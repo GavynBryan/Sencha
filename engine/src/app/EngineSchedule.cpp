@@ -1,14 +1,8 @@
 #include <app/EngineSchedule.h>
 
-#include <zone/ZoneRuntime.h>
-
-FrameRegistryView EngineSchedule::BuildFrameView(ZoneRuntime& zones)
-{
-    return zones.BuildFrameView();
-}
-
 void EngineSchedule::Init()
 {
+    TopoSort(ZoneResidencyEntries);
     TopoSort(FixedLogicEntries);
     TopoSort(PhysicsEntries);
     TopoSort(PostFixedEntries);
@@ -36,6 +30,7 @@ void EngineSchedule::Shutdown()
 
     Records.clear();
     TypeIndex.clear();
+    ZoneResidencyEntries.clear();
     FixedLogicEntries.clear();
     PhysicsEntries.clear();
     PostFixedEntries.clear();
@@ -44,6 +39,11 @@ void EngineSchedule::Shutdown()
     AudioEntries.clear();
     EndFrameEntries.clear();
     Initialized = false;
+}
+
+void EngineSchedule::RunZoneResidency(ZoneResidencyContext& ctx)
+{
+    Run(ZoneResidencyEntries, ctx);
 }
 
 void EngineSchedule::RunFixedLogic(FixedLogicContext& ctx)

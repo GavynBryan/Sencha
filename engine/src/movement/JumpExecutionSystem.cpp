@@ -1,21 +1,29 @@
 #include <movement/JumpExecutionSystem.h>
 
 #include <app/GameContexts.h>
-#include <ecs/World.h>
+#include <ecs/StoragePartitionSet.h>
 #include <movement/MovementTags.h>
-#include <world/registry/Registry.h>
 
 #include <cstdint>
 #include <utility>
 
 void JumpExecutionSystem::Step(World& world)
 {
-    if (!world.IsRegistered<GameplayTagContainer>() || !world.IsRegistered<CharacterController>()
+    Step(world, nullptr);
+}
+
+void JumpExecutionSystem::Step(
+    World& world,
+    const StoragePartitionSet* partitions)
+{
+    if (!world.IsRegistered<GameplayTagContainer>()
+        || !world.IsRegistered<CharacterController>()
         || !world.IsRegistered<MovementProfile>())
     {
         return;
     }
-    const MovementTags* ids = std::as_const(world).TryGetResource<MovementTags>();
+    const MovementTags* ids =
+        std::as_const(world).TryGetResource<MovementTags>();
     if (ids == nullptr)
         return;
 
@@ -25,7 +33,7 @@ void JumpExecutionSystem::Step(World& world)
         LastWorld = &world;
     }
 
-    CachedQuery->ForEachChunk([&](auto& view)
+    const auto visit = [&](auto& view)
     {
         auto tags = view.template Write<GameplayTagContainer>();
         auto controllers = view.template Write<CharacterController>();
@@ -37,11 +45,15 @@ void JumpExecutionSystem::Step(World& world)
             controllers[i].PendingJumpSpeed = profiles[i].JumpSpeed;
             tags[i].Revoke(ids->JumpRequested);
         }
-    });
+    };
+
+    if (partitions != nullptr)
+        CachedQuery->ForEachChunkIn(*partitions, visit);
+    else
+        CachedQuery->ForEachChunk(visit);
 }
 
 void JumpExecutionSystem::FixedLogic(FixedLogicContext& ctx)
 {
-    for (Registry* reg : ctx.ActiveRegistries)
-        Step(reg->Components);
+    Step(ctx.Entities, &ctx.Partitions);
 }

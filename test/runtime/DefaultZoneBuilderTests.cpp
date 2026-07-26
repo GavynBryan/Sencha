@@ -1,48 +1,60 @@
 #include <gtest/gtest.h>
-#include <zone/DefaultZoneBuilder.h>
+
+#include <components/ActiveCameraService.h>
+#include <components/CameraComponent.h>
+#include <render/StaticMeshComponent.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
-#include <zone/ZoneRuntime.h>
+#include <zone/DefaultZoneBuilder.h>
 
-TEST(DefaultZoneBuilder, CreatesZoneAndRegistersDefaultStoresAndResources)
+TEST(DefaultZoneBuilder, InitializesEditorRegistryStoresAndResources)
 {
-    ZoneRuntime runtime;
+    Registry registry;
+    InitializeDefault3DRegistry(registry);
 
-    Registry& registry = CreateDefault3DZone(
-        runtime, ZoneId{ 7 }, ZoneParticipation{ .Visible = true, .Logic = true });
-
-    EXPECT_EQ(&registry, runtime.FindZone(ZoneId{ 7 }));
     EXPECT_TRUE(registry.Components.IsRegistered<LocalTransform>());
     EXPECT_TRUE(registry.Components.IsRegistered<WorldTransform>());
     EXPECT_TRUE(registry.Components.IsRegistered<Parent>());
     EXPECT_TRUE(registry.Components.IsRegistered<StaticMeshComponent>());
     EXPECT_TRUE(registry.Components.IsRegistered<CameraComponent>());
     EXPECT_TRUE(registry.Resources.Has<ActiveCameraService>());
-    EXPECT_TRUE(runtime.GetParticipation(ZoneId{ 7 }).Visible);
-    EXPECT_TRUE(runtime.GetParticipation(ZoneId{ 7 }).Logic);
 }
 
 TEST(DefaultZoneBuilder, CreateEntityAddsTransformComponents)
 {
-    ZoneRuntime runtime;
-    Registry& registry = CreateDefault3DZone(runtime, ZoneId{ 1 });
+    Registry registry;
+    InitializeDefault3DRegistry(registry);
 
-    EntityId entity = CreateDefaultEntity(registry, Transform3f(
-        Vec3d(1.0f, 2.0f, 3.0f), Quatf::Identity(), Vec3d::One()));
+    const EntityId entity = CreateDefaultEntity(
+        registry,
+        Transform3f(
+            Vec3d(1.0f, 2.0f, 3.0f),
+            Quatf::Identity(),
+            Vec3d::One()));
 
     EXPECT_TRUE(registry.Entities.IsAlive(entity));
-    EXPECT_TRUE(registry.Components.HasComponent<LocalTransform>(entity));
-    EXPECT_TRUE(registry.Components.HasComponent<WorldTransform>(entity));
+    EXPECT_TRUE(
+        registry.Components.HasComponent<LocalTransform>(entity));
+    EXPECT_TRUE(
+        registry.Components.HasComponent<WorldTransform>(entity));
 }
 
-TEST(DefaultZoneBuilder, AddCameraCanSetActiveCamera)
+TEST(DefaultZoneBuilder, AddCameraCanSetEditorActiveCamera)
 {
-    ZoneRuntime runtime;
-    Registry& registry = CreateDefault3DZone(runtime, ZoneId{ 1 });
-    EntityId camera = CreateDefaultEntity(registry);
+    Registry registry;
+    InitializeDefault3DRegistry(registry);
+    const EntityId camera = CreateDefaultEntity(registry);
 
-    const bool added = AddDefaultCamera(registry, camera, CameraComponent{}, true);
+    const bool added = AddDefaultCamera(
+        registry,
+        camera,
+        CameraComponent{},
+        true);
 
     EXPECT_TRUE(added);
-    EXPECT_EQ(registry.Resources.Get<ActiveCameraService>().GetActive(), camera);
+    EXPECT_EQ(
+        registry.Resources
+            .Get<ActiveCameraService>()
+            .GetActive(),
+        camera);
 }

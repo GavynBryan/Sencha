@@ -2,75 +2,132 @@
 
 #include <ecs/Chunk.h>
 #include <ecs/EntityId.h>
+#include <ecs/StoragePartitionSet.h>
 #include <world/transform/TransformComponents.h>
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
+#include <unordered_map>
 #include <vector>
 
-// ─── PropagationOrderCache ────────────────────────────────────────────────────
-//
-// World resource that caches a parent-before-child propagation order for the
-// transform hierarchy. Rebuilt lazily when either:
-//   - Changed<Parent> detects a hierarchy edit (parent added/removed/retargeted), or
-//   - World::StructuralVersion() differs from the version seen at last rebuild
-//     (any entity create/destroy or component add/remove can move rows and
-//     stale every cached pointer below — archetype count alone is NOT a
-//     sufficient key; see docs/ecs/decisions.md D4.4).
-//
-// Each entry stores the child and parent EntityIds (parent invalid for roots)
-// plus pointers resolved at rebuild time so the steady-state sweep does no
-// registry lookups. ChunkPtr/LocalCol/WorldCol let the sweep read the
-// LocalTransform column version (skip clean subtrees) and bump the
-// WorldTransform column version for exactly the chunks it writes.
-// LocalTransform and WorldTransform of one entity always share a chunk, so a
-// single chunk pointer serves both columns.
-//
-// ParentOrderIndex points at the parent's entry within Order (parents always
-// precede children), letting the sweep propagate dirtiness down the tree with
-// one flag array and no hashing. UINT32_MAX for roots.
-//
-// Spiritual successor of TransformPropagationOrderService from the sparse-set
-// era. See docs/ecs/decisions.md D3.1 for the mandate and benchmark rationale.
+enum class TransformPropagationDomain : std::uint8_t
+{
+    Simulation,
+    Presentation,
+};
 
+// One parented transform entity, held in parent-before-child order.
+//
+// Only entities carrying Parent appear here. An unparented entity's world
+// transform is its local transform, so it needs no ordering and is swept
+// chunk-linearly by a filtered query instead. Keeping those out of the order is
+// what makes both the order and its maintenance proportional to the hierarchy
+// rather than to everything resident.
 struct PropagationEntry
 {
     EntityId Child;
-    EntityId Parent; // invalid (Parent.IsValid() == false) for root entities
+    EntityId Parent;
     LocalTransform* LocalPtr = nullptr;
     WorldTransform* WorldPtr = nullptr;
     const WorldTransform* ParentWorldPtr = nullptr;
-    Chunk*   ChunkPtr = nullptr;          // chunk holding both transform columns
-    uint32_t LocalCol = UINT32_MAX;       // LocalTransform column in ChunkPtr
-    uint32_t WorldCol = UINT32_MAX;       // WorldTransform column in ChunkPtr
-    uint32_t ParentOrderIndex = UINT32_MAX; // parent's index in Order; UINT32_MAX for roots
+    Chunk* ChunkPtr = nullptr;
+    // Set only when the parent is not itself in the order — an unparented root,
+    // swept by the flat pass. Its world column's last-written frame is how this
+    // entry learns the root moved; a parent inside the order reports that
+    // through the sweep's dirty flags instead.
+    Chunk* ParentChunkPtr = nullptr;
+    uint32_t LocalCol = UINT32_MAX;
+    uint32_t WorldCol = UINT32_MAX;
+    uint32_t ParentWorldCol = UINT32_MAX;
+    uint32_t ParentOrderIndex = UINT32_MAX;
 };
 
+// One sweep state per cadence/domain. Simulation and presentation use different
+// partition sets, so sharing one last-sweep frame would make a zone that slept
+// through one domain miss parent changes when it re-entered that domain.
+struct PropagationSweepState
+{
+    StoragePartitionSet PreviousPartitions;
+    uint32_t LastSweepFrame = 0;
+    bool Swept = false;
+};
+
+// Persistent state for transform propagation: the parent-before-child order over
+// parented entities, and where those entities' rows currently live.
+//
+// The two have separate validity because different things invalidate them:
+//
+//   topology   who is whose parent, and in what order. Changes only when the
+//              hierarchy changes, so a spawn, despawn, or zone attach that
+//              touches no Parent column leaves it standing. This is the property
+//              that keeps a streaming event from costing a rebuild proportional
+//              to everything resident.
+//   addresses  where those entities' rows are. Any structural change can
+//              relocate a row, because removal is a swap-remove, so these are
+//              re-resolved whenever the structural version moves. That work is
+//              proportional to the order, not to the world.
+//
+// Conflating the two is what made every spawn anywhere rebuild a world-global
+// order; see docs/plans/unified-world-hardening.md.
 class PropagationOrderCache
 {
 public:
-    // Invalidates the cache so the next Propagate call rebuilds it.
-    void Invalidate() { Dirty = true; }
+    // Forces a topology rebuild, and with it an address resolve and one full
+    // sweep. The propagation bisect switch and the ECS benchmark use this.
+    void Invalidate() { TopologyDirty = true; }
+    bool IsDirty() const { return TopologyDirty; }
 
-    bool IsDirty() const { return Dirty; }
+    // ── Topology ─────────────────────────────────────────────────────────────
 
-    bool StructuralVersionMatches(uint64_t structuralVersion) const
+    // parentCount is the number of entities carrying Parent. It is a superset of
+    // the order's entries — an entity can carry Parent without carrying
+    // transforms — and it is deliberately the coarser signal: it catches Parent
+    // components appearing and disappearing, including through entity
+    // destruction, which no column-version probe reports.
+    bool TopologyMatches(std::size_t parentCount) const
     {
-        return LastStructuralVersion == structuralVersion;
+        return !TopologyDirty && LastParentCount == parentCount;
     }
 
-    // Called by the propagation system after rebuilding. A rebuild always
-    // forces the next sweep to recompute every entry: structural moves copy
-    // component data without bumping column versions, so change detection
-    // alone cannot be trusted across a rebuild.
-    void MarkClean(uint64_t structuralVersion)
+    uint32_t TopologyFrame() const { return LastTopologyFrame; }
+
+    void MarkTopologyClean(std::size_t parentCount, uint32_t frame)
     {
-        Dirty = false;
-        LastStructuralVersion = structuralVersion;
+        TopologyDirty = false;
+        LastParentCount = parentCount;
+        LastTopologyFrame = frame;
+        AddressesDirty = true;
         FullSweepPending = true;
+        ++RebuildCounter;
     }
 
-    // True exactly once after each rebuild; consumed by the sweep.
+    // Order rebuilds since construction. This is the invalidation blast-radius
+    // signal: work unrelated to a changed partition pays for a bump here. Tests
+    // bound it; the bench reports it.
+    uint64_t RebuildCount() const { return RebuildCounter; }
+
+    // ── Row addresses ────────────────────────────────────────────────────────
+
+    bool AddressesMatch(uint64_t structuralVersion) const
+    {
+        return !AddressesDirty && LastStructuralVersion == structuralVersion;
+    }
+
+    void MarkAddressesResolved(uint64_t structuralVersion)
+    {
+        AddressesDirty = false;
+        LastStructuralVersion = structuralVersion;
+        ++AddressResolveCounter;
+    }
+
+    // Address re-resolutions since construction. Reported separately from
+    // RebuildCount because the two have different causes and very different
+    // costs, and because how often a live scene pays this is the measurement
+    // that decides whether caching row pointers is worth its invalidation.
+    uint64_t AddressResolveCount() const { return AddressResolveCounter; }
+
+    // ── Sweep ────────────────────────────────────────────────────────────────
+
     bool ConsumeFullSweepPending()
     {
         const bool pending = FullSweepPending;
@@ -78,25 +135,51 @@ public:
         return pending;
     }
 
-    // Frame of the last completed sweep. The sweep treats an entry as locally
-    // dirty when its LocalTransform column version >= this value (>= rather
-    // than >, so writes landing later in the same frame as a sweep are not
-    // missed; the cost is one redundant re-propagation per write).
-    uint32_t LastSweepFrame() const { return SweepFrame; }
-    void SetLastSweepFrame(uint32_t frame) { SweepFrame = frame; }
+    PropagationSweepState& SweepState(TransformPropagationDomain domain)
+    {
+        return domain == TransformPropagationDomain::Simulation
+            ? SimulationSweep
+            : PresentationSweep;
+    }
 
     std::vector<PropagationEntry>& GetOrder() { return Order; }
     const std::vector<PropagationEntry>& GetOrder() const { return Order; }
-
-    // Frame-local dirty flags, indexed like Order. Owned here so the sweep
-    // reuses one allocation across frames.
     std::vector<uint8_t>& DirtyScratch() { return Scratch; }
+
+    // Partitions that entered the swept set since the previous sweep of this
+    // domain. Retained rather than local so a per-frame sweep allocates nothing.
+    StoragePartitionSet& EnteringScratch() { return Entering; }
+
+    // Retained rebuild workspace: the parented entities, each one's parent slot,
+    // and their children in compressed adjacency form. Held on the cache purely
+    // so that a rebuild after the first allocates nothing.
+    struct RebuildWorkspace
+    {
+        std::vector<EntityId> Child;
+        std::vector<EntityId> Parent;
+        std::vector<uint32_t> ParentSlot;
+        std::vector<uint32_t> ChildOffset;
+        std::vector<uint32_t> ChildCursor;
+        std::vector<uint32_t> ChildSlots;
+        std::vector<uint32_t> OrderSlot;
+        std::unordered_map<EntityIndex, uint32_t> SlotOfIndex;
+    };
+
+    RebuildWorkspace& Workspace() { return Rebuild; }
 
 private:
     std::vector<PropagationEntry> Order;
     std::vector<uint8_t> Scratch;
+    StoragePartitionSet Entering;
+    RebuildWorkspace Rebuild;
+    std::size_t LastParentCount = 0;
+    uint32_t LastTopologyFrame = 0;
     uint64_t LastStructuralVersion = 0;
-    uint32_t SweepFrame = 0;
+    uint64_t RebuildCounter = 0;
+    uint64_t AddressResolveCounter = 0;
+    PropagationSweepState SimulationSweep;
+    PropagationSweepState PresentationSweep;
     bool FullSweepPending = true;
-    bool Dirty = true; // start dirty so the first frame always builds
+    bool TopologyDirty = true;
+    bool AddressesDirty = true;
 };

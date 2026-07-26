@@ -13,6 +13,8 @@
 #include <jobs/AsyncTaskQueue.h>
 #include <jobs/ThreadPoolJobSystem.h>
 #include <runtime/FrameDriver.h>
+#include <world/RuntimeComponentSchema.h>
+#include <world/RuntimeWorld.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
 #ifdef SENCHA_ENABLE_VULKAN
@@ -38,6 +40,7 @@
 
 #include <cassert>
 #include <cstdio>
+#include <string>
 #include <utility>
 
 Engine::Engine(EngineConfig engineConfig)
@@ -82,6 +85,7 @@ bool Engine::Initialize()
         FrameDriverInstance.reset();
         TaskQueueInstance.reset();
         FramePoolInstance.reset();
+        RuntimeWorldState.reset();
 #ifdef SENCHA_ENABLE_VULKAN
         GraphicsState.reset();
 #endif
@@ -173,10 +177,14 @@ void Engine::Shutdown()
     if (!Initialized)
         return;
 
+    // Systems may retain references into the simulation. Shut them down while
+    // the unified world and backend services are still alive, then join task
+    // lanes before destroying the entity world they may have targeted.
     EngineSystems.Shutdown();
     FrameDriverInstance.reset();
     TaskQueueInstance.reset();
     FramePoolInstance.reset();
+    RuntimeWorldState.reset();
 #ifdef SENCHA_ENABLE_DEBUG_UI
     // The renderer owns the feature; only the borrowed view is cleared here.
     DebugOverlayFeature = nullptr;
@@ -257,6 +265,20 @@ const ConsoleService& Engine::Console() const
 {
     assert(ConsoleState && "Engine::Console: valid only between Initialize and Shutdown");
     return *ConsoleState;
+}
+
+RuntimeWorld& Engine::World()
+{
+    assert(RuntimeWorldState
+           && "Engine::World: valid after runtime schema sealing and before Shutdown");
+    return *RuntimeWorldState;
+}
+
+const RuntimeWorld& Engine::World() const
+{
+    assert(RuntimeWorldState
+           && "Engine::World: valid after runtime schema sealing and before Shutdown");
+    return *RuntimeWorldState;
 }
 
 PlatformServices& Engine::Platform()
@@ -354,7 +376,37 @@ int Engine::Run(Game& game)
         return 1;
 
     game.AttachEngine(*this);
-    game.OnRegisterComponents(DefaultComponentSerializerRegistry());
+
+    // Serializers and runtime storage share stable component identities but are
+    // independent registries. The editor calls only the serializer hook; the
+    // runtime additionally composes and seals the complete World vocabulary.
+    ComponentSerializerRegistry& serializers =
+        DefaultComponentSerializerRegistry();
+    game.OnRegisterComponents(serializers);
+
+    RuntimeComponentSchemaState = WorldComponentSchema{};
+    RegisterEngineRuntimeComponents(RuntimeComponentSchemaState);
+    game.OnRegisterRuntimeComponents(RuntimeComponentSchemaState);
+
+    std::string missingRuntimeComponent;
+    if (!RuntimeComponentSchemaCoversSerializers(
+            RuntimeComponentSchemaState,
+            serializers,
+            &missingRuntimeComponent))
+    {
+        std::fprintf(
+            stderr,
+            "Runtime component schema is missing storage for serialized component '%s'.\n",
+            missingRuntimeComponent.c_str());
+        game.OnUnregisterComponents(serializers);
+        RuntimeComponentSchemaState = WorldComponentSchema{};
+        return 1;
+    }
+
+    RuntimeComponentSchemaState.Seal();
+    assert(!RuntimeWorldState && "Engine::Run called with a live runtime world");
+    RuntimeWorldState =
+        std::make_unique<RuntimeWorld>(RuntimeComponentSchemaState);
 
     ConsoleService& console = Console();
     console.AdvancePhase(ConsolePhase::EngineReady);
@@ -417,7 +469,19 @@ int Engine::Run(Game& game)
         .Config = Configuration,
     };
     game.OnShutdown(shutdown);
-    game.OnUnregisterComponents(DefaultComponentSerializerRegistry());
+
+    // Symmetric teardown of OnRegisterComponents above: retract the game's
+    // serializers while the module is still mapped (the host unloads it after Run
+    // returns). A module-owned serializer left in the registry would be freed at
+    // exit, after dlclose, against unmapped code.
+    game.OnUnregisterComponents(serializers);
+
+    // Game component entries contain concrete registration function pointers
+    // instantiated in the game module. Clear them before Engine::Run returns and
+    // the host is allowed to unmap that module. RuntimeWorldState remains alive
+    // until Engine::Shutdown, which also occurs inside Application::Run while the
+    // module is mapped.
+    RuntimeComponentSchemaState = WorldComponentSchema{};
     return 0;
 }
 

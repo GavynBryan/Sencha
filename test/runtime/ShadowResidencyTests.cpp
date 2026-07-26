@@ -9,11 +9,7 @@ namespace
 {
     RenderEntityKey MakeKey(std::uint32_t entityIndex)
     {
-        return RenderEntityKey{
-            .Kind = RegistryKind::Zone,
-            .Zone = ZoneId{ 1 },
-            .Entity = EntityId{ entityIndex, 1 },
-        };
+        return RenderEntityKey{ .Entity = EntityId{ entityIndex, 1 } };
     }
 
     SpotShadowRequest MakeRequest(std::uint32_t entityIndex,
@@ -675,4 +671,114 @@ TEST(ShadowResidency, ApplyPointGrantsWiresLightsToRenderedCubeRecords)
     EXPECT_EQ(lights.PointShadows[slot].Params,
               residency.PointSlotRecord(slot).Params);
     EXPECT_EQ(lights.PointShadows[slot].LightIndex, 1u);
+}
+
+// A zone detach destroys its lights, and the renderer sees that only as their
+// requests ceasing. The slots they held must not make newly streamed lights wait
+// out the full hysteresis run: with four point slots, one lit room fills the pool,
+// so every threshold crossing would cost half a second of unshadowed lights.
+TEST(ShadowResidency, SlotsHeldByAbsentOwnersDoNotDelayNewGrants)
+{
+    ShadowResidencyBudgets twoSlots = kUnlimited;
+    twoSlots.MaxSlots = 2;
+
+    ShadowResidency residency;
+    std::vector<SpotShadowRequest> departing{
+        MakeRequest(1, 0, 1.0f),
+        MakeRequest(2, 1, 1.0f),
+    };
+    residency.Update(departing, {}, twoSlots);
+    ASSERT_TRUE(HasGrantForLight(residency, 0));
+    ASSERT_TRUE(HasGrantForLight(residency, 1));
+
+    // The zone unloads: entities 1 and 2 are gone, entities 3 and 4 stream in.
+    std::vector<SpotShadowRequest> arriving{
+        MakeRequest(3, 2, 1.0f),
+        MakeRequest(4, 3, 1.0f),
+    };
+    residency.Update(arriving, {}, twoSlots);
+
+    EXPECT_TRUE(HasGrantForLight(residency, 2))
+        << "a newly streamed light waited on a slot whose owner no longer exists";
+    EXPECT_TRUE(HasGrantForLight(residency, 3));
+    EXPECT_EQ(residency.LiveSlotCount(), 2u);
+}
+
+// The same property for the point pool, which is the one that actually bites at
+// four slots.
+TEST(ShadowResidency, PointSlotsHeldByAbsentOwnersDoNotDelayNewGrants)
+{
+    ShadowResidencyBudgets budgets = kUnlimited;
+    budgets.MaxPointSlots = 1;
+
+    ShadowResidency residency;
+    std::vector<PointShadowRequest> departing{ MakePointRequest(1, 0, 1.0f) };
+    // A point light stays ungranted until all six faces have rendered, so let it
+    // settle before taking the slot away.
+    for (int frame = 0; frame < 8; ++frame)
+        residency.Update({}, departing, {}, budgets);
+    ASSERT_TRUE(HasPointGrantForLight(residency, 0));
+
+    std::vector<PointShadowRequest> arriving{ MakePointRequest(2, 1, 1.0f) };
+    for (int frame = 0; frame < 8; ++frame)
+        residency.Update({}, arriving, {}, budgets);
+
+    EXPECT_TRUE(HasPointGrantForLight(residency, 1))
+        << "a streamed point light waited on a slot held by a destroyed owner";
+    EXPECT_FALSE(HasPointGrantForLight(residency, 0));
+}
+
+// The relaxation must be narrow: a holder that is still asking keeps its full
+// hysteresis protection, or equal-importance lights flicker again.
+TEST(ShadowResidency, ARequestingHolderKeepsItsHysteresisProtection)
+{
+    ShadowResidencyBudgets oneSlot = kUnlimited;
+    oneSlot.MaxSlots = 1;
+
+    ShadowResidency residency;
+    std::vector<SpotShadowRequest> first{ MakeRequest(1, 0, 1.0f) };
+    residency.Update(first, {}, oneSlot);
+    ASSERT_TRUE(HasGrantForLight(residency, 0));
+
+    std::vector<SpotShadowRequest> contested{
+        MakeRequest(2, 1, 5.0f),
+        MakeRequest(1, 0, 1.0f),
+    };
+    for (std::uint32_t frame = 0; frame < ShadowResidency::kStealOutscoredFrames - 1;
+         ++frame)
+    {
+        residency.Update(contested, {}, oneSlot);
+        EXPECT_TRUE(HasGrantForLight(residency, 0))
+            << "frame " << frame << ": a live holder lost its slot early";
+        EXPECT_FALSE(HasGrantForLight(residency, 1));
+    }
+}
+
+// Retention is the reason absent slots were held in the first place. An absent
+// owner with nothing contending must keep its allocation, so a light that is
+// briefly culled does not pay a re-render when it returns.
+TEST(ShadowResidency, AnUncontestedAbsentSlotRetainsItsCachedContent)
+{
+    ShadowResidencyBudgets budgets = kUnlimited;
+    budgets.MaxSlots = 4;
+
+    ShadowResidency residency;
+    std::vector<SpotShadowRequest> present{
+        MakeRequest(1, 0, 1.0f, ShadowUpdatePolicy::OnChange),
+    };
+    residency.Update(present, {}, budgets);
+    ASSERT_TRUE(HasGrantForLight(residency, 0));
+    const std::uint32_t liveWhilePresent = residency.LiveSlotCount();
+
+    // Culled for a while, with no other light asking for a slot.
+    for (int frame = 0; frame < 10; ++frame)
+        residency.Update({}, {}, budgets);
+    EXPECT_EQ(residency.LiveSlotCount(), liveWhilePresent)
+        << "an uncontested slot was dropped, costing a re-render on return";
+
+    // Back in view: still cached, so no view is scheduled for it.
+    residency.Update(present, {}, budgets);
+    EXPECT_TRUE(HasGrantForLight(residency, 0));
+    EXPECT_TRUE(residency.ScheduledViews().empty())
+        << "the returning light re-rendered despite its slot being retained";
 }

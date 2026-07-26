@@ -146,11 +146,31 @@ public:
               Registry& registry,
               SceneSerializationContext& context) override
     {
+        return LoadIntoWorld(
+            archive,
+            entity,
+            registry.Components,
+            context);
+    }
+
+    bool LoadIntoWorld(IReadArchive& archive,
+                       EntityId entity,
+                       World& world,
+                       SceneSerializationContext& context) override
+    {
         Component component{};
         if (!SceneComponentSerialization::LoadFields(archive, component, context))
             return false;
 
-        return Traits::Add(registry, entity, component);
+        // A batch importer creates the entity at its final archetype signature,
+        // so the column is already there and Traits::Add would read the presence
+        // as a duplicate. Write in place instead; OnAdd still fires exactly once.
+        // Rows the editor's document path loads into are never pre-created, so
+        // that path always takes the branch below.
+        if (world.HasComponent<Component>(entity))
+            return world.InitializeComponent<Component>(entity, component);
+
+        return Traits::Add(world, entity, component);
     }
 
     bool Remove(EntityId entity, Registry& registry) const override

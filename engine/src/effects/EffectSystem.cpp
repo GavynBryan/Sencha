@@ -8,104 +8,108 @@
 #include <effects/EffectRegistry.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 
+#include <ecs/Query.h>
+#include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 namespace
 {
-    // Apply a definition's modifiers to Base (Add -> Multiply -> Override), then
-    // clamp every base value to its attribute range. Used by instant and
-    // periodic application.
-    void ApplyModifiersToBase(AttributeSet& set,
-                              const EffectDefinition& def,
-                              const AttributeRegistry* attrReg)
-    {
-        for (const EffectModifier& m : def.Modifiers)
-            if (m.Op == ModifierOp::Add)
-                if (float* b = set.BasePtr(m.Attr)) *b += m.Magnitude;
-        for (const EffectModifier& m : def.Modifiers)
-            if (m.Op == ModifierOp::Multiply)
-                if (float* b = set.BasePtr(m.Attr)) *b *= m.Magnitude;
-        for (const EffectModifier& m : def.Modifiers)
-            if (m.Op == ModifierOp::Override)
-                if (float* b = set.BasePtr(m.Attr)) *b = m.Magnitude;
+void ApplyModifiersToBase(
+    AttributeSet& set,
+    const EffectDefinition& def,
+    const AttributeRegistry* attrReg)
+{
+    for (const EffectModifier& m : def.Modifiers)
+        if (m.Op == ModifierOp::Add)
+            if (float* b = set.BasePtr(m.Attr)) *b += m.Magnitude;
+    for (const EffectModifier& m : def.Modifiers)
+        if (m.Op == ModifierOp::Multiply)
+            if (float* b = set.BasePtr(m.Attr)) *b *= m.Magnitude;
+    for (const EffectModifier& m : def.Modifiers)
+        if (m.Op == ModifierOp::Override)
+            if (float* b = set.BasePtr(m.Attr)) *b = m.Magnitude;
 
-        if (attrReg != nullptr)
-            for (int i = 0; i < set.Count; ++i)
-                set.Base[i] = attrReg->Clamp(set.Ids[i], set.Base[i]);
-    }
+    if (attrReg != nullptr)
+        for (int i = 0; i < set.Count; ++i)
+            set.Base[i] = attrReg->Clamp(set.Ids[i], set.Base[i]);
 }
 
-void ApplyEffect(World& world, EntityId target, EffectId effect)
+template <typename QueryType, typename Visit>
+void VisitEffectChunks(
+    QueryType& query,
+    const StoragePartitionSet* partitions,
+    Visit&& visit)
 {
-    const EffectRegistry* effReg = std::as_const(world).TryGetResource<EffectRegistry>();
-    if (effReg == nullptr)
-        return;
-    const EffectDefinition* def = effReg->Get(effect);
-    if (def == nullptr)
-        return;
-
-    if (def->Duration == EffectDuration::Instant)
-    {
-        const AttributeRegistry* attrReg = std::as_const(world).TryGetResource<AttributeRegistry>();
-        if (AttributeSet* set = world.TryGet<AttributeSet>(target))
-            ApplyModifiersToBase(*set, *def, attrReg);
-        return;
-    }
-
-    // Duration / Infinite: an ActiveEffect entity carries the application; tags
-    // are granted to the target for its lifetime.
-    EntityId fx = world.CreateEntity();
-    ActiveEffect ae{};
-    ae.Target = target;
-    ae.Def = effect;
-    ae.TimeRemaining = (def->Duration == EffectDuration::Infinite) ? -1.0f : def->DurationSeconds;
-    ae.PeriodTimer = def->Period; // first periodic application after one full period
-    world.AddComponent<ActiveEffect>(fx, ae);
-
-    if (GameplayTagContainer* tags = world.TryGet<GameplayTagContainer>(target))
-        for (GameplayTagId tag : def->GrantedTags)
-            tags->Grant(tag);
+    if (partitions != nullptr)
+        query.ForEachChunkIn(*partitions, std::forward<Visit>(visit));
+    else
+        query.ForEachChunk(std::forward<Visit>(visit));
 }
 
-void TickEffects(World& world, float dt)
+void TickEffectsImpl(
+    World& world,
+    float dt,
+    const StoragePartitionSet* partitions)
 {
-    const EffectRegistry* effReg = std::as_const(world).TryGetResource<EffectRegistry>();
-    if (effReg == nullptr)
+    const EffectRegistry* effReg =
+        std::as_const(world).TryGetResource<EffectRegistry>();
+    if (effReg == nullptr || !world.IsRegistered<ActiveEffect>())
         return;
-    const AttributeRegistry* attrReg = std::as_const(world).TryGetResource<AttributeRegistry>();
+    const AttributeRegistry* attrReg =
+        std::as_const(world).TryGetResource<AttributeRegistry>();
 
-    std::vector<EntityId> expired;
-    world.ForEachComponent<ActiveEffect>([&](EntityId entity, ActiveEffect& ae)
+    std::vector<EntityIndex> expiredIndices;
+    Query<Write<ActiveEffect>> query(world);
+    VisitEffectChunks(query, partitions, [&](auto& view)
     {
-        const EffectDefinition* def = effReg->Get(ae.Def);
-        if (def == nullptr)
+        auto effects = view.template Write<ActiveEffect>();
+        const EntityIndex* indices = view.Entities();
+        for (std::uint32_t i = 0; i < view.Count(); ++i)
         {
-            expired.push_back(entity); // definition gone: drop the orphan
-            return;
-        }
-
-        if (def->Period > 0.0f)
-        {
-            ae.PeriodTimer -= dt;
-            int guard = 0;
-            while (ae.PeriodTimer <= 0.0f && guard++ < 64)
+            ActiveEffect& ae = effects[i];
+            const EffectDefinition* def = effReg->Get(ae.Def);
+            if (def == nullptr)
             {
-                if (AttributeSet* set = world.TryGet<AttributeSet>(ae.Target))
-                    ApplyModifiersToBase(*set, *def, attrReg);
-                ae.PeriodTimer += def->Period;
+                expiredIndices.push_back(indices[i]);
+                continue;
+            }
+
+            if (def->Period > 0.0f)
+            {
+                ae.PeriodTimer -= dt;
+                int guard = 0;
+                while (ae.PeriodTimer <= 0.0f && guard++ < 64)
+                {
+                    if (AttributeSet* set = world.TryGet<AttributeSet>(ae.Target))
+                        ApplyModifiersToBase(*set, *def, attrReg);
+                    ae.PeriodTimer += def->Period;
+                }
+            }
+
+            if (ae.TimeRemaining >= 0.0f)
+            {
+                ae.TimeRemaining -= dt;
+                if (ae.TimeRemaining <= 0.0f)
+                    expiredIndices.push_back(indices[i]);
             }
         }
-
-        if (ae.TimeRemaining >= 0.0f) // finite (negative == infinite)
-        {
-            ae.TimeRemaining -= dt;
-            if (ae.TimeRemaining <= 0.0f)
-                expired.push_back(entity);
-        }
     });
+
+    if (expiredIndices.empty())
+        return;
+
+    const std::unordered_set<EntityIndex> expiredSet(
+        expiredIndices.begin(),
+        expiredIndices.end());
+    std::vector<EntityId> expired;
+    expired.reserve(expiredSet.size());
+    for (EntityId entity : world.GetAliveEntities())
+        if (expiredSet.contains(entity.Index))
+            expired.push_back(entity);
 
     for (EntityId entity : expired)
     {
@@ -119,35 +123,45 @@ void TickEffects(World& world, float dt)
     }
 }
 
-void FoldActiveEffects(World& world)
+void FoldActiveEffectsImpl(
+    World& world,
+    const StoragePartitionSet* partitions)
 {
-    const EffectRegistry* effReg = std::as_const(world).TryGetResource<EffectRegistry>();
-    if (effReg == nullptr)
+    const EffectRegistry* effReg =
+        std::as_const(world).TryGetResource<EffectRegistry>();
+    if (effReg == nullptr || !world.IsRegistered<ActiveEffect>())
         return;
 
-    auto foldPass = [&world, effReg](ModifierOp op)
+    auto foldPass = [&](ModifierOp op)
     {
-        std::as_const(world).ForEachComponent<ActiveEffect>(
-            [&world, effReg, op](EntityId, const ActiveEffect& ae)
+        Query<Read<ActiveEffect>> query(world);
+        VisitEffectChunks(query, partitions, [&](auto& view)
         {
-            const EffectDefinition* def = effReg->Get(ae.Def);
-            if (def == nullptr || def->Period > 0.0f)
-                return; // periodic effects modify Base, not Current
-            AttributeSet* set = world.TryGet<AttributeSet>(ae.Target);
-            if (set == nullptr)
-                return;
-            for (const EffectModifier& m : def->Modifiers)
+            const auto effects = view.template Read<ActiveEffect>();
+            for (std::uint32_t i = 0; i < view.Count(); ++i)
             {
-                if (m.Op != op)
+                const ActiveEffect& ae = effects[i];
+                const EffectDefinition* def = effReg->Get(ae.Def);
+                if (def == nullptr || def->Period > 0.0f)
                     continue;
-                float* c = set->CurrentPtr(m.Attr);
-                if (c == nullptr)
+
+                AttributeSet* set = world.TryGet<AttributeSet>(ae.Target);
+                if (set == nullptr)
                     continue;
-                switch (op)
+
+                for (const EffectModifier& m : def->Modifiers)
                 {
-                    case ModifierOp::Add:      *c += m.Magnitude; break;
+                    if (m.Op != op)
+                        continue;
+                    float* c = set->CurrentPtr(m.Attr);
+                    if (c == nullptr)
+                        continue;
+                    switch (op)
+                    {
+                    case ModifierOp::Add: *c += m.Magnitude; break;
                     case ModifierOp::Multiply: *c *= m.Magnitude; break;
-                    case ModifierOp::Override: *c  = m.Magnitude; break;
+                    case ModifierOp::Override: *c = m.Magnitude; break;
+                    }
                 }
             }
         });
@@ -157,10 +171,79 @@ void FoldActiveEffects(World& world)
     foldPass(ModifierOp::Multiply);
     foldPass(ModifierOp::Override);
 }
+} // namespace
+
+void ApplyEffect(World& world, EntityId target, EffectId effect)
+{
+    const EffectRegistry* effReg =
+        std::as_const(world).TryGetResource<EffectRegistry>();
+    if (effReg == nullptr || !world.IsAlive(target))
+        return;
+    const EffectDefinition* def = effReg->Get(effect);
+    if (def == nullptr)
+        return;
+
+    if (def->Duration == EffectDuration::Instant)
+    {
+        const AttributeRegistry* attrReg =
+            std::as_const(world).TryGetResource<AttributeRegistry>();
+        if (AttributeSet* set = world.TryGet<AttributeSet>(target))
+            ApplyModifiersToBase(*set, *def, attrReg);
+        return;
+    }
+
+    const StoragePartitionId partition = world.GetEntityPartition(target);
+    EntityId fx = world.CreateEntity(partition);
+    ActiveEffect ae{};
+    ae.Target = target;
+    ae.Def = effect;
+    ae.TimeRemaining =
+        def->Duration == EffectDuration::Infinite ? -1.0f : def->DurationSeconds;
+    ae.PeriodTimer = def->Period;
+    world.AddComponent<ActiveEffect>(fx, ae);
+
+    if (GameplayTagContainer* tags = world.TryGet<GameplayTagContainer>(target))
+        for (GameplayTagId tag : def->GrantedTags)
+            tags->Grant(tag);
+}
+
+void TickEffects(World& world, float dt)
+{
+    TickEffectsImpl(world, dt, nullptr);
+}
+
+void TickEffects(
+    World& world,
+    float dt,
+    const StoragePartitionSet& partitions)
+{
+    TickEffectsImpl(world, dt, &partitions);
+}
+
+void FoldActiveEffects(World& world)
+{
+    FoldActiveEffectsImpl(world, nullptr);
+}
+
+void FoldActiveEffects(
+    World& world,
+    const StoragePartitionSet& partitions)
+{
+    FoldActiveEffectsImpl(world, &partitions);
+}
 
 void ResolveAttributesWithEffects(World& world)
 {
     ResetAttributesToBase(world);
     FoldActiveEffects(world);
     ClampAttributes(world);
+}
+
+void ResolveAttributesWithEffects(
+    World& world,
+    const StoragePartitionSet& partitions)
+{
+    ResetAttributesToBase(world, partitions);
+    FoldActiveEffects(world, partitions);
+    ClampAttributes(world, partitions);
 }

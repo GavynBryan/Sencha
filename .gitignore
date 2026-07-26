@@ -70,3 +70,8 @@ Thumbs.db
 
 # Dear ImGui window-layout dump written when running the editor
 imgui.ini
+
+# Core dumps. Valgrind writes one per intentional-abort test (the death tests
+# that assert in debug), so a memcheck run over the suite leaves several behind.
+vgcore.*
+core.*

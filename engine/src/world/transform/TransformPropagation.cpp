@@ -1,137 +1,228 @@
 #include <world/transform/TransformPropagation.h>
 
-#include <world/registry/Registry.h>
-#include <world/registry/RegistryParallel.h>
 #include <world/transform/PropagationOrderCache.h>
 
 #include <cstdint>
-#include <unordered_map>
-#include <unordered_set>
-#include <utility>
-#include <vector>
 
-// ─── RebuildCache ─────────────────────────────────────────────────────────────
-//
-// Builds a parent-before-child ordered list of PropagationEntries.
-//
-// Algorithm: BFS from roots (entities with LocalTransform+WorldTransform but no
-// Parent) outward through the parent→children adjacency built from Read<Parent>.
-//
-// The children map is keyed by parent EntityIndex so BFS fan-out is O(1) per
-// child. BFS guarantees every parent entry is emitted before any of its children,
-// satisfying the forward-sweep invariant in Propagate().
-
-void TransformPropagationSystem::RebuildCache(PropagationOrderCache& cache)
+namespace
 {
-    auto& order = cache.GetOrder();
-    order.clear();
-    const uint64_t structuralVersion = Target.StructuralVersion();
+// An entity with no parent: its world transform is its local transform.
+template <typename View>
+void WriteWorldFromLocal(View& view)
+{
+    const auto locals = view.template Read<LocalTransform>();
+    auto worlds = view.template Write<WorldTransform>();
+    for (uint32_t row = 0; row < view.Count(); ++row)
+        worlds[row].Value = locals[row].Value;
+}
 
-    if (!Target.IsRegistered<LocalTransform>()
-        || !Target.IsRegistered<WorldTransform>())
+// The flat sweep: every transform entity with no parent, in chunk order, with
+// the dirty test applied once per chunk instead of once per entity.
+//
+// Two query shapes rather than one, because a chunk cannot be skipped from
+// inside the callback: Query bumps a Write column's version for every chunk it
+// visits, so a chunk that visited but wrote nothing would still read as changed
+// to everything downstream. Changed<LocalTransform> does the skipping before the
+// visit. It tests strictly-after, so the reference frame is one below the last
+// sweep, which reproduces exactly the inclusive "written at or after the last
+// sweep" test the entity-at-a-time sweep used. The inclusive form matters: two
+// writes in one frame are indistinguishable, so a sweep must always redo work
+// written during its own frame.
+template <typename Unfiltered, typename Filtered>
+void SweepUnparented(
+    World& world,
+    const StoragePartitionSet& partitions,
+    const StoragePartitionSet& entering,
+    bool fullSweep,
+    uint32_t lastSweepFrame)
+{
+    const auto write = [](auto& view) { WriteWorldFromLocal(view); };
+
+    if (fullSweep)
     {
-        cache.MarkClean(structuralVersion);
+        Unfiltered all(world);
+        all.ForEachChunkIn(partitions, write);
         return;
     }
 
-    // Collect all entities that participate in propagation (have LocalTransform
-    // and WorldTransform) and map their EntityIndex → EntityId so we can
-    // reconstruct full ids from index comparisons below.
-    std::unordered_map<EntityIndex, EntityId> indexToId;
-    indexToId.reserve(Target.CountComponents<LocalTransform>());
-
-    std::as_const(Target).ForEachComponent<LocalTransform>(
-        [&](EntityId id, const LocalTransform&)
+    // A partition that re-enters this domain may have had local transforms
+    // written while it was dormant, so it gets one unconditional sweep.
+    if (!entering.Empty())
     {
-        if (Target.HasComponent<WorldTransform>(id))
-            indexToId.emplace(id.Index, id);
+        Unfiltered resumed(world);
+        resumed.ForEachChunkIn(entering, write);
+    }
+
+    Filtered moved(world);
+    moved.ForEachChunkIn(partitions, write, lastSweepFrame - 1);
+}
+} // namespace
+
+// Entities carrying Parent, whether or not they carry transforms. Coarser than
+// the order's own population on purpose: see PropagationOrderCache.
+std::size_t TransformPropagationSystem::ParentCount() const
+{
+    return Target.CountComponents<Parent>();
+}
+
+bool TransformPropagationSystem::HierarchyChangedSince(uint32_t topologyFrame)
+{
+    if (!Target.IsRegistered<Parent>())
+        return false;
+
+    // Chunk-conservative, and one frame behind on purpose: a Parent written in
+    // the same frame the order was built must still be seen, because an
+    // archetype migration bumps every column in the destination chunk and that
+    // is how a Parent gained or lost alongside other components surfaces here.
+    //
+    // A re-parent performed in frame zero with no intervening AdvanceFrame is
+    // not visible to any column-version probe — the version is the frame number,
+    // and there is no frame below it to compare against. Advance the frame
+    // between a hierarchy edit and the sweep that must observe it;
+    // TransformPropagation tests do.
+    const uint32_t reference = topologyFrame > 0 ? topologyFrame - 1 : 0;
+    Query<Changed<Parent>> changed(Target);
+    bool any = false;
+    changed.ForEachChunk([&](auto&) { any = true; }, reference);
+    return any;
+}
+
+void TransformPropagationSystem::RebuildTopology(
+    PropagationOrderCache& cache,
+    std::size_t parentCount)
+{
+    std::vector<PropagationEntry>& order = cache.GetOrder();
+    order.clear();
+
+    if (!Target.IsRegistered<Parent>())
+    {
+        cache.MarkTopologyClean(parentCount, Target.CurrentFrame());
+        return;
+    }
+
+    PropagationOrderCache::RebuildWorkspace& work = cache.Workspace();
+    work.Child.clear();
+    work.Parent.clear();
+
+    Query<Read<Parent>, With<LocalTransform>, With<WorldTransform>> nodes(Target);
+    nodes.ForEachChunk([&](auto& view)
+    {
+        const auto parents = view.template Read<Parent>();
+        for (uint32_t row = 0; row < view.Count(); ++row)
+        {
+            work.Child.push_back(view.Entity(row));
+            work.Parent.push_back(parents[row].Entity);
+        }
     });
 
-    if (indexToId.empty())
+    const std::size_t count = work.Child.size();
+    if (count == 0)
     {
-        cache.MarkClean(structuralVersion);
+        cache.MarkTopologyClean(parentCount, Target.CurrentFrame());
         return;
     }
 
-    // Build children adjacency: parent EntityIndex → list of child EntityIds.
-    // Also track which entities have a parent so we can identify roots.
-    std::unordered_map<EntityIndex, std::vector<EntityId>> children;
-    std::unordered_set<EntityIndex> hasParent;
+    work.SlotOfIndex.clear();
+    work.SlotOfIndex.reserve(count);
+    for (std::size_t slot = 0; slot < count; ++slot)
+        work.SlotOfIndex.emplace(work.Child[slot].Index, static_cast<uint32_t>(slot));
 
-    if (Target.IsRegistered<Parent>())
+    // A parent that is itself parented is ordered ahead of its child here. Any
+    // other parent — an unparented root, a non-transform entity, or a stale id —
+    // is reached by address instead.
+    work.ParentSlot.assign(count, UINT32_MAX);
+    for (std::size_t slot = 0; slot < count; ++slot)
     {
-        Query<Read<Parent>, With<LocalTransform>, With<WorldTransform>> parentQuery(Target);
-        parentQuery.ForEachChunk([&](auto& view)
+        const EntityId parent = work.Parent[slot];
+        if (!parent.IsValid())
+            continue;
+
+        const auto found = work.SlotOfIndex.find(parent.Index);
+        // Full identity, not just the index: entity slots are reused, and
+        // inheriting the transform of whatever now occupies the slot would be
+        // silently wrong rather than merely stale.
+        if (found != work.SlotOfIndex.end()
+            && work.Child[found->second] == parent)
         {
-            const auto parentComps = view.template Read<Parent>();
-            const EntityIndex* entities = view.Entities();
-            for (uint32_t i = 0; i < view.Count(); ++i)
-            {
-                // Recover the full EntityId for the child from our map.
-                auto childIt = indexToId.find(entities[i]);
-                if (childIt == indexToId.end()) continue;
-
-                const EntityId& parentEntityId = parentComps[i].Entity;
-                if (!parentEntityId.IsValid()) continue;
-
-                // Only add the parent→child link if the parent is also a
-                // propagation participant (has LocalTransform + WorldTransform).
-                if (indexToId.count(parentEntityId.Index) == 0) continue;
-
-                children[parentEntityId.Index].push_back(childIt->second);
-                hasParent.insert(entities[i]);
-            }
-        });
-    }
-
-    // BFS from roots (propagation participants without a Parent entry).
-    // Each BFS entry carries the child EntityId and the parent EntityId (invalid
-    // for roots).
-    struct BfsEntry
-    {
-        EntityId Child;
-        EntityId Parent; // invalid for roots
-    };
-
-    std::vector<BfsEntry> queue;
-    queue.reserve(indexToId.size());
-
-    for (const auto& [idx, id] : indexToId)
-    {
-        if (hasParent.count(idx) == 0)
-            queue.push_back({ id, EntityId{} });
-    }
-
-    order.reserve(indexToId.size());
-
-    for (size_t head = 0; head < queue.size(); ++head)
-    {
-        const BfsEntry current = queue[head];
-        order.push_back({ current.Child, current.Parent });
-
-        auto childrenIt = children.find(current.Child.Index);
-        if (childrenIt != children.end())
-        {
-            for (const EntityId& childId : childrenIt->second)
-                queue.push_back({ childId, current.Child });
+            work.ParentSlot[slot] = found->second;
         }
     }
 
-    std::unordered_map<EntityIndex, size_t> indexToOrder;
-    indexToOrder.reserve(order.size());
-    for (size_t i = 0; i < order.size(); ++i)
-        indexToOrder.emplace(order[i].Child.Index, i);
+    // Children per parent in compressed adjacency form: counts, prefix sum, fill.
+    work.ChildOffset.assign(count + 1, 0);
+    for (std::size_t slot = 0; slot < count; ++slot)
+    {
+        if (work.ParentSlot[slot] != UINT32_MAX)
+            ++work.ChildOffset[work.ParentSlot[slot] + 1];
+    }
+    for (std::size_t slot = 0; slot < count; ++slot)
+        work.ChildOffset[slot + 1] += work.ChildOffset[slot];
 
-    // Resolve chunk locations and row pointers for the steady-state sweep.
-    // LocateEntity is pure address resolution — unlike non-const TryGet it
-    // bumps no column versions, so a rebuild does not register as a change.
-    // Parents precede children in BFS order, so order[parentIdx].WorldPtr is
-    // already resolved when a child entry reads it.
+    work.ChildCursor = work.ChildOffset;
+    work.ChildSlots.assign(work.ChildOffset[count], 0);
+    for (std::size_t slot = 0; slot < count; ++slot)
+    {
+        const uint32_t parentSlot = work.ParentSlot[slot];
+        if (parentSlot != UINT32_MAX)
+            work.ChildSlots[work.ChildCursor[parentSlot]++] = static_cast<uint32_t>(slot);
+    }
+
+    // Breadth-first from the entities whose parent is not itself in the order.
+    // Anything unreachable from one of those seeds is in a parent cycle and stays
+    // out of the order, so a cycle costs no propagation rather than an infinite
+    // walk.
+    order.reserve(count);
+    work.OrderSlot.clear();
+    work.OrderSlot.reserve(count);
+    for (std::size_t slot = 0; slot < count; ++slot)
+    {
+        if (work.ParentSlot[slot] != UINT32_MAX)
+            continue;
+
+        order.push_back(PropagationEntry{
+            .Child = work.Child[slot],
+            .Parent = work.Parent[slot],
+        });
+        work.OrderSlot.push_back(static_cast<uint32_t>(slot));
+    }
+
+    for (std::size_t position = 0; position < order.size(); ++position)
+    {
+        const uint32_t slot = work.OrderSlot[position];
+        for (uint32_t edge = work.ChildOffset[slot];
+             edge < work.ChildOffset[slot + 1];
+             ++edge)
+        {
+            const uint32_t child = work.ChildSlots[edge];
+            order.push_back(PropagationEntry{
+                .Child = work.Child[child],
+                .Parent = work.Parent[child],
+                .ParentOrderIndex = static_cast<uint32_t>(position),
+            });
+            work.OrderSlot.push_back(child);
+        }
+    }
+
+    cache.MarkTopologyClean(parentCount, Target.CurrentFrame());
+}
+
+void TransformPropagationSystem::ResolveAddresses(PropagationOrderCache& cache)
+{
+    std::vector<PropagationEntry>& order = cache.GetOrder();
     const ComponentId localId = Target.GetComponentId<LocalTransform>();
     const ComponentId worldId = Target.GetComponentId<WorldTransform>();
 
     for (PropagationEntry& entry : order)
     {
+        entry.LocalPtr = nullptr;
+        entry.WorldPtr = nullptr;
+        entry.ParentWorldPtr = nullptr;
+        entry.ChunkPtr = nullptr;
+        entry.ParentChunkPtr = nullptr;
+        entry.LocalCol = UINT32_MAX;
+        entry.WorldCol = UINT32_MAX;
+        entry.ParentWorldCol = UINT32_MAX;
+
         const World::EntityChunkLocation loc = Target.LocateEntity(entry.Child);
         if (loc.ChunkPtr != nullptr)
         {
@@ -149,44 +240,99 @@ void TransformPropagationSystem::RebuildCache(PropagationOrderCache& cache)
             }
         }
 
+        // Parents precede their children in the order, so an in-order parent's
+        // address is already resolved.
+        if (entry.ParentOrderIndex != UINT32_MAX)
+        {
+            entry.ParentWorldPtr = order[entry.ParentOrderIndex].WorldPtr;
+            continue;
+        }
+
         if (!entry.Parent.IsValid())
             continue;
 
-        auto parentIt = indexToOrder.find(entry.Parent.Index);
-        if (parentIt != indexToOrder.end())
-        {
-            entry.ParentOrderIndex = static_cast<uint32_t>(parentIt->second);
-            entry.ParentWorldPtr = order[parentIt->second].WorldPtr;
-        }
+        const World::EntityChunkLocation parentLoc =
+            Target.LocateEntity(entry.Parent);
+        if (parentLoc.ChunkPtr == nullptr)
+            continue;
+
+        const uint32_t parentWorldCol = parentLoc.ChunkPtr->FindColumn(worldId);
+        if (parentWorldCol == UINT32_MAX)
+            continue;
+
+        entry.ParentChunkPtr = parentLoc.ChunkPtr;
+        entry.ParentWorldCol = parentWorldCol;
+        entry.ParentWorldPtr = reinterpret_cast<const WorldTransform*>(
+            parentLoc.ChunkPtr->ColumnData(parentWorldCol)) + parentLoc.Row;
     }
 
-    cache.MarkClean(structuralVersion);
+    cache.MarkAddressesResolved(Target.StructuralVersion());
 }
 
-// ─── Propagate ────────────────────────────────────────────────────────────────
-//
-// 1. Ensure the PropagationOrderCache resource exists.
-// 2. Invalidate the cache when World::StructuralVersion() has moved — any
-//    entity create/destroy or component add/remove can relocate rows and stale
-//    the cached pointers (swap-removes and moves into existing archetypes do
-//    NOT change the archetype count, so the count is not a sufficient key).
-// 3. Also invalidate on Changed<Parent>: re-parenting via Write<Parent> or
-//    non-const TryGet<Parent> mutates hierarchy order without any structural
-//    change.
-// 4. Rebuild if dirty. A rebuild forces a full sweep (structural moves copy
-//    component data without bumping column versions).
-// 5. Forward sweep: world[child] = world[parent] * local[child]; for roots,
-//    world[child] = local[child]. An entry is recomputed only when its
-//    LocalTransform column changed since the last sweep, or its parent entry
-//    was recomputed this sweep (hierarchy dirtiness propagates down). The
-//    sweep bumps the WorldTransform column version for exactly the chunks it
-//    writes, so downstream Changed<WorldTransform> filters skip clean chunks.
-//
-// Skip granularity is chunk-conservative for the local-change test (a chunk
-// write marks all its rows locally dirty) — consistent with the documented
-// Changed<T> semantics.
+void TransformPropagationSystem::SweepOrder(
+    PropagationOrderCache& cache,
+    const StoragePartitionSet& partitions,
+    const PropagationSweepState& sweep,
+    bool fullSweep,
+    uint32_t frame)
+{
+    std::vector<PropagationEntry>& order = cache.GetOrder();
+    if (order.empty())
+        return;
 
-void TransformPropagationSystem::Propagate()
+    const uint32_t lastSweep = sweep.LastSweepFrame;
+    std::vector<uint8_t>& dirty = cache.DirtyScratch();
+    dirty.assign(order.size(), 0);
+
+    for (std::size_t index = 0; index < order.size(); ++index)
+    {
+        const PropagationEntry& entry = order[index];
+        if (entry.LocalPtr == nullptr || entry.WorldPtr == nullptr
+            || entry.ChunkPtr == nullptr)
+        {
+            continue;
+        }
+
+        const StoragePartitionId partition = entry.ChunkPtr->Partition;
+        if (!partitions.Contains(partition))
+            continue;
+
+        const bool resumed = !sweep.PreviousPartitions.Contains(partition);
+        // A parent inside the order reports through the dirty flags. A parent
+        // outside it was handled by the flat pass, which bumps its world
+        // column's version when it recomputes.
+        const bool parentDirty =
+            entry.ParentOrderIndex != UINT32_MAX
+                ? dirty[entry.ParentOrderIndex] != 0
+                : entry.ParentChunkPtr != nullptr
+                      && entry.ParentChunkPtr->ColumnLastWrittenFrame(
+                             entry.ParentWorldCol) >= lastSweep;
+        const bool localDirty =
+            entry.ChunkPtr->ColumnLastWrittenFrame(entry.LocalCol) >= lastSweep;
+
+        if (!fullSweep && !resumed && !parentDirty && !localDirty)
+            continue;
+
+        dirty[index] = 1;
+
+        if (entry.ParentWorldPtr != nullptr)
+        {
+            entry.WorldPtr->Value =
+                entry.ParentWorldPtr->Value * entry.LocalPtr->Value;
+        }
+        else
+        {
+            entry.WorldPtr->Value = entry.LocalPtr->Value;
+        }
+
+        entry.ChunkPtr->BumpColumnVersion(entry.WorldCol, frame);
+    }
+}
+
+void TransformPropagationSystem::Propagate(
+    const StoragePartitionSet& partitions,
+    TransformPropagationDomain domain,
+    bool forceFullInvalidation)
 {
     if (!Target.IsRegistered<LocalTransform>()
         || !Target.IsRegistered<WorldTransform>())
@@ -194,116 +340,82 @@ void TransformPropagationSystem::Propagate()
         return;
     }
 
-    // Ensure the cache resource exists.
     if (!Target.HasResource<PropagationOrderCache>())
         Target.AddResource<PropagationOrderCache>();
 
     PropagationOrderCache& cache = Target.GetResource<PropagationOrderCache>();
 
-    if (!cache.IsDirty()
-        && !cache.StructuralVersionMatches(Target.StructuralVersion()))
-    {
+    if (forceFullInvalidation)
         cache.Invalidate();
-    }
 
-    // Detect hierarchy edits via Changed<Parent>. Parent add/remove is already
-    // covered by the structural version above; this catches re-parenting that
-    // rewrites an existing Parent value (Write<Parent> query access or
-    // non-const TryGet<Parent>), which moves no rows.
-    //
-    // The Changed<Parent> accessor is what arms the filter — a plain
-    // Read<Parent> query ignores referenceFrame entirely and would report
-    // every chunk as changed, forcing a rebuild every frame.
-    if (!cache.IsDirty() && Target.IsRegistered<Parent>())
+    if (!cache.IsDirty() && HierarchyChangedSince(cache.TopologyFrame()))
+        cache.Invalidate();
+
+    const std::size_t parentCount = ParentCount();
+    if (!cache.TopologyMatches(parentCount))
+        RebuildTopology(cache, parentCount);
+
+    if (!cache.AddressesMatch(Target.StructuralVersion()))
+        ResolveAddresses(cache);
+
+    PropagationSweepState& sweep = cache.SweepState(domain);
+    const uint32_t frame = Target.CurrentFrame();
+
+    // The frame counter is the only change stamp available, so a domain that has
+    // never swept, or whose last sweep was frame zero, has nothing it can
+    // compare against and sweeps everything. A rebuilt order additionally
+    // re-derives every parent link, so its entries all recompute once — but the
+    // unparented entities are untouched by a hierarchy change and stay
+    // incremental, which is what keeps a hierarchy edit off the critical path of
+    // a large flat world.
+    const bool rebuilt = cache.ConsumeFullSweepPending();
+    const bool flatFullSweep = !sweep.Swept || sweep.LastSweepFrame == 0;
+    const bool orderFullSweep = flatFullSweep || rebuilt;
+
+    StoragePartitionSet& entering = cache.EnteringScratch();
+    entering.Clear();
+    if (!flatFullSweep)
     {
-        const uint32_t prevFrame = Target.CurrentFrame() > 0
-                                       ? Target.CurrentFrame() - 1
-                                       : 0;
-        Query<Changed<Parent>> parentChanged(Target);
-        bool anyChanged = false;
-        parentChanged.ForEachChunk([&](auto& /*view*/)
+        for (const StoragePartitionId partition : partitions.Members())
         {
-            anyChanged = true;
-        }, prevFrame);
-
-        if (anyChanged)
-            cache.Invalidate();
+            if (!sweep.PreviousPartitions.Contains(partition))
+                entering.Add(partition);
+        }
     }
 
-    if (cache.IsDirty())
-        RebuildCache(cache);
-
-    auto& order = cache.GetOrder();
-    const bool fullSweep = cache.ConsumeFullSweepPending();
-    if (order.empty())
-        return;
-
-    const uint32_t frame     = Target.CurrentFrame();
-    const uint32_t lastSweep = cache.LastSweepFrame();
-
-    // Frame-local dirty flags indexed like `order`. Parents precede children,
-    // so dirty[ParentOrderIndex] is final by the time a child reads it.
-    std::vector<uint8_t>& dirty = cache.DirtyScratch();
-    dirty.assign(order.size(), 0);
-
-    for (size_t i = 0; i < order.size(); ++i)
+    if (Target.IsRegistered<Parent>())
     {
-        const PropagationEntry& entry = order[i];
-        if (entry.LocalPtr == nullptr || entry.WorldPtr == nullptr)
-            continue;
-
-        const bool parentDirty =
-            entry.ParentOrderIndex != UINT32_MAX
-            && dirty[entry.ParentOrderIndex] != 0;
-        const bool localDirty =
-            entry.ChunkPtr->ColumnLastWrittenFrame(entry.LocalCol) >= lastSweep;
-
-        if (!fullSweep && !parentDirty && !localDirty)
-            continue;
-
-        dirty[i] = 1;
-
-        if (entry.ParentWorldPtr != nullptr)
-            entry.WorldPtr->Value = entry.ParentWorldPtr->Value * entry.LocalPtr->Value;
-        else
-            entry.WorldPtr->Value = entry.LocalPtr->Value;
-
-        // Precise change signal: only chunks actually written this sweep match
-        // Changed<WorldTransform> downstream. Redundant bumps within a chunk
-        // are a single store each.
-        entry.ChunkPtr->BumpColumnVersion(entry.WorldCol, frame);
+        SweepUnparented<
+            Query<Read<LocalTransform>, Write<WorldTransform>, Without<Parent>>,
+            Query<
+                Read<LocalTransform>,
+                Write<WorldTransform>,
+                Without<Parent>,
+                Changed<LocalTransform>>>(
+            Target,
+            partitions,
+            entering,
+            flatFullSweep,
+            sweep.LastSweepFrame);
     }
-
-    cache.SetLastSweepFrame(frame);
-}
-
-void PropagateTransforms(std::span<Registry*> registries)
-{
-    std::unordered_set<Registry*> seen;
-    for (Registry* registry : registries)
+    else
     {
-        if (registry == nullptr || !seen.insert(registry).second)
-            continue;
-
-        PropagateTransforms(registry->Components);
-    }
-}
-
-void PropagateTransforms(JobSystem& jobs, std::span<Registry*> registries)
-{
-    // Deduplicate before the fork: ForEachRegistryParallel requires distinct
-    // entries, and duplicates here would mean two jobs propagating one World.
-    std::vector<Registry*> unique;
-    unique.reserve(registries.size());
-    std::unordered_set<Registry*> seen;
-    for (Registry* registry : registries)
-    {
-        if (registry != nullptr && seen.insert(registry).second)
-            unique.push_back(registry);
+        SweepUnparented<
+            Query<Read<LocalTransform>, Write<WorldTransform>>,
+            Query<
+                Read<LocalTransform>,
+                Write<WorldTransform>,
+                Changed<LocalTransform>>>(
+            Target,
+            partitions,
+            entering,
+            flatFullSweep,
+            sweep.LastSweepFrame);
     }
 
-    ForEachRegistryParallel(jobs, std::span<Registry* const>(unique),
-                            [](Registry& registry) {
-                                PropagateTransforms(registry.Components);
-                            });
+    SweepOrder(cache, partitions, sweep, orderFullSweep, frame);
+
+    sweep.PreviousPartitions = partitions;
+    sweep.LastSweepFrame = frame;
+    sweep.Swept = true;
 }

@@ -1,11 +1,13 @@
 #pragma once
 
 #include <core/config/EngineConfig.h>
+#include <ecs/StoragePartitionSet.h>
+#include <ecs/World.h>
 #include <input/InputFrame.h>
 #include <runtime/RenderPacket.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <time/FrameClock.h>
-#include <world/registry/FrameRegistryView.h>
+#include <world/RuntimeWorld.h>
 
 #include <SDL3/SDL.h>
 
@@ -14,68 +16,36 @@
 //=============================================================================
 // Game and frame contexts
 //
-// Each hook and frame phase receives a context carrying the per-call data its
-// consumer needs -- config, input, timing, registry views, render packets.
-// Contexts do NOT carry an engine handle. A game reaches the engine it drives
-// through Game::GetEngine() (bound once by Engine::Run); a system takes the
-// engine dependencies it needs as constructor parameters at registration. So a
-// context stays an honest statement of what its consumer may touch.
+// Each hook and frame phase receives the per-call data its consumer may touch.
+// Runtime simulation contexts expose one entity World and one domain-specific
+// storage-partition set. No context exposes registries, registry IDs, or another
+// entity universe.
 //=============================================================================
 
 class Engine;
 class EngineSchedule;
 
-//=============================================================================
-// GameConfigureContext
-//
-// Provides mutable engine configuration before the Engine is constructed.
-// Used by a Game to choose startup settings and service options.
-//=============================================================================
 struct GameConfigureContext
 {
     EngineConfig& Config;
 };
 
-//=============================================================================
-// GameStartupContext
-//
-// Per-call configuration for game startup; the engine is reached via
-// Game::GetEngine(). Runs after engine initialization, before frame processing.
-//=============================================================================
 struct GameStartupContext
 {
     EngineConfig& Config;
 };
 
-//=============================================================================
-// GameShutdownContext
-//
-// Per-call configuration for game shutdown; the engine is reached via
-// Game::GetEngine(). Used for game-owned cleanup while services are reachable.
-//=============================================================================
 struct GameShutdownContext
 {
     EngineConfig& Config;
 };
 
-//=============================================================================
-// SystemRegisterContext
-//
-// Provides access to the engine schedule during system registration.
-// Used by a Game to add systems and declare their execution dependencies.
-//=============================================================================
 struct SystemRegisterContext
 {
     EngineConfig& Config;
     EngineSchedule& Schedule;
 };
 
-//=============================================================================
-// PlatformEventContext
-//
-// Wraps an SDL platform event with a handled flag.
-// Used by a Game to consume window, input, and platform messages.
-//=============================================================================
 struct PlatformEventContext
 {
     EngineConfig& Config;
@@ -83,67 +53,56 @@ struct PlatformEventContext
     bool Handled = false;
 };
 
-//=============================================================================
-// FixedLogicContext
+// Retained backend owners consume the stable zone-lifecycle batch before a new
+// frame view is built. The World remains live, including importing/detaching
+// partitions named by the records.
 //
-// Provides fixed-tick simulation state before physics runs.
-// Used for deterministic gameplay logic that advances on fixed time steps.
-//=============================================================================
+// Every record names the partition it concerns, so a subscriber can act on a
+// departing zone's entities from Changes alone, and can move one out to
+// PersistentStoragePartition to let it outlive the zone. Resolving an arbitrary
+// ZoneId to its partition is deliberately absent: a subscriber that migrates
+// between named zones is a system with its own RuntimeWorld reference, the way
+// PhysicsStepSystem owns its PhysicsWorld, and widening this context would make
+// every focused residency test boot the zone runtime to get it.
+struct ZoneResidencyContext
+{
+    EngineConfig& Config;
+    World& Entities;
+    std::span<const ZoneResidencyChange> Changes;
+};
+
+// Shared shape for runtime phases. Partitions is always the correct domain set
+// for that phase: Logic, Physics, Visible, Audio, or Resident as documented.
 struct FixedLogicContext
 {
     EngineConfig& Config;
     RuntimeFrameLoop& Runtime;
     InputFrame& Input;
     FixedSimTime Time;
-    FrameRegistryView Registries;
-    std::span<Registry*> ActiveRegistries;
+    World& Entities;
+    const StoragePartitionSet& Partitions;
 };
 
-//=============================================================================
-// PhysicsContext
-//
-// Provides fixed-tick simulation state for physics systems.
-// Used for collision, dynamics, and other physics-authoritative updates.
-//=============================================================================
 struct PhysicsContext
 {
     EngineConfig& Config;
     RuntimeFrameLoop& Runtime;
     InputFrame& Input;
     FixedSimTime Time;
-    FrameRegistryView Registries;
-    std::span<Registry*> ActiveRegistries;
+    World& Entities;
+    const StoragePartitionSet& Partitions;
 };
 
-//=============================================================================
-// PostFixedContext
-//
-// Provides fixed-tick simulation state after physics has completed and the
-// engine has restored world-transform coherence for logic registries.
-//=============================================================================
 struct PostFixedContext
 {
     EngineConfig& Config;
     RuntimeFrameLoop& Runtime;
     InputFrame& Input;
     FixedSimTime Time;
-    FrameRegistryView Registries;
-    std::span<Registry*> ActiveRegistries;
+    World& Entities;
+    const StoragePartitionSet& Partitions;
 };
 
-//=============================================================================
-// FrameUpdateContext
-//
-// Per-frame systems. Runs once per rendered frame between Simulate and
-// ExtractRenderPacket. Use for state that must update at render cadence:
-// camera orientation from mouse look, HUD animations, menu timers, debug
-// cameras, anything input-reactive that is not simulation state.
-//
-// WallDeltaSeconds is the raw wall-clock duration of the previous frame.
-// Use it for framerate-independent interpolation (e.g. exponential smoothing).
-// Do NOT use it to scale simulation-authoritative values; that belongs in
-// fixed-tick systems with FixedSimTime.DeltaSeconds.
-//=============================================================================
 struct FrameUpdateContext
 {
     EngineConfig& Config;
@@ -151,17 +110,10 @@ struct FrameUpdateContext
     InputFrame& Input;
     double WallDeltaSeconds = 0.0;
     PresentationTime Presentation;
-    FrameRegistryView Registries;
-    std::span<Registry*> ActiveRegistries;
+    World& Entities;
+    const StoragePartitionSet& Partitions;
 };
 
-//=============================================================================
-// RenderExtractContext
-//
-// Provides presentation-time state and double-buffered render packets.
-// Used to extract renderable data from simulation state for the renderer.
-// World transforms are coherent for visible registries at phase entry.
-//=============================================================================
 struct RenderExtractContext
 {
     EngineConfig& Config;
@@ -170,39 +122,27 @@ struct RenderExtractContext
     RenderPacket& PacketWrite;
     RenderPacket& PacketRead;
     PresentationTime Presentation;
-    FrameRegistryView Registries;
-    std::span<Registry*> ActiveRegistries;
+    World& Entities;
+    const StoragePartitionSet& Partitions;
 };
 
-//=============================================================================
-// AudioContext
-//
-// Provides presentation-time state for audio systems.
-// Used to update audio playback from current input and world registry views.
-//=============================================================================
 struct AudioContext
 {
     EngineConfig& Config;
     RuntimeFrameLoop& Runtime;
     InputFrame& Input;
     PresentationTime Presentation;
-    FrameRegistryView Registries;
-    std::span<Registry*> ActiveRegistries;
+    World& Entities;
+    const StoragePartitionSet& Partitions;
 };
 
-//=============================================================================
-// EndFrameContext
-//
-// Provides final per-frame state before the engine advances frame resources.
-// Used for cleanup, lifecycle-only work, and end-of-frame bookkeeping.
-//=============================================================================
 struct EndFrameContext
 {
     EngineConfig& Config;
     RuntimeFrameLoop& Runtime;
     InputFrame& Input;
     PresentationTime Presentation;
-    FrameRegistryView Registries;
-    std::span<Registry*> ActiveRegistries;
+    World& Entities;
+    const StoragePartitionSet& Partitions;
     bool LifecycleOnly = false;
 };

@@ -1,16 +1,13 @@
 #pragma once
 
 struct FixedLogicContext;
+class StoragePartitionSet;
 class World;
 
-//=============================================================================
-// Grounding transition: the built-in ground/air eligibility. Reads
-// CharacterController.Grounded and requests OnGround or InAir at the base
-// priority; the mode arbiter applies the winner. A game adds a higher-priority
-// mode (slide, swim) without editing this.
-//=============================================================================
-
 void RequestGroundingLocomotionModes(World& world);
+void RequestGroundingLocomotionModes(
+    World& world,
+    const StoragePartitionSet& partitions);
 
 class GroundingTransitionSystem
 {

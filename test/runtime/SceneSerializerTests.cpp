@@ -52,18 +52,28 @@ struct ComponentStorageTraits<SceneCodecMaterialComponent>
 {
     static constexpr std::uint32_t BinaryChunkId = MakeFourCC('T', 'M', 'A', 'T');
 
+    static void Register(World& world)
+    {
+        if (!world.IsRegistered<SceneCodecMaterialComponent>())
+            world.RegisterComponent<SceneCodecMaterialComponent>();
+    }
+
     static void Register(Registry& registry)
     {
-        if (!registry.Components.IsRegistered<SceneCodecMaterialComponent>())
-            registry.Components.RegisterComponent<SceneCodecMaterialComponent>();
+        Register(registry.Components);
+    }
+
+    static bool Add(World& world, EntityId entity, SceneCodecMaterialComponent component)
+    {
+        if (world.HasComponent<SceneCodecMaterialComponent>(entity))
+            return false;
+        world.AddComponent(entity, component);
+        return true;
     }
 
     static bool Add(Registry& registry, EntityId entity, SceneCodecMaterialComponent component)
     {
-        if (registry.Components.HasComponent<SceneCodecMaterialComponent>(entity))
-            return false;
-        registry.Components.AddComponent(entity, component);
-        return true;
+        return Add(registry.Components, entity, component);
     }
 };
 

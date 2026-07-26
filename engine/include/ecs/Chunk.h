@@ -2,6 +2,7 @@
 
 #include <ecs/ComponentId.h>
 #include <ecs/EntityId.h>
+#include <ecs/StoragePartitionId.h>
 
 #include <array>
 #include <cassert>
@@ -26,7 +27,8 @@ struct ColumnDescriptor
     size_t      Stride;           // sizeof(T) per element; 0 for tag components
 };
 
-// Chunk: a fixed-size slab of memory holding rows of one archetype.
+// Chunk: a fixed-size slab of memory holding rows of one archetype and one
+// storage partition. Rows from different partitions never share a chunk.
 // Columns are parallel arrays; one column per non-tag component in the signature.
 //
 // Memory layout within Data[]:
@@ -42,6 +44,10 @@ struct Chunk
 
     uint32_t RowCount    = 0;
     uint32_t RowCapacity = 0;
+
+    // Structural partition key. Runtime zone participation can later skip whole
+    // chunks without adding a per-entity Zone component or hot-loop branch.
+    StoragePartitionId Partition = StoragePartitionId::Default();
 
     // Non-owning: points into the owning Archetype's column-descriptor vector.
     const ColumnDescriptor* Columns     = nullptr;
@@ -105,6 +111,12 @@ struct Chunk
         assert(col < ColumnCount);
         assert(col < LastWrittenFrames.size());
         LastWrittenFrames[col] = frame;
+    }
+
+    void BumpAllColumnVersions(uint32_t frame)
+    {
+        for (uint32_t col = 0; col < ColumnCount; ++col)
+            LastWrittenFrames[col] = frame;
     }
 
     uint32_t ColumnLastWrittenFrame(uint32_t col) const

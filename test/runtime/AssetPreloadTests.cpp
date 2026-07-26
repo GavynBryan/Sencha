@@ -7,10 +7,13 @@
 #include <core/logging/LoggingProvider.h>
 #include <jobs/AsyncTaskQueue.h>
 #include <render/MaterialCache.h>
+#include <ecs/WorldComponentSchema.h>
 #include <runtime/RuntimeFrameLoop.h>
-#include <world/registry/Registry.h>
+#include <world/RuntimeWorld.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
+#include <world/serialization/SceneSerializationContext.h>
 #include <zone/AsyncZoneLoader.h>
-#include <zone/ZoneRuntime.h>
+#include <zone/ZoneLoadPackage.h>
 
 #include <gtest/gtest.h>
 
@@ -353,12 +356,25 @@ namespace
 {
     struct ZoneHarness : PreloadHarness
     {
+        static WorldComponentSchema MakeSchema()
+        {
+            WorldComponentSchema schema;
+            schema.Seal();
+            return schema;
+        }
+
         ZoneHarness()
-            : Loader(Tasks, Zones, Runtime)
+            : Schema(MakeSchema())
+            , World(Schema)
+            , SceneContext(Logging, &Assets)
+            , Loader(Tasks, World, Schema, Serializers, SceneContext, Runtime)
         {
         }
 
-        ZoneRuntime Zones;
+        WorldComponentSchema Schema;
+        RuntimeWorld World;
+        ComponentSerializerRegistry Serializers;
+        SceneSerializationContext SceneContext;
         RuntimeFrameLoop Runtime;
         AsyncZoneLoader Loader;
     };
@@ -385,22 +401,22 @@ TEST(ZoneAssetGating, AttachDefersUntilPreloadCompletes)
     bool finalized = false;
     (void)h.Loader.BeginLoad(
         zone,
-        [](Registry&) {},
-        [&](Registry&) { finalized = true; },
+        [](ZoneLoadPackage&) {},
+        [&](RuntimeWorld&, RuntimeZoneRecord&) { finalized = true; return true; },
         ZoneParticipation{ .Logic = true },
         preload);
 
     EXPECT_EQ(h.Tasks.PumpWork(), 2u);
 
     EXPECT_EQ(h.Tasks.DrainCompletions(), 2u);
-    EXPECT_FALSE(h.Zones.IsZoneLoaded(zone));
+    EXPECT_FALSE(h.World.IsZoneResident(zone));
     EXPECT_FALSE(finalized);
     EXPECT_TRUE(h.Loader.IsLoading(zone));
     EXPECT_FALSE(preload->IsComplete());
 
     EXPECT_EQ(h.Tasks.PumpWork(), 1u);
     EXPECT_EQ(h.Tasks.DrainCompletions(), 1u);
-    EXPECT_TRUE(h.Zones.IsZoneLoaded(zone));
+    EXPECT_TRUE(h.World.IsZoneResident(zone));
     EXPECT_TRUE(finalized);
     EXPECT_FALSE(h.Loader.IsLoading(zone));
     EXPECT_TRUE(preload->IsComplete());
@@ -424,12 +440,12 @@ TEST(ZoneAssetGating, CompletePreloadAttachesInline)
     ASSERT_TRUE(preload->IsComplete());
 
     const ZoneId zone{ 6 };
-    (void)h.Loader.BeginLoad(zone, [](Registry&) {}, AsyncZoneLoader::FinalizeFn{},
+    (void)h.Loader.BeginLoad(zone, [](ZoneLoadPackage&) {}, AsyncZoneLoader::FinalizeFn{},
                              ZoneParticipation{ .Logic = true }, preload);
 
     (void)h.Tasks.PumpWork();
     (void)h.Tasks.DrainCompletions();
-    EXPECT_TRUE(h.Zones.IsZoneLoaded(zone));
+    EXPECT_TRUE(h.World.IsZoneResident(zone));
     EXPECT_EQ(preload->HeldHandleCount(), 0u);
 }
 
@@ -443,13 +459,13 @@ TEST(ZoneAssetGating, CancelledPreloadNeverBlocksAttach)
     preload->Cancel();
 
     const ZoneId zone{ 9 };
-    (void)h.Loader.BeginLoad(zone, [](Registry&) {}, AsyncZoneLoader::FinalizeFn{},
+    (void)h.Loader.BeginLoad(zone, [](ZoneLoadPackage&) {}, AsyncZoneLoader::FinalizeFn{},
                              ZoneParticipation{ .Logic = true }, preload);
 
     (void)h.Tasks.PumpWork();
     (void)h.Tasks.DrainCompletions();
 
-    EXPECT_TRUE(h.Zones.IsZoneLoaded(zone));
+    EXPECT_TRUE(h.World.IsZoneResident(zone));
     EXPECT_EQ(preload->HeldHandleCount(), 0u);
     EXPECT_FALSE(h.Materials.Find(material.Path).IsValid());
 }

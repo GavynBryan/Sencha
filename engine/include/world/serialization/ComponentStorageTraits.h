@@ -10,7 +10,8 @@
 // ComponentStorageTraits
 //
 // Maps serializable component types to their binary chunk IDs and insertion
-// behavior. Storage is the registry's archetype World.
+// behavior. Runtime import targets the unified World directly; Registry overloads
+// remain editor/legacy adapters until the cutover removes runtime registries.
 //
 // The primary template handles any component whose TypeSchema declares a
 // SceneChunkId: idempotent registration, reject-duplicate insertion. Only
@@ -26,23 +27,33 @@ struct ComponentStorageTraits
 {
     static constexpr std::uint32_t BinaryChunkId = TypeSchema<T>::SceneChunkId;
 
+    static void Register(World& world)
+    {
+        if (!world.IsRegistered<T>())
+            world.RegisterComponent<T>();
+    }
+
     static void Register(Registry& registry)
     {
-        if (!registry.Components.IsRegistered<T>())
-            registry.Components.RegisterComponent<T>();
+        Register(registry.Components);
+    }
+
+    static bool Add(World& world, EntityId entity, T component)
+    {
+        if (world.HasComponent<T>(entity))
+            return false;
+        world.AddComponent(entity, component);
+        return true;
     }
 
     static bool Add(Registry& registry, EntityId entity, T component)
     {
-        if (registry.Components.HasComponent<T>(entity))
-            return false;
-        registry.Components.AddComponent(entity, component);
-        return true;
+        return Add(registry.Components, entity, component);
     }
 };
 
 // LocalTransform is the one structural special case: WorldTransform and Parent
-// are not serialized themselves (hierarchy travels in the Hierarchy chunk, and
+// are not serialized themselves (hierarchy travels separately and
 // WorldTransform is derived), so they register alongside LocalTransform, and
 // every loaded LocalTransform seeds a matching WorldTransform for propagation.
 template <>
@@ -50,24 +61,34 @@ struct ComponentStorageTraits<LocalTransform>
 {
     static constexpr std::uint32_t BinaryChunkId = TypeSchema<LocalTransform>::SceneChunkId;
 
+    static void Register(World& world)
+    {
+        if (!world.IsRegistered<LocalTransform>())
+            world.RegisterComponent<LocalTransform>();
+        if (!world.IsRegistered<WorldTransform>())
+            world.RegisterComponent<WorldTransform>();
+        if (!world.IsRegistered<Parent>())
+            world.RegisterComponent<Parent>();
+    }
+
     static void Register(Registry& registry)
     {
-        if (!registry.Components.IsRegistered<LocalTransform>())
-            registry.Components.RegisterComponent<LocalTransform>();
-        if (!registry.Components.IsRegistered<WorldTransform>())
-            registry.Components.RegisterComponent<WorldTransform>();
-        if (!registry.Components.IsRegistered<Parent>())
-            registry.Components.RegisterComponent<Parent>();
+        Register(registry.Components);
+    }
+
+    static bool Add(World& world, EntityId entity, LocalTransform component)
+    {
+        if (world.HasComponent<LocalTransform>(entity))
+            return false;
+
+        world.AddComponent(entity, component);
+        if (!world.HasComponent<WorldTransform>(entity))
+            world.AddComponent(entity, WorldTransform{ component.Value });
+        return true;
     }
 
     static bool Add(Registry& registry, EntityId entity, LocalTransform component)
     {
-        if (registry.Components.HasComponent<LocalTransform>(entity))
-            return false;
-
-        registry.Components.AddComponent(entity, component);
-        if (!registry.Components.HasComponent<WorldTransform>(entity))
-            registry.Components.AddComponent(entity, WorldTransform{ component.Value });
-        return true;
+        return Add(registry.Components, entity, component);
     }
 };

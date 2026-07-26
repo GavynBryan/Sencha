@@ -3,11 +3,10 @@
 #include <app/GameContexts.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
-#include <ecs/World.h>
+#include <ecs/Query.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <movement/MovementProfile.h>
 #include <movement/MovementTags.h>
-#include <world/registry/Registry.h>
 
 #include <utility>
 #include <variant>
@@ -43,9 +42,12 @@ void MovementTuningSystem::FixedLogic(FixedLogicContext& ctx)
     {
         if (const CVarMetadata* c = cvars.FindCVar(name);
             c != nullptr && std::holds_alternative<double>(c->CurrentValue))
+        {
             return static_cast<float>(std::get<double>(c->CurrentValue));
+        }
         return fallback;
     };
+
     const float groundAccel = read("movement.ground_accel", 10.0f);
     const float airAccel = read("movement.air_accel", 10.0f);
     const float friction = read("movement.friction", 6.0f);
@@ -53,26 +55,32 @@ void MovementTuningSystem::FixedLogic(FixedLogicContext& ctx)
     const float maxAirSpeed = read("movement.max_air_speed", 1.0f);
     const float jumpSpeed = read("movement.jump_speed", 5.5f);
 
-    for (Registry* reg : ctx.ActiveRegistries)
+    World& world = ctx.Entities;
+    if (!world.IsRegistered<MovementProfile>()
+        || !world.IsRegistered<GameplayTagContainer>())
     {
-        World& world = reg->Components;
-        if (!world.IsRegistered<MovementProfile>() || !world.IsRegistered<GameplayTagContainer>())
-            continue;
-        const MovementTags* ids = world.TryGetResource<MovementTags>();
-        if (ids == nullptr)
-            continue;
-
-        world.ForEachComponent<MovementProfile>([&](EntityId entity, MovementProfile& profile)
-        {
-            const GameplayTagContainer* tags = world.TryGet<GameplayTagContainer>(entity);
-            if (tags == nullptr || !tags->HasExact(ids->Controlled))
-                return;
-            profile.GroundAcceleration = groundAccel;
-            profile.AirAcceleration = airAccel;
-            profile.Friction = friction;
-            profile.StopSpeed = stopSpeed;
-            profile.MaxAirSpeed = maxAirSpeed;
-            profile.JumpSpeed = jumpSpeed;
-        });
+        return;
     }
+
+    const MovementTags* ids = world.TryGetResource<MovementTags>();
+    if (ids == nullptr)
+        return;
+
+    Query<Write<MovementProfile>, Read<GameplayTagContainer>> query(world);
+    query.ForEachChunkIn(ctx.Partitions, [&](auto& view)
+    {
+        auto profiles = view.template Write<MovementProfile>();
+        const auto tags = view.template Read<GameplayTagContainer>();
+        for (std::uint32_t i = 0; i < view.Count(); ++i)
+        {
+            if (!tags[i].HasExact(ids->Controlled))
+                continue;
+            profiles[i].GroundAcceleration = groundAccel;
+            profiles[i].AirAcceleration = airAccel;
+            profiles[i].Friction = friction;
+            profiles[i].StopSpeed = stopSpeed;
+            profiles[i].MaxAirSpeed = maxAirSpeed;
+            profiles[i].JumpSpeed = jumpSpeed;
+        }
+    });
 }

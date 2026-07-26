@@ -15,15 +15,41 @@
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 
+#include <vector>
+
 #include <math/Quat.h>
 #include <math/Vec.h>
 #include <physics/CollisionShape.h>
+#include <physics/PhysicsConstraintTypes.h>
 #include <physics/PhysicsTypes.h>
 #include "PhysicsLayers.h"
 
 // 16 MB of scratch for one Update. Ample for room-scale zones; the allocator
 // asserts rather than grows, which would surface here as a clear failure.
 inline constexpr unsigned int kPhysicsTempAllocatorBytes = 16u * 1024u * 1024u;
+
+// One driven pose constraint's backend-side record. The realization drives
+// the follower's velocities toward the desired frame before each step; the
+// solver then resolves contacts normally, which is what keeps collision
+// response intact and the relationship one-way. The realization is private to
+// the impl and swappable (a solver-side constraint against a hidden anchor is
+// the recorded alternative if compliance tuning demands it).
+struct DrivenPoseSlot
+{
+    uint32_t Generation = 1; // bumped at release; stale handles never resolve
+    bool Alive = false;
+
+    PhysicsBodyId Follower;
+    BodyTransform FollowerLocalFrame;
+    LinearPoseDriveSettings LinearDrive;
+    AngularPoseDriveSettings AngularDrive;
+    uint64_t UserData = 0;
+
+    DrivenPoseTarget Target;
+    bool Refreshed = false; // set by SetDrivenPoseTarget, cleared by Step
+
+    PhysicsConstraintTelemetry Telemetry;
+};
 
 struct PhysicsWorldImpl
 {
@@ -33,6 +59,18 @@ struct PhysicsWorldImpl
     ObjectVsBroadPhaseLayerFilterImpl ObjectVsBroadPhase;
     ObjectLayerPairFilterImpl ObjectVsObject;
     JPH::PhysicsSystem System;
+
+    // Slot table + free list; iteration in slot order keeps driving
+    // deterministic. Constraint counts are small (grabs, carries, machinery),
+    // so RemoveBody's dependent-constraint sweep is a plain scan.
+    std::vector<DrivenPoseSlot> Constraints;
+    std::vector<uint32_t> FreeConstraintSlots;
+    uint32_t AliveConstraints = 0;
+    uint64_t StaleRefreshes = 0;
+
+    // From PhysicsWorldConfig (see its comment on tunneling).
+    float MaxDriveClosingSpeed = 50.0f;
+    float MaxDriveClosingAngularSpeed = 30.0f;
 
     PhysicsWorldImpl()
         : Temp(kPhysicsTempAllocatorBytes)

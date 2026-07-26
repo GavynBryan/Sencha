@@ -1,17 +1,20 @@
 #include "CubeDemoScene.h"
 
-#include <core/assets/AssetSystem.h>
+#include <components/ActiveCameraService.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
-#include <render/Camera.h>
-#include <render/StaticMeshComponent.h>
+#include <world/RuntimeWorld.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
-#include <zone/DefaultZoneBuilder.h>
+#include <zone/ZoneLoadPackage.h>
+#include <zone/ZonePackageSceneLoader.h>
 
+#include <algorithm>
 #include <cassert>
 #include <format>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
 DemoSceneParse ParseDemoSceneFile(std::string_view scenePath)
 {
@@ -20,57 +23,94 @@ DemoSceneParse ParseDemoSceneFile(std::string_view scenePath)
     std::ifstream file{ std::string(scenePath) };
     if (!file.is_open())
     {
-        result.Error = std::format("could not open scene file '{}'", scenePath);
+        result.Error = std::format(
+            "could not open scene file '{}'",
+            scenePath);
         return result;
     }
 
-    std::ostringstream buf;
-    buf << file.rdbuf();
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
 
     JsonParseError parseError;
-    result.Json = JsonParse(buf.str(), &parseError);
+    result.Json = JsonParse(buffer.str(), &parseError);
     if (!result.Json)
     {
-        result.Error = std::format("scene JSON parse error at {}: {}",
-                                   parseError.Position, parseError.Message);
+        result.Error = std::format(
+            "scene JSON parse error at {}: {}",
+            parseError.Position,
+            parseError.Message);
     }
     return result;
 }
 
-bool FinalizeDemoScene(DemoScene& scene,
-                       Registry& registry,
-                       const DemoSceneParse& parsed,
-                       AssetSystem& assets,
-                       LoggingProvider& logging,
-                       FreeCamera& freeCamera)
+bool BuildDemoScenePackage(
+    ZoneLoadPackage& package,
+    const DemoSceneParse& parsed,
+    const ComponentSerializerRegistry& serializers,
+    SceneLoadError* error)
+{
+    if (!parsed.Json)
+    {
+        if (error != nullptr)
+            error->Message = parsed.Error;
+        return false;
+    }
+
+    return BuildZonePackageFromSceneJson(
+        *parsed.Json,
+        serializers,
+        package,
+        error);
+}
+
+bool FinalizeDemoScene(
+    DemoScene& scene,
+    RuntimeWorld& runtime,
+    RuntimeZoneRecord& zone,
+    const DemoSceneParse& parsed,
+    LoggingProvider& logging,
+    FreeCamera& freeCamera)
 {
     Logger& log = logging.GetLogger<DemoScene>();
-
     if (!parsed.Json)
     {
         log.Error("CubeDemo: {}", parsed.Error);
-        assert(false && "Failed to read/parse demo scene file");
         return false;
     }
 
-    SceneLoadError loadError;
-    SceneSerializationContext sceneContext(logging, &assets);
-    if (!LoadSceneJson(*parsed.Json, registry, sceneContext, &loadError))
+    std::vector<EntityId> entities;
+    for (EntityId entity : runtime.Entities().GetAliveEntities())
     {
-        log.Error("CubeDemo: scene load error: {}", loadError.Message);
-        assert(false && "Failed to load demo scene");
+        if (runtime.Entities().GetEntityPartition(entity)
+            == zone.Partition)
+        {
+            entities.push_back(entity);
+        }
+    }
+    std::sort(
+        entities.begin(),
+        entities.end(),
+        [](EntityId left, EntityId right)
+        {
+            return left.Index < right.Index;
+        });
+
+    if (entities.size() < 3)
+    {
+        log.Error(
+            "CubeDemo: imported scene has {} entities; expected at least 3",
+            entities.size());
         return false;
     }
 
-    // Entities are loaded in JSON array order: 0=camera, 1=center cube, 2=center cube child.
-    const auto entities = registry.Entities.GetAliveEntities();
-    assert(entities.size() >= 3 && "Demo scene must have at least 3 entities");
-
-    scene.Camera          = entities[0];
-    scene.CenterCube      = entities[1];
+    scene.Camera = entities[0];
+    scene.CenterCube = entities[1];
     scene.CenterCubeChild = entities[2];
 
-    registry.Resources.Get<ActiveCameraService>().SetActive(scene.Camera);
+    runtime.Entities()
+        .GetResource<ActiveCameraService>()
+        .SetActive(scene.Camera);
     freeCamera.Entity = scene.Camera;
     return true;
 }

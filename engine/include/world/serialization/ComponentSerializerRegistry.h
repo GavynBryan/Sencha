@@ -75,8 +75,17 @@ public:
         return Entries_;
     }
 
-    // unique_ptr::get() is const-qualified and yields a non-const IComponentSerializer*,
-    // so a const registry still hands out mutable serializers for Load().
+    // unique_ptr::get() is const-qualified and yields a non-const
+    // IComponentSerializer*, so a const registry still hands out mutable
+    // serializers for owner-thread LoadIntoWorld calls.
+    [[nodiscard]] IComponentSerializer* FindByType(ComponentTypeId type) const
+    {
+        for (const auto& entry : Entries_)
+            if (entry->TypeId() == type)
+                return entry.get();
+        return nullptr;
+    }
+
     [[nodiscard]] IComponentSerializer* FindByJsonKey(std::string_view key) const
     {
         for (const auto& entry : Entries_)

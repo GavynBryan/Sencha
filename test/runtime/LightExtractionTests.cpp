@@ -2,12 +2,13 @@
 
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
+#include <ecs/StoragePartitionSet.h>
+#include <ecs/World.h>
 #include <render/Camera.h>
 #include <render/LightExtractionSystem.h>
 #include <render/PointLightComponent.h>
 #include <render/RenderLight.h>
 #include <render/SpotLightComponent.h>
-#include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
 
 #include <array>
@@ -37,42 +38,55 @@ namespace
         return camera;
     }
 
-    Registry MakeLightRegistry(RegistryId id, ZoneId zone = {})
+    constexpr StoragePartitionId kZoneOnePartition{ 1 };
+    constexpr StoragePartitionId kZoneTwoPartition{ 2 };
+
+    World MakeLightWorld()
     {
-        Registry registry = zone.IsValid()
-            ? MakeZoneRegistry(id, zone)
-            : MakeGlobalRegistry(id);
-        registry.Components.RegisterComponent<WorldTransform>();
-        registry.Components.RegisterComponent<PointLightComponent>();
-        registry.Components.RegisterComponent<SpotLightComponent>();
-        return registry;
+        World world;
+        world.RegisterComponent<WorldTransform>();
+        world.RegisterComponent<PointLightComponent>();
+        world.RegisterComponent<SpotLightComponent>();
+        return world;
     }
 
-    EntityId MakePoint(Registry& registry,
+    EntityId MakePoint(World& world,
                        const Vec<3>& position,
-                       const PointLightComponent& light)
+                       const PointLightComponent& light,
+                       StoragePartitionId partition = StoragePartitionId::Default())
     {
-        const EntityId entity = registry.Components.CreateEntity();
+        const EntityId entity = world.CreateEntity(partition);
         WorldTransform transform{};
         transform.Value.Position = position;
-        registry.Components.AddComponent(entity, transform);
-        registry.Components.AddComponent(entity, light);
+        world.AddComponent(entity, transform);
+        world.AddComponent(entity, light);
         return entity;
     }
 
-    EntityId MakeSpot(Registry& registry,
+    EntityId MakeSpot(World& world,
                       const Vec<3>& position,
-                      const SpotLightComponent& light)
+                      const SpotLightComponent& light,
+                      StoragePartitionId partition = StoragePartitionId::Default())
     {
-        const EntityId entity = registry.Components.CreateEntity();
+        const EntityId entity = world.CreateEntity(partition);
         WorldTransform transform{};
         transform.Value.Position = position;
-        registry.Components.AddComponent(entity, transform);
-        registry.Components.AddComponent(entity, light);
+        world.AddComponent(entity, transform);
+        world.AddComponent(entity, light);
         return entity;
     }
 
-    void Extract(std::vector<Registry*>& registries,
+    StoragePartitionSet AllLivePartitions(const World& world)
+    {
+        StoragePartitionSet partitions;
+        partitions.Add(StoragePartitionId::Default());
+        for (EntityId entity : world.GetAliveEntities())
+            partitions.Add(world.GetEntityPartition(entity));
+        return partitions;
+    }
+
+    void Extract(const World& world,
+                 const StoragePartitionSet& partitions,
                  RenderLightSet& lights,
                  std::vector<SpotShadowRequest>* requestsOut = nullptr,
                  std::vector<PointShadowRequest>* pointRequestsOut = nullptr)
@@ -80,21 +94,30 @@ namespace
         LightExtractionSystem extractor;
         std::vector<SpotShadowRequest> requests;
         std::vector<PointShadowRequest> pointRequests;
-        extractor.Extract(registries, MakeCamera(), lights,
+        extractor.Extract(world, partitions, MakeCamera(), lights,
                           requestsOut != nullptr ? *requestsOut : requests,
                           pointRequestsOut != nullptr ? *pointRequestsOut : pointRequests);
+    }
+
+    void Extract(const World& world,
+                 RenderLightSet& lights,
+                 std::vector<SpotShadowRequest>* requestsOut = nullptr,
+                 std::vector<PointShadowRequest>* pointRequestsOut = nullptr)
+    {
+        Extract(world, AllLivePartitions(world), lights, requestsOut,
+                pointRequestsOut);
     }
 }
 
 TEST(LightExtraction, EmitsPointAndSpotLights)
 {
-    Registry registry = MakeLightRegistry(RegistryId::Global());
+    World world = MakeLightWorld();
 
     PointLightComponent point{};
     point.Color = Vec<3>(0.2f, 0.4f, 0.6f);
     point.Intensity = 3.0f;
     point.Range = 12.0f;
-    MakePoint(registry, Vec<3>(0.0f, 0.0f, -2.0f), point);
+    MakePoint(world, Vec<3>(0.0f, 0.0f, -2.0f), point);
 
     SpotLightComponent spot{};
     spot.Color = Vec<3>(0.9f, 0.7f, 0.5f);
@@ -102,11 +125,10 @@ TEST(LightExtraction, EmitsPointAndSpotLights)
     spot.Range = 8.0f;
     spot.InnerAngleDegrees = 20.0f;
     spot.OuterAngleDegrees = 35.0f;
-    MakeSpot(registry, Vec<3>(0.0f, 0.0f, -3.0f), spot);
+    MakeSpot(world, Vec<3>(0.0f, 0.0f, -3.0f), spot);
 
     RenderLightSet lights;
-    std::vector<Registry*> registries{ &registry };
-    Extract(registries, lights);
+    Extract(world, lights);
 
     ASSERT_EQ(lights.Count, 2u);
     EXPECT_EQ(lights.Lights[0].Type, static_cast<std::uint32_t>(GpuLightType::Point));
@@ -123,23 +145,45 @@ TEST(LightExtraction, EmitsPointAndSpotLights)
 
 TEST(LightExtraction, SkipsDisabledAndCulledLights)
 {
-    Registry registry = MakeLightRegistry(RegistryId::Global());
+    World world = MakeLightWorld();
 
     PointLightComponent disabled{};
     disabled.Enabled = false;
-    MakePoint(registry, Vec<3>(0.0f, 0.0f, -2.0f), disabled);
+    MakePoint(world, Vec<3>(0.0f, 0.0f, -2.0f), disabled);
 
     PointLightComponent outside{};
     outside.Range = 0.5f;
-    MakePoint(registry, Vec<3>(100.0f, 0.0f, -2.0f), outside);
+    MakePoint(world, Vec<3>(100.0f, 0.0f, -2.0f), outside);
 
     PointLightComponent visible{};
     visible.Intensity = 4.0f;
-    MakePoint(registry, Vec<3>(0.0f, 0.0f, -2.0f), visible);
+    MakePoint(world, Vec<3>(0.0f, 0.0f, -2.0f), visible);
 
     RenderLightSet lights;
-    std::vector<Registry*> registries{ &registry };
-    Extract(registries, lights);
+    Extract(world, lights);
+
+    ASSERT_EQ(lights.Count, 1u);
+    EXPECT_FLOAT_EQ(lights.Lights[0].ColorIntensity.W, 4.0f);
+}
+
+TEST(LightExtraction, SkipsLightsOutsideTheActivePartitions)
+{
+    World world = MakeLightWorld();
+
+    PointLightComponent resident{};
+    resident.Intensity = 4.0f;
+    MakePoint(world, Vec<3>(0.0f, 0.0f, -2.0f), resident, kZoneOnePartition);
+
+    PointLightComponent dormant{};
+    dormant.Intensity = 9.0f;
+    MakePoint(world, Vec<3>(0.0f, 0.0f, -2.0f), dormant, kZoneTwoPartition);
+
+    StoragePartitionSet partitions;
+    partitions.Add(StoragePartitionId::Default());
+    partitions.Add(kZoneOnePartition);
+
+    RenderLightSet lights;
+    Extract(world, partitions, lights);
 
     ASSERT_EQ(lights.Count, 1u);
     EXPECT_FLOAT_EQ(lights.Lights[0].ColorIntensity.W, 4.0f);
@@ -147,7 +191,7 @@ TEST(LightExtraction, SkipsDisabledAndCulledLights)
 
 TEST(LightExtraction, ExcludesBakedDirectLights)
 {
-    Registry registry = MakeLightRegistry(RegistryId::Global());
+    World world = MakeLightWorld();
 
     // A baked-direct light contributes only through the per-vertex channel, so
     // it must never enter the runtime set (no cost, no cap slot, no shadow),
@@ -155,20 +199,19 @@ TEST(LightExtraction, ExcludesBakedDirectLights)
     PointLightComponent bakedPoint{};
     bakedPoint.Intensity = 5.0f;
     bakedPoint.BakeContribution = LightBakeContribution::Direct;
-    MakePoint(registry, Vec<3>(0.0f, 0.0f, -2.0f), bakedPoint);
+    MakePoint(world, Vec<3>(0.0f, 0.0f, -2.0f), bakedPoint);
 
     SpotLightComponent bakedSpot{};
     bakedSpot.Intensity = 5.0f;
     bakedSpot.BakeContribution = LightBakeContribution::Direct;
-    MakeSpot(registry, Vec<3>(0.0f, 0.0f, -3.0f), bakedSpot);
+    MakeSpot(world, Vec<3>(0.0f, 0.0f, -3.0f), bakedSpot);
 
     PointLightComponent dynamicPoint{};
     dynamicPoint.Intensity = 4.0f;
-    MakePoint(registry, Vec<3>(0.0f, 0.0f, -2.0f), dynamicPoint);
+    MakePoint(world, Vec<3>(0.0f, 0.0f, -2.0f), dynamicPoint);
 
     RenderLightSet lights;
-    std::vector<Registry*> registries{ &registry };
-    Extract(registries, lights);
+    Extract(world, lights);
 
     ASSERT_EQ(lights.Count, 1u);
     EXPECT_FLOAT_EQ(lights.Lights[0].ColorIntensity.W, 4.0f);
@@ -176,18 +219,17 @@ TEST(LightExtraction, ExcludesBakedDirectLights)
 
 TEST(LightExtraction, PrioritizesInfluentialLightsBeforeTheCap)
 {
-    Registry registry = MakeLightRegistry(RegistryId::Global());
+    World world = MakeLightWorld();
     constexpr std::uint32_t candidateCount = kMaxForwardLights + 10u;
     for (std::uint32_t index = 0; index < candidateCount; ++index)
     {
         PointLightComponent light{};
         light.Intensity = static_cast<float>(index + 1u);
-        MakePoint(registry, Vec<3>(0.0f, 0.0f, -2.0f), light);
+        MakePoint(world, Vec<3>(0.0f, 0.0f, -2.0f), light);
     }
 
     RenderLightSet lights;
-    std::vector<Registry*> registries{ &registry };
-    Extract(registries, lights);
+    Extract(world, lights);
 
     ASSERT_EQ(lights.Count, kMaxForwardLights);
     EXPECT_FLOAT_EQ(lights.Lights[0].ColorIntensity.W,
@@ -195,26 +237,31 @@ TEST(LightExtraction, PrioritizesInfluentialLightsBeforeTheCap)
     EXPECT_FLOAT_EQ(lights.Lights[kMaxForwardLights - 1u].ColorIntensity.W, 11.0f);
 }
 
-TEST(LightExtraction, ZoneAttachmentOrderDoesNotChangeTieBreaks)
+TEST(LightExtraction, PartitionSetOrderDoesNotChangeTieBreaks)
 {
-    Registry zoneTwo = MakeLightRegistry(RegistryId{ 2, 1 }, ZoneId{ 2 });
-    Registry zoneOne = MakeLightRegistry(RegistryId{ 3, 1 }, ZoneId{ 1 });
-
-    PointLightComponent blue{};
-    blue.Color = Vec<3>(0.0f, 0.0f, 1.0f);
-    MakePoint(zoneTwo, Vec<3>(0.0f, 0.0f, -2.0f), blue);
+    World world = MakeLightWorld();
 
     PointLightComponent red{};
     red.Color = Vec<3>(1.0f, 0.0f, 0.0f);
-    MakePoint(zoneOne, Vec<3>(0.0f, 0.0f, -2.0f), red);
+    MakePoint(world, Vec<3>(0.0f, 0.0f, -2.0f), red, kZoneOnePartition);
+
+    PointLightComponent blue{};
+    blue.Color = Vec<3>(0.0f, 0.0f, 1.0f);
+    MakePoint(world, Vec<3>(0.0f, 0.0f, -2.0f), blue, kZoneTwoPartition);
+
+    StoragePartitionSet forwardOrder;
+    forwardOrder.Add(kZoneTwoPartition);
+    forwardOrder.Add(kZoneOnePartition);
+
+    StoragePartitionSet reverseOrder;
+    reverseOrder.Add(kZoneOnePartition);
+    reverseOrder.Add(kZoneTwoPartition);
 
     RenderLightSet forward;
-    std::vector<Registry*> forwardOrder{ &zoneTwo, &zoneOne };
-    Extract(forwardOrder, forward);
+    Extract(world, forwardOrder, forward);
 
     RenderLightSet reverse;
-    std::vector<Registry*> reverseOrder{ &zoneOne, &zoneTwo };
-    Extract(reverseOrder, reverse);
+    Extract(world, reverseOrder, reverse);
 
     ASSERT_EQ(forward.Count, 2u);
     ASSERT_EQ(reverse.Count, 2u);
@@ -224,30 +271,35 @@ TEST(LightExtraction, ZoneAttachmentOrderDoesNotChangeTieBreaks)
     EXPECT_EQ(forward.Lights[1].ColorIntensity, reverse.Lights[1].ColorIntensity);
 }
 
-TEST(LightExtraction, ZoneAttachmentOrderDoesNotChangeShadowRequestsOrGrants)
+TEST(LightExtraction, PartitionSetOrderDoesNotChangeShadowRequestsOrGrants)
 {
-    Registry zoneTwo = MakeLightRegistry(RegistryId{ 2, 1 }, ZoneId{ 2 });
-    Registry zoneOne = MakeLightRegistry(RegistryId{ 3, 1 }, ZoneId{ 1 });
-
-    SpotLightComponent blue{};
-    blue.Color = Vec<3>(0.0f, 0.0f, 1.0f);
-    blue.CastShadows = true;
-    MakeSpot(zoneTwo, Vec<3>(0.0f, 0.0f, -2.0f), blue);
+    World world = MakeLightWorld();
 
     SpotLightComponent red{};
     red.Color = Vec<3>(1.0f, 0.0f, 0.0f);
     red.CastShadows = true;
-    MakeSpot(zoneOne, Vec<3>(0.0f, 0.0f, -2.0f), red);
+    MakeSpot(world, Vec<3>(0.0f, 0.0f, -2.0f), red, kZoneOnePartition);
+
+    SpotLightComponent blue{};
+    blue.Color = Vec<3>(0.0f, 0.0f, 1.0f);
+    blue.CastShadows = true;
+    MakeSpot(world, Vec<3>(0.0f, 0.0f, -2.0f), blue, kZoneTwoPartition);
+
+    StoragePartitionSet forwardOrder;
+    forwardOrder.Add(kZoneTwoPartition);
+    forwardOrder.Add(kZoneOnePartition);
+
+    StoragePartitionSet reverseOrder;
+    reverseOrder.Add(kZoneOnePartition);
+    reverseOrder.Add(kZoneTwoPartition);
 
     RenderLightSet forward;
     std::vector<SpotShadowRequest> forwardRequests;
-    std::vector<Registry*> forwardOrder{ &zoneTwo, &zoneOne };
-    Extract(forwardOrder, forward, &forwardRequests);
+    Extract(world, forwardOrder, forward, &forwardRequests);
 
     RenderLightSet reverse;
     std::vector<SpotShadowRequest> reverseRequests;
-    std::vector<Registry*> reverseOrder{ &zoneOne, &zoneTwo };
-    Extract(reverseOrder, reverse, &reverseRequests);
+    Extract(world, reverseOrder, reverse, &reverseRequests);
 
     ASSERT_EQ(forwardRequests.size(), 2u);
     ASSERT_EQ(reverseRequests.size(), 2u);
@@ -280,19 +332,18 @@ TEST(LightExtraction, ZoneAttachmentOrderDoesNotChangeShadowRequestsOrGrants)
 
 TEST(LightExtraction, ResidencyGrantsAtMostTheSlotBudget)
 {
-    Registry registry = MakeLightRegistry(RegistryId::Global());
+    World world = MakeLightWorld();
     constexpr std::uint32_t candidateCount = kMaxSpotShadows + 3u;
     for (std::uint32_t index = 0; index < candidateCount; ++index)
     {
         SpotLightComponent light{};
         light.CastShadows = true;
-        MakeSpot(registry, Vec<3>(0.0f, 0.0f, -2.0f), light);
+        MakeSpot(world, Vec<3>(0.0f, 0.0f, -2.0f), light);
     }
 
     RenderLightSet lights;
     std::vector<SpotShadowRequest> requests;
-    std::vector<Registry*> registries{ &registry };
-    Extract(registries, lights, &requests);
+    Extract(world, lights, &requests);
 
     // Extraction emits every packed request; the budget belongs to residency.
     ASSERT_EQ(lights.Count, candidateCount);
@@ -312,20 +363,19 @@ TEST(LightExtraction, ResidencyGrantsAtMostTheSlotBudget)
 
 TEST(LightExtraction, PacksSpotShadowSamplingScaleAndClampsSoftness)
 {
-    Registry registry = MakeLightRegistry(RegistryId::Global());
+    World world = MakeLightWorld();
     SpotLightComponent spot{};
     spot.Range = 20.0f;
     spot.OuterAngleDegrees = 45.0f;
     spot.CastShadows = true;
     spot.ShadowSoftness = 3.0f;
     spot.ShadowBiasScale = 1.75f;
-    MakeSpot(registry, Vec<3>(0.0f, 0.0f, -2.0f), spot);
+    MakeSpot(world, Vec<3>(0.0f, 0.0f, -2.0f), spot);
 
     RenderLightSet lights;
     lights.ShadowSoftness = 2.0f;
     std::vector<SpotShadowRequest> requests;
-    std::vector<Registry*> registries{ &registry };
-    Extract(registries, lights, &requests);
+    Extract(world, lights, &requests);
 
     ASSERT_EQ(requests.size(), 1u);
     const Vec4& params = requests[0].SamplingParams;
@@ -340,21 +390,20 @@ TEST(LightExtraction, PacksSpotShadowSamplingScaleAndClampsSoftness)
 
 TEST(LightExtraction, PacksPointShadowRequestAndClampsSamplingState)
 {
-    Registry registry = MakeLightRegistry(RegistryId::Global());
+    World world = MakeLightWorld();
     PointLightComponent point{};
     point.Range = 20.0f;
     point.CastShadows = true;
     point.ShadowUpdate = ShadowUpdatePolicy::EveryFrame;
     point.ShadowSoftness = 3.0f;
     point.ShadowBiasScale = 1.75f;
-    MakePoint(registry, Vec<3>(1.0f, 2.0f, -3.0f), point);
+    MakePoint(world, Vec<3>(1.0f, 2.0f, -3.0f), point);
 
     RenderLightSet lights;
     lights.ShadowSoftness = 2.0f;
     std::vector<SpotShadowRequest> spotRequests;
     std::vector<PointShadowRequest> pointRequests;
-    std::vector<Registry*> registries{ &registry };
-    Extract(registries, lights, &spotRequests, &pointRequests);
+    Extract(world, lights, &spotRequests, &pointRequests);
 
     EXPECT_TRUE(spotRequests.empty());
     ASSERT_EQ(pointRequests.size(), 1u);
@@ -367,32 +416,37 @@ TEST(LightExtraction, PacksPointShadowRequestAndClampsSamplingState)
     EXPECT_TRUE(pointRequests[0].Bounds.Contains(Vec<3>(1.0f, 2.0f, -3.0f)));
 }
 
-TEST(LightExtraction, ZoneAttachmentOrderDoesNotChangePointShadowGrants)
+TEST(LightExtraction, PartitionSetOrderDoesNotChangePointShadowGrants)
 {
-    Registry zoneTwo = MakeLightRegistry(RegistryId{ 2, 1 }, ZoneId{ 2 });
-    Registry zoneOne = MakeLightRegistry(RegistryId{ 3, 1 }, ZoneId{ 1 });
-
-    PointLightComponent blue{};
-    blue.Color = Vec<3>(0.0f, 0.0f, 1.0f);
-    blue.CastShadows = true;
-    MakePoint(zoneTwo, Vec<3>(0.0f, 0.0f, -2.0f), blue);
+    World world = MakeLightWorld();
 
     PointLightComponent red{};
     red.Color = Vec<3>(1.0f, 0.0f, 0.0f);
     red.CastShadows = true;
-    MakePoint(zoneOne, Vec<3>(0.0f, 0.0f, -2.0f), red);
+    MakePoint(world, Vec<3>(0.0f, 0.0f, -2.0f), red, kZoneOnePartition);
+
+    PointLightComponent blue{};
+    blue.Color = Vec<3>(0.0f, 0.0f, 1.0f);
+    blue.CastShadows = true;
+    MakePoint(world, Vec<3>(0.0f, 0.0f, -2.0f), blue, kZoneTwoPartition);
+
+    StoragePartitionSet forwardOrder;
+    forwardOrder.Add(kZoneTwoPartition);
+    forwardOrder.Add(kZoneOnePartition);
+
+    StoragePartitionSet reverseOrder;
+    reverseOrder.Add(kZoneOnePartition);
+    reverseOrder.Add(kZoneTwoPartition);
 
     RenderLightSet forward;
     std::vector<SpotShadowRequest> forwardSpots;
     std::vector<PointShadowRequest> forwardPoints;
-    std::vector<Registry*> forwardOrder{ &zoneTwo, &zoneOne };
-    Extract(forwardOrder, forward, &forwardSpots, &forwardPoints);
+    Extract(world, forwardOrder, forward, &forwardSpots, &forwardPoints);
 
     RenderLightSet reverse;
     std::vector<SpotShadowRequest> reverseSpots;
     std::vector<PointShadowRequest> reversePoints;
-    std::vector<Registry*> reverseOrder{ &zoneOne, &zoneTwo };
-    Extract(reverseOrder, reverse, &reverseSpots, &reversePoints);
+    Extract(world, reverseOrder, reverse, &reverseSpots, &reversePoints);
 
     ASSERT_EQ(forwardPoints.size(), 2u);
     ASSERT_EQ(reversePoints.size(), 2u);

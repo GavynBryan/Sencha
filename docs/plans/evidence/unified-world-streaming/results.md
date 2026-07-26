@@ -1,0 +1,347 @@
+# Unified World streaming and iteration: baseline evidence
+
+Baseline for the storage cutover from per-zone registries to one `World` whose
+streamed zones are storage partitions. Establishes what the unified model costs
+today so the hardening phases can be judged against a recorded number rather
+than an impression.
+
+Two questions are separated on purpose:
+
+- **Does one partitioned World iterate as fast as N worlds did, and is a dormant
+  partition free to skip?** Answered here, and the answer is yes.
+- **What does publishing and unpublishing a zone cost the owner thread?**
+  Answered here, and the answer is the reason the hardening work exists.
+
+## Method
+
+- Build: the `profile` preset (Release codegen, symbols, frame pointers). The
+  `dev` preset carries asserts and a debug allocator and reports zone import
+  roughly an order of magnitude slower, so it describes a build nobody ships.
+  Runs record their configuration in the `build` field and
+  `scripts/bench_streaming_compare.py` refuses to compare across configurations.
+- Machine: 13th Gen Intel Core i7-13620H (6 P-cores + 8 E-cores, 24 MB L3),
+  Linux 7.0.11. Pinned to a performance core.
+- Harness: `StreamingBench.Generate` (`test/runtime/StreamingBenchGen.cpp`),
+  driven by `scripts/bench_streaming.sh`. Medians; iteration over 200 passes,
+  streaming over 30 repetitions, propagation over 15.
+- Entity shape: `LocalTransform` + `WorldTransform` + `PointLightComponent`,
+  about 129 rows per 16 KB chunk. Packages declare `LocalTransform` +
+  `PointLightComponent` and the importer seeds the derived `WorldTransform`.
+- `perf stat` counters taken separately on the same shapes, user-mode, P-core.
+  Cycle and instruction columns come from that separate run, so they pair with
+  its timing (0.2196 ms for the all-active shape) rather than with the recorded
+  median below; the two differ by run-to-run drift, not by workload.
+
+**Millisecond numbers are only comparable drift-normalized.** Every run records
+`control_memory_stream_ms`, a fixed memory-streaming loop over a 20 MB buffer
+that touches no engine code. The ratio between it and a real metric cancels
+clock and thermal state; `bench_streaming_compare.py` reports both raw and
+normalized change and judges regressions on the normalized figure. This was not
+theoretical: partway through Phase 2 an untouched iteration metric read 33%
+slower purely because the machine had been building for an hour, and an
+independent binary running unchanged code confirmed the drift.
+
+**The machine must be otherwise idle.** This is not boilerplate: the first
+attempt at these numbers ran while a 16-way parallel build was in flight and
+reported iteration at 1.01 ms with 37.8 M cache misses, against 0.22 ms and
+2.31 M on a quiet machine. Core pinning does not protect a memory-bound
+measurement from a neighbour evicting shared L3 — the misses are genuinely
+suffered by the measured process, so the counter looks credible while describing
+the neighbour. Re-run anything that disagrees with this file by more than the
+compare script's tolerance on an idle machine before believing it.
+
+## Iteration: the unification is free
+
+One pass summing `WorldTransform` x `PointLightComponent` over 160 000 entities
+(8 zones x 20 000), user-mode counters over 200 passes:
+
+| Shape | ms/pass | Cycles | Instructions | Cache misses | Miss rate |
+|---|---|---|---|---|---|
+| Unified, 8 of 8 partitions active | 0.1954 | 473 M | 873 M | 2.31 M | 4.8% |
+| Eight separate `World`s (prior model) | 0.2208 | 499 M | 991 M | 2.18 M | 4.6% |
+| Unified, worst-case interleaved chunks | 0.1951 | 488 M | 874 M | 2.22 M | 4.6% |
+| Unified, 2 of 8 partitions active | 0.0435 | — | — | — | — |
+
+- **Parity holds.** Unified iteration runs about 11% faster than eight worlds on
+  12% fewer instructions — one query and one archetype table instead of eight.
+  Cache misses are equal within noise (2.31 M vs 2.18 M, both under 5%).
+- **The per-chunk partition test does not show up.** `ForEachChunkIn` adds one
+  indexed word load and a bit test per 16 KB chunk. Filtered all-active is not
+  measurably different from the unfiltered eight-world walk.
+- **Interleaving is not measurably worse.** Allocating entities round-robin
+  across zones produces the pessimal chunk ordering a real streaming history can
+  reach, and it lands within noise of sequential allocation (0.1951 vs 0.1954 ms,
+  identical instruction and miss counts). Chunk-granular partitioning means the
+  inner loop never sees the interleaving: it is still one linear column walk per
+  chunk either way.
+- **Dormant partitions are free to skip.** Two active partitions cost 0.0435 ms
+  against 0.1954 ms for eight: cost tracks the active set, not the resident set.
+  This is the participation-tier property the prior per-registry model provided,
+  preserved at chunk granularity.
+
+## Zone streaming: the owner-thread cost
+
+Import runs inside one `AsyncTaskQueue` commit at `FramePhase::DrainAsyncTasks`.
+`AsyncCommitBudgetMs` (default 2.0) is checked *between* commits and the first
+commit of a drain always runs, so a single zone's import cannot be split by the
+budget — it runs to completion on the owner thread whatever the budget says.
+
+| Zone entities | Import (ms) | Row migrations | Chunks | Detach (ms) |
+|---|---|---|---|---|
+| 1 000 | 0.059 | 0 | 8 | 0.013 |
+| 5 000 | 0.298 | 0 | 38 | 0.065 |
+| 20 000 | 1.189 | 0 | 152 | 0.291 |
+
+Recorded after Phase 2. The first measurement of this path, before the importer
+built rows at their final signature, was 0.327 / 1.622 / 6.489 ms with exactly
+three row migrations per entity — one per declared component plus the derived
+transform, each copying the columns added before it. Normalized against the
+drift control, the change is 5.7x; raw, 5.5x. `import_20000_ms` at 1.19 ms now
+fits inside the 2.0 ms `AsyncCommitBudgetMs`, which is criterion 1.
+
+Two changes produced it, in this order: building each row once at its final
+archetype signature (6.489 -> 2.480 ms), then a one-entry memo on archetype
+lookup plus hoisting the transform-type lookups out of the per-entity path
+(2.480 -> 1.189 ms). The second pair was worth more than the profile suggested
+because hashing a 256-bit signature and probing dominates a lookup whose answer
+is almost always the previous one.
+
+### Chunk reclamation
+
+Ten load/unload cycles of one 1 000-entity zone through a recycled partition
+slot:
+
+| Metric | Before Phase 4 | After |
+|---|---|---|
+| Chunks after 1 cycle | 8 | 8 |
+| Chunks after 10 cycles | 71 | 8 |
+| Empty chunks retained | 71 | 8 |
+
+`Archetype::RemoveRow` used to leave an emptied chunk in place, and only the last
+chunk per (archetype, partition) was ever reused, so each unload of a multi-chunk
+zone orphaned every slab but one — 71 held for a zone that needs 8, all empty, and
+each one still walked and skipped by every query. A slab that loses its last row
+now returns to a per-archetype free list, so the census is the concurrent
+high-water mark. That is criterion 3.
+
+The 8 retained after the final unload are that high-water mark waiting to be
+claimed again; reclamation makes memory reusable rather than returning it to the
+allocator. Resident chunk count for the 160 000-entity iteration shape also fell
+from 1 240 to 1 219: transient slabs — the empty-signature archetype every
+`CreateEntity` passes through on its way to its first component — are now shared
+across partitions instead of one being held per partition.
+
+## Transform propagation: the streaming hitch, and its removal
+
+Per-zone entity count is held at 20 000 and the world grows, so the numbers
+isolate whether the cost tracks the streamed zone or everything resident. The
+attached zone is deliberately tiny — 100 entities — so anything above a plain
+sweep is invalidation blast radius rather than the new zone's own work.
+
+Three sweeps are measured because they cost different things. *All dirty* never
+advances the frame, so every `LocalTransform` column reads as written at or after
+the last sweep and the whole active world recomputes. *Clean* advances the frame
+and writes nothing, leaving only the cost of deciding to skip — the common case
+in a real scene. *After attach* is the first sweep once a 100-entity zone joins
+the domain.
+
+Before, with one world-global order over every transform entity, keyed on the
+global structural counter:
+
+| World entities | All dirty (ms) | Clean (ms) | After attach (ms) |
+|---|---|---|---|
+| 40 000 | 0.129 | 0.093 | 2.466 |
+| 80 000 | 0.267 | 0.183 | 5.230 |
+| 160 000 | 0.768 | 0.420 | 10.829 |
+
+After Phase 3 — unparented entities swept chunk-linearly, parented entities
+through an order invalidated by hierarchy change rather than by any structural
+change:
+
+| World entities | All dirty (ms) | Clean (ms) | After attach (ms) |
+|---|---|---|---|
+| 40 000 | 0.069 | 0.0008 | 0.0013 |
+| 80 000 | 0.136 | 0.0014 | 0.0029 |
+| 160 000 | 0.292 | 0.0029 | 0.0048 |
+
+- **The hitch is gone, and so is its growth with world size.** 10.83 ms to
+  0.0048 ms at 160 000, and order rebuilds per attach from 1 to 0. What remains
+  is the new zone's own 100 entities plus one skipped-chunk test per resident
+  chunk. Criterion 2 asked for under 1.0 ms at 320 000; the measured 160 000 cost
+  is three orders of magnitude below that, and what is left scales with chunk
+  count rather than entity count.
+- **Deciding to skip was costing more than the arithmetic.** A sweep with nothing
+  dirty ran 0.42 ms at 160 000 because the order walk touched a chunk header per
+  entity, in hash order. Testing one column version per 16 KB chunk instead is
+  143x cheaper.
+- **Recomputing everything also got faster** — 0.768 ms to 0.292 ms — which is
+  the same effect from the other side: the old sweep chased cached pointers in
+  breadth-first order, so a full recompute was a random walk over every chunk.
+- **The hierarchy path did not regress.** 20 000 entities in depth-4 chains,
+  roots written every rep: 0.132 ms to 0.122 ms dirty, 0.049 ms to 0.032 ms
+  clean. Parented entities keep the cached-pointer order, and this is the
+  measurement that says keeping it is not costing anything (unified-world
+  hardening Phase 3, step 3).
+
+Two physics reconcilers (`RigidBodyBinding`, `CharacterMoverPool`) gated on the
+same global counter, so any spawn or despawn anywhere — a projectile, an expiring
+effect, a zone detach — rescanned every collider and controller in the world.
+Both now gate on the summed structural version of the partitions they were handed
+(`World::StructuralVersion(const StoragePartitionSet&)`), and the mover pool's
+whole-world component scan is partition-filtered. `ReconcilePasses()` bounds this
+in `test/physics/*ChurnOutsideTheActiveSetDoesNotReconcile`.
+
+**Machine state for this comparison.** These runs were taken with an editor
+process holding about one core, so the control read 0.461 ms against 0.365 ms for
+the recorded baseline — every millisecond figure here is inflated by roughly a
+quarter. Rather than compare against the recorded baseline across that gap, the
+pre-change binary and library were frozen aside and the two were run interleaved,
+twice, on the same machine state; the controls agree within 2.5% and the two
+rounds agree within a few percent. Contamination inflates both sides, so each
+improvement above is a lower bound, and the absolute after-numbers are upper
+bounds. Re-record on an idle machine to tighten them.
+
+**The attach metrics are now microsecond-scale, and percentages on them mislead.**
+After Phase 4 the 40 000-entity attach reads 0.0019 ms against 0.0013 ms recorded
+for Phase 3 — flagged by the compare script as a 42% regression, and it is a real
+0.6 microseconds, reproducible within 7% across four runs. The cause is Phase 4's
+change-detection fix: `Archetype::AddRow` reads a version per column per row, and
+this scenario spawns through the incremental path, so 100 entities cost four rows
+each. Per entity it is about 6 ns. It does not appear in `import_*` because the
+batch importer builds one row per entity, and because skipping a fresh 16 KB
+zero-filled slab pays for it. Judge these three metrics on their absolute values
+against a frame budget, not on their percentages.
+
+## Bounds derived from these numbers
+
+Machine-independent assertions live in
+`test/runtime/StreamingCostBoundsTests.cpp` and run in the normal suite. Three
+are disabled because the current implementation does not meet them; each names
+the phase that enables it, and each fails today for the reason its comment
+states:
+
+| Bound | State | Target |
+|---|---|---|
+| `ImportPerformsNoRowMigrationsPerEntity` | live, passing (Phase 2) | 0 |
+| `SpawnInOneZoneDoesNotRebuildTransformOrder` | live, passing (Phase 3) | no rebuild |
+| `FlatSpawnResolvesAddressesWithoutRebuildingOrder` | live, passing (Phase 3) | resolve, no rebuild |
+| `StreamingChurnDoesNotGrowChunkCount` | disabled, 71 after 10 cycles vs 8 | equal |
+
+`CrossPartitionParentChangeRebuildsTransformOrder` is live from the start and
+must stay live: cross-partition parenting is legal, so the order is genuinely
+world-global and a hierarchy change in any partition must still rebuild it. It
+exists so scoped invalidation cannot satisfy its own bound by invalidating less
+than correctness requires.
+
+## Traversal: what a streaming event costs a frame
+
+The bench scenarios above isolate one operation at a time. This one runs the whole
+path: a focus walks a chain of eight room-scale zones and back, four laps, through
+`WorldPartitionRuntime` demand, `AsyncZoneLoader` build and commit, `RuntimeWorld`
+residency processing, `BuildFrameView`, and a transform sweep — every frame. Zone
+budget is one hop of neighbours and a resident cap of four, so zones attach ahead of
+the focus and unload behind it continuously. 400 entities per zone, a quarter of
+them parented.
+
+| Measure | Value |
+|---|---|
+| Worst frame that attached or unloaded a zone | 0.116 ms |
+| Median frame that attached or unloaded a zone | 0.112 ms |
+| Worst frame that did not | 0.039 ms |
+| Median frame that did not | 0.002 ms |
+| Zone attaches over the traversal | 50 |
+| Resident chunks after lap 1 / after lap 4 | 16 / 16 |
+| Order rebuilds / address resolves over 720 frames | 106 / 106 |
+
+- **Criterion 5 is met on the owner thread.** The worst streaming frame costs
+  0.116 ms, which is 0.7% of a 16.7 ms budget. Nothing in the traversal comes near
+  a frame boundary.
+- **A quiet frame costs 2 microseconds.** That is the Phase 3 result seen from the
+  frame's side: when no zone event happens, the streaming machinery and the
+  transform sweep together are indistinguishable from nothing.
+- **Memory plateaus over a real traversal**, not just a synthetic load/unload loop:
+  50 attaches, and the chunk census after four laps equals the census after one.
+- **Cache invalidation tracks zone events, not frames.** 106 rebuilds over 720
+  frames — about one per zone event, which is the correct number, since a streamed
+  zone carries hierarchy and its arrival genuinely changes the order.
+
+Zone size here is room-scale on purpose, matching the target product shape. For a
+larger zone the import number bounds it: 20 000 entities import in 1.19 ms, so even
+that lands inside a frame with the rest of the traversal's per-frame cost being
+microseconds.
+
+**The GPU is not in this measurement.** Nothing in this repo drives multi-zone
+streaming with a renderer attached — SceneViewer loads exactly one zone and refuses
+a second, and `WorldPartitionRuntime` has no application driver at all, only its
+tests. So this is owner-thread cost: import, residency, propagation, frame-view
+construction. Render extraction volume changing as zones come and go is unmeasured,
+and closing that needs a streaming venue that does not exist yet — which the
+game-module port is the natural place to build.
+
+## Sanitizers
+
+Both sanitizer presets were unbuildable on this machine through Phases 2 to 4 —
+neither `libasan` nor `libtsan` was installed, so neither could link — and both
+legs were reported as owed. With the runtimes installed they run clean over all
+four phases' work: ASan over the full suite (1824 tests) and over
+`StreamingBench.Generate`, which is where the import, ten-cycle load/unload, and
+propagation paths actually run at scale; ASan with LeakSanitizer over the
+reclamation and partition suites; tsan over `jobs_tests`, `ecs_tests`,
+`runtime_tests`, and `physics_tests` (523 tests) and over the bench, which
+exercises the async commit boundary.
+
+A clean sanitizer run proves nothing on its own, so both were checked against a
+negative control: a standalone two-thread increment race is reported by tsan, a
+standalone heap-use-after-free by ASan, under the same flags; and the instrumented
+engine libraries import 41 `__asan_*` and 38 `__tsan_*` symbols. Leak detection is
+off for the suite runs, since the engine holds intentional process-lifetime
+allocations, and on for the reclamation paths, where the free list's retained slabs
+are the thing worth checking.
+
+Note for anyone repeating this: valgrind writes a core dump for every
+intentional-abort test, so a memcheck run over the suite leaves several 73 MB files
+in the working tree. `.gitignore` covers `vgcore.*` now.
+
+## Frame cost with a renderer attached
+
+Everything above is owner-thread cost measured headlessly. The GPU half was taken
+through the ported game module, which is the only thing that drives
+`WorldPartitionRuntime` with a renderer: a game owns the focus position and the
+streaming policy, so no engine-side harness was needed.
+
+Scenario: a two-zone cooked world, RTX 4060, `SENCHA_PRESENT_MODE=IMMEDIATE`,
+300 frames captured through `frame.trace.output`. That manifest carries no world
+scene, so every drawn surface came from a streamed zone; draw calls tracked
+residency as the neighbour streamed in and out.
+
+| measure | value |
+|---|---|
+| mean frame | 4.82 ms |
+| p50 | 6.87 ms |
+| p99 | 7.79 ms |
+| max | 12.89 ms |
+| frames over a 16.67 ms budget | **0** |
+| worst `DrainAsyncTasks` | 3.497 ms, in a 3.605 ms frame |
+
+The worst frame was pure render work with no streaming in it. Exactly one frame in
+300 carried a zone-import commit above 0.5 ms.
+
+That 3.497 ms deserves attention more than the headline does. The synthetic 20k
+import in this document measures 1.19 ms; a real cooked zone costs more because its
+commit also resolves assets and loads collision on the owner thread. It fits inside
+a frame today, but it is above the 2.0 ms `AsyncCommitBudgetMs`, and that budget is
+checked *between* commits — one import is one uninterruptible commit. A
+substantially larger zone would need the chunk-blit follow-on held in reserve.
+
+Not exercised by this capture: the `player_start` lookup, since the cooked level
+authors none; interactive movement, input, and physics; and a world of genuinely
+distinct cooked zones, since the fixture reuses one level and therefore warmed the
+asset cache for the second zone.
+
+## Artifacts
+
+- [`streaming.json`](streaming.json) — the recorded run.
+- [`streaming.csv`](streaming.csv) — the same metrics, flat.
+
+Re-record with `scripts/bench_streaming.sh` and diff with
+`scripts/bench_streaming_compare.py streaming.json <new>.json`.

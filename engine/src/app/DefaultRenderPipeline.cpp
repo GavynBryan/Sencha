@@ -4,7 +4,6 @@
 #include <core/console/ConsoleRegistry.h>
 #include <profiling/CpuScopeTimings.h>
 #include <profiling/RenderStats.h>
-#include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
 
 #ifdef SENCHA_ENABLE_VULKAN
@@ -203,25 +202,20 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
 #endif
 
     Queue.Reset();
-    bool hasCamera = false;
 
-    for (Registry* registry : ctx.ActiveRegistries)
+    World& world = ctx.Entities;
+    const ActiveCameraService* activeCamera =
+        world.TryGetResource<ActiveCameraService>();
+    if (activeCamera == nullptr || !activeCamera->HasActive())
     {
-        auto* activeCamera = registry->Resources.TryGet<ActiveCameraService>();
-        if (activeCamera == nullptr
-            || !registry->Components.IsRegistered<CameraComponent>()
-            || !registry->Components.IsRegistered<WorldTransform>())
-        {
-            continue;
-        }
-
-        hasCamera = CameraRenderDataSystem::Build(
-            *activeCamera, registry->Components, extent, Camera);
-        if (hasCamera)
-            break;
+        ctx.PacketWrite.Renderable = false;
+        return;
     }
 
-    if (!hasCamera)
+    const EntityId cameraEntity = activeCamera->GetActive();
+    if (!world.IsAlive(cameraEntity)
+        || !ctx.Partitions.Contains(world.GetEntityPartition(cameraEntity))
+        || !CameraRenderDataSystem::Build(*activeCamera, world, extent, Camera))
     {
         ctx.PacketWrite.Renderable = false;
         return;
@@ -232,19 +226,9 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
 
     {
         CpuScopeTimer timer(scopes, CpuScope::Extraction);
-        for (Registry* registry : ctx.ActiveRegistries)
-        {
-            if (!registry->Components.IsRegistered<WorldTransform>()
-                || !registry->Components.IsRegistered<StaticMeshComponent>())
-            {
-                continue;
-            }
-
-            RenderExtractor.Extract(
-                registry->Components, *Meshes, *Materials, *MaterialSets, Camera, Queue,
-                Textures);
-        }
-
+        RenderExtractor.Extract(
+            world, ctx.Partitions, *Meshes, *Materials, *MaterialSets, Camera,
+            Queue, Textures);
         Queue.SortOpaque();
     }
 
@@ -253,17 +237,17 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         CpuScopeTimer timer(scopes, CpuScope::LightSelection);
         Lights.Reset();
         ApplyRendererCVars(Console, Lights);
-        LightExtractor.Extract(ctx.ActiveRegistries, Camera, Lights, ShadowRequests,
-                               PointShadowRequests, &lightCounts);
-        ProbeVolumes.AppendActive(ctx.ActiveRegistries, Lights);
+        LightExtractor.Extract(world, ctx.Partitions, Camera, Lights,
+                               ShadowRequests, PointShadowRequests, &lightCounts);
+        ProbeVolumes.AppendActive(ctx.Partitions, Lights);
     }
 
     {
         CpuScopeTimer timer(scopes, CpuScope::ShadowGather);
         const bool wantsCasterEvents = Residency.HasOnChangeSlots();
         ShadowCasterExtractor.Extract(
-            ctx.ActiveRegistries, *Meshes, *Materials, *MaterialSets, ShadowCasters,
-            wantsCasterEvents);
+            world, ctx.Partitions, *Meshes, *Materials, *MaterialSets,
+            ShadowCasters, wantsCasterEvents);
 
         CasterEvents.clear();
         if (wantsCasterEvents)

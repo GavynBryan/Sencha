@@ -9,6 +9,8 @@
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/JsonArchive.h>
+#include <ecs/StoragePartitionSet.h>
+#include <ecs/World.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/SceneFieldCodec.h>
 #include <world/serialization/SceneSerializer.h>
@@ -17,80 +19,108 @@
 
 #include <cstdint>
 #include <string>
-#include <vector>
 
 namespace
 {
-    AudioClip MakeClip(uint32_t sampleRate = 22050, uint8_t channels = 1, uint32_t frames = 22050)
-    {
-        AudioClip clip;
-        clip.SampleRate = sampleRate;
-        clip.ChannelCount = channels;
-        clip.Samples.assign(static_cast<size_t>(frames) * channels, 1000);
-        return clip;
-    }
+AudioClip MakeClip(
+    uint32_t sampleRate = 22050,
+    uint8_t channels = 1,
+    uint32_t frames = 22050)
+{
+    AudioClip clip;
+    clip.SampleRate = sampleRate;
+    clip.ChannelCount = channels;
+    clip.Samples.assign(
+        static_cast<size_t>(frames) * channels,
+        1000);
+    return clip;
+}
 
-    // A clip resident in `cache` plus its Procedural registry record — the
-    // smallest setup that lets the codec and the asset front door resolve it.
-    AudioClipHandle RegisterResidentClip(AssetRegistry& registry, AudioClipCache& cache,
-                                         std::string_view path)
-    {
-        registry.Register(AssetRecord{
-            .Type = AssetType::Audio,
-            .SourceKind = AssetSourceKind::Procedural,
-            .Path = std::string(path),
-        });
-        return cache.Register(path, MakeClip());
-    }
+AudioClipHandle RegisterResidentClip(
+    AssetRegistry& registry,
+    AudioClipCache& cache,
+    std::string_view path)
+{
+    registry.Register(AssetRecord{
+        .Type = AssetType::Audio,
+        .SourceKind = AssetSourceKind::Procedural,
+        .Path = std::string(path),
+    });
+    return cache.Register(path, MakeClip());
+}
 
-    // Constructs an AudioService on SDL's dummy driver. Returns nullptr-valid
-    // when no audio backend is available (the headless/CI posture) so callers
-    // can skip, the Blender-test precedent.
-    EngineAudioConfig SfxConfig()
-    {
-        EngineAudioConfig config;
-        EngineAudioBusConfig sfx;
-        sfx.Name = "Sfx";
-        sfx.MaxVoices = 4;
-        sfx.StealPolicy = VoiceStealPolicy::Reject;
-        config.Buses.push_back(sfx);
-        return config;
-    }
+EngineAudioConfig SfxConfig()
+{
+    EngineAudioConfig config;
+    EngineAudioBusConfig sfx;
+    sfx.Name = "Sfx";
+    sfx.MaxVoices = 4;
+    sfx.StealPolicy = VoiceStealPolicy::Reject;
+    config.Buses.push_back(sfx);
+    return config;
+}
 
-    EngineAudioConfig StealConfig()
-    {
-        EngineAudioConfig config;
-        EngineAudioBusConfig sfx;
-        sfx.Name = "Sfx";
-        sfx.MaxVoices = 1;
-        sfx.StealPolicy = VoiceStealPolicy::StealOldest;
-        config.Buses.push_back(sfx);
+EngineAudioConfig StealConfig()
+{
+    EngineAudioConfig config;
+    EngineAudioBusConfig sfx;
+    sfx.Name = "Sfx";
+    sfx.MaxVoices = 1;
+    sfx.StealPolicy = VoiceStealPolicy::StealOldest;
+    config.Buses.push_back(sfx);
 
-        EngineAudioBusConfig ui;
-        ui.Name = "Ui";
-        ui.MaxVoices = 1;
-        ui.StealPolicy = VoiceStealPolicy::Reject;
-        config.Buses.push_back(ui);
-        return config;
-    }
+    EngineAudioBusConfig ui;
+    ui.Name = "Ui";
+    ui.MaxVoices = 1;
+    ui.StealPolicy = VoiceStealPolicy::Reject;
+    config.Buses.push_back(ui);
+    return config;
+}
+
+StoragePartitionSet ActivePartitions()
+{
+    StoragePartitionSet partitions;
+    partitions.Add(StoragePartitionId::Default());
+    return partitions;
+}
+
+void SetupAudioWorld(
+    World& world,
+    AudioClipCache* cache,
+    AudioService* audio)
+{
+    world.AddResource<AudioSourceRuntime>(cache, audio);
+    world.RegisterComponent<AudioSourceComponent>();
+}
 } // namespace
-
-// -- Codec ----------------------------------------------------------------------
 
 TEST(AudioClipCodec, SaveWritesPathString)
 {
     LoggingProvider logging;
     AssetRegistry registry(logging);
     AudioClipCache cache(logging);
-    AssetSystem assets(logging, registry, nullptr, nullptr, nullptr, &cache);
+    AssetSystem assets(
+        logging,
+        registry,
+        nullptr,
+        nullptr,
+        nullptr,
+        &cache);
 
-    AudioClipHandle handle = RegisterResidentClip(registry, cache, "asset://audio/boop.wav");
+    const AudioClipHandle handle = RegisterResidentClip(
+        registry,
+        cache,
+        "asset://audio/boop.wav");
 
     SceneSerializationContext context(logging, &assets);
     JsonWriteArchive archive;
-    ASSERT_TRUE(SceneFieldCodec<AudioClipHandle>::Save(archive, "clip", handle, context));
+    ASSERT_TRUE(SceneFieldCodec<AudioClipHandle>::Save(
+        archive,
+        "clip",
+        handle,
+        context));
 
-    JsonValue json = archive.TakeValue();
+    const JsonValue json = archive.TakeValue();
     ASSERT_TRUE(json.IsString());
     EXPECT_EQ(json.AsString(), "asset://audio/boop.wav");
 }
@@ -100,17 +130,29 @@ TEST(AudioClipCodec, LoadResolvesPathString)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     AudioClipCache cache(logging);
-    AssetSystem assets(logging, registry, nullptr, nullptr, nullptr, &cache);
+    AssetSystem assets(
+        logging,
+        registry,
+        nullptr,
+        nullptr,
+        nullptr,
+        &cache);
 
-    AudioClipHandle registered = RegisterResidentClip(registry, cache, "asset://audio/boop.wav");
-
-    auto parsed = JsonParse(R"("asset://audio/boop.wav")");
+    const AudioClipHandle registered = RegisterResidentClip(
+        registry,
+        cache,
+        "asset://audio/boop.wav");
+    const auto parsed = JsonParse(R"("asset://audio/boop.wav")");
     ASSERT_TRUE(parsed.has_value());
 
     SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     AudioClipHandle loaded;
-    ASSERT_TRUE(SceneFieldCodec<AudioClipHandle>::Load(archive, "", loaded, context));
+    ASSERT_TRUE(SceneFieldCodec<AudioClipHandle>::Load(
+        archive,
+        "",
+        loaded,
+        context));
     EXPECT_EQ(loaded, registered);
 }
 
@@ -122,47 +164,58 @@ TEST(AudioClipCodec, ComponentRoundTripsThroughSceneJson)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     AudioClipCache cache(logging);
-    AssetSystem assets(logging, registry, nullptr, nullptr, nullptr, &cache);
-    AudioClipHandle clip = RegisterResidentClip(registry, cache, "asset://audio/ambient.wav");
+    AssetSystem assets(
+        logging,
+        registry,
+        nullptr,
+        nullptr,
+        nullptr,
+        &cache);
+    const AudioClipHandle clip = RegisterResidentClip(
+        registry,
+        cache,
+        "asset://audio/ambient.wav");
 
-    Registry src;
-    src.Components.RegisterComponent<AudioSourceComponent>();
+    Registry source;
+    source.Components.RegisterComponent<AudioSourceComponent>();
+    const EntityId entity = source.Entities.Create();
+    source.Components.AddComponent(
+        entity,
+        AudioSourceComponent{
+            .Clip = clip,
+            .Bus = "Sfx",
+            .Gain = 0.5f,
+            .Pan = -0.25f,
+            .Looping = true,
+            .PlayOnActive = false,
+        });
 
-    EntityId entity = src.Entities.Create();
-    src.Components.AddComponent(entity, AudioSourceComponent{
-        .Clip = clip, .Bus = "Sfx", .Gain = 0.5f, .Pan = -0.25f,
-        .Looping = true, .PlayOnActive = false });
+    SceneSerializationContext saveContext(logging, &assets);
+    const JsonValue json = SaveSceneJson(source, saveContext);
 
-    SceneSerializationContext saveCtx(logging, &assets);
-    JsonValue json = SaveSceneJson(src, saveCtx);
-
-    Registry dst;
-    dst.Components.RegisterComponent<AudioSourceComponent>();
-
-    SceneSerializationContext loadCtx(logging, &assets);
-    ASSERT_TRUE(LoadSceneJson(json, dst, loadCtx));
+    Registry destination;
+    destination.Components.RegisterComponent<AudioSourceComponent>();
+    SceneSerializationContext loadContext(logging, &assets);
+    ASSERT_TRUE(LoadSceneJson(json, destination, loadContext));
 
     int count = 0;
-    dst.Components.ForEachComponent<AudioSourceComponent>(
-        [&](EntityId, AudioSourceComponent& source)
+    destination.Components.ForEachComponent<AudioSourceComponent>(
+        [&](EntityId, AudioSourceComponent& component)
     {
         ++count;
-        EXPECT_EQ(source.Clip, clip);
-        EXPECT_EQ(source.Bus.View(), "Sfx");
-        EXPECT_FLOAT_EQ(source.Gain, 0.5f);
-        EXPECT_FLOAT_EQ(source.Pan, -0.25f);
-        EXPECT_TRUE(source.Looping);
-        EXPECT_FALSE(source.PlayOnActive);
-        // Runtime fields are never serialized: they default on load.
-        EXPECT_FALSE(source.Voice.IsValid());
-        EXPECT_FALSE(source.Started);
+        EXPECT_EQ(component.Clip, clip);
+        EXPECT_EQ(component.Bus.View(), "Sfx");
+        EXPECT_FLOAT_EQ(component.Gain, 0.5f);
+        EXPECT_FLOAT_EQ(component.Pan, -0.25f);
+        EXPECT_TRUE(component.Looping);
+        EXPECT_FALSE(component.PlayOnActive);
+        EXPECT_FALSE(component.Voice.IsValid());
+        EXPECT_FALSE(component.Started);
     });
     EXPECT_EQ(count, 1);
 
     ClearComponentSerializers();
 }
-
-// -- Lifetime: the slice's one invariant ----------------------------------------
 
 TEST(AudioSourceLifetime, RemoveStopsVoiceBeforeReleasingSoleClipReference)
 {
@@ -173,33 +226,33 @@ TEST(AudioSourceLifetime, RemoveStopsVoiceBeforeReleasingSoleClipReference)
         GTEST_SKIP() << "no audio backend";
 
     AudioClipCache cache(logging);
-    AudioClipHandle clip = cache.Register("asset://audio/boop.wav", MakeClip()); // refcount 1
+    const AudioClipHandle clip = cache.Register(
+        "asset://audio/boop.wav",
+        MakeClip());
 
-    Registry registry;
-    registry.Components.AddResource<AudioSourceRuntime>(&cache, &audio);
-    registry.Components.RegisterComponent<AudioSourceComponent>();
-
-    EntityId entity = registry.Entities.Create();
-    registry.Components.AddComponent(entity, AudioSourceComponent{
-        .Clip = clip, .Bus = "Sfx", .Looping = true });
-    // OnAdd retained -> refcount 2. Drop the test's own ref so the component
-    // is the sole owner: now releasing first (before stopping) would free the
-    // clip out from under a live voice.
+    World world;
+    SetupAudioWorld(world, &cache, &audio);
+    const EntityId entity = world.CreateEntity();
+    world.AddComponent(
+        entity,
+        AudioSourceComponent{
+            .Clip = clip,
+            .Bus = "Sfx",
+            .Looping = true,
+        });
     cache.Release(clip);
     ASSERT_NE(cache.Get(clip), nullptr);
 
     AudioSystem system;
-    std::vector<Registry*> active{ &registry };
-    system.Update(&audio, active);
+    const StoragePartitionSet active = ActivePartitions();
+    system.Update(&audio, world, active);
 
-    VoiceId voice = registry.Components.TryGet<AudioSourceComponent>(entity)->Voice;
+    const VoiceId voice =
+        world.TryGet<AudioSourceComponent>(entity)->Voice;
     ASSERT_TRUE(voice.IsValid());
     ASSERT_TRUE(audio.IsPlaying(voice));
 
-    registry.Components.RemoveComponent<AudioSourceComponent>(entity);
-
-    // The voice was stopped, and only then was the last clip reference
-    // released — the clip is now gone, and no voice outlived it.
+    world.RemoveComponent<AudioSourceComponent>(entity);
     EXPECT_FALSE(audio.IsPlaying(voice));
     EXPECT_FALSE(cache.Find("asset://audio/boop.wav").IsValid());
 }
@@ -212,30 +265,26 @@ TEST(AudioServiceVoices, StealOldestSlotIsNotLeftOnFreeList)
     if (!audio.IsValid())
         GTEST_SKIP() << "no audio backend";
 
-    AudioClip clip = MakeClip();
+    const AudioClip clip = MakeClip();
 
     PlayParams sfx;
     sfx.Bus = "Sfx";
-
-    VoiceId first = audio.Play(AudioClipKey{ 1 }, clip, sfx);
+    const VoiceId first = audio.Play(AudioClipKey{ 1 }, clip, sfx);
     ASSERT_TRUE(first.IsValid());
 
-    VoiceId second = audio.Play(AudioClipKey{ 2 }, clip, sfx);
+    const VoiceId second = audio.Play(AudioClipKey{ 2 }, clip, sfx);
     ASSERT_TRUE(second.IsValid());
     EXPECT_FALSE(audio.IsPlaying(first));
     EXPECT_TRUE(audio.IsPlaying(second));
 
     PlayParams ui;
     ui.Bus = "Ui";
-
-    VoiceId third = audio.Play(AudioClipKey{ 3 }, clip, ui);
+    const VoiceId third = audio.Play(AudioClipKey{ 3 }, clip, ui);
     ASSERT_TRUE(third.IsValid());
     EXPECT_NE(third, second);
     EXPECT_TRUE(audio.IsPlaying(second));
     EXPECT_TRUE(audio.IsPlaying(third));
 }
-
-// -- AudioSystem: dormancy sweep and start rules --------------------------------
 
 TEST(AudioSystemSweep, LoopRestartsAcrossDormancyAndOneShotDoesNot)
 {
@@ -246,46 +295,58 @@ TEST(AudioSystemSweep, LoopRestartsAcrossDormancyAndOneShotDoesNot)
         GTEST_SKIP() << "no audio backend";
 
     AudioClipCache cache(logging);
-    AudioClipHandle clip = cache.Register("asset://audio/ambient.wav", MakeClip());
+    const AudioClipHandle clip = cache.Register(
+        "asset://audio/ambient.wav",
+        MakeClip());
 
-    Registry registry;
-    registry.Components.AddResource<AudioSourceRuntime>(&cache, &audio);
-    registry.Components.RegisterComponent<AudioSourceComponent>();
+    World world;
+    SetupAudioWorld(world, &cache, &audio);
 
-    EntityId loop = registry.Entities.Create();
-    registry.Components.AddComponent(loop, AudioSourceComponent{
-        .Clip = clip, .Bus = "Sfx", .Looping = true });
-    EntityId oneShot = registry.Entities.Create();
-    registry.Components.AddComponent(oneShot, AudioSourceComponent{
-        .Clip = clip, .Bus = "Sfx", .Looping = false });
+    const EntityId loop = world.CreateEntity();
+    world.AddComponent(
+        loop,
+        AudioSourceComponent{
+            .Clip = clip,
+            .Bus = "Sfx",
+            .Looping = true,
+        });
+    const EntityId oneShot = world.CreateEntity();
+    world.AddComponent(
+        oneShot,
+        AudioSourceComponent{
+            .Clip = clip,
+            .Bus = "Sfx",
+            .Looping = false,
+        });
 
     AudioSystem system;
-    std::vector<Registry*> active{ &registry };
-    std::vector<Registry*> dormant{};
+    const StoragePartitionSet active = ActivePartitions();
+    const StoragePartitionSet dormant;
 
-    // Active: both start.
-    system.Update(&audio, active);
-    VoiceId loopV1 = registry.Components.TryGet<AudioSourceComponent>(loop)->Voice;
-    VoiceId shotV1 = registry.Components.TryGet<AudioSourceComponent>(oneShot)->Voice;
-    ASSERT_TRUE(loopV1.IsValid());
-    ASSERT_TRUE(shotV1.IsValid());
-    EXPECT_TRUE(audio.IsPlaying(loopV1));
-    EXPECT_TRUE(registry.Components.TryGet<AudioSourceComponent>(oneShot)->Started);
+    system.Update(&audio, world, active);
+    const VoiceId firstLoopVoice =
+        world.TryGet<AudioSourceComponent>(loop)->Voice;
+    const VoiceId firstShotVoice =
+        world.TryGet<AudioSourceComponent>(oneShot)->Voice;
+    ASSERT_TRUE(firstLoopVoice.IsValid());
+    ASSERT_TRUE(firstShotVoice.IsValid());
+    EXPECT_TRUE(audio.IsPlaying(firstLoopVoice));
+    EXPECT_TRUE(
+        world.TryGet<AudioSourceComponent>(oneShot)->Started);
 
-    // Dormant: the sweep stops both voices without touching components.
-    system.Update(&audio, dormant);
-    EXPECT_FALSE(audio.IsPlaying(loopV1));
-    EXPECT_FALSE(audio.IsPlaying(shotV1));
+    system.Update(&audio, world, dormant);
+    EXPECT_FALSE(audio.IsPlaying(firstLoopVoice));
+    EXPECT_FALSE(audio.IsPlaying(firstShotVoice));
 
-    // Reactivate: the loop starts a fresh voice; the one-shot stays silent
-    // (Started latched — re-entry does not replay).
-    system.Update(&audio, active);
-    VoiceId loopV2 = registry.Components.TryGet<AudioSourceComponent>(loop)->Voice;
-    EXPECT_TRUE(loopV2.IsValid());
-    EXPECT_NE(loopV2, loopV1);
-    EXPECT_TRUE(audio.IsPlaying(loopV2));
+    system.Update(&audio, world, active);
+    const VoiceId secondLoopVoice =
+        world.TryGet<AudioSourceComponent>(loop)->Voice;
+    EXPECT_TRUE(secondLoopVoice.IsValid());
+    EXPECT_NE(secondLoopVoice, firstLoopVoice);
+    EXPECT_TRUE(audio.IsPlaying(secondLoopVoice));
 
-    const AudioSourceComponent* shot = registry.Components.TryGet<AudioSourceComponent>(oneShot);
+    const AudioSourceComponent* shot =
+        world.TryGet<AudioSourceComponent>(oneShot);
     EXPECT_TRUE(shot->Started);
     EXPECT_FALSE(audio.IsPlaying(shot->Voice));
 }
@@ -294,20 +355,25 @@ TEST(AudioSystemSweep, NullServiceAndPlayOnActiveFalseAreNoOps)
 {
     LoggingProvider logging;
     AudioClipCache cache(logging);
-    AudioClipHandle clip = cache.Register("asset://audio/ambient.wav", MakeClip());
+    const AudioClipHandle clip = cache.Register(
+        "asset://audio/ambient.wav",
+        MakeClip());
 
-    Registry registry;
-    registry.Components.AddResource<AudioSourceRuntime>(&cache, nullptr);
-    registry.Components.RegisterComponent<AudioSourceComponent>();
-
-    EntityId entity = registry.Entities.Create();
-    registry.Components.AddComponent(entity, AudioSourceComponent{
-        .Clip = clip, .Bus = "Sfx", .Looping = true, .PlayOnActive = false });
+    World world;
+    SetupAudioWorld(world, &cache, nullptr);
+    const EntityId entity = world.CreateEntity();
+    world.AddComponent(
+        entity,
+        AudioSourceComponent{
+            .Clip = clip,
+            .Bus = "Sfx",
+            .Looping = true,
+            .PlayOnActive = false,
+        });
 
     AudioSystem system;
-    std::vector<Registry*> active{ &registry };
-
-    // Null service: the system is a clean no-op (headless).
-    system.Update(nullptr, active);
-    EXPECT_FALSE(registry.Components.TryGet<AudioSourceComponent>(entity)->Voice.IsValid());
+    const StoragePartitionSet active = ActivePartitions();
+    system.Update(nullptr, world, active);
+    EXPECT_FALSE(
+        world.TryGet<AudioSourceComponent>(entity)->Voice.IsValid());
 }

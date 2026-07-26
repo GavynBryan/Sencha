@@ -2,7 +2,7 @@
 
 #include <core/logging/LoggingProvider.h>
 #include <graphics/vulkan/VulkanImageService.h>
-#include <world/registry/Registry.h>
+#include <world/RuntimeWorld.h>
 
 #include <algorithm>
 #include <fstream>
@@ -17,15 +17,15 @@ void ProbeVolumeSet::Setup(VulkanImageService* images,
     Logging = logging;
 }
 
-std::size_t ProbeVolumeSet::AddZoneVolumes(RegistryId registry,
+std::size_t ProbeVolumeSet::AddZoneVolumes(StoragePartitionId zone,
                                            const ProbeVolumeFile& file)
 {
     if (Images == nullptr || Bindings == nullptr)
         return 0;
-    ReleaseZone(registry);
+    ReleaseZone(zone);
 
     ZoneRecord record;
-    record.Registry = registry;
+    record.Partition = zone;
     for (const ProbeVolumeRecord& volume : file.Volumes)
     {
         const std::uint32_t count = volume.Grid.PointCount();
@@ -121,11 +121,11 @@ std::size_t ProbeVolumeSet::AddZoneVolumes(RegistryId registry,
     return added;
 }
 
-void ProbeVolumeSet::ReleaseZone(RegistryId registry)
+void ProbeVolumeSet::ReleaseZone(StoragePartitionId zone)
 {
     const auto it = std::find_if(Zones.begin(), Zones.end(),
-                                 [&](const ZoneRecord& zone)
-                                 { return zone.Registry == registry; });
+                                 [&](const ZoneRecord& record)
+                                 { return record.Partition == zone; });
     if (it == Zones.end())
         return;
     ReleaseVolumes(it->Volumes);
@@ -154,16 +154,12 @@ void ProbeVolumeSet::ReleaseVolumes(std::vector<ResidentVolume>& volumes)
     volumes.clear();
 }
 
-void ProbeVolumeSet::AppendActive(std::span<Registry* const> registries,
+void ProbeVolumeSet::AppendActive(const StoragePartitionSet& partitions,
                                   RenderLightSet& lights) const
 {
     for (const ZoneRecord& zone : Zones)
     {
-        const bool active = std::any_of(
-            registries.begin(), registries.end(),
-            [&](const Registry* registry)
-            { return registry != nullptr && registry->Id == zone.Registry; });
-        if (!active)
+        if (!partitions.Contains(zone.Partition))
             continue;
         for (const ResidentVolume& volume : zone.Volumes)
             (void)lights.AddProbeVolume(volume.Header);
@@ -200,11 +196,11 @@ bool ReadZoneProbeFile(const std::string& cookedScenePath, ProbeVolumeFile& out)
     return !out.Volumes.empty();
 }
 
-void AttachZoneProbes(ProbeVolumeSet& set, Registry& registry,
+void AttachZoneProbes(ProbeVolumeSet& set, RuntimeZoneRecord& zone,
                       const ProbeVolumeFile& file)
 {
     if (file.Volumes.empty())
         return;
-    if (set.AddZoneVolumes(registry.Id, file) > 0)
-        registry.Components.AddResource<ZoneProbeResidency>(&set, registry.Id);
+    if (set.AddZoneVolumes(zone.Partition, file) > 0)
+        zone.Resources.Register<ZoneProbeResidency>(&set, zone.Partition);
 }

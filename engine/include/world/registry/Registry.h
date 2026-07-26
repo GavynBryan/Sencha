@@ -12,7 +12,6 @@ enum class RegistryKind : uint8_t
     Global,
     Zone,
     Transient,
-    Boundary
 };
 
 //=============================================================================
@@ -76,31 +75,3 @@ struct Registry
     ResourceRegistry Resources;
     RegistryEntityFacade Entities{ &Components };
 };
-
-inline Registry MakeGlobalRegistry(RegistryId id = RegistryId::Global())
-{
-    assert(id.IsValid() && "MakeGlobalRegistry: registry id must be valid");
-    assert(id.IsGlobal() && "MakeGlobalRegistry: global registry id must be RegistryId::Global");
-
-    Registry registry;
-    registry.Id = id;
-    registry.Kind = RegistryKind::Global;
-    registry.Zone = ZoneId{};
-
-    assert(!registry.Zone.IsValid() && "Global registry must not have a ZoneId");
-    return registry;
-}
-
-inline Registry MakeZoneRegistry(RegistryId id, ZoneId zone)
-{
-    assert(id.IsValid() && "MakeZoneRegistry: registry id must be valid");
-    assert(zone.IsValid() && "Zone registry must have a valid ZoneId");
-
-    Registry registry;
-    registry.Id = id;
-    registry.Kind = RegistryKind::Zone;
-    registry.Zone = zone;
-
-    assert(registry.Zone.IsValid() && "Zone registry must have a valid ZoneId");
-    return registry;
-}

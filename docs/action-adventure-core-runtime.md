@@ -2,6 +2,12 @@
 
 Status: **proposed working plan** (2026-06-12). Version assignments and gates live in `docs/plans/engine-roadmap.md` (Track C).
 
+The "Current Foundation" list below was written against per-zone registries. Runtime
+storage has since become one `World` whose zones are storage partitions
+([`plans/unified-runtime-world.md`](plans/unified-runtime-world.md)); the product
+reasoning here is unaffected, but read any registry-shaped mechanism as its
+partition equivalent.
+
 This document captures the core-engine work that would make Sencha feel
 purpose-built for large authored action-adventure games: interconnected worlds,
 doorways and elevators, dense indoor spaces, outdoor vistas, backtracking,
@@ -42,18 +48,19 @@ The distinction from a generic engine is the set of promises:
 
 What already exists and should be reused:
 
-- `ZoneRuntime`: global registry plus loaded zone registries, each with
+- `RuntimeWorld`: one `World` plus a record per loaded zone, each with
   `ZoneParticipation` flags for `Visible`, `Physics`, `Logic`, and `Audio`.
-- `FrameRegistryView`: per-phase spans built from participation.
-- `AsyncZoneLoader`: detached registry build on the async lane, attach/finalize
+- `FrameZoneView`: per-phase storage-partition sets built from participation.
+- `AsyncZoneLoader`: detached package build on the async lane, import and finalize
   at the owner-thread drain point.
 - `AssetPreloader`: manifest-sized async residency batches, cache/in-flight
   dedup, staged load on task threads, commit at `DrainAsyncTasks`.
 - `AsyncCommitBudgetMs`: the first owner-thread budget knob for streaming.
 - `RuntimeFrameLoop` discontinuity flags: already names frame-history reset as
   a runtime concern.
-- `JobSystem` and `ForEachRegistryParallel`: zone-axis work for many live heavy
-  registries.
+- `JobSystem`: the frame-lane pool. Its zone-axis helper was retired with
+  per-registry storage and measured not to pay at room scale; see
+  [`ecs/parallelization.md`](ecs/parallelization.md).
 - `SceneSerializer`, `TypeSchema`, and schema-driven component registration:
   the base for scene, template, state overlay, and budget introspection.
 - `QuadTree` and `Grid2d`: small spatial data structures, not yet promoted to
@@ -481,7 +488,7 @@ zones, queue depth, commit budget use, worst assets, and active risk warnings.
 - Should partition metadata live in a new `.sworld` asset, beside scenes, or as
   a higher-level JSON that references scene assets?
 - Should residency tiers be a single enum, a bitset of capabilities, or a small
-  value type that compiles to current `FrameRegistryView` spans?
+  value type that compiles to `FrameZoneView` partition sets?
 - What is the first stable entity identity scheme for state overlays before the
   editor/AssetId work lands?
 - Does transition policy belong in `RuntimeFrameLoop`, a new runtime service, or

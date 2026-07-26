@@ -335,9 +335,18 @@ void ShadowResidency::ApplyHysteresisAndSteals(std::span<const SpotShadowRequest
             continue;
         }
 
+        // Hysteresis exists to stop ownership flickering between two lights that
+        // are both asking for a slot. A holder that produced no request this frame
+        // is not competing: its owner was culled, or destroyed outright when its
+        // zone detached. Making a waiting light outscore an absent holder for a
+        // fixed run only delays a grant that nothing contests. Uncontended slots
+        // still retain their cached content, so a brief absence stays free.
         ++holder.OutscoredFrames;
-        if (holder.OutscoredFrames < kStealOutscoredFrames)
+        if (holder.RequestIndex != UINT32_MAX
+            && holder.OutscoredFrames < kStealOutscoredFrames)
+        {
             continue;
+        }
 
         const SpotShadowRequest& request = requests[contenders[pair]];
         Atlas.Free(holder.Allocation);
@@ -382,9 +391,13 @@ void ShadowResidency::ApplyPointHysteresisAndSteals(
             continue;
         }
 
+        // An absent holder is not competing; see the spot path above.
         ++holder.OutscoredFrames;
-        if (holder.OutscoredFrames < kStealOutscoredFrames)
+        if (holder.RequestIndex != UINT32_MAX
+            && holder.OutscoredFrames < kStealOutscoredFrames)
+        {
             continue;
+        }
 
         AcquirePointSlot(holder, requests[contenders[pair]], contenders[pair]);
     }

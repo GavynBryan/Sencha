@@ -31,7 +31,6 @@ TEST(RuntimeConfig, EmptyObjectYieldsDefaults)
     EXPECT_DOUBLE_EQ(config->AsyncCommitBudgetMs, 2.0);
     EXPECT_EQ(config->JobWorkerCount, -1);
     EXPECT_EQ(config->AsyncTaskThreadCount, 1);
-    EXPECT_FALSE(config->ZoneParallelPropagation);
     EXPECT_FALSE(config->ExitOnEscape);
     EXPECT_FALSE(config->TogglePauseOnF1);
 }
@@ -42,15 +41,13 @@ TEST(RuntimeConfig, ReadsCamelCaseFields)
         "fixedTickRate": 120.0,
         "asyncCommitBudgetMs": 0.0,
         "jobWorkerCount": 4,
-        "asyncTaskThreadCount": 3,
-        "zoneParallelPropagation": true
+        "asyncTaskThreadCount": 3
     })");
     ASSERT_TRUE(config.has_value());
     EXPECT_DOUBLE_EQ(config->FixedTickRate, 120.0);
     EXPECT_DOUBLE_EQ(config->AsyncCommitBudgetMs, 0.0);
     EXPECT_EQ(config->JobWorkerCount, 4);
     EXPECT_EQ(config->AsyncTaskThreadCount, 3);
-    EXPECT_TRUE(config->ZoneParallelPropagation);
 }
 
 TEST(RuntimeConfig, ReadsSnakeCaseFields)
@@ -58,13 +55,11 @@ TEST(RuntimeConfig, ReadsSnakeCaseFields)
     auto config = Parse(R"({
         "job_worker_count": 0,
         "async_task_thread_count": 2,
-        "zone_parallel_propagation": true,
         "async_commit_budget_ms": 5.5
     })");
     ASSERT_TRUE(config.has_value());
     EXPECT_EQ(config->JobWorkerCount, 0);
     EXPECT_EQ(config->AsyncTaskThreadCount, 2);
-    EXPECT_TRUE(config->ZoneParallelPropagation);
     EXPECT_DOUBLE_EQ(config->AsyncCommitBudgetMs, 5.5);
 }
 
@@ -118,7 +113,6 @@ TEST(RuntimeConfig, RejectsWrongFieldTypes)
 {
     EXPECT_FALSE(Parse(R"({"fixedTickRate": "fast"})").has_value());
     EXPECT_FALSE(Parse(R"({"exitOnEscape": 1})").has_value());
-    EXPECT_FALSE(Parse(R"({"zoneParallelPropagation": "yes"})").has_value());
 }
 
 TEST(RuntimeConfig, StreamingFieldsParseAndDefault)

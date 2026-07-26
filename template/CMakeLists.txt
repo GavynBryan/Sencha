@@ -17,7 +17,8 @@ cmake_minimum_required(VERSION 3.20)
 #    points at, so the in-tree editor/host loads it with no extra steps.
 
 set(SENCHA_TEMPLATE_MODULE_SOURCES
-    src/TemplateGame.cpp)
+    src/TemplateGame.cpp
+    src/TemplateRuntimeComponents.cpp)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     # Standalone against a prebuilt SDK.

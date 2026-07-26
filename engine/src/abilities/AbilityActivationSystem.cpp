@@ -1,11 +1,9 @@
 #include <abilities/AbilityActivationSystem.h>
 
-#include <app/GameContexts.h>
 #include <abilities/AbilitySystem.h>
-#include <world/registry/Registry.h>
+#include <app/GameContexts.h>
 
 void AbilityActivationSystem::FixedLogic(FixedLogicContext& ctx)
 {
-    for (Registry* reg : ctx.ActiveRegistries)
-        ProcessAbilityActivations(reg->Components);
+    ProcessAbilityActivations(ctx.Entities, ctx.Partitions);
 }

@@ -514,6 +514,33 @@ identical.
 **The MigrationPlan.md open question ("decide based on measurement") is now closed.**
 Use the cached resource. Do not attempt per-frame recomputation.
 
+**Amended 2026-07-24 (unified World hardening, Phase 3).** The decision holds for
+entities that have a parent. It was over-applied to entities that do not.
+
+The order covered every transform entity, parented or not, and was keyed on the
+global structural version — so any spawn or despawn anywhere rebuilt it. Measured on
+a 160 000-entity world: 10.83 ms for the first sweep after a 100-entity zone
+attached, and 0.42 ms for a sweep in which *nothing had changed*, because walking the
+order touched a chunk header per entity in hash order just to decide to skip it.
+
+An unparented entity's world transform is its local transform, so it has no ordering
+constraint and does not belong in the order. Those are now swept chunk-linearly by a
+partition-filtered query, with the dirty test applied once per 16 KB chunk. Only
+parented entities remain in the cache, which makes both the order and every cost of
+maintaining it proportional to the hierarchy rather than to the world. Same shapes,
+after:
+
+| Sweep | Before | After |
+|---|---|---|
+| First after a 100-entity zone attaches | 10.83 ms | 0.0048 ms |
+| Nothing dirty | 0.420 ms | 0.0029 ms |
+| Everything dirty | 0.768 ms | 0.292 ms |
+| 20 000 entities in depth-4 chains, roots moved | 0.132 ms | 0.122 ms |
+
+The last row is the one that keeps this decision standing: for parented entities the
+cached order costs nothing against the alternative, so it stays. See
+[`../plans/unified-world-hardening.md`](../plans/unified-world-hardening.md).
+
 ---
 
 ### D3.2 — Propagation sweep uses TryGet per entry; separate `Write<WorldTransform>` bump pass
@@ -537,6 +564,21 @@ entity count.
 chunk iteration order. Chunk iteration visits entities in arbitrary storage order; the
 cache list visits in BFS topological order. The two orderings are incompatible without
 a per-entity scatter step that reintroduces hash map lookups — exactly what D3.1 rejects.
+
+**Amended 2026-07-24 (unified World hardening, Phase 3).** That rejected alternative
+is now the implementation for unparented entities, and the reasoning above is why it
+took a while to see: the ordering constraint it cites is real, but it only binds
+entities that have a parent. For an entity with no parent the world transform is the
+local transform, so storage order is a perfectly good visit order — and a chunk pass
+is strictly better than the entry walk, because the dirty test costs one column
+version per chunk instead of one chunk header touch per entity.
+
+The separate bump pass in this decision is also gone: the flat pass writes through a
+`Write<WorldTransform>` accessor, so Query bumps the column version for exactly the
+chunks it visited. Clean chunks are skipped *before* the visit by a
+`Changed<LocalTransform>` filter, which is what keeps the bump honest — a visited
+chunk is always a written chunk. The ordered pass, still using raw pointers, bumps
+explicitly per entry as before.
 
 ---
 

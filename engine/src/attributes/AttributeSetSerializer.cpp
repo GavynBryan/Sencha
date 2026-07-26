@@ -14,91 +14,125 @@
 #include <span>
 #include <vector>
 
-// Declared in <world/serialization/SceneSerializer.h>; forward-declared here to
-// keep framework code clear of the render/audio-pulling scene-codec headers.
 void RegisterComponentSerializer(std::unique_ptr<IComponentSerializer> serializer);
 
 namespace
 {
-    class AttributeSetSerializer final : public IComponentSerializer
+class AttributeSetSerializer final : public IComponentSerializer
+{
+public:
+    ComponentTypeId TypeId() const override
     {
-    public:
-        ComponentTypeId TypeId() const override { return ResolveComponentTypeId<AttributeSet>(); }
-        std::string_view JsonKey() const override { return "Attributes"; }
-        std::uint32_t BinaryChunkId() const override { return MakeFourCC('A', 'T', 'T', 'R'); }
+        return ResolveComponentTypeId<AttributeSet>();
+    }
 
-        // No flat scalar leaves to expose: attributes are a dynamic id/value array,
-        // not a fixed field set, and the framework does not carry a TypeSchema.
-        std::span<const RuntimeField> RuntimeFields() const override { return {}; }
+    std::string_view JsonKey() const override { return "Attributes"; }
+    std::uint32_t BinaryChunkId() const override
+    {
+        return MakeFourCC('A', 'T', 'T', 'R');
+    }
 
-        std::vector<std::byte> DefaultBytes() const override
-        {
-            AttributeSet value{};
-            std::vector<std::byte> bytes(sizeof(AttributeSet));
-            std::memcpy(bytes.data(), &value, sizeof(AttributeSet));
-            return bytes;
-        }
+    std::span<const RuntimeField> RuntimeFields() const override
+    {
+        return {};
+    }
 
-        void RegisterStorage(Registry& registry) const override
-        {
-            if (!registry.Components.IsRegistered<AttributeSet>())
-                registry.Components.RegisterComponent<AttributeSet>();
-        }
+    std::vector<std::byte> DefaultBytes() const override
+    {
+        AttributeSet value{};
+        std::vector<std::byte> bytes(sizeof(AttributeSet));
+        std::memcpy(bytes.data(), &value, sizeof(AttributeSet));
+        return bytes;
+    }
 
-        bool HasComponent(EntityId entity, const Registry& registry) const override
-        {
-            return registry.Components.IsRegistered<AttributeSet>()
-                && registry.Components.HasComponent<AttributeSet>(entity);
-        }
+    void RegisterStorage(Registry& registry) const override
+    {
+        if (!registry.Components.IsRegistered<AttributeSet>())
+            registry.Components.RegisterComponent<AttributeSet>();
+    }
 
-        bool Save(IWriteArchive& archive,
-                  EntityId entity,
-                  const Registry& registry,
-                  SceneSerializationContext&) const override
-        {
-            if (!registry.Components.IsRegistered<AttributeSet>())
-                return true;
-            const AttributeSet* set = registry.Components.TryGet<AttributeSet>(entity);
-            if (!set)
-                return true;
+    bool HasComponent(
+        EntityId entity,
+        const Registry& registry) const override
+    {
+        return registry.Components.IsRegistered<AttributeSet>()
+            && registry.Components.HasComponent<AttributeSet>(entity);
+    }
 
-            const AttributeRegistry* reg = registry.Components.TryGetResource<AttributeRegistry>();
-            if (!reg)
-                return false;
-
-            return WriteAttributes(archive, *set, *reg);
-        }
-
-        bool Load(IReadArchive& archive,
-                  EntityId entity,
-                  Registry& registry,
-                  SceneSerializationContext&) override
-        {
-            AttributeRegistry* reg = registry.Components.TryGetResource<AttributeRegistry>();
-            if (!reg)
-                return false;
-
-            AttributeSet set{};
-            if (!ReadAttributes(archive, set, *reg))
-                return false;
-
-            registry.Components.AddComponent<AttributeSet>(entity, set);
+    bool Save(
+        IWriteArchive& archive,
+        EntityId entity,
+        const Registry& registry,
+        SceneSerializationContext&) const override
+    {
+        if (!registry.Components.IsRegistered<AttributeSet>())
             return true;
-        }
 
-        bool Remove(EntityId entity, Registry& registry) const override
-        {
-            if (registry.Components.IsRegistered<AttributeSet>()
-                && registry.Components.HasComponent<AttributeSet>(entity))
-            {
-                registry.Components.RemoveComponent<AttributeSet>(entity);
-            }
+        const AttributeSet* set =
+            registry.Components.TryGet<AttributeSet>(entity);
+        if (set == nullptr)
             return true;
+
+        const AttributeRegistry* attributes =
+            registry.Components.TryGetResource<AttributeRegistry>();
+        return attributes != nullptr
+            && WriteAttributes(archive, *set, *attributes);
+    }
+
+    bool Load(
+        IReadArchive& archive,
+        EntityId entity,
+        Registry& registry,
+        SceneSerializationContext& context) override
+    {
+        return LoadIntoWorld(
+            archive,
+            entity,
+            registry.Components,
+            context);
+    }
+
+    bool LoadIntoWorld(
+        IReadArchive& archive,
+        EntityId entity,
+        World& world,
+        SceneSerializationContext&) override
+    {
+        AttributeRegistry* attributes =
+            world.TryGetResource<AttributeRegistry>();
+        if (attributes == nullptr)
+            return false;
+
+        // A batch importer creates the entity at its final archetype signature,
+        // so the column may already be present. Presence is then expected rather
+        // than a duplicate, and the value is written in place.
+        const bool preallocated = world.HasComponent<AttributeSet>(entity);
+
+        AttributeSet set{};
+        if (!ReadAttributes(archive, set, *attributes))
+            return false;
+
+        if (preallocated)
+            return world.InitializeComponent<AttributeSet>(entity, set);
+
+        world.AddComponent<AttributeSet>(entity, set);
+        return true;
+    }
+
+    bool Remove(EntityId entity, Registry& registry) const override
+    {
+        if (registry.Components.IsRegistered<AttributeSet>()
+            && registry.Components.HasComponent<AttributeSet>(entity))
+        {
+            registry.Components.RemoveComponent<AttributeSet>(entity);
         }
-    };
-}
+        return true;
+    }
+};
+} // namespace
 
 void RegisterAttributeSerializer()
 {
-    RegisterComponentSerializer(std::make_unique<AttributeSetSerializer>());
+    RegisterComponentSerializer(
+        std::make_unique<AttributeSetSerializer>());
 }

@@ -1,4 +1,5 @@
 #include "EditorLightGather.h"
+#include "EditorRenderEntityKey.h"
 
 #include "document/EditorDocument.h"
 

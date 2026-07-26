@@ -6,12 +6,13 @@
 #include <core/assets/AssetPreloader.h>
 #include <core/assets/RuntimeAssets.h>
 #include <core/console/ConsoleTypes.h>
+#include <ecs/EntityId.h>
+#include <world/serialization/SceneSerializationContext.h>
 #include <zone/AsyncZoneLoader.h>
 
+#include <memory>
 #include <optional>
 #include <string_view>
-
-class Registry;
 
 //=============================================================================
 // SceneViewerGame
@@ -26,7 +27,8 @@ class Registry;
 class SceneViewerGame final : public Game
 {
 public:
-    void OnRegisterComponents(ComponentSerializerRegistry& serializers) override;
+    void OnRegisterComponents(
+        ComponentSerializerRegistry& serializers) override;
     void OnStart(GameStartupContext& ctx) override;
     void OnRegisterSystems(SystemRegisterContext& ctx) override;
     void OnPlatformEvent(PlatformEventContext& ctx) override;
@@ -37,11 +39,12 @@ private:
     void SetRelativeMouseMode(bool enabled);
     RuntimeAssets& RuntimeAssetState();
 
-    Registry* ActiveZoneRegistry = nullptr;
     bool ZoneActive = false;
     std::optional<RuntimeAssets> Assets;
     std::optional<AssetPreloader> Preloader;
+    std::unique_ptr<SceneSerializationContext> SceneContext;
     std::optional<AsyncZoneLoader> ZoneLoader;
+    EntityId CameraEntity;
     FreeCamera FreeCam;
     // Armed by sceneviewer.camera.scripted; read by the scripted-path system.
     bool ScriptedCameraEnabled = false;

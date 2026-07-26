@@ -1,43 +1,41 @@
 #include <physics/PhysicsStepSystem.h>
 
 #include <app/GameContexts.h>
-#include <ecs/World.h>
-#include <physics/PhysicsScene.h>
-#include <world/registry/Registry.h>
-
-namespace
-{
-PhysicsScene& EnsureScene(World& world, PhysicsWorld& physics)
-{
-    if (world.HasResource<PhysicsScene>())
-        return world.GetResource<PhysicsScene>();
-    return world.AddResource<PhysicsScene>(physics);
-}
-} // namespace
+#include <world/RuntimeWorld.h>
 
 PhysicsStepSystem::PhysicsStepSystem()
+    : Bodies(Simulation)
+    , Characters(Simulation)
 {
     Simulation.SetShapeCache(&Shapes);
 }
 
 PhysicsStepSystem::~PhysicsStepSystem() = default;
 
+void PhysicsStepSystem::ZoneResidency(ZoneResidencyContext& ctx)
+{
+    for (const ZoneResidencyChange& change : ctx.Changes)
+    {
+        const bool detaching =
+            change.Kind == ZoneResidencyChangeKind::Detaching;
+        const bool leftPhysics =
+            change.Previous.Physics && !change.Current.Physics;
+        if (!detaching && !leftPhysics)
+            continue;
+
+        // Final visit happens while the partition and its entities are still
+        // alive. Capture dynamic state and strip backend links before RuntimeWorld
+        // destroys the partition.
+        Characters.EvictPartition(ctx.Entities, change.Partition);
+        Bodies.EvictPartition(ctx.Entities, change.Partition);
+    }
+}
+
 void PhysicsStepSystem::Physics(PhysicsContext& ctx)
 {
     const float dt = static_cast<float>(ctx.Time.DeltaSeconds);
 
-    for (Registry* reg : ctx.ActiveRegistries)
-    {
-        World& world = reg->Components;
-        EnsureScene(world, Simulation).SyncToPhysics(world);
-    }
-
+    Bodies.SyncToPhysics(ctx.Entities, ctx.Partitions);
     Simulation.Step(dt, CollisionSteps);
-
-    for (Registry* reg : ctx.ActiveRegistries)
-    {
-        World& world = reg->Components;
-        if (PhysicsScene* scene = world.TryGetResource<PhysicsScene>())
-            scene->SyncFromPhysics(world);
-    }
+    Bodies.SyncFromPhysics(ctx.Entities, ctx.Partitions);
 }

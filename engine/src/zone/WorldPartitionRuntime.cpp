@@ -1,5 +1,6 @@
 #include <zone/WorldPartitionRuntime.h>
 
+#include <world/RuntimeWorld.h>
 #include <zone/WorldPartitionIds.h>
 #include <zone/WorldPartitionValidation.h>
 
@@ -10,13 +11,11 @@
 
 namespace
 {
-
 bool SameParticipation(const ZoneParticipation& a, const ZoneParticipation& b)
 {
     return a.Visible == b.Visible && a.Physics == b.Physics && a.Logic == b.Logic
         && a.Audio == b.Audio;
 }
-
 } // namespace
 
 WorldPartitionRuntime::WorldPartitionRuntime(ZoneLoadRecipeFn recipe,
@@ -55,6 +54,23 @@ bool WorldPartitionRuntime::LoadManifest(WorldPartitionManifest manifest, std::s
     Focus_ = ZoneId{};
     HasFocusPosition_ = false;
     Pins_.clear();
+
+    // Reloading a manifest invalidates every outstanding lease without allowing
+    // an old token to alias a newly allocated slot in the same runtime object.
+    FreeLeaseSlots_.clear();
+    for (uint32_t i = 0; i < LeaseSlots_.size(); ++i)
+    {
+        ParticipationLeaseSlot& slot = LeaseSlots_[i];
+        slot.Alive = false;
+        ++slot.Generation;
+        if (slot.Generation == 0)
+            ++slot.Generation;
+        slot.Zone = ZoneId{};
+        slot.Minimum = ZoneParticipation{};
+        FreeLeaseSlots_.push_back(i);
+    }
+    ActiveLeaseCount_ = 0;
+
     PendingDestroys_.clear();
     Issued_.clear();
     Lingering_.clear();
@@ -114,25 +130,149 @@ void WorldPartitionRuntime::UnpinZone(ZoneId zone)
     std::erase_if(Pins_, [&](const ZonePin& pin) { return pin.Zone == zone; });
 }
 
+ParticipationLeaseId WorldPartitionRuntime::AcquireParticipationLease(
+    ZoneId zone,
+    ZoneParticipation minimum)
+{
+    if (!HasManifest_ || !zone.IsValid() || FindHeader(zone) == nullptr)
+    {
+        assert(false && "AcquireParticipationLease: zone must exist in the loaded manifest");
+        return ParticipationLeaseId{};
+    }
+
+    uint32_t index;
+    if (!FreeLeaseSlots_.empty())
+    {
+        index = FreeLeaseSlots_.back();
+        FreeLeaseSlots_.pop_back();
+    }
+    else
+    {
+        index = static_cast<uint32_t>(LeaseSlots_.size());
+        LeaseSlots_.push_back(ParticipationLeaseSlot{});
+    }
+
+    ParticipationLeaseSlot& slot = LeaseSlots_[index];
+    slot.Alive = true;
+    slot.Zone = zone;
+    slot.Minimum = minimum;
+    ++ActiveLeaseCount_;
+    return ParticipationLeaseId{ index, slot.Generation };
+}
+
+bool WorldPartitionRuntime::ReleaseParticipationLease(ParticipationLeaseId lease)
+{
+    if (!IsParticipationLeaseValid(lease))
+        return false;
+
+    ParticipationLeaseSlot& slot = LeaseSlots_[lease.Index];
+    slot.Alive = false;
+    ++slot.Generation;
+    if (slot.Generation == 0)
+        ++slot.Generation;
+    slot.Zone = ZoneId{};
+    slot.Minimum = ZoneParticipation{};
+    FreeLeaseSlots_.push_back(lease.Index);
+    --ActiveLeaseCount_;
+    return true;
+}
+
+bool WorldPartitionRuntime::IsParticipationLeaseValid(ParticipationLeaseId lease) const
+{
+    return lease.IsValid() && lease.Index < LeaseSlots_.size()
+        && LeaseSlots_[lease.Index].Alive
+        && LeaseSlots_[lease.Index].Generation == lease.Generation;
+}
+
+std::size_t WorldPartitionRuntime::InvalidateParticipationLeases(ZoneId zone)
+{
+    std::size_t invalidated = 0;
+    for (uint32_t index = 0; index < LeaseSlots_.size(); ++index)
+    {
+        ParticipationLeaseSlot& slot = LeaseSlots_[index];
+        if (!slot.Alive || slot.Zone != zone)
+            continue;
+
+        slot.Alive = false;
+        ++slot.Generation;
+        if (slot.Generation == 0)
+            ++slot.Generation;
+        slot.Zone = ZoneId{};
+        slot.Minimum = ZoneParticipation{};
+        FreeLeaseSlots_.push_back(index);
+        --ActiveLeaseCount_;
+        ++invalidated;
+    }
+    return invalidated;
+}
+
 void WorldPartitionRuntime::SetWorldTags(std::vector<std::string> tags)
 {
     WorldTags_ = std::move(tags);
 }
 
-void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
-                                   ZoneRuntime& zones)
+bool WorldPartitionRuntime::IsZoneLoadSuppressed(ZoneId zone) const
 {
+    for (const FailedLoad& record : FailedLoads_)
+        if (record.Zone == zone)
+            return true;
+    return false;
+}
+
+void WorldPartitionRuntime::ReconcileFailedLoads(AsyncZoneLoader& loader)
+{
+    // Lift first: a zone whose cooked content changed, or which left the
+    // manifest, is no longer described by the refusal that was recorded for it.
+    std::erase_if(FailedLoads_, [&](const FailedLoad& record)
+                  {
+                      const ZoneHeader* header = FindHeader(record.Zone);
+                      if (header == nullptr)
+                      {
+                          (void)loader.ClearFailure(record.Zone);
+                          return true;
+                      }
+                      if (header->CookedContentHash == record.ContentHash)
+                          return false;
+                      (void)loader.ClearFailure(record.Zone);
+                      return true;
+                  });
+
+    // Content identity is manifest policy rather than loader state, so the hash
+    // is stamped here instead of inside the failure record itself.
+    for (const ZoneLoadFailure& failure : loader.Failures())
+    {
+        if (IsZoneLoadSuppressed(failure.Zone))
+            continue;
+        const ZoneHeader* header = FindHeader(failure.Zone);
+        FailedLoads_.push_back(FailedLoad{
+            failure.Zone,
+            header != nullptr ? header->CookedContentHash : 0 });
+    }
+}
+
+void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
+                                   RuntimeWorld& world)
+{
+    ReconcileFailedLoads(loader);
+
     std::vector<ZoneDemandRecord> demand;
     std::vector<ZoneHopRank> ranks;
     if (HasManifest_ && Focus_.IsValid())
     {
-        // One resolved config for both calls: resolving only the demand call
-        // would demand zones past the base hop count that the ranks BFS never
-        // reaches, and rank-less zones sort last in load ordering.
         const WorldPartitionStreamingConfig resolved =
             ResolveRegionStreamingConfig(Manifest_, Focus_, Config_);
         ranks = ComputeZoneHopRanks(Manifest_, Index_, Focus_, resolved.HopCount, WorldTags_);
-        demand = ComputeZoneDemand(Manifest_, Index_, Focus_, Pins_, resolved,
+
+        // Leases use the existing pin-shaped pure demand input, but remain
+        // independently tokenized in the runtime. Duplicate entries are safe:
+        // ComputeZoneDemand ORs every floor onto the same zone.
+        std::vector<ZonePin> effectivePins = Pins_;
+        effectivePins.reserve(Pins_.size() + ActiveLeaseCount_);
+        for (const ParticipationLeaseSlot& lease : LeaseSlots_)
+            if (lease.Alive)
+                effectivePins.push_back(ZonePin{ lease.Zone, lease.Minimum });
+
+        demand = ComputeZoneDemand(Manifest_, Index_, Focus_, effectivePins, resolved,
                                    HasFocusPosition_ ? &FocusPosition_ : nullptr, WorldTags_);
     }
 
@@ -151,12 +291,10 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
         return nullptr;
     };
 
-    // Load: desired zones neither loaded nor in flight, closest and
-    // highest-priority first into the single task queue. Pinned zones beyond
-    // hop range have no rank and sort last among equals.
     std::vector<const ZoneDemandRecord*> toLoad;
     for (const ZoneDemandRecord& record : demand)
-        if (!zones.IsZoneLoaded(record.Zone) && !loader.IsLoading(record.Zone))
+        if (!world.IsZoneResident(record.Zone) && !loader.IsLoading(record.Zone)
+            && !IsZoneLoadSuppressed(record.Zone))
             toLoad.push_back(&record);
     std::sort(toLoad.begin(), toLoad.end(),
               [&](const ZoneDemandRecord* a, const ZoneDemandRecord* b)
@@ -181,27 +319,23 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
         if (header == nullptr)
             continue;
         ZoneLoadRecipe recipe = Recipe_(*header);
-        // Always dormant: participation flips after attach, so a mid-frame
-        // commit is invisible to every frame span and no discontinuity marks.
         loader.BeginLoad(record->Zone, std::move(recipe.Build), std::move(recipe.Finalize),
                          ZoneParticipation{}, std::move(recipe.Preload));
         Issued_.push_back(record->Zone);
     }
 
-    // Participation: loaded desired zones converge on their desired flags (the
-    // focus promotes to full; the previous focus demotes to dormant here in
-    // the same update, through its now-dormant neighbor demand).
     for (const ZoneDemandRecord& record : demand)
     {
-        if (!zones.IsZoneLoaded(record.Zone))
+        if (!world.IsZoneResident(record.Zone))
             continue;
-        if (!SameParticipation(zones.GetParticipation(record.Zone), record.Desired))
-            zones.SetParticipation(record.Zone, record.Desired);
+        const RuntimeZoneRecord* resident = world.FindZone(record.Zone);
+        if (resident != nullptr
+            && !SameParticipation(resident->Participation, record.Desired))
+        {
+            (void)world.RequestParticipation(record.Zone, record.Desired);
+        }
     }
 
-    // Cancel undemanded in-flight loads. A false return means the build is
-    // mid-flight on the task thread: retried next update, reported Lingering
-    // meanwhile. Attached or cancelled entries leave the issued list.
     std::vector<ZoneId> stillPending;
     for (ZoneId zone : Issued_)
     {
@@ -213,16 +347,12 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
     }
     Issued_ = std::move(stillPending);
 
-    // Linger and destroy: loaded, undesired, non-focus manifest zones (id
-    // order for determinism) accumulate linger time, sit dormant meanwhile,
-    // and are destroyed at or past the linger budget. Re-entering the desired
-    // set resets the clock (handled by the demand check dropping the state).
     std::erase_if(PendingDestroys_,
-                  [&](ZoneId zone) { return !zones.IsZoneLoaded(zone); });
+                  [&](ZoneId zone) { return !world.IsZoneResident(zone); });
 
     std::vector<const ZoneHeader*> loadedHeaders;
     for (const ZoneHeader& header : Manifest_.Zones)
-        if (zones.IsZoneLoaded(header.Id))
+        if (world.IsZoneResident(header.Id))
             loadedHeaders.push_back(&header);
     std::sort(loadedHeaders.begin(), loadedHeaders.end(),
               [](const ZoneHeader* a, const ZoneHeader* b)
@@ -244,9 +374,6 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
 
         if (state.Seconds >= Config_.LingerSeconds)
         {
-            // Destruction rides the drain (never mid-frame); the zone stays
-            // resident and reported until the commit runs, and must not be
-            // re-requested meanwhile.
             bool pending = false;
             for (ZoneId requested : PendingDestroys_)
                 pending |= requested == zone;
@@ -256,15 +383,14 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
                 PendingDestroys_.push_back(zone);
             }
         }
-        if (zones.GetParticipation(zone).Any())
-            zones.SetParticipation(zone, ZoneParticipation{});
+        const RuntimeZoneRecord* resident = world.FindZone(zone);
+        if (resident != nullptr && resident->Participation.Any())
+            (void)world.RequestParticipation(zone, ZoneParticipation{});
         lingering.push_back(state);
         lingerRecords.push_back(zone);
     }
     Lingering_ = std::move(lingering);
 
-    // Records: the demand set plus lingering zones (including uncancellable
-    // in-flight loads no longer demanded), ascending zone id.
     Records_ = std::move(demand);
     for (ZoneId zone : lingerRecords)
     {

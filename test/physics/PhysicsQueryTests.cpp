@@ -7,7 +7,7 @@
 #include <vector>
 
 #include <physics/PhysicsQueries.h>
-#include <physics/PhysicsScene.h> // PackEntity
+#include <physics/RigidBodyBinding.h> // PackEntity
 #include <physics/PhysicsWorld.h>
 
 namespace
