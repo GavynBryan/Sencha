@@ -655,6 +655,20 @@ public:
     void PopQueryScope()    const { assert(QueryDepth > 0); --QueryDepth; }
     bool InQueryScope()     const { return QueryDepth > 0; }
 
+    // Holds the scope across a callback that can throw. A depth left elevated
+    // rejects every later structural mutation for the lifetime of the World,
+    // so the release cannot sit on the normal return path alone.
+    struct QueryScope
+    {
+        explicit QueryScope(const World& world) : W(world) { W.PushQueryScope(); }
+        ~QueryScope() { W.PopQueryScope(); }
+
+        QueryScope(const QueryScope&) = delete;
+        QueryScope& operator=(const QueryScope&) = delete;
+
+        const World& W;
+    };
+
     // ── Frame counter ────────────────────────────────────────────────────────
 
     uint32_t CurrentFrame() const { return FrameCounter; }
