@@ -351,7 +351,7 @@ TEST(CaptionSceneCodec, ComponentRoundTripsWithReadableEnumStrings)
 
     Registry src;
     src.Components.RegisterComponent<AudioCaptionComponent>();
-    EntityId entity = src.Entities.Create();
+    EntityId entity = src.Components.CreateEntity();
     src.Components.AddComponent(entity, AudioCaptionComponent{
         .Kind = CaptionKind::Subtitle,
         .Channel = "Radio",

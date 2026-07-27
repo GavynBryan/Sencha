@@ -76,7 +76,7 @@ TEST(GameModuleLoader, LoadsRealModuleAndRegistersGameComponentByStableIdentity)
     LoggingProvider logging;
     SceneSerializationContext sctx{ logging };
 
-    const EntityId e = registry.Entities.Create();
+    const EntityId e = registry.Components.CreateEntity();
     auto parsed = JsonParse(R"({"anchor_x":1.0,"anchor_y":2.0,"anchor_z":3.0,"length":7.5})");
     ASSERT_TRUE(parsed.has_value());
     JsonReadArchive in{ *parsed };
@@ -150,7 +150,7 @@ TEST(GameModuleLoader, ModuleComponentRoundTripsThroughSceneJson)
 
     LoggingProvider logging;
     SceneSerializationContext sctx{ logging };
-    const EntityId e = source.Entities.Create();
+    const EntityId e = source.Components.CreateEntity();
     auto parsed = JsonParse(R"({"anchor_x":1.0,"anchor_y":2.0,"anchor_z":3.0,"length":7.5})");
     ASSERT_TRUE(parsed.has_value());
     JsonReadArchive in{ *parsed };
@@ -166,7 +166,7 @@ TEST(GameModuleLoader, ModuleComponentRoundTripsThroughSceneJson)
     const ComponentId id = loaded.Components.GetComponentIdByType(gs->TypeId());
     ASSERT_NE(id, InvalidComponentId);
     bool found = false;
-    for (const EntityId entity : loaded.Entities.GetAliveEntities())
+    for (const EntityId entity : loaded.Components.GetAliveEntities())
     {
         if (loaded.Components.HasComponent(entity, id))
         {

@@ -88,7 +88,6 @@ public:
     {
         DrainRemoveHooks();
         ClearOwnedTypeErased(Resources);
-        ClearOwnedTypeErased(LegacyStores);
     }
 
     World(const World&) = delete;
@@ -105,7 +104,6 @@ public:
         {
             DrainRemoveHooks();
             ClearOwnedTypeErased(Resources);
-            ClearOwnedTypeErased(LegacyStores);
             MoveFrom(std::move(other));
         }
         return *this;
@@ -655,6 +653,20 @@ public:
     void PopQueryScope()    const { assert(QueryDepth > 0); --QueryDepth; }
     bool InQueryScope()     const { return QueryDepth > 0; }
 
+    // Holds the scope across a callback that can throw. A depth left elevated
+    // rejects every later structural mutation for the lifetime of the World,
+    // so the release cannot sit on the normal return path alone.
+    struct QueryScope
+    {
+        explicit QueryScope(const World& world) : W(world) { W.PushQueryScope(); }
+        ~QueryScope() { W.PopQueryScope(); }
+
+        QueryScope(const QueryScope&) = delete;
+        QueryScope& operator=(const QueryScope&) = delete;
+
+        const World& W;
+    };
+
     // ── Frame counter ────────────────────────────────────────────────────────
 
     uint32_t CurrentFrame() const { return FrameCounter; }
@@ -790,69 +802,6 @@ public:
     bool HasResource() const
     {
         return Resources.count(std::type_index(typeid(T))) > 0;
-    }
-
-    // ── Migration-only legacy store bag ──────────────────────────────────────
-    //
-    // Phase 2 keeps older tests and examples compiling while production call
-    // sites move to archetype components. Do not use these methods for new ECS
-    // code; systems should use RegisterComponent/AddComponent/Query instead.
-
-    template <typename T, typename... Args>
-    T& Register(Args&&... args)
-    {
-        auto ptr = std::make_unique<T>(std::forward<Args>(args)...);
-        T* raw = ptr.get();
-        LegacyStores[std::type_index(typeid(T))] = {
-            raw,
-            [](void* p) { delete static_cast<T*>(p); }
-        };
-        ptr.release();
-        return *raw;
-    }
-
-    template <typename T, typename... Args>
-    T& Ensure(Args&&... args)
-    {
-        if (T* existing = TryGet<T>())
-            return *existing;
-        return Register<T>(std::forward<Args>(args)...);
-    }
-
-    template <typename T>
-    T& Get()
-    {
-        T* value = TryGet<T>();
-        assert(value != nullptr && "Legacy store not registered");
-        return *value;
-    }
-
-    template <typename T>
-    const T& Get() const
-    {
-        const T* value = TryGet<T>();
-        assert(value != nullptr && "Legacy store not registered");
-        return *value;
-    }
-
-    template <typename T>
-    T* TryGet()
-    {
-        auto it = LegacyStores.find(std::type_index(typeid(T)));
-        return it != LegacyStores.end() ? static_cast<T*>(it->second.first) : nullptr;
-    }
-
-    template <typename T>
-    const T* TryGet() const
-    {
-        auto it = LegacyStores.find(std::type_index(typeid(T)));
-        return it != LegacyStores.end() ? static_cast<const T*>(it->second.first) : nullptr;
-    }
-
-    template <typename T>
-    bool Has() const
-    {
-        return LegacyStores.count(std::type_index(typeid(T))) > 0;
     }
 
     // ── Entity introspection ─────────────────────────────────────────────────
@@ -1110,9 +1059,6 @@ private:
     std::unordered_map<
         std::type_index,
         std::pair<void*, std::function<void(void*)>>> Resources;
-    std::unordered_map<
-        std::type_index,
-        std::pair<void*, std::function<void(void*)>>> LegacyStores;
 
     mutable uint32_t QueryDepth = 0;
     uint32_t LifecycleHookDepth = 0;
@@ -1147,7 +1093,6 @@ private:
         TypeToId = std::move(other.TypeToId);
         NextComponentId = other.NextComponentId;
         Resources = std::move(other.Resources);
-        LegacyStores = std::move(other.LegacyStores);
         QueryDepth = other.QueryDepth;
         LifecycleHookDepth = other.LifecycleHookDepth;
         FrameCounter = other.FrameCounter;
@@ -1164,7 +1109,6 @@ private:
         EntityCreated = other.EntityCreated;
 
         other.Resources.clear();
-        other.LegacyStores.clear();
         other.QueryDepth = 0;
         other.LifecycleHookDepth = 0;
         other.EntityCreated = false;

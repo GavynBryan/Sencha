@@ -131,6 +131,9 @@ public:
     // retained across frames, so steady-state view construction allocates
     // nothing. The reference is valid until EndFrameView.
     [[nodiscard]] const FrameZoneView& BuildFrameView();
+
+    // Ends the view and advances the entity world's change epoch, so the pair
+    // brackets one frame of writes for Changed<T>.
     void EndFrameView();
 
 private:

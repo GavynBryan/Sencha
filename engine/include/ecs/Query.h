@@ -68,9 +68,9 @@ struct ChunkView
     }
 
     // Returns mutable span.
-    // Column version is bumped once per chunk by ForEachChunk after the callback
-    // returns — conservative semantics: bump happens whether or not any row was
-    // actually written. See docs/ecs/decisions.md D0.9.
+    // Column version is bumped once per chunk by ForEachChunk when the callback
+    // ends, by return or by throw. Conservative semantics: the bump happens
+    // whether or not any row was actually written. See docs/ecs/decisions.md D0.9.
     template <typename T>
     std::span<T> Write()
     {
@@ -176,7 +176,7 @@ private:
         if constexpr (FilterByPartition)
             assert(partitions != nullptr);
 
-        W->PushQueryScope();
+        const World::QueryScope queryScope(*W);
         RebuildIfStale();
 
         const uint32_t frame = W->CurrentFrame();
@@ -205,14 +205,32 @@ private:
                 if (!PassesChangedFilter(chunk, referenceFrame)) continue;
 
                 view.RawChunk = &chunk;
-                fn(view);
 
-                BumpWriteVersions(chunk, view, frame, std::index_sequence_for<Accessors...>{});
+                // Rows the callback wrote before throwing are already in the
+                // column, so the version has to move with them. Change
+                // detection is chunk-conservative, so publishing a write the
+                // callback did not finish costs a re-read; withholding one it
+                // did finish hides the write from every Changed<T> consumer.
+                {
+                    const ScopedWritePublish publish{ *this, chunk, view, frame };
+                    fn(view);
+                }
             }
         }
-
-        W->PopQueryScope();
     }
+
+    struct ScopedWritePublish
+    {
+        ~ScopedWritePublish()
+        {
+            Q.BumpWriteVersions(C, V, Frame, std::index_sequence_for<Accessors...>{});
+        }
+
+        Query&                         Q;
+        Chunk&                         C;
+        const ChunkView<Accessors...>& V;
+        uint32_t                       Frame;
+    };
 
     void BuildSignatures()
     {

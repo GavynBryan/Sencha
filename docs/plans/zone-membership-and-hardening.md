@@ -163,11 +163,10 @@ One commit, or one per item if any turns out to have live consumers.
   separate worlds with colliding `EntityId`s, so the field to keep is one narrow
   document discriminator, not three fields plus a branch on `Kind`.
 
-`Registry` and `RegistryEntityFacade` themselves are **not** cut here. The facade
-describes itself as migration-only and its runtime migration is complete, but it
-is now the editor document's storage container (`EditorDocument.cpp`). The honest
-classification is misplaced rather than dead: an editor-shaped container living in
-`engine/include/world/registry/`. Relocating it is editor work and out of scope.
+`Registry` itself is **not** cut here. It is now the editor document's storage
+container (`EditorDocument.cpp`). The honest classification is misplaced rather
+than dead: an editor-shaped container living in `engine/include/world/registry/`.
+Relocating it is editor work and out of scope.
 
 Tests: existing suites plus the module ABI check, since `RenderEntityKey` layout
 changes. `scripts/check_module_abi.sh`, and `sizeof`/`offsetof` coverage where the
