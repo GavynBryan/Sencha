@@ -18,6 +18,12 @@ RuntimeWorld::RuntimeWorld(const WorldComponentSchema& schema)
     // Partition zero is persistent and never receives a RuntimeZoneRecord.
     ZonesByPartition_.resize(1);
     FrameViewScratch_.Entities = &Entities_;
+
+    // Column version 0 is the "never written" sentinel Changed<T> compares
+    // against. Starting the driven world at epoch 1 keeps writes made before
+    // the first frame ends (startup, zone import) distinguishable from a
+    // column no one has ever written.
+    Entities_.AdvanceFrame();
 }
 
 RuntimeWorld::~RuntimeWorld()
@@ -374,6 +380,13 @@ void RuntimeWorld::EndFrameView()
 {
     assert(FrameViewLive_ && "EndFrameView called without a live FrameZoneView");
     FrameViewLive_ = false;
+
+    // Closing the view closes the frame's change epoch with it. Writes are
+    // stamped with the frame that produced them, so a system running next
+    // frame can ask Changed<T> what moved during this one. Without the
+    // advance every write in the process shares one frame number and no
+    // consumer can tell them apart.
+    Entities_.AdvanceFrame();
 }
 
 StoragePartitionId RuntimeWorld::AllocatePartition()

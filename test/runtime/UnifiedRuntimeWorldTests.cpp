@@ -1,4 +1,5 @@
 #include <components/ActiveCameraService.h>
+#include <ecs/Query.h>
 #include <ecs/WorldComponentSchema.h>
 #include <world/RuntimeWorld.h>
 
@@ -490,4 +491,63 @@ TEST(UnifiedRuntimeWorld, AFrameViewExcludesADetachingZone)
     EXPECT_FALSE(view.Resident.Contains(partition))
         << "a detaching zone was still offered to frame systems";
     runtime.EndFrameView();
+}
+
+// Change detection compares a column's last-written frame against a reference
+// frame, so the runtime has to close an epoch every frame or every write in the
+// process shares one frame number. Frame 0 is the "never written" sentinel, so
+// the driven world starts at 1 and writes made before the first frame ends
+// still read as writes.
+
+TEST(UnifiedRuntimeWorld, DrivenWorldStartsPastTheNeverWrittenSentinel)
+{
+    const WorldComponentSchema schema = MakeRuntimeSchema();
+    RuntimeWorld runtime(schema);
+
+    EXPECT_EQ(runtime.Entities().CurrentFrame(), 1u);
+}
+
+TEST(UnifiedRuntimeWorld, EndingTheFrameViewAdvancesTheChangeEpoch)
+{
+    const WorldComponentSchema schema = MakeRuntimeSchema();
+    RuntimeWorld runtime(schema);
+
+    const uint32_t before = runtime.Entities().CurrentFrame();
+
+    (void)runtime.BuildFrameView();
+    runtime.EndFrameView();
+
+    EXPECT_EQ(runtime.Entities().CurrentFrame(), before + 1);
+}
+
+TEST(UnifiedRuntimeWorld, ChangedSeesOnlyTheFrameThatWroteTheComponent)
+{
+    const WorldComponentSchema schema = MakeRuntimeSchema();
+    RuntimeWorld runtime(schema);
+    World& entities = runtime.Entities();
+
+    const EntityId entity = entities.CreateEntity();
+    entities.AddComponent(entity, RuntimeWorldValue{ 1 });
+
+    (void)runtime.BuildFrameView();
+    runtime.EndFrameView();
+    const uint32_t writeFrame = entities.CurrentFrame() - 1;
+
+    Query<Write<RuntimeWorldValue>> writer(entities);
+    writer.ForEachChunk([](auto& view) {
+        view.template Write<RuntimeWorldValue>()[0].Value = 2;
+    });
+
+    (void)runtime.BuildFrameView();
+    runtime.EndFrameView();
+
+    Query<Changed<RuntimeWorldValue>> changed(entities);
+
+    int sinceWriteFrame = 0;
+    changed.ForEachChunk([&](auto&) { ++sinceWriteFrame; }, writeFrame);
+    EXPECT_EQ(sinceWriteFrame, 1) << "the second frame's write was not visible";
+
+    int sinceLatest = 0;
+    changed.ForEachChunk([&](auto&) { ++sinceLatest; }, entities.CurrentFrame());
+    EXPECT_EQ(sinceLatest, 0) << "a stale write still reads as changed";
 }
