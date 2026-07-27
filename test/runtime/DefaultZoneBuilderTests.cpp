@@ -32,7 +32,7 @@ TEST(DefaultZoneBuilder, CreateEntityAddsTransformComponents)
             Quatf::Identity(),
             Vec3d::One()));
 
-    EXPECT_TRUE(registry.Entities.IsAlive(entity));
+    EXPECT_TRUE(registry.Components.IsAlive(entity));
     EXPECT_TRUE(
         registry.Components.HasComponent<LocalTransform>(entity));
     EXPECT_TRUE(

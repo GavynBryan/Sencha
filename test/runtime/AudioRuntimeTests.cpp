@@ -178,7 +178,7 @@ TEST(AudioClipCodec, ComponentRoundTripsThroughSceneJson)
 
     Registry source;
     source.Components.RegisterComponent<AudioSourceComponent>();
-    const EntityId entity = source.Entities.Create();
+    const EntityId entity = source.Components.CreateEntity();
     source.Components.AddComponent(
         entity,
         AudioSourceComponent{

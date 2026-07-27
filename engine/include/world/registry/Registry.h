@@ -14,52 +14,12 @@ enum class RegistryKind : uint8_t
     Transient,
 };
 
-//=============================================================================
-// RegistryEntityFacade
-//
-// Migration-only facade that preserves older `registry.Entities` call sites
-// while entity ownership lives inside `registry.Components` (World).
-//=============================================================================
-struct RegistryEntityFacade
-{
-    explicit RegistryEntityFacade(World* world = nullptr)
-        : Target(world)
-    {
-    }
-
-    EntityId Create() { return Target->CreateEntity(); }
-    void Destroy(EntityId entity) { Target->DestroyEntity(entity); }
-    bool IsAlive(EntityId entity) const { return Target->IsAlive(entity); }
-    size_t Count() const { return Target->EntityCount(); }
-    std::vector<EntityId> GetAliveEntities() const { return Target->GetAliveEntities(); }
-
-    World* Target = nullptr;
-};
-
 struct Registry
 {
     Registry() = default;
 
-    Registry(Registry&& other) noexcept
-        : Id(other.Id)
-        , Kind(other.Kind)
-        , Zone(other.Zone)
-        , Components(std::move(other.Components))
-        , Resources(std::move(other.Resources))
-        , Entities(&Components)
-    {
-    }
-
-    Registry& operator=(Registry&& other) noexcept
-    {
-        Id = other.Id;
-        Kind = other.Kind;
-        Zone = other.Zone;
-        Components = std::move(other.Components);
-        Resources = std::move(other.Resources);
-        Entities.Target = &Components;
-        return *this;
-    }
+    Registry(Registry&&) = default;
+    Registry& operator=(Registry&&) = default;
 
     Registry(const Registry&) = delete;
     Registry& operator=(const Registry&) = delete;
@@ -73,5 +33,4 @@ struct Registry
     // "components"; the type is now the ECS World, not a sparse-set registry.
     World Components;
     ResourceRegistry Resources;
-    RegistryEntityFacade Entities{ &Components };
 };
