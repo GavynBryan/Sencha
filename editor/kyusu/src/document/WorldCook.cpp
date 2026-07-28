@@ -4,7 +4,6 @@
 #include "EditorDocument.h"
 #include "WorldDocument.h"
 
-#include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
@@ -15,9 +14,10 @@
 
 #include <algorithm>
 #include <fstream>
-#include <iterator>
 #include <optional>
 #include <span>
+#include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -25,46 +25,27 @@
 namespace
 {
 
-bool ValidateGateBindingsInScene(const std::filesystem::path& path,
-                                 const std::vector<DockId>& docks,
-                                 std::string* error)
+// A gate binding names a dock the cook must have compiled; a binding left
+// behind by a deleted dock would cook into content nothing can open.
+bool ValidateGateBindings(const Registry& registry,
+                          const std::vector<DockId>& docks,
+                          std::string_view sceneLabel,
+                          std::string* error)
 {
-    std::ifstream file(path, std::ios::binary);
-    const std::string text((std::istreambuf_iterator<char>(file)),
-                           std::istreambuf_iterator<char>());
-    const auto root = JsonParse(text);
-    if (!root)
+    for (EntityId entity : registry.Components.GetAliveEntities())
     {
-        if (error != nullptr)
-            *error = "cannot inspect gate bindings in '" + path.generic_string() + "'";
-        return false;
-    }
-    const JsonValue* entities = root->Find("entities");
-    if (entities == nullptr || !entities->IsArray())
-        return true;
-
-    for (std::size_t index = 0; index < entities->AsArray().size(); ++index)
-    {
-        const JsonValue* components = entities->AsArray()[index].Find("components");
-        const JsonValue* binding = components != nullptr
-            ? components->Find("Dock Gate Binding") : nullptr;
-        const JsonValue* dockValue = binding != nullptr ? binding->Find("dock") : nullptr;
-        if (dockValue == nullptr)
+        const DockGateBinding* binding =
+            registry.Components.TryGet<DockGateBinding>(entity);
+        if (binding == nullptr)
             continue;
-        if (!dockValue->IsString())
+        if (binding->Id.IsValid()
+            && std::find(docks.begin(), docks.end(), binding->Id) != docks.end())
         {
-            if (error != nullptr)
-                *error = "gate binding in '" + path.generic_string()
-                    + "' has a malformed dock id";
-            return false;
-        }
-        const std::optional<DockId> dock = DockIdFromString(dockValue->AsString());
-        if (dock && std::find(docks.begin(), docks.end(), *dock) != docks.end())
             continue;
+        }
         if (error != nullptr)
-            *error = "gate binding in '" + path.generic_string()
-                + "' entity " + std::to_string(index) + " references missing dock "
-                + dockValue->AsString();
+            *error = "gate binding in '" + std::string(sceneLabel)
+                + "' references missing dock " + DockIdToString(binding->Id);
         return false;
     }
     return true;
@@ -270,21 +251,17 @@ std::optional<WorldCookInput> CollectWorldCookInput(
     authoredDocks.reserve(dockInputs.size());
     for (const AuthoredDockCookInput& dockInput : dockInputs)
         authoredDocks.push_back(dockInput.Dock.Id);
-    for (const ZoneHeader& zone : world.Manifest().Zones)
+    for (std::size_t zoneIndex = 0; zoneIndex < documents.size(); ++zoneIndex)
     {
         std::string bindingError;
-        if (!ValidateGateBindingsInScene(world.ResolveScenePath(zone.SceneRef),
-                                         authoredDocks, &bindingError))
+        if (!ValidateGateBindings(documents[zoneIndex]->GetRegistry(), authoredDocks,
+                                  data->Manifest.Zones[zoneIndex].Name, &bindingError))
             return fail("CookWorld: " + bindingError);
     }
-    if (!world.Manifest().WorldSceneRef.empty())
-    {
-        std::string bindingError;
-        if (!ValidateGateBindingsInScene(
-                world.ResolveScenePath(world.Manifest().WorldSceneRef),
-                authoredDocks, &bindingError))
-            return fail("CookWorld: " + bindingError);
-    }
+    std::string worldBindingError;
+    if (!ValidateGateBindings(registry, authoredDocks, "world scene",
+                              &worldBindingError))
+        return fail("CookWorld: " + worldBindingError);
     return WorldCookInput(std::move(data));
 }
 

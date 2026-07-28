@@ -121,6 +121,44 @@ TEST_F(WorldCookTest, RefusesGateBindingToMissingDock)
     EXPECT_NE(cooked.Error.find("references missing dock"), std::string::npos);
 }
 
+TEST_F(WorldCookTest, RefusesGateBindingInAnUnopenedZone)
+{
+    // Live validation only sees open zones, so the bad binding is authored,
+    // saved, and then reached through a fresh load that leaves its zone closed.
+    ZoneId second{};
+    {
+        WorldDocument world(Logging);
+        world.NewWorld("TestWorld");
+        const ZoneId first = world.Manifest().Zones[0].Id;
+        second = world.AddZone(world.Manifest().Graphs[0].Id, "Second");
+        ASSERT_TRUE(world.SetZoneBounds(second,
+            Aabb3d::FromMinMax(Vec3d{ 24, 0, -5 }, Vec3d{ 40, 4, 5 })));
+        ASSERT_TRUE(world.SetFocusZone(second));
+        const EntityId gate = world.FocusDocument().GetScene().CreateEntity(
+            Vec3d{ 32, 0, 0 });
+        world.FocusDocument().GetScene().GetRegistry().Components.AddComponent(
+            gate, DockGateBinding{ DockId{ 0xdead } });
+        world.FocusDocument().MarkDirty();
+        // Focus back before saving: the reload restores the recorded focus, and
+        // the zone under test has to come back closed.
+        ASSERT_TRUE(world.SetFocusZone(first));
+        ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+    }
+
+    WorldDocument reloaded(Logging);
+    ASSERT_TRUE(reloaded.LoadWorld(WorldPath()));
+    if (reloaded.IsZoneOpen(second))
+        ASSERT_TRUE(reloaded.UnloadZone(second));
+    ASSERT_FALSE(reloaded.IsZoneOpen(second))
+        << "the zone under test must be closed, or live validation covers it";
+
+    const WorldCookResult cooked = CookWorld(reloaded, Root, 16.0, Logging, nullptr);
+    EXPECT_FALSE(cooked.Success);
+    EXPECT_NE(cooked.Error.find("references missing dock"), std::string::npos)
+        << cooked.Error;
+    EXPECT_NE(cooked.Error.find("Second"), std::string::npos) << cooked.Error;
+}
+
 TEST_F(WorldCookTest, RefusesLiveWorldValidationErrors)
 {
     WorldDocument world(Logging);
