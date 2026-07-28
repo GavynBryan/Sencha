@@ -27,6 +27,7 @@
 #include <render/SpotLightComponent.h>
 #include <render/StaticMeshComponent.h>
 #include <render/ZoneLightmapComponent.h>
+#include <world/ComponentManifest.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/RuntimeWorld.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
@@ -226,6 +227,23 @@ public:
     int UnregisterCalls = 0;
 };
 } // namespace
+
+TEST(RuntimeComponentSchema, EngineSchemaCoversEverySceneComponent)
+{
+    // A component reaches the serializer through the manifest. Without a column
+    // to deserialize into, that only fails once a scene naming it is loaded, so
+    // the coverage is asserted here rather than left to a startup check.
+    WorldComponentSchema schema;
+    RegisterEngineRuntimeComponents(schema);
+    schema.Seal();
+
+    ForEachSceneComponent([&]<typename T>(ComponentTag<T>)
+    {
+        EXPECT_TRUE(schema.Contains(ResolveComponentTypeId<T>()))
+            << "manifest component " << TypeSchema<T>::Name
+            << " has no runtime storage";
+    });
+}
 
 TEST(RuntimeComponentSchema, EngineSchemaUsesCanonicalComponentIds)
 {
