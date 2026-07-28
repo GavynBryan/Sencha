@@ -283,7 +283,6 @@ TEST_F(WorldPartitionRuntimeTest, DockCrossingWaitsForDestinationPhysicsResidenc
     Partition.SetFocus(Vec3d{ 10, 1, 0 });
     Step();
     EXPECT_EQ(Partition.FocusZone(), kHub);
-    EXPECT_FALSE(Partition.LastCrossing().has_value());
     EXPECT_EQ(Partition.LastTraversal().Status,
               DockTraversalStatus::BlockedDestinationNotReady);
     EXPECT_LT(Partition.LastTraversal().SafeSourcePosition.X, 8.5f);
@@ -294,7 +293,7 @@ TEST_F(WorldPartitionRuntimeTest, DockCrossingWaitsForDestinationPhysicsResidenc
     Step();
     Partition.SetFocus(Vec3d{ 10, 1, 0 });
     Step();
-    ASSERT_TRUE(Partition.LastCrossing().has_value());
+    EXPECT_EQ(Partition.LastTraversal().Status, DockTraversalStatus::Crossed);
     EXPECT_EQ(Partition.FocusZone(), kHallway);
 }
 
@@ -307,7 +306,7 @@ TEST_F(WorldPartitionRuntimeTest, CrossingRecordsTraversalGraceReason)
 
     Partition.SetFocus(Vec3d{ 10, 1, 0 });
     Step(0.1);
-    ASSERT_TRUE(Partition.LastCrossing().has_value());
+    ASSERT_EQ(Partition.LastTraversal().Status, DockTraversalStatus::Crossed);
 
     const ZoneDemandRecord* source = nullptr;
     for (const ZoneDemandRecord& record : Partition.DemandRecords())

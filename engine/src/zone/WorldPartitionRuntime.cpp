@@ -68,7 +68,6 @@ bool WorldPartitionRuntime::LoadManifest(WorldPartitionManifest manifest, std::s
     Focus_ = ZoneId{};
     SuppressedDock_ = {};
     LastTraversal_ = {};
-    LastCrossing_.reset();
     HasFocusPosition_ = false;
     HasPendingFocusPosition_ = false;
     FocusCapsuleRadius_ = 0.0f;
@@ -151,7 +150,6 @@ void WorldPartitionRuntime::RelocateFocus(Vec3d position)
     HasPendingFocusPosition_ = false;
     SuppressedDock_ = {};
     LastTraversal_ = {};
-    LastCrossing_.reset();
     TraversalGrace_ = {};
 }
 
@@ -161,7 +159,6 @@ void WorldPartitionRuntime::SetFocus(ZoneId zone)
     Focus_ = zone;
     SuppressedDock_ = {};
     LastTraversal_ = {};
-    LastCrossing_.reset();
     TraversalGrace_ = {};
     HasPendingFocusPosition_ = false;
     if (const ZoneHeader* header = FindHeader(zone); header != nullptr
@@ -345,7 +342,6 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
 {
     ReconcileFailedLoads(loader);
 
-    LastCrossing_.reset();
     LastTraversal_ = {};
     if (HasManifest_ && Focus_.IsValid() && HasPendingFocusPosition_)
     {
@@ -366,11 +362,11 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
                 .ResidentPhysicsZones = residentPhysicsZones,
                 .RequireResidentDestination = true,
             });
-        if (LastTraversal_.Status == DockTraversalStatus::Crossed)
-            LastCrossing_ = LastTraversal_;
-        else if (LastTraversal_.Status
-                 == DockTraversalStatus::BlockedDestinationNotReady)
+        if (LastTraversal_.Status
+            == DockTraversalStatus::BlockedDestinationNotReady)
+        {
             ++LateTraversalCount_;
+        }
         Focus_ = state.Current;
         SuppressedDock_ = state.SuppressedDock;
         DockSweepPosition_ = state.PreviousPosition;
@@ -379,8 +375,8 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
             ? LastTraversal_.SafeSourcePosition : PendingFocusPosition_;
         HasFocusPosition_ = true;
         HasPendingFocusPosition_ = false;
-        if (LastCrossing_)
-            TraversalGrace_ = { LastCrossing_->From, 0.0 };
+        if (LastTraversal_.Status == DockTraversalStatus::Crossed)
+            TraversalGrace_ = { LastTraversal_.From, 0.0 };
     }
 
     std::vector<ZoneDemandRecord> demand;
@@ -427,7 +423,9 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
             previous->Sources.TraversalGrace = true;
             AddRuntimeReason(*previous,
                              { ZoneDemandReason::TraversalGrace, Focus_,
-                               LastCrossing_ ? LastCrossing_->Dock.Value : 0,
+                               LastTraversal_.Status
+                                       == DockTraversalStatus::Crossed
+                                   ? LastTraversal_.Dock.Value : 0,
                                0, {} });
         }
         else

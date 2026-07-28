@@ -74,10 +74,9 @@ public:
     [[nodiscard]] std::optional<ZoneId> ZoneAt(Vec3d position) const;
     [[nodiscard]] ZoneContainmentResult ResolveZoneAt(
         Vec3d position, ZoneId preferred = {}) const;
-    [[nodiscard]] const std::optional<DockTraversalResult>& LastCrossing() const
-    {
-        return LastCrossing_;
-    }
+    // The most recent Update's sweep. Status distinguishes no movement, a
+    // completed crossing, and a crossing held back because the destination was
+    // not resident; it is reset at the top of every Update.
     [[nodiscard]] const DockTraversalResult& LastTraversal() const
     {
         return LastTraversal_;
@@ -169,7 +168,6 @@ private:
     float FocusCapsuleCylinderHalfHeight_ = 0.0f;
     DockId SuppressedDock_;
     DockTraversalResult LastTraversal_;
-    std::optional<DockTraversalResult> LastCrossing_;
     uint64_t LateTraversalCount_ = 0;
     LingerState TraversalGrace_;
     std::vector<ZonePin> Pins_;
