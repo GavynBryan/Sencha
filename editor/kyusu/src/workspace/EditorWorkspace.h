@@ -1,6 +1,7 @@
 #pragma once
 
 #include "BrushManipulationSink.h"
+#include "PendingBridgeEdit.h"
 
 #include "authoring/EditorComponentAdapter.h"
 #include "commands/CommandStack.h"
@@ -66,9 +67,9 @@ public:
     // PENDING preview entity (adjust Segments live, Apply commits, Cancel or
     // Undo drops it); same-brush bridges stay immediate mesh edits.
     void BridgeSelectedEdges(int segments);
-    [[nodiscard]] bool HasPendingBridge() const { return Bridge == BridgeState::Pending; }
+    [[nodiscard]] bool HasPendingBridge() const { return BridgeEdit.HasPending(); }
     // Regenerates the pending preview with a new segment count.
-    void SetPendingBridgeSegments(int segments);
+    void SetPendingBridgeSegments(int segments) { BridgeEdit.SetSegments(segments); }
     void CommitPendingBridge();
     void CancelPendingBridge();
 
@@ -200,31 +201,9 @@ public:
     // so workspace-level edits (DeleteSelection) route through the same undo history.
     CommandStack* Commands = nullptr;
 
-    // Cross-brush bridge lifecycle. Invariants: Bridge == Pending exactly while
-    // PendingBridgeData holds a live preview entity (with the resolved paths it
-    // regenerates from) and the command stack's pending-edit scope is open for
-    // it. Transitions happen only in BeginPendingBridge (Idle -> Pending) and
-    // CommitPendingBridge / CancelPendingBridge (Pending -> Idle).
-    enum class BridgeState : std::uint8_t { Idle, Pending };
-    struct PendingBridge
-    {
-        EntityId Entity = {};
-        BrushOps::BridgePathSpec PathA;
-        BrushOps::BridgePathSpec PathB;
-        FaceMaterial Material;
-        int Segments = 1;
-        // The scene and document the preview entity lives in, captured at
-        // begin: a focus change swaps ActiveDocument, and cancel must destroy
-        // the entity where it was created.
-        EditorScene* Scene = nullptr;
-        EditorDocument* Document = nullptr;
-        std::vector<SelectableRef> BeforeSelection;
-    };
-    BridgeState Bridge = BridgeState::Idle;
-    PendingBridge PendingBridgeData;
-
-    void BeginPendingBridge(PendingBridge pending);
-    void RegeneratePendingBridge();
+    // Cross-brush bridge preview. Owns the staged entity, the paths it
+    // regenerates from, and the pending-edit scope that goes with them.
+    PendingBridgeEdit BridgeEdit;
 
     // Pending face inset / edge bevel: a panel-driven preview over the
     // captured selection, committed as one undo step. Invariants mirror the

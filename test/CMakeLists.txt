@@ -253,6 +253,7 @@ if(EDITOR_TEST_SOURCES)
         # glyph macros, both header-only, so no render or ImGui runtime links.
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/workspace/EditorWorkspace.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/workspace/BrushManipulationSink.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/workspace/PendingBridgeEdit.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/authoring/EditorComponentAdapter.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/authoring/WorldDockEditorAdapter.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshEditService.cpp
