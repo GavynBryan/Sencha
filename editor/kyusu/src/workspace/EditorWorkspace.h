@@ -1,29 +1,21 @@
 #pragma once
 
-#include "BrushManipulationSink.h"
 #include "PendingBridgeEdit.h"
 #include "PendingElementEdit.h"
+#include "WorkspaceInteractionRuntime.h"
 
 #include "authoring/EditorComponentAdapter.h"
 #include "commands/CommandStack.h"
 #include "document/EditorEntityRecipe.h"
-#include "editmodes/EditSessionHost.h"
-#include "editmodes/ManipulatorSession.h"
-#include "input/ViewportToolDispatcher.h"
 #include "editmodes/PivotState.h"
-#include "interaction/InteractionHost.h"
 #include "meshedit/ActiveMaterialState.h"
 #include "meshedit/FaceMaterialEdits.h"
 #include "meshedit/MeshEditService.h"
 #include "overlay/EditorOverlayState.h"
-#include "render/PreviewBuffer.h"
 #include "selection/SelectionContext.h"
 #include "selection/SelectionService.h"
-#include "tools/ToolContext.h"
-#include "tools/ToolRegistry.h"
 #include "viewport/GridSettings.h"
 #include "viewport/WorldViewSettings.h"
-#include "viewport/MarqueeState.h"
 #include "viewport/Picking.h"
 #include "viewport/ViewportLayout.h"
 
@@ -174,13 +166,10 @@ public:
     GridSettings Grid;
     BrushCreationSettings BrushCreate;
     EdgeCutSettings EdgeCut;
-    MarqueeState Marquee;
-    EditorOverlayState Overlay;
     PivotState Pivot;
-    InteractionHost Interactions;
-    PreviewBuffer Preview;
-    EditSessionHost Sessions;
-    std::unique_ptr<BrushManipulationSink> Sink;
+    // The document-bound editing stack and the transient state that dies with
+    // the edited document.
+    WorkspaceInteractionRuntime Interaction;
     // Keeps the deselect observer alive (SelectionService holds it weakly); clears
     // the transient pivot override whenever the selection changes.
     std::shared_ptr<SelectionService::ObserverFn> PivotObserver;
@@ -191,12 +180,6 @@ public:
     // Entity/mesh selection and Zone selection are mutually exclusive while
     // still sharing one visible selection across panels and viewport affordances.
     std::shared_ptr<SelectionService::ObserverFn> ZoneSelectionObserver;
-    // Non-owning; the EditSessionHost owns the session. Held so the overlay
-    // renderer can ask it for manipulator visuals.
-    ManipulatorSession* Manipulators = nullptr;
-    std::unique_ptr<ToolContext> ActiveToolContext;
-    std::unique_ptr<ToolRegistry> Tools;
-    std::unique_ptr<ViewportToolDispatcher> Dispatcher;
     // Non-owning; the command stack passed to Init (owned by EditorServices), held
     // so workspace-level edits (DeleteSelection) route through the same undo history.
     CommandStack* Commands = nullptr;

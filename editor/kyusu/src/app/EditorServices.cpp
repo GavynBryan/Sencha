@@ -2,7 +2,10 @@
 
 #include "EditorFrameHook.h"
 #include "viewport/EditorViewportCameraSystem.h"
+#include "editmodes/ManipulatorSession.h"
+#include "workspace/BrushManipulationSink.h"
 #include "input/KeymapFile.h"
+#include "input/ViewportToolDispatcher.h"
 #include "input/SdlEventTranslation.h"
 #include "input/UiInputGuard.h"
 #include "commands/CompositeCommand.h"
@@ -216,11 +219,11 @@ void EditorServices::BuildInput()
         { "mode.vertex",           SDLK_2,      {},                              [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Vertex); } },
         { "mode.edge",             SDLK_3,      {},                              [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Edge); } },
         { "mode.face",             SDLK_4,      {},                              [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Face); } },
-        { "gizmo.resize",          SDLK_Q,      { .Shift = true },               [this] { Workspace->Manipulators->SetTransformMode(TransformMode::Resize); } },
-        { "gizmo.move",            SDLK_W,      { .Shift = true },               [this] { Workspace->Manipulators->SetTransformMode(TransformMode::Move); } },
-        { "gizmo.rotate",          SDLK_E,      { .Shift = true },               [this] { Workspace->Manipulators->SetTransformMode(TransformMode::Rotate); } },
-        { "gizmo.scale",           SDLK_R,      { .Shift = true },               [this] { Workspace->Manipulators->SetTransformMode(TransformMode::Scale); } },
-        { "gizmo.space",           SDLK_G,      { .Ctrl = true },                [this] { Workspace->Manipulators->CycleTransformSpace(); } },
+        { "gizmo.resize",          SDLK_Q,      { .Shift = true },               [this] { Workspace->Interaction.Manipulators->SetTransformMode(TransformMode::Resize); } },
+        { "gizmo.move",            SDLK_W,      { .Shift = true },               [this] { Workspace->Interaction.Manipulators->SetTransformMode(TransformMode::Move); } },
+        { "gizmo.rotate",          SDLK_E,      { .Shift = true },               [this] { Workspace->Interaction.Manipulators->SetTransformMode(TransformMode::Rotate); } },
+        { "gizmo.scale",           SDLK_R,      { .Shift = true },               [this] { Workspace->Interaction.Manipulators->SetTransformMode(TransformMode::Scale); } },
+        { "gizmo.space",           SDLK_G,      { .Ctrl = true },                [this] { Workspace->Interaction.Manipulators->CycleTransformSpace(); } },
         { "grid.origin_selection", SDLK_G,      { .Shift = true },               [this] { Workspace->SetGridOriginToSelection(); } },
         { "grid.align_face",       SDLK_G,      { .Alt = true },                 [this] { Workspace->AlignGridToSelectedFace(); } },
         { "grid.reset",            SDLK_G,      { .Ctrl = true, .Shift = true }, [this] { Workspace->ResetGrid(); } },
@@ -264,7 +267,7 @@ void EditorServices::BuildInput()
             return capture;
         }));
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Navigation->OnInput(e, cap); });
-    Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Workspace->Dispatcher->OnInput(e, cap); });
+    Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Workspace->Interaction.Dispatcher->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture&) { return Shortcuts->OnInput(e); });
 
     // The pointer's owner drives the ImGui input gate: while a viewport gesture
@@ -347,9 +350,9 @@ void EditorServices::BuildViewportRendering()
         *Workspace->Affordances,
         Workspace->Selection,
         Workspace->MeshEdit,
-        Workspace->Overlay,
-        Workspace->Preview,
-        [this]() -> const ManipulatorSession* { return Workspace->Manipulators; },
+        Workspace->Interaction.Overlay,
+        Workspace->Interaction.Preview,
+        [this]() -> const ManipulatorSession* { return Workspace->Interaction.Manipulators; },
         Workspace->Grid,
         Workspace->WorldView,
         engine.Logging(),
@@ -404,8 +407,8 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     // panels so the work-area space they reserve is subtracted from the full-bleed
     // viewport panel below.
     Toolbar = std::make_unique<EditorToolbar>(
-        [this] { return Workspace->Tools.get(); },
-        [this] { return Workspace->Manipulators; },
+        [this] { return Workspace->Interaction.Tools.get(); },
+        [this] { return Workspace->Interaction.Manipulators; },
         Workspace->MeshEdit, Workspace->Grid, Workspace->WorldView,
         Workspace->EdgeCut);
     // The Cook/Play/Stop group routes through the same paths as the cook/play/stop
@@ -458,8 +461,8 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         .RotateInPlane = [this] { Workspace->RotateGridInPlane(90.0f); },
         .Reset = [this] { Workspace->ResetGrid(); },
         .ToggleMoveOrigin = [this]
-        { Workspace->Manipulators->SetEditingGridOrigin(!Workspace->Manipulators->IsEditingGridOrigin()); },
-        .IsMovingOrigin = [this] { return Workspace->Manipulators->IsEditingGridOrigin(); },
+        { Workspace->Interaction.Manipulators->SetEditingGridOrigin(!Workspace->Interaction.Manipulators->IsEditingGridOrigin()); },
+        .IsMovingOrigin = [this] { return Workspace->Interaction.Manipulators->IsEditingGridOrigin(); },
     });
     Toolbar->SetTransformControls({
         .SetOriginToPivot = [this] { Workspace->SetSelectedBrushOriginToPivot(); },
@@ -472,11 +475,11 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         .HasSelection = [this] { return !Workspace->Selection.GetSelection().empty(); },
     });
     StatusBar = std::make_unique<EditorStatusBar>(
-        [this] { return Workspace->Tools.get(); },
-        [this]() -> const ManipulatorSession* { return Workspace->Manipulators; },
+        [this] { return Workspace->Interaction.Tools.get(); },
+        [this]() -> const ManipulatorSession* { return Workspace->Interaction.Manipulators; },
         Workspace->Layout, Workspace->Selection, Workspace->Grid,
         Workspace->MeshEdit);
-    ToolSidebar = std::make_unique<EditorToolSidebar>([this] { return Workspace->Tools.get(); });
+    ToolSidebar = std::make_unique<EditorToolSidebar>([this] { return Workspace->Interaction.Tools.get(); });
     UiFeature->AddChrome([this] { Toolbar->Draw(); });
     UiFeature->AddChrome([this] { StatusBar->Draw(); });
     UiFeature->AddChrome([this] { ToolSidebar->Draw(); });
@@ -495,12 +498,12 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
             orthoId = viewport->Id;
     }
     auto perspectivePanel = std::make_unique<ViewportPanel>(
-        Workspace->Layout, Workspace->Marquee, Workspace->Overlay,
+        Workspace->Layout, Workspace->Interaction.Marquee, Workspace->Interaction.Overlay,
         RenderFeature->GetViewportTargets(), "Viewport", DockSlot::Center, 1.0f, perspectiveId);
     PerspectivePanel = perspectivePanel.get();
     UiFeature->AddPanel(std::move(perspectivePanel));
     auto orthoPanel = std::make_unique<ViewportPanel>(
-        Workspace->Layout, Workspace->Marquee, Workspace->Overlay,
+        Workspace->Layout, Workspace->Interaction.Marquee, Workspace->Interaction.Overlay,
         RenderFeature->GetViewportTargets(), "Ortho", DockSlot::CenterBottom, 1.0f, orthoId);
     OrthoPanel = orthoPanel.get();
     UiFeature->AddPanel(std::move(orthoPanel));
@@ -594,8 +597,8 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
             return summary;
         }));
     UiFeature->AddPanel(std::make_unique<ToolPropertiesPanel>(
-        [this]() -> IMeshEditTarget* { return Workspace->Sink.get(); },
-        [this]() -> ToolRegistry* { return Workspace->Tools.get(); },
+        [this]() -> IMeshEditTarget* { return Workspace->Interaction.Sink.get(); },
+        [this]() -> ToolRegistry* { return Workspace->Interaction.Tools.get(); },
         Workspace->Selection, Workspace->MeshEdit, *Commands,
         Workspace->World, Workspace->ActiveMaterial, Workspace->UvClipboard,
         Workspace->BrushCreate, Workspace->EdgeCut,

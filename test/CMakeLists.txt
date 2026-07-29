@@ -256,6 +256,7 @@ if(EDITOR_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/workspace/PendingBridgeEdit.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/workspace/PendingElementEdit.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/workspace/GridEditing.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/workspace/WorkspaceInteractionRuntime.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/authoring/EditorComponentAdapter.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/authoring/WorldDockEditorAdapter.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshEditService.cpp

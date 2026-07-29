@@ -62,11 +62,11 @@ TEST_F(WorkspaceInteractionResetTest, ResetClearsTransientOverlayState)
     const EntityId brush = AddBrush(Vec3d{ 0, 0, 0 });
     SelectEntity(brush);
     Workspace.UpdateOverlay();
-    ASSERT_FALSE(Workspace.Overlay.Labels.empty());
+    ASSERT_FALSE(Workspace.Interaction.Overlay.Labels.empty());
 
     Workspace.ResetInteractionState();
 
-    EXPECT_TRUE(Workspace.Overlay.Labels.empty());
+    EXPECT_TRUE(Workspace.Interaction.Overlay.Labels.empty());
 }
 
 // The rebuilt stack has to be usable, not merely non-null: a pending edit

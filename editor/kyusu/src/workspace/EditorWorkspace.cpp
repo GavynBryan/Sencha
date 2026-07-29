@@ -2,6 +2,10 @@
 
 #include "EscapePolicy.h"
 
+#include "BrushManipulationSink.h"
+#include "editmodes/ManipulatorSession.h"
+#include "tools/ToolRegistry.h"
+
 #include "EditorTheme.h"
 #include "authoring/WorldDockEditorAdapter.h"
 #include "brush/BrushBounds.h"
@@ -51,82 +55,31 @@ EditorWorkspace::EditorWorkspace(LoggingProvider& logging)
 
 void EditorWorkspace::BuildInteractionState()
 {
-    EditorDocument& document = ActiveDocument();
-
-    // Only the focus document is selectable (context zones are unpickable by
-    // construction); the guard turns any stray cross-registry ref into a loud
-    // debug failure instead of a silent stale selection.
-    LevelSelection.SetExpectedRegistry(document.GetRegistry().Id);
-
-    // All scene mutation during manipulation goes through this one sink; the
-    // session, manipulators, and the edge-cut tool stay scene-agnostic. Built first
-    // so the tool context can hold it.
-    Sink = std::make_unique<BrushManipulationSink>(
-        document.GetScene(), document, *Commands, Selection,
-        [this](std::vector<EntitySnapshot>& snapshots)
-        { RemapWorldConnectionDuplicateSnapshots(World, snapshots); });
-    // A committed duplicate (the gizmo Shift-drag) becomes the repeatable
-    // action: Ctrl+R re-duplicates the current selection at the same offset.
-    Sink->SetDuplicateObserver([this](Vec3d offset)
-    {
-        if (offset.SqrMagnitude() > 0.0f)
-            LastRepeatable = [this, offset] { DuplicateSelectionWithOffset(offset); };
-    });
-
-    ActiveToolContext = std::make_unique<ToolContext>(
-        *Commands,
-        Selection,
-        Picking,
-        document.GetScene(),
-        document,
-        MeshEdit,
-        *Sink,
-        ToolInteractionState{ Interactions, Preview, Marquee, Overlay },
-        ToolAuthoringSettings{ Grid, BrushCreate, EdgeCut, ActiveMaterial });
-
-    Tools = std::make_unique<ToolRegistry>(*ActiveToolContext);
-    Tools->Register(std::make_unique<SelectTool>());
-    Tools->Register(std::make_unique<BrushTool>());
-    Tools->Register(std::make_unique<EdgeCutTool>());
-    Tools->Register(std::make_unique<FaceCarveTool>());
-    Tools->Activate("select");
-
-    // Lets a tool hand off to another (the edge cut switches to Select after a cut).
-    ActiveToolContext->ActivateTool = [this](std::string_view id) { Tools->Activate(id); };
-
-    Dispatcher = std::make_unique<ViewportToolDispatcher>(
-        Layout,
-        *ActiveToolContext,
-        Interactions,
-        Sessions,
-        *Tools);
-
-    // The session reads selection and element mode live on each pointer-down, so
-    // it never needs rebuilding when the selection or mode changes. It consumes a
-    // click only when a manipulator is hit; otherwise the select tool picks.
-    auto session = std::make_unique<ManipulatorSession>(
-        Selection, MeshEdit, *Sink, Grid, Pivot, *Affordances);
-    Manipulators = session.get();
-    Sessions.SetSession(std::move(session));
-
-    // Resize quietly yields to Move while the selection has nothing resizable.
-    Manipulators->SetResizableQuery(
-        [this]
-        {
-            const EditorScene& scene = ActiveDocument().GetScene();
-            for (const SelectableRef& ref : Selection.GetSelection())
-                if (ref.IsEntity() && scene.TryGetBrushMesh(ref.Entity) != nullptr)
-                    return true;
-            return Affordances->HasEditTargets();
-        });
-    Manipulators->SetScaleAllowedQuery(
-        [this] { return Affordances->AllowsScaleForSelection(); });
+    Interaction.Rebuild(
+        WorkspaceInteractionInputs{
+            World,
+            LevelSelection,
+            Selection,
+            Picking,
+            MeshEdit,
+            Layout,
+            Pivot,
+            *Affordances,
+            ToolAuthoringSettings{ Grid, BrushCreate, EdgeCut, ActiveMaterial },
+            // A committed duplicate (the gizmo Shift-drag) becomes the repeatable
+            // action: Ctrl+R re-duplicates the current selection at the same offset.
+            [this](Vec3d offset)
+            {
+                if (offset.SqrMagnitude() > 0.0f)
+                    LastRepeatable = [this, offset] { DuplicateSelectionWithOffset(offset); };
+            },
+        },
+        *Commands);
 }
 
 void EditorWorkspace::ResetInteractionState()
 {
-    if (Tools != nullptr)
-        Tools->Cancel();
+    Interaction.CancelActiveTool();
     // The pending bridge preview lives in whichever scene it was begun in; a
     // focus change keeps that document alive, so cancel (not just drop) it.
     CancelPendingBridge();
@@ -136,14 +89,8 @@ void EditorWorkspace::ResetInteractionState()
     Selection.ClearSelection();
 
     // Transient view/interaction state that may reference the outgoing document.
-    Marquee = {};
+    Interaction.ClearTransient();
     Pivot = {};
-    Overlay.Labels.clear();
-    Overlay.PointHandles.clear();
-    Overlay.Readout.Clear();
-    Overlay.Hover = {};
-    Overlay.HoverBody = {};
-    Preview.Clear();
 
     BuildInteractionState();
 }
@@ -214,7 +161,7 @@ void EditorWorkspace::Init(CommandStack& commands)
     MeshEdit.SetElementKindObserver([this](MeshElementKind next)
     {
         ConvertSelectionToKind(next);
-        Manipulators->OnElementKindChanged(next);
+        Interaction.Manipulators->OnElementKindChanged(next);
     });
 }
 
@@ -472,14 +419,14 @@ void EditorWorkspace::EscapeStep()
             break;
         }
 
-    switch (NextEscapeAction(Manipulators->IsEditingGridOrigin(), Pivot.Editing, hasElementRefs,
+    switch (NextEscapeAction(Interaction.Manipulators->IsEditingGridOrigin(), Pivot.Editing, hasElementRefs,
                              MeshEdit.GetElementKind(), !Selection.GetSelection().empty()))
     {
     case EscapeAction::CancelGridOriginEdit:
-        Manipulators->SetEditingGridOrigin(false);
+        Interaction.Manipulators->SetEditingGridOrigin(false);
         break;
     case EscapeAction::CancelPivotEdit:
-        Manipulators->SetEditingPivot(false);
+        Interaction.Manipulators->SetEditingPivot(false);
         break;
     case EscapeAction::ClearElementSelection:
     {
@@ -504,7 +451,7 @@ void EditorWorkspace::EscapeStep()
 
 void EditorWorkspace::UpdateOverlay()
 {
-    Overlay.Labels.clear();
+    Interaction.Overlay.Labels.clear();
 
     // Union the world bounds of every selected brush, so the dimension labels
     // describe the selection's extents as one box.
@@ -524,7 +471,7 @@ void EditorWorkspace::UpdateOverlay()
     }
 
     if (bounds.IsValid())
-        Overlay.Labels = SelectionDimensionLabels(bounds, EditorTheme::DimensionLabel);
+        Interaction.Overlay.Labels = SelectionDimensionLabels(bounds, EditorTheme::DimensionLabel);
 
     // Zone name labels ride the same per-frame label rebuild as the dimension
     // text, anchored at each zone box's top center.
@@ -540,7 +487,7 @@ void EditorWorkspace::UpdateOverlay()
             label.Color = World.FocusZone() == zone.Id ? EditorTheme::Selection
                                                        : EditorTheme::BoundsBox;
             label.Text = zone.Name;
-            Overlay.Labels.push_back(std::move(label));
+            Interaction.Overlay.Labels.push_back(std::move(label));
         }
     }
 
@@ -548,7 +495,7 @@ void EditorWorkspace::UpdateOverlay()
     {
         ViewportAffordanceOutput affordances;
         Affordances->Build(affordances);
-        Overlay.Labels.insert(Overlay.Labels.end(),
+        Interaction.Overlay.Labels.insert(Interaction.Overlay.Labels.end(),
                               std::make_move_iterator(affordances.Labels.begin()),
                               std::make_move_iterator(affordances.Labels.end()));
     }
@@ -581,13 +528,13 @@ void EditorWorkspace::SetSelectedBrushOrigin(OriginAnchor anchor)
     if (anchor == OriginAnchor::SelectedVertex)
     {
         // The first selected vertex wins; the origin lands exactly on it.
-        if (Sink == nullptr)
+        if (Interaction.Sink == nullptr)
             return;
         for (const SelectableRef& ref : Selection.GetSelection())
         {
             if (!ref.IsVertex())
                 continue;
-            const std::optional<MeshEditTargetMesh> resolved = Sink->ResolveMesh(ref.Entity);
+            const std::optional<MeshEditTargetMesh> resolved = Interaction.Sink->ResolveMesh(ref.Entity);
             if (!resolved.has_value() || resolved->Mesh == nullptr)
                 continue;
             point = ElementCenter(*resolved->Mesh, resolved->Transform, ref);
@@ -628,24 +575,24 @@ void EditorWorkspace::SetSelectedBrushOrigin(OriginAnchor anchor)
 
 void EditorWorkspace::ApplyActiveMaterialToSelectedFaces()
 {
-    if (!ActiveMaterial.Active.IsValid() || Sink == nullptr || Commands == nullptr)
+    if (!ActiveMaterial.Active.IsValid() || Interaction.Sink == nullptr || Commands == nullptr)
         return;
-    ApplyMaterialToSelectedFaces(*Sink, Selection, *Commands, ActiveMaterial.Active);
+    ApplyMaterialToSelectedFaces(*Interaction.Sink, Selection, *Commands, ActiveMaterial.Active);
 }
 
 void EditorWorkspace::CopySelectedFaceProjection()
 {
-    if (Sink == nullptr)
+    if (Interaction.Sink == nullptr)
         return;
-    if (auto copied = ::CopySelectedFaceProjection(*Sink, Selection))
+    if (auto copied = ::CopySelectedFaceProjection(*Interaction.Sink, Selection))
         UvClipboard = std::move(copied);
 }
 
 void EditorWorkspace::PasteFaceProjectionToSelection()
 {
-    if (!UvClipboard.has_value() || Sink == nullptr || Commands == nullptr)
+    if (!UvClipboard.has_value() || Interaction.Sink == nullptr || Commands == nullptr)
         return;
-    PasteFaceProjection(*Sink, Selection, *Commands, *UvClipboard);
+    PasteFaceProjection(*Interaction.Sink, Selection, *Commands, *UvClipboard);
 }
 
 void EditorWorkspace::DeleteSelection()
@@ -662,10 +609,10 @@ void EditorWorkspace::DeleteSelection()
         hasFace |= ref.IsFace();
         hasEdge |= ref.IsEdge();
     }
-    if (Sink != nullptr && (hasFace || hasEdge))
+    if (Interaction.Sink != nullptr && (hasFace || hasEdge))
     {
         const MeshEditVerb verb = hasFace ? MeshEditVerb::Delete : MeshEditVerb::DissolveEdge;
-        if (auto command = MeshEdit.ApplyVerb(*Sink, Selection.GetSnapshot(), verb, {}))
+        if (auto command = MeshEdit.ApplyVerb(*Interaction.Sink, Selection.GetSnapshot(), verb, {}))
         {
             Commands->Execute(std::move(command));
             Selection.ClearMeshElementSelections();
@@ -687,9 +634,9 @@ void EditorWorkspace::DeleteSelection()
 
 void EditorWorkspace::DissolveSelectedEdges()
 {
-    if (Commands == nullptr || Sink == nullptr)
+    if (Commands == nullptr || Interaction.Sink == nullptr)
         return;
-    if (auto command = MeshEdit.ApplyVerb(*Sink, Selection.GetSnapshot(), MeshEditVerb::DissolveEdge, {}))
+    if (auto command = MeshEdit.ApplyVerb(*Interaction.Sink, Selection.GetSnapshot(), MeshEditVerb::DissolveEdge, {}))
     {
         Commands->Execute(std::move(command));
         Selection.ClearMeshElementSelections();
@@ -698,7 +645,7 @@ void EditorWorkspace::DissolveSelectedEdges()
 
 void EditorWorkspace::BridgeSelectedEdges(int segments)
 {
-    if (Commands == nullptr || Sink == nullptr)
+    if (Commands == nullptr || Interaction.Sink == nullptr)
         return;
 
     const SelectionSnapshot selection = Selection.GetSnapshot();
@@ -709,7 +656,7 @@ void EditorWorkspace::BridgeSelectedEdges(int segments)
         return;
     }
 
-    if (auto command = MeshEdit.ApplyVerb(*Sink, selection, MeshEditVerb::BridgeEdges,
+    if (auto command = MeshEdit.ApplyVerb(*Interaction.Sink, selection, MeshEditVerb::BridgeEdges,
                                           { .BridgeSegments = segments }))
     {
         Commands->Execute(std::move(command));
@@ -731,16 +678,16 @@ void EditorWorkspace::CancelPendingBridge()
 
 void EditorWorkspace::BeginInsetOnSelectedFaces(float distance)
 {
-    if (Commands == nullptr || Sink == nullptr)
+    if (Commands == nullptr || Interaction.Sink == nullptr)
         return;
-    ElementEdit.BeginInset(*Sink, *Commands, Selection.GetSelection(), distance);
+    ElementEdit.BeginInset(*Interaction.Sink, *Commands, Selection.GetSelection(), distance);
 }
 
 void EditorWorkspace::BeginBevelOnSelectedEdges(float width, int segments)
 {
-    if (Commands == nullptr || Sink == nullptr)
+    if (Commands == nullptr || Interaction.Sink == nullptr)
         return;
-    ElementEdit.BeginBevel(*Sink, *Commands, Selection.GetSelection(), width, segments);
+    ElementEdit.BeginBevel(*Interaction.Sink, *Commands, Selection.GetSelection(), width, segments);
 }
 
 void EditorWorkspace::CommitPendingElementEdit()
