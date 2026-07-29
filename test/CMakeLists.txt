@@ -248,6 +248,58 @@ if(EDITOR_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushOps.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushBounds.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/FaceMaterialEdits.cpp
+        # The workspace aggregator and the editing stack it composes. GUI-free:
+        # the only ImGui dependency is InputEvent's ImVec2 and the tools' icon
+        # glyph macros, both header-only, so no render or ImGui runtime links.
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/workspace/EditorWorkspace.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/workspace/BrushManipulationSink.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/authoring/EditorComponentAdapter.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/authoring/WorldDockEditorAdapter.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshEditService.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshElements.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshElementKindTraits.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/ElementGeometry.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/SelectionConversion.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/LoopSelection.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/PathSelection.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/interactions/BrushCreateDragInteraction.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/interactions/BrushCreationPlane.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/interactions/MarqueeInteraction.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/input/GestureRecognizer.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/input/InputRouter.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/DeferredCreateBrushCommand.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/DeleteEntityCommand.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/DuplicateEntitiesCommand.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/MergeBrushesCommand.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/SeparateFacesCommand.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/tools/BrushTool.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/tools/EdgeCutTool.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/tools/FaceCarveTool.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/tools/SelectTool.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/editmodes/AffordanceManipulator.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/editmodes/BoundsManipulator.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/editmodes/EditSessionHost.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/editmodes/ManipulatorSession.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/editmodes/ManipulatorTargets.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/editmodes/RotateManipulator.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/editmodes/ScaleManipulator.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/editmodes/SelectionPivot.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/editmodes/TranslateManipulator.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/input/ViewportToolDispatcher.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/overlay/SelectionLabels.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/render/PreviewBuffer.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/viewport/EditorCamera.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/viewport/EditorViewport.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/viewport/ElementSnap.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/viewport/Picking.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/viewport/ViewportLayout.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/viewport/ViewportOrientation.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/viewport/ViewportProjection.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/viewport/WorldViewSettings.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/interaction/InteractionHost.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionFold.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/tools/ToolContext.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/tools/ToolRegistry.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/commands/CommandStack.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionContext.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionService.cpp
@@ -264,6 +316,7 @@ if(EDITOR_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/shudei/src/PreviewPrimitives.cpp
         ${CMAKE_SOURCE_DIR}/editor/kettle/src/ProjectCatalog.cpp)
     target_include_directories(editor_tests PRIVATE
+        ${CMAKE_SOURCE_DIR}/editor
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src
         ${CMAKE_SOURCE_DIR}/editor/common/src
         ${CMAKE_SOURCE_DIR}/editor/shudei/src
