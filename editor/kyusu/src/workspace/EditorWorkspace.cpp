@@ -5,7 +5,6 @@
 #include "EditorTheme.h"
 #include "authoring/WorldDockEditorAdapter.h"
 #include "brush/BrushBounds.h"
-#include "brush/BrushOps.h"
 #include "document/EditorScene.h"
 #include "document/commands/DeleteEntityCommand.h"
 #include "document/commands/BreakInstanceCommand.h"
@@ -816,169 +815,26 @@ void EditorWorkspace::CancelPendingBridge()
 
 void EditorWorkspace::BeginInsetOnSelectedFaces(float distance)
 {
-    CancelPendingElementEdit(); // a re-inset replaces the previous preview
     if (Commands == nullptr || Sink == nullptr)
         return;
-
-    std::vector<ElementEditCapture> captures;
-    for (const SelectableRef& ref : Selection.GetSelection())
-    {
-        if (!ref.IsFace())
-            continue;
-        const std::optional<MeshEditTargetMesh> resolved = Sink->ResolveMesh(ref.Entity);
-        if (!resolved.has_value() || resolved->Mesh == nullptr
-            || ref.ElementId >= resolved->Mesh->Faces.size())
-            continue;
-        ElementEditCapture* capture = nullptr;
-        for (ElementEditCapture& existing : captures)
-            if (existing.Entity == ref.Entity)
-                capture = &existing;
-        if (capture == nullptr)
-        {
-            captures.push_back(ElementEditCapture{ ref.Entity, *resolved->Mesh, {}, {} });
-            capture = &captures.back();
-        }
-        capture->Faces.push_back(ref.ElementId);
-    }
-    if (captures.empty())
-        return;
-
-    ElementEdit = ElementEditState::Inset;
-    ElementEditCaptures = std::move(captures);
-    ElementEditDistance = distance;
-    Commands->OpenPendingEdit([this] { CancelPendingElementEdit(); });
-    RegeneratePendingElementEdit();
-}
-
-void EditorWorkspace::SetPendingInsetDistance(float distance)
-{
-    if (ElementEdit != ElementEditState::Inset || distance == ElementEditDistance)
-        return;
-    ElementEditDistance = distance;
-    RegeneratePendingElementEdit();
+    ElementEdit.BeginInset(*Sink, *Commands, Selection.GetSelection(), distance);
 }
 
 void EditorWorkspace::BeginBevelOnSelectedEdges(float width, int segments)
 {
-    CancelPendingElementEdit();
     if (Commands == nullptr || Sink == nullptr)
         return;
-
-    // Resolve the selected edge refs into vertex pairs against the captured
-    // originals, building each entity's edge enumeration once.
-    std::vector<ElementEditCapture> captures;
-    EntityId cachedEntity = {};
-    std::vector<EdgeElement> cachedEdges;
-    for (const SelectableRef& ref : Selection.GetSelection())
-    {
-        if (!ref.IsEdge())
-            continue;
-        const std::optional<MeshEditTargetMesh> resolved = Sink->ResolveMesh(ref.Entity);
-        if (!resolved.has_value() || resolved->Mesh == nullptr)
-            continue;
-        if (!(cachedEntity == ref.Entity))
-        {
-            cachedEntity = ref.Entity;
-            cachedEdges = MeshElements::Edges(*resolved->Mesh, resolved->Transform);
-        }
-        if (ref.ElementId >= cachedEdges.size())
-            continue;
-        ElementEditCapture* capture = nullptr;
-        for (ElementEditCapture& existing : captures)
-            if (existing.Entity == ref.Entity)
-                capture = &existing;
-        if (capture == nullptr)
-        {
-            captures.push_back(ElementEditCapture{ ref.Entity, *resolved->Mesh, {}, {} });
-            capture = &captures.back();
-        }
-        capture->Edges.push_back({ cachedEdges[ref.ElementId].VertexA,
-                                   cachedEdges[ref.ElementId].VertexB });
-    }
-    if (captures.empty())
-        return;
-
-    ElementEdit = ElementEditState::Bevel;
-    ElementEditCaptures = std::move(captures);
-    ElementEditWidth = width;
-    ElementEditSegments = std::clamp(segments, 1, 16);
-    Commands->OpenPendingEdit([this] { CancelPendingElementEdit(); });
-    RegeneratePendingElementEdit();
-}
-
-void EditorWorkspace::SetPendingBevelParams(float width, int segments)
-{
-    if (ElementEdit != ElementEditState::Bevel)
-        return;
-    segments = std::clamp(segments, 1, 16);
-    if (width == ElementEditWidth && segments == ElementEditSegments)
-        return;
-    ElementEditWidth = width;
-    ElementEditSegments = segments;
-    RegeneratePendingElementEdit();
-}
-
-void EditorWorkspace::RegeneratePendingElementEdit()
-{
-    if (ElementEdit == ElementEditState::Idle || Sink == nullptr)
-        return;
-    for (const ElementEditCapture& capture : ElementEditCaptures)
-    {
-        if (!Sink->ResolveMesh(capture.Entity).has_value())
-            continue;
-        const BrushMesh edited = ElementEdit == ElementEditState::Inset
-            ? BrushOps::ExtrudeFacesAlongNormals(capture.Original, capture.Faces, ElementEditDistance)
-            : BrushOps::BevelEdges(capture.Original, capture.Edges, ElementEditWidth, ElementEditSegments);
-        const bool changed = edited.Vertices.size() != capture.Original.Vertices.size()
-                          || edited.Faces.size() != capture.Original.Faces.size();
-        Sink->PreviewMesh(capture.Entity, changed ? edited : capture.Original);
-    }
+    ElementEdit.BeginBevel(*Sink, *Commands, Selection.GetSelection(), width, segments);
 }
 
 void EditorWorkspace::CommitPendingElementEdit()
 {
-    if (ElementEdit == ElementEditState::Idle || Commands == nullptr || Sink == nullptr)
-        return;
-
-    const ElementEditState state = ElementEdit;
-    std::vector<ElementEditCapture> captures = std::move(ElementEditCaptures);
-    Commands->ClosePendingEdit();
-    ElementEdit = ElementEditState::Idle;
-    ElementEditCaptures.clear();
-
-    std::vector<::MeshEdit> edits;
-    for (ElementEditCapture& capture : captures)
-    {
-        if (!Sink->ResolveMesh(capture.Entity).has_value())
-            continue; // the entity died while pending
-        BrushMesh after = state == ElementEditState::Inset
-            ? BrushOps::ExtrudeFacesAlongNormals(capture.Original, capture.Faces, ElementEditDistance)
-            : BrushOps::BevelEdges(capture.Original, capture.Edges, ElementEditWidth, ElementEditSegments);
-        if (after.Vertices.size() == capture.Original.Vertices.size()
-            && after.Faces.size() == capture.Original.Faces.size())
-            continue;
-        edits.push_back(::MeshEdit{ capture.Entity, std::move(capture.Original), std::move(after) });
-    }
-    if (edits.empty())
-        return;
-    Sink->CommitMeshes(std::move(edits));
-
-    // Beveled edges no longer exist: drop the stale element refs. Inset caps
-    // keep their indices, so the face selection stays valid.
-    if (state == ElementEditState::Bevel)
-        Sink->SelectElements({});
+    if (Commands != nullptr)
+        ElementEdit.Commit(*Commands);
 }
 
 void EditorWorkspace::CancelPendingElementEdit()
 {
-    if (ElementEdit == ElementEditState::Idle)
-        return;
     if (Commands != nullptr)
-        Commands->ClosePendingEdit();
-    ElementEdit = ElementEditState::Idle;
-    if (Sink != nullptr)
-        for (const ElementEditCapture& capture : ElementEditCaptures)
-            if (Sink->ResolveMesh(capture.Entity).has_value())
-                Sink->PreviewMesh(capture.Entity, capture.Original);
-    ElementEditCaptures.clear();
+        ElementEdit.Cancel(*Commands);
 }

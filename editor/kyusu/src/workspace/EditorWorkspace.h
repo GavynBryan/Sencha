@@ -2,6 +2,7 @@
 
 #include "BrushManipulationSink.h"
 #include "PendingBridgeEdit.h"
+#include "PendingElementEdit.h"
 
 #include "authoring/EditorComponentAdapter.h"
 #include "commands/CommandStack.h"
@@ -26,7 +27,6 @@
 #include "viewport/Picking.h"
 #include "viewport/ViewportLayout.h"
 
-#include "brush/BrushOps.h"
 #include "document/BrushCreationSettings.h"
 #include "document/EdgeCutSettings.h"
 #include "document/WorldDocument.h"
@@ -205,40 +205,21 @@ public:
     // regenerates from, and the pending-edit scope that goes with them.
     PendingBridgeEdit BridgeEdit;
 
-    // Pending face inset / edge bevel: a panel-driven preview over the
-    // captured selection, committed as one undo step. Invariants mirror the
-    // bridge: ElementEdit != Idle exactly while ElementEditCaptures holds the
-    // pre-edit snapshots and the pending-edit scope is open. Transitions only
-    // in BeginInsetOnSelectedFaces / BeginBevelOnSelectedEdges (Idle -> *) and
-    // CommitPendingElementEdit / CancelPendingElementEdit (* -> Idle).
-    enum class ElementEditState : std::uint8_t { Idle, Inset, Bevel };
-    struct ElementEditCapture
-    {
-        EntityId Entity = {};
-        BrushMesh Original;
-        std::vector<std::uint32_t> Faces;                  // Inset
-        std::vector<std::array<std::uint32_t, 2>> Edges;   // Bevel (vertex pairs into Original)
-    };
+    // Panel-driven face inset / edge bevel preview. Owns the captured meshes
+    // and the pending-edit scope that goes with them.
+    PendingElementEdit ElementEdit;
 
 public:
     void BeginInsetOnSelectedFaces(float distance);
-    [[nodiscard]] bool HasPendingInset() const { return ElementEdit == ElementEditState::Inset; }
-    void SetPendingInsetDistance(float distance);
+    [[nodiscard]] bool HasPendingInset() const { return ElementEdit.HasPendingInset(); }
+    void SetPendingInsetDistance(float distance) { ElementEdit.SetInsetDistance(distance); }
     void BeginBevelOnSelectedEdges(float width, int segments);
-    [[nodiscard]] bool HasPendingBevel() const { return ElementEdit == ElementEditState::Bevel; }
-    void SetPendingBevelParams(float width, int segments);
+    [[nodiscard]] bool HasPendingBevel() const { return ElementEdit.HasPendingBevel(); }
+    void SetPendingBevelParams(float width, int segments) { ElementEdit.SetBevelParams(width, segments); }
     void CommitPendingElementEdit();
     void CancelPendingElementEdit();
 
 private:
-    void RegeneratePendingElementEdit();
-
-    ElementEditState ElementEdit = ElementEditState::Idle;
-    std::vector<ElementEditCapture> ElementEditCaptures;
-    float ElementEditDistance = 0.0f; // Inset
-    float ElementEditWidth = 0.0f;    // Bevel
-    int ElementEditSegments = 1;      // Bevel
-
     // The last repeatable action, recorded by the action itself (currently the
     // duplicate-with-offset observer on the sink). Ctrl+R replays it against
     // the current selection.
