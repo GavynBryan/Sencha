@@ -39,8 +39,7 @@ constexpr const char* CanonicalFixture = R"json(
       "from": "00000000000000a1",
       "to": "00000000000000a2",
       "topology": "doorway",
-      "one_way": false,
-      "preload_priority": 0
+      "one_way": false
     }
   ]
 }
@@ -67,7 +66,8 @@ std::optional<WorldPartitionManifest> TryParse(const char* text, std::string* er
 
 TEST(WorldPartitionManifest, ManifestJsonRoundTrip)
 {
-    const WorldPartitionManifest first = ParseFixture(CanonicalFixture);
+    WorldPartitionManifest first = ParseFixture(CanonicalFixture);
+    first.Transitions.clear();
 
     const JsonValue written = WriteWorldPartitionManifest(first);
     std::string error;
@@ -79,18 +79,17 @@ TEST(WorldPartitionManifest, ManifestJsonRoundTrip)
     ASSERT_EQ(second->Zones.size(), 2u);
     EXPECT_EQ(second->Zones[0].Name, "Hub Room");
     EXPECT_EQ(second->Zones[1].BoundsOverridden, true);
-    ASSERT_EQ(second->Transitions.size(), 1u);
-    EXPECT_EQ(second->Transitions[0].Topology, TransitionTopology::Doorway);
+    EXPECT_TRUE(second->Transitions.empty());
 }
 
 TEST(WorldPartitionManifest, ReadRejectsUnsupportedFormatVersion)
 {
     std::string error;
-    const auto manifest = TryParse(R"({ "format_version": 2 })", &error);
+    const auto manifest = TryParse(R"({ "format_version": 5 })", &error);
 
     EXPECT_FALSE(manifest.has_value());
     EXPECT_NE(error.find("format_version"), std::string::npos);
-    EXPECT_NE(error.find('2'), std::string::npos);
+    EXPECT_NE(error.find('5'), std::string::npos);
 }
 
 TEST(WorldPartitionManifest, ReadRejectsMalformedZoneId)
@@ -187,7 +186,6 @@ TEST(WorldPartitionManifest, ReadAcceptsMissingOptionals)
     ASSERT_TRUE(manifest.has_value()) << error;
     EXPECT_FALSE(manifest->StartZone.IsValid());
     EXPECT_FALSE(manifest->Transitions[0].Flags.OneWay);
-    EXPECT_EQ(manifest->Transitions[0].PreloadPriority, 0);
     EXPECT_FALSE(manifest->Zones[0].BoundsOverridden);
 }
 
@@ -227,73 +225,122 @@ TEST(WorldPartitionManifest, ReadParsesButDoesNotValidate)
     EXPECT_EQ(manifest->Transitions[0].To, ZoneId{ 0xff });
 }
 
-TEST(WorldPartitionManifest, TransitionNameRoundTripsAndStaysOptional)
+TEST(WorldPartitionManifest, WriterDoesNotPersistLegacyTransitions)
 {
     WorldPartitionManifest manifest = ParseFixture(CanonicalFixture);
     ASSERT_EQ(manifest.Transitions.size(), 1u);
-    EXPECT_TRUE(manifest.Transitions[0].Name.empty());   // fixture has no name key
-
-    manifest.Transitions[0].Name = "Front Door";
-    const JsonValue written = WriteWorldPartitionManifest(manifest);
-    std::string error;
-    const auto reread = ReadWorldPartitionManifest(written, &error);
-    ASSERT_TRUE(reread.has_value()) << error;
-    EXPECT_EQ(reread->Transitions[0].Name, "Front Door");
-
-    // An empty name never writes a key (WriteOmitsEmptyCookedFields precedent).
-    manifest.Transitions[0].Name.clear();
-    const JsonValue bare = WriteWorldPartitionManifest(manifest);
-    const auto rereadBare = ReadWorldPartitionManifest(bare, &error);
-    ASSERT_TRUE(rereadBare.has_value()) << error;
-    EXPECT_TRUE(rereadBare->Transitions[0].Name.empty());
+    const std::string text = JsonStringify(WriteWorldPartitionManifest(manifest));
+    EXPECT_EQ(text.find("transitions"), std::string::npos);
 }
 
-TEST(WorldPartitionManifest, GateAndDepthRoundTripAndStayOptional)
+TEST(WorldPartitionManifest, EndpointAndDebugMapsRoundTrip)
 {
     WorldPartitionManifest manifest = ParseFixture(CanonicalFixture);
-    ASSERT_EQ(manifest.Transitions.size(), 1u);
-    EXPECT_TRUE(manifest.Transitions[0].RequiredTags.empty());
-    EXPECT_EQ(manifest.Transitions[0].PreloadDepth, 0);
+    manifest.Transitions.clear();
+    DockEndpoint dock{
+        .Id = DockId{ 0xd1 },
+        .OwnerZone = ZoneId{ 0xa1 },
+        .OtherZone = ZoneId{ 0xa2 },
+        .Side = DockSide::A,
+        .Origin = { 8, 2, 0 },
+        .Normal = { 1, 0, 0 },
+        .Right = { 0, 0, 1 },
+        .Up = { 0, 1, 0 },
+        .HalfExtents = { 2, 3 },
+        .Directions = 3,
+    };
+    DockEndpoint reverse = dock;
+    reverse.OwnerZone = ZoneId{ 0xa2 };
+    reverse.OtherZone = ZoneId{ 0xa1 };
+    reverse.Side = DockSide::B;
+    reverse.Normal = -dock.Normal;
+    reverse.Right = -dock.Right;
+    manifest.Zones[0].Docks.push_back(dock);
+    manifest.Zones[1].Docks.push_back(reverse);
+    manifest.DockDebugMap.push_back({ DockId{ 0xd1 }, 0x42 });
 
-    manifest.Transitions[0].RequiredTags = { "quest.bridge" };
-    manifest.Transitions[0].PreloadDepth = 2;
+    LinkEndpoint link{
+        .Id = LinkId{ 0xe1 },
+        .OwnerZone = ZoneId{ 0xa1 },
+        .OtherZone = ZoneId{ 0xa2 },
+        .Side = DockSide::A,
+        .Kind = 0,
+        .Directions = 1,
+    };
+    LinkEndpoint reverseLink = link;
+    reverseLink.OwnerZone = ZoneId{ 0xa2 };
+    reverseLink.OtherZone = ZoneId{ 0xa1 };
+    reverseLink.Side = DockSide::B;
+    manifest.Zones[0].Links.push_back(link);
+    manifest.Zones[1].Links.push_back(reverseLink);
+    manifest.LinkDebugMap.push_back({ LinkId{ 0xe1 }, 0x43 });
+
     const JsonValue written = WriteWorldPartitionManifest(manifest);
     std::string error;
     const auto reread = ReadWorldPartitionManifest(written, &error);
     ASSERT_TRUE(reread.has_value()) << error;
-    ASSERT_EQ(reread->Transitions[0].RequiredTags.size(), 1u);
-    EXPECT_EQ(reread->Transitions[0].RequiredTags[0], "quest.bridge");
-    EXPECT_EQ(reread->Transitions[0].PreloadDepth, 2);
-}
-
-TEST(WorldPartitionManifest, RegionStreamingRoundTripsPresentSubset)
-{
-    WorldPartitionManifest manifest = ParseFixture(CanonicalFixture);
-    manifest.Regions[0].Streaming.HopCount = 2;
-    manifest.Regions[0].Streaming.Radius = 250.0;
-
-    const JsonValue written = WriteWorldPartitionManifest(manifest);
-    std::string error;
-    const auto reread = ReadWorldPartitionManifest(written, &error);
-    ASSERT_TRUE(reread.has_value()) << error;
-    EXPECT_EQ(reread->Regions[0].Streaming.HopCount, 2);
-    EXPECT_EQ(reread->Regions[0].Streaming.Radius, 250.0);
-    EXPECT_FALSE(reread->Regions[0].Streaming.ResidentZoneCap.has_value());
     EXPECT_EQ(*reread, manifest);
 }
 
-TEST(WorldPartitionManifest, RegionStreamingOmittedWhenAllAbsent)
+TEST(WorldPartitionManifest, GraphStreamingRoundTripsPresentSubset)
+{
+    WorldPartitionManifest manifest = ParseFixture(CanonicalFixture);
+    manifest.Transitions.clear();
+    manifest.Graphs[0].Streaming.HopCount = 2;
+    manifest.Graphs[0].Streaming.Radius = 250.0;
+
+    const JsonValue written = WriteWorldPartitionManifest(manifest);
+    std::string error;
+    const auto reread = ReadWorldPartitionManifest(written, &error);
+    ASSERT_TRUE(reread.has_value()) << error;
+    EXPECT_EQ(reread->Graphs[0].Streaming.HopCount, 2);
+    EXPECT_EQ(reread->Graphs[0].Streaming.Radius, 250.0);
+    EXPECT_FALSE(reread->Graphs[0].Streaming.ResidentZoneCap.has_value());
+    EXPECT_EQ(*reread, manifest);
+}
+
+TEST(WorldPartitionManifest, GraphStreamingOmittedWhenAllAbsent)
 {
     // Legacy manifests carry no streaming key and load with every field
     // inherited; writing them back emits no streaming object.
     const WorldPartitionManifest manifest = ParseFixture(CanonicalFixture);
-    EXPECT_EQ(manifest.Regions[0].Streaming, RegionStreamingConfig{});
+    EXPECT_EQ(manifest.Graphs[0].Streaming, GraphStreamingConfig{});
 
     const std::string text = JsonStringify(WriteWorldPartitionManifest(manifest));
     EXPECT_EQ(text.find("streaming"), std::string::npos);
 }
 
-TEST(WorldPartitionManifest, ReadRejectsMalformedRegionStreaming)
+TEST(WorldPartitionManifest, LegacyGraphVocabularyReadsAndNewVocabularyWrites)
+{
+    const WorldPartitionManifest manifest = ParseFixture(CanonicalFixture);
+    const std::string text = JsonStringify(WriteWorldPartitionManifest(manifest));
+
+    EXPECT_NE(text.find("\"format_version\":4"), std::string::npos);
+    EXPECT_NE(text.find("\"graphs\""), std::string::npos);
+    EXPECT_NE(text.find("\"graph\""), std::string::npos);
+    EXPECT_EQ(text.find("\"regions\""), std::string::npos);
+    EXPECT_EQ(text.find("\"region\""), std::string::npos);
+}
+
+TEST(WorldPartitionManifest, VersionTwoOwnershipSchemaIsRejected)
+{
+    std::string error;
+    const auto manifest = TryParse(R"json(
+    {
+      "format_version": 2,
+      "graphs": [{ "id": "00000000000000b1", "name": "Graph" }],
+      "zones": [{
+        "id": "00000000000000a1",
+        "graph": "00000000000000b1",
+        "bounds": { "min": [-2,-3,-4], "max": [5,6,7] }
+      }]
+    })json", &error);
+
+    EXPECT_FALSE(manifest.has_value());
+    EXPECT_NE(error.find("format_version"), std::string::npos);
+}
+
+TEST(WorldPartitionManifest, ReadRejectsMalformedGraphStreaming)
 {
     std::string error;
     const auto manifest = TryParse(R"json(

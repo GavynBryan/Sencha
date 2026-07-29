@@ -261,3 +261,20 @@ void CharacterMoverPool::EvictAll(World& world)
     state.ActivePartitions.Clear();
     LastStructuralVersion = world.StructuralVersion(state.ActivePartitions);
 }
+
+bool CharacterMoverPool::SetPosition(World& world, EntityId entity,
+                                     const Vec3d& position)
+{
+    if (!Ready(world) || !S)
+        return false;
+    const CharacterMoverLink* link = world.TryGet<CharacterMoverLink>(entity);
+    LocalTransform* transform = world.TryGet<LocalTransform>(entity);
+    if (link == nullptr || transform == nullptr || link->MoverSlot >= S->Slots.size())
+        return false;
+    State::Slot& slot = S->Slots[link->MoverSlot];
+    if (slot.Owner != entity || !slot.Mover)
+        return false;
+    slot.Mover->SetPosition(position);
+    transform->Value.Position = position;
+    return true;
+}

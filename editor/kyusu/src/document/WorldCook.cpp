@@ -7,13 +7,51 @@
 #include <core/json/JsonStringify.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
+#include <world/transform/TransformComponents.h>
+#include <zone/WorldConnectionComponents.h>
 #include <zone/WorldPartitionIds.h>
+#include <zone/WorldTopologyCook.h>
 
+#include <algorithm>
 #include <fstream>
+#include <optional>
 #include <span>
+#include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 #include <vector>
+
+namespace
+{
+
+// A gate binding names a dock the cook must have compiled; a binding left
+// behind by a deleted dock would cook into content nothing can open.
+bool ValidateGateBindings(const Registry& registry,
+                          const std::vector<DockId>& docks,
+                          std::string_view sceneLabel,
+                          std::string* error)
+{
+    for (EntityId entity : registry.Components.GetAliveEntities())
+    {
+        const DockGateBinding* binding =
+            registry.Components.TryGet<DockGateBinding>(entity);
+        if (binding == nullptr)
+            continue;
+        if (binding->Id.IsValid()
+            && std::find(docks.begin(), docks.end(), binding->Id) != docks.end())
+        {
+            continue;
+        }
+        if (error != nullptr)
+            *error = "gate binding in '" + std::string(sceneLabel)
+                + "' references missing dock " + DockIdToString(binding->Id);
+        return false;
+    }
+    return true;
+}
+
+} // namespace
 
 struct WorldCookInput::Data
 {
@@ -60,6 +98,8 @@ std::optional<WorldCookInput> CollectWorldCookInput(
 
     if (!world.IsWorld())
         return fail("CookWorld: no world is open");
+    if (!world.Manifest().Transitions.empty())
+        return fail("CookWorld: unresolved legacy transitions must be migrated or discarded");
 
     std::string blocked;
     world.VisitOpenZones([&](ZoneId, EditorDocument& document, const ZoneViewState&)
@@ -78,6 +118,15 @@ std::optional<WorldCookInput> CollectWorldCookInput(
     }
     if (!blocked.empty())
         return fail("CookWorld: unsaved zone documents: " + blocked);
+
+    world.Revalidate();
+    for (const ContentRiskRecord& record : world.ValidationRecords())
+    {
+        if (record.Severity != ContentRiskSeverity::Error)
+            continue;
+        return fail("CookWorld: validation failed: " + record.RuleId + ": "
+            + record.Message);
+    }
 
     auto data = std::make_unique<WorldCookInput::Data>();
     data->Manifest = world.Manifest();
@@ -172,6 +221,47 @@ std::optional<WorldCookInput> CollectWorldCookInput(
             .Input = std::move(*input),
         });
     }
+
+    // Docks and links are authored as world-scene entities; the cooked manifest
+    // carries the topology they compile to, so it is resolved here alongside the
+    // rest of the authored input.
+    std::vector<AuthoredDockCookInput> dockInputs;
+    std::vector<AuthoredLinkCookInput> linkInputs;
+    const EditorScene& worldScene = world.WorldSceneDocument().GetScene();
+    const Registry& registry = world.WorldSceneDocument().GetRegistry();
+    for (EntityId entity : worldScene.GetAllEntities())
+    {
+        const uint64_t authoredEntity = (static_cast<uint64_t>(entity.Generation) << 32)
+            | entity.Index;
+        if (const WorldDock* dock = registry.Components.TryGet<WorldDock>(entity))
+        {
+            const LocalTransform* transform = registry.Components.TryGet<LocalTransform>(entity);
+            if (transform == nullptr)
+                return fail("CookWorld: a world dock has no transform");
+            dockInputs.push_back({ *dock, transform->Value, authoredEntity });
+        }
+        if (const WorldLink* link = registry.Components.TryGet<WorldLink>(entity))
+            linkInputs.push_back({ *link, authoredEntity });
+    }
+    std::string topologyError;
+    if (!CookWorldTopology(data->Manifest, dockInputs, linkInputs, &topologyError))
+        return fail("CookWorld: " + topologyError);
+
+    std::vector<DockId> authoredDocks;
+    authoredDocks.reserve(dockInputs.size());
+    for (const AuthoredDockCookInput& dockInput : dockInputs)
+        authoredDocks.push_back(dockInput.Dock.Id);
+    for (std::size_t zoneIndex = 0; zoneIndex < documents.size(); ++zoneIndex)
+    {
+        std::string bindingError;
+        if (!ValidateGateBindings(documents[zoneIndex]->GetRegistry(), authoredDocks,
+                                  data->Manifest.Zones[zoneIndex].Name, &bindingError))
+            return fail("CookWorld: " + bindingError);
+    }
+    std::string worldBindingError;
+    if (!ValidateGateBindings(registry, authoredDocks, "world scene",
+                              &worldBindingError))
+        return fail("CookWorld: " + worldBindingError);
     return WorldCookInput(std::move(data));
 }
 

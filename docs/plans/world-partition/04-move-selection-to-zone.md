@@ -4,6 +4,10 @@ Status: execution spec (2026-07-03). Implements Phase E2 of
 `docs/plans/world-partition-authoring.md` (Section 6.4 as amended; read it, then
 `00-execution-overview.md` D3, D5, and D12, before writing code).
 
+HISTORICAL. The world graph contracts are `11-zone-runtime-model.md` and
+`12-spatial-compilation.md`; where this file disagrees with them, they win.
+Portals and the `partition.portal.*` rules it references no longer exist.
+
 Prerequisite: Phase E1 complete (it is). Phase R is a parallel lane; neither blocks
 the other.
 

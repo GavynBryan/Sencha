@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 
+#include <ecs/EntityId.h>
 #include <ecs/StoragePartitionId.h>
 #include <math/Vec.h>
 
@@ -35,6 +36,12 @@ public:
         World& world,
         StoragePartitionId partition);
     void EvictAll(World& world);
+
+    // Move an existing character and its authored transform atomically. Used
+    // by world-partition threshold clamps and explicit gameplay teleports so
+    // the next physics tick cannot restore the pre-clamp position.
+    [[nodiscard]] bool SetPosition(World& world, EntityId entity,
+                                   const Vec3d& position);
 
     [[nodiscard]] size_t MoverCount() const;
     [[nodiscard]] uint64_t ReconcilePasses() const

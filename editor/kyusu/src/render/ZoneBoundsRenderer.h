@@ -14,7 +14,7 @@ struct WorldViewSettings;
 // bounds color, header-only zones dimmed. With the streaming preview on, the
 // tint switches to live demand state from the pure policy (focus resolved from
 // the perspective viewport's camera; sticky across viewports via the view
-// settings), plus a line per transition between connected zone centers.
+// settings). Dock affordances are provided through the component adapter seam.
 // Gathers segments only; owns no GPU state.
 class ZoneBoundsRenderer
 {

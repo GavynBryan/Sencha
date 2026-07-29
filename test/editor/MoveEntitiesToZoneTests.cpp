@@ -34,7 +34,7 @@ protected:
 
         World.NewWorld("TestWorld");
         SourceZone = World.Manifest().Zones[0].Id;
-        TargetZone = World.AddZone(World.Manifest().Regions[0].Id, "Target");
+        TargetZone = World.AddZone(World.Manifest().Graphs[0].Id, "Target");
         ASSERT_TRUE(World.LoadZone(TargetZone));
         Entity = World.FocusDocument().GetScene().CreateBrush(Vec3d{ 5, 0, 0 });
         OriginalMeshId = World.FocusDocument().GetScene().TryGetBrush(Entity)->Id;
@@ -170,7 +170,7 @@ TEST_F(MoveEntitiesToZoneTest, MoveMarksBothDocumentsDirty)
 
 TEST_F(MoveEntitiesToZoneTest, FactoryRefusesUnloadedTarget)
 {
-    const ZoneId closed = World.AddZone(World.Manifest().Regions[0].Id, "Closed");
+    const ZoneId closed = World.AddZone(World.Manifest().Graphs[0].Id, "Closed");
     const EntityId entities[] = { Entity };
     EXPECT_EQ(MakeMoveEntitiesToZoneCommand(entities, World, closed, Selection), nullptr);
 }
@@ -213,14 +213,8 @@ TEST_F(MoveEntitiesToZoneTest, EntityOutsideBoundsFires)
 {
     ASSERT_TRUE(World.SaveWorldAs(WorldPath()));
 
-    // Designer-set bounds nowhere near the brush at x = 5: the save must not
-    // recompute them, and the rule must persist.
-    for (ZoneHeader& zone : World.Manifest().Zones)
-        if (zone.Id == SourceZone)
-        {
-            zone.BoundsOverridden = true;
-            zone.Bounds = Aabb3d::FromMinMax(Vec3d{ -1, -1, -1 }, Vec3d{ 1, 1, 1 });
-        }
+    ASSERT_TRUE(World.SetZoneBounds(SourceZone,
+        Aabb3d::FromMinMax(Vec3d{ -1, -1, -1 }, Vec3d{ 1, 1, 1 })));
     ASSERT_TRUE(World.SaveWorld());
 
     EXPECT_EQ(CountRecords(World, "partition.zone.entity_outside_bounds"), 1u);
@@ -234,15 +228,17 @@ TEST_F(MoveEntitiesToZoneTest, EntityOutsideBoundsFires)
 
 TEST_F(MoveEntitiesToZoneTest, EntityOutsideBoundsSilentWhenContained)
 {
-    // Derived bounds are the union of the zone's content: containment is exact
-    // (closed intervals), so the corners on the boundary do not fire.
+    World.SetZoneBounds(SourceZone,
+        Aabb3d::FromMinMax(Vec3d{ -10, -10, -10 }, Vec3d{ 10, 10, 10 }));
     ASSERT_TRUE(World.SaveWorldAs(WorldPath()));
     EXPECT_EQ(CountRecords(World, "partition.zone.entity_outside_bounds"), 0u);
 }
 
-TEST_F(MoveEntitiesToZoneTest, EntityOutsideBoundsSelfHealsOnSaveForDerivedBounds)
+TEST_F(MoveEntitiesToZoneTest, EntityOutsideBoundsDoesNotRewriteOverrideOnSave)
 {
     ASSERT_TRUE(World.SaveWorldAs(WorldPath()));
+    const Aabb3d override = World.Manifest().Zones[0].Bounds;
+    ASSERT_TRUE(World.SetZoneBounds(SourceZone, override));
 
     Transform3f moved = *Source().GetScene().TryGetTransform(Entity);
     moved.Position = Vec3d{ 100.0f, 0.0f, 0.0f };
@@ -250,8 +246,7 @@ TEST_F(MoveEntitiesToZoneTest, EntityOutsideBoundsSelfHealsOnSaveForDerivedBound
     Source().MarkDirty();
     ASSERT_TRUE(World.SaveWorld());
 
-    // The save recomputed the derived union around the moved entity.
-    EXPECT_EQ(CountRecords(World, "partition.zone.entity_outside_bounds"), 0u);
+    EXPECT_EQ(CountRecords(World, "partition.zone.entity_outside_bounds"), 1u);
 }
 
 TEST_F(MoveEntitiesToZoneTest, UnloadClearsUndoStack)
@@ -259,7 +254,7 @@ TEST_F(MoveEntitiesToZoneTest, UnloadClearsUndoStack)
     // The workspace binding: any zone unload drops the stack, because queued
     // commands may reference the destroyed document.
     World.OnZoneUnloaded = [this](ZoneId) { Stack.Clear(); };
-    const ZoneId sibling = World.AddZone(World.Manifest().Regions[0].Id, "Sibling");
+    const ZoneId sibling = World.AddZone(World.Manifest().Graphs[0].Id, "Sibling");
     ASSERT_TRUE(World.LoadZone(sibling));
 
     ExecuteMove();

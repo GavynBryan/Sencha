@@ -7,7 +7,9 @@
 #include <imgui.h>
 
 #include <cstdint>
+#include <functional>
 #include <optional>
+#include <utility>
 #include <vector>
 
 struct EditorViewport;
@@ -49,6 +51,13 @@ struct SurfaceHit
 class PickingService
 {
 public:
+    using EntityProxyProvider = std::function<
+        std::optional<std::pair<SelectableRef, float>>(const Ray3d&, const EditorScene&)>;
+
+    void SetEntityProxyProvider(EntityProxyProvider provider)
+    {
+        ProxyProvider = std::move(provider);
+    }
     [[nodiscard]] SelectableRef Pick(const EditorViewport& viewport,
                                      ImVec2 point,
                                      const EditorScene& scene,
@@ -126,4 +135,6 @@ private:
                                            EntityId restrictTo = {}) const;
 
     [[nodiscard]] Ray3d BuildRay(const EditorViewport& viewport, ImVec2 point) const;
+
+    EntityProxyProvider ProxyProvider;
 };

@@ -1,36 +1,63 @@
 #pragma once
 
 #include <cstdint>
-#include <limits>
+#include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 #include <zone/WorldPartitionIndex.h>
 #include <zone/WorldPartitionManifest.h>
 #include <zone/ZoneParticipation.h>
 
-// Why a zone is demanded. Flags, not a single enum: one zone can be demanded
-// for several reasons at once (pinned and a neighbor, say), and the demand
-// inspector wants all of them.
-struct ZoneDemandSources
+enum class ZoneDemandReason : uint8_t
 {
-    bool Focus = false;
-    bool Pinned = false;
-    bool Neighbor = false;
-    bool Spatial = false;
-    bool Lingering = false;
+    Focus,
+    SameGraphHop,
+    SpatialRadius,
+    CrossGraphEntry,
+    ExplicitPin,
+    Gameplay,
+    TraversalGrace,
+    Linger,
+};
+
+struct ZoneDemandReasonRecord
+{
+    ZoneDemandReason Reason = ZoneDemandReason::Focus;
+    ZoneId SourceZone;
+    uint64_t SourceEndpoint = 0;
+    int32_t Rank = 0;
+    std::optional<double> Cost;
+
+    friend bool operator==(const ZoneDemandReasonRecord&,
+                           const ZoneDemandReasonRecord&) = default;
 };
 
 // One zone's desired residency this update. The data contract the kyusu demand
 // inspector and the streaming telemetry read; records first, UI second.
+//
+// A published record always carries at least one reason. One zone can be
+// demanded several ways at once (pinned and a graph neighbor, say), and one
+// kind can appear more than once when separate sources produced it, so Reasons
+// is a list rather than a set of flags.
 struct ZoneDemandRecord
 {
     ZoneId            Zone;
     ZoneParticipation Desired;
-    ZoneDemandSources Sources;
+    std::vector<ZoneDemandReasonRecord> Reasons;
 };
 
-// A script- or transition-driven residency demand beyond the policy. Data, not
+// Whether the record carries this kind of reason at all. Compares the kind
+// only: two SpatialRadius entries from different seeds are one kind.
+[[nodiscard]] bool IsDemandedFor(const ZoneDemandRecord& record,
+                                 ZoneDemandReason reason);
+
+// The record's reason kinds as a "+"-joined display string, each kind named
+// once, in a fixed order that does not depend on how the reasons accumulated.
+[[nodiscard]] std::string DescribeZoneDemandReasons(const ZoneDemandRecord& record);
+
+// An explicit script- or gameplay-driven residency demand beyond policy. Data, not
 // subclasses.
 struct ZonePin
 {
@@ -58,59 +85,68 @@ struct WorldPartitionStreamingConfig
 };
 
 // The streaming config in force while `focus` is resident: the focus zone's
-// region overrides applied over `base`, field by field. Pure; the runtime and
-// the editor preview both resolve through it. Invalid or region-less focus
+// graph overrides applied over `base`, field by field. Pure; the runtime and
+// the editor preview both resolve through it. Invalid or graph-less focus
 // returns base unchanged.
 [[nodiscard]] WorldPartitionStreamingConfig
-ResolveRegionStreamingConfig(const WorldPartitionManifest& manifest, ZoneId focus,
+ResolveGraphStreamingConfig(const WorldPartitionManifest& manifest, ZoneId focus,
                              const WorldPartitionStreamingConfig& base);
 
-// One zone's BFS rank from the focus: hop distance (0 = the focus itself) and
-// the highest PreloadPriority among the transition edges that discovered the
-// zone at its shortest hop (minimum for the focus). Eviction and load-issue
-// ordering read these; ComputeZoneDemand's traversal is this one.
+// One zone's BFS rank from the focus. Ordering is graph-policy evidence, never
+// an authored per-connection priority.
 struct ZoneHopRank
 {
     ZoneId  Zone;
     int32_t Hop = 0;
-    int32_t Priority = std::numeric_limits<int32_t>::min();
+    double Cost = 0.0; // runtime-derived distance/cost within one policy rank
+    ZoneDemandReason Reason = ZoneDemandReason::Focus;
+    ZoneId SourceZone;
+    uint64_t SourceEndpoint = 0;
 };
 
-// Pure. BFS over outgoing edges only, up to hopCount hops from the focus.
-// Edges whose RequiredTags are not all present in activeTags do not exist for
-// the traversal (a gate removes the EDGE, never a zone reachable another way).
-// Empty for an invalid or unknown focus. Ascending zone id.
+// Pure. BFS over outgoing edges only, up to hopCount hops from the focus. Gate
+// state never removes topology or residency demand. Empty for an invalid or
+// unknown focus. Ascending zone id.
 [[nodiscard]] std::vector<ZoneHopRank>
 ComputeZoneHopRanks(const WorldPartitionManifest& manifest,
                     const WorldPartitionIndex& index,
                     ZoneId focus,
-                    int32_t hopCount,
-                    std::span<const std::string> activeTags = {});
+                    int32_t hopCount);
 
-// Pure focus resolution from a position: candidates are zones whose Bounds
-// contain the position; the previous focus wins while it remains a candidate
-// (hysteresis at doorway thresholds); otherwise the smallest-volume candidate,
+struct ZoneContainmentResult
+{
+    ZoneId Chosen;
+    std::vector<ZoneId> Candidates;
+    bool Ambiguous = false;
+};
+
+// Pure placement and recovery resolution from a position. The preferred zone
+// wins while it remains an AABB candidate; otherwise the smallest-volume candidate,
 // ties by ascending zone id. A position inside no zone resolves to the
 // NEAREST zone by closest-point distance (ties: smaller volume, then id):
 // derived bounds hug authored geometry, so a pawn standing on a floor slab or
 // airborne routinely sits outside its zone's box, and keeping the previous
 // focus would freeze streaming on whatever zone was entered last. `previous`
-// survives only when no zone has valid bounds. Shared by
+// survives only when no zone has valid bounds. Candidates contain only actual
+// containing AABBs, sorted by id, so callers can diagnose overlap ambiguity.
+// Shared by
 // WorldPartitionRuntime and the editor's streaming preview.
+[[nodiscard]] ZoneContainmentResult ResolveZoneAt(
+    const WorldPartitionManifest& manifest, Vec3d position, ZoneId preferred);
+
 [[nodiscard]] ZoneId ResolveFocusZone(const WorldPartitionManifest& manifest,
                                       Vec3d position, ZoneId previous);
 
 // Pure. The demand set for one focus: the focus zone at full participation,
 // its graph neighbors within HopCount hops at the config's preload
 // participation, zones within Radius of the focus position likewise (when a
-// position is supplied), plus pins at their minimum. Lingering is runtime
-// state and is layered on by WorldPartitionRuntime::Update, never computed
-// here. Deterministic: records ascend by zone id value.
+// position is supplied), plus pins at their minimum. Linger is runtime state
+// and is layered on by WorldPartitionRuntime::Update, never computed here.
+// Deterministic: records ascend by zone id value.
 [[nodiscard]] std::vector<ZoneDemandRecord>
 ComputeZoneDemand(const WorldPartitionManifest& manifest,
                   const WorldPartitionIndex& index,
                   ZoneId focus,
                   std::span<const ZonePin> pins,
                   const WorldPartitionStreamingConfig& config,
-                  const Vec3d* focusPosition = nullptr,
-                  std::span<const std::string> activeTags = {});
+                  const Vec3d* focusPosition = nullptr);

@@ -9,6 +9,7 @@
 #include <math/geometry/3d/Transform3d.h>
 
 #include <memory>
+#include <functional>
 #include <span>
 #include <vector>
 
@@ -31,7 +32,8 @@ public:
                              std::span<const Transform3f> transforms,
                              EditorScene& scene, EditorDocument& document,
                              SelectionService& selection,
-                             bool asInstance = false);
+                             bool asInstance = false,
+                             std::function<void(std::vector<EntitySnapshot>&)> remap = {});
 
     void Execute() override;
     void Undo() override;
@@ -47,4 +49,5 @@ private:
     SelectionSnapshot           PreviousSelection;
     bool                        AsInstance = false;
     bool                        Captured = false;
+    std::function<void(std::vector<EntitySnapshot>&)> Remap;
 };

@@ -231,10 +231,10 @@ if(EDITOR_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/AssetFieldIo.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentSerialization.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorDocument.cpp
+        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorEntityRecipe.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorScene.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/WorldDocument.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/ZoneBounds.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/TransitionConnect.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/render/EditorLightGather.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/MoveEntitiesToZoneCommand.cpp
         ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMesh.cpp

@@ -69,16 +69,16 @@ TEST_F(WorldDocumentTest, LegacyModeWrapsSingleDocument)
     EXPECT_EQ(world.FocusDocument().GetScene().GetEntityCount(), 0u);
 }
 
-TEST_F(WorldDocumentTest, NewWorldHasOneRegionOneZoneFocused)
+TEST_F(WorldDocumentTest, NewWorldHasOneGraphOneZoneFocused)
 {
     WorldDocument world(Logging);
     world.NewWorld("TestWorld");
 
     EXPECT_TRUE(world.IsWorld());
-    ASSERT_EQ(world.Manifest().Regions.size(), 1u);
+    ASSERT_EQ(world.Manifest().Graphs.size(), 1u);
     ASSERT_EQ(world.Manifest().Zones.size(), 1u);
     EXPECT_TRUE(world.Manifest().Zones[0].Id.IsValid());
-    EXPECT_EQ(world.Manifest().Zones[0].Region, world.Manifest().Regions[0].Id);
+    EXPECT_EQ(world.Manifest().Zones[0].Graph, world.Manifest().Graphs[0].Id);
     EXPECT_EQ(world.Manifest().StartZone, world.Manifest().Zones[0].Id);
     EXPECT_EQ(world.FocusZone(), world.Manifest().Zones[0].Id);
     EXPECT_TRUE(world.IsZoneOpen(world.FocusZone()));
@@ -90,12 +90,12 @@ TEST_F(WorldDocumentTest, MintedIdsAreNonzeroAndUniqueAcrossManifest)
     WorldDocument world(Logging);
     world.NewWorld("TestWorld");
 
-    const RegionId region = world.Manifest().Regions[0].Id;
+    const GraphId graph = world.Manifest().Graphs[0].Id;
     std::vector<uint64_t> minted;
-    minted.push_back(region.Value);
+    minted.push_back(graph.Value);
     minted.push_back(world.Manifest().Zones[0].Id.Value);
     for (int i = 0; i < 16; ++i)
-        minted.push_back(world.AddZone(region, "Zone").Value);
+        minted.push_back(world.AddZone(graph, "Zone").Value);
 
     for (size_t a = 0; a < minted.size(); ++a)
     {
@@ -110,10 +110,10 @@ TEST_F(WorldDocumentTest, LoadZoneAssignsUniqueMonotonicRegistryIds)
     WorldDocument world(Logging);
     world.NewWorld("TestWorld");
 
-    const RegionId region = world.Manifest().Regions[0].Id;
+    const GraphId graph = world.Manifest().Graphs[0].Id;
     const ZoneId first = world.Manifest().Zones[0].Id;
-    const ZoneId second = world.AddZone(region, "Second");
-    const ZoneId third = world.AddZone(region, "Third");
+    const ZoneId second = world.AddZone(graph, "Second");
+    const ZoneId third = world.AddZone(graph, "Third");
 
     // The world scene document takes index 2 (created before any zone opens).
     EXPECT_EQ(world.WorldSceneDocument().GetRegistry().Id.Index, 2u);
@@ -133,7 +133,7 @@ TEST_F(WorldDocumentTest, SetFocusLoadsAndFiresObserverOnce)
 {
     WorldDocument world(Logging);
     world.NewWorld("TestWorld");
-    const ZoneId second = world.AddZone(world.Manifest().Regions[0].Id, "Second");
+    const ZoneId second = world.AddZone(world.Manifest().Graphs[0].Id, "Second");
 
     int fired = 0;
     world.OnFocusChanged = [&fired] { ++fired; };
@@ -148,11 +148,29 @@ TEST_F(WorldDocumentTest, SetFocusLoadsAndFiresObserverOnce)
     EXPECT_EQ(fired, 1);
 }
 
+TEST_F(WorldDocumentTest, ZoneSelectionIsSharedStateDistinctFromFocus)
+{
+    WorldDocument world(Logging);
+    world.NewWorld("TestWorld");
+    const ZoneId first = world.FocusZone();
+    const ZoneId second = world.AddZone(world.Manifest().Graphs[0].Id, "Second");
+
+    ASSERT_TRUE(world.SelectZone(second));
+    EXPECT_EQ(world.SelectedZone(), second);
+    EXPECT_EQ(world.FocusZone(), first);
+    EXPECT_FALSE(world.IsZoneOpen(second));
+
+    ASSERT_TRUE(world.SetFocusZone(second));
+    EXPECT_EQ(world.FocusZone(), second);
+    EXPECT_EQ(world.SelectedZone(), second);
+    EXPECT_FALSE(world.SelectZone(ZoneId{ 0xdead }));
+}
+
 TEST_F(WorldDocumentTest, UnloadRefusesDirtyZone)
 {
     WorldDocument world(Logging);
     world.NewWorld("TestWorld");
-    const ZoneId second = world.AddZone(world.Manifest().Regions[0].Id, "Second");
+    const ZoneId second = world.AddZone(world.Manifest().Graphs[0].Id, "Second");
 
     ASSERT_TRUE(world.LoadZone(second));
     OpenZoneDocument(world, second).MarkDirty();
@@ -169,9 +187,9 @@ TEST_F(WorldDocumentTest, WorldSaveLoadRoundTripsManifestAndZoneScenes)
 {
     WorldDocument world(Logging);
     world.NewWorld("TestWorld");
-    const RegionId region = world.Manifest().Regions[0].Id;
+    const GraphId graph = world.Manifest().Graphs[0].Id;
     const ZoneId first = world.Manifest().Zones[0].Id;
-    const ZoneId second = world.AddZone(region, "Second");
+    const ZoneId second = world.AddZone(graph, "Second");
 
     world.FocusDocument().GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
     ASSERT_TRUE(world.LoadZone(second));
@@ -186,7 +204,7 @@ TEST_F(WorldDocumentTest, WorldSaveLoadRoundTripsManifestAndZoneScenes)
     ASSERT_EQ(reloaded.Manifest().Zones.size(), 2u);
     EXPECT_EQ(reloaded.Manifest().Zones[0].Id, first);
     EXPECT_EQ(reloaded.Manifest().Zones[1].Id, second);
-    EXPECT_EQ(reloaded.Manifest().Regions[0].Id, region);
+    EXPECT_EQ(reloaded.Manifest().Graphs[0].Id, graph);
     EXPECT_EQ(reloaded.FocusZone(), first);
     EXPECT_EQ(reloaded.FocusDocument().GetScene().GetEntityCount(), 1u);
 
@@ -198,7 +216,7 @@ TEST_F(WorldDocumentTest, SaveWritesSceneFilesForNewZones)
 {
     WorldDocument world(Logging);
     world.NewWorld("TestWorld");
-    world.AddZone(world.Manifest().Regions[0].Id, "East Hall 2");
+    world.AddZone(world.Manifest().Graphs[0].Id, "East Hall 2");
 
     ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
 
@@ -213,10 +231,10 @@ TEST_F(WorldDocumentTest, VisitOpenZonesFollowsManifestOrder)
 {
     WorldDocument world(Logging);
     world.NewWorld("TestWorld");
-    const RegionId region = world.Manifest().Regions[0].Id;
+    const GraphId graph = world.Manifest().Graphs[0].Id;
     const ZoneId first = world.Manifest().Zones[0].Id;
-    const ZoneId second = world.AddZone(region, "Second");
-    const ZoneId third = world.AddZone(region, "Third");
+    const ZoneId second = world.AddZone(graph, "Second");
+    const ZoneId third = world.AddZone(graph, "Third");
 
     // Load out of manifest order: iteration must still follow the manifest.
     ASSERT_TRUE(world.LoadZone(third));
@@ -239,7 +257,7 @@ TEST_F(WorldDocumentTest, UserSidecarRoundTripsFocusAndZoneStates)
         WorldDocument world(Logging);
         world.NewWorld("TestWorld");
         const ZoneId zoneOne = world.Manifest().Zones[0].Id;
-        const ZoneId zoneTwo = world.AddZone(world.Manifest().Regions[0].Id, "Second");
+        const ZoneId zoneTwo = world.AddZone(world.Manifest().Graphs[0].Id, "Second");
         EXPECT_TRUE(world.SaveWorldAs(WorldPath()));
         EXPECT_TRUE(world.SetFocusZone(zoneTwo));
         EXPECT_TRUE(world.SetZoneVisible(zoneOne, false));
@@ -268,7 +286,7 @@ TEST_F(WorldDocumentTest, MissingSidecarYieldsDefaults)
     {
         WorldDocument world(Logging);
         world.NewWorld("TestWorld");
-        second = world.AddZone(world.Manifest().Regions[0].Id, "Second");
+        second = world.AddZone(world.Manifest().Graphs[0].Id, "Second");
         ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
         ASSERT_TRUE(world.SetFocusZone(second));
         ASSERT_TRUE(world.SaveWorld());
@@ -289,7 +307,7 @@ TEST_F(WorldDocumentTest, SceneUnresolvedRecordFiresForMissingFile)
     {
         WorldDocument world(Logging);
         world.NewWorld("TestWorld");
-        second = world.AddZone(world.Manifest().Regions[0].Id, "Second");
+        second = world.AddZone(world.Manifest().Graphs[0].Id, "Second");
         ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
     }
     fs::remove(Root / "levels/second.level.json");
@@ -328,7 +346,7 @@ TEST_F(WorldDocumentTest, ComputeZoneBoundsUnionsEntities)
     EXPECT_FALSE(ComputeZoneBounds(empty.GetScene()).has_value());
 }
 
-TEST_F(WorldDocumentTest, ComputeZoneBoundsRespectsOverrideFlag)
+TEST_F(WorldDocumentTest, SaveDerivesBoundsUntilExplicitOverride)
 {
     WorldDocument world(Logging);
     world.NewWorld("TestWorld");
@@ -338,13 +356,12 @@ TEST_F(WorldDocumentTest, ComputeZoneBoundsRespectsOverrideFlag)
     ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
     EXPECT_EQ(world.Manifest().Zones[0].Bounds.Max, (Vec3d{ 4.0f, 4.0f, 4.0f }));
 
-    // Designer-set bounds survive the save-time recompute.
     const Aabb3d authored{ { -100.0f, 0.0f, -100.0f }, { 100.0f, 10.0f, 100.0f } };
-    world.Manifest().Zones[0].Bounds = authored;
-    world.Manifest().Zones[0].BoundsOverridden = true;
+    ASSERT_TRUE(world.SetZoneBounds(zone, authored));
     ASSERT_TRUE(world.SaveWorld());
 
     EXPECT_EQ(world.Manifest().Zones[0].Bounds, authored);
+    EXPECT_TRUE(world.Manifest().Zones[0].BoundsOverridden);
     EXPECT_EQ(world.Manifest().Zones[0].Id, zone);
 }
 

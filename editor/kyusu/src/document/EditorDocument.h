@@ -9,6 +9,7 @@
 
 #include <string>
 #include <string_view>
+#include <functional>
 
 class LoggingProvider;
 class AssetSystem;
@@ -86,6 +87,9 @@ public:
     [[nodiscard]] bool HasFilePath() const;
 
     void MarkDirty(bool dirty = true);
+    // Owner hook for derived editor state (world validation). It is invoked only
+    // for authored mutations, never for load/save clearing dirty state.
+    std::function<void()> OnEdited;
     [[nodiscard]] EditorScene& GetScene();
     [[nodiscard]] const EditorScene& GetScene() const;
     [[nodiscard]] const Registry& GetRegistry() const;

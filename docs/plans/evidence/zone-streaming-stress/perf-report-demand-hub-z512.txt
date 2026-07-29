@@ -1,0 +1,40 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 662  of event 'cpu_core/cycles/Pu'
+# Event count (approx.): 584771692
+#
+# Overhead  Command        Shared Object         Symbol                                                                                                                                                                                                                                                         
+# ........  .............  ....................  ...............................................................................................................................................................................................................................................................
+#
+    86.55%  runtime_tests  libsencha_engine.so   [.] ComputeZoneHopRanks(WorldPartitionManifest const&, WorldPartitionIndex const&, StrongId<ZoneIdTag, unsigned long>, int)::{lambda(StrongId<ZoneIdTag, unsigned long>, unsigned long)#1}::operator()(StrongId<ZoneIdTag, unsigned long>, unsigned long) const
+            |          
+            |--39.51%--operator== (inlined)
+            |          |          
+            |          |--20.18%--ZoneExists (inlined)
+            |          |          operator() (inlined)
+            |          |          __normal_iterator (inlined)
+            |          |          end (inlined)
+            |          |          empty (inlined)
+            |          |          ComputeZoneDemand (inlined)
+            |          |          size (inlined)
+            |          |          operator() (inlined)
+            |          |          MeasureBatched<(anonymous namespace)::MeasureDemandStages(const ZoneTopologyStress::TopologySpec&, int)::<lambda()> > (inlined)
+            |          |          MeasureDemandStages (inlined)
+            |          |          TestBody (inlined)
+            |          |          HandleExceptionsInMethodIfSupported<testing::Test, void> (inlined)
+            |          |          Run (inlined)
+            |          |          Run (inlined)
+            |          |          Run (inlined)
+            |          |          Run (inlined)
+            |          |          Run (inlined)
+            |          |          RunAllTests (inlined)
+            |          |          HandleSehExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool> (inlined)
+            |          |          HandleExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool> (inlined)
+            |          |          Run (inlined)
+            |          |          main
+            |          |          __libc_start_call_main
+            |          |          __libc_start_main@@GLIBC_2.34
+            |          |          _start

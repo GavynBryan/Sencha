@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
+#include <string_view>
 #include <utility>
 
 namespace
@@ -15,12 +17,45 @@ bool ZoneExists(const WorldPartitionManifest& manifest, ZoneId zone)
     return false;
 }
 
+// Existence and graph in one pass, for callers that want both. Asking through
+// ZoneExists and GraphOf separately walks the zone list twice for one answer,
+// which the hop-rank BFS does once per edge it considers.
+const ZoneHeader* FindZoneHeader(const WorldPartitionManifest& manifest, ZoneId zone)
+{
+    for (const ZoneHeader& header : manifest.Zones)
+        if (header.Id == zone)
+            return &header;
+    return nullptr;
+}
+
 ZoneHopRank* FindRank(std::vector<ZoneHopRank>& ranks, ZoneId zone)
 {
     for (ZoneHopRank& rank : ranks)
         if (rank.Zone == zone)
             return &rank;
     return nullptr;
+}
+
+GraphId GraphOf(const WorldPartitionManifest& manifest, ZoneId zone)
+{
+    for (const ZoneHeader& header : manifest.Zones)
+        if (header.Id == zone)
+            return header.Graph;
+    return {};
+}
+
+bool EndpointAllowsOutgoing(DockSide side, uint32_t directions)
+{
+    constexpr uint32_t aToB = 1u << 0;
+    constexpr uint32_t bToA = 1u << 1;
+    return side == DockSide::A ? (directions & aToB) != 0 : (directions & bToA) != 0;
+}
+
+void AddReason(std::vector<ZoneDemandReasonRecord>& reasons,
+               ZoneDemandReasonRecord reason)
+{
+    if (std::find(reasons.begin(), reasons.end(), reason) == reasons.end())
+        reasons.push_back(std::move(reason));
 }
 
 double BoundsVolume(const Aabb3d& bounds)
@@ -33,41 +68,50 @@ double BoundsVolume(const Aabb3d& bounds)
 } // namespace
 
 WorldPartitionStreamingConfig
-ResolveRegionStreamingConfig(const WorldPartitionManifest& manifest, ZoneId focus,
+ResolveGraphStreamingConfig(const WorldPartitionManifest& manifest, ZoneId focus,
                              const WorldPartitionStreamingConfig& base)
 {
     WorldPartitionStreamingConfig resolved = base;
     if (!focus.IsValid())
         return resolved;
 
-    RegionId focusRegion;
+    GraphId focusGraph;
     for (const ZoneHeader& header : manifest.Zones)
         if (header.Id == focus)
-            focusRegion = header.Region;
+            focusGraph = header.Graph;
 
-    for (const RegionRecord& region : manifest.Regions)
+    for (const GraphRecord& graph : manifest.Graphs)
     {
-        if (region.Id != focusRegion)
+        if (graph.Id != focusGraph)
             continue;
-        if (region.Streaming.HopCount)
-            resolved.HopCount = *region.Streaming.HopCount;
-        if (region.Streaming.Radius)
-            resolved.Radius = *region.Streaming.Radius;
-        if (region.Streaming.ResidentZoneCap)
-            resolved.ResidentZoneCap = *region.Streaming.ResidentZoneCap;
+        if (graph.Streaming.HopCount)
+            resolved.HopCount = *graph.Streaming.HopCount;
+        if (graph.Streaming.Radius)
+            resolved.Radius = *graph.Streaming.Radius;
+        if (graph.Streaming.ResidentZoneCap)
+            resolved.ResidentZoneCap = *graph.Streaming.ResidentZoneCap;
         break;
     }
     return resolved;
 }
 
-ZoneId ResolveFocusZone(const WorldPartitionManifest& manifest, Vec3d position,
-                        ZoneId previous)
+ZoneContainmentResult ResolveZoneAt(const WorldPartitionManifest& manifest,
+                                    Vec3d position, ZoneId preferred)
 {
-    // Hysteresis: the previous focus wins while the position stays inside it,
-    // so a doorway threshold does not flap focus between overlapping bounds.
+    ZoneContainmentResult result;
     for (const ZoneHeader& header : manifest.Zones)
-        if (header.Id == previous && header.Bounds.Contains(position))
-            return previous;
+        if (header.Bounds.Contains(position))
+            result.Candidates.push_back(header.Id);
+    std::sort(result.Candidates.begin(), result.Candidates.end(),
+              [](ZoneId a, ZoneId b) { return a.Value < b.Value; });
+    result.Ambiguous = result.Candidates.size() > 1;
+
+    if (std::find(result.Candidates.begin(), result.Candidates.end(), preferred)
+        != result.Candidates.end())
+    {
+        result.Chosen = preferred;
+        return result;
+    }
 
     const ZoneHeader* best = nullptr;
     for (const ZoneHeader& header : manifest.Zones)
@@ -80,7 +124,10 @@ ZoneId ResolveFocusZone(const WorldPartitionManifest& manifest, Vec3d position,
             best = &header;
     }
     if (best != nullptr)
-        return best->Id;
+    {
+        result.Chosen = best->Id;
+        return result;
+    }
 
     // Inside no zone: the nearest bounds wins (ties: smaller volume, then
     // id). Derived bounds hug authored geometry, so a pawn standing on a
@@ -113,49 +160,35 @@ ZoneId ResolveFocusZone(const WorldPartitionManifest& manifest, Vec3d position,
             bestVolume = volume;
         }
     }
-    return best != nullptr ? best->Id : previous;
+    result.Chosen = best != nullptr ? best->Id : preferred;
+    return result;
+}
+
+ZoneId ResolveFocusZone(const WorldPartitionManifest& manifest, Vec3d position,
+                        ZoneId previous)
+{
+    return ResolveZoneAt(manifest, position, previous).Chosen;
 }
 
 std::vector<ZoneHopRank> ComputeZoneHopRanks(const WorldPartitionManifest& manifest,
                                              const WorldPartitionIndex& index,
                                              ZoneId focus,
-                                             int32_t hopCount,
-                                             std::span<const std::string> activeTags)
+                                             int32_t hopCount)
 {
-    const auto gateOpen = [&](const TransitionRecord& edge)
-    {
-        for (const std::string& required : edge.RequiredTags)
-        {
-            bool present = false;
-            for (const std::string& active : activeTags)
-                if (active == required)
-                {
-                    present = true;
-                    break;
-                }
-            if (!present)
-                return false;
-        }
-        return true;
-    };
-
     if (!focus.IsValid() || !ZoneExists(manifest, focus))
         return {};
 
-    std::vector<ZoneHopRank> ranks;
-    ranks.push_back(ZoneHopRank{ focus, 0, std::numeric_limits<int32_t>::min() });
+    const GraphId focusGraph = GraphOf(manifest, focus);
 
-    // Outgoing edges only: a two-way door is two edges (the unpaired validation
-    // rule keeps it that way), so paired doors are symmetric by construction
-    // and a OneWay edge INTO the focus does not preload its source.
-    //
-    // The traversal carries a remaining hop budget instead of running level by
-    // level: an edge may be crossed while budget remains OR when it carries an
-    // authored PreloadDepth, and the far side continues with
-    // max(budget - 1, PreloadDepth - 1), so one critical corridor preloads
-    // deeper than the global horizon. Hop values stay true BFS distances. A
-    // zone re-reached with a larger budget re-expands (FIFO order keeps the
-    // sequence deterministic).
+    std::vector<ZoneHopRank> ranks;
+    ranks.push_back(ZoneHopRank{ focus, 0, 0.0,
+                                  ZoneDemandReason::Focus, focus, 0 });
+
+    // Outgoing endpoints only: bilateral docks and links expose one endpoint
+    // per zone and direction masks decide whether it can expand from this side.
+    // A cross-graph connection seeds the destination even at the current
+    // graph's hop boundary. The destination Graph then supplies its own hop
+    // policy. Expansion never walks onward into a third Graph in the same pass.
     struct Frontier
     {
         ZoneId  Zone;
@@ -175,35 +208,57 @@ std::vector<ZoneHopRank> ComputeZoneHopRanks(const WorldPartitionManifest& manif
     for (size_t head = 0; head < queue.size(); ++head)
     {
         const Frontier current = queue[head];
-        for (uint32_t edgeIndex : index.Outgoing(current.Zone))
+        // The frontier zone's graph is the same for every edge leaving it, and
+        // a high-degree zone leaves a lot of them; resolving it per edge made
+        // the BFS cost the zone count times the degree.
+        const GraphId currentGraph = GraphOf(manifest, current.Zone);
+        const auto consider = [&](ZoneId destination, uint64_t endpointId)
         {
-            const TransitionRecord& edge = manifest.Transitions[edgeIndex];
-            if (!ZoneExists(manifest, edge.To) || !gateOpen(edge))
-                continue;
-            if (current.Remaining <= 0 && edge.PreloadDepth <= 0)
-                continue;
-            const int32_t farRemaining =
-                std::max(current.Remaining - 1, edge.PreloadDepth - 1);
+            const ZoneHeader* destinationHeader = FindZoneHeader(manifest, destination);
+            if (destinationHeader == nullptr)
+                return;
+            const GraphId destinationGraph = destinationHeader->Graph;
+            const bool crossGraph = currentGraph != destinationGraph;
+            if (crossGraph && currentGraph != focusGraph)
+                return;
+            if (current.Remaining <= 0 && !crossGraph)
+                return;
+
+            int32_t farRemaining = std::max(current.Remaining - 1, 0);
+            if (crossGraph)
+            {
+                WorldPartitionStreamingConfig destinationBase;
+                destinationBase.HopCount = hopCount;
+                farRemaining = std::max(
+                    0, ResolveGraphStreamingConfig(manifest, destination, destinationBase).HopCount);
+            }
             const int32_t farHop = current.Hop + 1;
 
-            if (ZoneHopRank* existing = FindRank(ranks, edge.To))
+            if (ZoneHopRank* existing = FindRank(ranks, destination))
             {
-                // A zone reachable by several edges at its shortest hop keeps
-                // the highest priority among those discoveries.
-                if (existing->Hop == farHop && edge.PreloadPriority > existing->Priority)
-                    existing->Priority = edge.PreloadPriority;
-                if (int32_t* known = remainingOf(edge.To);
+                if (int32_t* known = remainingOf(destination);
                     known != nullptr && farRemaining > *known)
                 {
                     *known = farRemaining;
-                    queue.push_back(Frontier{ edge.To, existing->Hop, farRemaining });
+                    queue.push_back(Frontier{ destination, existing->Hop, farRemaining });
                 }
-                continue;
+                return;
             }
-            ranks.push_back(ZoneHopRank{ edge.To, farHop, edge.PreloadPriority });
-            bestRemaining.push_back({ edge.To.Value, farRemaining });
-            queue.push_back(Frontier{ edge.To, farHop, farRemaining });
-        }
+            ranks.push_back(ZoneHopRank{
+                destination, farHop, 0.0,
+                crossGraph ? ZoneDemandReason::CrossGraphEntry
+                           : ZoneDemandReason::SameGraphHop,
+                current.Zone, endpointId });
+            bestRemaining.push_back({ destination.Value, farRemaining });
+            queue.push_back(Frontier{ destination, farHop, farRemaining });
+        };
+
+        for (const DockEndpoint& endpoint : index.DocksFrom(current.Zone))
+            if (EndpointAllowsOutgoing(endpoint.Side, endpoint.Directions))
+                consider(endpoint.OtherZone, endpoint.Id.Value);
+        for (const LinkEndpoint& endpoint : index.LinksFrom(current.Zone))
+            if (EndpointAllowsOutgoing(endpoint.Side, endpoint.Directions))
+                consider(endpoint.OtherZone, endpoint.Id.Value);
     }
 
     std::sort(ranks.begin(), ranks.end(),
@@ -217,20 +272,21 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
                                                 ZoneId focus,
                                                 std::span<const ZonePin> pins,
                                                 const WorldPartitionStreamingConfig& config,
-                                                const Vec3d* focusPosition,
-                                                std::span<const std::string> activeTags)
+                                                const Vec3d* focusPosition)
 {
     struct DemandEntry
     {
         ZoneHopRank       Rank;
         ZoneParticipation Desired;
-        ZoneDemandSources Sources;
+        std::vector<ZoneDemandReasonRecord> Reasons;
         bool              Pinned = false;
     };
 
     // The caller decides what "no focus yet" means; the policy does not guess.
+    const WorldPartitionStreamingConfig focusConfig =
+        ResolveGraphStreamingConfig(manifest, focus, config);
     const std::vector<ZoneHopRank> ranks =
-        ComputeZoneHopRanks(manifest, index, focus, config.HopCount, activeTags);
+        ComputeZoneHopRanks(manifest, index, focus, focusConfig.HopCount);
     if (ranks.empty())
         return {};
 
@@ -247,12 +303,13 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
         {
             entry.Desired = ZoneParticipation{ .Visible = true, .Physics = true,
                                                .Logic = true, .Audio = true };
-            entry.Sources.Focus = true;
+            AddReason(entry.Reasons, { ZoneDemandReason::Focus, focus, 0, 0, {} });
         }
         else
         {
             entry.Desired = preload;
-            entry.Sources.Neighbor = true;
+            AddReason(entry.Reasons, { rank.Reason, rank.SourceZone,
+                                       rank.SourceEndpoint, rank.Hop, {} });
         }
         entries.push_back(entry);
     }
@@ -271,37 +328,75 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
     // preferred by eviction, so spatial-only entries rank one hop past the
     // horizon with nearer-survives-longer priority; the quantization makes
     // priority ties exact and deterministic.
-    if (config.Radius > 0.0 && focusPosition != nullptr)
+    struct SpatialSeed
     {
+        GraphId Graph;
+        ZoneId Zone;
+        Vec3d Position;
+        WorldPartitionStreamingConfig Config;
+    };
+    std::vector<SpatialSeed> spatialSeeds;
+    if (focusPosition != nullptr)
+        spatialSeeds.push_back({ GraphOf(manifest, focus), focus, *focusPosition, focusConfig });
+    if (focusPosition != nullptr)
+    {
+        for (const ZoneHopRank& rank : ranks)
+        {
+            const GraphId graph = GraphOf(manifest, rank.Zone);
+            if (std::any_of(spatialSeeds.begin(), spatialSeeds.end(),
+                            [&](const SpatialSeed& seed) { return seed.Graph == graph; }))
+                continue;
+            for (const ZoneHeader& header : manifest.Zones)
+            {
+                if (header.Id == rank.Zone && header.Bounds.IsValid())
+                {
+                    spatialSeeds.push_back({ graph, rank.Zone, header.Bounds.Center(),
+                        ResolveGraphStreamingConfig(manifest, rank.Zone, config) });
+                    break;
+                }
+            }
+        }
+    }
+
+    for (const SpatialSeed& seed : spatialSeeds)
+    {
+        if (seed.Config.Radius <= 0.0)
+            continue;
         for (const ZoneHeader& header : manifest.Zones)
         {
-            if (header.Id == focus || !header.Bounds.IsValid())
+            if (header.Id == seed.Zone || header.Graph != seed.Graph
+                || !header.Bounds.IsValid())
                 continue;
             const Vec3d closest{
-                std::clamp((*focusPosition)[0], header.Bounds.Min[0], header.Bounds.Max[0]),
-                std::clamp((*focusPosition)[1], header.Bounds.Min[1], header.Bounds.Max[1]),
-                std::clamp((*focusPosition)[2], header.Bounds.Min[2], header.Bounds.Max[2])
+                std::clamp(seed.Position[0], header.Bounds.Min[0], header.Bounds.Max[0]),
+                std::clamp(seed.Position[1], header.Bounds.Min[1], header.Bounds.Max[1]),
+                std::clamp(seed.Position[2], header.Bounds.Min[2], header.Bounds.Max[2])
             };
-            const Vec3d delta = closest - *focusPosition;
+            const Vec3d delta = closest - seed.Position;
             const double distanceSq = static_cast<double>(delta[0]) * delta[0]
                 + static_cast<double>(delta[1]) * delta[1]
                 + static_cast<double>(delta[2]) * delta[2];
-            if (distanceSq > config.Radius * config.Radius)
+            if (distanceSq > seed.Config.Radius * seed.Config.Radius)
                 continue;
             if (DemandEntry* existing = find(header.Id))
             {
-                existing->Sources.Spatial = true;
                 existing->Desired.Visible |= preload.Visible;
                 existing->Desired.Physics |= preload.Physics;
+                AddReason(existing->Reasons,
+                          { ZoneDemandReason::SpatialRadius, seed.Zone, 0,
+                            existing->Rank.Hop, std::sqrt(distanceSq) });
                 continue;
             }
             DemandEntry entry;
             entry.Rank = ZoneHopRank{
-                header.Id, config.HopCount + 1,
-                -static_cast<int32_t>(std::lround(std::sqrt(distanceSq) * 100.0))
+                header.Id, seed.Config.HopCount + 1,
+                std::sqrt(distanceSq),
+                ZoneDemandReason::SpatialRadius, seed.Zone, 0
             };
             entry.Desired = preload;
-            entry.Sources.Spatial = true;
+            AddReason(entry.Reasons,
+                      { ZoneDemandReason::SpatialRadius, seed.Zone, 0,
+                        entry.Rank.Hop, std::sqrt(distanceSq) });
             entries.push_back(entry);
         }
     }
@@ -317,10 +412,14 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
         if (existing == nullptr)
         {
             DemandEntry entry;
-            entry.Rank = ZoneHopRank{ pin.Zone, std::numeric_limits<int32_t>::max(),
-                                      std::numeric_limits<int32_t>::min() };
+            entry.Rank = ZoneHopRank{
+                pin.Zone, std::numeric_limits<int32_t>::max(),
+                0.0,
+                ZoneDemandReason::ExplicitPin, pin.Zone, 0 };
             entry.Desired = pin.Minimum;
-            entry.Sources.Pinned = true;
+            AddReason(entry.Reasons,
+                      { ZoneDemandReason::ExplicitPin, pin.Zone, 0,
+                        std::numeric_limits<int32_t>::max(), {} });
             entry.Pinned = true;
             entries.push_back(entry);
             continue;
@@ -329,45 +428,68 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
         existing->Desired.Physics |= pin.Minimum.Physics;
         existing->Desired.Logic |= pin.Minimum.Logic;
         existing->Desired.Audio |= pin.Minimum.Audio;
-        existing->Sources.Pinned = true;
+        AddReason(existing->Reasons,
+                  { ZoneDemandReason::ExplicitPin, pin.Zone, 0,
+                    std::numeric_limits<int32_t>::max(), {} });
         existing->Pinned = true;
     }
 
-    // Cap: evict non-focus non-pinned zones (hop descending, then priority
-    // ascending, then id descending) until the cap is met. Focus plus pins may
+    // Cap: evict non-focus non-pinned zones (hop descending, then derived cost
+    // descending, then id descending) until the cap is met. Focus plus pins may
     // exceed the cap: pins are explicit demands, silently dropping one would
     // be a policy lie.
-    if (entries.size() > static_cast<size_t>(config.ResidentZoneCap))
+    std::vector<bool> evicted(entries.size(), false);
+    std::vector<GraphId> demandedGraphs;
+    for (const DemandEntry& entry : entries)
     {
+        const GraphId graph = GraphOf(manifest, entry.Rank.Zone);
+        if (std::find(demandedGraphs.begin(), demandedGraphs.end(), graph) == demandedGraphs.end())
+            demandedGraphs.push_back(graph);
+    }
+    for (GraphId graph : demandedGraphs)
+    {
+        ZoneId graphSeed;
+        std::size_t remaining = 0;
+        for (std::size_t i = 0; i < entries.size(); ++i)
+        {
+            if (GraphOf(manifest, entries[i].Rank.Zone) != graph)
+                continue;
+            if (!graphSeed.IsValid())
+                graphSeed = entries[i].Rank.Zone;
+            ++remaining;
+        }
+        const int32_t cap = ResolveGraphStreamingConfig(manifest, graphSeed, config)
+                                .ResidentZoneCap;
+        if (remaining <= static_cast<std::size_t>(cap))
+            continue;
         std::vector<size_t> evictable;
         for (size_t i = 0; i < entries.size(); ++i)
-            if (!entries[i].Sources.Focus && !entries[i].Pinned)
+            if (GraphOf(manifest, entries[i].Rank.Zone) == graph
+                && entries[i].Rank.Zone != focus && !entries[i].Pinned)
                 evictable.push_back(i);
         std::sort(evictable.begin(), evictable.end(),
                   [&](size_t a, size_t b)
                   {
                       if (entries[a].Rank.Hop != entries[b].Rank.Hop)
                           return entries[a].Rank.Hop > entries[b].Rank.Hop;
-                      if (entries[a].Rank.Priority != entries[b].Rank.Priority)
-                          return entries[a].Rank.Priority < entries[b].Rank.Priority;
+                      if (entries[a].Rank.Cost != entries[b].Rank.Cost)
+                          return entries[a].Rank.Cost > entries[b].Rank.Cost;
                       return entries[a].Rank.Zone.Value > entries[b].Rank.Zone.Value;
                   });
-        std::vector<bool> evicted(entries.size(), false);
-        size_t remaining = entries.size();
         for (size_t candidate : evictable)
         {
-            if (remaining <= static_cast<size_t>(config.ResidentZoneCap))
+            if (remaining <= static_cast<size_t>(cap))
                 break;
             evicted[candidate] = true;
             --remaining;
         }
-        std::vector<DemandEntry> kept;
-        kept.reserve(remaining);
-        for (size_t i = 0; i < entries.size(); ++i)
-            if (!evicted[i])
-                kept.push_back(entries[i]);
-        entries = std::move(kept);
     }
+    std::vector<DemandEntry> kept;
+    kept.reserve(entries.size());
+    for (size_t i = 0; i < entries.size(); ++i)
+        if (!evicted[i])
+            kept.push_back(entries[i]);
+    entries = std::move(kept);
 
     std::sort(entries.begin(), entries.end(),
               [](const DemandEntry& a, const DemandEntry& b)
@@ -376,6 +498,41 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
     std::vector<ZoneDemandRecord> records;
     records.reserve(entries.size());
     for (const DemandEntry& entry : entries)
-        records.push_back(ZoneDemandRecord{ entry.Rank.Zone, entry.Desired, entry.Sources });
+        records.push_back(ZoneDemandRecord{
+            entry.Rank.Zone, entry.Desired, entry.Reasons });
     return records;
+}
+
+bool IsDemandedFor(const ZoneDemandRecord& record, ZoneDemandReason reason)
+{
+    return std::any_of(record.Reasons.begin(), record.Reasons.end(),
+                       [reason](const ZoneDemandReasonRecord& entry)
+                       { return entry.Reason == reason; });
+}
+
+std::string DescribeZoneDemandReasons(const ZoneDemandRecord& record)
+{
+    // Order lives here rather than in Reasons, which is in accumulation order
+    // and can hold one kind several times.
+    static constexpr std::pair<ZoneDemandReason, std::string_view> kLabels[] = {
+        { ZoneDemandReason::Focus,           "focus" },
+        { ZoneDemandReason::SameGraphHop,    "graph hop" },
+        { ZoneDemandReason::CrossGraphEntry, "cross-graph entry" },
+        { ZoneDemandReason::SpatialRadius,   "radius" },
+        { ZoneDemandReason::ExplicitPin,     "pin" },
+        { ZoneDemandReason::Gameplay,        "gameplay" },
+        { ZoneDemandReason::TraversalGrace,  "traversal grace" },
+        { ZoneDemandReason::Linger,          "linger" },
+    };
+
+    std::string text;
+    for (const auto& [reason, label] : kLabels)
+    {
+        if (!IsDemandedFor(record, reason))
+            continue;
+        if (!text.empty())
+            text += "+";
+        text += label;
+    }
+    return text;
 }

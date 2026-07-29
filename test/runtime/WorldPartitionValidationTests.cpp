@@ -7,7 +7,7 @@
 namespace
 {
 
-constexpr uint64_t RegionB1 = 0xb1;
+constexpr uint64_t GraphB1 = 0xb1;
 constexpr uint64_t ZoneA1 = 0xa1;
 constexpr uint64_t ZoneA2 = 0xa2;
 constexpr uint64_t ZoneA3 = 0xa3;
@@ -17,10 +17,15 @@ ZoneHeader MakeZone(uint64_t id, std::string name, Aabb3d bounds)
     ZoneHeader zone;
     zone.Id = ZoneId{ id };
     zone.Name = std::move(name);
-    zone.Region = RegionId{ RegionB1 };
+    zone.Graph = GraphId{ GraphB1 };
     zone.SceneRef = "levels/" + zone.Name + ".level.json";
     zone.Bounds = bounds;
     return zone;
+}
+
+void SetZoneBounds(ZoneHeader& zone, Aabb3d bounds)
+{
+    zone.Bounds = bounds;
 }
 
 TransitionRecord MakeTransition(uint64_t id, uint64_t from, uint64_t to,
@@ -42,7 +47,7 @@ WorldPartitionManifest MakeCleanManifest()
     WorldPartitionManifest manifest;
     manifest.Name = "TestWorld";
     manifest.StartZone = ZoneId{ ZoneA1 };
-    manifest.Regions = { RegionRecord{ RegionId{ RegionB1 }, "Ruins" } };
+    manifest.Graphs = { GraphRecord{ GraphId{ GraphB1 }, "Ruins" } };
     manifest.Zones = {
         MakeZone(ZoneA1, "hub", Aabb3d{ { -8.0f, 0.0f, -8.0f }, { 8.0f, 4.0f, 8.0f } }),
         MakeZone(ZoneA2, "east", Aabb3d{ { 8.0f, 0.0f, -4.0f }, { 24.0f, 4.0f, 4.0f } }),
@@ -87,18 +92,18 @@ TEST(WorldPartitionValidation, CleanFixtureEmitsNothing)
 TEST(WorldPartitionValidation, DuplicateIdFires)
 {
     WorldPartitionManifest manifest = MakeCleanManifest();
-    manifest.Regions.push_back(RegionRecord{ RegionId{ RegionB1 }, "Ruins Copy" });
+    manifest.Graphs.push_back(GraphRecord{ GraphId{ GraphB1 }, "Ruins Copy" });
 
     ExpectSingleRecord(Validate(manifest), "partition.id.duplicate",
-                       ContentRiskSeverity::Error, ContentRiskSourceKind::Region, RegionB1);
+                       ContentRiskSeverity::Error, ContentRiskSourceKind::Graph, GraphB1);
 }
 
-TEST(WorldPartitionValidation, RegionMissingFires)
+TEST(WorldPartitionValidation, GraphMissingFires)
 {
     WorldPartitionManifest manifest = MakeCleanManifest();
-    manifest.Zones[2].Region = RegionId{ 0xdead };
+    manifest.Zones[2].Graph = GraphId{ 0xdead };
 
-    ExpectSingleRecord(Validate(manifest), "partition.zone.region_missing",
+    ExpectSingleRecord(Validate(manifest), "partition.zone.graph_missing",
                        ContentRiskSeverity::Error, ContentRiskSourceKind::Zone, ZoneA3);
 }
 
@@ -156,25 +161,23 @@ TEST(WorldPartitionValidation, BoundsInvalidFires)
                        ContentRiskSeverity::Error, ContentRiskSourceKind::Zone, ZoneA3);
 }
 
-TEST(WorldPartitionValidation, BoundsOverlapFiresOncePerPair)
+TEST(WorldPartitionValidation, OverlappingBoundsAreLegalAndInferNoTopology)
 {
     WorldPartitionManifest manifest = MakeCleanManifest();
-    manifest.Zones[1].Bounds = Aabb3d{ { 0.0f, 0.0f, -4.0f }, { 24.0f, 4.0f, 4.0f } };
+    SetZoneBounds(manifest.Zones[1],
+                  Aabb3d{ { 0.0f, 0.0f, -4.0f }, { 24.0f, 4.0f, 4.0f } });
 
-    const auto records = Validate(manifest);
-    ExpectSingleRecord(records, "partition.bounds.overlap",
-                       ContentRiskSeverity::Warning, ContentRiskSourceKind::Zone, ZoneA1);
-    // The message reads by authored name, not the opaque hex id.
-    EXPECT_NE(records[0].Message.find("hub"), std::string::npos);
-    EXPECT_NE(records[0].Message.find("east"), std::string::npos);
-    EXPECT_EQ(records[0].Message.find("00000000000000a1"), std::string::npos);
+    EXPECT_TRUE(Validate(manifest).empty());
+    const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
+    EXPECT_TRUE(index.DocksFrom(ZoneId{ ZoneA1 }).empty());
 }
 
 TEST(WorldPartitionValidation, KissingFacesDoNotOverlap)
 {
     WorldPartitionManifest manifest = MakeCleanManifest();
     // east's -x face lies exactly on hub's +x face (x = 8): contact, not overlap.
-    manifest.Zones[1].Bounds = Aabb3d{ { 8.0f, 0.0f, -4.0f }, { 24.0f, 4.0f, 4.0f } };
+    SetZoneBounds(manifest.Zones[1],
+                  Aabb3d{ { 8.0f, 0.0f, -4.0f }, { 24.0f, 4.0f, 4.0f } });
     EXPECT_TRUE(Validate(manifest).empty());
 }
 
@@ -183,22 +186,9 @@ TEST(WorldPartitionValidation, TouchingCornersDoNotOverlap)
     WorldPartitionManifest manifest = MakeCleanManifest();
     // east shares only the single corner (8, 4, 8) with hub's max corner: zero
     // overlap depth on every axis.
-    manifest.Zones[1].Bounds = Aabb3d{ { 8.0f, 4.0f, 8.0f }, { 24.0f, 8.0f, 20.0f } };
+    SetZoneBounds(manifest.Zones[1],
+                  Aabb3d{ { 8.0f, 4.0f, 8.0f }, { 24.0f, 8.0f, 20.0f } });
     EXPECT_TRUE(Validate(manifest).empty());
-}
-
-TEST(WorldPartitionValidation, MessageFallsBackToHexWhenZoneUnnamed)
-{
-    WorldPartitionManifest manifest = MakeCleanManifest();
-    manifest.Zones[0].Name.clear();
-    manifest.Zones[1].Bounds = Aabb3d{ { 0.0f, 0.0f, -4.0f }, { 24.0f, 4.0f, 4.0f } };
-
-    const auto records = Validate(manifest);
-    ExpectSingleRecord(records, "partition.bounds.overlap",
-                       ContentRiskSeverity::Warning, ContentRiskSourceKind::Zone, ZoneA1);
-    // Unnamed zone shows its hex id; the named partner still shows its name.
-    EXPECT_NE(records[0].Message.find("00000000000000a1"), std::string::npos);
-    EXPECT_NE(records[0].Message.find("east"), std::string::npos);
 }
 
 TEST(WorldPartitionValidation, UnreachableZoneFires)
@@ -226,17 +216,17 @@ TEST(WorldPartitionValidation, NoStartZoneFiresAndSuppressesReachability)
 TEST(WorldPartitionValidation, RecordsAreDeterministicallyOrdered)
 {
     WorldPartitionManifest manifest = MakeCleanManifest();
-    manifest.Regions.push_back(RegionRecord{ RegionId{ RegionB1 }, "Ruins Copy" });
+    manifest.Graphs.push_back(GraphRecord{ GraphId{ GraphB1 }, "Ruins Copy" });
     manifest.Zones[2].SceneRef.clear();
-    manifest.Zones[1].Bounds = Aabb3d{ { 0.0f, 0.0f, -4.0f }, { 24.0f, 4.0f, 4.0f } };
+    SetZoneBounds(manifest.Zones[1],
+                  Aabb3d{ { 0.0f, 0.0f, -4.0f }, { 24.0f, 4.0f, 4.0f } });
 
     const auto first = Validate(manifest);
     const auto second = Validate(manifest);
 
-    ASSERT_EQ(first.size(), 3u);
+    ASSERT_EQ(first.size(), 2u);
     EXPECT_EQ(first[0].RuleId, "partition.id.duplicate");
     EXPECT_EQ(first[1].RuleId, "partition.zone.scene_missing");
-    EXPECT_EQ(first[2].RuleId, "partition.bounds.overlap");
 
     ASSERT_EQ(second.size(), first.size());
     for (size_t i = 0; i < first.size(); ++i)
@@ -252,26 +242,26 @@ TEST(WorldPartitionValidation, RecordsAreDeterministicallyOrdered)
 namespace
 {
 
-constexpr uint64_t RegionB2 = 0xb2;
+constexpr uint64_t GraphB2 = 0xb2;
 constexpr uint64_t ZoneA4 = 0xa4;
 constexpr uint64_t ZoneA5 = 0xa5;
 
-// The clean fixture plus a proximity-streamed region west of the hub: two
+// The clean fixture plus a proximity-streamed graph west of the hub: two
 // field cells with no edge between them, connected (or not) to the graph by
 // an entrance edge pair the test adds.
-WorldPartitionManifest MakeGridRegionManifest()
+WorldPartitionManifest MakeGridGraphManifest()
 {
     WorldPartitionManifest manifest = MakeCleanManifest();
-    RegionRecord grid{ RegionId{ RegionB2 }, "Fields" };
+    GraphRecord grid{ GraphId{ GraphB2 }, "Fields" };
     grid.Streaming.Radius = 100.0;
-    manifest.Regions.push_back(grid);
+    manifest.Graphs.push_back(grid);
 
     ZoneHeader cellA = MakeZone(ZoneA4, "field_a",
                                 Aabb3d{ { -24.0f, 0.0f, -8.0f }, { -8.0f, 4.0f, 8.0f } });
     ZoneHeader cellB = MakeZone(ZoneA5, "field_b",
                                 Aabb3d{ { -40.0f, 0.0f, -8.0f }, { -24.0f, 4.0f, 8.0f } });
-    cellA.Region = RegionId{ RegionB2 };
-    cellB.Region = RegionId{ RegionB2 };
+    cellA.Graph = GraphId{ GraphB2 };
+    cellB.Graph = GraphId{ GraphB2 };
     manifest.Zones.push_back(cellA);
     manifest.Zones.push_back(cellB);
     return manifest;
@@ -282,18 +272,18 @@ WorldPartitionManifest MakeGridRegionManifest()
 TEST(WorldPartitionValidation, StreamingInvalidFiresPerBadField)
 {
     WorldPartitionManifest manifest = MakeCleanManifest();
-    manifest.Regions[0].Streaming.HopCount = -1;
-    manifest.Regions[0].Streaming.Radius = -5.0;
-    manifest.Regions[0].Streaming.ResidentZoneCap = 0;
+    manifest.Graphs[0].Streaming.HopCount = -1;
+    manifest.Graphs[0].Streaming.Radius = -5.0;
+    manifest.Graphs[0].Streaming.ResidentZoneCap = 0;
 
     const auto records = Validate(manifest);
     ASSERT_EQ(records.size(), 3u);
     for (const ContentRiskRecord& record : records)
     {
-        EXPECT_EQ(record.RuleId, "partition.region.streaming_invalid");
+        EXPECT_EQ(record.RuleId, "partition.graph.streaming_invalid");
         EXPECT_EQ(record.Severity, ContentRiskSeverity::Error);
-        EXPECT_EQ(record.Kind, ContentRiskSourceKind::Region);
-        EXPECT_EQ(record.SourceId, RegionB1);
+        EXPECT_EQ(record.Kind, ContentRiskSourceKind::Graph);
+        EXPECT_EQ(record.SourceId, GraphB1);
         EXPECT_FALSE(record.Message.empty());
     }
 }
@@ -301,27 +291,27 @@ TEST(WorldPartitionValidation, StreamingInvalidFiresPerBadField)
 TEST(WorldPartitionValidation, StreamingBoundaryValuesAreClean)
 {
     WorldPartitionManifest manifest = MakeCleanManifest();
-    manifest.Regions[0].Streaming.HopCount = 0;
-    manifest.Regions[0].Streaming.Radius = 0.0;
-    manifest.Regions[0].Streaming.ResidentZoneCap = 1;
+    manifest.Graphs[0].Streaming.HopCount = 0;
+    manifest.Graphs[0].Streaming.Radius = 0.0;
+    manifest.Graphs[0].Streaming.ResidentZoneCap = 1;
 
     EXPECT_TRUE(Validate(manifest).empty());
 }
 
-TEST(WorldPartitionValidation, RadiusRegionCellsReachableThroughOneEntranceEdge)
+TEST(WorldPartitionValidation, RadiusGraphCellsReachableThroughOneEntranceEdge)
 {
-    WorldPartitionManifest manifest = MakeGridRegionManifest();
-    // One entrance pair into the region; field_b has no edge at all yet stays
-    // quiet: an explicit-radius region streams by proximity, not edges.
+    WorldPartitionManifest manifest = MakeGridGraphManifest();
+    // One entrance pair into the graph; field_b has no edge at all yet stays
+    // quiet: an explicit-radius graph streams by proximity, not edges.
     manifest.Transitions.push_back(MakeTransition(0xc6, ZoneA1, ZoneA4));
     manifest.Transitions.push_back(MakeTransition(0xc7, ZoneA4, ZoneA1));
 
     EXPECT_TRUE(Validate(manifest).empty());
 }
 
-TEST(WorldPartitionValidation, IslandRadiusRegionStillWarnsEveryCell)
+TEST(WorldPartitionValidation, IslandRadiusGraphStillWarnsEveryCell)
 {
-    const WorldPartitionManifest manifest = MakeGridRegionManifest();
+    const WorldPartitionManifest manifest = MakeGridGraphManifest();
 
     const auto records = Validate(manifest);
     ASSERT_EQ(records.size(), 2u);
@@ -331,11 +321,11 @@ TEST(WorldPartitionValidation, IslandRadiusRegionStillWarnsEveryCell)
     EXPECT_EQ(records[1].SourceId, ZoneA5);
 }
 
-TEST(WorldPartitionValidation, StartZoneInsideRadiusRegionReachesItsSiblings)
+TEST(WorldPartitionValidation, StartZoneInsideRadiusGraphReachesItsSiblings)
 {
-    WorldPartitionManifest manifest = MakeGridRegionManifest();
+    WorldPartitionManifest manifest = MakeGridGraphManifest();
     manifest.StartZone = ZoneId{ ZoneA4 };
-    // The graph region is now the island: no edge connects it to the fields.
+    // The room graph is now the island: no edge connects it to the fields.
     const auto records = Validate(manifest);
     ASSERT_EQ(records.size(), 3u);
     for (const ContentRiskRecord& record : records)

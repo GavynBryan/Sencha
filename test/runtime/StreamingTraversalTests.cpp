@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -168,4 +169,75 @@ TEST_F(StreamingTraversalTest, RestreamedZoneMatchesAFreshAttach)
                 << ": a re-streamed zone produced a different world transform";
         }
     }
+}
+
+namespace
+{
+// The residency and participation of every zone, as one comparable line.
+std::string ResidencySnapshot(RuntimeWorld& world)
+{
+    std::string line;
+    for (int index = 0; index < kZoneCount; ++index)
+    {
+        const RuntimeZoneRecord* zone = world.FindZone(ZoneAt(index));
+        line += zone == nullptr ? "-" : "VPLA";
+        if (zone != nullptr)
+        {
+            const std::size_t base = line.size() - 4;
+            if (!zone->Participation.Visible) line[base + 0] = '.';
+            if (!zone->Participation.Physics) line[base + 1] = '.';
+            if (!zone->Participation.Logic)   line[base + 2] = '.';
+            if (!zone->Participation.Audio)   line[base + 3] = '.';
+        }
+        line += "|";
+    }
+    return line;
+}
+
+struct SettledLap
+{
+    std::vector<std::string> Observations;
+    int Attaches = 0;
+};
+
+// One lap, with all in-flight work settled before each observation, so what the
+// record holds is streaming policy rather than how many workers happened to run.
+SettledLap RunSettledLap(unsigned taskThreads)
+{
+    Harness harness(taskThreads);
+    const std::string error = harness.LoadManifest();
+    EXPECT_TRUE(error.empty()) << error;
+
+    SettledLap lap;
+    harness.WalkLap([&]
+    {
+        harness.StepFrame();
+        harness.SettleLoads();
+        lap.Observations.push_back(ResidencySnapshot(harness.World()));
+    });
+    lap.Attaches = harness.Attaches();
+    return lap;
+}
+} // namespace
+
+TEST(StreamingTraversalDeterminism, SettledTraversalIsIdenticalAcrossTaskThreadCounts)
+{
+    // The async lane may finish a build on any thread and in any order. Once the
+    // in-flight work is settled, which zones are resident and at what
+    // participation is policy, and policy does not know the worker count.
+    const SettledLap serial = RunSettledLap(0);
+    const SettledLap oneWorker = RunSettledLap(1);
+    const SettledLap fourWorkers = RunSettledLap(4);
+
+    // A lap that streamed nothing, or that never changed shape, would satisfy
+    // the comparison trivially.
+    ASSERT_GT(serial.Attaches, kZoneCount);
+    ASSERT_GT(std::set<std::string>(serial.Observations.begin(),
+                                    serial.Observations.end()).size(), 1u);
+    ASSERT_EQ(serial.Observations.size(), static_cast<std::size_t>(kFramesPerLap));
+
+    EXPECT_EQ(serial.Observations, oneWorker.Observations);
+    EXPECT_EQ(serial.Observations, fourWorkers.Observations);
+    EXPECT_EQ(serial.Attaches, oneWorker.Attaches);
+    EXPECT_EQ(serial.Attaches, fourWorkers.Attaches);
 }

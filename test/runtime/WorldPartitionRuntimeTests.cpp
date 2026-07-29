@@ -12,6 +12,9 @@
 #include <zone/WorldPartitionRuntime.h>
 #include <zone/ZoneLoadPackage.h>
 
+#include "ZoneDockFixture.h"
+
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <string>
@@ -21,6 +24,10 @@
 
 namespace
 {
+
+// A legacy-read fixture converted to cooked dock endpoints after parsing:
+// Hub <-> Hallway <-> Arena, one elevated preload priority. The recipes never
+// open the cooked paths; they exist so LoadManifest accepts the manifest.
 constexpr const char* kFixtureJson = R"({
   "format_version": 1,
   "name": "TraversalFixture",
@@ -48,7 +55,7 @@ constexpr const char* kFixtureJson = R"({
   ],
   "transitions": [
     { "id": "00000000000000c1", "from": "00000000000000a1", "to": "00000000000000a2",
-      "topology": "doorway", "preload_priority": 1 },
+      "topology": "doorway" },
     { "id": "00000000000000c2", "from": "00000000000000a2", "to": "00000000000000a1",
       "topology": "doorway" },
     { "id": "00000000000000c3", "from": "00000000000000a2", "to": "00000000000000a3",
@@ -70,7 +77,11 @@ WorldPartitionManifest FixtureManifest()
     const std::optional<WorldPartitionManifest> manifest =
         ReadWorldPartitionManifest(*json, &error);
     EXPECT_TRUE(manifest.has_value()) << error;
-    return *manifest;
+    WorldPartitionManifest cooked = *manifest;
+    cooked.Transitions.clear();
+    AddFixtureDockPair(cooked, 0xd1, kHub, kHallway, Vec3d{ 8.5, 2, 0 });
+    AddFixtureDockPair(cooked, 0xd2, kHallway, kArena, Vec3d{ 20.5, 2, 0 });
+    return cooked;
 }
 
 WorldComponentSchema EmptySchema()
@@ -194,7 +205,7 @@ TEST_F(WorldPartitionRuntimeTest, LoadManifestRefusesUncookedZones)
     EXPECT_FALSE(Partition.HasManifest());
 }
 
-TEST_F(WorldPartitionRuntimeTest, LoadManifestRefusesMissingTransitionEndpoint)
+TEST_F(WorldPartitionRuntimeTest, LoadManifestRefusesUnmigratedLegacyTransitions)
 {
     WorldPartitionManifest manifest = FixtureManifest();
     TransitionRecord dangling;
@@ -205,9 +216,7 @@ TEST_F(WorldPartitionRuntimeTest, LoadManifestRefusesMissingTransitionEndpoint)
 
     std::string error;
     EXPECT_FALSE(Partition.LoadManifest(std::move(manifest), &error));
-    EXPECT_NE(
-        error.find("partition.transition.endpoint_missing"),
-        std::string::npos);
+    EXPECT_NE(error.find("legacy transitions"), std::string::npos);
 }
 
 TEST_F(WorldPartitionRuntimeTest, FocusAndNeighborAttachHiddenThenConvergeParticipation)
@@ -262,6 +271,51 @@ TEST_F(WorldPartitionRuntimeTest, FocusChangePromotesNewFocusAndDemotesOldFocus)
     EXPECT_TRUE(Zone(kHub)->Participation.Physics);
     EXPECT_FALSE(Zone(kHub)->Participation.Logic);
     EXPECT_FALSE(Zone(kHub)->Participation.Audio);
+}
+
+TEST_F(WorldPartitionRuntimeTest, DockCrossingWaitsForDestinationPhysicsResidency)
+{
+    LoadFixture(WorldPartitionStreamingConfig{ .HopCount = 0 });
+    Partition.SetFocus(Vec3d{ 0, 1, 0 });
+    Step();
+    Step();
+
+    Partition.SetFocus(Vec3d{ 10, 1, 0 });
+    Step();
+    EXPECT_EQ(Partition.FocusZone(), kHub);
+    EXPECT_EQ(Partition.LastTraversal().Status,
+              DockTraversalStatus::BlockedDestinationNotReady);
+    EXPECT_LT(Partition.LastTraversal().SafeSourcePosition.X, 8.5f);
+    EXPECT_EQ(Partition.LateTraversalCount(), 1u);
+
+    Partition.PinZone(kHallway, ZoneParticipation{ .Physics = true });
+    Step();
+    Step();
+    Partition.SetFocus(Vec3d{ 10, 1, 0 });
+    Step();
+    EXPECT_EQ(Partition.LastTraversal().Status, DockTraversalStatus::Crossed);
+    EXPECT_EQ(Partition.FocusZone(), kHallway);
+}
+
+TEST_F(WorldPartitionRuntimeTest, CrossingRecordsTraversalGraceReason)
+{
+    LoadFixture(WorldPartitionStreamingConfig{ .HopCount = 1, .LingerSeconds = 2.0 });
+    Partition.SetFocus(Vec3d{ 0, 1, 0 });
+    Step();
+    Step();
+
+    Partition.SetFocus(Vec3d{ 10, 1, 0 });
+    Step(0.1);
+    ASSERT_EQ(Partition.LastTraversal().Status, DockTraversalStatus::Crossed);
+
+    const ZoneDemandRecord* source = nullptr;
+    for (const ZoneDemandRecord& record : Partition.DemandRecords())
+        if (record.Zone == kHub)
+            source = &record;
+    ASSERT_NE(source, nullptr);
+    EXPECT_TRUE(std::any_of(source->Reasons.begin(), source->Reasons.end(),
+                            [](const ZoneDemandReasonRecord& reason)
+                            { return reason.Reason == ZoneDemandReason::TraversalGrace; }));
 }
 
 TEST_F(WorldPartitionRuntimeTest, LingerExpiresThroughQueuedFinalDetach)
@@ -431,35 +485,60 @@ TEST_F(WorldPartitionRuntimeTest, DemandRecordsRemainDeterministicallySorted)
         EXPECT_LT(first[index - 1].Value, first[index].Value);
 }
 
-TEST_F(WorldPartitionRuntimeTest, FocusResolutionPreservesCurrentZoneOnOverlap)
+TEST_F(WorldPartitionRuntimeTest, EveryDemandRecordCarriesAtLeastOneReason)
 {
+    // Reasons is the only record of why a zone is demanded, so a record that
+    // carries none is indistinguishable from one that should not exist. The
+    // linger and traversal-grace paths layer records on after the demand pass,
+    // which is where an unexplained record would come from.
+    LoadFixture(WorldPartitionStreamingConfig{ .HopCount = 1, .LingerSeconds = 2.0 });
+    Partition.SetFocus(Vec3d{ 0, 1, 0 });
+    Step();
+    Step();
+    Partition.SetFocus(Vec3d{ 10, 1, 0 });
+    Step(0.1);
+
+    ASSERT_FALSE(Partition.DemandRecords().empty());
+    for (const ZoneDemandRecord& record : Partition.DemandRecords())
+        EXPECT_FALSE(record.Reasons.empty())
+            << "zone " << ZoneIdToString(record.Zone) << " is demanded for no reason";
+}
+
+TEST_F(WorldPartitionRuntimeTest, OverlappingZoneAabbsAreLegal)
+{
+    // Hallway's bounds stretched to overlap Hub over x in [7, 8].
     WorldPartitionManifest manifest = FixtureManifest();
     manifest.Zones[1].Bounds = Aabb3d::FromMinMax(
         Vec3d{ 7, 0, -2 },
         Vec3d{ 20, 4, 2 });
     std::string error;
-    ASSERT_TRUE(Partition.LoadManifest(std::move(manifest), &error))
-        << error;
-
-    Partition.SetFocus(kHub);
-    Partition.SetFocus(Vec3d{ 7.5f, 1.0f, 0.0f });
-    EXPECT_EQ(Partition.FocusZone(), kHub);
-
-    Partition.SetFocus(kHallway);
-    Partition.SetFocus(Vec3d{ 7.5f, 1.0f, 0.0f });
-    EXPECT_EQ(Partition.FocusZone(), kHallway);
+    EXPECT_TRUE(Partition.LoadManifest(std::move(manifest), &error)) << error;
 }
 
-TEST_F(WorldPartitionRuntimeTest, PositionOutsideAllBoundsSelectsNearestZone)
+TEST_F(WorldPartitionRuntimeTest, ExplicitRelocationInNoZoneFocusesNearestZone)
 {
     LoadFixture();
     Partition.SetFocus(kHub);
-
-    Partition.SetFocus(Vec3d{ 1000.0f, 0.0f, 0.0f });
+    // Far east of every bounds: the nearest zone (Arena, x up to 40) wins;
+    // the stale previous focus does not survive.
+    Partition.RelocateFocus(Vec3d{ 1000.0, 0.0, 0.0 });
     EXPECT_EQ(Partition.FocusZone(), kArena);
-
-    Partition.SetFocus(Vec3d{ 0.0f, 10.0f, 0.0f });
+    // Hovering above the Hub's box focuses the Hub: the floor-slab case
+    // (derived bounds hug geometry; the pawn transform rides above them).
+    Partition.RelocateFocus(Vec3d{ 0.0, 10.0, 0.0 });
     EXPECT_EQ(Partition.FocusZone(), kHub);
+}
+
+TEST_F(WorldPartitionRuntimeTest, CoincidentZoneAabbsUseDeterministicAndPreferredResolution)
+{
+    WorldPartitionManifest tie = FixtureManifest();
+    tie.Zones[1].Bounds = tie.Zones[0].Bounds;
+    std::string error;
+    ASSERT_TRUE(Partition.LoadManifest(std::move(tie), &error)) << error;
+    const ZoneContainmentResult deterministic = Partition.ResolveZoneAt(Vec3d{}, {});
+    EXPECT_TRUE(deterministic.Ambiguous);
+    EXPECT_EQ(deterministic.Chosen, kHub);
+    EXPECT_EQ(Partition.ResolveZoneAt(Vec3d{}, kHallway).Chosen, kHallway);
 }
 
 TEST(WorldPartitionRuntimeThreaded, MidBuildCancellationRetriesThenDetaches)
@@ -536,7 +615,7 @@ TEST(WorldPartitionRuntimeThreaded, MidBuildCancellationRetriesThenDetaches)
     for (const ZoneDemandRecord& record : partition.DemandRecords())
     {
         if (record.Zone == kHallway)
-            reportedLingering = record.Sources.Lingering;
+            reportedLingering = IsDemandedFor(record, ZoneDemandReason::Linger);
     }
     EXPECT_TRUE(reportedLingering);
 

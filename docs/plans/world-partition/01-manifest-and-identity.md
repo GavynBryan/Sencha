@@ -4,6 +4,12 @@ Status: execution spec (2026-07-02). Implements Phase 1 of
 `docs/plans/world-partition-authoring.md` (Sections 3 and 9 there; read them first,
 then `00-execution-overview.md` in this directory, before writing code).
 
+HISTORICAL. The world graph contracts are `11-zone-runtime-model.md` and
+`12-spatial-compilation.md`; where this file disagrees with them, they win.
+`RegionId`/`RegionRecord` are now `GraphId`/`GraphRecord`, `TransitionRecord` is
+refused at load, `ZoneRuntime` is now `RuntimeWorld`, and the manifest writer emits
+format_version 4.
+
 Scope: the partition id vocabulary, the manifest records, JSON round-trip, the
 adjacency index, and manifest-level validation. Pure data and pure functions.
 
@@ -179,7 +185,6 @@ struct TransitionRecord
     ZoneId             To;
     TransitionTopology Topology = TransitionTopology::Doorway;
     TransitionFlags    Flags;
-    int32_t            PreloadPriority = 0; // higher loads earlier within the neighbor set
     // No portal reference: linkage is content-side (overview D1).
 };
 
@@ -236,8 +241,7 @@ The canonical fixture; tests embed exactly this shape.
       "from": "00000000000000a1",
       "to": "00000000000000a2",
       "topology": "doorway",
-      "one_way": false,
-      "preload_priority": 0
+      "one_way": false
     }
   ]
 }
@@ -257,8 +261,8 @@ Parse rules, pinned:
 - `start_zone` is optional; absent means invalid `ZoneId{}`.
 - `bounds` is required per zone: objects with `min`/`max` arrays of exactly 3
   numbers each.
-- `one_way` optional, default false. `preload_priority` optional, default 0, must
-  fit int32.
+- `one_way` optional, default false. Legacy connection-policy keys are ignored
+  during migration and are never written.
 - Cooked fields (`cooked_scene`, `cooked_collision`, `content_hash` as 16-hex
   string) are optional on read.
 - Unknown keys anywhere are ignored without warning.
@@ -279,7 +283,7 @@ Tests in `test/runtime/WorldPartitionManifestTests.cpp`:
 - `ReadRejectsUnknownTopology`
 - `ReadRejectsMissingBounds`
 - `ReadIgnoresUnknownKeys` (fixture with extra keys parses identically)
-- `ReadAcceptsMissingOptionals` (no start_zone, no one_way, no preload_priority)
+- `ReadAcceptsMissingOptionals` (no start_zone or one_way)
 - `WriteOmitsEmptyCookedFields` (authored manifest writes no `cooked_*`/`content_hash`
   keys)
 - `ReadParsesButDoesNotValidate` (a fixture with a dangling transition endpoint

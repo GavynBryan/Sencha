@@ -2,10 +2,7 @@
 
 #include <abilities/AbilitySet.h>
 #include <attributes/AttributeSet.h>
-#include <audio/AudioCaptionComponent.h>
-#include <audio/AudioSourceComponent.h>
 #include <camera/CameraRig.h>
-#include <components/CameraComponent.h>
 #include <ecs/WorldComponentSchema.h>
 #include <effects/ActiveEffect.h>
 #include <gameplay_tags/GameplayTagContainer.h>
@@ -19,30 +16,24 @@
 #include <physics/components/Collider.h>
 #include <physics/components/PhysicsBodyLink.h>
 #include <physics/components/RigidBody.h>
-#include <render/IrradianceVolumeComponent.h>
-#include <render/PointLightComponent.h>
-#include <render/SpotLightComponent.h>
-#include <render/StaticMeshComponent.h>
-#include <render/ZoneLightmapComponent.h>
+#include <world/ComponentManifest.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/transform/TransformComponents.h>
 
 void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)
 {
-    // Default scene-storage prefix. LocalTransform's current storage traits
-    // register its derived WorldTransform and Parent columns immediately after
-    // it, so the schema preserves that exact order.
+    // The transform trio leads the schema. WorldTransform and Parent are
+    // derived columns rather than serialized scene components, so they are not
+    // in the manifest, and the canonical component ids depend on this order.
     schema.Add<LocalTransform>();
     schema.Add<WorldTransform>();
     schema.Add<Parent>();
-    schema.Add<CameraComponent>();
-    schema.Add<StaticMeshComponent>();
-    schema.Add<ZoneLightmapComponent>();
-    schema.Add<IrradianceVolumeComponent>();
-    schema.Add<PointLightComponent>();
-    schema.Add<SpotLightComponent>();
-    schema.Add<AudioSourceComponent>();
-    schema.Add<AudioCaptionComponent>();
+
+    // Every serialized scene component needs storage. Folding over the manifest
+    // is what keeps that true: a component added to the manifest for the
+    // serializer cannot reach startup without a column to deserialize into.
+    // Add is idempotent, so LocalTransform above is not registered twice.
+    ForEachSceneComponent([&]<typename T>(ComponentTag<T>) { schema.Add<T>(); });
 
     // Physics component and runtime-link family.
     schema.Add<Collider>();

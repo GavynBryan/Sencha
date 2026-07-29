@@ -1,9 +1,15 @@
 # Phase: Retire Portals; Doors Are World Content
 
-Status: execution spec (2026-07-05), NOT implemented. Owner review before any stage
-starts. Reverses `00-execution-overview.md` D9, D15, D19, D20 and retires
-`05-transitions-and-portals.md`. Read `00-execution-overview.md` and
-`07-global-content.md` first.
+Status: IMPLEMENTED 2026-07-05, in the same commit that added this file. Parts A
+and B shipped; `grep -rni portal engine editor test template` returns nothing, so
+the phase-end audit in Part A passes. Historical record. Reverses
+`00-execution-overview.md` D9, D15, D19, D20 and retires
+`05-transitions-and-portals.md`.
+
+The doors direction in Part C survived but its vocabulary did not: a door binds
+to a Dock through `DockGateBinding`, not to a transition. See
+`11-zone-runtime-model.md` and `12-spatial-compilation.md` for the current
+contract.
 
 ## Why
 

@@ -1,10 +1,11 @@
 # World Partition Execution Suite: Overview and Guardrails
 
-Status: execution spec (2026-07-02). Companion to `docs/plans/world-partition-authoring.md`
-(the design document; it owns the model and the phase definitions). This suite owns
-implementation detail at the standard set by `docs/plans/sencha-level-editor/00-overview.md`:
-detailed enough that two people working from it independently would build the same thing.
-The roadmap (`docs/plans/engine-roadmap.md`) owns versions and gates.
+Status: HISTORICAL (2026-07-02). The world graph model and its authoring, cook,
+and runtime contracts are owned by `11-zone-runtime-model.md` and
+`12-spatial-compilation.md`. Read those first; this file and docs 01 through 10
+are the record of the phases that got there, and their vocabulary predates the
+Region-to-Graph rename and the ZoneRuntime-to-RuntimeWorld move. The roadmap
+(`docs/plans/engine-roadmap.md`) owns versions and gates.
 
 Audience: the implementer of any world-partition phase, assumed competent but not assumed
 to make architecture calls. Where a decision could go two ways, this suite picks one and
@@ -22,12 +23,14 @@ and ask, not to improvise (see "Stop conditions" below).
 | `02-world-document-and-partition-tree.md` | Phase E1 | `WorldDocument`, workspace surgery, zone editor states, tree panel, bounds overlay, world cook. |
 | `03-runtime-streaming.md` | Phase R | `WorldPartitionRuntime`, demand policy, streaming tunables, template game world path, PIE play-from-world. |
 | `04-move-selection-to-zone.md` | Phase E2 | Cross-zone entity moves with undo, UI entry points, bounds-containment validation. |
-| `05-transitions-and-portals.md` | Phase E3 | Portal marker brushes, transition verbs and panel UI, linkage validation, cook exclusion. |
-| `06-streaming-maturation.md` | Phase N | Demand-model extensions (render-only neighbors, spatial radius, tag-gated transitions, per-edge preload depth). IMPLEMENTED 2026-07-05. |
-| `07-global-content.md` | Phase G | The world scene: authored global content loaded once into ZoneRuntime::Global(). IMPLEMENTED 2026-07-05. |
-| `08-context-zone-rendering.md` | Phase V | Context zones with real materials under a grey overlay; flat portal fill. Spec only; owner review before implementation. |
+| `05-transitions-and-portals.md` | superseded | Portal marker brushes and transition verbs. Retired by doc 09; portals no longer exist. |
+| `06-streaming-maturation.md` | retired | Historical demand experiment; connection-local policy was removed by Plans 11/12. |
+| `07-global-content.md` | Phase G | The world scene: authored global content loaded once into the persistent partition. IMPLEMENTED 2026-07-05; the container it names is now `RuntimeWorld`. |
+| `08-context-zone-rendering.md` | Phase V | Context zones with real materials under a grey overlay. IMPLEMENTED 2026-07-05; its portal-fill stage was retired the same day by doc 09. |
 | `09-retire-portals-doors-as-world-content.md` | (reversal) | Portals removed entirely; connections authored zone-to-zone only; doors recorded as future world-scene content. Reverses D9, D15, D19, D20. IMPLEMENTED 2026-07-05. |
-| `10-per-region-streaming-and-topology-labels.md` | (streaming shape) | Per-region streaming overrides (hop, radius, cap) resolved by focus region; honest topology labels. IMPLEMENTED 2026-07-05. |
+| `10-per-region-streaming-and-topology-labels.md` | (streaming shape) | Per-graph streaming overrides (hop, radius, cap) resolved by focus graph. IMPLEMENTED 2026-07-05 under the older "region" vocabulary. |
+| `11-zone-runtime-model.md` | canonical correction | Implemented one-AABB Zone, graph-policy demand, bounded-plane crossing, and defined late-residency contract. |
+| `12-spatial-compilation.md` | canonical correction | Implemented Dock/Link authoring, narrow editor affordances, cook/lifecycle/validation, and read-only Graph Viewer v1. |
 
 Execution order: Phase 1 first, alone, to completion. Then E1. After E1, Phase R and
 Phase E2 may proceed in parallel (separate lanes: R never touches the editor, E2 never
@@ -55,9 +58,10 @@ Architecture:
 4. **No locks, no raw threads, no `std::async`.** Nothing in Phases 1 and E1 is
    concurrent. If you think you need a mutex, you have the design wrong; stop.
 5. **No grab-bag names.** No `Manager`, `Helper`, `Util`, `Handler`. No genre words, no
-   project codenames, no "intent" words in identifiers. The vocabulary is fixed by the
-   design doc: World, Zone, Region, Transition, Portal, Space. Content names ("Chozo
-   Ruins") appear only as string data in fixtures.
+   project codenames, no "intent" words in identifiers. The vocabulary this suite
+   was written against was World, Zone, Region, Transition, Portal, Space; the
+   live vocabulary is World, Zone, Graph, Dock, Link, Space, fixed by Plan 11.
+   Content names ("Chozo Ruins") appear only as string data in fixtures.
 
 Data and determinism:
 
@@ -147,7 +151,7 @@ assets.
 **D10. The zone content recipe is a game-supplied function.** `WorldPartitionRuntime`
 decides which zones are resident; the game decides how a zone's cooked refs become a
 registry. The seam is one callable, `ZoneLoadRecipeFn`, returning per-zone build and
-finalize callbacks plus an optional asset preload (exact shape in `03-`). This is the
+finalize callbacks plus an optional asset preload (defined in `03-`). This is the
 game-binary boundary; it is a function, not an interface, because one implementation
 slot is all the boundary needs.
 
@@ -221,9 +225,9 @@ Stop, write down the situation, and ask the owner (do not pick silently) when:
 - You are about to add a second way to do something that has one way (a parallel flag
   system, a side-channel loader, a second id scheme).
 
-The design doc's Section 0 verdicts and Section 11 deferrals are binding context; if an
-idea appears there as rejected or deferred, it stays that way regardless of how natural
-it feels mid-implementation.
+Plans 11 and 12 are binding context: Plan 11 section 8 and Plan 12 section 10 list
+what was rejected and removed. If an idea appears there as deleted, it stays
+deleted regardless of how natural it feels mid-implementation.
 
 ---
 

@@ -10,13 +10,15 @@ DuplicateEntitiesCommand::DuplicateEntitiesCommand(std::span<const EntityId> sou
                                                    std::span<const Transform3f> transforms,
                                                    EditorScene& scene, EditorDocument& document,
                                                    SelectionService& selection,
-                                                   bool asInstance)
+                                                   bool asInstance,
+                                                   std::function<void(std::vector<EntitySnapshot>&)> remap)
     : Scene(scene)
     , Document(document)
     , Selection(selection)
     , Sources(sources.begin(), sources.end())
     , Transforms(transforms.begin(), transforms.end())
     , AsInstance(asInstance)
+    , Remap(std::move(remap))
 {
 }
 
@@ -30,6 +32,8 @@ void DuplicateEntitiesCommand::Execute()
         Snapshots.reserve(Sources.size());
         for (EntityId source : Sources)
             Snapshots.push_back(Document.CaptureEntity(source));
+        if (Remap)
+            Remap(Snapshots);
         Captured = true;
     }
 

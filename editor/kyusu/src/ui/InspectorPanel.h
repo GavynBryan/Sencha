@@ -13,6 +13,7 @@
 class CommandStack;
 class WorldDocument;
 class SelectionService;
+class EditorComponentAdapterRegistry;
 struct IComponentSerializer;
 struct RuntimeField;
 
@@ -26,7 +27,8 @@ class InspectorPanel : public IEditorPanel
 public:
     InspectorPanel(WorldDocument& world,
                    SelectionService& selection,
-                   CommandStack& commands);
+                   CommandStack& commands,
+                   EditorComponentAdapterRegistry& adapters);
 
     std::string_view GetTitle() const override;
     void OnDraw() override;
@@ -46,6 +48,7 @@ private:
     WorldDocument& WorldDoc;
     SelectionService& Selection;
     CommandStack& Commands;
+    EditorComponentAdapterRegistry& Adapters;
 
     // A single in-flight edit (only one widget drags at a time). Captured on
     // widget activation (pre-edit bytes), committed to a RawComponentEditCommand

@@ -5,6 +5,12 @@ Status: execution spec (2026-07-03). Implements Phase R of
 of Section 10; read them first, then `00-execution-overview.md`, especially D7, D10,
 and D14, before writing code).
 
+HISTORICAL. The world graph contracts are `11-zone-runtime-model.md` and
+`12-spatial-compilation.md`; where this file disagrees with them, they win.
+`ZoneRuntime` is now `RuntimeWorld`, portals no longer exist, and the fixture below
+carries a `transitions` array that `LoadManifest` refuses. Demand sources are the
+reasons listed in Plan 11 section 4.
+
 Prerequisite: Phase 1 complete (it is). Phase E1's world cook exists but is NOT a
 dependency: per D7 this phase runs against hand-written cooked manifest fixtures and
 must never block on editor work. Phase R and Phase E2 are parallel lanes.
@@ -176,13 +182,10 @@ Pinned semantics, exhaustive:
 - **Pins** get their `Minimum` participation (fielded OR with whatever the zone
   already earned) and `Sources.Pinned`. A pin on a zone the manifest does not contain
   is ignored (validation owns reporting broken content; the policy stays total).
-- **Cap.** When the demand set exceeds `ResidentZoneCap`, non-focus non-pinned zones
-  are evicted in this order until the cap is met: hop distance descending, then
-  `PreloadPriority` ascending (the transition edge that discovered the zone during
-  BFS; lowest priority evicted first; a zone reachable by several edges uses the
-  highest priority among its shortest-hop discoveries), then zone id value
-  descending. Focus plus pins may exceed the cap: pins are explicit demands, and
-  silently dropping one would be a policy lie.
+- **Cap.** When demand exceeds `ResidentZoneCap`, non-focus non-pinned Zones
+  are evicted by hop descending, runtime-derived spatial cost descending, then
+  Zone ID descending. Connections author no eviction policy. Focus plus pins
+  may exceed the cap.
 - **Output order:** ascending zone id value, always.
 
 ### Gate R2
@@ -194,7 +197,7 @@ New tests in `test/runtime/ZoneDemandTests.cpp`, each over small hand-built mani
 - `OneWayInboundEdgeDoesNotPreloadSource`
 - `PinnedZoneCarriesItsMinimum` (pin beyond hop range appears; pin on a neighbor
   ORs participation)
-- `CapEvictsByHopThenPriorityThenId`
+- `CapEvictsByHopThenDerivedCostThenId`
 - `PinsAndFocusExceedCap`
 - `RecordsAscendByZoneId`
 - `InvalidFocusYieldsEmptyDemand` (invalid id and unknown-but-nonzero id)
@@ -287,8 +290,7 @@ Pinned `Update` semantics, exhaustive:
 2. **Load.** Desired zones that are neither loaded (`ZoneRuntime::IsZoneLoaded`) nor
    in flight (`AsyncZoneLoader::IsLoading`) get `BeginLoad(zone, recipe.Build,
    recipe.Finalize, ZoneParticipation{}, recipe.Preload)`, in this order: hop
-   ascending, `PreloadPriority` descending, zone id ascending (the closest,
-   highest-priority zone enters the single task queue first).
+   ascending, runtime-derived cost ascending, Zone ID ascending.
 3. **Participation.** Desired zones that are loaded and whose current participation
    differs from desired get `SetParticipation`. The focus zone is always desired
    full; the previous focus demotes to dormant in the same update its successor
@@ -307,7 +309,7 @@ Pinned `Update` semantics, exhaustive:
 
 Embedded in the test file as a raw string and pinned here as the shape every R test
 shares. Three zones, one region, doorway pair Hub/Hallway, doorway pair
-Hallway/Arena, one elevated `preload_priority`, cooked fields filled with fixture
+Hallway/Arena, with cooked fields filled by the fixture
 paths (the tests' recipes never open them):
 
 ```json
@@ -338,7 +340,7 @@ paths (the tests' recipes never open them):
   ],
   "transitions": [
     { "id": "00000000000000c1", "from": "00000000000000a1", "to": "00000000000000a2",
-      "topology": "doorway", "preload_priority": 1 },
+      "topology": "doorway" },
     { "id": "00000000000000c2", "from": "00000000000000a2", "to": "00000000000000a1",
       "topology": "doorway" },
     { "id": "00000000000000c3", "from": "00000000000000a2", "to": "00000000000000a3",

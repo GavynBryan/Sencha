@@ -2,7 +2,9 @@
 
 #include "BrushManipulationSink.h"
 
+#include "authoring/EditorComponentAdapter.h"
 #include "commands/CommandStack.h"
+#include "document/EditorEntityRecipe.h"
 #include "editmodes/EditSessionHost.h"
 #include "editmodes/ManipulatorSession.h"
 #include "input/ViewportToolDispatcher.h"
@@ -159,6 +161,8 @@ public:
     SelectionContext LevelSelection;
     SelectionService Selection;
     PickingService Picking;
+    std::unique_ptr<EditorAffordanceService> Affordances;
+    EditorEntityRecipeRegistry CreationRecipes;
     MeshEditService MeshEdit;
     // Editor-wide texturing state: the browser and viewport sampling write it,
     // the apply verbs read it.
@@ -183,6 +187,9 @@ public:
     // entities only (nothing brush-editable), so entity work never dead-ends in a
     // mesh-element mode.
     std::shared_ptr<SelectionService::ObserverFn> ModeObserver;
+    // Entity/mesh selection and Zone selection are mutually exclusive while
+    // still sharing one visible selection across panels and viewport affordances.
+    std::shared_ptr<SelectionService::ObserverFn> ZoneSelectionObserver;
     // Non-owning; the EditSessionHost owns the session. Held so the overlay
     // renderer can ask it for manipulator visuals.
     ManipulatorSession* Manipulators = nullptr;

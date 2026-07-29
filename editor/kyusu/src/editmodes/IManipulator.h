@@ -18,6 +18,7 @@
 
 struct EditorViewport;
 class MeshEditService;
+class EditorAffordanceService;
 struct ManipulationSink;
 
 // What a manipulator needs to query the scene and drive an edit, all through
@@ -27,6 +28,7 @@ struct ManipulatorContext
     const SelectionSnapshot& Selection;
     MeshEditService& Service;
     ManipulationSink& Sink;
+    EditorAffordanceService* Affordances = nullptr;
     // Non-const like Pivot: the Move gizmo's grid-origin drag writes Origin.
     GridSettings& Grid;
     // Read by every manipulator (via ComputeSelectionPivot); written only by the

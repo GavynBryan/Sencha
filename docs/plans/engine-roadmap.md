@@ -73,8 +73,9 @@ Done and load-bearing:
 - Renderer: Vulkan forward pass for static meshes, `.smat`/`.stex` materials and
   textures, point lights (max 64, unshadowed), extraction by copy behind the
   render-domain vs `graphics/vulkan` split.
-- World: `ZoneRuntime` over per-zone registries, `AsyncZoneLoader` publish-by-handoff
-  streaming, `ZoneParticipation` compiled to Visible/Physics/Logic/Audio frame spans.
+- World: `RuntimeWorld` over partitioned entity storage, `AsyncZoneLoader`
+  publish-by-handoff streaming, `WorldPartitionRuntime` demand policy over a cooked
+  manifest, `ZoneParticipation` compiled to Visible/Physics/Logic/Audio frame spans.
 - Assets: `IAssetLoader` staged-load contract, content-hashed `CookedCacheIndex`,
   `.cooked/` overlay, source importers, asset hot reload for materials and textures.
 - SDK boundary: engine as a shared library, `install()`/`find_package(Sencha)`,
@@ -111,8 +112,9 @@ Absent. This list is the roadmap's backlog:
   point shadows and baked static direct lighting shipped 2026-07; hemispheric ambient
   is still the only indirect term.)
 - Cinematics/sequencer: none.
-- World partition metadata: no cells, adjacency, manifests, or streaming budgets beyond
-  `AsyncCommitBudgetMs`.
+- World partition: authored Zone AABBs, Docks, Links, cooked manifests, graph
+  streaming policy, and adjacency all shipped (`docs/plans/world-partition/`).
+  Not shipped: see-through portals and multi-space presentation (Track C item 7).
 - Scripting runtime: none (in scope for v1.0 by owner decision, Section 5 item 3).
 - Shipping: no packaging step, no dev-vs-shipping build configurations, no incremental
   cook, binary cooked scenes blocked on the asset-handle codec.
@@ -376,11 +378,12 @@ gates.
    zero missed fixed ticks and no synchronous fallback loads (spec stage 2). Wired into
    CI as a gate (Track E).
 
-3. **`WorldPartitionRuntime` (v1.0).** The metadata and policy layer over `ZoneRuntime`:
-   cell identity, bounds, adjacency, traversal edges, and priority hints; it issues load
-   and unload requests to `AsyncZoneLoader` and participation changes to the zone set
-   (spec stage 3). This converts the CLAUDE.md stance term into code; delete its
-   Section 3 row when it lands.
+3. **`WorldPartitionRuntime` (v1.0).** SHIPPED. The metadata and policy layer over
+   `RuntimeWorld`: zone identity, AABBs, graph adjacency, and Dock/Link topology; it
+   issues load and unload requests to `AsyncZoneLoader` and participation changes to
+   the resident set. Demand is graph policy, never an authored per-connection
+   priority. Contracts: `docs/plans/world-partition/11-zone-runtime-model.md` and
+   `12-spatial-compilation.md`.
 
 4. **Participation tiers (v1.0 core subset, v2.0 full).** Grow `ZoneParticipation` only
    into the tiers the two targets measurably need first (Dormant, PhysicsShell,
@@ -644,7 +647,8 @@ the specialist doc wins.
 | `docs/plans/sencha-level-editor/*` | Shipped-branch record plus execution detail for the editor substrate Track D builds on. |
 | `docs/assets/pipeline.md` | Execution record and deferral register for the asset pipeline items in Track F. |
 | `docs/core-systems-map.md` | Reader's map of the current tree; not a plan. |
-| `docs/plans/world-partition-authoring.md` | Proposed design for Track C item 3 and the partition authoring work in Track D. Its Section 13 lists the version moves awaiting ratification here. Stage-level execution specs: `docs/plans/world-partition/`. |
+| `docs/plans/world-partition/11-zone-runtime-model.md`, `12-spatial-compilation.md` | The world graph contracts: runtime residency, crossing, authoring, cook, and validation. Canonical for Track C item 3. |
+| `docs/plans/world-partition-authoring.md` | Historical design that produced the above. Superseded; portals and regions in it no longer exist. |
 
 ---
 

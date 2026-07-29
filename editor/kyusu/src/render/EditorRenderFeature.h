@@ -21,6 +21,7 @@
 #include "ViewportBackdropRenderer.h"
 #include "WireframeRenderer.h"
 #include "ZoneBoundsRenderer.h"
+#include "AffordanceRenderer.h"
 
 #include "viewport/ViewportShading.h"
 
@@ -50,6 +51,7 @@ class AssetSystem;
 class AssetRegistry;
 class LoggingProvider;
 class ConsoleRegistry;
+class EditorAffordanceService;
 struct WorldViewSettings;
 class StaticMeshCache;
 class MaterialCache;
@@ -67,6 +69,7 @@ public:
     // overlay, preview, grid) are bound as plain references.
     EditorRenderFeature(ViewportLayout& viewportLayout,
                         WorldDocument& world,
+                        EditorAffordanceService& affordances,
                         SelectionService& selection,
                         MeshEditService& meshEdit,
                         const EditorOverlayState& overlay,
@@ -196,6 +199,7 @@ private:
     BrushFillRenderer      BrushFills;
     ZoneBoundsRenderer     ZoneBounds;
     IrradianceVolumeRenderer IrradianceVolumes;
+    AffordanceRenderer     Affordances;
     // Create-drag preview overlay; runs in every viewport (not a body strategy).
     BrushPreviewRenderer   Preview;
     // Per-viewport offscreen targets this feature renders into; the UI composites them.

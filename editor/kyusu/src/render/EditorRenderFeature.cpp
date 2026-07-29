@@ -25,6 +25,7 @@
 
 EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
                                          WorldDocument& world,
+                                         EditorAffordanceService& affordances,
                                          SelectionService& selection,
                                          MeshEditService& meshEdit,
                                          const EditorOverlayState& overlay,
@@ -50,6 +51,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     , BrushFills(Fills)
     , ZoneBounds(WideLines)
     , IrradianceVolumes(selection, WideLines, Lines)
+    , Affordances(affordances, WideLines, Fills)
     , Preview(preview, Lines)
     , Console(&console)
 {
@@ -508,6 +510,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     Highlight.DrawViewport(local, viewport, scene, *Session());
     if (WorldView.ShowZoneBounds || WorldView.StreamingPreview)
         ZoneBounds.DrawViewport(local, viewport, World, WorldView);
+    Affordances.DrawViewport(local, viewport);
     Preview.DrawViewport(local, viewport);
 
     vkCmdEndRendering(frame.Cmd);

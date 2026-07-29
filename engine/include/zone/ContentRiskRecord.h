@@ -14,8 +14,10 @@ enum class ContentRiskSeverity : uint8_t
 enum class ContentRiskSourceKind : uint8_t
 {
     World,
-    Region,
+    Graph,
     Zone,
+    Dock,
+    Link,
     Transition,
 };
 

@@ -21,6 +21,7 @@
 #include <render/IrradianceVolumeComponent.h>
 #include <render/ZoneLightmapComponent.h>
 #include <world/registry/Registry.h>
+#include <world/ComponentManifest.h>
 #include <world/serialization/SceneFormat.h>
 #include <world/serialization/SceneSerializer.h>
 
@@ -36,17 +37,12 @@ namespace
     Registry MakeSceneRegistry()
     {
         Registry registry;
-        registry.Components.RegisterComponent<LocalTransform>();
+        ForEachSceneComponent([&]<typename T>(ComponentTag<T>)
+        {
+            registry.Components.RegisterComponent<T>();
+        });
         registry.Components.RegisterComponent<WorldTransform>();
         registry.Components.RegisterComponent<Parent>();
-        registry.Components.RegisterComponent<StaticMeshComponent>();
-        registry.Components.RegisterComponent<ZoneLightmapComponent>();
-        registry.Components.RegisterComponent<IrradianceVolumeComponent>();
-        registry.Components.RegisterComponent<PointLightComponent>();
-        registry.Components.RegisterComponent<SpotLightComponent>();
-        registry.Components.RegisterComponent<CameraComponent>();
-        registry.Components.RegisterComponent<AudioSourceComponent>();
-        registry.Components.RegisterComponent<AudioCaptionComponent>();
         return registry;
     }
 

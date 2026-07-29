@@ -13,6 +13,29 @@ std::string Hex(uint64_t value)
     return std::format("{:016x}", value);
 }
 
+bool IsFinitePositiveAabb(const Aabb3d& bounds)
+{
+    constexpr float kMinimumExtent = 1.0e-4f;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        if (!std::isfinite(bounds.Min[axis]) || !std::isfinite(bounds.Max[axis])
+            || bounds.Max[axis] - bounds.Min[axis] <= kMinimumExtent)
+            return false;
+    }
+    return true;
+}
+
+bool IsFinite(Vec3d value)
+{
+    return std::isfinite(value.X) && std::isfinite(value.Y)
+        && std::isfinite(value.Z);
+}
+
+bool IsUnit(Vec3d value)
+{
+    return IsFinite(value) && std::abs(value.SqrMagnitude() - 1.0f) <= 1.0e-3f;
+}
+
 // Human-legible reference for a message: the authored name when set, else the
 // hex id. Messages are baked at validation time, so a rename that re-runs
 // validation re-renders them with the new name.
@@ -26,32 +49,14 @@ std::string ZoneLabel(const WorldPartitionManifest& manifest, ZoneId id)
     return Hex(id.Value);
 }
 
-std::string RegionLabel(const WorldPartitionManifest& manifest, RegionId id)
+std::string GraphLabel(const WorldPartitionManifest& manifest, GraphId id)
 {
-    for (const RegionRecord& region : manifest.Regions)
+    for (const GraphRecord& graph : manifest.Graphs)
     {
-        if (region.Id == id)
-            return region.Name.empty() ? Hex(id.Value) : region.Name;
+        if (graph.Id == id)
+            return graph.Name.empty() ? Hex(id.Value) : graph.Name;
     }
     return Hex(id.Value);
-}
-
-// Overlap for validation means interpenetrating volume, not contact. Zones that
-// share a face, edge, or corner (the normal way adjacent zones sit against a
-// doorway) have zero or negative depth on at least one axis; only positive
-// overlap past a small epsilon on all three axes counts. Aabb3d::Intersects is
-// deliberately closed (broadphase wants contact), so it is the wrong test here.
-bool BoundsInterpenetrate(const Aabb3d& a, const Aabb3d& b)
-{
-    constexpr double epsilon = 1e-4;
-    for (int axis = 0; axis < 3; ++axis)
-    {
-        const double depth =
-            std::min(a.Max[axis], b.Max[axis]) - std::max(a.Min[axis], b.Min[axis]);
-        if (depth <= epsilon)
-            return false;
-    }
-    return true;
 }
 
 std::string TransitionLabel(const WorldPartitionManifest& manifest,
@@ -107,9 +112,9 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
     // partition.id.duplicate
     {
         std::vector<uint64_t> ids;
-        for (const RegionRecord& region : manifest.Regions)
-            ids.push_back(region.Id.Value);
-        AppendDuplicateIds(records, std::move(ids), ContentRiskSourceKind::Region, "region");
+        for (const GraphRecord& graph : manifest.Graphs)
+            ids.push_back(graph.Id.Value);
+        AppendDuplicateIds(records, std::move(ids), ContentRiskSourceKind::Graph, "graph");
 
         ids = {};
         for (const ZoneHeader& zone : manifest.Zones)
@@ -122,55 +127,55 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
         AppendDuplicateIds(records, std::move(ids), ContentRiskSourceKind::Transition, "transition");
     }
 
-    // partition.zone.region_missing
+    // partition.zone.graph_missing
     {
         std::vector<ContentRiskRecord> rule;
         for (const ZoneHeader& zone : manifest.Zones)
         {
             const bool known = std::any_of(
-                manifest.Regions.begin(), manifest.Regions.end(),
-                [&](const RegionRecord& region) { return region.Id == zone.Region; });
+                manifest.Graphs.begin(), manifest.Graphs.end(),
+                [&](const GraphRecord& graph) { return graph.Id == zone.Graph; });
             if (known)
                 continue;
             rule.push_back({
                 .Severity = ContentRiskSeverity::Error,
                 .Kind = ContentRiskSourceKind::Zone,
                 .SourceId = zone.Id.Value,
-                .RuleId = "partition.zone.region_missing",
-                .Message = std::format("zone {} references missing region {}",
+                .RuleId = "partition.zone.graph_missing",
+                .Message = std::format("zone {} references missing graph {}",
                                        ZoneLabel(manifest, zone.Id),
-                                       RegionLabel(manifest, zone.Region)),
+                                       GraphLabel(manifest, zone.Graph)),
             });
         }
         AppendSortedBySourceId(records, std::move(rule));
     }
 
-    // partition.region.streaming_invalid: one record per bad field, so the
+    // partition.graph.streaming_invalid: one record per bad field, so the
     // panel can name each offending value.
     {
         std::vector<ContentRiskRecord> rule;
-        for (const RegionRecord& region : manifest.Regions)
+        for (const GraphRecord& graph : manifest.Graphs)
         {
-            const RegionStreamingConfig& streaming = region.Streaming;
+            const GraphStreamingConfig& streaming = graph.Streaming;
             const auto add = [&](std::string message)
             {
                 rule.push_back({
                     .Severity = ContentRiskSeverity::Error,
-                    .Kind = ContentRiskSourceKind::Region,
-                    .SourceId = region.Id.Value,
-                    .RuleId = "partition.region.streaming_invalid",
+                    .Kind = ContentRiskSourceKind::Graph,
+                    .SourceId = graph.Id.Value,
+                    .RuleId = "partition.graph.streaming_invalid",
                     .Message = std::move(message),
                 });
             };
             if (streaming.HopCount && *streaming.HopCount < 0)
-                add(std::format("region {} streaming hop count {} is negative",
-                                RegionLabel(manifest, region.Id), *streaming.HopCount));
+                add(std::format("graph {} streaming hop count {} is negative",
+                                GraphLabel(manifest, graph.Id), *streaming.HopCount));
             if (streaming.Radius && (!std::isfinite(*streaming.Radius) || *streaming.Radius < 0.0))
-                add(std::format("region {} streaming radius {} must be finite and non-negative",
-                                RegionLabel(manifest, region.Id), *streaming.Radius));
+                add(std::format("graph {} streaming radius {} must be finite and non-negative",
+                                GraphLabel(manifest, graph.Id), *streaming.Radius));
             if (streaming.ResidentZoneCap && *streaming.ResidentZoneCap < 1)
-                add(std::format("region {} streaming resident zone cap {} is below 1",
-                                RegionLabel(manifest, region.Id), *streaming.ResidentZoneCap));
+                add(std::format("graph {} streaming resident zone cap {} is below 1",
+                                GraphLabel(manifest, graph.Id), *streaming.ResidentZoneCap));
         }
         AppendSortedBySourceId(records, std::move(rule));
     }
@@ -244,6 +249,117 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
         AppendSortedBySourceId(records, std::move(rule));
     }
 
+    // partition.dock.endpoint_invalid
+    {
+        std::vector<const DockEndpoint*> endpoints;
+        for (const ZoneHeader& zone : manifest.Zones)
+            for (const DockEndpoint& endpoint : zone.Docks)
+                endpoints.push_back(&endpoint);
+        std::sort(endpoints.begin(), endpoints.end(), [](const auto* a, const auto* b)
+        {
+            if (a->Id.Value != b->Id.Value)
+                return a->Id.Value < b->Id.Value;
+            return a->Side < b->Side;
+        });
+        for (std::size_t begin = 0; begin < endpoints.size();)
+        {
+            std::size_t end = begin + 1;
+            while (end < endpoints.size() && endpoints[end]->Id == endpoints[begin]->Id)
+                ++end;
+            const DockEndpoint& first = *endpoints[begin];
+            bool valid = first.Id.IsValid() && end - begin == 2;
+            if (valid)
+            {
+                const DockEndpoint& second = *endpoints[begin + 1];
+                valid = first.Side != second.Side
+                    && first.OwnerZone == second.OtherZone
+                    && first.OtherZone == second.OwnerZone
+                    && first.Origin == second.Origin
+                    && first.HalfExtents == second.HalfExtents
+                    && first.Normal == -second.Normal
+                    && first.Right == -second.Right
+                    && first.Up == second.Up
+                    && first.Directions == second.Directions;
+            }
+            for (std::size_t i = begin; i < end && valid; ++i)
+            {
+                const DockEndpoint& endpoint = *endpoints[i];
+                const ZoneHeader* owner = nullptr;
+                const ZoneHeader* other = nullptr;
+                for (const ZoneHeader& zone : manifest.Zones)
+                {
+                    if (zone.Id == endpoint.OwnerZone)
+                        owner = &zone;
+                    if (zone.Id == endpoint.OtherZone)
+                        other = &zone;
+                }
+                valid = owner != nullptr && other != nullptr && owner != other
+                    && endpoint.HalfExtents.X > 0.0f && endpoint.HalfExtents.Y > 0.0f
+                    && IsFinite(endpoint.Origin)
+                    && IsUnit(endpoint.Normal) && IsUnit(endpoint.Right)
+                    && IsUnit(endpoint.Up)
+                    && std::abs(endpoint.Normal.Dot(endpoint.Right)) <= 1.0e-3f
+                    && std::abs(endpoint.Normal.Dot(endpoint.Up)) <= 1.0e-3f
+                    && std::abs(endpoint.Right.Dot(endpoint.Up)) <= 1.0e-3f
+                    && endpoint.Directions >= 1u && endpoint.Directions <= 3u;
+            }
+            if (!valid)
+            {
+                records.push_back({
+                    .Severity = ContentRiskSeverity::Error,
+                    .Kind = ContentRiskSourceKind::Dock,
+                    .SourceId = first.Id.Value,
+                    .RuleId = "partition.dock.endpoint_invalid",
+                    .Message = std::format("dock {} does not have two valid reciprocal endpoints",
+                                           Hex(first.Id.Value)),
+                });
+            }
+            begin = end;
+        }
+    }
+
+    // partition.link.endpoint_invalid
+    {
+        std::vector<const LinkEndpoint*> endpoints;
+        for (const ZoneHeader& zone : manifest.Zones)
+            for (const LinkEndpoint& endpoint : zone.Links)
+                endpoints.push_back(&endpoint);
+        std::sort(endpoints.begin(), endpoints.end(), [](const auto* a, const auto* b)
+        {
+            if (a->Id.Value != b->Id.Value)
+                return a->Id.Value < b->Id.Value;
+            return a->Side < b->Side;
+        });
+        for (std::size_t begin = 0; begin < endpoints.size();)
+        {
+            std::size_t end = begin + 1;
+            while (end < endpoints.size() && endpoints[end]->Id == endpoints[begin]->Id)
+                ++end;
+            const LinkEndpoint& first = *endpoints[begin];
+            bool valid = first.Id.IsValid() && end - begin == 2 && first.Kind == 0;
+            if (valid)
+            {
+                const LinkEndpoint& second = *endpoints[begin + 1];
+                valid = first.Side != second.Side && first.Kind == second.Kind
+                    && first.OwnerZone == second.OtherZone
+                    && first.OtherZone == second.OwnerZone
+                    && first.Directions >= 1u && first.Directions <= 3u;
+            }
+            if (!valid)
+            {
+                records.push_back({
+                    .Severity = ContentRiskSeverity::Error,
+                    .Kind = ContentRiskSourceKind::Link,
+                    .SourceId = first.Id.Value,
+                    .RuleId = "partition.link.endpoint_invalid",
+                    .Message = std::format("link {} does not have two valid reciprocal endpoints",
+                                           Hex(first.Id.Value)),
+                });
+            }
+            begin = end;
+        }
+    }
+
     // partition.zone.scene_missing
     {
         std::vector<ContentRiskRecord> rule;
@@ -268,7 +384,7 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
         std::vector<ContentRiskRecord> rule;
         for (const ZoneHeader& zone : manifest.Zones)
         {
-            if (zone.Bounds.IsValid())
+            if (IsFinitePositiveAabb(zone.Bounds))
                 continue;
             rule.push_back({
                 .Severity = ContentRiskSeverity::Error,
@@ -282,56 +398,20 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
         AppendSortedBySourceId(records, std::move(rule));
     }
 
-    // partition.bounds.overlap: one record per unordered pair, source id is the
-    // lower zone id. Invalid bounds are excluded (bounds_invalid already fired).
-    {
-        std::vector<const ZoneHeader*> zones;
-        for (const ZoneHeader& zone : manifest.Zones)
-        {
-            if (zone.Bounds.IsValid())
-                zones.push_back(&zone);
-        }
-        std::sort(zones.begin(), zones.end(),
-                  [](const ZoneHeader* a, const ZoneHeader* b)
-                  { return a->Id.Value < b->Id.Value; });
-
-        std::vector<ContentRiskRecord> rule;
-        for (size_t a = 0; a < zones.size(); ++a)
-        {
-            for (size_t b = a + 1; b < zones.size(); ++b)
-            {
-                if (zones[a]->Id == zones[b]->Id)
-                    continue;
-                if (!BoundsInterpenetrate(zones[a]->Bounds, zones[b]->Bounds))
-                    continue;
-                rule.push_back({
-                    .Severity = ContentRiskSeverity::Warning,
-                    .Kind = ContentRiskSourceKind::Zone,
-                    .SourceId = zones[a]->Id.Value,
-                    .RuleId = "partition.bounds.overlap",
-                    .Message = std::format("zone {} bounds overlap zone {}",
-                                           ZoneLabel(manifest, zones[a]->Id),
-                                           ZoneLabel(manifest, zones[b]->Id)),
-                });
-            }
-        }
-        records.insert(records.end(), rule.begin(), rule.end());
-    }
-
     // partition.graph.unreachable, suppressed entirely when no_start_zone fires.
     const bool startZoneKnown =
         manifest.StartZone.IsValid() && index.ContainsZone(manifest.StartZone);
     if (startZoneKnown)
     {
-        // A region with an explicit Radius > 0 override streams by proximity,
+        // A graph with an explicit Radius > 0 override streams by proximity,
         // not authored edges, so its zones are mutually reachable: reaching any
         // one of them reaches them all. Only explicit overrides participate;
         // validation is pure over the manifest and cannot see the inherited
         // base radius in EngineRuntimeConfig.
-        std::unordered_set<uint64_t> radiusRegions;
-        for (const RegionRecord& region : manifest.Regions)
-            if (region.Streaming.Radius && *region.Streaming.Radius > 0.0)
-                radiusRegions.insert(region.Id.Value);
+        std::unordered_set<uint64_t> radiusGraphs;
+        for (const GraphRecord& graph : manifest.Graphs)
+            if (graph.Streaming.Radius && *graph.Streaming.Radius > 0.0)
+                radiusGraphs.insert(graph.Id.Value);
 
         std::unordered_set<uint64_t> reached;
         std::vector<ZoneId> frontier{ manifest.StartZone };
@@ -342,10 +422,10 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
             frontier.pop_back();
             for (const ZoneHeader& header : manifest.Zones)
             {
-                if (header.Id != zone || !radiusRegions.contains(header.Region.Value))
+                if (header.Id != zone || !radiusGraphs.contains(header.Graph.Value))
                     continue;
                 for (const ZoneHeader& sibling : manifest.Zones)
-                    if (sibling.Region == header.Region
+                    if (sibling.Graph == header.Graph
                         && reached.insert(sibling.Id.Value).second)
                         frontier.push_back(sibling.Id);
             }
@@ -362,6 +442,23 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                     continue;
                 if (reached.insert(transition.From.Value).second)
                     frontier.push_back(transition.From);
+            }
+            const auto endpointOutgoing = [](DockSide side, uint32_t directions)
+            {
+                return side == DockSide::A ? (directions & 1u) != 0
+                                           : (directions & 2u) != 0;
+            };
+            for (const DockEndpoint& endpoint : index.DocksFrom(zone))
+            {
+                if (endpointOutgoing(endpoint.Side, endpoint.Directions)
+                    && reached.insert(endpoint.OtherZone.Value).second)
+                    frontier.push_back(endpoint.OtherZone);
+            }
+            for (const LinkEndpoint& endpoint : index.LinksFrom(zone))
+            {
+                if (endpointOutgoing(endpoint.Side, endpoint.Directions)
+                    && reached.insert(endpoint.OtherZone.Value).second)
+                    frontier.push_back(endpoint.OtherZone);
             }
         }
 

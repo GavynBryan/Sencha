@@ -13,11 +13,13 @@
 #include <vector>
 
 BrushManipulationSink::BrushManipulationSink(EditorScene& scene, EditorDocument& document,
-                                             CommandStack& commands, SelectionService& selection)
+                                             CommandStack& commands, SelectionService& selection,
+                                             std::function<void(std::vector<EntitySnapshot>&)> duplicateRemap)
     : Scene(scene)
     , Document(document)
     , Commands(commands)
     , Selection(selection)
+    , DuplicateRemap(std::move(duplicateRemap))
 {
 }
 
@@ -112,7 +114,7 @@ void BrushManipulationSink::CommitDuplicate(std::span<const EntityId> sources,
         if (const Transform3f* source = Scene.TryGetTransform(sources.front()))
             offset = transforms.front().Position - source->Position;
     Commands.Execute(std::make_unique<DuplicateEntitiesCommand>(
-        sources, transforms, Scene, Document, Selection));
+        sources, transforms, Scene, Document, Selection, false, DuplicateRemap));
     if (DuplicateObserver && offset.has_value())
         DuplicateObserver(*offset);
 }

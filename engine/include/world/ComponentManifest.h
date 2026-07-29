@@ -9,6 +9,7 @@
 #include <render/StaticMeshComponent.h>
 #include <render/ZoneLightmapComponent.h>
 #include <world/transform/TransformComponents.h>
+#include <zone/WorldConnectionComponents.h>
 
 #include <tuple>
 #include <utility>
@@ -29,7 +30,10 @@ using EngineSceneComponents = std::tuple<
     PointLightComponent,
     SpotLightComponent,
     AudioSourceComponent,
-    AudioCaptionComponent>;
+    AudioCaptionComponent,
+    WorldDock,
+    WorldLink,
+    DockGateBinding>;
 
 template <typename T>
 struct ComponentTag

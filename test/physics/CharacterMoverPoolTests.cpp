@@ -190,6 +190,23 @@ TEST(CharacterMoverPool, ChurnOutsideTheActiveSetDoesNotReconcile)
     EXPECT_TRUE(ecs.HasComponent<CharacterMoverLink>(sleeper));
 }
 
+TEST(CharacterMoverPool, SetPositionUpdatesMoverAndTransformTogether)
+{
+    PhysicsWorld physics;
+    World ecs;
+    SetUpPhysics(ecs);
+    CharacterMoverPool pool(physics);
+
+    const EntityId player = SpawnCharacter(ecs, Vec3d(0.0f, 5.0f, 0.0f));
+    pool.Reconcile(ecs, ActivePartitions());
+    const Vec3d thresholdClamp{ -0.35f, 2.0f, 1.0f };
+    ASSERT_TRUE(pool.SetPosition(ecs, player, thresholdClamp));
+    EXPECT_EQ(ecs.TryGet<LocalTransform>(player)->Value.Position, thresholdClamp);
+
+    pool.Drive(ecs, ActivePartitions(), 0.0f, Vec3d::Zero());
+    EXPECT_EQ(ecs.TryGet<LocalTransform>(player)->Value.Position, thresholdClamp);
+}
+
 TEST(CharacterMoverPool, ReleasesMoverWhenControllerRemoved)
 {
     PhysicsWorld physics;

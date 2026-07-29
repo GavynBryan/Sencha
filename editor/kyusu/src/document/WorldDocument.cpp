@@ -7,7 +7,9 @@
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 #include <zone/WorldPartitionValidation.h>
+#include <zone/WorldConnectionComponents.h>
 #include <zone/ZoneDemand.h>
+#include <world/transform/TransformComponents.h>
 
 #include <algorithm>
 #include <cctype>
@@ -20,6 +22,20 @@
 
 namespace
 {
+
+ZoneId UniqueZoneAt(const WorldPartitionManifest& manifest, Vec3d point)
+{
+    ZoneId result;
+    for (const ZoneHeader& zone : manifest.Zones)
+    {
+        if (!zone.Bounds.Contains(point))
+            continue;
+        if (result.IsValid())
+            return {};
+        result = zone.Id;
+    }
+    return result;
+}
 
 // Scene file names derive from zone names: lowercase, spaces to underscores,
 // ASCII alphanumerics/underscore/hyphen only. Empty after sanitizing falls
@@ -103,6 +119,7 @@ bool WorldDocument::LoadWorld(std::string_view path)
     LegacyDocument_.reset();
     OpenZones_.clear();
     FocusZone_ = ZoneId{};
+    SelectedZone_ = ZoneId{};
     WorldSceneFocused_ = false;
     WorldPath_.assign(path);
     Manifest_ = std::move(*manifest);
@@ -146,6 +163,12 @@ bool WorldDocument::SaveWorld()
     auto& log = Logging_.GetLogger<WorldDocument>();
     if (WorldPath_.empty())
         return false;
+    if (!Manifest_.Transitions.empty())
+    {
+        log.Error("cannot save world with {} unresolved legacy transitions; migrate or discard them",
+                  Manifest_.Transitions.size());
+        return false;
+    }
 
     namespace fs = std::filesystem;
 
@@ -182,14 +205,6 @@ bool WorldDocument::SaveWorld()
         if (it != OpenZones_.end())
         {
             EditorDocument& document = *it->second.Document;
-            // Derived bounds ride every zone save; designer-set bounds stay
-            // authored and are never recomputed. A zone with nothing boundable
-            // keeps its previous bounds.
-            if (!header.BoundsOverridden)
-            {
-                if (const auto bounds = ComputeZoneBounds(document.GetScene()))
-                    header.Bounds = *bounds;
-            }
             if (!document.HasFilePath())
             {
                 if (!document.SaveAs(scenePath))
@@ -275,6 +290,7 @@ void WorldDocument::NewWorld(std::string_view name)
     LegacyDocument_.reset();
     OpenZones_.clear();
     FocusZone_ = ZoneId{};
+    SelectedZone_ = ZoneId{};
     WorldSceneFocused_ = false;
     WorldPath_.clear();
     Manifest_ = {};
@@ -282,8 +298,8 @@ void WorldDocument::NewWorld(std::string_view name)
     IndexDirty_ = true;
     CreateWorldSceneDocument();
 
-    const RegionId region = AddRegion("Region 1");
-    const ZoneId zone = AddZone(region, "Zone 1");
+    const GraphId graph = AddGraph("Graph 1");
+    const ZoneId zone = AddZone(graph, "Zone 1");
     Manifest_.StartZone = zone;
     WorldDirty_ = true;
     SetFocusZone(zone);
@@ -375,6 +391,7 @@ bool WorldDocument::LoadZone(ZoneId zone)
     }
 
     auto document = std::make_unique<EditorDocument>(Logging_);
+    document->OnEdited = [this] { Revalidate(); };
     document->SetRegistryIdentity(RegistryId{ NextRegistryIndex_++, 1 }, zone);
     if (Assets_)
         document->SetAssetEnvironment(*Assets_);
@@ -444,14 +461,28 @@ bool WorldDocument::SetFocusZone(ZoneId zone)
     if (!WorldMode_)
         return false;
     if (zone == FocusZone_ && IsZoneOpen(zone))
+    {
+        SelectedZone_ = zone;
         return true;
+    }
     if (!LoadZone(zone))
         return false;
 
     FocusZone_ = zone;
+    SelectedZone_ = zone;
     WorldSceneFocused_ = false;
     if (OnFocusChanged)
         OnFocusChanged();
+    return true;
+}
+
+bool WorldDocument::SelectZone(ZoneId zone)
+{
+    if (!WorldMode_)
+        return false;
+    if (zone.IsValid() && FindZoneHeader(zone) == nullptr)
+        return false;
+    SelectedZone_ = zone;
     return true;
 }
 
@@ -466,6 +497,7 @@ bool WorldDocument::FocusWorldScene()
     // unload while the world scene is edited.
     WorldSceneFocused_ = true;
     FocusZone_ = ZoneId{};
+    SelectedZone_ = ZoneId{};
     if (OnFocusChanged)
         OnFocusChanged();
     return true;
@@ -526,59 +558,174 @@ ZoneId WorldDocument::MintZoneId()
     return ZoneId{ MintRawId() };
 }
 
-RegionId WorldDocument::MintRegionId()
+GraphId WorldDocument::MintGraphId()
 {
-    return RegionId{ MintRawId() };
+    return GraphId{ MintRawId() };
 }
 
-TransitionId WorldDocument::MintTransitionId()
+DockId WorldDocument::MintDockId()
 {
-    return TransitionId{ MintRawId() };
+    return DockId{ MintRawId() };
 }
 
-ZoneId WorldDocument::AddZone(RegionId region, std::string name)
+LinkId WorldDocument::MintLinkId()
+{
+    return LinkId{ MintRawId() };
+}
+
+ZoneId WorldDocument::AddZone(GraphId graph, std::string name)
 {
     assert(WorldMode_ && "AddZone: world mode only");
     ZoneHeader header;
     header.Id = MintZoneId();
     header.Name = std::move(name);
-    header.Region = region;
+    header.Graph = graph;
+    header.Bounds = Aabb3d::FromMinMax(
+        Vec3d{ -5.0f, 0.0f, -5.0f }, Vec3d{ 5.0f, 4.0f, 5.0f });
     Manifest_.Zones.push_back(std::move(header));
     MarkManifestEdited();
     RunValidation();
     return Manifest_.Zones.back().Id;
 }
 
-RegionId WorldDocument::AddRegion(std::string name)
+GraphId WorldDocument::AddGraph(std::string name)
 {
-    assert(WorldMode_ && "AddRegion: world mode only");
-    RegionRecord record;
-    record.Id = MintRegionId();
+    assert(WorldMode_ && "AddGraph: world mode only");
+    GraphRecord record;
+    record.Id = MintGraphId();
     record.Name = std::move(name);
-    Manifest_.Regions.push_back(std::move(record));
+    Manifest_.Graphs.push_back(std::move(record));
     MarkManifestEdited();
     RunValidation();
-    return Manifest_.Regions.back().Id;
+    return Manifest_.Graphs.back().Id;
 }
 
-TransitionId WorldDocument::AddTransition(ZoneId from, ZoneId to, TransitionTopology topology,
-                                          bool oneWay, int32_t preloadPriority)
+LegacyTransitionMigrationReport WorldDocument::MigrateLegacyTransitions()
 {
-    assert(WorldMode_ && "AddTransition: world mode only");
-    TransitionRecord record;
-    record.Id = MintTransitionId();
-    record.From = from;
-    record.To = to;
-    record.Topology = topology;
-    record.Flags.OneWay = oneWay;
-    record.PreloadPriority = preloadPriority;
-    Manifest_.Transitions.push_back(record);
-    MarkManifestEdited();
+    assert(WorldMode_ && "MigrateLegacyTransitions: world mode only");
+    LegacyTransitionMigrationReport report;
+    if (Manifest_.Transitions.empty())
+        return report;
+
+    std::vector<const TransitionRecord*> ordered;
+    ordered.reserve(Manifest_.Transitions.size());
+    for (const TransitionRecord& transition : Manifest_.Transitions)
+        ordered.push_back(&transition);
+    std::sort(ordered.begin(), ordered.end(), [](const auto* a, const auto* b)
+              { return a->Id.Value < b->Id.Value; });
+
+    std::vector<TransitionId> migrated;
+    const auto consumed = [&](TransitionId id)
+    {
+        return std::find(migrated.begin(), migrated.end(), id) != migrated.end();
+    };
+    const auto matchingReverse = [](const TransitionRecord& a,
+                                    const TransitionRecord& b)
+    {
+        return b.Topology == TransitionTopology::Teleport
+            && a.From == b.To && a.To == b.From
+            && !a.Flags.OneWay && !b.Flags.OneWay;
+    };
+
+    EditorScene& scene = WorldScene_->GetScene();
+    Registry& registry = scene.GetRegistry();
+    for (const TransitionRecord* transition : ordered)
+    {
+        if (consumed(transition->Id))
+            continue;
+        if (transition->Topology != TransitionTopology::Teleport)
+        {
+            report.Unresolved.push_back(transition->Id);
+            continue;
+        }
+
+        const TransitionRecord* reverse = nullptr;
+        for (const TransitionRecord* candidate : ordered)
+        {
+            if (candidate == transition || consumed(candidate->Id))
+                continue;
+            if (matchingReverse(*transition, *candidate))
+            {
+                reverse = candidate;
+                break;
+            }
+        }
+
+        WorldLink link;
+        link.Id = MintLinkId();
+        link.ZoneA = transition->From;
+        link.ZoneB = transition->To;
+        link.Kind = LinkKind::Teleport;
+        link.Directions = reverse != nullptr ? DockDirectionBoth : DockDirectionAToB;
+
+        const EntityId entity = registry.Components.CreateEntity();
+        registry.Components.AddComponent(entity, link);
+        scene.TrackEntity(entity);
+        migrated.push_back(transition->Id);
+        if (reverse != nullptr)
+        {
+            migrated.push_back(reverse->Id);
+            ++report.CollapsedPairs;
+        }
+        report.Links.push_back({ transition->Id,
+                                 reverse != nullptr ? reverse->Id : TransitionId{},
+                                 link.Id });
+    }
+
+    if (!migrated.empty())
+    {
+        std::erase_if(Manifest_.Transitions, [&](const TransitionRecord& transition)
+                      { return consumed(transition.Id); });
+        WorldScene_->MarkDirty();
+        MarkManifestEdited();
+    }
     RunValidation();
-    return record.Id;
+    return report;
 }
 
-bool WorldDocument::RemoveTransition(TransitionId transition)
+bool WorldDocument::ConvertLegacyTransitionToTeleport(TransitionId id)
+{
+    assert(WorldMode_ && "ConvertLegacyTransitionToTeleport: world mode only");
+    const auto it = std::find_if(
+        Manifest_.Transitions.begin(), Manifest_.Transitions.end(),
+        [&](const TransitionRecord& record) { return record.Id == id; });
+    if (it == Manifest_.Transitions.end())
+        return false;
+
+    const TransitionRecord source = *it;
+    TransitionId reverseId;
+    if (!source.Flags.OneWay)
+        for (const TransitionRecord& candidate : Manifest_.Transitions)
+            if (candidate.Id != source.Id && !candidate.Flags.OneWay
+                && candidate.From == source.To && candidate.To == source.From)
+            {
+                reverseId = candidate.Id;
+                break;
+            }
+
+    WorldLink link;
+    link.Id = MintLinkId();
+    link.ZoneA = source.From;
+    link.ZoneB = source.To;
+    link.Kind = LinkKind::Teleport;
+    link.Directions = reverseId.IsValid()
+        ? DockDirectionBoth : DockDirectionAToB;
+
+    EditorScene& scene = WorldScene_->GetScene();
+    Registry& registry = scene.GetRegistry();
+    const EntityId entity = registry.Components.CreateEntity();
+    registry.Components.AddComponent(entity, link);
+    scene.TrackEntity(entity);
+
+    std::erase_if(Manifest_.Transitions, [&](const TransitionRecord& record)
+                  { return record.Id == source.Id || record.Id == reverseId; });
+    WorldScene_->MarkDirty();
+    MarkManifestEdited();
+    RunValidation();
+    return true;
+}
+
+bool WorldDocument::DiscardLegacyTransition(TransitionId transition)
 {
     const auto count = std::erase_if(Manifest_.Transitions,
                                      [&](const TransitionRecord& record)
@@ -601,8 +748,8 @@ void WorldDocument::RefreshDerivedZoneBounds()
     if (!WorldMode_)
         return;
 
-    // Non-overridden spans refresh from live content (the recompute a save also
-    // performs) so validation and the manifest write see current bounds.
+    // Derived zones follow currently open, boundable content. Closed or empty
+    // zones retain their persisted starter/cache value.
     for (ZoneHeader& header : Manifest_.Zones)
     {
         if (header.BoundsOverridden)
@@ -613,91 +760,6 @@ void WorldDocument::RefreshDerivedZoneBounds()
         if (const auto bounds = ComputeZoneBounds(it->second.Document->GetScene()))
             header.Bounds = *bounds;
     }
-}
-
-bool WorldDocument::RenameTransition(TransitionId transition, std::string name)
-{
-    for (TransitionRecord& record : Manifest_.Transitions)
-    {
-        if (record.Id != transition)
-            continue;
-        record.Name = std::move(name);
-        MarkManifestEdited();
-        RunValidation();
-        return true;
-    }
-    return false;
-}
-
-bool WorldDocument::SetTransitionTopology(TransitionId transition, TransitionTopology topology)
-{
-    for (TransitionRecord& record : Manifest_.Transitions)
-    {
-        if (record.Id != transition)
-            continue;
-        record.Topology = topology;
-        MarkManifestEdited();
-        RunValidation();
-        return true;
-    }
-    return false;
-}
-
-bool WorldDocument::SetTransitionOneWay(TransitionId transition, bool oneWay)
-{
-    for (TransitionRecord& record : Manifest_.Transitions)
-    {
-        if (record.Id != transition)
-            continue;
-        record.Flags.OneWay = oneWay;
-        MarkManifestEdited();
-        RunValidation();
-        return true;
-    }
-    return false;
-}
-
-bool WorldDocument::SetTransitionRequiredTags(TransitionId transition,
-                                              std::vector<std::string> tags)
-{
-    for (TransitionRecord& record : Manifest_.Transitions)
-    {
-        if (record.Id != transition)
-            continue;
-        record.RequiredTags = std::move(tags);
-        MarkManifestEdited();
-        RunValidation();
-        return true;
-    }
-    return false;
-}
-
-bool WorldDocument::SetTransitionPreloadDepth(TransitionId transition, int32_t depth)
-{
-    for (TransitionRecord& record : Manifest_.Transitions)
-    {
-        if (record.Id != transition)
-            continue;
-        record.PreloadDepth = depth < 0 ? 0 : depth;
-        MarkManifestEdited();
-        RunValidation();
-        return true;
-    }
-    return false;
-}
-
-bool WorldDocument::SetTransitionPreloadPriority(TransitionId transition, int32_t priority)
-{
-    for (TransitionRecord& record : Manifest_.Transitions)
-    {
-        if (record.Id != transition)
-            continue;
-        record.PreloadPriority = priority;
-        MarkManifestEdited();
-        RunValidation();
-        return true;
-    }
-    return false;
 }
 
 bool WorldDocument::RenameZone(ZoneId zone, std::string name)
@@ -714,11 +776,63 @@ bool WorldDocument::RenameZone(ZoneId zone, std::string name)
     return false;
 }
 
-bool WorldDocument::RenameRegion(RegionId region, std::string name)
+bool WorldDocument::SetZoneGraph(ZoneId zone, GraphId graph)
 {
-    for (RegionRecord& record : Manifest_.Regions)
+    const bool graphExists = std::any_of(Manifest_.Graphs.begin(), Manifest_.Graphs.end(),
+                                         [&](const GraphRecord& record)
+                                         { return record.Id == graph; });
+    if (!graphExists)
+        return false;
+    for (ZoneHeader& header : Manifest_.Zones)
     {
-        if (record.Id != region)
+        if (header.Id != zone)
+            continue;
+        header.Graph = graph;
+        MarkManifestEdited();
+        RunValidation();
+        return true;
+    }
+    return false;
+}
+
+bool WorldDocument::SetZoneBounds(ZoneId zone, Aabb3d bounds, bool overridden)
+{
+    for (ZoneHeader& header : Manifest_.Zones)
+    {
+        if (header.Id != zone)
+            continue;
+        header.Bounds = bounds;
+        header.BoundsOverridden = overridden;
+        MarkManifestEdited();
+        RunValidation();
+        return true;
+    }
+    return false;
+}
+
+bool WorldDocument::UseDerivedZoneBounds(ZoneId zone)
+{
+    for (ZoneHeader& header : Manifest_.Zones)
+    {
+        if (header.Id != zone)
+            continue;
+        header.BoundsOverridden = false;
+        const auto it = OpenZones_.find(header.Id);
+        if (it != OpenZones_.end())
+            if (const auto bounds = ComputeZoneBounds(it->second.Document->GetScene()))
+                header.Bounds = *bounds;
+        MarkManifestEdited();
+        RunValidation();
+        return true;
+    }
+    return false;
+}
+
+bool WorldDocument::RenameGraph(GraphId graph, std::string name)
+{
+    for (GraphRecord& record : Manifest_.Graphs)
+    {
+        if (record.Id != graph)
             continue;
         record.Name = std::move(name);
         MarkManifestEdited();
@@ -728,11 +842,11 @@ bool WorldDocument::RenameRegion(RegionId region, std::string name)
     return false;
 }
 
-bool WorldDocument::SetRegionHopCount(RegionId region, std::optional<int32_t> hopCount)
+bool WorldDocument::SetGraphHopCount(GraphId graph, std::optional<int32_t> hopCount)
 {
-    for (RegionRecord& record : Manifest_.Regions)
+    for (GraphRecord& record : Manifest_.Graphs)
     {
-        if (record.Id != region)
+        if (record.Id != graph)
             continue;
         record.Streaming.HopCount = hopCount;
         MarkManifestEdited();
@@ -742,11 +856,11 @@ bool WorldDocument::SetRegionHopCount(RegionId region, std::optional<int32_t> ho
     return false;
 }
 
-bool WorldDocument::SetRegionRadius(RegionId region, std::optional<double> radius)
+bool WorldDocument::SetGraphRadius(GraphId graph, std::optional<double> radius)
 {
-    for (RegionRecord& record : Manifest_.Regions)
+    for (GraphRecord& record : Manifest_.Graphs)
     {
-        if (record.Id != region)
+        if (record.Id != graph)
             continue;
         record.Streaming.Radius = radius;
         MarkManifestEdited();
@@ -756,11 +870,11 @@ bool WorldDocument::SetRegionRadius(RegionId region, std::optional<double> radiu
     return false;
 }
 
-bool WorldDocument::SetRegionResidentCap(RegionId region, std::optional<int32_t> cap)
+bool WorldDocument::SetGraphResidentCap(GraphId graph, std::optional<int32_t> cap)
 {
-    for (RegionRecord& record : Manifest_.Regions)
+    for (GraphRecord& record : Manifest_.Graphs)
     {
-        if (record.Id != region)
+        if (record.Id != graph)
             continue;
         record.Streaming.ResidentZoneCap = cap;
         MarkManifestEdited();
@@ -799,12 +913,25 @@ uint64_t WorldDocument::MintRawId()
             continue;
         const auto zoneHit = std::any_of(Manifest_.Zones.begin(), Manifest_.Zones.end(),
                                          [&](const ZoneHeader& z) { return z.Id.Value == value; });
-        const auto regionHit = std::any_of(Manifest_.Regions.begin(), Manifest_.Regions.end(),
-                                           [&](const RegionRecord& r) { return r.Id.Value == value; });
+        const auto graphHit = std::any_of(Manifest_.Graphs.begin(), Manifest_.Graphs.end(),
+                                          [&](const GraphRecord& graph)
+                                          { return graph.Id.Value == value; });
         const auto transitionHit =
             std::any_of(Manifest_.Transitions.begin(), Manifest_.Transitions.end(),
                         [&](const TransitionRecord& t) { return t.Id.Value == value; });
-        if (zoneHit || regionHit || transitionHit)
+        bool connectionHit = false;
+        if (WorldScene_ != nullptr)
+        {
+            const Registry& registry = WorldScene_->GetRegistry();
+            for (EntityId entity : WorldScene_->GetScene().GetAllEntities())
+            {
+                if (const WorldDock* dock = registry.Components.TryGet<WorldDock>(entity))
+                    connectionHit |= dock->Id.Value == value;
+                if (const WorldLink* link = registry.Components.TryGet<WorldLink>(entity))
+                    connectionHit |= link->Id.Value == value;
+            }
+        }
+        if (zoneHit || graphHit || transitionHit || connectionHit)
             continue;
         return value;
     }
@@ -848,6 +975,160 @@ void WorldDocument::RunValidation()
 
     ValidationRecords_ = ValidateWorldPartitionManifest(Manifest_, Index());
 
+    std::vector<DockId> dockIds;
+    std::vector<LinkId> linkIds;
+    if (WorldScene_ != nullptr)
+    {
+        const EditorScene& scene = WorldScene_->GetScene();
+        const Registry& registry = WorldScene_->GetRegistry();
+        for (EntityId entity : scene.GetAllEntities())
+        {
+            if (const WorldDock* dock = registry.Components.TryGet<WorldDock>(entity))
+            {
+                const LocalTransform* transform =
+                    registry.Components.TryGet<LocalTransform>(entity);
+                const bool duplicate = std::find(dockIds.begin(), dockIds.end(), dock->Id)
+                    != dockIds.end();
+                dockIds.push_back(dock->Id);
+                const auto addDockError = [&](std::string_view rule, std::string message)
+                {
+                    ValidationRecords_.push_back({
+                        .Severity = ContentRiskSeverity::Error,
+                        .Kind = ContentRiskSourceKind::Dock,
+                        .SourceId = dock->Id.Value,
+                        .RuleId = std::string(rule),
+                        .Message = std::move(message),
+                    });
+                };
+                if (!dock->Id.IsValid())
+                    addDockError("partition.dock.id_invalid", "world dock id is invalid");
+                if (duplicate)
+                    addDockError("partition.dock.id_duplicate",
+                        std::format("duplicate world dock id {}", DockIdToString(dock->Id)));
+                const bool zoneAKnown = FindZoneHeader(dock->ZoneA) != nullptr;
+                const bool zoneBKnown = FindZoneHeader(dock->ZoneB) != nullptr;
+                if (!zoneAKnown || !zoneBKnown)
+                    addDockError("partition.dock.zone_unresolved",
+                        std::format("world dock {} references an unresolved zone",
+                                    DockIdToString(dock->Id)));
+                if (dock->ZoneA == dock->ZoneB)
+                    addDockError("partition.dock.same_zone",
+                        std::format("world dock {} connects a zone to itself",
+                                    DockIdToString(dock->Id)));
+                const bool planeValid = std::isfinite(dock->HalfExtents.X)
+                    && std::isfinite(dock->HalfExtents.Y)
+                    && dock->HalfExtents.X > 0.0f && dock->HalfExtents.Y > 0.0f;
+                if (!planeValid)
+                    addDockError("partition.dock.plane_degenerate",
+                        std::format("world dock {} has non-positive plane dimensions",
+                                    DockIdToString(dock->Id)));
+                if (dock->Directions < 1u || dock->Directions > 3u)
+                    addDockError("partition.dock.semantics_invalid",
+                        std::format("world dock {} has invalid directionality",
+                                    DockIdToString(dock->Id)));
+
+                bool transformValid = transform != nullptr;
+                bool unitScale = false;
+                if (transform != nullptr)
+                {
+                    const Transform3f& value = transform->Value;
+                    const auto finite = [](Vec3d vector)
+                    { return std::isfinite(vector.X) && std::isfinite(vector.Y)
+                        && std::isfinite(vector.Z); };
+                    const Vec3d right = value.Right();
+                    const Vec3d up = value.Up();
+                    const Vec3d normal = -value.Forward();
+                    transformValid = finite(value.Position) && finite(right)
+                        && finite(up) && finite(normal)
+                        && std::abs(right.SqrMagnitude() - 1.0f) <= 1e-3f
+                        && std::abs(up.SqrMagnitude() - 1.0f) <= 1e-3f
+                        && std::abs(normal.SqrMagnitude() - 1.0f) <= 1e-3f
+                        && std::abs(right.Dot(up)) <= 1e-3f
+                        && std::abs(right.Dot(normal)) <= 1e-3f
+                        && std::abs(up.Dot(normal)) <= 1e-3f;
+                    unitScale = std::abs(value.Scale.X - 1.0f) <= 1e-4f
+                        && std::abs(value.Scale.Y - 1.0f) <= 1e-4f
+                        && std::abs(value.Scale.Z - 1.0f) <= 1e-4f;
+                }
+                if (!transformValid)
+                    addDockError("partition.dock.transform_invalid",
+                        std::format("world dock {} has a missing or invalid plane transform",
+                                    DockIdToString(dock->Id)));
+                if (transform != nullptr && !unitScale)
+                    addDockError("partition.dock.scale_not_unit",
+                        std::format("world dock {} must use unit entity scale",
+                                    DockIdToString(dock->Id)));
+
+                if (!zoneAKnown || !zoneBKnown || dock->ZoneA == dock->ZoneB
+                    || !transformValid)
+                    continue;
+                const Vec3d normal = (-transform->Value.Forward()).Normalized();
+                const ZoneId probeA = UniqueZoneAt(
+                    Manifest_, transform->Value.Position - normal);
+                const ZoneId probeB = UniqueZoneAt(
+                    Manifest_, transform->Value.Position + normal);
+                if (probeA != dock->ZoneA || probeB != dock->ZoneB)
+                {
+                    ValidationRecords_.push_back({
+                        .Severity = ContentRiskSeverity::Warning,
+                        .Kind = ContentRiskSourceKind::Dock,
+                        .SourceId = dock->Id.Value,
+                        .RuleId = "partition.dock.probe_mismatch",
+                        .Message = std::format("world dock {} side probes disagree with explicit zones",
+                                               DockIdToString(dock->Id)),
+                    });
+                }
+            }
+            if (const WorldLink* link = registry.Components.TryGet<WorldLink>(entity))
+            {
+                const bool duplicate = std::find(linkIds.begin(), linkIds.end(), link->Id)
+                    != linkIds.end();
+                linkIds.push_back(link->Id);
+                const bool zonesKnown = FindZoneHeader(link->ZoneA) != nullptr
+                    && FindZoneHeader(link->ZoneB) != nullptr
+                    && link->ZoneA != link->ZoneB;
+                if (!link->Id.IsValid() || duplicate || !zonesKnown
+                    || link->Kind != LinkKind::Teleport
+                    || link->Directions < 1u || link->Directions > 3u)
+                {
+                    ValidationRecords_.push_back({
+                        .Severity = ContentRiskSeverity::Error,
+                        .Kind = ContentRiskSourceKind::Link,
+                        .SourceId = link->Id.Value,
+                        .RuleId = "partition.link.authored_invalid",
+                        .Message = std::format("world link {} has invalid identity, zones, or semantics",
+                                               LinkIdToString(link->Id)),
+                    });
+                }
+            }
+        }
+
+    }
+
+    const auto validateBindings = [&](const Registry& registry)
+    {
+        for (EntityId entity : registry.Components.GetAliveEntities())
+        {
+            const DockGateBinding* binding =
+                registry.Components.TryGet<DockGateBinding>(entity);
+            if (binding == nullptr
+                || std::find(dockIds.begin(), dockIds.end(), binding->Id) != dockIds.end())
+                continue;
+            ValidationRecords_.push_back({
+                .Severity = ContentRiskSeverity::Error,
+                .Kind = ContentRiskSourceKind::Dock,
+                .SourceId = binding->Id.Value,
+                .RuleId = "partition.gate_binding.dock_missing",
+                .Message = std::format("gate binding references missing dock {}",
+                                       DockIdToString(binding->Id)),
+            });
+        }
+    };
+    if (WorldScene_ != nullptr)
+        validateBindings(WorldScene_->GetRegistry());
+    for (const auto& entry : OpenZones_)
+        validateBindings(entry.second.Document->GetRegistry());
+
     // The pure layer takes no filesystem; resolvability of nonempty scene refs
     // is the editor's half, reported through the same record type.
     std::vector<ContentRiskRecord> unresolved;
@@ -873,11 +1154,8 @@ void WorldDocument::RunValidation()
     for (ContentRiskRecord& record : unresolved)
         ValidationRecords_.push_back(std::move(record));
 
-    // Containment of open-zone content in the zone header's bounds, one record
-    // per zone. Zones with derived bounds self-heal on save (the union
-    // recompute), so a persistent hit means designer-set bounds, exactly where
-    // a straying entity stays wrong until a human acts. Entities without world
-    // bounds (nothing boundable) are skipped.
+    // Containment of open-zone content in its coarse authored AABB,
+    // one record per zone. Entities without world bounds are skipped.
     for (const ZoneHeader& zone : Manifest_.Zones)
     {
         const auto it = OpenZones_.find(zone.Id);
@@ -916,6 +1194,7 @@ void WorldDocument::RunValidation()
 void WorldDocument::CreateWorldSceneDocument()
 {
     WorldScene_ = std::make_unique<EditorDocument>(Logging_);
+    WorldScene_->OnEdited = [this] { Revalidate(); };
     WorldScene_->SetRegistryIdentity(RegistryId{ NextRegistryIndex_++, 1 }, ZoneId{});
     if (Assets_)
         WorldScene_->SetAssetEnvironment(*Assets_);
@@ -930,6 +1209,7 @@ void WorldDocument::CreateWorldSceneDocument()
         Logging_.GetLogger<WorldDocument>().Error(
             "cannot load world scene '{}'; the world scene starts empty", scenePath);
         WorldScene_ = std::make_unique<EditorDocument>(Logging_);
+        WorldScene_->OnEdited = [this] { Revalidate(); };
         WorldScene_->SetRegistryIdentity(RegistryId{ NextRegistryIndex_++, 1 }, ZoneId{});
         if (Assets_)
             WorldScene_->SetAssetEnvironment(*Assets_);
@@ -956,7 +1236,7 @@ void WorldDocument::WriteUserSidecar() const
         root.emplace_back("show_zone_bounds", JsonValue{ ViewSettings_->ShowZoneBounds });
         root.emplace_back("streaming_preview", JsonValue{ ViewSettings_->StreamingPreview });
         // Preview overrides follow the absent-inherits model on disk too: no
-        // key means the preview shows the authored per-region shape.
+        // key means the preview shows the authored per-graph shape.
         if (ViewSettings_->PreviewHopCount)
             root.emplace_back("preview_hop_count", JsonValue{ *ViewSettings_->PreviewHopCount });
     }
@@ -1047,6 +1327,7 @@ void WorldDocument::CloseWorldToLegacy()
     IndexDirty_ = true;
     WorldDirty_ = false;
     FocusZone_ = ZoneId{};
+    SelectedZone_ = ZoneId{};
     WorldSceneFocused_ = false;
     WorldScene_.reset();
     OpenZones_.clear();
