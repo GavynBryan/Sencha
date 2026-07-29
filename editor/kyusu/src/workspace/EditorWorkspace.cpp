@@ -79,16 +79,10 @@ void EditorWorkspace::BuildInteractionState()
         Picking,
         document.GetScene(),
         document,
-        Interactions,
-        Preview,
         MeshEdit,
-        Marquee,
-        Grid,
-        BrushCreate,
-        Overlay,
         *Sink,
-        EdgeCut,
-        ActiveMaterial);
+        ToolInteractionState{ Interactions, Preview, Marquee, Overlay },
+        ToolAuthoringSettings{ Grid, BrushCreate, EdgeCut, ActiveMaterial });
 
     Tools = std::make_unique<ToolRegistry>(*ActiveToolContext);
     Tools->Register(std::make_unique<SelectTool>());

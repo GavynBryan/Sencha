@@ -20,6 +20,29 @@ struct ManipulationSink;
 struct EdgeCutSettings;
 struct ActiveMaterialState;
 
+// The transient editing state a tool reads and writes: the live interaction,
+// the geometry it previews, the marquee, and the viewport overlay. They are
+// created, reset, and torn down together with the document being edited, so
+// they reach a tool as one group rather than four arguments.
+struct ToolInteractionState
+{
+    InteractionHost& Interactions;
+    PreviewBuffer& Preview;
+    MarqueeState& Marquee;
+    EditorOverlayState& Overlay;
+};
+
+// The authoring settings a tool acts with. These outlive any one document (they
+// are editor-wide and toolbar-surfaced), which is what separates them from the
+// interaction state above.
+struct ToolAuthoringSettings
+{
+    GridSettings& Grid;
+    BrushCreationSettings& BrushCreate;
+    EdgeCutSettings& EdgeCut;
+    ActiveMaterialState& ActiveMaterial;
+};
+
 struct ToolContext
 {
     ToolContext(CommandStack& commandStack,
@@ -27,16 +50,10 @@ struct ToolContext
                 PickingService& pickingService,
                 EditorScene& levelScene,
                 EditorDocument& levelDocument,
-                InteractionHost& interactions,
-                PreviewBuffer& preview,
                 MeshEditService& meshEdit,
-                MarqueeState& marquee,
-                GridSettings& grid,
-                BrushCreationSettings& brushCreate,
-                EditorOverlayState& overlay,
                 ManipulationSink& sink,
-                EdgeCutSettings& edgeCut,
-                ActiveMaterialState& activeMaterial);
+                ToolInteractionState interaction,
+                ToolAuthoringSettings settings);
 
     CommandStack& Commands;
     SelectionService& Selection;

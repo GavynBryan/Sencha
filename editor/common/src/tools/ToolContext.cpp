@@ -5,30 +5,24 @@ ToolContext::ToolContext(CommandStack& commandStack,
                          PickingService& pickingService,
                          EditorScene& levelScene,
                          EditorDocument& levelDocument,
-                         InteractionHost& interactions,
-                         PreviewBuffer& preview,
                          MeshEditService& meshEdit,
-                         MarqueeState& marquee,
-                         GridSettings& grid,
-                         BrushCreationSettings& brushCreate,
-                         EditorOverlayState& overlay,
                          ManipulationSink& sink,
-                         EdgeCutSettings& edgeCut,
-                         ActiveMaterialState& activeMaterial)
+                         ToolInteractionState interaction,
+                         ToolAuthoringSettings settings)
     : Commands(commandStack)
     , Selection(selectionService)
     , Picking(pickingService)
     , Scene(levelScene)
     , Document(levelDocument)
-    , Interactions(interactions)
-    , Preview(preview)
+    , Interactions(interaction.Interactions)
+    , Preview(interaction.Preview)
     , MeshEdit(meshEdit)
-    , Marquee(marquee)
-    , Grid(grid)
-    , BrushCreate(brushCreate)
-    , Overlay(overlay)
+    , Marquee(interaction.Marquee)
+    , Grid(settings.Grid)
+    , BrushCreate(settings.BrushCreate)
+    , Overlay(interaction.Overlay)
     , Sink(sink)
-    , EdgeCut(edgeCut)
-    , ActiveMaterial(activeMaterial)
+    , EdgeCut(settings.EdgeCut)
+    , ActiveMaterial(settings.ActiveMaterial)
 {
 }
