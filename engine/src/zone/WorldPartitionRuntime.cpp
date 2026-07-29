@@ -420,7 +420,6 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
                 demand.push_back(std::move(record));
                 previous = &demand.back();
             }
-            previous->Sources.TraversalGrace = true;
             AddRuntimeReason(*previous,
                              { ZoneDemandReason::TraversalGrace, Focus_,
                                LastTraversal_.Status
@@ -559,8 +558,6 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
     {
         ZoneDemandRecord record;
         record.Zone = zone;
-        record.Sources.Lingering = true;
-        record.Sources.Linger = true;
         AddRuntimeReason(record, { ZoneDemandReason::Linger, Focus_, 0, 0, {} });
         Records_.push_back(record);
     }
@@ -573,8 +570,6 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
             continue;
         ZoneDemandRecord record;
         record.Zone = zone;
-        record.Sources.Lingering = true;
-        record.Sources.Linger = true;
         AddRuntimeReason(record, { ZoneDemandReason::Linger, Focus_, 0, 0, {} });
         Records_.push_back(record);
     }

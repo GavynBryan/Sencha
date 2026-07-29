@@ -4,6 +4,11 @@ Status: IMPLEMENTED 2026-07-05 (all three stages; see "Implementation notes" at 
 end for deviations). Read `00-execution-overview.md` (especially D19/D20 and the R5a
 global-span decision) first.
 
+HISTORICAL. The world graph contracts are `11-zone-runtime-model.md` and
+`12-spatial-compilation.md`; where this file disagrees with them, they win.
+The world-scene feature shipped and survives; the container it calls
+`ZoneRuntime::Global()` is now the persistent partition of `RuntimeWorld`.
+
 ## The model
 
 The runtime already has the "world-lifetime" container: `ZoneRuntime::Global()`, the

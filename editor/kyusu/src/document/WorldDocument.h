@@ -212,8 +212,8 @@ public:
 
 private:
     // Each open zone document gets a unique RegistryId {NextRegistryIndex_++, 1},
-    // starting at 2, never reused within a session (the ZoneRuntime discipline),
-    // so a stale SelectableRef can never alias a later-opened zone.
+    // starting at 2, never reused within a session, so a stale SelectableRef
+    // can never alias a later-opened zone.
     struct OpenZone
     {
         std::unique_ptr<EditorDocument> Document;

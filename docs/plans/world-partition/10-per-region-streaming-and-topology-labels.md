@@ -5,6 +5,12 @@ end for deviations and owed manual gates). Independent of Phase G (07) and of th
 portal retirement (09). Read `00-execution-overview.md` and
 `06-streaming-maturation.md` first.
 
+HISTORICAL. The world graph contracts are `11-zone-runtime-model.md` and
+`12-spatial-compilation.md`; where this file disagrees with them, they win.
+The feature shipped and survives under Graph vocabulary: `RegionStreamingConfig` is
+`GraphStreamingConfig` and `ResolveRegionStreamingConfig` is
+`ResolveGraphStreamingConfig`. The Doorway/Seam/Teleport combo it describes is gone.
+
 ## Why
 
 The demand policy already runs two OR'd sources: `Neighbor` (graph BFS over
@@ -222,12 +228,16 @@ ResolveRegionStreamingConfig(const WorldPartitionManifest& manifest, ZoneId focu
   is demanded, regardless of the focus region). That fixes the asymmetry but breaks
   S-D3's single-resolved-config policy signature, so it is a deliberate later trade,
   never a quiet v1 tweak.
-- **Resident cap interaction: confirmed against the code (2026-07-05).** Spatial
-  entries rank `HopCount + 1` with nearer-survives-longer priority; cap eviction is
-  hop descending, then priority ascending, with focus and pins exempt. Under a tight
-  cap the far spatial ring evicts first, then nearer spatial, then the outermost graph
-  hops; the focus and its immediate graph ring survive. S-D2 makes the cap per-region
-  so a grid region can raise it.
+- **Resident cap interaction.** Spatial entries rank `HopCount + 1` so they evict
+  ahead of graph neighbors. Cap eviction is hop descending, then runtime-derived
+  cost descending, then zone id descending, with the focus and pins exempt. Under
+  a tight cap the far spatial ring evicts first, then nearer spatial, then the
+  outermost graph hops; the focus and its immediate graph ring survive. S-D2 makes
+  the cap per-graph so a proximity graph can raise it.
+
+  (Written 2026-07-05 as "priority ascending", when connections carried an
+  authored `PreloadPriority`. That field was removed; ordering within a hop is
+  runtime-derived cost. Corrected against `ZoneDemand.cpp`.)
 
 ## Implementation notes (2026-07-05)
 

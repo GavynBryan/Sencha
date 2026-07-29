@@ -1,9 +1,13 @@
 # Phase V: Context-Zone and Portal Viewport Rendering
 
 Status: IMPLEMENTED 2026-07-05 (owner-directed same-day execution, commit
-"partition 08"). Fixes two owner-reported defects from hands-on testing and lands the intended
-look: context zones VISIBLE with their real materials under a grey overlay (not the
-procedural checker), portals as flat translucent cyan volumes (not checker boxes).
+"partition 08"). Historical record. The context-zone half shipped and survives:
+context zones render VISIBLE with their real materials under a grey overlay
+rather than the procedural checker. The portal half (stage V3, flat translucent
+cyan volumes) was deleted the same day by
+`09-retire-portals-doors-as-world-content.md`; portals no longer exist. See
+`11-zone-runtime-model.md` and `12-spatial-compilation.md` for the current
+contract.
 
 ## Why it looks wrong today
 

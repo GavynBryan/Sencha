@@ -224,6 +224,12 @@ The deleted `WorldTagList` editor helper and its test/CMake registration must
 remain absent. Legacy JSON keys may appear only in migration-read fixtures that
 prove they are ignored and never written.
 
+An earlier plan may stay in the tree as a historical record only while its header
+says so and points here. A document that describes a deleted mechanism without
+that header reads as a specification, and this suite has already been
+re-implemented from one once. No active implementation checklist may reference
+anything in this ledger.
+
 ## 11. Verification matrix
 
 Headless tests cover one cached/override Zone AABB, invalid AABBs, legal overlap,

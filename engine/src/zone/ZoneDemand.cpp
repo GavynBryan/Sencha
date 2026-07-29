@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <string_view>
 #include <utility>
 
 namespace
@@ -262,7 +263,6 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
     {
         ZoneHopRank       Rank;
         ZoneParticipation Desired;
-        ZoneDemandSources Sources;
         std::vector<ZoneDemandReasonRecord> Reasons;
         bool              Pinned = false;
     };
@@ -288,15 +288,11 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
         {
             entry.Desired = ZoneParticipation{ .Visible = true, .Physics = true,
                                                .Logic = true, .Audio = true };
-            entry.Sources.Focus = true;
             AddReason(entry.Reasons, { ZoneDemandReason::Focus, focus, 0, 0, {} });
         }
         else
         {
             entry.Desired = preload;
-            entry.Sources.Neighbor = true;
-            entry.Sources.SameGraphHop = rank.Reason == ZoneDemandReason::SameGraphHop;
-            entry.Sources.CrossGraphEntry = rank.Reason == ZoneDemandReason::CrossGraphEntry;
             AddReason(entry.Reasons, { rank.Reason, rank.SourceZone,
                                        rank.SourceEndpoint, rank.Hop, {} });
         }
@@ -369,8 +365,6 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
                 continue;
             if (DemandEntry* existing = find(header.Id))
             {
-                existing->Sources.Spatial = true;
-                existing->Sources.SpatialRadius = true;
                 existing->Desired.Visible |= preload.Visible;
                 existing->Desired.Physics |= preload.Physics;
                 AddReason(existing->Reasons,
@@ -385,8 +379,6 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
                 ZoneDemandReason::SpatialRadius, seed.Zone, 0
             };
             entry.Desired = preload;
-            entry.Sources.Spatial = true;
-            entry.Sources.SpatialRadius = true;
             AddReason(entry.Reasons,
                       { ZoneDemandReason::SpatialRadius, seed.Zone, 0,
                         entry.Rank.Hop, std::sqrt(distanceSq) });
@@ -410,8 +402,6 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
                 0.0,
                 ZoneDemandReason::ExplicitPin, pin.Zone, 0 };
             entry.Desired = pin.Minimum;
-            entry.Sources.Pinned = true;
-            entry.Sources.ExplicitPin = true;
             AddReason(entry.Reasons,
                       { ZoneDemandReason::ExplicitPin, pin.Zone, 0,
                         std::numeric_limits<int32_t>::max(), {} });
@@ -423,8 +413,6 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
         existing->Desired.Physics |= pin.Minimum.Physics;
         existing->Desired.Logic |= pin.Minimum.Logic;
         existing->Desired.Audio |= pin.Minimum.Audio;
-        existing->Sources.Pinned = true;
-        existing->Sources.ExplicitPin = true;
         AddReason(existing->Reasons,
                   { ZoneDemandReason::ExplicitPin, pin.Zone, 0,
                     std::numeric_limits<int32_t>::max(), {} });
@@ -462,7 +450,7 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
         std::vector<size_t> evictable;
         for (size_t i = 0; i < entries.size(); ++i)
             if (GraphOf(manifest, entries[i].Rank.Zone) == graph
-                && !entries[i].Sources.Focus && !entries[i].Pinned)
+                && entries[i].Rank.Zone != focus && !entries[i].Pinned)
                 evictable.push_back(i);
         std::sort(evictable.begin(), evictable.end(),
                   [&](size_t a, size_t b)
@@ -496,6 +484,40 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
     records.reserve(entries.size());
     for (const DemandEntry& entry : entries)
         records.push_back(ZoneDemandRecord{
-            entry.Rank.Zone, entry.Desired, entry.Sources, entry.Reasons });
+            entry.Rank.Zone, entry.Desired, entry.Reasons });
     return records;
+}
+
+bool IsDemandedFor(const ZoneDemandRecord& record, ZoneDemandReason reason)
+{
+    return std::any_of(record.Reasons.begin(), record.Reasons.end(),
+                       [reason](const ZoneDemandReasonRecord& entry)
+                       { return entry.Reason == reason; });
+}
+
+std::string DescribeZoneDemandReasons(const ZoneDemandRecord& record)
+{
+    // Order lives here rather than in Reasons, which is in accumulation order
+    // and can hold one kind several times.
+    static constexpr std::pair<ZoneDemandReason, std::string_view> kLabels[] = {
+        { ZoneDemandReason::Focus,           "focus" },
+        { ZoneDemandReason::SameGraphHop,    "graph hop" },
+        { ZoneDemandReason::CrossGraphEntry, "cross-graph entry" },
+        { ZoneDemandReason::SpatialRadius,   "radius" },
+        { ZoneDemandReason::ExplicitPin,     "pin" },
+        { ZoneDemandReason::Gameplay,        "gameplay" },
+        { ZoneDemandReason::TraversalGrace,  "traversal grace" },
+        { ZoneDemandReason::Linger,          "linger" },
+    };
+
+    std::string text;
+    for (const auto& [reason, label] : kLabels)
+    {
+        if (!IsDemandedFor(record, reason))
+            continue;
+        if (!text.empty())
+            text += "+";
+        text += label;
+    }
+    return text;
 }

@@ -90,8 +90,8 @@ TEST(ZoneDemand, FocusAloneIsFullParticipation)
     EXPECT_TRUE(records[0].Desired.Physics);
     EXPECT_TRUE(records[0].Desired.Logic);
     EXPECT_TRUE(records[0].Desired.Audio);
-    EXPECT_TRUE(records[0].Sources.Focus);
-    EXPECT_FALSE(records[0].Sources.Neighbor);
+    ASSERT_EQ(records[0].Reasons.size(), 1u);
+    EXPECT_EQ(records[0].Reasons[0].Reason, ZoneDemandReason::Focus);
 }
 
 TEST(ZoneDemand, NeighborsPreloadVisibleByDefault)
@@ -110,8 +110,8 @@ TEST(ZoneDemand, NeighborsPreloadVisibleByDefault)
         EXPECT_TRUE(record->Desired.Physics);
         EXPECT_FALSE(record->Desired.Logic);
         EXPECT_FALSE(record->Desired.Audio);
-        EXPECT_TRUE(record->Sources.Neighbor);
-        EXPECT_FALSE(record->Sources.Focus);
+        ASSERT_EQ(record->Reasons.size(), 1u);
+        EXPECT_EQ(record->Reasons[0].Reason, ZoneDemandReason::SameGraphHop);
     }
 }
 
@@ -155,15 +155,15 @@ TEST(ZoneDemand, PinnedZoneCarriesItsMinimum)
 
     const ZoneDemandRecord* far = FindRecord(records, 0xa4);
     ASSERT_NE(far, nullptr);
-    EXPECT_TRUE(far->Sources.Pinned);
-    EXPECT_FALSE(far->Sources.Neighbor);
+    ASSERT_EQ(far->Reasons.size(), 1u);
+    EXPECT_EQ(far->Reasons[0].Reason, ZoneDemandReason::ExplicitPin);
     EXPECT_TRUE(far->Desired.Logic);
     EXPECT_FALSE(far->Desired.Visible);
 
     const ZoneDemandRecord* near = FindRecord(records, 0xa2);
     ASSERT_NE(near, nullptr);
-    EXPECT_TRUE(near->Sources.Pinned);
-    EXPECT_TRUE(near->Sources.Neighbor);
+    EXPECT_TRUE(IsDemandedFor(*near, ZoneDemandReason::ExplicitPin));
+    EXPECT_TRUE(IsDemandedFor(*near, ZoneDemandReason::SameGraphHop));
     EXPECT_TRUE(near->Desired.Audio);       // the pin's minimum, OR-ed on
     EXPECT_TRUE(near->Desired.Visible);     // the neighbor render preload
 }
@@ -334,8 +334,8 @@ TEST(ZoneDemand, ZonesWithinRadiusJoinDemand)
     ASSERT_EQ(records.size(), 2u);
     const ZoneDemandRecord* nearZone = FindRecord(records, 0xa2);
     ASSERT_NE(nearZone, nullptr);
-    EXPECT_TRUE(nearZone->Sources.Spatial);
-    EXPECT_FALSE(nearZone->Sources.Neighbor);
+    ASSERT_EQ(nearZone->Reasons.size(), 1u);
+    EXPECT_EQ(nearZone->Reasons[0].Reason, ZoneDemandReason::SpatialRadius);
     EXPECT_TRUE(nearZone->Desired.Visible);
     EXPECT_EQ(FindRecord(records, 0xa3), nullptr);
 
@@ -463,7 +463,6 @@ TEST(ZoneDemand, CrossGraphDockSeedsDestinationGraphPolicy)
         manifest, index, a.Id, {}, WorldPartitionStreamingConfig{}, &focusPosition);
     const ZoneDemandRecord* entry = FindRecord(records, b.Id.Value);
     ASSERT_NE(entry, nullptr);
-    EXPECT_TRUE(entry->Sources.CrossGraphEntry);
     EXPECT_NE(FindRecord(records, c.Id.Value), nullptr);
     EXPECT_TRUE(std::any_of(entry->Reasons.begin(), entry->Reasons.end(),
                             [](const ZoneDemandReasonRecord& reason)

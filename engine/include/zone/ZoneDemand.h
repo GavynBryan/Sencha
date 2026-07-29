@@ -3,30 +3,12 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 #include <zone/WorldPartitionIndex.h>
 #include <zone/WorldPartitionManifest.h>
 #include <zone/ZoneParticipation.h>
-
-// Why a zone is demanded. Flags, not a single enum: one zone can be demanded
-// for several reasons at once (pinned and a neighbor, say), and the demand
-// inspector wants all of them.
-struct ZoneDemandSources
-{
-    bool Focus = false;
-    bool Pinned = false;
-    bool Neighbor = false;
-    bool Spatial = false;
-    bool Lingering = false;
-    bool SameGraphHop = false;
-    bool SpatialRadius = false;
-    bool CrossGraphEntry = false;
-    bool ExplicitPin = false;
-    bool Gameplay = false;
-    bool TraversalGrace = false;
-    bool Linger = false;
-};
 
 enum class ZoneDemandReason : uint8_t
 {
@@ -54,13 +36,26 @@ struct ZoneDemandReasonRecord
 
 // One zone's desired residency this update. The data contract the kyusu demand
 // inspector and the streaming telemetry read; records first, UI second.
+//
+// A published record always carries at least one reason. One zone can be
+// demanded several ways at once (pinned and a graph neighbor, say), and one
+// kind can appear more than once when separate sources produced it, so Reasons
+// is a list rather than a set of flags.
 struct ZoneDemandRecord
 {
     ZoneId            Zone;
     ZoneParticipation Desired;
-    ZoneDemandSources Sources;
     std::vector<ZoneDemandReasonRecord> Reasons;
 };
+
+// Whether the record carries this kind of reason at all. Compares the kind
+// only: two SpatialRadius entries from different seeds are one kind.
+[[nodiscard]] bool IsDemandedFor(const ZoneDemandRecord& record,
+                                 ZoneDemandReason reason);
+
+// The record's reason kinds as a "+"-joined display string, each kind named
+// once, in a fixed order that does not depend on how the reasons accumulated.
+[[nodiscard]] std::string DescribeZoneDemandReasons(const ZoneDemandRecord& record);
 
 // An explicit script- or gameplay-driven residency demand beyond policy. Data, not
 // subclasses.
@@ -145,9 +140,9 @@ struct ZoneContainmentResult
 // Pure. The demand set for one focus: the focus zone at full participation,
 // its graph neighbors within HopCount hops at the config's preload
 // participation, zones within Radius of the focus position likewise (when a
-// position is supplied), plus pins at their minimum. Lingering is runtime
-// state and is layered on by WorldPartitionRuntime::Update, never computed
-// here. Deterministic: records ascend by zone id value.
+// position is supplied), plus pins at their minimum. Linger is runtime state
+// and is layered on by WorldPartitionRuntime::Update, never computed here.
+// Deterministic: records ascend by zone id value.
 [[nodiscard]] std::vector<ZoneDemandRecord>
 ComputeZoneDemand(const WorldPartitionManifest& manifest,
                   const WorldPartitionIndex& index,

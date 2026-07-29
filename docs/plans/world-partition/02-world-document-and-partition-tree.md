@@ -7,6 +7,11 @@ writing code. Phase 1 (`01-manifest-and-identity.md`) must be complete: this pha
 consumes `WorldPartitionManifest`, the id helpers, `WorldPartitionIndex`, and
 `ValidateWorldPartitionManifest`.
 
+HISTORICAL. The world graph contracts are `11-zone-runtime-model.md` and
+`12-spatial-compilation.md`; where this file disagrees with them, they win.
+Region verbs and tree nodes are now Graph verbs and Graph nodes; `ZoneRuntime` is
+now `RuntimeWorld`. Transitions and portals were replaced by authored Docks and Links.
+
 Scope: the `WorldDocument` container, the workspace refactor, `.sworld` file actions,
 zone editor states with the Context (loaded, visible, locked) preset, the partition
 tree panel, the zone bounds overlay, and the world cook.

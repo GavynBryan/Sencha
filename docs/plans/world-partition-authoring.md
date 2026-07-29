@@ -1,14 +1,19 @@
 # World Partition Authoring and Runtime Plan
 
-Status: proposed design (2026-07-02). Candidate execution spec for Track C item 3
-(`WorldPartitionRuntime`) and the partition authoring additions to Track D in
-`docs/plans/engine-roadmap.md`. The roadmap owns versions and gates; Section 13 lists the
-version moves this document asks the roadmap to ratify. Where this document assigns a
-version, read it as a proposal until the roadmap records it.
+Status: HISTORICAL (2026-07-02). This document no longer owns the model.
+`docs/plans/world-partition/11-zone-runtime-model.md` and
+`12-spatial-compilation.md` do, and where they disagree with anything below, they
+win without exception.
 
-Implementation detail lives in the execution suite `docs/plans/world-partition/` (start
-with `00-execution-overview.md`). Where that suite pins a mechanism decision, it wins,
-per the roadmap's specialist-doc rule; this document owns the model.
+Much of what follows was built and then removed. Portals (Section 5), the
+`PortalRecord`/`PortalHeader` schema, `RegionId` and `RegionRecord`, the
+per-transition `StreamingHint` preload priority, and `ZoneRuntime` are all gone;
+Section 8's multi-space design is built on portals and has no live substrate.
+Kept because Section 8 and the Section 11 deferral register are the only written
+record of the non-Euclidean and see-through work that `engine-roadmap.md` Track C
+item 7 still carries for v2.0.
+
+Read it as the reasoning that produced the current model, not as a specification.
 
 Audience: whoever implements any item here (human or agent), and reviewers. This document
 consolidates the partition model evaluation (zones, regions, portals, streaming,

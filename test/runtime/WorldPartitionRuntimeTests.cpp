@@ -313,7 +313,6 @@ TEST_F(WorldPartitionRuntimeTest, CrossingRecordsTraversalGraceReason)
         if (record.Zone == kHub)
             source = &record;
     ASSERT_NE(source, nullptr);
-    EXPECT_TRUE(source->Sources.TraversalGrace);
     EXPECT_TRUE(std::any_of(source->Reasons.begin(), source->Reasons.end(),
                             [](const ZoneDemandReasonRecord& reason)
                             { return reason.Reason == ZoneDemandReason::TraversalGrace; }));
@@ -486,6 +485,25 @@ TEST_F(WorldPartitionRuntimeTest, DemandRecordsRemainDeterministicallySorted)
         EXPECT_LT(first[index - 1].Value, first[index].Value);
 }
 
+TEST_F(WorldPartitionRuntimeTest, EveryDemandRecordCarriesAtLeastOneReason)
+{
+    // Reasons is the only record of why a zone is demanded, so a record that
+    // carries none is indistinguishable from one that should not exist. The
+    // linger and traversal-grace paths layer records on after the demand pass,
+    // which is where an unexplained record would come from.
+    LoadFixture(WorldPartitionStreamingConfig{ .HopCount = 1, .LingerSeconds = 2.0 });
+    Partition.SetFocus(Vec3d{ 0, 1, 0 });
+    Step();
+    Step();
+    Partition.SetFocus(Vec3d{ 10, 1, 0 });
+    Step(0.1);
+
+    ASSERT_FALSE(Partition.DemandRecords().empty());
+    for (const ZoneDemandRecord& record : Partition.DemandRecords())
+        EXPECT_FALSE(record.Reasons.empty())
+            << "zone " << ZoneIdToString(record.Zone) << " is demanded for no reason";
+}
+
 TEST_F(WorldPartitionRuntimeTest, OverlappingZoneAabbsAreLegal)
 {
     // Hallway's bounds stretched to overlap Hub over x in [7, 8].
@@ -597,7 +615,7 @@ TEST(WorldPartitionRuntimeThreaded, MidBuildCancellationRetriesThenDetaches)
     for (const ZoneDemandRecord& record : partition.DemandRecords())
     {
         if (record.Zone == kHallway)
-            reportedLingering = record.Sources.Lingering;
+            reportedLingering = IsDemandedFor(record, ZoneDemandReason::Linger);
     }
     EXPECT_TRUE(reportedLingering);
 

@@ -4,6 +4,12 @@ Status: execution spec (2026-07-02). Implements Phase 1 of
 `docs/plans/world-partition-authoring.md` (Sections 3 and 9 there; read them first,
 then `00-execution-overview.md` in this directory, before writing code).
 
+HISTORICAL. The world graph contracts are `11-zone-runtime-model.md` and
+`12-spatial-compilation.md`; where this file disagrees with them, they win.
+`RegionId`/`RegionRecord` are now `GraphId`/`GraphRecord`, `TransitionRecord` is
+refused at load, `ZoneRuntime` is now `RuntimeWorld`, and the manifest writer emits
+format_version 4.
+
 Scope: the partition id vocabulary, the manifest records, JSON round-trip, the
 adjacency index, and manifest-level validation. Pure data and pure functions.
 

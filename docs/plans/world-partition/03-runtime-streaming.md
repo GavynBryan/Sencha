@@ -5,6 +5,12 @@ Status: execution spec (2026-07-03). Implements Phase R of
 of Section 10; read them first, then `00-execution-overview.md`, especially D7, D10,
 and D14, before writing code).
 
+HISTORICAL. The world graph contracts are `11-zone-runtime-model.md` and
+`12-spatial-compilation.md`; where this file disagrees with them, they win.
+`ZoneRuntime` is now `RuntimeWorld`, portals no longer exist, and the fixture below
+carries a `transitions` array that `LoadManifest` refuses. Demand sources are the
+reasons listed in Plan 11 section 4.
+
 Prerequisite: Phase 1 complete (it is). Phase E1's world cook exists but is NOT a
 dependency: per D7 this phase runs against hand-written cooked manifest fixtures and
 must never block on editor work. Phase R and Phase E2 are parallel lanes.

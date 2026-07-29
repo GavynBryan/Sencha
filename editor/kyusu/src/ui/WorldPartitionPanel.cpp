@@ -188,23 +188,8 @@ void WorldPartitionPanel::DrawStreamingPreview()
         &view->PreviewFocusPosition);
     for (const ZoneDemandRecord& record : records)
     {
-        std::string why;
-        const auto tag = [&](bool on, const char* name)
-        {
-            if (!on)
-                return;
-            if (!why.empty())
-                why += "+";
-            why += name;
-        };
-        tag(record.Sources.Focus, "focus");
-        tag(record.Sources.SameGraphHop, "graph hop");
-        tag(record.Sources.CrossGraphEntry, "cross-graph entry");
-        tag(record.Sources.SpatialRadius, "radius");
-        tag(record.Sources.ExplicitPin, "pin");
-        tag(record.Sources.TraversalGrace, "traversal grace");
-        tag(record.Sources.Linger, "linger");
-        why += record.Sources.Focus ? ", live"
+        std::string why = DescribeZoneDemandReasons(record);
+        why += IsDemandedFor(record, ZoneDemandReason::Focus) ? ", live"
              : record.Desired.Visible ? ", render preload"
                                       : ", dormant preload";
         ImGui::BulletText("%s (%s)", zoneName(record.Zone), why.c_str());

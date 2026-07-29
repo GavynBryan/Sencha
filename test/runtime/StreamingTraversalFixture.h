@@ -10,12 +10,12 @@
 // StreamingBench.Generate, which does not. A second copy of this fixture would
 // eventually measure a different scenario than the one the bounds protect.
 //
-// The async lane runs with no worker threads, which is its deterministic reference
-// mode: every load lands in the frame that asked for it, so a lap is reproducible
-// and the bounds are exact rather than timing-dependent. The threaded path through
-// the same loader is covered by AsyncZoneLoadTests, including under tsan. What this
-// scenario is for is the shape a single test cannot reach — many zones arriving and
-// leaving over time — and that shape does not change with the lane.
+// The async lane defaults to no worker threads, which is its deterministic
+// reference mode: every load lands in the frame that asked for it, so a lap is
+// reproducible and the counted bounds are exact rather than timing-dependent.
+// The determinism test drives the same lap at higher worker counts and settles
+// in-flight work before each observation, which is the only way to compare
+// laps whose loads land in different frames.
 
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
@@ -37,10 +37,14 @@
 
 #include "ZoneDockFixture.h"
 
+#include <gtest/gtest.h>
+
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace StreamingTraversal
@@ -141,8 +145,11 @@ inline void BuildZoneContent(ZoneLoadPackage& package, int zoneIndex)
 class Harness
 {
 public:
-    Harness()
-        : Tasks_(0)
+    // Worker count is the async lane's only timing knob. Zero is the
+    // deterministic reference; a settled traversal must match it at any count.
+    explicit Harness(unsigned taskThreads = 0)
+        : TaskThreads_(taskThreads)
+        , Tasks_(taskThreads)
         , Schema_(Schema())
         , World_(Schema_)
         , SceneContext_(Logging_)
@@ -197,8 +204,7 @@ public:
 
         Partition_.Update(dt, Loader_, World_);
         World_.FlushLifecycleRequests();
-        Tasks_.PumpWork();
-        Tasks_.DrainCompletions();
+        DrainOnce();
         World_.FlushLifecycleRequests();
         (void)World_.BeginResidencyProcessing();
         World_.FinalizeResidencyProcessing();
@@ -240,6 +246,26 @@ public:
 
     void WalkLap() { WalkLap([this] { StepFrame(); }); }
 
+    // Pumps until nothing is in flight, so an observation taken afterwards
+    // reflects streaming policy rather than how many workers happened to run.
+    void SettleLoads()
+    {
+        const auto deadline =
+            std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (AnyLoading())
+        {
+            if (std::chrono::steady_clock::now() >= deadline)
+            {
+                ADD_FAILURE() << "streaming did not settle within 10s";
+                return;
+            }
+            DrainOnce();
+            World_.FlushLifecycleRequests();
+            (void)World_.BeginResidencyProcessing();
+            World_.FinalizeResidencyProcessing();
+        }
+    }
+
     RuntimeWorld& World() { return World_; }
     WorldPartitionRuntime& Partition() { return Partition_; }
     const PropagationOrderCache& Cache()
@@ -252,6 +278,25 @@ public:
     int Attaches() const { return Attaches_; }
 
 private:
+    // PumpWork is the zero-worker path only; with workers the queue runs itself
+    // and the owner thread just collects what finished.
+    void DrainOnce()
+    {
+        if (TaskThreads_ == 0)
+            Tasks_.PumpWork();
+        else
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        Tasks_.DrainCompletions();
+    }
+
+    [[nodiscard]] bool AnyLoading() const
+    {
+        for (int index = 0; index < kZoneCount; ++index)
+            if (Loader_.IsLoading(ZoneAt(index)))
+                return true;
+        return false;
+    }
+
     ZoneLoadRecipeFn MakeRecipe()
     {
         return [this](const ZoneHeader& header)
@@ -271,6 +316,7 @@ private:
         };
     }
 
+    unsigned TaskThreads_ = 0;
     LoggingProvider Logging_;
     AsyncTaskQueue Tasks_;
     WorldComponentSchema Schema_;

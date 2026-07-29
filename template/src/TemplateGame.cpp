@@ -667,21 +667,7 @@ void TemplateGame::OnStart(GameStartupContext&)
             for (const ZoneDemandRecord& record :
                  Partition->DemandRecords())
             {
-                std::string sources;
-                const auto addSource = [&sources](
-                    bool enabled,
-                    const char* name)
-                {
-                    if (!enabled)
-                        return;
-                    if (!sources.empty())
-                        sources += "+";
-                    sources += name;
-                };
-                addSource(record.Sources.Focus, "focus");
-                addSource(record.Sources.Neighbor, "neighbor");
-                addSource(record.Sources.Pinned, "pinned");
-                addSource(record.Sources.Lingering, "lingering");
+                const std::string sources = DescribeZoneDemandReasons(record);
 
                 std::string state = "unloaded";
                 if (const RuntimeZoneRecord* zone =
