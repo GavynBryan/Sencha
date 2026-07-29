@@ -200,7 +200,6 @@ public:
     {
         // ::World, because the World() accessor below shadows the type name here.
         ::World& entities = World_.Entities();
-        entities.AdvanceFrame();
 
         Partition_.Update(dt, Loader_, World_);
         World_.FlushLifecycleRequests();

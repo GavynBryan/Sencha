@@ -26,6 +26,7 @@
 
 #include <gtest/gtest.h>
 
+#include "BenchRecorder.h"
 #include "StreamingTraversalFixture.h"
 
 #include <ecs/Query.h>
@@ -53,43 +54,20 @@
 namespace
 {
 namespace fs = std::filesystem;
-using Clock = std::chrono::steady_clock;
+using Bench::Clock;
+using Bench::Median;
+using Bench::MillisecondsSince;
 
-// One recorded measurement. Unit is carried so the compare script can apply a
-// tolerance appropriate to the quantity: milliseconds drift between runs, counts
-// must match exactly.
-struct Metric
-{
-    std::string Name;
-    std::string Unit;
-    double Value = 0.0;
-};
-
-std::vector<Metric> Metrics;
+Bench::Recorder Recorder;
 
 void Record(std::string name, std::string unit, double value)
 {
-    Metrics.push_back(Metric{ std::move(name), std::move(unit), value });
-}
-
-double MillisecondsSince(Clock::time_point start)
-{
-    return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
-}
-
-double Median(std::vector<double>& samples)
-{
-    std::sort(samples.begin(), samples.end());
-    return samples[samples.size() / 2];
+    Recorder.Record(std::move(name), std::move(unit), value);
 }
 
 int RepsFromEnvironment(int fallback)
 {
-    const char* raw = std::getenv("SENCHA_STREAMING_BENCH_REPS");
-    if (raw == nullptr || raw[0] == '\0')
-        return fallback;
-    const int parsed = std::atoi(raw);
-    return parsed > 0 ? parsed : fallback;
+    return Bench::RepsFromEnvironment("SENCHA_STREAMING_BENCH_REPS", fallback);
 }
 
 WorldComponentSchema RuntimeSchema()
@@ -587,44 +565,6 @@ void MeasureControl(int reps)
     EXPECT_GT(checksum, 0u);
 }
 
-// ── Output ───────────────────────────────────────────────────────────────────
-
-const char* BuildConfiguration()
-{
-#ifdef NDEBUG
-    return "release-codegen";
-#else
-    return "debug-asserts";
-#endif
-}
-
-void WriteJson(const fs::path& path)
-{
-    std::ofstream out(path, std::ios::trunc);
-    ASSERT_TRUE(out.is_open()) << "cannot write " << path.generic_string();
-    out << "{\n";
-    out << "  \"schema\": 1,\n";
-    out << "  \"build\": \"" << BuildConfiguration() << "\",\n";
-    out << "  \"metrics\": [\n";
-    for (size_t index = 0; index < Metrics.size(); ++index)
-    {
-        const Metric& metric = Metrics[index];
-        out << "    { \"name\": \"" << metric.Name << "\", \"unit\": \""
-            << metric.Unit << "\", \"value\": " << metric.Value << " }"
-            << (index + 1 < Metrics.size() ? "," : "") << "\n";
-    }
-    out << "  ]\n";
-    out << "}\n";
-}
-
-void WriteCsv(const fs::path& path)
-{
-    std::ofstream out(path, std::ios::trunc);
-    ASSERT_TRUE(out.is_open()) << "cannot write " << path.generic_string();
-    out << "name,unit,value\n";
-    for (const Metric& metric : Metrics)
-        out << metric.Name << ',' << metric.Unit << ',' << metric.Value << '\n';
-}
 } // namespace
 
 TEST(StreamingBench, Generate)
@@ -640,7 +580,7 @@ TEST(StreamingBench, Generate)
     if (jsonPath.has_parent_path() && !jsonPath.parent_path().empty())
         fs::create_directories(jsonPath.parent_path());
 
-    Metrics.clear();
+    Recorder.Clear();
 
     const int iterationReps = RepsFromEnvironment(200);
     const int streamingReps = RepsFromEnvironment(30);
@@ -672,10 +612,13 @@ TEST(StreamingBench, Generate)
 
     MeasureTraversal();
 
-    WriteJson(jsonPath);
+    ASSERT_TRUE(Recorder.WriteJson(jsonPath))
+        << "cannot write " << jsonPath.generic_string();
     fs::path csvPath = jsonPath;
     csvPath.replace_extension(".csv");
-    WriteCsv(csvPath);
+    ASSERT_TRUE(Recorder.WriteCsv(csvPath))
+        << "cannot write " << csvPath.generic_string();
 
-    testing::Test::RecordProperty("metrics", static_cast<int>(Metrics.size()));
+    testing::Test::RecordProperty("metrics",
+                                  static_cast<int>(Recorder.Metrics().size()));
 }

@@ -17,6 +17,17 @@ bool ZoneExists(const WorldPartitionManifest& manifest, ZoneId zone)
     return false;
 }
 
+// Existence and graph in one pass, for callers that want both. Asking through
+// ZoneExists and GraphOf separately walks the zone list twice for one answer,
+// which the hop-rank BFS does once per edge it considers.
+const ZoneHeader* FindZoneHeader(const WorldPartitionManifest& manifest, ZoneId zone)
+{
+    for (const ZoneHeader& header : manifest.Zones)
+        if (header.Id == zone)
+            return &header;
+    return nullptr;
+}
+
 ZoneHopRank* FindRank(std::vector<ZoneHopRank>& ranks, ZoneId zone)
 {
     for (ZoneHopRank& rank : ranks)
@@ -197,12 +208,16 @@ std::vector<ZoneHopRank> ComputeZoneHopRanks(const WorldPartitionManifest& manif
     for (size_t head = 0; head < queue.size(); ++head)
     {
         const Frontier current = queue[head];
+        // The frontier zone's graph is the same for every edge leaving it, and
+        // a high-degree zone leaves a lot of them; resolving it per edge made
+        // the BFS cost the zone count times the degree.
+        const GraphId currentGraph = GraphOf(manifest, current.Zone);
         const auto consider = [&](ZoneId destination, uint64_t endpointId)
         {
-            if (!ZoneExists(manifest, destination))
+            const ZoneHeader* destinationHeader = FindZoneHeader(manifest, destination);
+            if (destinationHeader == nullptr)
                 return;
-            const GraphId currentGraph = GraphOf(manifest, current.Zone);
-            const GraphId destinationGraph = GraphOf(manifest, destination);
+            const GraphId destinationGraph = destinationHeader->Graph;
             const bool crossGraph = currentGraph != destinationGraph;
             if (crossGraph && currentGraph != focusGraph)
                 return;
