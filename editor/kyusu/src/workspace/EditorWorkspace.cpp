@@ -22,6 +22,7 @@
 #include "meshedit/MeshElements.h"
 #include "meshedit/SelectionConversion.h"
 #include "overlay/SelectionLabels.h"
+#include "GridEditing.h"
 #include "viewport/GridFrame.h"
 #include "selection/SelectionFold.h"
 #include "selection/commands/SelectCommand.h"
@@ -440,97 +441,18 @@ void EditorWorkspace::SeparateSelectedFaces()
 
 void EditorWorkspace::SyncOrthoViewsToGridFrame()
 {
-    Vec3d u;
-    Vec3d n;
-    Vec3d v;
-    GridFrame::Basis(Grid, u, n, v);
-
-    for (const auto& viewport : Layout.All())
-    {
-        const OrientationTraits& traits = viewport->GetOrientationTraits();
-        if (traits.Mode != EditorCamera::Mode::Orthographic || traits.UsesCameraAxis)
-            continue;
-
-        viewport->Camera.OrthoAxis = GridFrame::MapToFrame(traits.OrthoAxis, u, n, v);
-        // The same view-up rule the world-aligned basis uses (world up, or
-        // forward when looking straight down/up), expressed in the frame.
-        const Vec3d upDefault = std::abs(traits.OrthoAxis.Y) > 0.999f ? Vec3d::Forward() : Vec3d::Up();
-        viewport->Camera.OrthoUpHint = GridFrame::MapToFrame(upDefault, u, n, v);
-    }
+    GridEditing::SyncOrthoViews(Grid, Layout);
 }
 
 void EditorWorkspace::SetGridOriginToSelection()
 {
-    const EditorScene& scene = ActiveDocument().GetScene();
-
-    // A single selected vertex is the exact intent; use its world position.
-    const SelectableRef* vertexRef = nullptr;
-    for (const SelectableRef& ref : Selection.GetSelection())
-    {
-        if (!ref.IsVertex())
-            continue;
-        if (vertexRef != nullptr)
-        {
-            vertexRef = nullptr;
-            break;
-        }
-        vertexRef = &ref;
-    }
-    if (vertexRef != nullptr)
-    {
-        const BrushMesh* mesh = scene.TryGetBrushMesh(vertexRef->Entity);
-        const Transform3f* transform = scene.TryGetTransform(vertexRef->Entity);
-        if (mesh != nullptr && transform != nullptr)
-        {
-            if (const auto vertex = MeshElements::TryGetVertex(*mesh, *transform, vertexRef->ElementId))
-            {
-                Grid.Origin = vertex->Position;
-                return;
-            }
-        }
-    }
-
-    Aabb3d bounds = Aabb3d::Empty();
-    for (const SelectableRef& ref : Selection.GetSelection())
-    {
-        if (!ref.Entity.IsValid())
-            continue;
-        if (const auto entityBounds = scene.TryGetWorldBounds(ref.Entity))
-            bounds.ExpandToInclude(*entityBounds);
-    }
-    if (bounds.IsValid())
-        Grid.Origin = bounds.Center();
+    GridEditing::SetOriginToSelection(Grid, ActiveDocument().GetScene(), Selection.GetSelection());
 }
 
 void EditorWorkspace::AlignGridToSelectedFace()
 {
-    const EditorScene& scene = ActiveDocument().GetScene();
-
-    SelectableRef faceRef = Selection.GetPrimarySelection();
-    if (!faceRef.IsFace())
-    {
-        faceRef = {};
-        for (const SelectableRef& ref : Selection.GetSelection())
-            if (ref.IsFace())
-            {
-                faceRef = ref;
-                break;
-            }
-    }
-    if (!faceRef.IsFace())
-        return;
-
-    const BrushMesh* mesh = scene.TryGetBrushMesh(faceRef.Entity);
-    const Transform3f* transform = scene.TryGetTransform(faceRef.Entity);
-    if (mesh == nullptr || transform == nullptr)
-        return;
-
-    const auto face = MeshElements::TryGetFace(*mesh, *transform, faceRef.ElementId);
-    if (!face.has_value())
-        return;
-
-    (void)GridFrame::FromFace(face->Center, face->Normal,
-                              GridFrame::LongestEdgeDirection(face->Corners), Grid);
+    GridEditing::AlignToSelectedFace(Grid, ActiveDocument().GetScene(), Selection.GetSelection(),
+                                     Selection.GetPrimarySelection());
 }
 
 void EditorWorkspace::RotateGridInPlane(float degrees)
