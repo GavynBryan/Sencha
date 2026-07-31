@@ -1,5 +1,8 @@
 #include "FaceCarveTool.h"
 
+#include "ui/ButtonFlow.h"
+#include "ui/EditorUiSkin.h"
+
 #include "EditorTheme.h"
 #include "fonts/IconsFontAwesome6.h"
 
@@ -424,6 +427,14 @@ void FaceCarveTool::OnDeactivate(ToolContext& ctx)
     RevertAll(ctx);
 }
 
+void FaceCarveTool::CommitPending(ToolContext& ctx)
+{
+    if (CanCommit())
+        Commit(ctx);
+    else
+        RevertAll(ctx);
+}
+
 void FaceCarveTool::OnCancel(ToolContext& ctx)
 {
     RevertAll(ctx);
@@ -550,4 +561,70 @@ void FaceCarveTool::WriteRectHandles(ToolContext& ctx, Vec2d rectMin, Vec2d rect
         handle.SizePixels = EditorTheme::HandlePixels;
         ctx.Overlay.PointHandles.push_back(handle);
     }
+}
+
+ITool::Shortcut FaceCarveTool::GetShortcut() const { return { SDLK_X, {} }; }
+
+void FaceCarveTool::DrawProperties(ToolContext& ctx)
+{
+    ImGui::SeparatorText("Face Carve");
+
+    const bool hasDraft = HasPending();
+    const bool canCommit = CanCommit();
+
+    if (ImGui::RadioButton("Inset", Mode == FaceCarveMode::Inset))
+        SetMode(ctx, FaceCarveMode::Inset);
+    if (ImGui::RadioButton("Edge Loop", Mode == FaceCarveMode::EdgeLoop))
+        SetMode(ctx, FaceCarveMode::EdgeLoop);
+
+    bool pierce = Pierce;
+    if (ImGui::Checkbox("Pierce", &pierce))
+        SetPierceEnabled(ctx, pierce);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Carve matching bounds into the nearest opposite face");
+
+    if (!hasDraft)
+    {
+        ImGui::TextDisabled(Mode == FaceCarveMode::EdgeLoop ? "Drag loop bounds on a face"
+                                                            : "Drag an inset on a face");
+    }
+
+    if (!canCommit)
+        ImGui::BeginDisabled();
+    ButtonFlow flow;
+    if (flow.Button("Apply"))
+        Commit(ctx);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Commit the pending carve  [Enter]");
+    if (!canCommit)
+        ImGui::EndDisabled();
+    if (!hasDraft)
+        ImGui::BeginDisabled();
+    if (flow.Button("Cancel"))
+        RevertAll(ctx);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Discard the pending carve  [Esc]");
+    if (!hasDraft)
+        ImGui::EndDisabled();
+}
+
+void FaceCarveTool::DrawToolbarControls(ToolContext& ctx)
+{
+    const float size = EditorUiSkin::BarButtonSize();
+    const bool hasDraft = HasPending();
+    const bool canCommit = CanCommit();
+
+    if (!canCommit)
+        ImGui::BeginDisabled();
+    if (EditorUiSkin::ToolButton("carveapply", ICON_FA_CHECK, "Apply carve  [Enter]", false, size))
+        Commit(ctx);
+    if (!canCommit)
+        ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (!hasDraft)
+        ImGui::BeginDisabled();
+    if (EditorUiSkin::ToolButton("carvecancel", ICON_FA_XMARK, "Cancel carve  [Esc]", false, size))
+        RevertAll(ctx);
+    if (!hasDraft)
+        ImGui::EndDisabled();
 }

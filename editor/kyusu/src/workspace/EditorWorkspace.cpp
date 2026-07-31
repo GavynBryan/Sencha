@@ -45,12 +45,46 @@
 #include <utility>
 #include <vector>
 
-EditorWorkspace::EditorWorkspace(LoggingProvider& logging)
+EditorWorkspace::EditorWorkspace(LoggingProvider& logging, CommandStack& commands)
     : World(logging)
     , Selection(LevelSelection)
     , MeshEdit(logging)
+    , Commands(commands)
+    , Actions(World, Selection, commands, MeshEdit, BridgeEdit,
+              [this] { return static_cast<IMeshEditTarget*>(Interaction.Sink.get()); },
+              MakeDuplicateRemap())
 {
     World.BindViewSettings(&WorldView);
+    PendingPanelEdits = {
+        PendingEditHooks{
+            [this] { return BridgeEdit.HasPending(); },
+            [this] { BridgeEdit.Commit(Commands, Selection); },
+            [this] { BridgeEdit.Cancel(Commands); },
+        },
+        PendingEditHooks{
+            [this] { return ElementEdit.HasPendingInset() || ElementEdit.HasPendingBevel(); },
+            [this] { ElementEdit.Commit(Commands); },
+            [this] { ElementEdit.Cancel(Commands); },
+        },
+    };
+    Build();
+}
+
+bool EditorWorkspace::HasPendingPanelEdit() const
+{
+    for (const PendingEditHooks& pending : PendingPanelEdits)
+        if (pending.HasPending())
+            return true;
+    return false;
+}
+
+std::function<void(std::vector<EntitySnapshot>&)> EditorWorkspace::MakeDuplicateRemap()
+{
+    // Copies of world docks and links must not share the original's minted ids.
+    // Every duplicate route (menu, gizmo drag, repeat) goes through this, so a
+    // route cannot quietly skip the remap and produce colliding identity.
+    return [this](std::vector<EntitySnapshot>& snapshots)
+    { RemapWorldConnectionDuplicateSnapshots(World, snapshots); };
 }
 
 void EditorWorkspace::BuildInteractionState()
@@ -65,27 +99,42 @@ void EditorWorkspace::BuildInteractionState()
             Layout,
             Pivot,
             *Affordances,
-            ToolAuthoringSettings{ Grid, BrushCreate, EdgeCut, ActiveMaterial },
+            ToolAuthoringSettings{ Grid, ActiveMaterial },
+            MakeDuplicateRemap(),
             // A committed duplicate (the gizmo Shift-drag) becomes the repeatable
             // action: Ctrl+R re-duplicates the current selection at the same offset.
-            [this](Vec3d offset)
-            {
-                if (offset.SqrMagnitude() > 0.0f)
-                    LastRepeatable = [this, offset] { DuplicateSelectionWithOffset(offset); };
-            },
+            [this](Vec3d offset) { Actions.RecordRepeatableDuplicate(offset); },
         },
-        *Commands);
+        Commands);
+}
+
+void EditorWorkspace::CancelDocumentTransactions()
+{
+    Interaction.CancelActiveTool();
+    // Every preview stages state in a document: the bridge owns an entity in the
+    // scene it was begun in, the element edit holds the pre-edit meshes. Cancel
+    // them (rather than dropping the stack under them) so the staged state is
+    // reverted while the document that holds it is still alive.
+    for (const PendingEditHooks& pending : PendingPanelEdits)
+        pending.Cancel();
+    Commands.Clear();
+}
+
+void EditorWorkspace::ResolvePendingEdits()
+{
+    // Commit, not cancel: a live preview is what the user is looking at, and
+    // persisting the document behind their back with that geometry missing
+    // would be the surprising outcome. Each resolution is its own undo step, so
+    // an unwanted commit is one Ctrl+Z away. Tools whose preview is a hover
+    // artifact rather than placed work revert instead (see ITool::CommitPending).
+    Interaction.CommitActiveTool();
+    for (const PendingEditHooks& pending : PendingPanelEdits)
+        pending.Commit();
 }
 
 void EditorWorkspace::ResetInteractionState()
 {
-    Interaction.CancelActiveTool();
-    // The pending bridge preview lives in whichever scene it was begun in; a
-    // focus change keeps that document alive, so cancel (not just drop) it.
-    CancelPendingBridge();
-    CancelPendingElementEdit();
-    if (Commands != nullptr)
-        Commands->Clear();
+    CancelDocumentTransactions();
     Selection.ClearSelection();
 
     // Transient view/interaction state that may reference the outgoing document.
@@ -95,12 +144,10 @@ void EditorWorkspace::ResetInteractionState()
     BuildInteractionState();
 }
 
-void EditorWorkspace::Init(CommandStack& commands)
+void EditorWorkspace::Build()
 {
-    Commands = &commands;
-
     Affordances = std::make_unique<EditorAffordanceService>(
-        World, Selection, commands, Grid);
+        World, Selection, Commands, Grid);
     Affordances->Registry().Register(MakeWorldDockEditorAdapter());
     CreationRecipes.Register("world_dock", std::make_unique<WorldDockRecipe>());
     Picking.SetEntityProxyProvider(
@@ -109,18 +156,22 @@ void EditorWorkspace::Init(CommandStack& commands)
 
     BuildInteractionState();
 
-    // A focus change swaps the edited document: reset exactly as document open
-    // does. In legacy mode focus never changes, so this never fires.
-    World.OnFocusChanged = [this] { ResetInteractionState(); };
+    // Anything that leaves a different document under the editing stack (zone
+    // focus, world scene focus, new, open, close to legacy) lands here, so the
+    // stack rebinds from one place instead of each caller arranging it.
+    World.OnEditedDocumentChanged = [this] { ResetInteractionState(); };
+
+    // The documents a preview staged state into are about to be destroyed.
+    // Unwind now, while they are still alive; the rebuild follows from the
+    // focus change or the file action once the new documents exist.
+    World.OnWillReplaceDocuments = [this] { CancelDocumentTransactions(); };
 
     // An unload destroys a zone document that queued commands may still
-    // reference (the cross-zone move holds two documents). Focus is unchanged,
-    // so only the stack drops; tools and selection stay.
-    World.OnZoneUnloaded = [this](ZoneId)
-    {
-        if (Commands != nullptr)
-            Commands->Clear();
-    };
+    // reference (the cross-zone move holds two documents). Clearing the stack
+    // would drop an open pending edit's cancel without running it, stranding the
+    // preview in the focus document (which the unload leaves alive), so cancel
+    // the live transactions first. Focus is unchanged, so tools and selection stay.
+    World.OnZoneUnloaded = [this](ZoneId) { CancelDocumentTransactions(); };
 
     // The transient pivot is per-selection: any selection change resets it to
     // the computed center AND leaves pivot-editing (clicking another object
@@ -208,8 +259,6 @@ void EditorWorkspace::ConvertSelectionToKind(MeshElementKind next)
 
 void EditorWorkspace::SelectAll()
 {
-    if (Commands == nullptr)
-        return;
 
     const EditorScene& scene = ActiveDocument().GetScene();
     const MeshElementKind kind = MeshEdit.GetElementKind();
@@ -245,139 +294,7 @@ void EditorWorkspace::SelectAll()
         return;
 
     SelectionSnapshot snapshot = SelectionFold::Apply({}, gathered, SelectionFold::Op::Replace);
-    Commands->Execute(std::make_unique<SelectCommand>(Selection, std::move(snapshot)));
-}
-
-void EditorWorkspace::DuplicateSelection(bool asInstance)
-{
-    if (Commands == nullptr)
-        return;
-
-    const EditorScene& scene = ActiveDocument().GetScene();
-    std::vector<EntityId> sources;
-    std::vector<Transform3f> transforms;
-    for (const SelectableRef& ref : Selection.GetSelection())
-    {
-        if (!ref.IsEntity() || !scene.HasEntity(ref.Entity))
-            continue;
-        sources.push_back(ref.Entity);
-        const Transform3f* transform = scene.TryGetTransform(ref.Entity);
-        transforms.push_back(transform != nullptr ? *transform : Transform3f::Identity());
-    }
-    if (sources.empty())
-        return;
-
-    Commands->Execute(std::make_unique<DuplicateEntitiesCommand>(
-        sources, transforms, ActiveDocument().GetScene(), ActiveDocument(), Selection,
-        asInstance, [this](std::vector<EntitySnapshot>& snapshots)
-        { RemapWorldConnectionDuplicateSnapshots(World, snapshots); }));
-}
-
-void EditorWorkspace::RepeatLastAction()
-{
-    if (LastRepeatable)
-        LastRepeatable();
-}
-
-void EditorWorkspace::DuplicateSelectionWithOffset(Vec3d offset)
-{
-    if (Commands == nullptr)
-        return;
-
-    const EditorScene& scene = ActiveDocument().GetScene();
-    std::vector<EntityId> sources;
-    std::vector<Transform3f> transforms;
-    for (const SelectableRef& ref : Selection.GetSelection())
-    {
-        if (!ref.IsEntity() || !scene.HasEntity(ref.Entity))
-            continue;
-        sources.push_back(ref.Entity);
-        const Transform3f* transform = scene.TryGetTransform(ref.Entity);
-        Transform3f placed = transform != nullptr ? *transform : Transform3f::Identity();
-        placed.Position += offset;
-        transforms.push_back(placed);
-    }
-    if (sources.empty())
-        return;
-
-    Commands->Execute(std::make_unique<DuplicateEntitiesCommand>(
-        sources, transforms, ActiveDocument().GetScene(), ActiveDocument(), Selection));
-}
-
-void EditorWorkspace::MakeSelectedBrushesUnique()
-{
-    if (Commands == nullptr)
-        return;
-
-    EditorScene& scene = ActiveDocument().GetScene();
-    std::vector<std::unique_ptr<ICommand>> commands;
-    for (const SelectableRef& ref : Selection.GetSelection())
-        if (ref.IsEntity())
-            if (auto command = MakeBreakInstanceCommand(scene, ActiveDocument(), ref.Entity))
-                commands.push_back(std::move(command));
-
-    if (commands.empty())
-        return;
-    if (commands.size() == 1)
-        Commands->Execute(std::move(commands.front()));
-    else
-        Commands->Execute(std::make_unique<CompositeCommand>(std::move(commands)));
-}
-
-void EditorWorkspace::MergeSelectedBrushes()
-{
-    if (Commands == nullptr)
-        return;
-
-    EditorScene& scene = ActiveDocument().GetScene();
-    const SelectableRef primary = Selection.GetPrimarySelection();
-    EntityId target = primary.IsEntity() && scene.TryGetBrushMesh(primary.Entity) != nullptr
-        ? primary.Entity
-        : EntityId{};
-    std::vector<EntityId> sources;
-    for (const SelectableRef& ref : Selection.GetSelection())
-    {
-        if (!ref.IsEntity() || scene.TryGetBrushMesh(ref.Entity) == nullptr)
-            continue;
-        if (!target.IsValid())
-        {
-            target = ref.Entity;
-            continue;
-        }
-        if (ref.Entity != target)
-            sources.push_back(ref.Entity);
-    }
-
-    if (auto command = MakeMergeBrushesCommand(target, sources, scene, ActiveDocument(), Selection))
-        Commands->Execute(std::move(command));
-}
-
-void EditorWorkspace::SeparateSelectedFaces()
-{
-    if (Commands == nullptr)
-        return;
-
-    // Face refs of ONE brush (the mesh verbs' contract); the first entity with
-    // face refs wins.
-    EntityId source;
-    std::vector<std::uint32_t> faces;
-    for (const SelectableRef& ref : Selection.GetSelection())
-    {
-        if (!ref.IsFace())
-            continue;
-        if (!source.IsValid())
-            source = ref.Entity;
-        if (ref.Entity == source)
-            faces.push_back(ref.ElementId);
-    }
-
-    if (auto command = MakeSeparateFacesCommand(source, faces, ActiveDocument().GetScene(), ActiveDocument(), Selection))
-    {
-        Commands->Execute(std::move(command));
-        // The face indices no longer resolve on the reshaped source.
-        Selection.ClearMeshElementSelections();
-        MeshEdit.SetElementKind(MeshElementKind::Object);
-    }
+    Commands.Execute(std::make_unique<SelectCommand>(Selection, std::move(snapshot)));
 }
 
 void EditorWorkspace::SyncOrthoViewsToGridFrame()
@@ -408,8 +325,6 @@ void EditorWorkspace::ResetGrid()
 
 void EditorWorkspace::EscapeStep()
 {
-    if (Commands == nullptr)
-        return;
 
     bool hasElementRefs = false;
     for (const SelectableRef& ref : Selection.GetSelection())
@@ -419,9 +334,19 @@ void EditorWorkspace::EscapeStep()
             break;
         }
 
-    switch (NextEscapeAction(Interaction.Manipulators->IsEditingGridOrigin(), Pivot.Editing, hasElementRefs,
-                             MeshEdit.GetElementKind(), !Selection.GetSelection().empty()))
+    switch (NextEscapeAction(EscapeContext{
+                .HasPendingEdit = HasPendingPanelEdit(),
+                .GridOriginEditing = Interaction.Manipulators->IsEditingGridOrigin(),
+                .PivotEditing = Pivot.Editing,
+                .HasElementRefs = hasElementRefs,
+                .ElementKind = MeshEdit.GetElementKind(),
+                .HasSelection = !Selection.GetSelection().empty(),
+            }))
     {
+    case EscapeAction::CancelPendingEdit:
+        for (const PendingEditHooks& pending : PendingPanelEdits)
+            pending.Cancel();
+        break;
     case EscapeAction::CancelGridOriginEdit:
         Interaction.Manipulators->SetEditingGridOrigin(false);
         break;
@@ -435,14 +360,14 @@ void EditorWorkspace::EscapeStep()
             if (ref.IsEntity())
                 entitiesOnly.Items.push_back(ref);
         entitiesOnly.Primary = entitiesOnly.Items.empty() ? SelectableRef{} : entitiesOnly.Items.back();
-        Commands->Execute(std::make_unique<SelectCommand>(Selection, std::move(entitiesOnly)));
+        Commands.Execute(std::make_unique<SelectCommand>(Selection, std::move(entitiesOnly)));
         break;
     }
     case EscapeAction::DropToObjectMode:
         MeshEdit.SetElementKind(MeshElementKind::Object);
         break;
     case EscapeAction::ClearSelection:
-        Commands->Execute(std::make_unique<SelectCommand>(Selection, SelectionSnapshot{}));
+        Commands.Execute(std::make_unique<SelectCommand>(Selection, SelectionSnapshot{}));
         break;
     case EscapeAction::None:
         break;
@@ -470,8 +395,11 @@ void EditorWorkspace::UpdateOverlay()
             bounds.ExpandToInclude(entityBounds);
     }
 
+    // Appended, not assigned: clear() above keeps the vector's capacity, and a
+    // move-assign here would throw that away every frame.
     if (bounds.IsValid())
-        Interaction.Overlay.Labels = SelectionDimensionLabels(bounds, EditorTheme::DimensionLabel);
+        AppendSelectionDimensionLabels(bounds, EditorTheme::DimensionLabel,
+                                       Interaction.Overlay.Labels);
 
     // Zone name labels ride the same per-frame label rebuild as the dimension
     // text, anchored at each zone box's top center.
@@ -503,7 +431,7 @@ void EditorWorkspace::UpdateOverlay()
 
 void EditorWorkspace::SetSelectedBrushOriginToPivot()
 {
-    if (Commands == nullptr || !Pivot.Override.has_value())
+    if (!Pivot.Override.has_value())
         return;
 
     const SelectableRef primary = Selection.GetPrimarySelection();
@@ -512,15 +440,13 @@ void EditorWorkspace::SetSelectedBrushOriginToPivot()
 
     if (auto command = MakeSetBrushOriginCommand(ActiveDocument().GetScene(), primary.Entity, *Pivot.Override))
     {
-        Commands->Execute(std::move(command));
+        Commands.Execute(std::move(command));
         Pivot.Override.reset(); // the origin is now the pivot; drop the transient
     }
 }
 
 void EditorWorkspace::SetSelectedBrushOrigin(OriginAnchor anchor)
 {
-    if (Commands == nullptr)
-        return;
 
     EntityId entity = {};
     std::optional<Vec3d> point;
@@ -568,16 +494,16 @@ void EditorWorkspace::SetSelectedBrushOrigin(OriginAnchor anchor)
 
     if (auto command = MakeSetBrushOriginCommand(ActiveDocument().GetScene(), entity, *point))
     {
-        Commands->Execute(std::move(command));
+        Commands.Execute(std::move(command));
         Pivot.Override.reset(); // the pivot tracked the old origin; drop the transient
     }
 }
 
 void EditorWorkspace::ApplyActiveMaterialToSelectedFaces()
 {
-    if (!ActiveMaterial.Active.IsValid() || Interaction.Sink == nullptr || Commands == nullptr)
+    if (!ActiveMaterial.Active.IsValid() || Interaction.Sink == nullptr)
         return;
-    ApplyMaterialToSelectedFaces(*Interaction.Sink, Selection, *Commands, ActiveMaterial.Active);
+    ApplyMaterialToSelectedFaces(*Interaction.Sink, Selection, Commands, ActiveMaterial.Active);
 }
 
 void EditorWorkspace::CopySelectedFaceProjection()
@@ -590,15 +516,13 @@ void EditorWorkspace::CopySelectedFaceProjection()
 
 void EditorWorkspace::PasteFaceProjectionToSelection()
 {
-    if (!UvClipboard.has_value() || Interaction.Sink == nullptr || Commands == nullptr)
+    if (!UvClipboard.has_value() || Interaction.Sink == nullptr)
         return;
-    PasteFaceProjection(*Interaction.Sink, Selection, *Commands, *UvClipboard);
+    PasteFaceProjection(*Interaction.Sink, Selection, Commands, *UvClipboard);
 }
 
 void EditorWorkspace::DeleteSelection()
 {
-    if (Commands == nullptr)
-        return;
 
     // Element selections delete through mesh verbs: faces are removed, edges
     // dissolve (merge their two faces). Vertex refs have no delete verb yet.
@@ -614,7 +538,7 @@ void EditorWorkspace::DeleteSelection()
         const MeshEditVerb verb = hasFace ? MeshEditVerb::Delete : MeshEditVerb::DissolveEdge;
         if (auto command = MeshEdit.ApplyVerb(*Interaction.Sink, Selection.GetSnapshot(), verb, {}))
         {
-            Commands->Execute(std::move(command));
+            Commands.Execute(std::move(command));
             Selection.ClearMeshElementSelections();
         }
         return;
@@ -629,75 +553,50 @@ void EditorWorkspace::DeleteSelection()
     if (entities.empty())
         return;
 
-    Commands->Execute(MakeDeleteEntitiesCommand(entities, ActiveDocument().GetScene(), ActiveDocument(), Selection));
+    Commands.Execute(MakeDeleteEntitiesCommand(entities, ActiveDocument().GetScene(), ActiveDocument(), Selection));
 }
 
 void EditorWorkspace::DissolveSelectedEdges()
 {
-    if (Commands == nullptr || Interaction.Sink == nullptr)
+    if (Interaction.Sink == nullptr)
         return;
     if (auto command = MeshEdit.ApplyVerb(*Interaction.Sink, Selection.GetSnapshot(), MeshEditVerb::DissolveEdge, {}))
     {
-        Commands->Execute(std::move(command));
-        Selection.ClearMeshElementSelections();
-    }
-}
-
-void EditorWorkspace::BridgeSelectedEdges(int segments)
-{
-    if (Commands == nullptr || Interaction.Sink == nullptr)
-        return;
-
-    const SelectionSnapshot selection = Selection.GetSnapshot();
-    if (PendingBridgeEdit::SpansTwoBrushes(selection.Items))
-    {
-        BridgeEdit.Begin(ActiveDocument().GetScene(), ActiveDocument(), *Commands,
-                         selection.Items, segments);
-        return;
-    }
-
-    if (auto command = MeshEdit.ApplyVerb(*Interaction.Sink, selection, MeshEditVerb::BridgeEdges,
-                                          { .BridgeSegments = segments }))
-    {
-        Commands->Execute(std::move(command));
+        Commands.Execute(std::move(command));
         Selection.ClearMeshElementSelections();
     }
 }
 
 void EditorWorkspace::CommitPendingBridge()
 {
-    if (Commands != nullptr)
-        BridgeEdit.Commit(*Commands, Selection);
+    BridgeEdit.Commit(Commands, Selection);
 }
 
 void EditorWorkspace::CancelPendingBridge()
 {
-    if (Commands != nullptr)
-        BridgeEdit.Cancel(*Commands);
+    BridgeEdit.Cancel(Commands);
 }
 
 void EditorWorkspace::BeginInsetOnSelectedFaces(float distance)
 {
-    if (Commands == nullptr || Interaction.Sink == nullptr)
+    if (Interaction.Sink == nullptr)
         return;
-    ElementEdit.BeginInset(*Interaction.Sink, *Commands, Selection.GetSelection(), distance);
+    ElementEdit.BeginInset(*Interaction.Sink, Commands, Selection.GetSelection(), distance);
 }
 
 void EditorWorkspace::BeginBevelOnSelectedEdges(float width, int segments)
 {
-    if (Commands == nullptr || Interaction.Sink == nullptr)
+    if (Interaction.Sink == nullptr)
         return;
-    ElementEdit.BeginBevel(*Interaction.Sink, *Commands, Selection.GetSelection(), width, segments);
+    ElementEdit.BeginBevel(*Interaction.Sink, Commands, Selection.GetSelection(), width, segments);
 }
 
 void EditorWorkspace::CommitPendingElementEdit()
 {
-    if (Commands != nullptr)
-        ElementEdit.Commit(*Commands);
+    ElementEdit.Commit(Commands);
 }
 
 void EditorWorkspace::CancelPendingElementEdit()
 {
-    if (Commands != nullptr)
-        ElementEdit.Cancel(*Commands);
+    ElementEdit.Cancel(Commands);
 }

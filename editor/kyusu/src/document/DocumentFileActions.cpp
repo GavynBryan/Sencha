@@ -32,12 +32,12 @@ bool IsWorldPath(std::string_view path)
 } // namespace
 
 DocumentFileActions::DocumentFileActions(SdlWindow& window, WorldDocument& world,
-                                         std::function<void()> resetInteraction,
+                                         std::function<void()> resolvePendingEdits,
                                          MaterialLibrary& materials,
                                          std::vector<std::string> contentRoots)
     : Window(window)
     , World(world)
-    , ResetInteraction(std::move(resetInteraction))
+    , ResolvePendingEdits(std::move(resolvePendingEdits))
     , Materials(materials)
     , ContentRoots(std::move(contentRoots))
 {
@@ -46,13 +46,11 @@ DocumentFileActions::DocumentFileActions(SdlWindow& window, WorldDocument& world
 void DocumentFileActions::New()
 {
     World.New();
-    ResetInteraction();
 }
 
 void DocumentFileActions::NewWorld()
 {
     World.NewWorld("Untitled World");
-    ResetInteraction();
 }
 
 void DocumentFileActions::Save()
@@ -63,6 +61,7 @@ void DocumentFileActions::Save()
         return;
     }
 
+    ResolvePendingEdits();
     World.Save();
 }
 
@@ -130,13 +129,13 @@ void DocumentFileActions::ProcessPending()
                 : World.Load(action.Path);
             if (loaded)
             {
-                ResetInteraction();
                 RescanMaterials(action.Path);
                 LogUnresolvedFaceMaterials(action.Path);
             }
             break;
         }
         case FileActionKind::SaveAs:
+            ResolvePendingEdits();
             World.SaveAs(action.Path);
             RescanMaterials(action.Path);
             break;

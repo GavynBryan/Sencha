@@ -105,24 +105,50 @@ EditorAffordanceService::EditorAffordanceService(
 {
 }
 
+void EditorComponentAdapterRegistry::ResolveEntries() const
+{
+    const auto& serializers = GetComponentSerializerEntries();
+    if (ResolvedSerializerCount == serializers.size() && Resolved.size() == Adapters.size())
+        return;
+
+    Resolved.clear();
+    Resolved.reserve(Adapters.size());
+    for (const auto& serializer : serializers)
+    {
+        const auto it = Adapters.find(serializer->TypeId());
+        if (it != Adapters.end())
+            Resolved.push_back({ it->second.get(), serializer.get() });
+    }
+    ResolvedSerializerCount = serializers.size();
+}
+
 void EditorAffordanceService::Build(ViewportAffordanceOutput& output) const
 {
+    ++Builds;
     EditorDocument& document = World.FocusDocument();
     EditorScene& scene = document.GetScene();
     const ::Registry& registry = scene.GetRegistry();
     const SelectableRef selected = Selection.GetPrimarySelection();
+
+    // Adapters outer, entities inner: only registered adapters can contribute,
+    // and there are a handful of those against every registered component type.
+    const std::span<const EditorComponentAdapterRegistry::Entry> entries = Adapters.Entries();
+    if (entries.empty())
+    {
+        AppendZoneBoundsTarget(output);
+        return;
+    }
 
     for (EntityId entity : scene.GetAllEntities())
     {
         if (!scene.IsEntityVisible(entity))
             continue;
         const Transform3f* transform = scene.TryGetTransform(entity);
-        for (const auto& serializer : GetComponentSerializerEntries())
+        for (const EditorComponentAdapterRegistry::Entry& entry : entries)
         {
-            const IEditorComponentAdapter* adapter = Adapters.Find(serializer->TypeId());
-            if (adapter == nullptr || !serializer->HasComponent(entity, registry))
+            if (!entry.Serializer->HasComponent(entity, registry))
                 continue;
-            adapter->BuildViewport(EditorComponentContext{
+            entry.Adapter->BuildViewport(EditorComponentContext{
                 .World = World,
                 .Document = document,
                 .Scene = scene,
@@ -197,11 +223,10 @@ bool EditorAffordanceService::AllowsScaleForSelection() const
     const ::Registry& registry = World.FocusDocument().GetRegistry();
     if (selected.Registry != registry.Id)
         return true;
-    for (const auto& serializer : GetComponentSerializerEntries())
-        if (serializer->HasComponent(selected.Entity, registry))
-            if (const IEditorComponentAdapter* adapter = Adapters.Find(serializer->TypeId());
-                adapter != nullptr && !adapter->AllowEntityScale())
-                return false;
+    for (const EditorComponentAdapterRegistry::Entry& entry : Adapters.Entries())
+        if (entry.Serializer->HasComponent(selected.Entity, registry)
+            && !entry.Adapter->AllowEntityScale())
+            return false;
     return true;
 }
 

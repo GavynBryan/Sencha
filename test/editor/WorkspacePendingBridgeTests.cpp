@@ -32,7 +32,7 @@ TEST_F(WorkspacePendingBridgeTest, CrossBrushBridgeStagesAPreviewEntity)
     SelectMatchingEdgesOnTwoBrushes();
     const std::size_t before = BrushCount();
 
-    Workspace.BridgeSelectedEdges(1);
+    Workspace.Actions.Bridge(1);
 
     EXPECT_TRUE(Workspace.HasPendingBridge());
     EXPECT_TRUE(Commands.HasPendingEdit());
@@ -44,7 +44,7 @@ TEST_F(WorkspacePendingBridgeTest, CancelDestroysThePreviewEntity)
     SelectMatchingEdgesOnTwoBrushes();
     const std::size_t before = BrushCount();
 
-    Workspace.BridgeSelectedEdges(1);
+    Workspace.Actions.Bridge(1);
     ASSERT_TRUE(Workspace.HasPendingBridge());
     Workspace.CancelPendingBridge();
 
@@ -59,7 +59,7 @@ TEST_F(WorkspacePendingBridgeTest, CommitKeepsTheBridgeAsOneUndoStep)
     SelectMatchingEdgesOnTwoBrushes();
     const std::size_t before = BrushCount();
 
-    Workspace.BridgeSelectedEdges(1);
+    Workspace.Actions.Bridge(1);
     Workspace.CommitPendingBridge();
 
     EXPECT_FALSE(Workspace.HasPendingBridge());
@@ -76,7 +76,7 @@ TEST_F(WorkspacePendingBridgeTest, UndoWhilePendingDropsThePreview)
     SelectMatchingEdgesOnTwoBrushes();
     const std::size_t before = BrushCount();
 
-    Workspace.BridgeSelectedEdges(1);
+    Workspace.Actions.Bridge(1);
     Commands.Undo();
 
     EXPECT_FALSE(Workspace.HasPendingBridge());
@@ -89,7 +89,7 @@ TEST_F(WorkspacePendingBridgeTest, ChangingSegmentsRegeneratesWithoutStagingAnot
 {
     SelectMatchingEdgesOnTwoBrushes();
 
-    Workspace.BridgeSelectedEdges(1);
+    Workspace.Actions.Bridge(1);
     const std::size_t staged = BrushCount();
     Workspace.SetPendingBridgeSegments(4);
 
@@ -114,11 +114,11 @@ TEST_F(WorkspacePendingBridgeTest, RebridgingReplacesThePreviousPreview)
     SelectMatchingEdgesOnTwoBrushes();
     const std::size_t before = BrushCount();
 
-    Workspace.BridgeSelectedEdges(1);
+    Workspace.Actions.Bridge(1);
     const std::vector<SelectableRef> firstEdges = RefsOf(First, MeshElementKind::Edge);
     const std::vector<SelectableRef> secondEdges = RefsOf(Second, MeshElementKind::Edge);
     Select({ firstEdges[1], secondEdges[1] });
-    Workspace.BridgeSelectedEdges(1);
+    Workspace.Actions.Bridge(1);
 
     EXPECT_TRUE(Workspace.HasPendingBridge());
     EXPECT_EQ(BrushCount(), before + 1);
@@ -135,7 +135,7 @@ TEST_F(WorkspacePendingBridgeTest, MismatchedPathLengthsStageNothing)
     Select({ firstEdges[0], firstEdges[1], firstEdges[2], secondEdges[0] });
     const std::size_t before = BrushCount();
 
-    Workspace.BridgeSelectedEdges(1);
+    Workspace.Actions.Bridge(1);
 
     EXPECT_FALSE(Workspace.HasPendingBridge());
     EXPECT_FALSE(Commands.HasPendingEdit());
@@ -151,7 +151,7 @@ TEST_F(WorkspacePendingBridgeTest, SingleBrushSelectionNeverStagesAPreview)
     ASSERT_GE(edges.size(), 2u);
     Select({ edges[0], edges[1] });
 
-    Workspace.BridgeSelectedEdges(1);
+    Workspace.Actions.Bridge(1);
 
     EXPECT_FALSE(Workspace.HasPendingBridge());
     EXPECT_FALSE(Commands.HasPendingEdit());
@@ -184,7 +184,7 @@ TEST_F(WorkspacePendingBridgeTest, CancelWithNothingPendingIsANoOp)
 TEST_F(WorkspacePendingBridgeTest, CommitAfterThePreviewEntityDiesLeavesNoPendingState)
 {
     SelectMatchingEdgesOnTwoBrushes();
-    Workspace.BridgeSelectedEdges(1);
+    Workspace.Actions.Bridge(1);
     ASSERT_TRUE(Workspace.HasPendingBridge());
 
     // The preview is the only brush that is neither source.

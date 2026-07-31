@@ -22,6 +22,17 @@ public:
     InputConsumed OnKeyDown(ToolContext& ctx, const KeyDownEvent& event) override;
     void OnDeactivate(ToolContext& ctx) override;
     void OnCancel(ToolContext& ctx) override;
+    // The cut preview follows the cursor; it is a hover artifact, not placed
+    // work, so a save drops it rather than cutting the mesh on the user's behalf.
+    void CommitPending(ToolContext& ctx) override;
+
+    void DrawProperties(ToolContext& ctx) override;
+    void DrawToolbarControls(ToolContext& ctx) override;
+    [[nodiscard]] Shortcut GetShortcut() const override;
+
+    // Whole edge ring versus the single edge under the cursor. Tab toggles it,
+    // and the toolbar and properties panel both drive it.
+    bool LoopCut = true;
 
 private:
     // Revert any active preview, pick the edge under the cursor, and preview its cut.

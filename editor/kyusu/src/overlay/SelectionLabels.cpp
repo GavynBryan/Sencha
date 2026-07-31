@@ -37,3 +37,10 @@ std::vector<LabelRequest> SelectionDimensionLabels(const Aabb3d& bounds, const V
     }
     return labels;
 }
+
+void AppendSelectionDimensionLabels(const Aabb3d& bounds, const Vec4& color,
+                                    std::vector<LabelRequest>& out)
+{
+    for (LabelRequest& label : SelectionDimensionLabels(bounds, color))
+        out.push_back(std::move(label));
+}

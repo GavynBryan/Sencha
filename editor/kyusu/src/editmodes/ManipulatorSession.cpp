@@ -24,7 +24,7 @@ ManipulatorSession::ManipulatorSession(SelectionService& selection,
                                        EditorAffordanceService& affordances)
     : Selection(selection)
     , Service(service)
-    , Sink(sink)
+    , Sink(&sink)
     , Grid(grid)
     , Pivot(pivot)
     , Affordances(affordances)
@@ -73,7 +73,7 @@ std::array<Vec3d, 3> ManipulatorSession::GizmoAxes() const
         const SelectableRef primary = Selection.GetPrimarySelection();
         if (!primary.Entity.IsValid())
             return kWorld;
-        const std::optional<Transform3f> transform = Sink.ResolveTransform(primary.Entity);
+        const std::optional<Transform3f> transform = Sink->ResolveTransform(primary.Entity);
         if (!transform.has_value())
             return kWorld;
         return {
@@ -91,7 +91,7 @@ ManipulatorContext ManipulatorSession::MakeContext(const SelectionSnapshot& snap
     return ManipulatorContext{
         .Selection = snapshot,
         .Service = Service,
-        .Sink = Sink,
+        .Sink = *Sink,
         .Affordances = &Affordances,
         .Grid = Grid,
         .Pivot = Pivot,

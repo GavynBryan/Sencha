@@ -22,14 +22,23 @@ class WorkspaceTest : public ::testing::Test
 protected:
     static void SetUpTestSuite() { RegisterDocumentSerializers(); }
 
-    void SetUp() override
-    {
-        Workspace.World.NewWorld("WorkspaceTest");
-        Workspace.Init(Commands);
-    }
+    void SetUp() override { Workspace.World.NewWorld("WorkspaceTest"); }
 
     [[nodiscard]] EditorScene& Scene() { return Workspace.ActiveDocument().GetScene(); }
     [[nodiscard]] RegistryId Registry() { return Workspace.ActiveDocument().GetRegistry().Id; }
+
+    // A second open zone in the same graph, for the transitions that only exist
+    // with more than one zone (focus change, unload). Focus stays where it was.
+    [[nodiscard]] ZoneId AddSecondZone()
+    {
+        const std::vector<GraphRecord>& graphs = Workspace.World.Manifest().Graphs;
+        EXPECT_FALSE(graphs.empty());
+        if (graphs.empty())
+            return {};
+        const ZoneId zone = Workspace.World.AddZone(graphs.front().Id, "Second");
+        EXPECT_TRUE(Workspace.World.LoadZone(zone));
+        return zone;
+    }
 
     [[nodiscard]] EntityId AddBrush(Vec3d position, Vec3d halfExtents = { 0.5, 0.5, 0.5 })
     {
@@ -85,5 +94,5 @@ protected:
 
     LoggingProvider Logging;
     CommandStack Commands;
-    EditorWorkspace Workspace{ Logging };
+    EditorWorkspace Workspace{ Logging, Commands };
 };

@@ -1,6 +1,17 @@
 # Kyusu Editor Decomposition Plan
 
-Status: proposed execution plan, measured against main at the world-graph and dock merge (2026-07-28).
+Status: executed. Phases 0-4 landed, along with the parts of Phase 5 that earned
+their own owner (`EditorCookRuntime`, the document verbs and read models moved
+off the composition root). The remaining Phase 5 groups -- input, viewport, and
+UI runtimes -- were deliberately not built: the three couplings this plan already
+names across those boundaries make them one bring-up sequence rather than three
+owners, so grouping them would add indirection without moving an invariant.
+
+Work beyond this plan landed with it, from an audit of the result: the pending
+edit scope gained a single owner, document replacement now cancels transactions
+before destroying the documents they staged into, saves and cooks resolve open
+previews, tools own their settings and their chrome, and the authoring half of
+kyusu became a library the test targets link.
 
 This plan is intentionally editor-only. Runtime and ECS stabilization landed on main with the unified runtime container; none of that work belongs here.
 

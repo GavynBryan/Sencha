@@ -19,10 +19,8 @@ ToolContext::ToolContext(CommandStack& commandStack,
     , MeshEdit(meshEdit)
     , Marquee(interaction.Marquee)
     , Grid(settings.Grid)
-    , BrushCreate(settings.BrushCreate)
     , Overlay(interaction.Overlay)
     , Sink(sink)
-    , EdgeCut(settings.EdgeCut)
     , ActiveMaterial(settings.ActiveMaterial)
 {
 }

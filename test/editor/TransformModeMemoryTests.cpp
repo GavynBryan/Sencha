@@ -32,25 +32,43 @@ TEST(TransformModeMemory, ResizeIsNeverRecordedForElementContext)
 
 TEST(EscapePolicy, ClimbsOneLevelPerPress)
 {
-    // Grid-origin edit wins over everything, then pivot edit.
-    EXPECT_EQ(NextEscapeAction(true, true, true, MeshElementKind::Face, true),
+    // A staged preview is the outermost context: it goes first, before any
+    // selection or mode state is touched.
+    EXPECT_EQ(NextEscapeAction({ .HasPendingEdit = true,
+                                 .GridOriginEditing = true,
+                                 .PivotEditing = true,
+                                 .HasElementRefs = true,
+                                 .ElementKind = MeshElementKind::Face,
+                                 .HasSelection = true }),
+              EscapeAction::CancelPendingEdit);
+    // Then grid-origin edit, then pivot edit.
+    EXPECT_EQ(NextEscapeAction({ .GridOriginEditing = true,
+                                 .PivotEditing = true,
+                                 .HasElementRefs = true,
+                                 .ElementKind = MeshElementKind::Face,
+                                 .HasSelection = true }),
               EscapeAction::CancelGridOriginEdit);
-    EXPECT_EQ(NextEscapeAction(false, true, true, MeshElementKind::Face, true),
+    EXPECT_EQ(NextEscapeAction({ .PivotEditing = true,
+                                 .HasElementRefs = true,
+                                 .ElementKind = MeshElementKind::Face,
+                                 .HasSelection = true }),
               EscapeAction::CancelPivotEdit);
     // Element refs clear before the mode drops.
-    EXPECT_EQ(NextEscapeAction(false, false, true, MeshElementKind::Face, true),
+    EXPECT_EQ(NextEscapeAction({ .HasElementRefs = true,
+                                 .ElementKind = MeshElementKind::Face,
+                                 .HasSelection = true }),
               EscapeAction::ClearElementSelection);
     // Mode drops before the entity selection clears.
-    EXPECT_EQ(NextEscapeAction(false, false, false, MeshElementKind::Face, true),
+    EXPECT_EQ(NextEscapeAction({ .ElementKind = MeshElementKind::Face, .HasSelection = true }),
               EscapeAction::DropToObjectMode);
-    EXPECT_EQ(NextEscapeAction(false, false, false, MeshElementKind::Object, true),
+    EXPECT_EQ(NextEscapeAction({ .ElementKind = MeshElementKind::Object, .HasSelection = true }),
               EscapeAction::ClearSelection);
-    EXPECT_EQ(NextEscapeAction(false, false, false, MeshElementKind::Object, false),
+    EXPECT_EQ(NextEscapeAction({ .ElementKind = MeshElementKind::Object, .HasSelection = false }),
               EscapeAction::None);
 }
 
 TEST(EscapePolicy, ModeDropsEvenWithoutSelection)
 {
-    EXPECT_EQ(NextEscapeAction(false, false, false, MeshElementKind::Vertex, false),
+    EXPECT_EQ(NextEscapeAction({ .ElementKind = MeshElementKind::Vertex, .HasSelection = false }),
               EscapeAction::DropToObjectMode);
 }

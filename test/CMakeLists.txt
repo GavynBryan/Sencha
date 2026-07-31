@@ -106,36 +106,12 @@ if(ECS_TEST_SOURCES)
     list(APPEND SENCHA_TEST_TARGETS ecs_tests)
 endif()
 
-if(BRUSH_TEST_SOURCES)
-    # The brush geometry kernel is pure (math-only, no UI), so the tests compile
-    # its sources directly and link only the engine — no editor/Vulkan/ImGui deps.
-    add_executable(brush_tests
-        ${BRUSH_TEST_SOURCES}
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMesh.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/FaceMaterial.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushTessellation.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushLightmapCharts.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshSerialization.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshStore.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushValidation.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushHalfEdge.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushOps.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshElements.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshEditService.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshElementKindTraits.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/ElementGeometry.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/LoopSelection.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/PathSelection.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/SelectionConversion.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/overlay/SelectionLabels.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionContext.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionFold.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionService.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/commands/SelectCommand.cpp)
-    target_include_directories(brush_tests PRIVATE
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src
-        ${CMAKE_SOURCE_DIR}/editor/common/src)
-    target_link_libraries(brush_tests PRIVATE sencha_engine GTest::gtest_main)
+if(BRUSH_TEST_SOURCES AND TARGET kyusu_authoring)
+    # The brush geometry kernel is pure (math-only, no UI). Static-library
+    # linking pulls only the objects these tests actually reference, so the
+    # binary stays as lean as the hand-listed source set it replaced.
+    add_executable(brush_tests ${BRUSH_TEST_SOURCES})
+    target_link_libraries(brush_tests PRIVATE kyusu_authoring GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS brush_tests)
 endif()
 
@@ -154,62 +130,10 @@ if(PHYSICS_TEST_SOURCES)
 endif()
 
 # The level cook is editor-side (it consumes editor brush/level types) but the
-# relevant sources are UI/Vulkan-free, so the tests compile them directly and
-# link only the engine (same discipline as brush_tests).
-if(LEVEL_COOK_TEST_SOURCES)
-    add_executable(level_cook_tests
-        ${LEVEL_COOK_TEST_SOURCES}
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/AssetFieldIo.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/BrushBake.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/CellArtifactCook.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/CookArtifactTransaction.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/CookedSceneAssembly.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/CookGraph.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/CookReceipt.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/CookStepCache.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentCook.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentCookFingerprints.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentCookInput.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/project/CookProfile.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentLightmapBake.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentProbeBake.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentPublication.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentPublicationPlan.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorDocument.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorScene.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentSerialization.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/LightmapSurfaceCook.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/BrushCookInput.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/WorldCook.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/WorldDocument.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/ZoneBounds.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/DeleteEntityCommand.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/DuplicateEntitiesCommand.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/MergeBrushesCommand.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/MoveEntitiesToZoneCommand.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/SeparateFacesCommand.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/export/GltfMeshExport.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionContext.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionService.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/commands/SelectCommand.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMesh.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/FaceMaterial.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushTessellation.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushLightmapCharts.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshSerialization.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshStore.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushValidation.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushHalfEdge.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushOps.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushBounds.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshElements.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshEditService.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshElementKindTraits.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/ElementGeometry.cpp)
-    target_include_directories(level_cook_tests PRIVATE
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src
-        ${CMAKE_SOURCE_DIR}/editor/common/src)
-    target_link_libraries(level_cook_tests PRIVATE sencha_engine GTest::gtest_main)
+# relevant sources are UI/Vulkan-free, so they come from the authoring library.
+if(LEVEL_COOK_TEST_SOURCES AND TARGET kyusu_authoring)
+    add_executable(level_cook_tests ${LEVEL_COOK_TEST_SOURCES})
+    target_link_libraries(level_cook_tests PRIVATE kyusu_authoring GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS level_cook_tests)
 endif()
 
@@ -223,109 +147,24 @@ endif()
 # selection math) is compiled and tested directly, linking only the engine for
 # its math headers -- the brush_tests discipline. GUI-coupled editor code (ImGui,
 # render passes) is out of scope for headless tests by construction.
-if(EDITOR_TEST_SOURCES)
-    # EditorThemeFile is UI-adjacent but headless (it needs ImGui's ImVec4 type,
-    # not its runtime), so imgui_support rides along for the headers.
+if(EDITOR_TEST_SOURCES AND TARGET kyusu_authoring)
+    # Kyusu's authoring half arrives as a library; only the other editor
+    # applications, which have no such split, are still listed by hand.
     add_executable(editor_tests
         ${EDITOR_TEST_SOURCES}
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/AssetFieldIo.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/DocumentSerialization.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorDocument.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorEntityRecipe.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/EditorScene.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/WorldDocument.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/ZoneBounds.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/render/EditorLightGather.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/MoveEntitiesToZoneCommand.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMesh.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/FaceMaterial.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushTessellation.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushLightmapCharts.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshSerialization.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushMeshStore.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushValidation.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushHalfEdge.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushOps.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/brush/BrushBounds.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/FaceMaterialEdits.cpp
-        # The workspace aggregator and the editing stack it composes. GUI-free:
-        # the only ImGui dependency is InputEvent's ImVec2 and the tools' icon
-        # glyph macros, both header-only, so no render or ImGui runtime links.
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/workspace/EditorWorkspace.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/workspace/BrushManipulationSink.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/workspace/PendingBridgeEdit.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/workspace/PendingElementEdit.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/workspace/GridEditing.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/workspace/WorkspaceInteractionRuntime.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/authoring/EditorComponentAdapter.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/authoring/WorldDockEditorAdapter.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshEditService.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshElements.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/MeshElementKindTraits.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/ElementGeometry.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/SelectionConversion.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/LoopSelection.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/meshedit/PathSelection.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/interactions/BrushCreateDragInteraction.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/interactions/BrushCreationPlane.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/interactions/MarqueeInteraction.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/input/GestureRecognizer.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/input/InputRouter.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/DeferredCreateBrushCommand.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/DeleteEntityCommand.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/DuplicateEntitiesCommand.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/MergeBrushesCommand.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/commands/SeparateFacesCommand.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/tools/BrushTool.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/tools/EdgeCutTool.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/tools/FaceCarveTool.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/document/tools/SelectTool.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/editmodes/AffordanceManipulator.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/editmodes/BoundsManipulator.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/editmodes/EditSessionHost.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/editmodes/ManipulatorSession.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/editmodes/ManipulatorTargets.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/editmodes/RotateManipulator.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/editmodes/ScaleManipulator.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/editmodes/SelectionPivot.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/editmodes/TranslateManipulator.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/input/ViewportToolDispatcher.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/overlay/SelectionLabels.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/render/PreviewBuffer.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/viewport/EditorCamera.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/viewport/EditorViewport.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/viewport/ElementSnap.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/viewport/Picking.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/viewport/ViewportLayout.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/viewport/ViewportOrientation.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/viewport/ViewportProjection.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src/viewport/WorldViewSettings.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/interaction/InteractionHost.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionFold.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/tools/ToolContext.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/tools/ToolRegistry.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/commands/CommandStack.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionContext.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/SelectionService.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/selection/commands/SelectCommand.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/input/KeymapFile.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/project/CookProfile.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/project/MaterialLibrary.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/project/Project.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/project/ProjectArgs.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/project/TextureImportStore.cpp
         ${CMAKE_SOURCE_DIR}/editor/common/src/ui/EditorThemeFile.cpp
         ${CMAKE_SOURCE_DIR}/editor/shudei/src/MaterialEditSession.cpp
         ${CMAKE_SOURCE_DIR}/editor/shudei/src/MaterialTabSet.cpp
         ${CMAKE_SOURCE_DIR}/editor/shudei/src/PreviewPrimitives.cpp
         ${CMAKE_SOURCE_DIR}/editor/kettle/src/ProjectCatalog.cpp)
+    # editor/ for the shared fonts, and the two flat application trees. Kyusu's
+    # and editor_common's include paths come with kyusu_authoring, which is also
+    # what lets a test include a shell-only header (a panel) without compiling it.
     target_include_directories(editor_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/editor
-        ${CMAKE_SOURCE_DIR}/editor/kyusu/src
-        ${CMAKE_SOURCE_DIR}/editor/common/src
         ${CMAKE_SOURCE_DIR}/editor/shudei/src
         ${CMAKE_SOURCE_DIR}/editor/kettle/src)
-    target_link_libraries(editor_tests PRIVATE sencha_engine GTest::gtest_main)
+    target_link_libraries(editor_tests PRIVATE kyusu_authoring GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS editor_tests)
 endif()
 

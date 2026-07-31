@@ -14,10 +14,8 @@ class PreviewBuffer;
 class SelectionService;
 struct MarqueeState;
 struct GridSettings;
-struct BrushCreationSettings;
 struct EditorOverlayState;
 struct ManipulationSink;
-struct EdgeCutSettings;
 struct ActiveMaterialState;
 
 // The transient editing state a tool reads and writes: the live interaction,
@@ -32,14 +30,12 @@ struct ToolInteractionState
     EditorOverlayState& Overlay;
 };
 
-// The authoring settings a tool acts with. These outlive any one document (they
-// are editor-wide and toolbar-surfaced), which is what separates them from the
-// interaction state above.
+// The editor-wide authoring state a tool acts with: shared by several tools and
+// by the panels beside them, which is what separates it from a setting a single
+// tool owns as a member. These outlive any one document.
 struct ToolAuthoringSettings
 {
     GridSettings& Grid;
-    BrushCreationSettings& BrushCreate;
-    EdgeCutSettings& EdgeCut;
     ActiveMaterialState& ActiveMaterial;
 };
 
@@ -65,11 +61,9 @@ struct ToolContext
     MeshEditService& MeshEdit;
     MarqueeState& Marquee;
     GridSettings& Grid;
-    BrushCreationSettings& BrushCreate;
     EditorOverlayState& Overlay;
     // The brush-edit backend, for tools that preview/commit mesh edits (the edge cut).
     ManipulationSink& Sink;
-    EdgeCutSettings& EdgeCut;
     // The editor-wide texturing material: new brushes stamp it onto their
     // faces, Shift+RClick sampling writes it.
     ActiveMaterialState& ActiveMaterial;

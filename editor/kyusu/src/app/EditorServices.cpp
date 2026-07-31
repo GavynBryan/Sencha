@@ -5,6 +5,7 @@
 #include "editmodes/ManipulatorSession.h"
 #include "workspace/BrushManipulationSink.h"
 #include "input/KeymapFile.h"
+#include "tools/ToolRegistry.h"
 #include "input/ViewportToolDispatcher.h"
 #include "input/SdlEventTranslation.h"
 #include "input/UiInputGuard.h"
@@ -12,11 +13,11 @@
 #include "document/BrushBake.h"
 #include "document/DocumentFileActions.h"
 #include "document/DocumentSerialization.h"
-#include "project/CookSession.h"
+#include "document/LightingReadModel.h"
+#include "EditorCookRuntime.h"
 #include "project/MaterialLibrary.h"
 #include "document/commands/BakeBrushToMeshCommand.h"
 #include "export/GltfMeshExport.h"
-#include "project/PieDriver.h"
 #include "render/EditorRenderFeature.h"
 #include "ui/ActiveMaterialPanel.h"
 #include "ui/CookProfilesPanel.h"
@@ -103,11 +104,10 @@ EditorServices::~EditorServices()
     if (Window != nullptr)
         SetRelativeMouseMode(*Window, false);
 
-    // Pie and Files reference Workspace/Commands/Materials/Project; tear them down
-    // before that state goes away.
+    // The cook runtime and Files reference Workspace/Commands/Materials/Project;
+    // tear them down before that state goes away.
     Files.reset();
-    Pie.reset();
-    Cook.reset();
+    CookRuntime.reset();
     UnloadGameModule();
     Workspace.reset();
     Commands.reset();
@@ -135,24 +135,19 @@ void EditorServices::BuildDocument()
 {
     Engine& engine = *EnginePtr;
     Commands = std::make_unique<CommandStack>();
-    Workspace = std::make_unique<EditorWorkspace>(engine.Logging());
+    Workspace = std::make_unique<EditorWorkspace>(engine.Logging(), *Commands);
     if (Assets)
         Workspace->World.SetAssetEnvironment(*Assets);
     Workspace->Layout.OnResize(Window->GetExtent().Width, Window->GetExtent().Height);
-    Workspace->Init(*Commands);
 }
 
 void EditorServices::BuildPlayLoop()
 {
     Engine& engine = *EnginePtr;
-    Cook = std::make_unique<CookSession>(engine, Workspace->World,
-                                         Project ? &*Project : nullptr,
-                                         Assets ? &*Assets : nullptr);
-    Pie = std::make_unique<PieDriver>(engine, Workspace->World,
-                                      Project ? &*Project : nullptr,
-                                      Assets ? &*Assets : nullptr);
-    Cook->RegisterCommands(engine.Console().Registry());
-    Pie->RegisterCommands(engine.Console().Registry());
+    CookRuntime = std::make_unique<EditorCookRuntime>(engine, Workspace->World,
+                                                      Project ? &*Project : nullptr,
+                                                      Assets ? &*Assets : nullptr);
+    CookRuntime->RegisterConsoleCommands(engine.Console().Registry());
 }
 
 void EditorServices::BuildFileActions()
@@ -166,8 +161,13 @@ void EditorServices::BuildFileActions()
     // project the pickable set is the project's, independent of any level.
     if (!contentRoots.empty())
         Materials->Rescan(contentRoots);
+    // Baking writes a mesh asset into the project, so the selection actions get
+    // the asset environment once it exists (they stay inert without one).
+    if (Assets && Project && !Project->ContentRoots.empty())
+        Workspace->Actions.SetAssetEnvironment(*Assets, Project->ContentRoots.front(),
+                                               engine.Logging());
     Files = std::make_unique<DocumentFileActions>(
-        *Window, Workspace->World, [this] { Workspace->ResetInteractionState(); },
+        *Window, Workspace->World, [this] { Workspace->ResolvePendingEdits(); },
         *Materials, std::move(contentRoots));
 }
 
@@ -207,9 +207,9 @@ void EditorServices::BuildInput()
         { "edit.delete",           SDLK_DELETE, {},                              [this] { Workspace->DeleteSelection(); } },
         { "edit.dissolve",         SDLK_BACKSPACE, {},                           [this] { Workspace->DissolveSelectedEdges(); } },
         { "edit.select_all",       SDLK_A,      { .Ctrl = true },                [this] { Workspace->SelectAll(); } },
-        { "edit.duplicate",        SDLK_D,      { .Ctrl = true },                [this] { Workspace->DuplicateSelection(/*asInstance*/ false); } },
-        { "edit.duplicate_instance", SDLK_D,    { .Alt = true },                 [this] { Workspace->DuplicateSelection(/*asInstance*/ true); } },
-        { "edit.repeat",           SDLK_R,      { .Ctrl = true },                [this] { Workspace->RepeatLastAction(); } },
+        { "edit.duplicate",        SDLK_D,      { .Ctrl = true },                [this] { Workspace->Actions.Duplicate(/*asInstance*/ false); } },
+        { "edit.duplicate_instance", SDLK_D,    { .Alt = true },                 [this] { Workspace->Actions.Duplicate(/*asInstance*/ true); } },
+        { "edit.repeat",           SDLK_R,      { .Ctrl = true },                [this] { Workspace->Actions.RepeatLast(); } },
         { "edit.escape",           SDLK_ESCAPE, {},                              [this] { Workspace->EscapeStep(); } },
         { "file.new",              SDLK_N,      { .Ctrl = true },                [this] { if (Files) Files->New(); } },
         { "file.open",             SDLK_O,      { .Ctrl = true },                [this] { if (Files) Files->RequestOpen(); } },
@@ -239,13 +239,38 @@ void EditorServices::BuildInput()
     const auto overrides = LoadKeymapOverrides("keybinds.json", &keymapError);
     if (!keymapError.empty())
         std::fprintf(stderr, "[editor] %s\n", keymapError.c_str());
-    for (const KeyBinding& binding : bindings)
+    const auto registerBinding = [&](std::string_view action, SDL_Keycode key,
+                                     ModifierFlags mods, std::function<void()> callback)
     {
-        const auto it = overrides.find(std::string(binding.Action));
+        const auto it = overrides.find(std::string(action));
         if (it != overrides.end())
-            Shortcuts->Register(binding.Action, it->second.Key, it->second.Mods, binding.Callback);
-        else
-            Shortcuts->Register(binding.Action, binding.Key, binding.Mods, binding.Callback);
+            Shortcuts->Register(action, it->second.Key, it->second.Mods, std::move(callback));
+        else if (key != SDLK_UNKNOWN)
+            Shortcuts->Register(action, key, mods, std::move(callback));
+    };
+
+    for (const KeyBinding& binding : bindings)
+        registerBinding(binding.Action, binding.Key, binding.Mods, binding.Callback);
+
+    // Tool activation is generated from the registry rather than listed above: a
+    // tool declares its own key, so adding one needs no edit here. The action
+    // name is "tool.<id>", which is also what a keymap file overrides, and the
+    // registry resolves at fire time because the workspace owns it.
+    if (ToolRegistry* tools = Workspace->Interaction.Tools.get())
+    {
+        for (const std::unique_ptr<ITool>& tool : tools->GetTools())
+        {
+            if (tool == nullptr)
+                continue;
+            const std::string id(tool->GetId());
+            const ITool::Shortcut shortcut = tool->GetShortcut();
+            registerBinding("tool." + id, shortcut.Key, shortcut.Mods,
+                            [this, id]
+                            {
+                                if (ToolRegistry* live = Workspace->Interaction.Tools.get())
+                                    (void)live->Activate(id);
+                            });
+        }
     }
 
     Router = std::make_unique<InputRouter>();
@@ -409,38 +434,41 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     Toolbar = std::make_unique<EditorToolbar>(
         [this] { return Workspace->Interaction.Tools.get(); },
         [this] { return Workspace->Interaction.Manipulators; },
-        Workspace->MeshEdit, Workspace->Grid, Workspace->WorldView,
-        Workspace->EdgeCut);
+        Workspace->MeshEdit, Workspace->Grid, Workspace->WorldView);
     // The Cook/Play/Stop group routes through the same paths as the cook/play/stop
     // console commands.
+    // A cook reads the live documents (and force-saves the world first), so open
+    // previews settle before it starts or they would cook half-staged.
     Toolbar->SetPlayControls({
         .RunCook = [this] {
-            if (Cook) (void)Cook->StartById(SelectedCookProfileId);
+            Workspace->ResolvePendingEdits();
+            if (CookRuntime) CookRuntime->Start();
         },
-        .CancelCook = [this] { if (Cook) Cook->Cancel(); },
+        .CancelCook = [this] { if (CookRuntime) CookRuntime->Cancel(); },
         .RebuildCook = [this] {
-            if (Cook) (void)Cook->StartById(SelectedCookProfileId, true);
+            Workspace->ResolvePendingEdits();
+            if (CookRuntime) CookRuntime->Start(/*rebuild*/ true);
         },
-        .IsCooking = [this] { return Cook != nullptr && Cook->IsActive(); },
+        .IsCooking = [this] { return CookRuntime != nullptr && CookRuntime->IsActive(); },
         .Profiles = [this] {
             std::vector<EditorToolbar::PlayControls::ProfileChoice> choices;
-            if (Cook)
-                for (const CookProfile& profile : Cook->AvailableProfiles())
+            if (CookRuntime)
+                for (const CookProfile& profile : CookRuntime->GetSession().AvailableProfiles())
                     choices.push_back({ profile.Id, profile.Name, profile.BuiltIn });
             return choices;
         },
-        .SelectedProfileId = [this] { return SelectedCookProfileId; },
+        .SelectedProfileId = [this] { return CookRuntime ? CookRuntime->SelectedProfileId() : std::string{}; },
         .SelectProfile = [this](std::string_view id) {
-            SelectedCookProfileId = id;
+            if (CookRuntime) CookRuntime->SelectProfile(std::string(id));
         },
         .OpenProfiles = [this] {
-            if (CookProfiles != nullptr)
-                CookProfiles->SetVisible(true);
+            if (CookRuntime && CookRuntime->ProfilesPanel() != nullptr)
+                CookRuntime->ProfilesPanel()->SetVisible(true);
         },
         .CookStatus = [this] {
-            if (!Cook)
+            if (!CookRuntime)
                 return std::string{};
-            const CookSession::Status status = Cook->GetStatus();
+            const CookSession::Status status = CookRuntime->GetSession().GetStatus();
             if (!status.Active)
                 return status.LastError;
             std::string text = status.ProfileName;
@@ -451,9 +479,9 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
                         std::to_string(status.TotalSteps) + ")";
             return text;
         },
-        .Play = [this] { if (Pie) Pie->Play(Pie->LastCookedMap()); },
-        .Stop = [this] { if (Pie) Pie->Stop(); },
-        .IsPlaying = [this] { return Pie != nullptr && Pie->IsPlaying(); },
+        .Play = [this] { if (CookRuntime) CookRuntime->Player().Play(CookRuntime->Player().LastCookedMap()); },
+        .Stop = [this] { if (CookRuntime) CookRuntime->Player().Stop(); },
+        .IsPlaying = [this] { return CookRuntime != nullptr && CookRuntime->Player().IsPlaying(); },
     });
     Toolbar->SetGridFrameControls({
         .OriginToSelection = [this] { Workspace->SetGridOriginToSelection(); },
@@ -523,8 +551,9 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         Workspace->Affordances->Registry()));
     auto cookProfiles = std::make_unique<CookProfilesPanel>(
         Project ? &*Project : nullptr);
-    CookProfiles = cookProfiles.get();
-    CookProfiles->SetVisible(false);
+    cookProfiles->SetVisible(false);
+    if (CookRuntime)
+        CookRuntime->SetProfilesPanel(cookProfiles.get());
     UiFeature->AddPanel(std::move(cookProfiles));
     const auto previewBuilder = [this]() -> SceneRenderQueueBuilder* {
         return RenderFeature != nullptr ? RenderFeature->FocusQueueBuilder() : nullptr;
@@ -533,27 +562,13 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         RenderFeature->ShadowReadout(), Workspace->Selection, *Commands,
         [this] { if (RenderFeature != nullptr) RenderFeature->InvalidateShadows(); },
         [this]() -> std::uint32_t {
-            const World& world =
-                Workspace->World.FocusDocument().GetRegistry().Components;
-            std::uint32_t count = 0;
-            if (world.IsRegistered<PointLightComponent>())
-                world.ForEachComponent<PointLightComponent>(
-                    [&](EntityId, const PointLightComponent& light) {
-                        if (light.BakeContribution == LightBakeContribution::Direct)
-                            ++count;
-                    });
-            if (world.IsRegistered<SpotLightComponent>())
-                world.ForEachComponent<SpotLightComponent>(
-                    [&](EntityId, const SpotLightComponent& light) {
-                        if (light.BakeContribution == LightBakeContribution::Direct)
-                            ++count;
-                    });
-            return count;
+            return LightingReadModel::CountDirectBakeLights(
+                Workspace->World.FocusDocument().GetRegistry().Components);
         },
         [this, previewBuilder]() -> LightingPanel::BakedPreviewState {
             SceneRenderQueueBuilder* builder = previewBuilder();
             const CookSession::Record* record =
-                Cook != nullptr ? Cook->LastRecord() : nullptr;
+                CookRuntime != nullptr ? CookRuntime->LastRecord() : nullptr;
             if (builder == nullptr || record == nullptr)
                 return LightingPanel::BakedPreviewState::Unavailable;
             if (!builder->LightmapPreviewEnabled() || !builder->LightmapPreviewLoaded())
@@ -566,29 +581,16 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
             SceneRenderQueueBuilder* builder = previewBuilder();
             if (builder == nullptr)
                 return;
-            if (enabled)
-            {
-                if (const CookSession::Record* record =
-                        Cook != nullptr ? Cook->LastRecord() : nullptr)
-                {
-                    builder->SetLightmapPreview({ record->CookedScenePath,
-                                                  record->ContentHash });
-                    PreviewCookSerial = record->Serial;
-                }
-            }
+            if (enabled && CookRuntime != nullptr)
+                CookRuntime->RefreshPreviewNow(*builder);
             builder->SetLightmapPreviewEnabled(enabled);
         },
         [this]() -> LightingPanel::ProbeSummary {
             LightingPanel::ProbeSummary summary;
-            const World& world =
-                Workspace->World.FocusDocument().GetRegistry().Components;
-            if (world.IsRegistered<IrradianceVolumeComponent>())
-                world.ForEachComponent<IrradianceVolumeComponent>(
-                    [&](EntityId, const IrradianceVolumeComponent&) {
-                        ++summary.AuthoredVolumes;
-                    });
+            summary.AuthoredVolumes = LightingReadModel::CountAuthoredIrradianceVolumes(
+                Workspace->World.FocusDocument().GetRegistry().Components);
             if (const CookSession::Record* record =
-                    Cook != nullptr ? Cook->LastRecord() : nullptr)
+                    CookRuntime != nullptr ? CookRuntime->LastRecord() : nullptr)
             {
                 summary.HasCook = true;
                 summary.CookedVolumes = record->ProbeVolumeCount;
@@ -598,42 +600,14 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         }));
     UiFeature->AddPanel(std::make_unique<ToolPropertiesPanel>(
         [this]() -> IMeshEditTarget* { return Workspace->Interaction.Sink.get(); },
+        [this]() -> ManipulationSink* { return Workspace->Interaction.Sink.get(); },
         [this]() -> ToolRegistry* { return Workspace->Interaction.Tools.get(); },
         Workspace->Selection, Workspace->MeshEdit, *Commands,
         Workspace->World, Workspace->ActiveMaterial, Workspace->UvClipboard,
-        Workspace->BrushCreate, Workspace->EdgeCut,
-        ToolPropertiesPanel::ObjectActions{
-            .Duplicate = [this] { Workspace->DuplicateSelection(/*asInstance*/ false); },
-            .Instance = [this] { Workspace->DuplicateSelection(/*asInstance*/ true); },
-            .MakeUnique = [this] { Workspace->MakeSelectedBrushesUnique(); },
-            .Merge = [this] { Workspace->MergeSelectedBrushes(); },
-            .SeparateFaces = [this] { Workspace->SeparateSelectedFaces(); },
-            .Bake = [this] { BakeSelectedBrushes(); },
-            .Revert = [this] { RevertSelectedBakedBrushes(); },
-            .ExportGlb = [this] { ExportSelectionGlb(); },
-            .BridgeEdges = [this](int segments) { Workspace->BridgeSelectedEdges(segments); },
-            .HasPendingBridge = [this] { return Workspace->HasPendingBridge(); },
-            .SetBridgeSegments = [this](int segments) { Workspace->SetPendingBridgeSegments(segments); },
-            .CommitBridge = [this] { Workspace->CommitPendingBridge(); },
-            .CancelBridge = [this] { Workspace->CancelPendingBridge(); },
-            .BeginInset = [this](float distance) { Workspace->BeginInsetOnSelectedFaces(distance); },
-            .HasPendingInset = [this] { return Workspace->HasPendingInset(); },
-            .SetInsetDistance = [this](float distance) { Workspace->SetPendingInsetDistance(distance); },
-            .BeginBevel = [this](float width, int segments) { Workspace->BeginBevelOnSelectedEdges(width, segments); },
-            .HasPendingBevel = [this] { return Workspace->HasPendingBevel(); },
-            .SetBevelParams = [this](float width, int segments) { Workspace->SetPendingBevelParams(width, segments); },
-            .CommitElementEdit = [this] { Workspace->CommitPendingElementEdit(); },
-            .CancelElementEdit = [this] { Workspace->CancelPendingElementEdit(); },
-            .HasBakedSelection = [this] { return SelectionHasBakedBrush(); },
-            .HasInstancedSelection = [this]
-            {
-                const EditorScene& scene = Workspace->ActiveDocument().GetScene();
-                for (const SelectableRef& ref : Workspace->Selection.GetSelection())
-                    if (ref.IsEntity() && scene.IsBrushInstanced(ref.Entity))
-                        return true;
-                return false;
-            },
-        }));
+        Workspace->Actions, Workspace->BridgeEdit, Workspace->ElementEdit,
+        // Export is the one verb that needs a native file dialog, so the shell
+        // keeps it; the geometry itself comes from the selection actions.
+        [this] { ExportSelectionGlb(); }));
 
     // Material picking surfaces: thumbnail residency for both panels, bounded
     // by the budget cvar so a large library never pins every base color
@@ -781,27 +755,8 @@ void EditorServices::ProcessFrame()
         Files->UpdateTitle();
     }
 
-    if (Cook != nullptr && Pie != nullptr &&
-        Cook->PublicationSerial() != AppliedCookSerial)
-    {
-        AppliedCookSerial = Cook->PublicationSerial();
-        if (!Cook->LastCookedWorld().empty())
-            Pie->UseCookedWorld(Cook->LastCookedWorld(), Cook->LastCookedZone());
-        else if (const CookSession::Record* record = Cook->LastRecord())
-            Pie->UseCookedLevel(record->Map);
-    }
-
-    // A newer cook refreshes an enabled baked-lighting preview in place.
-    if (RenderFeature != nullptr && Cook != nullptr)
-        if (SceneRenderQueueBuilder* builder = RenderFeature->FocusQueueBuilder();
-            builder != nullptr && builder->LightmapPreviewEnabled())
-            if (const CookSession::Record* record = Cook->LastRecord();
-                record != nullptr && record->Serial != PreviewCookSerial)
-            {
-                builder->SetLightmapPreview({ record->CookedScenePath,
-                                              record->ContentHash });
-                PreviewCookSerial = record->Serial;
-            }
+    if (CookRuntime != nullptr)
+        CookRuntime->Update(RenderFeature != nullptr ? RenderFeature->FocusQueueBuilder() : nullptr);
 
     // Poll watched sources on an interval, not per frame: the watcher is a
     // content-hash-confirmed mtime scan over the content roots. A save from
@@ -858,95 +813,17 @@ struct GlbExportPayload
 };
 }
 
-void EditorServices::BakeSelectedBrushes()
-{
-    if (!Assets || !Project || Project->ContentRoots.empty())
-    {
-        std::fprintf(stderr, "[editor] bake needs an open project (SENCHA_PROJECT) with a content root\n");
-        return;
-    }
 
-    Engine& engine = *EnginePtr;
-    const std::filesystem::path contentRoot(Project->ContentRoots.front());
-    EditorScene& scene = Workspace->ActiveDocument().GetScene();
 
-    // Snapshot the entity list first: executing a command must not invalidate the
-    // selection span being walked.
-    std::vector<EntityId> targets;
-    for (const SelectableRef& ref : Workspace->Selection.GetSelection())
-        if (ref.IsEntity() && scene.TryGetBrush(ref.Entity) != nullptr)
-            targets.push_back(ref.Entity);
-
-    std::vector<std::unique_ptr<ICommand>> commands;
-    for (EntityId entity : targets)
-        if (auto command = MakeBakeBrushToMeshCommand(scene, Workspace->ActiveDocument(), Assets->Assets,
-                                                      Assets->Registry, engine.Logging(),
-                                                      entity, contentRoot))
-            commands.push_back(std::move(command));
-
-    if (commands.empty())
-        return;
-    if (commands.size() == 1)
-        Commands->Execute(std::move(commands.front()));
-    else
-        Commands->Execute(std::make_unique<CompositeCommand>(std::move(commands)));
-}
-
-void EditorServices::RevertSelectedBakedBrushes()
-{
-    if (!Assets)
-        return;
-
-    EditorScene& scene = Workspace->ActiveDocument().GetScene();
-    std::vector<EntityId> targets;
-    for (const SelectableRef& ref : Workspace->Selection.GetSelection())
-        if (ref.IsEntity() && scene.TryGetBakedBrush(ref.Entity) != nullptr)
-            targets.push_back(ref.Entity);
-
-    std::vector<std::unique_ptr<ICommand>> commands;
-    for (EntityId entity : targets)
-        if (auto command = MakeRevertBakedBrushCommand(scene, Workspace->ActiveDocument(), Assets->Assets, entity))
-            commands.push_back(std::move(command));
-
-    if (commands.empty())
-        return;
-    if (commands.size() == 1)
-        Commands->Execute(std::move(commands.front()));
-    else
-        Commands->Execute(std::make_unique<CompositeCommand>(std::move(commands)));
-}
-
-bool EditorServices::SelectionHasBakedBrush() const
-{
-    if (!Workspace)
-        return false;
-    const EditorScene& scene = Workspace->ActiveDocument().GetScene();
-    for (const SelectableRef& ref : Workspace->Selection.GetSelection())
-        if (ref.IsEntity() && scene.TryGetBakedBrush(ref.Entity) != nullptr)
-            return true;
-    return false;
-}
 
 void EditorServices::ExportSelectionGlb()
 {
     if (Window == nullptr || Window->GetHandle() == nullptr)
         return;
 
-    const EditorScene& scene = Workspace->ActiveDocument().GetScene();
-
-    // First selected entity with a live or dormant brush mesh supplies the
-    // geometry, baked in local space through the same kernel as the level cook.
-    const BrushMesh* mesh = nullptr;
-    for (const SelectableRef& ref : Workspace->Selection.GetSelection())
-    {
-        if (!ref.IsEntity())
-            continue;
-        mesh = scene.TryGetBrushMesh(ref.Entity);
-        if (mesh == nullptr)
-            mesh = scene.TryGetDormantBrushMesh(ref.Entity);
-        if (mesh != nullptr)
-            break;
-    }
+    // The geometry comes from the selection actions (baked in local space
+    // through the same kernel as the level cook); the dialog is this layer's.
+    const BrushMesh* mesh = Workspace->Actions.SelectedExportMesh();
     if (mesh == nullptr)
     {
         std::fprintf(stderr, "[editor] export: select a brush or baked brush first\n");

@@ -12,7 +12,7 @@ The editor tooling is a family of applications over one shared shell library:
 | Tree | Target | What it is |
 | --- | --- | --- |
 | `editor/common/` | `editor_common` (static lib) | The shared editor shell: ImGui UI feature + theme/skin, generic input, commands/selection/tools/interaction abstractions, offscreen viewport targets, and the project layer (descriptor, argv resolution, content mounting, process spawning). |
-| `editor/kyusu/` | `kyusu` | The level editor ("Kyusu - Level Editor"). Everything below is about its internals. |
+| `editor/kyusu/` | `kyusu_authoring` (static lib) + `kyusu` | The level editor ("Kyusu - Level Editor"). Split in two: the authoring library (document, brush kernel, mesh edit, workspace, edit modes, viewport math, cook) is GUI- and Vulkan-free and is what the headless test targets link; the `kyusu` executable is the shell over it (entry point, panels, render passes, SDL and window plumbing). Everything below is about its internals. |
 | `editor/shudei/` | `shudei` | The material editor ("Shudei - Material Editor"): browse/edit/save `.smat` with a live MeshForwardPass preview. |
 | `editor/kettle/` | `kettle` | The project launcher ("Kettle - Project Launcher"): recent projects, create project, project settings, launches the editors. |
 
@@ -71,10 +71,13 @@ Read the level editor bottom to top. Each layer depends only on layers below it.
    (engine-only).
 3. Authoring subsystems: `input/`, `editmodes/`, `meshedit/`, `viewport/`,
    `render/`, and the `document/` domain. Each owns one slice of authoring.
-4. Workspace aggregator: `workspace/`. `EditorWorkspace` is the per-document
-   session: it composes the document plus every layer-3 subsystem into the shared
-   state panels and tools read. It is the editor's central hub by design, so it
-   has the widest fan-out; that breadth lives here, not scattered.
+4. Workspace aggregator: `workspace/`. `EditorWorkspace` composes the document
+   plus every layer-3 subsystem into the shared state panels and tools read, and
+   owns the mechanisms beside it: `WorkspaceInteractionRuntime` (the editing
+   stack), `PendingBridgeEdit` and `PendingElementEdit` (staged previews),
+   `SelectionActions` (verbs over the selection as a whole), `GridEditing`. It
+   is the editor's central hub by design, so it has the widest fan-out; that
+   breadth lives here, not scattered.
 5. App composition: `app/`. `EditorServices` owns the workspace, input, UI, and
    play loop, and wires them into the engine.
 
@@ -98,8 +101,8 @@ Level editor (`editor/kyusu/src/`):
 
 | Directory | Owns | Extension seam |
 | --- | --- | --- |
-| `app/` | Entry point + composition root (`EditorApp`, `EditorServices`, `EditorFrameHook`, source hot-reload wiring). | -- |
-| `workspace/` | The per-document authoring hub (`EditorWorkspace`, `BrushManipulationSink`). | -- |
+| `app/` | Entry point + composition root (`EditorApp`, `EditorServices`, `EditorFrameHook`, source hot-reload wiring) and `EditorCookRuntime` (the cook session, the player it feeds, and the serials that hand one to the other). | -- |
+| `workspace/` | The per-document authoring hub (`EditorWorkspace`, `BrushManipulationSink`) plus the mechanisms it composes: `WorkspaceInteractionRuntime`, `PendingBridgeEdit`, `PendingElementEdit`, `SelectionActions`, `GridEditing`, `EscapePolicy`. | -- |
 | `brush/` | Half-edge brush geometry kernel: mesh, ops, tessellation, validation. Pure leaf (engine-only), consumed by `document`, `meshedit`, `render`, `ui`, `editmodes`, interactions, and the test suite. | -- |
 | `input/` | Viewport-coupled input (`ViewportNavigation`, `ViewportToolDispatcher`, `SdlEventTranslation`). | -- |
 | `editmodes/` | Transform gizmos and manipulator sessions (`TranslateManipulator`, `BoundsManipulator`, `EditSessionHost`). | manipulators |
@@ -160,18 +163,29 @@ format boundary; the editor's own types use document/scene vocabulary.
   generic `commands/` directory.
 
 Enforced by `scripts/check_editor_layering.sh` (a ctest) plus the include-path
-firewall above.
+firewall above. One deliberate exception: a panel may include the narrow
+workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
+`SelectionActions`) rather than receive a bag of callbacks assembled for it.
+`EditorWorkspace` itself stays off-limits to `ui/`.
 
 ## Where do I add ...
 
 - A panel: implement `IEditorPanel` (kyusu panels in `kyusu/src/ui/`), register
   it in the owning services' `BuildUi`.
-- A tool: implement `ITool` (built-ins live in `kyusu/src/document/tools/`),
-  register it with the `ToolRegistry` populated in `workspace/EditorWorkspace`.
+- A tool: implement `ITool` (built-ins live in `kyusu/src/document/tools/`) and
+  register it in `WorkspaceInteractionRuntime::Rebuild`. That is the whole cost:
+  a tool declares its own properties UI (`DrawProperties`), toolbar chrome
+  (`DrawToolbarControls`), activation key (`GetShortcut`), and how a save should
+  resolve anything it has staged (`CommitPending`), so the panel, the toolbar,
+  the sidebar, the status bar, and the keymap all pick it up without an edit.
+  Settings only that tool acts on are members on the tool; genuinely shared
+  authoring state (the grid, the active material) goes through `ToolContext`.
 - An undo-able edit: implement `ICommand` next to its domain, run it through the
   `CommandStack`.
-- A keyboard shortcut: `EditorServices::BuildInput` (Kyusu); Shudei handles its
-  few chords directly in `HandlePlatformEvent`.
+- A keyboard shortcut: the binding table in `EditorServices::BuildInput` (Kyusu);
+  Shudei handles its few chords directly in `HandlePlatformEvent`. Tool
+  activation rows are generated from the registry instead, under `tool.<id>`.
+  Any action, listed or generated, is rebindable from `keybinds.json`.
 - A viewport visual: a render feature/pass in `kyusu/src/render/`, added in
   `EditorServices::BuildViewportRendering`.
 - A tunable: a cvar registered where it is read (see `editor.cull_backfaces` in

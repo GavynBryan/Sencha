@@ -142,6 +142,9 @@ JsonValue EditorDocument::ToJson() const
 
 bool EditorDocument::LoadFromJson(const JsonValue& root)
 {
+    // Destructive on entry and on failure: a rejected file leaves this document
+    // empty, not as it was. Callers that must survive a bad file load into a
+    // fresh document and swap only on success (WorldDocument::Load, LoadZone).
     Scene.Clear();
 
     SceneLoadError loadError;

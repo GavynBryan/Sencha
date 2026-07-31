@@ -33,7 +33,7 @@ TEST_F(WorkspaceInteractionResetTest, ResetCancelsAPendingBridgeAndDropsItsPrevi
     const EntityId second = AddBrush(Vec3d{ 4, 0, 0 });
     Select({ RefsOf(first, MeshElementKind::Edge)[0], RefsOf(second, MeshElementKind::Edge)[0] });
     const std::size_t before = BrushCount();
-    Workspace.BridgeSelectedEdges(1);
+    Workspace.Actions.Bridge(1);
     ASSERT_TRUE(Workspace.HasPendingBridge());
 
     Workspace.ResetInteractionState();
@@ -93,7 +93,7 @@ TEST_F(WorkspaceInteractionResetTest, RepeatWithNothingRecordedIsANoOp)
     SelectEntity(brush);
     const std::size_t before = BrushCount();
 
-    Workspace.RepeatLastAction();
+    Workspace.Actions.RepeatLast();
 
     EXPECT_EQ(BrushCount(), before);
     EXPECT_FALSE(Commands.CanUndo());

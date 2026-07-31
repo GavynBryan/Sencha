@@ -123,8 +123,9 @@ public:
     [[nodiscard]] EditorDocument& WorldSceneDocument();
     [[nodiscard]] const EditorDocument& WorldSceneDocument() const;
 
-    // Focus. SetFocusZone loads the zone if needed, then fires OnFocusChanged
-    // (after the switch; the workspace uses it to reset interaction state).
+    // Focus. SetFocusZone loads the zone if needed, then fires
+    // OnEditedDocumentChanged (after the switch; the workspace uses it to reset
+    // interaction state).
     // FocusWorldScene focuses the world scene instead of any zone: while it is
     // focused FocusZone() is invalid and every zone is context.
     bool SetFocusZone(ZoneId zone);
@@ -196,12 +197,31 @@ public:
     bool ConvertLegacyTransitionToTeleport(TransitionId transition);
     bool DiscardLegacyTransition(TransitionId transition);
 
+    // Installs a whole manifest, reconciling everything derived from it: the
+    // spatial index, the dirty flag, the selection and any open zone whose
+    // header vanished, and the focus when the focused zone is gone. This is the
+    // single transition an undoable manifest edit runs through, so a rolled-back
+    // structural change cannot leave the session pointing at a zone that no
+    // longer exists.
+    void ApplyManifestSnapshot(WorldPartitionManifest manifest);
+
     // Refreshes derived zone bounds, then reruns validation. Manifest verbs
     // revalidate themselves; content edits (moving entities) call this
     // explicitly, and save runs it implicitly.
     void Revalidate();
 
-    std::function<void()> OnFocusChanged;
+    // Fires after the edited document changes: a zone focus change, a focus
+    // switch to the world scene, or a wholesale replacement (new, open, close to
+    // legacy). Every path that leaves a different document under the editing
+    // stack raises it, so the workspace rebinds without the caller arranging it.
+    std::function<void()> OnEditedDocumentChanged;
+
+    // Fires immediately before the open documents are replaced wholesale (world
+    // load, new world, close-to-legacy, legacy new and load), while every one of
+    // them is still alive. Receivers must terminate anything that captured
+    // document state: a preview entity or a captured mesh reverts here or not at
+    // all. Validation runs first, so a rejected file never fires this.
+    std::function<void()> OnWillReplaceDocuments;
 
     // Fires after a zone document is destroyed by UnloadZone. The workspace
     // clears the undo stack on it: queued commands may hold references into any
@@ -242,9 +262,17 @@ private:
     // Opens the zones the sidecar recorded and applies their visibility;
     // returns the recorded focus (invalid when absent or malformed).
     SidecarFocus ApplyUserSidecar();
+    // Persists the outgoing world's sidecar and tears the world state down,
+    // leaving no editable document behind. Callers install one.
+    void CloseWorldState();
     // Persists the outgoing world's sidecar and returns to legacy mode with a
     // fresh single document.
     void CloseWorldToLegacy();
+    // Runs OnWillReplaceDocuments if anything is listening. Every path that
+    // destroys or replaces an open document calls this while it is still alive.
+    void NotifyWillReplaceDocuments();
+    // Runs OnEditedDocumentChanged if anything is listening.
+    void NotifyEditedDocumentChanged();
 
     LoggingProvider& Logging_;
     RuntimeAssets* Assets_ = nullptr;

@@ -129,6 +129,47 @@ TEST(CommandStack, CancelCallbackMayCloseReentrantly)
     EXPECT_FALSE(stack.HasPendingEdit());
 }
 
+TEST(CommandStack, OpeningOverAnOpenScopeCancelsTheIncumbent)
+{
+    CommandStack stack;
+    int incumbentCancels = 0;
+    int claimantCancels = 0;
+    stack.OpenPendingEdit([&] { ++incumbentCancels; });
+
+    stack.OpenPendingEdit([&] { ++claimantCancels; });
+    EXPECT_EQ(incumbentCancels, 1);
+    EXPECT_EQ(claimantCancels, 0);
+    EXPECT_TRUE(stack.HasPendingEdit());
+
+    // The scope belongs to the claimant now, so Undo reaches its callback.
+    stack.Undo();
+    EXPECT_EQ(incumbentCancels, 1);
+    EXPECT_EQ(claimantCancels, 1);
+    EXPECT_FALSE(stack.HasPendingEdit());
+}
+
+TEST(CommandStack, IncumbentClosingReentrantlyLeavesTheNewScopeIntact)
+{
+    CommandStack stack;
+    int incumbentCancels = 0;
+    int claimantCancels = 0;
+    // The incumbent's cancel transition closes the scope itself. That close must
+    // not reach the callback the new owner is in the middle of installing.
+    stack.OpenPendingEdit(
+        [&]
+        {
+            ++incumbentCancels;
+            stack.ClosePendingEdit();
+        });
+
+    stack.OpenPendingEdit([&] { ++claimantCancels; });
+    EXPECT_EQ(incumbentCancels, 1);
+    EXPECT_TRUE(stack.HasPendingEdit());
+
+    stack.Undo();
+    EXPECT_EQ(claimantCancels, 1);
+}
+
 TEST(CommandStack, ClearDropsScopeWithoutCancel)
 {
     CommandStack stack;

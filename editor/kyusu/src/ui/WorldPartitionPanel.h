@@ -47,6 +47,11 @@ public:
     float GetDockWeight() const override { return 1.45f; }
 
 private:
+    // Runs a manifest verb and records it as one undo step. The verb reports
+    // whether it changed anything, so a refused edit leaves the stack alone.
+    template <typename Fn>
+    void RunManifestEdit(Fn&& verb);
+
     void DrawHeaderButtons();
     // The world row above the graphs: the world scene, focusable like a zone.
     // It shows the world's name (the scene has none of its own) and carries no

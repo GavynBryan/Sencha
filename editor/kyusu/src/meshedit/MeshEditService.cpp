@@ -608,6 +608,11 @@ const std::array<VerbDescriptor, 13> kVerbs = { {
     { IsEdgeRef,        ApplyBridgeEdges },         // BridgeEdges
     { IsEdgeRef,        ApplySetEdgeSoftness },     // SetEdgeSoftness
 } };
+
+// ApplyVerb indexes kVerbs by the enum value, so the row order above is the
+// enum's declaration order and the table must cover every verb.
+static_assert(kVerbs.size() == static_cast<std::size_t>(MeshEditVerb::Count),
+              "kVerbs is indexed by MeshEditVerb: every verb needs exactly one row");
 }
 
 MeshEditService::MeshEditService(LoggingProvider& logging)

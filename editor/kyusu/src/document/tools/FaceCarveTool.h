@@ -50,6 +50,12 @@ public:
     InputConsumed OnKeyDown(ToolContext& ctx, const KeyDownEvent& event) override;
     void OnDeactivate(ToolContext& ctx) override;
     void OnCancel(ToolContext& ctx) override;
+    // A carve that is far enough along to commit is placed work and goes into
+    // the document; a half-formed draft cannot be committed, so it reverts.
+    void CommitPending(ToolContext& ctx) override;
+    void DrawProperties(ToolContext& ctx) override;
+    void DrawToolbarControls(ToolContext& ctx) override;
+    [[nodiscard]] Shortcut GetShortcut() const override;
 
     // Toolbar wiring: Apply/Cancel enable state.
     [[nodiscard]] bool HasPending() const { return Phase != FaceCarvePhase::Idle && PreviewValid; }

@@ -28,6 +28,12 @@ struct ITool
     // be left dangling. (W4.)
     virtual void OnCancel(ToolContext& ctx) {}
 
+    // Resolve any staged-but-uncommitted state, because the document is about to
+    // be persisted and a preview must not reach the file unresolved. A tool that
+    // stages placed, user-intended geometry commits it; one whose preview is
+    // merely a hover artifact reverts. Tools with nothing staged do nothing.
+    virtual void CommitPending(ToolContext& ctx) {}
+
     // Semantic pointer gestures from the GestureRecognizer (the click-vs-drag
     // deadzone + double-click timing live there, not per tool). A click is a press
     // and release under the deadzone. BeginDrag fires when a press crosses it and
@@ -43,6 +49,24 @@ struct ITool
     // drag starts, or the tool deactivates, so the tool can drop its preview.
     virtual InputConsumed OnHover(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos) { return InputConsumed::No; }
     virtual void OnHoverEnd(ToolContext& ctx) {}
+
+    // A tool's own chrome, drawn while it is active: the settings and verbs in
+    // the Tool Properties panel, and the compact controls in the toolbar's
+    // contextual group. The tool draws them itself so that adding a tool does not
+    // mean editing the panel and the toolbar as well; both surfaces simply hand
+    // the active tool its space. Leave empty for a tool with no controls.
+    virtual void DrawProperties(ToolContext& ctx) {}
+    virtual void DrawToolbarControls(ToolContext& ctx) {}
+
+    // The key that activates this tool. Unmodified letters by convention; the
+    // binding is registered under "tool.<id>" and a keymap file can override it.
+    // Leave defaulted for a tool reachable only from the sidebar.
+    struct Shortcut
+    {
+        SDL_Keycode   Key = SDLK_UNKNOWN;
+        ModifierFlags Mods{};
+    };
+    [[nodiscard]] virtual Shortcut GetShortcut() const { return {}; }
 
     virtual ~ITool() = default;
 };

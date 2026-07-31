@@ -7,8 +7,17 @@
 // One Escape press climbs one level of editing context. The active-drag cancel
 // lives ahead of this in the input chain (ViewportToolDispatcher), so by the
 // time this policy runs there is no interaction in flight.
+//
+// These are context levels, not features, and the ordering between them is the
+// policy: it is written out here so the whole of it can be read at once. Tools
+// add no levels -- the dispatcher hands Escape to the active tool before this
+// runs, and a tool cancels its own gesture there. Panel-driven previews add no
+// levels either: the command stack holds a single pending-edit scope, so at most
+// one such mechanism is ever staged, and the one CancelPendingEdit rung covers
+// every one of them, present and future.
 enum class EscapeAction : uint8_t
 {
+    CancelPendingEdit,     // drop a staged preview (bridge, inset, bevel)
     CancelGridOriginEdit,  // leave grid-origin editing, keep everything else
     CancelPivotEdit,       // leave pivot-editing, keep everything else
     ClearElementSelection, // drop vertex/edge/face refs, keep entity selection
@@ -17,21 +26,33 @@ enum class EscapeAction : uint8_t
     None,
 };
 
-[[nodiscard]] inline EscapeAction NextEscapeAction(bool gridOriginEditing,
-                                                   bool pivotEditing,
-                                                   bool hasElementRefs,
-                                                   MeshElementKind elementKind,
-                                                   bool hasSelection)
+// The editing context Escape reads, outermost level first.
+struct EscapeContext
 {
-    if (gridOriginEditing)
+    // A panel-driven preview is staged (the cross-brush bridge, an inset or a
+    // bevel). Tool-driven previews never reach here: the dispatcher hands
+    // Escape to the active tool ahead of this policy.
+    bool            HasPendingEdit = false;
+    bool            GridOriginEditing = false;
+    bool            PivotEditing = false;
+    bool            HasElementRefs = false;
+    MeshElementKind ElementKind = MeshElementKind::Object;
+    bool            HasSelection = false;
+};
+
+[[nodiscard]] inline EscapeAction NextEscapeAction(const EscapeContext& context)
+{
+    if (context.HasPendingEdit)
+        return EscapeAction::CancelPendingEdit;
+    if (context.GridOriginEditing)
         return EscapeAction::CancelGridOriginEdit;
-    if (pivotEditing)
+    if (context.PivotEditing)
         return EscapeAction::CancelPivotEdit;
-    if (hasElementRefs)
+    if (context.HasElementRefs)
         return EscapeAction::ClearElementSelection;
-    if (elementKind != MeshElementKind::Object)
+    if (context.ElementKind != MeshElementKind::Object)
         return EscapeAction::DropToObjectMode;
-    if (hasSelection)
+    if (context.HasSelection)
         return EscapeAction::ClearSelection;
     return EscapeAction::None;
 }

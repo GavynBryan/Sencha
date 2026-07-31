@@ -32,6 +32,9 @@ enum class MeshEditVerb : uint8_t
     SnapVerticesToGrid,
     BridgeEdges,
     SetEdgeSoftness,
+    // Not a verb: bounds the dispatch table so a new verb without a table row is
+    // a compile error rather than an out-of-bounds read. Keep last.
+    Count,
 };
 
 struct MeshEditParams

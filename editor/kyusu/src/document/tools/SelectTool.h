@@ -13,6 +13,7 @@ public:
     std::string_view GetId() const override;
     std::string_view GetDisplayName() const override;
     std::string_view GetIcon() const override;
+    [[nodiscard]] Shortcut GetShortcut() const override;
     InputConsumed OnClick(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
     // Double-click: edge -> its loop, face -> all faces (or the face loop if it is
     // already selected), vertex -> all vertices.
