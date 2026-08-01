@@ -1,5 +1,7 @@
 #pragma once
 
+#include "brush/BrushOps.h" // BrushPrimitive
+
 #include <math/geometry/3d/Aabb3d.h>
 #include <math/spatial/GridPlane.h>
 #include <math/Vec.h>
@@ -92,4 +94,5 @@ struct BrushDepthPlacement
 }
 
 [[nodiscard]] std::optional<BrushCreationPlane>
-ResolveBrushCreationPlane(const ToolContext& ctx, const EditorViewport& viewport, ImVec2 pressPos);
+ResolveBrushCreationPlane(const ToolContext& ctx, const EditorViewport& viewport, ImVec2 pressPos,
+                          BrushPrimitive primitive);

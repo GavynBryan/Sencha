@@ -1,6 +1,5 @@
 #include "BrushCreationPlane.h"
 
-#include "document/BrushCreationSettings.h"
 #include "document/EditorScene.h"
 #include "selection/SelectionService.h"
 #include "tools/ToolContext.h"
@@ -48,7 +47,8 @@ bool IsSignedWorldAxis(const Vec3d& v)
 }
 
 std::optional<BrushCreationPlane>
-ResolveBrushCreationPlane(const ToolContext& ctx, const EditorViewport& viewport, ImVec2 pressPos)
+ResolveBrushCreationPlane(const ToolContext& ctx, const EditorViewport& viewport, ImVec2 pressPos,
+                          BrushPrimitive primitive)
 {
     const OrientationTraits& traits = viewport.GetOrientationTraits();
     const bool perspective = traits.Mode == EditorCamera::Mode::Perspective;
@@ -152,7 +152,7 @@ ResolveBrushCreationPlane(const ToolContext& ctx, const EditorViewport& viewport
     // A plane primitive is a zero-thickness quad emitted at its local depth
     // center, so it rests flush at the reference depth instead of half a cell
     // off it (the box/cylinder rule).
-    if (ctx.BrushCreate.ActivePrimitive == BrushPrimitive::Plane && !selectedBounds.has_value())
+    if (primitive == BrushPrimitive::Plane && !selectedBounds.has_value())
     {
         depth.Center = surface.has_value() ? surface->Point[depthAxis]
                      : frameAligned        ? plane.Origin[depthAxis]

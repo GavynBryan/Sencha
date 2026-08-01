@@ -1,10 +1,11 @@
 #include "EdgeCutTool.h"
 
+#include "ui/EditorUiSkin.h"
+
 #include "fonts/IconsFontAwesome6.h"
 
 #include "brush/BrushOps.h"
 #include "brush/BrushValidation.h"
-#include "document/EdgeCutSettings.h"
 #include "document/EditorScene.h"
 #include "meshedit/ManipulationSink.h"
 #include "meshedit/MeshEditService.h"
@@ -142,6 +143,32 @@ void EdgeCutTool::OnHoverEnd(ToolContext& ctx) { Revert(ctx); }
 void EdgeCutTool::OnDeactivate(ToolContext& ctx) { Revert(ctx); }
 void EdgeCutTool::OnCancel(ToolContext& ctx) { Revert(ctx); }
 
+void EdgeCutTool::CommitPending(ToolContext& ctx) { Revert(ctx); }
+
+ITool::Shortcut EdgeCutTool::GetShortcut() const { return { SDLK_C, {} }; }
+
+void EdgeCutTool::DrawProperties(ToolContext&)
+{
+    ImGui::SeparatorText("Edge Cut");
+    if (ImGui::RadioButton("Loop cut (whole ring)", LoopCut))
+        LoopCut = true;
+    if (ImGui::RadioButton("Single edge cut", !LoopCut))
+        LoopCut = false;
+    ImGui::TextDisabled("Tab toggles.  Click an edge to cut.");
+}
+
+void EdgeCutTool::DrawToolbarControls(ToolContext&)
+{
+    const float buttonSize = EditorUiSkin::BarButtonSize();
+    if (EditorUiSkin::ToolButton("cutloop", ICON_FA_ROTATE,
+                                        "Loop cut (whole ring)  [Tab]", LoopCut, buttonSize))
+        LoopCut = true;
+    ImGui::SameLine();
+    if (EditorUiSkin::ToolButton("cutsingle", ICON_FA_GRIP_LINES,
+                                        "Single edge cut  [Tab]", !LoopCut, buttonSize))
+        LoopCut = false;
+}
+
 InputConsumed EdgeCutTool::OnClick(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)
 {
     UpdatePreview(ctx, viewport, pointer.Position);
@@ -153,7 +180,7 @@ InputConsumed EdgeCutTool::OnKeyDown(ToolContext& ctx, const KeyDownEvent& event
 {
     if (event.Key == SDLK_TAB)
     {
-        ctx.EdgeCut.LoopCut = !ctx.EdgeCut.LoopCut;
+        LoopCut = !LoopCut;
         return InputConsumed::Yes;
     }
     return InputConsumed::No;
@@ -205,7 +232,7 @@ void EdgeCutTool::UpdatePreview(ToolContext& ctx, EditorViewport& viewport, ImVe
 
     BrushMesh original = mesh;
     // Single cut splits only the face under the cursor; loop cut rings the edge.
-    BrushMesh cut = ctx.EdgeCut.LoopCut
+    BrushMesh cut = LoopCut
         ? BrushOps::InsertEdgeLoop(original, a, b, t)
         : BrushOps::InsertEdgeCut(original, a, b, t, face.ElementId);
 
@@ -226,7 +253,7 @@ void EdgeCutTool::UpdatePreview(ToolContext& ctx, EditorViewport& viewport, ImVe
     readout.From = cutPoint;
     readout.To = cutPoint;
     char buffer[32];
-    std::snprintf(buffer, sizeof(buffer), "%s %.2f", ctx.EdgeCut.LoopCut ? "loop" : "single", static_cast<double>(t));
+    std::snprintf(buffer, sizeof(buffer), "%s %.2f", LoopCut ? "loop" : "single", static_cast<double>(t));
     readout.Text = buffer;
     readout.Viewport = viewport.Id;
 }

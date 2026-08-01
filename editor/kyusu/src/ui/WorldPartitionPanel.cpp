@@ -1,5 +1,7 @@
 #include "WorldPartitionPanel.h"
 
+#include "document/commands/EditWorldManifestCommand.h"
+
 #include "ui/EditorUiStyle.h"
 #include "ui/ScopedPanel.h"
 #include "fonts/IconsFontAwesome6.h"
@@ -38,6 +40,16 @@ WorldPartitionPanel::WorldPartitionPanel(WorldDocument& world, SelectionService&
 std::string_view WorldPartitionPanel::GetTitle() const
 {
     return "World";
+}
+
+
+template <typename Fn>
+void WorldPartitionPanel::RunManifestEdit(Fn&& verb)
+{
+    WorldPartitionManifest before = WorldDoc.Manifest();
+    if (!verb())
+        return;
+    RecordManifestEdit(WorldDoc, Commands, std::move(before));
 }
 
 void WorldPartitionPanel::OnDraw()
@@ -258,7 +270,7 @@ void WorldPartitionPanel::DrawHeaderButtons()
     };
 
     if (ImGui::Button(ICON_FA_PLUS "  Graph"))
-        (void)WorldDoc.AddGraph("New Graph");
+        RunManifestEdit([&] { return WorldDoc.AddGraph("New Graph").IsValid(); });
 
     // New zones land in the focus zone's graph (fallback: the first graph).
     GraphId activeGraph;
@@ -270,7 +282,7 @@ void WorldPartitionPanel::DrawHeaderButtons()
     ImGui::SameLine();
     ImGui::BeginDisabled(!activeGraph.IsValid());
     if (ImGui::Button(ICON_FA_PLUS "  Zone"))
-        (void)WorldDoc.AddZone(activeGraph, "New Zone");
+        RunManifestEdit([&] { return WorldDoc.AddZone(activeGraph, "New Zone").IsValid(); });
     ImGui::EndDisabled();
 
     const ZoneHeader* activeZone = nullptr;
@@ -476,7 +488,7 @@ void WorldPartitionPanel::DrawGraph(const GraphRecord& graph)
         if (ImGui::IsItemDeactivated())
         {
             if (RenameBuffer_[0] != '\0')
-                (void)WorldDoc.RenameGraph(graph.Id, RenameBuffer_);
+                RunManifestEdit([&] { return WorldDoc.RenameGraph(graph.Id, RenameBuffer_); });
             RenamingGraph_ = GraphId{};
         }
         ImGui::PopID();
@@ -495,7 +507,7 @@ void WorldPartitionPanel::DrawGraph(const GraphRecord& graph)
     if (ImGui::BeginPopupContextItem("##graph_ctx"))
     {
         if (ImGui::MenuItem(ICON_FA_PLUS "  New Zone"))
-            (void)WorldDoc.AddZone(graph.Id, "New Zone");
+            RunManifestEdit([&] { return WorldDoc.AddZone(graph.Id, "New Zone").IsValid(); });
         if (ImGui::MenuItem(ICON_FA_PEN "  Rename"))
         {
             RenamingGraph_ = graph.Id;
@@ -569,18 +581,18 @@ void WorldPartitionPanel::DrawGraphStreaming(const GraphRecord& graph)
         };
         option("Inherited", inheritedShape,
                "Use the world's default shape.",
-               [&] { (void)WorldDoc.SetGraphRadius(graph.Id, std::nullopt); });
+               [&] { RunManifestEdit([&] { return WorldDoc.SetGraphRadius(graph.Id, std::nullopt); }); });
         option("Graph", !inheritedShape && !proximity,
                "Zones load through authored connections: rooms behind doorways. "
                "Only connected zones preload; distance never matters.",
-               [&] { (void)WorldDoc.SetGraphRadius(graph.Id, 0.0); });
+               [&] { RunManifestEdit([&] { return WorldDoc.SetGraphRadius(graph.Id, 0.0); }); });
         option("Proximity", !inheritedShape && proximity,
                "Zones load by distance from the player: an open area tiled into "
                "grid cells needs no connections, and diagonal neighbors load too.",
                [&]
                {
-                   (void)WorldDoc.SetGraphRadius(
-                       graph.Id, SeedGraphRadius(WorldDoc.Manifest(), graph.Id));
+                   RunManifestEdit([&] { return WorldDoc.SetGraphRadius(
+                       graph.Id, SeedGraphRadius(WorldDoc.Manifest(), graph.Id)); });
                });
         ImGui::EndCombo();
     }
@@ -617,8 +629,8 @@ void WorldPartitionPanel::DrawGraphStreaming(const GraphRecord& graph)
         float radius = static_cast<float>(graph.Streaming.Radius.value_or(base.Radius));
         (void)ImGui::InputFloat("Load radius", &radius, 0.0f, 0.0f, "%.0f");
         if (ImGui::IsItemDeactivatedAfterEdit())
-            (void)WorldDoc.SetGraphRadius(graph.Id,
-                                           radius < 0.0f ? 0.0 : static_cast<double>(radius));
+            RunManifestEdit([&] { return WorldDoc.SetGraphRadius(graph.Id,
+                                           radius < 0.0f ? 0.0 : static_cast<double>(radius)); });
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("World units. Zones within this distance of the player load, "
                               "connected or not. Drawn as a circle in the streaming preview.");
@@ -627,24 +639,24 @@ void WorldPartitionPanel::DrawGraphStreaming(const GraphRecord& graph)
     ImGui::SetNextItemWidth(70.0f);
     int hops = graph.Streaming.HopCount.value_or(base.HopCount);
     if (ImGui::InputInt("Preload hops", &hops))
-        (void)WorldDoc.SetGraphHopCount(graph.Id, hops < 0 ? 0 : hops);
+        RunManifestEdit([&] { return WorldDoc.SetGraphHopCount(graph.Id, hops < 0 ? 0 : hops); });
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("How many connections ahead zones preload: 1 keeps every "
                           "adjacent room loaded, 2 the rooms behind those. Connections "
                           "still apply in a Proximity graph (its entrances).");
     clearOrInherited(graph.Streaming.HopCount.has_value(), "clear_hops",
-                     [&] { (void)WorldDoc.SetGraphHopCount(graph.Id, std::nullopt); });
+                     [&] { RunManifestEdit([&] { return WorldDoc.SetGraphHopCount(graph.Id, std::nullopt); }); });
 
     ImGui::SetNextItemWidth(70.0f);
     int cap = graph.Streaming.ResidentZoneCap.value_or(base.ResidentZoneCap);
     if (ImGui::InputInt("Zone cap", &cap))
-        (void)WorldDoc.SetGraphResidentCap(graph.Id, cap < 1 ? 1 : cap);
+        RunManifestEdit([&] { return WorldDoc.SetGraphResidentCap(graph.Id, cap < 1 ? 1 : cap); });
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Most zones kept loaded at once while the player is in this "
                           "graph; the farthest preloads unload first. The player's zone "
                           "and pinned zones never unload.");
     clearOrInherited(graph.Streaming.ResidentZoneCap.has_value(), "clear_cap",
-                     [&] { (void)WorldDoc.SetGraphResidentCap(graph.Id, std::nullopt); });
+                     [&] { RunManifestEdit([&] { return WorldDoc.SetGraphResidentCap(graph.Id, std::nullopt); }); });
 
     ImGui::PopID();
 }
@@ -675,7 +687,7 @@ void WorldPartitionPanel::DrawZoneRow(const ZoneHeader& zone)
         if (ImGui::IsItemDeactivated())
         {
             if (RenameBuffer_[0] != '\0')
-                (void)WorldDoc.RenameZone(zone.Id, RenameBuffer_);
+                RunManifestEdit([&] { return WorldDoc.RenameZone(zone.Id, RenameBuffer_); });
             RenamingZone_ = ZoneId{};
         }
         ImGui::PopID();
@@ -778,7 +790,7 @@ void WorldPartitionPanel::DrawZoneRow(const ZoneHeader& zone)
             {
                 if (ImGui::MenuItem(graph.Name.c_str(), nullptr, graph.Id == zone.Graph,
                                     graph.Id != zone.Graph))
-                    (void)WorldDoc.SetZoneGraph(zone.Id, graph.Id);
+                    RunManifestEdit([&] { return WorldDoc.SetZoneGraph(zone.Id, graph.Id); });
             }
             ImGui::EndMenu();
         }

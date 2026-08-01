@@ -2,6 +2,8 @@
 
 #include "tools/ITool.h"
 
+#include "BrushCreationSettings.h"
+
 #include "selection/SelectableRef.h"
 
 #include <core/assets/AssetRef.h>
@@ -78,8 +80,18 @@ public:
     // built; a RefreshPending restyles the preview with it.
     [[nodiscard]] bool PendingMaterialStale(const ToolContext& ctx) const;
 
+    void DrawProperties(ToolContext& ctx) override;
+    [[nodiscard]] Shortcut GetShortcut() const override;
+
+    // The primitive the next drag creates and its shape parameters. Owned here
+    // because only this tool acts on them; the properties UI drives them and
+    // regenerates the pending preview in place.
+    BrushCreationSettings Creation;
+
     // Commits the pending brush as one undoable create and drops the preview.
-    void CommitPending(ToolContext& ctx);
+    // The pending brush is placed work (dragged out at a chosen size), so this
+    // is also how a save resolves it, and how a tool switch clicks it off.
+    void CommitPending(ToolContext& ctx) override;
     void CancelPending(ToolContext& ctx);
 
 private:

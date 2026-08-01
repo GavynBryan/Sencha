@@ -1,33 +1,25 @@
 #pragma once
 
-#include "BrushManipulationSink.h"
+#include "PendingBridgeEdit.h"
+#include "SelectionActions.h"
+#include "PendingElementEdit.h"
+#include "WorkspaceInteractionRuntime.h"
 
 #include "authoring/EditorComponentAdapter.h"
 #include "commands/CommandStack.h"
 #include "document/EditorEntityRecipe.h"
-#include "editmodes/EditSessionHost.h"
-#include "editmodes/ManipulatorSession.h"
-#include "input/ViewportToolDispatcher.h"
 #include "editmodes/PivotState.h"
-#include "interaction/InteractionHost.h"
 #include "meshedit/ActiveMaterialState.h"
 #include "meshedit/FaceMaterialEdits.h"
 #include "meshedit/MeshEditService.h"
 #include "overlay/EditorOverlayState.h"
-#include "render/PreviewBuffer.h"
 #include "selection/SelectionContext.h"
 #include "selection/SelectionService.h"
-#include "tools/ToolContext.h"
-#include "tools/ToolRegistry.h"
 #include "viewport/GridSettings.h"
 #include "viewport/WorldViewSettings.h"
-#include "viewport/MarqueeState.h"
 #include "viewport/Picking.h"
 #include "viewport/ViewportLayout.h"
 
-#include "brush/BrushOps.h"
-#include "document/BrushCreationSettings.h"
-#include "document/EdgeCutSettings.h"
 #include "document/WorldDocument.h"
 
 #include <functional>
@@ -40,9 +32,7 @@ class LoggingProvider;
 class EditorWorkspace
 {
 public:
-    explicit EditorWorkspace(LoggingProvider& logging);
-
-    void Init(CommandStack& commands);
+    EditorWorkspace(LoggingProvider& logging, CommandStack& commands);
 
     // The document all editing binds: the focus zone's document in world mode,
     // the single anonymous document in legacy mode. Long-lived objects resolve
@@ -50,6 +40,18 @@ public:
     // members, so a focus change cannot leave them stale.
     [[nodiscard]] EditorDocument& ActiveDocument() { return World.FocusDocument(); }
     [[nodiscard]] const EditorDocument& ActiveDocument() const { return World.FocusDocument(); }
+
+    // Terminates every transaction staging state in the active document (the
+    // active tool's gesture, the pending bridge, the pending element edit) and
+    // drops the undo stack. Safe to run immediately before the document is
+    // destroyed: it touches only state that is still alive at the call.
+    void CancelDocumentTransactions();
+
+    // Settles every open preview into the document as ordinary undo steps, so
+    // that nothing reaches a file or a cook in a half-staged state. Save, Save
+    // As, and cook run it first. This is the one place the resolve-by-commit
+    // policy lives.
+    void ResolvePendingEdits();
 
     // Tears down and rebuilds everything that binds the active document (tool
     // context, manipulation sink, session, transient interaction state) and
@@ -61,40 +63,11 @@ public:
     void DeleteSelection();
     // Backspace verb in edge mode: merge the faces across each selected edge.
     void DissolveSelectedEdges();
-    // Bridges two selected edge paths from different brushes into a new bridge
-    // brush without changing either source. The cross-brush bridge starts as a
-    // PENDING preview entity (adjust Segments live, Apply commits, Cancel or
-    // Undo drops it); same-brush bridges stay immediate mesh edits.
-    void BridgeSelectedEdges(int segments);
-    [[nodiscard]] bool HasPendingBridge() const { return Bridge == BridgeState::Pending; }
+    [[nodiscard]] bool HasPendingBridge() const { return BridgeEdit.HasPending(); }
     // Regenerates the pending preview with a new segment count.
-    void SetPendingBridgeSegments(int segments);
+    void SetPendingBridgeSegments(int segments) { BridgeEdit.SetSegments(segments); }
     void CommitPendingBridge();
     void CancelPendingBridge();
-
-    // Duplicates the entity-kind selection in place as one undoable step and
-    // selects the copies. With asInstance, brush copies SHARE the source's mesh
-    // (editing any instance edits them all; baking them shares one asset).
-    void DuplicateSelection(bool asInstance);
-
-    // Repeats the last recorded repeatable action (Ctrl+R). Today that is a
-    // duplicate-with-offset: after a Shift-drag duplicate, each press
-    // duplicates the current selection again displaced by the same offset (the
-    // copies stay selected, so repeated presses chain placements). No-op until
-    // an action records itself.
-    void RepeatLastAction();
-
-    // Breaks every selected instanced brush out of its instance group (each gets
-    // its own copy of the live shared mesh), as one undoable step.
-    void MakeSelectedBrushesUnique();
-
-    // Joins the selected brushes into the primary one (faces rebased, texture
-    // placement preserved, sources destroyed), as one undoable step.
-    void MergeSelectedBrushes();
-
-    // Splits the selected faces (one brush) into a new brush entity, as one
-    // undoable step; the source keeps at least one face.
-    void SeparateSelectedFaces();
 
     // Select-all for the current element kind, as one undoable step. Object mode:
     // every visible, unlocked entity. Element modes: every element of that kind on
@@ -171,15 +144,10 @@ public:
     // shortcuts work with every panel closed.
     std::optional<FaceMaterialClipboard> UvClipboard;
     GridSettings Grid;
-    BrushCreationSettings BrushCreate;
-    EdgeCutSettings EdgeCut;
-    MarqueeState Marquee;
-    EditorOverlayState Overlay;
     PivotState Pivot;
-    InteractionHost Interactions;
-    PreviewBuffer Preview;
-    EditSessionHost Sessions;
-    std::unique_ptr<BrushManipulationSink> Sink;
+    // The document-bound editing stack and the transient state that dies with
+    // the edited document.
+    WorkspaceInteractionRuntime Interaction;
     // Keeps the deselect observer alive (SelectionService holds it weakly); clears
     // the transient pivot override whenever the selection changes.
     std::shared_ptr<SelectionService::ObserverFn> PivotObserver;
@@ -190,89 +158,64 @@ public:
     // Entity/mesh selection and Zone selection are mutually exclusive while
     // still sharing one visible selection across panels and viewport affordances.
     std::shared_ptr<SelectionService::ObserverFn> ZoneSelectionObserver;
-    // Non-owning; the EditSessionHost owns the session. Held so the overlay
-    // renderer can ask it for manipulator visuals.
-    ManipulatorSession* Manipulators = nullptr;
-    std::unique_ptr<ToolContext> ActiveToolContext;
-    std::unique_ptr<ToolRegistry> Tools;
-    std::unique_ptr<ViewportToolDispatcher> Dispatcher;
-    // Non-owning; the command stack passed to Init (owned by EditorServices), held
-    // so workspace-level edits (DeleteSelection) route through the same undo history.
-    CommandStack* Commands = nullptr;
+    // Owned by EditorServices, which declares it ahead of the workspace and so
+    // outlives it. Workspace-level edits (DeleteSelection) route through the
+    // same undo history every other surface writes to.
+    CommandStack& Commands;
 
-    // Cross-brush bridge lifecycle. Invariants: Bridge == Pending exactly while
-    // PendingBridgeData holds a live preview entity (with the resolved paths it
-    // regenerates from) and the command stack's pending-edit scope is open for
-    // it. Transitions happen only in BeginPendingBridge (Idle -> Pending) and
-    // CommitPendingBridge / CancelPendingBridge (Pending -> Idle).
-    enum class BridgeState : std::uint8_t { Idle, Pending };
-    struct PendingBridge
+    // Cross-brush bridge preview. Owns the staged entity, the paths it
+    // regenerates from, and the pending-edit scope that goes with them.
+    PendingBridgeEdit BridgeEdit;
+
+    // Panel-driven face inset / edge bevel preview. Owns the captured meshes
+    // and the pending-edit scope that goes with them.
+    PendingElementEdit ElementEdit;
+
+    // Verbs over the selection as a whole (duplicate, merge, separate, bake).
+    // Declared after the members it binds so construction order holds.
+    SelectionActions Actions;
+
+private:
+    // One entry per panel-driven pending-edit mechanism. The lifecycle verbs
+    // (Escape, document teardown, save resolution) iterate this rather than
+    // naming each mechanism, so a new mechanism is registered once here instead
+    // of being remembered at every site that has to resolve a staged preview.
+    //
+    // Order does not matter: the command stack holds a single pending-edit
+    // scope, so at most one entry ever has something staged.
+    struct PendingEditHooks
     {
-        EntityId Entity = {};
-        BrushOps::BridgePathSpec PathA;
-        BrushOps::BridgePathSpec PathB;
-        FaceMaterial Material;
-        int Segments = 1;
-        // The scene and document the preview entity lives in, captured at
-        // begin: a focus change swaps ActiveDocument, and cancel must destroy
-        // the entity where it was created.
-        EditorScene* Scene = nullptr;
-        EditorDocument* Document = nullptr;
-        std::vector<SelectableRef> BeforeSelection;
+        std::function<bool()> HasPending;
+        std::function<void()> Commit;
+        std::function<void()> Cancel;
     };
-    BridgeState Bridge = BridgeState::Idle;
-    PendingBridge PendingBridgeData;
+    std::array<PendingEditHooks, 2> PendingPanelEdits;
 
-    void BeginPendingBridge(PendingBridge pending);
-    void RegeneratePendingBridge();
-
-    // Pending face inset / edge bevel: a panel-driven preview over the
-    // captured selection, committed as one undo step. Invariants mirror the
-    // bridge: ElementEdit != Idle exactly while ElementEditCaptures holds the
-    // pre-edit snapshots and the pending-edit scope is open. Transitions only
-    // in BeginInsetOnSelectedFaces / BeginBevelOnSelectedEdges (Idle -> *) and
-    // CommitPendingElementEdit / CancelPendingElementEdit (* -> Idle).
-    enum class ElementEditState : std::uint8_t { Idle, Inset, Bevel };
-    struct ElementEditCapture
-    {
-        EntityId Entity = {};
-        BrushMesh Original;
-        std::vector<std::uint32_t> Faces;                  // Inset
-        std::vector<std::array<std::uint32_t, 2>> Edges;   // Bevel (vertex pairs into Original)
-    };
+    // True while any panel-driven preview is staged.
+    [[nodiscard]] bool HasPendingPanelEdit() const;
 
 public:
     void BeginInsetOnSelectedFaces(float distance);
-    [[nodiscard]] bool HasPendingInset() const { return ElementEdit == ElementEditState::Inset; }
-    void SetPendingInsetDistance(float distance);
+    [[nodiscard]] bool HasPendingInset() const { return ElementEdit.HasPendingInset(); }
+    void SetPendingInsetDistance(float distance) { ElementEdit.SetInsetDistance(distance); }
     void BeginBevelOnSelectedEdges(float width, int segments);
-    [[nodiscard]] bool HasPendingBevel() const { return ElementEdit == ElementEditState::Bevel; }
-    void SetPendingBevelParams(float width, int segments);
+    [[nodiscard]] bool HasPendingBevel() const { return ElementEdit.HasPendingBevel(); }
+    void SetPendingBevelParams(float width, int segments) { ElementEdit.SetBevelParams(width, segments); }
     void CommitPendingElementEdit();
     void CancelPendingElementEdit();
 
 private:
-    void RegeneratePendingElementEdit();
-
-    ElementEditState ElementEdit = ElementEditState::Idle;
-    std::vector<ElementEditCapture> ElementEditCaptures;
-    float ElementEditDistance = 0.0f; // Inset
-    float ElementEditWidth = 0.0f;    // Bevel
-    int ElementEditSegments = 1;      // Bevel
-
-    // The last repeatable action, recorded by the action itself (currently the
-    // duplicate-with-offset observer on the sink). Ctrl+R replays it against
-    // the current selection.
-    std::function<void()> LastRepeatable;
-
-    // Duplicates the current entity selection displaced by `offset`, as one
-    // undoable step (the copies end up selected, so repeats chain).
-    void DuplicateSelectionWithOffset(Vec3d offset);
+    // The identity remap every duplicate route shares. See the definition.
+    [[nodiscard]] std::function<void(std::vector<EntitySnapshot>&)> MakeDuplicateRemap();
 
 private:
-    // Builds the document-bound editing stack (sink, tool context, tools,
-    // dispatcher, manipulator session) against the active document. Init and
-    // ResetInteractionState share it.
+    // Composes the authoring subsystems and subscribes the document and
+    // selection observers. Runs once, from the constructor.
+    void Build();
+
+    // Builds the document-bound editing stack (sink, tool context, dispatcher)
+    // against the active document and rebinds the editor-lifetime tools and
+    // manipulator session to it. Bring-up and ResetInteractionState share it.
     void BuildInteractionState();
 
     // Re-expresses the current selection in the new element kind (face -> its

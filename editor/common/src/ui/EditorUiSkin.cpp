@@ -226,3 +226,28 @@ void EditorUiSkin::PanelBackdrop()
         GlowText(ImVec2(x, y), ImGui::GetColorU32(EditorUi::AccentHover), EditorUi::Accent, label);
     }
 }
+
+bool EditorUiSkin::ToolButton(const char* id, const char* icon, const char* tooltip,
+                              bool active, float size)
+{
+    const bool clicked = Button(id, icon, ImVec2(size, size), active);
+    if (tooltip != nullptr && ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", tooltip);
+    return clicked;
+}
+
+void EditorUiSkin::Divider(float height)
+{
+    ImGui::SameLine();
+    const ImVec2 p = ImGui::GetCursorScreenPos();
+    ImGui::GetWindowDrawList()->AddLine(
+        ImVec2(p.x + 3.0f, p.y), ImVec2(p.x + 3.0f, p.y + height),
+        ImGui::GetColorU32(WithAlpha(EditorUi::Border, 0.9f)));
+    ImGui::Dummy(ImVec2(7.0f, height));
+    ImGui::SameLine();
+}
+
+float EditorUiSkin::BarButtonSize()
+{
+    return ImGui::GetFrameHeight();
+}

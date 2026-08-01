@@ -114,6 +114,10 @@ bool WorldDocument::LoadWorld(std::string_view path)
         return false;
     }
 
+    // The file is accepted from here on, so the open documents are going away:
+    // anything holding them must unwind before they do.
+    NotifyWillReplaceDocuments();
+
     WriteUserSidecar();
     WorldMode_ = true;
     LegacyDocument_.reset();
@@ -149,6 +153,7 @@ bool WorldDocument::LoadWorld(std::string_view path)
         LegacyDocument_ = std::make_unique<EditorDocument>(Logging_);
         if (Assets_)
             LegacyDocument_->SetAssetEnvironment(*Assets_);
+        NotifyEditedDocumentChanged();
         return false;
     }
     if (sidecar.WorldScene)
@@ -285,6 +290,8 @@ bool WorldDocument::SaveWorldAs(std::string_view path)
 
 void WorldDocument::NewWorld(std::string_view name)
 {
+    NotifyWillReplaceDocuments();
+
     WriteUserSidecar();
     WorldMode_ = true;
     LegacyDocument_.reset();
@@ -314,9 +321,14 @@ bool WorldDocument::HasSaveTarget() const
 
 void WorldDocument::New()
 {
+    // Both branches discard document content: the world teardown drops every
+    // open zone, and the legacy path clears the scene in place.
+    NotifyWillReplaceDocuments();
+
     if (WorldMode_)
         CloseWorldToLegacy();
     LegacyDocument_->New();
+    NotifyEditedDocumentChanged();
 }
 
 bool WorldDocument::IsWorldManifestFile(std::string_view path)
@@ -339,9 +351,22 @@ bool WorldDocument::Load(std::string_view path)
     // that only ever opens blank.
     if (IsWorldManifestFile(path))
         return LoadWorld(path);
+
+    // Staged: a file that parses but does not load must not cost the user what
+    // is already open. Only a document that came up whole replaces the current
+    // one, so a rejected file leaves the session exactly as it was.
+    auto staged = std::make_unique<EditorDocument>(Logging_);
+    if (Assets_)
+        staged->SetAssetEnvironment(*Assets_);
+    if (!staged->Load(path))
+        return false;
+
+    NotifyWillReplaceDocuments();
     if (WorldMode_)
-        CloseWorldToLegacy();
-    return LegacyDocument_->Load(path);
+        CloseWorldState();
+    LegacyDocument_ = std::move(staged);
+    NotifyEditedDocumentChanged();
+    return true;
 }
 
 bool WorldDocument::Save()
@@ -471,8 +496,7 @@ bool WorldDocument::SetFocusZone(ZoneId zone)
     FocusZone_ = zone;
     SelectedZone_ = zone;
     WorldSceneFocused_ = false;
-    if (OnFocusChanged)
-        OnFocusChanged();
+    NotifyEditedDocumentChanged();
     return true;
 }
 
@@ -498,8 +522,7 @@ bool WorldDocument::FocusWorldScene()
     WorldSceneFocused_ = true;
     FocusZone_ = ZoneId{};
     SelectedZone_ = ZoneId{};
-    if (OnFocusChanged)
-        OnFocusChanged();
+    NotifyEditedDocumentChanged();
     return true;
 }
 
@@ -937,6 +960,43 @@ uint64_t WorldDocument::MintRawId()
     }
 }
 
+void WorldDocument::ApplyManifestSnapshot(WorldPartitionManifest manifest)
+{
+    if (!WorldMode_)
+        return;
+
+    Manifest_ = std::move(manifest);
+    MarkManifestEdited();
+
+    // Drop anything the new manifest no longer describes. Closing a zone whose
+    // header is gone also drops the document a queued command could reference.
+    for (auto it = OpenZones_.begin(); it != OpenZones_.end();)
+    {
+        if (FindZoneHeader(it->first) == nullptr)
+            it = OpenZones_.erase(it);
+        else
+            ++it;
+    }
+    if (SelectedZone_.IsValid() && FindZoneHeader(SelectedZone_) == nullptr)
+        SelectedZone_ = ZoneId{};
+
+    // The focus must always land on a real zone; re-focusing raises the edited
+    // document change so the editing stack rebinds.
+    if (!WorldSceneFocused_ && (!FocusZone_.IsValid() || FindZoneHeader(FocusZone_) == nullptr))
+    {
+        FocusZone_ = ZoneId{};
+        ZoneId next = Manifest_.StartZone;
+        if (!next.IsValid() || FindZoneHeader(next) == nullptr)
+            next = Manifest_.Zones.empty() ? ZoneId{} : Manifest_.Zones.front().Id;
+        if (next.IsValid())
+            (void)SetFocusZone(next);
+        else
+            FocusWorldScene();
+    }
+
+    RunValidation();
+}
+
 void WorldDocument::MarkManifestEdited()
 {
     WorldDirty_ = true;
@@ -1318,7 +1378,19 @@ WorldDocument::SidecarFocus WorldDocument::ApplyUserSidecar()
     return result;
 }
 
-void WorldDocument::CloseWorldToLegacy()
+void WorldDocument::NotifyWillReplaceDocuments()
+{
+    if (OnWillReplaceDocuments)
+        OnWillReplaceDocuments();
+}
+
+void WorldDocument::NotifyEditedDocumentChanged()
+{
+    if (OnEditedDocumentChanged)
+        OnEditedDocumentChanged();
+}
+
+void WorldDocument::CloseWorldState()
 {
     WriteUserSidecar();
     WorldMode_ = false;
@@ -1332,6 +1404,11 @@ void WorldDocument::CloseWorldToLegacy()
     WorldScene_.reset();
     OpenZones_.clear();
     ValidationRecords_.clear();
+}
+
+void WorldDocument::CloseWorldToLegacy()
+{
+    CloseWorldState();
     LegacyDocument_ = std::make_unique<EditorDocument>(Logging_);
     if (Assets_)
         LegacyDocument_->SetAssetEnvironment(*Assets_);

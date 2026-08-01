@@ -1,11 +1,12 @@
 #include "BrushTool.h"
 
+#include "ui/ButtonFlow.h"
+
 #include "fonts/IconsFontAwesome6.h"
 
 #include "brush/BrushMesh.h"
 #include "brush/BrushOps.h"
 #include "commands/CommandStack.h"
-#include "document/BrushCreationSettings.h"
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
 #include "document/commands/DeferredCreateBrushCommand.h"
@@ -177,7 +178,7 @@ std::unique_ptr<IInteraction> BrushTool::BeginDrag(ToolContext& ctx, EditorViewp
     // copy a selected brush's off-axis size, or rest on the surface under the
     // cursor in perspective).
     const std::optional<BrushCreationPlane> plane =
-        ResolveBrushCreationPlane(ctx, viewport, pressPointer.Position);
+        ResolveBrushCreationPlane(ctx, viewport, pressPointer.Position, Creation.ActivePrimitive);
     if (!plane.has_value())
         return nullptr;
 
@@ -190,7 +191,7 @@ void BrushTool::SetPending(ToolContext& ctx, const PendingBrush& pending)
     Pending = pending;
     Pending.DepthFloorHalf = ctx.Grid.Spacing * 0.5f;
 
-    const bool solid = ctx.BrushCreate.ActivePrimitive != BrushPrimitive::Plane;
+    const bool solid = Creation.ActivePrimitive != BrushPrimitive::Plane;
     const float depthHalf = PendingDepthHalf(solid, Pending.DragDepthHalf, Pending.DepthFloorHalf);
     Pending.LastBuiltDepthHalf = depthHalf;
 
@@ -206,7 +207,7 @@ void BrushTool::SetPending(ToolContext& ctx, const PendingBrush& pending)
     const std::span<const SelectableRef> selection = ctx.Selection.GetSelection();
     PendingPreviousSelection.assign(selection.begin(), selection.end());
 
-    BrushMesh mesh = BuildPendingMesh(ctx.BrushCreate, Pending, depthHalf);
+    BrushMesh mesh = BuildPendingMesh(Creation, Pending, depthHalf);
     MeshLocalBounds(mesh, Pending.LastBuiltBoundsMin, Pending.LastBuiltBoundsMax);
     ApplyActiveMaterial(mesh, ctx.ActiveMaterial.Active);
     PendingMaterial = ctx.ActiveMaterial.Active;
@@ -257,10 +258,10 @@ void BrushTool::RefreshPending(ToolContext& ctx)
         }
     }
 
-    const bool solid = ctx.BrushCreate.ActivePrimitive != BrushPrimitive::Plane;
+    const bool solid = Creation.ActivePrimitive != BrushPrimitive::Plane;
     const float depthHalf = PendingDepthHalf(solid, Pending.DragDepthHalf, Pending.DepthFloorHalf);
 
-    BrushMesh mesh = BuildPendingMesh(ctx.BrushCreate, Pending, depthHalf);
+    BrushMesh mesh = BuildPendingMesh(Creation, Pending, depthHalf);
     MeshLocalBounds(mesh, Pending.LastBuiltBoundsMin, Pending.LastBuiltBoundsMax);
     ApplyActiveMaterial(mesh, ctx.ActiveMaterial.Active);
     PendingMaterial = ctx.ActiveMaterial.Active;
@@ -327,4 +328,95 @@ void BrushTool::CancelPending(ToolContext& ctx)
     ctx.Preview.Clear();
     ctx.Selection.SetSelection(std::move(PendingPreviousSelection));
     PendingPreviousSelection.clear();
+}
+
+ITool::Shortcut BrushTool::GetShortcut() const { return { SDLK_B, {} }; }
+
+void BrushTool::DrawProperties(ToolContext& ctx)
+{
+    ImGui::SeparatorText("Primitive");
+
+    const bool pending = HasPending();
+    bool changed = false;
+
+    struct PrimitiveOption { BrushPrimitive Kind; const char* Label; };
+    static constexpr PrimitiveOption kPrimitives[] = {
+        { BrushPrimitive::Box, "Box" },
+        { BrushPrimitive::Plane, "Plane" },
+        { BrushPrimitive::Cylinder, "Cylinder" },
+    };
+    {
+        ButtonFlow flow;
+        for (const PrimitiveOption& prim : kPrimitives)
+        {
+            const bool active = Creation.ActivePrimitive == prim.Kind;
+            if (active)
+                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+            if (flow.Button(prim.Label) && !active)
+            {
+                Creation.ActivePrimitive = prim.Kind;
+                changed = true;
+            }
+            if (active)
+                ImGui::PopStyleColor();
+        }
+    }
+
+    if (Creation.ActivePrimitive == BrushPrimitive::Cylinder)
+    {
+        ImGui::SetNextItemWidth(120.0f);
+        if (ImGui::DragInt("Sides", &Creation.CylinderSides, 0.25f, 3, 64))
+        {
+            Creation.CylinderSides = std::clamp(Creation.CylinderSides, 3, 64);
+            changed = true;
+        }
+    }
+
+    if (Creation.ActivePrimitive == BrushPrimitive::Plane)
+    {
+        ImGui::SetNextItemWidth(120.0f);
+        if (ImGui::DragInt("Subdivisions", &Creation.PlaneSubdivisions, 0.25f, 1, 32))
+        {
+            Creation.PlaneSubdivisions = std::clamp(Creation.PlaneSubdivisions, 1, 32);
+            changed = true;
+        }
+    }
+
+    if (ImGui::RadioButton("Outer", !Creation.Inner))
+    {
+        changed |= Creation.Inner;
+        Creation.Inner = false;
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Inner", Creation.Inner))
+    {
+        changed |= !Creation.Inner;
+        Creation.Inner = true;
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Inside-out brush (all normals flipped), for rooms seen from within");
+
+    // A material picked while the brush is pending restyles the preview: the
+    // uncommitted brush should always carry the current active material.
+    if (pending && PendingMaterialStale(ctx))
+        changed = true;
+
+    if (changed && pending)
+        RefreshPending(ctx);
+
+    if (!pending)
+    {
+        ImGui::TextDisabled("Drag in a viewport to create");
+        return;
+    }
+
+    ButtonFlow flow;
+    if (flow.Button("Apply"))
+        CommitPending(ctx);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Commit the pending brush  [Enter]");
+    if (flow.Button("Cancel"))
+        CancelPending(ctx);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Discard the pending brush  [Esc]");
 }

@@ -18,11 +18,13 @@ class DocumentFileActions
 {
 public:
     // contentRoots are the project's content roots; empty when no project is
-    // loaded (materials then scan next to the level file). resetInteraction is
-    // the workspace's interaction reset, injected by the composition root: New
-    // and Open swap the edited document, so both run it after the file action.
+    // loaded (materials then scan next to the level file). Swapping the edited
+    // document is the document's own event to raise, so nothing here has to
+    // reset the editing stack: WorldDocument::OnEditedDocumentChanged does.
+    // resolvePendingEdits settles open previews before a write, so no save can
+    // capture half-staged geometry.
     DocumentFileActions(SdlWindow& window, WorldDocument& world,
-                        std::function<void()> resetInteraction,
+                        std::function<void()> resolvePendingEdits,
                         MaterialLibrary& materials, std::vector<std::string> contentRoots);
 
     void New();
@@ -57,7 +59,7 @@ private:
 
     SdlWindow&        Window;
     WorldDocument&    World;
-    std::function<void()> ResetInteraction;
+    std::function<void()> ResolvePendingEdits;
     MaterialLibrary&  Materials;
     std::vector<std::string> ContentRoots;
 

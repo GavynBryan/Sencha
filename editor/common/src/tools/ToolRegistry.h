@@ -29,7 +29,13 @@ public:
 
     // The shared context, for UI that drives tool operations directly (e.g. the
     // Tool Properties panel regenerating a tool's pending preview).
-    [[nodiscard]] ToolContext& GetContext() { return Context; }
+    [[nodiscard]] ToolContext& GetContext() { return *Context; }
+
+    // Points the registry at a new context. The tools outlive any one document,
+    // so a document swap rebinds them here instead of rebuilding them, which is
+    // what lets a tool hold settings and stay active across the swap. The caller
+    // resolves in-flight tool state before rebinding; nothing here does.
+    void Rebind(ToolContext& context) { Context = &context; }
 
     // Aborts the active tool's in-progress gesture, if any. (W4.)
     void Cancel();
@@ -42,7 +48,10 @@ public:
     InputConsumed OnInput(const InputEvent& event);
 
 private:
-    ToolContext& Context;
+    ToolContext* Context;
     std::vector<std::unique_ptr<ITool>> Tools;
+    // -1 until something activates. Registration alone never activates: a tool
+    // that was never entered through Activate has not had OnActivate run, and
+    // treating it as current would skip that setup.
     int ActiveIndex = -1;
 };

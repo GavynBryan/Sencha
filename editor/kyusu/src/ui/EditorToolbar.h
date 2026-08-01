@@ -9,7 +9,6 @@ class ManipulatorSession;
 class ToolRegistry;
 class MeshEditService;
 struct GridSettings;
-struct EdgeCutSettings;
 struct WorldViewSettings;
 
 // The top icon toolbar (fixed app chrome, not a dockable panel). Backed control
@@ -76,14 +75,12 @@ public:
         std::function<bool()> HasSelection;
     };
 
-    // The tool registry and manipulator session are rebuilt when the workspace
-    // resets interaction state, so the composition root injects resolvers
-    // instead of references.
+    // The registry and session are resolved at call time rather than held: the
+    // workspace stands them up during bring-up, after the toolbar is built.
     EditorToolbar(std::function<ToolRegistry*()> tools,
                   std::function<ManipulatorSession*()> session,
                   MeshEditService& meshEdit, GridSettings& grid,
-                  WorldViewSettings& worldView,
-                  EdgeCutSettings& edgeCut);
+                  WorldViewSettings& worldView);
 
     void SetPlayControls(PlayControls controls) { Play = std::move(controls); }
     void SetGridFrameControls(GridFrameControls controls) { GridFrame = std::move(controls); }
@@ -105,7 +102,6 @@ private:
     MeshEditService& MeshEdit;
     GridSettings& Grid;
     WorldViewSettings& WorldView;
-    EdgeCutSettings& EdgeCut;
     PlayControls Play;
     GridFrameControls GridFrame;
     TransformControls Transform;

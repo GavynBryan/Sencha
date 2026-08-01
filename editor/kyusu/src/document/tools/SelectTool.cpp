@@ -1,5 +1,7 @@
 #include "SelectTool.h"
 
+#include <SDL3/SDL_keycode.h>
+
 #include "fonts/IconsFontAwesome6.h"
 
 #include "document/interactions/MarqueeInteraction.h"
@@ -60,6 +62,9 @@ std::string_view SelectTool::GetIcon() const
 {
     return ICON_FA_ARROW_POINTER;
 }
+
+// Unmodified letters here stay clear of the fly camera's W/A/S/D and Q/E.
+ITool::Shortcut SelectTool::GetShortcut() const { return { SDLK_V, {} }; }
 
 InputConsumed SelectTool::OnClick(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)
 {

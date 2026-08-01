@@ -6,6 +6,39 @@ file(GLOB_RECURSE KYUSU_HEADERS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.h"
 )
 
+# The editor splits into an authoring library and the shell that hosts it. The
+# authoring half (document, brush kernel, mesh edit, workspace, edit modes,
+# viewport math, cook) touches neither ImGui's runtime nor Vulkan, so the
+# headless test targets link it instead of each re-listing its sources; the
+# shell half (app entry, panels, render passes, SDL and window plumbing) is what
+# needs a GPU and a window. Anything under these paths is shell.
+set(KYUSU_SHELL_PATTERNS
+    "/src/app/"
+    "/src/ui/"
+    "/src/render/"
+    "/src/main\\.cpp$"
+    "/src/input/SdlEventTranslation\\.cpp$"
+    "/src/viewport/EditorViewportCameraSystem\\.cpp$"
+    "/src/document/DocumentFileActions\\.cpp$"
+    "/src/project/PieDriver\\.cpp$"
+    "/src/project/CookSession\\.cpp$"
+)
+
+set(KYUSU_AUTHORING_SOURCES ${KYUSU_SOURCES})
+foreach(_pattern IN LISTS KYUSU_SHELL_PATTERNS)
+    list(FILTER KYUSU_AUTHORING_SOURCES EXCLUDE REGEX "${_pattern}")
+endforeach()
+
+# Two render sources carry no GPU dependency and the authoring layer uses both:
+# the light gather feeds the cook, the preview buffer backs tool previews.
+list(APPEND KYUSU_AUTHORING_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/render/EditorLightGather.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/render/PreviewBuffer.cpp"
+)
+
+set(KYUSU_SHELL_SOURCES ${KYUSU_SOURCES})
+list(REMOVE_ITEM KYUSU_SHELL_SOURCES ${KYUSU_AUTHORING_SOURCES})
+
 # Viewport shader pipeline: each entry is source|stage|embedded-variable. The
 # generated headers land in ${CMAKE_CURRENT_BINARY_DIR}/generated/shaders/.
 set(KYUSU_SHADERS
@@ -44,15 +77,24 @@ foreach(_entry IN LISTS KYUSU_SHADERS)
     list(APPEND KYUSU_GENERATED_HEADERS "${_header}")
 endforeach()
 
-add_executable(kyusu
-    ${KYUSU_SOURCES}
+add_library(kyusu_authoring STATIC
+    ${KYUSU_AUTHORING_SOURCES}
     ${KYUSU_HEADERS}
+)
+
+# PUBLIC: authoring headers include editor_common headers, and the shell and the
+# test targets must compile against the same view of the engine that this
+# library did (editor_common's Vulkan/debug-UI defines change engine layouts).
+target_link_libraries(kyusu_authoring PUBLIC editor_common)
+target_include_directories(kyusu_authoring PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+
+add_executable(kyusu
+    ${KYUSU_SHELL_SOURCES}
     ${KYUSU_GENERATED_HEADERS}
 )
 
-target_link_libraries(kyusu PRIVATE editor_common)
+target_link_libraries(kyusu PRIVATE kyusu_authoring)
 target_include_directories(kyusu PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/src"
     "${CMAKE_CURRENT_BINARY_DIR}/generated"
 )
 

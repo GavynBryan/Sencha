@@ -13,6 +13,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
@@ -110,14 +111,33 @@ public:
     virtual ~IEditorComponentAdapter() = default;
 };
 
+class IComponentSerializer;
+
 class EditorComponentAdapterRegistry
 {
 public:
     bool Register(std::unique_ptr<IEditorComponentAdapter> adapter);
     [[nodiscard]] const IEditorComponentAdapter* Find(ComponentTypeId type) const;
 
+    // Registered adapters paired with the serializer that answers "does this
+    // entity have the component". Iterating these (rather than every registered
+    // component type) keeps affordance work proportional to what actually
+    // authors affordances, which is a handful of types at most.
+    struct Entry
+    {
+        const IEditorComponentAdapter* Adapter;
+        const IComponentSerializer*    Serializer;
+    };
+    [[nodiscard]] std::span<const Entry> Entries() const { ResolveEntries(); return Resolved; }
+
 private:
+    // Rebuilt lazily when the adapter set or the serializer registry changes;
+    // both are bring-up-time facts, so this settles after the first build.
+    void ResolveEntries() const;
+
     std::unordered_map<ComponentTypeId, std::unique_ptr<IEditorComponentAdapter>> Adapters;
+    mutable std::vector<Entry> Resolved;
+    mutable std::size_t ResolvedSerializerCount = 0;
 };
 
 class EditorAffordanceService
@@ -133,8 +153,15 @@ public:
     [[nodiscard]] bool AllowsScaleForSelection() const;
     [[nodiscard]] bool HasEditTargets() const;
 
+    // How many times Build has run. Affordances are rebuilt from several places
+    // per frame (each viewport, the overlay, hit-testing); this exists so a test
+    // can bound that rather than guess at it.
+    [[nodiscard]] std::uint64_t BuildCount() const { return Builds; }
+
 private:
     void AppendZoneBoundsTarget(ViewportAffordanceOutput& output) const;
+
+    mutable std::uint64_t Builds = 0;
 
     WorldDocument& World;
     SelectionService& Selection;

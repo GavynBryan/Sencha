@@ -32,6 +32,17 @@ void Band(ImDrawList* dl, const ImVec2& mn, const ImVec2& mx, const ImVec4& base
 // (advances the cursor; IsItemHovered() after the call works for tooltips).
 bool Button(const char* id, const char* label, const ImVec2& size, bool active);
 
+// Square Button plus its tooltip, the shape every bar-hosted control uses.
+// `id` is a stable ImGui id; `tooltip` may be dynamic and may be null.
+bool ToolButton(const char* id, const char* icon, const char* tooltip, bool active, float size);
+
+// Vertical divider matching the button height, for grouping bar sections.
+void Divider(float height);
+
+// The edge length bar buttons are laid out at, derived from the current font so
+// bars and the controls tools draw into them agree without passing sizes around.
+[[nodiscard]] float BarButtonSize();
+
 // Subtle top-lit gradient + inner top bevel over the current window's content
 // area, giving panels depth. Call once right after a panel's Begin().
 void PanelBackdrop();

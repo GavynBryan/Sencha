@@ -8,9 +8,6 @@
 #include "meshedit/MeshElementKind.h"
 #include "meshedit/MeshElementKindTraits.h"
 #include "meshedit/MeshEditService.h"
-#include "document/BrushCreationSettings.h"
-#include "document/EdgeCutSettings.h"
-#include "document/tools/FaceCarveTool.h"
 #include "tools/ITool.h"
 #include "tools/ToolRegistry.h"
 #include "viewport/GridSettings.h"
@@ -25,42 +22,15 @@
 #include <cstdio>
 #include <string>
 
-namespace
-{
-// A square glossy beveled icon button (EditorUiSkin), accent-lit when active.
-// `id` is a stable ImGui id; `tooltip` may be dynamic. Returns true when clicked.
-bool ToolButton(const char* id, const char* icon, const char* tooltip, bool active, float size)
-{
-    const bool clicked = EditorUiSkin::Button(id, icon, ImVec2(size, size), active);
-    if (tooltip != nullptr && ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", tooltip);
-    return clicked;
-}
-
-// Vertical divider matching the button height, for grouping the toolbar sections.
-void Divider(float height)
-{
-    ImGui::SameLine();
-    const ImVec2 p = ImGui::GetCursorScreenPos();
-    ImGui::GetWindowDrawList()->AddLine(
-        ImVec2(p.x + 3.0f, p.y), ImVec2(p.x + 3.0f, p.y + height),
-        ImGui::GetColorU32(EditorUiSkin::WithAlpha(EditorUi::Border, 0.9f)));
-    ImGui::Dummy(ImVec2(7.0f, height));
-    ImGui::SameLine();
-}
-}
-
 EditorToolbar::EditorToolbar(std::function<ToolRegistry*()> tools,
                              std::function<ManipulatorSession*()> session,
                              MeshEditService& meshEdit, GridSettings& grid,
-                             WorldViewSettings& worldView,
-                             EdgeCutSettings& edgeCut)
+                             WorldViewSettings& worldView)
     : ToolsResolver(std::move(tools))
     , SessionResolver(std::move(session))
     , MeshEdit(meshEdit)
     , Grid(grid)
     , WorldView(worldView)
-    , EdgeCut(edgeCut)
 {
 }
 
@@ -97,9 +67,9 @@ void EditorToolbar::Draw()
         // active tool's contextual controls and the shared editing groups.
         DrawToolContextGroup(buttonSize);
         DrawTransformGroup(buttonSize);
-        Divider(buttonSize);
+        EditorUiSkin::Divider(buttonSize);
         DrawGridGroup(buttonSize);
-        Divider(buttonSize);
+        EditorUiSkin::Divider(buttonSize);
         DrawPlayGroup(buttonSize);
     }
     ImGui::End();
@@ -107,46 +77,18 @@ void EditorToolbar::Draw()
 
 void EditorToolbar::DrawToolContextGroup(float buttonSize)
 {
-    const ITool* activeTool = Tools().GetActiveTool();
+    // Whatever the active tool wants here, it draws itself: a tool with contextual
+    // controls ships them with its own code rather than as a branch in the bar.
+    ToolRegistry& tools = Tools();
+    ITool* active = tools.GetActiveTool();
+    if (active == nullptr)
+        return;
 
-    // Edge-cut mode (Loop ring vs Single edge): drives EdgeCutSettings. Shows
-    // only while the cut tool is active; Tab toggles it too.
-    if (activeTool != nullptr && activeTool->GetId() == "edgecut")
-    {
-        if (ToolButton("cutloop", ICON_FA_ROTATE, "Loop cut (whole ring)  [Tab]",
-                       EdgeCut.LoopCut, buttonSize))
-            EdgeCut.LoopCut = true;
-        ImGui::SameLine();
-        if (ToolButton("cutsingle", ICON_FA_GRIP_LINES, "Single edge cut  [Tab]",
-                       !EdgeCut.LoopCut, buttonSize))
-            EdgeCut.LoopCut = false;
-        Divider(buttonSize);
-    }
-
-    // Face carve: Apply/Cancel for the pending draft. Clicking synthesizes the
-    // exact key path (ToolRegistry routes KeyDownEvent to the active tool), so
-    // there is only ONE commit/cancel code path, and it works when the cursor
-    // is over the toolbar where viewport keys never arrive.
-    if (activeTool != nullptr && activeTool->GetId() == "facecarve")
-    {
-        const auto* carve = static_cast<const FaceCarveTool*>(activeTool);
-        const bool pending = carve->HasPending();
-        const bool canCommit = carve->CanCommit();
-        if (!canCommit)
-            ImGui::BeginDisabled();
-        if (ToolButton("carveapply", ICON_FA_CHECK, "Apply carve  [Enter]", false, buttonSize))
-            Tools().OnInput(InputEvent{ KeyDownEvent{ SDLK_RETURN, {} } });
-        ImGui::SameLine();
-        if (!canCommit)
-            ImGui::EndDisabled();
-        if (!pending)
-            ImGui::BeginDisabled();
-        if (ToolButton("carvecancel", ICON_FA_XMARK, "Cancel carve  [Esc]", false, buttonSize))
-            Tools().OnInput(InputEvent{ KeyDownEvent{ SDLK_ESCAPE, {} } });
-        if (!pending)
-            ImGui::EndDisabled();
-        Divider(buttonSize);
-    }
+    const ImVec2 before = ImGui::GetCursorScreenPos();
+    active->DrawToolbarControls(tools.GetContext());
+    // Only fence off the group when the tool actually drew into it.
+    if (ImGui::GetCursorScreenPos().x != before.x)
+        EditorUiSkin::Divider(buttonSize);
 }
 
 void EditorToolbar::DrawTransformGroup(float buttonSize)
@@ -171,7 +113,7 @@ void EditorToolbar::DrawTransformGroup(float buttonSize)
         if (!first)
             ImGui::SameLine();
         first = false;
-        if (ToolButton(gizmo.Tooltip, gizmo.Icon, gizmo.Tooltip, effective == gizmo.Mode, buttonSize))
+        if (EditorUiSkin::ToolButton(gizmo.Tooltip, gizmo.Icon, gizmo.Tooltip, effective == gizmo.Mode, buttonSize))
             session.SetTransformMode(gizmo.Mode);
     }
 
@@ -197,14 +139,14 @@ void EditorToolbar::DrawTransformGroup(float buttonSize)
     {
         ImGui::SameLine();
         const bool editingPivot = session.IsEditingPivot();
-        if (ToolButton("editpivot", ICON_FA_CROSSHAIRS,
+        if (EditorUiSkin::ToolButton("editpivot", ICON_FA_CROSSHAIRS,
                        editingPivot ? "Pivot: editing (Move gizmo drags it)" : "Edit pivot",
                        editingPivot, buttonSize))
             session.SetEditingPivot(!editingPivot);
 
         ImGui::SameLine();
         const bool hasPivot = session.HasPivotOverride();
-        if (ToolButton("setorigin", ICON_FA_ANCHOR, "Set origin...", false, buttonSize))
+        if (EditorUiSkin::ToolButton("setorigin", ICON_FA_ANCHOR, "Set origin...", false, buttonSize))
             ImGui::OpenPopup("##setorigin_menu");
         if (ImGui::BeginPopup("##setorigin_menu"))
         {
@@ -229,7 +171,7 @@ void EditorToolbar::DrawGridGroup(float buttonSize)
 {
     // Grid snap toggle + target + spacing: drives the shared GridSettings, so
     // picking, manipulators and brush-create all honor it.
-    if (ToolButton("snap", ICON_FA_MAGNET,
+    if (EditorUiSkin::ToolButton("snap", ICON_FA_MAGNET,
                    Grid.SnapEnabled ? "Snap: on" : "Snap: off",
                    Grid.SnapEnabled, buttonSize))
         Grid.SnapEnabled = !Grid.SnapEnabled;
@@ -249,7 +191,7 @@ void EditorToolbar::DrawGridGroup(float buttonSize)
         ImGui::SetTooltip("Snap target: grid lines, or the vertex/edge/face under the cursor");
 
     ImGui::SameLine();
-    if (ToolButton("zonebounds", ICON_FA_VECTOR_SQUARE,
+    if (EditorUiSkin::ToolButton("zonebounds", ICON_FA_VECTOR_SQUARE,
                    WorldView.ShowZoneBounds ? "Zone bounds: on" : "Zone bounds: off",
                    WorldView.ShowZoneBounds, buttonSize))
         WorldView.ShowZoneBounds = !WorldView.ShowZoneBounds;
@@ -339,7 +281,7 @@ void EditorToolbar::DrawPlayGroup(float buttonSize)
             if (!status.empty())
                 tooltip += "\n" + status;
         }
-        if (ToolButton("cook", cooking ? ICON_FA_XMARK : ICON_FA_HAMMER,
+        if (EditorUiSkin::ToolButton("cook", cooking ? ICON_FA_XMARK : ICON_FA_HAMMER,
                        tooltip.c_str(), cooking, buttonSize))
         {
             if (cooking && Play.CancelCook)
@@ -376,13 +318,13 @@ void EditorToolbar::DrawPlayGroup(float buttonSize)
     ImGui::SameLine();
     if (Play.Play)
     {
-        if (ToolButton("play", ICON_FA_PLAY, playing ? "Playing" : "Play (PIE)", playing, buttonSize))
+        if (EditorUiSkin::ToolButton("play", ICON_FA_PLAY, playing ? "Playing" : "Play (PIE)", playing, buttonSize))
             Play.Play();
     }
     ImGui::SameLine();
     if (Play.Stop)
     {
-        if (ToolButton("stop", ICON_FA_STOP, "Stop", false, buttonSize) && playing)
+        if (EditorUiSkin::ToolButton("stop", ICON_FA_STOP, "Stop", false, buttonSize) && playing)
             Play.Stop();
     }
 }

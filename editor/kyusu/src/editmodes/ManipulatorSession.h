@@ -33,6 +33,11 @@ public:
                        GridSettings& grid, PivotState& pivot,
                        EditorAffordanceService& affordances);
 
+    // Rebinds to the sink of the newly edited document. The gizmo mode, space,
+    // and per-context memory are editor-wide preferences, so they survive; only
+    // this one document-bound dependency changes.
+    void SetSink(ManipulationSink& sink) { Sink = &sink; }
+
     InputConsumed OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer);
 
     // Tracks the gizmo part under the cursor from a pointer move in `viewport`
@@ -118,7 +123,10 @@ private:
 
     SelectionService& Selection;
     MeshEditService& Service;
-    ManipulationSink& Sink;
+    // Pointer, not reference: the sink is the one dependency bound to the edited
+    // document, so a document swap rebinds it through SetSink while the session
+    // (and the gizmo mode, space, and memory it holds) stays put.
+    ManipulationSink* Sink;
     GridSettings& Grid;
     PivotState& Pivot;
     EditorAffordanceService& Affordances;

@@ -63,17 +63,29 @@ check "editor_common depends on an application-only subsystem" \
       '#include[[:space:]]*"([^"]*/)?(app|brush|document|editmodes|export|meshedit|overlay|workspace)/' \
       "$COMMON"
 
-# C. Only app/ may include workspace/. Filter on the including FILE's path (not
-# the line text, which contains "workspace/" by construction), so a real
-# violation in content is not masked.
+# C. Only app/ may include workspace/, with one deliberate exception: panels may
+# read the narrow workspace mechanisms they drive (a panel that needs a pending
+# edit should hold that mechanism, not a bag of callbacks assembled for it).
+# EditorWorkspace itself stays off-limits to ui/ -- a panel takes the mechanism,
+# never the aggregator. Filter on the including FILE's path (not the line text,
+# which contains "workspace/" by construction), so a real violation in content
+# is not masked.
+ws_panel_mechanisms='workspace/(PendingBridgeEdit|PendingElementEdit|SelectionActions)\.h'
 ws_includers="$(grep -rlE '#include[[:space:]]*["<]([^">]*/)?workspace/' "$COMMON" "$KYUSU" 2>/dev/null \
                 | grep -vE '^'"$KYUSU"'/(app|workspace)/')"
-if [ -n "$ws_includers" ]; then
+for file in $ws_includers; do
+    # A ui/ file is clean only when EVERY workspace include it has is an allowed
+    # mechanism; one stray aggregator include still fails.
+    if [ "${file#"$KYUSU"/ui/}" != "$file" ] \
+       && ! grep -E '#include[[:space:]]*["<]([^">]*/)?workspace/' "$file" \
+            | grep -qvE "$ws_panel_mechanisms"; then
+        continue
+    fi
     echo "VIOLATION: a subsystem below the aggregator reaches up into workspace/ (compose in app/ instead)"
-    echo "$ws_includers"
+    echo "$file"
     echo
     status=1
-fi
+done
 
 if [ "$status" -eq 0 ]; then
     echo "editor layering directions: OK"

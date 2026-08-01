@@ -136,7 +136,7 @@ TEST_F(WorldDocumentTest, SetFocusLoadsAndFiresObserverOnce)
     const ZoneId second = world.AddZone(world.Manifest().Graphs[0].Id, "Second");
 
     int fired = 0;
-    world.OnFocusChanged = [&fired] { ++fired; };
+    world.OnEditedDocumentChanged = [&fired] { ++fired; };
 
     ASSERT_TRUE(world.SetFocusZone(second));
     EXPECT_EQ(fired, 1);
@@ -416,7 +416,7 @@ TEST_F(WorldDocumentTest, FocusWorldSceneSwitchesFocusDocumentAndFiresOnce)
     const ZoneId zone = world.Manifest().Zones[0].Id;
 
     int fired = 0;
-    world.OnFocusChanged = [&fired] { ++fired; };
+    world.OnEditedDocumentChanged = [&fired] { ++fired; };
 
     ASSERT_TRUE(world.FocusWorldScene());
     EXPECT_EQ(fired, 1);

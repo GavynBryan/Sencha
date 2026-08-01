@@ -28,9 +28,18 @@ public:
 
     // The single transient pending-edit scope: work that lives in the scene but
     // not on the stack yet (an uncommitted brush, a face-carve preview). The
-    // owning tool opens it when that state comes alive, passing the callback
-    // that reverts it, and closes it on its own commit or cancel transition.
-    // At most one is open; opening over an open scope is a tool lifecycle bug.
+    // owning mechanism opens it when that state comes alive, passing the
+    // callback that reverts it, and closes it on its own commit or cancel
+    // transition.
+    //
+    // At most one is open. Several mechanisms can stage previews (the brush and
+    // face-carve tools, the cross-brush bridge, the inset/bevel edit), and any
+    // of them may begin while another is pending, so opening over an open scope
+    // runs the incumbent's cancel first and hands the scope to the new owner.
+    // Cancel callbacks must therefore be idempotent through their owner's own
+    // state, since they can be invoked by Undo, by their owner, or by the next
+    // owner opening.
+    //
     // Close is idempotent and never runs the callback (the owner already
     // committed or reverted through its own transition). Executing commands
     // while a scope is open is allowed and leaves it open; Undo then rolls the

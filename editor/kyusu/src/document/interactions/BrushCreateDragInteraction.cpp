@@ -1,6 +1,6 @@
 #include "BrushCreateDragInteraction.h"
 
-#include "document/BrushCreationSettings.h"
+#include "document/tools/BrushTool.h"
 #include "brush/BrushMesh.h"
 #include "brush/BrushOps.h"
 #include "document/tools/BrushTool.h"
@@ -85,7 +85,7 @@ void BrushCreateDragInteraction::UpdatePreview(ToolContext& ctx, Vec3d snapped)
         // basis (the depth extent is symmetric, so its sign is irrelevant).
         LastRotation = Quatf::FromBasis(u, v.Cross(u), v);
 
-        auto [transform, mesh] = BuildPrimitive(ctx.BrushCreate, /*depthAxis*/ 1, center, halfExtents, LastRotation);
+        auto [transform, mesh] = BuildPrimitive(Tool.Creation, /*depthAxis*/ 1, center, halfExtents, LastRotation);
         ctx.Preview.SetMesh(transform, std::move(mesh));
         return;
     }
@@ -112,7 +112,7 @@ void BrushCreateDragInteraction::UpdatePreview(ToolContext& ctx, Vec3d snapped)
     LastHalfExtents = halfExtents;
     LastRotation = Quatf::Identity();
 
-    auto [transform, mesh] = BuildPrimitive(ctx.BrushCreate, Plane.DepthAxis, center, halfExtents);
+    auto [transform, mesh] = BuildPrimitive(Tool.Creation, Plane.DepthAxis, center, halfExtents);
     ctx.Preview.SetMesh(transform, std::move(mesh));
 }
 

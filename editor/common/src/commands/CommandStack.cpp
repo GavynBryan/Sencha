@@ -1,6 +1,5 @@
 #include "CommandStack.h"
 
-#include <cassert>
 #include <utility>
 
 void CommandStack::Execute(std::unique_ptr<ICommand> command)
@@ -63,7 +62,17 @@ bool CommandStack::CanRedo() const
 
 void CommandStack::OpenPendingEdit(std::function<void()> cancel)
 {
-    assert(!PendingEditCancel && "a pending edit is already open");
+    if (PendingEditCancel)
+    {
+        // A second owner claiming the scope cancels the incumbent: its callback
+        // reverts the state it staged and re-closes the scope on the way out.
+        // Cleared before invoking, as in Undo, so that re-entrant close cannot
+        // reach the callback being installed here.
+        std::function<void()> incumbent = std::move(PendingEditCancel);
+        PendingEditCancel = nullptr;
+        incumbent();
+    }
+
     PendingEditCancel = std::move(cancel);
 }
 

@@ -32,6 +32,7 @@ class SdlWindow;
 class PieDriver;
 class CookSession;
 class CookProfilesPanel;
+class EditorCookRuntime;
 class DocumentFileActions;
 
 //=============================================================================
@@ -106,10 +107,7 @@ private:
 
     // Bake-to-static-mesh actions behind the ToolPropertiesPanel buttons. All need a
     // mounted project (the .smesh is written under its first content root).
-    void BakeSelectedBrushes();
-    void RevertSelectedBakedBrushes();
     void ExportSelectionGlb();
-    [[nodiscard]] bool SelectionHasBakedBrush() const;
 
     ViewportPanel* PerspectivePanel = nullptr;
     ViewportPanel* OrthoPanel = nullptr;
@@ -160,13 +158,7 @@ private:
     std::optional<ProjectDescriptor> Project;
 
     // Declared last so they are torn down before the state they reference.
-    std::unique_ptr<CookSession>        Cook;
-    std::unique_ptr<PieDriver>          Pie;
-    CookProfilesPanel*                  CookProfiles = nullptr;
-    std::string                         SelectedCookProfileId = "full";
-    std::uint64_t                       AppliedCookSerial = 0;
-    // Serial of the cook the baked-lighting preview last loaded; a newer cook
-    // refreshes an enabled preview in ProcessFrame.
-    std::uint64_t                       PreviewCookSerial = 0;
+    // Cooking, the player it feeds, and the serials that hand one to the other.
+    std::unique_ptr<EditorCookRuntime>  CookRuntime;
     std::unique_ptr<DocumentFileActions> Files;
 };
