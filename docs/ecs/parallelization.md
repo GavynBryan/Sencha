@@ -6,7 +6,7 @@ to execute top-to-bottom.
 
 If you are wiring gameplay or engine systems, the current surfaces are:
 
-- `JobSystem` / `ThreadPoolJobSystem`: frame-lane fork/join work. The engine owns
+- `JobSystem`: frame-lane fork/join work. The engine owns
   one pool and exposes it as `Engine::Jobs()`. Its consumers today are editor and
   asset-side: source watching, project content mount, texture recook. The runtime
   frame has no intra-frame ECS parallelism, which is a measurement, not an
@@ -177,7 +177,7 @@ public:
 Contract (the draft left all of these unspecified; each is a real bug when omitted):
 
 - **Caller participates.** The forking thread executes jobs from the same atomic
-  counter alongside the workers. This means `ThreadPoolJobSystem(0)` — a pool with
+  counter alongside the workers. This means `JobSystem(0)` — a pool with
   zero workers — *is* the deterministic single-threaded implementation for tests; no
   separate class needed, and behavior degrades gracefully rather than deadlocking.
 - **No nesting.** Calling `ParallelFor` from inside a job asserts in debug builds
@@ -209,7 +209,7 @@ Unchanged from the draft, with placement made concrete:
   service surface as other engine-owned singletons.
 - `EngineSchedule` and systems receive `JobSystem&`; queries receive it per call
   (Decision 4). `World`, `Registry`, and `ZoneRuntime` never see it.
-- Tests construct `ThreadPoolJobSystem(0)` for determinism.
+- Tests construct `JobSystem(0)` for determinism.
 
 ## Decision 3: the async lane — `AsyncTaskQueue`
 
@@ -239,7 +239,7 @@ public:
     // already forbids mid-frame.
     void DrainCompletions(const AsyncDrainBudget& budget = {});
 
-    // Zero-thread test mode (mirrors ThreadPoolJobSystem(0)): constructed with
+    // Zero-thread test mode (mirrors JobSystem(0)): constructed with
     // no task threads, Submit only enqueues; PumpWork runs pending work inline
     // on the calling thread. Submit → PumpWork → DrainCompletions is then fully
     // deterministic, with no sleeps or polling in tests.
@@ -385,7 +385,7 @@ real customer) that is chunk-pure and embarrassingly parallel.
 The design splits cleanly into deterministic logic and a small concurrent core, and
 the test plan follows that split (harness: the existing GoogleTest suites):
 
-- **Logic, deterministically.** `ThreadPoolJobSystem(0)` and zero-thread
+- **Logic, deterministically.** `JobSystem(0)` and zero-thread
   `AsyncTaskQueue` + `PumpWork` make every consumer — parallel queries, output
   collection, zone-parallel loops, drain budgeting, cancellation — single-threaded
   gtest cases. The Stage C/D "identical results" criteria are direct comparisons
@@ -403,7 +403,7 @@ the test plan follows that split (harness: the existing GoogleTest suites):
 
 ## Rollout
 
-- **Stage A — substrate.** `JobSystem` + `ThreadPoolJobSystem` per Decision 1;
+- **Stage A — substrate.** `JobSystem` per Decision 1;
   thread-safe logging provider; contract asserts (nesting, single-active, in-job
   structural-version checks ride in Stage D). Benchmark: `ParallelFor` overhead
   curve (jobCount × job-size grid) so later gates have a measured floor.
@@ -412,7 +412,7 @@ the test plan follows that split (harness: the existing GoogleTest suites):
   zone produces zero missed fixed ticks on the main thread.
 - **Stage C — zone-parallel system execution.** Convert registry-span loops in
   systems that qualify under Decision 4's rules. Gated on a multi-zone workload
-  existing. Success: identical simulation results vs. `ThreadPoolJobSystem(0)`.
+  existing. Success: identical simulation results vs. `JobSystem(0)`.
 - **Stage D — chunk-parallel queries.** `ForEachChunkParallel` + both output
   patterns + fork/join structural asserts. Gated on the ~1 ms profile trigger.
   Success: identical results vs. serial for a per-entity system and (post-sort) for
@@ -430,7 +430,7 @@ propagation over live Worlds):
   place the Decision 4 rules live. Spans of zero or one registries run inline
   on the caller (the dispatch floor is never paid for an unparallelizable
   span); larger spans fork one job per registry. Entries must be distinct.
-- `Engine` now owns the frame pool (`ThreadPoolJobSystem`), sized by
+- `Engine` now owns the frame pool (`JobSystem`), sized by
   `EngineRuntimeConfig::JobWorkerCount` (-1 = auto `hardware_concurrency - 2`,
   0 = the engine-wide single-threaded bisect/determinism switch the rollout
   required, positive = pinned), exposed as `Engine::Jobs()`. A game system
@@ -512,11 +512,11 @@ the budget can meter them.
 
 ### Stage A measured results (2026-06-11, WSL2, g++-14 -O3, 14 HW threads)
 
-Substrate landed: `jobs/JobSystem.h`, `jobs/ThreadPoolJobSystem.{h,cpp}`,
+Substrate landed: `jobs/JobSystem.{h,cpp}`,
 thread-safe log sinks, 16 tests in `test/jobs/JobSystemTests.cpp` (clean under
 `SENCHA_ENABLE_TSAN=ON`), overhead benchmark in `example/JobSystemBenchmark`.
 
-From the benchmark (12 workers vs. `ThreadPoolJobSystem(0)`, medians of 51 runs):
+From the benchmark (12 workers vs. `JobSystem(0)`, medians of 51 runs):
 
 - **Dispatch floor: ~300 µs** per `ParallelFor` — condvar wake of parked workers
   under the WSL2 scheduler dominates everything else. Two orders of magnitude
@@ -539,7 +539,7 @@ From the benchmark (12 workers vs. `ThreadPoolJobSystem(0)`, medians of 51 runs)
   design does not pretend to. What release builds structurally prevent is exactly
   what the data model prevents: jobs own disjoint chunks (Stage D) or disjoint
   registries (Stage C).
-- `ThreadPoolJobSystem(0)` is bit-identical to pre-jobs behavior everywhere.
+- `JobSystem(0)` is bit-identical to pre-jobs behavior everywhere.
 - No stage ships without its gate met and its benchmark recorded next to the
   Phase 4 numbers.
 

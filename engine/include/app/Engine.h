@@ -36,7 +36,6 @@ class ImGuiDebugOverlay;
 class JobSystem;
 struct PlatformServices;
 class RuntimeWorld;
-class ThreadPoolJobSystem;
 
 // Owns the runtime services, frame loop, unified entity world, schedule, and
 // timing state. There is exactly one runtime entity universe per Engine run.
@@ -122,15 +121,6 @@ public:
         return RuntimeLoop;
     }
 
-    [[nodiscard]] FrameDriver* Driver()
-    {
-        return FrameDriverInstance.get();
-    }
-    [[nodiscard]] const FrameDriver* Driver() const
-    {
-        return FrameDriverInstance.get();
-    }
-
     [[nodiscard]] AsyncTaskQueue& Tasks();
     [[nodiscard]] const AsyncTaskQueue& Tasks() const;
 
@@ -142,34 +132,6 @@ public:
     // dispatch floor. See docs/ecs/parallelization.md.
     [[nodiscard]] JobSystem& Jobs();
     [[nodiscard]] const JobSystem& Jobs() const;
-
-    [[nodiscard]] TimingHistory& Timing() { return TimingData; }
-    [[nodiscard]] const TimingHistory& Timing() const
-    {
-        return TimingData;
-    }
-
-    // The renderer instrumentation bundle. Always present; its members are
-    // non-null exactly while their render.profile.mode tier is active (all
-    // null when profiling is compiled out).
-    [[nodiscard]] const RenderInstrumentation& Instrumentation() const
-    {
-        return InstrumentationBundle;
-    }
-    [[nodiscard]] RenderProfileMode ActiveRenderProfileMode() const
-    {
-        return ActiveProfileMode;
-    }
-    // Applies the pending render.profile.mode once, at the top of the
-    // extract phase, so one frame never sees two modes; resets the frame's
-    // stats while counters are active.
-    void ApplyPendingRenderProfileMode();
-    // Pushes the finished frame's stats into the history ring; called after
-    // the render phase so pass publishes are included. No-op below Counters.
-    void PushRenderStatsFrame();
-    // Stamps the capture envelope with the device, driver, and build a run
-    // was recorded on. Called once graphics exist, before any frame runs.
-    void PublishCaptureEnvironment();
 
     [[nodiscard]] DefaultRenderPipeline* GetRenderPipeline();
     [[nodiscard]] const DefaultRenderPipeline* GetRenderPipeline() const;
@@ -188,7 +150,28 @@ public:
 #endif
 
 private:
+    // Frame-phase bodies and the state they sample. Registered once, from
+    // EngineFramePhases.cpp; nothing outside the frame pipeline reads these.
     void RegisterFramePhases(Game& game);
+    [[nodiscard]] TimingHistory& Timing() { return TimingData; }
+    // The renderer instrumentation bundle. Always present; its members are
+    // non-null exactly while their render.profile.mode tier is active (all
+    // null when profiling is compiled out).
+    [[nodiscard]] const RenderInstrumentation& Instrumentation() const
+    {
+        return InstrumentationBundle;
+    }
+    // Applies the pending render.profile.mode once, at the top of the
+    // extract phase, so one frame never sees two modes; resets the frame's
+    // stats while counters are active.
+    void ApplyPendingRenderProfileMode();
+    // Pushes the finished frame's stats into the history ring; called after
+    // the render phase so pass publishes are included. No-op below Counters.
+    void PushRenderStatsFrame();
+    // Stamps the capture envelope with the device, driver, and build a run
+    // was recorded on. Called once graphics exist, before any frame runs.
+    void PublishCaptureEnvironment();
+
     void RegisterEngineConsoleBuiltins(ConsoleService& console, DebugService& debug);
     // Adds the default debug overlay to the main renderer. Called by Run after
     // the game's startup hooks so the overlay's MainColor draw follows every
@@ -251,7 +234,7 @@ private:
     // Declared last: destroyed first, so task/worker threads are joined (and
     // pending commits dropped) before the worlds and services they reference.
     std::unique_ptr<AsyncTaskQueue> TaskQueueInstance;
-    std::unique_ptr<ThreadPoolJobSystem> FramePoolInstance;
+    std::unique_ptr<JobSystem> FramePoolInstance;
     bool Initialized = false;
     bool Running = false;
     bool FramePhasesRegistered = false;

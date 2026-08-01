@@ -30,11 +30,6 @@ void ChromeJsonFrameTrace::EndPhase(const char* name)
     Events.push_back(Event{ name, 'E', NowMicros() });
 }
 
-void ChromeJsonFrameTrace::Mark(const char* name)
-{
-    Events.push_back(Event{ name, 'i', NowMicros() });
-}
-
 bool ChromeJsonFrameTrace::WriteTo(const std::string& path) const
 {
     std::ofstream out(path);

@@ -18,7 +18,7 @@ struct EngineRuntimeConfig
     double AsyncCommitBudgetMs = 2.0;
 
     // Frame-lane job pool size. -1 = auto (hardware_concurrency - 2, the
-    // ThreadPoolJobSystem default). 0 = single-threaded: every job runs on
+    // JobSystem default). 0 = single-threaded: every job runs on
     // the calling thread in index order — the engine-wide switch for
     // bisecting threading bugs and for deterministic runs. Positive values
     // pin an explicit worker count.

@@ -10,7 +10,6 @@ class IRenderFeature
 {
 public:
     virtual RenderPhase GetPhase() const = 0;
-    virtual void Contribute(VulkanBootstrapPolicy&) {}
     virtual bool Setup(const RendererServices& services) = 0;
     virtual void OnDraw(const FrameContext& frame) = 0;
     virtual void Teardown() {}
@@ -20,7 +19,6 @@ public:
 | Hook | When | Contract |
 |---|---|---|
 | `GetPhase` | any time | one feature, one phase, constant for its lifetime |
-| `Contribute` | before device creation, by the game | fold extensions and feature bits into the bootstrap policy. The `Renderer` never calls this: by the time it exists the device does |
 | `Setup` | inside `Renderer::AddFeature` | cache service pointers, create up-front GPU resources. Returning `false` means the feature is unusable: `AddFeature` tears it down and refuses to register it, rather than leaving an inert feature in a phase bucket |
 | `OnDraw` | once per frame, in phase order, in registration order within a phase | record commands. For `MainColor` the command buffer is already inside `vkCmdBeginRendering` on the swapchain image. Other phases open their own scopes |
 | `Teardown` | in `~Renderer`, after `vkDeviceWaitIdle`, before any Vulkan service unwinds | release everything the feature still holds |

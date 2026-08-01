@@ -74,7 +74,7 @@ Application
     RuntimeFrameLoop
     FrameDriver
     AsyncTaskQueue
-    ThreadPoolJobSystem
+    JobSystem
     TimingHistory
 
 Game-owned in CubeDemo
@@ -110,7 +110,7 @@ compile time, not by runtime type lookup.
 ## Frame Contract
 
 `FrameDriver` owns the outer loop. The default engine phases are registered by
-`RegisterDefaultEngineFramePhases`.
+`Engine::RegisterFramePhases` (defined in `EngineFramePhases.cpp`).
 
 | Phase | What happens |
 | ----- | ------------ |
@@ -462,7 +462,7 @@ event pump.
 
 There are two worker lanes. Do not mix their contracts.
 
-`JobSystem` / `ThreadPoolJobSystem` is the frame lane:
+`JobSystem` is the frame lane:
 
 - fork/join inside the current phase
 - caller participates

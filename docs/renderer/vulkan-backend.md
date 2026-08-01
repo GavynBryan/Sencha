@@ -29,10 +29,13 @@ window service:
 | `DeviceFeatures.textureCompressionBC` | constructor | `VK_TRUE` |
 | `DeviceFeatures.imageCubeArray` | constructor | `VK_TRUE` |
 
-`IRenderFeature::Contribute(VulkanBootstrapPolicy&)` exists so a game can fold
-extra extensions or feature bits in before the device is created. The `Renderer`
-never calls it: by the time a `Renderer` exists the device already does. Nothing
-in the tree calls it today; it is a declared game-bootstrap seam, not dead code.
+The policy is built inside `GraphicsServices`, which brings the Vulkan stack up
+during `Engine::Initialize`. That runs before any game hook that could construct
+a render feature, so a feature cannot influence device creation: it is handed to
+the `Renderer` afterwards and acquires its GPU resources in `Setup`. A game that
+needs an extra extension or feature bit would need a hook at engine
+configuration time, before the device is built. There is no such hook today, and
+`IRenderFeature` no longer advertises one.
 
 ## Instance and validation
 

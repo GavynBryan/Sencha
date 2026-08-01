@@ -66,7 +66,7 @@ Done and load-bearing:
 - ECS: archetype SoA storage in 16KB chunks, `CommandBuffer` structural changes,
   `Changed<T>` chunk-conservative change detection, cached queries, `ComponentTraits`
   lifecycle hooks, generational entity ids, roughly 852 green tests.
-- Concurrency: `JobSystem`/`ThreadPoolJobSystem` fork-join plus `AsyncTaskQueue`,
+- Concurrency: `JobSystem` fork-join plus `AsyncTaskQueue`,
   with `worker_count == 0` as the deterministic reference path.
 - Frame hosting: `FrameDriver` with the fixed ten-phase frame, `EngineSchedule`
   topologically ordered systems, fixed-tick simulation with presentation-only wall time.

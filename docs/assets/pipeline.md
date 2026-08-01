@@ -205,7 +205,7 @@ Notes that are contractual, not stylistic:
 - **The synchronous path is `LoadStaged` + `Commit` called back-to-back on the
   owner thread.** `AssetSystem::LoadStaticMesh` becomes exactly that
   composition. One code path, two schedulings — the same trick as
-  `ThreadPoolJobSystem(0)` and `PumpWork`, and it makes every loader testable
+  `JobSystem(0)` and `PumpWork`, and it makes every loader testable
   deterministically with zero threads.
 - **Chunking is the loader's duty.** A texture atlas or fat mesh that would
   blow the 2 ms drain budget must be submitted as multiple tasks whose commits

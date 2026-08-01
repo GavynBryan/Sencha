@@ -26,5 +26,10 @@
 // IComponentSerializer. v4: the module factory returns a Game (retiring the
 // IGameModule/GameModuleContext side-contract); serializer registration is the
 // Game::OnRegisterComponents hook. (09-module-abi-hardening.md.) v5: added the
-// IsRemovable hint on IComponentSerializer (a new trailing vtable slot).
-#define SENCHA_GAME_ABI_VERSION 5u
+// IsRemovable hint on IComponentSerializer (a new trailing vtable slot). v6:
+// removed Engine::Driver, Engine::ActiveRenderProfileMode, and the
+// EngineFramePhases.h registration free function, and made the frame-phase
+// accessors (Timing, Instrumentation, the profiling latch/publish pair)
+// private; IRenderFeature lost the unreachable Contribute slot; JobSystem
+// became the concrete pool and IWindow was removed.
+#define SENCHA_GAME_ABI_VERSION 6u

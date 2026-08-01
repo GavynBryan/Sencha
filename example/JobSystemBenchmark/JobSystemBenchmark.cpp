@@ -2,7 +2,7 @@
 // Run with an optimized build; debug numbers mostly measure assertions.
 
 #include <ecs/WorldComponentSchema.h>
-#include <jobs/ThreadPoolJobSystem.h>
+#include <jobs/JobSystem.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <world/RuntimeWorld.h>
 #include <world/transform/TransformComponents.h>
@@ -34,7 +34,7 @@ uint64_t SpinWork(uint64_t seed, uint32_t iterations)
 volatile uint64_t g_sink = 0;
 
 double MedianRunUs(
-    ThreadPoolJobSystem& jobs,
+    JobSystem& jobs,
     uint32_t jobCount,
     uint32_t workIterations,
     int repetitions)
@@ -212,8 +212,8 @@ int main()
     const uint32_t jobCounts[] = { 1, 8, 64, 512, 4096 };
     const uint32_t workIterations[] = { 0, 100, 1000, 10000 };
 
-    ThreadPoolJobSystem serial(0);
-    ThreadPoolJobSystem pool(pooledWorkers);
+    JobSystem serial(0);
+    JobSystem pool(pooledWorkers);
 
     std::printf(
         "%10s %12s | %12s %12s %10s\n",

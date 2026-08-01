@@ -1,4 +1,4 @@
-#include <jobs/ThreadPoolJobSystem.h>
+#include <jobs/JobSystem.h>
 
 #include <cassert>
 #include <cstdio>
@@ -15,22 +15,22 @@ namespace
     thread_local bool TlsInJob = false;
 }
 
-uint32_t ThreadPoolJobSystem::DefaultWorkerCount()
+uint32_t JobSystem::DefaultWorkerCount()
 {
     const uint32_t hw = std::thread::hardware_concurrency();
     return hw > 2 ? hw - 2 : 0;
 }
 
-ThreadPoolJobSystem::ThreadPoolJobSystem(uint32_t workerCount)
+JobSystem::JobSystem(uint32_t workerCount)
 {
     Workers.reserve(workerCount);
     for (uint32_t i = 0; i < workerCount; ++i)
     {
-        Workers.emplace_back(&ThreadPoolJobSystem::WorkerMain, this, i + 1);
+        Workers.emplace_back(&JobSystem::WorkerMain, this, i + 1);
     }
 }
 
-ThreadPoolJobSystem::~ThreadPoolJobSystem()
+JobSystem::~JobSystem()
 {
     {
         std::lock_guard<std::mutex> lock(Mutex);
@@ -43,13 +43,13 @@ ThreadPoolJobSystem::~ThreadPoolJobSystem()
     }
 }
 
-uint32_t ThreadPoolJobSystem::CurrentWorkerIndex() const
+uint32_t JobSystem::CurrentWorkerIndex() const
 {
     assert(TlsInJob && "CurrentWorkerIndex is only valid inside a job callback");
     return TlsWorkerIndex;
 }
 
-void ThreadPoolJobSystem::ParallelFor(uint32_t jobCount,
+void JobSystem::ParallelFor(uint32_t jobCount,
                                       const std::function<void(uint32_t)>& fn)
 {
     assert(!TlsInJob && "ParallelFor must not be called from inside a job (no nesting)");
@@ -90,7 +90,7 @@ void ThreadPoolJobSystem::ParallelFor(uint32_t jobCount,
 #endif
 }
 
-void ThreadPoolJobSystem::WorkerMain(uint32_t workerIndex)
+void JobSystem::WorkerMain(uint32_t workerIndex)
 {
     TlsWorkerIndex = workerIndex;
 
@@ -114,7 +114,7 @@ void ThreadPoolJobSystem::WorkerMain(uint32_t workerIndex)
     }
 }
 
-void ThreadPoolJobSystem::ExecuteBatch(Batch& batch)
+void JobSystem::ExecuteBatch(Batch& batch)
 {
     for (;;)
     {
@@ -132,7 +132,7 @@ void ThreadPoolJobSystem::ExecuteBatch(Batch& batch)
         }
         catch (...)
         {
-            std::fprintf(stderr, "ThreadPoolJobSystem: job %u threw; job callbacks must not throw\n", index);
+            std::fprintf(stderr, "JobSystem: job %u threw; job callbacks must not throw\n", index);
             std::abort();
         }
 #else

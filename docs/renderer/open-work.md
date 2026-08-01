@@ -75,9 +75,11 @@ device-lost fault injection are owed in the same bucket.
 
 ## Smaller items
 
-- **`IRenderFeature::Contribute` has no caller.** It is a declared
-  game-bootstrap seam (fold device extensions and feature bits into the policy
-  before device creation). Neither the template nor the examples use it yet.
+- **No pre-device hook for render features.** `Contribute` was removed: it
+  could never fire, because `GraphicsServices` creates the device during
+  `Engine::Initialize`, before any hook that could build a feature. A game that
+  needs a device extension or feature bit needs a hook at engine configuration
+  time, where `EngineConfig` is still mutable and the policy has not been built.
 - **Headless testability.** `VulkanFrameScratch`, `ShadowDepthPass`,
   `Renderer::AddFeature`, and `StaticMeshCache` all need a live device to
   construct, so their contracts cannot be tested headlessly. One case was fixed

@@ -1,5 +1,3 @@
-#include <app/EngineFramePhases.h>
-
 #include <app/Engine.h>
 #include <app/Game.h>
 #include <input/SdlInputCapture.h>
@@ -24,9 +22,18 @@
 #include <platform/SdlWindowService.h>
 #endif
 
-void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& driver)
+// Defined here rather than in Engine.cpp so the phase bodies -- which reach
+// deep into graphics, platform, and schedule state -- stay in one translation
+// unit, and so the accessors they need can stay private to Engine.
+void Engine::RegisterFramePhases(Game& game)
 {
+    if (FramePhasesRegistered || FrameDriverInstance == nullptr)
+        return;
+
 #ifdef SENCHA_ENABLE_VULKAN
+    Engine& engine = *this;
+    FrameDriver& driver = *FrameDriverInstance;
+
     auto& config = engine.Config();
     auto& windows = engine.Platform().Windows;
     auto& swapchain = engine.Graphics().Swapchain;
@@ -145,7 +152,7 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
 
     driver.Register(FramePhase::Simulate, [&engine, &config](PhaseContext& ctx) {
         const FrameZoneView& zones = *ctx.Zones;
-        World& entities = *zones.Entities;
+        ::World& entities = *zones.Entities;
 
         FixedLogicContext logic{
             .Config = config,
@@ -187,7 +194,7 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
     driver.Register(FramePhase::Update, [&engine, &config](PhaseContext& ctx) {
         const RuntimeFrameSnapshot& rf = ctx.Runtime->GetCurrentFrame();
         const FrameZoneView& zones = *ctx.Zones;
-        World& entities = *zones.Entities;
+        ::World& entities = *zones.Entities;
 
         FrameUpdateContext update{
             .Config = config,
@@ -217,7 +224,7 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
         engine.ApplyPendingRenderProfileMode();
 
         const FrameZoneView& zones = *ctx.Zones;
-        World& entities = *zones.Entities;
+        ::World& entities = *zones.Entities;
 
         PropagateTransforms(
             entities,
@@ -298,8 +305,8 @@ void RegisterDefaultEngineFramePhases(Engine& engine, Game& game, FrameDriver& d
             swapchain.GetRecreateCount());
     });
 #else
-    (void)engine;
     (void)game;
-    (void)driver;
 #endif
+
+    FramePhasesRegistered = true;
 }
