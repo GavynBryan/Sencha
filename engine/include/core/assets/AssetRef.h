@@ -8,7 +8,10 @@
 // AssetType
 //
 // Stable tag identifying what kind of asset an AssetRef points at.
-// Serialized as a string ("Mesh", "Material", ...) in text formats.
+// Serialized as a string ("StaticMesh", "Material", ...) in text formats:
+// scene fields, the cooked cache index, and document cook receipts. Every
+// value needs a name in both directions below, or artifacts carrying it
+// cannot be read back.
 //=============================================================================
 enum class AssetType : uint16_t
 {
@@ -46,6 +49,10 @@ enum class AssetArity : uint16_t
     List,
 };
 
+// Listed exhaustively rather than with a default arm: a new AssetType that
+// nobody names here would otherwise serialize as "Unknown" and be rejected on
+// read, which fails the whole cooked index or receipt containing it. -Wswitch
+// turns that into a compile-time warning instead.
 inline std::string_view AssetTypeToString(AssetType type)
 {
     switch (type)
@@ -61,8 +68,10 @@ inline std::string_view AssetTypeToString(AssetType type)
     case AssetType::AnimationClip: return "AnimationClip";
     case AssetType::SkinnedMesh: return "SkinnedMesh";
     case AssetType::Collision: return "Collision";
-    default:                  return "Unknown";
+    case AssetType::ProbeVolume: return "ProbeVolume";
+    case AssetType::Unknown:  break;
     }
+    return "Unknown";
 }
 
 inline bool AssetTypeFromString(std::string_view name, AssetType& out)
@@ -78,6 +87,7 @@ inline bool AssetTypeFromString(std::string_view name, AssetType& out)
     if (name == "AnimationClip") { out = AssetType::AnimationClip; return true; }
     if (name == "SkinnedMesh") { out = AssetType::SkinnedMesh; return true; }
     if (name == "Collision") { out = AssetType::Collision; return true; }
+    if (name == "ProbeVolume") { out = AssetType::ProbeVolume; return true; }
     return false;
 }
 

@@ -52,3 +52,33 @@ TEST(CookReceiptTest, PutReplacesOnlyMatchingStep)
     EXPECT_EQ(FindCookStepReceipt(receipt, "b")->Version, 1u);
 }
 
+// A probe bake records its artifact in the receipt; if the type has no name
+// the receipt stops parsing entirely, so the next cook sees no prior steps
+// and reuse is unreachable for every step, not just the probe one.
+TEST(CookReceiptTest, ProbeVolumeArtifactRoundTrips)
+{
+    DocumentCookReceipt source;
+    source.Target = "levels/test.json";
+    source.PublishedProfileId = "full";
+    source.PublishedFingerprint = 0x0f0f0f0f0f0f0f0fULL;
+    source.Steps.push_back(CookStepReceipt{
+        .StepId = "irradiance_probes",
+        .Version = 1,
+        .InputFingerprint = 0x1111222233334444ULL,
+        .Artifacts = {
+            CookedArtifact{ "asset://levels/test/probes.sprobe",
+                            ".cooked/levels/test/probes.sprobe",
+                            AssetType::ProbeVolume, 512 },
+        },
+    });
+
+    DocumentCookReceipt parsed;
+    std::string error;
+    ASSERT_TRUE(ReadDocumentCookReceipt(WriteDocumentCookReceipt(source), parsed, &error))
+        << error;
+    ASSERT_EQ(parsed.Steps.size(), 1u);
+    ASSERT_EQ(parsed.Steps.front().Artifacts.size(), 1u);
+    EXPECT_EQ(parsed.Steps.front().Artifacts.front().Type, AssetType::ProbeVolume);
+    EXPECT_EQ(parsed.Steps.front().Artifacts.front().ContentHash, 512u);
+}
+
