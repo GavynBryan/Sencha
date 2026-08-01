@@ -25,10 +25,10 @@
 #include <render/ZoneLightmapComponent.h>
 #include <render/static_mesh/StaticMeshCache.h>
 #include <world/registry/Registry.h>
+#include <world/registry/SceneRegistryInitialization.h>
 #include <world/serialization/SceneSerializationContext.h>
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
-#include <zone/DefaultZoneBuilder.h>
 
 #include <algorithm>
 #include <cmath>
@@ -316,8 +316,8 @@ void SceneRenderQueueBuilder::SetLightmapPreview(const LightmapPreviewSource& so
     }
 
     auto registry = std::make_unique<Registry>();
-    InitializeDefault3DRegistry(*registry, &Meshes, &MaterialSets,
-                                nullptr, nullptr, nullptr, Textures);
+    InitializeSceneRegistry(*registry, &Meshes, &MaterialSets,
+                            nullptr, nullptr, nullptr, Textures);
     SceneSerializationContext context(Logging, &Assets);
     SceneLoadError loadError;
     if (!LoadSceneJson(*json, *registry, context, &loadError))

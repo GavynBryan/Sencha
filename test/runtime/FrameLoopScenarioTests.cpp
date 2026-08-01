@@ -255,24 +255,34 @@ TEST(RuntimeFrameLoopScenario, TimescaleRealtimeProducesTicks)
 }
 
 // ---------------------------------------------------------------------------
-// Scenario: PresentationHistoryResetPending and bus both fire together
+// Scenario: a discontinuity publishes once and is visible in the snapshot
 // ---------------------------------------------------------------------------
 
-TEST(RuntimeFrameLoopScenario, DiscontinuityFiresBusAndLegacyFlagOnce)
+TEST(RuntimeFrameLoopScenario, DiscontinuityPublishesOnceAndFlagsTheFrame)
 {
     RuntimeFrameLoop runtime;
     int busCalls = 0;
+    TemporalDiscontinuityReason busReason = TemporalDiscontinuityReason::None;
     runtime.GetDiscontinuityBus().Subscribe(
-        [&](const FrameDiscontinuityEvent&) { ++busCalls; });
+        [&](const FrameDiscontinuityEvent& event)
+        {
+            ++busCalls;
+            busReason = event.Reason;
+        });
 
     runtime.BeginFrame();
     runtime.MarkTemporalDiscontinuity(TemporalDiscontinuityReason::Teleport);
     runtime.ScheduleFixedTicks();
 
     EXPECT_EQ(busCalls, 1);
-    EXPECT_TRUE(runtime.ConsumePresentationHistoryReset());
-    // Second consume is false — flag was cleared.
-    EXPECT_FALSE(runtime.ConsumePresentationHistoryReset());
+    EXPECT_EQ(busReason, TemporalDiscontinuityReason::Teleport);
+    EXPECT_TRUE(HasRuntimeFrameEvent(runtime.GetCurrentFrame().Events,
+                                     RuntimeFrameEventFlags::TemporalDiscontinuity));
+
+    // Applying is idempotent within the frame: the pending mark is cleared, so
+    // a second schedule does not republish.
+    runtime.ScheduleFixedTicks();
+    EXPECT_EQ(busCalls, 1);
 }
 
 // ---------------------------------------------------------------------------

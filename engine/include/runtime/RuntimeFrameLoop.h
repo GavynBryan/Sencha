@@ -111,11 +111,6 @@ public:
     [[nodiscard]] FrameDiscontinuityBus& GetDiscontinuityBus() { return DiscontinuityBus; }
     [[nodiscard]] const FrameDiscontinuityBus& GetDiscontinuityBus() const { return DiscontinuityBus; }
 
-    // Deprecated — use GetDiscontinuityBus().Subscribe() instead. This single-
-    // consumer flag still exists for code paths that need a cheap synchronous
-    // query in the same frame the discontinuity was applied.
-    [[nodiscard]] bool ConsumePresentationHistoryReset();
-
     // 0.0 pauses simulation tick emission; positive values emit the configured
     // locked tick budget. FixedSimTime::DeltaSeconds never changes.
     void SetSimulationTimescale(float scale) { SimulationTimescale = scale < 0.0f ? 0.0f : scale; }
@@ -157,6 +152,5 @@ private:
     bool SwapchainDirty = false;
     bool Minimized = false;
     bool DiscontinuityPending = false;
-    bool PresentationHistoryResetPending = false;
     TemporalDiscontinuityReason PendingDiscontinuityReason = TemporalDiscontinuityReason::None;
 };

@@ -497,7 +497,7 @@ conversion drove one API addition — `BeginLoad` takes an optional main-thread
 discontinuity) because scene deserialization acquires from the asset caches
 and therefore cannot run in the work stage. The split is the template for
 future consumers: work = file IO + JSON parse + registry skeleton
-(`InitializeDefault3DRegistry`, extracted from `CreateDefault3DZone`);
+(`InitializeSceneRegistry`);
 finalize = `LoadSceneJson` + camera/game-state wiring. The demo's systems and
 debug panel null-check the registry pointer every tick and idle until the
 commit flips it — the game runs normally while the zone loads.

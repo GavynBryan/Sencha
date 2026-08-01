@@ -5,15 +5,12 @@
 #include <runtime/FrameTrace.h>
 #include <runtime/RenderPacket.h>
 #include <runtime/RuntimeFrameLoop.h>
-#include <time/TimingHistory.h>
 #include <world/RuntimeWorld.h>
 
 #include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
-
-class FrameDriver;
 
 //=============================================================================
 // FramePhase
@@ -38,7 +35,6 @@ enum class FramePhase : int
 
 struct PhaseContext
 {
-    FrameDriver* Driver = nullptr;
     RuntimeFrameLoop* Runtime = nullptr;
     InputFrame* Input = nullptr;
     RenderPacket* PacketWrite = nullptr;
@@ -49,7 +45,6 @@ struct PhaseContext
     // EndFrame. Phase contexts below receive the appropriate domain set from it.
     const FrameZoneView* Zones = nullptr;
 
-    FrameTrace* Trace = nullptr;
     bool IsFixedTick = false;
 };
 
@@ -66,27 +61,25 @@ public:
     void SetTargetFps(double fps);
     [[nodiscard]] double GetTargetFps() const { return Pacer.GetTargetFps(); }
 
-    void SetTimingHistory(TimingHistory* history) { History = history; }
     void SetTrace(FrameTrace* trace) { Trace = trace; }
 
     void Run();
     void StepOnce();
 
-    [[nodiscard]] RuntimeFrameLoop& GetRuntime() { return Runtime; }
     [[nodiscard]] const InputFrame& GetInputFrame() const { return Input; }
     [[nodiscard]] InputFrame& GetInputFrame() { return Input; }
-    [[nodiscard]] RenderPacketDoubleBuffer& GetPacketBuffer() { return Packets; }
-
-    void DrainInputEdgesForFirstTick();
 
 private:
     void InvokePhase(FramePhase phase, PhaseContext& ctx);
+
+    // Input edges are consumed by the first fixed tick of a frame, or dropped
+    // at the end of a frame that ran none, so a press is never seen twice.
+    void DrainInputEdgesForFirstTick();
 
     RuntimeFrameLoop& Runtime;
     FramePacer Pacer;
     InputFrame Input;
     RenderPacketDoubleBuffer Packets;
-    TimingHistory* History = nullptr;
     FrameTrace* Trace = nullptr;
     std::function<bool()> ShouldExitPredicate;
     std::vector<FramePhaseCallback> Phases[static_cast<int>(FramePhase::Count)];

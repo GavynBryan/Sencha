@@ -62,7 +62,7 @@ struct ProbeBakeParams
 
 struct ProbeVolumeBakeResult
 {
-    // PointCount() entries in Grid3d point order, dilated, upload-ready.
+    // PointCount() entries in GridTransform3d point order, dilated, upload-ready.
     std::vector<ProbeShL1> Sh;
     // PointCount() entries, 1 = baked valid (not dilated). Diagnostics.
     std::vector<std::uint8_t> Valid;

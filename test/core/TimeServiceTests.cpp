@@ -196,7 +196,8 @@ TEST(RuntimeFrameLoop, DiscontinuityProducesHistoryResetWithoutChangingTickTime)
 
     EXPECT_EQ(budget.TicksToRunThisFrame, 1u);
     EXPECT_DOUBLE_EQ(runtime.GetCurrentFrame().TickDtSeconds, runtime.GetSimulationClock().GetFixedDt());
-    EXPECT_TRUE(runtime.ConsumePresentationHistoryReset());
+    EXPECT_TRUE(HasRuntimeFrameEvent(runtime.GetCurrentFrame().Events,
+                                     RuntimeFrameEventFlags::TemporalDiscontinuity));
 }
 
 TEST(RuntimeFrameLoop, ResizeSettlesBeforeSwapchainRebuild)

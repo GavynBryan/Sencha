@@ -2,9 +2,9 @@
 
 #include <world/ComponentManifest.h>
 #include <world/registry/Registry.h>
+#include <world/registry/SceneRegistryInitialization.h>
 #include <world/serialization/ComponentStorageTraits.h>
 #include <world/serialization/SceneSerializer.h>
-#include <zone/DefaultZoneBuilder.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -68,16 +68,16 @@ TEST(ComponentManifest, SchemaDefaultsMatchMemberInitializers)
     });
 }
 
-TEST(ComponentManifest, DefaultRegistryRegistersEveryManifestComponent)
+TEST(ComponentManifest, SceneRegistryRegistersEveryManifestComponent)
 {
     Registry registry;
-    InitializeDefault3DRegistry(registry);
+    InitializeSceneRegistry(registry);
 
     ForEachSceneComponent([&](auto tag)
     {
         using T = typename decltype(tag)::Type;
         EXPECT_TRUE(registry.Components.IsRegistered<T>())
-            << TypeSchema<T>::Name << " missing from the default registry";
+            << TypeSchema<T>::Name << " missing from the scene registry";
     });
 
     // LocalTransform's storage traits co-register the derived/hierarchy

@@ -63,8 +63,9 @@ What already exists and should be reused:
   [`ecs/parallelization.md`](ecs/parallelization.md).
 - `SceneSerializer`, `TypeSchema`, and schema-driven component registration:
   the base for scene, template, state overlay, and budget introspection.
-- `QuadTree` and `Grid2d`: small spatial data structures, not yet promoted to
-  engine-level world query or partition services.
+- `PhysicsQueries`: raycast, shape sweep, and overlap against the Jolt scene
+  owned by a registry. This is the only spatial query mechanism in the tree,
+  and the starting point for section H.
 
 ## Non-Goals
 
@@ -336,9 +337,12 @@ Consumers include camera obstruction, interactions, lock target visibility,
 melee traces, projectile sweeps, audio obstruction, foot placement, trigger
 volumes, streaming volumes, and editor selection.
 
-The first implementation can be intentionally modest: AABB broadphase plus ray
-helpers over static and dynamic query components. The important part is the
-engine-level contract: spatial questions are zone-aware and uniform.
+The first implementation can be intentionally modest. `PhysicsQueries` already
+answers ray, sweep, and overlap against a registry's Jolt scene, so the work
+left is the zone-aware contract on top of it -- cross-zone stitching, layers
+and masks, and richer hit records -- not a second broadphase. The important
+part is the engine-level contract: spatial questions are zone-aware and
+uniform.
 
 ### I. Camera And Visibility Infrastructure
 

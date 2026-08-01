@@ -142,13 +142,14 @@ public:
     // DefaultSource(), and CommitTyped at the drain point.
     [[nodiscard]] IAssetLoader* LoaderFor(AssetType type);
     [[nodiscard]] IAssetSource& DefaultSource() { return Source; }
+    // Only the types the preloader and hot reloader commit directly are exposed
+    // here. Skeleton, animation clip, and skinned mesh resolve synchronously
+    // through LoaderFor for now (AssetPreloader skips them); they get an
+    // accessor when an async path commits them.
     [[nodiscard]] StaticMeshAssetLoader& StaticMeshLoaderRef() { return MeshLoader; }
-    [[nodiscard]] SkinnedMeshAssetLoader& SkinnedMeshLoaderRef() { return SkinnedLoader; }
     [[nodiscard]] TextureAssetLoader& TextureLoaderRef() { return TexLoader; }
     [[nodiscard]] MaterialAssetLoader& MaterialLoaderRef() { return MatLoader; }
     [[nodiscard]] AudioClipAssetLoader& AudioClipLoaderRef() { return ClipLoader; }
-    [[nodiscard]] SkeletonAssetLoader& SkeletonLoaderRef() { return SkelLoader; }
-    [[nodiscard]] AnimationClipAssetLoader& AnimationClipLoaderRef() { return AnimLoader; }
 
 private:
     Logger& Log;
