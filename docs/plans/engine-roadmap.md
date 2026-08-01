@@ -625,6 +625,14 @@ The repo's deferral pattern: every deferral records the concrete trigger that re
   gameplay.
 - **Game-module hot reload: v2.0.** Trigger already recorded ("gameplay-iteration pain
   on a real title"); script hot reload covers most v1.0 iteration.
+- **Spatial queries build on `PhysicsQueries`, not a second broadphase
+  (2026-08-01).** The `QuadTree` and `Grid2d` headers the action-adventure spec
+  listed as foundation for its spatial query layer were never included by
+  anything and have been deleted. Jolt already answers ray, sweep, and overlap
+  per registry, so the remaining work in that layer is the zone-aware contract
+  over it -- cross-zone stitching, layers and masks, richer hit records. Revive
+  trigger for a standalone spatial index: a query consumer that must not depend
+  on physics bodies, such as a pure-authoring or non-collidable overlay index.
 - **Chunk-parallel queries: profile-gated** (Track E item 6), never speculative.
 - **Participation tiers: earned per tier**, never adopted wholesale from the candidate
   list in the streaming spec.

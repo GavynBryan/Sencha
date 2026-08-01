@@ -168,13 +168,6 @@ void RuntimeFrameLoop::EndFrame()
     DiscontinuityPending = false;
 }
 
-bool RuntimeFrameLoop::ConsumePresentationHistoryReset()
-{
-    const bool reset = PresentationHistoryResetPending;
-    PresentationHistoryResetPending = false;
-    return reset;
-}
-
 void RuntimeFrameLoop::SetResizeSettleSeconds(double seconds)
 {
     ResizeSettleSeconds = seconds < 0.0 ? 0.0 : seconds;
@@ -187,7 +180,6 @@ bool RuntimeFrameLoop::IsResizeSettling() const
 
 void RuntimeFrameLoop::ApplyDiscontinuity()
 {
-    PresentationHistoryResetPending = true;
     Current.Events |= RuntimeFrameEventFlags::TemporalDiscontinuity;
     DiscontinuityPending = false;
 

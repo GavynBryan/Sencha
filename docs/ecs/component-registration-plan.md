@@ -17,7 +17,7 @@ Adding a serializable component today touches five files:
 | FourCC chunk ID | `world/serialization/SceneFormat.h` | per-type fact living three directories from the type |
 | `ComponentStorageTraits<T>` specialization | `world/serialization/ComponentStorageTraits.h` | ~18 lines; 4 of 5 are identical boilerplate; drags `audio/` and `render/` includes into `world/serialization` |
 | `RegisterComponent<T>()` line | `SceneSerializer.cpp` `InitSceneSerializer()` | forget it → component **silently never serializes** |
-| `RegisterComponent<T>()` line | `DefaultZoneBuilder.cpp` `PrepareRegistry()` | forget it → loads still work, but programmatic `AddComponent` before the first load hits the registration-after-entity-creation assert (debug) / UB (release), order-dependent |
+| `RegisterComponent<T>()` line | `SceneRegistryInitialization.cpp` `InitializeSceneRegistry()` | forget it → loads still work, but programmatic `AddComponent` before the first load hits the registration-after-entity-creation assert (debug) / UB (release), order-dependent |
 
 Additional silent failure: `RegisterComponentSerializer` skips any serializer
 whose chunk ID **or** JSON key collides with an existing entry — no assert, no
@@ -105,10 +105,10 @@ void ForEachSceneComponent(Fn&& fn);   // fold over the tuple's types
 Consumers:
 
 - `InitSceneSerializer()` folds over the list calling `RegisterComponent<T>()`.
-- `DefaultZoneBuilder::PrepareRegistry` folds over the list calling
+- `InitializeSceneRegistry` folds over the list calling
   `ComponentStorageTraits<T>::Register(registry)`. Using the traits (not raw
   `RegisterComponent`) is what keeps `WorldTransform`/`Parent` registered via
-  `LocalTransform`, preserving today's `PrepareRegistry` behavior exactly.
+  `LocalTransform`, preserving today's registration behavior exactly.
 
 The two lists that could previously drift apart are now the same list, which
 removes the order-dependent registration bug class outright.

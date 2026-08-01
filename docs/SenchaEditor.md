@@ -48,7 +48,7 @@ Use explicit source lists or glob-recurse. One executable, no sub-targets.
 
 ## Engine Additions (Phase 1)
 
-These belong in the engine, not the editor. Add them beside the existing `Grid2d.h`.
+These belong in the engine, not the editor. Add them under `engine/include/math/spatial/`.
 
 ### `engine/include/math/spatial/GridPlane.h`
 
@@ -75,29 +75,6 @@ namespace GridPlanes {
 
 `Snap`: project world point onto plane, round to nearest `Spacing` on each axis, return 3D point.
 `Project`: dot product against AxisU and AxisV to find nearest on-plane point.
-
-### `engine/include/math/spatial/Grid3d.h`
-
-Header-only. Direct 3D analog of `Grid2d<T>`. Not used in the crude editor milestone but placed now.
-
-```cpp
-template<typename T>
-struct Grid3d {
-    uint32_t       Width  = 0;
-    uint32_t       Height = 0;
-    uint32_t       Depth  = 0;
-    std::vector<T> Cells;
-
-    bool     IsEmpty()  const { return Cells.empty(); }
-    uint32_t Count()    const { return Width * Height * Depth; }
-    bool     InBounds(uint32_t col, uint32_t row, uint32_t layer) const;
-    T&       Get(uint32_t col, uint32_t row, uint32_t layer);
-    const T& Get(uint32_t col, uint32_t row, uint32_t layer) const;
-    void     Set(uint32_t col, uint32_t row, uint32_t layer, const T& value);
-};
-```
-
-Index formula: `layer * Width * Height + row * Width + col`.
 
 ---
 
@@ -748,7 +725,7 @@ Goals: Editor compiles and opens an empty SDL window with ImGui menu bar.
 - `EditorApp::OnConfigure` — set title "Sencha Editor"
 - `EditorApp::OnStart` — install `EditorUiFeature` only (no `EditorRenderFeature` yet)
 - `EditorUiFeature` — ImGui init, empty docking space, menu bar with "File > Exit"
-- Engine additions: `GridPlane.h`, `Grid3d.h` (headers only, no .cpp needed)
+- Engine additions: `GridPlane.h` (header only, no .cpp needed)
 
 Verification: window opens, ImGui renders, "Exit" closes cleanly.
 

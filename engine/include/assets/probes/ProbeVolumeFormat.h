@@ -20,7 +20,7 @@
 //
 // SH payload layout ('SHL1'): after the volume index, three channel planes
 // (R, G, B), each PointCount() quads of fp16 in coefficient order
-// (c1x, c1y, c1z, c0) and Grid3d point order. That is exactly one 3D-texture
+// (c1x, c1y, c1z, c0) and GridTransform3d point order. That is exactly one 3D-texture
 // upload per channel, no repacking at load.
 //
 // Validity ('VLDT'): after the volume index, one bit per probe (LSB-first),

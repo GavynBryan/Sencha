@@ -158,7 +158,6 @@ bool Engine::Initialize()
 
     RuntimeLoop.SetSurfaceExtent(window->GetExtent());
     FrameDriverInstance = std::make_unique<FrameDriver>(RuntimeLoop);
-    FrameDriverInstance->SetTimingHistory(&TimingData);
     FrameDriverInstance->SetTargetFps(Configuration.Runtime.TargetFps);
     FrameDriverInstance->SetShouldExit([this] {
         if (!Running)

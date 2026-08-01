@@ -63,12 +63,10 @@ void FrameDriver::StepOnce()
     EdgesDrainedThisFrame = false;
 
     PhaseContext ctx;
-    ctx.Driver = this;
     ctx.Runtime = &Runtime;
     ctx.Input = &Input;
     ctx.PacketWrite = &Packets.WriteSlot();
     ctx.PacketRead = &Packets.ReadSlot();
-    ctx.Trace = Trace;
 
     if (Trace) Trace->BeginFrame(Runtime.GetCurrentFrame().WallTime.FrameIndex);
 

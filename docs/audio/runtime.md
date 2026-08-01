@@ -216,8 +216,8 @@ a display (below).
   `Configuration.Audio` and registers `AudioSystem`; both wire into the
   pre-built audio lane that existed unused (`ZoneParticipation.Audio` →
   `FrameRegistryView.Audio` → `RunAudio`).
-- `DefaultZoneBuilder` threads the audio cache + service into the zone the
-  way it already threads mesh/material caches, installing
+- `InitializeSceneRegistry` threads the audio cache + service into the
+  registry the way it already threads mesh/material caches, installing
   `AudioSourceRuntime`; dormant zones are excluded from the audio view by
   construction, so a preloaded neighbor is silent for free.
 - CubeDemo: an `Sfx` bus (8 voices, Reject — the loop-on-Reject authoring

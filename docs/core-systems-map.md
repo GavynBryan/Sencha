@@ -233,7 +233,7 @@ Scene serialization is schema-driven:
 
 The set of serializable components is named once, in
 `world/ComponentManifest.h` (`EngineSceneComponents`). `InitSceneSerializer()`
-and `InitializeDefault3DRegistry()` both fold over that list, so serializer
+and `InitializeSceneRegistry()` both fold over that list, so serializer
 registration and storage registration cannot drift apart. Each component's
 JSON key and chunk FourCC live on its own `TypeSchema<T>` (`Name`,
 `SceneChunkId`).

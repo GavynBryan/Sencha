@@ -97,9 +97,10 @@ authored no volumes, which is not an error.
 
 Each volume record carries a `GridTransform3d` lattice, a priority, a stable
 cook-order index, and three fp16 channel planes (R, G, B) of
-`PointCount() * 4` coefficients in `(c1x, c1y, c1z, c0)` order and Grid3d point
-order. That is exactly one 3D-texture upload per channel with no repacking at
-load. An optional validity bit plane marks probes that were dilated rather than
+`PointCount() * 4` coefficients in `(c1x, c1y, c1z, c0)` order and
+`GridTransform3d` point order. That is exactly one 3D-texture upload per
+channel with no repacking at load. An optional validity bit plane marks probes
+that were dilated rather than
 baked; the runtime ignores it and the editor overlay tints with it.
 
 ### Residency

@@ -12,9 +12,12 @@
 //
 // World mapping for a 3D lattice of sample points: point (x, y, z) sits at
 // Origin + index * CellSize (point convention: Dims points per axis span
-// Dims - 1 cells). Pairs with Grid3d<T> for storage; this type owns only the
-// world <-> grid mapping and the trilinear weights a sample between points
-// needs. Flattened indices follow Grid3d order (z-major, then y, then x).
+// Dims - 1 cells). This type owns only the world <-> grid mapping and the
+// trilinear weights a sample between points needs; storage is the caller's.
+//
+// FlatIndex defines the canonical point order for anything that stores one
+// value per point: x varies fastest, then y, then z. Cooked probe payloads
+// depend on it, so changing it changes those formats.
 //=============================================================================
 struct GridTransform3d
 {
