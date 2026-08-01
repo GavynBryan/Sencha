@@ -1,8 +1,8 @@
 #include <assets/audio_clip/AudioClipSerializer.h>
 #include <audio/AudioClipCache.h>
 #include <core/assets/AssetManifest.h>
-#include <core/assets/AssetPreloader.h>
-#include <core/assets/AssetSystem.h>
+#include <assets/runtime/AssetPreloader.h>
+#include <assets/runtime/AssetSystem.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 #include <jobs/AsyncTaskQueue.h>

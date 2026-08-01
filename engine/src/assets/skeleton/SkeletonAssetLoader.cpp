@@ -37,11 +37,6 @@ AssetStaging SkeletonAssetLoader::LoadStaged(const AssetRecord& record, IAssetSo
     return staging;
 }
 
-AssetCommitResult SkeletonAssetLoader::Commit(AssetStaging&& staged)
-{
-    return { CommitTyped(std::move(staged)).IsValid() };
-}
-
 SkeletonHandle SkeletonAssetLoader::CommitTyped(AssetStaging&& staged)
 {
     if (!staged.IsValid())

@@ -18,7 +18,7 @@
 // artifacts exist. These are exactly the functions a batch cook tool
 // invokes, so `sencha-cook <assets-root>` falls out for free later.
 //
-// Contract, mirroring IAssetLoader's stage half (Decision C):
+// Contract, mirroring IAssetStager's stage half (Decision C):
 //   - Import is pure with respect to engine state: bytes in, artifacts out
 //     through the writer seam. No caches, no services, no logging — errors
 //     travel in ImportResult::Error and the driver logs them.

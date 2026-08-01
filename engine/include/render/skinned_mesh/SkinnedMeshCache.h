@@ -69,7 +69,6 @@ public:
 private:
     friend class AssetCache<SkinnedMeshCache, SkinnedMeshHandle, SkinnedMeshEntry>;
 
-    bool OnLoad(std::string_view path, SkinnedMeshEntry& out);
     void OnFree(SkinnedMeshEntry& entry);
     bool IsEntryLive(const SkinnedMeshEntry& entry) const;
 

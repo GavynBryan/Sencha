@@ -4,7 +4,7 @@
 #include <audio/AudioClipCache.h>
 #include <audio/AudioClipLoader.h>
 #include <core/assets/AssetSource.h>
-#include <core/assets/AssetSystem.h>
+#include <assets/runtime/AssetSystem.h>
 #include <core/logging/LoggingProvider.h>
 
 #ifdef SENCHA_ENABLE_COOK

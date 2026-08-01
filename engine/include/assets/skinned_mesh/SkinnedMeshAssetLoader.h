@@ -1,7 +1,7 @@
 #pragma once
 
 #include <assets/static_mesh/MeshLoader.h>
-#include <core/assets/AssetLoader.h>
+#include <core/assets/AssetStager.h>
 #include <render/skinned_mesh/SkinnedMeshHandle.h>
 
 class AssetSystem;
@@ -18,7 +18,7 @@ class SkinnedMeshCache;
 // holding it (the mesh→skeleton refcount chain). Payload type:
 // SkinnedMeshData.
 //=============================================================================
-class SkinnedMeshAssetLoader final : public IAssetLoader
+class SkinnedMeshAssetLoader final : public IAssetStager
 {
 public:
     SkinnedMeshAssetLoader(LoggingProvider& logging,
@@ -26,10 +26,8 @@ public:
                            SkinnedMeshCache* cache,
                            SkeletonCache* skeletons);
 
-    [[nodiscard]] AssetType Type() const override { return AssetType::SkinnedMesh; }
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
                                           IAssetSource& source) override;
-    AssetCommitResult Commit(AssetStaging&& staged) override;
 
     [[nodiscard]] SkinnedMeshHandle CommitTyped(AssetStaging&& staged);
 

@@ -75,7 +75,6 @@ public:
 private:
     friend class AssetCache<MaterialCache, MaterialHandle, MaterialEntry>;
 
-    bool OnLoad(std::string_view path, MaterialEntry& out);
     void OnFree(MaterialEntry& entry);
     bool IsEntryLive(const MaterialEntry& entry) const;
 };

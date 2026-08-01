@@ -1,6 +1,6 @@
 #include <zone/AsyncZoneLoader.h>
 
-#include <core/assets/AssetPreloader.h>
+#include <assets/runtime/AssetPreloader.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/WorldComponentSchema.h>
 #include <runtime/RuntimeFrameLoop.h>

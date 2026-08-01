@@ -1,7 +1,7 @@
 #include <assets/skinned_mesh/SkinnedMeshAssetLoader.h>
 
 #include <anim/SkeletonCache.h>
-#include <core/assets/AssetSystem.h>
+#include <assets/runtime/AssetSystem.h>
 #include <core/logging/LoggingProvider.h>
 #include <render/skinned_mesh/SkinnedMeshCache.h>
 
@@ -41,11 +41,6 @@ AssetStaging SkinnedMeshAssetLoader::LoadStaged(const AssetRecord& record, IAsse
 
     staging.Payload = std::move(data);
     return staging;
-}
-
-AssetCommitResult SkinnedMeshAssetLoader::Commit(AssetStaging&& staged)
-{
-    return { CommitTyped(std::move(staged)).IsValid() };
 }
 
 SkinnedMeshHandle SkinnedMeshAssetLoader::CommitTyped(AssetStaging&& staged)

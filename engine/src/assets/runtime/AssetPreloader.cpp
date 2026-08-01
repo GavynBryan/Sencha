@@ -1,7 +1,7 @@
-#include <core/assets/AssetPreloader.h>
+#include <assets/runtime/AssetPreloader.h>
 
-#include <core/assets/AssetLoader.h>
-#include <core/assets/AssetSystem.h>
+#include <core/assets/AssetStager.h>
+#include <assets/runtime/AssetSystem.h>
 #include <core/logging/LoggingProvider.h>
 #include <jobs/AsyncTaskQueue.h>
 
@@ -223,7 +223,7 @@ std::shared_ptr<AssetPreload> AssetPreloader::Begin(std::span<const std::string>
 
 void AssetPreloader::SubmitStagedLoad(const AssetRecord& record)
 {
-    IAssetLoader* loader = Assets.LoaderFor(record.Type);
+    IAssetStager* loader = Assets.LoaderFor(record.Type);
     assert(loader != nullptr && "AssetPreloader: Begin filtered types without loaders");
 
     IAssetSource* source = &Assets.DefaultSource();

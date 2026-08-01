@@ -14,7 +14,7 @@
 #include "meshedit/MeshEditService.h"
 #include "selection/SelectionService.h"
 
-#include <core/assets/RuntimeAssets.h>
+#include <assets/runtime/RuntimeAssets.h>
 
 #include <filesystem>
 #include <utility>

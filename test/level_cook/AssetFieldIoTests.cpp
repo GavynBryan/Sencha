@@ -6,7 +6,7 @@
 #include "document/AssetFieldIo.h"
 
 #include <core/assets/AssetRegistry.h>
-#include <core/assets/AssetSystem.h>
+#include <assets/runtime/AssetSystem.h>
 #include <core/logging/LoggingProvider.h>
 #include <render/Material.h>
 #include <render/MaterialCache.h>

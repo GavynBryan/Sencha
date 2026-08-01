@@ -3,7 +3,7 @@
 #include <anim/AnimationClipCache.h>
 #include <anim/SkeletonCache.h>
 #include <assets/animation/AnimationClipSerializer.h>
-#include <core/assets/AssetSystem.h>
+#include <assets/runtime/AssetSystem.h>
 #include <core/logging/LoggingProvider.h>
 
 #include <format>
@@ -42,11 +42,6 @@ AssetStaging AnimationClipAssetLoader::LoadStaged(const AssetRecord& record, IAs
 
     staging.Payload = std::move(data);
     return staging;
-}
-
-AssetCommitResult AnimationClipAssetLoader::Commit(AssetStaging&& staged)
-{
-    return { CommitTyped(std::move(staged)).IsValid() };
 }
 
 AnimationClipHandle AnimationClipAssetLoader::CommitTyped(AssetStaging&& staged)

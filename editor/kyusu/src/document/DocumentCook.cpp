@@ -30,7 +30,7 @@
 #include <assets/cook/ImportOnDemand.h>
 #include <assets/cook/LightmapAtlasPack.h>
 #include <assets/cook/TextureCook.h>
-#include <core/assets/RuntimeAssets.h>
+#include <assets/runtime/RuntimeAssets.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
 

@@ -42,8 +42,8 @@ High-value files to read first:
 | Zones | `engine/include/zone/ZoneRuntime.h`, `engine/include/zone/AsyncZoneLoader.h` |
 | Transforms | `engine/src/world/transform/TransformPropagation.cpp` |
 | Scene files | `engine/src/world/serialization/SceneSerializer.cpp`, `engine/src/world/serialization/SceneFieldCodec.cpp` |
-| Asset front door | `engine/include/core/assets/AssetSystem.h`, `engine/include/core/assets/AssetLoader.h` |
-| Asset streaming | `engine/include/core/assets/AssetPreloader.h`, `engine/src/core/assets/AssetPreloader.cpp` |
+| Asset front door | `engine/include/assets/runtime/AssetSystem.h`, `engine/include/core/assets/AssetStager.h` |
+| Asset streaming | `engine/include/assets/runtime/AssetPreloader.h`, `engine/src/assets/runtime/AssetPreloader.cpp` |
 | Render extraction | `engine/src/app/DefaultRenderPipeline.cpp`, `engine/src/render/RenderExtractionSystem.cpp` |
 | Vulkan backend | `engine/src/graphics/vulkan/GraphicsServices.cpp`, `engine/src/graphics/vulkan/Renderer.cpp` |
 | Audio runtime | `engine/include/audio/AudioSourceComponent.h`, `engine/src/audio/AudioSystem.cpp` |
@@ -576,7 +576,7 @@ New asset type:
 
 1. Add/confirm an `AssetType` and registry extension.
 2. Add a cache or runtime store with generational handles if residency matters.
-3. Implement `IAssetLoader::LoadStaged` and owner-thread `CommitTyped`.
+3. Implement `IAssetStager::LoadStaged` and owner-thread `CommitTyped`.
 4. Wire it into `AssetSystem::Load*`, `TryAcquire*`, `Release*`, and `LoaderFor`.
 5. Extend `AssetPreloader` if the type should stream from manifests.
 6. Keep importers cook/dev-only if they parse source formats not meant to ship.

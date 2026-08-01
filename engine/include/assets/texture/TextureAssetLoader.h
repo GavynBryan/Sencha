@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/assets/AssetLoader.h>
+#include <core/assets/AssetStager.h>
 #include <core/logging/Logger.h>
 #include <render/TextureHandle.h>
 
@@ -19,15 +19,13 @@ class TextureCache;
 // (base color). Cooked .stex carries a usage tag that replaces the
 // parameter entirely (Decisions E/L).
 //=============================================================================
-class TextureAssetLoader final : public IAssetLoader
+class TextureAssetLoader final : public IAssetStager
 {
 public:
     TextureAssetLoader(LoggingProvider& logging, TextureCache* cache);
 
-    [[nodiscard]] AssetType Type() const override { return AssetType::Texture; }
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
                                           IAssetSource& source) override;
-    AssetCommitResult Commit(AssetStaging&& staged) override;
 
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
                                           IAssetSource& source,

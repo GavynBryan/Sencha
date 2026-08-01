@@ -2,9 +2,9 @@
 
 #include <assets/cook/AssetImporter.h>
 #include <assets/cook/ImportOnDemand.h>
-#include <core/assets/AssetLoader.h>
+#include <core/assets/AssetStager.h>
 #include <core/assets/AssetRegistry.h>
-#include <core/assets/AssetSystem.h>
+#include <assets/runtime/AssetSystem.h>
 #include <core/logging/LoggingProvider.h>
 #include <jobs/AsyncTaskQueue.h>
 

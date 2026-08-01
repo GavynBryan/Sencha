@@ -1,6 +1,5 @@
 #include <graphics/vulkan/TextureCache.h>
 
-#include <render/ImageLoader.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
 #include <graphics/vulkan/VulkanImageService.h>
 #include <graphics/vulkan/VulkanSamplerCache.h>
@@ -58,24 +57,6 @@ TextureCache::TextureCache(LoggingProvider& logging,
 TextureCache::~TextureCache()
 {
     FreeAllEntries();
-}
-
-// -- Acquire overloads (SamplerDesc is texture-specific) ---------------------
-
-TextureHandle TextureCache::Acquire(std::string_view path, const SamplerDesc& sampler)
-{
-    PendingSampler = &sampler;
-    TextureHandle handle = AssetCache::Acquire(path);
-    PendingSampler = nullptr;
-    return handle;
-}
-
-TextureCacheHandle TextureCache::AcquireOwned(std::string_view path, const SamplerDesc& sampler)
-{
-    PendingSampler = &sampler;
-    TextureCacheHandle handle = AssetCache::AcquireOwned(path);
-    PendingSampler = nullptr;
-    return handle;
 }
 
 // -- CreateFromImage ----------------------------------------------------------
@@ -242,19 +223,6 @@ ImageHandle TextureCache::GetGpuImage(TextureHandle handle) const
 }
 
 // -- AssetCache CRTP hooks ----------------------------------------------------
-
-bool TextureCache::OnLoad(std::string_view path, TextureEntry& out)
-{
-    auto loadedImage = LoadImageFromFile(path);
-    if (!loadedImage)
-    {
-        Log.Error("TextureCache: failed to load image '{}'", path);
-        return false;
-    }
-
-    const SamplerDesc sampler = PendingSampler ? *PendingSampler : SamplerDesc{};
-    return UploadImage(*loadedImage, sampler, std::string(path).c_str(), out);
-}
 
 void TextureCache::OnFree(TextureEntry& entry)
 {

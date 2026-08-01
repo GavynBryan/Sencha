@@ -71,7 +71,6 @@ private:
 
     // The content path is the only creation route; there is no byte source to
     // load a set from, so the base's path-keyed Acquire(path) is unused.
-    bool OnLoad(std::string_view, MaterialSetEntry&) { return false; }
     void OnFree(MaterialSetEntry& entry);
     bool IsEntryLive(const MaterialSetEntry& entry) const { return entry.Alive; }
 

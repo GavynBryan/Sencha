@@ -57,7 +57,6 @@ public:
 private:
     friend class AssetCache<AnimationClipCache, AnimationClipHandle, AnimationClipEntry>;
 
-    bool OnLoad(std::string_view path, AnimationClipEntry& out);
     void OnFree(AnimationClipEntry& entry);
     bool IsEntryLive(const AnimationClipEntry& entry) const;
 };

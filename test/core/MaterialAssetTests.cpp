@@ -1,7 +1,7 @@
 #include <assets/material/MaterialLoader.h>
 #include <assets/material/MaterialWriter.h>
 #include <core/assets/AssetRegistry.h>
-#include <core/assets/AssetSystem.h>
+#include <assets/runtime/AssetSystem.h>
 #include <core/handle/ILifetimeOwner.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>

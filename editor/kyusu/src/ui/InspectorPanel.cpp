@@ -16,7 +16,7 @@
 #include "selection/SelectionService.h"
 
 #include <core/assets/AssetRegistry.h>
-#include <core/assets/AssetSystem.h>
+#include <assets/runtime/AssetSystem.h>
 #include <core/metadata/RuntimeSchema.h>
 #include <world/serialization/IComponentSerializer.h>
 #include <world/serialization/SceneSerializer.h>

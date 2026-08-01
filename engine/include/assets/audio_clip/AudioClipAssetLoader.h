@@ -1,7 +1,7 @@
 #pragma once
 
 #include <audio/AudioClipCache.h>
-#include <core/assets/AssetLoader.h>
+#include <core/assets/AssetStager.h>
 #include <core/logging/Logger.h>
 
 class LoggingProvider;
@@ -19,15 +19,13 @@ class LoggingProvider;
 // which is what makes it the cheap proof that adding a type is bounded
 // (Decision F).
 //=============================================================================
-class AudioClipAssetLoader final : public IAssetLoader
+class AudioClipAssetLoader final : public IAssetStager
 {
 public:
     AudioClipAssetLoader(LoggingProvider& logging, AudioClipCache* cache);
 
-    [[nodiscard]] AssetType Type() const override { return AssetType::Audio; }
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
                                           IAssetSource& source) override;
-    AssetCommitResult Commit(AssetStaging&& staged) override;
 
     // Owner-thread commit returning the typed handle (refcount 1, owned by
     // the caller). The virtual Commit wraps this for heterogeneous drivers.

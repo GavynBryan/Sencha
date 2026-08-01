@@ -101,11 +101,6 @@ bool StaticMeshCache::IsAlive(StaticMeshHandle handle) const
     return entry != nullptr && entry->Alive;
 }
 
-bool StaticMeshCache::OnLoad(std::string_view, StaticMeshEntry&)
-{
-    return false;
-}
-
 void StaticMeshCache::OnFree(StaticMeshEntry& entry)
 {
     DestroyGpuMesh(*Buffers, entry.Mesh);

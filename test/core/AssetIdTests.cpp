@@ -1,6 +1,6 @@
 #include <core/assets/AssetIdMap.h>
 #include <core/assets/AssetRegistry.h>
-#include <core/assets/AssetSystem.h>
+#include <assets/runtime/AssetSystem.h>
 #include <core/assets/AssetManifest.h>
 #include <core/hash/ContentHash.h>
 #include <core/json/JsonParser.h>

@@ -6,7 +6,7 @@
 
 #include <assets/static_mesh/MeshSerializer.h>
 #include <core/assets/AssetRegistry.h>
-#include <core/assets/AssetSystem.h>
+#include <assets/runtime/AssetSystem.h>
 #include <core/hash/ContentHash.h>
 #include <core/logging/Logger.h>
 #include <render/StaticMeshComponent.h>

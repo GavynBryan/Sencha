@@ -5,8 +5,8 @@
 
 #include <app/Game.h>
 #include <components/ActiveCameraService.h>
-#include <core/assets/AssetPreloader.h>
-#include <core/assets/RuntimeAssets.h>
+#include <assets/runtime/AssetPreloader.h>
+#include <assets/runtime/RuntimeAssets.h>
 #include <world/serialization/SceneSerializationContext.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/AsyncZoneLoader.h>

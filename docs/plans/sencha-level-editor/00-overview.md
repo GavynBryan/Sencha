@@ -163,7 +163,7 @@ Document map:
 | `02-module-topology-dll.md` | 2 | engine.so, game DLL, `IGameModule` ABI, app host, editor module loader, generic inspector/hierarchy. |
 | `03-brush-representation.md` | 3 | Editable polygon-mesh brush; clip/extrude/delete; selection & handles; serialization. |
 | `04-brush-texturing-uv.md` | 3 | Per-face material slots, projection UVs (texture lock), inspector & viewport UV tools. |
-| `05-level-cook.md` | 4 | Bake to static mesh (sections per material), `AssetSourceKind::Generated`, cooked-cache participation, prune, PIE, glTF/asset bake-out. |
+| `05-level-cook.md` | 4 | Bake to static mesh (sections per material), cook provenance through the cooked index, cooked-cache participation, prune, PIE, glTF/asset bake-out. |
 | `06-leveldemo-player-playable.md` | 2+4 | Rename CubeDemo→LevelDemo, player-controller game component/prefab, end-to-end playable gate. |
 
 ---

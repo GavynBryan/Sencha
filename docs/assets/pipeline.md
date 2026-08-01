@@ -127,8 +127,9 @@ to scene refs must keep the editor's save → load round trip intact, including
 editor-only component chunks it knows nothing about. Two forward notes: the
 editor branch forked from the `ecs-overhaul` merge and predates the jobs
 work, so it will rebase over this plan's changes, not vice versa; and brush
-geometry compiled to meshes is the obvious eventual customer for
-`AssetSourceKind::Generated`, which is currently an error stub.
+geometry compiled to meshes registers as `File` like any other cooked
+artifact, with its level ownership recorded by the cooked index that drives
+the prune pass.
 
 ### B. Import boundary — runtime formats in the repo, import-on-demand in dev
 
@@ -173,7 +174,7 @@ One consequence worth stating now: a single glTF/.blend source can yield
 Decision J). The cooked-cache keying is therefore source-hash → *set of
 outputs*, not one-to-one, from day one.
 
-### C. The staged-load contract — `IAssetLoader` work/commit split
+### C. The staged-load contract — `IAssetStager` work/commit split
 
 **Proposed.** This is the centerpiece; everything else feeds it.
 
@@ -182,7 +183,7 @@ Each asset type provides a loader with two halves, mirroring the
 
 ```cpp
 // Sketch — names to taste. One per asset type.
-class IAssetLoader
+class IAssetStager
 {
 public:
     // Task thread. File IO + decode into plain CPU data. No caches, no
@@ -191,9 +192,18 @@ public:
     // AsyncTaskQueue::Submit<TPayload>).
     AssetStaging LoadStaged(const AssetRecord& record);
 
+};
+
+// The commit half is not virtual: it is always issued against a loader the
+// caller already names, and it returns that loader's own handle type.
+class SomeAssetLoader final : public IAssetStager
+{
+public:
+    AssetStaging LoadStaged(const AssetRecord& record, IAssetSource& source) override;
+
     // Owner thread, inside a drain commit. Insert into the cache, perform
     // the GPU upload, return the handle. Must respect chunking (below).
-    AssetCommitResult Commit(AssetStaging&& staged);
+    SomeHandle CommitTyped(AssetStaging&& staged);
 };
 ```
 
@@ -597,7 +607,7 @@ Ordered, like the jobs plan, by return-on-complexity, each stage gated:
   registration; release of a zone releases the whole chain (asserted in a
   cache-state test).*
 - **Stage 2 — the staged-load contract (Decisions C, I).**
-  `IAssetLoader` split for mesh/texture/material, `AssetSystem` sync path
+  `IAssetStager` split for mesh/texture/material, `AssetSystem` sync path
   recomposed on top of it, in-flight dedup table, byte-source seam.
   *Gate: every loader passes the zero-thread determinism suite; sync behavior
   bit-identical to Stage 1.*
@@ -701,8 +711,8 @@ recomposed path):
   `ReadAssetBytes(record)` resolving `FilePath` with virtual-path fallback.
   Tests drive loaders through a `MemoryAssetSource` — no filesystem, no
   threads.
-- `core/assets/AssetLoader.h` — the Decision C contract: `AssetStaging`
-  (record + type-erased `std::any` payload + error string), `IAssetLoader`
+- `core/assets/AssetStager.h` — the Decision C contract: `AssetStaging`
+  (record + type-erased `std::any` payload + error string), `IAssetStager`
   with the `LoadStaged` (task-thread, pure, errors-not-logs) / `Commit`
   (owner-thread, logs) split. Each loader also exposes a typed
   `CommitTyped` returning its handle; the virtual `Commit` wraps it for
@@ -795,7 +805,7 @@ sight, renames keep theirs via the map).
 
 One inventory correction discovered entering the stage: `AudioClipCache`
 already sits on the `AssetCache` CRTP base, so 4d is registration plus an
-`IAssetLoader` and OGG support — the "migration" half of the Decision F
+`IAssetStager` and OGG support — the "migration" half of the Decision F
 proof is already done.
 
 ### Stage 4a — foundations (landed)

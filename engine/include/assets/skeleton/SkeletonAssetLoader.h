@@ -1,7 +1,7 @@
 #pragma once
 
 #include <anim/SkeletonHandle.h>
-#include <core/assets/AssetLoader.h>
+#include <core/assets/AssetStager.h>
 #include <core/logging/Logger.h>
 
 class LoggingProvider;
@@ -15,15 +15,13 @@ class SkeletonCache;
 // Payload type: SkeletonData. Fully CPU-side, no GPU half — the MaterialCache
 // pattern for a leaf asset.
 //=============================================================================
-class SkeletonAssetLoader final : public IAssetLoader
+class SkeletonAssetLoader final : public IAssetStager
 {
 public:
     SkeletonAssetLoader(LoggingProvider& logging, SkeletonCache* cache);
 
-    [[nodiscard]] AssetType Type() const override { return AssetType::Skeleton; }
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
                                           IAssetSource& source) override;
-    AssetCommitResult Commit(AssetStaging&& staged) override;
 
     [[nodiscard]] SkeletonHandle CommitTyped(AssetStaging&& staged);
 

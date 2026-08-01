@@ -48,7 +48,6 @@ public:
 private:
     friend class AssetCache<SkeletonCache, SkeletonHandle, SkeletonEntry>;
 
-    bool OnLoad(std::string_view path, SkeletonEntry& out);
     void OnFree(SkeletonEntry& entry);
     bool IsEntryLive(const SkeletonEntry& entry) const;
 };

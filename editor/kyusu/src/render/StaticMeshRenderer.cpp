@@ -3,7 +3,7 @@
 #include "document/EditorScene.h"
 
 #include <core/assets/AssetRegistry.h>
-#include <core/assets/AssetSystem.h>
+#include <assets/runtime/AssetSystem.h>
 #include <core/logging/LoggingProvider.h>
 #include <render/StaticMeshComponent.h>
 #include <world/registry/Registry.h>

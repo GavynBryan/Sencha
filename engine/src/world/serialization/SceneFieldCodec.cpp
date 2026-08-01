@@ -1,7 +1,7 @@
 #include <world/serialization/SceneFieldCodec.h>
 
 #include <core/assets/AssetId.h>
-#include <core/assets/AssetSystem.h>
+#include <assets/runtime/AssetSystem.h>
 #include <core/logging/LoggingProvider.h>
 
 #include <optional>

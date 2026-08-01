@@ -7,8 +7,8 @@
 
 > Original-plan corrections baked in here: **one mesh per level with one section per
 > material** (not "one section, MaterialSlot 0"); **UVs baked from projections** (04-);
-> **`AssetSourceKind::Generated` is mandatory, not optional**, because "no garbage" is a
-> stated requirement and a distinct, prune-owned source kind is what makes it auditable.
+> cook-owned artifacts must be auditable, because "no garbage" is a stated requirement
+> (see section 4 for what shipped).
 
 ---
 
@@ -173,20 +173,21 @@ streaming/visibility is a later, justified move.
 
 ---
 
-## 4. `AssetSourceKind::Generated` — mandatory
+## 4. Cook provenance — the cooked index, not a source kind
 
-The generated level mesh registers with **`AssetSourceKind::Generated`**, not `File`. Today
-`Generated` is an enum value with a stubbed load path
-([AssetSystem](../../engine/src/assets/) — the stub the pipeline doc flags). We implement it:
+This section originally called for a distinct `AssetSourceKind::Generated` so that "this
+mesh was generated from level X and dies with it" would be a queryable fact rather than a
+convention. That requirement stands; the mechanism that satisfies it is not a source kind.
 
-- A `Generated` static-mesh record carries the `.cooked/...` physical path; its loader reads
-  bytes from there exactly like `File` (delegate to the byte source, pipeline.md Decision I).
-  The *only* behavioral difference from `File` is **provenance**: a `Generated` asset is
-  *owned by a level source* and is the prune pass's responsibility (§6).
-- Why mandatory and not "path of least resistance = File" (the original's hedge): the stated
-  requirement is **no garbage assets, ever**. A distinct source kind makes "this mesh was
-  generated from level X and dies with it" a queryable fact instead of a convention. It is a
-  few lines (delegate-to-file load) and it is the right shape. We pay it.
+`CookedCacheIndex` already keys each source to the set of artifacts its cook produced, and
+`CookPrune` walks exactly that relationship to reap artifacts whose source is gone (§6). The
+ownership edge lives on the edge itself, which is stronger than a per-record tag: a tag says
+*that* a record was generated, the index says *by what*.
+
+`RegisterCookedAssets` accordingly registers cooked artifacts as `File` — the record carries
+the `.cooked/...` physical path and the loader reads it through the ordinary byte source
+(pipeline.md Decision I). `AssetSourceKind::Generated` and `Embedded` were never constructed
+by anything and have been removed.
 
 ---
 
@@ -288,7 +289,6 @@ becomes instanceable (brushes themselves can't be instanced by design, 03-).
 
 **S6 — offline cook:**
 - `BrushGeometryCook` (pure bake, sections-per-material, baked UVs, tangents); `CookBrush` POD.
-- `AssetSourceKind::Generated` load path implemented.
 - Level cook module: authored JSON + sidecar → cooked scene + `.smesh` + manifest (with
   sidecar material refs) + AssetId stamping; `CookedCache` participation (source = level,
   brush-geometry hash).

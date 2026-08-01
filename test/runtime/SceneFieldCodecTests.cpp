@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-#include <core/assets/AssetSystem.h>
+#include <assets/runtime/AssetSystem.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/JsonArchive.h>

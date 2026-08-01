@@ -44,13 +44,6 @@ const AudioClip* AudioClipCache::Get(AudioClipHandle handle) const
 
 // -- AssetCache CRTP hooks ---------------------------------------------------
 
-bool AudioClipCache::OnLoad(std::string_view, AudioClipEntry&)
-{
-    // No file IO in the cache (Decision I): Acquire resolves registered
-    // entries only; decode lives in AudioClipAssetLoader's stage half.
-    return false;
-}
-
 void AudioClipCache::OnFree(AudioClipEntry& entry)
 {
     entry.Clip = {};
