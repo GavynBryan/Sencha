@@ -754,15 +754,19 @@ and the zone attaches only when they are resident.
   without this code knowing it exists (the Decision O discipline). Manifest
   entries are paths only; the type always comes from the registry record,
   so the manifest can never contradict the registry.
-- `core/assets/AssetPreloader.{h,cpp}` — the manifest driver: dedup against
-  caches (`TryAcquire*`), coalescing against loads already in flight (the
-  Stage 2 table, reshaped to carry waiters — its first consumer revealed
-  that counting alone was the wrong API), `LoadStaged` on task threads,
-  `CommitTyped` at the drain point, where every commit is individually
-  metered by the existing `AsyncCommitBudgetMs`. **Two waves**: leaf assets
-  (textures, meshes) first, materials submitted by the last wave-1 commit —
-  so material commits always resolve their texture refs against warm caches
-  instead of decoding inline at the drain.
+- `assets/runtime/AssetPreloader.{h,cpp}` — the manifest driver: dedup against
+  caches (through the kind's `IAssetStore`), coalescing against loads already
+  in flight (the Stage 2 table, reshaped to carry waiters — its first consumer
+  revealed that counting alone was the wrong API), `LoadStaged` on task
+  threads, commit at the drain point, where every commit is individually
+  metered by the existing `AsyncCommitBudgetMs`. **Commit order follows
+  `AssetStaging::Dependencies`**: a staged payload whose declared dependencies
+  are not resident waits, its dependencies are requested through the same
+  path, and it commits once they land. A material therefore resolves its
+  texture refs against warm caches because it *said* it needed them, not
+  because the driver knows what a material is. Edges are cycle-checked before
+  they are recorded, so a mutually-referencing pair fails both loads instead
+  of deadlocking.
 - `AssetPreload` — the per-request tracker. Its handles are scaffolding:
   they keep assets alive (and deduplicated) between commit and the moment
   finalize's entities take their own references through component traits,
@@ -986,9 +990,10 @@ loader, one importer, and switch-case additions; no contract needed bending.
   fallback and the WAV importer).
 - `AssetSystem` gained `LoadAudioClip`/`TryAcquireAudioClip`/
   `ReleaseAudioClip` and routes `AssetType::Audio` through `LoaderFor`;
-  `RuntimeAssets` owns an `AudioClipCache`; the preloader carries clips in
-  **wave 1** (audio is leaf data — nothing resolves refs against it at
-  commit); the scanner maps `.sclip` → Audio.
+  `RuntimeAssets` owns an `AudioClipCache`; a clip declares no staging
+  dependencies (audio is leaf data — nothing resolves refs against it at
+  commit), so it commits in the round it stages; the `.sclip` extension is
+  registered on the Audio kind.
 - `assets/cook/AudioCook.{h,cpp}` (SENCHA_ENABLE_COOK only) — one
   `AudioClipImporter` for `.wav` and `.ogg`, emitting `.sclip` under the
   source's virtual path. OGG decode is stb_vorbis (single-TU inclusion
@@ -1005,8 +1010,8 @@ loader, one importer, and switch-case additions; no contract needed bending.
   so its tests pin rate/channels/duration and waveform amplitude, never
   exact samples; the WAV path *is* byte-exact and tested as such. No
   scene component references audio yet, so manifest-driven audio preload
-  is exercised by direct preloader tests rather than a demo scene — the
-  wave-1 path is pinned headless alongside the existing suite.
+  is exercised by direct preloader tests rather than a demo scene, pinned
+  headless alongside the existing suite.
 
 ### Stage 4e — AssetId groundwork (landed, 2026-06-12)
 
@@ -1136,13 +1141,14 @@ mesh type split (the Decision J revision above) was taken here.
   pin the refcount freeing. Runtime playback is explicitly **not** gated
   here — the animation-runtime plan owns pose evaluation, the GPU skinning
   path choice (Decision N), and the `SkinnedMeshComponent` + render
-  pipeline. Two recorded gaps, both deliberate: skeletal assets are not
-  yet async-preloaded (no streamable component references them; wiring them
-  needs a skeletons-first wave so a dependent commit never inline-loads a
-  pending skeleton — they load synchronously via the front door until
-  then), and the mesh→skeleton chain's GPU-commit half is exercised by the
-  cook + future demo rather than headless (the `StaticMeshCache`/4c
-  precedent: GPU-commit halves are not headless-testable).
+  pipeline. Skeletal assets are async-preloaded: a clip and a skinned mesh
+  each declare their skeleton in `AssetStaging::Dependencies`, so the driver
+  commits the skeleton first and the dependent never inline-loads one that is
+  also pending in the same drain (the double-release that previously kept
+  them off the async lane). One recorded gap remains: the mesh→skeleton
+  chain's GPU-commit half is exercised by the cook + future demo rather than
+  headless (the `StaticMeshCache`/4c precedent: GPU-commit halves are not
+  headless-testable).
 - **Dependency hygiene.** `IsValidAssetPath` moved to a dependency-neutral
   `core/assets/AssetPath.h`, so the low-level mesh and animation data
   validators check skeleton/texture path well-formedness without reaching

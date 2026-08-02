@@ -39,6 +39,15 @@ AssetStaging SkinnedMeshAssetLoader::LoadStaged(const AssetRecord& record, IAsse
         return staging;
     }
 
+    // The commit resolves this skeleton through the front door and holds a
+    // reference to it, so it has to be resident first. Declaring it here is
+    // what lets the async driver order the two commits.
+    if (!data.Skinning.SkeletonPath.empty())
+    {
+        staging.Dependencies.push_back(
+            AssetRef{ AssetType::Skeleton, data.Skinning.SkeletonPath });
+    }
+
     staging.Payload = std::move(data);
     return staging;
 }
@@ -66,8 +75,9 @@ SkinnedMeshHandle SkinnedMeshAssetLoader::CommitTyped(AssetStaging&& staged)
         return {};
     }
 
-    // Resolve and hold the skeleton (loads inline if not yet resident — the
-    // material→texture pattern), then bind the mesh→skeleton chain.
+    // Resident by now on the async path (declared as a staging dependency);
+    // the synchronous path loads it inline here. Either way the commit holds
+    // the reference that binds the mesh→skeleton chain.
     SkeletonHandle skeleton = Assets.LoadSkeleton(data->Skinning.SkeletonPath);
     if (!skeleton.IsValid())
     {

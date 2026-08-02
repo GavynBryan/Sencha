@@ -53,6 +53,17 @@ AssetStaging MaterialAssetLoader::LoadStaged(const AssetRecord& record, IAssetSo
         return staging;
     }
 
+    // CommitTyped resolves each slot through the front door, so every texture
+    // it names has to be resident by then. Declaring them here is what lets
+    // the async driver order the commits instead of this loader loading them
+    // inline on the owner thread.
+    for (const AssetRef* reference : { &desc.BaseColorTexture, &desc.NormalTexture,
+                                       &desc.OrmTexture, &desc.EmissiveTexture })
+    {
+        if (reference->IsValid())
+            staging.Dependencies.push_back(*reference);
+    }
+
     staging.Payload = std::move(desc);
     return staging;
 }

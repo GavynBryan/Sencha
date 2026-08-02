@@ -40,6 +40,12 @@ AssetStaging AnimationClipAssetLoader::LoadStaged(const AssetRecord& record, IAs
         return staging;
     }
 
+    // The commit resolves this skeleton through the front door and holds a
+    // reference to it, so it has to be resident first. Declaring it here is
+    // what lets the async driver order the two commits.
+    if (!data.SkeletonPath.empty())
+        staging.Dependencies.push_back(AssetRef{ AssetType::Skeleton, data.SkeletonPath });
+
     staging.Payload = std::move(data);
     return staging;
 }
@@ -67,9 +73,9 @@ AnimationClipHandle AnimationClipAssetLoader::CommitTyped(AssetStaging&& staged)
         return {};
     }
 
-    // Resolve the skeleton through the front door (loads inline if not yet
-    // resident — the material→texture pattern) and hold the reference: the
-    // clip→skeleton refcount chain.
+    // Resident by now on the async path (declared as a staging dependency);
+    // the synchronous path loads it inline here. Either way the commit holds
+    // the reference that forms the clip→skeleton chain.
     SkeletonHandle skeleton = Assets.LoadSkeleton(data->SkeletonPath);
     if (!skeleton.IsValid())
     {

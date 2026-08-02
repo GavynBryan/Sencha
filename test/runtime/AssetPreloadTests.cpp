@@ -1,4 +1,8 @@
+#include <anim/AnimationClipCache.h>
+#include <anim/SkeletonCache.h>
+#include <assets/animation/AnimationClipSerializer.h>
 #include <assets/audio_clip/AudioClipSerializer.h>
+#include <assets/skeleton/SkeletonSerializer.h>
 #include <audio/AudioClipCache.h>
 #include <core/assets/AssetManifest.h>
 #include <assets/runtime/AssetPreloader.h>
@@ -22,10 +26,26 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace
 {
+    // ctest runs each case in its own process, so a per-process counter alone
+    // repeats the same names in every case and two cases running in parallel
+    // would write and delete each other's file. The case name disambiguates.
+    std::filesystem::path TempAssetPath(std::string_view prefix, std::string_view extension)
+    {
+        static int counter = 0;
+        std::string caseName = "unknown";
+        if (const auto* info = testing::UnitTest::GetInstance()->current_test_info())
+            caseName = std::string(info->test_suite_name()) + "_" + info->name();
+
+        const std::string name = std::string(prefix) + "_" + caseName + "_"
+            + std::to_string(++counter) + std::string(extension);
+        return std::filesystem::temp_directory_path() / name;
+    }
+
     // One temp .smat on disk plus its registry record: the smallest real
     // asset the headless preload path can take from manifest to residency.
     class TempMaterialAsset
@@ -34,9 +54,7 @@ namespace
         TempMaterialAsset(AssetRegistry& registry, std::string_view name,
                           std::string_view contents = R"({"version": 2})")
         {
-            static int counter = 0;
-            File = std::filesystem::temp_directory_path() /
-                   ("sencha_preload_" + std::to_string(++counter) + ".smat");
+            File = TempAssetPath("sencha_preload_material", ".smat");
             std::ofstream out(File, std::ios::trunc);
             out << contents;
 
@@ -73,9 +91,7 @@ namespace
             std::vector<std::byte> bytes;
             EXPECT_TRUE(WriteSclipToBytes(clip, bytes));
 
-            static int counter = 0;
-            File = std::filesystem::temp_directory_path() /
-                   ("sencha_preload_audio_" + std::to_string(++counter) + ".sclip");
+            File = TempAssetPath("sencha_preload_audio", ".sclip");
             std::ofstream out(File, std::ios::binary | std::ios::trunc);
             out.write(reinterpret_cast<const char*>(bytes.data()),
                       static_cast<std::streamsize>(bytes.size()));
@@ -99,6 +115,92 @@ namespace
         std::filesystem::path File;
     };
 
+    // One temp .sskel on disk plus its registry record. Clips and skinned
+    // meshes name one, which is the dependency edge the preloader orders on.
+    class TempSkeletonAsset
+    {
+    public:
+        TempSkeletonAsset(AssetRegistry& registry, std::string_view name)
+        {
+            SkeletonData skeleton;
+            skeleton.Joints.push_back(SkeletonJoint{});
+
+            std::vector<std::byte> bytes;
+            EXPECT_TRUE(WriteSskelToBytes(skeleton, bytes));
+
+            File = TempAssetPath("sencha_preload_skeleton", ".sskel");
+            std::ofstream out(File, std::ios::binary | std::ios::trunc);
+            out.write(reinterpret_cast<const char*>(bytes.data()),
+                      static_cast<std::streamsize>(bytes.size()));
+
+            Path = "asset://skeletons/test/" + std::string(name) + ".sskel";
+            EXPECT_TRUE(registry.Register(AssetRecord{
+                .Type = AssetType::Skeleton,
+                .SourceKind = AssetSourceKind::File,
+                .Path = Path,
+                .FilePath = File.generic_string(),
+            }));
+        }
+
+        ~TempSkeletonAsset()
+        {
+            std::error_code ec;
+            std::filesystem::remove(File, ec);
+        }
+
+        std::string Path;
+        std::filesystem::path File;
+    };
+
+    // A valid .sanim whose skeleton path the fixture supplies, so a test can
+    // point it at a skeleton that resolves or one that does not.
+    class TempAnimationClipAsset
+    {
+    public:
+        TempAnimationClipAsset(AssetRegistry& registry,
+                               std::string_view name,
+                               std::string_view skeletonPath)
+        {
+            AnimationClipData clip;
+            clip.SkeletonPath = std::string(skeletonPath);
+            clip.DurationSeconds = 1.0f;
+
+            AnimationJointTrack track;
+            track.JointIndex = 0;
+            track.Path = AnimationChannelPath::Translation;
+            track.Interpolation = AnimationInterpolation::Linear;
+            track.TimesSeconds = { 0.0f, 1.0f };
+            track.Values = { 0.0f, 0.0f, 0.0f,
+                             0.0f, 0.0f, 0.0f };
+            clip.Tracks.push_back(std::move(track));
+
+            std::vector<std::byte> bytes;
+            EXPECT_TRUE(WriteSanimToBytes(clip, bytes));
+
+            File = TempAssetPath("sencha_preload_animation", ".sanim");
+            std::ofstream out(File, std::ios::binary | std::ios::trunc);
+            out.write(reinterpret_cast<const char*>(bytes.data()),
+                      static_cast<std::streamsize>(bytes.size()));
+
+            Path = "asset://animation/test/" + std::string(name) + ".sanim";
+            EXPECT_TRUE(registry.Register(AssetRecord{
+                .Type = AssetType::AnimationClip,
+                .SourceKind = AssetSourceKind::File,
+                .Path = Path,
+                .FilePath = File.generic_string(),
+            }));
+        }
+
+        ~TempAnimationClipAsset()
+        {
+            std::error_code ec;
+            std::filesystem::remove(File, ec);
+        }
+
+        std::string Path;
+        std::filesystem::path File;
+    };
+
     struct PreloadHarness
     {
         PreloadHarness()
@@ -106,7 +208,10 @@ namespace
             , Registry(Logging)
             , Materials()
             , AudioClips(Logging)
-            , Assets(Logging, Registry, nullptr, &Materials, nullptr, &AudioClips)
+            , Skeletons()
+            , AnimationClips()
+            , Assets(Logging, Registry, nullptr, &Materials, nullptr, &AudioClips,
+                     &Skeletons, &AnimationClips)
             , Preloader(Logging, Registry, Assets, Tasks)
         {
         }
@@ -116,6 +221,8 @@ namespace
         AssetRegistry Registry;
         MaterialCache Materials;
         AudioClipCache AudioClips;
+        SkeletonCache Skeletons;
+        AnimationClipCache AnimationClips;
         AssetSystem Assets;
         AssetPreloader Preloader;
     };
@@ -256,7 +363,7 @@ TEST(AssetPreload, MaterialsStreamToResidencyHeadless)
     EXPECT_FALSE(h.Materials.Find(blue.Path).IsValid());
 }
 
-TEST(AssetPreload, AudioClipsStreamInWaveOne)
+TEST(AssetPreload, IndependentRootsStageTogether)
 {
     PreloadHarness h;
     TempAudioClipAsset blip(h.Registry, "blip");
@@ -266,15 +373,12 @@ TEST(AssetPreload, AudioClipsStreamInWaveOne)
     auto preload = h.Preloader.Begin(paths);
     EXPECT_EQ(preload->PendingCount(), 2u);
 
-    // Wave 1 carries the leaf assets: exactly one task (the clip) is in
-    // flight; the material is deferred until the last wave-1 commit.
-    EXPECT_EQ(h.Tasks.PumpWork(), 1u);
-    EXPECT_EQ(h.Tasks.DrainCompletions(), 1u);
+    // Neither declares a dependency, so both stage in the same round. Only a
+    // declared edge delays a commit; kind alone never does.
+    EXPECT_EQ(h.Tasks.PumpWork(), 2u);
+    EXPECT_EQ(h.Tasks.DrainCompletions(), 2u);
     EXPECT_TRUE(h.AudioClips.Find(blip.Path).IsValid());
-    EXPECT_FALSE(h.Materials.Find(red.Path).IsValid());
-
-    EXPECT_EQ(h.Tasks.PumpWork(), 1u);
-    EXPECT_EQ(h.Tasks.DrainCompletions(), 1u);
+    EXPECT_TRUE(h.Materials.Find(red.Path).IsValid());
     EXPECT_TRUE(preload->IsComplete());
     EXPECT_EQ(preload->FailureCount(), 0u);
     EXPECT_EQ(preload->HeldHandleCount(), 2u);
@@ -282,6 +386,102 @@ TEST(AssetPreload, AudioClipsStreamInWaveOne)
     preload->ReleaseAll();
     EXPECT_FALSE(h.AudioClips.Find(blip.Path).IsValid());
     EXPECT_FALSE(h.Materials.Find(red.Path).IsValid());
+}
+
+TEST(AssetPreload, DeclaredDependencyCommitsBeforeItsDependent)
+{
+    PreloadHarness h;
+    TempSkeletonAsset skeleton(h.Registry, "rig");
+    TempAnimationClipAsset clip(h.Registry, "walk", skeleton.Path);
+
+    // Only the clip is in the manifest: the skeleton is reached through the
+    // dependency the clip's staging declares.
+    const std::vector<std::string> paths{ clip.Path };
+    auto preload = h.Preloader.Begin(paths);
+    EXPECT_EQ(preload->PendingCount(), 1u);
+
+    // Round one stages the clip and discovers the skeleton it needs. The
+    // clip cannot commit yet, so neither is resident.
+    EXPECT_EQ(h.Tasks.PumpWork(), 1u);
+    EXPECT_EQ(h.Tasks.DrainCompletions(), 1u);
+    EXPECT_FALSE(h.AnimationClips.Find(clip.Path).IsValid());
+    EXPECT_FALSE(preload->IsComplete());
+
+    // Round two commits the skeleton, which releases the clip's commit in the
+    // same drain. Both land, and the clip holds its own skeleton reference.
+    EXPECT_EQ(h.Tasks.PumpWork(), 1u);
+    EXPECT_EQ(h.Tasks.DrainCompletions(), 1u);
+    EXPECT_TRUE(h.Skeletons.Find(skeleton.Path).IsValid());
+    EXPECT_TRUE(h.AnimationClips.Find(clip.Path).IsValid());
+    EXPECT_TRUE(preload->IsComplete());
+    EXPECT_EQ(preload->FailureCount(), 0u);
+
+    // The preload holds only the clip: the skeleton stays resident on the
+    // clip's reference alone, and both free once that goes.
+    EXPECT_EQ(preload->HeldHandleCount(), 1u);
+    preload->ReleaseAll();
+    EXPECT_FALSE(h.AnimationClips.Find(clip.Path).IsValid());
+    EXPECT_FALSE(h.Skeletons.Find(skeleton.Path).IsValid());
+}
+
+TEST(AssetPreload, AlreadyResidentDependencyCommitsImmediately)
+{
+    PreloadHarness h;
+    TempSkeletonAsset skeleton(h.Registry, "rig");
+    TempAnimationClipAsset clip(h.Registry, "walk", skeleton.Path);
+
+    ASSERT_TRUE(h.Assets.LoadSkeleton(skeleton.Path).IsValid());
+
+    const std::vector<std::string> paths{ clip.Path };
+    auto preload = h.Preloader.Begin(paths);
+
+    // The dependency resolves against the cache, so no second round is needed.
+    EXPECT_EQ(h.Tasks.PumpWork(), 1u);
+    EXPECT_EQ(h.Tasks.DrainCompletions(), 1u);
+    EXPECT_TRUE(h.AnimationClips.Find(clip.Path).IsValid());
+    EXPECT_TRUE(preload->IsComplete());
+    EXPECT_EQ(preload->FailureCount(), 0u);
+}
+
+TEST(AssetPreload, FailedDependencyFailsItsDependentWithoutDeadlock)
+{
+    PreloadHarness h;
+    ASSERT_TRUE(h.Registry.Register(AssetRecord{
+        .Type = AssetType::Skeleton,
+        .SourceKind = AssetSourceKind::File,
+        .Path = "asset://skeletons/test/missing.sskel",
+        .FilePath = "does/not/exist.sskel",
+    }));
+    TempAnimationClipAsset clip(h.Registry, "orphan", "asset://skeletons/test/missing.sskel");
+
+    const std::vector<std::string> paths{ clip.Path };
+    auto preload = h.Preloader.Begin(paths);
+
+    EXPECT_EQ(h.Tasks.PumpWork(), 1u);
+    EXPECT_EQ(h.Tasks.DrainCompletions(), 1u);
+    EXPECT_FALSE(preload->IsComplete());
+
+    // The skeleton fails to stage; the failure propagates to the clip rather
+    // than leaving it waiting forever.
+    EXPECT_EQ(h.Tasks.PumpWork(), 1u);
+    EXPECT_EQ(h.Tasks.DrainCompletions(), 1u);
+    EXPECT_TRUE(preload->IsComplete());
+    EXPECT_EQ(preload->FailureCount(), 1u);
+    EXPECT_FALSE(h.AnimationClips.Find(clip.Path).IsValid());
+}
+
+TEST(AssetPreload, DependencyOnAnUnregisteredPathFailsTheDependent)
+{
+    PreloadHarness h;
+    TempAnimationClipAsset clip(h.Registry, "dangling", "asset://skeletons/test/nowhere.sskel");
+
+    const std::vector<std::string> paths{ clip.Path };
+    auto preload = h.Preloader.Begin(paths);
+
+    EXPECT_EQ(h.Tasks.PumpWork(), 1u);
+    EXPECT_EQ(h.Tasks.DrainCompletions(), 1u);
+    EXPECT_TRUE(preload->IsComplete());
+    EXPECT_EQ(preload->FailureCount(), 1u);
 }
 
 TEST(AssetPreload, TwoPreloadsCoalesceOnOneLoad)
@@ -380,21 +580,16 @@ namespace
     };
 }
 
-TEST(ZoneAssetGating, AttachDefersUntilPreloadCompletes)
+TEST(ZoneAssetGating, AttachDefersUntilDependencyChainCompletes)
 {
     ZoneHarness h;
 
-    // Wave 1: a mesh record whose file is missing still counts, so the
-    // material is deferred to wave 2 and requires two drain rounds.
-    ASSERT_TRUE(h.Registry.Register(AssetRecord{
-        .Type = AssetType::StaticMesh,
-        .SourceKind = AssetSourceKind::File,
-        .Path = "asset://meshes/test/missing.smesh",
-        .FilePath = "does/not/exist.smesh",
-    }));
-    TempMaterialAsset material(h.Registry, "gated");
+    // A clip whose skeleton commits a round later, so the preload spans two
+    // drain rounds and the deferred attach has something real to wait on.
+    TempSkeletonAsset skeleton(h.Registry, "gated");
+    TempAnimationClipAsset clip(h.Registry, "gated", skeleton.Path);
 
-    const std::vector<std::string> paths{ "asset://meshes/test/missing.smesh", material.Path };
+    const std::vector<std::string> paths{ clip.Path };
     auto preload = h.Preloader.Begin(paths);
 
     const ZoneId zone{ 5 };
@@ -406,6 +601,9 @@ TEST(ZoneAssetGating, AttachDefersUntilPreloadCompletes)
         ZoneParticipation{ .Logic = true },
         preload);
 
+    // The clip staging and the zone build, then both commits: the clip's
+    // staging discovers its skeleton and submits it, and the zone commit must
+    // defer the attach because the preload is still short one asset.
     EXPECT_EQ(h.Tasks.PumpWork(), 2u);
 
     EXPECT_EQ(h.Tasks.DrainCompletions(), 2u);
@@ -414,14 +612,17 @@ TEST(ZoneAssetGating, AttachDefersUntilPreloadCompletes)
     EXPECT_TRUE(h.Loader.IsLoading(zone));
     EXPECT_FALSE(preload->IsComplete());
 
+    // The skeleton lands, releasing the clip's commit in the same drain. That
+    // completes the preload, which fires the deferred attach.
     EXPECT_EQ(h.Tasks.PumpWork(), 1u);
     EXPECT_EQ(h.Tasks.DrainCompletions(), 1u);
     EXPECT_TRUE(h.World.IsZoneResident(zone));
     EXPECT_TRUE(finalized);
     EXPECT_FALSE(h.Loader.IsLoading(zone));
     EXPECT_TRUE(preload->IsComplete());
+    EXPECT_EQ(preload->FailureCount(), 0u);
     EXPECT_EQ(preload->HeldHandleCount(), 0u);
-    EXPECT_FALSE(h.Materials.Find(material.Path).IsValid());
+    EXPECT_FALSE(h.AnimationClips.Find(clip.Path).IsValid());
 
     EXPECT_EQ(h.Runtime.GetCurrentFrame().DiscontinuityReason,
               TemporalDiscontinuityReason::ZoneLoad);

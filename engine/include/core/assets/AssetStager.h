@@ -5,6 +5,7 @@
 
 #include <any>
 #include <string>
+#include <vector>
 
 //=============================================================================
 // The staged-load contract (docs/assets/pipeline.md, Decision C)
@@ -42,6 +43,14 @@ struct AssetStaging
     // ...). Type-erased so heterogeneous loads can flow through one driver;
     // each loader's commit knows its own payload type and rejects others.
     std::any Payload;
+
+    // Assets this payload's commit resolves through the front door and must
+    // therefore find resident: a material's textures, a skinned mesh's
+    // skeleton. Declared by the stage half because that is where the payload
+    // is parsed; the async driver reads them and orders commits accordingly.
+    // A commit that inline-loads instead of declaring is the double-release
+    // hazard this exists to remove.
+    std::vector<AssetRef> Dependencies;
 
     // Non-empty means staging failed. Set instead of logging because the
     // stage half may run off the owner thread; the committer/driver logs.
