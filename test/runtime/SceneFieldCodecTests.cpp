@@ -80,8 +80,8 @@ namespace
 
 TEST(SceneFieldCodec, GenericComponentSerializerWritesTypedMaterialHandleAsPathString)
 {
-    ClearComponentSerializers();
-    RegisterComponent<SceneCodecMaterialComponent>();
+    ComponentSerializerRegistry serializers;
+    RegisterComponent<SceneCodecMaterialComponent>(serializers);
 
     LoggingProvider logging;
     AssetRegistry assetRegistry(logging);
@@ -97,7 +97,7 @@ TEST(SceneFieldCodec, GenericComponentSerializerWritesTypedMaterialHandleAsPathS
     registry.Components.AddComponent(entity, SceneCodecMaterialComponent{ .Material = material });
 
     SceneSerializationContext context(logging, &assets);
-    JsonValue json = SaveSceneJson(registry, context);
+    JsonValue json = SaveSceneJson(registry, serializers, context);
 
     const JsonValue* entities = json.Find("entities");
     ASSERT_NE(entities, nullptr);

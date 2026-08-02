@@ -59,13 +59,12 @@ namespace
 
 TEST(SceneSerializerIdentity, IdenticalRegistrationIsIdempotent)
 {
-    ClearComponentSerializers();
-    RegisterComponentSerializer(Ser<SerP>());
-    const size_t afterFirst = GetComponentSerializerEntries().size();
-    RegisterComponentSerializer(Ser<SerP>()); // full tuple match → no-op
-    const size_t afterSecond = GetComponentSerializerEntries().size();
+    ComponentSerializerRegistry serializers;
+    (void)serializers.Register(Ser<SerP>());
+    const size_t afterFirst = serializers.Entries().size();
+    (void)serializers.Register(Ser<SerP>()); // full tuple match -> no-op
+    const size_t afterSecond = serializers.Entries().size();
     EXPECT_EQ(afterFirst, afterSecond);
-    ClearComponentSerializers();
 }
 
 TEST(SceneSerializerIdentity, FullTupleIsConsistent)
@@ -84,9 +83,9 @@ TEST(SceneSerializerIdentity, SameJsonKeyDifferentTypeIdRejected)
 #else
     EXPECT_DEATH(
         {
-            ClearComponentSerializers();
-            RegisterComponentSerializer(Ser<SerP>());
-            RegisterComponentSerializer(Ser<SerQ>()); // same key, different id
+            ComponentSerializerRegistry serializers;
+            RegisterComponent<SerP>(serializers);
+            RegisterComponent<SerQ>(serializers); // same key, different id
         },
         "collision");
 #endif
@@ -99,9 +98,9 @@ TEST(SceneSerializerIdentity, SameChunkDifferentTypeIdRejected)
 #else
     EXPECT_DEATH(
         {
-            ClearComponentSerializers();
-            RegisterComponentSerializer(Ser<SerR>());
-            RegisterComponentSerializer(Ser<SerS>()); // same chunk, different id
+            ComponentSerializerRegistry serializers;
+            RegisterComponent<SerR>(serializers);
+            RegisterComponent<SerS>(serializers); // same chunk, different id
         },
         "collision");
 #endif

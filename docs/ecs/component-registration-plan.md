@@ -4,7 +4,7 @@ Status: **implemented** (2026-06-12, branch `asset-pipelines`). All five steps
 landed; full suite green (807 tests). Two deviations from the original plan
 are recorded inline below, marked **Deviation**.
 Branch context: coordinate with Editor Phase 1 (it consumes
-`GetComponentSerializerEntries()` — that entry point did not change).
+the serializer entry list — that entry point did not change).
 
 ## Problem
 
@@ -16,10 +16,10 @@ Adding a serializable component today touches five files:
 | Trivially-copyable `static_assert` | the component's own header | ceremony, should be automatic |
 | FourCC chunk ID | `world/serialization/SceneFormat.h` | per-type fact living three directories from the type |
 | `ComponentStorageTraits<T>` specialization | `world/serialization/ComponentStorageTraits.h` | ~18 lines; 4 of 5 are identical boilerplate; drags `audio/` and `render/` includes into `world/serialization` |
-| `RegisterComponent<T>()` line | `SceneSerializer.cpp` `InitSceneSerializer()` | forget it → component **silently never serializes** |
+| `RegisterComponent<T>()` line | `SceneSerializer.cpp` `RegisterEngineSceneSerializers()` | forget it → component **silently never serializes** |
 | `RegisterComponent<T>()` line | `SceneRegistryInitialization.cpp` `InitializeSceneRegistry()` | forget it → loads still work, but programmatic `AddComponent` before the first load hits the registration-after-entity-creation assert (debug) / UB (release), order-dependent |
 
-Additional silent failure: `RegisterComponentSerializer` skips any serializer
+Additional silent failure: registering a serializer skips any serializer
 whose chunk ID **or** JSON key collides with an existing entry — no assert, no
 log. A genuine collision is indistinguishable from idempotent re-registration.
 
@@ -32,7 +32,7 @@ scene components is named in exactly one place.
 - **Wire format does not change.** Same FourCCs, same chunk layout, same JSON
   keys. Existing `.scene` files load unmodified. (This is what makes the
   refactor safe relative to the editor branch.)
-- `GetComponentSerializerEntries()` keeps its signature and semantics.
+- The serializer entry list keeps its semantics.
 - `World::RegisterComponent<T>` keeps its register-before-first-entity rule.
 - No static-initializer self-registration. The engine is a static library;
   registrar objects in unreferenced TUs get dead-stripped, init order is
@@ -104,7 +104,7 @@ void ForEachSceneComponent(Fn&& fn);   // fold over the tuple's types
 
 Consumers:
 
-- `InitSceneSerializer()` folds over the list calling `RegisterComponent<T>()`.
+- `RegisterEngineSceneSerializers()` folds over the list calling `RegisterComponent<T>()`.
 - `InitializeSceneRegistry` folds over the list calling
   `ComponentStorageTraits<T>::Register(registry)`. Using the traits (not raw
   `RegisterComponent`) is what keeps `WorldTransform`/`Parent` registered via
@@ -114,7 +114,7 @@ The two lists that could previously drift apart are now the same list, which
 removes the order-dependent registration bug class outright.
 
 Games extend, not edit: game-specific components keep using
-`RegisterComponent<T>()` after `InitSceneSerializer()` and registering storage
+`RegisterComponent<T>()` after `RegisterEngineSceneSerializers()` and registering storage
 in their own zone-builder hook. A game-side manifest helper is a follow-up if
 a real game needs it; don't build it speculatively.
 
@@ -124,9 +124,9 @@ a real game needs it; don't build it speculatively.
   `static_assert(std::is_trivially_copyable_v<T>)` — archetype chunks relocate
   with `memcpy`, so this is a structural requirement, enforced once. Delete
   the per-header asserts (e.g. `AudioCaptionComponent.h`).
-- `RegisterComponentSerializer` distinguishes the two collision cases:
+- Registration distinguishes the two collision cases:
   - chunk ID **and** JSON key both match an existing entry → idempotent
-    re-registration, skip silently (keeps `InitSceneSerializer()` re-entrant);
+    re-registration, skip silently (keeps `RegisterEngineSceneSerializers()` re-entrant);
   - only one matches → genuine collision: assert in debug, log error in
     release, refuse to register.
 

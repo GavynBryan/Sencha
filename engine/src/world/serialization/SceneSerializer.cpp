@@ -22,11 +22,6 @@
 
 namespace
 {
-    const std::vector<std::unique_ptr<IComponentSerializer>>& SerializerEntries()
-    {
-        return DefaultComponentSerializerRegistry().Entries();
-    }
-
     void SetError(SceneSaveError* error, std::string message)
     {
         if (error)
@@ -39,9 +34,10 @@ namespace
             error->Message = std::move(message);
     }
 
-    IComponentSerializer* FindByChunkMutable(std::uint32_t chunkId)
+    IComponentSerializer* FindByChunkMutable(const ComponentSerializerRegistry& serializers,
+                                             std::uint32_t chunkId)
     {
-        for (const auto& entry : SerializerEntries())
+        for (const auto& entry : serializers.Entries())
         {
             if (entry->BinaryChunkId() == chunkId)
                 return entry.get();
@@ -49,9 +45,10 @@ namespace
         return nullptr;
     }
 
-    IComponentSerializer* FindByJsonKey(std::string_view key)
+    IComponentSerializer* FindByJsonKey(const ComponentSerializerRegistry& serializers,
+                                        std::string_view key)
     {
-        for (const auto& entry : SerializerEntries())
+        for (const auto& entry : serializers.Entries())
         {
             if (key == entry->JsonKey())
                 return entry.get();
@@ -59,9 +56,10 @@ namespace
         return nullptr;
     }
 
-    void RegisterSerializedComponentStorage(Registry& registry)
+    void RegisterSerializedComponentStorage(const ComponentSerializerRegistry& serializers,
+                                            Registry& registry)
     {
-        for (const auto& entry : SerializerEntries())
+        for (const auto& entry : serializers.Entries())
             entry->RegisterStorage(registry);
     }
 
@@ -257,62 +255,39 @@ namespace
         return true;
     }
 
-    void RollbackLoadedEntities(Registry& registry, const std::vector<EntityId>& entities)
+    void RollbackLoadedEntities(const ComponentSerializerRegistry& serializers,
+                                Registry& registry,
+                                const std::vector<EntityId>& entities)
     {
         for (auto it = entities.rbegin(); it != entities.rend(); ++it)
         {
-            for (const auto& serializer : SerializerEntries())
+            for (const auto& serializer : serializers.Entries())
                 serializer->Remove(*it, registry);
             registry.Components.DestroyEntity(*it);
         }
     }
 }
 
-void RegisterComponentSerializer(std::unique_ptr<IComponentSerializer> serializer)
+void RegisterEngineSceneSerializers(ComponentSerializerRegistry& serializers)
 {
-    // Conflict policy lives in ComponentSerializerRegistry; the legacy free
-    // function preserves the historical fail-loud behavior so the death tests
-    // still observe a hard stop on a genuine collision (vs. the loader, which
-    // takes the returned Rejected and refuses the module cleanly).
-    const auto result = DefaultComponentSerializerRegistry().Register(std::move(serializer));
-    assert(result != ComponentSerializerRegistry::RegisterResult::Rejected
-           && "Component serializer collision: ComponentTypeId, chunk ID, or JSON "
-              "key already registered by a different component");
-    (void)result;
-}
-
-void ClearComponentSerializers()
-{
-    DefaultComponentSerializerRegistry().Clear();
-}
-
-ComponentSerializerRegistry& DefaultComponentSerializerRegistry()
-{
-    static ComponentSerializerRegistry instance;
-    return instance;
-}
-
-void InitSceneSerializer()
-{
-    ForEachSceneComponent([](auto tag)
+    ForEachSceneComponent([&](auto tag)
     {
-        RegisterComponent<typename decltype(tag)::Type>();
+        RegisterComponent<typename decltype(tag)::Type>(serializers);
     });
 }
 
-const std::vector<std::unique_ptr<IComponentSerializer>>& GetComponentSerializerEntries()
-{
-    return SerializerEntries();
-}
-
-bool SaveSceneBinary(const Registry& registry, BinaryWriter& writer, SceneSaveError* error)
+bool SaveSceneBinary(const Registry& registry,
+                     const ComponentSerializerRegistry& serializers,
+                     BinaryWriter& writer,
+                     SceneSaveError* error)
 {
     LoggingProvider logging;
     SceneSerializationContext context(logging);
-    return SaveSceneBinary(registry, writer, context, error);
+    return SaveSceneBinary(registry, serializers, writer, context, error);
 }
 
 bool SaveSceneBinary(const Registry& registry,
+                     const ComponentSerializerRegistry& serializers,
                      BinaryWriter& writer,
                      SceneSerializationContext& context,
                      SceneSaveError* error)
@@ -337,7 +312,7 @@ bool SaveSceneBinary(const Registry& registry,
         return false;
     }
 
-    for (const auto& entry : SerializerEntries())
+    for (const auto& entry : serializers.Entries())
     {
         ChunkWriter chunk;
         if (!chunk.Begin(writer, entry->BinaryChunkId(), SceneVersion)
@@ -352,15 +327,19 @@ bool SaveSceneBinary(const Registry& registry,
     return true;
 }
 
-bool LoadSceneBinary(BinaryReader& reader, Registry& registry, SceneLoadError* error)
+bool LoadSceneBinary(BinaryReader& reader,
+                     Registry& registry,
+                     const ComponentSerializerRegistry& serializers,
+                     SceneLoadError* error)
 {
     LoggingProvider logging;
     SceneSerializationContext context(logging);
-    return LoadSceneBinary(reader, registry, context, error);
+    return LoadSceneBinary(reader, registry, serializers, context, error);
 }
 
 bool LoadSceneBinary(BinaryReader& reader,
                      Registry& registry,
+                     const ComponentSerializerRegistry& serializers,
                      SceneSerializationContext& context,
                      SceneLoadError* error)
 {
@@ -376,7 +355,7 @@ bool LoadSceneBinary(BinaryReader& reader,
     std::vector<EntityId> loadedEntities;
     bool loadedRegistry = false;
 
-    RegisterSerializedComponentStorage(registry);
+    RegisterSerializedComponentStorage(serializers, registry);
 
     while (true)
     {
@@ -398,7 +377,7 @@ bool LoadSceneBinary(BinaryReader& reader,
             ok = Deserialize(reader, count)
                 && LoadHierarchyChunk(reader, count, registry, remap);
         }
-        else if (IComponentSerializer* entry = FindByChunkMutable(chunkHeader.Id))
+        else if (IComponentSerializer* entry = FindByChunkMutable(serializers, chunkHeader.Id))
         {
             std::uint32_t count = 0;
             ok = Deserialize(reader, count)
@@ -407,14 +386,14 @@ bool LoadSceneBinary(BinaryReader& reader,
 
         if (!ok)
         {
-            RollbackLoadedEntities(registry, loadedEntities);
+            RollbackLoadedEntities(serializers, registry, loadedEntities);
             SetError(error, "Failed to read scene chunk " + std::to_string(chunkHeader.Id) + ".");
             return false;
         }
 
         if (!chunk.Skip(reader))
         {
-            RollbackLoadedEntities(registry, loadedEntities);
+            RollbackLoadedEntities(serializers, registry, loadedEntities);
             SetError(error, "Failed to skip scene chunk remainder.");
             return false;
         }
@@ -422,7 +401,7 @@ bool LoadSceneBinary(BinaryReader& reader,
 
     if (!loadedRegistry)
     {
-        RollbackLoadedEntities(registry, loadedEntities);
+        RollbackLoadedEntities(serializers, registry, loadedEntities);
         SetError(error, "Scene is missing entity registry chunk.");
         return false;
     }
@@ -430,14 +409,17 @@ bool LoadSceneBinary(BinaryReader& reader,
     return true;
 }
 
-JsonValue SaveSceneJson(const Registry& registry)
+JsonValue SaveSceneJson(const Registry& registry,
+                        const ComponentSerializerRegistry& serializers)
 {
     LoggingProvider logging;
     SceneSerializationContext context(logging);
-    return SaveSceneJson(registry, context);
+    return SaveSceneJson(registry, serializers, context);
 }
 
-JsonValue SaveSceneJson(const Registry& registry, SceneSerializationContext& context)
+JsonValue SaveSceneJson(const Registry& registry,
+                        const ComponentSerializerRegistry& serializers,
+                        SceneSerializationContext& context)
 {
     JsonValue::Array entitiesJson;
     JsonValue::Array hierarchyJson;
@@ -451,7 +433,7 @@ JsonValue SaveSceneJson(const Registry& registry, SceneSerializationContext& con
         entityToJsonIndex[entity.Index] = i;
 
         JsonValue::Object componentsJson;
-        for (const auto& entry : SerializerEntries())
+        for (const auto& entry : serializers.Entries())
         {
             JsonWriteArchive archive;
             if (!entry->Save(archive, entity, registry, context) || !archive.Ok())
@@ -494,15 +476,19 @@ JsonValue SaveSceneJson(const Registry& registry, SceneSerializationContext& con
     });
 }
 
-bool LoadSceneJson(const JsonValue& root, Registry& registry, SceneLoadError* error)
+bool LoadSceneJson(const JsonValue& root,
+                   Registry& registry,
+                   const ComponentSerializerRegistry& serializers,
+                   SceneLoadError* error)
 {
     LoggingProvider logging;
     SceneSerializationContext context(logging);
-    return LoadSceneJson(root, registry, context, error);
+    return LoadSceneJson(root, registry, serializers, context, error);
 }
 
 bool LoadSceneJson(const JsonValue& root,
                    Registry& registry,
+                   const ComponentSerializerRegistry& serializers,
                    SceneSerializationContext& context,
                    SceneLoadError* error)
 {
@@ -525,13 +511,13 @@ bool LoadSceneJson(const JsonValue& root,
     std::vector<EntityId> entities;
     entities.reserve(entitiesValue->AsArray().size());
 
-    RegisterSerializedComponentStorage(registry);
+    RegisterSerializedComponentStorage(serializers, registry);
 
     for (const JsonValue& entityValue : entitiesValue->AsArray())
     {
         if (!entityValue.IsObject())
         {
-            RollbackLoadedEntities(registry, entities);
+            RollbackLoadedEntities(serializers, registry, entities);
             SetError(error, "Scene JSON entity must be an object.");
             return false;
         }
@@ -545,21 +531,21 @@ bool LoadSceneJson(const JsonValue& root,
 
         if (!components->IsObject())
         {
-            RollbackLoadedEntities(registry, entities);
+            RollbackLoadedEntities(serializers, registry, entities);
             SetError(error, "Scene JSON components must be an object.");
             return false;
         }
 
         for (const auto& [key, componentData] : components->AsObject())
         {
-            IComponentSerializer* entry = FindByJsonKey(key);
+            IComponentSerializer* entry = FindByJsonKey(serializers, key);
             if (!entry)
                 continue;
 
             JsonReadArchive archive(componentData);
             if (!entry->Load(archive, entity, registry, context) || !archive.Ok())
             {
-                RollbackLoadedEntities(registry, entities);
+                RollbackLoadedEntities(serializers, registry, entities);
                 SetError(error, "Failed to load JSON component '" + key + "'.");
                 return false;
             }
@@ -569,7 +555,7 @@ bool LoadSceneJson(const JsonValue& root,
     const JsonValue* hierarchyValue = root.Find("hierarchy");
     if (hierarchyValue && !hierarchyValue->IsArray())
     {
-        RollbackLoadedEntities(registry, entities);
+        RollbackLoadedEntities(serializers, registry, entities);
         SetError(error, "Scene JSON hierarchy must be an array.");
         return false;
     }
@@ -580,7 +566,7 @@ bool LoadSceneJson(const JsonValue& root,
         {
             if (!relation.IsObject())
             {
-                RollbackLoadedEntities(registry, entities);
+                RollbackLoadedEntities(serializers, registry, entities);
                 SetError(error, "Scene JSON hierarchy relation must be an object.");
                 return false;
             }
@@ -589,7 +575,7 @@ bool LoadSceneJson(const JsonValue& root,
             const JsonValue* parent = relation.Find("parent");
             if (!child || !parent || !child->IsNumber() || !parent->IsNumber())
             {
-                RollbackLoadedEntities(registry, entities);
+                RollbackLoadedEntities(serializers, registry, entities);
                 SetError(error, "Scene JSON hierarchy relation is invalid.");
                 return false;
             }
@@ -598,7 +584,7 @@ bool LoadSceneJson(const JsonValue& root,
             const auto parentIndex = static_cast<size_t>(parent->AsNumber());
             if (childIndex >= entities.size() || parentIndex >= entities.size())
             {
-                RollbackLoadedEntities(registry, entities);
+                RollbackLoadedEntities(serializers, registry, entities);
                 SetError(error, "Scene JSON hierarchy references an unknown entity.");
                 return false;
             }

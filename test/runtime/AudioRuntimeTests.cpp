@@ -158,8 +158,8 @@ TEST(AudioClipCodec, LoadResolvesPathString)
 
 TEST(AudioClipCodec, ComponentRoundTripsThroughSceneJson)
 {
-    ClearComponentSerializers();
-    RegisterComponent<AudioSourceComponent>();
+    ComponentSerializerRegistry serializers;
+    RegisterComponent<AudioSourceComponent>(serializers);
 
     LoggingProvider logging;
     AssetRegistry registry(logging);
@@ -191,12 +191,12 @@ TEST(AudioClipCodec, ComponentRoundTripsThroughSceneJson)
         });
 
     SceneSerializationContext saveContext(logging, &assets);
-    const JsonValue json = SaveSceneJson(source, saveContext);
+    const JsonValue json = SaveSceneJson(source, serializers, saveContext);
 
     Registry destination;
     destination.Components.RegisterComponent<AudioSourceComponent>();
     SceneSerializationContext loadContext(logging, &assets);
-    ASSERT_TRUE(LoadSceneJson(json, destination, loadContext));
+    ASSERT_TRUE(LoadSceneJson(json, destination, serializers, loadContext));
 
     int count = 0;
     destination.Components.ForEachComponent<AudioSourceComponent>(
@@ -213,8 +213,6 @@ TEST(AudioClipCodec, ComponentRoundTripsThroughSceneJson)
         EXPECT_FALSE(component.Started);
     });
     EXPECT_EQ(count, 1);
-
-    ClearComponentSerializers();
 }
 
 TEST(AudioSourceLifetime, RemoveStopsVoiceBeforeReleasingSoleClipReference)

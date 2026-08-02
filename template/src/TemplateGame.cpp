@@ -506,11 +506,12 @@ struct SpinSystem
 } // namespace
 
 void TemplateGame::OnRegisterComponents(
-    ComponentSerializerRegistry&)
+    ComponentSerializerRegistry& serializers)
 {
-    InitSceneSerializer();
-    RegisterComponent<SpinComponent>();
-    RegisterComponent<PlayerStartComponent>();
+    // The engine already registered its own scene manifest into this registry;
+    // a game adds only what it owns.
+    RegisterComponent<SpinComponent>(serializers);
+    RegisterComponent<PlayerStartComponent>(serializers);
 }
 
 void TemplateGame::OnUnregisterComponents(
@@ -571,7 +572,7 @@ void TemplateGame::OnStart(GameStartupContext&)
         engine.Tasks(),
         engine.World(),
         engine.RuntimeComponents(),
-        DefaultComponentSerializerRegistry(),
+        engine.SceneSerializers(),
         *SceneContext,
         engine.Runtime());
     Preloader.emplace(
@@ -754,8 +755,7 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
     }
 
     auto buildResult = std::make_shared<SceneBuildResult>();
-    const ComponentSerializerRegistry* serializers =
-        &DefaultComponentSerializerRegistry();
+    const ComponentSerializerRegistry* serializers = &engine.SceneSerializers();
     auto probes = std::make_shared<ProbeVolumeFile>();
     ZoneLoader->BeginLoad(
         kPlayZone,
@@ -875,8 +875,7 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
     AssetSystem* assetSystem = &runtimeAssets.Assets;
     LoggingProvider* loggingPtr = &logging;
-    const ComponentSerializerRegistry* serializers =
-        &DefaultComponentSerializerRegistry();
+    const ComponentSerializerRegistry* serializers = &engine.SceneSerializers();
 
     const EngineRuntimeConfig& runtimeConfig =
         engine.Config().Runtime;
@@ -998,7 +997,7 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
             package,
             buildResult,
             scenePath,
-            DefaultComponentSerializerRegistry());
+            engine.SceneSerializers());
         if (!buildResult.Success)
         {
             Partition.reset();
@@ -1013,7 +1012,7 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
                 engine.RuntimeComponents(),
                 package,
                 PersistentStoragePartition,
-                DefaultComponentSerializerRegistry(),
+                engine.SceneSerializers(),
                 *SceneContext,
                 &importError))
         {

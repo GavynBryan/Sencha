@@ -13,6 +13,7 @@
 #include <utility>
 #include <unordered_map>
 #include <unordered_set>
+#include "DocumentSerialization.h"
 
 namespace
 {
@@ -36,7 +37,7 @@ template <typename Component>
 void AppendComponent(EntitySnapshot& snapshot, Registry& registry, EntityId entity,
                      LoggingProvider& logging)
 {
-    for (const auto& serializer : GetComponentSerializerEntries())
+    for (const auto& serializer : EditorSceneSerializers().Entries())
     {
         if (serializer->TypeId() != ResolveComponentTypeId<Component>())
             continue;

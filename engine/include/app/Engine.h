@@ -12,6 +12,7 @@
 #include <runtime/FrameTrace.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <time/TimingHistory.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
 #include <profiling/RenderCapture.h>
@@ -133,6 +134,14 @@ public:
     [[nodiscard]] JobSystem& Jobs();
     [[nodiscard]] const JobSystem& Jobs() const;
 
+    // Which components this host can serialize: the engine scene manifest plus
+    // whatever the loaded game module registered through OnRegisterComponents.
+    // Zone loading and any other scene read/write takes this explicitly.
+    [[nodiscard]] const ComponentSerializerRegistry& SceneSerializers() const
+    {
+        return SceneSerializerRegistry;
+    }
+
     [[nodiscard]] DefaultRenderPipeline* GetRenderPipeline();
     [[nodiscard]] const DefaultRenderPipeline* GetRenderPipeline() const;
 
@@ -179,6 +188,7 @@ private:
     void CreateDebugOverlay();
 
     EngineConfig Configuration;
+    ComponentSerializerRegistry SceneSerializerRegistry;
     LoggingProvider LoggingState;
     std::unique_ptr<DebugService> DebugState;
     std::unique_ptr<ConsoleService> ConsoleState;

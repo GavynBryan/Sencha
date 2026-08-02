@@ -123,10 +123,9 @@ public:
     }
 
     void OnRegisterComponents(
-        ComponentSerializerRegistry&) override
+        ComponentSerializerRegistry& serializers) override
     {
-        InitSceneSerializer();
-        RegisterComponent<StartupGameComponent>();
+        RegisterComponent<StartupGameComponent>(serializers);
     }
 
     void OnUnregisterComponents(
@@ -204,10 +203,9 @@ public:
     }
 
     void OnRegisterComponents(
-        ComponentSerializerRegistry&) override
+        ComponentSerializerRegistry& serializers) override
     {
-        InitSceneSerializer();
-        RegisterComponent<MissingRuntimeComponent>();
+        RegisterComponent<MissingRuntimeComponent>(serializers);
     }
 
     void OnUnregisterComponents(

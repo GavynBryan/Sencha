@@ -130,23 +130,23 @@ TEST(GameModuleLoader, RefusesAbiMismatch)
 // call), loaded into a stock registry that links no editor symbols.
 TEST(GameModuleLoader, ModuleComponentRoundTripsThroughSceneJson)
 {
-    // Use the engine's default registry — the one SaveSceneJson/LoadSceneJson read.
-    ClearComponentSerializers();
-    InitSceneSerializer();
+    // A host registry, seeded exactly the way Engine::Run seeds its own.
+    ComponentSerializerRegistry serializers;
+    RegisterEngineSceneSerializers(serializers);
 
     GameModuleLoader loader;
     std::string error;
     LoadedModule m = loader.Load(TEST_GAME_MODULE_PATH, &error);
     ASSERT_TRUE(m.IsValid()) << error;
-    m.Instance->OnRegisterComponents(DefaultComponentSerializerRegistry());
+    m.Instance->OnRegisterComponents(serializers);
 
-    IComponentSerializer* gs = DefaultComponentSerializerRegistry().FindByJsonKey("spike.grapple_hook");
+    IComponentSerializer* gs = serializers.FindByJsonKey("spike.grapple_hook");
     ASSERT_NE(gs, nullptr);
 
     // Author an entity carrying the game component (type-erased, via its Load).
     Registry source;
-    for (const auto& s : GetComponentSerializerEntries())
-        s->RegisterStorage(source);
+    for (const auto& entry : serializers.Entries())
+        entry->RegisterStorage(source);
 
     LoggingProvider logging;
     SceneSerializationContext sctx{ logging };
@@ -157,10 +157,10 @@ TEST(GameModuleLoader, ModuleComponentRoundTripsThroughSceneJson)
     ASSERT_TRUE(gs->Load(in, e, source, sctx));
 
     // Save the whole scene, then load into a fresh registry (the runtime/editor path).
-    const JsonValue scene = SaveSceneJson(source);
+    const JsonValue scene = SaveSceneJson(source, serializers);
     Registry loaded;
     SceneLoadError loadError;
-    ASSERT_TRUE(LoadSceneJson(scene, loaded, &loadError)) << loadError.Message;
+    ASSERT_TRUE(LoadSceneJson(scene, loaded, serializers, &loadError)) << loadError.Message;
 
     // The game component came back, by its module-stable identity.
     const ComponentId id = loaded.Components.GetComponentIdByType(gs->TypeId());
@@ -181,7 +181,7 @@ TEST(GameModuleLoader, ModuleComponentRoundTripsThroughSceneJson)
     }
     EXPECT_TRUE(found);
 
-    m.Instance->OnUnregisterComponents(DefaultComponentSerializerRegistry());
+    // Entries the module allocated must go before the module is unmapped.
+    m.Instance->OnUnregisterComponents(serializers);
     loader.Unload(m);
-    ClearComponentSerializers();
 }

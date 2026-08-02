@@ -207,8 +207,6 @@ void CubeDemoGame::OnStart(GameStartupContext&)
         graphics.Samplers);
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
 
-    InitSceneSerializer();
-
 #ifdef SENCHA_ENABLE_COOK
     {
         PngTextureImporter pngImporter;
@@ -285,7 +283,7 @@ void CubeDemoGame::OnStart(GameStartupContext&)
         engine.Tasks(),
         engine.World(),
         engine.RuntimeComponents(),
-        DefaultComponentSerializerRegistry(),
+        engine.SceneSerializers(),
         *SceneContext,
         engine.Runtime());
     Preloader.emplace(
@@ -322,8 +320,7 @@ void CubeDemoGame::OnStart(GameStartupContext&)
     auto parsed = std::make_shared<DemoSceneParse>();
     auto packageBuilt = std::make_shared<bool>(false);
     auto packageError = std::make_shared<std::string>();
-    const ComponentSerializerRegistry* serializers =
-        &DefaultComponentSerializerRegistry();
+    const ComponentSerializerRegistry* serializers = &engine.SceneSerializers();
     ZoneLoader->BeginLoad(
         kDemoZone,
         [parsed, packageBuilt, packageError, serializers](

@@ -34,16 +34,17 @@ namespace
         return registry;
     }
 
-    void ResetSceneSerializers()
+    ComponentSerializerRegistry MakeSerializers()
     {
-        ClearComponentSerializers();
-        InitSceneSerializer();
+        ComponentSerializerRegistry serializers;
+        RegisterEngineSceneSerializers(serializers);
+        return serializers;
     }
 }
 
 TEST(SceneSerializerFailure, JsonLoadRollsBackEntitiesAndComponents)
 {
-    ResetSceneSerializers();
+    const ComponentSerializerRegistry serializers = MakeSerializers();
     auto parsed = JsonParse(R"({
         "version": 1,
         "entities": [
@@ -67,7 +68,7 @@ TEST(SceneSerializerFailure, JsonLoadRollsBackEntitiesAndComponents)
 
     Registry loaded = MakeFailureRegistry();
     SceneLoadError error;
-    EXPECT_FALSE(LoadSceneJson(*parsed, loaded, &error));
+    EXPECT_FALSE(LoadSceneJson(*parsed, loaded, serializers, &error));
 
     EXPECT_EQ(loaded.Components.EntityCount(), 0u);
     EXPECT_EQ(loaded.Components.CountComponents<LocalTransform>(), 0u);
@@ -75,7 +76,7 @@ TEST(SceneSerializerFailure, JsonLoadRollsBackEntitiesAndComponents)
 
 TEST(SceneSerializerFailure, BinaryLoadRollsBackCreatedEntities)
 {
-    ResetSceneSerializers();
+    const ComponentSerializerRegistry serializers = MakeSerializers();
     auto stream = MakeBinaryStream();
     BinaryWriter writer(stream);
 
@@ -102,7 +103,7 @@ TEST(SceneSerializerFailure, BinaryLoadRollsBackCreatedEntities)
     BinaryReader reader(stream);
     Registry loaded = MakeFailureRegistry();
     SceneLoadError error;
-    EXPECT_FALSE(LoadSceneBinary(reader, loaded, &error));
+    EXPECT_FALSE(LoadSceneBinary(reader, loaded, serializers, &error));
 
     EXPECT_EQ(loaded.Components.EntityCount(), 0u);
     EXPECT_EQ(loaded.Components.CountComponents<CameraComponent>(), 0u);
@@ -110,7 +111,7 @@ TEST(SceneSerializerFailure, BinaryLoadRollsBackCreatedEntities)
 
 TEST(SceneSerializerFailure, BinarySkipsUnknownChunks)
 {
-    ResetSceneSerializers();
+    const ComponentSerializerRegistry serializers = MakeSerializers();
     auto stream = MakeBinaryStream();
     BinaryWriter writer(stream);
 
@@ -144,7 +145,7 @@ TEST(SceneSerializerFailure, BinarySkipsUnknownChunks)
     stream.seekg(0);
     BinaryReader reader(stream);
     Registry loaded;
-    ASSERT_TRUE(LoadSceneBinary(reader, loaded));
+    ASSERT_TRUE(LoadSceneBinary(reader, loaded, serializers));
 
     EXPECT_EQ(loaded.Components.EntityCount(), 1u);
     EXPECT_EQ(loaded.Components.CountComponents<CameraComponent>(), 1u);
@@ -152,20 +153,20 @@ TEST(SceneSerializerFailure, BinarySkipsUnknownChunks)
 
 TEST(SceneSerializerFailure, HandlesEmptyRegistry)
 {
-    ResetSceneSerializers();
+    const ComponentSerializerRegistry serializers = MakeSerializers();
     Registry source;
     auto stream = MakeBinaryStream();
     BinaryWriter writer(stream);
-    ASSERT_TRUE(SaveSceneBinary(source, writer));
+    ASSERT_TRUE(SaveSceneBinary(source, serializers, writer));
 
     stream.seekg(0);
     BinaryReader reader(stream);
     Registry loaded;
-    ASSERT_TRUE(LoadSceneBinary(reader, loaded));
+    ASSERT_TRUE(LoadSceneBinary(reader, loaded, serializers));
     EXPECT_EQ(loaded.Components.EntityCount(), 0u);
 
-    JsonValue json = SaveSceneJson(source);
+    JsonValue json = SaveSceneJson(source, serializers);
     Registry jsonLoaded;
-    ASSERT_TRUE(LoadSceneJson(json, jsonLoaded));
+    ASSERT_TRUE(LoadSceneJson(json, jsonLoaded, serializers));
     EXPECT_EQ(jsonLoaded.Components.EntityCount(), 0u);
 }

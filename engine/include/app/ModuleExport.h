@@ -31,5 +31,9 @@
 // EngineFramePhases.h registration free function, and made the frame-phase
 // accessors (Timing, Instrumentation, the profiling latch/publish pair)
 // private; IRenderFeature lost the unreachable Contribute slot; JobSystem
-// became the concrete pool and IWindow was removed.
-#define SENCHA_GAME_ABI_VERSION 6u
+// became the concrete pool and IWindow was removed. v7: the process-global
+// component serializer registry is gone -- each host owns one and the scene
+// save/load functions take it explicitly, so a module that reached for the
+// default registry no longer links. Game::OnRegisterComponents is unchanged;
+// the registry it receives is now the engine's own.
+#define SENCHA_GAME_ABI_VERSION 7u

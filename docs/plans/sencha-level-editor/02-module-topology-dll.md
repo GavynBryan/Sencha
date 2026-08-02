@@ -355,8 +355,8 @@ public:
   - The free-function serializer global was refactored into an owned
     **`ComponentSerializerRegistry`** object
     ([ComponentSerializerRegistry.h](../../engine/include/world/serialization/ComponentSerializerRegistry.h));
-    the legacy `RegisterComponentSerializer`/`ClearComponentSerializers`/
-    `GetComponentSerializerEntries` free functions are now a thin shim over a process-default
+    the free functions that wrapped a process-default registry have since been
+    removed; each host owns a registry and passes it explicitly. Historically they shimmed a process-default
     instance, so existing callers are untouched while the object can be handed to a module.
   - ABI surface landed: [ModuleExport.h](../../engine/include/app/ModuleExport.h)
     (`SENCHA_GAME_EXPORT`, `SENCHA_GAME_ABI_VERSION`) and
@@ -435,7 +435,7 @@ public:
        **Owned by 04-** (first hard requirement: face material `AssetRef` editing); see the
        note there. Explicitly the property-metadata expansion deferred in 01-§7.
     2. **Editor uses the process-global serializer registry, not an owned instance.** S3's
-       `EditorApp`/`LevelDocument`/inspector route through `DefaultComponentSerializerRegistry()`
+       `EditorApp`/`LevelDocument`/inspector route through the editor's own registry
        and the free-function shim, contradicting §2.1 / 00-§2 ("game/editor never host
        engine-global state"). The owned `ComponentSerializerRegistry` exists but the editor
        doesn't own one yet. Invisible single-document/single-project; a hazard for

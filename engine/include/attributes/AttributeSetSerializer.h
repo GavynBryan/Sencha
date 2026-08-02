@@ -6,7 +6,9 @@
 // Registers an IComponentSerializer for AttributeSet with the scene serializer.
 // Attributes persist by name (see AttributeSerialization.h), resolved through
 // the AttributeRegistry stored as a world resource on the registry being
-// (de)serialized. Call once at startup, after InitSceneSerializer().
+// (de)serialized. Call once at startup, on the host's serializer registry.
 //=============================================================================
 
-void RegisterAttributeSerializer();
+class ComponentSerializerRegistry;
+
+void RegisterAttributeSerializer(ComponentSerializerRegistry& serializers);

@@ -86,14 +86,14 @@ TEST(ComponentManifest, SceneRegistryRegistersEveryManifestComponent)
     EXPECT_TRUE(registry.Components.IsRegistered<Parent>());
 }
 
-TEST(ComponentManifest, InitSceneSerializerIsIdempotentAndCoversManifest)
+TEST(ComponentManifest, EngineSerializerRegistrationIsIdempotentAndCoversManifest)
 {
-    ClearComponentSerializers();
-    InitSceneSerializer();
-    const std::size_t count = GetComponentSerializerEntries().size();
+    ComponentSerializerRegistry serializers;
+    RegisterEngineSceneSerializers(serializers);
+    const std::size_t count = serializers.Entries().size();
     EXPECT_EQ(count, std::tuple_size_v<EngineSceneComponents>);
 
-    InitSceneSerializer();
-    EXPECT_EQ(GetComponentSerializerEntries().size(), count)
-        << "Re-running InitSceneSerializer must not duplicate entries";
+    RegisterEngineSceneSerializers(serializers);
+    EXPECT_EQ(serializers.Entries().size(), count)
+        << "Re-registering the engine manifest must not duplicate entries";
 }

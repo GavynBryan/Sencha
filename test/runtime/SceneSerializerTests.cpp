@@ -46,10 +46,11 @@ namespace
         return registry;
     }
 
-    void ResetSceneSerializers()
+    ComponentSerializerRegistry MakeSerializers()
     {
-        ClearComponentSerializers();
-        InitSceneSerializer();
+        ComponentSerializerRegistry serializers;
+        RegisterEngineSceneSerializers(serializers);
+        return serializers;
     }
 
     Transform3f MakeTransform(float x, float y, float z)
@@ -73,7 +74,7 @@ namespace
 }
 TEST(SceneSerializer, BinaryRoundTripsCleanRegistry)
 {
-    ResetSceneSerializers();
+    const ComponentSerializerRegistry serializers = MakeSerializers();
     Registry source = MakeSceneRegistry();
 
     EntityId parent = source.Components.CreateEntity();
@@ -94,13 +95,13 @@ TEST(SceneSerializer, BinaryRoundTripsCleanRegistry)
 
     auto stream = MakeBinaryStream();
     BinaryWriter writer(stream);
-    ASSERT_TRUE(SaveSceneBinary(source, writer));
+    ASSERT_TRUE(SaveSceneBinary(source, serializers, writer));
 
     stream.seekg(0);
     BinaryReader reader(stream);
     Registry loaded;
     SceneLoadError error;
-    ASSERT_TRUE(LoadSceneBinary(reader, loaded, &error)) << error.Message;
+    ASSERT_TRUE(LoadSceneBinary(reader, loaded, serializers, &error)) << error.Message;
 
     EXPECT_EQ(loaded.Components.EntityCount(), 2u);
 
@@ -129,14 +130,14 @@ TEST(SceneSerializer, BinaryRoundTripsCleanRegistry)
 
 TEST(SceneSerializer, BinaryLoadIsAdditiveAndRemapsEntityIndices)
 {
-    ResetSceneSerializers();
+    const ComponentSerializerRegistry serializers = MakeSerializers();
     Registry source = MakeSceneRegistry();
     EntityId sourceEntity = source.Components.CreateEntity();
     AddTransform(source, sourceEntity, MakeTransform(8.0f, 0.0f, 0.0f));
 
     auto stream = MakeBinaryStream();
     BinaryWriter writer(stream);
-    ASSERT_TRUE(SaveSceneBinary(source, writer));
+    ASSERT_TRUE(SaveSceneBinary(source, serializers, writer));
 
     Registry loaded = MakeSceneRegistry();
     EntityId preexisting = loaded.Components.CreateEntity();
@@ -144,7 +145,7 @@ TEST(SceneSerializer, BinaryLoadIsAdditiveAndRemapsEntityIndices)
 
     stream.seekg(0);
     BinaryReader reader(stream);
-    ASSERT_TRUE(LoadSceneBinary(reader, loaded));
+    ASSERT_TRUE(LoadSceneBinary(reader, loaded, serializers));
 
     EXPECT_EQ(loaded.Components.EntityCount(), 2u);
     ASSERT_EQ(loaded.Components.CountComponents<LocalTransform>(), 2u);
@@ -164,19 +165,19 @@ TEST(SceneSerializer, BinaryLoadIsAdditiveAndRemapsEntityIndices)
 
 TEST(SceneSerializer, JsonRoundTripsThroughStringifyAndParser)
 {
-    ResetSceneSerializers();
+    const ComponentSerializerRegistry serializers = MakeSerializers();
     Registry source = MakeSceneRegistry();
     EntityId entity = source.Components.CreateEntity();
     AddTransform(source, entity, MakeTransform(2.0f, 3.0f, 4.0f));
     source.Components.AddComponent(entity, CameraComponent{});
 
-    JsonValue json = SaveSceneJson(source);
+    JsonValue json = SaveSceneJson(source, serializers);
     std::string text = JsonStringify(json, true);
     auto parsed = JsonParse(text);
     ASSERT_TRUE(parsed.has_value());
 
     Registry loaded;
-    ASSERT_TRUE(LoadSceneJson(*parsed, loaded));
+    ASSERT_TRUE(LoadSceneJson(*parsed, loaded, serializers));
 
     ASSERT_EQ(loaded.Components.EntityCount(), 1u);
     ASSERT_EQ(loaded.Components.CountComponents<LocalTransform>(), 1u);
@@ -192,7 +193,7 @@ TEST(SceneSerializer, JsonRoundTripsThroughStringifyAndParser)
 
 TEST(SceneSerializer, PointLightRoundTripsThroughJson)
 {
-    ResetSceneSerializers();
+    const ComponentSerializerRegistry serializers = MakeSerializers();
     Registry source = MakeSceneRegistry();
     EntityId entity = source.Components.CreateEntity();
     AddTransform(source, entity, MakeTransform(0.0f, 0.0f, 0.0f));
@@ -204,12 +205,12 @@ TEST(SceneSerializer, PointLightRoundTripsThroughJson)
     light.Enabled = false;
     source.Components.AddComponent(entity, light);
 
-    JsonValue json = SaveSceneJson(source);
+    JsonValue json = SaveSceneJson(source, serializers);
     auto parsed = JsonParse(JsonStringify(json, true));
     ASSERT_TRUE(parsed.has_value());
 
     Registry loaded;
-    ASSERT_TRUE(LoadSceneJson(*parsed, loaded));
+    ASSERT_TRUE(LoadSceneJson(*parsed, loaded, serializers));
 
     ASSERT_EQ(loaded.Components.CountComponents<PointLightComponent>(), 1u);
     const PointLightComponent* out = nullptr;
@@ -228,7 +229,7 @@ TEST(SceneSerializer, PointLightRoundTripsThroughJson)
 
 TEST(SceneSerializer, LoadsHandAuthoredJson)
 {
-    ResetSceneSerializers();
+    const ComponentSerializerRegistry serializers = MakeSerializers();
     auto parsed = JsonParse(R"({
         "version": 1,
         "entities": [
@@ -269,7 +270,7 @@ TEST(SceneSerializer, LoadsHandAuthoredJson)
     ASSERT_TRUE(parsed.has_value());
 
     Registry loaded;
-    ASSERT_TRUE(LoadSceneJson(*parsed, loaded));
+    ASSERT_TRUE(LoadSceneJson(*parsed, loaded, serializers));
 
     EXPECT_EQ(loaded.Components.EntityCount(), 2u);
     EXPECT_EQ(loaded.Components.CountComponents<LocalTransform>(), 2u);
@@ -282,7 +283,7 @@ TEST(SceneSerializer, LoadsLightRecordsCookedBeforeShadowFieldsExisted)
     // Scenes cooked before the shadow and bake fields existed carry only the
     // original light keys; the schema defaults must fill the rest instead of
     // rejecting the component.
-    ResetSceneSerializers();
+    const ComponentSerializerRegistry serializers = MakeSerializers();
     auto parsed = JsonParse(R"({
         "version": 1,
         "entities": [
@@ -327,7 +328,7 @@ TEST(SceneSerializer, LoadsLightRecordsCookedBeforeShadowFieldsExisted)
     ASSERT_TRUE(parsed.has_value());
 
     Registry loaded;
-    ASSERT_TRUE(LoadSceneJson(*parsed, loaded));
+    ASSERT_TRUE(LoadSceneJson(*parsed, loaded, serializers));
 
     ASSERT_EQ(loaded.Components.CountComponents<PointLightComponent>(), 1u);
     ASSERT_EQ(loaded.Components.CountComponents<SpotLightComponent>(), 1u);
@@ -353,10 +354,10 @@ TEST(SceneSerializer, LoadsLightRecordsCookedBeforeShadowFieldsExisted)
 
 TEST(SceneSerializer, RegistersStaticMeshThroughGenericSerializer)
 {
-    ResetSceneSerializers();
+    const ComponentSerializerRegistry serializers = MakeSerializers();
 
     bool found = false;
-    for (const auto& entry : GetComponentSerializerEntries())
+    for (const auto& entry : serializers.Entries())
         found = found || entry->JsonKey() == "StaticMesh";
 
     EXPECT_TRUE(found);

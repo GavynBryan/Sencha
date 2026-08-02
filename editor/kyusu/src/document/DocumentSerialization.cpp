@@ -100,6 +100,12 @@ struct ComponentStorageTraits<BakedBrushComponent>
 
 #include <world/serialization/SceneSerializer.h>
 
+ComponentSerializerRegistry& EditorSceneSerializers()
+{
+    static ComponentSerializerRegistry instance;
+    return instance;
+}
+
 void RegisterDocumentSerializers()
 {
     static bool registered = false;
@@ -107,10 +113,12 @@ void RegisterDocumentSerializers()
         return;
     registered = true;
 
+    ComponentSerializerRegistry& serializers = EditorSceneSerializers();
+
     // Engine components: LocalTransform, CameraComponent, StaticMeshComponent.
-    InitSceneSerializer();
+    RegisterEngineSceneSerializers(serializers);
 
     // Editor-only components.
-    RegisterComponent<BrushComponent>();
-    RegisterComponent<BakedBrushComponent>();
+    RegisterComponent<BrushComponent>(serializers);
+    RegisterComponent<BakedBrushComponent>(serializers);
 }

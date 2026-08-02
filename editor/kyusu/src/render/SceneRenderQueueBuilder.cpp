@@ -37,6 +37,7 @@
 #include <optional>
 #include <sstream>
 #include <utility>
+#include "document/DocumentSerialization.h"
 
 namespace
 {
@@ -320,7 +321,7 @@ void SceneRenderQueueBuilder::SetLightmapPreview(const LightmapPreviewSource& so
                             nullptr, nullptr, nullptr, Textures);
     SceneSerializationContext context(Logging, &Assets);
     SceneLoadError loadError;
-    if (!LoadSceneJson(*json, *registry, context, &loadError))
+    if (!LoadSceneJson(*json, *registry, EditorSceneSerializers(), context, &loadError))
     {
         Log.Error("lightmap preview: scene load error: {}", loadError.Message);
         return;

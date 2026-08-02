@@ -199,7 +199,6 @@ struct ScriptedCameraPathSystem
 void SceneViewerGame::OnRegisterComponents(
     ComponentSerializerRegistry&)
 {
-    InitSceneSerializer();
 }
 
 void SceneViewerGame::OnStart(GameStartupContext&)
@@ -268,7 +267,7 @@ void SceneViewerGame::OnStart(GameStartupContext&)
         engine.Tasks(),
         engine.World(),
         engine.RuntimeComponents(),
-        DefaultComponentSerializerRegistry(),
+        engine.SceneSerializers(),
         *SceneContext,
         engine.Runtime());
     Preloader.emplace(
@@ -367,8 +366,7 @@ ConsoleResult SceneViewerGame::LoadMap(
 
     auto buildResult = std::make_shared<SceneBuildResult>();
     auto probes = std::make_shared<ProbeVolumeFile>();
-    const ComponentSerializerRegistry* serializers =
-        &DefaultComponentSerializerRegistry();
+    const ComponentSerializerRegistry* serializers = &engine.SceneSerializers();
     ZoneLoader->BeginLoad(
         kPlayZone,
         [buildResult, probes, serializers, scenePath](
