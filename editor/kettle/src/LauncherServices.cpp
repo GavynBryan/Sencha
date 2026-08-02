@@ -70,6 +70,7 @@ void LauncherServices::BuildUi()
         ProjectBrowserPanel::Actions{
             .OpenLevelEditor = [this](const std::string& path) { LaunchEditor("kyusu", path); },
             .OpenMaterialEditor = [this](const std::string& path) { LaunchEditor("shudei", path); },
+            .OpenDataEditor = [this](const std::string& path) { LaunchEditor("data_editor", path); },
             .BrowseForProject = [this]() { BrowseForProject(); },
             .CreateProject = [this](const std::string& dir, const std::string& name)
             { CreateProject(dir, name); },

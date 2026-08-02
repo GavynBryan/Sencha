@@ -7,6 +7,7 @@
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <audio/AudioClipCache.h>
 #include <core/metadata/DataSchema.h>
+#include <movement/MovementProfileData.h>
 #include <core/assets/AssetRegistry.h>
 #include <assets/runtime/AssetSystem.h>
 #include <graphics/vulkan/TextureCache.h>
@@ -77,6 +78,11 @@ struct RuntimeAssets
         {
             return DataAssets.HasResidentSubtype(typeName);
         });
+
+        // The engine's own data subtypes. A game module adds its own through
+        // the same registry via Game::OnRegisterDataAssetTypes, which is what
+        // makes them appear in the prebuilt Data Editor.
+        RegisterMovementProfileData(DataTypes, DataSchemas);
 
         // Data is the one built-in kind AssetSystem cannot register itself:
         // its cache and loader live here, not in the front door.
