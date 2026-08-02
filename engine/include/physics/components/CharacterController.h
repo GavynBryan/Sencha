@@ -1,27 +1,23 @@
 #pragma once
 
 #include <ecs/ComponentTypeId.h>
-#include <math/Vec.h>
 
 //=============================================================================
 // CharacterController
 //
-// Data-only ECS component for a kinematic capsule character. Capsule dimensions
-// and slope limit are authored; DesiredVelocity is the planar move intent that
-// gameplay (fixed logic) writes each tick; Grounded is written back by the
-// CharacterControllerSystem. The persistent vertical velocity lives in the
-// system's CharacterMover, not here. PendingJumpSpeed is a one-shot jump request
-// in the same in/out shape as DesiredVelocity: gameplay sets it, the system
-// consumes it (when grounded) and resets it to zero.
+// Authored physical shape of a kinematic capsule character. Configuration
+// only: the per-tick motion comes from MotionRequest and the achieved facts go
+// back out as SupportState and KinematicState, so this component is read by
+// the mover pool and never used as an in/out mailbox.
 //=============================================================================
 struct CharacterController
 {
     float Radius = 0.3f;
     float Height = 1.8f;
     float SlopeLimitDegrees = 50.0f;
-    Vec3d DesiredVelocity = Vec3d::Zero();
-    float PendingJumpSpeed = 0.0f;
-    bool Grounded = false;
+    float StepHeight = 0.35f;
+    float GroundSnapDistance = 0.25f;
+    float SkinWidth = 0.02f;
 };
 
 SENCHA_DECLARE_COMPONENT_TYPE(CharacterController, "sencha.physics.character_controller");

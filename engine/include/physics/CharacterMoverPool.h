@@ -53,6 +53,7 @@ private:
     struct State;
 
     bool Ready(const World& world) const;
+    bool ReadyToDrive(const World& world) const;
     State& EnsureState(World& world);
 
     PhysicsWorld* Simulation;

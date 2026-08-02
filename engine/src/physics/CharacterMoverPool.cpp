@@ -9,6 +9,7 @@
 #include <ecs/World.h>
 #include <physics/CharacterMover.h>
 #include <physics/PhysicsWorld.h>
+#include <movement/MovementComponents.h>
 #include <physics/components/CharacterController.h>
 #include <physics/components/CharacterMoverLink.h>
 #include <world/transform/TransformComponents.h>
@@ -26,6 +27,19 @@ Vec3d ReadPosition(const World& world, EntityId entity)
     return Vec3d::Zero();
 }
 
+// The motor's support classification and the movement component's are the same
+// three cases named in each layer's own vocabulary; neither depends on the
+// other's header.
+SupportKind ToSupportKind(CharacterSupportKind kind)
+{
+    switch (kind)
+    {
+    case CharacterSupportKind::Stable: return SupportKind::Stable;
+    case CharacterSupportKind::Steep:  return SupportKind::Steep;
+    case CharacterSupportKind::None:   break;
+    }
+    return SupportKind::None;
+}
 } // namespace
 
 struct CharacterMoverPool::State
@@ -33,7 +47,6 @@ struct CharacterMoverPool::State
     explicit State(World& world)
         : Commands(world)
         , PendingQuery(world)
-        , DriveQuery(world)
     {
     }
 
@@ -50,10 +63,20 @@ struct CharacterMoverPool::State
     // archetype-level form of the per-entity presence test, so an already-bound
     // controller costs nothing to skip.
     Query<Read<CharacterController>, Without<CharacterMoverLink>> PendingQuery;
-    Query<
-        Write<CharacterController>,
+    // The motor consumes the composed request and publishes the facts the
+    // movement pipeline reads next tick; the authored controller shape is only
+    // needed when a mover is created.
+    //
+    // Built on the first drive, not with the pool: naming a component the
+    // world never registered is an assert, and a physics-only world binds
+    // movers without ever driving them.
+    using CharacterDriveQuery = Query<
         Write<LocalTransform>,
-        Read<CharacterMoverLink>> DriveQuery;
+        Read<CharacterMoverLink>,
+        Write<MotionRequest>,
+        Write<KinematicState>,
+        Write<SupportState>>;
+    std::optional<CharacterDriveQuery> DriveQuery;
     StoragePartitionSet ActivePartitions;
 
     uint32_t Allocate(EntityId owner)
@@ -97,6 +120,18 @@ bool CharacterMoverPool::Ready(const World& world) const
         && world.IsRegistered<LocalTransform>();
 }
 
+bool CharacterMoverPool::ReadyToDrive(const World& world) const
+{
+    // Binding a mover needs only the authored capsule; driving one needs the
+    // movement components it reads and writes. A world that has characters but
+    // no movement pipeline still binds them, which is what the residency tests
+    // and a physics-only host rely on.
+    return Ready(world)
+        && world.IsRegistered<MotionRequest>()
+        && world.IsRegistered<KinematicState>()
+        && world.IsRegistered<SupportState>();
+}
+
 CharacterMoverPool::State& CharacterMoverPool::EnsureState(World& world)
 {
     if (!S)
@@ -130,12 +165,13 @@ void CharacterMoverPool::Reconcile(
         {
             const EntityId entity = view.Entity(index);
             const uint32_t slot = state.Allocate(entity);
-            const CharacterMoverConfig config{
-                controllers[index].Radius,
-                controllers[index].Height,
-                controllers[index].SlopeLimitDegrees,
-                70.0f,
-            };
+            CharacterMoverConfig config;
+            config.Radius = controllers[index].Radius;
+            config.Height = controllers[index].Height;
+            config.SlopeLimitDegrees = controllers[index].SlopeLimitDegrees;
+            config.StepHeight = controllers[index].StepHeight;
+            config.GroundSnapDistance = controllers[index].GroundSnapDistance;
+            config.SkinWidth = controllers[index].SkinWidth;
             state.Slots[slot].Mover.emplace(
                 *Simulation,
                 config,
@@ -176,36 +212,46 @@ void CharacterMoverPool::Drive(
     float dt,
     const Vec3d& gravity)
 {
-    if (!Ready(world) || !S)
+    if (!ReadyToDrive(world) || !S)
         return;
 
     State& state = *S;
-    state.DriveQuery.ForEachChunkIn(partitions, [&](auto& view)
+    if (!state.DriveQuery)
+        state.DriveQuery.emplace(world);
+
+    state.DriveQuery->ForEachChunkIn(partitions, [&](auto& view)
     {
-        auto controllers =
-            view.template Write<CharacterController>();
         auto transforms = view.template Write<LocalTransform>();
         const auto links = view.template Read<CharacterMoverLink>();
+        auto requests = view.template Write<MotionRequest>();
+        auto kinematics = view.template Write<KinematicState>();
+        auto supports = view.template Write<SupportState>();
 
         for (uint32_t index = 0; index < view.Count(); ++index)
         {
             CharacterMover& mover =
                 *state.Slots[links[index].MoverSlot].Mover;
-            if (controllers[index].PendingJumpSpeed > 0.0f
-                && mover.IsGrounded())
-            {
-                mover.Jump(controllers[index].PendingJumpSpeed);
-            }
-            controllers[index].PendingJumpSpeed = 0.0f;
-            mover.Move(
-                Vec3d(
-                    controllers[index].DesiredVelocity.X,
-                    0.0f,
-                    controllers[index].DesiredVelocity.Z),
-                dt,
-                gravity);
-            controllers[index].Grounded = mover.IsGrounded();
-            transforms[index].Value.Position = mover.GetPosition();
+
+            CharacterMoveRequest request;
+            request.Velocity = requests[index].Velocity;
+            request.UpAxis = requests[index].UpAxis;
+            request.GravityScale = requests[index].GravityScale;
+            request.Gravity = gravity;
+            request.DeltaSeconds = dt;
+
+            const CharacterMoveResult result = mover.Move(request);
+
+            // The achieved velocity is what locomotion reads next tick, so a
+            // character that hit a wall does not keep the velocity it asked
+            // for.
+            kinematics[index].Velocity = result.Velocity;
+            supports[index].Kind = ToSupportKind(result.Support.Kind);
+            supports[index].Surface = result.Support.Surface;
+            supports[index].ContactPoint = result.Support.ContactPoint;
+            supports[index].Normal = result.Support.Normal;
+            supports[index].SurfaceVelocity = result.Support.Velocity;
+
+            transforms[index].Value.Position = result.Position;
         }
     });
 }

@@ -7,6 +7,7 @@
 #include <physics/CharacterMoverPool.h>
 #include <physics/PhysicsRegistration.h>
 #include <physics/PhysicsWorld.h>
+#include <movement/MovementComponents.h>
 #include <physics/components/CharacterController.h>
 #include <physics/components/CharacterMoverLink.h>
 #include <world/transform/TransformComponents.h>
@@ -31,6 +32,9 @@ void SetUpPhysics(World& world)
 {
     world.RegisterComponent<LocalTransform>();
     RegisterPhysicsComponents(world);
+    world.RegisterComponent<MotionRequest>();
+    world.RegisterComponent<KinematicState>();
+    world.RegisterComponent<SupportState>();
 }
 
 EntityId SpawnCharacterIn(
@@ -47,6 +51,9 @@ EntityId SpawnCharacterIn(
     world.AddComponent<CharacterController>(
         entity,
         CharacterController{});
+    world.AddComponent<MotionRequest>(entity, MotionRequest{});
+    world.AddComponent<KinematicState>(entity, KinematicState{});
+    world.AddComponent<SupportState>(entity, SupportState{});
     return entity;
 }
 
@@ -56,6 +63,24 @@ EntityId SpawnCharacter(World& world, const Vec3d& position)
         world,
         StoragePartitionId::Default(),
         position);
+}
+
+// Stands in for the locomotion and composition systems: carry the achieved
+// velocity forward, integrate gravity, and cancel descent while standing. The
+// motor owns no velocity of its own, so something has to.
+void StepLocomotion(World& world, EntityId entity)
+{
+    const KinematicState* kinematic = world.TryGet<KinematicState>(entity);
+    const SupportState* support = world.TryGet<SupportState>(entity);
+    MotionRequest* request = world.TryGet<MotionRequest>(entity);
+    if (kinematic == nullptr || support == nullptr || request == nullptr)
+        return;
+
+    Vec3d velocity = kinematic->Velocity;
+    if (support->Kind == SupportKind::Stable && velocity.Y < 0.0f)
+        velocity.Y = 0.0f;
+    velocity.Y += static_cast<float>(kGravity.Y) * kFixedDt;
+    request->Velocity = velocity;
 }
 
 void AddStaticFloor(PhysicsWorld& world)
@@ -87,6 +112,7 @@ TEST(CharacterMoverPool, CreatesLinkAndDrivesMoverOntoFloor)
     for (int index = 0; index < 240; ++index)
     {
         pool.Reconcile(ecs, ActivePartitions());
+        StepLocomotion(ecs, player);
         pool.Drive(ecs, ActivePartitions(), kFixedDt, kGravity);
     }
 
@@ -95,7 +121,7 @@ TEST(CharacterMoverPool, CreatesLinkAndDrivesMoverOntoFloor)
     EXPECT_NEAR(rest->Value.Position.Y, 1.4f, 0.05f);
 }
 
-TEST(CharacterMoverPool, PendingJumpSpeedLaunchesMoverUpward)
+TEST(CharacterMoverPool, UpwardRequestLaunchesMoverUpward)
 {
     PhysicsWorld physics;
     AddStaticFloor(physics);
@@ -110,18 +136,18 @@ TEST(CharacterMoverPool, PendingJumpSpeedLaunchesMoverUpward)
     for (int index = 0; index < 240; ++index)
     {
         pool.Reconcile(ecs, ActivePartitions());
+        StepLocomotion(ecs, player);
         pool.Drive(ecs, ActivePartitions(), kFixedDt, kGravity);
     }
     const float restY =
         ecs.TryGet<LocalTransform>(player)->Value.Position.Y;
-    ASSERT_TRUE(
-        ecs.TryGet<CharacterController>(player)->Grounded);
+    ASSERT_EQ(
+        ecs.TryGet<SupportState>(player)->Kind,
+        SupportKind::Stable);
 
-    ecs.TryGet<CharacterController>(player)->PendingJumpSpeed = 5.0f;
-    pool.Drive(ecs, ActivePartitions(), kFixedDt, kGravity);
-    EXPECT_FLOAT_EQ(
-        ecs.TryGet<CharacterController>(player)->PendingJumpSpeed,
-        0.0f);
+    // The composed request is the only way in: an upward velocity is what a
+    // jump reduces to by the time the motor sees it.
+    ecs.TryGet<MotionRequest>(player)->Velocity = Vec3d(0.0f, 5.0f, 0.0f);
 
     float peakY = restY;
     for (int index = 0; index < 30; ++index)
@@ -130,6 +156,7 @@ TEST(CharacterMoverPool, PendingJumpSpeedLaunchesMoverUpward)
         peakY = std::max(
             peakY,
             ecs.TryGet<LocalTransform>(player)->Value.Position.Y);
+        StepLocomotion(ecs, player);
     }
     EXPECT_GT(peakY, restY + 0.1f);
 }

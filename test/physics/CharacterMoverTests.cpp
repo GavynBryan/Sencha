@@ -28,6 +28,29 @@ CharacterMoverConfig MakeConfig()
     config.Height = 1.8f; // half height 0.9
     return config;
 }
+
+// Stands in for the locomotion system: integrate gravity, hold the achieved
+// vertical velocity between ticks, and cancel it while standing. The motor
+// itself carries no velocity and integrates nothing.
+CharacterMoveResult Advance(CharacterMover& mover,
+                            Vec3d& velocity,
+                            const Vec3d& planar,
+                            CharacterSupportKind support)
+{
+    float up = static_cast<float>(velocity.Y);
+    if (support == CharacterSupportKind::Stable && up < 0.0f)
+        up = 0.0f;
+    up += static_cast<float>(kGravity.Y) * kFixedDt;
+
+    CharacterMoveRequest request;
+    request.Velocity = Vec3d(planar.X, up, planar.Z);
+    request.Gravity = kGravity;
+    request.DeltaSeconds = kFixedDt;
+
+    const CharacterMoveResult result = mover.Move(request);
+    velocity = result.Velocity;
+    return result;
+}
 } // namespace
 
 TEST(CharacterMover, FallsAndLandsOnFloor)
@@ -36,12 +59,15 @@ TEST(CharacterMover, FallsAndLandsOnFloor)
     AddStaticBox(world, Vec3d(0.0f, 0.0f, 0.0f), Vec3d(50.0f, 0.5f, 50.0f)); // top at y = 0.5
 
     CharacterMover mover(world, MakeConfig(), Vec3d(0.0f, 5.0f, 0.0f));
+    Vec3d velocity = Vec3d::Zero();
+    CharacterMoveResult result;
     for (int i = 0; i < 240; ++i)
-        mover.Move(Vec3d::Zero(), kFixedDt, kGravity);
+        result = Advance(mover, velocity, Vec3d::Zero(), result.Support.Kind);
 
-    EXPECT_TRUE(mover.IsGrounded());
+    EXPECT_EQ(result.Support.Kind, CharacterSupportKind::Stable);
     // Floor top 0.5 + capsule half height 0.9 = 1.4.
-    EXPECT_NEAR(mover.GetPosition().Y, 1.4f, 0.05f);
+    EXPECT_NEAR(result.Position.Y, 1.4f, 0.05f);
+    EXPECT_GT(result.Support.Normal.Y, 0.9f);
 }
 
 TEST(CharacterMover, WalksIntoWallAndStops)
@@ -51,31 +77,43 @@ TEST(CharacterMover, WalksIntoWallAndStops)
     AddStaticBox(world, Vec3d(2.0f, 1.5f, 0.0f), Vec3d(0.5f, 2.0f, 5.0f)); // wall face at x = 1.5
 
     CharacterMover mover(world, MakeConfig(), Vec3d(0.0f, 1.4f, 0.0f));
+    Vec3d velocity = Vec3d::Zero();
+    CharacterSupportKind support = CharacterSupportKind::None;
     for (int i = 0; i < 180; ++i)
-        mover.Move(Vec3d(5.0f, 0.0f, 0.0f), kFixedDt, kGravity);
+        support = Advance(mover, velocity, Vec3d(5.0f, 0.0f, 0.0f), support).Support.Kind;
 
     const float x = mover.GetPosition().X;
     EXPECT_GT(x, 0.5f);  // it advanced
     EXPECT_LT(x, 1.5f);  // but did not pass through the wall (face at 1.5, minus radius)
 }
 
-TEST(CharacterMover, JumpLeavesGround)
+TEST(CharacterMover, UpwardVelocityLeavesGroundAndFallsBack)
 {
     PhysicsWorld world;
     AddStaticBox(world, Vec3d(0.0f, 0.0f, 0.0f), Vec3d(50.0f, 0.5f, 50.0f));
 
     CharacterMover mover(world, MakeConfig(), Vec3d(0.0f, 1.4f, 0.0f));
+    Vec3d velocity = Vec3d::Zero();
+    CharacterMoveResult result;
     for (int i = 0; i < 30; ++i) // settle on the floor
-        mover.Move(Vec3d::Zero(), kFixedDt, kGravity);
-    ASSERT_TRUE(mover.IsGrounded());
+        result = Advance(mover, velocity, Vec3d::Zero(), result.Support.Kind);
+    ASSERT_EQ(result.Support.Kind, CharacterSupportKind::Stable);
 
-    const float restY = mover.GetPosition().Y;
-    mover.Jump(5.0f);
-    mover.Move(Vec3d::Zero(), kFixedDt, kGravity);
-    EXPECT_GT(mover.GetPosition().Y, restY); // rose off the floor
+    const float restY = result.Position.Y;
+
+    // A jump is an ordinary up-axis velocity in the request, with snapping
+    // disabled for the tick that leaves the ground.
+    CharacterMoveRequest launch;
+    launch.Velocity = Vec3d(0.0f, 5.0f, 0.0f);
+    launch.Gravity = kGravity;
+    launch.DeltaSeconds = kFixedDt;
+    launch.AllowGroundSnap = false;
+    result = mover.Move(launch);
+    velocity = result.Velocity;
+    EXPECT_GT(result.Position.Y, restY);
 
     for (int i = 0; i < 240; ++i) // come back down and settle
-        mover.Move(Vec3d::Zero(), kFixedDt, kGravity);
-    EXPECT_TRUE(mover.IsGrounded());
-    EXPECT_NEAR(mover.GetPosition().Y, restY, 0.05f);
+        result = Advance(mover, velocity, Vec3d::Zero(), result.Support.Kind);
+    EXPECT_EQ(result.Support.Kind, CharacterSupportKind::Stable);
+    EXPECT_NEAR(result.Position.Y, restY, 0.05f);
 }

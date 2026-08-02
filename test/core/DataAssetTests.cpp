@@ -96,9 +96,17 @@ namespace
     public:
         TempDataFile()
         {
+            // ctest runs each case in its own process, so a per-process
+            // counter alone repeats the same name in every case and two cases
+            // running in parallel share one file. The case name disambiguates.
             static int counter = 0;
+            std::string caseName = "unknown";
+            if (const auto* info = testing::UnitTest::GetInstance()->current_test_info())
+                caseName = std::string(info->test_suite_name()) + "_" + info->name();
+
             File = std::filesystem::temp_directory_path() /
-                   ("sencha_data_asset_" + std::to_string(++counter) + ".sdata");
+                   ("sencha_data_asset_" + caseName + "_"
+                    + std::to_string(++counter) + ".sdata");
         }
 
         ~TempDataFile()
