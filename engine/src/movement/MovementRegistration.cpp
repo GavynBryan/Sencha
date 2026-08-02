@@ -12,15 +12,16 @@
 #include <effects/EffectRegistry.h>
 #include <gameplay_tags/GameplayTagQuery.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
-#include <movement/GroundingTransitionSystem.h>
+#include <movement/FreeLocomotionSystem.h>
 #include <movement/JumpExecutionSystem.h>
 #include <movement/LocomotionMode.h>
+#include <movement/MotionComposition.h>
+#include <movement/MovementComponents.h>
 #include <movement/MovementDefs.h>
 #include <movement/MovementIntent.h>
-#include <movement/MovementModes.h>
-#include <movement/MovementProfile.h>
-#include <movement/MovementState.h>
+#include <movement/MovementModeSystems.h>
 #include <movement/MovementTags.h>
+#include <movement/MovementTuningResolutionSystem.h>
 
 namespace
 {
@@ -40,29 +41,37 @@ void RegisterMovementComponents(World& world)
 {
     RegisterAbilityKit(world);
 
-    if (!world.IsRegistered<MovementIntent>())
-        world.RegisterComponent<MovementIntent>();
-    if (!world.IsRegistered<MovementState>())
-        world.RegisterComponent<MovementState>();
-    if (!world.IsRegistered<MovementProfile>())
-        world.RegisterComponent<MovementProfile>();
-    if (!world.IsRegistered<OnGround>())
-        world.RegisterComponent<OnGround>();
-    if (!world.IsRegistered<InAir>())
-        world.RegisterComponent<InAir>();
-    if (!world.IsRegistered<LocomotionModeRequest>())
-        world.RegisterComponent<LocomotionModeRequest>();
+    const auto ensure = [&world]<typename T>()
+    {
+        if (!world.IsRegistered<T>())
+            world.RegisterComponent<T>();
+    };
 
-    const MovementTags tags = EnsureMovementTags(world);
+    ensure.template operator()<MovementIntent>();
+    ensure.template operator()<KinematicState>();
+    ensure.template operator()<SupportState>();
+    ensure.template operator()<Immersion>();
+    ensure.template operator()<CharacterMovement>();
+    ensure.template operator()<ResolvedMovementTuning>();
+    ensure.template operator()<LocomotionOutput>();
+    ensure.template operator()<MotionAxisOverride>();
+    ensure.template operator()<MotionImpulse>();
+    ensure.template operator()<MotionRequest>();
+    ensure.template operator()<ModeTransitionRequest>();
+    ensure.template operator()<ClingSession>();
+    ensure.template operator()<FlightSession>();
 
-    // The built-in locomotion modes, each mapping its marker to the gameplay tag
-    // it projects while active. A game registers its own modes the same way; the
-    // arbiter stays mode-agnostic.
+    (void)EnsureMovementTags(world);
+
+    // Free is the one built-in mode: one planar algorithm whose ground and air
+    // behavior is a difference in resolved coefficients, not a difference in
+    // archetype. A game adds its own modes through the same registry.
+    GameplayTagRegistry& tagRegistry = world.GetResource<GameplayTagRegistry>();
     LocomotionModeRegistry& modes = world.HasResource<LocomotionModeRegistry>()
         ? world.GetResource<LocomotionModeRegistry>()
-        : world.AddResource<LocomotionModeRegistry>();
-    RegisterLocomotionMode<OnGround>(modes, tags.Grounded);
-    RegisterLocomotionMode<InAir>(modes, tags.Airborne);
+        : world.AddResource<LocomotionModeRegistry>(tagRegistry);
+    if (!modes.FreeMode().IsValid())
+        (void)modes.RegisterFree();
 }
 
 void RegisterDefaultMovementAbilities(World& world)
@@ -110,27 +119,37 @@ void RegisterMovement(World& world)
     RegisterDefaultMovementAbilities(world);
 }
 
-void RegisterMovementSystems(EngineSchedule& schedule)
+void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAssets)
 {
-    schedule.Register<GroundingTransitionSystem>();
-    schedule.Register<LocomotionModeArbiter>();
+    schedule.Register<SupportTagProjectionSystem>();
+    schedule.Register<ModeRequestCollectionSystem>();
+    schedule.Register<LocomotionModeTransitionSystem>();
+    schedule.Register<MovementTuningResolutionSystem>(dataAssets);
+    schedule.Register<FreeLocomotionSystem>();
     schedule.Register<JumpExecutionSystem>();
-    schedule.Register<GroundLocomotionSystem>();
-    schedule.Register<AirLocomotionSystem>();
+    schedule.Register<MotionCompositionSystem>();
 
-    // Interleave with the ability-kit systems (registered by RegisterAbilityKitSystems):
-    // grounding -> arbiter -> ability activation -> jump -> attribute resolve ->
-    // ground/air locomotion -> effect lifetime.
-    schedule.After<LocomotionModeArbiter, GroundingTransitionSystem>();
-    schedule.After<AbilityActivationSystem, LocomotionModeArbiter>();
-    schedule.After<JumpExecutionSystem, AbilityActivationSystem>();
-    schedule.After<AttributeResolveSystem, JumpExecutionSystem>();
+    // The tick reads as one sentence: project last step's physical facts onto
+    // tags, collect and apply mode transitions, resolve this tick's
+    // coefficients from the profile, run locomotion, let actions contribute,
+    // then compose the single motor request.
+    schedule.After<ModeRequestCollectionSystem, SupportTagProjectionSystem>();
+    schedule.After<AbilityActivationSystem, SupportTagProjectionSystem>();
+    schedule.After<ModeRequestCollectionSystem, AbilityActivationSystem>();
+    schedule.After<LocomotionModeTransitionSystem, ModeRequestCollectionSystem>();
 
-    schedule.After<GroundLocomotionSystem, LocomotionModeArbiter>();
-    schedule.After<GroundLocomotionSystem, AttributeResolveSystem>();
-    schedule.After<AirLocomotionSystem, LocomotionModeArbiter>();
-    schedule.After<AirLocomotionSystem, AttributeResolveSystem>();
+    // Tuning resolution reads the mode chosen this tick and the attributes
+    // effects have already resolved, so it follows both.
+    schedule.After<AttributeResolveSystem, AbilityActivationSystem>();
+    schedule.After<MovementTuningResolutionSystem, LocomotionModeTransitionSystem>();
+    schedule.After<MovementTuningResolutionSystem, AttributeResolveSystem>();
 
-    schedule.After<EffectLifetimeSystem, GroundLocomotionSystem>();
-    schedule.After<EffectLifetimeSystem, AirLocomotionSystem>();
+    schedule.After<FreeLocomotionSystem, MovementTuningResolutionSystem>();
+
+    // Jump is an action contribution, so it runs after locomotion has produced
+    // the base output and before composition folds the channels together.
+    schedule.After<JumpExecutionSystem, FreeLocomotionSystem>();
+    schedule.After<MotionCompositionSystem, JumpExecutionSystem>();
+
+    schedule.After<EffectLifetimeSystem, MotionCompositionSystem>();
 }

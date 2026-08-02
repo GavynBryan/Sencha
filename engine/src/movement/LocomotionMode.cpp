@@ -1,169 +1,116 @@
 #include <movement/LocomotionMode.h>
 
-#include <app/GameContexts.h>
-#include <ecs/ComponentId.h>
-#include <ecs/Query.h>
-#include <ecs/StoragePartitionSet.h>
-#include <ecs/World.h>
-#include <gameplay_tags/GameplayTagContainer.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
 
+#include <algorithm>
+#include <string>
 #include <utility>
-#include <vector>
-
-void LocomotionModeRegistry::Register(
-    ComponentTypeId marker,
-    GameplayTagId activeTag)
-{
-    for (LocomotionModeEntry& entry : Modes)
-    {
-        if (entry.Marker == marker)
-        {
-            entry.ActiveTag = activeTag;
-            return;
-        }
-    }
-    Modes.push_back({ marker, activeTag });
-}
-
-GameplayTagId LocomotionModeRegistry::TagFor(
-    ComponentTypeId marker) const
-{
-    for (const LocomotionModeEntry& entry : Modes)
-        if (entry.Marker == marker)
-            return entry.ActiveTag;
-    return GameplayTagId{};
-}
-
-void RequestLocomotionMode(
-    World& world,
-    EntityId entity,
-    ComponentTypeId marker,
-    int priority)
-{
-    LocomotionModeRequest* request =
-        world.TryGet<LocomotionModeRequest>(entity);
-    if (request != nullptr && priority > request->Priority)
-    {
-        request->Priority = priority;
-        request->Marker = marker;
-    }
-}
 
 namespace
 {
-struct ResolvedMode
-{
-    EntityId Entity;
-    ComponentId Current;
-    ComponentId Desired;
-    ComponentTypeId DesiredType;
-};
-
-void ApplyLocomotionModesImpl(
-    World& world,
-    const StoragePartitionSet* partitions)
-{
-    if (!world.IsRegistered<LocomotionModeRequest>())
-        return;
-    const LocomotionModeRegistry* registry =
-        std::as_const(world).TryGetResource<LocomotionModeRegistry>();
-    if (registry == nullptr)
-        return;
-
-    std::vector<ResolvedMode> resolved;
-    Query<Write<LocomotionModeRequest>> query(world);
-    const auto visit = [&](auto& view)
+    std::string RequestTagName(std::string_view modeName)
     {
-        auto requests = view.template Write<LocomotionModeRequest>();
-        for (std::uint32_t i = 0; i < view.Count(); ++i)
-        {
-            LocomotionModeRequest& request = requests[i];
-            if (request.Priority <= 0)
-                continue;
-
-            const EntityId entity = view.Entity(i);
-            const ComponentTypeId desiredType = request.Marker;
-            request.Priority = 0;
-            request.Marker = ComponentTypeId{};
-
-            const ComponentId desired =
-                world.GetComponentIdByType(desiredType);
-            if (desired == InvalidComponentId)
-                continue;
-
-            ComponentId current = InvalidComponentId;
-            for (const LocomotionModeEntry& entry : registry->Entries())
-            {
-                const ComponentId id =
-                    world.GetComponentIdByType(entry.Marker);
-                if (id != InvalidComponentId
-                    && world.HasComponent(entity, id))
-                {
-                    current = id;
-                    break;
-                }
-            }
-            resolved.push_back(
-                { entity, current, desired, desiredType });
-        }
-    };
-
-    if (partitions != nullptr)
-        query.ForEachChunkIn(*partitions, visit);
-    else
-        query.ForEachChunk(visit);
-
-    for (const ResolvedMode& mode : resolved)
-    {
-        if (mode.Current != mode.Desired)
-        {
-            if (mode.Current != InvalidComponentId)
-                world.RemoveComponentRaw(mode.Entity, mode.Current, nullptr);
-            if (!world.HasComponent(mode.Entity, mode.Desired))
-            {
-                world.AddComponentRaw(
-                    mode.Entity,
-                    mode.Desired,
-                    nullptr,
-                    0,
-                    1,
-                    nullptr);
-            }
-        }
-
-        if (GameplayTagContainer* tags =
-                world.TryGet<GameplayTagContainer>(mode.Entity))
-        {
-            const GameplayTagId desiredTag =
-                registry->TagFor(mode.DesiredType);
-            for (const LocomotionModeEntry& entry : registry->Entries())
-            {
-                if (entry.Marker != mode.DesiredType
-                    && entry.ActiveTag.IsValid())
-                {
-                    tags->Revoke(entry.ActiveTag);
-                }
-            }
-            if (desiredTag.IsValid() && !tags->HasExact(desiredTag))
-                tags->Grant(desiredTag);
-        }
+        constexpr std::string_view prefix = "movement.mode.";
+        if (modeName.starts_with(prefix))
+            return "movement.request." + std::string(modeName.substr(prefix.size()));
+        return "movement.request." + std::string(modeName);
     }
 }
-} // namespace
 
-void ApplyLocomotionModes(World& world)
+LocomotionModeRegistry::LocomotionModeRegistry(GameplayTagRegistry& tags)
+    : Tags(tags)
 {
-    ApplyLocomotionModesImpl(world, nullptr);
 }
 
-void ApplyLocomotionModes(
-    World& world,
-    const StoragePartitionSet& partitions)
+LocomotionModeId LocomotionModeRegistry::RegisterFree(std::string name)
 {
-    ApplyLocomotionModesImpl(world, &partitions);
+    const LocomotionModeId id = RegisterImpl(std::move(name), {}, {}, {}, {});
+    if (!Free.IsValid())
+        Free = id;
+    return id;
 }
 
-void LocomotionModeArbiter::FixedLogic(FixedLogicContext& ctx)
+LocomotionModeId LocomotionModeRegistry::RegisterImpl(
+    std::string name,
+    std::function<bool(const World&, EntityId)> canEnter,
+    std::function<void(World&, EntityId)> enterSession,
+    std::function<void(World&, EntityId)> exitSession,
+    std::function<void(World&, EntityId)> discardCandidate)
 {
-    ApplyLocomotionModes(ctx.Entities, ctx.Partitions);
+    if (const LocomotionModeEntry* existing = Find(name))
+        return existing->Id;
+
+    const auto activeTag = Tags.RegisterTag(name);
+    const auto requestTag = Tags.RegisterTag(RequestTagName(name));
+    if (!activeTag.has_value() || !requestTag.has_value())
+        return {};
+
+    const LocomotionModeId id{ static_cast<uint32_t>(Modes.size() + 1) };
+    Modes.push_back(LocomotionModeEntry{
+        .Id = id,
+        .Name = std::move(name),
+        .ActiveTag = *activeTag,
+        .RequestTag = *requestTag,
+        .CanEnter = std::move(canEnter),
+        .EnterSession = std::move(enterSession),
+        .ExitSession = std::move(exitSession),
+        .DiscardCandidate = std::move(discardCandidate),
+    });
+    ++RegistryGeneration;
+    return id;
+}
+
+const LocomotionModeEntry* LocomotionModeRegistry::Find(LocomotionModeId id) const
+{
+    if (!id.IsValid() || id.Value > Modes.size())
+        return nullptr;
+    return &Modes[id.Value - 1];
+}
+
+const LocomotionModeEntry* LocomotionModeRegistry::Find(std::string_view name) const
+{
+    const auto it = std::find_if(Modes.begin(), Modes.end(), [name](const LocomotionModeEntry& entry)
+    {
+        return entry.Name == name;
+    });
+    return it == Modes.end() ? nullptr : &*it;
+}
+
+const LocomotionModeEntry* LocomotionModeRegistry::FindByRequestTag(GameplayTagId tag) const
+{
+    const auto it = std::find_if(Modes.begin(), Modes.end(), [tag](const LocomotionModeEntry& entry)
+    {
+        return entry.RequestTag == tag;
+    });
+    return it == Modes.end() ? nullptr : &*it;
+}
+
+bool RequestLocomotionMode(World& world,
+                           EntityId entity,
+                           LocomotionModeId target,
+                           ModeRequestClass requestClass)
+{
+    if (!target.IsValid() || !world.IsRegistered<ModeTransitionRequest>())
+        return false;
+
+    const LocomotionModeRegistry* modes = std::as_const(world).TryGetResource<LocomotionModeRegistry>();
+    if (modes == nullptr || modes->Find(target) == nullptr)
+        return false;
+
+    ModeTransitionRequest* request = world.TryGet<ModeTransitionRequest>(entity);
+    if (request == nullptr)
+        return false;
+
+    if (request->Pending)
+    {
+        const auto incoming = static_cast<uint8_t>(requestClass);
+        const auto current = static_cast<uint8_t>(request->Class);
+        if (incoming <= current)
+            return false;
+    }
+
+    request->Target = target;
+    request->Class = requestClass;
+    request->Pending = true;
+    return true;
 }

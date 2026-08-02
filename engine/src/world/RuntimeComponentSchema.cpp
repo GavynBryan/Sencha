@@ -6,11 +6,8 @@
 #include <ecs/WorldComponentSchema.h>
 #include <effects/ActiveEffect.h>
 #include <gameplay_tags/GameplayTagContainer.h>
-#include <movement/LocomotionMode.h>
+#include <movement/MovementComponents.h>
 #include <movement/MovementIntent.h>
-#include <movement/MovementModes.h>
-#include <movement/MovementProfile.h>
-#include <movement/MovementState.h>
 #include <physics/components/CharacterController.h>
 #include <physics/components/CharacterMoverLink.h>
 #include <physics/components/Collider.h>
@@ -50,13 +47,22 @@ void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)
     schema.Add<AbilitySet>();
     schema.Add<ActiveEffect>();
 
-    // Movement component family.
+    // Movement component family: the physical facts, the character's authored
+    // binding, this tick's resolved coefficients, and the contribution
+    // channels that compose into one motor request.
     schema.Add<MovementIntent>();
-    schema.Add<MovementState>();
-    schema.Add<MovementProfile>();
-    schema.Add<OnGround>();
-    schema.Add<InAir>();
-    schema.Add<LocomotionModeRequest>();
+    schema.Add<KinematicState>();
+    schema.Add<SupportState>();
+    schema.Add<Immersion>();
+    schema.Add<CharacterMovement>();
+    schema.Add<ResolvedMovementTuning>();
+    schema.Add<LocomotionOutput>();
+    schema.Add<MotionAxisOverride>();
+    schema.Add<MotionImpulse>();
+    schema.Add<MotionRequest>();
+    schema.Add<ModeTransitionRequest>();
+    schema.Add<ClingSession>();
+    schema.Add<FlightSession>();
 
     // Camera runtime data beyond the serializable CameraComponent.
     schema.Add<CameraRig>();

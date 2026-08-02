@@ -13,10 +13,8 @@
 #include <effects/ActiveEffect.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <movement/LocomotionMode.h>
+#include <movement/MovementComponents.h>
 #include <movement/MovementIntent.h>
-#include <movement/MovementModes.h>
-#include <movement/MovementProfile.h>
-#include <movement/MovementState.h>
 #include <physics/components/CharacterController.h>
 #include <physics/components/CharacterMoverLink.h>
 #include <physics/components/Collider.h>
@@ -249,7 +247,7 @@ TEST(RuntimeComponentSchema, EngineSchemaUsesCanonicalComponentIds)
     RegisterEngineRuntimeComponents(schema);
     schema.Seal();
 
-    EXPECT_EQ(schema.Size(), 31u);
+    EXPECT_EQ(schema.Size(), 38u);
 
     World world;
     schema.Apply(world);
@@ -278,12 +276,19 @@ TEST(RuntimeComponentSchema, EngineSchemaUsesCanonicalComponentIds)
     ExpectComponentId<AbilitySet>(world, 21);
     ExpectComponentId<ActiveEffect>(world, 22);
     ExpectComponentId<MovementIntent>(world, 23);
-    ExpectComponentId<MovementState>(world, 24);
-    ExpectComponentId<MovementProfile>(world, 25);
-    ExpectComponentId<OnGround>(world, 26);
-    ExpectComponentId<InAir>(world, 27);
-    ExpectComponentId<LocomotionModeRequest>(world, 28);
-    ExpectComponentId<CameraRig>(world, 29);
+    ExpectComponentId<KinematicState>(world, 24);
+    ExpectComponentId<SupportState>(world, 25);
+    ExpectComponentId<Immersion>(world, 26);
+    ExpectComponentId<CharacterMovement>(world, 27);
+    ExpectComponentId<ResolvedMovementTuning>(world, 28);
+    ExpectComponentId<LocomotionOutput>(world, 29);
+    ExpectComponentId<MotionAxisOverride>(world, 30);
+    ExpectComponentId<MotionImpulse>(world, 31);
+    ExpectComponentId<MotionRequest>(world, 32);
+    ExpectComponentId<ModeTransitionRequest>(world, 33);
+    ExpectComponentId<ClingSession>(world, 34);
+    ExpectComponentId<FlightSession>(world, 35);
+    ExpectComponentId<CameraRig>(world, 36);
 }
 
 TEST(RuntimeComponentSchema, EngineOwnsUnifiedWorldBeforeGameStart)
@@ -304,9 +309,9 @@ TEST(RuntimeComponentSchema, EngineOwnsUnifiedWorldBeforeGameStart)
     EXPECT_TRUE(game.AppliedGameComponent);
     EXPECT_TRUE(game.SawEngineOwnedWorld);
     EXPECT_TRUE(game.EngineOwnedEntityWasPersistent);
-    EXPECT_EQ(game.SchemaSize, 32u);
-    EXPECT_EQ(game.AppliedGameComponentId, 31u);
-    EXPECT_EQ(game.EngineOwnedGameComponentId, 31u);
+    EXPECT_EQ(game.SchemaSize, 39u);
+    EXPECT_EQ(game.AppliedGameComponentId, 38u);
+    EXPECT_EQ(game.EngineOwnedGameComponentId, 38u);
     EXPECT_EQ(StartupGameRemoveCalls, 1);
 }
 

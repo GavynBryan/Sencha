@@ -27,11 +27,9 @@
 #include <math/geometry/3d/Transform3d.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MovementDefs.h>
+#include <movement/MovementComponents.h>
 #include <movement/MovementIntent.h>
-#include <movement/MovementModes.h>
-#include <movement/MovementProfile.h>
 #include <movement/MovementRegistration.h>
-#include <movement/MovementState.h>
 #include <movement/MovementTags.h>
 #include <physics/CollisionShapeCache.h>
 #include <physics/CharacterMoverPool.h>
@@ -223,22 +221,32 @@ EntityId SpawnPlayerAvatar(
     world.AddComponent<CharacterController>(
         pawn,
         CharacterController{});
-    world.AddComponent<MovementProfile>(
-        pawn,
-        MovementProfile{});
-    world.AddComponent<MovementState>(
-        pawn,
-        MovementState{});
     world.AddComponent<MovementIntent>(
         pawn,
         MovementIntent{});
+    world.AddComponent<KinematicState>(pawn, KinematicState{});
+    world.AddComponent<SupportState>(pawn, SupportState{});
+    world.AddComponent<ResolvedMovementTuning>(pawn, ResolvedMovementTuning{});
+    world.AddComponent<LocomotionOutput>(pawn, LocomotionOutput{});
+    world.AddComponent<MotionAxisOverride>(pawn, MotionAxisOverride{});
+    world.AddComponent<MotionImpulse>(pawn, MotionImpulse{});
+    world.AddComponent<MotionRequest>(pawn, MotionRequest{});
+    world.AddComponent<ModeTransitionRequest>(pawn, ModeTransitionRequest{});
+
+    // No authored profile: the template pawn resolves tuning from defaults
+    // plus the MoveSpeed attribute, which is what an unauthored character
+    // should do.
+    CharacterMovement pawnMovement;
+    if (const LocomotionModeRegistry* modes =
+            world.TryGetResource<LocomotionModeRegistry>())
+    {
+        pawnMovement.Mode = modes->FreeMode();
+    }
+    world.AddComponent<CharacterMovement>(pawn, pawnMovement);
+
     // The pawn moves every tick and is what the camera watches, so it renders
     // interpolated between ticks rather than stepping at the tick rate.
     world.AddComponent<WorldTransformHistory>(pawn, WorldTransformHistory{});
-    world.AddComponent<OnGround>(pawn, OnGround{});
-    world.AddComponent<LocomotionModeRequest>(
-        pawn,
-        LocomotionModeRequest{});
 
     const MovementDefs* movementDefs =
         world.TryGetResource<MovementDefs>();
@@ -1146,7 +1154,7 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     }
 
     RegisterAbilityKitSystems(ctx.Schedule);
-    RegisterMovementSystems(ctx.Schedule);
+    RegisterMovementSystems(ctx.Schedule, RuntimeAssetState().DataAssets);
     RegisterCameraSystem(ctx.Schedule);
     ctx.Schedule.Register<CharacterInputSystem>();
     OrderMovementAfterInput<CharacterInputSystem>(ctx.Schedule);

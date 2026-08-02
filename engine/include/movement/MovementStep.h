@@ -7,13 +7,16 @@
 //=============================================================================
 // Movement step math (pure)
 //
-// The per-entity Quake locomotion kernel, free of World/ECS/app so it is trivially
-// unit-testable and shared by the ground and air locomotion systems. Acceleration
-// is projected onto the wish direction (PM_Accelerate): it only tops up the
-// component along wishDir up to wishSpeed, which preserves momentum and, with a
-// low air cap, gives skill-based air control. Friction is a multiplicative decay
-// with a stop-speed floor (PM_Friction) so low speeds stop crisply. Vertical is
-// owned by the mover; callers keep velocity planar.
+// The per-entity locomotion kernel, free of World/ECS/app so it is trivially
+// unit-testable. Acceleration is projected onto the wish direction: it only
+// tops up the velocity component along wishDir, up to wishSpeed, which
+// preserves existing momentum and, with a low wish-speed cap, leaves steering
+// authority without letting the character accelerate freely. Friction is a
+// multiplicative decay with a stop-speed floor so low speeds stop crisply
+// instead of asymptoting.
+//
+// Both operate on the caller's chosen plane; the axis split belongs to the
+// system that calls these.
 //=============================================================================
 namespace movement
 {
