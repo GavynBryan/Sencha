@@ -56,11 +56,6 @@ AssetStaging AudioClipAssetLoader::LoadStaged(const AssetRecord& record, IAssetS
     return staging;
 }
 
-AssetCommitResult AudioClipAssetLoader::Commit(AssetStaging&& staged)
-{
-    return { CommitTyped(std::move(staged)).IsValid() };
-}
-
 AudioClipHandle AudioClipAssetLoader::CommitTyped(AssetStaging&& staged)
 {
     if (!staged.IsValid())

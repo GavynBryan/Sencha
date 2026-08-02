@@ -57,16 +57,15 @@ files, a pack file, or memory.
 
 ## Layer 2: The staged-load contract
 
-**Files:** `core/assets/AssetLoader.h`, then one loader per type under
+**Files:** `core/assets/AssetStager.h`, then one loader per type under
 `assets/{type}/`
 
 ### The interface
 
 | Class | Role |
 |-------|------|
-| `IAssetLoader` | Abstract base with two methods: `LoadStaged()` and `Commit()`. |
+| `IAssetStager` | Abstract base with one method, `LoadStaged()`. |
 | `AssetStaging` | The payload that flows between the two halves: an `AssetRecord`, a type-erased `std::any Payload`, and an error string. |
-| `AssetCommitResult` | Success/failure result from `Commit()`. |
 
 ### The two halves
 
@@ -78,12 +77,18 @@ Every asset load splits into two steps:
   services. Safe to run on any thread. Errors go into `AssetStaging::Error`
   rather than logging, because this half might not be on the owner thread.
 
-- **`Commit(staging) -> AssetCommitResult`** — Owner-thread only. Takes the CPU
+- **`CommitTyped(staging) -> THandle`** — Owner-thread only. Takes the CPU
   payload from staging, uploads to GPU if needed, inserts into the cache,
   returns the handle. This is where engine state changes.
 
+Only the staging half is virtual: it is the half the async driver runs against a
+loader it resolved from a type tag, without knowing the type. A commit is always
+issued against a loader the caller already names, and each `CommitTyped` returns
+that loader's own handle type, so routing it through a type-erased virtual would
+only lose the handle.
+
 The synchronous path calls both back-to-back on the same thread. The async path
-runs `LoadStaged` on a task thread and `Commit` at the drain point. Same code,
+runs `LoadStaged` on a task thread and commits at the drain point. Same code,
 two schedulings.
 
 ### The concrete loaders
@@ -194,7 +199,7 @@ AssetSystem Assets;            // destroyed first (refs all caches, but owns not
 
 ### `AssetSystem` — the front door
 
-**File:** `core/assets/AssetSystem.h`
+**File:** `assets/runtime/AssetSystem.h`
 
 The single entry point for all asset operations. It owns all 7 loaders, holds
 (non-owning) pointers to all 7 caches, and provides three families of methods:
@@ -216,7 +221,7 @@ thread work.
 
 ### `RuntimeAssets` — the owner
 
-**File:** `core/assets/RuntimeAssets.h`
+**File:** `assets/runtime/RuntimeAssets.h`
 
 A plain struct that owns the registry, all 7 caches, and the `AssetSystem`. Its
 only job is construction (wiring everything together with the right Vulkan
@@ -225,7 +230,7 @@ state" that the engine holds.
 
 ### `AssetPreloader` — the async driver
 
-**File:** `core/assets/AssetPreloader.h`
+**File:** `assets/runtime/AssetPreloader.h`
 
 Drives manifest-sized batches of async loads. Given a list of paths (typically
 from a zone's asset manifest):
@@ -299,7 +304,7 @@ point. Follow it to the loader's `LoadStaged` (decode) then `CommitTyped`
 **Starting from async loading:** `AssetPreloader::Begin()` fans out to task
 threads. Follow `OnAssetCommitted` for the drain-point commit path.
 
-**Adding a new asset type:** implement `IAssetLoader` (staged + commit),
+**Adding a new asset type:** implement `IAssetStager` plus a `CommitTyped`,
 derive from `AssetCache` (three CRTP hooks), register both in `AssetSystem`
 and `RuntimeAssets`. The pattern is identical across all 7 existing types.
 

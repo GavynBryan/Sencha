@@ -1,6 +1,5 @@
 #include <app/Engine.h>
 #include <app/EngineConsoleBuiltins.h>
-#include <app/EngineFramePhases.h>
 #include <app/Game.h>
 #include <audio/AudioService.h>
 #include <audio/AudioSystem.h>
@@ -11,7 +10,7 @@
 #include <debug/DebugLogSink.h>
 #include <debug/DebugService.h>
 #include <jobs/AsyncTaskQueue.h>
-#include <jobs/ThreadPoolJobSystem.h>
+#include <jobs/JobSystem.h>
 #include <runtime/FrameDriver.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/RuntimeWorld.h>
@@ -107,8 +106,8 @@ bool Engine::Initialize()
         static_cast<uint32_t>(Configuration.Runtime.AsyncTaskThreadCount));
 
     const int configuredWorkers = Configuration.Runtime.JobWorkerCount;
-    FramePoolInstance = std::make_unique<ThreadPoolJobSystem>(
-        configuredWorkers < 0 ? ThreadPoolJobSystem::DefaultWorkerCount()
+    FramePoolInstance = std::make_unique<JobSystem>(
+        configuredWorkers < 0 ? JobSystem::DefaultWorkerCount()
                               : static_cast<uint32_t>(configuredWorkers));
 
     if (Configuration.Window.GraphicsApi == WindowGraphicsApi::None)
@@ -358,15 +357,6 @@ DefaultRenderPipeline* Engine::GetRenderPipeline()
 const DefaultRenderPipeline* Engine::GetRenderPipeline() const
 {
     return EngineSystems.Get<DefaultRenderPipeline>();
-}
-
-void Engine::RegisterFramePhases(Game& game)
-{
-    if (FramePhasesRegistered || FrameDriverInstance == nullptr)
-        return;
-
-    RegisterDefaultEngineFramePhases(*this, game, *FrameDriverInstance);
-    FramePhasesRegistered = true;
 }
 
 int Engine::Run(Game& game)

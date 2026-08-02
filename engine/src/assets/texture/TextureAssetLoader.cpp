@@ -68,11 +68,6 @@ AssetStaging TextureAssetLoader::LoadStaged(const AssetRecord& record,
     return staging;
 }
 
-AssetCommitResult TextureAssetLoader::Commit(AssetStaging&& staged)
-{
-    return { CommitTyped(std::move(staged)).IsValid() };
-}
-
 TextureHandle TextureAssetLoader::CommitTyped(AssetStaging&& staged)
 {
     if (!staged.IsValid())

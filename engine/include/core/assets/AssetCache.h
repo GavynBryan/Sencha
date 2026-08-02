@@ -19,11 +19,14 @@
 //   - Acquire / Release / AcquireOwned public interface
 //   - ILifetimeOwner integration (Attach / Detach for RAII handles)
 //
-// The derived class must supply three static-dispatch hooks by implementing
-// these methods (called through CRTP -- no virtual dispatch):
+// A cache resolves; it does not load. Entries arrive through the derived
+// cache's own create/commit entry points, which the staged loaders call on
+// the owner thread (docs/assets/pipeline.md, Decisions C and I). Acquire
+// therefore only hands back something already registered under that path --
+// a miss is a miss, not a synchronous file read on whatever thread asked.
 //
-//   // Populate `out` from `path`. Return false on failure; do not log here.
-//   bool OnLoad(std::string_view path, TEntry& out);
+// The derived class must supply two static-dispatch hooks by implementing
+// these methods (called through CRTP -- no virtual dispatch):
 //
 //   // Release any resources held by `entry` (GPU teardown, etc.).
 //   // Called when the refcount reaches zero or on destruction.
@@ -50,33 +53,20 @@ template<typename TDerived, typename THandle, typename TEntry>
 class AssetCache : public ILifetimeOwner
 {
 public:
-    // -- Load from filesystem -------------------------------------------------
+    // -- Resolve an already-registered path -----------------------------------
     //
-    // Deduplicated: identical paths return the same handle. RefCount is
-    // incremented on every call. Returns an invalid handle on load failure.
+    // Deduplicated: identical paths return the same handle, and RefCount is
+    // incremented on every call. Returns an invalid handle when nothing has
+    // been committed under that path yet.
     [[nodiscard]] THandle Acquire(std::string_view path)
     {
-        const std::string key(path);
-
-        if (auto it = PathLookup.find(key); it != PathLookup.end())
-        {
-            THandle handle = it->second;
-            if (TEntry* entry = Resolve(handle))
-                ++entry->RefCount;
-            return handle;
-        }
-
-        TEntry entry{};
-        if (!Derived().OnLoad(path, entry))
+        auto it = PathLookup.find(std::string(path));
+        if (it == PathLookup.end())
             return {};
 
-        THandle handle = AllocHandle(std::move(entry));
-        if (handle.IsValid())
-        {
-            Resolve(handle)->PathKey = key;
-            PathLookup.emplace(key, handle);
-        }
-
+        THandle handle = it->second;
+        if (TEntry* entry = Resolve(handle))
+            ++entry->RefCount;
         return handle;
     }
 

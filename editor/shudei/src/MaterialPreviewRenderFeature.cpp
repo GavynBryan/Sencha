@@ -1,6 +1,6 @@
 #include "MaterialPreviewRenderFeature.h"
 
-#include <core/assets/RuntimeAssets.h>
+#include <assets/runtime/RuntimeAssets.h>
 #include <graphics/vulkan/VulkanBarriers.h>
 #include <math/geometry/3d/Frustum.h>
 

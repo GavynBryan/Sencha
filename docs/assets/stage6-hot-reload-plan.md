@@ -48,7 +48,7 @@ are the three Decision H names.
 
 | Piece | Where | Use in Stage 6 |
 |-------|-------|----------------|
-| Staged load split | `core/assets/AssetLoader.h` — `IAssetLoader::LoadStaged` (pure, task-thread) + `CommitTyped` (owner-thread) | The *decode* half of a reload reuses `LoadStaged` unchanged; the *swap* half is a new commit variant. |
+| Staged load split | `core/assets/AssetStager.h` — `IAssetStager::LoadStaged` (pure, task-thread) + `CommitTyped` (owner-thread) | The *decode* half of a reload reuses `LoadStaged` unchanged; the *swap* half is a new commit variant. |
 | Cook / re-import | `assets/cook/ImportOnDemand.cpp` (`ImportAssetsOnDemand`), `assets/cook/AssetImporter.h` (`AssetImporterRegistry`, `IAssetImporter::Import`, `ICookOutputWriter`) | Re-cooking one changed source reuses the importer registry. Factor a single-source re-import out of the directory walk. |
 | Cooked index | `assets/cook/CookedCache.h` — `CookedCacheIndex`, `CookedSourceEntry` (source-rel-path → source hash → **set of artifacts**) | Maps a changed source to the cooked artifact paths it produces, so the reloader knows which cache entries to swap. |
 | Registry | `core/assets/AssetRegistry.h` — `AssetRecord{ Type, Path, FilePath, ContentHash, ... }`, `FindByPath`, `RegisterOrVerify` | The reloader updates `ContentHash` on re-cook and uses `Type` to pick the cache. |
@@ -56,7 +56,7 @@ are the three Decision H names.
 | GPU teardown is already deferred | `VulkanBufferService::Destroy` → `DeletionQueue->EnqueueBufferDestroy`; `VulkanImageService::Destroy` → deletion queue | **Crucial:** calling the existing `Destroy(oldHandle)` during a swap is already frames-in-flight safe. No new deferral code needed for buffers/images. |
 | Deletion queue cadence | `VulkanDeletionQueueService` — retains `framesInFlight + 1` frames; `AdvanceFrame()` called in `VulkanFrameService::BeginFrame` after the in-flight fence wait | Already correct; the swap just enqueues. |
 | Bindless image array | `VulkanDescriptorCache::RegisterSampledImage(image, sampler) → BindlessImageIndex`, `UnregisterSampledImage(index)` | **Gap:** there is no "rewrite the descriptor at an existing index" method. Texture reload needs one (see §4.1). |
-| Async lane | `jobs/AsyncTaskQueue` — `Submit<TPayload>(work → TPayload, commit(TPayload))`, `PumpWork`, `DrainCompletions`; pattern in `core/assets/AssetPreloader.cpp` | The reload decode runs as a task; the swap runs at the drain point, owner-thread. Mirror the preloader. |
+| Async lane | `jobs/AsyncTaskQueue` — `Submit<TPayload>(work → TPayload, commit(TPayload))`, `PumpWork`, `DrainCompletions`; pattern in `assets/runtime/AssetPreloader.cpp` | The reload decode runs as a task; the swap runs at the drain point, owner-thread. Mirror the preloader. |
 | Per-frame loop | `runtime/RuntimeFrameLoop.h`, `app/Engine.cpp` | Where to tick the watcher poll and (already) advance the deletion queue. |
 | Demo wiring precedent | `example/CubeDemo/CubeDemoGame.cpp` (already builds `AssetImporterRegistry` + calls `ImportAssetsOnDemand` under `SENCHA_ENABLE_COOK`) | Where to instantiate + tick the watcher. CubeDemo references `assets/textures/dev/checker.png` via `red.smat` — the gate target. |
 
@@ -247,7 +247,7 @@ All steps are owner-thread except the explicitly async decode.
      the next normal load picks up the new bytes. If **resident**, continue.
    - **Submit an async staged decode** mirroring the preloader:
      ```cpp
-     IAssetLoader* loader = assets.LoaderFor(type);
+     IAssetStager* loader = assets.LoaderFor(type);
      tasks.Submit<AssetStaging>(
          [loader, src = &assets.DefaultSource(), record]() {  // task thread
              return loader->LoadStaged(record, *src);          // pure decode

@@ -59,7 +59,6 @@ public:
 private:
     friend class AssetCache<StaticMeshCache, StaticMeshHandle, StaticMeshEntry>;
 
-    bool OnLoad(std::string_view path, StaticMeshEntry& out);
     void OnFree(StaticMeshEntry& entry);
     bool IsEntryLive(const StaticMeshEntry& entry) const;
 

@@ -3,9 +3,9 @@
 #include <assets/static_mesh/MeshSerializer.h>
 #include <assets/texture/TextureAssetLoader.h>
 #include <core/assets/AssetInFlightTable.h>
-#include <core/assets/AssetLoader.h>
+#include <core/assets/AssetStager.h>
 #include <core/assets/AssetSource.h>
-#include <core/assets/AssetSystem.h>
+#include <assets/runtime/AssetSystem.h>
 #include <core/logging/LoggingProvider.h>
 #include <render/Image.h>
 #include <render/MaterialCache.h>
@@ -217,7 +217,7 @@ TEST(TextureAssetLoader, StagesPngFromMemoryWithUsageColorspace)
     EXPECT_EQ(std::any_cast<Image>(&linear.Payload)->Format, PixelFormat::RGBA8);
 
     // The generic driver-facing overload assumes sRGB until .stex usage tags.
-    AssetStaging generic = static_cast<IAssetLoader&>(loader).LoadStaged(record, source);
+    AssetStaging generic = static_cast<IAssetStager&>(loader).LoadStaged(record, source);
     ASSERT_TRUE(generic.IsValid());
     EXPECT_EQ(std::any_cast<Image>(&generic.Payload)->Format, PixelFormat::RGBA8_SRGB);
 

@@ -4,8 +4,8 @@
 #include "EditorDocument.h"
 
 #include <assets/static_mesh/MeshLoader.h>
-#include <core/assets/AssetSystem.h>
-#include <core/assets/RuntimeAssets.h>
+#include <assets/runtime/AssetSystem.h>
+#include <assets/runtime/RuntimeAssets.h>
 #include <core/hash/ContentHash.h>
 #include <core/logging/LoggingProvider.h>
 #include <render/IrradianceVolumeComponent.h>

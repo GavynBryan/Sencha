@@ -66,7 +66,7 @@ Done and load-bearing:
 - ECS: archetype SoA storage in 16KB chunks, `CommandBuffer` structural changes,
   `Changed<T>` chunk-conservative change detection, cached queries, `ComponentTraits`
   lifecycle hooks, generational entity ids, roughly 852 green tests.
-- Concurrency: `JobSystem`/`ThreadPoolJobSystem` fork-join plus `AsyncTaskQueue`,
+- Concurrency: `JobSystem` fork-join plus `AsyncTaskQueue`,
   with `worker_count == 0` as the deterministic reference path.
 - Frame hosting: `FrameDriver` with the fixed ten-phase frame, `EngineSchedule`
   topologically ordered systems, fixed-tick simulation with presentation-only wall time.
@@ -76,7 +76,7 @@ Done and load-bearing:
 - World: `RuntimeWorld` over partitioned entity storage, `AsyncZoneLoader`
   publish-by-handoff streaming, `WorldPartitionRuntime` demand policy over a cooked
   manifest, `ZoneParticipation` compiled to Visible/Physics/Logic/Audio frame spans.
-- Assets: `IAssetLoader` staged-load contract, content-hashed `CookedCacheIndex`,
+- Assets: `IAssetStager` staged-load contract, content-hashed `CookedCacheIndex`,
   `.cooked/` overlay, source importers, asset hot reload for materials and textures.
 - SDK boundary: engine as a shared library, `install()`/`find_package(Sencha)`,
   `sencha_game_module()`, the ABI fingerprint handshake, the out-of-tree `template/`
@@ -232,7 +232,7 @@ Each item states its mechanism, version, the seam it builds on, and its gate.
    embedded Lua-family VM hosted as an engine service. The design constraints that keep
    it inside the invariants:
 
-   - Scripts are assets: they flow through the `IAssetLoader` staged-load contract and
+   - Scripts are assets: they flow through the `IAssetStager` staged-load contract and
      the cooked cache, and they hot-reload like materials do. Script iteration is the
      cheapest loop in the engine.
    - Scripts drive behavior only through existing seams: `CommandBuffer` for structural

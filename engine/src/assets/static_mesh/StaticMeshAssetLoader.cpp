@@ -37,11 +37,6 @@ AssetStaging StaticMeshAssetLoader::LoadStaged(const AssetRecord& record, IAsset
     return staging;
 }
 
-AssetCommitResult StaticMeshAssetLoader::Commit(AssetStaging&& staged)
-{
-    return { CommitTyped(std::move(staged)).IsValid() };
-}
-
 StaticMeshHandle StaticMeshAssetLoader::CommitTyped(AssetStaging&& staged)
 {
     if (!staged.IsValid())

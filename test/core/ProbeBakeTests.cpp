@@ -1,7 +1,7 @@
 #include <assets/cook/BakeBvh.h>
 #include <assets/cook/DirectLightBake.h>
 #include <assets/cook/ProbeBake.h>
-#include <jobs/ThreadPoolJobSystem.h>
+#include <jobs/JobSystem.h>
 #include <math/spatial/GridTransform3d.h>
 
 #include <gtest/gtest.h>
@@ -244,7 +244,7 @@ TEST(ProbeBake, SerialAndParallelBakesAreBitIdentical)
     const ProbeVolumeBakeResult serial =
         BakeProbeVolume(grid, bvh, lights, table, params, nullptr);
 
-    ThreadPoolJobSystem parallel(4);
+    JobSystem parallel(4);
     const ProbeVolumeBakeResult threaded =
         BakeProbeVolume(grid, bvh, lights, table, params, &parallel);
 

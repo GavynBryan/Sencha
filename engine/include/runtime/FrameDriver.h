@@ -61,7 +61,7 @@ public:
     void SetTargetFps(double fps);
     [[nodiscard]] double GetTargetFps() const { return Pacer.GetTargetFps(); }
 
-    void SetTrace(FrameTrace* trace) { Trace = trace; }
+    void SetTrace(ChromeJsonFrameTrace* trace) { Trace = trace; }
 
     void Run();
     void StepOnce();
@@ -80,7 +80,7 @@ private:
     FramePacer Pacer;
     InputFrame Input;
     RenderPacketDoubleBuffer Packets;
-    FrameTrace* Trace = nullptr;
+    ChromeJsonFrameTrace* Trace = nullptr;
     std::function<bool()> ShouldExitPredicate;
     std::vector<FramePhaseCallback> Phases[static_cast<int>(FramePhase::Count)];
     bool EdgesDrainedThisFrame = false;

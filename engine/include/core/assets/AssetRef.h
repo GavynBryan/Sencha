@@ -35,8 +35,6 @@ enum class AssetSourceKind : uint16_t
     Unknown = 0,
     File,
     Procedural,
-    Generated,
-    Embedded,
 };
 
 // How a member stores its asset handle. Single is one handle (e.g. a mesh);
@@ -97,8 +95,6 @@ inline std::string_view AssetSourceKindToString(AssetSourceKind kind)
     {
     case AssetSourceKind::File:       return "File";
     case AssetSourceKind::Procedural: return "Procedural";
-    case AssetSourceKind::Generated:  return "Generated";
-    case AssetSourceKind::Embedded:   return "Embedded";
     default:                          return "Unknown";
     }
 }

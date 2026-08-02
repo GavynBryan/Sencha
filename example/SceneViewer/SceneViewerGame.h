@@ -3,8 +3,8 @@
 #include "FreeCamera.h"
 
 #include <app/Game.h>
-#include <core/assets/AssetPreloader.h>
-#include <core/assets/RuntimeAssets.h>
+#include <assets/runtime/AssetPreloader.h>
+#include <assets/runtime/RuntimeAssets.h>
 #include <core/console/ConsoleTypes.h>
 #include <ecs/EntityId.h>
 #include <world/serialization/SceneSerializationContext.h>

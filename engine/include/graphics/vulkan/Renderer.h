@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
-#include <graphics/vulkan/VulkanBootstrapPolicy.h>
 #include <graphics/vulkan/VulkanFrameService.h>
 #include <vulkan/vulkan.h>
 
@@ -47,12 +46,13 @@ struct RenderInstrumentation;
 //     every feature is bucketed by the phase it reports, so adding offscreen
 //     / shadow / UI phases later doesn't churn the feature interface.
 //
-//   * Contribute() is game-driven, not renderer-driven. The game constructs
-//     features, calls Contribute() on each to fold extensions and feature
-//     bits into its VulkanBootstrapPolicy, then brings up the Vulkan stack,
-//     then hands the features to the Renderer via AddFeature(). This
-//     resolves the chicken-and-egg where features need the device to Setup
-//     but the device needs feature contributions to create.
+//   * Features are added after the device exists. GraphicsServices builds its
+//     own VulkanBootstrapPolicy and brings up the Vulkan stack during
+//     Engine::Initialize, which runs before any game hook that could
+//     construct a feature; features are then handed over via AddFeature() and
+//     acquire their GPU resources in Setup(). A feature that needs a device
+//     extension or feature bit would need a hook at engine configuration
+//     time, before the device is built -- there is no such hook today.
 //=============================================================================
 
 enum class RenderPhase : uint8_t
@@ -117,12 +117,6 @@ public:
 
     // Which phase this feature runs in. One feature, one phase.
     [[nodiscard]] virtual RenderPhase GetPhase() const = 0;
-
-    // Pre-device hook. The game calls this before creating the physical
-    // device so the feature can fold device extensions / feature bits into
-    // the bootstrap policy. The Renderer itself never invokes this -- by
-    // the time the Renderer exists, the device already exists.
-    virtual void Contribute(VulkanBootstrapPolicy& /*policy*/) {}
 
     // Runs once, inside Renderer::AddFeature. Cache service pointers here.
     // Do any up-front GPU resource creation here too. Returning false means

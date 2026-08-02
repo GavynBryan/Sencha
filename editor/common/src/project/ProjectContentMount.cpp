@@ -7,7 +7,7 @@
 #include <assets/cook/TextureCook.h>
 #include <core/assets/AssetIdMap.h>
 #include <core/assets/AssetRegistry.h>
-#include <core/assets/RuntimeAssets.h>
+#include <assets/runtime/RuntimeAssets.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 

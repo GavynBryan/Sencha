@@ -1,7 +1,7 @@
 #include <assets/material/MaterialAssetLoader.h>
 
 #include <assets/material/MaterialLoader.h>
-#include <core/assets/AssetSystem.h>
+#include <assets/runtime/AssetSystem.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 #include <graphics/vulkan/TextureCache.h>
@@ -55,11 +55,6 @@ AssetStaging MaterialAssetLoader::LoadStaged(const AssetRecord& record, IAssetSo
 
     staging.Payload = std::move(desc);
     return staging;
-}
-
-AssetCommitResult MaterialAssetLoader::Commit(AssetStaging&& staged)
-{
-    return { CommitTyped(std::move(staged)).IsValid() };
 }
 
 MaterialHandle MaterialAssetLoader::CommitTyped(AssetStaging&& staged)

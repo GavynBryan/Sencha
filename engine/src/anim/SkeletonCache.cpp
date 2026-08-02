@@ -53,13 +53,6 @@ std::string_view SkeletonCache::GetName(SkeletonHandle handle) const
     return GetRegisteredPath(handle);
 }
 
-bool SkeletonCache::OnLoad(std::string_view, SkeletonEntry&)
-{
-    // No file IO in caches (Decision I): skeletons arrive through Register,
-    // fed by the staged loader. Acquire on an unknown name simply misses.
-    return false;
-}
-
 void SkeletonCache::OnFree(SkeletonEntry& entry)
 {
     entry.Value = {};

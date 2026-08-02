@@ -6,60 +6,28 @@
 #include <vector>
 
 //=============================================================================
-// FrameTrace
-//
-// Phase-boundary tracing interface. FrameDriver calls BeginPhase / EndPhase
-// around each registered phase. Implementations:
-//
-//   NullFrameTrace           — zero-cost default, drop all markers.
-//   ChromeJsonFrameTrace     — writes chrome://tracing-compatible JSON.
-//   (Tracy/PIX adapters can be added without touching the driver.)
-//
-// Markers are also emitted for fixed ticks so CPU-bound sim blow-ups show
-// up as distinct regions. This interface is intentionally synchronous and
-// runs on the loop thread — if you need cross-thread capture, buffer
-// internally and flush from a worker.
-//=============================================================================
-class FrameTrace
-{
-public:
-    virtual ~FrameTrace() = default;
-
-    virtual void BeginFrame(uint64_t frameIndex) = 0;
-    virtual void EndFrame(uint64_t frameIndex) = 0;
-
-    virtual void BeginPhase(const char* name) = 0;
-    virtual void EndPhase(const char* name) = 0;
-
-    // Point-in-time marker, no matching EndPhase required.
-    virtual void Mark(const char* name) = 0;
-};
-
-class NullFrameTrace final : public FrameTrace
-{
-public:
-    void BeginFrame(uint64_t) override {}
-    void EndFrame(uint64_t) override {}
-    void BeginPhase(const char*) override {}
-    void EndPhase(const char*) override {}
-    void Mark(const char*) override {}
-};
-
-//=============================================================================
 // ChromeJsonFrameTrace
 //
-// Buffers phase events and writes them as chrome://tracing JSON on flush.
-// Use for offline perf investigation. NOT intended for long-running sessions;
-// memory grows linearly with captured frames.
+// Phase-boundary tracing. FrameDriver calls BeginPhase / EndPhase around each
+// registered phase, and emits markers for fixed ticks too, so CPU-bound sim
+// blow-ups show up as distinct regions. Events buffer in memory and write as
+// chrome://tracing JSON on flush.
+//
+// For offline perf investigation, not long-running sessions: memory grows
+// linearly with captured frames. Tracing is off unless the frame.trace.output
+// cvar names a path, in which case Engine constructs one and hands the driver
+// a pointer; a null pointer is the untraced path.
+//
+// Synchronous, and runs on the loop thread. Cross-thread capture would need to
+// buffer internally and flush from a worker.
 //=============================================================================
-class ChromeJsonFrameTrace final : public FrameTrace
+class ChromeJsonFrameTrace
 {
 public:
-    void BeginFrame(uint64_t frameIndex) override;
-    void EndFrame(uint64_t frameIndex) override;
-    void BeginPhase(const char* name) override;
-    void EndPhase(const char* name) override;
-    void Mark(const char* name) override;
+    void BeginFrame(uint64_t frameIndex);
+    void EndFrame(uint64_t frameIndex);
+    void BeginPhase(const char* name);
+    void EndPhase(const char* name);
 
     // Write buffered events to path in chrome tracing format. Returns false
     // on I/O error. Does not clear the buffer; call Clear() if needed.

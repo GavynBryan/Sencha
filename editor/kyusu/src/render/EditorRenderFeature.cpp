@@ -12,7 +12,7 @@
 #include "viewport/ViewportShading.h"
 
 #include <app/EngineConsoleBuiltins.h>
-#include <core/assets/RuntimeAssets.h>
+#include <assets/runtime/RuntimeAssets.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleTypes.h>
 #include <world/registry/Registry.h>

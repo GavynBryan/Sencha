@@ -4,7 +4,7 @@
 #include <assets/texture/TextureSerializer.h>
 #include <core/assets/AssetSource.h>
 #include <core/logging/LoggingProvider.h>
-#include <jobs/ThreadPoolJobSystem.h>
+#include <jobs/JobSystem.h>
 #include <render/Image.h>
 #include <render/TextureData.h>
 
@@ -305,7 +305,7 @@ TEST(TextureCook, PooledCookMatchesSerialByteForByte)
     for (uint8_t& byte : noisy.Pixels)
         byte = static_cast<uint8_t>(rng());
 
-    ThreadPoolJobSystem pool(3);
+    JobSystem pool(3);
     for (const TextureUsage usage :
          { TextureUsage::BaseColor, TextureUsage::Normal, TextureUsage::LinearData })
     {

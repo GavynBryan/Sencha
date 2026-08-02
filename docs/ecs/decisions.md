@@ -706,7 +706,7 @@ source committed at `example/EcsBenchmark/EcsBenchmark.cpp`.
 ### B4.1 — Transform Propagation Throughput
 
 **Setup:** 100k entities in a 4-ary tree, `LocalTransform + WorldTransform + Parent`
-components. `TransformPropagationSystem` driven via `PropagateTransforms(World&)`.
+components. Driven via `PropagateTransforms(World&)`.
 Steady-state = cached sweep with no hierarchy change. Rebuild = `PropagationOrderCache`
 forced dirty before each call.
 
@@ -756,7 +756,7 @@ whenever entity locations change. Three changes are required:
    ```
 
 2. **Resolve pointers during `RebuildCache`** (`TransformPropagation.cpp`,
-   `TransformPropagationSystem::RebuildCache`): after building the BFS order, walk
+   the sweep's `RebuildCache`): after building the BFS order, walk
    the `order` vector and call `world.TryGet<LocalTransform>` and
    `world.TryGet<WorldTransform>` once per entry. Store the results. The rebuild
    already pays the BFS cost; two `TryGet` calls per entry add negligible overhead

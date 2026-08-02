@@ -4,7 +4,7 @@
 #include <anim/SkeletonCache.h>
 #include <audio/AudioClipCache.h>
 #include <core/assets/AssetRegistry.h>
-#include <core/assets/AssetSystem.h>
+#include <assets/runtime/AssetSystem.h>
 #include <graphics/vulkan/TextureCache.h>
 #include <render/MaterialCache.h>
 #include <render/MaterialSetCache.h>

@@ -1,6 +1,6 @@
 #include "ui/ImGuiTextureBinding.h"
 
-#include <core/assets/AssetSystem.h>
+#include <assets/runtime/AssetSystem.h>
 #include <graphics/vulkan/TextureCache.h>
 #include <graphics/vulkan/VulkanSamplerCache.h>
 

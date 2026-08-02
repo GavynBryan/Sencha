@@ -198,7 +198,7 @@ ECS pointers across phases.
 
 The job substrate and async lane are now real code:
 
-- `JobSystem` / `ThreadPoolJobSystem` provide frame-lane fork/join work.
+- `JobSystem` provide frame-lane fork/join work.
 - `AsyncTaskQueue` provides cross-frame work with a main-thread commit drain.
 - `AsyncZoneLoader` builds detached zone registries off-thread and attaches them
   at the drain point.

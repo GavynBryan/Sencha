@@ -82,13 +82,6 @@ bool SkinnedMeshCache::IsAlive(SkinnedMeshHandle handle) const
     return entry != nullptr && entry->Alive;
 }
 
-bool SkinnedMeshCache::OnLoad(std::string_view, SkinnedMeshEntry&)
-{
-    // No file IO in caches (Decision I): skinned meshes arrive through
-    // CreateFromData, fed by the staged loader.
-    return false;
-}
-
 void SkinnedMeshCache::OnFree(SkinnedMeshEntry& entry)
 {
     DestroyGpuMesh(*Buffers, entry.Mesh);

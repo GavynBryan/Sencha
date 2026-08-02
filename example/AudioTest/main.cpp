@@ -1,7 +1,7 @@
 #include <audio/AudioClipCache.h>
 #include <audio/AudioService.h>
 #include <core/assets/AssetRegistry.h>
-#include <core/assets/AssetSystem.h>
+#include <assets/runtime/AssetSystem.h>
 #include <core/logging/ConsoleLogSink.h>
 #include <core/logging/LoggingProvider.h>
 #include <platform/SdlVideoService.h>

@@ -140,7 +140,7 @@ public:
     // The staged-load surface (Decision C), exposed for async drivers: the
     // preloader runs LoaderFor(type)->LoadStaged on a task thread against
     // DefaultSource(), and CommitTyped at the drain point.
-    [[nodiscard]] IAssetLoader* LoaderFor(AssetType type);
+    [[nodiscard]] IAssetStager* LoaderFor(AssetType type);
     [[nodiscard]] IAssetSource& DefaultSource() { return Source; }
     // Only the types the preloader and hot reloader commit directly are exposed
     // here. Skeleton, animation clip, and skinned mesh resolve synchronously

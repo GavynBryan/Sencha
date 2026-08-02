@@ -77,7 +77,6 @@ private:
     friend class AssetCache<AudioClipCache, AudioClipHandle, AudioClipEntry>;
 
     // AssetCache CRTP hooks.
-    bool OnLoad(std::string_view path, AudioClipEntry& out);
     void OnFree(AudioClipEntry& entry);
     bool IsEntryLive(const AudioClipEntry& entry) const;
 

@@ -252,4 +252,8 @@ if(NOT WIN32)
         NAME editor_layering_directions
         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_editor_layering.sh ${CMAKE_SOURCE_DIR}
     )
+    add_test(
+        NAME asset_layering_directions
+        COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_asset_layering.sh ${CMAKE_SOURCE_DIR}
+    )
 endif()

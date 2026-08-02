@@ -1,5 +1,6 @@
 #include <world/transform/TransformPropagation.h>
 
+#include <ecs/Query.h>
 #include <world/transform/PropagationOrderCache.h>
 
 #include <cstdint>
@@ -56,7 +57,38 @@ void SweepUnparented(
     Filtered moved(world);
     moved.ForEachChunkIn(partitions, write, lastSweepFrame - 1);
 }
-} // namespace
+
+// The sweep's working state. Lives here rather than in the header: callers
+// only ever run one propagation and throw it away, which is what the free
+// functions below do.
+class TransformPropagationSystem
+{
+public:
+    explicit TransformPropagationSystem(World& world)
+        : Target(world)
+    {
+    }
+
+    void Propagate(
+        const StoragePartitionSet& partitions,
+        TransformPropagationDomain domain,
+        bool forceFullInvalidation);
+
+private:
+    World& Target;
+
+    std::size_t ParentCount() const;
+    bool HierarchyChangedSince(uint32_t topologyFrame);
+    void RebuildTopology(PropagationOrderCache& cache, std::size_t parentCount);
+    void ResolveAddresses(PropagationOrderCache& cache);
+    void SweepOrder(
+        PropagationOrderCache& cache,
+        const StoragePartitionSet& partitions,
+        const PropagationSweepState& sweep,
+        bool fullSweep,
+        uint32_t frame);
+};
+
 
 // Entities carrying Parent, whether or not they carry transforms. Coarser than
 // the order's own population on purpose: see PropagationOrderCache.
@@ -418,4 +450,29 @@ void TransformPropagationSystem::Propagate(
     sweep.PreviousPartitions = partitions;
     sweep.LastSweepFrame = frame;
     sweep.Swept = true;
+}
+
+} // namespace
+
+void PropagateTransforms(
+    World& world,
+    const StoragePartitionSet& partitions,
+    TransformPropagationDomain domain,
+    bool forceFullInvalidation)
+{
+    TransformPropagationSystem propagation(world);
+    propagation.Propagate(partitions, domain, forceFullInvalidation);
+}
+
+void PropagateTransforms(World& world)
+{
+    StoragePartitionSet partitions;
+    partitions.Add(StoragePartitionId::Default());
+    for (EntityId entity : world.GetAliveEntities())
+        partitions.Add(world.GetEntityPartition(entity));
+
+    PropagateTransforms(
+        world,
+        partitions,
+        TransformPropagationDomain::Simulation);
 }

@@ -58,13 +58,6 @@ std::string_view AnimationClipCache::GetName(AnimationClipHandle handle) const
     return GetRegisteredPath(handle);
 }
 
-bool AnimationClipCache::OnLoad(std::string_view, AnimationClipEntry&)
-{
-    // No file IO in caches (Decision I): clips arrive through Register,
-    // fed by the staged loader. Acquire on an unknown name simply misses.
-    return false;
-}
-
 void AnimationClipCache::OnFree(AnimationClipEntry& entry)
 {
     entry.Value = {};

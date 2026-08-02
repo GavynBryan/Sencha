@@ -102,11 +102,6 @@ std::string_view MaterialCache::GetName(MaterialHandle handle) const
     return GetRegisteredPath(handle);
 }
 
-bool MaterialCache::OnLoad(std::string_view, MaterialEntry&)
-{
-    return false;
-}
-
 void MaterialCache::OnFree(MaterialEntry& entry)
 {
     entry.Value = {};

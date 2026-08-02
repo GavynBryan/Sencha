@@ -18,6 +18,8 @@
 
 #include "StreamingTraversalFixture.h"
 
+#include <ecs/Query.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <set>

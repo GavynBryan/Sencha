@@ -7,7 +7,7 @@
 
 #include "project/TextureImportStore.h"
 
-#include <core/assets/RuntimeAssets.h>
+#include <assets/runtime/RuntimeAssets.h>
 
 #include <cstddef>
 #include <memory>

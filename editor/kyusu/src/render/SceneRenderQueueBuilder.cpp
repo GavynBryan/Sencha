@@ -8,7 +8,7 @@
 
 #include <assets/cook/BrushClustering.h>   // CookBrushGeometry
 #include <assets/cook/BrushGeometryCook.h> // CollectMaterialOrder, BakeBrushFacesToStaticMesh
-#include <core/assets/AssetSystem.h>
+#include <assets/runtime/AssetSystem.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/Logger.h>

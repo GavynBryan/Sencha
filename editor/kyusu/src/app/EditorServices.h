@@ -2,7 +2,7 @@
 
 #include <app/GameContexts.h>
 #include <app/GameModuleLoader.h>
-#include <core/assets/RuntimeAssets.h>
+#include <assets/runtime/RuntimeAssets.h>
 
 #include "commands/CommandStack.h"
 #include "input/InputRouter.h"

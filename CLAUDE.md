@@ -137,7 +137,7 @@ Split by mechanism. Do not solve file growth with junk drawers. Do not solve jun
 
 Two lanes, no third.
 
-- **JobSystem / ThreadPoolJobSystem**: intra-frame fork-join. The caller participates. Jobs do not spawn and wait on the same pool. `worker_count == 0` is the deterministic serial reference path.
+- **JobSystem**: intra-frame fork-join. The caller participates. Jobs do not spawn and wait on the same pool. `worker_count == 0` is the deterministic serial reference path.
 - **AsyncTaskQueue**: cross-frame work. Results commit at `FramePhase::DrainAsyncTasks`, never mid-frame.
 - Parallel isolation comes from disjoint registries or disjoint data partitions, not shared mutation hidden behind locks.
 - Do not spawn raw threads, call `std::async`, or create another pool.

@@ -1,7 +1,7 @@
 #include "AssetFieldIo.h"
 
 #include <core/assets/AssetRegistry.h>
-#include <core/assets/AssetSystem.h>
+#include <assets/runtime/AssetSystem.h>
 #include <render/MaterialSetCache.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 

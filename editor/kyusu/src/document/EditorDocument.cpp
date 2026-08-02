@@ -3,7 +3,7 @@
 #include "brush/BrushMeshSerialization.h"
 
 #include <core/assets/AssetRegistry.h>
-#include <core/assets/RuntimeAssets.h>
+#include <assets/runtime/RuntimeAssets.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <core/serialization/JsonArchive.h>

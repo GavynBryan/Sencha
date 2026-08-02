@@ -1,7 +1,7 @@
 #pragma once
 
 #include <anim/AnimationClipHandle.h>
-#include <core/assets/AssetLoader.h>
+#include <core/assets/AssetStager.h>
 #include <core/logging/Logger.h>
 
 class AssetSystem;
@@ -18,7 +18,7 @@ class SkeletonCache;
 // skeleton reference (the clip→skeleton refcount chain, the material→texture
 // pattern). Payload type: AnimationClipData.
 //=============================================================================
-class AnimationClipAssetLoader final : public IAssetLoader
+class AnimationClipAssetLoader final : public IAssetStager
 {
 public:
     AnimationClipAssetLoader(LoggingProvider& logging,
@@ -26,10 +26,8 @@ public:
                              AnimationClipCache* cache,
                              SkeletonCache* skeletons);
 
-    [[nodiscard]] AssetType Type() const override { return AssetType::AnimationClip; }
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
                                           IAssetSource& source) override;
-    AssetCommitResult Commit(AssetStaging&& staged) override;
 
     [[nodiscard]] AnimationClipHandle CommitTyped(AssetStaging&& staged);
 

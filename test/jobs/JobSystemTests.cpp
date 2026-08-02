@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <jobs/ThreadPoolJobSystem.h>
+#include <jobs/JobSystem.h>
 
 #include <atomic>
 #include <latch>
@@ -10,14 +10,14 @@
 #include <vector>
 
 //=============================================================================
-// Deterministic behavior: ThreadPoolJobSystem(0) runs every job inline on
+// Deterministic behavior: JobSystem(0) runs every job inline on
 // the calling thread in index order. This configuration is the reference
 // implementation the threaded configurations are compared against.
 //=============================================================================
 
 TEST(JobSystemZeroWorkers, RunsAllJobsInlineInIndexOrder)
 {
-    ThreadPoolJobSystem jobs(0);
+    JobSystem jobs(0);
     EXPECT_EQ(jobs.WorkerCount(), 0u);
 
     std::vector<uint32_t> order;
@@ -39,7 +39,7 @@ TEST(JobSystemZeroWorkers, RunsAllJobsInlineInIndexOrder)
 
 TEST(JobSystemZeroWorkers, CurrentWorkerIndexIsZeroInsideJobs)
 {
-    ThreadPoolJobSystem jobs(0);
+    JobSystem jobs(0);
     jobs.ParallelFor(3, [&](uint32_t) {
         EXPECT_EQ(jobs.CurrentWorkerIndex(), 0u);
     });
@@ -47,13 +47,13 @@ TEST(JobSystemZeroWorkers, CurrentWorkerIndexIsZeroInsideJobs)
 
 TEST(JobSystemZeroWorkers, ZeroJobsReturnsWithoutInvokingCallback)
 {
-    ThreadPoolJobSystem jobs(0);
+    JobSystem jobs(0);
     jobs.ParallelFor(0, [&](uint32_t) { FAIL() << "callback ran for jobCount == 0"; });
 }
 
 TEST(JobSystemZeroWorkers, ReusableAcrossBatches)
 {
-    ThreadPoolJobSystem jobs(0);
+    JobSystem jobs(0);
     uint64_t sum = 0;
     for (uint32_t batch = 1; batch <= 50; ++batch)
     {
@@ -77,7 +77,7 @@ TEST(JobSystemZeroWorkers, ReusableAcrossBatches)
 
 TEST(JobSystemThreaded, EveryIndexExecutesExactlyOnce)
 {
-    ThreadPoolJobSystem jobs(4);
+    JobSystem jobs(4);
     EXPECT_EQ(jobs.WorkerCount(), 4u);
 
     for (uint32_t jobCount : { 1u, 3u, 4u, 7u, 64u, 10000u })
@@ -94,7 +94,7 @@ TEST(JobSystemThreaded, EveryIndexExecutesExactlyOnce)
 
 TEST(JobSystemThreaded, JoinMakesPlainJobWritesVisibleToCaller)
 {
-    ThreadPoolJobSystem jobs(4);
+    JobSystem jobs(4);
     constexpr uint32_t JobCount = 4096;
 
     // Plain non-atomic writes: visibility after ParallelFor returns is part
@@ -112,7 +112,7 @@ TEST(JobSystemThreaded, JoinMakesPlainJobWritesVisibleToCaller)
 
 TEST(JobSystemThreaded, RepeatedBatchesStress)
 {
-    ThreadPoolJobSystem jobs(4);
+    JobSystem jobs(4);
     constexpr uint32_t Iterations = 300;
     constexpr uint32_t JobCount = 257;   // not a multiple of the worker count
 
@@ -133,7 +133,7 @@ TEST(JobSystemThreaded, RepeatedBatchesStress)
 TEST(JobSystemThreaded, CallerParticipatesAndWorkerIndicesAreDistinct)
 {
     constexpr uint32_t Workers = 3;
-    ThreadPoolJobSystem jobs(Workers);
+    JobSystem jobs(Workers);
 
     std::latch rendezvous(Workers + 1);
     std::mutex mutex;
@@ -156,7 +156,7 @@ TEST(JobSystemThreaded, CallerParticipatesAndWorkerIndicesAreDistinct)
 
 TEST(JobSystemThreaded, CurrentWorkerIndexStaysWithinBounds)
 {
-    ThreadPoolJobSystem jobs(4);
+    JobSystem jobs(4);
     std::atomic<bool> inBounds{ true };
 
     jobs.ParallelFor(2048, [&](uint32_t) {
@@ -171,7 +171,7 @@ TEST(JobSystemThreaded, CurrentWorkerIndexStaysWithinBounds)
 
 TEST(JobSystemThreaded, ZeroJobsReturnsWithoutInvokingCallback)
 {
-    ThreadPoolJobSystem jobs(4);
+    JobSystem jobs(4);
     std::atomic<uint32_t> calls{ 0 };
     jobs.ParallelFor(0, [&](uint32_t) { calls.fetch_add(1); });
     EXPECT_EQ(calls.load(), 0u);
@@ -179,7 +179,7 @@ TEST(JobSystemThreaded, ZeroJobsReturnsWithoutInvokingCallback)
 
 TEST(JobSystemThreaded, PoolDestructionWithNoBatchesDoesNotHang)
 {
-    ThreadPoolJobSystem jobs(8);
+    JobSystem jobs(8);
     // Destructor runs at scope exit; the test passing is the assertion.
 }
 
@@ -193,7 +193,7 @@ TEST(JobSystemThreaded, PoolDestructionWithNoBatchesDoesNotHang)
 TEST(JobSystemContracts, NestedParallelForDies)
 {
     GTEST_FLAG_SET(death_test_style, "threadsafe");
-    ThreadPoolJobSystem jobs(0);
+    JobSystem jobs(0);
     EXPECT_DEATH(
         jobs.ParallelFor(1, [&](uint32_t) {
             jobs.ParallelFor(1, [](uint32_t) {});
@@ -204,8 +204,8 @@ TEST(JobSystemContracts, NestedParallelForDies)
 TEST(JobSystemContracts, NestedParallelForAcrossPoolsDies)
 {
     GTEST_FLAG_SET(death_test_style, "threadsafe");
-    ThreadPoolJobSystem outer(0);
-    ThreadPoolJobSystem inner(0);
+    JobSystem outer(0);
+    JobSystem inner(0);
     EXPECT_DEATH(
         outer.ParallelFor(1, [&](uint32_t) {
             inner.ParallelFor(1, [](uint32_t) {});
@@ -218,7 +218,7 @@ TEST(JobSystemContracts, ConcurrentParallelForDies)
     GTEST_FLAG_SET(death_test_style, "threadsafe");
     EXPECT_DEATH(
         {
-            ThreadPoolJobSystem jobs(1);
+            JobSystem jobs(1);
             std::latch jobStarted(1);
             std::latch releaseJob(1);
 
@@ -245,14 +245,14 @@ TEST(JobSystemContracts, ConcurrentParallelForDies)
 TEST(JobSystemContracts, CurrentWorkerIndexOutsideJobDies)
 {
     GTEST_FLAG_SET(death_test_style, "threadsafe");
-    ThreadPoolJobSystem jobs(0);
+    JobSystem jobs(0);
     EXPECT_DEATH((void)jobs.CurrentWorkerIndex(), "only valid inside a job");
 }
 
 TEST(JobSystemContracts, ThrowingJobDies)
 {
     GTEST_FLAG_SET(death_test_style, "threadsafe");
-    ThreadPoolJobSystem jobs(0);
+    JobSystem jobs(0);
     EXPECT_DEATH(
         jobs.ParallelFor(1, [](uint32_t) { throw 42; }),
         "job 0 threw");

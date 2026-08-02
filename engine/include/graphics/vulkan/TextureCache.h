@@ -65,15 +65,10 @@ public:
 
     [[nodiscard]] bool IsValid() const { return Valid; }
 
-    // -- Load from filesystem -------------------------------------------------
-    // Inherited from AssetCache: Acquire(), AcquireOwned(), Release()
-    // These call OnLoad() / OnFree() / IsEntryLive() below.
-    //
-    // `sampler` is consulted only on the first load for a given path.
-    [[nodiscard]] TextureHandle     Acquire(std::string_view path,
-                                            const SamplerDesc& sampler = {});
-    [[nodiscard]] TextureCacheHandle AcquireOwned(std::string_view path,
-                                                   const SamplerDesc& sampler = {});
+    // -- Resolve an already-uploaded path --------------------------------------
+    // Inherited from AssetCache: Acquire(), AcquireOwned(), Release(). Textures
+    // enter through the CreateFrom* entry points below, which the texture
+    // loader calls on the owner thread; the cache never reads a file.
 
     // -- Upload from CPU-side data --------------------------------------------
     //
@@ -137,13 +132,12 @@ private:
     friend class AssetCache<TextureCache, TextureHandle, TextureEntry>;
 
     // AssetCache CRTP hooks.
-    // OnLoad is not used directly -- TextureCache::Acquire overloads with SamplerDesc.
-    bool OnLoad(std::string_view path, TextureEntry& out);
     void OnFree(TextureEntry& entry);
     bool IsEntryLive(const TextureEntry& entry) const;
 
     // Uploads `image` to the GPU and populates `out` with the resulting GPU
-    // handles. Does not allocate a cache slot. Used by OnLoad and CreateFromImage.
+    // handles. Does not allocate a cache slot. Used by the CreateFromImage
+    // entry points.
     bool UploadImage(const Image& image, const SamplerDesc& sampler,
                      const char* debugName, TextureEntry& out);
 
@@ -167,7 +161,4 @@ private:
     VulkanDescriptorCache* Descriptors = nullptr;
     VulkanSamplerCache*    Samplers    = nullptr;
     bool                   Valid       = false;
-
-    // Pending sampler for use during OnLoad (set by Acquire before base calls OnLoad).
-    const SamplerDesc*     PendingSampler = nullptr;
 };
