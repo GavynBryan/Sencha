@@ -32,6 +32,7 @@ public:
 	JsonValue(std::nullptr_t) : Data(std::monostate{}) {}
 	JsonValue(bool value) : Data(value) {}
 	JsonValue(double value) : Data(value) {}
+	JsonValue(float value) : Data(static_cast<double>(value)) {}
 	JsonValue(int value) : Data(static_cast<double>(value)) {}
 	JsonValue(std::string value) : Data(std::move(value)) {}
 	JsonValue(const char* value) : Data(std::string(value)) {}
@@ -58,6 +59,18 @@ public:
 	[[nodiscard]] const Object&       AsObject() const { return std::get<Object>(Data); }
 
 	// -- Object field lookup (linear scan) ------------------------------------
+
+	// Mutable overload: an editor document edits fields in place, which is
+	// what keeps unknown keys and object order intact across a save.
+	[[nodiscard]] JsonValue* Find(std::string_view key)
+	{
+		if (!IsObject()) return nullptr;
+		for (auto& [k, v] : std::get<Object>(Data))
+		{
+			if (k == key) return &v;
+		}
+		return nullptr;
+	}
 
 	[[nodiscard]] const JsonValue* Find(std::string_view key) const
 	{

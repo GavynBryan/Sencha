@@ -38,6 +38,10 @@ public:
     bool Register(const AssetRecord& record);
     bool RegisterOrVerify(const AssetRecord& record);
 
+    // Drops a record and any id bound to it. For an editor that deleted or
+    // renamed the file behind it; the runtime never unregisters.
+    bool Unregister(std::string_view path);
+
     // Binds a stable id to an already-registered path (the ApplyAssetIds
     // pass). Idempotent for the same pair; a record that already carries a
     // different id, or an id already bound to another path, is a conflict

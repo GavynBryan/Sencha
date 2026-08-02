@@ -96,6 +96,7 @@ AssetKindRegistration MakeBuiltinAssetKind(AssetType type)
     case AssetType::Audio:         return make("Audio", {".sclip"});
     case AssetType::Skeleton:      return make("Skeleton", {".sskel"});
     case AssetType::AnimationClip: return make("AnimationClip", {".sanim"});
+    case AssetType::Data:          return make("Data", {".sdata"});
     default:                       return {};
     }
 }
@@ -123,6 +124,7 @@ std::span<const AssetType> BuiltinAssetKinds()
         AssetType::Audio,
         AssetType::Skeleton,
         AssetType::AnimationClip,
+        AssetType::Data,
     };
     return kKinds;
 }

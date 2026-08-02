@@ -28,6 +28,7 @@ enum class AssetType : uint16_t
     SkinnedMesh = 10,
     Collision = 11,
     ProbeVolume = 12,
+    Data = 13,
 };
 
 enum class AssetSourceKind : uint16_t
@@ -67,6 +68,7 @@ inline std::string_view AssetTypeToString(AssetType type)
     case AssetType::SkinnedMesh: return "SkinnedMesh";
     case AssetType::Collision: return "Collision";
     case AssetType::ProbeVolume: return "ProbeVolume";
+    case AssetType::Data: return "Data";
     case AssetType::Unknown:  break;
     }
     return "Unknown";
@@ -86,6 +88,7 @@ inline bool AssetTypeFromString(std::string_view name, AssetType& out)
     if (name == "SkinnedMesh") { out = AssetType::SkinnedMesh; return true; }
     if (name == "Collision") { out = AssetType::Collision; return true; }
     if (name == "ProbeVolume") { out = AssetType::ProbeVolume; return true; }
+    if (name == "Data") { out = AssetType::Data; return true; }
     return false;
 }
 

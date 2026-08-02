@@ -123,6 +123,18 @@ bool AssetRegistry::RegisterOrVerify(const AssetRecord& record)
     return true;
 }
 
+bool AssetRegistry::Unregister(std::string_view path)
+{
+    auto it = RecordsByPath.find(std::string(path));
+    if (it == RecordsByPath.end())
+        return false;
+
+    if (it->second.Id.IsValid())
+        RecordsById.erase(it->second.Id);
+    RecordsByPath.erase(it);
+    return true;
+}
+
 bool AssetRegistry::AssignId(std::string_view path, AssetId id)
 {
     if (!id.IsValid())
