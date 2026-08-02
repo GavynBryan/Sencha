@@ -232,7 +232,7 @@ Scene serialization is schema-driven:
   ODR note in that header.
 
 The set of serializable components is named once, in
-`world/ComponentManifest.h` (`EngineSceneComponents`). `InitSceneSerializer()`
+`world/ComponentManifest.h` (`EngineSceneComponents`). `RegisterEngineSceneSerializers()`
 and `InitializeSceneRegistry()` both fold over that list, so serializer
 registration and storage registration cannot drift apart. Each component's
 JSON key and chunk FourCC live on its own `TypeSchema<T>` (`Name`,

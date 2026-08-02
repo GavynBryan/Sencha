@@ -13,6 +13,7 @@
 #include <fstream>
 #include <set>
 #include <vector>
+#include "document/DocumentSerialization.h"
 
 namespace
 {
@@ -89,7 +90,7 @@ void ComponentVisualRenderer::DrawViewport(const FrameContext& frame, const Edit
                      EditorTheme::ComponentVisual.Z * tint.Z,
                      EditorTheme::ComponentVisual.W * tint.W);
     const Registry& registry = scene.GetRegistry();
-    const auto& serializers = GetComponentSerializerEntries();
+    const auto& serializers = EditorSceneSerializers().Entries();
 
     std::vector<EditorLineVertex> vertices;
     for (EntityId entity : scene.GetAllEntities())

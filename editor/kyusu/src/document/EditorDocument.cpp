@@ -22,6 +22,7 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+#include "DocumentSerialization.h"
 
 namespace
 {
@@ -91,7 +92,7 @@ EditorDocument::EditorDocument(LoggingProvider& logging)
     // Register storage for every serializer the registry knows — engine, editor,
     // and any game module loaded at startup — so game components are available
     // (and inspectable/addable) before any entity exists. Idempotent.
-    for (const auto& serializer : GetComponentSerializerEntries())
+    for (const auto& serializer : EditorSceneSerializers().Entries())
         serializer->RegisterStorage(Registry_);
 }
 
@@ -130,7 +131,7 @@ JsonValue EditorDocument::ToJson() const
     // Assets may be null (brush-only); the codec only touches it on asset fields,
     // of which a brush-only scene has none.
     SceneSerializationContext context(Logging, Assets);
-    JsonValue root = SaveSceneJson(Registry_, context);
+    JsonValue root = SaveSceneJson(Registry_, EditorSceneSerializers(), context);
     if (root.IsObject())
     {
         root.AsObject().emplace_back("brush_meshes", SerializeBrushMeshes(Scene.GetBrushMeshStore()));
@@ -149,7 +150,7 @@ bool EditorDocument::LoadFromJson(const JsonValue& root)
 
     SceneLoadError loadError;
     SceneSerializationContext context(Logging, Assets);
-    if (!LoadSceneJson(root, Registry_, context, &loadError))
+    if (!LoadSceneJson(root, Registry_, EditorSceneSerializers(), context, &loadError))
     {
         Scene.SyncFromRegistry();
         return false;
@@ -176,7 +177,7 @@ EntitySnapshot EditorDocument::CaptureEntity(EntityId entity) const
     // One object per present component, keyed by JsonKey(): the same per-entity
     // layout SaveSceneJson produces, so RestoreEntity round-trips it.
     JsonValue::Object components;
-    for (const auto& serializer : GetComponentSerializerEntries())
+    for (const auto& serializer : EditorSceneSerializers().Entries())
     {
         if (!serializer->HasComponent(entity, Registry_))
             continue;
@@ -222,7 +223,7 @@ EntityId EditorDocument::RestoreEntity(const EntitySnapshot& snapshot, bool fres
         for (const auto& [key, componentData] : snapshot.Components.AsObject())
         {
             IComponentSerializer* serializer = nullptr;
-            for (const auto& entry : GetComponentSerializerEntries())
+            for (const auto& entry : EditorSceneSerializers().Entries())
                 if (entry->JsonKey() == key)
                 {
                     serializer = entry.get();

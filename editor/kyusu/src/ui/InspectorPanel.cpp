@@ -30,6 +30,7 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include "document/DocumentSerialization.h"
 
 namespace
 {
@@ -507,7 +508,7 @@ void InspectorPanel::DrawAddComponentMenu(EntityId entity)
     if (ImGui::BeginPopup("##add_component"))
     {
         bool anyAddable = false;
-        for (const auto& serializer : GetComponentSerializerEntries())
+        for (const auto& serializer : EditorSceneSerializers().Entries())
         {
             const ComponentId id = world.GetComponentIdByType(serializer->TypeId());
             if (id == InvalidComponentId || world.HasComponent(entity, id))
@@ -563,7 +564,7 @@ void InspectorPanel::OnDraw()
     // Registry-driven: every component the registry knows about, drawn by schema.
     // No component is named in editor code here.
     World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
-    for (const auto& serializer : GetComponentSerializerEntries())
+    for (const auto& serializer : EditorSceneSerializers().Entries())
     {
         const ComponentId id = world.GetComponentIdByType(serializer->TypeId());
         if (id != InvalidComponentId && world.HasComponent(entity, id))

@@ -6,6 +6,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include "document/DocumentSerialization.h"
 
 // Viewport affordances are rebuilt several times a frame (each viewport, the
 // overlay, hover, hit-testing), so the cost of one build is multiplied by a
@@ -32,7 +33,7 @@ TEST_F(AffordanceBuildCostTest, WorkScalesWithAdaptersNotRegisteredComponentType
     // component type. Walking the registered types per entity would make the
     // inner loop an order of magnitude wider than the work that can result.
     const std::size_t adapters = Affordances().Registry().Entries().size();
-    const std::size_t serializers = GetComponentSerializerEntries().size();
+    const std::size_t serializers = EditorSceneSerializers().Entries().size();
     EXPECT_GT(serializers, adapters);
     EXPECT_LE(adapters, 4u) << "affordance adapters grew; re-check the per-entity inner loop";
 }

@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include "document/DocumentSerialization.h"
 
 namespace
 {
@@ -107,7 +108,7 @@ EditorAffordanceService::EditorAffordanceService(
 
 void EditorComponentAdapterRegistry::ResolveEntries() const
 {
-    const auto& serializers = GetComponentSerializerEntries();
+    const auto& serializers = EditorSceneSerializers().Entries();
     if (ResolvedSerializerCount == serializers.size() && Resolved.size() == Adapters.size())
         return;
 

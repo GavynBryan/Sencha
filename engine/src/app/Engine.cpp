@@ -15,6 +15,7 @@
 #include <world/RuntimeComponentSchema.h>
 #include <world/RuntimeWorld.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
+#include <world/serialization/SceneSerializer.h>
 
 #ifdef SENCHA_ENABLE_VULKAN
 #include <graphics/vulkan/GraphicsServices.h>
@@ -369,8 +370,13 @@ int Engine::Run(Game& game)
     // Serializers and runtime storage share stable component identities but are
     // independent registries. The editor calls only the serializer hook; the
     // runtime additionally composes and seals the complete World vocabulary.
-    ComponentSerializerRegistry& serializers =
-        DefaultComponentSerializerRegistry();
+    //
+    // The engine registers its own manifest before handing the registry to the
+    // game, so a game module adds to a known set instead of being responsible
+    // for seeding it. Clear first: Run may be called again in the same process.
+    ComponentSerializerRegistry& serializers = SceneSerializerRegistry;
+    serializers.Clear();
+    RegisterEngineSceneSerializers(serializers);
     game.OnRegisterComponents(serializers);
 
     RuntimeComponentSchemaState = WorldComponentSchema{};

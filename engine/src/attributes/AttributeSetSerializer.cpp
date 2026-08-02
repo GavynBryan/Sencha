@@ -13,8 +13,7 @@
 #include <memory>
 #include <span>
 #include <vector>
-
-void RegisterComponentSerializer(std::unique_ptr<IComponentSerializer> serializer);
+#include <world/serialization/ComponentSerializerRegistry.h>
 
 namespace
 {
@@ -131,8 +130,8 @@ public:
 };
 } // namespace
 
-void RegisterAttributeSerializer()
+void RegisterAttributeSerializer(ComponentSerializerRegistry& serializers)
 {
-    RegisterComponentSerializer(
+    (void)serializers.Register(
         std::make_unique<AttributeSetSerializer>());
 }

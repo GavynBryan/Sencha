@@ -24,6 +24,7 @@
 #include <span>
 #include <string>
 #include <vector>
+#include "document/DocumentSerialization.h"
 
 SceneHierarchyPanel::SceneHierarchyPanel(WorldDocument& world,
                                          SelectionService& selection, CommandStack& commands)
@@ -86,7 +87,7 @@ void SceneHierarchyPanel::OnDraw()
         // Registry-driven summary: the components present on this entity, named
         // by the serializer registry — no hard-coded component list.
         std::string summary;
-        for (const auto& serializer : GetComponentSerializerEntries())
+        for (const auto& serializer : EditorSceneSerializers().Entries())
         {
             const ComponentId id = world.GetComponentIdByType(serializer->TypeId());
             if (id == InvalidComponentId || !world.HasComponent(entity, id))

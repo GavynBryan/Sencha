@@ -28,6 +28,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include "DocumentSerialization.h"
 
 namespace
 {
@@ -222,7 +223,8 @@ JsonValue BuildPassthroughScene(const EditorDocument& document,
                                 std::unordered_map<EntityIndex, std::uint32_t>& sceneIndices)
 {
     SceneSerializationContext context(logging, assets);
-    JsonValue serialized = SaveSceneJson(document.GetRegistry(), context);
+    JsonValue serialized =
+        SaveSceneJson(document.GetRegistry(), EditorSceneSerializers(), context);
     const JsonValue* sourceEntities = serialized.Find("entities");
     const JsonValue* sourceHierarchy = serialized.Find("hierarchy");
     if (sourceEntities == nullptr || !sourceEntities->IsArray()

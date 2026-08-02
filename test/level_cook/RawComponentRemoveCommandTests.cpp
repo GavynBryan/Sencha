@@ -25,10 +25,10 @@ namespace
     protected:
         static void SetUpTestSuite() { RegisterDocumentSerializers(); }
 
-        // The serializer for a given JSON key (process-global, stable).
+        // The serializer for a given JSON key, from the editor's registry.
         IComponentSerializer* SerializerFor(std::string_view jsonKey) const
         {
-            for (const auto& entry : GetComponentSerializerEntries())
+            for (const auto& entry : EditorSceneSerializers().Entries())
                 if (entry->JsonKey() == jsonKey)
                     return entry.get();
             return nullptr;

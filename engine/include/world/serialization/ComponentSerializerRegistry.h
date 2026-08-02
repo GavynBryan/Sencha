@@ -105,8 +105,3 @@ public:
 private:
     std::vector<std::unique_ptr<IComponentSerializer>> Entries_;
 };
-
-// The process-default instance behind the legacy free-function API in
-// SceneSerializer.h. New code (the module context) should take an explicit
-// ComponentSerializerRegistry& instead of reaching for this.
-ComponentSerializerRegistry& DefaultComponentSerializerRegistry();

@@ -344,8 +344,8 @@ TEST(CaptionSystemDegrade, NoAudioServiceStillSubtitlesActiveSources)
 
 TEST(CaptionSceneCodec, ComponentRoundTripsWithReadableEnumStrings)
 {
-    ClearComponentSerializers();
-    RegisterComponent<AudioCaptionComponent>();
+    ComponentSerializerRegistry serializers;
+    RegisterComponent<AudioCaptionComponent>(serializers);
 
     LoggingProvider logging;
 
@@ -363,7 +363,7 @@ TEST(CaptionSceneCodec, ComponentRoundTripsWithReadableEnumStrings)
     });
 
     SceneSerializationContext saveCtx(logging);
-    JsonValue json = SaveSceneJson(src, saveCtx);
+    JsonValue json = SaveSceneJson(src, serializers, saveCtx);
 
     // Author-readable strings in the scene file, never raw integers.
     const JsonValue* components =
@@ -376,7 +376,7 @@ TEST(CaptionSceneCodec, ComponentRoundTripsWithReadableEnumStrings)
     Registry dst;
     dst.Components.RegisterComponent<AudioCaptionComponent>();
     SceneSerializationContext loadCtx(logging);
-    ASSERT_TRUE(LoadSceneJson(json, dst, loadCtx));
+    ASSERT_TRUE(LoadSceneJson(json, dst, serializers, loadCtx));
 
     int count = 0;
     dst.Components.ForEachComponent<AudioCaptionComponent>(
@@ -396,8 +396,6 @@ TEST(CaptionSceneCodec, ComponentRoundTripsWithReadableEnumStrings)
         EXPECT_FALSE(caption.CaptionAttempted);
     });
     EXPECT_EQ(count, 1);
-
-    ClearComponentSerializers();
 }
 
 TEST(CaptionSceneCodec, UnknownEnumStringFailsLoad)

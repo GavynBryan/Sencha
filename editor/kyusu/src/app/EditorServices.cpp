@@ -905,7 +905,7 @@ void EditorServices::LoadGameModule()
 
     // The editor only borrows the module's component serializers (so it can edit
     // scenes containing game components); it never runs the game's lifecycle.
-    GameModule.Instance->OnRegisterComponents(DefaultComponentSerializerRegistry());
+    GameModule.Instance->OnRegisterComponents(EditorSceneSerializers());
     std::fprintf(stderr, "[editor] loaded game module '%s'\n", modulePath.c_str());
 }
 
@@ -930,6 +930,6 @@ void EditorServices::UnloadGameModule()
         return;
 
     // Retract the serializers while the module is still mapped, then unmap.
-    GameModule.Instance->OnUnregisterComponents(DefaultComponentSerializerRegistry());
+    GameModule.Instance->OnUnregisterComponents(EditorSceneSerializers());
     ModuleLoader.Unload(GameModule);
 }
