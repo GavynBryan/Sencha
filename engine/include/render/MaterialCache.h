@@ -31,7 +31,7 @@ using MaterialCacheHandle = Owned<MaterialHandle>;
 //
 // CPU-side material cache with stable string keys for scene serialization.
 //=============================================================================
-class MaterialCache final : public AssetCache<MaterialCache, MaterialHandle, MaterialEntry>
+class MaterialCache final : public AssetCache<MaterialCache, MaterialHandle, MaterialEntry, AssetType::Material>
 {
 public:
     MaterialCache();
@@ -73,7 +73,7 @@ public:
     [[nodiscard]] std::string_view GetName(MaterialHandle handle) const;
 
 private:
-    friend class AssetCache<MaterialCache, MaterialHandle, MaterialEntry>;
+    friend class AssetCache<MaterialCache, MaterialHandle, MaterialEntry, AssetType::Material>;
 
     void OnFree(MaterialEntry& entry);
     bool IsEntryLive(const MaterialEntry& entry) const;

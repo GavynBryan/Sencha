@@ -76,7 +76,7 @@ int main()
     }
 #endif
 
-    ScanAssetsDirectory("assets", registry);
+    ScanAssetsDirectory("assets", registry, assets.Kinds());
 
     // -- Load clip -----------------------------------------------------
     AudioClipHandle clip = assets.LoadAudioClip(kSoundPath);

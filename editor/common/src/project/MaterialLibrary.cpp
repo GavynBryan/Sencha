@@ -1,5 +1,6 @@
 #include "MaterialLibrary.h"
 
+#include <core/assets/AssetKindRegistry.h>
 #include <core/assets/AssetRegistry.h>
 
 #include <algorithm>
@@ -39,8 +40,13 @@ void MaterialLibrary::Rescan(std::span<const std::string> roots)
         if (root.empty())
             continue;
 
+        // Only the material kind is registered: this scan classifies .smat
+        // and nothing else, and shares the one built-in extension table.
+        AssetKindRegistry kinds;
+        (void)kinds.Register(MakeBuiltinAssetKind(AssetType::Material));
+
         AssetRegistry registry(Logging);
-        ScanAssetsDirectory(root, registry);
+        ScanAssetsDirectory(root, registry, kinds);
 
         for (const auto& [path, record] : registry.Records())
         {

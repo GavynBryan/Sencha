@@ -1,5 +1,7 @@
 #include <core/assets/AssetRegistry.h>
 
+#include <core/assets/AssetKindRegistry.h>
+
 #include <core/hash/ContentHash.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
@@ -11,23 +13,6 @@
 
 namespace
 {
-    AssetType AssetTypeFromExtension(std::string_view extension)
-    {
-        if (extension == ".smesh")  return AssetType::StaticMesh;
-        if (extension == ".skmesh") return AssetType::SkinnedMesh;
-        if (extension == ".smat")   return AssetType::Material;
-        if (extension == ".stex")   return AssetType::Texture;
-        if (extension == ".smap")   return AssetType::Scene;
-        if (extension == ".sclip")  return AssetType::Audio;
-        if (extension == ".sskel")  return AssetType::Skeleton;
-        if (extension == ".sanim")  return AssetType::AnimationClip;
-        // Source formats (.png, .gltf, ...) are deliberately absent: they
-        // reach the registry through import-on-demand, registered under
-        // their virtual path against the cooked artifact (Decision B). The
-        // Stage 1 loose-PNG mapping retired when the texture cook landed.
-        return AssetType::Unknown;
-    }
-
     std::string MakeVirtualAssetPath(const std::filesystem::path& root,
                                      const std::filesystem::path& file)
     {
@@ -192,7 +177,9 @@ bool AssetRegistry::Contains(std::string_view path) const
     return FindByPath(path) != nullptr;
 }
 
-bool ScanAssetsDirectory(std::string_view rootDirectory, AssetRegistry& registry)
+bool ScanAssetsDirectory(std::string_view rootDirectory,
+                         AssetRegistry& registry,
+                         const AssetKindRegistry& kinds)
 {
     if (rootDirectory.empty())
     {
@@ -231,7 +218,11 @@ bool ScanAssetsDirectory(std::string_view rootDirectory, AssetRegistry& registry
             continue;
         }
 
-        const AssetType type = AssetTypeFromExtension(it->path().extension().generic_string());
+        // Source formats (.png, .gltf, ...) match no registered kind: they reach
+        // the registry through import-on-demand, registered under their virtual
+        // path against the cooked artifact (Decision B).
+        const AssetType type =
+            kinds.FindTypeByExtension(it->path().extension().generic_string());
         if (type == AssetType::Unknown)
             continue;
 

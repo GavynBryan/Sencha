@@ -6,6 +6,7 @@
 #include <assets/cook/CookedCache.h>
 #include <core/assets/AssetIdMap.h>
 #include <core/assets/AssetManifest.h>
+#include <core/assets/AssetKindRegistry.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
@@ -239,8 +240,9 @@ TEST_F(LevelCookTest, CookedSceneFullyResolvesAgainstScannedRegistry)
     // skips .cooked/ on its own, so the two roots don't collide.
     LoggingProvider logging;
     AssetRegistry registry(logging);
-    ScanAssetsDirectory(Root.generic_string(), registry);
-    ScanAssetsDirectory((Root / ".cooked").generic_string(), registry);
+    ScanAssetsDirectory(Root.generic_string(), registry, BuiltinAssetKindRegistry());
+    ScanAssetsDirectory((Root / ".cooked").generic_string(), registry,
+                        BuiltinAssetKindRegistry());
 
     AssetIdMap idMap;
     ASSERT_TRUE(AssetIdMap::LoadFromFile((Root / kAssetIdMapFileName).generic_string(), idMap));

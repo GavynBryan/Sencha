@@ -22,8 +22,9 @@ void MountProjectContent(const ProjectDescriptor& project,
     Logger& log = logging.GetLogger<ProjectDescriptor>();
     for (const std::string& root : project.ContentRoots)
     {
-        ScanAssetsDirectory(root, assets.Registry);
-        ScanAssetsDirectory((std::filesystem::path(root) / ".cooked").string(), assets.Registry);
+        ScanAssetsDirectory(root, assets.Registry, assets.Assets.Kinds());
+        ScanAssetsDirectory((std::filesystem::path(root) / ".cooked").string(),
+                            assets.Registry, assets.Assets.Kinds());
 
         // Cook source textures on demand (.png -> .stex) and register the cooked
         // overlay, so a material's asset://...png resolves to its cooked .stex with a

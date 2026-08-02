@@ -47,7 +47,7 @@ using AudioClipCacheHandle = Owned<AudioClipHandle>;
 // PCM data when it reaches zero. AcquireOwned() wraps the handle in an
 // AudioClipCacheHandle that calls Release() automatically on destruction.
 //=============================================================================
-class AudioClipCache : public AssetCache<AudioClipCache, AudioClipHandle, AudioClipEntry>
+class AudioClipCache : public AssetCache<AudioClipCache, AudioClipHandle, AudioClipEntry, AssetType::Audio>
 {
 public:
     explicit AudioClipCache(LoggingProvider& logging);
@@ -74,7 +74,7 @@ public:
     [[nodiscard]] const AudioClip* Get(AudioClipHandle handle) const;
 
 private:
-    friend class AssetCache<AudioClipCache, AudioClipHandle, AudioClipEntry>;
+    friend class AssetCache<AudioClipCache, AudioClipHandle, AudioClipEntry, AssetType::Audio>;
 
     // AssetCache CRTP hooks.
     void OnFree(AudioClipEntry& entry);

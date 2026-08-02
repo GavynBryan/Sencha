@@ -560,10 +560,12 @@ void TemplateGame::OnStart(GameStartupContext&)
 
     ScanAssetsDirectory(
         std::string(kAuthoredRoot),
-        runtimeAssets.Registry);
+        runtimeAssets.Registry,
+        runtimeAssets.Assets.Kinds());
     ScanAssetsDirectory(
         std::string(kCookedScanRoot),
-        runtimeAssets.Registry);
+        runtimeAssets.Registry,
+        runtimeAssets.Assets.Kinds());
     RegisterCookedAssets(
         std::string(kAuthoredRoot),
         runtimeAssets.Registry);
