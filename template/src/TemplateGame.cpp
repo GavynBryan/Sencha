@@ -29,6 +29,7 @@
 #include <movement/MovementDefs.h>
 #include <movement/MovementComponents.h>
 #include <movement/MovementIntent.h>
+#include <movement/MovementProfileBindingCache.h>
 #include <movement/MovementRegistration.h>
 #include <movement/MovementTags.h>
 #include <physics/CollisionShapeCache.h>
@@ -70,6 +71,8 @@ namespace
 {
 constexpr std::string_view kAuthoredRoot = "assets";
 constexpr std::string_view kCookedScanRoot = "assets/.cooked";
+constexpr std::string_view kPlayerMovementProfilePath =
+    "asset://data/player_movement.sdata";
 constexpr ZoneId kPlayZone{ 1 };
 
 struct SceneBuildResult
@@ -199,7 +202,8 @@ EntityId CreateTransformEntity(
 EntityId SpawnPlayerAvatar(
     World& world,
     Logger& log,
-    std::optional<StoragePartitionId> spawnPartition)
+    std::optional<StoragePartitionId> spawnPartition,
+    MovementProfileHandle movementProfile)
 {
     const Vec3d spawnPosition =
         FindPlayerStart(world, spawnPartition);
@@ -233,10 +237,11 @@ EntityId SpawnPlayerAvatar(
     world.AddComponent<MotionRequest>(pawn, MotionRequest{});
     world.AddComponent<ModeTransitionRequest>(pawn, ModeTransitionRequest{});
 
-    // No authored profile: the template pawn resolves tuning from defaults
-    // plus the MoveSpeed attribute, which is what an unauthored character
-    // should do.
+    // With an invalid profile handle the pawn resolves tuning from defaults
+    // plus the MoveSpeed attribute, so a missing asset degrades to movement
+    // that still works.
     CharacterMovement pawnMovement;
+    pawnMovement.Profile = movementProfile;
     if (const LocomotionModeRegistry* modes =
             world.TryGetResource<LocomotionModeRegistry>())
     {
@@ -259,9 +264,12 @@ EntityId SpawnPlayerAvatar(
     }
     world.AddComponent<GameplayTagContainer>(pawn, pawnTags);
 
+    // The profile's base layer owns the authored top speed; this attribute is
+    // the effect-modifiable base and the whole answer when no profile loads,
+    // so keep it at a modest speed rather than a tuned one.
     AttributeSet pawnAttributes{};
     if (movementDefs != nullptr)
-        pawnAttributes.Add(movementDefs->MoveSpeed, 2.0f);
+        pawnAttributes.Add(movementDefs->MoveSpeed, 4.5f);
     world.AddComponent<AttributeSet>(pawn, pawnAttributes);
 
     AbilitySet pawnAbilities{};
@@ -415,6 +423,40 @@ struct WorldPartitionUpdateSystem
     std::optional<Vec3d> PendingSafePosition;
 };
 
+#ifdef SENCHA_ENABLE_COOK
+// Polls the source watcher on wall time and hands changed files to the
+// reloader, which stages an in-place swap that commits at the async drain.
+struct HotReloadPollSystem
+{
+    HotReloadPollSystem(
+        std::optional<AssetSourceWatcher>& watcher,
+        std::optional<AssetHotReloader>& reloader)
+        : Watcher(watcher)
+        , Reloader(reloader)
+    {
+    }
+
+    void FrameUpdate(FrameUpdateContext& ctx)
+    {
+        if (!Watcher.has_value() || !Reloader.has_value())
+            return;
+
+        Accumulator += ctx.WallDeltaSeconds;
+        if (Accumulator < kPollIntervalSeconds)
+            return;
+        Accumulator = 0.0;
+
+        for (const std::string& changed : Watcher->PollChanged())
+            Reloader->ReloadSource(changed);
+    }
+
+    static constexpr double kPollIntervalSeconds = 0.3;
+    std::optional<AssetSourceWatcher>& Watcher;
+    std::optional<AssetHotReloader>& Reloader;
+    double Accumulator = 0.0;
+};
+#endif
+
 struct CharacterInputSystem
 {
     void FixedLogic(FixedLogicContext& ctx)
@@ -443,15 +485,11 @@ struct CharacterInputSystem
             (input.IsKeyDown(SDL_SCANCODE_D) ? 1.0f : 0.0f)
             - (input.IsKeyDown(SDL_SCANCODE_A) ? 1.0f : 0.0f);
 
-        bool jump = false;
-        for (std::uint32_t scancode : input.KeysPressed)
-        {
-            if (scancode == SDL_SCANCODE_SPACE)
-            {
-                jump = true;
-                break;
-            }
-        }
+        // Held, not edge-triggered: queueing the ability every tick while the
+        // key is down means a press just before landing fires on the first
+        // grounded tick, and holding the key hops again on each landing. The
+        // activation gate (grounded, cooldown) rejects the rest for free.
+        const bool jump = input.IsKeyDown(SDL_SCANCODE_SPACE);
 
         float yaw = 0.0f;
         if (const ActiveCameraService* cameraService =
@@ -613,6 +651,21 @@ void TemplateGame::OnStart(GameStartupContext&)
         runtimeAssets.Registry,
         runtimeAssets.Assets,
         engine.Tasks());
+
+#ifdef SENCHA_ENABLE_COOK
+    HotReloader.emplace(
+        logging,
+        runtimeAssets.Assets,
+        runtimeAssets.Registry,
+        HotReloadImporters,
+        engine.Tasks(),
+        std::string(kAuthoredRoot));
+    HotReloadWatcher.emplace(
+        logging,
+        std::string(kAuthoredRoot),
+        std::vector<std::string>{ ".sdata" });
+    HotReloadWatcher->Initialize();
+#endif
 
     if (DefaultRenderPipeline* pipeline =
             engine.GetRenderPipeline())
@@ -833,10 +886,12 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
 
             if (!PlayerPawn.IsValid())
             {
+                Logger& log = logging.GetLogger<TemplateGame>();
                 PlayerPawn = SpawnPlayerAvatar(
                     runtime.Entities(),
-                    logging.GetLogger<TemplateGame>(),
-                    zone.Partition);
+                    log,
+                    zone.Partition,
+                    ResolvePlayerMovementProfile(log));
             }
             PlayZoneActive = true;
             return true;
@@ -1072,10 +1127,12 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
 
     if (!PlayerPawn.IsValid())
     {
+        Logger& log = logging.GetLogger<TemplateGame>();
         PlayerPawn = SpawnPlayerAvatar(
             engine.World().Entities(),
-            logging.GetLogger<TemplateGame>(),
-            PersistentStoragePartition);
+            log,
+            PersistentStoragePartition,
+            ResolvePlayerMovementProfile(log));
     }
 
     ZoneId focus = PendingZoneFocus;
@@ -1164,6 +1221,9 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
         ZoneLoader,
         GetEngine().World(),
         PlayerPawn);
+#ifdef SENCHA_ENABLE_COOK
+    ctx.Schedule.Register<HotReloadPollSystem>(HotReloadWatcher, HotReloader);
+#endif
 }
 
 void TemplateGame::OnPlatformEvent(PlatformEventContext& ctx)
@@ -1260,6 +1320,19 @@ void TemplateGame::OnShutdown(GameShutdownContext&)
     ZoneLoader.reset();
     SceneContext.reset();
     Preloader.reset();
+#ifdef SENCHA_ENABLE_COOK
+    HotReloadWatcher.reset();
+    HotReloader.reset();
+#endif
+
+    // The world-resource binding cache holds leases into this game's
+    // data-asset cache; both references must drop before Assets goes away.
+    if (MovementProfileBindingCache* bindings =
+            runtime.Entities().TryGetResource<MovementProfileBindingCache>())
+    {
+        bindings->Clear();
+    }
+    PlayerMovementProfile.Reset();
     Assets.reset();
 }
 
@@ -1268,6 +1341,60 @@ RuntimeAssets& TemplateGame::RuntimeAssetState()
     assert(Assets.has_value()
            && "RuntimeAssets must be constructed before use");
     return *Assets;
+}
+
+// Loads the pawn's movement profile synchronously the first time a pawn
+// spawns. The asset is game-lifetime, so the owned lease lives on the game;
+// the tuning system's binding cache adds its own reference on first resolve.
+// Returns an invalid handle on any failure, which the pawn treats as
+// default tuning.
+MovementProfileHandle TemplateGame::ResolvePlayerMovementProfile(Logger& log)
+{
+    if (PlayerMovementProfile.IsValid())
+        return MovementProfileHandle{ PlayerMovementProfile.GetToken() };
+
+    RuntimeAssets& assets = RuntimeAssetState();
+    if (DataAssetHandle resident =
+            assets.DataAssets.Find(kPlayerMovementProfilePath);
+        resident.IsValid())
+    {
+        PlayerMovementProfile =
+            assets.DataAssets.AcquireOwned(kPlayerMovementProfilePath);
+        return MovementProfileHandle{ PlayerMovementProfile.GetToken() };
+    }
+
+    const AssetRecord* record =
+        assets.Registry.FindByPath(kPlayerMovementProfilePath);
+    if (record == nullptr)
+    {
+        log.Warn(
+            "TemplateGame: movement profile '{}' is not in the asset "
+            "registry; the pawn uses default tuning",
+            kPlayerMovementProfilePath);
+        return {};
+    }
+
+    AssetStaging staged =
+        assets.DataLoader.LoadStaged(*record, assets.Assets.DefaultSource());
+    if (!staged.IsValid())
+    {
+        log.Warn(
+            "TemplateGame: movement profile '{}' failed to load: {}",
+            kPlayerMovementProfilePath,
+            staged.Error);
+        return {};
+    }
+
+    const DataAssetHandle committed =
+        assets.DataLoader.CommitTyped(std::move(staged));
+    if (!committed.IsValid())
+        return {};
+
+    // CommitTyped hands over the creation reference; adopt rather than
+    // re-acquire so the count stays balanced.
+    PlayerMovementProfile = DataAssetCacheHandle(
+        &assets.DataAssets, committed, DataAssetCacheHandle::NoAttach);
+    return MovementProfileHandle{ PlayerMovementProfile.GetToken() };
 }
 
 void TemplateGame::SetRelativeMouseMode(bool enabled)

@@ -1,0 +1,38 @@
+{
+    "type": "movement.profile",
+    "version": 1,
+    "data": {
+        "name": "player_movement",
+        "layers": [
+            {
+                "set": {
+                    "max_speed": 4.5,
+                    "acceleration": 10.0,
+                    "friction": 4.0,
+                    "stop_speed": 2.5,
+                    "jump_speed": 6.9,
+                    "gravity_scale": 2.07
+                }
+            },
+            {
+                "when": { "support": "none" },
+                "set": {
+                    "friction": 0.0,
+                    "wish_speed_cap": 0.76
+                }
+            },
+            {
+                "when": { "support": "steep" },
+                "set": {
+                    "friction": 0.0,
+                    "wish_speed_cap": 0.76
+                }
+            },
+            {
+                "when": { "tags": { "all": ["movement.jump.requested"] } },
+                "set": { "friction": 0.0 }
+            }
+        ],
+        "modes": []
+    }
+}

@@ -96,9 +96,12 @@ void RegisterDefaultMovementAbilities(World& world)
     request.GrantedTags = { tags.JumpRequested };
     const EffectId requestFx = effReg.Register("movement.jump.request", request);
 
+    // Just long enough to outlive the request effect and the granting tick at
+    // coarse fixed rates; anything longer eats into the landing-to-jump
+    // cadence of consecutive hops.
     EffectDefinition cooldown;
     cooldown.Duration = EffectDuration::Duration;
-    cooldown.DurationSeconds = 0.3f;
+    cooldown.DurationSeconds = 0.15f;
     cooldown.GrantedTags = { tags.JumpCooldown };
     const EffectId cooldownFx = effReg.Register("movement.jump.cooldown", cooldown);
 
