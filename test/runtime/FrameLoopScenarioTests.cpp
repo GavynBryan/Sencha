@@ -17,6 +17,30 @@
 // number so the suite does not depend on SDL headers. 26 is SDL_SCANCODE_W.
 static constexpr uint32_t kTestScancode = 26;
 
+namespace
+{
+    // Scripts the platform clock so a scenario controls how much simulated time
+    // each frame is worth. Tick emission is a function of elapsed wall time, so
+    // scheduling behavior is only testable deterministically by scripting it.
+    class ScriptedFrameClock
+    {
+    public:
+        explicit ScriptedFrameClock(RuntimeFrameLoop& runtime)
+        {
+            runtime.GetWallClock().SetNowSource([this] { return Now; });
+        }
+
+        void Advance(double seconds)
+        {
+            Now += std::chrono::duration_cast<TimeService::Clock::duration>(
+                std::chrono::duration<double>(seconds));
+        }
+
+    private:
+        TimeService::TimePoint Now{};
+    };
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -238,20 +262,28 @@ TEST(RuntimeFrameLoopScenario, TimescaleZeroPausesSimulationTicks)
 TEST(RuntimeFrameLoopScenario, TimescaleRealtimeProducesTicks)
 {
     RuntimeFrameLoop runtime;
+    ScriptedFrameClock clock(runtime);
+    const double fixedDt = runtime.GetSimulationClock().GetFixedDt();
 
-    uint32_t ticksAt1x = 0;
-    runtime.BeginFrame();
-    runtime.ResolveLifecycleTransitions();
-    runtime.ScheduleFixedTicks();
-    while (runtime.CanRunFixedTickThisFrame())
-    {
-        (void)runtime.BeginFixedTick();
-        runtime.EndFixedTick();
-        ++ticksAt1x;
-    }
-    runtime.BuildPresentationFrame();
-    runtime.EndFrame();
-    EXPECT_EQ(ticksAt1x, 1u);
+    const auto stepFrame = [&](double seconds) {
+        clock.Advance(seconds);
+        runtime.BeginFrame();
+        runtime.ResolveLifecycleTransitions();
+        runtime.ScheduleFixedTicks();
+        uint32_t ticks = 0;
+        while (runtime.CanRunFixedTickThisFrame())
+        {
+            (void)runtime.BeginFixedTick();
+            runtime.EndFixedTick();
+            ++ticks;
+        }
+        runtime.BuildPresentationFrame();
+        runtime.EndFrame();
+        return ticks;
+    };
+
+    stepFrame(0.0);
+    EXPECT_EQ(stepFrame(fixedDt * 1.5), 1u);
 }
 
 // ---------------------------------------------------------------------------
@@ -308,15 +340,36 @@ TEST(InputFrame, HeldStateSurvivesEdgeClear)
     EXPECT_TRUE(frame.IsKeyDown(kTestScancode));
 }
 
-TEST(FrameDriver, LockedTickSeesInputEdges)
+TEST(InputFrame, ConsumeKeyPressedRemovesAllMatchingEdges)
+{
+    InputFrame frame;
+    frame.KeysPressed.push_back(kTestScancode);
+    frame.KeysPressed.push_back(99);
+    frame.KeysPressed.push_back(kTestScancode);
+
+    EXPECT_TRUE(frame.ConsumeKeyPressed(kTestScancode));
+    EXPECT_EQ(frame.KeysPressed.size(), 1u);
+    EXPECT_EQ(frame.KeysPressed.front(), 99u);
+
+    // A second consume finds nothing, which is what stops a handler outside the
+    // fixed-tick drain from acting on the same press twice.
+    EXPECT_FALSE(frame.ConsumeKeyPressed(kTestScancode));
+}
+
+TEST(FrameDriver, FirstTickSeesInputEdges)
 {
     RuntimeFrameLoop runtime;
+    ScriptedFrameClock clock(runtime);
     FrameDriver driver(runtime);
+    const double fixedDt = runtime.GetSimulationClock().GetFixedDt();
 
     int tickCount = 0;
     std::size_t firstTickPressed = 0;
+    bool pressThisFrame = true;
 
     driver.Register(FramePhase::PumpPlatform, [&](PhaseContext& ctx) {
+        if (!pressThisFrame)
+            return;
         ctx.Input->SetKeyHeld(kTestScancode, true);
         ctx.Input->KeysPressed.push_back(kTestScancode);
     });
@@ -329,11 +382,87 @@ TEST(FrameDriver, LockedTickSeesInputEdges)
         ++tickCount;
     });
 
+    // The platform clock reports zero for its first sample, so the opening
+    // frame accrues no simulated time and runs no tick.
+    clock.Advance(0.0);
+    driver.StepOnce();
+    pressThisFrame = false;
+
+    clock.Advance(fixedDt * 1.5);
     driver.StepOnce();
 
     EXPECT_EQ(tickCount, 1);
     EXPECT_EQ(firstTickPressed, 1u);
     EXPECT_TRUE(driver.GetInputFrame().IsKeyDown(kTestScancode));
+}
+
+TEST(FrameDriver, EdgesPersistAcrossZeroTickFramesUntilFirstTick)
+{
+    RuntimeFrameLoop runtime;
+    ScriptedFrameClock clock(runtime);
+    FrameDriver driver(runtime);
+    const double fixedDt = runtime.GetSimulationClock().GetFixedDt();
+
+    int ticksSeen = 0;
+    int ticksThatSawTheEdge = 0;
+    bool pressThisFrame = false;
+
+    driver.Register(FramePhase::PumpPlatform, [&](PhaseContext& ctx) {
+        if (pressThisFrame)
+            ctx.Input->KeysPressed.push_back(kTestScancode);
+    });
+    driver.Register(FramePhase::ScheduleTicks, [&](PhaseContext& ctx) {
+        ctx.Runtime->ScheduleFixedTicks();
+    });
+    driver.Register(FramePhase::Simulate, [&](PhaseContext& ctx) {
+        ++ticksSeen;
+        for (uint32_t scancode : ctx.Input->KeysPressed)
+            if (scancode == kTestScancode)
+                ++ticksThatSawTheEdge;
+    });
+
+    // Press during a frame too short to complete a tick.
+    clock.Advance(0.0);
+    driver.StepOnce();
+    pressThisFrame = true;
+    clock.Advance(fixedDt * 0.4);
+    driver.StepOnce();
+    pressThisFrame = false;
+    ASSERT_EQ(ticksSeen, 0);
+
+    // The press waits for the tick rather than being lost with the frame.
+    clock.Advance(fixedDt * 0.4);
+    driver.StepOnce();
+    clock.Advance(fixedDt * 0.4);
+    driver.StepOnce();
+
+    EXPECT_GE(ticksSeen, 1);
+    EXPECT_EQ(ticksThatSawTheEdge, 1);
+}
+
+TEST(FrameDriver, SpikeFrameRunsCappedTickBurst)
+{
+    RuntimeFrameLoop runtime;
+    ScriptedFrameClock clock(runtime);
+    runtime.SetMaxFixedTicksPerFrame(4);
+    FrameDriver driver(runtime);
+
+    int ticksSeen = 0;
+    driver.Register(FramePhase::ScheduleTicks, [](PhaseContext& ctx) {
+        ctx.Runtime->ScheduleFixedTicks();
+    });
+    driver.Register(FramePhase::Simulate, [&](PhaseContext&) { ++ticksSeen; });
+
+    clock.Advance(0.0);
+    driver.StepOnce();
+
+    // A stalled frame catches up to the cap and drops the rest, so the frame
+    // after a hitch is not itself late.
+    clock.Advance(1.0);
+    driver.StepOnce();
+
+    EXPECT_EQ(ticksSeen, 4);
+    EXPECT_GT(runtime.GetCurrentFrame().TicksDropped, 0u);
 }
 
 TEST(SwapchainRebuildWorker, RunningRequestQueuesFollowUpAndReportsCompletedExtents)

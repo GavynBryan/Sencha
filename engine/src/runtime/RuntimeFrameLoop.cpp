@@ -125,11 +125,30 @@ void RuntimeFrameLoop::FailSwapchainRebuild()
 
 TickBudget RuntimeFrameLoop::ScheduleFixedTicks()
 {
+    // Reset before this frame's time is accumulated: a discontinuity means the
+    // elapsed wall time does not correspond to simulated time the new state
+    // should replay.
     if (DiscontinuityPending)
+    {
         ApplyDiscontinuity();
+        Scheduler.Reset();
+    }
 
-    Current.Budget.TicksToRunThisFrame =
-        (!Current.LifecycleOnly && SimulationTimescale > 0.0f) ? 1u : 0u;
+    // Lifecycle-only frames render nothing and simulate nothing, and the wall
+    // time they span belongs to the stall rather than to gameplay. They also
+    // end in a discontinuity, which clears the residual anyway.
+    if (Current.LifecycleOnly)
+    {
+        Current.Budget.TicksToRunThisFrame = 0u;
+        return Current.Budget;
+    }
+
+    const double elapsed =
+        static_cast<double>(Current.WallTime.Dt) * static_cast<double>(SimulationTimescale);
+    const FixedStepPlan plan = Scheduler.Advance(elapsed, SimulationClock.GetFixedDt());
+
+    Current.Budget.TicksToRunThisFrame = plan.TicksToRun;
+    Current.TicksDropped = plan.TicksDropped;
     return Current.Budget;
 }
 
@@ -151,10 +170,11 @@ void RuntimeFrameLoop::EndFixedTick()
 
 PresentationTime RuntimeFrameLoop::BuildPresentationFrame()
 {
-    // Locked scheduling renders the latest completed simulation state. A future
-    // paced scheduler can provide a fractional phase here without changing
-    // FixedSimTime.
-    Current.Presentation = SimulationClock.BuildPresentationTime(1.0);
+    // How far presentation sits past the last completed tick. Renderers that
+    // keep per-tick history blend with it; everything else renders the latest
+    // completed state and ignores it.
+    Current.Presentation =
+        SimulationClock.BuildPresentationTime(Scheduler.GetAlpha(SimulationClock.GetFixedDt()));
     Current.Presentation.FrameIndex = Current.WallTime.FrameIndex;
     return Current.Presentation;
 }

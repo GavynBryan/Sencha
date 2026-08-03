@@ -11,6 +11,16 @@ struct EngineRuntimeConfig
     double TargetFps = 0.0;
     double ResizeSettleSeconds = 0.10;
 
+    // Catch-up bounds for the fixed-tick accumulator. A frame that spans a long
+    // stall (breakpoint, window drag, disk hitch) would otherwise owe more
+    // simulation than it can afford, and running it all makes the next frame
+    // later still. MaxFixedTicksPerFrame caps the ticks one frame may run and
+    // MaxFrameWallDeltaSeconds caps the elapsed time it may claim; the excess
+    // is dropped, so simulated time falls behind wall time instead of
+    // spiralling. Dropped ticks are reported per frame.
+    int MaxFixedTicksPerFrame = 4;
+    double MaxFrameWallDeltaSeconds = 0.25;
+
     // Wall-time budget for async-task commits per frame (the
     // FramePhase::DrainAsyncTasks drain). 0.0 = unbudgeted, matching the
     // TargetFps convention. The first ready commit always runs regardless,

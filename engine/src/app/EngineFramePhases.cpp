@@ -79,17 +79,11 @@ void Engine::RegisterFramePhases(Game& game)
         if (config.Runtime.ExitOnEscape && ctx.Input->IsKeyDown(SDL_SCANCODE_ESCAPE))
             ctx.Input->QuitRequested = true;
 
-        if (config.Runtime.TogglePauseOnF1)
+        if (config.Runtime.TogglePauseOnF1
+            && ctx.Input->ConsumeKeyPressed(SDL_SCANCODE_F1))
         {
             const bool wasPaused = ctx.Runtime->GetSimulationTimescale() == 0.0f;
-            for (uint32_t sc : ctx.Input->KeysPressed)
-            {
-                if (sc == SDL_SCANCODE_F1)
-                {
-                    ctx.Runtime->SetSimulationTimescale(wasPaused ? 1.0f : 0.0f);
-                    break;
-                }
-            }
+            ctx.Runtime->SetSimulationTimescale(wasPaused ? 1.0f : 0.0f);
         }
     });
 

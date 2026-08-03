@@ -180,7 +180,9 @@ namespace EngineConsoleBuiltins
             .DefaultValue = 1.0,
             .CurrentValue = static_cast<double>(runtimeLoop.GetSimulationTimescale()),
             .Flags = CVarFlags::Transient,
-            .Help = "Simulation timescale. 0 pauses fixed-tick simulation.",
+            .Help = "Scales wall time entering the tick accumulator: 0.5 is "
+                    "half speed, 2 is double, 0 pauses. Tick delta is "
+                    "unchanged, so per-tick behavior stays deterministic.",
             .Source = { "runtime loop" },
             .Min = 0.0,
             .OnChange = [&runtimeLoop](const CVarChangeContext& ctx) {
@@ -202,6 +204,43 @@ namespace EngineConsoleBuiltins
             .OnChange = [&runtimeLoop, &runtimeConfig](const CVarChangeContext& ctx) {
                 runtimeConfig.FixedTickRate = std::get<double>(ctx.NewValue);
                 runtimeLoop.GetSimulationClock().SetFixedTickRate(runtimeConfig.FixedTickRate);
+            },
+        });
+
+        registry.RegisterCVar({
+            .Name = "time.max_ticks_per_frame",
+            .Owner = "engine",
+            .Type = CVarType::Int,
+            .DefaultValue = static_cast<std::int64_t>(runtimeConfig.MaxFixedTicksPerFrame),
+            .CurrentValue = static_cast<std::int64_t>(runtimeConfig.MaxFixedTicksPerFrame),
+            .Flags = CVarFlags::Archive,
+            .Help = "Most fixed ticks one frame may run while catching up. "
+                    "Ticks beyond it are dropped, so simulation falls behind "
+                    "wall time rather than spiralling after a stall.",
+            .Source = { "engine config" },
+            .Min = 1.0,
+            .OnChange = [&runtimeLoop, &runtimeConfig](const CVarChangeContext& ctx) {
+                runtimeConfig.MaxFixedTicksPerFrame =
+                    static_cast<int>(std::get<std::int64_t>(ctx.NewValue));
+                runtimeLoop.SetMaxFixedTicksPerFrame(
+                    static_cast<uint32_t>(runtimeConfig.MaxFixedTicksPerFrame));
+            },
+        });
+
+        registry.RegisterCVar({
+            .Name = "time.max_frame_delta",
+            .Owner = "engine",
+            .Type = CVarType::Double,
+            .DefaultValue = runtimeConfig.MaxFrameWallDeltaSeconds,
+            .CurrentValue = runtimeConfig.MaxFrameWallDeltaSeconds,
+            .Flags = CVarFlags::Archive,
+            .Help = "Most elapsed wall time one frame may contribute to the "
+                    "tick accumulator, in seconds.",
+            .Source = { "engine config" },
+            .Min = 0.001,
+            .OnChange = [&runtimeLoop, &runtimeConfig](const CVarChangeContext& ctx) {
+                runtimeConfig.MaxFrameWallDeltaSeconds = std::get<double>(ctx.NewValue);
+                runtimeLoop.SetMaxFrameWallDeltaSeconds(runtimeConfig.MaxFrameWallDeltaSeconds);
             },
         });
 

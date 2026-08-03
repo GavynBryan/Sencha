@@ -118,17 +118,46 @@ compile time, not by runtime type lookup.
 | `ResolveLifecycle` | Apply window resize/minimize/restore to `RuntimeFrameLoop`. |
 | `RebuildGraphics` | Recreate swapchain/frame/render resources when needed. |
 | `DrainAsyncTasks` | Run ready async commits on the owner thread, within `AsyncCommitBudgetMs`. Zone attaches and asset publishes happen here. |
-| `ScheduleTicks` | Build `FrameZoneView` from zone participation and decide whether fixed simulation runs this frame. |
+| `ScheduleTicks` | Build `FrameZoneView` from zone participation and convert elapsed wall time into this frame's fixed-tick budget. |
 | `Simulate` | Run fixed-phase systems, physics systems, transform propagation, then post-fixed systems. |
 | `Update` | Run presentation-rate systems and then audio systems. |
 | `ExtractRenderPacket` | Propagate visible transforms, extract camera and render queue data. |
 | `Render` | Submit the current packet through `Renderer`. |
 | `EndFrame` | Run cleanup/end systems, record lifecycle timing, end runtime frame, flip packet buffers, pace. |
 
-Current simulation scheduling is conservative: lifecycle-only frames run zero
-fixed ticks, normal frames currently schedule one fixed tick. Fixed systems
-consume `FixedSimTime`; `FrameUpdateContext::WallDeltaSeconds` is for
-presentation-rate behavior only, such as camera look smoothing or UI.
+Simulation runs on a fixed timestep decoupled from presentation.
+`RuntimeFrameLoop` accumulates each frame's elapsed wall time (scaled by
+`SetSimulationTimescale`) through `FixedStepScheduler` and emits however many
+whole ticks that time now covers: zero on a short frame, several on a long one.
+Simulated time therefore tracks wall time at any frame rate, and every tick is
+still exactly `FixedSimTime::DeltaSeconds` long, so per-tick behavior stays
+deterministic. The sub-tick remainder carries to the next frame and is
+published as `PresentationTime::Alpha`.
+
+Two bounds keep a stall from cascading. `MaxFrameWallDeltaSeconds` caps the
+elapsed time one frame may contribute, and `MaxFixedTicksPerFrame` caps the
+ticks it may run; whole ticks past the cap are dropped rather than deferred, so
+simulated time falls behind wall time instead of the next frame inheriting an
+even larger debt. Dropped ticks appear as `RuntimeFrameSnapshot::TicksDropped`
+and in the timing history. Lifecycle-only frames accumulate nothing, and a
+temporal discontinuity clears the residual so the new state does not replay
+time that belonged to the old one.
+
+Fixed systems consume `FixedSimTime`; `FrameUpdateContext::WallDeltaSeconds` is
+for presentation-rate behavior only, such as camera look smoothing or UI. A
+frame runs its fixed ticks before presentation-rate systems, so a
+presentation-rate system must not write simulation state: with a variable tick
+count its writes land outside the simulation's own cadence.
+
+Input edges follow from the same rule. They are drained after the first fixed
+tick of a frame, so ticks after the first see held state only, and a frame that
+runs no tick keeps them for the next one rather than dropping the press.
+Anything that reads an edge outside that drain — an engine-level window or
+pause key in `PumpPlatform` — must consume it with `InputFrame::ConsumeKeyPressed`,
+or it will act on the same press again on the next zero-tick frame.
+Per-frame accumulated values such as `InputFrame::MouseDeltaX` are
+presentation-rate inputs: consuming one per fixed tick would apply it several
+times on a catch-up frame and not at all on a short one.
 
 Lifecycle-only frames are real frames. They still pump platform, drain async
 tasks, and run end-frame bookkeeping, but skip extraction/render when the

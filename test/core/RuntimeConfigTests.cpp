@@ -29,10 +29,42 @@ TEST(RuntimeConfig, EmptyObjectYieldsDefaults)
     EXPECT_DOUBLE_EQ(config->TargetFps, 0.0);
     EXPECT_DOUBLE_EQ(config->ResizeSettleSeconds, 0.10);
     EXPECT_DOUBLE_EQ(config->AsyncCommitBudgetMs, 2.0);
+    EXPECT_EQ(config->MaxFixedTicksPerFrame, 4);
+    EXPECT_DOUBLE_EQ(config->MaxFrameWallDeltaSeconds, 0.25);
     EXPECT_EQ(config->JobWorkerCount, -1);
     EXPECT_EQ(config->AsyncTaskThreadCount, 1);
     EXPECT_FALSE(config->ExitOnEscape);
     EXPECT_FALSE(config->TogglePauseOnF1);
+}
+
+TEST(RuntimeConfig, ReadsCatchUpBoundsInEitherSpelling)
+{
+    auto camel = Parse(R"({
+        "maxFixedTicksPerFrame": 8,
+        "maxFrameWallDeltaSeconds": 0.5
+    })");
+    ASSERT_TRUE(camel.has_value());
+    EXPECT_EQ(camel->MaxFixedTicksPerFrame, 8);
+    EXPECT_DOUBLE_EQ(camel->MaxFrameWallDeltaSeconds, 0.5);
+
+    auto snake = Parse(R"({
+        "max_fixed_ticks_per_frame": 2,
+        "max_frame_wall_delta_seconds": 0.1
+    })");
+    ASSERT_TRUE(snake.has_value());
+    EXPECT_EQ(snake->MaxFixedTicksPerFrame, 2);
+    EXPECT_DOUBLE_EQ(snake->MaxFrameWallDeltaSeconds, 0.1);
+}
+
+TEST(RuntimeConfig, RejectsCatchUpBoundsThatWouldStallSimulation)
+{
+    RuntimeConfigError error;
+    // Zero ticks per frame would emit no simulation at all.
+    EXPECT_FALSE(Parse(R"({"maxFixedTicksPerFrame": 0})", &error).has_value());
+    EXPECT_NE(error.Message.find("maxFixedTicksPerFrame"), std::string::npos);
+
+    EXPECT_FALSE(Parse(R"({"maxFrameWallDeltaSeconds": 0.0})", &error).has_value());
+    EXPECT_NE(error.Message.find("maxFrameWallDeltaSeconds"), std::string::npos);
 }
 
 TEST(RuntimeConfig, ReadsCamelCaseFields)
