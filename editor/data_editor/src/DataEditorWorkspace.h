@@ -14,6 +14,16 @@
 
 struct ProjectDescriptor;
 
+// What the last save did, so the editor can say whether a running game will
+// pick the change up. The editor cannot observe the game process, so a valid
+// save reports what the file now permits, not a confirmed reload.
+struct DataSaveReport
+{
+    std::string VirtualPath;
+    bool SemanticallyValid = false;
+    bool Saved = false;
+};
+
 class DataEditorWorkspace
 {
 public:
@@ -44,8 +54,10 @@ public:
     [[nodiscard]] bool SaveActive(std::string* error = nullptr);
     void SaveAll();
     void ValidateActive();
+    [[nodiscard]] const DataSaveReport& LastSaveReport() const { return LastSave; }
 
     [[nodiscard]] const DataSchema* ActiveSchema() const;
+    [[nodiscard]] const DataAssetTypeRegistry& Types() const { return Assets.DataTypes; }
     [[nodiscard]] std::span<const DataAssetTypeRegistration> DataTypes() const
     {
         return Assets.DataTypes.Entries();
@@ -68,4 +80,5 @@ private:
     std::size_t ActiveTab = 0;
     const DataFieldSchema* Selected = nullptr;
     std::string SelectedJsonPath;
+    DataSaveReport LastSave;
 };

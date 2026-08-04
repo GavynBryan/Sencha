@@ -156,14 +156,20 @@ if(EDITOR_TEST_SOURCES AND TARGET kyusu_authoring)
         ${CMAKE_SOURCE_DIR}/editor/shudei/src/MaterialEditSession.cpp
         ${CMAKE_SOURCE_DIR}/editor/shudei/src/MaterialTabSet.cpp
         ${CMAKE_SOURCE_DIR}/editor/shudei/src/PreviewPrimitives.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kettle/src/ProjectCatalog.cpp)
-    # editor/ for the shared fonts, and the two flat application trees. Kyusu's
+        ${CMAKE_SOURCE_DIR}/editor/kettle/src/ProjectCatalog.cpp
+        # The data editor's GUI-free half: the document's edit transaction and
+        # the movement authoring model. Its panels stay out by construction.
+        ${CMAKE_SOURCE_DIR}/editor/data_editor/src/DataDocument.cpp
+        ${CMAKE_SOURCE_DIR}/editor/data_editor/src/movement/MovementLayerSummary.cpp
+        ${CMAKE_SOURCE_DIR}/editor/data_editor/src/movement/MovementResponseSim.cpp)
+    # editor/ for the shared fonts, and the flat application trees. Kyusu's
     # and editor_common's include paths come with kyusu_authoring, which is also
     # what lets a test include a shell-only header (a panel) without compiling it.
     target_include_directories(editor_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/editor
         ${CMAKE_SOURCE_DIR}/editor/shudei/src
-        ${CMAKE_SOURCE_DIR}/editor/kettle/src)
+        ${CMAKE_SOURCE_DIR}/editor/kettle/src
+        ${CMAKE_SOURCE_DIR}/editor/data_editor/src)
     target_link_libraries(editor_tests PRIVATE kyusu_authoring GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS editor_tests)
 endif()

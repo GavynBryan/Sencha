@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <optional>
+#include <span>
 
 namespace
 {
@@ -84,6 +85,125 @@ TEST(MovementProfileData, OrderedLayersResolveAndTrace)
     EXPECT_TRUE(resolved.Trace[0].Matched);
     EXPECT_TRUE(resolved.Trace[1].Matched);
     EXPECT_TRUE(resolved.Trace[2].Matched);
+}
+
+TEST(MovementProfileData, LayerNamesSurviveCompileAndBind)
+{
+    DataAssetTypeRegistry types;
+    DataSchemaRegistry schemas;
+    const auto profile = CompileProfile(types, schemas, R"({
+        "name": "named",
+        "layers": [
+            { "name": "Ground base", "set": { "friction": 4 } },
+            { "when": { "support": "none" }, "set": { "friction": 0 } }
+        ],
+        "modes": []
+    })");
+    ASSERT_NE(profile, nullptr);
+    ASSERT_EQ(profile->Layers.size(), 2u);
+    EXPECT_EQ(profile->Layers[0].Name, "Ground base");
+    EXPECT_TRUE(profile->Layers[1].Name.empty());
+
+    GameplayTagRegistry tags;
+    const MovementProfileBindResult bound = BindMovementProfile(
+        *profile, tags, [](std::string_view) { return LocomotionModeId{1}; });
+    ASSERT_TRUE(bound.IsValid()) << bound.Error;
+    EXPECT_EQ(bound.Profile->Layers[0].Name, "Ground base");
+    EXPECT_TRUE(bound.Profile->Layers[1].Name.empty());
+
+    MovementResolveContext context;
+    context.Support = SupportKind::None;
+    const MovementResolveResult resolved = ResolveMovementTuning(
+        *bound.Profile, context, 7.0f, true);
+    ASSERT_EQ(resolved.Trace.size(), 2u);
+    EXPECT_EQ(resolved.Trace[0].Name, "Ground base");
+    EXPECT_TRUE(resolved.Trace[1].Name.empty());
+}
+
+// Profiles authored before layer names existed must keep loading unchanged;
+// the field is optional precisely so no migration is required.
+TEST(MovementProfileData, NamelessLayersStillCompile)
+{
+    DataAssetTypeRegistry types;
+    DataSchemaRegistry schemas;
+    const auto profile = CompileProfile(types, schemas, R"({
+        "name": "player_movement",
+        "layers": [
+            { "set": { "max_speed": 4.5, "friction": 4.0 } },
+            { "when": { "support": "none" }, "set": { "friction": 0.0 } }
+        ],
+        "modes": []
+    })");
+    ASSERT_NE(profile, nullptr);
+    ASSERT_EQ(profile->Layers.size(), 2u);
+    EXPECT_TRUE(profile->Layers[0].Name.empty());
+    EXPECT_FLOAT_EQ(*profile->Layers[0].Set.MaxSpeed, 4.5f);
+}
+
+// The per-layer snapshot is what authoring and in-game diagnostics read to show
+// which layer last moved a coefficient, so it must match an incremental
+// application of the same layers.
+TEST(MovementProfileData, TraceSnapshotsRecordPerLayerEffectiveValues)
+{
+    DataAssetTypeRegistry types;
+    DataSchemaRegistry schemas;
+    const auto profile = CompileProfile(types, schemas, R"({
+        "name": "snapshots",
+        "layers": [
+            { "set": { "friction": 4, "gravity_scale": 2 } },
+            { "when": { "support": "stable" }, "set": { "friction": 9 } },
+            { "when": { "support": "none" }, "scale": { "gravity_scale": 0.5 },
+              "add": { "friction": 1 } }
+        ],
+        "modes": []
+    })");
+    ASSERT_NE(profile, nullptr);
+
+    GameplayTagRegistry tags;
+    const MovementProfileBindResult bound = BindMovementProfile(
+        *profile, tags, [](std::string_view) { return LocomotionModeId{1}; });
+    ASSERT_TRUE(bound.IsValid()) << bound.Error;
+
+    MovementResolveContext context;
+    context.Support = SupportKind::None;
+    const MovementResolveResult resolved = ResolveMovementTuning(
+        *bound.Profile, context, 7.0f, true);
+
+    ASSERT_EQ(resolved.Trace.size(), 3u);
+    EXPECT_FLOAT_EQ(resolved.Trace[0].After.Friction, 4.0f);
+    EXPECT_FLOAT_EQ(resolved.Trace[0].After.GravityScale, 2.0f);
+
+    // The unmatched layer carries the running values forward untouched.
+    EXPECT_FALSE(resolved.Trace[1].Matched);
+    EXPECT_FLOAT_EQ(resolved.Trace[1].After.Friction, 4.0f);
+
+    EXPECT_TRUE(resolved.Trace[2].Matched);
+    EXPECT_FLOAT_EQ(resolved.Trace[2].After.Friction, 5.0f);
+    EXPECT_FLOAT_EQ(resolved.Trace[2].After.GravityScale, 1.0f);
+    EXPECT_FLOAT_EQ(resolved.Trace.back().After.Friction, resolved.Tuning.Friction);
+    EXPECT_FLOAT_EQ(resolved.Trace.back().After.GravityScale, resolved.Tuning.GravityScale);
+}
+
+TEST(MovementProfileData, TuningFieldTableCoversEveryCoefficient)
+{
+    const std::span<const MovementTuningField> fields = MovementTuningFields();
+    ASSERT_EQ(fields.size(), 8u);
+
+    // Every row must address a distinct pair; a copy-paste slip in the table
+    // would otherwise silently drop or double-apply a coefficient.
+    MovementTuningPatch patch;
+    ResolvedMovementTuning tuning;
+    for (std::size_t index = 0; index < fields.size(); ++index)
+    {
+        patch.*fields[index].Patch = static_cast<float>(index + 1);
+        tuning.*fields[index].Resolved = static_cast<float>(index + 1);
+    }
+    for (std::size_t index = 0; index < fields.size(); ++index)
+    {
+        ASSERT_TRUE((patch.*fields[index].Patch).has_value());
+        EXPECT_FLOAT_EQ(*(patch.*fields[index].Patch), static_cast<float>(index + 1));
+        EXPECT_FLOAT_EQ(tuning.*fields[index].Resolved, static_cast<float>(index + 1));
+    }
 }
 
 TEST(MovementProfileData, BindingRejectsUnknownNames)

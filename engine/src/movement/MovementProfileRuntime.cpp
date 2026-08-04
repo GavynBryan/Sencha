@@ -44,6 +44,7 @@ namespace
                    BoundMovementLayer& output,
                    std::string& error)
     {
+        output.Name = source.Name;
         output.When.Support = source.When.Support;
         output.When.ImmersionAtLeast = source.When.ImmersionAtLeast;
         output.Set = source.Set;
@@ -167,22 +168,13 @@ namespace
 
     void ApplyLayer(ResolvedMovementTuning& tuning, const BoundMovementLayer& layer)
     {
-        ApplyOptional(tuning.MaxSpeed, layer.Set.MaxSpeed,
-                      layer.Scale.MaxSpeed, layer.Add.MaxSpeed);
-        ApplyOptional(tuning.Acceleration, layer.Set.Acceleration,
-                      layer.Scale.Acceleration, layer.Add.Acceleration);
-        ApplyOptional(tuning.Friction, layer.Set.Friction,
-                      layer.Scale.Friction, layer.Add.Friction);
-        ApplyOptional(tuning.StopSpeed, layer.Set.StopSpeed,
-                      layer.Scale.StopSpeed, layer.Add.StopSpeed);
-        ApplyOptional(tuning.WishSpeedCap, layer.Set.WishSpeedCap,
-                      layer.Scale.WishSpeedCap, layer.Add.WishSpeedCap);
-        ApplyOptional(tuning.Drag, layer.Set.Drag,
-                      layer.Scale.Drag, layer.Add.Drag);
-        ApplyOptional(tuning.GravityScale, layer.Set.GravityScale,
-                      layer.Scale.GravityScale, layer.Add.GravityScale);
-        ApplyOptional(tuning.JumpSpeed, layer.Set.JumpSpeed,
-                      layer.Scale.JumpSpeed, layer.Add.JumpSpeed);
+        for (const MovementTuningField& field : MovementTuningFields())
+        {
+            ApplyOptional(tuning.*field.Resolved,
+                          layer.Set.*field.Patch,
+                          layer.Scale.*field.Patch,
+                          layer.Add.*field.Patch);
+        }
     }
 
     void ResolveLayers(const std::vector<BoundMovementLayer>& layers,
@@ -194,16 +186,18 @@ namespace
         {
             std::string failure;
             const bool matched = LayerMatches(layer, context, trace ? &failure : nullptr);
+            if (matched)
+                ApplyLayer(tuning, layer);
             if (trace)
             {
                 trace->push_back(MovementLayerTrace{
+                    .Name = layer.Name,
                     .SourcePath = layer.SourcePath,
                     .Matched = matched,
                     .Failure = std::move(failure),
+                    .After = tuning,
                 });
             }
-            if (matched)
-                ApplyLayer(tuning, layer);
         }
     }
 
@@ -218,6 +212,21 @@ namespace
             });
         return found == profile.Modes.end() ? nullptr : &*found;
     }
+}
+
+std::span<const MovementTuningField> MovementTuningFields()
+{
+    static constexpr MovementTuningField kFields[] = {
+        { "max_speed", &MovementTuningPatch::MaxSpeed, &ResolvedMovementTuning::MaxSpeed },
+        { "acceleration", &MovementTuningPatch::Acceleration, &ResolvedMovementTuning::Acceleration },
+        { "friction", &MovementTuningPatch::Friction, &ResolvedMovementTuning::Friction },
+        { "stop_speed", &MovementTuningPatch::StopSpeed, &ResolvedMovementTuning::StopSpeed },
+        { "wish_speed_cap", &MovementTuningPatch::WishSpeedCap, &ResolvedMovementTuning::WishSpeedCap },
+        { "drag", &MovementTuningPatch::Drag, &ResolvedMovementTuning::Drag },
+        { "gravity_scale", &MovementTuningPatch::GravityScale, &ResolvedMovementTuning::GravityScale },
+        { "jump_speed", &MovementTuningPatch::JumpSpeed, &ResolvedMovementTuning::JumpSpeed },
+    };
+    return kFields;
 }
 
 MovementProfileBindResult BindMovementProfile(

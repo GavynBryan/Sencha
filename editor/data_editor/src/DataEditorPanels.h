@@ -6,7 +6,10 @@
 #include <cstddef>
 #include <string>
 
+#include <cstdint>
+
 class DataEditorWorkspace;
+class MovementResolvePreview;
 
 class DataAssetBrowserPanel final : public IEditorPanel
 {
@@ -28,13 +31,14 @@ private:
 class DataFormPanel final : public IEditorPanel
 {
 public:
-    explicit DataFormPanel(DataEditorWorkspace& workspace);
+    DataFormPanel(DataEditorWorkspace& workspace, MovementResolvePreview& preview);
     [[nodiscard]] std::string_view GetTitle() const override { return "Data"; }
     [[nodiscard]] DockSlot GetDockSlot() const override { return DockSlot::Center; }
     void OnDraw() override;
 
 private:
     DataEditorWorkspace& Workspace;
+    MovementResolvePreview& Preview;
 };
 
 class DataDocumentationPanel final : public IEditorPanel
@@ -74,6 +78,7 @@ private:
 
     DataEditorWorkspace& Workspace;
     std::string LoadedPath;
+    uint64_t LoadedRevision = 0;
     std::array<char, 65536> Buffer{};
     std::string ParseError;
 };

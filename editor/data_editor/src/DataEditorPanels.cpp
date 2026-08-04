@@ -1,6 +1,12 @@
 #include "DataEditorPanels.h"
 
 #include "DataEditorWorkspace.h"
+#include "DataFormEdit.h"
+#include "movement/MovementProfileForm.h"
+#include "movement/MovementResolvePreview.h"
+
+#include "ui/ButtonFlow.h"
+#include "ui/ScopedPanel.h"
 
 #include <core/json/JsonFormat.h>
 #include <core/json/JsonParser.h>
@@ -32,34 +38,50 @@ namespace
         return field.DisplayName.empty() ? field.Key : field.DisplayName;
     }
 
+    // Units belong beside the number being tuned; sending them only to the
+    // documentation pane makes the author look away to read them.
+    std::string FieldLabel(const DataFieldSchema& field)
+    {
+        std::string label = DisplayName(field);
+        if (!field.Units.empty())
+            label += " (" + field.Units + ")";
+        return label;
+    }
+
     void DrawFieldHelp(DataEditorWorkspace& workspace,
                        const DataFieldSchema& field,
                        std::string_view path)
     {
-        if (ImGui::IsItemHovered())
-        {
-            workspace.SelectField(&field, std::string(path));
-            if (!field.Summary.empty())
-                ImGui::SetTooltip("%s", field.Summary.c_str());
-        }
+        if (ImGui::IsItemHovered() && !field.Summary.empty())
+            ImGui::SetTooltip("%s", field.Summary.c_str());
+
+        // Selection follows clicks only. Driving it from hover made the
+        // documentation pane chase the pointer, so it could never be read while
+        // reaching for another control.
         if (ImGui::IsItemClicked())
             workspace.SelectField(&field, std::string(path));
     }
 
-    bool DrawField(JsonValue& value,
-                   const DataFieldSchema& field,
-                   const std::string& path,
-                   DataEditorWorkspace& workspace);
+    // Continuous widgets (drags, text fields) end their interaction here.
+    FieldEdit ContinuousEdit(bool changed)
+    {
+        return FieldEdit{ changed, ImGui::IsItemDeactivatedAfterEdit() };
+    }
 
-    bool DrawRecord(JsonValue& value,
-                    const DataFieldSchema& field,
-                    const std::string& path,
-                    DataEditorWorkspace& workspace)
+    FieldEdit DrawField(JsonValue& value,
+                        const DataFieldSchema& field,
+                        const std::string& path,
+                        DataEditorWorkspace& workspace);
+
+    FieldEdit DrawRecord(JsonValue& value,
+                         const DataFieldSchema& field,
+                         const std::string& path,
+                         DataEditorWorkspace& workspace)
     {
         if (!value.IsObject())
             value = JsonValue(JsonValue::Object{});
 
-        bool changed = false;
+        FieldEdit edit;
         for (const DataFieldSchema& child : field.Children)
         {
             JsonValue* childValue = value.Find(child.Key);
@@ -70,7 +92,7 @@ namespace
                 {
                     value.AsObject().emplace_back(child.Key, CreateDefaultDataValue(child));
                     childValue = &value.AsObject().back().second;
-                    changed = true;
+                    edit |= FieldEdit::Instant();
                 }
                 else
                 {
@@ -78,7 +100,7 @@ namespace
                     if (ImGui::Button(("Add " + DisplayName(child)).c_str()))
                     {
                         value.AsObject().emplace_back(child.Key, CreateDefaultDataValue(child));
-                        changed = true;
+                        edit |= FieldEdit::Instant();
                     }
                     DrawFieldHelp(workspace, child, childPath);
                     ImGui::PopID();
@@ -87,7 +109,7 @@ namespace
             }
 
             ImGui::PushID(childPath.c_str());
-            changed = DrawField(*childValue, child, childPath, workspace) || changed;
+            edit |= DrawField(*childValue, child, childPath, workspace);
             if (!child.Required)
             {
                 ImGui::SameLine();
@@ -97,59 +119,65 @@ namespace
                     object.erase(std::remove_if(object.begin(), object.end(),
                         [&child](const auto& item) { return item.first == child.Key; }),
                         object.end());
-                    changed = true;
+                    edit |= FieldEdit::Instant();
                 }
             }
             ImGui::PopID();
         }
-        return changed;
+        return edit;
     }
 
-    bool DrawArray(JsonValue& value,
-                   const DataFieldSchema& field,
-                   const std::string& path,
-                   DataEditorWorkspace& workspace)
+    FieldEdit DrawArray(JsonValue& value,
+                        const DataFieldSchema& field,
+                        const std::string& path,
+                        DataEditorWorkspace& workspace)
     {
         if (!value.IsArray())
             value = JsonValue(JsonValue::Array{});
         if (field.Children.size() != 1)
         {
             ImGui::TextUnformatted("Array schema is invalid.");
-            return false;
+            return {};
         }
 
-        bool changed = false;
+        FieldEdit edit;
+        const DataFieldSchema& element = field.Children.front();
+        const std::string elementName = element.DisplayName.empty()
+            ? std::string("Element") : element.DisplayName;
+
         JsonValue::Array& array = value.AsArray();
         std::optional<std::size_t> remove;
         for (std::size_t index = 0; index < array.size(); ++index)
         {
             const std::string elementPath = std::format("{}[{}]", path, index);
             ImGui::PushID(static_cast<int>(index));
-            const std::string label = std::format("Element {}", index);
+            // Counted from one and named after the element schema: the author
+            // reads "Layer 2", not a zero-based array offset.
+            const std::string label = std::format("{} {}", elementName, index + 1);
             if (ImGui::TreeNodeEx(label.c_str(), ImGuiTreeNodeFlags_DefaultOpen))
             {
-                changed = DrawField(array[index], field.Children.front(), elementPath,
-                                    workspace) || changed;
-                if (ImGui::SmallButton("Duplicate"))
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%s", elementPath.c_str());
+                edit |= DrawField(array[index], element, elementPath, workspace);
+
+                ButtonFlow verbs;
+                if (verbs.Button("Duplicate"))
                 {
                     array.insert(array.begin() + static_cast<std::ptrdiff_t>(index + 1),
                                  array[index]);
-                    changed = true;
+                    edit |= FieldEdit::Instant();
                 }
-                ImGui::SameLine();
-                if (ImGui::SmallButton("Delete"))
+                if (verbs.Button("Delete"))
                     remove = index;
-                ImGui::SameLine();
-                if (index > 0 && ImGui::SmallButton("Up"))
+                if (index > 0 && verbs.Button("Up"))
                 {
                     std::swap(array[index], array[index - 1]);
-                    changed = true;
+                    edit |= FieldEdit::Instant();
                 }
-                ImGui::SameLine();
-                if (index + 1 < array.size() && ImGui::SmallButton("Down"))
+                if (index + 1 < array.size() && verbs.Button("Down"))
                 {
                     std::swap(array[index], array[index + 1]);
-                    changed = true;
+                    edit |= FieldEdit::Instant();
                 }
                 ImGui::TreePop();
             }
@@ -161,24 +189,24 @@ namespace
         if (remove)
         {
             array.erase(array.begin() + static_cast<std::ptrdiff_t>(*remove));
-            changed = true;
+            edit |= FieldEdit::Instant();
         }
-        if (ImGui::Button("Add element"))
+        if (ImGui::Button(("Add " + elementName).c_str()))
         {
-            array.push_back(CreateDefaultDataValue(field.Children.front()));
-            changed = true;
+            array.push_back(CreateDefaultDataValue(element));
+            edit |= FieldEdit::Instant();
         }
         DrawFieldHelp(workspace, field, path);
-        return changed;
+        return edit;
     }
 
-    bool DrawField(JsonValue& value,
-                   const DataFieldSchema& field,
-                   const std::string& path,
-                   DataEditorWorkspace& workspace)
+    FieldEdit DrawField(JsonValue& value,
+                        const DataFieldSchema& field,
+                        const std::string& path,
+                        DataEditorWorkspace& workspace)
     {
-        const std::string label = DisplayName(field);
-        bool changed = false;
+        const std::string label = FieldLabel(field);
+        FieldEdit edit;
 
         if (field.ReadOnly)
             ImGui::BeginDisabled();
@@ -191,7 +219,7 @@ namespace
             if (ImGui::Checkbox(label.c_str(), &current))
             {
                 value = JsonValue(current);
-                changed = true;
+                edit |= FieldEdit::Instant();
             }
             DrawFieldHelp(workspace, field, path);
             break;
@@ -204,15 +232,17 @@ namespace
                 field.Kind == DataFieldKind::Int ? 1.0 : 0.05);
             const double* minimum = field.Numeric.Minimum ? &*field.Numeric.Minimum : nullptr;
             const double* maximum = field.Numeric.Maximum ? &*field.Numeric.Maximum : nullptr;
-            if (ImGui::DragScalar(label.c_str(), ImGuiDataType_Double, &current,
-                                  static_cast<float>(speed), minimum, maximum,
-                                  field.Kind == DataFieldKind::Int ? "%.0f" : "%.3f"))
+            const bool dragged = ImGui::DragScalar(
+                label.c_str(), ImGuiDataType_Double, &current,
+                static_cast<float>(speed), minimum, maximum,
+                field.Kind == DataFieldKind::Int ? "%.0f" : "%.3f");
+            if (dragged)
             {
                 if (field.Kind == DataFieldKind::Int)
                     current = std::round(current);
                 value = JsonValue(current);
-                changed = true;
             }
+            edit |= ContinuousEdit(dragged);
             DrawFieldHelp(workspace, field, path);
             break;
         }
@@ -231,10 +261,8 @@ namespace
                                             ImVec2(-1.0f, 90.0f), flags)
                 : ImGui::InputText(label.c_str(), buffer.data(), buffer.size(), flags);
             if (edited)
-            {
                 value = JsonValue(std::string(buffer.data()));
-                changed = true;
-            }
+            edit |= ContinuousEdit(edited);
             DrawFieldHelp(workspace, field, path);
             break;
         }
@@ -251,7 +279,7 @@ namespace
                     if (ImGui::Selectable(choiceLabel, selected))
                     {
                         value = JsonValue(choice.Value);
-                        changed = true;
+                        edit |= FieldEdit::Instant();
                     }
                     if (ImGui::IsItemHovered() && !choice.Description.empty())
                         ImGui::SetTooltip("%s", choice.Description.c_str());
@@ -275,15 +303,16 @@ namespace
                 }
             }
             const int count = static_cast<int>(std::min<uint32_t>(field.VectorLength, 4));
-            if (ImGui::DragScalarN(label.c_str(), ImGuiDataType_Double, components.data(),
-                                   count, 0.05f))
+            const bool dragged = ImGui::DragScalarN(
+                label.c_str(), ImGuiDataType_Double, components.data(), count, 0.05f);
+            if (dragged)
             {
                 JsonValue::Array array;
                 for (int index = 0; index < count; ++index)
                     array.emplace_back(components[index]);
                 value = JsonValue(std::move(array));
-                changed = true;
             }
+            edit |= ContinuousEdit(dragged);
             DrawFieldHelp(workspace, field, path);
             break;
         }
@@ -291,7 +320,7 @@ namespace
             if (ImGui::TreeNodeEx(label.c_str(), ImGuiTreeNodeFlags_DefaultOpen))
             {
                 DrawFieldHelp(workspace, field, path);
-                changed = DrawRecord(value, field, path, workspace);
+                edit |= DrawRecord(value, field, path, workspace);
                 ImGui::TreePop();
             }
             break;
@@ -299,7 +328,7 @@ namespace
             if (ImGui::TreeNodeEx(label.c_str(), ImGuiTreeNodeFlags_DefaultOpen))
             {
                 DrawFieldHelp(workspace, field, path);
-                changed = DrawArray(value, field, path, workspace);
+                edit |= DrawArray(value, field, path, workspace);
                 ImGui::TreePop();
             }
             break;
@@ -310,18 +339,18 @@ namespace
             {
                 value = enabled && field.Children.size() == 1
                     ? CreateDefaultDataValue(field.Children.front()) : JsonValue();
-                changed = true;
+                edit |= FieldEdit::Instant();
             }
             DrawFieldHelp(workspace, field, path);
             if (enabled && field.Children.size() == 1)
-                changed = DrawField(value, field.Children.front(), path, workspace) || changed;
+                edit |= DrawField(value, field.Children.front(), path, workspace);
             break;
         }
         }
 
         if (field.ReadOnly)
             ImGui::EndDisabled();
-        return changed;
+        return edit;
     }
 
     std::string DefaultText(const DataDefaultValue& value)
@@ -348,6 +377,10 @@ DataAssetBrowserPanel::DataAssetBrowserPanel(DataEditorWorkspace& workspace)
 
 void DataAssetBrowserPanel::OnDraw()
 {
+    ScopedPanel panel(GetTitle(), &Visible);
+    if (!panel.IsOpen())
+        return;
+
     const auto types = Workspace.DataTypes();
     if (!types.empty())
     {
@@ -427,13 +460,18 @@ void DataAssetBrowserPanel::OnDraw()
         ImGui::TextWrapped("Error: %s", LastError.c_str());
 }
 
-DataFormPanel::DataFormPanel(DataEditorWorkspace& workspace)
+DataFormPanel::DataFormPanel(DataEditorWorkspace& workspace, MovementResolvePreview& preview)
     : Workspace(workspace)
+    , Preview(preview)
 {
 }
 
 void DataFormPanel::OnDraw()
 {
+    ScopedPanel panel(GetTitle(), &Visible);
+    if (!panel.IsOpen())
+        return;
+
     auto& documents = Workspace.Documents();
     if (documents.empty())
     {
@@ -466,10 +504,24 @@ void DataFormPanel::OnDraw()
                     ImGui::TextWrapped("No authoring schema is registered for subtype '%s'.",
                                        document.Subtype().c_str());
                 }
-                else if (DrawField(*data, schema->Root, "$.data", Workspace))
+                else
                 {
-                    document.ReplaceRoot(std::move(root));
-                    Workspace.ValidateActive();
+                    // Escape abandons an interaction wherever it started, so a
+                    // drag that went somewhere unintended costs nothing.
+                    if (document.IsEditing() && ImGui::IsKeyPressed(ImGuiKey_Escape))
+                    {
+                        document.CancelEdit();
+                        Workspace.ValidateActive();
+                    }
+                    else
+                    {
+                        // Subtypes earn a purpose-built surface one at a time;
+                        // everything else gets the schema-generated form.
+                        const FieldEdit edit = document.Subtype() == MovementProfileSubtype()
+                            ? DrawMovementProfileForm(*data, *schema, Workspace, Preview)
+                            : DrawField(*data, schema->Root, "$.data", Workspace);
+                        ApplyFieldEdit(document, Workspace, edit, std::move(root));
+                    }
                 }
                 ImGui::EndTabItem();
             }
@@ -489,6 +541,10 @@ DataDocumentationPanel::DataDocumentationPanel(DataEditorWorkspace& workspace)
 
 void DataDocumentationPanel::OnDraw()
 {
+    ScopedPanel panel(GetTitle(), &Visible);
+    if (!panel.IsOpen())
+        return;
+
     const DataFieldSchema* field = Workspace.SelectedField();
     if (field == nullptr)
     {
@@ -537,11 +593,34 @@ DataValidationPanel::DataValidationPanel(DataEditorWorkspace& workspace)
 
 void DataValidationPanel::OnDraw()
 {
+    ScopedPanel panel(GetTitle(), &Visible);
+    if (!panel.IsOpen())
+        return;
+
     DataDocument* document = Workspace.Active();
     if (document == nullptr)
     {
         ImGui::TextUnformatted("No open document.");
         return;
+    }
+
+    // The editor has no channel to a running game, so this reports what the
+    // saved file now permits rather than a confirmed reload. The authoritative
+    // confirmation is the reload counter in the game's own movement panel.
+    const DataSaveReport& save = Workspace.LastSaveReport();
+    if (save.Saved && save.VirtualPath == document->VirtualPath())
+    {
+        if (save.SemanticallyValid)
+        {
+            ImGui::TextUnformatted("Saved. A running game hot reloads this within ~0.3 s.");
+        }
+        else
+        {
+            ImGui::TextWrapped(
+                "Saved with validation errors. The runtime and any running game keep "
+                "the last valid version.");
+        }
+        ImGui::Separator();
     }
 
     if (document->IsExternallyModified())
@@ -573,23 +652,29 @@ void DataRawJsonPanel::Refresh()
     if (document == nullptr)
     {
         LoadedPath.clear();
+        LoadedRevision = 0;
         return;
     }
 
     LoadedPath = document->VirtualPath();
+    LoadedRevision = document->Revision();
     CopyToBuffer(JsonFormat(document->Root()), Buffer.data(), Buffer.size());
     ParseError.clear();
 }
 
 void DataRawJsonPanel::OnDraw()
 {
+    ScopedPanel panel(GetTitle(), &Visible);
+    if (!panel.IsOpen())
+        return;
+
     DataDocument* document = Workspace.Active();
     if (document == nullptr)
     {
         ImGui::TextUnformatted("No open document.");
         return;
     }
-    if (LoadedPath != document->VirtualPath())
+    if (LoadedPath != document->VirtualPath() || LoadedRevision != document->Revision())
         Refresh();
 
     ImGui::InputTextMultiline("##raw_json", Buffer.data(), Buffer.size(),

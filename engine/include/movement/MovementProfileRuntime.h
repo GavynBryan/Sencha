@@ -6,11 +6,24 @@
 
 #include <functional>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
 class GameplayTagRegistry;
+
+// Pairs each authored coefficient with the resolved member it feeds. Layer
+// application, authoring surfaces, and diagnostics walk this table so the
+// coefficient list exists once rather than once per consumer.
+struct MovementTuningField
+{
+    std::string_view Key; // matches the authoring schema key
+    std::optional<float> MovementTuningPatch::* Patch;
+    float ResolvedMovementTuning::* Resolved;
+};
+
+[[nodiscard]] std::span<const MovementTuningField> MovementTuningFields();
 
 struct BoundMovementTagQuery
 {
@@ -29,6 +42,9 @@ struct BoundMovementLayerCondition
 
 struct BoundMovementLayer
 {
+    // Carried through binding so diagnostics can label a layer without
+    // reaching back into the compiled asset.
+    std::string Name;
     BoundMovementLayerCondition When;
     MovementTuningPatch Set;
     MovementTuningPatch Scale;
@@ -73,11 +89,18 @@ struct MovementResolveContext
     const GameplayTagContainer* Tags = nullptr;
 };
 
+// A self-describing record of one layer's contribution, so a diagnostic
+// surface never has to re-derive which layer an entry came from.
 struct MovementLayerTrace
 {
+    std::string Name; // authored label; empty when the layer is unnamed
     std::string SourcePath;
     bool Matched = false;
     std::string Failure;
+
+    // Coefficients after this layer applied, or the running values unchanged
+    // when it did not match. Only meaningful when a trace was collected.
+    ResolvedMovementTuning After;
 };
 
 struct MovementResolveResult

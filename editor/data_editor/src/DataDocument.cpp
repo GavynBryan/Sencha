@@ -142,6 +142,59 @@ void DataDocument::ReplaceRoot(JsonValue root)
         *this, WorkingRoot, std::move(root)));
 }
 
+void DataDocument::BeginEdit()
+{
+    if (Editing)
+        return;
+
+    Editing = true;
+    EditBaseline = WorkingRoot;
+
+    // Undo during an interaction reverts the interaction itself before reaching
+    // committed history. The callback is idempotent through Editing because the
+    // stack can invoke it, and so can a later Begin claiming the scope.
+    History.OpenPendingEdit([this]
+    {
+        if (!Editing)
+            return;
+        Editing = false;
+        ApplyRoot(EditBaseline);
+    });
+}
+
+void DataDocument::PreviewRoot(JsonValue root)
+{
+    ApplyRoot(std::move(root));
+}
+
+void DataDocument::CommitEdit()
+{
+    if (!Editing)
+        return;
+
+    Editing = false;
+    History.ClosePendingEdit();
+
+    // An interaction that ended where it started leaves no history behind.
+    if (JsonFormat(WorkingRoot) == JsonFormat(EditBaseline))
+        return;
+
+    History.Execute(std::make_unique<ReplaceRootCommand>(
+        *this, std::move(EditBaseline), WorkingRoot));
+    EditBaseline = JsonValue();
+}
+
+void DataDocument::CancelEdit()
+{
+    if (!Editing)
+        return;
+
+    Editing = false;
+    History.ClosePendingEdit();
+    ApplyRoot(EditBaseline);
+    EditBaseline = JsonValue();
+}
+
 void DataDocument::Undo()
 {
     History.Undo();
@@ -220,8 +273,15 @@ bool DataDocument::Reload(const DataAssetTypeRegistry& types,
         return false;
     }
 
-    WorkingRoot = std::move(*root);
+    // Clear drops a pending edit's callback without running it, so the
+    // transaction is abandoned here rather than cancelled: the state it guarded
+    // is being replaced wholesale by the file's contents.
+    Editing = false;
+    EditBaseline = JsonValue();
     History.Clear();
+
+    WorkingRoot = std::move(*root);
+    ++ContentRevision;
     SavedText = JsonFormat(WorkingRoot);
     RefreshEnvelopeIdentity();
     RefreshDirty();
@@ -300,6 +360,7 @@ void DataDocument::Validate(const DataAssetTypeRegistry& types,
 void DataDocument::ApplyRoot(JsonValue root)
 {
     WorkingRoot = std::move(root);
+    ++ContentRevision;
     RefreshEnvelopeIdentity();
     RefreshDirty();
 }

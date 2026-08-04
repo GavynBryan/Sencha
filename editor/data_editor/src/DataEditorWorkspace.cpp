@@ -222,6 +222,8 @@ void DataEditorWorkspace::Close(std::size_t index)
     if (index >= Tabs.size())
         return;
 
+    // An interaction still in flight would otherwise be destroyed mid-transaction.
+    Tabs[index]->CancelEdit();
     Tabs.erase(Tabs.begin() + static_cast<std::ptrdiff_t>(index));
     if (Tabs.empty())
         ActiveTab = 0;
@@ -235,6 +237,13 @@ void DataEditorWorkspace::SetActive(std::size_t index)
 {
     if (index >= Tabs.size())
         return;
+    // Leaving a document mid-drag keeps what the pointer already produced;
+    // abandoning it silently would lose an edit the author watched happen.
+    if (index != ActiveTab)
+    {
+        if (DataDocument* previous = Active())
+            previous->CommitEdit();
+    }
     ActiveTab = index;
     Selected = nullptr;
     SelectedJsonPath.clear();
@@ -256,13 +265,24 @@ bool DataEditorWorkspace::SaveActive(std::string* error)
     if (document == nullptr)
         return false;
 
+    // Saving mid-drag writes what is on screen, so the interaction has to land
+    // on the undo stack rather than stay pending behind the written file.
+    document->CommitEdit();
+
     document->Validate(Assets.DataTypes, Assets.DataSchemas);
     if (!document->Save(error))
         return false;
 
     RegisterFile(document->VirtualPath(), document->FilePath());
-    if (document->IsSemanticallyValid())
+    const bool valid = document->IsSemanticallyValid();
+    if (valid)
         ReloadResident(document->VirtualPath());
+
+    LastSave = DataSaveReport{
+        .VirtualPath = document->VirtualPath(),
+        .SemanticallyValid = valid,
+        .Saved = true,
+    };
     return true;
 }
 

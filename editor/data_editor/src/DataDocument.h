@@ -44,6 +44,23 @@ public:
     [[nodiscard]] bool CanUndo() const { return History.CanUndo(); }
     [[nodiscard]] bool CanRedo() const { return History.CanRedo(); }
 
+    // Live edit transaction. A drag reports a change every frame; without a
+    // scope around it each frame would land its own full-document command. The
+    // baseline taken at Begin is what Commit and Cancel undo to, so one
+    // interaction produces one undo entry.
+    //
+    // Every path that can interrupt an interaction (escape, switching tabs,
+    // closing the document, saving, shutdown) must reach Commit or Cancel.
+    void BeginEdit();
+    void PreviewRoot(JsonValue root);
+    void CommitEdit();
+    void CancelEdit();
+    [[nodiscard]] bool IsEditing() const { return Editing; }
+
+    // Bumped on every content change, including previews. Derived views cache
+    // against it instead of re-serializing the document to detect edits.
+    [[nodiscard]] uint64_t Revision() const { return ContentRevision; }
+
     [[nodiscard]] bool IsDirty() const { return Dirty; }
     [[nodiscard]] bool IsExternallyModified() const;
 
@@ -82,6 +99,10 @@ private:
     std::filesystem::file_time_type LastWriteTime{};
     bool HasWriteTime = false;
     bool Dirty = false;
+
+    JsonValue EditBaseline;
+    bool Editing = false;
+    uint64_t ContentRevision = 0;
 
     CommandStack History;
     std::vector<DataValidationError> Errors;

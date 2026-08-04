@@ -6,6 +6,9 @@
 #include <abilities/AbilityKit.h>
 #include <app/DefaultRenderPipeline.h>
 #include <app/Engine.h>
+#ifdef SENCHA_ENABLE_DEBUG_UI
+#include <debug/MovementStatePanel.h>
+#endif
 #include <app/GameModule.h>
 #include <audio/AudioSourceComponent.h>
 #include <camera/CameraRegistration.h>
@@ -665,6 +668,15 @@ void TemplateGame::OnStart(GameStartupContext&)
         std::string(kAuthoredRoot),
         std::vector<std::string>{ ".sdata" });
     HotReloadWatcher->Initialize();
+#endif
+
+#ifdef SENCHA_ENABLE_DEBUG_UI
+    // The other half of the movement tuning loop: the editor predicts what a
+    // profile does, this reports what the running game resolved from it.
+    // Composed here rather than by the engine overlay because the world being
+    // simulated and the data cache holding the profile are both the game's.
+    engine.AddDebugPanel(std::make_unique<MovementStatePanel>(
+        engine.World().Entities(), &runtimeAssets.DataAssets));
 #endif
 
     if (DefaultRenderPipeline* pipeline =

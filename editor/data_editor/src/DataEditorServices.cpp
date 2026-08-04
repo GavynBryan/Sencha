@@ -1,6 +1,9 @@
 #include "DataEditorServices.h"
 
 #include "DataEditorPanels.h"
+#include "movement/MovementProfileForm.h"
+#include "movement/MovementResolvePanel.h"
+#include "movement/MovementResponsePanel.h"
 
 #include "project/ProjectContentMount.h"
 #include "ui/EditorThemeStartup.h"
@@ -141,7 +144,7 @@ void DataEditorServices::BuildUi()
         DockLayoutRatios{
             .Bottom = 0.18f,
             .Left = 0.23f,
-            .Right = 0.26f,
+            .Right = 0.30f,
             .CenterBottom = 0.30f,
         });
     UiFeature = ui.get();
@@ -153,26 +156,47 @@ void DataEditorServices::BuildUi()
             [this]() { if (DataDocument* document = Workspace->Active()) document->Redo(); },
             [this]() { const DataDocument* document = Workspace->Active(); return document && document->CanUndo(); },
             [this]() { const DataDocument* document = Workspace->Active(); return document && document->CanRedo(); });
-        UiFeature->SetFileActions(
-            {},
-            {},
-            [this]()
-            {
-                std::string error;
-                if (!Workspace->SaveActive(&error) && !error.empty())
-                    std::fprintf(stderr, "[data_editor] save failed: %s\n", error.c_str());
-            },
-            {});
+        UiFeature->SetFileActions({}, {}, [this]() { SaveActive(); }, {});
         UiFeature->SetSaveAllAction([this]() { Workspace->SaveAll(); });
 
         UiFeature->AddPanel(std::make_unique<DataAssetBrowserPanel>(*Workspace));
-        UiFeature->AddPanel(std::make_unique<DataFormPanel>(*Workspace));
+        UiFeature->AddPanel(std::make_unique<DataFormPanel>(*Workspace, Preview));
         UiFeature->AddPanel(std::make_unique<DataDocumentationPanel>(*Workspace));
         UiFeature->AddPanel(std::make_unique<DataValidationPanel>(*Workspace));
         UiFeature->AddPanel(std::make_unique<DataRawJsonPanel>(*Workspace));
+
+        // Registered unconditionally: documents open and close at runtime, so
+        // these self-gate on the active subtype rather than being added later.
+        UiFeature->AddPanel(std::make_unique<MovementResolvePanel>(*Workspace, Preview));
+        UiFeature->AddPanel(std::make_unique<MovementResponsePanel>(*Workspace, Preview));
+
+        BuildShortcuts();
     }
 
     engine.Graphics().MainRenderer.AddFeature(std::move(ui));
+}
+
+void DataEditorServices::BuildShortcuts()
+{
+    Shortcuts.Register("data.save", SDLK_S, ModifierFlags{ .Ctrl = true },
+                       [this] { SaveActive(); });
+    Shortcuts.Register("data.save_all", SDLK_S, ModifierFlags{ .Ctrl = true, .Shift = true },
+                       [this] { Workspace->SaveAll(); });
+    Shortcuts.Register("data.undo", SDLK_Z, ModifierFlags{ .Ctrl = true },
+                       [this] { if (DataDocument* d = Workspace->Active()) d->Undo(); });
+    Shortcuts.Register("data.redo", SDLK_Y, ModifierFlags{ .Ctrl = true },
+                       [this] { if (DataDocument* d = Workspace->Active()) d->Redo(); });
+    Shortcuts.Register("data.redo_alt", SDLK_Z, ModifierFlags{ .Ctrl = true, .Shift = true },
+                       [this] { if (DataDocument* d = Workspace->Active()) d->Redo(); });
+}
+
+void DataEditorServices::SaveActive()
+{
+    if (!Workspace)
+        return;
+    std::string error;
+    if (!Workspace->SaveActive(&error) && !error.empty())
+        std::fprintf(stderr, "[data_editor] save failed: %s\n", error.c_str());
 }
 
 void DataEditorServices::RegisterSystems(EngineSchedule& schedule)
@@ -184,10 +208,38 @@ void DataEditorServices::HandlePlatformEvent(PlatformEventContext& ctx)
 {
     if (UiFeature)
         UiFeature->ProcessSdlEvent(ctx.Event);
+
+    // Shortcuts run only when a text field is not consuming the keyboard, so
+    // Ctrl+S while renaming an asset reaches the field, not the workspace.
+    if (ctx.Event.type != SDL_EVENT_KEY_DOWN || Workspace == nullptr)
+        return;
+    if (UiFeature && UiFeature->GetInputCapture().Keyboard)
+        return;
+
+    const SDL_Keymod mods = SDL_GetModState();
+    const KeyDownEvent key{
+        .Key = ctx.Event.key.key,
+        .Modifiers = {
+            .Ctrl = (mods & SDL_KMOD_CTRL) != 0,
+            .Shift = (mods & SDL_KMOD_SHIFT) != 0,
+            .Alt = (mods & SDL_KMOD_ALT) != 0,
+        },
+    };
+    (void)Shortcuts.OnInput(InputEvent{ key });
 }
 
 void DataEditorServices::ProcessFrame()
 {
+    // One update point for the shared preview, so it stays current whether or
+    // not the panels that read it happen to be visible.
+    if (Workspace && Assets)
+    {
+        if (const DataDocument* document = Workspace->Active();
+            document != nullptr && document->Subtype() == MovementProfileSubtype())
+        {
+            Preview.Update(*document, Assets->DataTypes);
+        }
+    }
     UpdateTitle();
 }
 

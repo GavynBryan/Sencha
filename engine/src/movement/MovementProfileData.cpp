@@ -105,10 +105,10 @@ namespace
         support.Required = false;
         support.Default = std::string("any");
         support.EnumChoices = {
-            { "any", "Any", "Do not filter by support." },
-            { "none", "None", "The character has no supporting surface." },
-            { "stable", "Stable", "The character is on stable support." },
-            { "steep", "Steep", "The character touches a surface too steep to support it." },
+            { "any", "Any support", "Do not filter by support." },
+            { "none", "In the air", "The character has no supporting surface." },
+            { "stable", "On stable ground", "The character is on stable support." },
+            { "steep", "On steep ground", "The character touches a surface too steep to support it." },
         };
 
         DataFieldSchema immersion = FloatField(
@@ -133,10 +133,18 @@ namespace
 
     DataFieldSchema LayerSchema()
     {
+        DataFieldSchema name;
+        name.Key = "name";
+        name.DisplayName = "Rule name";
+        name.Summary = "Designer-facing label. Synthesized from the condition when absent.";
+        name.Kind = DataFieldKind::String;
+        name.Required = false;
+
         DataFieldSchema layer;
         layer.DisplayName = "Layer";
         layer.Kind = DataFieldKind::Record;
         layer.Children = {
+            std::move(name),
             ConditionSchema(),
             TuningPatchSchema("set", "Set", "Replace authored coefficients."),
             TuningPatchSchema("scale", "Scale", "Multiply coefficients after set operations."),
@@ -291,6 +299,8 @@ namespace
             }
 
             MovementProfileLayer layer;
+            if (const JsonValue* name = item.Find("name"); name && name->IsString())
+                layer.Name = name->AsString();
             layer.When = ParseCondition(item.Find("when"));
             layer.Set = ParsePatch(item.Find("set"));
             layer.Scale = ParsePatch(item.Find("scale"));

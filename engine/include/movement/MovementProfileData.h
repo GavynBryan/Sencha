@@ -41,6 +41,10 @@ struct MovementLayerCondition
 
 struct MovementProfileLayer
 {
+    // Authored label. Empty means unnamed; authoring and diagnostic surfaces
+    // synthesize a label from the condition instead. Never compared or matched
+    // against, so it carries no runtime identity.
+    std::string Name;
     MovementLayerCondition When;
     MovementTuningPatch Set;
     MovementTuningPatch Scale;

@@ -1,7 +1,9 @@
 #pragma once
 
 #include "DataEditorWorkspace.h"
+#include "movement/MovementResolvePreview.h"
 
+#include "input/ShortcutRegistry.h"
 #include "project/Project.h"
 
 #include <app/GameModuleLoader.h>
@@ -38,8 +40,10 @@ private:
     void LoadProject();
     void InitAssets();
     void BuildUi();
+    void BuildShortcuts();
     void ProcessFrame();
     void UpdateTitle();
+    void SaveActive();
 
     Engine* EnginePtr = nullptr;
     SdlWindow* Window = nullptr;
@@ -51,6 +55,11 @@ private:
     GameModuleLoader ModuleLoader;
     LoadedModule ProjectModule;
     std::unique_ptr<DataEditorWorkspace> Workspace;
+
+    // One owner for the simulated context: the form and both movement panels
+    // read the same dialled-in facts rather than each keeping a copy.
+    MovementResolvePreview Preview;
+    ShortcutRegistry Shortcuts;
 
     EditorUiFeature* UiFeature = nullptr;
     std::string LastWindowTitle;
