@@ -2,7 +2,12 @@
 
 #include <anim/AnimationClipCache.h>
 #include <anim/SkeletonCache.h>
+#include <assets/data/DataAssetCache.h>
+#include <assets/data/DataAssetLoader.h>
+#include <assets/data/DataAssetTypeRegistry.h>
 #include <audio/AudioClipCache.h>
+#include <core/metadata/DataSchema.h>
+#include <movement/MovementProfileData.h>
 #include <core/assets/AssetRegistry.h>
 #include <assets/runtime/AssetSystem.h>
 #include <graphics/vulkan/TextureCache.h>
@@ -35,6 +40,15 @@ struct RuntimeAssets
     SkinnedMeshCache SkinnedMeshes;
     AnimationClipCache AnimationClips;
     AudioClipCache AudioClips;
+
+    // Structured data. The subtype registry and schemas are separate from the
+    // cache because a game module registers into them while the module is
+    // mapped, and must unregister before it is unmapped.
+    DataAssetTypeRegistry DataTypes;
+    DataSchemaRegistry DataSchemas;
+    DataAssetCache DataAssets;
+    DataAssetLoader DataLoader;
+
     AssetSystem Assets;
 
     RuntimeAssets(LoggingProvider& logging,
@@ -51,9 +65,42 @@ struct RuntimeAssets
         , SkinnedMeshes(logging, buffers)
         , AnimationClips()
         , AudioClips(logging)
+        , DataTypes()
+        , DataSchemas()
+        , DataAssets()
+        , DataLoader(logging, &DataTypes, &DataSchemas, &DataAssets)
         , Assets(logging, Registry, StaticMeshes, Materials, Textures, AudioClips,
                  Skeletons, AnimationClips, SkinnedMeshes, MaterialSets)
     {
+        // Unregistering a subtype with values still resident would leave the
+        // cache holding a value nothing can interpret.
+        DataTypes.SetResidentQuery([this](std::string_view typeName)
+        {
+            return DataAssets.HasResidentSubtype(typeName);
+        });
+
+        // The engine's own data subtypes. A game module adds its own through
+        // the same registry via Game::OnRegisterDataAssetTypes, which is what
+        // makes them appear in the prebuilt Data Editor.
+        RegisterMovementProfileData(DataTypes, DataSchemas);
+
+        // Data is the one built-in kind AssetSystem cannot register itself:
+        // its cache and loader live here, not in the front door.
+        AssetKindRegistration data = MakeBuiltinAssetKind(AssetType::Data);
+        data.Stager = &DataLoader;
+        data.Store = &DataAssets;
+        data.Commit = [this](AssetStaging&& staged) -> AssetLease
+        {
+            const DataAssetHandle handle = DataLoader.CommitTyped(std::move(staged));
+            if (!handle.IsValid())
+                return {};
+            return AssetLease::Adopt(AssetType::Data, DataAssets, handle.ToToken());
+        };
+        data.Reload = [this](AssetStaging&& staged)
+        {
+            return DataLoader.CommitReload(std::move(staged));
+        };
+        (void)Assets.Kinds().Register(std::move(data));
     }
 
     RuntimeAssets(const RuntimeAssets&) = delete;

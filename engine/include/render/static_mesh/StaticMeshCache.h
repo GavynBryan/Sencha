@@ -26,7 +26,7 @@ class StaticMeshCache;
 using StaticMeshCacheHandle = Owned<StaticMeshHandle>;
 
 class StaticMeshCache final
-    : public AssetCache<StaticMeshCache, StaticMeshHandle, StaticMeshEntry>
+    : public AssetCache<StaticMeshCache, StaticMeshHandle, StaticMeshEntry, AssetType::StaticMesh>
 {
 public:
     StaticMeshCache(LoggingProvider& logging, VulkanBufferService& buffers);
@@ -57,7 +57,7 @@ public:
     [[nodiscard]] bool IsAlive(StaticMeshHandle handle) const;
 
 private:
-    friend class AssetCache<StaticMeshCache, StaticMeshHandle, StaticMeshEntry>;
+    friend class AssetCache<StaticMeshCache, StaticMeshHandle, StaticMeshEntry, AssetType::StaticMesh>;
 
     void OnFree(StaticMeshEntry& entry);
     bool IsEntryLive(const StaticMeshEntry& entry) const;

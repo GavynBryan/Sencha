@@ -37,7 +37,7 @@ struct SkinnedMeshEntry
 };
 
 class SkinnedMeshCache final
-    : public AssetCache<SkinnedMeshCache, SkinnedMeshHandle, SkinnedMeshEntry>
+    : public AssetCache<SkinnedMeshCache, SkinnedMeshHandle, SkinnedMeshEntry, AssetType::SkinnedMesh>
 {
 public:
     SkinnedMeshCache(LoggingProvider& logging, VulkanBufferService& buffers);
@@ -67,7 +67,7 @@ public:
     [[nodiscard]] bool IsAlive(SkinnedMeshHandle handle) const;
 
 private:
-    friend class AssetCache<SkinnedMeshCache, SkinnedMeshHandle, SkinnedMeshEntry>;
+    friend class AssetCache<SkinnedMeshCache, SkinnedMeshHandle, SkinnedMeshEntry, AssetType::SkinnedMesh>;
 
     void OnFree(SkinnedMeshEntry& entry);
     bool IsEntryLive(const SkinnedMeshEntry& entry) const;

@@ -9,6 +9,7 @@
 #include <assets/skinned_mesh/SkinnedMeshAssetLoader.h>
 #include <assets/static_mesh/StaticMeshAssetLoader.h>
 #include <assets/texture/TextureAssetLoader.h>
+#include <core/assets/AssetKindRegistry.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetSource.h>
 #include <core/logging/Logger.h>
@@ -19,6 +20,7 @@
 #include <render/static_mesh/MeshGeometry.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 
+#include <initializer_list>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -137,21 +139,40 @@ public:
     void ReleaseSkeleton(SkeletonHandle handle);
     void ReleaseAnimationClip(AnimationClipHandle handle);
 
+    // Type-erased residency, for drivers that hold a reference without naming
+    // the handle type. Invalid lease when the kind is unregistered or the
+    // asset is not resident; never loads.
+    [[nodiscard]] AssetLease TryAcquireLease(std::string_view path, AssetType type);
+
+    // Owner-thread commit of a staged payload, dispatched through the kind's
+    // registered Commit. Returns the creation reference.
+    [[nodiscard]] AssetLease Commit(AssetStaging&& staged);
+
     // The staged-load surface (Decision C), exposed for async drivers: the
     // preloader runs LoaderFor(type)->LoadStaged on a task thread against
-    // DefaultSource(), and CommitTyped at the drain point.
+    // DefaultSource(), and commits at the drain point.
     [[nodiscard]] IAssetStager* LoaderFor(AssetType type);
     [[nodiscard]] IAssetSource& DefaultSource() { return Source; }
-    // Only the types the preloader and hot reloader commit directly are exposed
-    // here. Skeleton, animation clip, and skinned mesh resolve synchronously
-    // through LoaderFor for now (AssetPreloader skips them); they get an
-    // accessor when an async path commits them.
+
+    // The registered outer kinds. Scanning, preload, and hot reload read this
+    // instead of carrying their own switch over AssetType. Mutable so a game
+    // module can register a kind of its own at composition time.
+    [[nodiscard]] AssetKindRegistry& Kinds() { return KindRegistry; }
+    [[nodiscard]] const AssetKindRegistry& Kinds() const { return KindRegistry; }
+
+    // Synchronous typed facades still name their own loader; only generic
+    // orchestration goes through the registry.
     [[nodiscard]] StaticMeshAssetLoader& StaticMeshLoaderRef() { return MeshLoader; }
     [[nodiscard]] TextureAssetLoader& TextureLoaderRef() { return TexLoader; }
     [[nodiscard]] MaterialAssetLoader& MaterialLoaderRef() { return MatLoader; }
     [[nodiscard]] AudioClipAssetLoader& AudioClipLoaderRef() { return ClipLoader; }
 
 private:
+    void RegisterKinds();
+
+    [[nodiscard]] IAssetStore* StoreFor(AssetType type);
+    [[nodiscard]] const IAssetStore* StoreFor(AssetType type) const;
+
     Logger& Log;
     AssetRegistry& Registry;
     StaticMeshCache* StaticMeshes = nullptr;
@@ -171,4 +192,5 @@ private:
     SkeletonAssetLoader SkelLoader;
     AnimationClipAssetLoader AnimLoader;
     SkinnedMeshAssetLoader SkinnedLoader;
+    AssetKindRegistry KindRegistry;
 };

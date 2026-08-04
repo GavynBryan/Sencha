@@ -75,3 +75,6 @@ imgui.ini
 # that assert in debug), so a memcheck run over the suite leaves several behind.
 vgcore.*
 core.*
+
+# Captured with a project open, per editor. data_editor has none yet.
+data_editor.imgui.ini

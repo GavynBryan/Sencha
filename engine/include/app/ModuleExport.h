@@ -35,5 +35,7 @@
 // component serializer registry is gone -- each host owns one and the scene
 // save/load functions take it explicitly, so a module that reached for the
 // default registry no longer links. Game::OnRegisterComponents is unchanged;
-// the registry it receives is now the engine's own.
-#define SENCHA_GAME_ABI_VERSION 7u
+// the registry it receives is now the engine's own. v8: added the
+// Game::OnRegisterDataAssetTypes / OnUnregisterDataAssetTypes pair, so a
+// module can register structured data subtypes and their authoring schemas.
+#define SENCHA_GAME_ABI_VERSION 8u

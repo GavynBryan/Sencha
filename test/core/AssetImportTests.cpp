@@ -1,3 +1,4 @@
+#include <core/assets/AssetKindRegistry.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/hash/ContentHash.h>
 #include <core/logging/LoggingProvider.h>
@@ -68,7 +69,7 @@ TEST(AssetScan, ScanFillsContentHash)
 
     LoggingProvider logging;
     AssetRegistry registry(logging);
-    ASSERT_TRUE(ScanAssetsDirectory(root.PathString(), registry));
+    ASSERT_TRUE(ScanAssetsDirectory(root.PathString(), registry, BuiltinAssetKindRegistry()));
 
     const AssetRecord* record = registry.FindByPath("asset://meshes/thing.smesh");
     ASSERT_NE(record, nullptr);
@@ -84,7 +85,7 @@ TEST(AssetScan, ScanSkipsCookedCacheDirectory)
 
     LoggingProvider logging;
     AssetRegistry registry(logging);
-    ASSERT_TRUE(ScanAssetsDirectory(root.PathString(), registry));
+    ASSERT_TRUE(ScanAssetsDirectory(root.PathString(), registry, BuiltinAssetKindRegistry()));
 
     EXPECT_TRUE(registry.Contains("asset://meshes/real.smesh"));
     EXPECT_FALSE(registry.Contains("asset://.cooked/meshes/cooked.smesh"));

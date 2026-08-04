@@ -49,7 +49,7 @@ struct TextureEntry
 //   - GetBindlessIndex(): descriptor index for use in per-instance draw data
 //   - GetExtent(): pixel dimensions of the uploaded image
 //=============================================================================
-class TextureCache : public AssetCache<TextureCache, TextureHandle, TextureEntry>
+class TextureCache : public AssetCache<TextureCache, TextureHandle, TextureEntry, AssetType::Texture>
 {
 public:
     TextureCache(LoggingProvider& logging,
@@ -129,7 +129,7 @@ public:
     [[nodiscard]] static SamplerDesc SamplerForTextureData(const TextureData& texture);
 
 private:
-    friend class AssetCache<TextureCache, TextureHandle, TextureEntry>;
+    friend class AssetCache<TextureCache, TextureHandle, TextureEntry, AssetType::Texture>;
 
     // AssetCache CRTP hooks.
     void OnFree(TextureEntry& entry);

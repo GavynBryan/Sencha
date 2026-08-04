@@ -573,7 +573,7 @@ void MaterialEditorServices::RescanMaterials()
     // Registry re-scan picks up files created since startup (this app's New/
     // Duplicate/Rename included), then the pickable list follows.
     for (const std::string& root : Project->ContentRoots)
-        ScanAssetsDirectory(root, Assets->Registry);
+        ScanAssetsDirectory(root, Assets->Registry, Assets->Assets.Kinds());
     Materials->Rescan(Project->ContentRoots);
 }
 

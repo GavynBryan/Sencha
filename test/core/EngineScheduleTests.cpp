@@ -76,10 +76,12 @@ struct FixedC
 
 struct MultiPhase
 {
+    int PreSimulateCount = 0;
     int FixedCount = 0;
     int FrameCount = 0;
     int ExtractCount = 0;
 
+    void PreSimulate(PreSimulateContext&) { ++PreSimulateCount; }
     void FixedLogic(FixedLogicContext&) { ++FixedCount; }
     void FrameUpdate(FrameUpdateContext&) { ++FrameCount; }
     void ExtractRender(RenderExtractContext&) { ++ExtractCount; }
@@ -169,6 +171,15 @@ TEST_F(EngineScheduleTest, DispatchesOnlyImplementedPhases)
     harness.Schedule.Init();
 
     const FrameZoneView& view = harness.BuildView();
+    PreSimulateContext preSimulate{
+        .Config = harness.Config,
+        .Runtime = harness.Runtime,
+        .Input = harness.Input,
+        .Entities = *view.Entities,
+        .Partitions = view.Logic,
+    };
+    harness.Schedule.RunPreSimulate(preSimulate);
+
     FixedLogicContext fixed{
         .Config = harness.Config,
         .Runtime = harness.Runtime,
@@ -204,6 +215,7 @@ TEST_F(EngineScheduleTest, DispatchesOnlyImplementedPhases)
     harness.Schedule.RunExtractRender(extract);
     harness.EndView();
 
+    EXPECT_EQ(system.PreSimulateCount, 1);
     EXPECT_EQ(system.FixedCount, 1);
     EXPECT_EQ(system.FrameCount, 1);
     EXPECT_EQ(system.ExtractCount, 1);

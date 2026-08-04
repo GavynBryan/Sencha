@@ -11,6 +11,8 @@
 #include <string_view>
 #include <unordered_map>
 
+class AssetKindRegistry;
+
 struct AssetRecord
 {
     AssetType Type = AssetType::Unknown;
@@ -36,6 +38,10 @@ public:
     bool Register(const AssetRecord& record);
     bool RegisterOrVerify(const AssetRecord& record);
 
+    // Drops a record and any id bound to it. For an editor that deleted or
+    // renamed the file behind it; the runtime never unregisters.
+    bool Unregister(std::string_view path);
+
     // Binds a stable id to an already-registered path (the ApplyAssetIds
     // pass). Idempotent for the same pair; a record that already carries a
     // different id, or an id already bound to another path, is a conflict
@@ -55,7 +61,9 @@ public:
     }
 
 private:
-    friend bool ScanAssetsDirectory(std::string_view rootDirectory, AssetRegistry& registry);
+    friend bool ScanAssetsDirectory(std::string_view rootDirectory,
+                                    AssetRegistry& registry,
+                                    const AssetKindRegistry& kinds);
 
     Logger& Log;
     std::unordered_map<std::string, AssetRecord> RecordsByPath;
@@ -64,7 +72,14 @@ private:
 
 // IsValidAssetPath lives in <core/assets/AssetPath.h> (included above) so
 // low-level data validators can use it without depending on this header.
-bool ScanAssetsDirectory(std::string_view rootDirectory, AssetRegistry& registry);
+
+// Registers every file under `rootDirectory` whose extension a registered kind
+// claims. `kinds` is the only extension table: a kind that is scanned but not
+// loadable (Scene) still registers its extension, so classification and
+// loadability stay separate questions.
+bool ScanAssetsDirectory(std::string_view rootDirectory,
+                         AssetRegistry& registry,
+                         const AssetKindRegistry& kinds);
 
 // Registers cooked artifacts listed in <assetsRoot>/.cooked/index.json under
 // their cook-time virtual paths. The path-keyed companion to the physical scan:

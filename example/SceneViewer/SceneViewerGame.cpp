@@ -228,10 +228,12 @@ void SceneViewerGame::OnStart(GameStartupContext&)
     // without it a material's texture refs fall back to the neutral default.
     ScanAssetsDirectory(
         std::string(kAuthoredRoot),
-        runtimeAssets.Registry);
+        runtimeAssets.Registry,
+        runtimeAssets.Assets.Kinds());
     ScanAssetsDirectory(
         std::string(kCookedScanRoot),
-        runtimeAssets.Registry);
+        runtimeAssets.Registry,
+        runtimeAssets.Assets.Kinds());
     RegisterCookedAssets(
         std::string(kAuthoredRoot),
         runtimeAssets.Registry);

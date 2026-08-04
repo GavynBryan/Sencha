@@ -6,6 +6,8 @@
 
 class Engine;
 class ComponentSerializerRegistry;
+class DataAssetTypeRegistry;
+class DataSchemaRegistry;
 class WorldComponentSchema;
 
 //=============================================================================
@@ -33,6 +35,14 @@ public:
     // the symmetric teardown (editor module swap / host shutdown).
     virtual void OnRegisterComponents(ComponentSerializerRegistry&) {}
     virtual void OnUnregisterComponents(ComponentSerializerRegistry&) {}
+
+    // Structured data subtypes the module defines, plus their authoring
+    // schemas. Registration only, like the serializer hooks: an editor calls
+    // these standalone so it can author the module's data without starting
+    // the game. The teardown must run while the module is still mapped —
+    // the compiler is a std::function whose target lives in the module.
+    virtual void OnRegisterDataAssetTypes(DataAssetTypeRegistry&, DataSchemaRegistry&) {}
+    virtual void OnUnregisterDataAssetTypes(DataAssetTypeRegistry&, DataSchemaRegistry&) {}
 
     // Register the game's runtime ECS storage vocabulary. Engine::Run first adds
     // the engine-owned prefix, calls this hook, then seals the schema before

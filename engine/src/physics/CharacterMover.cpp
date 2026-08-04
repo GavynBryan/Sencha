@@ -4,14 +4,55 @@
 
 #include <algorithm>
 
+#include <Jolt/Physics/Body/BodyLockInterface.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 
 #include <physics/PhysicsWorld.h>
+#include <physics/RigidBodyBinding.h> // UnpackEntity
 
 namespace
 {
 constexpr float kDegreesToRadians = 0.0174532925199432958f;
+constexpr float kMinimumAxisLengthSquared = 1.0e-8f;
+
+Vec3d SafeUpAxis(const Vec3d& candidate)
+{
+    if (candidate.SqrMagnitude() <= kMinimumAxisLengthSquared)
+        return Vec3d(0.0f, 1.0f, 0.0f);
+    return candidate.Normalized();
+}
+
+CharacterSupportKind ClassifySupport(const JPH::CharacterVirtual& character)
+{
+    switch (character.GetGroundState())
+    {
+    case JPH::CharacterBase::EGroundState::OnGround:
+        return CharacterSupportKind::Stable;
+    case JPH::CharacterBase::EGroundState::OnSteepGround:
+    case JPH::CharacterBase::EGroundState::NotSupported:
+        return CharacterSupportKind::Steep;
+    case JPH::CharacterBase::EGroundState::InAir:
+        break;
+    }
+    return CharacterSupportKind::None;
+}
+
+// The ground body carries its owning entity in its user data, the same packing
+// the rigid-body binding writes.
+EntityId ResolveGroundEntity(const JPH::PhysicsSystem& system,
+                             const JPH::CharacterVirtual& character)
+{
+    const JPH::BodyID body = character.GetGroundBodyID();
+    if (body.IsInvalid())
+        return {};
+
+    const JPH::BodyLockRead lock(system.GetBodyLockInterface(), body);
+    if (!lock.Succeeded())
+        return {};
+
+    return UnpackEntity(lock.GetBody().GetUserData());
+}
 } // namespace
 
 struct CharacterMoverImpl
@@ -19,8 +60,8 @@ struct CharacterMoverImpl
     JPH::PhysicsSystem* System = nullptr;
     JPH::TempAllocator* Temp = nullptr;
     JPH::Ref<JPH::CharacterVirtual> Character;
-    float VerticalVelocity = 0.0f;
-    bool Grounded = false;
+    float StepHeight = 0.35f;
+    float GroundSnapDistance = 0.25f;
 };
 
 CharacterMover::CharacterMover(PhysicsWorld& world, const CharacterMoverConfig& config, const Vec3d& position)
@@ -28,6 +69,8 @@ CharacterMover::CharacterMover(PhysicsWorld& world, const CharacterMoverConfig& 
 {
     Impl->System = &world.Internal().System;
     Impl->Temp = &world.Internal().Temp;
+    Impl->StepHeight = std::max(0.0f, config.StepHeight);
+    Impl->GroundSnapDistance = std::max(0.0f, config.GroundSnapDistance);
 
     const float radius = config.Radius;
     const float cylinderHalfHeight = std::max(0.0f, config.Height * 0.5f - radius);
@@ -37,6 +80,7 @@ CharacterMover::CharacterMover(PhysicsWorld& world, const CharacterMoverConfig& 
     settings->mMaxSlopeAngle = config.SlopeLimitDegrees * kDegreesToRadians;
     settings->mMass = config.Mass;
     settings->mUp = JPH::Vec3::sAxisY();
+    settings->mCharacterPadding = std::max(0.0f, config.SkinWidth);
     // Keep the character out of geometry by its own margin, like a body skin.
     settings->mSupportingVolume = JPH::Plane(JPH::Vec3::sAxisY(), -radius);
 
@@ -47,21 +91,34 @@ CharacterMover::~CharacterMover() = default;
 CharacterMover::CharacterMover(CharacterMover&&) noexcept = default;
 CharacterMover& CharacterMover::operator=(CharacterMover&&) noexcept = default;
 
-void CharacterMover::Move(const Vec3d& horizontalVelocity, float dt, const Vec3d& gravity)
+CharacterMoveResult CharacterMover::Move(const CharacterMoveRequest& request)
 {
     JPH::CharacterVirtual& character = *Impl->Character;
 
-    const bool grounded = character.GetGroundState() == JPH::CharacterBase::EGroundState::OnGround;
-    if (grounded && Impl->VerticalVelocity < 0.0f)
-        Impl->VerticalVelocity = 0.0f; // planted: do not accumulate downward while standing
-    Impl->VerticalVelocity += static_cast<float>(gravity.Y) * dt;
+    const Vec3d up = SafeUpAxis(request.UpAxis);
 
-    character.SetLinearVelocity(
-        JPH::Vec3(horizontalVelocity.X, Impl->VerticalVelocity, horizontalVelocity.Z));
+    // Gravity reaches the backend as a direction for its stair and floor-stick
+    // passes only. Integrating it is locomotion's job: doing it here as well
+    // would apply it twice, and the request that arrives is already the full
+    // composed velocity.
+    const Vec3d gravity = request.Gravity * request.GravityScale;
+
+    character.SetLinearVelocity(ToJph(request.Velocity));
+    character.SetUp(ToJph(up));
 
     JPH::CharacterVirtual::ExtendedUpdateSettings updateSettings;
+    updateSettings.mWalkStairsStepUp = ToJph(up * Impl->StepHeight);
+    if (request.AllowGroundSnap)
+    {
+        updateSettings.mStickToFloorStepDown = ToJph(up * -Impl->GroundSnapDistance);
+    }
+    else
+    {
+        updateSettings.mStickToFloorStepDown = JPH::Vec3::sZero();
+    }
+
     character.ExtendedUpdate(
-        dt,
+        request.DeltaSeconds,
         ToJph(gravity),
         updateSettings,
         Impl->System->GetDefaultBroadPhaseLayerFilter(PhysicsObjectLayers::Character),
@@ -70,20 +127,22 @@ void CharacterMover::Move(const Vec3d& horizontalVelocity, float dt, const Vec3d
         {},
         *Impl->Temp);
 
-    Impl->Grounded = character.GetGroundState() == JPH::CharacterBase::EGroundState::OnGround;
-    // The achieved vertical velocity (slide off a slope, hit a ceiling) is what
-    // carries to next tick.
-    Impl->VerticalVelocity = character.GetLinearVelocity().GetY();
-}
+    CharacterMoveResult result;
+    result.Position = FromJphR(character.GetPosition());
+    // The achieved velocity, not the requested one: sliding off a slope or
+    // hitting a ceiling is exactly what the caller needs to see.
+    result.Velocity = FromJph(character.GetLinearVelocity());
 
-void CharacterMover::Jump(float upSpeed)
-{
-    Impl->VerticalVelocity = upSpeed;
-}
+    result.Support.Kind = ClassifySupport(character);
+    if (result.Support.Kind != CharacterSupportKind::None)
+    {
+        result.Support.Surface = ResolveGroundEntity(*Impl->System, character);
+        result.Support.ContactPoint = FromJphR(character.GetGroundPosition());
+        result.Support.Normal = FromJph(character.GetGroundNormal());
+        result.Support.Velocity = FromJph(character.GetGroundVelocity());
+    }
 
-bool CharacterMover::IsGrounded() const
-{
-    return Impl->Grounded;
+    return result;
 }
 
 Vec3d CharacterMover::GetPosition() const

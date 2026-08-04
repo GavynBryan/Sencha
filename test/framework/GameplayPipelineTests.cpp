@@ -7,11 +7,10 @@
 #include <input/InputFrame.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MovementDefs.h>
+#include <assets/data/DataAssetCache.h>
+#include <movement/MovementComponents.h>
 #include <movement/MovementIntent.h>
-#include <movement/MovementModes.h>
-#include <movement/MovementProfile.h>
 #include <movement/MovementRegistration.h>
-#include <movement/MovementState.h>
 #include <movement/MovementTags.h>
 #include <physics/components/CharacterController.h>
 #include <runtime/RuntimeFrameLoop.h>
@@ -32,6 +31,7 @@ struct GameplayScheduleHarness
     InputFrame Input;
     World WorldState;
     StoragePartitionSet ActivePartitions;
+    DataAssetCache DataAssets;
     EngineSchedule Schedule;
 };
 
@@ -74,16 +74,27 @@ EntityId SpawnControlledPawn(World& world)
     const MovementTags& tags = world.GetResource<MovementTags>();
 
     const EntityId pawn = world.CreateEntity();
-    CharacterController controller;
-    controller.Grounded = true;
-    world.AddComponent<CharacterController>(pawn, controller);
-    world.AddComponent<MovementProfile>(pawn, MovementProfile{});
-    world.AddComponent<MovementState>(pawn, MovementState{});
+    world.AddComponent<CharacterController>(pawn, CharacterController{});
     world.AddComponent<MovementIntent>(pawn, MovementIntent{});
-    world.AddComponent<LocomotionModeRequest>(
-        pawn,
-        LocomotionModeRequest{});
-    world.AddComponent<OnGround>(pawn, OnGround{});
+    world.AddComponent<KinematicState>(pawn, KinematicState{});
+
+    // Stable support is the physical fact the whole tick reads: it gates the
+    // jump ability through the projected tag and keeps gravity out of the
+    // locomotion result.
+    SupportState support;
+    support.Kind = SupportKind::Stable;
+    world.AddComponent<SupportState>(pawn, support);
+
+    world.AddComponent<ResolvedMovementTuning>(pawn, ResolvedMovementTuning{});
+    world.AddComponent<LocomotionOutput>(pawn, LocomotionOutput{});
+    world.AddComponent<MotionAxisOverride>(pawn, MotionAxisOverride{});
+    world.AddComponent<MotionImpulse>(pawn, MotionImpulse{});
+    world.AddComponent<MotionRequest>(pawn, MotionRequest{});
+    world.AddComponent<ModeTransitionRequest>(pawn, ModeTransitionRequest{});
+
+    CharacterMovement movement;
+    movement.Mode = world.GetResource<LocomotionModeRegistry>().FreeMode();
+    world.AddComponent<CharacterMovement>(pawn, movement);
 
     GameplayTagContainer tagContainer;
     tagContainer.Grant(tags.Controlled);
@@ -106,7 +117,7 @@ TEST(GameplayPipeline, OrdersInputModeAbilityJumpResolveLocomotionAndLifetime)
     const EntityId pawn = SpawnControlledPawn(harness.WorldState);
 
     RegisterAbilityKitSystems(harness.Schedule);
-    RegisterMovementSystems(harness.Schedule);
+    RegisterMovementSystems(harness.Schedule, harness.DataAssets);
     harness.Schedule.Register<TestInputSystem>(pawn);
     OrderMovementAfterInput<TestInputSystem>(harness.Schedule);
     harness.Schedule.Init();
@@ -128,20 +139,31 @@ TEST(GameplayPipeline, OrdersInputModeAbilityJumpResolveLocomotionAndLifetime)
         harness.WorldState.GetResource<MovementTags>();
     const GameplayTagContainer* tagContainer =
         harness.WorldState.TryGet<GameplayTagContainer>(pawn);
-    const CharacterController* controller =
-        harness.WorldState.TryGet<CharacterController>(pawn);
-    const MovementState* state =
-        harness.WorldState.TryGet<MovementState>(pawn);
+    const LocomotionOutput* locomotion =
+        harness.WorldState.TryGet<LocomotionOutput>(pawn);
+    const MotionRequest* request =
+        harness.WorldState.TryGet<MotionRequest>(pawn);
+    const MotionAxisOverride* contributions =
+        harness.WorldState.TryGet<MotionAxisOverride>(pawn);
 
     ASSERT_NE(tagContainer, nullptr);
-    ASSERT_NE(controller, nullptr);
-    ASSERT_NE(state, nullptr);
+    ASSERT_NE(locomotion, nullptr);
+    ASSERT_NE(request, nullptr);
+    ASSERT_NE(contributions, nullptr);
+
+    // Support projected its tag, which is what let the jump ability activate;
+    // the one-tick request tag was consumed and the cooldown is holding.
     EXPECT_TRUE(tagContainer->HasExact(tags.Grounded));
     EXPECT_FALSE(tagContainer->HasExact(tags.JumpRequested));
     EXPECT_TRUE(tagContainer->HasExact(tags.JumpCooldown));
-    EXPECT_FLOAT_EQ(controller->PendingJumpSpeed, 5.5f);
-    EXPECT_GT(controller->DesiredVelocity.X, 0.0f);
-    EXPECT_FLOAT_EQ(
-        controller->DesiredVelocity.X,
-        state->PlanarVelocity.X);
+
+    // Input reached locomotion, and composition folded the jump's up-axis
+    // contribution over it into the single motor request.
+    EXPECT_GT(locomotion->Velocity.X, 0.0f);
+    EXPECT_FLOAT_EQ(request->Velocity.X, locomotion->Velocity.X);
+    EXPECT_FLOAT_EQ(request->Velocity.Y, 5.5f);
+
+    // Composition consumed the contribution channels, so the jump cannot
+    // replay on the next tick.
+    EXPECT_FALSE(contributions->HasUp);
 }

@@ -8,6 +8,7 @@
 #include "document/EditorDocument.h"
 
 #include <core/assets/AssetRef.h>
+#include <core/assets/AssetKindRegistry.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
@@ -188,7 +189,8 @@ TEST_F(BrushCollisionCookTest, MaterialTextureCooksAndRegistersUnderSourcePath)
     // RegisterCookedAssets adds the texture under its source virtual path.
     LoggingProvider logging;
     AssetRegistry registry(logging);
-    ScanAssetsDirectory((Root / ".cooked").generic_string(), registry);
+    ScanAssetsDirectory((Root / ".cooked").generic_string(), registry,
+                        BuiltinAssetKindRegistry());
     EXPECT_GE(RegisterCookedAssets(Root.generic_string(), registry), 1);
 
     const AssetRecord* texture = registry.FindByPath("asset://textures/dev/checker.png");

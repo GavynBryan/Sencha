@@ -226,7 +226,7 @@ void CubeDemoGame::OnStart(GameStartupContext&)
     }
 #endif
 
-    ScanAssetsDirectory("assets", runtimeAssets.Registry);
+    ScanAssetsDirectory("assets", runtimeAssets.Registry, runtimeAssets.Assets.Kinds());
 
     AssetIdMap idMap;
     std::string idMapError;

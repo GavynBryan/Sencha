@@ -20,6 +20,7 @@ public:
     {
         std::function<void(const std::string& projectPath)> OpenLevelEditor;
         std::function<void(const std::string& projectPath)> OpenMaterialEditor;
+        std::function<void(const std::string& projectPath)> OpenDataEditor;
         std::function<void()> BrowseForProject;
         std::function<void(const std::string& directory, const std::string& name)> CreateProject;
         std::function<void(const std::string& projectPath)> RemoveEntry;

@@ -25,7 +25,7 @@ struct SkeletonEntry
 // references into it; the skeleton outlives everything that poses against
 // it. No file IO (Decision I): Acquire resolves registered entries only.
 //=============================================================================
-class SkeletonCache final : public AssetCache<SkeletonCache, SkeletonHandle, SkeletonEntry>
+class SkeletonCache final : public AssetCache<SkeletonCache, SkeletonHandle, SkeletonEntry, AssetType::Skeleton>
 {
 public:
     SkeletonCache();
@@ -46,7 +46,7 @@ public:
     [[nodiscard]] std::string_view GetName(SkeletonHandle handle) const;
 
 private:
-    friend class AssetCache<SkeletonCache, SkeletonHandle, SkeletonEntry>;
+    friend class AssetCache<SkeletonCache, SkeletonHandle, SkeletonEntry, AssetType::Skeleton>;
 
     void OnFree(SkeletonEntry& entry);
     bool IsEntryLive(const SkeletonEntry& entry) const;

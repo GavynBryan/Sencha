@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/assets/AssetStore.h>
 #include <core/handle/ILifetimeOwner.h>
 #include <core/handle/Owned.h>
 
@@ -11,13 +12,19 @@
 #include <vector>
 
 //=============================================================================
-// AssetCache<TDerived, THandle, TEntry>
+// AssetCache<TDerived, THandle, TEntry, TAssetType>
 //
 // CRTP base for path-keyed, ref-counted asset caches. Provides:
 //   - Generational slot pool (Entries, FreeSlots)
 //   - Path-based deduplication (PathLookup, ref-counting)
 //   - Acquire / Release / AcquireOwned public interface
 //   - ILifetimeOwner integration (Attach / Detach for RAII handles)
+//   - the IAssetStore residency seam, keyed on TAssetType
+//
+// TAssetType is the kind this cache stores. Naming it is what lets generic
+// orchestration hold a reference without knowing THandle: the lease carries
+// the same token/owner pair the typed handle does. A cache that leaves it
+// Unknown keeps its typed API and simply issues no leases.
 //
 // A cache resolves; it does not load. Entries arrive through the derived
 // cache's own create/commit entry points, which the staged loaders call on
@@ -49,8 +56,11 @@
 //=============================================================================
 
 
-template<typename TDerived, typename THandle, typename TEntry>
-class AssetCache : public ILifetimeOwner
+template<typename TDerived,
+         typename THandle,
+         typename TEntry,
+         AssetType TAssetType = AssetType::Unknown>
+class AssetCache : public ILifetimeOwner, public IAssetStore
 {
 public:
     // -- Resolve an already-registered path -----------------------------------
@@ -102,6 +112,38 @@ public:
         if (entry->RefCount > 0) return;
 
         FreeEntry(HandleIndex(handle), *entry);
+    }
+
+    // -- IAssetStore ----------------------------------------------------------
+
+    [[nodiscard]] AssetType Type() const override { return TAssetType; }
+
+    [[nodiscard]] bool IsResident(std::string_view path) const override
+    {
+        return FindRegisteredHandle(path).IsValid();
+    }
+
+    [[nodiscard]] AssetLease TryAcquireLease(std::string_view path) override
+    {
+        if constexpr (TAssetType == AssetType::Unknown)
+        {
+            return {};
+        }
+        else
+        {
+            // Adopt, not Retain: FindRegisteredHandle already took the
+            // reference the lease is going to own.
+            THandle handle = FindRegisteredHandle(path, /*addRef*/ true);
+            if (!handle.IsValid())
+                return {};
+
+            return AssetLease::Adopt(TAssetType, *this, handle.ToToken());
+        }
+    }
+
+    [[nodiscard]] std::string_view GetPath(uint64_t token) const override
+    {
+        return GetRegisteredPath(THandle::FromToken(token));
     }
 
 protected:

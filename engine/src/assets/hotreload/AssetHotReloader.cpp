@@ -75,61 +75,27 @@ void AssetHotReloader::ReloadSource(std::string_view sourceRelPath)
 
 void AssetHotReloader::StageReload(const AssetRecord& record)
 {
-    switch (record.Type)
+    const AssetKindRegistration* kind = Assets.Kinds().Find(record.Type);
+    if (kind == nullptr || !kind->Reload)
     {
-    case AssetType::Texture:
-    {
-        IAssetSource* source = &Assets.DefaultSource();
-        const AssetRecord rec = record; // capture by value for the task thread
-        Tasks.Submit<AssetStaging>(
-            // Task thread: pure decode of the re-cooked bytes.
-            [this, source, rec]() -> AssetStaging {
-                return Assets.TextureLoaderRef().LoadStaged(rec, *source);
-            },
-            // Owner thread, drain point: swap the resident slot in place.
-            [this, path = record.Path](AssetStaging staging) {
-                if (Assets.TextureLoaderRef().CommitReload(std::move(staging)))
-                    Log.Info("AssetHotReloader: reloaded texture '{}'", path);
-            });
-        break;
-    }
-    case AssetType::StaticMesh:
-    {
-        IAssetSource* source = &Assets.DefaultSource();
-        const AssetRecord rec = record; // capture by value for the task thread
-        Tasks.Submit<AssetStaging>(
-            // Task thread: pure decode of the re-cooked .smesh bytes.
-            [this, source, rec]() -> AssetStaging {
-                return Assets.StaticMeshLoaderRef().LoadStaged(rec, *source);
-            },
-            // Owner thread, drain point: swap the resident geometry in place.
-            [this, path = record.Path](AssetStaging staging) {
-                if (Assets.StaticMeshLoaderRef().CommitReload(std::move(staging)))
-                    Log.Info("AssetHotReloader: reloaded static mesh '{}'", path);
-            });
-        break;
-    }
-    case AssetType::Material:
-    {
-        IAssetSource* source = &Assets.DefaultSource();
-        const AssetRecord rec = record; // capture by value for the task thread
-        Tasks.Submit<AssetStaging>(
-            // Task thread: pure JSON parse of the edited .smat.
-            [this, source, rec]() -> AssetStaging {
-                return Assets.MaterialLoaderRef().LoadStaged(rec, *source);
-            },
-            // Owner thread, drain point: re-resolve texture slots and swap the
-            // resident material value in place (old texture refs released).
-            [this, path = record.Path](AssetStaging staging) {
-                if (Assets.MaterialLoaderRef().CommitReload(std::move(staging)))
-                    Log.Info("AssetHotReloader: reloaded material '{}'", path);
-            });
-        break;
-    }
-    default:
-        Log.Debug("AssetHotReloader: '{}' ({}) is not hot-reloadable yet "
-                  "(Stage 6 covers textures, static meshes, and materials)",
+        Log.Debug("AssetHotReloader: '{}' ({}) registers no reload operation",
                   record.Path, AssetTypeToString(record.Type));
-        break;
+        return;
     }
+
+    IAssetStager* stager = kind->Stager;
+    IAssetSource* source = &Assets.DefaultSource();
+    const AssetRecord rec = record; // capture by value for the task thread
+
+    Tasks.Submit<AssetStaging>(
+        // Task thread: pure decode of the re-cooked bytes.
+        [stager, source, rec]() -> AssetStaging {
+            return stager->LoadStaged(rec, *source);
+        },
+        // Owner thread, drain point: swap the resident entry in place.
+        [this, kindName = kind->Name, reload = kind->Reload, path = record.Path]
+        (AssetStaging staging) {
+            if (reload(std::move(staging)))
+                Log.Info("AssetHotReloader: reloaded {} '{}'", kindName, path);
+        });
 }

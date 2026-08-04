@@ -2,6 +2,7 @@
 
 #include <app/GameContexts.h>
 #include <ecs/StoragePartitionSet.h>
+#include <movement/MotionComposition.h>
 #include <movement/MovementTags.h>
 
 #include <cstdint>
@@ -17,8 +18,8 @@ void JumpExecutionSystem::Step(
     const StoragePartitionSet* partitions)
 {
     if (!world.IsRegistered<GameplayTagContainer>()
-        || !world.IsRegistered<CharacterController>()
-        || !world.IsRegistered<MovementProfile>())
+        || !world.IsRegistered<ResolvedMovementTuning>()
+        || !world.IsRegistered<MotionAxisOverride>())
     {
         return;
     }
@@ -36,13 +37,16 @@ void JumpExecutionSystem::Step(
     const auto visit = [&](auto& view)
     {
         auto tags = view.template Write<GameplayTagContainer>();
-        auto controllers = view.template Write<CharacterController>();
-        const auto profiles = view.template Read<MovementProfile>();
+        const auto tuning = view.template Read<ResolvedMovementTuning>();
         for (std::uint32_t i = 0; i < view.Count(); ++i)
         {
             if (!tags[i].HasExact(ids->JumpRequested))
                 continue;
-            controllers[i].PendingJumpSpeed = profiles[i].JumpSpeed;
+
+            // First-write-wins: a jump loses to an action that already claimed
+            // the up channel this tick, and the tag is consumed either way so
+            // the request cannot fire twice.
+            (void)TrySetUpMotionOverride(world, view.Entity(i), tuning[i].JumpSpeed);
             tags[i].Revoke(ids->JumpRequested);
         }
     };

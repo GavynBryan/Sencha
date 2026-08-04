@@ -28,7 +28,7 @@ struct AnimationClipEntry
 // (Decision I): Acquire resolves registered entries only.
 //=============================================================================
 class AnimationClipCache final
-    : public AssetCache<AnimationClipCache, AnimationClipHandle, AnimationClipEntry>
+    : public AssetCache<AnimationClipCache, AnimationClipHandle, AnimationClipEntry, AssetType::AnimationClip>
 {
 public:
     AnimationClipCache();
@@ -55,7 +55,7 @@ public:
     [[nodiscard]] std::string_view GetName(AnimationClipHandle handle) const;
 
 private:
-    friend class AssetCache<AnimationClipCache, AnimationClipHandle, AnimationClipEntry>;
+    friend class AssetCache<AnimationClipCache, AnimationClipHandle, AnimationClipEntry, AssetType::AnimationClip>;
 
     void OnFree(AnimationClipEntry& entry);
     bool IsEntryLive(const AnimationClipEntry& entry) const;

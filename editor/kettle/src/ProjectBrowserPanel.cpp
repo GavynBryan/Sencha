@@ -61,9 +61,9 @@ void ProjectBrowserPanel::DrawRecentList()
     if (!ImGui::BeginTable("##projects", 3,
                            ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
         return;
-    ImGui::TableSetupColumn("Project", ImGuiTableColumnFlags_WidthStretch, 0.45f);
-    ImGui::TableSetupColumn("Path", ImGuiTableColumnFlags_WidthStretch, 0.35f);
-    ImGui::TableSetupColumn("##actions", ImGuiTableColumnFlags_WidthStretch, 0.20f);
+    ImGui::TableSetupColumn("Project", ImGuiTableColumnFlags_WidthStretch, 0.40f);
+    ImGui::TableSetupColumn("Path", ImGuiTableColumnFlags_WidthStretch, 0.34f);
+    ImGui::TableSetupColumn("##actions", ImGuiTableColumnFlags_WidthStretch, 0.26f);
 
     for (const ProjectCatalogEntry& entry : Catalog.Entries())
     {
@@ -97,6 +97,10 @@ void ProjectBrowserPanel::DrawRecentList()
         if (ImGui::SmallButton("Shudei") && Act.OpenMaterialEditor)
             Act.OpenMaterialEditor(entry.Path);
         ImGui::SetItemTooltip("Open in the material editor");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Data") && Act.OpenDataEditor)
+            Act.OpenDataEditor(entry.Path);
+        ImGui::SetItemTooltip("Open in the structured data editor");
         ImGui::EndDisabled();
         ImGui::SameLine();
         if (ImGui::SmallButton("x") && Act.RemoveEntry)

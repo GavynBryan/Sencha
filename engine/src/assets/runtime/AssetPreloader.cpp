@@ -1,7 +1,7 @@
 #include <assets/runtime/AssetPreloader.h>
 
-#include <core/assets/AssetStager.h>
 #include <assets/runtime/AssetSystem.h>
+#include <core/assets/AssetKindRegistry.h>
 #include <core/logging/LoggingProvider.h>
 #include <jobs/AsyncTaskQueue.h>
 
@@ -9,16 +9,6 @@
 #include <utility>
 
 // -- AssetPreload ---------------------------------------------------------------
-
-AssetPreload::AssetPreload(AssetSystem& assets)
-    : Assets(assets)
-{
-}
-
-AssetPreload::~AssetPreload()
-{
-    ReleaseAll();
-}
 
 void AssetPreload::SetOnComplete(std::function<void()> callback)
 {
@@ -36,46 +26,37 @@ void AssetPreload::SetOnComplete(std::function<void()> callback)
 
 void AssetPreload::ReleaseAll()
 {
-    for (StaticMeshHandle handle : Meshes)
-        Assets.ReleaseStaticMesh(handle);
-    Meshes.clear();
-
-    for (MaterialHandle handle : Materials)
-        Assets.ReleaseMaterial(handle);
-    Materials.clear();
-
-    for (TextureHandle handle : Textures)
-        Assets.ReleaseTexture(handle);
-    Textures.clear();
-
-    for (AudioClipHandle handle : AudioClips)
-        Assets.ReleaseAudioClip(handle);
-    AudioClips.clear();
+    HeldAssets.clear();
 }
 
 void AssetPreload::Cancel()
 {
     Cancelled = true;
     OnComplete = nullptr;
-    DeferredMaterials.clear();
     ReleaseAll();
 }
 
-void AssetPreload::FinishOne(bool wave1, bool failed)
+void AssetPreload::AddPending()
+{
+    ++Pending;
+}
+
+void AssetPreload::FinishOne(bool failed)
 {
     if (failed)
         ++Failures;
 
     if (Pending > 0)
         --Pending;
-    if (wave1 && Wave1Pending > 0)
-        --Wave1Pending;
 }
 
-void AssetPreload::Store(StaticMeshHandle handle) { Meshes.push_back(handle); }
-void AssetPreload::Store(MaterialHandle handle) { Materials.push_back(handle); }
-void AssetPreload::Store(TextureHandle handle) { Textures.push_back(handle); }
-void AssetPreload::Store(AudioClipHandle handle) { AudioClips.push_back(handle); }
+void AssetPreload::Store(AssetLease lease)
+{
+    // A cancelled preload lets the lease die here, which releases the
+    // reference the commit took.
+    if (!Cancelled && lease.IsValid())
+        HeldAssets.push_back(std::move(lease));
+}
 
 void AssetPreload::FireOnComplete()
 {
@@ -100,312 +81,297 @@ AssetPreloader::AssetPreloader(LoggingProvider& logging,
 {
 }
 
+bool AssetPreloader::CanStage(const AssetRecord& record) const
+{
+    const AssetKindRegistration* kind = Assets.Kinds().Find(record.Type);
+    // Only File records have bytes to stage; a procedural asset exists only
+    // because something registered it directly.
+    return kind != nullptr && kind->IsLoadable()
+        && record.SourceKind == AssetSourceKind::File;
+}
+
 std::shared_ptr<AssetPreload> AssetPreloader::Begin(std::span<const std::string> paths)
 {
-    std::shared_ptr<AssetPreload> preload(new AssetPreload(Assets));
-
-    std::vector<AssetRecord> wave1;
-    std::vector<AssetRecord> materials;
+    std::shared_ptr<AssetPreload> preload(new AssetPreload());
 
     for (const std::string& path : paths)
     {
         const AssetRecord* record = Registry.FindByPath(path);
         if (record == nullptr)
         {
-            Log.Warn("AssetPreloader: '{}' has no registry record; sync fallback will report it", path);
+            Log.Warn("AssetPreloader: '{}' has no registry record; sync fallback will report it",
+                     path);
             ++preload->Failures;
             continue;
         }
 
-        switch (record->Type)
+        if (AssetLease resident = Assets.TryAcquireLease(record->Path, record->Type))
         {
-        case AssetType::StaticMesh:
-        {
-            if (StaticMeshHandle handle = Assets.TryAcquireStaticMesh(path); handle.IsValid())
-            {
-                preload->Store(handle);
-                continue;
-            }
-            break;
-        }
-        case AssetType::Texture:
-        {
-            if (TextureHandle handle = Assets.TryAcquireTexture(path); handle.IsValid())
-            {
-                preload->Store(handle);
-                continue;
-            }
-            break;
-        }
-        case AssetType::Material:
-        {
-            if (MaterialHandle handle = Assets.TryAcquireMaterial(path); handle.IsValid())
-            {
-                preload->Store(handle);
-                continue;
-            }
-            break;
-        }
-        case AssetType::Audio:
-        {
-            if (AudioClipHandle handle = Assets.TryAcquireAudioClip(path); handle.IsValid())
-            {
-                preload->Store(handle);
-                continue;
-            }
-            break;
-        }
-        // Skeletal assets are deliberately *not* async-preloaded yet — an
-        // explicit policy, not missing support, and distinct from a failure.
-        // No streamable scene component references a skeleton, clip, or
-        // skinned mesh yet, and a skinned mesh / clip commit inline-loads its
-        // skeleton on the owner thread regardless. Wiring these into the async
-        // lane needs a skeletons-first wave: a dependent's commit must never
-        // inline-load a skeleton that is also a pending async task in the same
-        // drain, or the skeleton's own commit double-releases the shared
-        // reference (a use-after-free under real threads). That wave lands with
-        // the animation-runtime component story (docs/assets/pipeline.md,
-        // Stage 5 status). Until then they resolve through the synchronous
-        // fallback — out of this preload's scope, so not counted as a failure.
-        case AssetType::Skeleton:
-        case AssetType::AnimationClip:
-        case AssetType::SkinnedMesh:
-            Log.Debug("AssetPreloader: '{}' ({}) is not async-preloaded yet (Stage 5); "
-                      "the synchronous fallback resolves it",
-                      path, AssetTypeToString(record->Type));
+            preload->Store(std::move(resident));
             continue;
-        default:
-            Log.Warn("AssetPreloader: '{}' has unsupported type {}; skipped",
-                     path, AssetTypeToString(record->Type));
+        }
+
+        if (!CanStage(*record))
+        {
+            Log.Warn("AssetPreloader: '{}' ({}, {}) cannot be staged; "
+                     "sync fallback will report it",
+                     path, AssetTypeToString(record->Type),
+                     AssetSourceKindToString(record->SourceKind));
             ++preload->Failures;
             continue;
         }
 
-        // Not resident. Only File records can be staged.
-        if (record->SourceKind != AssetSourceKind::File)
-        {
-            Log.Warn("AssetPreloader: '{}' is {} and not resident; sync fallback will report it",
-                     path, AssetSourceKindToString(record->SourceKind));
-            ++preload->Failures;
-            continue;
-        }
-
-        if (record->Type == AssetType::Material)
-            materials.push_back(*record);
-        else
-            wave1.push_back(*record);
-    }
-
-    preload->Wave1Pending = static_cast<uint32_t>(wave1.size());
-    preload->Pending = static_cast<uint32_t>(wave1.size() + materials.size());
-
-    if (preload->Wave1Pending > 0)
-    {
-        // Materials wait for their textures; the last wave-1 commit submits them.
-        preload->DeferredMaterials = std::move(materials);
-
-        for (const AssetRecord& record : wave1)
-        {
-            if (InFlight.Begin(record.Path, preload) ==
-                AssetInFlightTable<std::shared_ptr<AssetPreload>>::BeginResult::Started)
-            {
-                SubmitStagedLoad(record);
-            }
-        }
-    }
-    else if (!materials.empty())
-    {
-        SubmitMaterials(preload, std::move(materials));
+        preload->AddPending();
+        RequestLoad(*record, LoadWaiter{ .Preload = preload });
     }
 
     return preload;
 }
 
+void AssetPreloader::RequestLoad(const AssetRecord& record, LoadWaiter waiter)
+{
+    if (AssetLease resident = Assets.TryAcquireLease(record.Path, record.Type))
+    {
+        if (waiter.IsDependency())
+        {
+            OnDependencyFinished(waiter.ParentPath, std::move(resident), /*failed*/ false);
+        }
+        else if (waiter.Preload)
+        {
+            waiter.Preload->Store(std::move(resident));
+            waiter.Preload->FinishOne(/*failed*/ false);
+        }
+        return;
+    }
+
+    if (!CanStage(record))
+    {
+        Deliver(waiter, record.Type, record.Path, /*failed*/ true);
+        return;
+    }
+
+    if (InFlight.Begin(record.Path, std::move(waiter))
+        == AssetInFlightTable<LoadWaiter>::BeginResult::Started)
+    {
+        SubmitStagedLoad(record);
+    }
+}
+
 void AssetPreloader::SubmitStagedLoad(const AssetRecord& record)
 {
-    IAssetStager* loader = Assets.LoaderFor(record.Type);
-    assert(loader != nullptr && "AssetPreloader: Begin filtered types without loaders");
+    IAssetStager* stager = Assets.LoaderFor(record.Type);
+    assert(stager != nullptr && "AssetPreloader: CanStage admitted a kind with no stager");
 
     IAssetSource* source = &Assets.DefaultSource();
 
     Tasks.Submit<AssetStaging>(
         // Work, task thread: pure decode against the byte seam. The record
         // is captured by value — plain data, no shared state.
-        [loader, source, record]() -> AssetStaging
+        [stager, source, record]() -> AssetStaging
         {
-            return loader->LoadStaged(record, *source);
+            return stager->LoadStaged(record, *source);
         },
         // Commit, owner thread at the drain point.
         [this, type = record.Type, path = record.Path](AssetStaging staging)
         {
-            OnAssetCommitted(type, path, std::move(staging));
+            OnAssetStaged(type, path, std::move(staging));
         });
 }
 
-void AssetPreloader::SubmitMaterials(const std::shared_ptr<AssetPreload>& preload,
-                                     std::vector<AssetRecord> records)
+void AssetPreloader::OnAssetStaged(AssetType type,
+                                   const std::string& path,
+                                   AssetStaging&& staging)
 {
-    for (const AssetRecord& record : records)
-    {
-        // Another preload may have made it resident while wave 1 ran.
-        if (MaterialHandle handle = Assets.TryAcquireMaterial(record.Path); handle.IsValid())
-        {
-            if (preload->Cancelled)
-                Assets.ReleaseMaterial(handle);
-            else
-                preload->Store(handle);
-            preload->FinishOne(/*wave1*/ false, /*failed*/ false);
-            continue;
-        }
-
-        if (InFlight.Begin(record.Path, preload) ==
-            AssetInFlightTable<std::shared_ptr<AssetPreload>>::BeginResult::Started)
-        {
-            SubmitStagedLoad(record);
-        }
-    }
-}
-
-void AssetPreloader::OnAssetCommitted(AssetType type, const std::string& path, AssetStaging&& staging)
-{
-    std::vector<std::shared_ptr<AssetPreload>> waiters = InFlight.Finish(path);
-
-    bool failed = !staging.IsValid();
-    if (failed)
+    if (!staging.IsValid())
     {
         Log.Error("AssetPreloader: '{}' failed to stage: {}", path, staging.Error);
-    }
-    else
-    {
-        // Commit the staged payload, then drop the creation reference only
-        // after every waiter has taken its own — releasing first could free
-        // the asset out from under them.
-        switch (type)
-        {
-        case AssetType::StaticMesh:
-        {
-            StaticMeshHandle created = Assets.StaticMeshLoaderRef().CommitTyped(std::move(staging));
-            failed = !created.IsValid();
-            for (const auto& waiter : waiters)
-                DeliverToWaiter(waiter, type, path, /*wave1*/ true, failed);
-            if (created.IsValid())
-                Assets.ReleaseStaticMesh(created);
-            break;
-        }
-        case AssetType::Texture:
-        {
-            TextureHandle created = Assets.TextureLoaderRef().CommitTyped(std::move(staging));
-            failed = !created.IsValid();
-            for (const auto& waiter : waiters)
-                DeliverToWaiter(waiter, type, path, /*wave1*/ true, failed);
-            if (created.IsValid())
-                Assets.ReleaseTexture(created);
-            break;
-        }
-        case AssetType::Material:
-        {
-            MaterialHandle created = Assets.MaterialLoaderRef().CommitTyped(std::move(staging));
-            failed = !created.IsValid();
-            for (const auto& waiter : waiters)
-                DeliverToWaiter(waiter, type, path, /*wave1*/ false, failed);
-            if (created.IsValid())
-                Assets.ReleaseMaterial(created);
-            break;
-        }
-        case AssetType::Audio:
-        {
-            AudioClipHandle created = Assets.AudioClipLoaderRef().CommitTyped(std::move(staging));
-            failed = !created.IsValid();
-            for (const auto& waiter : waiters)
-                DeliverToWaiter(waiter, type, path, /*wave1*/ true, failed);
-            if (created.IsValid())
-                Assets.ReleaseAudioClip(created);
-            break;
-        }
-        default:
-            failed = true;
-            break;
-        }
-    }
-
-    if (failed)
-    {
-        const bool wave1 = (type != AssetType::Material);
-        for (const auto& waiter : waiters)
-            waiter->FinishOne(wave1, /*failed*/ true);
-    }
-
-    // Orchestration after bookkeeping: wave-2 submission, then completion.
-    // Commits may Submit follow-up tasks by contract.
-    for (const auto& waiter : waiters)
-    {
-        if (waiter->Wave1Pending == 0 && !waiter->DeferredMaterials.empty())
-            SubmitMaterials(waiter, std::move(waiter->DeferredMaterials));
-    }
-
-    for (const auto& waiter : waiters)
-    {
-        if (waiter->IsComplete())
-            waiter->FireOnComplete();
-    }
-}
-
-void AssetPreloader::DeliverToWaiter(const std::shared_ptr<AssetPreload>& preload,
-                                     AssetType type, const std::string& path,
-                                     bool wave1, bool failed)
-{
-    if (failed)
-    {
-        preload->FinishOne(wave1, /*failed*/ true);
+        CompleteLoad(type, path, /*failed*/ true);
         return;
     }
 
-    bool delivered = false;
-    switch (type)
+    std::vector<AssetRecord> toLoad;
+    std::vector<AssetLease> residentDependencies;
+    std::vector<std::string> edges;
+    std::unordered_set<std::string> unique;
+
+    for (const AssetRef& dependency : staging.Dependencies)
     {
-    case AssetType::StaticMesh:
-        if (StaticMeshHandle handle = Assets.TryAcquireStaticMesh(path); handle.IsValid())
+        if (!dependency.IsValid() || !unique.insert(dependency.Path).second)
+            continue;
+
+        const AssetRecord* record = Registry.FindByPath(dependency.Path);
+        if (record == nullptr || record->Type != dependency.Type)
         {
-            if (preload->Cancelled)
-                Assets.ReleaseStaticMesh(handle);
-            else
-                preload->Store(handle);
-            delivered = true;
+            Log.Error("AssetPreloader: '{}' declares unresolvable dependency '{}'",
+                      path, dependency.Path);
+            CompleteLoad(type, path, /*failed*/ true);
+            return;
         }
-        break;
-    case AssetType::Texture:
-        if (TextureHandle handle = Assets.TryAcquireTexture(path); handle.IsValid())
+
+        // Checked before the edge is recorded: a cycle would otherwise leave
+        // both payloads waiting on each other forever.
+        if (dependency.Path == path || WouldCreateCycle(path, dependency.Path))
         {
-            if (preload->Cancelled)
-                Assets.ReleaseTexture(handle);
-            else
-                preload->Store(handle);
-            delivered = true;
+            Log.Error("AssetPreloader: dependency cycle between '{}' and '{}'",
+                      path, dependency.Path);
+            CompleteLoad(type, path, /*failed*/ true);
+            return;
         }
-        break;
-    case AssetType::Material:
-        if (MaterialHandle handle = Assets.TryAcquireMaterial(path); handle.IsValid())
-        {
-            if (preload->Cancelled)
-                Assets.ReleaseMaterial(handle);
-            else
-                preload->Store(handle);
-            delivered = true;
-        }
-        break;
-    case AssetType::Audio:
-        if (AudioClipHandle handle = Assets.TryAcquireAudioClip(path); handle.IsValid())
-        {
-            if (preload->Cancelled)
-                Assets.ReleaseAudioClip(handle);
-            else
-                preload->Store(handle);
-            delivered = true;
-        }
-        break;
-    default:
-        break;
+
+        edges.push_back(dependency.Path);
+
+        if (AssetLease resident = Assets.TryAcquireLease(dependency.Path, dependency.Type))
+            residentDependencies.push_back(std::move(resident));
+        else
+            toLoad.push_back(*record);
     }
 
-    preload->FinishOne(wave1, /*failed*/ !delivered);
+    DependencyEdges[path] = std::move(edges);
+
+    PendingCommit pending;
+    pending.Type = type;
+    pending.Staging = std::move(staging);
+    pending.DependencyLeases = std::move(residentDependencies);
+    pending.PendingDependencies = static_cast<uint32_t>(toLoad.size());
+    PendingCommits.emplace(path, std::move(pending));
+
+    if (toLoad.empty())
+    {
+        CommitReady(path);
+        return;
+    }
+
+    for (const AssetRecord& dependency : toLoad)
+        RequestLoad(dependency, LoadWaiter{ .ParentPath = path });
+}
+
+void AssetPreloader::OnDependencyFinished(const std::string& parentPath,
+                                          AssetLease dependency,
+                                          bool failed)
+{
+    auto it = PendingCommits.find(parentPath);
+    if (it == PendingCommits.end())
+        return;
+
+    PendingCommit& pending = it->second;
+    if (failed || !dependency.IsValid())
+        pending.DependencyFailed = true;
+    else
+        pending.DependencyLeases.push_back(std::move(dependency));
+
+    if (pending.PendingDependencies > 0)
+        --pending.PendingDependencies;
+
+    if (pending.PendingDependencies != 0)
+        return;
+
+    if (pending.DependencyFailed)
+    {
+        const AssetType type = pending.Type;
+        CompleteLoad(type, parentPath, /*failed*/ true);
+        return;
+    }
+
+    CommitReady(parentPath);
+}
+
+void AssetPreloader::CommitReady(const std::string& path)
+{
+    auto it = PendingCommits.find(path);
+    if (it == PendingCommits.end())
+        return;
+
+    // Moved out before the commit runs: the commit resolves refs through the
+    // front door and must not find this entry mid-flight.
+    PendingCommit pending = std::move(it->second);
+    PendingCommits.erase(it);
+    DependencyEdges.erase(path);
+
+    const AssetLease created = Assets.Commit(std::move(pending.Staging));
+    const bool failed = !created.IsValid();
+    if (failed)
+        Log.Error("AssetPreloader: '{}' failed to commit", path);
+
+    // The dependency leases outlive the commit that needed them and release
+    // here; the committed asset holds its own references by now.
+    CompleteLoad(pending.Type, path, failed);
+}
+
+void AssetPreloader::CompleteLoad(AssetType type, const std::string& path, bool failed)
+{
+    PendingCommits.erase(path);
+    DependencyEdges.erase(path);
+
+    ++DeliveryDepth;
+    for (const LoadWaiter& waiter : InFlight.Finish(path))
+        Deliver(waiter, type, path, failed);
+    --DeliveryDepth;
+
+    // Outermost delivery only: a dependency chain unwinds through nested
+    // CompleteLoad calls, and a completion callback must not run while that
+    // bookkeeping is still on the stack.
+    if (DeliveryDepth != 0)
+        return;
+
+    std::vector<std::shared_ptr<AssetPreload>> finished = std::move(FinishedThisDrain);
+    FinishedThisDrain.clear();
+    for (const std::shared_ptr<AssetPreload>& preload : finished)
+        preload->FireOnComplete();
+}
+
+void AssetPreloader::Deliver(const LoadWaiter& waiter,
+                             AssetType type,
+                             const std::string& path,
+                             bool failed)
+{
+    AssetLease lease;
+    if (!failed)
+        lease = Assets.TryAcquireLease(path, type);
+
+    const bool deliveryFailed = failed || !lease.IsValid();
+
+    if (waiter.IsDependency())
+    {
+        OnDependencyFinished(waiter.ParentPath, std::move(lease), deliveryFailed);
+        return;
+    }
+
+    if (!waiter.Preload)
+        return;
+
+    waiter.Preload->Store(std::move(lease));
+    waiter.Preload->FinishOne(deliveryFailed);
+    if (waiter.Preload->IsComplete())
+        FinishedThisDrain.push_back(waiter.Preload);
+}
+
+bool AssetPreloader::WouldCreateCycle(std::string_view parent,
+                                      std::string_view dependency) const
+{
+    std::unordered_set<std::string> visited;
+    return Reaches(dependency, parent, visited);
+}
+
+bool AssetPreloader::Reaches(std::string_view from,
+                             std::string_view target,
+                             std::unordered_set<std::string>& visited) const
+{
+    if (from == target)
+        return true;
+
+    const std::string key(from);
+    if (!visited.insert(key).second)
+        return false;
+
+    auto it = DependencyEdges.find(key);
+    if (it == DependencyEdges.end())
+        return false;
+
+    for (const std::string& dependency : it->second)
+    {
+        if (Reaches(dependency, target, visited))
+            return true;
+    }
+
+    return false;
 }

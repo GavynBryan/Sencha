@@ -20,6 +20,10 @@ concept HasZoneResidency =
     requires(T& t, ZoneResidencyContext& ctx) { t.ZoneResidency(ctx); };
 
 template<typename T>
+concept HasPreSimulate =
+    requires(T& t, PreSimulateContext& ctx) { t.PreSimulate(ctx); };
+
+template<typename T>
 concept HasFixedLogic = requires(T& t, FixedLogicContext& ctx) { t.FixedLogic(ctx); };
 
 template<typename T>
@@ -42,8 +46,9 @@ concept HasEndFrame = requires(T& t, EndFrameContext& ctx) { t.EndFrame(ctx); };
 
 template<typename T>
 concept IsScheduledSystem =
-    HasZoneResidency<T> || HasFixedLogic<T> || HasPhysics<T> || HasPostFixed<T>
-    || HasFrameUpdate<T> || HasExtractRender<T> || HasAudio<T> || HasEndFrame<T>;
+    HasZoneResidency<T> || HasPreSimulate<T> || HasFixedLogic<T> || HasPhysics<T>
+    || HasPostFixed<T> || HasFrameUpdate<T> || HasExtractRender<T> || HasAudio<T>
+    || HasEndFrame<T>;
 
 //=============================================================================
 // EngineSchedule
@@ -78,6 +83,7 @@ public:
     void Shutdown();
 
     void RunZoneResidency(ZoneResidencyContext& ctx);
+    void RunPreSimulate(PreSimulateContext& ctx);
     void RunFixedLogic(FixedLogicContext& ctx);
     void RunPhysics(PhysicsContext& ctx);
     void RunPostFixed(PostFixedContext& ctx);
@@ -120,6 +126,7 @@ private:
     std::unordered_map<std::type_index, void*> TypeIndex;
 
     std::vector<DispatchEntry<ZoneResidencyContext>> ZoneResidencyEntries;
+    std::vector<DispatchEntry<PreSimulateContext>> PreSimulateEntries;
     std::vector<DispatchEntry<FixedLogicContext>> FixedLogicEntries;
     std::vector<DispatchEntry<PhysicsContext>> PhysicsEntries;
     std::vector<DispatchEntry<PostFixedContext>> PostFixedEntries;
@@ -157,6 +164,9 @@ T& EngineSchedule::Register(Args&&... args)
     if constexpr (HasZoneResidency<T>)
         ZoneResidencyEntries.push_back({ std::type_index(typeid(T)), raw,
             [](void* p, ZoneResidencyContext& ctx) { static_cast<T*>(p)->ZoneResidency(ctx); }, {} });
+    if constexpr (HasPreSimulate<T>)
+        PreSimulateEntries.push_back({ std::type_index(typeid(T)), raw,
+            [](void* p, PreSimulateContext& ctx) { static_cast<T*>(p)->PreSimulate(ctx); }, {} });
     if constexpr (HasFixedLogic<T>)
         FixedLogicEntries.push_back({ std::type_index(typeid(T)), raw,
             [](void* p, FixedLogicContext& ctx) { static_cast<T*>(p)->FixedLogic(ctx); }, {} });
@@ -188,6 +198,7 @@ void EngineSchedule::After()
     const std::type_index tid(typeid(T));
     const std::type_index dep(typeid(TDep));
     AddDependency(ZoneResidencyEntries, tid, dep);
+    AddDependency(PreSimulateEntries, tid, dep);
     AddDependency(FixedLogicEntries, tid, dep);
     AddDependency(PhysicsEntries, tid, dep);
     AddDependency(PostFixedEntries, tid, dep);

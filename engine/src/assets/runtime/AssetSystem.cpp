@@ -12,6 +12,7 @@
 #include <render/static_mesh/StaticMeshCache.h>
 
 #include <cassert>
+#include <functional>
 #include <utility>
 
 AssetSystem::AssetSystem(LoggingProvider& logging,
@@ -57,6 +58,119 @@ AssetSystem::AssetSystem(LoggingProvider& logging,
     , AnimLoader(logging, *this, animationClips, skeletons)
     , SkinnedLoader(logging, *this, skinnedMeshes, skeletons)
 {
+    RegisterKinds();
+}
+
+namespace
+{
+    // Wraps a loader's CommitTyped so the lease adopts the creation reference
+    // the commit already holds. TCache is the issuing store, which is what
+    // decodes the token back into its own handle.
+    template<typename TLoader, typename TCache>
+    std::function<AssetLease(AssetStaging&&)> MakeCommit(AssetType type,
+                                                         TLoader& loader,
+                                                         TCache* cache)
+    {
+        if (cache == nullptr)
+            return {};
+
+        return [type, &loader, cache](AssetStaging&& staged) -> AssetLease
+        {
+            auto handle = loader.CommitTyped(std::move(staged));
+            if (!handle.IsValid())
+                return {};
+
+            return AssetLease::Adopt(type, *cache, handle.ToToken());
+        };
+    }
+
+    template<typename TLoader>
+    std::function<bool(AssetStaging&&)> MakeReload(TLoader& loader)
+    {
+        return [&loader](AssetStaging&& staged) -> bool
+        {
+            return loader.CommitReload(std::move(staged));
+        };
+    }
+}
+
+void AssetSystem::RegisterKinds()
+{
+    // Identity comes from the built-in table; this only attaches the load half.
+    // The stager is always wired because staging touches no cache; the commit
+    // half appears only for caches the host actually supplied, so a headless
+    // AssetSystem still stages and simply reports the commit as a failure.
+    const auto attach = [this](AssetType type,
+                               IAssetStager& stager,
+                               IAssetStore* store,
+                               std::function<AssetLease(AssetStaging&&)> commit,
+                               std::function<bool(AssetStaging&&)> reload = {})
+    {
+        AssetKindRegistration registration = MakeBuiltinAssetKind(type);
+        registration.Stager = &stager;
+        if (store != nullptr && commit)
+        {
+            registration.Store = store;
+            registration.Commit = std::move(commit);
+            registration.Reload = std::move(reload);
+        }
+
+        if (!KindRegistry.Register(std::move(registration)))
+            Log.Error("AssetSystem: rejected {} kind registration", AssetTypeToString(type));
+    };
+
+    attach(AssetType::StaticMesh, MeshLoader, StaticMeshes,
+           MakeCommit(AssetType::StaticMesh, MeshLoader, StaticMeshes),
+           MakeReload(MeshLoader));
+    attach(AssetType::SkinnedMesh, SkinnedLoader, SkinnedMeshes,
+           MakeCommit(AssetType::SkinnedMesh, SkinnedLoader, SkinnedMeshes));
+    attach(AssetType::Material, MatLoader, Materials,
+           MakeCommit(AssetType::Material, MatLoader, Materials),
+           MakeReload(MatLoader));
+    attach(AssetType::Texture, TexLoader, Textures,
+           MakeCommit(AssetType::Texture, TexLoader, Textures),
+           MakeReload(TexLoader));
+    attach(AssetType::Audio, ClipLoader, AudioClips,
+           MakeCommit(AssetType::Audio, ClipLoader, AudioClips));
+    attach(AssetType::Skeleton, SkelLoader, Skeletons,
+           MakeCommit(AssetType::Skeleton, SkelLoader, Skeletons));
+    attach(AssetType::AnimationClip, AnimLoader, AnimationClips,
+           MakeCommit(AssetType::AnimationClip, AnimLoader, AnimationClips));
+
+    // Scenes are scanned and referenced but never resolved through a cache.
+    if (!KindRegistry.Register(MakeBuiltinAssetKind(AssetType::Scene)))
+        Log.Error("AssetSystem: rejected Scene kind registration");
+}
+
+IAssetStore* AssetSystem::StoreFor(AssetType type)
+{
+    AssetKindRegistration* kind = KindRegistry.Find(type);
+    return kind ? kind->Store : nullptr;
+}
+
+const IAssetStore* AssetSystem::StoreFor(AssetType type) const
+{
+    const AssetKindRegistration* kind = KindRegistry.Find(type);
+    return kind ? kind->Store : nullptr;
+}
+
+AssetLease AssetSystem::TryAcquireLease(std::string_view path, AssetType type)
+{
+    IAssetStore* store = StoreFor(type);
+    return store ? store->TryAcquireLease(path) : AssetLease{};
+}
+
+AssetLease AssetSystem::Commit(AssetStaging&& staged)
+{
+    const AssetKindRegistration* kind = KindRegistry.Find(staged.Record.Type);
+    if (kind == nullptr || !kind->Commit)
+    {
+        Log.Error("AssetSystem: no commit registered for {} '{}'",
+                  AssetTypeToString(staged.Record.Type), staged.Record.Path);
+        return {};
+    }
+
+    return kind->Commit(std::move(staged));
 }
 
 const AssetRecord* AssetSystem::Resolve(std::string_view path, AssetType expectedType) const
@@ -88,17 +202,8 @@ const AssetRecord* AssetSystem::Resolve(std::string_view path, AssetType expecte
 
 bool AssetSystem::IsResident(std::string_view path, AssetType type) const
 {
-    switch (type)
-    {
-    case AssetType::StaticMesh:    return StaticMeshes && StaticMeshes->Find(path).IsValid();
-    case AssetType::SkinnedMesh:   return SkinnedMeshes && SkinnedMeshes->Find(path).IsValid();
-    case AssetType::Material:      return Materials && Materials->Find(path).IsValid();
-    case AssetType::Texture:       return Textures && Textures->Find(path).IsValid();
-    case AssetType::Audio:         return AudioClips && AudioClips->Find(path).IsValid();
-    case AssetType::Skeleton:      return Skeletons && Skeletons->Find(path).IsValid();
-    case AssetType::AnimationClip: return AnimationClips && AnimationClips->Find(path).IsValid();
-    default:                       return false;
-    }
+    const IAssetStore* store = StoreFor(type);
+    return store != nullptr && store->IsResident(path);
 }
 
 std::string_view AssetSystem::ResolveRefPath(AssetId id,
@@ -127,15 +232,6 @@ std::string_view AssetSystem::ResolveRefPath(AssetId id,
 
 IAssetStager* AssetSystem::LoaderFor(AssetType type)
 {
-    switch (type)
-    {
-    case AssetType::StaticMesh:    return &MeshLoader;
-    case AssetType::SkinnedMesh:   return &SkinnedLoader;
-    case AssetType::Texture:       return &TexLoader;
-    case AssetType::Material:      return &MatLoader;
-    case AssetType::Audio:         return &ClipLoader;
-    case AssetType::Skeleton:      return &SkelLoader;
-    case AssetType::AnimationClip: return &AnimLoader;
-    default:                       return nullptr;
-    }
+    AssetKindRegistration* kind = KindRegistry.Find(type);
+    return kind ? kind->Stager : nullptr;
 }

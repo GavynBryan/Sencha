@@ -1,10 +1,18 @@
 #pragma once
 
 #include <app/Game.h>
+#include <assets/data/DataAssetHandle.h>
 #include <assets/runtime/AssetPreloader.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/console/ConsoleTypes.h>
 #include <ecs/EntityId.h>
+#include <movement/MovementProfileData.h>
+
+#ifdef SENCHA_ENABLE_COOK
+#include <assets/cook/AssetImporter.h>
+#include <assets/hotreload/AssetHotReloader.h>
+#include <assets/hotreload/AssetSourceWatcher.h>
+#endif
 #include <world/serialization/SceneSerializationContext.h>
 #include <zone/AsyncZoneLoader.h>
 #include <zone/WorldPartitionRuntime.h>
@@ -38,6 +46,7 @@ private:
     ConsoleResult FocusWorldZone(std::string_view zoneHex);
     void SetRelativeMouseMode(bool enabled);
     RuntimeAssets& RuntimeAssetState();
+    MovementProfileHandle ResolvePlayerMovementProfile(Logger& log);
 
     bool PlayZoneActive = false;
     std::optional<RuntimeAssets> Assets;
@@ -47,6 +56,16 @@ private:
     std::optional<WorldPartitionRuntime> Partition;
     ZoneId PendingZoneFocus;
     EntityId PlayerPawn;
+    // Declared after Assets so its release runs before the cache is destroyed.
+    DataAssetCacheHandle PlayerMovementProfile;
     std::string PendingWorldSceneCollision;
     CollisionShapeCache* PhysicsShapes = nullptr;
+
+#ifdef SENCHA_ENABLE_COOK
+    // Dev-only source watching so authored data (movement tuning) reloads
+    // in place while the game runs. No importers: .sdata is a runtime format.
+    AssetImporterRegistry HotReloadImporters;
+    std::optional<AssetHotReloader> HotReloader;
+    std::optional<AssetSourceWatcher> HotReloadWatcher;
+#endif
 };
