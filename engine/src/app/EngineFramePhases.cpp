@@ -140,9 +140,21 @@ void Engine::RegisterFramePhases(Game& game)
         runtimeWorld.FinalizeResidencyProcessing();
     });
 
-    driver.Register(FramePhase::ScheduleTicks, [&engine](PhaseContext& ctx) {
-        ctx.Zones = &engine.World().BuildFrameView();
+    driver.Register(FramePhase::ScheduleTicks, [&engine, &config](PhaseContext& ctx) {
+        const FrameZoneView& zones = engine.World().BuildFrameView();
+        ctx.Zones = &zones;
         ctx.Runtime->ScheduleFixedTicks();
+
+        // After the tick budget so the frame view is settled, and before the
+        // ticks themselves consume what it produces.
+        PreSimulateContext preSimulate{
+            .Config = config,
+            .Runtime = *ctx.Runtime,
+            .Input = *ctx.Input,
+            .Entities = *zones.Entities,
+            .Partitions = zones.Logic,
+        };
+        engine.Schedule().RunPreSimulate(preSimulate);
     });
 
     driver.Register(FramePhase::Simulate, [&engine, &config](PhaseContext& ctx) {

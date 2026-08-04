@@ -3,6 +3,7 @@
 void EngineSchedule::Init()
 {
     TopoSort(ZoneResidencyEntries);
+    TopoSort(PreSimulateEntries);
     TopoSort(FixedLogicEntries);
     TopoSort(PhysicsEntries);
     TopoSort(PostFixedEntries);
@@ -31,6 +32,7 @@ void EngineSchedule::Shutdown()
     Records.clear();
     TypeIndex.clear();
     ZoneResidencyEntries.clear();
+    PreSimulateEntries.clear();
     FixedLogicEntries.clear();
     PhysicsEntries.clear();
     PostFixedEntries.clear();
@@ -44,6 +46,11 @@ void EngineSchedule::Shutdown()
 void EngineSchedule::RunZoneResidency(ZoneResidencyContext& ctx)
 {
     Run(ZoneResidencyEntries, ctx);
+}
+
+void EngineSchedule::RunPreSimulate(PreSimulateContext& ctx)
+{
+    Run(PreSimulateEntries, ctx);
 }
 
 void EngineSchedule::RunFixedLogic(FixedLogicContext& ctx)

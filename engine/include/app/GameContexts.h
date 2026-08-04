@@ -71,6 +71,27 @@ struct ZoneResidencyContext
     std::span<const ZoneResidencyChange> Changes;
 };
 
+// Runs once per rendered frame, after the frame view is built and before any
+// fixed tick, including on frames that run no ticks at all.
+//
+// This is where frame-rate state that simulation reads is produced. Look
+// accumulation is the motivating case: a camera turn arrives with the frame, but
+// the character steers on it during the tick, so accumulating it in FrameUpdate
+// left every tick steering on the previous frame's orientation while the same
+// frame rendered the new one.
+//
+// There is deliberately no PresentationTime here: presentation is built after
+// simulation, so no valid alpha exists yet. Work that needs one belongs in
+// FrameUpdate.
+struct PreSimulateContext
+{
+    EngineConfig& Config;
+    RuntimeFrameLoop& Runtime;
+    InputFrame& Input;
+    World& Entities;
+    const StoragePartitionSet& Partitions;
+};
+
 // Shared shape for runtime phases. Partitions is always the correct domain set
 // for that phase: Logic, Physics, Visible, Audio, or Resident as documented.
 struct FixedLogicContext
