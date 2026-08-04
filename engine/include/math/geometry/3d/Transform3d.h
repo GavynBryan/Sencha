@@ -147,6 +147,19 @@ struct Transform3d
 		return Transform3d{};
 	}
 
+	// Component-wise blend: linear for position and scale, shortest-path
+	// spherical for rotation. Interpolating the TRS components rather than the
+	// matrices is what keeps the result a well-formed transform.
+	static Transform3d Interpolate(const Transform3d& from, const Transform3d& to, T t)
+		requires std::floating_point<T>
+	{
+		return Transform3d{
+			Vec<3, T>::Lerp(from.Position, to.Position, t),
+			Quat<T>::Slerp(from.Rotation, to.Rotation, t),
+			Vec<3, T>::Lerp(from.Scale, to.Scale, t),
+		};
+	}
+
 private:
 	static constexpr Vec<3, T> ComponentScale(const Vec<3, T>& a, const Vec<3, T>& b)
 	{

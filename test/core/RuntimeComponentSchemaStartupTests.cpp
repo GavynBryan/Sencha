@@ -249,7 +249,7 @@ TEST(RuntimeComponentSchema, EngineSchemaUsesCanonicalComponentIds)
     RegisterEngineRuntimeComponents(schema);
     schema.Seal();
 
-    EXPECT_EQ(schema.Size(), 30u);
+    EXPECT_EQ(schema.Size(), 31u);
 
     World world;
     schema.Apply(world);
@@ -304,9 +304,9 @@ TEST(RuntimeComponentSchema, EngineOwnsUnifiedWorldBeforeGameStart)
     EXPECT_TRUE(game.AppliedGameComponent);
     EXPECT_TRUE(game.SawEngineOwnedWorld);
     EXPECT_TRUE(game.EngineOwnedEntityWasPersistent);
-    EXPECT_EQ(game.SchemaSize, 31u);
-    EXPECT_EQ(game.AppliedGameComponentId, 30u);
-    EXPECT_EQ(game.EngineOwnedGameComponentId, 30u);
+    EXPECT_EQ(game.SchemaSize, 32u);
+    EXPECT_EQ(game.AppliedGameComponentId, 31u);
+    EXPECT_EQ(game.EngineOwnedGameComponentId, 31u);
     EXPECT_EQ(StartupGameRemoveCalls, 1);
 }
 

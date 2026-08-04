@@ -5,7 +5,9 @@
 #include <time/TimingHistory.h>
 
 #include <chrono>
+#include <cstdint>
 #include <thread>
+#include <vector>
 
 // =============================================================================
 // FrameClock layout
@@ -187,17 +189,200 @@ TEST(TimingHistory, MaintainsBoundedChronologicalSamples)
 // Runtime frame loop
 // =============================================================================
 
-TEST(RuntimeFrameLoop, DiscontinuityProducesHistoryResetWithoutChangingTickTime)
+namespace
+{
+    // Scripts the platform clock so tick scheduling can be tested as a function
+    // of elapsed time instead of by sleeping.
+    class ScriptedClock
+    {
+    public:
+        explicit ScriptedClock(RuntimeFrameLoop& runtime)
+        {
+            runtime.GetWallClock().SetNowSource([this] { return Now; });
+        }
+
+        void Advance(double seconds)
+        {
+            Now += std::chrono::duration_cast<TimeService::Clock::duration>(
+                std::chrono::duration<double>(seconds));
+        }
+
+    private:
+        TimeService::TimePoint Now{};
+    };
+
+    // One frame of the scheduling path: advance the clock, begin the frame,
+    // resolve lifecycle, and take the tick budget.
+    uint32_t StepFrame(RuntimeFrameLoop& runtime, ScriptedClock& clock, double seconds)
+    {
+        clock.Advance(seconds);
+        runtime.BeginFrame();
+        runtime.ResolveLifecycleTransitions();
+        const uint32_t ticks = runtime.ScheduleFixedTicks().TicksToRunThisFrame;
+        for (uint32_t tick = 0; tick < ticks; ++tick)
+        {
+            (void)runtime.BeginFixedTick();
+            runtime.EndFixedTick();
+        }
+        runtime.BuildPresentationFrame();
+        runtime.EndFrame();
+        return ticks;
+    }
+}
+
+TEST(RuntimeFrameLoop, DiscontinuityResetsResidualWithoutChangingTickTime)
 {
     RuntimeFrameLoop runtime;
+    ScriptedClock clock(runtime);
+    const double fixedDt = runtime.GetSimulationClock().GetFixedDt();
+
+    // Bank most of a tick, then cut simulated time.
+    EXPECT_EQ(StepFrame(runtime, clock, 0.0), 0u); // first Advance() yields dt = 0
+    EXPECT_EQ(StepFrame(runtime, clock, fixedDt * 0.9), 0u);
+
+    clock.Advance(fixedDt * 0.9);
     runtime.BeginFrame();
     runtime.MarkTemporalDiscontinuity(TemporalDiscontinuityReason::SwapchainRecreated);
-    TickBudget budget = runtime.ScheduleFixedTicks();
+    runtime.ResolveLifecycleTransitions();
+    const TickBudget budget = runtime.ScheduleFixedTicks();
 
-    EXPECT_EQ(budget.TicksToRunThisFrame, 1u);
-    EXPECT_DOUBLE_EQ(runtime.GetCurrentFrame().TickDtSeconds, runtime.GetSimulationClock().GetFixedDt());
+    // Without the reset the two nine-tenths frames would have completed a tick.
+    EXPECT_EQ(budget.TicksToRunThisFrame, 0u);
+    EXPECT_DOUBLE_EQ(runtime.GetCurrentFrame().TickDtSeconds, fixedDt);
     EXPECT_TRUE(HasRuntimeFrameEvent(runtime.GetCurrentFrame().Events,
                                      RuntimeFrameEventFlags::TemporalDiscontinuity));
+}
+
+TEST(RuntimeFrameLoop, TickBudgetTracksScriptedWallClock)
+{
+    // The framerate-independence invariant at the layer that owns scheduling:
+    // the same elapsed wall time yields the same simulated time, whether it
+    // arrives as many short frames or few long ones. Simulated time may trail
+    // by the tick still in progress, and by no more.
+    const double frameDeltas[] = { 1.0 / 144.0, 1.0 / 60.0, 1.0 / 30.0 };
+    for (double delta : frameDeltas)
+    {
+        RuntimeFrameLoop runtime;
+        ScriptedClock clock(runtime);
+        const double fixedDt = runtime.GetSimulationClock().GetFixedDt();
+
+        // The platform clock reports zero for its first sample by contract, so
+        // prime it before measuring elapsed time against emitted ticks.
+        StepFrame(runtime, clock, 0.0);
+
+        uint64_t ticks = 0;
+        double wallSeconds = 0.0;
+        const int frames = static_cast<int>(1.0 / delta);
+        for (int frame = 0; frame < frames; ++frame)
+        {
+            ticks += StepFrame(runtime, clock, delta);
+            wallSeconds += delta;
+        }
+
+        // Wall deltas reach scheduling as float, so a delta that is an exact
+        // multiple of the tick can land a hair under it and defer that tick to
+        // the next frame. Lag therefore reaches one whole tick, and the
+        // epsilon covers comparing that against this test's own double sum.
+        constexpr double kRoundingEpsilon = 1e-9;
+        const double simulated = static_cast<double>(ticks) * fixedDt;
+        const double lag = wallSeconds - simulated;
+        EXPECT_GE(lag, -kRoundingEpsilon) << "frame delta " << delta;
+        EXPECT_LE(lag, fixedDt + kRoundingEpsilon) << "frame delta " << delta;
+    }
+}
+
+TEST(RuntimeFrameLoop, SpikeFrameClampsTickBurst)
+{
+    RuntimeFrameLoop runtime;
+    ScriptedClock clock(runtime);
+    runtime.SetMaxFixedTicksPerFrame(4);
+
+    EXPECT_EQ(StepFrame(runtime, clock, 0.0), 0u);
+    const uint32_t ticks = StepFrame(runtime, clock, 1.0);
+
+    EXPECT_EQ(ticks, 4u);
+    EXPECT_GT(runtime.GetCurrentFrame().TicksDropped, 0u);
+}
+
+TEST(RuntimeFrameLoop, TimescaleScalesTickAccrualNotTickDelta)
+{
+    // Half timescale over the same wall time is half the simulated time, and
+    // every tick is still the same length.
+    const auto ticksAtTimescale = [](float timescale) {
+        RuntimeFrameLoop runtime;
+        ScriptedClock clock(runtime);
+        runtime.SetSimulationTimescale(timescale);
+        StepFrame(runtime, clock, 0.0);
+
+        uint64_t ticks = 0;
+        for (int frame = 0; frame < 120; ++frame)
+        {
+            ticks += StepFrame(runtime, clock, 1.0 / 120.0);
+            EXPECT_DOUBLE_EQ(runtime.GetCurrentFrame().TickDtSeconds,
+                             runtime.GetSimulationClock().GetFixedDt());
+        }
+        return ticks;
+    };
+
+    const uint64_t fullSpeed = ticksAtTimescale(1.0f);
+    const uint64_t halfSpeed = ticksAtTimescale(0.5f);
+
+    EXPECT_NEAR(static_cast<double>(fullSpeed), 60.0, 1.0);
+    EXPECT_NEAR(static_cast<double>(halfSpeed), 30.0, 1.0);
+}
+
+TEST(RuntimeFrameLoop, PausedTimescaleAccruesNothing)
+{
+    RuntimeFrameLoop runtime;
+    ScriptedClock clock(runtime);
+    const double fixedDt = runtime.GetSimulationClock().GetFixedDt();
+    runtime.SetSimulationTimescale(0.0f);
+
+    EXPECT_EQ(StepFrame(runtime, clock, 0.0), 0u);
+    EXPECT_EQ(StepFrame(runtime, clock, 1.0), 0u);
+
+    // Unpausing does not replay the wall time that passed while paused.
+    runtime.SetSimulationTimescale(1.0f);
+    EXPECT_EQ(StepFrame(runtime, clock, fixedDt * 1.5), 1u);
+}
+
+TEST(RuntimeFrameLoop, PresentationAlphaReportsResidual)
+{
+    RuntimeFrameLoop runtime;
+    ScriptedClock clock(runtime);
+    const double fixedDt = runtime.GetSimulationClock().GetFixedDt();
+
+    EXPECT_EQ(StepFrame(runtime, clock, 0.0), 0u);
+    EXPECT_EQ(StepFrame(runtime, clock, fixedDt * 0.25), 0u);
+
+    EXPECT_NEAR(runtime.GetCurrentFrame().Presentation.Alpha, 0.25, 1e-5);
+}
+
+TEST(RuntimeFrameLoop, IdenticalScriptedClocksProduceIdenticalTickStreams)
+{
+    // Tick scheduling is owner-thread work with no parallel path, so the serial
+    // reference is the whole contract: identical elapsed time in, identical
+    // tick stream out.
+    const auto run = [](std::vector<uint32_t>& perFrameTicks, uint64_t& finalTickIndex) {
+        RuntimeFrameLoop runtime;
+        ScriptedClock clock(runtime);
+        const double deltas[] = { 0.004, 0.021, 0.007, 0.033, 0.012, 0.0166, 0.05 };
+        for (int repeat = 0; repeat < 10; ++repeat)
+            for (double delta : deltas)
+                perFrameTicks.push_back(StepFrame(runtime, clock, delta));
+        finalTickIndex = runtime.GetSimulationClock().GetTickIndex();
+    };
+
+    std::vector<uint32_t> first;
+    std::vector<uint32_t> second;
+    uint64_t firstIndex = 0;
+    uint64_t secondIndex = 0;
+    run(first, firstIndex);
+    run(second, secondIndex);
+
+    EXPECT_EQ(first, second);
+    EXPECT_EQ(firstIndex, secondIndex);
+    EXPECT_GT(firstIndex, 0u);
 }
 
 TEST(RuntimeFrameLoop, ResizeSettlesBeforeSwapchainRebuild)

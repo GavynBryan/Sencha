@@ -20,6 +20,9 @@ struct TimingFrameSample
     double PresentSeconds = 0.0;
     double TotalFrameSeconds = 0.0;
     uint32_t FixedTicks = 0;
+    // Ticks this frame owed but the catch-up cap refused. Sustained non-zero
+    // values mean simulation cannot keep up with wall time.
+    uint32_t TicksDropped = 0;
     int LifecycleState = 0;
     int TemporalDiscontinuityReason = 0;
     uint32_t RuntimeEvents = 0;

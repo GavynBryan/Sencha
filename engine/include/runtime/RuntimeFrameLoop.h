@@ -2,6 +2,7 @@
 
 #include <platform/WindowTypes.h>
 #include <runtime/FrameDiscontinuityBus.h>
+#include <time/FixedStepScheduler.h>
 #include <time/FrameClock.h>
 #include <time/SimClock.h>
 #include <time/TimeService.h>
@@ -71,6 +72,10 @@ struct RuntimeFrameSnapshot
     TickBudget Budget;
     double TickDtSeconds = FixedSimulationLoop::DefaultFixedDt;
     uint32_t FixedTicks = 0;
+
+    // Whole ticks this frame's elapsed time covered but the per-frame cap
+    // refused to run. Non-zero means simulated time fell behind wall time.
+    uint32_t TicksDropped = 0;
     RuntimeFrameState State = RuntimeFrameState::Running;
     TemporalDiscontinuityReason DiscontinuityReason = TemporalDiscontinuityReason::None;
     RuntimeFrameEventFlags Events = RuntimeFrameEventFlags::None;
@@ -111,10 +116,18 @@ public:
     [[nodiscard]] FrameDiscontinuityBus& GetDiscontinuityBus() { return DiscontinuityBus; }
     [[nodiscard]] const FrameDiscontinuityBus& GetDiscontinuityBus() const { return DiscontinuityBus; }
 
-    // 0.0 pauses simulation tick emission; positive values emit the configured
-    // locked tick budget. FixedSimTime::DeltaSeconds never changes.
+    // Scales wall time on its way into the tick accumulator, so it changes how
+    // often ticks are emitted and never how long a tick is:
+    // FixedSimTime::DeltaSeconds stays constant and per-tick behavior stays
+    // deterministic. 0.0 accumulates nothing, which is what pauses simulation.
     void SetSimulationTimescale(float scale) { SimulationTimescale = scale < 0.0f ? 0.0f : scale; }
     [[nodiscard]] float GetSimulationTimescale() const { return SimulationTimescale; }
+
+    // Bounds on catch-up after a stall. Ticks beyond the cap are dropped, not
+    // deferred; see FixedStepScheduler.
+    void SetMaxFixedTicksPerFrame(uint32_t ticks) { Scheduler.SetMaxTicksPerFrame(ticks); }
+    void SetMaxFrameWallDeltaSeconds(double seconds) { Scheduler.SetMaxFrameInputSeconds(seconds); }
+    [[nodiscard]] const FixedStepScheduler& GetFixedStepScheduler() const { return Scheduler; }
 
     // Resize events can arrive sparsely while the OS is in a live-resize drag.
     // Hold lifecycle mode for a short real-time quiet window so swapchain
@@ -141,6 +154,9 @@ private:
 
     TimeService WallClock;
     FixedSimulationLoop SimulationClock;
+    // Persistent across frames on purpose: the sub-tick residual is the state
+    // that makes tick emission track wall time. Current is cleared every frame.
+    FixedStepScheduler Scheduler;
     FrameDiscontinuityBus DiscontinuityBus;
     RuntimeFrameSnapshot Current;
     RuntimeFrameState State = RuntimeFrameState::Running;

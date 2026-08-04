@@ -131,6 +131,10 @@ struct AudioContext
     EngineConfig& Config;
     RuntimeFrameLoop& Runtime;
     InputFrame& Input;
+    // Audio runs once per rendered frame, so anything here that ages with the
+    // player's experience rather than with simulation -- subtitle dwell time,
+    // for instance -- uses this rather than the tick delta.
+    double WallDeltaSeconds = 0.0;
     PresentationTime Presentation;
     World& Entities;
     const StoragePartitionSet& Partitions;

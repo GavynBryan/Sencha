@@ -94,11 +94,15 @@ void FrameDriver::StepOnce()
         const bool shouldDrainEdgesAfterTick = !EdgesDrainedThisFrame;
         ctx.CurrentTick = Runtime.BeginFixedTick();
         ctx.IsFixedTick = true;
+        // Per tick rather than per frame: a frame may run several ticks while
+        // catching up, and the burst is the thing worth seeing in a trace.
+        if (Trace) Trace->BeginPhase("FixedTick");
         const int simIdx = static_cast<int>(FramePhase::Simulate);
         for (auto& cb : Phases[simIdx])
         {
             if (cb) cb(ctx);
         }
+        if (Trace) Trace->EndPhase("FixedTick");
         if (shouldDrainEdgesAfterTick)
             DrainInputEdgesForFirstTick();
         Runtime.EndFixedTick();

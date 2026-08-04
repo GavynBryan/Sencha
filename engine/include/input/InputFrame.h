@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -69,6 +70,19 @@ struct InputFrame
         KeysReleased.clear();
         MouseButtonsPressed.clear();
         MouseButtonsReleased.clear();
+    }
+
+    // Take a key press edge. Bindings that run outside the fixed-tick drain,
+    // such as engine-level window and pause keys in PumpPlatform, must consume
+    // the edge they act on: edges survive frames that run no fixed tick, so a
+    // handler that only tests for the press would fire again next frame.
+    bool ConsumeKeyPressed(uint32_t scancode)
+    {
+        const auto first = std::remove(KeysPressed.begin(), KeysPressed.end(), scancode);
+        if (first == KeysPressed.end())
+            return false;
+        KeysPressed.erase(first, KeysPressed.end());
+        return true;
     }
 
     [[nodiscard]] bool IsKeyDown(uint32_t scancode) const

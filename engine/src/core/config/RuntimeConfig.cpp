@@ -91,6 +91,10 @@ std::optional<EngineRuntimeConfig> DeserializeRuntimeConfig(
             config.TargetFps, sectionError)
         || !ReadDoubleEither(root, "resizeSettleSeconds", "resize_settle_seconds",
             config.ResizeSettleSeconds, sectionError)
+        || !ReadIntEither(root, "maxFixedTicksPerFrame", "max_fixed_ticks_per_frame",
+            config.MaxFixedTicksPerFrame, sectionError)
+        || !ReadDoubleEither(root, "maxFrameWallDeltaSeconds", "max_frame_wall_delta_seconds",
+            config.MaxFrameWallDeltaSeconds, sectionError)
         || !ReadDoubleEither(root, "asyncCommitBudgetMs", "async_commit_budget_ms",
             config.AsyncCommitBudgetMs, sectionError)
         || !ReadIntEither(root, "jobWorkerCount", "job_worker_count",
@@ -121,6 +125,18 @@ std::optional<EngineRuntimeConfig> DeserializeRuntimeConfig(
     if (!std::isfinite(config.FixedTickRate) || config.FixedTickRate <= 0.0)
     {
         if (error) error->Message = "runtime config: 'fixedTickRate' must be greater than zero";
+        return std::nullopt;
+    }
+
+    if (config.MaxFixedTicksPerFrame < 1)
+    {
+        if (error) error->Message = "runtime config: 'maxFixedTicksPerFrame' must be at least one";
+        return std::nullopt;
+    }
+
+    if (!std::isfinite(config.MaxFrameWallDeltaSeconds) || config.MaxFrameWallDeltaSeconds <= 0.0)
+    {
+        if (error) error->Message = "runtime config: 'maxFrameWallDeltaSeconds' must be greater than zero";
         return std::nullopt;
     }
 

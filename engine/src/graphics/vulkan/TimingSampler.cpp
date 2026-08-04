@@ -14,6 +14,7 @@ namespace
             .PresentationDtSeconds = frame.Presentation.DeltaSeconds,
             .InterpolationAlpha = frame.Presentation.Alpha,
             .FixedTicks = frame.FixedTicks,
+            .TicksDropped = frame.TicksDropped,
             .LifecycleState = static_cast<int>(frame.State),
             .TemporalDiscontinuityReason = static_cast<int>(frame.DiscontinuityReason),
             .RuntimeEvents = static_cast<uint32_t>(frame.Events),

@@ -11,6 +11,7 @@
 #include <render/StaticMeshComponent.h>
 #include <render/static_mesh/StaticMeshCache.h>
 #include <world/transform/TransformComponents.h>
+#include <world/transform/TransformHistory.h>
 
 #include <cstdint>
 #include <optional>
@@ -68,9 +69,14 @@ public:
                  const MaterialCache& materials,
                  const MaterialSetCache& materialSets,
                  ShadowCasterSet& casters,
-                 bool emitRecords = true);
+                 bool emitRecords = true,
+                 double interpolationAlpha = 1.0);
 
 private:
     const World* LastWorld = nullptr;
-    std::optional<Query<Read<WorldTransform>, Read<StaticMeshComponent>>> CachedQuery;
+    std::optional<Query<Read<WorldTransform>,
+                        Read<StaticMeshComponent>,
+                        Without<WorldTransformHistory>>> CachedQuery;
+    std::optional<Query<Read<WorldTransformHistory>,
+                        Read<StaticMeshComponent>>> CachedInterpolatedQuery;
 };

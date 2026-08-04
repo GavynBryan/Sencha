@@ -4,6 +4,7 @@
 #include <jobs/AsyncTaskQueue.h>
 #include <runtime/FrameDriver.h>
 #include <world/RuntimeWorld.h>
+#include <world/transform/TransformHistory.h>
 #include <world/transform/TransformPropagation.h>
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
@@ -79,17 +80,11 @@ void Engine::RegisterFramePhases(Game& game)
         if (config.Runtime.ExitOnEscape && ctx.Input->IsKeyDown(SDL_SCANCODE_ESCAPE))
             ctx.Input->QuitRequested = true;
 
-        if (config.Runtime.TogglePauseOnF1)
+        if (config.Runtime.TogglePauseOnF1
+            && ctx.Input->ConsumeKeyPressed(SDL_SCANCODE_F1))
         {
             const bool wasPaused = ctx.Runtime->GetSimulationTimescale() == 0.0f;
-            for (uint32_t sc : ctx.Input->KeysPressed)
-            {
-                if (sc == SDL_SCANCODE_F1)
-                {
-                    ctx.Runtime->SetSimulationTimescale(wasPaused ? 1.0f : 0.0f);
-                    break;
-                }
-            }
+            ctx.Runtime->SetSimulationTimescale(wasPaused ? 1.0f : 0.0f);
         }
     });
 
@@ -189,6 +184,15 @@ void Engine::RegisterFramePhases(Game& game)
             .Partitions = zones.Logic,
         };
         engine.Schedule().RunPostFixed(postFixed);
+
+        // Last thing in the tick, so the captured pose is the one this tick
+        // finished with. A frame-wide discontinuity has no meaningful previous
+        // pose to blend from, so it collapses every history instead.
+        CaptureWorldTransformHistory(
+            entities,
+            zones.Logic,
+            HasRuntimeFrameEvent(ctx.Runtime->GetCurrentFrame().Events,
+                                 RuntimeFrameEventFlags::TemporalDiscontinuity));
     });
 
     driver.Register(FramePhase::Update, [&engine, &config](PhaseContext& ctx) {
@@ -211,6 +215,7 @@ void Engine::RegisterFramePhases(Game& game)
             .Config = config,
             .Runtime = *ctx.Runtime,
             .Input = *ctx.Input,
+            .WallDeltaSeconds = static_cast<double>(rf.WallTime.Dt),
             .Presentation = rf.Presentation,
             .Entities = entities,
             .Partitions = zones.Audio,

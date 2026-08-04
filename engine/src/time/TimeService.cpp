@@ -1,13 +1,28 @@
 #include <time/TimeService.h>
 
+#include <utility>
+
 TimeService::TimeService()
     : LastTime(Clock::now())
 {
 }
 
+void TimeService::SetNowSource(NowSource source)
+{
+    Source = std::move(source);
+    // Rebase so the first sample after the swap measures from the new source
+    // rather than across the two clocks.
+    LastTime = Now();
+}
+
+TimeService::TimePoint TimeService::Now() const
+{
+    return Source ? Source() : Clock::now();
+}
+
 FrameClock TimeService::Advance()
 {
-    TimePoint now = Clock::now();
+    TimePoint now = Now();
 
     float delta = 0.0f;
     if (!FirstFrame)

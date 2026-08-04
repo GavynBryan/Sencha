@@ -11,6 +11,7 @@
 #include <render/TextureHandle.h>
 #include <render/static_mesh/StaticMeshCache.h>
 #include <world/transform/TransformComponents.h>
+#include <world/transform/TransformHistory.h>
 
 #include <cstdint>
 #include <optional>
@@ -77,6 +78,10 @@ public:
     // `textures` resolves each resident zone's ZoneLightmapComponent to the
     // bindless atlas index stamped on that zone's items; null leaves items
     // without a lightmap.
+    // `interpolationAlpha` is how far this frame sits past the last completed
+    // simulation tick (PresentationTime::Alpha). Entities carrying
+    // WorldTransformHistory render the blend at that point; everything else
+    // renders its live WorldTransform.
     void Extract(
         const World& world,
         const StoragePartitionSet& partitions,
@@ -85,11 +90,16 @@ public:
         const MaterialSetCache& materialSets,
         const CameraRenderData& camera,
         RenderQueue& queue,
-        const TextureCache* textures = nullptr);
+        const TextureCache* textures = nullptr,
+        double interpolationAlpha = 1.0);
 
 private:
     const World* LastWorld = nullptr;
-    std::optional<Query<Read<WorldTransform>, Read<StaticMeshComponent>>> CachedQuery;
+    std::optional<Query<Read<WorldTransform>,
+                        Read<StaticMeshComponent>,
+                        Without<WorldTransformHistory>>> CachedQuery;
+    std::optional<Query<Read<WorldTransformHistory>,
+                        Read<StaticMeshComponent>>> CachedInterpolatedQuery;
     // Retained across frames so a steady-state extract allocates nothing; both
     // are rebuilt from scratch each call.
     std::vector<ZoneLightmapBinding> LightmapBindings;

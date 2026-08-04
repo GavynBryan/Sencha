@@ -102,6 +102,9 @@ bool Engine::Initialize()
 
     RuntimeLoop.SetResizeSettleSeconds(Configuration.Runtime.ResizeSettleSeconds);
     RuntimeLoop.GetSimulationClock().SetFixedTickRate(Configuration.Runtime.FixedTickRate);
+    RuntimeLoop.SetMaxFixedTicksPerFrame(
+        static_cast<uint32_t>(Configuration.Runtime.MaxFixedTicksPerFrame));
+    RuntimeLoop.SetMaxFrameWallDeltaSeconds(Configuration.Runtime.MaxFrameWallDeltaSeconds);
 
     TaskQueueInstance = std::make_unique<AsyncTaskQueue>(
         static_cast<uint32_t>(Configuration.Runtime.AsyncTaskThreadCount));

@@ -6,6 +6,7 @@
 #include <camera/CameraRig.h>
 #include <components/ActiveCameraService.h>
 #include <world/transform/TransformComponents.h>
+#include <world/transform/TransformHistory.h>
 
 void CameraFollowSystem::FrameUpdate(FrameUpdateContext& ctx)
 {
@@ -35,9 +36,20 @@ void CameraFollowSystem::FrameUpdate(FrameUpdateContext& ctx)
     rig->Pitch -= ctx.Input.MouseDeltaY * rig->Sensitivity;
     rig->Pitch = std::clamp(rig->Pitch, rig->MinPitch, rig->MaxPitch);
 
+    // Follow the pose the target is being drawn at, not the one the last tick
+    // left it in: chasing the tick pose would reintroduce the step this frame's
+    // interpolation exists to remove.
     Vec3d targetPosition = Vec3d::Zero();
-    if (const WorldTransform* target = world.TryGet<WorldTransform>(rig->Target))
+    if (const WorldTransformHistory* history =
+            world.TryGet<WorldTransformHistory>(rig->Target))
+    {
+        targetPosition =
+            ResolvePresentationPose(*history, ctx.Presentation.Alpha).Position;
+    }
+    else if (const WorldTransform* target = world.TryGet<WorldTransform>(rig->Target))
+    {
         targetPosition = target->Value.Position;
+    }
 
     const CameraPose pose = ComputeCameraPose(*rig, targetPosition);
     if (!pose.Override)

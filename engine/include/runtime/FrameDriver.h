@@ -72,8 +72,9 @@ public:
 private:
     void InvokePhase(FramePhase phase, PhaseContext& ctx);
 
-    // Input edges are consumed by the first fixed tick of a frame, or dropped
-    // at the end of a frame that ran none, so a press is never seen twice.
+    // Input edges are consumed by the first fixed tick of a frame. A frame that
+    // runs no tick leaves them intact so the press reaches the next tick
+    // instead of being lost; ticks after the first see held state only.
     void DrainInputEdgesForFirstTick();
 
     RuntimeFrameLoop& Runtime;

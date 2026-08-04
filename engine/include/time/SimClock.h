@@ -8,14 +8,19 @@
 // FixedSimulationLoop
 //
 // Fixed-step simulation clock. RuntimeFrameLoop decides how many fixed ticks a
-// frame should run; this type only owns the fixed delta and monotonic tick index.
+// frame should run (see FixedStepScheduler); this type only owns the fixed
+// delta and monotonic tick index.
 //
 // The main loop drives it:
 //
-//   TickBudget budget = scheduler.ConsumeTicks(runtimeState);
+//   TickBudget budget = runtime.ScheduleFixedTicks();
 //   for (uint32_t i = 0; i < budget.TicksToRunThisFrame; ++i)
-//       schedule.RunFixedLogic(sim.BeginFixedTickContext());
-//   systemHost.RunRender(presentation.Alpha);
+//       schedule.RunFixedLogic(sim.BeginFixedTick());
+//   render(runtime.BuildPresentationFrame().Alpha);
+//
+// The delta never varies with frame rate: a slow frame runs more ticks, not
+// longer ones. Simulation that integrates ctx.Time.DeltaSeconds is therefore
+// framerate-independent and reproducible for a given tick sequence.
 //=============================================================================
 struct TickBudget
 {

@@ -12,6 +12,7 @@
 #include <physics/components/CharacterController.h>
 #include <physics/components/CharacterMoverLink.h>
 #include <world/transform/TransformComponents.h>
+#include <world/transform/TransformHistory.h>
 
 namespace
 {
@@ -276,5 +277,8 @@ bool CharacterMoverPool::SetPosition(World& world, EntityId entity,
         return false;
     slot.Mover->SetPosition(position);
     transform->Value.Position = position;
+    // This is a teleport, not motion. Rendering must not blend the character
+    // across the gap it just skipped.
+    RequestTransformHistorySnap(world, entity);
     return true;
 }
