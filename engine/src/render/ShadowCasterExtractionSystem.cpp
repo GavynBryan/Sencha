@@ -1,5 +1,7 @@
 #include <render/ShadowCasterExtractionSystem.h>
 
+#include <world/transform/TransformHistory.h>
+
 #include <render/RenderEntityKey.h>
 
 namespace
@@ -108,7 +110,8 @@ void ShadowCasterExtractionSystem::Extract(
     const MaterialCache& materials,
     const MaterialSetCache& materialSets,
     ShadowCasterSet& casters,
-    bool emitRecords)
+    bool emitRecords,
+    double interpolationAlpha)
 {
     casters.Reset();
 
@@ -121,12 +124,14 @@ void ShadowCasterExtractionSystem::Extract(
     if (LastWorld != &world || !CachedQuery.has_value())
     {
         CachedQuery.emplace(world);
+        CachedInterpolatedQuery.emplace(world);
         LastWorld = &world;
     }
 
-    CachedQuery->ForEachChunkIn(partitions, [&](auto& view)
+    // Casters must use the same pose their mesh renders at, or a shadow
+    // separates from the object dropping it.
+    const auto emitChunk = [&](auto& view, auto&& poseAt)
     {
-        const auto transforms = view.template Read<WorldTransform>();
         const auto renderers = view.template Read<StaticMeshComponent>();
 
         for (uint32_t i = 0; i < view.Count(); ++i)
@@ -143,7 +148,7 @@ void ShadowCasterExtractionSystem::Extract(
 
             const ShadowCasterGatherResult gathered = AppendShadowCasters(
                 renderer, *mesh, *sectionMaterials, materials,
-                transforms[i].Value.ToMat4(), casters);
+                poseAt(i).ToMat4(), casters);
             if (gathered.EffectiveSectionMask == 0 || !emitRecords)
                 continue;
 
@@ -158,5 +163,19 @@ void ShadowCasterExtractionSystem::Extract(
                 },
             });
         }
+    };
+
+    CachedQuery->ForEachChunkIn(partitions, [&](auto& view)
+    {
+        const auto transforms = view.template Read<WorldTransform>();
+        emitChunk(view, [&](uint32_t i) -> const Transform3f& { return transforms[i].Value; });
+    });
+
+    CachedInterpolatedQuery->ForEachChunkIn(partitions, [&](auto& view)
+    {
+        const auto histories = view.template Read<WorldTransformHistory>();
+        emitChunk(view, [&](uint32_t i) {
+            return ResolvePresentationPose(histories[i], interpolationAlpha);
+        });
     });
 }

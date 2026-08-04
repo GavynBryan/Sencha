@@ -231,6 +231,9 @@ EntityId SpawnPlayerAvatar(
     world.AddComponent<MovementIntent>(
         pawn,
         MovementIntent{});
+    // The pawn moves every tick and is what the camera watches, so it renders
+    // interpolated between ticks rather than stepping at the tick rate.
+    world.AddComponent<WorldTransformHistory>(pawn, WorldTransformHistory{});
     world.AddComponent<OnGround>(pawn, OnGround{});
     world.AddComponent<LocomotionModeRequest>(
         pawn,

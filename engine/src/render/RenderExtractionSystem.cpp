@@ -1,5 +1,7 @@
 #include <render/RenderExtractionSystem.h>
 
+#include <world/transform/TransformHistory.h>
+
 #include <graphics/vulkan/TextureCache.h>
 #include <render/ZoneLightmapComponent.h>
 
@@ -85,7 +87,8 @@ void RenderExtractionSystem::Extract(
     const MaterialSetCache& materialSets,
     const CameraRenderData& camera,
     RenderQueue& queue,
-    const TextureCache* textures)
+    const TextureCache* textures,
+    double interpolationAlpha)
 {
     if (!world.IsRegistered<WorldTransform>()
         || !world.IsRegistered<StaticMeshComponent>())
@@ -122,12 +125,14 @@ void RenderExtractionSystem::Extract(
     if (LastWorld != &world || !CachedQuery.has_value())
     {
         CachedQuery.emplace(world);
+        CachedInterpolatedQuery.emplace(world);
         LastWorld = &world;
     }
 
-    CachedQuery->ForEachChunkIn(partitions, [&](auto& view)
+    // Whether an entity carries pose history is an archetype property, so the
+    // two paths are separate chunk walks rather than a per-entity branch.
+    const auto emitChunk = [&](auto& view, auto&& poseAt)
     {
-        const auto transforms = view.template Read<WorldTransform>();
         const auto renderers = view.template Read<StaticMeshComponent>();
         const ZoneLightmapIndices lightmap =
             LookupZoneLightmap(LightmapTable, view.Partition());
@@ -147,7 +152,7 @@ void RenderExtractionSystem::Extract(
                 continue;
             }
 
-            const Mat4 worldMatrix = transforms[i].Value.ToMat4();
+            const Mat4 worldMatrix = poseAt(i).ToMat4();
             const Aabb3d worldBounds =
                 TransformBounds(mesh->LocalBounds, worldMatrix);
             if (!camera.ViewFrustum.IntersectsAabb(worldBounds))
@@ -192,5 +197,19 @@ void RenderExtractionSystem::Extract(
                 queue.AddOpaque(item);
             }
         }
+    };
+
+    CachedQuery->ForEachChunkIn(partitions, [&](auto& view)
+    {
+        const auto transforms = view.template Read<WorldTransform>();
+        emitChunk(view, [&](uint32_t i) -> const Transform3f& { return transforms[i].Value; });
+    });
+
+    CachedInterpolatedQuery->ForEachChunkIn(partitions, [&](auto& view)
+    {
+        const auto histories = view.template Read<WorldTransformHistory>();
+        emitChunk(view, [&](uint32_t i) {
+            return ResolvePresentationPose(histories[i], interpolationAlpha);
+        });
     });
 }

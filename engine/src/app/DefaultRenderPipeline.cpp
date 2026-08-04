@@ -228,7 +228,7 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         CpuScopeTimer timer(scopes, CpuScope::Extraction);
         RenderExtractor.Extract(
             world, ctx.Partitions, *Meshes, *Materials, *MaterialSets, Camera,
-            Queue, Textures);
+            Queue, Textures, ctx.Presentation.Alpha);
         Queue.SortOpaque();
     }
 
@@ -247,7 +247,7 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         const bool wantsCasterEvents = Residency.HasOnChangeSlots();
         ShadowCasterExtractor.Extract(
             world, ctx.Partitions, *Meshes, *Materials, *MaterialSets,
-            ShadowCasters, wantsCasterEvents);
+            ShadowCasters, wantsCasterEvents, ctx.Presentation.Alpha);
 
         CasterEvents.clear();
         if (wantsCasterEvents)

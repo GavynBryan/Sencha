@@ -4,6 +4,7 @@
 #include <jobs/AsyncTaskQueue.h>
 #include <runtime/FrameDriver.h>
 #include <world/RuntimeWorld.h>
+#include <world/transform/TransformHistory.h>
 #include <world/transform/TransformPropagation.h>
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
@@ -183,6 +184,15 @@ void Engine::RegisterFramePhases(Game& game)
             .Partitions = zones.Logic,
         };
         engine.Schedule().RunPostFixed(postFixed);
+
+        // Last thing in the tick, so the captured pose is the one this tick
+        // finished with. A frame-wide discontinuity has no meaningful previous
+        // pose to blend from, so it collapses every history instead.
+        CaptureWorldTransformHistory(
+            entities,
+            zones.Logic,
+            HasRuntimeFrameEvent(ctx.Runtime->GetCurrentFrame().Events,
+                                 RuntimeFrameEventFlags::TemporalDiscontinuity));
     });
 
     driver.Register(FramePhase::Update, [&engine, &config](PhaseContext& ctx) {

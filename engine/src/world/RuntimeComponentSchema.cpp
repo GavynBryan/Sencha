@@ -19,6 +19,7 @@
 #include <world/ComponentManifest.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/transform/TransformComponents.h>
+#include <world/transform/TransformHistory.h>
 
 void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)
 {
@@ -59,6 +60,10 @@ void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)
 
     // Camera runtime data beyond the serializable CameraComponent.
     schema.Add<CameraRig>();
+
+    // Per-tick pose history for entities that opt into render interpolation.
+    // Derived and runtime-only, like WorldTransform: never serialized.
+    schema.Add<WorldTransformHistory>();
 }
 
 bool RuntimeComponentSchemaCoversSerializers(

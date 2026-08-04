@@ -279,6 +279,46 @@ struct Quat
 		}
 		return q.Normalized();
 	}
+
+	// Shortest-path spherical interpolation. q and -q are the same orientation,
+	// so a negative dot is flipped first; otherwise the blend would travel the
+	// long way around. Near-parallel inputs fall back to a normalized linear
+	// blend, where the slerp coefficients lose precision and the two agree.
+	static Quat Slerp(const Quat& from, const Quat& to, T t) requires std::floating_point<T>
+	{
+		Quat target = to;
+		T cosTheta = from.Dot(to);
+		if (cosTheta < T{0})
+		{
+			target = to * T{-1};
+			cosTheta = -cosTheta;
+		}
+
+		constexpr T kParallelThreshold = T{0.9995};
+		if (cosTheta > kParallelThreshold)
+		{
+			const Quat blended{
+				from.X + (target.X - from.X) * t,
+				from.Y + (target.Y - from.Y) * t,
+				from.Z + (target.Z - from.Z) * t,
+				from.W + (target.W - from.W) * t,
+			};
+			return blended.Normalized();
+		}
+
+		if (cosTheta > T{1}) cosTheta = T{1};
+		const T theta = std::acos(cosTheta);
+		const T sinTheta = std::sin(theta);
+		const T fromScale = std::sin((T{1} - t) * theta) / sinTheta;
+		const T toScale = std::sin(t * theta) / sinTheta;
+
+		return Quat{
+			from.X * fromScale + target.X * toScale,
+			from.Y * fromScale + target.Y * toScale,
+			from.Z * fromScale + target.Z * toScale,
+			from.W * fromScale + target.W * toScale,
+		}.Normalized();
+	}
 };
 
 // -- Free function: scalar * quat -------------------------------------------
