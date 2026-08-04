@@ -73,6 +73,39 @@ namespace
                         const std::string& path,
                         DataEditorWorkspace& workspace);
 
+    // Absent optional members behind one popup, for records where a button per
+    // member would bury the values actually set.
+    FieldEdit DrawAddOptionalMember(JsonValue& value,
+                                    const DataFieldSchema& field,
+                                    const std::string& path)
+    {
+        FieldEdit edit;
+        const std::string popup = "add##" + path;
+        if (ImGui::Button("Add"))
+            ImGui::OpenPopup(popup.c_str());
+        if (!ImGui::BeginPopup(popup.c_str()))
+            return edit;
+
+        bool anyOffered = false;
+        for (const DataFieldSchema& child : field.Children)
+        {
+            if (child.Required || value.Find(child.Key) != nullptr)
+                continue;
+            anyOffered = true;
+            if (ImGui::Selectable(DisplayName(child).c_str()))
+            {
+                value.AsObject().emplace_back(child.Key, CreateDefaultDataValue(child));
+                edit |= FieldEdit::Instant();
+            }
+            if (ImGui::IsItemHovered() && !child.Summary.empty())
+                ImGui::SetTooltip("%s", child.Summary.c_str());
+        }
+        if (!anyOffered)
+            ImGui::TextDisabled("Everything here is already set.");
+        ImGui::EndPopup();
+        return edit;
+    }
+
     FieldEdit DrawRecord(JsonValue& value,
                          const DataFieldSchema& field,
                          const std::string& path,
@@ -80,6 +113,8 @@ namespace
     {
         if (!value.IsObject())
             value = JsonValue(JsonValue::Object{});
+
+        const bool compact = field.Editor.Widget == "compact";
 
         FieldEdit edit;
         for (const DataFieldSchema& child : field.Children)
@@ -93,6 +128,10 @@ namespace
                     value.AsObject().emplace_back(child.Key, CreateDefaultDataValue(child));
                     childValue = &value.AsObject().back().second;
                     edit |= FieldEdit::Instant();
+                }
+                else if (compact)
+                {
+                    continue; // offered through the popup below instead
                 }
                 else
                 {
@@ -124,6 +163,9 @@ namespace
             }
             ImGui::PopID();
         }
+
+        if (compact)
+            edit |= DrawAddOptionalMember(value, field, path);
         return edit;
     }
 
@@ -145,6 +187,12 @@ namespace
         const std::string elementName = element.DisplayName.empty()
             ? std::string("Element") : element.DisplayName;
 
+        // Cards read as a list first and an editor second, so a long array can be
+        // scanned without expanding every entry.
+        const bool cards = field.Editor.Widget == "cards";
+        const ImGuiTreeNodeFlags rowFlags =
+            cards ? ImGuiTreeNodeFlags_None : ImGuiTreeNodeFlags_DefaultOpen;
+
         JsonValue::Array& array = value.AsArray();
         std::optional<std::size_t> remove;
         for (std::size_t index = 0; index < array.size(); ++index)
@@ -152,9 +200,18 @@ namespace
             const std::string elementPath = std::format("{}[{}]", path, index);
             ImGui::PushID(static_cast<int>(index));
             // Counted from one and named after the element schema: the author
-            // reads "Layer 2", not a zero-based array offset.
-            const std::string label = std::format("{} {}", elementName, index + 1);
-            if (ImGui::TreeNodeEx(label.c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+            // reads "Layer 2", not a zero-based array offset. A card titles
+            // itself by what the author named the element instead.
+            std::string label = std::format("{} {}", elementName, index + 1);
+            if (cards && !field.Editor.TitleKey.empty() && array[index].IsObject())
+            {
+                if (const JsonValue* title = array[index].Find(field.Editor.TitleKey);
+                    title != nullptr && title->IsString() && !title->AsString().empty())
+                {
+                    label = title->AsString();
+                }
+            }
+            if (ImGui::TreeNodeEx(label.c_str(), rowFlags))
             {
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("%s", elementPath.c_str());
@@ -368,6 +425,21 @@ namespace
                 return std::to_string(item);
         }, value);
     }
+}
+
+FieldEdit DrawDataField(JsonValue& value,
+                        const DataFieldSchema& field,
+                        const std::string& path,
+                        DataEditorWorkspace& workspace)
+{
+    return DrawField(value, field, path, workspace);
+}
+
+void DrawDataFieldHelp(DataEditorWorkspace& workspace,
+                       const DataFieldSchema& field,
+                       std::string_view path)
+{
+    DrawFieldHelp(workspace, field, path);
 }
 
 DataAssetBrowserPanel::DataAssetBrowserPanel(DataEditorWorkspace& workspace)

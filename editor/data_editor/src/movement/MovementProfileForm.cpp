@@ -41,14 +41,6 @@ namespace
         { "add", "Offset", "Add to what earlier layers produced." },
     } };
 
-    const DataFieldSchema* FindChild(const DataFieldSchema& parent, std::string_view key)
-    {
-        const auto found = std::find_if(
-            parent.Children.begin(), parent.Children.end(),
-            [key](const DataFieldSchema& child) { return child.Key == key; });
-        return found == parent.Children.end() ? nullptr : &*found;
-    }
-
     JsonValue* FindOrNull(JsonValue& object, std::string_view key)
     {
         return object.IsObject() ? object.Find(key) : nullptr;
@@ -93,6 +85,8 @@ namespace
     FieldEdit DrawCoefficientRow(JsonValue& patch,
                                  const MovementCoefficientLabel& label,
                                  const DataFieldSchema* fieldSchema,
+                                 const std::string& path,
+                                 DataEditorWorkspace& workspace,
                                  bool& removed)
     {
         FieldEdit edit;
@@ -120,8 +114,8 @@ namespace
         edit.Changed = dragged;
         edit.Committed = ImGui::IsItemDeactivatedAfterEdit();
 
-        if (fieldSchema && ImGui::IsItemHovered() && !fieldSchema->Summary.empty())
-            ImGui::SetTooltip("%s", fieldSchema->Summary.c_str());
+        if (fieldSchema != nullptr)
+            DrawDataFieldHelp(workspace, *fieldSchema, path);
 
         ImGui::SameLine();
         if (ImGui::SmallButton("Clear"))
@@ -369,7 +363,9 @@ namespace
     FieldEdit DrawLayerBody(JsonValue& layer,
                             const DataFieldSchema& layerSchema,
                             const std::vector<MovementCoefficientLabel>& labels,
-                            const MovementResolvePreview& preview)
+                            const MovementResolvePreview& preview,
+                            const std::string& layerPath,
+                            DataEditorWorkspace& workspace)
     {
         FieldEdit edit;
 
@@ -414,9 +410,11 @@ namespace
             for (const MovementCoefficientLabel& label : labels)
             {
                 bool removed = false;
-                edit |= DrawCoefficientRow(*patch, label,
-                                           patchSchema ? FindChild(*patchSchema, label.Key) : nullptr,
-                                           removed);
+                edit |= DrawCoefficientRow(
+                    *patch, label,
+                    patchSchema ? FindChild(*patchSchema, label.Key) : nullptr,
+                    std::format("{}.{}.{}", layerPath, operation.Key, label.Key),
+                    workspace, removed);
                 if (removed)
                 {
                     EraseKey(*patch, label.Key);
@@ -444,7 +442,9 @@ namespace
                              const std::vector<MovementProfileLayer>* compiled,
                              std::span<const MovementLayerTrace> trace,
                              const std::vector<MovementCoefficientLabel>& labels,
-                             const MovementResolvePreview& preview)
+                             const MovementResolvePreview& preview,
+                             const std::string& path,
+                             DataEditorWorkspace& workspace)
     {
         FieldEdit edit;
         if (!layersValue.IsArray())
@@ -460,6 +460,7 @@ namespace
         {
             ImGui::PushID(static_cast<int>(index));
 
+            const std::string elementPath = std::format("{}[{}]", path, index);
             const bool haveCompiled = compiled != nullptr && index < compiled->size();
             const std::string name = haveCompiled
                 ? MovementLayerName((*compiled)[index])
@@ -511,7 +512,8 @@ namespace
             if (open)
             {
                 ImGui::Indent();
-                edit |= DrawLayerBody(layers[index], layerSchema, labels, preview);
+                edit |= DrawLayerBody(layers[index], layerSchema, labels, preview,
+                                      elementPath, workspace);
 
                 ButtonFlow verbs;
                 if (verbs.Button("Duplicate"))
@@ -597,12 +599,7 @@ FieldEdit DrawMovementProfileForm(JsonValue& data,
 
     ImGui::Spacing();
     ImGui::SeparatorText("Rules, in order");
-    const DataFieldSchema* layersSchema = nullptr;
-    for (const DataFieldSchema& child : schema.Root.Children)
-    {
-        if (child.Key == "layers")
-            layersSchema = &child;
-    }
+    const DataFieldSchema* layersSchema = FindChild(schema.Root, "layers");
 
     if (layersSchema != nullptr)
     {
@@ -614,9 +611,26 @@ FieldEdit DrawMovementProfileForm(JsonValue& data,
                 : std::span<const MovementLayerTrace>{};
         edit |= DrawLayerCards(layers, *layersSchema,
                                compiled ? &compiled->Layers : nullptr,
-                               trace, labels, preview);
+                               trace, labels, preview, "$.data.layers", workspace);
     }
 
-    (void)workspace;
+    // Modes have no purpose-built surface, so they get the schema-generated one
+    // rather than being editable only through raw JSON. Their layers still read
+    // as titled cards, because that presentation is authored in the schema.
+    if (const DataFieldSchema* modesSchema = FindChild(schema.Root, "modes"))
+    {
+        ImGui::Spacing();
+        ImGui::SeparatorText("Modes");
+        ImGui::TextDisabled("Tuning that applies only while a locomotion mode is active.");
+
+        JsonValue& modes = EnsureMember(data, "modes", JsonValue(JsonValue::Array{}));
+        edit |= DrawDataField(modes, *modesSchema, "$.data.modes", workspace);
+
+        // The whole document is committed on any change, so an untouched empty
+        // array should not start appearing in the file.
+        if (modes.IsArray() && modes.AsArray().empty())
+            EraseKey(data, "modes");
+    }
+
     return edit;
 }

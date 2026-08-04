@@ -2,6 +2,10 @@
 
 #include <core/json/JsonValue.h>
 
+#include <string>
+#include <string_view>
+
+struct DataFieldSchema;
 class DataDocument;
 class DataEditorWorkspace;
 
@@ -36,3 +40,18 @@ void ApplyFieldEdit(DataDocument& document,
                     DataEditorWorkspace& workspace,
                     const FieldEdit& edit,
                     JsonValue root);
+
+// The schema-generated form for one field and everything under it. A
+// purpose-built surface delegates here for the parts it has nothing better to
+// offer, so no subtree becomes unauthorable just because a specialized form
+// exists for its siblings.
+[[nodiscard]] FieldEdit DrawDataField(JsonValue& value,
+                                      const DataFieldSchema& field,
+                                      const std::string& path,
+                                      DataEditorWorkspace& workspace);
+
+// Tooltip on hover, pin the documentation pane on click. Call immediately after
+// the widget the help describes.
+void DrawDataFieldHelp(DataEditorWorkspace& workspace,
+                       const DataFieldSchema& field,
+                       std::string_view path);

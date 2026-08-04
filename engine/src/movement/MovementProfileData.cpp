@@ -34,7 +34,8 @@ namespace
 
     DataFieldSchema TuningPatchSchema(std::string key,
                                       std::string display,
-                                      std::string summary)
+                                      std::string summary,
+                                      double neutral)
     {
         DataFieldSchema field;
         field.Key = std::move(key);
@@ -42,6 +43,9 @@ namespace
         field.Summary = std::move(summary);
         field.Kind = DataFieldKind::Record;
         field.Required = false;
+        // Eight optional coefficients per operation, three operations per layer:
+        // a button for every absent one would bury the few that are set.
+        field.Editor.Widget = "compact";
         field.Children = {
             FloatField("max_speed", "Maximum speed", "Maximum movement speed.", "m/s", 0.0),
             FloatField("acceleration", "Acceleration", "Rate used to approach desired velocity.", "1/s", 0.0),
@@ -52,6 +56,10 @@ namespace
             FloatField("gravity_scale", "Gravity scale", "Multiplier applied to world gravity.", "multiplier", 0.0),
             FloatField("jump_speed", "Jump speed", "Up-axis speed supplied by jump execution.", "m/s", 0.0),
         };
+        // Multiplying starts at the identity, replacing and offsetting at zero,
+        // so adding a coefficient never changes movement on its own.
+        for (DataFieldSchema& coefficient : field.Children)
+            coefficient.Default = neutral;
         return field;
     }
 
@@ -146,9 +154,9 @@ namespace
         layer.Children = {
             std::move(name),
             ConditionSchema(),
-            TuningPatchSchema("set", "Set", "Replace authored coefficients."),
-            TuningPatchSchema("scale", "Scale", "Multiply coefficients after set operations."),
-            TuningPatchSchema("add", "Add", "Add to coefficients after set and scale operations."),
+            TuningPatchSchema("set", "Set", "Replace authored coefficients.", 0.0),
+            TuningPatchSchema("scale", "Scale", "Multiply coefficients after set operations.", 1.0),
+            TuningPatchSchema("add", "Add", "Add to coefficients after set and scale operations.", 0.0),
         };
         return layer;
     }
@@ -167,6 +175,8 @@ namespace
         layers.DisplayName = "Layers";
         layers.Summary = "Ordered movement tuning layers. Authored order is conflict resolution.";
         layers.Kind = DataFieldKind::Array;
+        layers.Editor.Widget = "cards";
+        layers.Editor.TitleKey = "name";
         layers.Children.push_back(LayerSchema());
 
         DataFieldSchema modeName;
@@ -179,6 +189,8 @@ namespace
         modeLayers.Key = "layers";
         modeLayers.DisplayName = "Mode layers";
         modeLayers.Kind = DataFieldKind::Array;
+        modeLayers.Editor.Widget = "cards";
+        modeLayers.Editor.TitleKey = "name";
         modeLayers.Children.push_back(LayerSchema());
 
         DataFieldSchema mode;
@@ -196,6 +208,8 @@ namespace
         modes.Summary = "Optional mode-specific tuning and sustain conditions.";
         modes.Kind = DataFieldKind::Array;
         modes.Required = false;
+        modes.Editor.Widget = "cards";
+        modes.Editor.TitleKey = "mode";
         modes.Children.push_back(std::move(mode));
 
         DataFieldSchema root;

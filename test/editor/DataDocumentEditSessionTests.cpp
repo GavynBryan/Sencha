@@ -61,6 +61,36 @@ namespace
     }
 }
 
+// An optional member's default is the value it starts at once the author adds
+// it. Materializing every optional member with a default would hand back a
+// record full of values nobody asked for -- with eight optional coefficients per
+// operation, that buries the ones actually set.
+TEST(DataDocumentEditSession, OptionalMembersAreNotMaterializedByTheirDefault)
+{
+    Registered registered;
+    const DataSchema* schema = registered.Schemas.Find("movement.profile");
+    ASSERT_NE(schema, nullptr);
+
+    const DataFieldSchema* layers = FindChild(schema->Root, "layers");
+    ASSERT_NE(layers, nullptr);
+    ASSERT_FALSE(layers->Children.empty());
+
+    const JsonValue layer = CreateDefaultDataValue(layers->Children.front());
+    ASSERT_TRUE(layer.IsObject());
+    EXPECT_EQ(layer.Find("set"), nullptr) << "an optional patch record stays absent";
+    EXPECT_EQ(layer.Find("when"), nullptr);
+    EXPECT_EQ(layer.Find("name"), nullptr);
+
+    // Added explicitly, it starts at the operation's neutral value.
+    const DataFieldSchema* scale = FindChild(layers->Children.front(), "scale");
+    ASSERT_NE(scale, nullptr);
+    const DataFieldSchema* scaledFriction = FindChild(*scale, "friction");
+    ASSERT_NE(scaledFriction, nullptr);
+    const JsonValue added = CreateDefaultDataValue(*scaledFriction);
+    ASSERT_TRUE(added.IsNumber());
+    EXPECT_DOUBLE_EQ(added.AsNumber(), 1.0);
+}
+
 TEST(DataDocumentEditSession, OneInteractionLeavesOneUndoEntry)
 {
     Registered registered;

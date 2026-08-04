@@ -263,6 +263,16 @@ namespace
     }
 }
 
+const DataFieldSchema* FindChild(const DataFieldSchema& parent, std::string_view key)
+{
+    for (const DataFieldSchema& child : parent.Children)
+    {
+        if (child.Key == key)
+            return &child;
+    }
+    return nullptr;
+}
+
 bool ValidateDataAgainstSchema(const JsonValue& value,
                                const DataSchema& schema,
                                std::vector<DataValidationError>& errors)

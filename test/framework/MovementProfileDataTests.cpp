@@ -9,6 +9,7 @@
 
 #include <optional>
 #include <span>
+#include <variant>
 
 namespace
 {
@@ -203,6 +204,79 @@ TEST(MovementProfileData, TuningFieldTableCoversEveryCoefficient)
         ASSERT_TRUE((patch.*fields[index].Patch).has_value());
         EXPECT_FLOAT_EQ(*(patch.*fields[index].Patch), static_cast<float>(index + 1));
         EXPECT_FLOAT_EQ(tuning.*fields[index].Resolved, static_cast<float>(index + 1));
+    }
+}
+
+// Presentation is authored in the schema rather than hardcoded in the editor,
+// so a surface that renders a profile well does so from data any subtype can
+// carry.
+TEST(MovementProfileData, SchemaCarriesPresentationHints)
+{
+    DataAssetTypeRegistry types;
+    DataSchemaRegistry schemas;
+    RegisterMovementProfileData(types, schemas);
+    const DataSchema* schema = schemas.Find("movement.profile");
+    ASSERT_NE(schema, nullptr);
+
+    const DataFieldSchema* layers = FindChild(schema->Root, "layers");
+    ASSERT_NE(layers, nullptr);
+    EXPECT_EQ(layers->Editor.Widget, "cards");
+    EXPECT_EQ(layers->Editor.TitleKey, "name");
+    ASSERT_FALSE(layers->Children.empty());
+    ASSERT_NE(FindChild(layers->Children.front(), layers->Editor.TitleKey), nullptr)
+        << "the title key must name a real member of the element";
+
+    const DataFieldSchema* modes = FindChild(schema->Root, "modes");
+    ASSERT_NE(modes, nullptr);
+    EXPECT_EQ(modes->Editor.Widget, "cards");
+    EXPECT_EQ(modes->Editor.TitleKey, "mode");
+    ASSERT_FALSE(modes->Children.empty());
+    EXPECT_NE(FindChild(modes->Children.front(), modes->Editor.TitleKey), nullptr);
+
+    const DataFieldSchema* modeLayers = FindChild(modes->Children.front(), "layers");
+    ASSERT_NE(modeLayers, nullptr);
+    EXPECT_EQ(modeLayers->Editor.Widget, "cards");
+
+    for (const char* op : { "set", "scale", "add" })
+    {
+        const DataFieldSchema* patch = FindChild(layers->Children.front(), op);
+        ASSERT_NE(patch, nullptr) << op;
+        EXPECT_EQ(patch->Editor.Widget, "compact") << op;
+    }
+}
+
+// Adding a coefficient must not move the character on its own: multiplying
+// starts at the identity, replacing and offsetting at zero.
+TEST(MovementProfileData, AddedCoefficientsStartNeutral)
+{
+    DataAssetTypeRegistry types;
+    DataSchemaRegistry schemas;
+    RegisterMovementProfileData(types, schemas);
+    const DataSchema* schema = schemas.Find("movement.profile");
+    ASSERT_NE(schema, nullptr);
+    const DataFieldSchema* layer = &FindChild(schema->Root, "layers")->Children.front();
+
+    const auto neutralOf = [layer](const char* op)
+    {
+        const DataFieldSchema* patch = FindChild(*layer, op);
+        EXPECT_NE(patch, nullptr) << op;
+        return patch;
+    };
+
+    for (const MovementTuningField& field : MovementTuningFields())
+    {
+        const DataFieldSchema* scaled = FindChild(*neutralOf("scale"), field.Key);
+        ASSERT_NE(scaled, nullptr) << field.Key;
+        ASSERT_TRUE(std::holds_alternative<double>(scaled->Default)) << field.Key;
+        EXPECT_DOUBLE_EQ(std::get<double>(scaled->Default), 1.0) << field.Key;
+
+        for (const char* op : { "set", "add" })
+        {
+            const DataFieldSchema* other = FindChild(*neutralOf(op), field.Key);
+            ASSERT_NE(other, nullptr) << field.Key;
+            ASSERT_TRUE(std::holds_alternative<double>(other->Default)) << field.Key;
+            EXPECT_DOUBLE_EQ(std::get<double>(other->Default), 0.0) << field.Key;
+        }
     }
 }
 

@@ -423,9 +423,13 @@ JsonValue CreateDefaultDataValue(const DataFieldSchema& field)
     case DataFieldKind::Record:
     {
         JsonValue::Object object;
+        // Only required members are materialized. An optional member's default
+        // is the value it starts at when the author adds it, not a reason to
+        // write it out unasked -- otherwise a record with many optional members
+        // arrives fully populated and the few that were set are lost in it.
         for (const DataFieldSchema& child : field.Children)
         {
-            if (child.Required || HasExplicitDefault(child.Default))
+            if (child.Required)
                 object.emplace_back(child.Key, CreateDefaultDataValue(child));
         }
         return JsonValue(std::move(object));

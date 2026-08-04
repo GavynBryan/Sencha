@@ -9,14 +9,6 @@
 
 namespace
 {
-    const DataFieldSchema* FindChild(const DataFieldSchema& parent, std::string_view key)
-    {
-        const auto found = std::find_if(
-            parent.Children.begin(), parent.Children.end(),
-            [key](const DataFieldSchema& child) { return child.Key == key; });
-        return found == parent.Children.end() ? nullptr : &*found;
-    }
-
     void AppendClause(std::string& sentence, std::string_view clause)
     {
         if (!sentence.empty())
