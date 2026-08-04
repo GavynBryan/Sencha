@@ -215,6 +215,7 @@ void Engine::RegisterFramePhases(Game& game)
             .Config = config,
             .Runtime = *ctx.Runtime,
             .Input = *ctx.Input,
+            .WallDeltaSeconds = static_cast<double>(rf.WallTime.Dt),
             .Presentation = rf.Presentation,
             .Entities = entities,
             .Partitions = zones.Audio,

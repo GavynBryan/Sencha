@@ -47,6 +47,10 @@ float ClipDurationSeconds(
 
 void CaptionSystem::Audio(AudioContext& ctx)
 {
+    // Captions are read by a person, so they age on the wall clock. This phase
+    // runs once per rendered frame; charging it a fixed tick's worth each time
+    // made subtitles expire faster the higher the frame rate, and kept them
+    // ageing on frames that simulated nothing.
     Update(
         Captions,
         (AudioBackend != nullptr && AudioBackend->IsValid())
@@ -54,7 +58,7 @@ void CaptionSystem::Audio(AudioContext& ctx)
             : nullptr,
         ctx.Entities,
         ctx.Partitions,
-        static_cast<float>(ctx.Presentation.DeltaSeconds));
+        static_cast<float>(ctx.WallDeltaSeconds));
 }
 
 void CaptionSystem::Update(

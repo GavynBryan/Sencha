@@ -23,6 +23,10 @@ void AudioSystem::Update(
     if (audio == nullptr || !audio->IsValid())
         return;
 
+    // Drains and re-queues backend buffers. Deliberately per rendered frame
+    // rather than per simulation tick: it is idempotent and only needs to run
+    // often enough to keep the mixer fed, so pacing it off a second
+    // accumulator would buy nothing.
     audio->Tick();
 
     std::unordered_set<std::uint16_t> active;

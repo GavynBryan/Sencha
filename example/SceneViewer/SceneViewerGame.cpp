@@ -156,6 +156,13 @@ struct FreeCameraMovementSystem
 // same view sequence. Runs in FrameUpdate (after the fixed-tick free-cam),
 // so it wins for the presented frame whenever armed. Off by default; free
 // fly-cam is untouched unless sceneviewer.camera.scripted is set.
+//
+// Keying the orbit to rendered frames rather than simulated time is
+// deliberate and is the exception to the rule that presentation-rate systems
+// leave simulation alone. Renderer A/B captures compare frame N of one build
+// against frame N of another, which only means anything if frame N is the
+// same view in both; a time-based orbit would move with whatever frame rate
+// each build happened to achieve. It is a capture tool, not gameplay.
 struct ScriptedCameraPathSystem
 {
     ScriptedCameraPathSystem(FreeCamera& freeCamera, const bool& enabled)

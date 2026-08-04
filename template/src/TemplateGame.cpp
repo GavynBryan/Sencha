@@ -48,6 +48,7 @@
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
+#include <world/transform/TransformHistory.h>
 #include <zone/WorldPartitionIds.h>
 #include <zone/ZoneLoadPackage.h>
 #include <zone/ZonePackageImporter.h>
@@ -360,31 +361,50 @@ struct WorldPartitionUpdateSystem
             Runtime);
 
         // A crossing the destination is not ready for leaves the pawn where the
-        // sweep last had it fully inside the source zone; without this the next
-        // physics tick would restore the position that entered the unloaded zone.
+        // sweep last had it fully inside the source zone. Streaming decides
+        // that here, on the wall clock, but moving the pawn is simulation, so
+        // the position is recorded and applied on the next fixed tick.
         if (Pawn.IsValid()
             && Partition->LastTraversal().Status
                 == DockTraversalStatus::BlockedDestinationNotReady)
         {
-            const Vec3d safe = Partition->LastTraversal().SafeSourcePosition;
-            bool moved = false;
-            if (world.HasResource<CharacterMoverPool>())
-            {
-                moved = world.GetResource<CharacterMoverPool>().SetPosition(
-                    world, Pawn, safe);
-            }
-            if (!moved)
-                if (LocalTransform* transform = world.TryGet<LocalTransform>(Pawn))
-                    transform->Value.Position = safe;
-            if (WorldTransform* transform = world.TryGet<WorldTransform>(Pawn))
-                transform->Value.Position = safe;
+            PendingSafePosition = Partition->LastTraversal().SafeSourcePosition;
         }
+    }
+
+    // Applied at the head of the tick, before movement runs, so the pawn never
+    // enters physics at the position that reached into the unloaded zone.
+    void FixedLogic(FixedLogicContext& ctx)
+    {
+        if (!PendingSafePosition.has_value() || !Pawn.IsValid())
+            return;
+
+        World& world = ctx.Entities;
+        const Vec3d safe = *PendingSafePosition;
+        PendingSafePosition.reset();
+
+        bool moved = false;
+        if (world.HasResource<CharacterMoverPool>())
+        {
+            moved = world.GetResource<CharacterMoverPool>().SetPosition(
+                world, Pawn, safe);
+        }
+        if (!moved)
+        {
+            if (LocalTransform* transform = world.TryGet<LocalTransform>(Pawn))
+                transform->Value.Position = safe;
+            RequestTransformHistorySnap(world, Pawn);
+        }
+        if (WorldTransform* transform = world.TryGet<WorldTransform>(Pawn))
+            transform->Value.Position = safe;
     }
 
     std::optional<WorldPartitionRuntime>& Partition;
     std::optional<AsyncZoneLoader>& Loader;
     RuntimeWorld& Runtime;
     EntityId& Pawn;
+    // Set by streaming on the wall clock, consumed by the next fixed tick.
+    std::optional<Vec3d> PendingSafePosition;
 };
 
 struct CharacterInputSystem

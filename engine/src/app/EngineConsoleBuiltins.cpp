@@ -296,7 +296,8 @@ namespace EngineConsoleBuiltins
             .DefaultValue = std::int64_t{ 0 },
             .CurrentValue = std::int64_t{ 0 },
             .Flags = CVarFlags::Transient,
-            .Help = "Request exit once this many frames have been driven. 0 runs "
+            .Help = "Request exit once this many rendered frames have been "
+                    "driven -- not fixed ticks, which vary per frame. 0 runs "
                     "until a quit request. For bounded, unattended runs.",
             .Source = { "engine defaults" },
             .Min = 0.0,

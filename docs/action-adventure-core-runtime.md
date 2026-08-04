@@ -277,7 +277,10 @@ Candidate transition kinds:
 
 Each transition can declare:
 
-- interpolation history reset policy
+- interpolation history reset policy (the reset half exists: a temporal
+  discontinuity snaps every `WorldTransformHistory`, and
+  `RequestTransformHistorySnap` snaps one entity; what a transition would add
+  is declaring which of the two it wants)
 - camera history reset or blend policy
 - async drain tolerance for this frame range
 - required pinned zones
