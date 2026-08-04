@@ -97,10 +97,14 @@ behavior.
   data-driven gameplay framework: tags, attributes, effects, and abilities as POD
   components + data + uniform systems — no per-entity behavior object, tags for
   mutual exclusion, events as data. Public entry point:
-  `engine/include/framework/AbilityKit.h`.
-- AbilityKit lives under `engine/.../framework/`, kept decoupled from the renderer
-  and scene data by the `framework_isolation` check
-  (`cmake/CheckFrameworkIsolation.cmake`).
+  `engine/include/abilities/AbilityKit.h`.
+- Gameplay features live as flat peer directories under `engine/`
+  (`gameplay_tags/`, `attributes/`, `effects/`, `abilities/`, `camera/`,
+  `movement/`), one system per file, each owning its `Register*` functions.
+- `docs/gameplay/movement.md` documents the character movement runtime as it
+  exists in the tree — facts vs. modes vs. the composed motor request, the
+  locomotion mode registry, authored movement profiles — and the recipes for
+  extending it with new modes, actions, coefficients, and detection systems.
 
 ## Requirements
 
