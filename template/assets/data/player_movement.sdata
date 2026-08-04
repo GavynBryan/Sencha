@@ -5,6 +5,7 @@
     "name": "player_movement",
     "layers": [
       {
+        "name": "Base",
         "set": {
           "max_speed": 4.5,
           "acceleration": 10,
@@ -15,15 +16,16 @@
         }
       },
       {
+        "name": "Air control",
         "when": {
           "support": "none"
         },
         "set": {
-          "friction": 0,
-          "wish_speed_cap": 0.76
+          "friction": 0
         }
       },
       {
+        "name": "Sliding off steep ground",
         "when": {
           "support": "steep"
         },
@@ -33,6 +35,7 @@
         }
       },
       {
+        "name": "Jump startup",
         "when": {
           "tags": {
             "all": [
