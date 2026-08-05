@@ -18,6 +18,7 @@ status=0
 # The module-facing ABI header dirs — the same surface the fingerprint hashes.
 ABI_DIRS=(
     "$INCLUDE/app"
+    "$INCLUDE/input"
     "$INCLUDE/world/serialization"
     "$INCLUDE/core/metadata"
     "$INCLUDE/core/console"

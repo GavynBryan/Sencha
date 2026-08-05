@@ -7,6 +7,7 @@
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <audio/AudioClipCache.h>
 #include <core/metadata/DataSchema.h>
+#include <input/InputProfileData.h>
 #include <movement/MovementProfileData.h>
 #include <core/assets/AssetRegistry.h>
 #include <assets/runtime/AssetSystem.h>
@@ -83,6 +84,7 @@ struct RuntimeAssets
         // the same registry via Game::OnRegisterDataAssetTypes, which is what
         // makes them appear in the prebuilt Data Editor.
         RegisterMovementProfileData(DataTypes, DataSchemas);
+        RegisterInputProfileData(DataTypes, DataSchemas);
 
         // Data is the one built-in kind AssetSystem cannot register itself:
         // its cache and loader live here, not in the front door.

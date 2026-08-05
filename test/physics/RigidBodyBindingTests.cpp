@@ -360,7 +360,6 @@ TEST(RigidBodyBinding, StepSystemOwnsSingleSimulationBinding)
     PhysicsContext context{
         .Config = config,
         .Runtime = runtime,
-        .Input = input,
         .Time = FixedSimTime{},
         .Entities = world,
         .Partitions = ActivePartitions(),

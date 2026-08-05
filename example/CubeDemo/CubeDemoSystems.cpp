@@ -1,6 +1,8 @@
 #include "CubeDemoSystems.h"
 
 #include <app/GameContexts.h>
+#include <input/InputActionResolveSystem.h>
+#include <input/InputActionState.h>
 #include <audio/Caption.h>
 #include <audio/CaptionRuntime.h>
 #include <math/Quat.h>
@@ -24,8 +26,11 @@ struct FreeCameraMovementSystem
 
     void FixedLogic(FixedLogicContext& ctx)
     {
+        const auto* actions = ctx.Entities.TryGetResource<InputActionState>();
+        if (actions == nullptr)
+            return;
         Camera.TickFixed(
-            ctx.Input,
+            actions->Tick(),
             ctx.Entities,
             static_cast<float>(ctx.Time.DeltaSeconds));
     }
@@ -71,7 +76,10 @@ struct FreeCameraLookSystem
 
     void FrameUpdate(FrameUpdateContext& ctx)
     {
-        Camera.UpdateLook(ctx.Input);
+        const auto* actions = ctx.Entities.TryGetResource<InputActionState>();
+        if (actions == nullptr)
+            return;
+        Camera.UpdateLook(actions->Frame());
         Camera.ApplyRotation(ctx.Entities);
     }
 
@@ -170,27 +178,28 @@ struct MouseTraceSystem
 
     void FrameUpdate(FrameUpdateContext& ctx)
     {
+        const auto* actions = ctx.Entities.TryGetResource<InputActionState>();
+        if (actions == nullptr)
+            return;
+
+        // Records the resolved look action rather than raw device motion: what
+        // is worth tracing is what the camera actually received.
+        const InputActionView input = actions->Frame();
+        const Vec2d look = input.Axis2(Camera.Actions.Look);
         TraceHistory[TraceWrite] = TraceSample{
             .Dt = ctx.WallDeltaSeconds,
-            .Mdx = ctx.Input.MouseDeltaX,
-            .Mdy = ctx.Input.MouseDeltaY,
+            .Mdx = look.X,
+            .Mdy = look.Y,
             .Yaw = Camera.Yaw,
             .Pitch = Camera.Pitch,
-            .LookHeld = ctx.Input.IsMouseButtonDown(
-                SDL_BUTTON_RIGHT),
+            .LookHeld = input.Held(Camera.Actions.LookEnable),
         };
         TraceWrite = (TraceWrite + 1) % kTraceCapacity;
         if (TraceCount < kTraceCapacity)
             ++TraceCount;
 
-        int numKeys = 0;
-        const bool* sdlKeys = SDL_GetKeyboardState(&numKeys);
-        const bool f2Down = sdlKeys != nullptr
-            && SDL_SCANCODE_F2 < numKeys
-            && sdlKeys[SDL_SCANCODE_F2];
-        if (f2Down && !F2WasDown)
+        if (input.Pressed(Camera.Actions.DumpTrace))
             DumpTrace();
-        F2WasDown = f2Down;
     }
 
     void DumpTrace()
@@ -235,7 +244,6 @@ struct MouseTraceSystem
     std::array<TraceSample, kTraceCapacity> TraceHistory{};
     size_t TraceWrite = 0;
     size_t TraceCount = 0;
-    bool F2WasDown = false;
     FreeCamera& Camera;
 };
 } // namespace
@@ -250,5 +258,8 @@ void RegisterCubeDemoSystems(
     schedule.Register<MouseTraceSystem>(freeCamera);
     schedule.Register<FreeCameraLookSystem>(freeCamera);
     schedule.Register<FreeCameraMovementSystem>(freeCamera);
+    schedule.After<MouseTraceSystem, InputActionResolveSystem>();
+    schedule.After<FreeCameraLookSystem, InputActionResolveSystem>();
+    schedule.After<FreeCameraMovementSystem, InputActionResolveSystem>();
     schedule.Register<CubeSpinSystem>(scene);
 }

@@ -4,31 +4,33 @@
 #include <camera/CameraFollowSystem.h>
 #include <camera/CameraRig.h>
 #include <components/ActiveCameraService.h>
+#include <controller/LookIntegrationSystem.h>
+#include <controller/LookOrientation.h>
 #include <core/config/EngineConfig.h>
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
+#include <input/InputActionState.h>
 #include <input/InputFrame.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <world/transform/TransformComponents.h>
+#include <world/transform/TransformHistory.h>
 
 namespace
 {
-    // A character reads the rig's yaw during simulation to steer along it. This
+    // A character reads its own aim during simulation to steer along it. This
     // stands in for the game's own input system, which lives in game code and
     // cannot be linked here.
     struct YawReadingSystem
     {
+        EntityId Pawn;
         float ObservedYaw = 0.0f;
         int Ticks = 0;
 
         void FixedLogic(FixedLogicContext& ctx)
         {
-            const auto* cameras = ctx.Entities.TryGetResource<ActiveCameraService>();
-            if (cameras == nullptr || !cameras->HasActive())
-                return;
-            if (const CameraRig* rig = ctx.Entities.TryGet<CameraRig>(cameras->GetActive()))
+            if (const LookOrientation* look = ctx.Entities.TryGet<LookOrientation>(Pawn))
             {
-                ObservedYaw = rig->Yaw;
+                ObservedYaw = look->Yaw;
                 ++Ticks;
             }
         }
@@ -39,28 +41,51 @@ namespace
         LookHarness()
         {
             WorldState.RegisterComponent<CameraRig>();
+            WorldState.RegisterComponent<LookOrientation>();
+            WorldState.RegisterComponent<LocalLookControl>();
             WorldState.RegisterComponent<LocalTransform>();
             WorldState.RegisterComponent<WorldTransform>();
+            // The camera follows the pose its target is drawn at, so placement
+            // consults the target's interpolation history.
+            WorldState.RegisterComponent<WorldTransformHistory>();
             Partitions.Add(StoragePartitionId::Default());
+
+            // The pawn aims; the camera follows it and presents that aim.
+            Pawn = WorldState.CreateEntity();
+            WorldState.AddComponent<LookOrientation>(Pawn, {});
+            WorldState.AddComponent<LocalLookControl>(Pawn, {});
+            WorldState.AddComponent<LocalTransform>(Pawn, {});
 
             Camera = WorldState.CreateEntity();
             CameraRig rig{};
             rig.Mode = CameraRigMode::FirstPerson;
-            rig.Sensitivity = 0.01f;
+            rig.Target = Pawn;
             WorldState.AddComponent<CameraRig>(Camera, rig);
             WorldState.AddComponent<LocalTransform>(Camera, {});
             WorldState.AddResource<ActiveCameraService>().SetActive(Camera);
 
+            // Aim integrates from a resolved look action. Filling the snapshot
+            // directly keeps this focused: the mapper has its own coverage, and
+            // booting it here would prove nothing extra.
+            WorldState.AddResource<InputActionState>().Configure(1);
+            WorldState.AddResource<LookInputBinding>().Look = InputActionId{ 1 };
+
+            Integrate = &Schedule.Register<LookIntegrationSystem>();
             Follow = &Schedule.Register<CameraFollowSystem>();
             Reader = &Schedule.Register<YawReadingSystem>();
+            Reader->Pawn = Pawn;
             Schedule.Init();
         }
 
         // One rendered frame in engine order: look accumulation, then the fixed
         // tick that consumes it, then placement.
-        void RunFrame(float mouseDeltaX)
+        //
+        // The look value is angular displacement for the frame: the binding's
+        // scale has already turned device units into radians by this point.
+        void RunFrame(float lookX, float lookY = 0.0f)
         {
-            Input.MouseDeltaX = mouseDeltaX;
+            WorldState.GetResource<InputActionState>().FrameStorage()[0] =
+                InputActionValue{ lookX, lookY, InputActionFlags::None };
 
             PreSimulateContext preSimulate{
                 .Config = Config,
@@ -74,7 +99,6 @@ namespace
             FixedLogicContext fixed{
                 .Config = Config,
                 .Runtime = Runtime,
-                .Input = Input,
                 .Time = {},
                 .Entities = WorldState,
                 .Partitions = Partitions,
@@ -95,7 +119,7 @@ namespace
 
         [[nodiscard]] float Yaw() const
         {
-            return WorldState.TryGet<CameraRig>(Camera)->Yaw;
+            return WorldState.TryGet<LookOrientation>(Pawn)->Yaw;
         }
 
         EngineConfig Config;
@@ -105,6 +129,8 @@ namespace
         StoragePartitionSet Partitions;
         EngineSchedule Schedule;
         EntityId Camera;
+        EntityId Pawn;
+        LookIntegrationSystem* Integrate = nullptr;
         CameraFollowSystem* Follow = nullptr;
         YawReadingSystem* Reader = nullptr;
     };
@@ -117,9 +143,9 @@ namespace
 TEST(CameraLook, SimulationSeesTheSameFrameYaw)
 {
     LookHarness harness;
-    harness.RunFrame(10.0f);
+    harness.RunFrame(0.1f);
 
-    const float expected = -10.0f * 0.01f;
+    const float expected = -0.1f;
     EXPECT_EQ(harness.Reader->Ticks, 1);
     EXPECT_FLOAT_EQ(harness.Reader->ObservedYaw, expected)
         << "the tick must steer along this frame's look, not the last frame's";
@@ -131,11 +157,11 @@ TEST(CameraLook, SimulationSeesTheSameFrameYaw)
 TEST(CameraLook, PlacementDoesNotAccumulateLookAgain)
 {
     LookHarness harness;
-    harness.RunFrame(4.0f);
+    harness.RunFrame(0.04f);
     const float afterFirst = harness.Yaw();
-    EXPECT_FLOAT_EQ(afterFirst, -4.0f * 0.01f);
+    EXPECT_FLOAT_EQ(afterFirst, -0.04f);
 
-    // A frame with no mouse motion leaves the orientation where it was.
+    // A frame with no look input leaves the orientation where it was.
     harness.RunFrame(0.0f);
     EXPECT_FLOAT_EQ(harness.Yaw(), afterFirst);
     EXPECT_FLOAT_EQ(harness.Reader->ObservedYaw, afterFirst);
@@ -144,14 +170,13 @@ TEST(CameraLook, PlacementDoesNotAccumulateLookAgain)
 TEST(CameraLook, PitchStaysClampedWhenAccumulatedBeforeSimulation)
 {
     LookHarness harness;
-    CameraRig* rig = harness.WorldState.TryGet<CameraRig>(harness.Camera);
-    rig->MinPitch = -0.5f;
-    rig->MaxPitch = 0.5f;
+    LookOrientation* look = harness.WorldState.TryGet<LookOrientation>(harness.Pawn);
+    look->MinPitch = -0.5f;
+    look->MaxPitch = 0.5f;
 
-    harness.Input.MouseDeltaY = -1000.0f;
-    harness.RunFrame(0.0f);
+    harness.RunFrame(0.0f, -1000.0f);
 
-    EXPECT_FLOAT_EQ(harness.WorldState.TryGet<CameraRig>(harness.Camera)->Pitch, 0.5f);
+    EXPECT_FLOAT_EQ(harness.WorldState.TryGet<LookOrientation>(harness.Pawn)->Pitch, 0.5f);
 }
 
 TEST(CameraPose, FirstPersonSitsAtPivot)
@@ -160,7 +185,7 @@ TEST(CameraPose, FirstPersonSitsAtPivot)
     rig.Mode = CameraRigMode::FirstPerson;
     rig.PivotOffset = Vec3d(0.0f, 1.6f, 0.0f);
 
-    const CameraPose pose = ComputeCameraPose(rig, Vec3d(5.0f, 0.0f, 3.0f));
+    const CameraPose pose = ComputeCameraPose(rig, Vec3d(5.0f, 0.0f, 3.0f), 0.0f, 0.0f);
 
     EXPECT_TRUE(pose.Override);
     EXPECT_FLOAT_EQ(pose.Position.X, 5.0f);
@@ -175,7 +200,7 @@ TEST(CameraPose, ThirdPersonPlacesBoomBehindAtRest)
     rig.PivotOffset = Vec3d(0.0f, 1.0f, 0.0f);
     rig.Distance = 4.0f;
 
-    const CameraPose pose = ComputeCameraPose(rig, Vec3d::Zero());
+    const CameraPose pose = ComputeCameraPose(rig, Vec3d::Zero(), 0.0f, 0.0f);
 
     // At yaw 0 / pitch 0 the look direction is -Z, so the boom (behind) is +Z.
     EXPECT_TRUE(pose.Override);
@@ -190,10 +215,8 @@ TEST(CameraPose, ThirdPersonPreservesBoomLength)
     rig.Mode = CameraRigMode::ThirdPerson;
     rig.PivotOffset = Vec3d::Zero();
     rig.Distance = 4.0f;
-    rig.Yaw = 0.9f;
-    rig.Pitch = 0.2f;
 
-    const CameraPose pose = ComputeCameraPose(rig, Vec3d::Zero());
+    const CameraPose pose = ComputeCameraPose(rig, Vec3d::Zero(), 0.9f, 0.2f);
 
     EXPECT_NEAR(pose.Position.Magnitude(), rig.Distance, 1e-3f);
 }
@@ -203,7 +226,7 @@ TEST(CameraPose, FixedLeavesAuthoredPose)
     CameraRig rig{};
     rig.Mode = CameraRigMode::Fixed;
 
-    const CameraPose pose = ComputeCameraPose(rig, Vec3d(9.0f, 9.0f, 9.0f));
+    const CameraPose pose = ComputeCameraPose(rig, Vec3d(9.0f, 9.0f, 9.0f), 0.0f, 0.0f);
 
     EXPECT_FALSE(pose.Override);
 }

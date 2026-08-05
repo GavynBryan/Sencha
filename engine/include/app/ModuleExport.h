@@ -38,4 +38,8 @@
 // the registry it receives is now the engine's own. v8: added the
 // Game::OnRegisterDataAssetTypes / OnUnregisterDataAssetTypes pair, so a
 // module can register structured data subtypes and their authoring schemas.
-#define SENCHA_GAME_ABI_VERSION 8u
+// v9: the fixed-tick, physics, post-fixed, render-extract, audio, and end-frame
+// contexts no longer carry an InputFrame. Simulation reads resolved actions from
+// InputActionState; PreSimulate (where the mapper runs) and FrameUpdate (editor
+// and debug tooling) still expose the raw device frame.
+#define SENCHA_GAME_ABI_VERSION 9u

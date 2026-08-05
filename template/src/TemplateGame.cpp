@@ -11,10 +11,14 @@
 #endif
 #include <app/GameModule.h>
 #include <audio/AudioSourceComponent.h>
+#include <camera/CameraFollowSystem.h>
 #include <camera/CameraRegistration.h>
 #include <camera/CameraRig.h>
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
+#include <controller/ControllerRegistration.h>
+#include <controller/LookIntegrationSystem.h>
+#include <controller/LookOrientation.h>
 #include <core/assets/AssetIdMap.h>
 #include <core/assets/AssetManifest.h>
 #include <core/assets/AssetRegistry.h>
@@ -33,6 +37,10 @@
 #include <movement/MovementComponents.h>
 #include <movement/MovementIntent.h>
 #include <movement/MovementProfileBindingCache.h>
+#include <input/InputActionResolveSystem.h>
+#include <input/InputActionState.h>
+#include <input/InputBindingCache.h>
+#include <input/InputRegistration.h>
 #include <movement/MovementRegistration.h>
 #include <movement/MovementTags.h>
 #include <physics/CollisionShapeCache.h>
@@ -76,6 +84,10 @@ constexpr std::string_view kAuthoredRoot = "assets";
 constexpr std::string_view kCookedScanRoot = "assets/.cooked";
 constexpr std::string_view kPlayerMovementProfilePath =
     "asset://data/player_movement.sdata";
+constexpr std::string_view kInputActionSetPath =
+    "asset://data/input_actions.sdata";
+constexpr std::string_view kInputProfilePath =
+    "asset://data/input_default.sdata";
 constexpr ZoneId kPlayZone{ 1 };
 
 struct SceneBuildResult
@@ -280,6 +292,11 @@ EntityId SpawnPlayerAvatar(
         pawnAbilities.Grant(movementDefs->Jump);
     world.AddComponent<AbilitySet>(pawn, pawnAbilities);
 
+    // The pawn aims; the camera presents it. The tag marks this as the entity
+    // the local player's look action turns.
+    world.AddComponent<LookOrientation>(pawn, {});
+    world.AddComponent<LocalLookControl>(pawn, {});
+
     CameraRig rig{};
     rig.Target = pawn;
     rig.Mode = CameraRigMode::FirstPerson;
@@ -337,6 +354,7 @@ void ConfigureRuntimeResources(
     RegisterPhysicsComponents(world);
     RegisterMovement(world);
     RegisterCameraComponents(world);
+    RegisterControllerComponents(world);
 }
 
 struct WorldPartitionUpdateSystem
@@ -480,58 +498,56 @@ struct CharacterInputSystem
         if (tags == nullptr || defs == nullptr)
             return;
 
-        const InputFrame& input = ctx.Input;
-        const float forward =
-            (input.IsKeyDown(SDL_SCANCODE_W) ? 1.0f : 0.0f)
-            - (input.IsKeyDown(SDL_SCANCODE_S) ? 1.0f : 0.0f);
-        const float strafe =
-            (input.IsKeyDown(SDL_SCANCODE_D) ? 1.0f : 0.0f)
-            - (input.IsKeyDown(SDL_SCANCODE_A) ? 1.0f : 0.0f);
+        const TemplateInputActions* actionIds =
+            world.TryGetResource<TemplateInputActions>();
+        const InputActionState* actions =
+            world.TryGetResource<InputActionState>();
+        if (actionIds == nullptr || actions == nullptr)
+            return;
+
+        // This tick's resolved actions, not the frame's: a frame that runs
+        // several ticks steers each of them, and one that runs none steers
+        // nothing.
+        const InputActionView input = actions->Tick();
+        const Vec2d move = input.Axis2(actionIds->Move);
+        const float strafe = move.X;
+        const float forward = move.Y;
 
         // Held, not edge-triggered: queueing the ability every tick while the
-        // key is down means a press just before landing fires on the first
-        // grounded tick, and holding the key hops again on each landing. The
+        // control is down means a press just before landing fires on the first
+        // grounded tick, and holding it hops again on each landing. The
         // activation gate (grounded, cooldown) rejects the rest for free.
-        const bool jump = input.IsKeyDown(SDL_SCANCODE_SPACE);
+        const bool jump = input.Held(actionIds->Jump);
 
-        float yaw = 0.0f;
-        if (const ActiveCameraService* cameraService =
-                world.TryGetResource<ActiveCameraService>())
-        {
-            if (cameraService->HasActive())
-            {
-                if (const CameraRig* rig = world.TryGet<CameraRig>(
-                        cameraService->GetActive()))
-                {
-                    yaw = rig->Yaw;
-                }
-            }
-        }
-
-        const Quatf frame =
-            Quatf::FromAxisAngle(Vec3d::Up(), yaw);
-        Vec3d wish =
-            frame.RotateVector(Vec3d::Forward()) * forward
-            + frame.RotateVector(Vec3d::Right()) * strafe;
-        wish.Y = 0.0f;
-        const float squared = wish.SqrMagnitude();
-        if (squared > 1.0f)
-            wish = wish * (1.0f / std::sqrt(squared));
-
+        // Each controlled entity steers along its own aim, read from the entity
+        // rather than from whatever camera happens to be watching it.
         Query<
             Write<MovementIntent>,
-            Read<GameplayTagContainer>> query(world);
+            Read<GameplayTagContainer>,
+            Read<LookOrientation>> query(world);
         query.ForEachChunkIn(ctx.Partitions, [&](auto& view)
         {
             auto intents = view.template Write<MovementIntent>();
             const auto entityTags =
                 view.template Read<GameplayTagContainer>();
+            const auto orientations =
+                view.template Read<LookOrientation>();
             for (std::uint32_t index = 0;
                  index < view.Count();
                  ++index)
             {
                 if (!entityTags[index].HasExact(tags->Controlled))
                     continue;
+
+                const Quatf frame = Quatf::FromAxisAngle(
+                    Vec3d::Up(), orientations[index].Yaw);
+                Vec3d wish =
+                    frame.RotateVector(Vec3d::Forward()) * forward
+                    + frame.RotateVector(Vec3d::Right()) * strafe;
+                wish.Y = 0.0f;
+                const float squared = wish.SqrMagnitude();
+                if (squared > 1.0f)
+                    wish = wish * (1.0f / std::sqrt(squared));
 
                 intents[index].WishDir = wish;
                 if (jump && activations != nullptr)
@@ -639,6 +655,7 @@ void TemplateGame::OnStart(GameStartupContext&)
     }
 
     ConfigureRuntimeResources(engine, runtimeAssets);
+    SetupInputMapping(logging.GetLogger<TemplateGame>());
     SceneContext = std::make_unique<SceneSerializationContext>(
         logging,
         &runtimeAssets.Assets);
@@ -1224,8 +1241,20 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
 
     RegisterAbilityKitSystems(ctx.Schedule);
     RegisterMovementSystems(ctx.Schedule, RuntimeAssetState().DataAssets);
+    RegisterInputSystems(
+        ctx.Schedule,
+        RuntimeAssetState().DataAssets,
+        GetEngine().Logging());
     RegisterCameraSystem(ctx.Schedule);
+    RegisterControllerSystems(ctx.Schedule);
     ctx.Schedule.Register<CharacterInputSystem>();
+
+    // Everything that reads actions runs after they are resolved: the aim
+    // integrates on the frame snapshot, the character steers on the tick record
+    // along the orientation that produced.
+    ctx.Schedule.After<LookIntegrationSystem, InputActionResolveSystem>();
+    ctx.Schedule.After<CharacterInputSystem, LookIntegrationSystem>();
+    ctx.Schedule.After<CharacterInputSystem, InputActionResolveSystem>();
     OrderMovementAfterInput<CharacterInputSystem>(ctx.Schedule);
     ctx.Schedule.Register<SpinSystem>();
     ctx.Schedule.Register<WorldPartitionUpdateSystem>(
@@ -1355,34 +1384,19 @@ RuntimeAssets& TemplateGame::RuntimeAssetState()
     return *Assets;
 }
 
-// Loads the pawn's movement profile synchronously the first time a pawn
-// spawns. The asset is game-lifetime, so the owned lease lives on the game;
-// the tuning system's binding cache adds its own reference on first resolve.
-// Returns an invalid handle on any failure, which the pawn treats as
-// default tuning.
-MovementProfileHandle TemplateGame::ResolvePlayerMovementProfile(Logger& log)
+// Loads one structured data asset synchronously and returns an owned lease.
+// Returns an invalid handle on any failure, which every caller treats as
+// "run without the authored data" rather than as a fatal error.
+DataAssetCacheHandle TemplateGame::AcquireDataAsset(std::string_view path, Logger& log)
 {
-    if (PlayerMovementProfile.IsValid())
-        return MovementProfileHandle{ PlayerMovementProfile.GetToken() };
-
     RuntimeAssets& assets = RuntimeAssetState();
-    if (DataAssetHandle resident =
-            assets.DataAssets.Find(kPlayerMovementProfilePath);
-        resident.IsValid())
-    {
-        PlayerMovementProfile =
-            assets.DataAssets.AcquireOwned(kPlayerMovementProfilePath);
-        return MovementProfileHandle{ PlayerMovementProfile.GetToken() };
-    }
+    if (assets.DataAssets.Find(path).IsValid())
+        return assets.DataAssets.AcquireOwned(path);
 
-    const AssetRecord* record =
-        assets.Registry.FindByPath(kPlayerMovementProfilePath);
+    const AssetRecord* record = assets.Registry.FindByPath(path);
     if (record == nullptr)
     {
-        log.Warn(
-            "TemplateGame: movement profile '{}' is not in the asset "
-            "registry; the pawn uses default tuning",
-            kPlayerMovementProfilePath);
+        log.Warn("TemplateGame: '{}' is not in the asset registry", path);
         return {};
     }
 
@@ -1390,10 +1404,7 @@ MovementProfileHandle TemplateGame::ResolvePlayerMovementProfile(Logger& log)
         assets.DataLoader.LoadStaged(*record, assets.Assets.DefaultSource());
     if (!staged.IsValid())
     {
-        log.Warn(
-            "TemplateGame: movement profile '{}' failed to load: {}",
-            kPlayerMovementProfilePath,
-            staged.Error);
+        log.Warn("TemplateGame: '{}' failed to load: {}", path, staged.Error);
         return {};
     }
 
@@ -1404,9 +1415,61 @@ MovementProfileHandle TemplateGame::ResolvePlayerMovementProfile(Logger& log)
 
     // CommitTyped hands over the creation reference; adopt rather than
     // re-acquire so the count stays balanced.
-    PlayerMovementProfile = DataAssetCacheHandle(
+    return DataAssetCacheHandle(
         &assets.DataAssets, committed, DataAssetCacheHandle::NoAttach);
+}
+
+// Loads the pawn's movement profile synchronously the first time a pawn
+// spawns. The asset is game-lifetime, so the owned lease lives on the game;
+// the tuning system's binding cache adds its own reference on first resolve.
+MovementProfileHandle TemplateGame::ResolvePlayerMovementProfile(Logger& log)
+{
+    if (!PlayerMovementProfile.IsValid())
+        PlayerMovementProfile = AcquireDataAsset(kPlayerMovementProfilePath, log);
     return MovementProfileHandle{ PlayerMovementProfile.GetToken() };
+}
+
+// Binds the game's controls. The action set loads first: a profile names its
+// actions, and binding cannot resolve those names until the set is resident.
+void TemplateGame::SetupInputMapping(Logger& log)
+{
+    RuntimeAssets& assets = RuntimeAssetState();
+    World& world = GetEngine().World().Entities();
+
+    InputActionSetAsset = AcquireDataAsset(kInputActionSetPath, log);
+    InputProfileAsset = AcquireDataAsset(kInputProfilePath, log);
+    if (!InputProfileAsset.IsValid())
+    {
+        log.Error("TemplateGame: no input profile; the game has no controls");
+        return;
+    }
+
+    const InputProfileHandle profile{ InputProfileAsset.GetToken() };
+    RegisterInputMapping(world, assets.DataAssets, profile);
+
+    // Names resolve to ids once, here. Every system downstream indexes by id.
+    std::string bindError;
+    const InputActionRegistry* actions =
+        world.GetResource<InputBindingCache>().GetActions(profile, &bindError);
+    if (actions == nullptr)
+    {
+        log.Error("TemplateGame: input profile did not bind: {}", bindError);
+        return;
+    }
+
+    TemplateInputActions& ids = world.HasResource<TemplateInputActions>()
+        ? world.GetResource<TemplateInputActions>()
+        : world.AddResource<TemplateInputActions>();
+    ids.Move = actions->Find("move");
+    ids.Look = actions->Find("look");
+    ids.Jump = actions->Find("jump");
+
+    LookInputBinding& look = world.HasResource<LookInputBinding>()
+        ? world.GetResource<LookInputBinding>()
+        : world.AddResource<LookInputBinding>();
+    look.Look = ids.Look;
+
+    GameplayInput = world.GetResource<InputContextSet>().Activate("gameplay");
 }
 
 void TemplateGame::SetRelativeMouseMode(bool enabled)

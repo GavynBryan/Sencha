@@ -34,6 +34,7 @@ class GpuTimestampPool;
 struct GraphicsServices;
 class IDebugPanel;
 class ImGuiDebugOverlay;
+class SdlGamepadCapture;
 class JobSystem;
 struct PlatformServices;
 class RuntimeWorld;
@@ -145,6 +146,10 @@ public:
     [[nodiscard]] DefaultRenderPipeline* GetRenderPipeline();
     [[nodiscard]] const DefaultRenderPipeline* GetRenderPipeline() const;
 
+    // Open gamepads, or null when the platform layer has not been brought up.
+    // Present regardless of the debug UI: pads are ordinary input hardware.
+    [[nodiscard]] SdlGamepadCapture* GetGamepadCapture() { return GamepadCaptureState.get(); }
+
 #ifdef SENCHA_ENABLE_DEBUG_UI
     // The runtime debug overlay (console + timing panels, grave-key toggle).
     // Created by Run when windowed and Config().Console.UiEnabled. Null when
@@ -195,6 +200,9 @@ private:
     std::unique_ptr<AudioService> AudioState;
     std::unique_ptr<CaptionRuntime> CaptionState;
     std::unique_ptr<PlatformServices> PlatformState;
+    // Owns the open gamepads. Stateful, unlike the keyboard and mouse adapter:
+    // a pad has to be held open to report anything.
+    std::unique_ptr<SdlGamepadCapture> GamepadCaptureState;
 #ifdef SENCHA_ENABLE_VULKAN
     std::unique_ptr<GraphicsServices> GraphicsState;
 #endif

@@ -125,7 +125,6 @@ TEST(GameplayPipeline, OrdersInputModeAbilityJumpResolveLocomotionAndLifetime)
     FixedLogicContext context{
         .Config = harness.Config,
         .Runtime = harness.Runtime,
-        .Input = harness.Input,
         .Time = FixedSimTime{
             .DeltaSeconds = 0.10,
             .TickIndex = 1,

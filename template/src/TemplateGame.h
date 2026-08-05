@@ -6,6 +6,8 @@
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/console/ConsoleTypes.h>
 #include <ecs/EntityId.h>
+#include <input/InputAction.h>
+#include <input/InputContextSet.h>
 #include <movement/MovementProfileData.h>
 
 #ifdef SENCHA_ENABLE_COOK
@@ -25,6 +27,16 @@
 #include <vector>
 
 class CollisionShapeCache;
+
+// The actions this game reads, resolved from the profile's action set once at
+// startup. Systems index by id from here; adding an action is an edit to
+// input_actions.sdata, a binding in the profile, and one field here.
+struct TemplateInputActions
+{
+    InputActionId Move;
+    InputActionId Look;
+    InputActionId Jump;
+};
 
 class TemplateGame final : public Game
 {
@@ -46,7 +58,9 @@ private:
     ConsoleResult FocusWorldZone(std::string_view zoneHex);
     void SetRelativeMouseMode(bool enabled);
     RuntimeAssets& RuntimeAssetState();
+    DataAssetCacheHandle AcquireDataAsset(std::string_view path, Logger& log);
     MovementProfileHandle ResolvePlayerMovementProfile(Logger& log);
+    void SetupInputMapping(Logger& log);
 
     bool PlayZoneActive = false;
     std::optional<RuntimeAssets> Assets;
@@ -56,8 +70,13 @@ private:
     std::optional<WorldPartitionRuntime> Partition;
     ZoneId PendingZoneFocus;
     EntityId PlayerPawn;
-    // Declared after Assets so its release runs before the cache is destroyed.
+    // Declared after Assets so their release runs before the cache is destroyed.
     DataAssetCacheHandle PlayerMovementProfile;
+    DataAssetCacheHandle InputActionSetAsset;
+    DataAssetCacheHandle InputProfileAsset;
+    // Held for the process: this game is always in its gameplay context. A
+    // menu would take its own lease and drop this one.
+    InputContextLease GameplayInput;
     std::string PendingWorldSceneCollision;
     CollisionShapeCache* PhysicsShapes = nullptr;
 

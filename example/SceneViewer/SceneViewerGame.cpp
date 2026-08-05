@@ -1,5 +1,10 @@
 #include "SceneViewerGame.h"
 
+#include <input/InputActionResolveSystem.h>
+#include <input/InputActionState.h>
+#include <input/InputBindingCache.h>
+#include <input/InputRegistration.h>
+
 #include <app/DefaultRenderPipeline.h>
 #include <app/Engine.h>
 #include <app/GameModule.h>
@@ -126,7 +131,10 @@ struct FreeCameraLookSystem
 
     void FrameUpdate(FrameUpdateContext& ctx)
     {
-        Camera.UpdateLook(ctx.Input);
+        const auto* actions = ctx.Entities.TryGetResource<InputActionState>();
+        if (actions == nullptr)
+            return;
+        Camera.UpdateLook(actions->Frame());
         Camera.ApplyRotation(ctx.Entities);
     }
 
@@ -142,8 +150,11 @@ struct FreeCameraMovementSystem
 
     void FixedLogic(FixedLogicContext& ctx)
     {
+        const auto* actions = ctx.Entities.TryGetResource<InputActionState>();
+        if (actions == nullptr)
+            return;
         Camera.TickFixed(
-            ctx.Input,
+            actions->Tick(),
             ctx.Entities,
             static_cast<float>(ctx.Time.DeltaSeconds));
     }
@@ -237,6 +248,32 @@ void SceneViewerGame::OnStart(GameStartupContext&)
     RegisterCookedAssets(
         std::string(kAuthoredRoot),
         runtimeAssets.Registry);
+
+    // The viewer's own controls. Registered as a procedural profile so the
+    // camera works against any content root, whatever input assets it holds.
+    {
+        World& world = GetEngine().World().Entities();
+        const InputProfileHandle profile =
+            RegisterFlyCameraInput(runtimeAssets.DataAssets);
+        RegisterInputMapping(world, runtimeAssets.DataAssets, profile);
+
+        std::string bindError;
+        if (const InputActionRegistry* actions =
+                world.GetResource<InputBindingCache>().GetActions(profile, &bindError))
+        {
+            FreeCam.Actions.Look = actions->Find("fly_look");
+            FreeCam.Actions.Move = actions->Find("fly_move");
+            FreeCam.Actions.Vertical = actions->Find("fly_vertical");
+            FreeCam.Actions.Fast = actions->Find("fly_fast");
+            FreeCam.Actions.LookEnable = actions->Find("fly_look_enable");
+            FlyInput = world.GetResource<InputContextSet>().Activate("fly");
+        }
+        else
+        {
+            logging.GetLogger<SceneViewerGame>().Error(
+                "fly camera input did not bind: {}", bindError);
+        }
+    }
 
     AssetIdMap idMap;
     std::string idMapError;
@@ -422,7 +459,13 @@ ConsoleResult SceneViewerGame::LoadMap(
 void SceneViewerGame::OnRegisterSystems(
     SystemRegisterContext& ctx)
 {
+    RegisterInputSystems(
+        ctx.Schedule,
+        RuntimeAssetState().DataAssets,
+        GetEngine().Logging());
     ctx.Schedule.Register<FreeCameraLookSystem>(FreeCam);
+    ctx.Schedule.After<FreeCameraLookSystem, InputActionResolveSystem>();
+    ctx.Schedule.After<FreeCameraMovementSystem, InputActionResolveSystem>();
     ctx.Schedule.Register<FreeCameraMovementSystem>(FreeCam);
     ctx.Schedule.Register<ScriptedCameraPathSystem>(
         FreeCam, ScriptedCameraEnabled);

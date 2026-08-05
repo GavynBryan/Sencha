@@ -19,8 +19,8 @@ class SdlInputCapture
 {
 public:
     // Start-of-frame: zero accumulated deltas, but retain held state and
-    // unconsumed edges from the previous frame. Do NOT call ClearEdges()
-    // here — that is the simulation's job on its first fixed tick.
+    // unconsumed edges from the previous frame. Do NOT call ClearEdges() here —
+    // that is the input mapper's job, once per frame before any fixed tick.
     static void BeginFrame(InputFrame& frame);
 
     // Fold a single SDL_Event into the frame. Returns true if the event was

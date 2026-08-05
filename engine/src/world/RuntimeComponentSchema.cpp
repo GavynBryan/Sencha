@@ -3,6 +3,7 @@
 #include <abilities/AbilitySet.h>
 #include <attributes/AttributeSet.h>
 #include <camera/CameraRig.h>
+#include <controller/LookOrientation.h>
 #include <ecs/WorldComponentSchema.h>
 #include <effects/ActiveEffect.h>
 #include <gameplay_tags/GameplayTagContainer.h>
@@ -66,6 +67,11 @@ void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)
 
     // Camera runtime data beyond the serializable CameraComponent.
     schema.Add<CameraRig>();
+
+    // Where a controlled entity is aiming, and the tag marking the one the
+    // local player's look action drives.
+    schema.Add<LookOrientation>();
+    schema.Add<LocalLookControl>();
 
     // Per-tick pose history for entities that opt into render interpolation.
     // Derived and runtime-only, like WorldTransform: never serialized.

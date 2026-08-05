@@ -1,0 +1,11 @@
+{
+    "type": "input.actions",
+    "version": 1,
+    "data": {
+        "actions": [
+            { "name": "move", "type": "axis2" },
+            { "name": "look", "type": "axis2" },
+            { "name": "jump", "type": "digital" }
+        ]
+    }
+}

@@ -1,5 +1,9 @@
 #include "CubeDemoGame.h"
 
+#include <input/InputActionResolveSystem.h>
+#include <input/InputBindingCache.h>
+#include <input/InputRegistration.h>
+
 #include "CubeDemoSystems.h"
 
 #include <app/DefaultRenderPipeline.h>
@@ -206,6 +210,33 @@ void CubeDemoGame::OnStart(GameStartupContext&)
         graphics.Descriptors,
         graphics.Samplers);
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
+
+    // The demo's own controls. Registered as a procedural profile so the camera
+    // works without shipping input assets in the demo's generated content.
+    {
+        World& world = engine.World().Entities();
+        const InputProfileHandle profile =
+            RegisterFlyCameraInput(runtimeAssets.DataAssets);
+        RegisterInputMapping(world, runtimeAssets.DataAssets, profile);
+
+        std::string bindError;
+        if (const InputActionRegistry* actions =
+                world.GetResource<InputBindingCache>().GetActions(profile, &bindError))
+        {
+            FreeCam.Actions.Look = actions->Find("fly_look");
+            FreeCam.Actions.Move = actions->Find("fly_move");
+            FreeCam.Actions.Vertical = actions->Find("fly_vertical");
+            FreeCam.Actions.Fast = actions->Find("fly_fast");
+            FreeCam.Actions.LookEnable = actions->Find("fly_look_enable");
+            FreeCam.Actions.DumpTrace = actions->Find("fly_dump_trace");
+            FlyInput = world.GetResource<InputContextSet>().Activate("fly");
+        }
+        else
+        {
+            logging.GetLogger<CubeDemoGame>().Error(
+                "fly camera input did not bind: {}", bindError);
+        }
+    }
 
 #ifdef SENCHA_ENABLE_COOK
     {
@@ -417,6 +448,10 @@ void CubeDemoGame::OnStart(GameStartupContext&)
 void CubeDemoGame::OnRegisterSystems(
     SystemRegisterContext& ctx)
 {
+    RegisterInputSystems(
+        ctx.Schedule,
+        RuntimeAssetState().DataAssets,
+        GetEngine().Logging());
     RegisterCubeDemoSystems(
         ctx.Schedule,
         FreeCam,

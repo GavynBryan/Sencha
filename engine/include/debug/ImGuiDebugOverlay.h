@@ -40,6 +40,11 @@ public:
 
 	bool ProcessSdlEvent(const SDL_Event& event);
 
+	// Whether the overlay is claiming keyboard and mouse events this frame, so
+	// the caller can keep device state that stops reaching gameplay from
+	// sticking held.
+	[[nodiscard]] bool IsCapturingInput() const { return Debug.IsOpen(); }
+
 	template <typename T, typename... Args>
 	T& AddPanel(Args&&... args)
 	{

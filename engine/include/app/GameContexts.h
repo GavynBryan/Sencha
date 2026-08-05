@@ -83,6 +83,10 @@ struct ZoneResidencyContext
 // There is deliberately no PresentationTime here: presentation is built after
 // simulation, so no valid alpha exists yet. Work that needs one belongs in
 // FrameUpdate.
+//
+// This is the one simulation-side context carrying the raw InputFrame, because
+// it is where the input mapper reads devices and turns them into actions.
+// Gameplay reads InputActionState instead.
 struct PreSimulateContext
 {
     EngineConfig& Config;
@@ -94,11 +98,14 @@ struct PreSimulateContext
 
 // Shared shape for runtime phases. Partitions is always the correct domain set
 // for that phase: Logic, Physics, Visible, Audio, or Resident as documented.
+//
+// No InputFrame: simulation reads resolved actions from InputActionState, which
+// the mapper filled during PreSimulate. A fixed tick that read devices directly
+// would have no defined answer on a frame that ran several ticks.
 struct FixedLogicContext
 {
     EngineConfig& Config;
     RuntimeFrameLoop& Runtime;
-    InputFrame& Input;
     FixedSimTime Time;
     World& Entities;
     const StoragePartitionSet& Partitions;
@@ -108,7 +115,6 @@ struct PhysicsContext
 {
     EngineConfig& Config;
     RuntimeFrameLoop& Runtime;
-    InputFrame& Input;
     FixedSimTime Time;
     World& Entities;
     const StoragePartitionSet& Partitions;
@@ -118,12 +124,14 @@ struct PostFixedContext
 {
     EngineConfig& Config;
     RuntimeFrameLoop& Runtime;
-    InputFrame& Input;
     FixedSimTime Time;
     World& Entities;
     const StoragePartitionSet& Partitions;
 };
 
+// Keeps the raw InputFrame: editor viewports, debug tooling, and a future
+// rebinding screen all need to know which physical control moved, and all of
+// them live on the presentation clock.
 struct FrameUpdateContext
 {
     EngineConfig& Config;
@@ -139,7 +147,6 @@ struct RenderExtractContext
 {
     EngineConfig& Config;
     RuntimeFrameLoop& Runtime;
-    InputFrame& Input;
     RenderPacket& PacketWrite;
     RenderPacket& PacketRead;
     PresentationTime Presentation;
@@ -151,7 +158,6 @@ struct AudioContext
 {
     EngineConfig& Config;
     RuntimeFrameLoop& Runtime;
-    InputFrame& Input;
     // Audio runs once per rendered frame, so anything here that ages with the
     // player's experience rather than with simulation -- subtitle dwell time,
     // for instance -- uses this rather than the tick delta.
@@ -165,7 +171,6 @@ struct EndFrameContext
 {
     EngineConfig& Config;
     RuntimeFrameLoop& Runtime;
-    InputFrame& Input;
     PresentationTime Presentation;
     World& Entities;
     const StoragePartitionSet& Partitions;

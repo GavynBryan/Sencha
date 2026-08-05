@@ -18,7 +18,10 @@ bool SdlInputCapture::Accept(InputFrame& frame, const SDL_Event& event)
         return true;
 
     case SDL_EVENT_WINDOW_FOCUS_LOST:
-        frame.FocusLost = true;
+        // An unfocused window gets no key-up events, so whatever was down when
+        // focus left would stay held until the player pressed and released it
+        // again.
+        frame.ReleaseAllHeld();
         return true;
 
     case SDL_EVENT_KEY_DOWN:
@@ -66,8 +69,6 @@ bool SdlInputCapture::Accept(InputFrame& frame, const SDL_Event& event)
     }
 
     case SDL_EVENT_MOUSE_MOTION:
-        frame.MouseX = event.motion.x;
-        frame.MouseY = event.motion.y;
         frame.MouseDeltaX += event.motion.xrel;
         frame.MouseDeltaY += event.motion.yrel;
         return true;

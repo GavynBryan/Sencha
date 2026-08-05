@@ -5,6 +5,7 @@
 #include <app/GameContexts.h>
 #include <camera/CameraRig.h>
 #include <components/ActiveCameraService.h>
+#include <controller/LookOrientation.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
 
@@ -37,20 +38,6 @@ namespace
     }
 }
 
-void CameraFollowSystem::PreSimulate(PreSimulateContext& ctx)
-{
-    CameraRig* rig = ResolveActiveRig(ctx.Entities, ctx.Partitions);
-    if (rig == nullptr)
-        return;
-
-    // Before the tick, not after: a character steers along this orientation
-    // during simulation, and accumulating it afterwards would aim every tick at
-    // where the player was looking on the previous frame.
-    rig->Yaw -= ctx.Input.MouseDeltaX * rig->Sensitivity;
-    rig->Pitch -= ctx.Input.MouseDeltaY * rig->Sensitivity;
-    rig->Pitch = std::clamp(rig->Pitch, rig->MinPitch, rig->MaxPitch);
-}
-
 void CameraFollowSystem::FrameUpdate(FrameUpdateContext& ctx)
 {
     World& world = ctx.Entities;
@@ -78,7 +65,17 @@ void CameraFollowSystem::FrameUpdate(FrameUpdateContext& ctx)
         targetPosition = target->Value.Position;
     }
 
-    const CameraPose pose = ComputeCameraPose(*rig, targetPosition);
+    // The target aims; the camera presents what it is aiming at. A target with
+    // no orientation of its own faces the world's default heading.
+    float yaw = 0.0f;
+    float pitch = 0.0f;
+    if (const LookOrientation* look = world.TryGet<LookOrientation>(rig->Target))
+    {
+        yaw = look->Yaw;
+        pitch = look->Pitch;
+    }
+
+    const CameraPose pose = ComputeCameraPose(*rig, targetPosition, yaw, pitch);
     if (!pose.Override)
         return;
 
