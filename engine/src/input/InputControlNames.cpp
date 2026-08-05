@@ -111,6 +111,38 @@ std::optional<InputControl> ParseInputControl(std::string_view name)
     return std::nullopt;
 }
 
+std::span<const NamedInputControl> EnumerateInputControls()
+{
+    static const std::vector<NamedInputControl> controls = []
+    {
+        std::vector<NamedInputControl> all;
+
+        // Scancode zero is "unknown"; the rest are offered only if the name
+        // this platform gives them parses back to the same control. That drops
+        // the unnamed ones and, where two scancodes share a name, keeps the one
+        // the parser actually resolves to -- so every entry here is bindable.
+        for (std::uint16_t scancode = 1; scancode < SDL_SCANCODE_COUNT; ++scancode)
+        {
+            const InputControl control{ InputControlSource::Key, scancode };
+            std::string name = FormatInputControl(control);
+            if (name == "key.unknown")
+                continue;
+            if (ParseInputControl(name) != control)
+                continue;
+            all.push_back(NamedInputControl{ control, std::move(name) });
+        }
+
+        for (const NamedControl& entry : kMouseControls)
+            all.push_back(NamedInputControl{ entry.Control, "mouse." + std::string(entry.Name) });
+        for (const NamedControl& entry : kGamepadControls)
+            all.push_back(NamedInputControl{ entry.Control, "gamepad." + std::string(entry.Name) });
+
+        return all;
+    }();
+
+    return controls;
+}
+
 std::string FormatInputControl(InputControl control)
 {
     switch (control.Source)

@@ -1,6 +1,7 @@
 #include <input/SdlGamepadCapture.h>
 
 #include <input/InputControl.h>
+#include <input/SdlInputCapture.h>
 
 #include <SDL3/SDL.h>
 
@@ -175,5 +176,71 @@ bool SdlGamepadCapture::Accept(InputFrame& frame, const SDL_Event& event)
 
     default:
         return false;
+    }
+}
+
+std::optional<InputControl> InputControlFromSdlEvent(const SDL_Event& event, float axisThreshold)
+{
+    switch (event.type)
+    {
+    case SDL_EVENT_KEY_DOWN:
+        if (event.key.repeat)
+            return std::nullopt;
+        return InputControl{ InputControlSource::Key,
+                             static_cast<std::uint16_t>(event.key.scancode) };
+
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        return InputControl{ InputControlSource::MouseButton,
+                             static_cast<std::uint16_t>(event.button.button) };
+
+    case SDL_EVENT_MOUSE_WHEEL:
+        if (event.wheel.y == 0.0f)
+            return std::nullopt;
+        return InputControl{ InputControlSource::MouseWheel, 0 };
+
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+    {
+        GamepadButton button{};
+        if (!MapButton(static_cast<SDL_GamepadButton>(event.gbutton.button), button))
+            return std::nullopt;
+        return InputControl{ InputControlSource::GamepadButton,
+                             static_cast<std::uint16_t>(button) };
+    }
+
+    case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+    {
+        GamepadAxis axis{};
+        if (!MapAxis(static_cast<SDL_GamepadAxis>(event.gaxis.axis), axis))
+            return std::nullopt;
+        if (std::fabs(static_cast<float>(event.gaxis.value) * kAxisScale) < axisThreshold)
+            return std::nullopt;
+
+        // A stick names the stick, not the one axis that happened to move: the
+        // player pushing left means "the left stick", and a binding to half a
+        // stick is not something this vocabulary can express anyway.
+        switch (axis)
+        {
+        case GamepadAxis::LeftX:
+        case GamepadAxis::LeftY:
+            return InputControl{ InputControlSource::GamepadStick,
+                                 static_cast<std::uint16_t>(GamepadStick::Left) };
+        case GamepadAxis::RightX:
+        case GamepadAxis::RightY:
+            return InputControl{ InputControlSource::GamepadStick,
+                                 static_cast<std::uint16_t>(GamepadStick::Right) };
+        case GamepadAxis::LeftTrigger:
+            return InputControl{ InputControlSource::GamepadTrigger,
+                                 static_cast<std::uint16_t>(GamepadTrigger::Left) };
+        case GamepadAxis::RightTrigger:
+            return InputControl{ InputControlSource::GamepadTrigger,
+                                 static_cast<std::uint16_t>(GamepadTrigger::Right) };
+        case GamepadAxis::Count:
+            break;
+        }
+        return std::nullopt;
+    }
+
+    default:
+        return std::nullopt;
     }
 }

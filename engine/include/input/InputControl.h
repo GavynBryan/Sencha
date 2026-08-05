@@ -2,8 +2,10 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 //=============================================================================
 // Input controls
@@ -111,3 +113,22 @@ struct InputControl
 
 // The authored name for a control, for diagnostics and round-tripping.
 [[nodiscard]] std::string FormatInputControl(InputControl control);
+
+// A control an authored name can address, paired with that name.
+struct NamedInputControl
+{
+    InputControl Control;
+    std::string Name;
+};
+
+// Every control this platform can name, in device order: keys, then mouse,
+// then gamepad. For a binding picker or a rebinding screen -- anywhere the
+// answer to "what can I bind?" has to be shown rather than known.
+//
+// Keys are only the scancodes whose name survives a round trip: platform
+// scancode names are not a stable two-way mapping (some scancodes have no name,
+// and distinct ones can share one), so offering a name the parser would reject
+// or resolve to a different key is the failure this filter prevents.
+//
+// Built once on first call and never mutated, so a caller may hold the span.
+[[nodiscard]] std::span<const NamedInputControl> EnumerateInputControls();
