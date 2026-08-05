@@ -1,9 +1,7 @@
 #include "DataEditorServices.h"
 
 #include "DataEditorPanels.h"
-#include "movement/MovementProfileForm.h"
-#include "movement/MovementResolvePanel.h"
-#include "movement/MovementResponsePanel.h"
+#include "SubtypeEditors.h"
 
 #include "project/ProjectContentMount.h"
 #include "ui/EditorThemeStartup.h"
@@ -131,6 +129,7 @@ void DataEditorServices::InitAssets()
 
     MountProjectContent(*Project, *Assets, engine.Logging(), &engine.Jobs());
     Workspace = std::make_unique<DataEditorWorkspace>(*Assets, *Project);
+    RegisterBuiltInSubtypeEditors(SubtypeEditors);
 }
 
 void DataEditorServices::BuildUi()
@@ -160,15 +159,19 @@ void DataEditorServices::BuildUi()
         UiFeature->SetSaveAllAction([this]() { Workspace->SaveAll(); });
 
         UiFeature->AddPanel(std::make_unique<DataAssetBrowserPanel>(*Workspace));
-        UiFeature->AddPanel(std::make_unique<DataFormPanel>(*Workspace, Preview));
+        UiFeature->AddPanel(std::make_unique<DataFormPanel>(*Workspace, SubtypeEditors));
         UiFeature->AddPanel(std::make_unique<DataDocumentationPanel>(*Workspace));
         UiFeature->AddPanel(std::make_unique<DataValidationPanel>(*Workspace));
         UiFeature->AddPanel(std::make_unique<DataRawJsonPanel>(*Workspace));
 
-        // Registered unconditionally: documents open and close at runtime, so
-        // these self-gate on the active subtype rather than being added later.
-        UiFeature->AddPanel(std::make_unique<MovementResolvePanel>(*Workspace, Preview));
-        UiFeature->AddPanel(std::make_unique<MovementResponsePanel>(*Workspace, Preview));
+        // Whatever the subtype editors contribute. Added unconditionally:
+        // documents open and close at runtime, so a panel self-gates on the
+        // active subtype rather than appearing and disappearing.
+        for (const auto& editor : SubtypeEditors.Entries())
+        {
+            for (auto& panel : editor->CreatePanels(*Workspace))
+                UiFeature->AddPanel(std::move(panel));
+        }
 
         BuildShortcuts();
     }
@@ -206,6 +209,22 @@ void DataEditorServices::RegisterSystems(EngineSchedule& schedule)
 
 void DataEditorServices::HandlePlatformEvent(PlatformEventContext& ctx)
 {
+    // Offered to the active document's editor before the UI layer: a surface
+    // listening for a control to bind must claim the press outright, or the
+    // same keystroke also lands in whatever widget has focus.
+    if (Workspace)
+    {
+        if (const DataDocument* document = Workspace->Active())
+        {
+            if (IDataSubtypeEditor* editor = SubtypeEditors.Find(document->Subtype());
+                editor != nullptr && editor->HandlePlatformEvent(ctx.Event))
+            {
+                ctx.Handled = true;
+                return;
+            }
+        }
+    }
+
     if (UiFeature)
         UiFeature->ProcessSdlEvent(ctx.Event);
 
@@ -230,14 +249,14 @@ void DataEditorServices::HandlePlatformEvent(PlatformEventContext& ctx)
 
 void DataEditorServices::ProcessFrame()
 {
-    // One update point for the shared preview, so it stays current whether or
-    // not the panels that read it happen to be visible.
-    if (Workspace && Assets)
+    // Only the active document's editor runs: a background tab has no surface
+    // on screen and nothing that reads its state.
+    if (Workspace)
     {
-        if (const DataDocument* document = Workspace->Active();
-            document != nullptr && document->Subtype() == MovementProfileSubtype())
+        if (const DataDocument* document = Workspace->Active())
         {
-            Preview.Update(*document, Assets->DataTypes);
+            if (IDataSubtypeEditor* editor = SubtypeEditors.Find(document->Subtype()))
+                editor->UpdateForFrame(*document, *Workspace);
         }
     }
     UpdateTitle();

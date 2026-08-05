@@ -151,6 +151,7 @@ endif()
 # what makes this safe (a false negative is the segfault we are eliminating).
 file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     "${SENCHA_ENGINE_INCLUDE_DIR}/app/*.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/input/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/serialization/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/metadata/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/console/*.h"

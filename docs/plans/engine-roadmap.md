@@ -90,6 +90,10 @@ Done and load-bearing:
   components plus data plus uniform systems), the data-driven movement stack
   (`MovementProfile`, ground/air locomotion, jump execution, `MovementIntent`), and
   `CameraRig` with first-person/third-person/fixed as data.
+- Input action mapping: `input.actions`/`input.profile` assets over keyboard, mouse, and
+  gamepad, resolved per fixed tick by `InputActionResolveSystem`, with lease-held contexts
+  and priority claim. Aim lives on the controlled entity (`LookOrientation`), not the
+  camera. (Track A item 1, shipped.)
 - Editors: kyusu, shudei, and kettle over `editor_common` (docking UI, themes, keymap
   rebinding, `CommandStack` undo, reflection-driven inspector that picks up game-module
   components, out-of-process PIE spawning the real `app` host, material hot reload).
@@ -104,7 +108,6 @@ Absent. This list is the roadmap's backlog:
 
 - Animation runtime: clips and skeletons load, but nothing samples, blends, or poses.
   Skinned meshes cannot be drawn at all (no `SkinnedMeshComponent`, no GPU skinning).
-- Input action mapping: raw `InputFrame` only, no data-driven bindings.
 - Game-facing UI/HUD: ImGui is debug and editor only.
 - Navigation: none. AI: none. Save games: none. Localization: none.
 - Rendering: no transparency (opaque fallback with a warning), no post-processing
@@ -209,14 +212,19 @@ stated target hardware, authored by more than one person concurrently without da
 
 Each item states its mechanism, version, the seam it builds on, and its gate.
 
-1. **Input action mapping (v1.0).** A data-driven binding asset maps device inputs to
-   named actions with edge, held, and axis semantics, resolved at fixed-tick consumption.
-   Builds on `input/InputFrame.h` (held state plus edge lists, edges preserved across
-   zero-tick frames) with the editor's `keybinds.json` as the authoring precedent.
-   Actions feed AbilityKit intents and `movement/MovementIntent.h`, so player input and
-   AI share one activation path. Gate: the template game rebinds jump and fire from data
-   with no recompile, and an input edge arriving on a zero-tick frame fires on the next
-   fixed tick.
+1. **Input action mapping (v1.0). SHIPPED.** `input.actions` and `input.profile`
+   `.sdata` assets map device controls to named actions with edge, held, and axis
+   semantics, resolved per fixed tick by `InputActionResolveSystem` over
+   `input/InputFrame.h`. Contexts are activated by counted lease and claim shared
+   controls by priority. Actions feed `movement/MovementIntent.h` and AbilityKit
+   activations through the game's own bridge system, so player input and AI share one
+   activation path. Gate met: the template game rebinds movement and jump from
+   `template/assets/data/input_default.sdata` with no recompile, and an edge arriving on
+   a zero-tick frame fires on the next fixed tick (`InputRuntimeFixture`,
+   `InputResolve`). Keyboard, mouse, and gamepad all bind through one vocabulary.
+   Resolved tick records are flat, tick-stamped, action-indexed value arrays — the shape
+   a player command projects from, which is what the networking track builds on.
+   Deferred: a rebinding UI, chords and timed sequences, analog-to-digital thresholds.
 
 2. **Animation runtime (v1.0).** Clip sampling into pose buffers plus a data-authored
    blend/state graph asset (states, transitions, blend parameters), evaluated by an

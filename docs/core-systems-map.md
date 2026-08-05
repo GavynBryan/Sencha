@@ -167,7 +167,11 @@ pause key in `PumpPlatform` — must consume it with `InputFrame::ConsumeKeyPres
 or it will act on the same press again on the next zero-tick frame.
 Per-frame accumulated values such as `InputFrame::MouseDeltaX` are
 presentation-rate inputs: consuming one per fixed tick would apply it several
-times on a catch-up frame and not at all on a short one.
+times on a catch-up frame and not at all on a short one. Gameplay does not face
+that choice, because the mapper resolves motion separately per clock: the
+presentation snapshot carries the frame's displacement, and the first tick of a
+frame carries everything accumulated since the previous tick, with later ticks
+of a catch-up burst carrying none.
 
 Lifecycle-only frames are real frames. They still pump platform, drain async
 tasks, and run end-frame bookkeeping, but skip extraction/render when the
@@ -489,13 +493,30 @@ SDL integration is split:
 `Game::OnPlatformEvent` sees each SDL event before input capture. If it marks
 the event handled, the default input path skips it.
 
-`InputFrame` has held state plus edge lists. Edges are drained on the first
-fixed tick of a frame. If a frame runs zero fixed ticks, edges persist so input
-impulses are not lost during lifecycle frames or stalls.
+`InputFrame` has held state plus edge lists. Edges persist until something
+drains them, so a frame running zero fixed ticks cannot lose an impulse during
+a lifecycle frame or a stall: the mapper drains them once per frame into its own
+per-clock latches, and `FrameDriver` drains them on the first fixed tick for
+hosts running no mapper.
 
-There is no engine-owned action binding layer right now. Rebindable gameplay
-controls should be added as a mapper over `InputFrame`, not as a second SDL
-event pump.
+Only `PreSimulateContext` (where the mapper runs) and `FrameUpdateContext`
+(editor viewports and debug tooling) carry the raw frame. The fixed-tick,
+physics, post-fixed, extract, audio, and end-frame contexts do not: simulation
+reads resolved actions, and a fixed tick reading devices directly would have no
+defined answer on a frame that ran several ticks.
+
+`InputActionResolveSystem` (`input/InputActionResolveSystem.h`) is the mapper
+over `InputFrame`, and the only thing on the gameplay path that reads it.
+`SdlGamepadCapture` folds connected pads into the same frame; keyboard, mouse,
+and gamepad all bind through one control vocabulary.
+Gameplay reads `InputActionState`: `Tick()` for the simulation, `Frame()` for
+presentation. Controls are bound in `input.profile` assets against actions
+declared in an `input.actions` asset; contexts are activated by lease through
+`InputContextSet`. See `docs/gameplay/input.md`.
+
+The mapper takes the frame's edges during `PreSimulate` and latches them per
+clock, which is what lets a motion or wheel impulse survive a zero-tick frame
+rather than only a button press.
 
 ## Concurrency
 

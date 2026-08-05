@@ -140,6 +140,9 @@ endif()
 if(FRAMEWORK_TEST_SOURCES)
     add_executable(framework_tests ${FRAMEWORK_TEST_SOURCES})
     target_link_libraries(framework_tests PRIVATE sencha_engine GTest::gtest_main)
+    # The template's shipped gameplay data lives in the source tree, so the
+    # authored assets can be validated against the schemas that load them.
+    target_compile_definitions(framework_tests PRIVATE SENCHA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
     list(APPEND SENCHA_TEST_TARGETS framework_tests)
 endif()
 
@@ -160,6 +163,9 @@ if(EDITOR_TEST_SOURCES AND TARGET kyusu_authoring)
         # The data editor's GUI-free half: the document's edit transaction and
         # the movement authoring model. Its panels stay out by construction.
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src/DataDocument.cpp
+        ${CMAKE_SOURCE_DIR}/editor/data_editor/src/SubtypeEditorRegistry.cpp
+        ${CMAKE_SOURCE_DIR}/editor/data_editor/src/input/InputBindingSummary.cpp
+        ${CMAKE_SOURCE_DIR}/editor/data_editor/src/input/InputControlCapture.cpp
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src/movement/MovementLayerSummary.cpp
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src/movement/MovementResponseSim.cpp)
     # editor/ for the shared fonts, and the flat application trees. Kyusu's
@@ -261,5 +267,9 @@ if(NOT WIN32)
     add_test(
         NAME asset_layering_directions
         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_asset_layering.sh ${CMAKE_SOURCE_DIR}
+    )
+    add_test(
+        NAME gameplay_input_discipline
+        COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_gameplay_input.sh ${CMAKE_SOURCE_DIR}
     )
 endif()

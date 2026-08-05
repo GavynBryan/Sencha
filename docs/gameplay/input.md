@@ -1,0 +1,330 @@
+# Input mapping
+
+Status: current architecture (2026-08).
+
+Gameplay reads *actions* — `move`, `jump`, `look` — and never learns which key or
+button produced one. Controls are authored in data, so rebinding a game is an
+asset edit rather than a recompile, and a menu can take a key away from gameplay
+without either side knowing about the other.
+
+## The path an input takes
+
+```
+SDL events
+  └─ SdlInputCapture              → InputFrame          raw device state, per rendered frame
+       └─ InputActionResolveSystem                      the only gameplay-path reader of InputFrame
+            ├─ PreSimulate  (1× per frame) → InputActionState::Frame()
+            └─ FixedLogic   (1× per tick)  → InputActionState::Tick()
+                 └─ game systems → MovementIntent, AbilityActivationQueue
+```
+
+`InputFrame` (`input/InputFrame.h`) stays what it was: a platform-agnostic
+snapshot of held keys, button state, edges, and pointer motion. It remains the
+right thing to read in the editor, in debug tooling, and in a future rebinding
+screen that needs to know which physical control the player just pressed.
+
+It is not reachable from simulation. Only `PreSimulateContext`, where the mapper
+runs, and `FrameUpdateContext`, where the tooling lives, carry it; the fixed-tick
+and later contexts do not. The mapper captures a device snapshot once per frame,
+so every tick of that frame resolves against identical device state.
+
+Everything above it speaks actions.
+
+## Authoring
+
+Two `.sdata` subtypes, because they vary independently. Actions are declared once
+per game; a game ships several profiles over them (keyboard, gamepad, a player's
+saved rebinds).
+
+`input_actions.sdata` — the vocabulary:
+
+```json
+{ "type": "input.actions", "version": 1, "data": { "actions": [
+    { "name": "move", "type": "axis2" },
+    { "name": "look", "type": "axis2" },
+    { "name": "jump", "type": "digital", "fire": "held" },
+    { "name": "pause", "type": "digital", "scope": "presentation" }
+]}}
+```
+
+`type` is `digital`, `axis1`, or `axis2`. `scope` is `simulation` (the default —
+the action drives the simulation and may travel in a player command) or
+`presentation` (local to this client: menus, debug toggles).
+
+`fire` says which moment counts as the action firing: `pressed` (the default —
+once, as the control goes down), `released` (once, as it comes up), or `held`
+(every pass it is down, which repeats). It belongs to the action rather than to
+the code that reads it, so why holding jump jumps repeatedly is answerable from
+the input mapping instead of from C++, and changing it is an edit to data. Only
+a button has a moment to fire on; authoring `fire` on an axis action fails the
+asset rather than becoming a knob that silently never applies.
+
+`input_default.sdata` — controls bound to those actions, grouped into contexts:
+
+```json
+{ "type": "input.profile", "version": 1, "data": {
+    "actions": "asset://data/input_actions.sdata",
+    "contexts": [
+        { "name": "gameplay", "priority": 100, "bindings": [
+            { "action": "move", "composite": "cardinal",
+              "left": "key.a", "right": "key.d", "down": "key.s", "up": "key.w" },
+            { "action": "look", "control": "mouse.delta", "scale": 0.0025 },
+            { "action": "jump", "control": "key.space" }
+        ]}
+    ]}}
+```
+
+A binding names either one `control` or a `composite` of buttons (`axis` for a
+signed scalar, `cardinal` for a plane in `left`/`right`/`down`/`up` order).
+Optional conditioning: `scale`, `dead_zone`, `invert_x`, `invert_y`, and
+`normalize` (keeps a cardinal composite inside the unit circle so diagonals are
+not faster). Several bindings may drive one action; digital contributions or
+together, axis contributions sum.
+
+Control names are `key.<name>`, `mouse.left|right|middle|x1|x2`, `mouse.delta`,
+`mouse.wheel`, and the gamepad set below. Key names come from the platform's
+scancode table with spaces written as underscores (`key.left_shift`), so a
+binding names a physical key position rather than a layout-dependent letter.
+
+Gamepad controls are named by position on the pad, not by the glyph printed
+there, so one binding covers pads whose face buttons carry different letters:
+`gamepad.south|east|west|north`, `gamepad.back|guide|start`,
+`gamepad.left_shoulder|right_shoulder`, `gamepad.left_stick_click`,
+`gamepad.right_stick_click`, `gamepad.dpad_up|dpad_down|dpad_left|dpad_right`,
+`gamepad.left_trigger|right_trigger` (scalars), and
+`gamepad.left_stick|right_stick` (planes). SDL's mapping database normalizes
+layouts, so an Xbox, PlayStation, or generic pad all arrive as the same set.
+
+Sticks report negative Y when pushed away from the player, matching the mouse's
+downward-positive convention. A movement binding therefore wants `invert_y`,
+while a look binding does not — the template profile shows both.
+
+Every connected pad drives one abstract pad. `GamepadDeviceSet` keeps what each
+device is reporting and folds them: a button reads down while any device holds
+it, and each stick or trigger takes the device pushing it furthest. One player
+with a controller in each hand is still one player, and a pad unplugged
+mid-press stops contributing rather than holding its buttons down forever.
+Per-player device sets are a split-screen concern and are not this.
+
+Sticks and triggers are *positions*, not displacement: they hold their value
+until the device moves, so every tick of a catch-up frame reads the same stick.
+Only mouse motion and the wheel accumulate.
+
+A trigger can drive a button action, which is how fire and jump are normally
+bound on a pad: `threshold` says how far it must be pulled to count as pressed,
+defaulting to half travel. The crossing is what produces the press and release
+the action's `fire` mode then selects over,
+and it is tracked whether or not the binding's context is active -- so switching
+a context on over an already-pulled trigger reads as held, never as a press the
+player did not make. The wheel cannot drive a button action: it reports how far
+it moved rather than how far it is held, so there is no position to compare.
+
+Both subtypes are runtime formats: no cook step, and the existing `.sdata`
+watcher hot-reloads them in place while the game runs.
+
+## Authoring them
+
+Both subtypes have purpose-built surfaces in the Data Editor, so the JSON above
+is what gets written rather than what gets typed.
+
+A profile presents as the keymap it describes: a collapsed context reads
+"gameplay - priority 100 - 5 bindings", a collapsed binding reads
+"jump - Space" or "move - WASD". Where something under a card is wrong, the card
+carries a marker, so a mistake cannot hide behind a collapsed row.
+
+An action card names the shape it carries and any moment that is not the
+default, so "jump - Button, while held" is legible from the collapsed row. The
+fire mode is offered only on a button, and turning a button into an axis takes
+the mode with it rather than leaving an unauthorable field behind.
+
+A binding's shape is chosen once -- single control, two buttons, or four
+directions -- and choosing it erases the slots the other shapes use. That makes
+the compiler's "exactly one of control or composite" rule unauthorable to
+violate, and means only the slots that apply are ever on screen.
+
+Control slots offer three ways to fill them, in increasing order of how much the
+author has to know: **Listen** binds whatever control they press; **Pick** lists
+what this platform can bind, grouped by device with a filter and the authored
+name beside each label; and the text stays editable for anyone who already knows
+the name. A name that parses to nothing says so at the field.
+
+The action field lists what the referenced action set declares, with
+shape-incompatible actions disabled and the reason on hover. The set is read
+from its open tab when it has one, so an action added moments ago is bindable
+before it is saved. An action the set does not declare is flagged but never
+cleared -- it may be one the author is about to add -- and actions declared but
+bound nowhere are listed at the bottom of the profile.
+
+These surfaces are ordinary subtype editors (`editor/data_editor/src/input/`),
+registered in `SubtypeEditors.cpp` like any other. A subtype with no editor
+keeps the schema-generated form.
+
+## Reading actions
+
+```cpp
+// Resolved once at startup: names to dense ids.
+struct TemplateInputActions { InputActionId Move, Look, Jump; };
+
+void CharacterInputSystem::FixedLogic(FixedLogicContext& ctx)
+{
+    const auto* ids = ctx.Entities.TryGetResource<TemplateInputActions>();
+    const auto* actions = ctx.Entities.TryGetResource<InputActionState>();
+    if (ids == nullptr || actions == nullptr)
+        return;
+
+    const InputActionView input = actions->Tick();
+    const Vec2d move = input.Axis2(ids->Move);   // strafe on X, forward on Y
+    const bool jump = input.Fired(ids->Jump);    // the moment the action set authored
+    ...
+}
+```
+
+`Fired()` is what single-phase gameplay reads: it answers under the action's own
+`fire` mode, so a designer retuning a button does not need the consumer to
+change. `Held()`, `Pressed()`, and `Released()` remain for gameplay built out of
+several phases — charge while held, loose on release — where no one mode
+describes what the consumer wants.
+
+`Tick()` is this tick's record; `Frame()` is the presentation snapshot, which is
+what a camera or a menu wants. A system that reads actions must be ordered after
+the resolve system:
+
+```cpp
+ctx.Schedule.After<CharacterInputSystem, InputActionResolveSystem>();
+```
+
+Adding an action costs one entry in the action set, one binding in the profile,
+and one field wherever it is consumed. No engine edit, no central switch.
+
+## Contexts
+
+A context is a named group of bindings that can be turned on and off at runtime.
+Activation returns a lease; the context stays live until the lease is dropped, so
+a menu that is torn down or a dialogue interrupted by a load cannot leave its
+context stuck on. Leases are counted, so two holders do not cancel each other.
+
+```cpp
+InputContextLease menu = world.GetResource<InputContextSet>().Activate("menu");
+// ... dropping `menu` deactivates it
+```
+
+Every context has a unique priority within its profile. When several active
+contexts bind the same control, the highest-priority one claims it and the
+control reads as absent to everything below — per control, not per context, so a
+menu that binds Escape does not also take movement. To block a whole context,
+deactivate it; there is no separate "consume everything" flag.
+
+## Frame and tick semantics
+
+A rendered frame may run zero, one, or several fixed ticks against one sample of
+input. The mapper keeps a separate latch per clock, which settles every case:
+
+| Situation | Behaviour |
+|---|---|
+| Zero ticks | The presentation snapshot still resolves. The simulation latch keeps the edges and motion until a tick runs, so nothing is dropped. |
+| One tick | The tick consumes everything latched since the previous tick. |
+| Catch-up burst | The first tick consumes the latch, including the full accumulated motion. Later ticks see held state, no press edges, and no motion — a press fires once, not once per tick. |
+| Tap inside one frame | Pressed and Released arrive together on the next tick, with the action never reading as held. |
+| Context activated over a held key | Held, never a synthesised press. |
+| Context deactivated while holding | The action releases; it cannot stay held. |
+| Second control pressed while the action is held | No second press. Edges describe the action, not the binding that moved: with jump on Space, a pad button, and a trigger, joining one to another is not a new press, and letting one go while another still holds it is not a release. |
+| The profile stops resolving | Every held action releases once and then reads as zero, on both clocks. Actions cannot outlive the bindings that produced them. |
+| Focus loss, or the console taking input | The capture layer releases held device state, so actions release through the ordinary path instead of sticking down. |
+
+Context changes are applied at the frame boundary, before the first tick, so
+every tick of one frame resolves against the same set.
+
+`Fired()` is a mode-selected copy of one of those edges, decided where the mode
+is known, so it inherits every row above rather than adding rules of its own: a
+`pressed` action fires once per press however many ticks the frame ran, a
+`released` action fires once when the control comes up — including the once it
+owes when the profile stops resolving underneath it — and a `held` action fires
+every pass the control is down, which is the repetition that mode means.
+
+## Hot reload
+
+Both subtypes reload in place while the game runs, and a game resolves its action
+names once at startup. An id therefore has to keep meaning the same action across
+a reload: the registry keeps each name's id, so reordering the action set is free
+and adding to it does not disturb what is already resolved. A name the set stops
+declaring retires its slot rather than lending it to whatever was authored next,
+so a cached id for a deleted action reads as absent instead of as someone else's
+action.
+
+A profile that names a different action set rebinds against that one — the lease
+and the reload version it watches follow the path the profile names.
+
+## Diagnostics
+
+A rebind that produces no tables at all keeps the previous ones, so a bad
+hot-reload does not take the player's controls away while the bad edit is on
+disk. `InputBindingCache::Status()` says which of the four states a profile is in
+(`Unbound`, `Current`, `Stale`, `Failed`) and carries the diagnostics.
+
+Those diagnostics are entry state, not a one-shot delivery: a game asking at
+startup and the resolve system asking every frame both see them. The resolve
+system is the one place that reports, once per change rather than once per frame,
+to the log and to `InputActionState::Error()`. That includes a *partial* failure,
+where one binding is dropped and the rest of the profile binds — the case that
+would otherwise stay silent precisely because the controls mostly work.
+
+Load-time mistakes — duplicate action names, unknown controls, duplicate context
+priorities, incomplete composites, a control that cannot produce its action's
+value — fail the asset with an exact JSON path rather than producing a control
+that silently never fires.
+
+## Boundaries this leaves open
+
+**AbilityKit.** A game bridges actions to `AbilityActivationQueue` in its own
+system, which is what keeps one activation path for players and AI (abilitykit
+D-I). Which moment an action fires on is settled here, in the mapping, not
+there. What remains for the AbilityKit stage is binding an ability definition
+directly to an action id, and abilities whose shape spans several moments —
+charge while held then loose on release, tap versus hold, timed sequences. Those
+need more than one moment and so read the raw edges; the tick records already
+carry the edges and tick stamps they will need.
+
+**Networking.** Tick records are flat, tick-stamped, action-indexed value arrays
+with no strings, pointers, or platform types. A command builder projects the
+actions a game replicates out of a record by index. This ticket supplies that
+shape and nothing else: no schema, no redundancy window, no replication.
+
+Note that accumulated view angles are *not* in the record. The mapper produces
+per-tick look displacement; the entity's `LookOrientation` holds the running
+total. Moving absolute angles into the command is a networking decision — the
+deltas that would drive them are already per-tick, so it does not need a change
+here first. See "Aim" below.
+
+## Aim
+
+Where an entity is looking is `LookOrientation` (`controller/LookOrientation.h`):
+accumulated yaw and pitch plus the pitch limits, on the entity doing the aiming.
+`LookIntegrationSystem` integrates the look action into it during `PreSimulate`,
+for entities tagged `LocalLookControl`; `LookInputBinding` names which action
+turns them.
+
+This deliberately does not live in the input layer. Input measures a device and
+produces displacement; the running total is simulation state with several
+readers — a character steers along it, a camera presents it, an AI could write it
+instead of the player. `CameraRig` is one of those readers: it carries the target
+relationship and boom shape, and `ComputeCameraPose` is passed the orientation.
+
+Look integrates on the presentation clock, because aiming has to track the rate
+frames arrive or it visibly steps. Simulation therefore reads a frame-clocked
+value, which is correct for local play and is exactly what a replayable command
+has to replace: the command carries the orientation sampled for its tick, and
+replay feeds that back instead of re-reading the component.
+
+## Deferred
+
+An in-game rebinding UI (the editor's control enumeration and press-to-bind
+mapping are engine-side precisely so one can reuse them), a live binding-test
+panel that shows action values responding to real devices while authoring,
+per-device profile overlays, chords and timed sequences,
+input recording and replay, and per-player device routing for split-screen (one
+abstract pad is shared by every open device today).
+
+A binding that cannot resolve is dropped and the rest of the profile still
+binds, so one mistake costs the controls it is in rather than every control.
+The failures that leave nothing bindable at all -- a missing action set, a
+vocabulary with duplicate names -- still fail outright.

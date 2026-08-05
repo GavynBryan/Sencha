@@ -2,8 +2,7 @@
 
 #include "DataEditorWorkspace.h"
 #include "DataFormEdit.h"
-#include "movement/MovementProfileForm.h"
-#include "movement/MovementResolvePreview.h"
+#include "SubtypeEditorRegistry.h"
 
 #include "ui/ButtonFlow.h"
 #include "ui/ScopedPanel.h"
@@ -103,6 +102,72 @@ namespace
         if (!anyOffered)
             ImGui::TextDisabled("Everything here is already set.");
         ImGui::EndPopup();
+        return edit;
+    }
+
+    // A reference to another data asset: the path stays typable, but the assets
+    // that would satisfy it are a click away, filtered to the subtype the schema
+    // says this field accepts. Open jumps to the referenced document, which is
+    // most of what an author wants after seeing the name.
+    FieldEdit DrawDataAssetRef(JsonValue& value,
+                               const DataFieldSchema& field,
+                               const std::string& path,
+                               const std::string& label,
+                               DataEditorWorkspace& workspace)
+    {
+        FieldEdit edit;
+        const std::string current = value.IsString() ? value.AsString() : std::string{};
+
+        std::array<char, 2048> buffer{};
+        CopyToBuffer(current, buffer.data(), buffer.size());
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
+        const bool edited = ImGui::InputText(("##ref" + path).c_str(),
+                                             buffer.data(), buffer.size());
+        if (edited)
+            value = JsonValue(std::string(buffer.data()));
+        edit |= ContinuousEdit(edited);
+        DrawFieldHelp(workspace, field, path);
+
+        const std::string popup = "pickref##" + path;
+        ImGui::SameLine();
+        if (ImGui::Button("Pick"))
+            ImGui::OpenPopup(popup.c_str());
+        if (ImGui::BeginPopup(popup.c_str()))
+        {
+            bool anyOffered = false;
+            // Enumerated only while the popup is open: the subtype of an asset
+            // that is not already in a tab costs a file read to learn.
+            for (const AssetRecord* record : workspace.DataAssets())
+            {
+                if (!field.Reference.DataSubtype.empty()
+                    && workspace.DataSubtypeOf(record->Path) != field.Reference.DataSubtype)
+                {
+                    continue;
+                }
+                anyOffered = true;
+                if (ImGui::Selectable(record->Path.c_str()))
+                {
+                    value = JsonValue(record->Path);
+                    edit |= FieldEdit::Instant();
+                }
+            }
+            if (!anyOffered)
+            {
+                ImGui::TextDisabled("%s", field.Reference.DataSubtype.empty()
+                    ? "This project has no data assets."
+                    : ("No " + field.Reference.DataSubtype + " assets in this project.").c_str());
+            }
+            ImGui::EndPopup();
+        }
+
+        ImGui::SameLine();
+        ImGui::BeginDisabled(current.empty());
+        if (ImGui::Button("Open"))
+            (void)workspace.Open(current);
+        ImGui::EndDisabled();
+
+        ImGui::SameLine();
+        ImGui::TextUnformatted(label.c_str());
         return edit;
     }
 
@@ -215,7 +280,14 @@ namespace
             {
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("%s", elementPath.c_str());
-                edit |= DrawField(array[index], element, elementPath, workspace);
+                // A record element draws its members straight into the card:
+                // going back through DrawField would open a second node named
+                // after the element schema, so a named card read
+                // "Contexts > gameplay > Context".
+                if (element.Kind == DataFieldKind::Record)
+                    edit |= DrawRecord(array[index], element, elementPath, workspace);
+                else
+                    edit |= DrawField(array[index], element, elementPath, workspace);
 
                 ButtonFlow verbs;
                 if (verbs.Button("Duplicate"))
@@ -303,9 +375,11 @@ namespace
             DrawFieldHelp(workspace, field, path);
             break;
         }
+        case DataFieldKind::DataAssetRef:
+            edit |= DrawDataAssetRef(value, field, path, label, workspace);
+            break;
         case DataFieldKind::String:
         case DataFieldKind::AssetRef:
-        case DataFieldKind::DataAssetRef:
         case DataFieldKind::GameplayTag:
         {
             std::array<char, 2048> buffer{};
@@ -532,9 +606,9 @@ void DataAssetBrowserPanel::OnDraw()
         ImGui::TextWrapped("Error: %s", LastError.c_str());
 }
 
-DataFormPanel::DataFormPanel(DataEditorWorkspace& workspace, MovementResolvePreview& preview)
+DataFormPanel::DataFormPanel(DataEditorWorkspace& workspace, SubtypeEditorRegistry& editors)
     : Workspace(workspace)
-    , Preview(preview)
+    , Editors(editors)
 {
 }
 
@@ -587,10 +661,12 @@ void DataFormPanel::OnDraw()
                     }
                     else
                     {
-                        // Subtypes earn a purpose-built surface one at a time;
-                        // everything else gets the schema-generated form.
-                        const FieldEdit edit = document.Subtype() == MovementProfileSubtype()
-                            ? DrawMovementProfileForm(*data, *schema, Workspace, Preview)
+                        // A subtype with a purpose-built editor draws through
+                        // it; everything else gets the schema-generated form.
+                        IDataSubtypeEditor* editor = Editors.Find(document.Subtype());
+                        SubtypeFormContext ctx{ *data, *schema, document, Workspace };
+                        const FieldEdit edit = editor != nullptr
+                            ? editor->DrawForm(ctx)
                             : DrawField(*data, schema->Root, "$.data", Workspace);
                         ApplyFieldEdit(document, Workspace, edit, std::move(root));
                     }

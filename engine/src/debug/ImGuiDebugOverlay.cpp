@@ -93,17 +93,19 @@ void ImGuiDebugOverlay::Teardown()
 
 bool ImGuiDebugOverlay::ProcessSdlEvent(const SDL_Event& event)
 {
-	if (event.type == SDL_EVENT_KEY_DOWN
+	const bool isToggle = event.type == SDL_EVENT_KEY_DOWN
 		&& !event.key.repeat
-		&& event.key.scancode == SDL_SCANCODE_GRAVE)
-	{
+		&& event.key.scancode == SDL_SCANCODE_GRAVE;
+	if (isToggle)
 		Debug.Toggle();
-	}
 
 	if (Valid)
 		ImGui_ImplSDL3_ProcessEvent(&event);
 
-	return Debug.IsOpen() && IsDebugUiInputEvent(event);
+	// The toggle key is always the overlay's own. Claiming it on the closing
+	// press too keeps it from reaching whatever gameplay binding shares the key
+	// on the one frame the console goes away.
+	return isToggle || (Debug.IsOpen() && IsDebugUiInputEvent(event));
 }
 
 bool ImGuiDebugOverlay::InitImGui(const RendererServices& services)

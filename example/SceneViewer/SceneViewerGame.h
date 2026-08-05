@@ -2,6 +2,8 @@
 
 #include "FreeCamera.h"
 
+#include <input/InputContextSet.h>
+
 #include <app/Game.h>
 #include <assets/runtime/AssetPreloader.h>
 #include <assets/runtime/RuntimeAssets.h>
@@ -46,6 +48,8 @@ private:
     std::optional<AsyncZoneLoader> ZoneLoader;
     EntityId CameraEntity;
     FreeCamera FreeCam;
+    // Held for the process: the viewer is always in its fly context.
+    InputContextLease FlyInput;
     // Armed by sceneviewer.camera.scripted; read by the scripted-path system.
     bool ScriptedCameraEnabled = false;
 };

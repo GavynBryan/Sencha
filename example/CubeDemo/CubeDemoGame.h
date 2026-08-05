@@ -3,6 +3,8 @@
 #include "CubeDemoScene.h"
 #include "FreeCamera.h"
 
+#include <input/InputContextSet.h>
+
 #include <app/Game.h>
 #include <components/ActiveCameraService.h>
 #include <assets/runtime/AssetPreloader.h>
@@ -43,6 +45,8 @@ private:
     std::unique_ptr<SceneSerializationContext> SceneContext;
     std::optional<AsyncZoneLoader> ZoneLoader;
     FreeCamera FreeCam;
+    // Held for the process: the demo is always in its fly context.
+    InputContextLease FlyInput;
     DemoScene Demo;
 
 #ifdef SENCHA_ENABLE_COOK

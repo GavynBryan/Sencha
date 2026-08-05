@@ -50,7 +50,6 @@ namespace
         AudioContext ctx{
             .Config = config,
             .Runtime = runtime,
-            .Input = input,
             .WallDeltaSeconds = wallDeltaSeconds,
             .Presentation = PresentationTime{ .DeltaSeconds = presentationDeltaSeconds },
             .Entities = world,

@@ -34,6 +34,7 @@
 #endif
 #endif
 
+#include <input/SdlGamepadCapture.h>
 #include <platform/PlatformServices.h>
 #include <platform/SdlWindow.h>
 #include <platform/SdlWindowService.h>
@@ -89,6 +90,7 @@ bool Engine::Initialize()
 #ifdef SENCHA_ENABLE_VULKAN
         GraphicsState.reset();
 #endif
+        GamepadCaptureState.reset();
         PlatformState.reset();
         CaptionState.reset();
         AudioState.reset();
@@ -121,6 +123,12 @@ bool Engine::Initialize()
     }
 
     PlatformState = std::make_unique<PlatformServices>(logging);
+    // Gamepads are optional hardware: a system with no pad subsystem still
+    // runs, it just never reports one.
+    GamepadCaptureState = std::make_unique<SdlGamepadCapture>();
+    if (!GamepadCaptureState->IsAvailable())
+        logging.GetLogger<Engine>().Info("gamepad subsystem unavailable; pads will not be read");
+
     SdlWindow* window = PlatformState->CreatePrimaryWindow(Configuration.Window);
     if (window == nullptr || !window->IsValid())
     {
@@ -210,6 +218,7 @@ void Engine::Shutdown()
 #endif
     GraphicsState.reset();
 #endif
+    GamepadCaptureState.reset();
     PlatformState.reset();
     CaptionState.reset();
     AudioState.reset();

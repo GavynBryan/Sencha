@@ -142,7 +142,6 @@ TEST_F(EngineScheduleTest, DependencyOrderingAppliesWithinPhase)
     FixedLogicContext context{
         .Config = harness.Config,
         .Runtime = harness.Runtime,
-        .Input = harness.Input,
         .Time = {},
         .Entities = *view.Entities,
         .Partitions = view.Logic,
@@ -183,7 +182,6 @@ TEST_F(EngineScheduleTest, DispatchesOnlyImplementedPhases)
     FixedLogicContext fixed{
         .Config = harness.Config,
         .Runtime = harness.Runtime,
-        .Input = harness.Input,
         .Time = {},
         .Entities = *view.Entities,
         .Partitions = view.Logic,
@@ -205,7 +203,6 @@ TEST_F(EngineScheduleTest, DispatchesOnlyImplementedPhases)
     RenderExtractContext extract{
         .Config = harness.Config,
         .Runtime = harness.Runtime,
-        .Input = harness.Input,
         .PacketWrite = packets.WriteSlot(),
         .PacketRead = packets.ReadSlot(),
         .Presentation = {},

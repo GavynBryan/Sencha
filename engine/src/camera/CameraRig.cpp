@@ -1,6 +1,9 @@
 #include <camera/CameraRig.h>
 
-CameraPose ComputeCameraPose(const CameraRig& rig, const Vec3d& targetWorldPosition)
+CameraPose ComputeCameraPose(const CameraRig& rig,
+                             const Vec3d& targetWorldPosition,
+                             float yaw,
+                             float pitch)
 {
     CameraPose pose;
     if (rig.Mode == CameraRigMode::Fixed)
@@ -8,8 +11,8 @@ CameraPose ComputeCameraPose(const CameraRig& rig, const Vec3d& targetWorldPosit
 
     pose.Override = true;
     const Vec3d pivot = targetWorldPosition + rig.PivotOffset;
-    pose.Rotation = Quatf::FromAxisAngle(Vec3d::Up(), rig.Yaw)
-                  * Quatf::FromAxisAngle(Vec3d::Right(), rig.Pitch);
+    pose.Rotation = Quatf::FromAxisAngle(Vec3d::Up(), yaw)
+                  * Quatf::FromAxisAngle(Vec3d::Right(), pitch);
 
     if (rig.Mode == CameraRigMode::FirstPerson)
         pose.Position = pivot;

@@ -1,5 +1,6 @@
 #include <app/Engine.h>
 #include <app/Game.h>
+#include <input/SdlGamepadCapture.h>
 #include <input/SdlInputCapture.h>
 #include <jobs/AsyncTaskQueue.h>
 #include <runtime/FrameDriver.h>
@@ -44,22 +45,33 @@ void Engine::RegisterFramePhases(Game& game)
 
     driver.Register(FramePhase::PumpPlatform, [&engine, &game, &config, &windows, windowId](PhaseContext& ctx) {
         SdlInputCapture::BeginFrame(*ctx.Input);
+
+        // Pads already plugged in at launch send no connection event, so the
+        // first frame is where they are picked up.
+        SdlGamepadCapture* gamepads = engine.GetGamepadCapture();
+        if (gamepads != nullptr && !ctx.Input->GamepadConnected && gamepads->OpenCount() == 0)
+            gamepads->OpenConnected(*ctx.Input);
+
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
             windows.HandleEvent(event);
-            SdlInputCapture::Accept(*ctx.Input, event);
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
-            // The overlay claims input first: the grave toggle always, and
-            // keyboard/mouse while the console is open, so an open console
-            // never leaks its keystrokes into gameplay handlers.
+            // The overlay claims input before capture, not after: the grave
+            // toggle always, and keyboard/mouse while the console is open. An
+            // event folded into the InputFrame first would reach every gameplay
+            // reader whatever the overlay then said about it.
             if (ImGuiDebugOverlay* overlay = engine.GetDebugOverlay();
                 overlay != nullptr && overlay->ProcessSdlEvent(event))
             {
                 continue;
             }
 #endif
+
+            SdlInputCapture::Accept(*ctx.Input, event);
+            if (gamepads != nullptr)
+                gamepads->Accept(*ctx.Input, event);
 
             PlatformEventContext eventCtx{
                 .Config = config,
@@ -74,6 +86,16 @@ void Engine::RegisterFramePhases(Game& game)
             else if (event.type == SDL_EVENT_WINDOW_RESTORED)
                 ctx.Runtime->NotifyRestored(windows.GetExtent(windowId));
         }
+
+#ifdef SENCHA_ENABLE_DEBUG_UI
+        // A press that began before the console opened would otherwise stay
+        // held for as long as it is open, since its key-up is claimed above.
+        if (ImGuiDebugOverlay* overlay = engine.GetDebugOverlay();
+            overlay != nullptr && overlay->IsCapturingInput())
+        {
+            ctx.Input->ReleaseAllHeld();
+        }
+#endif
 
         if (windows.IsCloseRequested(windowId))
             ctx.Input->QuitRequested = true;
@@ -164,7 +186,6 @@ void Engine::RegisterFramePhases(Game& game)
         FixedLogicContext logic{
             .Config = config,
             .Runtime = *ctx.Runtime,
-            .Input = *ctx.Input,
             .Time = ctx.CurrentTick,
             .Entities = entities,
             .Partitions = zones.Logic,
@@ -174,7 +195,6 @@ void Engine::RegisterFramePhases(Game& game)
         PhysicsContext physics{
             .Config = config,
             .Runtime = *ctx.Runtime,
-            .Input = *ctx.Input,
             .Time = ctx.CurrentTick,
             .Entities = entities,
             .Partitions = zones.Physics,
@@ -190,7 +210,6 @@ void Engine::RegisterFramePhases(Game& game)
         PostFixedContext postFixed{
             .Config = config,
             .Runtime = *ctx.Runtime,
-            .Input = *ctx.Input,
             .Time = ctx.CurrentTick,
             .Entities = entities,
             .Partitions = zones.Logic,
@@ -226,7 +245,6 @@ void Engine::RegisterFramePhases(Game& game)
         AudioContext audio{
             .Config = config,
             .Runtime = *ctx.Runtime,
-            .Input = *ctx.Input,
             .WallDeltaSeconds = static_cast<double>(rf.WallTime.Dt),
             .Presentation = rf.Presentation,
             .Entities = entities,
@@ -252,7 +270,6 @@ void Engine::RegisterFramePhases(Game& game)
         RenderExtractContext extract{
             .Config = config,
             .Runtime = *ctx.Runtime,
-            .Input = *ctx.Input,
             .PacketWrite = *ctx.PacketWrite,
             .PacketRead = *ctx.PacketRead,
             .Presentation = ctx.PacketWrite->Presentation,
@@ -301,7 +318,6 @@ void Engine::RegisterFramePhases(Game& game)
         EndFrameContext endFrame{
             .Config = config,
             .Runtime = *ctx.Runtime,
-            .Input = *ctx.Input,
             .Presentation = rf.Presentation,
             .Entities = *zones.Entities,
             .Partitions = zones.Logic,

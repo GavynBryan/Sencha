@@ -331,10 +331,11 @@ void DataDocument::Validate(const DataAssetTypeRegistry& types,
                       "file version does not match the registered subtype version");
     }
 
+    bool schemaValid = true;
     if (const DataSchema* schema = schemas.Find(typeName))
     {
         std::vector<DataValidationError> schemaErrors;
-        (void)ValidateDataAgainstSchema(*dataValue, *schema, schemaErrors);
+        schemaValid = ValidateDataAgainstSchema(*dataValue, *schema, schemaErrors);
         for (DataValidationError& schemaError : schemaErrors)
         {
             if (schemaError.Path == "$")
@@ -345,16 +346,62 @@ void DataDocument::Validate(const DataAssetTypeRegistry& types,
         }
     }
 
-    if (Errors.empty())
+    // A compiler sees data its schema accepted, which is the order the runtime
+    // loader binds in and the only precondition a compiler can be written
+    // against. Subtypes come from the loaded game module, so running one over a
+    // shape it was promised it would never see puts arbitrary code a bad field
+    // type away from taking the editor down with it.
+    if (!schemaValid)
+        return;
+
+    DataAssetCompileResult compiled = type->Compile(*dataValue);
+    if (!compiled.IsValid())
     {
-        DataAssetCompileResult compiled = type->Compile(*dataValue);
-        if (!compiled.IsValid())
+        Errors.push_back(compiled.Error.empty()
+            ? DataValidationError{ "$.data", "subtype compiler returned no value" }
+            : SplitCompileError(std::move(compiled.Error)));
+    }
+}
+
+const DataValidationError* FindValidationErrorAt(
+    std::span<const DataValidationError> errors, std::string_view path)
+{
+    for (const DataValidationError& error : errors)
+    {
+        if (error.Path == path)
+            return &error;
+        if (error.Path.size() > path.size()
+            && error.Path.compare(0, path.size(), path) == 0
+            && (error.Path[path.size()] == '.' || error.Path[path.size()] == '['))
         {
-            AddValidation(Errors, "$.data",
-                          compiled.Error.empty() ? "subtype compiler returned no value"
-                                                 : std::move(compiled.Error));
+            return &error;
         }
     }
+    return nullptr;
+}
+
+DataValidationError SplitCompileError(std::string message)
+{
+    // Subtype compilers format their errors as "<json-path> <what went wrong>".
+    // Recovering the path lands the error on the field that owns it; collapsing
+    // every one onto "$.data" put them all on the document root, where a form
+    // cannot mark the offending card.
+    if (!message.starts_with("$."))
+        return DataValidationError{ "$.data", std::move(message) };
+
+    const auto pathEnd = message.find_first_not_of(
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.$[]");
+    if (pathEnd == std::string::npos)
+        return DataValidationError{ std::move(message), std::string() };
+
+    std::string path = message.substr(0, pathEnd);
+    std::string rest = message.substr(pathEnd);
+    if (const auto textStart = rest.find_first_not_of(" \t");
+        textStart != std::string::npos)
+    {
+        rest.erase(0, textStart);
+    }
+    return DataValidationError{ std::move(path), std::move(rest) };
 }
 
 void DataDocument::ApplyRoot(JsonValue root)

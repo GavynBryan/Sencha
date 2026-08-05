@@ -1,0 +1,53 @@
+{
+    "type": "input.profile",
+    "version": 1,
+    "data": {
+        "actions": "asset://data/input_actions.sdata",
+        "contexts": [
+            {
+                "name": "gameplay",
+                "priority": 100,
+                "bindings": [
+                    {
+                        "action": "move",
+                        "composite": "cardinal",
+                        "left": "key.a",
+                        "right": "key.d",
+                        "down": "key.s",
+                        "up": "key.w"
+                    },
+                    {
+                        "action": "move",
+                        "control": "gamepad.left_stick",
+                        "dead_zone": 0.2,
+                        "invert_y": true
+                    },
+                    {
+                        "action": "look",
+                        "control": "mouse.delta",
+                        "scale": 0.0025
+                    },
+                    {
+                        "action": "look",
+                        "control": "gamepad.right_stick",
+                        "dead_zone": 0.15,
+                        "scale": 0.04
+                    },
+                    {
+                        "action": "jump",
+                        "control": "key.space"
+                    },
+                    {
+                        "action": "jump",
+                        "control": "gamepad.south"
+                    },
+                    {
+                        "action": "jump",
+                        "control": "gamepad.right_trigger",
+                        "threshold": 0.5
+                    }
+                ]
+            }
+        ]
+    }
+}
