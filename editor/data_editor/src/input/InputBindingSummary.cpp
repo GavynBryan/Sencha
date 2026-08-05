@@ -106,6 +106,11 @@ std::string DescribeConditioning(const JsonValue& binding)
     {
         text += ", dead zone " + FormatInputScalar(deadZone->AsNumber());
     }
+    if (const JsonValue* threshold = binding.Find("threshold");
+        threshold != nullptr && threshold->IsNumber())
+    {
+        text += ", past " + FormatInputScalar(threshold->AsNumber());
+    }
     if (const JsonValue* invertY = binding.Find("invert_y");
         invertY != nullptr && invertY->IsBool() && invertY->AsBool())
     {

@@ -141,6 +141,20 @@ void ClampToUnitCircle(float& x, float& y)
     y *= scale;
 }
 
+// Threshold state for one binding, carried between passes of one clock.
+constexpr std::uint8_t kAnalogAbove = 1 << 0;
+constexpr std::uint8_t kAnalogPressed = 1 << 1;
+constexpr std::uint8_t kAnalogReleased = 1 << 2;
+
+// Whether this binding turns an analog control into a button, which is the one
+// case with no device edge behind it.
+bool IsAnalogButton(const InputBinding& binding, InputActionType actionType)
+{
+    return binding.Kind == InputBindingKind::Direct
+        && actionType == InputActionType::Digital
+        && binding.Controls[kBindingNegativeX].Source == InputControlSource::GamepadTrigger;
+}
+
 struct BindingContribution
 {
     float X = 0.0f;
@@ -153,7 +167,9 @@ struct BindingContribution
 BindingContribution EvaluateBinding(const InputBinding& binding,
                                     const InputDeviceSnapshot& devices,
                                     const InputEdgeLatch& latch,
-                                    const InputControlClaims& claims)
+                                    const InputControlClaims& claims,
+                                    bool analogButton,
+                                    std::uint8_t analogState)
 {
     BindingContribution result;
 
@@ -164,6 +180,18 @@ BindingContribution EvaluateBinding(const InputBinding& binding,
         const InputControl control = binding.Controls[kBindingNegativeX];
         if (!control.IsValid() || claims.Has(control))
             return result;
+
+        // A thresholded control is already a button by the time it gets here;
+        // its value is the crossing, so none of the analog conditioning below
+        // applies to it.
+        if (analogButton)
+        {
+            result.Held = (analogState & kAnalogAbove) != 0;
+            result.Pressed = (analogState & kAnalogPressed) != 0;
+            result.Released = (analogState & kAnalogReleased) != 0;
+            result.X = result.Held ? 1.0f : 0.0f;
+            return result;
+        }
 
         switch (control.Source)
         {
@@ -418,6 +446,35 @@ void ResolveInputActions(const BoundInputProfile& profile,
     if (clock.HeldPrevious.size() != actionCount)
         clock.HeldPrevious.assign(actionCount, 0);
 
+    // Analog thresholds first, for every binding whether or not its context is
+    // active: the crossing is a fact about the control, so a context switched on
+    // over an already-pulled trigger reads as held rather than as a fresh press.
+    if (clock.AnalogState.size() != profile.Bindings.size())
+        clock.AnalogState.assign(profile.Bindings.size(), 0);
+    for (std::size_t i = 0; i < profile.Bindings.size(); ++i)
+    {
+        const InputBinding& binding = profile.Bindings[i];
+        if (binding.ActionIndex >= actionCount
+            || !IsAnalogButton(binding, profile.ActionTypes[binding.ActionIndex]))
+        {
+            clock.AnalogState[i] = 0;
+            continue;
+        }
+
+        float value = 0.0f;
+        float unused = 0.0f;
+        ReadGamepadAxes(devices, binding.Controls[kBindingNegativeX], value, unused);
+
+        const bool above = value >= binding.Threshold;
+        const bool wasAbove = (clock.AnalogState[i] & kAnalogAbove) != 0;
+        std::uint8_t state = above ? kAnalogAbove : std::uint8_t{ 0 };
+        if (above && !wasAbove)
+            state |= kAnalogPressed;
+        else if (!above && wasAbove)
+            state |= kAnalogReleased;
+        clock.AnalogState[i] = state;
+    }
+
     InputControlClaims claims;
     for (std::size_t contextIndex = 0; contextIndex < profile.Contexts.size(); ++contextIndex)
     {
@@ -432,8 +489,10 @@ void ResolveInputActions(const BoundInputProfile& profile,
             if (binding.ActionIndex >= actionCount)
                 continue;
 
-            const BindingContribution contribution =
-                EvaluateBinding(binding, devices, clock.Latch, claims);
+            const bool analogButton =
+                IsAnalogButton(binding, profile.ActionTypes[binding.ActionIndex]);
+            const BindingContribution contribution = EvaluateBinding(
+                binding, devices, clock.Latch, claims, analogButton, clock.AnalogState[i]);
             InputActionValue& value = out[binding.ActionIndex];
 
             if (profile.ActionTypes[binding.ActionIndex] != InputActionType::Digital)

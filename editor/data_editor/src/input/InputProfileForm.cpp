@@ -315,6 +315,7 @@ FieldEdit DrawConditioning(JsonValue& binding, const std::string& path)
 
     drawFloat("scale", "Scale", -1000.0f, 1000.0f);
     drawFloat("dead_zone", "Dead zone", 0.0f, 0.99f);
+    drawFloat("threshold", "Threshold", 0.01f, 1.0f);
     drawBool("invert_x", "Invert X");
     drawBool("invert_y", "Invert Y");
     drawBool("normalize", "Clamp to unit");
@@ -331,9 +332,11 @@ FieldEdit DrawConditioning(JsonValue& binding, const std::string& path)
             const char* Summary;
             JsonValue Default;
         };
-        const std::array<Setting, 5> settings{ {
+        const std::array<Setting, 6> settings{ {
             { "scale", "Scale", "Multiply the resolved value.", JsonValue(1.0) },
             { "dead_zone", "Dead zone", "Ignore movement smaller than this.", JsonValue(0.2) },
+            { "threshold", "Threshold", "How far a trigger is pulled before it counts as pressed.",
+              JsonValue(0.5) },
             { "invert_x", "Invert X", "Flip the sign of the X result.", JsonValue(true) },
             { "invert_y", "Invert Y", "Flip the sign of the Y result.", JsonValue(true) },
             { "normalize", "Clamp to unit", "Keep diagonals from outrunning cardinals.",

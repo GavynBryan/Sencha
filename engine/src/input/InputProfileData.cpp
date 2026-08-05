@@ -133,6 +133,7 @@ DataSchema MakeProfileSchema()
         StringField("up", "Up", "The button that steers forward or up.", false),
         FloatField("scale", "Scale", "Multiplier applied to the resolved value.", -1000.0, 1000.0),
         FloatField("dead_zone", "Dead zone", "Magnitude below which the control reads as rest.", 0.0, 0.99),
+        FloatField("threshold", "Threshold", "How far a trigger must be pulled before it counts as pressed.", 0.01, 1.0),
         BoolField("invert_x", "Invert X", "Flip the sign of the X result."),
         BoolField("invert_y", "Invert Y", "Flip the sign of the Y result."),
         BoolField("normalize", "Clamp to unit", "Keep a cardinal composite inside the unit circle so diagonals are not faster."),
@@ -327,6 +328,7 @@ bool CompileBinding(const JsonValue& item,
 
     ReadFloat(item, "scale", out.Binding.Scale);
     ReadFloat(item, "dead_zone", out.Binding.DeadZone);
+    ReadFloat(item, "threshold", out.Binding.Threshold);
     ReadBool(item, "invert_x", out.Binding.InvertX);
     ReadBool(item, "invert_y", out.Binding.InvertY);
     ReadBool(item, "normalize", out.Binding.Normalize);

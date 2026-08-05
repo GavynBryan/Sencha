@@ -634,3 +634,140 @@ TEST(InputControlNames, RoundTripsThroughFormatting)
     EXPECT_EQ(FormatInputControl(Key(SDL_SCANCODE_LSHIFT)), "key.left_shift");
     EXPECT_EQ(FormatInputControl(InputControl{ InputControlSource::MouseMotion, 0 }), "mouse.delta");
 }
+
+// ---------------------------------------------------------------------------
+// A trigger driving a button action
+// ---------------------------------------------------------------------------
+
+namespace
+{
+InputControl Trigger(GamepadTrigger which)
+{
+    return InputControl{ InputControlSource::GamepadTrigger, static_cast<std::uint16_t>(which) };
+}
+
+Harness TriggerHarness(float threshold = 0.5f)
+{
+    InputBinding binding = DirectBinding(0, Trigger(GamepadTrigger::Right));
+    binding.Threshold = threshold;
+    return Harness(SingleContext({ InputActionType::Digital }, { binding }));
+}
+
+void PullTrigger(Harness& harness, float amount)
+{
+    harness.Frame.SetGamepadAxis(GamepadAxis::RightTrigger, amount);
+}
+}
+
+TEST(InputResolveThreshold, ATriggerCrossingItsThresholdIsAPress)
+{
+    Harness harness = TriggerHarness();
+
+    PullTrigger(harness, 0.2f);
+    harness.Accumulate();
+    {
+        const InputActionValue value = harness.ResolveTick();
+        EXPECT_FALSE(value.IsHeld()) << "resting travel is not a press";
+        EXPECT_FALSE(value.WasPressed());
+    }
+
+    PullTrigger(harness, 0.8f);
+    harness.Accumulate();
+    {
+        const InputActionValue value = harness.ResolveTick();
+        EXPECT_TRUE(value.WasPressed());
+        EXPECT_TRUE(value.IsHeld());
+        EXPECT_FLOAT_EQ(value.X, 1.0f) << "a button action reads as a button";
+    }
+
+    // Held past the crossing is a hold, not a second press.
+    harness.Accumulate();
+    {
+        const InputActionValue value = harness.ResolveTick();
+        EXPECT_FALSE(value.WasPressed());
+        EXPECT_TRUE(value.IsHeld());
+    }
+
+    PullTrigger(harness, 0.1f);
+    harness.Accumulate();
+    {
+        const InputActionValue value = harness.ResolveTick();
+        EXPECT_TRUE(value.WasReleased());
+        EXPECT_FALSE(value.IsHeld());
+    }
+}
+
+TEST(InputResolveThreshold, TheAuthoredThresholdDecidesWhereThePressIs)
+{
+    Harness harness = TriggerHarness(0.9f);
+
+    PullTrigger(harness, 0.7f);
+    harness.Accumulate();
+    EXPECT_FALSE(harness.ResolveTick().IsHeld());
+
+    PullTrigger(harness, 0.95f);
+    harness.Accumulate();
+    EXPECT_TRUE(harness.ResolveTick().IsHeld());
+}
+
+TEST(InputResolveThreshold, ACatchUpBurstDoesNotRepeatThePress)
+{
+    Harness harness = TriggerHarness();
+
+    PullTrigger(harness, 0.8f);
+    harness.Accumulate();
+
+    int pressed = 0;
+    for (int tick = 0; tick < 4; ++tick)
+    {
+        if (harness.ResolveTick().WasPressed())
+            ++pressed;
+    }
+    EXPECT_EQ(pressed, 1);
+    EXPECT_TRUE(harness.Values[0].IsHeld());
+}
+
+TEST(InputResolveThreshold, ActivatingAContextOverAPulledTriggerDoesNotFireAPress)
+{
+    Harness harness = TriggerHarness();
+    harness.Active = { 0 };
+
+    // Pulled while the context was off. Turning the context on must read as
+    // held, exactly as an already-down key does -- otherwise opening a menu
+    // fires whatever the player happens to be holding.
+    PullTrigger(harness, 0.8f);
+    harness.Accumulate();
+    harness.ResolveTick();
+    EXPECT_FALSE(harness.Values[0].IsHeld());
+
+    harness.Active = { 1 };
+    harness.Accumulate();
+    const InputActionValue value = harness.ResolveTick();
+    EXPECT_TRUE(value.IsHeld());
+    EXPECT_FALSE(value.WasPressed());
+}
+
+TEST(InputResolveThreshold, TheTwoClocksCrossIndependently)
+{
+    Harness harness = TriggerHarness();
+
+    PullTrigger(harness, 0.8f);
+    harness.Accumulate();
+
+    // The presentation clock reading the crossing must not consume it for the
+    // simulation clock, which has not resolved yet.
+    EXPECT_TRUE(harness.ResolveFrameClock().WasPressed());
+    EXPECT_TRUE(harness.ResolveTick().WasPressed());
+}
+
+TEST(InputResolveThreshold, ATriggerStillDrivesAnAxisActionAsAnAxis)
+{
+    // Thresholding is what a button action asks for; an axis action still gets
+    // the trigger's travel.
+    Harness harness(SingleContext({ InputActionType::Axis1D },
+                                  { DirectBinding(0, Trigger(GamepadTrigger::Right)) }));
+
+    harness.Frame.SetGamepadAxis(GamepadAxis::RightTrigger, 0.4f);
+    harness.Accumulate();
+    EXPECT_FLOAT_EQ(harness.ResolveTick().X, 0.4f);
+}

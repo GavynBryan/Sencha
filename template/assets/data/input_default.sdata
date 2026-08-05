@@ -40,6 +40,11 @@
                     {
                         "action": "jump",
                         "control": "gamepad.south"
+                    },
+                    {
+                        "action": "jump",
+                        "control": "gamepad.right_trigger",
+                        "threshold": 0.5
                     }
                 ]
             }

@@ -292,16 +292,16 @@ TEST_F(InputBindFixture, BindsNamesToDenseIndicesInClaimOrder)
 
 TEST_F(InputBindFixture, ABindingThatCannotResolveCostsOnlyItself)
 {
-    // The failure that prompted this: jump is a button action and a trigger is
-    // analog, so that one binding cannot resolve. Refusing the whole profile
-    // over it left the player with no controls at all -- no movement, no look,
-    // nothing -- which is a far worse answer to a typo than a dead jump.
+    // Refusing the whole profile over one binding left the player with no
+    // controls at all -- no movement, no look, nothing -- which is a far worse
+    // answer to a mistake than one dead binding. A stick cannot drive a button
+    // action, so this jump binding is the one that cannot resolve.
     const InputProfileHandle handle = Publish(kActionSet, R"({
         "actions": "asset://data/input_actions.sdata",
         "contexts": [ { "name": "gameplay", "priority": 100, "bindings": [
             { "action": "move", "composite": "cardinal",
               "left": "key.a", "right": "key.d", "down": "key.s", "up": "key.w" },
-            { "action": "jump", "control": "gamepad.left_trigger" },
+            { "action": "jump", "control": "gamepad.left_stick" },
             { "action": "look", "control": "mouse.delta" } ] } ]
     })");
     InputBindingCache bindings(Cache);
@@ -318,13 +318,32 @@ TEST_F(InputBindFixture, ABindingThatCannotResolveCostsOnlyItself)
     EXPECT_NE(error.find("cannot produce"), std::string::npos) << error;
 }
 
+TEST_F(InputBindFixture, ATriggerBindsToAButtonAction)
+{
+    // Fire and jump on a trigger is how a pad is bound; the threshold is what
+    // turns the pull into a press.
+    const InputProfileHandle handle = Publish(kActionSet, R"({
+        "actions": "asset://data/input_actions.sdata",
+        "contexts": [ { "name": "gameplay", "priority": 100, "bindings": [
+            { "action": "jump", "control": "gamepad.right_trigger", "threshold": 0.4 } ] } ]
+    })");
+    InputBindingCache bindings(Cache);
+
+    std::string error;
+    const BoundInputProfile* bound = bindings.Get(handle, &error);
+    ASSERT_NE(bound, nullptr) << error;
+    EXPECT_TRUE(error.empty()) << error;
+    ASSERT_EQ(bound->Bindings.size(), 1u);
+    EXPECT_FLOAT_EQ(bound->Bindings[0].Threshold, 0.4f);
+}
+
 TEST_F(InputBindFixture, ReportsEveryBindingThatFailedNotJustTheFirst)
 {
     const InputProfileHandle handle = Publish(kActionSet, R"({
         "actions": "asset://data/input_actions.sdata",
         "contexts": [ { "name": "gameplay", "priority": 100, "bindings": [
             { "action": "teleport", "control": "key.t" },
-            { "action": "jump", "control": "mouse.delta" } ] } ]
+            { "action": "jump", "control": "gamepad.left_stick" } ] } ]
     })");
     InputBindingCache bindings(Cache);
 
@@ -353,7 +372,8 @@ TEST_F(InputBindFixture, RejectsABindingForAnUnknownAction)
 
 TEST_F(InputBindFixture, RejectsAControlThatCannotProduceTheActionsValue)
 {
-    // jump is digital; the mouse's motion is a plane.
+    // jump is a button action; the mouse's motion is a plane, and unlike a
+    // trigger it has no single value a threshold could compare.
     const InputProfileHandle handle = Publish(kActionSet, R"({
         "actions": "asset://data/input_actions.sdata",
         "contexts": [ { "name": "gameplay", "priority": 1, "bindings": [

@@ -46,6 +46,9 @@ struct InputBinding
     InputControl Controls[kInputBindingControlCount]{};
 
     float Scale = 1.0f;
+    // How far an analog control must travel before it reads as pressed, when
+    // one drives a button action. Ignored otherwise.
+    float Threshold = 0.5f;
     // Below this magnitude the control reads as rest. Applied radially for a
     // plane and axially for a scalar, rescaling what is left so the live range
     // still starts at zero instead of stepping.
@@ -95,7 +98,12 @@ struct InputBinding
         switch (type)
         {
         case InputActionType::Digital:
-            return kind == InputControlValueKind::Button;
+            // A trigger drives a button by crossing its threshold, which is how
+            // every shooter binds fire on a pad. The wheel cannot: it reports
+            // how far it moved, not how far it is held.
+            return kind == InputControlValueKind::Button
+                || binding.Controls[kBindingNegativeX].Source
+                       == InputControlSource::GamepadTrigger;
         case InputActionType::Axis1D:
             return kind == InputControlValueKind::Button || kind == InputControlValueKind::Axis1D;
         case InputActionType::Axis2D:

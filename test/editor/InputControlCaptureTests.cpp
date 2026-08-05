@@ -174,19 +174,31 @@ TEST(InputControlCapture, APlaneSlotAcceptsAStick)
 
 TEST(InputControlCapture, ListenRefusesWhatThePickerWouldNotOffer)
 {
-    // The failure this pairing exists to prevent: a control the binder rejects
-    // must not be reachable by pressing it either.
+    // A control the binder rejects must not be reachable by pressing it either.
+    // A stick cannot drive a button action: it has no single value to compare.
+    const InputSlotAcceptance buttonAction{
+        InputBindingKind::Direct, InputActionType::Digital, true };
+    InputControlCapture capture = Armed("$.data.slot", buttonAction);
+
+    EXPECT_FALSE(capture.HandleSdlEvent(StickPush(0.9f)));
+    EXPECT_TRUE(capture.IsArmed()) << "the listen waits for a control that fits";
+}
+
+TEST(InputControlCapture, ListenTakesATriggerForAButtonAction)
+{
+    // The pairing this whole exchange started from: a trigger drives a button
+    // action through its threshold, so Listen must accept one.
     const InputSlotAcceptance buttonAction{
         InputBindingKind::Direct, InputActionType::Digital, true };
     InputControlCapture capture = Armed("$.data.slot", buttonAction);
 
     SDL_Event trigger{};
     trigger.type = SDL_EVENT_GAMEPAD_AXIS_MOTION;
-    trigger.gaxis.axis = SDL_GAMEPAD_AXIS_LEFT_TRIGGER;
+    trigger.gaxis.axis = SDL_GAMEPAD_AXIS_RIGHT_TRIGGER;
     trigger.gaxis.value = static_cast<Sint16>(0.9f * 32767.0f);
 
-    EXPECT_FALSE(capture.HandleSdlEvent(trigger));
-    EXPECT_TRUE(capture.IsArmed()) << "the listen waits for a control that fits";
+    EXPECT_TRUE(capture.HandleSdlEvent(trigger));
+    EXPECT_EQ(*capture.TakeCapture("$.data.slot", kDocument, 7), "gamepad.right_trigger");
 }
 
 TEST(InputControlCapture, RestingDriftDoesNotBind)

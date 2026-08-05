@@ -72,6 +72,17 @@ struct InputClockState
     // goes away while it was holding an action owes that action a release edge,
     // and this is what detects it.
     std::vector<std::uint8_t> HeldPrevious;
+
+    // Threshold state per binding, for the bindings that turn an analog control
+    // into a button. An analog control produces no device edge, so its crossing
+    // has to be noticed here.
+    //
+    // Tracked for every binding, active context or not: the crossing is a fact
+    // about the physical control, and contexts filter edges rather than create
+    // them. Without that, activating a context over an already-pulled trigger
+    // would fire a press the player never made -- the same rule the keyboard
+    // path already keeps.
+    std::vector<std::uint8_t> AnalogState;
 };
 
 // Fold this rendered frame's device transitions and motion into both clocks,
