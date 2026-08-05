@@ -87,7 +87,7 @@ DataSchema MakeActionSetSchema()
     DataFieldSchema actions;
     actions.Key = "actions";
     actions.DisplayName = "Actions";
-    actions.Summary = "Every action this game understands.";
+    actions.Summary = "Every action this game understands. Bindings and gameplay both refer to these by name.";
     actions.Kind = DataFieldKind::Array;
     actions.Editor.Widget = "cards";
     actions.Editor.TitleKey = "name";
@@ -118,18 +118,19 @@ DataSchema MakeProfileSchema()
     DataFieldSchema binding;
     binding.Key = "binding";
     binding.DisplayName = "Binding";
+    binding.Summary = "One way to produce an action: a single control, or several buttons combined.";
     binding.Kind = DataFieldKind::Record;
     binding.Editor.Widget = "compact";
     binding.Children = {
-        StringField("action", "Action", "Name of the action this drives."),
-        StringField("control", "Control", "Control name, such as key.w or mouse.delta. Omit when using a composite.", false),
+        StringField("action", "Action", "The action this control drives, by the name the action set declares."),
+        StringField("control", "Control", "The one control that drives this action. Leave empty when several buttons combine into it instead.", false),
         std::move(composite),
-        StringField("negative", "Negative", "Axis composite: the control driving the negative end.", false),
-        StringField("positive", "Positive", "Axis composite: the control driving the positive end.", false),
-        StringField("left", "Left", "Cardinal composite: negative X.", false),
-        StringField("right", "Right", "Cardinal composite: positive X.", false),
-        StringField("down", "Down", "Cardinal composite: negative Y.", false),
-        StringField("up", "Up", "Cardinal composite: positive Y.", false),
+        StringField("negative", "Negative", "The button that drives this axis negative.", false),
+        StringField("positive", "Positive", "The button that drives this axis positive.", false),
+        StringField("left", "Left", "The button that steers left.", false),
+        StringField("right", "Right", "The button that steers right.", false),
+        StringField("down", "Down", "The button that steers back or down.", false),
+        StringField("up", "Up", "The button that steers forward or up.", false),
         FloatField("scale", "Scale", "Multiplier applied to the resolved value.", -1000.0, 1000.0),
         FloatField("dead_zone", "Dead zone", "Magnitude below which the control reads as rest.", 0.0, 0.99),
         BoolField("invert_x", "Invert X", "Flip the sign of the X result."),
@@ -155,6 +156,7 @@ DataSchema MakeProfileSchema()
     DataFieldSchema context;
     context.Key = "context";
     context.DisplayName = "Context";
+    context.Summary = "A group of bindings that can be switched on and off while the game runs.";
     context.Kind = DataFieldKind::Record;
     context.Children = {
         StringField("name", "Name", "Identity used to activate and deactivate this context at runtime."),
@@ -165,7 +167,7 @@ DataSchema MakeProfileSchema()
     DataFieldSchema contexts;
     contexts.Key = "contexts";
     contexts.DisplayName = "Contexts";
-    contexts.Summary = "Binding groups that can be activated and deactivated independently.";
+    contexts.Summary = "Binding groups that switch on and off independently. Where two active groups bind the same control, the higher priority takes it and the lower one stops seeing it.";
     contexts.Kind = DataFieldKind::Array;
     contexts.Editor.Widget = "cards";
     contexts.Editor.TitleKey = "name";
