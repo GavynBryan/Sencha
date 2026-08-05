@@ -1,5 +1,6 @@
 #include <input/InputActionResolve.h>
 
+#include <algorithm>
 #include <cmath>
 
 namespace
@@ -445,6 +446,8 @@ void ResolveInputActions(const BoundInputProfile& profile,
         out[i] = InputActionValue{};
     if (clock.HeldPrevious.size() != actionCount)
         clock.HeldPrevious.assign(actionCount, 0);
+    if (clock.FiresOnRelease.size() != actionCount)
+        clock.FiresOnRelease.assign(actionCount, 0);
 
     // Analog thresholds first, for every binding whether or not its context is
     // active: the crossing is a fact about the control, so a context switched on
@@ -514,24 +517,72 @@ void ResolveInputActions(const BoundInputProfile& profile,
             ClaimBindingControls(profile.Bindings[i], claims);
     }
 
+    // Edges describe the action, not the bindings under it. Up to here the
+    // flags mean "some binding saw a device transition"; here that becomes
+    // "the action went down" or "the action came up", which is the only thing
+    // a consumer can act on. Two controls bound to one action would otherwise
+    // report a second press when the second control joins one already held,
+    // and a release when either lets go while the other still holds it.
     for (std::size_t i = 0; i < actionCount; ++i)
     {
         InputActionValue& value = out[i];
         const bool held = value.IsHeld();
+        const bool wasHeld = clock.HeldPrevious[i] != 0;
+        const bool sawPress = value.WasPressed();
+        const bool sawRelease = value.WasReleased();
+
+        InputActionFlags flags = held ? InputActionFlags::Held : InputActionFlags::None;
 
         // A press only ever comes from a device transition. Activating a
         // context over an already-held key must not look like a new press, or
         // opening a menu would fire whatever the player happened to be holding.
-        // A release also comes from losing the binding, so an action cannot
-        // stay held after the context that drove it goes away.
-        if (!held && clock.HeldPrevious[i] != 0)
-            value.Flags |= InputActionFlags::Released;
+        if (sawPress && !wasHeld)
+            flags |= InputActionFlags::Pressed;
 
-        if (profile.ActionTypes[i] == InputActionType::Digital)
+        // A release comes from the action falling, whatever made it fall: a
+        // control let go, or the binding that drove it going away. `sawRelease`
+        // covers the tap that began and ended inside one window, where the
+        // action was never observed held at all.
+        if (!held && (wasHeld || sawRelease))
+            flags |= InputActionFlags::Released;
+
+        // An axis action carries a magnitude rather than a moment, so it never
+        // fires however its bindings behaved.
+        const InputActionFireMode fire = profile.ActionFireModes[i];
+        const bool digital = profile.ActionTypes[i] == InputActionType::Digital;
+        if (digital)
+        {
+            if (HasFlag(flags, FireFlagOf(fire)))
+                flags |= InputActionFlags::Fired;
             value.X = held ? 1.0f : 0.0f;
+        }
 
+        value.Flags = flags;
         clock.HeldPrevious[i] = held ? 1 : 0;
+        clock.FiresOnRelease[i] =
+            held && digital && fire == InputActionFireMode::Released ? 1 : 0;
     }
 
     clock.Latch.Clear();
+}
+
+void ReleaseInputActions(InputClockState& clock, std::span<InputActionValue> out)
+{
+    for (std::size_t i = 0; i < out.size(); ++i)
+    {
+        const bool wasHeld = i < clock.HeldPrevious.size() && clock.HeldPrevious[i] != 0;
+        out[i] = InputActionValue{};
+        if (!wasHeld)
+            continue;
+
+        out[i].Flags |= InputActionFlags::Released;
+        // The mode is carried rather than looked up: the profile that declared
+        // it is exactly what has gone away.
+        if (i < clock.FiresOnRelease.size() && clock.FiresOnRelease[i] != 0)
+            out[i].Flags |= InputActionFlags::Fired;
+    }
+
+    std::fill(clock.HeldPrevious.begin(), clock.HeldPrevious.end(), std::uint8_t{ 0 });
+    std::fill(clock.FiresOnRelease.begin(), clock.FiresOnRelease.end(), std::uint8_t{ 0 });
+    std::fill(clock.AnalogState.begin(), clock.AnalogState.end(), std::uint8_t{ 0 });
 }

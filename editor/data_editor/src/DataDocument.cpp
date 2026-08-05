@@ -331,10 +331,11 @@ void DataDocument::Validate(const DataAssetTypeRegistry& types,
                       "file version does not match the registered subtype version");
     }
 
+    bool schemaValid = true;
     if (const DataSchema* schema = schemas.Find(typeName))
     {
         std::vector<DataValidationError> schemaErrors;
-        (void)ValidateDataAgainstSchema(*dataValue, *schema, schemaErrors);
+        schemaValid = ValidateDataAgainstSchema(*dataValue, *schema, schemaErrors);
         for (DataValidationError& schemaError : schemaErrors)
         {
             if (schemaError.Path == "$")
@@ -345,9 +346,14 @@ void DataDocument::Validate(const DataAssetTypeRegistry& types,
         }
     }
 
-    // Compiled even when the schema already complained: the two catch different
-    // mistakes, and reporting only the first found means fixing a missing field
-    // reveals a binding error that was there all along.
+    // A compiler sees data its schema accepted, which is the order the runtime
+    // loader binds in and the only precondition a compiler can be written
+    // against. Subtypes come from the loaded game module, so running one over a
+    // shape it was promised it would never see puts arbitrary code a bad field
+    // type away from taking the editor down with it.
+    if (!schemaValid)
+        return;
+
     DataAssetCompileResult compiled = type->Compile(*dataValue);
     if (!compiled.IsValid())
     {

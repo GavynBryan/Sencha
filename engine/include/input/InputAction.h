@@ -43,12 +43,30 @@ enum class InputActionScope : std::uint8_t
     Presentation,
 };
 
+// Which edge or level makes a digital action fire.
+//
+// Authored per action rather than decided at the call site, so a designer
+// asking why holding jump jumps repeatedly finds the answer in the input
+// mapping instead of in C++. Gameplay that wants one moment reads Fired();
+// gameplay built out of several phases -- charge on press, loose on release --
+// still reads the raw edges.
+enum class InputActionFireMode : std::uint8_t
+{
+    Pressed,
+    Released,
+    Held,
+};
+
 enum class InputActionFlags : std::uint8_t
 {
     None = 0,
     Held = 1 << 0,
     Pressed = 1 << 1,
     Released = 1 << 2,
+    // The action's own fire mode is satisfied this pass. A mode-selected copy
+    // of one of the three above, stamped where the mode is known so a recorded
+    // tick carries the decision made under the mode in force when it ran.
+    Fired = 1 << 3,
 };
 
 [[nodiscard]] constexpr InputActionFlags operator|(InputActionFlags a, InputActionFlags b)
@@ -67,6 +85,18 @@ constexpr InputActionFlags& operator|=(InputActionFlags& a, InputActionFlags b)
     return (static_cast<std::uint8_t>(value) & static_cast<std::uint8_t>(flag)) != 0;
 }
 
+// The flag a fire mode selects over.
+[[nodiscard]] constexpr InputActionFlags FireFlagOf(InputActionFireMode mode)
+{
+    switch (mode)
+    {
+    case InputActionFireMode::Released: return InputActionFlags::Released;
+    case InputActionFireMode::Held:     return InputActionFlags::Held;
+    case InputActionFireMode::Pressed:  break;
+    }
+    return InputActionFlags::Pressed;
+}
+
 // One action as declared by an authored action set. The registry mints ids for
 // these; the data layer produces them without needing a registry to exist yet.
 struct InputActionDefinition
@@ -74,6 +104,9 @@ struct InputActionDefinition
     std::string Name;
     InputActionType Type = InputActionType::Digital;
     InputActionScope Scope = InputActionScope::Simulation;
+    // Meaningful for Digital only. An axis action carries a magnitude, not a
+    // moment, and never fires.
+    InputActionFireMode Fire = InputActionFireMode::Pressed;
 };
 
 // One action's resolved state for one clock.
@@ -90,4 +123,5 @@ struct InputActionValue
     [[nodiscard]] bool IsHeld() const { return HasFlag(Flags, InputActionFlags::Held); }
     [[nodiscard]] bool WasPressed() const { return HasFlag(Flags, InputActionFlags::Pressed); }
     [[nodiscard]] bool WasReleased() const { return HasFlag(Flags, InputActionFlags::Released); }
+    [[nodiscard]] bool WasFired() const { return HasFlag(Flags, InputActionFlags::Fired); }
 };

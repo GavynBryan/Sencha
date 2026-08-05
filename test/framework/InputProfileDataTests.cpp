@@ -131,6 +131,55 @@ TEST_F(InputDataFixture, RejectsAnUnknownActionType)
     EXPECT_FALSE(result.IsValid());
 }
 
+TEST_F(InputDataFixture, ReadsEveryFireMode)
+{
+    const DataAssetCompileResult result = Compile(kInputActionSetTypeName, R"({
+        "actions": [
+            { "name": "shoot", "type": "digital", "fire": "pressed" },
+            { "name": "throw", "type": "digital", "fire": "released" },
+            { "name": "jump", "type": "digital", "fire": "held" }
+        ]
+    })");
+    ASSERT_TRUE(result.IsValid()) << result.Error;
+
+    const auto* actions = static_cast<const CompiledInputActionSet*>(result.Value.get());
+    ASSERT_EQ(actions->Actions.size(), 3u);
+    EXPECT_EQ(actions->Actions[0].Fire, InputActionFireMode::Pressed);
+    EXPECT_EQ(actions->Actions[1].Fire, InputActionFireMode::Released);
+    EXPECT_EQ(actions->Actions[2].Fire, InputActionFireMode::Held);
+}
+
+TEST_F(InputDataFixture, AnActionThatSaysNothingFiresOnPress)
+{
+    // Every action set authored before the field existed loads unchanged, and
+    // a button nobody has thought about behaves the way a button usually does.
+    const DataAssetCompileResult result = Compile(kInputActionSetTypeName, kActionSet);
+    ASSERT_TRUE(result.IsValid()) << result.Error;
+
+    const auto* actions = static_cast<const CompiledInputActionSet*>(result.Value.get());
+    EXPECT_EQ(actions->Actions[2].Fire, InputActionFireMode::Pressed);
+}
+
+TEST_F(InputDataFixture, RejectsAnUnknownFireMode)
+{
+    const DataAssetCompileResult result = Compile(kInputActionSetTypeName, R"({
+        "actions": [ { "name": "jump", "type": "digital", "fire": "double_tap" } ]
+    })");
+    EXPECT_FALSE(result.IsValid());
+}
+
+TEST_F(InputDataFixture, RejectsAFireModeOnAnAxisAction)
+{
+    // An axis carries a magnitude, not a moment. Accepting the field there
+    // would author a knob that silently never applies.
+    const DataAssetCompileResult result = Compile(kInputActionSetTypeName, R"({
+        "actions": [ { "name": "move", "type": "axis2", "fire": "held" } ]
+    })");
+    EXPECT_FALSE(result.IsValid());
+    EXPECT_NE(result.Error.find("$.data.actions[0].fire"), std::string::npos) << result.Error;
+    EXPECT_NE(result.Error.find("digital"), std::string::npos) << result.Error;
+}
+
 // ---------------------------------------------------------------------------
 // Profiles
 // ---------------------------------------------------------------------------
@@ -258,6 +307,21 @@ protected:
         return InputProfileHandle{ Cache.Register(kProfilePath, std::string(kInputProfileTypeName), profile.Value) };
     }
 
+    // The author saves an edit to one of the two documents.
+    void ReloadActionSet(std::string_view actionSetJson)
+    {
+        const DataAssetCompileResult actions = Compile(kInputActionSetTypeName, actionSetJson);
+        ASSERT_TRUE(actions.IsValid()) << actions.Error;
+        ASSERT_TRUE(Cache.ReloadInPlace(kActionSetPath, kInputActionSetTypeName, actions.Value));
+    }
+
+    void ReloadProfile(std::string_view profileJson)
+    {
+        const DataAssetCompileResult profile = Compile(kInputProfileTypeName, profileJson);
+        ASSERT_TRUE(profile.IsValid()) << profile.Error;
+        ASSERT_TRUE(Cache.ReloadInPlace(kProfilePath, kInputProfileTypeName, profile.Value));
+    }
+
     static constexpr std::string_view kActionSetPath = "asset://data/input_actions.sdata";
     static constexpr std::string_view kProfilePath = "asset://data/input_default.sdata";
 
@@ -270,8 +334,8 @@ TEST_F(InputBindFixture, BindsNamesToDenseIndicesInClaimOrder)
     const InputProfileHandle handle = Publish(kActionSet, kProfile);
     InputBindingCache bindings(Cache);
 
-    std::string error;
-    const BoundInputProfile* bound = bindings.Get(handle, &error);
+    const BoundInputProfile* bound = bindings.Get(handle);
+    const std::string error = DescribeBindErrors(bindings.Status(handle));
     ASSERT_NE(bound, nullptr) << error;
 
     // Highest priority first, so a resolve pass walks contexts in claim order.
@@ -290,6 +354,67 @@ TEST_F(InputBindFixture, BindsNamesToDenseIndicesInClaimOrder)
     EXPECT_EQ(jumpBinding.ActionIndex, InputActionRegistry::IndexOf(jump));
 }
 
+TEST_F(InputBindFixture, FireModesLandBesideTheActionTypes)
+{
+    const InputProfileHandle handle = Publish(R"({
+        "actions": [
+            { "name": "jump", "type": "digital", "fire": "held" },
+            { "name": "throw", "type": "digital", "fire": "released" },
+            { "name": "move", "type": "axis2" }
+        ]
+    })", R"({
+        "actions": "asset://data/input_actions.sdata",
+        "contexts": [ { "name": "gameplay", "priority": 100, "bindings": [
+            { "action": "jump", "control": "key.space" }
+        ]} ]
+    })");
+    InputBindingCache bindings(Cache);
+
+    const BoundInputProfile* bound = bindings.Get(handle);
+    const InputActionRegistry* actions = bindings.GetActions(handle);
+    ASSERT_NE(bound, nullptr) << DescribeBindErrors(bindings.Status(handle));
+    ASSERT_NE(actions, nullptr);
+
+    // A resolve pass indexes both tables by the same dense index without
+    // checking either, so they have to stay the same length.
+    ASSERT_EQ(bound->ActionFireModes.size(), bound->ActionTypes.size());
+    EXPECT_EQ(bound->ActionFireModes[InputActionRegistry::IndexOf(actions->Find("jump"))],
+              InputActionFireMode::Held);
+    EXPECT_EQ(bound->ActionFireModes[InputActionRegistry::IndexOf(actions->Find("throw"))],
+              InputActionFireMode::Released);
+}
+
+TEST_F(InputBindFixture, ARetiredSlotKeepsAFireModeItCanBeIndexedBy)
+{
+    const InputProfileHandle handle = Publish(R"({
+        "actions": [
+            { "name": "jump", "type": "digital", "fire": "held" },
+            { "name": "shout", "type": "digital", "fire": "released" }
+        ]
+    })", R"({
+        "actions": "asset://data/input_actions.sdata",
+        "contexts": [ { "name": "gameplay", "priority": 100, "bindings": [
+            { "action": "jump", "control": "key.space" }
+        ]} ]
+    })");
+    InputBindingCache bindings(Cache);
+    ASSERT_NE(bindings.Get(handle), nullptr);
+
+    const InputActionId shout = bindings.GetActions(handle)->Find("shout");
+    ASSERT_TRUE(shout.IsValid());
+
+    // The author drops an action. Its slot stays so a cached id remains a
+    // valid index; the mode table has to keep pace with the type table.
+    ReloadActionSet(R"({
+        "actions": [ { "name": "jump", "type": "digital", "fire": "held" } ]
+    })");
+
+    const BoundInputProfile* bound = bindings.Get(handle);
+    ASSERT_NE(bound, nullptr) << DescribeBindErrors(bindings.Status(handle));
+    ASSERT_EQ(bound->ActionFireModes.size(), bound->ActionTypes.size());
+    EXPECT_GT(bound->ActionFireModes.size(), InputActionRegistry::IndexOf(shout));
+}
+
 TEST_F(InputBindFixture, ABindingThatCannotResolveCostsOnlyItself)
 {
     // Refusing the whole profile over one binding left the player with no
@@ -306,8 +431,8 @@ TEST_F(InputBindFixture, ABindingThatCannotResolveCostsOnlyItself)
     })");
     InputBindingCache bindings(Cache);
 
-    std::string error;
-    const BoundInputProfile* bound = bindings.Get(handle, &error);
+    const BoundInputProfile* bound = bindings.Get(handle);
+    const std::string error = DescribeBindErrors(bindings.Status(handle));
     ASSERT_NE(bound, nullptr) << "the profile still binds";
 
     // Move and look survive; only the trigger binding is dropped.
@@ -329,8 +454,8 @@ TEST_F(InputBindFixture, ATriggerBindsToAButtonAction)
     })");
     InputBindingCache bindings(Cache);
 
-    std::string error;
-    const BoundInputProfile* bound = bindings.Get(handle, &error);
+    const BoundInputProfile* bound = bindings.Get(handle);
+    const std::string error = DescribeBindErrors(bindings.Status(handle));
     ASSERT_NE(bound, nullptr) << error;
     EXPECT_TRUE(error.empty()) << error;
     ASSERT_EQ(bound->Bindings.size(), 1u);
@@ -348,8 +473,8 @@ TEST_F(InputBindFixture, ReportsEveryBindingThatFailedNotJustTheFirst)
     InputBindingCache bindings(Cache);
 
     // Fixing one mistake should not be how the author discovers the next.
-    std::string error;
-    ASSERT_NE(bindings.Get(handle, &error), nullptr);
+    ASSERT_NE(bindings.Get(handle), nullptr);
+    const std::string error = DescribeBindErrors(bindings.Status(handle));
     EXPECT_NE(error.find("teleport"), std::string::npos) << error;
     EXPECT_NE(error.find("jump"), std::string::npos) << error;
 }
@@ -363,8 +488,8 @@ TEST_F(InputBindFixture, RejectsABindingForAnUnknownAction)
     })");
     InputBindingCache bindings(Cache);
 
-    std::string error;
-    const BoundInputProfile* bound = bindings.Get(handle, &error);
+    const BoundInputProfile* bound = bindings.Get(handle);
+    const std::string error = DescribeBindErrors(bindings.Status(handle));
     ASSERT_NE(bound, nullptr);
     EXPECT_TRUE(bound->Bindings.empty()) << "the unresolvable binding is dropped";
     EXPECT_NE(error.find("names no declared action"), std::string::npos) << error;
@@ -381,8 +506,8 @@ TEST_F(InputBindFixture, RejectsAControlThatCannotProduceTheActionsValue)
     })");
     InputBindingCache bindings(Cache);
 
-    std::string error;
-    const BoundInputProfile* bound = bindings.Get(handle, &error);
+    const BoundInputProfile* bound = bindings.Get(handle);
+    const std::string error = DescribeBindErrors(bindings.Status(handle));
     ASSERT_NE(bound, nullptr);
     EXPECT_TRUE(bound->Bindings.empty()) << "the unresolvable binding is dropped";
     EXPECT_NE(error.find("cannot produce"), std::string::npos) << error;
@@ -396,10 +521,13 @@ TEST_F(InputBindFixture, ReportsAMissingActionSet)
         Cache.Register(kProfilePath, std::string(kInputProfileTypeName), profile.Value) };
 
     InputBindingCache bindings(Cache);
-    std::string error;
-    EXPECT_EQ(bindings.Get(handle, &error), nullptr)
+    EXPECT_EQ(bindings.Get(handle), nullptr)
         << "without a vocabulary nothing can bind";
-    EXPECT_NE(error.find("is missing"), std::string::npos) << error;
+
+    const InputBindStatus status = bindings.Status(handle);
+    EXPECT_EQ(status.State, InputBindState::Failed)
+        << "nothing bound before, so there is nothing to fall back on";
+    EXPECT_NE(DescribeBindErrors(status).find("is missing"), std::string::npos);
 }
 
 TEST_F(InputBindFixture, RebindsWhenTheProfileReloadsAndKeepsTheHandle)
@@ -503,9 +631,8 @@ TEST_F(InputBindFixture, TheTemplatesShippedControlsLoadAndBind)
         kProfilePath, std::string(kInputProfileTypeName), profile.Value) };
 
     InputBindingCache bindings(Cache);
-    std::string bindError;
-    const BoundInputProfile* bound = bindings.Get(handle, &bindError);
-    ASSERT_NE(bound, nullptr) << bindError;
+    const BoundInputProfile* bound = bindings.Get(handle);
+    ASSERT_NE(bound, nullptr) << DescribeBindErrors(bindings.Status(handle));
 
     // The actions the template's systems resolve by name at startup.
     const InputActionRegistry* registry = bindings.GetActions(handle);
@@ -518,25 +645,151 @@ TEST_F(InputBindFixture, TheTemplatesShippedControlsLoadAndBind)
     EXPECT_NE(bound->FindContext("gameplay"), kInvalidInputContext);
 }
 
-TEST_F(InputBindFixture, ABadReloadKeepsTheLastGoodBindings)
+TEST_F(InputBindFixture, ABadReloadReportsWhatItDroppedAndBindsTheRest)
 {
     const InputProfileHandle handle = Publish(kActionSet, kProfile);
     InputBindingCache bindings(Cache);
     ASSERT_NE(bindings.Get(handle), nullptr);
 
-    const DataAssetCompileResult broken = Compile(kInputProfileTypeName, R"({
+    ReloadProfile(R"({
         "actions": "asset://data/input_actions.sdata",
         "contexts": [ { "name": "gameplay", "priority": 100, "bindings": [
             { "action": "nonexistent", "control": "key.j" } ] } ]
     })");
-    ASSERT_TRUE(broken.IsValid()) << broken.Error;
-    ASSERT_TRUE(Cache.ReloadInPlace(kProfilePath, kInputProfileTypeName, broken.Value));
 
-    std::string error;
-    const BoundInputProfile* bound = bindings.Get(handle, &error);
+    const BoundInputProfile* bound = bindings.Get(handle);
+    const std::string error = DescribeBindErrors(bindings.Status(handle));
 
     // The edit is reported, and what still resolves still binds.
     EXPECT_NE(error.find("names no declared action"), std::string::npos) << error;
     ASSERT_NE(bound, nullptr);
     EXPECT_TRUE(bound->Bindings.empty());
+    EXPECT_EQ(bindings.Status(handle).State, InputBindState::Current)
+        << "a profile that compiled is current, however little of it resolved";
+}
+
+TEST_F(InputBindFixture, ARebindWithNoVocabularyKeepsTheLastGoodTables)
+{
+    const InputProfileHandle handle = Publish(kActionSet, kProfile);
+    InputBindingCache bindings(Cache);
+    const BoundInputProfile* first = bindings.Get(handle);
+    ASSERT_NE(first, nullptr);
+    const std::size_t boundBefore = first->Bindings.size();
+    ASSERT_GT(boundBefore, 0u);
+
+    // The profile is edited to name an action set nothing published, so not one
+    // binding in it can resolve and there are no tables to produce at all.
+    ReloadProfile(R"({
+        "actions": "asset://data/input_absent.sdata",
+        "contexts": [ { "name": "gameplay", "priority": 100, "bindings": [
+            { "action": "jump", "control": "key.space" } ] } ]
+    })");
+
+    const BoundInputProfile* bound = bindings.Get(handle);
+    ASSERT_NE(bound, nullptr) << "the player keeps the controls that were working";
+    EXPECT_EQ(bound->Bindings.size(), boundBefore);
+
+    const InputBindStatus status = bindings.Status(handle);
+    EXPECT_EQ(status.State, InputBindState::Stale);
+    EXPECT_NE(DescribeBindErrors(status).find("is missing"), std::string::npos);
+}
+
+TEST_F(InputBindFixture, ReorderingTheActionSetDoesNotRepointCachedIds)
+{
+    const InputProfileHandle handle = Publish(kActionSet, kProfile);
+    InputBindingCache bindings(Cache);
+    const InputActionRegistry* actions = bindings.GetActions(handle);
+    ASSERT_NE(actions, nullptr);
+
+    // What a game resolves once at startup and indexes by from then on.
+    const InputActionId move = actions->Find("move");
+    const InputActionId jump = actions->Find("jump");
+    ASSERT_TRUE(move.IsValid());
+    ASSERT_TRUE(jump.IsValid());
+
+    // The author drags jump to the top of the document and saves.
+    ReloadActionSet(R"({
+        "actions": [
+            { "name": "jump", "type": "digital" },
+            { "name": "move", "type": "axis2" },
+            { "name": "look", "type": "axis2" },
+            { "name": "pause", "type": "digital", "scope": "presentation" }
+        ]
+    })");
+
+    const InputActionRegistry* rebound = bindings.GetActions(handle);
+    ASSERT_NE(rebound, nullptr);
+    EXPECT_EQ(rebound->Find("move"), move) << "a cached id still means the action it was resolved for";
+    EXPECT_EQ(rebound->Find("jump"), jump);
+
+    // And the recompiled bindings drive those same slots, so the player's keys
+    // still do what the document says they do.
+    const BoundInputProfile* bound = bindings.Get(handle);
+    ASSERT_NE(bound, nullptr);
+    EXPECT_EQ(bound->ActionTypes[InputActionRegistry::IndexOf(move)], InputActionType::Axis2D);
+    EXPECT_EQ(bound->ActionTypes[InputActionRegistry::IndexOf(jump)], InputActionType::Digital);
+
+    const std::uint32_t gameplay = bound->FindContext("gameplay");
+    ASSERT_NE(gameplay, kInvalidInputContext);
+    const InputBinding& jumpBinding =
+        bound->Bindings[bound->Contexts[gameplay].FirstBinding + 2];
+    EXPECT_EQ(jumpBinding.ActionIndex, InputActionRegistry::IndexOf(jump));
+    EXPECT_EQ(jumpBinding.Controls[kBindingNegativeX].Index, SDL_SCANCODE_SPACE);
+}
+
+TEST_F(InputBindFixture, RetargetingTheProfilesActionSetBindsAgainstTheNewOne)
+{
+    const InputProfileHandle handle = Publish(kActionSet, kProfile);
+    InputBindingCache bindings(Cache);
+    ASSERT_NE(bindings.Get(handle), nullptr);
+
+    // A second vocabulary, the way a project grows one for a separate mode.
+    const DataAssetCompileResult other = Compile(kInputActionSetTypeName, R"({
+        "actions": [ { "name": "fire", "type": "digital" } ]
+    })");
+    ASSERT_TRUE(other.IsValid()) << other.Error;
+    (void)Cache.Register("asset://data/input_vehicle.sdata",
+                         std::string(kInputActionSetTypeName), other.Value);
+
+    ReloadProfile(R"({
+        "actions": "asset://data/input_vehicle.sdata",
+        "contexts": [ { "name": "gameplay", "priority": 100, "bindings": [
+            { "action": "fire", "control": "key.space" } ] } ]
+    })");
+
+    // The lease and its reload version follow the path the profile names; a
+    // lease taken once and kept would still be watching the old document.
+    const InputActionRegistry* actions = bindings.GetActions(handle);
+    ASSERT_NE(actions, nullptr);
+    EXPECT_TRUE(actions->Find("fire").IsValid());
+    EXPECT_FALSE(actions->Find("jump").IsValid());
+
+    const BoundInputProfile* bound = bindings.Get(handle);
+    ASSERT_NE(bound, nullptr);
+    EXPECT_EQ(bound->Bindings.size(), 1u);
+    EXPECT_TRUE(DescribeBindErrors(bindings.Status(handle)).empty());
+}
+
+TEST_F(InputBindFixture, DiagnosticsAreNotConsumedByWhoeverReadsThemFirst)
+{
+    // A game asks once at startup and a reporter asks every frame. Handing the
+    // failure to whichever got there first is how a dropped binding stays
+    // silent, since the profile it was dropped from binds fine without it.
+    const InputProfileHandle handle = Publish(kActionSet, R"({
+        "actions": "asset://data/input_actions.sdata",
+        "contexts": [ { "name": "gameplay", "priority": 100, "bindings": [
+            { "action": "move", "composite": "cardinal",
+              "left": "key.a", "right": "key.d", "down": "key.s", "up": "key.w" },
+            { "action": "teleport", "control": "key.t" } ] } ]
+    })");
+    InputBindingCache bindings(Cache);
+    ASSERT_NE(bindings.GetActions(handle), nullptr) << "the rest of the profile still binds";
+
+    const InputBindStatus startup = bindings.Status(handle);
+    ASSERT_FALSE(startup.Errors.empty());
+
+    const InputBindStatus reporter = bindings.Status(handle);
+    EXPECT_EQ(DescribeBindErrors(reporter), DescribeBindErrors(startup));
+    EXPECT_EQ(reporter.Revision, startup.Revision)
+        << "an unchanged failure is not a new one to report";
 }

@@ -133,6 +133,13 @@ protected:
             CompileDocument(kInputProfileTypeName, profileJson)) };
     }
 
+    // The author saves an edit to the action set while the game runs.
+    void ReloadActionSet(std::string_view actionSetJson)
+    {
+        ASSERT_TRUE(Cache.ReloadInPlace(kActionSetPath, kInputActionSetTypeName,
+                                        CompileDocument(kInputActionSetTypeName, actionSetJson)));
+    }
+
     // A second profile asset, the way a game ships one per control scheme.
     void PublishAlternateProfile(std::string_view profileJson)
     {
@@ -469,6 +476,40 @@ TEST_F(InputRuntimeFixture, ABrokenProfileReportsItselfThroughTheActionState)
         << state.Error();
 }
 
+TEST_F(InputRuntimeFixture, LosingTheProfileReleasesWhatItWasHolding)
+{
+    InputContextLease gameplay = WorldState.GetResource<InputContextSet>().Activate("gameplay");
+    RunFrame(1);
+    BindActionIds();
+
+    PressKey(SDL_SCANCODE_SPACE);
+    RunFrame(1);
+    ASSERT_TRUE(Recorder->Samples.back().Jump.IsHeld());
+
+    // Pointed at a profile whose action set nothing published: no vocabulary,
+    // so not one binding resolves and there are no previous tables under this
+    // handle to fall back on.
+    PublishAlternateProfile(R"({
+        "actions": "asset://data/input_absent.sdata",
+        "contexts": [ { "name": "gameplay", "priority": 100, "bindings": [
+            { "action": "jump", "control": "key.space" } ] } ]
+    })");
+    RegisterInputMapping(WorldState, Cache, Profile);
+    RunFrame(1);
+
+    // The key is still physically down. What gameplay reads is not: leaving the
+    // last resolved values standing would have the simulation jumping for the
+    // rest of the session.
+    const auto& lost = Recorder->Samples.back();
+    EXPECT_FALSE(lost.Jump.IsHeld());
+    EXPECT_TRUE(lost.Jump.WasReleased());
+    EXPECT_FALSE(FrameActions().Held(Recorder->Jump));
+
+    // And it owes that release once, not on every tick from here on.
+    RunFrame(1);
+    EXPECT_FALSE(Recorder->Samples.back().Jump.WasReleased());
+}
+
 // ---------------------------------------------------------------------------
 // The seam the networking ticket builds on
 // ---------------------------------------------------------------------------
@@ -517,4 +558,65 @@ TEST_F(InputRuntimeFixture, TickRecordsProjectIntoAFlatPlayerCommand)
     EXPECT_EQ(commands[1].Buttons, 1u);
     EXPECT_FLOAT_EQ(commands[1].MoveY, 1.0f);
     EXPECT_GT(commands[0].Tick, commands[1].Tick);
+}
+
+TEST_F(InputRuntimeFixture, TheAuthoredFireModeDecidesWhatTheSimulationReads)
+{
+    InputContextLease gameplay = WorldState.GetResource<InputContextSet>().Activate("gameplay");
+    RunFrame(1);
+    BindActionIds();
+
+    const auto firedTicks = [this]
+    {
+        int count = 0;
+        for (const auto& sample : Recorder->Samples)
+        {
+            if (sample.Jump.WasFired())
+                ++count;
+        }
+        return count;
+    };
+
+    // Nothing authored: a button fires once per press however many ticks the
+    // frame ran.
+    Recorder->Samples.clear();
+    PressKey(SDL_SCANCODE_SPACE);
+    RunFrame(3);
+    EXPECT_EQ(firedTicks(), 1);
+
+    ReleaseKey(SDL_SCANCODE_SPACE);
+    RunFrame(1);
+
+    // The designer edits the action set and saves. The cached id still names
+    // jump, and the same control now fires on every tick it is down -- an edit
+    // to data, with no change to the system that reads it.
+    ReloadActionSet(R"({
+        "actions": [
+            { "name": "move", "type": "axis2" },
+            { "name": "look", "type": "axis2" },
+            { "name": "jump", "type": "digital", "fire": "held" },
+            { "name": "menu_back", "type": "digital", "scope": "presentation" }
+        ]
+    })");
+
+    Recorder->Samples.clear();
+    PressKey(SDL_SCANCODE_SPACE);
+    RunFrame(3);
+    EXPECT_EQ(firedTicks(), 3);
+}
+
+TEST_F(InputRuntimeFixture, HistoryRecordsCarryTheFiredMoment)
+{
+    InputContextLease gameplay = WorldState.GetResource<InputContextSet>().Activate("gameplay");
+    RunFrame(1);
+    BindActionIds();
+
+    PressKey(SDL_SCANCODE_SPACE);
+    RunFrame(1);
+
+    // A command builder reads records rather than the live view, so the moment
+    // has to survive in the record it was resolved into.
+    const InputActionState& state = WorldState.GetResource<InputActionState>();
+    ASSERT_GT(state.HistoryCount(), 0u);
+    EXPECT_TRUE(state.History(0).View().Fired(Recorder->Jump));
 }

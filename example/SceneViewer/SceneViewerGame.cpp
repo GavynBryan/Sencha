@@ -257,9 +257,8 @@ void SceneViewerGame::OnStart(GameStartupContext&)
             RegisterFlyCameraInput(runtimeAssets.DataAssets);
         RegisterInputMapping(world, runtimeAssets.DataAssets, profile);
 
-        std::string bindError;
-        if (const InputActionRegistry* actions =
-                world.GetResource<InputBindingCache>().GetActions(profile, &bindError))
+        InputBindingCache& bindings = world.GetResource<InputBindingCache>();
+        if (const InputActionRegistry* actions = bindings.GetActions(profile))
         {
             FreeCam.Actions.Look = actions->Find("fly_look");
             FreeCam.Actions.Move = actions->Find("fly_move");
@@ -271,7 +270,8 @@ void SceneViewerGame::OnStart(GameStartupContext&)
         else
         {
             logging.GetLogger<SceneViewerGame>().Error(
-                "fly camera input did not bind: {}", bindError);
+                "fly camera input did not bind: {}",
+                DescribeBindErrors(bindings.Status(profile)));
         }
     }
 

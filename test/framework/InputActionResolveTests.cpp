@@ -47,12 +47,17 @@ InputBinding CardinalBinding(std::uint32_t action)
     return binding;
 }
 
-// A profile with one context holding the given bindings.
+// A profile with one context holding the given bindings. Fire modes default to
+// the compiler's default so a scenario that is not about firing says nothing
+// about it; the tables stay parallel either way.
 BoundInputProfile SingleContext(std::vector<InputActionType> types,
-                                std::vector<InputBinding> bindings)
+                                std::vector<InputBinding> bindings,
+                                std::vector<InputActionFireMode> fireModes = {})
 {
     BoundInputProfile profile;
     profile.ActionTypes = std::move(types);
+    profile.ActionFireModes = std::move(fireModes);
+    profile.ActionFireModes.resize(profile.ActionTypes.size(), InputActionFireMode::Pressed);
     profile.Bindings = std::move(bindings);
     profile.Contexts.push_back(InputContextDefinition{
         "gameplay", 0, 0, static_cast<std::uint32_t>(profile.Bindings.size()) });
@@ -345,6 +350,89 @@ TEST(InputResolve, MultipleBindingsFeedOneAction)
     EXPECT_FLOAT_EQ(value.X, 1.0f);
 }
 
+namespace
+{
+// One digital action a player can drive from either hand.
+BoundInputProfile TwoControlsOneAction()
+{
+    return SingleContext({ InputActionType::Digital },
+                         { DirectBinding(0, Key(kKeySpace)),
+                           DirectBinding(0, InputControl{ InputControlSource::MouseButton,
+                                                          SDL_BUTTON_LEFT }) });
+}
+}
+
+TEST(InputResolve, ASecondControlJoiningAHeldActionIsNotANewPress)
+{
+    Harness harness(TwoControlsOneAction());
+
+    harness.PressKey(kKeySpace);
+    harness.Accumulate();
+    ASSERT_TRUE(harness.ResolveTick().WasPressed());
+
+    // The other hand joins in on a control bound to the same action. Edges
+    // belong to the action, and the action never came up.
+    harness.BeginFrame();
+    harness.Frame.SetMouseButtonHeld(SDL_BUTTON_LEFT, true);
+    harness.Frame.MouseButtonsPressed.push_back(SDL_BUTTON_LEFT);
+    harness.Accumulate();
+
+    const InputActionValue value = harness.ResolveTick();
+    EXPECT_TRUE(value.IsHeld());
+    EXPECT_FALSE(value.WasPressed()) << "an edge-driven ability would fire twice";
+}
+
+TEST(InputResolve, ReleasingOneOfTwoHeldControlsDoesNotReleaseTheAction)
+{
+    Harness harness(TwoControlsOneAction());
+
+    harness.PressKey(kKeySpace);
+    harness.Frame.SetMouseButtonHeld(SDL_BUTTON_LEFT, true);
+    harness.Frame.MouseButtonsPressed.push_back(SDL_BUTTON_LEFT);
+    harness.Accumulate();
+    ASSERT_TRUE(harness.ResolveTick().IsHeld());
+
+    // One hand lets go while the other keeps holding.
+    harness.BeginFrame();
+    harness.ReleaseKey(kKeySpace);
+    harness.Accumulate();
+
+    const InputActionValue stillHeld = harness.ResolveTick();
+    EXPECT_TRUE(stillHeld.IsHeld());
+    EXPECT_FALSE(stillHeld.WasReleased()) << "a held ability would be cancelled under the player";
+
+    // The last one lets go, and now the action really did come up.
+    harness.BeginFrame();
+    harness.Frame.SetMouseButtonHeld(SDL_BUTTON_LEFT, false);
+    harness.Frame.MouseButtonsReleased.push_back(SDL_BUTTON_LEFT);
+    harness.Accumulate();
+
+    const InputActionValue released = harness.ResolveTick();
+    EXPECT_FALSE(released.IsHeld());
+    EXPECT_TRUE(released.WasReleased());
+}
+
+TEST(InputResolve, LosingEveryBindingReleasesWhatWasHeld)
+{
+    Harness harness(SingleContext({ InputActionType::Digital },
+                                  { DirectBinding(0, Key(kKeySpace)) }));
+
+    harness.PressKey(kKeySpace);
+    harness.Accumulate();
+    ASSERT_TRUE(harness.ResolveTick().IsHeld());
+
+    // What the resolve system publishes when no profile can be bound: the
+    // action falls, and it owes the release for falling.
+    ReleaseInputActions(harness.Simulation, harness.Values);
+    EXPECT_FALSE(harness.Values[0].IsHeld());
+    EXPECT_TRUE(harness.Values[0].WasReleased());
+    EXPECT_FLOAT_EQ(harness.Values[0].X, 0.0f);
+
+    // And it only owes it once.
+    ReleaseInputActions(harness.Simulation, harness.Values);
+    EXPECT_FALSE(harness.Values[0].WasReleased());
+}
+
 // ---------------------------------------------------------------------------
 // Contexts
 // ---------------------------------------------------------------------------
@@ -357,6 +445,7 @@ BoundInputProfile MenuOverGameplay()
 {
     BoundInputProfile profile;
     profile.ActionTypes = { InputActionType::Axis2D, InputActionType::Digital, InputActionType::Digital };
+    profile.ActionFireModes.assign(profile.ActionTypes.size(), InputActionFireMode::Pressed);
     profile.Bindings = {
         DirectBinding(1, Key(kKeyEscape)),   // menu.back
         CardinalBinding(0),                  // gameplay move
@@ -445,11 +534,22 @@ TEST(InputResolve, DeactivatingAContextReleasesWhatItHeld)
 // Registry
 // ---------------------------------------------------------------------------
 
+namespace
+{
+InputActionDefinition Action(std::string name, InputActionType type)
+{
+    return InputActionDefinition{ std::move(name), type, InputActionScope::Simulation };
+}
+}
+
 TEST(InputActionRegistryTests, MintsDenseRegistrationOrderIds)
 {
     InputActionRegistry registry;
-    ASSERT_TRUE(registry.Register({ "move", InputActionType::Axis2D, InputActionScope::Simulation }));
-    ASSERT_TRUE(registry.Register({ "jump", InputActionType::Digital, InputActionScope::Simulation }));
+    const std::vector<InputActionDefinition> set = {
+        Action("move", InputActionType::Axis2D),
+        Action("jump", InputActionType::Digital),
+    };
+    ASSERT_TRUE(registry.Rebuild(set));
 
     const InputActionId move = registry.Find("move");
     const InputActionId jump = registry.Find("jump");
@@ -464,11 +564,77 @@ TEST(InputActionRegistryTests, MintsDenseRegistrationOrderIds)
 TEST(InputActionRegistryTests, RejectsDuplicateNames)
 {
     InputActionRegistry registry;
-    ASSERT_TRUE(registry.Register({ "jump", InputActionType::Digital, InputActionScope::Simulation }));
+    const std::vector<InputActionDefinition> set = {
+        Action("jump", InputActionType::Digital),
+        Action("jump", InputActionType::Digital),
+    };
 
     std::string error;
-    EXPECT_FALSE(registry.Register({ "jump", InputActionType::Digital, InputActionScope::Simulation }, &error));
+    EXPECT_FALSE(registry.Rebuild(set, &error));
     EXPECT_NE(error.find("duplicate"), std::string::npos);
+}
+
+TEST(InputActionRegistryTests, ANameKeepsItsIdWhenTheSetIsReordered)
+{
+    InputActionRegistry registry;
+    ASSERT_TRUE(registry.Rebuild(std::vector<InputActionDefinition>{
+        Action("move", InputActionType::Axis2D),
+        Action("jump", InputActionType::Digital) }));
+    const InputActionId move = registry.Find("move");
+    const InputActionId jump = registry.Find("jump");
+
+    // Consumers resolve names once and index by id afterwards, so an author
+    // reordering the document must not repoint those ids at each other.
+    ASSERT_TRUE(registry.Rebuild(std::vector<InputActionDefinition>{
+        Action("jump", InputActionType::Digital),
+        Action("move", InputActionType::Axis2D) }));
+    EXPECT_EQ(registry.Find("move"), move);
+    EXPECT_EQ(registry.Find("jump"), jump);
+    EXPECT_EQ(registry.Get(move)->Type, InputActionType::Axis2D);
+}
+
+TEST(InputActionRegistryTests, ADroppedNameRetiresItsSlotRatherThanLendingIt)
+{
+    InputActionRegistry registry;
+    ASSERT_TRUE(registry.Rebuild(std::vector<InputActionDefinition>{
+        Action("move", InputActionType::Axis2D),
+        Action("jump", InputActionType::Digital) }));
+    const InputActionId jump = registry.Find("jump");
+
+    // jump is deleted and crouch is added in the same edit. A cached jump id
+    // has to read as absent -- reading as crouch is how a control ends up
+    // firing the wrong thing.
+    ASSERT_TRUE(registry.Rebuild(std::vector<InputActionDefinition>{
+        Action("move", InputActionType::Axis2D),
+        Action("crouch", InputActionType::Digital) }));
+    EXPECT_FALSE(registry.Find("jump").IsValid());
+    EXPECT_EQ(registry.Get(jump), nullptr);
+    EXPECT_NE(registry.Find("crouch"), jump);
+    EXPECT_EQ(registry.SlotCount(), 3u);
+
+    // And bringing it back is the same action again, not a third slot.
+    ASSERT_TRUE(registry.Rebuild(std::vector<InputActionDefinition>{
+        Action("move", InputActionType::Axis2D),
+        Action("crouch", InputActionType::Digital),
+        Action("jump", InputActionType::Digital) }));
+    EXPECT_EQ(registry.Find("jump"), jump);
+    EXPECT_EQ(registry.SlotCount(), 3u);
+}
+
+TEST(InputActionRegistryTests, ARejectedRebuildLeavesThePreviousVocabularyIntact)
+{
+    InputActionRegistry registry;
+    ASSERT_TRUE(registry.Rebuild(std::vector<InputActionDefinition>{
+        Action("move", InputActionType::Axis2D) }));
+    const InputActionId move = registry.Find("move");
+
+    EXPECT_FALSE(registry.Rebuild(std::vector<InputActionDefinition>{
+        Action("jump", InputActionType::Digital),
+        Action("jump", InputActionType::Digital) }));
+
+    // The caller still has a working vocabulary to fall back on.
+    EXPECT_EQ(registry.Find("move"), move);
+    EXPECT_EQ(registry.SlotCount(), 1u);
 }
 
 // ---------------------------------------------------------------------------
@@ -770,4 +936,277 @@ TEST(InputResolveThreshold, ATriggerStillDrivesAnAxisActionAsAnAxis)
     harness.Frame.SetGamepadAxis(GamepadAxis::RightTrigger, 0.4f);
     harness.Accumulate();
     EXPECT_FLOAT_EQ(harness.ResolveTick().X, 0.4f);
+}
+
+// ---------------------------------------------------------------------------
+// Authored fire mode
+//
+// Which moment a digital action fires on is authored, not chosen at the call
+// site. Fired is a mode-selected copy of one of the edges above, so these check
+// that it inherits their guarantees rather than acquiring rules of its own.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+Harness FireHarness(InputActionFireMode mode)
+{
+    return Harness(SingleContext({ InputActionType::Digital },
+                                 { DirectBinding(0, Key(kKeySpace)) },
+                                 { mode }));
+}
+
+enum class Step
+{
+    Press,
+    Hold,
+    Release,
+    Idle,
+};
+
+// One frame per step, one tick per frame, collecting what fired.
+std::vector<bool> RunFireScript(InputActionFireMode mode, const std::vector<Step>& steps)
+{
+    Harness harness = FireHarness(mode);
+    std::vector<bool> fired;
+    for (Step step : steps)
+    {
+        harness.BeginFrame();
+        if (step == Step::Press)
+            harness.PressKey(kKeySpace);
+        else if (step == Step::Release)
+            harness.ReleaseKey(kKeySpace);
+        harness.Accumulate();
+        fired.push_back(harness.ResolveTick().WasFired());
+    }
+    return fired;
+}
+}
+
+TEST(InputResolveFireMode, EachModeFiresOnItsOwnMoment)
+{
+    // Press, keep holding, let go, stay idle.
+    const std::vector<Step> script = { Step::Press, Step::Hold, Step::Release, Step::Idle };
+
+    struct Case
+    {
+        InputActionFireMode Mode;
+        std::vector<bool> Fired;
+        const char* Why;
+    };
+
+    const Case cases[] = {
+        { InputActionFireMode::Pressed, { true, false, false, false },
+          "once as the control goes down" },
+        { InputActionFireMode::Held, { true, true, false, false },
+          "every pass the control is down" },
+        { InputActionFireMode::Released, { false, false, true, false },
+          "once as the control comes up" },
+    };
+
+    for (const Case& test : cases)
+        EXPECT_EQ(RunFireScript(test.Mode, script), test.Fired) << test.Why;
+}
+
+TEST(InputResolveFireMode, FiredIsTheOnlyFlagTheModeDecides)
+{
+    // The raw edges stay what they were: gameplay built out of several phases
+    // still reads them, whatever one moment the action authored.
+    Harness harness = FireHarness(InputActionFireMode::Released);
+
+    harness.PressKey(kKeySpace);
+    harness.Accumulate();
+    const InputActionValue pressed = harness.ResolveTick();
+    EXPECT_TRUE(pressed.WasPressed()) << "a released-mode action still reports its press";
+    EXPECT_TRUE(pressed.IsHeld());
+    EXPECT_FALSE(pressed.WasFired());
+}
+
+TEST(InputResolveFireMode, AnAxisActionNeverFires)
+{
+    // An axis carries a magnitude rather than a moment. The compiler rejects
+    // `fire` on one; a hand-built profile must not produce a moment either.
+    Harness harness(SingleContext({ InputActionType::Axis2D }, { CardinalBinding(0) },
+                                  { InputActionFireMode::Held }));
+
+    harness.PressKey(kKeyW);
+    harness.Accumulate();
+    const InputActionValue value = harness.ResolveTick();
+    EXPECT_FLOAT_EQ(value.Y, 1.0f);
+    EXPECT_FALSE(value.WasFired());
+}
+
+TEST(InputResolveFireMode, ATapInsideOneFrameFiresPressAndReleaseModesOnce)
+{
+    // Both edges arrive on the same tick and the action never reads as held,
+    // so the two edge modes each owe exactly one fire and hold owes none.
+    for (InputActionFireMode mode : { InputActionFireMode::Pressed,
+                                      InputActionFireMode::Released,
+                                      InputActionFireMode::Held })
+    {
+        Harness harness = FireHarness(mode);
+        harness.PressKey(kKeySpace);
+        harness.ReleaseKey(kKeySpace);
+        harness.Accumulate();
+
+        const InputActionValue value = harness.ResolveTick();
+        EXPECT_FALSE(value.IsHeld());
+        EXPECT_EQ(value.WasFired(), mode != InputActionFireMode::Held);
+    }
+}
+
+TEST(InputResolveFireMode, ACatchUpBurstFiresAnEdgeModeOnce)
+{
+    for (InputActionFireMode mode : { InputActionFireMode::Pressed, InputActionFireMode::Released })
+    {
+        Harness harness = FireHarness(mode);
+        harness.PressKey(kKeySpace);
+        if (mode == InputActionFireMode::Released)
+        {
+            harness.Accumulate();
+            harness.ResolveTick();
+            harness.BeginFrame();
+            harness.ReleaseKey(kKeySpace);
+        }
+        harness.Accumulate();
+
+        int fired = 0;
+        for (int tick = 0; tick < 4; ++tick)
+        {
+            if (harness.ResolveTick().WasFired())
+                ++fired;
+        }
+        EXPECT_EQ(fired, 1) << "an edge mode fires once per burst, not once per tick";
+    }
+}
+
+TEST(InputResolveFireMode, AHeldModeFiresOnEveryTickOfACatchUpBurst)
+{
+    // The repetition a designer would come looking for. It is what the mode
+    // means, so it is asserted rather than avoided.
+    Harness harness = FireHarness(InputActionFireMode::Held);
+    harness.PressKey(kKeySpace);
+    harness.Accumulate();
+
+    int fired = 0;
+    for (int tick = 0; tick < 4; ++tick)
+    {
+        if (harness.ResolveTick().WasFired())
+            ++fired;
+    }
+    EXPECT_EQ(fired, 4);
+}
+
+TEST(InputResolveFireMode, ActivatingAContextOverAHeldKeyFiresHoldButNotPress)
+{
+    for (InputActionFireMode mode : { InputActionFireMode::Pressed, InputActionFireMode::Held })
+    {
+        Harness harness = FireHarness(mode);
+        harness.Active = { 0 };
+
+        harness.PressKey(kKeySpace);
+        harness.Accumulate();
+        EXPECT_FALSE(harness.ResolveTick().WasFired());
+
+        harness.Active = { 1 };
+        harness.BeginFrame();
+        harness.Accumulate();
+        EXPECT_EQ(harness.ResolveTick().WasFired(), mode == InputActionFireMode::Held)
+            << "opening a menu must not fire what the player was already holding";
+    }
+}
+
+TEST(InputResolveFireMode, DeactivatingAContextFiresAReleaseMode)
+{
+    Harness harness = FireHarness(InputActionFireMode::Released);
+
+    harness.PressKey(kKeySpace);
+    harness.Accumulate();
+    EXPECT_FALSE(harness.ResolveTick().WasFired());
+
+    harness.Active = { 0 };
+    harness.BeginFrame();
+    harness.Accumulate();
+    EXPECT_TRUE(harness.ResolveTick().WasFired())
+        << "the binding going away is still the action coming up";
+}
+
+TEST(InputResolveFireMode, ASecondControlJoiningAHeldActionDoesNotRefirePress)
+{
+    Harness harness(SingleContext({ InputActionType::Digital },
+                                  { DirectBinding(0, Key(kKeySpace)),
+                                    DirectBinding(0, Key(kKeyEscape)) },
+                                  { InputActionFireMode::Pressed }));
+
+    harness.PressKey(kKeySpace);
+    harness.Accumulate();
+    EXPECT_TRUE(harness.ResolveTick().WasFired());
+
+    harness.BeginFrame();
+    harness.PressKey(kKeyEscape);
+    harness.Accumulate();
+    EXPECT_FALSE(harness.ResolveTick().WasFired())
+        << "an edge-driven ability would fire twice";
+}
+
+TEST(InputResolveFireMode, LosingTheProfileFiresAReleaseModeExactlyOnce)
+{
+    Harness harness = FireHarness(InputActionFireMode::Released);
+
+    harness.PressKey(kKeySpace);
+    harness.Accumulate();
+    ASSERT_TRUE(harness.ResolveTick().IsHeld());
+
+    // No profile to consult here: the mode the release fires under is carried
+    // by the clock, because the profile that declared it is what went away.
+    ReleaseInputActions(harness.Simulation, harness.Values);
+    EXPECT_TRUE(harness.Values[0].WasReleased());
+    EXPECT_TRUE(harness.Values[0].WasFired());
+
+    ReleaseInputActions(harness.Simulation, harness.Values);
+    EXPECT_FALSE(harness.Values[0].WasReleased()) << "the release is owed once, not every pass";
+    EXPECT_FALSE(harness.Values[0].WasFired());
+}
+
+TEST(InputResolveFireMode, LosingTheProfileDoesNotFireAPressMode)
+{
+    Harness harness = FireHarness(InputActionFireMode::Pressed);
+
+    harness.PressKey(kKeySpace);
+    harness.Accumulate();
+    ASSERT_TRUE(harness.ResolveTick().IsHeld());
+
+    ReleaseInputActions(harness.Simulation, harness.Values);
+    EXPECT_TRUE(harness.Values[0].WasReleased());
+    EXPECT_FALSE(harness.Values[0].WasFired())
+        << "losing the bindings is not the player pressing anything";
+}
+
+TEST(InputResolveFireMode, ATriggerCrossingDrivesTheAuthoredMode)
+{
+    for (InputActionFireMode mode : { InputActionFireMode::Pressed, InputActionFireMode::Released })
+    {
+        InputBinding binding = DirectBinding(0, Trigger(GamepadTrigger::Right));
+        binding.Threshold = 0.5f;
+        Harness harness(SingleContext({ InputActionType::Digital }, { binding }, { mode }));
+
+        PullTrigger(harness, 0.8f);
+        harness.Accumulate();
+        EXPECT_EQ(harness.ResolveTick().WasFired(), mode == InputActionFireMode::Pressed);
+
+        PullTrigger(harness, 0.1f);
+        harness.Accumulate();
+        EXPECT_EQ(harness.ResolveTick().WasFired(), mode == InputActionFireMode::Released);
+    }
+}
+
+TEST(InputResolveFireMode, TheTwoClocksFireIndependently)
+{
+    Harness harness = FireHarness(InputActionFireMode::Pressed);
+
+    harness.PressKey(kKeySpace);
+    harness.Accumulate();
+
+    EXPECT_TRUE(harness.ResolveFrameClock().WasFired());
+    EXPECT_TRUE(harness.ResolveTick().WasFired())
+        << "the presentation clock must not consume the simulation's moment";
 }

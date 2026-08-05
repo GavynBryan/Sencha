@@ -42,7 +42,7 @@ saved rebinds).
 { "type": "input.actions", "version": 1, "data": { "actions": [
     { "name": "move", "type": "axis2" },
     { "name": "look", "type": "axis2" },
-    { "name": "jump", "type": "digital" },
+    { "name": "jump", "type": "digital", "fire": "held" },
     { "name": "pause", "type": "digital", "scope": "presentation" }
 ]}}
 ```
@@ -50,6 +50,14 @@ saved rebinds).
 `type` is `digital`, `axis1`, or `axis2`. `scope` is `simulation` (the default —
 the action drives the simulation and may travel in a player command) or
 `presentation` (local to this client: menus, debug toggles).
+
+`fire` says which moment counts as the action firing: `pressed` (the default —
+once, as the control goes down), `released` (once, as it comes up), or `held`
+(every pass it is down, which repeats). It belongs to the action rather than to
+the code that reads it, so why holding jump jumps repeatedly is answerable from
+the input mapping instead of from C++, and changing it is an edit to data. Only
+a button has a moment to fire on; authoring `fire` on an axis action fails the
+asset rather than becoming a knob that silently never applies.
 
 `input_default.sdata` — controls bound to those actions, grouped into contexts:
 
@@ -91,13 +99,21 @@ Sticks report negative Y when pushed away from the player, matching the mouse's
 downward-positive convention. A movement binding therefore wants `invert_y`,
 while a look binding does not — the template profile shows both.
 
+Every connected pad drives one abstract pad. `GamepadDeviceSet` keeps what each
+device is reporting and folds them: a button reads down while any device holds
+it, and each stick or trigger takes the device pushing it furthest. One player
+with a controller in each hand is still one player, and a pad unplugged
+mid-press stops contributing rather than holding its buttons down forever.
+Per-player device sets are a split-screen concern and are not this.
+
 Sticks and triggers are *positions*, not displacement: they hold their value
 until the device moves, so every tick of a catch-up frame reads the same stick.
 Only mouse motion and the wheel accumulate.
 
 A trigger can drive a button action, which is how fire and jump are normally
 bound on a pad: `threshold` says how far it must be pulled to count as pressed,
-defaulting to half travel. The crossing is what produces the press and release,
+defaulting to half travel. The crossing is what produces the press and release
+the action's `fire` mode then selects over,
 and it is tracked whether or not the binding's context is active -- so switching
 a context on over an already-pulled trigger reads as held, never as a press the
 player did not make. The wheel cannot drive a button action: it reports how far
@@ -115,6 +131,11 @@ A profile presents as the keymap it describes: a collapsed context reads
 "gameplay - priority 100 - 5 bindings", a collapsed binding reads
 "jump - Space" or "move - WASD". Where something under a card is wrong, the card
 carries a marker, so a mistake cannot hide behind a collapsed row.
+
+An action card names the shape it carries and any moment that is not the
+default, so "jump - Button, while held" is legible from the collapsed row. The
+fire mode is offered only on a button, and turning a button into an axis takes
+the mode with it rather than leaving an unauthorable field behind.
 
 A binding's shape is chosen once -- single control, two buttons, or four
 directions -- and choosing it erases the slots the other shapes use. That makes
@@ -153,10 +174,16 @@ void CharacterInputSystem::FixedLogic(FixedLogicContext& ctx)
 
     const InputActionView input = actions->Tick();
     const Vec2d move = input.Axis2(ids->Move);   // strafe on X, forward on Y
-    const bool jump = input.Held(ids->Jump);     // or Pressed() / Released()
+    const bool jump = input.Fired(ids->Jump);    // the moment the action set authored
     ...
 }
 ```
+
+`Fired()` is what single-phase gameplay reads: it answers under the action's own
+`fire` mode, so a designer retuning a button does not need the consumer to
+change. `Held()`, `Pressed()`, and `Released()` remain for gameplay built out of
+several phases — charge while held, loose on release — where no one mode
+describes what the consumer wants.
 
 `Tick()` is this tick's record; `Frame()` is the presentation snapshot, which is
 what a camera or a menu wants. A system that reads actions must be ordered after
@@ -200,28 +227,62 @@ input. The mapper keeps a separate latch per clock, which settles every case:
 | Tap inside one frame | Pressed and Released arrive together on the next tick, with the action never reading as held. |
 | Context activated over a held key | Held, never a synthesised press. |
 | Context deactivated while holding | The action releases; it cannot stay held. |
+| Second control pressed while the action is held | No second press. Edges describe the action, not the binding that moved: with jump on Space, a pad button, and a trigger, joining one to another is not a new press, and letting one go while another still holds it is not a release. |
+| The profile stops resolving | Every held action releases once and then reads as zero, on both clocks. Actions cannot outlive the bindings that produced them. |
 | Focus loss, or the console taking input | The capture layer releases held device state, so actions release through the ordinary path instead of sticking down. |
 
 Context changes are applied at the frame boundary, before the first tick, so
 every tick of one frame resolves against the same set.
 
+`Fired()` is a mode-selected copy of one of those edges, decided where the mode
+is known, so it inherits every row above rather than adding rules of its own: a
+`pressed` action fires once per press however many ticks the frame ran, a
+`released` action fires once when the control comes up — including the once it
+owes when the profile stops resolving underneath it — and a `held` action fires
+every pass the control is down, which is the repetition that mode means.
+
+## Hot reload
+
+Both subtypes reload in place while the game runs, and a game resolves its action
+names once at startup. An id therefore has to keep meaning the same action across
+a reload: the registry keeps each name's id, so reordering the action set is free
+and adding to it does not disturb what is already resolved. A name the set stops
+declaring retires its slot rather than lending it to whatever was authored next,
+so a cached id for a deleted action reads as absent instead of as someone else's
+action.
+
+A profile that names a different action set rebinds against that one — the lease
+and the reload version it watches follow the path the profile names.
+
 ## Diagnostics
 
-A profile whose bindings do not resolve is reported and keeps its previous
-tables, so a bad hot-reload does not take the player's controls away. The failure
-is logged once and left on `InputActionState::Error()`. Load-time mistakes —
-duplicate action names, unknown controls, duplicate context priorities,
-incomplete composites, a control that cannot produce its action's value — fail
-the asset with an exact JSON path rather than producing a control that silently
-never fires.
+A rebind that produces no tables at all keeps the previous ones, so a bad
+hot-reload does not take the player's controls away while the bad edit is on
+disk. `InputBindingCache::Status()` says which of the four states a profile is in
+(`Unbound`, `Current`, `Stale`, `Failed`) and carries the diagnostics.
+
+Those diagnostics are entry state, not a one-shot delivery: a game asking at
+startup and the resolve system asking every frame both see them. The resolve
+system is the one place that reports, once per change rather than once per frame,
+to the log and to `InputActionState::Error()`. That includes a *partial* failure,
+where one binding is dropped and the rest of the profile binds — the case that
+would otherwise stay silent precisely because the controls mostly work.
+
+Load-time mistakes — duplicate action names, unknown controls, duplicate context
+priorities, incomplete composites, a control that cannot produce its action's
+value — fail the asset with an exact JSON path rather than producing a control
+that silently never fires.
 
 ## Boundaries this leaves open
 
 **AbilityKit.** A game bridges actions to `AbilityActivationQueue` in its own
 system, which is what keeps one activation path for players and AI (abilitykit
-D-I). Binding an ability definition directly to an action id, and hold/release
-ability semantics, are deferred to the AbilityKit tasks stage; the tick records
-already carry the edges and tick stamps those will need.
+D-I). Which moment an action fires on is settled here, in the mapping, not
+there. What remains for the AbilityKit stage is binding an ability definition
+directly to an action id, and abilities whose shape spans several moments —
+charge while held then loose on release, tap versus hold, timed sequences. Those
+need more than one moment and so read the raw edges; the tick records already
+carry the edges and tick stamps they will need.
 
 **Networking.** Tick records are flat, tick-stamped, action-indexed value arrays
 with no strings, pointers, or platform types. A command builder projects the

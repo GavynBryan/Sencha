@@ -73,6 +73,12 @@ struct InputClockState
     // and this is what detects it.
     std::vector<std::uint8_t> HeldPrevious;
 
+    // Whether the action held after the previous pass fires on release, by
+    // dense action index. The release a lost profile owes is published without
+    // a profile to consult, so the mode that release fires under is carried
+    // here rather than looked up when it is already gone.
+    std::vector<std::uint8_t> FiresOnRelease;
+
     // Threshold state per binding, for the bindings that turn an analog control
     // into a button. An analog control produces no device edge, so its crossing
     // has to be noticed here.
@@ -105,3 +111,12 @@ void ResolveInputActions(const BoundInputProfile& profile,
                          const InputDeviceSnapshot& devices,
                          InputClockState& clock,
                          std::span<InputActionValue> out);
+
+// Publish the release every held action owes when no profile can resolve, and
+// forget what this clock was carrying.
+//
+// Losing the profile is losing every binding at once, which is the same thing
+// as a context going away underneath an action and owes the same edge. Without
+// it the last resolved values would stand as the newest published state and a
+// consumer would read a held action for as long as nothing rebound.
+void ReleaseInputActions(InputClockState& clock, std::span<InputActionValue> out);

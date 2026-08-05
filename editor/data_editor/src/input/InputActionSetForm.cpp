@@ -11,6 +11,7 @@
 #include <imgui.h>
 
 #include <array>
+#include <cctype>
 #include <cstring>
 #include <format>
 #include <optional>
@@ -105,7 +106,14 @@ FieldEdit DrawNameRow(JsonValue& action)
     return FieldEdit{ edited, ImGui::IsItemDeactivatedAfterEdit() };
 }
 
-// "move - Plane", "pause - Button, presentation".
+// The action's value shape, defaulted the way the compiler defaults it.
+std::string ActionTypeOf(const JsonValue& action)
+{
+    const std::string type = ReadMemberString(action, "type");
+    return type.empty() ? std::string("digital") : type;
+}
+
+// "move - Plane", "jump - Button, while held", "pause - Button, presentation".
 std::string ActionCardTitle(const JsonValue& action,
                             const DataFieldSchema* record,
                             std::size_t index)
@@ -113,10 +121,19 @@ std::string ActionCardTitle(const JsonValue& action,
     const std::string name = ReadMemberString(action, "name");
     std::string title = name.empty() ? std::format("Action {}", index + 1) : name;
 
-    std::string type = ReadMemberString(action, "type");
-    if (type.empty())
-        type = "digital";
+    const std::string type = ActionTypeOf(action);
     title += " - " + EnumDisplayName(record, "type", type, type);
+
+    // Only the modes that differ from the default earn room in the title: the
+    // question a card answers at a glance is which button behaves unusually.
+    if (const std::string fire = ReadMemberString(action, "fire");
+        type == "digital" && !fire.empty() && fire != "pressed")
+    {
+        std::string label = EnumDisplayName(record, "fire", fire, fire);
+        for (char& c : label)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        title += ", " + label;
+    }
 
     if (ReadMemberString(action, "scope") == "presentation")
         title += ", presentation";
@@ -159,6 +176,19 @@ FieldEdit DrawInputActionSetForm(JsonValue& data,
             ImGui::Indent();
             edit |= DrawNameRow(actions[index]);
             edit |= DrawEnumRow(actions[index], record, "type", "Value", "digital");
+            // Only a button has a moment to fire on, and the compiler rejects
+            // the field on anything else. Turning a button into an axis takes
+            // the mode with it rather than leaving behind a member the form no
+            // longer shows and the compiler will not accept.
+            if (ActionTypeOf(actions[index]) == "digital")
+            {
+                edit |= DrawEnumRow(actions[index], record, "fire", "Fires", "pressed");
+            }
+            else if (FindMember(actions[index], "fire") != nullptr)
+            {
+                EraseMember(actions[index], "fire");
+                edit |= FieldEdit::Instant();
+            }
             edit |= DrawEnumRow(actions[index], record, "scope", "Scope", "simulation");
 
             ButtonFlow verbs;

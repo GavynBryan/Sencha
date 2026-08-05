@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+#include <input/GamepadDeviceSet.h>
+#include <input/InputControl.h>
 #include <input/InputFrame.h>
 #include <input/SdlInputCapture.h>
 
@@ -126,4 +128,121 @@ TEST(SdlInputCapture, BeginFrameKeepsHeldStateAndEdges)
     EXPECT_TRUE(frame.IsKeyDown(SDL_SCANCODE_W));
     EXPECT_TRUE(Contains(frame.KeysPressed, SDL_SCANCODE_W));
     EXPECT_FLOAT_EQ(frame.MouseDeltaX, 0.0f);
+}
+
+// ---------------------------------------------------------------------------
+// Folding several pads into one abstract pad
+// ---------------------------------------------------------------------------
+
+namespace
+{
+constexpr std::uint32_t kPadA = 1;
+constexpr std::uint32_t kPadB = 2;
+constexpr std::uint32_t kSouth = static_cast<std::uint32_t>(GamepadButton::South);
+
+// Both pads open and nothing pressed, which is where every scenario below
+// starts and where the frame starts too.
+GamepadDeviceSet TwoPads()
+{
+    GamepadDeviceSet devices;
+    devices.Add(kPadA);
+    devices.Add(kPadB);
+    return devices;
+}
+
+// One device change, published the way the capture adapter publishes it.
+void PressOn(GamepadDeviceSet& devices, InputFrame& frame, std::uint32_t device, bool down)
+{
+    const std::uint32_t before = devices.FoldButtons();
+    devices.SetButton(device, kSouth, down);
+    devices.PublishButtons(frame, before);
+}
+}
+
+TEST(GamepadDeviceSet, AButtonStaysDownWhileAnyPadHoldsIt)
+{
+    GamepadDeviceSet devices = TwoPads();
+    InputFrame frame;
+
+    PressOn(devices, frame, kPadA, true);
+    PressOn(devices, frame, kPadB, true);
+    ASSERT_TRUE(frame.IsGamepadButtonDown(kSouth));
+    EXPECT_EQ(frame.GamepadButtonsPressed.size(), 1u) << "one abstract pad, one press";
+
+    // The first pad lets go while the second is still holding it.
+    frame.ClearEdges();
+    PressOn(devices, frame, kPadA, false);
+    EXPECT_TRUE(frame.IsGamepadButtonDown(kSouth));
+    EXPECT_TRUE(frame.GamepadButtonsReleased.empty());
+
+    // Only when the last one lets go does the abstract pad come up.
+    PressOn(devices, frame, kPadB, false);
+    EXPECT_FALSE(frame.IsGamepadButtonDown(kSouth));
+    EXPECT_TRUE(Contains(frame.GamepadButtonsReleased, kSouth));
+}
+
+TEST(GamepadDeviceSet, UnpluggingOnePadLeavesWhatTheOthersHold)
+{
+    GamepadDeviceSet devices = TwoPads();
+    InputFrame frame;
+    PressOn(devices, frame, kPadA, true);
+    PressOn(devices, frame, kPadB, true);
+    frame.ClearEdges();
+
+    // A pad pulled out mid-press never sends its button-up.
+    const std::uint32_t before = devices.FoldButtons();
+    devices.Remove(kPadA);
+    devices.PublishButtons(frame, before);
+
+    EXPECT_TRUE(frame.IsGamepadButtonDown(kSouth)) << "the pad still plugged in is still holding it";
+    EXPECT_TRUE(frame.GamepadButtonsReleased.empty());
+
+    const std::uint32_t beforeLast = devices.FoldButtons();
+    devices.Remove(kPadB);
+    devices.PublishButtons(frame, beforeLast);
+    EXPECT_FALSE(frame.IsGamepadButtonDown(kSouth));
+    EXPECT_TRUE(Contains(frame.GamepadButtonsReleased, kSouth));
+}
+
+TEST(GamepadDeviceSet, AStickTakesTheDevicePushedFurthest)
+{
+    GamepadDeviceSet devices = TwoPads();
+    InputFrame frame;
+
+    devices.SetAxis(kPadA, GamepadAxis::LeftX, 0.9f);
+    devices.SetAxis(kPadB, GamepadAxis::LeftY, -0.2f);
+    devices.PublishAxes(frame);
+    EXPECT_FLOAT_EQ(frame.GetGamepadAxis(GamepadAxis::LeftX), 0.9f);
+    EXPECT_FLOAT_EQ(frame.GetGamepadAxis(GamepadAxis::LeftY), 0.0f)
+        << "both axes come from the same hand";
+
+    // The stick that was winning returns to centre, and the fold follows it
+    // there rather than holding the furthest value it ever saw.
+    devices.SetAxis(kPadA, GamepadAxis::LeftX, 0.0f);
+    devices.PublishAxes(frame);
+    EXPECT_FLOAT_EQ(frame.GetGamepadAxis(GamepadAxis::LeftY), -0.2f);
+
+    // And a pad unplugged with its stick pushed stops contributing at all.
+    devices.Remove(kPadB);
+    devices.PublishAxes(frame);
+    EXPECT_FLOAT_EQ(frame.GetGamepadAxis(GamepadAxis::LeftY), 0.0f);
+}
+
+TEST(GamepadDeviceSet, PublishingDoesNotFightAForcedRelease)
+{
+    GamepadDeviceSet devices = TwoPads();
+    InputFrame frame;
+    PressOn(devices, frame, kPadA, true);
+
+    // Focus loss releases everything the frame is holding while the device
+    // itself keeps reporting the button down.
+    frame.ReleaseAllHeld();
+    frame.ClearEdges();
+
+    // An unrelated device change must not resurrect it as a fresh press.
+    devices.SetAxis(kPadB, GamepadAxis::RightX, 0.5f);
+    devices.PublishAxes(frame);
+    devices.PublishButtons(frame, devices.FoldButtons());
+    EXPECT_FALSE(frame.IsGamepadButtonDown(kSouth));
+    EXPECT_TRUE(frame.GamepadButtonsPressed.empty());
 }

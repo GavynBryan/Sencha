@@ -74,6 +74,19 @@ DataSchema MakeActionSetSchema()
         { "presentation", "Presentation", "Local to this client: menus, debug toggles." },
     };
 
+    DataFieldSchema fire;
+    fire.Key = "fire";
+    fire.DisplayName = "Fires";
+    fire.Summary = "When a button action counts as fired. Gameplay that reacts to one moment reads this; gameplay built out of several phases reads the raw edges instead.";
+    fire.Kind = DataFieldKind::Enum;
+    fire.Default = std::string("pressed");
+    fire.Required = false;
+    fire.EnumChoices = {
+        { "pressed", "On press", "Once, the moment the control goes down." },
+        { "released", "On release", "Once, the moment the control comes up." },
+        { "held", "While held", "Every pass the control is down, which repeats." },
+    };
+
     DataFieldSchema action;
     action.Key = "action";
     action.DisplayName = "Action";
@@ -82,6 +95,7 @@ DataSchema MakeActionSetSchema()
         StringField("name", "Name", "Identity referenced by profiles and by gameplay code."),
         std::move(type),
         std::move(scope),
+        std::move(fire),
     };
 
     DataFieldSchema actions;
@@ -204,6 +218,14 @@ bool ParseActionScope(std::string_view text, InputActionScope& out)
 {
     if (text == "simulation")   { out = InputActionScope::Simulation;   return true; }
     if (text == "presentation") { out = InputActionScope::Presentation; return true; }
+    return false;
+}
+
+bool ParseFireMode(std::string_view text, InputActionFireMode& out)
+{
+    if (text == "pressed")  { out = InputActionFireMode::Pressed;  return true; }
+    if (text == "released") { out = InputActionFireMode::Released; return true; }
+    if (text == "held")     { out = InputActionFireMode::Held;     return true; }
     return false;
 }
 
@@ -389,6 +411,23 @@ DataAssetCompileResult CompileInputActionSet(const JsonValue& data)
             if (!ParseActionScope(scope->AsString(), definition.Scope))
             {
                 result.Error = std::format("{}.scope is not a scope: '{}'", path, scope->AsString());
+                return result;
+            }
+        }
+        if (const JsonValue* fire = item.Find("fire"); fire != nullptr && !fire->IsNull())
+        {
+            // Authored on an axis action the knob would silently never apply,
+            // which reads as a mapping that does not work. Naming the path is
+            // how the author finds out it belongs on a button.
+            if (definition.Type != InputActionType::Digital)
+            {
+                result.Error = std::format("{}.fire applies only to a digital action", path);
+                return result;
+            }
+            if (!fire->IsString() || !ParseFireMode(fire->AsString(), definition.Fire))
+            {
+                result.Error = std::format("{}.fire is not a fire mode: '{}'", path,
+                                           fire->IsString() ? fire->AsString() : std::string("<not a string>"));
                 return result;
             }
         }

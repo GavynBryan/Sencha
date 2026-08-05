@@ -513,11 +513,12 @@ struct CharacterInputSystem
         const float strafe = move.X;
         const float forward = move.Y;
 
-        // Held, not edge-triggered: queueing the ability every tick while the
-        // control is down means a press just before landing fires on the first
-        // grounded tick, and holding it hops again on each landing. The
-        // activation gate (grounded, cooldown) rejects the rest for free.
-        const bool jump = input.Held(actionIds->Jump);
+        // Whichever moment the action set authored. Jump authors "while held":
+        // queueing the ability every tick while the control is down means a
+        // press just before landing fires on the first grounded tick, and
+        // holding it hops again on each landing. The activation gate (grounded,
+        // cooldown) rejects the rest for free.
+        const bool jump = input.Fired(actionIds->Jump);
 
         // Each controlled entity steers along its own aim, read from the entity
         // rather than from whatever camera happens to be watching it.
@@ -1447,13 +1448,16 @@ void TemplateGame::SetupInputMapping(Logger& log)
     const InputProfileHandle profile{ InputProfileAsset.GetToken() };
     RegisterInputMapping(world, assets.DataAssets, profile);
 
-    // Names resolve to ids once, here. Every system downstream indexes by id.
-    std::string bindError;
-    const InputActionRegistry* actions =
-        world.GetResource<InputBindingCache>().GetActions(profile, &bindError);
+    // Names resolve to ids once, here. An id outlives a reload of the action
+    // set, so every system downstream indexes by id from now on; the resolve
+    // system reports whatever failed to bind, including the bindings that were
+    // dropped while the rest of the profile bound fine.
+    InputBindingCache& bindings = world.GetResource<InputBindingCache>();
+    const InputActionRegistry* actions = bindings.GetActions(profile);
     if (actions == nullptr)
     {
-        log.Error("TemplateGame: input profile did not bind: {}", bindError);
+        log.Error("TemplateGame: input profile did not bind: {}",
+                  DescribeBindErrors(bindings.Status(profile)));
         return;
     }
 

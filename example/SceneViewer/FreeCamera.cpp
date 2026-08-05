@@ -58,12 +58,16 @@ AuthoredInputBinding AxisPair(std::string_view action,
 InputProfileHandle RegisterFlyCameraInput(DataAssetCache& dataAssets)
 {
     auto actions = std::make_shared<CompiledInputActionSet>();
+    // Modifiers fire while they are down; the trace dump fires once per press,
+    // which is the default.
     actions->Actions = {
         { "fly_look", InputActionType::Axis2D, InputActionScope::Presentation },
         { "fly_move", InputActionType::Axis2D, InputActionScope::Simulation },
         { "fly_vertical", InputActionType::Axis1D, InputActionScope::Simulation },
-        { "fly_fast", InputActionType::Digital, InputActionScope::Simulation },
-        { "fly_look_enable", InputActionType::Digital, InputActionScope::Presentation },
+        { "fly_fast", InputActionType::Digital, InputActionScope::Simulation,
+          InputActionFireMode::Held },
+        { "fly_look_enable", InputActionType::Digital, InputActionScope::Presentation,
+          InputActionFireMode::Held },
         { "fly_dump_trace", InputActionType::Digital, InputActionScope::Presentation },
     };
 
@@ -101,7 +105,7 @@ InputProfileHandle RegisterFlyCameraInput(DataAssetCache& dataAssets)
 
 void FreeCamera::UpdateLook(const InputActionView& input)
 {
-    LookHeld = input.Held(Actions.LookEnable);
+    LookHeld = input.Fired(Actions.LookEnable);
     if (!LookHeld)
         return;
 
@@ -127,7 +131,7 @@ void FreeCamera::TickFixed(const InputActionView& input, World& world, float fix
     if (move.SqrMagnitude() > 0.0f)
     {
         move = move.Normalized();
-        const float speed = MoveSpeed * (input.Held(Actions.Fast) ? FastMultiplier : 1.0f);
+        const float speed = MoveSpeed * (input.Fired(Actions.Fast) ? FastMultiplier : 1.0f);
         transform->Value.Position += transform->Value.Rotation.RotateVector(move) * (speed * fixedDt);
     }
 }

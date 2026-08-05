@@ -13,6 +13,25 @@ InputActionResolveSystem::InputActionResolveSystem(DataAssetCache& dataAssets,
 {
 }
 
+void InputActionResolveSystem::ReportBindStatus(World& world, const InputBindStatus& status)
+{
+    if (status.Revision == ReportedErrorRevision)
+        return;
+    ReportedErrorRevision = status.Revision;
+
+    const std::string message = DescribeBindErrors(status);
+
+    // Bindings that fail to resolve leave the player without the controls they
+    // authored, so this is worth saying out loud rather than leaving to a
+    // silent no-op. A partial failure reports here too: dropping one binding
+    // keeps the profile working, which is exactly why nothing else would ever
+    // notice it happened.
+    if (!message.empty() && Log != nullptr)
+        Log->Error("input profile: {}", message);
+    if (InputActionState* state = world.TryGetResource<InputActionState>())
+        state->SetError(message);
+}
+
 const BoundInputProfile* InputActionResolveSystem::ResolveProfile(World& world)
 {
     InputProfileBinding* binding = world.TryGetResource<InputProfileBinding>();
@@ -23,18 +42,8 @@ const BoundInputProfile* InputActionResolveSystem::ResolveProfile(World& world)
     if (cache == nullptr)
         cache = &world.AddResource<InputBindingCache>(*DataAssets);
 
-    std::string error;
-    const BoundInputProfile* profile = cache->Get(binding->Profile, &error);
-    if (!error.empty())
-    {
-        // Bindings that fail to resolve leave the player without the controls
-        // they authored, so this is worth saying out loud rather than leaving
-        // to a silent no-op.
-        if (Log != nullptr)
-            Log->Error("input profile: {}", error);
-        if (InputActionState* state = world.TryGetResource<InputActionState>())
-            state->SetError(error);
-    }
+    const BoundInputProfile* profile = cache->Get(binding->Profile);
+    ReportBindStatus(world, cache->Status(binding->Profile));
     return profile;
 }
 
@@ -50,6 +59,11 @@ void InputActionResolveSystem::PreSimulate(PreSimulateContext& ctx)
 
     if (profile == nullptr)
     {
+        // Anything held was held under bindings that are gone. Publishing the
+        // release they owe is what stops a consumer from reading a held action
+        // for the rest of the session after a profile swap fails.
+        if (InputActionState* state = world.TryGetResource<InputActionState>())
+            ReleaseInputActions(Presentation, state->FrameStorage());
         Presentation.Latch.Clear();
         Simulation.Latch.Clear();
         return;
@@ -74,19 +88,27 @@ void InputActionResolveSystem::FixedLogic(FixedLogicContext& ctx)
 {
     World& world = ctx.Entities;
     const BoundInputProfile* profile = ResolveProfile(world);
-    if (profile == nullptr)
-        return;
 
     InputActionState* state = world.TryGetResource<InputActionState>();
     if (state == nullptr)
         return;
 
-    // ActiveMask is whatever PreSimulate settled for this frame: every tick of
-    // one frame resolves against the same contexts.
+    // Opened before the profile is tested, because a tick that resolves nothing
+    // still has to publish something. Leaving the previous record newest would
+    // serve it to every tick from here on.
     const std::span<InputActionValue> storage = state->BeginTick(ctx.Time.TickIndex);
     if (storage.empty())
         return;
 
+    if (profile == nullptr)
+    {
+        ReleaseInputActions(Simulation, storage);
+        return;
+    }
+
+    // ActiveMask is whatever PreSimulate settled for this frame: every tick of
+    // one frame resolves against the same contexts.
+    //
     // The frame's device snapshot, not the live platform frame: simulation is
     // downstream of the pump, and every tick of one frame owes the same answer.
     ResolveInputActions(*profile, ActiveMask, Devices, Simulation, storage);

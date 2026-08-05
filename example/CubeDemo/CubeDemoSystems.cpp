@@ -192,13 +192,13 @@ struct MouseTraceSystem
             .Mdy = look.Y,
             .Yaw = Camera.Yaw,
             .Pitch = Camera.Pitch,
-            .LookHeld = input.Held(Camera.Actions.LookEnable),
+            .LookHeld = input.Fired(Camera.Actions.LookEnable),
         };
         TraceWrite = (TraceWrite + 1) % kTraceCapacity;
         if (TraceCount < kTraceCapacity)
             ++TraceCount;
 
-        if (input.Pressed(Camera.Actions.DumpTrace))
+        if (input.Fired(Camera.Actions.DumpTrace))
             DumpTrace();
     }
 

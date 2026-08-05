@@ -142,6 +142,10 @@ struct BoundInputProfile
     // Action type by dense index, so a resolve pass knows whether to sum
     // contributions or or-them-together without consulting the registry.
     std::vector<InputActionType> ActionTypes;
+    // Fire mode by dense index, parallel to ActionTypes and always the same
+    // length: a resolve pass indexes both by the same action index without
+    // checking either. Anything assembling a profile by hand owes both.
+    std::vector<InputActionFireMode> ActionFireModes;
 
     [[nodiscard]] std::uint32_t ActionCount() const
     {

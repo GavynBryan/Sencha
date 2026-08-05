@@ -6,7 +6,6 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
-#include <bit>
 #include <cmath>
 
 namespace
@@ -60,53 +59,40 @@ SdlGamepadCapture::SdlGamepadCapture()
 
 SdlGamepadCapture::~SdlGamepadCapture()
 {
-    for (const OpenPad& pad : Pads)
-        SDL_CloseGamepad(static_cast<SDL_Gamepad*>(pad.Handle));
-    Pads.clear();
+    for (void* handle : Devices.PlatformHandles())
+        SDL_CloseGamepad(static_cast<SDL_Gamepad*>(handle));
     if (SubsystemReady)
         SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
 }
 
 void SdlGamepadCapture::Open(std::uint32_t instanceId, InputFrame& frame)
 {
-    const auto existing = std::find_if(Pads.begin(), Pads.end(),
-        [instanceId](const OpenPad& pad) { return pad.InstanceId == instanceId; });
-    if (existing != Pads.end())
+    if (Devices.Contains(instanceId))
         return;
 
     SDL_Gamepad* handle = SDL_OpenGamepad(static_cast<SDL_JoystickID>(instanceId));
     if (handle == nullptr)
         return;
 
-    Pads.push_back(OpenPad{ instanceId, handle });
+    Devices.Add(instanceId, handle);
     frame.GamepadConnected = true;
 }
 
 void SdlGamepadCapture::Close(std::uint32_t instanceId, InputFrame& frame)
 {
-    const auto existing = std::find_if(Pads.begin(), Pads.end(),
-        [instanceId](const OpenPad& pad) { return pad.InstanceId == instanceId; });
-    if (existing == Pads.end())
+    if (!Devices.Contains(instanceId))
         return;
 
-    SDL_CloseGamepad(static_cast<SDL_Gamepad*>(existing->Handle));
-    Pads.erase(existing);
-    frame.GamepadConnected = !Pads.empty();
+    const std::uint32_t before = Devices.FoldButtons();
+    SDL_CloseGamepad(static_cast<SDL_Gamepad*>(Devices.Remove(instanceId)));
+    frame.GamepadConnected = !Devices.Empty();
 
     // A pad unplugged mid-press never sends its button-up, and its sticks stop
-    // reporting wherever they were pushed.
-    if (Pads.empty())
-    {
-        std::uint32_t held = frame.GamepadButtonsHeld;
-        while (held != 0)
-        {
-            const auto bit = static_cast<std::uint32_t>(std::countr_zero(held));
-            held &= held - 1;
-            frame.GamepadButtonsReleased.push_back(bit);
-        }
-        frame.GamepadButtonsHeld = 0;
-        frame.GamepadAxes.fill(0.0f);
-    }
+    // reporting wherever they were pushed. Dropping it from the fold releases
+    // whatever only it was holding, and leaves alone whatever the pads still
+    // plugged in are holding.
+    Devices.PublishButtons(frame, before);
+    Devices.PublishAxes(frame);
 }
 
 void SdlGamepadCapture::OpenConnected(InputFrame& frame)
@@ -136,26 +122,17 @@ bool SdlGamepadCapture::Accept(InputFrame& frame, const SDL_Event& event)
         return true;
 
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
-    {
-        GamepadButton button{};
-        if (!MapButton(static_cast<SDL_GamepadButton>(event.gbutton.button), button))
-            return false;
-        const auto index = static_cast<std::uint32_t>(button);
-        if (!frame.IsGamepadButtonDown(index))
-            frame.GamepadButtonsPressed.push_back(index);
-        frame.SetGamepadButtonHeld(index, true);
-        return true;
-    }
-
     case SDL_EVENT_GAMEPAD_BUTTON_UP:
     {
         GamepadButton button{};
         if (!MapButton(static_cast<SDL_GamepadButton>(event.gbutton.button), button))
             return false;
-        const auto index = static_cast<std::uint32_t>(button);
-        if (frame.IsGamepadButtonDown(index))
-            frame.GamepadButtonsReleased.push_back(index);
-        frame.SetGamepadButtonHeld(index, false);
+
+        const std::uint32_t before = Devices.FoldButtons();
+        Devices.SetButton(static_cast<std::uint32_t>(event.gbutton.which),
+                          static_cast<std::uint32_t>(button),
+                          event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN);
+        Devices.PublishButtons(frame, before);
         return true;
     }
 
@@ -165,12 +142,9 @@ bool SdlGamepadCapture::Accept(InputFrame& frame, const SDL_Event& event)
         if (!MapAxis(static_cast<SDL_GamepadAxis>(event.gaxis.axis), axis))
             return false;
 
-        // Last writer wins. With two pads open they fight over the same axis,
-        // which is predictable and self-correcting; taking the larger magnitude
-        // instead would leave the axis stuck, since a stick returning to centre
-        // reports a smaller value than the one already recorded.
-        frame.SetGamepadAxis(
-            axis, std::clamp(static_cast<float>(event.gaxis.value) * kAxisScale, -1.0f, 1.0f));
+        Devices.SetAxis(static_cast<std::uint32_t>(event.gaxis.which), axis,
+                        std::clamp(static_cast<float>(event.gaxis.value) * kAxisScale, -1.0f, 1.0f));
+        Devices.PublishAxes(frame);
         return true;
     }
 

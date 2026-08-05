@@ -38,6 +38,14 @@ struct InputActionView
         return Values[index];
     }
 
+    // Whether the action fires this pass, under the mode its action set
+    // authored. What gameplay reacting to one moment should read: flipping a
+    // button between press, release and hold is then an edit to the input
+    // mapping rather than to the code that consumes it.
+    [[nodiscard]] bool Fired(InputActionId action) const { return Get(action).WasFired(); }
+
+    // The raw edges, for gameplay built out of several phases -- charge while
+    // held, loose on release -- where no single mode describes what it wants.
     [[nodiscard]] bool Held(InputActionId action) const { return Get(action).IsHeld(); }
     [[nodiscard]] bool Pressed(InputActionId action) const { return Get(action).WasPressed(); }
     [[nodiscard]] bool Released(InputActionId action) const { return Get(action).WasReleased(); }

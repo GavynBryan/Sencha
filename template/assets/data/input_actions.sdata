@@ -5,7 +5,7 @@
         "actions": [
             { "name": "move", "type": "axis2" },
             { "name": "look", "type": "axis2" },
-            { "name": "jump", "type": "digital" }
+            { "name": "jump", "type": "digital", "fire": "held" }
         ]
     }
 }

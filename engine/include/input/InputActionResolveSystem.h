@@ -37,11 +37,17 @@ public:
 
 private:
     // The bound profile for this world, or null when no profile is configured
-    // or its bindings do not resolve. Reports a new failure once.
+    // or nothing could be bound from it.
     const BoundInputProfile* ResolveProfile(World& world);
+
+    // The one place bind diagnostics reach a log and the diagnostic surface.
+    // The cache holds them as state, so reporting is driven by the revision
+    // rather than by whoever happened to ask first.
+    void ReportBindStatus(World& world, const InputBindStatus& status);
 
     DataAssetCache* DataAssets = nullptr;
     Logger* Log = nullptr;
+    std::uint64_t ReportedErrorRevision = 0;
 
     // Device state as of this frame's platform pump. Captured in PreSimulate so
     // the fixed ticks that follow need no access to the platform's frame at all.

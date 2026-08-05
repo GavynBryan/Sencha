@@ -24,6 +24,15 @@ struct DataAssetCompileResult
     }
 };
 
+// Turns one subtype's authored `data` object into its compiled runtime value.
+//
+// Called only after the subtype's registered schema has accepted the document,
+// so a compiler may rely on the shapes that schema guarantees. A subtype with
+// no registered schema guarantees nothing, and its compiler sees whatever the
+// file contained. Everything a compiler does not validate through its schema
+// it must therefore check itself, including value kinds: these run inside the
+// editor as well as the runtime, and a compiler that throws takes its host with
+// it.
 using CompileDataAssetFn =
     std::function<DataAssetCompileResult(const JsonValue& data)>;
 using DataAssetResidentQueryFn = std::function<bool(std::string_view typeName)>;
