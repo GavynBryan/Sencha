@@ -8,9 +8,25 @@
 
 #include <filesystem>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
+
+// Splits a subtype compiler's "<json-path> <message>" error back into the two.
+// Exposed for testing: getting the path right is what lets a form mark the
+// field that is actually wrong, and the formats are easy to regress.
+[[nodiscard]] DataValidationError SplitCompileError(std::string message);
+
+// The first validation error at `path` or anywhere under it, or null. A form
+// marks a collapsed card with this: the error may belong to a field the author
+// cannot currently see, and a card that looks fine while something inside it is
+// broken is worse than no marker at all.
+//
+// "Under" means the error path continues with '.' or '[', so "$.data.context"
+// never matches "$.data.contexts".
+[[nodiscard]] const DataValidationError* FindValidationErrorAt(
+    std::span<const DataValidationError> errors, std::string_view path);
 
 class DataDocument
 {

@@ -67,6 +67,11 @@ public:
     [[nodiscard]] const std::string& SelectedPath() const { return SelectedJsonPath; }
 
     [[nodiscard]] std::vector<const AssetRecord*> DataAssets() const;
+
+    // The declared subtype of a data asset, for reference fields that only
+    // accept one kind. Reads an open tab's working envelope when there is one,
+    // so an unsaved retype is honoured.
+    [[nodiscard]] std::string DataSubtypeOf(std::string_view virtualPath) const;
     [[nodiscard]] std::filesystem::path ResolveFile(std::string_view virtualPath) const;
     [[nodiscard]] std::string MakeVirtualPath(std::string_view relativePath) const;
 

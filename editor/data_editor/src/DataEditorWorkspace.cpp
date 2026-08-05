@@ -3,9 +3,12 @@
 #include "project/Project.h"
 
 #include <core/json/JsonFormat.h>
+#include <core/json/JsonParser.h>
 
 #include <algorithm>
 #include <fstream>
+#include <optional>
+#include <sstream>
 #include <utility>
 
 namespace
@@ -332,6 +335,34 @@ std::vector<const AssetRecord*> DataEditorWorkspace::DataAssets() const
             return a->Path < b->Path;
         });
     return records;
+}
+
+std::string DataEditorWorkspace::DataSubtypeOf(std::string_view virtualPath) const
+{
+    // An open tab's live envelope wins over the file: a subtype-filtered picker
+    // that read only disk would miss an asset the author just created and has
+    // not saved.
+    for (const auto& tab : Tabs)
+    {
+        if (tab->VirtualPath() == virtualPath)
+            return std::string(tab->Subtype());
+    }
+
+    const std::filesystem::path file = ResolveFile(virtualPath);
+    if (file.empty())
+        return {};
+
+    std::ifstream stream(file);
+    if (!stream)
+        return {};
+    std::ostringstream contents;
+    contents << stream.rdbuf();
+
+    const std::optional<JsonValue> root = JsonParse(contents.str());
+    if (!root.has_value())
+        return {};
+    const JsonValue* type = root->Find("type");
+    return type != nullptr && type->IsString() ? type->AsString() : std::string{};
 }
 
 std::filesystem::path DataEditorWorkspace::ResolveFile(std::string_view virtualPath) const
