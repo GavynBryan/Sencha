@@ -8,12 +8,12 @@
 #include <utility>
 
 void InputControlCapture::Arm(std::string fieldPath,
-                              bool buttonsOnly,
+                              InputSlotAcceptance acceptance,
                               std::string documentPath,
                               std::uint64_t documentRevision)
 {
     Armed = true;
-    ButtonsOnly = buttonsOnly;
+    Acceptance = acceptance;
     ArmedField = std::move(fieldPath);
     ArmedDocument = std::move(documentPath);
     ArmedRevision = documentRevision;
@@ -78,10 +78,11 @@ bool InputControlCapture::HandleSdlEvent(const SDL_Event& event)
     if (!control.has_value())
         return false;
 
-    // A slot that only takes buttons stays armed through stick and wheel
-    // motion: the author is reaching for a button, and the pad resting against
-    // a thumb should not end the listen.
-    if (ButtonsOnly && ValueKindOf(control->Source) != InputControlValueKind::Button)
+    // A control this slot cannot take leaves the listen armed: the author is
+    // reaching for one that fits, and a pad resting against a thumb should not
+    // end the wait. Listening and picking answer to the same rule, so Listen
+    // cannot bind what Pick would not offer.
+    if (!Acceptance.Accepts(control->Source))
         return false;
 
     CapturedName = FormatInputControl(*control);

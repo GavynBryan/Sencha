@@ -315,18 +315,13 @@ bool CompileBinding(const JsonValue& item,
         return false;
     }
 
-    // A composite of buttons must be buttons: a plane control in one corner of
-    // WASD would silently contribute its whole displacement to that direction.
-    if (out.Binding.Kind != InputBindingKind::Direct)
+    for (const InputControl& bound : out.Binding.Controls)
     {
-        for (const InputControl& bound : out.Binding.Controls)
+        if (bound.IsValid() && !BindingKindAcceptsControl(out.Binding.Kind, bound.Source))
         {
-            if (bound.IsValid() && ValueKindOf(bound.Source) != InputControlValueKind::Button)
-            {
-                error = std::format("{} uses '{}' in a composite, which is not a button",
-                                    path, FormatInputControl(bound));
-                return false;
-            }
+            error = std::format("{} uses '{}' in a composite, which is not a button",
+                                path, FormatInputControl(bound));
+            return false;
         }
     }
 

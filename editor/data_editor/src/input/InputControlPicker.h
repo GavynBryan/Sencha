@@ -2,19 +2,11 @@
 
 #include "../DataFormEdit.h"
 #include "input/InputControlCapture.h"
+#include "input/InputSlotAcceptance.h"
 
 #include <cstdint>
 #include <string>
 #include <string_view>
-
-// Whether a slot can take any control or only a button. A composite builds its
-// value out of buttons, so offering the mouse's motion in one of its four
-// corners would offer a binding the compiler rejects.
-enum class InputControlSlotFilter : std::uint8_t
-{
-    AnyControl,
-    ButtonsOnly,
-};
 
 // One control slot of a binding: the authored name, a picker listing what this
 // platform can actually bind, and whatever the slot's owner adds beside them.
@@ -26,7 +18,7 @@ enum class InputControlSlotFilter : std::uint8_t
                                              std::string_view key,
                                              const char* label,
                                              const std::string& fieldPath,
-                                             InputControlSlotFilter filter,
+                                             InputSlotAcceptance acceptance,
                                              InputControlCapture& capture,
                                              std::string_view documentPath,
                                              std::uint64_t documentRevision);

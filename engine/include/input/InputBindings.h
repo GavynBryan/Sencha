@@ -58,6 +58,29 @@ struct InputBinding
     bool Normalize = true;
 };
 
+// Whether a binding of this kind can build its value out of this kind of
+// control. A composite combines buttons -- a stick in one corner of WASD would
+// contribute its whole displacement to that one direction -- while a direct
+// binding takes whatever the action it drives can use.
+//
+// Orthogonal to BindingProducesType below: this asks what may occupy a slot,
+// that asks what the assembled binding can drive. An authoring surface offering
+// controls must consult both, and must consult these rather than restating
+// them, or the controls it offers drift from the ones the binder accepts.
+[[nodiscard]] constexpr bool BindingKindAcceptsControl(InputBindingKind kind,
+                                                       InputControlSource source)
+{
+    switch (kind)
+    {
+    case InputBindingKind::AxisPair:
+    case InputBindingKind::Cardinal:
+        return ValueKindOf(source) == InputControlValueKind::Button;
+    case InputBindingKind::Direct:
+        break;
+    }
+    return true;
+}
+
 // Whether a binding can produce the value an action carries. A button cannot
 // describe a plane and the mouse cannot be a button, so a mismatch is an
 // authoring error worth failing the load over rather than a control that

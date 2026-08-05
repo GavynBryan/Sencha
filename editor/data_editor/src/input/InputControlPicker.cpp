@@ -63,7 +63,7 @@ FieldEdit DrawInputControlSlot(JsonValue& binding,
                                std::string_view key,
                                const char* label,
                                const std::string& fieldPath,
-                               InputControlSlotFilter filter,
+                               InputSlotAcceptance acceptance,
                                InputControlCapture& capture,
                                std::string_view documentPath,
                                std::uint64_t documentRevision)
@@ -114,11 +114,11 @@ FieldEdit DrawInputControlSlot(JsonValue& binding,
             const char* heading = nullptr;
             for (const NamedInputControl& entry : EnumerateInputControls())
             {
-                if (filter == InputControlSlotFilter::ButtonsOnly
-                    && ValueKindOf(entry.Control.Source) != InputControlValueKind::Button)
-                {
+                // The engine's rule, not a copy of it: a control the binder
+                // would reject is never offered, and one it starts accepting
+                // appears here without an edit.
+                if (!acceptance.Accepts(entry.Control.Source))
                     continue;
-                }
 
                 const std::string friendly = DescribeInputControlName(entry.Name);
                 if (!MatchesFilter(friendly, entry.Name, needle))
@@ -153,8 +153,7 @@ FieldEdit DrawInputControlSlot(JsonValue& binding,
         if (listening)
             capture.Disarm();
         else
-            capture.Arm(fieldPath, filter == InputControlSlotFilter::ButtonsOnly,
-                        std::string(documentPath), documentRevision);
+            capture.Arm(fieldPath, acceptance, std::string(documentPath), documentRevision);
     }
     ImGui::SetItemTooltip("Press the control you want on this slot. Escape cancels.");
 
@@ -168,13 +167,22 @@ FieldEdit DrawInputControlSlot(JsonValue& binding,
         ImGui::Unindent();
     }
 
-    // A name nothing recognizes is the author's most common mistake here, and
-    // the bottom validation panel is too far from the field to connect them.
-    if (!current.empty() && !ParseInputControl(current).has_value())
+    // The two mistakes this field invites, said at the field: the bottom
+    // validation panel is too far away to connect to what was just typed.
+    if (!current.empty())
     {
+        const std::optional<InputControl> parsed = ParseInputControl(current);
         ImGui::Indent();
-        ImGui::TextColored(EditorUi::Warning, "'%s' is not a control on this platform.",
-                           current.c_str());
+        if (!parsed.has_value())
+        {
+            ImGui::TextColored(EditorUi::Warning, "'%s' is not a control on this platform.",
+                               current.c_str());
+        }
+        else if (!acceptance.Accepts(parsed->Source))
+        {
+            ImGui::TextColored(EditorUi::Warning,
+                               "'%s' cannot drive this action.", current.c_str());
+        }
         ImGui::Unindent();
     }
 

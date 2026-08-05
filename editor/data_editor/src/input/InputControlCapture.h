@@ -1,5 +1,7 @@
 #pragma once
 
+#include "input/InputSlotAcceptance.h"
+
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -24,7 +26,7 @@ class InputControlCapture
 {
 public:
     void Arm(std::string fieldPath,
-             bool buttonsOnly,
+             InputSlotAcceptance acceptance,
              std::string documentPath,
              std::uint64_t documentRevision);
     void Disarm();
@@ -48,7 +50,7 @@ public:
 
 private:
     bool Armed = false;
-    bool ButtonsOnly = false;
+    InputSlotAcceptance Acceptance;
     std::string ArmedField;
     std::string ArmedDocument;
     std::uint64_t ArmedRevision = 0;

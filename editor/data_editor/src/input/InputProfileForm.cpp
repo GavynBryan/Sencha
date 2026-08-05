@@ -6,6 +6,7 @@
 #include "input/InputBindingSummary.h"
 #include "input/InputControlCapture.h"
 #include "input/InputControlPicker.h"
+#include "input/InputSlotAcceptance.h"
 #include "input/InputProfilePreview.h"
 
 #include "ui/ButtonFlow.h"
@@ -122,6 +123,17 @@ void ApplyShape(JsonValue& binding, BindingShape shape)
     }
 }
 
+InputBindingKind ShapeKind(BindingShape shape)
+{
+    switch (shape)
+    {
+    case BindingShape::Cardinal: return InputBindingKind::Cardinal;
+    case BindingShape::AxisPair: return InputBindingKind::AxisPair;
+    case BindingShape::SingleControl: break;
+    }
+    return InputBindingKind::Direct;
+}
+
 // What a binding of this shape produces, so the action list can say which
 // actions it could drive.
 InputActionType ShapeProduces(BindingShape shape, const JsonValue& binding)
@@ -168,17 +180,9 @@ const char* ActionTypeLabel(InputActionType type)
 bool ShapeCanDrive(BindingShape shape, const JsonValue& binding, InputActionType actionType)
 {
     InputBinding probe;
-    switch (shape)
+    probe.Kind = ShapeKind(shape);
+    if (shape == BindingShape::SingleControl)
     {
-    case BindingShape::Cardinal:
-        probe.Kind = InputBindingKind::Cardinal;
-        break;
-    case BindingShape::AxisPair:
-        probe.Kind = InputBindingKind::AxisPair;
-        break;
-    case BindingShape::SingleControl:
-    {
-        probe.Kind = InputBindingKind::Direct;
         const std::optional<InputControl> parsed =
             ParseInputControl(ReadMemberString(binding, "control"));
         // An empty slot cannot be judged yet; let every action through rather
@@ -186,8 +190,6 @@ bool ShapeCanDrive(BindingShape shape, const JsonValue& binding, InputActionType
         if (!parsed.has_value())
             return true;
         probe.Controls[kBindingNegativeX] = *parsed;
-        break;
-    }
     }
     return BindingProducesType(probe, actionType);
 }
@@ -359,6 +361,27 @@ FieldEdit DrawConditioning(JsonValue& binding, const std::string& path)
     return edit;
 }
 
+// What this binding's slots may hold: its shape, and the action it drives when
+// the set declares one.
+InputSlotAcceptance SlotAcceptance(const JsonValue& binding,
+                                   const InputProfilePreview& preview,
+                                   BindingShape shape)
+{
+    InputSlotAcceptance acceptance;
+    acceptance.Kind = ShapeKind(shape);
+
+    const std::string action = ReadMemberString(binding, "action");
+    for (const KnownInputAction& known : preview.KnownActions())
+    {
+        if (known.Name != action)
+            continue;
+        acceptance.ActionType = known.Type;
+        acceptance.ActionKnown = true;
+        break;
+    }
+    return acceptance;
+}
+
 FieldEdit DrawBindingBody(JsonValue& binding,
                           const InputProfilePreview& preview,
                           const std::string& path,
@@ -371,18 +394,20 @@ FieldEdit DrawBindingBody(JsonValue& binding,
     edit |= DrawActionRow(binding, preview, shape);
     edit |= DrawShapeRow(binding, shape);
 
+    const InputSlotAcceptance acceptance = SlotAcceptance(binding, preview, shape);
+
     switch (shape)
     {
     case BindingShape::SingleControl:
         edit |= DrawInputControlSlot(binding, "control", "Control", path + ".control",
-                                     InputControlSlotFilter::AnyControl, capture,
+                                     acceptance, capture,
                                      document.VirtualPath(), document.Revision());
         break;
     case BindingShape::AxisPair:
         for (const auto& [key, label] : kAxisSlots)
         {
             edit |= DrawInputControlSlot(binding, key, label, path + "." + key,
-                                         InputControlSlotFilter::ButtonsOnly, capture,
+                                         acceptance, capture,
                                          document.VirtualPath(), document.Revision());
         }
         break;
@@ -390,7 +415,7 @@ FieldEdit DrawBindingBody(JsonValue& binding,
         for (const auto& [key, label] : kCardinalSlots)
         {
             edit |= DrawInputControlSlot(binding, key, label, path + "." + key,
-                                         InputControlSlotFilter::ButtonsOnly, capture,
+                                         acceptance, capture,
                                          document.VirtualPath(), document.Revision());
         }
         break;
