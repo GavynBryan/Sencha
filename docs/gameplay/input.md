@@ -98,6 +98,38 @@ Only mouse motion and the wheel accumulate.
 Both subtypes are runtime formats: no cook step, and the existing `.sdata`
 watcher hot-reloads them in place while the game runs.
 
+## Authoring them
+
+Both subtypes have purpose-built surfaces in the Data Editor, so the JSON above
+is what gets written rather than what gets typed.
+
+A profile presents as the keymap it describes: a collapsed context reads
+"gameplay - priority 100 - 5 bindings", a collapsed binding reads
+"jump - Space" or "move - WASD". Where something under a card is wrong, the card
+carries a marker, so a mistake cannot hide behind a collapsed row.
+
+A binding's shape is chosen once -- single control, two buttons, or four
+directions -- and choosing it erases the slots the other shapes use. That makes
+the compiler's "exactly one of control or composite" rule unauthorable to
+violate, and means only the slots that apply are ever on screen.
+
+Control slots offer three ways to fill them, in increasing order of how much the
+author has to know: **Listen** binds whatever control they press; **Pick** lists
+what this platform can bind, grouped by device with a filter and the authored
+name beside each label; and the text stays editable for anyone who already knows
+the name. A name that parses to nothing says so at the field.
+
+The action field lists what the referenced action set declares, with
+shape-incompatible actions disabled and the reason on hover. The set is read
+from its open tab when it has one, so an action added moments ago is bindable
+before it is saved. An action the set does not declare is flagged but never
+cleared -- it may be one the author is about to add -- and actions declared but
+bound nowhere are listed at the bottom of the profile.
+
+These surfaces are ordinary subtype editors (`editor/data_editor/src/input/`),
+registered in `SubtypeEditors.cpp` like any other. A subtype with no editor
+keeps the schema-generated form.
+
 ## Reading actions
 
 ```cpp
@@ -216,7 +248,10 @@ replay feeds that back instead of re-reading the component.
 
 ## Deferred
 
-A rebinding UI, per-device profile overlays, chords and timed sequences,
+An in-game rebinding UI (the editor's control enumeration and press-to-bind
+mapping are engine-side precisely so one can reuse them), a live binding-test
+panel that shows action values responding to real devices while authoring,
+per-device profile overlays, chords and timed sequences,
 input recording and replay, and per-player device routing for split-screen (one
 abstract pad is shared by every open device today).
 
