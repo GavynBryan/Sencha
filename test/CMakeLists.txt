@@ -165,6 +165,7 @@ if(EDITOR_TEST_SOURCES AND TARGET kyusu_authoring)
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src/DataDocument.cpp
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src/SubtypeEditorRegistry.cpp
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src/input/InputBindingSummary.cpp
+        ${CMAKE_SOURCE_DIR}/editor/data_editor/src/input/InputControlCapture.cpp
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src/movement/MovementLayerSummary.cpp
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src/movement/MovementResponseSim.cpp)
     # editor/ for the shared fonts, and the flat application trees. Kyusu's

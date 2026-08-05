@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../DataFormEdit.h"
+#include "input/InputControlCapture.h"
 
 #include <cstdint>
 #include <string>
@@ -25,4 +26,7 @@ enum class InputControlSlotFilter : std::uint8_t
                                              std::string_view key,
                                              const char* label,
                                              const std::string& fieldPath,
-                                             InputControlSlotFilter filter);
+                                             InputControlSlotFilter filter,
+                                             InputControlCapture& capture,
+                                             std::string_view documentPath,
+                                             std::uint64_t documentRevision);

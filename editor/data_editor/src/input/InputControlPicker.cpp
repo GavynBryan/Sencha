@@ -13,6 +13,7 @@
 #include <array>
 #include <cctype>
 #include <cstring>
+#include <optional>
 #include <string>
 
 namespace
@@ -62,9 +63,22 @@ FieldEdit DrawInputControlSlot(JsonValue& binding,
                                std::string_view key,
                                const char* label,
                                const std::string& fieldPath,
-                               InputControlSlotFilter filter)
+                               InputControlSlotFilter filter,
+                               InputControlCapture& capture,
+                               std::string_view documentPath,
+                               std::uint64_t documentRevision)
 {
     FieldEdit edit;
+
+    // A control pressed on an earlier frame, delivered to the slot that asked
+    // for it.
+    if (std::optional<std::string> captured =
+            capture.TakeCapture(fieldPath, documentPath, documentRevision))
+    {
+        SetMember(binding, key, JsonValue(*std::move(captured)));
+        edit |= FieldEdit::Instant();
+    }
+
     const std::string current = ReadMemberString(binding, key);
 
     ImGui::PushID(fieldPath.c_str());
@@ -133,7 +147,26 @@ FieldEdit DrawInputControlSlot(JsonValue& binding,
     }
 
     ImGui::SameLine();
+    const bool listening = capture.IsArmedAt(fieldPath);
+    if (ImGui::Button(listening ? "Listening" : "Listen"))
+    {
+        if (listening)
+            capture.Disarm();
+        else
+            capture.Arm(fieldPath, filter == InputControlSlotFilter::ButtonsOnly,
+                        std::string(documentPath), documentRevision);
+    }
+    ImGui::SetItemTooltip("Press the control you want on this slot. Escape cancels.");
+
+    ImGui::SameLine();
     ImGui::TextUnformatted(label);
+
+    if (listening)
+    {
+        ImGui::Indent();
+        ImGui::TextColored(EditorUi::Accent, "Press a control...");
+        ImGui::Unindent();
+    }
 
     // A name nothing recognizes is the author's most common mistake here, and
     // the bottom validation panel is too far from the field to connect them.

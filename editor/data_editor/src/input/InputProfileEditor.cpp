@@ -1,5 +1,6 @@
 #include "input/InputProfileEditor.h"
 
+#include "input/InputControlCapture.h"
 #include "input/InputProfileForm.h"
 #include "input/InputProfilePreview.h"
 
@@ -15,7 +16,7 @@ public:
 
     [[nodiscard]] FieldEdit DrawForm(SubtypeFormContext& ctx) override
     {
-        return DrawInputProfileForm(ctx.Data, ctx.Schema, ctx.Workspace, Preview);
+        return DrawInputProfileForm(ctx.Data, ctx.Schema, ctx.Workspace, Preview, Capture);
     }
 
     void UpdateForFrame(const DataDocument& document,
@@ -24,8 +25,16 @@ public:
         Preview.Update(document, workspace);
     }
 
+    // Claimed before the UI sees it: a control being bound must not also
+    // activate whatever widget has focus.
+    bool HandlePlatformEvent(const SDL_Event& event) override
+    {
+        return Capture.HandleSdlEvent(event);
+    }
+
 private:
     InputProfilePreview Preview;
+    InputControlCapture Capture;
 };
 }
 

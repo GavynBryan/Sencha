@@ -4,6 +4,7 @@
 #include "DataEditorWorkspace.h"
 #include "JsonObjectEdit.h"
 #include "input/InputBindingSummary.h"
+#include "input/InputControlCapture.h"
 #include "input/InputControlPicker.h"
 #include "input/InputProfilePreview.h"
 
@@ -360,7 +361,9 @@ FieldEdit DrawConditioning(JsonValue& binding, const std::string& path)
 
 FieldEdit DrawBindingBody(JsonValue& binding,
                           const InputProfilePreview& preview,
-                          const std::string& path)
+                          const std::string& path,
+                          InputControlCapture& capture,
+                          const DataDocument& document)
 {
     FieldEdit edit;
     const BindingShape shape = ReadShape(binding);
@@ -372,20 +375,23 @@ FieldEdit DrawBindingBody(JsonValue& binding,
     {
     case BindingShape::SingleControl:
         edit |= DrawInputControlSlot(binding, "control", "Control", path + ".control",
-                                     InputControlSlotFilter::AnyControl);
+                                     InputControlSlotFilter::AnyControl, capture,
+                                     document.VirtualPath(), document.Revision());
         break;
     case BindingShape::AxisPair:
         for (const auto& [key, label] : kAxisSlots)
         {
             edit |= DrawInputControlSlot(binding, key, label, path + "." + key,
-                                         InputControlSlotFilter::ButtonsOnly);
+                                         InputControlSlotFilter::ButtonsOnly, capture,
+                                         document.VirtualPath(), document.Revision());
         }
         break;
     case BindingShape::Cardinal:
         for (const auto& [key, label] : kCardinalSlots)
         {
             edit |= DrawInputControlSlot(binding, key, label, path + "." + key,
-                                         InputControlSlotFilter::ButtonsOnly);
+                                         InputControlSlotFilter::ButtonsOnly, capture,
+                                         document.VirtualPath(), document.Revision());
         }
         break;
     }
@@ -411,7 +417,8 @@ void DrawErrorMarker(const DataDocument& document, const std::string& path)
 FieldEdit DrawBindings(JsonValue& context,
                        const InputProfilePreview& preview,
                        const DataDocument& document,
-                       const std::string& contextPath)
+                       const std::string& contextPath,
+                       InputControlCapture& capture)
 {
     FieldEdit edit;
     JsonValue* bindingsValue = FindMember(context, "bindings");
@@ -437,7 +444,7 @@ FieldEdit DrawBindings(JsonValue& context,
         if (open)
         {
             ImGui::Indent();
-            edit |= DrawBindingBody(bindings[index], preview, path);
+            edit |= DrawBindingBody(bindings[index], preview, path, capture, document);
 
             ButtonFlow verbs;
             if (verbs.Button("Duplicate"))
@@ -525,7 +532,8 @@ std::string_view InputProfileSubtype()
 FieldEdit DrawInputProfileForm(JsonValue& data,
                                const DataSchema& schema,
                                DataEditorWorkspace& workspace,
-                               InputProfilePreview& preview)
+                               InputProfilePreview& preview,
+                               InputControlCapture& capture)
 {
     FieldEdit edit;
     const DataDocument* document = workspace.Active();
@@ -587,7 +595,7 @@ FieldEdit DrawInputProfileForm(JsonValue& data,
         {
             ImGui::Indent();
             edit |= DrawContextHeader(contexts[index]);
-            edit |= DrawBindings(contexts[index], preview, *document, path);
+            edit |= DrawBindings(contexts[index], preview, *document, path, capture);
 
             ButtonFlow verbs;
             if (verbs.Button("Duplicate"))

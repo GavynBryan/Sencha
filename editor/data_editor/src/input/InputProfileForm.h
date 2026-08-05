@@ -6,6 +6,7 @@
 
 struct DataSchema;
 class DataEditorWorkspace;
+class InputControlCapture;
 class InputProfilePreview;
 
 // The subtype this form claims. Named rather than spelled at the call site so
@@ -20,4 +21,5 @@ class InputProfilePreview;
 [[nodiscard]] FieldEdit DrawInputProfileForm(JsonValue& data,
                                              const DataSchema& schema,
                                              DataEditorWorkspace& workspace,
-                                             InputProfilePreview& preview);
+                                             InputProfilePreview& preview,
+                                             InputControlCapture& capture);
