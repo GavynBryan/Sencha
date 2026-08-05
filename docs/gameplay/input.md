@@ -95,6 +95,14 @@ Sticks and triggers are *positions*, not displacement: they hold their value
 until the device moves, so every tick of a catch-up frame reads the same stick.
 Only mouse motion and the wheel accumulate.
 
+A trigger can drive a button action, which is how fire and jump are normally
+bound on a pad: `threshold` says how far it must be pulled to count as pressed,
+defaulting to half travel. The crossing is what produces the press and release,
+and it is tracked whether or not the binding's context is active -- so switching
+a context on over an already-pulled trigger reads as held, never as a press the
+player did not make. The wheel cannot drive a button action: it reports how far
+it moved rather than how far it is held, so there is no position to compare.
+
 Both subtypes are runtime formats: no cook step, and the existing `.sdata`
 watcher hot-reloads them in place while the game runs.
 
@@ -255,8 +263,7 @@ per-device profile overlays, chords and timed sequences,
 input recording and replay, and per-player device routing for split-screen (one
 abstract pad is shared by every open device today).
 
-Analog-to-digital thresholds are also deferred: binding `jump` to
-`gamepad.right_trigger` is rejected at load rather than treated as a button,
-because a threshold crossing has no device edge behind it and would need its own
-per-clock previous-value state. Bind a button, or add the threshold when a game
-needs it.
+A binding that cannot resolve is dropped and the rest of the profile still
+binds, so one mistake costs the controls it is in rather than every control.
+The failures that leave nothing bindable at all -- a missing action set, a
+vocabulary with duplicate names -- still fail outright.
