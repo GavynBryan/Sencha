@@ -290,6 +290,51 @@ TEST_F(InputBindFixture, BindsNamesToDenseIndicesInClaimOrder)
     EXPECT_EQ(jumpBinding.ActionIndex, InputActionRegistry::IndexOf(jump));
 }
 
+TEST_F(InputBindFixture, ABindingThatCannotResolveCostsOnlyItself)
+{
+    // The failure that prompted this: jump is a button action and a trigger is
+    // analog, so that one binding cannot resolve. Refusing the whole profile
+    // over it left the player with no controls at all -- no movement, no look,
+    // nothing -- which is a far worse answer to a typo than a dead jump.
+    const InputProfileHandle handle = Publish(kActionSet, R"({
+        "actions": "asset://data/input_actions.sdata",
+        "contexts": [ { "name": "gameplay", "priority": 100, "bindings": [
+            { "action": "move", "composite": "cardinal",
+              "left": "key.a", "right": "key.d", "down": "key.s", "up": "key.w" },
+            { "action": "jump", "control": "gamepad.left_trigger" },
+            { "action": "look", "control": "mouse.delta" } ] } ]
+    })");
+    InputBindingCache bindings(Cache);
+
+    std::string error;
+    const BoundInputProfile* bound = bindings.Get(handle, &error);
+    ASSERT_NE(bound, nullptr) << "the profile still binds";
+
+    // Move and look survive; only the trigger binding is dropped.
+    ASSERT_EQ(bound->Contexts.size(), 1u);
+    EXPECT_EQ(bound->Bindings.size(), 2u);
+    EXPECT_EQ(bound->Contexts[0].BindingCount, 2u);
+    EXPECT_NE(error.find("binding 2"), std::string::npos) << error;
+    EXPECT_NE(error.find("cannot produce"), std::string::npos) << error;
+}
+
+TEST_F(InputBindFixture, ReportsEveryBindingThatFailedNotJustTheFirst)
+{
+    const InputProfileHandle handle = Publish(kActionSet, R"({
+        "actions": "asset://data/input_actions.sdata",
+        "contexts": [ { "name": "gameplay", "priority": 100, "bindings": [
+            { "action": "teleport", "control": "key.t" },
+            { "action": "jump", "control": "mouse.delta" } ] } ]
+    })");
+    InputBindingCache bindings(Cache);
+
+    // Fixing one mistake should not be how the author discovers the next.
+    std::string error;
+    ASSERT_NE(bindings.Get(handle, &error), nullptr);
+    EXPECT_NE(error.find("teleport"), std::string::npos) << error;
+    EXPECT_NE(error.find("jump"), std::string::npos) << error;
+}
+
 TEST_F(InputBindFixture, RejectsABindingForAnUnknownAction)
 {
     const InputProfileHandle handle = Publish(kActionSet, R"({
@@ -300,8 +345,10 @@ TEST_F(InputBindFixture, RejectsABindingForAnUnknownAction)
     InputBindingCache bindings(Cache);
 
     std::string error;
-    EXPECT_EQ(bindings.Get(handle, &error), nullptr);
-    EXPECT_NE(error.find("unknown action 'teleport'"), std::string::npos) << error;
+    const BoundInputProfile* bound = bindings.Get(handle, &error);
+    ASSERT_NE(bound, nullptr);
+    EXPECT_TRUE(bound->Bindings.empty()) << "the unresolvable binding is dropped";
+    EXPECT_NE(error.find("names no declared action"), std::string::npos) << error;
 }
 
 TEST_F(InputBindFixture, RejectsAControlThatCannotProduceTheActionsValue)
@@ -315,8 +362,10 @@ TEST_F(InputBindFixture, RejectsAControlThatCannotProduceTheActionsValue)
     InputBindingCache bindings(Cache);
 
     std::string error;
-    EXPECT_EQ(bindings.Get(handle, &error), nullptr);
-    EXPECT_NE(error.find("cannot produce its value"), std::string::npos) << error;
+    const BoundInputProfile* bound = bindings.Get(handle, &error);
+    ASSERT_NE(bound, nullptr);
+    EXPECT_TRUE(bound->Bindings.empty()) << "the unresolvable binding is dropped";
+    EXPECT_NE(error.find("cannot produce"), std::string::npos) << error;
 }
 
 TEST_F(InputBindFixture, ReportsAMissingActionSet)
@@ -328,7 +377,8 @@ TEST_F(InputBindFixture, ReportsAMissingActionSet)
 
     InputBindingCache bindings(Cache);
     std::string error;
-    EXPECT_EQ(bindings.Get(handle, &error), nullptr);
+    EXPECT_EQ(bindings.Get(handle, &error), nullptr)
+        << "without a vocabulary nothing can bind";
     EXPECT_NE(error.find("is missing"), std::string::npos) << error;
 }
 
@@ -465,9 +515,8 @@ TEST_F(InputBindFixture, ABadReloadKeepsTheLastGoodBindings)
     std::string error;
     const BoundInputProfile* bound = bindings.Get(handle, &error);
 
-    // The edit is reported, but the player keeps working controls rather than
-    // losing input for as long as the bad file is on disk.
-    EXPECT_NE(error.find("unknown action 'nonexistent'"), std::string::npos) << error;
+    // The edit is reported, and what still resolves still binds.
+    EXPECT_NE(error.find("names no declared action"), std::string::npos) << error;
     ASSERT_NE(bound, nullptr);
-    EXPECT_EQ(bound->Contexts.size(), 2u);
+    EXPECT_TRUE(bound->Bindings.empty());
 }

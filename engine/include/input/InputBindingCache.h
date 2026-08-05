@@ -35,9 +35,12 @@ class InputBindingCache
 public:
     explicit InputBindingCache(DataAssetCache& dataAssets);
 
-    // The compiled tables for a profile, or null if it has never bound
-    // successfully. `newError` receives a diagnostic the first time a given
-    // failure appears, so a caller can log it without repeating every frame.
+    // The compiled tables for a profile, or null when nothing could be bound at
+    // all. Bindings that fail individually are dropped and the rest still bind,
+    // so one bad entry costs its own controls rather than every control.
+    //
+    // `newError` receives the failures the first time they appear, so a caller
+    // can log them without repeating every frame.
     [[nodiscard]] const BoundInputProfile* Get(InputProfileHandle handle,
                                                std::string* newError = nullptr);
 
@@ -60,7 +63,9 @@ private:
         std::uint64_t ProfileVersion = 0;
         std::uint64_t ActionSetVersion = 0;
         bool Bound = false;
-        std::string Error;
+        // Every binding that did not resolve, not just the first: fixing one
+        // should not be how the author discovers the next.
+        std::vector<std::string> Errors;
         bool ErrorDelivered = false;
     };
 

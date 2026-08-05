@@ -18,8 +18,8 @@ bool InputBindingCache::Rebuild(Entry& entry, const CompiledInputProfile& profil
         entry.ActionSetLease.GetToken(), kInputActionSetTypeName);
     if (actionSet == nullptr)
     {
-        entry.Error = std::format("action set '{}' is missing or is not an {}",
-                                  profile.ActionSetPath, kInputActionSetTypeName);
+        entry.Errors.push_back(std::format("action set '{}' is missing or is not an {}",
+                                           profile.ActionSetPath, kInputActionSetTypeName));
         return false;
     }
 
@@ -28,7 +28,9 @@ bool InputBindingCache::Rebuild(Entry& entry, const CompiledInputProfile& profil
         std::string error;
         if (!entry.Actions.Register(definition, &error))
         {
-            entry.Error = std::move(error);
+            // A duplicate action name makes the whole vocabulary ambiguous, so
+            // there is no partial answer worth keeping here.
+            entry.Errors.push_back(std::move(error));
             return false;
         }
         entry.Profile.ActionTypes.push_back(definition.Type);
@@ -52,23 +54,29 @@ bool InputBindingCache::Rebuild(Entry& entry, const CompiledInputProfile& profil
         compiled.Priority = context->Priority;
         compiled.FirstBinding = static_cast<std::uint32_t>(entry.Profile.Bindings.size());
 
-        for (const AuthoredInputBinding& authored : context->Bindings)
+        // A binding that cannot resolve is dropped, and the rest of the profile
+        // still binds. Refusing the whole profile over one mistake costs the
+        // player every control they have, which is a far worse answer to a
+        // typo than losing the one binding it is in.
+        for (std::size_t index = 0; index < context->Bindings.size(); ++index)
         {
+            const AuthoredInputBinding& authored = context->Bindings[index];
             const InputActionId action = entry.Actions.Find(authored.Action);
             if (!action.IsValid())
             {
-                entry.Error = std::format("context '{}' binds unknown action '{}'",
-                                          context->Name, authored.Action);
-                return false;
+                entry.Errors.push_back(std::format(
+                    "context '{}' binding {} names no declared action ('{}')",
+                    context->Name, index + 1, authored.Action));
+                continue;
             }
 
             const InputActionType type = entry.Profile.ActionTypes[InputActionRegistry::IndexOf(action)];
             if (!BindingProducesType(authored.Binding, type))
             {
-                entry.Error = std::format(
-                    "context '{}' binds action '{}' to a control that cannot produce its value",
-                    context->Name, authored.Action);
-                return false;
+                entry.Errors.push_back(std::format(
+                    "context '{}' binding {} drives '{}' with a control that cannot produce "
+                    "its value", context->Name, index + 1, authored.Action));
+                continue;
             }
 
             InputBinding binding = authored.Binding;
@@ -128,30 +136,38 @@ InputBindingCache::Entry* InputBindingCache::Resolve(InputProfileHandle handle, 
         InputActionRegistry previousActions = std::move(entry.Actions);
         const bool wasBound = entry.Bound;
 
-        entry.Error.clear();
+        entry.Errors.clear();
         entry.ErrorDelivered = false;
 
         if (profile == nullptr)
         {
-            entry.Error = std::format("data asset is stale or is not an {}", kInputProfileTypeName);
+            entry.Errors.push_back(
+                std::format("data asset is stale or is not an {}", kInputProfileTypeName));
         }
         else if (Rebuild(entry, *profile))
         {
             entry.Bound = true;
         }
 
-        // A failed rebind keeps the last good tables: dropping them would take
-        // the player's controls away for as long as the bad edit is on disk.
-        if (!entry.Error.empty() && wasBound)
+        // A rebind that could not produce tables at all keeps the last good
+        // ones: dropping them would take the player's controls away for as long
+        // as the bad edit is on disk.
+        if (!entry.Bound && wasBound)
         {
             entry.Profile = std::move(previous);
             entry.Actions = std::move(previousActions);
+            entry.Bound = true;
         }
     }
 
-    if (!entry.Error.empty() && !entry.ErrorDelivered && newError != nullptr)
+    if (!entry.Errors.empty() && !entry.ErrorDelivered && newError != nullptr)
     {
-        *newError = entry.Error;
+        for (const std::string& error : entry.Errors)
+        {
+            if (!newError->empty())
+                newError->append("; ");
+            newError->append(error);
+        }
         entry.ErrorDelivered = true;
     }
 
