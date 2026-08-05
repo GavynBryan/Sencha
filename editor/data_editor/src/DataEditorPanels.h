@@ -9,7 +9,7 @@
 #include <cstdint>
 
 class DataEditorWorkspace;
-class MovementResolvePreview;
+class SubtypeEditorRegistry;
 
 class DataAssetBrowserPanel final : public IEditorPanel
 {
@@ -31,14 +31,14 @@ private:
 class DataFormPanel final : public IEditorPanel
 {
 public:
-    DataFormPanel(DataEditorWorkspace& workspace, MovementResolvePreview& preview);
+    DataFormPanel(DataEditorWorkspace& workspace, SubtypeEditorRegistry& editors);
     [[nodiscard]] std::string_view GetTitle() const override { return "Data"; }
     [[nodiscard]] DockSlot GetDockSlot() const override { return DockSlot::Center; }
     void OnDraw() override;
 
 private:
     DataEditorWorkspace& Workspace;
-    MovementResolvePreview& Preview;
+    SubtypeEditorRegistry& Editors;
 };
 
 class DataDocumentationPanel final : public IEditorPanel

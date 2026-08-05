@@ -1,7 +1,7 @@
 #pragma once
 
 #include "DataEditorWorkspace.h"
-#include "movement/MovementResolvePreview.h"
+#include "SubtypeEditorRegistry.h"
 
 #include "input/ShortcutRegistry.h"
 #include "project/Project.h"
@@ -56,9 +56,10 @@ private:
     LoadedModule ProjectModule;
     std::unique_ptr<DataEditorWorkspace> Workspace;
 
-    // One owner for the simulated context: the form and both movement panels
-    // read the same dialled-in facts rather than each keeping a copy.
-    MovementResolvePreview Preview;
+    // The purpose-built authoring surfaces. Declared before the UI feature is
+    // built so the panels an editor contributes never outlive the state they
+    // read.
+    SubtypeEditorRegistry SubtypeEditors;
     ShortcutRegistry Shortcuts;
 
     EditorUiFeature* UiFeature = nullptr;

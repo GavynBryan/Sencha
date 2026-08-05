@@ -2,8 +2,7 @@
 
 #include "DataEditorWorkspace.h"
 #include "DataFormEdit.h"
-#include "movement/MovementProfileForm.h"
-#include "movement/MovementResolvePreview.h"
+#include "SubtypeEditorRegistry.h"
 
 #include "ui/ButtonFlow.h"
 #include "ui/ScopedPanel.h"
@@ -607,9 +606,9 @@ void DataAssetBrowserPanel::OnDraw()
         ImGui::TextWrapped("Error: %s", LastError.c_str());
 }
 
-DataFormPanel::DataFormPanel(DataEditorWorkspace& workspace, MovementResolvePreview& preview)
+DataFormPanel::DataFormPanel(DataEditorWorkspace& workspace, SubtypeEditorRegistry& editors)
     : Workspace(workspace)
-    , Preview(preview)
+    , Editors(editors)
 {
 }
 
@@ -662,10 +661,12 @@ void DataFormPanel::OnDraw()
                     }
                     else
                     {
-                        // Subtypes earn a purpose-built surface one at a time;
-                        // everything else gets the schema-generated form.
-                        const FieldEdit edit = document.Subtype() == MovementProfileSubtype()
-                            ? DrawMovementProfileForm(*data, *schema, Workspace, Preview)
+                        // A subtype with a purpose-built editor draws through
+                        // it; everything else gets the schema-generated form.
+                        IDataSubtypeEditor* editor = Editors.Find(document.Subtype());
+                        SubtypeFormContext ctx{ *data, *schema, document, Workspace };
+                        const FieldEdit edit = editor != nullptr
+                            ? editor->DrawForm(ctx)
                             : DrawField(*data, schema->Root, "$.data", Workspace);
                         ApplyFieldEdit(document, Workspace, edit, std::move(root));
                     }

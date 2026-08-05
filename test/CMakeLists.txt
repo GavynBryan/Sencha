@@ -163,6 +163,7 @@ if(EDITOR_TEST_SOURCES AND TARGET kyusu_authoring)
         # The data editor's GUI-free half: the document's edit transaction and
         # the movement authoring model. Its panels stay out by construction.
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src/DataDocument.cpp
+        ${CMAKE_SOURCE_DIR}/editor/data_editor/src/SubtypeEditorRegistry.cpp
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src/movement/MovementLayerSummary.cpp
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src/movement/MovementResponseSim.cpp)
     # editor/ for the shared fonts, and the flat application trees. Kyusu's
