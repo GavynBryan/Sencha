@@ -461,9 +461,11 @@ TEST_F(InputRuntimeFixture, ABrokenProfileReportsItselfThroughTheActionState)
     RegisterInputMapping(WorldState, Cache, Profile);
     RunFrame(1);
 
-    // Visible and actionable, not a silently dead control scheme.
+    // Visible and actionable, naming the binding and the action it could not
+    // resolve, rather than a silently dead control scheme.
     const auto& state = WorldState.GetResource<InputActionState>();
-    EXPECT_NE(state.Error().find("unknown action 'not_an_action'"), std::string::npos)
+    EXPECT_NE(state.Error().find("not_an_action"), std::string::npos) << state.Error();
+    EXPECT_NE(state.Error().find("names no declared action"), std::string::npos)
         << state.Error();
 }
 
