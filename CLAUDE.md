@@ -84,7 +84,7 @@ Dependency direction flows toward stable lower-level mechanisms. Lower layers do
 
 - `Engine` is the integration root for services, frame hosting, scheduling, timing, and worker lanes.
 - `Registry` wraps ECS `World` storage plus registry-local resources.
-- `ZoneRuntime` owns the global registry and loaded zone registries.
+- `RuntimeWorld` owns the single partitioned entity `World`; zone residency maps `ZoneId` to storage partitions, with partition zero persistent.
 - `FrameDriver` owns the outer frame pipeline.
 - Render extraction copies simulation state into render-domain data. Graphics backends consume extracted data, not live ECS state.
 - Editor executables own their editor registries and authoring state. Editor-only and cook-only code never links into the shipping runtime.

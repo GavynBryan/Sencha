@@ -1061,7 +1061,7 @@ zero-thread deterministic). Decision A made real; Stage 4 closes with it.
   pre-existing 32-bit `AssetId` used by the audio runtime as a voice
   diagnostic token (it wrapped a *cache-handle index*, not an asset
   identity). It is now `AudioClipKey` in `audio/AudioVoice.h`; the
-  identity header keeps `TypeId`/`SerializedEntityId` and points at the
+  identity header keeps `TypeId`/`PersistentEntityId` and points at the
   real `AssetId`. The same sweep fixed a latent ODR hazard in
   `SerializationTests.cpp`, whose file-scope stand-in id types now live
   in an anonymous namespace.
