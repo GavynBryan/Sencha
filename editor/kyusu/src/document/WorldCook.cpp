@@ -7,6 +7,7 @@
 #include <core/json/JsonStringify.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
+#include <world/identity/PersistentIdComponent.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/WorldConnectionComponents.h>
 #include <zone/WorldPartitionIds.h>
@@ -19,6 +20,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -47,6 +49,35 @@ bool ValidateGateBindings(const Registry& registry,
             *error = "gate binding in '" + std::string(sceneLabel)
                 + "' references missing dock " + DockIdToString(binding->Id);
         return false;
+    }
+    return true;
+}
+
+// Persistent entity ids are the join key for save overlays and cross-scene
+// references, so a value shared by two entities — in one zone or across two —
+// would silently merge their recorded state. The editor mints uniquely within
+// a document; this is the world-wide guard against content duplicated by hand
+// (a copied .level file keeps its ids).
+bool ValidatePersistentIds(const Registry& registry,
+                           std::string_view sceneLabel,
+                           std::unordered_map<std::uint64_t, std::string>& seen,
+                           std::string* error)
+{
+    for (EntityId entity : registry.Components.GetAliveEntities())
+    {
+        const PersistentIdComponent* id =
+            registry.Components.TryGet<PersistentIdComponent>(entity);
+        if (id == nullptr || !id->Id.IsValid())
+            continue;
+        const auto [it, inserted] = seen.emplace(id->Id.Value, std::string(sceneLabel));
+        if (!inserted)
+        {
+            if (error != nullptr)
+                *error = "duplicate persistent entity id "
+                    + PersistentEntityIdToString(id->Id) + " in '" + it->second
+                    + "' and '" + std::string(sceneLabel) + "'";
+            return false;
+        }
     }
     return true;
 }
@@ -262,6 +293,20 @@ std::optional<WorldCookInput> CollectWorldCookInput(
     if (!ValidateGateBindings(registry, authoredDocks, "world scene",
                               &worldBindingError))
         return fail("CookWorld: " + worldBindingError);
+
+    std::unordered_map<std::uint64_t, std::string> seenPersistentIds;
+    for (std::size_t zoneIndex = 0; zoneIndex < documents.size(); ++zoneIndex)
+    {
+        std::string identityError;
+        if (!ValidatePersistentIds(documents[zoneIndex]->GetRegistry(),
+                                   data->Manifest.Zones[zoneIndex].Name,
+                                   seenPersistentIds, &identityError))
+            return fail("CookWorld: " + identityError);
+    }
+    std::string worldIdentityError;
+    if (!ValidatePersistentIds(registry, "world scene", seenPersistentIds,
+                               &worldIdentityError))
+        return fail("CookWorld: " + worldIdentityError);
     return WorldCookInput(std::move(data));
 }
 

@@ -11,6 +11,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/BinaryReader.h>
 #include <render/IrradianceVolumeComponent.h>
+#include <world/identity/PersistentIdComponent.h>
 #include <zone/WorldPartitionManifest.h>
 #include <zone/WorldConnectionComponents.h>
 
@@ -470,4 +471,86 @@ TEST_F(WorldCookTest, RefusesDirtyZoneDocuments)
 
     EXPECT_FALSE(cooked.Success);
     EXPECT_NE(cooked.Error.find("unsaved"), std::string::npos);
+}
+
+TEST_F(WorldCookTest, RefusesDuplicatePersistentIdsAcrossZones)
+{
+    WorldDocument world(Logging);
+    world.NewWorld("TestWorld");
+    const ZoneId second = world.AddZone(world.Manifest().Graphs[0].Id, "Second");
+    ASSERT_TRUE(world.SetZoneBounds(second,
+        Aabb3d::FromMinMax(Vec3d{ 24, 0, -5 }, Vec3d{ 40, 4, 5 })));
+
+    const EntityId original =
+        world.FocusDocument().GetScene().CreateEntity(Vec3d{ 0, 0, 0 });
+    const PersistentIdComponent* originalId =
+        world.FocusDocument().GetRegistry().Components.TryGet<PersistentIdComponent>(
+            original);
+    ASSERT_NE(originalId, nullptr);
+    ASSERT_TRUE(originalId->Id.IsValid());
+
+    // The editor cannot author this state: it models a .level file duplicated
+    // by hand, whose entities keep their source ids.
+    ASSERT_TRUE(world.SetFocusZone(second));
+    const EntityId copy =
+        world.FocusDocument().GetScene().CreateEntity(Vec3d{ 32, 0, 0 });
+    world.FocusDocument().GetScene().SetComponent(
+        copy, PersistentIdComponent{ originalId->Id });
+    ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+
+    const WorldCookResult cooked = CookWorld(world, Root, 16.0, Logging, nullptr);
+    EXPECT_FALSE(cooked.Success);
+    EXPECT_NE(cooked.Error.find("duplicate persistent entity id"), std::string::npos)
+        << cooked.Error;
+    EXPECT_NE(cooked.Error.find("Second"), std::string::npos) << cooked.Error;
+}
+
+TEST_F(WorldCookTest, CookedSceneCarriesAuthoredIdsAndGeneratedEntitiesCarryNone)
+{
+    WorldDocument world(Logging);
+    world.NewWorld("TestWorld");
+
+    // One brush (cooks into a generated cell mesh) and one plain authored
+    // entity (passes through with its identity).
+    world.FocusDocument().GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
+    const EntityId authored =
+        world.FocusDocument().GetScene().CreateEntity(Vec3d{ 2, 0, 0 });
+    const PersistentIdComponent* authoredId =
+        world.FocusDocument().GetRegistry().Components.TryGet<PersistentIdComponent>(
+            authored);
+    ASSERT_NE(authoredId, nullptr);
+    ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+
+    const WorldCookResult cooked = CookWorld(world, Root, 16.0, Logging, nullptr);
+    ASSERT_TRUE(cooked.Success) << cooked.Error;
+
+    const WorldPartitionManifest manifest = ParseCookedManifest(cooked.CookedManifestPath);
+    ASSERT_FALSE(manifest.Zones.empty());
+    const auto sceneJson = JsonParse(ReadFile(Root / manifest.Zones[0].CookedSceneRef));
+    ASSERT_TRUE(sceneJson.has_value());
+    const JsonValue* entities = sceneJson->Find("entities");
+    ASSERT_NE(entities, nullptr);
+
+    const std::string expected = PersistentEntityIdToString(authoredId->Id);
+    bool sawAuthoredId = false;
+    std::size_t withoutId = 0;
+    for (const JsonValue& entity : entities->AsArray())
+    {
+        const JsonValue* components = entity.Find("components");
+        ASSERT_NE(components, nullptr);
+        const JsonValue* persistent = components->Find("persistent_id");
+        if (persistent == nullptr)
+        {
+            ++withoutId;
+            continue;
+        }
+        const JsonValue* id = persistent->Find("id");
+        ASSERT_NE(id, nullptr);
+        ASSERT_TRUE(id->IsString());
+        sawAuthoredId = sawAuthoredId || id->AsString() == expected;
+    }
+    EXPECT_TRUE(sawAuthoredId)
+        << "the authored entity's id must cook through verbatim";
+    EXPECT_GT(withoutId, 0u)
+        << "cook-generated entities (cell meshes) must not carry identity";
 }

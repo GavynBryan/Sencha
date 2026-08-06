@@ -4,6 +4,7 @@
 #include "brush/BrushMesh.h"
 #include "brush/BrushMeshStore.h"
 
+#include <core/identity/Id.h>
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
 #include <ecs/EntityId.h>
@@ -15,6 +16,7 @@
 #include <zone/WorldPartitionIds.h>
 
 #include <optional>
+#include <random>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -110,6 +112,20 @@ public:
     // that create entities without going through EditorScene (e.g. scene load).
     void SyncFromRegistry();
 
+    // Mints a persistent entity id unused by any tracked entity. Editor-side by
+    // design (the engine mints no random ids); bit 63 stays clear, reserved for
+    // the runtime allocator namespace.
+    [[nodiscard]] PersistentEntityId MintPersistentId();
+    // Establishes the document identity invariant on one entity: it keeps the
+    // id it carries unless that id is unset or already held by another tracked
+    // entity (a duplicate or copy-paste of a live source), in which case it is
+    // minted fresh. Returns true when a mint happened.
+    bool EnsurePersistentId(EntityId entity);
+    // Load-time migration: every tracked entity ends up with a valid unique id.
+    // Returns the number of ids minted, so callers can dirty the document only
+    // when the file actually predates persistent identity.
+    size_t BackfillPersistentIds();
+
     [[nodiscard]] bool HasEntity(EntityId entity) const;
     [[nodiscard]] uint32_t GetEntityCount() const;
     [[nodiscard]] std::span<const EntityId> GetAllEntities() const;
@@ -149,9 +165,15 @@ public:
     [[nodiscard]] const BrushMeshStore& GetBrushMeshStore() const { return BrushMeshes; }
 
 private:
+    // Rolls until the draw is nonzero, has bit 63 clear, and inserts into the
+    // caller's taken-set; batch minting shares one set across calls.
+    [[nodiscard]] PersistentEntityId MintFromTaken(std::unordered_set<uint64_t>& taken);
+
     Registry& Registry_;
     std::vector<EntityId> Entities;
     BrushMeshStore BrushMeshes;
+    // Persistent-id minting entropy (per document, like WorldDocument's Rng_).
+    std::mt19937_64 IdRng_{ std::random_device{}() };
     // Sparse editor view flags keyed by slot index (membership = non-default).
     std::unordered_set<EntityIndex> HiddenEntities;
     std::unordered_set<EntityIndex> LockedEntities;

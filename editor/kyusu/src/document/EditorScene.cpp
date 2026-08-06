@@ -3,6 +3,7 @@
 #include "brush/BrushBounds.h"
 #include "brush/BrushOps.h"
 
+#include <world/identity/PersistentIdComponent.h>
 #include <world/transform/TransformComponents.h>
 
 #include <algorithm>
@@ -26,6 +27,7 @@ EntityId EditorScene::CreateBrushFromMesh(const Transform3f& transform, BrushMes
     EntityId entity = world.CreateEntity();
     world.AddComponent(entity, LocalTransform{ transform });
     world.AddComponent(entity, BrushComponent{ BrushMeshes.Create(std::move(mesh)) });
+    world.AddComponent(entity, PersistentIdComponent{ MintPersistentId() });
 
     Entities.push_back(entity);
     return entity;
@@ -40,6 +42,7 @@ EntityId EditorScene::CreateCamera(Vec3d position)
     EntityId entity = world.CreateEntity();
     world.AddComponent(entity, LocalTransform{ transform });
     world.AddComponent(entity, CameraComponent{});
+    world.AddComponent(entity, PersistentIdComponent{ MintPersistentId() });
 
     Entities.push_back(entity);
     return entity;
@@ -53,9 +56,90 @@ EntityId EditorScene::CreateEntity(Vec3d position)
     World& world = Registry_.Components;
     EntityId entity = world.CreateEntity();
     world.AddComponent(entity, LocalTransform{ transform });
+    world.AddComponent(entity, PersistentIdComponent{ MintPersistentId() });
 
     Entities.push_back(entity);
     return entity;
+}
+
+PersistentEntityId EditorScene::MintPersistentId()
+{
+    World& world = Registry_.Components;
+    std::unordered_set<uint64_t> taken;
+    taken.reserve(Entities.size());
+    for (EntityId entity : Entities)
+        if (const auto* id = world.TryGet<PersistentIdComponent>(entity))
+            taken.insert(id->Id.Value);
+    return MintFromTaken(taken);
+}
+
+PersistentEntityId EditorScene::MintFromTaken(std::unordered_set<uint64_t>& taken)
+{
+    while (true)
+    {
+        const uint64_t value = IdRng_() & ~PersistentEntityIdRuntimeBit;
+        if (value != 0 && taken.insert(value).second)
+            return PersistentEntityId{ value };
+    }
+}
+
+bool EditorScene::EnsurePersistentId(EntityId entity)
+{
+    World& world = Registry_.Components;
+    PersistentIdComponent* id = world.TryGet<PersistentIdComponent>(entity);
+
+    bool duplicate = false;
+    if (id != nullptr && id->Id.IsValid())
+    {
+        for (EntityId other : Entities)
+        {
+            if (other == entity)
+                continue;
+            const auto* otherId = world.TryGet<PersistentIdComponent>(other);
+            if (otherId != nullptr && otherId->Id == id->Id)
+            {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate)
+            return false;
+    }
+
+    const PersistentEntityId minted = MintPersistentId();
+    if (id != nullptr)
+        id->Id = minted;
+    else
+        world.AddComponent(entity, PersistentIdComponent{ minted });
+    return true;
+}
+
+size_t EditorScene::BackfillPersistentIds()
+{
+    World& world = Registry_.Components;
+    std::unordered_set<uint64_t> taken;
+    taken.reserve(Entities.size());
+
+    // First pass claims every valid id; the first holder keeps it. The second
+    // pass mints for whoever is left (missing, unset, or a losing duplicate),
+    // sharing one taken-set so a legacy document migrates in linear time.
+    std::vector<EntityId> needsMint;
+    for (EntityId entity : Entities)
+    {
+        const auto* id = world.TryGet<PersistentIdComponent>(entity);
+        if (id == nullptr || !id->Id.IsValid() || !taken.insert(id->Id.Value).second)
+            needsMint.push_back(entity);
+    }
+
+    for (EntityId entity : needsMint)
+    {
+        const PersistentEntityId fresh = MintFromTaken(taken);
+        if (auto* id = world.TryGet<PersistentIdComponent>(entity))
+            id->Id = fresh;
+        else
+            world.AddComponent(entity, PersistentIdComponent{ fresh });
+    }
+    return needsMint.size();
 }
 
 void EditorScene::DestroyEntity(EntityId entity)
