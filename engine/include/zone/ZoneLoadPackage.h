@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/identity/Id.h>
 #include <core/json/JsonValue.h>
 #include <ecs/ComponentTypeId.h>
 #include <zone/ZoneId.h>
@@ -48,6 +49,13 @@ struct ZonePackageComponent
 struct ZonePackageEntity
 {
     std::vector<ZonePackageComponent> Components;
+
+    // The entity's persistent identity, extracted at package build so the
+    // owner-thread import can consult the ZoneStateStore before creating the
+    // row. Invalid for entities without identity (cook-generated content).
+    // The persistent_id component still travels in Components; this field is
+    // import metadata, not a second source of truth.
+    PersistentEntityId PersistentId;
 };
 
 struct ZonePackageParent
@@ -127,6 +135,14 @@ public:
         component.Type = type;
         component.SerializedJson = std::move(value);
         target->Components.push_back(std::move(component));
+        return true;
+    }
+
+    bool SetPersistentId(ZoneLocalEntityId entity, PersistentEntityId id)
+    {
+        if (!ContainsEntity(entity))
+            return false;
+        Entities_[entity.Value].PersistentId = id;
         return true;
     }
 

@@ -247,7 +247,7 @@ TEST(RuntimeComponentSchema, EngineSchemaUsesCanonicalComponentIds)
     RegisterEngineRuntimeComponents(schema);
     schema.Seal();
 
-    EXPECT_EQ(schema.Size(), 40u);
+    EXPECT_EQ(schema.Size(), 41u);
 
     World world;
     schema.Apply(world);
@@ -266,29 +266,30 @@ TEST(RuntimeComponentSchema, EngineSchemaUsesCanonicalComponentIds)
     ExpectComponentId<WorldDock>(world, 11);
     ExpectComponentId<WorldLink>(world, 12);
     ExpectComponentId<DockGateBinding>(world, 13);
-    ExpectComponentId<Collider>(world, 14);
-    ExpectComponentId<RigidBody>(world, 15);
-    ExpectComponentId<CharacterController>(world, 16);
-    ExpectComponentId<PhysicsBodyLink>(world, 17);
-    ExpectComponentId<CharacterMoverLink>(world, 18);
-    ExpectComponentId<GameplayTagContainer>(world, 19);
-    ExpectComponentId<AttributeSet>(world, 20);
-    ExpectComponentId<AbilitySet>(world, 21);
-    ExpectComponentId<ActiveEffect>(world, 22);
-    ExpectComponentId<MovementIntent>(world, 23);
-    ExpectComponentId<KinematicState>(world, 24);
-    ExpectComponentId<SupportState>(world, 25);
-    ExpectComponentId<Immersion>(world, 26);
-    ExpectComponentId<CharacterMovement>(world, 27);
-    ExpectComponentId<ResolvedMovementTuning>(world, 28);
-    ExpectComponentId<LocomotionOutput>(world, 29);
-    ExpectComponentId<MotionAxisOverride>(world, 30);
-    ExpectComponentId<MotionImpulse>(world, 31);
-    ExpectComponentId<MotionRequest>(world, 32);
-    ExpectComponentId<ModeTransitionRequest>(world, 33);
-    ExpectComponentId<ClingSession>(world, 34);
-    ExpectComponentId<FlightSession>(world, 35);
-    ExpectComponentId<CameraRig>(world, 36);
+    ExpectComponentId<PersistentIdComponent>(world, 14);
+    ExpectComponentId<Collider>(world, 15);
+    ExpectComponentId<RigidBody>(world, 16);
+    ExpectComponentId<CharacterController>(world, 17);
+    ExpectComponentId<PhysicsBodyLink>(world, 18);
+    ExpectComponentId<CharacterMoverLink>(world, 19);
+    ExpectComponentId<GameplayTagContainer>(world, 20);
+    ExpectComponentId<AttributeSet>(world, 21);
+    ExpectComponentId<AbilitySet>(world, 22);
+    ExpectComponentId<ActiveEffect>(world, 23);
+    ExpectComponentId<MovementIntent>(world, 24);
+    ExpectComponentId<KinematicState>(world, 25);
+    ExpectComponentId<SupportState>(world, 26);
+    ExpectComponentId<Immersion>(world, 27);
+    ExpectComponentId<CharacterMovement>(world, 28);
+    ExpectComponentId<ResolvedMovementTuning>(world, 29);
+    ExpectComponentId<LocomotionOutput>(world, 30);
+    ExpectComponentId<MotionAxisOverride>(world, 31);
+    ExpectComponentId<MotionImpulse>(world, 32);
+    ExpectComponentId<MotionRequest>(world, 33);
+    ExpectComponentId<ModeTransitionRequest>(world, 34);
+    ExpectComponentId<ClingSession>(world, 35);
+    ExpectComponentId<FlightSession>(world, 36);
+    ExpectComponentId<CameraRig>(world, 37);
 }
 
 TEST(RuntimeComponentSchema, EngineOwnsUnifiedWorldBeforeGameStart)
@@ -309,9 +310,9 @@ TEST(RuntimeComponentSchema, EngineOwnsUnifiedWorldBeforeGameStart)
     EXPECT_TRUE(game.AppliedGameComponent);
     EXPECT_TRUE(game.SawEngineOwnedWorld);
     EXPECT_TRUE(game.EngineOwnedEntityWasPersistent);
-    EXPECT_EQ(game.SchemaSize, 41u);
-    EXPECT_EQ(game.AppliedGameComponentId, 40u);
-    EXPECT_EQ(game.EngineOwnedGameComponentId, 40u);
+    EXPECT_EQ(game.SchemaSize, 42u);
+    EXPECT_EQ(game.AppliedGameComponentId, 41u);
+    EXPECT_EQ(game.EngineOwnedGameComponentId, 41u);
     EXPECT_EQ(StartupGameRemoveCalls, 1);
 }
 

@@ -17,7 +17,7 @@ TEST(IdentitySerializationTests, RoundTripsIdTypes)
     BinaryWriter writer(stream);
 
     const TypeId expectedType{ 7 };
-    const SerializedEntityId expectedEntity{ 1001 };
+    const PersistentEntityId expectedEntity{ 0x0123456789abcdefull };
 
     ASSERT_TRUE(Serialize(writer, expectedType));
     ASSERT_TRUE(Serialize(writer, expectedEntity));
@@ -26,7 +26,7 @@ TEST(IdentitySerializationTests, RoundTripsIdTypes)
     BinaryReader reader(stream);
 
     TypeId actualType{};
-    SerializedEntityId actualEntity{};
+    PersistentEntityId actualEntity{};
 
     ASSERT_TRUE(Deserialize(reader, actualType));
     ASSERT_TRUE(Deserialize(reader, actualEntity));
@@ -40,4 +40,25 @@ TEST(IdentitySerializationTests, DefaultIdIsFalsy)
     TypeId id{};
     EXPECT_FALSE(static_cast<bool>(id));
     EXPECT_TRUE(static_cast<bool>(TypeId{ 1 }));
+}
+
+TEST(IdentitySerializationTests, PersistentEntityIdTextRoundTrips)
+{
+    const PersistentEntityId id{ 0x0123456789abcdefull };
+    const std::string text = PersistentEntityIdToString(id);
+    EXPECT_EQ(text, "0123456789abcdef");
+
+    const auto parsed = PersistentEntityIdFromString(text);
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(*parsed, id);
+}
+
+TEST(IdentitySerializationTests, PersistentEntityIdTextParsingIsStrict)
+{
+    EXPECT_FALSE(PersistentEntityIdFromString("").has_value());
+    EXPECT_FALSE(PersistentEntityIdFromString("123").has_value());
+    EXPECT_FALSE(PersistentEntityIdFromString("0000000000000000").has_value());
+    EXPECT_FALSE(PersistentEntityIdFromString("0123456789ABCDEF").has_value());
+    EXPECT_FALSE(PersistentEntityIdFromString("0123456789abcdef0").has_value());
+    EXPECT_FALSE(PersistentEntityIdFromString("not-a-hex-number").has_value());
 }

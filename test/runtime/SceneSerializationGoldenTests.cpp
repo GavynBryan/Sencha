@@ -90,7 +90,10 @@ TEST(SceneSerializationGolden, BinaryPayloadIsUnchanged)
     ASSERT_TRUE(SaveSceneBinary(registry, serializers, writer, &error)) << error.Message;
 
     const std::string bytes = stream.str();
-    EXPECT_EQ(HashOfString(bytes), 0xbd2afea637eb27adULL)
+    // Constant last moved by PersistentIdComponent joining the manifest: the
+    // binary form writes one chunk per registered serializer, so a new
+    // component appends an empty chunk even when no entity carries it.
+    EXPECT_EQ(HashOfString(bytes), 0xb474dcf75ae1ce7aULL)
         << "scene binary changed; if that was intended, update the constant."
         << " size=" << bytes.size();
 }

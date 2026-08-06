@@ -1,5 +1,6 @@
 #include <zone/ZonePackageSceneLoader.h>
 
+#include <core/identity/Id.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneFormat.h>
 #include <zone/ZoneLoadPackage.h>
@@ -90,6 +91,19 @@ bool BuildZonePackageFromSceneJson(
                     error,
                     "Scene JSON contains a duplicate component on one entity.");
                 return false;
+            }
+
+            // Lift the identity into package metadata (the component itself
+            // still imports normally). A malformed id is left invalid rather
+            // than failing the build: the entity just loses overlay coverage.
+            if (key == "persistent_id" && componentData.IsObject())
+            {
+                if (const JsonValue* id = componentData.Find("id");
+                    id != nullptr && id->IsString())
+                {
+                    if (const auto parsed = PersistentEntityIdFromString(id->AsString()))
+                        (void)built.SetPersistentId(entity, *parsed);
+                }
             }
         }
     }

@@ -7,6 +7,7 @@
 #include <world/serialization/SceneSerializationContext.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/ZoneLoadPackage.h>
+#include <zone/ZoneStateStore.h>
 
 #include <cstddef>
 #include <cstring>
@@ -169,11 +170,16 @@ bool ImportPackageIntoPartitionImpl(
     const auto fail = [&](std::string message)
     {
         for (auto it = entities.rbegin(); it != entities.rend(); ++it)
-            if (world.IsAlive(*it))
+            if (it->IsValid() && world.IsAlive(*it))
                 world.DestroyEntity(*it);
         SetError(error, std::move(message));
         return false;
     };
+
+    // The zone state overlay: entities recorded destroyed in a prior residency
+    // are not re-created. Worlds without the store (editor documents, plain
+    // test worlds) import the cooked scene verbatim.
+    const ZoneStateStore* zoneState = world.TryGetResource<ZoneStateStore>();
 
     // Which entities are parented has to be known before any row is built, so
     // Parent joins the initial signature instead of costing a later archetype
@@ -199,6 +205,16 @@ bool ImportPackageIntoPartitionImpl(
     std::size_t packageIndex = 0;
     for (const ZonePackageEntity& packageEntity : package.Entities())
     {
+        if (zoneState != nullptr && packageEntity.PersistentId.IsValid()
+            && zoneState->IsRecordedDestroyed(package.Zone(), packageEntity.PersistentId))
+        {
+            // The slot stays positionally aligned with the package's local
+            // ids; parent relations that touch it are dropped below.
+            entities.push_back(EntityId{});
+            ++packageIndex;
+            continue;
+        }
+
         std::string failure;
         if (!BuildEntitySignature(
                 world,
@@ -241,6 +257,11 @@ bool ImportPackageIntoPartitionImpl(
     {
         const EntityId child = entities[relation.Child.Value];
         const EntityId parent = entities[relation.Parent.Value];
+        // A suppressed end leaves the relation unwired: the child imports
+        // unparented, matching how destruction leaves a live orphan rather
+        // than cascading.
+        if (!child.IsValid() || !parent.IsValid())
+            continue;
         // Pre-created by BuildEntitySignature whenever Parent is registered;
         // the add is the path for a world that registered it later.
         if (!world.IsRegistered<Parent>()
@@ -248,6 +269,19 @@ bool ImportPackageIntoPartitionImpl(
         {
             world.AddComponent<Parent>(child, Parent{ parent });
         }
+    }
+
+    // Successful import records what the cooked scene authored, so the detach
+    // capture can diff live state against it.
+    if (auto* mutableState = world.TryGetResource<ZoneStateStore>())
+    {
+        std::vector<PersistentEntityId> authored;
+        authored.reserve(package.EntityCount());
+        for (const ZonePackageEntity& packageEntity : package.Entities())
+            if (packageEntity.PersistentId.IsValid())
+                authored.push_back(packageEntity.PersistentId);
+        if (!authored.empty())
+            mutableState->RecordAuthoredSet(package.Zone(), authored);
     }
 
     if (error != nullptr)
