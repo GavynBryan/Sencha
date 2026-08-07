@@ -20,13 +20,6 @@ bool SceneFieldCodec<PersistentEntityId>::Load(IReadArchive& archive, std::strin
     archive.Field(key, text);
     if (!archive.Ok())
         return false;
-    // Authored scenes must preserve unset identities so the editor can backfill
-    // them on load rather than fail the parse.
-    if (text == "0000000000000000")
-    {
-        value = PersistentEntityId{};
-        return true;
-    }
     const auto parsed = PersistentEntityIdFromString(text);
     if (!parsed)
     {

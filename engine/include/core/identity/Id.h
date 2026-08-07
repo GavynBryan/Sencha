@@ -38,6 +38,15 @@ using PersistentEntityId = StrongId<struct PersistentEntityIdTag, std::uint64_t>
 
 inline constexpr std::uint64_t PersistentEntityIdRuntimeBit = 1ull << 63;
 
+// An id an editor is allowed to have authored: set, and outside the reserved
+// runtime half. Content carrying a runtime-namespace id did not come from a
+// mint, so editor load validation and the world cook both reject it — otherwise
+// it would collide with the runtime allocator the reservation exists to protect.
+[[nodiscard]] inline bool IsAuthoredPersistentEntityId(PersistentEntityId id)
+{
+    return id.IsValid() && (id.Value & PersistentEntityIdRuntimeBit) == 0;
+}
+
 // Text form follows the AssetId precedent: 16-digit lowercase hex, no prefix,
 // because JSON numbers are doubles and cannot hold 64 bits. FromString is
 // strict: exactly 16 lowercase hex digits and nonzero, anything else is

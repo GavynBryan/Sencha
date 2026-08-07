@@ -64,21 +64,10 @@ EntityId EditorScene::CreateEntity(Vec3d position)
 
 PersistentEntityId EditorScene::MintPersistentId()
 {
-    World& world = Registry_.Components;
-    std::unordered_set<uint64_t> taken;
-    taken.reserve(Entities.size());
-    for (EntityId entity : Entities)
-        if (const auto* id = world.TryGet<PersistentIdComponent>(entity))
-            taken.insert(id->Id.Value);
-    return MintFromTaken(taken);
-}
-
-PersistentEntityId EditorScene::MintFromTaken(std::unordered_set<uint64_t>& taken)
-{
     while (true)
     {
         const uint64_t value = IdRng_() & ~PersistentEntityIdRuntimeBit;
-        if (value != 0 && taken.insert(value).second)
+        if (value != 0 && TakenIds_.insert(value).second)
             return PersistentEntityId{ value };
     }
 }
@@ -88,22 +77,13 @@ bool EditorScene::EnsurePersistentId(EntityId entity)
     World& world = Registry_.Components;
     PersistentIdComponent* id = world.TryGet<PersistentIdComponent>(entity);
 
-    bool duplicate = false;
-    if (id != nullptr && id->Id.IsValid())
+    // The entity does not contribute to the index until it is adopted, so a
+    // successful insert means its id was genuinely free and it keeps it. A
+    // failed insert means another tracked entity already holds the value.
+    if (id != nullptr && IsAuthoredPersistentEntityId(id->Id)
+        && TakenIds_.insert(id->Id.Value).second)
     {
-        for (EntityId other : Entities)
-        {
-            if (other == entity)
-                continue;
-            const auto* otherId = world.TryGet<PersistentIdComponent>(other);
-            if (otherId != nullptr && otherId->Id == id->Id)
-            {
-                duplicate = true;
-                break;
-            }
-        }
-        if (!duplicate)
-            return false;
+        return false;
     }
 
     const PersistentEntityId minted = MintPersistentId();
@@ -114,32 +94,31 @@ bool EditorScene::EnsurePersistentId(EntityId entity)
     return true;
 }
 
-size_t EditorScene::BackfillPersistentIds()
+bool EditorScene::ValidateIdentities(std::string* error) const
 {
-    World& world = Registry_.Components;
-    std::unordered_set<uint64_t> taken;
-    taken.reserve(Entities.size());
+    const World& world = Registry_.Components;
+    const auto fail = [error](std::string message)
+    {
+        if (error != nullptr)
+            *error = std::move(message);
+        return false;
+    };
 
-    // First pass claims every valid id; the first holder keeps it. The second
-    // pass mints for whoever is left (missing, unset, or a losing duplicate),
-    // sharing one taken-set so a legacy document migrates in linear time.
-    std::vector<EntityId> needsMint;
+    std::unordered_set<uint64_t> seen;
+    seen.reserve(Entities.size());
     for (EntityId entity : Entities)
     {
         const auto* id = world.TryGet<PersistentIdComponent>(entity);
-        if (id == nullptr || !id->Id.IsValid() || !taken.insert(id->Id.Value).second)
-            needsMint.push_back(entity);
+        if (id == nullptr || !id->Id.IsValid())
+            return fail("an entity has no persistent identity");
+        if (!IsAuthoredPersistentEntityId(id->Id))
+            return fail("persistent entity id " + PersistentEntityIdToString(id->Id)
+                + " uses the reserved runtime namespace");
+        if (!seen.insert(id->Id.Value).second)
+            return fail("persistent entity id " + PersistentEntityIdToString(id->Id)
+                + " is held by two entities");
     }
-
-    for (EntityId entity : needsMint)
-    {
-        const PersistentEntityId fresh = MintFromTaken(taken);
-        if (auto* id = world.TryGet<PersistentIdComponent>(entity))
-            id->Id = fresh;
-        else
-            world.AddComponent(entity, PersistentIdComponent{ fresh });
-    }
-    return needsMint.size();
+    return true;
 }
 
 void EditorScene::DestroyEntity(EntityId entity)
@@ -176,6 +155,11 @@ void EditorScene::DestroyEntity(EntityId entity)
             BrushMeshes.Destroy(baked->Source);
     }
 
+    // Release the id while the component still exists. Undo of a delete restores
+    // the snapshot's id, which only works because destruction frees it here.
+    if (const auto* id = world.TryGet<PersistentIdComponent>(entity))
+        TakenIds_.erase(id->Id.Value);
+
     world.DestroyEntity(entity);
     std::erase(Entities, entity);
     // Drop any editor flags so a reused slot index starts visible + unlocked.
@@ -187,8 +171,17 @@ void EditorScene::TrackEntity(EntityId entity)
 {
     // Adopt an entity created outside the Create* helpers (a restored deletion)
     // into the tracked list, without the full-list reorder SyncFromRegistry does.
-    if (std::find(Entities.begin(), Entities.end(), entity) == Entities.end())
-        Entities.push_back(entity);
+    // Re-adopting a tracked entity must stay a no-op: its id is already indexed,
+    // and running the identity check again would read that as a duplicate.
+    if (std::find(Entities.begin(), Entities.end(), entity) != Entities.end())
+        return;
+
+    // Identity is settled at adoption, before the entity counts as tracked, so
+    // every route into the scene lands here exactly once: a restored snapshot
+    // keeps its id when nothing live holds it, and an entity assembled directly
+    // in the registry gets one it never minted for itself.
+    (void)EnsurePersistentId(entity);
+    Entities.push_back(entity);
 }
 
 void EditorScene::SetTransform(EntityId entity, const Transform3f& transform)
@@ -214,6 +207,7 @@ void EditorScene::Clear()
     for (EntityId entity : world.GetAliveEntities())
         world.DestroyEntity(entity);
     Entities.clear();
+    TakenIds_.clear();
     BrushMeshes.Clear();
     HiddenEntities.clear();
     LockedEntities.clear();
@@ -221,7 +215,19 @@ void EditorScene::Clear()
 
 void EditorScene::SyncFromRegistry()
 {
-    Entities = Registry_.Components.GetAliveEntities();
+    World& world = Registry_.Components;
+    Entities = world.GetAliveEntities();
+
+    // The registry changed underneath the scene (a load, or the rollback of a
+    // failed one), so the index is rebuilt from what the entities actually
+    // carry. Malformed identity is not this function's business: a load reports
+    // it through ValidateIdentities and fails.
+    TakenIds_.clear();
+    TakenIds_.reserve(Entities.size());
+    for (EntityId entity : Entities)
+        if (const auto* id = world.TryGet<PersistentIdComponent>(entity))
+            if (id->Id.IsValid())
+                TakenIds_.insert(id->Id.Value);
 }
 
 bool EditorScene::HasEntity(EntityId entity) const

@@ -69,6 +69,18 @@ bool ValidatePersistentIds(const Registry& registry,
             registry.Components.TryGet<PersistentIdComponent>(entity);
         if (id == nullptr || !id->Id.IsValid())
             continue;
+        // Bit 63 belongs to the runtime allocator; no editor mint sets it, so
+        // content carrying one was hand-written and would collide with ids the
+        // runtime hands out for dynamically spawned entities.
+        if (!IsAuthoredPersistentEntityId(id->Id))
+        {
+            if (error != nullptr)
+                *error = "persistent entity id "
+                    + PersistentEntityIdToString(id->Id) + " in '"
+                    + std::string(sceneLabel)
+                    + "' uses the reserved runtime namespace";
+            return false;
+        }
         const auto [it, inserted] = seen.emplace(id->Id.Value, std::string(sceneLabel));
         if (!inserted)
         {

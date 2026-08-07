@@ -107,6 +107,24 @@ TEST(ZoneStateStore, CaptureWithoutAuthoredRecordIsIgnored)
     EXPECT_EQ(store.RecordedDestroyedCount(ZoneId{ 7 }), 0u);
 }
 
+TEST(ZoneStateStore, RepeatedCaptureWithoutReimportKeepsTheDeviation)
+{
+    ZoneStateStore store;
+    const std::array authored{ PersistentEntityId{ 0xa }, PersistentEntityId{ 0xb } };
+    store.RecordAuthoredSet(ZoneId{ 1 }, authored);
+    const std::array live{ PersistentEntityId{ 0xb } };
+    store.RecordDetachCapture(ZoneId{ 1 }, live);
+    ASSERT_TRUE(store.IsRecordedDestroyed(ZoneId{ 1 }, PersistentEntityId{ 0xa }));
+
+    // Only an import supplies a baseline, so a capture without one has nothing
+    // to diff. Recomputing from an empty baseline would read as "everything
+    // survived" and quietly resurrect A.
+    store.RecordDetachCapture(ZoneId{ 1 }, {});
+
+    EXPECT_TRUE(store.IsRecordedDestroyed(ZoneId{ 1 }, PersistentEntityId{ 0xa }));
+    EXPECT_EQ(store.RecordedDestroyedCount(ZoneId{ 1 }), 1u);
+}
+
 TEST(ZoneStateStore, ClearRestoresAuthoredReplay)
 {
     ZoneStateStore store;
@@ -184,4 +202,81 @@ TEST(ZoneStateMemory, UntouchedZoneRestreamsVerbatim)
     FinishResidency(runtime);
 
     EXPECT_EQ(AliveCount(runtime.Entities()), ids.size());
+}
+
+// The package carries identity twice — as import metadata consulted before the
+// row exists, and as the component the index registers afterwards. They decide
+// different things, so a package where they disagree would suppress under one
+// identity and resolve under the other.
+TEST(ZonePackageIdentity, MetadataDisagreeingWithTheComponentFailsImport)
+{
+    const WorldComponentSchema schema = IdentityOnlySchema();
+    RuntimeWorld runtime(schema);
+
+    ZoneLoadPackage package(ZoneId{ 51 });
+    const ZoneLocalEntityId local = package.CreateEntity();
+    ASSERT_TRUE(package.AddComponent<PersistentIdComponent>(
+        local, { PersistentEntityId{ 0xaaa } }));
+    ASSERT_TRUE(package.SetPersistentId(local, PersistentEntityId{ 0xbbb }));
+
+    ZoneImportError error;
+    EXPECT_FALSE(ImportZonePackage(
+        runtime, schema, package, LogicOnly(), &error));
+    EXPECT_NE(error.Message.find("identity metadata"), std::string::npos)
+        << error.Message;
+    EXPECT_EQ(AliveCount(runtime.Entities()), 0u)
+        << "a rejected package must leave no partially imported rows";
+}
+
+TEST(ZonePackageIdentity, MetadataWithoutTheComponentFailsImport)
+{
+    const WorldComponentSchema schema = IdentityOnlySchema();
+    RuntimeWorld runtime(schema);
+
+    ZoneLoadPackage package(ZoneId{ 52 });
+    const ZoneLocalEntityId local = package.CreateEntity();
+    ASSERT_TRUE(package.SetPersistentId(local, PersistentEntityId{ 0xccc }));
+
+    ZoneImportError error;
+    EXPECT_FALSE(ImportZonePackage(
+        runtime, schema, package, LogicOnly(), &error));
+    EXPECT_NE(error.Message.find("identity metadata"), std::string::npos)
+        << error.Message;
+}
+
+TEST(ZonePackageIdentity, ComponentWithoutMetadataFailsImport)
+{
+    const WorldComponentSchema schema = IdentityOnlySchema();
+    RuntimeWorld runtime(schema);
+
+    // The dangerous direction: the entity would register in the index but never
+    // be reachable by suppression, so destroying it would not survive a restream.
+    ZoneLoadPackage package(ZoneId{ 53 });
+    const ZoneLocalEntityId local = package.CreateEntity();
+    ASSERT_TRUE(package.AddComponent<PersistentIdComponent>(
+        local, { PersistentEntityId{ 0xddd } }));
+
+    ZoneImportError error;
+    EXPECT_FALSE(ImportZonePackage(
+        runtime, schema, package, LogicOnly(), &error));
+    EXPECT_NE(error.Message.find("identity metadata"), std::string::npos)
+        << error.Message;
+}
+
+TEST(ZonePackageIdentity, UnidentifiedEntitiesImportNormally)
+{
+    // Cook-generated content (cell meshes, lightmap entities) carries no
+    // identity at all, and agreement must read that as agreement.
+    const WorldComponentSchema schema = IdentityOnlySchema();
+    RuntimeWorld runtime(schema);
+
+    ZoneLoadPackage package(ZoneId{ 54 });
+    (void)package.CreateEntity();
+
+    ZoneImportError error;
+    EXPECT_TRUE(ImportZonePackage(
+        runtime, schema, package, LogicOnly(), &error))
+        << error.Message;
+    FinishResidency(runtime);
+    EXPECT_EQ(AliveCount(runtime.Entities()), 1u);
 }

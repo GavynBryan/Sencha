@@ -184,6 +184,19 @@ bool CookSession::Start(const CookProfile& profile,
         return true;
     }
 
+    // Same rule as world mode above: the cook must be a function of what is on
+    // disk, so unsaved authoring edits reach the file before they reach a
+    // cooked artifact.
+    if (EditorDocument& focus = World_.FocusDocument(); focus.IsDirty())
+    {
+        if (!focus.HasFilePath() || !focus.Save())
+        {
+            State->LastError = "save the level before cooking";
+            log.Error("cook: {}", State->LastError);
+            return false;
+        }
+    }
+
     if (levelName.empty())
     {
         const EditorDocument& document = World_.FocusDocument();

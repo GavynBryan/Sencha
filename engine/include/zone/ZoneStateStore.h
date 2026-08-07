@@ -18,6 +18,11 @@
 // set. Unload therefore stops meaning forget: a pickup taken before a zone
 // streamed out is still gone when it streams back in.
 //
+// What survives between residencies is the deviation, not the baseline: the
+// authored set lives only for the span of one residency because every import
+// restates it from the cooked artifact. Retained memory therefore tracks how
+// much state has actually changed, not how much of the world has been visited.
+//
 // This is the runtime half of the zone state overlay. Serializing records for
 // save files and capturing changed component fields extend this store; they do
 // not replace it.
@@ -49,16 +54,27 @@ public:
         if (it == Zones_.end())
             return;
 
+        ZoneStateRecord& record = it->second;
+        // Without a baseline there is nothing to diff against, and recomputing
+        // from an empty one would read as "everything survived" and erase the
+        // deviation already recorded. Only an import can supply a baseline.
+        if (record.Authored.empty())
+            return;
+
         std::unordered_set<std::uint64_t> liveSet;
         liveSet.reserve(live.size());
         for (const PersistentEntityId id : live)
             liveSet.insert(id.Value);
 
-        ZoneStateRecord& record = it->second;
         record.Destroyed.clear();
         for (const std::uint64_t authored : record.Authored)
             if (!liveSet.contains(authored))
                 record.Destroyed.insert(authored);
+
+        // The baseline is a property of the cooked artifact, restated by every
+        // import, so holding it between residencies would make this store grow
+        // with zones visited rather than with state that actually deviates.
+        record.Authored.clear();
     }
 
     [[nodiscard]] bool IsRecordedDestroyed(ZoneId zone, PersistentEntityId id) const

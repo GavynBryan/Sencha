@@ -167,12 +167,22 @@ bool EditorDocument::LoadFromJson(const JsonValue& root)
 
     Scene.SyncFromRegistry();
 
-    // A file from before persistent identity gets ids on open, and the load
-    // owns the resulting dirty state: a migrated file opens dirty so the mints
-    // reach disk (a cook of never-saved ids would bake identities the next
-    // session re-rolls), a current file opens clean. The dirty field is written
-    // directly because OnEdited is for authored mutations, never loads.
-    Dirty = Scene.BackfillPersistentIds() > 0;
+    // Identity is authored, so a file that does not already carry it is rejected
+    // rather than repaired: minting here would rewrite the document's identities
+    // without the user asking and let a cook bake ids the source never recorded.
+    if (std::string identityError; !Scene.ValidateIdentities(&identityError))
+    {
+        Logging.GetLogger<EditorDocument>().Error(
+            "scene identity is invalid: {}", identityError);
+        Scene.Clear();
+        Scene.SyncFromRegistry();
+        return false;
+    }
+
+    // The document was replaced wholesale, so whatever divergence the previous
+    // contents had from disk went with them. Written directly because OnEdited
+    // is for authored mutations, never loads.
+    Dirty = false;
     return true;
 }
 
@@ -245,6 +255,11 @@ EntityId EditorDocument::RestoreEntity(const EntitySnapshot& snapshot, bool fres
         }
     }
 
+    // Adoption settles identity, and it follows liveness: an undone delete or a
+    // cross-zone move restores its snapshot id (nothing live holds it), a
+    // duplicate or copy of a live source mints fresh, and a recipe snapshot with
+    // no id at all gets one. The components are loaded first so the id the
+    // snapshot carries is the one being judged.
     Scene.TrackEntity(entity);
 
     if (snapshot.Mesh.has_value())
@@ -274,12 +289,6 @@ EntityId EditorDocument::RestoreEntity(const EntitySnapshot& snapshot, bool fres
 
     Scene.SetEntityVisible(entity, !snapshot.Hidden);
     Scene.SetEntityLocked(entity, snapshot.Locked);
-
-    // Identity follows liveness, not the caller's mesh policy: an undone delete
-    // or a cross-zone move restores its snapshot id (nothing live holds it), a
-    // duplicate or copy of a live source mints fresh, and a recipe snapshot
-    // with no id at all gets one here.
-    (void)Scene.EnsurePersistentId(entity);
     return entity;
 }
 
@@ -357,8 +366,6 @@ bool EditorDocument::Load(std::string_view path)
         return false;
 
     FilePath.assign(path);
-    // LoadFromJson owns the dirty outcome: clean for a current file, dirty for
-    // a legacy file whose freshly minted ids still need a save.
     return true;
 }
 

@@ -510,6 +510,12 @@ void InspectorPanel::DrawAddComponentMenu(EntityId entity)
         bool anyAddable = false;
         for (const auto& serializer : EditorSceneSerializers().Entries())
         {
+            // A component the editor may not remove is one the document owns, so
+            // hand-adding it would produce an entity whose managed state the
+            // owner never minted (an unset persistent id, a transform with no
+            // derived pair).
+            if (!serializer->IsRemovable())
+                continue;
             const ComponentId id = world.GetComponentIdByType(serializer->TypeId());
             if (id == InvalidComponentId || world.HasComponent(entity, id))
                 continue;

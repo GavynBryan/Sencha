@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/identity/Id.h>
+#include <core/metadata/ComponentRemovable.h>
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
 #include <core/serialization/FourCC.h>
@@ -19,13 +20,24 @@
 //
 // Carries an entity's persistent identity. The editor mints the id when the
 // entity is authored; the cook carries it verbatim; the runtime resolves it
-// through the world's PersistentEntityIndex. An unset id is legal in authored
-// scenes (the editor backfills on load) and simply leaves the entity out of
-// the index.
+// through the world's PersistentEntityIndex. Editor documents must carry a
+// valid id on every entity or they do not load; cooked scenes may hold
+// entities with none (cook-generated content), which simply stay out of the
+// index.
 //=============================================================================
 struct PersistentIdComponent
 {
     PersistentEntityId Id;
+};
+
+// The document owns identity, not the inspector: removing this would strand any
+// save-overlay or cross-scene reference joined on the id, and the document would
+// then fail to load. EditorScene is the only mutation boundary.
+// (core/metadata/ComponentRemovable.h)
+template <>
+struct ComponentRemovable<PersistentIdComponent>
+{
+    static constexpr bool Value = false;
 };
 
 template <>

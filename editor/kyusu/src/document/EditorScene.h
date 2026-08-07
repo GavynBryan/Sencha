@@ -12,6 +12,7 @@
 #include <math/geometry/3d/Aabb3d.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <render/Camera.h>
+#include <world/identity/PersistentIdComponent.h>
 #include <world/registry/Registry.h>
 #include <zone/WorldPartitionIds.h>
 
@@ -87,7 +88,9 @@ public:
     EntityId CreateEntity(Vec3d position);
     void DestroyEntity(EntityId entity);
     // Adopts an externally-created entity into the tracked list (used to restore
-    // a deleted entity, which the registry recreates under a fresh id).
+    // a deleted entity, which the registry recreates under a fresh id). Adoption
+    // is also where identity is established, so every route into the scene mints
+    // or claims exactly once; adopting an already-tracked entity does nothing.
     void TrackEntity(EntityId entity);
     void SetTransform(EntityId entity, const Transform3f& transform);
     // Rebuilds the brush's mesh as an axis-aligned box of the given half-extents
@@ -101,6 +104,9 @@ public:
     template <typename T>
     void SetComponent(EntityId entity, const T& value)
     {
+        static_assert(!std::is_same_v<T, PersistentIdComponent>,
+                      "Persistent identity changes go through EnsurePersistentId; "
+                      "a wholesale write would desynchronize the scene's id index.");
         if (T* existing = Registry_.Components.TryGet<T>(entity))
             *existing = value;
     }
@@ -114,17 +120,22 @@ public:
 
     // Mints a persistent entity id unused by any tracked entity. Editor-side by
     // design (the engine mints no random ids); bit 63 stays clear, reserved for
-    // the runtime allocator namespace.
+    // the runtime allocator namespace. The returned id is reserved immediately,
+    // so a discarded mint is retired for the life of the document.
     [[nodiscard]] PersistentEntityId MintPersistentId();
     // Establishes the document identity invariant on one entity: it keeps the
-    // id it carries unless that id is unset or already held by another tracked
-    // entity (a duplicate or copy-paste of a live source), in which case it is
-    // minted fresh. Returns true when a mint happened.
+    // id it carries unless that id is unset, in the runtime namespace, or
+    // already held by another tracked entity (a duplicate or copy-paste of a
+    // live source), in which case it is minted fresh. Returns true when a mint
+    // happened. Expects an entity not yet contributing to the id index, which is
+    // why adoption calls it before the entity counts as tracked.
     bool EnsurePersistentId(EntityId entity);
-    // Load-time migration: every tracked entity ends up with a valid unique id.
-    // Returns the number of ids minted, so callers can dirty the document only
-    // when the file actually predates persistent identity.
-    size_t BackfillPersistentIds();
+    // Checks the document invariant a load must arrive at already satisfying:
+    // every tracked entity carries a unique authored id. Reading a file is not
+    // authoring, so a violation is reported rather than repaired — repairing on
+    // load would rewrite the file's identities behind the user and hand the cook
+    // ids the source never recorded.
+    [[nodiscard]] bool ValidateIdentities(std::string* error) const;
 
     [[nodiscard]] bool HasEntity(EntityId entity) const;
     [[nodiscard]] uint32_t GetEntityCount() const;
@@ -165,15 +176,17 @@ public:
     [[nodiscard]] const BrushMeshStore& GetBrushMeshStore() const { return BrushMeshes; }
 
 private:
-    // Rolls until the draw is nonzero, has bit 63 clear, and inserts into the
-    // caller's taken-set; batch minting shares one set across calls.
-    [[nodiscard]] PersistentEntityId MintFromTaken(std::unordered_set<uint64_t>& taken);
-
     Registry& Registry_;
     std::vector<EntityId> Entities;
     BrushMeshStore BrushMeshes;
     // Persistent-id minting entropy (per document, like WorldDocument's Rng_).
     std::mt19937_64 IdRng_{ std::random_device{}() };
+    // Every persistent id spoken for in this document: held by a tracked entity
+    // or reserved by a mint. Minting and duplicate detection are lookups against
+    // it rather than scans of the entity list, which is what keeps a bulk paste
+    // linear. Rebuilt by SyncFromRegistry; released by DestroyEntity so undo can
+    // restore an id.
+    std::unordered_set<uint64_t> TakenIds_;
     // Sparse editor view flags keyed by slot index (membership = non-default).
     std::unordered_set<EntityIndex> HiddenEntities;
     std::unordered_set<EntityIndex> LockedEntities;

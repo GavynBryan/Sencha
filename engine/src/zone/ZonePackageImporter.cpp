@@ -3,6 +3,7 @@
 #include <core/serialization/JsonArchive.h>
 #include <ecs/WorldComponentSchema.h>
 #include <world/RuntimeWorld.h>
+#include <world/identity/PersistentIdComponent.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializationContext.h>
 #include <world/transform/TransformComponents.h>
@@ -42,6 +43,25 @@ void SeedDerivedTransform(World& world, EntityId entity, bool worldHasTransforms
     (void)world.InitializeComponent<WorldTransform>(
         entity,
         WorldTransform{ local->Value });
+}
+
+// ZonePackageEntity::PersistentId is import metadata lifted from the entity's
+// persistent_id component at package build, and the two decide different things:
+// the metadata drives destroyed-entity suppression before the row exists, the
+// component drives PersistentEntityIndex registration after it does. A package
+// whose two copies disagree would suppress under one identity and resolve under
+// another, so agreement is checked rather than assumed. A world that never
+// registered the component (minimal fixtures) reads as no identity, which only
+// agrees with metadata that is likewise unset.
+bool PersistentIdentityAgrees(const World& world,
+                              EntityId entity,
+                              PersistentEntityId metadata)
+{
+    PersistentEntityId component;
+    if (world.IsRegistered<PersistentIdComponent>())
+        if (const auto* id = world.TryGet<PersistentIdComponent>(entity))
+            component = id->Id;
+    return component == metadata;
 }
 
 // Every column the entity will carry, so its row is built once. Declared
@@ -251,6 +271,12 @@ bool ImportPackageIntoPartitionImpl(
         }
 
         SeedDerivedTransform(world, entity, worldHasTransforms);
+
+        if (!PersistentIdentityAgrees(world, entity, packageEntity.PersistentId))
+        {
+            return fail("Package entity identity metadata disagrees with its "
+                        "persistent_id component.");
+        }
     }
 
     for (const ZonePackageParent& relation : package.Parents())

@@ -8,6 +8,7 @@
 
 #include <assets/probes/ProbeVolumeFormat.h>
 #include <core/json/JsonParser.h>
+#include <core/json/JsonStringify.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/BinaryReader.h>
 #include <render/IrradianceVolumeComponent.h>
@@ -17,6 +18,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -64,6 +66,35 @@ protected:
         const auto manifest = ReadWorldPartitionManifest(*json, &error);
         EXPECT_TRUE(manifest.has_value()) << error;
         return *manifest;
+    }
+
+    // Rewrites a saved zone file through a JSON edit, standing in for content
+    // the editor cannot author: a file that predates persistent identity, or one
+    // whose ids were written by hand.
+    static void EditSavedScene(const fs::path& path,
+                               const std::function<void(JsonValue&)>& edit)
+    {
+        auto json = JsonParse(ReadFile(path));
+        ASSERT_TRUE(json.has_value()) << path.generic_string();
+        edit(*json);
+        std::ofstream(path, std::ios::binary | std::ios::trunc)
+            << JsonStringify(*json, true);
+    }
+
+    static void StripPersistentIds(JsonValue& root)
+    {
+        JsonValue* entities = root.Find("entities");
+        if (entities == nullptr || !entities->IsArray())
+            return;
+        for (JsonValue& entity : entities->AsArray())
+        {
+            JsonValue* components = entity.Find("components");
+            if (components == nullptr || !components->IsObject())
+                continue;
+            auto& members = components->AsObject();
+            std::erase_if(members, [](const auto& member)
+                          { return member.first == "persistent_id"; });
+        }
     }
 
     LoggingProvider Logging;   // sink-less: silent
@@ -490,12 +521,14 @@ TEST_F(WorldCookTest, RefusesDuplicatePersistentIdsAcrossZones)
     ASSERT_TRUE(originalId->Id.IsValid());
 
     // The editor cannot author this state: it models a .level file duplicated
-    // by hand, whose entities keep their source ids.
+    // by hand, whose entities keep their source ids. Written straight into the
+    // registry because EditorScene refuses to mint a collision.
+    const PersistentEntityId duplicated = originalId->Id;
     ASSERT_TRUE(world.SetFocusZone(second));
     const EntityId copy =
         world.FocusDocument().GetScene().CreateEntity(Vec3d{ 32, 0, 0 });
-    world.FocusDocument().GetScene().SetComponent(
-        copy, PersistentIdComponent{ originalId->Id });
+    world.FocusDocument().GetScene().GetRegistry().Components
+        .TryGet<PersistentIdComponent>(copy)->Id = duplicated;
     ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
 
     const WorldCookResult cooked = CookWorld(world, Root, 16.0, Logging, nullptr);
@@ -503,6 +536,87 @@ TEST_F(WorldCookTest, RefusesDuplicatePersistentIdsAcrossZones)
     EXPECT_NE(cooked.Error.find("duplicate persistent entity id"), std::string::npos)
         << cooked.Error;
     EXPECT_NE(cooked.Error.find("Second"), std::string::npos) << cooked.Error;
+}
+
+namespace
+{
+// Builds a two-zone world, saves it, and returns the second zone's scene ref.
+// The second zone is the one under test because the reload restores focus to
+// the first, leaving the second closed — and only a closed zone reaches cook's
+// own document load.
+struct ClosedZoneWorld
+{
+    ZoneId Closed;
+    std::string SceneRef;
+};
+} // namespace
+
+TEST_F(WorldCookTest, RefusesAZoneWithoutPersistentIdentity)
+{
+    // A closed zone whose file carries no identity. Cook loads closed zones
+    // itself, and that load now refuses malformed content instead of minting
+    // ids the source never recorded.
+    ClosedZoneWorld setup;
+    {
+        WorldDocument world(Logging);
+        world.NewWorld("TestWorld");
+        const ZoneId first = world.Manifest().Zones[0].Id;
+        world.FocusDocument().GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
+        setup.Closed = world.AddZone(world.Manifest().Graphs[0].Id, "Second");
+        ASSERT_TRUE(world.SetZoneBounds(setup.Closed,
+            Aabb3d::FromMinMax(Vec3d{ 24, 0, -5 }, Vec3d{ 40, 4, 5 })));
+        ASSERT_TRUE(world.SetFocusZone(setup.Closed));
+        world.FocusDocument().GetScene().CreateBrush(Vec3d{ 32, 0, 0 });
+        ASSERT_TRUE(world.SetFocusZone(first));
+        ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+        setup.SceneRef = world.Manifest().Zones[1].SceneRef;
+    }
+    ASSERT_FALSE(setup.SceneRef.empty());
+
+    // Record the zone as closed while its file is still well-formed; a zone that
+    // comes back open would be refused by the editor load instead.
+    {
+        WorldDocument settle(Logging);
+        ASSERT_TRUE(settle.LoadWorld(WorldPath()));
+        if (settle.IsZoneOpen(setup.Closed))
+            ASSERT_TRUE(settle.UnloadZone(setup.Closed));
+        ASSERT_TRUE(settle.SaveWorld());
+    }
+    EditSavedScene(Root / setup.SceneRef, StripPersistentIds);
+
+    WorldDocument reloaded(Logging);
+    ASSERT_TRUE(reloaded.LoadWorld(WorldPath()));
+    ASSERT_FALSE(reloaded.IsZoneOpen(setup.Closed))
+        << "the zone under test must be closed, or the editor load covers it";
+
+    const WorldCookResult cooked = CookWorld(reloaded, Root, 16.0, Logging, nullptr);
+    EXPECT_FALSE(cooked.Success);
+    EXPECT_NE(cooked.Error.find("could not load"), std::string::npos) << cooked.Error;
+    EXPECT_NE(cooked.Error.find("Second"), std::string::npos) << cooked.Error;
+}
+
+TEST_F(WorldCookTest, RefusesReservedRuntimeNamespaceIds)
+{
+    // Bit 63 belongs to the runtime allocator, so no editor mint produces one
+    // and a file carrying one is refused at document load before the cook sees
+    // it. The cook gate covers live registry state that never crossed a load,
+    // modelled here by writing the id straight into the world scene.
+    WorldDocument world(Logging);
+    world.NewWorld("TestWorld");
+    world.FocusDocument().GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
+    EditorDocument& worldScene = world.WorldSceneDocument();
+    const EntityId entity = worldScene.GetScene().CreateEntity(Vec3d{});
+    worldScene.MarkDirty();
+    ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+
+    worldScene.GetScene().GetRegistry().Components
+        .TryGet<PersistentIdComponent>(entity)->Id =
+            PersistentEntityId{ PersistentEntityIdRuntimeBit | 0x5678 };
+
+    const WorldCookResult cooked = CookWorld(world, Root, 16.0, Logging, nullptr);
+    EXPECT_FALSE(cooked.Success);
+    EXPECT_NE(cooked.Error.find("reserved runtime namespace"), std::string::npos)
+        << cooked.Error;
 }
 
 TEST_F(WorldCookTest, CookedSceneCarriesAuthoredIdsAndGeneratedEntitiesCarryNone)
