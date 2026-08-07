@@ -10,14 +10,14 @@
 
 struct AuthoredDockCookInput
 {
-    WorldDock Dock;
-    Transform3f Transform;
+    WorldDock Dock{};
+    Transform3f Transform{};
     uint64_t AuthoredEntity = 0;
 };
 
 struct AuthoredLinkCookInput
 {
-    WorldLink Link;
+    WorldLink Link{};
     uint64_t AuthoredEntity = 0;
 };
 

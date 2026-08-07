@@ -5,6 +5,7 @@ file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS
 add_executable(app ${APP_SOURCES})
 
 target_link_libraries(app PRIVATE engine)
+sencha_warnings(app)
 
 # Install the runtime host into the SDK (engine-roadmap.md: SDK boundary, shipped). RPATH
 # $ORIGIN/../lib so the installed app finds libsencha_engine.so beside it without

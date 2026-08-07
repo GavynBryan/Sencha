@@ -23,9 +23,9 @@ struct BrushVertex
 
 struct BrushFace
 {
-    std::vector<std::uint32_t> Loop;     // CCW vertex indices, outward-facing (>=3)
+    std::vector<std::uint32_t> Loop{};    // CCW vertex indices, outward-facing (>=3)
     Vec3d                      Normal = {}; // cached; recomputed on edit (Newell)
-    FaceMaterial               Material;  // per-face texturing; survives edits (04-)
+    FaceMaterial               Material{}; // per-face texturing; survives edits (04-)
 };
 
 struct BrushMesh

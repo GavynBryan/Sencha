@@ -218,8 +218,12 @@ inline void AddStressLinkPair(WorldPartitionManifest& manifest,
         }
     }
 
-    return Aabb3d{ Vec3d{ minX, 0.0, minZ },
-                   Vec3d{ minX + span, spec.ZoneHeight, minZ + span } };
+    // Vec3d is float-scalar (Vec3dd is the double one), so the layout math
+    // stays in double and converts once, here.
+    return Aabb3d{ Vec3d{ static_cast<float>(minX), 0.0f, static_cast<float>(minZ) },
+                   Vec3d{ static_cast<float>(minX + span),
+                          static_cast<float>(spec.ZoneHeight),
+                          static_cast<float>(minZ + span) } };
 }
 
 // A point comfortably inside a zone: its bounds centre.

@@ -1747,5 +1747,7 @@ TEST(BrushOpsBevel, ProfileBulgesTowardTheOldCorner)
     ASSERT_GT(out.Vertices.size(), box.Vertices.size());
     for (const BrushVertex& v : out.Vertices)
         if (v.Position.X > 1.0f - w - 1e-4f && v.Position.Y > 1.0f - w - 1e-4f)
+        {
             EXPECT_GE(v.Position.X + v.Position.Y, 2.0f - w - 1e-4f);
+        }
 }

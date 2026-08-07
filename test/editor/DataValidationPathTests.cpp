@@ -123,9 +123,9 @@ struct CountingSubtype
             ++*compiles;
             // Written the way a compiler may be written once its schema
             // guarantees the shape. Reached with raw json, this throws.
-            const JsonValue* entries = data.Find("entries");
-            EXPECT_NE(entries, nullptr);
-            (void)entries->AsArray();
+            const JsonValue* entriesValue = data.Find("entries");
+            EXPECT_NE(entriesValue, nullptr);
+            (void)entriesValue->AsArray();
             return DataAssetCompileResult{ std::make_shared<int>(1), {}, {} };
         };
         EXPECT_TRUE(Types.Register(std::move(registration)));

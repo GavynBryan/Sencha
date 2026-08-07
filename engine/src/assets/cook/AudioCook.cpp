@@ -7,8 +7,22 @@
 // stb_vorbis is plain C designed for single-TU inclusion; this importer is
 // its only consumer. No stdio decoders — sources arrive as bytes through
 // the import contract.
+//
+// The -isystem path suppresses warnings the front end attributes to the
+// header, but -Wmaybe-uninitialized is raised by an optimization pass after
+// inlining has erased that attribution, so at -O2 and above it reports against
+// this TU. Silence it around the include only.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
 #define STB_VORBIS_NO_STDIO
 #include <stb_vorbis.c>
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 #include <cstdlib>
 #include <optional>

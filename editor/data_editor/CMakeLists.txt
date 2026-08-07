@@ -12,6 +12,7 @@ add_executable(data_editor
 )
 
 target_link_libraries(data_editor PRIVATE editor_common)
+sencha_warnings(data_editor)
 target_include_directories(data_editor PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )

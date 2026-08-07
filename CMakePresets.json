@@ -19,14 +19,15 @@
       "name": "dev",
       "inherits": "base",
       "displayName": "Development (Vulkan + Cook, Debug)",
-      "description": "Full-featured debug build for daily development.",
+      "description": "Full-featured debug build for daily development. Warnings are errors here (and in dev-ui, tsan, and ci, which inherit this) so a new one fails where it is introduced; pass -DSENCHA_WARNINGS_AS_ERRORS=OFF to get past one in progress.",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "SENCHA_ENABLE_VULKAN": "ON",
         "SENCHA_ENABLE_COOK": "ON",
         "SENCHA_ENABLE_DEBUG_UI": "OFF",
-        "SENCHA_ENABLE_HOT_RELOAD": "OFF"
+        "SENCHA_ENABLE_HOT_RELOAD": "OFF",
+        "SENCHA_WARNINGS_AS_ERRORS": "ON"
       }
     },
     {
@@ -43,13 +44,14 @@
       "name": "release",
       "inherits": "base",
       "displayName": "Release (Vulkan + Cook)",
-      "description": "Optimized build. Hot-reload stays off -- shipping binaries carry no GLSL compiler.",
+      "description": "Optimized build. Hot-reload stays off -- shipping binaries carry no GLSL compiler. Warnings stay warnings: optimizer-dependent diagnostics vary with the compiler version, and a toolchain upgrade must not be able to block a shipping build. The dev preset is where they gate.",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "SENCHA_ENABLE_VULKAN": "ON",
         "SENCHA_ENABLE_COOK": "ON",
         "SENCHA_ENABLE_DEBUG_UI": "OFF",
-        "SENCHA_ENABLE_HOT_RELOAD": "OFF"
+        "SENCHA_ENABLE_HOT_RELOAD": "OFF",
+        "SENCHA_WARNINGS_AS_ERRORS": "OFF"
       }
     },
     {
@@ -66,7 +68,8 @@
         "SENCHA_ENABLE_COOK": "ON",
         "SENCHA_ENABLE_DEBUG_UI": "OFF",
         "SENCHA_ENABLE_HOT_RELOAD": "OFF",
-        "SENCHA_ENABLE_RENDER_PROFILING": "ON"
+        "SENCHA_ENABLE_RENDER_PROFILING": "ON",
+        "SENCHA_WARNINGS_AS_ERRORS": "OFF"
       }
     },
     {

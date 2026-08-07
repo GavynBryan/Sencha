@@ -12,9 +12,9 @@ class GameplayTagRegistry;
 
 struct GameplayTagSource
 {
-    std::string Name;
-    std::optional<std::string> Owner;
-    std::optional<std::uint64_t> SourceId;
+    std::string Name{};
+    std::optional<std::string> Owner{};
+    std::optional<std::uint64_t> SourceId{};
 };
 
 struct GameplayTagGrantHandle

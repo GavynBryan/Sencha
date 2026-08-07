@@ -78,7 +78,7 @@ TEST_F(WorkspaceResolvePendingEditsTest, ResolvingCommitsAPendingBridgeAsOneUndo
 
 TEST_F(WorkspaceResolvePendingEditsTest, ResolvingWithNothingStagedIsANoOp)
 {
-    AddBrush(Vec3d{ 0, 0, 0 });
+    (void)AddBrush(Vec3d{ 0, 0, 0 });
 
     Workspace.ResolvePendingEdits();
 

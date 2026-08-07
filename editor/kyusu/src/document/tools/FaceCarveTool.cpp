@@ -188,7 +188,7 @@ void FaceCarveTool::OnHoverEnd(ToolContext& ctx)
     ctx.Overlay.Readout.Clear();
 }
 
-InputConsumed FaceCarveTool::OnClick(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)
+InputConsumed FaceCarveTool::OnClick(ToolContext& /*ctx*/, EditorViewport& /*viewport*/, const PointerEvent& /*pointer*/)
 {
     // A click is not a rect; consuming it keeps stray clicks from re-selecting
     // while the tool is active, and a pending carve survives.

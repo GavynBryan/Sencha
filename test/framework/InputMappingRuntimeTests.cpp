@@ -18,6 +18,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <format>
 #include <string>
 #include <vector>
 
@@ -619,4 +620,30 @@ TEST_F(InputRuntimeFixture, HistoryRecordsCarryTheFiredMoment)
     const InputActionState& state = WorldState.GetResource<InputActionState>();
     ASSERT_GT(state.HistoryCount(), 0u);
     EXPECT_TRUE(state.History(0).View().Fired(Recorder->Jump));
+}
+
+// The lease token crosses ILifetimeOwner's uint64_t slot, so the slot index
+// survives an encode/decode round trip only if the full 32 bits come back.
+// Every other test here holds a handful of contexts, which would pass even if
+// the decode kept one byte.
+TEST(InputContextSetTest, LeasesResolveBeyondTheFirstByteOfSlotIndices)
+{
+    InputContextSet contexts;
+    std::vector<InputContextLease> leases;
+    constexpr std::size_t kContexts = 300;
+
+    for (std::size_t i = 0; i < kContexts; ++i)
+        leases.push_back(contexts.Activate(std::format("context{}", i)));
+    contexts.ApplyPending();
+
+    for (std::size_t i = 0; i < kContexts; ++i)
+        EXPECT_TRUE(contexts.IsActive(std::format("context{}", i))) << "context " << i;
+
+    // Dropping one lease must reach that slot and no other.
+    leases[kContexts - 1].Reset();
+    contexts.ApplyPending();
+
+    EXPECT_FALSE(contexts.IsActive(std::format("context{}", kContexts - 1)));
+    for (std::size_t i = 0; i + 1 < kContexts; ++i)
+        EXPECT_TRUE(contexts.IsActive(std::format("context{}", i))) << "context " << i;
 }

@@ -25,11 +25,11 @@ void RemapWorldConnectionDuplicateSnapshots(
 struct EditorCreateContext
 {
     WorldDocument* World = nullptr;
-    ZoneId ActiveZone;
-    GraphId ActiveGraph;
-    Vec3d PlacementPoint;
+    ZoneId ActiveZone{};
+    GraphId ActiveGraph{};
+    Vec3d PlacementPoint{};
     Vec3d PlacementNormal = Vec3d::Forward();
-    std::span<const SelectableRef> Selection;
+    std::span<const SelectableRef> Selection{};
 };
 
 class IEditorEntityRecipe

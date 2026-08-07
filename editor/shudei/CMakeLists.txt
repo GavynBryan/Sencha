@@ -41,6 +41,7 @@ add_executable(shudei
 )
 
 target_link_libraries(shudei PRIVATE editor_common)
+sencha_warnings(shudei)
 target_include_directories(shudei PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
     "${CMAKE_CURRENT_BINARY_DIR}/generated"

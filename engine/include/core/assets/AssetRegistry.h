@@ -18,8 +18,8 @@ struct AssetRecord
     AssetType Type = AssetType::Unknown;
     AssetSourceKind SourceKind = AssetSourceKind::Unknown;
 
-    std::string Path;
-    std::string FilePath;
+    std::string Path{};
+    std::string FilePath{};
 
     // Stable identity from the cook's persisted id map (Decision A / Stage
     // 4e). Invalid until ApplyAssetIds runs after import + scan; records

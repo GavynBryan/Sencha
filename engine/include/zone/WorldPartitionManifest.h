@@ -19,11 +19,11 @@ enum class DockSide : uint8_t
 
 struct DockEndpoint
 {
-    DockId Id;
-    ZoneId OwnerZone;
-    ZoneId OtherZone;
+    DockId Id{};
+    ZoneId OwnerZone{};
+    ZoneId OtherZone{};
     DockSide Side = DockSide::A;
-    Vec3d Origin;
+    Vec3d Origin{};
     Vec3d Normal = Vec3d::Forward();
     Vec3d Right = Vec3d::Right();
     Vec3d Up = Vec3d::Up();
@@ -90,29 +90,29 @@ struct GraphStreamingConfig
 
 struct GraphRecord
 {
-    GraphId              Id;
-    std::string          Name;
-    GraphStreamingConfig Streaming;
+    GraphId              Id{};
+    std::string          Name{};
+    GraphStreamingConfig Streaming{};
 
     friend bool operator==(const GraphRecord&, const GraphRecord&) = default;
 };
 
 struct ZoneHeader
 {
-    ZoneId      Id;
-    std::string Name;
-    GraphId    Graph;                     // exactly one, validated
-    std::string SceneRef;                  // project-relative authored scene path
-    Aabb3d      Bounds;
+    ZoneId      Id{};
+    std::string Name{};
+    GraphId    Graph{};                   // exactly one, validated
+    std::string SceneRef{};                // project-relative authored scene path
+    Aabb3d      Bounds{};
     bool        BoundsOverridden = false;
 
     // Cooked-manifest-only fields; zero/empty in authored manifests. The world cook
     // fills them; the runtime loading policy consumes them.
-    std::string CookedSceneRef;
-    std::string CookedCollisionRef;
+    std::string CookedSceneRef{};
+    std::string CookedCollisionRef{};
     uint64_t    CookedContentHash = 0;
-    std::vector<DockEndpoint> Docks;
-    std::vector<LinkEndpoint> Links;
+    std::vector<DockEndpoint> Docks{};
+    std::vector<LinkEndpoint> Links{};
 
     friend bool operator==(const ZoneHeader&, const ZoneHeader&) = default;
 };

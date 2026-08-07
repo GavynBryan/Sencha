@@ -133,7 +133,7 @@ public:
             // Same stable identity must mean the same storage contract — a
             // mismatch is two distinct types lying about a shared name, which
             // would silently corrupt archetype layout. Fail loudly (§3.3).
-            const ComponentMeta& existing = ComponentMetas[it->second];
+            [[maybe_unused]] const ComponentMeta& existing = ComponentMetas[it->second];
             assert(existing.Size == size && existing.Alignment == align
                    && existing.IsTag == std::is_empty_v<T>
                    && "ComponentTypeId collision: same stable name, different storage layout.");
@@ -302,7 +302,8 @@ public:
     StoragePartitionId GetEntityPartition(EntityId entity) const
     {
         const EntityLocation loc = Entities.GetLocation(entity);
-        const Chunk* chunk = ArchetypeList[loc.ArchetypeId]->Chunks[loc.ChunkIndex].get();
+        [[maybe_unused]] const Chunk* chunk =
+            ArchetypeList[loc.ArchetypeId]->Chunks[loc.ChunkIndex].get();
         assert(chunk->Partition == loc.Partition);
         return loc.Partition;
     }

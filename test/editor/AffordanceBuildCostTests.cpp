@@ -21,7 +21,7 @@ protected:
     void AddBrushes(int count)
     {
         for (int i = 0; i < count; ++i)
-            AddBrush(Vec3d{ static_cast<float>(i) * 2.0f, 0, 0 });
+            (void)AddBrush(Vec3d{ static_cast<float>(i) * 2.0f, 0, 0 });
     }
 
     [[nodiscard]] EditorAffordanceService& Affordances() { return *Workspace.Affordances; }

@@ -189,15 +189,15 @@ std::vector<LightmapPlacement> CollectLightmapPlacements(
                 {
                     const StaticMeshVertex& a = verts[indices[i + e]];
                     const StaticMeshVertex& b = verts[indices[i + (e + 1) % 3]];
-                    const float world =
+                    const float worldLength =
                         (placement.ToWorld.TransformPoint(b.Position)
                          - placement.ToWorld.TransformPoint(a.Position)).Magnitude();
                     const float su = std::abs(b.LightmapU - a.LightmapU) / 65535.0f;
                     const float sv = std::abs(b.LightmapV - a.LightmapV) / 65535.0f;
                     if (su > 1e-5f)
-                        du = std::max(du, world / su);
+                        du = std::max(du, worldLength / su);
                     if (sv > 1e-5f)
-                        dv = std::max(dv, world / sv);
+                        dv = std::max(dv, worldLength / sv);
                 }
             if (du <= 0.0f && dv <= 0.0f)
                 return;

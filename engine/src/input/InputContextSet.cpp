@@ -2,6 +2,21 @@
 
 #include <cstring>
 
+namespace
+{
+    // Inverse of Owned<InputContextToken>::Encode(), which copies the token's
+    // object representation into the low bytes of a zeroed uint64_t. Decoding
+    // through a uint32_t rather than straight into InputContextToken keeps the
+    // byte-level round trip identical while memcpy's destination stays a type
+    // with a trivial default constructor.
+    InputContextToken DecodeToken(std::uint64_t token)
+    {
+        std::uint32_t value = 0;
+        std::memcpy(&value, &token, sizeof(value));
+        return InputContextToken{ value };
+    }
+}
+
 std::uint32_t InputContextSet::SlotFor(std::string_view name)
 {
     const auto it = SlotsByName.find(std::string(name));
@@ -46,8 +61,7 @@ void InputContextSet::BuildActiveMask(const BoundInputProfile& profile,
 
 void InputContextSet::Attach(std::uint64_t token)
 {
-    InputContextToken decoded{};
-    std::memcpy(&decoded, &token, sizeof(decoded));
+    const InputContextToken decoded = DecodeToken(token);
     if (decoded.Value == 0 || decoded.Value > Slots.size())
         return;
     ++Slots[decoded.Value - 1].Leases;
@@ -55,8 +69,7 @@ void InputContextSet::Attach(std::uint64_t token)
 
 void InputContextSet::Detach(std::uint64_t token)
 {
-    InputContextToken decoded{};
-    std::memcpy(&decoded, &token, sizeof(decoded));
+    const InputContextToken decoded = DecodeToken(token);
     if (decoded.Value == 0 || decoded.Value > Slots.size())
         return;
     Slot& slot = Slots[decoded.Value - 1];

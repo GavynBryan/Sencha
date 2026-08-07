@@ -845,14 +845,14 @@ void EditorServices::ExportSelectionGlb()
         {
             // The dialog callback may run off the main thread; the payload is
             // self-contained (no editor state), so writing here is safe.
-            std::unique_ptr<GlbExportPayload> payload(static_cast<GlbExportPayload*>(userdata));
+            std::unique_ptr<GlbExportPayload> owned(static_cast<GlbExportPayload*>(userdata));
             if (filelist == nullptr || filelist[0] == nullptr)
                 return;
             std::filesystem::path path(filelist[0]);
             if (path.extension() != ".glb")
                 path += ".glb";
             std::string writeError;
-            if (!WriteGlbFile(payload->Geometry, payload->Materials, path, &writeError))
+            if (!WriteGlbFile(owned->Geometry, owned->Materials, path, &writeError))
                 std::fprintf(stderr, "[editor] export: %s\n", writeError.c_str());
             else
                 std::fprintf(stderr, "[editor] exported '%s'\n", path.string().c_str());

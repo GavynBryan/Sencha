@@ -187,8 +187,9 @@ public:
             AddFixtureDockPair(cooked,
                                static_cast<std::uint64_t>(0xc0 + index),
                                ZoneAt(index), ZoneAt(index + 1),
-                               Vec3d{ static_cast<double>(index + 1) * kZoneSpan,
-                                      2, 0 });
+                               Vec3d{ static_cast<float>(index + 1)
+                                          * static_cast<float>(kZoneSpan),
+                                      2.0f, 0.0f });
         if (!Partition_.LoadManifest(std::move(cooked), &error))
             return "manifest load failed: " + error;
         return {};

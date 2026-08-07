@@ -84,6 +84,7 @@ if(RUNTIME_TEST_SOURCES)
     # it is dlopen-only; hidden visibility — only SenchaCreateGameModule exported.
     add_library(test_game_module MODULE module/TestGameModule.cpp)
     target_link_libraries(test_game_module PRIVATE sencha_engine)
+    sencha_warnings(test_game_module)
     set_target_properties(test_game_module PROPERTIES
         CXX_VISIBILITY_PRESET hidden
         VISIBILITY_INLINES_HIDDEN ON
@@ -179,6 +180,12 @@ if(EDITOR_TEST_SOURCES AND TARGET kyusu_authoring)
     target_link_libraries(editor_tests PRIVATE kyusu_authoring GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS editor_tests)
 endif()
+
+# Held to the same warning set as the code under test, applied over the
+# accumulated list so a test executable added above cannot miss it.
+foreach(sencha_test_target IN LISTS SENCHA_TEST_TARGETS)
+    sencha_warnings(${sencha_test_target})
+endforeach()
 
 add_custom_target(engine_tests DEPENDS ${SENCHA_TEST_TARGETS})
 

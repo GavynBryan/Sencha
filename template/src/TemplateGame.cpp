@@ -1017,19 +1017,19 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
             // the manifest sits beside the cooked scene (.cooked.json ->
             // .manifest.json). Missing manifest = resolve-on-attach fallback.
             {
-                std::string manifestPath = scenePath;
+                std::string assetManifestPath = scenePath;
                 constexpr std::string_view cookedSuffix = ".cooked.json";
-                if (manifestPath.ends_with(cookedSuffix))
+                if (assetManifestPath.ends_with(cookedSuffix))
                 {
-                    manifestPath.resize(
-                        manifestPath.size() - cookedSuffix.size());
-                    manifestPath += ".manifest.json";
-                    AssetManifest manifest;
+                    assetManifestPath.resize(
+                        assetManifestPath.size() - cookedSuffix.size());
+                    assetManifestPath += ".manifest.json";
+                    AssetManifest assetManifest;
                     if (Preloader.has_value()
-                        && LoadAssetManifestFile(manifestPath, manifest, nullptr))
+                        && LoadAssetManifestFile(assetManifestPath, assetManifest, nullptr))
                     {
                         recipe.Preload = Preloader->Begin(ResolveManifestPaths(
-                            manifest, RuntimeAssetState().Registry));
+                            assetManifest, RuntimeAssetState().Registry));
                     }
                 }
             }

@@ -12,6 +12,7 @@ add_library(editor_common STATIC
 )
 
 target_link_libraries(editor_common PUBLIC sencha::engine)
+sencha_warnings(editor_common)
 
 # The parent editor/ dir carries the shared fonts/ headers ("fonts/...").
 # Application-private sources are NOT on this path: an editor application can

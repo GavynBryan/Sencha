@@ -86,6 +86,7 @@ add_library(kyusu_authoring STATIC
 # test targets must compile against the same view of the engine that this
 # library did (editor_common's Vulkan/debug-UI defines change engine layouts).
 target_link_libraries(kyusu_authoring PUBLIC editor_common)
+sencha_warnings(kyusu_authoring)
 target_include_directories(kyusu_authoring PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 add_executable(kyusu
@@ -94,6 +95,7 @@ add_executable(kyusu
 )
 
 target_link_libraries(kyusu PRIVATE kyusu_authoring)
+sencha_warnings(kyusu)
 target_include_directories(kyusu PRIVATE
     "${CMAKE_CURRENT_BINARY_DIR}/generated"
 )

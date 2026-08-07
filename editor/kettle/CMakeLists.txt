@@ -12,6 +12,7 @@ add_executable(kettle
 )
 
 target_link_libraries(kettle PRIVATE editor_common)
+sencha_warnings(kettle)
 target_include_directories(kettle PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )

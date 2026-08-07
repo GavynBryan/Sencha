@@ -44,7 +44,7 @@ void DockPacked(ImGuiID region, const std::vector<IEditorPanel*>& panels, ImGuiD
 {
     struct DockUnit
     {
-        std::vector<IEditorPanel*> Members;
+        std::vector<IEditorPanel*> Members{};
         float Weight = 0.0f;
         int TabGroup = -1;
     };

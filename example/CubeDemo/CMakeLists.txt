@@ -6,6 +6,7 @@ add_executable(CubeDemo
     FreeCamera.cpp
 )
 target_link_libraries(CubeDemo PRIVATE engine)
+sencha_warnings(CubeDemo)
 
 # Dev-asset generator: produces the demo's .smesh at build time so the demo
 # exercises the file-based asset path end to end (docs/assets/pipeline.md,
@@ -13,6 +14,7 @@ target_link_libraries(CubeDemo PRIVATE engine)
 # and copied next to the binary.
 add_executable(GenerateCubeDemoAssets GenerateCubeDemoAssets.cpp)
 target_link_libraries(GenerateCubeDemoAssets PRIVATE engine)
+sencha_warnings(GenerateCubeDemoAssets)
 
 add_custom_command(TARGET CubeDemo POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

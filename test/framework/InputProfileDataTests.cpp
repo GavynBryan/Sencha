@@ -586,7 +586,9 @@ JsonValue DataSection(const std::string& document, std::string_view expectedType
     const JsonValue* type = parsed->Find("type");
     EXPECT_NE(type, nullptr);
     if (type != nullptr)
+    {
         EXPECT_EQ(type->AsString(), expectedType);
+    }
 
     const JsonValue* version = parsed->Find("version");
     EXPECT_NE(version, nullptr);

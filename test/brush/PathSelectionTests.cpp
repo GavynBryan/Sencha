@@ -14,16 +14,6 @@ EntityId TestEntity()
 {
     return EntityId{ 7, 1 };
 }
-
-// The edge index of the sorted vertex pair (a, b) under the shared enumeration.
-std::uint32_t EdgeIndexOf(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b)
-{
-    for (const EdgeElement& edge : MeshElements::Edges(mesh, Transform3f::Identity()))
-        if ((edge.VertexA == a && edge.VertexB == b) || (edge.VertexA == b && edge.VertexB == a))
-            return edge.Index;
-    ADD_FAILURE() << "edge (" << a << ", " << b << ") not found";
-    return 0;
-}
 }
 
 TEST(PathSelection, VertexPathCrossesTheBox)

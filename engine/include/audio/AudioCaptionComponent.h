@@ -34,8 +34,8 @@ struct AudioCaptionComponent
     CaptionKind Kind = CaptionKind::ClosedCaption;
     CaptionChannelName Channel = "World";
     CaptionPriority Priority = CaptionPriority::Gameplay;
-    CaptionTextKey Text;
-    SpeakerKey Speaker;             // empty = no speaker tag
+    CaptionTextKey Text{};
+    SpeakerKey Speaker{};             // empty = no speaker tag
     float DurationSeconds = 0.0f;   // 0 = derive from voice/clip; loops should
                                     // author finite unless persistent is meant
     bool MergeDuplicates = true;
@@ -45,8 +45,8 @@ struct AudioCaptionComponent
     // for. A fresh voice on the sibling source (loop restart after zone
     // re-entry) differs from CaptionedVoice and re-captions; a one-shot's
     // latched stale voice matches and does not.
-    CaptionId Caption;
-    VoiceId CaptionedVoice;
+    CaptionId Caption{};
+    VoiceId CaptionedVoice{};
     // The degrade path (voice never started) fires once per component
     // lifetime, mirroring the one-shot Started latch.
     bool CaptionAttempted = false;

@@ -42,6 +42,10 @@ option(SENCHA_BUILD_TEMPLATE
     "Build the template game module in-tree against the engine being built. Engine-dev convenience: the module rebuilds with the engine in one build, so the host/module ABI fingerprint can never skew (no SDK install/rebuild dance). Writes template/build/game.so; the standalone SDK build of template/ is unaffected."
     ON)
 
+option(SENCHA_WARNINGS_AS_ERRORS
+    "Treat first-party compiler warnings as errors. ON in the dev preset (and everything inheriting it: dev-ui, tsan, ci) so a new warning fails the build where it is introduced. OFF by default so bare configures, an installed SDK, and toolchains whose diagnostics we have not triaged still build."
+    OFF)
+
 set(SENCHA_GAME_PROJECT_DIR "" CACHE PATH
     "Optional external game project to build against the in-tree engine. The project must provide a CMakeLists.txt that supports being added as a subdirectory.")
 

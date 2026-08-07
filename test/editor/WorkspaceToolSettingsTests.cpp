@@ -85,8 +85,10 @@ TEST_F(WorkspaceToolSettingsTest, ToolShortcutsAreDistinctAndClearOfTheFlyCamera
             continue;
         const bool unmodified = !shortcut.Mods.Ctrl && !shortcut.Mods.Shift && !shortcut.Mods.Alt;
         if (unmodified)
+        {
             for (const SDL_Keycode camera : kCameraKeys)
                 EXPECT_NE(shortcut.Key, camera) << "tool " << tool->GetId();
+        }
         EXPECT_EQ(std::find(seen.begin(), seen.end(), shortcut.Key), seen.end())
             << "duplicate tool shortcut on " << tool->GetId();
         seen.push_back(shortcut.Key);

@@ -202,9 +202,13 @@ TEST_F(StoragePartitionQueryTest, WriteVersionsBumpOnlyVisitedPartitions)
             const uint32_t column = chunk->FindColumn(valueId);
             ASSERT_NE(column, UINT32_MAX);
             if (chunk->Partition == StoragePartitionId{ 1 })
+            {
                 EXPECT_EQ(chunk->ColumnLastWrittenFrame(column), 1u);
+            }
             else if (chunk->Partition == StoragePartitionId{ 2 })
+            {
                 EXPECT_EQ(chunk->ColumnLastWrittenFrame(column), 0u);
+            }
         }
     }
 }

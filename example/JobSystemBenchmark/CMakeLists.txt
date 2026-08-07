@@ -5,3 +5,4 @@ add_executable(JobSystemBenchmark
 target_link_libraries(JobSystemBenchmark PRIVATE engine)
 
 target_compile_features(JobSystemBenchmark PRIVATE cxx_std_20)
+sencha_warnings(JobSystemBenchmark)

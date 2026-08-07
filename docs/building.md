@@ -55,8 +55,34 @@ All `SENCHA_ENABLE_*` options are declared in
 | `SENCHA_ENABLE_DEBUG_UI`   | OFF     | ImGui debug overlay. Requires `SENCHA_ENABLE_VULKAN`. |
 | `SENCHA_ENABLE_HOT_RELOAD` | OFF     | glslang for live GLSL reload. Never in release. |
 | `SENCHA_ENABLE_TSAN`       | OFF     | ThreadSanitizer (GCC/Clang). |
+| `SENCHA_WARNINGS_AS_ERRORS` | OFF (ON in `dev`) | Compiler warnings fail the build. See [Warnings](#warnings). |
 
 Override any of them on a classic configure with `-DSENCHA_ENABLE_FOO=ON/OFF`.
+
+## Warnings
+
+Every first-party target calls `sencha_warnings()` from
+[`cmake/SenchaWarnings.cmake`](../cmake/SenchaWarnings.cmake), which is the one
+place the warning set is defined: `-Wall -Wextra -Wshadow -Wnon-virtual-dtor`
+on GCC and Clang, `/W4 /permissive-` on MSVC. Third-party targets never call it,
+and the tree builds clean.
+
+`SENCHA_WARNINGS_AS_ERRORS` adds `-Werror` (`/WX`). The `dev` preset sets it ON,
+so `dev-ui`, `tsan`, and `ci` inherit it and a new warning fails the build where
+it is introduced. To get past one mid-change:
+
+```sh
+cmake --preset dev -DSENCHA_WARNINGS_AS_ERRORS=OFF
+```
+
+`release` and `profile` deliberately leave it OFF. Warnings from optimization
+passes vary with the compiler version, and a toolchain upgrade must not be able
+to block a shipping build.
+
+Fix warnings at the cause; do not add `-Wno-*`. A third-party implementation body
+included into a first-party translation unit is the one exception, and it is
+guarded at the include site — see
+`engine/src/graphics/vulkan/VulkanMemoryAllocatorImpl.cpp`.
 
 ## Joint engine and game development
 
