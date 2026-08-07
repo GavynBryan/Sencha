@@ -54,6 +54,26 @@ namespace
         return path;
     }
 
+    // Strips --headless from argv and reports whether it was there. A headless
+    // host builds no window and no graphics services; it still runs the frame
+    // loop, which is what makes it a server rather than a dead process.
+    bool ExtractHeadlessArg(int& argc, char** argv)
+    {
+        bool headless = false;
+        int write = 1;
+        for (int read = 1; read < argc; ++read)
+        {
+            if (std::strcmp(argv[read], "--headless") == 0)
+            {
+                headless = true;
+                continue;
+            }
+            argv[write++] = argv[read];
+        }
+        argc = write;
+        return headless;
+    }
+
     // The default game module sits next to the executable as game<ext>: drop a
     // game module there and `app` runs it with no --game. Empty if none found.
     std::string DefaultModuleBesideExe()
@@ -79,6 +99,7 @@ namespace
 
 int main(int argc, char** argv)
 {
+    const bool headless = ExtractHeadlessArg(argc, argv);
     const std::string modulePath = ResolveModulePath(argc, argv);
     if (modulePath.empty())
     {
@@ -101,7 +122,7 @@ int main(int argc, char** argv)
     }
 
     Application app(argc, argv);
-    app.Configure([](EngineConfig& config) {
+    app.Configure([headless](EngineConfig& config) {
         config.App.Name = "Sencha";
         config.Window.Title = "Sencha";
         config.Window.Width = 1280;
@@ -151,10 +172,20 @@ int main(int argc, char** argv)
             if (std::sscanf(device, "%d", &index) == 1)
                 config.Graphics.DeviceIndex = index;
         }
-        config.Window.GraphicsApi = WindowGraphicsApi::Vulkan;
-        config.Runtime.ExitOnEscape = true;
-        config.Runtime.TogglePauseOnF1 = true;
-        config.Debug.DebugUi = true;
+        // A headless host builds no window and no graphics services. It still
+        // runs the frame loop, so it ticks, streams, and drains async work like
+        // any other host; it just has nothing to present.
+        config.Window.GraphicsApi =
+            headless ? WindowGraphicsApi::None : WindowGraphicsApi::Vulkan;
+        // Escape and F1 arrive through SDL, which a headless host never pumps.
+        config.Runtime.ExitOnEscape = !headless;
+        config.Runtime.TogglePauseOnF1 = !headless;
+        // Nothing draws the overlay and nothing types into it. The console
+        // itself still exists: the startup script and cvars are how a headless
+        // host is driven.
+        config.Debug.DebugUi = !headless;
+        if (headless)
+            config.Console.UiEnabled = false;
     });
 
     const int result = app.Run(*module.Instance);

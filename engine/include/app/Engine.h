@@ -166,7 +166,16 @@ public:
 private:
     // Frame-phase bodies and the state they sample. Registered once, from
     // EngineFramePhases.cpp; nothing outside the frame pipeline reads these.
+    //
+    // Split by what the bodies reach for, not by convenience: the simulation
+    // half touches only the world, the schedule, and the clocks, so it runs
+    // whether or not this process has a window. A headless host registers it
+    // alone and steps the same frame the windowed host does, minus the phases
+    // that would have had nothing to draw into.
     void RegisterFramePhases(Game& game);
+    void RegisterSimulationFramePhases();
+    void RegisterPresentationFramePhases(Game& game);
+    [[nodiscard]] bool HasPresentation() const;
     [[nodiscard]] TimingHistory& Timing() { return TimingData; }
     // The renderer instrumentation bundle. Always present; its members are
     // non-null exactly while their render.profile.mode tier is active (all

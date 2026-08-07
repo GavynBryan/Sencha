@@ -26,118 +26,49 @@
 
 // Defined here rather than in Engine.cpp so the phase bodies -- which reach
 // deep into graphics, platform, and schedule state -- stay in one translation
-// unit, and so the accessors they need can stay private to Engine.
+bool Engine::HasPresentation() const
+{
+#ifdef SENCHA_ENABLE_VULKAN
+    return PlatformState != nullptr && GraphicsState != nullptr;
+#else
+    return false;
+#endif
+}
+
 void Engine::RegisterFramePhases(Game& game)
 {
     if (FramePhasesRegistered || FrameDriverInstance == nullptr)
         return;
 
-#ifdef SENCHA_ENABLE_VULKAN
+    // Presentation first, and not for cosmetic reasons: the driver runs a
+    // phase's callbacks in registration order, and ResolveLifecycle is the one
+    // phase both halves claim. The window observations have to land before the
+    // transitions resolved from them.
+    if (HasPresentation())
+        RegisterPresentationFramePhases(game);
+    else
+        (void)game;
+
+    RegisterSimulationFramePhases();
+
+    FramePhasesRegistered = true;
+}
+
+// Everything a frame does that does not need a window: the async commit point,
+// zone residency, the tick budget, the fixed ticks themselves, and the
+// per-frame update. A headless host runs exactly this set.
+void Engine::RegisterSimulationFramePhases()
+{
     Engine& engine = *this;
     FrameDriver& driver = *FrameDriverInstance;
-
     auto& config = engine.Config();
-    auto& windows = engine.Platform().Windows;
-    auto& swapchain = engine.Graphics().Swapchain;
-    auto& frames = engine.Graphics().Frames;
-    auto& renderer = engine.Graphics().MainRenderer;
-    const SdlWindowService::WindowId windowId = windows.GetPrimaryWindowId();
 
-    driver.Register(FramePhase::PumpPlatform, [&engine, &game, &config, &windows, windowId](PhaseContext& ctx) {
-        SdlInputCapture::BeginFrame(*ctx.Input);
-
-        // Pads already plugged in at launch send no connection event, so the
-        // first frame is where they are picked up.
-        SdlGamepadCapture* gamepads = engine.GetGamepadCapture();
-        if (gamepads != nullptr && !ctx.Input->GamepadConnected && gamepads->OpenCount() == 0)
-            gamepads->OpenConnected(*ctx.Input);
-
-        SDL_Event event;
-        while (SDL_PollEvent(&event))
-        {
-            windows.HandleEvent(event);
-
-#ifdef SENCHA_ENABLE_DEBUG_UI
-            // The overlay claims input before capture, not after: the grave
-            // toggle always, and keyboard/mouse while the console is open. An
-            // event folded into the InputFrame first would reach every gameplay
-            // reader whatever the overlay then said about it.
-            if (ImGuiDebugOverlay* overlay = engine.GetDebugOverlay();
-                overlay != nullptr && overlay->ProcessSdlEvent(event))
-            {
-                continue;
-            }
-#endif
-
-            SdlInputCapture::Accept(*ctx.Input, event);
-            if (gamepads != nullptr)
-                gamepads->Accept(*ctx.Input, event);
-
-            PlatformEventContext eventCtx{
-                .Config = config,
-                .Event = event,
-            };
-            game.OnPlatformEvent(eventCtx);
-            if (eventCtx.Handled)
-                continue;
-
-            if (event.type == SDL_EVENT_WINDOW_MINIMIZED)
-                ctx.Runtime->NotifyMinimized();
-            else if (event.type == SDL_EVENT_WINDOW_RESTORED)
-                ctx.Runtime->NotifyRestored(windows.GetExtent(windowId));
-        }
-
-#ifdef SENCHA_ENABLE_DEBUG_UI
-        // A press that began before the console opened would otherwise stay
-        // held for as long as it is open, since its key-up is claimed above.
-        if (ImGuiDebugOverlay* overlay = engine.GetDebugOverlay();
-            overlay != nullptr && overlay->IsCapturingInput())
-        {
-            ctx.Input->ReleaseAllHeld();
-        }
-#endif
-
-        if (windows.IsCloseRequested(windowId))
-            ctx.Input->QuitRequested = true;
-        if (config.Runtime.ExitOnEscape && ctx.Input->IsKeyDown(SDL_SCANCODE_ESCAPE))
-            ctx.Input->QuitRequested = true;
-
-        if (config.Runtime.TogglePauseOnF1
-            && ctx.Input->ConsumeKeyPressed(SDL_SCANCODE_F1))
-        {
-            const bool wasPaused = ctx.Runtime->GetSimulationTimescale() == 0.0f;
-            ctx.Runtime->SetSimulationTimescale(wasPaused ? 1.0f : 0.0f);
-        }
-    });
-
-    driver.Register(FramePhase::ResolveLifecycle, [&windows, windowId](PhaseContext& ctx) {
-        WindowExtent resizedExtent;
-        if (windows.ConsumeResize(windowId, &resizedExtent))
-            ctx.Runtime->NotifyResize(resizedExtent);
-
-        const SdlWindowService::WindowState* windowState = windows.GetState(windowId);
-        if (windowState != nullptr && windowState->Minimized)
-            ctx.Runtime->NotifyMinimized();
-
+    // The window half of this phase, when there is one, has already recorded
+    // what it saw; this resolves the state machine from it. Headless there is
+    // nothing to observe and the resolve is a no-op that keeps the frame state
+    // reported correctly.
+    driver.Register(FramePhase::ResolveLifecycle, [](PhaseContext& ctx) {
         ctx.Runtime->ResolveLifecycleTransitions();
-    });
-
-    driver.Register(FramePhase::RebuildGraphics, [&swapchain, &frames, &renderer](PhaseContext& ctx) {
-        if (ctx.Runtime->ShouldRebuildSwapchain())
-        {
-            const WindowExtent rebuildExtent = ctx.Runtime->GetDesiredSwapchainExtent();
-            ctx.Runtime->BeginSwapchainRebuild();
-            if (swapchain.Recreate(rebuildExtent))
-            {
-                frames.ResetAfterSwapchainRecreate();
-                renderer.NotifySwapchainRecreated();
-                ctx.Runtime->CompleteSwapchainRebuild(rebuildExtent);
-            }
-            else
-            {
-                ctx.Runtime->FailSwapchainRebuild();
-            }
-        }
     });
 
     driver.Register(FramePhase::DrainAsyncTasks, [&engine, &config](PhaseContext&) {
@@ -253,6 +184,155 @@ void Engine::RegisterFramePhases(Game& game)
         engine.Schedule().RunAudio(audio);
     });
 
+    driver.Register(FramePhase::EndFrame, [this, &engine, &config](PhaseContext& ctx) {
+        const RuntimeFrameSnapshot& rf = ctx.Runtime->GetCurrentFrame();
+
+        // PumpPlatform may request exit before lifecycle drain and frame-view
+        // construction. That path has no simulation work to finalize.
+        if (ctx.Zones == nullptr)
+            return;
+
+        const FrameZoneView& zones = *ctx.Zones;
+        EndFrameContext endFrame{
+            .Config = config,
+            .Runtime = *ctx.Runtime,
+            .Presentation = rf.Presentation,
+            .Entities = *zones.Entities,
+            .Partitions = zones.Logic,
+            .LifecycleOnly = rf.LifecycleOnly,
+        };
+        engine.Schedule().RunEndFrame(endFrame);
+
+        engine.World().EndFrameView();
+        ctx.Zones = nullptr;
+
+        if (!rf.LifecycleOnly)
+            return;
+
+#ifdef SENCHA_ENABLE_VULKAN
+        if (GraphicsState != nullptr)
+        {
+            TimingSampler::PushLifecycleFrame(
+                engine.Timing(),
+                rf,
+                GraphicsState->Swapchain.GetState(),
+                GraphicsState->Swapchain.GetRecreateCount());
+        }
+#endif
+    });
+}
+
+// The phases that need a window, a swapchain, or a renderer. Compiled out
+// entirely without Vulkan, and never registered when this process has no
+// presentation services.
+void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
+{
+#ifdef SENCHA_ENABLE_VULKAN
+    Engine& engine = *this;
+    FrameDriver& driver = *FrameDriverInstance;
+
+    auto& config = engine.Config();
+    auto& windows = engine.Platform().Windows;
+    auto& swapchain = engine.Graphics().Swapchain;
+    auto& frames = engine.Graphics().Frames;
+    auto& renderer = engine.Graphics().MainRenderer;
+    const SdlWindowService::WindowId windowId = windows.GetPrimaryWindowId();
+
+    driver.Register(FramePhase::PumpPlatform, [&engine, &game, &config, &windows, windowId](PhaseContext& ctx) {
+        SdlInputCapture::BeginFrame(*ctx.Input);
+
+        // Pads already plugged in at launch send no connection event, so the
+        // first frame is where they are picked up.
+        SdlGamepadCapture* gamepads = engine.GetGamepadCapture();
+        if (gamepads != nullptr && !ctx.Input->GamepadConnected && gamepads->OpenCount() == 0)
+            gamepads->OpenConnected(*ctx.Input);
+
+        SDL_Event event;
+        while (SDL_PollEvent(&event))
+        {
+            windows.HandleEvent(event);
+
+#ifdef SENCHA_ENABLE_DEBUG_UI
+            // The overlay claims input before capture, not after: the grave
+            // toggle always, and keyboard/mouse while the console is open. An
+            // event folded into the InputFrame first would reach every gameplay
+            // reader whatever the overlay then said about it.
+            if (ImGuiDebugOverlay* overlay = engine.GetDebugOverlay();
+                overlay != nullptr && overlay->ProcessSdlEvent(event))
+            {
+                continue;
+            }
+#endif
+
+            SdlInputCapture::Accept(*ctx.Input, event);
+            if (gamepads != nullptr)
+                gamepads->Accept(*ctx.Input, event);
+
+            PlatformEventContext eventCtx{
+                .Config = config,
+                .Event = event,
+            };
+            game.OnPlatformEvent(eventCtx);
+            if (eventCtx.Handled)
+                continue;
+
+            if (event.type == SDL_EVENT_WINDOW_MINIMIZED)
+                ctx.Runtime->NotifyMinimized();
+            else if (event.type == SDL_EVENT_WINDOW_RESTORED)
+                ctx.Runtime->NotifyRestored(windows.GetExtent(windowId));
+        }
+
+#ifdef SENCHA_ENABLE_DEBUG_UI
+        // A press that began before the console opened would otherwise stay
+        // held for as long as it is open, since its key-up is claimed above.
+        if (ImGuiDebugOverlay* overlay = engine.GetDebugOverlay();
+            overlay != nullptr && overlay->IsCapturingInput())
+        {
+            ctx.Input->ReleaseAllHeld();
+        }
+#endif
+
+        if (windows.IsCloseRequested(windowId))
+            ctx.Input->QuitRequested = true;
+        if (config.Runtime.ExitOnEscape && ctx.Input->IsKeyDown(SDL_SCANCODE_ESCAPE))
+            ctx.Input->QuitRequested = true;
+
+        if (config.Runtime.TogglePauseOnF1
+            && ctx.Input->ConsumeKeyPressed(SDL_SCANCODE_F1))
+        {
+            const bool wasPaused = ctx.Runtime->GetSimulationTimescale() == 0.0f;
+            ctx.Runtime->SetSimulationTimescale(wasPaused ? 1.0f : 0.0f);
+        }
+    });
+
+    driver.Register(FramePhase::ResolveLifecycle, [&windows, windowId](PhaseContext& ctx) {
+        WindowExtent resizedExtent;
+        if (windows.ConsumeResize(windowId, &resizedExtent))
+            ctx.Runtime->NotifyResize(resizedExtent);
+
+        const SdlWindowService::WindowState* windowState = windows.GetState(windowId);
+        if (windowState != nullptr && windowState->Minimized)
+            ctx.Runtime->NotifyMinimized();
+    });
+
+    driver.Register(FramePhase::RebuildGraphics, [&swapchain, &frames, &renderer](PhaseContext& ctx) {
+        if (ctx.Runtime->ShouldRebuildSwapchain())
+        {
+            const WindowExtent rebuildExtent = ctx.Runtime->GetDesiredSwapchainExtent();
+            ctx.Runtime->BeginSwapchainRebuild();
+            if (swapchain.Recreate(rebuildExtent))
+            {
+                frames.ResetAfterSwapchainRecreate();
+                renderer.NotifySwapchainRecreated();
+                ctx.Runtime->CompleteSwapchainRebuild(rebuildExtent);
+            }
+            else
+            {
+                ctx.Runtime->FailSwapchainRebuild();
+            }
+        }
+    });
+
     driver.Register(FramePhase::ExtractRenderPacket, [&engine, &config](PhaseContext& ctx) {
         // Before any extraction or recording reads the bundle, so one frame
         // sees exactly one profile mode.
@@ -305,41 +385,5 @@ void Engine::RegisterFramePhases(Game& game)
         // After the render phase, so pass-exit publishes are in the frame.
         engine.PushRenderStatsFrame();
     });
-
-    driver.Register(FramePhase::EndFrame, [&engine, &config, &swapchain](PhaseContext& ctx) {
-        const RuntimeFrameSnapshot& rf = ctx.Runtime->GetCurrentFrame();
-
-        // PumpPlatform may request exit before lifecycle drain and frame-view
-        // construction. That path has no simulation work to finalize.
-        if (ctx.Zones == nullptr)
-            return;
-
-        const FrameZoneView& zones = *ctx.Zones;
-        EndFrameContext endFrame{
-            .Config = config,
-            .Runtime = *ctx.Runtime,
-            .Presentation = rf.Presentation,
-            .Entities = *zones.Entities,
-            .Partitions = zones.Logic,
-            .LifecycleOnly = rf.LifecycleOnly,
-        };
-        engine.Schedule().RunEndFrame(endFrame);
-
-        engine.World().EndFrameView();
-        ctx.Zones = nullptr;
-
-        if (!rf.LifecycleOnly)
-            return;
-
-        TimingSampler::PushLifecycleFrame(
-            engine.Timing(),
-            rf,
-            swapchain.GetState(),
-            swapchain.GetRecreateCount());
-    });
-#else
-    (void)game;
 #endif
-
-    FramePhasesRegistered = true;
 }

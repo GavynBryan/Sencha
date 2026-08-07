@@ -111,16 +111,41 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-## Headless builds
+## Headless
 
-There is **no working no-Vulkan configuration yet**. `SENCHA_ENABLE_VULKAN=OFF`
+Two different things share the word, and only one of them works.
+
+**Running headless — works.** `app --headless` builds no window and no graphics
+services, and runs the frame loop anyway: async commits drain, zone residency
+resolves, the tick scheduler paces fixed ticks, and the schedule's simulation
+phases run. The render phases are not registered at all. This is the
+dedicated-host shape and the CI simulation-soak shape.
+
+```sh
+app --headless --game path/to/game.so +map levels/<name>
+```
+
+A headless host runs until something asks it to stop: `Engine::RequestExit()`,
+the console `quit`, or `+set app.exit_after_frames <n>`. There is no window to
+close, so a host with no exit condition runs forever — which is correct for a
+server and a hang for anything else.
+
+The game module has to cooperate. A module that reaches for `Engine::Graphics()`
+unconditionally cannot run headless, and the bundled `template/` currently does:
+its `RuntimeAssets` is constructed from the Vulkan buffer, image, descriptor, and
+sampler services. Making the template headless-capable means decoupling the asset
+caches from those services, and is Track G's dedicated-host work.
+
+**Building without Vulkan — does not work.** `SENCHA_ENABLE_VULKAN=OFF`
 fails to compile because the render layer (`engine/src/render/…`,
 `include/render/static_mesh/GpuStaticMesh.h`) includes Vulkan/VMA headers
 unconditionally even though those files sit outside `graphics/vulkan/`. Building
 or testing without a GPU is fine — the test suite is non-graphical — but the
 **Vulkan SDK headers must be present**. Decoupling the render layer is tracked
 under "Future work" in
-[cmake-build-hygiene-plan.md](cmake-build-hygiene-plan.md).
+[cmake-build-hygiene-plan.md](cmake-build-hygiene-plan.md). Note that the two are
+independent: running headless does not need a no-Vulkan build, it just declines
+to initialize the graphics services a normal build contains.
 
 ## Cleaning a dirty tree
 
