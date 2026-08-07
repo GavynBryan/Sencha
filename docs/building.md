@@ -30,11 +30,15 @@ suite.
 
 | Preset    | Build type | Vulkan | Cook | Debug UI | Notes |
 |-----------|------------|--------|------|----------|-------|
-| `dev`     | Debug      | on     | on   | off      | Daily development. Builds in `build/`. |
-| `dev-ui`  | Debug      | on     | on   | **on**   | Adds the ImGui debug overlay. `build-dev-ui/`. |
-| `release` | Release    | on     | on   | off      | Optimized. Hot-reload stays off — shipping binaries carry no GLSL compiler. |
-| `tsan`    | Debug      | on     | on   | off      | ThreadSanitizer for the job system. GCC/Clang only. `build-tsan/`. |
-| `ci`      | Debug      | on     | on   | off      | For CI runners with the Vulkan SDK; no GPU needed to build/run the (non-graphical) tests. `build-ci/`. |
+| `dev`     | Debug      | on     | on   | on       | Daily development. Builds in `build/`. |
+| `release` | Release    | on     | on   | on       | Optimized. Hot-reload stays off — shipping binaries carry no GLSL compiler. |
+| `tsan`    | Debug      | on     | on   | on       | ThreadSanitizer for the job system. GCC/Clang only. `build-tsan/`. |
+| `ci`      | Debug      | on     | on   | on       | For CI runners with the Vulkan SDK; no GPU needed to build/run the (non-graphical) tests. `build-ci/`. |
+
+The debug UI ships in every build, including `release`: the console is a
+player-facing feature, not a development-only one. A host that does not want it
+sets `EngineConfig.Console.UiEnabled = false` per process (the editors do). A
+no-Vulkan build has nowhere to draw it and forces it off automatically.
 
 Each configure preset has a matching build preset; `dev`, `tsan`, and `ci` also
 have test presets (`ctest --preset <name>`). List them with:
@@ -68,7 +72,7 @@ on GCC and Clang, `/W4 /permissive-` on MSVC. Third-party targets never call it,
 and the tree builds clean.
 
 `SENCHA_WARNINGS_AS_ERRORS` adds `-Werror` (`/WX`). The `dev` preset sets it ON,
-so `dev-ui`, `tsan`, and `ci` inherit it and a new warning fails the build where
+so `tsan` and `ci` inherit it and a new warning fails the build where
 it is introduced. To get past one mid-change:
 
 ```sh
