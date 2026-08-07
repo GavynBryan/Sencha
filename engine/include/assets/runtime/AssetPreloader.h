@@ -129,8 +129,8 @@ private:
     // staging that cannot commit until this one lands.
     struct LoadWaiter
     {
-        std::shared_ptr<AssetPreload> Preload;
-        std::string ParentPath;
+        std::shared_ptr<AssetPreload> Preload{};
+        std::string ParentPath{};
 
         [[nodiscard]] bool IsDependency() const { return !ParentPath.empty(); }
     };

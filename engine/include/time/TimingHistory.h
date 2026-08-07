@@ -45,7 +45,7 @@ struct TimingFrameSample
     GpuScopeSpan GpuScopes[kGpuScopeCount] = {};
     // This frame's CPU scope milliseconds; every scope reads not-measured
     // while render.profile.mode is below Counters.
-    CpuScopeTimings CpuScopes;
+    CpuScopeTimings CpuScopes{};
 };
 
 class TimingHistory

@@ -147,7 +147,8 @@ ImageHandle VulkanImageService::Create(const ImageCreateInfo& info)
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = is3d ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
-    imageInfo.flags = isCubeArray ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0u;
+    imageInfo.flags =
+        isCubeArray ? static_cast<VkImageCreateFlags>(VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) : 0u;
     imageInfo.format = info.Format;
     imageInfo.extent = { info.Extent.width, info.Extent.height, is3d ? info.Depth : 1u };
     imageInfo.mipLevels = mipLevels;
