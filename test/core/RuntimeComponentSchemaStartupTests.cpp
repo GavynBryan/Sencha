@@ -176,6 +176,9 @@ public:
         EngineOwnedEntityWasPersistent =
             live.GetEntityPartition(entity)
             == PersistentStoragePartition;
+
+        // Headless still runs the frame loop; this test only wants the hooks.
+        GetEngine().RequestExit();
     }
 
     int RegistrationCalls = 0;
@@ -217,6 +220,8 @@ public:
     void OnStart(GameStartupContext&) override
     {
         ++StartCalls;
+        // Headless still runs the frame loop; this test only wants the hooks.
+        GetEngine().RequestExit();
     }
 
     int StartCalls = 0;

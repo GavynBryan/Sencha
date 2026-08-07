@@ -116,8 +116,20 @@ bool Engine::Initialize()
         configuredWorkers < 0 ? JobSystem::DefaultWorkerCount()
                               : static_cast<uint32_t>(configuredWorkers));
 
+    // Headless: no platform, no graphics, but a real frame loop. The driver is
+    // renderer-agnostic, so a host with nothing to draw into still steps ticks,
+    // drains async commits, and runs its schedule. Pacing still applies, which
+    // is what keeps a dedicated host from spinning a core at full speed.
     if (Configuration.Window.GraphicsApi == WindowGraphicsApi::None)
     {
+        FrameDriverInstance = std::make_unique<FrameDriver>(RuntimeLoop);
+        FrameDriverInstance->SetTargetFps(Configuration.Runtime.TargetFps);
+        FrameDriverInstance->SetShouldExit([this] {
+            if (!Running)
+                return true;
+            return ExitAfterFrames != 0
+                && RuntimeLoop.GetCurrentFrame().WallTime.FrameIndex >= ExitAfterFrames;
+        });
         Initialized = true;
         return true;
     }
@@ -418,6 +430,13 @@ int Engine::Run(Game& game)
     ConsoleService& console = Console();
     console.AdvancePhase(ConsolePhase::EngineReady);
 
+    // Running from the start of the lifecycle, not from the first frame, so
+    // RequestExit means something during startup: a host that cannot load what
+    // it was told to load has to be able to decline to run, and headless that
+    // is the difference between exiting and spinning forever with no window to
+    // close. The frame loop's exit predicate reads this before its first frame.
+    Running = true;
+
     GameStartupContext startup{
         .Config = Configuration,
     };
@@ -450,7 +469,6 @@ int Engine::Run(Game& game)
         if (!RenderCaptureOutputPath.empty())
             RenderCaptureStore.Start(0);
 #endif
-        Running = true;
         FrameDriverInstance->Run();
         if (FrameTraceStore != nullptr
             && !FrameTraceStore->WriteTo(FrameTraceOutputPath))
