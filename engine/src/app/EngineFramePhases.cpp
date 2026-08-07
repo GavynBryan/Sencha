@@ -6,6 +6,7 @@
 #include <runtime/FrameDriver.h>
 #include <world/RuntimeWorld.h>
 #include <world/transform/TransformHistory.h>
+#include <net/NetSession.h>
 #include <world/transform/TransformPropagation.h>
 
 #ifdef SENCHA_ENABLE_DEBUG_UI

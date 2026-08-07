@@ -1,0 +1,206 @@
+#pragma once
+
+#include <core/identity/StrongId.h>
+#include <net/NetChannel.h>
+#include <net/NetProtocol.h>
+#include <net/NetTransport.h>
+
+#include <cstdint>
+#include <functional>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+//=============================================================================
+// NetSession
+//
+// Peer lifecycle: who is connected, how they got there, and what they are
+// allowed to have said on the way. It owns the channels per peer and the
+// handshake state machine, and it owns no sockets -- the transport is injected,
+// so a whole session runs in process over a loopback pair with no ports and no
+// scheduling in the way.
+//
+// One session model, three configurations, one binary:
+//
+//   - Host: authority plus a local player. The listen server, and with no
+//     remote peers, exactly single-player.
+//   - Client: mirrors replicated state, sends inputs and requests.
+//   - Headless host: authority with no local player. The dedicated server.
+//
+// No session constructed means no networking in the frame at all, which is what
+// keeps single-player free of all of this.
+//=============================================================================
+
+using PeerId = StrongId<struct PeerIdTag, std::uint32_t>;
+
+enum class NetSessionRole : std::uint8_t
+{
+    // Not in a session. Every net frame phase is a no-op.
+    Standalone,
+    Host,
+    Client,
+};
+
+enum class NetPeerState : std::uint8_t
+{
+    // The authority has seen a Hello and replied with a cookie, but holds no
+    // state for this address yet -- the cookie is what makes that possible.
+    Challenged,
+    Connected,
+    Disconnected,
+};
+
+// Why a client's connection attempt ended, for the console and the log. Kept
+// distinct from the free-text reason so callers branch on the cause rather than
+// on message text.
+enum class NetJoinFailure : std::uint8_t
+{
+    None,
+    Refused,        // the authority said no, with a reason
+    TimedOut,
+    TransportError,
+};
+
+//=============================================================================
+// Identity gate
+//
+// What both ends compare before any state exists. Mutual by design: the client
+// refuses a mismatched authority the same way the authority refuses a
+// mismatched client, because a compromised server is in the threat model.
+//
+// It is an assertion, not a proof. A machine an attacker controls can report
+// whatever it likes here, so nothing about client safety may rest on it -- it
+// stops accidents and version confusion, and the decode boundary handles the
+// rest.
+//=============================================================================
+struct NetIdentity
+{
+    std::uint64_t ModuleFingerprint = 0;
+    std::uint64_t WorldIdentity = 0;
+    std::uint32_t FixedTickRateMilliHz = 60000;
+
+    bool operator==(const NetIdentity&) const = default;
+};
+
+// Why an identity was refused, so the message names the field rather than
+// saying only that something did not match.
+[[nodiscard]] std::string_view NetDescribeIdentityMismatch(const NetIdentity& local,
+                                                           const NetIdentity& remote);
+
+struct NetPeer
+{
+    PeerId Id;
+    NetAddress Address;
+    NetPeerState State = NetPeerState::Challenged;
+    NetChannelSet Channels;
+    // Strikes are how a peer earns a disconnect. A decode error, a cap
+    // violation, or a protocol-state violation each count one; the peer is
+    // dropped at the limit rather than on the first anomaly, because ordinary
+    // crosstalk on a shared port is not an attack.
+    std::uint32_t Strikes = 0;
+    double LastHeardSeconds = 0.0;
+    std::uint64_t RoundTripMicroseconds = 0;
+};
+
+// A peer is dropped at this many strikes.
+inline constexpr std::uint32_t kNetMaxStrikes = 8;
+
+// Peers the design is validated against. Budgets and tables are tuned for four,
+// which is the co-op shape, and hold at eight.
+inline constexpr std::size_t kNetMaxPeersSupported = 8;
+
+class NetSession
+{
+public:
+    // Messages the session hands up after decoding and admission. The payload
+    // is owned, because the transport's buffers are gone by the time anything
+    // above the session runs.
+    struct Delivery
+    {
+        PeerId From;
+        NetChannelKind Channel;
+        std::vector<std::byte> Payload;
+    };
+
+    explicit NetSession(INetTransport& transport);
+
+    // Binds and becomes the authority. Port zero takes an ephemeral one.
+    [[nodiscard]] bool Host(std::uint16_t port, const NetIdentity& identity);
+    // Binds an ephemeral port and begins the handshake with `authority`.
+    [[nodiscard]] bool Connect(const NetAddress& authority, const NetIdentity& identity);
+    void Disconnect(std::string_view reason);
+
+    [[nodiscard]] NetSessionRole Role() const { return CurrentRole; }
+    [[nodiscard]] bool IsConnected() const;
+    [[nodiscard]] const NetAddress& LocalAddress() const { return Local; }
+
+    // Drains the transport, advances the handshake, and returns whatever
+    // arrived for the layers above. Called from the frame's net pump phase.
+    [[nodiscard]] std::vector<Delivery> Pump(double nowSeconds);
+    // Puts queued channel traffic on the wire. Called after simulation, so a
+    // snapshot leaves in the frame that produced it.
+    void Flush(double nowSeconds);
+
+    // Queues to one peer, or to every connected peer.
+    [[nodiscard]] bool Send(PeerId peer, NetChannelKind channel,
+                            std::span<const std::byte> message);
+    void Broadcast(NetChannelKind channel, std::span<const std::byte> message);
+
+    [[nodiscard]] std::vector<PeerId> ConnectedPeers() const;
+    [[nodiscard]] const NetPeer* FindPeer(PeerId id) const;
+    [[nodiscard]] std::size_t PeerCount() const { return Peers.size(); }
+
+    void SetMaxPeers(std::size_t count) { MaxPeers = count; }
+    void SetTimeoutSeconds(double seconds) { TimeoutSeconds = seconds; }
+
+    // Client-side outcome of the last connection attempt.
+    [[nodiscard]] NetJoinFailure JoinFailure() const { return Failure; }
+    [[nodiscard]] const std::string& JoinFailureReason() const { return FailureReason; }
+    [[nodiscard]] PeerId LocalPeerId() const { return SelfId; }
+    [[nodiscard]] std::uint64_t AuthorityTick() const { return LastAuthorityTick; }
+
+    // Diagnostics for the status command.
+    [[nodiscard]] std::uint64_t StrikesIssued() const { return TotalStrikes; }
+    [[nodiscard]] std::uint64_t Refusals() const { return TotalRefusals; }
+
+private:
+    [[nodiscard]] NetPeer* PeerByAddress(const NetAddress& address);
+    void HandleAuthorityMessage(const NetDatagram& datagram, double nowSeconds,
+                                std::vector<Delivery>& out);
+    void HandleClientMessage(const NetDatagram& datagram, std::vector<Delivery>& out);
+    void DeliverChannelPayloads(NetPeer& peer, std::span<const std::byte> packet,
+                                double nowSeconds, std::vector<Delivery>& out);
+    void Strike(NetPeer& peer, std::string_view why);
+    void SendRaw(const NetAddress& to, std::span<const std::byte> bytes);
+    void RefuseAt(const NetAddress& address, std::string_view reason);
+    // The cookie is an HMAC-shaped fold over the address and a per-session
+    // secret. It exists so the authority can verify a peer reached the address
+    // it claims before allocating anything for it, which is what makes a
+    // spoofed source address unable to start a session.
+    [[nodiscard]] std::vector<std::byte> CookieFor(const NetAddress& address) const;
+
+    INetTransport& Transport;
+    NetSessionRole CurrentRole = NetSessionRole::Standalone;
+    NetIdentity LocalIdentity;
+    NetAddress Local;
+    NetAddress AuthorityAddress;
+
+    std::vector<NetPeer> Peers;
+    PeerId NextPeerId{ 1 };
+    std::size_t MaxPeers = 4;
+    double TimeoutSeconds = 10.0;
+    std::uint64_t Secret = 0;
+
+    // Client state.
+    NetChannelSet ClientChannels;
+    bool AwaitingChallenge = false;
+    bool Admitted = false;
+    PeerId SelfId;
+    std::uint64_t LastAuthorityTick = 0;
+    double ConnectStartedSeconds = 0.0;
+    NetJoinFailure Failure = NetJoinFailure::None;
+    std::string FailureReason;
+
+    std::uint64_t TotalStrikes = 0;
+    std::uint64_t TotalRefusals = 0;
+};

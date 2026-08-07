@@ -1,6 +1,7 @@
 #pragma once
 
 #include <app/DefaultRenderPipeline.h>
+#include <net/NetSession.h>
 #include <app/EngineSchedule.h>
 #include <core/console/ConsoleStartupScript.h>
 #include <core/config/EngineConfig.h>
@@ -61,6 +62,17 @@ public:
         StartupScript = std::move(script);
     }
     [[nodiscard]] bool IsInitialized() const { return Initialized; }
+
+    // The session, or null when this process is not hosting or joined. Null is
+    // the normal case: a single-player game never constructs one, and every net
+    // frame phase is a no-op without it. Callers check rather than assume, which
+    // is why this is a Try and not a reference.
+    [[nodiscard]] NetSession* TryNet() { return NetState.get(); }
+    [[nodiscard]] const NetSession* TryNet() const { return NetState.get(); }
+    // Constructs the session over `transport`, which the caller owns and must
+    // outlive it. Returns null if one already exists.
+    [[nodiscard]] NetSession* CreateNetSession(INetTransport& transport);
+    void DestroyNetSession();
 
     [[nodiscard]] EngineConfig& Config() { return Configuration; }
     [[nodiscard]] const EngineConfig& Config() const
@@ -221,6 +233,7 @@ private:
     RuntimeFrameLoop RuntimeLoop;
     ConsoleStartupScript StartupScript;
     std::unique_ptr<FrameDriver> FrameDriverInstance;
+    std::unique_ptr<NetSession> NetState;
     TimingHistory TimingData;
     // Run-control state, written by app.exit_after_frames / frame.trace.output.
     // Zero and empty leave both facilities inert; the trace store is allocated
