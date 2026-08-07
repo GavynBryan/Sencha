@@ -8,6 +8,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <ecs/WorldComponentSchema.h>
 #include <net/ReplicationLayout.h>
+#include <net/ReplicationRuntime.h>
 #include <profiling/CpuScopeTimings.h>
 #include <profiling/RenderInstrumentation.h>
 #include <profiling/RenderStats.h>
@@ -75,6 +76,11 @@ public:
     [[nodiscard]] NetSession* CreateNetSession(INetTransport& transport);
     void DestroyNetSession();
 
+    // Per-session replication state: the authority's identity mint and per-peer
+    // baselines, or a client's map of what it has been told about. Reset with
+    // the session, because all of it is session-transient.
+    [[nodiscard]] ReplicationRuntime& Replication() { return ReplicationState; }
+
     [[nodiscard]] EngineConfig& Config() { return Configuration; }
     [[nodiscard]] const EngineConfig& Config() const
     {
@@ -126,7 +132,7 @@ public:
 
     // Which components replicate and how their bytes are packed, compiled once
     // for this run. Sealed before OnStart, and read only by a session.
-    [[nodiscard]] const ReplicationLayout& Replication() const
+    [[nodiscard]] const ReplicationLayout& ReplicatedComponents() const
     {
         return ReplicationLayoutState;
     }
@@ -239,6 +245,7 @@ private:
     EngineSchedule EngineSystems;
     WorldComponentSchema RuntimeComponentSchemaState;
     ReplicationLayout ReplicationLayoutState;
+    ReplicationRuntime ReplicationState;
     std::unique_ptr<RuntimeWorld> RuntimeWorldState;
     RuntimeFrameLoop RuntimeLoop;
     ConsoleStartupScript StartupScript;

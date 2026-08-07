@@ -389,12 +389,14 @@ NetSession* Engine::CreateNetSession(INetTransport& transport)
     if (NetState != nullptr)
         return nullptr;
     NetState = std::make_unique<NetSession>(transport);
+    ReplicationState.Reset();
     return NetState.get();
 }
 
 void Engine::DestroyNetSession()
 {
     NetState.reset();
+    ReplicationState.Reset();
 }
 
 DefaultRenderPipeline* Engine::GetRenderPipeline()

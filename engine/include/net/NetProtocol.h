@@ -57,6 +57,22 @@ enum class NetMessageType : std::uint8_t
     Pong = 8,
 };
 
+// What a channel message carries. The handshake messages above travel raw and
+// are routed by their own type byte; everything that flows once a peer is
+// admitted rides a channel, and this is the first byte of that payload.
+//
+// Explicit values for the same reason as NetMessageType: this is wire format,
+// and reordering the enum must not change what a peer thinks it received.
+enum class NetPayloadKind : std::uint8_t
+{
+    Invalid = 0,
+    // Authority to client: replicated entity state.
+    Snapshot = 1,
+    // Client to authority: the tick's input record. Reserved here so the two
+    // directions cannot collide as the format grows.
+    Command = 2,
+};
+
 // What a decode can go wrong as. A peer's strike count keys on these, so they
 // distinguish "malformed" from "not for me" -- the first is hostile, the second
 // is ordinary crosstalk on a shared port.

@@ -7,6 +7,7 @@
 #include <world/RuntimeWorld.h>
 #include <world/transform/TransformHistory.h>
 #include <net/NetSession.h>
+#include <net/ReplicationSnapshot.h>
 #include <world/transform/TransformPropagation.h>
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
@@ -102,6 +103,9 @@ void Engine::RegisterNetFramePhases()
             else
             {
                 log.Info("net: peer {} left ({})", event.Peer.Value, event.Reason);
+                // Their baseline goes with them: it describes what a peer that
+                // will never receive anything again was told.
+                engine.Replication().ForgetPeer(event.Peer);
             }
         }
 
@@ -124,17 +128,48 @@ void Engine::RegisterNetFramePhases()
         wasClient = isClient;
         wasAdmitted = isAdmitted;
 
-        // Nothing consumes deliveries yet: replication is the next phase of the
-        // track. Draining is still required, or the transport's buffers and the
-        // peers' channel state never advance.
+        // Snapshots are applied here, before the tick that will read them, and
+        // outside any query -- applying one creates and destroys entities.
+        // Deliveries must be drained whatever this process does with them, or
+        // the transport's buffers and the peers' channel state never advance.
+        if (!isAdmitted)
+            return;
+
+        ::World& world = engine.World().Entities();
         for (const NetSession::Delivery& delivery : deliveries)
-            (void)delivery;
+        {
+            const SnapshotApplyResult applied =
+                engine.Replication().Apply(delivery.Payload, world,
+                                           engine.RuntimeComponents(),
+                                           engine.ReplicatedComponents());
+            if (!applied.Ok())
+            {
+                // A snapshot that will not decode means the authority is
+                // sending something this build cannot read. Logged rather than
+                // fatal: the session's own strike machinery decides what to do
+                // about a peer that keeps doing it.
+                log.Warn("net: refused a snapshot ({})",
+                         SnapshotApplyErrorToString(applied.Error));
+            }
+        }
     });
 
     driver.Register(FramePhase::FlushNet, [&engine](PhaseContext& ctx) {
         NetSession* session = engine.TryNet();
         if (session == nullptr)
             return;
+
+        // Queued before the flush, so state produced by the simulation that
+        // just ran leaves in the same frame that produced it rather than
+        // waiting a full frame to go out.
+        if (session->Role() == NetSessionRole::Host)
+        {
+            ::World& world = engine.World().Entities();
+            (void)engine.Replication().Publish(
+                *session, world, engine.ReplicatedComponents(),
+                world.CurrentFrame());
+        }
+
         session->Flush(ctx.Runtime->GetCurrentFrame().WallTime.UnscaledElapsed);
     });
 }
