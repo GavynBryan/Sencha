@@ -1,0 +1,8 @@
+{
+  "type": "player.avatar",
+  "version": 1,
+  "data": {
+    "mesh": "asset://meshes/dev/cube.smesh",
+    "materials": ["asset://materials/dev/gray.smat"]
+  }
+}

@@ -84,6 +84,8 @@ constexpr std::string_view kAuthoredRoot = "assets";
 constexpr std::string_view kCookedScanRoot = "assets/.cooked";
 constexpr std::string_view kPlayerMovementProfilePath =
     "asset://data/player_movement.sdata";
+constexpr std::string_view kPlayerAvatarPath =
+    "asset://data/player_avatar.sdata";
 constexpr std::string_view kInputActionSetPath =
     "asset://data/input_actions.sdata";
 constexpr std::string_view kInputProfilePath =
@@ -218,7 +220,8 @@ EntityId SpawnPlayerAvatar(
     World& world,
     Logger& log,
     std::optional<StoragePartitionId> spawnPartition,
-    MovementProfileHandle movementProfile)
+    MovementProfileHandle movementProfile,
+    const ResolvedPlayerAvatar& avatar)
 {
     const Vec3d spawnPosition =
         FindPlayerStart(world, spawnPartition);
@@ -267,6 +270,20 @@ EntityId SpawnPlayerAvatar(
     // The pawn moves every tick and is what the camera watches, so it renders
     // interpolated between ticks rather than stepping at the tick rate.
     world.AddComponent<WorldTransformHistory>(pawn, WorldTransformHistory{});
+
+    // The body other viewers see. A first-person camera targeting this pawn
+    // excludes it, so the local player does not sit inside their own mesh; a
+    // third-person camera draws it. Without a resolved avatar the pawn simply
+    // has no body, which is a missing asset rather than a broken player.
+    if (avatar.IsValid())
+    {
+        world.AddComponent<StaticMeshComponent>(
+            pawn,
+            StaticMeshComponent{
+                .Mesh = avatar.Mesh,
+                .Materials = avatar.Materials,
+            });
+    }
 
     const MovementDefs* movementDefs =
         world.TryGetResource<MovementDefs>();
@@ -624,6 +641,11 @@ void TemplateGame::OnStart(GameStartupContext&)
         graphics.Samplers);
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
 
+    // This game's own data subtypes, registered into the registries it owns and
+    // unregistered in OnShutdown while the module is still mapped: the registry
+    // holds function pointers into this module.
+    RegisterPlayerAvatarData(runtimeAssets.DataTypes, runtimeAssets.DataSchemas);
+
     ScanAssetsDirectory(
         std::string(kAuthoredRoot),
         runtimeAssets.Registry,
@@ -731,6 +753,26 @@ void TemplateGame::OnStart(GameStartupContext&)
                 return usage;
             }
             return LoadWorld(args[0]);
+        },
+    });
+
+    engine.Console().Registry().RegisterCommand({
+        .Name = "camera_mode",
+        .Owner = "game",
+        .Usage = "camera_mode <first|third|fixed>",
+        .Help = "Switch the active camera between first-person, third-person, and the authored pose.",
+        .RequiredPhase = ConsolePhase::GameLoaded,
+        .Callback = [this](
+            ConsoleExecutionContext&,
+            std::span<const std::string> args)
+        {
+            if (args.size() != 1)
+            {
+                ConsoleResult usage;
+                usage.Error("usage: camera_mode <first|third|fixed>");
+                return usage;
+            }
+            return SetCameraMode(args[0]);
         },
     });
 
@@ -921,7 +963,8 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
                     runtime.Entities(),
                     log,
                     zone.Partition,
-                    ResolvePlayerMovementProfile(log));
+                    ResolvePlayerMovementProfile(log),
+                    ResolvePlayerAvatar(log));
             }
             PlayZoneActive = true;
             return true;
@@ -1162,7 +1205,8 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
             engine.World().Entities(),
             log,
             PersistentStoragePartition,
-            ResolvePlayerMovementProfile(log));
+            ResolvePlayerMovementProfile(log),
+            ResolvePlayerAvatar(log));
     }
 
     ZoneId focus = PendingZoneFocus;
@@ -1216,6 +1260,39 @@ ConsoleResult TemplateGame::FocusWorldZone(
 
     PendingZoneFocus = *zone;
     result.Info("zone focus queued for the next world load");
+    return result;
+}
+
+ConsoleResult TemplateGame::SetCameraMode(std::string_view modeName)
+{
+    ConsoleResult result;
+
+    CameraRigMode mode{};
+    if (modeName == "first")
+        mode = CameraRigMode::FirstPerson;
+    else if (modeName == "third")
+        mode = CameraRigMode::ThirdPerson;
+    else if (modeName == "fixed")
+        mode = CameraRigMode::Fixed;
+    else
+    {
+        result.Error("unknown camera mode '" + std::string(modeName)
+                     + "'; expected first, third, or fixed");
+        return result;
+    }
+
+    World& world = GetEngine().World().Entities();
+    const EntityId camera =
+        world.GetResource<ActiveCameraService>().GetActive();
+    CameraRig* rig = camera.IsValid() ? world.TryGet<CameraRig>(camera) : nullptr;
+    if (rig == nullptr)
+    {
+        result.Error("no active camera with a rig; load a map first");
+        return result;
+    }
+
+    rig->Mode = mode;
+    result.Info("camera mode " + std::string(modeName));
     return result;
 }
 
@@ -1367,14 +1444,40 @@ void TemplateGame::OnShutdown(GameShutdownContext&)
     HotReloader.reset();
 #endif
 
-    // The world-resource binding cache holds leases into this game's
-    // data-asset cache; both references must drop before Assets goes away.
+    // The world-resource binding caches hold leases into this game's data-asset
+    // cache; every reference must drop before Assets goes away. A lease that
+    // outlives its owner calls through a destroyed vtable when the world tears
+    // down, which aborts on the way out rather than at the point of the mistake.
     if (MovementProfileBindingCache* bindings =
             runtime.Entities().TryGetResource<MovementProfileBindingCache>())
     {
         bindings->Clear();
     }
+    if (InputBindingCache* bindings =
+            runtime.Entities().TryGetResource<InputBindingCache>())
+    {
+        bindings->Clear();
+    }
+    // Same rule for the context lease. The game object is a module-static whose
+    // destructor runs at dlclose, long after the world that owns the context set,
+    // so the lease has to be dropped here while its owner still exists.
+    GameplayInput.Reset();
+    // Every lease this game holds into its own data-asset cache, dropped here.
+    // Declaration order alone is not enough: Assets is reset explicitly below,
+    // so anything still holding a lease at that point outlives its owner and
+    // calls through a destroyed vtable when the module unloads.
     PlayerMovementProfile.Reset();
+    InputActionSetAsset.Reset();
+    InputProfileAsset.Reset();
+    // The pawns that held their own references are destroyed above, so this
+    // drops the last one before the caches go away.
+    ReleasePlayerAvatar();
+    PlayerAvatarAsset.Reset();
+    // The subtype registration holds a function pointer into this module, and
+    // unregistering refuses while values are still resident, so it follows the
+    // handles above and precedes the cache going away.
+    if (Assets.has_value())
+        UnregisterPlayerAvatarData(Assets->DataTypes, Assets->DataSchemas);
     Assets.reset();
 }
 
@@ -1428,6 +1531,86 @@ MovementProfileHandle TemplateGame::ResolvePlayerMovementProfile(Logger& log)
     if (!PlayerMovementProfile.IsValid())
         PlayerMovementProfile = AcquireDataAsset(kPlayerMovementProfilePath, log);
     return MovementProfileHandle{ PlayerMovementProfile.GetToken() };
+}
+
+// Turns the authored avatar paths into mesh and material-set handles, once.
+// Every failure path leaves the result invalid, which spawns a bodyless pawn
+// rather than refusing to spawn: a missing body is a content problem, not a
+// reason to have no player.
+ResolvedPlayerAvatar TemplateGame::ResolvePlayerAvatar(Logger& log)
+{
+    if (PlayerAvatar.IsValid())
+        return PlayerAvatar;
+
+    if (!PlayerAvatarAsset.IsValid())
+        PlayerAvatarAsset = AcquireDataAsset(kPlayerAvatarPath, log);
+    if (!PlayerAvatarAsset.IsValid())
+        return {};
+
+    RuntimeAssets& assets = RuntimeAssetState();
+    const CompiledPlayerAvatar* avatar =
+        assets.DataAssets.TryGet<CompiledPlayerAvatar>(
+            PlayerAvatarAsset.GetToken(), "player.avatar");
+    if (avatar == nullptr)
+    {
+        log.Warn("TemplateGame: '{}' is not a player.avatar", kPlayerAvatarPath);
+        return {};
+    }
+    const StaticMeshHandle mesh =
+        assets.Assets.LoadStaticMesh(avatar->MeshPath);
+    if (!mesh.IsValid())
+    {
+        log.Warn("TemplateGame: player avatar mesh '{}' did not load",
+                 avatar->MeshPath);
+        return {};
+    }
+
+    std::vector<MaterialHandle> materials;
+    materials.reserve(avatar->MaterialPaths.size());
+    for (const std::string& path : avatar->MaterialPaths)
+    {
+        const MaterialHandle material = assets.Assets.LoadMaterial(path);
+        if (!material.IsValid())
+        {
+            log.Warn("TemplateGame: player avatar material '{}' did not load",
+                     path);
+            for (MaterialHandle loaded : materials)
+                assets.Assets.ReleaseMaterial(loaded);
+            assets.Assets.ReleaseStaticMesh(mesh);
+            return {};
+        }
+        materials.push_back(material);
+    }
+
+    const MaterialSetHandle set = assets.Assets.AcquireMaterialSet(materials);
+    // The set retains its own reference to each member for its lifetime, so the
+    // loads above have done their job once it exists.
+    for (MaterialHandle material : materials)
+        assets.Assets.ReleaseMaterial(material);
+    if (!set.IsValid())
+    {
+        log.Warn("TemplateGame: player avatar materials did not form a set");
+        assets.Assets.ReleaseStaticMesh(mesh);
+        return {};
+    }
+
+    PlayerAvatar = ResolvedPlayerAvatar{ .Mesh = mesh, .Materials = set };
+    return PlayerAvatar;
+}
+
+void TemplateGame::ReleasePlayerAvatar()
+{
+    if (!Assets.has_value())
+    {
+        PlayerAvatar = {};
+        return;
+    }
+
+    if (PlayerAvatar.Materials.IsValid())
+        Assets->Assets.ReleaseMaterialSet(PlayerAvatar.Materials);
+    if (PlayerAvatar.Mesh.IsValid())
+        Assets->Assets.ReleaseStaticMesh(PlayerAvatar.Mesh);
+    PlayerAvatar = {};
 }
 
 // Binds the game's controls. The action set loads first: a profile names its

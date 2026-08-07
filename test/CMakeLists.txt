@@ -139,7 +139,14 @@ if(LEVEL_COOK_TEST_SOURCES AND TARGET kyusu_authoring)
 endif()
 
 if(FRAMEWORK_TEST_SOURCES)
-    add_executable(framework_tests ${FRAMEWORK_TEST_SOURCES})
+    # The template owns the player.avatar subtype, and its compiler is pure data
+    # code over engine headers. Compiling that one translation unit here tests it
+    # where it lives rather than duplicating the schema (the brush_tests and
+    # editor_tests discipline: link the GUI-free code directly).
+    add_executable(framework_tests
+        ${FRAMEWORK_TEST_SOURCES}
+        ${CMAKE_SOURCE_DIR}/template/src/PlayerAvatarData.cpp)
+    target_include_directories(framework_tests PRIVATE ${CMAKE_SOURCE_DIR}/template/src)
     target_link_libraries(framework_tests PRIVATE sencha_engine GTest::gtest_main)
     # The template's shipped gameplay data lives in the source tree, so the
     # authored assets can be validated against the schemas that load them.

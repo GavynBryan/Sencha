@@ -230,3 +230,56 @@ TEST(CameraPose, FixedLeavesAuthoredPose)
 
     EXPECT_FALSE(pose.Override);
 }
+
+// A first-person camera sits at the pivot inside its target, so drawing the
+// target fills the view with the inside of its own body.
+TEST(CameraExclusion, FirstPersonExcludesItsTarget)
+{
+    CameraRig rig{};
+    rig.Mode = CameraRigMode::FirstPerson;
+    rig.Target = EntityId{ 7, 2 };
+
+    EXPECT_EQ(CameraRigExcludedEntity(rig), rig.Target);
+}
+
+// The boom looks at the target from outside it: seeing your own body is the
+// point of the mode.
+TEST(CameraExclusion, ThirdPersonExcludesNothing)
+{
+    CameraRig rig{};
+    rig.Mode = CameraRigMode::ThirdPerson;
+    rig.Target = EntityId{ 7, 2 };
+
+    EXPECT_FALSE(CameraRigExcludedEntity(rig).IsValid());
+}
+
+TEST(CameraExclusion, FixedExcludesNothing)
+{
+    CameraRig rig{};
+    rig.Mode = CameraRigMode::Fixed;
+    rig.Target = EntityId{ 7, 2 };
+
+    EXPECT_FALSE(CameraRigExcludedEntity(rig).IsValid());
+}
+
+// A rig with no target excludes nothing rather than excluding "entity zero":
+// the exclusion is carried as an id, and an invalid id matches no live entity.
+TEST(CameraExclusion, FirstPersonWithNoTargetExcludesNothing)
+{
+    CameraRig rig{};
+    rig.Mode = CameraRigMode::FirstPerson;
+
+    EXPECT_FALSE(CameraRigExcludedEntity(rig).IsValid());
+}
+
+// Identity is generational: once a target's slot is recycled, the rig's stale id
+// must stop matching the entity now living in that slot.
+TEST(CameraExclusion, ExclusionDoesNotFollowARecycledSlot)
+{
+    CameraRig rig{};
+    rig.Mode = CameraRigMode::FirstPerson;
+    rig.Target = EntityId{ 7, 2 };
+
+    const EntityId recycled{ 7, 3 };
+    EXPECT_NE(CameraRigExcludedEntity(rig), recycled);
+}

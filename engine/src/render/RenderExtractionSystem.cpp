@@ -143,6 +143,9 @@ void RenderExtractionSystem::Extract(
             if (!renderer.Visible)
                 continue;
 
+            if (view.Entity(i) == camera.ExcludedEntity)
+                continue;
+
             const GpuStaticMesh* mesh = meshes.Get(renderer.Mesh);
             const std::vector<MaterialHandle>* sectionMaterials =
                 materialSets.Get(renderer.Materials);

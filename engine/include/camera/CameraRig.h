@@ -66,3 +66,9 @@ CameraPose ComputeCameraPose(const CameraRig& rig,
                              const Vec3d& targetWorldPosition,
                              float yaw,
                              float pitch);
+
+// The entity this rig's camera must not draw, or an invalid id when it may draw
+// everything. A first-person camera sits inside its target, so drawing the target
+// fills the view with the inside of its own geometry. Third-person and fixed rigs
+// look at the target from outside and exclude nothing.
+EntityId CameraRigExcludedEntity(const CameraRig& rig);

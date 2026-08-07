@@ -26,6 +26,12 @@ struct CameraRenderData
     Mat4 ViewProjection = Mat4::Identity();
     Vec3d Position;
     Frustum ViewFrustum;
+
+    // Mesh extraction skips this entity for this camera. It is derived per frame
+    // from the camera's rig, never authored and never simulation state: which
+    // entity a viewer must not see is a property of where that viewer sits.
+    // Shadow extraction ignores it, so an excluded entity still casts its shadow.
+    EntityId ExcludedEntity;
 };
 
 //=============================================================================
