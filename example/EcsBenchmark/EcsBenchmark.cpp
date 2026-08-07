@@ -1,17 +1,12 @@
-// Phase 4 ECS benchmark
+// ECS benchmark.
 //
-// Measures: transform propagation throughput vs pre-migration baseline,
-// render extraction chunk-query throughput, RenderQueueItem sort time,
-// archetype count and memory footprint under representative scenes.
+// Measures: transform propagation throughput, render extraction chunk-query
+// throughput, RenderQueueItem sort time, archetype count and memory footprint
+// under representative scenes.
 //
-// Build (from repo root):
-//   g++-14 -std=c++20 -O2 -march=native -DNDEBUG -DSENCHA_ENABLE_VULKAN \
-//     -I engine/include \
-//     -I build-verify/_deps/vulkanmemoryallocator-src/include \
-//     example/EcsBenchmark/EcsBenchmark.cpp \
-//     build-verify/engine/libsencha_engine.a \
-//     -lSDL3 -lvulkan \
-//     -o build-verify/EcsBenchmark
+// Build it through the profile preset, not a Debug one -- these numbers only
+// describe the shipping binary at release optimization:
+//   cmake --build --preset profile --target EcsBenchmark
 
 #include <ecs/Ecs.h>
 #include <render/RenderQueue.h>

@@ -3,6 +3,7 @@ add_executable(AudioTest
 )
 
 target_link_libraries(AudioTest PRIVATE engine)
+sencha_warnings(AudioTest)
 
 # Source audio (WAV) is committed under assets/ and cooked to .sclip by
 # import-on-demand at startup (docs/assets/pipeline.md, Stage 4d).

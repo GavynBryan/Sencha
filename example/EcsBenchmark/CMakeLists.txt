@@ -5,3 +5,4 @@ add_executable(EcsBenchmark
 target_link_libraries(EcsBenchmark PRIVATE engine)
 
 target_compile_features(EcsBenchmark PRIVATE cxx_std_20)
+sencha_warnings(EcsBenchmark)

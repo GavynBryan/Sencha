@@ -6,6 +6,7 @@ add_library(SceneViewer MODULE
     SceneViewerGame.cpp
     FreeCamera.cpp)
 target_link_libraries(SceneViewer PRIVATE engine)
+sencha_warnings(SceneViewer)
 # OUTPUT_NAME "game": the bundle's module is the default one `app` discovers
 # beside itself (game<ext>), so the bundle runs with a bare `app +map ...`. The
 # descriptive name stays on the CMake target and the directory.

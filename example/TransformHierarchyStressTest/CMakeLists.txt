@@ -5,3 +5,4 @@ add_executable(TransformHierarchyStressTest
 target_link_libraries(TransformHierarchyStressTest PRIVATE engine)
 
 target_compile_features(TransformHierarchyStressTest PRIVATE cxx_std_20)
+sencha_warnings(TransformHierarchyStressTest)

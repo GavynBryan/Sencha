@@ -44,6 +44,10 @@ else()
 
     sencha_game_module(template_game
         SOURCES ${SENCHA_TEMPLATE_MODULE_SOURCES})
+    # In-tree the template is held to the engine's own warning set. The SDK does
+    # not install SenchaWarnings.cmake, so a standalone build of this same file
+    # keeps whatever diagnostics the game project chose.
+    sencha_warnings(template_game)
     set_target_properties(template_game PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build")
 endif()
