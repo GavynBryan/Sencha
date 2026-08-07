@@ -250,29 +250,24 @@ if(SENCHA_ENABLE_COOK)
     # BC block encoders for the texture cook (docs/assets/pipeline.md,
     # Decisions E/L): bc7enc (BC7) + rgbcx (BC4/BC5) + bc7decomp (tests
     # decode-verify the encoder). MIT, single-purpose — the stb precedent.
-    # Cook-only: never rides in a shipping binary. Populated without
-    # add_subdirectory because the repo's own CMakeLists builds a test app.
-    # bc7enc.c is plain C — the only C in the tree, hence the enable here.
+    # Cook-only: never rides in a shipping binary.
+    #
+    # SOURCE_SUBDIR names a directory these repos do not have, so
+    # FetchContent_MakeAvailable downloads without add_subdirectory: bc7enc's own
+    # CMakeLists builds a test app we do not want, and the other two only need
+    # their sources. This is the supported form -- calling FetchContent_Populate
+    # directly is deprecated under CMP0169.
+    #
+    # bc7enc.c and mikktspace.c are plain C, hence the enable here.
     enable_language(C)
     include(FetchContent)
     FetchContent_Declare(
         bc7enc
         GIT_REPOSITORY https://github.com/richgel999/bc7enc.git
         GIT_TAG        f66c2e489b07138f2673a2fb3d27c1aa1d565c48
+        SOURCE_SUBDIR  sencha-does-not-build-this
     )
-    FetchContent_GetProperties(bc7enc)
-    if(NOT bc7enc_POPULATED)
-        FetchContent_Populate(bc7enc)
-    endif()
-    target_sources(sencha_engine PRIVATE
-        "${bc7enc_SOURCE_DIR}/bc7enc.c"
-        "${bc7enc_SOURCE_DIR}/bc7decomp.cpp"
-    )
-    # SYSTEM: vendored third-party headers — keep their -Wall/-Wextra noise out
-    # of the engine's own diagnostics.
-    # BUILD_INTERFACE only: cook headers are dev/editor-side; a game module SDK
-    # does not include them, so these vendored dirs stay out of the export.
-    target_include_directories(sencha_engine SYSTEM PUBLIC "$<BUILD_INTERFACE:${bc7enc_SOURCE_DIR}>")
+    FetchContent_MakeAvailable(bc7enc)
 
     # glTF parsing for the mesh cook (Decision B): cgltf, single-header,
     # the stb precedent. The implementation TU lives in src/assets/cook.
@@ -280,12 +275,9 @@ if(SENCHA_ENABLE_COOK)
         cgltf
         GIT_REPOSITORY https://github.com/jkuhlmann/cgltf.git
         GIT_TAG        bbeb5b0b070ddacddac6852fb72143eb68454937 # v1.15
+        SOURCE_SUBDIR  sencha-does-not-build-this
     )
-    FetchContent_GetProperties(cgltf)
-    if(NOT cgltf_POPULATED)
-        FetchContent_Populate(cgltf)
-    endif()
-    target_include_directories(sencha_engine SYSTEM PUBLIC "$<BUILD_INTERFACE:${cgltf_SOURCE_DIR}>")
+    FetchContent_MakeAvailable(cgltf)
 
     # Tangent generation for the mesh cook (Decision M): MikkTSpace, the
     # de-facto standard. Cook-only, never ships — the glslang rule.
@@ -293,13 +285,32 @@ if(SENCHA_ENABLE_COOK)
         mikktspace
         GIT_REPOSITORY https://github.com/mmikk/MikkTSpace.git
         GIT_TAG        3e895b49d05ea07e4c2133156cfa94369e19e409
+        SOURCE_SUBDIR  sencha-does-not-build-this
     )
-    FetchContent_GetProperties(mikktspace)
-    if(NOT mikktspace_POPULATED)
-        FetchContent_Populate(mikktspace)
-    endif()
-    target_sources(sencha_engine PRIVATE "${mikktspace_SOURCE_DIR}/mikktspace.c")
-    target_include_directories(sencha_engine SYSTEM PUBLIC "$<BUILD_INTERFACE:${mikktspace_SOURCE_DIR}>")
+    FetchContent_MakeAvailable(mikktspace)
+
+    # Vendored encoder/tangent sources compile in their own target so the
+    # first-party diagnostic set never binds to third-party code. OBJECT rather
+    # than STATIC for the sencha_imgui_support reason: the objects have to land
+    # in the engine binary itself, and on Windows only the shared library's own
+    # object files reach its export table.
+    add_library(sencha_cook_thirdparty OBJECT
+        "${bc7enc_SOURCE_DIR}/bc7enc.c"
+        "${bc7enc_SOURCE_DIR}/bc7decomp.cpp"
+        "${mikktspace_SOURCE_DIR}/mikktspace.c"
+    )
+    target_include_directories(sencha_cook_thirdparty SYSTEM PUBLIC
+        "${bc7enc_SOURCE_DIR}"
+        "${mikktspace_SOURCE_DIR}")
+    target_link_libraries(sencha_engine PRIVATE sencha_cook_thirdparty)
+
+    # SYSTEM: vendored third-party headers — keep their diagnostics out of the
+    # engine's own. BUILD_INTERFACE only: cook headers are dev/editor-side; a
+    # game module SDK does not include them, so these dirs stay out of the export.
+    target_include_directories(sencha_engine SYSTEM PUBLIC
+        "$<BUILD_INTERFACE:${bc7enc_SOURCE_DIR}>"
+        "$<BUILD_INTERFACE:${cgltf_SOURCE_DIR}>"
+        "$<BUILD_INTERFACE:${mikktspace_SOURCE_DIR}>")
 endif()
 
 if(WIN32)
@@ -415,7 +426,9 @@ if(SENCHA_ENABLE_VULKAN)
     )
     add_library(sencha::imgui_support ALIAS sencha_imgui_support)
 
-    target_include_directories(sencha_imgui_support
+    # SYSTEM so imgui's headers do not report diagnostics into whichever
+    # first-party target includes them.
+    target_include_directories(sencha_imgui_support SYSTEM
         PUBLIC
             "${IMGUI_DIR}"
             "${IMGUI_DIR}/backends"
