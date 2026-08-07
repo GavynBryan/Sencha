@@ -605,6 +605,64 @@ is v2.0. Every batch-2 tool states its restricted domain up front, the way
 
 ---
 
+## 10a. Track G: sessions and replication
+
+Server-authoritative multiplayer, on the idTech and Source posture: the infrastructure
+is built for sessions, and games may be single-player. No session constructed means no
+networking code in the frame at all. Execution detail is `docs/plans/networking.md`,
+which is ratified; this section owns the sequence and the gate.
+
+1. **Headless frame loop (v1.0).** The last unbuilt piece of that document's Section 3
+   binding constraints; the other four shipped on Tracks A and C. A headless engine
+   cannot tick today — `Engine::Initialize` returns before `FrameDriver` exists when
+   there is no window, and phase registration is entirely inside the Vulkan guard.
+   Independently valuable: it is the CI simulation-soak vehicle and the dedicated
+   host's skeleton. Gate: a headless engine runs fixed ticks with no graphics
+   services constructed, and exits clean.
+
+2. **Transport, protocol, session (G1).** `INetTransport` with UDP, loopback, and a
+   seeded deterministic simulated transport; two channel classes; pure span decoders
+   with cap tables and a fuzz corpus; cookie handshake with compatibility and world
+   identity gates; table sync for registration-order ids; `PumpNet` and `FlushNet`
+   frame phases; `host`/`connect`/`disconnect`. Gate: an empty session held between
+   two processes over loopback UDP, with the codec and channel suites green.
+
+3. **Replication core (G2).** Schema annotations and the replicated-component
+   manifest fold; type-erased component overwrite; identity maps over
+   `PersistentEntityId` and `NetEntityId`; snapshot ring, per-client deltas, acks,
+   budgets; client apply and interpolation. Gate: a pawn mirrors between two
+   instances, stationary then moving under authority control.
+
+4. **Ownership, input, prediction (G4). Track gate.** `NetOwner`; session role as
+   composition at `OnRegisterSystems`; the input channel over the tick-stamped action
+   records plus per-tick aim; per-peer pawn spawn; input-delay mode end to end.
+   Prediction and reconciliation follow as their own item. **Track gate: two
+   instances on one machine, one hosting, each seeing the other's pawn move under
+   server-authoritative simulation.**
+
+5. **Zone interest (G3).** Multi-source demand, per-peer zone grant/ack/revoke, zone
+   baselines, late join, travel. Not required for the track gate — a single-zone map
+   with pawns in the persistent partition reaches it — but required before any
+   multi-zone session ships. Gate: a scripted three-zone co-op traversal with zero
+   missed host ticks and no desync mismatches.
+
+6. **Session semantics (G5).** `CVarFlags::Replicated` and enforced `Cheat` gating,
+   cvar sync, cue replication, desync hashing, a net stats panel. Load-bearing rather
+   than hygienic: the console ships in every build (see Recorded decisions), so this
+   is the shipping gate on what a player's own console can reach in a session.
+
+7. **Hardening (G6).** libsodium AEAD and the auth-token seam; rate budgets and
+   strikes; malformed-traffic soak in both directions, including a hostile authority
+   against a live client; interest-leak audit.
+
+8. **Dedicated host and tooling (G7).** Packaged headless host configuration, the
+   two-process CI soak, and PIE host-plus-join convenience.
+
+Version placement for G1 onward is the open question in `networking.md` Section 14:
+the recommendation is item 1 into v1.0 now with the rest gated as its own arc.
+
+---
+
 ## 11. Recorded decisions and deferrals
 
 The repo's deferral pattern: every deferral records the concrete trigger that revives it.
@@ -664,7 +722,8 @@ the specialist doc wins.
 | `docs/assets/pipeline.md` | Execution record and deferral register for the asset pipeline items in Track F. |
 | `docs/core-systems-map.md` | Reader's map of the current tree; not a plan. |
 | `docs/plans/world-partition/11-zone-runtime-model.md`, `12-spatial-compilation.md` | The world graph contracts: runtime residency, crossing, authoring, cook, and validation. Canonical for Track C item 3. |
-| `docs/plans/runtime-stable-identity.md` | The persistent entity identity scheme and in-session zone state memory. The identity substrate Track A item 8, Track C item 5, Track D item 1, and networking all join on. |
+| `docs/plans/runtime-stable-identity.md` | The persistent entity identity scheme and in-session zone state memory. The identity substrate Track A item 8, Track C item 5, Track D item 1, and Track G all join on. |
+| `docs/plans/networking.md` | Ratified execution spec for Track G: session model, module layout, protocol, replication, interest, and security posture. |
 | `docs/plans/world-partition-authoring.md` | Historical design that produced the above. Superseded; portals and regions in it no longer exist. |
 
 ---
