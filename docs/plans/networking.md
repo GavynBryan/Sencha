@@ -1266,6 +1266,12 @@ server-authoritative simulation. Zone interest (G3) is not required to reach it 
 is required before any multi-zone (`+world`) session ships, and the three-zone
 scripted co-op traversal is *its* gate rather than G4's.
 
+"Seeing" in that gate means observed motion, asserted as close to the rendered
+frame as the harness can reach — not World-level state and not log lines. Recorded
+after the 2026-08-07 playtest: every World-level assertion passed while replicated
+motion never reached the screen, because the tests stopped one derivation short of
+what extraction actually reads.
+
 - **G0. Foundations (no netcode). MOSTLY LANDED.** Section 3.1's paced tick scheduler,
   3.2's mover-state fix, 3.3's tick-stamped input records, and 3.4's stable identity
   all shipped on their own tracks. What remains: **the headless frame loop**
@@ -1309,6 +1315,41 @@ scripted co-op traversal is *its* gate rather than G4's.
   consumption and validation; input-delay mode end-to-end, which is the two-instance
   deliverable. Prediction mode with reconciliation and error smoothing follows as its
   own phase rather than riding this one. Depends on G2 and Track A item 1.
+
+  *Status 2026-08-07: landed in a simplified form that met the session gate and
+  then failed the first live playtest in two instructive ways.* The command
+  carries a client-framed wish vector rather than the action columns above, so
+  the authority cannot re-interpret or validate at the action level and
+  non-movement actions (jump, abilities) have no wire form at all; and
+  possession is three overlapping marks (`Controlled` tag, `LocalLookControl`,
+  `NetOwner`) plus a skip rule inside the input system, which produced the
+  crossed-keys defect (a host's input steering every pawn). Both simplifications
+  are retired by G4a below, which now precedes prediction.
+- **G4a. Possession and spawn recipes. Added 2026-08-07; precedes prediction.**
+  The first live playtest found both of its defects in the same missing
+  ownership: nothing owns what a replicated entity *is* on the receiving
+  machine. Two mechanisms close it.
+
+  *Possession.* The input layer gains `InputActionSourceId` (slot zero is the
+  local device), a world resource `InputActionSourceTable`, and a pawn component
+  `InputActionSourceRef` (absent means local). `CharacterInputSystem` resolves
+  its action view per entity through the table; the session registers one source
+  per admitted peer and feeds it from the Section 7.3 command stream (action
+  columns through the synced name table, the aim sample, the redundancy window,
+  the gap policy). One possession mechanism replaces the mark constellation, the
+  authority interprets remote input with the same game code it runs for local
+  input, and abilities cross the wire without bespoke messages.
+
+  *Spawn recipes.* A snapshot-spawned entity currently carries only its
+  replicated components: no derived columns, no local scaffolding, with each
+  game hand-rolling the difference. The playtest's frozen-motion defect was
+  exactly this — render extraction and history recording both require
+  `WorldTransform`, which is derived, so nothing on the client ever gave the
+  mirrored pawns one and replicated motion never reached the screen. The spawn
+  payload gains a recipe identity the receiver instantiates its full local
+  shape from, the interim form of the prefab encoding Section 6.1 already
+  reserves for Track D item 1. Prediction depends on this phase: reconciliation
+  built over hand-rolled adoption compounds the debt.
 - **G5. Session semantics.** Cvar flag enforcement and sync (Section 9); event/cue
   replication (Section 6.4); desync hashing (Section 10.7); a net stats debug
   panel (rates, RTT, budget occupancy, per-zone scope sizes) on the existing

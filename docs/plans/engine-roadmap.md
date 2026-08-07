@@ -637,26 +637,39 @@ which is ratified; this section owns the sequence and the gate.
 4. **Ownership, input, prediction (G4). Track gate.** `NetOwner`; session role as
    composition at `OnRegisterSystems`; the input channel over the tick-stamped action
    records plus per-tick aim; per-peer pawn spawn; input-delay mode end to end.
-   Prediction and reconciliation follow as their own item. **Track gate: two
-   instances on one machine, one hosting, each seeing the other's pawn move under
-   server-authoritative simulation.**
+   Prediction and reconciliation follow item 5. **Track gate: two instances on one
+   machine, one hosting, each seeing the other's pawn move under
+   server-authoritative simulation** — where "seeing" is observed motion, not
+   World state or log output.
 
-5. **Zone interest (G3).** Multi-source demand, per-peer zone grant/ack/revoke, zone
+5. **Possession and spawn recipes (G4a). Added 2026-08-07, ahead of prediction.**
+   The first live playtest traced its defects to one missing ownership: what a
+   replicated entity is on the receiving machine. The input-source table
+   (`InputActionSourceRef` on the pawn, slot zero local, one source per admitted
+   peer fed from the command stream) replaces possession-by-marks and carries
+   action columns so the authority interprets remote input with the same game
+   code as local; the spawn payload gains a recipe identity so the receiver
+   instantiates the full local shape — derived columns included — instead of
+   each game hand-rolling adoption. Interim form of the prefab encoding the
+   protocol reserves for Track D item 1. Gate: a client jumps, and replicated
+   motion is asserted at the extraction boundary.
+
+6. **Zone interest (G3).** Multi-source demand, per-peer zone grant/ack/revoke, zone
    baselines, late join, travel. Not required for the track gate — a single-zone map
    with pawns in the persistent partition reaches it — but required before any
    multi-zone session ships. Gate: a scripted three-zone co-op traversal with zero
    missed host ticks and no desync mismatches.
 
-6. **Session semantics (G5).** `CVarFlags::Replicated` and enforced `Cheat` gating,
+7. **Session semantics (G5).** `CVarFlags::Replicated` and enforced `Cheat` gating,
    cvar sync, cue replication, desync hashing, a net stats panel. Load-bearing rather
    than hygienic: the console ships in every build (see Recorded decisions), so this
    is the shipping gate on what a player's own console can reach in a session.
 
-7. **Hardening (G6).** libsodium AEAD and the auth-token seam; rate budgets and
+8. **Hardening (G6).** libsodium AEAD and the auth-token seam; rate budgets and
    strikes; malformed-traffic soak in both directions, including a hostile authority
    against a live client; interest-leak audit.
 
-8. **Dedicated host and tooling (G7).** Packaged headless host configuration, the
+9. **Dedicated host and tooling (G7).** Packaged headless host configuration, the
    two-process CI soak, and PIE host-plus-join convenience.
 
 Version placement for G1 onward is the open question in `networking.md` Section 14:
