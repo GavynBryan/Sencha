@@ -65,6 +65,10 @@ file(GLOB_RECURSE EDITOR_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/editor/*.cpp
 )
 
+file(GLOB_RECURSE NET_TEST_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/net/*.cpp
+)
+
 add_executable(core_tests ${CORE_TEST_SOURCES})
 target_link_libraries(core_tests PRIVATE sencha_engine GTest::gtest_main)
 # Committed content lives in the source tree, not beside the test binary.
@@ -181,6 +185,15 @@ if(EDITOR_TEST_SOURCES AND TARGET kyusu_authoring)
     list(APPEND SENCHA_TEST_TARGETS editor_tests)
 endif()
 
+# The transport, protocol, and channel layers. Their own target because they
+# need no world, no graphics, and no content: the fuzz and impairment suites run
+# in a fraction of a second and are the ones worth running on every change.
+if(NET_TEST_SOURCES)
+    add_executable(net_tests ${NET_TEST_SOURCES})
+    target_link_libraries(net_tests PRIVATE sencha_engine GTest::gtest_main)
+    list(APPEND SENCHA_TEST_TARGETS net_tests)
+endif()
+
 # Held to the same warning set as the code under test, applied over the
 # accumulated list so a test executable added above cannot miss it.
 foreach(sencha_test_target IN LISTS SENCHA_TEST_TARGETS)
@@ -197,6 +210,12 @@ gtest_discover_tests(core_tests
 gtest_discover_tests(math_geometry_tests
     DISCOVERY_TIMEOUT 30
 )
+
+if(TARGET net_tests)
+    gtest_discover_tests(net_tests
+        DISCOVERY_TIMEOUT 30
+    )
+endif()
 
 if(TARGET engine_feature_tests)
     gtest_discover_tests(engine_feature_tests
