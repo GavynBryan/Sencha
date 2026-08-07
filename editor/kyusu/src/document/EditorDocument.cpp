@@ -166,6 +166,23 @@ bool EditorDocument::LoadFromJson(const JsonValue& root)
         ReportUnresolvedAssetRefs(root, *Catalog, Logging.GetLogger<EditorDocument>(), "load");
 
     Scene.SyncFromRegistry();
+
+    // Identity is authored, so a file that does not already carry it is rejected
+    // rather than repaired: minting here would rewrite the document's identities
+    // without the user asking and let a cook bake ids the source never recorded.
+    if (std::string identityError; !Scene.ValidateIdentities(&identityError))
+    {
+        Logging.GetLogger<EditorDocument>().Error(
+            "scene identity is invalid: {}", identityError);
+        Scene.Clear();
+        Scene.SyncFromRegistry();
+        return false;
+    }
+
+    // The document was replaced wholesale, so whatever divergence the previous
+    // contents had from disk went with them. Written directly because OnEdited
+    // is for authored mutations, never loads.
+    Dirty = false;
     return true;
 }
 
@@ -238,6 +255,11 @@ EntityId EditorDocument::RestoreEntity(const EntitySnapshot& snapshot, bool fres
         }
     }
 
+    // Adoption settles identity, and it follows liveness: an undone delete or a
+    // cross-zone move restores its snapshot id (nothing live holds it), a
+    // duplicate or copy of a live source mints fresh, and a recipe snapshot with
+    // no id at all gets one. The components are loaded first so the id the
+    // snapshot carries is the one being judged.
     Scene.TrackEntity(entity);
 
     if (snapshot.Mesh.has_value())
@@ -344,7 +366,6 @@ bool EditorDocument::Load(std::string_view path)
         return false;
 
     FilePath.assign(path);
-    Dirty = false;
     return true;
 }
 

@@ -8,6 +8,7 @@
 #include <render/SpotLightComponent.h>
 #include <render/StaticMeshComponent.h>
 #include <render/ZoneLightmapComponent.h>
+#include <world/identity/PersistentIdComponent.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/WorldConnectionComponents.h>
 
@@ -33,7 +34,10 @@ using EngineSceneComponents = std::tuple<
     AudioCaptionComponent,
     WorldDock,
     WorldLink,
-    DockGateBinding>;
+    DockGateBinding,
+    // Appended last: registration order feeds serialized state, so new
+    // components extend this list at the end rather than reordering it.
+    PersistentIdComponent>;
 
 template <typename T>
 struct ComponentTag

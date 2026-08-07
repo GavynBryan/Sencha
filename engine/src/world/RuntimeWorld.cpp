@@ -1,7 +1,13 @@
 #include <world/RuntimeWorld.h>
 
 #include <components/ActiveCameraService.h>
+#include <ecs/Query.h>
 #include <ecs/WorldComponentSchema.h>
+#include <world/identity/PersistentEntityIndex.h>
+#include <world/identity/PersistentIdComponent.h>
+#include <zone/ZoneStateStore.h>
+
+#include <vector>
 
 #include <algorithm>
 #include <cassert>
@@ -14,6 +20,15 @@ RuntimeWorld::RuntimeWorld(const WorldComponentSchema& schema)
     // Active-camera selection is simulation-scoped under one entity universe,
     // and component hooks must be able to reach World resources during teardown.
     Entities_.AddResource<ActiveCameraService>();
+
+    // Every driven world can resolve persistent identities; the identity
+    // component's hooks maintain the index as zones import and detach.
+    Entities_.AddResource<PersistentEntityIndex>();
+
+    // Zone state memory: the import path suppresses recorded-destroyed
+    // entities and the detach path below captures the deviation, so a zone
+    // that streams out and back does not resurrect consumed content.
+    Entities_.AddResource<ZoneStateStore>();
 
     // Partition zero is persistent and never receives a RuntimeZoneRecord.
     ZonesByPartition_.resize(1);
@@ -319,6 +334,31 @@ void RuntimeWorld::FinalizeResidencyProcessing()
 
         assert(record->Id == change.Zone);
         assert(record->State == RuntimeZoneLoadState::Detaching);
+
+        // Capture the zone's persistent-identity deviation while its entities
+        // are still alive; this is the moment "unload" stops meaning "forget".
+        // Worlds whose schema never registered the identity component (minimal
+        // fixtures) have nothing to capture and must not build the query.
+        if (auto* zoneState = Entities_.TryGetResource<ZoneStateStore>();
+            zoneState != nullptr && Entities_.IsRegistered<PersistentIdComponent>())
+        {
+            std::vector<PersistentEntityId> live;
+            StoragePartitionSet detaching;
+            detaching.Add(change.Partition);
+            Query<Read<PersistentIdComponent>> identified(Entities_);
+            identified.ForEachChunkIn(
+                detaching,
+                [&](auto& view)
+                {
+                    for (const PersistentIdComponent& id :
+                         view.template Read<PersistentIdComponent>())
+                    {
+                        if (id.Id.IsValid())
+                            live.push_back(id.Id);
+                    }
+                });
+            zoneState->RecordDetachCapture(change.Zone, live);
+        }
 
         // Backend scenes receive the residency batch before this point. Entity
         // hooks then run through the ordinary World destruction path while

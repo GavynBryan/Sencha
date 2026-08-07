@@ -5,6 +5,7 @@
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneFormat.h>
 #include <world/serialization/SceneSerializationContext.h>
+#include <world/identity/PersistentIdComponent.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/ZoneLoadPackage.h>
 #include <zone/ZonePackageImporter.h>
@@ -170,4 +171,37 @@ TEST(ZonePackageSceneLoader, UnknownSerializedComponentRejectsWholePackage)
         &error));
     EXPECT_FALSE(error.Message.empty());
     EXPECT_TRUE(package.Empty());
+}
+
+TEST(ZonePackageSceneLoader, LiftsPersistentIdIntoPackageMetadata)
+{
+    ComponentSerializerRegistry serializers;
+    ASSERT_EQ(
+        serializers.Register(
+            std::make_unique<ComponentSerializer<PersistentIdComponent>>()),
+        ComponentSerializerRegistry::RegisterResult::Added);
+
+    JsonValue::Array entities;
+    entities.emplace_back(JsonValue::Object{
+        { "components", JsonValue(JsonValue::Object{
+            { "persistent_id", JsonValue(JsonValue::Object{
+                { "id", JsonValue(std::string("00000000000000aa")) },
+            }) },
+        }) },
+    });
+    entities.emplace_back(JsonValue::Object{
+        { "components", JsonValue(JsonValue::Object{}) },
+    });
+    const JsonValue root(JsonValue::Object{
+        { "version", JsonValue(static_cast<double>(SceneVersion)) },
+        { "entities", JsonValue(std::move(entities)) },
+    });
+
+    ZoneLoadPackage package(ZoneId{ 5 });
+    SceneLoadError error;
+    ASSERT_TRUE(BuildZonePackageFromSceneJson(root, serializers, package, &error))
+        << error.Message;
+    ASSERT_EQ(package.EntityCount(), 2u);
+    EXPECT_EQ(package.Entities()[0].PersistentId, (PersistentEntityId{ 0xaa }));
+    EXPECT_FALSE(package.Entities()[1].PersistentId.IsValid());
 }

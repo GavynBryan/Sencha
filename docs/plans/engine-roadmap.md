@@ -664,6 +664,7 @@ the specialist doc wins.
 | `docs/assets/pipeline.md` | Execution record and deferral register for the asset pipeline items in Track F. |
 | `docs/core-systems-map.md` | Reader's map of the current tree; not a plan. |
 | `docs/plans/world-partition/11-zone-runtime-model.md`, `12-spatial-compilation.md` | The world graph contracts: runtime residency, crossing, authoring, cook, and validation. Canonical for Track C item 3. |
+| `docs/plans/runtime-stable-identity.md` | The persistent entity identity scheme and in-session zone state memory. The identity substrate Track A item 8, Track C item 5, Track D item 1, and networking all join on. |
 | `docs/plans/world-partition-authoring.md` | Historical design that produced the above. Superseded; portals and regions in it no longer exist. |
 
 ---
