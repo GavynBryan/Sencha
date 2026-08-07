@@ -321,6 +321,12 @@ void NetSession::HandleAuthorityMessage(const NetDatagram& datagram,
             .AuthorityTick = LastAuthorityTick,
         };
         SendRaw(datagram.From, NetEncodeAccept(accept, scratch));
+        Events.push_back(NetPeerEvent{
+            .Kind = NetPeerEventKind::Joined,
+            .Peer = Peers.back().Id,
+            .Address = Peers.back().Address,
+            .Reason = {},
+        });
         return;
     }
     case NetMessageType::Ping:
@@ -468,6 +474,7 @@ void NetSession::HandleClientMessage(const NetDatagram& datagram,
 std::vector<NetSession::Delivery> NetSession::Pump(double nowSeconds)
 {
     std::vector<Delivery> out;
+    Events.clear();
     if (CurrentRole == NetSessionRole::Standalone)
         return out;
 
@@ -492,6 +499,19 @@ std::vector<NetSession::Delivery> NetSession::Pump(double nowSeconds)
                 continue;
             if ((nowSeconds - peer.LastHeardSeconds) > TimeoutSeconds)
                 peer.State = NetPeerState::Disconnected;
+        }
+        for (const NetPeer& peer : Peers)
+        {
+            if (peer.State != NetPeerState::Disconnected)
+                continue;
+            Events.push_back(NetPeerEvent{
+                .Kind = NetPeerEventKind::Left,
+                .Peer = peer.Id,
+                .Address = peer.Address,
+                .Reason = (nowSeconds - peer.LastHeardSeconds) > TimeoutSeconds
+                              ? "timed out"
+                              : "disconnected",
+            });
         }
         std::erase_if(Peers, [](const NetPeer& peer) {
             return peer.State == NetPeerState::Disconnected;

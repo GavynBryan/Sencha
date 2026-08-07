@@ -109,6 +109,24 @@ inline constexpr std::uint32_t kNetMaxStrikes = 8;
 // which is the co-op shape, and hold at eight.
 inline constexpr std::size_t kNetMaxPeersSupported = 8;
 
+// What changed about the peer set during a pump. The game needs these to spawn
+// and despawn a pawn per player, and a headless host needs them because console
+// output goes to a console view nobody is watching on a server.
+enum class NetPeerEventKind : std::uint8_t
+{
+    Joined,
+    Left,
+};
+
+struct NetPeerEvent
+{
+    NetPeerEventKind Kind = NetPeerEventKind::Joined;
+    PeerId Peer;
+    NetAddress Address;
+    // Empty for a join; why they went, for a leave.
+    std::string Reason;
+};
+
 class NetSession
 {
 public:
@@ -145,6 +163,10 @@ public:
     [[nodiscard]] bool Send(PeerId peer, NetChannelKind channel,
                             std::span<const std::byte> message);
     void Broadcast(NetChannelKind channel, std::span<const std::byte> message);
+
+    // Peer transitions from the most recent Pump. Cleared at the start of each
+    // one, so a caller that pumps and then reads sees exactly that frame's.
+    [[nodiscard]] std::span<const NetPeerEvent> PeerEvents() const { return Events; }
 
     [[nodiscard]] std::vector<PeerId> ConnectedPeers() const;
     [[nodiscard]] const NetPeer* FindPeer(PeerId id) const;
@@ -201,6 +223,7 @@ private:
     NetJoinFailure Failure = NetJoinFailure::None;
     std::string FailureReason;
 
+    std::vector<NetPeerEvent> Events;
     std::uint64_t TotalStrikes = 0;
     std::uint64_t TotalRefusals = 0;
 };

@@ -51,8 +51,61 @@ void Engine::RegisterFramePhases(Game& game)
         (void)game;
 
     RegisterSimulationFramePhases();
+    RegisterNetFramePhases();
 
     FramePhasesRegistered = true;
+}
+
+// The two net phases. Registered whether or not this process will ever host or
+// join: without a session they are one null check each, and conditional
+// registration would mean a session could not be created after the phases were
+// wired -- which is exactly when `host` and `connect` run.
+void Engine::RegisterNetFramePhases()
+{
+    Engine& engine = *this;
+    FrameDriver& driver = *FrameDriverInstance;
+
+    driver.Register(FramePhase::PumpNet, [&engine](PhaseContext& ctx) {
+        NetSession* session = engine.TryNet();
+        if (session == nullptr)
+            return;
+
+        // Unscaled wall time. Timeouts, resends, and clock sync are about how
+        // long a peer has actually been silent; a paused or time-scaled
+        // simulation must not stretch a peer's timeout along with it.
+        const double now = ctx.Runtime->GetCurrentFrame().WallTime.UnscaledElapsed;
+        const std::vector<NetSession::Delivery> deliveries = session->Pump(now);
+
+        // Logged rather than left to the console: a headless host has nobody
+        // watching a console view, and who joined and who left is the first
+        // thing anyone asks a server.
+        Logger& log = engine.Logging().GetLogger<Engine>();
+        for (const NetPeerEvent& event : session->PeerEvents())
+        {
+            if (event.Kind == NetPeerEventKind::Joined)
+            {
+                log.Info("net: peer {} joined from {}",
+                         event.Peer.Value, NetAddressToString(event.Address));
+            }
+            else
+            {
+                log.Info("net: peer {} left ({})", event.Peer.Value, event.Reason);
+            }
+        }
+
+        // Nothing consumes deliveries yet: replication is the next phase of the
+        // track. Draining is still required, or the transport's buffers and the
+        // peers' channel state never advance.
+        for (const NetSession::Delivery& delivery : deliveries)
+            (void)delivery;
+    });
+
+    driver.Register(FramePhase::FlushNet, [&engine](PhaseContext& ctx) {
+        NetSession* session = engine.TryNet();
+        if (session == nullptr)
+            return;
+        session->Flush(ctx.Runtime->GetCurrentFrame().WallTime.UnscaledElapsed);
+    });
 }
 
 // Everything a frame does that does not need a window: the async commit point,

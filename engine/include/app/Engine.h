@@ -186,6 +186,7 @@ private:
     // that would have had nothing to draw into.
     void RegisterFramePhases(Game& game);
     void RegisterSimulationFramePhases();
+    void RegisterNetFramePhases();
     void RegisterPresentationFramePhases(Game& game);
     [[nodiscard]] bool HasPresentation() const;
     [[nodiscard]] TimingHistory& Timing() { return TimingData; }
