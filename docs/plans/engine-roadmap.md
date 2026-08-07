@@ -68,8 +68,9 @@ Done and load-bearing:
   lifecycle hooks, generational entity ids, roughly 852 green tests.
 - Concurrency: `JobSystem` fork-join plus `AsyncTaskQueue`,
   with `worker_count == 0` as the deterministic reference path.
-- Frame hosting: `FrameDriver` with the fixed ten-phase frame, `EngineSchedule`
-  topologically ordered systems, fixed-tick simulation with presentation-only wall time.
+- Frame hosting: `FrameDriver` with the fixed eleven-phase frame, `EngineSchedule`
+  topologically ordered systems, and fixed-tick simulation paced by a wall-time
+  accumulator with presentation-only wall time and real sub-tick interpolation.
 - Renderer: Vulkan forward pass for static meshes, `.smat`/`.stex` materials and
   textures, point lights (max 64, unshadowed), extraction by copy behind the
   render-domain vs `graphics/vulkan` split.
