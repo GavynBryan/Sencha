@@ -8,15 +8,15 @@
 
 struct ConsoleCommandLine
 {
-    std::vector<std::string> Args;
-    ConsoleValueSource Source;
-    std::string Text;
+    std::vector<std::string> Args{};
+    ConsoleValueSource Source{};
+    std::string Text{};
 };
 
 struct ConsoleParseDiagnostic
 {
-    ConsoleValueSource Source;
-    std::string Message;
+    ConsoleValueSource Source{};
+    std::string Message{};
 };
 
 class ConsoleStartupScript

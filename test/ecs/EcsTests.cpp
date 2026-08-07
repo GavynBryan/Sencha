@@ -370,15 +370,8 @@ TEST_F(EcsTest, QueryReadWrite_IteratesAllMatchingEntities)
             pos[i].X += vel[i].X;
     });
 
-    // Verify all 50 entities have Pos.X == 1.
-    int checked = 0;
-    for (int i = 0; i < 50; ++i)
-    {
-        // We can't easily index entities here without a reference list,
-        // so we verify via a second query.
-    }
-
-    // Second pass query just counts rows.
+    // Every entity must have been advanced exactly once. Verified through a
+    // second query because the entities were created without a reference list.
     Query<Read<Pos>> verify(world);
     int total = 0;
     verify.ForEachChunk([&total](auto& view) {
@@ -561,8 +554,12 @@ TEST_F(EcsTest, WriteAccessBumpsColumnVersion)
             if (col.Id == posId)
             {
                 for (const auto& chunk : arch->Chunks)
+                {
                     if (!chunk->IsEmpty())
+                    {
                         EXPECT_EQ(chunk->ColumnLastWrittenFrame(&col - arch->Columns.data()), 1u);
+                    }
+                }
                 found = true;
             }
         }
@@ -820,9 +817,15 @@ TEST_F(EcsTest, Invariant_WriteAccessBumpsColumnVersionConservatively)
         for (const auto& col : arch->Columns)
         {
             if (col.Id == posId)
+            {
                 for (const auto& chunk : arch->Chunks)
+                {
                     if (!chunk->IsEmpty())
+                    {
                         EXPECT_EQ(chunk->ColumnLastWrittenFrame(&col - arch->Columns.data()), 1u);
+                    }
+                }
+            }
         }
     }
 }
@@ -941,7 +944,9 @@ TEST_F(EcsTest, Stress_CommandBufferBatchedNonContiguousAddRemovePreservesData)
         EXPECT_EQ(world.TryGet<Vel>(entities[i])->X, static_cast<float>(i * 2));
         EXPECT_EQ(world.HasComponent<Mass>(entities[i]), i % 3 == 1);
         if (i % 3 == 1)
+        {
             EXPECT_EQ(world.TryGet<Mass>(entities[i])->Value, static_cast<float>(i * 3));
+        }
     }
 
     CommandBuffer remove(world);

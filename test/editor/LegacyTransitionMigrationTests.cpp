@@ -61,10 +61,9 @@ protected:
 
 TEST_F(LegacyTransitionMigrationTest, ReciprocalTeleportsCollapseIntoOneWorldLink)
 {
-    const TransitionId forward = AddLegacyTransition(
-        World, ZoneA, ZoneB, TransitionTopology::Teleport, false);
-    const TransitionId reverse = AddLegacyTransition(
-        World, ZoneB, ZoneA, TransitionTopology::Teleport, false);
+    // A reciprocal pair: A->B and B->A.
+    AddLegacyTransition(World, ZoneA, ZoneB, TransitionTopology::Teleport, false);
+    AddLegacyTransition(World, ZoneB, ZoneA, TransitionTopology::Teleport, false);
 
     const LegacyTransitionMigrationReport report = World.MigrateLegacyTransitions();
 

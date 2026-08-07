@@ -474,7 +474,9 @@ TEST(MeshEditService, InsertEdgeLoopNeverCorruptsMeshForAnySeed)
                 EXPECT_GT(after.Faces.size(), shape.Faces.size());
             }
             if (inputClosed)
+            {
                 EXPECT_TRUE(repair.Closed) << "loop cut opened a closed mesh";
+            }
         }
     }
 }

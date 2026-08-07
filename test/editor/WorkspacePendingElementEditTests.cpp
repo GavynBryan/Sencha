@@ -185,7 +185,7 @@ TEST_F(WorkspacePendingElementEditTest, StartingABevelReplacesAPendingInset)
 
 TEST_F(WorkspacePendingElementEditTest, CommitWithNothingPendingIsANoOp)
 {
-    AddBrush(Vec3d{ 0, 0, 0 });
+    (void)AddBrush(Vec3d{ 0, 0, 0 });
 
     Workspace.CommitPendingElementEdit();
 
@@ -195,7 +195,7 @@ TEST_F(WorkspacePendingElementEditTest, CommitWithNothingPendingIsANoOp)
 
 TEST_F(WorkspacePendingElementEditTest, CancelWithNothingPendingIsANoOp)
 {
-    AddBrush(Vec3d{ 0, 0, 0 });
+    (void)AddBrush(Vec3d{ 0, 0, 0 });
 
     Workspace.CancelPendingElementEdit();
 

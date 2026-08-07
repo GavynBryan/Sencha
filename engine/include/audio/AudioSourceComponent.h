@@ -36,7 +36,7 @@ using BusName = InlineString<32>;
 struct AudioSourceComponent
 {
     // -- Authored (serialized) -----------------------------------------------
-    AudioClipHandle Clip;
+    AudioClipHandle Clip{};
     BusName Bus = "Sfx";
     float Gain = 1.0f;          // [0, 1]
     float Pan = 0.0f;           // [-1 left, +1 right], static (no listener yet)
@@ -47,7 +47,7 @@ struct AudioSourceComponent
     // The voice this source currently drives. Generational, so a stale id
     // (the voice was stolen or retired) resolves to nothing and AudioSystem
     // treats the source as not playing.
-    VoiceId Voice;
+    VoiceId Voice{};
     // One-shots fire once per component lifetime; loops use Voice validity.
     bool Started = false;
 };

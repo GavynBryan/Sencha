@@ -17,8 +17,8 @@ struct Collider
     // A valid Mesh (a cooked shape resolved into the CollisionShapeCache, the
     // static-brush-collision case) takes precedence over the inline primitive
     // Shape used by authored/runtime colliders.
-    CollisionShape Shape;
-    CollisionShapeHandle Mesh;
+    CollisionShape Shape{};
+    CollisionShapeHandle Mesh{};
     bool IsTrigger = false;
 };
 

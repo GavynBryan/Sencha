@@ -46,10 +46,10 @@ struct CookOutputPolicy
 // that do not implement every step yet.
 struct CookProfile
 {
-    std::string Id;
-    std::string Name;
-    std::vector<std::string> TargetSteps;
-    std::vector<CookOutputPolicy> OutputPolicies;
+    std::string Id{};
+    std::string Name{};
+    std::vector<std::string> TargetSteps{};
+    std::vector<CookOutputPolicy> OutputPolicies{};
     bool BuiltIn = false;
 };
 

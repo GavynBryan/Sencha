@@ -127,7 +127,9 @@ TEST_F(WorldManifestUndoTest, UndoingTheFocusedZonesCreationReFocusesSomewhereVa
     // dangling; whatever it landed on is a zone the manifest still describes.
     EXPECT_NE(World.FocusZone(), added);
     if (World.FocusZone().IsValid())
+    {
         EXPECT_NE(Zone(World.FocusZone()), nullptr);
+    }
     EXPECT_FALSE(World.IsZoneOpen(added));
 }
 

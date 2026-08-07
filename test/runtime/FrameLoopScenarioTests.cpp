@@ -113,7 +113,9 @@ TEST(RuntimeFrameLoopScenario, BurstResizeEmitsZeroTicksDuringLifecycleFrames)
         runtime.ResolveLifecycleTransitions();
         TickBudget budget = runtime.ScheduleFixedTicks();
         if (runtime.GetCurrentFrame().LifecycleOnly)
+        {
             EXPECT_EQ(budget.TicksToRunThisFrame, 0u);
+        }
         runtime.BuildPresentationFrame();
         runtime.EndFrame();
     }

@@ -76,8 +76,8 @@ struct LocomotionModeId
 // tuning from, and the locomotion mode it is currently in.
 struct CharacterMovement
 {
-    MovementProfileHandle Profile;
-    LocomotionModeId Mode;
+    MovementProfileHandle Profile{};
+    LocomotionModeId Mode{};
 };
 SENCHA_DECLARE_COMPONENT_TYPE(CharacterMovement, "sencha.character_movement");
 

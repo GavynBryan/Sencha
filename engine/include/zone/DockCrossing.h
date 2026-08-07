@@ -8,10 +8,10 @@
 
 struct ZoneFocusState
 {
-    ZoneId Current;
-    ZoneId Previous;
-    DockId SuppressedDock;
-    Vec3d PreviousPosition;
+    ZoneId Current{};
+    ZoneId Previous{};
+    DockId SuppressedDock{};
+    Vec3d PreviousPosition{};
 };
 
 enum class DockTraversalStatus : uint8_t
@@ -24,19 +24,19 @@ enum class DockTraversalStatus : uint8_t
 struct DockTraversalResult
 {
     DockTraversalStatus Status = DockTraversalStatus::None;
-    DockId Dock;
-    ZoneId From;
-    ZoneId To;
-    Vec3d CrossingPoint;
-    Vec3d SafeSourcePosition;
-    Vec3d PlaneNormal;
+    DockId Dock{};
+    ZoneId From{};
+    ZoneId To{};
+    Vec3d CrossingPoint{};
+    Vec3d SafeSourcePosition{};
+    Vec3d PlaneNormal{};
 };
 
 struct DockCrossingOptions
 {
     float CapsuleRadius = 0.0f;
     float CapsuleHalfHeight = 0.0f;
-    std::span<const ZoneId> ResidentPhysicsZones;
+    std::span<const ZoneId> ResidentPhysicsZones{};
     bool RequireResidentDestination = false;
 };
 

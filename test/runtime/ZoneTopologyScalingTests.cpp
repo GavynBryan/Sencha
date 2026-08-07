@@ -153,8 +153,10 @@ TEST(ZoneTopologyScaling, DemandSetSizeDoesNotGrowWithWorldSize)
             EXPECT_LE(demand.size(), static_cast<std::size_t>(config.ResidentZoneCap))
                 << ShapeName(shape) << " x" << zoneCount << " exceeded the cap";
             if (previous != 0)
+            {
                 EXPECT_EQ(demand.size(), previous)
                     << ShapeName(shape) << " demand changed between scales";
+            }
             previous = demand.size();
 
             for (const ZoneDemandRecord& record : demand)
@@ -185,7 +187,9 @@ TEST(ZoneTopologyScaling, HopRankCountDependsOnHopsNotOnWorldSize)
             EXPECT_EQ(ranks.size(), static_cast<std::size_t>(hopCount * 2 + 1))
                 << "chain x" << zoneCount << " at " << hopCount << " hops";
             if (previous != 0)
+            {
                 EXPECT_EQ(ranks.size(), previous);
+            }
             previous = ranks.size();
         }
     }

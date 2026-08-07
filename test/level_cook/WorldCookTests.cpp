@@ -180,7 +180,9 @@ TEST_F(WorldCookTest, RefusesGateBindingInAnUnopenedZone)
     WorldDocument reloaded(Logging);
     ASSERT_TRUE(reloaded.LoadWorld(WorldPath()));
     if (reloaded.IsZoneOpen(second))
+    {
         ASSERT_TRUE(reloaded.UnloadZone(second));
+    }
     ASSERT_FALSE(reloaded.IsZoneOpen(second))
         << "the zone under test must be closed, or live validation covers it";
 
@@ -579,7 +581,9 @@ TEST_F(WorldCookTest, RefusesAZoneWithoutPersistentIdentity)
         WorldDocument settle(Logging);
         ASSERT_TRUE(settle.LoadWorld(WorldPath()));
         if (settle.IsZoneOpen(setup.Closed))
+        {
             ASSERT_TRUE(settle.UnloadZone(setup.Closed));
+        }
         ASSERT_TRUE(settle.SaveWorld());
     }
     EditSavedScene(Root / setup.SceneRef, StripPersistentIds);
