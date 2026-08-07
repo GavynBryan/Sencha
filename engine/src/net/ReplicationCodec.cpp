@@ -413,6 +413,10 @@ bool ReplicationEncodeComponent(const ReplicatedComponent& component,
         const ReplicatedField& field = component.Fields[i];
         if (field.OwnerOnly && !forOwner)
             continue;
+        // The owner's own answer is newer than anything that could come back
+        // to them, so sending it would only overwrite it with a stale one.
+        if (field.OwnerLocal && forOwner)
+            continue;
         if (hasBaseline && !FieldDiffers(field, current, baseline))
             continue;
         mask |= (std::uint64_t{ 1 } << i);

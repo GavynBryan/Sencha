@@ -78,6 +78,11 @@ struct Field
     // Never leaves the machine that computes it. Derived caches, presentation
     // smoothing, handles that mean nothing on another process.
     bool IsLocalOnly = false;
+    // Sent to everyone except the peer that owns the entity, because that peer
+    // computes it themselves and holds a fresher answer than the one coming
+    // back. Aim is the case: a player's view must follow their mouse now, not
+    // at the end of a round trip.
+    bool IsOwnerLocal = false;
 
     Field& Optional()
     {
@@ -117,6 +122,12 @@ struct Field
     Field& OwnerOnly()
     {
         IsOwnerOnly = true;
+        return *this;
+    }
+
+    Field& OwnerLocal()
+    {
+        IsOwnerLocal = true;
         return *this;
     }
 

@@ -130,6 +130,7 @@ bool ReplicationLayout::AddErased(ComponentTypeId type,
                                                         : field.Scalar;
         out.Quantization = field.Quantization;
         out.OwnerOnly = field.OwnerOnly;
+        out.OwnerLocal = field.OwnerLocal;
 
         assert(out.Offset + out.Count * out.Size <= size
                && "a replicated field runs past the end of its component");
@@ -204,6 +205,7 @@ std::uint64_t ReplicationLayout::TableHash() const
             MixBytes(hash, &field.Quantization.Min, sizeof(float));
             MixBytes(hash, &field.Quantization.Max, sizeof(float));
             MixU64(hash, field.OwnerOnly ? 1u : 0u);
+            MixU64(hash, field.OwnerLocal ? 1u : 0u);
         }
     }
     return hash;

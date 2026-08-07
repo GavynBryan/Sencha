@@ -45,6 +45,8 @@ struct ReplicatedField
     FieldQuantization Quantization{};
     // Sent only to the peer that owns the entity.
     bool OwnerOnly = false;
+    // Sent to everyone except that peer, which computes it itself.
+    bool OwnerLocal = false;
 };
 
 //-----------------------------------------------------------------------------

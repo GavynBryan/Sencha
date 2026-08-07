@@ -250,7 +250,7 @@ TEST(ReplicationCodec, FullStateRoundTripsWithinQuantization)
     const LookOrientation sent{ .Yaw = 2.5f, .Pitch = -0.75f,
                                 .MinPitch = -1.4f, .MaxPitch = 1.4f };
     LookOrientation received{};
-    RoundTrip(look, BytesOf(sent), {}, MutableBytesOf(received));
+    RoundTrip(look, BytesOf(sent), {}, MutableBytesOf(received), false);
 
     EXPECT_FLOAT_EQ(received.Yaw, sent.Yaw) << "yaw is unquantized, so it is exact";
     EXPECT_NEAR(received.Pitch, sent.Pitch, 0.001f);
@@ -267,7 +267,7 @@ TEST(ReplicationCodec, LocalFieldsAreNotOverwrittenByADecode)
                                 .MinPitch = -9.0f, .MaxPitch = 9.0f };
     LookOrientation received{ .Yaw = 0.0f, .Pitch = 0.0f,
                               .MinPitch = -1.4f, .MaxPitch = 1.4f };
-    RoundTrip(look, BytesOf(sent), {}, MutableBytesOf(received));
+    RoundTrip(look, BytesOf(sent), {}, MutableBytesOf(received), false);
 
     EXPECT_FLOAT_EQ(received.Yaw, 1.0f);
     EXPECT_FLOAT_EQ(received.MinPitch, -1.4f)
@@ -305,8 +305,8 @@ TEST(ReplicationCodec, ADeltaCarriesOnlyTheChangedField)
     current.Yaw = 2.0f;  // pitch deliberately untouched
 
     LookOrientation received = baseline;
-    const std::size_t bits =
-        RoundTrip(look, BytesOf(current), BytesOf(baseline), MutableBytesOf(received));
+    const std::size_t bits = RoundTrip(look, BytesOf(current), BytesOf(baseline),
+                                       MutableBytesOf(received), false);
 
     // Mask plus one 32-bit float, and specifically not the 16-bit pitch too.
     EXPECT_EQ(bits, look.Fields.size() + 32);
@@ -353,7 +353,8 @@ TEST(ReplicationCodec, DeltaApplicationConvergesOnTheAuthorityState)
         authority.Pitch = std::sin(static_cast<float>(tick) * 0.2f);
         ReplicationSnapToWire(look, MutableBytesOf(authority));
 
-        RoundTrip(look, BytesOf(authority), BytesOf(baseline), MutableBytesOf(client));
+        RoundTrip(look, BytesOf(authority), BytesOf(baseline), MutableBytesOf(client),
+                  false);
 
         ASSERT_FLOAT_EQ(client.Yaw, authority.Yaw) << "tick " << tick;
         ASSERT_FLOAT_EQ(client.Pitch, authority.Pitch) << "tick " << tick;
@@ -390,6 +391,31 @@ TEST(ReplicationCodec, OwnerOnlyFieldsAreWithheldFromOtherPeers)
     EXPECT_FLOAT_EQ(toOther.Private, -1.0f)
         << "an owner-only field must not reach a peer that does not own the entity";
     EXPECT_EQ(otherBits, 2u + 32u) << "and must not cost bits either";
+}
+
+// A player's view has to follow their mouse now, not at the end of a round
+// trip, so the authority never sends an owner its own aim -- the owner's local
+// answer is always fresher than the echo.
+TEST(ReplicationCodec, TheOwnerIsNotSentItsOwnAim)
+{
+    const ReplicationLayout layout = EngineLayout();
+    const ReplicatedComponent& look = LookComponent(layout);
+
+    const LookOrientation authority{ .Yaw = 9.0f, .Pitch = 1.0f };
+    LookOrientation owner{ .Yaw = 1.5f, .Pitch = -0.5f };
+    const LookOrientation before = owner;
+    const std::size_t ownerBits =
+        RoundTrip(look, BytesOf(authority), {}, MutableBytesOf(owner), true);
+
+    EXPECT_FLOAT_EQ(owner.Yaw, before.Yaw)
+        << "the owner's own aim must not be overwritten by the echo";
+    EXPECT_FLOAT_EQ(owner.Pitch, before.Pitch);
+    EXPECT_EQ(ownerBits, look.Fields.size()) << "and it must not cost bits";
+
+    LookOrientation spectator{};
+    RoundTrip(look, BytesOf(authority), {}, MutableBytesOf(spectator), false);
+    EXPECT_FLOAT_EQ(spectator.Yaw, 9.0f)
+        << "everyone else still has to see where the player is aiming";
 }
 
 //=============================================================================
@@ -482,7 +508,7 @@ TEST(ReplicationCodec, EveryEngineComponentRoundTripsFromDefaults)
 
         std::array<std::byte, kScratchBytes> scratch{};
         NetBitWriter writer(scratch);
-        ASSERT_TRUE(ReplicationEncodeComponent(component, current, {}, true, writer))
+        ASSERT_TRUE(ReplicationEncodeComponent(component, current, {}, false, writer))
             << component.Name;
         ASSERT_LE(writer.BitsWritten(), ReplicationMaxComponentBits(component))
             << component.Name << " exceeded its own stated maximum";

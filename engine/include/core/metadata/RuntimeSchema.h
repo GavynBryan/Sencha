@@ -68,6 +68,7 @@ struct RuntimeField
     // that does not replicate ignores all three.
     FieldQuantization Quantization{};
     bool OwnerOnly = false;
+    bool OwnerLocal = false;
     bool LocalOnly = false;
 };
 
@@ -121,6 +122,7 @@ namespace RuntimeSchemaDetail
         // inherits; otherwise the ancestor's stands.
         FieldQuantization          Quantization{};
         bool                       OwnerOnly = false;
+        bool                       OwnerLocal = false;
         bool                       LocalOnly = false;
 
         template <typename FieldT, typename M>
@@ -136,10 +138,12 @@ namespace RuntimeSchemaDetail
             const FieldQuantization quantization =
                 field.Quantization.IsQuantized() ? field.Quantization : Quantization;
             const bool ownerOnly = OwnerOnly || field.IsOwnerOnly;
+            const bool ownerLocal = OwnerLocal || field.IsOwnerLocal;
             const bool localOnly = LocalOnly || field.IsLocalOnly;
             const auto annotate = [&](RuntimeField& out) {
                 out.Quantization = quantization;
                 out.OwnerOnly = ownerOnly;
+                out.OwnerLocal = ownerLocal;
                 out.LocalOnly = localOnly;
             };
 
@@ -177,7 +181,8 @@ namespace RuntimeSchemaDetail
 
             if constexpr (HasTypeSchema<MemberType>)
             {
-                Collector<Root> sub{ Out, Base, name, quantization, ownerOnly, localOnly };
+                Collector<Root> sub{ Out, Base, name, quantization, ownerOnly, ownerLocal,
+                                     localOnly };
                 VisitSchema<TypeSchema<MemberType>>(member, sub);
             }
             else if constexpr (IsStrongId<MemberType>::value)

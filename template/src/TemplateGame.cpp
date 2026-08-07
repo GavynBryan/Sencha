@@ -590,6 +590,19 @@ struct CharacterInputSystem
                 if (!entityTags[index].HasExact(tags->Controlled))
                     continue;
 
+                // Local input steers what this machine controls and nothing
+                // else. An entity a peer owns is steered by that peer's
+                // commands; without this, a host's keys would write intent
+                // onto every pawn in the session. The local-control mark is
+                // the exception that keeps a client steering its own pawn,
+                // which carries its owner id.
+                const EntityId steered = view.Entity(index);
+                if (world.HasComponent<NetOwner>(steered)
+                    && !world.HasComponent<LocalLookControl>(steered))
+                {
+                    continue;
+                }
+
                 const Quatf frame = Quatf::FromAxisAngle(
                     Vec3d::Up(), orientations[index].Yaw);
                 Vec3d wish =
@@ -919,6 +932,27 @@ private:
             {
                 world.RemoveComponent<LocalLookControl>(previous);
                 world.DestroyEntity(previous);
+            }
+
+            // What a replicated pawn arrives without, and what this machine
+            // needs to turn a player's input into a request. All of it is
+            // local scratch: the authority has its own copies and simulates
+            // from them, and none of this ever leaves here.
+            //
+            // Without them the input system skips this pawn entirely -- it
+            // steers whatever carries an intent, a Controlled tag, and an
+            // orientation -- and every command would carry zero.
+            if (!world.HasComponent<MovementIntent>(mine))
+                world.AddComponent<MovementIntent>(mine, MovementIntent{});
+            if (!world.HasComponent<GameplayTagContainer>(mine))
+            {
+                GameplayTagContainer tags{};
+                if (const MovementTags* movement =
+                        world.TryGetResource<MovementTags>())
+                {
+                    tags.Grant(movement->Controlled);
+                }
+                world.AddComponent<GameplayTagContainer>(mine, tags);
             }
 
             AttachLocalPlayer(world, mine, Log());

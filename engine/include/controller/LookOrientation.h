@@ -53,11 +53,12 @@ struct TypeSchema<LookOrientation>
             // angle folded into a circle -- so a fixed quantization range would
             // clamp a player who kept turning one way. It ships at full width
             // until the codec can carry a wrapping angle.
-            MakeField("yaw", &LookOrientation::Yaw),
+            MakeField("yaw", &LookOrientation::Yaw).OwnerLocal(),
             // Pitch is bounded by the limits below, which are stricter than
             // this range, so nothing here can clamp.
             MakeField("pitch", &LookOrientation::Pitch)
-                .Quantize(-1.5707964f, 1.5707964f, 16),
+                .Quantize(-1.5707964f, 1.5707964f, 16)
+                .OwnerLocal(),
             // How far this thing can look is a property of the thing, identical
             // on every machine that loaded it. Sending it every tick would be
             // sending a constant.
