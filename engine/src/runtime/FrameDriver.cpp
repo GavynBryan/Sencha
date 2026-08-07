@@ -8,9 +8,11 @@ const char* ToString(FramePhase phase)
     case FramePhase::ResolveLifecycle: return "ResolveLifecycle";
     case FramePhase::RebuildGraphics: return "RebuildGraphics";
     case FramePhase::DrainAsyncTasks: return "DrainAsyncTasks";
+    case FramePhase::PumpNet: return "PumpNet";
     case FramePhase::ZoneResidency: return "ZoneResidency";
     case FramePhase::ScheduleTicks: return "ScheduleTicks";
     case FramePhase::Simulate: return "Simulate";
+    case FramePhase::FlushNet: return "FlushNet";
     case FramePhase::Update: return "Update";
     case FramePhase::ExtractRenderPacket: return "ExtractRenderPacket";
     case FramePhase::Render: return "Render";
@@ -85,6 +87,7 @@ void FrameDriver::StepOnce()
     InvokePhase(FramePhase::ResolveLifecycle, ctx);
     InvokePhase(FramePhase::RebuildGraphics, ctx);
     InvokePhase(FramePhase::DrainAsyncTasks, ctx);
+    InvokePhase(FramePhase::PumpNet, ctx);
     InvokePhase(FramePhase::ZoneResidency, ctx);
     InvokePhase(FramePhase::ScheduleTicks, ctx);
 
@@ -109,6 +112,8 @@ void FrameDriver::StepOnce()
     }
     ctx.IsFixedTick = false;
     if (Trace) Trace->EndPhase("Simulate");
+
+    InvokePhase(FramePhase::FlushNet, ctx);
 
     Runtime.BuildPresentationFrame();
     InvokePhase(FramePhase::Update, ctx);

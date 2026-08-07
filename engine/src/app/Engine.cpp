@@ -1,5 +1,6 @@
 #include <app/Engine.h>
 #include <app/EngineConsoleBuiltins.h>
+#include <net/NetConsoleCommands.h>
 #include <app/Game.h>
 #include <audio/AudioService.h>
 #include <audio/AudioSystem.h>
@@ -67,6 +68,7 @@ bool Engine::Initialize()
     DebugState = std::make_unique<DebugService>(logging, debugLog);
     ConsoleState = std::make_unique<ConsoleService>();
     RegisterEngineConsoleBuiltins(*ConsoleState, *DebugState);
+    RegisterNetConsoleCommands(ConsoleState->Registry(), *this);
     if (Configuration.Console.OpenOnStart)
         DebugState->Open();
     EngineSystems.Register<DefaultRenderPipeline>(
@@ -83,6 +85,7 @@ bool Engine::Initialize()
     EngineSystems.Register<CaptionSystem>(CaptionState.get(), AudioState.get());
     auto failInitialize = [this]() {
         EngineSystems.Shutdown();
+        NetState.reset();
         FrameDriverInstance.reset();
         TaskQueueInstance.reset();
         FramePoolInstance.reset();
@@ -191,6 +194,9 @@ void Engine::Shutdown()
     // the unified world and backend services are still alive, then join task
     // lanes before destroying the entity world they may have targeted.
     EngineSystems.Shutdown();
+    // Before the frame driver: the net phases hold a pointer to this, and a
+    // session outliving the loop that pumps it is a session nothing drains.
+    NetState.reset();
     FrameDriverInstance.reset();
     TaskQueueInstance.reset();
     FramePoolInstance.reset();
@@ -360,6 +366,19 @@ const AsyncTaskQueue& Engine::Tasks() const
 {
     assert(TaskQueueInstance && "Engine::Tasks: valid only between Initialize and Shutdown");
     return *TaskQueueInstance;
+}
+
+NetSession* Engine::CreateNetSession(INetTransport& transport)
+{
+    if (NetState != nullptr)
+        return nullptr;
+    NetState = std::make_unique<NetSession>(transport);
+    return NetState.get();
+}
+
+void Engine::DestroyNetSession()
+{
+    NetState.reset();
 }
 
 DefaultRenderPipeline* Engine::GetRenderPipeline()
