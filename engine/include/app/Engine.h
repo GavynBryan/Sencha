@@ -23,6 +23,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -80,6 +81,23 @@ public:
     // baselines, or a client's map of what it has been told about. Reset with
     // the session, because all of it is session-transient.
     [[nodiscard]] ReplicationRuntime& Replication() { return ReplicationState; }
+
+    // Channel payloads from the most recent pump that replication did not
+    // claim: the game's own traffic, commands above all. Cleared at the start
+    // of each pump, so a system that runs in the frame sees exactly that
+    // frame's. The engine deliberately does not interpret any of it -- what a
+    // command means is the game's business.
+    [[nodiscard]] std::span<const NetSession::Delivery> NetDeliveries() const
+    {
+        return PendingNetDeliveries;
+    }
+
+    // Called by the net pump phase only.
+    void RetainNetDelivery(const NetSession::Delivery& delivery)
+    {
+        PendingNetDeliveries.push_back(delivery);
+    }
+    void ClearNetDeliveries() { PendingNetDeliveries.clear(); }
 
     [[nodiscard]] EngineConfig& Config() { return Configuration; }
     [[nodiscard]] const EngineConfig& Config() const
@@ -246,6 +264,7 @@ private:
     WorldComponentSchema RuntimeComponentSchemaState;
     ReplicationLayout ReplicationLayoutState;
     ReplicationRuntime ReplicationState;
+    std::vector<NetSession::Delivery> PendingNetDeliveries;
     std::unique_ptr<RuntimeWorld> RuntimeWorldState;
     RuntimeFrameLoop RuntimeLoop;
     ConsoleStartupScript StartupScript;

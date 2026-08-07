@@ -87,6 +87,7 @@ void Engine::RegisterNetFramePhases()
         // long a peer has actually been silent; a paused or time-scaled
         // simulation must not stretch a peer's timeout along with it.
         const double now = ctx.Runtime->GetCurrentFrame().WallTime.UnscaledElapsed;
+        engine.ClearNetDeliveries();
         const std::vector<NetSession::Delivery> deliveries = session->Pump(now);
 
         // Logged rather than left to the console: a headless host has nobody
@@ -132,12 +133,24 @@ void Engine::RegisterNetFramePhases()
         // outside any query -- applying one creates and destroys entities.
         // Deliveries must be drained whatever this process does with them, or
         // the transport's buffers and the peers' channel state never advance.
-        if (!isAdmitted)
+        // A host receives commands but never snapshots, so it must not stop
+        // here; only a client that is not yet admitted has nothing to do.
+        if (isClient && !isAdmitted)
             return;
 
         ::World& world = engine.World().Entities();
         for (const NetSession::Delivery& delivery : deliveries)
         {
+            // Anything that is not a snapshot is the game's; it is kept for
+            // this frame rather than interpreted here.
+            if (delivery.Payload.empty()
+                || static_cast<NetPayloadKind>(delivery.Payload[0])
+                       != NetPayloadKind::Snapshot)
+            {
+                engine.RetainNetDelivery(delivery);
+                continue;
+            }
+
             const SnapshotApplyResult applied =
                 engine.Replication().Apply(delivery.Payload, world,
                                            engine.RuntimeComponents(),

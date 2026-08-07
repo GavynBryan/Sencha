@@ -44,6 +44,7 @@
 #include <movement/MovementRegistration.h>
 #include <net/NetReplicationComponents.h>
 #include <net/NetSession.h>
+#include <net/ReplicationCodec.h>
 #include <movement/MovementTags.h>
 #include <physics/CollisionShapeCache.h>
 #include <physics/CharacterMoverPool.h>
@@ -69,6 +70,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -79,6 +81,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace
@@ -609,6 +612,85 @@ struct CharacterInputSystem
 };
 
 //=============================================================================
+// PlayerCommand
+//
+// One tick of what a player is asking for: where they are aiming and which way
+// they want to move. The shape is the usercmd every authoritative shooter has
+// had since Quake, and for the same reason -- it is the smallest thing a
+// server can simulate from that a client cannot lie its way past. Nothing here
+// is state: the authority decides where the player ends up.
+//
+// WishDir travels already framed against the player's own view because the
+// game is what knows how a camera frames movement. Its length is clamped on
+// arrival, so a client claiming a longer vector gets the same speed as
+// everyone else; the authority's own profile decides how fast that is.
+//=============================================================================
+struct PlayerCommand
+{
+    std::uint64_t Tick = 0;
+    float Yaw = 0.0f;
+    float Pitch = 0.0f;
+    // Planar, so only two components travel. The vertical one is not a thing a
+    // player asks for; it is what gravity and the mover decide.
+    float WishX = 0.0f;
+    float WishZ = 0.0f;
+};
+
+void EncodePlayerCommand(const PlayerCommand& command, NetBitWriter& writer)
+{
+    writer.WriteU64(command.Tick);
+    writer.WriteFloat(command.Yaw);
+    writer.WriteFloat(command.Pitch);
+    writer.WriteFloat(command.WishX);
+    writer.WriteFloat(command.WishZ);
+}
+
+bool DecodePlayerCommand(NetBitReader& reader, PlayerCommand& out)
+{
+    return reader.ReadU64(out.Tick)
+        && reader.ReadFloat(out.Yaw)
+        && reader.ReadFloat(out.Pitch)
+        && reader.ReadFloat(out.WishX)
+        && reader.ReadFloat(out.WishZ);
+}
+
+// Everything a command carries is applied through this, on the authority, so
+// there is one place that decides what a client is allowed to ask for.
+void ApplyPlayerCommand(World& world, EntityId pawn, const PlayerCommand& command)
+{
+    if (!world.IsAlive(pawn))
+        return;
+
+    // Non-finite values would poison the simulation on arrival, and they are
+    // the first thing anyone sends when probing a server.
+    const bool finite = std::isfinite(command.Yaw) && std::isfinite(command.Pitch)
+                     && std::isfinite(command.WishX) && std::isfinite(command.WishZ);
+    if (!finite)
+        return;
+
+    if (LookOrientation* look = world.TryGet<LookOrientation>(pawn))
+    {
+        look->Yaw = command.Yaw;
+        look->Pitch = std::clamp(command.Pitch, look->MinPitch, look->MaxPitch);
+    }
+
+    if (MovementIntent* intent = world.TryGet<MovementIntent>(pawn))
+    {
+        Vec3d wish{ command.WishX, 0.0f, command.WishZ };
+        const float length = std::sqrt(wish.X * wish.X + wish.Z * wish.Z);
+        // Clamped, never normalized: a partly-deflected stick is a real request
+        // for less than full speed, and scaling it up would be the server
+        // inventing input nobody gave.
+        if (length > 1.0f)
+        {
+            wish.X /= length;
+            wish.Z /= length;
+        }
+        intent->WishDir = wish;
+    }
+}
+
+//=============================================================================
 // SessionPlayerSystem
 //
 // Keeps the set of player pawns in step with the set of peers, from whichever
@@ -632,6 +714,7 @@ struct SessionPlayerSystem
     // than every frame.
     EntityId LocalPawn;
     std::unordered_map<std::uint32_t, EntityId> PeerPawns;
+    std::unordered_set<std::uint32_t> CommandedPeers;
 
     void FrameUpdate(FrameUpdateContext& ctx)
     {
@@ -643,9 +726,15 @@ struct SessionPlayerSystem
             return;
 
         if (session->Role() == NetSessionRole::Host)
+        {
             ServePeers(world, *session);
+            ReceiveCommands(world);
+        }
         else if (session->Role() == NetSessionRole::Client && session->IsConnected())
+        {
             AdoptReplicatedPawns(world, session->LocalPeerId().Value);
+            SendCommand(world, *session);
+        }
     }
 
 private:
@@ -712,6 +801,72 @@ private:
             Log().Info("TemplateGame: removed the pawn for peer {}", it->first);
             it = PeerPawns.erase(it);
         }
+    }
+
+    // The authority reads what its peers asked for and applies it to their own
+    // pawn and no one else's. Which pawn a peer owns is the authority's record,
+    // never something the message claims, so a peer cannot drive another's.
+    void ReceiveCommands(World& world)
+    {
+        for (const NetSession::Delivery& delivery : Owner->NetDeliveries())
+        {
+            if (delivery.Payload.size() < 2
+                || static_cast<NetPayloadKind>(delivery.Payload[0])
+                       != NetPayloadKind::Command)
+            {
+                continue;
+            }
+
+            const auto pawn = PeerPawns.find(delivery.From.Value);
+            if (pawn == PeerPawns.end())
+                continue;
+
+            NetBitReader reader(std::span<const std::byte>(delivery.Payload).subspan(1));
+            PlayerCommand command;
+            if (!DecodePlayerCommand(reader, command))
+                continue;
+            ApplyPlayerCommand(world, pawn->second, command);
+
+            // Once per peer: enough to show the loop closed, quiet enough to
+            // leave in. A rate every tick belongs on the stats panel.
+            if (CommandedPeers.insert(delivery.From.Value).second)
+            {
+                Log().Info("TemplateGame: first command from peer {}",
+                           delivery.From.Value);
+            }
+        }
+    }
+
+    // A client asks; it does not decide. Its own pawn is simulated on the
+    // authority, so what leaves here is this tick's request and nothing about
+    // where the player thinks they are.
+    void SendCommand(World& world, NetSession& session)
+    {
+        if (!LocalPawn.IsValid() || !world.IsAlive(LocalPawn))
+            return;
+
+        PlayerCommand command;
+        if (const LookOrientation* look = world.TryGet<LookOrientation>(LocalPawn))
+        {
+            command.Yaw = look->Yaw;
+            command.Pitch = look->Pitch;
+        }
+        if (const MovementIntent* intent = world.TryGet<MovementIntent>(LocalPawn))
+        {
+            command.WishX = intent->WishDir.X;
+            command.WishZ = intent->WishDir.Z;
+        }
+
+        std::array<std::byte, 64> scratch{};
+        scratch[0] = static_cast<std::byte>(NetPayloadKind::Command);
+        NetBitWriter writer(std::span<std::byte>(scratch).subspan(1));
+        EncodePlayerCommand(command, writer);
+        if (writer.Overflowed())
+            return;
+
+        (void)session.Send(session.LocalPeerId(), NetChannelKind::UnreliableSequenced,
+                           std::span<const std::byte>(scratch).subspan(
+                               0, 1 + writer.BytesWritten()));
     }
 
     void AdoptReplicatedPawns(World& world, std::uint32_t self)
