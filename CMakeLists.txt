@@ -59,6 +59,11 @@ add_test(NAME physics_isolation
 # consumes them.
 include("${CMAKE_SOURCE_DIR}/cmake/SenchaOptions.cmake")
 
+# sencha_warnings(): the first-party diagnostic set. Included here so every
+# subdirectory can call it, and after SenchaOptions.cmake because it reads
+# SENCHA_WARNINGS_AS_ERRORS.
+include("${CMAKE_SOURCE_DIR}/cmake/SenchaWarnings.cmake")
+
 if(SENCHA_ENABLE_TSAN AND SENCHA_ENABLE_ASAN)
     message(FATAL_ERROR "SENCHA_ENABLE_TSAN and SENCHA_ENABLE_ASAN are mutually exclusive")
 endif()

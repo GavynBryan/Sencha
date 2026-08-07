@@ -237,12 +237,7 @@ target_include_directories(sencha_engine
 target_link_libraries(sencha_engine PUBLIC SDL3::SDL3 ${CMAKE_DL_LIBS})
 target_compile_features(sencha_engine PUBLIC cxx_std_20)
 
-# Diagnostics: PRIVATE so they apply to the engine build without leaking onto
-# consumers. Not -Werror yet — the warning set still needs triage.
-target_compile_options(sencha_engine PRIVATE
-    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4;/permissive->
-)
+sencha_warnings(sencha_engine)
 
 if(SENCHA_ENABLE_COOK)
     target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_COOK)
