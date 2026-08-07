@@ -121,7 +121,7 @@ bool RuntimeWorld::CancelZoneImport(ZoneId zone)
 
     const StoragePartitionId partition = record->Partition;
     (void)Entities_.DestroyPartition(partition);
-    const std::size_t erased = PartitionByZone_.erase(zone);
+    [[maybe_unused]] const std::size_t erased = PartitionByZone_.erase(zone);
     assert(erased == 1 && "Cancelled import was missing from ZoneId index");
     ZonesByPartition_[partition.Value].reset();
     ReleasePartition(partition);
@@ -133,7 +133,7 @@ RuntimeZoneRecord& RuntimeWorld::AttachZone(
     ZoneParticipation participation)
 {
     RuntimeZoneRecord& record = BeginZoneImport(zone);
-    const bool published = PublishZone(zone, participation);
+    [[maybe_unused]] const bool published = PublishZone(zone, participation);
     assert(published && "AttachZone failed to publish a new import partition");
     return record;
 }
@@ -364,7 +364,7 @@ void RuntimeWorld::FinalizeResidencyProcessing()
         // hooks then run through the ordinary World destruction path while
         // simulation-scoped World resources and zone resources are still alive.
         (void)Entities_.DestroyPartition(change.Partition);
-        const std::size_t erased = PartitionByZone_.erase(change.Zone);
+        [[maybe_unused]] const std::size_t erased = PartitionByZone_.erase(change.Zone);
         assert(erased == 1 && "Detaching zone was missing from ZoneId index");
         ZonesByPartition_[change.Partition.Value].reset();
         ReleasePartition(change.Partition);

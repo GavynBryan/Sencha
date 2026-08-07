@@ -140,7 +140,7 @@ public:
         assert(Sealed_ && "Apply requires a sealed WorldComponentSchema");
         for (std::size_t index = 0; index < Entries_.size(); ++index)
         {
-            const ComponentId assigned = Entries_[index].Register(world);
+            [[maybe_unused]] const ComponentId assigned = Entries_[index].Register(world);
             assert(assigned == static_cast<ComponentId>(index)
                    && "World component registration order differs from sealed schema");
         }

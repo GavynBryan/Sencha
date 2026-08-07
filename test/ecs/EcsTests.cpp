@@ -163,7 +163,7 @@ TEST_F(EcsTest, EntityCountTracksLiveEntities)
 
 TEST_F(EcsTest, DestroyDuringActiveQueryAssertsInDebug)
 {
-    EntityId e = world.CreateEntity();
+    [[maybe_unused]] EntityId e = world.CreateEntity();
     world.PushQueryScope();
 #ifdef NDEBUG
     GTEST_SKIP() << "Assertion only fires in debug builds.";
@@ -233,7 +233,7 @@ TEST_F(EcsTest, TryGetReturnsNullForDeadEntity)
 
 TEST_F(EcsTest, AddComponentDuringActiveQueryAssertsInDebug)
 {
-    EntityId e = world.CreateEntity();
+    [[maybe_unused]] EntityId e = world.CreateEntity();
     world.PushQueryScope();
 #ifdef NDEBUG
     GTEST_SKIP() << "Assertion only fires in debug builds.";
@@ -741,7 +741,7 @@ TEST_F(EcsTest, OnRemoveHook_FiresOnCommandBufferFlush)
 
 TEST_F(EcsTest, LifecycleHook_StructuralMutationAssertsInDebug)
 {
-    EntityId e = world.CreateEntity();
+    [[maybe_unused]] EntityId e = world.CreateEntity();
 #ifdef NDEBUG
     GTEST_SKIP() << "Assertion only fires in debug builds.";
 #else
@@ -788,7 +788,7 @@ TEST_F(EcsTest, MultipleResourceTypes)
 
 TEST_F(EcsTest, Invariant_StructuralChangeDuringQueryFails)
 {
-    EntityId e = world.CreateEntity();
+    [[maybe_unused]] EntityId e = world.CreateEntity();
     world.PushQueryScope();
 #ifdef NDEBUG
     GTEST_SKIP() << "Assertion only fires in debug builds.";

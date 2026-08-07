@@ -7,7 +7,7 @@ namespace
 {
     // Debug wrapper enforcing the no-throw contract for work and commit.
     template <typename Fn, typename... Args>
-    auto RunGuarded(const char* stage, Fn&& fn, Args&&... args)
+    auto RunGuarded([[maybe_unused]] const char* stage, Fn&& fn, Args&&... args)
     {
 #ifndef NDEBUG
         try
