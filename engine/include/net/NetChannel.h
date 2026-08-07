@@ -52,7 +52,7 @@ inline constexpr std::size_t kNetPacketHeaderBytes = 10;
 // delivery the moment a message spanned more than one datagram, because the
 // fragments consume sequences that never deliver anything of their own.
 // messageId(2) + fragmentIndex(1) + fragmentCount(1)
-inline constexpr std::size_t kNetReliableHeaderBytes = 4:point_up:;
+inline constexpr std::size_t kNetReliableHeaderBytes = 4;
 
 inline constexpr std::size_t kNetMaxPayloadBytes =
     kNetMaxDatagramBytes - kNetPacketHeaderBytes - kNetAeadTagBytes;
