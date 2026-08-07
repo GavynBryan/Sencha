@@ -4,6 +4,7 @@
 #include <audio/AudioSourceComponent.h>
 #include <components/CameraComponent.h>
 #include <controller/LookOrientation.h>
+#include <net/NetReplicationComponents.h>
 #include <render/IrradianceVolumeComponent.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
@@ -59,7 +60,8 @@ using EngineSceneComponents = std::tuple<
 //=============================================================================
 using EngineReplicatedComponents = std::tuple<
     LocalTransform,
-    LookOrientation>;
+    LookOrientation,
+    NetOwner>;
 
 template <typename T>
 struct ComponentTag

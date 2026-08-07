@@ -9,6 +9,7 @@
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <movement/MovementComponents.h>
 #include <movement/MovementIntent.h>
+#include <net/NetReplicationComponents.h>
 #include <net/ReplicationLayout.h>
 #include <physics/components/CharacterController.h>
 #include <physics/components/CharacterMoverLink.h>
@@ -77,6 +78,13 @@ void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)
     // Per-tick pose history for entities that opt into render interpolation.
     // Derived and runtime-only, like WorldTransform: never serialized.
     schema.Add<WorldTransformHistory>();
+
+    // Session data: which entities travel and whose inputs drive them. Present
+    // in every build because a World's component vocabulary is fixed before any
+    // session can exist; they cost a column each and nothing else when no
+    // session is ever created.
+    schema.Add<NetReplicated>();
+    schema.Add<NetOwner>();
 }
 
 void RegisterEngineReplicatedComponents(ReplicationLayout& layout)

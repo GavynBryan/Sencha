@@ -12,15 +12,18 @@
 #include <ecs/WorldComponentSchema.h>
 #include <effects/ActiveEffect.h>
 #include <gameplay_tags/GameplayTagContainer.h>
+#include <controller/LookOrientation.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MovementComponents.h>
 #include <movement/MovementIntent.h>
+#include <net/NetReplicationComponents.h>
 #include <physics/components/CharacterController.h>
 #include <physics/components/CharacterMoverLink.h>
 #include <physics/components/Collider.h>
 #include <physics/components/PhysicsBodyLink.h>
 #include <physics/components/RigidBody.h>
 #include <render/IrradianceVolumeComponent.h>
+#include <world/transform/TransformHistory.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
 #include <render/StaticMeshComponent.h>
@@ -252,7 +255,7 @@ TEST(RuntimeComponentSchema, EngineSchemaUsesCanonicalComponentIds)
     RegisterEngineRuntimeComponents(schema);
     schema.Seal();
 
-    EXPECT_EQ(schema.Size(), 41u);
+    EXPECT_EQ(schema.Size(), 43u);
 
     World world;
     schema.Apply(world);
@@ -295,6 +298,11 @@ TEST(RuntimeComponentSchema, EngineSchemaUsesCanonicalComponentIds)
     ExpectComponentId<ClingSession>(world, 35);
     ExpectComponentId<FlightSession>(world, 36);
     ExpectComponentId<CameraRig>(world, 37);
+    ExpectComponentId<LookOrientation>(world, 38);
+    ExpectComponentId<LocalLookControl>(world, 39);
+    ExpectComponentId<WorldTransformHistory>(world, 40);
+    ExpectComponentId<NetReplicated>(world, 41);
+    ExpectComponentId<NetOwner>(world, 42);
 }
 
 TEST(RuntimeComponentSchema, EngineOwnsUnifiedWorldBeforeGameStart)
@@ -315,9 +323,9 @@ TEST(RuntimeComponentSchema, EngineOwnsUnifiedWorldBeforeGameStart)
     EXPECT_TRUE(game.AppliedGameComponent);
     EXPECT_TRUE(game.SawEngineOwnedWorld);
     EXPECT_TRUE(game.EngineOwnedEntityWasPersistent);
-    EXPECT_EQ(game.SchemaSize, 42u);
-    EXPECT_EQ(game.AppliedGameComponentId, 41u);
-    EXPECT_EQ(game.EngineOwnedGameComponentId, 41u);
+    EXPECT_EQ(game.SchemaSize, 44u);
+    EXPECT_EQ(game.AppliedGameComponentId, 43u);
+    EXPECT_EQ(game.EngineOwnedGameComponentId, 43u);
     EXPECT_EQ(StartupGameRemoveCalls, 1);
 }
 
