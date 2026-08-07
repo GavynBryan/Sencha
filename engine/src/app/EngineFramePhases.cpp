@@ -6,6 +6,9 @@
 #include <runtime/FrameDriver.h>
 #include <world/RuntimeWorld.h>
 #include <world/transform/TransformHistory.h>
+#include <core/console/ConsoleService.h>
+#include <net/NetCVarSync.h>
+#include <net/NetConsoleCommands.h>
 #include <net/NetSession.h>
 #include <net/ReplicationSnapshot.h>
 #include <world/transform/TransformPropagation.h>
@@ -74,6 +77,7 @@ void Engine::RegisterNetFramePhases()
                     [&engine, wasClient = false, wasAdmitted = false](
                         PhaseContext& ctx) mutable {
         NetSession* session = engine.TryNet();
+        NetApplyConsoleAuthority(engine.Console().Registry(), session);
         if (session == nullptr)
         {
             // Destroyed via the console's own `disconnect`, which already
@@ -141,11 +145,28 @@ void Engine::RegisterNetFramePhases()
         ::World& world = engine.World().Entities();
         for (const NetSession::Delivery& delivery : deliveries)
         {
-            // Anything that is not a snapshot is the game's; it is kept for
-            // this frame rather than interpreted here.
-            if (delivery.Payload.empty()
-                || static_cast<NetPayloadKind>(delivery.Payload[0])
-                       != NetPayloadKind::Snapshot)
+            if (delivery.Payload.empty())
+                continue;
+
+            // A session-owned cvar arriving. Engine business rather than the
+            // game's, because the flag that says the session owns it is the
+            // console's own.
+            if (static_cast<NetPayloadKind>(delivery.Payload[0])
+                == NetPayloadKind::CVar)
+            {
+                NetCVarUpdate update;
+                if (!NetDecodeCVarUpdate(delivery.Payload, update)
+                    || !NetApplyCVarUpdate(engine.Console().Registry(), update))
+                {
+                    log.Warn("net: refused a cvar update from the authority");
+                }
+                continue;
+            }
+
+            // Anything else that is not a snapshot is the game's; it is kept
+            // for this frame rather than interpreted here.
+            if (static_cast<NetPayloadKind>(delivery.Payload[0])
+                != NetPayloadKind::Snapshot)
             {
                 engine.RetainNetDelivery(delivery);
                 continue;
@@ -181,6 +202,10 @@ void Engine::RegisterNetFramePhases()
             (void)engine.Replication().Publish(
                 *session, world, engine.ReplicatedComponents(),
                 world.CurrentFrame());
+            // Cheap when nothing changed: it compares what each peer was last
+            // told and sends only differences.
+            (void)engine.CVarPublisher().Publish(
+                *session, engine.Console().Registry());
         }
 
         session->Flush(ctx.Runtime->GetCurrentFrame().WallTime.UnscaledElapsed);
@@ -433,8 +458,21 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
         if (config.Runtime.TogglePauseOnF1
             && ctx.Input->ConsumeKeyPressed(SDL_SCANCODE_F1))
         {
+            // Routed through the console rather than set directly, so pausing
+            // obeys whatever the session decided about timescale. Solo is
+            // unchanged, a host pausing pauses the session, and a client is
+            // refused -- which is the correct answer to one player trying to
+            // stop everyone else's game.
             const bool wasPaused = ctx.Runtime->GetSimulationTimescale() == 0.0f;
-            ctx.Runtime->SetSimulationTimescale(wasPaused ? 1.0f : 0.0f);
+            const ConsoleResult set = engine.Console().Registry().SetCVar(
+                "time.timescale", wasPaused ? 1.0 : 0.0,
+                ConsoleValueSource{ "pause key" }, ConsolePhase::EngineReady);
+            if (!set.Succeeded())
+            {
+                engine.Logging().GetLogger<Engine>().Info(
+                    "pause: {}",
+                    set.Output.empty() ? "refused" : set.Output.front().Text);
+            }
         }
     });
 

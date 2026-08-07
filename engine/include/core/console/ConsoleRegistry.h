@@ -28,6 +28,18 @@ public:
                           ConsoleValueSource source,
                           ConsolePhase phase,
                           bool force = false);
+
+    // What a session lets this process change. Written by whoever owns the
+    // session and read on every set; the default is the single-player answer,
+    // under which nothing is restricted.
+    void SetAuthorityPolicy(const ConsoleAuthorityPolicy& policy)
+    {
+        Authority = policy;
+    }
+    [[nodiscard]] const ConsoleAuthorityPolicy& AuthorityPolicy() const
+    {
+        return Authority;
+    }
     ConsoleResult SetCVarFromString(std::string_view name,
                                     std::string_view value,
                                     ConsoleValueSource source,
@@ -58,6 +70,8 @@ public:
 
 private:
     friend class ConsoleOverrideScope;
+
+    ConsoleAuthorityPolicy Authority;
 
     struct CVarRecord
     {

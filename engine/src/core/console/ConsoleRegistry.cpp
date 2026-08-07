@@ -501,6 +501,30 @@ ConsoleResult ConsoleRegistry::SetRecord(CVarRecord& record,
         return Failure(ConsoleStatus::PhaseNotReady, "cvar is init-only: " + metadata.Name);
     }
 
+    // Session rules. All of this is inert outside a session, so a single-player
+    // game reaches none of it. `force` is the authority applying a value it
+    // already decided, and the sync path that carries one to a client; neither
+    // is a request from a player.
+    if (!force && Authority.InSession)
+    {
+        // Refused with the value that is actually in force, because "you may
+        // not set that" without saying what it is leaves a player guessing at
+        // the rules of the server they are on.
+        if (HasFlag(metadata.Flags, CVarFlags::Replicated) && !Authority.HasAuthority)
+        {
+            return Failure(ConsoleStatus::ValidationFailed,
+                           metadata.Name + " is set by the server (currently "
+                               + ToString(metadata.CurrentValue) + ")");
+        }
+        // Checked regardless of authority: a listen-server host must not be
+        // able to grant themselves what the other players cannot have.
+        if (HasFlag(metadata.Flags, CVarFlags::Cheat) && !Authority.CheatsEnabled)
+        {
+            return Failure(ConsoleStatus::ValidationFailed,
+                           metadata.Name + " is a cheat and net.cheats is off");
+        }
+    }
+
     CVarValidationResult validation = ValidateRangeAndEnum(metadata, value);
     if (!validation.Accepted)
         return Failure(ConsoleStatus::ValidationFailed,

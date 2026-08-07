@@ -17,3 +17,10 @@ class Engine;
 // module, so a player cannot type their way past the compatibility gate.
 //=============================================================================
 void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine);
+
+// Republishes what the session lets this process's console change. Called every
+// pump rather than only from the commands, because a role can end without one:
+// a timeout, a kick, or an authority that quit all drop a client back to
+// standalone, and its console has to stop being restricted when they do.
+class NetSession;
+void NetApplyConsoleAuthority(ConsoleRegistry& registry, const NetSession* session);

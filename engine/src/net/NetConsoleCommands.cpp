@@ -10,6 +10,7 @@
 #include <charconv>
 #include <memory>
 #include <string>
+#include <variant>
 
 namespace
 {
@@ -81,14 +82,62 @@ namespace
     }
 }
 
+void NetApplyConsoleAuthority(ConsoleRegistry& registry, const NetSession* session)
+{
+    ConsoleAuthorityPolicy policy;
+    if (session != nullptr && session->Role() != NetSessionRole::Standalone)
+    {
+        policy.InSession = true;
+        // A host holds authority the moment it binds; a client only once it is
+        // admitted, so a half-open connection does not silently unlock the
+        // console.
+        policy.HasAuthority = session->Role() == NetSessionRole::Host;
+        if (const CVarMetadata* cheats = registry.FindCVar("net.cheats"))
+        {
+            if (const bool* enabled = std::get_if<bool>(&cheats->CurrentValue))
+                policy.CheatsEnabled = *enabled;
+        }
+    }
+    registry.SetAuthorityPolicy(policy);
+}
+
 void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
 {
+    registry.RegisterCVar({
+        .Name = "net.cheats",
+        .Owner = "engine",
+        .Type = CVarType::Bool,
+        .DefaultValue = false,
+        .CurrentValue = false,
+        // Replicated so only the authority decides it, and Transient so a
+        // server that once enabled cheats does not quietly start that way
+        // again next launch.
+        .Flags = CVarFlags::Transient | CVarFlags::Replicated,
+        .Help = "Whether Cheat-flagged cvars may be changed during a session. "
+                "Off blocks them for everyone including the host.",
+        .Source = { "engine defaults" },
+    });
+
+    registry.RegisterCVar({
+        .Name = "net.max_peers",
+        .Owner = "engine",
+        .Type = CVarType::Int,
+        .DefaultValue = static_cast<std::int64_t>(4),
+        .CurrentValue = static_cast<std::int64_t>(4),
+        .Flags = CVarFlags::Archive,
+        .Help = "Peers a hosted session admits. Tuned for four; the design is "
+                "validated to eight.",
+        .Source = { "engine defaults" },
+        .Min = static_cast<std::int64_t>(1),
+        .Max = static_cast<std::int64_t>(kNetMaxPeersSupported),
+    });
+
     registry.RegisterCommand({
         .Name = "host",
         .Owner = "engine",
         .Usage = "host [port]",
         .Help = "Start hosting a session on this machine. Default port 27500.",
-        .Callback = [&engine](ConsoleExecutionContext&,
+        .Callback = [&engine, &registry](ConsoleExecutionContext&,
                               std::span<const std::string> args) {
             ConsoleResult result;
             if (args.size() > 1)
@@ -121,6 +170,12 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
                 result.Status = ConsoleStatus::InvalidArguments;
                 result.Error("could not bind port " + std::to_string(port));
                 return result;
+            }
+
+            if (const CVarMetadata* cap = registry.FindCVar("net.max_peers"))
+            {
+                if (const auto* value = std::get_if<std::int64_t>(&cap->CurrentValue))
+                    session->SetMaxPeers(static_cast<std::size_t>(*value));
             }
 
             result.Info("hosting on " + NetAddressToString(session->LocalAddress()));

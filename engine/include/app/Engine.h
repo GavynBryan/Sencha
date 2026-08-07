@@ -8,6 +8,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <ecs/WorldComponentSchema.h>
 #include <net/ReplicationLayout.h>
+#include <net/NetCVarSync.h>
 #include <net/ReplicationRuntime.h>
 #include <profiling/CpuScopeTimings.h>
 #include <profiling/RenderInstrumentation.h>
@@ -81,6 +82,9 @@ public:
     // baselines, or a client's map of what it has been told about. Reset with
     // the session, because all of it is session-transient.
     [[nodiscard]] ReplicationRuntime& Replication() { return ReplicationState; }
+    // Which session-owned cvar values each peer has been told. Reset with the
+    // session like everything else that is session-transient.
+    [[nodiscard]] NetCVarPublisher& CVarPublisher() { return CVarPublisherState; }
 
     // Channel payloads from the most recent pump that replication did not
     // claim: the game's own traffic, commands above all. Cleared at the start
@@ -265,6 +269,7 @@ private:
     ReplicationLayout ReplicationLayoutState;
     ReplicationRuntime ReplicationState;
     std::vector<NetSession::Delivery> PendingNetDeliveries;
+    NetCVarPublisher CVarPublisherState;
     std::unique_ptr<RuntimeWorld> RuntimeWorldState;
     RuntimeFrameLoop RuntimeLoop;
     ConsoleStartupScript StartupScript;

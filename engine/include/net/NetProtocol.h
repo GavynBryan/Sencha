@@ -71,6 +71,10 @@ enum class NetPayloadKind : std::uint8_t
     // Client to authority: the tick's input record. Reserved here so the two
     // directions cannot collide as the format grows.
     Command = 2,
+    // Authority to client: the value of one session-owned cvar. Rides the
+    // reliable channel, because unlike a snapshot there is no next one to
+    // supersede a lost update.
+    CVar = 3,
 };
 
 // What a decode can go wrong as. A peer's strike count keys on these, so they

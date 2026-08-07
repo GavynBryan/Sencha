@@ -179,7 +179,11 @@ namespace EngineConsoleBuiltins
             .Type = CVarType::Double,
             .DefaultValue = 1.0,
             .CurrentValue = static_cast<double>(runtimeLoop.GetSimulationTimescale()),
-            .Flags = CVarFlags::Transient,
+            // Replicated because a per-client timescale in a session is a
+            // desync by construction: everyone's simulation has to advance at
+            // the same rate as the authority's or they are watching different
+            // worlds. Outside a session this is unchanged.
+            .Flags = CVarFlags::Transient | CVarFlags::Replicated,
             .Help = "Scales wall time entering the tick accumulator: 0.5 is "
                     "half speed, 2 is double, 0 pauses. Tick delta is "
                     "unchanged, so per-tick behavior stays deterministic.",
@@ -197,7 +201,11 @@ namespace EngineConsoleBuiltins
             .Type = CVarType::Double,
             .DefaultValue = runtimeConfig.FixedTickRate,
             .CurrentValue = runtimeConfig.FixedTickRate,
-            .Flags = CVarFlags::Archive | CVarFlags::InitOnly,
+            // Verified at the handshake rather than synchronized: a tick rate
+            // cannot change live, so a mismatch refuses admission instead of
+            // growing sync machinery. Replicated marks it as the session's to
+            // decide for the same reason the gate checks it.
+            .Flags = CVarFlags::Archive | CVarFlags::InitOnly | CVarFlags::Replicated,
             .Help = "Fixed simulation tick rate. Init-only once systems are registered.",
             .Source = { "engine config" },
             .Min = 0.001,
