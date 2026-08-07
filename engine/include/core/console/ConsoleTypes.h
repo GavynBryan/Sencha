@@ -84,7 +84,7 @@ using CVarValue = std::variant<bool, std::int64_t, double, std::string>;
 struct ConsoleValueSource
 {
     std::string Description = "default";
-    std::string File;
+    std::string File{};
     int Line = 0;
     int Column = 0;
 };
@@ -152,29 +152,29 @@ using CVarChangeCallback = std::function<void(const CVarChangeContext&)>;
 
 struct CVarMetadata
 {
-    std::string Name;
+    std::string Name{};
     std::string Owner = "engine";
     CVarType Type = CVarType::String;
     CVarValue DefaultValue = std::string{};
     CVarValue CurrentValue = std::string{};
-    std::optional<CVarValue> PendingValue;
-    std::optional<CVarValue> LatchedValue;
+    std::optional<CVarValue> PendingValue{};
+    std::optional<CVarValue> LatchedValue{};
     CVarFlags Flags = CVarFlags::None;
-    std::string Help;
-    ConsoleValueSource Source;
-    std::optional<double> Min;
-    std::optional<double> Max;
-    std::vector<std::string> EnumValues;
-    CVarValidator Validator;
-    CVarChangeCallback OnChange;
+    std::string Help{};
+    ConsoleValueSource Source{};
+    std::optional<double> Min{};
+    std::optional<double> Max{};
+    std::vector<std::string> EnumValues{};
+    CVarValidator Validator{};
+    CVarChangeCallback OnChange{};
 };
 
 struct PendingCVarAssignment
 {
-    std::string Name;
-    std::string ValueText;
-    ConsoleValueSource Source;
-    std::string Diagnostic;
+    std::string Name{};
+    std::string ValueText{};
+    ConsoleValueSource Source{};
+    std::string Diagnostic{};
     bool Resolved = false;
 };
 
@@ -190,14 +190,14 @@ using ConsoleCommandCallback =
 
 struct ConsoleCommandMetadata
 {
-    std::string Name;
+    std::string Name{};
     std::string Owner = "engine";
-    std::string Usage;
-    std::string Help;
-    std::vector<std::string> Examples;
+    std::string Usage{};
+    std::string Help{};
+    std::vector<std::string> Examples{};
     ConsoleCommandFlags Flags = ConsoleCommandFlags::None;
     ConsolePhase RequiredPhase = ConsolePhase::EngineReady;
-    ConsoleCommandCallback Callback;
+    ConsoleCommandCallback Callback{};
 };
 
 [[nodiscard]] std::string ToString(const CVarValue& value);
