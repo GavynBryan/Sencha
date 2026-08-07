@@ -7,6 +7,7 @@
 #include <core/config/EngineConfig.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/WorldComponentSchema.h>
+#include <net/ReplicationLayout.h>
 #include <profiling/CpuScopeTimings.h>
 #include <profiling/RenderInstrumentation.h>
 #include <profiling/RenderStats.h>
@@ -123,6 +124,13 @@ public:
         return RuntimeComponentSchemaState;
     }
 
+    // Which components replicate and how their bytes are packed, compiled once
+    // for this run. Sealed before OnStart, and read only by a session.
+    [[nodiscard]] const ReplicationLayout& Replication() const
+    {
+        return ReplicationLayoutState;
+    }
+
     // The sole runtime entity universe for this simulation. Persistent entities
     // live in partition zero and streamed zones occupy storage partitions inside
     // the same World.
@@ -230,6 +238,7 @@ private:
 #endif
     EngineSchedule EngineSystems;
     WorldComponentSchema RuntimeComponentSchemaState;
+    ReplicationLayout ReplicationLayoutState;
     std::unique_ptr<RuntimeWorld> RuntimeWorldState;
     RuntimeFrameLoop RuntimeLoop;
     ConsoleStartupScript StartupScript;

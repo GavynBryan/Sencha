@@ -3,6 +3,7 @@
 #include <core/assets/AssetRef.h>
 #include <core/identity/StrongId.h>
 #include <core/metadata/EnumSchema.h>
+#include <core/metadata/Field.h>
 #include <core/metadata/ScalarGroup.h>
 #include <core/metadata/SchemaVisit.h>
 #include <core/metadata/TypeSchema.h>
@@ -61,6 +62,13 @@ struct RuntimeField
     // Scalar stays the underlying integer kind and the bytes at Offset are
     // unchanged, so a consumer without enum awareness still works.
     std::span<const EnumOption> Enum{};
+    // Replication metadata, inherited from the nearest annotated ancestor: a
+    // range tagged on a Vec3 member applies to each of its floats, and a
+    // subtree excluded from the wire excludes every leaf under it. A consumer
+    // that does not replicate ignores all three.
+    FieldQuantization Quantization{};
+    bool OwnerOnly = false;
+    bool LocalOnly = false;
 };
 
 namespace RuntimeSchemaDetail
@@ -107,6 +115,13 @@ namespace RuntimeSchemaDetail
         std::vector<RuntimeField>& Out;
         const Root&                Base;
         std::string                Prefix;
+        // Carried down from the enclosing member so an annotation on a
+        // composite (a Vec3 position, a whole Transform) reaches the scalars it
+        // was meant to describe. A member's own annotation wins over what it
+        // inherits; otherwise the ancestor's stands.
+        FieldQuantization          Quantization{};
+        bool                       OwnerOnly = false;
+        bool                       LocalOnly = false;
 
         template <typename FieldT, typename M>
         void Field(const FieldT& field, const M& member)
@@ -118,6 +133,16 @@ namespace RuntimeSchemaDetail
                 Prefix.empty() ? std::string(field.Name)
                                : Prefix + "." + std::string(field.Name);
 
+            const FieldQuantization quantization =
+                field.Quantization.IsQuantized() ? field.Quantization : Quantization;
+            const bool ownerOnly = OwnerOnly || field.IsOwnerOnly;
+            const bool localOnly = LocalOnly || field.IsLocalOnly;
+            const auto annotate = [&](RuntimeField& out) {
+                out.Quantization = quantization;
+                out.OwnerOnly = ownerOnly;
+                out.LocalOnly = localOnly;
+            };
+
             using MemberType = std::remove_cvref_t<M>;
             // A field tagged AsColor() that is exactly three floats stops the
             // recursion and becomes one Color3 leaf, so the editor draws a single
@@ -128,9 +153,11 @@ namespace RuntimeSchemaDetail
             {
                 if (field.IsColor)
                 {
-                    Out.push_back(RuntimeField{
+                    RuntimeField f{
                         std::move(name), offset, 3 * sizeof(float),
-                        FieldScalar::Color3, AssetType::Unknown, AssetArity::Single });
+                        FieldScalar::Color3, AssetType::Unknown, AssetArity::Single };
+                    annotate(f);
+                    Out.push_back(std::move(f));
                     return;
                 }
             }
@@ -143,13 +170,14 @@ namespace RuntimeSchemaDetail
                 using Comp = typename PackedScalarGroup<MemberType>::Component;
                 RuntimeField f{ std::move(name), offset, sizeof(Comp), ScalarKindOf<Comp>() };
                 f.Count = static_cast<std::uint8_t>(PackedScalarGroup<MemberType>::Count);
+                annotate(f);
                 Out.push_back(std::move(f));
                 return;
             }
 
             if constexpr (HasTypeSchema<MemberType>)
             {
-                Collector<Root> sub{ Out, Base, name };
+                Collector<Root> sub{ Out, Base, name, quantization, ownerOnly, localOnly };
                 VisitSchema<TypeSchema<MemberType>>(member, sub);
             }
             else if constexpr (IsStrongId<MemberType>::value)
@@ -157,6 +185,7 @@ namespace RuntimeSchemaDetail
                 using U = typename IsStrongId<MemberType>::Underlying;
                 RuntimeField f{ std::move(name), offset, sizeof(U), ScalarKindOf<U>() };
                 f.ReadOnly = true;
+                annotate(f);
                 Out.push_back(std::move(f));
             }
             else
@@ -165,6 +194,7 @@ namespace RuntimeSchemaDetail
                                 ScalarKindOf<MemberType>(), field.Asset, field.Arity };
                 if constexpr (HasEnumSchema<MemberType>)
                     f.Enum = EnumOptionsOf<MemberType>();
+                annotate(f);
                 Out.push_back(std::move(f));
             }
         }

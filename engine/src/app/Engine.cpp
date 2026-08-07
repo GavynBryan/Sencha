@@ -446,6 +446,44 @@ int Engine::Run(Game& game)
     }
 
     RuntimeComponentSchemaState.Seal();
+
+    // The replicated table is compiled from the same components, after the
+    // world vocabulary exists and before anything can host or join. A build
+    // that gets this wrong is wrong for every session it would ever run, so it
+    // is reported here rather than discovered as a misread snapshot later.
+    ReplicationLayoutState = ReplicationLayout{};
+    RegisterEngineReplicatedComponents(ReplicationLayoutState);
+    game.OnRegisterReplicatedComponents(ReplicationLayoutState);
+    if (ReplicationLayoutState.Error() != ReplicationLayoutError::None)
+    {
+        std::fprintf(
+            stderr,
+            "Replicated component table is invalid (%.*s): %s.\n",
+            static_cast<int>(
+                ReplicationLayoutErrorToString(ReplicationLayoutState.Error()).size()),
+            ReplicationLayoutErrorToString(ReplicationLayoutState.Error()).data(),
+            ReplicationLayoutState.ErrorDetail().c_str());
+        game.OnUnregisterComponents(serializers);
+        RuntimeComponentSchemaState = WorldComponentSchema{};
+        return 1;
+    }
+
+    std::string missingReplicatedComponent;
+    if (!RuntimeComponentSchemaCoversReplication(
+            RuntimeComponentSchemaState,
+            ReplicationLayoutState,
+            &missingReplicatedComponent))
+    {
+        std::fprintf(
+            stderr,
+            "Runtime component schema is missing storage for replicated component '%s'.\n",
+            missingReplicatedComponent.c_str());
+        game.OnUnregisterComponents(serializers);
+        RuntimeComponentSchemaState = WorldComponentSchema{};
+        return 1;
+    }
+    ReplicationLayoutState.Seal();
+
     assert(!RuntimeWorldState && "Engine::Run called with a live runtime world");
     RuntimeWorldState =
         std::make_unique<RuntimeWorld>(RuntimeComponentSchemaState);

@@ -9,6 +9,7 @@
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <movement/MovementComponents.h>
 #include <movement/MovementIntent.h>
+#include <net/ReplicationLayout.h>
 #include <physics/components/CharacterController.h>
 #include <physics/components/CharacterMoverLink.h>
 #include <physics/components/Collider.h>
@@ -76,6 +77,31 @@ void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)
     // Per-tick pose history for entities that opt into render interpolation.
     // Derived and runtime-only, like WorldTransform: never serialized.
     schema.Add<WorldTransformHistory>();
+}
+
+void RegisterEngineReplicatedComponents(ReplicationLayout& layout)
+{
+    ForEachReplicatedComponent([&]<typename T>(ComponentTag<T>) { layout.Add<T>(); });
+}
+
+bool RuntimeComponentSchemaCoversReplication(
+    const WorldComponentSchema& schema,
+    const ReplicationLayout& layout,
+    std::string* missingComponent)
+{
+    for (const ReplicatedComponent& component : layout.Components())
+    {
+        if (schema.Contains(component.Type))
+            continue;
+
+        if (missingComponent != nullptr)
+            *missingComponent = std::string(component.Name);
+        return false;
+    }
+
+    if (missingComponent != nullptr)
+        missingComponent->clear();
+    return true;
 }
 
 bool RuntimeComponentSchemaCoversSerializers(

@@ -3,6 +3,7 @@
 #include <audio/AudioCaptionComponent.h>
 #include <audio/AudioSourceComponent.h>
 #include <components/CameraComponent.h>
+#include <controller/LookOrientation.h>
 #include <render/IrradianceVolumeComponent.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
@@ -39,6 +40,27 @@ using EngineSceneComponents = std::tuple<
     // components extend this list at the end rather than reordering it.
     PersistentIdComponent>;
 
+//=============================================================================
+// EngineReplicatedComponents
+//
+// The engine components whose values an authority sends to its peers. A
+// separate list from the scene manifest because the two answer different
+// questions: that one is what an author saves, this one is what a spectator
+// must see. Plenty of state is one without the other -- a light is authored and
+// never changes, a look direction changes constantly and is never authored.
+//
+// Order is a wire contract: a component's position here is its one-byte key on
+// the wire, so entries append at the end and never reorder. Both ends compare
+// the compiled table's hash at the handshake, so a build that gets this wrong
+// is refused rather than left to misread every snapshot.
+//
+// A component listed here must have a TypeSchema and no ComponentTraits
+// lifecycle hooks; ReplicationLayout::Add enforces both at compile time.
+//=============================================================================
+using EngineReplicatedComponents = std::tuple<
+    LocalTransform,
+    LookOrientation>;
+
 template <typename T>
 struct ComponentTag
 {
@@ -59,4 +81,11 @@ void ForEachSceneComponent(Fn&& fn)
 {
     ComponentManifestDetail::ForEach(std::forward<Fn>(fn),
                                      static_cast<EngineSceneComponents*>(nullptr));
+}
+
+template <typename Fn>
+void ForEachReplicatedComponent(Fn&& fn)
+{
+    ComponentManifestDetail::ForEach(std::forward<Fn>(fn),
+                                     static_cast<EngineReplicatedComponents*>(nullptr));
 }
