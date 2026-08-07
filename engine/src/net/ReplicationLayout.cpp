@@ -66,6 +66,7 @@ std::string_view ReplicationLayoutErrorToString(ReplicationLayoutError error)
     case ReplicationLayoutError::UnsupportedField:    return "unsupported field type";
     case ReplicationLayoutError::NoReplicatedFields:  return "no replicated fields";
     case ReplicationLayoutError::InvalidQuantization: return "invalid quantization range";
+    case ReplicationLayoutError::TooManyFields:       return "too many replicated fields";
     }
     return "unknown";
 }
@@ -138,6 +139,11 @@ bool ReplicationLayout::AddErased(ComponentTypeId type,
     if (component.Fields.empty())
     {
         Fail(ReplicationLayoutError::NoReplicatedFields, std::string(name));
+        return false;
+    }
+    if (component.Fields.size() > kMaxReplicatedFieldsPerComponent)
+    {
+        Fail(ReplicationLayoutError::TooManyFields, std::string(name));
         return false;
     }
 

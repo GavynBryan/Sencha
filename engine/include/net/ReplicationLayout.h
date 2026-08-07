@@ -72,7 +72,14 @@ enum class ReplicationLayoutError : std::uint8_t
     NoReplicatedFields,
     // Quantization asked for a range that cannot round-trip.
     InvalidQuantization,
+    // More replicated fields than one field mask can address.
+    TooManyFields,
 };
+
+// A component's per-field presence mask is one machine word, so this is how
+// many fields of one component the wire can distinguish. Comfortably above any
+// real component; a type that needs more is really several components.
+inline constexpr std::size_t kMaxReplicatedFieldsPerComponent = 64;
 
 [[nodiscard]] std::string_view ReplicationLayoutErrorToString(ReplicationLayoutError error);
 
