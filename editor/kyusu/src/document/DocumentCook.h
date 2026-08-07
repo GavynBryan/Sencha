@@ -49,10 +49,10 @@ struct DocumentCookOptions
     // Null selects the protected Full profile.
     const CookProfile* Profile = nullptr;
     bool ForceRebuild = false;
-    std::shared_ptr<CookControl> Control;
+    std::shared_ptr<CookControl> Control{};
     // Optional prefix for content-addressed publication. World cooks use this
     // so the manifest switches generations only after every zone succeeds.
-    std::string OutputNamespace;
+    std::string OutputNamespace{};
 };
 
 class EditorDocument;

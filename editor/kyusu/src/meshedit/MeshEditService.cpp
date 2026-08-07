@@ -654,9 +654,9 @@ std::unique_ptr<ICommand> MeshEditService::ApplyVerb(IMeshEditTarget& target,
 
     struct EntityRefs
     {
-        EntityId Entity;
-        RegistryId Registry;
-        std::vector<SelectableRef> Refs;
+        EntityId Entity{};
+        RegistryId Registry{};
+        std::vector<SelectableRef> Refs{};
     };
     std::vector<EntityRefs> groups;
     for (const SelectableRef& ref : selection.Items)

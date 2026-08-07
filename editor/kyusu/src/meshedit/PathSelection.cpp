@@ -38,7 +38,7 @@ Adjacency VertexAdjacency(const BrushMesh& mesh, const std::vector<EdgeElement>&
     return adj;
 }
 
-Adjacency EdgeAdjacency(const BrushMesh& mesh, const std::vector<EdgeElement>& edges)
+Adjacency EdgeAdjacency(const std::vector<EdgeElement>& edges)
 {
     std::map<std::uint32_t, std::vector<std::uint32_t>> vertexEdges;
     for (const EdgeElement& edge : edges)
@@ -129,7 +129,7 @@ std::vector<SelectableRef> GatherPathSelection(const BrushMesh& mesh,
         path = ShortestPath(VertexAdjacency(mesh, EnumerateEdges(mesh)), from.ElementId, to.ElementId);
         break;
     case SelectableKind::Edge:
-        path = ShortestPath(EdgeAdjacency(mesh, EnumerateEdges(mesh)), from.ElementId, to.ElementId);
+        path = ShortestPath(EdgeAdjacency(EnumerateEdges(mesh)), from.ElementId, to.ElementId);
         break;
     case SelectableKind::Face:
         path = ShortestPath(FaceAdjacency(mesh), from.ElementId, to.ElementId);

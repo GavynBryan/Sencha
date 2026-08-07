@@ -176,7 +176,7 @@ InputConsumed EdgeCutTool::OnClick(ToolContext& ctx, EditorViewport& viewport, c
     return InputConsumed::Yes;
 }
 
-InputConsumed EdgeCutTool::OnKeyDown(ToolContext& ctx, const KeyDownEvent& event)
+InputConsumed EdgeCutTool::OnKeyDown(ToolContext& /*ctx*/, const KeyDownEvent& event)
 {
     if (event.Key == SDLK_TAB)
     {

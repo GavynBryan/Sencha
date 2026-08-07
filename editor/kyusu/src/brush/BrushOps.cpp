@@ -533,10 +533,10 @@ BrushMesh BrushOps::DissolveEdge(const BrushMesh& mesh, std::uint32_t a, std::ui
     // and must remain in the merged ngon.
     const auto removeRedundantEndpoint = [&](std::uint32_t endpoint)
     {
-        const auto it = std::find(merged.begin(), merged.end(), endpoint);
-        if (it == merged.end() || merged.size() <= 3)
+        const auto endpointIt = std::find(merged.begin(), merged.end(), endpoint);
+        if (endpointIt == merged.end() || merged.size() <= 3)
             return;
-        const std::size_t index = static_cast<std::size_t>(it - merged.begin());
+        const std::size_t index = static_cast<std::size_t>(endpointIt - merged.begin());
         const Vec3d previous = mesh.Vertices[merged[(index + merged.size() - 1) % merged.size()]].Position;
         const Vec3d current = mesh.Vertices[endpoint].Position;
         const Vec3d next = mesh.Vertices[merged[(index + 1) % merged.size()]].Position;
@@ -546,7 +546,7 @@ BrushMesh BrushOps::DissolveEdge(const BrushMesh& mesh, std::uint32_t a, std::ui
         if (scale <= 1e-10 || incoming.Cross(outgoing).Magnitude() > scale * 1e-5
             || incoming.Dot(outgoing) <= 0.0)
             return;
-        merged.erase(it);
+        merged.erase(endpointIt);
     };
     removeRedundantEndpoint(a);
     removeRedundantEndpoint(b);

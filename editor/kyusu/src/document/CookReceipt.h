@@ -11,12 +11,12 @@
 
 struct CookStepReceipt
 {
-    std::string StepId;
+    std::string StepId{};
     std::uint32_t Version = 1;
     std::uint64_t InputFingerprint = 0;
-    std::vector<std::pair<std::string, std::uint64_t>> Dependencies;
-    std::vector<CookedArtifact> Artifacts;
-    JsonValue Metadata;
+    std::vector<std::pair<std::string, std::uint64_t>> Dependencies{};
+    std::vector<CookedArtifact> Artifacts{};
+    JsonValue Metadata{};
     double DurationMilliseconds = 0.0;
 };
 

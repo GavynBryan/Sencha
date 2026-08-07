@@ -120,10 +120,10 @@ void StampOriginViewport(InputRouter& router, ViewportLayout& layout, InputEvent
         return hovered;
     };
 
-    if (auto* e = std::get_if<PointerDownEvent>(&event))
-        e->Viewport = resolve(e->Position);
-    else if (auto* e = std::get_if<PointerUpEvent>(&event))
-        e->Viewport = resolve(e->Position);
-    else if (auto* e = std::get_if<PointerMoveEvent>(&event))
-        e->Viewport = resolve(e->Position);
+    if (auto* down = std::get_if<PointerDownEvent>(&event))
+        down->Viewport = resolve(down->Position);
+    else if (auto* up = std::get_if<PointerUpEvent>(&event))
+        up->Viewport = resolve(up->Position);
+    else if (auto* move = std::get_if<PointerMoveEvent>(&event))
+        move->Viewport = resolve(move->Position);
 }
