@@ -215,6 +215,19 @@ struct Quat
 		return Quat{};
 	}
 
+	static Quat Nlerp(Quat a, Quat b, T t)
+		requires std::floating_point<T>
+	{
+		if (a.Dot(b) < T{0})
+			b = -b;
+		return Quat{
+			a.X + t * (b.X - a.X),
+			a.Y + t * (b.Y - a.Y),
+			a.Z + t * (b.Z - a.Z),
+			a.W + t * (b.W - a.W)
+		}.Normalized();
+	}
+
 	static Quat FromAxisAngle(const Vec<3, T>& axis, T angleRadians)
 		requires std::floating_point<T>
 	{

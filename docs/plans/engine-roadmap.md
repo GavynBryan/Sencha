@@ -4,7 +4,7 @@ Status: standing master plan (2026-07-02). Supersedes `docs/plans/real-engine-ro
 that plan's phase spine (0 through 4) is absorbed here. Its Phase 0 (the SDK boundary)
 and most of Phase 1 (the editor product loop) are recorded as shipped; Phases 2 through 4
 map into the v1.0 tracks below. Companion execution docs remain authoritative for their
-own detail (see Section 12).
+own detail (see Section 12). The animation suite companion is `docs/animation/suite-plan.md`.
 
 Audience: whoever implements any item here (human or agent), and reviewers. This document
 owns versions, gates, and sequencing for the whole engine. Execution detail lives in the
