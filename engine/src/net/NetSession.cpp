@@ -13,6 +13,20 @@ namespace
     {
         return kind == NetChannelKind::ReliableOrdered ? "reliable" : "unreliable";
     }
+
+    std::uint64_t MicroFromSeconds(double seconds)
+    {
+        return static_cast<std::uint64_t>(seconds * 1'000'000.0);
+    }
+
+    // The admitted-peer paths peek the leading byte to route control messages
+    // before channel delivery. That is only unambiguous while no control type
+    // shares a value with a channel kind's leading byte.
+    constexpr auto kHighestChannelKind =
+        static_cast<std::uint8_t>(NetChannelKind::ReliableOrdered);
+    static_assert(static_cast<std::uint8_t>(NetMessageType::Disconnect) > kHighestChannelKind);
+    static_assert(static_cast<std::uint8_t>(NetMessageType::Ping) > kHighestChannelKind);
+    static_assert(static_cast<std::uint8_t>(NetMessageType::Pong) > kHighestChannelKind);
 }
 
 std::string_view NetDescribeIdentityMismatch(const NetIdentity& local,
@@ -91,6 +105,11 @@ bool NetSession::Connect(const NetAddress& authority, const NetIdentity& identit
     AuthorityAddress = authority;
     AwaitingChallenge = true;
     Admitted = false;
+    ConnectClockArmed = false;
+    ConnectStartedSeconds = 0.0;
+    AuthorityLastHeardSeconds = 0.0;
+    LastPingSentSeconds = 0.0;
+    RttMicroseconds = 0;
     Failure = NetJoinFailure::None;
     FailureReason.clear();
 
@@ -130,6 +149,7 @@ void NetSession::Disconnect(std::string_view reason)
     Admitted = false;
     AwaitingChallenge = false;
     SelfId = PeerId{};
+    RttMicroseconds = 0;
     Transport.Close();
 }
 
@@ -197,7 +217,21 @@ void NetSession::Strike(NetPeer& peer, std::string_view why)
     if (peer.Strikes < kNetMaxStrikes)
         return;
 
-    RefuseAt(peer.Address, why);
+    // An admitted peer gets a disconnect, not a refusal: refusals are for the
+    // door, and a client that was inside treats an unexplained end as a
+    // network failure it might wait out.
+    if (peer.State == NetPeerState::Connected)
+    {
+        Scratch scratch{};
+        NetDisconnect message;
+        message.Reason = std::string(why.substr(
+            0, std::min(why.size(), NetDefaultCaps().MaxReasonBytes)));
+        SendRaw(peer.Address, NetEncodeDisconnect(message, scratch));
+    }
+    else
+    {
+        RefuseAt(peer.Address, why);
+    }
     peer.State = NetPeerState::Disconnected;
 }
 
@@ -234,17 +268,50 @@ void NetSession::HandleAuthorityMessage(const NetDatagram& datagram,
     NetMessageType type = NetMessageType::Invalid;
 
     // A packet from an admitted peer belongs to the channel layer; only the
-    // handshake goes through the protocol decoders directly. Ordering matters:
-    // an admitted peer's channel traffic must not be reinterpreted as a
-    // handshake message that happens to share a first byte.
+    // control messages a live peer may still send -- disconnect and the
+    // keepalives -- are peeked off first. Their type bytes sit above every
+    // channel kind (asserted at the top of this file), so a channel packet can
+    // never be mistaken for one of them.
     if (NetPeer* known = PeerByAddress(datagram.From);
         known != nullptr && known->State == NetPeerState::Connected)
     {
-        if (NetPeekMessageType(datagram.Payload, type) == NetDecodeError::None
-            && type == NetMessageType::Disconnect)
+        if (NetPeekMessageType(datagram.Payload, type) == NetDecodeError::None)
         {
-            known->State = NetPeerState::Disconnected;
-            return;
+            if (type == NetMessageType::Disconnect)
+            {
+                known->State = NetPeerState::Disconnected;
+                return;
+            }
+            if (type == NetMessageType::Ping)
+            {
+                NetPing ping;
+                if (NetDecodePing(datagram.Payload, ping) != NetDecodeError::None)
+                {
+                    Strike(*known, "malformed ping");
+                    return;
+                }
+                known->LastHeardSeconds = nowSeconds;
+                const NetPong pong{
+                    .SentMicroseconds = ping.SentMicroseconds,
+                    .AuthorityTick = LastAuthorityTick,
+                };
+                SendRaw(datagram.From, NetEncodePong(pong, scratch));
+                return;
+            }
+            if (type == NetMessageType::Pong)
+            {
+                NetPong pong;
+                if (NetDecodePong(datagram.Payload, pong) != NetDecodeError::None)
+                {
+                    Strike(*known, "malformed pong");
+                    return;
+                }
+                known->LastHeardSeconds = nowSeconds;
+                const std::uint64_t nowMicro = MicroFromSeconds(nowSeconds);
+                if (nowMicro >= pong.SentMicroseconds)
+                    known->RoundTripMicroseconds = nowMicro - pong.SentMicroseconds;
+                return;
+            }
         }
         DeliverChannelPayloads(*known, datagram.Payload, nowSeconds, out);
         return;
@@ -350,12 +417,14 @@ void NetSession::HandleAuthorityMessage(const NetDatagram& datagram,
 }
 
 void NetSession::HandleClientMessage(const NetDatagram& datagram,
+                                     double nowSeconds,
                                      std::vector<Delivery>& out)
 {
     // Only the authority's address is listened to at all. This is the cheapest
     // possible filter against off-path injection, and it costs nothing.
     if (!(datagram.From == AuthorityAddress))
         return;
+    AuthorityLastHeardSeconds = nowSeconds;
 
     Scratch scratch{};
     NetMessageType type = NetMessageType::Invalid;
@@ -366,21 +435,39 @@ void NetSession::HandleClientMessage(const NetDatagram& datagram,
         {
             if (type == NetMessageType::Disconnect)
             {
+                Failure = NetJoinFailure::Ended;
+                FailureReason = "session ended";
                 NetDisconnect message;
                 if (NetDecodeDisconnect(datagram.Payload, message) == NetDecodeError::None)
-                {
-                    Failure = NetJoinFailure::Refused;
                     FailureReason = message.Reason;
-                }
                 Admitted = false;
                 CurrentRole = NetSessionRole::Standalone;
+                Transport.Close();
+                return;
+            }
+            if (type == NetMessageType::Ping)
+            {
+                NetPing ping;
+                if (NetDecodePing(datagram.Payload, ping) == NetDecodeError::None)
+                {
+                    const NetPong pong{
+                        .SentMicroseconds = ping.SentMicroseconds,
+                        .AuthorityTick = LastAuthorityTick,
+                    };
+                    SendRaw(AuthorityAddress, NetEncodePong(pong, scratch));
+                }
                 return;
             }
             if (type == NetMessageType::Pong)
             {
                 NetPong pong;
                 if (NetDecodePong(datagram.Payload, pong) == NetDecodeError::None)
+                {
                     LastAuthorityTick = pong.AuthorityTick;
+                    const std::uint64_t nowMicro = MicroFromSeconds(nowSeconds);
+                    if (nowMicro >= pong.SentMicroseconds)
+                        RttMicroseconds = nowMicro - pong.SentMicroseconds;
+                }
                 return;
             }
         }
@@ -485,20 +572,28 @@ std::vector<NetSession::Delivery> NetSession::Pump(double nowSeconds)
         if (CurrentRole == NetSessionRole::Host)
             HandleAuthorityMessage(datagram, nowSeconds, out);
         else
-            HandleClientMessage(datagram, out);
+            HandleClientMessage(datagram, nowSeconds, out);
     }
 
     if (CurrentRole == NetSessionRole::Host)
     {
         // A peer that has gone quiet is dropped rather than held forever: its
         // slot, its channel buffers, and its place in the peer cap are the
-        // resources a half-open connection would otherwise hold.
+        // resources a half-open connection would otherwise hold. It is told,
+        // best effort: the return path often still works when nothing has
+        // arrived, and one datagram spares the peer its own full timeout.
         for (NetPeer& peer : Peers)
         {
             if (peer.State != NetPeerState::Connected)
                 continue;
             if ((nowSeconds - peer.LastHeardSeconds) > TimeoutSeconds)
+            {
+                Scratch scratch{};
+                SendRaw(peer.Address,
+                        NetEncodeDisconnect(NetDisconnect{ .Reason = "timed out" },
+                                            scratch));
                 peer.State = NetPeerState::Disconnected;
+            }
         }
         for (const NetPeer& peer : Peers)
         {
@@ -517,14 +612,31 @@ std::vector<NetSession::Delivery> NetSession::Pump(double nowSeconds)
             return peer.State == NetPeerState::Disconnected;
         });
     }
-    else if (CurrentRole == NetSessionRole::Client && !Admitted)
+    else if (CurrentRole == NetSessionRole::Client)
     {
-        if (ConnectStartedSeconds == 0.0)
-            ConnectStartedSeconds = nowSeconds;
-        else if ((nowSeconds - ConnectStartedSeconds) > TimeoutSeconds)
+        if (!Admitted)
         {
+            if (!ConnectClockArmed)
+            {
+                ConnectClockArmed = true;
+                ConnectStartedSeconds = nowSeconds;
+            }
+            else if ((nowSeconds - ConnectStartedSeconds) > TimeoutSeconds)
+            {
+                Failure = NetJoinFailure::TimedOut;
+                FailureReason = "no response from authority";
+                CurrentRole = NetSessionRole::Standalone;
+                Transport.Close();
+            }
+        }
+        else if ((nowSeconds - AuthorityLastHeardSeconds) > TimeoutSeconds)
+        {
+            // Admission set the last-heard clock, so this measures silence
+            // since then -- the host's keepalives are what normally keep it
+            // fresh, and their absence is what "the host is gone" looks like.
             Failure = NetJoinFailure::TimedOut;
-            FailureReason = "no response from authority";
+            FailureReason = "authority stopped responding";
+            Admitted = false;
             CurrentRole = NetSessionRole::Standalone;
             Transport.Close();
         }
@@ -535,12 +647,25 @@ std::vector<NetSession::Delivery> NetSession::Pump(double nowSeconds)
 
 void NetSession::Flush(double nowSeconds)
 {
+    // Keepalives ride the flush: an admitted end with nothing to say must
+    // still be distinguishable from a dead one, and the echoed timestamp is
+    // the round-trip measurement for free. Channel traffic does not reset the
+    // cadence; a fixed cadence is simpler to reason about and four pings per
+    // timeout are noise next to any real traffic.
+    Scratch scratch{};
+
     if (CurrentRole == NetSessionRole::Host)
     {
         for (NetPeer& peer : Peers)
         {
             if (peer.State != NetPeerState::Connected)
                 continue;
+            if ((nowSeconds - peer.LastPingSentSeconds) >= KeepaliveSeconds())
+            {
+                peer.LastPingSentSeconds = nowSeconds;
+                const NetPing ping{ .SentMicroseconds = MicroFromSeconds(nowSeconds) };
+                SendRaw(peer.Address, NetEncodePing(ping, scratch));
+            }
             for (const NetChannelSet::Packet& packet : peer.Channels.Drain(nowSeconds))
                 SendRaw(peer.Address, packet.Bytes);
         }
@@ -549,6 +674,12 @@ void NetSession::Flush(double nowSeconds)
 
     if (CurrentRole == NetSessionRole::Client && Admitted)
     {
+        if ((nowSeconds - LastPingSentSeconds) >= KeepaliveSeconds())
+        {
+            LastPingSentSeconds = nowSeconds;
+            const NetPing ping{ .SentMicroseconds = MicroFromSeconds(nowSeconds) };
+            SendRaw(AuthorityAddress, NetEncodePing(ping, scratch));
+        }
         for (const NetChannelSet::Packet& packet : ClientChannels.Drain(nowSeconds))
             SendRaw(AuthorityAddress, packet.Bytes);
     }

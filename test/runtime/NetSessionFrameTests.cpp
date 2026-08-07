@@ -13,6 +13,11 @@ TEST(NetSessionFrame, TwoEnginesCompleteAHandshakeOverLoopback)
 {
     SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
 
+    // Transports before engines: the sessions the engines own reference them
+    // through shutdown, where the engine says goodbye on the wire.
+    UdpTransport hostTransport;
+    UdpTransport clientTransport;
+
     EngineConfig hostConfig;
     hostConfig.Window.GraphicsApi = WindowGraphicsApi::None;
     hostConfig.Debug.ConsoleLogging = false;
@@ -20,7 +25,6 @@ TEST(NetSessionFrame, TwoEnginesCompleteAHandshakeOverLoopback)
     Engine hostEngine(hostConfig);
     ASSERT_TRUE(hostEngine.Initialize());
 
-    UdpTransport hostTransport;
     NetSession* host = hostEngine.CreateNetSession(hostTransport);
     ASSERT_NE(host, nullptr);
 
@@ -34,7 +38,6 @@ TEST(NetSessionFrame, TwoEnginesCompleteAHandshakeOverLoopback)
     Engine clientEngine(clientConfig);
     ASSERT_TRUE(clientEngine.Initialize());
 
-    UdpTransport clientTransport;
     NetSession* client = clientEngine.CreateNetSession(clientTransport);
     ASSERT_NE(client, nullptr);
     ASSERT_TRUE(client->Connect(host->LocalAddress(), identity));

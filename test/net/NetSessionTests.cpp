@@ -385,6 +385,140 @@ TEST(NetSession, MalformedTrafficStrikesAndEventuallyDisconnects)
         << "a peer that keeps sending garbage must eventually be dropped";
 }
 
+// An admitted session with nothing to say must stay up. Without keepalives an
+// idle client looks identical to a dead one and gets dropped at the timeout,
+// which is exactly what happened to the first real two-process session.
+TEST(NetSession, KeepalivesHoldAnIdleSessionOpen)
+{
+    Pair pair;
+    ASSERT_TRUE(pair.StartHost());
+    pair.HostSession.SetTimeoutSeconds(1.0);
+    pair.ClientSession.SetTimeoutSeconds(1.0);
+    ASSERT_TRUE(pair.StartClient());
+    pair.Step(6);
+    ASSERT_TRUE(pair.ClientSession.IsConnected());
+
+    // Three full timeouts of silence from the layers above.
+    pair.Step(static_cast<int>(3.0 * 60.0));
+
+    EXPECT_TRUE(pair.ClientSession.IsConnected());
+    EXPECT_EQ(pair.HostSession.ConnectedPeers().size(), 1u);
+    EXPECT_EQ(pair.HostSession.StrikesIssued(), 0u)
+        << "a keepalive from an admitted peer must not read as garbage";
+    EXPECT_EQ(pair.ClientSession.JoinFailure(), NetJoinFailure::None);
+}
+
+// The pings double as the round-trip measurement, on both ends.
+TEST(NetSession, KeepalivesMeasureRoundTripOnBothSides)
+{
+    Pair pair;
+    ASSERT_TRUE(pair.StartHost());
+    pair.HostSession.SetTimeoutSeconds(1.0);
+    pair.ClientSession.SetTimeoutSeconds(1.0);
+    ASSERT_TRUE(pair.StartClient());
+    pair.Step(6);
+    ASSERT_TRUE(pair.ClientSession.IsConnected());
+
+    pair.Step(static_cast<int>(60.0));  // several keepalive intervals
+
+    const NetPeer* peer =
+        pair.HostSession.FindPeer(pair.HostSession.ConnectedPeers().front());
+    ASSERT_NE(peer, nullptr);
+    EXPECT_GT(peer->RoundTripMicroseconds, 0u);
+    EXPECT_GT(pair.ClientSession.RoundTripMicroseconds(), 0u);
+}
+
+// When the host drops a peer it says so, because the return path usually still
+// works and one datagram spares the peer waiting out its own full timeout.
+TEST(NetSession, ADroppedClientIsToldItWasDropped)
+{
+    Pair pair;
+    ASSERT_TRUE(pair.StartHost());
+    pair.HostSession.SetTimeoutSeconds(1.0);
+    ASSERT_TRUE(pair.StartClient());
+    pair.Step(6);
+    ASSERT_TRUE(pair.ClientSession.IsConnected());
+
+    // The client goes completely quiet -- a hang, not a crash. The host's
+    // parting disconnect waits in the client's receive queue until it wakes.
+    double now = pair.Now;
+    for (; now < pair.Now + 3.0; now += 1.0 / 60.0)
+    {
+        (void)pair.HostSession.Pump(now);
+        pair.HostSession.Flush(now);
+    }
+    (void)pair.ClientSession.Pump(now);
+
+    EXPECT_EQ(pair.HostSession.ConnectedPeers().size(), 0u);
+    EXPECT_EQ(pair.ClientSession.Role(), NetSessionRole::Standalone);
+    EXPECT_EQ(pair.ClientSession.JoinFailure(), NetJoinFailure::Ended);
+    EXPECT_EQ(pair.ClientSession.JoinFailureReason(), "timed out");
+}
+
+// The other direction: a host that vanishes must not leave a client that
+// believes it is in a session forever.
+TEST(NetSession, AClientNoticesTheAuthorityIsGone)
+{
+    Pair pair;
+    ASSERT_TRUE(pair.StartHost());
+    pair.ClientSession.SetTimeoutSeconds(1.0);
+    ASSERT_TRUE(pair.StartClient());
+    pair.Step(6);
+    ASSERT_TRUE(pair.ClientSession.IsConnected());
+
+    // The host process is gone: it neither pumps nor flushes again.
+    for (double now = pair.Now; now < pair.Now + 3.0; now += 1.0 / 60.0)
+    {
+        (void)pair.ClientSession.Pump(now);
+        pair.ClientSession.Flush(now);
+    }
+
+    EXPECT_FALSE(pair.ClientSession.IsConnected());
+    EXPECT_EQ(pair.ClientSession.Role(), NetSessionRole::Standalone);
+    EXPECT_EQ(pair.ClientSession.JoinFailure(), NetJoinFailure::TimedOut);
+}
+
+// Regression: the connect clock armed on "started time is exactly zero", so a
+// client whose first pump ran at time zero never armed it and never timed out.
+TEST(NetSession, TheConnectTimeoutRunsFromTheFirstPump)
+{
+    LoopbackNetwork network;
+    LoopbackTransport transport(network);
+    NetSession client(transport);
+    client.SetTimeoutSeconds(1.0);
+    ASSERT_TRUE(client.Connect(NetAddressLoopback(40000), SampleIdentity()));
+
+    (void)client.Pump(0.0);
+    (void)client.Pump(1.5);
+
+    EXPECT_EQ(client.JoinFailure(), NetJoinFailure::TimedOut)
+        << "a first pump at time zero must still arm the connect clock";
+}
+
+// A struck-out peer gets a disconnect, not silence: it was admitted, so from
+// its side an unexplained end is indistinguishable from a network failure.
+TEST(NetSession, AStruckPeerIsToldItWasDropped)
+{
+    Pair pair;
+    ASSERT_TRUE(pair.StartHost());
+    ASSERT_TRUE(pair.StartClient());
+    pair.Step(6);
+    ASSERT_TRUE(pair.ClientSession.IsConnected());
+
+    const std::vector<std::byte> garbage(3, std::byte{ 0x7F });
+    for (std::uint32_t i = 0; i < kNetMaxStrikes; ++i)
+    {
+        ASSERT_TRUE(pair.ClientTransport.Send(pair.HostSession.LocalAddress(), garbage));
+        pair.Step();
+    }
+    pair.Step(2);
+
+    EXPECT_EQ(pair.HostSession.ConnectedPeers().size(), 0u);
+    EXPECT_EQ(pair.ClientSession.Role(), NetSessionRole::Standalone);
+    EXPECT_EQ(pair.ClientSession.JoinFailure(), NetJoinFailure::Ended);
+    EXPECT_FALSE(pair.ClientSession.JoinFailureReason().empty());
+}
+
 // Off-path injection: the client listens to the authority's address and nothing
 // else, which costs nothing and removes a whole class of nuisance.
 TEST(NetSession, ClientIgnoresTrafficFromAnyoneButTheAuthority)

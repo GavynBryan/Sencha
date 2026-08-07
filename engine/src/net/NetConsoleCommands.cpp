@@ -60,6 +60,25 @@ namespace
         }
         return "standalone";
     }
+
+    std::string_view DescribeFailure(NetJoinFailure failure)
+    {
+        switch (failure)
+        {
+        case NetJoinFailure::Refused:        return "refused";
+        case NetJoinFailure::TimedOut:       return "timed out";
+        case NetJoinFailure::TransportError: return "transport error";
+        case NetJoinFailure::Ended:          return "session ended";
+        case NetJoinFailure::None:           break;
+        }
+        return "";
+    }
+
+    std::string DescribeRoundTrip(std::uint64_t microseconds)
+    {
+        return std::to_string(microseconds / 1000) + "."
+             + std::to_string((microseconds / 100) % 10) + "ms";
+    }
 }
 
 void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
@@ -212,12 +231,26 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
                 text += session->IsConnected() ? "; admitted as peer "
                                                    + std::to_string(session->LocalPeerId().Value)
                                                : "; not admitted";
-                if (session->JoinFailure() != NetJoinFailure::None)
-                    text += "; refused: " + session->JoinFailureReason();
+                if (session->RoundTripMicroseconds() > 0)
+                    text += "; rtt " + DescribeRoundTrip(session->RoundTripMicroseconds());
             }
             else
             {
                 text += "; peers " + std::to_string(session->ConnectedPeers().size());
+                for (PeerId id : session->ConnectedPeers())
+                {
+                    const NetPeer* peer = session->FindPeer(id);
+                    if (peer != nullptr && peer->RoundTripMicroseconds > 0)
+                    {
+                        text += "; peer " + std::to_string(id.Value) + " rtt "
+                              + DescribeRoundTrip(peer->RoundTripMicroseconds);
+                    }
+                }
+            }
+            if (session->JoinFailure() != NetJoinFailure::None)
+            {
+                text += "; " + std::string(DescribeFailure(session->JoinFailure()))
+                      + ": " + session->JoinFailureReason();
             }
 
             text += "; strikes " + std::to_string(session->StrikesIssued());

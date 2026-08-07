@@ -208,6 +208,10 @@ void Engine::Shutdown()
     EngineSystems.Shutdown();
     // Before the frame driver: the net phases hold a pointer to this, and a
     // session outliving the loop that pumps it is a session nothing drains.
+    // The goodbye is what turns this quit into an immediate leave on the other
+    // end instead of a peer that lingers until its timeout.
+    if (NetState != nullptr)
+        NetState->Disconnect("quit");
     NetState.reset();
     FrameDriverInstance.reset();
     TaskQueueInstance.reset();

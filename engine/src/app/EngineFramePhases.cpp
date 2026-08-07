@@ -65,10 +65,22 @@ void Engine::RegisterNetFramePhases()
     Engine& engine = *this;
     FrameDriver& driver = *FrameDriverInstance;
 
-    driver.Register(FramePhase::PumpNet, [&engine](PhaseContext& ctx) {
+    // The two flags track the client's outcome across frames so admission and
+    // loss are logged once each, at the transition. The console cannot do it:
+    // admission lands several round trips after `connect` returns, and a
+    // headless client has no console view anyone watches.
+    driver.Register(FramePhase::PumpNet,
+                    [&engine, wasClient = false, wasAdmitted = false](
+                        PhaseContext& ctx) mutable {
         NetSession* session = engine.TryNet();
         if (session == nullptr)
+        {
+            // Destroyed via the console's own `disconnect`, which already
+            // reported the outcome.
+            wasClient = false;
+            wasAdmitted = false;
             return;
+        }
 
         // Unscaled wall time. Timeouts, resends, and clock sync are about how
         // long a peer has actually been silent; a paused or time-scaled
@@ -92,6 +104,25 @@ void Engine::RegisterNetFramePhases()
                 log.Info("net: peer {} left ({})", event.Peer.Value, event.Reason);
             }
         }
+
+        const bool isClient = session->Role() == NetSessionRole::Client;
+        const bool isAdmitted = isClient && session->IsConnected();
+        if (isAdmitted && !wasAdmitted)
+        {
+            log.Info("net: admitted as peer {} by {}",
+                     session->LocalPeerId().Value,
+                     NetAddressToString(session->Authority()));
+        }
+        if (wasClient && !isClient)
+        {
+            // Refusal, timeout, or a kick; the reason names which.
+            log.Info("net: session ended: {}",
+                     session->JoinFailureReason().empty()
+                         ? "disconnected"
+                         : session->JoinFailureReason());
+        }
+        wasClient = isClient;
+        wasAdmitted = isAdmitted;
 
         // Nothing consumes deliveries yet: replication is the next phase of the
         // track. Draining is still required, or the transport's buffers and the

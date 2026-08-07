@@ -50,15 +50,16 @@ enum class NetPeerState : std::uint8_t
     Disconnected,
 };
 
-// Why a client's connection attempt ended, for the console and the log. Kept
-// distinct from the free-text reason so callers branch on the cause rather than
-// on message text.
+// Why a client's session or connection attempt ended, for the console and the
+// log. Kept distinct from the free-text reason so callers branch on the cause
+// rather than on message text.
 enum class NetJoinFailure : std::uint8_t
 {
     None,
-    Refused,        // the authority said no, with a reason
-    TimedOut,
+    Refused,        // the authority said no at the door, with a reason
+    TimedOut,       // never answered, or went silent after admission
     TransportError,
+    Ended,          // admitted, then ended by the authority: kicked or it quit
 };
 
 //=============================================================================
@@ -99,6 +100,7 @@ struct NetPeer
     // crosstalk on a shared port is not an attack.
     std::uint32_t Strikes = 0;
     double LastHeardSeconds = 0.0;
+    double LastPingSentSeconds = 0.0;
     std::uint64_t RoundTripMicroseconds = 0;
 };
 
@@ -180,6 +182,10 @@ public:
     [[nodiscard]] const std::string& JoinFailureReason() const { return FailureReason; }
     [[nodiscard]] PeerId LocalPeerId() const { return SelfId; }
     [[nodiscard]] std::uint64_t AuthorityTick() const { return LastAuthorityTick; }
+    // Who the client dialed, and the round trip its keepalives measure. The
+    // host reads per-peer round trips off NetPeer instead.
+    [[nodiscard]] const NetAddress& Authority() const { return AuthorityAddress; }
+    [[nodiscard]] std::uint64_t RoundTripMicroseconds() const { return RttMicroseconds; }
 
     // Diagnostics for the status command.
     [[nodiscard]] std::uint64_t StrikesIssued() const { return TotalStrikes; }
@@ -189,7 +195,11 @@ private:
     [[nodiscard]] NetPeer* PeerByAddress(const NetAddress& address);
     void HandleAuthorityMessage(const NetDatagram& datagram, double nowSeconds,
                                 std::vector<Delivery>& out);
-    void HandleClientMessage(const NetDatagram& datagram, std::vector<Delivery>& out);
+    void HandleClientMessage(const NetDatagram& datagram, double nowSeconds,
+                             std::vector<Delivery>& out);
+    // Keepalive cadence, derived from the timeout so several pings fit inside
+    // one timeout window whatever the timeout is set to.
+    [[nodiscard]] double KeepaliveSeconds() const { return TimeoutSeconds * 0.25; }
     void DeliverChannelPayloads(NetPeer& peer, std::span<const std::byte> packet,
                                 double nowSeconds, std::vector<Delivery>& out);
     void Strike(NetPeer& peer, std::string_view why);
@@ -219,7 +229,13 @@ private:
     bool Admitted = false;
     PeerId SelfId;
     std::uint64_t LastAuthorityTick = 0;
+    // Armed by the first pump after Connect, because Connect has no clock. A
+    // flag rather than a zero sentinel: time zero is a legitimate first pump.
+    bool ConnectClockArmed = false;
     double ConnectStartedSeconds = 0.0;
+    double AuthorityLastHeardSeconds = 0.0;
+    double LastPingSentSeconds = 0.0;
+    std::uint64_t RttMicroseconds = 0;
     NetJoinFailure Failure = NetJoinFailure::None;
     std::string FailureReason;
 
