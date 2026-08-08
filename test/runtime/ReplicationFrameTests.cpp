@@ -147,6 +147,20 @@ namespace
             Driver = &system;
         }
 
+        void OnShutdown(GameShutdownContext&) override
+        {
+            // Copied out while the schedule still owns the system. Application
+            // destroys the engine before Run returns, so a pointer into a
+            // system is dangling by the time a test body could read it -- the
+            // values happen to survive in freed memory, which is why this only
+            // shows up under a sanitizer.
+            if (Driver != nullptr)
+            {
+                Applied = Driver->Applied;
+                SeenPosition = Driver->SeenPosition;
+            }
+        }
+
         UdpTransport Transport;
         NetSession& Client;
         StandaloneWorld& Mirror;
@@ -155,6 +169,8 @@ namespace
         ClientPumpSystem* Driver = nullptr;
         bool Hosting = false;
         bool Dialed = false;
+        int Applied = 0;
+        Vec3d SeenPosition;
     };
 
     //-------------------------------------------------------------------------
@@ -261,13 +277,13 @@ TEST(ReplicationFrame, TheFlushPhasePublishesWhatTheAuthorityHolds)
 
     ASSERT_TRUE(game.Hosting) << "the engine never started hosting";
     ASSERT_TRUE(game.Dialed) << "the hand-driven client never opened a socket";
-    ASSERT_NE(game.Driver, nullptr);
+    ASSERT_NE(game.Driver, nullptr) << "the pump system was never registered";
 
-    EXPECT_GT(game.Driver->Applied, 0)
+    EXPECT_GT(game.Applied, 0)
         << "the flush phase never published a snapshot";
-    EXPECT_FLOAT_EQ(game.Driver->SeenPosition.X, 12.0f);
-    EXPECT_FLOAT_EQ(game.Driver->SeenPosition.Y, 34.0f);
-    EXPECT_FLOAT_EQ(game.Driver->SeenPosition.Z, 56.0f);
+    EXPECT_FLOAT_EQ(game.SeenPosition.X, 12.0f);
+    EXPECT_FLOAT_EQ(game.SeenPosition.Y, 34.0f);
+    EXPECT_FLOAT_EQ(game.SeenPosition.Z, 56.0f);
 }
 
 // The mirror image: nothing here calls Apply on the engine, so the entity can
