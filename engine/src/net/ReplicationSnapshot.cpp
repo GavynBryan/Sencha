@@ -66,16 +66,68 @@ const ReplicationPeerState::EntityBaseline* ReplicationPeerState::Find(
     return it == Baselines.end() ? nullptr : &it->second;
 }
 
-void ReplicationPeerState::Record(NetEntityId id, std::uint8_t component,
-                                  std::span<const std::byte> bytes)
+void ReplicationPeerState::BeginSnapshot(std::uint64_t tick)
 {
-    std::vector<std::byte>& stored = Baselines[id].Components[component];
-    stored.assign(bytes.begin(), bytes.end());
+    if (Pending.size() < kMaxUnacknowledged)
+    {
+        if (Pending.empty() || Pending.back().Tick != tick)
+            Pending.push_back(SentSnapshot{ .Tick = tick, .Components = {} });
+        return;
+    }
+
+    // This peer has not confirmed anything for longer than is worth tracking.
+    // Everything believed about it is a guess by now, so it is treated as new:
+    // the snapshot about to be written is full state, and it costs one
+    // snapshot rather than an unbounded pile of them.
+    Baselines.clear();
+    Pending.clear();
+    Pending.push_back(SentSnapshot{ .Tick = tick, .Components = {} });
+}
+
+void ReplicationPeerState::RecordSent(std::uint64_t tick, NetEntityId id,
+                                      std::uint8_t component,
+                                      std::span<const std::byte> bytes)
+{
+    // Held aside, not applied. What the peer holds only changes when the peer
+    // says so, because a snapshot that was written is not a snapshot that
+    // arrived.
+    if (Pending.empty() || Pending.back().Tick != tick)
+        BeginSnapshot(tick);
+
+    Pending.back().Components.emplace_back(
+        id, component, std::vector<std::byte>(bytes.begin(), bytes.end()));
+}
+
+void ReplicationPeerState::Acknowledge(std::uint64_t tick)
+{
+    std::size_t applied = 0;
+    for (const SentSnapshot& snapshot : Pending)
+    {
+        if (snapshot.Tick > tick)
+            break;
+        for (const auto& [id, component, bytes] : snapshot.Components)
+            Baselines[id].Components[component] = bytes;
+        ++applied;
+    }
+    Pending.erase(Pending.begin(),
+                  Pending.begin() + static_cast<std::ptrdiff_t>(applied));
 }
 
 void ReplicationPeerState::Forget(NetEntityId id)
 {
     Baselines.erase(id);
+    for (SentSnapshot& snapshot : Pending)
+    {
+        std::erase_if(snapshot.Components, [id](const auto& entry) {
+            return std::get<0>(entry) == id;
+        });
+    }
+}
+
+void ReplicationPeerState::Clear()
+{
+    Baselines.clear();
+    Pending.clear();
 }
 
 //=============================================================================
@@ -145,6 +197,9 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
     const World& reading = world;
     const ReplicationLayout& layout = *request.Layout;
     ReplicationPeerState& peer = *request.Peer;
+    // Before any difference is computed, so the whole snapshot is measured from
+    // one baseline rather than from one that changed part way through.
+    peer.BeginSnapshot(request.Tick);
     const bool hasOwners = world.IsRegistered(ResolveComponentTypeId<NetOwner>());
 
     // Nothing is marked for replication in a world that never registered the
@@ -296,7 +351,7 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
     for (const PendingEntity& entity : live)
     {
         for (const auto& [wireIndex, bytes] : entity.Components)
-            peer.Record(entity.Id, wireIndex, bytes);
+            peer.RecordSent(request.Tick, entity.Id, wireIndex, bytes);
     }
 
     // Identities of entities the world no longer has stop being remembered.

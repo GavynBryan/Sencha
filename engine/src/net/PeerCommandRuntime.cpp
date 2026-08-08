@@ -103,7 +103,8 @@ void PeerCommandRuntime::Feed(World& world, std::uint64_t tick)
 }
 
 std::size_t PeerCommandRuntime::SendLocal(NetSession& session,
-                                          const PawnCommandRing& ring)
+                                          const PawnCommandRing& ring,
+                                          std::uint64_t snapshotAck)
 {
     if (session.Role() != NetSessionRole::Client || !session.IsConnected())
         return 0;
@@ -115,6 +116,7 @@ std::size_t PeerCommandRuntime::SendLocal(NetSession& session,
     // is re-sampled here, because anything sampled at send time is a different
     // moment from the one the tick ran at.
     NetPlayerCommand command;
+    command.SnapshotAck = snapshotAck;
     const std::size_t window =
         std::min<std::size_t>(ring.Size(), kNetMaxCommandRecords);
     for (std::size_t index = 0; index < window; ++index)
@@ -161,6 +163,12 @@ std::uint64_t PeerCommandRuntime::AckFor(PeerId peer) const
 {
     const auto it = Buffers.find(peer);
     return it == Buffers.end() ? 0 : it->second.ConsumedThrough();
+}
+
+std::uint64_t PeerCommandRuntime::SnapshotAckFor(PeerId peer) const
+{
+    const auto it = Buffers.find(peer);
+    return it == Buffers.end() ? 0 : it->second.SnapshotAck();
 }
 
 const NetPeerCommandBuffer* PeerCommandRuntime::Peer(PeerId peer) const

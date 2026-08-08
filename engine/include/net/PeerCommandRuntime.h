@@ -53,7 +53,8 @@ public:
     // the authority's clock and already carry the aim each tick ran with, so
     // nothing here re-samples anything: a value read at send time belongs to a
     // different moment than the tick it would be attributed to.
-    std::size_t SendLocal(NetSession& session, const PawnCommandRing& ring);
+    std::size_t SendLocal(NetSession& session, const PawnCommandRing& ring,
+                          std::uint64_t snapshotAck);
 
     // How many ticks of input each peer's buffer holds back before consuming.
     // Applied at the next feed, so raising it mid-session costs latency
@@ -68,6 +69,10 @@ public:
     // snapshot that tells it so. Zero for a peer that has not spoken yet, which
     // is also what "nothing of yours has been simulated" means.
     [[nodiscard]] std::uint64_t AckFor(PeerId peer) const;
+
+    // The newest snapshot this peer has said it applied, which is the state any
+    // difference sent to it must be measured from.
+    [[nodiscard]] std::uint64_t SnapshotAckFor(PeerId peer) const;
 
     [[nodiscard]] std::size_t TrackedPeers() const { return Buffers.size(); }
     [[nodiscard]] const NetPeerCommandBuffer* Peer(PeerId peer) const;

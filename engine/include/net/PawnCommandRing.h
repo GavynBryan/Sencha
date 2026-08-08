@@ -66,23 +66,18 @@ public:
     void DropThrough(std::uint64_t tick);
 
     // Oldest first, for replay. False when the span cannot be replayed
-    // faithfully: a tick between the acknowledgement and the oldest record held
-    // has already been overwritten, so replaying what remains would skip input
-    // the authority is about to apply.
+    // faithfully: a tick the authority has not confirmed has already been
+    // pushed out of the window, so replaying what remains would skip input it
+    // is about to apply.
+    //
+    // An acknowledgement far below what is held is not a gap by itself -- at
+    // the start of a session nothing has been confirmed and every record ever
+    // captured is still here. What makes a gap is having lost one.
     template <typename Fn>
     [[nodiscard]] bool ForEachAfter(std::uint64_t tick, Fn&& visit) const
     {
-        if (Count == 0)
-            return tick >= Newest;
-
-        // Everything held is older than the acknowledgement: nothing to replay,
-        // which is not a gap.
-        if (tick >= Newest)
-            return true;
-
-        const std::uint64_t oldest = At(0).Tick;
-        if (tick + 1 < oldest)
-            return false;  // the window moved past a tick still owed
+        if (tick < LostThrough)
+            return false;
 
         for (std::size_t index = 0; index < Count; ++index)
         {
@@ -110,4 +105,7 @@ private:
     std::size_t Head = 0;
     std::size_t Count = 0;
     std::uint64_t Newest = 0;
+    // The newest tick this ring has had to overwrite. An acknowledgement at or
+    // above it means nothing owed has been lost; below it, something has.
+    std::uint64_t LostThrough = 0;
 };

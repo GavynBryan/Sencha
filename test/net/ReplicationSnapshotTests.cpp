@@ -38,6 +38,9 @@ namespace
 
         std::vector<std::byte> Scratch;
         std::uint64_t Tick = 0;
+        // Whether the client confirms what it applied. Off models a peer whose
+        // acknowledgements are not arriving.
+        bool Acknowledge = true;
         SnapshotWriteResult LastWrite;
         SnapshotApplyResult LastApply;
 
@@ -86,6 +89,13 @@ namespace
                 apply, std::span(Scratch).subspan(0, LastWrite.BytesWritten));
             EXPECT_TRUE(LastApply.Ok())
                 << SnapshotApplyErrorToString(LastApply.Error);
+
+            // The client applied it, so it says so. Deltas are measured from
+            // what a peer has confirmed, and a harness that never confirmed
+            // would be testing a peer that never answers -- which has its own
+            // test below.
+            if (Acknowledge)
+                Peer.Acknowledge(Tick);
             return LastWrite.BytesWritten;
         }
 
@@ -424,6 +434,83 @@ TEST(ReplicationSnapshot, CarriesHowFarTheAuthorityGotThroughThisClientsInput)
     // And it moves with the authority rather than sticking at the first value.
     pair.Replicate(0, nullptr, nullptr, nullptr, 4400);
     EXPECT_EQ(pair.LastApply.CommandAck, 4400u);
+}
+
+//=============================================================================
+// Deltas are measured from what the peer confirmed, not from what was sent
+//
+// The defect this closes cost a whole session's worth of state for one dropped
+// datagram. A snapshot rides an unreliable channel, so writing one is not
+// delivering it; a baseline advanced on writing then describes a state the peer
+// never reached, and every later difference is measured from that fiction. A
+// position hides it -- it changes every tick, so every snapshot re-carries it.
+// Anything that settles does not.
+//=============================================================================
+
+TEST(ReplicationAcknowledgement, StateSurvivesASnapshotThatNeverArrives)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 7 });
+    pair.Authority.AddComponent<CharacterMovement>(
+        authority, CharacterMovement{ .Mode = LocomotionModeId{ 3 } });
+
+    // The snapshot carrying the mode is written and lost: the client never sees
+    // these bytes, so it never confirms them.
+    pair.Acknowledge = false;
+    pair.Replicate(7);
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+    pair.Client.TryGet<CharacterMovement>(mirror)->Mode = LocomotionModeId{};
+
+    // Everything after it arrives normally. The mode never changes again, so
+    // nothing but the acknowledgement rule can bring it back.
+    pair.Acknowledge = true;
+    for (int step = 0; step < 3; ++step)
+    {
+        pair.Authority.TryGet<LocalTransform>(authority)->Value.Position =
+            Vec3d{ static_cast<float>(step), 0.0f, 0.0f };
+        pair.Replicate(7);
+    }
+
+    EXPECT_EQ(pair.Client.TryGet<CharacterMovement>(mirror)->Mode.Value, 3u)
+        << "a lost snapshot took a settled value with it for the rest of the "
+           "session, because the authority went on describing differences from "
+           "a state this client was never in";
+}
+
+// The other half of the same rule: a peer that keeps confirming pays for what
+// it already has exactly once.
+TEST(ReplicationAcknowledgement, ConfirmedStateIsNotSentAgain)
+{
+    Pair pair;
+    (void)pair.SpawnReplicated(PoseAt(1.0f, 2.0f, 3.0f));
+
+    const std::size_t first = pair.Replicate();
+    const std::size_t second = pair.Replicate();
+    EXPECT_LT(second, first)
+        << "a world that did not move cost as much to describe the second time";
+}
+
+// A peer that stops answering cannot be tracked forever. Rather than grow, the
+// authority forgets what it believed and tells that peer everything again.
+TEST(ReplicationAcknowledgement, APeerThatStopsConfirmingIsToldEverythingAgain)
+{
+    Pair pair;
+    (void)pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    pair.Acknowledge = false;
+    for (std::size_t step = 0; step < ReplicationPeerState::kMaxUnacknowledged + 4;
+         ++step)
+    {
+        pair.Replicate();
+    }
+
+    EXPECT_LE(pair.Peer.Unacknowledged(),
+              ReplicationPeerState::kMaxUnacknowledged + 1)
+        << "the authority kept every unconfirmed snapshot, so a silent peer "
+           "buys memory on the machine hosting it";
 }
 
 //=============================================================================

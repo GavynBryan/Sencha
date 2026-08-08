@@ -188,7 +188,7 @@ std::size_t NetEncodePlayerCommand(const NetPlayerCommand& command,
     // with a bit saying whether another follows, and a bit writer cannot be
     // rewound to correct one: running out halfway would leave a message
     // claiming input it does not carry.
-    const std::size_t headerBits = kActionCountBits + 64;
+    const std::size_t headerBits = kActionCountBits + 64 + 64;
     std::size_t budget = writer.BitsRemaining();
     if (budget < headerBits)
         return 0;
@@ -219,6 +219,7 @@ std::size_t NetEncodePlayerCommand(const NetPlayerCommand& command,
     if (count == 0)
         return 0;
 
+    writer.WriteU64(command.SnapshotAck);
     writer.WriteBits(actions, kActionCountBits);
     writer.WriteU64(newestTick);
 
@@ -243,7 +244,8 @@ bool NetDecodePlayerCommand(NetBitReader& reader, NetPlayerCommand& out)
 
     std::uint32_t actions = 0;
     std::uint64_t newestTick = 0;
-    if (!reader.ReadBits(kActionCountBits, actions)
+    if (!reader.ReadU64(out.SnapshotAck)
+        || !reader.ReadBits(kActionCountBits, actions)
         || !reader.ReadU64(newestTick))
     {
         return false;
@@ -294,6 +296,7 @@ void NetPeerCommandBuffer::Receive(const NetPlayerCommand& command)
         return;
 
     const std::uint64_t newest = command.Records[0].Tick;
+    AckedSnapshot = std::max(AckedSnapshot, command.SnapshotAck);
 
     // First contact takes the newest record only. The window behind it is
     // insurance for ticks this authority never ran; queueing it would seed a

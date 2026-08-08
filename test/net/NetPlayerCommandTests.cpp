@@ -155,7 +155,7 @@ TEST(NetPlayerCommandCodec, DropsOldRedundancyRatherThanTheCommand)
     const NetPlayerCommand sent = CommandEndingAt(500, 8);
 
     // Sized to fit the header and roughly two records.
-    const RoundTrip trip(sent, 32);
+    const RoundTrip trip(sent, 48);
 
     ASSERT_TRUE(trip.Ok);
     EXPECT_GE(trip.Encoded, 1u);

@@ -338,7 +338,8 @@ void Engine::RegisterNetFramePhases()
             // record filed under a name the authority cannot place is one it
             // can never acknowledge.
             const std::size_t bytes = engine.PeerCommands().SendLocal(
-                *session, engine.Prediction().Commands());
+                *session, engine.Prediction().Commands(),
+                engine.Replication().AppliedSnapshot());
             if (bytes > 0)
                 traffic.RecordOut(NetTrafficKind::Command, bytes);
         }

@@ -4,8 +4,9 @@ void PawnCommandRing::Push(const PawnCommandTick& record)
 {
     if (Count == kDepth)
     {
-        // The oldest goes; a tick this far behind is one no acknowledgement is
-        // still going to arrive for.
+        // The oldest goes, and the ring remembers losing it: a replay asked to
+        // start from before this point cannot be honest about what it skipped.
+        LostThrough = Records[Head].Tick;
         Records[Head] = record;
         Head = (Head + 1) % kDepth;
     }
@@ -22,6 +23,7 @@ void PawnCommandRing::Clear()
     Head = 0;
     Count = 0;
     Newest = 0;
+    LostThrough = 0;
 }
 
 void PawnCommandRing::DropThrough(std::uint64_t tick)

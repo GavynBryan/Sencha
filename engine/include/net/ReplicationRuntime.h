@@ -56,6 +56,11 @@ public:
                               ClientPrediction* prediction = nullptr,
                               ReplicationInterpolation* interpolation = nullptr);
 
+    // Client side. The newest snapshot this machine has applied, which is what
+    // it tells the authority so the next difference is measured from a state it
+    // actually reached.
+    [[nodiscard]] std::uint64_t AppliedSnapshot() const { return AppliedTick; }
+
     // A peer that left keeps no baseline: it would be a growing memory cost
     // against a peer that will never receive anything again, and a peer id can
     // be reused.
@@ -73,6 +78,7 @@ private:
     ReplicationAuthorityIdentity Identity;
     std::unordered_map<PeerId, ReplicationPeerState> Peers;
     ReplicationClientIdentity ClientMap;
+    std::uint64_t AppliedTick = 0;
     // Reused across peers and frames. Sized once to the largest datagram a
     // channel will fragment for us, so publishing allocates nothing per frame.
     std::vector<std::byte> Scratch;

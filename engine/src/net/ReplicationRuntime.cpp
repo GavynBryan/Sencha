@@ -47,6 +47,12 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
         request.Tick = tick;
         request.CommandAck = commands == nullptr ? 0 : commands->AckFor(peer);
 
+        // What this peer has confirmed holding, before the difference against
+        // it is computed. The bound on how far it may fall behind is the peer
+        // state's own business.
+        if (commands != nullptr)
+            baseline.Acknowledge(commands->SnapshotAckFor(peer));
+
         const SnapshotWriteResult written = ReplicationWriteSnapshot(
             request, std::span(Scratch).subspan(kKindBytes, kMaxSnapshotBytes));
         if (!written.Ok)
@@ -103,7 +109,13 @@ SnapshotApplyResult ReplicationRuntime::Apply(std::span<const std::byte> payload
     request.Prediction = prediction;
     request.Interpolation = interpolation;
 
-    return ReplicationApplySnapshot(request, payload.subspan(kKindBytes));
+    const SnapshotApplyResult applied =
+        ReplicationApplySnapshot(request, payload.subspan(kKindBytes));
+    // Only a snapshot that applied cleanly counts as one this machine holds; a
+    // refused one left the world part-way and must not be acknowledged.
+    if (applied.Ok())
+        AppliedTick = std::max(AppliedTick, applied.Tick);
+    return applied;
 }
 
 void ReplicationRuntime::ForgetPeer(PeerId peer)
@@ -116,4 +128,5 @@ void ReplicationRuntime::Reset()
     Identity = ReplicationAuthorityIdentity{};
     Peers.clear();
     ClientMap.Clear();
+    AppliedTick = 0;
 }
