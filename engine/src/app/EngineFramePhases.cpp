@@ -8,6 +8,8 @@
 #include <world/transform/TransformHistory.h>
 #include <core/console/ConsoleService.h>
 #include <net/NetCVarSync.h>
+#include <physics/CharacterMoverPool.h>
+#include <physics/components/CharacterMoverLink.h>
 #include <net/NetConsoleCommands.h>
 #include <net/NetSession.h>
 #include <net/ReplicationSnapshot.h>
@@ -254,12 +256,30 @@ void Engine::RegisterNetFramePhases()
             // authority's position would drag them back by the round trip.
             if (applied.Prediction.has_value())
             {
-                // The cvar is read here rather than latched, so turning
-                // prediction off mid-session stops correcting immediately
-                // instead of at the next join.
                 const EntityId pawn = engine.Prediction().Predicted();
-                if (LocalTransform* pose = world.TryGet<LocalTransform>(pawn))
-                    pose->Value.Position += applied.Prediction->Offset;
+                if (const LocalTransform* pose = world.TryGet<LocalTransform>(pawn))
+                {
+                    const Vec3d corrected =
+                        pose->Value.Position + applied.Prediction->Offset;
+
+                    // Through the mover, never onto the transform alone. A
+                    // character's position lives inside its mover; the transform
+                    // is where the last sweep left a copy. Writing only the copy
+                    // is undone on the next tick, which starts from where the
+                    // mover still believes it is -- a correction that reports
+                    // itself as applied and moves nothing.
+                    if (world.HasComponent<CharacterMoverLink>(pawn)
+                        && world.HasResource<CharacterMoverPool>())
+                    {
+                        (void)world.GetResource<CharacterMoverPool>().SetPosition(
+                            world, pawn, corrected);
+                    }
+                    else if (LocalTransform* writable =
+                                 world.TryGet<LocalTransform>(pawn))
+                    {
+                        writable->Value.Position = corrected;
+                    }
+                }
             }
             // Every snapshot is also a clock sample, and the freshest one
             // available: it leaves the authority stamped with the tick that
