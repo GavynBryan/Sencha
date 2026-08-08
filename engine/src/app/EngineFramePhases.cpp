@@ -109,8 +109,10 @@ void Engine::RegisterNetFramePhases()
             {
                 log.Info("net: peer {} left ({})", event.Peer.Value, event.Reason);
                 // Their baseline goes with them: it describes what a peer that
-                // will never receive anything again was told.
+                // will never receive anything again was told, and their queued
+                // input describes ticks nobody will simulate.
                 engine.Replication().ForgetPeer(event.Peer);
+                engine.PeerCommands().ForgetPeer(event.Peer);
             }
         }
 
@@ -163,6 +165,20 @@ void Engine::RegisterNetFramePhases()
                 continue;
             }
 
+            // A player's request arriving. Buffered here and fed on the tick
+            // clock, because a frame that runs several ticks owes a remote
+            // player as many ticks of input as it gives the local one.
+            if (static_cast<NetPayloadKind>(delivery.Payload[0])
+                == NetPayloadKind::Command)
+            {
+                if (!engine.PeerCommands().Receive(delivery.From, delivery.Payload))
+                {
+                    log.Warn("net: refused a command from peer {}",
+                             delivery.From.Value);
+                }
+                continue;
+            }
+
             // Anything else that is not a snapshot is the game's; it is kept
             // for this frame rather than interpreted here.
             if (static_cast<NetPayloadKind>(delivery.Payload[0])
@@ -207,6 +223,13 @@ void Engine::RegisterNetFramePhases()
             // told and sends only differences.
             (void)engine.CVarPublisher().Publish(
                 *session, engine.Console().Registry());
+        }
+        else if (session->Role() == NetSessionRole::Client)
+        {
+            // Queued after the ticks that resolved it, so the newest record a
+            // command carries is this frame's rather than the previous one's.
+            (void)engine.PeerCommands().SendLocal(
+                *session, engine.World().Entities());
         }
 
         session->Flush(ctx.Runtime->GetCurrentFrame().WallTime.UnscaledElapsed);

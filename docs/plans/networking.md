@@ -1340,6 +1340,23 @@ what extraction actually reads.
   authority interprets remote input with the same game code it runs for local
   input, and abilities cross the wire without bespoke messages.
 
+  *Possession status 2026-08-07: landed.* `input/InputActionSource.h` owns the
+  rule (`InputActionSourceRef`, `InputActionSourceTable`, and an
+  `InputActionSources` resolver a pass builds once); `net/NetPlayerCommand.h`
+  carries the action columns, the aim sample, and a continuation-bit redundancy
+  window that drops its oldest records rather than the command; and
+  `net/PeerCommandRuntime.h` buffers per peer, hands out one record per fixed
+  tick through `PeerCommandFeedSystem`, and holds held actions while clearing
+  edges on a starved tick. A peer's id is its input source id. The skip rule
+  inside `CharacterInputSystem` is gone, as is the local scaffolding a client
+  used to graft onto its own mirrored pawn. Two deviations from the text above:
+  a peer's actions ride the wire as the dense array the local vocabulary is
+  indexed by rather than through a synced name table (both ends compile the same
+  vocabulary from the same content, and a mismatch scrambles only that client's
+  own controls because the authority validates every effect an action can have);
+  and axes travel at full float width rather than quantized, because an action's
+  magnitude is not bounded by anything the input layer promises.
+
   *Spawn recipes.* A snapshot-spawned entity currently carries only its
   replicated components: no derived columns, no local scaffolding, with each
   game hand-rolling the difference. The playtest's frozen-motion defect was

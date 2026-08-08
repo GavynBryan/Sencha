@@ -7,6 +7,7 @@
 #include <ecs/WorldComponentSchema.h>
 #include <effects/ActiveEffect.h>
 #include <gameplay_tags/GameplayTagContainer.h>
+#include <input/InputActionSource.h>
 #include <movement/MovementComponents.h>
 #include <movement/MovementIntent.h>
 #include <net/NetReplicationComponents.h>
@@ -79,6 +80,10 @@ void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)
     // Per-tick pose history for entities that opt into render interpolation.
     // Derived and runtime-only, like WorldTransform: never serialized.
     schema.Add<WorldTransformHistory>();
+
+    // Which input source steers an entity. Absent means this machine's own, so
+    // single-player content never carries one.
+    schema.Add<InputActionSourceRef>();
 
     // Session data: which entities travel and whose inputs drive them. Present
     // in every build because a World's component vocabulary is fixed before any

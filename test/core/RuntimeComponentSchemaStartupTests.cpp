@@ -17,6 +17,7 @@
 #include <movement/MovementComponents.h>
 #include <movement/MovementIntent.h>
 #include <net/NetReplicationComponents.h>
+#include <input/InputActionSource.h>
 #include <net/NetSpawnRecipe.h>
 #include <physics/components/CharacterController.h>
 #include <physics/components/CharacterMoverLink.h>
@@ -256,7 +257,7 @@ TEST(RuntimeComponentSchema, EngineSchemaUsesCanonicalComponentIds)
     RegisterEngineRuntimeComponents(schema);
     schema.Seal();
 
-    EXPECT_EQ(schema.Size(), 44u);
+    EXPECT_EQ(schema.Size(), 45u);
 
     World world;
     schema.Apply(world);
@@ -302,9 +303,10 @@ TEST(RuntimeComponentSchema, EngineSchemaUsesCanonicalComponentIds)
     ExpectComponentId<LookOrientation>(world, 38);
     ExpectComponentId<LocalLookControl>(world, 39);
     ExpectComponentId<WorldTransformHistory>(world, 40);
-    ExpectComponentId<NetReplicated>(world, 41);
-    ExpectComponentId<NetOwner>(world, 42);
-    ExpectComponentId<NetSpawnRecipe>(world, 43);
+    ExpectComponentId<InputActionSourceRef>(world, 41);
+    ExpectComponentId<NetReplicated>(world, 42);
+    ExpectComponentId<NetOwner>(world, 43);
+    ExpectComponentId<NetSpawnRecipe>(world, 44);
 }
 
 TEST(RuntimeComponentSchema, EngineOwnsUnifiedWorldBeforeGameStart)
@@ -325,9 +327,9 @@ TEST(RuntimeComponentSchema, EngineOwnsUnifiedWorldBeforeGameStart)
     EXPECT_TRUE(game.AppliedGameComponent);
     EXPECT_TRUE(game.SawEngineOwnedWorld);
     EXPECT_TRUE(game.EngineOwnedEntityWasPersistent);
-    EXPECT_EQ(game.SchemaSize, 45u);
-    EXPECT_EQ(game.AppliedGameComponentId, 44u);
-    EXPECT_EQ(game.EngineOwnedGameComponentId, 44u);
+    EXPECT_EQ(game.SchemaSize, 46u);
+    EXPECT_EQ(game.AppliedGameComponentId, 45u);
+    EXPECT_EQ(game.EngineOwnedGameComponentId, 45u);
     EXPECT_EQ(StartupGameRemoveCalls, 1);
 }
 

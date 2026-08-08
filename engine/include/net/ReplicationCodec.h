@@ -43,6 +43,12 @@ public:
 
     [[nodiscard]] bool Overflowed() const { return Overflow; }
     [[nodiscard]] std::size_t BitsWritten() const { return Cursor; }
+    // What is left. A writer that composes optional parts asks before writing
+    // one, because a bit writer cannot be rewound once it has overflowed.
+    [[nodiscard]] std::size_t BitsRemaining() const
+    {
+        return Overflow ? 0 : Buffer.size() * 8 - Cursor;
+    }
     // Rounded up to whole bytes; the tail bits of the last byte are zero.
     [[nodiscard]] std::size_t BytesWritten() const { return (Cursor + 7) / 8; }
     [[nodiscard]] std::span<const std::byte> Written() const

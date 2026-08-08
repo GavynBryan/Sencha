@@ -38,6 +38,7 @@
 #include <movement/MovementIntent.h>
 #include <movement/MovementProfileBindingCache.h>
 #include <input/InputActionResolveSystem.h>
+#include <input/InputActionSource.h>
 #include <input/InputActionState.h>
 #include <input/InputBindingCache.h>
 #include <input/InputRegistration.h>
@@ -45,7 +46,7 @@
 #include <net/NetReplicationComponents.h>
 #include <net/NetSpawnRecipe.h>
 #include <net/NetSession.h>
-#include <net/ReplicationCodec.h>
+#include <net/PeerCommandRuntime.h>
 #include <movement/MovementTags.h>
 #include <physics/CollisionShapeCache.h>
 #include <physics/CharacterMoverPool.h>
@@ -551,25 +552,14 @@ struct CharacterInputSystem
 
         const TemplateInputActions* actionIds =
             world.TryGetResource<TemplateInputActions>();
-        const InputActionState* actions =
-            world.TryGetResource<InputActionState>();
-        if (actionIds == nullptr || actions == nullptr)
+        if (actionIds == nullptr)
             return;
 
-        // This tick's resolved actions, not the frame's: a frame that runs
-        // several ticks steers each of them, and one that runs none steers
-        // nothing.
-        const InputActionView input = actions->Tick();
-        const Vec2d move = input.Axis2(actionIds->Move);
-        const float strafe = move.X;
-        const float forward = move.Y;
-
-        // Whichever moment the action set authored. Jump authors "while held":
-        // queueing the ability every tick while the control is down means a
-        // press just before landing fires on the first grounded tick, and
-        // holding it hops again on each landing. The activation gate (grounded,
-        // cooldown) rejects the rest for free.
-        const bool jump = input.Fired(actionIds->Jump);
+        // Every controlled entity steers from its own input source: this
+        // machine's devices for the player sitting here, a peer's arriving
+        // commands for everyone else. Resolving one action state for the whole
+        // pass is what would make one player's keys move every pawn at once.
+        const InputActionSources sources(world);
 
         // Each controlled entity steers along its own aim, read from the entity
         // rather than from whatever camera happens to be watching it.
@@ -591,18 +581,23 @@ struct CharacterInputSystem
                 if (!entityTags[index].HasExact(tags->Controlled))
                     continue;
 
-                // Local input steers what this machine controls and nothing
-                // else. An entity a peer owns is steered by that peer's
-                // commands; without this, a host's keys would write intent
-                // onto every pawn in the session. The local-control mark is
-                // the exception that keeps a client steering its own pawn,
-                // which carries its owner id.
                 const EntityId steered = view.Entity(index);
-                if (world.HasComponent<NetOwner>(steered)
-                    && !world.HasComponent<LocalLookControl>(steered))
-                {
-                    continue;
-                }
+
+                // This tick's actions, not the frame's: a frame that runs
+                // several ticks steers each of them, and one that runs none
+                // steers nothing.
+                const InputActionView input = sources.TickFor(steered);
+                const Vec2d move = input.Axis2(actionIds->Move);
+                const float strafe = move.X;
+                const float forward = move.Y;
+
+                // Whichever moment the action set authored. Jump authors "while
+                // held": queueing the ability every tick while the control is
+                // down means a press just before landing fires on the first
+                // grounded tick, and holding it hops again on each landing. The
+                // activation gate (grounded, cooldown) rejects the rest for
+                // free.
+                const bool jump = input.Fired(actionIds->Jump);
 
                 const Quatf frame = Quatf::FromAxisAngle(
                     Vec3d::Up(), orientations[index].Yaw);
@@ -634,85 +629,6 @@ enum : NetSpawnRecipeId
 };
 
 //=============================================================================
-// PlayerCommand
-//
-// One tick of what a player is asking for: where they are aiming and which way
-// they want to move. The shape is the usercmd every authoritative shooter has
-// had since Quake, and for the same reason -- it is the smallest thing a
-// server can simulate from that a client cannot lie its way past. Nothing here
-// is state: the authority decides where the player ends up.
-//
-// WishDir travels already framed against the player's own view because the
-// game is what knows how a camera frames movement. Its length is clamped on
-// arrival, so a client claiming a longer vector gets the same speed as
-// everyone else; the authority's own profile decides how fast that is.
-//=============================================================================
-struct PlayerCommand
-{
-    std::uint64_t Tick = 0;
-    float Yaw = 0.0f;
-    float Pitch = 0.0f;
-    // Planar, so only two components travel. The vertical one is not a thing a
-    // player asks for; it is what gravity and the mover decide.
-    float WishX = 0.0f;
-    float WishZ = 0.0f;
-};
-
-void EncodePlayerCommand(const PlayerCommand& command, NetBitWriter& writer)
-{
-    writer.WriteU64(command.Tick);
-    writer.WriteFloat(command.Yaw);
-    writer.WriteFloat(command.Pitch);
-    writer.WriteFloat(command.WishX);
-    writer.WriteFloat(command.WishZ);
-}
-
-bool DecodePlayerCommand(NetBitReader& reader, PlayerCommand& out)
-{
-    return reader.ReadU64(out.Tick)
-        && reader.ReadFloat(out.Yaw)
-        && reader.ReadFloat(out.Pitch)
-        && reader.ReadFloat(out.WishX)
-        && reader.ReadFloat(out.WishZ);
-}
-
-// Everything a command carries is applied through this, on the authority, so
-// there is one place that decides what a client is allowed to ask for.
-void ApplyPlayerCommand(World& world, EntityId pawn, const PlayerCommand& command)
-{
-    if (!world.IsAlive(pawn))
-        return;
-
-    // Non-finite values would poison the simulation on arrival, and they are
-    // the first thing anyone sends when probing a server.
-    const bool finite = std::isfinite(command.Yaw) && std::isfinite(command.Pitch)
-                     && std::isfinite(command.WishX) && std::isfinite(command.WishZ);
-    if (!finite)
-        return;
-
-    if (LookOrientation* look = world.TryGet<LookOrientation>(pawn))
-    {
-        look->Yaw = command.Yaw;
-        look->Pitch = std::clamp(command.Pitch, look->MinPitch, look->MaxPitch);
-    }
-
-    if (MovementIntent* intent = world.TryGet<MovementIntent>(pawn))
-    {
-        Vec3d wish{ command.WishX, 0.0f, command.WishZ };
-        const float length = std::sqrt(wish.X * wish.X + wish.Z * wish.Z);
-        // Clamped, never normalized: a partly-deflected stick is a real request
-        // for less than full speed, and scaling it up would be the server
-        // inventing input nobody gave.
-        if (length > 1.0f)
-        {
-            wish.X /= length;
-            wish.Z /= length;
-        }
-        intent->WishDir = wish;
-    }
-}
-
-//=============================================================================
 // SessionPlayerSystem
 //
 // Keeps the set of player pawns in step with the set of peers, from whichever
@@ -736,7 +652,6 @@ struct SessionPlayerSystem
     // than every frame.
     EntityId LocalPawn;
     std::unordered_map<std::uint32_t, EntityId> PeerPawns;
-    std::unordered_set<std::uint32_t> CommandedPeers;
 
     void FrameUpdate(FrameUpdateContext& ctx)
     {
@@ -748,15 +663,9 @@ struct SessionPlayerSystem
             return;
 
         if (session->Role() == NetSessionRole::Host)
-        {
             ServePeers(world, *session);
-            ReceiveCommands(world);
-        }
         else if (session->Role() == NetSessionRole::Client && session->IsConnected())
-        {
             AdoptReplicatedPawns(world, session->LocalPeerId().Value);
-            SendCommand(world, *session);
-        }
     }
 
 private:
@@ -809,6 +718,12 @@ private:
             world.AddComponent<NetOwner>(pawn, NetOwner{ .Peer = peer.Value });
             world.AddComponent<NetSpawnRecipe>(
                 pawn, NetSpawnRecipe{ .Id = kPlayerPawnRecipe });
+            // Whose keys steer it. Without this the pawn reads the local
+            // source, which is the possession bug in one component: the person
+            // running the server would drive every pawn they are simulating on
+            // someone else's behalf.
+            world.AddComponent<InputActionSourceRef>(
+                pawn, InputActionSourceRef{ .Source = peer.Value });
             PeerPawns.emplace(peer.Value, pawn);
             Log().Info("TemplateGame: spawned a pawn for peer {}", peer.Value);
         }
@@ -829,72 +744,6 @@ private:
             Log().Info("TemplateGame: removed the pawn for peer {}", it->first);
             it = PeerPawns.erase(it);
         }
-    }
-
-    // The authority reads what its peers asked for and applies it to their own
-    // pawn and no one else's. Which pawn a peer owns is the authority's record,
-    // never something the message claims, so a peer cannot drive another's.
-    void ReceiveCommands(World& world)
-    {
-        for (const NetSession::Delivery& delivery : Owner->NetDeliveries())
-        {
-            if (delivery.Payload.size() < 2
-                || static_cast<NetPayloadKind>(delivery.Payload[0])
-                       != NetPayloadKind::Command)
-            {
-                continue;
-            }
-
-            const auto pawn = PeerPawns.find(delivery.From.Value);
-            if (pawn == PeerPawns.end())
-                continue;
-
-            NetBitReader reader(std::span<const std::byte>(delivery.Payload).subspan(1));
-            PlayerCommand command;
-            if (!DecodePlayerCommand(reader, command))
-                continue;
-            ApplyPlayerCommand(world, pawn->second, command);
-
-            // Once per peer: enough to show the loop closed, quiet enough to
-            // leave in. A rate every tick belongs on the stats panel.
-            if (CommandedPeers.insert(delivery.From.Value).second)
-            {
-                Log().Info("TemplateGame: first command from peer {}",
-                           delivery.From.Value);
-            }
-        }
-    }
-
-    // A client asks; it does not decide. Its own pawn is simulated on the
-    // authority, so what leaves here is this tick's request and nothing about
-    // where the player thinks they are.
-    void SendCommand(World& world, NetSession& session)
-    {
-        if (!LocalPawn.IsValid() || !world.IsAlive(LocalPawn))
-            return;
-
-        PlayerCommand command;
-        if (const LookOrientation* look = world.TryGet<LookOrientation>(LocalPawn))
-        {
-            command.Yaw = look->Yaw;
-            command.Pitch = look->Pitch;
-        }
-        if (const MovementIntent* intent = world.TryGet<MovementIntent>(LocalPawn))
-        {
-            command.WishX = intent->WishDir.X;
-            command.WishZ = intent->WishDir.Z;
-        }
-
-        std::array<std::byte, 64> scratch{};
-        scratch[0] = static_cast<std::byte>(NetPayloadKind::Command);
-        NetBitWriter writer(std::span<std::byte>(scratch).subspan(1));
-        EncodePlayerCommand(command, writer);
-        if (writer.Overflowed())
-            return;
-
-        (void)session.Send(session.LocalPeerId(), NetChannelKind::UnreliableSequenced,
-                           std::span<const std::byte>(scratch).subspan(
-                               0, 1 + writer.BytesWritten()));
     }
 
     void AdoptReplicatedPawns(World& world, std::uint32_t self)
@@ -930,27 +779,10 @@ private:
                 world.DestroyEntity(previous);
             }
 
-            // What a replicated pawn arrives without, and what this machine
-            // needs to turn a player's input into a request. All of it is
-            // local scratch: the authority has its own copies and simulates
-            // from them, and none of this ever leaves here.
-            //
-            // Without them the input system skips this pawn entirely -- it
-            // steers whatever carries an intent, a Controlled tag, and an
-            // orientation -- and every command would carry zero.
-            if (!world.HasComponent<MovementIntent>(mine))
-                world.AddComponent<MovementIntent>(mine, MovementIntent{});
-            if (!world.HasComponent<GameplayTagContainer>(mine))
-            {
-                GameplayTagContainer tags{};
-                if (const MovementTags* movement =
-                        world.TryGetResource<MovementTags>())
-                {
-                    tags.Grant(movement->Controlled);
-                }
-                world.AddComponent<GameplayTagContainer>(mine, tags);
-            }
-
+            // Nothing local is grafted onto it. A client's own pawn is
+            // simulated on the authority, so steering it here would write
+            // intent the next snapshot overwrites, and the request that
+            // actually moves the player travels as this tick's actions.
             AttachLocalPlayer(world, mine, Log());
             LocalPawn = mine;
         }
@@ -1730,6 +1562,7 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
         GetEngine().Logging());
     RegisterCameraSystem(ctx.Schedule);
     RegisterControllerSystems(ctx.Schedule);
+    RegisterNetSystems(ctx.Schedule, GetEngine().PeerCommands());
     ctx.Schedule.Register<CharacterInputSystem>();
 
     // Everything that reads actions runs after they are resolved: the aim
@@ -1738,6 +1571,9 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     ctx.Schedule.After<LookIntegrationSystem, InputActionResolveSystem>();
     ctx.Schedule.After<CharacterInputSystem, LookIntegrationSystem>();
     ctx.Schedule.After<CharacterInputSystem, InputActionResolveSystem>();
+    // A remote player's actions have to be in their source before anything
+    // reads one, the same way the local player's have to be resolved first.
+    ctx.Schedule.After<CharacterInputSystem, PeerCommandFeedSystem>();
     OrderMovementAfterInput<CharacterInputSystem>(ctx.Schedule);
     ctx.Schedule.Register<SpinSystem>();
 

@@ -10,6 +10,7 @@
 #include <net/ReplicationLayout.h>
 #include <net/NetCVarSync.h>
 #include <net/NetSpawnRecipe.h>
+#include <net/PeerCommandRuntime.h>
 #include <net/ReplicationRuntime.h>
 #include <profiling/CpuScopeTimings.h>
 #include <profiling/RenderInstrumentation.h>
@@ -86,6 +87,13 @@ public:
     // Which session-owned cvar values each peer has been told. Reset with the
     // session like everything else that is session-transient.
     [[nodiscard]] NetCVarPublisher& CVarPublisher() { return CVarPublisherState; }
+    // The input channel's per-peer arrival buffers, and the client half that
+    // fills the wire. Session-transient for the same reason.
+    [[nodiscard]] PeerCommandRuntime& PeerCommands() { return PeerCommandState; }
+    [[nodiscard]] const PeerCommandRuntime& PeerCommands() const
+    {
+        return PeerCommandState;
+    }
 
     // What a replicated entity becomes on this machine. Registered by the game
     // and outlives any one session, because it describes content rather than a
@@ -280,6 +288,7 @@ private:
     ReplicationRuntime ReplicationState;
     std::vector<NetSession::Delivery> PendingNetDeliveries;
     NetCVarPublisher CVarPublisherState;
+    PeerCommandRuntime PeerCommandState;
     NetSpawnRecipes SpawnRecipeState;
     std::unique_ptr<RuntimeWorld> RuntimeWorldState;
     RuntimeFrameLoop RuntimeLoop;

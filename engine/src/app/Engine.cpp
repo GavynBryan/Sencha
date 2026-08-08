@@ -396,6 +396,7 @@ NetSession* Engine::CreateNetSession(INetTransport& transport)
     NetState = std::make_unique<NetSession>(transport);
     ReplicationState.Reset();
     CVarPublisherState.Reset();
+    PeerCommandState.Reset();
     return NetState.get();
 }
 
@@ -404,6 +405,7 @@ void Engine::DestroyNetSession()
     NetState.reset();
     ReplicationState.Reset();
     CVarPublisherState.Reset();
+    PeerCommandState.Reset();
 }
 
 DefaultRenderPipeline* Engine::GetRenderPipeline()
