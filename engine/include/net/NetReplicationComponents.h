@@ -62,6 +62,9 @@ template <>
 struct TypeSchema<NetOwner>
 {
     static constexpr std::string_view Name = "NetOwner";
+    // Ownership itself travels: a client cannot know which entity is its own
+    // until the authority says so, and everything owner-only keys off it.
+    static constexpr bool Replicated = true;
 
     static auto Fields()
     {

@@ -21,7 +21,9 @@
 #include <render/IrradianceVolumeComponent.h>
 #include <render/ZoneLightmapComponent.h>
 #include <world/registry/Registry.h>
-#include <world/ComponentManifest.h>
+#include <math/MathSchemas.h>
+#include <world/ComponentRegistrar.h>
+#include <world/RuntimeComponentSchema.h>
 #include <world/serialization/SceneFormat.h>
 #include <world/serialization/SceneSerializer.h>
 
@@ -37,12 +39,11 @@ namespace
     Registry MakeSceneRegistry()
     {
         Registry registry;
-        ForEachSceneComponent([&]<typename T>(ComponentTag<T>)
-        {
-            registry.Components.RegisterComponent<T>();
-        });
-        registry.Components.RegisterComponent<WorldTransform>();
-        registry.Components.RegisterComponent<Parent>();
+        // The engine's own vocabulary, composed the way the runtime composes
+        // it, so this fixture cannot know a different set of components than
+        // the code it is testing.
+        ComponentRegistrar components(registry.Components);
+        RegisterEngineComponents(components);
         return registry;
     }
 
@@ -126,6 +127,54 @@ TEST(SceneSerializer, BinaryRoundTripsCleanRegistry)
     ASSERT_NE(loadedCamera, nullptr);
     EXPECT_EQ(loadedCamera->Projection, ProjectionKind::Orthographic);
     EXPECT_FLOAT_EQ(loadedCamera->OrthographicHeight, 12.0f);
+}
+
+// Chunk order is not part of the format. The writer emits one chunk per
+// registered serializer, so registration order decides the order they land in;
+// the reader dispatches on each chunk's id. Anything else would make a scene
+// readable only by a build whose components were registered in the same order
+// as the one that wrote it, which is the opposite of what the chunk id is for.
+TEST(SceneSerializer, ADifferentRegistrationOrderReadsTheSameScene)
+{
+    const ComponentSerializerRegistry writerSerializers = MakeSerializers();
+
+    // The same components, registered the other way round, so the chunks come
+    // out in a different order than the reader below expects them in.
+    ComponentSerializerRegistry readerSerializers;
+    RegisterComponent<CameraComponent>(readerSerializers);
+    RegisterComponent<LocalTransform>(readerSerializers);
+
+    // Guard against the test being vacuous: the two registries must genuinely
+    // disagree about order, or this proves nothing.
+    ASSERT_FALSE(writerSerializers.Entries().empty());
+    ASSERT_NE(writerSerializers.Entries().front()->TypeId(),
+              readerSerializers.Entries().front()->TypeId());
+
+    Registry source = MakeSceneRegistry();
+    const EntityId entity = source.Components.CreateEntity();
+    AddTransform(source, entity, MakeTransform(9.0f, 8.0f, 7.0f));
+    source.Components.AddComponent(entity, CameraComponent{ .FovYRadians = 0.5f });
+
+    auto stream = MakeBinaryStream();
+    BinaryWriter writer(stream);
+    ASSERT_TRUE(SaveSceneBinary(source, writerSerializers, writer));
+
+    stream.seekg(0);
+    BinaryReader reader(stream);
+    Registry loaded;
+    SceneLoadError error;
+    ASSERT_TRUE(LoadSceneBinary(reader, loaded, readerSerializers, &error)) << error.Message;
+
+    ASSERT_EQ(loaded.Components.CountComponents<LocalTransform>(), 1u);
+    ASSERT_EQ(loaded.Components.CountComponents<CameraComponent>(), 1u);
+
+    EntityId loadedEntity;
+    loaded.Components.ForEachComponent<CameraComponent>(
+        [&](EntityId e, const CameraComponent&) { loadedEntity = e; });
+    ASSERT_TRUE(loadedEntity.IsValid());
+    EXPECT_EQ(loaded.Components.TryGet<LocalTransform>(loadedEntity)->Value.Position,
+              Vec3d(9.0f, 8.0f, 7.0f));
+    EXPECT_FLOAT_EQ(loaded.Components.TryGet<CameraComponent>(loadedEntity)->FovYRadians, 0.5f);
 }
 
 TEST(SceneSerializer, BinaryLoadIsAdditiveAndRemapsEntityIndices)

@@ -54,6 +54,7 @@ template <>
 struct TypeSchema<SupportState>
 {
     static constexpr std::string_view Name = "SupportState";
+    static constexpr bool Replicated = true;
 
     static auto Fields()
     {
@@ -103,6 +104,7 @@ template <>
 struct TypeSchema<KinematicState>
 {
     static constexpr std::string_view Name = "KinematicState";
+    static constexpr bool Replicated = true;
 
     static auto Fields()
     {
@@ -157,6 +159,7 @@ template <>
 struct TypeSchema<CharacterMovement>
 {
     static constexpr std::string_view Name = "CharacterMovement";
+    static constexpr bool Replicated = true;
 
     static auto Fields()
     {

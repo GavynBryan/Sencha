@@ -9,6 +9,7 @@
 #include <physics/components/Collider.h>
 #include <physics/components/PhysicsBodyLink.h>
 #include <physics/components/RigidBody.h>
+#include <world/ComponentRegistrar.h>
 
 void RegisterPhysics(EngineSchedule& schedule)
 {
@@ -17,11 +18,19 @@ void RegisterPhysics(EngineSchedule& schedule)
     schedule.After<CharacterControllerSystem, PhysicsStepSystem>();
 }
 
+void RegisterPhysicsComponents(ComponentRegistrar& registrar)
+{
+    registrar.Add<Collider>();
+    registrar.Add<RigidBody>();
+    registrar.Add<CharacterController>();
+    // The runtime links the bridges add at reconcile time. Named here so a
+    // caller cannot forget them and the reconcile's AddComponent never asserts.
+    registrar.Add<PhysicsBodyLink>();
+    registrar.Add<CharacterMoverLink>();
+}
+
 void RegisterPhysicsComponents(World& world)
 {
-    world.RegisterComponent<Collider>();
-    world.RegisterComponent<RigidBody>();
-    world.RegisterComponent<CharacterController>();
-    world.RegisterComponent<PhysicsBodyLink>();
-    world.RegisterComponent<CharacterMoverLink>();
+    ComponentRegistrar registrar(world);
+    RegisterPhysicsComponents(registrar);
 }

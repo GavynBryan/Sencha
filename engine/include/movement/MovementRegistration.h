@@ -5,6 +5,7 @@
 #include <movement/FreeLocomotionSystem.h>
 #include <movement/MovementModeSystems.h>
 
+class ComponentRegistrar;
 class DataAssetCache;
 class World;
 
@@ -18,9 +19,13 @@ class World;
 // RegisterMovementSystems.
 //=============================================================================
 
-// Movement components, the movement.* tags, and the LocomotionModeRegistry
-// carrying the built-in Free mode. Calls RegisterAbilityKit. No default
-// abilities.
+// The movement component vocabulary, including the ability kit's. Movement is
+// built on the kit, so a caller cannot get one without the other.
+void RegisterMovementComponents(ComponentRegistrar& registrar);
+
+// The same components plus the per-World pieces a sealed vocabulary cannot
+// carry: the movement.* tags and the LocomotionModeRegistry holding the
+// built-in Free mode. Calls RegisterAbilityKit. No default abilities.
 void RegisterMovementComponents(World& world);
 
 // The default MoveSpeed attribute and the Jump ability/effects, authored as

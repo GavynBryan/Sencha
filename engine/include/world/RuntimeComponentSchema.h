@@ -2,23 +2,25 @@
 
 #include <string>
 
+class ComponentRegistrar;
 class ComponentSerializerRegistry;
 class ReplicationLayout;
 class WorldComponentSchema;
 
-// Adds every engine-owned component type that may appear in a runtime World.
+// Composes the engine's component vocabulary by asking each owning feature, in
+// a fixed order, to name what it owns. The registrar decides what follows from
+// each component -- storage, a scene serializer, a place on the wire -- by
+// reading the component's own schema, so this is wiring and nothing else.
 //
-// The order intentionally mirrors the current default zone initialization path:
-// scene storage (including derived transform columns), physics, AbilityKit,
-// movement, then camera runtime data. Keeping this prefix stable lets current
-// registry Worlds and the future unified World coexist during migration.
-void RegisterEngineRuntimeComponents(WorldComponentSchema& schema);
+// A host calls this once with the registries it owns. What a game module adds
+// goes through the same registrar afterwards, so its components take runtime
+// indices and wire keys after the engine's.
+void RegisterEngineComponents(ComponentRegistrar& registrar);
 
-// Compiles the engine's replicated component table. Folds the replication
-// manifest the same way the runtime schema folds the scene manifest, so the
-// table cannot drift from the components it describes. A game module appends
-// its own after this and before the layout is sealed.
-void RegisterEngineReplicatedComponents(ReplicationLayout& layout);
+// Storage only, for a caller that wants the vocabulary without a serializer
+// registry or a replicated table: the streaming and zone fixtures that seal a
+// schema and apply it to a World.
+void RegisterEngineRuntimeComponents(WorldComponentSchema& schema);
 
 // Every serializable scene component must also have runtime storage in the
 // sealed world vocabulary. Returns false and names the first missing serializer

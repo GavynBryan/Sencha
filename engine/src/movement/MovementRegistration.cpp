@@ -22,6 +22,7 @@
 #include <movement/MovementModeSystems.h>
 #include <movement/MovementTags.h>
 #include <movement/MovementTuningResolutionSystem.h>
+#include <world/ComponentRegistrar.h>
 
 namespace
 {
@@ -37,30 +38,34 @@ namespace
     }
 }
 
+void RegisterMovementComponents(ComponentRegistrar& registrar)
+{
+    RegisterAbilityKitComponents(registrar);
+
+    // The physical facts, this tick's request and resolved coefficients, and
+    // the contribution channels that compose into one motor request.
+    registrar.Add<MovementIntent>();
+    registrar.Add<JumpState>();
+    registrar.Add<KinematicState>();
+    registrar.Add<SupportState>();
+    registrar.Add<Immersion>();
+    registrar.Add<CharacterMovement>();
+    registrar.Add<ResolvedMovementTuning>();
+    registrar.Add<LocomotionOutput>();
+    registrar.Add<MotionAxisOverride>();
+    registrar.Add<MotionImpulse>();
+    registrar.Add<MotionRequest>();
+    registrar.Add<ModeTransitionRequest>();
+    registrar.Add<ClingSession>();
+    registrar.Add<FlightSession>();
+}
+
 void RegisterMovementComponents(World& world)
 {
     RegisterAbilityKit(world);
 
-    const auto ensure = [&world]<typename T>()
-    {
-        if (!world.IsRegistered<T>())
-            world.RegisterComponent<T>();
-    };
-
-    ensure.template operator()<MovementIntent>();
-    ensure.template operator()<JumpState>();
-    ensure.template operator()<KinematicState>();
-    ensure.template operator()<SupportState>();
-    ensure.template operator()<Immersion>();
-    ensure.template operator()<CharacterMovement>();
-    ensure.template operator()<ResolvedMovementTuning>();
-    ensure.template operator()<LocomotionOutput>();
-    ensure.template operator()<MotionAxisOverride>();
-    ensure.template operator()<MotionImpulse>();
-    ensure.template operator()<MotionRequest>();
-    ensure.template operator()<ModeTransitionRequest>();
-    ensure.template operator()<ClingSession>();
-    ensure.template operator()<FlightSession>();
+    ComponentRegistrar registrar(world);
+    RegisterMovementComponents(registrar);
 
     (void)EnsureMovementTags(world);
 

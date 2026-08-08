@@ -77,6 +77,7 @@ enum class NetJoinFailure : std::uint8_t
 struct NetIdentity
 {
     std::uint64_t ModuleFingerprint = 0;
+    std::uint64_t ReplicationTableHash = 0;
     std::uint64_t WorldIdentity = 0;
     std::uint32_t FixedTickRateMilliHz = 60000;
 

@@ -3,6 +3,7 @@
 #include <controller/LookOrientation.h>
 #include <net/ReplicationCodec.h>
 #include <net/ReplicationLayout.h>
+#include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/transform/TransformComponents.h>
 
@@ -30,7 +31,8 @@ namespace
     ReplicationLayout EngineLayout()
     {
         ReplicationLayout layout;
-        RegisterEngineReplicatedComponents(layout);
+        ComponentRegistrar components(nullptr, nullptr, &layout);
+        RegisterEngineComponents(components);
         return layout;
     }
 

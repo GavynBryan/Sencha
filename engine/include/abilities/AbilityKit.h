@@ -34,13 +34,20 @@
 #include <abilities/AbilitySet.h>
 #include <abilities/AbilitySystem.h>
 
+class ComponentRegistrar;
 class World;
 class EngineSchedule;
 
-// Register the ability-kit component/resource set (tag container, attribute set,
-// ability set, active effects, and the tag/attribute/effect/ability registries plus
-// the activation queue) on a World. Idempotent; call once per World. Any feature
-// built on the kit (movement) calls this so callers cannot forget a piece.
+// The kit's component vocabulary: tag container, attribute set, ability set,
+// active effects.
+void RegisterAbilityKitComponents(ComponentRegistrar& registrar);
+
+// The same components plus the per-World resources they need (the
+// tag/attribute/effect/ability registries and the activation queue). Resources
+// belong to one World and cannot travel in a sealed vocabulary, which is why
+// this is a separate call rather than the registrar's business. Idempotent;
+// call once per World. Any feature built on the kit (movement) calls this so
+// callers cannot forget a piece.
 void RegisterAbilityKit(World& world);
 
 // Register the ability-kit fixed-tick systems (ability activation, then attribute

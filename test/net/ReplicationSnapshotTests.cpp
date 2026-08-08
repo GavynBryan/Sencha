@@ -10,6 +10,7 @@
 #include <net/ReplicationInterpolation.h>
 #include <net/ReplicationSnapshot.h>
 #include <world/transform/TransformHistory.h>
+#include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/transform/TransformComponents.h>
 
@@ -46,12 +47,11 @@ namespace
 
         Pair() : Scratch(kSnapshotBytes)
         {
-            RegisterEngineRuntimeComponents(Schema);
+            ComponentRegistrar components(&Schema, nullptr, &Layout);
+            RegisterEngineComponents(components);
             Schema.Seal();
             Schema.Apply(Authority);
             Schema.Apply(Client);
-
-            RegisterEngineReplicatedComponents(Layout);
             Layout.Seal();
         }
 

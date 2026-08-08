@@ -62,6 +62,9 @@ template <>
 struct TypeSchema<NetSpawnRecipe>
 {
     static constexpr std::string_view Name = "NetSpawnRecipe";
+    // How a client builds the entity in the first place, so it has to arrive
+    // in the same snapshot that first mentions it.
+    static constexpr bool Replicated = true;
 
     static auto Fields()
     {

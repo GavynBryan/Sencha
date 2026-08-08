@@ -36,6 +36,8 @@ std::string_view NetDescribeIdentityMismatch(const NetIdentity& local,
     // three causes have completely different fixes.
     if (local.ModuleFingerprint != remote.ModuleFingerprint)
         return "game build mismatch";
+    if (local.ReplicationTableHash != remote.ReplicationTableHash)
+        return "replicated component mismatch";
     if (local.WorldIdentity != remote.WorldIdentity)
         return "world content mismatch";
     if (local.FixedTickRateMilliHz != remote.FixedTickRateMilliHz)
@@ -321,6 +323,7 @@ void NetSession::HandleAuthorityMessage(const NetDatagram& datagram,
                 const NetAccept accept{
                     .PeerId = known->Id.Value,
                     .ModuleFingerprint = LocalIdentity.ModuleFingerprint,
+                    .ReplicationTableHash = LocalIdentity.ReplicationTableHash,
                     .WorldIdentity = LocalIdentity.WorldIdentity,
                     .FixedTickRateMilliHz = LocalIdentity.FixedTickRateMilliHz,
                     .AuthorityTick = LocalTickIndex,
@@ -401,6 +404,7 @@ void NetSession::HandleAuthorityMessage(const NetDatagram& datagram,
 
         const NetIdentity remote{
             .ModuleFingerprint = echo.ModuleFingerprint,
+            .ReplicationTableHash = echo.ReplicationTableHash,
             .WorldIdentity = echo.WorldIdentity,
             .FixedTickRateMilliHz = echo.FixedTickRateMilliHz,
         };
@@ -429,6 +433,7 @@ void NetSession::HandleAuthorityMessage(const NetDatagram& datagram,
         const NetAccept accept{
             .PeerId = Peers.back().Id.Value,
             .ModuleFingerprint = LocalIdentity.ModuleFingerprint,
+            .ReplicationTableHash = LocalIdentity.ReplicationTableHash,
             .WorldIdentity = LocalIdentity.WorldIdentity,
             .FixedTickRateMilliHz = LocalIdentity.FixedTickRateMilliHz,
             .AuthorityTick = LocalTickIndex,
@@ -553,6 +558,7 @@ void NetSession::HandleClientMessage(const NetDatagram& datagram,
         echo.Cookie = std::move(challenge.Cookie);
         echo.ProtocolVersion = kNetProtocolVersion;
         echo.ModuleFingerprint = LocalIdentity.ModuleFingerprint;
+        echo.ReplicationTableHash = LocalIdentity.ReplicationTableHash;
         echo.WorldIdentity = LocalIdentity.WorldIdentity;
         echo.FixedTickRateMilliHz = LocalIdentity.FixedTickRateMilliHz;
         AwaitingChallenge = false;
@@ -570,6 +576,7 @@ void NetSession::HandleClientMessage(const NetDatagram& datagram,
         // the handshake a client-side threat model actually depends on.
         const NetIdentity remote{
             .ModuleFingerprint = accept.ModuleFingerprint,
+            .ReplicationTableHash = accept.ReplicationTableHash,
             .WorldIdentity = accept.WorldIdentity,
             .FixedTickRateMilliHz = accept.FixedTickRateMilliHz,
         };

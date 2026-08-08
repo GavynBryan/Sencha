@@ -845,22 +845,6 @@ struct SpinSystem
 };
 } // namespace
 
-void TemplateGame::OnRegisterComponents(
-    ComponentSerializerRegistry& serializers)
-{
-    // The engine already registered its own scene manifest into this registry;
-    // a game adds only what it owns.
-    RegisterComponent<SpinComponent>(serializers);
-    RegisterComponent<PlayerStartComponent>(serializers);
-}
-
-void TemplateGame::OnUnregisterComponents(
-    ComponentSerializerRegistry& serializers)
-{
-    serializers.Remove(ResolveComponentTypeId<SpinComponent>());
-    serializers.Remove(ResolveComponentTypeId<PlayerStartComponent>());
-}
-
 void TemplateGame::OnStart(GameStartupContext&)
 {
     Engine& engine = GetEngine();

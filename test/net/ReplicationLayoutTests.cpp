@@ -3,6 +3,7 @@
 #include <controller/LookOrientation.h>
 #include <math/MathSchemas.h>
 #include <net/ReplicationLayout.h>
+#include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/transform/TransformComponents.h>
 
@@ -327,7 +328,8 @@ TEST(ReplicationLayoutHash, AnEmptyTableStillHashes)
 TEST(EngineReplicationLayout, CompilesWithoutError)
 {
     ReplicationLayout layout;
-    RegisterEngineReplicatedComponents(layout);
+    ComponentRegistrar components(nullptr, nullptr, &layout);
+    RegisterEngineComponents(components);
 
     ASSERT_EQ(layout.Error(), ReplicationLayoutError::None)
         << ReplicationLayoutErrorToString(layout.Error()) << ": " << layout.ErrorDetail();
@@ -338,7 +340,8 @@ TEST(EngineReplicationLayout, CompilesWithoutError)
 TEST(EngineReplicationLayout, LookOrientationSendsAimAndNotItsLimits)
 {
     ReplicationLayout layout;
-    RegisterEngineReplicatedComponents(layout);
+    ComponentRegistrar components(nullptr, nullptr, &layout);
+    RegisterEngineComponents(components);
 
     const ReplicatedComponent* look =
         layout.Find(ResolveComponentTypeId<LookOrientation>());
@@ -365,7 +368,8 @@ TEST(EngineReplicationLayout, LookOrientationSendsAimAndNotItsLimits)
 TEST(EngineReplicationLayout, EveryFieldLiesInsideItsComponent)
 {
     ReplicationLayout layout;
-    RegisterEngineReplicatedComponents(layout);
+    ComponentRegistrar components(nullptr, nullptr, &layout);
+    RegisterEngineComponents(components);
 
     for (const ReplicatedComponent& component : layout.Components())
     {

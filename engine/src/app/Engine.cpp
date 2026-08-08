@@ -13,6 +13,7 @@
 #include <jobs/AsyncTaskQueue.h>
 #include <jobs/JobSystem.h>
 #include <runtime/FrameDriver.h>
+#include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/RuntimeWorld.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
@@ -434,21 +435,34 @@ int Engine::Run(Game& game)
 
     game.AttachEngine(*this);
 
-    // Serializers and runtime storage share stable component identities but are
-    // independent registries. The editor calls only the serializer hook; the
-    // runtime additionally composes and seals the complete World vocabulary.
+    // Storage, scene serializers, and the replicated table are three registries
+    // filled in one pass from one set of declarations. They used to be filled
+    // from three lists that nothing forced to agree, which is a way of saying
+    // that a component could have storage and no serializer, or a place on the
+    // wire and no column to land in. Now each component is named once and its
+    // own schema decides which of the three it belongs in.
     //
-    // The engine registers its own manifest before handing the registry to the
-    // game, so a game module adds to a known set instead of being responsible
-    // for seeding it. Clear first: Run may be called again in the same process.
+    // The engine goes first so a game module adds to a known vocabulary rather
+    // than being responsible for seeding it, and so game components take
+    // runtime indices and wire keys after the engine's. Clear first: Run may be
+    // called again in the same process.
     ComponentSerializerRegistry& serializers = SceneSerializerRegistry;
     serializers.Clear();
-    RegisterEngineSceneSerializers(serializers);
-    game.OnRegisterComponents(serializers);
-
     RuntimeComponentSchemaState = WorldComponentSchema{};
-    RegisterEngineRuntimeComponents(RuntimeComponentSchemaState);
-    game.OnRegisterRuntimeComponents(RuntimeComponentSchemaState);
+    ReplicationLayoutState = ReplicationLayout{};
+
+    ComponentRegistrar engineComponents(
+        &RuntimeComponentSchemaState, &serializers, &ReplicationLayoutState);
+    RegisterEngineComponents(engineComponents);
+
+    ComponentRegistrar gameComponents(
+        &RuntimeComponentSchemaState, &serializers, &ReplicationLayoutState);
+    game.OnRegisterComponents(gameComponents);
+    // What the module registered, so shutdown can retract exactly that while
+    // the module is still mapped. The game does not repeat the list to take it
+    // back; a list repeated is a list that can disagree with itself.
+    const std::span<const ComponentTypeId> added = gameComponents.AddedSerializers();
+    GameSerializerTypes.assign(added.begin(), added.end());
 
     std::string missingRuntimeComponent;
     if (!RuntimeComponentSchemaCoversSerializers(
@@ -460,20 +474,14 @@ int Engine::Run(Game& game)
             stderr,
             "Runtime component schema is missing storage for serialized component '%s'.\n",
             missingRuntimeComponent.c_str());
-        game.OnUnregisterComponents(serializers);
+        RetractGameComponents();
         RuntimeComponentSchemaState = WorldComponentSchema{};
         return 1;
     }
 
-    RuntimeComponentSchemaState.Seal();
-
-    // The replicated table is compiled from the same components, after the
-    // world vocabulary exists and before anything can host or join. A build
-    // that gets this wrong is wrong for every session it would ever run, so it
-    // is reported here rather than discovered as a misread snapshot later.
-    ReplicationLayoutState = ReplicationLayout{};
-    RegisterEngineReplicatedComponents(ReplicationLayoutState);
-    game.OnRegisterReplicatedComponents(ReplicationLayoutState);
+    // A replicated table that cannot be compiled is wrong for every session
+    // this build would ever run, so it is reported here rather than discovered
+    // later as a misread snapshot.
     if (ReplicationLayoutState.Error() != ReplicationLayoutError::None)
     {
         std::fprintf(
@@ -483,7 +491,7 @@ int Engine::Run(Game& game)
                 ReplicationLayoutErrorToString(ReplicationLayoutState.Error()).size()),
             ReplicationLayoutErrorToString(ReplicationLayoutState.Error()).data(),
             ReplicationLayoutState.ErrorDetail().c_str());
-        game.OnUnregisterComponents(serializers);
+        RetractGameComponents();
         RuntimeComponentSchemaState = WorldComponentSchema{};
         return 1;
     }
@@ -498,10 +506,12 @@ int Engine::Run(Game& game)
             stderr,
             "Runtime component schema is missing storage for replicated component '%s'.\n",
             missingReplicatedComponent.c_str());
-        game.OnUnregisterComponents(serializers);
+        RetractGameComponents();
         RuntimeComponentSchemaState = WorldComponentSchema{};
         return 1;
     }
+
+    RuntimeComponentSchemaState.Seal();
     ReplicationLayoutState.Seal();
 
     assert(!RuntimeWorldState && "Engine::Run called with a live runtime world");
@@ -580,7 +590,7 @@ int Engine::Run(Game& game)
     // serializers while the module is still mapped (the host unloads it after Run
     // returns). A module-owned serializer left in the registry would be freed at
     // exit, after dlclose, against unmapped code.
-    game.OnUnregisterComponents(serializers);
+    RetractGameComponents();
 
     // Game component entries contain concrete registration function pointers
     // instantiated in the game module. Clear them before Engine::Run returns and
@@ -661,6 +671,13 @@ void Engine::PushRenderStatsFrame()
             InstrumentationBundle.Capture->Append(*timing, FrameRenderStats);
     }
 #endif
+}
+
+void Engine::RetractGameComponents()
+{
+    for (ComponentTypeId type : GameSerializerTypes)
+        (void)SceneSerializerRegistry.Remove(type);
+    GameSerializerTypes.clear();
 }
 
 void Engine::CreateDebugOverlay()

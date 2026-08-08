@@ -214,8 +214,7 @@ struct ScriptedCameraPathSystem
 };
 } // namespace
 
-void SceneViewerGame::OnRegisterComponents(
-    ComponentSerializerRegistry&)
+void SceneViewerGame::OnRegisterComponents(ComponentRegistrar&)
 {
 }
 

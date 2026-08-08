@@ -21,10 +21,10 @@
 // wire codec without naming any component type.
 //
 // There is no second registry to keep in step with the first: a component
-// replicates because a manifest lists it, and the fields that travel are the
-// fields its TypeSchema declares, minus what the schema itself marks local.
-// Adding a replicated component is a schema edit plus a manifest line, and no
-// netcode at all.
+// replicates because its TypeSchema says `Replicated = true`, and the fields
+// that travel are the fields that schema declares, minus what it marks local.
+// Adding a replicated component is one line on the component and one line in
+// its feature's registrar, and no netcode at all.
 //=============================================================================
 
 //-----------------------------------------------------------------------------
@@ -89,8 +89,11 @@ class ReplicationLayout
 {
 public:
     // Registers T as replicated. Ordering is the wire contract: a component's
-    // position here is its one-byte wire key, so components append at the end
-    // and never reorder, exactly as the scene manifest does.
+    // position here is its one-byte wire key, so two builds must add the same
+    // components in the same order. That is a same-build contract rather than a
+    // persisted one -- the handshake compares TableHash and refuses a peer that
+    // does not match -- so this is normally reached through ComponentRegistrar,
+    // which derives it from the component's own schema.
     template <typename T>
     bool Add()
     {

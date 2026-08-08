@@ -28,6 +28,7 @@
 #include <physics/CharacterMoverPool.h>
 #include <physics/PhysicsWorld.h>
 #include <physics/components/CharacterController.h>
+#include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/transform/TransformComponents.h>
 
@@ -159,11 +160,11 @@ namespace
 
         SimWorld()
         {
-            RegisterEngineRuntimeComponents(Schema);
+            ComponentRegistrar components(&Schema, nullptr, &Layout);
+            RegisterEngineComponents(components);
             Schema.Seal();
             Schema.Apply(Entities);
             RegisterMovement(Entities);
-            RegisterEngineReplicatedComponents(Layout);
             Layout.Seal();
             BuildLevel(Physics);
 

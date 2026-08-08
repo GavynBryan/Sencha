@@ -298,8 +298,16 @@ private:
     // scene feature the game registered.
     void CreateDebugOverlay();
 
+    // Removes the serializers the game module registered. Must run while the
+    // module is still mapped: the serializer objects were constructed by it,
+    // and freeing one afterwards runs a destructor that is no longer there.
+    void RetractGameComponents();
+
     EngineConfig Configuration;
     ComponentSerializerRegistry SceneSerializerRegistry;
+    // Component identities the game module's registration added serializers
+    // for, recorded so teardown does not need the game to list them again.
+    std::vector<ComponentTypeId> GameSerializerTypes;
     LoggingProvider LoggingState;
     std::unique_ptr<DebugService> DebugState;
     std::unique_ptr<ConsoleService> ConsoleState;

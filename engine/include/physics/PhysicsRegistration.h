@@ -1,5 +1,6 @@
 #pragma once
 
+class ComponentRegistrar;
 class EngineSchedule;
 class World;
 
@@ -16,11 +17,13 @@ void RegisterPhysics(EngineSchedule& schedule);
 //=============================================================================
 // RegisterPhysicsComponents
 //
-// Register the physics component set on a zone's World before any entity is
-// created in it. This includes the runtime link components (PhysicsBodyLink,
-// CharacterMoverLink) the bridges add at reconcile time, so callers cannot
-// forget them and the reconcile's AddComponent never asserts. Registering a
-// component a zone never uses is harmless (no archetype exists until an entity
-// has it). Call once per World.
+// The physics component vocabulary, including the runtime link components the
+// bridges add at reconcile time. Registering a component a zone never uses is
+// harmless: no archetype exists until an entity has it.
+//
+// The World overload registers straight into one World for a caller that built
+// it by hand rather than sealing a schema for it. Call once per World, before
+// any entity is created in it.
 //=============================================================================
+void RegisterPhysicsComponents(ComponentRegistrar& registrar);
 void RegisterPhysicsComponents(World& world);

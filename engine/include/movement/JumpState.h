@@ -36,6 +36,7 @@ template <>
 struct TypeSchema<JumpState>
 {
     static constexpr std::string_view Name = "JumpState";
+    static constexpr bool Replicated = true;
 
     static auto Fields()
     {
