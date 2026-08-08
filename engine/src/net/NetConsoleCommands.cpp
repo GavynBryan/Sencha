@@ -5,8 +5,10 @@
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleTypes.h>
 #include <net/NetSession.h>
+#include <net/PeerCommandRuntime.h>
 #include <net/UdpTransport.h>
 
+#include <algorithm>
 #include <charconv>
 #include <memory>
 #include <string>
@@ -130,6 +132,34 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
         .Source = { "engine defaults" },
         .Min = static_cast<std::int64_t>(1),
         .Max = static_cast<std::int64_t>(kNetMaxPeersSupported),
+    });
+
+    registry.RegisterCVar({
+        .Name = "net.command_slack",
+        .Owner = "engine",
+        .Type = CVarType::Int,
+        .DefaultValue = static_cast<std::int64_t>(
+            NetPeerCommandBuffer::kTargetDepth),
+        .CurrentValue = static_cast<std::int64_t>(
+            NetPeerCommandBuffer::kTargetDepth),
+        // The authority's to set: it is the machine doing the buffering, and a
+        // client choosing how late it is simulated would be choosing its own
+        // advantage.
+        .Flags = CVarFlags::Archive | CVarFlags::Replicated,
+        .Help = "Ticks of input the authority holds back before simulating a "
+                "peer. Higher rides out a jittery connection; every tick is "
+                "latency that peer pays on every input.",
+        .Source = { "engine defaults" },
+        .Min = static_cast<std::int64_t>(0),
+        .Max = static_cast<std::int64_t>(NetPeerCommandBuffer::kCapacity - 1),
+        .OnChange = [&engine](const CVarChangeContext& change) {
+            if (const std::int64_t* ticks =
+                    std::get_if<std::int64_t>(&change.NewValue))
+            {
+                engine.PeerCommands().SetTargetDepth(
+                    static_cast<std::size_t>(std::max<std::int64_t>(0, *ticks)));
+            }
+        },
     });
 
     registry.RegisterCommand({

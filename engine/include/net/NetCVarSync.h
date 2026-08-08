@@ -67,7 +67,13 @@ inline constexpr std::size_t kNetMaxCVarStringBytes = 256;
 class NetCVarPublisher
 {
 public:
-    std::size_t Publish(NetSession& session, const ConsoleRegistry& registry);
+    struct PublishStats
+    {
+        std::size_t Updates = 0;
+        std::size_t BytesQueued = 0;
+    };
+
+    PublishStats Publish(NetSession& session, const ConsoleRegistry& registry);
     void ForgetPeer(PeerId peer);
     void Reset() { Sent.clear(); }
 

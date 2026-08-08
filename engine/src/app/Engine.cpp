@@ -29,6 +29,7 @@
 #ifdef SENCHA_ENABLE_DEBUG_UI
 #include <debug/ConsolePanel.h>
 #include <debug/ImGuiDebugOverlay.h>
+#include <debug/NetStatsPanel.h>
 #include <debug/TimingPanel.h>
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
 #include <debug/RenderStatsPanel.h>
@@ -397,6 +398,7 @@ NetSession* Engine::CreateNetSession(INetTransport& transport)
     ReplicationState.Reset();
     CVarPublisherState.Reset();
     PeerCommandState.Reset();
+    NetStatsState.Reset();
     return NetState.get();
 }
 
@@ -406,6 +408,7 @@ void Engine::DestroyNetSession()
     ReplicationState.Reset();
     CVarPublisherState.Reset();
     PeerCommandState.Reset();
+    NetStatsState.Reset();
 }
 
 DefaultRenderPipeline* Engine::GetRenderPipeline()
@@ -671,6 +674,9 @@ void Engine::CreateDebugOverlay()
         *DebugState, *window, GraphicsState->Instance, GraphicsState->Frames);
     overlay->AddPanel<ConsolePanel>(DebugState->GetLogSink(), *ConsoleState);
     overlay->AddPanel<TimingPanel>(TimingData);
+    // Registered once for the process; the session it reads comes and goes.
+    overlay->AddPanel<NetStatsPanel>(NetState, NetStatsState, PeerCommandState,
+                                     ConsoleState->Registry());
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     overlay->AddPanel<RenderStatsPanel>(
         ActiveProfileMode, RenderStatsRing, ConsoleState->Registry());

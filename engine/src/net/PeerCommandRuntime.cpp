@@ -51,6 +51,8 @@ void PeerCommandRuntime::Feed(World& world, std::uint64_t tick)
 
     for (auto& [peer, buffer] : Buffers)
     {
+        buffer.SetTargetDepth(Target);
+
         NetCommandRecord record;
         if (!buffer.Next(record))
             continue;
@@ -91,16 +93,16 @@ void PeerCommandRuntime::Feed(World& world, std::uint64_t tick)
     });
 }
 
-bool PeerCommandRuntime::SendLocal(NetSession& session, const World& world)
+std::size_t PeerCommandRuntime::SendLocal(NetSession& session, const World& world)
 {
     if (session.Role() != NetSessionRole::Client || !session.IsConnected())
-        return false;
+        return 0;
 
     const InputActionState* actions = world.TryGetResource<InputActionState>();
     if (actions == nullptr || actions->HistoryCount() == 0)
-        return false;
+        return 0;
     if (!world.IsRegistered<LookOrientation>() || !world.IsRegistered<LocalLookControl>())
-        return false;
+        return 0;
 
     NetPlayerCommand command;
 
@@ -118,7 +120,7 @@ bool PeerCommandRuntime::SendLocal(NetSession& session, const World& world)
         aimed = true;
     });
     if (!aimed)
-        return false;
+        return 0;
 
     // Newest first, which is the order the history ring hands them back and the
     // order the encoder drops from when the window does not fit.
@@ -142,12 +144,15 @@ bool PeerCommandRuntime::SendLocal(NetSession& session, const World& world)
 
     NetBitWriter writer(std::span<std::byte>(Scratch).subspan(kKindBytes));
     if (NetEncodePlayerCommand(command, writer) == 0)
-        return false;
+        return 0;
 
-    return session.Send(
-        session.LocalPeerId(), NetChannelKind::UnreliableSequenced,
-        std::span<const std::byte>(Scratch).subspan(
-            0, kKindBytes + writer.BytesWritten()));
+    const std::size_t bytes = kKindBytes + writer.BytesWritten();
+    if (!session.Send(session.LocalPeerId(), NetChannelKind::UnreliableSequenced,
+                      std::span<const std::byte>(Scratch).subspan(0, bytes)))
+    {
+        return 0;
+    }
+    return bytes;
 }
 
 void PeerCommandRuntime::ForgetPeer(PeerId peer)

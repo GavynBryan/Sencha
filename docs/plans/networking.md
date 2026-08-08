@@ -1383,6 +1383,18 @@ what extraction actually reads.
   replication (Section 6.4); desync hashing (Section 10.7); a net stats debug
   panel (rates, RTT, budget occupancy, per-zone scope sizes) on the existing
   `IDebugPanel` seam. Depends on G2.
+
+  *Status 2026-08-08: cvar enforcement and sync landed earlier; the stats panel
+  landed now.* `net/NetStats.h` counts traffic by payload kind into per-second
+  windows and `debug/NetStatsPanel.h` presents it beside per-peer round trip,
+  strikes, and command-buffer depth. Depth sits next to round trip on purpose:
+  they are the same measurement from opposite ends, and a peer whose ping is
+  fine while its queue is deep is being made late by the authority rather than
+  by the network -- the distinction that cost a live session to find by hand.
+  `net.command_slack` makes the buffer's tolerance an authority-owned
+  (`Replicated`) tunable rather than a constant. Still open in this phase:
+  event/cue replication and desync hashing. Per-zone scope sizes wait on zone
+  interest, which has no scopes to size yet.
 - **G6. Hardening.** Crypto and auth token seam (owner decision executed); rate
   budgets and strike enforcement; malformed-traffic soak in both directions
   (hostile client against an authority, hostile authority against a live client,

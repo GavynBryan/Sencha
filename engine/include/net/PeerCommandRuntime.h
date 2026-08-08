@@ -42,9 +42,16 @@ public:
     void Feed(World& world, std::uint64_t tick);
 
     // Client side, once per frame. Projects this machine's recent ticks and its
-    // aim into one command and queues it. Returns whether anything was sent;
-    // there is nothing to send before this client has a pawn to aim.
-    bool SendLocal(NetSession& session, const World& world);
+    // aim into one command and queues it. Returns the bytes queued, zero when
+    // there was nothing to send -- there is nothing before this client has a
+    // pawn to aim.
+    std::size_t SendLocal(NetSession& session, const World& world);
+
+    // How many ticks of input each peer's buffer holds back before consuming.
+    // Applied at the next feed, so raising it mid-session costs latency
+    // immediately and lowering it is paid off by the catch-up collapse.
+    void SetTargetDepth(std::size_t ticks) { Target = ticks; }
+    [[nodiscard]] std::size_t TargetDepth() const { return Target; }
 
     void ForgetPeer(PeerId peer);
     void Reset();
@@ -54,6 +61,7 @@ public:
 
 private:
     std::unordered_map<PeerId, NetPeerCommandBuffer> Buffers;
+    std::size_t Target = NetPeerCommandBuffer::kTargetDepth;
     // Reused across frames, sized once to the largest datagram a channel will
     // carry, so sending a command allocates nothing.
     std::vector<std::byte> Scratch;

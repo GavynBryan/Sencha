@@ -142,17 +142,17 @@ bool NetDecodeCVarUpdate(std::span<const std::byte> bytes, NetCVarUpdate& out)
     return reader.AtEnd();
 }
 
-std::size_t NetCVarPublisher::Publish(NetSession& session,
-                                      const ConsoleRegistry& registry)
+NetCVarPublisher::PublishStats NetCVarPublisher::Publish(
+    NetSession& session, const ConsoleRegistry& registry)
 {
+    PublishStats stats;
     if (session.Role() != NetSessionRole::Host)
-        return 0;
+        return stats;
 
     const std::vector<PeerId> peers = session.ConnectedPeers();
     if (peers.empty())
-        return 0;
+        return stats;
 
-    std::size_t queued = 0;
     std::array<std::byte, 512> scratch{};
 
     for (PeerId peer : peers)
@@ -183,7 +183,8 @@ std::size_t NetCVarPublisher::Publish(NetSession& session,
             }
 
             seen[metadata->Name] = rendered;
-            ++queued;
+            ++stats.Updates;
+            stats.BytesQueued += size;
         }
     }
 
@@ -194,7 +195,7 @@ std::size_t NetCVarPublisher::Publish(NetSession& session,
                }) == peers.end();
     });
 
-    return queued;
+    return stats;
 }
 
 void NetCVarPublisher::ForgetPeer(PeerId peer)

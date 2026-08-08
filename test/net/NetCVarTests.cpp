@@ -391,15 +391,15 @@ TEST(NetCVarPublish, APeerIsSentTheSessionsValuesAndThenOnlyChanges)
     NetCVarPublisher publisher;
 
     // First pass: the peer knows nothing, so it is told.
-    EXPECT_EQ(publisher.Publish(pair.HostSession, registry.Console), 1u);
+    EXPECT_EQ(publisher.Publish(pair.HostSession, registry.Console).Updates, 1u);
     // Second: nothing changed, so nothing is sent.
-    EXPECT_EQ(publisher.Publish(pair.HostSession, registry.Console), 0u);
+    EXPECT_EQ(publisher.Publish(pair.HostSession, registry.Console).Updates, 0u);
 
     ASSERT_TRUE(registry.Console
                     .SetCVar("test.session", 6.5, ConsoleValueSource{ "test" },
                              ConsolePhase::EngineReady, true)
                     .Succeeded());
-    EXPECT_EQ(publisher.Publish(pair.HostSession, registry.Console), 1u);
+    EXPECT_EQ(publisher.Publish(pair.HostSession, registry.Console).Updates, 1u);
 
     // And it arrives as something the client can apply.
     pair.Step(4);

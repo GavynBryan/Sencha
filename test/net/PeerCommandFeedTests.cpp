@@ -209,6 +209,31 @@ TEST(PeerCommandFeed, FeedsOneRecordPerTick)
     }
 }
 
+// A knob nobody can reach is a constant with extra steps. The runtime holds
+// the tuned value; the buffers are what actually hold input back, so the value
+// has to arrive there before it means anything.
+TEST(PeerCommandFeed, TheTunedSlackReachesThePeerBuffers)
+{
+    World world = MakeWorld();
+    (void)SpawnPawnFor(world, kAlice);
+
+    PeerCommandRuntime commands;
+    commands.SetTargetDepth(5);
+    ASSERT_EQ(commands.TargetDepth(), 5u);
+
+    ASSERT_TRUE(Deliver(commands, kAlice, Asking(1, 1.0f, false)));
+    commands.Feed(world, 1);
+
+    const NetPeerCommandBuffer* buffer = commands.Peer(kAlice);
+    ASSERT_NE(buffer, nullptr);
+    EXPECT_EQ(buffer->TargetDepth(), 5u);
+
+    // And it keeps following: tuning mid-session is the whole point of a cvar.
+    commands.SetTargetDepth(0);
+    commands.Feed(world, 2);
+    EXPECT_EQ(commands.Peer(kAlice)->TargetDepth(), 0u);
+}
+
 TEST(PeerCommandFeed, RefusesAPayloadThatIsNotACommand)
 {
     PeerCommandRuntime commands;

@@ -3,6 +3,7 @@
 #include <input/InputAction.h>
 #include <net/ReplicationCodec.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <span>
@@ -121,7 +122,8 @@ public:
 
     // Depth the buffer tolerates in steady state. One record of slack rides
     // out a late datagram without starving; every record above it is one tick
-    // of lag the player pays on every input from then on.
+    // of lag the player pays on every input from then on. The default; the
+    // authority tunes it live against what the stats surface reports.
     static constexpr std::size_t kTargetDepth = 1;
 
     // Consecutive consumes that must end above the target before the excess is
@@ -141,6 +143,15 @@ public:
     // a peer that has not spoken yet has no input, not zeroed input.
     [[nodiscard]] bool Next(NetCommandRecord& out);
 
+    // Trading latency for tolerance of a jittery connection. Zero consumes as
+    // fast as records arrive and starves on the first late one; anything above
+    // that is lag every input pays for the calm it buys.
+    void SetTargetDepth(std::size_t ticks)
+    {
+        Target = std::min(ticks, kCapacity - 1);
+    }
+    [[nodiscard]] std::size_t TargetDepth() const { return Target; }
+
     [[nodiscard]] float Yaw() const { return AimYaw; }
     [[nodiscard]] float Pitch() const { return AimPitch; }
     [[nodiscard]] bool HasAim() const { return AimSeen; }
@@ -159,6 +170,8 @@ private:
     std::array<NetCommandRecord, kCapacity> Queue{};
     std::size_t Head = 0;
     std::size_t Count = 0;
+
+    std::size_t Target = kTargetDepth;
 
     NetCommandRecord Last{};
     bool HasLast = false;

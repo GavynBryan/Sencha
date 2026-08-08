@@ -335,12 +335,12 @@ bool NetPeerCommandBuffer::Next(NetCommandRecord& out)
         // now on. It is shed here in one consume, collapsed into the record
         // handed out. The streak is what keeps a frame that runs several ticks
         // safe: its burst falls with every consume and never reads as backlog.
-        if (Count > kTargetDepth)
+        if (Count > Target)
         {
             ++BacklogTicks;
             if (BacklogTicks >= kCollapseStreak)
             {
-                while (Count > kTargetDepth)
+                while (Count > Target)
                 {
                     NetCommandRecord newer = Queue[Head];
                     Head = (Head + 1) % kCapacity;

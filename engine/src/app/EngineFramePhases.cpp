@@ -94,6 +94,21 @@ void Engine::RegisterNetFramePhases()
         engine.ClearNetDeliveries();
         const std::vector<NetSession::Delivery> deliveries = session->Pump(now);
 
+        // Everything that arrived, counted before anything decides what to do
+        // with it: traffic a build refuses is still traffic it paid for, and a
+        // rate that only counted accepted messages would hide exactly the
+        // pathologies worth seeing.
+        NetStats& traffic = engine.NetTraffic();
+        traffic.Sample(now);
+        for (const NetSession::Delivery& delivery : deliveries)
+        {
+            traffic.RecordIn(delivery.Payload.empty()
+                                 ? NetTrafficKind::Other
+                                 : NetTrafficKindOf(static_cast<NetPayloadKind>(
+                                       delivery.Payload[0])),
+                             delivery.Payload.size());
+        }
+
         // Logged rather than left to the console: a headless host has nobody
         // watching a console view, and who joined and who left is the first
         // thing anyone asks a server.
@@ -213,23 +228,36 @@ void Engine::RegisterNetFramePhases()
         // Queued before the flush, so state produced by the simulation that
         // just ran leaves in the same frame that produced it rather than
         // waiting a full frame to go out.
+        NetStats& traffic = engine.NetTraffic();
         if (session->Role() == NetSessionRole::Host)
         {
             ::World& world = engine.World().Entities();
-            (void)engine.Replication().Publish(
-                *session, world, engine.ReplicatedComponents(),
-                world.CurrentFrame());
+            const ReplicationRuntime::PublishStats published =
+                engine.Replication().Publish(
+                    *session, world, engine.ReplicatedComponents(),
+                    world.CurrentFrame());
+            traffic.RecordOut(NetTrafficKind::Snapshot, published.BytesQueued,
+                              published.SnapshotsSent);
+
             // Cheap when nothing changed: it compares what each peer was last
             // told and sends only differences.
-            (void)engine.CVarPublisher().Publish(
-                *session, engine.Console().Registry());
+            const NetCVarPublisher::PublishStats cvars =
+                engine.CVarPublisher().Publish(
+                    *session, engine.Console().Registry());
+            if (cvars.Updates > 0)
+            {
+                traffic.RecordOut(NetTrafficKind::CVar, cvars.BytesQueued,
+                                  static_cast<std::uint32_t>(cvars.Updates));
+            }
         }
         else if (session->Role() == NetSessionRole::Client)
         {
             // Queued after the ticks that resolved it, so the newest record a
             // command carries is this frame's rather than the previous one's.
-            (void)engine.PeerCommands().SendLocal(
+            const std::size_t bytes = engine.PeerCommands().SendLocal(
                 *session, engine.World().Entities());
+            if (bytes > 0)
+                traffic.RecordOut(NetTrafficKind::Command, bytes);
         }
 
         session->Flush(ctx.Runtime->GetCurrentFrame().WallTime.UnscaledElapsed);

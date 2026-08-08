@@ -10,6 +10,7 @@
 #include <net/ReplicationLayout.h>
 #include <net/NetCVarSync.h>
 #include <net/NetSpawnRecipe.h>
+#include <net/NetStats.h>
 #include <net/PeerCommandRuntime.h>
 #include <net/ReplicationRuntime.h>
 #include <profiling/CpuScopeTimings.h>
@@ -94,6 +95,10 @@ public:
     {
         return PeerCommandState;
     }
+    // What the session is spending, as rates. Counting only: nothing reads it
+    // to decide anything, so recording into it raises no ordering question.
+    [[nodiscard]] NetStats& NetTraffic() { return NetStatsState; }
+    [[nodiscard]] const NetStats& NetTraffic() const { return NetStatsState; }
 
     // What a replicated entity becomes on this machine. Registered by the game
     // and outlives any one session, because it describes content rather than a
@@ -289,6 +294,7 @@ private:
     std::vector<NetSession::Delivery> PendingNetDeliveries;
     NetCVarPublisher CVarPublisherState;
     PeerCommandRuntime PeerCommandState;
+    NetStats NetStatsState;
     NetSpawnRecipes SpawnRecipeState;
     std::unique_ptr<RuntimeWorld> RuntimeWorldState;
     RuntimeFrameLoop RuntimeLoop;
