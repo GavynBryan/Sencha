@@ -229,24 +229,6 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
         },
     });
 
-    registry.RegisterCVar({
-        .Name = "net.prediction.snap_distance",
-        .Owner = "engine",
-        .Type = CVarType::Double,
-        .DefaultValue = static_cast<double>(ClientPrediction::kDefaultSnapMeters),
-        .CurrentValue = static_cast<double>(ClientPrediction::kDefaultSnapMeters),
-        .Flags = CVarFlags::Archive,
-        .Help = "Metres of disagreement past which a client is moved at once "
-                "rather than corrected gently.",
-        .Source = { "engine defaults" },
-        .Min = 0.0,
-        .Max = 100.0,
-        .OnChange = [&engine](const CVarChangeContext& change) {
-            if (const double* metres = std::get_if<double>(&change.NewValue))
-                engine.Prediction().SetSnapMeters(static_cast<float>(*metres));
-        },
-    });
-
     registry.RegisterCommand({
         .Name = "host",
         .Owner = "engine",

@@ -149,21 +149,23 @@ void NetStatsPanel::Draw()
         }
         else if (!Prediction.IsEnabled())
         {
-            ImGui::TextUnformatted("off (net.prediction) -- input costs a round trip");
+            ImGui::TextUnformatted(
+                "off (net.prediction) -- input costs a round trip");
         }
         else
         {
-            // Error is what says whether this is working. A floor that creeps
-            // up is prediction drifting away from the authority; snaps are it
-            // giving up and moving the player.
-            ImGui::Text("error %.3f m  |  %" PRIu64 " corrections, %" PRIu64
-                        " snaps of %" PRIu64 " checks",
-                        static_cast<double>(Prediction.LastErrorMeters()),
-                        Prediction.Corrections(), Prediction.Snaps(),
-                        Prediction.Observations());
+            // Reset distance is what says whether this is working. A steady
+            // few centimetres is healthy; a rising floor is the two simulations
+            // drifting apart faster than they are pulled together.
+            ImGui::Text("reset %.3f m  |  %u ticks replayed  |  %" PRIu64
+                        " reconciles, %" PRIu64 " snaps",
+                        static_cast<double>(Prediction.LastResetMeters()),
+                        Prediction.LastReplayedTicks(), Prediction.Reconciles(),
+                        Prediction.Snaps());
             ImGui::SetItemTooltip(
-                "Distance between where this machine put the pawn and where the "
-                "authority says it was, at the same tick.");
+                "How far the pawn moved when the authority's state replaced "
+                "this machine's guess and the unanswered ticks were re-run. "
+                "Snaps are stalls too long to replay through.");
         }
 
         ImGui::SeparatorText("Interpolation");

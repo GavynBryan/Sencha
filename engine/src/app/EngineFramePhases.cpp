@@ -12,7 +12,9 @@
 #include <physics/components/CharacterMoverLink.h>
 #include <net/NetConsoleCommands.h>
 #include <net/NetSession.h>
+#include <net/PawnStateReplay.h>
 #include <net/ReplicationSnapshot.h>
+#include <physics/PhysicsStepSystem.h>
 #include <world/transform/TransformPropagation.h>
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
@@ -250,37 +252,26 @@ void Engine::RegisterNetFramePhases()
                                            &engine.Prediction(),
                                            &engine.Interpolation());
 
-            // A correction moves the pawn by how far this machine was wrong,
-            // not to where the authority was: everything simulated since that
-            // tick was built on the same error, so shifting the trajectory
-            // keeps the motion the player has produced meanwhile. Assigning the
-            // authority's position would drag them back by the round trip.
-            if (applied.Prediction.has_value())
+            // Start again from what the authority did, then re-run the ticks it
+            // has not answered. Both halves are necessary: the state alone
+            // rewinds the player by a round trip, and the input alone is what
+            // this machine already guessed with.
+            if (applied.PredictedStateUpdated)
             {
-                const EntityId pawn = engine.Prediction().Predicted();
-                if (const LocalTransform* pose = world.TryGet<LocalTransform>(pawn))
+                PawnReplayRequest replay;
+                replay.Entities = &world;
+                replay.Schema = &engine.RuntimeComponents();
+                replay.Prediction = &engine.Prediction();
+                if (PhysicsStepSystem* physics =
+                        engine.Schedule().Get<PhysicsStepSystem>())
                 {
-                    const Vec3d corrected =
-                        pose->Value.Position + applied.Prediction->Offset;
-
-                    // Through the mover, never onto the transform alone. A
-                    // character's position lives inside its mover; the transform
-                    // is where the last sweep left a copy. Writing only the copy
-                    // is undone on the next tick, which starts from where the
-                    // mover still believes it is -- a correction that reports
-                    // itself as applied and moves nothing.
-                    if (world.HasComponent<CharacterMoverLink>(pawn)
-                        && world.HasResource<CharacterMoverPool>())
-                    {
-                        (void)world.GetResource<CharacterMoverPool>().SetPosition(
-                            world, pawn, corrected);
-                    }
-                    else if (LocalTransform* writable =
-                                 world.TryGet<LocalTransform>(pawn))
-                    {
-                        writable->Value.Position = corrected;
-                    }
+                    replay.Movers = &physics->GetCharacterMovers();
                 }
+                replay.AckTick = applied.CommandAck;
+                replay.FixedDeltaSeconds =
+                    static_cast<float>(simulation.GetFixedDt());
+                replay.Replay = engine.Prediction().IsEnabled();
+                (void)ReplayPawnState(replay);
             }
             // Every snapshot is also a clock sample, and the freshest one
             // available: it leaves the authority stamped with the tick that

@@ -237,10 +237,10 @@ struct SnapshotApplyResult
     std::uint32_t RecipesMissing = 0;
     std::uint32_t EntitiesUpdated = 0;
     std::uint32_t EntitiesDestroyed = 0;
-    // Set when a predicted entity's authoritative position disagreed with what
-    // this machine simulated for that tick. The caller moves the pawn; a
-    // snapshot applier has no business deciding how a correction is served.
-    std::optional<ClientPrediction::Correction> Prediction;
+    // The predicted pawn's authoritative state was updated by this snapshot, so
+    // the caller has something new to reconcile against. Deciding what to do
+    // about it is not a snapshot applier's business.
+    bool PredictedStateUpdated = false;
 
     [[nodiscard]] bool Ok() const { return Error == SnapshotApplyError::None; }
 };

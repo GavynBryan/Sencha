@@ -370,14 +370,11 @@ TEST(ReplicationPrediction, ThePredictedEntityKeepsWhatThisMachineSimulated)
            "predicted, which is the round trip the player would feel";
 }
 
-// The trap the authoritative shadow exists for.
-//
-// A snapshot carries fields, not components: the authority moves along X every
-// tick, so X is sent and Z -- which it never touches -- is not. This machine
-// meanwhile drifts along Z. Staged against what this machine simulated, the
-// unsent Z would be filled in from its own drift and the divergence would read
-// as perfect agreement; staged against the authority's own view, it is seen.
-TEST(ReplicationPrediction, AnUnsentFieldIsComparedAgainstTheAuthorityNotThePrediction)
+// The trap the authoritative shadow exists for: the world's copy of a predicted
+// pawn is this machine's guess, and staging an arriving delta against a guess
+// makes a divergence read as agreement. What the shadow holds has to be what
+// the authority said, however far the guess has wandered.
+TEST(ReplicationPrediction, TheShadowHoldsTheAuthoritysWordNotThisMachinesGuess)
 {
     Pair pair;
     ClientPrediction prediction;
@@ -388,31 +385,29 @@ TEST(ReplicationPrediction, AnUnsentFieldIsComparedAgainstTheAuthorityNotThePred
     ASSERT_TRUE(mirror.IsValid());
     prediction.SetPredicted(mirror);
 
-    LocalTransform* authorityPose = pair.Authority.TryGet<LocalTransform>(authority);
-    LocalTransform* clientPose = pair.Client.TryGet<LocalTransform>(mirror);
-
-    // A tick where the two agree, which seeds the authority's view.
-    authorityPose->Value.Position = Vec3d{ 1.0f, 0.0f, 0.0f };
-    clientPose->Value.Position = Vec3d{ 1.0f, 0.0f, 0.0f };
-    prediction.Record(pair.Tick + 1, clientPose->Value.Position);
-    pair.Replicate(0, nullptr, &prediction);
-    ASSERT_TRUE(prediction.HasAuthoritativeState(ResolveComponentTypeId<LocalTransform>()));
-    ASSERT_FALSE(pair.LastApply.Prediction.has_value());
-
-    // The authority advances along X only. This machine advances along X too --
-    // agreeing there -- and has also drifted three quarters of a metre along Z,
-    // which the authority has never had reason to send.
-    authorityPose->Value.Position = Vec3d{ 2.0f, 0.0f, 0.0f };
-    clientPose->Value.Position = Vec3d{ 2.0f, 0.0f, 0.75f };
-    prediction.Record(pair.Tick + 1, clientPose->Value.Position);
+    // The authority is at one metre along X. This machine has guessed its way
+    // somewhere else entirely, which is what predicting ahead looks like.
+    pair.Authority.TryGet<LocalTransform>(authority)->Value.Position =
+        Vec3d{ 1.0f, 0.0f, 0.0f };
+    pair.Client.TryGet<LocalTransform>(mirror)->Value.Position =
+        Vec3d{ 40.0f, 0.0f, -12.0f };
     pair.Replicate(0, nullptr, &prediction);
 
-    ASSERT_TRUE(pair.LastApply.Prediction.has_value())
-        << "a divergence in a field the authority had no reason to resend was "
-           "compared against this machine's own guess and read as agreement";
-    EXPECT_FLOAT_EQ(pair.LastApply.Prediction->Offset.Z, -0.75f);
-    EXPECT_NEAR(pair.LastApply.Prediction->Offset.X, 0.0f, 1e-4f)
-        << "the axis both machines agree on is not a correction";
+    // The guess is untouched -- the whole point of intercepting.
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
+                    40.0f);
+
+    // And the authority's word is what was kept, so a replay resumes from a
+    // real position rather than from wherever this machine had drifted.
+    const EntityId probe = pair.Client.CreateEntity();
+    pair.Client.AddComponent<LocalTransform>(probe, LocalTransform{});
+    ASSERT_TRUE(prediction.RestoreTo(pair.Client, pair.Schema, probe));
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(probe)->Value.Position.X,
+                    1.0f)
+        << "the shadow was contaminated by the world's copy, so every delta "
+           "after this one is staged against a value the authority never sent";
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(probe)->Value.Position.Z,
+                    0.0f);
 }
 
 // A client cannot replay what it cannot separate from what has been answered,

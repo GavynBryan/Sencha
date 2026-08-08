@@ -176,24 +176,6 @@ void PeerCommandFeedSystem::FixedLogic(FixedLogicContext& ctx)
     Commands->Feed(ctx.Entities, ctx.Time.TickIndex);
 }
 
-void PredictionRecordSystem::PostFixed(PostFixedContext& ctx)
-{
-    if (Prediction == nullptr || Clock == nullptr)
-        return;
-
-    const EntityId pawn = Prediction->Predicted();
-    if (!pawn.IsValid() || !ctx.Entities.IsAlive(pawn))
-        return;
-    if (!Clock->HasEstimate())
-        return;  // No shared name for this tick, so nothing to record it under.
-
-    if (const LocalTransform* pose = ctx.Entities.TryGet<LocalTransform>(pawn))
-    {
-        Prediction->Record(Clock->AuthorityTickAt(ctx.Time.TickIndex),
-                           pose->Value.Position);
-    }
-}
-
 void RegisterNetSystems(EngineSchedule& schedule, PeerCommandRuntime& commands,
                         ClientPrediction& prediction,
                         ReplicationInterpolation& interpolation,
@@ -202,5 +184,4 @@ void RegisterNetSystems(EngineSchedule& schedule, PeerCommandRuntime& commands,
     schedule.Register<PeerCommandFeedSystem>(commands);
     schedule.Register<ReplicationInterpolationSystem>(interpolation, prediction, clock);
     schedule.Register<PawnCommandCaptureSystem>(prediction, clock);
-    schedule.Register<PredictionRecordSystem>(prediction, clock);
 }

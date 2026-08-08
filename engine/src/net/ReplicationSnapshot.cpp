@@ -484,10 +484,7 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
                     return result;
                 }
                 request.Prediction->MarkSeen(component->Type);
-                // Last one wins within a snapshot; a correction describes the
-                // tick, not the component.
-                if (const auto correction = request.Prediction->Commit(result.Tick))
-                    result.Prediction = correction;
+                result.PredictedStateUpdated = true;
                 continue;
             }
 
