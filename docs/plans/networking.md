@@ -1357,6 +1357,18 @@ what extraction actually reads.
   and axes travel at full float width rather than quantized, because an action's
   magnitude is not bounded by anything the input layer promises.
 
+  The arrival buffer keeps itself shallow, which the first live session of this
+  slice proved matters as much as delivery: queueing the first command's whole
+  redundancy window seeded a standing backlog exactly one window deep (~133ms
+  at 60Hz) that never drained, because records arrive at the same rate ticks
+  consume them. First contact now takes only the newest record, and depth that
+  persists above a one-record slack across several consumes -- persistence is
+  what distinguishes backlog from a burst a multi-tick frame is about to drain
+  -- is collapsed into the next record handed out, edges carried so a tap in a
+  shed tick still lands. Command latency is pipeline-bound (~2-3 frames), which
+  is the input-delay floor prediction later removes; the slack becomes a cvar
+  when the net stats panel gives it a feedback surface.
+
   *Spawn recipes.* A snapshot-spawned entity currently carries only its
   replicated components: no derived columns, no local scaffolding, with each
   game hand-rolling the difference. The playtest's frozen-motion defect was

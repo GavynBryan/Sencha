@@ -101,6 +101,15 @@ std::size_t NetEncodePlayerCommand(const NetPlayerCommand& command,
 // was held is right -- a player holding forward through a dropped packet is
 // still holding forward -- while repeating a press would fire the same jump
 // again on every starved tick.
+//
+// It also keeps itself shallow. A queued record is not input the simulation
+// still owes anyone; it is standing latency, paid again on every tick that
+// follows, because records arrive at the same rate ticks consume them and a
+// deep queue therefore never drains on its own. So first contact takes only
+// the newest record -- the window behind it is insurance for ticks this
+// authority never ran -- and depth that persists above a small slack is
+// collapsed into the next record handed out, edges carried, so shedding
+// backlog cannot eat a tap that lived in a shed tick.
 //=============================================================================
 class NetPeerCommandBuffer
 {
@@ -110,9 +119,22 @@ public:
     // queueing would let it buy memory on the authority.
     static constexpr std::size_t kCapacity = 16;
 
-    // Takes the records this peer has not been credited with yet. Records at or
-    // below the last one consumed are ignored, which is what makes resending
-    // the redundancy window free.
+    // Depth the buffer tolerates in steady state. One record of slack rides
+    // out a late datagram without starving; every record above it is one tick
+    // of lag the player pays on every input from then on.
+    static constexpr std::size_t kTargetDepth = 1;
+
+    // Consecutive consumes that must end above the target before the excess is
+    // collapsed. A frame that runs several ticks legitimately drains a
+    // several-deep queue inside the frame -- depth alone cannot tell that burst
+    // from backlog, but the burst falls with every consume and backlog does
+    // not, which is what a streak measures.
+    static constexpr std::size_t kCollapseStreak = 3;
+
+    // Takes the records this peer has not been credited with yet. Records
+    // below the admission floor -- consumed already, or older than first
+    // contact -- are ignored, which is what makes resending the redundancy
+    // window free.
     void Receive(const NetPlayerCommand& command);
 
     // The record this tick simulates. False when nothing has ever arrived --
@@ -140,8 +162,13 @@ private:
 
     NetCommandRecord Last{};
     bool HasLast = false;
-    std::uint64_t LastConsumedTick = 0;
-    bool Consumed = false;
+    // Records below this tick are never queued: they are either consumed
+    // already or older than first contact, which makes them latency, not input.
+    std::uint64_t AdmitFloor = 0;
+    bool SeenCommand = false;
+    // Consecutive consumes that ended above the target. Reset the moment depth
+    // is healthy, so only depth that persists ever reads as backlog.
+    std::size_t BacklogTicks = 0;
 
     float AimYaw = 0.0f;
     float AimPitch = 0.0f;

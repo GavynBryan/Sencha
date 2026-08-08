@@ -260,16 +260,20 @@ TEST(NetPeerCommandBuffer, HasNoInputBeforeAPeerHasSpoken)
     EXPECT_FALSE(buffer.HasAim());
 }
 
+// A burst that a multi-tick frame will drain inside the frame is not backlog,
+// and every record in it gets its own tick, in order, nothing merged.
 TEST(NetPeerCommandBuffer, HandsOutOneRecordPerTickInOrder)
 {
     NetPeerCommandBuffer buffer;
-    buffer.Receive(CommandEndingAt(12, 3));  // ticks 10, 11, 12
+    for (std::uint64_t tick = 10; tick <= 13; ++tick)
+        buffer.Receive(CommandEndingAt(tick, 1));
 
-    for (std::uint64_t tick = 10; tick <= 12; ++tick)
+    for (std::uint64_t tick = 10; tick <= 13; ++tick)
     {
         NetCommandRecord record;
         ASSERT_TRUE(buffer.Next(record)) << "tick " << tick;
-        EXPECT_EQ(record.Tick, tick);
+        EXPECT_EQ(record.Tick, tick)
+            << "a burst a frame is about to drain was collapsed as backlog";
     }
     EXPECT_EQ(buffer.QueuedTicks(), 0u);
 }
@@ -279,33 +283,38 @@ TEST(NetPeerCommandBuffer, HandsOutOneRecordPerTickInOrder)
 TEST(NetPeerCommandBuffer, IgnoresTicksItHasAlreadyHandedOut)
 {
     NetPeerCommandBuffer buffer;
-    buffer.Receive(CommandEndingAt(20, 4));  // 17..20
+    buffer.Receive(CommandEndingAt(20, 4));  // first contact: only 20 queued
 
     NetCommandRecord record;
     ASSERT_TRUE(buffer.Next(record));
-    ASSERT_EQ(record.Tick, 17u);
+    ASSERT_EQ(record.Tick, 20u);
 
-    // The next command resends 17 and 18 alongside 21 and 22.
-    buffer.Receive(CommandEndingAt(22, 6));  // 17..22
+    // The next command resends 17..20 alongside 21 and 22.
+    buffer.Receive(CommandEndingAt(22, 6));
 
-    for (std::uint64_t tick = 18; tick <= 22; ++tick)
+    for (std::uint64_t tick = 21; tick <= 22; ++tick)
     {
         ASSERT_TRUE(buffer.Next(record)) << "tick " << tick;
         EXPECT_EQ(record.Tick, tick);
     }
     EXPECT_EQ(buffer.QueuedTicks(), 0u)
         << "the resent ticks were credited twice";
+
+    // The same command arriving again is entirely insurance now.
+    buffer.Receive(CommandEndingAt(22, 6));
+    EXPECT_EQ(buffer.QueuedTicks(), 0u);
 }
 
 TEST(NetPeerCommandBuffer, OrdersRecordsThatArriveOutOfOrder)
 {
     NetPeerCommandBuffer buffer;
     buffer.Receive(CommandEndingAt(40, 1));  // 40
-    buffer.Receive(CommandEndingAt(38, 1));  // 38
-    buffer.Receive(CommandEndingAt(39, 1));  // 39
+    buffer.Receive(CommandEndingAt(43, 1));  // 43, overtaking
+    buffer.Receive(CommandEndingAt(42, 1));  // 42
 
     NetCommandRecord record;
-    for (std::uint64_t tick = 38; tick <= 40; ++tick)
+    const std::uint64_t expected[] = { 40, 42, 43 };
+    for (std::uint64_t tick : expected)
     {
         ASSERT_TRUE(buffer.Next(record));
         EXPECT_EQ(record.Tick, tick);
@@ -331,6 +340,132 @@ TEST(NetPeerCommandBuffer, BoundsHowFarAheadAPeerMayRun)
     ASSERT_TRUE(buffer.Next(record));
     EXPECT_EQ(record.Tick, 200u - NetPeerCommandBuffer::kCapacity + 1u)
         << "the oldest queued tick is the one worth dropping";
+}
+
+//-----------------------------------------------------------------------------
+// Depth policy
+//
+// The defect this section pins down: the buffer once held a standing backlog
+// equal to the redundancy window, so every command a peer ever sent was
+// simulated ~8 ticks late -- ~133ms of input lag at 60Hz that no amount of
+// bandwidth or proximity could remove. Correctness of delivery said nothing
+// about it; only depth does.
+//-----------------------------------------------------------------------------
+
+TEST(NetPeerCommandBufferDepth, FirstContactDoesNotQueueTheRedundancyWindow)
+{
+    NetPeerCommandBuffer buffer;
+    buffer.Receive(CommandEndingAt(107, 8));
+
+    EXPECT_EQ(buffer.QueuedTicks(), 1u)
+        << "queueing the window at first contact seeds a backlog that never "
+           "drains, because records arrive exactly as fast as ticks consume "
+           "them";
+
+    NetCommandRecord record;
+    ASSERT_TRUE(buffer.Next(record));
+    EXPECT_EQ(record.Tick, 107u);
+}
+
+// The regression pin for the lag itself: a steady stream, including routine
+// datagram loss covered by the redundancy window, never builds standing depth.
+TEST(NetPeerCommandBufferDepth, ASteadyStreamNeverBuildsStandingLatency)
+{
+    NetPeerCommandBuffer buffer;
+    std::uint64_t delivered = 0;
+    std::uint64_t starvedBefore = 0;
+
+    for (std::uint64_t tick = 101; tick < 300; ++tick)
+    {
+        // Every fifth datagram is lost; the next command's window covers it.
+        if (tick % 5 != 0)
+        {
+            buffer.Receive(CommandEndingAt(tick, 8));
+            delivered = tick;
+        }
+
+        NetCommandRecord record;
+        ASSERT_TRUE(buffer.Next(record)) << "tick " << tick;
+
+        EXPECT_LE(buffer.QueuedTicks(), NetPeerCommandBuffer::kTargetDepth)
+            << "standing depth at tick " << tick
+            << " -- every queued record is a tick of input lag";
+
+        const bool starved = buffer.StarvedTicks() != starvedBefore;
+        starvedBefore = buffer.StarvedTicks();
+        if (!starved)
+        {
+            EXPECT_GE(record.Tick + NetPeerCommandBuffer::kTargetDepth, delivered)
+                << "consumed input trails what the wire has delivered";
+        }
+    }
+}
+
+// A stall's burst is real backlog: it persists across consumes, which is what
+// distinguishes it from a multi-tick frame's, and it is shed in one consume
+// once the streak proves it.
+TEST(NetPeerCommandBufferDepth, ABurstAfterAStallShedsItsBacklog)
+{
+    NetPeerCommandBuffer buffer;
+    buffer.Receive(CommandEndingAt(1, 1));
+    NetCommandRecord record;
+    ASSERT_TRUE(buffer.Next(record));
+
+    // The connection stalls, then everything arrives at once: one command
+    // whose window carries ticks 5..12.
+    buffer.Receive(CommandEndingAt(12, 8));
+    ASSERT_EQ(buffer.QueuedTicks(), 8u);
+
+    // The streak has to run before the collapse may fire, so the first
+    // consumes replay the backlog as-is.
+    ASSERT_TRUE(buffer.Next(record));
+    EXPECT_EQ(record.Tick, 5u);
+    ASSERT_TRUE(buffer.Next(record));
+    EXPECT_EQ(record.Tick, 6u);
+
+    // Third consecutive backlogged consume: the excess collapses into this
+    // record, leaving only the slack.
+    ASSERT_TRUE(buffer.Next(record));
+    EXPECT_EQ(record.Tick, 11u)
+        << "the backlog was replayed one late tick at a time instead of shed";
+    EXPECT_EQ(buffer.QueuedTicks(), NetPeerCommandBuffer::kTargetDepth);
+
+    ASSERT_TRUE(buffer.Next(record));
+    EXPECT_EQ(record.Tick, 12u);
+}
+
+// Shedding backlog must not eat a request the player made exactly once.
+TEST(NetPeerCommandBufferDepth, CollapseCarriesEdgesFromShedTicks)
+{
+    NetPeerCommandBuffer buffer;
+    buffer.Receive(CommandEndingAt(1, 1));
+    NetCommandRecord record;
+    ASSERT_TRUE(buffer.Next(record));
+
+    // A stall's burst of single-record commands, with a tap -- pressed and
+    // fired, never held -- living only in tick 9.
+    for (std::uint64_t tick = 5; tick <= 12; ++tick)
+    {
+        NetPlayerCommand command;
+        command.RecordCount = 1;
+        command.Records[0] = RecordAt(tick, 1);
+        if (tick == 9)
+        {
+            command.Records[0].Actions[0] = Digital(false, true, true);
+        }
+        buffer.Receive(command);
+    }
+
+    ASSERT_TRUE(buffer.Next(record));  // 5
+    ASSERT_TRUE(buffer.Next(record));  // 6
+    ASSERT_TRUE(buffer.Next(record));  // collapse: 7..11 into one
+
+    ASSERT_EQ(record.Tick, 11u);
+    EXPECT_TRUE(record.Actions[0].WasPressed())
+        << "the tap lived only in a shed tick and vanished with it";
+    EXPECT_TRUE(record.Actions[0].WasFired());
+    EXPECT_FALSE(record.Actions[0].IsHeld())
+        << "held is a state, and the newest state is not-held";
 }
 
 //-----------------------------------------------------------------------------

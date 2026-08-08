@@ -111,6 +111,28 @@ namespace
         }
         value.Flags = flags;
     }
+
+    // What a collapsed tick keeps. Levels and axes come from the newest record
+    // of the batch -- they are states, and the newest state is the true one --
+    // but the edges are OR'd forward, because a press that lived only in a
+    // shed tick is a request the player made exactly once and shedding backlog
+    // must not be how it disappears.
+    void CarryEdges(const NetCommandRecord& older, NetCommandRecord& newer)
+    {
+        constexpr std::uint8_t edgeMask =
+            static_cast<std::uint8_t>(InputActionFlags::Pressed)
+            | static_cast<std::uint8_t>(InputActionFlags::Released)
+            | static_cast<std::uint8_t>(InputActionFlags::Fired);
+
+        const std::uint8_t count = std::min(older.ActionCount, newer.ActionCount);
+        for (std::uint8_t index = 0; index < count; ++index)
+        {
+            const std::uint8_t edges =
+                static_cast<std::uint8_t>(older.Actions[index].Flags) & edgeMask;
+            newer.Actions[index].Flags = static_cast<InputActionFlags>(
+                static_cast<std::uint8_t>(newer.Actions[index].Flags) | edges);
+        }
+    }
 }
 
 std::size_t NetEncodePlayerCommand(const NetPlayerCommand& command,
@@ -238,6 +260,18 @@ void NetPeerCommandBuffer::Receive(const NetPlayerCommand& command)
         return;
 
     const std::uint64_t newest = command.Records[0].Tick;
+
+    // First contact takes the newest record only. The window behind it is
+    // insurance for ticks this authority never ran; queueing it would seed a
+    // backlog exactly one window deep, and since records then arrive at the
+    // same rate ticks consume them, that backlog would never drain -- every
+    // command this peer ever sends would be simulated a full window late.
+    if (!SeenCommand)
+    {
+        SeenCommand = true;
+        AdmitFloor = newest;
+    }
+
     if (!AimSeen || newest >= AimTick)
     {
         AimYaw = command.Yaw;
@@ -254,9 +288,10 @@ void NetPeerCommandBuffer::Receive(const NetPlayerCommand& command)
 
 void NetPeerCommandBuffer::Insert(const NetCommandRecord& record)
 {
-    // Already simulated. This is the redundancy window doing its job: most of
-    // what a command carries is input the authority already has.
-    if (Consumed && record.Tick <= LastConsumedTick)
+    // Below the floor is input nobody wants: consumed already, or older than
+    // first contact. This is the redundancy window doing its job -- most of
+    // what a command carries is insurance the authority did not need.
+    if (record.Tick < AdmitFloor)
         return;
 
     for (std::size_t index = 0; index < Count; ++index)
@@ -294,10 +329,36 @@ bool NetPeerCommandBuffer::Next(NetCommandRecord& out)
         Head = (Head + 1) % kCapacity;
         --Count;
 
+        // Catch-up. Depth above the slack that persists across consumes is
+        // backlog -- a stall's burst, or a peer whose clock runs slightly fast
+        // -- and every record of it is a tick of lag paid on every input from
+        // now on. It is shed here in one consume, collapsed into the record
+        // handed out. The streak is what keeps a frame that runs several ticks
+        // safe: its burst falls with every consume and never reads as backlog.
+        if (Count > kTargetDepth)
+        {
+            ++BacklogTicks;
+            if (BacklogTicks >= kCollapseStreak)
+            {
+                while (Count > kTargetDepth)
+                {
+                    NetCommandRecord newer = Queue[Head];
+                    Head = (Head + 1) % kCapacity;
+                    --Count;
+                    CarryEdges(out, newer);
+                    out = newer;
+                }
+                BacklogTicks = 0;
+            }
+        }
+        else
+        {
+            BacklogTicks = 0;
+        }
+
         Last = out;
         HasLast = true;
-        LastConsumedTick = out.Tick;
-        Consumed = true;
+        AdmitFloor = out.Tick + 1;
         return true;
     }
 
@@ -307,6 +368,7 @@ bool NetPeerCommandBuffer::Next(NetCommandRecord& out)
     if (!HasLast)
         return false;
 
+    BacklogTicks = 0;
     ++Starved;
     for (std::uint8_t index = 0; index < Last.ActionCount; ++index)
         ClearEdges(Last.Actions[index]);
