@@ -213,6 +213,11 @@ void Engine::Shutdown()
     if (NetState != nullptr)
         NetState->Disconnect("quit");
     NetState.reset();
+    // Recipes are callables a game module registered. A game clears its own in
+    // OnShutdown; this is the backstop, because the Engine's own destruction
+    // can run after the module is unmapped and destroying the callable then
+    // reaches into memory that is gone.
+    SpawnRecipeState.Clear();
     FrameDriverInstance.reset();
     TaskQueueInstance.reset();
     FramePoolInstance.reset();

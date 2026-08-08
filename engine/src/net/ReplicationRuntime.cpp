@@ -79,7 +79,8 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
 SnapshotApplyResult ReplicationRuntime::Apply(std::span<const std::byte> payload,
                                               World& world,
                                               const WorldComponentSchema& schema,
-                                              const ReplicationLayout& layout)
+                                              const ReplicationLayout& layout,
+                                              const NetSpawnRecipes* recipes)
 {
     SnapshotApplyResult result;
     if (payload.size() < kKindBytes)
@@ -95,6 +96,7 @@ SnapshotApplyResult ReplicationRuntime::Apply(std::span<const std::byte> payload
     request.Schema = &schema;
     request.Layout = &layout;
     request.Identity = &ClientMap;
+    request.Recipes = recipes;
 
     return ReplicationApplySnapshot(request, payload.subspan(kKindBytes));
 }

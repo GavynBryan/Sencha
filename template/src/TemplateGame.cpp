@@ -43,6 +43,7 @@
 #include <input/InputRegistration.h>
 #include <movement/MovementRegistration.h>
 #include <net/NetReplicationComponents.h>
+#include <net/NetSpawnRecipe.h>
 #include <net/NetSession.h>
 #include <net/ReplicationCodec.h>
 #include <movement/MovementTags.h>
@@ -624,6 +625,14 @@ struct CharacterInputSystem
     }
 };
 
+// What this game's replicated entities are. Ids match on both ends because
+// both ends are the same build running the same content; they are the game's
+// vocabulary, not the engine's.
+enum : NetSpawnRecipeId
+{
+    kPlayerPawnRecipe = 1,
+};
+
 //=============================================================================
 // PlayerCommand
 //
@@ -776,7 +785,11 @@ private:
         // a map loads and that can be after this system is registered.
         const EntityId local = FindLocallyControlledPawn(world);
         if (local.IsValid() && !world.HasComponent<NetReplicated>(local))
+        {
             world.AddComponent<NetReplicated>(local);
+            world.AddComponent<NetSpawnRecipe>(
+                local, NetSpawnRecipe{ .Id = kPlayerPawnRecipe });
+        }
 
         const std::vector<PeerId> peers = session.ConnectedPeers();
 
@@ -794,6 +807,8 @@ private:
             const EntityId pawn = SpawnPawn(world, spawn, Profile, Avatar);
             world.AddComponent<NetReplicated>(pawn);
             world.AddComponent<NetOwner>(pawn, NetOwner{ .Peer = peer.Value });
+            world.AddComponent<NetSpawnRecipe>(
+                pawn, NetSpawnRecipe{ .Id = kPlayerPawnRecipe });
             PeerPawns.emplace(peer.Value, pawn);
             Log().Info("TemplateGame: spawned a pawn for peer {}", peer.Value);
         }
@@ -888,37 +903,18 @@ private:
         // definitive list: an entity is not marked on this side, and querying
         // by NetOwner would miss every pawn the authority drives itself --
         // including the host's own player.
-        std::vector<EntityId> needBody;
+        // What each replicated entity *is* -- body, pose history, derived
+        // columns -- is the spawn recipe's job now, run once at spawn. What is
+        // left here is possession: which of them this player drives.
         EntityId mine;
         for (const auto& [id, entity] : Owner->Replication().ClientEntities().All())
         {
             if (!world.IsAlive(entity))
                 continue;
-            if (!world.HasComponent<StaticMeshComponent>(entity))
-                needBody.push_back(entity);
             if (const NetOwner* owner = world.TryGet<NetOwner>(entity);
                 owner != nullptr && owner->Peer == self)
             {
                 mine = entity;
-            }
-        }
-
-        // The wire carries values, never content. Both machines already have
-        // the avatar, so a client resolves it locally rather than being told
-        // what to load by whoever it connected to.
-        if (Avatar.IsValid())
-        {
-            for (EntityId entity : needBody)
-            {
-                world.AddComponent<StaticMeshComponent>(
-                    entity,
-                    StaticMeshComponent{ .Mesh = Avatar.Mesh,
-                                         .Materials = Avatar.Materials });
-                // Replicated pawns move every tick, so they present
-                // interpolated between ticks like the local one does.
-                world.AddComponent<WorldTransformHistory>(
-                    entity, WorldTransformHistory{});
-                Log().Info("TemplateGame: gave a body to a replicated pawn");
             }
         }
 
@@ -1028,6 +1024,32 @@ void TemplateGame::OnStart(GameStartupContext&)
     // unregistered in OnShutdown while the module is still mapped: the registry
     // holds function pointers into this module.
     RegisterPlayerAvatarData(runtimeAssets.DataTypes, runtimeAssets.DataSchemas);
+
+    // What a replicated player pawn becomes on whichever machine receives it.
+    // A snapshot brings the state; this brings everything a body needs to be
+    // seen, which is content both ends already have and neither has to be told
+    // about. The avatar is resolved once here rather than per spawn.
+    engine.SpawnRecipes().Register(
+        kPlayerPawnRecipe,
+        [this](World& world, EntityId entity) {
+            Logger& log = GetEngine().Logging().GetLogger<TemplateGame>();
+            const ResolvedPlayerAvatar avatar = ResolvePlayerAvatar(log);
+            if (avatar.IsValid() && !world.HasComponent<StaticMeshComponent>(entity))
+            {
+                world.AddComponent<StaticMeshComponent>(
+                    entity,
+                    StaticMeshComponent{ .Mesh = avatar.Mesh,
+                                         .Materials = avatar.Materials });
+            }
+            // Pawns move every tick, so they present interpolated between
+            // ticks rather than stepping at the tick rate.
+            if (!world.HasComponent<WorldTransformHistory>(entity))
+            {
+                world.AddComponent<WorldTransformHistory>(
+                    entity, WorldTransformHistory{});
+            }
+            log.Info("TemplateGame: built a replicated player pawn");
+        });
 
     ScanAssetsDirectory(
         std::string(kAuthoredRoot),
@@ -1857,6 +1879,10 @@ void TemplateGame::OnShutdown(GameShutdownContext&)
     // destructor runs at dlclose, long after the world that owns the context set,
     // so the lease has to be dropped here while its owner still exists.
     GameplayInput.Reset();
+    // The spawn recipe is a callable whose target lives in this module, for the
+    // same reason the subtype registration below is: it has to go while the
+    // module is still mapped.
+    GetEngine().SpawnRecipes().Clear();
     // Every lease this game holds into its own data-asset cache, dropped here.
     // Declaration order alone is not enough: Assets is reset explicitly below,
     // so anything still holding a lease at that point outlives its owner and

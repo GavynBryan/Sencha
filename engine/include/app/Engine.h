@@ -9,6 +9,7 @@
 #include <ecs/WorldComponentSchema.h>
 #include <net/ReplicationLayout.h>
 #include <net/NetCVarSync.h>
+#include <net/NetSpawnRecipe.h>
 #include <net/ReplicationRuntime.h>
 #include <profiling/CpuScopeTimings.h>
 #include <profiling/RenderInstrumentation.h>
@@ -85,6 +86,15 @@ public:
     // Which session-owned cvar values each peer has been told. Reset with the
     // session like everything else that is session-transient.
     [[nodiscard]] NetCVarPublisher& CVarPublisher() { return CVarPublisherState; }
+
+    // What a replicated entity becomes on this machine. Registered by the game
+    // and outlives any one session, because it describes content rather than a
+    // connection.
+    [[nodiscard]] NetSpawnRecipes& SpawnRecipes() { return SpawnRecipeState; }
+    [[nodiscard]] const NetSpawnRecipes& SpawnRecipes() const
+    {
+        return SpawnRecipeState;
+    }
 
     // Channel payloads from the most recent pump that replication did not
     // claim: the game's own traffic, commands above all. Cleared at the start
@@ -270,6 +280,7 @@ private:
     ReplicationRuntime ReplicationState;
     std::vector<NetSession::Delivery> PendingNetDeliveries;
     NetCVarPublisher CVarPublisherState;
+    NetSpawnRecipes SpawnRecipeState;
     std::unique_ptr<RuntimeWorld> RuntimeWorldState;
     RuntimeFrameLoop RuntimeLoop;
     ConsoleStartupScript StartupScript;

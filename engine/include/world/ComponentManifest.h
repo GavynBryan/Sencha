@@ -5,6 +5,7 @@
 #include <components/CameraComponent.h>
 #include <controller/LookOrientation.h>
 #include <net/NetReplicationComponents.h>
+#include <net/NetSpawnRecipe.h>
 #include <render/IrradianceVolumeComponent.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
@@ -61,7 +62,8 @@ using EngineSceneComponents = std::tuple<
 using EngineReplicatedComponents = std::tuple<
     LocalTransform,
     LookOrientation,
-    NetOwner>;
+    NetOwner,
+    NetSpawnRecipe>;
 
 template <typename T>
 struct ComponentTag

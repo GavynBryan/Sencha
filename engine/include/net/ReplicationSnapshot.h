@@ -2,6 +2,7 @@
 
 #include <core/identity/StrongId.h>
 #include <ecs/EntityId.h>
+#include <net/NetSpawnRecipe.h>
 #include <net/ReplicationCodec.h>
 #include <net/ReplicationLayout.h>
 
@@ -207,6 +208,11 @@ struct SnapshotApplyRequest
     const WorldComponentSchema* Schema = nullptr;
     const ReplicationLayout* Layout = nullptr;
     ReplicationClientIdentity* Identity = nullptr;
+    // What a newly spawned entity becomes beyond its replicated state. Null
+    // means an entity is only what the wire said, which leaves it with no
+    // derived columns and nothing to draw it -- valid for a test, wrong for a
+    // game.
+    const NetSpawnRecipes* Recipes = nullptr;
     // Where newly spawned entities are created. Partition zero is the
     // persistent one and is where a session's pawns live.
     std::uint16_t Partition = 0;
@@ -217,6 +223,10 @@ struct SnapshotApplyResult
     SnapshotApplyError Error = SnapshotApplyError::None;
     std::uint64_t Tick = 0;
     std::uint32_t EntitiesSpawned = 0;
+    // Spawns that named a recipe this build does not have. Not an error -- an
+    // authority may run content a client did not register -- but the entity is
+    // bare, so it is counted rather than silently dropped.
+    std::uint32_t RecipesMissing = 0;
     std::uint32_t EntitiesUpdated = 0;
     std::uint32_t EntitiesDestroyed = 0;
 

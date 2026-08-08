@@ -175,7 +175,8 @@ void Engine::RegisterNetFramePhases()
             const SnapshotApplyResult applied =
                 engine.Replication().Apply(delivery.Payload, world,
                                            engine.RuntimeComponents(),
-                                           engine.ReplicatedComponents());
+                                           engine.ReplicatedComponents(),
+                                           &engine.SpawnRecipes());
             if (!applied.Ok())
             {
                 // A snapshot that will not decode means the authority is

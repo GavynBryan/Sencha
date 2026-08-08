@@ -4,6 +4,7 @@
 #include <ecs/World.h>
 #include <ecs/WorldComponentSchema.h>
 #include <net/NetReplicationComponents.h>
+#include <world/transform/DerivedTransform.h>
 
 #include <algorithm>
 #include <cassert>
@@ -449,6 +450,30 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
             {
                 result.Error = SnapshotApplyError::ComponentAddFailed;
                 return result;
+            }
+        }
+
+        // Derived from the local transform that just arrived, and re-seeded on
+        // every update so the pair stays consistent between the write and the
+        // propagation that follows it. Without this an entity is correct in
+        // state and invisible on screen: extraction and pose history both read
+        // the world transform, and nothing else would ever create it here.
+        SeedDerivedWorldTransform(world, entity);
+
+        // Last, and only once: the recipe completes an entity that already
+        // holds everything the wire had to say about it.
+        if (spawned && request.Recipes != nullptr)
+        {
+            NetSpawnRecipeId recipeId = kNetNoSpawnRecipe;
+            if (world.IsRegistered<NetSpawnRecipe>())
+            {
+                if (const NetSpawnRecipe* recipe = world.TryGet<NetSpawnRecipe>(entity))
+                    recipeId = recipe->Id;
+            }
+            if (recipeId != kNetNoSpawnRecipe
+                && !request.Recipes->Build(recipeId, world, entity))
+            {
+                ++result.RecipesMissing;
             }
         }
     }

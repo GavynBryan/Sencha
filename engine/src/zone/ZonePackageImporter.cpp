@@ -6,6 +6,7 @@
 #include <world/identity/PersistentIdComponent.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializationContext.h>
+#include <world/transform/DerivedTransform.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/ZoneLoadPackage.h>
 #include <zone/ZoneStateStore.h>
@@ -24,25 +25,16 @@ void SetError(ZoneImportError* error, std::string message)
         error->Message = std::move(message);
 }
 
-// WorldTransform is derived, never authored: a package declares LocalTransform
-// and the imported entity gets a matching world transform to propagate from.
-// Both payload forms land here, and the column is already in the signature the
-// entity was created with, so this writes in place.
-//
-// Whether the destination world even has the two transform types is a property
-// of the world, not of an entity, so it is resolved once per import rather than
-// re-looked-up per entity.
+// Every path that builds an entity from data owes the derived world transform,
+// and there is more than one of them, so the obligation itself lives in the
+// transform module. The registration check stays here because whether the
+// destination world has the pair at all is a property of the world, resolved
+// once per import rather than per entity.
 void SeedDerivedTransform(World& world, EntityId entity, bool worldHasTransforms)
 {
     if (!worldHasTransforms)
         return;
-
-    const LocalTransform* local = world.TryGet<LocalTransform>(entity);
-    if (local == nullptr)
-        return;
-    (void)world.InitializeComponent<WorldTransform>(
-        entity,
-        WorldTransform{ local->Value });
+    SeedDerivedWorldTransform(world, entity);
 }
 
 // ZonePackageEntity::PersistentId is import metadata lifted from the entity's

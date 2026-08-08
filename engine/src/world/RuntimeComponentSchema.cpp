@@ -10,6 +10,7 @@
 #include <movement/MovementComponents.h>
 #include <movement/MovementIntent.h>
 #include <net/NetReplicationComponents.h>
+#include <net/NetSpawnRecipe.h>
 #include <net/ReplicationLayout.h>
 #include <physics/components/CharacterController.h>
 #include <physics/components/CharacterMoverLink.h>
@@ -85,6 +86,7 @@ void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)
     // session is ever created.
     schema.Add<NetReplicated>();
     schema.Add<NetOwner>();
+    schema.Add<NetSpawnRecipe>();
 }
 
 void RegisterEngineReplicatedComponents(ReplicationLayout& layout)

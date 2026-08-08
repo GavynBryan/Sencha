@@ -4,7 +4,10 @@
 #include <ecs/World.h>
 #include <ecs/WorldComponentSchema.h>
 #include <net/NetReplicationComponents.h>
+#include <ecs/Query.h>
+#include <net/NetSpawnRecipe.h>
 #include <net/ReplicationSnapshot.h>
+#include <world/transform/TransformHistory.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/transform/TransformComponents.h>
 
@@ -49,7 +52,8 @@ namespace
 
         // One snapshot: written on the authority, carried as bytes, applied on
         // the client. Returns the bytes it took.
-        std::size_t Replicate(std::uint32_t ownerPeer = 0)
+        std::size_t Replicate(std::uint32_t ownerPeer = 0,
+                              const NetSpawnRecipes* recipes = nullptr)
         {
             ++Tick;
             SnapshotWriteRequest write;
@@ -68,6 +72,7 @@ namespace
             apply.Schema = &Schema;
             apply.Layout = &Layout;
             apply.Identity = &ClientIdentity;
+            apply.Recipes = recipes;
 
             LastApply = ReplicationApplySnapshot(
                 apply, std::span(Scratch).subspan(0, LastWrite.BytesWritten));
@@ -320,6 +325,111 @@ TEST(ReplicationSnapshot, OwnerOnlyStateReachesOnlyItsOwner)
     ASSERT_NE(owner, nullptr);
     EXPECT_EQ(owner->Peer, 7u)
         << "a client has to learn which entity is its own";
+}
+
+//=============================================================================
+// Reaching the screen
+//
+// The gap the first live playtest found. Every assertion above passes on an
+// entity nothing will ever draw, because replication carries the authored
+// transform and rendering reads the derived one. These assert the chain
+// extraction actually depends on.
+//
+// Not the rendered frame itself: RenderExtractionSystem::Extract needs mesh and
+// material caches that only exist with a device. What is asserted here is the
+// component shape its queries match and the derivation that feeds them, which
+// is exactly where the break was.
+//=============================================================================
+
+TEST(ReplicationVisibility, ASpawnedEntityGetsTheDerivedTransformRenderingReads)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(3.0f, 4.0f, 5.0f));
+    pair.Replicate();
+
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+
+    const WorldTransform* derived = pair.Client.TryGet<WorldTransform>(mirror);
+    ASSERT_NE(derived, nullptr)
+        << "a replicated entity with no world transform is invisible to "
+           "extraction and to pose history, however correct its state is";
+    EXPECT_FLOAT_EQ(derived->Value.Position.X, 3.0f);
+    EXPECT_FLOAT_EQ(derived->Value.Position.Y, 4.0f);
+    EXPECT_FLOAT_EQ(derived->Value.Position.Z, 5.0f);
+}
+
+// Motion, not just presence: the derived transform has to keep following the
+// replicated one or the entity appears once and then freezes.
+TEST(ReplicationVisibility, TheDerivedTransformFollowsReplicatedMotion)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Replicate();
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+
+    for (int step = 1; step <= 10; ++step)
+    {
+        pair.Authority.TryGet<LocalTransform>(authority)->Value.Position =
+            Vec3d{ static_cast<float>(step) * 2.0f, 0.0f, 0.0f };
+        pair.Replicate();
+
+        const WorldTransform* derived = pair.Client.TryGet<WorldTransform>(mirror);
+        ASSERT_NE(derived, nullptr) << "step " << step;
+        ASSERT_FLOAT_EQ(derived->Value.Position.X, static_cast<float>(step) * 2.0f)
+            << "the drawn transform stopped tracking at step " << step;
+    }
+}
+
+// The recipe is what turns replicated state into something with a body. Without
+// one an entity is bare, which is the state the playtest was actually in.
+TEST(ReplicationVisibility, ARecipeCompletesTheEntityOnArrival)
+{
+    Pair pair;
+    NetSpawnRecipes recipes;
+    int built = 0;
+    // Written the way a real recipe is: idempotent, so that "ran once" is
+    // proven by the counter rather than by a duplicate add bringing the process
+    // down. A test that detects a regression by crashing reports it as no
+    // output at all, which is easy to misread as passing.
+    recipes.Register(7, [&built](World& world, EntityId entity) {
+        ++built;
+        if (!world.HasComponent<WorldTransformHistory>(entity))
+            world.AddComponent<WorldTransformHistory>(entity, WorldTransformHistory{});
+    });
+
+    const EntityId authority = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetSpawnRecipe>(authority, NetSpawnRecipe{ .Id = 7 });
+    pair.Replicate(0, &recipes);
+
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+    EXPECT_EQ(built, 1);
+    EXPECT_TRUE(pair.Client.HasComponent<WorldTransformHistory>(mirror))
+        << "the recipe did not run, so the entity arrived bare";
+
+    // And only once, however many snapshots follow.
+    pair.Replicate(0, &recipes);
+    pair.Replicate(0, &recipes);
+    EXPECT_EQ(built, 1) << "a recipe must build an entity once, not every tick";
+}
+
+// A recipe this build does not know leaves the entity with its state rather
+// than failing the snapshot: an authority may run content a client lacks.
+TEST(ReplicationVisibility, AnUnknownRecipeIsCountedNotFatal)
+{
+    Pair pair;
+    NetSpawnRecipes recipes;
+
+    const EntityId authority = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetSpawnRecipe>(authority, NetSpawnRecipe{ .Id = 99 });
+    pair.Replicate(0, &recipes);
+
+    EXPECT_TRUE(pair.LastApply.Ok());
+    EXPECT_EQ(pair.LastApply.RecipesMissing, 1u);
+    EXPECT_TRUE(pair.Mirror(authority).IsValid())
+        << "the entity still exists with the state it was sent";
 }
 
 //=============================================================================

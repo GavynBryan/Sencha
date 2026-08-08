@@ -1,6 +1,7 @@
 #pragma once
 
 #include <net/NetSession.h>
+#include <net/NetSpawnRecipe.h>
 #include <net/ReplicationSnapshot.h>
 
 #include <cstdint>
@@ -44,7 +45,8 @@ public:
     // rather than treated as an error, because other kinds share this channel.
     SnapshotApplyResult Apply(std::span<const std::byte> payload, World& world,
                               const WorldComponentSchema& schema,
-                              const ReplicationLayout& layout);
+                              const ReplicationLayout& layout,
+                              const NetSpawnRecipes* recipes = nullptr);
 
     // A peer that left keeps no baseline: it would be a growing memory cost
     // against a peer that will never receive anything again, and a peer id can
