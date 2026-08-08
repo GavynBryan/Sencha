@@ -384,6 +384,57 @@ TEST(ReplicationVisibility, TheDerivedTransformFollowsReplicatedMotion)
 
 // The recipe is what turns replicated state into something with a body. Without
 // one an entity is bare, which is the state the playtest was actually in.
+// A field the wire never carries is a field the sender is saying nothing
+// about, not a field worth zero. LookOrientation declares its pitch limits
+// local-only -- how far a thing can look is a property of the thing, identical
+// on every machine that loaded it -- so they never travel, and an entity built
+// from a snapshot has to get them from the type rather than from the absence.
+//
+// Zeroing them produces a component that decoded perfectly, validates fine, and
+// pins the player's view to the horizon.
+TEST(ReplicationVisibility, ASpawnedEntityKeepsTheFieldsTheWireNeverCarries)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<LookOrientation>(authority, LookOrientation{});
+    pair.Replicate();
+
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+
+    const LookOrientation* aim = pair.Client.TryGet<LookOrientation>(mirror);
+    ASSERT_NE(aim, nullptr);
+
+    const LookOrientation declared;
+    EXPECT_FLOAT_EQ(aim->MinPitch, declared.MinPitch)
+        << "a local-only field arrived as zero, so this player cannot look down";
+    EXPECT_FLOAT_EQ(aim->MaxPitch, declared.MaxPitch)
+        << "a local-only field arrived as zero, so this player cannot look up";
+    EXPECT_LT(aim->MinPitch, aim->MaxPitch)
+        << "an empty pitch range clamps every look to one angle";
+}
+
+// The same for the owner, whose own aim is deliberately withheld so their view
+// does not fight the authority's echo of it. Withholding a field must not cost
+// them the limits that field is clamped against.
+TEST(ReplicationVisibility, AnOwnedSpawnKeepsItsLimitsToo)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<LookOrientation>(authority, LookOrientation{});
+    pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 4 });
+    pair.Replicate(4);
+
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+
+    const LookOrientation* aim = pair.Client.TryGet<LookOrientation>(mirror);
+    ASSERT_NE(aim, nullptr);
+    const LookOrientation declared;
+    EXPECT_FLOAT_EQ(aim->MinPitch, declared.MinPitch);
+    EXPECT_FLOAT_EQ(aim->MaxPitch, declared.MaxPitch);
+}
+
 TEST(ReplicationVisibility, ARecipeCompletesTheEntityOnArrival)
 {
     Pair pair;

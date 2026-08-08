@@ -424,8 +424,15 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
             }
 
             // Decoded into staging first. A delta leaves unmasked fields
-            // alone, so staging starts as what the entity currently holds --
-            // or as zeroes when it does not hold the component yet.
+            // alone, so staging has to start as whatever those fields should
+            // keep: what the entity already holds, or -- on an entity meeting
+            // this component for the first time -- the type's own defaults.
+            //
+            // Not zeroes. A field the wire never carries is a field the sender
+            // is saying nothing about, either because it is local to each
+            // machine or because it belongs to the owner; zeroing it substitutes
+            // a value the type never declared. A pitch limit of zero is a
+            // player who cannot look up, on a component that decoded perfectly.
             staging.assign(component->Size, std::byte{ 0 });
             const ComponentId column = world.GetComponentIdByType(component->Type);
             const bool present = world.HasComponent(entity, column);
@@ -434,6 +441,11 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
                 const void* current = world.GetComponentRaw(entity, column);
                 if (current != nullptr)
                     std::memcpy(staging.data(), current, component->Size);
+            }
+            else if (!schema.WriteDefaultBytes(component->Type, staging))
+            {
+                result.Error = SnapshotApplyError::UnknownComponentStorage;
+                return result;
             }
 
             if (!ReplicationDecodeComponent(*component, reader, staging))
