@@ -157,6 +157,12 @@ void PeerCommandRuntime::Reset()
     Buffers.clear();
 }
 
+std::uint64_t PeerCommandRuntime::AckFor(PeerId peer) const
+{
+    const auto it = Buffers.find(peer);
+    return it == Buffers.end() ? 0 : it->second.ConsumedThrough();
+}
+
 const NetPeerCommandBuffer* PeerCommandRuntime::Peer(PeerId peer) const
 {
     const auto it = Buffers.find(peer);

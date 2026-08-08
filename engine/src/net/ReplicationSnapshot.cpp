@@ -247,6 +247,7 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
 
     NetBitWriter writer(out);
     writer.WriteU64(request.Tick);
+    writer.WriteU64(request.CommandAck);
     writer.WriteBits(static_cast<std::uint32_t>(destroyed.size()), kCountBits);
     writer.WriteBits(static_cast<std::uint32_t>(live.size()), kCountBits);
 
@@ -336,6 +337,7 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
     std::uint32_t destroyedCount = 0;
     std::uint32_t updatedCount = 0;
     if (!reader.ReadU64(result.Tick)
+        || !reader.ReadU64(result.CommandAck)
         || !reader.ReadBits(kCountBits, destroyedCount)
         || !reader.ReadBits(kCountBits, updatedCount))
     {

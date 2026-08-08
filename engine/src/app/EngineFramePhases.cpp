@@ -322,7 +322,8 @@ void Engine::RegisterNetFramePhases()
             const ReplicationRuntime::PublishStats published =
                 engine.Replication().Publish(
                     *session, world, engine.ReplicatedComponents(),
-                    ctx.Runtime->GetSimulationClock().GetTickIndex());
+                    ctx.Runtime->GetSimulationClock().GetTickIndex(),
+                    &engine.PeerCommands());
             traffic.RecordOut(NetTrafficKind::Snapshot, published.BytesQueued,
                               published.SnapshotsSent);
 

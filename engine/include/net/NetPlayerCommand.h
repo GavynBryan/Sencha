@@ -163,6 +163,15 @@ public:
     }
     [[nodiscard]] std::size_t TargetDepth() const { return Target; }
 
+    // The newest tick this peer will never be asked about again: everything at
+    // or below it has been simulated or passed over for good. The client is
+    // told this in every snapshot, and it is what tells it which of its own
+    // records it still owes a replay.
+    [[nodiscard]] std::uint64_t ConsumedThrough() const
+    {
+        return AdmitFloor == 0 ? 0 : AdmitFloor - 1;
+    }
+
     // Ticks handed out with nothing queued behind them. The starvation rate is
     // what a stats panel reads to say a peer's connection is behind.
     [[nodiscard]] std::uint64_t StarvedTicks() const { return Starved; }

@@ -64,6 +64,11 @@ public:
     void ForgetPeer(PeerId peer);
     void Reset();
 
+    // The newest command tick this peer has been credited with, for the
+    // snapshot that tells it so. Zero for a peer that has not spoken yet, which
+    // is also what "nothing of yours has been simulated" means.
+    [[nodiscard]] std::uint64_t AckFor(PeerId peer) const;
+
     [[nodiscard]] std::size_t TrackedPeers() const { return Buffers.size(); }
     [[nodiscard]] const NetPeerCommandBuffer* Peer(PeerId peer) const;
 

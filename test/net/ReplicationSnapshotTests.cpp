@@ -57,7 +57,8 @@ namespace
         std::size_t Replicate(std::uint32_t ownerPeer = 0,
                               const NetSpawnRecipes* recipes = nullptr,
                               ClientPrediction* prediction = nullptr,
-                              ReplicationInterpolation* interpolation = nullptr)
+                              ReplicationInterpolation* interpolation = nullptr,
+                              std::uint64_t commandAck = 0)
         {
             ++Tick;
             SnapshotWriteRequest write;
@@ -67,6 +68,7 @@ namespace
             write.Peer = &Peer;
             write.OwnerPeer = ownerPeer;
             write.Tick = Tick;
+            write.CommandAck = commandAck;
 
             LastWrite = ReplicationWriteSnapshot(write, Scratch);
             EXPECT_TRUE(LastWrite.Ok);
@@ -411,6 +413,22 @@ TEST(ReplicationPrediction, AnUnsentFieldIsComparedAgainstTheAuthorityNotThePred
     EXPECT_FLOAT_EQ(pair.LastApply.Prediction->Offset.Z, -0.75f);
     EXPECT_NEAR(pair.LastApply.Prediction->Offset.X, 0.0f, 1e-4f)
         << "the axis both machines agree on is not a correction";
+}
+
+// A client cannot replay what it cannot separate from what has been answered,
+// so the acknowledgement travels with the state it accounts for -- in the same
+// message, describing the same moment.
+TEST(ReplicationSnapshot, CarriesHowFarTheAuthorityGotThroughThisClientsInput)
+{
+    Pair pair;
+    (void)pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+
+    pair.Replicate(0, nullptr, nullptr, nullptr, 4321);
+    EXPECT_EQ(pair.LastApply.CommandAck, 4321u);
+
+    // And it moves with the authority rather than sticking at the first value.
+    pair.Replicate(0, nullptr, nullptr, nullptr, 4400);
+    EXPECT_EQ(pair.LastApply.CommandAck, 4400u);
 }
 
 //=============================================================================
@@ -905,10 +923,13 @@ TEST(ReplicationSnapshotHostile, AnUnknownComponentKeyIsRefused)
         ReplicationWriteSnapshot(write, pair.Scratch);
     ASSERT_TRUE(produced.Ok);
 
-    // The component key sits after the tick, the two counts, the entity id, and
-    // the component count: 64 + 32 + 32 + 64 + 8 bits, which is byte-aligned at
-    // byte 25. Corrupt it to a key no build defines.
-    constexpr std::size_t kComponentKeyByte = (64 + 32 + 32 + 64 + 8) / 8;
+    // Where the first component key sits, counted rather than guessed so that
+    // adding a header field moves one number here instead of a magic one.
+    constexpr std::size_t kHeaderBits = 64   // tick
+                                      + 64   // command acknowledgement
+                                      + 32   // destroyed count
+                                      + 32;  // updated count
+    constexpr std::size_t kComponentKeyByte = (kHeaderBits + 64 + 8) / 8;
     ASSERT_GT(produced.BytesWritten, kComponentKeyByte);
     pair.Scratch[kComponentKeyByte] = std::byte{ 0xFE };
 
@@ -932,6 +953,7 @@ TEST(ReplicationSnapshotHostile, AnAbsurdEntityCountIsRefusedByTheCap)
     std::array<std::byte, 32> forged{};
     NetBitWriter writer(forged);
     writer.WriteU64(1);            // tick
+    writer.WriteU64(0);            // command acknowledgement
     writer.WriteBits(0, 32);       // destroyed
     writer.WriteBits(0xFFFFFFFF, 32);  // updated: four billion entities
 

@@ -155,6 +155,12 @@ struct SnapshotWriteRequest
     // here, which is what a spectator or a recording gets.
     std::uint32_t OwnerPeer = 0;
     std::uint64_t Tick = 0;
+    // The newest command tick from this peer that the authority has finished
+    // with. A client keeps the ticks it has simulated and not had answered; the
+    // ones at or below this are answered, and everything above them is what a
+    // replay owes. Without it a client cannot tell which of its own guesses the
+    // state it just received already accounts for.
+    std::uint64_t CommandAck = 0;
 };
 
 struct SnapshotWriteResult
@@ -222,6 +228,8 @@ struct SnapshotApplyResult
 {
     SnapshotApplyError Error = SnapshotApplyError::None;
     std::uint64_t Tick = 0;
+    // What the authority has finished simulating of this client's own input.
+    std::uint64_t CommandAck = 0;
     std::uint32_t EntitiesSpawned = 0;
     // Spawns that named a recipe this build does not have. Not an error -- an
     // authority may run content a client did not register -- but the entity is

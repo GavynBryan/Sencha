@@ -17,7 +17,7 @@ namespace
 
 ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
     NetSession& session, World& world, const ReplicationLayout& layout,
-    std::uint64_t tick)
+    std::uint64_t tick, const PeerCommandRuntime* commands)
 {
     PublishStats stats;
     if (session.Role() != NetSessionRole::Host)
@@ -45,6 +45,7 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
         request.Peer = &baseline;
         request.OwnerPeer = peer.Value;
         request.Tick = tick;
+        request.CommandAck = commands == nullptr ? 0 : commands->AckFor(peer);
 
         const SnapshotWriteResult written = ReplicationWriteSnapshot(
             request, std::span(Scratch).subspan(kKindBytes, kMaxSnapshotBytes));

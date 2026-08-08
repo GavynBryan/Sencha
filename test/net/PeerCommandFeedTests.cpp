@@ -354,3 +354,72 @@ TEST(PeerCommandFeed, AStarvedTickHoldsTheAimItLastHad)
     commands.Feed(world, 2);  // nothing arrived
     EXPECT_FLOAT_EQ(world.TryGet<LookOrientation>(pawn)->Yaw, 1.25f);
 }
+
+//=============================================================================
+// What the authority tells a client it has finished with
+//
+// A client keeps every tick it has simulated and not had answered. The
+// acknowledgement is what lets it throw the answered ones away and re-run only
+// the rest -- without it, a client holds an opinion about its own past that
+// nothing can ever settle.
+//=============================================================================
+
+TEST(PeerCommandAck, SaysNothingHasBeenSimulatedBeforeAPeerSpeaks)
+{
+    PeerCommandRuntime commands;
+    EXPECT_EQ(commands.AckFor(kAlice), 0u);
+}
+
+TEST(PeerCommandAck, NamesTheNewestTickTheAuthorityIsDoneWith)
+{
+    World world = MakeWorld();
+    (void)SpawnPawnFor(world, kAlice);
+
+    PeerCommandRuntime commands;
+    commands.SetTargetDepth(0);
+    ASSERT_TRUE(Deliver(commands, kAlice, Asking(40, 1.0f, false)));
+
+    // Received but not yet simulated: first contact sets the floor at the
+    // newest record, so everything below it is already passed over for good.
+    EXPECT_EQ(commands.AckFor(kAlice), 39u);
+
+    commands.Feed(world, 1);
+    EXPECT_EQ(commands.AckFor(kAlice), 40u)
+        << "a tick that has been simulated has to be one the client stops "
+           "holding, or its replay re-runs input the authority already applied";
+}
+
+TEST(PeerCommandAck, EachPeerIsToldAboutItsOwnInput)
+{
+    World world = MakeWorld();
+    (void)SpawnPawnFor(world, kAlice);
+    (void)SpawnPawnFor(world, kBob);
+
+    PeerCommandRuntime commands;
+    commands.SetTargetDepth(0);
+    ASSERT_TRUE(Deliver(commands, kAlice, Asking(10, 1.0f, false)));
+    ASSERT_TRUE(Deliver(commands, kBob, Asking(500, 1.0f, false)));
+    commands.Feed(world, 1);
+
+    EXPECT_EQ(commands.AckFor(kAlice), 10u);
+    EXPECT_EQ(commands.AckFor(kBob), 500u)
+        << "one peer's acknowledgement named another peer's ticks, which would "
+           "have that client throw away input nobody has simulated";
+}
+
+// Resending the redundancy window must not appear to un-simulate anything.
+TEST(PeerCommandAck, NeverGoesBackwardsWhenAWindowIsResent)
+{
+    World world = MakeWorld();
+    (void)SpawnPawnFor(world, kAlice);
+
+    PeerCommandRuntime commands;
+    commands.SetTargetDepth(0);
+    ASSERT_TRUE(Deliver(commands, kAlice, Asking(70, 1.0f, false)));
+    commands.Feed(world, 1);
+    const std::uint64_t after = commands.AckFor(kAlice);
+
+    ASSERT_TRUE(Deliver(commands, kAlice, Asking(70, 1.0f, false)));
+    ASSERT_TRUE(Deliver(commands, kAlice, Asking(69, 1.0f, false)));
+    EXPECT_EQ(commands.AckFor(kAlice), after);
+}

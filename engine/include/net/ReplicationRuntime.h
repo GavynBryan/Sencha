@@ -2,6 +2,7 @@
 
 #include <net/NetSession.h>
 #include <net/NetSpawnRecipe.h>
+#include <net/PeerCommandRuntime.h>
 #include <net/ReplicationSnapshot.h>
 
 #include <cstdint>
@@ -37,8 +38,13 @@ public:
     // Authority side. Writes one snapshot per connected peer and queues it on
     // the unreliable channel: a snapshot that arrives late is worthless, since
     // the next one supersedes it, so there is nothing to gain from resending.
+    // `commands` supplies each peer's acknowledgement -- how far the authority
+    // has got through that peer's input -- so a snapshot tells a client both
+    // what the world is and which of the client's own guesses it accounts for.
+    // Null acknowledges nothing, which is right for a recording.
     PublishStats Publish(NetSession& session, World& world,
-                         const ReplicationLayout& layout, std::uint64_t tick);
+                         const ReplicationLayout& layout, std::uint64_t tick,
+                         const PeerCommandRuntime* commands = nullptr);
 
     // Client side. `payload` is one channel message, still carrying its kind
     // byte. Returns what happened; a payload that is not a snapshot is ignored
