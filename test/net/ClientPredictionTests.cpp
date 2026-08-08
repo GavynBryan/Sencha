@@ -30,7 +30,7 @@ namespace
     void Decode(ClientPrediction& prediction, const Vec3d& position)
     {
         LocalTransform value{};
-        const std::span<std::byte> shadow = prediction.AuthoritativeBytes();
+        const std::span<std::byte> shadow = prediction.AuthoritativeBytes(ResolveComponentTypeId<LocalTransform>());
         std::memcpy(&value, shadow.data(), sizeof(value));
         value.Value.Position = position;
         std::memcpy(shadow.data(), &value, sizeof(value));
@@ -168,7 +168,7 @@ TEST(ClientPredictionShadow, KeepsTheAuthoritysValueAcrossSnapshots)
 
     prediction.Record(100, Vec3d{ 0.0f, 0.0f, 0.0f });
     ASSERT_FALSE(Arrive(prediction, 100, Vec3d{ 0.0f, 0.0f, 0.0f }).has_value());
-    EXPECT_TRUE(prediction.HasAuthoritativeState());
+    EXPECT_TRUE(prediction.HasAuthoritativeState(ResolveComponentTypeId<LocalTransform>()));
 
     // The authority stands still, so the next snapshot carries no position at
     // all: the shadow keeps the last one. This machine, meanwhile, has drifted.
@@ -189,7 +189,7 @@ TEST(ClientPredictionShadow, ResetForgetsBothTheHistoryAndTheAuthority)
 
     prediction.Reset();
     EXPECT_FALSE(prediction.Predicted().IsValid());
-    EXPECT_FALSE(prediction.HasAuthoritativeState());
+    EXPECT_FALSE(prediction.HasAuthoritativeState(ResolveComponentTypeId<LocalTransform>()));
     EXPECT_EQ(prediction.Observations(), 0u);
     EXPECT_EQ(prediction.Corrections(), 0u);
     EXPECT_FLOAT_EQ(prediction.LastErrorMeters(), 0.0f);

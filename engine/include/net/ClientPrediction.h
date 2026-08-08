@@ -3,6 +3,8 @@
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 #include <math/Vec.h>
+#include <movement/JumpState.h>
+#include <movement/MovementComponents.h>
 #include <net/PawnCommandRing.h>
 #include <world/transform/TransformComponents.h>
 
@@ -43,6 +45,9 @@
 // Pure: no World, no session, no clock. Positions and ticks go in, a correction
 // comes out.
 //=============================================================================
+class World;
+class WorldComponentSchema;
+
 class ClientPrediction
 {
 public:
@@ -67,12 +72,6 @@ public:
     {
         return Subject.IsValid() && entity == Subject;
     }
-
-    // Whether an arriving component belongs to the authority's argument with
-    // this machine rather than to the world. Position is what a player feels
-    // and what this predicts; everything else about a predicted entity still
-    // lands normally.
-    [[nodiscard]] bool Intercepts(EntityId entity, ComponentTypeId type) const;
 
     // Off means the authority's position lands in the world as it does for any
     // other entity, which is the input-delay behaviour prediction replaced.
@@ -102,8 +101,20 @@ public:
     // the field the authority had no reason to resend would read as perfect
     // agreement.
     //-------------------------------------------------------------------------
-    [[nodiscard]] std::span<std::byte> AuthoritativeBytes();
-    [[nodiscard]] bool HasAuthoritativeState() const { return SeenAuthority; }
+    // What the authority last said about one of the pawn's components. The set
+    // is the pawn's movement state: where it is, how fast, what it is standing
+    // on, which rules it moves under, and whether it may jump. A replay resumes
+    // from all of it, because resuming from the position alone puts the pawn in
+    // the right place still carrying the wrong everything else.
+    [[nodiscard]] bool Intercepts(EntityId entity, ComponentTypeId type) const;
+    [[nodiscard]] std::span<std::byte> AuthoritativeBytes(ComponentTypeId type);
+    [[nodiscard]] bool HasAuthoritativeState(ComponentTypeId type) const;
+    // Copies every component the authority has spoken about onto the entity.
+    [[nodiscard]] bool RestoreTo(World& world, const WorldComponentSchema& schema,
+                                 EntityId entity) const;
+    // Records that the authority has now spoken about this component, so the
+    // next delta stages against what it said rather than against defaults.
+    void MarkSeen(ComponentTypeId type);
 
     // What the authority says the pawn was at that tick.
     struct Correction
@@ -153,9 +164,29 @@ private:
 
     PawnCommandRing Ring;
 
-    // What the authority last said, which is what its deltas are against.
-    LocalTransform Authoritative{};
-    bool SeenAuthority = false;
+    // What the authority last said, one slot per replicated pawn component,
+    // kept as bytes because that is what a delta decodes into.
+    struct Shadow
+    {
+        LocalTransform Transform{};
+        KinematicState Motion{};
+        SupportState Support{};
+        CharacterMovement Movement{};
+        JumpState Jump{};
+    };
+    Shadow Authoritative{};
+
+    // Which of them the authority has actually spoken about, so a first delta
+    // is staged against the type's declared defaults rather than against zero.
+    struct Seen
+    {
+        bool Transform = false;
+        bool Motion = false;
+        bool Support = false;
+        bool Movement = false;
+        bool Jump = false;
+    };
+    Seen SeenAuthority{};
 
     EntityId Subject;
     bool Enabled = true;

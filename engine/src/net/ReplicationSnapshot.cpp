@@ -446,23 +446,42 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
                 && request.Prediction->Intercepts(entity, component->Type))
             {
                 const std::span<std::byte> shadow =
-                    request.Prediction->AuthoritativeBytes();
+                    request.Prediction->AuthoritativeBytes(component->Type);
                 if (shadow.size() != component->Size)
                 {
                     result.Error = SnapshotApplyError::UnknownComponentStorage;
                     return result;
                 }
-                if (!request.Prediction->HasAuthoritativeState()
-                    && !schema.WriteDefaultBytes(component->Type, shadow))
+                // Seeding the shadow the first time. A client adopts its pawn
+                // only after snapshots have already been arriving for it, so
+                // the authority's baseline already credits this machine with
+                // values it has no reason to send again. The world's copy is
+                // exactly those values, which makes it the only correct seed --
+                // starting from the type's defaults would silently discard
+                // everything said before the pawn became this machine's own.
+                if (!request.Prediction->HasAuthoritativeState(component->Type))
                 {
-                    result.Error = SnapshotApplyError::UnknownComponentStorage;
-                    return result;
+                    const ComponentId column =
+                        world.GetComponentIdByType(component->Type);
+                    const void* held = world.HasComponent(entity, column)
+                                           ? world.GetComponentRaw(entity, column)
+                                           : nullptr;
+                    if (held != nullptr)
+                    {
+                        std::memcpy(shadow.data(), held, component->Size);
+                    }
+                    else if (!schema.WriteDefaultBytes(component->Type, shadow))
+                    {
+                        result.Error = SnapshotApplyError::UnknownComponentStorage;
+                        return result;
+                    }
                 }
                 if (!ReplicationDecodeComponent(*component, reader, shadow))
                 {
                     result.Error = SnapshotApplyError::Truncated;
                     return result;
                 }
+                request.Prediction->MarkSeen(component->Type);
                 // Last one wins within a snapshot; a correction describes the
                 // tick, not the component.
                 if (const auto correction = request.Prediction->Commit(result.Tick))

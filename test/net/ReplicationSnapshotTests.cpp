@@ -394,7 +394,7 @@ TEST(ReplicationPrediction, AnUnsentFieldIsComparedAgainstTheAuthorityNotThePred
     clientPose->Value.Position = Vec3d{ 1.0f, 0.0f, 0.0f };
     prediction.Record(pair.Tick + 1, clientPose->Value.Position);
     pair.Replicate(0, nullptr, &prediction);
-    ASSERT_TRUE(prediction.HasAuthoritativeState());
+    ASSERT_TRUE(prediction.HasAuthoritativeState(ResolveComponentTypeId<LocalTransform>()));
     ASSERT_FALSE(pair.LastApply.Prediction.has_value());
 
     // The authority advances along X only. This machine advances along X too --
@@ -411,6 +411,132 @@ TEST(ReplicationPrediction, AnUnsentFieldIsComparedAgainstTheAuthorityNotThePred
     EXPECT_FLOAT_EQ(pair.LastApply.Prediction->Offset.Z, -0.75f);
     EXPECT_NEAR(pair.LastApply.Prediction->Offset.X, 0.0f, 1e-4f)
         << "the axis both machines agree on is not a correction";
+}
+
+//=============================================================================
+// The pawn state that rides home to its owner
+//
+// A client resuming its own simulation needs everything the movement step
+// reads: velocity, support, mode, jump cooldown. Nobody else does, and what one
+// player's machine is owed must not be what every machine receives.
+//=============================================================================
+
+namespace
+{
+    // A pawn with the full movement-state set, owned by `peer`.
+    EntityId SpawnOwnedPawn(Pair& pair, std::uint32_t peer)
+    {
+        const EntityId pawn = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+        pair.Authority.AddComponent<NetOwner>(pawn, NetOwner{ .Peer = peer });
+        KinematicState motion;
+        motion.Velocity = Vec3d{ 3.0f, -1.0f, 0.5f };
+        pair.Authority.AddComponent<KinematicState>(pawn, motion);
+        SupportState support;
+        support.Kind = SupportKind::Stable;
+        support.SurfaceVelocity = Vec3d{ 0.25f, 0.0f, 0.0f };
+        pair.Authority.AddComponent<SupportState>(pawn, support);
+        pair.Authority.AddComponent<CharacterMovement>(
+            pawn, CharacterMovement{ .Mode = LocomotionModeId{ 2 } });
+        pair.Authority.AddComponent<JumpState>(
+            pawn, JumpState{ .CooldownRemaining = 0.12f });
+        return pawn;
+    }
+}
+
+TEST(ReplicationPawnState, TheOwnerGetsWhatItNeedsToResumeSimulating)
+{
+    Pair pair;
+    const EntityId pawn = SpawnOwnedPawn(pair, 7);
+
+    // This stream belongs to peer 7, the owner.
+    pair.Replicate(7);
+    const EntityId mirror = pair.Mirror(pawn);
+    ASSERT_TRUE(mirror.IsValid());
+
+    const KinematicState* motion = pair.Client.TryGet<KinematicState>(mirror);
+    ASSERT_NE(motion, nullptr);
+    EXPECT_FLOAT_EQ(motion->Velocity.X, 3.0f);
+    EXPECT_FLOAT_EQ(motion->Velocity.Y, -1.0f);
+
+    const SupportState* support = pair.Client.TryGet<SupportState>(mirror);
+    ASSERT_NE(support, nullptr);
+    EXPECT_EQ(support->Kind, SupportKind::Stable);
+    EXPECT_FLOAT_EQ(support->SurfaceVelocity.X, 0.25f);
+
+    EXPECT_EQ(pair.Client.TryGet<CharacterMovement>(mirror)->Mode.Value, 2u);
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<JumpState>(mirror)->CooldownRemaining,
+                    0.12f);
+}
+
+TEST(ReplicationPawnState, EveryoneElseGetsThePoseAndNoneOfTheRest)
+{
+    Pair pair;
+    const EntityId pawn = SpawnOwnedPawn(pair, 7);
+    pair.Authority.TryGet<LocalTransform>(pawn)->Value.Position =
+        Vec3d{ 4.0f, 0.0f, 0.0f };
+
+    // This stream belongs to peer 9, a spectator of pawn 7.
+    pair.Replicate(9);
+    const EntityId mirror = pair.Mirror(pawn);
+    ASSERT_TRUE(mirror.IsValid());
+
+    // The pose travels to everyone: it is what the pawn looks like.
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
+                    4.0f);
+
+    // The simulation state does not. The components exist -- the wire named
+    // them -- but every owner-only field decoded to its default, which is what
+    // an all-zero mask means.
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<KinematicState>(mirror)->Velocity.X, 0.0f)
+        << "another player's machine was handed simulation state it has no "
+           "business holding";
+    EXPECT_EQ(pair.Client.TryGet<SupportState>(mirror)->Kind, SupportKind::None);
+    EXPECT_EQ(pair.Client.TryGet<CharacterMovement>(mirror)->Mode.Value, 0u)
+        << "a spectator's mirror claims a locomotion mode, so movement systems "
+           "on that machine would start driving a puppet";
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<JumpState>(mirror)->CooldownRemaining, 0.0f);
+}
+
+// The shadow's whole reason applied to the new state: a delta that has no
+// reason to resend velocity must not cost the predictor the velocity it was
+// last told.
+TEST(ReplicationPawnState, TheShadowKeepsStateAnEmptyDeltaDidNotResend)
+{
+    Pair pair;
+    ClientPrediction prediction;
+
+    const EntityId pawn = SpawnOwnedPawn(pair, 7);
+    pair.Replicate(7, nullptr, &prediction);
+    const EntityId mirror = pair.Mirror(pawn);
+    ASSERT_TRUE(mirror.IsValid());
+    prediction.SetPredicted(mirror);
+
+    // First snapshot with a subject: everything lands in the shadows.
+    pair.Replicate(7, nullptr, &prediction);
+    ASSERT_TRUE(prediction.HasAuthoritativeState(
+        ResolveComponentTypeId<KinematicState>()));
+
+    // The authority changes nothing, so the next delta carries empty masks.
+    pair.Replicate(7, nullptr, &prediction);
+
+    World scratch;
+    WorldComponentSchema schema;
+    RegisterEngineRuntimeComponents(schema);
+    schema.Seal();
+    schema.Apply(scratch);
+    const EntityId probe = scratch.CreateEntity();
+    scratch.AddComponent<KinematicState>(probe, KinematicState{});
+    scratch.AddComponent<SupportState>(probe, SupportState{});
+    scratch.AddComponent<CharacterMovement>(probe, CharacterMovement{});
+    scratch.AddComponent<JumpState>(probe, JumpState{});
+    scratch.AddComponent<LocalTransform>(probe, LocalTransform{});
+    ASSERT_TRUE(prediction.RestoreTo(scratch, schema, probe));
+
+    EXPECT_FLOAT_EQ(scratch.TryGet<KinematicState>(probe)->Velocity.X, 3.0f)
+        << "an empty delta cost the shadow the velocity the authority last "
+           "sent, so a replay would resume from a standstill";
+    EXPECT_EQ(scratch.TryGet<SupportState>(probe)->Kind, SupportKind::Stable);
+    EXPECT_FLOAT_EQ(scratch.TryGet<JumpState>(probe)->CooldownRemaining, 0.12f);
 }
 
 TEST(ReplicationPrediction, OtherPlayersPawnsStillArriveAsState)

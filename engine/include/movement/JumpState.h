@@ -1,7 +1,10 @@
 #pragma once
 
+#include <core/metadata/Field.h>
+#include <core/metadata/TypeSchema.h>
 #include <ecs/ComponentTypeId.h>
 
+#include <tuple>
 #include <type_traits>
 
 //=============================================================================
@@ -26,3 +29,19 @@ static_assert(std::is_trivially_copyable_v<JumpState>,
               "JumpState must be trivially copyable to live in ECS chunks");
 
 SENCHA_DECLARE_COMPONENT_TYPE(JumpState, "sencha.jump_state");
+
+// Owner-only: the machine resuming this character's simulation has to know
+// whether it may jump yet, and nobody else has any use for the number.
+template <>
+struct TypeSchema<JumpState>
+{
+    static constexpr std::string_view Name = "JumpState";
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("cooldown_remaining", &JumpState::CooldownRemaining)
+                .OwnerOnly(),
+        };
+    }
+};

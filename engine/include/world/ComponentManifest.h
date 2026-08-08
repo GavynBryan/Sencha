@@ -4,6 +4,8 @@
 #include <audio/AudioSourceComponent.h>
 #include <components/CameraComponent.h>
 #include <controller/LookOrientation.h>
+#include <movement/JumpState.h>
+#include <movement/MovementComponents.h>
 #include <net/NetReplicationComponents.h>
 #include <net/NetSpawnRecipe.h>
 #include <render/IrradianceVolumeComponent.h>
@@ -59,11 +61,24 @@ using EngineSceneComponents = std::tuple<
 // A component listed here must have a TypeSchema and no ComponentTraits
 // lifecycle hooks; ReplicationLayout::Add enforces both at compile time.
 //=============================================================================
+// Wire keys are positions in this list, so entries append rather than move.
+//
+// Everything after the first four is a client's own pawn being handed back the
+// state it needs to resume simulating from what the authority actually did.
+// Position alone was not enough and could never have been: a pawn put in the
+// right place still carrying the wrong velocity walks straight back out of it,
+// and one that disagrees about what it is standing on disagrees about
+// everything that follows. All of it is owner-only, because it is what one
+// machine needs to continue a simulation, not what the others need to draw it.
 using EngineReplicatedComponents = std::tuple<
     LocalTransform,
     LookOrientation,
     NetOwner,
-    NetSpawnRecipe>;
+    NetSpawnRecipe,
+    KinematicState,
+    SupportState,
+    CharacterMovement,
+    JumpState>;
 
 template <typename T>
 struct ComponentTag

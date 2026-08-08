@@ -1,12 +1,15 @@
 #pragma once
 
+#include <core/metadata/TypeSchema.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
+#include <math/MathSchemas.h>
 #include <math/Vec.h>
 #include <movement/MovementProfileData.h>
 
 #include <compare>
 #include <cstdint>
+#include <tuple>
 #include <type_traits>
 
 //=============================================================================
@@ -43,6 +46,31 @@ struct SupportState
 };
 SENCHA_DECLARE_COMPONENT_TYPE(SupportState, "sencha.support_state");
 
+// Sent to the peer that owns this character and to nobody else. Everyone can
+// see where another player is; only that player's own machine has to be able to
+// resume simulating them from it, which is what reconciliation does after every
+// snapshot.
+template <>
+struct TypeSchema<SupportState>
+{
+    static constexpr std::string_view Name = "SupportState";
+
+    static auto Fields()
+    {
+        return std::tuple{
+            // What locomotion and the jump gate actually read.
+            MakeField("kind", &SupportState::Kind).OwnerOnly(),
+            MakeField("surface_velocity", &SupportState::SurfaceVelocity).OwnerOnly(),
+            // Where the contact was is re-derived by the first replayed sweep,
+            // and the surface is an entity handle that means nothing on another
+            // machine.
+            MakeField("surface", &SupportState::Surface).LocalOnly(),
+            MakeField("contact_point", &SupportState::ContactPoint).LocalOnly(),
+            MakeField("normal", &SupportState::Normal).LocalOnly(),
+        };
+    }
+};
+
 // How deeply the character is inside a volume, in [0, 1]. A fact like
 // SupportState: profiles condition on it rather than a "swimming" mode being
 // switched on somewhere.
@@ -62,14 +90,49 @@ struct KinematicState
 };
 SENCHA_DECLARE_COMPONENT_TYPE(KinematicState, "sencha.kinematic_state");
 
+// Owner-only, and the single most important thing a client gets back. A
+// correction that carried position alone put the pawn in the right place still
+// travelling at the wrong speed, and the next tick walked it straight back out
+// again -- which is what a pawn wedged on a corner at one end and running down
+// a hallway at the other looks like.
+//
+// Full width: how fast something is going is not bounded by anything the
+// movement layer promises, and a range that clamped it would silently disagree
+// with the machine that sent it.
+template <>
+struct TypeSchema<KinematicState>
+{
+    static constexpr std::string_view Name = "KinematicState";
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("velocity", &KinematicState::Velocity).OwnerOnly(),
+        };
+    }
+};
+
 // Registration-order id from the LocomotionModeRegistry. Zero is the sentinel;
-// these are runtime values and are never serialized.
+// these are runtime values and are never serialized into content.
 struct LocomotionModeId
 {
     uint32_t Value = 0;
 
     [[nodiscard]] bool IsValid() const { return Value != 0; }
     auto operator<=>(const LocomotionModeId&) const = default;
+};
+
+template <>
+struct TypeSchema<LocomotionModeId>
+{
+    static constexpr std::string_view Name = "LocomotionModeId";
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("value", &LocomotionModeId::Value),
+        };
+    }
 };
 
 // What this character is in movement terms: the authored profile it resolves
@@ -80,6 +143,31 @@ struct CharacterMovement
     LocomotionModeId Mode{};
 };
 SENCHA_DECLARE_COMPONENT_TYPE(CharacterMovement, "sencha.character_movement");
+
+// The mode travels to the owner so its own machine knows which rules it is
+// resuming under, and refuses to replay under rules it does not implement
+// rather than replaying under the wrong ones.
+//
+// This is a registration-order id on the wire, which content must never carry.
+// A snapshot is not content: it is traffic between two processes the identity
+// gate has already proved are the same build, so their registration orders are
+// the same order -- the argument the action columns in a player command already
+// run on. It is session-transient in both directions and is never written down.
+template <>
+struct TypeSchema<CharacterMovement>
+{
+    static constexpr std::string_view Name = "CharacterMovement";
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("mode", &CharacterMovement::Mode).OwnerOnly(),
+            // Which profile a character resolves tuning from is content both
+            // machines already loaded.
+            MakeField("profile", &CharacterMovement::Profile).LocalOnly(),
+        };
+    }
+};
 
 // This tick's coefficients, resolved from the profile's layers against the
 // current facts. Written by the tuning resolution system and read by

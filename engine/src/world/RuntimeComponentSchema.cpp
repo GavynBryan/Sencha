@@ -9,6 +9,7 @@
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <input/InputActionSource.h>
 #include <movement/MovementComponents.h>
+#include <movement/JumpState.h>
 #include <movement/MovementIntent.h>
 #include <net/NetReplicationComponents.h>
 #include <net/NetSpawnRecipe.h>
@@ -56,6 +57,7 @@ void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)
     // binding, this tick's resolved coefficients, and the contribution
     // channels that compose into one motor request.
     schema.Add<MovementIntent>();
+    schema.Add<JumpState>();
     schema.Add<KinematicState>();
     schema.Add<SupportState>();
     schema.Add<Immersion>();
