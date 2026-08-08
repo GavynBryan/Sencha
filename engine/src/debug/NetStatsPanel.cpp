@@ -1,6 +1,7 @@
 #include <debug/NetStatsPanel.h>
 
 #include <core/console/ConsoleRegistry.h>
+#include <net/ClientPrediction.h>
 #include <net/NetSession.h>
 #include <net/NetStats.h>
 #include <net/NetTickEstimator.h>
@@ -58,11 +59,13 @@ namespace
 NetStatsPanel::NetStatsPanel(const std::unique_ptr<NetSession>& session,
                              const NetStats& traffic,
                              const NetTickEstimator& clock,
+                             const ClientPrediction& prediction,
                              PeerCommandRuntime& commands,
                              ConsoleRegistry& console)
     : Session(session)
     , Traffic(traffic)
     , Clock(clock)
+    , Prediction(prediction)
     , Commands(commands)
     , Console(console)
 {
@@ -133,6 +136,33 @@ void NetStatsPanel::Draw()
             ImGui::Unindent();
         }
         ImGui::TreePop();
+    }
+
+    if (session->Role() == NetSessionRole::Client)
+    {
+        ImGui::SeparatorText("Prediction");
+        if (!Prediction.Predicted().IsValid())
+        {
+            ImGui::TextUnformatted("no pawn yet");
+        }
+        else if (!Prediction.IsEnabled())
+        {
+            ImGui::TextUnformatted("off (net.prediction) -- input costs a round trip");
+        }
+        else
+        {
+            // Error is what says whether this is working. A floor that creeps
+            // up is prediction drifting away from the authority; snaps are it
+            // giving up and moving the player.
+            ImGui::Text("error %.3f m  |  %" PRIu64 " corrections, %" PRIu64
+                        " snaps of %" PRIu64 " checks",
+                        static_cast<double>(Prediction.LastErrorMeters()),
+                        Prediction.Corrections(), Prediction.Snaps(),
+                        Prediction.Observations());
+            ImGui::SetItemTooltip(
+                "Distance between where this machine put the pawn and where the "
+                "authority says it was, at the same tick.");
+        }
     }
 
     ImGui::SeparatorText("Peers");

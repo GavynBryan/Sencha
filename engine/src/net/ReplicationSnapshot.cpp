@@ -433,6 +433,38 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
             // machine or because it belongs to the owner; zeroing it substitutes
             // a value the type never declared. A pitch limit of zero is a
             // player who cannot look up, on a component that decoded perfectly.
+            // A predicted entity's position never reaches the world through
+            // here. It is decoded onto the authority's own view of it, which is
+            // what the delta is against, and handed to the predictor to argue
+            // with what this machine simulated.
+            if (request.Prediction != nullptr
+                && request.Prediction->Intercepts(entity, component->Type))
+            {
+                const std::span<std::byte> shadow =
+                    request.Prediction->AuthoritativeBytes();
+                if (shadow.size() != component->Size)
+                {
+                    result.Error = SnapshotApplyError::UnknownComponentStorage;
+                    return result;
+                }
+                if (!request.Prediction->HasAuthoritativeState()
+                    && !schema.WriteDefaultBytes(component->Type, shadow))
+                {
+                    result.Error = SnapshotApplyError::UnknownComponentStorage;
+                    return result;
+                }
+                if (!ReplicationDecodeComponent(*component, reader, shadow))
+                {
+                    result.Error = SnapshotApplyError::Truncated;
+                    return result;
+                }
+                // Last one wins within a snapshot; a correction describes the
+                // tick, not the component.
+                if (const auto correction = request.Prediction->Commit(result.Tick))
+                    result.Prediction = correction;
+                continue;
+            }
+
             staging.assign(component->Size, std::byte{ 0 });
             const ComponentId column = world.GetComponentIdByType(component->Type);
             const bool present = world.HasComponent(entity, column);

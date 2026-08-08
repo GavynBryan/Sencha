@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <controller/LookOrientation.h>
+#include <net/ClientPrediction.h>
 #include <ecs/World.h>
 #include <ecs/WorldComponentSchema.h>
 #include <net/NetReplicationComponents.h>
@@ -53,7 +54,8 @@ namespace
         // One snapshot: written on the authority, carried as bytes, applied on
         // the client. Returns the bytes it took.
         std::size_t Replicate(std::uint32_t ownerPeer = 0,
-                              const NetSpawnRecipes* recipes = nullptr)
+                              const NetSpawnRecipes* recipes = nullptr,
+                              ClientPrediction* prediction = nullptr)
         {
             ++Tick;
             SnapshotWriteRequest write;
@@ -73,6 +75,7 @@ namespace
             apply.Layout = &Layout;
             apply.Identity = &ClientIdentity;
             apply.Recipes = recipes;
+            apply.Prediction = prediction;
 
             LastApply = ReplicationApplySnapshot(
                 apply, std::span(Scratch).subspan(0, LastWrite.BytesWritten));
@@ -325,6 +328,110 @@ TEST(ReplicationSnapshot, OwnerOnlyStateReachesOnlyItsOwner)
     ASSERT_NE(owner, nullptr);
     EXPECT_EQ(owner->Peer, 7u)
         << "a client has to learn which entity is its own";
+}
+
+//=============================================================================
+// Prediction
+//
+// A client's own pawn is the one entity it simulates rather than mirrors, so
+// the authority's position for it is an argument to settle rather than state to
+// write. These assert that through the applier, which is where the subtle part
+// lives: a delta carries only what changed, so it has to be applied to what the
+// authority believes it sent.
+//=============================================================================
+
+TEST(ReplicationPrediction, ThePredictedEntityKeepsWhatThisMachineSimulated)
+{
+    Pair pair;
+    ClientPrediction prediction;
+
+    const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Replicate();
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+    prediction.SetPredicted(mirror);
+
+    // This machine has simulated the pawn forward; the authority has not caught
+    // up yet. Its word must not overwrite what was simulated.
+    pair.Client.TryGet<LocalTransform>(mirror)->Value.Position =
+        Vec3d{ 9.0f, 0.0f, 0.0f };
+    pair.Authority.TryGet<LocalTransform>(authority)->Value.Position =
+        Vec3d{ 1.0f, 0.0f, 0.0f };
+    pair.Replicate(0, nullptr, &prediction);
+
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
+                    9.0f)
+        << "the authority's position was written over what this machine "
+           "predicted, which is the round trip the player would feel";
+}
+
+// The trap the authoritative shadow exists for.
+//
+// A snapshot carries fields, not components: the authority moves along X every
+// tick, so X is sent and Z -- which it never touches -- is not. This machine
+// meanwhile drifts along Z. Staged against what this machine simulated, the
+// unsent Z would be filled in from its own drift and the divergence would read
+// as perfect agreement; staged against the authority's own view, it is seen.
+TEST(ReplicationPrediction, AnUnsentFieldIsComparedAgainstTheAuthorityNotThePrediction)
+{
+    Pair pair;
+    ClientPrediction prediction;
+
+    const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Replicate();
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+    prediction.SetPredicted(mirror);
+
+    LocalTransform* authorityPose = pair.Authority.TryGet<LocalTransform>(authority);
+    LocalTransform* clientPose = pair.Client.TryGet<LocalTransform>(mirror);
+
+    // A tick where the two agree, which seeds the authority's view.
+    authorityPose->Value.Position = Vec3d{ 1.0f, 0.0f, 0.0f };
+    clientPose->Value.Position = Vec3d{ 1.0f, 0.0f, 0.0f };
+    prediction.Record(pair.Tick + 1, clientPose->Value.Position);
+    pair.Replicate(0, nullptr, &prediction);
+    ASSERT_TRUE(prediction.HasAuthoritativeState());
+    ASSERT_FALSE(pair.LastApply.Prediction.has_value());
+
+    // The authority advances along X only. This machine advances along X too --
+    // agreeing there -- and has also drifted three quarters of a metre along Z,
+    // which the authority has never had reason to send.
+    authorityPose->Value.Position = Vec3d{ 2.0f, 0.0f, 0.0f };
+    clientPose->Value.Position = Vec3d{ 2.0f, 0.0f, 0.75f };
+    prediction.Record(pair.Tick + 1, clientPose->Value.Position);
+    pair.Replicate(0, nullptr, &prediction);
+
+    ASSERT_TRUE(pair.LastApply.Prediction.has_value())
+        << "a divergence in a field the authority had no reason to resend was "
+           "compared against this machine's own guess and read as agreement";
+    EXPECT_FLOAT_EQ(pair.LastApply.Prediction->Offset.Z, -0.75f);
+    EXPECT_NEAR(pair.LastApply.Prediction->Offset.X, 0.0f, 1e-4f)
+        << "the axis both machines agree on is not a correction";
+}
+
+TEST(ReplicationPrediction, OtherPlayersPawnsStillArriveAsState)
+{
+    Pair pair;
+    ClientPrediction prediction;
+
+    const EntityId mine = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    const EntityId theirs = pair.SpawnReplicated(PoseAt(5.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    const EntityId myMirror = pair.Mirror(mine);
+    const EntityId theirMirror = pair.Mirror(theirs);
+    ASSERT_TRUE(myMirror.IsValid());
+    ASSERT_TRUE(theirMirror.IsValid());
+    prediction.SetPredicted(myMirror);
+
+    pair.Authority.TryGet<LocalTransform>(theirs)->Value.Position =
+        Vec3d{ 42.0f, 0.0f, 0.0f };
+    pair.Replicate(0, nullptr, &prediction);
+
+    EXPECT_FLOAT_EQ(
+        pair.Client.TryGet<LocalTransform>(theirMirror)->Value.Position.X, 42.0f)
+        << "a puppet has to be drawn where the authority says it is";
 }
 
 //=============================================================================

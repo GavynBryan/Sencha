@@ -46,7 +46,8 @@ public:
     SnapshotApplyResult Apply(std::span<const std::byte> payload, World& world,
                               const WorldComponentSchema& schema,
                               const ReplicationLayout& layout,
-                              const NetSpawnRecipes* recipes = nullptr);
+                              const NetSpawnRecipes* recipes = nullptr,
+                              ClientPrediction* prediction = nullptr);
 
     // A peer that left keeps no baseline: it would be a growing memory cost
     // against a peer that will never receive anything again, and a peer id can

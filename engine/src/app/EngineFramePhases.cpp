@@ -244,7 +244,23 @@ void Engine::RegisterNetFramePhases()
                 engine.Replication().Apply(delivery.Payload, world,
                                            engine.RuntimeComponents(),
                                            engine.ReplicatedComponents(),
-                                           &engine.SpawnRecipes());
+                                           &engine.SpawnRecipes(),
+                                           &engine.Prediction());
+
+            // A correction moves the pawn by how far this machine was wrong,
+            // not to where the authority was: everything simulated since that
+            // tick was built on the same error, so shifting the trajectory
+            // keeps the motion the player has produced meanwhile. Assigning the
+            // authority's position would drag them back by the round trip.
+            if (applied.Prediction.has_value())
+            {
+                // The cvar is read here rather than latched, so turning
+                // prediction off mid-session stops correcting immediately
+                // instead of at the next join.
+                const EntityId pawn = engine.Prediction().Predicted();
+                if (LocalTransform* pose = world.TryGet<LocalTransform>(pawn))
+                    pose->Value.Position += applied.Prediction->Offset;
+            }
             // Every snapshot is also a clock sample, and the freshest one
             // available: it leaves the authority stamped with the tick that
             // produced it, once a frame rather than once a keepalive.

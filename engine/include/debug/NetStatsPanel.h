@@ -4,6 +4,7 @@
 
 #include <memory>
 
+class ClientPrediction;
 class ConsoleRegistry;
 class NetSession;
 class NetStats;
@@ -33,6 +34,7 @@ public:
     NetStatsPanel(const std::unique_ptr<NetSession>& session,
                   const NetStats& traffic,
                   const NetTickEstimator& clock,
+                  const ClientPrediction& prediction,
                   PeerCommandRuntime& commands,
                   ConsoleRegistry& console);
 
@@ -42,6 +44,7 @@ private:
     const std::unique_ptr<NetSession>& Session;
     const NetStats& Traffic;
     const NetTickEstimator& Clock;
+    const ClientPrediction& Prediction;
     PeerCommandRuntime& Commands;
     ConsoleRegistry& Console;
 };

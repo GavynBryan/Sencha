@@ -3,11 +3,13 @@
 #include <core/identity/StrongId.h>
 #include <ecs/EntityId.h>
 #include <net/NetSpawnRecipe.h>
+#include <net/ClientPrediction.h>
 #include <net/ReplicationCodec.h>
 #include <net/ReplicationLayout.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <unordered_map>
 #include <vector>
@@ -208,6 +210,11 @@ struct SnapshotApplyRequest
     const WorldComponentSchema* Schema = nullptr;
     const ReplicationLayout* Layout = nullptr;
     ReplicationClientIdentity* Identity = nullptr;
+    // What this machine simulates for itself, or null when it mirrors
+    // everything. A predicted entity's position is handed here rather than
+    // written, because the world's copy is what this machine produced and the
+    // arriving one is the authority's argument with it.
+    ClientPrediction* Prediction = nullptr;
     // What a newly spawned entity becomes beyond its replicated state. Null
     // means an entity is only what the wire said, which leaves it with no
     // derived columns and nothing to draw it -- valid for a test, wrong for a
@@ -229,6 +236,10 @@ struct SnapshotApplyResult
     std::uint32_t RecipesMissing = 0;
     std::uint32_t EntitiesUpdated = 0;
     std::uint32_t EntitiesDestroyed = 0;
+    // Set when a predicted entity's authoritative position disagreed with what
+    // this machine simulated for that tick. The caller moves the pawn; a
+    // snapshot applier has no business deciding how a correction is served.
+    std::optional<ClientPrediction::Correction> Prediction;
 
     [[nodiscard]] bool Ok() const { return Error == SnapshotApplyError::None; }
 };

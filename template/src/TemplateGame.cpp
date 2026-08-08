@@ -224,31 +224,39 @@ EntityId CreateTransformEntity(
     return entity;
 }
 
-// The pawn itself: everything that makes a body move and be seen, and nothing
-// about who is watching it. A remote player's pawn is exactly this and no more,
-// which is why the camera and the local input marks are not in here.
-EntityId SpawnPawn(
+// Everything that makes a body move and be seen, added to an entity that
+// already exists. Split from SpawnPawn because a client predicting its own pawn
+// needs this on an entity replication created, and a pawn that simulates on two
+// machines has to be the same pawn on both -- one archetype, one place.
+//
+// Nothing here is about who is watching: the camera and the local input marks
+// live in AttachLocalPlayer.
+void BuildPawnBody(
     World& world,
-    const Vec3d& spawnPosition,
+    EntityId pawn,
     MovementProfileHandle movementProfile,
     const ResolvedPlayerAvatar& avatar)
 {
-    const EntityId pawn =
-        CreateTransformEntity(world, spawnPosition);
-    world.AddComponent<CharacterController>(
-        pawn,
-        CharacterController{});
-    world.AddComponent<MovementIntent>(
-        pawn,
-        MovementIntent{});
-    world.AddComponent<KinematicState>(pawn, KinematicState{});
-    world.AddComponent<SupportState>(pawn, SupportState{});
-    world.AddComponent<ResolvedMovementTuning>(pawn, ResolvedMovementTuning{});
-    world.AddComponent<LocomotionOutput>(pawn, LocomotionOutput{});
-    world.AddComponent<MotionAxisOverride>(pawn, MotionAxisOverride{});
-    world.AddComponent<MotionImpulse>(pawn, MotionImpulse{});
-    world.AddComponent<MotionRequest>(pawn, MotionRequest{});
-    world.AddComponent<ModeTransitionRequest>(pawn, ModeTransitionRequest{});
+    // Idempotent throughout. On the authority this runs on a bare entity; on a
+    // client it runs on one replication has already given a transform, an
+    // orientation, and a body, and adding a component twice is a structural
+    // error rather than an overwrite.
+    const auto ensure = [&world, pawn]<typename T>(const T& value)
+    {
+        if (!world.HasComponent<T>(pawn))
+            world.AddComponent<T>(pawn, value);
+    };
+
+    ensure(CharacterController{});
+    ensure(MovementIntent{});
+    ensure(KinematicState{});
+    ensure(SupportState{});
+    ensure(ResolvedMovementTuning{});
+    ensure(LocomotionOutput{});
+    ensure(MotionAxisOverride{});
+    ensure(MotionImpulse{});
+    ensure(MotionRequest{});
+    ensure(ModeTransitionRequest{});
 
     // With an invalid profile handle the pawn resolves tuning from defaults
     // plus the MoveSpeed attribute, so a missing asset degrades to movement
@@ -260,11 +268,11 @@ EntityId SpawnPawn(
     {
         pawnMovement.Mode = modes->FreeMode();
     }
-    world.AddComponent<CharacterMovement>(pawn, pawnMovement);
+    ensure(pawnMovement);
 
     // The pawn moves every tick and is what the camera watches, so it renders
     // interpolated between ticks rather than stepping at the tick rate.
-    world.AddComponent<WorldTransformHistory>(pawn, WorldTransformHistory{});
+    ensure(WorldTransformHistory{});
 
     // The body other viewers see. A first-person camera targeting this pawn
     // excludes it, so the local player does not sit inside their own mesh; a
@@ -272,12 +280,10 @@ EntityId SpawnPawn(
     // has no body, which is a missing asset rather than a broken player.
     if (avatar.IsValid())
     {
-        world.AddComponent<StaticMeshComponent>(
-            pawn,
-            StaticMeshComponent{
-                .Mesh = avatar.Mesh,
-                .Materials = avatar.Materials,
-            });
+        ensure(StaticMeshComponent{
+            .Mesh = avatar.Mesh,
+            .Materials = avatar.Materials,
+        });
     }
 
     const MovementDefs* movementDefs =
@@ -289,7 +295,7 @@ EntityId SpawnPawn(
     {
         pawnTags.Grant(movementTags->Controlled);
     }
-    world.AddComponent<GameplayTagContainer>(pawn, pawnTags);
+    ensure(pawnTags);
 
     // The profile's base layer owns the authored top speed; this attribute is
     // the effect-modifiable base and the whole answer when no profile loads,
@@ -297,18 +303,27 @@ EntityId SpawnPawn(
     AttributeSet pawnAttributes{};
     if (movementDefs != nullptr)
         pawnAttributes.Add(movementDefs->MoveSpeed, 4.5f);
-    world.AddComponent<AttributeSet>(pawn, pawnAttributes);
+    ensure(pawnAttributes);
 
     AbilitySet pawnAbilities{};
     if (movementDefs != nullptr)
         pawnAbilities.Grant(movementDefs->Jump);
-    world.AddComponent<AbilitySet>(pawn, pawnAbilities);
+    ensure(pawnAbilities);
 
     // The pawn aims; a camera presents it. Every pawn has an orientation --
     // a remote player is aiming somewhere too, and that is what makes their
     // body face the right way.
-    world.AddComponent<LookOrientation>(pawn, {});
+    ensure(LookOrientation{});
+}
 
+EntityId SpawnPawn(
+    World& world,
+    const Vec3d& spawnPosition,
+    MovementProfileHandle movementProfile,
+    const ResolvedPlayerAvatar& avatar)
+{
+    const EntityId pawn = CreateTransformEntity(world, spawnPosition);
+    BuildPawnBody(world, pawn, movementProfile, avatar);
     return pawn;
 }
 
@@ -779,12 +794,22 @@ private:
                 world.DestroyEntity(previous);
             }
 
-            // Nothing local is grafted onto it. A client's own pawn is
-            // simulated on the authority, so steering it here would write
-            // intent the next snapshot overwrites, and the request that
-            // actually moves the player travels as this tick's actions.
+            // This pawn becomes a full simulation participant on this machine.
+            // A player holding a key cannot wait for the round trip to see it,
+            // so the client runs the same systems over the same input and the
+            // authority's snapshots become something to reconcile against
+            // rather than something to obey.
+            //
+            // The same archetype the authority built, from the same function:
+            // two machines simulating one pawn from the same input have to be
+            // simulating the same pawn.
+            if (!world.HasComponent<MovementIntent>(mine))
+                BuildPawnBody(world, mine, Profile, Avatar);
+
             AttachLocalPlayer(world, mine, Log());
             LocalPawn = mine;
+            Owner->Prediction().SetPredicted(mine);
+            Log().Info("TemplateGame: predicting this player's own pawn");
         }
     }
 };
@@ -1562,7 +1587,8 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
         GetEngine().Logging());
     RegisterCameraSystem(ctx.Schedule);
     RegisterControllerSystems(ctx.Schedule);
-    RegisterNetSystems(ctx.Schedule, GetEngine().PeerCommands());
+    RegisterNetSystems(ctx.Schedule, GetEngine().PeerCommands(),
+                       GetEngine().Prediction(), GetEngine().NetClock());
     ctx.Schedule.Register<CharacterInputSystem>();
 
     // Everything that reads actions runs after they are resolved: the aim

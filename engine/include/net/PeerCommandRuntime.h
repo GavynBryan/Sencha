@@ -1,7 +1,9 @@
 #pragma once
 
 #include <app/GameContexts.h>
+#include <net/ClientPrediction.h>
 #include <net/NetPlayerCommand.h>
+#include <net/NetTickEstimator.h>
 #include <net/NetSession.h>
 
 #include <cstdint>
@@ -98,8 +100,37 @@ private:
     PeerCommandRuntime* Commands = nullptr;
 };
 
+//=============================================================================
+// PredictionRecordSystem
+//
+// Remembers where this machine put its own pawn, once per tick, under the name
+// the authority uses for that tick.
+//
+// Runs post-fixed rather than in fixed logic, because the position a client has
+// to answer for is the one after the mover has swept it and the transform
+// hierarchy has settled -- the value in the middle of a tick is not where
+// anything ended up.
+//=============================================================================
+class PredictionRecordSystem
+{
+public:
+    PredictionRecordSystem(ClientPrediction& prediction,
+                           const NetTickEstimator& clock)
+        : Prediction(&prediction), Clock(&clock)
+    {
+    }
+
+    void PostFixed(PostFixedContext& ctx);
+
+private:
+    ClientPrediction* Prediction = nullptr;
+    const NetTickEstimator* Clock = nullptr;
+};
+
 // Registers the systems the net module contributes to a game's schedule. A game
 // that never hosts or joins still registers them: they are inert with no
 // session, and composing a schedule by role would make the schedule depend on
 // something that is not known until a console command runs.
-void RegisterNetSystems(EngineSchedule& schedule, PeerCommandRuntime& commands);
+void RegisterNetSystems(EngineSchedule& schedule, PeerCommandRuntime& commands,
+                        ClientPrediction& prediction,
+                        const NetTickEstimator& clock);

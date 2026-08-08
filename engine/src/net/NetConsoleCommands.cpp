@@ -5,6 +5,7 @@
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleTypes.h>
 #include <net/NetSession.h>
+#include <net/ClientPrediction.h>
 #include <net/PeerCommandRuntime.h>
 #include <net/UdpTransport.h>
 
@@ -159,6 +160,43 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
                 engine.PeerCommands().SetTargetDepth(
                     static_cast<std::size_t>(std::max<std::int64_t>(0, *ticks)));
             }
+        },
+    });
+
+    registry.RegisterCVar({
+        .Name = "net.prediction",
+        .Owner = "engine",
+        .Type = CVarType::Bool,
+        .DefaultValue = true,
+        .CurrentValue = true,
+        // Local to each client. It changes only what this machine draws for
+        // itself between snapshots; the authority simulates the same either
+        // way, so nobody gains anything by turning it off but their own feel.
+        .Flags = CVarFlags::Archive,
+        .Help = "Simulate this client's own pawn immediately instead of waiting "
+                "for the authority. Off costs a round trip on every input.",
+        .Source = { "engine defaults" },
+        .OnChange = [&engine](const CVarChangeContext& change) {
+            if (const bool* on = std::get_if<bool>(&change.NewValue))
+                engine.Prediction().SetEnabled(*on);
+        },
+    });
+
+    registry.RegisterCVar({
+        .Name = "net.prediction.snap_distance",
+        .Owner = "engine",
+        .Type = CVarType::Double,
+        .DefaultValue = static_cast<double>(ClientPrediction::kDefaultSnapMeters),
+        .CurrentValue = static_cast<double>(ClientPrediction::kDefaultSnapMeters),
+        .Flags = CVarFlags::Archive,
+        .Help = "Metres of disagreement past which a client is moved at once "
+                "rather than corrected gently.",
+        .Source = { "engine defaults" },
+        .Min = 0.0,
+        .Max = 100.0,
+        .OnChange = [&engine](const CVarChangeContext& change) {
+            if (const double* metres = std::get_if<double>(&change.NewValue))
+                engine.Prediction().SetSnapMeters(static_cast<float>(*metres));
         },
     });
 
