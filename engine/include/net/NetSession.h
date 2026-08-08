@@ -177,6 +177,13 @@ public:
     void SetMaxPeers(std::size_t count) { MaxPeers = count; }
     void SetTimeoutSeconds(double seconds) { TimeoutSeconds = seconds; }
 
+    // The fixed tick this machine is simulating. An authority publishes it in
+    // every admission and keepalive, because two machines counting their own
+    // ticks from their own process start share no name for a moment in time
+    // until one of them says which name it uses.
+    void SetLocalTick(std::uint64_t tick) { LocalTickIndex = tick; }
+    [[nodiscard]] std::uint64_t LocalTick() const { return LocalTickIndex; }
+
     // Client-side outcome of the last connection attempt.
     [[nodiscard]] NetJoinFailure JoinFailure() const { return Failure; }
     [[nodiscard]] const std::string& JoinFailureReason() const { return FailureReason; }
@@ -222,6 +229,7 @@ private:
     std::size_t MaxPeers = 4;
     double TimeoutSeconds = 10.0;
     std::uint64_t Secret = 0;
+    std::uint64_t LocalTickIndex = 0;
 
     // Client state.
     NetChannelSet ClientChannels;

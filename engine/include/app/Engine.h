@@ -11,6 +11,7 @@
 #include <net/NetCVarSync.h>
 #include <net/NetSpawnRecipe.h>
 #include <net/NetStats.h>
+#include <net/NetTickEstimator.h>
 #include <net/PeerCommandRuntime.h>
 #include <net/ReplicationRuntime.h>
 #include <profiling/CpuScopeTimings.h>
@@ -99,6 +100,10 @@ public:
     // to decide anything, so recording into it raises no ordering question.
     [[nodiscard]] NetStats& NetTraffic() { return NetStatsState; }
     [[nodiscard]] const NetStats& NetTraffic() const { return NetStatsState; }
+    // What the authority's clock is called, as seen from a client. Meaningless
+    // on an authority, which is the machine defining it.
+    [[nodiscard]] NetTickEstimator& NetClock() { return NetClockState; }
+    [[nodiscard]] const NetTickEstimator& NetClock() const { return NetClockState; }
 
     // What a replicated entity becomes on this machine. Registered by the game
     // and outlives any one session, because it describes content rather than a
@@ -295,6 +300,7 @@ private:
     NetCVarPublisher CVarPublisherState;
     PeerCommandRuntime PeerCommandState;
     NetStats NetStatsState;
+    NetTickEstimator NetClockState;
     NetSpawnRecipes SpawnRecipeState;
     std::unique_ptr<RuntimeWorld> RuntimeWorldState;
     RuntimeFrameLoop RuntimeLoop;

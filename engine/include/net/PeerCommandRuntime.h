@@ -45,7 +45,14 @@ public:
     // aim into one command and queues it. Returns the bytes queued, zero when
     // there was nothing to send -- there is nothing before this client has a
     // pawn to aim.
-    std::size_t SendLocal(NetSession& session, const World& world);
+    //
+    // `tickOffset` renames each record from this machine's tick counter to the
+    // authority's, far enough ahead that the command lands before the tick it
+    // asks for. Zero stamps local ticks, which is right only when the two
+    // clocks are the same one -- a loopback test, or a session that has not
+    // heard from the authority yet.
+    std::size_t SendLocal(NetSession& session, const World& world,
+                          std::int64_t tickOffset = 0);
 
     // How many ticks of input each peer's buffer holds back before consuming.
     // Applied at the next feed, so raising it mid-session costs latency

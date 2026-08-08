@@ -91,6 +91,14 @@ void Engine::RegisterNetFramePhases()
         // long a peer has actually been silent; a paused or time-scaled
         // simulation must not stretch a peer's timeout along with it.
         const double now = ctx.Runtime->GetCurrentFrame().WallTime.UnscaledElapsed;
+
+        // Published before the pump, so the keepalives and admissions that
+        // leave inside it carry this frame's tick rather than the last one's.
+        // An authority is the machine that defines the clock; a client sets it
+        // too, harmlessly, so nothing has to branch on role to keep it fresh.
+        const FixedSimulationLoop& simulation = ctx.Runtime->GetSimulationClock();
+        session->SetLocalTick(simulation.GetTickIndex());
+
         engine.ClearNetDeliveries();
         const std::vector<NetSession::Delivery> deliveries = session->Pump(now);
 
@@ -133,6 +141,35 @@ void Engine::RegisterNetFramePhases()
 
         const bool isClient = session->Role() == NetSessionRole::Client;
         const bool isAdmitted = isClient && session->IsConnected();
+
+        if (isAdmitted)
+        {
+            // Seeded from admission, then kept fresh by the snapshots below.
+            // Only the seed comes from here: the keepalive's copy is refreshed
+            // every few seconds, and feeding a stale number in every frame
+            // would drag the estimate away from what snapshots just said.
+            if (!engine.NetClock().HasEstimate())
+            {
+                engine.NetClock().Observe(session->AuthorityTick(),
+                                          simulation.GetTickIndex(),
+                                          session->RoundTripMicroseconds(),
+                                          simulation.GetFixedDt());
+            }
+
+            // How much margin the authority wants on arriving input. It is the
+            // machine doing the buffering, so it decides; the value reaches
+            // here as a replicated cvar rather than as a second protocol field.
+            if (const CVarMetadata* slack =
+                    engine.Console().Registry().FindCVar("net.command_slack"))
+            {
+                if (const std::int64_t* ticks =
+                        std::get_if<std::int64_t>(&slack->CurrentValue))
+                {
+                    engine.NetClock().SetSlackTicks(
+                        static_cast<std::uint32_t>(std::max<std::int64_t>(0, *ticks)));
+                }
+            }
+        }
         if (isAdmitted && !wasAdmitted)
         {
             log.Info("net: admitted as peer {} by {}",
@@ -208,6 +245,16 @@ void Engine::RegisterNetFramePhases()
                                            engine.RuntimeComponents(),
                                            engine.ReplicatedComponents(),
                                            &engine.SpawnRecipes());
+            // Every snapshot is also a clock sample, and the freshest one
+            // available: it leaves the authority stamped with the tick that
+            // produced it, once a frame rather than once a keepalive.
+            if (applied.Ok() && isAdmitted)
+            {
+                engine.NetClock().Observe(applied.Tick, simulation.GetTickIndex(),
+                                          session->RoundTripMicroseconds(),
+                                          simulation.GetFixedDt());
+            }
+
             if (!applied.Ok())
             {
                 // A snapshot that will not decode means the authority is
@@ -232,10 +279,13 @@ void Engine::RegisterNetFramePhases()
         if (session->Role() == NetSessionRole::Host)
         {
             ::World& world = engine.World().Entities();
+            // Stamped with the simulation tick, not the frame counter: it is
+            // the label a client compares its own prediction of that moment
+            // against, and frames and ticks are not the same count.
             const ReplicationRuntime::PublishStats published =
                 engine.Replication().Publish(
                     *session, world, engine.ReplicatedComponents(),
-                    world.CurrentFrame());
+                    ctx.Runtime->GetSimulationClock().GetTickIndex());
             traffic.RecordOut(NetTrafficKind::Snapshot, published.BytesQueued,
                               published.SnapshotsSent);
 
@@ -254,8 +304,17 @@ void Engine::RegisterNetFramePhases()
         {
             // Queued after the ticks that resolved it, so the newest record a
             // command carries is this frame's rather than the previous one's.
-            const std::size_t bytes = engine.PeerCommands().SendLocal(
-                *session, engine.World().Entities());
+            // Nothing is sent before the authority's clock has a name here.
+            // Stamping local ticks first and authority ticks afterwards would
+            // step the stamp by the whole offset mid-session, and if that step
+            // went backwards the authority would refuse everything after it as
+            // input for ticks it had already run.
+            const std::size_t bytes =
+                engine.NetClock().HasEstimate()
+                    ? engine.PeerCommands().SendLocal(
+                          *session, engine.World().Entities(),
+                          engine.NetClock().CommandOffset())
+                    : 0;
             if (bytes > 0)
                 traffic.RecordOut(NetTrafficKind::Command, bytes);
         }

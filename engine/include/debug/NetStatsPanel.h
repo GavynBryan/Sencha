@@ -7,6 +7,7 @@
 class ConsoleRegistry;
 class NetSession;
 class NetStats;
+class NetTickEstimator;
 class PeerCommandRuntime;
 
 //=============================================================================
@@ -31,6 +32,7 @@ class NetStatsPanel : public IDebugPanel
 public:
     NetStatsPanel(const std::unique_ptr<NetSession>& session,
                   const NetStats& traffic,
+                  const NetTickEstimator& clock,
                   PeerCommandRuntime& commands,
                   ConsoleRegistry& console);
 
@@ -39,6 +41,7 @@ public:
 private:
     const std::unique_ptr<NetSession>& Session;
     const NetStats& Traffic;
+    const NetTickEstimator& Clock;
     PeerCommandRuntime& Commands;
     ConsoleRegistry& Console;
 };

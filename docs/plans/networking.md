@@ -1395,6 +1395,33 @@ what extraction actually reads.
   (`Replicated`) tunable rather than a constant. Still open in this phase:
   event/cue replication and desync hashing. Per-zone scope sizes wait on zone
   interest, which has no scopes to size yet.
+- **G-P. Prediction. Split out 2026-08-08; depends on G4a.**
+
+  *P1, the shared tick: landed.* Prediction rests on both machines naming the
+  same moment, and they did not: each counted fixed ticks from its own process
+  start, snapshots were stamped with the frame counter rather than the tick
+  index, and the protocol's `AuthorityTick` field was dead -- an authority never
+  wrote its own tick into it, so every client read zero forever. Now the
+  authority publishes its tick in admissions, keepalives, and snapshots, and
+  `net/NetTickEstimator.h` turns that into an offset from the client's own
+  counter, aged by half the round trip and slewed against jitter (snapping only
+  across a real discontinuity). Commands are stamped for the tick they want to
+  be simulated on, flight time and `net.command_slack` ahead, and are not sent
+  at all until the clock has a name -- stamping local ticks first and authority
+  ticks after would step the stamp mid-session, and a backwards step would make
+  the authority refuse everything following it as input for ticks already run.
+
+  *P2, local prediction: not started.* The owned pawn simulates locally from
+  its own input, keeping per-tick state and the inputs that produced it;
+  arriving snapshots are compared against what was predicted for that tick, and
+  a divergence rolls back and replays. Feasible without rewinding physics:
+  character motion is a kinematic sweep against a static world
+  (`CharacterMover::Move`, with `SetPosition` to restore), not a rigid-body
+  step, so only the predicted pawn rewinds.
+
+  *P3, error smoothing and diagnostics: not started.* Corrections blended over
+  several frames rather than snapped, with prediction error on the stats panel.
+
 - **G6. Hardening.** Crypto and auth token seam (owner decision executed); rate
   budgets and strike enforcement; malformed-traffic soak in both directions
   (hostile client against an authority, hostile authority against a live client,

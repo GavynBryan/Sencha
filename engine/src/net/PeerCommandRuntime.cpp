@@ -93,7 +93,8 @@ void PeerCommandRuntime::Feed(World& world, std::uint64_t tick)
     });
 }
 
-std::size_t PeerCommandRuntime::SendLocal(NetSession& session, const World& world)
+std::size_t PeerCommandRuntime::SendLocal(NetSession& session, const World& world,
+                                          std::int64_t tickOffset)
 {
     if (session.Role() != NetSessionRole::Client || !session.IsConnected())
         return 0;
@@ -130,7 +131,14 @@ std::size_t PeerCommandRuntime::SendLocal(NetSession& session, const World& worl
     {
         const InputActionTickRecord source = actions->History(index);
         NetCommandRecord& record = command.Records[index];
-        record.Tick = source.Tick;
+        // Renamed onto the authority's clock, keeping the spacing between
+        // records: the window has to stay a run of consecutive ticks or the
+        // authority reads it as gaps it must fill.
+        record.Tick = tickOffset >= 0
+            ? source.Tick + static_cast<std::uint64_t>(tickOffset)
+            : (static_cast<std::uint64_t>(-tickOffset) > source.Tick
+                   ? 0
+                   : source.Tick - static_cast<std::uint64_t>(-tickOffset));
         record.ActionCount = static_cast<std::uint8_t>(
             std::min<std::size_t>(source.Values.size(), kNetMaxCommandActions));
         for (std::uint8_t action = 0; action < record.ActionCount; ++action)

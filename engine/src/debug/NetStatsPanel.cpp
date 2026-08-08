@@ -3,6 +3,7 @@
 #include <core/console/ConsoleRegistry.h>
 #include <net/NetSession.h>
 #include <net/NetStats.h>
+#include <net/NetTickEstimator.h>
 #include <net/PeerCommandRuntime.h>
 
 #include <imgui.h>
@@ -56,10 +57,12 @@ namespace
 
 NetStatsPanel::NetStatsPanel(const std::unique_ptr<NetSession>& session,
                              const NetStats& traffic,
+                             const NetTickEstimator& clock,
                              PeerCommandRuntime& commands,
                              ConsoleRegistry& console)
     : Session(session)
     , Traffic(traffic)
+    , Clock(clock)
     , Commands(commands)
     , Console(console)
 {
@@ -85,10 +88,30 @@ void NetStatsPanel::Draw()
                 NetAddressToString(session->LocalAddress()).c_str());
     if (session->Role() == NetSessionRole::Client)
     {
-        ImGui::Text("peer %u  |  rtt %.1f ms  |  authority tick %" PRIu64,
-                    session->LocalPeerId().Value,
-                    static_cast<double>(session->RoundTripMicroseconds()) / 1000.0,
-                    session->AuthorityTick());
+        ImGui::Text("peer %u  |  rtt %.1f ms", session->LocalPeerId().Value,
+                    static_cast<double>(session->RoundTripMicroseconds()) / 1000.0);
+        if (Clock.HasEstimate())
+        {
+            // Local tick, what it is called on the authority, and how far
+            // ahead this machine is stamping the input it sends.
+            const std::uint64_t local = session->LocalTick();
+            ImGui::Text("tick %" PRIu64 " -> authority %" PRIu64
+                        "  |  sending for %" PRIu64 " (+%d)",
+                        local, Clock.AuthorityTickAt(local),
+                        Clock.CommandTickAt(local),
+                        static_cast<int>(Clock.CommandOffset() - Clock.Offset()));
+            ImGui::SetItemTooltip(
+                "Flight time plus slack. Input stamped for a tick the "
+                "authority has already run is input thrown away.");
+        }
+        else
+        {
+            ImGui::TextUnformatted("authority clock not named yet");
+        }
+    }
+    else
+    {
+        ImGui::Text("tick %" PRIu64, session->LocalTick());
     }
 
     ImGui::SeparatorText("Traffic");

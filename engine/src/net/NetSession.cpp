@@ -293,7 +293,7 @@ void NetSession::HandleAuthorityMessage(const NetDatagram& datagram,
                 known->LastHeardSeconds = nowSeconds;
                 const NetPong pong{
                     .SentMicroseconds = ping.SentMicroseconds,
-                    .AuthorityTick = LastAuthorityTick,
+                    .AuthorityTick = LocalTickIndex,
                 };
                 SendRaw(datagram.From, NetEncodePong(pong, scratch));
                 return;
@@ -385,7 +385,7 @@ void NetSession::HandleAuthorityMessage(const NetDatagram& datagram,
             .ModuleFingerprint = LocalIdentity.ModuleFingerprint,
             .WorldIdentity = LocalIdentity.WorldIdentity,
             .FixedTickRateMilliHz = LocalIdentity.FixedTickRateMilliHz,
-            .AuthorityTick = LastAuthorityTick,
+            .AuthorityTick = LocalTickIndex,
         };
         SendRaw(datagram.From, NetEncodeAccept(accept, scratch));
         Events.push_back(NetPeerEvent{
@@ -403,7 +403,7 @@ void NetSession::HandleAuthorityMessage(const NetDatagram& datagram,
             return;
         const NetPong pong{
             .SentMicroseconds = ping.SentMicroseconds,
-            .AuthorityTick = LastAuthorityTick,
+            .AuthorityTick = LocalTickIndex,
         };
         SendRaw(datagram.From, NetEncodePong(pong, scratch));
         return;
