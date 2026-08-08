@@ -619,7 +619,10 @@ which is ratified; this section owns the sequence and the gate.
    there is no window, and phase registration is entirely inside the Vulkan guard.
    Independently valuable: it is the CI simulation-soak vehicle and the dedicated
    host's skeleton. Gate: a headless engine runs fixed ticks with no graphics
-   services constructed, and exits clean.
+   services constructed, and exits clean. **Landed.** The engine ticks headless;
+   the template game module does not yet, because its asset stack is built from
+   graphics services. That is G7's to resolve, and it is what the two-process CI
+   soak waits on.
 
 2. **Transport, protocol, session (G1).** `INetTransport` with UDP, loopback, and a
    seeded deterministic simulated transport; two channel classes; pure span decoders
@@ -627,12 +630,19 @@ which is ratified; this section owns the sequence and the gate.
    identity gates; table sync for registration-order ids; `PumpNet` and `FlushNet`
    frame phases; `host`/`connect`/`disconnect`. Gate: an empty session held between
    two processes over loopback UDP, with the codec and channel suites green.
+   **Landed**, with one deviation: registration-order ids ride no synced name
+   table. Component identity is content-addressed already, and input actions ride
+   the dense array both ends compile from the same content — recorded with its
+   reasoning in `networking.md`. Crypto is G6; the packet header reserves its
+   framing.
 
 3. **Replication core (G2).** Schema annotations and the replicated-component
    manifest fold; type-erased component overwrite; identity maps over
    `PersistentEntityId` and `NetEntityId`; snapshot ring, per-client deltas, acks,
    budgets; client apply and interpolation. Gate: a pawn mirrors between two
-   instances, stationary then moving under authority control.
+   instances, stationary then moving under authority control. **Landed**, gate
+   met on screen. Interest scoping is item 6; a snapshot today covers everything
+   marked replicated.
 
 4. **Ownership, input, prediction (G4). Track gate.** `NetOwner`; session role as
    composition at `OnRegisterSystems`; the input channel over the tick-stamped action
@@ -640,7 +650,7 @@ which is ratified; this section owns the sequence and the gate.
    Prediction and reconciliation follow item 5. **Track gate: two instances on one
    machine, one hosting, each seeing the other's pawn move under
    server-authoritative simulation** — where "seeing" is observed motion, not
-   World state or log output.
+   World state or log output. **Gate met** on 2026-08-07, owner-observed.
 
 5. **Possession and spawn recipes (G4a). Added 2026-08-07, ahead of prediction.**
    The first live playtest traced its defects to one missing ownership: what a
@@ -652,7 +662,12 @@ which is ratified; this section owns the sequence and the gate.
    instantiates the full local shape — derived columns included — instead of
    each game hand-rolling adoption. Interim form of the prefab encoding the
    protocol reserves for Track D item 1. Gate: a client jumps, and replicated
-   motion is asserted at the extraction boundary.
+   motion is asserted at the extraction boundary. **Landed.** Motion is asserted
+   through the components and derivation extraction queries match — a device-backed
+   `Extract` call is out of reach of a headless suite — and the jump path is
+   asserted through the action columns that carry it. Two live defects this phase
+   found and closed: a standing input backlog one redundancy window deep, and
+   local-only fields arriving zeroed on a snapshot-spawned entity.
 
 6. **Zone interest (G3).** Multi-source demand, per-peer zone grant/ack/revoke, zone
    baselines, late join, travel. Not required for the track gate — a single-zone map
@@ -671,6 +686,12 @@ which is ratified; this section owns the sequence and the gate.
 
 9. **Dedicated host and tooling (G7).** Packaged headless host configuration, the
    two-process CI soak, and PIE host-plus-join convenience.
+
+10. **Prediction (G-P). Split out 2026-08-08.** P1, the shared tick, has landed:
+   the authority publishes its simulation tick and a client names its own clock in
+   those terms, which is what lets a command ask for a tick and a prediction be
+   compared against one. P2 is local prediction with rollback and replay of the
+   owned pawn; P3 is error smoothing and prediction diagnostics.
 
 Version placement for G1 onward is the open question in `networking.md` Section 14:
 the recommendation is item 1 into v1.0 now with the rest gated as its own arc.
