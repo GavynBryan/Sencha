@@ -99,6 +99,9 @@ struct ResolvedMovementTuning
     float Drag = 0.0f;
     float GravityScale = 1.0f;
     float JumpSpeed = 5.5f;
+    // Seconds a jump locks out the next one. Part of movement feel, so it is
+    // resolved with the rest of it rather than authored somewhere else.
+    float JumpCooldownSeconds = 0.15f;
 };
 SENCHA_DECLARE_COMPONENT_TYPE(ResolvedMovementTuning, "sencha.resolved_movement_tuning");
 

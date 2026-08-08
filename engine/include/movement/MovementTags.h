@@ -20,12 +20,15 @@ class GameplayTagRegistry;
 struct MovementTags
 {
     GameplayTagId Controlled;
-    // Projected from SupportState by SupportTagProjectionSystem; the Jump gate.
-    // There is no airborne counterpart: it is the absence of this tag, and a
-    // query says so with None rather than a second tag tracking the same fact.
+    // Projected from SupportState by SupportTagProjectionSystem, for the systems
+    // that query locomotion state (animation, abilities, mode entry). There is
+    // no airborne counterpart: it is the absence of this tag, and a query says
+    // so with None rather than a second tag tracking the same fact.
+    //
+    // Jump does not read it. Jump reads SupportState directly, because a
+    // predicted step has to see the support the sweep just produced rather than
+    // a tag projected from the step before it.
     GameplayTagId Grounded;
-    GameplayTagId JumpRequested; // one-tick: granted on jump activation, consumed by jump execution
-    GameplayTagId JumpCooldown;  // blocks the Jump ability until its cooldown effect expires
 };
 
 // Register the movement.* tag hierarchy and return the resolved ids. Idempotent:

@@ -48,6 +48,7 @@ void RegisterMovementComponents(World& world)
     };
 
     ensure.template operator()<MovementIntent>();
+    ensure.template operator()<JumpState>();
     ensure.template operator()<KinematicState>();
     ensure.template operator()<SupportState>();
     ensure.template operator()<Immersion>();
@@ -79,39 +80,10 @@ void RegisterDefaultMovementAbilities(World& world)
     RegisterMovementComponents(world);
 
     AttributeRegistry& attrReg = world.GetResource<AttributeRegistry>();
-    EffectRegistry& effReg = world.GetResource<EffectRegistry>();
-    AbilityRegistry& abilityReg = world.GetResource<AbilityRegistry>();
-    const MovementTags tags = EnsureMovementTags(world);
+    (void)EnsureMovementTags(world);
 
     MovementDefs defs;
     defs.MoveSpeed = attrReg.RegisterAttribute("MoveSpeed", 0.0f, 100.0f, kDefaultMoveSpeed);
-
-    // Jump is authored data, not a code path: gated by grounded, blocked by its own
-    // cooldown tag, and its behavior is a short effect granting the one-tick request
-    // tag jump execution consumes. Cooldown outlives the request so grants
-    // never overlap.
-    EffectDefinition request;
-    request.Duration = EffectDuration::Duration;
-    request.DurationSeconds = 0.05f;
-    request.GrantedTags = { tags.JumpRequested };
-    const EffectId requestFx = effReg.Register("movement.jump.request", request);
-
-    // Just long enough to outlive the request effect and the granting tick at
-    // coarse fixed rates; anything longer eats into the landing-to-jump
-    // cadence of consecutive hops.
-    EffectDefinition cooldown;
-    cooldown.Duration = EffectDuration::Duration;
-    cooldown.DurationSeconds = 0.15f;
-    cooldown.GrantedTags = { tags.JumpCooldown };
-    const EffectId cooldownFx = effReg.Register("movement.jump.cooldown", cooldown);
-
-    AbilityDefinition jump;
-    jump.ActivationRequirements
-        .AddAll(tags.Grounded, GameplayTagMatchMode::Hierarchical)
-        .AddNone(tags.JumpCooldown);
-    jump.Cooldown = cooldownFx;
-    jump.OnActivate = requestFx;
-    defs.Jump = abilityReg.Register("movement.jump", jump);
 
     if (!world.HasResource<MovementDefs>())
         world.AddResource<MovementDefs>(defs);
@@ -149,8 +121,8 @@ void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAsset
 
     schedule.After<FreeLocomotionSystem, MovementTuningResolutionSystem>();
 
-    // Jump is an action contribution, so it runs after locomotion has produced
-    // the base output and before composition folds the channels together.
+    // Jump contributes over locomotion's base output, before composition folds
+    // the channels together.
     schedule.After<JumpExecutionSystem, FreeLocomotionSystem>();
     schedule.After<MotionCompositionSystem, JumpExecutionSystem>();
 

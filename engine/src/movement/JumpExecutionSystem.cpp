@@ -3,30 +3,51 @@
 #include <app/GameContexts.h>
 #include <ecs/StoragePartitionSet.h>
 #include <movement/MotionComposition.h>
-#include <movement/MovementTags.h>
 
+#include <algorithm>
 #include <cstdint>
-#include <utility>
 
-void JumpExecutionSystem::Step(World& world)
+bool StepJump(const SupportState& support,
+              const ResolvedMovementTuning& tuning,
+              bool jumpRequested,
+              float deltaSeconds,
+              JumpState& state,
+              float& upVelocityOut)
 {
-    Step(world, nullptr);
+    // Counts down whether or not a jump was asked for, so a step is a step.
+    state.CooldownRemaining =
+        std::max(0.0f, state.CooldownRemaining - deltaSeconds);
+
+    if (!jumpRequested)
+        return false;
+    if (support.Kind != SupportKind::Stable)
+        return false;
+    if (state.CooldownRemaining > 0.0f)
+        return false;
+
+    state.CooldownRemaining = tuning.JumpCooldownSeconds;
+    upVelocityOut = tuning.JumpSpeed;
+    return true;
+}
+
+void JumpExecutionSystem::Step(World& world, float deltaSeconds)
+{
+    Step(world, nullptr, deltaSeconds);
 }
 
 void JumpExecutionSystem::Step(
     World& world,
-    const StoragePartitionSet* partitions)
+    const StoragePartitionSet* partitions,
+    float deltaSeconds)
 {
-    if (!world.IsRegistered<GameplayTagContainer>()
+    if (!world.IsRegistered<JumpState>()
+        || !world.IsRegistered<MovementIntent>()
+        || !world.IsRegistered<SupportState>()
         || !world.IsRegistered<ResolvedMovementTuning>()
         || !world.IsRegistered<MotionAxisOverride>())
     {
         return;
     }
-    const MovementTags* ids =
-        std::as_const(world).TryGetResource<MovementTags>();
-    if (ids == nullptr)
-        return;
 
     if (LastWorld != &world)
     {
@@ -36,18 +57,24 @@ void JumpExecutionSystem::Step(
 
     const auto visit = [&](auto& view)
     {
-        auto tags = view.template Write<GameplayTagContainer>();
+        auto states = view.template Write<JumpState>();
+        const auto intents = view.template Read<MovementIntent>();
+        const auto supports = view.template Read<SupportState>();
         const auto tuning = view.template Read<ResolvedMovementTuning>();
+
         for (std::uint32_t i = 0; i < view.Count(); ++i)
         {
-            if (!tags[i].HasExact(ids->JumpRequested))
+            float up = 0.0f;
+            if (!StepJump(supports[i], tuning[i], intents[i].Jump, deltaSeconds,
+                          states[i], up))
+            {
                 continue;
+            }
 
             // First-write-wins: a jump loses to an action that already claimed
-            // the up channel this tick, and the tag is consumed either way so
-            // the request cannot fire twice.
-            (void)TrySetUpMotionOverride(world, view.Entity(i), tuning[i].JumpSpeed);
-            tags[i].Revoke(ids->JumpRequested);
+            // the up channel this tick. The cooldown is spent either way, which
+            // is what stops a held key retrying every tick.
+            (void)TrySetUpMotionOverride(world, view.Entity(i), up);
         }
     };
 
@@ -59,5 +86,6 @@ void JumpExecutionSystem::Step(
 
 void JumpExecutionSystem::FixedLogic(FixedLogicContext& ctx)
 {
-    Step(ctx.Entities, &ctx.Partitions);
+    Step(ctx.Entities, &ctx.Partitions,
+         static_cast<float>(ctx.Time.DeltaSeconds));
 }

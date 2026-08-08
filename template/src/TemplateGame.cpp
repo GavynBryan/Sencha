@@ -34,6 +34,7 @@
 #include <math/geometry/3d/Transform3d.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MovementDefs.h>
+#include <movement/JumpState.h>
 #include <movement/MovementComponents.h>
 #include <movement/MovementIntent.h>
 #include <movement/MovementProfileBindingCache.h>
@@ -305,10 +306,11 @@ void BuildPawnBody(
         pawnAttributes.Add(movementDefs->MoveSpeed, 4.5f);
     ensure(pawnAttributes);
 
-    AbilitySet pawnAbilities{};
-    if (movementDefs != nullptr)
-        pawnAbilities.Grant(movementDefs->Jump);
-    ensure(pawnAbilities);
+    // Jump is not here: it steers the body, so it lives in the movement step
+    // where a predicted tick can replay it. AbilitySet is what a pawn's
+    // authority-validated actions would be granted through.
+    ensure(AbilitySet{});
+    ensure(JumpState{});
 
     // The pawn aims; a camera presents it. Every pawn has an orientation --
     // a remote player is aiming somewhere too, and that is what makes their
@@ -487,12 +489,12 @@ struct WorldPartitionUpdateSystem
         const Vec3d safe = *PendingSafePosition;
         PendingSafePosition.reset();
 
+        // Through the mover, never onto the transform alone: a character's
+        // position lives inside its mover and the transform is where the last
+        // sweep left a copy, so writing the copy is undone by the next tick.
         bool moved = false;
-        if (world.HasResource<CharacterMoverPool>())
-        {
-            moved = world.GetResource<CharacterMoverPool>().SetPosition(
-                world, Pawn, safe);
-        }
+        if (Movers != nullptr)
+            moved = Movers->SetPosition(world, Pawn, safe);
         if (!moved)
         {
             if (LocalTransform* transform = world.TryGet<LocalTransform>(Pawn))
@@ -507,6 +509,9 @@ struct WorldPartitionUpdateSystem
     std::optional<AsyncZoneLoader>& Loader;
     RuntimeWorld& Runtime;
     EntityId& Pawn;
+    // Owned by the physics step, which is where characters live. Null in a
+    // configuration with no physics, where the transform is all there is.
+    CharacterMoverPool* Movers = nullptr;
     // Set by streaming on the wall clock, consumed by the next fixed tick.
     std::optional<Vec3d> PendingSafePosition;
 };
@@ -558,11 +563,7 @@ struct CharacterInputSystem
 
         const MovementTags* tags =
             world.TryGetResource<MovementTags>();
-        const MovementDefs* defs =
-            world.TryGetResource<MovementDefs>();
-        AbilityActivationQueue* activations =
-            world.TryGetResource<AbilityActivationQueue>();
-        if (tags == nullptr || defs == nullptr)
+        if (tags == nullptr)
             return;
 
         const TemplateInputActions* actionIds =
@@ -607,11 +608,11 @@ struct CharacterInputSystem
                 const float forward = move.Y;
 
                 // Whichever moment the action set authored. Jump authors "while
-                // held": queueing the ability every tick while the control is
-                // down means a press just before landing fires on the first
-                // grounded tick, and holding it hops again on each landing. The
-                // activation gate (grounded, cooldown) rejects the rest for
-                // free.
+                // held": asking every tick the control is down means a press
+                // just before landing fires on the first grounded tick, and
+                // holding it hops again on each landing. The gate in the
+                // movement step (on the ground, off cooldown) rejects the rest
+                // for free.
                 const bool jump = input.Fired(actionIds->Jump);
 
                 const Quatf frame = Quatf::FromAxisAngle(
@@ -625,11 +626,7 @@ struct CharacterInputSystem
                     wish = wish * (1.0f / std::sqrt(squared));
 
                 intents[index].WishDir = wish;
-                if (jump && activations != nullptr)
-                {
-                    activations->Pending.push_back(
-                        { view.Entity(index), defs->Jump });
-                }
+                intents[index].Jump = jump;
             }
         });
     }
@@ -1615,11 +1612,14 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
         players.LocalPawn = PlayerPawn;
     }
 
-    ctx.Schedule.Register<WorldPartitionUpdateSystem>(
-        Partition,
-        ZoneLoader,
-        GetEngine().World(),
-        PlayerPawn);
+    WorldPartitionUpdateSystem& partitionUpdate =
+        ctx.Schedule.Register<WorldPartitionUpdateSystem>(
+            Partition,
+            ZoneLoader,
+            GetEngine().World(),
+            PlayerPawn);
+    if (PhysicsStepSystem* step = ctx.Schedule.Get<PhysicsStepSystem>())
+        partitionUpdate.Movers = &step->GetCharacterMovers();
 #ifdef SENCHA_ENABLE_COOK
     ctx.Schedule.Register<HotReloadPollSystem>(HotReloadWatcher, HotReloader);
 #endif

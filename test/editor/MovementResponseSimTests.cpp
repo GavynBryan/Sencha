@@ -9,6 +9,7 @@
 #include <movement/JumpExecutionSystem.h>
 #include <movement/MotionComposition.h>
 #include <movement/MovementComponents.h>
+#include <movement/JumpState.h>
 #include <movement/MovementIntent.h>
 #include <movement/MovementProfileData.h>
 #include <movement/MovementProfileRuntime.h>
@@ -66,6 +67,10 @@ namespace
         GameplayTagRegistry* Tags = nullptr;
         LocomotionModeRegistry* Modes = nullptr;
         MovementTags Ids{};
+        // Authored tuning keys on tag names, so a profile can react to a state
+        // the engine does not mint itself. This one stands for a game granting
+        // it; the engine's jump reads SupportState directly.
+        GameplayTagId JumpStartup{};
         LocomotionModeId Free;
         EntityId Entity;
 
@@ -90,7 +95,10 @@ namespace
             Modes = &WorldState.AddResource<LocomotionModeRegistry>(*Tags);
             Free = Modes->RegisterFree();
             Ids = RegisterMovementTags(*Tags);
+            JumpStartup = Tags->RegisterTag("movement.jump.requested")
+                              .value_or(GameplayTagId{});
             WorldState.AddResource<MovementTags>(Ids);
+            WorldState.RegisterComponent<JumpState>();
 
             Entity = WorldState.CreateEntity();
             WorldState.AddComponent<GameplayTagContainer>(Entity, {});
@@ -102,6 +110,7 @@ namespace
             WorldState.AddComponent<MotionAxisOverride>(Entity, {});
             WorldState.AddComponent<MotionImpulse>(Entity, {});
             WorldState.AddComponent<MotionRequest>(Entity, {});
+            WorldState.AddComponent<JumpState>(Entity, {});
             // Free locomotion only drives characters whose mode is the free one.
             WorldState.AddComponent<CharacterMovement>(Entity, CharacterMovement{ .Mode = Free });
         }
@@ -123,10 +132,11 @@ namespace
 
             GameplayTagContainer& tags = *WorldState.TryGet<GameplayTagContainer>(Entity);
             if (jumpRequested)
-                tags.Grant(Ids.JumpRequested);
+                tags.Grant(JumpStartup);
+            WorldState.TryGet<MovementIntent>(Entity)->Jump = jumpRequested;
 
             Locomotion.Step(WorldState, kDt);
-            Jump.Step(WorldState);
+            Jump.Step(WorldState, kDt);
             Composition.Step(WorldState);
 
             const Vec3d velocity = WorldState.TryGet<MotionRequest>(Entity)->Velocity;
@@ -233,13 +243,17 @@ TEST(MovementResponseSim, LaunchTickResolvesGroundedWithTheJumpTag)
     ASSERT_NE(compiled, nullptr);
 
     GameplayTagRegistry tags;
-    const MovementTags ids = RegisterMovementTags(tags);
+    (void)RegisterMovementTags(tags);
+    // The profile keys a layer on a tag the engine does not mint; a game
+    // granting it would have registered it, and binding refuses names it
+    // cannot resolve.
+    (void)tags.RegisterTag("movement.jump.requested");
     const MovementProfileBindResult bound = BindMovementProfile(
         *compiled, tags, [](std::string_view) { return LocomotionModeId{ 1 }; });
     ASSERT_TRUE(bound.IsValid()) << bound.Error;
 
     GameplayTagContainer active;
-    active.Grant(ids.JumpRequested);
+    active.Grant(tags.RegisterTag("movement.jump.requested").value_or(GameplayTagId{}));
     MovementResolveContext context;
     context.Support = SupportKind::Stable;
     context.Mode = LocomotionModeId{ 1 };
@@ -265,6 +279,10 @@ TEST(MovementResponseSim, SpeedResponseSettlesAtTheAuthoredTopSpeed)
 
     GameplayTagRegistry tags;
     (void)RegisterMovementTags(tags);
+    // The profile keys a layer on a tag the engine does not mint; a game
+    // granting it would have registered it, and binding refuses names it
+    // cannot resolve.
+    (void)tags.RegisterTag("movement.jump.requested");
     const MovementProfileBindResult bound = BindMovementProfile(
         *compiled, tags, [](std::string_view) { return LocomotionModeId{ 1 }; });
     ASSERT_TRUE(bound.IsValid()) << bound.Error;

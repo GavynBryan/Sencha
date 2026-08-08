@@ -9,6 +9,7 @@
 #include <movement/MovementDefs.h>
 #include <assets/data/DataAssetCache.h>
 #include <movement/MovementComponents.h>
+#include <movement/JumpState.h>
 #include <movement/MovementIntent.h>
 #include <movement/MovementRegistration.h>
 #include <movement/MovementTags.h>
@@ -55,14 +56,8 @@ struct TestInputSystem
                 ctx.Entities.TryGet<MovementIntent>(Pawn))
         {
             intent->WishDir = Vec3d(1.0f, 0.0f, 0.0f);
+            intent->Jump = true;
         }
-
-        const MovementDefs* defs =
-            ctx.Entities.TryGetResource<MovementDefs>();
-        AbilityActivationQueue* queue =
-            ctx.Entities.TryGetResource<AbilityActivationQueue>();
-        if (defs != nullptr && queue != nullptr)
-            queue->Pending.push_back({ Pawn, defs->Jump });
     }
 
     EntityId Pawn;
@@ -79,8 +74,7 @@ EntityId SpawnControlledPawn(World& world)
     world.AddComponent<KinematicState>(pawn, KinematicState{});
 
     // Stable support is the physical fact the whole tick reads: it gates the
-    // jump ability through the projected tag and keeps gravity out of the
-    // locomotion result.
+    // jump and keeps gravity out of the locomotion result.
     SupportState support;
     support.Kind = SupportKind::Stable;
     world.AddComponent<SupportState>(pawn, support);
@@ -104,14 +98,13 @@ EntityId SpawnControlledPawn(World& world)
     attributes.Add(defs.MoveSpeed, 6.0f);
     world.AddComponent<AttributeSet>(pawn, attributes);
 
-    AbilitySet abilities;
-    abilities.Grant(defs.Jump);
-    world.AddComponent<AbilitySet>(pawn, abilities);
+    world.AddComponent<AbilitySet>(pawn, AbilitySet{});
+    world.AddComponent<JumpState>(pawn, JumpState{});
     return pawn;
 }
 } // namespace
 
-TEST(GameplayPipeline, OrdersInputModeAbilityJumpResolveLocomotionAndLifetime)
+TEST(GameplayPipeline, OrdersInputModeResolveLocomotionJumpAndComposition)
 {
     GameplayScheduleHarness harness;
     const EntityId pawn = SpawnControlledPawn(harness.WorldState);
@@ -150,11 +143,14 @@ TEST(GameplayPipeline, OrdersInputModeAbilityJumpResolveLocomotionAndLifetime)
     ASSERT_NE(request, nullptr);
     ASSERT_NE(contributions, nullptr);
 
-    // Support projected its tag, which is what let the jump ability activate;
-    // the one-tick request tag was consumed and the cooldown is holding.
+    // Support projected its tag for the systems that query locomotion state.
     EXPECT_TRUE(tagContainer->HasExact(tags.Grounded));
-    EXPECT_FALSE(tagContainer->HasExact(tags.JumpRequested));
-    EXPECT_TRUE(tagContainer->HasExact(tags.JumpCooldown));
+
+    // The jump fired off the same support the sweep produces, and spent its
+    // cooldown, which is what stops a held key firing again next tick.
+    const JumpState* jump = harness.WorldState.TryGet<JumpState>(pawn);
+    ASSERT_NE(jump, nullptr);
+    EXPECT_GT(jump->CooldownRemaining, 0.0f);
 
     // Input reached locomotion, and composition folded the jump's up-axis
     // contribution over it into the single motor request.
