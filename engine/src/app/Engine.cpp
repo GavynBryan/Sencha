@@ -401,6 +401,7 @@ NetSession* Engine::CreateNetSession(INetTransport& transport)
     NetStatsState.Reset();
     NetClockState.Reset();
     PredictionState.Reset();
+    InterpolationState.Reset();
     return NetState.get();
 }
 
@@ -413,6 +414,7 @@ void Engine::DestroyNetSession()
     NetStatsState.Reset();
     NetClockState.Reset();
     PredictionState.Reset();
+    InterpolationState.Reset();
 }
 
 DefaultRenderPipeline* Engine::GetRenderPipeline()
@@ -680,8 +682,8 @@ void Engine::CreateDebugOverlay()
     overlay->AddPanel<TimingPanel>(TimingData);
     // Registered once for the process; the session it reads comes and goes.
     overlay->AddPanel<NetStatsPanel>(NetState, NetStatsState, NetClockState,
-                                     PredictionState, PeerCommandState,
-                                     ConsoleState->Registry());
+                                     PredictionState, InterpolationState,
+                                     PeerCommandState, ConsoleState->Registry());
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     overlay->AddPanel<RenderStatsPanel>(
         ActiveProfileMode, RenderStatsRing, ConsoleState->Registry());

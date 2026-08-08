@@ -206,8 +206,10 @@ void PredictionRecordSystem::PostFixed(PostFixedContext& ctx)
 
 void RegisterNetSystems(EngineSchedule& schedule, PeerCommandRuntime& commands,
                         ClientPrediction& prediction,
+                        ReplicationInterpolation& interpolation,
                         const NetTickEstimator& clock)
 {
     schedule.Register<PeerCommandFeedSystem>(commands);
+    schedule.Register<ReplicationInterpolationSystem>(interpolation, prediction, clock);
     schedule.Register<PredictionRecordSystem>(prediction, clock);
 }

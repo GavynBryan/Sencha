@@ -113,10 +113,19 @@ bool NetSession::Connect(const NetAddress& authority, const NetIdentity& identit
     Failure = NetJoinFailure::None;
     FailureReason.clear();
 
+    SendHello();
+    return true;
+}
+
+void NetSession::SendHello()
+{
+    // Re-arms the challenge gate: a retry is asking to be challenged again, and
+    // the answer to the previous ask may simply have been lost.
+    AwaitingChallenge = true;
+
     Scratch scratch{};
     const NetHello hello{ .ProtocolVersion = kNetProtocolVersion };
     SendRaw(AuthorityAddress, NetEncodeHello(hello, scratch));
-    return true;
 }
 
 void NetSession::Disconnect(std::string_view reason)
@@ -280,6 +289,43 @@ void NetSession::HandleAuthorityMessage(const NetDatagram& datagram,
             if (type == NetMessageType::Disconnect)
             {
                 known->State = NetPeerState::Disconnected;
+                return;
+            }
+            // A peer that is already admitted here but still handshaking on its
+            // own side lost the accept, and is asking again. Answering is what
+            // closes that: the alternative is a client that retries until its
+            // connect window runs out while the authority holds a peer it
+            // believes is live, and every retry falls through to the channel
+            // layer as garbage and earns a strike on the way.
+            //
+            // Both answers are idempotent. The challenge is a pure function of
+            // the address, and the accept repeats the id this peer already has,
+            // so neither admits anyone twice nor raises a second joined event.
+            if (type == NetMessageType::Hello)
+            {
+                known->LastHeardSeconds = nowSeconds;
+                const NetChallenge challenge{ .Cookie = CookieFor(datagram.From) };
+                SendRaw(datagram.From, NetEncodeChallenge(challenge, scratch));
+                return;
+            }
+            if (type == NetMessageType::CookieEcho)
+            {
+                NetCookieEcho echo;
+                if (NetDecodeCookieEcho(datagram.Payload, echo) != NetDecodeError::None
+                    || echo.Cookie != CookieFor(datagram.From))
+                {
+                    Strike(*known, "malformed handshake repeat");
+                    return;
+                }
+                known->LastHeardSeconds = nowSeconds;
+                const NetAccept accept{
+                    .PeerId = known->Id.Value,
+                    .ModuleFingerprint = LocalIdentity.ModuleFingerprint,
+                    .WorldIdentity = LocalIdentity.WorldIdentity,
+                    .FixedTickRateMilliHz = LocalIdentity.FixedTickRateMilliHz,
+                    .AuthorityTick = LocalTickIndex,
+                };
+                SendRaw(datagram.From, NetEncodeAccept(accept, scratch));
                 return;
             }
             if (type == NetMessageType::Ping)
@@ -620,6 +666,8 @@ std::vector<NetSession::Delivery> NetSession::Pump(double nowSeconds)
             {
                 ConnectClockArmed = true;
                 ConnectStartedSeconds = nowSeconds;
+                // Connect sent one already; the retry cadence runs from it.
+                LastHandshakeSentSeconds = nowSeconds;
             }
             else if ((nowSeconds - ConnectStartedSeconds) > TimeoutSeconds)
             {
@@ -627,6 +675,15 @@ std::vector<NetSession::Delivery> NetSession::Pump(double nowSeconds)
                 FailureReason = "no response from authority";
                 CurrentRole = NetSessionRole::Standalone;
                 Transport.Close();
+            }
+            else if ((nowSeconds - LastHandshakeSentSeconds) >= HandshakeRetrySeconds())
+            {
+                // Starting the handshake over rather than resuming it, because
+                // the authority holds no state to resume from until the cookie
+                // comes back -- that is what makes a challenge cheap to ask for
+                // again.
+                LastHandshakeSentSeconds = nowSeconds;
+                SendHello();
             }
         }
         else if ((nowSeconds - AuthorityLastHeardSeconds) > TimeoutSeconds)

@@ -726,6 +726,21 @@ Per-tick application keeps remote motion smooth at snapshot cadence; sub-tick
 presentation smoothing arrives free once Section 3.1's alpha is real and transforms
 interpolate at extraction.
 
+*LANDED as `ReplicationInterpolation`, with two deviations from the description
+above.* Poses are held per entity rather than per scope, because the applier
+already works entity by entity and a scope-wide buffer would need its own index
+into one. And the presented tick is `AuthorityTickAt(local) - FlightTicks() -
+net.interp_delay_ticks` rather than the estimate minus the cvar alone: the
+estimate names where the authority is *now*, so a delay measured only from there
+lands ahead of the newest sample that can physically have arrived, and every
+resolve holds instead of blending. The flight term is what puts the presented
+tick at the newest arrival, and the cvar is the margin on top of it.
+
+Only `LocalTransform` is intercepted. The rest of a mirrored entity's state still
+lands normally, and the applier still adds the component on the spawn snapshot --
+seeded from the authority's value -- because the buffer writes the presented pose
+into it every tick and cannot write into a column the entity never gained.
+
 A snapshot that references a zone the client has not finished loading cannot occur
 by protocol (grants gate replication, Section 8.2); the applier treats it as a
 protocol violation, not a queue-and-hope case.
@@ -1421,6 +1436,38 @@ what extraction actually reads.
 
   *P3, error smoothing and diagnostics: not started.* Corrections blended over
   several frames rather than snapped, with prediction error on the stats panel.
+
+  *Degraded-link soak: LANDED (`test/net/NetDegradedLinkTests.cpp`).* Two
+  sessions over `SimulatedTransport` at a seeded impairment schedule, stepped a
+  tick at a time: handshake, keepalives, measured round trips, and commands, with
+  loss, delay, jitter, and reordering applied. `NetImpairment` gained
+  `LatencySteps`/`JitterSteps` to make it possible — the transport modelled loss,
+  duplication, and reorder, but not the delay that prediction exists for. It
+  found three defects that every mechanism's own unit test had passed over:
+
+  1. *The join failed outright under loss.* `Connect` sent one `Hello` and never
+     repeated it, so a single lost datagram in any of the four handshake legs
+     failed the join permanently (~59% of attempts at 20% loss). Retried on a
+     cadence now, and the authority answers a repeated `Hello`/`CookieEcho` from
+     an admitted peer instead of feeding it to the channel layer as garbage and
+     striking the peer for it.
+  2. *The command stamp chased raw jitter.* `NetTickEstimator` slewed `Delta` but
+     assigned `Flight` straight from each measured round trip, and the stamp is
+     their sum — so the jumping the slew exists to prevent happened anyway.
+     Flight now rises at once and decays a tick at a time.
+  3. *Not a defect, recorded because it looks like one.* The command buffer's
+     target depth is a ceiling, not a floor; see the note on
+     `NetPeerCommandBuffer`. Making it hold records back to build the depth
+     deliberately measured worse, not better.
+
+  Not covered: replication does not run in the soak, so the shared clock is fed
+  by keepalives rather than by snapshots.
+
+  *Remote-entity interpolation: LANDED* (`ReplicationInterpolation`, Section 7).
+  It was the gap the soak's findings pointed at -- the own-pawn path had just
+  been made steadier while everything a client mirrors still stepped whenever a
+  datagram landed, which is the same jitter seen by every player watching rather
+  than by the one with the bad connection.
 
 - **G6. Hardening.** Crypto and auth token seam (owner decision executed); rate
   budgets and strike enforcement; malformed-traffic soak in both directions

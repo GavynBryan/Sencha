@@ -1588,7 +1588,8 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     RegisterCameraSystem(ctx.Schedule);
     RegisterControllerSystems(ctx.Schedule);
     RegisterNetSystems(ctx.Schedule, GetEngine().PeerCommands(),
-                       GetEngine().Prediction(), GetEngine().NetClock());
+                       GetEngine().Prediction(), GetEngine().Interpolation(),
+                       GetEngine().NetClock());
     ctx.Schedule.Register<CharacterInputSystem>();
 
     // Everything that reads actions runs after they are resolved: the aim

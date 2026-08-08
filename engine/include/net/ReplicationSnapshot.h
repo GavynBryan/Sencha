@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
+class ReplicationInterpolation;
 class World;
 class WorldComponentSchema;
 
@@ -80,20 +81,7 @@ private:
 
 //-----------------------------------------------------------------------------
 // The authority's identity mint and its map into its own world.
-//
-// EntityId is a generational handle with no std::hash of its own, so the map
-// brings its own: index and generation folded together, because a recycled slot
-// is a different entity and must not collide with the one it replaced.
 //-----------------------------------------------------------------------------
-struct EntityIdHash
-{
-    [[nodiscard]] std::size_t operator()(EntityId entity) const
-    {
-        return (static_cast<std::size_t>(entity.Index) << 32)
-             ^ static_cast<std::size_t>(entity.Generation);
-    }
-};
-
 class ReplicationAuthorityIdentity
 {
 public:
@@ -215,6 +203,11 @@ struct SnapshotApplyRequest
     // written, because the world's copy is what this machine produced and the
     // arriving one is the authority's argument with it.
     ClientPrediction* Prediction = nullptr;
+    // What this machine mirrors rather than simulates, or null to write arriving
+    // poses straight to the world. A mirrored entity's pose is handed here
+    // rather than written, because the tick it describes is not the tick this
+    // machine is about to draw.
+    ReplicationInterpolation* Interpolation = nullptr;
     // What a newly spawned entity becomes beyond its replicated state. Null
     // means an entity is only what the wire said, which leaves it with no
     // derived columns and nothing to draw it -- valid for a test, wrong for a

@@ -4,6 +4,7 @@
 #include <ecs/World.h>
 #include <ecs/WorldComponentSchema.h>
 #include <net/NetReplicationComponents.h>
+#include <net/ReplicationInterpolation.h>
 #include <world/transform/DerivedTransform.h>
 
 #include <algorithm>
@@ -362,6 +363,10 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
 
         const EntityId entity = identity.TryResolve(id);
         identity.Unbind(id);
+        // Poses held for an entity that is gone describe nothing, and the handle
+        // will be handed out again to something else.
+        if (request.Interpolation != nullptr && entity.IsValid())
+            request.Interpolation->Forget(entity);
         // An identity this client never had is not an error: it can be an
         // entity destroyed before the client was ever told it existed.
         if (entity.IsValid() && world.IsAlive(entity))
@@ -462,6 +467,56 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
                 // tick, not the component.
                 if (const auto correction = request.Prediction->Commit(result.Tick))
                     result.Prediction = correction;
+                continue;
+            }
+
+            // Everything this machine mirrors rather than simulates. The pose is
+            // held with the tick it describes instead of written, because the
+            // tick it describes is behind the one about to be drawn, and writing
+            // it now is what makes a mirrored entity step whenever its datagram
+            // was late.
+            // Never the pawn this machine simulates for itself, whether or not
+            // it is currently correcting it: with prediction off the local pawn
+            // still runs its own movement here, and holding its pose back would
+            // leave the authority's word with nowhere to land.
+            const bool ownPawn = request.Prediction != nullptr
+                              && request.Prediction->Predicts(entity);
+            if (request.Interpolation != nullptr && !ownPawn
+                && request.Interpolation->Intercepts(component->Type))
+            {
+                const std::span<std::byte> shadow =
+                    request.Interpolation->AuthoritativeBytes(entity);
+                if (shadow.size() != component->Size)
+                {
+                    result.Error = SnapshotApplyError::UnknownComponentStorage;
+                    return result;
+                }
+                if (!request.Interpolation->HasAuthoritativeState(entity)
+                    && !schema.WriteDefaultBytes(component->Type, shadow))
+                {
+                    result.Error = SnapshotApplyError::UnknownComponentStorage;
+                    return result;
+                }
+                if (!ReplicationDecodeComponent(*component, reader, shadow))
+                {
+                    result.Error = SnapshotApplyError::Truncated;
+                    return result;
+                }
+                request.Interpolation->Commit(entity, result.Tick);
+
+                // The component still has to exist, because presenting a pose
+                // means writing into it every tick and nothing can be written
+                // into a column the entity never gained. Seeded from the
+                // authority's own value the first time, so a newly mirrored
+                // entity appears where it belongs rather than at the origin and
+                // then slides in from there.
+                if (!world.HasComponent(entity,
+                                        world.GetComponentIdByType(component->Type))
+                    && !schema.ImportComponent(world, entity, component->Type, shadow))
+                {
+                    result.Error = SnapshotApplyError::ComponentAddFailed;
+                    return result;
+                }
                 continue;
             }
 

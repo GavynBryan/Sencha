@@ -5,6 +5,7 @@
 #include <memory>
 
 class ClientPrediction;
+class ReplicationInterpolation;
 class ConsoleRegistry;
 class NetSession;
 class NetStats;
@@ -35,6 +36,7 @@ public:
                   const NetStats& traffic,
                   const NetTickEstimator& clock,
                   const ClientPrediction& prediction,
+                  const ReplicationInterpolation& interpolation,
                   PeerCommandRuntime& commands,
                   ConsoleRegistry& console);
 
@@ -45,6 +47,7 @@ private:
     const NetStats& Traffic;
     const NetTickEstimator& Clock;
     const ClientPrediction& Prediction;
+    const ReplicationInterpolation& Interpolation;
     PeerCommandRuntime& Commands;
     ConsoleRegistry& Console;
 };

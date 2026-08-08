@@ -7,6 +7,7 @@
 #include <net/NetReplicationComponents.h>
 #include <ecs/Query.h>
 #include <net/NetSpawnRecipe.h>
+#include <net/ReplicationInterpolation.h>
 #include <net/ReplicationSnapshot.h>
 #include <world/transform/TransformHistory.h>
 #include <world/RuntimeComponentSchema.h>
@@ -55,7 +56,8 @@ namespace
         // the client. Returns the bytes it took.
         std::size_t Replicate(std::uint32_t ownerPeer = 0,
                               const NetSpawnRecipes* recipes = nullptr,
-                              ClientPrediction* prediction = nullptr)
+                              ClientPrediction* prediction = nullptr,
+                              ReplicationInterpolation* interpolation = nullptr)
         {
             ++Tick;
             SnapshotWriteRequest write;
@@ -76,6 +78,7 @@ namespace
             apply.Identity = &ClientIdentity;
             apply.Recipes = recipes;
             apply.Prediction = prediction;
+            apply.Interpolation = interpolation;
 
             LastApply = ReplicationApplySnapshot(
                 apply, std::span(Scratch).subspan(0, LastWrite.BytesWritten));
@@ -432,6 +435,137 @@ TEST(ReplicationPrediction, OtherPlayersPawnsStillArriveAsState)
     EXPECT_FLOAT_EQ(
         pair.Client.TryGet<LocalTransform>(theirMirror)->Value.Position.X, 42.0f)
         << "a puppet has to be drawn where the authority says it is";
+}
+
+//=============================================================================
+// Poses held rather than written
+//
+// The applier's half of interpolation. The unit tests pin what the buffer does
+// with poses it is given; these pin that the applier gives it the right ones and
+// keeps them out of the world in the meantime.
+//=============================================================================
+
+TEST(ReplicationInterpolationApply, AMirroredPoseIsHeldInsteadOfWritten)
+{
+    Pair pair;
+    ReplicationInterpolation interpolation;
+
+    const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Replicate(0, nullptr, nullptr, &interpolation);
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+
+    pair.Authority.TryGet<LocalTransform>(authority)->Value.Position =
+        Vec3d{ 9.0f, 0.0f, 0.0f };
+    const std::uint64_t moved = pair.Tick + 1;
+    pair.Replicate(0, nullptr, nullptr, &interpolation);
+
+    EXPECT_EQ(interpolation.TrackedCount(), 1u)
+        << "the applier never handed the pose to the buffer, so nothing will "
+           "present it";
+
+    const auto held = interpolation.Resolve(mirror, moved);
+    ASSERT_TRUE(held.has_value());
+    EXPECT_FLOAT_EQ(held->Value.Position.X, 9.0f);
+
+    // And the world still holds whatever it did: writing the arriving pose here
+    // is exactly the stepping the buffer exists to replace.
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
+                    0.0f)
+        << "the arriving pose was written straight to the world as well, so the "
+           "entity steps to it and is then blended from it";
+}
+
+// What the world's copy is doing cannot reach the held pose. Today the transport
+// of this is trivial -- a transform arrives whole or not at all -- but the
+// staging source is the part that would stop being trivial the moment the
+// schema splits position from rotation, and this is where that would show.
+TEST(ReplicationInterpolationApply, TheHeldPoseComesFromTheWireNotTheWorld)
+{
+    Pair pair;
+    ReplicationInterpolation interpolation;
+
+    const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Replicate(0, nullptr, nullptr, &interpolation);
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+
+    // Dragged somewhere the authority never put it, which is what presenting a
+    // blend does to this component every tick.
+    pair.Client.TryGet<LocalTransform>(mirror)->Value.Position =
+        Vec3d{ -50.0f, -50.0f, -50.0f };
+
+    pair.Authority.TryGet<LocalTransform>(authority)->Value.Position =
+        Vec3d{ 6.0f, 0.0f, 4.0f };
+    const std::uint64_t moved = pair.Tick + 1;
+    pair.Replicate(0, nullptr, nullptr, &interpolation);
+
+    const auto held = interpolation.Resolve(mirror, moved);
+    ASSERT_TRUE(held.has_value());
+    EXPECT_FLOAT_EQ(held->Value.Position.X, 6.0f);
+    EXPECT_FLOAT_EQ(held->Value.Position.Y, 0.0f);
+    EXPECT_FLOAT_EQ(held->Value.Position.Z, 4.0f);
+}
+
+// Prediction off does not mean the local pawn becomes a mirrored one. It is
+// still simulated here -- its movement systems run either way -- so its pose has
+// to land in the world as it did before prediction existed. Held back instead,
+// the authority's word would have nowhere to go and the pawn would answer to
+// nothing but this machine.
+TEST(ReplicationInterpolationApply, TheOwnPawnIsNeverMirroredEvenWithPredictionOff)
+{
+    Pair pair;
+    ClientPrediction prediction;
+    ReplicationInterpolation interpolation;
+
+    const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Replicate(0, nullptr, &prediction, &interpolation);
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+
+    prediction.SetPredicted(mirror);
+    prediction.SetEnabled(false);
+
+    pair.Authority.TryGet<LocalTransform>(authority)->Value.Position =
+        Vec3d{ 3.0f, 0.0f, 0.0f };
+    pair.Replicate(0, nullptr, &prediction, &interpolation);
+
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
+                    3.0f)
+        << "the pawn this machine simulates was mirrored instead of written, so "
+           "the authority's pose reached neither the world nor anything that "
+           "would present it";
+
+    // A track from before adoption is expected -- a client cannot know which
+    // pawn is its own until the ownership arrives, and the presenting system
+    // drops it on the first tick after that. What must not happen is this
+    // snapshot adding to it.
+    const auto held = interpolation.Resolve(mirror, pair.Tick);
+    if (held.has_value())
+    {
+        EXPECT_FLOAT_EQ(held->Value.Position.X, 0.0f)
+            << "the own pawn's pose was fed to the buffer as well, so two "
+               "mechanisms now hold an opinion about where it is";
+    }
+}
+
+TEST(ReplicationInterpolationApply, ADestroyedEntityStopsBeingHeld)
+{
+    Pair pair;
+    ReplicationInterpolation interpolation;
+
+    const EntityId authority = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+    pair.Replicate(0, nullptr, nullptr, &interpolation);
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+    ASSERT_EQ(interpolation.TrackedCount(), 1u);
+
+    pair.Authority.DestroyEntity(authority);
+    pair.Replicate(0, nullptr, nullptr, &interpolation);
+
+    EXPECT_EQ(interpolation.TrackedCount(), 0u)
+        << "poses kept for a destroyed entity would be inherited by whatever "
+           "the handle is handed out to next";
 }
 
 //=============================================================================

@@ -111,6 +111,14 @@ std::size_t NetEncodePlayerCommand(const NetPlayerCommand& command,
 // authority never ran -- and depth that persists above a small slack is
 // collapsed into the next record handed out, edges carried, so shedding
 // backlog cannot eat a tap that lived in a shed tick.
+//
+// The target depth is a ceiling and not a floor, which is easy to read the
+// wrong way round. The queue fills on its own from the ticks that arrive
+// several at a time on a jittery link, and the collapse is what stops it
+// filling past the target; nothing holds a record back to build depth
+// deliberately. Adding that costs more than it buys -- every dry spell would be
+// followed by the target's worth of further starved ticks while the depth was
+// rebuilt, on exactly the connections that run dry most.
 //=============================================================================
 class NetPeerCommandBuffer
 {

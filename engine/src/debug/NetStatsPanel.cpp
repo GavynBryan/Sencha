@@ -60,12 +60,14 @@ NetStatsPanel::NetStatsPanel(const std::unique_ptr<NetSession>& session,
                              const NetStats& traffic,
                              const NetTickEstimator& clock,
                              const ClientPrediction& prediction,
+                             const ReplicationInterpolation& interpolation,
                              PeerCommandRuntime& commands,
                              ConsoleRegistry& console)
     : Session(session)
     , Traffic(traffic)
     , Clock(clock)
     , Prediction(prediction)
+    , Interpolation(interpolation)
     , Commands(commands)
     , Console(console)
 {
@@ -162,6 +164,33 @@ void NetStatsPanel::Draw()
             ImGui::SetItemTooltip(
                 "Distance between where this machine put the pawn and where the "
                 "authority says it was, at the same tick.");
+        }
+
+        ImGui::SeparatorText("Interpolation");
+        if (!Interpolation.IsEnabled())
+        {
+            ImGui::TextUnformatted(
+                "off (net.interpolation) -- others step as snapshots land");
+        }
+        else if (Interpolation.TrackedCount() == 0)
+        {
+            ImGui::TextUnformatted("nothing mirrored yet");
+        }
+        else
+        {
+            // Held ticks are the tell. A few are ordinary; a rising share means
+            // the presented tick is running past the newest sample, which is
+            // the delay being too short for this connection rather than
+            // anything going wrong here.
+            ImGui::Text("%zu mirrored, %u tick delay  |  %" PRIu64
+                        " blended, %" PRIu64 " held of %" PRIu64,
+                        Interpolation.TrackedCount(), Interpolation.DelayTicks(),
+                        Interpolation.Interpolated(), Interpolation.Held(),
+                        Interpolation.Resolved());
+            ImGui::SetItemTooltip(
+                "Poses resolved between two snapshots, against poses that ran "
+                "past the newest one and stopped. Raise net.interp_delay_ticks "
+                "if held is climbing.");
         }
     }
 

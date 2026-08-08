@@ -3,6 +3,7 @@
 #include <app/GameContexts.h>
 #include <net/ClientPrediction.h>
 #include <net/NetPlayerCommand.h>
+#include <net/ReplicationInterpolation.h>
 #include <net/NetTickEstimator.h>
 #include <net/NetSession.h>
 
@@ -133,4 +134,5 @@ private:
 // something that is not known until a console command runs.
 void RegisterNetSystems(EngineSchedule& schedule, PeerCommandRuntime& commands,
                         ClientPrediction& prediction,
+                        ReplicationInterpolation& interpolation,
                         const NetTickEstimator& clock);

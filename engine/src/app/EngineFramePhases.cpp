@@ -247,7 +247,8 @@ void Engine::RegisterNetFramePhases()
                                            engine.RuntimeComponents(),
                                            engine.ReplicatedComponents(),
                                            &engine.SpawnRecipes(),
-                                           &engine.Prediction());
+                                           &engine.Prediction(),
+                                           &engine.Interpolation());
 
             // A correction moves the pawn by how far this machine was wrong,
             // not to where the authority was: everything simulated since that

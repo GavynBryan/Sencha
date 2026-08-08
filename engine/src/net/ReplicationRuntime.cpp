@@ -81,7 +81,8 @@ SnapshotApplyResult ReplicationRuntime::Apply(std::span<const std::byte> payload
                                               const WorldComponentSchema& schema,
                                               const ReplicationLayout& layout,
                                               const NetSpawnRecipes* recipes,
-                                              ClientPrediction* prediction)
+                                              ClientPrediction* prediction,
+                                              ReplicationInterpolation* interpolation)
 {
     SnapshotApplyResult result;
     if (payload.size() < kKindBytes)
@@ -99,6 +100,7 @@ SnapshotApplyResult ReplicationRuntime::Apply(std::span<const std::byte> payload
     request.Identity = &ClientMap;
     request.Recipes = recipes;
     request.Prediction = prediction;
+    request.Interpolation = interpolation;
 
     return ReplicationApplySnapshot(request, payload.subspan(kKindBytes));
 }

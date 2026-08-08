@@ -11,6 +11,7 @@
 #include <net/NetCVarSync.h>
 #include <net/NetSpawnRecipe.h>
 #include <net/ClientPrediction.h>
+#include <net/ReplicationInterpolation.h>
 #include <net/NetStats.h>
 #include <net/NetTickEstimator.h>
 #include <net/PeerCommandRuntime.h>
@@ -111,6 +112,17 @@ public:
     [[nodiscard]] const ClientPrediction& Prediction() const
     {
         return PredictionState;
+    }
+    // Everything else a client holds: mirrored along the authority's path at a
+    // small delay rather than moved whenever a datagram lands. Inert on an
+    // authority, which has nothing to mirror.
+    [[nodiscard]] ReplicationInterpolation& Interpolation()
+    {
+        return InterpolationState;
+    }
+    [[nodiscard]] const ReplicationInterpolation& Interpolation() const
+    {
+        return InterpolationState;
     }
 
     // What a replicated entity becomes on this machine. Registered by the game
@@ -310,6 +322,7 @@ private:
     NetStats NetStatsState;
     NetTickEstimator NetClockState;
     ClientPrediction PredictionState;
+    ReplicationInterpolation InterpolationState;
     NetSpawnRecipes SpawnRecipeState;
     std::unique_ptr<RuntimeWorld> RuntimeWorldState;
     RuntimeFrameLoop RuntimeLoop;

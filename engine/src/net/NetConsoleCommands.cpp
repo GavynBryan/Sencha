@@ -183,6 +183,53 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
     });
 
     registry.RegisterCVar({
+        .Name = "net.interpolation",
+        .Owner = "engine",
+        .Type = CVarType::Bool,
+        .DefaultValue = true,
+        .CurrentValue = true,
+        // Local to each client, for the same reason prediction is: it changes
+        // what this machine draws between snapshots and nothing the authority
+        // simulates.
+        .Flags = CVarFlags::Archive,
+        .Help = "Draw mirrored entities along the authority's path at a small "
+                "delay. Off steps them whenever a snapshot lands, which is "
+                "visible as stutter on any connection with jitter.",
+        .Source = { "engine defaults" },
+        .OnChange = [&engine](const CVarChangeContext& change) {
+            if (const bool* on = std::get_if<bool>(&change.NewValue))
+                engine.Interpolation().SetEnabled(*on);
+        },
+    });
+
+    registry.RegisterCVar({
+        .Name = "net.interp_delay_ticks",
+        .Owner = "engine",
+        .Type = CVarType::Int,
+        .DefaultValue = static_cast<std::int64_t>(
+            ReplicationInterpolation::kDefaultDelayTicks),
+        .CurrentValue = static_cast<std::int64_t>(
+            ReplicationInterpolation::kDefaultDelayTicks),
+        .Flags = CVarFlags::Archive,
+        .Help = "Ticks behind the newest snapshot that mirrored entities are "
+                "drawn, on top of measured flight time. Higher rides out more "
+                "jitter; every tick is how far in the past other players are.",
+        .Source = { "engine defaults" },
+        .Min = static_cast<std::int64_t>(0),
+        // Past the window there are no samples left to bracket the presented
+        // tick, so further delay buys nothing and only holds the pose further
+        // behind.
+        .Max = static_cast<std::int64_t>(ReplicationInterpolation::kSamples - 1),
+        .OnChange = [&engine](const CVarChangeContext& change) {
+            if (const std::int64_t* ticks = std::get_if<std::int64_t>(&change.NewValue))
+            {
+                engine.Interpolation().SetDelayTicks(
+                    static_cast<std::uint32_t>(std::max<std::int64_t>(0, *ticks)));
+            }
+        },
+    });
+
+    registry.RegisterCVar({
         .Name = "net.prediction.snap_distance",
         .Owner = "engine",
         .Type = CVarType::Double,
