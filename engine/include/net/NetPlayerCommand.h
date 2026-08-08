@@ -42,10 +42,19 @@
 inline constexpr std::size_t kNetMaxCommandActions = 32;
 inline constexpr std::size_t kNetMaxCommandRecords = 8;
 
-// One tick of resolved actions.
+// One tick of resolved actions, and the aim they were taken with.
+//
+// Aim rides per tick because movement is derived from it: the direction a
+// player asks for is their input framed by where they are looking, so a tick
+// simulated against a different aim walks a different path. Sending one sample
+// per datagram and applying it to every tick in the window made the two
+// machines answer different questions -- against a wall or a corner, that is
+// the difference between stopping and not.
 struct NetCommandRecord
 {
     std::uint64_t Tick = 0;
+    float Yaw = 0.0f;
+    float Pitch = 0.0f;
     std::uint8_t ActionCount = 0;
     std::array<InputActionValue, kNetMaxCommandActions> Actions{};
 
@@ -57,12 +66,6 @@ struct NetCommandRecord
 
 struct NetPlayerCommand
 {
-    // Where the player is aiming, as of the newest record. Aim is continuous
-    // and integrated on the sender's presentation clock, so it travels once per
-    // command rather than once per tick.
-    float Yaw = 0.0f;
-    float Pitch = 0.0f;
-
     std::uint8_t RecordCount = 0;
     // Newest first. The rest are the redundancy window: ticks the authority may
     // already have, resent so that losing one datagram loses no input.
@@ -160,10 +163,6 @@ public:
     }
     [[nodiscard]] std::size_t TargetDepth() const { return Target; }
 
-    [[nodiscard]] float Yaw() const { return AimYaw; }
-    [[nodiscard]] float Pitch() const { return AimPitch; }
-    [[nodiscard]] bool HasAim() const { return AimSeen; }
-
     // Ticks handed out with nothing queued behind them. The starvation rate is
     // what a stats panel reads to say a peer's connection is behind.
     [[nodiscard]] std::uint64_t StarvedTicks() const { return Starved; }
@@ -190,13 +189,6 @@ private:
     // Consecutive consumes that ended above the target. Reset the moment depth
     // is healthy, so only depth that persists ever reads as backlog.
     std::size_t BacklogTicks = 0;
-
-    float AimYaw = 0.0f;
-    float AimPitch = 0.0f;
-    // The newest tick any aim sample arrived with, so a datagram that overtakes
-    // a newer one cannot drag the view backwards.
-    std::uint64_t AimTick = 0;
-    bool AimSeen = false;
 
     std::uint64_t Starved = 0;
 };

@@ -195,8 +195,6 @@ namespace
             return;
 
         NetPlayerCommand command;
-        command.Yaw = 0.5f;
-        command.Pitch = 0.25f;
         command.RecordCount = static_cast<std::uint8_t>(kNetMaxCommandRecords);
 
         for (std::size_t index = 0; index < kNetMaxCommandRecords; ++index)
@@ -209,6 +207,8 @@ namespace
             // fill for itself.
             record.Tick = static_cast<std::uint64_t>(
                 static_cast<std::int64_t>(localTick) + link.Clock.CommandOffset());
+            record.Yaw = 0.5f;
+            record.Pitch = 0.25f;
             record.ActionCount = kActionCount;
 
             // Held the whole run, which is what a player walking forward looks

@@ -13,8 +13,37 @@ namespace
     constexpr std::uint8_t kFlagBits = 4;
     constexpr std::uint64_t kMaxTickDelta = 255;
 
+    // Yaw travels at full width: it is a running total with no bound the input
+    // layer promises, so a range would silently wrap someone who kept turning.
+    // Pitch is bounded by the neck it describes, so sixteen bits over that
+    // range is finer than any display can show.
+    constexpr std::uint8_t kPitchBits = 16;
+    constexpr float kPitchLimit = 1.5707964f;
+    constexpr std::size_t kAimBits = 32 + kPitchBits;
+
     static_assert(kNetMaxCommandActions <= (1u << kActionCountBits),
                   "the action cap has to be expressible in the count field");
+
+    void WritePitch(float pitch, NetBitWriter& writer)
+    {
+        const float clamped = std::clamp(pitch, -kPitchLimit, kPitchLimit);
+        const float unit = (clamped + kPitchLimit) / (2.0f * kPitchLimit);
+        constexpr std::uint32_t steps = (1u << kPitchBits) - 1u;
+        writer.WriteBits(
+            static_cast<std::uint32_t>(unit * static_cast<float>(steps) + 0.5f),
+            kPitchBits);
+    }
+
+    [[nodiscard]] bool ReadPitch(NetBitReader& reader, float& pitch)
+    {
+        std::uint32_t raw = 0;
+        if (!reader.ReadBits(kPitchBits, raw))
+            return false;
+        constexpr std::uint32_t steps = (1u << kPitchBits) - 1u;
+        const float unit = static_cast<float>(raw) / static_cast<float>(steps);
+        pitch = unit * (2.0f * kPitchLimit) - kPitchLimit;
+        return true;
+    }
 
     [[nodiscard]] bool HasAxis(const InputActionValue& value)
     {
@@ -29,7 +58,7 @@ namespace
                                          std::uint8_t actionCount,
                                          bool newest)
     {
-        std::size_t bits = newest ? 0 : kTickDeltaBits;
+        std::size_t bits = (newest ? 0 : kTickDeltaBits) + kAimBits;
         for (std::uint8_t index = 0; index < actionCount; ++index)
         {
             bits += kFlagBits + 1;
@@ -42,6 +71,9 @@ namespace
     void WriteRecord(const NetCommandRecord& record, std::uint8_t actionCount,
                      NetBitWriter& writer)
     {
+        writer.WriteFloat(record.Yaw);
+        WritePitch(record.Pitch, writer);
+
         for (std::uint8_t index = 0; index < actionCount; ++index)
         {
             const InputActionValue& value = record.Actions[index];
@@ -65,6 +97,13 @@ namespace
                                   NetCommandRecord& record)
     {
         record.ActionCount = actionCount;
+        if (!reader.ReadFloat(record.Yaw) || !ReadPitch(reader, record.Pitch))
+            return false;
+        // A non-finite aim frames every wish direction derived from it, so it
+        // is refused at the boundary rather than downstream.
+        if (!std::isfinite(record.Yaw))
+            return false;
+
         for (std::uint8_t index = 0; index < actionCount; ++index)
         {
             std::uint32_t flags = 0;
@@ -149,7 +188,7 @@ std::size_t NetEncodePlayerCommand(const NetPlayerCommand& command,
     // with a bit saying whether another follows, and a bit writer cannot be
     // rewound to correct one: running out halfway would leave a message
     // claiming input it does not carry.
-    const std::size_t headerBits = 32 + 32 + kActionCountBits + 64;
+    const std::size_t headerBits = kActionCountBits + 64;
     std::size_t budget = writer.BitsRemaining();
     if (budget < headerBits)
         return 0;
@@ -180,8 +219,6 @@ std::size_t NetEncodePlayerCommand(const NetPlayerCommand& command,
     if (count == 0)
         return 0;
 
-    writer.WriteFloat(command.Yaw);
-    writer.WriteFloat(command.Pitch);
     writer.WriteBits(actions, kActionCountBits);
     writer.WriteU64(newestTick);
 
@@ -206,15 +243,12 @@ bool NetDecodePlayerCommand(NetBitReader& reader, NetPlayerCommand& out)
 
     std::uint32_t actions = 0;
     std::uint64_t newestTick = 0;
-    if (!reader.ReadFloat(out.Yaw) || !reader.ReadFloat(out.Pitch)
-        || !reader.ReadBits(kActionCountBits, actions)
+    if (!reader.ReadBits(kActionCountBits, actions)
         || !reader.ReadU64(newestTick))
     {
         return false;
     }
 
-    if (!std::isfinite(out.Yaw) || !std::isfinite(out.Pitch))
-        return false;
     if (actions > kNetMaxCommandActions)
         return false;
 
@@ -270,14 +304,6 @@ void NetPeerCommandBuffer::Receive(const NetPlayerCommand& command)
     {
         SeenCommand = true;
         AdmitFloor = newest;
-    }
-
-    if (!AimSeen || newest >= AimTick)
-    {
-        AimYaw = command.Yaw;
-        AimPitch = command.Pitch;
-        AimTick = newest;
-        AimSeen = true;
     }
 
     // Oldest first, so the queue fills in order and the insert below almost

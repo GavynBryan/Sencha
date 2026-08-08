@@ -341,17 +341,12 @@ void Engine::RegisterNetFramePhases()
         {
             // Queued after the ticks that resolved it, so the newest record a
             // command carries is this frame's rather than the previous one's.
-            // Nothing is sent before the authority's clock has a name here.
-            // Stamping local ticks first and authority ticks afterwards would
-            // step the stamp by the whole offset mid-session, and if that step
-            // went backwards the authority would refuse everything after it as
-            // input for ticks it had already run.
-            const std::size_t bytes =
-                engine.NetClock().HasEstimate()
-                    ? engine.PeerCommands().SendLocal(
-                          *session, engine.World().Entities(),
-                          engine.NetClock().CommandOffset())
-                    : 0;
+            // Whatever the ring holds, exactly as it was captured. Nothing is
+            // in it before the authority's clock has a name here, because a
+            // record filed under a name the authority cannot place is one it
+            // can never acknowledge.
+            const std::size_t bytes = engine.PeerCommands().SendLocal(
+                *session, engine.Prediction().Commands());
             if (bytes > 0)
                 traffic.RecordOut(NetTrafficKind::Command, bytes);
         }

@@ -47,6 +47,7 @@
 #include <net/NetReplicationComponents.h>
 #include <net/NetSpawnRecipe.h>
 #include <net/NetSession.h>
+#include <net/PawnCommandCapture.h>
 #include <net/PeerCommandRuntime.h>
 #include <movement/MovementTags.h>
 #include <physics/CollisionShapeCache.h>
@@ -1598,6 +1599,9 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     // A remote player's actions have to be in their source before anything
     // reads one, the same way the local player's have to be resolved first.
     ctx.Schedule.After<CharacterInputSystem, PeerCommandFeedSystem>();
+    // What gets written down is what the tick went on to simulate, so capture
+    // follows the derivation and precedes everything that acts on it.
+    ctx.Schedule.After<PawnCommandCaptureSystem, CharacterInputSystem>();
     OrderMovementAfterInput<CharacterInputSystem>(ctx.Schedule);
     ctx.Schedule.Register<SpinSystem>();
 

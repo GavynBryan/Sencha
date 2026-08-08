@@ -3,6 +3,7 @@
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 #include <math/Vec.h>
+#include <net/PawnCommandRing.h>
 #include <world/transform/TransformComponents.h>
 
 #include <array>
@@ -80,6 +81,12 @@ public:
     void SetEnabled(bool enabled) { Enabled = enabled; }
     [[nodiscard]] bool IsEnabled() const { return Enabled; }
 
+    // Every tick this machine has simulated for its own pawn, under the name
+    // the authority knows it by. The one source for what goes on the wire and
+    // for what a replay re-runs.
+    [[nodiscard]] PawnCommandRing& Commands() { return Ring; }
+    [[nodiscard]] const PawnCommandRing& Commands() const { return Ring; }
+
     // Where this machine believes the pawn was at an authority tick. Recorded
     // after the tick has been simulated, once per tick.
     void Record(std::uint64_t authorityTick, const Vec3d& position);
@@ -143,6 +150,8 @@ private:
     // Indexed by tick, so a lookup is arithmetic rather than a search and an
     // overwritten slot retires itself.
     std::array<Sample, kHistory> Samples{};
+
+    PawnCommandRing Ring;
 
     // What the authority last said, which is what its deltas are against.
     LocalTransform Authoritative{};

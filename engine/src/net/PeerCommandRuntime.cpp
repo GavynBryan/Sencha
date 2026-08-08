@@ -7,6 +7,7 @@
 #include <input/InputActionSource.h>
 #include <input/InputActionState.h>
 #include <net/NetReplicationComponents.h>
+#include <net/PawnCommandCapture.h>
 
 #include <algorithm>
 
@@ -49,6 +50,10 @@ void PeerCommandRuntime::Feed(World& world, std::uint64_t tick)
         ? world.GetResource<InputActionSourceTable>()
         : world.AddResource<InputActionSourceTable>();
 
+    // What each peer's tick came to, so the aim that framed a record is applied
+    // with that record rather than with whichever datagram landed last.
+    Consumed.clear();
+
     for (auto& [peer, buffer] : Buffers)
     {
         buffer.SetTargetDepth(Target);
@@ -56,6 +61,7 @@ void PeerCommandRuntime::Feed(World& world, std::uint64_t tick)
         NetCommandRecord record;
         if (!buffer.Next(record))
             continue;
+        Consumed.emplace(peer, record);
 
         // A peer's id is its input source id. Peer ids start at one and source
         // zero is this machine's own, so the two spaces cannot collide.
@@ -78,71 +84,49 @@ void PeerCommandRuntime::Feed(World& world, std::uint64_t tick)
         return;
 
     // Aim goes to the pawn the authority recorded this peer as owning, which is
-    // the only thing that decides whose view a command turns.
+    // the only thing that decides whose view a command turns. It comes from the
+    // record this tick consumed, so a tick is simulated with the aim it was
+    // taken with -- including a starved tick, whose repeated record carries the
+    // last aim the player actually held.
     const World& reader = world;
     reader.ForEachComponent<NetOwner>([&](EntityId entity, const NetOwner& owner) {
-        const auto it = Buffers.find(PeerId{ owner.Peer });
-        if (it == Buffers.end() || !it->second.HasAim())
+        const auto it = Consumed.find(PeerId{ owner.Peer });
+        if (it == Consumed.end())
             return;
 
         LookOrientation* look = world.TryGet<LookOrientation>(entity);
         if (look == nullptr)
             return;
-        look->Yaw = it->second.Yaw();
-        look->Pitch = std::clamp(it->second.Pitch(), look->MinPitch, look->MaxPitch);
+        look->Yaw = it->second.Yaw;
+        look->Pitch = std::clamp(it->second.Pitch, look->MinPitch, look->MaxPitch);
     });
 }
 
-std::size_t PeerCommandRuntime::SendLocal(NetSession& session, const World& world,
-                                          std::int64_t tickOffset)
+std::size_t PeerCommandRuntime::SendLocal(NetSession& session,
+                                          const PawnCommandRing& ring)
 {
     if (session.Role() != NetSessionRole::Client || !session.IsConnected())
         return 0;
-
-    const InputActionState* actions = world.TryGetResource<InputActionState>();
-    if (actions == nullptr || actions->HistoryCount() == 0)
-        return 0;
-    if (!world.IsRegistered<LookOrientation>() || !world.IsRegistered<LocalLookControl>())
+    if (ring.Size() == 0)
         return 0;
 
+    // Straight off the ring: these are the ticks this machine simulated, under
+    // the names it simulated them by, with the aim each was taken with. Nothing
+    // is re-sampled here, because anything sampled at send time is a different
+    // moment from the one the tick ran at.
     NetPlayerCommand command;
-
-    // Where this player is aiming, from the one pawn this process drives. Look
-    // integrates locally on the presentation clock so the view never waits for
-    // a round trip; what travels is the sample the authority simulates from.
-    bool aimed = false;
-    Query<Read<LookOrientation>, With<LocalLookControl>> aim(world);
-    aim.ForEachChunk([&](auto& view) {
-        if (aimed || view.Count() == 0)
-            return;
-        const auto looks = view.template Read<LookOrientation>();
-        command.Yaw = looks[0].Yaw;
-        command.Pitch = looks[0].Pitch;
-        aimed = true;
-    });
-    if (!aimed)
-        return 0;
-
-    // Newest first, which is the order the history ring hands them back and the
-    // order the encoder drops from when the window does not fit.
     const std::size_t window =
-        std::min<std::size_t>(actions->HistoryCount(), kNetMaxCommandRecords);
+        std::min<std::size_t>(ring.Size(), kNetMaxCommandRecords);
     for (std::size_t index = 0; index < window; ++index)
     {
-        const InputActionTickRecord source = actions->History(index);
+        const PawnCommandTick& source = ring.Recent(index);
         NetCommandRecord& record = command.Records[index];
-        // Renamed onto the authority's clock, keeping the spacing between
-        // records: the window has to stay a run of consecutive ticks or the
-        // authority reads it as gaps it must fill.
-        record.Tick = tickOffset >= 0
-            ? source.Tick + static_cast<std::uint64_t>(tickOffset)
-            : (static_cast<std::uint64_t>(-tickOffset) > source.Tick
-                   ? 0
-                   : source.Tick - static_cast<std::uint64_t>(-tickOffset));
-        record.ActionCount = static_cast<std::uint8_t>(
-            std::min<std::size_t>(source.Values.size(), kNetMaxCommandActions));
+        record.Tick = source.Tick;
+        record.Yaw = source.Yaw;
+        record.Pitch = source.Pitch;
+        record.ActionCount = source.ActionCount;
         for (std::uint8_t action = 0; action < record.ActionCount; ++action)
-            record.Actions[action] = source.Values[action];
+            record.Actions[action] = source.Actions[action];
     }
     command.RecordCount = static_cast<std::uint8_t>(window);
 
@@ -211,5 +195,6 @@ void RegisterNetSystems(EngineSchedule& schedule, PeerCommandRuntime& commands,
 {
     schedule.Register<PeerCommandFeedSystem>(commands);
     schedule.Register<ReplicationInterpolationSystem>(interpolation, prediction, clock);
+    schedule.Register<PawnCommandCaptureSystem>(prediction, clock);
     schedule.Register<PredictionRecordSystem>(prediction, clock);
 }
