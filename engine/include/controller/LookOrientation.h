@@ -1,8 +1,12 @@
 #pragma once
 
+#include <core/metadata/Field.h>
+#include <core/metadata/TypeSchema.h>
 #include <ecs/ComponentTypeId.h>
 #include <input/InputAction.h>
 
+#include <string_view>
+#include <tuple>
 #include <type_traits>
 
 //=============================================================================
@@ -31,6 +35,40 @@ struct LookOrientation
 
 static_assert(std::is_trivially_copyable_v<LookOrientation>,
               "LookOrientation must be trivially copyable to live in ECS chunks");
+
+// Runtime-only: never scene-serialized (no SceneChunkId, absent from the scene
+// manifest). The schema is here because where something aims is one of the few
+// facts other machines must see, and the schema is what states which of these
+// bytes travel.
+template <>
+struct TypeSchema<LookOrientation>
+{
+    static constexpr std::string_view Name = "LookOrientation";
+
+    static auto Fields()
+    {
+        const LookOrientation defaults;
+        return std::tuple{
+            // Yaw accumulates without bound -- it is a running total, not an
+            // angle folded into a circle -- so a fixed quantization range would
+            // clamp a player who kept turning one way. It ships at full width
+            // until the codec can carry a wrapping angle.
+            MakeField("yaw", &LookOrientation::Yaw).OwnerLocal(),
+            // Pitch is bounded by the limits below, which are stricter than
+            // this range, so nothing here can clamp.
+            MakeField("pitch", &LookOrientation::Pitch)
+                .Quantize(-1.5707964f, 1.5707964f, 16)
+                .OwnerLocal(),
+            // How far this thing can look is a property of the thing, identical
+            // on every machine that loaded it. Sending it every tick would be
+            // sending a constant.
+            MakeField("min_pitch", &LookOrientation::MinPitch)
+                .Default(defaults.MinPitch).LocalOnly(),
+            MakeField("max_pitch", &LookOrientation::MaxPitch)
+                .Default(defaults.MaxPitch).LocalOnly(),
+        };
+    }
+};
 
 SENCHA_DECLARE_COMPONENT_TYPE(LookOrientation, "sencha.look_orientation");
 

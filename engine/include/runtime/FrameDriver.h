@@ -21,13 +21,21 @@ enum class FramePhase : int
     ResolveLifecycle = 1,
     RebuildGraphics = 2,
     DrainAsyncTasks = 3,
-    ZoneResidency = 4,
-    ScheduleTicks = 5,
-    Simulate = 6,
-    Update = 7,
-    ExtractRenderPacket = 8,
-    Render = 9,
-    EndFrame = 10,
+    // Before ZoneResidency, so a zone grant that arrives this frame reaches
+    // residency processing in the same frame rather than the next one, and
+    // before ScheduleTicks, because the tick budget consumes the clock-sync
+    // estimate this phase updates.
+    PumpNet = 4,
+    ZoneResidency = 5,
+    ScheduleTicks = 6,
+    Simulate = 7,
+    // After the ticks, so a snapshot leaves in the frame that produced it, and
+    // before presentation has consumed anything.
+    FlushNet = 8,
+    Update = 9,
+    ExtractRenderPacket = 10,
+    Render = 11,
+    EndFrame = 12,
     Count,
 };
 

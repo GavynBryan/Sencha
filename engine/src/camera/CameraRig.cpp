@@ -20,3 +20,8 @@ CameraPose ComputeCameraPose(const CameraRig& rig,
         pose.Position = pivot + pose.Rotation.RotateVector(Vec3d::Backward()) * rig.Distance;
     return pose;
 }
+
+EntityId CameraRigExcludedEntity(const CameraRig& rig)
+{
+    return rig.Mode == CameraRigMode::FirstPerson ? rig.Target : EntityId{};
+}

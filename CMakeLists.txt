@@ -55,6 +55,12 @@ include(GNUInstallDirs)
 add_test(NAME physics_isolation
     COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/cmake/CheckPhysicsIsolation.cmake")
 
+# Transport firewall, on the same terms: platform sockets stay behind
+# engine/src/net/ so the protocol, channel, and session layers can be written
+# and tested without one.
+add_test(NAME net_isolation
+    COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/cmake/CheckNetIsolation.cmake")
+
 # All SENCHA_ENABLE_* feature flags are declared here, before any subdirectory
 # consumes them.
 include("${CMAKE_SOURCE_DIR}/cmake/SenchaOptions.cmake")

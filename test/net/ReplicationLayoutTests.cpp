@@ -1,0 +1,381 @@
+#include <gtest/gtest.h>
+
+#include <controller/LookOrientation.h>
+#include <math/MathSchemas.h>
+#include <net/ReplicationLayout.h>
+#include <world/RuntimeComponentSchema.h>
+#include <world/transform/TransformComponents.h>
+
+#include <cstdint>
+#include <string>
+#include <tuple>
+
+namespace
+{
+    // Every field kind the layout has an opinion about, in one component.
+    struct Sampled
+    {
+        float Plain = 0.0f;
+        float Ranged = 0.0f;
+        float Secret = 0.0f;
+        float Derived = 0.0f;
+        Vec3d Position;
+    };
+
+    struct Excluded
+    {
+        float OnlyLocal = 0.0f;
+    };
+
+    // A 64-bit member has no entry in the scalar table, so it is exactly the
+    // shape the layout has to refuse rather than silently truncate.
+    struct Unsupported
+    {
+        std::uint64_t Wide = 0;
+    };
+
+    struct Nested
+    {
+        Transform3f Pose;
+    };
+
+    // Transform3f has its own schema, so reaching its floats means recursing
+    // rather than stopping at a packed group. That is a different code path
+    // from a Vec3 member and needs its own coverage.
+    struct DeeplyRanged
+    {
+        Transform3f Pose;
+    };
+
+    struct Hooked
+    {
+        int Value = 0;
+    };
+}
+
+template <>
+struct TypeSchema<Sampled>
+{
+    static constexpr std::string_view Name = "test.Sampled";
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("plain", &Sampled::Plain),
+            MakeField("ranged", &Sampled::Ranged).Quantize(-10.0f, 10.0f, 12),
+            MakeField("secret", &Sampled::Secret).OwnerOnly(),
+            MakeField("derived", &Sampled::Derived).LocalOnly(),
+            MakeField("position", &Sampled::Position).Quantize(-1024.0f, 1024.0f, 18),
+        };
+    }
+};
+
+template <>
+struct TypeSchema<Excluded>
+{
+    static constexpr std::string_view Name = "test.Excluded";
+    static auto Fields()
+    {
+        return std::tuple{ MakeField("only_local", &Excluded::OnlyLocal).LocalOnly() };
+    }
+};
+
+template <>
+struct TypeSchema<Unsupported>
+{
+    static constexpr std::string_view Name = "test.Unsupported";
+    static auto Fields()
+    {
+        return std::tuple{ MakeField("wide", &Unsupported::Wide) };
+    }
+};
+
+template <>
+struct TypeSchema<Nested>
+{
+    static constexpr std::string_view Name = "test.Nested";
+    static auto Fields()
+    {
+        // Tagged on the composite, not on the scalars underneath it.
+        return std::tuple{ MakeField("pose", &Nested::Pose).LocalOnly() };
+    }
+};
+
+template <>
+struct TypeSchema<DeeplyRanged>
+{
+    static constexpr std::string_view Name = "test.DeeplyRanged";
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("pose", &DeeplyRanged::Pose).Quantize(-64.0f, 64.0f, 14),
+        };
+    }
+};
+
+template <>
+struct TypeSchema<Hooked>
+{
+    static constexpr std::string_view Name = "test.Hooked";
+    static auto Fields()
+    {
+        return std::tuple{ MakeField("value", &Hooked::Value) };
+    }
+};
+
+namespace
+{
+    const ReplicatedField* FindField(const ReplicatedComponent& component,
+                                     std::string_view name)
+    {
+        for (const ReplicatedField& field : component.Fields)
+        {
+            if (field.Name == name)
+                return &field;
+        }
+        return nullptr;
+    }
+}
+
+TEST(ReplicationLayout, LocalOnlyFieldsNeverReachTheWire)
+{
+    ReplicationLayout layout;
+    ASSERT_TRUE(layout.Add<Sampled>());
+
+    const ReplicatedComponent* component = layout.Find(ResolveComponentTypeId<Sampled>());
+    ASSERT_NE(component, nullptr);
+
+    EXPECT_NE(FindField(*component, "plain"), nullptr);
+    EXPECT_EQ(FindField(*component, "derived"), nullptr)
+        << "a LocalOnly field must not appear in the wire layout";
+}
+
+TEST(ReplicationLayout, QuantizationAndOwnershipSurviveFlattening)
+{
+    ReplicationLayout layout;
+    ASSERT_TRUE(layout.Add<Sampled>());
+    const ReplicatedComponent* component = layout.Find(ResolveComponentTypeId<Sampled>());
+    ASSERT_NE(component, nullptr);
+
+    const ReplicatedField* plain = FindField(*component, "plain");
+    ASSERT_NE(plain, nullptr);
+    EXPECT_FALSE(plain->Quantization.IsQuantized());
+    EXPECT_FALSE(plain->OwnerOnly);
+
+    const ReplicatedField* ranged = FindField(*component, "ranged");
+    ASSERT_NE(ranged, nullptr);
+    EXPECT_EQ(ranged->Quantization.Bits, 12);
+    EXPECT_FLOAT_EQ(ranged->Quantization.Min, -10.0f);
+    EXPECT_FLOAT_EQ(ranged->Quantization.Max, 10.0f);
+
+    const ReplicatedField* secret = FindField(*component, "secret");
+    ASSERT_NE(secret, nullptr);
+    EXPECT_TRUE(secret->OwnerOnly);
+}
+
+// A range tagged on a Vec3 has to reach the floats inside it, or tagging a
+// composite would silently do nothing.
+TEST(ReplicationLayout, AnnotationsOnACompositeReachItsScalars)
+{
+    ReplicationLayout layout;
+    ASSERT_TRUE(layout.Add<Sampled>());
+    const ReplicatedComponent* component = layout.Find(ResolveComponentTypeId<Sampled>());
+    ASSERT_NE(component, nullptr);
+
+    const ReplicatedField* position = FindField(*component, "position");
+    ASSERT_NE(position, nullptr);
+    EXPECT_EQ(position->Count, 3) << "a Vec3 is one three-wide run";
+    EXPECT_EQ(position->Quantization.Bits, 18);
+    EXPECT_FLOAT_EQ(position->Quantization.Max, 1024.0f);
+}
+
+// A member with its own schema is reached by recursion, not by the packed-group
+// shortcut above, so it exercises the path where the annotation has to be
+// handed down rather than applied in place.
+TEST(ReplicationLayout, AnnotationsSurviveRecursionIntoANestedSchema)
+{
+    ReplicationLayout layout;
+    ASSERT_TRUE(layout.Add<DeeplyRanged>());
+    const ReplicatedComponent* component =
+        layout.Find(ResolveComponentTypeId<DeeplyRanged>());
+    ASSERT_NE(component, nullptr);
+    ASSERT_FALSE(component->Fields.empty());
+
+    for (const ReplicatedField& field : component->Fields)
+    {
+        EXPECT_EQ(field.Quantization.Bits, 14) << field.Name;
+        EXPECT_FLOAT_EQ(field.Quantization.Min, -64.0f) << field.Name;
+        EXPECT_FLOAT_EQ(field.Quantization.Max, 64.0f) << field.Name;
+    }
+}
+
+// The same, one level deeper and for exclusion: a subtree marked local must not
+// leak any of its leaves.
+TEST(ReplicationLayout, ExcludingACompositeExcludesEverythingUnderIt)
+{
+    ReplicationLayout layout;
+    EXPECT_FALSE(layout.Add<Nested>());
+    EXPECT_EQ(layout.Error(), ReplicationLayoutError::NoReplicatedFields);
+}
+
+TEST(ReplicationLayout, AComponentWithNothingToSendIsRefused)
+{
+    ReplicationLayout layout;
+    EXPECT_FALSE(layout.Add<Excluded>());
+    EXPECT_EQ(layout.Error(), ReplicationLayoutError::NoReplicatedFields);
+    EXPECT_NE(layout.ErrorDetail().find("Excluded"), std::string::npos);
+}
+
+// A leaf the codec cannot express must fail loudly at startup. Silently
+// dropping it would replicate a component that looks complete and is not.
+TEST(ReplicationLayout, AFieldTheCodecCannotExpressIsRefusedByName)
+{
+    ReplicationLayout layout;
+    EXPECT_FALSE(layout.Add<Unsupported>());
+    EXPECT_EQ(layout.Error(), ReplicationLayoutError::UnsupportedField);
+    EXPECT_NE(layout.ErrorDetail().find("wide"), std::string::npos)
+        << "the failure must name the field, not just the component";
+}
+
+TEST(ReplicationLayout, WireKeysArePositionalAndRoundTrip)
+{
+    ReplicationLayout layout;
+    ASSERT_TRUE(layout.Add<LocalTransform>());
+    ASSERT_TRUE(layout.Add<LookOrientation>());
+    layout.Seal();
+
+    const auto transform = layout.IndexOf(ResolveComponentTypeId<LocalTransform>());
+    const auto look = layout.IndexOf(ResolveComponentTypeId<LookOrientation>());
+    ASSERT_TRUE(transform.has_value());
+    ASSERT_TRUE(look.has_value());
+    EXPECT_EQ(*transform, 0);
+    EXPECT_EQ(*look, 1);
+
+    ASSERT_NE(layout.At(*look), nullptr);
+    EXPECT_EQ(layout.At(*look)->Type, ResolveComponentTypeId<LookOrientation>());
+    EXPECT_EQ(layout.At(200), nullptr) << "an out-of-range key must not resolve";
+}
+
+TEST(ReplicationLayout, AddingTheSameComponentTwiceIsIdempotent)
+{
+    ReplicationLayout layout;
+    EXPECT_TRUE(layout.Add<LookOrientation>());
+    EXPECT_FALSE(layout.Add<LookOrientation>());
+    EXPECT_EQ(layout.Size(), 1u);
+    EXPECT_EQ(layout.Error(), ReplicationLayoutError::None)
+        << "a duplicate is a no-op, not a broken table";
+}
+
+//=============================================================================
+// Table hash
+//
+// This is what the handshake compares, so it has to move for every difference
+// that would make two builds read each other's snapshots differently, and stay
+// put otherwise.
+//=============================================================================
+
+TEST(ReplicationLayoutHash, IdenticalTablesAgree)
+{
+    ReplicationLayout first;
+    ASSERT_TRUE(first.Add<LocalTransform>());
+    ASSERT_TRUE(first.Add<LookOrientation>());
+
+    ReplicationLayout second;
+    ASSERT_TRUE(second.Add<LocalTransform>());
+    ASSERT_TRUE(second.Add<LookOrientation>());
+
+    EXPECT_EQ(first.TableHash(), second.TableHash());
+}
+
+TEST(ReplicationLayoutHash, OrderIsPartOfTheContract)
+{
+    ReplicationLayout first;
+    ASSERT_TRUE(first.Add<LocalTransform>());
+    ASSERT_TRUE(first.Add<LookOrientation>());
+
+    ReplicationLayout reordered;
+    ASSERT_TRUE(reordered.Add<LookOrientation>());
+    ASSERT_TRUE(reordered.Add<LocalTransform>());
+
+    EXPECT_NE(first.TableHash(), reordered.TableHash())
+        << "wire keys are positional, so a reorder must not hash the same";
+}
+
+TEST(ReplicationLayoutHash, MembershipChangesTheHash)
+{
+    ReplicationLayout smaller;
+    ASSERT_TRUE(smaller.Add<LocalTransform>());
+
+    ReplicationLayout larger;
+    ASSERT_TRUE(larger.Add<LocalTransform>());
+    ASSERT_TRUE(larger.Add<LookOrientation>());
+
+    EXPECT_NE(smaller.TableHash(), larger.TableHash());
+}
+
+TEST(ReplicationLayoutHash, AnEmptyTableStillHashes)
+{
+    ReplicationLayout empty;
+    ReplicationLayout other;
+    EXPECT_EQ(empty.TableHash(), other.TableHash());
+    EXPECT_NE(empty.TableHash(), 0u);
+}
+
+//=============================================================================
+// The engine's own table
+//=============================================================================
+
+TEST(EngineReplicationLayout, CompilesWithoutError)
+{
+    ReplicationLayout layout;
+    RegisterEngineReplicatedComponents(layout);
+
+    ASSERT_EQ(layout.Error(), ReplicationLayoutError::None)
+        << ReplicationLayoutErrorToString(layout.Error()) << ": " << layout.ErrorDetail();
+    EXPECT_GT(layout.Size(), 0u);
+}
+
+// Where a player is looking replicates; how far their neck bends does not.
+TEST(EngineReplicationLayout, LookOrientationSendsAimAndNotItsLimits)
+{
+    ReplicationLayout layout;
+    RegisterEngineReplicatedComponents(layout);
+
+    const ReplicatedComponent* look =
+        layout.Find(ResolveComponentTypeId<LookOrientation>());
+    ASSERT_NE(look, nullptr);
+
+    EXPECT_NE(FindField(*look, "yaw"), nullptr);
+    EXPECT_NE(FindField(*look, "pitch"), nullptr);
+    EXPECT_EQ(FindField(*look, "min_pitch"), nullptr);
+    EXPECT_EQ(FindField(*look, "max_pitch"), nullptr);
+
+    const ReplicatedField* pitch = FindField(*look, "pitch");
+    ASSERT_NE(pitch, nullptr);
+    EXPECT_TRUE(pitch->Quantization.IsQuantized());
+
+    // Yaw accumulates without bound, so a fixed range would clamp a player who
+    // kept turning. It is deliberately unquantized until the codec can wrap.
+    const ReplicatedField* yaw = FindField(*look, "yaw");
+    ASSERT_NE(yaw, nullptr);
+    EXPECT_FALSE(yaw->Quantization.IsQuantized());
+}
+
+// Every replicated field has to address bytes that exist, or the codec would
+// read past the component it was handed.
+TEST(EngineReplicationLayout, EveryFieldLiesInsideItsComponent)
+{
+    ReplicationLayout layout;
+    RegisterEngineReplicatedComponents(layout);
+
+    for (const ReplicatedComponent& component : layout.Components())
+    {
+        for (const ReplicatedField& field : component.Fields)
+        {
+            EXPECT_LE(field.Offset + field.Count * field.Size, component.Size)
+                << component.Name << "." << field.Name;
+            EXPECT_GT(field.Count, 0) << component.Name << "." << field.Name;
+            EXPECT_NE(field.Scalar, FieldScalar::Unsupported)
+                << component.Name << "." << field.Name;
+        }
+    }
+}

@@ -38,10 +38,15 @@
 #include <movement/MovementIntent.h>
 #include <movement/MovementProfileBindingCache.h>
 #include <input/InputActionResolveSystem.h>
+#include <input/InputActionSource.h>
 #include <input/InputActionState.h>
 #include <input/InputBindingCache.h>
 #include <input/InputRegistration.h>
 #include <movement/MovementRegistration.h>
+#include <net/NetReplicationComponents.h>
+#include <net/NetSpawnRecipe.h>
+#include <net/NetSession.h>
+#include <net/PeerCommandRuntime.h>
 #include <movement/MovementTags.h>
 #include <physics/CollisionShapeCache.h>
 #include <physics/CharacterMoverPool.h>
@@ -67,6 +72,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -76,6 +82,8 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace
@@ -84,6 +92,8 @@ constexpr std::string_view kAuthoredRoot = "assets";
 constexpr std::string_view kCookedScanRoot = "assets/.cooked";
 constexpr std::string_view kPlayerMovementProfilePath =
     "asset://data/player_movement.sdata";
+constexpr std::string_view kPlayerAvatarPath =
+    "asset://data/player_avatar.sdata";
 constexpr std::string_view kInputActionSetPath =
     "asset://data/input_actions.sdata";
 constexpr std::string_view kInputProfilePath =
@@ -214,27 +224,15 @@ EntityId CreateTransformEntity(
     return entity;
 }
 
-EntityId SpawnPlayerAvatar(
+// The pawn itself: everything that makes a body move and be seen, and nothing
+// about who is watching it. A remote player's pawn is exactly this and no more,
+// which is why the camera and the local input marks are not in here.
+EntityId SpawnPawn(
     World& world,
-    Logger& log,
-    std::optional<StoragePartitionId> spawnPartition,
-    MovementProfileHandle movementProfile)
+    const Vec3d& spawnPosition,
+    MovementProfileHandle movementProfile,
+    const ResolvedPlayerAvatar& avatar)
 {
-    const Vec3d spawnPosition =
-        FindPlayerStart(world, spawnPartition);
-
-    EntityId camera = FindFirstCamera(
-        world,
-        PersistentStoragePartition);
-    if (!camera.IsValid())
-    {
-        camera = CreateTransformEntity(world, spawnPosition);
-        world.AddComponent<CameraComponent>(
-            camera,
-            CameraComponent{});
-    }
-    world.GetResource<ActiveCameraService>().SetActive(camera);
-
     const EntityId pawn =
         CreateTransformEntity(world, spawnPosition);
     world.AddComponent<CharacterController>(
@@ -268,6 +266,20 @@ EntityId SpawnPlayerAvatar(
     // interpolated between ticks rather than stepping at the tick rate.
     world.AddComponent<WorldTransformHistory>(pawn, WorldTransformHistory{});
 
+    // The body other viewers see. A first-person camera targeting this pawn
+    // excludes it, so the local player does not sit inside their own mesh; a
+    // third-person camera draws it. Without a resolved avatar the pawn simply
+    // has no body, which is a missing asset rather than a broken player.
+    if (avatar.IsValid())
+    {
+        world.AddComponent<StaticMeshComponent>(
+            pawn,
+            StaticMeshComponent{
+                .Mesh = avatar.Mesh,
+                .Materials = avatar.Materials,
+            });
+    }
+
     const MovementDefs* movementDefs =
         world.TryGetResource<MovementDefs>();
 
@@ -292,18 +304,58 @@ EntityId SpawnPlayerAvatar(
         pawnAbilities.Grant(movementDefs->Jump);
     world.AddComponent<AbilitySet>(pawn, pawnAbilities);
 
-    // The pawn aims; the camera presents it. The tag marks this as the entity
-    // the local player's look action turns.
+    // The pawn aims; a camera presents it. Every pawn has an orientation --
+    // a remote player is aiming somewhere too, and that is what makes their
+    // body face the right way.
     world.AddComponent<LookOrientation>(pawn, {});
-    world.AddComponent<LocalLookControl>(pawn, {});
+
+    return pawn;
+}
+
+// Points this process's camera and local input at a pawn. Exactly one pawn per
+// process gets this: the one this player drives. Everything here is a
+// presentation or input fact about this machine, which is why none of it
+// replicates.
+void AttachLocalPlayer(World& world, EntityId pawn, Logger& log)
+{
+    const Vec3d position =
+        world.TryGet<LocalTransform>(pawn) != nullptr
+            ? world.TryGet<LocalTransform>(pawn)->Value.Position
+            : Vec3d{};
+
+    EntityId camera = FindFirstCamera(world, PersistentStoragePartition);
+    if (!camera.IsValid())
+    {
+        camera = CreateTransformEntity(world, position);
+        world.AddComponent<CameraComponent>(camera, CameraComponent{});
+    }
+    world.GetResource<ActiveCameraService>().SetActive(camera);
+
+    // The tag marks this as the entity the local player's look action turns.
+    if (!world.HasComponent<LocalLookControl>(pawn))
+        world.AddComponent<LocalLookControl>(pawn, {});
 
     CameraRig rig{};
     rig.Target = pawn;
     rig.Mode = CameraRigMode::FirstPerson;
-    world.AddComponent<CameraRig>(camera, rig);
+    if (CameraRig* existing = world.TryGet<CameraRig>(camera))
+        *existing = rig;
+    else
+        world.AddComponent<CameraRig>(camera, rig);
 
-    log.Info(
-        "TemplateGame: spawned persistent player and camera in partition zero");
+    log.Info("TemplateGame: local player attached to its pawn");
+}
+
+EntityId SpawnPlayerAvatar(
+    World& world,
+    Logger& log,
+    std::optional<StoragePartitionId> spawnPartition,
+    MovementProfileHandle movementProfile,
+    const ResolvedPlayerAvatar& avatar)
+{
+    const EntityId pawn = SpawnPawn(
+        world, FindPlayerStart(world, spawnPartition), movementProfile, avatar);
+    AttachLocalPlayer(world, pawn, log);
     return pawn;
 }
 
@@ -500,25 +552,14 @@ struct CharacterInputSystem
 
         const TemplateInputActions* actionIds =
             world.TryGetResource<TemplateInputActions>();
-        const InputActionState* actions =
-            world.TryGetResource<InputActionState>();
-        if (actionIds == nullptr || actions == nullptr)
+        if (actionIds == nullptr)
             return;
 
-        // This tick's resolved actions, not the frame's: a frame that runs
-        // several ticks steers each of them, and one that runs none steers
-        // nothing.
-        const InputActionView input = actions->Tick();
-        const Vec2d move = input.Axis2(actionIds->Move);
-        const float strafe = move.X;
-        const float forward = move.Y;
-
-        // Whichever moment the action set authored. Jump authors "while held":
-        // queueing the ability every tick while the control is down means a
-        // press just before landing fires on the first grounded tick, and
-        // holding it hops again on each landing. The activation gate (grounded,
-        // cooldown) rejects the rest for free.
-        const bool jump = input.Fired(actionIds->Jump);
+        // Every controlled entity steers from its own input source: this
+        // machine's devices for the player sitting here, a peer's arriving
+        // commands for everyone else. Resolving one action state for the whole
+        // pass is what would make one player's keys move every pawn at once.
+        const InputActionSources sources(world);
 
         // Each controlled entity steers along its own aim, read from the entity
         // rather than from whatever camera happens to be watching it.
@@ -540,6 +581,24 @@ struct CharacterInputSystem
                 if (!entityTags[index].HasExact(tags->Controlled))
                     continue;
 
+                const EntityId steered = view.Entity(index);
+
+                // This tick's actions, not the frame's: a frame that runs
+                // several ticks steers each of them, and one that runs none
+                // steers nothing.
+                const InputActionView input = sources.TickFor(steered);
+                const Vec2d move = input.Axis2(actionIds->Move);
+                const float strafe = move.X;
+                const float forward = move.Y;
+
+                // Whichever moment the action set authored. Jump authors "while
+                // held": queueing the ability every tick while the control is
+                // down means a press just before landing fires on the first
+                // grounded tick, and holding it hops again on each landing. The
+                // activation gate (grounded, cooldown) rejects the rest for
+                // free.
+                const bool jump = input.Fired(actionIds->Jump);
+
                 const Quatf frame = Quatf::FromAxisAngle(
                     Vec3d::Up(), orientations[index].Yaw);
                 Vec3d wish =
@@ -558,6 +617,175 @@ struct CharacterInputSystem
                 }
             }
         });
+    }
+};
+
+// What this game's replicated entities are. Ids match on both ends because
+// both ends are the same build running the same content; they are the game's
+// vocabulary, not the engine's.
+enum : NetSpawnRecipeId
+{
+    kPlayerPawnRecipe = 1,
+};
+
+//=============================================================================
+// SessionPlayerSystem
+//
+// Keeps the set of player pawns in step with the set of peers, from whichever
+// side of the session this process is on.
+//
+// On the authority: every connected peer gets a pawn, marked replicated and
+// owned by them, and loses it when they go. On a client: the pawns arrive as
+// replicated state, and this gives them the body every machine already has the
+// content for and points the camera at the one this player owns.
+//
+// Deliberately not two systems behind a role check inside one: the two halves
+// share no state and the role is fixed for a session, so the branch is a
+// dispatch on a value that cannot change rather than a growing behavior hub.
+//=============================================================================
+struct SessionPlayerSystem
+{
+    Engine* Owner = nullptr;
+    MovementProfileHandle Profile;
+    ResolvedPlayerAvatar Avatar;
+    // The pawn this process's player drives, so a client attaches once rather
+    // than every frame.
+    EntityId LocalPawn;
+    std::unordered_map<std::uint32_t, EntityId> PeerPawns;
+
+    void FrameUpdate(FrameUpdateContext& ctx)
+    {
+        World& world = ctx.Entities;
+        NetSession* session = Owner == nullptr ? nullptr : Owner->TryNet();
+        if (session == nullptr)
+            return;
+        if (!world.IsRegistered<NetReplicated>() || !world.IsRegistered<NetOwner>())
+            return;
+
+        if (session->Role() == NetSessionRole::Host)
+            ServePeers(world, *session);
+        else if (session->Role() == NetSessionRole::Client && session->IsConnected())
+            AdoptReplicatedPawns(world, session->LocalPeerId().Value);
+    }
+
+private:
+    Logger& Log() { return Owner->Logging().GetLogger<TemplateGame>(); }
+
+    // The one pawn this machine's player drives, marked by the tag the look
+    // input follows. There is at most one per process by construction.
+    static EntityId FindLocallyControlledPawn(const World& world)
+    {
+        if (!world.IsRegistered<LocalLookControl>())
+            return EntityId{};
+        for (EntityId entity : world.GetAliveEntities())
+        {
+            if (world.HasComponent<LocalLookControl>(entity))
+                return entity;
+        }
+        return EntityId{};
+    }
+
+    void ServePeers(World& world, NetSession& session)
+    {
+        // The host is a player too. Without this a client would see everyone
+        // except the person running the server, which is the one pawn they are
+        // most likely to be standing next to. Found by its local-control mark
+        // rather than remembered from startup, because the pawn is spawned when
+        // a map loads and that can be after this system is registered.
+        const EntityId local = FindLocallyControlledPawn(world);
+        if (local.IsValid() && !world.HasComponent<NetReplicated>(local))
+        {
+            world.AddComponent<NetReplicated>(local);
+            world.AddComponent<NetSpawnRecipe>(
+                local, NetSpawnRecipe{ .Id = kPlayerPawnRecipe });
+        }
+
+        const std::vector<PeerId> peers = session.ConnectedPeers();
+
+        for (PeerId peer : peers)
+        {
+            if (PeerPawns.contains(peer.Value))
+                continue;
+
+            // Offset laterally from the authored start so two players do not
+            // arrive inside each other. A proper multi-start rotation is the
+            // level's business, not this system's.
+            Vec3d spawn = FindPlayerStart(world, PersistentStoragePartition);
+            spawn.X += 2.0f * static_cast<float>(PeerPawns.size() + 1);
+
+            const EntityId pawn = SpawnPawn(world, spawn, Profile, Avatar);
+            world.AddComponent<NetReplicated>(pawn);
+            world.AddComponent<NetOwner>(pawn, NetOwner{ .Peer = peer.Value });
+            world.AddComponent<NetSpawnRecipe>(
+                pawn, NetSpawnRecipe{ .Id = kPlayerPawnRecipe });
+            // Whose keys steer it. Without this the pawn reads the local
+            // source, which is the possession bug in one component: the person
+            // running the server would drive every pawn they are simulating on
+            // someone else's behalf.
+            world.AddComponent<InputActionSourceRef>(
+                pawn, InputActionSourceRef{ .Source = peer.Value });
+            PeerPawns.emplace(peer.Value, pawn);
+            Log().Info("TemplateGame: spawned a pawn for peer {}", peer.Value);
+        }
+
+        // A peer that left takes its pawn with it.
+        for (auto it = PeerPawns.begin(); it != PeerPawns.end(); )
+        {
+            const bool present = std::any_of(
+                peers.begin(), peers.end(),
+                [id = it->first](PeerId peer) { return peer.Value == id; });
+            if (present)
+            {
+                ++it;
+                continue;
+            }
+            if (world.IsAlive(it->second))
+                world.DestroyEntity(it->second);
+            Log().Info("TemplateGame: removed the pawn for peer {}", it->first);
+            it = PeerPawns.erase(it);
+        }
+    }
+
+    void AdoptReplicatedPawns(World& world, std::uint32_t self)
+    {
+        // Everything replication created for this client, which is the only
+        // definitive list: an entity is not marked on this side, and querying
+        // by NetOwner would miss every pawn the authority drives itself --
+        // including the host's own player.
+        // What each replicated entity *is* -- body, pose history, derived
+        // columns -- is the spawn recipe's job now, run once at spawn. What is
+        // left here is possession: which of them this player drives.
+        EntityId mine;
+        for (const auto& [id, entity] : Owner->Replication().ClientEntities().All())
+        {
+            if (!world.IsAlive(entity))
+                continue;
+            if (const NetOwner* owner = world.TryGet<NetOwner>(entity);
+                owner != nullptr && owner->Peer == self)
+            {
+                mine = entity;
+            }
+        }
+
+        if (mine.IsValid() && mine != LocalPawn)
+        {
+            // The pawn this process spawned for itself before joining is now
+            // someone else's job to simulate. Leaving it would leave a second
+            // body standing where the player used to be.
+            const EntityId previous = FindLocallyControlledPawn(world);
+            if (previous.IsValid() && previous != mine)
+            {
+                world.RemoveComponent<LocalLookControl>(previous);
+                world.DestroyEntity(previous);
+            }
+
+            // Nothing local is grafted onto it. A client's own pawn is
+            // simulated on the authority, so steering it here would write
+            // intent the next snapshot overwrites, and the request that
+            // actually moves the player travels as this tick's actions.
+            AttachLocalPlayer(world, mine, Log());
+            LocalPawn = mine;
+        }
     }
 };
 
@@ -623,6 +851,37 @@ void TemplateGame::OnStart(GameStartupContext&)
         graphics.Descriptors,
         graphics.Samplers);
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
+
+    // This game's own data subtypes, registered into the registries it owns and
+    // unregistered in OnShutdown while the module is still mapped: the registry
+    // holds function pointers into this module.
+    RegisterPlayerAvatarData(runtimeAssets.DataTypes, runtimeAssets.DataSchemas);
+
+    // What a replicated player pawn becomes on whichever machine receives it.
+    // A snapshot brings the state; this brings everything a body needs to be
+    // seen, which is content both ends already have and neither has to be told
+    // about. The avatar is resolved once here rather than per spawn.
+    engine.SpawnRecipes().Register(
+        kPlayerPawnRecipe,
+        [this](World& world, EntityId entity) {
+            Logger& log = GetEngine().Logging().GetLogger<TemplateGame>();
+            const ResolvedPlayerAvatar avatar = ResolvePlayerAvatar(log);
+            if (avatar.IsValid() && !world.HasComponent<StaticMeshComponent>(entity))
+            {
+                world.AddComponent<StaticMeshComponent>(
+                    entity,
+                    StaticMeshComponent{ .Mesh = avatar.Mesh,
+                                         .Materials = avatar.Materials });
+            }
+            // Pawns move every tick, so they present interpolated between
+            // ticks rather than stepping at the tick rate.
+            if (!world.HasComponent<WorldTransformHistory>(entity))
+            {
+                world.AddComponent<WorldTransformHistory>(
+                    entity, WorldTransformHistory{});
+            }
+            log.Info("TemplateGame: built a replicated player pawn");
+        });
 
     ScanAssetsDirectory(
         std::string(kAuthoredRoot),
@@ -731,6 +990,26 @@ void TemplateGame::OnStart(GameStartupContext&)
                 return usage;
             }
             return LoadWorld(args[0]);
+        },
+    });
+
+    engine.Console().Registry().RegisterCommand({
+        .Name = "camera_mode",
+        .Owner = "game",
+        .Usage = "camera_mode <first|third|fixed>",
+        .Help = "Switch the active camera between first-person, third-person, and the authored pose.",
+        .RequiredPhase = ConsolePhase::GameLoaded,
+        .Callback = [this](
+            ConsoleExecutionContext&,
+            std::span<const std::string> args)
+        {
+            if (args.size() != 1)
+            {
+                ConsoleResult usage;
+                usage.Error("usage: camera_mode <first|third|fixed>");
+                return usage;
+            }
+            return SetCameraMode(args[0]);
         },
     });
 
@@ -921,7 +1200,8 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
                     runtime.Entities(),
                     log,
                     zone.Partition,
-                    ResolvePlayerMovementProfile(log));
+                    ResolvePlayerMovementProfile(log),
+                    ResolvePlayerAvatar(log));
             }
             PlayZoneActive = true;
             return true;
@@ -1162,7 +1442,8 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
             engine.World().Entities(),
             log,
             PersistentStoragePartition,
-            ResolvePlayerMovementProfile(log));
+            ResolvePlayerMovementProfile(log),
+            ResolvePlayerAvatar(log));
     }
 
     ZoneId focus = PendingZoneFocus;
@@ -1219,6 +1500,39 @@ ConsoleResult TemplateGame::FocusWorldZone(
     return result;
 }
 
+ConsoleResult TemplateGame::SetCameraMode(std::string_view modeName)
+{
+    ConsoleResult result;
+
+    CameraRigMode mode{};
+    if (modeName == "first")
+        mode = CameraRigMode::FirstPerson;
+    else if (modeName == "third")
+        mode = CameraRigMode::ThirdPerson;
+    else if (modeName == "fixed")
+        mode = CameraRigMode::Fixed;
+    else
+    {
+        result.Error("unknown camera mode '" + std::string(modeName)
+                     + "'; expected first, third, or fixed");
+        return result;
+    }
+
+    World& world = GetEngine().World().Entities();
+    const EntityId camera =
+        world.GetResource<ActiveCameraService>().GetActive();
+    CameraRig* rig = camera.IsValid() ? world.TryGet<CameraRig>(camera) : nullptr;
+    if (rig == nullptr)
+    {
+        result.Error("no active camera with a rig; load a map first");
+        return result;
+    }
+
+    rig->Mode = mode;
+    result.Info("camera mode " + std::string(modeName));
+    return result;
+}
+
 void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
 {
     RegisterPhysics(ctx.Schedule);
@@ -1248,6 +1562,7 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
         GetEngine().Logging());
     RegisterCameraSystem(ctx.Schedule);
     RegisterControllerSystems(ctx.Schedule);
+    RegisterNetSystems(ctx.Schedule, GetEngine().PeerCommands());
     ctx.Schedule.Register<CharacterInputSystem>();
 
     // Everything that reads actions runs after they are resolved: the aim
@@ -1256,8 +1571,23 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     ctx.Schedule.After<LookIntegrationSystem, InputActionResolveSystem>();
     ctx.Schedule.After<CharacterInputSystem, LookIntegrationSystem>();
     ctx.Schedule.After<CharacterInputSystem, InputActionResolveSystem>();
+    // A remote player's actions have to be in their source before anything
+    // reads one, the same way the local player's have to be resolved first.
+    ctx.Schedule.After<CharacterInputSystem, PeerCommandFeedSystem>();
     OrderMovementAfterInput<CharacterInputSystem>(ctx.Schedule);
     ctx.Schedule.Register<SpinSystem>();
+
+    // Inert with no session: its first act each frame is to look for one.
+    {
+        SessionPlayerSystem& players = ctx.Schedule.Register<SessionPlayerSystem>();
+        players.Owner = &GetEngine();
+        players.Profile =
+            ResolvePlayerMovementProfile(GetEngine().Logging().GetLogger<TemplateGame>());
+        players.Avatar =
+            ResolvePlayerAvatar(GetEngine().Logging().GetLogger<TemplateGame>());
+        players.LocalPawn = PlayerPawn;
+    }
+
     ctx.Schedule.Register<WorldPartitionUpdateSystem>(
         Partition,
         ZoneLoader,
@@ -1367,14 +1697,44 @@ void TemplateGame::OnShutdown(GameShutdownContext&)
     HotReloader.reset();
 #endif
 
-    // The world-resource binding cache holds leases into this game's
-    // data-asset cache; both references must drop before Assets goes away.
+    // The world-resource binding caches hold leases into this game's data-asset
+    // cache; every reference must drop before Assets goes away. A lease that
+    // outlives its owner calls through a destroyed vtable when the world tears
+    // down, which aborts on the way out rather than at the point of the mistake.
     if (MovementProfileBindingCache* bindings =
             runtime.Entities().TryGetResource<MovementProfileBindingCache>())
     {
         bindings->Clear();
     }
+    if (InputBindingCache* bindings =
+            runtime.Entities().TryGetResource<InputBindingCache>())
+    {
+        bindings->Clear();
+    }
+    // Same rule for the context lease. The game object is a module-static whose
+    // destructor runs at dlclose, long after the world that owns the context set,
+    // so the lease has to be dropped here while its owner still exists.
+    GameplayInput.Reset();
+    // The spawn recipe is a callable whose target lives in this module, for the
+    // same reason the subtype registration below is: it has to go while the
+    // module is still mapped.
+    GetEngine().SpawnRecipes().Clear();
+    // Every lease this game holds into its own data-asset cache, dropped here.
+    // Declaration order alone is not enough: Assets is reset explicitly below,
+    // so anything still holding a lease at that point outlives its owner and
+    // calls through a destroyed vtable when the module unloads.
     PlayerMovementProfile.Reset();
+    InputActionSetAsset.Reset();
+    InputProfileAsset.Reset();
+    // The pawns that held their own references are destroyed above, so this
+    // drops the last one before the caches go away.
+    ReleasePlayerAvatar();
+    PlayerAvatarAsset.Reset();
+    // The subtype registration holds a function pointer into this module, and
+    // unregistering refuses while values are still resident, so it follows the
+    // handles above and precedes the cache going away.
+    if (Assets.has_value())
+        UnregisterPlayerAvatarData(Assets->DataTypes, Assets->DataSchemas);
     Assets.reset();
 }
 
@@ -1428,6 +1788,86 @@ MovementProfileHandle TemplateGame::ResolvePlayerMovementProfile(Logger& log)
     if (!PlayerMovementProfile.IsValid())
         PlayerMovementProfile = AcquireDataAsset(kPlayerMovementProfilePath, log);
     return MovementProfileHandle{ PlayerMovementProfile.GetToken() };
+}
+
+// Turns the authored avatar paths into mesh and material-set handles, once.
+// Every failure path leaves the result invalid, which spawns a bodyless pawn
+// rather than refusing to spawn: a missing body is a content problem, not a
+// reason to have no player.
+ResolvedPlayerAvatar TemplateGame::ResolvePlayerAvatar(Logger& log)
+{
+    if (PlayerAvatar.IsValid())
+        return PlayerAvatar;
+
+    if (!PlayerAvatarAsset.IsValid())
+        PlayerAvatarAsset = AcquireDataAsset(kPlayerAvatarPath, log);
+    if (!PlayerAvatarAsset.IsValid())
+        return {};
+
+    RuntimeAssets& assets = RuntimeAssetState();
+    const CompiledPlayerAvatar* avatar =
+        assets.DataAssets.TryGet<CompiledPlayerAvatar>(
+            PlayerAvatarAsset.GetToken(), "player.avatar");
+    if (avatar == nullptr)
+    {
+        log.Warn("TemplateGame: '{}' is not a player.avatar", kPlayerAvatarPath);
+        return {};
+    }
+    const StaticMeshHandle mesh =
+        assets.Assets.LoadStaticMesh(avatar->MeshPath);
+    if (!mesh.IsValid())
+    {
+        log.Warn("TemplateGame: player avatar mesh '{}' did not load",
+                 avatar->MeshPath);
+        return {};
+    }
+
+    std::vector<MaterialHandle> materials;
+    materials.reserve(avatar->MaterialPaths.size());
+    for (const std::string& path : avatar->MaterialPaths)
+    {
+        const MaterialHandle material = assets.Assets.LoadMaterial(path);
+        if (!material.IsValid())
+        {
+            log.Warn("TemplateGame: player avatar material '{}' did not load",
+                     path);
+            for (MaterialHandle loaded : materials)
+                assets.Assets.ReleaseMaterial(loaded);
+            assets.Assets.ReleaseStaticMesh(mesh);
+            return {};
+        }
+        materials.push_back(material);
+    }
+
+    const MaterialSetHandle set = assets.Assets.AcquireMaterialSet(materials);
+    // The set retains its own reference to each member for its lifetime, so the
+    // loads above have done their job once it exists.
+    for (MaterialHandle material : materials)
+        assets.Assets.ReleaseMaterial(material);
+    if (!set.IsValid())
+    {
+        log.Warn("TemplateGame: player avatar materials did not form a set");
+        assets.Assets.ReleaseStaticMesh(mesh);
+        return {};
+    }
+
+    PlayerAvatar = ResolvedPlayerAvatar{ .Mesh = mesh, .Materials = set };
+    return PlayerAvatar;
+}
+
+void TemplateGame::ReleasePlayerAvatar()
+{
+    if (!Assets.has_value())
+    {
+        PlayerAvatar = {};
+        return;
+    }
+
+    if (PlayerAvatar.Materials.IsValid())
+        Assets->Assets.ReleaseMaterialSet(PlayerAvatar.Materials);
+    if (PlayerAvatar.Mesh.IsValid())
+        Assets->Assets.ReleaseStaticMesh(PlayerAvatar.Mesh);
+    PlayerAvatar = {};
 }
 
 // Binds the game's controls. The action set loads first: a profile names its

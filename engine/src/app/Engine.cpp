@@ -1,5 +1,6 @@
 #include <app/Engine.h>
 #include <app/EngineConsoleBuiltins.h>
+#include <net/NetConsoleCommands.h>
 #include <app/Game.h>
 #include <audio/AudioService.h>
 #include <audio/AudioSystem.h>
@@ -28,6 +29,7 @@
 #ifdef SENCHA_ENABLE_DEBUG_UI
 #include <debug/ConsolePanel.h>
 #include <debug/ImGuiDebugOverlay.h>
+#include <debug/NetStatsPanel.h>
 #include <debug/TimingPanel.h>
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
 #include <debug/RenderStatsPanel.h>
@@ -67,6 +69,7 @@ bool Engine::Initialize()
     DebugState = std::make_unique<DebugService>(logging, debugLog);
     ConsoleState = std::make_unique<ConsoleService>();
     RegisterEngineConsoleBuiltins(*ConsoleState, *DebugState);
+    RegisterNetConsoleCommands(ConsoleState->Registry(), *this);
     if (Configuration.Console.OpenOnStart)
         DebugState->Open();
     EngineSystems.Register<DefaultRenderPipeline>(
@@ -83,6 +86,7 @@ bool Engine::Initialize()
     EngineSystems.Register<CaptionSystem>(CaptionState.get(), AudioState.get());
     auto failInitialize = [this]() {
         EngineSystems.Shutdown();
+        NetState.reset();
         FrameDriverInstance.reset();
         TaskQueueInstance.reset();
         FramePoolInstance.reset();
@@ -116,8 +120,20 @@ bool Engine::Initialize()
         configuredWorkers < 0 ? JobSystem::DefaultWorkerCount()
                               : static_cast<uint32_t>(configuredWorkers));
 
+    // Headless: no platform, no graphics, but a real frame loop. The driver is
+    // renderer-agnostic, so a host with nothing to draw into still steps ticks,
+    // drains async commits, and runs its schedule. Pacing still applies, which
+    // is what keeps a dedicated host from spinning a core at full speed.
     if (Configuration.Window.GraphicsApi == WindowGraphicsApi::None)
     {
+        FrameDriverInstance = std::make_unique<FrameDriver>(RuntimeLoop);
+        FrameDriverInstance->SetTargetFps(Configuration.Runtime.TargetFps);
+        FrameDriverInstance->SetShouldExit([this] {
+            if (!Running)
+                return true;
+            return ExitAfterFrames != 0
+                && RuntimeLoop.GetCurrentFrame().WallTime.FrameIndex >= ExitAfterFrames;
+        });
         Initialized = true;
         return true;
     }
@@ -191,6 +207,18 @@ void Engine::Shutdown()
     // the unified world and backend services are still alive, then join task
     // lanes before destroying the entity world they may have targeted.
     EngineSystems.Shutdown();
+    // Before the frame driver: the net phases hold a pointer to this, and a
+    // session outliving the loop that pumps it is a session nothing drains.
+    // The goodbye is what turns this quit into an immediate leave on the other
+    // end instead of a peer that lingers until its timeout.
+    if (NetState != nullptr)
+        NetState->Disconnect("quit");
+    NetState.reset();
+    // Recipes are callables a game module registered. A game clears its own in
+    // OnShutdown; this is the backstop, because the Engine's own destruction
+    // can run after the module is unmapped and destroying the callable then
+    // reaches into memory that is gone.
+    SpawnRecipeState.Clear();
     FrameDriverInstance.reset();
     TaskQueueInstance.reset();
     FramePoolInstance.reset();
@@ -362,6 +390,29 @@ const AsyncTaskQueue& Engine::Tasks() const
     return *TaskQueueInstance;
 }
 
+NetSession* Engine::CreateNetSession(INetTransport& transport)
+{
+    if (NetState != nullptr)
+        return nullptr;
+    NetState = std::make_unique<NetSession>(transport);
+    ReplicationState.Reset();
+    CVarPublisherState.Reset();
+    PeerCommandState.Reset();
+    NetStatsState.Reset();
+    NetClockState.Reset();
+    return NetState.get();
+}
+
+void Engine::DestroyNetSession()
+{
+    NetState.reset();
+    ReplicationState.Reset();
+    CVarPublisherState.Reset();
+    PeerCommandState.Reset();
+    NetStatsState.Reset();
+    NetClockState.Reset();
+}
+
 DefaultRenderPipeline* Engine::GetRenderPipeline()
 {
     return EngineSystems.Get<DefaultRenderPipeline>();
@@ -411,12 +462,57 @@ int Engine::Run(Game& game)
     }
 
     RuntimeComponentSchemaState.Seal();
+
+    // The replicated table is compiled from the same components, after the
+    // world vocabulary exists and before anything can host or join. A build
+    // that gets this wrong is wrong for every session it would ever run, so it
+    // is reported here rather than discovered as a misread snapshot later.
+    ReplicationLayoutState = ReplicationLayout{};
+    RegisterEngineReplicatedComponents(ReplicationLayoutState);
+    game.OnRegisterReplicatedComponents(ReplicationLayoutState);
+    if (ReplicationLayoutState.Error() != ReplicationLayoutError::None)
+    {
+        std::fprintf(
+            stderr,
+            "Replicated component table is invalid (%.*s): %s.\n",
+            static_cast<int>(
+                ReplicationLayoutErrorToString(ReplicationLayoutState.Error()).size()),
+            ReplicationLayoutErrorToString(ReplicationLayoutState.Error()).data(),
+            ReplicationLayoutState.ErrorDetail().c_str());
+        game.OnUnregisterComponents(serializers);
+        RuntimeComponentSchemaState = WorldComponentSchema{};
+        return 1;
+    }
+
+    std::string missingReplicatedComponent;
+    if (!RuntimeComponentSchemaCoversReplication(
+            RuntimeComponentSchemaState,
+            ReplicationLayoutState,
+            &missingReplicatedComponent))
+    {
+        std::fprintf(
+            stderr,
+            "Runtime component schema is missing storage for replicated component '%s'.\n",
+            missingReplicatedComponent.c_str());
+        game.OnUnregisterComponents(serializers);
+        RuntimeComponentSchemaState = WorldComponentSchema{};
+        return 1;
+    }
+    ReplicationLayoutState.Seal();
+
     assert(!RuntimeWorldState && "Engine::Run called with a live runtime world");
     RuntimeWorldState =
         std::make_unique<RuntimeWorld>(RuntimeComponentSchemaState);
 
     ConsoleService& console = Console();
     console.AdvancePhase(ConsolePhase::EngineReady);
+
+    // Running from the start of the lifecycle, not from the first frame, so
+    // RequestExit means something during startup: a host that cannot load what
+    // it was told to load has to be able to decline to run, and headless that
+    // is the difference between exiting and spinning forever with no window to
+    // close. The frame loop's exit predicate reads this before its first frame.
+    Running = true;
 
     GameStartupContext startup{
         .Config = Configuration,
@@ -450,7 +546,6 @@ int Engine::Run(Game& game)
         if (!RenderCaptureOutputPath.empty())
             RenderCaptureStore.Start(0);
 #endif
-        Running = true;
         FrameDriverInstance->Run();
         if (FrameTraceStore != nullptr
             && !FrameTraceStore->WriteTo(FrameTraceOutputPath))
@@ -581,6 +676,9 @@ void Engine::CreateDebugOverlay()
         *DebugState, *window, GraphicsState->Instance, GraphicsState->Frames);
     overlay->AddPanel<ConsolePanel>(DebugState->GetLogSink(), *ConsoleState);
     overlay->AddPanel<TimingPanel>(TimingData);
+    // Registered once for the process; the session it reads comes and goes.
+    overlay->AddPanel<NetStatsPanel>(NetState, NetStatsState, NetClockState,
+                                     PeerCommandState, ConsoleState->Registry());
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     overlay->AddPanel<RenderStatsPanel>(
         ActiveProfileMode, RenderStatsRing, ConsoleState->Registry());

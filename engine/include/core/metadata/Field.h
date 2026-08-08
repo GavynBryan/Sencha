@@ -20,7 +20,31 @@
 //   MakeField("tag",    &Actor::Tag).Optional()
 //   MakeField("mesh",   &Actor::Mesh).AsAsset(AssetType::StaticMesh)
 //   MakeField("mats",   &Actor::Mats).AsAsset(AssetType::Material, AssetArity::List)
+//   MakeField("pos",    &Actor::Pos).Quantize(-4096.0f, 4096.0f, 20)
+//   MakeField("cooldown", &Actor::Cooldown).OwnerOnly()
+//   MakeField("blend",  &Actor::Blend).LocalOnly()
 //=============================================================================
+
+//=============================================================================
+// FieldQuantization
+//
+// Lossy fixed-point encoding for a float leaf: Bits bits spanning [Min, Max].
+// Bits == 0 means the leaf is carried at its natural width.
+//
+// This is a property of the data, not of any one consumer: it states the range
+// the value actually occupies and the precision it is meaningful to. A wire
+// codec reads it to pack; an editor could read the same range to bound a
+// slider.
+//=============================================================================
+struct FieldQuantization
+{
+    float Min = 0.0f;
+    float Max = 0.0f;
+    std::uint8_t Bits = 0;
+
+    [[nodiscard]] constexpr bool IsQuantized() const { return Bits > 0; }
+    bool operator==(const FieldQuantization&) const = default;
+};
 
 template <typename Class, typename Member>
 struct Field
@@ -42,6 +66,23 @@ struct Field
     // shows a swatch + picker instead of three drag fields. View-only: the
     // serialized form is unchanged (still the member's own [x,y,z] schema).
     bool IsColor = false;
+    // Replication scope and precision. All three describe the member itself, so
+    // they are declared once beside it rather than in a second registry that
+    // could drift; a replication writer is the consumer. Tagging a member that
+    // has its own schema (a Vec3, a Transform) applies to every leaf beneath it.
+    FieldQuantization Quantization{};
+    // Sent only to the peer that owns the entity. Private state a spectator has
+    // no business seeing, and the cheapest anti-cheat there is: what is never
+    // sent cannot be read out of a client's memory.
+    bool IsOwnerOnly = false;
+    // Never leaves the machine that computes it. Derived caches, presentation
+    // smoothing, handles that mean nothing on another process.
+    bool IsLocalOnly = false;
+    // Sent to everyone except the peer that owns the entity, because that peer
+    // computes it themselves and holds a fresher answer than the one coming
+    // back. Aim is the case: a player's view must follow their mouse now, not
+    // at the end of a round trip.
+    bool IsOwnerLocal = false;
 
     Field& Optional()
     {
@@ -66,6 +107,33 @@ struct Field
     Field& AsColor()
     {
         IsColor = true;
+        return *this;
+    }
+
+    // The range this member actually occupies and the precision worth carrying.
+    // A value outside [min, max] clamps rather than wrapping, so a bad range is
+    // a visible pin rather than a value that teleports.
+    Field& Quantize(float min, float max, std::uint8_t bits)
+    {
+        Quantization = FieldQuantization{ min, max, bits };
+        return *this;
+    }
+
+    Field& OwnerOnly()
+    {
+        IsOwnerOnly = true;
+        return *this;
+    }
+
+    Field& OwnerLocal()
+    {
+        IsOwnerLocal = true;
+        return *this;
+    }
+
+    Field& LocalOnly()
+    {
+        IsLocalOnly = true;
         return *this;
     }
 };

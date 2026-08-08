@@ -149,9 +149,17 @@ endif()
 # and no ABI header here embeds a comment-introducer (// or /*) inside a string
 # literal, so comment stripping never deletes a real token. Keep both true: it is
 # what makes this safe (a false negative is the segfault we are eliminating).
+#
+# A directory belongs here when its headers can change the layout of something a
+# game module compiles against. That is not only the types a module names: it
+# includes anything Engine holds by value, because a module reaching a service
+# through an inline accessor has the member offset baked into its own code. net/
+# is here for exactly that reason -- Engine holds the replication, cvar-sync,
+# command, traffic, and clock runtimes by value.
 file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     "${SENCHA_ENGINE_INCLUDE_DIR}/app/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/input/*.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/net/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/serialization/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/metadata/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/console/*.h"

@@ -41,6 +41,15 @@ enum class CVarFlags : std::uint32_t
     Transient  = 1u << 6,
     Latched    = 1u << 7,
     Unsafe     = 1u << 8,
+    // The session decides this one. Writable only where authority sits, and
+    // synchronized to everyone else; a client's own attempt is refused with the
+    // authoritative value rather than silently diverging. Outside a session it
+    // means nothing, which is what keeps single-player unaffected.
+    //
+    // For anything whose value must be the same on every machine in a session:
+    // a per-client tick rate or timescale is a desync by construction, not a
+    // preference.
+    Replicated = 1u << 9,
 };
 
 inline CVarFlags operator|(CVarFlags a, CVarFlags b)
@@ -59,6 +68,32 @@ inline bool HasFlag(CVarFlags flags, CVarFlags flag)
 {
     return (static_cast<std::uint32_t>(flags) & static_cast<std::uint32_t>(flag)) != 0;
 }
+
+//=============================================================================
+// ConsoleAuthorityPolicy
+//
+// What a session permits this process's console to change. A plain value the
+// session writes and the registry reads, rather than the registry knowing what
+// a session is: the console sits below networking and must keep working in a
+// build that never opens a socket.
+//
+// The default is the single-player answer -- no session, so nothing here
+// applies and every flag behaves as it always has.
+//=============================================================================
+struct ConsoleAuthorityPolicy
+{
+    // False means every rule below is inert. This is the state a single-player
+    // game is in for its entire life.
+    bool InSession = false;
+    // Whether this process is the one that decides. A listen server's own
+    // console is unrestricted; a client's is not.
+    bool HasAuthority = false;
+    // Whether Cheat-flagged cvars may be written at all. Off blocks them for
+    // everyone in the session including the host, which is the point: a
+    // listen-server host must not be able to quietly grant themselves what the
+    // other players cannot have.
+    bool CheatsEnabled = false;
+};
 
 enum class ConsoleCommandFlags : std::uint32_t
 {

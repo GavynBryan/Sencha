@@ -8,6 +8,7 @@ class Engine;
 class ComponentSerializerRegistry;
 class DataAssetTypeRegistry;
 class DataSchemaRegistry;
+class ReplicationLayout;
 class WorldComponentSchema;
 
 //=============================================================================
@@ -49,6 +50,14 @@ public:
     // OnStart. Unlike serializer registration, this hook is runtime-only: the
     // editor does not need a live World merely to inspect scene fields.
     virtual void OnRegisterRuntimeComponents(WorldComponentSchema&) {}
+
+    // Which of the game's components an authority sends to its peers. Called
+    // right after the engine folds its own replication manifest and before the
+    // table is sealed, so a game's components take wire keys after the
+    // engine's. Order is a wire contract in both halves: appending is safe,
+    // reordering is not. A single-player game leaves this empty and pays
+    // nothing -- no session means the table is never read.
+    virtual void OnRegisterReplicatedComponents(ReplicationLayout&) {}
 
     virtual void OnStart(GameStartupContext&) {}
     virtual void OnRegisterSystems(SystemRegisterContext&) {}

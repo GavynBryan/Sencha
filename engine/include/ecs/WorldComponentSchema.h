@@ -43,6 +43,13 @@ public:
         // Same decode, but into a row that already carries the column. Null for
         // no entry; see WorldComponentSchema::InitializeComponent.
         ImportFn Initialize = nullptr;
+        // Overwrite in place on a row that already carries the column. See
+        // WorldComponentSchema::SetComponentBytes.
+        ImportFn Write = nullptr;
+        // The type's own default-constructed bytes. See
+        // WorldComponentSchema::WriteDefaultBytes.
+        using DefaultsFn = bool (*)(std::span<std::byte>);
+        DefaultsFn Defaults = nullptr;
 
         friend class WorldComponentSchema;
     };
@@ -120,6 +127,43 @@ public:
                 return world.InitializeComponent<T>(entity, value);
             }
         };
+        entry.Write = [](World& world,
+                         EntityId entity,
+                         std::span<const std::byte> bytes) {
+            if constexpr (std::is_empty_v<T>)
+            {
+                // A tag carries nothing to overwrite; presence is its whole
+                // value, and changing that is structural, not a write.
+                return bytes.empty() && world.HasComponent<T>(entity);
+            }
+            else
+            {
+                if (bytes.size() != sizeof(T))
+                    return false;
+                // Non-const TryGet publishes the column's write version, so a
+                // value arriving this way is visible to Changed<T> exactly as a
+                // system's own write would be.
+                T* target = world.TryGet<T>(entity);
+                if (target == nullptr)
+                    return false;
+                std::memcpy(target, bytes.data(), sizeof(T));
+                return true;
+            }
+        };
+        entry.Defaults = [](std::span<std::byte> bytes) {
+            if constexpr (std::is_empty_v<T>)
+            {
+                return bytes.empty();
+            }
+            else
+            {
+                if (bytes.size() != sizeof(T))
+                    return false;
+                const T value{};
+                std::memcpy(bytes.data(), &value, sizeof(T));
+                return true;
+            }
+        };
         Entries_.push_back(entry);
         return true;
     }
@@ -144,6 +188,23 @@ public:
             assert(assigned == static_cast<ComponentId>(index)
                    && "World component registration order differs from sealed schema");
         }
+    }
+
+    // Fills `bytes` with a default-constructed instance of the component.
+    //
+    // What a field's absence means. A decoder that leaves unmentioned fields
+    // alone needs something underneath them, and for a value arriving on an
+    // entity that does not hold the component yet, zero is not it: zero is a
+    // number the type never chose, while the member initializers are the values
+    // it declares for exactly this case. Substituting zero silently produces a
+    // component that is valid, wrong, and inert -- the failure that reads as a
+    // feature not working rather than as data being missing.
+    bool WriteDefaultBytes(ComponentTypeId type, std::span<std::byte> bytes) const
+    {
+        const Entry* entry = Find(type);
+        return entry != nullptr
+            && entry->Defaults != nullptr
+            && entry->Defaults(bytes);
     }
 
     // Imports one package component through the concrete component type that was
@@ -176,6 +237,28 @@ public:
         return entry != nullptr
             && entry->Initialize != nullptr
             && entry->Initialize(world, entity, bytes);
+    }
+
+    // Overwrites a component that is already on the entity, without adding,
+    // removing, or firing a lifecycle hook. This is how replication applies a
+    // snapshot: the value changes, the entity's shape does not.
+    //
+    // Deliberately not a fallback for ImportComponent. A component whose
+    // ComponentTraits retain external handles cannot be overwritten this way --
+    // OnAdd would not run for the incoming handles and OnRemove would not run
+    // for the outgoing ones -- so anything reachable through here must be
+    // hook-free, which the replication registry enforces at registration.
+    bool SetComponentBytes(
+        World& world,
+        EntityId entity,
+        ComponentTypeId type,
+        std::span<const std::byte> bytes) const
+    {
+        assert(Sealed_ && "SetComponentBytes requires a sealed schema");
+        const Entry* entry = Find(type);
+        return entry != nullptr
+            && entry->Write != nullptr
+            && entry->Write(world, entity, bytes);
     }
 
     [[nodiscard]] const Entry* Find(ComponentTypeId type) const

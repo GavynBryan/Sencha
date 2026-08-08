@@ -43,13 +43,18 @@ option(SENCHA_BUILD_TEMPLATE
     ON)
 
 option(SENCHA_WARNINGS_AS_ERRORS
-    "Treat first-party compiler warnings as errors. ON in the dev preset (and everything inheriting it: dev-ui, tsan, ci) so a new warning fails the build where it is introduced. OFF by default so bare configures, an installed SDK, and toolchains whose diagnostics we have not triaged still build."
+    "Treat first-party compiler warnings as errors. ON in the dev preset (and everything inheriting it: tsan, ci) so a new warning fails the build where it is introduced. OFF by default so bare configures, an installed SDK, and toolchains whose diagnostics we have not triaged still build."
     OFF)
 
 set(SENCHA_GAME_PROJECT_DIR "" CACHE PATH
     "Optional external game project to build against the in-tree engine. The project must provide a CMakeLists.txt that supports being added as a subdirectory.")
 
 # Cross-option invariants.
+# The overlay draws through the Vulkan backend, so a no-Vulkan build simply has
+# nowhere to put it. Forcing it off beats failing the configure: the debug UI is
+# on by default everywhere, and a headless build asking for no graphics should
+# not have to also know to switch off a UI it could never have shown.
 if(SENCHA_ENABLE_DEBUG_UI AND NOT SENCHA_ENABLE_VULKAN)
-    message(FATAL_ERROR "SENCHA_ENABLE_DEBUG_UI requires SENCHA_ENABLE_VULKAN=ON")
+    message(STATUS "SENCHA_ENABLE_DEBUG_UI forced OFF: it requires SENCHA_ENABLE_VULKAN=ON")
+    set(SENCHA_ENABLE_DEBUG_UI OFF CACHE BOOL "" FORCE)
 endif()

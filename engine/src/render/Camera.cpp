@@ -1,5 +1,6 @@
 #include <render/Camera.h>
 
+#include <camera/CameraRig.h>
 #include <world/transform/TransformComponents.h>
 
 #include <cmath>
@@ -80,5 +81,13 @@ bool CameraRenderDataSystem::Build(const ActiveCameraService& activeCamera,
     out.ViewProjection = projection * out.View;
     out.Position = transform->Value.Position;
     out.ViewFrustum = Frustum::FromViewProjection(out.ViewProjection);
+    // Rigs are optional vocabulary: an editor viewport camera and a bare
+    // authored camera have none, and their worlds never register the type.
+    out.ExcludedEntity = EntityId{};
+    if (world.IsRegistered<CameraRig>())
+    {
+        if (const CameraRig* rig = world.TryGet<CameraRig>(entity))
+            out.ExcludedEntity = CameraRigExcludedEntity(*rig);
+    }
     return true;
 }

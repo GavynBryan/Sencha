@@ -10,6 +10,8 @@
 #include <input/InputContextSet.h>
 #include <movement/MovementProfileData.h>
 
+#include "PlayerAvatarData.h"
+
 #ifdef SENCHA_ENABLE_COOK
 #include <assets/cook/AssetImporter.h>
 #include <assets/hotreload/AssetHotReloader.h>
@@ -56,10 +58,13 @@ private:
     ConsoleResult LoadMap(std::string_view mapName);
     ConsoleResult LoadWorld(std::string_view worldName);
     ConsoleResult FocusWorldZone(std::string_view zoneHex);
+    ConsoleResult SetCameraMode(std::string_view modeName);
     void SetRelativeMouseMode(bool enabled);
     RuntimeAssets& RuntimeAssetState();
     DataAssetCacheHandle AcquireDataAsset(std::string_view path, Logger& log);
     MovementProfileHandle ResolvePlayerMovementProfile(Logger& log);
+    ResolvedPlayerAvatar ResolvePlayerAvatar(Logger& log);
+    void ReleasePlayerAvatar();
     void SetupInputMapping(Logger& log);
 
     bool PlayZoneActive = false;
@@ -72,8 +77,12 @@ private:
     EntityId PlayerPawn;
     // Declared after Assets so their release runs before the cache is destroyed.
     DataAssetCacheHandle PlayerMovementProfile;
+    DataAssetCacheHandle PlayerAvatarAsset;
     DataAssetCacheHandle InputActionSetAsset;
     DataAssetCacheHandle InputProfileAsset;
+    // Resolved once and held for the process so spawning a second pawn does not
+    // reload the body. Released in OnShutdown, before the caches are destroyed.
+    ResolvedPlayerAvatar PlayerAvatar;
     // Held for the process: this game is always in its gameplay context. A
     // menu would take its own lease and drop this one.
     InputContextLease GameplayInput;

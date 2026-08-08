@@ -68,8 +68,9 @@ Done and load-bearing:
   lifecycle hooks, generational entity ids, roughly 852 green tests.
 - Concurrency: `JobSystem` fork-join plus `AsyncTaskQueue`,
   with `worker_count == 0` as the deterministic reference path.
-- Frame hosting: `FrameDriver` with the fixed ten-phase frame, `EngineSchedule`
-  topologically ordered systems, fixed-tick simulation with presentation-only wall time.
+- Frame hosting: `FrameDriver` with the fixed eleven-phase frame, `EngineSchedule`
+  topologically ordered systems, and fixed-tick simulation paced by a wall-time
+  accumulator with presentation-only wall time and real sub-tick interpolation.
 - Renderer: Vulkan forward pass for static meshes, `.smat`/`.stex` materials and
   textures, point lights (max 64, unshadowed), extraction by copy behind the
   render-domain vs `graphics/vulkan` split.
@@ -605,6 +606,98 @@ is v2.0. Every batch-2 tool states its restricted domain up front, the way
 
 ---
 
+## 10a. Track G: sessions and replication
+
+Server-authoritative multiplayer, on the idTech and Source posture: the infrastructure
+is built for sessions, and games may be single-player. No session constructed means no
+networking code in the frame at all. Execution detail is `docs/plans/networking.md`,
+which is ratified; this section owns the sequence and the gate.
+
+1. **Headless frame loop (v1.0).** The last unbuilt piece of that document's Section 3
+   binding constraints; the other four shipped on Tracks A and C. A headless engine
+   cannot tick today — `Engine::Initialize` returns before `FrameDriver` exists when
+   there is no window, and phase registration is entirely inside the Vulkan guard.
+   Independently valuable: it is the CI simulation-soak vehicle and the dedicated
+   host's skeleton. Gate: a headless engine runs fixed ticks with no graphics
+   services constructed, and exits clean. **Landed.** The engine ticks headless;
+   the template game module does not yet, because its asset stack is built from
+   graphics services. That is G7's to resolve, and it is what the two-process CI
+   soak waits on.
+
+2. **Transport, protocol, session (G1).** `INetTransport` with UDP, loopback, and a
+   seeded deterministic simulated transport; two channel classes; pure span decoders
+   with cap tables and a fuzz corpus; cookie handshake with compatibility and world
+   identity gates; table sync for registration-order ids; `PumpNet` and `FlushNet`
+   frame phases; `host`/`connect`/`disconnect`. Gate: an empty session held between
+   two processes over loopback UDP, with the codec and channel suites green.
+   **Landed**, with one deviation: registration-order ids ride no synced name
+   table. Component identity is content-addressed already, and input actions ride
+   the dense array both ends compile from the same content — recorded with its
+   reasoning in `networking.md`. Crypto is G6; the packet header reserves its
+   framing.
+
+3. **Replication core (G2).** Schema annotations and the replicated-component
+   manifest fold; type-erased component overwrite; identity maps over
+   `PersistentEntityId` and `NetEntityId`; snapshot ring, per-client deltas, acks,
+   budgets; client apply and interpolation. Gate: a pawn mirrors between two
+   instances, stationary then moving under authority control. **Landed**, gate
+   met on screen. Interest scoping is item 6; a snapshot today covers everything
+   marked replicated.
+
+4. **Ownership, input, prediction (G4). Track gate.** `NetOwner`; session role as
+   composition at `OnRegisterSystems`; the input channel over the tick-stamped action
+   records plus per-tick aim; per-peer pawn spawn; input-delay mode end to end.
+   Prediction and reconciliation follow item 5. **Track gate: two instances on one
+   machine, one hosting, each seeing the other's pawn move under
+   server-authoritative simulation** — where "seeing" is observed motion, not
+   World state or log output. **Gate met** on 2026-08-07, owner-observed.
+
+5. **Possession and spawn recipes (G4a). Added 2026-08-07, ahead of prediction.**
+   The first live playtest traced its defects to one missing ownership: what a
+   replicated entity is on the receiving machine. The input-source table
+   (`InputActionSourceRef` on the pawn, slot zero local, one source per admitted
+   peer fed from the command stream) replaces possession-by-marks and carries
+   action columns so the authority interprets remote input with the same game
+   code as local; the spawn payload gains a recipe identity so the receiver
+   instantiates the full local shape — derived columns included — instead of
+   each game hand-rolling adoption. Interim form of the prefab encoding the
+   protocol reserves for Track D item 1. Gate: a client jumps, and replicated
+   motion is asserted at the extraction boundary. **Landed.** Motion is asserted
+   through the components and derivation extraction queries match — a device-backed
+   `Extract` call is out of reach of a headless suite — and the jump path is
+   asserted through the action columns that carry it. Two live defects this phase
+   found and closed: a standing input backlog one redundancy window deep, and
+   local-only fields arriving zeroed on a snapshot-spawned entity.
+
+6. **Zone interest (G3).** Multi-source demand, per-peer zone grant/ack/revoke, zone
+   baselines, late join, travel. Not required for the track gate — a single-zone map
+   with pawns in the persistent partition reaches it — but required before any
+   multi-zone session ships. Gate: a scripted three-zone co-op traversal with zero
+   missed host ticks and no desync mismatches.
+
+7. **Session semantics (G5).** `CVarFlags::Replicated` and enforced `Cheat` gating,
+   cvar sync, cue replication, desync hashing, a net stats panel. Load-bearing rather
+   than hygienic: the console ships in every build (see Recorded decisions), so this
+   is the shipping gate on what a player's own console can reach in a session.
+
+8. **Hardening (G6).** libsodium AEAD and the auth-token seam; rate budgets and
+   strikes; malformed-traffic soak in both directions, including a hostile authority
+   against a live client; interest-leak audit.
+
+9. **Dedicated host and tooling (G7).** Packaged headless host configuration, the
+   two-process CI soak, and PIE host-plus-join convenience.
+
+10. **Prediction (G-P). Split out 2026-08-08.** P1, the shared tick, has landed:
+   the authority publishes its simulation tick and a client names its own clock in
+   those terms, which is what lets a command ask for a tick and a prediction be
+   compared against one. P2 is local prediction with rollback and replay of the
+   owned pawn; P3 is error smoothing and prediction diagnostics.
+
+Version placement for G1 onward is the open question in `networking.md` Section 14:
+the recommendation is item 1 into v1.0 now with the rest gated as its own arc.
+
+---
+
 ## 11. Recorded decisions and deferrals
 
 The repo's deferral pattern: every deferral records the concrete trigger that revives it.
@@ -664,7 +757,8 @@ the specialist doc wins.
 | `docs/assets/pipeline.md` | Execution record and deferral register for the asset pipeline items in Track F. |
 | `docs/core-systems-map.md` | Reader's map of the current tree; not a plan. |
 | `docs/plans/world-partition/11-zone-runtime-model.md`, `12-spatial-compilation.md` | The world graph contracts: runtime residency, crossing, authoring, cook, and validation. Canonical for Track C item 3. |
-| `docs/plans/runtime-stable-identity.md` | The persistent entity identity scheme and in-session zone state memory. The identity substrate Track A item 8, Track C item 5, Track D item 1, and networking all join on. |
+| `docs/plans/runtime-stable-identity.md` | The persistent entity identity scheme and in-session zone state memory. The identity substrate Track A item 8, Track C item 5, Track D item 1, and Track G all join on. |
+| `docs/plans/networking.md` | Ratified execution spec for Track G: session model, module layout, protocol, replication, interest, and security posture. |
 | `docs/plans/world-partition-authoring.md` | Historical design that produced the above. Superseded; portals and regions in it no longer exist. |
 
 ---

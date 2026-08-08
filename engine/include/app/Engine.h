@@ -1,11 +1,19 @@
 #pragma once
 
 #include <app/DefaultRenderPipeline.h>
+#include <net/NetSession.h>
 #include <app/EngineSchedule.h>
 #include <core/console/ConsoleStartupScript.h>
 #include <core/config/EngineConfig.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/WorldComponentSchema.h>
+#include <net/ReplicationLayout.h>
+#include <net/NetCVarSync.h>
+#include <net/NetSpawnRecipe.h>
+#include <net/NetStats.h>
+#include <net/NetTickEstimator.h>
+#include <net/PeerCommandRuntime.h>
+#include <net/ReplicationRuntime.h>
 #include <profiling/CpuScopeTimings.h>
 #include <profiling/RenderInstrumentation.h>
 #include <profiling/RenderStats.h>
@@ -20,6 +28,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -61,6 +70,66 @@ public:
         StartupScript = std::move(script);
     }
     [[nodiscard]] bool IsInitialized() const { return Initialized; }
+
+    // The session, or null when this process is not hosting or joined. Null is
+    // the normal case: a single-player game never constructs one, and every net
+    // frame phase is a no-op without it. Callers check rather than assume, which
+    // is why this is a Try and not a reference.
+    [[nodiscard]] NetSession* TryNet() { return NetState.get(); }
+    [[nodiscard]] const NetSession* TryNet() const { return NetState.get(); }
+    // Constructs the session over `transport`, which the caller owns and must
+    // outlive it. Returns null if one already exists.
+    [[nodiscard]] NetSession* CreateNetSession(INetTransport& transport);
+    void DestroyNetSession();
+
+    // Per-session replication state: the authority's identity mint and per-peer
+    // baselines, or a client's map of what it has been told about. Reset with
+    // the session, because all of it is session-transient.
+    [[nodiscard]] ReplicationRuntime& Replication() { return ReplicationState; }
+    // Which session-owned cvar values each peer has been told. Reset with the
+    // session like everything else that is session-transient.
+    [[nodiscard]] NetCVarPublisher& CVarPublisher() { return CVarPublisherState; }
+    // The input channel's per-peer arrival buffers, and the client half that
+    // fills the wire. Session-transient for the same reason.
+    [[nodiscard]] PeerCommandRuntime& PeerCommands() { return PeerCommandState; }
+    [[nodiscard]] const PeerCommandRuntime& PeerCommands() const
+    {
+        return PeerCommandState;
+    }
+    // What the session is spending, as rates. Counting only: nothing reads it
+    // to decide anything, so recording into it raises no ordering question.
+    [[nodiscard]] NetStats& NetTraffic() { return NetStatsState; }
+    [[nodiscard]] const NetStats& NetTraffic() const { return NetStatsState; }
+    // What the authority's clock is called, as seen from a client. Meaningless
+    // on an authority, which is the machine defining it.
+    [[nodiscard]] NetTickEstimator& NetClock() { return NetClockState; }
+    [[nodiscard]] const NetTickEstimator& NetClock() const { return NetClockState; }
+
+    // What a replicated entity becomes on this machine. Registered by the game
+    // and outlives any one session, because it describes content rather than a
+    // connection.
+    [[nodiscard]] NetSpawnRecipes& SpawnRecipes() { return SpawnRecipeState; }
+    [[nodiscard]] const NetSpawnRecipes& SpawnRecipes() const
+    {
+        return SpawnRecipeState;
+    }
+
+    // Channel payloads from the most recent pump that replication did not
+    // claim: the game's own traffic, commands above all. Cleared at the start
+    // of each pump, so a system that runs in the frame sees exactly that
+    // frame's. The engine deliberately does not interpret any of it -- what a
+    // command means is the game's business.
+    [[nodiscard]] std::span<const NetSession::Delivery> NetDeliveries() const
+    {
+        return PendingNetDeliveries;
+    }
+
+    // Called by the net pump phase only.
+    void RetainNetDelivery(const NetSession::Delivery& delivery)
+    {
+        PendingNetDeliveries.push_back(delivery);
+    }
+    void ClearNetDeliveries() { PendingNetDeliveries.clear(); }
 
     [[nodiscard]] EngineConfig& Config() { return Configuration; }
     [[nodiscard]] const EngineConfig& Config() const
@@ -109,6 +178,13 @@ public:
     [[nodiscard]] const WorldComponentSchema& RuntimeComponents() const
     {
         return RuntimeComponentSchemaState;
+    }
+
+    // Which components replicate and how their bytes are packed, compiled once
+    // for this run. Sealed before OnStart, and read only by a session.
+    [[nodiscard]] const ReplicationLayout& ReplicatedComponents() const
+    {
+        return ReplicationLayoutState;
     }
 
     // The sole runtime entity universe for this simulation. Persistent entities
@@ -166,7 +242,17 @@ public:
 private:
     // Frame-phase bodies and the state they sample. Registered once, from
     // EngineFramePhases.cpp; nothing outside the frame pipeline reads these.
+    //
+    // Split by what the bodies reach for, not by convenience: the simulation
+    // half touches only the world, the schedule, and the clocks, so it runs
+    // whether or not this process has a window. A headless host registers it
+    // alone and steps the same frame the windowed host does, minus the phases
+    // that would have had nothing to draw into.
     void RegisterFramePhases(Game& game);
+    void RegisterSimulationFramePhases();
+    void RegisterNetFramePhases();
+    void RegisterPresentationFramePhases(Game& game);
+    [[nodiscard]] bool HasPresentation() const;
     [[nodiscard]] TimingHistory& Timing() { return TimingData; }
     // The renderer instrumentation bundle. Always present; its members are
     // non-null exactly while their render.profile.mode tier is active (all
@@ -208,10 +294,19 @@ private:
 #endif
     EngineSchedule EngineSystems;
     WorldComponentSchema RuntimeComponentSchemaState;
+    ReplicationLayout ReplicationLayoutState;
+    ReplicationRuntime ReplicationState;
+    std::vector<NetSession::Delivery> PendingNetDeliveries;
+    NetCVarPublisher CVarPublisherState;
+    PeerCommandRuntime PeerCommandState;
+    NetStats NetStatsState;
+    NetTickEstimator NetClockState;
+    NetSpawnRecipes SpawnRecipeState;
     std::unique_ptr<RuntimeWorld> RuntimeWorldState;
     RuntimeFrameLoop RuntimeLoop;
     ConsoleStartupScript StartupScript;
     std::unique_ptr<FrameDriver> FrameDriverInstance;
+    std::unique_ptr<NetSession> NetState;
     TimingHistory TimingData;
     // Run-control state, written by app.exit_after_frames / frame.trace.output.
     // Zero and empty leave both facilities inert; the trace store is allocated

@@ -30,11 +30,15 @@ suite.
 
 | Preset    | Build type | Vulkan | Cook | Debug UI | Notes |
 |-----------|------------|--------|------|----------|-------|
-| `dev`     | Debug      | on     | on   | off      | Daily development. Builds in `build/`. |
-| `dev-ui`  | Debug      | on     | on   | **on**   | Adds the ImGui debug overlay. `build-dev-ui/`. |
-| `release` | Release    | on     | on   | off      | Optimized. Hot-reload stays off — shipping binaries carry no GLSL compiler. |
-| `tsan`    | Debug      | on     | on   | off      | ThreadSanitizer for the job system. GCC/Clang only. `build-tsan/`. |
-| `ci`      | Debug      | on     | on   | off      | For CI runners with the Vulkan SDK; no GPU needed to build/run the (non-graphical) tests. `build-ci/`. |
+| `dev`     | Debug      | on     | on   | on       | Daily development. Builds in `build/`. |
+| `release` | Release    | on     | on   | on       | Optimized. Hot-reload stays off — shipping binaries carry no GLSL compiler. |
+| `tsan`    | Debug      | on     | on   | on       | ThreadSanitizer for the job system. GCC/Clang only. `build-tsan/`. |
+| `ci`      | Debug      | on     | on   | on       | For CI runners with the Vulkan SDK; no GPU needed to build/run the (non-graphical) tests. `build-ci/`. |
+
+The debug UI ships in every build, including `release`: the console is a
+player-facing feature, not a development-only one. A host that does not want it
+sets `EngineConfig.Console.UiEnabled = false` per process (the editors do). A
+no-Vulkan build has nowhere to draw it and forces it off automatically.
 
 Each configure preset has a matching build preset; `dev`, `tsan`, and `ci` also
 have test presets (`ctest --preset <name>`). List them with:
@@ -68,7 +72,7 @@ on GCC and Clang, `/W4 /permissive-` on MSVC. Third-party targets never call it,
 and the tree builds clean.
 
 `SENCHA_WARNINGS_AS_ERRORS` adds `-Werror` (`/WX`). The `dev` preset sets it ON,
-so `dev-ui`, `tsan`, and `ci` inherit it and a new warning fails the build where
+so `tsan` and `ci` inherit it and a new warning fails the build where
 it is introduced. To get past one mid-change:
 
 ```sh
@@ -107,16 +111,41 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-## Headless builds
+## Headless
 
-There is **no working no-Vulkan configuration yet**. `SENCHA_ENABLE_VULKAN=OFF`
+Two different things share the word, and only one of them works.
+
+**Running headless — works.** `app --headless` builds no window and no graphics
+services, and runs the frame loop anyway: async commits drain, zone residency
+resolves, the tick scheduler paces fixed ticks, and the schedule's simulation
+phases run. The render phases are not registered at all. This is the
+dedicated-host shape and the CI simulation-soak shape.
+
+```sh
+app --headless --game path/to/game.so +map levels/<name>
+```
+
+A headless host runs until something asks it to stop: `Engine::RequestExit()`,
+the console `quit`, or `+set app.exit_after_frames <n>`. There is no window to
+close, so a host with no exit condition runs forever — which is correct for a
+server and a hang for anything else.
+
+The game module has to cooperate. A module that reaches for `Engine::Graphics()`
+unconditionally cannot run headless, and the bundled `template/` currently does:
+its `RuntimeAssets` is constructed from the Vulkan buffer, image, descriptor, and
+sampler services. Making the template headless-capable means decoupling the asset
+caches from those services, and is Track G's dedicated-host work.
+
+**Building without Vulkan — does not work.** `SENCHA_ENABLE_VULKAN=OFF`
 fails to compile because the render layer (`engine/src/render/…`,
 `include/render/static_mesh/GpuStaticMesh.h`) includes Vulkan/VMA headers
 unconditionally even though those files sit outside `graphics/vulkan/`. Building
 or testing without a GPU is fine — the test suite is non-graphical — but the
 **Vulkan SDK headers must be present**. Decoupling the render layer is tracked
 under "Future work" in
-[cmake-build-hygiene-plan.md](cmake-build-hygiene-plan.md).
+[cmake-build-hygiene-plan.md](cmake-build-hygiene-plan.md). Note that the two are
+independent: running headless does not need a no-Vulkan build, it just declines
+to initialize the graphics services a normal build contains.
 
 ## Cleaning a dirty tree
 

@@ -30,6 +30,10 @@ namespace
             SawEngineConfig = GetEngine().Config().Runtime.TargetFps == 144.0;
             SawFixedTickRate =
                 GetEngine().Runtime().GetSimulationClock().GetFixedDt() == 1.0 / 120.0;
+            // A headless host runs its frame loop like any other. This test is
+            // about the lifecycle hooks, so it declines the loop the same way a
+            // host that cannot start would.
+            GetEngine().RequestExit();
         }
 
         void OnShutdown(GameShutdownContext& ctx) override
@@ -65,6 +69,7 @@ namespace
         void OnStart(GameStartupContext&) override
         {
             EngineSeen = &GetEngine();
+            GetEngine().RequestExit();
         }
 
         static inline Engine* EngineSeen = nullptr;
