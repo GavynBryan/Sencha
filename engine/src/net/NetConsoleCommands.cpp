@@ -164,8 +164,8 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
         .DefaultValue = static_cast<std::int64_t>(4),
         .CurrentValue = static_cast<std::int64_t>(4),
         .Flags = CVarFlags::Archive,
-        .Help = "Peers a hosted session admits. Tuned for four; the design is "
-                "validated to eight.",
+        .Help = "Peers a hosted session admits. Four is the co-op shape and the "
+                "default; sixteen is measured and is what the arena modes need.",
         .Source = { "engine defaults" },
         .Min = static_cast<std::int64_t>(1),
         .Max = static_cast<std::int64_t>(kNetMaxPeersSupported),

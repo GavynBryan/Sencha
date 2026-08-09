@@ -108,9 +108,18 @@ struct NetPeer
 // A peer is dropped at this many strikes.
 inline constexpr std::uint32_t kNetMaxStrikes = 8;
 
-// Peers the design is validated against. Budgets and tables are tuned for four,
-// which is the co-op shape, and hold at eight.
-inline constexpr std::size_t kNetMaxPeersSupported = 8;
+// Peers the design is validated against. Four is the co-op shape and stays the
+// default a host admits; sixteen is what the arena modes need and what the
+// replication budget, fill order, and per-peer state are measured at.
+//
+// The number moved because what made eight the ceiling was removed rather than
+// raised: a snapshot used to carry every entity to every peer at full width and
+// per-tick, and the authority's whole outbound bill scaled with the product.
+// Change tracking, a per-peer byte budget that defers instead of failing, and a
+// quantized transform cut that product enough that the peer count stopped being
+// what binds. Held at sixteen because that is what is measured, not because
+// something breaks at seventeen.
+inline constexpr std::size_t kNetMaxPeersSupported = 16;
 
 // What changed about the peer set during a pump. The game needs these to spawn
 // and despawn a pawn per player, and a headless host needs them because console

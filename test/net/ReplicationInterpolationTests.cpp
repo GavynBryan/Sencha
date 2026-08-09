@@ -29,6 +29,13 @@ namespace
         return pose;
     }
 
+    LocalTransform PoseAt3(float x, float y, float z)
+    {
+        LocalTransform pose;
+        pose.Value.Position = Vec3d{ x, y, z };
+        return pose;
+    }
+
     // A pawn walking a straight line at one metre a tick, so where it should be
     // at any tick is the tick number and any unevenness is visible as a step
     // that is not one.
@@ -297,4 +304,27 @@ TEST(ReplicationInterpolation, WithholdsOnlyThePoseItPresents)
     ReplicationInterpolation interpolation;
     EXPECT_FALSE(interpolation.Intercepts(ResolveComponentTypeId<WorldTransform>()))
         << "everything else about a mirrored entity still lands normally";
+}
+
+// Omitting an entity that has nothing to say means a still entity's samples are
+// far apart by design -- further apart than any loss would make them. Presenting
+// one has to read as stillness rather than as a stream that has fallen behind.
+TEST(ReplicationInterpolation, AStillEntityIsPresentedWhereItStands)
+{
+    ReplicationInterpolation interpolation;
+    interpolation.SetSnapshotInterval(2);
+
+    const EntityId entity{ 3, 1 };
+    interpolation.Record(entity, 1, PoseAt3(7.0f, 8.0f, 9.0f));
+    interpolation.Record(entity, 400, PoseAt3(7.0f, 8.0f, 9.0f));
+
+    for (std::uint64_t tick : { std::uint64_t{ 2 }, std::uint64_t{ 200 },
+                                std::uint64_t{ 400 } })
+    {
+        const std::optional<LocalTransform> pose = interpolation.Resolve(entity, tick);
+        ASSERT_TRUE(pose.has_value()) << "tick " << tick;
+        EXPECT_FLOAT_EQ(pose->Value.Position.X, 7.0f) << "tick " << tick;
+        EXPECT_FLOAT_EQ(pose->Value.Position.Y, 8.0f) << "tick " << tick;
+        EXPECT_FLOAT_EQ(pose->Value.Position.Z, 9.0f) << "tick " << tick;
+    }
 }
