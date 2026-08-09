@@ -70,18 +70,40 @@ using NetEntityId = StrongId<struct NetEntityIdTag, std::uint64_t>;
 class ReplicationPeerState
 {
 public:
-    // Snapshots that may be in flight before a peer that has stopped
-    // acknowledging is treated as new and told everything again. Well past any
-    // round trip a session tolerates; a peer further behind than this has a
-    // connection whose deltas are not worth computing.
+    // Snapshots that may be waiting on proof at once. Well past any round trip a
+    // session tolerates, and past the acknowledgement window as well, so the
+    // bound is only ever reached by a peer that has stopped answering
+    // altogether. Reaching it drops the oldest one unresolved, which costs the
+    // bandwidth to describe what it carried again and never a floor: what a peer
+    // has proved it holds stays proved however long it then goes quiet.
     static constexpr std::size_t kMaxUnacknowledged = 32;
 
+    // What a peer has been told about one entity.
+    struct EntityRecord
+    {
+        // The newest generation it has proved it holds. Zero means it has
+        // confirmed nothing about the entity, so everything is owed.
+        std::uint64_t Floor = 0;
+        // The last snapshot this entity was written into, proved or not.
+        // Separate from the floor because it answers a different question: the
+        // floor decides what to say, this decides who gets said first when there
+        // is not room for everyone. An entity written into each of the last
+        // three snapshots and confirmed in none of them is still owed
+        // everything, but it is not the one going hungry.
+        std::uint32_t LastSentAt = 0;
+    };
+
     // How far through the authority's history this peer has been carried for
-    // one entity: the newest generation it has proved it holds. Zero means it
-    // has never confirmed anything about the entity, so everything is owed.
+    // one entity. Zero for an entity it has never confirmed anything about.
     [[nodiscard]] std::uint64_t Floor(NetEntityId id) const;
+    // Whether this peer has ever confirmed anything about the entity. Not the
+    // same as having been sent it: a snapshot that was written may have been
+    // dropped, and a peer that has confirmed nothing may not have the entity at
+    // all, which is why the spawn stays owed until it says otherwise.
     [[nodiscard]] bool Knows(NetEntityId id) const;
-    [[nodiscard]] std::size_t Size() const { return Floors.size(); }
+    // Which snapshot last carried it, or zero if none ever has.
+    [[nodiscard]] std::uint32_t LastSentAt(NetEntityId id) const;
+    [[nodiscard]] std::size_t Size() const { return Entities.size(); }
 
     // The name the next snapshot for this peer goes out under. One per snapshot
     // written, never reused, and not the simulation tick: a frame can publish
@@ -89,9 +111,7 @@ public:
     // by an acknowledgement.
     [[nodiscard]] std::uint32_t NextSnapshotSequence() const { return NextSequence; }
 
-    // Opens a snapshot under that sequence, and enforces the bound: a peer with
-    // too many outstanding is one whose confirmations have stopped arriving, so
-    // what it is believed to hold is forgotten and it is told everything again.
+    // Opens a snapshot under that sequence, and enforces the bound above.
     void BeginSnapshot(std::uint32_t sequence);
 
     // Records that a snapshot carried this entity at that generation, pending
@@ -130,9 +150,9 @@ public:
 
     void Clear();
 
-    [[nodiscard]] const std::unordered_map<NetEntityId, std::uint64_t>& All() const
+    [[nodiscard]] const std::unordered_map<NetEntityId, EntityRecord>& All() const
     {
-        return Floors;
+        return Entities;
     }
 
 private:
@@ -145,7 +165,7 @@ private:
         std::vector<NetEntityId> Destroyed;
     };
 
-    std::unordered_map<NetEntityId, std::uint64_t> Floors;
+    std::unordered_map<NetEntityId, EntityRecord> Entities;
     // Destroys this peer is owed, oldest first. Cleared only by proof.
     std::vector<NetEntityId> Departed;
     // Oldest first, one entry per snapshot still unconfirmed.
@@ -244,11 +264,30 @@ struct SnapshotWriteResult
     bool Ok = false;
     std::uint32_t EntitiesWritten = 0;
     std::uint32_t EntitiesDestroyed = 0;
+    // Entities that had something to say and were left for a later snapshot.
+    // Back-pressure, not loss: nothing about them was recorded as sent, so the
+    // next snapshot still owes exactly the same difference, and their turn comes
+    // before the ones that just went out.
+    std::uint32_t EntitiesDeferred = 0;
+    // Entities that would not fit a snapshot of their own. Counted apart from
+    // the ones above because waiting will not help: nothing about them can ever
+    // reach this peer, so this is a budget or layout fault rather than a busy
+    // frame, and it is the one back-pressure case that needs an operator.
+    std::uint32_t EntitiesUnsendable = 0;
+    std::uint32_t DestroysDeferred = 0;
     std::size_t BytesWritten = 0;
 };
 
-// Encodes one snapshot into `out`. Returns what it did, so a caller can log or
-// budget without re-deriving it.
+// Encodes one snapshot into `out`, filling it as far as it goes: `out` is the
+// budget, not a buffer that is assumed large enough. What does not fit is
+// deferred whole entities at a time and reported, never a part-written one.
+//
+// Succeeds for any world. An authority that could not describe its world inside
+// one datagram used to write nothing at all, which sounds conservative and is
+// the opposite: a peer with no proven state is owed every entity at once, so the
+// snapshot that would seed it is the largest one it will ever be sent, and
+// failing to send it means it is never seeded and therefore never owed less.
+// Past a few dozen entities a joining peer starved permanently.
 [[nodiscard]] SnapshotWriteResult ReplicationWriteSnapshot(
     const SnapshotWriteRequest& request,
     std::span<std::byte> out);

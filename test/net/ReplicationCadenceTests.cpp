@@ -245,7 +245,7 @@ TEST(ReplicationCadence, TheEntityCapDropsTheSameEntitiesEveryRun)
     peer.Acknowledge(applied);
     ASSERT_EQ(peer.Size(), cap);
     std::uint64_t highest = 0;
-    for (const auto& [id, floor] : peer.All())
+    for (const auto& [id, record] : peer.All())
         highest = std::max(highest, id.Value);
     EXPECT_EQ(highest, static_cast<std::uint64_t>(cap));
 }

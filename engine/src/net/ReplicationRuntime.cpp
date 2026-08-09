@@ -83,13 +83,18 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
         if (commands != nullptr)
             baseline.Acknowledge(commands->SnapshotAckFor(peer));
 
+        // The subspan is the budget: what does not fit is deferred to a later
+        // snapshot rather than failing this one.
         const SnapshotWriteResult written = ReplicationWriteSnapshot(
             request, std::span(Scratch).subspan(kKindBytes, kMaxSnapshotBytes));
+        stats.EntitiesDeferred += written.EntitiesDeferred;
+        stats.EntitiesUnsendable += written.EntitiesUnsendable;
         if (!written.Ok)
         {
-            // Over budget for one datagram. The baseline was left untouched, so
-            // the next attempt still describes the same difference rather than
-            // one against a snapshot this peer never got.
+            // Nothing a world can do reaches here -- the writer fills to the
+            // budget and reports the remainder -- so this is a malformed request
+            // or a writer that disagreed with its own measurement. The peer
+            // state is left untouched either way.
             continue;
         }
 

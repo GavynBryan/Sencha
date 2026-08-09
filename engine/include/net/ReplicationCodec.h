@@ -130,6 +130,14 @@ void ReplicationSnapToWire(const ReplicatedComponent& component,
                                               std::uint64_t fields,
                                               NetBitWriter& writer);
 
+// Exactly what the call above would write for the same mask, without writing it.
+// A caller filling a fixed budget needs this because a bit writer cannot be
+// rewound: an entity that turns out not to fit part way through cannot be taken
+// back out, and a half-written entity is not a smaller snapshot, it is a corrupt
+// one. The value depends on the mask, not on the bytes.
+[[nodiscard]] std::size_t ReplicationEncodedComponentBits(
+    const ReplicatedComponent& component, std::uint64_t fields);
+
 // Which of a component's field runs the wire would carry differently. An empty
 // `previous` means every run: there is nothing to difference against, which is
 // the fresh-state form. Quantized runs compare at wire precision, so movement

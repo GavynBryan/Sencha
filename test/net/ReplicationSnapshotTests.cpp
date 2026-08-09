@@ -41,6 +41,10 @@ namespace
         ReplicationClientIdentity ClientIdentity;
 
         std::vector<std::byte> Scratch;
+        // How much of that scratch a snapshot may use. The default is far more
+        // than any test world needs, so the budget is out of the way unless a
+        // test is about it.
+        std::size_t Budget = kSnapshotBytes;
         std::uint64_t Tick = 0;
         // Whether the client confirms what it applied. Off models a peer whose
         // acknowledgements are not arriving.
@@ -83,7 +87,8 @@ namespace
             write.Sequence = Peer.NextSnapshotSequence();
             write.CommandAck = commandAck;
 
-            LastWrite = ReplicationWriteSnapshot(write, Scratch);
+            LastWrite = ReplicationWriteSnapshot(
+                write, std::span(Scratch).subspan(0, Budget));
             EXPECT_TRUE(LastWrite.Ok);
 
             if (!Deliver)
@@ -723,6 +728,37 @@ TEST(ReplicationAcknowledgement, APeerThatStopsConfirmingIsToldEverythingAgain)
            "buys memory on the machine hosting it";
 }
 
+// What running the ring out costs is the oldest unconfirmed snapshot, and only
+// that. Proof a peer has already given does not decay: throwing its floors away
+// means describing the entire world to it again at the exact moment its link is
+// least able to carry that, and under a byte budget the seeding competes for
+// room with the state that has genuinely moved.
+TEST(ReplicationAcknowledgement, GoingQuietDoesNotUndoWhatAPeerAlreadyProved)
+{
+    Pair pair;
+    const EntityId entity = pair.SpawnReplicated(PoseAt(1.0f, 2.0f, 3.0f));
+    pair.Replicate();
+
+    const NetEntityId id = pair.Identity.TryFind(entity);
+    ASSERT_TRUE(id.IsValid());
+    const std::uint64_t proved = pair.Peer.Floor(id);
+    ASSERT_GT(proved, 0u);
+
+    // Silence, for longer than the ring is deep. The world does not move, so
+    // there is nothing new to say about it and every snapshot should be empty.
+    pair.Acknowledge = false;
+    for (std::size_t step = 0; step < ReplicationPeerState::kMaxUnacknowledged + 4;
+         ++step)
+    {
+        pair.Replicate();
+        ASSERT_EQ(pair.LastWrite.EntitiesWritten, 0u)
+            << "step " << step << ": a still world was described again to a peer "
+               "that had already confirmed holding it";
+    }
+
+    EXPECT_EQ(pair.Peer.Floor(id), proved);
+}
+
 //=============================================================================
 // The pawn state that rides home to its owner
 //
@@ -1306,4 +1342,242 @@ TEST(ReplicationSnapshotHostile, RandomBytesNeverCorruptTheClientWorld)
             }
         }
     }
+}
+
+
+//=============================================================================
+// Filling one datagram
+//
+// A snapshot rides the unreliable channel, so it has to fit one datagram, and a
+// world can be bigger than that. What the authority does about it is the whole
+// difference between a session that scales and one that stops working at a
+// couple of dozen entities: writing nothing at all sounds like the conservative
+// answer and is the opposite, because the peer that needs the largest snapshot
+// is the one that has just joined and been told nothing.
+//=============================================================================
+
+namespace
+{
+    // Room for four entities of the size this schema replicates. Small enough
+    // that a modest world does not fit, large enough that the fill has a real
+    // packing decision to make rather than a trivial one.
+    constexpr std::size_t kTightBudget = 256;
+}
+
+// The one this mechanism exists for. Every entity is owed to a peer that has
+// confirmed nothing, so the snapshot that would seed it is the largest it will
+// ever be sent; an authority that gives up on a snapshot it cannot fit never
+// sends that peer anything, and a peer that receives nothing is never owed any
+// less. It is not a slow join, it is a permanent one.
+TEST(ReplicationBudget, APeerJoiningAWorldLargerThanOneDatagramIsSeededAnyway)
+{
+    Pair pair;
+    pair.Budget = kTightBudget;
+
+    constexpr std::size_t kEntities = 40;
+    std::vector<EntityId> world;
+    for (std::size_t i = 0; i < kEntities; ++i)
+        world.push_back(pair.SpawnReplicated(PoseAt(static_cast<float>(i), 0.0f, 0.0f)));
+
+    std::vector<std::size_t> sizes{ pair.Replicate() };
+    ASSERT_GT(pair.LastWrite.EntitiesDeferred, 0u)
+        << "the budget never bit, so nothing below is a test of it";
+    ASSERT_LE(sizes.front(), kTightBudget);
+
+    while (pair.ClientIdentity.Size() < kEntities && sizes.size() < kEntities * 2)
+        sizes.push_back(pair.Replicate());
+
+    ASSERT_EQ(pair.ClientIdentity.Size(), kEntities)
+        << "a peer that could not be told everything at once was never told the rest";
+    for (std::size_t i = 0; i < kEntities; ++i)
+    {
+        const EntityId mirror = pair.Mirror(world[i]);
+        ASSERT_TRUE(mirror.IsValid()) << "entity " << i;
+        const LocalTransform* seen = pair.Client.TryGet<LocalTransform>(mirror);
+        ASSERT_NE(seen, nullptr) << "entity " << i;
+        EXPECT_FLOAT_EQ(seen->Value.Position.X, static_cast<float>(i));
+    }
+
+    // Packed rather than dribbled. One entity per snapshot would arrive here
+    // too, eventually, and would make a join take as many round trips as the
+    // world has entities.
+    EXPECT_LT(sizes.size(), kEntities)
+        << "seeding cost a snapshot per entity";
+    for (std::size_t i = 0; i + 1 < sizes.size(); ++i)
+    {
+        EXPECT_GT(sizes[i], kTightBudget / 2)
+            << "publish " << i << " left half the datagram empty";
+    }
+}
+
+// Deferring is not describing. An entity left out for room must stay owed in
+// full: if making room advanced what the peer is believed to hold, the state it
+// was holding a place for would be measured as already delivered and never sent
+// at all.
+TEST(ReplicationBudget, WhatDidNotFitIsStillOwedInFull)
+{
+    Pair pair;
+    // One entity's worth. The second has nowhere to go.
+    pair.Budget = 88;
+
+    const EntityId first = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+    const EntityId second = pair.SpawnReplicated(PoseAt(2.0f, 0.0f, 0.0f));
+
+    pair.Replicate();
+    ASSERT_EQ(pair.LastWrite.EntitiesWritten, 1u);
+    ASSERT_EQ(pair.LastWrite.EntitiesDeferred, 1u);
+
+    const NetEntityId deferred = pair.Identity.TryFind(second);
+    ASSERT_TRUE(deferred.IsValid());
+    EXPECT_EQ(pair.Peer.Floor(deferred), 0u)
+        << "the peer was credited with state that was never written";
+    EXPECT_EQ(pair.Peer.LastSentAt(deferred), 0u)
+        << "an entity that was left out was recorded as having had its turn";
+
+    // It is left exactly where it was, which is the case a credited floor loses
+    // entirely: a peer believed to hold state it was never sent is owed nothing
+    // further about it, and nothing about an entity at rest ever moves again to
+    // put it back in the queue. It would simply never arrive.
+    pair.Replicate();
+
+    EntityId mirror = pair.Mirror(second);
+    ASSERT_TRUE(mirror.IsValid()) << "the entity that waited its turn never came";
+    const LocalTransform* seen = pair.Client.TryGet<LocalTransform>(mirror);
+    ASSERT_NE(seen, nullptr);
+    EXPECT_FLOAT_EQ(seen->Value.Position.X, 2.0f);
+
+    // And once it has genuinely been received, it keeps up like anything else.
+    pair.Authority.TryGet<LocalTransform>(second)->Value.Position =
+        Vec3d{ 9.0f, 0.0f, 0.0f };
+    pair.Replicate();
+    mirror = pair.Mirror(second);
+    ASSERT_TRUE(mirror.IsValid());
+    EXPECT_FLOAT_EQ(
+        pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X, 9.0f);
+
+    // And the one that did fit was not disturbed by any of it.
+    const EntityId firstMirror = pair.Mirror(first);
+    ASSERT_TRUE(firstMirror.IsValid());
+    EXPECT_FLOAT_EQ(
+        pair.Client.TryGet<LocalTransform>(firstMirror)->Value.Position.X, 1.0f);
+}
+
+// Everything moves every publish and a quarter of it fits. Whichever entities
+// lost their place last time have to win it this time, or a busy world means a
+// fixed few entities are the only ones anybody ever sees move -- and which few
+// would be decided by something as arbitrary as the order they were created in.
+TEST(ReplicationBudget, ABusyWorldRotatesInsteadOfFavouringTheSameFewEntities)
+{
+    Pair pair;
+    pair.Budget = kTightBudget;
+
+    constexpr std::size_t kEntities = 20;
+    std::vector<EntityId> world;
+    for (std::size_t i = 0; i < kEntities; ++i)
+        world.push_back(pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f)));
+
+    // Seeded first, so what follows measures the fill order under pressure
+    // rather than the join.
+    while (pair.ClientIdentity.Size() < kEntities)
+        pair.Replicate();
+
+    // Now nothing is at rest: every entity has something new to say on every
+    // publish, and they cannot all be accommodated.
+    for (std::size_t publish = 1; publish <= kEntities; ++publish)
+    {
+        for (std::size_t i = 0; i < kEntities; ++i)
+        {
+            pair.Authority.TryGet<LocalTransform>(world[i])->Value.Position =
+                Vec3d{ static_cast<float>(publish), static_cast<float>(i), 0.0f };
+        }
+        pair.Replicate();
+        ASSERT_GT(pair.LastWrite.EntitiesDeferred, 0u)
+            << "publish " << publish << " fitted everything, so there was no "
+               "contention to resolve";
+    }
+
+    for (std::size_t i = 0; i < kEntities; ++i)
+    {
+        const EntityId mirror = pair.Mirror(world[i]);
+        ASSERT_TRUE(mirror.IsValid()) << "entity " << i;
+        const LocalTransform* seen = pair.Client.TryGet<LocalTransform>(mirror);
+        ASSERT_NE(seen, nullptr) << "entity " << i;
+        EXPECT_GT(seen->Value.Position.X, 0.0f)
+            << "entity " << i << " never once won a place in a snapshot";
+    }
+}
+
+// A budget that cannot hold one particular entity, which no amount of patience
+// fixes. It must not take the snapshot down with it, must not block the entities
+// queued behind it, and must be counted: an entity nothing can be said about is
+// a fault for an operator to see rather than one to discover as a missing
+// object.
+TEST(ReplicationBudget, AnEntityTooLargeForAnySnapshotIsCountedNotSilentlyDropped)
+{
+    Pair pair;
+    // Enough for an entity carrying no replicated components; nowhere near
+    // enough for one carrying a transform.
+    pair.Budget = 48;
+
+    const EntityId heavy = pair.SpawnReplicated(PoseAt(4.0f, 0.0f, 0.0f));
+    const EntityId bare = pair.Authority.CreateEntity();
+    pair.Authority.AddComponent<NetReplicated>(bare);
+    // Identity is minted here rather than left to the order the store happens to
+    // walk the chunks in, so the one that cannot fit is reliably first in the
+    // queue. That is the arrangement that matters: an entity nothing can be done
+    // about has to be stepped over, not allowed to stop the fill where it stands.
+    const NetEntityId heavyId = pair.Identity.IdFor(heavy);
+    const NetEntityId bareId = pair.Identity.IdFor(bare);
+    ASSERT_LT(heavyId.Value, bareId.Value);
+
+    pair.Replicate();
+
+    EXPECT_TRUE(pair.LastWrite.Ok)
+        << "one entity nobody can describe stopped the whole snapshot";
+    EXPECT_EQ(pair.LastWrite.EntitiesUnsendable, 1u);
+    EXPECT_EQ(pair.LastWrite.EntitiesDeferred, 0u)
+        << "an entity that will never fit was counted as merely waiting";
+    EXPECT_EQ(pair.LastWrite.EntitiesWritten, 1u);
+    EXPECT_TRUE(pair.Mirror(bare).IsValid())
+        << "an entity that fitted was held up behind one that never will";
+    EXPECT_FALSE(pair.Mirror(heavy).IsValid());
+}
+
+// An update that waits is superseded by the next one, so waiting costs it
+// nothing but freshness. A destroy that waits is superseded by nothing: the
+// authority has no further reason to mention an entity it no longer has, so a
+// client that missed the news keeps the thing forever.
+TEST(ReplicationBudget, ADestroyIsNotHeldBehindASnapshotFullOfUpdates)
+{
+    Pair pair;
+    pair.Budget = kTightBudget;
+
+    constexpr std::size_t kEntities = 20;
+    std::vector<EntityId> world;
+    for (std::size_t i = 0; i < kEntities; ++i)
+        world.push_back(pair.SpawnReplicated(PoseAt(static_cast<float>(i), 0.0f, 0.0f)));
+    while (pair.ClientIdentity.Size() < kEntities)
+        pair.Replicate();
+
+    const EntityId doomed = world.front();
+    const EntityId mirror = pair.Mirror(doomed);
+    ASSERT_TRUE(mirror.IsValid());
+
+    // The rest of the world is busy enough to fill the budget on its own.
+    for (std::size_t i = 1; i < kEntities; ++i)
+    {
+        pair.Authority.TryGet<LocalTransform>(world[i])->Value.Position =
+            Vec3d{ 100.0f, 0.0f, 0.0f };
+    }
+    pair.Authority.DestroyEntity(doomed);
+
+    pair.Replicate();
+
+    EXPECT_EQ(pair.LastWrite.EntitiesDestroyed, 1u);
+    EXPECT_EQ(pair.LastWrite.DestroysDeferred, 0u);
+    ASSERT_GT(pair.LastWrite.EntitiesDeferred, 0u)
+        << "the snapshot had room to spare, so the destroy was not competing "
+           "with anything";
+    EXPECT_FALSE(pair.Client.IsAlive(mirror))
+        << "the client is still holding an entity the world destroyed";
 }

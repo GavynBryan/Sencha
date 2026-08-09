@@ -41,6 +41,12 @@ public:
         std::uint32_t PeersServed = 0;
         std::uint32_t SnapshotsSent = 0;
         std::size_t BytesQueued = 0;
+        // Summed over the peers served. Deferred entities are the budget doing
+        // its job and are only worth watching as a trend; unsendable ones are
+        // never worth anything but a fix, since nothing about them can reach the
+        // peer at all.
+        std::uint32_t EntitiesDeferred = 0;
+        std::uint32_t EntitiesUnsendable = 0;
     };
 
     // Authority side. Writes one snapshot per connected peer and queues it on

@@ -129,6 +129,16 @@ namespace
         assert(false && "replicated field has no encoder");
     }
 
+    // Runs a component actually has. A mask bit past the end would be written as
+    // a field the reader has no description of, so it is dropped rather than
+    // trusted.
+    std::uint64_t AddressableFields(const ReplicatedComponent& component)
+    {
+        return component.Fields.size() >= 64
+                   ? ~std::uint64_t{ 0 }
+                   : (std::uint64_t{ 1 } << component.Fields.size()) - 1;
+    }
+
     bool ReadScalar(const ReplicatedField& field, std::byte* at, NetBitReader& reader)
     {
         if (IsQuantizedFloat(field))
@@ -436,13 +446,7 @@ bool ReplicationEncodeComponent(const ReplicatedComponent& component,
 {
     assert(current.size() == component.Size);
 
-    // Runs the component does not have cannot be asked for: a mask bit past the
-    // end would be written as a field the reader has no description of.
-    const std::uint64_t addressable =
-        component.Fields.size() >= 64
-            ? ~std::uint64_t{ 0 }
-            : (std::uint64_t{ 1 } << component.Fields.size()) - 1;
-    const std::uint64_t mask = fields & addressable;
+    const std::uint64_t mask = fields & AddressableFields(component);
 
     for (std::size_t i = 0; i < component.Fields.size(); ++i)
         writer.WriteBool((mask & (std::uint64_t{ 1 } << i)) != 0);
@@ -457,6 +461,22 @@ bool ReplicationEncodeComponent(const ReplicatedComponent& component,
     }
 
     return !writer.Overflowed();
+}
+
+std::size_t ReplicationEncodedComponentBits(const ReplicatedComponent& component,
+                                            std::uint64_t fields)
+{
+    const std::uint64_t mask = fields & AddressableFields(component);
+
+    std::size_t bits = component.Fields.size();  // the mask
+    for (std::size_t i = 0; i < component.Fields.size(); ++i)
+    {
+        if ((mask & (std::uint64_t{ 1 } << i)) == 0)
+            continue;
+        const ReplicatedField& field = component.Fields[i];
+        bits += static_cast<std::size_t>(ScalarBits(field)) * field.Count;
+    }
+    return bits;
 }
 
 bool ReplicationDecodeComponent(const ReplicatedComponent& component,
