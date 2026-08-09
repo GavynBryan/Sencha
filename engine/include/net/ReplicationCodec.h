@@ -38,6 +38,14 @@ public:
     void WriteBool(bool value) { WriteBits(value ? 1u : 0u, 1); }
     void WriteU32(std::uint32_t value) { WriteBits(value, 32); }
     void WriteU64(std::uint64_t value);
+    // Seven payload bits at a time, each followed by a bit saying whether
+    // another group follows. Small values cost eight bits and the full width
+    // costs eighty, which is the right trade for a quantity that is small for
+    // most of a session and has no ceiling: entity identities are minted from
+    // one and never reused, so they start tiny and grow slowly, and paying
+    // sixty-four bits for every one of them was most of what an unchanged
+    // entity's envelope cost.
+    void WriteVarUInt(std::uint64_t value);
     void WriteFloat(float value);
     void WriteDouble(double value);
 
@@ -76,6 +84,10 @@ public:
     [[nodiscard]] bool ReadU64(std::uint64_t& out);
     [[nodiscard]] bool ReadFloat(float& out);
     [[nodiscard]] bool ReadDouble(double& out);
+    // Bounded at ten groups, which is every bit a u64 has. A stream claiming an
+    // eleventh is refused rather than read: continuation bits come from a peer,
+    // and an unbounded loop over them is a peer deciding how long this runs.
+    [[nodiscard]] bool ReadVarUInt(std::uint64_t& out);
 
     [[nodiscard]] bool Overflowed() const { return Overflow; }
     [[nodiscard]] std::size_t BitsRead() const { return Cursor; }

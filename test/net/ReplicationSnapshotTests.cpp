@@ -9,6 +9,7 @@
 #include <net/NetSpawnRecipe.h>
 #include <net/ReplicationInterpolation.h>
 #include <net/ReplicationChangeStore.h>
+#include <net/ReplicationSchemas.h>
 #include <net/ReplicationSnapshot.h>
 #include <world/transform/TransformHistory.h>
 #include <world/ComponentRegistrar.h>
@@ -22,6 +23,17 @@
 namespace
 {
     constexpr std::size_t kSnapshotBytes = 64 * 1024;
+
+    // What the wire can express. A replicated position is not the authority's
+    // float any more: it is the nearest value the declared precision can name,
+    // so what these tests hold the wire to is that distance rather than
+    // equality. Derived from the schema rather than written down, so widening
+    // the field widens this with it and narrowing it cannot pass unnoticed.
+    constexpr float WireStep(float range, std::uint8_t bits)
+    {
+        return 2.0f * range / static_cast<float>((std::uint32_t{ 1 } << bits) - 1u);
+    }
+    constexpr float kWirePosition = WireStep(kNetPositionRange, kNetPositionBits);
 
     // Two worlds built from the same sealed schema, wired together by hand so
     // the whole replication path runs with no sockets, no frame, and no clock.
@@ -157,9 +169,9 @@ TEST(ReplicationSnapshot, AnEntityMarkedForReplicationAppearsOnTheClient)
 
     const LocalTransform* transform = pair.Client.TryGet<LocalTransform>(mirror);
     ASSERT_NE(transform, nullptr);
-    EXPECT_FLOAT_EQ(transform->Value.Position.X, 1.0f);
-    EXPECT_FLOAT_EQ(transform->Value.Position.Y, 2.0f);
-    EXPECT_FLOAT_EQ(transform->Value.Position.Z, 3.0f);
+    EXPECT_NEAR(transform->Value.Position.X, 1.0f, kWirePosition);
+    EXPECT_NEAR(transform->Value.Position.Y, 2.0f, kWirePosition);
+    EXPECT_NEAR(transform->Value.Position.Z, 3.0f, kWirePosition);
 }
 
 // The whole point of the marker: a level's worth of authored geometry has
@@ -198,7 +210,7 @@ TEST(ReplicationSnapshot, MovementOnTheAuthorityFollowsToTheClient)
 
         const LocalTransform* seen = pair.Client.TryGet<LocalTransform>(mirror);
         ASSERT_NE(seen, nullptr);
-        ASSERT_FLOAT_EQ(seen->Value.Position.X, static_cast<float>(step))
+        ASSERT_NEAR(seen->Value.Position.X, static_cast<float>(step), kWirePosition)
             << "step " << step;
     }
 
@@ -266,7 +278,7 @@ TEST(ReplicationSnapshot, ManyEntitiesKeepTheirOwnIdentities)
         ASSERT_TRUE(mirror.IsValid()) << i;
         const LocalTransform* seen = pair.Client.TryGet<LocalTransform>(mirror);
         ASSERT_NE(seen, nullptr) << i;
-        EXPECT_FLOAT_EQ(seen->Value.Position.X, static_cast<float>(i));
+        EXPECT_NEAR(seen->Value.Position.X, static_cast<float>(i), kWirePosition);
     }
 
     // Destroy every other one and confirm the survivors are untouched.
@@ -281,7 +293,7 @@ TEST(ReplicationSnapshot, ManyEntitiesKeepTheirOwnIdentities)
         ASSERT_TRUE(mirror.IsValid()) << i;
         const LocalTransform* seen = pair.Client.TryGet<LocalTransform>(mirror);
         ASSERT_NE(seen, nullptr) << i;
-        EXPECT_FLOAT_EQ(seen->Value.Position.X, static_cast<float>(i));
+        EXPECT_NEAR(seen->Value.Position.X, static_cast<float>(i), kWirePosition);
     }
 }
 
@@ -357,10 +369,14 @@ TEST(ReplicationSnapshot, AnEntityLeftOutOfASnapshotIsLeftAloneNotDestroyed)
 
     EXPECT_TRUE(pair.Client.IsAlive(stillMirror))
         << "an entity was destroyed for having nothing to report";
-    EXPECT_EQ(pair.Client.TryGet<LocalTransform>(stillMirror)->Value.Position,
-              Vec3d(1.0f, 2.0f, 3.0f));
-    EXPECT_EQ(pair.Client.TryGet<LocalTransform>(movingMirror)->Value.Position,
-              Vec3d(4.0f, 0.0f, 0.0f));
+    const Vec3d& held = pair.Client.TryGet<LocalTransform>(stillMirror)->Value.Position;
+    EXPECT_NEAR(held.X, 1.0f, kWirePosition);
+    EXPECT_NEAR(held.Y, 2.0f, kWirePosition);
+    EXPECT_NEAR(held.Z, 3.0f, kWirePosition);
+    const Vec3d& moved = pair.Client.TryGet<LocalTransform>(movingMirror)->Value.Position;
+    EXPECT_NEAR(moved.X, 4.0f, kWirePosition);
+    EXPECT_NEAR(moved.Y, 0.0f, kWirePosition);
+    EXPECT_NEAR(moved.Z, 0.0f, kWirePosition);
 }
 
 // A peer that was never told about an entity has nothing to forget, and one
@@ -411,7 +427,7 @@ TEST(ReplicationSnapshot, OnlyWhatMovedCostsAnything)
     EXPECT_GT(moved, idle);
     const EntityId mirror = pair.Mirror(entities[3]);
     ASSERT_TRUE(mirror.IsValid());
-    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X, 99.0f);
+    EXPECT_NEAR(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X, 99.0f, kWirePosition);
 
     // And the world settles back down once it stops moving.
     EXPECT_EQ(pair.Replicate(), idle);
@@ -464,8 +480,8 @@ TEST(ReplicationPrediction, ThePredictedEntityKeepsWhatThisMachineSimulated)
         Vec3d{ 1.0f, 0.0f, 0.0f };
     pair.Replicate(0, nullptr, &prediction);
 
-    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
-                    9.0f)
+    EXPECT_NEAR(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
+                    9.0f, kWirePosition)
         << "the authority's position was written over what this machine "
            "predicted, which is the round trip the player would feel";
 }
@@ -494,20 +510,18 @@ TEST(ReplicationPrediction, TheShadowHoldsTheAuthoritysWordNotThisMachinesGuess)
     pair.Replicate(0, nullptr, &prediction);
 
     // The guess is untouched -- the whole point of intercepting.
-    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
-                    40.0f);
+    EXPECT_NEAR(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X, 40.0f, kWirePosition);
 
     // And the authority's word is what was kept, so a replay resumes from a
     // real position rather than from wherever this machine had drifted.
     const EntityId probe = pair.Client.CreateEntity();
     pair.Client.AddComponent<LocalTransform>(probe, LocalTransform{});
     ASSERT_TRUE(prediction.RestoreTo(pair.Client, pair.Schema, probe));
-    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(probe)->Value.Position.X,
-                    1.0f)
+    EXPECT_NEAR(pair.Client.TryGet<LocalTransform>(probe)->Value.Position.X,
+                    1.0f, kWirePosition)
         << "the shadow was contaminated by the world's copy, so every delta "
            "after this one is staged against a value the authority never sent";
-    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(probe)->Value.Position.Z,
-                    0.0f);
+    EXPECT_NEAR(pair.Client.TryGet<LocalTransform>(probe)->Value.Position.Z, 0.0f, kWirePosition);
 }
 
 // A client cannot replay what it cannot separate from what has been answered,
@@ -827,8 +841,7 @@ TEST(ReplicationPawnState, EveryoneElseGetsThePoseAndNoneOfTheRest)
     ASSERT_TRUE(mirror.IsValid());
 
     // The pose travels to everyone: it is what the pawn looks like.
-    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
-                    4.0f);
+    EXPECT_NEAR(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X, 4.0f, kWirePosition);
 
     // The simulation state does not. The components exist -- the wire named
     // them -- but every owner-only field decoded to its default, which is what
@@ -905,8 +918,8 @@ TEST(ReplicationPrediction, OtherPlayersPawnsStillArriveAsState)
         Vec3d{ 42.0f, 0.0f, 0.0f };
     pair.Replicate(0, nullptr, &prediction);
 
-    EXPECT_FLOAT_EQ(
-        pair.Client.TryGet<LocalTransform>(theirMirror)->Value.Position.X, 42.0f)
+    EXPECT_NEAR(
+        pair.Client.TryGet<LocalTransform>(theirMirror)->Value.Position.X, 42.0f, kWirePosition)
         << "a puppet has to be drawn where the authority says it is";
 }
 
@@ -939,12 +952,12 @@ TEST(ReplicationInterpolationApply, AMirroredPoseIsHeldInsteadOfWritten)
 
     const auto held = interpolation.Resolve(mirror, moved);
     ASSERT_TRUE(held.has_value());
-    EXPECT_FLOAT_EQ(held->Value.Position.X, 9.0f);
+    EXPECT_NEAR(held->Value.Position.X, 9.0f, kWirePosition);
 
     // And the world still holds whatever it did: writing the arriving pose here
     // is exactly the stepping the buffer exists to replace.
-    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
-                    0.0f)
+    EXPECT_NEAR(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
+                    0.0f, kWirePosition)
         << "the arriving pose was written straight to the world as well, so the "
            "entity steps to it and is then blended from it";
 }
@@ -975,9 +988,9 @@ TEST(ReplicationInterpolationApply, TheHeldPoseComesFromTheWireNotTheWorld)
 
     const auto held = interpolation.Resolve(mirror, moved);
     ASSERT_TRUE(held.has_value());
-    EXPECT_FLOAT_EQ(held->Value.Position.X, 6.0f);
-    EXPECT_FLOAT_EQ(held->Value.Position.Y, 0.0f);
-    EXPECT_FLOAT_EQ(held->Value.Position.Z, 4.0f);
+    EXPECT_NEAR(held->Value.Position.X, 6.0f, kWirePosition);
+    EXPECT_NEAR(held->Value.Position.Y, 0.0f, kWirePosition);
+    EXPECT_NEAR(held->Value.Position.Z, 4.0f, kWirePosition);
 }
 
 // Prediction off does not mean the local pawn becomes a mirrored one. It is
@@ -1003,8 +1016,8 @@ TEST(ReplicationInterpolationApply, TheOwnPawnIsNeverMirroredEvenWithPredictionO
         Vec3d{ 3.0f, 0.0f, 0.0f };
     pair.Replicate(0, nullptr, &prediction, &interpolation);
 
-    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
-                    3.0f)
+    EXPECT_NEAR(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
+                    3.0f, kWirePosition)
         << "the pawn this machine simulates was mirrored instead of written, so "
            "the authority's pose reached neither the world nor anything that "
            "would present it";
@@ -1016,7 +1029,7 @@ TEST(ReplicationInterpolationApply, TheOwnPawnIsNeverMirroredEvenWithPredictionO
     const auto held = interpolation.Resolve(mirror, pair.Tick);
     if (held.has_value())
     {
-        EXPECT_FLOAT_EQ(held->Value.Position.X, 0.0f)
+        EXPECT_NEAR(held->Value.Position.X, 0.0f, kWirePosition)
             << "the own pawn's pose was fed to the buffer as well, so two "
                "mechanisms now hold an opinion about where it is";
     }
@@ -1068,9 +1081,9 @@ TEST(ReplicationVisibility, ASpawnedEntityGetsTheDerivedTransformRenderingReads)
     ASSERT_NE(derived, nullptr)
         << "a replicated entity with no world transform is invisible to "
            "extraction and to pose history, however correct its state is";
-    EXPECT_FLOAT_EQ(derived->Value.Position.X, 3.0f);
-    EXPECT_FLOAT_EQ(derived->Value.Position.Y, 4.0f);
-    EXPECT_FLOAT_EQ(derived->Value.Position.Z, 5.0f);
+    EXPECT_NEAR(derived->Value.Position.X, 3.0f, kWirePosition);
+    EXPECT_NEAR(derived->Value.Position.Y, 4.0f, kWirePosition);
+    EXPECT_NEAR(derived->Value.Position.Z, 5.0f, kWirePosition);
 }
 
 // Motion, not just presence: the derived transform has to keep following the
@@ -1091,7 +1104,7 @@ TEST(ReplicationVisibility, TheDerivedTransformFollowsReplicatedMotion)
 
         const WorldTransform* derived = pair.Client.TryGet<WorldTransform>(mirror);
         ASSERT_NE(derived, nullptr) << "step " << step;
-        ASSERT_FLOAT_EQ(derived->Value.Position.X, static_cast<float>(step) * 2.0f)
+        ASSERT_NEAR(derived->Value.Position.X, static_cast<float>(step) * 2.0f, kWirePosition)
             << "the drawn transform stopped tracking at step " << step;
     }
 }
@@ -1242,30 +1255,25 @@ TEST(ReplicationSnapshotHostile, TruncatedSnapshotsAreRefused)
 TEST(ReplicationSnapshotHostile, AnUnknownComponentKeyIsRefused)
 {
     Pair pair;
-    pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
 
-    SnapshotWriteRequest write;
-    pair.Changes.Update(pair.Authority, pair.Layout, pair.Identity,
-                        ++pair.Generation);
-    write.Changes = &pair.Changes;
-    write.Layout = &pair.Layout;
-    write.Peer = &pair.Peer;
-    write.Tick = 1;
-    write.Sequence = pair.Peer.NextSnapshotSequence();
-    const SnapshotWriteResult produced =
-        ReplicationWriteSnapshot(write, pair.Scratch);
-    ASSERT_TRUE(produced.Ok);
-
-    // Where the first component key sits, counted rather than guessed so that
-    // adding a header field moves one number here instead of a magic one.
-    constexpr std::size_t kHeaderBits = 64   // tick
-                                      + 32   // snapshot sequence
-                                      + 64   // command acknowledgement
-                                      + 32   // destroyed count
-                                      + 32;  // updated count
-    constexpr std::size_t kComponentKeyByte = (kHeaderBits + 64 + 8) / 8;
-    ASSERT_GT(produced.BytesWritten, kComponentKeyByte);
-    pair.Scratch[kComponentKeyByte] = std::byte{ 0xFE };
+    // Built rather than produced-then-poked: the envelope is bit-packed, so a
+    // component key does not sit on a byte boundary and there is no byte to
+    // overwrite. The widths come from the wire contract, so adding a header
+    // field moves this with it instead of leaving it quietly describing the old
+    // shape.
+    using Wire = ReplicationSnapshotWire;
+    std::array<std::byte, 64> forged{};
+    NetBitWriter writer(forged);
+    static_assert(Wire::TickBits == 64 && Wire::CommandAckBits == 64,
+                  "the two wide header fields are written as whole words");
+    writer.WriteU64(1);                      // tick
+    writer.WriteBits(1, Wire::SequenceBits);
+    writer.WriteU64(0);                      // command acknowledgement
+    writer.WriteBits(0, Wire::CountBits);    // nothing destroyed
+    writer.WriteBits(1, Wire::CountBits);    // one entity
+    writer.WriteVarUInt(1);                  // its identity
+    writer.WriteBits(1, Wire::ComponentCountBits);
+    writer.WriteBits(0xFE, Wire::ComponentIndexBits);  // a key this build lacks
 
     SnapshotApplyRequest apply;
     apply.Target = &pair.Client;
@@ -1273,8 +1281,8 @@ TEST(ReplicationSnapshotHostile, AnUnknownComponentKeyIsRefused)
     apply.Layout = &pair.Layout;
     apply.Identity = &pair.ClientIdentity;
 
-    const SnapshotApplyResult result = ReplicationApplySnapshot(
-        apply, std::span(pair.Scratch).subspan(0, produced.BytesWritten));
+    const SnapshotApplyResult result =
+        ReplicationApplySnapshot(apply, writer.Written());
     EXPECT_EQ(result.Error, SnapshotApplyError::UnknownComponent);
 }
 
@@ -1287,10 +1295,13 @@ TEST(ReplicationSnapshotHostile, AnAbsurdEntityCountIsRefusedByTheCap)
     std::array<std::byte, 32> forged{};
     NetBitWriter writer(forged);
     writer.WriteU64(1);            // tick
-    writer.WriteBits(1, 32);       // snapshot sequence
+    writer.WriteBits(1, ReplicationSnapshotWire::SequenceBits);
     writer.WriteU64(0);            // command acknowledgement
-    writer.WriteBits(0, 32);       // destroyed
-    writer.WriteBits(0xFFFFFFFF, 32);  // updated: four billion entities
+    writer.WriteBits(0, ReplicationSnapshotWire::CountBits);  // destroyed
+    // Every bit the count has: more entities than the cap allows, claimed
+    // before a single one has been read.
+    writer.WriteBits((1u << ReplicationSnapshotWire::CountBits) - 1u,
+                     ReplicationSnapshotWire::CountBits);
 
     SnapshotApplyRequest apply;
     apply.Target = &pair.Client;
@@ -1358,10 +1369,22 @@ TEST(ReplicationSnapshotHostile, RandomBytesNeverCorruptTheClientWorld)
 
 namespace
 {
-    // Room for four entities of the size this schema replicates. Small enough
-    // that a modest world does not fit, large enough that the fill has a real
-    // packing decision to make rather than a trivial one.
-    constexpr std::size_t kTightBudget = 256;
+    // A budget that holds exactly `count` freshly spawned entities, measured
+    // rather than written down. What an entity costs on the wire is a property
+    // of the schema and the envelope, and both of those move: a byte count in a
+    // test stops meaning what it says the moment either does, and a test whose
+    // premise has quietly stopped holding still passes.
+    std::size_t BudgetForEntities(std::size_t count)
+    {
+        Pair sizing;
+        for (std::size_t i = 0; i < count; ++i)
+            (void)sizing.SpawnReplicated(PoseAt(static_cast<float>(i), 0.0f, 0.0f));
+        return sizing.Replicate();
+    }
+
+    // Small enough that a modest world does not fit, large enough that the fill
+    // has a real packing decision to make rather than a trivial one.
+    std::size_t TightBudget() { return BudgetForEntities(4); }
 }
 
 // The one this mechanism exists for. Every entity is owed to a peer that has
@@ -1372,7 +1395,8 @@ namespace
 TEST(ReplicationBudget, APeerJoiningAWorldLargerThanOneDatagramIsSeededAnyway)
 {
     Pair pair;
-    pair.Budget = kTightBudget;
+    const std::size_t budget = TightBudget();
+    pair.Budget = budget;
 
     constexpr std::size_t kEntities = 40;
     std::vector<EntityId> world;
@@ -1382,7 +1406,7 @@ TEST(ReplicationBudget, APeerJoiningAWorldLargerThanOneDatagramIsSeededAnyway)
     std::vector<std::size_t> sizes{ pair.Replicate() };
     ASSERT_GT(pair.LastWrite.EntitiesDeferred, 0u)
         << "the budget never bit, so nothing below is a test of it";
-    ASSERT_LE(sizes.front(), kTightBudget);
+    ASSERT_LE(sizes.front(), budget);
 
     while (pair.ClientIdentity.Size() < kEntities && sizes.size() < kEntities * 2)
         sizes.push_back(pair.Replicate());
@@ -1395,7 +1419,7 @@ TEST(ReplicationBudget, APeerJoiningAWorldLargerThanOneDatagramIsSeededAnyway)
         ASSERT_TRUE(mirror.IsValid()) << "entity " << i;
         const LocalTransform* seen = pair.Client.TryGet<LocalTransform>(mirror);
         ASSERT_NE(seen, nullptr) << "entity " << i;
-        EXPECT_FLOAT_EQ(seen->Value.Position.X, static_cast<float>(i));
+        EXPECT_NEAR(seen->Value.Position.X, static_cast<float>(i), kWirePosition);
     }
 
     // Packed rather than dribbled. One entity per snapshot would arrive here
@@ -1405,7 +1429,7 @@ TEST(ReplicationBudget, APeerJoiningAWorldLargerThanOneDatagramIsSeededAnyway)
         << "seeding cost a snapshot per entity";
     for (std::size_t i = 0; i + 1 < sizes.size(); ++i)
     {
-        EXPECT_GT(sizes[i], kTightBudget / 2)
+        EXPECT_GT(sizes[i], budget / 2)
             << "publish " << i << " left half the datagram empty";
     }
 }
@@ -1418,7 +1442,7 @@ TEST(ReplicationBudget, WhatDidNotFitIsStillOwedInFull)
 {
     Pair pair;
     // One entity's worth. The second has nowhere to go.
-    pair.Budget = 88;
+    pair.Budget = BudgetForEntities(1);
 
     const EntityId first = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
     const EntityId second = pair.SpawnReplicated(PoseAt(2.0f, 0.0f, 0.0f));
@@ -1444,7 +1468,7 @@ TEST(ReplicationBudget, WhatDidNotFitIsStillOwedInFull)
     ASSERT_TRUE(mirror.IsValid()) << "the entity that waited its turn never came";
     const LocalTransform* seen = pair.Client.TryGet<LocalTransform>(mirror);
     ASSERT_NE(seen, nullptr);
-    EXPECT_FLOAT_EQ(seen->Value.Position.X, 2.0f);
+    EXPECT_NEAR(seen->Value.Position.X, 2.0f, kWirePosition);
 
     // And once it has genuinely been received, it keeps up like anything else.
     pair.Authority.TryGet<LocalTransform>(second)->Value.Position =
@@ -1452,14 +1476,14 @@ TEST(ReplicationBudget, WhatDidNotFitIsStillOwedInFull)
     pair.Replicate();
     mirror = pair.Mirror(second);
     ASSERT_TRUE(mirror.IsValid());
-    EXPECT_FLOAT_EQ(
-        pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X, 9.0f);
+    EXPECT_NEAR(
+        pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X, 9.0f, kWirePosition);
 
     // And the one that did fit was not disturbed by any of it.
     const EntityId firstMirror = pair.Mirror(first);
     ASSERT_TRUE(firstMirror.IsValid());
-    EXPECT_FLOAT_EQ(
-        pair.Client.TryGet<LocalTransform>(firstMirror)->Value.Position.X, 1.0f);
+    EXPECT_NEAR(
+        pair.Client.TryGet<LocalTransform>(firstMirror)->Value.Position.X, 1.0f, kWirePosition);
 }
 
 // Everything moves every publish and a quarter of it fits. Whichever entities
@@ -1469,7 +1493,8 @@ TEST(ReplicationBudget, WhatDidNotFitIsStillOwedInFull)
 TEST(ReplicationBudget, ABusyWorldRotatesInsteadOfFavouringTheSameFewEntities)
 {
     Pair pair;
-    pair.Budget = kTightBudget;
+    const std::size_t budget = TightBudget();
+    pair.Budget = budget;
 
     constexpr std::size_t kEntities = 20;
     std::vector<EntityId> world;
@@ -1515,9 +1540,9 @@ TEST(ReplicationBudget, ABusyWorldRotatesInsteadOfFavouringTheSameFewEntities)
 TEST(ReplicationBudget, AnEntityTooLargeForAnySnapshotIsCountedNotSilentlyDropped)
 {
     Pair pair;
-    // Enough for an entity carrying no replicated components; nowhere near
-    // enough for one carrying a transform.
-    pair.Budget = 48;
+    // One byte short of what a single entity carrying a transform needs, which
+    // still leaves room for one carrying no replicated components at all.
+    pair.Budget = BudgetForEntities(1) - 1;
 
     const EntityId heavy = pair.SpawnReplicated(PoseAt(4.0f, 0.0f, 0.0f));
     const EntityId bare = pair.Authority.CreateEntity();
@@ -1550,7 +1575,8 @@ TEST(ReplicationBudget, AnEntityTooLargeForAnySnapshotIsCountedNotSilentlyDroppe
 TEST(ReplicationBudget, ADestroyIsNotHeldBehindASnapshotFullOfUpdates)
 {
     Pair pair;
-    pair.Budget = kTightBudget;
+    const std::size_t budget = TightBudget();
+    pair.Budget = budget;
 
     constexpr std::size_t kEntities = 20;
     std::vector<EntityId> world;
@@ -1591,7 +1617,8 @@ TEST(ReplicationBudget, ADestroyIsNotHeldBehindASnapshotFullOfUpdates)
 TEST(ReplicationBudget, APeersOwnEntityIsCarriedWhileTheWorldSaturatesTheBudget)
 {
     Pair pair;
-    pair.Budget = kTightBudget;
+    const std::size_t budget = TightBudget();
+    pair.Budget = budget;
     constexpr std::uint32_t kOwner = 3;
 
     constexpr std::size_t kCrowd = 40;
@@ -1626,7 +1653,7 @@ TEST(ReplicationBudget, APeersOwnEntityIsCarriedWhileTheWorldSaturatesTheBudget)
                "own entity yet";
         const LocalTransform* seen = pair.Client.TryGet<LocalTransform>(mirror);
         ASSERT_NE(seen, nullptr);
-        EXPECT_FLOAT_EQ(seen->Value.Position.X, moved)
+        EXPECT_NEAR(seen->Value.Position.X, moved, kWirePosition)
             << "publish " << publish << ": the owner is a snapshot behind on its "
                "own entity";
     }
@@ -1638,7 +1665,8 @@ TEST(ReplicationBudget, APeersOwnEntityIsCarriedWhileTheWorldSaturatesTheBudget)
 TEST(ReplicationBudget, AMassDestroyDoesNotCostAPlayerTheirOwnState)
 {
     Pair pair;
-    pair.Budget = kTightBudget;
+    const std::size_t budget = TightBudget();
+    pair.Budget = budget;
     constexpr std::uint32_t kOwner = 5;
 
     constexpr std::size_t kCrowd = 60;
@@ -1662,8 +1690,8 @@ TEST(ReplicationBudget, AMassDestroyDoesNotCostAPlayerTheirOwnState)
     ASSERT_GT(pair.LastWrite.EntitiesDestroyed, 0u);
     const EntityId mirror = pair.Mirror(pawn);
     ASSERT_TRUE(mirror.IsValid());
-    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
-                    42.0f)
+    EXPECT_NEAR(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
+                    42.0f, kWirePosition)
         << "the player's own state waited behind the news that a zone emptied";
 }
 
@@ -1707,7 +1735,8 @@ TEST(ReplicationBudget, AMassDestroyIsPacedRatherThanDropped)
 TEST(ReplicationBudget, ANewEntityIsNotQueuedBehindOnesThePeerAlreadyHas)
 {
     Pair pair;
-    pair.Budget = kTightBudget;
+    const std::size_t budget = TightBudget();
+    pair.Budget = budget;
 
     constexpr std::size_t kCrowd = 30;
     std::vector<EntityId> crowd;
@@ -1732,8 +1761,7 @@ TEST(ReplicationBudget, ANewEntityIsNotQueuedBehindOnesThePeerAlreadyHas)
     const EntityId mirror = pair.Mirror(arrival);
     ASSERT_TRUE(mirror.IsValid()) << "the spawn waited behind entities the peer "
                                      "already had";
-    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.Z,
-                    11.0f);
+    EXPECT_NEAR(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.Z, 11.0f, kWirePosition);
 }
 
 // Which entities a full snapshot takes is decided by their identity, not by
@@ -1746,7 +1774,8 @@ TEST(ReplicationBudget, WhoGoesFirstFollowsIdentityRatherThanStorageOrder)
 {
     Pair pair;
     // Room for a handful, so most of the world is left for later snapshots.
-    pair.Budget = kTightBudget;
+    const std::size_t budget = TightBudget();
+    pair.Budget = budget;
 
     constexpr std::size_t kEntities = 40;
     std::vector<EntityId> world;
@@ -1788,7 +1817,8 @@ TEST(ReplicationBudget, TheSameSimulationProducesTheSameStreamTwice)
 {
     const auto run = [] {
         Pair pair;
-        pair.Budget = kTightBudget;
+        const std::size_t budget = TightBudget();
+    pair.Budget = budget;
         std::vector<std::vector<std::byte>> stream;
 
         std::vector<EntityId> world;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/metadata/RuntimeSchema.h>
+#include <net/ReplicationSchemas.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
 
@@ -119,7 +120,7 @@ public:
         return AddErased(ResolveComponentTypeId<T>(),
                          ResolveComponentName<T>(),
                          sizeof(T),
-                         RuntimeFieldsOf<T>());
+                         RuntimeFieldsOf<T, SchemaPurpose::Replication>());
     }
 
     void Seal();

@@ -2,6 +2,7 @@
 
 #include <controller/LookOrientation.h>
 #include <net/ReplicationCodec.h>
+#include <net/ReplicationSchemas.h>
 #include <net/ReplicationLayout.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
@@ -546,4 +547,206 @@ TEST(ReplicationCodec, EveryEngineComponentRoundTripsFromDefaults)
             }
         }
     }
+}
+
+//=============================================================================
+// Variable-width identities
+//
+// An entity identity is minted from one and never reused, so most of a
+// session's identities are small and none of them has a ceiling. A fixed
+// sixty-four bits was most of what an entity's envelope cost, paid on every
+// entity in every snapshot to every peer.
+//=============================================================================
+
+TEST(NetBitVarUInt, RoundTripsAcrossEveryWidth)
+{
+    std::array<std::byte, 32> buffer{};
+    for (std::uint64_t value : { std::uint64_t{ 0 }, std::uint64_t{ 1 },
+                                 std::uint64_t{ 127 }, std::uint64_t{ 128 },
+                                 std::uint64_t{ 16383 }, std::uint64_t{ 16384 },
+                                 std::uint64_t{ 1ull << 32 },
+                                 ~std::uint64_t{ 0 } })
+    {
+        NetBitWriter writer(buffer);
+        writer.WriteVarUInt(value);
+        ASSERT_FALSE(writer.Overflowed()) << value;
+
+        NetBitReader reader(writer.Written());
+        std::uint64_t read = 0;
+        ASSERT_TRUE(reader.ReadVarUInt(read)) << value;
+        EXPECT_EQ(read, value);
+    }
+}
+
+// The saving is the whole point, so it is asserted rather than assumed.
+TEST(NetBitVarUInt, SmallIdentitiesCostAByte)
+{
+    const auto bits = [](std::uint64_t value) {
+        std::array<std::byte, 32> buffer{};
+        NetBitWriter writer(buffer);
+        writer.WriteVarUInt(value);
+        return writer.BitsWritten();
+    };
+
+    EXPECT_EQ(bits(1), 8u);
+    EXPECT_EQ(bits(127), 8u);
+    EXPECT_EQ(bits(128), 16u);
+    EXPECT_EQ(bits(16383), 16u);
+    EXPECT_EQ(bits(16384), 24u);
+    // The worst case is still bounded, and it is what a fixed-width identity
+    // cost every time rather than only past eighteen quintillion.
+    EXPECT_EQ(bits(~std::uint64_t{ 0 }), 80u);
+}
+
+// Continuation bits come from a peer. A reader that kept going while they said
+// to would be letting the sender decide how long the read runs.
+TEST(NetBitVarUInt, AnEndlessRunOfContinuationsIsRefused)
+{
+    std::array<std::byte, 32> buffer{};
+    NetBitWriter writer(buffer);
+    for (int group = 0; group < 20; ++group)
+    {
+        writer.WriteBits(0x7F, 7);
+        writer.WriteBool(true);  // and another follows, forever
+    }
+
+    NetBitReader reader(writer.Written());
+    std::uint64_t value = 0;
+    EXPECT_FALSE(reader.ReadVarUInt(value));
+    EXPECT_TRUE(reader.Overflowed());
+}
+
+//=============================================================================
+// A transform at wire precision
+//
+// The precision a link carries a value at is a fact about the link, not about
+// the type. That is why it is stated by the layer doing the sending: the scene
+// format, the inspector, and the physics step all keep reading a transform at
+// full width, and none of them is affected by what a snapshot spends on one.
+//=============================================================================
+
+namespace
+{
+    // The step between two values the wire can name.
+    constexpr float WireStep(float range, std::uint8_t bits)
+    {
+        return 2.0f * range / static_cast<float>((std::uint32_t{ 1 } << bits) - 1u);
+    }
+
+    const ReplicatedComponent& TransformOnTheWire(ReplicationLayout& layout)
+    {
+        EXPECT_TRUE(layout.Add<LocalTransform>());
+        const ReplicatedComponent* component =
+            layout.Find(ResolveComponentTypeId<LocalTransform>());
+        EXPECT_NE(component, nullptr);
+        return *component;
+    }
+
+    // Encodes then decodes a whole transform, so what comes back is what a peer
+    // would actually be holding.
+    LocalTransform ThroughTheWire(const ReplicatedComponent& component,
+                                  const LocalTransform& sent)
+    {
+        std::array<std::byte, kScratchBytes> buffer{};
+        NetBitWriter writer(buffer);
+        const std::uint64_t all = ~std::uint64_t{ 0 };
+        EXPECT_TRUE(ReplicationEncodeComponent(component, BytesOf(sent), all, writer));
+
+        LocalTransform received{};
+        NetBitReader reader(writer.Written());
+        EXPECT_TRUE(ReplicationDecodeComponent(
+            component, reader,
+            std::span(reinterpret_cast<std::byte*>(&received), sizeof(received))));
+        return received;
+    }
+}
+
+TEST(ReplicationTransformPrecision, EveryPartArrivesWithinItsDeclaredStep)
+{
+    ReplicationLayout layout;
+    const ReplicatedComponent& component = TransformOnTheWire(layout);
+
+    LocalTransform sent{};
+    sent.Value.Position = Vec3d{ 12.3456f, -700.125f, 0.0009f };
+    sent.Value.Rotation = Quatf{ 0.5f, -0.5f, 0.5f, 0.5f };
+    sent.Value.Scale = Vec3d{ 1.0f, 2.5f, -0.75f };
+
+    const LocalTransform got = ThroughTheWire(component, sent);
+
+    const float position = WireStep(kNetPositionRange, kNetPositionBits);
+    EXPECT_NEAR(got.Value.Position.X, sent.Value.Position.X, position);
+    EXPECT_NEAR(got.Value.Position.Y, sent.Value.Position.Y, position);
+    EXPECT_NEAR(got.Value.Position.Z, sent.Value.Position.Z, position);
+
+    const float rotation = WireStep(kNetRotationRange, kNetRotationBits);
+    EXPECT_NEAR(got.Value.Rotation.X, sent.Value.Rotation.X, rotation);
+    EXPECT_NEAR(got.Value.Rotation.Y, sent.Value.Rotation.Y, rotation);
+    EXPECT_NEAR(got.Value.Rotation.Z, sent.Value.Rotation.Z, rotation);
+    EXPECT_NEAR(got.Value.Rotation.W, sent.Value.Rotation.W, rotation);
+
+    const float scale = WireStep(kNetScaleRange, kNetScaleBits);
+    EXPECT_NEAR(got.Value.Scale.X, sent.Value.Scale.X, scale);
+    EXPECT_NEAR(got.Value.Scale.Y, sent.Value.Scale.Y, scale);
+    EXPECT_NEAR(got.Value.Scale.Z, sent.Value.Scale.Z, scale);
+}
+
+// A scale of exactly one is what nearly every entity has, and it has to survive
+// the trip: a range too coarse to name it would make every replicated entity
+// permanently the wrong size, everywhere, for no reason a player could trace.
+TEST(ReplicationTransformPrecision, TheScaleEverythingHasSurvivesIntact)
+{
+    ReplicationLayout layout;
+    const ReplicatedComponent& component = TransformOnTheWire(layout);
+
+    LocalTransform sent{};
+    sent.Value.Scale = Vec3d{ 1.0f, 1.0f, 1.0f };
+    const LocalTransform got = ThroughTheWire(component, sent);
+
+    // A tenth of a millimetre per unit. Anything coarser is visible on a
+    // character-sized object.
+    EXPECT_NEAR(got.Value.Scale.X, 1.0f, 1e-3f);
+    EXPECT_NEAR(got.Value.Scale.Y, 1.0f, 1e-3f);
+    EXPECT_NEAR(got.Value.Scale.Z, 1.0f, 1e-3f);
+}
+
+// The range is a declaration about how large a world can be. Beyond it a
+// position pins to the edge rather than wrapping -- an entity in the wrong
+// place, which is bad, rather than an entity somewhere it has never been, which
+// is worse and untraceable.
+TEST(ReplicationTransformPrecision, APositionBeyondTheDeclaredWorldPinsToItsEdge)
+{
+    ReplicationLayout layout;
+    const ReplicatedComponent& component = TransformOnTheWire(layout);
+
+    LocalTransform sent{};
+    sent.Value.Position = Vec3d{ kNetPositionRange * 4.0f, -kNetPositionRange * 4.0f,
+                                 0.0f };
+    const LocalTransform got = ThroughTheWire(component, sent);
+
+    EXPECT_NEAR(got.Value.Position.X, kNetPositionRange,
+                WireStep(kNetPositionRange, kNetPositionBits));
+    EXPECT_NEAR(got.Value.Position.Y, -kNetPositionRange,
+                WireStep(kNetPositionRange, kNetPositionBits));
+}
+
+// The layering claim of the whole arrangement. If a wire decision reached the
+// authoring description, a scene would round-trip through it and a saved level
+// would quietly lose precision it was authored with.
+TEST(ReplicationTransformPrecision, TheAuthoredDescriptionIsUntouched)
+{
+    for (const RuntimeField& field : RuntimeFieldsOf<LocalTransform>())
+    {
+        EXPECT_FALSE(field.Quantization.IsQuantized())
+            << field.Name << " is described to authoring at wire precision";
+    }
+
+    // And the replication description of the same type is not.
+    bool anyQuantized = false;
+    for (const RuntimeField& field :
+         RuntimeFieldsOf<LocalTransform, SchemaPurpose::Replication>())
+    {
+        anyQuantized = anyQuantized || field.Quantization.IsQuantized();
+    }
+    EXPECT_TRUE(anyQuantized)
+        << "nothing is quantized, so the two descriptions are the same one";
 }

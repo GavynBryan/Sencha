@@ -246,6 +246,19 @@ void NetBitWriter::WriteU64(std::uint64_t value)
     WriteBits(static_cast<std::uint32_t>(value >> 32), 32);
 }
 
+void NetBitWriter::WriteVarUInt(std::uint64_t value)
+{
+    for (;;)
+    {
+        const auto group = static_cast<std::uint32_t>(value & 0x7Full);
+        value >>= 7;
+        WriteBits(group, 7);
+        WriteBool(value != 0);
+        if (value == 0)
+            return;
+    }
+}
+
 void NetBitWriter::WriteFloat(float value)
 {
     WriteU32(std::bit_cast<std::uint32_t>(value));
@@ -309,6 +322,26 @@ bool NetBitReader::ReadU64(std::uint64_t& out)
     out = static_cast<std::uint64_t>(low)
         | (static_cast<std::uint64_t>(high) << 32);
     return true;
+}
+
+bool NetBitReader::ReadVarUInt(std::uint64_t& out)
+{
+    out = 0;
+    // Ten seven-bit groups is seventy bits, which covers every u64 with room to
+    // spare in the last group. An eleventh cannot be describing a u64.
+    constexpr std::uint8_t kMaxGroups = 10;
+    for (std::uint8_t group = 0; group < kMaxGroups; ++group)
+    {
+        std::uint32_t payload = 0;
+        bool more = false;
+        if (!ReadBits(7, payload) || !ReadBool(more))
+            return false;
+        out |= static_cast<std::uint64_t>(payload) << (group * 7);
+        if (!more)
+            return true;
+    }
+    Overflow = true;
+    return false;
 }
 
 bool NetBitReader::ReadFloat(float& out)

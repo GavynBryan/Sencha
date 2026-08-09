@@ -15,25 +15,42 @@
 
 namespace
 {
-    // Counts on the wire are 32 bits so the format does not need revisiting for
-    // a bigger world; the caps, not the width, are what bound the work.
-    constexpr std::uint8_t kCountBits = 32;
-    constexpr std::uint8_t kSequenceBits = 32;
-    constexpr std::uint8_t kComponentCountBits = 8;
-    constexpr std::uint8_t kComponentIndexBits = 8;
+    // A count is bounded by the entity cap and checked against it on the way in,
+    // so a width that could not address the cap would be a decoder refusing
+    // snapshots the writer is allowed to produce.
+    static_assert(ReplicationCaps{}.MaxEntitiesPerSnapshot
+                      <= (1u << ReplicationSnapshotWire::CountBits),
+                  "the count width has to address the cap it is checked against");
+    constexpr std::uint8_t kCountBits = ReplicationSnapshotWire::CountBits;
+    constexpr std::uint8_t kSequenceBits = ReplicationSnapshotWire::SequenceBits;
+    constexpr std::uint8_t kComponentCountBits =
+        ReplicationSnapshotWire::ComponentCountBits;
+    constexpr std::uint8_t kComponentIndexBits =
+        ReplicationSnapshotWire::ComponentIndexBits;
 
     void WriteNetEntityId(NetBitWriter& writer, NetEntityId id)
     {
-        writer.WriteU64(id.Value);
+        writer.WriteVarUInt(id.Value);
     }
 
     bool ReadNetEntityId(NetBitReader& reader, NetEntityId& out)
     {
         std::uint64_t value = 0;
-        if (!reader.ReadU64(value))
+        if (!reader.ReadVarUInt(value))
             return false;
         out = NetEntityId{ value };
         return true;
+    }
+
+    // What one identity costs on the wire, which the fill has to know before it
+    // writes one. Not a constant any more: an identity is as wide as it needs
+    // to be.
+    std::size_t NetEntityIdBits(NetEntityId id)
+    {
+        std::size_t groups = 1;
+        for (std::uint64_t rest = id.Value >> 7; rest != 0; rest >>= 7)
+            ++groups;
+        return groups * 8;
     }
 }
 
@@ -279,9 +296,10 @@ namespace
 
     // The fixed part of every snapshot: the tick, this snapshot's name, the
     // command acknowledgement, and the two counts.
-    constexpr std::size_t kHeaderBits =
-        64 + kSequenceBits + 64 + kCountBits + kCountBits;
-    constexpr std::size_t kEntityIdBits = 64;
+    constexpr std::size_t kHeaderBits = ReplicationSnapshotWire::TickBits
+                                      + kSequenceBits
+                                      + ReplicationSnapshotWire::CommandAckBits
+                                      + kCountBits + kCountBits;
 
     // What a snapshot would say about one entity for one peer, and what saying
     // it would cost. Decided before anything is written, because a bit writer
@@ -323,7 +341,7 @@ namespace
         const bool ownershipMoved = entity.OwnerChangedAt > floor;
 
         const std::size_t first = masks.size();
-        std::size_t bits = kEntityIdBits + kComponentCountBits;
+        std::size_t bits = NetEntityIdBits(entity.Id) + kComponentCountBits;
         bool owedAnything = false;
 
         for (const ReplicationChangeStore::ComponentState& held : entity.Components)
@@ -453,8 +471,15 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
             break;
         ownedBits += plan.Bits;
     }
-    const std::size_t guaranteed =
-        std::min(bodyBits, kGuaranteedDestroys * kEntityIdBits);
+    // What the destroys that are guaranteed room actually cost, so the
+    // reservation above cannot claim the space they are promised.
+    std::size_t guaranteed = 0;
+    for (std::size_t i = 0;
+         i < owedDestroys.size() && i < kGuaranteedDestroys; ++i)
+    {
+        guaranteed += NetEntityIdBits(owedDestroys[i]);
+    }
+    guaranteed = std::min(bodyBits, guaranteed);
     const std::size_t reserved = std::min(ownedBits, bodyBits - guaranteed);
 
     // Destroys go in ahead of everything the reservation did not claim. An
@@ -463,16 +488,23 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
     // not there, which nothing later corrects except the destroy itself. Oldest
     // first, so the tail of a large sweep does not sit behind whatever died
     // since.
-    const std::size_t destroyRoom =
-        std::min((bodyBits - reserved) / kEntityIdBits, kMaxDestroysPerSnapshot);
-    const std::size_t destroysWritten =
-        std::min(destroyRoom, owedDestroys.size());
+    std::size_t destroysWritten = 0;
+    std::size_t destroyBits = 0;
+    while (destroysWritten < owedDestroys.size()
+           && destroysWritten < kMaxDestroysPerSnapshot)
+    {
+        const std::size_t cost = NetEntityIdBits(owedDestroys[destroysWritten]);
+        if (destroyBits + cost > bodyBits - reserved)
+            break;
+        destroyBits += cost;
+        ++destroysWritten;
+    }
     const std::span<const NetEntityId> destroyed =
         owedDestroys.subspan(0, destroysWritten);
     result.DestroysDeferred =
         static_cast<std::uint32_t>(owedDestroys.size() - destroysWritten);
 
-    std::size_t used = kHeaderBits + destroysWritten * kEntityIdBits;
+    std::size_t used = kHeaderBits + destroyBits;
 
     // What fits, in that order. An entity is taken whole or not at all: a first
     // send carries the entity's every field, and the client turns that into a

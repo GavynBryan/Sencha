@@ -384,3 +384,117 @@ TEST(ReplicationBudgetRuntime, LoweringTheBudgetLowersWhatGoesOut)
         << "entities were deferred but nothing reported how long they have "
            "been waiting";
 }
+
+//=============================================================================
+// What a snapshot costs
+//
+// Bounds rather than exact sizes: a bound says what the format promises and
+// fails when the promise is broken, while an exact size fails whenever anything
+// is added and teaches everyone to update the number without reading it.
+//=============================================================================
+
+namespace
+{
+    // A fixed scene: fifty entities carrying nothing but a transform.
+    struct SizedWorld
+    {
+        WorldComponentSchema Schema;
+        ReplicationLayout Layout;
+        World Entities;
+        ReplicationAuthorityIdentity Identity;
+        ReplicationChangeStore Changes;
+        ReplicationPeerState Peer;
+        std::vector<EntityId> All;
+        std::vector<std::byte> Scratch;
+        std::uint64_t Generation = 0;
+
+        explicit SizedWorld(std::size_t count) : Scratch(64 * 1024)
+        {
+            ComponentRegistrar components(&Schema, nullptr, &Layout);
+            RegisterEngineComponents(components);
+            Schema.Seal();
+            Schema.Apply(Entities);
+            Layout.Seal();
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                const EntityId entity = Entities.CreateEntity();
+                Entities.AddComponent<LocalTransform>(entity, LocalTransform{});
+                Entities.AddComponent<NetReplicated>(entity, NetReplicated{});
+                All.push_back(entity);
+            }
+        }
+
+        std::size_t Publish()
+        {
+            Changes.Update(Entities, Layout, Identity, ++Generation);
+            SnapshotWriteRequest write;
+            write.Changes = &Changes;
+            write.Layout = &Layout;
+            write.Peer = &Peer;
+            write.Tick = Generation;
+            write.Sequence = Peer.NextSnapshotSequence();
+            const SnapshotWriteResult result =
+                ReplicationWriteSnapshot(write, Scratch);
+            EXPECT_TRUE(result.Ok);
+            NetSnapshotAck applied;
+            applied.Observe(write.Sequence);
+            Peer.Acknowledge(applied);
+            return result.BytesWritten;
+        }
+    };
+}
+
+// Full state, which is what a joining peer is owed for every entity at once and
+// therefore what decides how many round trips a join takes.
+TEST(ReplicationSize, OneDatagramSeedsFortyEntities)
+{
+    SizedWorld world(40);
+    const std::size_t bytes = world.Publish();
+
+    EXPECT_LE(bytes, kNetMaxSnapshotBytes)
+        << "a datagram no longer seeds forty entities, so joining now takes "
+           "more round trips than it did";
+    // Twenty-four bytes covers a transform at wire precision plus the envelope
+    // around it -- against about fifty before the transform was quantized and
+    // the identities and counts were narrowed.
+    EXPECT_LE(bytes / world.All.size(), 24u);
+}
+
+// Steady state, which is what the session actually spends: everything held,
+// everything moving.
+TEST(ReplicationSize, AMovingEntityCostsFarLessThanAFreshOne)
+{
+    SizedWorld world(50);
+    const std::size_t full = world.Publish();
+
+    for (EntityId entity : world.All)
+    {
+        world.Entities.TryGet<LocalTransform>(entity)->Value.Position =
+            Vec3d{ 1.0f, 2.0f, 3.0f };
+    }
+    const std::size_t moving = world.Publish();
+
+    EXPECT_LT(moving, full)
+        << "an entity that only moved cost as much as one being described from "
+           "nothing";
+    // Only the position run travels, so a moving entity is its envelope plus
+    // three quantized floats.
+    EXPECT_LE(moving / world.All.size(), 14u);
+}
+
+// The one every session pays on every publish regardless of what happened.
+TEST(ReplicationSize, AStillWorldCostsOnlyItsHeader)
+{
+    SizedWorld world(50);
+    (void)world.Publish();
+    const std::size_t still = world.Publish();
+
+    // Tick, sequence, command acknowledgement, and two counts.
+    constexpr std::size_t kHeaderBytes =
+        (ReplicationSnapshotWire::TickBits + ReplicationSnapshotWire::SequenceBits
+         + ReplicationSnapshotWire::CommandAckBits
+         + 2 * ReplicationSnapshotWire::CountBits + 7) / 8;
+    EXPECT_EQ(still, kHeaderBytes)
+        << "a world that did not move still cost something to describe";
+}

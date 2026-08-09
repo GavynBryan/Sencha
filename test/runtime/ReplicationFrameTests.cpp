@@ -8,6 +8,7 @@
 #include <net/NetReplicationComponents.h>
 #include <net/NetSession.h>
 #include <net/ReplicationRuntime.h>
+#include <net/ReplicationSchemas.h>
 #include <net/UdpTransport.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
@@ -38,6 +39,13 @@ namespace
         identity.FixedTickRateMilliHz = 60000;
         return identity;
     }
+
+    // A replicated position is the nearest value the declared wire precision can
+    // name, not the authority's float. Derived from the schema, so widening or
+    // narrowing that precision moves this with it.
+    constexpr float kWirePosition =
+        2.0f * kNetPositionRange
+        / static_cast<float>((std::uint32_t{ 1 } << kNetPositionBits) - 1u);
 
     Transform3f PoseAt(float x, float y, float z)
     {
@@ -282,9 +290,9 @@ TEST(ReplicationFrame, TheFlushPhasePublishesWhatTheAuthorityHolds)
 
     EXPECT_GT(game.Applied, 0)
         << "the flush phase never published a snapshot";
-    EXPECT_FLOAT_EQ(game.SeenPosition.X, 12.0f);
-    EXPECT_FLOAT_EQ(game.SeenPosition.Y, 34.0f);
-    EXPECT_FLOAT_EQ(game.SeenPosition.Z, 56.0f);
+    EXPECT_NEAR(game.SeenPosition.X, 12.0f, kWirePosition);
+    EXPECT_NEAR(game.SeenPosition.Y, 34.0f, kWirePosition);
+    EXPECT_NEAR(game.SeenPosition.Z, 56.0f, kWirePosition);
 }
 
 // The mirror image: nothing here calls Apply on the engine, so the entity can
@@ -311,7 +319,7 @@ TEST(ReplicationFrame, ThePumpPhaseAppliesWhatTheAuthoritySends)
 
     ASSERT_TRUE(game.Joined) << "the engine never dialed the authority";
     EXPECT_EQ(game.Mirrored, 1) << "the pump phase never applied a snapshot";
-    EXPECT_FLOAT_EQ(game.SeenPosition.X, -7.5f);
-    EXPECT_FLOAT_EQ(game.SeenPosition.Y, 2.25f);
-    EXPECT_FLOAT_EQ(game.SeenPosition.Z, 100.0f);
+    EXPECT_NEAR(game.SeenPosition.X, -7.5f, kWirePosition);
+    EXPECT_NEAR(game.SeenPosition.Y, 2.25f, kWirePosition);
+    EXPECT_NEAR(game.SeenPosition.Z, 100.0f, kWirePosition);
 }

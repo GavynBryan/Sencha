@@ -233,6 +233,29 @@ struct ReplicationCaps
     std::uint32_t MaxComponentsPerEntity = 32;
 };
 
+//-----------------------------------------------------------------------------
+// The snapshot envelope's field widths, in bits.
+//
+// Stated here rather than only inside the writer because they are the wire
+// contract: anything that builds or inspects a snapshot without going through
+// the writer reads them from one place instead of restating them and drifting.
+//
+// Counts are as wide as the cap they are checked against and no wider. Entity
+// identities are not here at all: they are written as a variable width, because
+// they are minted from one and never reused, so most of a session's identities
+// are small and a fixed sixty-four bits was most of what an entity's envelope
+// cost.
+//-----------------------------------------------------------------------------
+struct ReplicationSnapshotWire
+{
+    static constexpr std::uint8_t TickBits = 64;
+    static constexpr std::uint8_t SequenceBits = 32;
+    static constexpr std::uint8_t CommandAckBits = 64;
+    static constexpr std::uint8_t CountBits = 11;
+    static constexpr std::uint8_t ComponentCountBits = 8;
+    static constexpr std::uint8_t ComponentIndexBits = 8;
+};
+
 [[nodiscard]] const ReplicationCaps& ReplicationDefaultCaps();
 
 //-----------------------------------------------------------------------------
