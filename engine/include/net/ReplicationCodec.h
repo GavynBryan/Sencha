@@ -113,21 +113,37 @@ void ReplicationSnapToWire(const ReplicatedComponent& component,
 //-----------------------------------------------------------------------------
 // Component encode and decode
 //
-// `baseline` may be empty, which encodes every field -- the fresh-state form a
-// client gets when it has no baseline to delta against. When it is present it
-// must be the same size as `current`, and only fields that differ are written.
+// Which fields travel is the caller's decision, handed over as a mask of field
+// runs. That is deliberate: whether a field has changed is a question about the
+// authority's history, and whether a peer may see it is a question about that
+// peer -- neither is something a codec can answer, and folding them in here is
+// what made the two get confused for each other.
 //
-// `forOwner` decides whether owner-only fields are included. It is a writer-side
-// question only: the mask tells the reader what is there.
+// The two halves of the answer are below, so a caller composes them rather than
+// reinventing either.
 //
 // Returns false if the component did not fit, which is a budgeting error on the
 // authority and never a wire condition.
 //-----------------------------------------------------------------------------
 [[nodiscard]] bool ReplicationEncodeComponent(const ReplicatedComponent& component,
                                               std::span<const std::byte> current,
-                                              std::span<const std::byte> baseline,
-                                              bool forOwner,
+                                              std::uint64_t fields,
                                               NetBitWriter& writer);
+
+// Which of a component's field runs the wire would carry differently. An empty
+// `previous` means every run: there is nothing to difference against, which is
+// the fresh-state form. Quantized runs compare at wire precision, so movement
+// finer than the declared resolution is not a change.
+[[nodiscard]] std::uint64_t ReplicationChangedFields(
+    const ReplicatedComponent& component,
+    std::span<const std::byte> current,
+    std::span<const std::byte> previous);
+
+// Which of a component's field runs a particular peer is allowed to receive:
+// owner-only runs to the owner, owner-local runs to everyone else. A fact about
+// the receiver, not about the value.
+[[nodiscard]] std::uint64_t ReplicationVisibleFields(
+    const ReplicatedComponent& component, bool forOwner);
 
 // Applies a decoded component onto `target`, which must already hold the
 // receiver's current value for this component: fields whose mask bit is clear

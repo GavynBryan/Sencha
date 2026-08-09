@@ -1,5 +1,7 @@
 #include <net/ReplicationSnapshot.h>
 
+#include <net/ReplicationChangeStore.h>
+
 #include <ecs/Query.h>
 #include <ecs/World.h>
 #include <ecs/WorldComponentSchema.h>
@@ -60,11 +62,15 @@ std::string_view SnapshotApplyErrorToString(SnapshotApplyError error)
 // ReplicationPeerState
 //=============================================================================
 
-const ReplicationPeerState::EntityBaseline* ReplicationPeerState::Find(
-    NetEntityId id) const
+std::uint64_t ReplicationPeerState::Floor(NetEntityId id) const
 {
-    const auto it = Baselines.find(id);
-    return it == Baselines.end() ? nullptr : &it->second;
+    const auto it = Floors.find(id);
+    return it == Floors.end() ? 0 : it->second;
+}
+
+bool ReplicationPeerState::Knows(NetEntityId id) const
+{
+    return Floors.contains(id);
 }
 
 void ReplicationPeerState::BeginSnapshot(std::uint32_t sequence)
@@ -74,31 +80,29 @@ void ReplicationPeerState::BeginSnapshot(std::uint32_t sequence)
     if (Pending.size() < kMaxUnacknowledged)
     {
         if (Pending.empty() || Pending.back().Sequence != sequence)
-            Pending.push_back(SentSnapshot{ .Sequence = sequence, .Components = {} });
+            Pending.push_back(SentSnapshot{ .Sequence = sequence, .Entities = {} });
         return;
     }
 
     // This peer has not confirmed anything for longer than is worth tracking.
     // Everything believed about it is a guess by now, so it is treated as new:
-    // the snapshot about to be written is full state, and it costs one
-    // snapshot rather than an unbounded pile of them.
-    Baselines.clear();
+    // the snapshot about to be written is full state, and it costs one snapshot
+    // rather than an unbounded pile of them.
+    Floors.clear();
     Pending.clear();
-    Pending.push_back(SentSnapshot{ .Sequence = sequence, .Components = {} });
+    Pending.push_back(SentSnapshot{ .Sequence = sequence, .Entities = {} });
 }
 
 void ReplicationPeerState::RecordSent(std::uint32_t sequence, NetEntityId id,
-                                      std::uint8_t component,
-                                      std::span<const std::byte> bytes)
+                                      std::uint64_t generation)
 {
-    // Held aside, not applied. What the peer holds only changes when the peer
-    // says so, because a snapshot that was written is not a snapshot that
-    // arrived.
+    // Held aside, not applied. How far a peer has been carried only changes
+    // when the peer says so, because a snapshot that was written is not a
+    // snapshot that arrived.
     if (Pending.empty() || Pending.back().Sequence != sequence)
         BeginSnapshot(sequence);
 
-    Pending.back().Components.emplace_back(
-        id, component, std::vector<std::byte>(bytes.begin(), bytes.end()));
+    Pending.back().Entities.emplace_back(id, generation);
 }
 
 void ReplicationPeerState::Acknowledge(const NetSnapshotAck& ack)
@@ -106,15 +110,16 @@ void ReplicationPeerState::Acknowledge(const NetSnapshotAck& ack)
     if (!ack.Any())
         return;
 
-    // Oldest first, so a component named by two pending snapshots ends on the
-    // value the newer one carried.
     std::size_t settled = 0;
     for (const SentSnapshot& snapshot : Pending)
     {
         if (ack.Confirms(snapshot.Sequence))
         {
-            for (const auto& [id, component, bytes] : snapshot.Components)
-                Baselines[id].Components[component] = bytes;
+            for (const auto& [id, generation] : snapshot.Entities)
+            {
+                std::uint64_t& floor = Floors[id];
+                floor = std::max(floor, generation);
+            }
         }
         else if (snapshot.Sequence > ack.Newest())
         {
@@ -123,8 +128,8 @@ void ReplicationPeerState::Acknowledge(const NetSnapshotAck& ack)
             break;
         }
         // Otherwise: sent, never confirmed, and no proof can still arrive. It
-        // is dropped without being promoted -- what it carried stays owed, and
-        // the next snapshot describes it again.
+        // is dropped without raising anything -- what it carried stays owed,
+        // and the next snapshot describes it again.
         ++settled;
     }
 
@@ -134,18 +139,18 @@ void ReplicationPeerState::Acknowledge(const NetSnapshotAck& ack)
 
 void ReplicationPeerState::Forget(NetEntityId id)
 {
-    Baselines.erase(id);
+    Floors.erase(id);
     for (SentSnapshot& snapshot : Pending)
     {
-        std::erase_if(snapshot.Components, [id](const auto& entry) {
-            return std::get<0>(entry) == id;
+        std::erase_if(snapshot.Entities, [id](const auto& entry) {
+            return entry.first == id;
         });
     }
 }
 
 void ReplicationPeerState::Clear()
 {
-    Baselines.clear();
+    Floors.clear();
     Pending.clear();
 }
 
@@ -206,8 +211,8 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
                                              std::span<std::byte> out)
 {
     SnapshotWriteResult result;
-    if (request.Source == nullptr || request.Layout == nullptr
-        || request.Identity == nullptr || request.Peer == nullptr)
+    if (request.Layout == nullptr || request.Peer == nullptr
+        || request.Changes == nullptr)
     {
         return result;
     }
@@ -218,185 +223,97 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
     assert(request.Sequence != 0
            && "A snapshot needs a sequence; take it from the peer state.");
 
-    World& world = *request.Source;
-    const World& reading = world;
     const ReplicationLayout& layout = *request.Layout;
+    const ReplicationChangeStore& changes = *request.Changes;
     ReplicationPeerState& peer = *request.Peer;
+    const std::uint64_t generation = changes.Generation();
+
     // Before any difference is computed, so the whole snapshot is measured from
-    // one baseline rather than from one that changed part way through.
+    // one set of floors rather than from ones that moved part way through.
     peer.BeginSnapshot(request.Sequence);
-    const bool hasOwners = world.IsRegistered(ResolveComponentTypeId<NetOwner>());
 
-    // Nothing is marked for replication in a world that never registered the
-    // marker, which is every single-player world.
-    if (!world.IsRegistered(ResolveComponentTypeId<NetReplicated>()))
-        return result;
-
-    // Which entity carries which component, resolved once rather than per
-    // entity: a ComponentTypeId lookup is a hash probe and this loop is the
-    // hot one.
-    struct ResolvedComponent
-    {
-        std::uint8_t WireIndex;
-        ComponentId Column;
-        const ReplicatedComponent* Layout;
-    };
-    std::vector<ResolvedComponent> columns;
-    columns.reserve(layout.Size());
-    for (std::size_t i = 0; i < layout.Size(); ++i)
-    {
-        const ReplicatedComponent* component = layout.At(static_cast<std::uint8_t>(i));
-        if (!world.IsRegistered(component->Type))
-            continue;  // The authority does not store it; nothing to send.
-        columns.push_back(ResolvedComponent{
-            .WireIndex = static_cast<std::uint8_t>(i),
-            .Column = world.GetComponentIdByType(component->Type),
-            .Layout = component,
-        });
-    }
-
-    // Pass one: what exists now, and what it looks like at wire precision.
-    struct PendingEntity
-    {
-        NetEntityId Id;
-        // Zero when nobody owns it, which is the case for everything the
-        // authority drives itself.
-        std::uint32_t Owner = 0;
-        // Wire index and the snapped bytes to send.
-        std::vector<std::pair<std::uint8_t, std::vector<std::byte>>> Components;
-    };
-    std::vector<PendingEntity> live;
-
-    // A const query: this walks the world without publishing a write, so
-    // running the writer cannot make everything look changed next tick.
-    Query<With<NetReplicated>> replicated(world);
-    replicated.ForEachChunk([&](auto& view) {
-        for (std::uint32_t row = 0; row < view.Count(); ++row)
-        {
-            const EntityId entity = view.Entity(row);
-            PendingEntity pending;
-            pending.Id = request.Identity->IdFor(entity);
-            if (hasOwners)
-            {
-                if (const NetOwner* owner = reading.TryGet<NetOwner>(entity))
-                    pending.Owner = owner->Peer;
-            }
-
-            for (const ResolvedComponent& column : columns)
-            {
-                if (!reading.HasComponent(entity, column.Column))
-                    continue;
-                const void* raw = reading.GetComponentRaw(entity, column.Column);
-                if (raw == nullptr)
-                    continue;
-
-                std::vector<std::byte> bytes(column.Layout->Size);
-                std::memcpy(bytes.data(), raw, column.Layout->Size);
-                // Snapped before it is compared or sent, so the baseline this
-                // records is exactly what the peer will hold.
-                ReplicationSnapToWire(*column.Layout, bytes);
-                pending.Components.emplace_back(column.WireIndex, std::move(bytes));
-            }
-
-            if (!pending.Components.empty())
-                live.push_back(std::move(pending));
-        }
-    });
-
-    // Deterministic order: an unordered_map's iteration order is not a contract,
-    // and two runs of the same simulation must produce the same bytes. Sorted
-    // before anything is dropped, because chunk order is storage order and a
-    // cap applied to it would keep a different set of entities on two machines
-    // running the same simulation.
-    std::sort(live.begin(), live.end(),
-              [](const PendingEntity& a, const PendingEntity& b) {
-                  return a.Id.Value < b.Id.Value;
-              });
-
-    // Pass two: anything the peer was told about and is not here any more.
-    // Computed against everything alive rather than against what survives the
-    // cap below -- an entity this snapshot has no room for is still alive, and
-    // telling a peer to destroy it would be a lie the next snapshot has to take
-    // back by respawning it.
+    // Anything this peer was told about and the world no longer has. Kept per
+    // peer rather than read straight off the store, because a peer that was
+    // never told about an entity has nothing to forget, and one whose destroy
+    // was lost still needs telling.
     std::vector<NetEntityId> destroyed;
-    for (const auto& [id, baseline] : peer.All())
+    for (NetEntityId id : changes.Departed())
     {
-        const bool stillLive = std::any_of(
-            live.begin(), live.end(),
-            [id = id](const PendingEntity& entity) { return entity.Id == id; });
-        if (!stillLive)
+        if (peer.Knows(id))
             destroyed.push_back(id);
     }
-    std::sort(destroyed.begin(), destroyed.end(),
-              [](NetEntityId a, NetEntityId b) { return a.Value < b.Value; });
 
-    if (live.size() > ReplicationDefaultCaps().MaxEntitiesPerSnapshot)
-        live.resize(ReplicationDefaultCaps().MaxEntitiesPerSnapshot);
+    const std::span<const ReplicationChangeStore::EntityState> live = changes.Live();
+    const std::size_t entityCap = ReplicationDefaultCaps().MaxEntitiesPerSnapshot;
+    const std::size_t entityCount = std::min(live.size(), entityCap);
 
     NetBitWriter writer(out);
     writer.WriteU64(request.Tick);
     writer.WriteBits(request.Sequence, kSequenceBits);
     writer.WriteU64(request.CommandAck);
     writer.WriteBits(static_cast<std::uint32_t>(destroyed.size()), kCountBits);
-    writer.WriteBits(static_cast<std::uint32_t>(live.size()), kCountBits);
+    writer.WriteBits(static_cast<std::uint32_t>(entityCount), kCountBits);
 
     for (NetEntityId id : destroyed)
         WriteNetEntityId(writer, id);
 
-    for (const PendingEntity& entity : live)
+    // What each entity was carried to, recorded only once the whole snapshot
+    // has encoded: a partial record would raise a floor for state the peer
+    // never received.
+    std::vector<std::pair<NetEntityId, std::uint64_t>> carried;
+    carried.reserve(entityCount);
+
+    for (std::size_t index = 0; index < entityCount; ++index)
     {
+        const ReplicationChangeStore::EntityState& entity = live[index];
+        const std::uint64_t floor = peer.Floor(entity.Id);
+        const bool isOwner =
+            request.OwnerPeer != 0 && entity.Owner == request.OwnerPeer;
+        // A transfer makes owner-gated runs newly visible to one peer and newly
+        // hidden from another without any of them having changed value, so the
+        // fields' own history cannot express it.
+        const bool ownershipMoved = entity.OwnerChangedAt > floor;
+
         WriteNetEntityId(writer, entity.Id);
         writer.WriteBits(static_cast<std::uint32_t>(entity.Components.size()),
                          kComponentCountBits);
 
-        for (const auto& [wireIndex, bytes] : entity.Components)
+        for (const ReplicationChangeStore::ComponentState& held : entity.Components)
         {
-            const ReplicatedComponent* component = layout.At(wireIndex);
-            writer.WriteBits(wireIndex, kComponentIndexBits);
+            const ReplicatedComponent* component = layout.At(held.WireIndex);
+            writer.WriteBits(held.WireIndex, kComponentIndexBits);
 
-            // An entity or component this peer has not been told about gets
-            // full state; there is nothing to difference against.
-            std::span<const std::byte> baseline;
-            if (const ReplicationPeerState::EntityBaseline* known =
-                    peer.Find(entity.Id))
+            std::uint64_t fields = 0;
+            for (std::size_t run = 0; run < component->Fields.size(); ++run)
             {
-                const auto it = known->Components.find(wireIndex);
-                if (it != known->Components.end())
-                    baseline = it->second;
+                const bool moved =
+                    run < held.ChangedAt.size() && held.ChangedAt[run] > floor;
+                const bool gated = component->Fields[run].OwnerOnly
+                                || component->Fields[run].OwnerLocal;
+                if (moved || (gated && ownershipMoved))
+                    fields |= (std::uint64_t{ 1 } << run);
             }
+            fields &= ReplicationVisibleFields(*component, isOwner);
 
-            const bool isOwner =
-                request.OwnerPeer != 0 && entity.Owner == request.OwnerPeer;
-            if (!ReplicationEncodeComponent(*component, bytes, baseline, isOwner,
-                                            writer))
-            {
+            if (!ReplicationEncodeComponent(*component, held.Bytes, fields, writer))
                 return result;  // Did not fit; the peer state is left untouched.
-            }
         }
+
+        carried.emplace_back(entity.Id, generation);
     }
 
     if (writer.Overflowed())
         return result;
 
-    // Committed only once the whole snapshot encoded: a partial record would
-    // make the next delta reference bytes the peer never received.
     for (NetEntityId id : destroyed)
         peer.Forget(id);
-    for (const PendingEntity& entity : live)
-    {
-        for (const auto& [wireIndex, bytes] : entity.Components)
-            peer.RecordSent(request.Sequence, entity.Id, wireIndex, bytes);
-    }
-
-    // Identities of entities the world no longer has stop being remembered.
-    // Keyed on liveness rather than on what this peer was told, because the map
-    // is shared by every peer while the baselines are per peer.
-    request.Identity->ForgetDead(reading);
+    for (const auto& [id, at] : carried)
+        peer.RecordSent(request.Sequence, id, at);
 
     result.Ok = true;
-    result.EntitiesWritten = static_cast<std::uint32_t>(live.size());
-    result.EntitiesDestroyed = static_cast<std::uint32_t>(destroyed.size());
     result.BytesWritten = writer.BytesWritten();
+    result.EntitiesWritten = static_cast<std::uint32_t>(entityCount);
+    result.EntitiesDestroyed = static_cast<std::uint32_t>(destroyed.size());
     return result;
 }
 

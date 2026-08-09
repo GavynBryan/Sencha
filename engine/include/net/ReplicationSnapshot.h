@@ -12,10 +12,10 @@
 #include <cstdint>
 #include <optional>
 #include <span>
-#include <tuple>
 #include <unordered_map>
 #include <vector>
 
+class ReplicationChangeStore;
 class ReplicationInterpolation;
 class World;
 class WorldComponentSchema;
@@ -48,25 +48,24 @@ using NetEntityId = StrongId<struct NetEntityIdTag, std::uint64_t>;
 //-----------------------------------------------------------------------------
 // What one side remembers between snapshots.
 //
-// On the authority this is per client: which entities that client has been told
-// about and the exact bytes it is known to hold, so the next snapshot can be a
-// difference. On a client it is the one map from wire identity to its own
-// entities.
+// On the authority this is per client: how far through the authority's own
+// history each entity has been carried to that client, and which snapshots are
+// still waiting to be confirmed. On a client it is the one map from wire
+// identity to its own entities.
 //
-// "Known to hold", not "was last sent", and the distinction is the whole reason
-// this class is more than a map. Snapshots ride an unreliable channel: one that
-// is dropped was still written, and a baseline advanced on writing would from
-// then on describe a state the peer never reached. Every later delta is
-// measured from that fiction, so any field that does not happen to change again
-// is never re-sent and the two machines disagree about it permanently. A
-// position hides this -- it changes every tick, so every snapshot re-carries it
-// -- and anything that settles does not: a locomotion mode is written once, and
-// one lost datagram loses it for the session.
+// No component bytes live here. What the world looks like has one answer for
+// everyone (ReplicationChangeStore holds it), so a peer only needs to remember
+// how much of that answer it has proved it received -- a generation per entity.
+// Keeping per-peer copies meant the same comparison run once per peer and the
+// memory to run it with, both of which scale with exactly the number this work
+// exists to raise.
 //
-// So a snapshot's contents are held aside until the peer says it arrived, and
-// deltas are measured from the newest one it has confirmed. Unacknowledged
-// changes are simply re-sent, which is what makes a dropped snapshot cost
-// bandwidth instead of correctness.
+// "Proved", not "was sent", and the distinction is the whole reason this class
+// is more than a map. Snapshots ride an unreliable channel: one that is dropped
+// was still written, and a floor advanced on writing would from then on
+// describe a peer as up to date with history it never saw. Every later
+// difference is measured from that fiction, so anything that does not happen to
+// move again is never sent and the two machines disagree about it permanently.
 //-----------------------------------------------------------------------------
 class ReplicationPeerState
 {
@@ -77,42 +76,37 @@ public:
     // connection whose deltas are not worth computing.
     static constexpr std::size_t kMaxUnacknowledged = 32;
 
-    // The component values this peer is known to hold, already snapped to wire
-    // precision so a delta against them is exact.
-    struct EntityBaseline
-    {
-        // Keyed by the component's wire index.
-        std::unordered_map<std::uint8_t, std::vector<std::byte>> Components;
-    };
+    // How far through the authority's history this peer has been carried for
+    // one entity: the newest generation it has proved it holds. Zero means it
+    // has never confirmed anything about the entity, so everything is owed.
+    [[nodiscard]] std::uint64_t Floor(NetEntityId id) const;
+    [[nodiscard]] bool Knows(NetEntityId id) const;
+    [[nodiscard]] std::size_t Size() const { return Floors.size(); }
 
-    // What the peer is known to hold: the base every delta is measured from.
-    [[nodiscard]] const EntityBaseline* Find(NetEntityId id) const;
-    [[nodiscard]] std::size_t Size() const { return Baselines.size(); }
-
-    // The name the next snapshot for this peer goes out under. One per
-    // snapshot written, never reused, and not the simulation tick: a frame can
-    // publish twice at one tick, and two datagrams sharing a name cannot be
-    // told apart by an acknowledgement.
+    // The name the next snapshot for this peer goes out under. One per snapshot
+    // written, never reused, and not the simulation tick: a frame can publish
+    // twice at one tick, and two datagrams sharing a name cannot be told apart
+    // by an acknowledgement.
     [[nodiscard]] std::uint32_t NextSnapshotSequence() const { return NextSequence; }
 
     // Opens a snapshot under that sequence, and enforces the bound: a peer with
     // too many outstanding is one whose confirmations have stopped arriving, so
     // what it is believed to hold is forgotten and it is told everything again.
-    // The writer calls this before computing any difference, so a snapshot is
-    // never half measured from a baseline that is about to be discarded.
     void BeginSnapshot(std::uint32_t sequence);
 
-    // What a snapshot just told the peer, held until the peer confirms it.
-    void RecordSent(std::uint32_t sequence, NetEntityId id, std::uint8_t component,
-                    std::span<const std::byte> bytes);
+    // Records that a snapshot carried this entity at that generation, pending
+    // proof it arrived.
+    void RecordSent(std::uint32_t sequence, NetEntityId id,
+                    std::uint64_t generation);
+
     // Everything a destroyed entity had, in flight or confirmed.
     void Forget(NetEntityId id);
 
-    // Applies what the peer has proved it holds. A pending snapshot is promoted
-    // only when the acknowledgement names it: a cumulative mark would promote
-    // the ones lost on the way, recording the peer as holding state it was
-    // never sent. One that the window has passed without naming is dropped
-    // rather than promoted -- what it carried is simply owed again, which costs
+    // Applies what the peer has proved it holds. A pending snapshot raises
+    // floors only when the acknowledgement names it: a cumulative mark would
+    // vouch for the ones lost on the way, recording the peer as up to date with
+    // history it never received. One the window has passed without naming is
+    // dropped rather than applied -- what it carried stays owed, which costs
     // bandwidth and never correctness.
     void Acknowledge(const NetSnapshotAck& ack);
 
@@ -120,22 +114,21 @@ public:
 
     void Clear();
 
-    [[nodiscard]] const std::unordered_map<NetEntityId, EntityBaseline>& All() const
+    [[nodiscard]] const std::unordered_map<NetEntityId, std::uint64_t>& All() const
     {
-        return Baselines;
+        return Floors;
     }
 
 private:
-    // What one snapshot told this peer, kept whole so acknowledging it is one
-    // step rather than a search.
+    // What one snapshot told this peer: which entities, and how far through the
+    // authority's history each was carried.
     struct SentSnapshot
     {
         std::uint32_t Sequence = 0;
-        std::vector<std::tuple<NetEntityId, std::uint8_t, std::vector<std::byte>>>
-            Components;
+        std::vector<std::pair<NetEntityId, std::uint64_t>> Entities;
     };
 
-    std::unordered_map<NetEntityId, EntityBaseline> Baselines;
+    std::unordered_map<NetEntityId, std::uint64_t> Floors;
     // Oldest first, one entry per snapshot still unconfirmed.
     std::vector<SentSnapshot> Pending;
     // Starts at one, because zero is the acknowledgement's "nothing yet".
@@ -204,12 +197,10 @@ struct ReplicationCaps
 //-----------------------------------------------------------------------------
 struct SnapshotWriteRequest
 {
-    // Non-const because a Query binds to a mutable World, not because anything
-    // here writes: the writer only reads, and it uses accessors that publish no
-    // column version, so running it cannot make the next tick see changes.
-    World* Source = nullptr;
+    // What the world looks like and when each part of it last moved, gathered
+    // once for every peer rather than once per peer.
+    const ReplicationChangeStore* Changes = nullptr;
     const ReplicationLayout* Layout = nullptr;
-    ReplicationAuthorityIdentity* Identity = nullptr;
     // Updated in place to reflect what this snapshot told the peer. A caller
     // that discards the produced bytes must discard this too, or the next
     // delta will be against a snapshot the peer never received.

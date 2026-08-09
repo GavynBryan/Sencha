@@ -395,19 +395,26 @@ std::size_t ReplicationMaxComponentBits(const ReplicatedComponent& component)
     return bits;
 }
 
-bool ReplicationEncodeComponent(const ReplicatedComponent& component,
-                                std::span<const std::byte> current,
-                                std::span<const std::byte> baseline,
-                                bool forOwner,
-                                NetBitWriter& writer)
+std::uint64_t ReplicationChangedFields(const ReplicatedComponent& component,
+                                       std::span<const std::byte> current,
+                                       std::span<const std::byte> previous)
 {
     assert(current.size() == component.Size);
-    assert(baseline.empty() || baseline.size() == component.Size);
+    assert(previous.empty() || previous.size() == component.Size);
 
-    // The mask is decided before any of it is written, because it has to lead
-    // the payload and the decision for one field cannot depend on another's.
-    const bool hasBaseline = !baseline.empty();
-    std::uint64_t mask = 0;
+    std::uint64_t changed = 0;
+    for (std::size_t i = 0; i < component.Fields.size(); ++i)
+    {
+        if (previous.empty() || FieldDiffers(component.Fields[i], current, previous))
+            changed |= (std::uint64_t{ 1 } << i);
+    }
+    return changed;
+}
+
+std::uint64_t ReplicationVisibleFields(const ReplicatedComponent& component,
+                                       bool forOwner)
+{
+    std::uint64_t visible = 0;
     for (std::size_t i = 0; i < component.Fields.size(); ++i)
     {
         const ReplicatedField& field = component.Fields[i];
@@ -417,10 +424,25 @@ bool ReplicationEncodeComponent(const ReplicatedComponent& component,
         // to them, so sending it would only overwrite it with a stale one.
         if (field.OwnerLocal && forOwner)
             continue;
-        if (hasBaseline && !FieldDiffers(field, current, baseline))
-            continue;
-        mask |= (std::uint64_t{ 1 } << i);
+        visible |= (std::uint64_t{ 1 } << i);
     }
+    return visible;
+}
+
+bool ReplicationEncodeComponent(const ReplicatedComponent& component,
+                                std::span<const std::byte> current,
+                                std::uint64_t fields,
+                                NetBitWriter& writer)
+{
+    assert(current.size() == component.Size);
+
+    // Runs the component does not have cannot be asked for: a mask bit past the
+    // end would be written as a field the reader has no description of.
+    const std::uint64_t addressable =
+        component.Fields.size() >= 64
+            ? ~std::uint64_t{ 0 }
+            : (std::uint64_t{ 1 } << component.Fields.size()) - 1;
+    const std::uint64_t mask = fields & addressable;
 
     for (std::size_t i = 0; i < component.Fields.size(); ++i)
         writer.WriteBool((mask & (std::uint64_t{ 1 } << i)) != 0);

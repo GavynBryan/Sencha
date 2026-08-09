@@ -55,8 +55,12 @@ namespace
     {
         std::array<std::byte, kScratchBytes> scratch{};
         NetBitWriter writer(scratch);
-        EXPECT_TRUE(ReplicationEncodeComponent(component, current, baseline,
-                                               forOwner, writer));
+        // What a difference would carry, narrowed to what this receiver may
+        // see -- the two questions the writer composes.
+        const std::uint64_t fields =
+            ReplicationChangedFields(component, current, baseline)
+            & ReplicationVisibleFields(component, forOwner);
+        EXPECT_TRUE(ReplicationEncodeComponent(component, current, fields, writer));
         EXPECT_FALSE(writer.Overflowed());
 
         NetBitReader reader(writer.Written());
@@ -435,7 +439,8 @@ TEST(ReplicationCodecHostile, TruncatedMessagesAreRefused)
     const LookOrientation sent{ .Yaw = 2.5f, .Pitch = -0.75f };
     std::array<std::byte, kScratchBytes> scratch{};
     NetBitWriter writer(scratch);
-    ASSERT_TRUE(ReplicationEncodeComponent(look, BytesOf(sent), {}, true, writer));
+    ASSERT_TRUE(ReplicationEncodeComponent(
+        look, BytesOf(sent), ReplicationVisibleFields(look, true), writer));
 
     // Every proper prefix of a valid message must be refused.
     const std::span<const std::byte> whole = writer.Written();
@@ -514,8 +519,9 @@ TEST(ReplicationCodec, EveryEngineComponentRoundTripsFromDefaults)
 
             std::array<std::byte, kScratchBytes> scratch{};
             NetBitWriter writer(scratch);
-            ASSERT_TRUE(
-                ReplicationEncodeComponent(component, current, {}, forOwner, writer))
+            ASSERT_TRUE(ReplicationEncodeComponent(
+                component, current, ReplicationVisibleFields(component, forOwner),
+                writer))
                 << component.Name;
             ASSERT_LE(writer.BitsWritten(), ReplicationMaxComponentBits(component))
                 << component.Name << " exceeded its own stated maximum";

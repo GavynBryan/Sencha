@@ -55,6 +55,12 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
         Scratch.resize(kKindBytes + kMaxSnapshotBytes);
     Scratch[0] = static_cast<std::byte>(NetPayloadKind::Snapshot);
 
+    // What the world looks like, and what moved since last time -- computed
+    // once and read by every peer. The generation is this store's own count of
+    // publishes, not the simulation tick: it has to increase on every pass and
+    // the tick does not (a paused authority still publishes).
+    Changes.Update(world, layout, Identity, ++Generation);
+
     for (PeerId peer : peers)
     {
         ++stats.PeersServed;
@@ -63,9 +69,8 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
         ReplicationPeerState& baseline = Peers[peer];
 
         SnapshotWriteRequest request;
-        request.Source = &world;
+        request.Changes = &Changes;
         request.Layout = &layout;
-        request.Identity = &Identity;
         request.Peer = &baseline;
         request.OwnerPeer = peer.Value;
         request.Tick = tick;
@@ -148,6 +153,8 @@ void ReplicationRuntime::ForgetPeer(PeerId peer)
 void ReplicationRuntime::Reset()
 {
     Identity = ReplicationAuthorityIdentity{};
+    Changes.Reset();
+    Generation = 0;
     Peers.clear();
     ClientMap.Clear();
     AppliedTick = 0;

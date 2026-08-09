@@ -3,6 +3,7 @@
 #include <net/NetSession.h>
 #include <net/NetSpawnRecipe.h>
 #include <net/PeerCommandRuntime.h>
+#include <net/ReplicationChangeStore.h>
 #include <net/ReplicationSnapshot.h>
 
 #include <cstdint>
@@ -106,6 +107,11 @@ public:
 
 private:
     ReplicationAuthorityIdentity Identity;
+    ReplicationChangeStore Changes;
+    // Counts publishes, and is what "since" means in every floor and every
+    // change stamp. Its own counter rather than the simulation tick, because it
+    // must increase on every pass and a tick need not.
+    std::uint64_t Generation = 0;
     std::unordered_map<PeerId, ReplicationPeerState> Peers;
     ReplicationClientIdentity ClientMap;
     std::uint64_t AppliedTick = 0;

@@ -8,6 +8,7 @@
 #include <ecs/Query.h>
 #include <net/NetSpawnRecipe.h>
 #include <net/ReplicationInterpolation.h>
+#include <net/ReplicationChangeStore.h>
 #include <net/ReplicationSnapshot.h>
 #include <world/transform/TransformHistory.h>
 #include <world/ComponentRegistrar.h>
@@ -34,6 +35,8 @@ namespace
         World Client;
 
         ReplicationAuthorityIdentity Identity;
+        ReplicationChangeStore Changes;
+        std::uint64_t Generation = 0;
         ReplicationPeerState Peer;
         ReplicationClientIdentity ClientIdentity;
 
@@ -69,10 +72,11 @@ namespace
                               std::uint64_t commandAck = 0)
         {
             ++Tick;
+            Changes.Update(Authority, Layout, Identity, ++Generation);
+
             SnapshotWriteRequest write;
-            write.Source = &Authority;
+            write.Changes = &Changes;
             write.Layout = &Layout;
-            write.Identity = &Identity;
             write.Peer = &Peer;
             write.OwnerPeer = ownerPeer;
             write.Tick = Tick;
@@ -513,19 +517,18 @@ TEST(ReplicationAcknowledgement, StateSurvivesASnapshotThatNeverArrives)
 TEST(ReplicationAcknowledgement, ALostSnapshotIsNotPromotedByALaterOne)
 {
     ReplicationPeerState peer;
-    const NetEntityId entity{ 1 };
-    const std::array<std::byte, 1> first{ std::byte{ 0xAA } };
-    const std::array<std::byte, 1> second{ std::byte{ 0xBB } };
+    const NetEntityId lostEntity{ 1 };
+    const NetEntityId arrivedEntity{ 2 };
 
-    // Two snapshots naming different components, so what each carried is
-    // distinguishable in the baseline afterwards.
+    // Two snapshots carrying different entities, so what each one carried is
+    // distinguishable in the floors afterwards.
     const std::uint32_t lost = peer.NextSnapshotSequence();
     peer.BeginSnapshot(lost);
-    peer.RecordSent(lost, entity, 0, first);
+    peer.RecordSent(lost, lostEntity, 10);
 
     const std::uint32_t arrived = peer.NextSnapshotSequence();
     peer.BeginSnapshot(arrived);
-    peer.RecordSent(arrived, entity, 1, second);
+    peer.RecordSent(arrived, arrivedEntity, 11);
 
     // The client applied only the second. It says so, and says nothing about
     // the first, because it never saw it.
@@ -533,15 +536,90 @@ TEST(ReplicationAcknowledgement, ALostSnapshotIsNotPromotedByALaterOne)
     ack.Observe(arrived);
     peer.Acknowledge(ack);
 
-    const ReplicationPeerState::EntityBaseline* baseline = peer.Find(entity);
-    ASSERT_NE(baseline, nullptr);
-    EXPECT_TRUE(baseline->Components.contains(1))
-        << "the snapshot the client confirmed was not recorded";
-    EXPECT_FALSE(baseline->Components.contains(0))
-        << "a snapshot the client never received was recorded as state it holds";
+    EXPECT_EQ(peer.Floor(arrivedEntity), 11u)
+        << "the snapshot the client confirmed did not raise its floor";
+    EXPECT_EQ(peer.Floor(lostEntity), 0u)
+        << "a snapshot the client never received was counted as history it holds";
 
     // And nothing is left waiting on proof that can no longer arrive.
     EXPECT_EQ(peer.Unacknowledged(), 0u);
+}
+
+// A value that changes and changes back inside one round trip.
+//
+// Asking "does this differ from what the peer holds" answers no -- the
+// authority is back where it started, so a comparison against the peer's bytes
+// sees nothing to send. But the peer applied the middle of the excursion and is
+// sitting on it, and nothing will ever move that value again. Asking "has this
+// moved since they last proved they were up to date" is the question with no
+// such hole, which is why the store records when a run last moved rather than
+// what each peer was last told.
+TEST(ReplicationAcknowledgement, AValueThatChangesAndChangesBackStillArrives)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 7 });
+    pair.Authority.AddComponent<CharacterMovement>(
+        authority, CharacterMovement{ .Mode = LocomotionModeId{ 3 } });
+
+    // Settled and confirmed at three.
+    pair.Replicate(7);
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+    ASSERT_EQ(pair.Client.TryGet<CharacterMovement>(mirror)->Mode.Value, 3u);
+
+    // It changes to five. That snapshot arrives -- the client now holds five --
+    // but its acknowledgement is lost, so the authority has no proof.
+    pair.Authority.TryGet<CharacterMovement>(authority)->Mode = LocomotionModeId{ 5 };
+    pair.Acknowledge = false;
+    pair.Replicate(7);
+    pair.Acknowledge = true;
+    ASSERT_EQ(pair.Client.TryGet<CharacterMovement>(mirror)->Mode.Value, 5u);
+
+    // And then it changes straight back to three, which is where the authority
+    // believed the client already was.
+    pair.Authority.TryGet<CharacterMovement>(authority)->Mode = LocomotionModeId{ 3 };
+    for (int step = 0; step < 3; ++step)
+    {
+        pair.Authority.TryGet<LocalTransform>(authority)->Value.Position =
+            Vec3d{ static_cast<float>(step), 0.0f, 0.0f };
+        pair.Replicate(7);
+    }
+
+    EXPECT_EQ(pair.Client.TryGet<CharacterMovement>(mirror)->Mode.Value, 3u)
+        << "the client was left holding the middle of an excursion the "
+           "authority had already come back from, because nothing differed "
+           "from what it was believed to hold";
+}
+
+// Owner-gated fields are the one thing a run's own history cannot account for.
+// A transfer makes them newly visible to one peer and newly hidden from
+// another without any of them having changed value, so an entity whose
+// ownership moves must re-state them to whoever can now see them.
+TEST(ReplicationAcknowledgement, OwnershipMovingResendsWhatTheNewOwnerMaySee)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 1 });
+    pair.Authority.AddComponent<CharacterMovement>(
+        authority, CharacterMovement{ .Mode = LocomotionModeId{ 4 } });
+
+    // Peer 2 is a spectator here: the mode is owner-only, so it is gated out
+    // and the mode never reaches this client while peer 1 owns the entity.
+    pair.Replicate(2);
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+    ASSERT_EQ(pair.Client.TryGet<CharacterMovement>(mirror)->Mode.Value, 0u)
+        << "an owner-only field reached a peer that does not own the entity";
+
+    // Ownership transfers to peer 2. The mode has not changed value since the
+    // last snapshot, so only ownership having moved can bring it.
+    pair.Authority.TryGet<NetOwner>(authority)->Peer = 2;
+    pair.Replicate(2);
+
+    EXPECT_EQ(pair.Client.TryGet<CharacterMovement>(mirror)->Mode.Value, 4u)
+        << "a new owner was never told the owner-only state it had just become "
+           "entitled to, because the field itself had not moved";
 }
 
 TEST(ReplicationAcknowledgement, ConfirmedStateIsNotSentAgain)
@@ -1026,9 +1104,10 @@ TEST(ReplicationSnapshotHostile, TruncatedSnapshotsAreRefused)
         pair.SpawnReplicated(PoseAt(static_cast<float>(i), 1.0f, 2.0f));
 
     SnapshotWriteRequest write;
-    write.Source = &pair.Authority;
+    pair.Changes.Update(pair.Authority, pair.Layout, pair.Identity,
+                        ++pair.Generation);
+    write.Changes = &pair.Changes;
     write.Layout = &pair.Layout;
-    write.Identity = &pair.Identity;
     write.Peer = &pair.Peer;
     write.Tick = 1;
     write.Sequence = pair.Peer.NextSnapshotSequence();
@@ -1060,9 +1139,10 @@ TEST(ReplicationSnapshotHostile, AnUnknownComponentKeyIsRefused)
     pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
 
     SnapshotWriteRequest write;
-    write.Source = &pair.Authority;
+    pair.Changes.Update(pair.Authority, pair.Layout, pair.Identity,
+                        ++pair.Generation);
+    write.Changes = &pair.Changes;
     write.Layout = &pair.Layout;
-    write.Identity = &pair.Identity;
     write.Peer = &pair.Peer;
     write.Tick = 1;
     write.Sequence = pair.Peer.NextSnapshotSequence();

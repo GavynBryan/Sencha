@@ -5,6 +5,7 @@
 #include <net/LoopbackTransport.h>
 #include <net/NetSession.h>
 #include <net/NetReplicationComponents.h>
+#include <net/ReplicationChangeStore.h>
 #include <net/ReplicationRuntime.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
@@ -222,9 +223,10 @@ TEST(ReplicationCadence, TheEntityCapDropsTheSameEntitiesEveryRun)
     std::vector<std::byte> scratch(1u << 20);
     ReplicationPeerState peer;
     SnapshotWriteRequest request;
-    request.Source = &world;
+    ReplicationChangeStore changes;
+    changes.Update(world, layout, identity, 1);
+    request.Changes = &changes;
     request.Layout = &layout;
-    request.Identity = &identity;
     request.Peer = &peer;
     request.OwnerPeer = 1;
     request.Tick = 1;
@@ -241,9 +243,9 @@ TEST(ReplicationCadence, TheEntityCapDropsTheSameEntitiesEveryRun)
     NetSnapshotAck applied;
     applied.Observe(request.Sequence);
     peer.Acknowledge(applied);
-    ASSERT_EQ(peer.All().size(), cap);
+    ASSERT_EQ(peer.Size(), cap);
     std::uint64_t highest = 0;
-    for (const auto& [id, baseline] : peer.All())
+    for (const auto& [id, floor] : peer.All())
         highest = std::max(highest, id.Value);
     EXPECT_EQ(highest, static_cast<std::uint64_t>(cap));
 }
@@ -286,17 +288,18 @@ TEST(ReplicationCadence, AnEntityTheCapDroppedIsNotReportedDead)
     ReplicationPeerState peer;
     const std::uint32_t seeded = peer.NextSnapshotSequence();
     peer.BeginSnapshot(seeded);
-    peer.RecordSent(seeded, dropped, 0, {});
+    peer.RecordSent(seeded, dropped, 1);
     NetSnapshotAck seededAck;
     seededAck.Observe(seeded);
     peer.Acknowledge(seededAck);
-    ASSERT_NE(peer.Find(dropped), nullptr);
+    ASSERT_TRUE(peer.Knows(dropped));
 
     std::vector<std::byte> scratch(1u << 20);
     SnapshotWriteRequest request;
-    request.Source = &world;
+    ReplicationChangeStore changes;
+    changes.Update(world, layout, identity, 1);
+    request.Changes = &changes;
     request.Layout = &layout;
-    request.Identity = &identity;
     request.Peer = &peer;
     request.OwnerPeer = 1;
     request.Tick = 1;
