@@ -128,6 +128,15 @@ namespace
                 engine.Interpolation().SetSnapshotInterval(value);
             }
         }
+        if (const CVarMetadata* budget = registry.FindCVar("net.snapshot_bytes"))
+        {
+            if (const std::int64_t* bytes =
+                    std::get_if<std::int64_t>(&budget->CurrentValue))
+            {
+                engine.Replication().SetSnapshotBytes(
+                    static_cast<std::size_t>(std::max<std::int64_t>(0, *bytes)));
+            }
+        }
     }
 }
 
@@ -221,6 +230,36 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
                 // An authority mirrors other players too, so it holds the same
                 // presentation lag its clients do.
                 engine.Interpolation().SetSnapshotInterval(interval);
+            }
+        },
+    });
+
+    registry.RegisterCVar({
+        .Name = "net.snapshot_bytes",
+        .Owner = "engine",
+        .Type = CVarType::Int,
+        .DefaultValue = static_cast<std::int64_t>(kNetMaxSnapshotBytes),
+        .CurrentValue = static_cast<std::int64_t>(kNetMaxSnapshotBytes),
+        // The authority's: it is the machine paying this per peer, and it is
+        // the one number that decides how much of a link a full session takes.
+        // Not replicated, because nothing on a client behaves differently for
+        // knowing it -- a snapshot describes itself.
+        .Flags = CVarFlags::Archive,
+        .Help = "Bytes one snapshot may occupy, per peer. Lowering it loses "
+                "nothing: what does not fit is carried by a later snapshot. It "
+                "trades how fast a peer converges on the world for how much of "
+                "the link the authority takes to get it there.",
+        .Source = { "engine defaults" },
+        .Min = static_cast<std::int64_t>(kNetMinSnapshotBytes),
+        // A snapshot has to fit one datagram; there is no fragmentation behind
+        // it and no resend, so a larger budget would simply not arrive.
+        .Max = static_cast<std::int64_t>(kNetMaxSnapshotBytes),
+        .OnChange = [&engine](const CVarChangeContext& change) {
+            if (const std::int64_t* bytes =
+                    std::get_if<std::int64_t>(&change.NewValue))
+            {
+                engine.Replication().SetSnapshotBytes(
+                    static_cast<std::size_t>(std::max<std::int64_t>(0, *bytes)));
             }
         },
     });

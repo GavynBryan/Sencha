@@ -700,7 +700,8 @@ void Engine::CreateDebugOverlay()
     // Registered once for the process; the session it reads comes and goes.
     overlay->AddPanel<NetStatsPanel>(NetState, NetStatsState, NetClockState,
                                      PredictionState, InterpolationState,
-                                     PeerCommandState, ConsoleState->Registry());
+                                     ReplicationState, PeerCommandState,
+                                     ConsoleState->Registry());
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     overlay->AddPanel<RenderStatsPanel>(
         ActiveProfileMode, RenderStatsRing, ConsoleState->Registry());

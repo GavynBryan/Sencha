@@ -311,3 +311,76 @@ TEST(ReplicationCadence, AnEntityTheCapDroppedIsNotReportedDead)
     EXPECT_EQ(written.EntitiesDestroyed, 0u)
         << "an entity the cap had no room for was reported destroyed";
 }
+
+//=============================================================================
+// How much the authority says at once.
+//
+// The sibling of the cadence: how often against how much. Both trade a peer's
+// convergence on the world against the share of the link the authority takes to
+// get it there, and neither loses anything by being turned down -- what does not
+// fit rides a later snapshot.
+//=============================================================================
+
+TEST(ReplicationBudgetRuntime, TheBudgetIsClampedToWhatOneDatagramCanCarry)
+{
+    ReplicationRuntime runtime;
+    EXPECT_EQ(runtime.SnapshotBytes(), kNetMaxSnapshotBytes)
+        << "the shipping default is not what a datagram holds";
+
+    runtime.SetSnapshotBytes(kNetMaxSnapshotBytes * 4);
+    EXPECT_EQ(runtime.SnapshotBytes(), kNetMaxSnapshotBytes)
+        << "a snapshot larger than a datagram is one that never arrives: there "
+           "is no fragmentation behind this channel";
+
+    runtime.SetSnapshotBytes(1);
+    EXPECT_EQ(runtime.SnapshotBytes(), kNetMinSnapshotBytes)
+        << "a budget below the floor is envelope and nothing else";
+
+    runtime.SetSnapshotBytes(512);
+    EXPECT_EQ(runtime.SnapshotBytes(), 512u);
+}
+
+// The budget is what the writer is given, not a number kept beside it. A peer
+// served under a lowered budget receives smaller datagrams, and receives the
+// rest of the world in the ones after.
+TEST(ReplicationBudgetRuntime, LoweringTheBudgetLowersWhatGoesOut)
+{
+    const auto publishOnce = [](std::size_t budget) {
+        PublishRig rig;
+        rig.Replication.SetPublishInterval(1);
+        rig.Replication.SetSnapshotBytes(budget);
+        // A world well past what the narrow budget can carry at once.
+        for (std::size_t i = 0; i < 60; ++i)
+        {
+            const EntityId entity = rig.Entities.CreateEntity();
+            rig.Entities.AddComponent<LocalTransform>(entity, LocalTransform{});
+            rig.Entities.AddComponent<NetReplicated>(entity, NetReplicated{});
+        }
+
+        // Two publishes, and the second is the one measured: on a peer's very
+        // first snapshot nothing has been waiting yet, so the age of the oldest
+        // deferred entity is only meaningful once there is a snapshot it could
+        // have ridden and did not.
+        (void)rig.Replication.Publish(rig.Host, rig.Entities, rig.Layout, 1);
+        const ReplicationRuntime::PublishStats stats =
+            rig.Replication.Publish(rig.Host, rig.Entities, rig.Layout, 2);
+        EXPECT_EQ(stats.SnapshotsSent, 1u);
+        EXPECT_EQ(stats.BudgetBytes, budget);
+        // Held as well as returned, so a panel reads the same publish the frame
+        // just made rather than one of its own.
+        EXPECT_EQ(rig.Replication.LastPublish().BudgetBytes, budget);
+        return stats;
+    };
+
+    const ReplicationRuntime::PublishStats wide = publishOnce(kNetMaxSnapshotBytes);
+    const ReplicationRuntime::PublishStats narrow = publishOnce(256);
+
+    EXPECT_LE(narrow.PeakSnapshotBytes, 256u);
+    EXPECT_GT(wide.PeakSnapshotBytes, narrow.PeakSnapshotBytes);
+    // The world did not shrink, so what the narrow one could not carry is
+    // waiting rather than gone.
+    EXPECT_GT(narrow.EntitiesDeferred, wide.EntitiesDeferred);
+    EXPECT_GT(narrow.OldestDeferredSnapshots, 0u)
+        << "entities were deferred but nothing reported how long they have "
+           "been waiting";
+}

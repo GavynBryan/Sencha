@@ -7,12 +7,12 @@
 
 namespace
 {
-    // One kind byte, then the bit-packed snapshot. A snapshot rides the
-    // unreliable channel, so it has to fit one datagram; there is no
-    // fragmentation to fall back on and no point resending, because the next
-    // snapshot supersedes this one before a resend could arrive.
-    constexpr std::size_t kKindBytes = 1;
-    constexpr std::size_t kMaxSnapshotBytes = kNetMaxPayloadBytes - kKindBytes;
+    constexpr std::size_t kKindBytes = kNetSnapshotKindBytes;
+}
+
+void ReplicationRuntime::SetSnapshotBytes(std::size_t bytes)
+{
+    Budget = std::clamp(bytes, kNetMinSnapshotBytes, kNetMaxSnapshotBytes);
 }
 
 ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
@@ -51,9 +51,13 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
     LastPublishedTick = tick;
     HasPublished = true;
 
-    if (Scratch.size() < kKindBytes + kMaxSnapshotBytes)
-        Scratch.resize(kKindBytes + kMaxSnapshotBytes);
+    // Sized to the largest budget rather than the current one, so changing the
+    // budget mid-session does not reallocate and a lowered one simply uses less
+    // of the same buffer.
+    if (Scratch.size() < kKindBytes + kNetMaxSnapshotBytes)
+        Scratch.resize(kKindBytes + kNetMaxSnapshotBytes);
     Scratch[0] = static_cast<std::byte>(NetPayloadKind::Snapshot);
+    stats.BudgetBytes = Budget;
 
     // What the world looks like, and what moved since last time -- computed
     // once and read by every peer. The generation is this store's own count of
@@ -86,9 +90,13 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
         // The subspan is the budget: what does not fit is deferred to a later
         // snapshot rather than failing this one.
         const SnapshotWriteResult written = ReplicationWriteSnapshot(
-            request, std::span(Scratch).subspan(kKindBytes, kMaxSnapshotBytes));
+            request, std::span(Scratch).subspan(kKindBytes, Budget));
         stats.EntitiesDeferred += written.EntitiesDeferred;
         stats.EntitiesUnsendable += written.EntitiesUnsendable;
+        stats.OldestDeferredSnapshots = std::max(stats.OldestDeferredSnapshots,
+                                                 written.OldestDeferredSnapshots);
+        stats.PeakSnapshotBytes =
+            std::max(stats.PeakSnapshotBytes, written.BytesWritten);
         if (!written.Ok)
         {
             // Nothing a world can do reaches here -- the writer fills to the
@@ -109,6 +117,7 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
         stats.BytesQueued += total;
     }
 
+    Published = stats;
     return stats;
 }
 
@@ -166,4 +175,5 @@ void ReplicationRuntime::Reset()
     AppliedAcks.Clear();
     LastPublishedTick = 0;
     HasPublished = false;
+    Published = PublishStats{};
 }

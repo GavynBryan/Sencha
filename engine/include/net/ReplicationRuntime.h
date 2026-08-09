@@ -20,6 +20,20 @@ class WorldComponentSchema;
 // per peer, which is the term that decides how many players fit.
 inline constexpr std::uint32_t kNetDefaultSnapshotInterval = 2;
 
+// One kind byte ahead of the bit-packed snapshot.
+inline constexpr std::size_t kNetSnapshotKindBytes = 1;
+
+// The most one snapshot can be. A snapshot rides the unreliable channel, so it
+// has to fit a single datagram: there is no fragmentation to fall back on, and
+// no point resending, because the next snapshot supersedes this one before a
+// resend could arrive. Anything that does not fit is deferred to the next.
+inline constexpr std::size_t kNetMaxSnapshotBytes =
+    kNetMaxPayloadBytes - kNetSnapshotKindBytes;
+
+// Smallest budget worth offering. Below roughly this a snapshot is envelope and
+// little else, and entities start failing to fit one at a time.
+inline constexpr std::size_t kNetMinSnapshotBytes = 128;
+
 //=============================================================================
 // ReplicationRuntime
 //
@@ -47,6 +61,16 @@ public:
         // peer at all.
         std::uint32_t EntitiesDeferred = 0;
         std::uint32_t EntitiesUnsendable = 0;
+        // The longest any one entity has waited to be carried to a peer that is
+        // owed it, in snapshots, across all peers served. This is the number
+        // that says whether deferral is a busy moment or a queue that is not
+        // draining.
+        std::uint32_t OldestDeferredSnapshots = 0;
+        // The fullest snapshot written, against the budget it was written to.
+        // Occupancy well under the budget with entities still deferred means
+        // something other than bytes is doing the limiting.
+        std::size_t PeakSnapshotBytes = 0;
+        std::size_t BudgetBytes = 0;
     };
 
     // Authority side. Writes one snapshot per connected peer and queues it on
@@ -77,6 +101,19 @@ public:
     {
         return PublishInterval;
     }
+
+    // Bytes one snapshot may occupy, clamped to what a datagram can carry.
+    // Lowering it does not lose anything: what does not fit is deferred and
+    // arrives in a later snapshot, so this trades how quickly a peer converges
+    // on the world against how much of the link the authority takes to do it.
+    void SetSnapshotBytes(std::size_t bytes);
+    [[nodiscard]] std::size_t SnapshotBytes() const { return Budget; }
+
+    // What the last publish that actually went out cost. Held rather than
+    // returned only, because the frame that publishes and the panel that reads
+    // are different callers, and a publish the cadence skipped has nothing to
+    // say -- reporting zeroes for it would read as a session that stopped.
+    [[nodiscard]] const PublishStats& LastPublish() const { return Published; }
 
     // Client side. `payload` is one channel message, still carrying its kind
     // byte. Returns what happened; a payload that is not a snapshot is ignored
@@ -134,6 +171,8 @@ private:
     // the rest of the session.
     std::uint64_t LastPublishedTick = 0;
     bool HasPublished = false;
+    std::size_t Budget = kNetMaxSnapshotBytes;
+    PublishStats Published;
     // Reused across peers and frames. Sized once to the largest datagram a
     // channel will fragment for us, so publishing allocates nothing per frame.
     std::vector<std::byte> Scratch;

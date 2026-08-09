@@ -1581,3 +1581,254 @@ TEST(ReplicationBudget, ADestroyIsNotHeldBehindASnapshotFullOfUpdates)
     EXPECT_FALSE(pair.Client.IsAlive(mirror))
         << "the client is still holding an entity the world destroyed";
 }
+
+// A peer's own entity is not one of the crowd. Everything else it receives is
+// mirrored and presented a fixed distance in the past, so a late sample is
+// smoothed over and nobody sees it; its own entity is what its prediction argues
+// with, and one that arrives late means it keeps predicting uncorrected until
+// the correction is large enough to see as a jump. Ordering by anything but
+// ownership would leave that to whichever entity happened to be created first.
+TEST(ReplicationBudget, APeersOwnEntityIsCarriedWhileTheWorldSaturatesTheBudget)
+{
+    Pair pair;
+    pair.Budget = kTightBudget;
+    constexpr std::uint32_t kOwner = 3;
+
+    constexpr std::size_t kCrowd = 40;
+    std::vector<EntityId> crowd;
+    for (std::size_t i = 0; i < kCrowd; ++i)
+        crowd.push_back(pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f)));
+
+    // Created last, so identity order works against it and nothing but
+    // ownership can put it at the front of the queue.
+    const EntityId pawn = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(pawn, NetOwner{ .Peer = kOwner });
+
+    for (std::size_t publish = 1; publish <= 12; ++publish)
+    {
+        const auto moved = static_cast<float>(publish);
+        pair.Authority.TryGet<LocalTransform>(pawn)->Value.Position =
+            Vec3d{ moved, 0.0f, 0.0f };
+        for (EntityId other : crowd)
+        {
+            pair.Authority.TryGet<LocalTransform>(other)->Value.Position =
+                Vec3d{ 0.0f, moved, 0.0f };
+        }
+
+        pair.Replicate(kOwner);
+        ASSERT_GT(pair.LastWrite.EntitiesDeferred, 0u)
+            << "publish " << publish << " had room for everyone, so nothing was "
+               "competing with the pawn";
+
+        const EntityId mirror = pair.Mirror(pawn);
+        ASSERT_TRUE(mirror.IsValid())
+            << "publish " << publish << ": the owner has not been told about its "
+               "own entity yet";
+        const LocalTransform* seen = pair.Client.TryGet<LocalTransform>(mirror);
+        ASSERT_NE(seen, nullptr);
+        EXPECT_FLOAT_EQ(seen->Value.Position.X, moved)
+            << "publish " << publish << ": the owner is a snapshot behind on its "
+               "own entity";
+    }
+}
+
+// Emptying a zone is a burst of destroys that no later snapshot repeats, so they
+// go early -- but not so early that a player pays for it. The snapshot keeps
+// room for the peer's own entity ahead of them.
+TEST(ReplicationBudget, AMassDestroyDoesNotCostAPlayerTheirOwnState)
+{
+    Pair pair;
+    pair.Budget = kTightBudget;
+    constexpr std::uint32_t kOwner = 5;
+
+    constexpr std::size_t kCrowd = 60;
+    std::vector<EntityId> crowd;
+    for (std::size_t i = 0; i < kCrowd; ++i)
+        crowd.push_back(pair.SpawnReplicated(PoseAt(static_cast<float>(i), 0.0f, 0.0f)));
+    const EntityId pawn = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(pawn, NetOwner{ .Peer = kOwner });
+
+    while (pair.ClientIdentity.Size() < kCrowd + 1)
+        pair.Replicate(kOwner);
+
+    // The zone goes, and the player moves in the same tick.
+    for (EntityId doomed : crowd)
+        pair.Authority.DestroyEntity(doomed);
+    pair.Authority.TryGet<LocalTransform>(pawn)->Value.Position =
+        Vec3d{ 42.0f, 0.0f, 0.0f };
+
+    pair.Replicate(kOwner);
+
+    ASSERT_GT(pair.LastWrite.EntitiesDestroyed, 0u);
+    const EntityId mirror = pair.Mirror(pawn);
+    ASSERT_TRUE(mirror.IsValid());
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
+                    42.0f)
+        << "the player's own state waited behind the news that a zone emptied";
+}
+
+// The debt is paced, not dropped. A destroy stays owed until the peer confirms
+// it, so capping how many ride in one snapshot spends the burst over several
+// rather than handing one snapshot entirely to entities that no longer exist.
+TEST(ReplicationBudget, AMassDestroyIsPacedRatherThanDropped)
+{
+    Pair pair;
+    constexpr std::size_t kEntities = 100;
+    std::vector<EntityId> world;
+    for (std::size_t i = 0; i < kEntities; ++i)
+        world.push_back(pair.SpawnReplicated(PoseAt(static_cast<float>(i), 0.0f, 0.0f)));
+    pair.Replicate();
+    ASSERT_EQ(pair.ClientIdentity.Size(), kEntities);
+
+    std::vector<EntityId> mirrors;
+    for (EntityId entity : world)
+        mirrors.push_back(pair.Mirror(entity));
+
+    for (EntityId entity : world)
+        pair.Authority.DestroyEntity(entity);
+
+    pair.Replicate();
+    EXPECT_GT(pair.LastWrite.DestroysDeferred, 0u)
+        << "a hundred destroys rode one snapshot, so nothing is being paced";
+
+    for (int publish = 0; publish < 20; ++publish)
+        pair.Replicate();
+
+    for (std::size_t i = 0; i < mirrors.size(); ++i)
+    {
+        EXPECT_FALSE(pair.Client.IsAlive(mirrors[i]))
+            << "entity " << i << " outlived the world by more than the pacing";
+    }
+}
+
+// A spawn is news a player is waiting on -- a rocket that appears half a second
+// late has already hit them. Whatever the load, an entity a peer has never been
+// sent goes ahead of everything it already holds.
+TEST(ReplicationBudget, ANewEntityIsNotQueuedBehindOnesThePeerAlreadyHas)
+{
+    Pair pair;
+    pair.Budget = kTightBudget;
+
+    constexpr std::size_t kCrowd = 30;
+    std::vector<EntityId> crowd;
+    for (std::size_t i = 0; i < kCrowd; ++i)
+        crowd.push_back(pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f)));
+    while (pair.ClientIdentity.Size() < kCrowd)
+        pair.Replicate();
+
+    // Everything the peer already has is moving, so the queue is full before the
+    // new entity is even created.
+    for (EntityId entity : crowd)
+    {
+        pair.Authority.TryGet<LocalTransform>(entity)->Value.Position =
+            Vec3d{ 7.0f, 0.0f, 0.0f };
+    }
+    const EntityId arrival = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 11.0f));
+
+    pair.Replicate();
+
+    ASSERT_GT(pair.LastWrite.EntitiesDeferred, 0u)
+        << "the snapshot had room for everything, so nothing was queued";
+    const EntityId mirror = pair.Mirror(arrival);
+    ASSERT_TRUE(mirror.IsValid()) << "the spawn waited behind entities the peer "
+                                     "already had";
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.Z,
+                    11.0f);
+}
+
+// Which entities a full snapshot takes is decided by their identity, not by
+// which chunk they happen to sit in. Storage order moves when an entity gains or
+// loses a component, and a fill that followed it would send a different set for
+// reasons nothing in the simulation can see -- the same session replayed would
+// not produce the same stream, and the divergence would be attributed to
+// whatever was actually being investigated.
+TEST(ReplicationBudget, WhoGoesFirstFollowsIdentityRatherThanStorageOrder)
+{
+    Pair pair;
+    // Room for a handful, so most of the world is left for later snapshots.
+    pair.Budget = kTightBudget;
+
+    constexpr std::size_t kEntities = 40;
+    std::vector<EntityId> world;
+    for (std::size_t i = 0; i < kEntities; ++i)
+    {
+        const EntityId entity = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+        // Spread across archetypes so that identity order and chunk order
+        // genuinely disagree: every other entity lives in a different chunk.
+        if (i % 2 == 0)
+            pair.Authority.AddComponent<LookOrientation>(entity);
+        world.push_back(entity);
+        // Minted in creation order, so identity is a fact about the entity
+        // rather than about which chunk the store reached first.
+        (void)pair.Identity.IdFor(entity);
+    }
+
+    pair.Replicate();
+    ASSERT_GT(pair.LastWrite.EntitiesDeferred, 0u);
+
+    // Whatever fitted, it is a prefix of the identities -- not a scattering of
+    // whichever chunks came first.
+    const std::size_t carried = pair.LastWrite.EntitiesWritten;
+    ASSERT_GT(carried, 0u);
+    for (std::size_t i = 0; i < kEntities; ++i)
+    {
+        const bool arrived = pair.Mirror(world[i]).IsValid();
+        EXPECT_EQ(arrived, i < carried)
+            << "entity " << i << (arrived ? " arrived out of turn"
+                                          : " was passed over in its turn");
+    }
+}
+
+// Two runs of the same simulation have to produce the same bytes. Under a budget
+// the writer is choosing who goes and who waits on every publish, and a session
+// that cannot be replayed byte for byte is one where a divergence cannot be
+// attributed. This pins the whole pipeline's reproducibility within a build; the
+// test above is what pins the ordering rule it rests on.
+TEST(ReplicationBudget, TheSameSimulationProducesTheSameStreamTwice)
+{
+    const auto run = [] {
+        Pair pair;
+        pair.Budget = kTightBudget;
+        std::vector<std::vector<std::byte>> stream;
+
+        std::vector<EntityId> world;
+        for (std::size_t i = 0; i < 30; ++i)
+        {
+            const EntityId entity =
+                pair.SpawnReplicated(PoseAt(static_cast<float>(i), 0.0f, 0.0f));
+            // Spread across archetypes, so storage order and identity order
+            // genuinely disagree.
+            if (i % 3 == 0)
+                pair.Authority.AddComponent<LookOrientation>(entity);
+            world.push_back(entity);
+        }
+
+        for (std::size_t publish = 1; publish <= 15; ++publish)
+        {
+            for (std::size_t i = 0; i < world.size(); ++i)
+            {
+                pair.Authority.TryGet<LocalTransform>(world[i])->Value.Position =
+                    Vec3d{ static_cast<float>(publish), static_cast<float>(i), 0.0f };
+            }
+            // A death part way through, so the destroy records take part in the
+            // comparison rather than only the updates.
+            if (publish == 8)
+            {
+                pair.Authority.DestroyEntity(world[4]);
+                world.erase(world.begin() + 4);
+            }
+
+            const std::size_t bytes = pair.Replicate();
+            stream.emplace_back(pair.Scratch.begin(),
+                                pair.Scratch.begin() + static_cast<std::ptrdiff_t>(bytes));
+        }
+        return stream;
+    };
+
+    const std::vector<std::vector<std::byte>> first = run();
+    const std::vector<std::vector<std::byte>> second = run();
+
+    ASSERT_EQ(first.size(), second.size());
+    for (std::size_t i = 0; i < first.size(); ++i)
+        EXPECT_EQ(first[i], second[i]) << "snapshot " << i << " differed";
+}

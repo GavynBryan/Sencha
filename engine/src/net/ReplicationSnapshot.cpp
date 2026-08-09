@@ -84,6 +84,8 @@ std::uint32_t ReplicationPeerState::LastSentAt(NetEntityId id) const
 void ReplicationPeerState::BeginSnapshot(std::uint32_t sequence)
 {
     NextSequence = std::max(NextSequence, sequence + 1);
+    if (First == 0)
+        First = sequence;
 
     // The oldest one goes rather than the floors it was waiting to raise. It is
     // dropped exactly as an expired one is: what it carried simply stays owed,
@@ -196,6 +198,7 @@ void ReplicationPeerState::Clear()
     Entities.clear();
     Departed.clear();
     Pending.clear();
+    First = 0;
 }
 
 //=============================================================================
@@ -295,6 +298,12 @@ namespace
         // order. Held rather than recomputed at write time so the bytes written
         // are necessarily the bytes measured.
         std::size_t FirstMask = 0;
+        // Driven by the peer this snapshot is for. Everything else this peer
+        // receives is mirrored and presented a fixed distance in the past, so a
+        // late sample is smoothed over; its own entity is what its prediction
+        // argues with, and a late one means it keeps predicting uncorrected
+        // until the correction is large enough to see as a jump.
+        bool Owned = false;
     };
 
     // Plans one entity, appending its masks. Returns false when this peer is
@@ -348,9 +357,22 @@ namespace
             .LastSentAt = peer.LastSentAt(entity.Id),
             .Bits = bits,
             .FirstMask = first,
+            .Owned = isOwner,
         };
         return true;
     }
+
+    // Records a snapshot always has room for, however much the peer's own
+    // entities want. Destroys are the one record nothing later repeats, so a
+    // budget that could be taken entirely by updates would leave a client
+    // holding an entity that is never mentioned again.
+    constexpr std::size_t kGuaranteedDestroys = 4;
+
+    // The most destroys one snapshot carries. Paced rather than dropped -- the
+    // debt is owed until the peer confirms it -- because a sweep that emptied a
+    // zone would otherwise spend a whole datagram on the news while the player's
+    // own entity waited behind it.
+    constexpr std::size_t kMaxDestroysPerSnapshot = 32;
 }
 
 SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request,
@@ -398,37 +420,59 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
             planned.push_back(plan);
     }
 
-    // Whose turn it is. Longest since this peer last heard about it first, which
-    // puts everything it has never been sent at the front -- and that is the
-    // case that matters, because a peer joining a world larger than one datagram
-    // is owed all of it at once and can only be seeded a datagram at a time.
-    // Identity breaks ties so two runs of the same simulation fill the same way.
+    // Whose turn it is. The peer's own entities first, then longest since it
+    // last heard about them -- which puts everything it has never been sent at
+    // the front of the rest, and that is the case that matters, because a peer
+    // joining a world larger than one datagram is owed all of it at once and can
+    // only be seeded a datagram at a time. Identity breaks ties so two runs of
+    // the same simulation fill the same way.
     std::sort(planned.begin(), planned.end(),
               [](const PlannedEntity& a, const PlannedEntity& b) {
+                  if (a.Owned != b.Owned)
+                      return a.Owned;
                   if (a.LastSentAt != b.LastSentAt)
                       return a.LastSentAt < b.LastSentAt;
                   return a.Entity->Id.Value < b.Entity->Id.Value;
               });
 
     const std::size_t capacityBits = out.size() * 8;
-    std::size_t used = kHeaderBits;
+    if (capacityBits < kHeaderBits)
+        return result;  // Smaller than an empty snapshot; nothing can be said.
+    const std::size_t bodyBits = capacityBits - kHeaderBits;
 
-    // Destroys go in ahead of updates. An update that waits is superseded by the
-    // next one, so waiting costs freshness; a destroy that waits leaves a client
-    // holding an entity that is not there, which nothing later corrects except
-    // the destroy itself. Oldest first, so the tail of a large sweep does not
-    // sit behind whatever died since.
-    std::size_t destroysWritten = 0;
-    while (destroysWritten < owedDestroys.size()
-           && used + kEntityIdBits <= capacityBits)
+    // Room set aside for the peer's own entities before destroys take theirs, so
+    // that emptying a zone cannot cost a player the correction their prediction
+    // is waiting on. Capped so destroys keep a few records of their own: whoever
+    // is served first must not be served exclusively.
+    std::size_t ownedBits = 0;
+    for (const PlannedEntity& plan : planned)
     {
-        used += kEntityIdBits;
-        ++destroysWritten;
+        if (!plan.Owned)
+            break;  // Sorted ahead of everything else.
+        if (ownedBits + plan.Bits > bodyBits)
+            break;
+        ownedBits += plan.Bits;
     }
+    const std::size_t guaranteed =
+        std::min(bodyBits, kGuaranteedDestroys * kEntityIdBits);
+    const std::size_t reserved = std::min(ownedBits, bodyBits - guaranteed);
+
+    // Destroys go in ahead of everything the reservation did not claim. An
+    // update that waits is superseded by the next one, so waiting costs it
+    // freshness; a destroy that waits leaves a client holding an entity that is
+    // not there, which nothing later corrects except the destroy itself. Oldest
+    // first, so the tail of a large sweep does not sit behind whatever died
+    // since.
+    const std::size_t destroyRoom =
+        std::min((bodyBits - reserved) / kEntityIdBits, kMaxDestroysPerSnapshot);
+    const std::size_t destroysWritten =
+        std::min(destroyRoom, owedDestroys.size());
     const std::span<const NetEntityId> destroyed =
         owedDestroys.subspan(0, destroysWritten);
     result.DestroysDeferred =
         static_cast<std::uint32_t>(owedDestroys.size() - destroysWritten);
+
+    std::size_t used = kHeaderBits + destroysWritten * kEntityIdBits;
 
     // What fits, in that order. An entity is taken whole or not at all: a first
     // send carries the entity's every field, and the client turns that into a
@@ -452,6 +496,17 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
             // Deferred, not dropped: nothing about it is recorded as sent, so it
             // stays owed and keeps its place at the front of the next snapshot.
             ++result.EntitiesDeferred;
+            // One it has never been sent has been waiting since this peer's
+            // first snapshot, not since sequence zero -- a peer that joined a
+            // moment ago is not decades behind.
+            const std::uint32_t since = plan.LastSentAt != 0
+                                            ? plan.LastSentAt
+                                            : peer.FirstSequence();
+            if (request.Sequence > since)
+            {
+                result.OldestDeferredSnapshots = std::max(
+                    result.OldestDeferredSnapshots, request.Sequence - since);
+            }
             continue;
         }
         used += plan.Bits;

@@ -103,6 +103,9 @@ public:
     [[nodiscard]] bool Knows(NetEntityId id) const;
     // Which snapshot last carried it, or zero if none ever has.
     [[nodiscard]] std::uint32_t LastSentAt(NetEntityId id) const;
+    // The first snapshot ever opened for this peer, which is when everything it
+    // has not been sent started waiting. Zero before the first one.
+    [[nodiscard]] std::uint32_t FirstSequence() const { return First; }
     [[nodiscard]] std::size_t Size() const { return Entities.size(); }
 
     // The name the next snapshot for this peer goes out under. One per snapshot
@@ -172,6 +175,7 @@ private:
     std::vector<SentSnapshot> Pending;
     // Starts at one, because zero is the acknowledgement's "nothing yet".
     std::uint32_t NextSequence = 1;
+    std::uint32_t First = 0;
 };
 
 //-----------------------------------------------------------------------------
@@ -275,6 +279,11 @@ struct SnapshotWriteResult
     // frame, and it is the one back-pressure case that needs an operator.
     std::uint32_t EntitiesUnsendable = 0;
     std::uint32_t DestroysDeferred = 0;
+    // Snapshots the longest-waiting deferred entity has gone without being
+    // carried. Counted from this peer's first snapshot for one it has never been
+    // sent, so a peer still being seeded reads as "waiting since it joined"
+    // rather than as waiting since the session began.
+    std::uint32_t OldestDeferredSnapshots = 0;
     std::size_t BytesWritten = 0;
 };
 
