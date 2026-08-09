@@ -887,6 +887,38 @@ void TemplateGame::OnStart(GameStartupContext&)
                 world.AddComponent<WorldTransformHistory>(
                     entity, WorldTransformHistory{});
             }
+
+            // Which profile a pawn resolves tuning from is content this machine
+            // already has, and a handle into its own asset cache is meaningless
+            // on any other -- so the field does not travel, and naming it is
+            // this side's job. It has to happen here rather than when the local
+            // player takes possession: replication has already created
+            // CharacterMovement by the time a recipe runs, and the possession
+            // path only adds components that are missing, so a profile written
+            // there would be dropped on exactly the machine that predicts. A
+            // pawn left on the default handle resolves engine tuning while the
+            // authority runs the authored kind, and the two simulations then
+            // disagree by design on every input.
+            const MovementProfileHandle profile = ResolvePlayerMovementProfile(log);
+            if (CharacterMovement* movement =
+                    world.TryGet<CharacterMovement>(entity))
+            {
+                // Mode is the authority's word and arrives on the wire; only
+                // the profile is this machine's to fill in.
+                movement->Profile = profile;
+            }
+            else
+            {
+                CharacterMovement built;
+                built.Profile = profile;
+                if (const LocomotionModeRegistry* modes =
+                        world.TryGetResource<LocomotionModeRegistry>())
+                {
+                    built.Mode = modes->FreeMode();
+                }
+                world.AddComponent<CharacterMovement>(entity, built);
+            }
+
             log.Info("TemplateGame: built a replicated player pawn");
         });
 
