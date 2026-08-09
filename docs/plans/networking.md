@@ -1855,11 +1855,23 @@ owed before the phase that depends on them.
    should also gate `Developer`-flagged cvars in sessions. This matters more than it
    did at review: the console now ships to players (Section 10.8), so this list is
    the shipping gate rather than a dev convenience.
-5. **World-identity strictness at join.** Exact cooked-content hash match (
+5. **A client is never told which world to load.** Found live (2026-08-09): a
+   client launched with `+connect` alone joins, replicates, predicts -- and
+   renders two pawns in a void, because the handshake carries a WorldIdentity
+   *hash* (zero today) but never the map name, and nothing else does. The
+   client's collision was the authority's, delivered through reset-and-replay:
+   imperceptible at loopback RTT, rubber-banding on a real link. The template's
+   join flow already assumes the client loaded the same map (it destroys its
+   pre-join local pawn on adopting the replicated one); only the telling is
+   missing. Admission should carry the map name so a client loads it on join --
+   which is the front half of §8.3's late-join path and pairs with the
+   strictness question below. Until then, both processes need `+map`.
+
+6. **World-identity strictness at join.** Exact cooked-content hash match (
    recommended: it is the only defensible line while cooked scenes are JSON and
    mods are not a feature) versus a looser manifest-only match to ease dev
    iteration, with the strict mode as the shipping default.
-6. **An acknowledgement cannot travel without input.** `PeerCommandRuntime::
+7. **An acknowledgement cannot travel without input.** `PeerCommandRuntime::
    SendLocal` sends nothing when the command ring is empty, and
    `NetEncodePlayerCommand` refuses a message with zero records, so a client with
    no input to send cannot confirm the snapshots it has applied. Proof of
@@ -1876,7 +1888,7 @@ owed before the phase that depends on them.
    Deliberately not taken inside the replication-scaling work. The sixteen-peer
    soak runs entirely on this path, which is why its numbers are a lower bound.
 
-7. **Interpolation across a long gap.** Bracketing two samples far apart draws an
+8. **Interpolation across a long gap.** Bracketing two samples far apart draws an
    entity sliding between them. A rule that snaps instead of blending past some
    gap width was considered and rejected on measurement: a real teleport is a
    *large distance in a small time*, which no time-based threshold can see, while
@@ -1886,7 +1898,7 @@ owed before the phase that depends on them.
    presentation class what speeds the simulation can produce. Open, and not
    urgent.
 
-8. **Server build identity grade (Section 10.4).** Mutual identity verification
+9. **Server build identity grade (Section 10.4).** Mutual identity verification
    ships in G1 regardless. Decide whether the build-signature grade is wanted: it is
    meaningful if dedicated server binaries stay first-party and near-worthless once
    they are publicly distributed, which now couples to the answered decision that
