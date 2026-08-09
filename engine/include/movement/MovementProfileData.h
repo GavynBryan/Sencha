@@ -34,6 +34,11 @@ struct MovementLayerCondition
     std::optional<std::string> Mode;
     MovementSupportCondition Support = MovementSupportCondition::Any;
     std::optional<float> ImmersionAtLeast;
+    // Whether this tick's movement request asks for a jump. A fact about the
+    // request rather than about the body, so it is available while tuning is
+    // being resolved -- which is the tick a launch needs different coefficients
+    // on, before the body has left the ground and support still reads stable.
+    std::optional<bool> Jump;
     std::vector<std::string> AllTags;
     std::vector<std::string> AnyTags;
     std::vector<std::string> NoneTags;

@@ -1562,7 +1562,8 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     }
 
     RegisterAbilityKitSystems(ctx.Schedule);
-    RegisterMovementSystems(ctx.Schedule, RuntimeAssetState().DataAssets);
+    RegisterMovementSystems(ctx.Schedule, RuntimeAssetState().DataAssets,
+                            &GetEngine().Logging());
     RegisterInputSystems(
         ctx.Schedule,
         RuntimeAssetState().DataAssets,

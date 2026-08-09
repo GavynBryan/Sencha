@@ -124,6 +124,16 @@ namespace
             "Minimum estimated fraction of the character capsule inside the active volume.",
             "fraction", 0.0, 1.0);
 
+        DataFieldSchema jump;
+        jump.Key = "jump";
+        jump.DisplayName = "Jumping";
+        jump.Summary =
+            "Match only on a tick whose movement request asks for a jump. The "
+            "launch tick still reads as stable support, so this is how a launch "
+            "gets different coefficients than standing still does.";
+        jump.Kind = DataFieldKind::Bool;
+        jump.Required = false;
+
         DataFieldSchema condition;
         condition.Key = "when";
         condition.DisplayName = "When";
@@ -134,6 +144,7 @@ namespace
             std::move(mode),
             std::move(support),
             std::move(immersion),
+            std::move(jump),
             TagQuerySchema("tags", "Gameplay tags", "Tag conditions evaluated against the character."),
         };
         return condition;
@@ -288,6 +299,8 @@ namespace
             else if (support->AsString() == "steep") condition.Support = MovementSupportCondition::Steep;
         }
         condition.ImmersionAtLeast = OptionalFloat(*value, "immersion_at_least");
+        if (const JsonValue* jump = value->Find("jump"); jump && jump->IsBool())
+            condition.Jump = jump->AsBool();
         ParseTags(value->Find("tags"), condition.AllTags, condition.AnyTags, condition.NoneTags);
         return condition;
     }

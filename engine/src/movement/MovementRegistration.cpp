@@ -99,12 +99,13 @@ void RegisterMovement(World& world)
     RegisterDefaultMovementAbilities(world);
 }
 
-void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAssets)
+void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAssets,
+                             LoggingProvider* logging)
 {
     schedule.Register<SupportTagProjectionSystem>();
     schedule.Register<ModeRequestCollectionSystem>();
     schedule.Register<LocomotionModeTransitionSystem>();
-    schedule.Register<MovementTuningResolutionSystem>(dataAssets);
+    schedule.Register<MovementTuningResolutionSystem>(dataAssets, logging);
     schedule.Register<FreeLocomotionSystem>();
     schedule.Register<JumpExecutionSystem>();
     schedule.Register<MotionCompositionSystem>();
