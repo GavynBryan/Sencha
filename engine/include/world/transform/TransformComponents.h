@@ -50,6 +50,9 @@ struct TypeSchema<LocalTransform>
 {
     static constexpr std::string_view Name = "Transform";
     static constexpr std::uint32_t SceneChunkId = MakeFourCC('X', 'F', 'R', 'M');
+    // Where a thing is, which is the one fact every peer needs about every
+    // entity it can see.
+    static constexpr bool Replicated = true;
 
     static auto Fields()
     {

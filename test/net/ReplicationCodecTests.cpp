@@ -3,6 +3,7 @@
 #include <controller/LookOrientation.h>
 #include <net/ReplicationCodec.h>
 #include <net/ReplicationLayout.h>
+#include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/transform/TransformComponents.h>
 
@@ -30,7 +31,8 @@ namespace
     ReplicationLayout EngineLayout()
     {
         ReplicationLayout layout;
-        RegisterEngineReplicatedComponents(layout);
+        ComponentRegistrar components(nullptr, nullptr, &layout);
+        RegisterEngineComponents(components);
         return layout;
     }
 
@@ -495,36 +497,47 @@ TEST(ReplicationCodec, EveryEngineComponentRoundTripsFromDefaults)
 {
     const ReplicationLayout layout = EngineLayout();
 
-    for (const ReplicatedComponent& component : layout.Components())
+    // Both audiences, because ownership decides which fields travel: a field
+    // withheld from this receiver is the codec doing its job, not a loss.
+    for (const bool forOwner : { false, true })
     {
-        std::vector<std::byte> current(component.Size, std::byte{ 0 });
-        std::vector<std::byte> target(component.Size, std::byte{ 0 });
-
-        // A recognisable pattern, snapped to what the wire can carry so the
-        // comparison below is exact rather than approximate.
-        for (std::size_t i = 0; i < current.size(); ++i)
-            current[i] = static_cast<std::byte>((i * 7 + 3) & 0x3F);
-        ReplicationSnapToWire(component, current);
-
-        std::array<std::byte, kScratchBytes> scratch{};
-        NetBitWriter writer(scratch);
-        ASSERT_TRUE(ReplicationEncodeComponent(component, current, {}, false, writer))
-            << component.Name;
-        ASSERT_LE(writer.BitsWritten(), ReplicationMaxComponentBits(component))
-            << component.Name << " exceeded its own stated maximum";
-
-        NetBitReader reader(writer.Written());
-        ASSERT_TRUE(ReplicationDecodeComponent(component, reader, target))
-            << component.Name;
-
-        // Only the replicated fields are claimed to survive; the rest of the
-        // component is the receiver's own business.
-        for (const ReplicatedField& field : component.Fields)
+        for (const ReplicatedComponent& component : layout.Components())
         {
-            const std::size_t span = field.Count * field.Size;
-            EXPECT_EQ(std::memcmp(current.data() + field.Offset,
-                                  target.data() + field.Offset, span), 0)
-                << component.Name << "." << field.Name;
+            std::vector<std::byte> current(component.Size, std::byte{ 0 });
+            std::vector<std::byte> target(component.Size, std::byte{ 0 });
+
+            // A recognisable pattern, snapped to what the wire can carry so the
+            // comparison below is exact rather than approximate.
+            for (std::size_t i = 0; i < current.size(); ++i)
+                current[i] = static_cast<std::byte>((i * 7 + 3) & 0x3F);
+            ReplicationSnapToWire(component, current);
+
+            std::array<std::byte, kScratchBytes> scratch{};
+            NetBitWriter writer(scratch);
+            ASSERT_TRUE(
+                ReplicationEncodeComponent(component, current, {}, forOwner, writer))
+                << component.Name;
+            ASSERT_LE(writer.BitsWritten(), ReplicationMaxComponentBits(component))
+                << component.Name << " exceeded its own stated maximum";
+
+            NetBitReader reader(writer.Written());
+            ASSERT_TRUE(ReplicationDecodeComponent(component, reader, target))
+                << component.Name;
+
+            // Only fields addressed to this receiver are claimed to survive;
+            // the rest of the component is the receiver's own business.
+            for (const ReplicatedField& field : component.Fields)
+            {
+                if (field.OwnerOnly && !forOwner)
+                    continue;
+                if (field.OwnerLocal && forOwner)
+                    continue;
+                const std::size_t span = field.Count * field.Size;
+                EXPECT_EQ(std::memcmp(current.data() + field.Offset,
+                                      target.data() + field.Offset, span), 0)
+                    << component.Name << "." << field.Name
+                    << (forOwner ? " (as owner)" : " (as peer)");
+            }
         }
     }
 }

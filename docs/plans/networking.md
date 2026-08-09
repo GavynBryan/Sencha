@@ -1,9 +1,12 @@
 # Networking: Sessions, Replication, and Zone-Scoped Authority
 
-Status: ratified design, execution pending (reviewed 2026-07-10, ratified and
-corrected 2026-08-07). This is roadmap Track G. The model, the module layout, the
-protocol shape, and the security posture below are decided; the phase list in
-Section 12 is the execution plan. No networking code exists yet.
+Status: ratified design, in execution (reviewed 2026-07-10, ratified and corrected
+2026-08-07). This is roadmap Track G. The model, the module layout, the protocol
+shape, and the security posture below are decided; the phase list in Section 12 is
+the execution plan and carries per-phase status. Sessions, channels, replication,
+input, the shared clock, and prediction have landed; interest scoping, event
+replication, desync hashing, and hardening have not. Where the tree and a design
+paragraph disagree, the paragraph carries a *LANDED* note saying how.
 
 Read `docs/plans/engine-roadmap.md` (tracks, gates),
 `docs/plans/world-partition/00-execution-overview.md` (binding rules, D10, D14, D17,
@@ -726,6 +729,21 @@ Per-tick application keeps remote motion smooth at snapshot cadence; sub-tick
 presentation smoothing arrives free once Section 3.1's alpha is real and transforms
 interpolate at extraction.
 
+*LANDED as `ReplicationInterpolation`, with two deviations from the description
+above.* Poses are held per entity rather than per scope, because the applier
+already works entity by entity and a scope-wide buffer would need its own index
+into one. And the presented tick is `AuthorityTickAt(local) - FlightTicks() -
+net.interp_delay_ticks` rather than the estimate minus the cvar alone: the
+estimate names where the authority is *now*, so a delay measured only from there
+lands ahead of the newest sample that can physically have arrived, and every
+resolve holds instead of blending. The flight term is what puts the presented
+tick at the newest arrival, and the cvar is the margin on top of it.
+
+Only `LocalTransform` is intercepted. The rest of a mirrored entity's state still
+lands normally, and the applier still adds the component on the spawn snapshot --
+seeded from the authority's value -- because the buffer writes the presented pose
+into it every tick and cannot write into a column the entity never gained.
+
 A snapshot that references a zone the client has not finished loading cannot occur
 by protocol (grants gate replication, Section 8.2); the applier treats it as a
 protocol violation, not a queue-and-hope case.
@@ -838,6 +856,96 @@ activation). Not rigid bodies, not other entities, not zone content. Mechanism:
   phase, and why input-delay mode ships first and stays.
 - Remote interactions during replay use latest replicated state (standard
   approximation); mispredictions from it are bounded by the correction path.
+
+*LANDED, with the comparison step deleted.* A live two-instance session desynced
+unboundedly on a corner-heavy map -- one machine had the pawn wedged on a corner
+while the other ran it down a hallway -- and the investigation found the compare
+-then-correct shape above was carrying four separate defects at once, three of them
+structural to comparing. What shipped instead is the Quake/Source shape:
+**every snapshot resets the pawn to what the authority said and replays the unacked
+input over it, unconditionally.** There is no epsilon, no predicted-state history,
+and no correction offset.
+
+The reasons, because "we simplified it" is not one:
+
+- **Comparing needs a history of predicted state; replaying needs only a history
+  of input.** The client keeps `PawnCommandRing` (`net/PawnCommandRing.h`), one
+  record per tick holding the tick's authority-clock name, the aim it was taken
+  with, the derived `MovementIntent`, and the raw action values. That single ring
+  is the client's own simulation input, the wire projection, and the replay
+  source. Sampling those three separately is what put aim on the wire once per
+  datagram while movement went per tick, and the two machines then paired
+  different aim with the same input -- against a corner, the difference between
+  stopping and not.
+- **An epsilon is a policy about five components, not one.** Convergence needs
+  velocity, support, locomotion mode, and jump cooldown as well as position, and
+  "close enough" would have to be defined per field, per units, forever. Replaying
+  unconditionally is both cheaper to reason about and cheaper to run: the window
+  is flight plus `net.command_slack` ticks, a handful, over kernels that are
+  already the ones the live tick calls.
+- **The comparison was also being run against the wrong tick.** The client
+  recorded predictions under the tick it simulated and stamped commands for a tick
+  flight-plus-slack ahead, so the comparison differenced two simulations several
+  ticks apart in input time and manufactured error on every accelerating frame.
+  With no comparison there is no key to skew.
+- **And the correction path was dead anyway.** Corrections wrote `LocalTransform`
+  only, which the next tick's mover overwrote from its own internal position,
+  because the gate that would have reached the mover tested a World resource
+  nothing ever registered. Every correction ever computed was a no-op. Both modes
+  now go through the same reset, so `net.prediction 0` is reset-only input delay
+  rather than a second, separately broken path.
+
+The mechanism, as built. `net/PawnStateReplay.h` owns the whole operation and runs
+on the main thread at `PumpNet`, structurally silent. The applier does not write
+the pawn's owned components into the world -- it intercepts them into
+`ClientPrediction`'s shadow (`LocalTransform`, `KinematicState`, `SupportState`,
+`CharacterMovement`, `JumpState`), so the world keeps the client's own predicted
+values and the authority's last word stays available to reset from. Replay then
+restores the shadow through `SetComponentBytes` plus
+`CharacterMoverPool::RestorePosition` (Phase 1 added per-entity `Step`/`RestorePosition`
+beside `Drive`, sharing one sweep body so replay and the live tick cannot diverge by
+construction), drops the ring through the acked tick, and steps what remains through
+`StepFreeLocomotion` → `StepJump` → `ComposeMotion` → `Movers->Step`.
+
+Two things had to move to make the state closed under replay. Jump left the ability
+framework and became `StepJump` plus a `JumpState` component inside the movement
+step: anything that steers your own body inside the prediction window belongs to
+movement, and the ability layer is for authority-validated actions. And the owned
+pawn's state replicates `OwnerOnly` (Section 6.3's field annotation, previously
+unused), including `CharacterMovement.Mode` as a raw registration-order id under the
+same same-build session-transient contract the action columns use.
+
+Snap fallback, rather than pretending: a locomotion mode replay does not model, or
+an ack older than the ring's oldest surviving record (a stall past one second),
+resets position directly and clears the ring. Both are observable -- mode
+replicates, and the stats panel counts snaps -- so a fallback that starts firing is
+a diagnosis rather than a mystery.
+
+Two defects this uncovered that were not prediction's at all, recorded because both
+were invisible to every unit test:
+
+1. *Snapshot baselines advanced on write, not on delivery.* Snapshots ride the
+   unreliable channel, so a dropped one was still counted as held, and every later
+   delta was measured against a state the client had never been in. Position hid
+   it completely (it changes every tick, so every snapshot re-carries it);
+   anything that settles did not, and one lost datagram lost `CharacterMovement.Mode`
+   for the session. Baselines are now the newest snapshot the client has
+   *confirmed*: the command carries `SnapshotAck`, unconfirmed snapshots are held
+   per peer (bounded, `ReplicationPeerState`), and an unacknowledged change is
+   simply sent again.
+2. *The command ring called "nothing acknowledged yet" a gap.* At session start
+   nothing is confirmed and every record ever captured is still held, which is the
+   opposite of having lost one. A gap is eviction, tracked explicitly.
+
+Deferred, with triggers: **error smoothing** (P3) did not ship. The reset snaps
+simulation state, and at the impairments the convergence regression covers the
+result is sub-millimetre with zero snaps, so there is nothing visible to blend;
+the trigger is a measured visible pop at internet latency or on a connection worse
+than the soak's schedule, and the blend belongs on the presentation transform only.
+Replay reads tuning and attributes as of now rather than as of the replayed tick, so
+a mid-window tuning change replays with the new coefficients and the next reconcile
+absorbs it. Motion impulses are not replayed; they arrive as replicated velocity at
+the ack.
 
 Deferred with recorded triggers: server-side lag compensation for hit validation
 (trigger: a target game ships hitscan combat at internet latency), projectile
@@ -1411,16 +1519,55 @@ what extraction actually reads.
   ticks after would step the stamp mid-session, and a backwards step would make
   the authority refuse everything following it as input for ticks already run.
 
-  *P2, local prediction: not started.* The owned pawn simulates locally from
-  its own input, keeping per-tick state and the inputs that produced it;
-  arriving snapshots are compared against what was predicted for that tick, and
-  a divergence rolls back and replays. Feasible without rewinding physics:
-  character motion is a kinematic sweep against a static world
-  (`CharacterMover::Move`, with `SetPosition` to restore), not a rigid-body
-  step, so only the predicted pawn rewinds.
+  *P2, local prediction: LANDED, and rebuilt once.* The first build predicted
+  locally and nudged toward the authority with an offset; a live two-instance
+  session on the corner map desynced without bound, and the rebuild replaced
+  compare-and-correct with unconditional reset-and-replay. Section 7.4 carries
+  the shape, the four root causes, and the two replication defects the rebuild's
+  end-to-end regression uncovered. The physics assumption held exactly as
+  written: character motion is a kinematic sweep against a static world, so
+  replay is repeated sweeps for one entity and no Jolt state is rewound.
 
-  *P3, error smoothing and diagnostics: not started.* Corrections blended over
-  several frames rather than snapped, with prediction error on the stats panel.
+  *P3, error smoothing: not started, and no longer obviously needed.*
+  `test/net/PredictionConvergenceTests.cpp` runs two full worlds -- physics,
+  movement, the real frame order -- over an impaired link and drives the client
+  into geometry: it settles under a millimetre with zero snap fallbacks. A blend
+  buys nothing against an error that small. The trigger is a visible pop at
+  internet latency, and it belongs on the presentation transform, never on
+  simulation state. Diagnostics did ship: the stats panel reads reconciles,
+  ticks replayed, last reset distance, and snap fallbacks.
+
+  *Degraded-link soak: LANDED (`test/net/NetDegradedLinkTests.cpp`).* Two
+  sessions over `SimulatedTransport` at a seeded impairment schedule, stepped a
+  tick at a time: handshake, keepalives, measured round trips, and commands, with
+  loss, delay, jitter, and reordering applied. `NetImpairment` gained
+  `LatencySteps`/`JitterSteps` to make it possible — the transport modelled loss,
+  duplication, and reorder, but not the delay that prediction exists for. It
+  found three defects that every mechanism's own unit test had passed over:
+
+  1. *The join failed outright under loss.* `Connect` sent one `Hello` and never
+     repeated it, so a single lost datagram in any of the four handshake legs
+     failed the join permanently (~59% of attempts at 20% loss). Retried on a
+     cadence now, and the authority answers a repeated `Hello`/`CookieEcho` from
+     an admitted peer instead of feeding it to the channel layer as garbage and
+     striking the peer for it.
+  2. *The command stamp chased raw jitter.* `NetTickEstimator` slewed `Delta` but
+     assigned `Flight` straight from each measured round trip, and the stamp is
+     their sum — so the jumping the slew exists to prevent happened anyway.
+     Flight now rises at once and decays a tick at a time.
+  3. *Not a defect, recorded because it looks like one.* The command buffer's
+     target depth is a ceiling, not a floor; see the note on
+     `NetPeerCommandBuffer`. Making it hold records back to build the depth
+     deliberately measured worse, not better.
+
+  Not covered: replication does not run in the soak, so the shared clock is fed
+  by keepalives rather than by snapshots.
+
+  *Remote-entity interpolation: LANDED* (`ReplicationInterpolation`, Section 7).
+  It was the gap the soak's findings pointed at -- the own-pawn path had just
+  been made steadier while everything a client mirrors still stepped whenever a
+  datagram landed, which is the same jitter seen by every player watching rather
+  than by the one with the bad connection.
 
 - **G6. Hardening.** Crypto and auth token seam (owner decision executed); rate
   budgets and strike enforcement; malformed-traffic soak in both directions

@@ -9,6 +9,7 @@
 #include <net/NetSession.h>
 #include <net/ReplicationRuntime.h>
 #include <net/UdpTransport.h>
+#include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/RuntimeWorld.h>
 #include <world/transform/TransformComponents.h>
@@ -55,10 +56,10 @@ namespace
 
         StandaloneWorld()
         {
-            RegisterEngineRuntimeComponents(Schema);
+            ComponentRegistrar components(&Schema, nullptr, &Layout);
+            RegisterEngineComponents(components);
             Schema.Seal();
             Schema.Apply(Entities);
-            RegisterEngineReplicatedComponents(Layout);
             Layout.Seal();
         }
     };

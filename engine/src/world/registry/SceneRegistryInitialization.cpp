@@ -4,7 +4,8 @@
 #include <components/ActiveCameraService.h>
 #include <render/StaticMeshComponent.h>
 #include <render/ZoneLightmapComponent.h>
-#include <world/ComponentManifest.h>
+#include <world/ComponentRegistrar.h>
+#include <world/RuntimeComponentSchema.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/ComponentStorageTraits.h>
 
@@ -18,11 +19,12 @@ void InitializeSceneRegistry(
     TextureCache* textures)
 {
     registry.Resources.Register<ActiveCameraService>();
-    ForEachSceneComponent([&](auto tag)
-    {
-        ComponentStorageTraits<
-            typename decltype(tag)::Type>::Register(registry);
-    });
+    // The same feature registrars the runtime composes its sealed vocabulary
+    // from, aimed at this registry's World instead. An editor preview that knew
+    // a different set of components than the runtime would render a different
+    // scene than the game does.
+    ComponentRegistrar components(registry.Components);
+    RegisterEngineComponents(components);
     registry.Components.AddResource<StaticMeshComponentAssets>(
         meshes,
         materialSets);

@@ -42,10 +42,19 @@
 inline constexpr std::size_t kNetMaxCommandActions = 32;
 inline constexpr std::size_t kNetMaxCommandRecords = 8;
 
-// One tick of resolved actions.
+// One tick of resolved actions, and the aim they were taken with.
+//
+// Aim rides per tick because movement is derived from it: the direction a
+// player asks for is their input framed by where they are looking, so a tick
+// simulated against a different aim walks a different path. Sending one sample
+// per datagram and applying it to every tick in the window made the two
+// machines answer different questions -- against a wall or a corner, that is
+// the difference between stopping and not.
 struct NetCommandRecord
 {
     std::uint64_t Tick = 0;
+    float Yaw = 0.0f;
+    float Pitch = 0.0f;
     std::uint8_t ActionCount = 0;
     std::array<InputActionValue, kNetMaxCommandActions> Actions{};
 
@@ -57,11 +66,12 @@ struct NetCommandRecord
 
 struct NetPlayerCommand
 {
-    // Where the player is aiming, as of the newest record. Aim is continuous
-    // and integrated on the sender's presentation clock, so it travels once per
-    // command rather than once per tick.
-    float Yaw = 0.0f;
-    float Pitch = 0.0f;
+    // The newest snapshot this client has applied. It travels back with the
+    // input because the input already travels every tick, and because the
+    // authority cannot compute a correct difference without it: a snapshot that
+    // was written is not a snapshot that arrived, and a delta measured from one
+    // the client never received describes a state it was never in.
+    std::uint64_t SnapshotAck = 0;
 
     std::uint8_t RecordCount = 0;
     // Newest first. The rest are the redundancy window: ticks the authority may
@@ -111,6 +121,14 @@ std::size_t NetEncodePlayerCommand(const NetPlayerCommand& command,
 // authority never ran -- and depth that persists above a small slack is
 // collapsed into the next record handed out, edges carried, so shedding
 // backlog cannot eat a tap that lived in a shed tick.
+//
+// The target depth is a ceiling and not a floor, which is easy to read the
+// wrong way round. The queue fills on its own from the ticks that arrive
+// several at a time on a jittery link, and the collapse is what stops it
+// filling past the target; nothing holds a record back to build depth
+// deliberately. Adding that costs more than it buys -- every dry spell would be
+// followed by the target's worth of further starved ticks while the depth was
+// rebuilt, on exactly the connections that run dry most.
 //=============================================================================
 class NetPeerCommandBuffer
 {
@@ -152,9 +170,20 @@ public:
     }
     [[nodiscard]] std::size_t TargetDepth() const { return Target; }
 
-    [[nodiscard]] float Yaw() const { return AimYaw; }
-    [[nodiscard]] float Pitch() const { return AimPitch; }
-    [[nodiscard]] bool HasAim() const { return AimSeen; }
+    // The newest snapshot this peer has told us it applied. Never goes
+    // backwards: a datagram that overtakes a newer one carries an older answer,
+    // and treating it as current would have the authority describe differences
+    // from a state the peer has already moved past.
+    [[nodiscard]] std::uint64_t SnapshotAck() const { return AckedSnapshot; }
+
+    // The newest tick this peer will never be asked about again: everything at
+    // or below it has been simulated or passed over for good. The client is
+    // told this in every snapshot, and it is what tells it which of its own
+    // records it still owes a replay.
+    [[nodiscard]] std::uint64_t ConsumedThrough() const
+    {
+        return AdmitFloor == 0 ? 0 : AdmitFloor - 1;
+    }
 
     // Ticks handed out with nothing queued behind them. The starvation rate is
     // what a stats panel reads to say a peer's connection is behind.
@@ -178,17 +207,11 @@ private:
     // Records below this tick are never queued: they are either consumed
     // already or older than first contact, which makes them latency, not input.
     std::uint64_t AdmitFloor = 0;
+    std::uint64_t AckedSnapshot = 0;
     bool SeenCommand = false;
     // Consecutive consumes that ended above the target. Reset the moment depth
     // is healthy, so only depth that persists ever reads as backlog.
     std::size_t BacklogTicks = 0;
-
-    float AimYaw = 0.0f;
-    float AimPitch = 0.0f;
-    // The newest tick any aim sample arrived with, so a datagram that overtakes
-    // a newer one cannot drag the view backwards.
-    std::uint64_t AimTick = 0;
-    bool AimSeen = false;
 
     std::uint64_t Starved = 0;
 };

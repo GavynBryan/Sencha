@@ -63,6 +63,7 @@ namespace
             output.When.Mode = mode;
         }
 
+        output.When.Jump = source.When.Jump;
         return BindTagQuery(source.When.AllTags, source.When.AnyTags,
                             source.When.NoneTags, tags, output.When.Tags, error);
     }
@@ -149,6 +150,16 @@ namespace
                 *failure = std::format("immersion {} is below {}",
                                        context.Immersion,
                                        *layer.When.ImmersionAtLeast);
+            }
+            return false;
+        }
+
+        if (layer.When.Jump && *layer.When.Jump != context.Jump)
+        {
+            if (failure)
+            {
+                *failure = context.Jump ? "this tick does not ask for a jump"
+                                        : "this tick asks for a jump";
             }
             return false;
         }

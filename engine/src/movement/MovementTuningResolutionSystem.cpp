@@ -7,6 +7,8 @@
 #include <movement/MovementComponents.h>
 #include <movement/MovementDefs.h>
 #include <movement/LocomotionMode.h>
+#include <core/logging/LoggingProvider.h>
+#include <movement/MovementIntent.h>
 #include <movement/MovementProfileBindingCache.h>
 #include <ecs/Query.h>
 #include <ecs/StoragePartitionSet.h>
@@ -56,6 +58,7 @@ void MovementTuningResolutionSystem::StepImpl(World& world,
     const bool hasSupport = world.IsRegistered<SupportState>();
     const bool hasImmersion = world.IsRegistered<Immersion>();
     const bool hasTags = world.IsRegistered<GameplayTagContainer>();
+    const bool hasIntent = world.IsRegistered<MovementIntent>();
 
     Query<Write<ResolvedMovementTuning>, Read<CharacterMovement>> query(world);
     const auto visit = [&](auto& view)
@@ -70,7 +73,22 @@ void MovementTuningResolutionSystem::StepImpl(World& world,
             const CharacterMovement& movement = movements[i];
 
             const float maxSpeed = ReadMoveSpeed(std::as_const(world), entity);
-            const BoundMovementProfile* profile = bindings->Get(movement.Profile);
+
+            // A profile that cannot be bound resolves to an empty one, which
+            // silently returns every character to engine defaults -- a whole
+            // movement feel replaced because one layer named something that no
+            // longer exists. Reported once per profile, because the alternative
+            // is a designer re-tuning numbers that were never being read.
+            std::string bindError;
+            const BoundMovementProfile* profile =
+                bindings->Get(movement.Profile, &bindError);
+            if (!bindError.empty() && Logging != nullptr)
+            {
+                Logging->GetLogger<MovementTuningResolutionSystem>().Error(
+                    "Movement profile failed to bind ({}); this character is "
+                    "moving on engine defaults, not on its authored tuning.",
+                    bindError);
+            }
             if (profile == nullptr)
             {
                 // No profile bound: the attribute alone is the whole answer,
@@ -94,6 +112,14 @@ void MovementTuningResolutionSystem::StepImpl(World& world,
             }
             if (hasTags)
                 context.Tags = std::as_const(world).TryGet<GameplayTagContainer>(entity);
+            if (hasIntent)
+            {
+                if (const MovementIntent* intent =
+                        std::as_const(world).TryGet<MovementIntent>(entity))
+                {
+                    context.Jump = intent->Jump;
+                }
+            }
 
             tuning = ResolveMovementTuning(*profile, context, maxSpeed, /*collectTrace*/ false).Tuning;
         }

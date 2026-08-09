@@ -37,6 +37,7 @@ struct BoundMovementLayerCondition
     std::optional<LocomotionModeId> Mode;
     MovementSupportCondition Support = MovementSupportCondition::Any;
     std::optional<float> ImmersionAtLeast;
+    std::optional<bool> Jump;
     BoundMovementTagQuery Tags;
 };
 
@@ -85,6 +86,7 @@ struct MovementResolveContext
 {
     SupportKind Support = SupportKind::None;
     float Immersion = 0.0f;
+    bool Jump = false;
     LocomotionModeId Mode;
     const GameplayTagContainer* Tags = nullptr;
 };

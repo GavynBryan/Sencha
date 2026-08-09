@@ -258,6 +258,7 @@ std::span<const std::byte> NetEncodeCookieEcho(const NetCookieEcho& message, std
         w.WriteBytes(message.Cookie, NetDefaultCaps().MaxCookieBytes);
         w.WriteU16(message.ProtocolVersion);
         w.WriteU64(message.ModuleFingerprint);
+        w.WriteU64(message.ReplicationTableHash);
         w.WriteU64(message.WorldIdentity);
         w.WriteU32(message.FixedTickRateMilliHz);
     });
@@ -268,6 +269,7 @@ std::span<const std::byte> NetEncodeAccept(const NetAccept& message, std::span<s
     return Encode(NetMessageType::Accept, out, [&](NetWriter& w) {
         w.WriteU32(message.PeerId);
         w.WriteU64(message.ModuleFingerprint);
+        w.WriteU64(message.ReplicationTableHash);
         w.WriteU64(message.WorldIdentity);
         w.WriteU32(message.FixedTickRateMilliHz);
         w.WriteU64(message.AuthorityTick);
@@ -377,6 +379,7 @@ NetDecodeError NetDecodeCookieEcho(std::span<const std::byte> payload,
     if (out.ProtocolVersion != kNetProtocolVersion)
         return NetDecodeError::BadVersion;
     if (!reader.ReadU64(out.ModuleFingerprint)
+        || !reader.ReadU64(out.ReplicationTableHash)
         || !reader.ReadU64(out.WorldIdentity)
         || !reader.ReadU32(out.FixedTickRateMilliHz))
     {
@@ -395,6 +398,7 @@ NetDecodeError NetDecodeAccept(std::span<const std::byte> payload, NetAccept& ou
         return NetDecodeError::UnknownMessage;
     if (!reader.ReadU32(out.PeerId)
         || !reader.ReadU64(out.ModuleFingerprint)
+        || !reader.ReadU64(out.ReplicationTableHash)
         || !reader.ReadU64(out.WorldIdentity)
         || !reader.ReadU32(out.FixedTickRateMilliHz)
         || !reader.ReadU64(out.AuthorityTick))

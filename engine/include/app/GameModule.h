@@ -19,8 +19,9 @@ class Game;
 //
 // Ownership (binding): the returned Game is MODULE-owned (typically a
 // function-local static). The host never deletes it across the allocator
-// boundary; teardown is Game::OnShutdown (or OnUnregisterComponents for an
-// editor that only borrowed serializers) followed by unmapping the library.
+// boundary; teardown is Game::OnShutdown, or -- for an editor that only
+// borrowed serializers -- the host retracting what the module registered,
+// followed by unmapping the library.
 //=============================================================================
 
 // The ONLY exported symbol of a game module (besides its ABI descriptor). C

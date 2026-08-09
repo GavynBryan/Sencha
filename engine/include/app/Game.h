@@ -5,11 +5,9 @@
 #include <cassert>
 
 class Engine;
-class ComponentSerializerRegistry;
+class ComponentRegistrar;
 class DataAssetTypeRegistry;
 class DataSchemaRegistry;
-class ReplicationLayout;
-class WorldComponentSchema;
 
 //=============================================================================
 // Game
@@ -29,13 +27,22 @@ public:
 
     virtual void OnConfigure(GameConfigureContext&) {}
 
-    // Register the game's component serializers into the host registry. Called
-    // standalone by the editor (so it can edit scenes containing game components
-    // without ever starting the game) and by Engine::Run before any scene loads.
-    // Registration only: no entities, no engine state. OnUnregisterComponents is
-    // the symmetric teardown (editor module swap / host shutdown).
-    virtual void OnRegisterComponents(ComponentSerializerRegistry&) {}
-    virtual void OnUnregisterComponents(ComponentSerializerRegistry&) {}
+    // Name the components this game owns. One `registrar.Add<T>()` per
+    // component, and what follows -- ECS storage, a scene serializer, a place
+    // in the replicated table -- is read off each component's own TypeSchema.
+    // A server-authoritative gameplay component is `Replicated = true` on its
+    // schema and one line here; there is nothing else to keep in step and no
+    // engine edit at all.
+    //
+    // Called standalone by the editor, which supplies a serializer registry and
+    // nothing else so it can edit scenes containing game components without
+    // starting the game, and by Engine::Run before any scene loads with all
+    // three registries. Registration only: no entities, no engine state.
+    //
+    // Teardown is the host's: it retracts exactly what this added, while the
+    // module is still mapped. Declaring a component and taking it back used to
+    // be two lists that nothing forced to agree.
+    virtual void OnRegisterComponents(ComponentRegistrar&) {}
 
     // Structured data subtypes the module defines, plus their authoring
     // schemas. Registration only, like the serializer hooks: an editor calls
@@ -44,20 +51,6 @@ public:
     // the compiler is a std::function whose target lives in the module.
     virtual void OnRegisterDataAssetTypes(DataAssetTypeRegistry&, DataSchemaRegistry&) {}
     virtual void OnUnregisterDataAssetTypes(DataAssetTypeRegistry&, DataSchemaRegistry&) {}
-
-    // Register the game's runtime ECS storage vocabulary. Engine::Run first adds
-    // the engine-owned prefix, calls this hook, then seals the schema before
-    // OnStart. Unlike serializer registration, this hook is runtime-only: the
-    // editor does not need a live World merely to inspect scene fields.
-    virtual void OnRegisterRuntimeComponents(WorldComponentSchema&) {}
-
-    // Which of the game's components an authority sends to its peers. Called
-    // right after the engine folds its own replication manifest and before the
-    // table is sealed, so a game's components take wire keys after the
-    // engine's. Order is a wire contract in both halves: appending is safe,
-    // reordering is not. A single-player game leaves this empty and pays
-    // nothing -- no session means the table is never read.
-    virtual void OnRegisterReplicatedComponents(ReplicationLayout&) {}
 
     virtual void OnStart(GameStartupContext&) {}
     virtual void OnRegisterSystems(SystemRegisterContext&) {}

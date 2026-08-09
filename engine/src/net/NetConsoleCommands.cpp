@@ -5,6 +5,8 @@
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleTypes.h>
 #include <net/NetSession.h>
+#include <net/ReplicationLayout.h>
+#include <net/ClientPrediction.h>
 #include <net/PeerCommandRuntime.h>
 #include <net/UdpTransport.h>
 
@@ -30,6 +32,11 @@ namespace
     {
         NetIdentity identity;
         identity.ModuleFingerprint = SenchaThisBuildAbi().HeaderFingerprint;
+        // The compiled replicated table, which the ABI fingerprint cannot stand
+        // in for: a game module deciding a different set of its components
+        // replicates changes no engine header, and the two builds would then
+        // read each other's snapshots as different components.
+        identity.ReplicationTableHash = engine.ReplicatedComponents().TableHash();
         // Content identity is the world cook's to supply and does not exist yet,
         // so it is zero on both ends today: matching, and therefore inert. It
         // becomes load-bearing when the world hash lands, and the gate is
@@ -162,6 +169,72 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
         },
     });
 
+    registry.RegisterCVar({
+        .Name = "net.prediction",
+        .Owner = "engine",
+        .Type = CVarType::Bool,
+        .DefaultValue = true,
+        .CurrentValue = true,
+        // Local to each client. It changes only what this machine draws for
+        // itself between snapshots; the authority simulates the same either
+        // way, so nobody gains anything by turning it off but their own feel.
+        .Flags = CVarFlags::Archive,
+        .Help = "Simulate this client's own pawn immediately instead of waiting "
+                "for the authority. Off costs a round trip on every input.",
+        .Source = { "engine defaults" },
+        .OnChange = [&engine](const CVarChangeContext& change) {
+            if (const bool* on = std::get_if<bool>(&change.NewValue))
+                engine.Prediction().SetEnabled(*on);
+        },
+    });
+
+    registry.RegisterCVar({
+        .Name = "net.interpolation",
+        .Owner = "engine",
+        .Type = CVarType::Bool,
+        .DefaultValue = true,
+        .CurrentValue = true,
+        // Local to each client, for the same reason prediction is: it changes
+        // what this machine draws between snapshots and nothing the authority
+        // simulates.
+        .Flags = CVarFlags::Archive,
+        .Help = "Draw mirrored entities along the authority's path at a small "
+                "delay. Off steps them whenever a snapshot lands, which is "
+                "visible as stutter on any connection with jitter.",
+        .Source = { "engine defaults" },
+        .OnChange = [&engine](const CVarChangeContext& change) {
+            if (const bool* on = std::get_if<bool>(&change.NewValue))
+                engine.Interpolation().SetEnabled(*on);
+        },
+    });
+
+    registry.RegisterCVar({
+        .Name = "net.interp_delay_ticks",
+        .Owner = "engine",
+        .Type = CVarType::Int,
+        .DefaultValue = static_cast<std::int64_t>(
+            ReplicationInterpolation::kDefaultDelayTicks),
+        .CurrentValue = static_cast<std::int64_t>(
+            ReplicationInterpolation::kDefaultDelayTicks),
+        .Flags = CVarFlags::Archive,
+        .Help = "Ticks behind the newest snapshot that mirrored entities are "
+                "drawn, on top of measured flight time. Higher rides out more "
+                "jitter; every tick is how far in the past other players are.",
+        .Source = { "engine defaults" },
+        .Min = static_cast<std::int64_t>(0),
+        // Past the window there are no samples left to bracket the presented
+        // tick, so further delay buys nothing and only holds the pose further
+        // behind.
+        .Max = static_cast<std::int64_t>(ReplicationInterpolation::kSamples - 1),
+        .OnChange = [&engine](const CVarChangeContext& change) {
+            if (const std::int64_t* ticks = std::get_if<std::int64_t>(&change.NewValue))
+            {
+                engine.Interpolation().SetDelayTicks(
+                    static_cast<std::uint32_t>(std::max<std::int64_t>(0, *ticks)));
+            }
+        },
+    });
+
     registry.RegisterCommand({
         .Name = "host",
         .Owner = "engine",
@@ -289,6 +362,53 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
             engine.DestroyNetSession();
             ConsoleTransport.reset();
             result.Info("disconnected");
+            return result;
+        },
+    });
+
+    registry.RegisterCommand({
+        .Name = "net_components",
+        .Owner = "engine",
+        .Usage = "net_components",
+        .Help = "Print the sealed replicated component table: wire key, name, "
+                "and each field's visibility.",
+        .Callback = [&engine](ConsoleExecutionContext&,
+                              std::span<const std::string>) {
+            // The table is compiled from what components declare, so there is
+            // no list to read to find out what replicates. This prints what the
+            // build actually sealed, which is the only answer that is never
+            // out of date.
+            ConsoleResult result;
+            const ReplicationLayout& layout = engine.ReplicatedComponents();
+
+            std::string text = "replicated components: "
+                             + std::to_string(layout.Size())
+                             + "  (table hash "
+                             + std::to_string(layout.TableHash()) + ")";
+            for (std::size_t index = 0; index < layout.Size(); ++index)
+            {
+                const ReplicatedComponent* component =
+                    layout.At(static_cast<std::uint8_t>(index));
+                if (component == nullptr)
+                    continue;
+
+                text += "\n  " + std::to_string(index) + "  "
+                      + std::string(component->Name);
+                for (const ReplicatedField& field : component->Fields)
+                {
+                    text += "\n      " + field.Name;
+                    if (field.OwnerOnly)
+                        text += "  owner-only";
+                    if (field.OwnerLocal)
+                        text += "  everyone-but-owner";
+                    if (field.Quantization.IsQuantized())
+                    {
+                        text += "  quantized " + std::to_string(field.Quantization.Bits)
+                              + " bits";
+                    }
+                }
+            }
+            result.Info(text);
             return result;
         },
     });

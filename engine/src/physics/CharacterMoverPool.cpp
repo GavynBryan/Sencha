@@ -206,6 +206,36 @@ void CharacterMoverPool::Reconcile(
     LastStructuralVersion = world.StructuralVersion(partitions);
 }
 
+void CharacterMoverPool::Sweep(
+    CharacterMover& mover,
+    const MotionRequest& request,
+    float dt,
+    const Vec3d& gravity,
+    KinematicState& kinematics,
+    SupportState& support,
+    LocalTransform& transform)
+{
+    CharacterMoveRequest move;
+    move.Velocity = request.Velocity;
+    move.UpAxis = request.UpAxis;
+    move.GravityScale = request.GravityScale;
+    move.Gravity = gravity;
+    move.DeltaSeconds = dt;
+
+    const CharacterMoveResult result = mover.Move(move);
+
+    // The achieved velocity is what locomotion reads next tick, so a character
+    // that hit a wall does not keep the velocity it asked for.
+    kinematics.Velocity = result.Velocity;
+    support.Kind = ToSupportKind(result.Support.Kind);
+    support.Surface = result.Support.Surface;
+    support.ContactPoint = result.Support.ContactPoint;
+    support.Normal = result.Support.Normal;
+    support.SurfaceVelocity = result.Support.Velocity;
+
+    transform.Value.Position = result.Position;
+}
+
 void CharacterMoverPool::Drive(
     World& world,
     const StoragePartitionSet& partitions,
@@ -229,31 +259,55 @@ void CharacterMoverPool::Drive(
 
         for (uint32_t index = 0; index < view.Count(); ++index)
         {
-            CharacterMover& mover =
-                *state.Slots[links[index].MoverSlot].Mover;
-
-            CharacterMoveRequest request;
-            request.Velocity = requests[index].Velocity;
-            request.UpAxis = requests[index].UpAxis;
-            request.GravityScale = requests[index].GravityScale;
-            request.Gravity = gravity;
-            request.DeltaSeconds = dt;
-
-            const CharacterMoveResult result = mover.Move(request);
-
-            // The achieved velocity is what locomotion reads next tick, so a
-            // character that hit a wall does not keep the velocity it asked
-            // for.
-            kinematics[index].Velocity = result.Velocity;
-            supports[index].Kind = ToSupportKind(result.Support.Kind);
-            supports[index].Surface = result.Support.Surface;
-            supports[index].ContactPoint = result.Support.ContactPoint;
-            supports[index].Normal = result.Support.Normal;
-            supports[index].SurfaceVelocity = result.Support.Velocity;
-
-            transforms[index].Value.Position = result.Position;
+            Sweep(*state.Slots[links[index].MoverSlot].Mover, requests[index],
+                  dt, gravity, kinematics[index], supports[index],
+                  transforms[index]);
         }
     });
+}
+
+bool CharacterMoverPool::Step(World& world, EntityId entity,
+                              const MotionRequest& request, float dt,
+                              const Vec3d& gravity)
+{
+    if (!Ready(world) || !S)
+        return false;
+
+    const CharacterMoverLink* link = world.TryGet<CharacterMoverLink>(entity);
+    if (link == nullptr || link->MoverSlot >= S->Slots.size())
+        return false;
+    State::Slot& slot = S->Slots[link->MoverSlot];
+    if (slot.Owner != entity || !slot.Mover)
+        return false;
+
+    KinematicState* kinematics = world.TryGet<KinematicState>(entity);
+    SupportState* support = world.TryGet<SupportState>(entity);
+    LocalTransform* transform = world.TryGet<LocalTransform>(entity);
+    if (kinematics == nullptr || support == nullptr || transform == nullptr)
+        return false;
+
+    Sweep(*slot.Mover, request, dt, gravity, *kinematics, *support, *transform);
+    return true;
+}
+
+bool CharacterMoverPool::RestorePosition(World& world, EntityId entity,
+                                         const Vec3d& position)
+{
+    if (!Ready(world) || !S)
+        return false;
+    const CharacterMoverLink* link = world.TryGet<CharacterMoverLink>(entity);
+    LocalTransform* transform = world.TryGet<LocalTransform>(entity);
+    if (link == nullptr || transform == nullptr || link->MoverSlot >= S->Slots.size())
+        return false;
+    State::Slot& slot = S->Slots[link->MoverSlot];
+    if (slot.Owner != entity || !slot.Mover)
+        return false;
+
+    // No history snap: the pawn is being returned to where the authority says
+    // it already was, and the replay that follows moves it on from there.
+    slot.Mover->SetPosition(position);
+    transform->Value.Position = position;
+    return true;
 }
 
 void CharacterMoverPool::EvictPartition(

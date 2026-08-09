@@ -8,8 +8,8 @@
 // through the GameplayTagRegistry stored as a world resource on the registry
 // being (de)serialized. Call once at startup, on the host's serializer registry.
 //
-// This lives in the framework, not the engine manifest: the engine's
-// EngineSceneComponents must not name gameplay types.
+// This lives in the framework rather than in the engine's own component
+// registration: the engine does not name gameplay types.
 //=============================================================================
 
 class ComponentSerializerRegistry;

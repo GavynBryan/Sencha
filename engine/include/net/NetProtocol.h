@@ -141,9 +141,15 @@ struct NetCookieEcho
 {
     std::vector<std::byte> Cookie;
     std::uint16_t ProtocolVersion = kNetProtocolVersion;
-    // The game module ABI fingerprint, already computed at build time. Two
-    // builds whose components disagree cannot share a wire format.
+    // The engine ABI fingerprint, already computed at build time.
     std::uint64_t ModuleFingerprint = 0;
+    // The compiled replicated component table: its order, and every field's
+    // offset, width, and quantization. A component's wire key is its position
+    // in that table, so two builds that disagree here would each read the
+    // other's snapshots as a different component entirely -- and the ABI
+    // fingerprint cannot catch it, because a game module changing which of its
+    // components replicate does not change an engine header.
+    std::uint64_t ReplicationTableHash = 0;
     // A hash over the cooked content both sides must already own. The wire
     // never carries content; this is what makes that safe to assume.
     std::uint64_t WorldIdentity = 0;
@@ -158,6 +164,7 @@ struct NetAccept
     // The authority's identity tuple, so the gate runs in both directions and a
     // client refuses a mismatched authority before applying any state.
     std::uint64_t ModuleFingerprint = 0;
+    std::uint64_t ReplicationTableHash = 0;
     std::uint64_t WorldIdentity = 0;
     std::uint32_t FixedTickRateMilliHz = 0;
     std::uint64_t AuthorityTick = 0;

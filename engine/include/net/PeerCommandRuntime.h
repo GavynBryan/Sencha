@@ -1,7 +1,11 @@
 #pragma once
 
 #include <app/GameContexts.h>
+#include <net/ClientPrediction.h>
 #include <net/NetPlayerCommand.h>
+#include <net/PawnCommandRing.h>
+#include <net/ReplicationInterpolation.h>
+#include <net/NetTickEstimator.h>
 #include <net/NetSession.h>
 
 #include <cstdint>
@@ -41,18 +45,16 @@ public:
     // input source and its aim to the pawn it owns.
     void Feed(World& world, std::uint64_t tick);
 
-    // Client side, once per frame. Projects this machine's recent ticks and its
-    // aim into one command and queues it. Returns the bytes queued, zero when
-    // there was nothing to send -- there is nothing before this client has a
-    // pawn to aim.
+    // Client side, once per frame. Projects the newest ticks this machine has
+    // simulated and not had answered onto the wire. Returns the bytes queued,
+    // zero when there is nothing to send.
     //
-    // `tickOffset` renames each record from this machine's tick counter to the
-    // authority's, far enough ahead that the command lands before the tick it
-    // asks for. Zero stamps local ticks, which is right only when the two
-    // clocks are the same one -- a loopback test, or a session that has not
-    // heard from the authority yet.
-    std::size_t SendLocal(NetSession& session, const World& world,
-                          std::int64_t tickOffset = 0);
+    // Everything travels as it was captured. The records are already stamped on
+    // the authority's clock and already carry the aim each tick ran with, so
+    // nothing here re-samples anything: a value read at send time belongs to a
+    // different moment than the tick it would be attributed to.
+    std::size_t SendLocal(NetSession& session, const PawnCommandRing& ring,
+                          std::uint64_t snapshotAck);
 
     // How many ticks of input each peer's buffer holds back before consuming.
     // Applied at the next feed, so raising it mid-session costs latency
@@ -63,11 +65,23 @@ public:
     void ForgetPeer(PeerId peer);
     void Reset();
 
+    // The newest command tick this peer has been credited with, for the
+    // snapshot that tells it so. Zero for a peer that has not spoken yet, which
+    // is also what "nothing of yours has been simulated" means.
+    [[nodiscard]] std::uint64_t AckFor(PeerId peer) const;
+
+    // The newest snapshot this peer has said it applied, which is the state any
+    // difference sent to it must be measured from.
+    [[nodiscard]] std::uint64_t SnapshotAckFor(PeerId peer) const;
+
     [[nodiscard]] std::size_t TrackedPeers() const { return Buffers.size(); }
     [[nodiscard]] const NetPeerCommandBuffer* Peer(PeerId peer) const;
 
 private:
     std::unordered_map<PeerId, NetPeerCommandBuffer> Buffers;
+    // What each peer's most recent fed tick consumed, so the aim that framed a
+    // record reaches the pawn with that record. Rebuilt every feed.
+    std::unordered_map<PeerId, NetCommandRecord> Consumed;
     std::size_t Target = NetPeerCommandBuffer::kTargetDepth;
     // Reused across frames, sized once to the largest datagram a channel will
     // carry, so sending a command allocates nothing.
@@ -102,4 +116,7 @@ private:
 // that never hosts or joins still registers them: they are inert with no
 // session, and composing a schedule by role would make the schedule depend on
 // something that is not known until a console command runs.
-void RegisterNetSystems(EngineSchedule& schedule, PeerCommandRuntime& commands);
+void RegisterNetSystems(EngineSchedule& schedule, PeerCommandRuntime& commands,
+                        ClientPrediction& prediction,
+                        ReplicationInterpolation& interpolation,
+                        const NetTickEstimator& clock);

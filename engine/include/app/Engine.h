@@ -10,6 +10,8 @@
 #include <net/ReplicationLayout.h>
 #include <net/NetCVarSync.h>
 #include <net/NetSpawnRecipe.h>
+#include <net/ClientPrediction.h>
+#include <net/ReplicationInterpolation.h>
 #include <net/NetStats.h>
 #include <net/NetTickEstimator.h>
 #include <net/PeerCommandRuntime.h>
@@ -104,6 +106,24 @@ public:
     // on an authority, which is the machine defining it.
     [[nodiscard]] NetTickEstimator& NetClock() { return NetClockState; }
     [[nodiscard]] const NetTickEstimator& NetClock() const { return NetClockState; }
+    // The one entity this machine simulates for itself rather than mirrors.
+    // Inert until a client is given a pawn, which is every other configuration.
+    [[nodiscard]] ClientPrediction& Prediction() { return PredictionState; }
+    [[nodiscard]] const ClientPrediction& Prediction() const
+    {
+        return PredictionState;
+    }
+    // Everything else a client holds: mirrored along the authority's path at a
+    // small delay rather than moved whenever a datagram lands. Inert on an
+    // authority, which has nothing to mirror.
+    [[nodiscard]] ReplicationInterpolation& Interpolation()
+    {
+        return InterpolationState;
+    }
+    [[nodiscard]] const ReplicationInterpolation& Interpolation() const
+    {
+        return InterpolationState;
+    }
 
     // What a replicated entity becomes on this machine. Registered by the game
     // and outlives any one session, because it describes content rather than a
@@ -278,8 +298,16 @@ private:
     // scene feature the game registered.
     void CreateDebugOverlay();
 
+    // Removes the serializers the game module registered. Must run while the
+    // module is still mapped: the serializer objects were constructed by it,
+    // and freeing one afterwards runs a destructor that is no longer there.
+    void RetractGameComponents();
+
     EngineConfig Configuration;
     ComponentSerializerRegistry SceneSerializerRegistry;
+    // Component identities the game module's registration added serializers
+    // for, recorded so teardown does not need the game to list them again.
+    std::vector<ComponentTypeId> GameSerializerTypes;
     LoggingProvider LoggingState;
     std::unique_ptr<DebugService> DebugState;
     std::unique_ptr<ConsoleService> ConsoleState;
@@ -301,6 +329,8 @@ private:
     PeerCommandRuntime PeerCommandState;
     NetStats NetStatsState;
     NetTickEstimator NetClockState;
+    ClientPrediction PredictionState;
+    ReplicationInterpolation InterpolationState;
     NetSpawnRecipes SpawnRecipeState;
     std::unique_ptr<RuntimeWorld> RuntimeWorldState;
     RuntimeFrameLoop RuntimeLoop;

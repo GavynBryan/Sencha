@@ -44,6 +44,9 @@ template <>
 struct TypeSchema<LookOrientation>
 {
     static constexpr std::string_view Name = "LookOrientation";
+    // Where a player is aiming: never authored, and changing constantly, which
+    // is why it replicates without being scene-serializable.
+    static constexpr bool Replicated = true;
 
     static auto Fields()
     {

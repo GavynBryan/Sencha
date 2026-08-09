@@ -43,12 +43,7 @@ struct TemplateInputActions
 class TemplateGame final : public Game
 {
 public:
-    void OnRegisterComponents(
-        ComponentSerializerRegistry& serializers) override;
-    void OnUnregisterComponents(
-        ComponentSerializerRegistry& serializers) override;
-    void OnRegisterRuntimeComponents(
-        WorldComponentSchema& schema) override;
+    void OnRegisterComponents(ComponentRegistrar& registrar) override;
     void OnStart(GameStartupContext& ctx) override;
     void OnRegisterSystems(SystemRegisterContext& ctx) override;
     void OnPlatformEvent(PlatformEventContext& ctx) override;

@@ -5,7 +5,8 @@
 #include <core/serialization/BinaryFormat.h>
 #include <core/serialization/JsonArchive.h>
 #include <core/serialization/Serialize.h>
-#include <world/ComponentManifest.h>
+#include <world/ComponentRegistrar.h>
+#include <world/RuntimeComponentSchema.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneFormat.h>
 #include <math/MathSchemas.h>
@@ -270,10 +271,12 @@ namespace
 
 void RegisterEngineSceneSerializers(ComponentSerializerRegistry& serializers)
 {
-    ForEachSceneComponent([&](auto tag)
-    {
-        RegisterComponent<typename decltype(tag)::Type>(serializers);
-    });
+    // Storage-free: this host wants to read and write scenes without a World.
+    // It walks the same feature registrars the runtime does, and each component
+    // that declares a chunk id gets a serializer -- so an editor's idea of what
+    // a scene can contain cannot drift from the runtime's.
+    ComponentRegistrar registrar(nullptr, &serializers, nullptr);
+    RegisterEngineComponents(registrar);
 }
 
 bool SaveSceneBinary(const Registry& registry,

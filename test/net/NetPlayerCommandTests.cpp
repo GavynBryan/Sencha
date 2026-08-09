@@ -54,13 +54,16 @@ namespace
     NetPlayerCommand CommandEndingAt(std::uint64_t newest, std::uint8_t count)
     {
         NetPlayerCommand command;
-        command.Yaw = 1.25f;
-        command.Pitch = -0.5f;
         command.RecordCount = count;
         for (std::uint8_t index = 0; index < count; ++index)
         {
             NetCommandRecord& record = command.Records[index];
             record = RecordAt(newest - index, 2);
+            // A different aim per record, because that is the thing the wire
+            // has to keep distinct: one sample applied to the whole window is
+            // what made the two machines frame the same input differently.
+            record.Yaw = 1.25f + static_cast<float>(index);
+            record.Pitch = -0.5f + 0.05f * static_cast<float>(index);
             record.Actions[0] = Axis(0.5f, -0.25f);
             record.Actions[1] = Digital(true, index == count - 1, true);
         }
@@ -101,14 +104,17 @@ TEST(NetPlayerCommandCodec, RoundTripsAimAndEveryRecord)
     ASSERT_TRUE(trip.Ok);
     EXPECT_EQ(trip.Encoded, 4u);
     ASSERT_EQ(trip.Decoded.RecordCount, 4);
-    EXPECT_FLOAT_EQ(trip.Decoded.Yaw, sent.Yaw);
-    EXPECT_FLOAT_EQ(trip.Decoded.Pitch, sent.Pitch);
 
     for (std::size_t index = 0; index < 4; ++index)
     {
         const NetCommandRecord& in = sent.Records[index];
         const NetCommandRecord& out = trip.Decoded.Records[index];
         EXPECT_EQ(out.Tick, in.Tick) << "record " << index;
+        EXPECT_FLOAT_EQ(out.Yaw, in.Yaw)
+            << "record " << index << " lost the aim it was taken with";
+        // Pitch is quantized over the range a neck covers, so it survives to
+        // finer than anything a display can show rather than exactly.
+        EXPECT_NEAR(out.Pitch, in.Pitch, 1e-4f) << "record " << index;
         ASSERT_EQ(out.ActionCount, in.ActionCount) << "record " << index;
         EXPECT_FLOAT_EQ(out.Actions[0].X, in.Actions[0].X) << "record " << index;
         EXPECT_FLOAT_EQ(out.Actions[0].Y, in.Actions[0].Y) << "record " << index;
@@ -149,7 +155,7 @@ TEST(NetPlayerCommandCodec, DropsOldRedundancyRatherThanTheCommand)
     const NetPlayerCommand sent = CommandEndingAt(500, 8);
 
     // Sized to fit the header and roughly two records.
-    const RoundTrip trip(sent, 32);
+    const RoundTrip trip(sent, 48);
 
     ASSERT_TRUE(trip.Ok);
     EXPECT_GE(trip.Encoded, 1u);
@@ -189,7 +195,7 @@ TEST(NetPlayerCommandCodec, RefusesATruncatedMessage)
 TEST(NetPlayerCommandCodec, RefusesNonFiniteAim)
 {
     NetPlayerCommand sent = CommandEndingAt(3, 1);
-    sent.Pitch = std::numeric_limits<float>::quiet_NaN();
+    sent.Records[0].Yaw = std::numeric_limits<float>::quiet_NaN();
 
     std::array<std::byte, 1024> buffer{};
     NetBitWriter writer(buffer);
@@ -257,7 +263,6 @@ TEST(NetPeerCommandBuffer, HasNoInputBeforeAPeerHasSpoken)
     NetCommandRecord record;
     EXPECT_FALSE(buffer.Next(record))
         << "a silent peer has no input, which is not the same as zeroed input";
-    EXPECT_FALSE(buffer.HasAim());
 }
 
 // A burst that a multi-tick frame will drain inside the frame is not backlog,
@@ -547,19 +552,27 @@ TEST(NetPeerCommandBufferGap, ResumesFromTheWireWhenTrafficReturns)
         << "the hold has to end when the wire says it ended";
 }
 
-TEST(NetPeerCommandBufferGap, KeepsTheNewestAimWhenAnOlderCommandOvertakesIt)
+// Aim rides its own tick, so an overtaking datagram cannot drag the view
+// backwards: it either carries a tick already credited, which is refused at the
+// floor, or a newer one, which is consumed in its turn.
+TEST(NetPeerCommandBufferGap, AnOvertakenCommandDoesNotDragTheAimBack)
 {
     NetPeerCommandBuffer buffer;
+    buffer.SetTargetDepth(0);
 
     NetPlayerCommand newer = CommandEndingAt(60, 1);
-    newer.Yaw = 2.0f;
+    newer.Records[0].Yaw = 2.0f;
     buffer.Receive(newer);
 
     NetPlayerCommand older = CommandEndingAt(59, 1);
-    older.Yaw = 1.0f;
+    older.Records[0].Yaw = 1.0f;
     buffer.Receive(older);
 
-    EXPECT_TRUE(buffer.HasAim());
-    EXPECT_FLOAT_EQ(buffer.Yaw(), 2.0f)
-        << "a datagram that overtakes a newer one must not drag the view back";
+    NetCommandRecord record;
+    ASSERT_TRUE(buffer.Next(record));
+    EXPECT_EQ(record.Tick, 60u);
+    EXPECT_FLOAT_EQ(record.Yaw, 2.0f);
+
+    // And nothing behind it: the older tick was already credited.
+    EXPECT_EQ(buffer.QueuedTicks(), 0u);
 }

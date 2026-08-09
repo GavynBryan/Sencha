@@ -2,6 +2,8 @@
 
 #include <net/LoopbackTransport.h>
 #include <net/NetSession.h>
+#include <world/ComponentRegistrar.h>
+#include <world/RuntimeComponentSchema.h>
 
 #include <cstring>
 #include <string>
@@ -27,6 +29,7 @@ namespace
     {
         return NetIdentity{
             .ModuleFingerprint = 0xABCDEF,
+            .ReplicationTableHash = 0xFEDCBA,
             .WorldIdentity = 0x123456,
             .FixedTickRateMilliHz = 60000,
         };
@@ -195,6 +198,54 @@ TEST(NetSession, AuthorityRefusesMismatchedWorldContent)
     pair.Step(6);
 
     EXPECT_EQ(pair.ClientSession.JoinFailureReason(), "world content mismatch");
+}
+
+// The replicated table decides what a snapshot's component keys mean, and the
+// build fingerprint cannot stand in for it: a game module changing which of its
+// own components replicate changes no engine header. Two builds that disagree
+// here would each read the other's snapshots as different components entirely,
+// which is silent rather than loud, so it is refused at the gate.
+TEST(NetSession, AuthorityRefusesAMismatchedReplicatedTable)
+{
+    Pair pair;
+    ASSERT_TRUE(pair.StartHost());
+
+    NetIdentity wrong = SampleIdentity();
+    wrong.ReplicationTableHash = SampleIdentity().ReplicationTableHash + 1;
+    ASSERT_TRUE(pair.StartClient(wrong));
+    pair.Step(6);
+
+    EXPECT_FALSE(pair.ClientSession.IsConnected());
+    EXPECT_EQ(pair.ClientSession.JoinFailureReason(), "replicated component mismatch");
+}
+
+// The engine's own table, end to end: two builds that composed the same
+// components agree, and the value is not a constant that would match anything.
+TEST(NetSession, TheEngineReplicatedTableAdmitsAnIdenticalBuild)
+{
+    ReplicationLayout layout;
+    ComponentRegistrar components(nullptr, nullptr, &layout);
+    RegisterEngineComponents(components);
+    layout.Seal();
+
+    ReplicationLayout other;
+    ComponentRegistrar otherComponents(nullptr, nullptr, &other);
+    RegisterEngineComponents(otherComponents);
+    other.Seal();
+
+    NetIdentity identity = SampleIdentity();
+    identity.ReplicationTableHash = layout.TableHash();
+    EXPECT_NE(identity.ReplicationTableHash, 0u);
+
+    Pair pair;
+    ASSERT_TRUE(pair.StartHost(identity));
+
+    NetIdentity peer = SampleIdentity();
+    peer.ReplicationTableHash = other.TableHash();
+    ASSERT_TRUE(pair.StartClient(peer));
+    pair.Step(6);
+
+    EXPECT_TRUE(pair.ClientSession.IsConnected());
 }
 
 // A tick rate cannot change live, so it is verified at the gate rather than

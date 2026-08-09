@@ -301,6 +301,74 @@ TEST(MovementProfileData, BindingRejectsUnknownNames)
     EXPECT_NE(bound.Error.find("missing.tag"), std::string::npos);
 }
 
+// The tick a jump launches on still reads as stable support, so support alone
+// cannot express "different coefficients while taking off". The request is a
+// fact about the tick, known before locomotion runs, which is what makes it
+// expressible as a condition at all.
+TEST(MovementProfileData, AJumpingTickCanCarryItsOwnCoefficients)
+{
+    DataAssetTypeRegistry types;
+    DataSchemaRegistry schemas;
+    const auto profile = CompileProfile(types, schemas, R"({
+        "name": "launch",
+        "layers": [
+            { "set": { "friction": 4.0 } },
+            { "when": { "jump": true }, "set": { "friction": 0.0 } }
+        ],
+        "modes": []
+    })");
+    ASSERT_NE(profile, nullptr);
+
+    GameplayTagRegistry tags;
+    const MovementProfileBindResult bound = BindMovementProfile(
+        *profile, tags, [](std::string_view) { return LocomotionModeId{1}; });
+    ASSERT_TRUE(bound.IsValid()) << bound.Error;
+
+    MovementResolveContext standing;
+    standing.Support = SupportKind::Stable;
+    EXPECT_FLOAT_EQ(
+        ResolveMovementTuning(*bound.Profile, standing, 7.0f, false).Tuning.Friction,
+        4.0f);
+
+    MovementResolveContext launching = standing;
+    launching.Jump = true;
+    EXPECT_FLOAT_EQ(
+        ResolveMovementTuning(*bound.Profile, launching, 7.0f, false).Tuning.Friction,
+        0.0f);
+}
+
+// A layer asking for the absence of a jump is the same mechanism, and proves
+// the condition is compared rather than merely tested for presence.
+TEST(MovementProfileData, ALayerCanRequireThatNoJumpWasAskedFor)
+{
+    DataAssetTypeRegistry types;
+    DataSchemaRegistry schemas;
+    const auto profile = CompileProfile(types, schemas, R"({
+        "name": "grounded_only",
+        "layers": [
+            { "when": { "jump": false }, "set": { "friction": 9.0 } }
+        ],
+        "modes": []
+    })");
+    ASSERT_NE(profile, nullptr);
+
+    GameplayTagRegistry tags;
+    const MovementProfileBindResult bound = BindMovementProfile(
+        *profile, tags, [](std::string_view) { return LocomotionModeId{1}; });
+    ASSERT_TRUE(bound.IsValid()) << bound.Error;
+
+    MovementResolveContext resting;
+    EXPECT_FLOAT_EQ(
+        ResolveMovementTuning(*bound.Profile, resting, 7.0f, false).Tuning.Friction,
+        9.0f);
+
+    MovementResolveContext launching;
+    launching.Jump = true;
+    EXPECT_FLOAT_EQ(
+        ResolveMovementTuning(*bound.Profile, launching, 7.0f, false).Tuning.Friction,
+        ResolvedMovementTuning{}.Friction);
+}
+
 TEST(MovementProfileData, ModeSustainUsesBoundTagIds)
 {
     DataAssetTypeRegistry types;

@@ -29,6 +29,22 @@ struct NetImpairment
     // A held datagram is released behind the one sent after it, which is what
     // reordering looks like from the receiver: later sequence first.
     std::uint32_t ReorderPercent = 0;
+
+    // Delay before a datagram goes out, counted in pump steps: one step is one
+    // Receive on the sending endpoint, which is one frame. The transport owns no
+    // clock -- a caller converts from its own tick rate, and gets the same
+    // schedule at any wall-clock speed as a result.
+    //
+    // Latency is the impairment prediction exists for. Loss and reorder exercise
+    // the reliability layer; only delay makes an authority's word old enough
+    // that a client has to guess ahead of it.
+    std::uint32_t LatencySteps = 0;
+    // Drawn per datagram on top of the latency. This is also what reorders a
+    // stream no reorder roll touched -- two datagrams given different delays
+    // arrive in the other order, which is where real jitter's reordering comes
+    // from.
+    std::uint32_t JitterSteps = 0;
+
     std::uint64_t Seed = 1;
 };
 
@@ -50,9 +66,10 @@ public:
     [[nodiscard]] std::uint64_t Dropped() const { return DroppedCount; }
     [[nodiscard]] std::uint64_t Duplicated() const { return DuplicatedCount; }
     [[nodiscard]] std::uint64_t Reordered() const { return ReorderedCount; }
+    [[nodiscard]] std::uint64_t Delayed() const { return DelayedCount; }
 
-    // Releases anything held back for reordering. A test that stops sending
-    // still wants the held datagram delivered rather than lost.
+    // Releases anything held back for reordering or delay. A test that stops
+    // sending still wants the held datagram delivered rather than lost.
     void Flush();
 
 private:
@@ -60,15 +77,37 @@ private:
     {
         NetAddress To;
         std::vector<std::byte> Payload;
+        // Drawn when the datagram was held, so releasing it costs no extra roll
+        // and the schedule stays a fixed number of rolls per send.
+        std::uint32_t JitterRoll = 0;
+    };
+
+    struct Postponed
+    {
+        NetAddress To;
+        std::vector<std::byte> Payload;
+        std::uint64_t ReleaseStep = 0;
     };
 
     [[nodiscard]] std::uint32_t NextRoll();
+    // Sends now, or queues for a later step when the schedule says this datagram
+    // is delayed. Reports what the inner transport said when it went out now,
+    // and true when it was queued -- a sender cannot be told about a failure
+    // that has not happened yet.
+    [[nodiscard]] bool Dispatch(const NetAddress& to,
+                                std::span<const std::byte> payload,
+                                std::uint32_t jitterRoll);
+    void ReleaseDue();
 
     INetTransport& Inner;
     NetImpairment Impairment;
     std::uint64_t RandomState = 0;
     std::vector<Held> Holding;
+    std::vector<Postponed> Delaying;
+    // Advanced once per Receive, which is once per pump on this endpoint.
+    std::uint64_t StepIndex = 0;
     std::uint64_t DroppedCount = 0;
     std::uint64_t DuplicatedCount = 0;
     std::uint64_t ReorderedCount = 0;
+    std::uint64_t DelayedCount = 0;
 };

@@ -6,6 +6,7 @@
 #include <audio/AudioSourceComponent.h>
 #include <camera/CameraRig.h>
 #include <components/CameraComponent.h>
+#include <core/console/ConsoleService.h>
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
 #include <core/serialization/FourCC.h>
@@ -15,6 +16,7 @@
 #include <controller/LookOrientation.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MovementComponents.h>
+#include <movement/JumpState.h>
 #include <movement/MovementIntent.h>
 #include <net/NetReplicationComponents.h>
 #include <input/InputActionSource.h>
@@ -30,7 +32,7 @@
 #include <render/SpotLightComponent.h>
 #include <render/StaticMeshComponent.h>
 #include <render/ZoneLightmapComponent.h>
-#include <world/ComponentManifest.h>
+#include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/RuntimeWorld.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
@@ -125,27 +127,10 @@ public:
         ctx.Config.Debug.ConsoleLogging = false;
     }
 
-    void OnRegisterComponents(
-        ComponentSerializerRegistry& serializers) override
-    {
-        RegisterComponent<StartupGameComponent>(serializers);
-    }
-
-    void OnUnregisterComponents(
-        ComponentSerializerRegistry& serializers) override
-    {
-        serializers.Remove(
-            ResolveComponentTypeId<StartupGameComponent>());
-    }
-
-    void OnRegisterRuntimeComponents(
-        WorldComponentSchema& schema) override
+    void OnRegisterComponents(ComponentRegistrar& registrar) override
     {
         ++RegistrationCalls;
-        EXPECT_FALSE(schema.IsSealed());
-        EXPECT_TRUE(schema.Contains(
-            ResolveComponentTypeId<LocalTransform>()));
-        EXPECT_TRUE(schema.Add<StartupGameComponent>());
+        registrar.Add<StartupGameComponent>();
     }
 
     void OnStart(GameStartupContext&) override
@@ -182,10 +167,21 @@ public:
             live.GetEntityPartition(entity)
             == PersistentStoragePartition;
 
+        // The table has no list to read it off, so the console command is how
+        // anyone finds out what this build replicates. Exercised here because
+        // it needs a composed engine to have anything to print.
+        const ConsoleResult dump =
+            GetEngine().Console().ExecuteLine("net_components");
+        ComponentDumpOk = dump.Succeeded();
+        for (const ConsoleOutputEntry& entry : dump.Output)
+            ComponentDumpText += entry.Text;
+
         // Headless still runs the frame loop; this test only wants the hooks.
         GetEngine().RequestExit();
     }
 
+    bool ComponentDumpOk = false;
+    std::string ComponentDumpText;
     int RegistrationCalls = 0;
     int StartCalls = 0;
     bool SawSealedSchema = false;
@@ -199,65 +195,59 @@ public:
     ComponentId EngineOwnedGameComponentId = InvalidComponentId;
 };
 
-class MissingRuntimeSchemaGame final : public Game
-{
-public:
-    void OnConfigure(GameConfigureContext& ctx) override
-    {
-        ctx.Config.Window.GraphicsApi = WindowGraphicsApi::None;
-        ctx.Config.Debug.ConsoleLogging = false;
-    }
-
-    void OnRegisterComponents(
-        ComponentSerializerRegistry& serializers) override
-    {
-        RegisterComponent<MissingRuntimeComponent>(serializers);
-    }
-
-    void OnUnregisterComponents(
-        ComponentSerializerRegistry& serializers) override
-    {
-        ++UnregisterCalls;
-        serializers.Remove(
-            ResolveComponentTypeId<MissingRuntimeComponent>());
-    }
-
-    void OnStart(GameStartupContext&) override
-    {
-        ++StartCalls;
-        // Headless still runs the frame loop; this test only wants the hooks.
-        GetEngine().RequestExit();
-    }
-
-    int StartCalls = 0;
-    int UnregisterCalls = 0;
-};
 } // namespace
 
-TEST(RuntimeComponentSchema, EngineSchemaCoversEverySceneComponent)
+// Storage, serializers, and the replicated table are filled from one set of
+// declarations, so the thing worth asserting is that they still describe the
+// same components -- not the contents of a list, which is what the manifest
+// tuples used to make this test about.
+TEST(RuntimeComponentSchema, OneRegistrationFillsEveryRegistryConsistently)
 {
-    // A component reaches the serializer through the manifest. Without a column
-    // to deserialize into, that only fails once a scene naming it is loaded, so
-    // the coverage is asserted here rather than left to a startup check.
     WorldComponentSchema schema;
-    RegisterEngineRuntimeComponents(schema);
+    ComponentSerializerRegistry serializers;
+    ReplicationLayout layout;
+
+    ComponentRegistrar registrar(&schema, &serializers, &layout);
+    RegisterEngineComponents(registrar);
     schema.Seal();
 
-    ForEachSceneComponent([&]<typename T>(ComponentTag<T>)
-    {
-        EXPECT_TRUE(schema.Contains(ResolveComponentTypeId<T>()))
-            << "manifest component " << TypeSchema<T>::Name
-            << " has no runtime storage";
-    });
+    ASSERT_EQ(layout.Error(), ReplicationLayoutError::None)
+        << ReplicationLayoutErrorToString(layout.Error()) << ": " << layout.ErrorDetail();
+
+    std::string missing;
+    EXPECT_TRUE(RuntimeComponentSchemaCoversSerializers(schema, serializers, &missing))
+        << "serialized component without storage: " << missing;
+    EXPECT_TRUE(RuntimeComponentSchemaCoversReplication(schema, layout, &missing))
+        << "replicated component without storage: " << missing;
+
+    // Both policies are read off the schema, so a component that declares one
+    // is in that registry and a component that declares neither is in neither.
+    EXPECT_NE(serializers.FindByType(ResolveComponentTypeId<PointLightComponent>()), nullptr);
+    EXPECT_EQ(layout.Find(ResolveComponentTypeId<PointLightComponent>()), nullptr);
+
+    EXPECT_NE(layout.Find(ResolveComponentTypeId<LookOrientation>()), nullptr);
+    EXPECT_EQ(serializers.FindByType(ResolveComponentTypeId<LookOrientation>()), nullptr);
+
+    // LocalTransform is the one that does both.
+    EXPECT_NE(serializers.FindByType(ResolveComponentTypeId<LocalTransform>()), nullptr);
+    EXPECT_NE(layout.Find(ResolveComponentTypeId<LocalTransform>()), nullptr);
+
+    // And a runtime-only column is in storage alone.
+    EXPECT_TRUE(schema.Contains(ResolveComponentTypeId<WorldTransform>()));
+    EXPECT_EQ(serializers.FindByType(ResolveComponentTypeId<WorldTransform>()), nullptr);
+    EXPECT_EQ(layout.Find(ResolveComponentTypeId<WorldTransform>()), nullptr);
 }
 
-TEST(RuntimeComponentSchema, EngineSchemaUsesCanonicalComponentIds)
+// What the order actually has to guarantee. It used to be pinned as forty-six
+// literal indices, which made every added component a twenty-line edit and
+// asserted a great deal that nothing depends on: a component's saved identity
+// is the chunk id its schema declares and its runtime identity is a hash of its
+// name, so neither moves when this order does.
+TEST(RuntimeComponentSchema, TheTransformTrioLeadsTheVocabulary)
 {
     WorldComponentSchema schema;
     RegisterEngineRuntimeComponents(schema);
     schema.Seal();
-
-    EXPECT_EQ(schema.Size(), 45u);
 
     World world;
     schema.Apply(world);
@@ -265,48 +255,6 @@ TEST(RuntimeComponentSchema, EngineSchemaUsesCanonicalComponentIds)
     ExpectComponentId<LocalTransform>(world, 0);
     ExpectComponentId<WorldTransform>(world, 1);
     ExpectComponentId<Parent>(world, 2);
-    ExpectComponentId<CameraComponent>(world, 3);
-    ExpectComponentId<StaticMeshComponent>(world, 4);
-    ExpectComponentId<ZoneLightmapComponent>(world, 5);
-    ExpectComponentId<IrradianceVolumeComponent>(world, 6);
-    ExpectComponentId<PointLightComponent>(world, 7);
-    ExpectComponentId<SpotLightComponent>(world, 8);
-    ExpectComponentId<AudioSourceComponent>(world, 9);
-    ExpectComponentId<AudioCaptionComponent>(world, 10);
-    ExpectComponentId<WorldDock>(world, 11);
-    ExpectComponentId<WorldLink>(world, 12);
-    ExpectComponentId<DockGateBinding>(world, 13);
-    ExpectComponentId<PersistentIdComponent>(world, 14);
-    ExpectComponentId<Collider>(world, 15);
-    ExpectComponentId<RigidBody>(world, 16);
-    ExpectComponentId<CharacterController>(world, 17);
-    ExpectComponentId<PhysicsBodyLink>(world, 18);
-    ExpectComponentId<CharacterMoverLink>(world, 19);
-    ExpectComponentId<GameplayTagContainer>(world, 20);
-    ExpectComponentId<AttributeSet>(world, 21);
-    ExpectComponentId<AbilitySet>(world, 22);
-    ExpectComponentId<ActiveEffect>(world, 23);
-    ExpectComponentId<MovementIntent>(world, 24);
-    ExpectComponentId<KinematicState>(world, 25);
-    ExpectComponentId<SupportState>(world, 26);
-    ExpectComponentId<Immersion>(world, 27);
-    ExpectComponentId<CharacterMovement>(world, 28);
-    ExpectComponentId<ResolvedMovementTuning>(world, 29);
-    ExpectComponentId<LocomotionOutput>(world, 30);
-    ExpectComponentId<MotionAxisOverride>(world, 31);
-    ExpectComponentId<MotionImpulse>(world, 32);
-    ExpectComponentId<MotionRequest>(world, 33);
-    ExpectComponentId<ModeTransitionRequest>(world, 34);
-    ExpectComponentId<ClingSession>(world, 35);
-    ExpectComponentId<FlightSession>(world, 36);
-    ExpectComponentId<CameraRig>(world, 37);
-    ExpectComponentId<LookOrientation>(world, 38);
-    ExpectComponentId<LocalLookControl>(world, 39);
-    ExpectComponentId<WorldTransformHistory>(world, 40);
-    ExpectComponentId<InputActionSourceRef>(world, 41);
-    ExpectComponentId<NetReplicated>(world, 42);
-    ExpectComponentId<NetOwner>(world, 43);
-    ExpectComponentId<NetSpawnRecipe>(world, 44);
 }
 
 TEST(RuntimeComponentSchema, EngineOwnsUnifiedWorldBeforeGameStart)
@@ -327,20 +275,42 @@ TEST(RuntimeComponentSchema, EngineOwnsUnifiedWorldBeforeGameStart)
     EXPECT_TRUE(game.AppliedGameComponent);
     EXPECT_TRUE(game.SawEngineOwnedWorld);
     EXPECT_TRUE(game.EngineOwnedEntityWasPersistent);
-    EXPECT_EQ(game.SchemaSize, 46u);
-    EXPECT_EQ(game.AppliedGameComponentId, 45u);
-    EXPECT_EQ(game.EngineOwnedGameComponentId, 45u);
     EXPECT_EQ(StartupGameRemoveCalls, 1);
+
+    EXPECT_TRUE(game.ComponentDumpOk);
+    EXPECT_NE(game.ComponentDumpText.find("Transform"), std::string::npos);
+    EXPECT_NE(game.ComponentDumpText.find("owner-only"), std::string::npos);
+
+    // The engine's vocabulary comes first and the game's follows it, stated
+    // against what the engine actually registers rather than against a number
+    // that has to be edited every time a component is added.
+    WorldComponentSchema engineOnly;
+    RegisterEngineRuntimeComponents(engineOnly);
+    EXPECT_EQ(game.SchemaSize, engineOnly.Size() + 1);
+    EXPECT_EQ(game.AppliedGameComponentId, engineOnly.Size());
+    EXPECT_EQ(game.EngineOwnedGameComponentId, engineOnly.Size());
 }
 
-TEST(RuntimeComponentSchema, MissingRuntimeStorageFailsBeforeGameStart)
+// The startup guard against a serializer with no column to deserialize into.
+// Registration no longer offers a way to produce one -- naming a component adds
+// storage and its serializer together -- so this exercises the predicate
+// directly rather than through a game that cannot construct the mismatch.
+TEST(RuntimeComponentSchema, StorageCoverageNamesTheComponentItIsMissing)
 {
-    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+    WorldComponentSchema schema;
+    RegisterEngineRuntimeComponents(schema);
+    schema.Seal();
 
-    Application app(0, nullptr);
-    MissingRuntimeSchemaGame game;
+    ComponentSerializerRegistry serializers;
+    ComponentRegistrar engineSerializers(nullptr, &serializers, nullptr);
+    RegisterEngineComponents(engineSerializers);
+    EXPECT_TRUE(RuntimeComponentSchemaCoversSerializers(schema, serializers));
 
-    EXPECT_EQ(app.Run(game), 1);
-    EXPECT_EQ(game.StartCalls, 0);
-    EXPECT_EQ(game.UnregisterCalls, 1);
+    // A serializer that reached the registry by some other route than the
+    // registrar -- which is the only way this can now happen.
+    RegisterComponent<MissingRuntimeComponent>(serializers);
+
+    std::string missing;
+    EXPECT_FALSE(RuntimeComponentSchemaCoversSerializers(schema, serializers, &missing));
+    EXPECT_EQ(missing, "missing_runtime_component");
 }

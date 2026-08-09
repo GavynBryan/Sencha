@@ -3,15 +3,19 @@
 #include <core/identity/StrongId.h>
 #include <ecs/EntityId.h>
 #include <net/NetSpawnRecipe.h>
+#include <net/ClientPrediction.h>
 #include <net/ReplicationCodec.h>
 #include <net/ReplicationLayout.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
+class ReplicationInterpolation;
 class World;
 class WorldComponentSchema;
 
@@ -44,28 +48,66 @@ using NetEntityId = StrongId<struct NetEntityIdTag, std::uint64_t>;
 // What one side remembers between snapshots.
 //
 // On the authority this is per client: which entities that client has been told
-// about, and the exact bytes it was last told, so the next snapshot can be a
+// about and the exact bytes it is known to hold, so the next snapshot can be a
 // difference. On a client it is the one map from wire identity to its own
 // entities.
+//
+// "Known to hold", not "was last sent", and the distinction is the whole reason
+// this class is more than a map. Snapshots ride an unreliable channel: one that
+// is dropped was still written, and a baseline advanced on writing would from
+// then on describe a state the peer never reached. Every later delta is
+// measured from that fiction, so any field that does not happen to change again
+// is never re-sent and the two machines disagree about it permanently. A
+// position hides this -- it changes every tick, so every snapshot re-carries it
+// -- and anything that settles does not: a locomotion mode is written once, and
+// one lost datagram loses it for the session.
+//
+// So a snapshot's contents are held aside until the peer says it arrived, and
+// deltas are measured from the newest one it has confirmed. Unacknowledged
+// changes are simply re-sent, which is what makes a dropped snapshot cost
+// bandwidth instead of correctness.
 //-----------------------------------------------------------------------------
 class ReplicationPeerState
 {
 public:
-    // The component values this peer is believed to hold, already snapped to
-    // wire precision so a delta against them is exact.
+    // Snapshots that may be in flight before a peer that has stopped
+    // acknowledging is treated as new and told everything again. Well past any
+    // round trip a session tolerates; a peer further behind than this has a
+    // connection whose deltas are not worth computing.
+    static constexpr std::size_t kMaxUnacknowledged = 32;
+
+    // The component values this peer is known to hold, already snapped to wire
+    // precision so a delta against them is exact.
     struct EntityBaseline
     {
         // Keyed by the component's wire index.
         std::unordered_map<std::uint8_t, std::vector<std::byte>> Components;
     };
 
+    // What the peer is known to hold: the base every delta is measured from.
     [[nodiscard]] const EntityBaseline* Find(NetEntityId id) const;
     [[nodiscard]] std::size_t Size() const { return Baselines.size(); }
 
-    void Record(NetEntityId id, std::uint8_t component,
-                std::span<const std::byte> bytes);
+    // Opens a snapshot at this tick, and enforces the bound: a peer with too
+    // many outstanding is one whose confirmations have stopped arriving, so
+    // what it is believed to hold is forgotten and it is told everything again.
+    // The writer calls this before computing any difference, so a snapshot is
+    // never half measured from a baseline that is about to be discarded.
+    void BeginSnapshot(std::uint64_t tick);
+
+    // What a snapshot just told the peer, held until the peer confirms it.
+    void RecordSent(std::uint64_t tick, NetEntityId id, std::uint8_t component,
+                    std::span<const std::byte> bytes);
+    // Everything a destroyed entity had, in flight or confirmed.
     void Forget(NetEntityId id);
-    void Clear() { Baselines.clear(); }
+
+    // The peer has applied every snapshot up to this tick. Everything sent at
+    // or before it is now what the peer holds.
+    void Acknowledge(std::uint64_t tick);
+
+    [[nodiscard]] std::size_t Unacknowledged() const { return Pending.size(); }
+
+    void Clear();
 
     [[nodiscard]] const std::unordered_map<NetEntityId, EntityBaseline>& All() const
     {
@@ -73,25 +115,23 @@ public:
     }
 
 private:
+    // What one snapshot told this peer, kept whole so acknowledging it is one
+    // step rather than a search.
+    struct SentSnapshot
+    {
+        std::uint64_t Tick = 0;
+        std::vector<std::tuple<NetEntityId, std::uint8_t, std::vector<std::byte>>>
+            Components;
+    };
+
     std::unordered_map<NetEntityId, EntityBaseline> Baselines;
+    // Oldest first, one entry per snapshot still unconfirmed.
+    std::vector<SentSnapshot> Pending;
 };
 
 //-----------------------------------------------------------------------------
 // The authority's identity mint and its map into its own world.
-//
-// EntityId is a generational handle with no std::hash of its own, so the map
-// brings its own: index and generation folded together, because a recycled slot
-// is a different entity and must not collide with the one it replaced.
 //-----------------------------------------------------------------------------
-struct EntityIdHash
-{
-    [[nodiscard]] std::size_t operator()(EntityId entity) const
-    {
-        return (static_cast<std::size_t>(entity.Index) << 32)
-             ^ static_cast<std::size_t>(entity.Generation);
-    }
-};
-
 class ReplicationAuthorityIdentity
 {
 public:
@@ -165,6 +205,12 @@ struct SnapshotWriteRequest
     // here, which is what a spectator or a recording gets.
     std::uint32_t OwnerPeer = 0;
     std::uint64_t Tick = 0;
+    // The newest command tick from this peer that the authority has finished
+    // with. A client keeps the ticks it has simulated and not had answered; the
+    // ones at or below this are answered, and everything above them is what a
+    // replay owes. Without it a client cannot tell which of its own guesses the
+    // state it just received already accounts for.
+    std::uint64_t CommandAck = 0;
 };
 
 struct SnapshotWriteResult
@@ -208,6 +254,16 @@ struct SnapshotApplyRequest
     const WorldComponentSchema* Schema = nullptr;
     const ReplicationLayout* Layout = nullptr;
     ReplicationClientIdentity* Identity = nullptr;
+    // What this machine simulates for itself, or null when it mirrors
+    // everything. A predicted entity's position is handed here rather than
+    // written, because the world's copy is what this machine produced and the
+    // arriving one is the authority's argument with it.
+    ClientPrediction* Prediction = nullptr;
+    // What this machine mirrors rather than simulates, or null to write arriving
+    // poses straight to the world. A mirrored entity's pose is handed here
+    // rather than written, because the tick it describes is not the tick this
+    // machine is about to draw.
+    ReplicationInterpolation* Interpolation = nullptr;
     // What a newly spawned entity becomes beyond its replicated state. Null
     // means an entity is only what the wire said, which leaves it with no
     // derived columns and nothing to draw it -- valid for a test, wrong for a
@@ -222,6 +278,8 @@ struct SnapshotApplyResult
 {
     SnapshotApplyError Error = SnapshotApplyError::None;
     std::uint64_t Tick = 0;
+    // What the authority has finished simulating of this client's own input.
+    std::uint64_t CommandAck = 0;
     std::uint32_t EntitiesSpawned = 0;
     // Spawns that named a recipe this build does not have. Not an error -- an
     // authority may run content a client did not register -- but the entity is
@@ -229,6 +287,10 @@ struct SnapshotApplyResult
     std::uint32_t RecipesMissing = 0;
     std::uint32_t EntitiesUpdated = 0;
     std::uint32_t EntitiesDestroyed = 0;
+    // The predicted pawn's authoritative state was updated by this snapshot, so
+    // the caller has something new to reconcile against. Deciding what to do
+    // about it is not a snapshot applier's business.
+    bool PredictedStateUpdated = false;
 
     [[nodiscard]] bool Ok() const { return Error == SnapshotApplyError::None; }
 };

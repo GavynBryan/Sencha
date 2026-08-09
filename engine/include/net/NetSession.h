@@ -77,6 +77,7 @@ enum class NetJoinFailure : std::uint8_t
 struct NetIdentity
 {
     std::uint64_t ModuleFingerprint = 0;
+    std::uint64_t ReplicationTableHash = 0;
     std::uint64_t WorldIdentity = 0;
     std::uint32_t FixedTickRateMilliHz = 60000;
 
@@ -207,6 +208,13 @@ private:
     // Keepalive cadence, derived from the timeout so several pings fit inside
     // one timeout window whatever the timeout is set to.
     [[nodiscard]] double KeepaliveSeconds() const { return TimeoutSeconds * 0.25; }
+    // How often an unadmitted client repeats its handshake step. Faster than a
+    // keepalive because the connect window is the whole budget: the handshake is
+    // the one exchange with no next message to supersede a lost one, so a
+    // datagram lost in any of its four legs has to be replaced rather than
+    // waited out.
+    [[nodiscard]] double HandshakeRetrySeconds() const { return TimeoutSeconds * 0.1; }
+    void SendHello();
     void DeliverChannelPayloads(NetPeer& peer, std::span<const std::byte> packet,
                                 double nowSeconds, std::vector<Delivery>& out);
     void Strike(NetPeer& peer, std::string_view why);
@@ -241,6 +249,7 @@ private:
     // flag rather than a zero sentinel: time zero is a legitimate first pump.
     bool ConnectClockArmed = false;
     double ConnectStartedSeconds = 0.0;
+    double LastHandshakeSentSeconds = 0.0;
     double AuthorityLastHeardSeconds = 0.0;
     double LastPingSentSeconds = 0.0;
     std::uint64_t RttMicroseconds = 0;

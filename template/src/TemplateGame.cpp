@@ -34,6 +34,7 @@
 #include <math/geometry/3d/Transform3d.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MovementDefs.h>
+#include <movement/JumpState.h>
 #include <movement/MovementComponents.h>
 #include <movement/MovementIntent.h>
 #include <movement/MovementProfileBindingCache.h>
@@ -46,6 +47,7 @@
 #include <net/NetReplicationComponents.h>
 #include <net/NetSpawnRecipe.h>
 #include <net/NetSession.h>
+#include <net/PawnCommandCapture.h>
 #include <net/PeerCommandRuntime.h>
 #include <movement/MovementTags.h>
 #include <physics/CollisionShapeCache.h>
@@ -224,31 +226,39 @@ EntityId CreateTransformEntity(
     return entity;
 }
 
-// The pawn itself: everything that makes a body move and be seen, and nothing
-// about who is watching it. A remote player's pawn is exactly this and no more,
-// which is why the camera and the local input marks are not in here.
-EntityId SpawnPawn(
+// Everything that makes a body move and be seen, added to an entity that
+// already exists. Split from SpawnPawn because a client predicting its own pawn
+// needs this on an entity replication created, and a pawn that simulates on two
+// machines has to be the same pawn on both -- one archetype, one place.
+//
+// Nothing here is about who is watching: the camera and the local input marks
+// live in AttachLocalPlayer.
+void BuildPawnBody(
     World& world,
-    const Vec3d& spawnPosition,
+    EntityId pawn,
     MovementProfileHandle movementProfile,
     const ResolvedPlayerAvatar& avatar)
 {
-    const EntityId pawn =
-        CreateTransformEntity(world, spawnPosition);
-    world.AddComponent<CharacterController>(
-        pawn,
-        CharacterController{});
-    world.AddComponent<MovementIntent>(
-        pawn,
-        MovementIntent{});
-    world.AddComponent<KinematicState>(pawn, KinematicState{});
-    world.AddComponent<SupportState>(pawn, SupportState{});
-    world.AddComponent<ResolvedMovementTuning>(pawn, ResolvedMovementTuning{});
-    world.AddComponent<LocomotionOutput>(pawn, LocomotionOutput{});
-    world.AddComponent<MotionAxisOverride>(pawn, MotionAxisOverride{});
-    world.AddComponent<MotionImpulse>(pawn, MotionImpulse{});
-    world.AddComponent<MotionRequest>(pawn, MotionRequest{});
-    world.AddComponent<ModeTransitionRequest>(pawn, ModeTransitionRequest{});
+    // Idempotent throughout. On the authority this runs on a bare entity; on a
+    // client it runs on one replication has already given a transform, an
+    // orientation, and a body, and adding a component twice is a structural
+    // error rather than an overwrite.
+    const auto ensure = [&world, pawn]<typename T>(const T& value)
+    {
+        if (!world.HasComponent<T>(pawn))
+            world.AddComponent<T>(pawn, value);
+    };
+
+    ensure(CharacterController{});
+    ensure(MovementIntent{});
+    ensure(KinematicState{});
+    ensure(SupportState{});
+    ensure(ResolvedMovementTuning{});
+    ensure(LocomotionOutput{});
+    ensure(MotionAxisOverride{});
+    ensure(MotionImpulse{});
+    ensure(MotionRequest{});
+    ensure(ModeTransitionRequest{});
 
     // With an invalid profile handle the pawn resolves tuning from defaults
     // plus the MoveSpeed attribute, so a missing asset degrades to movement
@@ -260,11 +270,11 @@ EntityId SpawnPawn(
     {
         pawnMovement.Mode = modes->FreeMode();
     }
-    world.AddComponent<CharacterMovement>(pawn, pawnMovement);
+    ensure(pawnMovement);
 
     // The pawn moves every tick and is what the camera watches, so it renders
     // interpolated between ticks rather than stepping at the tick rate.
-    world.AddComponent<WorldTransformHistory>(pawn, WorldTransformHistory{});
+    ensure(WorldTransformHistory{});
 
     // The body other viewers see. A first-person camera targeting this pawn
     // excludes it, so the local player does not sit inside their own mesh; a
@@ -272,12 +282,10 @@ EntityId SpawnPawn(
     // has no body, which is a missing asset rather than a broken player.
     if (avatar.IsValid())
     {
-        world.AddComponent<StaticMeshComponent>(
-            pawn,
-            StaticMeshComponent{
-                .Mesh = avatar.Mesh,
-                .Materials = avatar.Materials,
-            });
+        ensure(StaticMeshComponent{
+            .Mesh = avatar.Mesh,
+            .Materials = avatar.Materials,
+        });
     }
 
     const MovementDefs* movementDefs =
@@ -289,7 +297,7 @@ EntityId SpawnPawn(
     {
         pawnTags.Grant(movementTags->Controlled);
     }
-    world.AddComponent<GameplayTagContainer>(pawn, pawnTags);
+    ensure(pawnTags);
 
     // The profile's base layer owns the authored top speed; this attribute is
     // the effect-modifiable base and the whole answer when no profile loads,
@@ -297,18 +305,28 @@ EntityId SpawnPawn(
     AttributeSet pawnAttributes{};
     if (movementDefs != nullptr)
         pawnAttributes.Add(movementDefs->MoveSpeed, 4.5f);
-    world.AddComponent<AttributeSet>(pawn, pawnAttributes);
+    ensure(pawnAttributes);
 
-    AbilitySet pawnAbilities{};
-    if (movementDefs != nullptr)
-        pawnAbilities.Grant(movementDefs->Jump);
-    world.AddComponent<AbilitySet>(pawn, pawnAbilities);
+    // Jump is not here: it steers the body, so it lives in the movement step
+    // where a predicted tick can replay it. AbilitySet is what a pawn's
+    // authority-validated actions would be granted through.
+    ensure(AbilitySet{});
+    ensure(JumpState{});
 
     // The pawn aims; a camera presents it. Every pawn has an orientation --
     // a remote player is aiming somewhere too, and that is what makes their
     // body face the right way.
-    world.AddComponent<LookOrientation>(pawn, {});
+    ensure(LookOrientation{});
+}
 
+EntityId SpawnPawn(
+    World& world,
+    const Vec3d& spawnPosition,
+    MovementProfileHandle movementProfile,
+    const ResolvedPlayerAvatar& avatar)
+{
+    const EntityId pawn = CreateTransformEntity(world, spawnPosition);
+    BuildPawnBody(world, pawn, movementProfile, avatar);
     return pawn;
 }
 
@@ -472,12 +490,12 @@ struct WorldPartitionUpdateSystem
         const Vec3d safe = *PendingSafePosition;
         PendingSafePosition.reset();
 
+        // Through the mover, never onto the transform alone: a character's
+        // position lives inside its mover and the transform is where the last
+        // sweep left a copy, so writing the copy is undone by the next tick.
         bool moved = false;
-        if (world.HasResource<CharacterMoverPool>())
-        {
-            moved = world.GetResource<CharacterMoverPool>().SetPosition(
-                world, Pawn, safe);
-        }
+        if (Movers != nullptr)
+            moved = Movers->SetPosition(world, Pawn, safe);
         if (!moved)
         {
             if (LocalTransform* transform = world.TryGet<LocalTransform>(Pawn))
@@ -492,6 +510,9 @@ struct WorldPartitionUpdateSystem
     std::optional<AsyncZoneLoader>& Loader;
     RuntimeWorld& Runtime;
     EntityId& Pawn;
+    // Owned by the physics step, which is where characters live. Null in a
+    // configuration with no physics, where the transform is all there is.
+    CharacterMoverPool* Movers = nullptr;
     // Set by streaming on the wall clock, consumed by the next fixed tick.
     std::optional<Vec3d> PendingSafePosition;
 };
@@ -543,11 +564,7 @@ struct CharacterInputSystem
 
         const MovementTags* tags =
             world.TryGetResource<MovementTags>();
-        const MovementDefs* defs =
-            world.TryGetResource<MovementDefs>();
-        AbilityActivationQueue* activations =
-            world.TryGetResource<AbilityActivationQueue>();
-        if (tags == nullptr || defs == nullptr)
+        if (tags == nullptr)
             return;
 
         const TemplateInputActions* actionIds =
@@ -592,11 +609,11 @@ struct CharacterInputSystem
                 const float forward = move.Y;
 
                 // Whichever moment the action set authored. Jump authors "while
-                // held": queueing the ability every tick while the control is
-                // down means a press just before landing fires on the first
-                // grounded tick, and holding it hops again on each landing. The
-                // activation gate (grounded, cooldown) rejects the rest for
-                // free.
+                // held": asking every tick the control is down means a press
+                // just before landing fires on the first grounded tick, and
+                // holding it hops again on each landing. The gate in the
+                // movement step (on the ground, off cooldown) rejects the rest
+                // for free.
                 const bool jump = input.Fired(actionIds->Jump);
 
                 const Quatf frame = Quatf::FromAxisAngle(
@@ -610,11 +627,7 @@ struct CharacterInputSystem
                     wish = wish * (1.0f / std::sqrt(squared));
 
                 intents[index].WishDir = wish;
-                if (jump && activations != nullptr)
-                {
-                    activations->Pending.push_back(
-                        { view.Entity(index), defs->Jump });
-                }
+                intents[index].Jump = jump;
             }
         });
     }
@@ -779,12 +792,22 @@ private:
                 world.DestroyEntity(previous);
             }
 
-            // Nothing local is grafted onto it. A client's own pawn is
-            // simulated on the authority, so steering it here would write
-            // intent the next snapshot overwrites, and the request that
-            // actually moves the player travels as this tick's actions.
+            // This pawn becomes a full simulation participant on this machine.
+            // A player holding a key cannot wait for the round trip to see it,
+            // so the client runs the same systems over the same input and the
+            // authority's snapshots become something to reconcile against
+            // rather than something to obey.
+            //
+            // The same archetype the authority built, from the same function:
+            // two machines simulating one pawn from the same input have to be
+            // simulating the same pawn.
+            if (!world.HasComponent<MovementIntent>(mine))
+                BuildPawnBody(world, mine, Profile, Avatar);
+
             AttachLocalPlayer(world, mine, Log());
             LocalPawn = mine;
+            Owner->Prediction().SetPredicted(mine);
+            Log().Info("TemplateGame: predicting this player's own pawn");
         }
     }
 };
@@ -821,22 +844,6 @@ struct SpinSystem
     }
 };
 } // namespace
-
-void TemplateGame::OnRegisterComponents(
-    ComponentSerializerRegistry& serializers)
-{
-    // The engine already registered its own scene manifest into this registry;
-    // a game adds only what it owns.
-    RegisterComponent<SpinComponent>(serializers);
-    RegisterComponent<PlayerStartComponent>(serializers);
-}
-
-void TemplateGame::OnUnregisterComponents(
-    ComponentSerializerRegistry& serializers)
-{
-    serializers.Remove(ResolveComponentTypeId<SpinComponent>());
-    serializers.Remove(ResolveComponentTypeId<PlayerStartComponent>());
-}
 
 void TemplateGame::OnStart(GameStartupContext&)
 {
@@ -1555,14 +1562,17 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     }
 
     RegisterAbilityKitSystems(ctx.Schedule);
-    RegisterMovementSystems(ctx.Schedule, RuntimeAssetState().DataAssets);
+    RegisterMovementSystems(ctx.Schedule, RuntimeAssetState().DataAssets,
+                            &GetEngine().Logging());
     RegisterInputSystems(
         ctx.Schedule,
         RuntimeAssetState().DataAssets,
         GetEngine().Logging());
     RegisterCameraSystem(ctx.Schedule);
     RegisterControllerSystems(ctx.Schedule);
-    RegisterNetSystems(ctx.Schedule, GetEngine().PeerCommands());
+    RegisterNetSystems(ctx.Schedule, GetEngine().PeerCommands(),
+                       GetEngine().Prediction(), GetEngine().Interpolation(),
+                       GetEngine().NetClock());
     ctx.Schedule.Register<CharacterInputSystem>();
 
     // Everything that reads actions runs after they are resolved: the aim
@@ -1574,6 +1584,9 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     // A remote player's actions have to be in their source before anything
     // reads one, the same way the local player's have to be resolved first.
     ctx.Schedule.After<CharacterInputSystem, PeerCommandFeedSystem>();
+    // What gets written down is what the tick went on to simulate, so capture
+    // follows the derivation and precedes everything that acts on it.
+    ctx.Schedule.After<PawnCommandCaptureSystem, CharacterInputSystem>();
     OrderMovementAfterInput<CharacterInputSystem>(ctx.Schedule);
     ctx.Schedule.Register<SpinSystem>();
 
@@ -1588,11 +1601,14 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
         players.LocalPawn = PlayerPawn;
     }
 
-    ctx.Schedule.Register<WorldPartitionUpdateSystem>(
-        Partition,
-        ZoneLoader,
-        GetEngine().World(),
-        PlayerPawn);
+    WorldPartitionUpdateSystem& partitionUpdate =
+        ctx.Schedule.Register<WorldPartitionUpdateSystem>(
+            Partition,
+            ZoneLoader,
+            GetEngine().World(),
+            PlayerPawn);
+    if (PhysicsStepSystem* step = ctx.Schedule.Get<PhysicsStepSystem>())
+        partitionUpdate.Movers = &step->GetCharacterMovers();
 #ifdef SENCHA_ENABLE_COOK
     ctx.Schedule.Register<HotReloadPollSystem>(HotReloadWatcher, HotReloader);
 #endif

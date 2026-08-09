@@ -14,17 +14,20 @@
 #include <effects/EffectRegistry.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <world/ComponentRegistrar.h>
+
+void RegisterAbilityKitComponents(ComponentRegistrar& registrar)
+{
+    registrar.Add<GameplayTagContainer>();
+    registrar.Add<AttributeSet>();
+    registrar.Add<AbilitySet>();
+    registrar.Add<ActiveEffect>();
+}
 
 void RegisterAbilityKit(World& world)
 {
-    if (!world.IsRegistered<GameplayTagContainer>())
-        world.RegisterComponent<GameplayTagContainer>();
-    if (!world.IsRegistered<AttributeSet>())
-        world.RegisterComponent<AttributeSet>();
-    if (!world.IsRegistered<AbilitySet>())
-        world.RegisterComponent<AbilitySet>();
-    if (!world.IsRegistered<ActiveEffect>())
-        world.RegisterComponent<ActiveEffect>();
+    ComponentRegistrar registrar(world);
+    RegisterAbilityKitComponents(registrar);
 
     if (!world.HasResource<GameplayTagRegistry>())
         world.AddResource<GameplayTagRegistry>();

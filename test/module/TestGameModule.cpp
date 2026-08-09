@@ -1,9 +1,9 @@
 // A minimal, real game module for the S2 boundary integration test. Built as a
 // loadable library (MODULE) against the shared engine ABI, with hidden default
 // visibility; only SenchaCreateGameModule is exported. It is a Game (the v4
-// module contract) whose OnRegisterComponents registers a game-defined component
-// serializer into the host-owned registry and OnUnregisterComponents retracts it
-// — the in-tree analog of a shipped game.so, exercised without running the game.
+// module contract) whose OnRegisterComponents names a game-defined component and
+// leaves the host to retract it -- the in-tree analog of a shipped game.so,
+// exercised without running the game.
 
 #include <app/Game.h>
 #include <app/GameModule.h>
@@ -11,6 +11,7 @@
 #include <core/serialization/FourCC.h>
 #include <world/serialization/ComponentSerializer.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
+#include <world/ComponentRegistrar.h>
 #include <world/serialization/ComponentStorageTraits.h>
 
 #include <memory>
@@ -47,15 +48,9 @@ namespace
 {
     struct TestGameModule final : Game
     {
-        void OnRegisterComponents(ComponentSerializerRegistry& serializers) override
+        void OnRegisterComponents(ComponentRegistrar& registrar) override
         {
-            serializers.Register(std::make_unique<ComponentSerializer<GrappleHook>>());
-        }
-
-        void OnUnregisterComponents(ComponentSerializerRegistry& serializers) override
-        {
-            // Module-owns: retract exactly our serializer while still mapped.
-            serializers.Remove(ResolveComponentTypeId<GrappleHook>());
+            registrar.Add<GrappleHook>();
         }
     };
 }
@@ -63,7 +58,7 @@ namespace
 extern "C" SENCHA_GAME_EXPORT Game* SenchaCreateGameModule()
 {
     // Module-owned static instance: nothing for the host to delete across the
-    // allocator boundary; teardown is OnUnregisterComponents + unmap.
+    // allocator boundary; the host retracts what this registered, then unmaps.
     static TestGameModule instance;
     return &instance;
 }

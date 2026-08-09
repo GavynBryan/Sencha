@@ -45,7 +45,8 @@ public:
     LoadedModule Load(const std::filesystem::path& artifact, std::string* error = nullptr);
 
     // Unmap the library. Safe on an invalid module (no-op). The caller is
-    // responsible for any Game teardown (OnShutdown / OnUnregisterComponents)
-    // BEFORE this, while the module is still mapped.
+    // responsible for any Game teardown -- OnShutdown, and retracting whatever
+    // the module's OnRegisterComponents registered -- BEFORE this, while the
+    // module is still mapped.
     void Unload(LoadedModule& module);
 };

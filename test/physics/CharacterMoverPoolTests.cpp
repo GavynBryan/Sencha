@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <tuple>
 
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
@@ -293,4 +294,112 @@ TEST(CharacterMoverPool, SlotReusedAfterRelease)
     EXPECT_EQ(
         ecs.TryGet<CharacterMoverLink>(second)->MoverSlot,
         firstSlot);
+}
+
+//=============================================================================
+// The seam prediction replay stands on
+//
+// Replay re-runs the ticks a client has not had answered yet. It has to move
+// the pawn through the code the live tick uses, and it has to be able to put
+// the pawn back where the authority says it was first -- so both operations
+// are pinned here against the chunk-driven path they must agree with.
+//=============================================================================
+
+TEST(CharacterMoverPoolStep, MovesOneCharacterExactlyAsDriveDoes)
+{
+    const auto run = [](bool useStep) {
+        PhysicsWorld physics;
+        AddStaticFloor(physics);
+
+        World ecs;
+        SetUpPhysics(ecs);
+        CharacterMoverPool pool(physics);
+
+        const EntityId player = SpawnCharacter(ecs, Vec3d(0.0f, 5.0f, 0.0f));
+        pool.Reconcile(ecs, ActivePartitions());
+
+        for (int index = 0; index < 120; ++index)
+        {
+            pool.Reconcile(ecs, ActivePartitions());
+            StepLocomotion(ecs, player);
+            if (useStep)
+            {
+                const MotionRequest request = *ecs.TryGet<MotionRequest>(player);
+                EXPECT_TRUE(pool.Step(ecs, player, request, kFixedDt, kGravity));
+            }
+            else
+            {
+                pool.Drive(ecs, ActivePartitions(), kFixedDt, kGravity);
+            }
+        }
+
+        return std::tuple{ ecs.TryGet<LocalTransform>(player)->Value.Position,
+                           ecs.TryGet<KinematicState>(player)->Velocity,
+                           ecs.TryGet<SupportState>(player)->Kind };
+    };
+
+    const auto [drivePos, driveVel, driveSupport] = run(false);
+    const auto [stepPos, stepVel, stepSupport] = run(true);
+
+    // Exact: it is the same sweep over the same geometry on the same machine.
+    // Anything else means replay and the live tick are two rulebooks.
+    EXPECT_EQ(stepPos.X, drivePos.X);
+    EXPECT_EQ(stepPos.Y, drivePos.Y);
+    EXPECT_EQ(stepPos.Z, drivePos.Z);
+    EXPECT_EQ(stepVel.Y, driveVel.Y);
+    EXPECT_EQ(stepSupport, driveSupport);
+}
+
+TEST(CharacterMoverPoolStep, RefusesAnEntityWithNoMover)
+{
+    PhysicsWorld physics;
+    AddStaticFloor(physics);
+
+    World ecs;
+    SetUpPhysics(ecs);
+    CharacterMoverPool pool(physics);
+
+    const EntityId bare = ecs.CreateEntity();
+    EXPECT_FALSE(pool.Step(ecs, bare, MotionRequest{}, kFixedDt, kGravity));
+    EXPECT_FALSE(pool.RestorePosition(ecs, bare, Vec3d(1.0f, 1.0f, 1.0f)));
+}
+
+// The defect that made every correction a no-op: a character's position lives
+// inside its mover, and the transform is where the last sweep left a copy.
+// Writing the copy is undone by the next sweep, which starts from where the
+// mover still believes it is.
+TEST(CharacterMoverPoolStep, RestoreIsWhereTheNextSweepStartsFrom)
+{
+    PhysicsWorld physics;
+    AddStaticFloor(physics);
+
+    World ecs;
+    SetUpPhysics(ecs);
+    CharacterMoverPool pool(physics);
+
+    const EntityId player = SpawnCharacter(ecs, Vec3d(0.0f, 5.0f, 0.0f));
+    pool.Reconcile(ecs, ActivePartitions());
+    for (int index = 0; index < 120; ++index)
+    {
+        pool.Reconcile(ecs, ActivePartitions());
+        StepLocomotion(ecs, player);
+        pool.Drive(ecs, ActivePartitions(), kFixedDt, kGravity);
+    }
+
+    const Vec3d moved(4.0f, ecs.TryGet<LocalTransform>(player)->Value.Position.Y,
+                      0.0f);
+    ASSERT_TRUE(pool.RestorePosition(ecs, player, moved));
+
+    // A standing sweep must leave it where the restore put it.
+    ecs.TryGet<MotionRequest>(player)->Velocity = Vec3d(0.0f, 0.0f, 0.0f);
+    pool.Drive(ecs, ActivePartitions(), kFixedDt, kGravity);
+    EXPECT_NEAR(ecs.TryGet<LocalTransform>(player)->Value.Position.X, 4.0f, 1e-3f);
+
+    // The negative control for the same claim: writing only the transform is
+    // reverted by the sweep, because the mover was never told.
+    ecs.TryGet<LocalTransform>(player)->Value.Position.X = -7.0f;
+    pool.Drive(ecs, ActivePartitions(), kFixedDt, kGravity);
+    EXPECT_NEAR(ecs.TryGet<LocalTransform>(player)->Value.Position.X, 4.0f, 1e-3f)
+        << "the transform-only write survived a sweep, so this test can no "
+           "longer tell a real correction from a lost one";
 }

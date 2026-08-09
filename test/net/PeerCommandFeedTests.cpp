@@ -56,12 +56,12 @@ namespace
                             float yaw = 0.0f, float pitch = 0.0f)
     {
         NetPlayerCommand command;
-        command.Yaw = yaw;
-        command.Pitch = pitch;
         command.RecordCount = 1;
 
         NetCommandRecord& record = command.Records[0];
         record.Tick = tick;
+        record.Yaw = yaw;
+        record.Pitch = pitch;
         record.ActionCount = kActionCount;
         record.Actions[InputActionRegistry::IndexOf(kMove)].Y = forward;
         if (jump)
@@ -299,4 +299,127 @@ TEST(PeerCommandFeed, DoesNothingBeforeAnActionVocabularyExists)
     commands.Feed(world, 1);
 
     EXPECT_EQ(world.TryGetResource<InputActionSourceTable>(), nullptr);
+}
+
+// The defect this closes: aim used to ride once per datagram and be applied to
+// every tick fed from it. A frame that ran several ticks turned the pawn all at
+// once at the end instead of through the arc the player actually swept, and the
+// client -- which framed each tick against its own live look -- walked a
+// different path. On a corner that is the difference between catching it and
+// not.
+TEST(PeerCommandFeed, EachTickTurnsByTheAimItWasTakenWith)
+{
+    World world = MakeWorld();
+    const EntityId pawn = SpawnPawnFor(world, kAlice);
+
+    PeerCommandRuntime commands;
+    commands.SetTargetDepth(0);
+
+    // First contact takes only the newest record, so this is what sets the
+    // floor the window behind it is measured against.
+    ASSERT_TRUE(Deliver(commands, kAlice, Asking(9, 1.0f, false, 0.0f)));
+    commands.Feed(world, 1);
+
+    // Now one datagram carrying two ticks swept through different angles --
+    // what a redundancy window looks like after a dropped packet.
+    NetPlayerCommand command;
+    command.RecordCount = 2;
+    command.Records[0] = Asking(11, 1.0f, false, 0.75f).Records[0];
+    command.Records[1] = Asking(10, 1.0f, false, 0.25f).Records[0];
+    ASSERT_TRUE(Deliver(commands, kAlice, command));
+
+    commands.Feed(world, 2);
+    EXPECT_FLOAT_EQ(world.TryGet<LookOrientation>(pawn)->Yaw, 0.25f)
+        << "the first tick was turned by an aim belonging to a later one";
+
+    commands.Feed(world, 3);
+    EXPECT_FLOAT_EQ(world.TryGet<LookOrientation>(pawn)->Yaw, 0.75f);
+}
+
+// A starved tick repeats the last record, so it keeps the last aim: a player
+// whose datagram was late is still looking where they were looking.
+TEST(PeerCommandFeed, AStarvedTickHoldsTheAimItLastHad)
+{
+    World world = MakeWorld();
+    const EntityId pawn = SpawnPawnFor(world, kAlice);
+
+    PeerCommandRuntime commands;
+    commands.SetTargetDepth(0);
+    ASSERT_TRUE(Deliver(commands, kAlice, Asking(5, 1.0f, false, 1.25f)));
+
+    commands.Feed(world, 1);
+    ASSERT_FLOAT_EQ(world.TryGet<LookOrientation>(pawn)->Yaw, 1.25f);
+
+    world.TryGet<LookOrientation>(pawn)->Yaw = 99.0f;
+    commands.Feed(world, 2);  // nothing arrived
+    EXPECT_FLOAT_EQ(world.TryGet<LookOrientation>(pawn)->Yaw, 1.25f);
+}
+
+//=============================================================================
+// What the authority tells a client it has finished with
+//
+// A client keeps every tick it has simulated and not had answered. The
+// acknowledgement is what lets it throw the answered ones away and re-run only
+// the rest -- without it, a client holds an opinion about its own past that
+// nothing can ever settle.
+//=============================================================================
+
+TEST(PeerCommandAck, SaysNothingHasBeenSimulatedBeforeAPeerSpeaks)
+{
+    PeerCommandRuntime commands;
+    EXPECT_EQ(commands.AckFor(kAlice), 0u);
+}
+
+TEST(PeerCommandAck, NamesTheNewestTickTheAuthorityIsDoneWith)
+{
+    World world = MakeWorld();
+    (void)SpawnPawnFor(world, kAlice);
+
+    PeerCommandRuntime commands;
+    commands.SetTargetDepth(0);
+    ASSERT_TRUE(Deliver(commands, kAlice, Asking(40, 1.0f, false)));
+
+    // Received but not yet simulated: first contact sets the floor at the
+    // newest record, so everything below it is already passed over for good.
+    EXPECT_EQ(commands.AckFor(kAlice), 39u);
+
+    commands.Feed(world, 1);
+    EXPECT_EQ(commands.AckFor(kAlice), 40u)
+        << "a tick that has been simulated has to be one the client stops "
+           "holding, or its replay re-runs input the authority already applied";
+}
+
+TEST(PeerCommandAck, EachPeerIsToldAboutItsOwnInput)
+{
+    World world = MakeWorld();
+    (void)SpawnPawnFor(world, kAlice);
+    (void)SpawnPawnFor(world, kBob);
+
+    PeerCommandRuntime commands;
+    commands.SetTargetDepth(0);
+    ASSERT_TRUE(Deliver(commands, kAlice, Asking(10, 1.0f, false)));
+    ASSERT_TRUE(Deliver(commands, kBob, Asking(500, 1.0f, false)));
+    commands.Feed(world, 1);
+
+    EXPECT_EQ(commands.AckFor(kAlice), 10u);
+    EXPECT_EQ(commands.AckFor(kBob), 500u)
+        << "one peer's acknowledgement named another peer's ticks, which would "
+           "have that client throw away input nobody has simulated";
+}
+
+// Resending the redundancy window must not appear to un-simulate anything.
+TEST(PeerCommandAck, NeverGoesBackwardsWhenAWindowIsResent)
+{
+    World world = MakeWorld();
+    (void)SpawnPawnFor(world, kAlice);
+
+    PeerCommandRuntime commands;
+    commands.SetTargetDepth(0);
+    ASSERT_TRUE(Deliver(commands, kAlice, Asking(70, 1.0f, false)));
+    commands.Feed(world, 1);
+    const std::uint64_t after = commands.AckFor(kAlice);
+
+    ASSERT_TRUE(Deliver(commands, kAlice, Asking(70, 1.0f, false)));
+    ASSERT_TRUE(Deliver(commands, kAlice, Asking(69, 1.0f, false)));
+    EXPECT_EQ(commands.AckFor(kAlice), after);
 }

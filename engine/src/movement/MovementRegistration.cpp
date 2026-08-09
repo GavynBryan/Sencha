@@ -22,6 +22,7 @@
 #include <movement/MovementModeSystems.h>
 #include <movement/MovementTags.h>
 #include <movement/MovementTuningResolutionSystem.h>
+#include <world/ComponentRegistrar.h>
 
 namespace
 {
@@ -37,29 +38,34 @@ namespace
     }
 }
 
+void RegisterMovementComponents(ComponentRegistrar& registrar)
+{
+    RegisterAbilityKitComponents(registrar);
+
+    // The physical facts, this tick's request and resolved coefficients, and
+    // the contribution channels that compose into one motor request.
+    registrar.Add<MovementIntent>();
+    registrar.Add<JumpState>();
+    registrar.Add<KinematicState>();
+    registrar.Add<SupportState>();
+    registrar.Add<Immersion>();
+    registrar.Add<CharacterMovement>();
+    registrar.Add<ResolvedMovementTuning>();
+    registrar.Add<LocomotionOutput>();
+    registrar.Add<MotionAxisOverride>();
+    registrar.Add<MotionImpulse>();
+    registrar.Add<MotionRequest>();
+    registrar.Add<ModeTransitionRequest>();
+    registrar.Add<ClingSession>();
+    registrar.Add<FlightSession>();
+}
+
 void RegisterMovementComponents(World& world)
 {
     RegisterAbilityKit(world);
 
-    const auto ensure = [&world]<typename T>()
-    {
-        if (!world.IsRegistered<T>())
-            world.RegisterComponent<T>();
-    };
-
-    ensure.template operator()<MovementIntent>();
-    ensure.template operator()<KinematicState>();
-    ensure.template operator()<SupportState>();
-    ensure.template operator()<Immersion>();
-    ensure.template operator()<CharacterMovement>();
-    ensure.template operator()<ResolvedMovementTuning>();
-    ensure.template operator()<LocomotionOutput>();
-    ensure.template operator()<MotionAxisOverride>();
-    ensure.template operator()<MotionImpulse>();
-    ensure.template operator()<MotionRequest>();
-    ensure.template operator()<ModeTransitionRequest>();
-    ensure.template operator()<ClingSession>();
-    ensure.template operator()<FlightSession>();
+    ComponentRegistrar registrar(world);
+    RegisterMovementComponents(registrar);
 
     (void)EnsureMovementTags(world);
 
@@ -79,39 +85,10 @@ void RegisterDefaultMovementAbilities(World& world)
     RegisterMovementComponents(world);
 
     AttributeRegistry& attrReg = world.GetResource<AttributeRegistry>();
-    EffectRegistry& effReg = world.GetResource<EffectRegistry>();
-    AbilityRegistry& abilityReg = world.GetResource<AbilityRegistry>();
-    const MovementTags tags = EnsureMovementTags(world);
+    (void)EnsureMovementTags(world);
 
     MovementDefs defs;
     defs.MoveSpeed = attrReg.RegisterAttribute("MoveSpeed", 0.0f, 100.0f, kDefaultMoveSpeed);
-
-    // Jump is authored data, not a code path: gated by grounded, blocked by its own
-    // cooldown tag, and its behavior is a short effect granting the one-tick request
-    // tag jump execution consumes. Cooldown outlives the request so grants
-    // never overlap.
-    EffectDefinition request;
-    request.Duration = EffectDuration::Duration;
-    request.DurationSeconds = 0.05f;
-    request.GrantedTags = { tags.JumpRequested };
-    const EffectId requestFx = effReg.Register("movement.jump.request", request);
-
-    // Just long enough to outlive the request effect and the granting tick at
-    // coarse fixed rates; anything longer eats into the landing-to-jump
-    // cadence of consecutive hops.
-    EffectDefinition cooldown;
-    cooldown.Duration = EffectDuration::Duration;
-    cooldown.DurationSeconds = 0.15f;
-    cooldown.GrantedTags = { tags.JumpCooldown };
-    const EffectId cooldownFx = effReg.Register("movement.jump.cooldown", cooldown);
-
-    AbilityDefinition jump;
-    jump.ActivationRequirements
-        .AddAll(tags.Grounded, GameplayTagMatchMode::Hierarchical)
-        .AddNone(tags.JumpCooldown);
-    jump.Cooldown = cooldownFx;
-    jump.OnActivate = requestFx;
-    defs.Jump = abilityReg.Register("movement.jump", jump);
 
     if (!world.HasResource<MovementDefs>())
         world.AddResource<MovementDefs>(defs);
@@ -122,12 +99,13 @@ void RegisterMovement(World& world)
     RegisterDefaultMovementAbilities(world);
 }
 
-void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAssets)
+void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAssets,
+                             LoggingProvider* logging)
 {
     schedule.Register<SupportTagProjectionSystem>();
     schedule.Register<ModeRequestCollectionSystem>();
     schedule.Register<LocomotionModeTransitionSystem>();
-    schedule.Register<MovementTuningResolutionSystem>(dataAssets);
+    schedule.Register<MovementTuningResolutionSystem>(dataAssets, logging);
     schedule.Register<FreeLocomotionSystem>();
     schedule.Register<JumpExecutionSystem>();
     schedule.Register<MotionCompositionSystem>();
@@ -149,8 +127,8 @@ void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAsset
 
     schedule.After<FreeLocomotionSystem, MovementTuningResolutionSystem>();
 
-    // Jump is an action contribution, so it runs after locomotion has produced
-    // the base output and before composition folds the channels together.
+    // Jump contributes over locomotion's base output, before composition folds
+    // the channels together.
     schedule.After<JumpExecutionSystem, FreeLocomotionSystem>();
     schedule.After<MotionCompositionSystem, JumpExecutionSystem>();
 

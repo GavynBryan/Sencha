@@ -4,6 +4,7 @@
 #include <ecs/World.h>
 #include <ecs/WorldComponentSchema.h>
 #include <net/NetReplicationComponents.h>
+#include <net/ReplicationInterpolation.h>
 #include <world/transform/DerivedTransform.h>
 
 #include <algorithm>
@@ -65,16 +66,68 @@ const ReplicationPeerState::EntityBaseline* ReplicationPeerState::Find(
     return it == Baselines.end() ? nullptr : &it->second;
 }
 
-void ReplicationPeerState::Record(NetEntityId id, std::uint8_t component,
-                                  std::span<const std::byte> bytes)
+void ReplicationPeerState::BeginSnapshot(std::uint64_t tick)
 {
-    std::vector<std::byte>& stored = Baselines[id].Components[component];
-    stored.assign(bytes.begin(), bytes.end());
+    if (Pending.size() < kMaxUnacknowledged)
+    {
+        if (Pending.empty() || Pending.back().Tick != tick)
+            Pending.push_back(SentSnapshot{ .Tick = tick, .Components = {} });
+        return;
+    }
+
+    // This peer has not confirmed anything for longer than is worth tracking.
+    // Everything believed about it is a guess by now, so it is treated as new:
+    // the snapshot about to be written is full state, and it costs one
+    // snapshot rather than an unbounded pile of them.
+    Baselines.clear();
+    Pending.clear();
+    Pending.push_back(SentSnapshot{ .Tick = tick, .Components = {} });
+}
+
+void ReplicationPeerState::RecordSent(std::uint64_t tick, NetEntityId id,
+                                      std::uint8_t component,
+                                      std::span<const std::byte> bytes)
+{
+    // Held aside, not applied. What the peer holds only changes when the peer
+    // says so, because a snapshot that was written is not a snapshot that
+    // arrived.
+    if (Pending.empty() || Pending.back().Tick != tick)
+        BeginSnapshot(tick);
+
+    Pending.back().Components.emplace_back(
+        id, component, std::vector<std::byte>(bytes.begin(), bytes.end()));
+}
+
+void ReplicationPeerState::Acknowledge(std::uint64_t tick)
+{
+    std::size_t applied = 0;
+    for (const SentSnapshot& snapshot : Pending)
+    {
+        if (snapshot.Tick > tick)
+            break;
+        for (const auto& [id, component, bytes] : snapshot.Components)
+            Baselines[id].Components[component] = bytes;
+        ++applied;
+    }
+    Pending.erase(Pending.begin(),
+                  Pending.begin() + static_cast<std::ptrdiff_t>(applied));
 }
 
 void ReplicationPeerState::Forget(NetEntityId id)
 {
     Baselines.erase(id);
+    for (SentSnapshot& snapshot : Pending)
+    {
+        std::erase_if(snapshot.Components, [id](const auto& entry) {
+            return std::get<0>(entry) == id;
+        });
+    }
+}
+
+void ReplicationPeerState::Clear()
+{
+    Baselines.clear();
+    Pending.clear();
 }
 
 //=============================================================================
@@ -144,6 +197,9 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
     const World& reading = world;
     const ReplicationLayout& layout = *request.Layout;
     ReplicationPeerState& peer = *request.Peer;
+    // Before any difference is computed, so the whole snapshot is measured from
+    // one baseline rather than from one that changed part way through.
+    peer.BeginSnapshot(request.Tick);
     const bool hasOwners = world.IsRegistered(ResolveComponentTypeId<NetOwner>());
 
     // Nothing is marked for replication in a world that never registered the
@@ -246,6 +302,7 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
 
     NetBitWriter writer(out);
     writer.WriteU64(request.Tick);
+    writer.WriteU64(request.CommandAck);
     writer.WriteBits(static_cast<std::uint32_t>(destroyed.size()), kCountBits);
     writer.WriteBits(static_cast<std::uint32_t>(live.size()), kCountBits);
 
@@ -294,7 +351,7 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
     for (const PendingEntity& entity : live)
     {
         for (const auto& [wireIndex, bytes] : entity.Components)
-            peer.Record(entity.Id, wireIndex, bytes);
+            peer.RecordSent(request.Tick, entity.Id, wireIndex, bytes);
     }
 
     // Identities of entities the world no longer has stop being remembered.
@@ -335,6 +392,7 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
     std::uint32_t destroyedCount = 0;
     std::uint32_t updatedCount = 0;
     if (!reader.ReadU64(result.Tick)
+        || !reader.ReadU64(result.CommandAck)
         || !reader.ReadBits(kCountBits, destroyedCount)
         || !reader.ReadBits(kCountBits, updatedCount))
     {
@@ -362,6 +420,10 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
 
         const EntityId entity = identity.TryResolve(id);
         identity.Unbind(id);
+        // Poses held for an entity that is gone describe nothing, and the handle
+        // will be handed out again to something else.
+        if (request.Interpolation != nullptr && entity.IsValid())
+            request.Interpolation->Forget(entity);
         // An identity this client never had is not an error: it can be an
         // entity destroyed before the client was ever told it existed.
         if (entity.IsValid() && world.IsAlive(entity))
@@ -433,6 +495,104 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
             // machine or because it belongs to the owner; zeroing it substitutes
             // a value the type never declared. A pitch limit of zero is a
             // player who cannot look up, on a component that decoded perfectly.
+            // A predicted entity's position never reaches the world through
+            // here. It is decoded onto the authority's own view of it, which is
+            // what the delta is against, and handed to the predictor to argue
+            // with what this machine simulated.
+            if (request.Prediction != nullptr
+                && request.Prediction->Intercepts(entity, component->Type))
+            {
+                const std::span<std::byte> shadow =
+                    request.Prediction->AuthoritativeBytes(component->Type);
+                if (shadow.size() != component->Size)
+                {
+                    result.Error = SnapshotApplyError::UnknownComponentStorage;
+                    return result;
+                }
+                // Seeding the shadow the first time. A client adopts its pawn
+                // only after snapshots have already been arriving for it, so
+                // the authority's baseline already credits this machine with
+                // values it has no reason to send again. The world's copy is
+                // exactly those values, which makes it the only correct seed --
+                // starting from the type's defaults would silently discard
+                // everything said before the pawn became this machine's own.
+                if (!request.Prediction->HasAuthoritativeState(component->Type))
+                {
+                    const ComponentId column =
+                        world.GetComponentIdByType(component->Type);
+                    const void* held = world.HasComponent(entity, column)
+                                           ? world.GetComponentRaw(entity, column)
+                                           : nullptr;
+                    if (held != nullptr)
+                    {
+                        std::memcpy(shadow.data(), held, component->Size);
+                    }
+                    else if (!schema.WriteDefaultBytes(component->Type, shadow))
+                    {
+                        result.Error = SnapshotApplyError::UnknownComponentStorage;
+                        return result;
+                    }
+                }
+                if (!ReplicationDecodeComponent(*component, reader, shadow))
+                {
+                    result.Error = SnapshotApplyError::Truncated;
+                    return result;
+                }
+                request.Prediction->MarkSeen(component->Type);
+                result.PredictedStateUpdated = true;
+                continue;
+            }
+
+            // Everything this machine mirrors rather than simulates. The pose is
+            // held with the tick it describes instead of written, because the
+            // tick it describes is behind the one about to be drawn, and writing
+            // it now is what makes a mirrored entity step whenever its datagram
+            // was late.
+            // Never the pawn this machine simulates for itself, whether or not
+            // it is currently correcting it: with prediction off the local pawn
+            // still runs its own movement here, and holding its pose back would
+            // leave the authority's word with nowhere to land.
+            const bool ownPawn = request.Prediction != nullptr
+                              && request.Prediction->Predicts(entity);
+            if (request.Interpolation != nullptr && !ownPawn
+                && request.Interpolation->Intercepts(component->Type))
+            {
+                const std::span<std::byte> shadow =
+                    request.Interpolation->AuthoritativeBytes(entity);
+                if (shadow.size() != component->Size)
+                {
+                    result.Error = SnapshotApplyError::UnknownComponentStorage;
+                    return result;
+                }
+                if (!request.Interpolation->HasAuthoritativeState(entity)
+                    && !schema.WriteDefaultBytes(component->Type, shadow))
+                {
+                    result.Error = SnapshotApplyError::UnknownComponentStorage;
+                    return result;
+                }
+                if (!ReplicationDecodeComponent(*component, reader, shadow))
+                {
+                    result.Error = SnapshotApplyError::Truncated;
+                    return result;
+                }
+                request.Interpolation->Commit(entity, result.Tick);
+
+                // The component still has to exist, because presenting a pose
+                // means writing into it every tick and nothing can be written
+                // into a column the entity never gained. Seeded from the
+                // authority's own value the first time, so a newly mirrored
+                // entity appears where it belongs rather than at the origin and
+                // then slides in from there.
+                if (!world.HasComponent(entity,
+                                        world.GetComponentIdByType(component->Type))
+                    && !schema.ImportComponent(world, entity, component->Type, shadow))
+                {
+                    result.Error = SnapshotApplyError::ComponentAddFailed;
+                    return result;
+                }
+                continue;
+            }
+
             staging.assign(component->Size, std::byte{ 0 });
             const ComponentId column = world.GetComponentIdByType(component->Type);
             const bool present = world.HasComponent(entity, column);

@@ -37,11 +37,7 @@
       {
         "name": "Jump startup",
         "when": {
-          "tags": {
-            "all": [
-              "movement.jump.requested"
-            ]
-          }
+          "jump": true
         },
         "set": {
           "friction": 0

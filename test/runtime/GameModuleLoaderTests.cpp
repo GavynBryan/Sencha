@@ -16,6 +16,7 @@
 #include <core/serialization/JsonArchive.h>
 #include <ecs/ComponentTypeId.h>
 #include <world/registry/Registry.h>
+#include <world/ComponentRegistrar.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/IComponentSerializer.h>
 #include <world/serialization/SceneSerializationContext.h>
@@ -51,9 +52,11 @@ TEST(GameModuleLoader, LoadsRealModuleAndRegistersGameComponentByStableIdentity)
     LoadedModule m = loader.Load(TEST_GAME_MODULE_PATH, &error);
     ASSERT_TRUE(m.IsValid()) << error;
 
-    // Borrow the module's serializers exactly as the editor does — no game run.
+    // Borrow the module's serializers exactly as the editor does — no game run,
+    // so the registrar carries a serializer registry and nothing else.
     ComponentSerializerRegistry serializers;
-    m.Instance->OnRegisterComponents(serializers);
+    ComponentRegistrar registrar(nullptr, &serializers, nullptr);
+    m.Instance->OnRegisterComponents(registrar);
 
     // The host never names GrappleHook, yet its serializer is now present, keyed
     // by the same stable identity the module computed inside its own .so.
@@ -90,8 +93,11 @@ TEST(GameModuleLoader, LoadsRealModuleAndRegistersGameComponentByStableIdentity)
     ASSERT_NE(length, nullptr);
     EXPECT_DOUBLE_EQ(length->AsNumber(), 7.5);
 
-    // Retract the serializer (while still mapped), then unmap.
-    m.Instance->OnUnregisterComponents(serializers);
+    // Retract the serializer (while still mapped), then unmap. The module does
+    // not list its components a second time to take them back: the host
+    // retracts exactly what registration recorded.
+    for (ComponentTypeId type : registrar.AddedSerializers())
+        EXPECT_TRUE(serializers.Remove(type));
     EXPECT_EQ(serializers.FindByJsonKey("spike.grapple_hook"), nullptr);
     loader.Unload(m);
     EXPECT_FALSE(m.IsValid());
@@ -138,7 +144,8 @@ TEST(GameModuleLoader, ModuleComponentRoundTripsThroughSceneJson)
     std::string error;
     LoadedModule m = loader.Load(TEST_GAME_MODULE_PATH, &error);
     ASSERT_TRUE(m.IsValid()) << error;
-    m.Instance->OnRegisterComponents(serializers);
+    ComponentRegistrar registrar(nullptr, &serializers, nullptr);
+    m.Instance->OnRegisterComponents(registrar);
 
     IComponentSerializer* gs = serializers.FindByJsonKey("spike.grapple_hook");
     ASSERT_NE(gs, nullptr);
@@ -182,6 +189,7 @@ TEST(GameModuleLoader, ModuleComponentRoundTripsThroughSceneJson)
     EXPECT_TRUE(found);
 
     // Entries the module allocated must go before the module is unmapped.
-    m.Instance->OnUnregisterComponents(serializers);
+    for (ComponentTypeId type : registrar.AddedSerializers())
+        (void)serializers.Remove(type);
     loader.Unload(m);
 }

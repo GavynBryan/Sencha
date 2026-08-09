@@ -8,9 +8,13 @@
 #include <world/transform/TransformHistory.h>
 #include <core/console/ConsoleService.h>
 #include <net/NetCVarSync.h>
+#include <physics/CharacterMoverPool.h>
+#include <physics/components/CharacterMoverLink.h>
 #include <net/NetConsoleCommands.h>
 #include <net/NetSession.h>
+#include <net/PawnStateReplay.h>
 #include <net/ReplicationSnapshot.h>
+#include <physics/PhysicsStepSystem.h>
 #include <world/transform/TransformPropagation.h>
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
@@ -244,7 +248,31 @@ void Engine::RegisterNetFramePhases()
                 engine.Replication().Apply(delivery.Payload, world,
                                            engine.RuntimeComponents(),
                                            engine.ReplicatedComponents(),
-                                           &engine.SpawnRecipes());
+                                           &engine.SpawnRecipes(),
+                                           &engine.Prediction(),
+                                           &engine.Interpolation());
+
+            // Start again from what the authority did, then re-run the ticks it
+            // has not answered. Both halves are necessary: the state alone
+            // rewinds the player by a round trip, and the input alone is what
+            // this machine already guessed with.
+            if (applied.PredictedStateUpdated)
+            {
+                PawnReplayRequest replay;
+                replay.Entities = &world;
+                replay.Schema = &engine.RuntimeComponents();
+                replay.Prediction = &engine.Prediction();
+                if (PhysicsStepSystem* physics =
+                        engine.Schedule().Get<PhysicsStepSystem>())
+                {
+                    replay.Movers = &physics->GetCharacterMovers();
+                }
+                replay.AckTick = applied.CommandAck;
+                replay.FixedDeltaSeconds =
+                    static_cast<float>(simulation.GetFixedDt());
+                replay.Replay = engine.Prediction().IsEnabled();
+                (void)ReplayPawnState(replay);
+            }
             // Every snapshot is also a clock sample, and the freshest one
             // available: it leaves the authority stamped with the tick that
             // produced it, once a frame rather than once a keepalive.
@@ -285,7 +313,8 @@ void Engine::RegisterNetFramePhases()
             const ReplicationRuntime::PublishStats published =
                 engine.Replication().Publish(
                     *session, world, engine.ReplicatedComponents(),
-                    ctx.Runtime->GetSimulationClock().GetTickIndex());
+                    ctx.Runtime->GetSimulationClock().GetTickIndex(),
+                    &engine.PeerCommands());
             traffic.RecordOut(NetTrafficKind::Snapshot, published.BytesQueued,
                               published.SnapshotsSent);
 
@@ -304,17 +333,13 @@ void Engine::RegisterNetFramePhases()
         {
             // Queued after the ticks that resolved it, so the newest record a
             // command carries is this frame's rather than the previous one's.
-            // Nothing is sent before the authority's clock has a name here.
-            // Stamping local ticks first and authority ticks afterwards would
-            // step the stamp by the whole offset mid-session, and if that step
-            // went backwards the authority would refuse everything after it as
-            // input for ticks it had already run.
-            const std::size_t bytes =
-                engine.NetClock().HasEstimate()
-                    ? engine.PeerCommands().SendLocal(
-                          *session, engine.World().Entities(),
-                          engine.NetClock().CommandOffset())
-                    : 0;
+            // Whatever the ring holds, exactly as it was captured. Nothing is
+            // in it before the authority's clock has a name here, because a
+            // record filed under a name the authority cannot place is one it
+            // can never acknowledge.
+            const std::size_t bytes = engine.PeerCommands().SendLocal(
+                *session, engine.Prediction().Commands(),
+                engine.Replication().AppliedSnapshot());
             if (bytes > 0)
                 traffic.RecordOut(NetTrafficKind::Command, bytes);
         }

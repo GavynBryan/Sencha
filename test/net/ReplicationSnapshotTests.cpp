@@ -1,13 +1,16 @@
 #include <gtest/gtest.h>
 
 #include <controller/LookOrientation.h>
+#include <net/ClientPrediction.h>
 #include <ecs/World.h>
 #include <ecs/WorldComponentSchema.h>
 #include <net/NetReplicationComponents.h>
 #include <ecs/Query.h>
 #include <net/NetSpawnRecipe.h>
+#include <net/ReplicationInterpolation.h>
 #include <net/ReplicationSnapshot.h>
 #include <world/transform/TransformHistory.h>
+#include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/transform/TransformComponents.h>
 
@@ -36,24 +39,29 @@ namespace
 
         std::vector<std::byte> Scratch;
         std::uint64_t Tick = 0;
+        // Whether the client confirms what it applied. Off models a peer whose
+        // acknowledgements are not arriving.
+        bool Acknowledge = true;
         SnapshotWriteResult LastWrite;
         SnapshotApplyResult LastApply;
 
         Pair() : Scratch(kSnapshotBytes)
         {
-            RegisterEngineRuntimeComponents(Schema);
+            ComponentRegistrar components(&Schema, nullptr, &Layout);
+            RegisterEngineComponents(components);
             Schema.Seal();
             Schema.Apply(Authority);
             Schema.Apply(Client);
-
-            RegisterEngineReplicatedComponents(Layout);
             Layout.Seal();
         }
 
         // One snapshot: written on the authority, carried as bytes, applied on
         // the client. Returns the bytes it took.
         std::size_t Replicate(std::uint32_t ownerPeer = 0,
-                              const NetSpawnRecipes* recipes = nullptr)
+                              const NetSpawnRecipes* recipes = nullptr,
+                              ClientPrediction* prediction = nullptr,
+                              ReplicationInterpolation* interpolation = nullptr,
+                              std::uint64_t commandAck = 0)
         {
             ++Tick;
             SnapshotWriteRequest write;
@@ -63,6 +71,7 @@ namespace
             write.Peer = &Peer;
             write.OwnerPeer = ownerPeer;
             write.Tick = Tick;
+            write.CommandAck = commandAck;
 
             LastWrite = ReplicationWriteSnapshot(write, Scratch);
             EXPECT_TRUE(LastWrite.Ok);
@@ -73,11 +82,20 @@ namespace
             apply.Layout = &Layout;
             apply.Identity = &ClientIdentity;
             apply.Recipes = recipes;
+            apply.Prediction = prediction;
+            apply.Interpolation = interpolation;
 
             LastApply = ReplicationApplySnapshot(
                 apply, std::span(Scratch).subspan(0, LastWrite.BytesWritten));
             EXPECT_TRUE(LastApply.Ok())
                 << SnapshotApplyErrorToString(LastApply.Error);
+
+            // The client applied it, so it says so. Deltas are measured from
+            // what a peer has confirmed, and a harness that never confirmed
+            // would be testing a peer that never answers -- which has its own
+            // test below.
+            if (Acknowledge)
+                Peer.Acknowledge(Tick);
             return LastWrite.BytesWritten;
         }
 
@@ -328,6 +346,455 @@ TEST(ReplicationSnapshot, OwnerOnlyStateReachesOnlyItsOwner)
 }
 
 //=============================================================================
+// Prediction
+//
+// A client's own pawn is the one entity it simulates rather than mirrors, so
+// the authority's position for it is an argument to settle rather than state to
+// write. These assert that through the applier, which is where the subtle part
+// lives: a delta carries only what changed, so it has to be applied to what the
+// authority believes it sent.
+//=============================================================================
+
+TEST(ReplicationPrediction, ThePredictedEntityKeepsWhatThisMachineSimulated)
+{
+    Pair pair;
+    ClientPrediction prediction;
+
+    const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Replicate();
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+    prediction.SetPredicted(mirror);
+
+    // This machine has simulated the pawn forward; the authority has not caught
+    // up yet. Its word must not overwrite what was simulated.
+    pair.Client.TryGet<LocalTransform>(mirror)->Value.Position =
+        Vec3d{ 9.0f, 0.0f, 0.0f };
+    pair.Authority.TryGet<LocalTransform>(authority)->Value.Position =
+        Vec3d{ 1.0f, 0.0f, 0.0f };
+    pair.Replicate(0, nullptr, &prediction);
+
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
+                    9.0f)
+        << "the authority's position was written over what this machine "
+           "predicted, which is the round trip the player would feel";
+}
+
+// The trap the authoritative shadow exists for: the world's copy of a predicted
+// pawn is this machine's guess, and staging an arriving delta against a guess
+// makes a divergence read as agreement. What the shadow holds has to be what
+// the authority said, however far the guess has wandered.
+TEST(ReplicationPrediction, TheShadowHoldsTheAuthoritysWordNotThisMachinesGuess)
+{
+    Pair pair;
+    ClientPrediction prediction;
+
+    const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Replicate();
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+    prediction.SetPredicted(mirror);
+
+    // The authority is at one metre along X. This machine has guessed its way
+    // somewhere else entirely, which is what predicting ahead looks like.
+    pair.Authority.TryGet<LocalTransform>(authority)->Value.Position =
+        Vec3d{ 1.0f, 0.0f, 0.0f };
+    pair.Client.TryGet<LocalTransform>(mirror)->Value.Position =
+        Vec3d{ 40.0f, 0.0f, -12.0f };
+    pair.Replicate(0, nullptr, &prediction);
+
+    // The guess is untouched -- the whole point of intercepting.
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
+                    40.0f);
+
+    // And the authority's word is what was kept, so a replay resumes from a
+    // real position rather than from wherever this machine had drifted.
+    const EntityId probe = pair.Client.CreateEntity();
+    pair.Client.AddComponent<LocalTransform>(probe, LocalTransform{});
+    ASSERT_TRUE(prediction.RestoreTo(pair.Client, pair.Schema, probe));
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(probe)->Value.Position.X,
+                    1.0f)
+        << "the shadow was contaminated by the world's copy, so every delta "
+           "after this one is staged against a value the authority never sent";
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(probe)->Value.Position.Z,
+                    0.0f);
+}
+
+// A client cannot replay what it cannot separate from what has been answered,
+// so the acknowledgement travels with the state it accounts for -- in the same
+// message, describing the same moment.
+TEST(ReplicationSnapshot, CarriesHowFarTheAuthorityGotThroughThisClientsInput)
+{
+    Pair pair;
+    (void)pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+
+    pair.Replicate(0, nullptr, nullptr, nullptr, 4321);
+    EXPECT_EQ(pair.LastApply.CommandAck, 4321u);
+
+    // And it moves with the authority rather than sticking at the first value.
+    pair.Replicate(0, nullptr, nullptr, nullptr, 4400);
+    EXPECT_EQ(pair.LastApply.CommandAck, 4400u);
+}
+
+//=============================================================================
+// Deltas are measured from what the peer confirmed, not from what was sent
+//
+// The defect this closes cost a whole session's worth of state for one dropped
+// datagram. A snapshot rides an unreliable channel, so writing one is not
+// delivering it; a baseline advanced on writing then describes a state the peer
+// never reached, and every later difference is measured from that fiction. A
+// position hides it -- it changes every tick, so every snapshot re-carries it.
+// Anything that settles does not.
+//=============================================================================
+
+TEST(ReplicationAcknowledgement, StateSurvivesASnapshotThatNeverArrives)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 7 });
+    pair.Authority.AddComponent<CharacterMovement>(
+        authority, CharacterMovement{ .Mode = LocomotionModeId{ 3 } });
+
+    // The snapshot carrying the mode is written and lost: the client never sees
+    // these bytes, so it never confirms them.
+    pair.Acknowledge = false;
+    pair.Replicate(7);
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+    pair.Client.TryGet<CharacterMovement>(mirror)->Mode = LocomotionModeId{};
+
+    // Everything after it arrives normally. The mode never changes again, so
+    // nothing but the acknowledgement rule can bring it back.
+    pair.Acknowledge = true;
+    for (int step = 0; step < 3; ++step)
+    {
+        pair.Authority.TryGet<LocalTransform>(authority)->Value.Position =
+            Vec3d{ static_cast<float>(step), 0.0f, 0.0f };
+        pair.Replicate(7);
+    }
+
+    EXPECT_EQ(pair.Client.TryGet<CharacterMovement>(mirror)->Mode.Value, 3u)
+        << "a lost snapshot took a settled value with it for the rest of the "
+           "session, because the authority went on describing differences from "
+           "a state this client was never in";
+}
+
+// The other half of the same rule: a peer that keeps confirming pays for what
+// it already has exactly once.
+TEST(ReplicationAcknowledgement, ConfirmedStateIsNotSentAgain)
+{
+    Pair pair;
+    (void)pair.SpawnReplicated(PoseAt(1.0f, 2.0f, 3.0f));
+
+    const std::size_t first = pair.Replicate();
+    const std::size_t second = pair.Replicate();
+    EXPECT_LT(second, first)
+        << "a world that did not move cost as much to describe the second time";
+}
+
+// A peer that stops answering cannot be tracked forever. Rather than grow, the
+// authority forgets what it believed and tells that peer everything again.
+TEST(ReplicationAcknowledgement, APeerThatStopsConfirmingIsToldEverythingAgain)
+{
+    Pair pair;
+    (void)pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    pair.Acknowledge = false;
+    for (std::size_t step = 0; step < ReplicationPeerState::kMaxUnacknowledged + 4;
+         ++step)
+    {
+        pair.Replicate();
+    }
+
+    EXPECT_LE(pair.Peer.Unacknowledged(),
+              ReplicationPeerState::kMaxUnacknowledged + 1)
+        << "the authority kept every unconfirmed snapshot, so a silent peer "
+           "buys memory on the machine hosting it";
+}
+
+//=============================================================================
+// The pawn state that rides home to its owner
+//
+// A client resuming its own simulation needs everything the movement step
+// reads: velocity, support, mode, jump cooldown. Nobody else does, and what one
+// player's machine is owed must not be what every machine receives.
+//=============================================================================
+
+namespace
+{
+    // A pawn with the full movement-state set, owned by `peer`.
+    EntityId SpawnOwnedPawn(Pair& pair, std::uint32_t peer)
+    {
+        const EntityId pawn = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+        pair.Authority.AddComponent<NetOwner>(pawn, NetOwner{ .Peer = peer });
+        KinematicState motion;
+        motion.Velocity = Vec3d{ 3.0f, -1.0f, 0.5f };
+        pair.Authority.AddComponent<KinematicState>(pawn, motion);
+        SupportState support;
+        support.Kind = SupportKind::Stable;
+        support.SurfaceVelocity = Vec3d{ 0.25f, 0.0f, 0.0f };
+        pair.Authority.AddComponent<SupportState>(pawn, support);
+        pair.Authority.AddComponent<CharacterMovement>(
+            pawn, CharacterMovement{ .Mode = LocomotionModeId{ 2 } });
+        pair.Authority.AddComponent<JumpState>(
+            pawn, JumpState{ .CooldownRemaining = 0.12f });
+        return pawn;
+    }
+}
+
+TEST(ReplicationPawnState, TheOwnerGetsWhatItNeedsToResumeSimulating)
+{
+    Pair pair;
+    const EntityId pawn = SpawnOwnedPawn(pair, 7);
+
+    // This stream belongs to peer 7, the owner.
+    pair.Replicate(7);
+    const EntityId mirror = pair.Mirror(pawn);
+    ASSERT_TRUE(mirror.IsValid());
+
+    const KinematicState* motion = pair.Client.TryGet<KinematicState>(mirror);
+    ASSERT_NE(motion, nullptr);
+    EXPECT_FLOAT_EQ(motion->Velocity.X, 3.0f);
+    EXPECT_FLOAT_EQ(motion->Velocity.Y, -1.0f);
+
+    const SupportState* support = pair.Client.TryGet<SupportState>(mirror);
+    ASSERT_NE(support, nullptr);
+    EXPECT_EQ(support->Kind, SupportKind::Stable);
+    EXPECT_FLOAT_EQ(support->SurfaceVelocity.X, 0.25f);
+
+    EXPECT_EQ(pair.Client.TryGet<CharacterMovement>(mirror)->Mode.Value, 2u);
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<JumpState>(mirror)->CooldownRemaining,
+                    0.12f);
+}
+
+TEST(ReplicationPawnState, EveryoneElseGetsThePoseAndNoneOfTheRest)
+{
+    Pair pair;
+    const EntityId pawn = SpawnOwnedPawn(pair, 7);
+    pair.Authority.TryGet<LocalTransform>(pawn)->Value.Position =
+        Vec3d{ 4.0f, 0.0f, 0.0f };
+
+    // This stream belongs to peer 9, a spectator of pawn 7.
+    pair.Replicate(9);
+    const EntityId mirror = pair.Mirror(pawn);
+    ASSERT_TRUE(mirror.IsValid());
+
+    // The pose travels to everyone: it is what the pawn looks like.
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
+                    4.0f);
+
+    // The simulation state does not. The components exist -- the wire named
+    // them -- but every owner-only field decoded to its default, which is what
+    // an all-zero mask means.
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<KinematicState>(mirror)->Velocity.X, 0.0f)
+        << "another player's machine was handed simulation state it has no "
+           "business holding";
+    EXPECT_EQ(pair.Client.TryGet<SupportState>(mirror)->Kind, SupportKind::None);
+    EXPECT_EQ(pair.Client.TryGet<CharacterMovement>(mirror)->Mode.Value, 0u)
+        << "a spectator's mirror claims a locomotion mode, so movement systems "
+           "on that machine would start driving a puppet";
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<JumpState>(mirror)->CooldownRemaining, 0.0f);
+}
+
+// The shadow's whole reason applied to the new state: a delta that has no
+// reason to resend velocity must not cost the predictor the velocity it was
+// last told.
+TEST(ReplicationPawnState, TheShadowKeepsStateAnEmptyDeltaDidNotResend)
+{
+    Pair pair;
+    ClientPrediction prediction;
+
+    const EntityId pawn = SpawnOwnedPawn(pair, 7);
+    pair.Replicate(7, nullptr, &prediction);
+    const EntityId mirror = pair.Mirror(pawn);
+    ASSERT_TRUE(mirror.IsValid());
+    prediction.SetPredicted(mirror);
+
+    // First snapshot with a subject: everything lands in the shadows.
+    pair.Replicate(7, nullptr, &prediction);
+    ASSERT_TRUE(prediction.HasAuthoritativeState(
+        ResolveComponentTypeId<KinematicState>()));
+
+    // The authority changes nothing, so the next delta carries empty masks.
+    pair.Replicate(7, nullptr, &prediction);
+
+    World scratch;
+    WorldComponentSchema schema;
+    RegisterEngineRuntimeComponents(schema);
+    schema.Seal();
+    schema.Apply(scratch);
+    const EntityId probe = scratch.CreateEntity();
+    scratch.AddComponent<KinematicState>(probe, KinematicState{});
+    scratch.AddComponent<SupportState>(probe, SupportState{});
+    scratch.AddComponent<CharacterMovement>(probe, CharacterMovement{});
+    scratch.AddComponent<JumpState>(probe, JumpState{});
+    scratch.AddComponent<LocalTransform>(probe, LocalTransform{});
+    ASSERT_TRUE(prediction.RestoreTo(scratch, schema, probe));
+
+    EXPECT_FLOAT_EQ(scratch.TryGet<KinematicState>(probe)->Velocity.X, 3.0f)
+        << "an empty delta cost the shadow the velocity the authority last "
+           "sent, so a replay would resume from a standstill";
+    EXPECT_EQ(scratch.TryGet<SupportState>(probe)->Kind, SupportKind::Stable);
+    EXPECT_FLOAT_EQ(scratch.TryGet<JumpState>(probe)->CooldownRemaining, 0.12f);
+}
+
+TEST(ReplicationPrediction, OtherPlayersPawnsStillArriveAsState)
+{
+    Pair pair;
+    ClientPrediction prediction;
+
+    const EntityId mine = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    const EntityId theirs = pair.SpawnReplicated(PoseAt(5.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    const EntityId myMirror = pair.Mirror(mine);
+    const EntityId theirMirror = pair.Mirror(theirs);
+    ASSERT_TRUE(myMirror.IsValid());
+    ASSERT_TRUE(theirMirror.IsValid());
+    prediction.SetPredicted(myMirror);
+
+    pair.Authority.TryGet<LocalTransform>(theirs)->Value.Position =
+        Vec3d{ 42.0f, 0.0f, 0.0f };
+    pair.Replicate(0, nullptr, &prediction);
+
+    EXPECT_FLOAT_EQ(
+        pair.Client.TryGet<LocalTransform>(theirMirror)->Value.Position.X, 42.0f)
+        << "a puppet has to be drawn where the authority says it is";
+}
+
+//=============================================================================
+// Poses held rather than written
+//
+// The applier's half of interpolation. The unit tests pin what the buffer does
+// with poses it is given; these pin that the applier gives it the right ones and
+// keeps them out of the world in the meantime.
+//=============================================================================
+
+TEST(ReplicationInterpolationApply, AMirroredPoseIsHeldInsteadOfWritten)
+{
+    Pair pair;
+    ReplicationInterpolation interpolation;
+
+    const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Replicate(0, nullptr, nullptr, &interpolation);
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+
+    pair.Authority.TryGet<LocalTransform>(authority)->Value.Position =
+        Vec3d{ 9.0f, 0.0f, 0.0f };
+    const std::uint64_t moved = pair.Tick + 1;
+    pair.Replicate(0, nullptr, nullptr, &interpolation);
+
+    EXPECT_EQ(interpolation.TrackedCount(), 1u)
+        << "the applier never handed the pose to the buffer, so nothing will "
+           "present it";
+
+    const auto held = interpolation.Resolve(mirror, moved);
+    ASSERT_TRUE(held.has_value());
+    EXPECT_FLOAT_EQ(held->Value.Position.X, 9.0f);
+
+    // And the world still holds whatever it did: writing the arriving pose here
+    // is exactly the stepping the buffer exists to replace.
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
+                    0.0f)
+        << "the arriving pose was written straight to the world as well, so the "
+           "entity steps to it and is then blended from it";
+}
+
+// What the world's copy is doing cannot reach the held pose. Today the transport
+// of this is trivial -- a transform arrives whole or not at all -- but the
+// staging source is the part that would stop being trivial the moment the
+// schema splits position from rotation, and this is where that would show.
+TEST(ReplicationInterpolationApply, TheHeldPoseComesFromTheWireNotTheWorld)
+{
+    Pair pair;
+    ReplicationInterpolation interpolation;
+
+    const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Replicate(0, nullptr, nullptr, &interpolation);
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+
+    // Dragged somewhere the authority never put it, which is what presenting a
+    // blend does to this component every tick.
+    pair.Client.TryGet<LocalTransform>(mirror)->Value.Position =
+        Vec3d{ -50.0f, -50.0f, -50.0f };
+
+    pair.Authority.TryGet<LocalTransform>(authority)->Value.Position =
+        Vec3d{ 6.0f, 0.0f, 4.0f };
+    const std::uint64_t moved = pair.Tick + 1;
+    pair.Replicate(0, nullptr, nullptr, &interpolation);
+
+    const auto held = interpolation.Resolve(mirror, moved);
+    ASSERT_TRUE(held.has_value());
+    EXPECT_FLOAT_EQ(held->Value.Position.X, 6.0f);
+    EXPECT_FLOAT_EQ(held->Value.Position.Y, 0.0f);
+    EXPECT_FLOAT_EQ(held->Value.Position.Z, 4.0f);
+}
+
+// Prediction off does not mean the local pawn becomes a mirrored one. It is
+// still simulated here -- its movement systems run either way -- so its pose has
+// to land in the world as it did before prediction existed. Held back instead,
+// the authority's word would have nowhere to go and the pawn would answer to
+// nothing but this machine.
+TEST(ReplicationInterpolationApply, TheOwnPawnIsNeverMirroredEvenWithPredictionOff)
+{
+    Pair pair;
+    ClientPrediction prediction;
+    ReplicationInterpolation interpolation;
+
+    const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Replicate(0, nullptr, &prediction, &interpolation);
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+
+    prediction.SetPredicted(mirror);
+    prediction.SetEnabled(false);
+
+    pair.Authority.TryGet<LocalTransform>(authority)->Value.Position =
+        Vec3d{ 3.0f, 0.0f, 0.0f };
+    pair.Replicate(0, nullptr, &prediction, &interpolation);
+
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X,
+                    3.0f)
+        << "the pawn this machine simulates was mirrored instead of written, so "
+           "the authority's pose reached neither the world nor anything that "
+           "would present it";
+
+    // A track from before adoption is expected -- a client cannot know which
+    // pawn is its own until the ownership arrives, and the presenting system
+    // drops it on the first tick after that. What must not happen is this
+    // snapshot adding to it.
+    const auto held = interpolation.Resolve(mirror, pair.Tick);
+    if (held.has_value())
+    {
+        EXPECT_FLOAT_EQ(held->Value.Position.X, 0.0f)
+            << "the own pawn's pose was fed to the buffer as well, so two "
+               "mechanisms now hold an opinion about where it is";
+    }
+}
+
+TEST(ReplicationInterpolationApply, ADestroyedEntityStopsBeingHeld)
+{
+    Pair pair;
+    ReplicationInterpolation interpolation;
+
+    const EntityId authority = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+    pair.Replicate(0, nullptr, nullptr, &interpolation);
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+    ASSERT_EQ(interpolation.TrackedCount(), 1u);
+
+    pair.Authority.DestroyEntity(authority);
+    pair.Replicate(0, nullptr, nullptr, &interpolation);
+
+    EXPECT_EQ(interpolation.TrackedCount(), 0u)
+        << "poses kept for a destroyed entity would be inherited by whatever "
+           "the handle is handed out to next";
+}
+
+//=============================================================================
 // Reaching the screen
 //
 // The gap the first live playtest found. Every assertion above passes on an
@@ -538,10 +1005,13 @@ TEST(ReplicationSnapshotHostile, AnUnknownComponentKeyIsRefused)
         ReplicationWriteSnapshot(write, pair.Scratch);
     ASSERT_TRUE(produced.Ok);
 
-    // The component key sits after the tick, the two counts, the entity id, and
-    // the component count: 64 + 32 + 32 + 64 + 8 bits, which is byte-aligned at
-    // byte 25. Corrupt it to a key no build defines.
-    constexpr std::size_t kComponentKeyByte = (64 + 32 + 32 + 64 + 8) / 8;
+    // Where the first component key sits, counted rather than guessed so that
+    // adding a header field moves one number here instead of a magic one.
+    constexpr std::size_t kHeaderBits = 64   // tick
+                                      + 64   // command acknowledgement
+                                      + 32   // destroyed count
+                                      + 32;  // updated count
+    constexpr std::size_t kComponentKeyByte = (kHeaderBits + 64 + 8) / 8;
     ASSERT_GT(produced.BytesWritten, kComponentKeyByte);
     pair.Scratch[kComponentKeyByte] = std::byte{ 0xFE };
 
@@ -565,6 +1035,7 @@ TEST(ReplicationSnapshotHostile, AnAbsurdEntityCountIsRefusedByTheCap)
     std::array<std::byte, 32> forged{};
     NetBitWriter writer(forged);
     writer.WriteU64(1);            // tick
+    writer.WriteU64(0);            // command acknowledgement
     writer.WriteBits(0, 32);       // destroyed
     writer.WriteBits(0xFFFFFFFF, 32);  // updated: four billion entities
 

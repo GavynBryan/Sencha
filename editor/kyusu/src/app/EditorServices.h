@@ -3,6 +3,7 @@
 #include <app/GameContexts.h>
 #include <app/GameModuleLoader.h>
 #include <assets/runtime/RuntimeAssets.h>
+#include <ecs/ComponentTypeId.h>
 
 #include "commands/CommandStack.h"
 #include "input/InputRouter.h"
@@ -17,6 +18,7 @@
 
 #include <memory>
 #include <optional>
+#include <vector>
 
 class EditorUiFeature;
 class EditorConsolePanel;
@@ -153,6 +155,11 @@ private:
 
     GameModuleLoader ModuleLoader;
     LoadedModule     GameModule;
+    // Component identities the module's registration added serializers for.
+    // Recorded so unload retracts exactly those, while the module is still
+    // mapped -- the module built the serializer objects, so freeing one after
+    // unmapping runs a destructor that is gone.
+    std::vector<ComponentTypeId> GameModuleSerializerTypes;
 
     std::optional<std::string> ProjectPath;
     std::optional<ProjectDescriptor> Project;

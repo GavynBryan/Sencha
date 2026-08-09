@@ -18,6 +18,8 @@
 #include "project/MaterialLibrary.h"
 #include "document/commands/BakeBrushToMeshCommand.h"
 #include "export/GltfMeshExport.h"
+
+#include <world/ComponentRegistrar.h>
 #include "render/EditorRenderFeature.h"
 #include "ui/ActiveMaterialPanel.h"
 #include "ui/CookProfilesPanel.h"
@@ -905,7 +907,12 @@ void EditorServices::LoadGameModule()
 
     // The editor only borrows the module's component serializers (so it can edit
     // scenes containing game components); it never runs the game's lifecycle.
-    GameModule.Instance->OnRegisterComponents(EditorSceneSerializers());
+    // No World and no session here, so the registrar carries neither -- a game
+    // component that only replicates is registered and simply has nowhere to go.
+    ComponentRegistrar registrar(nullptr, &EditorSceneSerializers(), nullptr);
+    GameModule.Instance->OnRegisterComponents(registrar);
+    const std::span<const ComponentTypeId> added = registrar.AddedSerializers();
+    GameModuleSerializerTypes.assign(added.begin(), added.end());
     std::fprintf(stderr, "[editor] loaded game module '%s'\n", modulePath.c_str());
 }
 
@@ -930,6 +937,8 @@ void EditorServices::UnloadGameModule()
         return;
 
     // Retract the serializers while the module is still mapped, then unmap.
-    GameModule.Instance->OnUnregisterComponents(EditorSceneSerializers());
+    for (ComponentTypeId type : GameModuleSerializerTypes)
+        (void)EditorSceneSerializers().Remove(type);
+    GameModuleSerializerTypes.clear();
     ModuleLoader.Unload(GameModule);
 }

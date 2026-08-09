@@ -46,7 +46,25 @@ void NetTickEstimator::Observe(std::uint64_t authorityTick, std::uint64_t localT
     if (tickSeconds <= 0.0)
         return;
 
-    Flight = FlightTicksFrom(roundTripMicroseconds, tickSeconds);
+    // Flight rises at once and falls one tick at a time.
+    //
+    // The stamp a command carries is Delta plus this, so slewing Delta alone
+    // does not keep the stamp steady -- taking each measurement literally moves
+    // the stamp by the whole jitter of the round trip that produced it, and the
+    // jumping this class exists to prevent happens anyway.
+    //
+    // The two directions are not symmetric, for the reason the flight
+    // calculation rounds up. A round trip that just grew means commands are
+    // already arriving late, and every sample spent disbelieving it is input
+    // that misses its tick. A round trip that just shrank costs nothing to
+    // disbelieve for a few samples: the stamp is merely further ahead than it
+    // needs to be, which the authority's buffer absorbs and then sheds.
+    const std::uint32_t measured =
+        FlightTicksFrom(roundTripMicroseconds, tickSeconds);
+    if (!Observed || measured > Flight)
+        Flight = measured;
+    else if (Flight > measured)
+        --Flight;
 
     // The sample is a round trip old, so the authority has moved on since it
     // spoke: what it is at now is what it said plus the flight time.

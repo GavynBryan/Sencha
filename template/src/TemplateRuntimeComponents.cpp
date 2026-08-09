@@ -3,10 +3,14 @@
 #include "PlayerStartComponent.h"
 #include "SpinComponent.h"
 
-#include <ecs/WorldComponentSchema.h>
+#include <world/ComponentRegistrar.h>
 
-void TemplateGame::OnRegisterRuntimeComponents(WorldComponentSchema& schema)
+// Every component this game owns, named once. Storage, a scene serializer, and
+// a place in the replicated table follow from what each component's TypeSchema
+// declares -- there is no second list to keep in step, and nothing to write
+// again to take them back.
+void TemplateGame::OnRegisterComponents(ComponentRegistrar& registrar)
 {
-    schema.Add<SpinComponent>();
-    schema.Add<PlayerStartComponent>();
+    registrar.Add<SpinComponent>();
+    registrar.Add<PlayerStartComponent>();
 }

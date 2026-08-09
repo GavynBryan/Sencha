@@ -19,7 +19,8 @@
 #include <render/Camera.h>
 #include <render/PointLightComponent.h>
 #include <render/StaticMeshComponent.h>
-#include <world/ComponentManifest.h>
+#include <world/ComponentRegistrar.h>
+#include <world/RuntimeComponentSchema.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
@@ -34,12 +35,11 @@ namespace
     Registry MakeGoldenScene()
     {
         Registry registry;
-        ForEachSceneComponent([&]<typename T>(ComponentTag<T>)
-        {
-            registry.Components.RegisterComponent<T>();
-        });
-        registry.Components.RegisterComponent<WorldTransform>();
-        registry.Components.RegisterComponent<Parent>();
+        // The engine's own vocabulary, composed the way the runtime composes
+        // it, so this fixture cannot know a different set of components than
+        // the code it is testing.
+        ComponentRegistrar components(registry.Components);
+        RegisterEngineComponents(components);
 
         const EntityId root = registry.Components.CreateEntity();
         registry.Components.AddComponent(root, LocalTransform{
@@ -90,10 +90,16 @@ TEST(SceneSerializationGolden, BinaryPayloadIsUnchanged)
     ASSERT_TRUE(SaveSceneBinary(registry, serializers, writer, &error)) << error.Message;
 
     const std::string bytes = stream.str();
-    // Constant last moved by PersistentIdComponent joining the manifest: the
-    // binary form writes one chunk per registered serializer, so a new
-    // component appends an empty chunk even when no entity carries it.
-    EXPECT_EQ(HashOfString(bytes), 0xb474dcf75ae1ce7aULL)
+    // The binary form writes one chunk per registered serializer, so this hash
+    // moves with the set AND the order of registration. Last moved by
+    // components being registered by the feature that owns them rather than
+    // from one central list, which put the chunks in a different order.
+    //
+    // Order is not a format contract -- the reader dispatches on each chunk's
+    // id, proven by SceneSerializer.ADifferentRegistrationOrderReadsTheSameScene
+    // -- so a change here is only ever a prompt to check that nothing about the
+    // scene's content changed. The size below did not.
+    EXPECT_EQ(HashOfString(bytes), 0x4f218e01c3cc43beULL)
         << "scene binary changed; if that was intended, update the constant."
         << " size=" << bytes.size();
 }

@@ -7,7 +7,9 @@
 #include <ecs/World.h>
 #include <ecs/WorldComponentSchema.h>
 #include <input/InputActionState.h>
+#include <movement/MovementIntent.h>
 #include <net/NetPlayerCommand.h>
+#include <net/PeerCommandRuntime.h>
 #include <net/NetSession.h>
 #include <net/UdpTransport.h>
 #include <world/RuntimeComponentSchema.h>
@@ -131,18 +133,32 @@ namespace
             InputActionState& actions = world.AddResource<InputActionState>();
             actions.Configure(2);
 
+            // What a command is projected from: the pawn this machine predicts,
+            // and the intent each tick derives for it. The capture system writes
+            // one record per tick from these; nothing reaches the wire without
+            // them, which is the point -- a command is a tick that was simulated.
             const EntityId pawn = world.CreateEntity();
             world.AddComponent<LookOrientation>(pawn, LookOrientation{});
             world.AddComponent<LocalLookControl>(pawn, {});
+            world.AddComponent<MovementIntent>(pawn, MovementIntent{});
 
             NetSession* session = engine.CreateNetSession(Transport);
             if (session == nullptr)
                 return;
+            // After the session: creating one clears the predictor, because a
+            // pawn belongs to the session that named it.
+            engine.Prediction().SetPredicted(pawn);
             Joined = session->Connect(Address, ClockTestIdentity());
         }
 
         void OnRegisterSystems(SystemRegisterContext& ctx) override
         {
+            // The capture system is what fills the ring the flush phase sends
+            // from, so a game that never registers it has nothing to say.
+            RegisterNetSystems(ctx.Schedule, GetEngine().PeerCommands(),
+                               GetEngine().Prediction(),
+                               GetEngine().Interpolation(),
+                               GetEngine().NetClock());
             ctx.Schedule.Register<TickRecorderSystem>();
             AuthorityDriverSystem& driver =
                 ctx.Schedule.Register<AuthorityDriverSystem>();
