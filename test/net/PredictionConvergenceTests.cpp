@@ -358,7 +358,7 @@ namespace
 
                 AdoptPawn();
 
-                if (applied.PredictedStateUpdated && ClientPawn.IsValid())
+                if (applied.ReconcilePredicted && ClientPawn.IsValid())
                 {
                     PawnReplayRequest replay;
                     replay.Entities = &Mirror.Entities;

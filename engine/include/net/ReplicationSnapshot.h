@@ -99,7 +99,23 @@ public:
     void RecordSent(std::uint32_t sequence, NetEntityId id,
                     std::uint64_t generation);
 
-    // Everything a destroyed entity had, in flight or confirmed.
+    // An entity this peer was told about that the world no longer has. Held as
+    // a debt rather than acted on: the peer stops being up to date with it at
+    // once, but it is owed the news until it confirms hearing it. A destroy
+    // said once and forgotten leaves a client holding an entity that will never
+    // be mentioned again, because the authority has nothing left to mention.
+    void NoteDeparted(NetEntityId id);
+    [[nodiscard]] std::span<const NetEntityId> OwedDestroys() const
+    {
+        return { Departed.data(), Departed.size() };
+    }
+
+    // Records that a snapshot carried these destroys, pending proof.
+    void RecordDestroysSent(std::uint32_t sequence,
+                            std::span<const NetEntityId> ids);
+
+    // Everything about an entity, in flight or confirmed. For a peer leaving,
+    // not for an entity dying -- that is NoteDeparted.
     void Forget(NetEntityId id);
 
     // Applies what the peer has proved it holds. A pending snapshot raises
@@ -126,9 +142,12 @@ private:
     {
         std::uint32_t Sequence = 0;
         std::vector<std::pair<NetEntityId, std::uint64_t>> Entities;
+        std::vector<NetEntityId> Destroyed;
     };
 
     std::unordered_map<NetEntityId, std::uint64_t> Floors;
+    // Destroys this peer is owed, oldest first. Cleared only by proof.
+    std::vector<NetEntityId> Departed;
     // Oldest first, one entry per snapshot still unconfirmed.
     std::vector<SentSnapshot> Pending;
     // Starts at one, because zero is the acknowledgement's "nothing yet".
@@ -300,7 +319,14 @@ struct SnapshotApplyResult
     // The predicted pawn's authoritative state was updated by this snapshot, so
     // the caller has something new to reconcile against. Deciding what to do
     // about it is not a snapshot applier's business.
-    bool PredictedStateUpdated = false;
+    // Whether this snapshot should drive a reconcile of the predicted pawn.
+    // True for every snapshot a predicting client applies, not only ones that
+    // carried the pawn's own state: the shadow holds the authority's last word
+    // whether or not this snapshot refreshed it, and a pawn the authority has
+    // not moved is exactly the case a client can be wrong about on its own.
+    // Gating on the pawn appearing would mean a client that predicted movement
+    // the authority never performed is never told.
+    bool ReconcilePredicted = false;
 
     [[nodiscard]] bool Ok() const { return Error == SnapshotApplyError::None; }
 };

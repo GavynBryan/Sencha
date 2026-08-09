@@ -80,7 +80,7 @@ void ReplicationPeerState::BeginSnapshot(std::uint32_t sequence)
     if (Pending.size() < kMaxUnacknowledged)
     {
         if (Pending.empty() || Pending.back().Sequence != sequence)
-            Pending.push_back(SentSnapshot{ .Sequence = sequence, .Entities = {} });
+            Pending.push_back(SentSnapshot{ .Sequence = sequence, .Entities = {}, .Destroyed = {} });
         return;
     }
 
@@ -90,7 +90,7 @@ void ReplicationPeerState::BeginSnapshot(std::uint32_t sequence)
     // rather than an unbounded pile of them.
     Floors.clear();
     Pending.clear();
-    Pending.push_back(SentSnapshot{ .Sequence = sequence, .Entities = {} });
+    Pending.push_back(SentSnapshot{ .Sequence = sequence, .Entities = {}, .Destroyed = {} });
 }
 
 void ReplicationPeerState::RecordSent(std::uint32_t sequence, NetEntityId id,
@@ -103,6 +103,28 @@ void ReplicationPeerState::RecordSent(std::uint32_t sequence, NetEntityId id,
         BeginSnapshot(sequence);
 
     Pending.back().Entities.emplace_back(id, generation);
+}
+
+void ReplicationPeerState::NoteDeparted(NetEntityId id)
+{
+    // Only a peer that was told about it can be owed the news.
+    if (Floors.erase(id) == 0 && std::find(Departed.begin(), Departed.end(), id)
+                                     == Departed.end())
+    {
+        return;
+    }
+    if (std::find(Departed.begin(), Departed.end(), id) == Departed.end())
+        Departed.push_back(id);
+}
+
+void ReplicationPeerState::RecordDestroysSent(std::uint32_t sequence,
+                                              std::span<const NetEntityId> ids)
+{
+    if (ids.empty())
+        return;
+    if (Pending.empty() || Pending.back().Sequence != sequence)
+        BeginSnapshot(sequence);
+    Pending.back().Destroyed.assign(ids.begin(), ids.end());
 }
 
 void ReplicationPeerState::Acknowledge(const NetSnapshotAck& ack)
@@ -120,6 +142,9 @@ void ReplicationPeerState::Acknowledge(const NetSnapshotAck& ack)
                 std::uint64_t& floor = Floors[id];
                 floor = std::max(floor, generation);
             }
+            // Heard and understood: the debt is settled.
+            for (NetEntityId id : snapshot.Destroyed)
+                std::erase(Departed, id);
         }
         else if (snapshot.Sequence > ack.Newest())
         {
@@ -140,17 +165,20 @@ void ReplicationPeerState::Acknowledge(const NetSnapshotAck& ack)
 void ReplicationPeerState::Forget(NetEntityId id)
 {
     Floors.erase(id);
+    std::erase(Departed, id);
     for (SentSnapshot& snapshot : Pending)
     {
         std::erase_if(snapshot.Entities, [id](const auto& entry) {
             return entry.first == id;
         });
+        std::erase(snapshot.Destroyed, id);
     }
 }
 
 void ReplicationPeerState::Clear()
 {
     Floors.clear();
+    Departed.clear();
     Pending.clear();
 }
 
@@ -207,6 +235,57 @@ void ReplicationClientIdentity::Unbind(NetEntityId id)
 // Writing
 //=============================================================================
 
+namespace
+{
+    // Which runs of a component a peer is owed: the ones that moved after its
+    // floor, plus every gated one when ownership moved after its floor, and
+    // then only those this peer may see at all.
+    std::uint64_t OwedFields(const ReplicatedComponent& component,
+                             const ReplicationChangeStore::ComponentState& held,
+                             std::uint64_t floor, bool ownershipMoved,
+                             bool forOwner)
+    {
+        std::uint64_t owed = 0;
+        for (std::size_t run = 0; run < component.Fields.size(); ++run)
+        {
+            const bool moved =
+                run < held.ChangedAt.size() && held.ChangedAt[run] > floor;
+            const bool gated =
+                component.Fields[run].OwnerOnly || component.Fields[run].OwnerLocal;
+            if (moved || (gated && ownershipMoved))
+                owed |= (std::uint64_t{ 1 } << run);
+        }
+        return owed & ReplicationVisibleFields(component, forOwner);
+    }
+
+    // Whether a snapshot for this peer would carry anything about this entity.
+    // Asked before the envelope is written, because an entity with nothing to
+    // say should not appear at all rather than appear with every mask clear.
+    bool EntityHasNewsFor(const ReplicationChangeStore::EntityState& entity,
+                          const ReplicationLayout& layout,
+                          const ReplicationPeerState& peer,
+                          std::uint32_t ownerPeer)
+    {
+        // Never told about it: the spawn is the news.
+        if (!peer.Knows(entity.Id))
+            return true;
+
+        const std::uint64_t floor = peer.Floor(entity.Id);
+        const bool isOwner = ownerPeer != 0 && entity.Owner == ownerPeer;
+        const bool ownershipMoved = entity.OwnerChangedAt > floor;
+
+        for (const ReplicationChangeStore::ComponentState& held : entity.Components)
+        {
+            const ReplicatedComponent* component = layout.At(held.WireIndex);
+            if (component == nullptr)
+                continue;
+            if (OwedFields(*component, held, floor, ownershipMoved, isOwner) != 0)
+                return true;
+        }
+        return false;
+    }
+}
+
 SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request,
                                              std::span<std::byte> out)
 {
@@ -236,16 +315,26 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
     // peer rather than read straight off the store, because a peer that was
     // never told about an entity has nothing to forget, and one whose destroy
     // was lost still needs telling.
-    std::vector<NetEntityId> destroyed;
     for (NetEntityId id : changes.Departed())
+        peer.NoteDeparted(id);
+    const std::span<const NetEntityId> destroyed = peer.OwedDestroys();
+
+    // Which entities this snapshot has anything to say about. An entity nobody
+    // has touched since this peer's floor has nothing to carry, and absence
+    // means "unchanged" on the far side -- so saying nothing is the whole
+    // message. It used to cost around ten bytes of envelope to say nothing,
+    // paid per entity per peer per snapshot, which is what a still world spent
+    // its bandwidth on.
+    std::vector<const ReplicationChangeStore::EntityState*> sending;
+    sending.reserve(changes.Size());
+    for (const ReplicationChangeStore::EntityState& entity : changes.Live())
     {
-        if (peer.Knows(id))
-            destroyed.push_back(id);
+        if (EntityHasNewsFor(entity, layout, peer, request.OwnerPeer))
+            sending.push_back(&entity);
     }
 
-    const std::span<const ReplicationChangeStore::EntityState> live = changes.Live();
     const std::size_t entityCap = ReplicationDefaultCaps().MaxEntitiesPerSnapshot;
-    const std::size_t entityCount = std::min(live.size(), entityCap);
+    const std::size_t entityCount = std::min(sending.size(), entityCap);
 
     NetBitWriter writer(out);
     writer.WriteU64(request.Tick);
@@ -265,7 +354,7 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
 
     for (std::size_t index = 0; index < entityCount; ++index)
     {
-        const ReplicationChangeStore::EntityState& entity = live[index];
+        const ReplicationChangeStore::EntityState& entity = *sending[index];
         const std::uint64_t floor = peer.Floor(entity.Id);
         const bool isOwner =
             request.OwnerPeer != 0 && entity.Owner == request.OwnerPeer;
@@ -283,17 +372,8 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
             const ReplicatedComponent* component = layout.At(held.WireIndex);
             writer.WriteBits(held.WireIndex, kComponentIndexBits);
 
-            std::uint64_t fields = 0;
-            for (std::size_t run = 0; run < component->Fields.size(); ++run)
-            {
-                const bool moved =
-                    run < held.ChangedAt.size() && held.ChangedAt[run] > floor;
-                const bool gated = component->Fields[run].OwnerOnly
-                                || component->Fields[run].OwnerLocal;
-                if (moved || (gated && ownershipMoved))
-                    fields |= (std::uint64_t{ 1 } << run);
-            }
-            fields &= ReplicationVisibleFields(*component, isOwner);
+            const std::uint64_t fields =
+                OwedFields(*component, held, floor, ownershipMoved, isOwner);
 
             if (!ReplicationEncodeComponent(*component, held.Bytes, fields, writer))
                 return result;  // Did not fit; the peer state is left untouched.
@@ -305,8 +385,7 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
     if (writer.Overflowed())
         return result;
 
-    for (NetEntityId id : destroyed)
-        peer.Forget(id);
+    peer.RecordDestroysSent(request.Sequence, destroyed);
     for (const auto& [id, at] : carried)
         peer.RecordSent(request.Sequence, id, at);
 
@@ -491,7 +570,6 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
                     return result;
                 }
                 request.Prediction->MarkSeen(component->Type);
-                result.PredictedStateUpdated = true;
                 continue;
             }
 
@@ -601,6 +679,14 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
             }
         }
     }
+
+    // Every snapshot a predicting client applies is a chance to reconcile,
+    // whether or not it mentioned the pawn. The pawn is absent exactly when the
+    // authority has not moved it -- which is the case a client predicting
+    // movement of its own is most likely to be wrong about, and the acknowledged
+    // command tick has moved on regardless.
+    if (request.Prediction != nullptr && request.Prediction->Predicted().IsValid())
+        result.ReconcilePredicted = true;
 
     return result;
 }

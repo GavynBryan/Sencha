@@ -272,7 +272,7 @@ void Engine::RegisterNetFramePhases()
             // has not answered. Both halves are necessary: the state alone
             // rewinds the player by a round trip, and the input alone is what
             // this machine already guessed with.
-            if (applied.PredictedStateUpdated)
+            if (applied.ReconcilePredicted)
             {
                 PawnReplayRequest replay;
                 replay.Entities = &world;

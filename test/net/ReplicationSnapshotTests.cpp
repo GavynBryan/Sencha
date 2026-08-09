@@ -304,7 +304,7 @@ TEST(ReplicationSnapshot, AComponentAddedLaterStillArrives)
 
 // The delta property end to end: a still world costs the frame's bookkeeping
 // and no field bits at all.
-TEST(ReplicationSnapshot, AStillWorldCostsAlmostNothingAfterTheFirstSnapshot)
+TEST(ReplicationSnapshot, AStillWorldCostsNothingAfterTheFirstSnapshot)
 {
     Pair pair;
     for (int i = 0; i < 8; ++i)
@@ -314,9 +314,78 @@ TEST(ReplicationSnapshot, AStillWorldCostsAlmostNothingAfterTheFirstSnapshot)
     const std::size_t second = pair.Replicate();
     const std::size_t third = pair.Replicate();
 
+    // Not "almost nothing" -- nothing. An entity with nothing to say is absent
+    // rather than present with every mask clear, so a still world costs the
+    // header and no more however many entities are standing in it.
+    EXPECT_EQ(pair.LastWrite.EntitiesWritten, 0u);
+
     EXPECT_LT(second, first)
         << "the second snapshot of an unchanged world must be smaller than the first";
     EXPECT_EQ(second, third) << "and steady from then on";
+}
+
+// Absence has to mean "unchanged", not "gone". An entity the snapshot has
+// nothing to say about must be left exactly as it was -- the client's only
+// other reading of silence would be to destroy it, and the two are told apart
+// by the destroy list carrying it or not.
+TEST(ReplicationSnapshot, AnEntityLeftOutOfASnapshotIsLeftAloneNotDestroyed)
+{
+    Pair pair;
+    const EntityId still = pair.SpawnReplicated(PoseAt(1.0f, 2.0f, 3.0f));
+    const EntityId moving = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    const EntityId stillMirror = pair.Mirror(still);
+    const EntityId movingMirror = pair.Mirror(moving);
+    ASSERT_TRUE(stillMirror.IsValid());
+    ASSERT_TRUE(movingMirror.IsValid());
+
+    for (int step = 1; step <= 4; ++step)
+    {
+        pair.Authority.TryGet<LocalTransform>(moving)->Value.Position =
+            Vec3d{ static_cast<float>(step), 0.0f, 0.0f };
+        pair.Replicate();
+        EXPECT_EQ(pair.LastWrite.EntitiesWritten, 1u)
+            << "the entity that did not move was still described";
+        EXPECT_EQ(pair.LastWrite.EntitiesDestroyed, 0u);
+    }
+
+    EXPECT_TRUE(pair.Client.IsAlive(stillMirror))
+        << "an entity was destroyed for having nothing to report";
+    EXPECT_EQ(pair.Client.TryGet<LocalTransform>(stillMirror)->Value.Position,
+              Vec3d(1.0f, 2.0f, 3.0f));
+    EXPECT_EQ(pair.Client.TryGet<LocalTransform>(movingMirror)->Value.Position,
+              Vec3d(4.0f, 0.0f, 0.0f));
+}
+
+// A peer that was never told about an entity has nothing to forget, and one
+// whose destroy was lost still needs telling -- so which destroys a snapshot
+// carries is a fact about the peer, not about the world.
+TEST(ReplicationSnapshot, ADestroyIsResentUntilThePeerConfirmsIt)
+{
+    Pair pair;
+    const EntityId doomed = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+    pair.Replicate();
+    const EntityId mirror = pair.Mirror(doomed);
+    ASSERT_TRUE(mirror.IsValid());
+
+    // The destroy goes out and is lost on the wire.
+    pair.Authority.DestroyEntity(doomed);
+    pair.Deliver = false;
+    pair.Replicate();
+    pair.Deliver = true;
+    EXPECT_EQ(pair.LastWrite.EntitiesDestroyed, 1u);
+    EXPECT_TRUE(pair.Client.IsAlive(mirror)) << "the harness delivered a dropped snapshot";
+
+    // The next one says it again, because nothing confirmed the first.
+    pair.Replicate();
+    EXPECT_EQ(pair.LastWrite.EntitiesDestroyed, 1u)
+        << "a destroy the peer never confirmed was said once and forgotten";
+    EXPECT_FALSE(pair.Client.IsAlive(mirror));
+
+    // And once it has landed, it stops being said.
+    pair.Replicate();
+    EXPECT_EQ(pair.LastWrite.EntitiesDestroyed, 0u);
 }
 
 // Only the entity that moved should cost field bits.
@@ -752,12 +821,13 @@ TEST(ReplicationPawnState, TheShadowKeepsStateAnEmptyDeltaDidNotResend)
     ASSERT_TRUE(mirror.IsValid());
     prediction.SetPredicted(mirror);
 
-    // First snapshot with a subject: everything lands in the shadows.
+    // The pawn moves, so the snapshot carries its state and the shadows fill.
+    pair.Authority.TryGet<KinematicState>(pawn)->Velocity = Vec3d{ 3.0f, 0.0f, 0.0f };
     pair.Replicate(7, nullptr, &prediction);
     ASSERT_TRUE(prediction.HasAuthoritativeState(
         ResolveComponentTypeId<KinematicState>()));
 
-    // The authority changes nothing, so the next delta carries empty masks.
+    // The authority changes nothing, so the pawn is not mentioned at all.
     pair.Replicate(7, nullptr, &prediction);
 
     World scratch;
