@@ -16,6 +16,7 @@ namespace
     // Counts on the wire are 32 bits so the format does not need revisiting for
     // a bigger world; the caps, not the width, are what bound the work.
     constexpr std::uint8_t kCountBits = 32;
+    constexpr std::uint8_t kSequenceBits = 32;
     constexpr std::uint8_t kComponentCountBits = 8;
     constexpr std::uint8_t kComponentIndexBits = 8;
 
@@ -66,12 +67,14 @@ const ReplicationPeerState::EntityBaseline* ReplicationPeerState::Find(
     return it == Baselines.end() ? nullptr : &it->second;
 }
 
-void ReplicationPeerState::BeginSnapshot(std::uint64_t tick)
+void ReplicationPeerState::BeginSnapshot(std::uint32_t sequence)
 {
+    NextSequence = std::max(NextSequence, sequence + 1);
+
     if (Pending.size() < kMaxUnacknowledged)
     {
-        if (Pending.empty() || Pending.back().Tick != tick)
-            Pending.push_back(SentSnapshot{ .Tick = tick, .Components = {} });
+        if (Pending.empty() || Pending.back().Sequence != sequence)
+            Pending.push_back(SentSnapshot{ .Sequence = sequence, .Components = {} });
         return;
     }
 
@@ -81,36 +84,52 @@ void ReplicationPeerState::BeginSnapshot(std::uint64_t tick)
     // snapshot rather than an unbounded pile of them.
     Baselines.clear();
     Pending.clear();
-    Pending.push_back(SentSnapshot{ .Tick = tick, .Components = {} });
+    Pending.push_back(SentSnapshot{ .Sequence = sequence, .Components = {} });
 }
 
-void ReplicationPeerState::RecordSent(std::uint64_t tick, NetEntityId id,
+void ReplicationPeerState::RecordSent(std::uint32_t sequence, NetEntityId id,
                                       std::uint8_t component,
                                       std::span<const std::byte> bytes)
 {
     // Held aside, not applied. What the peer holds only changes when the peer
     // says so, because a snapshot that was written is not a snapshot that
     // arrived.
-    if (Pending.empty() || Pending.back().Tick != tick)
-        BeginSnapshot(tick);
+    if (Pending.empty() || Pending.back().Sequence != sequence)
+        BeginSnapshot(sequence);
 
     Pending.back().Components.emplace_back(
         id, component, std::vector<std::byte>(bytes.begin(), bytes.end()));
 }
 
-void ReplicationPeerState::Acknowledge(std::uint64_t tick)
+void ReplicationPeerState::Acknowledge(const NetSnapshotAck& ack)
 {
-    std::size_t applied = 0;
+    if (!ack.Any())
+        return;
+
+    // Oldest first, so a component named by two pending snapshots ends on the
+    // value the newer one carried.
+    std::size_t settled = 0;
     for (const SentSnapshot& snapshot : Pending)
     {
-        if (snapshot.Tick > tick)
+        if (ack.Confirms(snapshot.Sequence))
+        {
+            for (const auto& [id, component, bytes] : snapshot.Components)
+                Baselines[id].Components[component] = bytes;
+        }
+        else if (snapshot.Sequence > ack.Newest())
+        {
+            // Still in flight. Everything behind it is too, because sequences
+            // leave in order.
             break;
-        for (const auto& [id, component, bytes] : snapshot.Components)
-            Baselines[id].Components[component] = bytes;
-        ++applied;
+        }
+        // Otherwise: sent, never confirmed, and no proof can still arrive. It
+        // is dropped without being promoted -- what it carried stays owed, and
+        // the next snapshot describes it again.
+        ++settled;
     }
+
     Pending.erase(Pending.begin(),
-                  Pending.begin() + static_cast<std::ptrdiff_t>(applied));
+                  Pending.begin() + static_cast<std::ptrdiff_t>(settled));
 }
 
 void ReplicationPeerState::Forget(NetEntityId id)
@@ -193,13 +212,19 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
         return result;
     }
 
+    // Zero is the acknowledgement's "nothing yet", so a snapshot written under
+    // it can never be confirmed: every delta would be measured from first
+    // contact forever, which reads as bandwidth rather than as a defect.
+    assert(request.Sequence != 0
+           && "A snapshot needs a sequence; take it from the peer state.");
+
     World& world = *request.Source;
     const World& reading = world;
     const ReplicationLayout& layout = *request.Layout;
     ReplicationPeerState& peer = *request.Peer;
     // Before any difference is computed, so the whole snapshot is measured from
     // one baseline rather than from one that changed part way through.
-    peer.BeginSnapshot(request.Tick);
+    peer.BeginSnapshot(request.Sequence);
     const bool hasOwners = world.IsRegistered(ResolveComponentTypeId<NetOwner>());
 
     // Nothing is marked for replication in a world that never registered the
@@ -310,6 +335,7 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
 
     NetBitWriter writer(out);
     writer.WriteU64(request.Tick);
+    writer.WriteBits(request.Sequence, kSequenceBits);
     writer.WriteU64(request.CommandAck);
     writer.WriteBits(static_cast<std::uint32_t>(destroyed.size()), kCountBits);
     writer.WriteBits(static_cast<std::uint32_t>(live.size()), kCountBits);
@@ -359,7 +385,7 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
     for (const PendingEntity& entity : live)
     {
         for (const auto& [wireIndex, bytes] : entity.Components)
-            peer.RecordSent(request.Tick, entity.Id, wireIndex, bytes);
+            peer.RecordSent(request.Sequence, entity.Id, wireIndex, bytes);
     }
 
     // Identities of entities the world no longer has stop being remembered.
@@ -400,6 +426,7 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
     std::uint32_t destroyedCount = 0;
     std::uint32_t updatedCount = 0;
     if (!reader.ReadU64(result.Tick)
+        || !reader.ReadBits(kSequenceBits, result.Sequence)
         || !reader.ReadU64(result.CommandAck)
         || !reader.ReadBits(kCountBits, destroyedCount)
         || !reader.ReadBits(kCountBits, updatedCount))

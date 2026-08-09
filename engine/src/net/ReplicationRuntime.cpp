@@ -69,10 +69,11 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
         request.Peer = &baseline;
         request.OwnerPeer = peer.Value;
         request.Tick = tick;
+        request.Sequence = baseline.NextSnapshotSequence();
         request.CommandAck = commands == nullptr ? 0 : commands->AckFor(peer);
 
-        // What this peer has confirmed holding, before the difference against
-        // it is computed. The bound on how far it may fall behind is the peer
+        // What this peer has proved it holds, before the difference against it
+        // is computed. The bound on how far it may fall behind is the peer
         // state's own business.
         if (commands != nullptr)
             baseline.Acknowledge(commands->SnapshotAckFor(peer));
@@ -132,7 +133,10 @@ SnapshotApplyResult ReplicationRuntime::Apply(std::span<const std::byte> payload
     // Only a snapshot that applied cleanly counts as one this machine holds; a
     // refused one left the world part-way and must not be acknowledged.
     if (applied.Ok())
+    {
         AppliedTick = std::max(AppliedTick, applied.Tick);
+        AppliedAcks.Observe(applied.Sequence);
+    }
     return applied;
 }
 
@@ -147,6 +151,7 @@ void ReplicationRuntime::Reset()
     Peers.clear();
     ClientMap.Clear();
     AppliedTick = 0;
+    AppliedAcks.Clear();
     LastPublishedTick = 0;
     HasPublished = false;
 }

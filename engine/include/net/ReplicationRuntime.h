@@ -81,10 +81,15 @@ public:
                               ClientPrediction* prediction = nullptr,
                               ReplicationInterpolation* interpolation = nullptr);
 
-    // Client side. The newest snapshot this machine has applied, which is what
-    // it tells the authority so the next difference is measured from a state it
-    // actually reached.
+    // Client side. The newest snapshot tick this machine has applied. Used for
+    // the shared clock; what the authority is told about delivery is the ack
+    // below, which names snapshots rather than moments.
     [[nodiscard]] std::uint64_t AppliedSnapshot() const { return AppliedTick; }
+
+    // Client side. Which snapshots this machine has actually applied, which is
+    // what travels back so the next difference is measured from a state it
+    // really reached.
+    [[nodiscard]] const NetSnapshotAck& AppliedAck() const { return AppliedAcks; }
 
     // A peer that left keeps no baseline: it would be a growing memory cost
     // against a peer that will never receive anything again, and a peer id can
@@ -104,6 +109,7 @@ private:
     std::unordered_map<PeerId, ReplicationPeerState> Peers;
     ReplicationClientIdentity ClientMap;
     std::uint64_t AppliedTick = 0;
+    NetSnapshotAck AppliedAcks;
 
     // The shipping cadence, not one-per-tick: a cvar's OnChange fires on
     // change, so a default that disagreed with the cvar's would mean the

@@ -228,6 +228,7 @@ TEST(ReplicationCadence, TheEntityCapDropsTheSameEntitiesEveryRun)
     request.Peer = &peer;
     request.OwnerPeer = 1;
     request.Tick = 1;
+    request.Sequence = peer.NextSnapshotSequence();
 
     const SnapshotWriteResult written =
         ReplicationWriteSnapshot(request, std::span(scratch));
@@ -237,7 +238,9 @@ TEST(ReplicationCadence, TheEntityCapDropsTheSameEntitiesEveryRun)
     // The survivors are the lowest identities, which is a property of the
     // entity's name rather than of where its chunk happened to sit. Confirming
     // the snapshot is what turns what was sent into what the peer holds.
-    peer.Acknowledge(request.Tick);
+    NetSnapshotAck applied;
+    applied.Observe(request.Sequence);
+    peer.Acknowledge(applied);
     ASSERT_EQ(peer.All().size(), cap);
     std::uint64_t highest = 0;
     for (const auto& [id, baseline] : peer.All())
@@ -281,9 +284,12 @@ TEST(ReplicationCadence, AnEntityTheCapDroppedIsNotReportedDead)
     // Seed the peer as already holding it, so a destroy record would be
     // produced for it if the cap were mistaken for death.
     ReplicationPeerState peer;
-    peer.BeginSnapshot(0);
-    peer.RecordSent(0, dropped, 0, {});
-    peer.Acknowledge(0);
+    const std::uint32_t seeded = peer.NextSnapshotSequence();
+    peer.BeginSnapshot(seeded);
+    peer.RecordSent(seeded, dropped, 0, {});
+    NetSnapshotAck seededAck;
+    seededAck.Observe(seeded);
+    peer.Acknowledge(seededAck);
     ASSERT_NE(peer.Find(dropped), nullptr);
 
     std::vector<std::byte> scratch(1u << 20);
@@ -294,6 +300,7 @@ TEST(ReplicationCadence, AnEntityTheCapDroppedIsNotReportedDead)
     request.Peer = &peer;
     request.OwnerPeer = 1;
     request.Tick = 1;
+    request.Sequence = peer.NextSnapshotSequence();
 
     const SnapshotWriteResult written =
         ReplicationWriteSnapshot(request, std::span(scratch));

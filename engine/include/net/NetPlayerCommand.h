@@ -1,6 +1,7 @@
 #pragma once
 
 #include <input/InputAction.h>
+#include <net/NetSnapshotAck.h>
 #include <net/ReplicationCodec.h>
 
 #include <algorithm>
@@ -66,12 +67,15 @@ struct NetCommandRecord
 
 struct NetPlayerCommand
 {
-    // The newest snapshot this client has applied. It travels back with the
-    // input because the input already travels every tick, and because the
-    // authority cannot compute a correct difference without it: a snapshot that
-    // was written is not a snapshot that arrived, and a delta measured from one
-    // the client never received describes a state it was never in.
-    std::uint64_t SnapshotAck = 0;
+    // Which snapshots this client has applied. It travels back with the input
+    // because the input already travels every tick, and because the authority
+    // cannot compute a correct difference without it: a snapshot that was
+    // written is not a snapshot that arrived, and a delta measured from one the
+    // client never received describes a state it was never in.
+    //
+    // Evidence, not a high-water mark -- see NetSnapshotAck. A mark alone would
+    // vouch for the snapshots lost behind it.
+    NetSnapshotAck SnapshotAck;
 
     std::uint8_t RecordCount = 0;
     // Newest first. The rest are the redundancy window: ticks the authority may
@@ -170,11 +174,10 @@ public:
     }
     [[nodiscard]] std::size_t TargetDepth() const { return Target; }
 
-    // The newest snapshot this peer has told us it applied. Never goes
-    // backwards: a datagram that overtakes a newer one carries an older answer,
-    // and treating it as current would have the authority describe differences
-    // from a state the peer has already moved past.
-    [[nodiscard]] std::uint64_t SnapshotAck() const { return AckedSnapshot; }
+    // What this peer has proved it holds, merged across every command that has
+    // arrived. Only ever gains: a datagram that overtakes a newer one carries
+    // an older view, which can add to what is known and never subtract.
+    [[nodiscard]] const NetSnapshotAck& SnapshotAck() const { return AckedSnapshot; }
 
     // The newest tick this peer will never be asked about again: everything at
     // or below it has been simulated or passed over for good. The client is
@@ -207,7 +210,7 @@ private:
     // Records below this tick are never queued: they are either consumed
     // already or older than first contact, which makes them latency, not input.
     std::uint64_t AdmitFloor = 0;
-    std::uint64_t AckedSnapshot = 0;
+    NetSnapshotAck AckedSnapshot;
     bool SeenCommand = false;
     // Consecutive consumes that ended above the target. Reset the moment depth
     // is healthy, so only depth that persists ever reads as backlog.

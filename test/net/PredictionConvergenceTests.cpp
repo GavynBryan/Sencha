@@ -408,7 +408,7 @@ namespace
             }
 
             (void)ClientCommands.SendLocal(Client.Session, Prediction.Commands(),
-                                           ClientReplication.AppliedSnapshot());
+                                           ClientReplication.AppliedAck());
             Client.Session.Flush(Now);
         }
 

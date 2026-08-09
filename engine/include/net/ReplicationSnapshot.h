@@ -4,6 +4,7 @@
 #include <ecs/EntityId.h>
 #include <net/NetSpawnRecipe.h>
 #include <net/ClientPrediction.h>
+#include <net/NetSnapshotAck.h>
 #include <net/ReplicationCodec.h>
 #include <net/ReplicationLayout.h>
 
@@ -88,22 +89,32 @@ public:
     [[nodiscard]] const EntityBaseline* Find(NetEntityId id) const;
     [[nodiscard]] std::size_t Size() const { return Baselines.size(); }
 
-    // Opens a snapshot at this tick, and enforces the bound: a peer with too
-    // many outstanding is one whose confirmations have stopped arriving, so
+    // The name the next snapshot for this peer goes out under. One per
+    // snapshot written, never reused, and not the simulation tick: a frame can
+    // publish twice at one tick, and two datagrams sharing a name cannot be
+    // told apart by an acknowledgement.
+    [[nodiscard]] std::uint32_t NextSnapshotSequence() const { return NextSequence; }
+
+    // Opens a snapshot under that sequence, and enforces the bound: a peer with
+    // too many outstanding is one whose confirmations have stopped arriving, so
     // what it is believed to hold is forgotten and it is told everything again.
     // The writer calls this before computing any difference, so a snapshot is
     // never half measured from a baseline that is about to be discarded.
-    void BeginSnapshot(std::uint64_t tick);
+    void BeginSnapshot(std::uint32_t sequence);
 
     // What a snapshot just told the peer, held until the peer confirms it.
-    void RecordSent(std::uint64_t tick, NetEntityId id, std::uint8_t component,
+    void RecordSent(std::uint32_t sequence, NetEntityId id, std::uint8_t component,
                     std::span<const std::byte> bytes);
     // Everything a destroyed entity had, in flight or confirmed.
     void Forget(NetEntityId id);
 
-    // The peer has applied every snapshot up to this tick. Everything sent at
-    // or before it is now what the peer holds.
-    void Acknowledge(std::uint64_t tick);
+    // Applies what the peer has proved it holds. A pending snapshot is promoted
+    // only when the acknowledgement names it: a cumulative mark would promote
+    // the ones lost on the way, recording the peer as holding state it was
+    // never sent. One that the window has passed without naming is dropped
+    // rather than promoted -- what it carried is simply owed again, which costs
+    // bandwidth and never correctness.
+    void Acknowledge(const NetSnapshotAck& ack);
 
     [[nodiscard]] std::size_t Unacknowledged() const { return Pending.size(); }
 
@@ -119,7 +130,7 @@ private:
     // step rather than a search.
     struct SentSnapshot
     {
-        std::uint64_t Tick = 0;
+        std::uint32_t Sequence = 0;
         std::vector<std::tuple<NetEntityId, std::uint8_t, std::vector<std::byte>>>
             Components;
     };
@@ -127,6 +138,8 @@ private:
     std::unordered_map<NetEntityId, EntityBaseline> Baselines;
     // Oldest first, one entry per snapshot still unconfirmed.
     std::vector<SentSnapshot> Pending;
+    // Starts at one, because zero is the acknowledgement's "nothing yet".
+    std::uint32_t NextSequence = 1;
 };
 
 //-----------------------------------------------------------------------------
@@ -205,6 +218,9 @@ struct SnapshotWriteRequest
     // here, which is what a spectator or a recording gets.
     std::uint32_t OwnerPeer = 0;
     std::uint64_t Tick = 0;
+    // This snapshot's name for the peer it is written for. Taken from the peer
+    // state, which mints them in order.
+    std::uint32_t Sequence = 0;
     // The newest command tick from this peer that the authority has finished
     // with. A client keeps the ticks it has simulated and not had answered; the
     // ones at or below this are answered, and everything above them is what a
@@ -276,6 +292,9 @@ struct SnapshotApplyRequest
 
 struct SnapshotApplyResult
 {
+    // The authority's name for this snapshot, which the client reports back as
+    // proof it arrived. Per peer and unique per snapshot, unlike the tick.
+    std::uint32_t Sequence = 0;
     SnapshotApplyError Error = SnapshotApplyError::None;
     std::uint64_t Tick = 0;
     // What the authority has finished simulating of this client's own input.

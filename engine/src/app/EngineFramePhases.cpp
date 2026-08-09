@@ -355,7 +355,7 @@ void Engine::RegisterNetFramePhases()
             // can never acknowledge.
             const std::size_t bytes = engine.PeerCommands().SendLocal(
                 *session, engine.Prediction().Commands(),
-                engine.Replication().AppliedSnapshot());
+                engine.Replication().AppliedAck());
             if (bytes > 0)
                 traffic.RecordOut(NetTrafficKind::Command, bytes);
         }

@@ -104,7 +104,7 @@ void PeerCommandRuntime::Feed(World& world, std::uint64_t tick)
 
 std::size_t PeerCommandRuntime::SendLocal(NetSession& session,
                                           const PawnCommandRing& ring,
-                                          std::uint64_t snapshotAck)
+                                          const NetSnapshotAck& snapshotAck)
 {
     if (session.Role() != NetSessionRole::Client || !session.IsConnected())
         return 0;
@@ -165,10 +165,10 @@ std::uint64_t PeerCommandRuntime::AckFor(PeerId peer) const
     return it == Buffers.end() ? 0 : it->second.ConsumedThrough();
 }
 
-std::uint64_t PeerCommandRuntime::SnapshotAckFor(PeerId peer) const
+NetSnapshotAck PeerCommandRuntime::SnapshotAckFor(PeerId peer) const
 {
     const auto it = Buffers.find(peer);
-    return it == Buffers.end() ? 0 : it->second.SnapshotAck();
+    return it == Buffers.end() ? NetSnapshotAck{} : it->second.SnapshotAck();
 }
 
 const NetPeerCommandBuffer* PeerCommandRuntime::Peer(PeerId peer) const

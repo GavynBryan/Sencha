@@ -42,6 +42,11 @@ namespace
         // Whether the client confirms what it applied. Off models a peer whose
         // acknowledgements are not arriving.
         bool Acknowledge = true;
+        // Whether the client receives the snapshot at all. False is a datagram
+        // lost on the wire: written, never applied, never confirmed.
+        bool Deliver = true;
+        // What the client would report: the snapshots it actually applied.
+        NetSnapshotAck ClientAck;
         SnapshotWriteResult LastWrite;
         SnapshotApplyResult LastApply;
 
@@ -71,10 +76,14 @@ namespace
             write.Peer = &Peer;
             write.OwnerPeer = ownerPeer;
             write.Tick = Tick;
+            write.Sequence = Peer.NextSnapshotSequence();
             write.CommandAck = commandAck;
 
             LastWrite = ReplicationWriteSnapshot(write, Scratch);
             EXPECT_TRUE(LastWrite.Ok);
+
+            if (!Deliver)
+                return LastWrite.BytesWritten;
 
             SnapshotApplyRequest apply;
             apply.Target = &Client;
@@ -95,7 +104,10 @@ namespace
             // would be testing a peer that never answers -- which has its own
             // test below.
             if (Acknowledge)
-                Peer.Acknowledge(Tick);
+            {
+                ClientAck.Observe(LastApply.Sequence);
+                Peer.Acknowledge(ClientAck);
+            }
             return LastWrite.BytesWritten;
         }
 
@@ -455,17 +467,24 @@ TEST(ReplicationAcknowledgement, StateSurvivesASnapshotThatNeverArrives)
     pair.Authority.AddComponent<CharacterMovement>(
         authority, CharacterMovement{ .Mode = LocomotionModeId{ 3 } });
 
-    // The snapshot carrying the mode is written and lost: the client never sees
-    // these bytes, so it never confirms them.
-    pair.Acknowledge = false;
+    // Settled and confirmed: from here the authority is entitled to stop
+    // mentioning the mode, which is what makes the rest of this a test.
     pair.Replicate(7);
     const EntityId mirror = pair.Mirror(authority);
     ASSERT_TRUE(mirror.IsValid());
-    pair.Client.TryGet<CharacterMovement>(mirror)->Mode = LocomotionModeId{};
+    ASSERT_EQ(pair.Client.TryGet<CharacterMovement>(mirror)->Mode.Value, 3u);
+
+    // The mode changes, and the snapshot carrying it never arrives -- written,
+    // dropped on the wire, never applied and never confirmed.
+    pair.Authority.TryGet<CharacterMovement>(authority)->Mode = LocomotionModeId{ 5 };
+    pair.Deliver = false;
+    pair.Replicate(7);
+    pair.Deliver = true;
+    ASSERT_EQ(pair.Client.TryGet<CharacterMovement>(mirror)->Mode.Value, 3u)
+        << "the harness delivered a snapshot it was told to drop";
 
     // Everything after it arrives normally. The mode never changes again, so
-    // nothing but the acknowledgement rule can bring it back.
-    pair.Acknowledge = true;
+    // only measuring differences from what this client confirmed can bring it.
     for (int step = 0; step < 3; ++step)
     {
         pair.Authority.TryGet<LocalTransform>(authority)->Value.Position =
@@ -473,7 +492,7 @@ TEST(ReplicationAcknowledgement, StateSurvivesASnapshotThatNeverArrives)
         pair.Replicate(7);
     }
 
-    EXPECT_EQ(pair.Client.TryGet<CharacterMovement>(mirror)->Mode.Value, 3u)
+    EXPECT_EQ(pair.Client.TryGet<CharacterMovement>(mirror)->Mode.Value, 5u)
         << "a lost snapshot took a settled value with it for the rest of the "
            "session, because the authority went on describing differences from "
            "a state this client was never in";
@@ -481,6 +500,50 @@ TEST(ReplicationAcknowledgement, StateSurvivesASnapshotThatNeverArrives)
 
 // The other half of the same rule: a peer that keeps confirming pays for what
 // it already has exactly once.
+// Promotion needs the acknowledgement to name the snapshot, not merely to be
+// newer than it. A cumulative mark vouches for everything behind it, including
+// the datagrams that never landed -- and the peer is then recorded as holding
+// bytes it was never sent.
+//
+// Under a scheme where every snapshot carries every entity this is harmless,
+// because the next one restates the mistake away. It stops being harmless the
+// moment a snapshot may leave something out, which is what makes this the
+// foundation the omit-unchanged work is built on rather than a fix for a
+// visible bug today.
+TEST(ReplicationAcknowledgement, ALostSnapshotIsNotPromotedByALaterOne)
+{
+    ReplicationPeerState peer;
+    const NetEntityId entity{ 1 };
+    const std::array<std::byte, 1> first{ std::byte{ 0xAA } };
+    const std::array<std::byte, 1> second{ std::byte{ 0xBB } };
+
+    // Two snapshots naming different components, so what each carried is
+    // distinguishable in the baseline afterwards.
+    const std::uint32_t lost = peer.NextSnapshotSequence();
+    peer.BeginSnapshot(lost);
+    peer.RecordSent(lost, entity, 0, first);
+
+    const std::uint32_t arrived = peer.NextSnapshotSequence();
+    peer.BeginSnapshot(arrived);
+    peer.RecordSent(arrived, entity, 1, second);
+
+    // The client applied only the second. It says so, and says nothing about
+    // the first, because it never saw it.
+    NetSnapshotAck ack;
+    ack.Observe(arrived);
+    peer.Acknowledge(ack);
+
+    const ReplicationPeerState::EntityBaseline* baseline = peer.Find(entity);
+    ASSERT_NE(baseline, nullptr);
+    EXPECT_TRUE(baseline->Components.contains(1))
+        << "the snapshot the client confirmed was not recorded";
+    EXPECT_FALSE(baseline->Components.contains(0))
+        << "a snapshot the client never received was recorded as state it holds";
+
+    // And nothing is left waiting on proof that can no longer arrive.
+    EXPECT_EQ(peer.Unacknowledged(), 0u);
+}
+
 TEST(ReplicationAcknowledgement, ConfirmedStateIsNotSentAgain)
 {
     Pair pair;
@@ -968,6 +1031,7 @@ TEST(ReplicationSnapshotHostile, TruncatedSnapshotsAreRefused)
     write.Identity = &pair.Identity;
     write.Peer = &pair.Peer;
     write.Tick = 1;
+    write.Sequence = pair.Peer.NextSnapshotSequence();
     const SnapshotWriteResult produced =
         ReplicationWriteSnapshot(write, pair.Scratch);
     ASSERT_TRUE(produced.Ok);
@@ -1001,6 +1065,7 @@ TEST(ReplicationSnapshotHostile, AnUnknownComponentKeyIsRefused)
     write.Identity = &pair.Identity;
     write.Peer = &pair.Peer;
     write.Tick = 1;
+    write.Sequence = pair.Peer.NextSnapshotSequence();
     const SnapshotWriteResult produced =
         ReplicationWriteSnapshot(write, pair.Scratch);
     ASSERT_TRUE(produced.Ok);
@@ -1008,6 +1073,7 @@ TEST(ReplicationSnapshotHostile, AnUnknownComponentKeyIsRefused)
     // Where the first component key sits, counted rather than guessed so that
     // adding a header field moves one number here instead of a magic one.
     constexpr std::size_t kHeaderBits = 64   // tick
+                                      + 32   // snapshot sequence
                                       + 64   // command acknowledgement
                                       + 32   // destroyed count
                                       + 32;  // updated count
@@ -1035,6 +1101,7 @@ TEST(ReplicationSnapshotHostile, AnAbsurdEntityCountIsRefusedByTheCap)
     std::array<std::byte, 32> forged{};
     NetBitWriter writer(forged);
     writer.WriteU64(1);            // tick
+    writer.WriteBits(1, 32);       // snapshot sequence
     writer.WriteU64(0);            // command acknowledgement
     writer.WriteBits(0, 32);       // destroyed
     writer.WriteBits(0xFFFFFFFF, 32);  // updated: four billion entities
