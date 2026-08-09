@@ -205,3 +205,25 @@ TEST(MovementProfileBinding, TheTemplatesShippedMovementProfileBinds)
     EXPECT_TRUE(bound.IsValid())
         << "the template's movement profile no longer binds: " << bound.Error;
 }
+
+// A per-frame error is not a diagnostic, it is a denial of service against the
+// log it appears in: one character with an unbound profile produced over a
+// thousand identical lines in seventeen seconds of a live session, which is
+// where this was found.
+TEST(MovementProfileBinding, AnInvalidHandleIsReportedOnceAndNotEveryTick)
+{
+    Fixture fixture;
+    MovementProfileBindingCache cache(fixture.Assets, fixture.Tags, fixture.Modes);
+
+    std::string first;
+    EXPECT_EQ(cache.Get(MovementProfileHandle{}, &first), nullptr);
+    EXPECT_FALSE(first.empty()) << "an unbound profile said nothing at all";
+
+    for (int call = 0; call < 200; ++call)
+    {
+        std::string again;
+        EXPECT_EQ(cache.Get(MovementProfileHandle{}, &again), nullptr);
+        EXPECT_TRUE(again.empty())
+            << "call " << call << " reported the same failure again";
+    }
+}
