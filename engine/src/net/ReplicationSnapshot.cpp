@@ -278,10 +278,21 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
         }
     });
 
-    if (live.size() > ReplicationDefaultCaps().MaxEntitiesPerSnapshot)
-        live.resize(ReplicationDefaultCaps().MaxEntitiesPerSnapshot);
+    // Deterministic order: an unordered_map's iteration order is not a contract,
+    // and two runs of the same simulation must produce the same bytes. Sorted
+    // before anything is dropped, because chunk order is storage order and a
+    // cap applied to it would keep a different set of entities on two machines
+    // running the same simulation.
+    std::sort(live.begin(), live.end(),
+              [](const PendingEntity& a, const PendingEntity& b) {
+                  return a.Id.Value < b.Id.Value;
+              });
 
     // Pass two: anything the peer was told about and is not here any more.
+    // Computed against everything alive rather than against what survives the
+    // cap below -- an entity this snapshot has no room for is still alive, and
+    // telling a peer to destroy it would be a lie the next snapshot has to take
+    // back by respawning it.
     std::vector<NetEntityId> destroyed;
     for (const auto& [id, baseline] : peer.All())
     {
@@ -291,14 +302,11 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
         if (!stillLive)
             destroyed.push_back(id);
     }
-    // Deterministic order: an unordered_map's iteration order is not a contract,
-    // and two runs of the same simulation must produce the same bytes.
     std::sort(destroyed.begin(), destroyed.end(),
               [](NetEntityId a, NetEntityId b) { return a.Value < b.Value; });
-    std::sort(live.begin(), live.end(),
-              [](const PendingEntity& a, const PendingEntity& b) {
-                  return a.Id.Value < b.Id.Value;
-              });
+
+    if (live.size() > ReplicationDefaultCaps().MaxEntitiesPerSnapshot)
+        live.resize(ReplicationDefaultCaps().MaxEntitiesPerSnapshot);
 
     NetBitWriter writer(out);
     writer.WriteU64(request.Tick);

@@ -173,6 +173,22 @@ void Engine::RegisterNetFramePhases()
                         static_cast<std::uint32_t>(std::max<std::int64_t>(0, *ticks)));
                 }
             }
+
+            // How often the authority speaks, for the same reason and by the
+            // same route. Presenting a mirrored entity ahead of the newest
+            // sample that can physically exist holds the last pose instead of
+            // blending, so this term has to come from the machine that decides
+            // it rather than be assumed to be every tick.
+            if (const CVarMetadata* interval =
+                    engine.Console().Registry().FindCVar("net.snapshot_interval"))
+            {
+                if (const std::int64_t* ticks =
+                        std::get_if<std::int64_t>(&interval->CurrentValue))
+                {
+                    engine.Interpolation().SetSnapshotInterval(
+                        static_cast<std::uint32_t>(std::max<std::int64_t>(1, *ticks)));
+                }
+            }
         }
         if (isAdmitted && !wasAdmitted)
         {

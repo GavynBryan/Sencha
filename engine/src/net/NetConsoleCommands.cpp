@@ -110,6 +110,27 @@ void NetApplyConsoleAuthority(ConsoleRegistry& registry, const NetSession* sessi
     registry.SetAuthorityPolicy(policy);
 }
 
+namespace
+{
+    // Pushes registered defaults into the runtime state that holds them. Only
+    // needed for cvars whose value lives somewhere other than the registry;
+    // reading a cvar every frame would not need this.
+    void ApplyNetCVarDefaults(ConsoleRegistry& registry, Engine& engine)
+    {
+        if (const CVarMetadata* interval = registry.FindCVar("net.snapshot_interval"))
+        {
+            if (const std::int64_t* ticks =
+                    std::get_if<std::int64_t>(&interval->CurrentValue))
+            {
+                const auto value =
+                    static_cast<std::uint32_t>(std::max<std::int64_t>(1, *ticks));
+                engine.Replication().SetPublishInterval(value);
+                engine.Interpolation().SetSnapshotInterval(value);
+            }
+        }
+    }
+}
+
 void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
 {
     registry.RegisterCVar({
@@ -170,6 +191,41 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
     });
 
     registry.RegisterCVar({
+        .Name = "net.snapshot_interval",
+        .Owner = "engine",
+        .Type = CVarType::Int,
+        .DefaultValue = static_cast<std::int64_t>(kNetDefaultSnapshotInterval),
+        .CurrentValue = static_cast<std::int64_t>(kNetDefaultSnapshotInterval),
+        // The authority's, like the command slack: it is paying the per-peer
+        // cost, and a client choosing how often it is told about the world
+        // would be choosing how much of the session's bandwidth it takes.
+        // Clients are told so they can hold mirrored entities the right
+        // distance behind rather than guessing at the cadence.
+        .Flags = CVarFlags::Archive | CVarFlags::Replicated,
+        .Help = "Simulation ticks between snapshots. One is every tick; higher "
+                "trades freshness for bandwidth, which is what decides how "
+                "many players fit in a session.",
+        .Source = { "engine defaults" },
+        .Min = static_cast<std::int64_t>(1),
+        // Past this the interpolation buffer cannot bracket a presented tick
+        // from the samples it keeps, and mirrored motion would hold rather
+        // than blend.
+        .Max = static_cast<std::int64_t>(ReplicationInterpolation::kSamples / 2),
+        .OnChange = [&engine](const CVarChangeContext& change) {
+            if (const std::int64_t* ticks =
+                    std::get_if<std::int64_t>(&change.NewValue))
+            {
+                const auto interval =
+                    static_cast<std::uint32_t>(std::max<std::int64_t>(1, *ticks));
+                engine.Replication().SetPublishInterval(interval);
+                // An authority mirrors other players too, so it holds the same
+                // presentation lag its clients do.
+                engine.Interpolation().SetSnapshotInterval(interval);
+            }
+        },
+    });
+
+    registry.RegisterCVar({
         .Name = "net.prediction",
         .Owner = "engine",
         .Type = CVarType::Bool,
@@ -217,14 +273,15 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
         .CurrentValue = static_cast<std::int64_t>(
             ReplicationInterpolation::kDefaultDelayTicks),
         .Flags = CVarFlags::Archive,
-        .Help = "Ticks behind the newest snapshot that mirrored entities are "
-                "drawn, on top of measured flight time. Higher rides out more "
-                "jitter; every tick is how far in the past other players are.",
+        .Help = "Jitter margin, in ticks, for drawing mirrored entities -- on "
+                "top of measured flight time and the authority's snapshot "
+                "interval, both of which are accounted for already. Higher "
+                "rides out more jitter; every tick is how far in the past "
+                "other players are.",
         .Source = { "engine defaults" },
         .Min = static_cast<std::int64_t>(0),
-        // Past the window there are no samples left to bracket the presented
-        // tick, so further delay buys nothing and only holds the pose further
-        // behind.
+        // Margin only. The interval this rides on top of is bounded separately,
+        // and the two together stay inside the sample window by construction.
         .Max = static_cast<std::int64_t>(ReplicationInterpolation::kSamples - 1),
         .OnChange = [&engine](const CVarChangeContext& change) {
             if (const std::int64_t* ticks = std::get_if<std::int64_t>(&change.NewValue))
@@ -464,4 +521,10 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
             return result;
         },
     });
+
+    // Cvars whose value is state somewhere else are applied once here, because
+    // OnChange fires on change: a default that never changes would never be
+    // delivered, and the engine would run at a cadence nobody chose until
+    // someone happened to set it back to what it already said.
+    ApplyNetCVarDefaults(registry, engine);
 }

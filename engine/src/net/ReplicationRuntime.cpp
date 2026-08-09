@@ -24,8 +24,32 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
         return stats;
 
     const std::vector<PeerId> peers = session.ConnectedPeers();
+
+    // Peers that left between frames stop costing a baseline. Ahead of the
+    // cadence gate rather than behind it, because a peer's memory should be
+    // released when it leaves and not on whatever tick the next snapshot
+    // happens to fall on. Done here rather than only on the leave event so a
+    // missed event cannot leak.
+    std::erase_if(Peers, [&peers](const auto& entry) {
+        return std::find(peers.begin(), peers.end(), entry.first) == peers.end();
+    });
+
     if (peers.empty())
         return stats;
+
+    // Publishing is paced in simulation ticks, and the pace is held by
+    // difference rather than by remainder: a frame that ran several ticks moves
+    // the index by several, and a stride the index never lands on exactly would
+    // silence this authority permanently. A tick behind the last publish is a
+    // clock discontinuity (a reset, a rewound recording) and publishes.
+    const std::uint32_t interval = std::max<std::uint32_t>(1, PublishInterval);
+    if (HasPublished && tick >= LastPublishedTick
+        && (tick - LastPublishedTick) < interval)
+    {
+        return stats;
+    }
+    LastPublishedTick = tick;
+    HasPublished = true;
 
     if (Scratch.size() < kKindBytes + kMaxSnapshotBytes)
         Scratch.resize(kKindBytes + kMaxSnapshotBytes);
@@ -73,12 +97,6 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
         ++stats.SnapshotsSent;
         stats.BytesQueued += total;
     }
-
-    // Peers that left between frames stop costing a baseline. Done here rather
-    // than only on the leave event so a missed event cannot leak.
-    std::erase_if(Peers, [&peers](const auto& entry) {
-        return std::find(peers.begin(), peers.end(), entry.first) == peers.end();
-    });
 
     return stats;
 }
@@ -129,4 +147,6 @@ void ReplicationRuntime::Reset()
     Peers.clear();
     ClientMap.Clear();
     AppliedTick = 0;
+    LastPublishedTick = 0;
+    HasPublished = false;
 }

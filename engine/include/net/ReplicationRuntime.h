@@ -12,6 +12,13 @@
 class World;
 class WorldComponentSchema;
 
+// Ticks between snapshots out of the box: 30Hz against a 60Hz simulation. The
+// rate a snapshot is worth sending at is set by how fast a player can perceive
+// a change, not by how fast the world is stepped, and the interpolation buffer
+// covers the difference. Halving the rate halves the authority's outbound bill
+// per peer, which is the term that decides how many players fit.
+inline constexpr std::uint32_t kNetDefaultSnapshotInterval = 2;
+
 //=============================================================================
 // ReplicationRuntime
 //
@@ -42,9 +49,27 @@ public:
     // has got through that peer's input -- so a snapshot tells a client both
     // what the world is and which of the client's own guesses it accounts for.
     // Null acknowledges nothing, which is right for a recording.
+    //
+    // Called every frame; whether it publishes is its own business (see
+    // SetPublishInterval). Peer bookkeeping happens on every call regardless of
+    // cadence, so a peer that leaves stops costing memory at once.
     PublishStats Publish(NetSession& session, World& world,
                          const ReplicationLayout& layout, std::uint64_t tick,
                          const PeerCommandRuntime* commands = nullptr);
+
+    // Simulation ticks between snapshots. One publishes as fast as the world
+    // moves; higher trades freshness for bandwidth, which is the trade that
+    // decides how many players fit in a session -- the cost of a snapshot is
+    // paid per peer, so halving the rate halves the authority's whole outbound
+    // bill. Mirrored motion stays smooth because the interpolation buffer
+    // already presents between samples rather than stepping on arrival.
+    //
+    // Zero and one both mean every tick.
+    void SetPublishInterval(std::uint32_t ticks) { PublishInterval = ticks; }
+    [[nodiscard]] std::uint32_t PublishIntervalTicks() const
+    {
+        return PublishInterval;
+    }
 
     // Client side. `payload` is one channel message, still carrying its kind
     // byte. Returns what happened; a payload that is not a snapshot is ignored
@@ -79,6 +104,18 @@ private:
     std::unordered_map<PeerId, ReplicationPeerState> Peers;
     ReplicationClientIdentity ClientMap;
     std::uint64_t AppliedTick = 0;
+
+    // The shipping cadence, not one-per-tick: a cvar's OnChange fires on
+    // change, so a default that disagreed with the cvar's would mean the
+    // engine ran at a rate nobody chose until someone happened to set it.
+    std::uint32_t PublishInterval = kNetDefaultSnapshotInterval;
+    // The tick a snapshot last went out on, and whether one ever has. Compared
+    // as a difference rather than a remainder on purpose: a host running slower
+    // than its tick rate advances the tick index by several per frame, and a
+    // remainder test on a stride it never lands on would stop publishing for
+    // the rest of the session.
+    std::uint64_t LastPublishedTick = 0;
+    bool HasPublished = false;
     // Reused across peers and frames. Sized once to the largest datagram a
     // channel will fragment for us, so publishing allocates nothing per frame.
     std::vector<std::byte> Scratch;
