@@ -114,6 +114,8 @@ bool NetSession::Connect(const NetAddress& authority, const NetIdentity& identit
     RttMicroseconds = 0;
     Failure = NetJoinFailure::None;
     FailureReason.clear();
+    // Whatever a previous authority announced says nothing about this one.
+    AnnouncedMapName.clear();
 
     SendHello();
     return true;
@@ -128,6 +130,12 @@ void NetSession::SendHello()
     Scratch scratch{};
     const NetHello hello{ .ProtocolVersion = kNetProtocolVersion };
     SendRaw(AuthorityAddress, NetEncodeHello(hello, scratch));
+}
+
+void NetSession::SetAnnouncedMap(std::string_view map)
+{
+    const std::size_t cap = NetDefaultCaps().MaxIdentityBytes;
+    AnnouncedMapName.assign(map.substr(0, std::min(map.size(), cap)));
 }
 
 void NetSession::Disconnect(std::string_view reason)
@@ -161,6 +169,7 @@ void NetSession::Disconnect(std::string_view reason)
     AwaitingChallenge = false;
     SelfId = PeerId{};
     RttMicroseconds = 0;
+    AnnouncedMapName.clear();
     Transport.Close();
 }
 
@@ -327,6 +336,7 @@ void NetSession::HandleAuthorityMessage(const NetDatagram& datagram,
                     .WorldIdentity = LocalIdentity.WorldIdentity,
                     .FixedTickRateMilliHz = LocalIdentity.FixedTickRateMilliHz,
                     .AuthorityTick = LocalTickIndex,
+                    .MapName = AnnouncedMapName,
                 };
                 SendRaw(datagram.From, NetEncodeAccept(accept, scratch));
                 return;
@@ -437,6 +447,7 @@ void NetSession::HandleAuthorityMessage(const NetDatagram& datagram,
             .WorldIdentity = LocalIdentity.WorldIdentity,
             .FixedTickRateMilliHz = LocalIdentity.FixedTickRateMilliHz,
             .AuthorityTick = LocalTickIndex,
+            .MapName = AnnouncedMapName,
         };
         SendRaw(datagram.From, NetEncodeAccept(accept, scratch));
         Events.push_back(NetPeerEvent{
@@ -593,6 +604,7 @@ void NetSession::HandleClientMessage(const NetDatagram& datagram,
         Admitted = true;
         SelfId = PeerId{ accept.PeerId };
         LastAuthorityTick = accept.AuthorityTick;
+        AnnouncedMapName = std::move(accept.MapName);
         return;
     }
     case NetMessageType::Refuse:

@@ -582,9 +582,12 @@ Join flow, all messages length-prefixed and cap-checked (Section 10.2):
    - **Assets:** `AssetId` is cook-stable and rides the verified world identity; no
      table needed. Paths never cross the wire in steady state.
    - **Zones:** manifest ids, identical by the world identity gate.
-4. **Session admission.** `PeerId` assigned; replicated cvar values synced
-   (Section 9); spawn and interest bootstrap proceed through the ordinary paths
-   (Sections 7 and 8), so "late join" is not a special mode (Section 8.3).
+4. **Session admission.** `PeerId` assigned; the world the authority is serving
+   named, so a client loads it rather than having to be told by whoever launched
+   it (`NetAccept::MapName`, capped at `MaxIdentityBytes`); replicated cvar
+   values synced (Section 9); spawn and interest bootstrap proceed through the
+   ordinary paths (Sections 7 and 8), so "late join" is not a special mode
+   (Section 8.3).
 
 Auth tokens (who is allowed to join) are a seam input: the handshake carries an
 opaque token validated by a game-supplied callable (the `ZoneLoadRecipeFn`
@@ -1826,6 +1829,35 @@ owed before the phase that depends on them.
   ships in every build. See Sections 9 and 10.8 — this inverts the review's stated
   reasoning about what cheat gating is for.
 
+- **Which world a client loads (was open question 5, opened and closed
+  2026-08-09). LANDED.** Found live: a client launched with `+connect` alone
+  joined, replicated and predicted -- into an empty world, because the handshake
+  carried a WorldIdentity *hash* (zero today) and never the map name. What the
+  player felt as collision was the authority's geometry arriving through
+  reset-and-replay: imperceptible at loopback RTT, rubber-banding on a real
+  link.
+
+  `NetAccept` now carries `MapName` under the pre-existing `MaxIdentityBytes`
+  cap (96 bytes), which raises the protocol to **4**. The name and not the hash:
+  WorldIdentity answers "are we running the same thing", which is a different
+  question from "what should I load", and neither substitutes for the other. The
+  host's frame pushes `ConsoleService::CurrentMap()` into the session before each
+  pump, so a peer admitted during that pump is told what is loaded as of then;
+  the client runs `map` through its own console at the admitted transition, so a
+  map a session brought in is recorded exactly like one typed at the console.
+
+  Three outcomes, all pinned by tests: no map loaded here ⇒ load the announced
+  one; the same map already loaded ⇒ do nothing; a *different* map loaded ⇒ log
+  an error and change nothing, because whether a content disagreement should end
+  a session is the strictness question below and is decided at the handshake or
+  not at all.
+
+  Recorded gap: an authority that had nothing loaded when a peer joined never
+  tells it later, so a map loaded after admission does not reach an
+  already-admitted client. That is the back half of §8.3's late-join path
+  (travel), and it is pinned by a test so that changing it is a decision rather
+  than an accident.
+
 - **Snapshot cadence (was 3).** 60 Hz simulation, 30 Hz snapshots
   (`net.snapshot_interval` default 2), paced by difference rather than
   remainder. Halving the rate halves the authority's per-peer bill, and the
@@ -1855,23 +1887,11 @@ owed before the phase that depends on them.
    should also gate `Developer`-flagged cvars in sessions. This matters more than it
    did at review: the console now ships to players (Section 10.8), so this list is
    the shipping gate rather than a dev convenience.
-5. **A client is never told which world to load.** Found live (2026-08-09): a
-   client launched with `+connect` alone joins, replicates, predicts -- and
-   renders two pawns in a void, because the handshake carries a WorldIdentity
-   *hash* (zero today) but never the map name, and nothing else does. The
-   client's collision was the authority's, delivered through reset-and-replay:
-   imperceptible at loopback RTT, rubber-banding on a real link. The template's
-   join flow already assumes the client loaded the same map (it destroys its
-   pre-join local pawn on adopting the replicated one); only the telling is
-   missing. Admission should carry the map name so a client loads it on join --
-   which is the front half of §8.3's late-join path and pairs with the
-   strictness question below. Until then, both processes need `+map`.
-
-6. **World-identity strictness at join.** Exact cooked-content hash match (
+5. **World-identity strictness at join.** Exact cooked-content hash match (
    recommended: it is the only defensible line while cooked scenes are JSON and
    mods are not a feature) versus a looser manifest-only match to ease dev
    iteration, with the strict mode as the shipping default.
-7. **An acknowledgement cannot travel without input.** `PeerCommandRuntime::
+6. **An acknowledgement cannot travel without input.** `PeerCommandRuntime::
    SendLocal` sends nothing when the command ring is empty, and
    `NetEncodePlayerCommand` refuses a message with zero records, so a client with
    no input to send cannot confirm the snapshots it has applied. Proof of
@@ -1888,7 +1908,7 @@ owed before the phase that depends on them.
    Deliberately not taken inside the replication-scaling work. The sixteen-peer
    soak runs entirely on this path, which is why its numbers are a lower bound.
 
-8. **Interpolation across a long gap.** Bracketing two samples far apart draws an
+7. **Interpolation across a long gap.** Bracketing two samples far apart draws an
    entity sliding between them. A rule that snaps instead of blending past some
    gap width was considered and rejected on measurement: a real teleport is a
    *large distance in a small time*, which no time-based threshold can see, while
@@ -1898,7 +1918,7 @@ owed before the phase that depends on them.
    presentation class what speeds the simulation can produce. Open, and not
    urgent.
 
-9. **Server build identity grade (Section 10.4).** Mutual identity verification
+8. **Server build identity grade (Section 10.4).** Mutual identity verification
    ships in G1 regardless. Decide whether the build-signature grade is wanted: it is
    meaningful if dedicated server binaries stay first-party and near-worthless once
    they are publicly distributed, which now couples to the answered decision that

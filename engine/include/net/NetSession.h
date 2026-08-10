@@ -187,6 +187,17 @@ public:
     void SetMaxPeers(std::size_t count) { MaxPeers = count; }
     void SetTimeoutSeconds(double seconds) { TimeoutSeconds = seconds; }
 
+    // The world this session is running. An authority announces it in every
+    // admission so a joining client can load it instead of having to be told by
+    // whoever launched it; a client reads back whatever it was announced.
+    //
+    // One member for both roles because it is one fact -- which world this
+    // session is about -- and the role decides who writes it. Truncated here
+    // rather than at the encoder, so the wire cap is enforced where a caller can
+    // still see what it lost.
+    void SetAnnouncedMap(std::string_view map);
+    [[nodiscard]] const std::string& AnnouncedMap() const { return AnnouncedMapName; }
+
     // The fixed tick this machine is simulating. An authority publishes it in
     // every admission and keepalive, because two machines counting their own
     // ticks from their own process start share no name for a moment in time
@@ -264,6 +275,9 @@ private:
     std::uint64_t RttMicroseconds = 0;
     NetJoinFailure Failure = NetJoinFailure::None;
     std::string FailureReason;
+    // Set by the host through the setter, and by a client from the admission it
+    // was accepted with.
+    std::string AnnouncedMapName;
 
     std::vector<NetPeerEvent> Events;
     std::uint64_t TotalStrikes = 0;

@@ -103,6 +103,14 @@ void Engine::RegisterNetFramePhases()
         const FixedSimulationLoop& simulation = ctx.Runtime->GetSimulationClock();
         session->SetLocalTick(simulation.GetTickIndex());
 
+        // What this authority is serving, refreshed before the pump that hands
+        // out admissions: a peer accepted during this Pump is told the map this
+        // process has loaded as of now, rather than as of the last frame. The
+        // console owns which map was loaded; the session owns what it announces;
+        // this is the only place the two meet.
+        if (session->Role() == NetSessionRole::Host)
+            session->SetAnnouncedMap(engine.Console().CurrentMap());
+
         engine.ClearNetDeliveries();
         const std::vector<NetSession::Delivery> deliveries = session->Pump(now);
 
@@ -195,6 +203,40 @@ void Engine::RegisterNetFramePhases()
             log.Info("net: admitted as peer {} by {}",
                      session->LocalPeerId().Value,
                      NetAddressToString(session->Authority()));
+
+            // A client that was never told what to load renders an empty world
+            // and feels the authority's geometry through reconciliation, which
+            // reads as rubber-banding rather than as the missing step it is.
+            // Loaded through the console rather than by calling a game's map
+            // handler directly, so the map a session brought in is recorded the
+            // same way one typed at the console is.
+            const std::string& announced = session->AnnouncedMap();
+            const std::string& loaded = engine.Console().CurrentMap();
+            if (announced.empty())
+            {
+                // An authority hosting before it loaded anything. It has nothing
+                // to announce and does not say so later: a map loaded after this
+                // point never reaches an already-admitted client.
+            }
+            else if (loaded.empty())
+            {
+                const ConsoleResult run = engine.Console().ExecuteTokens(
+                    { "map", announced },
+                    ConsoleValueSource{ "session admission" });
+                if (run.Status != ConsoleStatus::Ok)
+                {
+                    log.Warn("net: could not load the announced map '{}'",
+                             announced);
+                }
+            }
+            else if (loaded != announced)
+            {
+                // Left as a report rather than a refusal. Whether a content
+                // difference should end a session is the world-identity
+                // question, and that is decided at the handshake or not at all.
+                log.Error("net: the authority is serving '{}' but this process "
+                          "loaded '{}'", announced, loaded);
+            }
         }
         if (wasClient && !isClient)
         {
