@@ -1950,3 +1950,169 @@ TEST(ReplicationBudget, TheSameSimulationProducesTheSameStreamTwice)
     for (std::size_t i = 0; i < first.size(); ++i)
         EXPECT_EQ(first[i], second[i]) << "snapshot " << i << " differed";
 }
+
+//=============================================================================
+// A refused snapshot changes nothing
+//
+// The applier reads a snapshot whole before it writes any of it, so a
+// truncation or a corruption anywhere in the body is discovered with the world
+// and the identity map untouched. That is the property the two passes exist
+// for, and it is checked by mutilating a snapshot known to be good and then
+// comparing the client against what it was.
+//
+// Each case gets a fixture of its own. A snapshot that survives being mutilated
+// is still a snapshot: it applies, and it leaves a client that is no longer the
+// one the next case is supposed to start from.
+//=============================================================================
+
+namespace
+{
+    // Everything an apply is allowed to change, in a form two of which can be
+    // compared. Keyed by the identity that named each entity, because a local
+    // handle only means something beside one.
+    struct ClientState
+    {
+        struct Entity
+        {
+            std::uint64_t Id = 0;
+            bool Alive = false;
+            std::vector<std::pair<std::uint32_t, std::vector<std::byte>>> Components;
+
+            bool operator==(const Entity&) const = default;
+        };
+        std::vector<Entity> Entities;
+
+        bool operator==(const ClientState&) const = default;
+    };
+
+    ClientState CaptureClient(const Pair& pair)
+    {
+        ClientState state;
+        for (const auto& [id, entity] : pair.ClientIdentity.All())
+        {
+            ClientState::Entity captured;
+            captured.Id = id.Value;
+            captured.Alive = pair.Client.IsAlive(entity);
+            if (captured.Alive)
+            {
+                for (const ReplicatedComponent& component : pair.Layout.Components())
+                {
+                    if (!pair.Client.IsRegistered(component.Type))
+                        continue;
+                    const ComponentId column =
+                        pair.Client.GetComponentIdByType(component.Type);
+                    if (!pair.Client.HasComponent(entity, column))
+                        continue;
+                    const auto* bytes = static_cast<const std::byte*>(
+                        pair.Client.GetComponentRaw(entity, column));
+                    captured.Components.emplace_back(
+                        component.Type.Value,
+                        std::vector<std::byte>(bytes, bytes + component.Size));
+                }
+            }
+            state.Entities.push_back(std::move(captured));
+        }
+        std::sort(state.Entities.begin(), state.Entities.end(),
+                  [](const ClientState::Entity& a, const ClientState::Entity& b) {
+                      return a.Id < b.Id;
+                  });
+        return state;
+    }
+
+    // Applies bytes without the harness's own expectations, because these tests
+    // are about snapshots that are meant to be refused.
+    SnapshotApplyResult ApplyRaw(Pair& pair, std::span<const std::byte> bytes)
+    {
+        SnapshotApplyRequest apply;
+        apply.Target = &pair.Client;
+        apply.Schema = &pair.Schema;
+        apply.Layout = &pair.Layout;
+        apply.Identity = &pair.ClientIdentity;
+        return ReplicationApplySnapshot(apply, bytes);
+    }
+
+    // A client holding several entities, and one more snapshot describing
+    // updates and a spawn together -- so a partial apply would have something
+    // to damage. Deterministic, so every fixture reaches the same state.
+    std::vector<std::byte> BusySnapshot(Pair& pair)
+    {
+        std::vector<EntityId> spawned;
+        for (int i = 0; i < 4; ++i)
+            spawned.push_back(pair.SpawnReplicated(PoseAt(float(i), 0.0f, 0.0f)));
+        pair.Replicate();
+
+        for (const EntityId entity : spawned)
+        {
+            if (LocalTransform* pose = pair.Authority.TryGet<LocalTransform>(entity))
+                pose->Value.Position.X += 1.0f;
+        }
+        (void)pair.SpawnReplicated(PoseAt(9.0f, 9.0f, 9.0f));
+
+        ++pair.Tick;
+        pair.Changes.Update(pair.Authority, pair.Layout, pair.Identity,
+                            ++pair.Generation);
+        SnapshotWriteRequest write;
+        write.Changes = &pair.Changes;
+        write.Layout = &pair.Layout;
+        write.Peer = &pair.Peer;
+        write.Tick = pair.Tick;
+        write.Sequence = pair.Peer.NextSnapshotSequence();
+        const SnapshotWriteResult result = ReplicationWriteSnapshot(
+            write, std::span(pair.Scratch).subspan(0, pair.Budget));
+        EXPECT_TRUE(result.Ok);
+        return std::vector<std::byte>(pair.Scratch.begin(),
+                                      pair.Scratch.begin() + result.BytesWritten);
+    }
+}
+
+TEST(ReplicationSnapshotAtomicity, NoTruncationLeavesTheWorldPartlyChanged)
+{
+    Pair reference;
+    const std::vector<std::byte> whole = BusySnapshot(reference);
+    ASSERT_GT(whole.size(), 8u);
+    const ClientState before = CaptureClient(reference);
+
+    for (std::size_t cut = 0; cut < whole.size(); ++cut)
+    {
+        Pair pair;
+        const std::vector<std::byte> again = BusySnapshot(pair);
+        ASSERT_EQ(again, whole) << "the fixture is not reproducible";
+        ASSERT_EQ(CaptureClient(pair), before);
+
+        const SnapshotApplyResult applied =
+            ApplyRaw(pair, std::span(whole).subspan(0, cut));
+        if (applied.Ok())
+            continue;  // a prefix that happened to be a whole smaller snapshot
+
+        EXPECT_EQ(CaptureClient(pair), before)
+            << "truncating at byte " << cut << " changed the client anyway";
+    }
+}
+
+TEST(ReplicationSnapshotAtomicity, NoMutationLeavesTheWorldPartlyChanged)
+{
+    Pair reference;
+    const std::vector<std::byte> whole = BusySnapshot(reference);
+    const ClientState before = CaptureClient(reference);
+
+    for (std::size_t i = 0; i < whole.size(); ++i)
+    {
+        for (int bit = 0; bit < 8; ++bit)
+        {
+            std::vector<std::byte> mutated = whole;
+            mutated[i] ^= static_cast<std::byte>(1u << bit);
+
+            Pair pair;
+            (void)BusySnapshot(pair);
+
+            const SnapshotApplyResult applied = ApplyRaw(pair, mutated);
+            if (applied.Ok())
+                continue;  // a flip the format tolerates; it described some
+                           // other valid world, which is not this test's business
+
+            EXPECT_EQ(CaptureClient(pair), before)
+                << "flipping bit " << bit << " of byte " << i
+                << " changed the client anyway";
+        }
+    }
+}
