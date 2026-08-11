@@ -127,14 +127,23 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
 
                 if (existing == state.Components.end())
                 {
-                    // First sight: everything about it is new.
+                    // First sight: everything about it is new. If the entity
+                    // had this component before and lost it, the news that it
+                    // went is superseded by it being back.
+                    std::erase_if(state.Removed,
+                                  [&](const RemovedComponent& gone) {
+                                      return gone.WireIndex == column.WireIndex;
+                                  });
                     ComponentState added;
                     added.WireIndex = column.WireIndex;
                     added.Bytes.assign(scratch.begin(), scratch.end());
                     added.ChangedAt.assign(runs, generation);
+                    added.SeenAt = generation;
                     state.Components.push_back(std::move(added));
                     continue;
                 }
+
+                existing->SeenAt = generation;
 
                 // A whole-component compare first, because most components do
                 // not move on most publishes and this settles them in one pass
@@ -156,9 +165,31 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
                 existing->Bytes.assign(scratch.begin(), scratch.end());
             }
 
+            // A component the walk did not find is one the entity no longer
+            // has. Recorded as removed rather than simply dropped: dropping it
+            // leaves every peer that was shown it holding it forever, and
+            // leaves a peer joining later being sent it, because a fresh floor
+            // owes everything the store still holds.
+            for (auto it = state.Components.begin(); it != state.Components.end();)
+            {
+                if (it->SeenAt == generation)
+                {
+                    ++it;
+                    continue;
+                }
+                state.Removed.push_back(
+                    RemovedComponent{ .WireIndex = it->WireIndex,
+                                      .RemovedAt = generation });
+                it = state.Components.erase(it);
+            }
+
             // Ordered so a snapshot writes components in a fixed order.
             std::sort(state.Components.begin(), state.Components.end(),
                       [](const ComponentState& a, const ComponentState& b) {
+                          return a.WireIndex < b.WireIndex;
+                      });
+            std::sort(state.Removed.begin(), state.Removed.end(),
+                      [](const RemovedComponent& a, const RemovedComponent& b) {
                           return a.WireIndex < b.WireIndex;
                       });
         }

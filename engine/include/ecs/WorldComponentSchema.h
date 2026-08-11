@@ -50,6 +50,10 @@ public:
         // WorldComponentSchema::WriteDefaultBytes.
         using DefaultsFn = bool (*)(std::span<std::byte>);
         DefaultsFn Defaults = nullptr;
+        // Takes the column off the entity. See
+        // WorldComponentSchema::RemoveComponent.
+        using RemoveFn = bool (*)(World&, EntityId);
+        RemoveFn Remove = nullptr;
 
         friend class WorldComponentSchema;
     };
@@ -164,6 +168,12 @@ public:
                 return true;
             }
         };
+        entry.Remove = [](World& world, EntityId entity) {
+            if (!world.HasComponent<T>(entity))
+                return false;
+            world.RemoveComponent<T>(entity);
+            return true;
+        };
         Entries_.push_back(entry);
         return true;
     }
@@ -259,6 +269,22 @@ public:
         return entry != nullptr
             && entry->Write != nullptr
             && entry->Write(world, entity, bytes);
+    }
+
+    // Takes a component off an entity through its concrete type, so OnRemove
+    // runs exactly as a typed RemoveComponent would. False when the entity does
+    // not carry it, which a caller acting on someone else's account -- a
+    // snapshot saying a component is gone -- treats as already true rather than
+    // as a failure.
+    //
+    // Structural, like the typed call it wraps: not to be used inside a query.
+    bool RemoveComponent(World& world, EntityId entity, ComponentTypeId type) const
+    {
+        assert(Sealed_ && "RemoveComponent requires a sealed schema");
+        const Entry* entry = Find(type);
+        return entry != nullptr
+            && entry->Remove != nullptr
+            && entry->Remove(world, entity);
     }
 
     [[nodiscard]] const Entry* Find(ComponentTypeId type) const

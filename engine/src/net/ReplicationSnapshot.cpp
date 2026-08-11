@@ -64,6 +64,10 @@ namespace
         bool Spawned = false;
         std::size_t FirstComponent = 0;
         std::uint32_t ComponentCount = 0;
+        // Components the entity no longer carries, as wire keys into the
+        // layout. Indices rather than pointers, into the plan's own list.
+        std::size_t FirstRemoval = 0;
+        std::uint32_t RemovalCount = 0;
     };
 
     // A count is bounded by the entity cap and checked against it on the way in,
@@ -367,6 +371,10 @@ namespace
         // order. Held rather than recomputed at write time so the bytes written
         // are necessarily the bytes measured.
         std::size_t FirstMask = 0;
+        // How many of the entity's recorded removals this peer has not been
+        // told about. They are the leading ones: a removal is recorded with the
+        // generation it happened at, and the list is only ever appended to.
+        std::uint32_t OwedRemovals = 0;
         // Driven by the peer this snapshot is for. Everything else this peer
         // receives is mirrored and presented a fixed distance in the past, so a
         // late sample is smoothed over; its own entity is what its prediction
@@ -392,8 +400,28 @@ namespace
         const bool ownershipMoved = entity.OwnerChangedAt > floor;
 
         const std::size_t first = masks.size();
-        std::size_t bits = NetEntityIdBits(entity.Id) + kComponentCountBits;
+        // One bit for whether anything was removed, and the count only when
+        // something was. A component leaving is rare and an entity is common,
+        // so a byte-wide count on every entity of every snapshot costs more
+        // over a seeding datagram than the removals it describes ever will.
+        std::size_t bits = NetEntityIdBits(entity.Id) + kComponentCountBits + 1;
         bool owedAnything = false;
+
+        // A component this peer was shown and has not been told is gone. Owed
+        // to a peer whose floor predates the removal, which is also every peer
+        // that has never heard of the entity -- harmless, because a client
+        // removing a component it does not have is already true.
+        std::uint32_t owedRemovals = 0;
+        for (const ReplicationChangeStore::RemovedComponent& gone : entity.Removed)
+        {
+            if (gone.RemovedAt <= floor)
+                continue;
+            ++owedRemovals;
+            bits += kComponentIndexBits;
+        }
+        if (owedRemovals != 0)
+            bits += kComponentCountBits;
+        owedAnything = owedAnything || owedRemovals != 0;
 
         for (const ReplicationChangeStore::ComponentState& held : entity.Components)
         {
@@ -426,6 +454,7 @@ namespace
             .LastSentAt = peer.LastSentAt(entity.Id),
             .Bits = bits,
             .FirstMask = first,
+            .OwedRemovals = owedRemovals,
             .Owned = isOwner,
         };
         return true;
@@ -626,6 +655,23 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
                 return result;
             }
         }
+
+        // Then what the entity stopped carrying. After the components rather
+        // than before them, so a component removed and added back inside one
+        // peer's floor arrives as an add: the wire says what the entity has,
+        // and then what it does not.
+        writer.WriteBool(plan->OwedRemovals != 0);
+        if (plan->OwedRemovals != 0)
+        {
+            writer.WriteBits(plan->OwedRemovals, kComponentCountBits);
+            const std::uint64_t floor = peer.Floor(entity.Id);
+            for (const ReplicationChangeStore::RemovedComponent& gone : entity.Removed)
+            {
+                if (gone.RemovedAt <= floor)
+                    continue;
+                writer.WriteBits(gone.WireIndex, kComponentIndexBits);
+            }
+        }
     }
 
     // The fill arithmetic and the encoder have to agree exactly, or a snapshot
@@ -727,6 +773,7 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
 
     std::vector<PlannedEntityUpdate> planned;
     std::vector<PlannedComponent> plannedComponents;
+    std::vector<const ReplicatedComponent*> plannedRemovals;
     // One arena for every component's decoded bytes, so the write half reads
     // from a single allocation rather than one per component.
     std::vector<std::byte> decoded;
@@ -965,6 +1012,43 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
             plannedComponents.push_back(slot);
         }
 
+        bool anyRemoved = false;
+        std::uint32_t removalCount = 0;
+        if (!reader.ReadBool(anyRemoved))
+        {
+            result.Error = SnapshotApplyError::Truncated;
+            return result;
+        }
+        if (anyRemoved && !reader.ReadBits(kComponentCountBits, removalCount))
+        {
+            result.Error = SnapshotApplyError::Truncated;
+            return result;
+        }
+        if (removalCount > caps.MaxComponentsPerEntity)
+        {
+            result.Error = SnapshotApplyError::CapExceeded;
+            return result;
+        }
+        update.FirstRemoval = plannedRemovals.size();
+        update.RemovalCount = removalCount;
+        for (std::uint32_t r = 0; r < removalCount; ++r)
+        {
+            std::uint32_t wireIndex = 0;
+            if (!reader.ReadBits(kComponentIndexBits, wireIndex))
+            {
+                result.Error = SnapshotApplyError::Truncated;
+                return result;
+            }
+            const ReplicatedComponent* component =
+                layout.At(static_cast<std::uint8_t>(wireIndex));
+            if (component == nullptr)
+            {
+                result.Error = SnapshotApplyError::UnknownComponent;
+                return result;
+            }
+            plannedRemovals.push_back(component);
+        }
+
         planned.push_back(update);
     }
 
@@ -1052,6 +1136,24 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
                 (void)wrote;
                 break;
             }
+            }
+        }
+
+        // What the entity stopped carrying. After the writes, because the same
+        // snapshot can carry a component's new value and another's departure,
+        // and the order the wire states is the order the authority meant.
+        //
+        // A component the entity does not have is not a failure: a peer told
+        // about a removal it never saw the addition of is already in the state
+        // the message describes.
+        for (std::uint32_t r = 0; r < update.RemovalCount; ++r)
+        {
+            const ReplicatedComponent& gone =
+                *plannedRemovals[update.FirstRemoval + r];
+            if (world.IsRegistered(gone.Type))
+            {
+                if (schema.RemoveComponent(world, entity, gone.Type))
+                    ++result.ComponentsRemoved;
             }
         }
 

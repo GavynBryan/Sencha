@@ -45,6 +45,20 @@ public:
         std::vector<std::byte> Bytes;
         // One entry per field run: the generation that run last moved at.
         std::vector<std::uint64_t> ChangedAt;
+        // The last pass that found this component on the entity, for the same
+        // reason EntityState carries one: what a pass did not see is gone.
+        std::uint64_t SeenAt = 0;
+    };
+
+    // A component an entity used to carry. Held until every peer has been told,
+    // the same way a destroyed entity is: a peer that has been shown the
+    // component and not shown it going keeps it forever, and a peer that joins
+    // afterwards would otherwise be sent state the authority does not have.
+    struct RemovedComponent
+    {
+        std::uint8_t WireIndex = 0;
+        // When it went. A peer whose floor is below this has not been told.
+        std::uint64_t RemovedAt = 0;
     };
 
     struct EntityState
@@ -53,6 +67,8 @@ public:
         // Ordered by wire index, so a snapshot writes components in a fixed
         // order without sorting per peer.
         std::vector<ComponentState> Components;
+        // Ordered by wire index for the same reason.
+        std::vector<RemovedComponent> Removed;
         // Zero when nobody owns it, which is everything the authority drives.
         std::uint32_t Owner = 0;
         // When ownership last moved. Whether a field is visible to a peer

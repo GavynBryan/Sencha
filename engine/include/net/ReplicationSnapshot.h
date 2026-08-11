@@ -392,6 +392,10 @@ struct SnapshotApplyResult
     NetSpawnRecipeId FirstMissingRecipe = kNetNoSpawnRecipe;
     std::uint32_t EntitiesUpdated = 0;
     std::uint32_t EntitiesDestroyed = 0;
+    // Components taken off entities that had them. Counts only the ones that
+    // were there: a removal for a component this client never gained describes
+    // a state it is already in.
+    std::uint32_t ComponentsRemoved = 0;
     // Whether this snapshot should drive a reconcile of the predicted pawn.
     // True for every snapshot a predicting client applies, not only ones that
     // carried the pawn's own state: the shadow holds the authority's last word

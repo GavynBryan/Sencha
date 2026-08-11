@@ -2116,3 +2116,164 @@ TEST(ReplicationSnapshotAtomicity, NoMutationLeavesTheWorldPartlyChanged)
         }
     }
 }
+
+//=============================================================================
+// A component that goes away
+//
+// Removing a component is an ordinary thing to do to an entity, and until the
+// wire could say it, doing so on a replicated entity meant every client that
+// had been shown the component kept it -- and, worse, a client joining later
+// was sent it, because a fresh floor owes whatever the store still holds.
+//=============================================================================
+
+TEST(ReplicationRemoval, ARemovedComponentLeavesTheClient)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 3 });
+    pair.Replicate(3);
+
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+    ASSERT_NE(pair.Client.TryGet<NetOwner>(mirror), nullptr);
+
+    pair.Authority.RemoveComponent<NetOwner>(authority);
+    pair.Replicate(3);
+
+    EXPECT_EQ(pair.LastApply.ComponentsRemoved, 1u);
+    EXPECT_EQ(pair.Client.TryGet<NetOwner>(mirror), nullptr)
+        << "the client kept a component the authority no longer has";
+    EXPECT_NE(pair.Client.TryGet<LocalTransform>(mirror), nullptr)
+        << "removing one component took another with it";
+}
+
+// The case that made this worth building rather than documenting. A peer that
+// joins after the removal has a floor of zero, so everything the store holds is
+// owed to it -- and what the store held was the component's last bytes.
+TEST(ReplicationRemoval, APeerJoiningAfterwardsIsNeverSentIt)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(2.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 1 });
+    pair.Replicate(1);
+    pair.Authority.RemoveComponent<NetOwner>(authority);
+    pair.Replicate(1);
+
+    // A second client, hearing about this world for the first time.
+    World latecomer;
+    pair.Schema.Apply(latecomer);
+    ReplicationClientIdentity latecomerIdentity;
+    ReplicationPeerState fresh;
+
+    ++pair.Tick;
+    pair.Changes.Update(pair.Authority, pair.Layout, pair.Identity, ++pair.Generation);
+    SnapshotWriteRequest write;
+    write.Changes = &pair.Changes;
+    write.Layout = &pair.Layout;
+    write.Peer = &fresh;
+    write.Tick = pair.Tick;
+    write.Sequence = fresh.NextSnapshotSequence();
+    const SnapshotWriteResult written = ReplicationWriteSnapshot(
+        write, std::span(pair.Scratch).subspan(0, pair.Budget));
+    ASSERT_TRUE(written.Ok);
+
+    SnapshotApplyRequest apply;
+    apply.Target = &latecomer;
+    apply.Schema = &pair.Schema;
+    apply.Layout = &pair.Layout;
+    apply.Identity = &latecomerIdentity;
+    const SnapshotApplyResult applied = ReplicationApplySnapshot(
+        apply, std::span(pair.Scratch).subspan(0, written.BytesWritten));
+    ASSERT_TRUE(applied.Ok()) << SnapshotApplyErrorToString(applied.Error);
+
+    const NetEntityId id = pair.Identity.TryFind(authority);
+    const EntityId seeded = latecomerIdentity.TryResolve(id);
+    ASSERT_TRUE(seeded.IsValid());
+    EXPECT_EQ(latecomer.TryGet<NetOwner>(seeded), nullptr)
+        << "a peer that never saw the component was sent it anyway";
+    EXPECT_NE(latecomer.TryGet<LocalTransform>(seeded), nullptr);
+}
+
+// Removals are owed until confirmed, exactly as destroys are: a lost snapshot
+// must not be the only time the news travelled.
+TEST(ReplicationRemoval, ARemovalIsResentUntilThePeerConfirmsIt)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(3.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 2 });
+    pair.Replicate(2);
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_NE(pair.Client.TryGet<NetOwner>(mirror), nullptr);
+
+    // The snapshot carrying the removal never arrives.
+    pair.Authority.RemoveComponent<NetOwner>(authority);
+    pair.Deliver = false;
+    pair.Replicate(2);
+    pair.Deliver = true;
+    EXPECT_NE(pair.Client.TryGet<NetOwner>(mirror), nullptr);
+
+    pair.Replicate(2);
+    EXPECT_EQ(pair.Client.TryGet<NetOwner>(mirror), nullptr)
+        << "the removal was said once, into a snapshot that was lost";
+}
+
+TEST(ReplicationRemoval, RemovingAndAddingBackConverges)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(4.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 5 });
+    pair.Replicate(5);
+
+    pair.Authority.RemoveComponent<NetOwner>(authority);
+    pair.Replicate(5);
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_EQ(pair.Client.TryGet<NetOwner>(mirror), nullptr);
+
+    pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 9 });
+    pair.Replicate(9);
+
+    const NetOwner* owner = pair.Client.TryGet<NetOwner>(mirror);
+    ASSERT_NE(owner, nullptr) << "the component came back and the client missed it";
+    EXPECT_EQ(owner->Peer, 9u);
+}
+
+// A removal for something the client never had describes a state it is already
+// in, so it is not an error and not counted.
+TEST(ReplicationRemoval, ARemovalForAComponentNeverHeldIsNotAnError)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(5.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 6 });
+    pair.Replicate(6);
+
+    // Removed before the peer below is ever told the entity exists.
+    pair.Authority.RemoveComponent<NetOwner>(authority);
+
+    World latecomer;
+    pair.Schema.Apply(latecomer);
+    ReplicationClientIdentity latecomerIdentity;
+    ReplicationPeerState fresh;
+
+    ++pair.Tick;
+    pair.Changes.Update(pair.Authority, pair.Layout, pair.Identity, ++pair.Generation);
+    SnapshotWriteRequest write;
+    write.Changes = &pair.Changes;
+    write.Layout = &pair.Layout;
+    write.Peer = &fresh;
+    write.Tick = pair.Tick;
+    write.Sequence = fresh.NextSnapshotSequence();
+    const SnapshotWriteResult written = ReplicationWriteSnapshot(
+        write, std::span(pair.Scratch).subspan(0, pair.Budget));
+    ASSERT_TRUE(written.Ok);
+
+    SnapshotApplyRequest apply;
+    apply.Target = &latecomer;
+    apply.Schema = &pair.Schema;
+    apply.Layout = &pair.Layout;
+    apply.Identity = &latecomerIdentity;
+    const SnapshotApplyResult applied = ReplicationApplySnapshot(
+        apply, std::span(pair.Scratch).subspan(0, written.BytesWritten));
+    EXPECT_TRUE(applied.Ok()) << SnapshotApplyErrorToString(applied.Error);
+    EXPECT_EQ(applied.ComponentsRemoved, 0u)
+        << "counted a removal of something that was never there";
+}
