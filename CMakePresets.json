@@ -70,6 +70,16 @@
       }
     },
     {
+      "name": "asan",
+      "inherits": "dev",
+      "displayName": "AddressSanitizer",
+      "description": "Debug build with AddressSanitizer. The suites worth running here are the ones that decode untrusted bytes into fixed-size storage -- the replication codec above all, where a field's declared width and the width the codec touches are separate facts that have to agree.",
+      "binaryDir": "${sourceDir}/build-asan",
+      "cacheVariables": {
+        "SENCHA_ENABLE_ASAN": "ON"
+      }
+    },
+    {
       "name": "ci",
       "inherits": "dev",
       "displayName": "CI (Vulkan SDK required on runner)",
@@ -82,6 +92,7 @@
     { "name": "release", "configurePreset": "release" },
     { "name": "profile", "configurePreset": "profile" },
     { "name": "tsan", "configurePreset": "tsan" },
+    { "name": "asan", "configurePreset": "asan" },
     { "name": "ci", "configurePreset": "ci" }
   ],
   "testPresets": [
@@ -93,6 +104,11 @@
     {
       "name": "tsan",
       "configurePreset": "tsan",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan",
       "output": { "outputOnFailure": true }
     },
     {
