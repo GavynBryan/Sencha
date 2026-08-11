@@ -958,10 +958,10 @@ TEST(ReplicationPrediction, ARecipeWrittenLocalFieldSurvivesSnapshotsAndReconcil
                                                         .Generation = 2 } };
 
     NetSpawnRecipes recipes;
-    recipes.Register(7, [local](World& world, EntityId entity) {
+    ASSERT_TRUE(recipes.Register(7, [local](World& world, EntityId entity) {
         if (CharacterMovement* movement = world.TryGet<CharacterMovement>(entity))
             movement->Profile = local;
-    });
+    }));
 
     const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
     pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 7 });
@@ -1256,11 +1256,11 @@ TEST(ReplicationVisibility, ARecipeCompletesTheEntityOnArrival)
     // proven by the counter rather than by a duplicate add bringing the process
     // down. A test that detects a regression by crashing reports it as no
     // output at all, which is easy to misread as passing.
-    recipes.Register(7, [&built](World& world, EntityId entity) {
+    ASSERT_TRUE(recipes.Register(7, [&built](World& world, EntityId entity) {
         ++built;
         if (!world.HasComponent<WorldTransformHistory>(entity))
             world.AddComponent<WorldTransformHistory>(entity, WorldTransformHistory{});
-    });
+    }));
 
     const EntityId authority = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
     pair.Authority.AddComponent<NetSpawnRecipe>(authority, NetSpawnRecipe{ .Id = 7 });
@@ -1291,6 +1291,9 @@ TEST(ReplicationVisibility, AnUnknownRecipeIsCountedNotFatal)
 
     EXPECT_TRUE(pair.LastApply.Ok());
     EXPECT_EQ(pair.LastApply.RecipesMissing, 1u);
+    // Which recipe, not just how many: the count alone does not shorten the
+    // search for a body that is in the right place and invisible.
+    EXPECT_EQ(pair.LastApply.FirstMissingRecipe, 99);
     EXPECT_TRUE(pair.Mirror(authority).IsValid())
         << "the entity still exists with the state it was sent";
 }

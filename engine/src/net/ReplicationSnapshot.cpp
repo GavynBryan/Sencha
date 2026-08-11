@@ -879,6 +879,8 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
             if (recipeId != kNetNoSpawnRecipe
                 && !request.Recipes->Build(recipeId, world, entity))
             {
+                if (result.RecipesMissing == 0)
+                    result.FirstMissingRecipe = recipeId;
                 ++result.RecipesMissing;
             }
         }

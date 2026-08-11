@@ -385,6 +385,11 @@ struct SnapshotApplyResult
     // authority may run content a client did not register -- but the entity is
     // bare, so it is counted rather than silently dropped.
     std::uint32_t RecipesMissing = 0;
+    // Which recipe the first of those named. Carried because the count alone
+    // cannot be acted on: this failure looks like an entity that is in the
+    // right place with the right state and nothing drawing it, and the one
+    // thing that shortens the search is the number the authority asked for.
+    NetSpawnRecipeId FirstMissingRecipe = kNetNoSpawnRecipe;
     std::uint32_t EntitiesUpdated = 0;
     std::uint32_t EntitiesDestroyed = 0;
     // Whether this snapshot should drive a reconcile of the predicted pawn.

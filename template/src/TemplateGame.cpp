@@ -981,7 +981,7 @@ void TemplateGame::OnStart(GameStartupContext&)
     // A snapshot brings the state; this brings everything a body needs to be
     // seen, which is content both ends already have and neither has to be told
     // about. The avatar is resolved once here rather than per spawn.
-    engine.SpawnRecipes().Register(
+    const bool pawnRecipeRegistered = engine.SpawnRecipes().Register(
         kPlayerPawnRecipe,
         [this](World& world, EntityId entity) {
             Logger& log = GetEngine().Logging().GetLogger<TemplateGame>();
@@ -1034,6 +1034,16 @@ void TemplateGame::OnStart(GameStartupContext&)
 
             log.Info("TemplateGame: built a replicated player pawn");
         });
+    if (!pawnRecipeRegistered)
+    {
+        // Nothing downstream can tell this apart from an authority running
+        // content this build does not have, so it is said here, where the id is
+        // known to be ours and the cause is a second claim on it.
+        GetEngine().Logging().GetLogger<TemplateGame>().Error(
+            "TemplateGame: spawn recipe {} was already registered; replicated "
+            "player pawns will arrive without a body",
+            static_cast<unsigned>(kPlayerPawnRecipe));
+    }
 
     ScanAssetsDirectory(
         std::string(kAuthoredRoot),

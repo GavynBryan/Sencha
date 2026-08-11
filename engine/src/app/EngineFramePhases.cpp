@@ -404,6 +404,18 @@ void Engine::RegisterNetFramePhases()
                                           simulation.GetFixedDt());
             }
 
+            // An entity whose recipe this build does not have is alive, holds
+            // the right state, and has nothing to draw it -- which reads as a
+            // rendering bug from every direction except this one. Reported per
+            // arrival rather than per frame: a recipe runs when an entity first
+            // appears, so this is bounded by spawns and not by frame rate.
+            if (applied.RecipesMissing > 0)
+            {
+                log.Warn("net: {} spawn(s) named recipe {} and others this build "
+                         "did not register; those entities arrived bare",
+                         applied.RecipesMissing, applied.FirstMissingRecipe);
+            }
+
             if (!applied.Ok())
             {
                 // A snapshot that will not decode means the authority is

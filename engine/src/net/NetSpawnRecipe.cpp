@@ -3,13 +3,19 @@
 #include <cassert>
 #include <utility>
 
-void NetSpawnRecipes::Register(NetSpawnRecipeId id, Builder build)
+bool NetSpawnRecipes::Register(NetSpawnRecipeId id, Builder build)
 {
-    assert(id != kNetNoSpawnRecipe
-           && "zero is the absence of a recipe and cannot name one");
-    if (!build)
-        return;
-    Builders[id] = std::move(build);
+    // Refused rather than asserted, so a release build fails the same way a
+    // debug one does. A registration that silently did nothing is the shape
+    // that reaches a player: the id stays unknown, every entity naming it
+    // arrives bare, and nothing along the way said so.
+    if (id == kNetNoSpawnRecipe || !build)
+        return false;
+    if (Builders.find(id) != Builders.end())
+        return false;
+
+    Builders.emplace(id, std::move(build));
+    return true;
 }
 
 bool NetSpawnRecipes::Build(NetSpawnRecipeId id, World& world, EntityId entity) const
