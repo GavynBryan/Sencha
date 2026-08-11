@@ -9,11 +9,6 @@ namespace
     // per message in steady state.
     using Scratch = std::array<std::byte, kNetMaxDatagramBytes>;
 
-    std::string_view DescribeChannel(NetChannelKind kind)
-    {
-        return kind == NetChannelKind::ReliableOrdered ? "reliable" : "unreliable";
-    }
-
     std::uint64_t MicroFromSeconds(double seconds)
     {
         return static_cast<std::uint64_t>(seconds * 1'000'000.0);
@@ -130,6 +125,21 @@ void NetSession::SendHello()
     Scratch scratch{};
     const NetHello hello{ .ProtocolVersion = kNetProtocolVersion };
     SendRaw(AuthorityAddress, NetEncodeHello(hello, scratch));
+}
+
+void NetSession::SendAccept(const NetAddress& to, PeerId peer)
+{
+    Scratch scratch{};
+    const NetAccept accept{
+        .PeerId = peer.Value,
+        .ModuleFingerprint = LocalIdentity.ModuleFingerprint,
+        .ReplicationTableHash = LocalIdentity.ReplicationTableHash,
+        .WorldIdentity = LocalIdentity.WorldIdentity,
+        .FixedTickRateMilliHz = LocalIdentity.FixedTickRateMilliHz,
+        .AuthorityTick = LocalTickIndex,
+        .MapName = AnnouncedMapName,
+    };
+    SendRaw(to, NetEncodeAccept(accept, scratch));
 }
 
 void NetSession::SetAnnouncedMap(std::string_view map)
@@ -253,6 +263,7 @@ void NetSession::Strike(NetPeer& peer, std::string_view why)
         RefuseAt(peer.Address, why);
     }
     peer.State = NetPeerState::Disconnected;
+    peer.LeaveReason = std::string(why);
 }
 
 void NetSession::DeliverChannelPayloads(NetPeer& peer,
@@ -300,6 +311,7 @@ void NetSession::HandleAuthorityMessage(const NetDatagram& datagram,
             if (type == NetMessageType::Disconnect)
             {
                 known->State = NetPeerState::Disconnected;
+                known->LeaveReason = "disconnected";
                 return;
             }
             // A peer that is already admitted here but still handshaking on its
@@ -329,16 +341,7 @@ void NetSession::HandleAuthorityMessage(const NetDatagram& datagram,
                     return;
                 }
                 known->LastHeardSeconds = nowSeconds;
-                const NetAccept accept{
-                    .PeerId = known->Id.Value,
-                    .ModuleFingerprint = LocalIdentity.ModuleFingerprint,
-                    .ReplicationTableHash = LocalIdentity.ReplicationTableHash,
-                    .WorldIdentity = LocalIdentity.WorldIdentity,
-                    .FixedTickRateMilliHz = LocalIdentity.FixedTickRateMilliHz,
-                    .AuthorityTick = LocalTickIndex,
-                    .MapName = AnnouncedMapName,
-                };
-                SendRaw(datagram.From, NetEncodeAccept(accept, scratch));
+                SendAccept(datagram.From, known->Id);
                 return;
             }
             if (type == NetMessageType::Ping)
@@ -440,16 +443,7 @@ void NetSession::HandleAuthorityMessage(const NetDatagram& datagram,
         peer.LastHeardSeconds = nowSeconds;
         Peers.push_back(std::move(peer));
 
-        const NetAccept accept{
-            .PeerId = Peers.back().Id.Value,
-            .ModuleFingerprint = LocalIdentity.ModuleFingerprint,
-            .ReplicationTableHash = LocalIdentity.ReplicationTableHash,
-            .WorldIdentity = LocalIdentity.WorldIdentity,
-            .FixedTickRateMilliHz = LocalIdentity.FixedTickRateMilliHz,
-            .AuthorityTick = LocalTickIndex,
-            .MapName = AnnouncedMapName,
-        };
-        SendRaw(datagram.From, NetEncodeAccept(accept, scratch));
+        SendAccept(datagram.From, Peers.back().Id);
         Events.push_back(NetPeerEvent{
             .Kind = NetPeerEventKind::Joined,
             .Peer = Peers.back().Id,
@@ -658,6 +652,7 @@ std::vector<NetSession::Delivery> NetSession::Pump(double nowSeconds)
                         NetEncodeDisconnect(NetDisconnect{ .Reason = "timed out" },
                                             scratch));
                 peer.State = NetPeerState::Disconnected;
+                peer.LeaveReason = "timed out";
             }
         }
         for (const NetPeer& peer : Peers)
@@ -668,9 +663,7 @@ std::vector<NetSession::Delivery> NetSession::Pump(double nowSeconds)
                 .Kind = NetPeerEventKind::Left,
                 .Peer = peer.Id,
                 .Address = peer.Address,
-                .Reason = (nowSeconds - peer.LastHeardSeconds) > TimeoutSeconds
-                              ? "timed out"
-                              : "disconnected",
+                .Reason = peer.LeaveReason,
             });
         }
         std::erase_if(Peers, [](const NetPeer& peer) {
@@ -792,5 +785,4 @@ void NetSession::Broadcast(NetChannelKind channel, std::span<const std::byte> me
         if (peer.State == NetPeerState::Connected)
             (void)peer.Channels.Send(channel, message);
     }
-    (void)DescribeChannel(channel);
 }

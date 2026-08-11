@@ -68,10 +68,3 @@ bool NetSnapshotAck::Confirms(std::uint32_t sequence) const
         return false;
     return (Behind & (1u << (back - 1))) != 0;
 }
-
-bool NetSnapshotAck::Expired(std::uint32_t sequence) const
-{
-    if (sequence == 0 || NewestSequence == 0)
-        return false;
-    return sequence < NewestSequence && (NewestSequence - sequence) > kWindow;
-}

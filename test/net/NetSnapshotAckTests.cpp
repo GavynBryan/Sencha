@@ -57,12 +57,10 @@ TEST(NetSnapshotAck, TheWindowHoldsExactlyItsWidth)
 
     // The oldest sequence the window can still speak for.
     EXPECT_TRUE(ack.Confirms(1));
-    EXPECT_FALSE(ack.Expired(1));
 
     // One further and it falls off the back.
     ack.Observe(2 + NetSnapshotAck::kWindow);
     EXPECT_FALSE(ack.Confirms(1));
-    EXPECT_TRUE(ack.Expired(1));
 }
 
 // A jump larger than the window leaves nothing behind it. Anything else would
@@ -78,7 +76,6 @@ TEST(NetSnapshotAck, ALongSilenceForgetsRatherThanGuesses)
     EXPECT_EQ(ack.Newest(), 500u);
     for (std::uint32_t s = 1; s <= 20; ++s)
         EXPECT_FALSE(ack.Confirms(s)) << "still claiming " << s;
-    EXPECT_TRUE(ack.Expired(20));
 }
 
 TEST(NetSnapshotAck, MergingIsAUnionAndNeverALoss)

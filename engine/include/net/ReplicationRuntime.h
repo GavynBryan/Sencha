@@ -20,15 +20,12 @@ class WorldComponentSchema;
 // per peer, which is the term that decides how many players fit.
 inline constexpr std::uint32_t kNetDefaultSnapshotInterval = 2;
 
-// One kind byte ahead of the bit-packed snapshot.
-inline constexpr std::size_t kNetSnapshotKindBytes = 1;
-
 // The most one snapshot can be. A snapshot rides the unreliable channel, so it
 // has to fit a single datagram: there is no fragmentation to fall back on, and
 // no point resending, because the next snapshot supersedes this one before a
 // resend could arrive. Anything that does not fit is deferred to the next.
 inline constexpr std::size_t kNetMaxSnapshotBytes =
-    kNetMaxPayloadBytes - kNetSnapshotKindBytes;
+    kNetMaxPayloadBytes - kNetPayloadKindBytes;
 
 // Smallest budget worth offering. Below roughly this a snapshot is envelope and
 // little else, and entities start failing to fit one at a time.

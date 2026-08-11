@@ -112,6 +112,14 @@ public:
     template <typename T>
     void Add()
     {
+        // The predicted set is a subset of the wire table: a client resumes
+        // simulating a component from what the authority said about it, and a
+        // component that does not travel has nothing to resume from.
+        static_assert(!ComponentIsPredicted<T> || ComponentIsReplicated<T>,
+                      "A predicted component must also be replicated: prediction "
+                      "resumes from the authority's value, which only arrives if "
+                      "the component travels.");
+
         if constexpr (ComponentIsSceneSerialized<T> || ComponentIsReplicated<T>)
         {
             assert(ComponentDefaultsMatchInitializers<T>()

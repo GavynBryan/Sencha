@@ -71,6 +71,11 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
     const World& reading = world;
     const bool hasOwners = world.IsRegistered(ResolveComponentTypeId<NetOwner>());
 
+    // Reused for every component of every entity. Most components have not
+    // moved on most publishes, and that case must not pay an allocation just to
+    // find out.
+    std::vector<std::byte> scratch;
+
     // A const walk: this reads the world without publishing a write, so
     // running it cannot make everything look changed on the next tick.
     Query<With<NetReplicated>> replicated(world);
@@ -110,9 +115,9 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
                 // Snapped before it is compared or stored, so what is recorded
                 // is exactly what a peer will hold. Comparing raw values would
                 // call movement finer than the wire can express a change.
-                std::vector<std::byte> bytes(size);
-                std::memcpy(bytes.data(), raw, size);
-                ReplicationSnapToWire(*column.Layout, bytes);
+                const auto* rawBytes = static_cast<const std::byte*>(raw);
+                scratch.assign(rawBytes, rawBytes + size);
+                ReplicationSnapToWire(*column.Layout, scratch);
 
                 const auto existing = std::find_if(
                     state.Components.begin(), state.Components.end(),
@@ -125,7 +130,7 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
                     // First sight: everything about it is new.
                     ComponentState added;
                     added.WireIndex = column.WireIndex;
-                    added.Bytes = std::move(bytes);
+                    added.Bytes.assign(scratch.begin(), scratch.end());
                     added.ChangedAt.assign(runs, generation);
                     state.Components.push_back(std::move(added));
                     continue;
@@ -135,20 +140,20 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
                 // not move on most publishes and this settles them in one pass
                 // rather than one per run.
                 if (existing->Bytes.size() == size
-                    && std::memcmp(existing->Bytes.data(), bytes.data(), size) == 0)
+                    && std::memcmp(existing->Bytes.data(), scratch.data(), size) == 0)
                 {
                     continue;
                 }
 
                 const std::uint64_t moved = ReplicationChangedFields(
-                    *column.Layout, bytes, existing->Bytes);
+                    *column.Layout, scratch, existing->Bytes);
                 existing->ChangedAt.resize(runs, generation);
                 for (std::size_t run = 0; run < runs; ++run)
                 {
                     if ((moved & (std::uint64_t{ 1 } << run)) != 0)
                         existing->ChangedAt[run] = generation;
                 }
-                existing->Bytes = std::move(bytes);
+                existing->Bytes.assign(scratch.begin(), scratch.end());
             }
 
             // Ordered so a snapshot writes components in a fixed order.

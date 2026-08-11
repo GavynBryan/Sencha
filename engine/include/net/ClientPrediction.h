@@ -2,16 +2,14 @@
 
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
-#include <math/Vec.h>
-#include <movement/JumpState.h>
-#include <movement/MovementComponents.h>
 #include <net/PawnCommandRing.h>
-#include <world/transform/TransformComponents.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <vector>
 
+class ReplicationLayout;
 class World;
 class WorldComponentSchema;
 
@@ -72,12 +70,17 @@ public:
     // in from this machine's own invention -- and the divergence in exactly
     // that field would read as perfect agreement.
     //
-    // The set is the pawn's movement state: where it is, how fast, what it is
-    // standing on, which rules it moves under, and whether it may jump. A
-    // replay resumes from all of it, because resuming from the position alone
-    // puts the pawn in the right place still carrying the wrong everything
-    // else.
+    // The set is compiled from the replication table: a component is held here
+    // because its own schema says the owner keeps simulating it. Netcode names
+    // none of them, so a game whose characters carry state of their own extends
+    // what a replay resumes from by declaring it on that state.
     //-------------------------------------------------------------------------
+    // Compiles the set from the sealed table, once, before any session exists.
+    // The descriptors are copied rather than referenced: what this needs is a
+    // handful of sizes, and copying them means a rebuilt table cannot leave a
+    // dangling one behind.
+    void Bind(const ReplicationLayout& layout);
+
     [[nodiscard]] bool Intercepts(EntityId entity, ComponentTypeId type) const;
     [[nodiscard]] std::span<std::byte> AuthoritativeBytes(ComponentTypeId type);
     [[nodiscard]] bool HasAuthoritativeState(ComponentTypeId type) const;
@@ -105,33 +108,36 @@ public:
     [[nodiscard]] std::uint64_t Snaps() const { return SnapCount; }
 
     // Session-transient, and also cleared when the predicted pawn changes: what
-    // was kept for one entity says nothing about another.
+    // was kept for one entity says nothing about another. The bound set
+    // survives: which components a client predicts is a fact of the build, not
+    // of the session it is in the middle of.
     void Reset();
 
 private:
-    // What the authority last said, one slot per replicated pawn component,
-    // written into as bytes because that is what a delta decodes into.
-    struct Shadow
+    // One predicted component: which one, and where the authority's copy of it
+    // lives in the arena below. Self-describing because a restore runs outside
+    // the applier, with no replication table in reach to ask.
+    struct ShadowSlot
     {
-        LocalTransform Transform{};
-        KinematicState Motion{};
-        SupportState Support{};
-        CharacterMovement Movement{};
-        JumpState Jump{};
+        ComponentTypeId Type;
+        std::uint32_t Offset = 0;
+        std::uint32_t Size = 0;
+        // Whether the authority has actually spoken about this one, so a first
+        // delta is staged against something real rather than against zero.
+        bool Seen = false;
     };
-    Shadow Authoritative{};
 
-    // Which of them the authority has actually spoken about, so a first delta
-    // is staged against something real rather than against zero.
-    struct Seen
-    {
-        bool Transform = false;
-        bool Motion = false;
-        bool Support = false;
-        bool Movement = false;
-        bool Jump = false;
-    };
-    Seen SeenAuthority{};
+    [[nodiscard]] const ShadowSlot* FindSlot(ComponentTypeId type) const;
+    [[nodiscard]] ShadowSlot* FindSlot(ComponentTypeId type);
+
+    std::vector<ShadowSlot> Slots;
+
+    // What the authority last said, as bytes, because that is what a delta
+    // decodes into. One allocation at Bind and none afterwards: this is written
+    // through on the snapshot path. The bytes of a slot that has not been seen
+    // are never read -- the applier seeds a slot before its first decode, and
+    // a restore skips what was never spoken about.
+    std::vector<std::byte> ShadowBytes;
 
     PawnCommandRing Ring;
 

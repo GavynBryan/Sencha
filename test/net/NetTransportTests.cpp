@@ -10,6 +10,12 @@
 #include <string_view>
 #include <vector>
 
+#if defined(__linux__)
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
+
 namespace
 {
     std::vector<std::byte> Bytes(std::string_view text)
@@ -278,3 +284,40 @@ TEST(UdpTransport, RefusesASecondBindOnTheSamePort)
     UdpTransport second;
     EXPECT_FALSE(second.Open(port));
 }
+
+#if defined(__linux__)
+// The transport's own Send refuses oversized payloads, so producing one takes a
+// raw socket -- which is also what a hostile peer would use.
+TEST(UdpTransport, CountsAndRefusesAnOversizedDatagram)
+{
+    UdpTransport receiver;
+    ASSERT_TRUE(receiver.Open(0));
+
+    const int sender = ::socket(AF_INET, SOCK_DGRAM, 0);
+    ASSERT_GE(sender, 0);
+
+    sockaddr_in to{};
+    to.sin_family = AF_INET;
+    to.sin_port = htons(receiver.LocalAddress().Port);
+    to.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+    const std::vector<std::byte> oversized(kNetMaxDatagramBytes + 100,
+                                           std::byte{ 0x5A });
+    ASSERT_EQ(::sendto(sender, oversized.data(), oversized.size(), 0,
+                       reinterpret_cast<const sockaddr*>(&to), sizeof(to)),
+              static_cast<ssize_t>(oversized.size()));
+    ::close(sender);
+
+    // Nonblocking, so the datagram may take a drain or two to surface. It must
+    // be counted as refused and never handed up truncated as if it were valid.
+    std::size_t delivered = 0;
+    for (int attempt = 0; attempt < 100 && receiver.OversizedDropped() == 0;
+         ++attempt)
+    {
+        delivered += receiver.Receive().size();
+    }
+
+    EXPECT_EQ(receiver.OversizedDropped(), 1u);
+    EXPECT_EQ(delivered, 0u) << "an oversized datagram must not be delivered";
+}
+#endif

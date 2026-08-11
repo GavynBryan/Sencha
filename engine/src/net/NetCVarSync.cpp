@@ -10,8 +10,6 @@
 
 namespace
 {
-    constexpr std::size_t kKindBytes = 1;
-
     bool IsKnownType(std::uint8_t raw, CVarType& out)
     {
         switch (static_cast<CVarType>(raw))
@@ -91,12 +89,12 @@ std::size_t NetEncodeCVarUpdate(const NetCVarUpdate& update,
 
 bool NetDecodeCVarUpdate(std::span<const std::byte> bytes, NetCVarUpdate& out)
 {
-    if (bytes.size() < kKindBytes)
+    if (bytes.size() < kNetPayloadKindBytes)
         return false;
     if (static_cast<NetPayloadKind>(bytes[0]) != NetPayloadKind::CVar)
         return false;
 
-    NetReader reader(bytes.subspan(kKindBytes));
+    NetReader reader(bytes.subspan(kNetPayloadKindBytes));
     if (!reader.ReadString(out.Name, kNetMaxCVarNameBytes))
         return false;
 
@@ -157,7 +155,7 @@ NetCVarPublisher::PublishStats NetCVarPublisher::Publish(
 
     for (PeerId peer : peers)
     {
-        auto& seen = Sent[peer.Value];
+        auto& seen = Sent[peer];
         // Hidden included on purpose: whether a value is shown in a listing has
         // nothing to do with whether the session owns it.
         for (const CVarMetadata* metadata : registry.ListCVars({}, true))
@@ -190,9 +188,7 @@ NetCVarPublisher::PublishStats NetCVarPublisher::Publish(
 
     // Peers that left stop costing a record.
     std::erase_if(Sent, [&peers](const auto& entry) {
-        return std::find_if(peers.begin(), peers.end(), [&entry](PeerId peer) {
-                   return peer.Value == entry.first;
-               }) == peers.end();
+        return std::find(peers.begin(), peers.end(), entry.first) == peers.end();
     });
 
     return stats;
@@ -200,7 +196,7 @@ NetCVarPublisher::PublishStats NetCVarPublisher::Publish(
 
 void NetCVarPublisher::ForgetPeer(PeerId peer)
 {
-    Sent.erase(peer.Value);
+    Sent.erase(peer);
 }
 
 bool NetApplyCVarUpdate(ConsoleRegistry& registry, const NetCVarUpdate& update)

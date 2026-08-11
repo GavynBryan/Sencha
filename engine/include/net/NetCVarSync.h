@@ -80,7 +80,7 @@ public:
 private:
     // What each peer was last told, by cvar name. A peer with no entry is new
     // and gets everything.
-    std::unordered_map<std::uint32_t,
+    std::unordered_map<PeerId,
                        std::unordered_map<std::string, std::string>> Sent;
 };
 

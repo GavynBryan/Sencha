@@ -1,6 +1,5 @@
 #pragma once
 
-#include <ecs/EntityId.h>
 #include <math/Vec.h>
 
 #include <cstdint>
@@ -37,6 +36,20 @@ class WorldComponentSchema;
 // archetypes: it writes component values and sweeps one character. That is why
 // jump had to leave the ability layer, and why nothing here may grow a
 // dependency on spawning an entity to say something happened.
+//
+// Why this is not in net/. Everything it writes is simulation state, and
+// everything it needs from netcode -- the authority's last word, which ticks
+// have been answered, which are still owed -- it reads as data. A replay driven
+// from inside net would have the transport layer calling movement and physics,
+// which is the arrow pointing the wrong way; the same code one layer up calls
+// both by name and owes nothing back. So net stays what it should be: the wire,
+// the codec, the clocks, and an honest record of what the authority has and has
+// not answered.
+//
+// What one re-run tick *does* is movement's own (movement/CharacterTickStep.h).
+// This decides which ticks to run and what to do when they cannot be; a second
+// implementation of the tick would reintroduce, as a difference between two
+// codebases, exactly the divergence replaying exists to remove.
 //=============================================================================
 
 struct PawnReplayRequest
@@ -53,6 +66,12 @@ struct PawnReplayRequest
     std::uint64_t AckTick = 0;
 
     float FixedDeltaSeconds = 1.0f / 60.0f;
+
+    // The values the scheduled tick integrates under, which a caller reads off
+    // the movement system that owns them rather than restating here. The
+    // defaults exist so a test rig on engine defaults is not obliged to say so;
+    // a caller that leaves them while the simulation runs on something else is
+    // replaying under different physics than it is correcting.
     Vec3d Gravity{ 0.0f, -9.81f, 0.0f };
     Vec3d UpAxis{ 0.0f, 1.0f, 0.0f };
 

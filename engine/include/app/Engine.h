@@ -303,6 +303,10 @@ private:
     // and freeing one afterwards runs a destructor that is no longer there.
     void RetractGameComponents();
 
+    // Everything session-transient, in one place, so creating and destroying a
+    // session cannot reset two different lists of it.
+    void ResetNetSessionState();
+
     EngineConfig Configuration;
     ComponentSerializerRegistry SceneSerializerRegistry;
     // Component identities the game module's registration added serializers

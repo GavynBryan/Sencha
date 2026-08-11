@@ -24,14 +24,16 @@ FrameClock TimeService::Advance()
 {
     TimePoint now = Now();
 
-    float delta = 0.0f;
+    double measured = 0.0;
     if (!FirstFrame)
     {
-        using FloatSeconds = std::chrono::duration<float>;
-        delta = std::chrono::duration_cast<FloatSeconds>(now - LastTime).count();
-        if (delta < 0.0f)
-            delta = 0.0f;
+        using DoubleSeconds = std::chrono::duration<double>;
+        measured = std::chrono::duration_cast<DoubleSeconds>(now - LastTime).count();
+        if (measured < 0.0)
+            measured = 0.0;
     }
+
+    const float delta = static_cast<float>(CadenceLock.Apply(measured));
 
     FirstFrame = false;
     LastTime = now;
@@ -41,6 +43,7 @@ FrameClock TimeService::Advance()
     return FrameClock{
         .Dt = delta,
         .UnscaledDt = delta,
+        .MeasuredDt = static_cast<float>(measured),
         .Elapsed = ElapsedTime,
         .UnscaledElapsed = ElapsedTime,
         .Timescale = 1.0f,

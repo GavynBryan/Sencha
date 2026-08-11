@@ -31,6 +31,12 @@ public:
     // partitions participating this tick.
     void Step(World& world, float dt);
 
+    // The values every scheduled locomotion step runs under. Prediction replay
+    // reads them from here rather than restating them, so a re-run tick cannot
+    // quietly integrate under different physics than the tick it re-runs.
+    [[nodiscard]] Vec3d GetGravity() const { return Gravity; }
+    [[nodiscard]] Vec3d GetUpAxis() const { return UpAxis; }
+
 private:
     void StepImpl(World& world, const class StoragePartitionSet* partitions, float dt);
 

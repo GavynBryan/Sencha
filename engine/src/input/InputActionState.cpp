@@ -7,6 +7,8 @@ void InputActionState::Configure(std::size_t actionCount)
 
     Actions = actionCount;
     FrameValues.assign(actionCount, InputActionValue{});
+    FrameSampledValues.assign(actionCount, InputActionValue{});
+    TickSampledValues.assign(actionCount, InputActionValue{});
     RingValues.assign(actionCount * kHistoryCapacity, InputActionValue{});
     RingTicks.assign(kHistoryCapacity, 0);
     Newest = 0;
@@ -44,6 +46,26 @@ InputActionView InputActionState::Tick() const
     return InputActionView{
         std::span<const InputActionValue>(RingValues).subspan(Newest * Actions, Actions)
     };
+}
+
+std::span<InputActionValue> InputActionState::FrameSampledStorage()
+{
+    return FrameSampledValues;
+}
+
+InputActionView InputActionState::FrameSampled() const
+{
+    return InputActionView{ FrameSampledValues };
+}
+
+std::span<InputActionValue> InputActionState::TickSampledStorage()
+{
+    return TickSampledValues;
+}
+
+InputActionView InputActionState::TickSampled() const
+{
+    return InputActionView{ TickSampledValues };
 }
 
 InputActionTickRecord InputActionState::History(std::size_t indexFromNewest) const

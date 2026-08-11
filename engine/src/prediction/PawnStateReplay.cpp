@@ -1,73 +1,12 @@
-#include <net/PawnStateReplay.h>
+#include <prediction/PawnStateReplay.h>
 
 #include <ecs/World.h>
 #include <ecs/WorldComponentSchema.h>
-#include <movement/FreeLocomotionSystem.h>
-#include <movement/JumpExecutionSystem.h>
-#include <movement/JumpState.h>
-#include <movement/LocomotionMode.h>
-#include <movement/MotionComposition.h>
-#include <movement/MovementComponents.h>
+#include <movement/CharacterTickStep.h>
 #include <net/ClientPrediction.h>
 #include <physics/CharacterMoverPool.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
-
-namespace
-{
-    // One replayed tick, composed from the same kernels the live tick runs. The
-    // components are read and written in place, so each step starts from what
-    // the one before it produced -- exactly as the scheduled systems do.
-    void StepOnce(World& world, CharacterMoverPool* movers, EntityId pawn,
-                  const PawnCommandTick& command, const PawnReplayRequest& request)
-    {
-        KinematicState* motion = world.TryGet<KinematicState>(pawn);
-        SupportState* support = world.TryGet<SupportState>(pawn);
-        const ResolvedMovementTuning* tuning =
-            world.TryGet<ResolvedMovementTuning>(pawn);
-        if (motion == nullptr || support == nullptr || tuning == nullptr)
-            return;
-
-        const LocomotionOutput locomotion = StepFreeLocomotion(
-            *motion, *support, command.Intent, *tuning, request.Gravity,
-            request.UpAxis, request.FixedDeltaSeconds);
-
-        // The mailboxes are rebuilt per step rather than read off the entity:
-        // the live tick clears them during composition, so a replayed tick that
-        // inherited them would apply a jump twice.
-        MotionAxisOverride overrides{};
-        if (JumpState* jump = world.TryGet<JumpState>(pawn))
-        {
-            float up = 0.0f;
-            if (StepJump(*support, *tuning, command.Intent.Jump,
-                         request.FixedDeltaSeconds, *jump, up))
-            {
-                overrides.UpVelocity = up;
-                overrides.HasUp = true;
-            }
-        }
-
-        const MotionRequest motionRequest =
-            ComposeMotion(locomotion, support, overrides, MotionImpulse{});
-
-        if (movers != nullptr)
-        {
-            (void)movers->Step(world, pawn, motionRequest,
-                               request.FixedDeltaSeconds, request.Gravity);
-            return;
-        }
-
-        // No physics: integrate the request the way a sweep against nothing
-        // would, so a headless configuration still advances rather than
-        // standing still.
-        motion->Velocity = motionRequest.Velocity;
-        if (LocalTransform* pose = world.TryGet<LocalTransform>(pawn))
-        {
-            pose->Value.Position =
-                pose->Value.Position + motionRequest.Velocity * request.FixedDeltaSeconds;
-        }
-    }
-}
 
 PawnReplayResult ReplayPawnState(const PawnReplayRequest& request)
 {
@@ -122,15 +61,10 @@ PawnReplayResult ReplayPawnState(const PawnReplayRequest& request)
     {
         // Rules this machine does not implement. Replaying under the wrong ones
         // would be a quiet disagreement; moving the pawn is a visible one.
-        const CharacterMovement* movement = world.TryGet<CharacterMovement>(pawn);
-        const LocomotionModeRegistry* modes =
-            world.HasResource<LocomotionModeRegistry>()
-                ? &world.GetResource<LocomotionModeRegistry>()
-                : nullptr;
-        const bool freeMode = movement != nullptr && modes != nullptr
-                           && movement->Mode == modes->FreeMode();
-
-        if (!freeMode)
+        // Asked before the loop rather than inside it, because a pawn under
+        // rules this cannot re-run has to be snapped even when there is no
+        // unanswered tick to run.
+        if (!CharacterTickModeSupported(world, pawn))
         {
             const LocalTransform* pose = world.TryGet<LocalTransform>(pawn);
             snapTo(pose == nullptr ? start : pose->Value.Position);
@@ -140,7 +74,9 @@ PawnReplayResult ReplayPawnState(const PawnReplayRequest& request)
             std::uint32_t replayed = 0;
             const bool complete = prediction.Commands().ForEachAfter(
                 request.AckTick, [&](const PawnCommandTick& command) {
-                    StepOnce(world, request.Movers, pawn, command, request);
+                    StepCharacterTick(world, request.Movers, pawn, command.Intent,
+                                      request.FixedDeltaSeconds, request.Gravity,
+                                      request.UpAxis);
                     ++replayed;
                 });
 

@@ -77,6 +77,11 @@ enum class NetPayloadKind : std::uint8_t
     CVar = 3,
 };
 
+// What the kind byte costs a payload. Every encoder writes it first and every
+// consumer strips it, so the offset is stated once rather than re-derived as a
+// literal beside each of them.
+inline constexpr std::size_t kNetPayloadKindBytes = 1;
+
 // What a decode can go wrong as. A peer's strike count keys on these, so they
 // distinguish "malformed" from "not for me" -- the first is hostile, the second
 // is ordinary crosstalk on a shared port.

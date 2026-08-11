@@ -2,6 +2,7 @@
 
 #include <assets/data/DataAssetHandle.h>
 #include <controller/LookOrientation.h>
+#include <movement/JumpState.h>
 #include <movement/MovementComponents.h>
 #include <movement/MovementProfileData.h>
 #include <net/ClientPrediction.h>
@@ -468,6 +469,7 @@ TEST(ReplicationPrediction, ThePredictedEntityKeepsWhatThisMachineSimulated)
 {
     Pair pair;
     ClientPrediction prediction;
+    prediction.Bind(pair.Layout);
 
     const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
     pair.Replicate();
@@ -497,6 +499,7 @@ TEST(ReplicationPrediction, TheShadowHoldsTheAuthoritysWordNotThisMachinesGuess)
 {
     Pair pair;
     ClientPrediction prediction;
+    prediction.Bind(pair.Layout);
 
     const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
     pair.Replicate();
@@ -866,6 +869,7 @@ TEST(ReplicationPawnState, TheShadowKeepsStateAnEmptyDeltaDidNotResend)
 {
     Pair pair;
     ClientPrediction prediction;
+    prediction.Bind(pair.Layout);
 
     const EntityId pawn = SpawnOwnedPawn(pair, 7);
     pair.Replicate(7, nullptr, &prediction);
@@ -906,6 +910,7 @@ TEST(ReplicationPrediction, OtherPlayersPawnsStillArriveAsState)
 {
     Pair pair;
     ClientPrediction prediction;
+    prediction.Bind(pair.Layout);
 
     const EntityId mine = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
     const EntityId theirs = pair.SpawnReplicated(PoseAt(5.0f, 0.0f, 0.0f));
@@ -945,6 +950,7 @@ TEST(ReplicationPrediction, ARecipeWrittenLocalFieldSurvivesSnapshotsAndReconcil
 {
     Pair pair;
     ClientPrediction prediction;
+    prediction.Bind(pair.Layout);
 
     // A handle no cache minted, which is exactly the point: its value is this
     // machine's business and it is never compared with the authority's.
@@ -1080,6 +1086,7 @@ TEST(ReplicationInterpolationApply, TheOwnPawnIsNeverMirroredEvenWithPredictionO
 {
     Pair pair;
     ClientPrediction prediction;
+    prediction.Bind(pair.Layout);
     ReplicationInterpolation interpolation;
 
     const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));

@@ -387,9 +387,6 @@ struct SnapshotApplyResult
     std::uint32_t RecipesMissing = 0;
     std::uint32_t EntitiesUpdated = 0;
     std::uint32_t EntitiesDestroyed = 0;
-    // The predicted pawn's authoritative state was updated by this snapshot, so
-    // the caller has something new to reconcile against. Deciding what to do
-    // about it is not a snapshot applier's business.
     // Whether this snapshot should drive a reconcile of the predicted pawn.
     // True for every snapshot a predicting client applies, not only ones that
     // carried the pawn's own state: the shadow holds the authority's last word

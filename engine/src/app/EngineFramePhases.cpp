@@ -7,14 +7,15 @@
 #include <world/RuntimeWorld.h>
 #include <world/transform/TransformHistory.h>
 #include <core/console/ConsoleService.h>
+#include <movement/FreeLocomotionSystem.h>
 #include <net/NetCVarSync.h>
 #include <physics/CharacterMoverPool.h>
 #include <physics/components/CharacterMoverLink.h>
 #include <net/NetConsoleCommands.h>
 #include <net/NetSession.h>
-#include <net/PawnStateReplay.h>
 #include <net/ReplicationSnapshot.h>
 #include <physics/PhysicsStepSystem.h>
+#include <prediction/PawnStateReplay.h>
 #include <world/transform/TransformPropagation.h>
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
@@ -325,6 +326,16 @@ void Engine::RegisterNetFramePhases()
                 {
                     replay.Movers = &physics->GetCharacterMovers();
                 }
+                // The values the scheduled tick integrates under, off the
+                // system that owns them: a replayed tick under different
+                // gravity than the tick it re-runs is a disagreement this
+                // machine would inject into the pawn every correction.
+                if (const FreeLocomotionSystem* locomotion =
+                        engine.Schedule().Get<FreeLocomotionSystem>())
+                {
+                    replay.Gravity = locomotion->GetGravity();
+                    replay.UpAxis = locomotion->GetUpAxis();
+                }
                 replay.AckTick = applied.CommandAck;
                 replay.FixedDeltaSeconds =
                     static_cast<float>(simulation.GetFixedDt());
@@ -466,12 +477,21 @@ void Engine::RegisterSimulationFramePhases()
         const FrameZoneView& zones = *ctx.Zones;
         ::World& entities = *zones.Entities;
 
+        // FixedTicks counts ticks already finished this frame, so the remainder
+        // including this one is what a burst-splitting system needs.
+        const RuntimeFrameSnapshot& frame = ctx.Runtime->GetCurrentFrame();
+        const std::uint32_t ticksLeft =
+            frame.Budget.TicksToRunThisFrame > frame.FixedTicks
+                ? frame.Budget.TicksToRunThisFrame - frame.FixedTicks
+                : 1u;
+
         FixedLogicContext logic{
             .Config = config,
             .Runtime = *ctx.Runtime,
             .Time = ctx.CurrentTick,
             .Entities = entities,
             .Partitions = zones.Logic,
+            .TicksLeftInFrame = ticksLeft,
         };
         engine.Schedule().RunFixedLogic(logic);
 

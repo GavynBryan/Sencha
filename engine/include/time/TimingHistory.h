@@ -10,6 +10,10 @@
 struct TimingFrameSample
 {
     double RawDtSeconds = 0.0;
+    // RawDt as the cadence lock conditioned it: the delta the simulation and
+    // interpolation actually consumed. Raw minus locked is the measurement
+    // noise the lock removed that frame.
+    double LockedDtSeconds = 0.0;
     double TickDtSeconds = 0.0;
     double PresentationDtSeconds = 0.0;
     double InterpolationAlpha = 0.0;

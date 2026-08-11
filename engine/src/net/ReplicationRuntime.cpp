@@ -5,11 +5,6 @@
 
 #include <algorithm>
 
-namespace
-{
-    constexpr std::size_t kKindBytes = kNetSnapshotKindBytes;
-}
-
 void ReplicationRuntime::SetSnapshotBytes(std::size_t bytes)
 {
     Budget = std::clamp(bytes, kNetMinSnapshotBytes, kNetMaxSnapshotBytes);
@@ -54,8 +49,8 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
     // Sized to the largest budget rather than the current one, so changing the
     // budget mid-session does not reallocate and a lowered one simply uses less
     // of the same buffer.
-    if (Scratch.size() < kKindBytes + kNetMaxSnapshotBytes)
-        Scratch.resize(kKindBytes + kNetMaxSnapshotBytes);
+    if (Scratch.size() < kNetPayloadKindBytes + kNetMaxSnapshotBytes)
+        Scratch.resize(kNetPayloadKindBytes + kNetMaxSnapshotBytes);
     Scratch[0] = static_cast<std::byte>(NetPayloadKind::Snapshot);
     stats.BudgetBytes = Budget;
 
@@ -90,7 +85,7 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
         // The subspan is the budget: what does not fit is deferred to a later
         // snapshot rather than failing this one.
         const SnapshotWriteResult written = ReplicationWriteSnapshot(
-            request, std::span(Scratch).subspan(kKindBytes, Budget));
+            request, std::span(Scratch).subspan(kNetPayloadKindBytes, Budget));
         stats.EntitiesDeferred += written.EntitiesDeferred;
         stats.EntitiesUnsendable += written.EntitiesUnsendable;
         stats.OldestDeferredSnapshots = std::max(stats.OldestDeferredSnapshots,
@@ -106,7 +101,7 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
             continue;
         }
 
-        const std::size_t total = kKindBytes + written.BytesWritten;
+        const std::size_t total = kNetPayloadKindBytes + written.BytesWritten;
         if (!session.Send(peer, NetChannelKind::UnreliableSequenced,
                           std::span(Scratch).subspan(0, total)))
         {
@@ -130,7 +125,7 @@ SnapshotApplyResult ReplicationRuntime::Apply(std::span<const std::byte> payload
                                               ReplicationInterpolation* interpolation)
 {
     SnapshotApplyResult result;
-    if (payload.size() < kKindBytes)
+    if (payload.size() < kNetPayloadKindBytes)
     {
         result.Error = SnapshotApplyError::Truncated;
         return result;
@@ -148,7 +143,7 @@ SnapshotApplyResult ReplicationRuntime::Apply(std::span<const std::byte> payload
     request.Interpolation = interpolation;
 
     const SnapshotApplyResult applied =
-        ReplicationApplySnapshot(request, payload.subspan(kKindBytes));
+        ReplicationApplySnapshot(request, payload.subspan(kNetPayloadKindBytes));
     // Only a snapshot that applied cleanly counts as one this machine holds; a
     // refused one left the world part-way and must not be acknowledged.
     if (applied.Ok())

@@ -196,6 +196,43 @@ namespace EngineConsoleBuiltins
         });
 
         registry.RegisterCVar({
+            .Name = "time.cadence_lock",
+            .Owner = "engine",
+            .Type = CVarType::Bool,
+            .DefaultValue = true,
+            .CurrentValue = runtimeLoop.GetWallClock().GetCadenceLock().IsEnabled(),
+            .Flags = CVarFlags::Archive,
+            .Help = "Snap measured frame deltas to the display cadence, "
+                    "removing scheduler noise before it reaches tick "
+                    "scheduling and interpolation. Off consumes deltas as "
+                    "measured.",
+            .Source = { "runtime loop" },
+            .OnChange = [&runtimeLoop](const CVarChangeContext& ctx) {
+                runtimeLoop.GetWallClock().GetCadenceLock().SetEnabled(
+                    std::get<bool>(ctx.NewValue));
+            },
+        });
+
+        registry.RegisterCVar({
+            .Name = "time.cadence_lock_tolerance",
+            .Owner = "engine",
+            .Type = CVarType::Double,
+            .DefaultValue = 0.25,
+            .CurrentValue = runtimeLoop.GetWallClock().GetCadenceLock().Tolerance(),
+            .Flags = CVarFlags::Archive,
+            .Help = "How far a measured delta may sit from a whole number of "
+                    "display periods and still snap, as a fraction of the "
+                    "period. Deltas outside it pass through as real hitches.",
+            .Source = { "runtime loop" },
+            .Min = 0.0,
+            .Max = 0.5,
+            .OnChange = [&runtimeLoop](const CVarChangeContext& ctx) {
+                runtimeLoop.GetWallClock().GetCadenceLock().SetTolerance(
+                    std::get<double>(ctx.NewValue));
+            },
+        });
+
+        registry.RegisterCVar({
             .Name = "time.fixed_tick_rate",
             .Owner = "engine",
             .Type = CVarType::Double,

@@ -160,6 +160,10 @@ struct BindingContribution
 {
     float X = 0.0f;
     float Y = 0.0f;
+    // True when X/Y came from a control that reports a held position rather
+    // than an accumulated displacement. The value is the same either way; what
+    // differs is what a time-integrating consumer must do with it.
+    bool Sampled = false;
     bool Held = false;
     bool Pressed = false;
     bool Released = false;
@@ -168,6 +172,7 @@ struct BindingContribution
 BindingContribution EvaluateBinding(const InputBinding& binding,
                                     const InputDeviceSnapshot& devices,
                                     const InputEdgeLatch& latch,
+                                    const InputMotionDelta& motion,
                                     const InputControlClaims& claims,
                                     bool analogButton,
                                     std::uint8_t analogState)
@@ -197,19 +202,21 @@ BindingContribution EvaluateBinding(const InputBinding& binding,
         switch (control.Source)
         {
         case InputControlSource::MouseMotion:
-            result.X = latch.MotionX;
-            result.Y = latch.MotionY;
+            result.X = motion.X;
+            result.Y = motion.Y;
             break;
         case InputControlSource::MouseWheel:
-            result.X = latch.Wheel;
+            result.X = motion.Wheel;
             break;
         case InputControlSource::GamepadTrigger:
         case InputControlSource::GamepadStick:
             ReadGamepadAxes(devices, control, result.X, result.Y);
+            result.Sampled = true;
             break;
         default:
             result.Held = devices.IsHeld(control);
             result.X = result.Held ? 1.0f : 0.0f;
+            result.Sampled = true;
             break;
         }
 
@@ -224,6 +231,7 @@ BindingContribution EvaluateBinding(const InputBinding& binding,
         const InputControl positive = binding.Controls[kBindingPositiveX];
         result.X = ButtonAxis(ButtonActive(devices, claims, negative),
                               ButtonActive(devices, claims, positive));
+        result.Sampled = true;
         result.Held = result.X != 0.0f;
         result.Pressed = (!claims.Has(negative) && latch.WasPressed(negative))
                       || (!claims.Has(positive) && latch.WasPressed(positive));
@@ -242,6 +250,7 @@ BindingContribution EvaluateBinding(const InputBinding& binding,
                               ButtonActive(devices, claims, positiveX));
         result.Y = ButtonAxis(ButtonActive(devices, claims, negativeY),
                               ButtonActive(devices, claims, positiveY));
+        result.Sampled = true;
         result.Held = result.X != 0.0f || result.Y != 0.0f;
 
         const InputControl all[kInputBindingControlCount] = { negativeX, positiveX, negativeY, positiveY };
@@ -349,6 +358,32 @@ void InputEdgeLatch::Clear()
     Wheel = 0.0f;
 }
 
+InputMotionDelta InputEdgeLatch::Share(std::uint32_t shares) const
+{
+    if (shares <= 1)
+        return InputMotionDelta{ .X = MotionX, .Y = MotionY, .Wheel = Wheel };
+
+    const float scale = 1.0f / static_cast<float>(shares);
+    return InputMotionDelta{
+        .X = MotionX * scale,
+        .Y = MotionY * scale,
+        .Wheel = Wheel * scale,
+    };
+}
+
+void InputEdgeLatch::Consume(const InputMotionDelta& taken)
+{
+    KeysPressed.fill(0);
+    KeysReleased.fill(0);
+    MouseButtonsPressed = 0;
+    MouseButtonsReleased = 0;
+    GamepadButtonsPressed = 0;
+    GamepadButtonsReleased = 0;
+    MotionX -= taken.X;
+    MotionY -= taken.Y;
+    Wheel -= taken.Wheel;
+}
+
 bool InputEdgeLatch::WasPressed(InputControl control) const
 {
     switch (control.Source)
@@ -436,14 +471,25 @@ void ResolveInputActions(const BoundInputProfile& profile,
                          std::span<const std::uint8_t> contextActive,
                          const InputDeviceSnapshot& devices,
                          InputClockState& clock,
-                         std::span<InputActionValue> out)
+                         std::span<InputActionValue> out,
+                         std::uint32_t displacementShares,
+                         std::span<InputActionValue> outSampled)
 {
     const std::size_t actionCount = profile.ActionTypes.size();
     if (out.size() < actionCount)
         return;
+    const bool trackSampled = outSampled.size() >= actionCount;
+
+    // Read once, before any binding sees it, so every binding in this pass
+    // resolves against the same displacement and the drain below subtracts
+    // exactly what was handed out.
+    const InputMotionDelta motion = clock.Latch.Share(displacementShares);
 
     for (std::size_t i = 0; i < actionCount; ++i)
         out[i] = InputActionValue{};
+    if (trackSampled)
+        for (std::size_t i = 0; i < actionCount; ++i)
+            outSampled[i] = InputActionValue{};
     if (clock.HeldPrevious.size() != actionCount)
         clock.HeldPrevious.assign(actionCount, 0);
     if (clock.FiresOnRelease.size() != actionCount)
@@ -495,13 +541,19 @@ void ResolveInputActions(const BoundInputProfile& profile,
             const bool analogButton =
                 IsAnalogButton(binding, profile.ActionTypes[binding.ActionIndex]);
             const BindingContribution contribution = EvaluateBinding(
-                binding, devices, clock.Latch, claims, analogButton, clock.AnalogState[i]);
+                binding, devices, clock.Latch, motion, claims, analogButton,
+                clock.AnalogState[i]);
             InputActionValue& value = out[binding.ActionIndex];
 
             if (profile.ActionTypes[binding.ActionIndex] != InputActionType::Digital)
             {
                 value.X += contribution.X;
                 value.Y += contribution.Y;
+                if (trackSampled && contribution.Sampled)
+                {
+                    outSampled[binding.ActionIndex].X += contribution.X;
+                    outSampled[binding.ActionIndex].Y += contribution.Y;
+                }
             }
             if (contribution.Held)
                 value.Flags |= InputActionFlags::Held;
@@ -563,7 +615,7 @@ void ResolveInputActions(const BoundInputProfile& profile,
             held && digital && fire == InputActionFireMode::Released ? 1 : 0;
     }
 
-    clock.Latch.Clear();
+    clock.Latch.Consume(motion);
 }
 
 void ReleaseInputActions(InputClockState& clock, std::span<InputActionValue> out)

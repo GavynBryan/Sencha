@@ -5,6 +5,7 @@
 #include <ecs/ComponentTypeId.h>
 #include <input/InputAction.h>
 
+#include <algorithm>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -35,6 +36,17 @@ struct LookOrientation
 
 static_assert(std::is_trivially_copyable_v<LookOrientation>,
               "LookOrientation must be trivially copyable to live in ECS chunks");
+
+// The one rule for writing an aim: pitch never leaves the limits of the thing
+// doing the aiming. Every writer goes through here -- the local look pass, an
+// authority applying the aim a peer's command was framed with -- because a
+// second copy of the rule is a limit that can differ between the machine that
+// enforced it and the machine that did not.
+inline void ApplyLook(LookOrientation& look, float yaw, float pitch)
+{
+    look.Yaw = yaw;
+    look.Pitch = std::clamp(pitch, look.MinPitch, look.MaxPitch);
+}
 
 // Runtime-only: never scene-serialized (no SceneChunkId, absent from the scene
 // manifest). The schema is here because where something aims is one of the few
@@ -102,4 +114,37 @@ SENCHA_DECLARE_COMPONENT_TYPE(LocalLookControl, "sencha.local_look_control");
 struct LookInputBinding
 {
     InputActionId Look;
+};
+
+//=============================================================================
+// PendingLookInput
+//
+// The presentation clock's view of look input the simulation has not caught up
+// to, in the two mechanical kinds look input comes in.
+//
+// Yaw/Pitch is accumulated displacement from latched controls (pointer,
+// wheel): amounts that arrived on frames no tick has consumed yet. Cleared by
+// every tick that runs, so it spans at most the gap between two ticks --
+// never a running total.
+//
+// RateYaw/RatePitch is the current turn rate from sampled controls (sticks,
+// held keys), in radians per second. It is not accumulated at all: a sample
+// covers time, so the presentation lead it owes is rate times the wall time
+// the next tick has yet to absorb -- which is alpha, and is derived where the
+// view is placed. Accumulating it per frame while ticks consumed it per tick
+// is a mismatch that stepped the view backward at tick rate.
+//
+// The aim a tick simulates under advances only when simulated time advances,
+// or a frame that ran no tick would turn the heading for free and a frame that
+// ran two would turn it once for both. A view that only moved on ticks would
+// visibly step at any refresh rate above the tick rate, so presentation adds
+// this on top of the simulation aim and tracks the player's input at frame
+// rate.
+//=============================================================================
+struct PendingLookInput
+{
+    float Yaw = 0.0f;
+    float Pitch = 0.0f;
+    float RateYaw = 0.0f;
+    float RatePitch = 0.0f;
 };

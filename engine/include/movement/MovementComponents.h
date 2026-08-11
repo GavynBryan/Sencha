@@ -55,6 +55,9 @@ struct TypeSchema<SupportState>
 {
     static constexpr std::string_view Name = "SupportState";
     static constexpr bool Replicated = true;
+    // What the character was standing on is what the ticks after it are derived
+    // from, so its own machine resumes from the authority's answer.
+    static constexpr bool Predicted = true;
 
     static auto Fields()
     {
@@ -105,6 +108,9 @@ struct TypeSchema<KinematicState>
 {
     static constexpr std::string_view Name = "KinematicState";
     static constexpr bool Replicated = true;
+    // Resuming from position alone leaves the pawn in the right place still
+    // travelling at the wrong speed, so the owner resumes from this too.
+    static constexpr bool Predicted = true;
 
     static auto Fields()
     {
@@ -160,6 +166,9 @@ struct TypeSchema<CharacterMovement>
 {
     static constexpr std::string_view Name = "CharacterMovement";
     static constexpr bool Replicated = true;
+    // Which rules the character moves under decides whether a replay is even
+    // possible, so the owner resumes from the authority's mode.
+    static constexpr bool Predicted = true;
 
     static auto Fields()
     {

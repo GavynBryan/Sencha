@@ -37,6 +37,9 @@ struct TypeSchema<JumpState>
 {
     static constexpr std::string_view Name = "JumpState";
     static constexpr bool Replicated = true;
+    // A replayed tick evaluates the same gate the live tick did, so the owner
+    // resumes from the authority's cooldown rather than its own guess at it.
+    static constexpr bool Predicted = true;
 
     static auto Fields()
     {

@@ -9,11 +9,16 @@
 #include <core/config/EngineConfig.h>
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
+#include <input/InputActionResolve.h>
 #include <input/InputActionState.h>
 #include <input/InputFrame.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
+
+#include <cmath>
+#include <cstdint>
+#include <vector>
 
 namespace
 {
@@ -25,12 +30,16 @@ namespace
         EntityId Pawn;
         float ObservedYaw = 0.0f;
         int Ticks = 0;
+        // Every tick's aim, not just the newest: a frame that runs several must
+        // be checkable tick by tick.
+        std::vector<float> ObservedYaws;
 
         void FixedLogic(FixedLogicContext& ctx)
         {
             if (const LookOrientation* look = ctx.Entities.TryGet<LookOrientation>(Pawn))
             {
                 ObservedYaw = look->Yaw;
+                ObservedYaws.push_back(look->Yaw);
                 ++Ticks;
             }
         }
@@ -77,15 +86,29 @@ namespace
             Schedule.Init();
         }
 
-        // One rendered frame in engine order: look accumulation, then the fixed
-        // tick that consumes it, then placement.
+        // One rendered frame in engine order, running the tick count the
+        // accumulator asked for: look accumulation on the frame snapshot, the
+        // ticks that consume it, then placement.
         //
-        // The look value is angular displacement for the frame: the binding's
-        // scale has already turned device units into radians by this point.
-        void RunFrame(float lookX, float lookY = 0.0f)
+        // The real latches do the splitting, so this exercises the composition
+        // rather than a hand-rolled model of it. The look value is angular
+        // displacement for the frame: the binding's scale has already turned
+        // device units into radians by this point.
+        void RunFrameWithTicks(std::uint32_t ticks, float lookX, float lookY = 0.0f)
         {
-            WorldState.GetResource<InputActionState>().FrameStorage()[0] =
-                InputActionValue{ lookX, lookY, InputActionFlags::None };
+            InputActionState& state = WorldState.GetResource<InputActionState>();
+
+            // The mapper folds the frame's displacement into both clocks.
+            Presentation.MotionX += lookX;
+            Presentation.MotionY += lookY;
+            Simulation.MotionX += lookX;
+            Simulation.MotionY += lookY;
+
+            // Presentation resolves once per frame and takes everything.
+            const InputMotionDelta framePass = Presentation.Share(1);
+            Presentation.Consume(framePass);
+            state.FrameStorage()[0] =
+                InputActionValue{ framePass.X, framePass.Y, InputActionFlags::None };
 
             PreSimulateContext preSimulate{
                 .Config = Config,
@@ -96,14 +119,27 @@ namespace
             };
             Schedule.RunPreSimulate(preSimulate);
 
-            FixedLogicContext fixed{
-                .Config = Config,
-                .Runtime = Runtime,
-                .Time = {},
-                .Entities = WorldState,
-                .Partitions = Partitions,
-            };
-            Schedule.RunFixedLogic(fixed);
+            for (std::uint32_t i = 0; i < ticks; ++i)
+            {
+                // Ticks left including this one, so the last takes the exact
+                // remainder however the division rounded.
+                const std::uint32_t left = ticks - i;
+                const InputMotionDelta tickPass = Simulation.Share(left);
+                Simulation.Consume(tickPass);
+                state.BeginTick(TickIndex)[0] =
+                    InputActionValue{ tickPass.X, tickPass.Y, InputActionFlags::None };
+
+                FixedLogicContext fixed{
+                    .Config = Config,
+                    .Runtime = Runtime,
+                    .Time = {},
+                    .Entities = WorldState,
+                    .Partitions = Partitions,
+                    .TicksLeftInFrame = left,
+                };
+                Schedule.RunFixedLogic(fixed);
+                ++TickIndex;
+            }
 
             FrameUpdateContext frame{
                 .Config = Config,
@@ -117,9 +153,100 @@ namespace
             Schedule.RunFrameUpdate(frame);
         }
 
+        void RunFrame(float lookX, float lookY = 0.0f)
+        {
+            RunFrameWithTicks(1, lookX, lookY);
+        }
+
+        // One rendered frame driven by wall time, holding a stick at a fixed
+        // deflection: the accumulator decides the tick count and the camera
+        // gets the real alpha, which is what the rate lead is derived from.
+        // `stickX` is the conditioned per-second value the resolve publishes
+        // on both the mixed and the sampled channel.
+        void RunWallFrame(double dt, float stickX)
+        {
+            constexpr double fixedDt = 1.0 / 60.0;
+            InputActionState& state = WorldState.GetResource<InputActionState>();
+
+            state.FrameStorage()[0] =
+                InputActionValue{ stickX, 0.0f, InputActionFlags::None };
+            state.FrameSampledStorage()[0] =
+                InputActionValue{ stickX, 0.0f, InputActionFlags::None };
+
+            PreSimulateContext preSimulate{
+                .Config = Config,
+                .Runtime = Runtime,
+                .Input = Input,
+                .Entities = WorldState,
+                .Partitions = Partitions,
+            };
+            Schedule.RunPreSimulate(preSimulate);
+
+            Residual += dt;
+            std::uint32_t ticks = 0;
+            while (Residual >= fixedDt)
+            {
+                Residual -= fixedDt;
+                ++ticks;
+            }
+            for (std::uint32_t i = 0; i < ticks; ++i)
+            {
+                state.BeginTick(TickIndex)[0] =
+                    InputActionValue{ stickX, 0.0f, InputActionFlags::None };
+                state.TickSampledStorage()[0] =
+                    InputActionValue{ stickX, 0.0f, InputActionFlags::None };
+
+                FixedLogicContext fixed{
+                    .Config = Config,
+                    .Runtime = Runtime,
+                    .Time = FixedSimTime{ .DeltaSeconds = fixedDt,
+                                          .TickIndex = TickIndex },
+                    .Entities = WorldState,
+                    .Partitions = Partitions,
+                    .TicksLeftInFrame = ticks - i,
+                };
+                Schedule.RunFixedLogic(fixed);
+                ++TickIndex;
+            }
+
+            FrameUpdateContext frame{
+                .Config = Config,
+                .Runtime = Runtime,
+                .Input = Input,
+                .WallDeltaSeconds = dt,
+                .Presentation = PresentationTime{ .DeltaSeconds = fixedDt,
+                                                  .Alpha = Residual / fixedDt },
+                .Entities = WorldState,
+                .Partitions = Partitions,
+            };
+            Schedule.RunFrameUpdate(frame);
+        }
+
+        // Where the camera actually aimed this frame: the yaw of the pose the
+        // follow pass wrote, which is the thing the player sees.
+        [[nodiscard]] float CameraYaw() const
+        {
+            const LocalTransform* transform =
+                WorldState.TryGet<LocalTransform>(Camera);
+            const Vec3d forward =
+                transform->Value.Rotation.RotateVector(Vec3d::Forward());
+            return std::atan2(-forward.X, -forward.Z);
+        }
+
+        // The aim simulation steers along.
         [[nodiscard]] float Yaw() const
         {
             return WorldState.TryGet<LookOrientation>(Pawn)->Yaw;
+        }
+
+        // The aim the view is presented at: the simulation aim plus whatever
+        // the pointer has moved since the last tick consumed anything.
+        [[nodiscard]] float PresentedYaw() const
+        {
+            const float lead = WorldState.TryGetResource<PendingLookInput>() != nullptr
+                ? WorldState.TryGetResource<PendingLookInput>()->Yaw
+                : 0.0f;
+            return Yaw() + lead;
         }
 
         EngineConfig Config;
@@ -133,6 +260,14 @@ namespace
         LookIntegrationSystem* Integrate = nullptr;
         CameraFollowSystem* Follow = nullptr;
         YawReadingSystem* Reader = nullptr;
+
+        // The two clocks' unconsumed displacement, as the mapper carries it.
+        InputEdgeLatch Presentation;
+        InputEdgeLatch Simulation;
+        std::uint64_t TickIndex = 1;
+        // Wall time the fixed-step boundary has not crossed yet, for the
+        // wall-clock stepper: what the engine's accumulator carries.
+        double Residual = 0.0;
     };
 }
 
@@ -177,6 +312,166 @@ TEST(CameraLook, PitchStaysClampedWhenAccumulatedBeforeSimulation)
     harness.RunFrame(0.0f, -1000.0f);
 
     EXPECT_FLOAT_EQ(harness.WorldState.TryGet<LookOrientation>(harness.Pawn)->Pitch, 0.5f);
+}
+
+// The jitter this guards: the aim used to integrate once per rendered frame
+// while movement rebuilt its heading once per fixed tick. When the display rate
+// and the tick rate are close, the accumulator runs zero, one, or two ticks on
+// alternating frames, so a frame that ran none turned the heading for free and a
+// frame that ran two stepped twice under one angle. Steering along that heading
+// while moving made the velocity direction lurch. Every tick must advance the
+// aim by the displacement covering the span it simulates.
+TEST(CameraLook, EachTickTurnsByTheTravelSinceTheLastTick)
+{
+    LookHarness harness;
+    constexpr float perFrame = 0.03f;
+
+    // The tick pattern a 60 Hz display produces against a 60 Hz simulation.
+    const std::uint32_t pattern[] = { 1, 0, 2, 1 };
+
+    for (std::uint32_t ticks : pattern)
+    {
+        const float before = harness.Yaw();
+        harness.RunFrameWithTicks(ticks, perFrame);
+        if (ticks == 0)
+        {
+            EXPECT_FLOAT_EQ(harness.Yaw(), before)
+                << "a frame that ran no tick must not turn the heading";
+        }
+    }
+
+    // Four frames of travel spread evenly over the four ticks that ran, so the
+    // heading advances by the same angle for every equal step of simulated
+    // time. Before the fix these came out -0.03, -0.09, -0.09, -0.12.
+    const std::vector<float>& observed = harness.Reader->ObservedYaws;
+    ASSERT_EQ(observed.size(), 4u);
+    for (std::size_t i = 0; i < observed.size(); ++i)
+    {
+        EXPECT_NEAR(observed[i], -perFrame * static_cast<float>(i + 1), 1e-5f)
+            << "tick " << i << " must sit one frame of travel past the last";
+    }
+}
+
+// A catch-up frame simulates two ticks. Both stepping under one angle is the
+// defect; the second must aim one tick further round than the first.
+TEST(CameraLook, TicksInOneFrameDoNotShareAnAngle)
+{
+    LookHarness harness;
+    harness.RunFrameWithTicks(0, 0.02f);
+    const float beforeBurst = harness.Yaw();
+
+    // Two frames of travel are outstanding and two ticks run: each takes one.
+    harness.RunFrameWithTicks(2, 0.02f);
+
+    const std::vector<float>& observed = harness.Reader->ObservedYaws;
+    ASSERT_EQ(observed.size(), 2u);
+    EXPECT_NE(observed[0], observed[1])
+        << "two ticks of one frame must not simulate under the same aim";
+    EXPECT_NEAR(observed[0], beforeBurst - 0.02f, 1e-5f);
+    EXPECT_NEAR(observed[1], beforeBurst - 0.04f, 1e-5f);
+}
+
+// Moving the aim onto the tick clock must not make the view step at the tick
+// rate: a frame that runs no tick still turns what the player sees.
+TEST(CameraLook, ViewTurnsOnAFrameThatRunsNoTick)
+{
+    LookHarness harness;
+    harness.RunFrameWithTicks(1, 0.05f);
+    const float settled = harness.Yaw();
+
+    harness.RunFrameWithTicks(0, 0.05f);
+
+    EXPECT_FLOAT_EQ(harness.Yaw(), settled)
+        << "no simulated time passed, so the heading must not move";
+    EXPECT_NEAR(harness.PresentedYaw(), settled - 0.05f, 1e-5f)
+        << "the view must still track the pointer at frame rate";
+}
+
+// The lead is what simulation has not caught up to, never a running total: once
+// a tick absorbs it the view must not count it a second time.
+TEST(CameraLook, TheViewLeadIsSpentByTheNextTick)
+{
+    LookHarness harness;
+    harness.RunFrameWithTicks(0, 0.05f);
+    harness.RunFrameWithTicks(1, 0.0f);
+
+    EXPECT_NEAR(harness.Yaw(), -0.05f, 1e-5f);
+    EXPECT_FLOAT_EQ(harness.PresentedYaw(), harness.Yaw())
+        << "the tick consumed the lead, so the view and the aim agree";
+}
+
+// A stick is a sample, not a displacement: the same deflection reads on every
+// pass. Accumulating it per frame while ticks consumed it per tick stepped the
+// view backward every time a tick landed -- at a 144 Hz display against a
+// 60 Hz simulation, a vibration at tick rate. A held stick must turn the view
+// by rate times wall time, every frame, in one direction.
+TEST(CameraLook, AHeldStickTurnsTheViewWithoutSteppingBack)
+{
+    LookHarness harness;
+    constexpr double dt = 1.0 / 144.0;
+    constexpr float rate = 2.4f;
+
+    harness.RunWallFrame(dt, rate);
+    float previous = harness.CameraYaw();
+
+    int reversals = 0;
+    double totalStep = 0.0;
+    double worstStep = 0.0;
+    const double expectedStep = rate * dt;
+    for (int i = 0; i < 90; ++i)
+    {
+        harness.RunWallFrame(dt, rate);
+        const double step = static_cast<double>(harness.CameraYaw()) - previous;
+        previous = harness.CameraYaw();
+        if (step > 0.0)
+            ++reversals;
+        totalStep += step;
+        worstStep = std::max(worstStep, std::abs(std::abs(step) - expectedStep));
+    }
+
+    EXPECT_EQ(reversals, 0)
+        << "the view must never move against a steadily held stick";
+    EXPECT_LT(worstStep, expectedStep * 0.02)
+        << "every frame advances by rate times its wall time";
+    EXPECT_NEAR(totalStep, -rate * dt * 90.0, 1e-3);
+}
+
+// Turn speed is a property of the stick, not of the display: a second of wall
+// time turns the view by the same angle at 144 Hz and 60 Hz frame rates.
+TEST(CameraLook, StickTurnSpeedIsIndependentOfFrameRate)
+{
+    constexpr float rate = 2.4f;
+
+    LookHarness at144;
+    for (int i = 0; i < 144; ++i)
+        at144.RunWallFrame(1.0 / 144.0, rate);
+
+    LookHarness at60;
+    for (int i = 0; i < 60; ++i)
+        at60.RunWallFrame(1.0 / 60.0, rate);
+
+    EXPECT_NEAR(at144.CameraYaw(), at60.CameraYaw(), 1e-3f);
+    EXPECT_NEAR(at144.CameraYaw(), -rate, 5e-3f)
+        << "one second at full deflection turns one rate's worth";
+}
+
+// The simulation's own aim advances only with simulated time: a frame that
+// runs two ticks turns the heading by two ticks of rate, a frame that runs
+// none leaves it alone.
+TEST(CameraLook, StickAdvancesTheHeadingByRateTimesSimulatedTime)
+{
+    LookHarness harness;
+    constexpr double fixedDt = 1.0 / 60.0;
+    constexpr float rate = 2.4f;
+
+    // Two frames of wall time, no tick boundary crossed yet.
+    harness.RunWallFrame(fixedDt * 0.4, rate);
+    EXPECT_FLOAT_EQ(harness.Yaw(), 0.0f)
+        << "no simulated time passed, so the heading must not move";
+
+    // Enough wall time to cross two tick boundaries at once.
+    harness.RunWallFrame(fixedDt * 2.0, rate);
+    EXPECT_NEAR(harness.Yaw(), -rate * fixedDt * 2.0, 1e-5f);
 }
 
 TEST(CameraPose, FirstPersonSitsAtPivot)

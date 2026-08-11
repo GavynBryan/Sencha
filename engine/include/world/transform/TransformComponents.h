@@ -53,6 +53,10 @@ struct TypeSchema<LocalTransform>
     // Where a thing is, which is the one fact every peer needs about every
     // entity it can see.
     static constexpr bool Replicated = true;
+    // A player moves the moment the key goes down rather than a round trip
+    // later, so their own machine keeps simulating where they are and treats
+    // what arrives as the authority's view to resume from.
+    static constexpr bool Predicted = true;
 
     static auto Fields()
     {

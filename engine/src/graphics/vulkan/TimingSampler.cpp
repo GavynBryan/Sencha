@@ -9,7 +9,8 @@ namespace
                                       uint64_t swapchainRecreateCount)
     {
         return TimingFrameSample{
-            .RawDtSeconds = frame.WallTime.UnscaledDt,
+            .RawDtSeconds = frame.WallTime.MeasuredDt,
+            .LockedDtSeconds = frame.WallTime.UnscaledDt,
             .TickDtSeconds = frame.TickDtSeconds,
             .PresentationDtSeconds = frame.Presentation.DeltaSeconds,
             .InterpolationAlpha = frame.Presentation.Alpha,

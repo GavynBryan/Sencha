@@ -103,6 +103,9 @@ struct NetPeer
     double LastHeardSeconds = 0.0;
     double LastPingSentSeconds = 0.0;
     std::uint64_t RoundTripMicroseconds = 0;
+    // Why the peer left, recorded at the transition to Disconnected -- the one
+    // place the cause is known -- and reported in that pump's leave event.
+    std::string LeaveReason;
 };
 
 // A peer is dropped at this many strikes.
@@ -235,6 +238,10 @@ private:
     // waited out.
     [[nodiscard]] double HandshakeRetrySeconds() const { return TimeoutSeconds * 0.1; }
     void SendHello();
+    // The admission message, assembled from the session's own identity and
+    // announcements. One builder for the fresh admission and the repeat sent to
+    // a peer whose accept was lost, so the two cannot drift apart.
+    void SendAccept(const NetAddress& to, PeerId peer);
     void DeliverChannelPayloads(NetPeer& peer, std::span<const std::byte> packet,
                                 double nowSeconds, std::vector<Delivery>& out);
     void Strike(NetPeer& peer, std::string_view why);

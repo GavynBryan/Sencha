@@ -69,7 +69,6 @@ private:
     std::optional<AsyncZoneLoader> ZoneLoader;
     std::optional<WorldPartitionRuntime> Partition;
     ZoneId PendingZoneFocus;
-    EntityId PlayerPawn;
     // Declared after Assets so their release runs before the cache is destroyed.
     DataAssetCacheHandle PlayerMovementProfile;
     DataAssetCacheHandle PlayerAvatarAsset;

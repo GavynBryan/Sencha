@@ -51,11 +51,6 @@ public:
     // indistinguishable here and has to be treated as unproven.
     [[nodiscard]] bool Confirms(std::uint32_t sequence) const;
 
-    // Whether `sequence` is old enough that no proof for it can still arrive.
-    // Anything the window has passed is never going to be confirmed, so a
-    // sender waiting on it is waiting forever.
-    [[nodiscard]] bool Expired(std::uint32_t sequence) const;
-
     [[nodiscard]] std::uint32_t Newest() const { return NewestSequence; }
     [[nodiscard]] std::uint32_t Window() const { return Behind; }
     [[nodiscard]] bool Any() const { return NewestSequence != 0; }

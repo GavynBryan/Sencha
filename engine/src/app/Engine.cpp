@@ -391,11 +391,8 @@ const AsyncTaskQueue& Engine::Tasks() const
     return *TaskQueueInstance;
 }
 
-NetSession* Engine::CreateNetSession(INetTransport& transport)
+void Engine::ResetNetSessionState()
 {
-    if (NetState != nullptr)
-        return nullptr;
-    NetState = std::make_unique<NetSession>(transport);
     ReplicationState.Reset();
     CVarPublisherState.Reset();
     PeerCommandState.Reset();
@@ -403,19 +400,21 @@ NetSession* Engine::CreateNetSession(INetTransport& transport)
     NetClockState.Reset();
     PredictionState.Reset();
     InterpolationState.Reset();
+}
+
+NetSession* Engine::CreateNetSession(INetTransport& transport)
+{
+    if (NetState != nullptr)
+        return nullptr;
+    NetState = std::make_unique<NetSession>(transport);
+    ResetNetSessionState();
     return NetState.get();
 }
 
 void Engine::DestroyNetSession()
 {
     NetState.reset();
-    ReplicationState.Reset();
-    CVarPublisherState.Reset();
-    PeerCommandState.Reset();
-    NetStatsState.Reset();
-    NetClockState.Reset();
-    PredictionState.Reset();
-    InterpolationState.Reset();
+    ResetNetSessionState();
 }
 
 DefaultRenderPipeline* Engine::GetRenderPipeline()
@@ -513,6 +512,12 @@ int Engine::Run(Game& game)
 
     RuntimeComponentSchemaState.Seal();
     ReplicationLayoutState.Seal();
+
+    // What a client resumes simulating for itself, from the same table that
+    // says what travels. Bound here rather than per session: the answer is a
+    // fact of the build, and a session starting must not be the moment it is
+    // first asked.
+    PredictionState.Bind(ReplicationLayoutState);
 
     assert(!RuntimeWorldState && "Engine::Run called with a live runtime world");
     RuntimeWorldState =

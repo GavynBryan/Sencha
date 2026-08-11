@@ -2,8 +2,13 @@
 
 #include <ecs/World.h>
 #include <ecs/WorldComponentSchema.h>
+#include <movement/JumpState.h>
+#include <movement/MovementComponents.h>
 #include <net/ClientPrediction.h>
+#include <net/ReplicationLayout.h>
+#include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
+#include <world/transform/TransformComponents.h>
 
 #include <cstring>
 
@@ -21,6 +26,32 @@ namespace
 {
     constexpr EntityId kPawn{ 5, 1 };
     constexpr EntityId kOther{ 6, 1 };
+
+    // The engine's component vocabulary in the two forms these tests need: the
+    // storage a World is made from, and the replication table the predicted set
+    // is compiled from. One pass builds both, so neither can drift from the
+    // other -- which is the whole point of the set coming from the table.
+    struct EngineComponents
+    {
+        WorldComponentSchema Schema;
+        ReplicationLayout Layout;
+
+        EngineComponents()
+        {
+            ComponentRegistrar registrar(&Schema, nullptr, &Layout);
+            RegisterEngineComponents(registrar);
+            Schema.Seal();
+            Layout.Seal();
+        }
+
+        [[nodiscard]] ClientPrediction Predicting(EntityId pawn) const
+        {
+            ClientPrediction prediction;
+            prediction.Bind(Layout);
+            prediction.SetPredicted(pawn);
+            return prediction;
+        }
+    };
 
     // Stands in for the snapshot applier: decodes a value into one of the
     // shadow slots the way an arriving delta would.
@@ -43,8 +74,8 @@ namespace
 
 TEST(ClientPrediction, PredictsOnlyTheEntityItWasGiven)
 {
-    ClientPrediction prediction;
-    prediction.SetPredicted(kPawn);
+    const EngineComponents components;
+    ClientPrediction prediction = components.Predicting(kPawn);
 
     EXPECT_TRUE(prediction.Predicts(kPawn));
     EXPECT_FALSE(prediction.Predicts(kOther))
@@ -59,8 +90,8 @@ TEST(ClientPrediction, PredictsOnlyTheEntityItWasGiven)
 // carrying the wrong everything else.
 TEST(ClientPrediction, WithholdsEverythingAReplayResumesFrom)
 {
-    ClientPrediction prediction;
-    prediction.SetPredicted(kPawn);
+    const EngineComponents components;
+    ClientPrediction prediction = components.Predicting(kPawn);
 
     EXPECT_TRUE(prediction.Intercepts(kPawn, ResolveComponentTypeId<LocalTransform>()));
     EXPECT_TRUE(prediction.Intercepts(kPawn, ResolveComponentTypeId<KinematicState>()));
@@ -74,8 +105,8 @@ TEST(ClientPrediction, WithholdsEverythingAReplayResumesFrom)
 
 TEST(ClientPrediction, DisabledInterceptsNothing)
 {
-    ClientPrediction prediction;
-    prediction.SetPredicted(kPawn);
+    const EngineComponents components;
+    ClientPrediction prediction = components.Predicting(kPawn);
     prediction.SetEnabled(false);
 
     EXPECT_FALSE(prediction.Intercepts(kPawn, ResolveComponentTypeId<LocalTransform>()))
@@ -89,8 +120,8 @@ TEST(ClientPrediction, DisabledInterceptsNothing)
 
 TEST(ClientPredictionShadow, RemembersEachComponentSeparately)
 {
-    ClientPrediction prediction;
-    prediction.SetPredicted(kPawn);
+    const EngineComponents components;
+    ClientPrediction prediction = components.Predicting(kPawn);
 
     EXPECT_FALSE(prediction.HasAuthoritativeState(
         ResolveComponentTypeId<KinematicState>()));
@@ -110,26 +141,23 @@ TEST(ClientPredictionShadow, RemembersEachComponentSeparately)
 
 TEST(ClientPredictionShadow, PutsEverythingItHasHeardOntoTheEntity)
 {
-    WorldComponentSchema schema;
-    RegisterEngineRuntimeComponents(schema);
-    schema.Seal();
+    const EngineComponents components;
 
     World world;
-    schema.Apply(world);
+    components.Schema.Apply(world);
     const EntityId pawn = world.CreateEntity();
     world.AddComponent<LocalTransform>(pawn, LocalTransform{});
     world.AddComponent<KinematicState>(pawn, KinematicState{});
     world.AddComponent<JumpState>(pawn, JumpState{});
 
-    ClientPrediction prediction;
-    prediction.SetPredicted(pawn);
+    ClientPrediction prediction = components.Predicting(pawn);
     Decode(prediction, PoseAt(9.0f));
     KinematicState motion;
     motion.Velocity = Vec3d{ 0.0f, 5.0f, 0.0f };
     Decode(prediction, motion);
     Decode(prediction, JumpState{ .CooldownRemaining = 0.1f });
 
-    ASSERT_TRUE(prediction.RestoreTo(world, schema, pawn));
+    ASSERT_TRUE(prediction.RestoreTo(world, components.Schema, pawn));
     EXPECT_FLOAT_EQ(world.TryGet<LocalTransform>(pawn)->Value.Position.X, 9.0f);
     EXPECT_FLOAT_EQ(world.TryGet<KinematicState>(pawn)->Velocity.Y, 5.0f)
         << "restoring the position without the velocity leaves the pawn in the "
@@ -140,23 +168,20 @@ TEST(ClientPredictionShadow, PutsEverythingItHasHeardOntoTheEntity)
 
 TEST(ClientPredictionShadow, SaysNothingAboutAComponentItHasNotHeardOf)
 {
-    WorldComponentSchema schema;
-    RegisterEngineRuntimeComponents(schema);
-    schema.Seal();
+    const EngineComponents components;
 
     World world;
-    schema.Apply(world);
+    components.Schema.Apply(world);
     const EntityId pawn = world.CreateEntity();
     world.AddComponent<LocalTransform>(pawn, LocalTransform{});
     KinematicState untouched;
     untouched.Velocity = Vec3d{ 7.0f, 0.0f, 0.0f };
     world.AddComponent<KinematicState>(pawn, untouched);
 
-    ClientPrediction prediction;
-    prediction.SetPredicted(pawn);
+    ClientPrediction prediction = components.Predicting(pawn);
     Decode(prediction, PoseAt(1.0f));
 
-    ASSERT_TRUE(prediction.RestoreTo(world, schema, pawn));
+    ASSERT_TRUE(prediction.RestoreTo(world, components.Schema, pawn));
     EXPECT_FLOAT_EQ(world.TryGet<KinematicState>(pawn)->Velocity.X, 7.0f)
         << "a component the authority has never described was overwritten with "
            "an invented default";
@@ -168,8 +193,8 @@ TEST(ClientPredictionShadow, SaysNothingAboutAComponentItHasNotHeardOf)
 
 TEST(ClientPrediction, ChangingPawnsForgetsTheOldOne)
 {
-    ClientPrediction prediction;
-    prediction.SetPredicted(kPawn);
+    const EngineComponents components;
+    ClientPrediction prediction = components.Predicting(kPawn);
     Decode(prediction, PoseAt(3.0f));
 
     PawnCommandTick record;
@@ -187,8 +212,8 @@ TEST(ClientPrediction, ChangingPawnsForgetsTheOldOne)
 
 TEST(ClientPrediction, SettingTheSamePawnAgainKeepsWhatItHas)
 {
-    ClientPrediction prediction;
-    prediction.SetPredicted(kPawn);
+    const EngineComponents components;
+    ClientPrediction prediction = components.Predicting(kPawn);
     PawnCommandTick record;
     record.Tick = 12;
     prediction.Commands().Push(record);
@@ -201,8 +226,8 @@ TEST(ClientPrediction, SettingTheSamePawnAgainKeepsWhatItHas)
 
 TEST(ClientPrediction, ResetForgetsEverything)
 {
-    ClientPrediction prediction;
-    prediction.SetPredicted(kPawn);
+    const EngineComponents components;
+    ClientPrediction prediction = components.Predicting(kPawn);
     Decode(prediction, PoseAt(3.0f));
     prediction.NoteReconcile(4, 0.5f, true);
 
@@ -215,10 +240,50 @@ TEST(ClientPrediction, ResetForgetsEverything)
     EXPECT_FLOAT_EQ(prediction.LastResetMeters(), 0.0f);
 }
 
-TEST(ClientPredictionStats, ReportWhatEachReconcileCost)
+// A session ending resets what was heard, not what this build predicts. Losing
+// the set here would leave the next session predicting nothing at all, which
+// looks exactly like prediction working until the first correction arrives.
+TEST(ClientPrediction, ResetKeepsTheSetItWasBoundTo)
+{
+    const EngineComponents components;
+    ClientPrediction prediction = components.Predicting(kPawn);
+
+    prediction.Reset();
+    prediction.SetPredicted(kPawn);
+    EXPECT_TRUE(prediction.Intercepts(kPawn, ResolveComponentTypeId<LocalTransform>()));
+    EXPECT_TRUE(prediction.Intercepts(kPawn, ResolveComponentTypeId<KinematicState>()));
+}
+
+// Nothing is predicted until the table says what is. A client that reached a
+// session without being bound must let the authority's state through rather
+// than divert it somewhere nothing will read it back out of.
+TEST(ClientPrediction, UnboundInterceptsNothing)
 {
     ClientPrediction prediction;
     prediction.SetPredicted(kPawn);
+
+    EXPECT_FALSE(prediction.Intercepts(kPawn, ResolveComponentTypeId<LocalTransform>()));
+    EXPECT_TRUE(prediction.AuthoritativeBytes(
+                              ResolveComponentTypeId<LocalTransform>()).empty());
+}
+
+// The set is the table's answer, not a list kept beside it.
+TEST(ClientPrediction, InterceptsExactlyWhatTheTableCallsPredicted)
+{
+    const EngineComponents components;
+    ClientPrediction prediction = components.Predicting(kPawn);
+
+    for (const ReplicatedComponent& component : components.Layout.Components())
+    {
+        EXPECT_EQ(prediction.Intercepts(kPawn, component.Type), component.Predicted)
+            << component.Name;
+    }
+}
+
+TEST(ClientPredictionStats, ReportWhatEachReconcileCost)
+{
+    const EngineComponents components;
+    ClientPrediction prediction = components.Predicting(kPawn);
 
     prediction.NoteReconcile(3, 0.02f, false);
     EXPECT_EQ(prediction.Reconciles(), 1u);

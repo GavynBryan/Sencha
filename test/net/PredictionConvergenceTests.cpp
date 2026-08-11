@@ -24,8 +24,8 @@
 #include <net/NetSession.h>
 #include <net/NetTickEstimator.h>
 #include <net/NetReplicationComponents.h>
-#include <net/PawnStateReplay.h>
 #include <net/PeerCommandRuntime.h>
+#include <prediction/PawnStateReplay.h>
 #include <net/ReplicationRuntime.h>
 #include <net/SimulatedTransport.h>
 #include <physics/CharacterMoverPool.h>
@@ -307,6 +307,8 @@ namespace
         {
             Clock.SetSlackTicks(
                 static_cast<std::uint32_t>(NetPeerCommandBuffer::kTargetDepth));
+            // The client's set comes from its own table, as the engine's does.
+            Prediction.Bind(Mirror.Layout);
         }
 
         [[nodiscard]] bool Join(int maxSteps)

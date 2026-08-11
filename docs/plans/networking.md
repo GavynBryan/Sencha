@@ -979,17 +979,73 @@ The reasons, because "we simplified it" is not one:
   now go through the same reset, so `net.prediction 0` is reset-only input delay
   rather than a second, separately broken path.
 
-The mechanism, as built. `net/PawnStateReplay.h` owns the whole operation and runs
-on the main thread at `PumpNet`, structurally silent. The applier does not write
+The mechanism, as built. `prediction/PawnStateReplay.h` owns the whole operation and
+runs on the main thread at `PumpNet`, structurally silent. The applier does not write
 the pawn's owned components into the world -- it intercepts them into
-`ClientPrediction`'s shadow (`LocalTransform`, `KinematicState`, `SupportState`,
-`CharacterMovement`, `JumpState`), so the world keeps the client's own predicted
-values and the authority's last word stays available to reset from. Replay then
+`ClientPrediction`'s shadow, so the world keeps the client's own predicted values
+and the authority's last word stays available to reset from. Replay then
 restores the shadow through `SetComponentBytes` plus
 `CharacterMoverPool::RestorePosition` (Phase 1 added per-entity `Step`/`RestorePosition`
 beside `Drive`, sharing one sweep body so replay and the live tick cannot diverge by
 construction), drops the ring through the acked tick, and steps what remains through
-`StepFreeLocomotion` → `StepJump` → `ComposeMotion` → `Movers->Step`.
+`movement/CharacterTickStep.h`.
+
+It is a layer above `net/`, not inside it, and that placement is the whole argument.
+Everything reconciliation *writes* is simulation state -- components, the mover's
+backend pose, presentation history -- and everything it needs from netcode it *reads*
+as data: the authority's last word, which ticks have been answered, which are still
+owed. Driven from inside `net/`, the transport layer ends up calling movement and
+physics, which is the dependency arrow backwards; the identical code one layer up
+calls both by name and owes nothing back. So `net/` keeps the wire, the codec, the
+clocks, the shadow, and the ring, and knows nothing about walking. The host side
+already worked this way -- `PeerCommandRuntime::Feed` writes input and the schedule
+simulates -- so this removes an asymmetry rather than inventing a rule.
+
+An earlier revision instead injected the tick into `net/` as a four-callback table.
+It satisfied the same constraint by indirection, and is recorded here because the
+lesson generalizes: a callback table handed down to a layer that must not know its
+callee is usually a sign the code is in the wrong layer, not that it needs a seam.
+Moving it up deleted the seam and its wiring outright.
+
+Which components get intercepted is a fact of the schema, not a list netcode keeps:
+a component declares `Predicted = true` beside `Replicated = true`, `ReplicationLayout`
+carries it on `ReplicatedComponent`, and `ClientPrediction::Bind` compiles the shadow
+from the sealed table at startup -- so `net` names no component type, and a game whose
+characters carry state of their own extends what a replay resumes from by declaring it
+on that state. The engine's set is `LocalTransform`, `KinematicState`, `SupportState`,
+`CharacterMovement`, and `JumpState`. The flag is deliberately outside `TableHash`:
+the hash exists so two builds know they agree on how to read each other's snapshots,
+and prediction changes only where the receiver lands the decoded bytes -- never the
+encoding -- so folding it in would refuse a handshake between builds that understand
+each other perfectly.
+
+What one re-run tick *does* belongs to movement (`StepCharacterTick`, composing
+`StepFreeLocomotion` → `StepJump` → `ComposeMotion` → `Movers->Step`, with the same
+mailbox-rebuild rule the live tick has). `PawnStateReplay` decides which ticks to run
+and what to do when they cannot be. A second implementation of the tick itself would
+reintroduce, as a difference between two codebases, exactly the divergence replaying
+exists to remove.
+
+Two definitions of a character tick do exist, and the split is deliberate rather than
+tolerated. The scheduled path is stage-major over chunks -- every entity through
+locomotion, then jump, then composition -- because that is the shape that keeps the
+bulk tick data-oriented; the replay path is entity-major because it advances one pawn
+several times before the next frame. The *kernels* are single-sourced, so what the two
+compositions can disagree about is ordering, and `PawnStateReplay.ReachesExactlyWhereTheLiveTicksReached`
+holds them to bit equality across 64 ticks of wall collisions and jumps. The replay
+tick is also a declared *subset*: mode transitions, tuning resolution, and ability
+contributions do not re-run, which is why mode and tuning are restored from the
+authority and held constant, and why jump had to become part of movement rather than
+an ability. Where prediction later covers abilities or weapons, the growth belongs in
+that composition and in the rollback contract below -- not in a `net/`-side pile of
+`Step*Tick` calls, and not in a second scheduler.
+
+Gravity and the up axis are read off the scheduled `FreeLocomotionSystem` at the call
+site rather than restated, so a replayed tick cannot integrate under different physics
+than the tick it corrects. Before this they existed as three unowned copies
+(`FreeLocomotionSystem`, `CharacterControllerSystem`, and the replay request's own
+defaults, which nothing ever set); giving gravity a single owner is still open, and
+these getters are the interim.
 
 Two things had to move to make the state closed under replay. Jump left the ability
 framework and became `StepJump` plus a `JumpState` component inside the movement
@@ -1003,7 +1059,18 @@ Snap fallback, rather than pretending: a locomotion mode replay does not model, 
 an ack older than the ring's oldest surviving record (a stall past one second),
 resets position directly and clears the ring. Both are observable -- mode
 replicates, and the stats panel counts snaps -- so a fallback that starts firing is
-a diagnosis rather than a mystery.
+a diagnosis rather than a mystery. The mode question (`CharacterTickModeSupported`)
+is asked before the replay loop, not inside it: a pawn under rules this build cannot
+re-run is out of step whether or not it currently owes any ticks, and deciding inside
+the loop would let an empty ring pass for agreement.
+
+Deferred, with its trigger: the usercmd's contents are engine-shaped today --
+`PawnCommandCapture` samples `LookOrientation` and `MovementIntent` directly. A
+game-owned fill/apply seam (a module deciding what a command carries, the role
+Source's client-dll `CreateMove` plays) is a real boundary but is not earned by
+anything shipping. The trigger is a second game whose aim model does not fit
+`LookOrientation` -- a third-person camera-rig-driven one -- at which point the
+command becomes a payload the game writes and reads rather than a fixed struct.
 
 Two defects this uncovered that were not prediction's at all, recorded because both
 were invisible to every unit test:

@@ -31,7 +31,7 @@
                         "action": "look",
                         "control": "gamepad.right_stick",
                         "dead_zone": 0.15,
-                        "scale": 0.04
+                        "scale": 2.4
                     },
                     {
                         "action": "jump",
