@@ -59,7 +59,7 @@ Application
     EngineConfig value
     LoggingProvider              (Foundation: owned first, destroyed last)
     DebugService                 (always-present singleton services)
-    AudioService
+    AudioService                 (mixing; opens no playback device when headless)
     CaptionRuntime
     PlatformServices             (SDL video + window; null when headless)
     GraphicsServices             (the Vulkan chain + Renderer; null when headless)

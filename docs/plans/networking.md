@@ -341,15 +341,19 @@ interpolates render poses between ticks. Rate and clamp are `EngineRuntimeConfig
 fields. The 0..2-tick elasticity Section 7.3 uses as its clock-convergence actuator
 is therefore already available.
 
-**Headless frame loop: OUTSTANDING. This is the one piece of Section 3 still owed,
-and it is Section 12's first execution phase.** A headless engine still cannot tick:
-`Engine::Initialize` returns early on `WindowGraphicsApi::None` (`Engine.cpp:119-123`)
-before `FrameDriverInstance` is constructed, and `RegisterFramePhases` is entirely
-inside `#ifdef SENCHA_ENABLE_VULKAN` (`EngineFramePhases.cpp`). Headless boot must
-construct the FrameDriver and register a simulation-only phase set (DrainAsyncTasks,
-ZoneResidency, ScheduleTicks, Simulate, Update, EndFrame; no platform, graphics, or
-render phases). This is the dedicated host's skeleton and equally the CI
-simulation-soak skeleton the roadmap's llvmpipe concern already wants.
+**Headless frame loop: LANDED.** Headless boot constructs the FrameDriver and
+registers the simulation and net phase sets only; `Engine::HasPresentation()`
+gates the presentation half. This is the dedicated host's skeleton and equally
+the CI simulation-soak skeleton the roadmap's llvmpipe concern already wants.
+
+*Status 2026-08-11 (G7): the game side landed too. The template's asset stack
+composes without graphics services -- the three GPU-backed caches are absent
+rather than the struct being split -- and a scene declines an asset of a kind
+the process cannot hold rather than failing the load, which is what lets a host
+load a level for its collision. A host is stopped by SIGINT/SIGTERM or by `quit`
+typed at its terminal, which is also its console; the process host owns the
+signals and names the descriptor, because signals are process-wide and several
+engines can run in one.*
 
 Tests: the accumulator unit tests exist. Still owed: a headless `FrameDriver`
 scenario test running fixed ticks with no graphics, and the traversal tick-budget
@@ -1792,11 +1796,32 @@ what extraction actually reads.
   interest-leak audit
   (assert no un-granted state ever serialized per peer); shipping-config posture
   checks. Depends on G1..G5 surface existing.
-- **G7. Dedicated host and tooling.** Packaged headless host configuration;
-  PIE "host plus join" launch convenience (spawn a second app process with
-  `+connect`, the out-of-process PIE precedent); the two-process soak in CI;
-  networked variant of the traversal-hitch harness (Track C item 2's script
-  driving two sessions). Depends on G1; packaging parts ride Track F item 2.
+- **G7. Dedicated host and tooling.** SUBSTANTIALLY LANDED. Packaged headless
+  host configuration; PIE "host plus join" launch convenience (spawn a second
+  app process with `+connect`, the out-of-process PIE precedent); the
+  two-process soak in CI; networked variant of the traversal-hitch harness
+  (Track C item 2's script driving two sessions). Depends on G1; packaging
+  parts ride Track F item 2.
+
+  *Status 2026-08-11: the dedicated host runs. `app --headless` loads a map,
+  hosts, admits peers, and serves them pawns with no local player of its own;
+  `scripts/package_bundle.sh` produces a server and a client bundle from one
+  content root; Kyusu's `playserver` launches the pair. Covered by a
+  two-process test (`test/runtime/HostClientProcessTests.cpp`) that runs the
+  shipping binary as host and client over loopback and asserts join, serve,
+  possession, and clean leave -- the plan-of-record shape, not two engines in
+  one process. Still owed from this phase: the scripted traversal soak with
+  zero-missed-tick assertions (rides Track C's script machinery and Track E's
+  CI), and Windows packaging (Track F).*
+
+  *Deviation from Sections 2.3 and 7.2, recorded: there is no `HeadlessHost`
+  value in `NetSessionRole`. Hosting is hosting on the wire, and a fourth role
+  would have to be audited into every `Role() == Host` comparison for no
+  protocol difference. "Nobody plays here" is instead a launch-configuration
+  fact (`EngineRuntimeConfig::HasLocalPlayer`) that the game reads at its
+  composition root, which is the same composition-not-branches rule Section 7.2
+  states -- and it keeps the fact separate from having no graphics, which the
+  scripted client in Section 11 needs, since that is headless with a player.*
 
 Gate for the track (the roadmap owns final wording): two players, one headless or
 listen host, complete a scripted co-op traversal of the three-zone fixture world

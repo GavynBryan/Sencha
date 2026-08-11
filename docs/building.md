@@ -125,16 +125,54 @@ dedicated-host shape and the CI simulation-soak shape.
 app --headless --game path/to/game.so +map levels/<name>
 ```
 
-A headless host runs until something asks it to stop: `Engine::RequestExit()`,
-the console `quit`, or `+set app.exit_after_frames <n>`. There is no window to
-close, so a host with no exit condition runs forever — which is correct for a
-server and a hang for anything else.
+A headless host runs until something asks it to stop. `Ctrl-C` and `SIGTERM`
+both shut it down through the ordinary exit path, so the world tears down and
+connected peers are told rather than the process vanishing; so does typing
+`quit` at its terminal, `Engine::RequestExit()`, and
+`+set app.exit_after_frames <n>`. There is no window to close, so a host with
+none of those runs forever — which is correct for a server.
 
-The game module has to cooperate. A module that reaches for `Engine::Graphics()`
-unconditionally cannot run headless, and the bundled `template/` currently does:
-its `RuntimeAssets` is constructed from the Vulkan buffer, image, descriptor, and
-sampler services. Making the template headless-capable means decoupling the asset
-caches from those services, and is Track G's dedicated-host work.
+Its terminal is its console. Anything typed there runs as a console command
+(`net.max_peers 8`, `quit`), and the startup script's output is logged, so which
+map loaded and which port an ephemeral bind actually took are visible without a
+window. A host started with its input closed simply has no console; it is not an
+error.
+
+The pacing default is twice the fixed tick rate, derived from
+`time.fixed_tick_rate` rather than written down separately: a frame that presents
+nothing is still the frame that pumps the network, and nothing else paces a loop
+with no vsync. `+set r.target_fps <n>` overrides it.
+
+The game module has to cooperate, and the bundled `template/` now does: its
+asset stack composes without graphics services, holding everything except the
+caches that own GPU resources. A scene that references meshes or textures still
+loads there — an asset of a kind this process cannot hold is declined rather
+than failing the load, so a host gets the entities and collision it simulates
+with and no bodies to draw. A module of your own needs the same treatment:
+reach for `Engine::TryGraphics()` rather than `Engine::Graphics()`.
+
+Nobody plays in a dedicated host. That is a separate fact from having no
+graphics (`EngineRuntimeConfig::HasLocalPlayer`, set by `--headless`), because
+the two come apart: a scripted client is headless *with* a player. The authority
+simulates every peer's pawn; it just never provisions one of its own.
+
+### Packaging a server and a client
+
+```sh
+scripts/package_bundle.sh --content ~/MyProject --map levels/EntranceHall --out /tmp/bundles
+```
+
+Writes two self-contained directories — a dedicated server and a client that
+joins one — carrying the host binary, the game module, cooked content, and the
+non-system shared libraries a clean machine will not have. Both ends must be
+built from the same source: a mismatch is refused at the handshake.
+
+### From the editor
+
+`playserver [map]` in Kyusu launches the same pair: a headless authority and a
+windowed client joined to it. `editor.pie.host_port` picks the port. This is the
+topology a shipped session runs, and unlike a listen server it does not make the
+host's rendering compete with the client's.
 
 **Building without Vulkan — does not work.** `SENCHA_ENABLE_VULKAN=OFF`
 fails to compile because the render layer (`engine/src/render/…`,

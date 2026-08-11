@@ -619,10 +619,10 @@ which is ratified; this section owns the sequence and the gate.
    there is no window, and phase registration is entirely inside the Vulkan guard.
    Independently valuable: it is the CI simulation-soak vehicle and the dedicated
    host's skeleton. Gate: a headless engine runs fixed ticks with no graphics
-   services constructed, and exits clean. **Landed.** The engine ticks headless;
-   the template game module does not yet, because its asset stack is built from
-   graphics services. That is G7's to resolve, and it is what the two-process CI
-   soak waits on.
+   services constructed, and exits clean. **Landed.** The engine ticks headless,
+   and as of G7 so does the template game module: its asset stack composes
+   without graphics services, and a scene declines the render assets the process
+   cannot hold rather than failing to load.
 
 2. **Transport, protocol, session (G1).** `INetTransport` with UDP, loopback, and a
    seeded deterministic simulated transport; two channel classes; pure span decoders
@@ -684,8 +684,13 @@ which is ratified; this section owns the sequence and the gate.
    strikes; malformed-traffic soak in both directions, including a hostile authority
    against a live client; interest-leak audit.
 
-9. **Dedicated host and tooling (G7).** Packaged headless host configuration, the
-   two-process CI soak, and PIE host-plus-join convenience.
+9. **Dedicated host and tooling (G7). Substantially landed 2026-08-11.** A
+   dedicated host runs the template game headless, hosts, and serves pawns to
+   joining clients with no local player of its own; `scripts/package_bundle.sh`
+   produces server and client bundles; Kyusu's `playserver` launches the pair;
+   and a two-process test runs the shipping binary as both ends over loopback.
+   Still owed: the scripted traversal soak with zero-missed-tick assertions
+   (rides Track C's script machinery and CI), and Windows packaging (Track F).
 
 10. **Prediction (G-P). Split out 2026-08-08.** P1, the shared tick, has landed:
    the authority publishes its simulation tick and a client names its own clock in

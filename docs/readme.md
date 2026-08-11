@@ -135,9 +135,12 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-> A no-Vulkan / headless build is **not** currently supported — the render layer
-> includes Vulkan headers unconditionally. See the "Future work" section of
-> [cmake-build-hygiene-plan.md](cmake-build-hygiene-plan.md).
+> A no-Vulkan **build** is not currently supported — the render layer includes
+> Vulkan headers unconditionally. See the "Future work" section of
+> [cmake-build-hygiene-plan.md](cmake-build-hygiene-plan.md). Running **headless**
+> is a different thing and does work: `app --headless` is the dedicated-server
+> shape, built with Vulkan and declining to initialize it. See
+> [building.md](building.md#headless).
 
 ## Examples
 
