@@ -7,6 +7,7 @@
 #include <ecs/WorldComponentSchema.h>
 #include <net/NetReplicationComponents.h>
 #include <net/ReplicationInterpolation.h>
+#include <world/identity/PersistentEntityIndex.h>
 #include <world/transform/DerivedTransform.h>
 
 #include <algorithm>
@@ -68,6 +69,15 @@ namespace
         // layout. Indices rather than pointers, into the plan's own list.
         std::size_t FirstRemoval = 0;
         std::uint32_t RemovalCount = 0;
+        // The wire named an authored entity this machine has not loaded yet.
+        // Its bytes are read so the stream stays aligned and then dropped, and
+        // the snapshot is reported incomplete so it is never acknowledged --
+        // which is what keeps the authority's floor where it was and makes the
+        // entity arrive again.
+        bool Deferred = false;
+        // Bind the identity at commit. True for an authored entity recognised
+        // through the index rather than created here.
+        bool BindIdentity = false;
     };
 
     // A count is bounded by the entity cap and checked against it on the way in,
@@ -82,6 +92,10 @@ namespace
         ReplicationSnapshotWire::ComponentCountBits;
     constexpr std::uint8_t kComponentIndexBits =
         ReplicationSnapshotWire::ComponentIndexBits;
+    constexpr std::uint8_t kAuthoredPresentBits =
+        ReplicationSnapshotWire::AuthoredPresentBits;
+    constexpr std::uint8_t kRemovalsPresentBits =
+        ReplicationSnapshotWire::RemovalsPresentBits;
 
     void WriteNetEntityId(NetBitWriter& writer, NetEntityId id)
     {
@@ -97,15 +111,20 @@ namespace
         return true;
     }
 
-    // What one identity costs on the wire, which the fill has to know before it
-    // writes one. Not a constant any more: an identity is as wide as it needs
-    // to be.
-    std::size_t NetEntityIdBits(NetEntityId id)
+    // What a variable-width value costs on the wire, which the fill has to know
+    // before it writes one.
+    std::size_t VarUIntBits(std::uint64_t value)
     {
         std::size_t groups = 1;
-        for (std::uint64_t rest = id.Value >> 7; rest != 0; rest >>= 7)
+        for (std::uint64_t rest = value >> 7; rest != 0; rest >>= 7)
             ++groups;
         return groups * 8;
+    }
+
+    // Not a constant any more: an identity is as wide as it needs to be.
+    std::size_t NetEntityIdBits(NetEntityId id)
+    {
+        return VarUIntBits(id.Value);
     }
 }
 
@@ -371,6 +390,8 @@ namespace
         // order. Held rather than recomputed at write time so the bytes written
         // are necessarily the bytes measured.
         std::size_t FirstMask = 0;
+        // Whether this record carries the entity's authored identity.
+        bool SendAuthored = false;
         // How many of the entity's recorded removals this peer has not been
         // told about. They are the leading ones: a removal is recorded with the
         // generation it happened at, and the list is only ever appended to.
@@ -404,7 +425,20 @@ namespace
         // something was. A component leaving is rare and an entity is common,
         // so a byte-wide count on every entity of every snapshot costs more
         // over a seeding datagram than the removals it describes ever will.
-        std::size_t bits = NetEntityIdBits(entity.Id) + kComponentCountBits + 1;
+        std::size_t bits = NetEntityIdBits(entity.Id) + kComponentCountBits
+                         + kRemovalsPresentBits;
+
+        // Whether the authored identity rides with this record. Sent while the
+        // peer has confirmed nothing about the entity, which is exactly while
+        // it might still have to recognise its own copy rather than build one.
+        // The bit itself is unconditional: a reader cannot infer what a writer
+        // knew about its floor, and a bit the two disagree about is the rest of
+        // the snapshot read at the wrong offset.
+        const bool sendAuthored = entity.Persistent.IsValid() && !peer.Knows(entity.Id);
+        bits += kAuthoredPresentBits;
+        if (sendAuthored)
+            bits += VarUIntBits(entity.Persistent.Value);
+
         bool owedAnything = false;
 
         // A component this peer was shown and has not been told is gone. Owed
@@ -454,6 +488,7 @@ namespace
             .LastSentAt = peer.LastSentAt(entity.Id),
             .Bits = bits,
             .FirstMask = first,
+            .SendAuthored = sendAuthored,
             .OwedRemovals = owedRemovals,
             .Owned = isOwner,
         };
@@ -640,6 +675,9 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
         const ReplicationChangeStore::EntityState& entity = *plan->Entity;
 
         WriteNetEntityId(writer, entity.Id);
+        writer.WriteBool(plan->SendAuthored);
+        if (plan->SendAuthored)
+            writer.WriteVarUInt(entity.Persistent.Value);
         writer.WriteBits(static_cast<std::uint32_t>(entity.Components.size()),
                          kComponentCountBits);
 
@@ -781,9 +819,15 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
 
     for (std::uint32_t i = 0; i < updatedCount; ++i)
     {
+        // Field order is the wire contract: identity, then the authored key,
+        // then the component count. Read in the order the writer writes them.
         NetEntityId id;
+        bool hasAuthored = false;
+        std::uint64_t authored = 0;
         std::uint32_t componentCount = 0;
         if (!ReadNetEntityId(reader, id)
+            || !reader.ReadBool(hasAuthored)
+            || (hasAuthored && !reader.ReadVarUInt(authored))
             || !reader.ReadBits(kComponentCountBits, componentCount))
         {
             result.Error = SnapshotApplyError::Truncated;
@@ -802,6 +846,33 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
                       || !world.IsAlive(update.Local);
         if (update.Spawned)
             update.Local = EntityId{};
+
+        // An authored entity is already here under its own identity, because
+        // this machine loaded the same level. Recognising it is the difference
+        // between a door and two doors.
+        if (update.Spawned && hasAuthored)
+        {
+            const PersistentEntityIndex* index =
+                world.TryGetResource<PersistentEntityIndex>();
+            const EntityId existing =
+                index == nullptr ? EntityId{}
+                                 : index->TryResolve(PersistentEntityId{ authored });
+            if (existing.IsValid() && world.IsAlive(existing))
+            {
+                update.Local = existing;
+                update.Spawned = false;
+                update.BindIdentity = true;
+                ++result.AuthoredBound;
+            }
+            else
+            {
+                // The level has not finished loading, or this build does not
+                // have the entity. Creating one would be the duplicate this
+                // exists to avoid, so the record is read and dropped.
+                update.Deferred = true;
+                ++result.AuthoredDeferred;
+            }
+        }
         update.FirstComponent = plannedComponents.size();
         update.ComponentCount = componentCount;
 
@@ -1074,6 +1145,12 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
 
     for (const PlannedEntityUpdate& update : planned)
     {
+        // Read to keep the stream aligned, and nothing more. The authority
+        // still holds it as unconfirmed, so it arrives again once this machine
+        // can recognise it.
+        if (update.Deferred)
+            continue;
+
         EntityId entity = update.Local;
         if (update.Spawned)
         {
@@ -1083,6 +1160,12 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
         }
         else
         {
+            // An authored entity meeting its wire identity for the first time.
+            // The entity is the one the level load made; only the binding is
+            // new, which is what keeps its zone, its authored components, and
+            // every handle already held on it.
+            if (update.BindIdentity)
+                identity.Bind(update.Id, entity);
             ++result.EntitiesUpdated;
         }
 

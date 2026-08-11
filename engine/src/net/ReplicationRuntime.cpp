@@ -144,9 +144,13 @@ SnapshotApplyResult ReplicationRuntime::Apply(std::span<const std::byte> payload
 
     const SnapshotApplyResult applied =
         ReplicationApplySnapshot(request, payload.subspan(kNetPayloadKindBytes));
-    // Only a snapshot that applied cleanly counts as one this machine holds; a
-    // refused one left the world part-way and must not be acknowledged.
-    if (applied.Ok())
+    // Only a snapshot this machine holds in full counts as one it holds. A
+    // refused one carried something this build cannot read; a deferred one
+    // named an authored entity the level has not produced yet. Acknowledging
+    // either would raise the authority's floor past state that never landed,
+    // and a floor only ever moves forward -- so the entity would stop being
+    // described and the two would disagree about it for the session.
+    if (applied.Complete())
     {
         AppliedTick = std::max(AppliedTick, applied.Tick);
         AppliedAcks.Observe(applied.Sequence);

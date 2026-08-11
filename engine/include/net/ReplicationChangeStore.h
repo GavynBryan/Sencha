@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/identity/Id.h>
 #include <net/ReplicationLayout.h>
 #include <net/ReplicationSnapshot.h>
 
@@ -64,6 +65,12 @@ public:
     struct EntityState
     {
         NetEntityId Id;
+        // The authored identity this entity was loaded under, when it has one.
+        // Both machines load the same level and reach the same value under
+        // different runtime handles, so this is what lets a client recognise an
+        // entity it already has instead of building a second one beside it.
+        // Invalid for anything the authority spawned at runtime.
+        PersistentEntityId Persistent;
         // Ordered by wire index, so a snapshot writes components in a fixed
         // order without sorting per peer.
         std::vector<ComponentState> Components;

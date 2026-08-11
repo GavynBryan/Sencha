@@ -3,6 +3,7 @@
 #include <ecs/Query.h>
 #include <ecs/World.h>
 #include <net/NetReplicationComponents.h>
+#include <world/identity/PersistentIdComponent.h>
 
 #include <algorithm>
 #include <cassert>
@@ -70,6 +71,8 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
 
     const World& reading = world;
     const bool hasOwners = world.IsRegistered(ResolveComponentTypeId<NetOwner>());
+    const bool hasPersistentIds =
+        world.IsRegistered(ResolveComponentTypeId<PersistentIdComponent>());
 
     // Reused for every component of every entity. Most components have not
     // moved on most publishes, and that case must not pay an allocation just to
@@ -88,6 +91,18 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
             EntityState& state = Published[id];
             state.Id = id;
             state.SeenAt = generation;
+
+            // Read every pass rather than once: an entity's authored identity
+            // does not change, but which entity a NetEntityId names can, and
+            // the store outlives neither.
+            if (hasPersistentIds)
+            {
+                if (const PersistentIdComponent* authored =
+                        reading.TryGet<PersistentIdComponent>(entity))
+                {
+                    state.Persistent = authored->Id;
+                }
+            }
 
             std::uint32_t owner = 0;
             if (hasOwners)

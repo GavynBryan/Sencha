@@ -254,6 +254,17 @@ struct ReplicationSnapshotWire
     static constexpr std::uint8_t CountBits = 11;
     static constexpr std::uint8_t ComponentCountBits = 8;
     static constexpr std::uint8_t ComponentIndexBits = 8;
+    // Whether an entity record carries the authored identity that lets a client
+    // recognise its own copy, and whether it carries any removals. One bit
+    // each, on every entity of every snapshot, because a reader cannot infer
+    // either from anything it holds -- and a presence bit the two sides
+    // disagree about is the rest of the snapshot read at the wrong offset.
+    //
+    // Bits rather than counts because both are rare and an entity is not: a
+    // byte-wide removal count on every entity cost more across a seeding
+    // datagram than the removals it described ever would.
+    static constexpr std::uint8_t AuthoredPresentBits = 1;
+    static constexpr std::uint8_t RemovalsPresentBits = 1;
 };
 
 [[nodiscard]] const ReplicationCaps& ReplicationDefaultCaps();
@@ -392,6 +403,14 @@ struct SnapshotApplyResult
     NetSpawnRecipeId FirstMissingRecipe = kNetNoSpawnRecipe;
     std::uint32_t EntitiesUpdated = 0;
     std::uint32_t EntitiesDestroyed = 0;
+    // Authored entities recognised through the world's persistent index rather
+    // than created: the client's own copy, now answering to a wire identity.
+    std::uint32_t AuthoredBound = 0;
+    // Authored entities the wire named that this machine cannot resolve yet,
+    // because the level is still loading. Read and dropped rather than
+    // duplicated; the authority still holds them unconfirmed and offers them
+    // again.
+    std::uint32_t AuthoredDeferred = 0;
     // Components taken off entities that had them. Counts only the ones that
     // were there: a removal for a component this client never gained describes
     // a state it is already in.
@@ -406,6 +425,14 @@ struct SnapshotApplyResult
     bool ReconcilePredicted = false;
 
     [[nodiscard]] bool Ok() const { return Error == SnapshotApplyError::None; }
+
+    // Whether everything the snapshot described actually landed. A snapshot
+    // that deferred an authored entity is Ok -- the world it left behind is
+    // consistent -- but it is not complete, and acknowledging it would tell the
+    // authority this client holds an entity it decided not to build. The
+    // floor would rise, the authored identity would stop being sent, and the
+    // client would never get another chance to recognise its own copy.
+    [[nodiscard]] bool Complete() const { return Ok() && AuthoredDeferred == 0; }
 };
 
 // Decodes a snapshot onto the target world. Structural work -- creating an

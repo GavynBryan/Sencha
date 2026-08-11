@@ -15,6 +15,8 @@
 #include <net/ReplicationChangeStore.h>
 #include <net/ReplicationSchemas.h>
 #include <net/ReplicationSnapshot.h>
+#include <world/identity/PersistentEntityIndex.h>
+#include <world/identity/PersistentIdComponent.h>
 #include <world/transform/TransformHistory.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
@@ -128,7 +130,12 @@ namespace
             // what a peer has confirmed, and a harness that never confirmed
             // would be testing a peer that never answers -- which has its own
             // test below.
-            if (Acknowledge)
+            // Complete rather than Ok, for the reason ReplicationRuntime uses
+            // the same predicate: a snapshot that deferred an authored entity
+            // left a consistent world and still did not land everything it
+            // described, and confirming it would raise a floor past state the
+            // client does not hold.
+            if (Acknowledge && LastApply.Complete())
             {
                 ClientAck.Observe(LastApply.Sequence);
                 Peer.Acknowledge(ClientAck);
@@ -1360,6 +1367,7 @@ TEST(ReplicationSnapshotHostile, AnUnknownComponentKeyIsRefused)
     writer.WriteBits(0, Wire::CountBits);    // nothing destroyed
     writer.WriteBits(1, Wire::CountBits);    // one entity
     writer.WriteVarUInt(1);                  // its identity
+    writer.WriteBits(0, Wire::AuthoredPresentBits);  // not an authored entity
     writer.WriteBits(1, Wire::ComponentCountBits);
     writer.WriteBits(0xFE, Wire::ComponentIndexBits);  // a key this build lacks
 
@@ -2276,4 +2284,132 @@ TEST(ReplicationRemoval, ARemovalForAComponentNeverHeldIsNotAnError)
     EXPECT_TRUE(applied.Ok()) << SnapshotApplyErrorToString(applied.Error);
     EXPECT_EQ(applied.ComponentsRemoved, 0u)
         << "counted a removal of something that was never there";
+}
+
+//=============================================================================
+// Authored entities
+//
+// A door in a level exists on both machines because both loaded the level, not
+// because one told the other. Their runtime handles differ and their authored
+// identities do not, so a snapshot that says nothing about the authored one
+// leaves a client building a second door beside the one it already had --
+// bare, in the wrong partition, and indistinguishable to everything holding a
+// handle on either.
+//=============================================================================
+
+namespace
+{
+    // Puts an entity in a world under an authored identity, the way a level
+    // load does: the component registers it in the index through its own
+    // lifecycle hook.
+    EntityId Author(World& world, PersistentEntityId id, const Transform3f& pose)
+    {
+        const EntityId entity = world.CreateEntity();
+        world.AddComponent<PersistentIdComponent>(entity, PersistentIdComponent{ id });
+        world.AddComponent<LocalTransform>(entity, LocalTransform{ pose });
+        return entity;
+    }
+}
+
+TEST(ReplicationAuthored, AClientRecognisesItsOwnCopyInsteadOfBuildingASecond)
+{
+    Pair pair;
+    pair.Authority.AddResource<PersistentEntityIndex>();
+    pair.Client.AddResource<PersistentEntityIndex>();
+
+    const PersistentEntityId door{ 4242 };
+    const EntityId authority = Author(pair.Authority, door, PoseAt(3.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetReplicated>(authority);
+    // The client loaded the same level, so it already has one.
+    const EntityId local = Author(pair.Client, door, PoseAt(3.0f, 0.0f, 0.0f));
+
+    pair.Replicate();
+
+    EXPECT_EQ(pair.LastApply.AuthoredBound, 1u);
+    EXPECT_EQ(pair.LastApply.EntitiesSpawned, 0u)
+        << "the client built a second copy of an entity it already had";
+    EXPECT_EQ(pair.Mirror(authority), local)
+        << "the wire identity did not land on the client's own copy";
+    EXPECT_NE(pair.Client.TryGet<PersistentIdComponent>(local), nullptr)
+        << "binding took the authored identity off the entity";
+}
+
+TEST(ReplicationAuthored, AuthoredStateFollowsOntoTheClientsOwnCopy)
+{
+    Pair pair;
+    pair.Authority.AddResource<PersistentEntityIndex>();
+    pair.Client.AddResource<PersistentEntityIndex>();
+
+    const PersistentEntityId lift{ 77 };
+    const EntityId authority = Author(pair.Authority, lift, PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetReplicated>(authority);
+    const EntityId local = Author(pair.Client, lift, PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    if (LocalTransform* pose = pair.Authority.TryGet<LocalTransform>(authority))
+        pose->Value.Position.Y += 4.0f;
+    pair.Replicate();
+
+    const LocalTransform* moved = pair.Client.TryGet<LocalTransform>(local);
+    ASSERT_NE(moved, nullptr);
+    EXPECT_NEAR(moved->Value.Position.Y, 4.0f, kWirePosition);
+}
+
+// The client is admitted before it loads the map, so a snapshot naming an
+// authored entity can arrive first. Building one then is the duplicate this
+// exists to prevent, so the record is read and dropped -- and because nothing
+// about it is recorded as confirmed, it comes back.
+TEST(ReplicationAuthored, AnEntityNamedBeforeTheLevelLoadsIsDeferredNotDuplicated)
+{
+    Pair pair;
+    pair.Authority.AddResource<PersistentEntityIndex>();
+    pair.Client.AddResource<PersistentEntityIndex>();
+
+    const PersistentEntityId gate{ 9001 };
+    const EntityId authority = Author(pair.Authority, gate, PoseAt(2.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetReplicated>(authority);
+
+    // The client has not loaded the level yet.
+    pair.Replicate();
+    EXPECT_EQ(pair.LastApply.AuthoredDeferred, 1u);
+    EXPECT_EQ(pair.LastApply.EntitiesSpawned, 0u)
+        << "an entity arrived before its level and was built anyway";
+    EXPECT_FALSE(pair.Mirror(authority).IsValid());
+
+    // The level loads.
+    const EntityId local = Author(pair.Client, gate, PoseAt(2.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    EXPECT_EQ(pair.LastApply.AuthoredBound, 1u);
+    EXPECT_EQ(pair.Mirror(authority), local);
+}
+
+// A runtime spawn has no authored identity and must keep behaving exactly as
+// it did: the wire creates it, because nothing else will.
+TEST(ReplicationAuthored, ADynamicEntityIsStillCreatedByTheWire)
+{
+    Pair pair;
+    pair.Authority.AddResource<PersistentEntityIndex>();
+    pair.Client.AddResource<PersistentEntityIndex>();
+
+    const EntityId authority = pair.SpawnReplicated(PoseAt(5.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    EXPECT_EQ(pair.LastApply.EntitiesSpawned, 1u);
+    EXPECT_EQ(pair.LastApply.AuthoredBound, 0u);
+    EXPECT_EQ(pair.LastApply.AuthoredDeferred, 0u);
+    EXPECT_TRUE(pair.Mirror(authority).IsValid());
+}
+
+// A world with no index at all -- every test world before this, and every
+// single-player one -- must not start deferring entities it would have built.
+TEST(ReplicationAuthored, AWorldWithoutAnIndexIsUnaffected)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(6.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    EXPECT_EQ(pair.LastApply.EntitiesSpawned, 1u);
+    EXPECT_EQ(pair.LastApply.AuthoredDeferred, 0u);
+    EXPECT_TRUE(pair.Mirror(authority).IsValid());
 }
