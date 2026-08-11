@@ -1,11 +1,8 @@
 #include <camera/CameraFollowSystem.h>
 
 #include <algorithm>
-#include <cstdio>
-#include <cstdlib>
 
 #include <app/GameContexts.h>
-#include <runtime/RuntimeFrameLoop.h>
 #include <camera/CameraRig.h>
 #include <components/ActiveCameraService.h>
 #include <controller/LookOrientation.h>
@@ -105,41 +102,6 @@ void CameraFollowSystem::FrameUpdate(FrameUpdateContext& ctx)
     const CameraPose pose = ComputeCameraPose(*rig, targetPosition, yaw, pitch);
     if (!pose.Override)
         return;
-
-    // TEMPORARY DIAGNOSTIC (jitter investigation): per-frame aim trace.
-    // SENCHA_AIM_TRACE=<path> appends one CSV row per frame. Delete when done.
-    if (const char* tracePath = std::getenv("SENCHA_AIM_TRACE"))
-    {
-        static std::FILE* trace = []() -> std::FILE*
-        {
-            std::FILE* f = std::fopen(std::getenv("SENCHA_AIM_TRACE"), "w");
-            if (f != nullptr)
-                std::fputs("frame,rawDt,ticks,alpha,simYaw,pendingYaw,"
-                           "presentedYaw,posX,posY,posZ\n", f);
-            return f;
-        }();
-        (void)tracePath;
-        if (trace != nullptr)
-        {
-            const RuntimeFrameSnapshot& frame = ctx.Runtime.GetCurrentFrame();
-            float simYaw = 0.0f;
-            float pendingYaw = 0.0f;
-            if (const LookOrientation* look = world.TryGet<LookOrientation>(rig->Target))
-                simYaw = look->Yaw;
-            if (const PendingLookInput* pending = world.TryGetResource<PendingLookInput>())
-                pendingYaw = pending->Yaw;
-            std::fprintf(trace, "%llu,%.9f,%u,%.6f,%.9f,%.9f,%.9f,%.6f,%.6f,%.6f\n",
-                         static_cast<unsigned long long>(frame.WallTime.FrameIndex),
-                         static_cast<double>(frame.WallTime.UnscaledDt),
-                         frame.FixedTicks,
-                         ctx.Presentation.Alpha,
-                         static_cast<double>(simYaw),
-                         static_cast<double>(pendingYaw),
-                         static_cast<double>(yaw),
-                         targetPosition.X, targetPosition.Y, targetPosition.Z);
-            std::fflush(trace);
-        }
-    }
 
     cameraTransform->Value.Position = pose.Position;
     cameraTransform->Value.Rotation = pose.Rotation;

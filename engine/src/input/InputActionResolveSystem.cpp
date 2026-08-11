@@ -1,7 +1,5 @@
 #include <input/InputActionResolveSystem.h>
 
-#include <cstdlib>
-
 #include <assets/data/DataAssetCache.h>
 #include <core/logging/LoggingProvider.h>
 #include <input/InputActionState.h>
@@ -53,31 +51,6 @@ void InputActionResolveSystem::PreSimulate(PreSimulateContext& ctx)
 {
     World& world = ctx.Entities;
     const BoundInputProfile* profile = ResolveProfile(world);
-
-    // TEMPORARY DIAGNOSTIC (jitter investigation): deterministic hands-free
-    // input through the whole real pipeline. SENCHA_SYNTH_LOOK=<counts/frame>
-    // injects constant mouse motion; SENCHA_SYNTH_FORWARD=<scancode> holds a
-    // key. Delete when done.
-    {
-        static const float synthLook = []() {
-            const char* v = std::getenv("SENCHA_SYNTH_LOOK");
-            return v != nullptr ? std::strtof(v, nullptr) : 0.0f;
-        }();
-        static const long synthForward = []() {
-            const char* v = std::getenv("SENCHA_SYNTH_FORWARD");
-            return v != nullptr ? std::strtol(v, nullptr, 10) : -1;
-        }();
-        static const float synthStick = []() {
-            const char* v = std::getenv("SENCHA_SYNTH_STICK");
-            return v != nullptr ? std::strtof(v, nullptr) : 0.0f;
-        }();
-        if (synthLook != 0.0f)
-            ctx.Input.MouseDeltaX += synthLook;
-        if (synthForward >= 0)
-            ctx.Input.SetKeyHeld(static_cast<std::uint16_t>(synthForward), true);
-        if (synthStick != 0.0f)
-            ctx.Input.SetGamepadAxis(GamepadAxis::RightX, synthStick);
-    }
 
     // Both clocks still take the frame's transitions when no profile is bound,
     // so a profile loaded mid-session does not inherit a backlog of stale
