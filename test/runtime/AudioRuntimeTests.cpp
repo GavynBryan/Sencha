@@ -375,3 +375,21 @@ TEST(AudioSystemSweep, NullServiceAndPlayOnActiveFalseAreNoOps)
     EXPECT_FALSE(
         world.TryGet<AudioSourceComponent>(entity)->Voice.IsValid());
 }
+
+// A process nobody is listening to holds no playback device: a dedicated host
+// mixes nothing, and asking for a device it will never use reports a failure
+// on a machine with no sound card that was never a problem. The service is
+// still constructed, in the same invalid state a failed open leaves, which is
+// what every consumer already checks for.
+TEST(AudioService, PlaybackDisabledOpensNoDevice)
+{
+    LoggingProvider logging;
+    EngineAudioConfig config;
+    config.EnablePlayback = false;
+    config.Buses.push_back(EngineAudioBusConfig{ .Name = "Sfx", .MaxVoices = 4 });
+
+    AudioService audio(logging, config);
+
+    EXPECT_FALSE(audio.IsValid())
+        << "no device means nothing can play, exactly as a failed open reports";
+}

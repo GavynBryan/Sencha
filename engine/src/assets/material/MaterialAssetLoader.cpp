@@ -180,12 +180,11 @@ void MaterialAssetLoader::ResolveTextureSlot(const AssetRef& ref,
     if (!ref.IsValid())
         return;
 
+    // No texture cache at all is a process that was composed without one -- a
+    // dedicated host reading the same materials it will never draw. Every
+    // material would say the same thing, and none of it is actionable.
     if (!Textures)
-    {
-        Log.Warn("MaterialAssetLoader: no TextureCache; texture '{}' left at neutral default",
-                 ref.Path);
         return;
-    }
 
     TextureHandle handle = Assets.LoadTexture(ref.Path, srgb);
     if (!handle.IsValid())

@@ -185,7 +185,25 @@ int main(int argc, char** argv)
         // host is driven.
         config.Debug.DebugUi = !headless;
         if (headless)
+        {
             config.Console.UiEnabled = false;
+
+            // Nobody is playing here. This is the dedicated-server posture,
+            // decided once at the launch that asked for it: the authority
+            // simulates every pawn and owns none of them. Separate from having
+            // no graphics, which is the line above -- a scripted client is
+            // headless with a player, and this switch is what tells them apart.
+            config.Runtime.HasLocalPlayer = false;
+
+            // A frame that presents nothing is still the frame that pumps the
+            // network, and with no vsync to block on there is nothing else
+            // pacing it. Two frames per fixed tick keeps a peer's command from
+            // waiting more than half a tick to be read, and keeps a host off a
+            // spinning core. Derived rather than written down twice: the tick
+            // rate is the authority on simulation cadence, and `r.target_fps`
+            // is the operator's override for both.
+            config.Runtime.TargetFps = 2.0 * config.Runtime.FixedTickRate;
+        }
     });
 
     const int result = app.Run(*module.Instance);

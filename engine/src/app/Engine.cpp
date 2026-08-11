@@ -80,6 +80,12 @@ bool Engine::Initialize()
     EngineSystems.Get<DefaultRenderPipeline>()->SetInstrumentation(
         &InstrumentationBundle);
 
+    // A process with nothing to present has nobody listening to it either, so
+    // it holds no playback device. Mixing still exists as a service; it simply
+    // has no output, the same shape as a machine whose device failed to open.
+    if (Configuration.Window.GraphicsApi == WindowGraphicsApi::None)
+        Configuration.Audio.EnablePlayback = false;
+
     AudioState = std::make_unique<AudioService>(logging, Configuration.Audio);
     EngineSystems.Register<AudioSystem>(AudioState.get());
 
@@ -123,8 +129,11 @@ bool Engine::Initialize()
 
     // Headless: no platform, no graphics, but a real frame loop. The driver is
     // renderer-agnostic, so a host with nothing to draw into still steps ticks,
-    // drains async commits, and runs its schedule. Pacing still applies, which
-    // is what keeps a dedicated host from spinning a core at full speed.
+    // drains async commits, and runs its schedule. Nothing here blocks on a
+    // display, so whether this spins a core is entirely down to the frame
+    // target the host configured; the app sets one for a dedicated host, and a
+    // target of zero (the engine default, and what the tests want) runs the
+    // loop as fast as it can.
     if (Configuration.Window.GraphicsApi == WindowGraphicsApi::None)
     {
         FrameDriverInstance = std::make_unique<FrameDriver>(RuntimeLoop);

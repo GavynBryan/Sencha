@@ -116,7 +116,9 @@ std::optional<EngineRuntimeConfig> DeserializeRuntimeConfig(
         || !ReadBoolEither(root, "exitOnEscape", "exit_on_escape",
             config.ExitOnEscape, sectionError)
         || !ReadBoolEither(root, "togglePauseOnF1", "toggle_pause_on_f1",
-            config.TogglePauseOnF1, sectionError))
+            config.TogglePauseOnF1, sectionError)
+        || !ReadBoolEither(root, "hasLocalPlayer", "has_local_player",
+            config.HasLocalPlayer, sectionError))
     {
         if (error) error->Message = sectionError;
         return std::nullopt;

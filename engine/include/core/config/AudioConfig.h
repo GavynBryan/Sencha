@@ -32,6 +32,13 @@ struct EngineAudioBusConfig
 struct EngineAudioConfig
 {
     std::vector<EngineAudioBusConfig> Buses;
+
+    // Whether to open a playback device. A process nobody is listening to --
+    // a dedicated host -- has no reason to hold one, and asking for one on a
+    // machine with no sound card reports a failure that was never a problem.
+    // The buses are still configured either way, so a malformed audio section
+    // is still an error wherever it is read.
+    bool EnablePlayback = true;
 };
 
 //=============================================================================

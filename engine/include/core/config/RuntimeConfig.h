@@ -64,6 +64,19 @@ struct EngineRuntimeConfig
 
     bool ExitOnEscape = false;
     bool TogglePauseOnF1 = false;
+
+    // Whether somebody is playing in this process, as opposed to whether this
+    // process can draw. A dedicated host answers no: the authority simulates
+    // every pawn, but none of them is a player sitting at this machine, so
+    // nothing here should provision one, possess it, or point a camera at it.
+    //
+    // Deliberately its own fact rather than read off the graphics services. The
+    // two coincide for a dedicated host and for a windowed client, and they
+    // come apart in configurations that already exist -- a scripted client
+    // drives a player with nothing on screen, and an observer process could
+    // draw a world it has no player in. A launch configuration is free to set
+    // both; neither is allowed to mean the other.
+    bool HasLocalPlayer = true;
 };
 
 struct RuntimeConfigError

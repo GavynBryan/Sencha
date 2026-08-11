@@ -29,6 +29,15 @@ namespace
 AudioService::AudioService(LoggingProvider& logging, const EngineAudioConfig& config)
     : Log(logging.GetLogger<AudioService>())
 {
+    // No device wanted: the service stays constructed and invalid, which is the
+    // same state a failed device open leaves behind and which every consumer
+    // already checks. Nothing is playing, so nothing needs one.
+    if (!config.EnablePlayback)
+    {
+        Log.Info("AudioService: playback disabled; no device opened");
+        return;
+    }
+
     if (SDL_WasInit(SDL_INIT_AUDIO) == 0)
     {
         if (!SDL_InitSubSystem(SDL_INIT_AUDIO))

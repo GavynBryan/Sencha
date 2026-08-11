@@ -742,6 +742,10 @@ struct SessionPlayerSystem
     MovementProfileHandle Profile;
     ResolvedPlayerAvatar Avatar;
     std::unordered_map<std::uint32_t, EntityId> PeerPawns;
+    // Whether anybody is playing in this process. A dedicated host simulates
+    // every pawn and owns none of them: set from the launch configuration at
+    // the composition root, never inferred from whether this process can draw.
+    bool ProvidesLocalPlayer = true;
 
     void FrameUpdate(FrameUpdateContext& ctx)
     {
@@ -778,6 +782,12 @@ private:
     // session this process has since left.
     void ProvideLocalPawn(World& world)
     {
+        // A dedicated host has nobody to provide one for. Everything a pawn is
+        // for here -- possession, the look input that steers it, the camera it
+        // is presented through -- describes a player at this machine.
+        if (!ProvidesLocalPlayer)
+            return;
+
         const PlayContentPartition* content =
             world.TryGetResource<PlayContentPartition>();
         if (content == nullptr)
@@ -1720,12 +1730,16 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     // way its first act each frame is to ask where this player's pawn comes
     // from.
     {
+        Logger& log = GetEngine().Logging().GetLogger<TemplateGame>();
         SessionPlayerSystem& players = ctx.Schedule.Register<SessionPlayerSystem>();
         players.Owner = &GetEngine();
-        players.Profile =
-            ResolvePlayerMovementProfile(GetEngine().Logging().GetLogger<TemplateGame>());
-        players.Avatar =
-            ResolvePlayerAvatar(GetEngine().Logging().GetLogger<TemplateGame>());
+        // The authority simulates movement whether or not anyone is watching,
+        // so the profile is resolved in every configuration.
+        players.Profile = ResolvePlayerMovementProfile(log);
+        players.ProvidesLocalPlayer = GetEngine().Config().Runtime.HasLocalPlayer;
+        // Resolves to no body on a process that cannot hold a mesh, which is
+        // exactly what a bodyless pawn wants.
+        players.Avatar = ResolvePlayerAvatar(log);
     }
 
     WorldPartitionUpdateSystem& partitionUpdate =
@@ -1940,6 +1954,12 @@ ResolvedPlayerAvatar TemplateGame::ResolvePlayerAvatar(Logger& log)
     if (PlayerAvatar.IsValid())
         return PlayerAvatar;
 
+    // A body is something to draw. A process that cannot hold a mesh has no
+    // body to give a pawn and is not missing one: the pawn simulates the same
+    // either way, and every machine that draws it resolves its own.
+    if (!RuntimeAssetState().Assets.HasStore(AssetType::StaticMesh))
+        return {};
+
     if (!PlayerAvatarAsset.IsValid())
         PlayerAvatarAsset = AcquireDataAsset(kPlayerAvatarPath, log);
     if (!PlayerAvatarAsset.IsValid())
@@ -2059,8 +2079,12 @@ void TemplateGame::SetupInputMapping(Logger& log)
 
 void TemplateGame::SetRelativeMouseMode(bool enabled)
 {
-    SdlWindow* window =
-        GetEngine().Platform().Windows.GetPrimaryWindow();
+    // No window to capture a pointer into on a headless host.
+    PlatformServices* platform = GetEngine().TryPlatform();
+    if (platform == nullptr)
+        return;
+
+    SdlWindow* window = platform->Windows.GetPrimaryWindow();
     if (window == nullptr || window->GetHandle() == nullptr)
         return;
     if (SDL_GetWindowRelativeMouseMode(window->GetHandle()) == enabled)
