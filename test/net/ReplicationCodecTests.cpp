@@ -750,3 +750,250 @@ TEST(ReplicationTransformPrecision, TheAuthoredDescriptionIsUntouched)
     EXPECT_TRUE(anyQuantized)
         << "nothing is quantized, so the two descriptions are the same one";
 }
+
+//=============================================================================
+// Narrow integers
+//
+// A field's scalar category says how the value travels; its Size says how many
+// bytes of the component it occupies. Every integral narrower than four bytes
+// travels in the 32-bit category, so those two numbers routinely disagree, and
+// an access that takes its width from the category reaches past the field into
+// whatever the component keeps next to it.
+//
+// These fixtures put something there worth noticing.
+//=============================================================================
+
+namespace
+{
+    enum class Slot : std::uint8_t
+    {
+        None,
+        Primary,
+        Secondary,
+    };
+
+    // Every narrow shape, each with a neighbour immediately after it. Laid out
+    // so there is no padding to absorb an over-wide access: 2+2+1+1+2 with
+    // two-byte alignment is exactly eight bytes.
+    struct NarrowNeighbours
+    {
+        std::uint16_t Small = 0;
+        std::uint16_t Canary = 0;
+        std::uint8_t Tiny = 0;
+        Slot Kind = Slot::None;
+        std::int16_t Signed = 0;
+    };
+
+    // Nothing but the narrow field, so the field's bytes are the whole object
+    // and an over-wide access has nothing of its own to land in.
+    struct NarrowAlone
+    {
+        std::uint16_t Only = 0;
+    };
+}
+
+template <>
+struct TypeSchema<NarrowNeighbours>
+{
+    static constexpr std::string_view Name = "test.NarrowNeighbours";
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("small", &NarrowNeighbours::Small),
+            MakeField("canary", &NarrowNeighbours::Canary),
+            MakeField("tiny", &NarrowNeighbours::Tiny),
+            MakeField("kind", &NarrowNeighbours::Kind),
+            MakeField("signed", &NarrowNeighbours::Signed),
+        };
+    }
+};
+
+template <>
+struct TypeSchema<NarrowAlone>
+{
+    static constexpr std::string_view Name = "test.NarrowAlone";
+    static auto Fields()
+    {
+        return std::tuple{ MakeField("only", &NarrowAlone::Only) };
+    }
+};
+
+namespace
+{
+    const ReplicatedComponent& NarrowComponent(const ReplicationLayout& layout)
+    {
+        const ReplicatedComponent* component =
+            layout.Find(ResolveComponentTypeId<NarrowNeighbours>());
+        EXPECT_NE(component, nullptr);
+        return *component;
+    }
+
+    ReplicationLayout NarrowLayout()
+    {
+        ReplicationLayout layout;
+        EXPECT_TRUE(layout.Add<NarrowNeighbours>());
+        EXPECT_TRUE(layout.Add<NarrowAlone>());
+        layout.Seal();
+        EXPECT_EQ(layout.Error(), ReplicationLayoutError::None)
+            << layout.ErrorDetail();
+        return layout;
+    }
+}
+
+// The delta contract, at the one place it is easiest to break: a field whose
+// mask bit is clear is left exactly as it was. A store that takes its width
+// from the category writes four bytes at a two-byte field and takes the
+// neighbour with it, which turns every narrow field into a silent corrupter of
+// whatever the component declared next.
+TEST(ReplicationNarrowScalars, DecodingOneFieldLeavesItsNeighbourAlone)
+{
+    const ReplicationLayout layout = NarrowLayout();
+    const ReplicatedComponent& component = NarrowComponent(layout);
+
+    NarrowNeighbours source{};
+    source.Small = 0x1234;
+    source.Canary = 0xBEEF;
+
+    NarrowNeighbours baseline = source;
+    baseline.Small = 0x1111;  // the only run the encoder will find changed
+
+    std::array<std::byte, kScratchBytes> scratch{};
+    NetBitWriter writer(scratch);
+    const std::uint64_t changed =
+        ReplicationChangedFields(component, BytesOf(source), BytesOf(baseline));
+    ASSERT_TRUE(ReplicationEncodeComponent(component, BytesOf(source), changed, writer));
+
+    NarrowNeighbours target{};
+    target.Canary = 0xC0DE;  // what the receiver already holds
+    NetBitReader reader(writer.Written());
+    ASSERT_TRUE(ReplicationDecodeComponent(component, reader, MutableBytesOf(target)));
+
+    EXPECT_EQ(target.Small, 0x1234);
+    EXPECT_EQ(target.Canary, 0xC0DE)
+        << "a field the delta did not carry was overwritten anyway";
+}
+
+// The other direction, and the reason OwnerOnly is not merely a visibility
+// nicety: a load that reads four bytes at a two-byte field puts the next field
+// on the wire inside the same word, whatever the mask said about it. Two
+// encodings that differ only in a field nobody asked for must be identical.
+TEST(ReplicationNarrowScalars, EncodingOneFieldCarriesOnlyItsOwnBytes)
+{
+    const ReplicationLayout layout = NarrowLayout();
+    const ReplicatedComponent& component = NarrowComponent(layout);
+
+    const std::uint64_t onlySmall = 1;  // field zero, and nothing else
+
+    NarrowNeighbours first{};
+    first.Small = 0x1234;
+    first.Canary = 0x0000;
+
+    NarrowNeighbours second{};
+    second.Small = 0x1234;
+    second.Canary = 0xFFFF;
+
+    std::array<std::byte, kScratchBytes> a{};
+    std::array<std::byte, kScratchBytes> b{};
+    NetBitWriter writerA(a);
+    NetBitWriter writerB(b);
+    ASSERT_TRUE(ReplicationEncodeComponent(component, BytesOf(first), onlySmall, writerA));
+    ASSERT_TRUE(ReplicationEncodeComponent(component, BytesOf(second), onlySmall, writerB));
+
+    ASSERT_EQ(writerA.BitsWritten(), writerB.BitsWritten());
+    EXPECT_TRUE(std::equal(writerA.Written().begin(), writerA.Written().end(),
+                           writerB.Written().begin()))
+        << "a field outside the mask reached the wire inside its neighbour's word";
+}
+
+TEST(ReplicationNarrowScalars, EveryNarrowWidthRoundTripsItsFullRange)
+{
+    const ReplicationLayout layout = NarrowLayout();
+    const ReplicatedComponent& component = NarrowComponent(layout);
+
+    NarrowNeighbours source{};
+    source.Small = 0xFFFF;
+    source.Canary = 0xABCD;
+    source.Tiny = 0xFF;
+    source.Kind = Slot::Secondary;
+    source.Signed = -32768;
+
+    NarrowNeighbours target{};
+    RoundTrip(component, BytesOf(source), {}, MutableBytesOf(target));
+
+    EXPECT_EQ(target.Small, 0xFFFF);
+    EXPECT_EQ(target.Canary, 0xABCD);
+    EXPECT_EQ(target.Tiny, 0xFF);
+    EXPECT_EQ(target.Kind, Slot::Secondary);
+    EXPECT_EQ(target.Signed, -32768) << "a signed narrow field lost its sign";
+}
+
+// The same access, with nothing of the component's own on either side of it.
+// Heap-allocated and sized exactly, so the bytes past the field belong to the
+// allocator rather than to the component -- which is what makes this the case a
+// sanitizer can see and a value comparison cannot.
+TEST(ReplicationNarrowScalars, ANarrowFieldTouchesNothingOutsideItsComponent)
+{
+    const ReplicationLayout layout = NarrowLayout();
+    const ReplicatedComponent* component =
+        layout.Find(ResolveComponentTypeId<NarrowAlone>());
+    ASSERT_NE(component, nullptr);
+    ASSERT_EQ(component->Size, sizeof(NarrowAlone));
+
+    std::vector<std::byte> source(component->Size);
+    const std::uint16_t value = 0x7A7A;
+    std::memcpy(source.data(), &value, sizeof(value));
+
+    std::array<std::byte, kScratchBytes> scratch{};
+    NetBitWriter writer(scratch);
+    ASSERT_TRUE(ReplicationEncodeComponent(*component, source, ~std::uint64_t{ 0 }, writer));
+
+    std::vector<std::byte> target(component->Size);
+    NetBitReader reader(writer.Written());
+    ASSERT_TRUE(ReplicationDecodeComponent(*component, reader, target));
+
+    std::uint16_t decoded = 0;
+    std::memcpy(&decoded, target.data(), sizeof(decoded));
+    EXPECT_EQ(decoded, value);
+}
+
+// The fill arithmetic and the encoder are separate code reading the same
+// layout, which is the shape that drifts silently. An entity is admitted to a
+// snapshot on the sizer's answer and then written with the encoder's, so any
+// field where they disagree is either wasted budget or -- at the moment the
+// budget is full -- a snapshot that overflows and a peer that receives nothing.
+TEST(ReplicationCodec, WhatTheSizerReservesIsWhatTheWriterSpends)
+{
+    const ReplicationLayout layout = EngineLayout();
+
+    for (const bool forOwner : { false, true })
+    {
+        for (const ReplicatedComponent& component : layout.Components())
+        {
+            std::vector<std::byte> current(component.Size, std::byte{ 0 });
+            for (std::size_t i = 0; i < current.size(); ++i)
+                current[i] = static_cast<std::byte>((i * 11 + 5) & 0x3F);
+            ReplicationSnapToWire(component, current);
+
+            const std::uint64_t visible =
+                ReplicationVisibleFields(component, forOwner);
+
+            // Every subset that matters: nothing owed, everything owed, and
+            // each single field on its own -- a per-field disagreement hides
+            // inside a full mask when another field happens to cancel it.
+            std::vector<std::uint64_t> masks{ 0, visible };
+            for (std::size_t i = 0; i < component.Fields.size(); ++i)
+                masks.push_back(visible & (std::uint64_t{ 1 } << i));
+
+            for (const std::uint64_t mask : masks)
+            {
+                std::array<std::byte, kScratchBytes> scratch{};
+                NetBitWriter writer(scratch);
+                ASSERT_TRUE(ReplicationEncodeComponent(component, current, mask, writer))
+                    << component.Name;
+                EXPECT_EQ(writer.BitsWritten(),
+                          ReplicationEncodedComponentBits(component, mask))
+                    << component.Name << " measured differently than it was written";
+            }
+        }
+    }
+}

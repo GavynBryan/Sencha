@@ -99,6 +99,17 @@ enum class ReplicationLayoutError : std::uint8_t
     InvalidQuantization,
     // More replicated fields than one field mask can address.
     TooManyFields,
+    // OwnerOnly and OwnerLocal on the same field: one says the owner is the
+    // only peer who may see it, the other says the owner is the only peer who
+    // may not. The field reaches nobody, while still costing a mask bit in
+    // every encode and a slot against the per-component field budget.
+    //
+    // Reachable without anyone writing both, because a composite's annotation
+    // reaches the scalars underneath it: an OwnerOnly struct with an OwnerLocal
+    // member produces this at the leaf. Refused rather than resolved -- there
+    // is no reading of the pair that is safe to guess at, and picking the
+    // member over the composite would send what the composite called private.
+    ContradictoryFieldPolicy,
 };
 
 // A component's per-field presence mask is one machine word, so this is how

@@ -8,11 +8,24 @@
 
 namespace
 {
+    // Only floats have a range to quantize into. The layout refuses a range on
+    // anything else, so this and the switch below are the same question asked
+    // once.
+    bool IsQuantizedFloat(const ReplicatedField& field)
+    {
+        return field.Quantization.IsQuantized() && field.Scalar == FieldScalar::Float;
+    }
+
     // Bits a field's one scalar occupies on the wire. Quantized floats take
     // exactly what they declared; everything else takes its natural width.
+    //
+    // This has to agree with WriteScalar exactly, for every field, or an
+    // entity measured to fit a snapshot overflows it while being written -- so
+    // both ask IsQuantizedFloat rather than each deciding for itself what
+    // counts as quantized.
     std::uint8_t ScalarBits(const ReplicatedField& field)
     {
-        if (field.Quantization.IsQuantized())
+        if (IsQuantizedFloat(field))
             return field.Quantization.Bits;
 
         switch (field.Scalar)
@@ -30,14 +43,6 @@ namespace
         // a table built by something other than ReplicationLayout::Add.
         assert(false && "replicated field has no wire width");
         return 0;
-    }
-
-    // Only floats have a range to quantize into. A quantized annotation on a
-    // non-float is meaningless rather than harmful: the layout keeps it, and
-    // the codec ignores it here.
-    bool IsQuantizedFloat(const ReplicatedField& field)
-    {
-        return field.Quantization.IsQuantized() && field.Scalar == FieldScalar::Float;
     }
 
     const std::byte* ScalarAt(std::span<const std::byte> bytes,
@@ -66,6 +71,71 @@ namespace
     void StoreAs(std::byte* at, T value)
     {
         std::memcpy(at, &value, sizeof(T));
+    }
+
+    // A field's scalar category says how its value travels; field.Size says how
+    // many bytes of the component it occupies. Those are different numbers for
+    // every integral narrower than four bytes -- all of them travel in the
+    // 32-bit category -- so an access sized from the category reads and writes
+    // past the field into whatever the component declared next to it. Which is
+    // a neighbouring field, and past the last one, whatever the allocator put
+    // there.
+    //
+    // So integers go through these: the category picks the wire width, the
+    // declared size picks the bytes. Narrowing on the way in is the value's
+    // own truncation and never the neighbour's problem; widening on the way out
+    // extends by the category's signedness, so a negative narrow value arrives
+    // as itself rather than as a large positive one.
+    std::uint32_t LoadUnsigned(const std::byte* at, std::size_t size)
+    {
+        switch (size)
+        {
+        case 1: return LoadAs<std::uint8_t>(at);
+        case 2: return LoadAs<std::uint16_t>(at);
+        case 4: return LoadAs<std::uint32_t>(at);
+        default: break;
+        }
+        // The layout refuses a width this does not implement, so reaching here
+        // would mean a table built by something other than ReplicationLayout.
+        assert(false && "replicated integer field has no width the codec implements");
+        return 0;
+    }
+
+    std::int32_t LoadSigned(const std::byte* at, std::size_t size)
+    {
+        switch (size)
+        {
+        case 1: return LoadAs<std::int8_t>(at);
+        case 2: return LoadAs<std::int16_t>(at);
+        case 4: return LoadAs<std::int32_t>(at);
+        default: break;
+        }
+        assert(false && "replicated integer field has no width the codec implements");
+        return 0;
+    }
+
+    void StoreUnsigned(std::byte* at, std::size_t size, std::uint32_t value)
+    {
+        switch (size)
+        {
+        case 1: StoreAs(at, static_cast<std::uint8_t>(value)); return;
+        case 2: StoreAs(at, static_cast<std::uint16_t>(value)); return;
+        case 4: StoreAs(at, value); return;
+        default: break;
+        }
+        assert(false && "replicated integer field has no width the codec implements");
+    }
+
+    void StoreSigned(std::byte* at, std::size_t size, std::int32_t value)
+    {
+        switch (size)
+        {
+        case 1: StoreAs(at, static_cast<std::int8_t>(value)); return;
+        case 2: StoreAs(at, static_cast<std::int16_t>(value)); return;
+        case 4: StoreAs(at, value); return;
+        default: break;
+        }
+        assert(false && "replicated integer field has no width the codec implements");
     }
 
     // Whether a field differs from the baseline in a way the wire would carry.
@@ -108,18 +178,21 @@ namespace
         switch (field.Scalar)
         {
         case FieldScalar::Bool:
+            assert(field.Size == sizeof(bool));
             writer.WriteBool(LoadAs<bool>(at));
             return;
         case FieldScalar::Int32:
-            writer.WriteU32(static_cast<std::uint32_t>(LoadAs<std::int32_t>(at)));
+            writer.WriteU32(static_cast<std::uint32_t>(LoadSigned(at, field.Size)));
             return;
         case FieldScalar::UInt32:
-            writer.WriteU32(LoadAs<std::uint32_t>(at));
+            writer.WriteU32(LoadUnsigned(at, field.Size));
             return;
         case FieldScalar::Float:
+            assert(field.Size == sizeof(float));
             writer.WriteFloat(LoadAs<float>(at));
             return;
         case FieldScalar::Double:
+            assert(field.Size == sizeof(double));
             writer.WriteDouble(LoadAs<double>(at));
             return;
         case FieldScalar::Color3:
@@ -154,6 +227,7 @@ namespace
         {
         case FieldScalar::Bool:
         {
+            assert(field.Size == sizeof(bool));
             bool value = false;
             if (!reader.ReadBool(value))
                 return false;
@@ -165,7 +239,7 @@ namespace
             std::uint32_t value = 0;
             if (!reader.ReadU32(value))
                 return false;
-            StoreAs(at, static_cast<std::int32_t>(value));
+            StoreSigned(at, field.Size, static_cast<std::int32_t>(value));
             return true;
         }
         case FieldScalar::UInt32:
@@ -173,11 +247,12 @@ namespace
             std::uint32_t value = 0;
             if (!reader.ReadU32(value))
                 return false;
-            StoreAs(at, value);
+            StoreUnsigned(at, field.Size, value);
             return true;
         }
         case FieldScalar::Float:
         {
+            assert(field.Size == sizeof(float));
             float value = 0.0f;
             if (!reader.ReadFloat(value))
                 return false;
@@ -186,6 +261,7 @@ namespace
         }
         case FieldScalar::Double:
         {
+            assert(field.Size == sizeof(double));
             double value = 0.0;
             if (!reader.ReadDouble(value))
                 return false;
