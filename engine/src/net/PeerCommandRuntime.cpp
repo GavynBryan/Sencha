@@ -11,19 +11,14 @@
 
 #include <algorithm>
 
-namespace
-{
-    constexpr std::size_t kKindBytes = 1;
-}
-
 bool PeerCommandRuntime::Receive(PeerId peer, std::span<const std::byte> payload)
 {
-    if (payload.size() < kKindBytes)
+    if (payload.size() < kNetPayloadKindBytes)
         return false;
     if (static_cast<NetPayloadKind>(payload[0]) != NetPayloadKind::Command)
         return false;
 
-    NetBitReader reader(payload.subspan(kKindBytes));
+    NetBitReader reader(payload.subspan(kNetPayloadKindBytes));
     NetPlayerCommand command;
     if (!NetDecodePlayerCommand(reader, command))
         return false;
@@ -97,14 +92,13 @@ void PeerCommandRuntime::Feed(World& world, std::uint64_t tick)
         LookOrientation* look = world.TryGet<LookOrientation>(entity);
         if (look == nullptr)
             return;
-        look->Yaw = it->second.Yaw;
-        look->Pitch = std::clamp(it->second.Pitch, look->MinPitch, look->MaxPitch);
+        ApplyLook(*look, it->second.Yaw, it->second.Pitch);
     });
 }
 
 std::size_t PeerCommandRuntime::SendLocal(NetSession& session,
                                           const PawnCommandRing& ring,
-                                          std::uint64_t snapshotAck)
+                                          const NetSnapshotAck& snapshotAck)
 {
     if (session.Role() != NetSessionRole::Client || !session.IsConnected())
         return 0;
@@ -136,11 +130,11 @@ std::size_t PeerCommandRuntime::SendLocal(NetSession& session,
         Scratch.resize(kNetMaxPayloadBytes);
     Scratch[0] = static_cast<std::byte>(NetPayloadKind::Command);
 
-    NetBitWriter writer(std::span<std::byte>(Scratch).subspan(kKindBytes));
+    NetBitWriter writer(std::span<std::byte>(Scratch).subspan(kNetPayloadKindBytes));
     if (NetEncodePlayerCommand(command, writer) == 0)
         return 0;
 
-    const std::size_t bytes = kKindBytes + writer.BytesWritten();
+    const std::size_t bytes = kNetPayloadKindBytes + writer.BytesWritten();
     if (!session.Send(session.LocalPeerId(), NetChannelKind::UnreliableSequenced,
                       std::span<const std::byte>(Scratch).subspan(0, bytes)))
     {
@@ -157,6 +151,7 @@ void PeerCommandRuntime::ForgetPeer(PeerId peer)
 void PeerCommandRuntime::Reset()
 {
     Buffers.clear();
+    Consumed.clear();
 }
 
 std::uint64_t PeerCommandRuntime::AckFor(PeerId peer) const
@@ -165,10 +160,10 @@ std::uint64_t PeerCommandRuntime::AckFor(PeerId peer) const
     return it == Buffers.end() ? 0 : it->second.ConsumedThrough();
 }
 
-std::uint64_t PeerCommandRuntime::SnapshotAckFor(PeerId peer) const
+NetSnapshotAck PeerCommandRuntime::SnapshotAckFor(PeerId peer) const
 {
     const auto it = Buffers.find(peer);
-    return it == Buffers.end() ? 0 : it->second.SnapshotAck();
+    return it == Buffers.end() ? NetSnapshotAck{} : it->second.SnapshotAck();
 }
 
 const NetPeerCommandBuffer* PeerCommandRuntime::Peer(PeerId peer) const

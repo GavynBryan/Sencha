@@ -75,6 +75,7 @@ struct Harness
     InputFrame Frame;
     std::vector<std::uint8_t> Active;
     std::vector<InputActionValue> Values;
+    std::vector<InputActionValue> SampledValues;
 
     explicit Harness(BoundInputProfile profile)
         : Profile(std::move(profile))
@@ -107,7 +108,19 @@ struct Harness
 
     const InputActionValue& ResolveTick(std::uint32_t action = 0)
     {
-        ResolveInputActions(Profile, Active, Devices, Simulation, Values);
+        SampledValues.assign(Profile.ActionCount(), InputActionValue{});
+        ResolveInputActions(Profile, Active, Devices, Simulation, Values, 1,
+                            SampledValues);
+        return Values[action];
+    }
+
+    // One tick of a frame that runs several, told how many are still to come
+    // including itself -- what the frame loop passes so the last takes the
+    // exact remainder.
+    const InputActionValue& ResolveTickOfBurst(std::uint32_t ticksLeft,
+                                               std::uint32_t action = 0)
+    {
+        ResolveInputActions(Profile, Active, Devices, Simulation, Values, ticksLeft);
         return Values[action];
     }
 
@@ -248,6 +261,73 @@ TEST(InputResolve, MotionAccumulatesUntilATickConsumesIt)
     EXPECT_FLOAT_EQ(harness.ResolveTick().X, 7.0f);
     // And the burst's later ticks must not apply it again.
     EXPECT_FLOAT_EQ(harness.ResolveTick().X, 0.0f);
+}
+
+// A transition happened at an instant and belongs to one tick, but motion
+// accumulated over a span the ticks of a catch-up frame are dividing between
+// them. Handing it all to the first tick makes anything integrating it -- a
+// heading, most visibly -- advance in steps that do not match the simulated
+// time they cover.
+TEST(InputResolve, ACatchUpBurstSplitsMotionAcrossItsTicks)
+{
+    Harness harness(SingleContext({ InputActionType::Axis2D },
+                                  { DirectBinding(0, InputControl{ InputControlSource::MouseMotion, 0 }) }));
+
+    harness.Frame.MouseDeltaX = 8.0f;
+    harness.Frame.MouseDeltaY = 4.0f;
+    harness.Accumulate();
+
+    const InputActionValue first = harness.ResolveTickOfBurst(2);
+    EXPECT_FLOAT_EQ(first.X, 4.0f);
+    EXPECT_FLOAT_EQ(first.Y, 2.0f);
+
+    const InputActionValue second = harness.ResolveTickOfBurst(1);
+    EXPECT_FLOAT_EQ(second.X, 4.0f);
+    EXPECT_FLOAT_EQ(second.Y, 2.0f);
+
+    // And nothing is left over for a tick the frame did not run.
+    EXPECT_FLOAT_EQ(harness.ResolveTick().X, 0.0f);
+}
+
+// Splitting must not lose or invent displacement, however the division rounds:
+// the last tick of the burst takes the exact remainder.
+TEST(InputResolve, SplittingMotionConservesTheTotal)
+{
+    Harness harness(SingleContext({ InputActionType::Axis2D },
+                                  { DirectBinding(0, InputControl{ InputControlSource::MouseMotion, 0 }) }));
+
+    harness.Frame.MouseDeltaX = 1.0f;
+    harness.Accumulate();
+
+    float total = 0.0f;
+    for (std::uint32_t left = 3; left >= 1; --left)
+        total += harness.ResolveTickOfBurst(left).X;
+
+    EXPECT_FLOAT_EQ(total, 1.0f);
+    EXPECT_FLOAT_EQ(harness.ResolveTick().X, 0.0f);
+}
+
+// The split is for displacement only. A press is a moment, so it still lands
+// whole on the first tick of the burst and never on the ones after it.
+TEST(InputResolve, SplittingMotionDoesNotSplitAnEdge)
+{
+    Harness harness(SingleContext({ InputActionType::Digital, InputActionType::Axis2D },
+                                  { DirectBinding(0, Key(kKeySpace)),
+                                    DirectBinding(1, InputControl{ InputControlSource::MouseMotion, 0 }) }));
+
+    harness.PressKey(kKeySpace);
+    harness.Frame.MouseDeltaX = 6.0f;
+    harness.Accumulate();
+
+    harness.ResolveTickOfBurst(2);
+    EXPECT_TRUE(harness.Values[0].WasPressed());
+    EXPECT_FLOAT_EQ(harness.Values[1].X, 3.0f);
+
+    harness.ResolveTickOfBurst(1);
+    EXPECT_FALSE(harness.Values[0].WasPressed())
+        << "the press belongs to the tick that took it";
+    EXPECT_TRUE(harness.Values[0].IsHeld());
+    EXPECT_FLOAT_EQ(harness.Values[1].X, 3.0f);
 }
 
 TEST(InputResolve, PresentationClockSeesEachFramesMotionOnce)
@@ -656,6 +736,75 @@ InputControl PadButton(GamepadButton button)
 {
     return InputControl{ InputControlSource::GamepadButton, static_cast<std::uint16_t>(button) };
 }
+}
+
+// A stick reports a held position and a pointer reports an accumulated
+// displacement. The mixed value keeps both, as every consumer has always read
+// it; the sampled channel carries the position-sourced share alone, which is
+// what lets a time-integrating consumer treat it as the rate it is. Losing
+// this split is how a held stick once turned a view that stepped backward at
+// tick rate.
+TEST(InputResolveGamepad, SampledChannelCarriesTheStickShareAlone)
+{
+    InputBinding stick = DirectBinding(0, Stick(GamepadStick::Right));
+    InputBinding mouse = DirectBinding(0, InputControl{ InputControlSource::MouseMotion, 0 });
+    Harness harness(SingleContext({ InputActionType::Axis2D }, { stick, mouse }));
+
+    harness.Frame.SetGamepadAxis(GamepadAxis::RightX, 0.5f);
+    harness.Frame.MouseDeltaX = 3.0f;
+    harness.Accumulate();
+
+    const InputActionValue& value = harness.ResolveTick();
+    EXPECT_FLOAT_EQ(value.X, 3.5f)
+        << "the mixed value still carries both kinds";
+    EXPECT_FLOAT_EQ(harness.SampledValues[0].X, 0.5f)
+        << "the sampled share is the stick's alone";
+    EXPECT_FLOAT_EQ(value.X - harness.SampledValues[0].X, 3.0f)
+        << "value minus sampled is the displacement share";
+}
+
+// The sampled share is conditioned exactly like the mixed value: the same dead
+// zone, scale, and inversion. A consumer subtracting one from the other would
+// otherwise read a phantom displacement from a resting stick.
+TEST(InputResolveGamepad, SampledShareIsConditionedLikeTheValue)
+{
+    InputBinding stick = DirectBinding(0, Stick(GamepadStick::Right));
+    stick.DeadZone = 0.2f;
+    stick.Scale = 2.0f;
+    Harness harness(SingleContext({ InputActionType::Axis2D }, { stick }));
+
+    harness.Frame.SetGamepadAxis(GamepadAxis::RightX, 0.6f);
+    harness.Accumulate();
+
+    const InputActionValue& value = harness.ResolveTick();
+    EXPECT_FLOAT_EQ(harness.SampledValues[0].X, value.X)
+        << "a stick-only action's sampled share is its whole value";
+    EXPECT_GT(value.X, 0.0f);
+    EXPECT_LT(value.X, 2.0f * 0.6f)
+        << "the dead zone rescale applied before the scale";
+
+    // At rest inside the dead zone both channels read zero.
+    harness.BeginFrame();
+    harness.Frame.SetGamepadAxis(GamepadAxis::RightX, 0.1f);
+    harness.Accumulate();
+    harness.ResolveTick();
+    EXPECT_FLOAT_EQ(harness.Values[0].X, 0.0f);
+    EXPECT_FLOAT_EQ(harness.SampledValues[0].X, 0.0f);
+}
+
+// Latched displacement never leaks into the sampled channel: a mouse-only
+// action reads as pure displacement.
+TEST(InputResolveGamepad, MouseMotionIsNeverSampled)
+{
+    Harness harness(SingleContext({ InputActionType::Axis2D },
+                                  { DirectBinding(0, InputControl{ InputControlSource::MouseMotion, 0 }) }));
+
+    harness.Frame.MouseDeltaX = 5.0f;
+    harness.Accumulate();
+    harness.ResolveTick();
+
+    EXPECT_FLOAT_EQ(harness.Values[0].X, 5.0f);
+    EXPECT_FLOAT_EQ(harness.SampledValues[0].X, 0.0f);
 }
 
 TEST(InputResolveGamepad, StickDrivesAPlane)

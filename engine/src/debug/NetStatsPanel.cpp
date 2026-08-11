@@ -6,6 +6,7 @@
 #include <net/NetStats.h>
 #include <net/NetTickEstimator.h>
 #include <net/PeerCommandRuntime.h>
+#include <net/ReplicationRuntime.h>
 
 #include <imgui.h>
 
@@ -61,6 +62,7 @@ NetStatsPanel::NetStatsPanel(const std::unique_ptr<NetSession>& session,
                              const NetTickEstimator& clock,
                              const ClientPrediction& prediction,
                              const ReplicationInterpolation& interpolation,
+                             const ReplicationRuntime& replication,
                              PeerCommandRuntime& commands,
                              ConsoleRegistry& console)
     : Session(session)
@@ -68,6 +70,7 @@ NetStatsPanel::NetStatsPanel(const std::unique_ptr<NetSession>& session,
     , Clock(clock)
     , Prediction(prediction)
     , Interpolation(interpolation)
+    , Replication(replication)
     , Commands(commands)
     , Console(console)
 {
@@ -196,6 +199,51 @@ void NetStatsPanel::Draw()
         }
     }
 
+    if (session->Role() == NetSessionRole::Host)
+    {
+        ImGui::SeparatorText("Replication");
+        const ReplicationRuntime::PublishStats& publish = Replication.LastPublish();
+        if (publish.SnapshotsSent == 0)
+        {
+            ImGui::TextUnformatted("nothing published yet");
+        }
+        else
+        {
+            const double occupancy =
+                publish.BudgetBytes == 0
+                    ? 0.0
+                    : 100.0 * static_cast<double>(publish.PeakSnapshotBytes)
+                          / static_cast<double>(publish.BudgetBytes);
+            ImGui::Text("%u snapshots  |  %zu of %zu B (%.0f%%)",
+                        publish.SnapshotsSent, publish.PeakSnapshotBytes,
+                        publish.BudgetBytes, occupancy);
+            ImGui::SetItemTooltip(
+                "The fullest snapshot of the last publish, against the budget "
+                "one may occupy. Entities deferred while this sits well under "
+                "the budget means something other than bytes is limiting.");
+
+            // Deferral is the budget working. Age is what says whether the
+            // queue is draining: a number that keeps climbing is an entity
+            // nobody is getting to.
+            ImGui::Text("%u deferred, oldest %u snapshots behind",
+                        publish.EntitiesDeferred, publish.OldestDeferredSnapshots);
+            ImGui::SetItemTooltip(
+                "Entities that had something to say and were left for a later "
+                "snapshot. They keep their place; nothing is lost by waiting.");
+
+            if (publish.EntitiesUnsendable > 0)
+            {
+                // Not back-pressure. Nothing about these entities can reach a
+                // peer at any budget they would fit in, so waiting will not
+                // help and only a smaller entity or a larger budget will.
+                ImGui::TextColored(
+                    ImVec4(1.0f, 0.45f, 0.35f, 1.0f),
+                    "%u entities too large for a snapshot -- raise "
+                    "net.snapshot_bytes", publish.EntitiesUnsendable);
+            }
+        }
+    }
+
     ImGui::SeparatorText("Peers");
     const std::vector<PeerId> peers = session->ConnectedPeers();
     if (peers.empty())
@@ -254,6 +302,24 @@ void NetStatsPanel::Draw()
     ImGui::SetItemTooltip(
         "Ticks of input the authority holds back before simulating a peer. "
         "Higher rides out a jittery connection; every tick is added latency.");
+
+    if (session->Role() == NetSessionRole::Host)
+    {
+        int budget = static_cast<int>(Replication.SnapshotBytes());
+        if (ImGui::SliderInt("snapshot budget (B)", &budget,
+                             static_cast<int>(kNetMinSnapshotBytes),
+                             static_cast<int>(kNetMaxSnapshotBytes)))
+        {
+            (void)Console.SetCVar("net.snapshot_bytes",
+                                  static_cast<std::int64_t>(budget),
+                                  ConsoleValueSource{ "net stats panel" },
+                                  ConsolePhase::EngineReady);
+        }
+        ImGui::SetItemTooltip(
+            "Bytes one snapshot may occupy, per peer. Lowering it costs "
+            "convergence speed, not correctness: what does not fit rides the "
+            "next snapshot.");
+    }
 
     ImGui::Text("session totals: %" PRIu64 " B in, %" PRIu64 " B out, "
                 "%" PRIu64 " strikes, %" PRIu64 " refusals",

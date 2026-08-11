@@ -7,14 +7,15 @@
 #include <world/RuntimeWorld.h>
 #include <world/transform/TransformHistory.h>
 #include <core/console/ConsoleService.h>
+#include <movement/FreeLocomotionSystem.h>
 #include <net/NetCVarSync.h>
 #include <physics/CharacterMoverPool.h>
 #include <physics/components/CharacterMoverLink.h>
 #include <net/NetConsoleCommands.h>
 #include <net/NetSession.h>
-#include <net/PawnStateReplay.h>
 #include <net/ReplicationSnapshot.h>
 #include <physics/PhysicsStepSystem.h>
+#include <prediction/PawnStateReplay.h>
 #include <world/transform/TransformPropagation.h>
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
@@ -103,6 +104,14 @@ void Engine::RegisterNetFramePhases()
         const FixedSimulationLoop& simulation = ctx.Runtime->GetSimulationClock();
         session->SetLocalTick(simulation.GetTickIndex());
 
+        // What this authority is serving, refreshed before the pump that hands
+        // out admissions: a peer accepted during this Pump is told the map this
+        // process has loaded as of now, rather than as of the last frame. The
+        // console owns which map was loaded; the session owns what it announces;
+        // this is the only place the two meet.
+        if (session->Role() == NetSessionRole::Host)
+            session->SetAnnouncedMap(engine.Console().CurrentMap());
+
         engine.ClearNetDeliveries();
         const std::vector<NetSession::Delivery> deliveries = session->Pump(now);
 
@@ -173,12 +182,62 @@ void Engine::RegisterNetFramePhases()
                         static_cast<std::uint32_t>(std::max<std::int64_t>(0, *ticks)));
                 }
             }
+
+            // How often the authority speaks, for the same reason and by the
+            // same route. Presenting a mirrored entity ahead of the newest
+            // sample that can physically exist holds the last pose instead of
+            // blending, so this term has to come from the machine that decides
+            // it rather than be assumed to be every tick.
+            if (const CVarMetadata* interval =
+                    engine.Console().Registry().FindCVar("net.snapshot_interval"))
+            {
+                if (const std::int64_t* ticks =
+                        std::get_if<std::int64_t>(&interval->CurrentValue))
+                {
+                    engine.Interpolation().SetSnapshotInterval(
+                        static_cast<std::uint32_t>(std::max<std::int64_t>(1, *ticks)));
+                }
+            }
         }
         if (isAdmitted && !wasAdmitted)
         {
             log.Info("net: admitted as peer {} by {}",
                      session->LocalPeerId().Value,
                      NetAddressToString(session->Authority()));
+
+            // A client that was never told what to load renders an empty world
+            // and feels the authority's geometry through reconciliation, which
+            // reads as rubber-banding rather than as the missing step it is.
+            // Loaded through the console rather than by calling a game's map
+            // handler directly, so the map a session brought in is recorded the
+            // same way one typed at the console is.
+            const std::string& announced = session->AnnouncedMap();
+            const std::string& loaded = engine.Console().CurrentMap();
+            if (announced.empty())
+            {
+                // An authority hosting before it loaded anything. It has nothing
+                // to announce and does not say so later: a map loaded after this
+                // point never reaches an already-admitted client.
+            }
+            else if (loaded.empty())
+            {
+                const ConsoleResult run = engine.Console().ExecuteTokens(
+                    { "map", announced },
+                    ConsoleValueSource{ "session admission" });
+                if (run.Status != ConsoleStatus::Ok)
+                {
+                    log.Warn("net: could not load the announced map '{}'",
+                             announced);
+                }
+            }
+            else if (loaded != announced)
+            {
+                // Left as a report rather than a refusal. Whether a content
+                // difference should end a session is the world-identity
+                // question, and that is decided at the handshake or not at all.
+                log.Error("net: the authority is serving '{}' but this process "
+                          "loaded '{}'", announced, loaded);
+            }
         }
         if (wasClient && !isClient)
         {
@@ -256,7 +315,7 @@ void Engine::RegisterNetFramePhases()
             // has not answered. Both halves are necessary: the state alone
             // rewinds the player by a round trip, and the input alone is what
             // this machine already guessed with.
-            if (applied.PredictedStateUpdated)
+            if (applied.ReconcilePredicted)
             {
                 PawnReplayRequest replay;
                 replay.Entities = &world;
@@ -266,6 +325,16 @@ void Engine::RegisterNetFramePhases()
                         engine.Schedule().Get<PhysicsStepSystem>())
                 {
                     replay.Movers = &physics->GetCharacterMovers();
+                }
+                // The values the scheduled tick integrates under, off the
+                // system that owns them: a replayed tick under different
+                // gravity than the tick it re-runs is a disagreement this
+                // machine would inject into the pawn every correction.
+                if (const FreeLocomotionSystem* locomotion =
+                        engine.Schedule().Get<FreeLocomotionSystem>())
+                {
+                    replay.Gravity = locomotion->GetGravity();
+                    replay.UpAxis = locomotion->GetUpAxis();
                 }
                 replay.AckTick = applied.CommandAck;
                 replay.FixedDeltaSeconds =
@@ -339,7 +408,7 @@ void Engine::RegisterNetFramePhases()
             // can never acknowledge.
             const std::size_t bytes = engine.PeerCommands().SendLocal(
                 *session, engine.Prediction().Commands(),
-                engine.Replication().AppliedSnapshot());
+                engine.Replication().AppliedAck());
             if (bytes > 0)
                 traffic.RecordOut(NetTrafficKind::Command, bytes);
         }
@@ -408,12 +477,21 @@ void Engine::RegisterSimulationFramePhases()
         const FrameZoneView& zones = *ctx.Zones;
         ::World& entities = *zones.Entities;
 
+        // FixedTicks counts ticks already finished this frame, so the remainder
+        // including this one is what a burst-splitting system needs.
+        const RuntimeFrameSnapshot& frame = ctx.Runtime->GetCurrentFrame();
+        const std::uint32_t ticksLeft =
+            frame.Budget.TicksToRunThisFrame > frame.FixedTicks
+                ? frame.Budget.TicksToRunThisFrame - frame.FixedTicks
+                : 1u;
+
         FixedLogicContext logic{
             .Config = config,
             .Runtime = *ctx.Runtime,
             .Time = ctx.CurrentTick,
             .Entities = entities,
             .Partitions = zones.Logic,
+            .TicksLeftInFrame = ticksLeft,
         };
         engine.Schedule().RunFixedLogic(logic);
 

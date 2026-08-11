@@ -5,14 +5,9 @@
 
 #include <algorithm>
 
-namespace
+void ReplicationRuntime::SetSnapshotBytes(std::size_t bytes)
 {
-    // One kind byte, then the bit-packed snapshot. A snapshot rides the
-    // unreliable channel, so it has to fit one datagram; there is no
-    // fragmentation to fall back on and no point resending, because the next
-    // snapshot supersedes this one before a resend could arrive.
-    constexpr std::size_t kKindBytes = 1;
-    constexpr std::size_t kMaxSnapshotBytes = kNetMaxPayloadBytes - kKindBytes;
+    Budget = std::clamp(bytes, kNetMinSnapshotBytes, kNetMaxSnapshotBytes);
 }
 
 ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
@@ -24,12 +19,46 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
         return stats;
 
     const std::vector<PeerId> peers = session.ConnectedPeers();
+
+    // Peers that left between frames stop costing a baseline. Ahead of the
+    // cadence gate rather than behind it, because a peer's memory should be
+    // released when it leaves and not on whatever tick the next snapshot
+    // happens to fall on. Done here rather than only on the leave event so a
+    // missed event cannot leak.
+    std::erase_if(Peers, [&peers](const auto& entry) {
+        return std::find(peers.begin(), peers.end(), entry.first) == peers.end();
+    });
+
     if (peers.empty())
         return stats;
 
-    if (Scratch.size() < kKindBytes + kMaxSnapshotBytes)
-        Scratch.resize(kKindBytes + kMaxSnapshotBytes);
+    // Publishing is paced in simulation ticks, and the pace is held by
+    // difference rather than by remainder: a frame that ran several ticks moves
+    // the index by several, and a stride the index never lands on exactly would
+    // silence this authority permanently. A tick behind the last publish is a
+    // clock discontinuity (a reset, a rewound recording) and publishes.
+    const std::uint32_t interval = std::max<std::uint32_t>(1, PublishInterval);
+    if (HasPublished && tick >= LastPublishedTick
+        && (tick - LastPublishedTick) < interval)
+    {
+        return stats;
+    }
+    LastPublishedTick = tick;
+    HasPublished = true;
+
+    // Sized to the largest budget rather than the current one, so changing the
+    // budget mid-session does not reallocate and a lowered one simply uses less
+    // of the same buffer.
+    if (Scratch.size() < kNetPayloadKindBytes + kNetMaxSnapshotBytes)
+        Scratch.resize(kNetPayloadKindBytes + kNetMaxSnapshotBytes);
     Scratch[0] = static_cast<std::byte>(NetPayloadKind::Snapshot);
+    stats.BudgetBytes = Budget;
+
+    // What the world looks like, and what moved since last time -- computed
+    // once and read by every peer. The generation is this store's own count of
+    // publishes, not the simulation tick: it has to increase on every pass and
+    // the tick does not (a paused authority still publishes).
+    Changes.Update(world, layout, Identity, ++Generation);
 
     for (PeerId peer : peers)
     {
@@ -39,31 +68,40 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
         ReplicationPeerState& baseline = Peers[peer];
 
         SnapshotWriteRequest request;
-        request.Source = &world;
+        request.Changes = &Changes;
         request.Layout = &layout;
-        request.Identity = &Identity;
         request.Peer = &baseline;
         request.OwnerPeer = peer.Value;
         request.Tick = tick;
+        request.Sequence = baseline.NextSnapshotSequence();
         request.CommandAck = commands == nullptr ? 0 : commands->AckFor(peer);
 
-        // What this peer has confirmed holding, before the difference against
-        // it is computed. The bound on how far it may fall behind is the peer
+        // What this peer has proved it holds, before the difference against it
+        // is computed. The bound on how far it may fall behind is the peer
         // state's own business.
         if (commands != nullptr)
             baseline.Acknowledge(commands->SnapshotAckFor(peer));
 
+        // The subspan is the budget: what does not fit is deferred to a later
+        // snapshot rather than failing this one.
         const SnapshotWriteResult written = ReplicationWriteSnapshot(
-            request, std::span(Scratch).subspan(kKindBytes, kMaxSnapshotBytes));
+            request, std::span(Scratch).subspan(kNetPayloadKindBytes, Budget));
+        stats.EntitiesDeferred += written.EntitiesDeferred;
+        stats.EntitiesUnsendable += written.EntitiesUnsendable;
+        stats.OldestDeferredSnapshots = std::max(stats.OldestDeferredSnapshots,
+                                                 written.OldestDeferredSnapshots);
+        stats.PeakSnapshotBytes =
+            std::max(stats.PeakSnapshotBytes, written.BytesWritten);
         if (!written.Ok)
         {
-            // Over budget for one datagram. The baseline was left untouched, so
-            // the next attempt still describes the same difference rather than
-            // one against a snapshot this peer never got.
+            // Nothing a world can do reaches here -- the writer fills to the
+            // budget and reports the remainder -- so this is a malformed request
+            // or a writer that disagreed with its own measurement. The peer
+            // state is left untouched either way.
             continue;
         }
 
-        const std::size_t total = kKindBytes + written.BytesWritten;
+        const std::size_t total = kNetPayloadKindBytes + written.BytesWritten;
         if (!session.Send(peer, NetChannelKind::UnreliableSequenced,
                           std::span(Scratch).subspan(0, total)))
         {
@@ -74,12 +112,7 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
         stats.BytesQueued += total;
     }
 
-    // Peers that left between frames stop costing a baseline. Done here rather
-    // than only on the leave event so a missed event cannot leak.
-    std::erase_if(Peers, [&peers](const auto& entry) {
-        return std::find(peers.begin(), peers.end(), entry.first) == peers.end();
-    });
-
+    Published = stats;
     return stats;
 }
 
@@ -92,7 +125,7 @@ SnapshotApplyResult ReplicationRuntime::Apply(std::span<const std::byte> payload
                                               ReplicationInterpolation* interpolation)
 {
     SnapshotApplyResult result;
-    if (payload.size() < kKindBytes)
+    if (payload.size() < kNetPayloadKindBytes)
     {
         result.Error = SnapshotApplyError::Truncated;
         return result;
@@ -110,11 +143,14 @@ SnapshotApplyResult ReplicationRuntime::Apply(std::span<const std::byte> payload
     request.Interpolation = interpolation;
 
     const SnapshotApplyResult applied =
-        ReplicationApplySnapshot(request, payload.subspan(kKindBytes));
+        ReplicationApplySnapshot(request, payload.subspan(kNetPayloadKindBytes));
     // Only a snapshot that applied cleanly counts as one this machine holds; a
     // refused one left the world part-way and must not be acknowledged.
     if (applied.Ok())
+    {
         AppliedTick = std::max(AppliedTick, applied.Tick);
+        AppliedAcks.Observe(applied.Sequence);
+    }
     return applied;
 }
 
@@ -126,7 +162,13 @@ void ReplicationRuntime::ForgetPeer(PeerId peer)
 void ReplicationRuntime::Reset()
 {
     Identity = ReplicationAuthorityIdentity{};
+    Changes.Reset();
+    Generation = 0;
     Peers.clear();
     ClientMap.Clear();
     AppliedTick = 0;
+    AppliedAcks.Clear();
+    LastPublishedTick = 0;
+    HasPublished = false;
+    Published = PublishStats{};
 }

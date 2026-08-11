@@ -103,14 +103,26 @@ struct NetPeer
     double LastHeardSeconds = 0.0;
     double LastPingSentSeconds = 0.0;
     std::uint64_t RoundTripMicroseconds = 0;
+    // Why the peer left, recorded at the transition to Disconnected -- the one
+    // place the cause is known -- and reported in that pump's leave event.
+    std::string LeaveReason;
 };
 
 // A peer is dropped at this many strikes.
 inline constexpr std::uint32_t kNetMaxStrikes = 8;
 
-// Peers the design is validated against. Budgets and tables are tuned for four,
-// which is the co-op shape, and hold at eight.
-inline constexpr std::size_t kNetMaxPeersSupported = 8;
+// Peers the design is validated against. Four is the co-op shape and stays the
+// default a host admits; sixteen is what the arena modes need and what the
+// replication budget, fill order, and per-peer state are measured at.
+//
+// The number moved because what made eight the ceiling was removed rather than
+// raised: a snapshot used to carry every entity to every peer at full width and
+// per-tick, and the authority's whole outbound bill scaled with the product.
+// Change tracking, a per-peer byte budget that defers instead of failing, and a
+// quantized transform cut that product enough that the peer count stopped being
+// what binds. Held at sixteen because that is what is measured, not because
+// something breaks at seventeen.
+inline constexpr std::size_t kNetMaxPeersSupported = 16;
 
 // What changed about the peer set during a pump. The game needs these to spawn
 // and despawn a pawn per player, and a headless host needs them because console
@@ -178,6 +190,17 @@ public:
     void SetMaxPeers(std::size_t count) { MaxPeers = count; }
     void SetTimeoutSeconds(double seconds) { TimeoutSeconds = seconds; }
 
+    // The world this session is running. An authority announces it in every
+    // admission so a joining client can load it instead of having to be told by
+    // whoever launched it; a client reads back whatever it was announced.
+    //
+    // One member for both roles because it is one fact -- which world this
+    // session is about -- and the role decides who writes it. Truncated here
+    // rather than at the encoder, so the wire cap is enforced where a caller can
+    // still see what it lost.
+    void SetAnnouncedMap(std::string_view map);
+    [[nodiscard]] const std::string& AnnouncedMap() const { return AnnouncedMapName; }
+
     // The fixed tick this machine is simulating. An authority publishes it in
     // every admission and keepalive, because two machines counting their own
     // ticks from their own process start share no name for a moment in time
@@ -215,6 +238,10 @@ private:
     // waited out.
     [[nodiscard]] double HandshakeRetrySeconds() const { return TimeoutSeconds * 0.1; }
     void SendHello();
+    // The admission message, assembled from the session's own identity and
+    // announcements. One builder for the fresh admission and the repeat sent to
+    // a peer whose accept was lost, so the two cannot drift apart.
+    void SendAccept(const NetAddress& to, PeerId peer);
     void DeliverChannelPayloads(NetPeer& peer, std::span<const std::byte> packet,
                                 double nowSeconds, std::vector<Delivery>& out);
     void Strike(NetPeer& peer, std::string_view why);
@@ -255,6 +282,9 @@ private:
     std::uint64_t RttMicroseconds = 0;
     NetJoinFailure Failure = NetJoinFailure::None;
     std::string FailureReason;
+    // Set by the host through the setter, and by a client from the admission it
+    // was accepted with.
+    std::string AnnouncedMapName;
 
     std::vector<NetPeerEvent> Events;
     std::uint64_t TotalStrikes = 0;

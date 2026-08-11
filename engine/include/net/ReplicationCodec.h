@@ -38,6 +38,14 @@ public:
     void WriteBool(bool value) { WriteBits(value ? 1u : 0u, 1); }
     void WriteU32(std::uint32_t value) { WriteBits(value, 32); }
     void WriteU64(std::uint64_t value);
+    // Seven payload bits at a time, each followed by a bit saying whether
+    // another group follows. Small values cost eight bits and the full width
+    // costs eighty, which is the right trade for a quantity that is small for
+    // most of a session and has no ceiling: entity identities are minted from
+    // one and never reused, so they start tiny and grow slowly, and paying
+    // sixty-four bits for every one of them was most of what an unchanged
+    // entity's envelope cost.
+    void WriteVarUInt(std::uint64_t value);
     void WriteFloat(float value);
     void WriteDouble(double value);
 
@@ -76,6 +84,10 @@ public:
     [[nodiscard]] bool ReadU64(std::uint64_t& out);
     [[nodiscard]] bool ReadFloat(float& out);
     [[nodiscard]] bool ReadDouble(double& out);
+    // Bounded at ten groups, which is every bit a u64 has. A stream claiming an
+    // eleventh is refused rather than read: continuation bits come from a peer,
+    // and an unbounded loop over them is a peer deciding how long this runs.
+    [[nodiscard]] bool ReadVarUInt(std::uint64_t& out);
 
     [[nodiscard]] bool Overflowed() const { return Overflow; }
     [[nodiscard]] std::size_t BitsRead() const { return Cursor; }
@@ -113,21 +125,45 @@ void ReplicationSnapToWire(const ReplicatedComponent& component,
 //-----------------------------------------------------------------------------
 // Component encode and decode
 //
-// `baseline` may be empty, which encodes every field -- the fresh-state form a
-// client gets when it has no baseline to delta against. When it is present it
-// must be the same size as `current`, and only fields that differ are written.
+// Which fields travel is the caller's decision, handed over as a mask of field
+// runs. That is deliberate: whether a field has changed is a question about the
+// authority's history, and whether a peer may see it is a question about that
+// peer -- neither is something a codec can answer, and folding them in here is
+// what made the two get confused for each other.
 //
-// `forOwner` decides whether owner-only fields are included. It is a writer-side
-// question only: the mask tells the reader what is there.
+// The two halves of the answer are below, so a caller composes them rather than
+// reinventing either.
 //
 // Returns false if the component did not fit, which is a budgeting error on the
 // authority and never a wire condition.
 //-----------------------------------------------------------------------------
 [[nodiscard]] bool ReplicationEncodeComponent(const ReplicatedComponent& component,
                                               std::span<const std::byte> current,
-                                              std::span<const std::byte> baseline,
-                                              bool forOwner,
+                                              std::uint64_t fields,
                                               NetBitWriter& writer);
+
+// Exactly what the call above would write for the same mask, without writing it.
+// A caller filling a fixed budget needs this because a bit writer cannot be
+// rewound: an entity that turns out not to fit part way through cannot be taken
+// back out, and a half-written entity is not a smaller snapshot, it is a corrupt
+// one. The value depends on the mask, not on the bytes.
+[[nodiscard]] std::size_t ReplicationEncodedComponentBits(
+    const ReplicatedComponent& component, std::uint64_t fields);
+
+// Which of a component's field runs the wire would carry differently. An empty
+// `previous` means every run: there is nothing to difference against, which is
+// the fresh-state form. Quantized runs compare at wire precision, so movement
+// finer than the declared resolution is not a change.
+[[nodiscard]] std::uint64_t ReplicationChangedFields(
+    const ReplicatedComponent& component,
+    std::span<const std::byte> current,
+    std::span<const std::byte> previous);
+
+// Which of a component's field runs a particular peer is allowed to receive:
+// owner-only runs to the owner, owner-local runs to everyone else. A fact about
+// the receiver, not about the value.
+[[nodiscard]] std::uint64_t ReplicationVisibleFields(
+    const ReplicatedComponent& component, bool forOwner);
 
 // Applies a decoded component onto `target`, which must already hold the
 // receiver's current value for this component: fields whose mask bit is clear

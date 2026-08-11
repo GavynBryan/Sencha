@@ -41,5 +41,10 @@ private:
     GameplayTagRegistry& Tags;
     LocomotionModeRegistry& Modes;
     std::unordered_map<uint64_t, Entry> Entries;
+    // An invalid handle names no profile, so there is no entry to remember it
+    // against and nothing that could later make it valid. Without this it is
+    // reported on every call -- which is once per character per tick, and a
+    // per-frame error buries every other diagnostic in the log it appears in.
+    bool InvalidReported = false;
     uint64_t Rebuilds = 0;
 };

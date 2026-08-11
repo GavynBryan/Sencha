@@ -11,7 +11,10 @@
 #include <movement/JumpState.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MotionComposition.h>
+#include <assets/data/DataAssetCache.h>
 #include <movement/MovementComponents.h>
+#include <movement/MovementProfileData.h>
+#include <movement/MovementTuningResolutionSystem.h>
 #include <movement/MovementIntent.h>
 #include <movement/MovementRegistration.h>
 #include <net/ClientPrediction.h>
@@ -21,8 +24,8 @@
 #include <net/NetSession.h>
 #include <net/NetTickEstimator.h>
 #include <net/NetReplicationComponents.h>
-#include <net/PawnStateReplay.h>
 #include <net/PeerCommandRuntime.h>
+#include <prediction/PawnStateReplay.h>
 #include <net/ReplicationRuntime.h>
 #include <net/SimulatedTransport.h>
 #include <physics/CharacterMoverPool.h>
@@ -146,17 +149,57 @@ namespace
     }
 
     // One complete simulating machine.
+    // Authored tuning, differing from every engine default so that resolving it
+    // and failing to resolve it cannot be mistaken for each other. Friction and
+    // acceleration rather than top speed: the speed term has an attribute
+    // fallback behind it, so a profile that failed to bind could still produce
+    // the authored number by accident.
+    constexpr float kAuthoredFriction = 2.0f;
+    constexpr float kAuthoredAcceleration = 40.0f;
+
+    std::shared_ptr<CompiledMovementProfile> AuthoredProfile()
+    {
+        auto profile = std::make_shared<CompiledMovementProfile>();
+        profile->Name = "convergence_profile";
+        MovementProfileLayer layer;
+        layer.Name = "base";
+        layer.Set.Friction = kAuthoredFriction;
+        layer.Set.Acceleration = kAuthoredAcceleration;
+        profile->Layers.push_back(std::move(layer));
+        return profile;
+    }
+
     struct SimWorld
     {
         WorldComponentSchema Schema;
         ReplicationLayout Layout;
         PhysicsWorld Physics;
+
+        // Each machine's own cache, which is the whole reason a profile handle
+        // cannot travel: the same asset gets whatever slot this process happens
+        // to hand out, and the two need not agree.
+        //
+        // Declared before the world on purpose. The tuning system keeps its
+        // binding cache as a world resource, and that cache holds asset leases
+        // -- so the cache they release into has to outlive the world holding
+        // them.
+        DataAssetCache DataAssets;
+
         World Entities;
         CharacterMoverPool Movers{ Physics };
+        MovementTuningResolutionSystem Tuning{ DataAssets };
 
         FreeLocomotionSystem Locomotion{ kGravity, kUpAxis };
         JumpExecutionSystem Jump;
         MotionCompositionSystem Composition;
+
+        // Installs the authored profile in this machine's cache and returns its
+        // local handle.
+        MovementProfileHandle InstallProfile()
+        {
+            return MovementProfileHandle{ DataAssets.Register(
+                "test/convergence_profile", "movement.profile", AuthoredProfile()) };
+        }
 
         SimWorld()
         {
@@ -197,6 +240,11 @@ namespace
         // The movement chain in schedule order, for every pawn with a body.
         void TickMovement()
         {
+            // First, as the real schedule orders it: everything below reads the
+            // tuning this resolves. Without a profile it writes the same engine
+            // defaults the components already hold, so a rig that installs none
+            // is unaffected by its presence.
+            Tuning.Step(Entities);
             Locomotion.Step(Entities, kDt);
             Jump.Step(Entities, kDt);
             Composition.Step(Entities);
@@ -250,12 +298,17 @@ namespace
         std::uint64_t AuthorityTick = kAuthorityEpoch;
         std::uint64_t ClientTick = 0;
         bool ReplayEnabled = true;
+        // Whether both machines resolve tuning from an authored profile. Off is
+        // the engine-default path the other tests run on.
+        bool AuthoredTuning = false;
 
         explicit ConvergenceRig(const NetImpairment& impairment)
             : Host(Network, impairment), Client(Network, impairment)
         {
             Clock.SetSlackTicks(
                 static_cast<std::uint32_t>(NetPeerCommandBuffer::kTargetDepth));
+            // The client's set comes from its own table, as the engine's does.
+            Prediction.Bind(Mirror.Layout);
         }
 
         [[nodiscard]] bool Join(int maxSteps)
@@ -290,6 +343,14 @@ namespace
                 InputActionSourceRef{
                     .Source = Client.Session.LocalPeerId().Value });
             Authority.AddBody(AuthorityPawn);
+            // The authority's own handle, into its own cache. Set here rather
+            // than in AddBody so a rig that wants engine defaults still gets
+            // them, and so the two machines' handles are visibly separate.
+            if (AuthoredTuning)
+            {
+                Authority.Entities.TryGet<CharacterMovement>(AuthorityPawn)->Profile =
+                    Authority.InstallProfile();
+            }
             return true;
         }
 
@@ -358,7 +419,7 @@ namespace
 
                 AdoptPawn();
 
-                if (applied.PredictedStateUpdated && ClientPawn.IsValid())
+                if (applied.ReconcilePredicted && ClientPawn.IsValid())
                 {
                     PawnReplayRequest replay;
                     replay.Entities = &Mirror.Entities;
@@ -408,7 +469,7 @@ namespace
             }
 
             (void)ClientCommands.SendLocal(Client.Session, Prediction.Commands(),
-                                           ClientReplication.AppliedSnapshot());
+                                           ClientReplication.AppliedAck());
             Client.Session.Flush(Now);
         }
 
@@ -421,6 +482,15 @@ namespace
             {
                 ClientPawn = entity;
                 Mirror.AddBody(ClientPawn);
+                // What the spawn recipe does in a real game: the receiving
+                // machine names the content itself, because the handle the
+                // authority holds means nothing here. Before possession, so the
+                // prediction shadow seeds from a complete component.
+                if (AuthoredTuning)
+                {
+                    Mirror.Entities.TryGet<CharacterMovement>(ClientPawn)->Profile =
+                        Mirror.InstallProfile();
+                }
                 Prediction.SetPredicted(ClientPawn);
                 break;
             }
@@ -490,6 +560,71 @@ TEST(PredictionConvergence, AClientDrivenIntoGeometryConvergesUnderLoss)
     EXPECT_GT(rig.Client.Link.Dropped(), 0u);
     EXPECT_GT(rig.Host.Link.Dropped(), 0u);
     EXPECT_GT(rig.Client.Link.Delayed(), 0u);
+}
+
+// The tuning a client predicts on has to be the tuning the authority simulates
+// on, and nothing on the wire can carry it: a profile handle is a slot in one
+// process's asset cache, so each machine names the content itself. When one
+// side names it and the other does not, both simulations are individually
+// correct and permanently disagree -- and reconciliation cannot fix it, because
+// reconciliation is what carries the disagreement across.
+//
+// Everything above this runs on engine defaults on both machines, which is a
+// state that agrees for the wrong reason: it cannot tell resolved tuning from
+// unresolved tuning. This one authors tuning that differs from every default,
+// resolves it separately on each machine, and asks both questions -- that the
+// client really is running the authored numbers, and that the two still
+// converge when it does.
+TEST(PredictionConvergence, AuthoredTuningIsWhatReplayConsumes)
+{
+    ConvergenceRig rig(BadConnection());
+    rig.AuthoredTuning = true;
+    ASSERT_TRUE(rig.Join(600)) << "the session never formed";
+
+    for (int step = 0; step < 120; ++step)
+        rig.Advance(ScriptTick{});
+    ASSERT_TRUE(rig.ClientPawn.IsValid()) << "the pawn was never adopted";
+
+    // Both machines resolved the profile they were each given, rather than
+    // falling back. This is the assertion the live defect would have failed:
+    // the client held an invalid handle and resolved engine defaults while the
+    // authority resolved the authored numbers.
+    const ResolvedMovementTuning* clientTuning =
+        rig.Mirror.Entities.TryGet<ResolvedMovementTuning>(rig.ClientPawn);
+    ASSERT_NE(clientTuning, nullptr);
+    EXPECT_FLOAT_EQ(clientTuning->Friction, kAuthoredFriction)
+        << "the client is predicting on engine defaults while the authority "
+           "runs authored tuning";
+    EXPECT_FLOAT_EQ(clientTuning->Acceleration, kAuthoredAcceleration);
+
+    const ResolvedMovementTuning* authorityTuning =
+        rig.Authority.Entities.TryGet<ResolvedMovementTuning>(rig.AuthorityPawn);
+    ASSERT_NE(authorityTuning, nullptr);
+    EXPECT_FLOAT_EQ(authorityTuning->Friction, kAuthoredFriction);
+
+    // And with both on the same numbers, the same drive that broke it live
+    // still converges.
+    for (int step = 0; step < 360; ++step)
+    {
+        ScriptTick input;
+        input.Forward = 1.0f;
+        input.Yaw = step < 180 ? 0.0f : 0.3f + 0.001f * static_cast<float>(step);
+        rig.Advance(input);
+    }
+    for (int step = 0; step < 240; ++step)
+        rig.Advance(ScriptTick{});
+
+    EXPECT_LT(rig.Disagreement(), 1e-3f)
+        << "the two machines settled " << rig.Disagreement()
+        << " metres apart on identical authored tuning";
+    EXPECT_GT(rig.Prediction.Reconciles(), 100u)
+        << "reconciliation barely ran, so agreement here is coincidence";
+    // Still the authored numbers after hundreds of reconciles: a restore that
+    // stamped the component wholesale over a locally-named field would show up
+    // here as tuning that reverted to defaults part way through.
+    EXPECT_FLOAT_EQ(
+        rig.Mirror.Entities.TryGet<ResolvedMovementTuning>(rig.ClientPawn)->Friction,
+        kAuthoredFriction);
 }
 
 // One press, one jump -- through reconciles that re-run the ticks around it.

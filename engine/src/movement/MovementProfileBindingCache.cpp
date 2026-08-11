@@ -21,8 +21,14 @@ const BoundMovementProfile* MovementProfileBindingCache::Get(MovementProfileHand
         newError->clear();
     if (!handle.IsValid())
     {
-        if (newError != nullptr)
+        // Reported once, like every other bind failure here: the caller logs
+        // whatever comes back, and this one has no profile identity to dedupe
+        // against on its own.
+        if (newError != nullptr && !InvalidReported)
+        {
             *newError = "movement profile handle is invalid";
+            InvalidReported = true;
+        }
         return nullptr;
     }
 
@@ -88,5 +94,6 @@ const BoundMovementProfile* MovementProfileBindingCache::Get(MovementProfileHand
 
 void MovementProfileBindingCache::Clear()
 {
+    InvalidReported = false;
     Entries.clear();
 }

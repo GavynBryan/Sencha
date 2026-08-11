@@ -11,11 +11,15 @@
 // consumes it directly: gameplay that advanced on this clock would run at
 // whatever rate frames happen to be presented.
 //
-// Dt / UnscaledDt        - raw wall delta from the platform clock. They are
+// Dt / UnscaledDt        - wall delta conditioned by the cadence lock: what
+//                          time-to-simulation conversion consumes. They are
 //                          equal while this compatibility snapshot exists.
+// MeasuredDt             - the delta as the platform clock measured it, before
+//                          conditioning. Diagnostics show this one; consuming
+//                          it re-imports the scheduler noise the lock removes.
 // Elapsed / UnscaledElapsed
-//                        - raw wall elapsed time since this clock was created.
-//                          They are equal here.
+//                        - conditioned wall elapsed time since this clock was
+//                          created. They are equal here.
 // Timescale              - always 1.0. Simulation pause state lives on
 //                          RuntimeFrameLoop.
 // FrameIndex             - monotonically increasing platform frame counter.
@@ -24,6 +28,7 @@ struct FrameClock
 {
     float    Dt               = 0.0f;
     float    UnscaledDt       = 0.0f;
+    float    MeasuredDt       = 0.0f;
     float    Elapsed          = 0.0f;
     float    UnscaledElapsed  = 0.0f;
     float    Timescale        = 1.0f;

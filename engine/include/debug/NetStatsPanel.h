@@ -6,6 +6,7 @@
 
 class ClientPrediction;
 class ReplicationInterpolation;
+class ReplicationRuntime;
 class ConsoleRegistry;
 class NetSession;
 class NetStats;
@@ -37,6 +38,7 @@ public:
                   const NetTickEstimator& clock,
                   const ClientPrediction& prediction,
                   const ReplicationInterpolation& interpolation,
+                  const ReplicationRuntime& replication,
                   PeerCommandRuntime& commands,
                   ConsoleRegistry& console);
 
@@ -48,6 +50,7 @@ private:
     const NetTickEstimator& Clock;
     const ClientPrediction& Prediction;
     const ReplicationInterpolation& Interpolation;
+    const ReplicationRuntime& Replication;
     PeerCommandRuntime& Commands;
     ConsoleRegistry& Console;
 };

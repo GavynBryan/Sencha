@@ -219,7 +219,8 @@ std::size_t NetEncodePlayerCommand(const NetPlayerCommand& command,
     if (count == 0)
         return 0;
 
-    writer.WriteU64(command.SnapshotAck);
+    writer.WriteBits(command.SnapshotAck.Newest(), 32);
+    writer.WriteBits(command.SnapshotAck.Window(), 32);
     writer.WriteBits(actions, kActionCountBits);
     writer.WriteU64(newestTick);
 
@@ -244,11 +245,22 @@ bool NetDecodePlayerCommand(NetBitReader& reader, NetPlayerCommand& out)
 
     std::uint32_t actions = 0;
     std::uint64_t newestTick = 0;
-    if (!reader.ReadU64(out.SnapshotAck)
+    std::uint32_t ackNewest = 0;
+    std::uint32_t ackWindow = 0;
+    if (!reader.ReadBits(32, ackNewest)
+        || !reader.ReadBits(32, ackWindow)
         || !reader.ReadBits(kActionCountBits, actions)
         || !reader.ReadU64(newestTick))
     {
         return false;
+    }
+    // Rebuilt through the type's own accumulation so a peer cannot hand over a
+    // window that names sequences ahead of the one it claims is newest.
+    out.SnapshotAck.Observe(ackNewest);
+    for (std::uint32_t back = NetSnapshotAck::kWindow; back > 0; --back)
+    {
+        if ((ackWindow & (1u << (back - 1))) != 0 && ackNewest > back)
+            out.SnapshotAck.Observe(ackNewest - back);
     }
 
     if (actions > kNetMaxCommandActions)
@@ -296,7 +308,7 @@ void NetPeerCommandBuffer::Receive(const NetPlayerCommand& command)
         return;
 
     const std::uint64_t newest = command.Records[0].Tick;
-    AckedSnapshot = std::max(AckedSnapshot, command.SnapshotAck);
+    AckedSnapshot.Merge(command.SnapshotAck);
 
     // First contact takes the newest record only. The window behind it is
     // insurance for ticks this authority never ran; queueing it would seed a

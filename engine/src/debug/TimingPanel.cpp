@@ -122,6 +122,11 @@ void TimingPanel::Draw()
                 Ms(oneSecond.Avg), Ms(oneSecond.Min), Ms(oneSecond.Max), Ms(oneSecond.StdDev));
     ImGui::Text("Raw DT 5s avg/min/max/std %.3f / %.3f / %.3f / %.3f",
                 Ms(fiveSecond.Avg), Ms(fiveSecond.Min), Ms(fiveSecond.Max), Ms(fiveSecond.StdDev));
+    // Raw is the measurement; Locked is what the simulation consumed. The gap
+    // between them is the scheduler noise the cadence lock removed this frame.
+    ImGui::Text("Locked DT: %.3f ms  (raw - locked: %+.3f ms)",
+                Ms(latest->LockedDtSeconds),
+                Ms(latest->RawDtSeconds - latest->LockedDtSeconds));
     ImGui::Text("Tick DT: %.3f ms  Presentation DT: %.3f ms  Alpha: %.3f",
                 Ms(latest->TickDtSeconds),
                 Ms(latest->PresentationDtSeconds),

@@ -109,6 +109,15 @@ struct FixedLogicContext
     FixedSimTime Time;
     World& Entities;
     const StoragePartitionSet& Partitions;
+
+    // Ticks this frame has still to run, this one included: 1 on a single-tick
+    // frame, N down to 1 across a catch-up burst. A system distributing a
+    // per-frame quantity across the burst -- a displacement latched once per
+    // frame, spent by however many ticks that frame runs -- divides by it.
+    // Giving the whole frame's displacement to the first tick and nothing to
+    // the rest is what makes a heading advance in steps that do not match the
+    // simulated time they cover.
+    uint32_t TicksLeftInFrame = 1;
 };
 
 struct PhysicsContext

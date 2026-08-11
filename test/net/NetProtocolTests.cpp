@@ -70,6 +70,7 @@ TEST(NetProtocol, AcceptRoundTripsEveryField)
         .WorldIdentity = 22,
         .FixedTickRateMilliHz = 60000,
         .AuthorityTick = 987654321,
+        .MapName = "levels/village_square.level",
     };
 
     const auto encoded = NetEncodeAccept(sent, scratch);
@@ -81,6 +82,72 @@ TEST(NetProtocol, AcceptRoundTripsEveryField)
     EXPECT_EQ(received.ModuleFingerprint, sent.ModuleFingerprint);
     EXPECT_EQ(received.WorldIdentity, sent.WorldIdentity);
     EXPECT_EQ(received.AuthorityTick, sent.AuthorityTick);
+    EXPECT_EQ(received.MapName, sent.MapName);
+}
+
+// An authority that is hosting but has not loaded a world has nothing to name,
+// and that has to be expressible: it is the ordinary state of a host between
+// starting up and choosing a map, not a malformed admission.
+TEST(NetProtocol, AnAdmissionWithNoMapIsValid)
+{
+    Scratch scratch{};
+    const NetAccept sent{
+        .PeerId = 1,
+        .FixedTickRateMilliHz = 60000,
+        .MapName = {},
+    };
+
+    const auto encoded = NetEncodeAccept(sent, scratch);
+    ASSERT_FALSE(encoded.empty());
+
+    NetAccept received{};
+    received.MapName = "stale";
+    ASSERT_EQ(NetDecodeAccept(encoded, received), NetDecodeError::None);
+    EXPECT_TRUE(received.MapName.empty());
+}
+
+TEST(NetProtocol, AMapNameAtItsCapRoundTrips)
+{
+    Scratch scratch{};
+    NetAccept sent{ .PeerId = 1, .FixedTickRateMilliHz = 60000, .MapName = {} };
+    sent.MapName.assign(NetDefaultCaps().MaxIdentityBytes, 'm');
+
+    const auto encoded = NetEncodeAccept(sent, scratch);
+    ASSERT_FALSE(encoded.empty());
+
+    NetAccept received{};
+    ASSERT_EQ(NetDecodeAccept(encoded, received), NetDecodeError::None);
+    EXPECT_EQ(received.MapName, sent.MapName);
+}
+
+TEST(NetProtocol, EncoderRefusesAMapNamePastItsCap)
+{
+    Scratch scratch{};
+    NetAccept sent{ .PeerId = 1, .FixedTickRateMilliHz = 60000, .MapName = {} };
+    sent.MapName.assign(NetDefaultCaps().MaxIdentityBytes + 1, 'm');
+
+    EXPECT_TRUE(NetEncodeAccept(sent, scratch).empty())
+        << "encoding past a cap must refuse rather than truncate the field";
+}
+
+// The decoder's own bound, tested against bytes the encoder would not produce.
+TEST(NetProtocol, AClaimedMapNamePastItsCapIsRefused)
+{
+    Scratch scratch{};
+    const NetAccept valid{ .PeerId = 1, .FixedTickRateMilliHz = 60000, .MapName = {} };
+    const auto encoded = NetEncodeAccept(valid, scratch);
+    ASSERT_FALSE(encoded.empty());
+
+    // The trailing two bytes are the empty name's length prefix; claim a name
+    // far past the cap instead.
+    std::vector<std::byte> forged(encoded.begin(), encoded.end());
+    ASSERT_GE(forged.size(), 2u);
+    const std::uint16_t claimed = 4096;
+    forged[forged.size() - 2] = static_cast<std::byte>(claimed & 0xFF);
+    forged[forged.size() - 1] = static_cast<std::byte>(claimed >> 8);
+
+    NetAccept received{};
+    EXPECT_EQ(NetDecodeAccept(forged, received), NetDecodeError::CapExceeded);
 }
 
 TEST(NetProtocol, ReasonTextRoundTrips)
@@ -233,7 +300,7 @@ TEST(NetProtocol, StructurallyValidButImpossibleValuesAreRefused)
 {
     Scratch scratch{};
 
-    NetAccept zeroPeer{ .PeerId = 0, .FixedTickRateMilliHz = 60000 };
+    NetAccept zeroPeer{ .PeerId = 0, .FixedTickRateMilliHz = 60000, .MapName = {} };
     const auto encodedPeer = NetEncodeAccept(zeroPeer, scratch);
     ASSERT_FALSE(encodedPeer.empty());
     NetAccept decoded{};
@@ -254,7 +321,8 @@ TEST(NetProtocol, ADecoderRefusesAnotherMessagesBytes)
 {
     Scratch scratch{};
     const auto encoded = NetEncodeAccept(
-        NetAccept{ .PeerId = 1, .FixedTickRateMilliHz = 60000 }, scratch);
+        NetAccept{ .PeerId = 1, .FixedTickRateMilliHz = 60000, .MapName = {} },
+        scratch);
     ASSERT_FALSE(encoded.empty());
 
     NetHello wrong{};
@@ -316,8 +384,12 @@ namespace
         add(NetEncodeHello(NetHello{}, scratch));
         add(NetEncodeChallenge(NetChallenge{ .Cookie = Cookie(16) }, scratch));
         add(NetEncodeCookieEcho(SampleEcho(), scratch));
-        add(NetEncodeAccept(
-            NetAccept{ .PeerId = 2, .FixedTickRateMilliHz = 60000 }, scratch));
+        // With a map name, so the mutator reaches an accept's variable-length
+        // tail rather than only its fixed fields.
+        add(NetEncodeAccept(NetAccept{ .PeerId = 2,
+                                       .FixedTickRateMilliHz = 60000,
+                                       .MapName = "levels/box" },
+                            scratch));
         add(NetEncodeRefuse(NetRefuse{ .Reason = "no" }, scratch));
         add(NetEncodeDisconnect(NetDisconnect{ .Reason = "bye" }, scratch));
         add(NetEncodePing(NetPing{ .SentMicroseconds = 1 }, scratch));

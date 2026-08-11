@@ -72,6 +72,33 @@ struct RuntimeField
     bool LocalOnly = false;
 };
 
+// What a flattened description is for. The same members at the same offsets
+// either way -- this decides which schema describes them when the two disagree.
+enum class SchemaPurpose : std::uint8_t
+{
+    // How a type is authored and stored: what an inspector edits and what a
+    // scene writes. The default, because it is what a type's own schema is.
+    Authoring,
+    // How a type travels. The precision a link carries a value at is a fact
+    // about the link, not about the type, so it belongs to whoever is sending
+    // rather than in the type's own description of itself.
+    Replication,
+};
+
+// Specialize for a type whose replicated description differs from its authored
+// one. Undefined otherwise, which is the ordinary case: most types travel
+// exactly as they are stored, and a specialization is a claim that this one is
+// worth spending fewer bits on than it is kept in.
+//
+// The members must be the same members: offsets come from member pointers
+// against the same root either way, so a specialization that named something
+// else would describe bytes that are not there.
+template <typename T>
+struct ReplicationSchema;
+
+template <typename T>
+concept HasReplicationSchema = requires { ReplicationSchema<T>::Fields(); };
+
 namespace RuntimeSchemaDetail
 {
     template <typename T>
@@ -110,7 +137,13 @@ namespace RuntimeSchemaDetail
     // each leaf's offset is its member address minus the root's, so offsets stay
     // absolute through any nesting depth. Schema'd members (Vec/Quat/Transform/…)
     // recurse; scalars are recorded at the leaves.
-    template <typename Root>
+    // Which description of a type to recurse through: its own, unless this is a
+    // replication pass and the type states a different one for the wire.
+    template <typename T, SchemaPurpose Purpose>
+    constexpr bool UsesReplicationSchema =
+        Purpose == SchemaPurpose::Replication && HasReplicationSchema<T>;
+
+    template <typename Root, SchemaPurpose Purpose = SchemaPurpose::Authoring>
     struct Collector
     {
         std::vector<RuntimeField>& Out;
@@ -124,6 +157,13 @@ namespace RuntimeSchemaDetail
         bool                       OwnerOnly = false;
         bool                       OwnerLocal = false;
         bool                       LocalOnly = false;
+        // Set while flattening a ReplicationSchema, whose annotations are what
+        // to spend on a shared type absent better information. A component that
+        // annotated its own member of that type has better information -- it
+        // knows the range that member actually occupies, which a general
+        // description of the type cannot -- so an inherited annotation outranks
+        // the wire default rather than the other way round.
+        bool                       WireDefaults = false;
 
         template <typename FieldT, typename M>
         void Field(const FieldT& field, const M& member)
@@ -135,8 +175,10 @@ namespace RuntimeSchemaDetail
                 Prefix.empty() ? std::string(field.Name)
                                : Prefix + "." + std::string(field.Name);
 
+            const bool inheritedWins = WireDefaults && Quantization.IsQuantized();
             const FieldQuantization quantization =
-                field.Quantization.IsQuantized() ? field.Quantization : Quantization;
+                (field.Quantization.IsQuantized() && !inheritedWins) ? field.Quantization
+                                                                     : Quantization;
             const bool ownerOnly = OwnerOnly || field.IsOwnerOnly;
             const bool ownerLocal = OwnerLocal || field.IsOwnerLocal;
             const bool localOnly = LocalOnly || field.IsLocalOnly;
@@ -179,11 +221,17 @@ namespace RuntimeSchemaDetail
                 return;
             }
 
-            if constexpr (HasTypeSchema<MemberType>)
+            if constexpr (HasTypeSchema<MemberType>
+                          || UsesReplicationSchema<MemberType, Purpose>)
             {
-                Collector<Root> sub{ Out, Base, name, quantization, ownerOnly, ownerLocal,
-                                     localOnly };
-                VisitSchema<TypeSchema<MemberType>>(member, sub);
+                constexpr bool wire = UsesReplicationSchema<MemberType, Purpose>;
+                Collector<Root, Purpose> sub{ Out,        Base,       name,
+                                              quantization, ownerOnly, ownerLocal,
+                                              localOnly, WireDefaults || wire };
+                if constexpr (wire)
+                    VisitSchema<ReplicationSchema<MemberType>>(member, sub);
+                else
+                    VisitSchema<TypeSchema<MemberType>>(member, sub);
             }
             else if constexpr (IsStrongId<MemberType>::value)
             {
@@ -206,8 +254,9 @@ namespace RuntimeSchemaDetail
     };
 }
 
-// The flattened leaf-scalar fields of component type T. Built once per T.
-template <typename T>
+// The flattened leaf-scalar fields of component type T, as the given purpose
+// describes them. Built once per (T, purpose).
+template <typename T, SchemaPurpose Purpose = SchemaPurpose::Authoring>
     requires HasTypeSchema<T>
 const std::vector<RuntimeField>& RuntimeFieldsOf()
 {
@@ -215,8 +264,13 @@ const std::vector<RuntimeField>& RuntimeFieldsOf()
     {
         std::vector<RuntimeField> out;
         T root{};
-        RuntimeSchemaDetail::Collector<T> collector{ out, root, std::string{} };
-        VisitSchema<TypeSchema<T>>(root, collector);
+        constexpr bool wire = RuntimeSchemaDetail::UsesReplicationSchema<T, Purpose>;
+        RuntimeSchemaDetail::Collector<T, Purpose> collector{
+            out, root, std::string{}, FieldQuantization{}, false, false, false, wire };
+        if constexpr (wire)
+            VisitSchema<ReplicationSchema<T>>(root, collector);
+        else
+            VisitSchema<TypeSchema<T>>(root, collector);
         return out;
     }();
     return fields;

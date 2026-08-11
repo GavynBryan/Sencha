@@ -7,6 +7,7 @@
 #include <net/NetTickEstimator.h>
 #include <world/transform/TransformComponents.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -55,9 +56,16 @@ public:
     // oldest is forgotten, which is the right thing to forget.
     static constexpr std::size_t kSamples = 8;
 
-    // Ticks behind the newest expected sample that the presented pose sits, on
-    // top of the flight time the clock already knows about. Two ticks of margin
-    // absorbs ordinary jitter at a cost most players cannot see.
+    // Jitter margin, in ticks, on top of the flight time the clock already
+    // knows about AND the interval between snapshots. Two ticks absorbs
+    // ordinary jitter at a cost most players cannot see.
+    //
+    // Margin rather than absolute delay because the two terms answer different
+    // questions. The interval says how old the newest sample that can possibly
+    // have arrived is -- publishing every third tick means the newest one is up
+    // to three ticks behind before the network is involved -- and presenting
+    // ahead of it holds the last pose instead of blending, which is the stutter
+    // this class exists to remove. That term is arithmetic. This one is taste.
     static constexpr std::uint32_t kDefaultDelayTicks = 2;
 
     // Whether an arriving component is this machine's to present rather than the
@@ -73,6 +81,25 @@ public:
 
     void SetDelayTicks(std::uint32_t ticks) { Delay = ticks; }
     [[nodiscard]] std::uint32_t DelayTicks() const { return Delay; }
+
+    // Ticks between the authority's snapshots, which the authority owns and
+    // tells this machine. Absorbed into the presented tick so a lower snapshot
+    // rate costs a little more age rather than a held pose every few frames.
+    void SetSnapshotInterval(std::uint32_t ticks)
+    {
+        SnapshotInterval = std::max<std::uint32_t>(1, ticks);
+    }
+    [[nodiscard]] std::uint32_t SnapshotIntervalTicks() const
+    {
+        return SnapshotInterval;
+    }
+
+    // What the two terms come to: how far behind the estimated authority tick a
+    // mirrored entity is drawn, before flight time.
+    [[nodiscard]] std::uint32_t PresentationLagTicks() const
+    {
+        return SnapshotInterval + Delay;
+    }
 
     // What the authority said this entity's pose was at that tick. Samples older
     // than the window, and ticks already held, are ignored -- the redundancy in
@@ -90,13 +117,13 @@ public:
     // resend would be filled in from a blend this machine invented between two
     // ticks -- and every later delta would compound the difference.
     //
-    // No test can currently show that going wrong, and it is worth saying why
-    // rather than leaving the impression one does. LocalTransform is a single
-    // schema field, so its mask is one bit and the transform arrives whole or
-    // not at all; there is no partial delta to stage wrongly. That stops being
-    // true the moment position and rotation are separated, which is what
-    // per-field quantization would want. Staging against the world is wrong in
-    // a way that would be silent then, so it is not done now.
+    // This is load-bearing today, not a precaution. LocalTransform is one
+    // schema field, but the wire does not see schema fields -- it sees the runs
+    // the flattener produces, and it produces three (position, rotation,
+    // scale), each with its own mask bit. A rotating entity that is not moving
+    // sends rotation alone, so partial transform deltas are the ordinary case.
+    // Staged against the presented pose, that delta would land on a blend this
+    // machine invented, and every later delta would compound it.
     //-------------------------------------------------------------------------
     [[nodiscard]] std::span<std::byte> AuthoritativeBytes(EntityId entity);
     [[nodiscard]] bool HasAuthoritativeState(EntityId entity) const;
@@ -153,6 +180,11 @@ private:
     std::unordered_map<EntityId, Track, EntityIdHash> Entities;
     bool Enabled = true;
     std::uint32_t Delay = kDefaultDelayTicks;
+    // What the authority says its snapshot cadence is. One until told, which is
+    // the safe direction to be wrong in: too little lag holds a pose, too much
+    // draws the world further into the past. The host sets it when the cvar is
+    // registered and a client is told by the replicated cvar.
+    std::uint32_t SnapshotInterval = 1;
 
     mutable std::uint64_t ResolvedTicks = 0;
     mutable std::uint64_t HeldTicks = 0;

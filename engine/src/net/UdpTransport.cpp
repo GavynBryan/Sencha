@@ -6,7 +6,6 @@
 #if defined(_WIN32)
 #include <winsock2.h>
 #include <ws2tcpip.h>
-using SocketHandle = SOCKET;
 #else
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -20,9 +19,21 @@ namespace
 #if defined(_WIN32)
     int CloseSocket(int handle) { return ::closesocket(static_cast<SOCKET>(handle)); }
     bool WouldBlock() { return ::WSAGetLastError() == WSAEWOULDBLOCK; }
+    // Winsock reports an oversized datagram as an error after discarding it.
+    bool MessageTooLong() { return ::WSAGetLastError() == WSAEMSGSIZE; }
+    constexpr int kReceiveFlags = 0;
 #else
     int CloseSocket(int handle) { return ::close(handle); }
     bool WouldBlock() { return errno == EAGAIN || errno == EWOULDBLOCK; }
+    bool MessageTooLong() { return false; }
+#if defined(__linux__)
+    // MSG_TRUNC makes recvfrom report a datagram's true length even when it was
+    // cut to the buffer, which is what lets an oversized one be counted and
+    // refused rather than handed up silently truncated.
+    constexpr int kReceiveFlags = MSG_TRUNC;
+#else
+    constexpr int kReceiveFlags = 0;
+#endif
 #endif
 
     // Both directions of the one conversion between the engine's address value
@@ -188,7 +199,7 @@ std::span<const NetDatagram> UdpTransport::Receive()
             Socket,
             reinterpret_cast<char*>(Slots[index].data()),
             static_cast<int>(Slots[index].size()),
-            0,
+            kReceiveFlags,
             reinterpret_cast<sockaddr*>(&from),
             &fromLength);
 
@@ -196,6 +207,11 @@ std::span<const NetDatagram> UdpTransport::Receive()
         {
             if (WouldBlock())
                 break;
+            if (MessageTooLong())
+            {
+                ++Oversized;
+                continue;
+            }
             // A refused ICMP from an earlier send surfaces here on some
             // platforms. It says nothing about the next datagram, so the pump
             // keeps draining rather than treating it as the end of the queue.
@@ -205,8 +221,8 @@ std::span<const NetDatagram> UdpTransport::Receive()
         const auto length = static_cast<std::size_t>(received);
         if (length > Slots[index].size())
         {
-            // Truncated by the slot bound: larger than the transport allows, so
-            // it is refused rather than partially interpreted.
+            // Cut to the slot bound: larger than the transport allows, so it is
+            // refused rather than partially interpreted.
             ++Oversized;
             continue;
         }

@@ -1,12 +1,12 @@
 #pragma once
 
 #include <core/metadata/RuntimeSchema.h>
+#include <net/ReplicationSchemas.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
 
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -26,6 +26,20 @@
 // Adding a replicated component is one line on the component and one line in
 // its feature's registrar, and no netcode at all.
 //=============================================================================
+
+// The owner's own machine keeps simulating this component between snapshots,
+// so what arrives for it is the authority's view rather than the world's next
+// value. Declared as `static constexpr bool Predicted = true;` on the schema,
+// beside Replicated. Read here rather than passed in by the registrar, so a
+// layout built directly still knows the fact.
+template <typename T>
+inline constexpr bool ComponentIsPredicted = []
+{
+    if constexpr (requires { TypeSchema<T>::Predicted; })
+        return static_cast<bool>(TypeSchema<T>::Predicted);
+    else
+        return false;
+}();
 
 //-----------------------------------------------------------------------------
 // One run of contiguous, same-typed scalars inside a component: a float, a
@@ -59,6 +73,15 @@ struct ReplicatedComponent
     // Size of the whole component, so an applier can size the staging buffer it
     // decodes into before writing it back through the world schema.
     std::size_t Size = 0;
+    // The owner's machine simulates this one for itself, so an applier holds
+    // what arrives apart from the world's copy instead of overwriting it.
+    //
+    // Deliberately absent from TableHash: the hash exists so two builds that
+    // read each other's snapshots know they agree on how, and this changes only
+    // where a client lands the bytes afterwards -- never the encoding, the field
+    // order, or a width. Folding it in would refuse a handshake between builds
+    // that understand each other perfectly.
+    bool Predicted = false;
     std::vector<ReplicatedField> Fields;
 };
 
@@ -119,7 +142,8 @@ public:
         return AddErased(ResolveComponentTypeId<T>(),
                          ResolveComponentName<T>(),
                          sizeof(T),
-                         RuntimeFieldsOf<T>());
+                         ComponentIsPredicted<T>,
+                         RuntimeFieldsOf<T, SchemaPurpose::Replication>());
     }
 
     void Seal();
@@ -129,7 +153,6 @@ public:
     // By wire key. Null for a key this build does not define, which is what a
     // peer sending an out-of-range component index looks like.
     [[nodiscard]] const ReplicatedComponent* At(std::uint8_t index) const;
-    [[nodiscard]] std::optional<std::uint8_t> IndexOf(ComponentTypeId type) const;
 
     [[nodiscard]] std::span<const ReplicatedComponent> Components() const
     {
@@ -153,6 +176,7 @@ private:
     bool AddErased(ComponentTypeId type,
                    std::string_view name,
                    std::size_t size,
+                   bool predicted,
                    const std::vector<RuntimeField>& fields);
 
     void Fail(ReplicationLayoutError error, std::string detail);

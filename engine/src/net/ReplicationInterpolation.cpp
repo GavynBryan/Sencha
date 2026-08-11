@@ -163,8 +163,11 @@ void ReplicationInterpolationSystem::FixedLogic(FixedLogicContext& ctx)
         return;
 
     const std::uint64_t authorityNow = Clock->AuthorityTickAt(ctx.Time.TickIndex);
-    const auto behind =
-        static_cast<std::uint64_t>(Clock->FlightTicks()) + Interpolation->DelayTicks();
+    // Flight is how long a datagram takes; the interval is how long the newest
+    // sample had already been waiting before one was sent; the margin is what
+    // is left over for jitter.
+    const auto behind = static_cast<std::uint64_t>(Clock->FlightTicks())
+                      + Interpolation->PresentationLagTicks();
     const std::uint64_t present = authorityNow > behind ? authorityNow - behind : 0;
 
     Interpolation->Tracked(Scratch);

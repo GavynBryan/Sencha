@@ -12,11 +12,12 @@
 #include <movement/MovementIntent.h>
 #include <movement/MovementRegistration.h>
 #include <net/ClientPrediction.h>
-#include <net/PawnStateReplay.h>
+#include <prediction/PawnStateReplay.h>
 #include <physics/CharacterMoverPool.h>
 #include <physics/PhysicsWorld.h>
 #include <physics/components/CharacterController.h>
 #include <physics/components/CharacterMoverLink.h>
+#include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/transform/TransformComponents.h>
 
@@ -79,6 +80,9 @@ namespace
     struct Machine
     {
         WorldComponentSchema Schema;
+        // The same table the runtime compiles the predicted set from, so these
+        // shadow whatever the engine's components say they resume from.
+        ReplicationLayout Layout;
         PhysicsWorld Physics;
         World Entities;
         CharacterMoverPool Movers{ Physics };
@@ -90,8 +94,10 @@ namespace
 
         Machine()
         {
-            RegisterEngineRuntimeComponents(Schema);
+            ComponentRegistrar registrar(&Schema, nullptr, &Layout);
+            RegisterEngineComponents(registrar);
             Schema.Seal();
+            Layout.Seal();
             Schema.Apply(Entities);
             RegisterMovement(Entities);
             BuildLevel(Physics);
@@ -160,27 +166,38 @@ namespace
         return script;
     }
 
-    // Copies one machine's pawn state into a prediction's shadows, the way a
-    // snapshot carrying that state would.
-    template <typename T>
-    void Shadow(ClientPrediction& prediction, const World& world, EntityId pawn)
+    // Copies one machine's pawn state into a prediction's shadow, the way a
+    // snapshot carrying that state would: every component the table calls
+    // predicted, so this cannot fall behind the set the runtime uses.
+    void ShadowPawn(ClientPrediction& prediction, const Machine& machine,
+                    EntityId pawn)
     {
-        const ComponentTypeId type = ResolveComponentTypeId<T>();
-        const T* value = world.TryGet<T>(pawn);
-        if (value == nullptr)
-            return;
-        const std::span<std::byte> bytes = prediction.AuthoritativeBytes(type);
-        std::memcpy(bytes.data(), value, sizeof(T));
-        prediction.MarkSeen(type);
+        const World& world = machine.Entities;
+        for (const ReplicatedComponent& component : machine.Layout.Components())
+        {
+            if (!component.Predicted)
+                continue;
+
+            const ComponentId column = world.GetComponentIdByType(component.Type);
+            if (!world.HasComponent(pawn, column))
+                continue;
+
+            const std::span<std::byte> bytes =
+                prediction.AuthoritativeBytes(component.Type);
+            ASSERT_EQ(bytes.size(), component.Size);
+            std::memcpy(bytes.data(), world.GetComponentRaw(pawn, column),
+                        component.Size);
+            prediction.MarkSeen(component.Type);
+        }
     }
 
-    void ShadowPawn(ClientPrediction& prediction, const World& world, EntityId pawn)
+    // A prediction bound to a machine's table and pointed at its pawn.
+    ClientPrediction PredictingPawn(const Machine& machine)
     {
-        Shadow<LocalTransform>(prediction, world, pawn);
-        Shadow<KinematicState>(prediction, world, pawn);
-        Shadow<SupportState>(prediction, world, pawn);
-        Shadow<CharacterMovement>(prediction, world, pawn);
-        Shadow<JumpState>(prediction, world, pawn);
+        ClientPrediction prediction;
+        prediction.Bind(machine.Layout);
+        prediction.SetPredicted(machine.Pawn);
+        return prediction;
     }
 
     PawnReplayRequest RequestFor(Machine& machine, ClientPrediction& prediction,
@@ -216,9 +233,8 @@ TEST(PawnStateReplay, ReachesExactlyWhereTheLiveTicksReached)
     // Replay the same records from the same start on a machine that has done
     // nothing else.
     Machine replayed;
-    ClientPrediction prediction;
-    prediction.SetPredicted(replayed.Pawn);
-    ShadowPawn(prediction, replayed.Entities, replayed.Pawn);
+    ClientPrediction prediction = PredictingPawn(replayed);
+    ShadowPawn(prediction, replayed, replayed.Pawn);
     for (const PawnCommandTick& record : script)
         prediction.Commands().Push(record);
 
@@ -249,9 +265,8 @@ TEST(PawnStateReplay, DisagreesWhenTheInputDisagrees)
     const Vec3d lived = live.Position();
 
     Machine replayed;
-    ClientPrediction prediction;
-    prediction.SetPredicted(replayed.Pawn);
-    ShadowPawn(prediction, replayed.Entities, replayed.Pawn);
+    ClientPrediction prediction = PredictingPawn(replayed);
+    ShadowPawn(prediction, replayed, replayed.Pawn);
     // Along the wall rather than into it: the wall clamps X in both runs
     // whatever the input said, so a difference there would be invisible.
     script[35].Intent.WishDir = Vec3d(1.0f, 0.0f, -0.6f);
@@ -270,9 +285,8 @@ TEST(PawnStateReplay, ReplaysOnlyWhatTheAuthorityHasNotAnswered)
     const std::vector<PawnCommandTick> script = ScriptedRun(kFirstTick, 20);
 
     Machine machine;
-    ClientPrediction prediction;
-    prediction.SetPredicted(machine.Pawn);
-    ShadowPawn(prediction, machine.Entities, machine.Pawn);
+    ClientPrediction prediction = PredictingPawn(machine);
+    ShadowPawn(prediction, machine, machine.Pawn);
     for (const PawnCommandTick& record : script)
         prediction.Commands().Push(record);
 
@@ -294,9 +308,8 @@ TEST(PawnStateReplay, ReplaysOnlyWhatTheAuthorityHasNotAnswered)
 TEST(PawnStateReplay, SnapsRatherThanReplayingAcrossAGapItCannotFill)
 {
     Machine machine;
-    ClientPrediction prediction;
-    prediction.SetPredicted(machine.Pawn);
-    ShadowPawn(prediction, machine.Entities, machine.Pawn);
+    ClientPrediction prediction = PredictingPawn(machine);
+    ShadowPawn(prediction, machine, machine.Pawn);
 
     const std::vector<PawnCommandTick> script =
         ScriptedRun(1, PawnCommandRing::kDepth + 30);
@@ -319,8 +332,7 @@ TEST(PawnStateReplay, SnapsRatherThanReplayingAcrossAGapItCannotFill)
 TEST(PawnStateReplay, WithReplayOffThePawnLandsOnTheAuthoritysState)
 {
     Machine machine;
-    ClientPrediction prediction;
-    prediction.SetPredicted(machine.Pawn);
+    ClientPrediction prediction = PredictingPawn(machine);
 
     LocalTransform authoritative;
     authoritative.Value.Position = Vec3d(3.0f, 2.0f, -1.0f);
@@ -348,4 +360,56 @@ TEST(PawnStateReplay, WithReplayOffThePawnLandsOnTheAuthoritysState)
     EXPECT_NEAR(machine.Position().X, 3.0f, 0.05f)
         << "the restore reached the transform but not the mover, so the first "
            "sweep after it undid the whole thing";
+}
+
+// The other honest failure: rules this machine cannot re-run. Replaying under
+// the wrong ones would be a disagreement nobody sees, so the pawn is moved
+// instead and the count says so.
+TEST(PawnStateReplay, SnapsRatherThanReplayingUnderRulesItDoesNotImplement)
+{
+    Machine machine;
+    ClientPrediction prediction = PredictingPawn(machine);
+
+    // A mode this build has no kernel for, arriving as the authority's word.
+    CharacterMovement unmodelled;
+    unmodelled.Mode = LocomotionModeId{ 9999 };
+    const ComponentTypeId type = ResolveComponentTypeId<CharacterMovement>();
+    const std::span<std::byte> bytes = prediction.AuthoritativeBytes(type);
+    std::memcpy(bytes.data(), &unmodelled, sizeof(unmodelled));
+    prediction.MarkSeen(type);
+
+    const std::vector<PawnCommandTick> script = ScriptedRun(100, 6);
+    for (const PawnCommandTick& record : script)
+        prediction.Commands().Push(record);
+
+    const PawnReplayResult result =
+        ReplayPawnState(RequestFor(machine, prediction, 99));
+
+    ASSERT_TRUE(result.Ran);
+    EXPECT_TRUE(result.Snapped);
+    EXPECT_EQ(result.TicksReplayed, 0u);
+    EXPECT_EQ(prediction.Commands().Size(), 0u);
+}
+
+// The gate is asked before there is anything to run, because a pawn under rules
+// this cannot re-run is out of step whether or not it owes ticks. Deciding
+// inside the loop would let an empty ring pass for agreement.
+TEST(PawnStateReplay, SnapsUnderRulesItCannotRunEvenWithNothingToReplay)
+{
+    Machine machine;
+    ClientPrediction prediction = PredictingPawn(machine);
+
+    CharacterMovement unmodelled;
+    unmodelled.Mode = LocomotionModeId{ 9999 };
+    const ComponentTypeId type = ResolveComponentTypeId<CharacterMovement>();
+    const std::span<std::byte> bytes = prediction.AuthoritativeBytes(type);
+    std::memcpy(bytes.data(), &unmodelled, sizeof(unmodelled));
+    prediction.MarkSeen(type);
+
+    const PawnReplayResult result =
+        ReplayPawnState(RequestFor(machine, prediction, 500));
+
+    ASSERT_TRUE(result.Ran);
+    EXPECT_TRUE(result.Snapped);
+    EXPECT_EQ(result.TicksReplayed, 0u);
 }

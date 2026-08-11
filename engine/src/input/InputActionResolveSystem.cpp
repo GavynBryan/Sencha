@@ -1,5 +1,7 @@
 #include <input/InputActionResolveSystem.h>
 
+#include <cstdlib>
+
 #include <assets/data/DataAssetCache.h>
 #include <core/logging/LoggingProvider.h>
 #include <input/InputActionState.h>
@@ -52,6 +54,31 @@ void InputActionResolveSystem::PreSimulate(PreSimulateContext& ctx)
     World& world = ctx.Entities;
     const BoundInputProfile* profile = ResolveProfile(world);
 
+    // TEMPORARY DIAGNOSTIC (jitter investigation): deterministic hands-free
+    // input through the whole real pipeline. SENCHA_SYNTH_LOOK=<counts/frame>
+    // injects constant mouse motion; SENCHA_SYNTH_FORWARD=<scancode> holds a
+    // key. Delete when done.
+    {
+        static const float synthLook = []() {
+            const char* v = std::getenv("SENCHA_SYNTH_LOOK");
+            return v != nullptr ? std::strtof(v, nullptr) : 0.0f;
+        }();
+        static const long synthForward = []() {
+            const char* v = std::getenv("SENCHA_SYNTH_FORWARD");
+            return v != nullptr ? std::strtol(v, nullptr, 10) : -1;
+        }();
+        static const float synthStick = []() {
+            const char* v = std::getenv("SENCHA_SYNTH_STICK");
+            return v != nullptr ? std::strtof(v, nullptr) : 0.0f;
+        }();
+        if (synthLook != 0.0f)
+            ctx.Input.MouseDeltaX += synthLook;
+        if (synthForward >= 0)
+            ctx.Input.SetKeyHeld(static_cast<std::uint16_t>(synthForward), true);
+        if (synthStick != 0.0f)
+            ctx.Input.SetGamepadAxis(GamepadAxis::RightX, synthStick);
+    }
+
     // Both clocks still take the frame's transitions when no profile is bound,
     // so a profile loaded mid-session does not inherit a backlog of stale
     // impulses on its first pass.
@@ -61,9 +88,17 @@ void InputActionResolveSystem::PreSimulate(PreSimulateContext& ctx)
     {
         // Anything held was held under bindings that are gone. Publishing the
         // release they owe is what stops a consumer from reading a held action
-        // for the rest of the session after a profile swap fails.
+        // for the rest of the session after a profile swap fails. The sampled
+        // shares go with them, or a consumer integrating a rate would keep
+        // turning on a stick reading that no longer has a binding behind it.
         if (InputActionState* state = world.TryGetResource<InputActionState>())
+        {
             ReleaseInputActions(Presentation, state->FrameStorage());
+            for (InputActionValue& sampled : state->FrameSampledStorage())
+                sampled = InputActionValue{};
+            for (InputActionValue& sampled : state->TickSampledStorage())
+                sampled = InputActionValue{};
+        }
         Presentation.Latch.Clear();
         Simulation.Latch.Clear();
         return;
@@ -81,7 +116,8 @@ void InputActionResolveSystem::PreSimulate(PreSimulateContext& ctx)
     contexts->ApplyPending();
     contexts->BuildActiveMask(*profile, ActiveMask);
 
-    ResolveInputActions(*profile, ActiveMask, Devices, Presentation, state->FrameStorage());
+    ResolveInputActions(*profile, ActiveMask, Devices, Presentation,
+                        state->FrameStorage(), 1, state->FrameSampledStorage());
 }
 
 void InputActionResolveSystem::FixedLogic(FixedLogicContext& ctx)
@@ -103,6 +139,8 @@ void InputActionResolveSystem::FixedLogic(FixedLogicContext& ctx)
     if (profile == nullptr)
     {
         ReleaseInputActions(Simulation, storage);
+        for (InputActionValue& sampled : state->TickSampledStorage())
+            sampled = InputActionValue{};
         return;
     }
 
@@ -111,5 +149,10 @@ void InputActionResolveSystem::FixedLogic(FixedLogicContext& ctx)
     //
     // The frame's device snapshot, not the live platform frame: simulation is
     // downstream of the pump, and every tick of one frame owes the same answer.
-    ResolveInputActions(*profile, ActiveMask, Devices, Simulation, storage);
+    //
+    // Motion is the exception, and takes the tick count for that reason: the
+    // frame latched one displacement covering the span these ticks divide
+    // between them, so each takes its share rather than the whole thing.
+    ResolveInputActions(*profile, ActiveMask, Devices, Simulation, storage,
+                        ctx.TicksLeftInFrame, state->TickSampledStorage());
 }

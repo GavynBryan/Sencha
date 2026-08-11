@@ -1,12 +1,15 @@
 # Networking: Sessions, Replication, and Zone-Scoped Authority
 
 Status: ratified design, in execution (reviewed 2026-07-10, ratified and corrected
-2026-08-07). This is roadmap Track G. The model, the module layout, the protocol
+2026-08-07; player envelope revised to 16 and replication rebuilt for it
+2026-08-09). This is roadmap Track G. The model, the module layout, the protocol
 shape, and the security posture below are decided; the phase list in Section 12 is
 the execution plan and carries per-phase status. Sessions, channels, replication,
-input, the shared clock, and prediction have landed; interest scoping, event
-replication, desync hashing, and hardening have not. Where the tree and a design
-paragraph disagree, the paragraph carries a *LANDED* note saying how.
+input, the shared clock, and prediction have landed, and replication has since
+been rebuilt around per-entity floors and a per-peer byte budget (Section 6.3,
+phase G-S); interest scoping, event replication, desync hashing, and hardening
+have not. Where the tree and a design paragraph disagree, the paragraph carries a
+*LANDED* note saying how.
 
 Read `docs/plans/engine-roadmap.md` (tracks, gates),
 `docs/plans/world-partition/00-execution-overview.md` (binding rules, D10, D14, D17,
@@ -531,7 +534,7 @@ Above the seam, `NetSession` implements exactly two channel classes over datagra
 - **Reliable-ordered** (windowed ack, resend, fragmentation for oversized payloads):
   handshake, tables, zone grants and baselines, cvar sync, disconnects.
 
-Scope honesty: this is a small, well-understood reliability layer for 2..8 peers and
+Scope honesty: this is a small, well-understood reliability layer for 2..16 peers and
 kilobyte-scale control traffic, not a general congestion-controlled stream; a
 per-peer token-bucket send budget (Section 10.6) stands in for congestion control at
 this scale. MTU is pinned conservatively (1200 bytes) with fragmentation only on the
@@ -579,9 +582,12 @@ Join flow, all messages length-prefixed and cap-checked (Section 10.2):
    - **Assets:** `AssetId` is cook-stable and rides the verified world identity; no
      table needed. Paths never cross the wire in steady state.
    - **Zones:** manifest ids, identical by the world identity gate.
-4. **Session admission.** `PeerId` assigned; replicated cvar values synced
-   (Section 9); spawn and interest bootstrap proceed through the ordinary paths
-   (Sections 7 and 8), so "late join" is not a special mode (Section 8.3).
+4. **Session admission.** `PeerId` assigned; the world the authority is serving
+   named, so a client loads it rather than having to be told by whoever launched
+   it (`NetAccept::MapName`, capped at `MaxIdentityBytes`); replicated cvar
+   values synced (Section 9); spawn and interest bootstrap proceed through the
+   ordinary paths (Sections 7 and 8), so "late join" is not a special mode
+   (Section 8.3).
 
 Auth tokens (who is allowed to join) are a seam input: the handshake carries an
 opaque token validated by a game-supplied callable (the `ZoneLoadRecipeFn`
@@ -661,39 +667,117 @@ field metadata, and eventually the binary asset-handle codec Track F item 3 fini
 Wire byte order is pinned little-endian, which is native on every current and
 plausible target; the codec asserts rather than swaps.
 
-### 6.3 Deltas, baselines, acks
+### 6.3 Deltas, floors, proof — LANDED, differently
 
-Per replication scope (each granted zone, plus the global scope), per tick, on the
-authority:
+Built, and not in the shape this section originally described. The snapshot ring
+of per-scope serialized state, and the per-client baseline selected out of it,
+were never implemented; what shipped answers a different question and is smaller.
 
-1. **Dirty narrowing.** The writer keeps the last-serialized tick per scope and
-   sweeps only chunks whose replicated columns changed since then, using the
-   existing per-chunk column counters with a caller-supplied reference frame
-   (`Query.h:107-114`). Chunk-conservative false positives cost a compare, not a
-   send. Structural changes (new chunks after archetype moves) are caught by the
-   identity map diff in the same pass.
-2. **Snapshot ring.** Serialized (quantized) state per entity is retained in a ring
-   of the last N ticks per scope (N a cvar; memory is bounded per scope, not per
-   client).
-3. **Per-client delta.** Each client's last-acked tick per scope selects the
-   baseline from the ring; the delta is (spawned, destroyed, changed) entities with
-   per-component field masks against that baseline. A client acked too far back
-   (beyond the ring) gets a fresh baseline against authored state, the same encoding
-   as a zone grant (Section 8.2); nothing special-cases "fell behind."
-4. **Budget and priority.** Each client has a per-tick byte budget (cvar). Scopes
-   drain in interest order: global scope first, then granted zones by that client's
-   hop rank (focus zone first, then neighbors), anchor-distance tie-break once the
-   zone review's Phase C lands. Within a zone, entities not sent for the longest go
-   first (send-age accumulation), so saturation degrades to lower frequency, never
-   starvation. Unsent scopes carry to the next tick.
+The original design asked *"how does this client's state differ from the
+baseline it acked?"* — which needs a copy of the world per retained tick, and a
+per-client comparison against it. What shipped asks *"what has moved since this
+client proved it was up to date?"* Those sound equivalent and are not, and the
+difference is a correctness one before it is a cost one: a value that changes and
+changes back inside one round trip differs from nothing, so a difference-based
+writer never sends it, while the client sits on the value from the middle of that
+excursion permanently. That was a live defect, reproduced against the pre-change
+build before it was fixed.
 
-Quantization is applied on the authority before both send and hash/desync purposes,
-and the predicted client applies the same quantization to its own predicted values
-before comparison (Section 7.4), so corrections fire on real divergence, not on
-representation error.
+**The authority side (`ReplicationChangeStore`).** One copy of published state for
+the whole session, not one per peer: per entity and component, the last published
+bytes already snapped to wire precision, and per *field run* the generation that
+run last moved at. Updated once per publish by a single const walk of the
+replicated world. Deciding what changed is a question about the world's own
+history and has one answer, so it costs the same at one peer as at sixteen. A
+field that jitters below its own wire resolution is not a change and costs
+nothing.
 
-Snapshot cadence is a cvar (`net.snapshot_interval_ticks`, default 2: 30 Hz state on
-a 60 Hz sim); inputs and acks ride every tick.
+**The peer side (`ReplicationPeerState`).** No component bytes at all. Per entity
+a *floor* — the newest generation that peer has **proved** it holds — and the
+snapshot sequence it was last written into. Plus a small ring of unconfirmed
+snapshots and a set of destroys owed.
+
+A field run travels iff `ChangedAt > floor`. First contact has floor zero, so
+everything is owed and the first send is full state; nothing special-cases a
+join.
+
+**Proof, not transmission.** Floors advance only when an acknowledgement names
+the specific snapshot that carried the state. A snapshot that was written is not
+a snapshot that arrived, and a floor advanced on writing describes a peer as up
+to date with history it never saw — every later difference is measured from that
+fiction. `NetSnapshotAck` carries a newest sequence plus a 32-bit window of which
+of the preceding ones were applied, so a gap in delivery is expressible rather
+than papered over by a high-water mark. Sequence rather than tick: a frame can
+publish twice at one tick, and two datagrams sharing a name cannot be told apart
+by an acknowledgement.
+
+**Ownership epoch.** Owner-gated visibility is per peer while change generations
+are global, so a transfer makes gated runs newly visible to one peer and newly
+hidden from another without any of them changing value. A per-entity
+`OwnerChangedAt` covers it: a gated run travels if ownership moved after the
+peer's floor, whatever the run's own history says.
+
+**Omission means unchanged.** An entity nothing has to say about does not appear
+in the snapshot at all. It used to cost about ten bytes of envelope to say
+nothing, per entity per peer per snapshot, which is what a still world spent its
+bandwidth on. A still world now costs the 23-byte header and nothing else,
+however many entities stand in it.
+
+Destroys stay explicit and are owed until confirmed. A destroy said once and lost
+leaves a client holding an entity the authority has no further reason to mention.
+
+**Budget and fill.** Each snapshot is written into a byte budget
+(`net.snapshot_bytes`, defaulting to one datagram). The writer measures each
+entity before committing any of it — a bit writer cannot be rewound, and half an
+entity is not a smaller snapshot but a corrupt one — and takes what fits, in this
+order:
+
+1. the entities the peer being written for owns;
+2. destroys, oldest first, capped per snapshot and with room reserved for (1)
+   ahead of them;
+3. everything else, longest-since-that-peer-last-heard-about-it first, identity
+   breaking ties.
+
+What does not fit is deferred whole. Deferral is sound for free: nothing about a
+deferred entity is recorded as sent, so it stays owed and holds its place at the
+front of the next snapshot. This is what makes a world larger than a datagram
+work at all — an authority that abandoned snapshots it could not fit never sent a
+joining peer anything, and a peer that receives nothing is never owed any less.
+Past about nineteen entities a joining peer starved permanently.
+
+The peer's own entities go first because everything else it receives is mirrored
+and presented a fixed distance in the past, so a late sample is smoothed over;
+its own entity is what its prediction argues with, and a late one means it keeps
+predicting uncorrected until the correction is large enough to see as a jump.
+
+**Quantization** is applied on the authority before state is stored, hashed, or
+sent, so what it believes a peer holds is exactly what the peer got. It is
+declared by a replication-only schema (`net/ReplicationSchemas.h`) consulted when
+the runtime flattener recurses into a composite — the precision a link carries a
+value at is a fact about the link, not about the type, so it is stated by the
+layer doing the sending. The scene format, the inspector, and the physics step
+keep reading the same members at full width. A component that declares its own
+range on a member wins over the wire default, because it knows something about
+that member the general description of the type cannot.
+
+Cadence is `net.snapshot_interval` (default 2: 30 Hz snapshots on a 60 Hz sim),
+paced by difference rather than remainder — a host running below its tick rate
+advances the tick index by several per frame and would never land on a stride.
+
+**Measured**, against the real 1173-byte datagram:
+
+| | before | after |
+|---|---|---|
+| full state per entity | ~50 B | 24 B |
+| entities seeded per datagram | 22 | 47 |
+| a moving entity | ~22 B | 12.5 B |
+| a still world | 10 B/entity/peer/snapshot | 23 B total |
+| joining peer past ~19 entities | never seeded | ceil(n/47) publishes |
+
+At the 16-peer envelope with 96 entities all moving every tick and no peer
+acknowledging anything (so every entity rides as full state — see the open
+question below), the authority spends 543 KiB/s outbound in total, 34 KiB/s per
+peer, with the worst-waiting entity two snapshots behind.
 
 ### 6.4 Events map onto the existing event taxonomy
 
@@ -895,17 +979,73 @@ The reasons, because "we simplified it" is not one:
   now go through the same reset, so `net.prediction 0` is reset-only input delay
   rather than a second, separately broken path.
 
-The mechanism, as built. `net/PawnStateReplay.h` owns the whole operation and runs
-on the main thread at `PumpNet`, structurally silent. The applier does not write
+The mechanism, as built. `prediction/PawnStateReplay.h` owns the whole operation and
+runs on the main thread at `PumpNet`, structurally silent. The applier does not write
 the pawn's owned components into the world -- it intercepts them into
-`ClientPrediction`'s shadow (`LocalTransform`, `KinematicState`, `SupportState`,
-`CharacterMovement`, `JumpState`), so the world keeps the client's own predicted
-values and the authority's last word stays available to reset from. Replay then
+`ClientPrediction`'s shadow, so the world keeps the client's own predicted values
+and the authority's last word stays available to reset from. Replay then
 restores the shadow through `SetComponentBytes` plus
 `CharacterMoverPool::RestorePosition` (Phase 1 added per-entity `Step`/`RestorePosition`
 beside `Drive`, sharing one sweep body so replay and the live tick cannot diverge by
 construction), drops the ring through the acked tick, and steps what remains through
-`StepFreeLocomotion` → `StepJump` → `ComposeMotion` → `Movers->Step`.
+`movement/CharacterTickStep.h`.
+
+It is a layer above `net/`, not inside it, and that placement is the whole argument.
+Everything reconciliation *writes* is simulation state -- components, the mover's
+backend pose, presentation history -- and everything it needs from netcode it *reads*
+as data: the authority's last word, which ticks have been answered, which are still
+owed. Driven from inside `net/`, the transport layer ends up calling movement and
+physics, which is the dependency arrow backwards; the identical code one layer up
+calls both by name and owes nothing back. So `net/` keeps the wire, the codec, the
+clocks, the shadow, and the ring, and knows nothing about walking. The host side
+already worked this way -- `PeerCommandRuntime::Feed` writes input and the schedule
+simulates -- so this removes an asymmetry rather than inventing a rule.
+
+An earlier revision instead injected the tick into `net/` as a four-callback table.
+It satisfied the same constraint by indirection, and is recorded here because the
+lesson generalizes: a callback table handed down to a layer that must not know its
+callee is usually a sign the code is in the wrong layer, not that it needs a seam.
+Moving it up deleted the seam and its wiring outright.
+
+Which components get intercepted is a fact of the schema, not a list netcode keeps:
+a component declares `Predicted = true` beside `Replicated = true`, `ReplicationLayout`
+carries it on `ReplicatedComponent`, and `ClientPrediction::Bind` compiles the shadow
+from the sealed table at startup -- so `net` names no component type, and a game whose
+characters carry state of their own extends what a replay resumes from by declaring it
+on that state. The engine's set is `LocalTransform`, `KinematicState`, `SupportState`,
+`CharacterMovement`, and `JumpState`. The flag is deliberately outside `TableHash`:
+the hash exists so two builds know they agree on how to read each other's snapshots,
+and prediction changes only where the receiver lands the decoded bytes -- never the
+encoding -- so folding it in would refuse a handshake between builds that understand
+each other perfectly.
+
+What one re-run tick *does* belongs to movement (`StepCharacterTick`, composing
+`StepFreeLocomotion` → `StepJump` → `ComposeMotion` → `Movers->Step`, with the same
+mailbox-rebuild rule the live tick has). `PawnStateReplay` decides which ticks to run
+and what to do when they cannot be. A second implementation of the tick itself would
+reintroduce, as a difference between two codebases, exactly the divergence replaying
+exists to remove.
+
+Two definitions of a character tick do exist, and the split is deliberate rather than
+tolerated. The scheduled path is stage-major over chunks -- every entity through
+locomotion, then jump, then composition -- because that is the shape that keeps the
+bulk tick data-oriented; the replay path is entity-major because it advances one pawn
+several times before the next frame. The *kernels* are single-sourced, so what the two
+compositions can disagree about is ordering, and `PawnStateReplay.ReachesExactlyWhereTheLiveTicksReached`
+holds them to bit equality across 64 ticks of wall collisions and jumps. The replay
+tick is also a declared *subset*: mode transitions, tuning resolution, and ability
+contributions do not re-run, which is why mode and tuning are restored from the
+authority and held constant, and why jump had to become part of movement rather than
+an ability. Where prediction later covers abilities or weapons, the growth belongs in
+that composition and in the rollback contract below -- not in a `net/`-side pile of
+`Step*Tick` calls, and not in a second scheduler.
+
+Gravity and the up axis are read off the scheduled `FreeLocomotionSystem` at the call
+site rather than restated, so a replayed tick cannot integrate under different physics
+than the tick it corrects. Before this they existed as three unowned copies
+(`FreeLocomotionSystem`, `CharacterControllerSystem`, and the replay request's own
+defaults, which nothing ever set); giving gravity a single owner is still open, and
+these getters are the interim.
 
 Two things had to move to make the state closed under replay. Jump left the ability
 framework and became `StepJump` plus a `JumpState` component inside the movement
@@ -919,7 +1059,18 @@ Snap fallback, rather than pretending: a locomotion mode replay does not model, 
 an ack older than the ring's oldest surviving record (a stall past one second),
 resets position directly and clears the ring. Both are observable -- mode
 replicates, and the stats panel counts snaps -- so a fallback that starts firing is
-a diagnosis rather than a mystery.
+a diagnosis rather than a mystery. The mode question (`CharacterTickModeSupported`)
+is asked before the replay loop, not inside it: a pawn under rules this build cannot
+re-run is out of step whether or not it currently owes any ticks, and deciding inside
+the loop would let an empty ring pass for agreement.
+
+Deferred, with its trigger: the usercmd's contents are engine-shaped today --
+`PawnCommandCapture` samples `LookOrientation` and `MovementIntent` directly. A
+game-owned fill/apply seam (a module deciding what a command carries, the role
+Source's client-dll `CreateMove` plays) is a real boundary but is not earned by
+anything shipping. The trigger is a second game whose aim model does not fit
+`LookOrientation` -- a third-person camera-rig-driven one -- at which point the
+command becomes a payload the game writes and reads rather than a fixed struct.
 
 Two defects this uncovered that were not prediction's at all, recorded because both
 were invisible to every unit test:
@@ -1299,6 +1450,28 @@ build the folding once. It exists to catch replication defects and
 nondeterminism regressions in development and soak, not to police cheaters
 (Section 10.3 already did).
 
+Two amendments now that §6.3 has landed, without which this reports disagreement
+that is not disagreement:
+
+- **Compare at a floor, not at a tick.** A client no longer holds every entity as
+  of the newest snapshot: entities are omitted when unchanged and deferred when
+  the budget is full, so at any moment a client's view is a mix of generations
+  that is correct and legitimately not uniform. A hash folded over "the world at
+  tick T" on the authority cannot match it. The comparison has to be per entity
+  against that peer's floor for that entity — which the authority already knows,
+  and which the client can name because it knows the newest sequence it applied
+  that carried each one. Anything coarser will fire constantly under budget
+  pressure and be turned off, which is worse than not having it.
+- **Exclude owner-gated fields.** Owner-only fields are never sent to non-owners
+  and owner-local fields are never sent to owners, so both sides are correct to
+  disagree about them. Fold only what the peer being compared against was
+  actually eligible to receive: `ReplicationVisibleFields` already answers this
+  per component per peer, so the fold takes the same mask the writer did.
+
+Quantization is already accounted for: state is snapped to wire precision before
+it is stored, hashed, or sent, so a hash is over the values a peer received
+rather than over the authority's fuller ones.
+
 ### 10.8 Shipping posture
 
 Shipping builds keep: the decode boundary, budgets, crypto, interest scoping (all
@@ -1569,6 +1742,49 @@ what extraction actually reads.
   datagram landed, which is the same jitter seen by every player watching rather
   than by the one with the bad connection.
 
+- **G-S. Replication scaling. LANDED 2026-08-09, branch `replication-scaling`.**
+  Not a planned phase: the sixteen-peer envelope (Open question 1) needed the
+  per-peer bill to stop scaling with the world, and measuring the existing writer
+  to find out how far it was from that turned up three live defects rather than a
+  budget shortfall.
+
+  *What it replaced.* §6.3 has the design; the short version is that the writer
+  asked "does this differ from what the peer holds" when the question it needed
+  answered was "has this moved since the peer proved it was up to date". The
+  three defects, each reproduced against the pre-change build before it was
+  fixed:
+
+  - A value that changed and changed back inside one round trip was never sent,
+    leaving the client permanently holding the value from the middle of the
+    excursion.
+  - A snapshot too large for one datagram produced nothing at all, and a peer
+    with no proven state is owed every entity at once — so past about nineteen
+    entities a joining peer starved permanently. This was the deadlock the
+    capacity measurement was really finding.
+  - A destroy was sent once and forgotten. Losing that datagram left a client
+    holding an entity the authority had no further reason to mention, forever.
+
+  Two more found while building: reconciliation was gated on the pawn appearing
+  in a snapshot, so once entities could be omitted a client predicting movement
+  the authority never performed would never be corrected — the previous epic's
+  incident, reopened by an optimization; and a mass destroy could take a whole
+  datagram and cost a player the correction their prediction was waiting on.
+
+  *What shipped.* Cadence decoupled from the tick rate (30 Hz default);
+  proof-shaped acknowledgements in sequence space; the change store and per-entity
+  floors; omit-unchanged; partial fill with a per-peer byte budget and a priority
+  order; the peer's own entities served first; quantized transforms behind a
+  replication-only schema; a narrowed envelope. Protocol version 3.
+
+  *Verified.* 2661 tests green, with a negative control for every behavioural
+  claim — each reverting one decision and failing the test that names it. A
+  sixteen-peer soak under loss (`ReplicationSoakTests.cpp`) converges and seeds a
+  late joiner into a saturated session. The prediction convergence suite passes
+  unmodified under quantized position, which was the stated gate for keeping it.
+
+  *Not covered.* Open questions 6 and 7 above came out of this work and are
+  deliberately unfixed. Interest scoping is still not the arena lever (§8).
+
 - **G6. Hardening.** Crypto and auth token seam (owner decision executed); rate
   budgets and strike enforcement; malformed-traffic soak in both directions
   (hostile client against an authority, hostile authority against a live client,
@@ -1605,7 +1821,8 @@ system's semantics until composition wires them in.
 - **Client authority over any gameplay state.** Inputs and requests only. No
   trigger; this is a security invariant, not a feature gap.
 - **MMO-scale anything** (sharding, seamless server handoff, hundreds of peers).
-  The envelope is small-group co-op: 8 peers validated, 4 tuned.
+  The envelope is co-op and small-arena: 16 peers validated and measured, 4 the
+  default a host admits.
 - **Cross-version and cross-build sessions.** Protocol version plus fingerprints
   gate hard (Section 5). Content versioning across saves is Track F item 6's
   domain, not the wire's.
@@ -1638,8 +1855,30 @@ owed before the phase that depends on them.
 
 ### Answered
 
-- **Player envelope (was 1).** Design-validate at 8 peers, tune defaults for 4. G1
-  pins cap tables at 8; `net.max_peers` defaults to 4.
+- **Player envelope (was 1). Revised 2026-08-09: 16, measured.** Loss Function
+  plans Deathmatch and CTF alongside Co-Op, which an eight-peer envelope does not
+  cover. `kNetMaxPeersSupported` is 16 and `net.max_peers` still defaults to 4 —
+  four is the co-op shape, sixteen is what a host may be told to admit.
+
+  The number moved because what made eight the ceiling was removed rather than
+  raised. A snapshot used to carry every entity to every peer at full width and
+  once per tick, so the authority's outbound bill was the product of all three,
+  and per-peer state was a copy of the world. §6.3 replaced that: change
+  tracking answers "what moved" once for the whole session instead of once per
+  peer, a per-peer byte budget defers rather than fails, and a transform travels
+  quantized. A still world costs a header; a busy one costs a datagram per peer
+  per snapshot, whatever the peer count.
+
+  Validated by a sixteen-peer soak (`ReplicationSoakTests.cpp`): real sessions
+  over a link losing 8% and reordering 4%, 96 entities all moving, a minute of
+  simulation, every peer holding the whole world at the end, and a peer joining
+  a session already saturated seeded in full. 543 KiB/s outbound total, 34 KiB/s
+  per peer, worst-waiting entity two snapshots behind.
+
+  Sixteen because that is what is measured, not because something breaks at
+  seventeen. Zone/interest scoping is still not the lever for arena modes — an
+  arena is one space where everyone is near everyone — and remains future work
+  for streamed worlds (§8).
 - **Transport ownership (was implicit in Section 4.3).** Sencha owns the reliability
   layer: two channel classes over UDP behind `INetTransport`, with Udp, Loopback, and
   Simulated implementations. Not ENet, not GameNetworkingSockets. The domain at this
@@ -1657,6 +1896,43 @@ owed before the phase that depends on them.
   ships in every build. See Sections 9 and 10.8 — this inverts the review's stated
   reasoning about what cheat gating is for.
 
+- **Which world a client loads (was open question 5, opened and closed
+  2026-08-09). LANDED.** Found live: a client launched with `+connect` alone
+  joined, replicated and predicted -- into an empty world, because the handshake
+  carried a WorldIdentity *hash* (zero today) and never the map name. What the
+  player felt as collision was the authority's geometry arriving through
+  reset-and-replay: imperceptible at loopback RTT, rubber-banding on a real
+  link.
+
+  `NetAccept` now carries `MapName` under the pre-existing `MaxIdentityBytes`
+  cap (96 bytes), which raises the protocol to **4**. The name and not the hash:
+  WorldIdentity answers "are we running the same thing", which is a different
+  question from "what should I load", and neither substitutes for the other. The
+  host's frame pushes `ConsoleService::CurrentMap()` into the session before each
+  pump, so a peer admitted during that pump is told what is loaded as of then;
+  the client runs `map` through its own console at the admitted transition, so a
+  map a session brought in is recorded exactly like one typed at the console.
+
+  Three outcomes, all pinned by tests: no map loaded here ⇒ load the announced
+  one; the same map already loaded ⇒ do nothing; a *different* map loaded ⇒ log
+  an error and change nothing, because whether a content disagreement should end
+  a session is the strictness question below and is decided at the handshake or
+  not at all.
+
+  Recorded gap: an authority that had nothing loaded when a peer joined never
+  tells it later, so a map loaded after admission does not reach an
+  already-admitted client. That is the back half of §8.3's late-join path
+  (travel), and it is pinned by a test so that changing it is a decision rather
+  than an accident.
+
+- **Snapshot cadence (was 3).** 60 Hz simulation, 30 Hz snapshots
+  (`net.snapshot_interval` default 2), paced by difference rather than
+  remainder. Halving the rate halves the authority's per-peer bill, and the
+  interpolation buffer already presents between samples rather than stepping on
+  arrival, so the cost is presentation age rather than smoothness. Interpolation
+  derives its delay from the interval, so a cadence change does not silently
+  make mirrored motion stutter.
+
 ### Still open
 
 1. **Track G's version placement.** G0 is engine hygiene worth doing regardless;
@@ -1668,10 +1944,10 @@ owed before the phase that depends on them.
    LAN/couch co-op; internet co-op wants G4's prediction. Which is the default
    posture for the two internal targets, and does either need lag compensation
    (currently deferred with a trigger)?
-3. **Tick and snapshot rates.** 60 Hz sim with 30 Hz snapshots is the working
-   default. If the 3rd-person target wants 30 Hz sim on modest hardware, the
-   handshake-pinned tick-rate class makes that a per-project config, but the
-   prediction window math should be validated at both rates before G4 hardens.
+3. **Tick rate for the 3rd-person target.** The snapshot cadence is settled (see
+   Answered), but if that target wants a 30 Hz simulation on modest hardware the
+   prediction window math should be validated at that rate before G4 hardens.
+   The handshake-pinned tick-rate class already makes it a per-project config.
 4. **The initial `Replicated` cvar sweep.** Section 9's corrected list is
    `time.timescale` and `time.fixed_tick_rate` (pinned); the `movement.*` cvars it
    originally named no longer exist. Ratify that, and decide whether `net.cheats`
@@ -1682,7 +1958,34 @@ owed before the phase that depends on them.
    recommended: it is the only defensible line while cooked scenes are JSON and
    mods are not a feature) versus a looser manifest-only match to ease dev
    iteration, with the strict mode as the shipping default.
-6. **Server build identity grade (Section 10.4).** Mutual identity verification
+6. **An acknowledgement cannot travel without input.** `PeerCommandRuntime::
+   SendLocal` sends nothing when the command ring is empty, and
+   `NetEncodePlayerCommand` refuses a message with zero records, so a client with
+   no input to send cannot confirm the snapshots it has applied. Proof of
+   delivery and player input are unrelated things and this couples them.
+
+   Consequence, measured: a client that has not yet adopted a pawn — which is
+   exactly the join window — never advances a floor, so every entity rides as
+   full state at roughly twice a delta's cost, during the one window where it has
+   the least bandwidth to spare. A spectator never converges cheaply at all. It
+   stays correct throughout; full state is always correct.
+
+   The fix is a command message that can carry an acknowledgement and no records,
+   which is a change to the command wire format and therefore a protocol bump.
+   Deliberately not taken inside the replication-scaling work. The sixteen-peer
+   soak runs entirely on this path, which is why its numbers are a lower bound.
+
+7. **Interpolation across a long gap.** Bracketing two samples far apart draws an
+   entity sliding between them. A rule that snaps instead of blending past some
+   gap width was considered and rejected on measurement: a real teleport is a
+   *large distance in a small time*, which no time-based threshold can see, while
+   every gap a time-based rule does catch is heavy loss or budget deferral, where
+   blending is both the better result and the documented purpose of the buffer.
+   A useful version needs a distance-per-time bound, which means telling a
+   presentation class what speeds the simulation can produce. Open, and not
+   urgent.
+
+8. **Server build identity grade (Section 10.4).** Mutual identity verification
    ships in G1 regardless. Decide whether the build-signature grade is wanted: it is
    meaningful if dedicated server binaries stay first-party and near-worthless once
    they are publicly distributed, which now couples to the answered decision that

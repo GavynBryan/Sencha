@@ -2,14 +2,18 @@
 
 #include <controller/LookOrientation.h>
 #include <math/MathSchemas.h>
+#include <movement/JumpState.h>
+#include <movement/MovementComponents.h>
 #include <net/ReplicationLayout.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/transform/TransformComponents.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <tuple>
+#include <vector>
 
 namespace
 {
@@ -51,6 +55,13 @@ namespace
     struct Hooked
     {
         int Value = 0;
+    };
+
+    // The owner keeps simulating this one between snapshots, which is a fact
+    // its schema states and the layout carries.
+    struct Resumed
+    {
+        float Value = 0.0f;
     };
 }
 
@@ -120,6 +131,18 @@ struct TypeSchema<Hooked>
     static auto Fields()
     {
         return std::tuple{ MakeField("value", &Hooked::Value) };
+    }
+};
+
+template <>
+struct TypeSchema<Resumed>
+{
+    static constexpr std::string_view Name = "test.Resumed";
+    static constexpr bool Replicated = true;
+    static constexpr bool Predicted = true;
+    static auto Fields()
+    {
+        return std::tuple{ MakeField("value", &Resumed::Value).OwnerOnly() };
     }
 };
 
@@ -244,15 +267,11 @@ TEST(ReplicationLayout, WireKeysArePositionalAndRoundTrip)
     ASSERT_TRUE(layout.Add<LookOrientation>());
     layout.Seal();
 
-    const auto transform = layout.IndexOf(ResolveComponentTypeId<LocalTransform>());
-    const auto look = layout.IndexOf(ResolveComponentTypeId<LookOrientation>());
-    ASSERT_TRUE(transform.has_value());
-    ASSERT_TRUE(look.has_value());
-    EXPECT_EQ(*transform, 0);
-    EXPECT_EQ(*look, 1);
-
-    ASSERT_NE(layout.At(*look), nullptr);
-    EXPECT_EQ(layout.At(*look)->Type, ResolveComponentTypeId<LookOrientation>());
+    // A component's wire key is its position in registration order.
+    ASSERT_NE(layout.At(0), nullptr);
+    ASSERT_NE(layout.At(1), nullptr);
+    EXPECT_EQ(layout.At(0)->Type, ResolveComponentTypeId<LocalTransform>());
+    EXPECT_EQ(layout.At(1)->Type, ResolveComponentTypeId<LookOrientation>());
     EXPECT_EQ(layout.At(200), nullptr) << "an out-of-range key must not resolve";
 }
 
@@ -264,6 +283,25 @@ TEST(ReplicationLayout, AddingTheSameComponentTwiceIsIdempotent)
     EXPECT_EQ(layout.Size(), 1u);
     EXPECT_EQ(layout.Error(), ReplicationLayoutError::None)
         << "a duplicate is a no-op, not a broken table";
+}
+
+// Which components a client resumes simulating for itself is a fact of the
+// schema, carried by the same table as everything else about them, so nothing
+// downstream has to keep its own list of them.
+TEST(ReplicationLayout, PredictionIsAFactTheSchemaStates)
+{
+    ReplicationLayout layout;
+    ASSERT_TRUE(layout.Add<Resumed>());
+    ASSERT_TRUE(layout.Add<Sampled>());
+
+    const ReplicatedComponent* resumed = layout.Find(ResolveComponentTypeId<Resumed>());
+    ASSERT_NE(resumed, nullptr);
+    EXPECT_TRUE(resumed->Predicted);
+
+    const ReplicatedComponent* sampled = layout.Find(ResolveComponentTypeId<Sampled>());
+    ASSERT_NE(sampled, nullptr);
+    EXPECT_FALSE(sampled->Predicted)
+        << "a schema that says nothing about prediction is not predicted";
 }
 
 //=============================================================================
@@ -361,6 +399,57 @@ TEST(EngineReplicationLayout, LookOrientationSendsAimAndNotItsLimits)
     const ReplicatedField* yaw = FindField(*look, "yaw");
     ASSERT_NE(yaw, nullptr);
     EXPECT_FALSE(yaw->Quantization.IsQuantized());
+}
+
+// The set a client resumes simulating for its own character: where it is, how
+// fast, what it is standing on, which rules it moves under, and whether it may
+// jump. Resuming from a subset of these puts the character in the right place
+// still carrying the wrong everything else, so the membership is pinned here --
+// this is the whole set, stated once, where dropping a flag is caught.
+TEST(EngineReplicationLayout, PredictedComponentsAreTheOnesAReplayResumesFrom)
+{
+    ReplicationLayout layout;
+    ComponentRegistrar components(nullptr, nullptr, &layout);
+    RegisterEngineComponents(components);
+
+    std::vector<ComponentTypeId> predicted;
+    for (const ReplicatedComponent& component : layout.Components())
+    {
+        if (component.Predicted)
+            predicted.push_back(component.Type);
+    }
+
+    const std::vector<ComponentTypeId> expected{
+        ResolveComponentTypeId<LocalTransform>(),
+        ResolveComponentTypeId<KinematicState>(),
+        ResolveComponentTypeId<SupportState>(),
+        ResolveComponentTypeId<CharacterMovement>(),
+        ResolveComponentTypeId<JumpState>(),
+    };
+
+    EXPECT_EQ(predicted.size(), expected.size());
+    for (const ComponentTypeId type : expected)
+    {
+        EXPECT_NE(std::find(predicted.begin(), predicted.end(), type), predicted.end())
+            << "a component a replay resumes from is missing from the predicted set";
+    }
+}
+
+// Prediction resumes from what the authority said, which only arrives if the
+// component travels. The registrar refuses the pairing at compile time; this
+// checks the engine's own components honour it.
+TEST(EngineReplicationLayout, EveryPredictedComponentAlsoReplicates)
+{
+    ReplicationLayout layout;
+    ComponentRegistrar components(nullptr, nullptr, &layout);
+    RegisterEngineComponents(components);
+
+    for (const ReplicatedComponent& component : layout.Components())
+    {
+        if (!component.Predicted)
+            continue;
+        EXPECT_FALSE(component.Fields.empty()) << component.Name;
+    }
 }
 
 // Every replicated field has to address bytes that exist, or the codec would

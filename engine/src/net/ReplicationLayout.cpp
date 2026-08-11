@@ -83,6 +83,7 @@ void ReplicationLayout::Fail(ReplicationLayoutError error, std::string detail)
 bool ReplicationLayout::AddErased(ComponentTypeId type,
                                   std::string_view name,
                                   std::size_t size,
+                                  bool predicted,
                                   const std::vector<RuntimeField>& fields)
 {
     assert(!Sealed_ && "Cannot add components after ReplicationLayout::Seal");
@@ -97,6 +98,7 @@ bool ReplicationLayout::AddErased(ComponentTypeId type,
     component.Type = type;
     component.Name = name;
     component.Size = size;
+    component.Predicted = predicted;
 
     for (const RuntimeField& field : fields)
     {
@@ -171,16 +173,6 @@ const ReplicatedComponent* ReplicationLayout::Find(ComponentTypeId type) const
 const ReplicatedComponent* ReplicationLayout::At(std::uint8_t index) const
 {
     return index < Components_.size() ? &Components_[index] : nullptr;
-}
-
-std::optional<std::uint8_t> ReplicationLayout::IndexOf(ComponentTypeId type) const
-{
-    for (std::size_t i = 0; i < Components_.size(); ++i)
-    {
-        if (Components_[i].Type == type)
-            return static_cast<std::uint8_t>(i);
-    }
-    return std::nullopt;
 }
 
 std::uint64_t ReplicationLayout::TableHash() const

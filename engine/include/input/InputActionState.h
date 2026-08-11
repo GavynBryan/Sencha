@@ -85,6 +85,20 @@ public:
     [[nodiscard]] InputActionView Tick() const;
     [[nodiscard]] std::uint64_t CurrentTick() const { return NewestTick; }
 
+    // The sampled share of each action's value for the most recent pass on
+    // each clock: what came from controls that report a held position (sticks,
+    // triggers) rather than an accumulated displacement (pointer, wheel).
+    //
+    // The main value keeps both mixed, which every existing consumer expects.
+    // A consumer that integrates over time needs them apart: a sample is a
+    // rate to multiply by the time the pass covers, while a displacement is
+    // already an amount. Kept for the current pass only -- no history, because
+    // nothing replays a rate: the tick that integrated it records the result.
+    [[nodiscard]] std::span<InputActionValue> FrameSampledStorage();
+    [[nodiscard]] InputActionView FrameSampled() const;
+    [[nodiscard]] std::span<InputActionValue> TickSampledStorage();
+    [[nodiscard]] InputActionView TickSampled() const;
+
     // Recent tick records, newest first, for a command builder. Older than
     // kHistoryCapacity ticks is gone.
     [[nodiscard]] std::size_t HistoryCount() const { return Recorded; }
@@ -100,6 +114,8 @@ public:
 private:
     std::size_t Actions = 0;
     std::vector<InputActionValue> FrameValues;
+    std::vector<InputActionValue> FrameSampledValues;
+    std::vector<InputActionValue> TickSampledValues;
     // kHistoryCapacity records laid end to end. Sized once in Configure so the
     // spans handed out stay valid.
     std::vector<InputActionValue> RingValues;

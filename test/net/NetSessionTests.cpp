@@ -590,3 +590,76 @@ TEST(NetSession, ClientIgnoresTrafficFromAnyoneButTheAuthority)
     EXPECT_TRUE(pair.ClientSession.IsConnected())
         << "a stranger must not be able to disconnect a client";
 }
+
+//=============================================================================
+// What world this session is about
+//
+// A client that is never told what to load joins, replicates, and predicts into
+// an empty world -- correct in every respect except that nothing is there. The
+// admission is where it gets told, because that is the one message a client is
+// guaranteed to receive before it holds any state.
+//=============================================================================
+
+TEST(NetSession, AnAdmissionCarriesTheWorldTheAuthorityIsServing)
+{
+    Pair pair;
+    ASSERT_TRUE(pair.StartHost());
+    pair.HostSession.SetAnnouncedMap("levels/village_square.level");
+    ASSERT_TRUE(pair.StartClient());
+    pair.Step(6);
+
+    ASSERT_TRUE(pair.ClientSession.IsConnected());
+    EXPECT_EQ(pair.ClientSession.AnnouncedMap(), "levels/village_square.level");
+}
+
+// A host that has bound a port but not loaded anything has nothing to announce,
+// and saying so is not a failure -- it is every host between starting up and
+// choosing a map.
+TEST(NetSession, AnAuthorityWithNoWorldAnnouncesNothing)
+{
+    Pair pair;
+    ASSERT_TRUE(pair.StartHost());
+    ASSERT_TRUE(pair.StartClient());
+    pair.Step(6);
+
+    ASSERT_TRUE(pair.ClientSession.IsConnected());
+    EXPECT_TRUE(pair.ClientSession.AnnouncedMap().empty());
+}
+
+// The wire cap is enforced where a caller can still see what it lost. Enforcing
+// it in the encoder instead would make an over-long name refuse the whole
+// admission, which turns a content-naming mistake into a session that cannot be
+// joined at all.
+TEST(NetSession, AnOverlongWorldNameIsTruncatedRatherThanRefused)
+{
+    Pair pair;
+    ASSERT_TRUE(pair.StartHost());
+    const std::string overlong(NetDefaultCaps().MaxIdentityBytes + 64, 'm');
+    pair.HostSession.SetAnnouncedMap(overlong);
+    EXPECT_EQ(pair.HostSession.AnnouncedMap().size(),
+              NetDefaultCaps().MaxIdentityBytes);
+
+    ASSERT_TRUE(pair.StartClient());
+    pair.Step(6);
+
+    ASSERT_TRUE(pair.ClientSession.IsConnected())
+        << "a name too long to carry stopped a peer being admitted at all";
+    EXPECT_EQ(pair.ClientSession.AnnouncedMap(),
+              overlong.substr(0, NetDefaultCaps().MaxIdentityBytes));
+}
+
+// A map loaded after the host started listening still reaches whoever joins
+// next: the accept is built when it is sent, not when the session began.
+TEST(NetSession, AWorldLoadedAfterHostingReachesTheNextPeer)
+{
+    Pair pair;
+    ASSERT_TRUE(pair.StartHost());
+    pair.Step(2);
+    pair.HostSession.SetAnnouncedMap("levels/late.level");
+
+    ASSERT_TRUE(pair.StartClient());
+    pair.Step(6);
+
+    ASSERT_TRUE(pair.ClientSession.IsConnected());
+    EXPECT_EQ(pair.ClientSession.AnnouncedMap(), "levels/late.level");
+}

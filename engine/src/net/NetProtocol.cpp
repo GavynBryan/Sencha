@@ -273,6 +273,7 @@ std::span<const std::byte> NetEncodeAccept(const NetAccept& message, std::span<s
         w.WriteU64(message.WorldIdentity);
         w.WriteU32(message.FixedTickRateMilliHz);
         w.WriteU64(message.AuthorityTick);
+        w.WriteString(message.MapName, NetDefaultCaps().MaxIdentityBytes);
     });
 }
 
@@ -391,7 +392,8 @@ NetDecodeError NetDecodeCookieEcho(std::span<const std::byte> payload,
     return Finish(reader);
 }
 
-NetDecodeError NetDecodeAccept(std::span<const std::byte> payload, NetAccept& out)
+NetDecodeError NetDecodeAccept(std::span<const std::byte> payload, NetAccept& out,
+                               const NetCaps& caps)
 {
     NetReader reader(payload);
     if (!TakeType(reader, NetMessageType::Accept))
@@ -401,7 +403,9 @@ NetDecodeError NetDecodeAccept(std::span<const std::byte> payload, NetAccept& ou
         || !reader.ReadU64(out.ReplicationTableHash)
         || !reader.ReadU64(out.WorldIdentity)
         || !reader.ReadU32(out.FixedTickRateMilliHz)
-        || !reader.ReadU64(out.AuthorityTick))
+        || !reader.ReadU64(out.AuthorityTick)
+        // Empty is legal: an authority with no map loaded has nothing to name.
+        || !reader.ReadString(out.MapName, caps.MaxIdentityBytes))
     {
         return reader.Error();
     }

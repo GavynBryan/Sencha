@@ -35,7 +35,7 @@
 // Bumped on any wire change. There are no cross-version sessions: the handshake
 // refuses a mismatch with a reason rather than trying to negotiate, which is
 // the only honest posture while the format is still moving.
-inline constexpr std::uint16_t kNetProtocolVersion = 1;
+inline constexpr std::uint16_t kNetProtocolVersion = 4;
 
 // Every message begins with this so a decoder can dispatch before it trusts
 // anything else. Values are explicit because they are wire format: reordering
@@ -76,6 +76,11 @@ enum class NetPayloadKind : std::uint8_t
     // supersede a lost update.
     CVar = 3,
 };
+
+// What the kind byte costs a payload. Every encoder writes it first and every
+// consumer strips it, so the offset is stated once rather than re-derived as a
+// literal beside each of them.
+inline constexpr std::size_t kNetPayloadKindBytes = 1;
 
 // What a decode can go wrong as. A peer's strike count keys on these, so they
 // distinguish "malformed" from "not for me" -- the first is hostile, the second
@@ -168,6 +173,15 @@ struct NetAccept
     std::uint64_t WorldIdentity = 0;
     std::uint32_t FixedTickRateMilliHz = 0;
     std::uint64_t AuthorityTick = 0;
+    // The world this session is running, so a joining client can load it rather
+    // than having to be told separately by whoever launched it. Empty when the
+    // authority has no map loaded, which is a host that has not started one yet
+    // rather than an error.
+    //
+    // The name and not the content hash: WorldIdentity above answers "are we
+    // running the same thing", which is a different question from "what should
+    // I load", and neither substitutes for the other.
+    std::string MapName;
 };
 
 struct NetRefuse
@@ -280,7 +294,7 @@ private:
 [[nodiscard]] NetDecodeError NetDecodeHello(std::span<const std::byte>, NetHello&);
 [[nodiscard]] NetDecodeError NetDecodeChallenge(std::span<const std::byte>, NetChallenge&, const NetCaps& = NetDefaultCaps());
 [[nodiscard]] NetDecodeError NetDecodeCookieEcho(std::span<const std::byte>, NetCookieEcho&, const NetCaps& = NetDefaultCaps());
-[[nodiscard]] NetDecodeError NetDecodeAccept(std::span<const std::byte>, NetAccept&);
+[[nodiscard]] NetDecodeError NetDecodeAccept(std::span<const std::byte>, NetAccept&, const NetCaps& = NetDefaultCaps());
 [[nodiscard]] NetDecodeError NetDecodeRefuse(std::span<const std::byte>, NetRefuse&, const NetCaps& = NetDefaultCaps());
 [[nodiscard]] NetDecodeError NetDecodeDisconnect(std::span<const std::byte>, NetDisconnect&, const NetCaps& = NetDefaultCaps());
 [[nodiscard]] NetDecodeError NetDecodePing(std::span<const std::byte>, NetPing&);

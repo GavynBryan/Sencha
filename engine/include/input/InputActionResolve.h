@@ -40,11 +40,25 @@ struct InputDeviceSnapshot
     [[nodiscard]] float Axis(GamepadAxis axis) const;
 };
 
+// Pointer and wheel displacement over some span: what a latch has accumulated,
+// or the share of it one resolve pass takes.
+struct InputMotionDelta
+{
+    float X = 0.0f;
+    float Y = 0.0f;
+    float Wheel = 0.0f;
+};
+
 // Device transitions and motion a clock has not consumed yet.
 //
 // Latching is what makes an impulse survive a frame that runs no fixed tick,
 // and what stops a catch-up burst from replaying one press on every tick: the
-// first tick empties the latch, so ticks after it see held state only.
+// first tick takes the transitions, so ticks after it see held state only.
+//
+// Displacement divides instead. A transition happened at one instant and
+// belongs to one pass, but motion accumulated over a span the passes are
+// splitting between them, so handing it all to the first tick would make a
+// heading turn in steps that do not match the simulated time they cover.
 struct InputEdgeLatch
 {
     std::array<std::uint64_t, kInputScancodeCount / 64> KeysPressed{};
@@ -59,6 +73,17 @@ struct InputEdgeLatch
 
     void Accumulate(const InputFrame& frame);
     void Clear();
+
+    // The displacement one pass takes when `shares` passes will split what is
+    // latched now. Zero and one both hand over the whole total.
+    //
+    // Callers pass the number of passes still to come, this one included, so
+    // the last of them takes the exact remainder however the division rounded.
+    [[nodiscard]] InputMotionDelta Share(std::uint32_t shares) const;
+
+    // Drop the transitions and subtract the displacement a pass consumed,
+    // leaving the remainder latched for the passes that follow.
+    void Consume(const InputMotionDelta& taken);
 
     [[nodiscard]] bool WasPressed(InputControl control) const;
     [[nodiscard]] bool WasReleased(InputControl control) const;
@@ -102,15 +127,32 @@ void AccumulateInputFrame(InputFrame& frame,
                           InputClockState& presentationClock,
                           InputClockState& simulationClock);
 
-// Resolve every action for one clock and empty that clock's latch.
+// Resolve every action for one clock and consume this pass's share of that
+// clock's latch.
 //
 // `contextActive` is indexed by context, parallel to profile.Contexts.
 // `out` must be sized to profile.ActionCount().
+//
+// `displacementShares` is how many passes are splitting the latched motion,
+// this one included -- the fixed ticks left in the frame for the simulation
+// clock, and one for the presentation clock, which resolves once per frame and
+// takes everything. See InputEdgeLatch::Share.
+//
+// `outSampled`, when sized to the action count, additionally receives each
+// action's sampled share: the contributions from controls that report a held
+// position (sticks, triggers) rather than an accumulated displacement. The
+// main value keeps both mixed. The two are different physical kinds -- a
+// sample is a rate that covers however much time the pass covers, while a
+// displacement is already an amount -- and a consumer that integrates over
+// time cannot do it correctly without them apart. An empty span skips the
+// bookkeeping.
 void ResolveInputActions(const BoundInputProfile& profile,
                          std::span<const std::uint8_t> contextActive,
                          const InputDeviceSnapshot& devices,
                          InputClockState& clock,
-                         std::span<InputActionValue> out);
+                         std::span<InputActionValue> out,
+                         std::uint32_t displacementShares = 1,
+                         std::span<InputActionValue> outSampled = {});
 
 // Publish the release every held action owes when no profile can resolve, and
 // forget what this clock was carrying.
