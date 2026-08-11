@@ -105,7 +105,7 @@ void EditorDocument::SetAssetEnvironment(RuntimeAssets& assets)
     // resource; without it an authored mesh handle would not hold its asset.
     World& world = Registry_.Components;
     if (!world.HasResource<StaticMeshComponentAssets>())
-        world.AddResource<StaticMeshComponentAssets>(&assets.StaticMeshes, &assets.MaterialSets);
+        world.AddResource<StaticMeshComponentAssets>(assets.StaticMeshes.get(), &assets.MaterialSets);
 }
 
 void EditorDocument::SetRegistryIdentity(RegistryId id, ZoneId zone)

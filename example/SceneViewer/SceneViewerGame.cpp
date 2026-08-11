@@ -295,10 +295,10 @@ void SceneViewerGame::OnStart(GameStartupContext&)
 
     World& world = engine.World().Entities();
     world.AddResource<StaticMeshComponentAssets>(
-        &runtimeAssets.StaticMeshes,
+        runtimeAssets.StaticMeshes.get(),
         &runtimeAssets.MaterialSets);
     world.AddResource<ZoneLightmapComponentAssets>(
-        &runtimeAssets.Textures);
+        runtimeAssets.Textures.get());
     world.AddResource<AudioSourceRuntime>(
         &runtimeAssets.AudioClips,
         &engine.Audio(),
@@ -329,10 +329,10 @@ void SceneViewerGame::OnStart(GameStartupContext&)
             engine.GetRenderPipeline())
     {
         pipeline->SetAssetStores(
-            runtimeAssets.StaticMeshes,
+            *runtimeAssets.StaticMeshes,
             runtimeAssets.Materials,
             runtimeAssets.MaterialSets,
-            &runtimeAssets.Textures);
+            runtimeAssets.Textures.get());
         pipeline->AddMeshRenderFeature(graphics);
     }
 

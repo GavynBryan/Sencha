@@ -456,24 +456,24 @@ void ConfigureRuntimeResources(
     if (StaticMeshComponentAssets* meshAssets =
             world.TryGetResource<StaticMeshComponentAssets>())
     {
-        meshAssets->Meshes = &assets.StaticMeshes;
+        meshAssets->Meshes = assets.StaticMeshes.get();
         meshAssets->MaterialSets = &assets.MaterialSets;
     }
     else
     {
         world.AddResource<StaticMeshComponentAssets>(
-            &assets.StaticMeshes,
+            assets.StaticMeshes.get(),
             &assets.MaterialSets);
     }
 
     if (ZoneLightmapComponentAssets* lightmapAssets =
             world.TryGetResource<ZoneLightmapComponentAssets>())
     {
-        lightmapAssets->Textures = &assets.Textures;
+        lightmapAssets->Textures = assets.Textures.get();
     }
     else
     {
-        world.AddResource<ZoneLightmapComponentAssets>(&assets.Textures);
+        world.AddResource<ZoneLightmapComponentAssets>(assets.Textures.get());
     }
 
     if (AudioSourceRuntime* audioRuntime =
@@ -941,14 +941,25 @@ void TemplateGame::OnStart(GameStartupContext&)
 {
     Engine& engine = GetEngine();
     LoggingProvider& logging = engine.Logging();
-    GraphicsServices& graphics = engine.Graphics();
 
-    Assets.emplace(
-        logging,
-        graphics.Buffers,
-        graphics.Images,
-        graphics.Descriptors,
-        graphics.Samplers);
+    // A dedicated host has no graphics services, so it composes an asset stack
+    // that cannot hold a mesh or a texture and loads everything else -- the
+    // movement profiles it simulates from, the collision it collides with --
+    // through the same front door.
+    GraphicsServices* graphics = engine.TryGraphics();
+    if (graphics != nullptr)
+    {
+        Assets.emplace(
+            logging,
+            graphics->Buffers,
+            graphics->Images,
+            graphics->Descriptors,
+            graphics->Samplers);
+    }
+    else
+    {
+        Assets.emplace(logging);
+    }
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
 
     // This game's own data subtypes, registered into the registries it owns and
@@ -1087,15 +1098,18 @@ void TemplateGame::OnStart(GameStartupContext&)
         engine.World().Entities(), &runtimeAssets.DataAssets));
 #endif
 
-    if (DefaultRenderPipeline* pipeline =
-            engine.GetRenderPipeline())
+    // The pipeline object exists headless -- it is registered unconditionally
+    // and its extract hook is simply never dispatched -- so the guard that
+    // matters is the graphics services its mesh feature is built from.
+    if (DefaultRenderPipeline* pipeline = engine.GetRenderPipeline();
+        pipeline != nullptr && graphics != nullptr)
     {
         pipeline->SetAssetStores(
-            runtimeAssets.StaticMeshes,
+            *runtimeAssets.StaticMeshes,
             runtimeAssets.Materials,
             runtimeAssets.MaterialSets,
-            &runtimeAssets.Textures);
-        pipeline->AddMeshRenderFeature(graphics);
+            runtimeAssets.Textures.get());
+        pipeline->AddMeshRenderFeature(*graphics);
     }
 
     engine.Console().SetMapHandler(

@@ -198,7 +198,7 @@ void MaterialEditorServices::BuildUi()
         [this](const TextureSourceLocation& source, std::string* error)
         { return RecookTexture(source, error); },
         std::make_unique<ImGuiTextureBinding>(
-            Assets->Assets, Assets->Textures,
+            Assets->Assets, *Assets->Textures,
             engine.Graphics().Images, engine.Graphics().Samplers),
         [this](const std::string& textureVirtualPath)
         { CreateMaterialFromTexture(textureVirtualPath); });

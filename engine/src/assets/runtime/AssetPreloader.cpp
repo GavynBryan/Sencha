@@ -105,6 +105,13 @@ std::shared_ptr<AssetPreload> AssetPreloader::Begin(std::span<const std::string>
             continue;
         }
 
+        // A kind this process cannot hold is not a preload failure: a manifest
+        // describes the content, not the process reading it, and a dedicated
+        // host that cannot commit a mesh should not read its bytes to throw
+        // them away.
+        if (!Assets.HasStore(record->Type))
+            continue;
+
         if (AssetLease resident = Assets.TryAcquireLease(record->Path, record->Type))
         {
             preload->Store(std::move(resident));

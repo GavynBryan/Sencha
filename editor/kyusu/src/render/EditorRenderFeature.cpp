@@ -65,12 +65,12 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     LoggingRef = &logging;
     if (runtimeAssets != nullptr)
     {
-        MeshCache = &runtimeAssets->StaticMeshes;
+        MeshCache = runtimeAssets->StaticMeshes.get();
         MaterialStore = &runtimeAssets->Materials;
-        QueueBuilder.emplace(runtimeAssets->Assets, runtimeAssets->StaticMeshes,
+        QueueBuilder.emplace(runtimeAssets->Assets, *runtimeAssets->StaticMeshes,
                              runtimeAssets->Materials, runtimeAssets->MaterialSets,
-                             logging, &runtimeAssets->Textures);
-        SceneSolid.emplace(Forward, *QueueBuilder, runtimeAssets->StaticMeshes,
+                             logging, runtimeAssets->Textures.get());
+        SceneSolid.emplace(Forward, *QueueBuilder, *runtimeAssets->StaticMeshes,
                            runtimeAssets->Materials);
         MaterialPath = true;
         BodyRenderers[static_cast<std::size_t>(ViewportShading::Solid)] = &*SceneSolid;
@@ -196,7 +196,7 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
                 auto& builder = ContextBuilders[zone.Value];
                 if (builder == nullptr)
                     builder = std::make_unique<SceneRenderQueueBuilder>(
-                        RuntimeAssetsRef->Assets, RuntimeAssetsRef->StaticMeshes,
+                        RuntimeAssetsRef->Assets, *RuntimeAssetsRef->StaticMeshes,
                         RuntimeAssetsRef->Materials, RuntimeAssetsRef->MaterialSets,
                         *LoggingRef);
                 builder->Build(document);

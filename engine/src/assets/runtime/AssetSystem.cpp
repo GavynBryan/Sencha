@@ -154,6 +154,11 @@ const IAssetStore* AssetSystem::StoreFor(AssetType type) const
     return kind ? kind->Store : nullptr;
 }
 
+bool AssetSystem::HasStore(AssetType type) const
+{
+    return StoreFor(type) != nullptr;
+}
+
 AssetLease AssetSystem::TryAcquireLease(std::string_view path, AssetType type)
 {
     IAssetStore* store = StoreFor(type);

@@ -139,6 +139,20 @@ public:
     void ReleaseSkeleton(SkeletonHandle handle);
     void ReleaseAnimationClip(AnimationClipHandle handle);
 
+    // Whether this process can hold a loaded asset of `type` at all.
+    //
+    // A composition query, never a health check. Which caches exist is fixed by
+    // the constructor arguments and never changes afterwards: RegisterKinds
+    // attaches a kind's store only for a cache that was passed, and nothing
+    // detaches one later. So a false answer means this process was built
+    // without that capability -- a headless host with no graphics services has
+    // no mesh or texture cache -- and never that a cache failed or went away.
+    //
+    // That is what lets a consumer treat an unresolvable asset of an
+    // unsupported kind as expected rather than as an error, while an
+    // unresolvable asset of a supported kind stays a real failure.
+    [[nodiscard]] bool HasStore(AssetType type) const;
+
     // Type-erased residency, for drivers that hold a reference without naming
     // the handle type. Invalid lease when the kind is unregistered or the
     // asset is not resident; never loads.

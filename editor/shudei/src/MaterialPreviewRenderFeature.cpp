@@ -47,8 +47,8 @@ bool MaterialPreviewRenderFeature::Setup(const RendererServices& services)
     for (std::size_t i = 0; i < Meshes.size(); ++i)
     {
         const auto kind = static_cast<PreviewPrimitive>(i);
-        Meshes[i] = Assets.StaticMeshes.CreateFromData(PreviewPrimitiveName(kind),
-                                                       BuildPreviewPrimitive(kind));
+        Meshes[i] = Assets.StaticMeshes->CreateFromData(PreviewPrimitiveName(kind),
+                                                        BuildPreviewPrimitive(kind));
     }
     // A failed lighting set disables the preview's forward pass, not the
     // feature: the backdrop still renders.
@@ -204,7 +204,7 @@ void MaterialPreviewRenderFeature::OnDraw(const FrameContext& frame)
         local.DepthFormat = Services.DepthFormat;
         local.Phase = RenderPhase::Offscreen;
 
-        Forward.Draw(local, camera, Lights, Queue, Assets.StaticMeshes, Assets.Materials);
+        Forward.Draw(local, camera, Lights, Queue, *Assets.StaticMeshes, Assets.Materials);
     }
 
     vkCmdEndRendering(frame.Cmd);

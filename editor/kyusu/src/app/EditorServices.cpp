@@ -635,7 +635,7 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         .Source = { "editor" },
     });
     Thumbnails = std::make_unique<MaterialThumbnailCache>(
-        Assets->Assets, Assets->Textures, engine.Graphics().Images, engine.Graphics().Samplers,
+        Assets->Assets, *Assets->Textures, engine.Graphics().Images, engine.Graphics().Samplers,
         Assets->Registry);
 
     // Added after ToolPropertiesPanel so the left column's Down-pack puts it

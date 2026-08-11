@@ -300,7 +300,7 @@ void CubeDemoGame::OnStart(GameStartupContext&)
 
     World& world = engine.World().Entities();
     world.AddResource<StaticMeshComponentAssets>(
-        &runtimeAssets.StaticMeshes,
+        runtimeAssets.StaticMeshes.get(),
         &runtimeAssets.MaterialSets);
     world.AddResource<AudioSourceRuntime>(
         &runtimeAssets.AudioClips,
@@ -412,10 +412,10 @@ void CubeDemoGame::OnStart(GameStartupContext&)
     if (pipeline != nullptr)
     {
         pipeline->SetAssetStores(
-            runtimeAssets.StaticMeshes,
+            *runtimeAssets.StaticMeshes,
             runtimeAssets.Materials,
             runtimeAssets.MaterialSets,
-            &runtimeAssets.Textures);
+            runtimeAssets.Textures.get());
         pipeline->AddMeshRenderFeature(graphics);
     }
 
