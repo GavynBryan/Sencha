@@ -243,7 +243,10 @@ TEST(NetPlayerCommandCodec, NoBitPatternExceedsTheCaps)
             continue;
 
         ASSERT_LE(out.RecordCount, kNetMaxCommandRecords);
-        ASSERT_GT(out.RecordCount, 0);
+        // Zero is the acknowledgement-only form and is a whole message, so it
+        // is no longer evidence of a decode that should have failed. What still
+        // has to hold is that whatever records it does claim are inside the
+        // caps and consistent with the tick it named as newest.
         for (const NetCommandRecord& record : out.Ticks())
         {
             ASSERT_LE(record.ActionCount, kNetMaxCommandActions);
@@ -575,4 +578,72 @@ TEST(NetPeerCommandBufferGap, AnOvertakenCommandDoesNotDragTheAimBack)
 
     // And nothing behind it: the older tick was already credited.
     EXPECT_EQ(buffer.QueuedTicks(), 0u);
+}
+
+//-----------------------------------------------------------------------------
+// Acknowledgement without input
+//
+// The command message is the only thing carrying a snapshot acknowledgement, so
+// until it could travel empty, a client with nothing simulated could not
+// confirm what it had applied -- and a client with nothing simulated is exactly
+// a client that has not been given a pawn yet.
+//-----------------------------------------------------------------------------
+
+TEST(NetPlayerCommandCodec, AnAcknowledgementTravelsWithNoInputBehindIt)
+{
+    NetSnapshotAck ack;
+    ack.Observe(7);
+    ack.Observe(9);
+
+    std::array<std::byte, 64> buffer{};
+    NetBitWriter writer(buffer);
+    ASSERT_TRUE(NetEncodeCommandAck(ack, writer));
+    ASSERT_FALSE(writer.Overflowed());
+
+    NetBitReader reader(writer.Written());
+    NetPlayerCommand out;
+    ASSERT_TRUE(NetDecodePlayerCommand(reader, out));
+
+    EXPECT_EQ(out.RecordCount, 0);
+    EXPECT_TRUE(out.SnapshotAck.Confirms(9));
+    EXPECT_TRUE(out.SnapshotAck.Confirms(7));
+    EXPECT_FALSE(out.SnapshotAck.Confirms(8));
+}
+
+// It has to be smaller than the thing it exists to avoid, or a client sending
+// one every flush would cost more than the resends it prevents.
+TEST(NetPlayerCommandCodec, AnAcknowledgementCostsLessThanACommand)
+{
+    NetSnapshotAck ack;
+    ack.Observe(3);
+
+    std::array<std::byte, 128> ackBuffer{};
+    NetBitWriter ackWriter(ackBuffer);
+    ASSERT_TRUE(NetEncodeCommandAck(ack, ackWriter));
+
+    std::array<std::byte, 128> commandBuffer{};
+    NetBitWriter commandWriter(commandBuffer);
+    NetPlayerCommand command = CommandEndingAt(4, 2);
+    command.SnapshotAck = ack;
+    ASSERT_GT(NetEncodePlayerCommand(command, commandWriter), 0u);
+
+    EXPECT_LT(ackWriter.BitsWritten(), commandWriter.BitsWritten());
+}
+
+TEST(NetPlayerCommandCodec, ATruncatedAcknowledgementIsRefused)
+{
+    NetSnapshotAck ack;
+    ack.Observe(5);
+
+    std::array<std::byte, 64> buffer{};
+    NetBitWriter writer(buffer);
+    ASSERT_TRUE(NetEncodeCommandAck(ack, writer));
+
+    for (std::size_t cut = 0; cut < writer.BytesWritten(); ++cut)
+    {
+        NetBitReader reader(writer.Written().subspan(0, cut));
+        NetPlayerCommand out;
+        EXPECT_FALSE(NetDecodePlayerCommand(reader, out))
+            << "accepted an acknowledgement cut to " << cut << " bytes";
+    }
 }

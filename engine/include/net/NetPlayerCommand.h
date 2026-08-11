@@ -95,6 +95,18 @@ struct NetPlayerCommand
 std::size_t NetEncodePlayerCommand(const NetPlayerCommand& command,
                                    NetBitWriter& writer);
 
+// The same message carrying an acknowledgement and no input.
+//
+// A client with nothing to say still has something to confirm, and until this
+// existed it could not: the command message was the only thing carrying a
+// snapshot acknowledgement, and it refused to encode without a record. So a
+// client that had not been given a pawn yet -- which is exactly the join
+// window, and every spectator for as long as it spectates -- never advanced a
+// floor, and the authority went on sending it whole entities at roughly twice
+// a delta's cost, during the one stretch where it has the least room for them.
+[[nodiscard]] bool NetEncodeCommandAck(const NetSnapshotAck& ack,
+                                       NetBitWriter& writer);
+
 // Every field a peer controls is bounded here: counts against the caps above,
 // and floats rejected unless finite. A caller that gets false has a malformed
 // message and nothing half-applied.

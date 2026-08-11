@@ -87,6 +87,10 @@ private:
     // Reused across frames, sized once to the largest datagram a channel will
     // carry, so sending a command allocates nothing.
     std::vector<std::byte> Scratch;
+    // The newest acknowledgement already sent without input behind it, so a
+    // client with nothing to simulate confirms each snapshot once rather than
+    // repeating the same confirmation every flush.
+    std::uint32_t LastAckSent = 0;
 };
 
 //=============================================================================
