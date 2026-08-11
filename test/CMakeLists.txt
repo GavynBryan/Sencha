@@ -99,6 +99,18 @@ if(RUNTIME_TEST_SOURCES)
         TEST_ENGINE_LIB_PATH="$<TARGET_FILE:sencha_engine>")
 endif()
 
+# Two-process hosting coverage runs the shipping host binary against the
+# template game module, so it needs both built and needs to know where they
+# landed. Without them the cases skip rather than fail: a configuration that
+# builds no template has nothing to host.
+if(TARGET runtime_tests AND TARGET app AND TARGET template_game)
+    add_dependencies(runtime_tests app template_game)
+    target_compile_definitions(runtime_tests PRIVATE
+        TEST_APP_PATH="$<TARGET_FILE:app>"
+        TEST_TEMPLATE_MODULE_PATH="$<TARGET_FILE:template_game>"
+        SENCHA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+endif()
+
 if(ENGINE_FEATURE_TEST_SOURCES)
     add_executable(engine_feature_tests ${ENGINE_FEATURE_TEST_SOURCES})
     target_link_libraries(engine_feature_tests PRIVATE sencha_engine GTest::gtest_main)
