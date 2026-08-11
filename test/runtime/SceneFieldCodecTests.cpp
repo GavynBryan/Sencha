@@ -36,6 +36,54 @@ struct TypeSchema<SceneCodecMaterialComponent>
     }
 };
 
+struct SceneCodecMeshComponent
+{
+    StaticMeshHandle Mesh;
+};
+
+template <>
+struct TypeSchema<SceneCodecMeshComponent>
+{
+    static constexpr std::string_view Name = "SceneCodecMesh";
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("mesh", &SceneCodecMeshComponent::Mesh),
+        };
+    }
+};
+
+template <>
+struct ComponentStorageTraits<SceneCodecMeshComponent>
+{
+    static constexpr std::uint32_t BinaryChunkId = MakeFourCC('T', 'M', 'S', 'H');
+
+    static void Register(World& world)
+    {
+        if (!world.IsRegistered<SceneCodecMeshComponent>())
+            world.RegisterComponent<SceneCodecMeshComponent>();
+    }
+
+    static void Register(Registry& registry)
+    {
+        Register(registry.Components);
+    }
+
+    static bool Add(World& world, EntityId entity, SceneCodecMeshComponent component)
+    {
+        if (world.HasComponent<SceneCodecMeshComponent>(entity))
+            return false;
+        world.AddComponent(entity, component);
+        return true;
+    }
+
+    static bool Add(Registry& registry, EntityId entity, SceneCodecMeshComponent component)
+    {
+        return Add(registry.Components, entity, component);
+    }
+};
+
 template <>
 struct ComponentStorageTraits<SceneCodecMaterialComponent>
 {
@@ -308,4 +356,145 @@ TEST(SceneFieldCodec, StaticMeshHandleRejectsWrongLegacyObjectType)
     StaticMeshHandle loaded;
     EXPECT_FALSE(SceneFieldCodec<StaticMeshHandle>::Load(archive, "", loaded, context));
     EXPECT_FALSE(archive.Ok());
+}
+
+// A scene names the content it is made of, not the processes that read it. A
+// dedicated host has no cache that can hold a mesh, so a mesh reference is
+// something it declines rather than something it fails on -- and it must
+// decline without failing the field, because an invalid field rolls the whole
+// scene back and the host would then have no world to simulate.
+TEST(SceneFieldCodec, StaticMeshHandleSkipsWhenTheProcessCannotHoldMeshes)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    registry.Register(AssetRecord{
+        .Type = AssetType::StaticMesh,
+        .SourceKind = AssetSourceKind::Procedural,
+        .Path = "asset://meshes/dev/cube.smesh",
+    });
+
+    MaterialCache materials;
+    // No mesh cache: the composition a host without graphics services gets.
+    AssetSystem assets(logging, registry, nullptr, &materials);
+    ASSERT_FALSE(assets.HasStore(AssetType::StaticMesh));
+
+    auto parsed = JsonParse(R"("asset://meshes/dev/cube.smesh")");
+    ASSERT_TRUE(parsed.has_value());
+
+    SceneSerializationContext context(logging, &assets);
+    JsonReadArchive archive(*parsed);
+    StaticMeshHandle loaded;
+    EXPECT_TRUE(SceneFieldCodec<StaticMeshHandle>::Load(archive, "", loaded, context));
+    EXPECT_TRUE(archive.Ok());
+    EXPECT_FALSE(loaded.IsValid())
+        << "the field is read and declined, leaving no handle behind";
+}
+
+// The relaxation is about capability, never about content. Where the process
+// can hold the kind, an asset that will not resolve is still a hard failure --
+// which is what keeps a client and an editor strict about content they are
+// supposed to be able to load.
+TEST(SceneFieldCodec, AMissingAssetStillFailsWhereTheProcessCanHoldIt)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    MaterialCache materials;
+    AssetSystem assets(logging, registry, nullptr, &materials);
+    ASSERT_TRUE(assets.HasStore(AssetType::Material));
+
+    // Registered nowhere: the capability exists, the asset does not.
+    auto parsed = JsonParse(R"("asset://materials/dev/missing.smat")");
+    ASSERT_TRUE(parsed.has_value());
+
+    SceneSerializationContext context(logging, &assets);
+    JsonReadArchive archive(*parsed);
+    MaterialHandle loaded;
+    EXPECT_FALSE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
+    EXPECT_FALSE(archive.Ok());
+}
+
+// Capability decides nothing about whether a ref is well formed: a malformed
+// reference is a broken scene on any process.
+TEST(SceneFieldCodec, CapabilityAbsenceDoesNotExcuseAMalformedRef)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    MaterialCache materials;
+    AssetSystem assets(logging, registry, nullptr, &materials);
+    ASSERT_FALSE(assets.HasStore(AssetType::StaticMesh));
+
+    auto parsed = JsonParse(R"({ "type": "Material", "path": "asset://meshes/dev/cube.smesh" })");
+    ASSERT_TRUE(parsed.has_value());
+
+    SceneSerializationContext context(logging, &assets);
+    JsonReadArchive archive(*parsed);
+    StaticMeshHandle loaded;
+    EXPECT_FALSE(SceneFieldCodec<StaticMeshHandle>::Load(archive, "", loaded, context));
+    EXPECT_FALSE(archive.Ok());
+}
+
+// The whole reason the capability rule exists: a scene rolls back entirely when
+// a field is invalid, so on a process that cannot hold meshes a level full of
+// them would produce no entities at all -- and therefore no collision, no
+// player starts, nothing for a dedicated host to simulate. The entities must
+// survive with their meshes simply absent.
+TEST(SceneFieldCodec, AMeshBearingSceneStillLoadsWhereMeshesCannotBeHeld)
+{
+    ComponentSerializerRegistry serializers;
+    RegisterEngineSceneSerializers(serializers);
+    RegisterComponent<SceneCodecMeshComponent>(serializers);
+
+    auto parsed = JsonParse(R"({
+        "version": 1,
+        "entities": [
+            {
+                "components": {
+                    "Transform": {
+                        "local": {
+                            "position": [1.0, 2.0, 3.0],
+                            "rotation": [0, 0, 0, 1],
+                            "scale": [1, 1, 1]
+                        }
+                    },
+                    "SceneCodecMesh": { "mesh": "asset://meshes/dev/cube.smesh" }
+                }
+            }
+        ]
+    })");
+    ASSERT_TRUE(parsed.has_value());
+
+    LoggingProvider logging;
+    AssetRegistry assetRegistry(logging);
+    assetRegistry.Register(AssetRecord{
+        .Type = AssetType::StaticMesh,
+        .SourceKind = AssetSourceKind::Procedural,
+        .Path = "asset://meshes/dev/cube.smesh",
+    });
+    MaterialCache materials;
+    AssetSystem assets(logging, assetRegistry, nullptr, &materials);
+    ASSERT_FALSE(assets.HasStore(AssetType::StaticMesh));
+
+    Registry registry;
+    registry.Components.RegisterComponent<LocalTransform>();
+    registry.Components.RegisterComponent<WorldTransform>();
+    registry.Components.RegisterComponent<Parent>();
+    registry.Components.RegisterComponent<SceneCodecMeshComponent>();
+
+    SceneSerializationContext context(logging, &assets);
+    SceneLoadError error;
+    ASSERT_TRUE(LoadSceneJson(*parsed, registry, serializers, context, &error))
+        << "scene load error: " << error.Message;
+
+    const std::vector<EntityId> alive = registry.Components.GetAliveEntities();
+    ASSERT_EQ(alive.size(), 1u);
+
+    const LocalTransform* transform = registry.Components.TryGet<LocalTransform>(alive[0]);
+    ASSERT_NE(transform, nullptr)
+        << "the entity and the state a host simulates from must survive";
+    EXPECT_FLOAT_EQ(transform->Value.Position.X, 1.0f);
+
+    const SceneCodecMeshComponent* mesh =
+        registry.Components.TryGet<SceneCodecMeshComponent>(alive[0]);
+    ASSERT_NE(mesh, nullptr);
+    EXPECT_FALSE(mesh->Mesh.IsValid()) << "with no mesh behind it";
 }

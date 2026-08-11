@@ -37,6 +37,26 @@ namespace
         return false;
     }
 
+    // Whether this process could hold `type` at all, as opposed to whether a
+    // particular asset resolved.
+    //
+    // A scene names the content it is made of, not the processes that read it.
+    // A dedicated host has no cache that can hold a mesh, so a mesh reference
+    // is something it declines rather than something it fails on -- and it must
+    // decline without failing the field, because a scene load rolls back
+    // entirely on an invalid field and a host would then have no collision to
+    // simulate against. The handle is left invalid, which every consumer of an
+    // asset handle already tolerates.
+    //
+    // Only a capability this process was composed without takes this path.
+    // Where the capability exists, an asset that will not resolve is still a
+    // hard failure, which is what keeps a client or an editor strict about the
+    // content it is supposed to be able to load.
+    bool LacksCapability(AssetType type, SceneSerializationContext& context)
+    {
+        return context.Assets != nullptr && !context.Assets->HasStore(type);
+    }
+
     // Reads the legacy {"type": ..., "path": ...} ref object. The enclosing
     // object scope is already open.
     bool ReadLegacyAssetRefFields(IReadArchive& archive,
@@ -219,6 +239,9 @@ bool SceneFieldCodec<StaticMeshHandle>::Load(IReadArchive& archive,
         return false;
     }
 
+    if (LacksCapability(AssetType::StaticMesh, context))
+        return archive.Ok();
+
     value = context.Assets->LoadStaticMesh(path);
     if (!value.IsValid())
     {
@@ -267,6 +290,9 @@ bool SceneFieldCodec<MaterialHandle>::Load(IReadArchive& archive,
         archive.MarkInvalidField(key);
         return false;
     }
+
+    if (LacksCapability(AssetType::Material, context))
+        return archive.Ok();
 
     value = context.Assets->LoadMaterial(path);
     if (!value.IsValid())
@@ -327,6 +353,9 @@ bool SceneFieldCodec<MaterialSetHandle>::Load(IReadArchive& archive,
         archive.MarkInvalidField(key);
         return false;
     }
+
+    if (LacksCapability(AssetType::Material, context))
+        return archive.Ok();
 
     const auto resolveInto = [&](std::string_view refKey, std::vector<MaterialHandle>& out) {
         std::string path;
@@ -429,6 +458,9 @@ bool SceneFieldCodec<TextureHandle>::Load(IReadArchive& archive,
         return false;
     }
 
+    if (LacksCapability(AssetType::Texture, context))
+        return archive.Ok();
+
     value = context.Assets->LoadTexture(path);
     if (!value.IsValid())
     {
@@ -476,6 +508,9 @@ bool SceneFieldCodec<AudioClipHandle>::Load(IReadArchive& archive,
         archive.MarkInvalidField(key);
         return false;
     }
+
+    if (LacksCapability(AssetType::Audio, context))
+        return archive.Ok();
 
     value = context.Assets->LoadAudioClip(path);
     if (!value.IsValid())
