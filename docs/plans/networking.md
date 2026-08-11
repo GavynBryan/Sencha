@@ -2,9 +2,11 @@
 
 Status: ratified design, in execution (reviewed 2026-07-10, ratified and corrected
 2026-08-07; player envelope revised to 16 and replication rebuilt for it
-2026-08-09). This is roadmap Track G. The model, the module layout, the protocol
-shape, and the security posture below are decided; the phase list in Section 12 is
-the execution plan and carries per-phase status. Sessions, channels, replication,
+2026-08-09; protocol raised to version 5 on 2026-08-11, when component removal,
+authored-entity identity, and an acknowledgement that travels without input all
+changed the wire and took one bump together). This is roadmap Track G. The model,
+the module layout, the protocol shape, and the security posture below are decided;
+the phase list in Section 12 is the execution plan and carries per-phase status. Sessions, channels, replication,
 input, the shared clock, and prediction have landed, and replication has since
 been rebuilt around per-entity floors and a per-peer byte budget (Section 6.3,
 phase G-S); interest scoping, event replication, desync hashing, and hardening
@@ -624,7 +626,24 @@ Identity assignment has two cases:
   resolved on each side through its own `PersistentEntityIndex`. No fallback scheme
   is needed; this shipped ahead of the track. No spawn messages for authored
   content, ever: a zone grant plus a
-  baseline delta against authored state fully describes it. This is the single
+  baseline delta against authored state fully describes it.
+
+  *Partly landed 2026-08-11, and not the way this describes.* Authored entities
+  still take a `NetEntityId` like everything else; what changed is that an entity
+  record carries its `PersistentEntityId` while the peer has confirmed nothing
+  about it, so a client binds the wire identity to the copy its own level load
+  produced instead of building a second one beside it. Before this, marking an
+  authored entity `NetReplicated` silently duplicated it on every client, and
+  nothing in the tree had done so, which is why nothing had noticed.
+
+  A client that cannot resolve the key yet -- admission precedes the map load, so
+  a snapshot can name an authored entity before the level produces it -- reads the
+  record and drops it, and reports the snapshot incomplete so it is not
+  acknowledged. That last part is what makes the deferral sound: the floor stays
+  where it was and the entity is described again.
+
+  The zone-grant-and-baseline form above still needs G3. This is the identity
+  half only, which is what a single-zone session needs and all it needs. This is the single
   biggest bandwidth and simplicity win the architecture hands us, and it is also
   exactly the `ZoneStateRecord` overlay shape (created/destroyed/changed against
   authored), which is why Section 3.4 insists the two share one identity.
@@ -802,6 +821,14 @@ replication-free, honoring its own exclusion (`abilitykit.md:71`): the framework
 components replicate generically like any other data.
 
 ### 6.5 Client apply and interpolation
+
+*Component removal landed 2026-08-11, as a per-entity list of wire keys behind a
+presence bit, owed until every peer's floor passes the generation it happened at
+-- the shape destroys already had, one level down. Before it, the publish walk
+skipped past a component the entity no longer had without erasing what it last
+knew, so every peer that had been shown it kept it permanently, and a peer
+joining afterwards was sent it: a fresh floor owes whatever the store still
+holds.*
 
 All structural application (spawn, destroy, component add/remove) happens at one
 defined point: the start of the client's fixed tick, before any system runs, through
@@ -2033,6 +2060,14 @@ owed before the phase that depends on them.
    which is a change to the command wire format and therefore a protocol bump.
    Deliberately not taken inside the replication-scaling work. The sixteen-peer
    soak runs entirely on this path, which is why its numbers are a lower bound.
+
+   *Answered 2026-08-11.* The command message carries one bit for whether input
+   follows, and an acknowledgement alone is nine bytes against a command's
+   dozens. It is sent only when the acknowledgement has moved, so a client with
+   nothing new to confirm sends nothing at all. Rode the protocol bump that
+   component removal and authored identity took together. The soak's numbers are
+   no longer a lower bound for this reason, though they were taken before the
+   change and have not been retaken.
 
 7. **Interpolation across a long gap.** Bracketing two samples far apart draws an
    entity sliding between them. A rule that snaps instead of blending past some
