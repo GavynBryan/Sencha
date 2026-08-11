@@ -836,6 +836,19 @@ A snapshot that references a zone the client has not finished loading cannot occ
 by protocol (grants gate replication, Section 8.2); the applier treats it as a
 protocol violation, not a queue-and-hope case.
 
+*Correction 2026-08-11: the applier does no such thing, and cannot -- there is no
+zone or scope concept anywhere in `engine/src/net/`. `SnapshotApplyRequest` carries
+one `Partition`, which is the persistent one. This paragraph describes the applier
+half of the grant flow control in Section 8.2, which arrives with G3; Section 8.2's
+own reference to "the applier's Section 6.5 violation rule" is pointing at intent
+rather than at code. Written here because a sentence in the present tense about a
+mechanism that does not exist is the kind a reader builds on.*
+
+*Also landed 2026-08-11: a snapshot is decoded in full before any of it is
+applied, so a truncated or corrupted one leaves the world and the identity map
+exactly as they were. It previously parsed and mutated in one pass and could
+return with entities destroyed, created, and half-written.*
+
 ---
 
 ## 7. Ownership and input
@@ -1328,10 +1341,19 @@ table syncs are the most complex messages in the protocol), so the fuzz corpus
 weights authority-to-client messages accordingly. Strikes on a client disconnect it
 from the offending session. Rules, enforced by review and tests:
 
-- Length-prefixed everything; every count validated against remaining bytes and
-  against a per-message-type cap table (max peers, max zones per grant, max
-  entities per delta, max component payload = schema-computed size, max string =
-  reason-text cap). No allocation sized by wire data beyond the caps.
+- Every count validated against remaining bytes and against a per-message-type
+  cap table (max peers, max zones per grant, max entities per delta, max
+  component payload = schema-computed size, max string = reason-text cap). No
+  allocation sized by wire data beyond the caps.
+
+  *Correction 2026-08-11: this rule said "length-prefixed everything", which the
+  snapshot body has never been and is not going to be. A snapshot is a bit
+  stream whose every offset depends on the compiled layout and on all preceding
+  data; per-entity or per-section prefixes would cost bytes on the hottest path
+  to buy a skip-ahead nothing performs. The handshake and control messages are
+  length-prefixed, and are what the rule accurately describes. What the snapshot
+  body relies on instead is the cap table above and the whole-then-write applier
+  in Section 6.5.*
 - Decoders are pure functions over `std::span<const std::byte>` returning value
   types or a typed error; no engine services, no logging, no side effects, so they
   fuzz in isolation.
@@ -1389,6 +1411,18 @@ structural first, then the Section 10.2 hardening discipline pointed the other w
   identity map, with spawns applied before references within a message; replicated
   parent links are cycle-checked before the transform system sees them. A malformed
   message is never partially applied; violations strike and disconnect.
+
+  *Status 2026-08-11: the never-partially-applied half is now true of snapshots
+  and is the reason the applier reads a whole snapshot before writing any of it
+  (Section 6.5). The rest of this paragraph is still a description of intent.
+  Unquantized floats are not checked for finiteness -- a float field is 32 bits
+  bit-cast, so a hostile authority can put NaN into any of them; enum payloads
+  are not range-checked; there are no replicated entity references or parent
+  links to validate, because the layout refuses an entity handle as a field.
+  And nothing strikes: the snapshot path logs a refusal, and `NetSession::Strike`
+  is private and reachable only from datagram decode. The whole paragraph is
+  scoped to the hostile-authority posture, which is G6 and not yet claimed --
+  v1 clients trust their authority.*
 - **Bounded client resources.** Grant counts, per-zone entity caps, snapshot ring
   depth, reliable-window sizes, and event rates bound what a hostile authority can
   make a client allocate; exceeding a cap is a protocol violation, not a growth
