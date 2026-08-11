@@ -45,6 +45,24 @@ bool Engine::HasPresentation() const
 #endif
 }
 
+// Console output reported where a host can see it.
+//
+// A windowed process shows this in its overlay. A dedicated host has no
+// overlay, and a command whose result went nowhere is a command an operator has
+// no way to know failed -- including the ones its own startup script ran.
+void Engine::LogConsoleResult(Logger& log, const ConsoleResult& result)
+{
+    for (const ConsoleOutputEntry& entry : result.Output)
+    {
+        switch (entry.Severity)
+        {
+        case ConsoleOutputSeverity::Error:   log.Error("{}", entry.Text); break;
+        case ConsoleOutputSeverity::Warning: log.Warn("{}", entry.Text); break;
+        case ConsoleOutputSeverity::Info:    log.Info("{}", entry.Text); break;
+        }
+    }
+}
+
 void Engine::RegisterFramePhases(Game& game)
 {
     if (FramePhasesRegistered || FrameDriverInstance == nullptr)
@@ -55,14 +73,48 @@ void Engine::RegisterFramePhases(Game& game)
     // phase both halves claim. The window observations have to land before the
     // transitions resolved from them.
     if (HasPresentation())
+    {
         RegisterPresentationFramePhases(game);
+    }
     else
+    {
         (void)game;
+        RegisterHostCommandPhase();
+    }
 
     RegisterSimulationFramePhases();
     RegisterNetFramePhases();
 
     FramePhasesRegistered = true;
+}
+
+// A headless host's terminal, pumped where every other input source is.
+//
+// PumpPlatform means "bring the outside world into this frame before anything
+// reacts to it" -- that is what it does for a window's events, and a line
+// someone typed at a server is the same kind of arrival. A process with no
+// descriptor configured registers nothing, so the phase stays empty exactly as
+// it was.
+void Engine::RegisterHostCommandPhase()
+{
+    if (CommandFeed == nullptr)
+        return;
+
+    FrameDriverInstance->Register(FramePhase::PumpPlatform, [this](PhaseContext&) {
+        if (!CommandFeed->IsOpen())
+            return;
+
+        Logger& log = Logging().GetLogger<Engine>();
+        for (const std::string& line : CommandFeed->Poll())
+        {
+            if (line.empty())
+                continue;
+
+            const ConsoleResult result =
+                Console().ExecuteLine(line, ConsoleValueSource{ "stdin" });
+            LogConsoleResult(log, result);
+        }
+    });
 }
 
 // The two net phases. Registered whether or not this process will ever host or

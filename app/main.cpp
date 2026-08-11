@@ -5,12 +5,18 @@
 
 #include <SDL3/SDL.h>
 
+#include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <string>
+
+#if !defined(_WIN32)
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 //=============================================================================
 // app: the Sencha runtime host.
@@ -26,6 +32,41 @@
 
 namespace
 {
+    // Raised by a signal handler, read by the frame loop's exit predicate.
+    //
+    // Process-wide because signals are: this is the host catching them, not any
+    // engine inside it. Ctrl-C at a server's terminal and the SIGTERM a service
+    // manager sends on shutdown are how a dedicated host is asked to stop, and
+    // both must land on the ordinary exit path so the world tears down and the
+    // peers are told rather than the process simply vanishing.
+    volatile std::sig_atomic_t HostExitRequested = 0;
+
+    extern "C" void OnHostExitSignal(int) { HostExitRequested = 1; }
+
+    void InstallHostExitSignals()
+    {
+        std::signal(SIGINT, OnHostExitSignal);
+        std::signal(SIGTERM, OnHostExitSignal);
+#if !defined(_WIN32)
+        // A backgrounded host reading its terminal would otherwise be stopped
+        // by the kernel the first time it tried.
+        std::signal(SIGTTIN, SIG_IGN);
+#endif
+    }
+
+    // Standard input, when the process has one at all -- a terminal, a pipe, or
+    // a file all administer a host equally well. A host started as a service
+    // with its input closed gets nothing to read, which is not an error: it is
+    // simply administered by other means.
+    int HostCommandDescriptor()
+    {
+#if defined(_WIN32)
+        return -1;
+#else
+        return ::fcntl(STDIN_FILENO, F_GETFD) != -1 ? STDIN_FILENO : -1;
+#endif
+    }
+
 #if defined(_WIN32)
     constexpr const char* kModuleExtension = ".dll";
 #elif defined(__APPLE__)
@@ -187,6 +228,15 @@ int main(int argc, char** argv)
         if (headless)
         {
             config.Console.UiEnabled = false;
+
+            // The two ways to reach a process with no window: a signal asking
+            // it to stop, and a line typed at its terminal. Both are the host's
+            // to own -- signals belong to the process, and naming the
+            // descriptor rather than assuming one keeps the engine out of the
+            // business of deciding whose standard input it is.
+            InstallHostExitSignals();
+            config.Runtime.HostExitFlag = &HostExitRequested;
+            config.Console.CommandFd = HostCommandDescriptor();
 
             // Nobody is playing here. This is the dedicated-server posture,
             // decided once at the launch that asked for it: the authority

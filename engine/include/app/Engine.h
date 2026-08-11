@@ -3,6 +3,7 @@
 #include <app/DefaultRenderPipeline.h>
 #include <net/NetSession.h>
 #include <app/EngineSchedule.h>
+#include <core/console/ConsoleLineFeed.h>
 #include <core/console/ConsoleStartupScript.h>
 #include <core/config/EngineConfig.h>
 #include <core/logging/LoggingProvider.h>
@@ -269,6 +270,8 @@ private:
     // alone and steps the same frame the windowed host does, minus the phases
     // that would have had nothing to draw into.
     void RegisterFramePhases(Game& game);
+    void RegisterHostCommandPhase();
+    static void LogConsoleResult(Logger& log, const ConsoleResult& result);
     void RegisterSimulationFramePhases();
     void RegisterNetFramePhases();
     void RegisterPresentationFramePhases(Game& game);
@@ -315,6 +318,9 @@ private:
     LoggingProvider LoggingState;
     std::unique_ptr<DebugService> DebugState;
     std::unique_ptr<ConsoleService> ConsoleState;
+    // Reads administration commands from the descriptor the process host named
+    // (EngineConsoleConfig::CommandFd). Null unless it named one.
+    std::unique_ptr<ConsoleLineFeed> CommandFeed;
     std::unique_ptr<AudioService> AudioState;
     std::unique_ptr<CaptionRuntime> CaptionState;
     std::unique_ptr<PlatformServices> PlatformState;

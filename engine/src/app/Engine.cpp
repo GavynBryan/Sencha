@@ -141,9 +141,19 @@ bool Engine::Initialize()
         FrameDriverInstance->SetShouldExit([this] {
             if (!Running)
                 return true;
+            // A signal the process host caught. Ownership sits there because
+            // signals belong to the process, not to any one engine in it; this
+            // only reads what it was handed.
+            if (Configuration.Runtime.HostExitFlag != nullptr
+                && *Configuration.Runtime.HostExitFlag != 0)
+            {
+                return true;
+            }
             return ExitAfterFrames != 0
                 && RuntimeLoop.GetCurrentFrame().WallTime.FrameIndex >= ExitAfterFrames;
         });
+        if (Configuration.Console.CommandFd >= 0)
+            CommandFeed = std::make_unique<ConsoleLineFeed>(Configuration.Console.CommandFd);
         Initialized = true;
         return true;
     }
@@ -547,7 +557,12 @@ int Engine::Run(Game& game)
     };
     game.OnStart(startup);
     console.AdvancePhase(ConsolePhase::GameLoaded);
-    (void)console.ExecuteStartupScript(StartupScript);
+    // Reported rather than discarded: these are the commands that decide what
+    // this process is -- which map it loaded, which port it is hosting on, who
+    // it is connecting to -- and a host with no overlay has no other way to
+    // learn that one of them failed, or which port an ephemeral bind chose.
+    LogConsoleResult(LoggingState.GetLogger<Engine>(),
+                     console.ExecuteStartupScript(StartupScript));
 
     SystemRegisterContext registerSystems{
         .Config = Configuration,

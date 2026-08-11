@@ -2,6 +2,7 @@
 
 #include <core/json/JsonValue.h>
 
+#include <csignal>
 #include <optional>
 #include <string>
 
@@ -77,6 +78,16 @@ struct EngineRuntimeConfig
     // draw a world it has no player in. A launch configuration is free to set
     // both; neither is allowed to mean the other.
     bool HasLocalPlayer = true;
+
+    // A flag the process host raises when it is told to stop -- a signal it
+    // caught, most often. Null when nothing outside the engine can ask.
+    //
+    // Signals are process-wide and an engine is not a process: several engines
+    // can run in one, and installing handlers from any of their lifetimes would
+    // leave whichever exits last restoring state it does not own. So the host
+    // catches and the engine reads, which is also why this is a plain flag and
+    // not a callback: it is written from a signal handler.
+    const volatile std::sig_atomic_t* HostExitFlag = nullptr;
 };
 
 struct RuntimeConfigError
