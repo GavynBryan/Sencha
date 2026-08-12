@@ -2413,3 +2413,112 @@ TEST(ReplicationAuthored, AWorldWithoutAnIndexIsUnaffected)
     EXPECT_EQ(pair.LastApply.AuthoredDeferred, 0u);
     EXPECT_TRUE(pair.Mirror(authority).IsValid());
 }
+
+//=============================================================================
+// Naming an entity across the wire
+//
+// Each side held one direction of the map, which is one direction short of
+// what a message needs. An authority could not answer "which of my entities is
+// this identity a peer just sent me", so it had no way to validate an object a
+// peer names; a client could not answer "what do I call the thing I am looking
+// at", so naming one meant walking every entry it had.
+//=============================================================================
+
+TEST(ReplicationIdentity, TheAuthorityResolvesAnIdentityItMinted)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    const NetEntityId id = pair.Identity.TryFind(authority);
+    ASSERT_TRUE(id.IsValid());
+    EXPECT_EQ(pair.Identity.TryResolve(id), authority);
+}
+
+TEST(ReplicationIdentity, TheAuthorityNamesNothingForAnIdentityItNeverMinted)
+{
+    Pair pair;
+    (void)pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    EXPECT_FALSE(pair.Identity.TryResolve(NetEntityId{ 9999 }).IsValid());
+    EXPECT_FALSE(pair.Identity.TryResolve(NetEntityId{}).IsValid());
+}
+
+// The case a message has to survive: a peer naming something that has since
+// died. Resolution stops as soon as the publish walk sweeps it.
+TEST(ReplicationIdentity, AnIdentityStopsResolvingOnceItsEntityIsGone)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+    pair.Replicate();
+    const NetEntityId id = pair.Identity.TryFind(authority);
+    ASSERT_TRUE(pair.Identity.TryResolve(id).IsValid());
+
+    pair.Authority.DestroyEntity(authority);
+    pair.Replicate();
+
+    EXPECT_FALSE(pair.Identity.TryResolve(id).IsValid())
+        << "an identity outlived the entity it named";
+}
+
+TEST(ReplicationIdentity, AClientNamesAnEntityReplicationGaveIt)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(2.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+
+    const NetEntityId named = pair.ClientIdentity.TryFind(mirror);
+    EXPECT_TRUE(named.IsValid());
+    EXPECT_EQ(named, pair.Identity.TryFind(authority))
+        << "the two sides disagree about what to call one entity";
+}
+
+// The security-relevant half. A client may only name what the authority gave
+// it, so its own local entities have no wire name at all -- otherwise a peer
+// could address something the authority has never heard of.
+TEST(ReplicationIdentity, AClientCannotNameAnEntityItMadeItself)
+{
+    Pair pair;
+    (void)pair.SpawnReplicated(PoseAt(3.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    const EntityId local = pair.Client.CreateEntity();
+    EXPECT_FALSE(pair.ClientIdentity.TryFind(local).IsValid());
+}
+
+TEST(ReplicationIdentity, AClientForgetsTheNameOfADestroyedEntity)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(4.0f, 0.0f, 0.0f));
+    pair.Replicate();
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(pair.ClientIdentity.TryFind(mirror).IsValid());
+
+    pair.Authority.DestroyEntity(authority);
+    pair.Replicate();
+
+    EXPECT_FALSE(pair.ClientIdentity.TryFind(mirror).IsValid())
+        << "a name survived the entity it belonged to";
+}
+
+// Binding an identity onto a different entity -- which is what recognising an
+// authored copy does -- must not leave the old pairing behind in either
+// direction.
+TEST(ReplicationIdentity, RebindingAnIdentityLeavesNoStaleName)
+{
+    ReplicationClientIdentity identity;
+    const EntityId first{ 1, 1 };
+    const EntityId second{ 2, 1 };
+
+    identity.Bind(NetEntityId{ 7 }, first);
+    identity.Bind(NetEntityId{ 7 }, second);
+
+    EXPECT_EQ(identity.TryResolve(NetEntityId{ 7 }), second);
+    EXPECT_EQ(identity.TryFind(second), NetEntityId{ 7 });
+    EXPECT_FALSE(identity.TryFind(first).IsValid())
+        << "the entity the identity moved off still answers to it";
+}

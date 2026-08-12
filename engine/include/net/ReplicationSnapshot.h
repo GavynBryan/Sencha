@@ -188,6 +188,20 @@ public:
     // for as long as it lives.
     [[nodiscard]] NetEntityId IdFor(EntityId entity);
     [[nodiscard]] NetEntityId TryFind(EntityId entity) const;
+
+    // The direction the wire arrives in: what one of this authority's entities
+    // a peer just named, or nothing.
+    //
+    // Invalid for an identity this authority never minted or has since
+    // released, which is the whole check a message needs to do before acting on
+    // an object a peer chose. Held as a map rather than searched for, because
+    // the search would be on a path whose length a peer decides.
+    //
+    // A caller still asks the world whether the entity is alive. This is
+    // cleaned at publish, so between two publishes it can still name one that
+    // has just died.
+    [[nodiscard]] EntityId TryResolve(NetEntityId id) const;
+
     void Release(EntityId entity);
     // Drops identities for entities the world no longer has. Without this the
     // map grows for the life of the session: an entity that is destroyed is
@@ -198,6 +212,10 @@ public:
 
 private:
     std::unordered_map<EntityId, NetEntityId, EntityIdHash> Forward;
+    // The same pairs the other way round. One hash node per replicated entity,
+    // one insert per identity minted, and one erase inside the sweep that
+    // already walks them -- nothing per publish and nothing per snapshot.
+    std::unordered_map<NetEntityId, EntityId> Reverse;
     // Starts at one: zero is the strong id's invalid sentinel.
     std::uint64_t NextId = 1;
 };
@@ -209,9 +227,19 @@ class ReplicationClientIdentity
 {
 public:
     [[nodiscard]] EntityId TryResolve(NetEntityId id) const;
+
+    // What to call an entity this machine can see, when asking the authority to
+    // do something about it. Invalid for anything replication did not put here,
+    // which is exactly the set a client is not entitled to name.
+    [[nodiscard]] NetEntityId TryFind(EntityId entity) const;
+
     void Bind(NetEntityId id, EntityId entity);
     void Unbind(NetEntityId id);
-    void Clear() { Entries.clear(); }
+    void Clear()
+    {
+        Entries.clear();
+        Names.clear();
+    }
 
     [[nodiscard]] std::size_t Size() const { return Entries.size(); }
     [[nodiscard]] const std::unordered_map<NetEntityId, EntityId>& All() const
@@ -221,6 +249,7 @@ public:
 
 private:
     std::unordered_map<NetEntityId, EntityId> Entries;
+    std::unordered_map<EntityId, NetEntityId, EntityIdHash> Names;
 };
 
 //-----------------------------------------------------------------------------

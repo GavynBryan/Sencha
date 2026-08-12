@@ -304,7 +304,14 @@ NetEntityId ReplicationAuthorityIdentity::IdFor(EntityId entity)
 
     const NetEntityId minted{ NextId++ };
     Forward.emplace(entity, minted);
+    Reverse.emplace(minted, entity);
     return minted;
+}
+
+EntityId ReplicationAuthorityIdentity::TryResolve(NetEntityId id) const
+{
+    const auto it = Reverse.find(id);
+    return it == Reverse.end() ? EntityId{} : it->second;
 }
 
 NetEntityId ReplicationAuthorityIdentity::TryFind(EntityId entity) const
@@ -315,13 +322,20 @@ NetEntityId ReplicationAuthorityIdentity::TryFind(EntityId entity) const
 
 void ReplicationAuthorityIdentity::Release(EntityId entity)
 {
-    Forward.erase(entity);
+    const auto it = Forward.find(entity);
+    if (it == Forward.end())
+        return;
+    Reverse.erase(it->second);
+    Forward.erase(it);
 }
 
 void ReplicationAuthorityIdentity::ForgetDead(const World& world)
 {
-    std::erase_if(Forward, [&world](const auto& entry) {
-        return !world.IsAlive(entry.first);
+    std::erase_if(Forward, [&](const auto& entry) {
+        if (world.IsAlive(entry.first))
+            return false;
+        Reverse.erase(entry.second);
+        return true;
     });
 }
 
@@ -331,14 +345,32 @@ EntityId ReplicationClientIdentity::TryResolve(NetEntityId id) const
     return it == Entries.end() ? EntityId{} : it->second;
 }
 
+NetEntityId ReplicationClientIdentity::TryFind(EntityId entity) const
+{
+    const auto it = Names.find(entity);
+    return it == Names.end() ? NetEntityId{} : it->second;
+}
+
 void ReplicationClientIdentity::Bind(NetEntityId id, EntityId entity)
 {
+    // Rebinding an identity onto a different entity -- which is what
+    // recognising an authored copy does -- drops the old pairing from both
+    // directions, so nothing goes on answering to a name it has lost.
+    const auto existing = Entries.find(id);
+    if (existing != Entries.end())
+        Names.erase(existing->second);
+
     Entries[id] = entity;
+    Names[entity] = id;
 }
 
 void ReplicationClientIdentity::Unbind(NetEntityId id)
 {
-    Entries.erase(id);
+    const auto it = Entries.find(id);
+    if (it == Entries.end())
+        return;
+    Names.erase(it->second);
+    Entries.erase(it);
 }
 
 //=============================================================================

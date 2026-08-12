@@ -145,6 +145,15 @@ public:
         return ClientMap;
     }
 
+    // The authority's half of the same question: which of this machine's
+    // entities a wire identity names. Const on purpose -- minting belongs to
+    // the publish walk, and an identity handed out for an entity the walk never
+    // visits is one nothing would ever release.
+    [[nodiscard]] const ReplicationAuthorityIdentity& AuthorityEntities() const
+    {
+        return Identity;
+    }
+
 private:
     ReplicationAuthorityIdentity Identity;
     ReplicationChangeStore Changes;
