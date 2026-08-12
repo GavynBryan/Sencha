@@ -12,6 +12,7 @@
 #include <physics/CharacterMoverPool.h>
 #include <physics/components/CharacterMoverLink.h>
 #include <net/NetConsoleCommands.h>
+#include <net/NetOwnership.h>
 #include <net/NetSession.h>
 #include <net/ReplicationSnapshot.h>
 #include <physics/PhysicsStepSystem.h>
@@ -201,6 +202,11 @@ void Engine::RegisterNetFramePhases()
                 // input describes ticks nobody will simulate.
                 engine.Replication().ForgetPeer(event.Peer);
                 engine.PeerCommands().ForgetPeer(event.Peer);
+                // The entities they were driving, handed back, and the input
+                // source their commands were landing in, closed. Nothing else
+                // closes one, and an entity left naming a peer that has gone
+                // reads its input from a source that will never fill again.
+                NetForgetOwnerPeer(engine.World().Entities(), event.Peer);
             }
         }
 
@@ -298,6 +304,13 @@ void Engine::RegisterNetFramePhases()
                      session->JoinFailureReason().empty()
                          ? "disconnected"
                          : session->JoinFailureReason());
+            // Whatever this machine was driving belonged to a session that no
+            // longer exists. A timeout does not destroy the session, so without
+            // this the client goes on predicting a pawn nothing will ever
+            // correct, and holds the look control that stops it being given a
+            // fresh one.
+            NetSetLocalControl(engine.World().Entities(), EntityId{},
+                               &engine.Prediction());
         }
         wasClient = isClient;
         wasAdmitted = isAdmitted;
@@ -409,6 +422,18 @@ void Engine::RegisterNetFramePhases()
             // rendering bug from every direction except this one. Reported per
             // arrival rather than per frame: a recipe runs when an entity first
             // appears, so this is bounded by spawns and not by frame rate.
+            // What the authority just said about ownership, turned into the one
+            // fact this machine acts on. Here rather than in a system because
+            // this is where the fact arrives and where structural work on
+            // arriving state already happens: it settles before the frame's
+            // first tick, so nothing has an ordering to declare against it, and
+            // no tick runs having predicted a body this client no longer drives.
+            if (isAdmitted)
+            {
+                NetReconcileLocalControl(world, session->LocalPeerId(),
+                                         engine.Prediction());
+            }
+
             if (applied.RecipesMissing > 0)
             {
                 log.Warn("net: {} spawn(s) named recipe {} and others this build "

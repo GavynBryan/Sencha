@@ -46,6 +46,7 @@
 #include <movement/MovementRegistration.h>
 #include <net/NetReplicationComponents.h>
 #include <net/NetSpawnRecipe.h>
+#include <net/NetOwnership.h>
 #include <net/NetSession.h>
 #include <net/PawnCommandCapture.h>
 #include <net/PeerCommandRuntime.h>
@@ -331,32 +332,6 @@ EntityId SpawnPawn(
 }
 
 //=============================================================================
-// LocalPlayerPawn
-//
-// Which pawn this process's player drives. One record, written only by
-// AttachLocalPlayer, which is what makes "at most one" a fact rather than a
-// hope: two copies of this answer is how a body the player drives ends up
-// beside a second one the camera is riding.
-//
-// Holds the id without keeping it alive. A pawn that has been destroyed --
-// unloaded with its zone, or handed over to the authority on join -- reads back
-// as no pawn at all, so nothing has to remember to clear this.
-//=============================================================================
-struct LocalPlayerPawn
-{
-    EntityId Value;
-};
-
-// The pawn this process's player drives, or an invalid id when there is none.
-EntityId LocalPawnOf(const World& world)
-{
-    const LocalPlayerPawn* record = world.TryGetResource<LocalPlayerPawn>();
-    if (record == nullptr || !record->Value.IsValid() || !world.IsAlive(record->Value))
-        return EntityId{};
-    return record->Value;
-}
-
-//=============================================================================
 // PlayContentPartition
 //
 // Which storage partition the loaded play content occupies, published when a
@@ -379,29 +354,22 @@ void PublishPlayContent(World& world, std::optional<StoragePartitionId> partitio
         world.AddResource<PlayContentPartition>().Value = partition;
 }
 
-// Points this process's camera and local input at a pawn, and takes those away
-// from whatever held them before. Exactly one pawn per process drives the
-// player's view, and this transition is the only thing that decides which:
-// every path that provides a pawn comes through here.
+// Takes local control of a pawn and points this process's camera at it.
 //
-// Everything here is a presentation or input fact about this machine, which is
-// why none of it replicates.
-void AttachLocalPlayer(World& world, EntityId pawn, Logger& log)
+// Which entity this machine drives, the look control that follows from it, and
+// the prediction that follows from that are the engine's -- one call, so the
+// half that used to be forgotten cannot be. What is left here is the camera,
+// which is a presentation choice: first person, orbit, or spectator is not a
+// fact about the network.
+void AttachLocalPlayer(World& world, EntityId pawn, ClientPrediction* prediction,
+                       Logger& log)
 {
+    NetSetLocalControl(world, pawn, prediction);
+
     const Vec3d position =
         world.TryGet<LocalTransform>(pawn) != nullptr
             ? world.TryGet<LocalTransform>(pawn)->Value.Position
             : Vec3d{};
-
-    // Release the previous holder first. Leaving the tag behind would leave a
-    // second entity turning with the player's mouse and steering off the same
-    // input, one of which the camera is not on.
-    const EntityId previous = LocalPawnOf(world);
-    if (previous.IsValid() && previous != pawn
-        && world.HasComponent<LocalLookControl>(previous))
-    {
-        world.RemoveComponent<LocalLookControl>(previous);
-    }
 
     EntityId camera = FindFirstCamera(world, PersistentStoragePartition);
     if (!camera.IsValid())
@@ -411,10 +379,6 @@ void AttachLocalPlayer(World& world, EntityId pawn, Logger& log)
     }
     world.GetResource<ActiveCameraService>().SetActive(camera);
 
-    // The tag marks this as the entity the local player's look action turns.
-    if (!world.HasComponent<LocalLookControl>(pawn))
-        world.AddComponent<LocalLookControl>(pawn, {});
-
     CameraRig rig{};
     rig.Target = pawn;
     rig.Mode = CameraRigMode::FirstPerson;
@@ -422,11 +386,6 @@ void AttachLocalPlayer(World& world, EntityId pawn, Logger& log)
         *existing = rig;
     else
         world.AddComponent<CameraRig>(camera, rig);
-
-    if (LocalPlayerPawn* record = world.TryGetResource<LocalPlayerPawn>())
-        record->Value = pawn;
-    else
-        world.AddResource<LocalPlayerPawn>().Value = pawn;
 
     log.Info("TemplateGame: local player attached to its pawn");
 }
@@ -444,7 +403,9 @@ void SpawnPlayerAvatar(
 {
     const EntityId pawn = SpawnPawn(
         world, FindPlayerStart(world, spawnPartition), movementProfile, avatar);
-    AttachLocalPlayer(world, pawn, log);
+    // No prediction: this machine defines this pawn rather than guessing ahead
+    // of somebody else's answer about it.
+    AttachLocalPlayer(world, pawn, nullptr, log);
 }
 
 void ConfigureRuntimeResources(
@@ -517,7 +478,7 @@ struct WorldPartitionUpdateSystem
         World& world = ctx.Entities;
         // Read rather than remembered: the pawn streaming follows is whichever
         // one the player is driving now, and joining a session replaces it.
-        const EntityId pawn = LocalPawnOf(world);
+        const EntityId pawn = LocalControlSubjectOf(world);
         if (pawn.IsValid())
         {
             if (const WorldTransform* transform =
@@ -558,7 +519,7 @@ struct WorldPartitionUpdateSystem
             return;
 
         World& world = ctx.Entities;
-        const EntityId pawn = LocalPawnOf(world);
+        const EntityId pawn = LocalControlSubjectOf(world);
         if (!pawn.IsValid())
         {
             PendingSafePosition.reset();
@@ -741,7 +702,6 @@ struct SessionPlayerSystem
     Engine* Owner = nullptr;
     MovementProfileHandle Profile;
     ResolvedPlayerAvatar Avatar;
-    std::unordered_map<std::uint32_t, EntityId> PeerPawns;
     // Whether anybody is playing in this process. A dedicated host simulates
     // every pawn and owns none of them: set from the launch configuration at
     // the composition root, never inferred from whether this process can draw.
@@ -762,7 +722,7 @@ struct SessionPlayerSystem
             // The authority owns every pawn in a session, this player's
             // included. Providing one here as well is the second provider.
             if (replicationReady && session->IsConnected())
-                AdoptReplicatedPawns(world, session->LocalPeerId().Value);
+                FollowLocalControl(world);
             return;
         }
 
@@ -792,7 +752,7 @@ private:
             world.TryGetResource<PlayContentPartition>();
         if (content == nullptr)
             return;
-        if (LocalPawnOf(world).IsValid())
+        if (LocalControlSubjectOf(world).IsValid())
             return;
 
         SpawnPlayerAvatar(world, Log(), content->Value, Profile, Avatar);
@@ -805,7 +765,7 @@ private:
         // most likely to be standing next to. Read each frame rather than
         // remembered, because the pawn appears when content loads and that can
         // be after this system is registered.
-        const EntityId local = LocalPawnOf(world);
+        const EntityId local = LocalControlSubjectOf(world);
         if (local.IsValid() && !world.HasComponent<NetReplicated>(local))
         {
             world.AddComponent<NetReplicated>(local);
@@ -815,103 +775,110 @@ private:
 
         const std::vector<PeerId> peers = session.ConnectedPeers();
 
+        std::vector<EntityId> owned;
         for (PeerId peer : peers)
         {
-            if (PeerPawns.contains(peer.Value))
+            // Asked of the component that already answers it. A map beside it
+            // would be a second copy of the same fact, and the copy is what
+            // goes stale the first time ownership moves.
+            owned.clear();
+            NetOwnedBy(world, peer, owned);
+            if (!owned.empty())
                 continue;
 
             // Offset laterally from the authored start so two players do not
-            // arrive inside each other. A proper multi-start rotation is the
-            // level's business, not this system's.
+            // arrive inside each other, by peer id so a peer lands in the same
+            // place however many others are present. A proper multi-start
+            // rotation is the level's business, not this system's.
             //
             // Unfiltered: a map's content is imported into its own zone
             // partition, so a start looked for only in the persistent one is a
             // start that is never found and a peer that arrives at the origin.
             Vec3d spawn = FindPlayerStart(world, std::nullopt);
-            spawn.X += 2.0f * static_cast<float>(PeerPawns.size() + 1);
+            spawn.X += 2.0f * static_cast<float>(peer.Value);
 
             const EntityId pawn = SpawnPawn(world, spawn, Profile, Avatar);
             world.AddComponent<NetReplicated>(pawn);
-            world.AddComponent<NetOwner>(pawn, NetOwner{ .Peer = peer.Value });
             world.AddComponent<NetSpawnRecipe>(
                 pawn, NetSpawnRecipe{ .Id = kPlayerPawnRecipe });
-            // Whose keys steer it. Without this the pawn reads the local
-            // source, which is the possession bug in one component: the person
-            // running the server would drive every pawn they are simulating on
-            // someone else's behalf.
-            world.AddComponent<InputActionSourceRef>(
-                pawn, InputActionSourceRef{ .Source = peer.Value });
-            PeerPawns.emplace(peer.Value, pawn);
+            // Whose pawn this is, and everything that follows from it: whose
+            // aim turns it, whose keys move it, and whose snapshot carries the
+            // state only its owner may see.
+            NetSetOwner(world, pawn, peer);
             Log().Info("TemplateGame: spawned a pawn for peer {}", peer.Value);
         }
 
-        // A peer that left takes its pawn with it.
-        for (auto it = PeerPawns.begin(); it != PeerPawns.end(); )
+        // A peer that left takes its pawn with it. The engine hands the
+        // entities a departing peer owned back to the authority, so what is
+        // left behind is a player pawn nobody drives -- which the host's own
+        // pawn also looks like, and is why that one is excluded by name.
+        std::vector<EntityId> orphans;
+        const World& reading = world;
+        reading.ForEachComponent<NetSpawnRecipe>(
+            [&](EntityId entity, const NetSpawnRecipe& recipe) {
+                if (recipe.Id != kPlayerPawnRecipe || entity == local)
+                    return;
+                if (NetOwnerOf(world, entity).IsValid())
+                    return;
+                orphans.push_back(entity);
+            });
+
+        for (const EntityId orphan : orphans)
         {
-            const bool present = std::any_of(
-                peers.begin(), peers.end(),
-                [id = it->first](PeerId peer) { return peer.Value == id; });
-            if (present)
-            {
-                ++it;
+            if (!world.IsAlive(orphan))
                 continue;
-            }
-            if (world.IsAlive(it->second))
-                world.DestroyEntity(it->second);
-            Log().Info("TemplateGame: removed the pawn for peer {}", it->first);
-            it = PeerPawns.erase(it);
+            world.DestroyEntity(orphan);
+            Log().Info("TemplateGame: removed the pawn for peer that left");
         }
     }
 
-    void AdoptReplicatedPawns(World& world, std::uint32_t self)
+    // What this machine has to do about driving a pawn, once the engine has
+    // decided which one that is.
+    //
+    // This used to be a scan of every entity replication had created, looking
+    // for one whose NetOwner named this peer -- which is the question the
+    // engine now answers before the frame's first tick, and answers without an
+    // unordered_map walk whose winner changed with hash order.
+    void FollowLocalControl(World& world)
     {
-        // Everything replication created for this client, which is the only
-        // definitive list: an entity is not marked on this side, and querying
-        // by NetOwner would miss every pawn the authority drives itself --
-        // including the host's own player.
-        // What each replicated entity *is* -- body, pose history, derived
-        // columns -- is the spawn recipe's job now, run once at spawn. What is
-        // left here is possession: which of them this player drives.
-        EntityId mine;
-        for (const auto& [id, entity] : Owner->Replication().ClientEntities().All())
-        {
-            if (!world.IsAlive(entity))
-                continue;
-            if (const NetOwner* owner = world.TryGet<NetOwner>(entity);
-                owner != nullptr && owner->Peer == self)
-            {
-                mine = entity;
-            }
-        }
-
-        if (!mine.IsValid() || mine == LocalPawnOf(world))
+        const EntityId subject = LocalControlSubjectOf(world);
+        if (subject == Followed)
             return;
 
         // A pawn this process provided for itself before joining is now
-        // someone else's job to simulate. Leaving it would leave a second body
-        // standing where the player used to be. Local only: a replicated
-        // entity destroyed here would be recreated by the next snapshot
-        // without the fields that have not changed since.
-        const EntityId previous = LocalPawnOf(world);
-        if (previous.IsValid() && !world.HasComponent<NetReplicated>(previous))
-            world.DestroyEntity(previous);
+        // somebody else's job to simulate, and leaving it would leave a second
+        // body standing where the player used to be. Local only: a replicated
+        // entity destroyed here would come back on the next snapshot without
+        // the fields that have not changed since.
+        if (Followed.IsValid() && world.IsAlive(Followed)
+            && !world.HasComponent<NetReplicated>(Followed))
+        {
+            world.DestroyEntity(Followed);
+        }
+        Followed = subject;
 
-        // This pawn becomes a full simulation participant on this machine.
-        // A player holding a key cannot wait for the round trip to see it,
-        // so the client runs the same systems over the same input and the
-        // authority's snapshots become something to reconcile against
-        // rather than something to obey.
+        if (!subject.IsValid())
+            return;
+
+        // This pawn becomes a full simulation participant on this machine. A
+        // player holding a key cannot wait for the round trip to see it, so the
+        // client runs the same systems over the same input and the authority's
+        // snapshots become something to reconcile against rather than obey.
         //
-        // The same archetype the authority built, from the same function:
-        // two machines simulating one pawn from the same input have to be
+        // The same archetype the authority built, from the same function: two
+        // machines simulating one pawn from the same input have to be
         // simulating the same pawn.
-        if (!world.HasComponent<MovementIntent>(mine))
-            BuildPawnBody(world, mine, Profile, Avatar);
+        if (!world.HasComponent<MovementIntent>(subject))
+            BuildPawnBody(world, subject, Profile, Avatar);
 
-        AttachLocalPlayer(world, mine, Log());
-        Owner->Prediction().SetPredicted(mine);
+        AttachLocalPlayer(world, subject, &Owner->Prediction(), Log());
         Log().Info("TemplateGame: predicting this player's own pawn");
     }
+
+    // The pawn this machine was last told to drive, so taking up a new one is
+    // an edge rather than something re-derived every frame.
+    EntityId Followed;
+
 };
 
 struct SpinSystem
