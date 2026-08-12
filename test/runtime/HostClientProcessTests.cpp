@@ -78,13 +78,25 @@ namespace
                 raw.push_back(arg.data());
             raw.push_back(nullptr);
 
+            // A pipe onto the child's stdin, which is where the console reads
+            // operator commands from. It is how a dedicated server is actually
+            // driven, so a test that drives one any other way is testing a path
+            // nobody uses.
+            int pipeFds[2] = { -1, -1 };
+            if (::pipe(pipeFds) != 0)
+                return;
+
             Pid = ::fork();
             if (Pid == 0)
             {
-                // Child: content root, then output to the log both ways so a
-                // crash message is captured beside the ordinary logging.
+                // Child: content root, stdin from the pipe, then output to the
+                // log both ways so a crash message is captured beside the
+                // ordinary logging.
                 if (::chdir(SENCHA_REPO_ROOT "/template") != 0)
                     ::_exit(127);
+                ::close(pipeFds[1]);
+                ::dup2(pipeFds[0], STDIN_FILENO);
+                ::close(pipeFds[0]);
                 const int fd = ::open(LogPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
                 if (fd < 0)
                     ::_exit(127);
@@ -94,10 +106,14 @@ namespace
                 ::execv(TEST_APP_PATH, raw.data());
                 ::_exit(127);
             }
+            ::close(pipeFds[0]);
+            StdIn = pipeFds[1];
         }
 
         ~AppProcess()
         {
+            if (StdIn >= 0)
+                ::close(StdIn);
             if (Pid > 0)
             {
                 ::kill(Pid, SIGKILL);
@@ -111,7 +127,23 @@ namespace
         AppProcess(const AppProcess&) = delete;
         AppProcess& operator=(const AppProcess&) = delete;
 
-        [[nodiscard]] bool Started() const { return Pid > 0; }
+        [[nodiscard]] bool Started() const { return Pid > 0 && StdIn >= 0; }
+
+        // Types a console line at the process, the way an operator would.
+        bool Send(std::string line) const
+        {
+            line += '\n';
+            std::size_t written = 0;
+            while (written < line.size())
+            {
+                const ssize_t n = ::write(StdIn, line.data() + written,
+                                          line.size() - written);
+                if (n <= 0)
+                    return false;
+                written += static_cast<std::size_t>(n);
+            }
+            return true;
+        }
 
         [[nodiscard]] std::string Log() const
         {
@@ -170,6 +202,7 @@ namespace
 
     private:
         pid_t Pid = -1;
+        int StdIn = -1;
         std::filesystem::path LogPath;
     };
 
@@ -223,6 +256,105 @@ TEST(HostClientProcess, ADedicatedHostServesAJoiningClient)
 
     int hostExit = -1;
     EXPECT_TRUE(host.StopAndWait(&hostExit)) << "host did not stop when asked";
+    EXPECT_EQ(hostExit, 0);
+}
+
+// The possession path, end to end, across two real processes.
+//
+// A client names an object it was given, asks the authority for it in a
+// validated request, and control moves -- input routing, prediction subject,
+// look control and camera, and what the authority will send it of that object's
+// state. Then it hands the object back and every one of those comes off.
+//
+// Everything below this has focused coverage and a deterministic two-world
+// test. What only two processes show is that the same path works through real
+// sockets, a real handshake, a real reliable channel, and a game module loaded
+// twice -- which is where the last serious defect in this area was hiding: a
+// reliable message from a client was being answered with a handshake challenge
+// and never delivered, and nothing but a real client sending one could see it.
+TEST(HostClientProcess, AClientTakesATurretAndGivesItBack)
+{
+    AppProcess host({ "+map", "levels/test", "+host", "0" }, TempLogPath("host"));
+    ASSERT_TRUE(host.Started());
+
+    std::string hostLog;
+    ASSERT_TRUE(host.WaitForLog("hosting on", &hostLog)) << hostLog;
+    std::string port;
+    ASSERT_TRUE(ParseHostPort(hostLog, port)) << hostLog;
+    ASSERT_TRUE(host.WaitForLog("placed a turret", &hostLog))
+        << "the host never placed a turret to take:\n" << hostLog;
+
+    AppProcess client({ "+connect", "127.0.0.1:" + port }, TempLogPath("client"));
+    ASSERT_TRUE(client.Started());
+
+    std::string clientLog;
+    ASSERT_TRUE(client.WaitForLog("predicting this player's own pawn", &clientLog))
+        << clientLog;
+    ASSERT_TRUE(host.WaitForLog("spawned a pawn for peer", &hostLog)) << hostLog;
+
+    // The turret has to have arrived before it can be named, and it arrives as
+    // ordinary replicated state rather than as anything the client waited for.
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    ASSERT_TRUE(client.Send("turret"));
+    EXPECT_TRUE(client.WaitForLog("asked the authority about turret", &clientLog))
+        << "the client could not name the turret replication gave it:\n"
+        << clientLog;
+    EXPECT_TRUE(host.WaitForLog("took the turret", &hostLog))
+        << "the request never reached the authority, or was refused:\n"
+        << hostLog;
+
+    // What the authority records, read the way an operator would read it. The
+    // peer owns the turret and no longer owns the pawn it walked in on: one
+    // peer drives one thing.
+    ASSERT_TRUE(host.Send("net_owners"));
+    EXPECT_TRUE(host.WaitForLog("owns 1", &hostLog)) << hostLog;
+    EXPECT_EQ(hostLog.find("NOT REPLICATED"), std::string::npos)
+        << "the peer owns something no peer can be told about:\n" << hostLog;
+
+    // And back. The same request means leaving, because the authority holds the
+    // record of who owns what and does not have to be told which was meant.
+    ASSERT_TRUE(client.Send("turret"));
+    EXPECT_TRUE(host.WaitForLog("left the turret", &hostLog))
+        << "the client could not give the turret back:\n" << hostLog;
+
+    int clientExit = -1;
+    EXPECT_TRUE(client.StopAndWait(&clientExit));
+    EXPECT_EQ(clientExit, 0);
+
+    int hostExit = -1;
+    EXPECT_TRUE(host.StopAndWait(&hostExit));
+    EXPECT_EQ(hostExit, 0);
+}
+
+// The account a dedicated host can give of itself. It has no window and no
+// overlay, so this is the only way to ask it anything.
+TEST(HostClientProcess, ADedicatedHostAnswersForItselfOverTheConsole)
+{
+    AppProcess host({ "+map", "levels/test", "+host", "0" }, TempLogPath("status"));
+    ASSERT_TRUE(host.Started());
+
+    std::string hostLog;
+    ASSERT_TRUE(host.WaitForLog("hosting on", &hostLog)) << hostLog;
+    std::string port;
+    ASSERT_TRUE(ParseHostPort(hostLog, port)) << hostLog;
+
+    AppProcess client({ "+connect", "127.0.0.1:" + port }, TempLogPath("statuscl"));
+    ASSERT_TRUE(client.Started());
+    ASSERT_TRUE(host.WaitForLog("spawned a pawn for peer", &hostLog)) << hostLog;
+
+    ASSERT_TRUE(host.Send("net_status"));
+    // Three of the questions the brief says a terminal has to answer: what the
+    // traffic is, whether the budget is what is holding entities back, and what
+    // each peer is costing.
+    EXPECT_TRUE(host.WaitForLog("traffic", &hostLog)) << hostLog;
+    EXPECT_TRUE(hostLog.find("publish") != std::string::npos) << hostLog;
+    EXPECT_TRUE(hostLog.find("starved") != std::string::npos) << hostLog;
+
+    int clientExit = -1;
+    EXPECT_TRUE(client.StopAndWait(&clientExit));
+    int hostExit = -1;
+    EXPECT_TRUE(host.StopAndWait(&hostExit));
     EXPECT_EQ(hostExit, 0);
 }
 

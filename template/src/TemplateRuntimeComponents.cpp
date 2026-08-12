@@ -2,6 +2,7 @@
 
 #include "PlayerStartComponent.h"
 #include "SpinComponent.h"
+#include "TurretMount.h"
 
 #include <world/ComponentRegistrar.h>
 
@@ -13,4 +14,8 @@ void TemplateGame::OnRegisterComponents(ComponentRegistrar& registrar)
 {
     registrar.Add<SpinComponent>();
     registrar.Add<PlayerStartComponent>();
+    registrar.Add<TurretMount>();
+    // Authority-only: it holds a runtime entity handle, so it neither travels
+    // nor is written down.
+    registrar.Add<TurretSeat>();
 }
