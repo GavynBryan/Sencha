@@ -6,6 +6,7 @@
 #include <net/ReplicationChangeStore.h>
 #include <net/ReplicationSnapshot.h>
 
+#include <array>
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
@@ -68,6 +69,21 @@ public:
         // something other than bytes is doing the limiting.
         std::size_t PeakSnapshotBytes = 0;
         std::size_t BudgetBytes = 0;
+        // Destroys that did not fit. Owed until confirmed either way, but a
+        // number that stays up means a sweep is draining slower than it grows.
+        std::uint32_t DestroysDeferred = 0;
+        // What the bytes bought, summed over the peers served: entities a peer
+        // had confirmed nothing about, against differences from what it holds.
+        // A body that is still mostly seeding seconds after a join is a peer
+        // that is not converging, which used to look like plain bandwidth.
+        std::size_t SeedingBytes = 0;
+        std::size_t DeltaBytes = 0;
+        // The costliest few entities of this publish, largest first, taking the
+        // most any one peer paid for each. Bounded and deliberately small: it
+        // answers "which entity is eating the budget" without a capture format,
+        // a file, or a viewer.
+        std::array<SnapshotWriteResult::EntityCost,
+                   SnapshotWriteResult::kCostliestTracked> Costliest{};
     };
 
     // Authority side. Writes one snapshot per connected peer and queues it on
@@ -121,6 +137,13 @@ public:
                               const NetSpawnRecipes* recipes = nullptr,
                               ClientPrediction* prediction = nullptr,
                               ReplicationInterpolation* interpolation = nullptr);
+
+    // Client side. What the last snapshot this machine applied did to it:
+    // spawned, updated, destroyed, components removed, authored entities bound
+    // or deferred, recipes it had no builder for. Every one of these was
+    // computed and discarded, so "why did that not appear" had no answer short
+    // of a debugger.
+    [[nodiscard]] const SnapshotApplyResult& LastApply() const { return Applied; }
 
     // Client side. The newest snapshot tick this machine has applied. Used for
     // the shared clock; what the authority is told about delivery is the ack
@@ -178,6 +201,7 @@ private:
     std::uint64_t Generation = 0;
     std::unordered_map<PeerId, ReplicationPeerState> Peers;
     ReplicationClientIdentity ClientMap;
+    SnapshotApplyResult Applied;
     std::uint64_t AppliedTick = 0;
     NetSnapshotAck AppliedAcks;
 

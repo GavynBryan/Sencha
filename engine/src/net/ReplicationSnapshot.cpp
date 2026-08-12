@@ -407,6 +407,10 @@ namespace
         // told about. They are the leading ones: a removal is recorded with the
         // generation it happened at, and the list is only ever appended to.
         std::uint32_t OwedRemovals = 0;
+        // This peer has confirmed nothing about it, so what it costs is the
+        // whole entity rather than what moved. The expensive half of a join,
+        // and the half that is supposed to stop.
+        bool Seeding = false;
         // Driven by the peer this snapshot is for. Everything else this peer
         // receives is mirrored and presented a fixed distance in the past, so a
         // late sample is smoothed over; its own entity is what its prediction
@@ -501,6 +505,7 @@ namespace
             .FirstMask = first,
             .SendAuthored = sendAuthored,
             .OwedRemovals = owedRemovals,
+            .Seeding = !peer.Knows(entity.Id),
             .Owned = isOwner,
         };
         return true;
@@ -517,6 +522,32 @@ namespace
     // zone would otherwise spend a whole datagram on the news while the player's
     // own entity waited behind it.
     constexpr std::size_t kMaxDestroysPerSnapshot = 32;
+
+    // Keeps the costliest few, largest first, ties by identity so the list is
+    // the same for two runs of one simulation. A fixed four-slot shift rather
+    // than a sort: this runs once per entity actually written, and the whole
+    // point of a bounded answer is that finding it costs nothing worth
+    // measuring.
+    void NoteCost(std::array<SnapshotWriteResult::EntityCost,
+                             SnapshotWriteResult::kCostliestTracked>& top,
+                  NetEntityId id, std::size_t bits)
+    {
+        const auto beats = [&](const SnapshotWriteResult::EntityCost& held) {
+            return bits > held.Bits
+                || (bits == held.Bits && (held.Id.Value == 0
+                                          || id.Value < held.Id.Value));
+        };
+
+        std::size_t at = top.size();
+        while (at > 0 && beats(top[at - 1]))
+            --at;
+        if (at == top.size())
+            return;
+
+        for (std::size_t i = top.size() - 1; i > at; --i)
+            top[i] = top[i - 1];
+        top[at] = SnapshotWriteResult::EntityCost{ id, bits };
+    }
 }
 
 SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request,
@@ -669,6 +700,8 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
         }
         used += plan.Bits;
         sending.push_back(&plan);
+        (plan.Seeding ? result.SeedingBits : result.DeltaBits) += plan.Bits;
+        NoteCost(result.Costliest, plan.Entity->Id, plan.Bits);
     }
 
     NetBitWriter writer(out);

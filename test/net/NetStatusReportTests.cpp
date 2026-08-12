@@ -324,3 +324,39 @@ TEST(NetOwnersReport, WhatThisMachineDrivesIsReportedWithOrWithoutASession)
     EXPECT_TRUE(Mentions(NetFormatOwners(nullptr, published.Entities, nullptr),
                          "entity "));
 }
+
+// The counters that were computed on every publish and every apply and then
+// thrown away. Each of these was a question the brief asks and the code already
+// knew the answer to.
+TEST(NetStatusReport, AHostSplitsWhatTheBytesBought)
+{
+    Published published;
+    NetStatusSources sources;
+    sources.Session = &published.Link.Host;
+    sources.Replication = &published.Replication;
+    const std::string text = NetFormatStatus(sources);
+
+    // The peer has confirmed nothing, so the whole body is seeding. That is the
+    // reading a total cannot give: high and falling is a join, high and level
+    // is a peer that is not converging.
+    EXPECT_TRUE(Mentions(text, "seeding")) << text;
+    EXPECT_TRUE(Mentions(text, "delta")) << text;
+    EXPECT_TRUE(Mentions(text, "destroy(s) deferred")) << text;
+    // Which entity is eating the budget, by name, with no capture format.
+    EXPECT_TRUE(Mentions(text, "costliest")) << text;
+}
+
+TEST(NetStatusReport, AClientReportsWhatTheLastSnapshotDidToIt)
+{
+    Session link;
+    ReplicationRuntime replication;
+
+    NetStatusSources sources;
+    sources.Session = &link.Client;
+    sources.Replication = &replication;
+    const std::string text = NetFormatStatus(sources);
+
+    EXPECT_TRUE(Mentions(text, "applied")) << text;
+    EXPECT_TRUE(Mentions(text, "spawned")) << text;
+    EXPECT_TRUE(Mentions(text, "component(s) removed")) << text;
+}

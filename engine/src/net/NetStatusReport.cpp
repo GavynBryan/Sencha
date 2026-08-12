@@ -150,8 +150,31 @@ namespace
                     publish.SnapshotsSent, publish.PeersServed,
                     publish.PeakSnapshotBytes, publish.BudgetBytes, occupancy);
         Continue(out);
-        out += Line("%u deferred, oldest %u snapshot(s) behind",
-                    publish.EntitiesDeferred, publish.OldestDeferredSnapshots);
+        out += Line("%u deferred, oldest %u snapshot(s) behind; %u destroy(s) "
+                    "deferred", publish.EntitiesDeferred,
+                    publish.OldestDeferredSnapshots, publish.DestroysDeferred);
+
+        // Seeding is the expensive half of a join and the half that is supposed
+        // to stop. A body still mostly seeding well after one is a peer that is
+        // not converging, which reads as plain bandwidth from a total.
+        Continue(out);
+        out += Line("%zu B seeding, %zu B delta", publish.SeedingBytes,
+                    publish.DeltaBytes);
+
+        std::string costliest;
+        for (const SnapshotWriteResult::EntityCost& cost : publish.Costliest)
+        {
+            if (cost.Bits == 0)
+                break;
+            if (!costliest.empty())
+                costliest += ", ";
+            costliest += Line("%" PRIu64 " (%zu B)", cost.Id.Value, cost.Bits / 8);
+        }
+        if (!costliest.empty())
+        {
+            Continue(out);
+            out += "costliest " + costliest;
+        }
 
         if (publish.EntitiesUnsendable > 0)
         {
@@ -202,6 +225,35 @@ namespace
                 Continue(out);
                 out += "  channel " + ChannelHealth(record->Channels);
             }
+        }
+    }
+
+    void AppendApply(std::string& out, const ReplicationRuntime& replication)
+    {
+        const SnapshotApplyResult& applied = replication.LastApply();
+        Section(out, "applied");
+        if (!applied.Ok())
+        {
+            out += "refused: "
+                 + std::string(SnapshotApplyErrorToString(applied.Error));
+            return;
+        }
+        out += Line("tick %" PRIu64 "; %u spawned, %u updated, %u destroyed, "
+                    "%u component(s) removed",
+                    applied.Tick, applied.EntitiesSpawned, applied.EntitiesUpdated,
+                    applied.EntitiesDestroyed, applied.ComponentsRemoved);
+
+        // The two ways an entity arrives and does not appear. A missing recipe
+        // leaves it correct in state and invisible on screen; a deferred
+        // authored key means this machine has not loaded the level yet, and
+        // the snapshot deliberately goes unacknowledged so it comes again.
+        if (applied.RecipesMissing != 0 || applied.AuthoredDeferred != 0
+            || applied.AuthoredBound != 0)
+        {
+            Continue(out);
+            out += Line("%u recipe(s) missing, %u authored bound, %u deferred",
+                        applied.RecipesMissing, applied.AuthoredBound,
+                        applied.AuthoredDeferred);
         }
     }
 
@@ -298,8 +350,11 @@ std::string NetFormatStatus(const NetStatusSources& sources)
     }
     else
     {
-        // A client's own view of the same three questions: what it is guessing,
-        // what it is presenting, and whether its one channel is backing up.
+        // A client's own view of the same questions: what the last snapshot
+        // did to it, what it is guessing, what it is presenting, and whether
+        // its one channel is backing up.
+        if (sources.Replication != nullptr)
+            AppendApply(out, *sources.Replication);
         if (sources.Prediction != nullptr)
             AppendPrediction(out, *sources.Prediction);
         if (sources.Interpolation != nullptr)

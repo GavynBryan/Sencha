@@ -5,6 +5,38 @@
 
 #include <algorithm>
 
+namespace
+{
+    // Folds one peer's costliest entity into the publish-wide list, keeping the
+    // largest a single peer paid and never counting an entity twice.
+    void MergeCost(std::array<SnapshotWriteResult::EntityCost,
+                              SnapshotWriteResult::kCostliestTracked>& top,
+                   const SnapshotWriteResult::EntityCost& cost)
+    {
+        for (SnapshotWriteResult::EntityCost& held : top)
+        {
+            if (held.Id != cost.Id)
+                continue;
+            held.Bits = std::max(held.Bits, cost.Bits);
+            std::sort(top.begin(), top.end(),
+                      [](const auto& a, const auto& b) {
+                          if (a.Bits != b.Bits)
+                              return a.Bits > b.Bits;
+                          return a.Id.Value < b.Id.Value;
+                      });
+            return;
+        }
+        if (cost.Bits <= top.back().Bits && top.back().Bits != 0)
+            return;
+        top.back() = cost;
+        std::sort(top.begin(), top.end(), [](const auto& a, const auto& b) {
+            if (a.Bits != b.Bits)
+                return a.Bits > b.Bits;
+            return a.Id.Value < b.Id.Value;
+        });
+    }
+}
+
 void ReplicationRuntime::SetSnapshotBytes(std::size_t bytes)
 {
     Budget = std::clamp(bytes, kNetMinSnapshotBytes, kNetMaxSnapshotBytes);
@@ -92,6 +124,18 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
                                                  written.OldestDeferredSnapshots);
         stats.PeakSnapshotBytes =
             std::max(stats.PeakSnapshotBytes, written.BytesWritten);
+        stats.DestroysDeferred += written.DestroysDeferred;
+        stats.SeedingBytes += written.SeedingBits / 8;
+        stats.DeltaBytes += written.DeltaBits / 8;
+        // The most any one peer paid for an entity, not the sum: a world of
+        // sixteen peers would otherwise report every entity as sixteen times
+        // its size and rank them all identically.
+        for (const SnapshotWriteResult::EntityCost& cost : written.Costliest)
+        {
+            if (cost.Bits == 0)
+                break;
+            MergeCost(stats.Costliest, cost);
+        }
         if (!written.Ok)
         {
             // Nothing a world can do reaches here -- the writer fills to the
@@ -155,6 +199,9 @@ SnapshotApplyResult ReplicationRuntime::Apply(std::span<const std::byte> payload
         AppliedTick = std::max(AppliedTick, applied.Tick);
         AppliedAcks.Observe(applied.Sequence);
     }
+    // Held whether or not it was accepted: a refused snapshot is exactly the
+    // one somebody wants to see the reason for.
+    Applied = applied;
     return applied;
 }
 
@@ -176,6 +223,7 @@ void ReplicationRuntime::Reset()
     Generation = 0;
     Peers.clear();
     ClientMap.Clear();
+    Applied = SnapshotApplyResult{};
     AppliedTick = 0;
     AppliedAcks.Clear();
     LastPublishedTick = 0;

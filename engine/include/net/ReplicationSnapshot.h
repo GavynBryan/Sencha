@@ -8,6 +8,7 @@
 #include <net/ReplicationCodec.h>
 #include <net/ReplicationLayout.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -348,6 +349,30 @@ struct SnapshotWriteResult
     // rather than as waiting since the session began.
     std::uint32_t OldestDeferredSnapshots = 0;
     std::size_t BytesWritten = 0;
+
+    // Split by what the bits bought: entities this peer had confirmed nothing
+    // about, against differences from what it already holds. Seeding is the
+    // expensive half and the temporary one, so "is this peer still being
+    // seeded" stops being a guess about a total that looks high. They sum to
+    // the body, so a body that is mostly seeding several seconds after a join
+    // is a peer that is not converging.
+    std::size_t SeedingBits = 0;
+    std::size_t DeltaBits = 0;
+
+    // The entities this snapshot spent the most on, largest first, ties by
+    // identity so two runs of one simulation report the same list.
+    //
+    // Bounded and tiny on purpose. "Which entity is eating the budget" is the
+    // question people actually ask, and answering it with a handful of names
+    // needs no capture format, no file, and no viewer -- while a per-message
+    // trace would need all three and is a different feature.
+    static constexpr std::size_t kCostliestTracked = 4;
+    struct EntityCost
+    {
+        NetEntityId Id;
+        std::size_t Bits = 0;
+    };
+    std::array<EntityCost, kCostliestTracked> Costliest{};
 };
 
 // Encodes one snapshot into `out`, filling it as far as it goes: `out` is the
