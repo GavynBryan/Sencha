@@ -234,6 +234,18 @@ public:
     [[nodiscard]] std::uint64_t StrikesIssued() const { return TotalStrikes; }
     [[nodiscard]] std::uint64_t Refusals() const { return TotalRefusals; }
 
+    // Client side, for diagnostics only: the channels toward the authority, so
+    // "is the reliable channel backing up" is answerable from outside. Null on
+    // a host, which keeps one set per peer on the peer record instead.
+    //
+    // Const, and const is the point. Everything about sequencing, ACKs, and
+    // retransmission is the channel's, and a diagnostic that could reach in and
+    // change it would be a second opinion about the reliable window.
+    [[nodiscard]] const NetChannelSet* AuthorityChannels() const
+    {
+        return CurrentRole == NetSessionRole::Client ? &ClientChannels : nullptr;
+    }
+
 private:
     [[nodiscard]] NetPeer* PeerByAddress(const NetAddress& address);
     void HandleAuthorityMessage(const NetDatagram& datagram, double nowSeconds,

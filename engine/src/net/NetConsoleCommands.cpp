@@ -5,6 +5,7 @@
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleTypes.h>
 #include <net/NetSession.h>
+#include <net/NetStatusReport.h>
 #include <net/ReplicationLayout.h>
 #include <net/ClientPrediction.h>
 #include <net/PeerCommandRuntime.h>
@@ -60,35 +61,6 @@ namespace
         return true;
     }
 
-    std::string_view DescribeRole(NetSessionRole role)
-    {
-        switch (role)
-        {
-        case NetSessionRole::Host:   return "host";
-        case NetSessionRole::Client: return "client";
-        case NetSessionRole::Standalone: break;
-        }
-        return "standalone";
-    }
-
-    std::string_view DescribeFailure(NetJoinFailure failure)
-    {
-        switch (failure)
-        {
-        case NetJoinFailure::Refused:        return "refused";
-        case NetJoinFailure::TimedOut:       return "timed out";
-        case NetJoinFailure::TransportError: return "transport error";
-        case NetJoinFailure::Ended:          return "session ended";
-        case NetJoinFailure::None:           break;
-        }
-        return "";
-    }
-
-    std::string DescribeRoundTrip(std::uint64_t microseconds)
-    {
-        return std::to_string(microseconds / 1000) + "."
-             + std::to_string((microseconds / 100) % 10) + "ms";
-    }
 }
 
 void NetApplyConsoleAuthority(ConsoleRegistry& registry, const NetSession* session)
@@ -513,50 +485,25 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
         .Name = "net_status",
         .Owner = "engine",
         .Usage = "net_status",
-        .Help = "Print session role, local address, peers, and handshake outcome.",
+        .Help = "Print what the session is doing: traffic by kind, replication "
+                "budget and deferral, per-peer input depth and channel health, "
+                "and a client's prediction, interpolation, and clock.",
         .Callback = [&engine](ConsoleExecutionContext&,
                               std::span<const std::string>) {
+            // The whole account, not a summary of it. A dedicated host has no
+            // overlay, so this is the only place the numbers that decide
+            // whether a session is healthy can be read at all.
+            NetStatusSources sources;
+            sources.Session = engine.TryNet();
+            sources.Traffic = &engine.NetTraffic();
+            sources.Replication = &engine.Replication();
+            sources.Commands = &engine.PeerCommands();
+            sources.Prediction = &engine.Prediction();
+            sources.Interpolation = &engine.Interpolation();
+            sources.Clock = &engine.NetClock();
+
             ConsoleResult result;
-            const NetSession* session = engine.TryNet();
-            if (session == nullptr)
-            {
-                result.Info("standalone (no session)");
-                return result;
-            }
-
-            std::string text = std::string(DescribeRole(session->Role()));
-            text += " at " + NetAddressToString(session->LocalAddress());
-
-            if (session->Role() == NetSessionRole::Client)
-            {
-                text += session->IsConnected() ? "; admitted as peer "
-                                                   + std::to_string(session->LocalPeerId().Value)
-                                               : "; not admitted";
-                if (session->RoundTripMicroseconds() > 0)
-                    text += "; rtt " + DescribeRoundTrip(session->RoundTripMicroseconds());
-            }
-            else
-            {
-                text += "; peers " + std::to_string(session->ConnectedPeers().size());
-                for (PeerId id : session->ConnectedPeers())
-                {
-                    const NetPeer* peer = session->FindPeer(id);
-                    if (peer != nullptr && peer->RoundTripMicroseconds > 0)
-                    {
-                        text += "; peer " + std::to_string(id.Value) + " rtt "
-                              + DescribeRoundTrip(peer->RoundTripMicroseconds);
-                    }
-                }
-            }
-            if (session->JoinFailure() != NetJoinFailure::None)
-            {
-                text += "; " + std::string(DescribeFailure(session->JoinFailure()))
-                      + ": " + session->JoinFailureReason();
-            }
-
-            text += "; strikes " + std::to_string(session->StrikesIssued());
-            text += "; refusals " + std::to_string(session->Refusals());
-            result.Info(text);
+            result.Info(NetFormatStatus(sources));
             return result;
         },
     });
