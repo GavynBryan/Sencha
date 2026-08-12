@@ -29,10 +29,19 @@
 // scale.
 //=============================================================================
 
+// The leading byte of a channel packet, which shares its namespace with
+// NetMessageType: an admitted peer's datagram is routed by peeking that byte,
+// so a channel kind that collides with a control type is a channel whose
+// packets are answered as handshake and never delivered. That is not
+// hypothetical -- ReliableOrdered was one, and no client could send the
+// authority a reliable message at all.
+//
+// Numbered above every control type so the two cannot meet. NetSession asserts
+// the separation against the types it actually peeks.
 enum class NetChannelKind : std::uint8_t
 {
-    UnreliableSequenced = 0,
-    ReliableOrdered = 1,
+    UnreliableSequenced = 16,
+    ReliableOrdered = 17,
 };
 
 // Space the AEAD will need, subtracted from the payload budget now so that

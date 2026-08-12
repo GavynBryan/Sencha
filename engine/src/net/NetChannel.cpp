@@ -228,8 +228,13 @@ std::vector<std::vector<std::byte>> NetChannelSet::Receive(
             | (static_cast<std::uint16_t>(packet[at + 1]) << 8));
     };
 
+    // Membership, not an upper bound. The bound worked only while the kinds
+    // started at zero, and they no longer do: a leading byte below the range
+    // would have been cast to a kind nothing handles and fallen through the
+    // channel-specific branches as though it were reliable.
     const auto kindRaw = static_cast<std::uint8_t>(packet[0]);
-    if (kindRaw > static_cast<std::uint8_t>(NetChannelKind::ReliableOrdered))
+    if (kindRaw != static_cast<std::uint8_t>(NetChannelKind::UnreliableSequenced)
+        && kindRaw != static_cast<std::uint8_t>(NetChannelKind::ReliableOrdered))
     {
         error = NetDecodeError::UnknownMessage;
         return delivered;

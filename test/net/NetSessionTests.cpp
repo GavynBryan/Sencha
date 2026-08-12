@@ -315,6 +315,39 @@ TEST(NetSession, MessagesFlowBothWaysOnceAdmitted)
     EXPECT_EQ(pair.HostInbox.front().From, peer);
 }
 
+// Every direction on every channel, because the pair above covers two of the
+// four and the two it covers are the two that worked. Client-to-authority on
+// the reliable channel did not: a channel packet's leading byte shares its
+// namespace with the control types, ReliableOrdered had the same value as
+// Hello, and an admitted peer's reliable packet was answered with a challenge
+// and never delivered. Nothing in the tree sent one, so nothing noticed.
+TEST(NetSession, EveryDirectionCarriesEveryChannel)
+{
+    for (const NetChannelKind channel : { NetChannelKind::UnreliableSequenced,
+                                          NetChannelKind::ReliableOrdered })
+    {
+        Pair pair;
+        ASSERT_TRUE(pair.StartHost());
+        ASSERT_TRUE(pair.StartClient());
+        pair.Step(6);
+        ASSERT_TRUE(pair.ClientSession.IsConnected());
+
+        const PeerId peer = pair.HostSession.ConnectedPeers().front();
+        ASSERT_TRUE(pair.HostSession.Send(peer, channel, Bytes("down")));
+        ASSERT_TRUE(pair.ClientSession.Send(pair.ClientSession.LocalPeerId(),
+                                            channel, Bytes("up")));
+        pair.Step(3);
+
+        ASSERT_FALSE(pair.ClientInbox.empty())
+            << "authority to client, channel " << int(channel);
+        EXPECT_EQ(Text(pair.ClientInbox.front().Payload), "down");
+        ASSERT_FALSE(pair.HostInbox.empty())
+            << "client to authority, channel " << int(channel);
+        EXPECT_EQ(Text(pair.HostInbox.front().Payload), "up");
+        EXPECT_EQ(pair.HostInbox.front().Channel, channel);
+    }
+}
+
 TEST(NetSession, BroadcastReachesEveryConnectedPeer)
 {
     Pair pair;
