@@ -963,6 +963,11 @@ Scope: the local player's pawn and its directly-driven state (movement stack,
 character controller, ability cooldown and cost bookkeeping needed for responsive
 activation). Not rigid bodies, not other entities, not zone content. Mechanism:
 
+*What shipped is narrower than this line, deliberately: the replay steps character
+movement, and the ability bookkeeping named here is the deferred item at the end of
+this section rather than something the `Predicted` flag reaches. See "What the
+declaration buys" below.*
+
 - The client runs the predicted subset of fixed systems (a registered list, the
   composition root again) for its pawn each tick using its own input, tagging
   results per tick in a small history ring (inputs, predicted component state,
@@ -1054,21 +1059,35 @@ Moving it up deleted the seam and its wiring outright.
 Which components get intercepted is a fact of the schema, not a list netcode keeps:
 a component declares `Predicted = true` beside `Replicated = true`, `ReplicationLayout`
 carries it on `ReplicatedComponent`, and `ClientPrediction::Bind` compiles the shadow
-from the sealed table at startup -- so `net` names no component type, and a game whose
-characters carry state of their own extends what a replay resumes from by declaring it
-on that state. The engine's set is `LocalTransform`, `KinematicState`, `SupportState`,
-`CharacterMovement`, and `JumpState`. The flag is deliberately outside `TableHash`:
+from the sealed table at startup -- so `net` names no component type. The engine's set
+is `LocalTransform`, `KinematicState`, `SupportState`, `CharacterMovement`, and
+`JumpState`. The flag is deliberately outside `TableHash`:
 the hash exists so two builds know they agree on how to read each other's snapshots,
 and prediction changes only where the receiver lands the decoded bytes -- never the
 encoding -- so folding it in would refuse a handshake between builds that understand
 each other perfectly.
 
+What the declaration buys is that staging, and only that. It routes bytes; it does
+not schedule work. Restoring is half of resuming and the other half is something
+re-running the ticks the authority has not answered, which is `PawnStateReplay`, which
+steps character movement. A component that step does not touch is staged and restored
+exactly the same way and then left at the authority's last word, so whatever its owner
+advanced since is discarded -- at the snapshot rate, silently, with nothing about the
+component's own behaviour looking wrong. So declaring `Predicted` on state a game
+carries of its own is not how a replay is extended; extending a replay means a second
+replay step beside the character one, which is Section 12's deferred work with a named
+trigger. Until then the build reports the gap instead of leaving it to be discovered:
+`CollectUnresumedPredictedComponents` (`prediction/PawnStateReplay.h`) is walked once
+at startup beside `Bind`, and every predicted component the tick does not resume is
+named in a warning saying what will happen to it.
+
 What one re-run tick *does* belongs to movement (`StepCharacterTick`, composing
 `StepFreeLocomotion` → `StepJump` → `ComposeMotion` → `Movers->Step`, with the same
-mailbox-rebuild rule the live tick has). `PawnStateReplay` decides which ticks to run
-and what to do when they cannot be. A second implementation of the tick itself would
-reintroduce, as a difference between two codebases, exactly the divergence replaying
-exists to remove.
+mailbox-rebuild rule the live tick has). It also answers `CharacterTickResumes`, in
+the same file, so a stage added to the tick and the set that reports on it move in one
+edit. `PawnStateReplay` decides which ticks to run and what to do when they cannot be.
+A second implementation of the tick itself would reintroduce, as a difference between
+two codebases, exactly the divergence replaying exists to remove.
 
 Two definitions of a character tick do exist, and the split is deliberate rather than
 tolerated. The scheduled path is stage-major over chunks -- every entity through

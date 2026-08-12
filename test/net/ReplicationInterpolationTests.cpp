@@ -41,7 +41,7 @@ namespace
     // that is not one.
     void Walk(ReplicationInterpolation& interpolation, std::uint64_t tick)
     {
-        interpolation.Record(kPawn, tick, PoseAt(static_cast<float>(tick)));
+        interpolation.Commit(kPawn, tick, PoseAt(static_cast<float>(tick)));
     }
 
     [[nodiscard]] float XAt(const ReplicationInterpolation& interpolation,
@@ -65,8 +65,8 @@ TEST(ReplicationInterpolation, SaysNothingAboutAnEntityItHasNotHeardOf)
 TEST(ReplicationInterpolation, InterpolatesBetweenTheSamplesEitherSide)
 {
     ReplicationInterpolation interpolation;
-    interpolation.Record(kPawn, 10, PoseAt(0.0f));
-    interpolation.Record(kPawn, 20, PoseAt(10.0f));
+    interpolation.Commit(kPawn, 10, PoseAt(0.0f));
+    interpolation.Commit(kPawn, 20, PoseAt(10.0f));
 
     EXPECT_FLOAT_EQ(XAt(interpolation, 10), 0.0f);
     EXPECT_FLOAT_EQ(XAt(interpolation, 15), 5.0f);
@@ -247,24 +247,17 @@ TEST(ReplicationInterpolationShadow, KeepsTheAuthoritysValueApartFromTheBlend)
 
     // Two poses far apart, so the pose presented between them is nothing like
     // either and the difference is impossible to miss.
-    const auto decode = [&](float x) {
-        LocalTransform value = PoseAt(x);
-        const std::span<std::byte> shadow = interpolation.AuthoritativeBytes(kPawn);
-        std::memcpy(shadow.data(), &value, sizeof(value));
-    };
-
-    decode(0.0f);
-    interpolation.Commit(kPawn, 10);
-    decode(100.0f);
-    interpolation.Commit(kPawn, 20);
-    EXPECT_TRUE(interpolation.HasAuthoritativeState(kPawn));
+    interpolation.Commit(kPawn, 10, PoseAt(0.0f));
+    interpolation.Commit(kPawn, 20, PoseAt(100.0f));
+    ASSERT_NE(interpolation.TryAuthoritative(kPawn), nullptr);
 
     ASSERT_FLOAT_EQ(XAt(interpolation, 15), 50.0f) << "sanity: presenting a blend";
 
     // The authority stands still, so the next snapshot carries no position at
-    // all and the shadow keeps the last one. Committing it must record where the
-    // authority actually was, not the halfway pose just presented.
-    interpolation.Commit(kPawn, 30);
+    // all and the applier stages the delta onto what the shadow already holds.
+    // Committing that must record where the authority actually was, not the
+    // halfway pose just presented.
+    interpolation.Commit(kPawn, 30, *interpolation.TryAuthoritative(kPawn));
     EXPECT_FLOAT_EQ(XAt(interpolation, 30), 100.0f)
         << "an unsent field was filled in from the blend this machine was "
            "drawing, so the entity drifted toward wherever it happened to be "
@@ -274,14 +267,11 @@ TEST(ReplicationInterpolationShadow, KeepsTheAuthoritysValueApartFromTheBlend)
 TEST(ReplicationInterpolationShadow, ForgettingAnEntityForgetsItsAuthority)
 {
     ReplicationInterpolation interpolation;
-    LocalTransform value = PoseAt(5.0f);
-    const std::span<std::byte> shadow = interpolation.AuthoritativeBytes(kPawn);
-    std::memcpy(shadow.data(), &value, sizeof(value));
-    interpolation.Commit(kPawn, 10);
-    ASSERT_TRUE(interpolation.HasAuthoritativeState(kPawn));
+    interpolation.Commit(kPawn, 10, PoseAt(5.0f));
+    ASSERT_NE(interpolation.TryAuthoritative(kPawn), nullptr);
 
     interpolation.Forget(kPawn);
-    EXPECT_FALSE(interpolation.HasAuthoritativeState(kPawn));
+    EXPECT_EQ(interpolation.TryAuthoritative(kPawn), nullptr);
 }
 
 //-----------------------------------------------------------------------------
@@ -291,10 +281,10 @@ TEST(ReplicationInterpolationShadow, ForgettingAnEntityForgetsItsAuthority)
 TEST(ReplicationInterpolation, DisabledInterceptsNothing)
 {
     ReplicationInterpolation interpolation;
-    ASSERT_TRUE(interpolation.Intercepts(ResolveComponentTypeId<LocalTransform>()));
+    ASSERT_TRUE(interpolation.InterceptsPose(ResolveComponentTypeId<LocalTransform>()));
 
     interpolation.SetEnabled(false);
-    EXPECT_FALSE(interpolation.Intercepts(ResolveComponentTypeId<LocalTransform>()))
+    EXPECT_FALSE(interpolation.InterceptsPose(ResolveComponentTypeId<LocalTransform>()))
         << "off has to let arriving poses reach the world, or a mirrored entity "
            "never moves at all";
 }
@@ -302,7 +292,7 @@ TEST(ReplicationInterpolation, DisabledInterceptsNothing)
 TEST(ReplicationInterpolation, WithholdsOnlyThePoseItPresents)
 {
     ReplicationInterpolation interpolation;
-    EXPECT_FALSE(interpolation.Intercepts(ResolveComponentTypeId<WorldTransform>()))
+    EXPECT_FALSE(interpolation.InterceptsPose(ResolveComponentTypeId<WorldTransform>()))
         << "everything else about a mirrored entity still lands normally";
 }
 
@@ -315,8 +305,8 @@ TEST(ReplicationInterpolation, AStillEntityIsPresentedWhereItStands)
     interpolation.SetSnapshotInterval(2);
 
     const EntityId entity{ 3, 1 };
-    interpolation.Record(entity, 1, PoseAt3(7.0f, 8.0f, 9.0f));
-    interpolation.Record(entity, 400, PoseAt3(7.0f, 8.0f, 9.0f));
+    interpolation.Commit(entity, 1, PoseAt3(7.0f, 8.0f, 9.0f));
+    interpolation.Commit(entity, 400, PoseAt3(7.0f, 8.0f, 9.0f));
 
     for (std::uint64_t tick : { std::uint64_t{ 2 }, std::uint64_t{ 200 },
                                 std::uint64_t{ 400 } })

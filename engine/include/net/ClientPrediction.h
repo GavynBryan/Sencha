@@ -72,8 +72,17 @@ public:
     //
     // The set is compiled from the replication table: a component is held here
     // because its own schema says the owner keeps simulating it. Netcode names
-    // none of them, so a game whose characters carry state of their own extends
-    // what a replay resumes from by declaring it on that state.
+    // none of them.
+    //
+    // What a declaration buys is exactly this staging, and nothing more. It is
+    // half of resuming; the other half is something re-running the ticks the
+    // authority has not answered, and the only thing that does is the character
+    // replay above this layer, which steps character movement. A component that
+    // replay does not step is staged and restored the same way and then simply
+    // left at the authority's last word, losing whatever its owner advanced
+    // since. The build says which components those are at startup --
+    // CollectUnresumedPredictedComponents in prediction/PawnStateReplay.h -- so
+    // the answer arrives before the behaviour does.
     //-------------------------------------------------------------------------
     // Compiles the set from the sealed table, once, before any session exists.
     // The descriptors are copied rather than referenced: what this needs is a

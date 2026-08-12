@@ -2029,13 +2029,15 @@ namespace
 
     // Applies bytes without the harness's own expectations, because these tests
     // are about snapshots that are meant to be refused.
-    SnapshotApplyResult ApplyRaw(Pair& pair, std::span<const std::byte> bytes)
+    SnapshotApplyResult ApplyRaw(Pair& pair, std::span<const std::byte> bytes,
+                                 ReplicationInterpolation* interpolation = nullptr)
     {
         SnapshotApplyRequest apply;
         apply.Target = &pair.Client;
         apply.Schema = &pair.Schema;
         apply.Layout = &pair.Layout;
         apply.Identity = &pair.ClientIdentity;
+        apply.Interpolation = interpolation;
         return ReplicationApplySnapshot(apply, bytes);
     }
 
@@ -2094,6 +2096,38 @@ TEST(ReplicationSnapshotAtomicity, NoTruncationLeavesTheWorldPartlyChanged)
 
         EXPECT_EQ(CaptureClient(pair), before)
             << "truncating at byte " << cut << " changed the client anyway";
+    }
+}
+
+// The pose buffer is state a refused apply can damage as surely as the world is,
+// and it is easier to damage: a mirrored pose is staged against what the
+// authority last said, so reading the shadow at all used to be enough to begin
+// tracking an entity the snapshot then turned out not to describe. Tracking is
+// reachable through Commit alone now, which runs only in the pass that cannot
+// fail -- this is that shape asserted rather than assumed.
+TEST(ReplicationSnapshotAtomicity, NoTruncationLeavesAPoseTrackBehind)
+{
+    Pair reference;
+    const std::vector<std::byte> whole = BusySnapshot(reference);
+    ASSERT_GT(whole.size(), 8u);
+
+    for (std::size_t cut = 0; cut < whole.size(); ++cut)
+    {
+        Pair pair;
+        const std::vector<std::byte> again = BusySnapshot(pair);
+        ASSERT_EQ(again, whole) << "the fixture is not reproducible";
+
+        ReplicationInterpolation interpolation;
+        ASSERT_EQ(interpolation.TrackedCount(), 0u);
+
+        const SnapshotApplyResult applied =
+            ApplyRaw(pair, std::span(whole).subspan(0, cut), &interpolation);
+        if (applied.Ok())
+            continue;  // a prefix that happened to be a whole smaller snapshot
+
+        EXPECT_EQ(interpolation.TrackedCount(), 0u)
+            << "truncating at byte " << cut << " left a track for an entity the "
+               "snapshot never went on to describe";
     }
 }
 

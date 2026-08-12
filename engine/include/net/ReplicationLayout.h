@@ -32,6 +32,12 @@
 // value. Declared as `static constexpr bool Predicted = true;` on the schema,
 // beside Replicated. Read here rather than passed in by the registrar, so a
 // layout built directly still knows the fact.
+//
+// This routes bytes and does not schedule work. The value is restored to the
+// authority's word before the unanswered ticks are re-run; whether it is then
+// carried forward depends entirely on whether that re-run steps it, and what
+// re-runs is character movement. Declaring it on something else is answered at
+// startup rather than silently -- see prediction/PawnStateReplay.h.
 template <typename T>
 inline constexpr bool ComponentIsPredicted = []
 {

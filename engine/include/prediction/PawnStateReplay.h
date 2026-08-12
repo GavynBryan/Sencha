@@ -3,9 +3,12 @@
 #include <math/Vec.h>
 
 #include <cstdint>
+#include <string_view>
+#include <vector>
 
 class CharacterMoverPool;
 class ClientPrediction;
+class ReplicationLayout;
 class World;
 class WorldComponentSchema;
 
@@ -50,6 +53,13 @@ class WorldComponentSchema;
 // This decides which ticks to run and what to do when they cannot be; a second
 // implementation of the tick would reintroduce, as a difference between two
 // codebases, exactly the divergence replaying exists to remove.
+//
+// The shape here is a character's, deliberately and all the way through: the
+// request carries gravity, an up axis, and a mover pool, and the loop steps a
+// character. A second thing worth replaying -- a vehicle, a projectile the
+// firer simulates ahead -- is a second request type and a second loop beside
+// this one, not a widening of these. Their only common part is "restore, then
+// re-run the unanswered ticks", which is four lines and shares no state.
 //=============================================================================
 
 struct PawnReplayRequest
@@ -98,3 +108,24 @@ struct PawnReplayResult
 
 // Restores the pawn to the authority's last word and re-runs everything since.
 [[nodiscard]] PawnReplayResult ReplayPawnState(const PawnReplayRequest& request);
+
+// Every component the replication table declares Predicted that re-running a
+// tick will not put back in step, by name, in table order. Empty is the healthy
+// answer and the one this build gives.
+//
+// Predicted is a real declaration with a real effect: the applier holds what
+// arrives for that component apart from the world's copy instead of overwriting
+// the value its owner is still simulating. What it cannot do is arrange for
+// anything to re-run, because the only thing that re-runs is the character tick
+// above. So a component outside that tick is restored to the authority's last
+// word at every snapshot and then left there. Whatever its owner advanced in
+// the ticks the authority has not answered is discarded, at the snapshot rate,
+// for as long as the session lasts -- and nothing about the component's own
+// behaviour looks wrong, which is why this is asked at startup rather than left
+// to be noticed.
+//
+// Reported rather than refused. The declaration is not malformed; it is being
+// asked for something this build does not do, and the useful response is to say
+// which component and what will happen to it.
+void CollectUnresumedPredictedComponents(const ReplicationLayout& layout,
+                                         std::vector<std::string_view>& out);

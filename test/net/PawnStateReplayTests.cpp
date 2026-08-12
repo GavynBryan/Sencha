@@ -42,6 +42,35 @@
 
 namespace
 {
+    // What a game would reasonably declare Predicted and what no character tick
+    // has ever heard of: a cooldown its owner counts down locally so that using
+    // an ability feels immediate. Here so the contract can be tested rather
+    // than only described.
+    struct AbilityCooldown
+    {
+        float Remaining = 0.0f;
+    };
+}
+
+template <>
+struct TypeSchema<AbilityCooldown>
+{
+    static constexpr std::string_view Name = "AbilityCooldown";
+    static constexpr bool Replicated = true;
+    static constexpr bool Predicted = true;
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("remaining", &AbilityCooldown::Remaining).OwnerOnly(),
+        };
+    }
+};
+
+SENCHA_DECLARE_COMPONENT_TYPE(AbilityCooldown, "test.ability_cooldown");
+
+namespace
+{
     constexpr float kDt = 1.0f / 60.0f;
     const Vec3d kGravity{ 0.0f, -9.81f, 0.0f };
     const Vec3d kUpAxis{ 0.0f, 1.0f, 0.0f };
@@ -96,6 +125,9 @@ namespace
         {
             ComponentRegistrar registrar(&Schema, nullptr, &Layout);
             RegisterEngineComponents(registrar);
+            // Declared on every machine here, carried by a pawn only where a
+            // test is about it. The declaration alone is what the report reads.
+            registrar.Add<AbilityCooldown>();
             Schema.Seal();
             Layout.Seal();
             Schema.Apply(Entities);
@@ -412,4 +444,91 @@ TEST(PawnStateReplay, SnapsUnderRulesItCannotRunEvenWithNothingToReplay)
     ASSERT_TRUE(result.Ran);
     EXPECT_TRUE(result.Snapped);
     EXPECT_EQ(result.TicksReplayed, 0u);
+}
+
+//=============================================================================
+// What Predicted does not buy
+//
+// The declaration stages a component's arriving bytes apart from the world's
+// copy and restores them before the unanswered ticks are re-run. It does not
+// arrange for anything to re-run, and the only thing that does is the character
+// tick. The two tests below are the contract: the build says which declarations
+// fall outside it, and what falling outside it actually costs.
+//=============================================================================
+
+TEST(PredictedComponentContract, TheEnginesOwnPredictedSetIsEntirelyResumed)
+{
+    WorldComponentSchema schema;
+    ReplicationLayout layout;
+    ComponentRegistrar registrar(&schema, nullptr, &layout);
+    RegisterEngineComponents(registrar);
+    layout.Seal();
+
+    std::vector<std::string_view> unresumed;
+    CollectUnresumedPredictedComponents(layout, unresumed);
+    EXPECT_TRUE(unresumed.empty())
+        << "an engine component is declared Predicted that a replayed tick does "
+           "not resume, so the startup warning fires on a stock build: "
+        << (unresumed.empty() ? std::string_view{} : unresumed.front());
+}
+
+TEST(PredictedComponentContract, ADeclarationTheReplayCannotResumeIsNamed)
+{
+    Machine machine;
+
+    std::vector<std::string_view> unresumed;
+    CollectUnresumedPredictedComponents(machine.Layout, unresumed);
+
+    ASSERT_EQ(unresumed.size(), 1u);
+    // The registered component name rather than the schema's, because that is
+    // what net_components and every other net diagnostic calls it.
+    EXPECT_EQ(unresumed.front(), "test.ability_cooldown");
+}
+
+// The behaviour the name is warning about, asserted deliberately rather than
+// left implied. If someone makes a replay able to carry a component like this
+// forward, this test fails and points at the contract that needs rewriting --
+// which is the whole reason it asserts the unhappy answer.
+TEST(PredictedComponentContract, AnUnresumedPredictedComponentIsResetAndNotCarriedForward)
+{
+    constexpr std::uint64_t kFirstTick = 700;
+    constexpr float kAuthoritysWord = 5.0f;
+    // Where the owner's own countdown had got to by the time the correction
+    // arrived: several ticks below what the authority last said.
+    constexpr float kLocallyAdvanced = 3.0f;
+
+    Machine machine;
+    machine.Entities.AddComponent<AbilityCooldown>(
+        machine.Pawn, AbilityCooldown{ .Remaining = kAuthoritysWord });
+
+    ClientPrediction prediction = PredictingPawn(machine);
+    ShadowPawn(prediction, machine, machine.Pawn);
+
+    machine.Entities.TryGet<AbilityCooldown>(machine.Pawn)->Remaining =
+        kLocallyAdvanced;
+
+    const std::vector<PawnCommandTick> script = ScriptedRun(kFirstTick, 10);
+    for (const PawnCommandTick& record : script)
+        prediction.Commands().Push(record);
+
+    const PawnReplayResult result =
+        ReplayPawnState(RequestFor(machine, prediction, kFirstTick - 1));
+
+    // The replay really ran, so what follows is not "nothing happened".
+    ASSERT_TRUE(result.Ran);
+    ASSERT_FALSE(result.Snapped);
+    ASSERT_EQ(result.TicksReplayed, 10u);
+
+    const float after =
+        machine.Entities.TryGet<AbilityCooldown>(machine.Pawn)->Remaining;
+    EXPECT_FLOAT_EQ(after, kAuthoritysWord)
+        << "the restore did not happen, which would mean Predicted stages "
+           "nothing at all";
+    EXPECT_NE(after, kLocallyAdvanced)
+        << "the owner's own progress survived a reconcile";
+    // The point: ten ticks were re-run and none of them touched this. The
+    // countdown is back where the authority left it and no closer to done.
+    EXPECT_GT(after, kLocallyAdvanced)
+        << "something advanced it during replay, so the contract this test "
+           "pins has changed and the header describing it is now wrong";
 }

@@ -4,9 +4,21 @@
 #include <ecs/WorldComponentSchema.h>
 #include <movement/CharacterTickStep.h>
 #include <net/ClientPrediction.h>
+#include <net/ReplicationLayout.h>
 #include <physics/CharacterMoverPool.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
+
+void CollectUnresumedPredictedComponents(const ReplicationLayout& layout,
+                                         std::vector<std::string_view>& out)
+{
+    out.clear();
+    for (const ReplicatedComponent& component : layout.Components())
+    {
+        if (component.Predicted && !CharacterTickResumes(component.Type))
+            out.push_back(component.Name);
+    }
+}
 
 PawnReplayResult ReplayPawnState(const PawnReplayRequest& request)
 {

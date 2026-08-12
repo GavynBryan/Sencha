@@ -68,10 +68,19 @@ public:
     // this class exists to remove. That term is arithmetic. This one is taste.
     static constexpr std::uint32_t kDefaultDelayTicks = 2;
 
-    // Whether an arriving component is this machine's to present rather than the
-    // world's to hold. Position is what a viewer sees move; everything else
-    // about a mirrored entity still lands normally.
-    [[nodiscard]] bool Intercepts(ComponentTypeId type) const;
+    // Whether an arriving component is the pose this machine presents rather
+    // than something the world holds. Position is what a viewer sees move;
+    // everything else about a mirrored entity still lands normally.
+    //
+    // Named for the pose rather than for the component because there is one
+    // answer and it is LocalTransform. A second interpolated type is not a
+    // second entry in a table here -- there is no table, and the blend below is
+    // Transform3f::Interpolate rather than anything a scalar lerp would do for a
+    // different type. It would be a declaration seam that does not exist, and
+    // the trigger for building one is a second type whose presentation visibly
+    // stutters. Until then this states its scope instead of implying a wider
+    // one.
+    [[nodiscard]] bool InterceptsPose(ComponentTypeId type) const;
 
     // Off writes arriving poses straight to the world, which is the stepping
     // behaviour this replaced. Kept so the difference can be seen rather than
@@ -101,12 +110,6 @@ public:
         return SnapshotInterval + Delay;
     }
 
-    // What the authority said this entity's pose was at that tick. Samples older
-    // than the window, and ticks already held, are ignored -- the redundancy in
-    // the stream means the same tick arrives more than once.
-    void Record(EntityId entity, std::uint64_t authorityTick,
-                const LocalTransform& pose);
-
     //-------------------------------------------------------------------------
     // The authority's own view, per entity
     //
@@ -125,12 +128,18 @@ public:
     // Staged against the presented pose, that delta would land on a blend this
     // machine invented, and every later delta would compound it.
     //-------------------------------------------------------------------------
-    [[nodiscard]] std::span<std::byte> AuthoritativeBytes(EntityId entity);
-    [[nodiscard]] bool HasAuthoritativeState(EntityId entity) const;
+    // What the authority last said, or null for an entity it has not spoken
+    // about yet -- which is the difference between staging a delta against the
+    // authority's word and staging it against nothing. A read, and only a read:
+    // asking does not begin tracking an entity.
+    [[nodiscard]] const LocalTransform* TryAuthoritative(EntityId entity) const;
 
-    // Takes whatever was decoded into AuthoritativeBytes as this entity's pose
-    // at that tick.
-    void Commit(EntityId entity, std::uint64_t authorityTick);
+    // Takes this pose as what the authority said at that tick, and begins
+    // tracking the entity if it was not already. The one door that creates a
+    // track, so a snapshot that is refused part-way cannot leave one behind for
+    // an entity it never went on to describe.
+    void Commit(EntityId entity, std::uint64_t authorityTick,
+                const LocalTransform& pose);
 
     // The pose to hold at `presentTick`, or nothing when this entity has said
     // nothing that can answer for it. Interpolates between the samples either
@@ -159,6 +168,12 @@ public:
     [[nodiscard]] std::uint64_t Interpolated() const { return InterpolatedTicks; }
 
 private:
+    // Keeps one pose against the tick it describes. Samples older than the
+    // window, and ticks already held, are ignored -- the redundancy in the
+    // stream means the same tick arrives more than once.
+    void Record(EntityId entity, std::uint64_t authorityTick,
+                const LocalTransform& pose);
+
     struct Sample
     {
         std::uint64_t Tick = 0;

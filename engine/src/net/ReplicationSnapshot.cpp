@@ -1035,29 +1035,24 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
             const bool ownPawn = request.Prediction != nullptr && !spawned
                               && request.Prediction->Predicts(entity);
             if (request.Interpolation != nullptr && !ownPawn
-                && request.Interpolation->Intercepts(component->Type))
+                && request.Interpolation->InterceptsPose(component->Type))
             {
                 slot.Sink = SnapshotSink::Interpolation;
-                // Asked before the shadow is reached for, because reaching for
-                // one creates it: a snapshot this pass goes on to refuse must
-                // not leave a track behind for an entity it never described.
-                const bool held = !spawned
-                               && request.Interpolation->HasAuthoritativeState(entity);
+                // Only what the pose interceptor answers for reaches here, and
+                // that is one component type, so the staging buffer and the
+                // shadow are the same size by construction rather than by check.
+                assert(component->Size == sizeof(LocalTransform));
+                const LocalTransform* shadow =
+                    spawned ? nullptr
+                            : request.Interpolation->TryAuthoritative(entity);
                 if (earlier != nullptr)
                 {
                     std::memcpy(target.data(), decoded.data() + earlier->Offset,
                                 component->Size);
                 }
-                else if (held)
+                else if (shadow != nullptr)
                 {
-                    const std::span<const std::byte> shadow =
-                        request.Interpolation->AuthoritativeBytes(entity);
-                    if (shadow.size() != component->Size)
-                    {
-                        result.Error = SnapshotApplyError::UnknownComponentStorage;
-                        return result;
-                    }
-                    std::memcpy(target.data(), shadow.data(), component->Size);
+                    std::memcpy(target.data(), shadow, component->Size);
                 }
                 else if (!schema.WriteDefaultBytes(component->Type, target))
                 {
@@ -1221,10 +1216,9 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
             }
             case SnapshotSink::Interpolation:
             {
-                const std::span<std::byte> shadow =
-                    request.Interpolation->AuthoritativeBytes(entity);
-                std::memcpy(shadow.data(), value.data(), component.Size);
-                request.Interpolation->Commit(entity, result.Tick);
+                LocalTransform pose;
+                std::memcpy(&pose, value.data(), sizeof(pose));
+                request.Interpolation->Commit(entity, result.Tick, pose);
 
                 // The component still has to exist, because presenting a pose
                 // means writing into it every tick and nothing can be written
