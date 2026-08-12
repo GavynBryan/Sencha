@@ -210,6 +210,16 @@ private:
 // physically have arrived; the margin is what leaves its neighbours time to
 // arrive too.
 //=============================================================================
+// Its order among the other fixed-logic systems is free, and that is a finding
+// rather than an omission: it writes LocalTransform only on mirrored entities,
+// which carry no MovementIntent and no character mover, so nothing else in the
+// list touches them. The one ordering it does need is against transform
+// propagation, and that is a frame-phase fact -- propagation runs after the
+// whole fixed-logic list -- rather than something a schedule edge could state.
+//
+// Written down because an undeclared constraint and a nonexistent one look
+// identical from outside, and the next person to add a system that reads a
+// mirrored pose needs to know which this was.
 class ReplicationInterpolationSystem
 {
 public:

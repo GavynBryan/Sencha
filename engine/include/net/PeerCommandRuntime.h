@@ -1,7 +1,9 @@
 #pragma once
 
+#include <app/EngineSchedule.h>
 #include <app/GameContexts.h>
 #include <net/ClientPrediction.h>
+#include <net/PawnCommandCapture.h>
 #include <net/NetPlayerCommand.h>
 #include <net/PawnCommandRing.h>
 #include <net/ReplicationInterpolation.h>
@@ -14,7 +16,6 @@
 #include <unordered_map>
 #include <vector>
 
-class EngineSchedule;
 class World;
 
 //=============================================================================
@@ -125,3 +126,28 @@ void RegisterNetSystems(EngineSchedule& schedule, PeerCommandRuntime& commands,
                         ClientPrediction& prediction,
                         ReplicationInterpolation& interpolation,
                         const NetTickEstimator& clock);
+
+// Orders the net input channel around a game's action-consuming system.
+//
+// Two edges, both the engine's, and neither expressible without naming a type
+// only the game has. A remote peer's actions have to be in their source before
+// anything reads one, or a tick steers on last tick's input. And what a client
+// writes down for replay has to be what the tick went on to simulate, or the
+// authority answers a command the client never ran.
+//
+// Declared here so they are maintained beside the systems that require them,
+// rather than restated correctly in every game that registers them and
+// incorrectly in the first one that does not.
+//
+// TActionConsumer is the game's system that turns resolved actions into intent.
+// Called once per such system: a game with a character input system and a
+// vehicle input system calls it twice, and both edges hold for each.
+//
+// Register the net systems and TActionConsumer first -- an edge naming a system
+// the schedule does not have is refused rather than silently dropped.
+template <typename TActionConsumer>
+void OrderNetInputAround(EngineSchedule& schedule)
+{
+    schedule.After<TActionConsumer, PeerCommandFeedSystem>();
+    schedule.After<PawnCommandCaptureSystem, TActionConsumer>();
+}

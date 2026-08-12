@@ -4,7 +4,9 @@
 #include <ecs/World.h>
 #include <input/InputActionSource.h>
 #include <net/ClientPrediction.h>
+#include <app/EngineSchedule.h>
 #include <net/NetOwnership.h>
+#include <net/PeerCommandRuntime.h>
 #include <net/NetReplicationComponents.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
@@ -292,4 +294,44 @@ TEST(NetLocalControlReconcile, TwoOwnedEntitiesResolveTheSameWayEveryTime)
         NetReconcileLocalControl(fixture.Entities, PeerId{ 2 }, prediction);
         EXPECT_EQ(LocalControlSubjectOf(fixture.Entities), chosen);
     }
+}
+
+//=============================================================================
+// Composition
+//
+// The two edges the net input channel needs are the engine's, and both name a
+// system only the game has. Restating them in every game is how the first game
+// that does not gets a remote player steering on last tick's input.
+//=============================================================================
+
+namespace
+{
+    // Stands in for a game's own system that turns resolved actions into
+    // intent -- the type the engine cannot name.
+    struct ActionConsumer
+    {
+        void FixedLogic(FixedLogicContext&) {}
+    };
+}
+
+TEST(NetComposition, TheInputChannelIsOrderedAroundTheGamesOwnSystem)
+{
+    EngineSchedule schedule;
+    PeerCommandRuntime commands;
+    ClientPrediction prediction;
+    ReplicationInterpolation interpolation;
+    NetTickEstimator clock;
+
+    RegisterNetSystems(schedule, commands, prediction, interpolation, clock);
+    schedule.Register<ActionConsumer>();
+
+    // Both edges land, which the schedule now refuses to pretend about: an
+    // edge naming a system that is not registered, or one whose ends share no
+    // phase, is an assertion rather than a silent no-op.
+    OrderNetInputAround<ActionConsumer>(schedule);
+    schedule.Init();
+
+    EXPECT_TRUE(schedule.Has<PeerCommandFeedSystem>());
+    EXPECT_TRUE(schedule.Has<PawnCommandCaptureSystem>());
+    EXPECT_TRUE(schedule.Has<ActionConsumer>());
 }

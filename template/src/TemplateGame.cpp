@@ -1694,12 +1694,9 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     ctx.Schedule.After<LookIntegrationSystem, InputActionResolveSystem>();
     ctx.Schedule.After<CharacterInputSystem, LookIntegrationSystem>();
     ctx.Schedule.After<CharacterInputSystem, InputActionResolveSystem>();
-    // A remote player's actions have to be in their source before anything
-    // reads one, the same way the local player's have to be resolved first.
-    ctx.Schedule.After<CharacterInputSystem, PeerCommandFeedSystem>();
-    // What gets written down is what the tick went on to simulate, so capture
-    // follows the derivation and precedes everything that acts on it.
-    ctx.Schedule.After<PawnCommandCaptureSystem, CharacterInputSystem>();
+    // The two edges the net input channel needs around whichever system turns
+    // actions into intent. Declared by the engine, which owns why they exist.
+    OrderNetInputAround<CharacterInputSystem>(ctx.Schedule);
     OrderMovementAfterInput<CharacterInputSystem>(ctx.Schedule);
     ctx.Schedule.Register<SpinSystem>();
 
