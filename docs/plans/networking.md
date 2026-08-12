@@ -1718,9 +1718,29 @@ entity references as component fields, generic rollback, generalized interpolati
 per-category bandwidth policy, a capture format, and recipe tables in the handshake
 identity. Section 11 of the plan behind this work holds the reasoning for each.
 
-Still owed here: the manual end-to-end pass with the packaged bundles (the automated
-two-process coverage stands in for it in CI), and zone interest, which is G3 and
-specialist and depends on three things this pass landed.
+The packaged-bundle pass was run rather than left to be described.
+`scripts/package_bundle.sh` produced a server and a client bundle from the template
+content; the server bundle hosted `levels/test` on UDP, the client bundle joined it,
+and all three questions were answered from what the server printed at its own
+terminal with no overlay anywhere: the traffic and which kind of it grew (7.0 KiB/s
+of command in against 939 B/s of snapshot out -- a session whose inbound cost is the
+player's own input), whether the budget was the constraint (peak 56 of 1173 B at 5
+per cent with nothing deferred, so emphatically not), and what the peer cost (8.3 ms,
+no strikes, two ticks queued). `net_owners` then named the entity that peer drove and
+its network identity, and reported the host driving nothing, which is what a
+dedicated host should say.
+
+Two things that run surfaced, neither a networking defect and neither fixed here.
+The template's startup banner prints player control hints unconditionally, so a
+dedicated server's terminal opens by explaining which mouse button looks around. And
+the machine's cooked template content is a `.smesh` version behind the loader
+(`scripts/migrate_smesh_v4_to_v5.py` exists for exactly this), so the client bundle
+joined, was served a pawn, and predicted it correctly while the level's geometry
+failed to stage -- which is stale generated content rather than anything tracked, but
+it does mean the visual half of that pass is owed a re-cook.
+
+Still owed here: zone interest, which is G3 and specialist and depends on three
+things this pass landed.
 
 - **G0. Foundations (no netcode). MOSTLY LANDED.** Section 3.1's paced tick scheduler,
   3.2's mover-state fix, 3.3's tick-stamped input records, and 3.4's stable identity
