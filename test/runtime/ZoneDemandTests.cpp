@@ -3,7 +3,10 @@
 #include <zone/ZoneDemand.h>
 
 #include <algorithm>
+#include <array>
 #include <initializer_list>
+#include <limits>
+#include <span>
 #include <vector>
 
 namespace
@@ -470,4 +473,183 @@ TEST(ZoneDemand, CrossGraphDockSeedsDestinationGraphPolicy)
                                 return reason.Reason == ZoneDemandReason::CrossGraphEntry
                                     && reason.SourceEndpoint == 0xd1;
                             }));
+}
+
+//=============================================================================
+// Several focus sources at once
+//
+// An authority streams around every connected player, so its residency is the
+// union of their neighborhoods rather than one player's. The merge is the whole
+// contract, and these are the parts of it that are easy to get subtly wrong: a
+// zone near one player and far from another must be treated as near, a zone
+// somebody is standing in must survive the cap, and one source must go on
+// producing exactly what it produced before any of this existed.
+//=============================================================================
+
+namespace
+{
+    std::vector<ZoneDemandRecord> DemandFor(
+        const WorldPartitionManifest& manifest,
+        std::span<const ZoneFocusSource> sources,
+        WorldPartitionStreamingConfig config)
+    {
+        const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
+        return ComputeZoneDemand(manifest, index, sources, {}, config);
+    }
+
+    ZoneFocusSource At(uint32_t source, uint64_t zone)
+    {
+        return ZoneFocusSource{ FocusSourceId{ source }, ZoneId{ zone }, std::nullopt };
+    }
+
+    // A1 -> A2 -> A3 -> A4 -> A5, bilateral. Long enough that a middle zone is
+    // genuinely far from both ends, which is what the merge has to be able to
+    // tell apart from a zone that is next door to one of them.
+    WorldPartitionManifest LongChainManifest()
+    {
+        WorldPartitionManifest manifest;
+        manifest.Name = "LongChain";
+        manifest.Zones = { MakeZone(0xa1), MakeZone(0xa2), MakeZone(0xa3),
+                           MakeZone(0xa4), MakeZone(0xa5) };
+        SetEdges(manifest, {
+            MakeEdge(0xc1, 0xa1, 0xa2), MakeEdge(0xc2, 0xa2, 0xa1),
+            MakeEdge(0xc3, 0xa2, 0xa3), MakeEdge(0xc4, 0xa3, 0xa2),
+            MakeEdge(0xc5, 0xa3, 0xa4), MakeEdge(0xc6, 0xa4, 0xa3),
+            MakeEdge(0xc7, 0xa4, 0xa5), MakeEdge(0xc8, 0xa5, 0xa4),
+        });
+        return manifest;
+    }
+}
+
+TEST(ZoneDemandSources, SingleSourceIsByteIdenticalToToday)
+{
+    const WorldPartitionManifest manifest = ChainManifest();
+    WorldPartitionStreamingConfig config;
+    config.HopCount = 2;
+
+    const std::vector<ZoneDemandRecord> single =
+        Demand(manifest, ZoneId{ 0xa1 }, {}, config);
+    const ZoneFocusSource one = At(1, 0xa1);
+    const std::vector<ZoneDemandRecord> spanned =
+        DemandFor(manifest, std::span(&one, 1), config);
+
+    ASSERT_EQ(single.size(), spanned.size());
+    for (std::size_t i = 0; i < single.size(); ++i)
+    {
+        EXPECT_EQ(single[i].Zone, spanned[i].Zone);
+        EXPECT_EQ(single[i].Desired, spanned[i].Desired);
+        // Reasons too, in accumulation order: a record that agreed about
+        // participation and disagreed about why would still change what the
+        // streaming inspector shows and what eviction ranks on.
+        EXPECT_EQ(single[i].Reasons, spanned[i].Reasons)
+            << "zone " << single[i].Zone.Value;
+    }
+}
+
+// A zone one hop from somebody is one hop away, not as far as the furthest
+// player who can also see it.
+//
+// Asserted through eviction because that is the only place the merged rank is
+// observable: a published record carries participation and reasons, and the
+// reasons carry every source's rank, so reading them back cannot tell which one
+// the merge chose. Eviction is what the rank is *for*, and a first version of
+// this test that read the reasons passed against a merge taking the maximum.
+//
+// Five zones, players at both ends, room for one non-focus zone to be dropped.
+// By minimum the middle zone is the far one and goes; by maximum the two zones
+// next door to a player rank as the far ones and one of them goes instead.
+TEST(ZoneDemandSources, TwoSourcesMergeByMinimumHop)
+{
+    const WorldPartitionManifest manifest = LongChainManifest();
+    WorldPartitionStreamingConfig config;
+    config.HopCount = 4;
+    config.ResidentZoneCap = 4;
+
+    const std::array<ZoneFocusSource, 2> sources{ At(1, 0xa1), At(2, 0xa5) };
+    const std::vector<ZoneDemandRecord> records =
+        DemandFor(manifest, sources, config);
+
+    ASSERT_EQ(records.size(), 4u);
+    EXPECT_EQ(FindRecord(records, 0xa3), nullptr)
+        << "the zone furthest from every player survived the cap";
+    EXPECT_NE(FindRecord(records, 0xa2), nullptr)
+        << "a zone next door to a player was ranked by how far the other player "
+           "is from it, and evicted for it";
+    EXPECT_NE(FindRecord(records, 0xa4), nullptr)
+        << "a zone next door to a player was ranked by how far the other player "
+           "is from it, and evicted for it";
+}
+
+// A player standing in a zone the cap would otherwise drop is a player the
+// authority stops simulating around, which is the failure this immunity exists
+// to make impossible.
+TEST(ZoneDemandSources, EachSourceFocusIsFullAndUnevictable)
+{
+    const WorldPartitionManifest manifest = ChainManifest();
+    WorldPartitionStreamingConfig config;
+    config.HopCount = 3;
+    // Tighter than the four zones two players between them demand.
+    config.ResidentZoneCap = 2;
+
+    const std::array<ZoneFocusSource, 2> sources{ At(1, 0xa1), At(2, 0xa4) };
+    const std::vector<ZoneDemandRecord> records =
+        DemandFor(manifest, sources, config);
+
+    const ZoneDemandRecord* first = FindRecord(records, 0xa1);
+    const ZoneDemandRecord* second = FindRecord(records, 0xa4);
+    ASSERT_NE(first, nullptr) << "the cap evicted a zone a player is standing in";
+    ASSERT_NE(second, nullptr) << "the cap evicted a zone a player is standing in";
+
+    for (const ZoneDemandRecord* focus : { first, second })
+    {
+        EXPECT_TRUE(focus->Desired.Visible);
+        EXPECT_TRUE(focus->Desired.Physics);
+        EXPECT_TRUE(focus->Desired.Logic)
+            << "a focus zone without Logic is a player the authority does not "
+               "simulate around";
+        EXPECT_TRUE(focus->Desired.Audio);
+    }
+}
+
+// Peers connect in whatever order they connect in. If that leaked into the
+// merge, two servers running the same session would hold different zones.
+TEST(ZoneDemandSources, MergedEvictionIsDeterministic)
+{
+    const WorldPartitionManifest manifest = ChainManifest();
+    WorldPartitionStreamingConfig config;
+    config.HopCount = 3;
+    config.ResidentZoneCap = 3;
+
+    const std::array<ZoneFocusSource, 2> forward{ At(1, 0xa1), At(2, 0xa4) };
+    std::array<ZoneFocusSource, 2> reversed{ At(1, 0xa4), At(2, 0xa1) };
+
+    const std::vector<ZoneDemandRecord> a = DemandFor(manifest, forward, config);
+    const std::vector<ZoneDemandRecord> b = DemandFor(manifest, reversed, config);
+
+    ASSERT_EQ(a.size(), b.size());
+    for (std::size_t i = 0; i < a.size(); ++i)
+    {
+        EXPECT_EQ(a[i].Zone, b[i].Zone) << "at " << i;
+        EXPECT_EQ(a[i].Desired, b[i].Desired) << "at " << i;
+    }
+}
+
+// A source that has not resolved a focus yet contributes nothing rather than
+// voiding the sources that have. Before a peer's pawn exists there is nothing
+// to stream around it, and that must not stop the authority streaming around
+// everybody else.
+TEST(ZoneDemandSources, AnUnresolvedSourceDoesNotSilenceTheOthers)
+{
+    const WorldPartitionManifest manifest = ChainManifest();
+    WorldPartitionStreamingConfig config;
+    config.HopCount = 1;
+
+    const std::array<ZoneFocusSource, 2> sources{
+        At(1, 0xa1), At(2, 0x0),  // the second has no zone yet
+    };
+    const std::vector<ZoneDemandRecord> records =
+        DemandFor(manifest, sources, config);
+
+    EXPECT_NE(FindRecord(records, 0xa1), nullptr)
+        << "one source with nothing to say silenced a source that had something";
 }
