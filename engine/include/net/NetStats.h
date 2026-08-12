@@ -32,11 +32,16 @@ enum class NetTrafficKind : std::uint8_t
     Snapshot,
     Command,
     CVar,
+    // What a game sends for itself. Its own bucket rather than sharing the
+    // catch-all, because "which traffic grew" is the first question anyone
+    // asks, and a game's messages counted beside handshake and keepalives make
+    // it unanswerable.
+    Game,
     // Handshake, keepalives, and anything a game sends for itself.
     Other,
 };
 
-inline constexpr std::size_t kNetTrafficKinds = 4;
+inline constexpr std::size_t kNetTrafficKinds = 5;
 
 [[nodiscard]] std::string_view NetTrafficKindToString(NetTrafficKind kind);
 
@@ -44,6 +49,10 @@ inline constexpr std::size_t kNetTrafficKinds = 4;
 // as Other rather than being dropped: unattributed traffic is still traffic,
 // and a rate that quietly omitted it would read as free.
 [[nodiscard]] NetTrafficKind NetTrafficKindOf(NetPayloadKind payload);
+
+// By the raw first byte rather than by the enum, because a game's kinds are not
+// in the enum -- which is the whole reason they need a bucket of their own.
+[[nodiscard]] NetTrafficKind NetTrafficKindOf(std::uint8_t payloadKind);
 
 struct NetTrafficRate
 {

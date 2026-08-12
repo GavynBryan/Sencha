@@ -12,6 +12,7 @@
 #include <physics/CharacterMoverPool.h>
 #include <physics/components/CharacterMoverLink.h>
 #include <net/NetConsoleCommands.h>
+#include <net/NetMessageRouter.h>
 #include <net/NetOwnership.h>
 #include <net/NetSession.h>
 #include <net/ReplicationSnapshot.h>
@@ -165,7 +166,6 @@ void Engine::RegisterNetFramePhases()
         if (session->Role() == NetSessionRole::Host)
             session->SetAnnouncedMap(engine.Console().CurrentMap());
 
-        engine.ClearNetDeliveries();
         const std::vector<NetSession::Delivery> deliveries = session->Pump(now);
 
         // Everything that arrived, counted before anything decides what to do
@@ -355,16 +355,32 @@ void Engine::RegisterNetFramePhases()
                 {
                     log.Warn("net: refused a command from peer {}",
                              delivery.From.Value);
+                    session->StrikePeer(delivery.From, "malformed command");
                 }
                 continue;
             }
 
-            // Anything else that is not a snapshot is the game's; it is kept
-            // for this frame rather than interpreted here.
-            if (static_cast<NetPayloadKind>(delivery.Payload[0])
-                != NetPayloadKind::Snapshot)
+            // A game's own message. Answered here, in the pump that answers
+            // the engine's, rather than parked in a buffer for a system that
+            // might read it -- which is what used to happen, to a buffer
+            // nothing ever read.
+            const std::uint8_t kind =
+                static_cast<std::uint8_t>(delivery.Payload[0]);
+            if (kind != static_cast<std::uint8_t>(NetPayloadKind::Snapshot))
             {
-                engine.RetainNetDelivery(delivery);
+                const NetMessageContext message{
+                    .From = delivery.From,
+                    .Entities = world,
+                    .Objects = &engine.Replication(),
+                    .Body = std::span<const std::byte>(delivery.Payload)
+                                .subspan(kNetPayloadKindBytes),
+                };
+                if (!engine.NetMessages().Route(session->Role(), kind, message))
+                {
+                    log.Warn("net: nothing answered payload kind {} from peer {}",
+                             kind, delivery.From.Value);
+                    session->StrikePeer(delivery.From, "unanswerable payload");
+                }
                 continue;
             }
 

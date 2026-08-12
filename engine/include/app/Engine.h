@@ -1,6 +1,7 @@
 #pragma once
 
 #include <app/DefaultRenderPipeline.h>
+#include <net/NetMessageRouter.h>
 #include <net/NetSession.h>
 #include <app/EngineSchedule.h>
 #include <core/console/ConsoleLineFeed.h>
@@ -135,22 +136,14 @@ public:
         return SpawnRecipeState;
     }
 
-    // Channel payloads from the most recent pump that replication did not
-    // claim: the game's own traffic, commands above all. Cleared at the start
-    // of each pump, so a system that runs in the frame sees exactly that
-    // frame's. The engine deliberately does not interpret any of it -- what a
-    // command means is the game's business.
-    [[nodiscard]] std::span<const NetSession::Delivery> NetDeliveries() const
+    // Where a game's own payload kinds are answered. Registered by the game and
+    // outlives any one session, because it describes what the game says rather
+    // than who it is connected to -- the same lifetime as the spawn recipes.
+    [[nodiscard]] NetMessageRouter& NetMessages() { return NetMessageState; }
+    [[nodiscard]] const NetMessageRouter& NetMessages() const
     {
-        return PendingNetDeliveries;
+        return NetMessageState;
     }
-
-    // Called by the net pump phase only.
-    void RetainNetDelivery(const NetSession::Delivery& delivery)
-    {
-        PendingNetDeliveries.push_back(delivery);
-    }
-    void ClearNetDeliveries() { PendingNetDeliveries.clear(); }
 
     [[nodiscard]] EngineConfig& Config() { return Configuration; }
     [[nodiscard]] const EngineConfig& Config() const
@@ -334,7 +327,7 @@ private:
     WorldComponentSchema RuntimeComponentSchemaState;
     ReplicationLayout ReplicationLayoutState;
     ReplicationRuntime ReplicationState;
-    std::vector<NetSession::Delivery> PendingNetDeliveries;
+    NetMessageRouter NetMessageState;
     NetCVarPublisher CVarPublisherState;
     PeerCommandRuntime PeerCommandState;
     NetStats NetStatsState;

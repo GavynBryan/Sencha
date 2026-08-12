@@ -75,7 +75,24 @@ enum class NetPayloadKind : std::uint8_t
     // reliable channel, because unlike a snapshot there is no next one to
     // supersede a lost update.
     CVar = 3,
+    // 4 .. 63 are unallocated and the engine's. Cues, zone grants, and whatever
+    // the protocol grows next take numbers from here.
 };
+
+// The range a game may define its own payload kinds in.
+//
+// Stated as numbers rather than left implicit at the end of the enum. A game
+// that picked four and an engine that later took four would not fail to
+// compile: they would decode one message as another, on two builds that each
+// look correct on their own. The gap is deliberate room for the engine to grow
+// without ever reaching a shipped game's number.
+//
+// Below this range the engine's own decoders run first, so a binding there is
+// a handler that is never reached.
+inline constexpr std::uint8_t kNetFirstGamePayloadKind = 64;
+inline constexpr std::uint8_t kNetLastGamePayloadKind = 255;
+inline constexpr std::size_t kNetGamePayloadKindCount =
+    static_cast<std::size_t>(kNetLastGamePayloadKind - kNetFirstGamePayloadKind) + 1;
 
 // What the kind byte costs a payload. Every encoder writes it first and every
 // consumer strips it, so the offset is stated once rather than re-derived as a
