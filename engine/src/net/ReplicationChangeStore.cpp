@@ -3,6 +3,7 @@
 #include <ecs/Query.h>
 #include <ecs/World.h>
 #include <net/NetReplicationComponents.h>
+#include <net/ReplicationCodec.h>
 #include <world/identity/PersistentIdComponent.h>
 
 #include <algorithm>
@@ -237,4 +238,22 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
 
     // Identities of entities the world no longer has stop being remembered.
     identity.ForgetDead(reading);
+}
+
+std::uint64_t ReplicationOwedFields(
+    const ReplicatedComponent& component,
+    const ReplicationChangeStore::ComponentState& held,
+    std::uint64_t floor, bool ownershipMoved, bool forOwner)
+{
+    std::uint64_t owed = 0;
+    for (std::size_t run = 0; run < component.Fields.size(); ++run)
+    {
+        const bool moved =
+            run < held.ChangedAt.size() && held.ChangedAt[run] > floor;
+        const bool gated =
+            component.Fields[run].OwnerOnly || component.Fields[run].OwnerLocal;
+        if (moved || (gated && ownershipMoved))
+            owed |= (std::uint64_t{ 1 } << run);
+    }
+    return owed & ReplicationVisibleFields(component, forOwner);
 }

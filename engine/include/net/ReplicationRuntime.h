@@ -154,6 +154,21 @@ public:
         return Identity;
     }
 
+    // What has been published and when each part of it last moved, and how far
+    // through that history one peer has been carried. Together these answer why
+    // a field has or has not reached a peer, which was previously answerable
+    // only by reading the writer.
+    //
+    // Const, and const is load-bearing. Both are the publish walk's to write:
+    // a floor moved by anything else is a peer credited with state it never
+    // proved it holds, which is silent and permanent.
+    [[nodiscard]] const ReplicationChangeStore& PublishedState() const
+    {
+        return Changes;
+    }
+    // Null for a peer this authority is not serving.
+    [[nodiscard]] const ReplicationPeerState* PeerBaseline(PeerId peer) const;
+
 private:
     ReplicationAuthorityIdentity Identity;
     ReplicationChangeStore Changes;

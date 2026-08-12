@@ -7,12 +7,14 @@
 #include <net/NetSession.h>
 #include <net/NetStatusReport.h>
 #include <net/ReplicationLayout.h>
+#include <world/RuntimeWorld.h>
 #include <net/ClientPrediction.h>
 #include <net/PeerCommandRuntime.h>
 #include <net/UdpTransport.h>
 
 #include <algorithm>
 #include <charconv>
+#include <limits>
 #include <memory>
 #include <string>
 #include <variant>
@@ -46,6 +48,13 @@ namespace
         identity.FixedTickRateMilliHz = static_cast<std::uint32_t>(
             engine.Config().Runtime.FixedTickRate * 1000.0);
         return identity;
+    }
+
+    bool ParseUnsigned(std::string_view text, std::uint64_t& out)
+    {
+        const auto result =
+            std::from_chars(text.data(), text.data() + text.size(), out);
+        return result.ec == std::errc{} && result.ptr == text.data() + text.size();
     }
 
     bool ParsePort(std::string_view text, std::uint16_t& out)
@@ -430,6 +439,64 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
             engine.DestroyNetSession();
             ConsoleTransport.reset();
             result.Info("disconnected");
+            return result;
+        },
+    });
+
+    registry.RegisterCommand({
+        .Name = "net_entity",
+        .Owner = "engine",
+        .Usage = "net_entity <netid> [peer]",
+        .Help = "Print one replicated object's record: owner, when each field "
+                "run last moved, and how far each peer has got with it. Naming "
+                "a peer reports what that peer is still owed, by name.",
+        .Callback = [&engine](ConsoleExecutionContext&,
+                              std::span<const std::string> args) {
+            ConsoleResult result;
+            std::uint64_t id = 0;
+            if (args.empty() || !ParseUnsigned(args[0], id))
+            {
+                result.Status = ConsoleStatus::InvalidArguments;
+                result.Error("usage: net_entity <netid> [peer]");
+                return result;
+            }
+
+            PeerId focus;
+            if (args.size() > 1)
+            {
+                std::uint64_t peer = 0;
+                if (!ParseUnsigned(args[1], peer) || peer == 0
+                    || peer > std::numeric_limits<std::uint32_t>::max())
+                {
+                    result.Status = ConsoleStatus::InvalidArguments;
+                    result.Error("peer ids start at 1");
+                    return result;
+                }
+                focus = PeerId{ static_cast<std::uint32_t>(peer) };
+            }
+
+            NetEntityReportSources sources;
+            sources.Session = engine.TryNet();
+            sources.Replication = &engine.Replication();
+            sources.Layout = &engine.ReplicatedComponents();
+            result.Info(NetFormatEntity(sources, NetEntityId{ id }, focus));
+            return result;
+        },
+    });
+
+    registry.RegisterCommand({
+        .Name = "net_owners",
+        .Owner = "engine",
+        .Usage = "net_owners",
+        .Help = "Print what this machine drives and, on a host, what each peer "
+                "owns -- straight off the NetOwner column, which is the only "
+                "record of it.",
+        .Callback = [&engine](ConsoleExecutionContext&,
+                              std::span<const std::string>) {
+            ConsoleResult result;
+            result.Info(NetFormatOwners(engine.TryNet(),
+                                        engine.World().Entities(),
+                                        &engine.Replication()));
             return result;
         },
     });

@@ -129,3 +129,16 @@ private:
     std::vector<NetEntityId> DepartedEntities;
     std::uint64_t LastGeneration = 0;
 };
+
+// Which runs of a component a peer is owed: the ones that moved after its
+// floor, plus every gated one when ownership moved after its floor, and then
+// only those this peer may see at all.
+//
+// A free function beside the store rather than a private step of the writer,
+// because a diagnostic that answers "why has this field not reached that peer"
+// has to answer it with the rule the writer actually applies. Two copies of it
+// would agree until the day the answer mattered.
+[[nodiscard]] std::uint64_t ReplicationOwedFields(
+    const ReplicatedComponent& component,
+    const ReplicationChangeStore::ComponentState& held,
+    std::uint64_t floor, bool ownershipMoved, bool forOwner);

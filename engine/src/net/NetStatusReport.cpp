@@ -1,6 +1,10 @@
 #include <net/NetStatusReport.h>
 
+#include <ecs/World.h>
 #include <net/ClientPrediction.h>
+#include <net/NetOwnership.h>
+#include <net/ReplicationChangeStore.h>
+#include <net/ReplicationCodec.h>
 #include <net/NetSession.h>
 #include <net/NetStats.h>
 #include <net/NetTickEstimator.h>
@@ -79,8 +83,17 @@ namespace
         out += Line("\n  %-*s ", kLabelWidth, label);
     }
 
+    // Trailing spaces are dropped on the way out, so a section whose content
+    // starts on the next line does not leave its label padding hanging.
+    void Trim(std::string& out)
+    {
+        while (!out.empty() && out.back() == ' ')
+            out.pop_back();
+    }
+
     void Continue(std::string& out)
     {
+        Trim(out);
         out += "\n" + kContinuation;
     }
 
@@ -311,5 +324,255 @@ std::string NetFormatStatus(const NetStatusSources& sources)
         }
     }
 
+    Trim(out);
+    return out;
+}
+
+//=============================================================================
+// One object
+//=============================================================================
+
+namespace
+{
+    // A component's field runs by name, for a mask. The dotted names are what
+    // net_components prints and what a schema declares, so the answer here can
+    // be taken straight back to the declaration that produced it.
+    std::string FieldNames(const ReplicatedComponent& component, std::uint64_t mask)
+    {
+        if (mask == 0)
+            return "-";
+        std::string names;
+        for (std::size_t run = 0; run < component.Fields.size(); ++run)
+        {
+            if ((mask & (std::uint64_t{ 1 } << run)) == 0)
+                continue;
+            if (!names.empty())
+                names += ", ";
+            names += component.Fields[run].Name;
+        }
+        return names;
+    }
+
+    void AppendEntityPeers(std::string& out, const NetSession& session,
+                           const ReplicationRuntime& replication,
+                           const ReplicationLayout& layout,
+                           const ReplicationChangeStore::EntityState& held,
+                           PeerId focus)
+    {
+        Section(out, "peers");
+        Continue(out);
+        out += Line("%-5s %5s %10s %10s  %s", "peer", "owner", "floor",
+                    "last sent", "owed");
+
+        for (const PeerId peer : session.ConnectedPeers())
+        {
+            if (focus.IsValid() && peer != focus)
+                continue;
+
+            const ReplicationPeerState* baseline = replication.PeerBaseline(peer);
+            const std::uint64_t floor =
+                baseline == nullptr ? 0 : baseline->Floor(held.Id);
+            const std::uint32_t sentAt =
+                baseline == nullptr ? 0 : baseline->LastSentAt(held.Id);
+            const bool isOwner = held.Owner == peer.Value;
+            const bool ownershipMoved = held.OwnerChangedAt > floor;
+
+            // What this peer is still owed, by the writer's own rule. An empty
+            // answer beside a floor below the store's generation is the shape
+            // of an entity nothing is left to say about; an answer that never
+            // empties is the one worth chasing.
+            std::string owed;
+            for (const ReplicationChangeStore::ComponentState& state : held.Components)
+            {
+                const ReplicatedComponent* component = layout.At(state.WireIndex);
+                if (component == nullptr)
+                    continue;
+                const std::uint64_t mask = ReplicationOwedFields(
+                    *component, state, floor, ownershipMoved, isOwner);
+                if (mask == 0)
+                    continue;
+                if (!owed.empty())
+                    owed += "; ";
+                owed += std::string(component->Name) + ":"
+                      + FieldNames(*component, mask);
+            }
+
+            Continue(out);
+            out += Line("%-5u %5s %10" PRIu64 " %10u  %s", peer.Value,
+                        isOwner ? "yes" : "-", floor, sentAt,
+                        owed.empty() ? "-" : owed.c_str());
+
+            // A peer that has confirmed nothing has not necessarily been sent
+            // nothing, and the two read very differently when the entity is
+            // missing on that machine.
+            if (floor == 0 && sentAt != 0)
+            {
+                Continue(out);
+                out += "      sent but never confirmed -- every part of it is "
+                       "still owed";
+            }
+        }
+    }
+}
+
+std::string NetFormatEntity(const NetEntityReportSources& sources, NetEntityId id,
+                            PeerId focus)
+{
+    const NetSession* session = sources.Session;
+    if (session == nullptr || sources.Replication == nullptr)
+        return "standalone (no session)";
+    if (!id.IsValid())
+        return "not a network id";
+
+    const ReplicationRuntime& replication = *sources.Replication;
+    std::string out = Line("net entity %" PRIu64, id.Value);
+
+    if (session->Role() != NetSessionRole::Host)
+    {
+        // A client holds the mapping and none of the history: what it was told
+        // is on the entity, and why it was told is the authority's business.
+        const EntityId local = replication.ClientEntities().TryResolve(id);
+        Section(out, "client");
+        out += local.IsValid()
+                   ? Line("entity %u:%u", local.Index, local.Generation)
+                   : std::string("not one this machine has been given");
+        return out;
+    }
+
+    const EntityId local = replication.AuthorityEntities().TryResolve(id);
+    const ReplicationChangeStore::EntityState* held =
+        replication.PublishedState().Find(id);
+
+    if (held == nullptr)
+    {
+        Section(out, "gone");
+        out += local.IsValid()
+                   ? "released from the world but the identity is still bound"
+                   : "the authority has no record of it";
+        // Which peers have yet to be told, which is the difference between an
+        // entity that is finished with and one still being taken away.
+        std::string owing;
+        for (const PeerId peer : session->ConnectedPeers())
+        {
+            const ReplicationPeerState* baseline = replication.PeerBaseline(peer);
+            if (baseline == nullptr)
+                continue;
+            for (const NetEntityId owed : baseline->OwedDestroys())
+            {
+                if (owed != id)
+                    continue;
+                if (!owing.empty())
+                    owing += ", ";
+                owing += std::to_string(peer.Value);
+            }
+        }
+        if (!owing.empty())
+        {
+            Continue(out);
+            out += "destroy still owed to peer(s) " + owing;
+        }
+        return out;
+    }
+
+    Section(out, "entity");
+    out += local.IsValid() ? Line("%u:%u", local.Index, local.Generation)
+                           : std::string("no local handle");
+    out += held->Owner == 0
+               ? std::string("; authority-owned")
+               : Line("; owned by peer %u (moved at gen %" PRIu64 ")",
+                      held->Owner, held->OwnerChangedAt);
+    out += Line("; seen at gen %" PRIu64 " of %" PRIu64, held->SeenAt,
+                replication.PublishedState().Generation());
+
+    if (held->Persistent.IsValid())
+    {
+        Section(out, "authored");
+        out += Line("persistent 0x%016" PRIx64, held->Persistent.Value);
+    }
+
+    if (sources.Layout != nullptr)
+    {
+        const ReplicationLayout& layout = *sources.Layout;
+        Section(out, "state");
+        for (const ReplicationChangeStore::ComponentState& state : held->Components)
+        {
+            const ReplicatedComponent* component = layout.At(state.WireIndex);
+            if (component == nullptr)
+                continue;
+            Continue(out);
+            // Per run rather than per component: a rotating entity that is not
+            // moving sends rotation alone, so which run moved is the answer and
+            // "the transform changed" is not.
+            out += Line("%-3u %s", state.WireIndex,
+                        std::string(component->Name).c_str());
+            for (std::size_t run = 0; run < component->Fields.size(); ++run)
+            {
+                Continue(out);
+                out += Line("      %-24s moved at gen %" PRIu64,
+                            component->Fields[run].Name.c_str(),
+                            run < state.ChangedAt.size() ? state.ChangedAt[run]
+                                                         : std::uint64_t{ 0 });
+            }
+        }
+
+        for (const ReplicationChangeStore::RemovedComponent& removed : held->Removed)
+        {
+            const ReplicatedComponent* component = layout.At(removed.WireIndex);
+            Section(out, "removed");
+            out += Line("%-3u %s at gen %" PRIu64, removed.WireIndex,
+                        component == nullptr ? "?"
+                                             : std::string(component->Name).c_str(),
+                        removed.RemovedAt);
+        }
+
+        AppendEntityPeers(out, *session, replication, layout, *held, focus);
+    }
+
+    Trim(out);
+    return out;
+}
+
+//=============================================================================
+// Who drives what
+//=============================================================================
+
+std::string NetFormatOwners(const NetSession* session, const World& entities,
+                            const ReplicationRuntime* replication)
+{
+    std::string out;
+    // The one entity this machine drives, whichever machine it is. A client
+    // with none while its pawn is plainly moving is the shape of a possession
+    // that did not take.
+    const EntityId local = LocalControlSubjectOf(entities);
+    Section(out, "local");
+    out += local.IsValid() ? Line("entity %u:%u", local.Index, local.Generation)
+                           : std::string("nothing driven here");
+
+    if (session == nullptr || session->Role() != NetSessionRole::Host)
+        return out;
+
+    std::vector<EntityId> owned;
+    for (const PeerId peer : session->ConnectedPeers())
+    {
+        NetOwnedBy(entities, peer, owned);
+        Section(out, "peer");
+        out += Line("%u owns %zu", peer.Value, owned.size());
+        for (const EntityId entity : owned)
+        {
+            Continue(out);
+            out += Line("  entity %u:%u", entity.Index, entity.Generation);
+            if (replication != nullptr)
+            {
+                const NetEntityId id =
+                    replication->AuthorityEntities().TryFind(entity);
+                // An owned entity that replication has never named is one no
+                // peer can be told about, which is the failure that looks like
+                // a possession working on the host and nowhere else.
+                out += id.IsValid() ? Line("  net %" PRIu64, id.Value)
+                                    : std::string("  NOT REPLICATED");
+            }
+        }
+    }
+    Trim(out);
     return out;
 }

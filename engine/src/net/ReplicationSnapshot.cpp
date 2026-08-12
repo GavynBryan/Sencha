@@ -379,27 +379,6 @@ void ReplicationClientIdentity::Unbind(NetEntityId id)
 
 namespace
 {
-    // Which runs of a component a peer is owed: the ones that moved after its
-    // floor, plus every gated one when ownership moved after its floor, and
-    // then only those this peer may see at all.
-    std::uint64_t OwedFields(const ReplicatedComponent& component,
-                             const ReplicationChangeStore::ComponentState& held,
-                             std::uint64_t floor, bool ownershipMoved,
-                             bool forOwner)
-    {
-        std::uint64_t owed = 0;
-        for (std::size_t run = 0; run < component.Fields.size(); ++run)
-        {
-            const bool moved =
-                run < held.ChangedAt.size() && held.ChangedAt[run] > floor;
-            const bool gated =
-                component.Fields[run].OwnerOnly || component.Fields[run].OwnerLocal;
-            if (moved || (gated && ownershipMoved))
-                owed |= (std::uint64_t{ 1 } << run);
-        }
-        return owed & ReplicationVisibleFields(component, forOwner);
-    }
-
     // The fixed part of every snapshot: the tick, this snapshot's name, the
     // command acknowledgement, and the two counts.
     constexpr std::size_t kHeaderBits = ReplicationSnapshotWire::TickBits
@@ -498,7 +477,7 @@ namespace
             assert(component != nullptr && "store holds a component the layout lost");
 
             const std::uint64_t owed =
-                OwedFields(*component, held, floor, ownershipMoved, isOwner);
+                ReplicationOwedFields(*component, held, floor, ownershipMoved, isOwner);
             masks.push_back(owed);
             owedAnything = owedAnything || owed != 0;
             bits += kComponentIndexBits

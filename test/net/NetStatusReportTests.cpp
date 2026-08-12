@@ -5,7 +5,12 @@
 #include <net/NetStats.h>
 #include <net/NetStatusReport.h>
 #include <net/PeerCommandRuntime.h>
+#include <net/NetOwnership.h>
+#include <net/NetReplicationComponents.h>
 #include <net/ReplicationRuntime.h>
+#include <world/ComponentRegistrar.h>
+#include <world/RuntimeComponentSchema.h>
+#include <world/transform/TransformComponents.h>
 
 #include <string>
 
@@ -179,4 +184,143 @@ TEST(NetStatusReport, ASessionWithNoOtherSourcesStillReports)
     EXPECT_TRUE(Mentions(text, "host")) << text;
     EXPECT_TRUE(Mentions(text, "strike")) << text;
     EXPECT_FALSE(Mentions(text, "traffic")) << text;
+}
+
+//=============================================================================
+// One object, and who drives what
+//
+// "Why is this not replicating" and "why does that peer own the wrong thing"
+// were answerable only by reading the writer and grepping a game's log line.
+//=============================================================================
+
+namespace
+{
+    // A host with a world, a replicated entity, and one peer that has been
+    // published to. Enough that every field of the record has a real value
+    // rather than a default.
+    struct Published
+    {
+        Session Link;
+        WorldComponentSchema Schema;
+        ReplicationLayout Layout;
+        World Entities;
+        ReplicationRuntime Replication;
+        EntityId Subject;
+
+        Published()
+        {
+            ComponentRegistrar components(&Schema, nullptr, &Layout);
+            RegisterEngineComponents(components);
+            Schema.Seal();
+            Schema.Apply(Entities);
+            Layout.Seal();
+
+            Subject = Entities.CreateEntity();
+            Entities.AddComponent<LocalTransform>(
+                Subject, LocalTransform{ Transform3f{ Vec3d(1.0f, 2.0f, 3.0f),
+                                                      Quatf::Identity(),
+                                                      Vec3d::One() } });
+            Entities.AddComponent<NetReplicated>(Subject, NetReplicated{});
+            NetSetOwner(Entities, Subject, PeerId{ 1 });
+
+            (void)Replication.Publish(Link.Host, Entities, Layout, 1);
+            Link.Step(2);
+        }
+
+        [[nodiscard]] NetEntityId Name() const
+        {
+            return Replication.AuthorityEntities().TryFind(Subject);
+        }
+
+        [[nodiscard]] NetEntityReportSources Sources() const
+        {
+            NetEntityReportSources sources;
+            sources.Session = &Link.Host;
+            sources.Replication = &Replication;
+            sources.Layout = &Layout;
+            return sources;
+        }
+    };
+}
+
+TEST(NetEntityReport, AnIdThisAuthorityNeverMintedIsSaidToBeUnknown)
+{
+    Published published;
+    const std::string text =
+        NetFormatEntity(published.Sources(), NetEntityId{ 999999 }, PeerId{});
+    EXPECT_TRUE(Mentions(text, "no record of it")) << text;
+}
+
+TEST(NetEntityReport, ARecordCarriesTheOwnerAndWhenEachRunLastMoved)
+{
+    Published published;
+    const NetEntityId id = published.Name();
+    ASSERT_TRUE(id.IsValid());
+
+    const std::string text = NetFormatEntity(published.Sources(), id, PeerId{});
+
+    EXPECT_TRUE(Mentions(text, "owned by peer 1")) << text;
+    // Per field run, because a rotating entity that is not moving sends
+    // rotation alone -- "the transform changed" is not the answer.
+    EXPECT_TRUE(Mentions(text, "local.position")) << text;
+    EXPECT_TRUE(Mentions(text, "local.rotation")) << text;
+    EXPECT_TRUE(Mentions(text, "moved at gen")) << text;
+    EXPECT_TRUE(Mentions(text, "floor")) << text;
+    EXPECT_TRUE(Mentions(text, "owner")) << text;
+}
+
+// The state a peer is actually in until it acknowledges anything: written into
+// a snapshot, confirmed in none, so everything about it is still owed. It reads
+// identically to "never sent" from the floor alone, and the two send someone to
+// entirely different places.
+TEST(NetEntityReport, APeerThatHasConfirmedNothingIsDistinguishedFromOneNeverSent)
+{
+    Published published;
+    const NetEntityId id = published.Name();
+    ASSERT_TRUE(id.IsValid());
+
+    const std::string text = NetFormatEntity(published.Sources(), id, PeerId{ 1 });
+    EXPECT_TRUE(Mentions(text, "sent but never confirmed")) << text;
+    // And what it is owed, by name, which is the "why can that player not see
+    // this" form of the question.
+    EXPECT_TRUE(Mentions(text, "local.position")) << text;
+    EXPECT_TRUE(Mentions(text, "sencha.net_owner:peer")) << text;
+}
+
+TEST(NetOwnersReport, AHostReportsWhatEachPeerDrives)
+{
+    Published published;
+    const std::string text =
+        NetFormatOwners(&published.Link.Host, published.Entities,
+                        &published.Replication);
+
+    EXPECT_TRUE(Mentions(text, "peer")) << text;
+    EXPECT_TRUE(Mentions(text, "owns 1")) << text;
+    EXPECT_TRUE(Mentions(text, "net ")) << text;
+    EXPECT_FALSE(Mentions(text, "NOT REPLICATED")) << text;
+}
+
+// The failure that looks like possession working on the host and nowhere else.
+TEST(NetOwnersReport, AnOwnedEntityReplicationCannotNameIsCalledOut)
+{
+    Published published;
+    const EntityId hidden = published.Entities.CreateEntity();
+    published.Entities.AddComponent<LocalTransform>(hidden, LocalTransform{});
+    NetSetOwner(published.Entities, hidden, PeerId{ 1 });
+
+    const std::string text =
+        NetFormatOwners(&published.Link.Host, published.Entities,
+                        &published.Replication);
+    EXPECT_TRUE(Mentions(text, "NOT REPLICATED")) << text;
+}
+
+TEST(NetOwnersReport, WhatThisMachineDrivesIsReportedWithOrWithoutASession)
+{
+    Published published;
+    EXPECT_TRUE(Mentions(NetFormatOwners(nullptr, published.Entities, nullptr),
+                         "nothing driven here"));
+
+    NetSetLocalControl(published.Entities, published.Subject, nullptr);
+    EXPECT_TRUE(Mentions(NetFormatOwners(nullptr, published.Entities, nullptr),
+                         "entity "));
 }

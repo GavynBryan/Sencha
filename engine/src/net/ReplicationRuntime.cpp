@@ -158,6 +158,12 @@ SnapshotApplyResult ReplicationRuntime::Apply(std::span<const std::byte> payload
     return applied;
 }
 
+const ReplicationPeerState* ReplicationRuntime::PeerBaseline(PeerId peer) const
+{
+    const auto it = Peers.find(peer);
+    return it == Peers.end() ? nullptr : &it->second;
+}
+
 void ReplicationRuntime::ForgetPeer(PeerId peer)
 {
     Peers.erase(peer);
