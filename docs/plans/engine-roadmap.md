@@ -644,9 +644,13 @@ which is ratified; this section owns the sequence and the gate.
    met on screen. Interest scoping is item 6; a snapshot today covers everything
    marked replicated.
 
-4. **Ownership, input, prediction (G4). Track gate.** `NetOwner`; session role as
-   composition at `OnRegisterSystems`; the input channel over the tick-stamped action
-   records plus per-tick aim; per-peer pawn spawn; input-delay mode end to end.
+4. **Ownership, input, prediction (G4). Track gate.** `NetOwner`; the input channel
+   over the tick-stamped action records plus per-tick aim; per-peer pawn spawn;
+   input-delay mode end to end. (Session role as composition at `OnRegisterSystems`
+   was part of this item and is now closed rather than owed: a session is created by
+   console command long after registration, so the role would be Standalone in every
+   process that goes on to host. `networking.md` Section 7.2 records what ships
+   instead.)
    Prediction and reconciliation follow item 5. **Track gate: two instances on one
    machine, one hosting, each seeing the other's pawn move under
    server-authoritative simulation** — where "seeing" is observed motion, not

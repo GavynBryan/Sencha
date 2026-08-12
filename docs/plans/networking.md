@@ -310,10 +310,12 @@ One session model, three configurations, one binary:
   without a measured need; revisit trigger: profiling shows meaningful cost from
   Visible/Audio bookkeeping on a headless host).
 
-Roles are composition, not branches: the game's `OnRegisterSystems` receives the
-session role and registers the appropriate system set (Section 7.2). The engine does
-not scatter `if (IsServer)` through systems; a system either runs in a role or is not
-registered in it.
+Roles are composition, not branches, in the sense that matters: the engine does not
+scatter `if (IsServer)` through systems. What that does *not* mean is a role handed to
+`OnRegisterSystems` -- that shape is architecturally closed and Section 7.2 records
+why. What replaced it is that the net systems are registered unconditionally and are
+inert with no session, which costs one null check each and cannot be wrong about a
+role that does not exist yet.
 
 ---
 
@@ -420,8 +422,9 @@ document proposed. The scheme is `PersistentEntityId`
 when an entity is authored — not by the cook — serialized per entity in scene
 documents, carried verbatim through the cook, and resolved at runtime through the
 `PersistentEntityIndex` world resource. Runtime `EntityId` values are never
-persisted. `PersistentIdComponent` is registered last in `ComponentManifest.h`
-(manifest order is serialized state; append only). `SerializedEntityId` no longer
+persisted. `PersistentIdComponent` is registered last in
+`RegisterWorldComponents` (`world/WorldComponentRegistration.h`); registration
+order is serialized state, so it is append-only. `SerializedEntityId` no longer
 exists.
 
 Two consequences for this track, both load-bearing:
@@ -676,10 +679,11 @@ scene serialization (`SceneChunkId`) and asset fields (`.AsAsset(...)`):
   the Section 5 remap, entity references encode as `NetEntityId` through the map
   (unmapped references refuse at the writer with a validation error, not silently).
 
-One registration fold, `EngineReplicatedComponents`, mirrors
-`EngineSceneComponents` (`world/ComponentManifest.h`), and game modules append their
-own in `OnRegisterComponents`, so the replication registry cannot drift from storage
-registration (the manifest-fold precedent). The writer and applier are schema-driven;
+There is no separate replication registry to drift: `ComponentRegistrar::Add<T>`
+puts one component into storage, the scene serializers, and the replicated table at
+once, deciding each from what that component's own `TypeSchema` declares. The engine
+names its own in `RegisterEngineComponents` and a game module appends its own in
+`OnRegisterComponents`, which is the whole of what a game writes. The writer and applier are schema-driven;
 adding a replicated component to a game is a schema edit plus a manifest entry, zero
 netcode. This satisfies OCP through data and the existing registration seam rather
 than a new interface.
@@ -893,10 +897,29 @@ the component.
 
 ### 7.2 Role composition without branches
 
-- **Authority-only systems** (AI, ability activation, effect lifetime, spawning,
-  scoring): registered only when the session role is Host or HeadlessHost, in the
-  game's `OnRegisterSystems` (which receives the role). One decision at the
-  composition root, per SOLID-as-applied; no `IsServer` branches inside systems.
+- **Authority-only systems**, as planned: registered only for a Host role, in the
+  game's `OnRegisterSystems`, which would receive the role.
+
+  *Closed 2026-08-12, not owed.* `OnRegisterSystems` cannot receive a useful role,
+  and the reason is a lifecycle fact rather than a missing field. A session is
+  created by the `host` or `connect` console command at an arbitrary later moment,
+  and `EngineSchedule::Register` asserts after `Init()` -- so at registration the
+  role is Standalone in every process that will go on to host, which is precisely
+  the case the field exists to serve. A field that is wrong for its own motivating
+  case is worse than no field.
+
+  What ships instead: the net systems register unconditionally and are inert with no
+  session (`RegisterNetSystems`, and the two frame phases, each one null check), and
+  role-dependent work is a runtime read of `NetSession::Role()` at the one place per
+  frame that owns the decision -- `SessionPlayerSystem::FrameUpdate` in the template
+  is the worked example. That is a branch, and it is one branch at a composition
+  point rather than a branch per system, which is what the rule was protecting.
+
+  Ordering that genuinely belongs to the engine but names a game's type is expressed
+  as a template parameterized by that type (`OrderNetInputAround<T>`), so the edge is
+  maintained beside the systems that require it rather than restated in every game.
+  `EngineSchedule::AddDependency` refuses an edge whose ends share no phase rather
+  than silently dropping it, which is how a mis-declared one is now found.
 - **Client-side gating of zone content** rides participation, which already exists:
   on a client, granted zones converge to participation without Logic
   (Visible, Physics, Audio per the normal demand policy), so fixed-logic systems
@@ -1637,6 +1660,68 @@ after the 2026-08-07 playtest: every World-level assertion passed while replicat
 motion never reached the screen, because the tests stopped one derivation short of
 what extraction actually reads.
 
+### 12.0 Contributor readiness, re-audited 2026-08-12
+
+Track G was audited against a single question: can a competent mid-level game or
+engine programmer implement ordinary multiplayer features without descending into
+replication protocol internals? The transport and protocol firewall passed
+outright -- no gameplay code anywhere touches a socket, a sequence number, an ack
+window, or a fragment, and `CheckNetIsolation.cmake` holds public net headers to
+the same bar. Everything the audit found was *above* transport, and the work below
+is what closed it. The fifteen tasks it scored, re-walked against the shipped tree
+rather than against the plan:
+
+| Task | Was | Is | What closed it |
+|---|---|---|---|
+| Add a replicated component | mid-level | mid-level | unchanged |
+| Add an owner-only field | mid-level | mid-level | contradictory flag pairs now refused by name |
+| Add a small integer field | **silently corrupting** | mid-level | width-aware codec access; unimplementable widths refused at registration |
+| Add another spawned replicated object | mid-level | mid-level | duplicate and null recipe registration refused |
+| Remove a replicated component | **silently stale on clients** | mid-level | removal travels, owed until acknowledged |
+| Add a networked authored door | **silently duplicated** | mid-level | authored key binds through `PersistentEntityIndex`; unloaded levels defer and converge |
+| Send a client-to-authority request | **not writable** | mid-level | `NetMessageRouter` + `NetSendToAuthority`; sender and direction are the engine's |
+| Send an unreliable cosmetic event | mid-level | mid-level | the channel is an argument, which is a product decision not transport knowledge |
+| Possess an object | **five representations by hand** | mid-level | `NetSetOwner`; every derivation follows |
+| Transfer ownership | **no path existed** | mid-level | one call; no frame exists with two drivers |
+| Add a predicted cooldown | suspicious | **specialist, and says so** | the build names it at startup and states what will happen to it |
+| Add another interpolated property | suspicious | **specialist, and says so** | the API states poses are the only interpolated type and names the trigger |
+| Diagnose why one entity is not replicating | no | mid-level | `net_entity <netid> [peer]` |
+| Diagnose a failed ownership transfer | no | mid-level | `net_owners`, plus the consistency assertion firing where it breaks |
+| Add a relevance rule | not yet defined | not yet defined | G3's gate, deliberately |
+
+Eleven of fifteen mid-level, four specialist for stated inherent reasons, none
+suspicious. The two specialist prediction and interpolation tasks are specialist
+because replaying a second domain and blending a second type are real design work,
+not because an implementation detail leaked -- and both now say so at the point
+somebody would otherwise assume they were supported.
+
+Three defects the audit did not name were found while closing it, and are recorded
+because their shape generalizes. A reliable message from a client to its authority
+was answered with a handshake challenge and never delivered: `NetChannelKind`
+collided with `NetMessageType` in the first byte the host peeks, and the guard for
+exactly that asserted three of the five types the branch reads. It survived because
+nothing in the tree had ever sent one -- commands ride unreliable, and the retained
+delivery buffer had no callers -- and because the session suite covered two of the
+four direction-by-channel combinations, the two that worked. The channel kinds are
+numbered above the message types now, so the collision fails to compile. Second, the
+channel's kind validation was an upper bound, correct only while kinds started at
+zero; it asks membership now. Third, the snapshot applier mutated the world at
+thirteen failure returns, and the lasting damage was an entity created before a
+mid-entity failure: bound to an identity, never spawned again, so its recipe never
+ran and it stayed correct in state and invisible on screen for the session. Apply is
+staged -- read whole, then write whole -- and truncation and mutation corpora prove
+no refusal changes anything.
+
+What this pass deliberately did not build, each recorded with a trigger rather than
+left implied: a universal RPC framework, a distinct network-object handle, replicated
+entity references as component fields, generic rollback, generalized interpolation,
+per-category bandwidth policy, a capture format, and recipe tables in the handshake
+identity. Section 11 of the plan behind this work holds the reasoning for each.
+
+Still owed here: the manual end-to-end pass with the packaged bundles (the automated
+two-process coverage stands in for it in CI), and zone interest, which is G3 and
+specialist and depends on three things this pass landed.
+
 - **G0. Foundations (no netcode). MOSTLY LANDED.** Section 3.1's paced tick scheduler,
   3.2's mover-state fix, 3.3's tick-stamped input records, and 3.4's stable identity
   all shipped on their own tracks. What remains: **the headless frame loop**
@@ -1760,6 +1845,18 @@ what extraction actually reads.
   (`Replicated`) tunable rather than a constant. Still open in this phase:
   event/cue replication and desync hashing. Per-zone scope sizes wait on zone
   interest, which has no scopes to size yet.
+
+  *Status 2026-08-12: the same account now reaches a terminal.* The panel is ImGui
+  and a dedicated host has no overlay, so the one process where budget occupancy,
+  deferral age, unsendable entities, and per-peer queue depth decide whether a
+  session is healthy could read none of them. `net_status` prints all of it
+  (`net/NetStatusReport.h`), `net_entity <netid> [peer]` answers why one object is
+  not reaching one peer using the writer's own owed-field rule, and `net_owners`
+  answers who drives what. Four counters that were computed every publish and every
+  apply and then discarded are surfaced: what the last snapshot did to a client, the
+  seeding-versus-delta split, deferred destroys, and a bounded costliest-entity
+  list -- which answers "what is eating the budget" without the capture format this
+  plan declined to build.
 - **G-P. Prediction. Split out 2026-08-08; depends on G4a.**
 
   *P1, the shared tick: landed.* Prediction rests on both machines naming the
@@ -1893,6 +1990,15 @@ what extraction actually reads.
   one process. Still owed from this phase: the scripted traversal soak with
   zero-missed-tick assertions (rides Track C's script machinery and Track E's
   CI), and Windows packaging (Track F).*
+
+  *Status 2026-08-12: that test now drives both processes by console, over a pipe
+  onto the child's stdin, which is how a dedicated server is actually operated --
+  a test that drove it any other way would be exercising a path nobody uses. It
+  covers the template's turret: a client names a replicated object, asks for it on
+  the reliable channel, takes it, and hands it back, with the authority's record
+  read back through `net_owners`. That is also the only coverage that could have
+  caught the channel-kind collision, since it is the first reliable message any
+  client in this tree has ever sent its authority.*
 
   *Deviation from Sections 2.3 and 7.2, recorded: there is no `HeadlessHost`
   value in `NetSessionRole`. Hosting is hosting on the wire, and a fourth role
