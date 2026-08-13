@@ -3,6 +3,7 @@
 #include <ecs/World.h>
 #include <net/NetOwnedFocus.h>
 #include <net/NetOwnership.h>
+#include <net/ReplicationRuntime.h>
 #include <net/NetReplicationComponents.h>
 #include <physics/components/CharacterController.h>
 #include <world/RuntimeWorld.h>
@@ -212,4 +213,127 @@ TEST(NetOwnedFocusSourceIds, PeerSourcesNeverCollideWithTheLocalOne)
     // entity behind it to refresh one.
     EXPECT_EQ(NetFocusSourceFor(EntityId{ .Index = 3, .Generation = 1 }),
               NetFocusSourceFor(EntityId{ .Index = 3, .Generation = 9 }));
+}
+
+//=============================================================================
+// What each peer may be told about
+//
+// The authority holds the union of everybody's neighborhoods; each peer is
+// offered only its own. Same policy, read the other way round.
+//=============================================================================
+
+namespace
+{
+    // One peer's zones out of the interest set, or empty if it has none.
+    std::vector<ZoneId> InterestOf(const NetOwnedFocus& focus, PeerId peer)
+    {
+        for (const NetPeerZoneInterest& record : focus.Interest())
+        {
+            if (record.Peer == peer)
+                return { record.Zones.begin(), record.Zones.end() };
+        }
+        return {};
+    }
+
+    bool Holds(const std::vector<ZoneId>& zones, int index)
+    {
+        return std::find(zones.begin(), zones.end(), ZoneAt(index)) != zones.end();
+    }
+}
+
+// A peer is offered the room it is in and the ones next door, which is what
+// makes a crossing free: the room being entered was granted before anyone
+// reached the doorway.
+TEST_F(NetOwnedFocusTest, APeerIsOfferedItsOwnNeighborhood)
+{
+    Pawn(PeerId{ 1 }, 3);
+    Step();
+
+    const std::vector<ZoneId> mine = InterestOf(Focus, PeerId{ 1 });
+    EXPECT_TRUE(Holds(mine, 3)) << "a peer was not offered the room it is standing in";
+    EXPECT_TRUE(Holds(mine, 2)) << "the room next door was not offered ahead of time";
+    EXPECT_TRUE(Holds(mine, 4));
+    EXPECT_FALSE(Holds(mine, 0)) << "a peer was offered a room nobody is near";
+}
+
+// The whole point of per-peer scope: what one player may be told about is not
+// what the authority happens to be holding.
+TEST_F(NetOwnedFocusTest, APeerIsNotOfferedAnotherPlayersRooms)
+{
+    Pawn(PeerId{ 1 }, 0);
+    Pawn(PeerId{ 7 }, 7);
+    Step();
+
+    const std::vector<ZoneId> first = InterestOf(Focus, PeerId{ 1 });
+    const std::vector<ZoneId> second = InterestOf(Focus, PeerId{ 7 });
+
+    EXPECT_TRUE(Holds(first, 0));
+    EXPECT_FALSE(Holds(first, 7)) << "one peer was offered the other's room";
+    EXPECT_TRUE(Holds(second, 7));
+    EXPECT_FALSE(Holds(second, 0));
+}
+
+// A peer driving two things is offered both neighborhoods, collapsed into one
+// set. Placed two rooms apart so the neighborhoods genuinely overlap -- far
+// enough apart and there is nothing to collapse, and a build that never
+// deduplicated at all would pass.
+TEST_F(NetOwnedFocusTest, APeerDrivingTwoThingsIsOfferedBothNeighborhoods)
+{
+    Pawn(PeerId{ 4 }, 2);
+    Pawn(PeerId{ 4 }, 4);
+    Step();
+
+    ASSERT_EQ(Focus.Interest().size(), 1u) << "one peer, one interest set";
+    const std::vector<ZoneId> mine = InterestOf(Focus, PeerId{ 4 });
+    EXPECT_TRUE(Holds(mine, 2));
+    EXPECT_TRUE(Holds(mine, 4));
+    EXPECT_TRUE(Holds(mine, 3)) << "the room between them was offered by neither";
+
+    EXPECT_TRUE(std::is_sorted(mine.begin(), mine.end(),
+                               [](ZoneId a, ZoneId b) { return a.Value < b.Value; }))
+        << "PublishZoneScope reads this with a binary search";
+    EXPECT_EQ(std::adjacent_find(mine.begin(), mine.end()), mine.end())
+        << "a room both of them are near was offered twice";
+}
+
+// Two players in the same room produce one set each, not one shared one, and
+// neither is missing anything.
+TEST_F(NetOwnedFocusTest, TwoPeersInOneRoomAreEachOfferedIt)
+{
+    Pawn(PeerId{ 1 }, 4);
+    Pawn(PeerId{ 2 }, 4);
+    Step();
+
+    EXPECT_EQ(Focus.Interest().size(), 2u);
+    EXPECT_TRUE(Holds(InterestOf(Focus, PeerId{ 1 }), 4));
+    EXPECT_TRUE(Holds(InterestOf(Focus, PeerId{ 2 }), 4));
+}
+
+// Interest follows the pawn, which is what makes a revoke happen at all.
+TEST_F(NetOwnedFocusTest, InterestFollowsThePeerAcrossTheChain)
+{
+    const EntityId pawn = Pawn(PeerId{ 1 }, 0);
+    Step();
+    ASSERT_TRUE(Holds(InterestOf(Focus, PeerId{ 1 }), 0));
+
+    World& world = Rig.World().Entities();
+    for (int zone = 1; zone <= 4; ++zone)
+    {
+        world.TryGet<WorldTransform>(pawn)->Value.Position = InZone(zone);
+        Step();
+    }
+
+    const std::vector<ZoneId> mine = InterestOf(Focus, PeerId{ 1 });
+    EXPECT_TRUE(Holds(mine, 4));
+    EXPECT_FALSE(Holds(mine, 0)) << "a peer is still offered a room it walked out of";
+}
+
+// A client computes no interest at all: it is not the one deciding what anybody
+// may be told about.
+TEST_F(NetOwnedFocusTest, AClientOffersNobodyAnything)
+{
+    Pawn(PeerId{ 1 }, 0);
+    Step(NetSessionRole::Client);
+
+    EXPECT_TRUE(Focus.Interest().empty());
 }

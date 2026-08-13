@@ -534,6 +534,22 @@ struct WorldPartitionUpdateSystem
             session == nullptr ? NetSessionRole::Standalone : session->Role(),
             *Partition);
 
+        // And what each of them may be told about. Same neighborhoods, read the
+        // other way round: the authority holds the union, each peer is offered
+        // its own.
+        if (session != nullptr)
+        {
+            const ReplicationRuntime::ZoneScopeStats scope =
+                Owner->Replication().PublishZoneScope(*session,
+                                                      PeerFocus.Interest());
+            if (scope.BytesQueued > 0)
+            {
+                Owner->NetTraffic().RecordOut(
+                    NetTrafficKind::Zone, scope.BytesQueued,
+                    scope.Grants + scope.Revokes);
+            }
+        }
+
         Partition->Update(
             ctx.WallDeltaSeconds,
             *Loader,

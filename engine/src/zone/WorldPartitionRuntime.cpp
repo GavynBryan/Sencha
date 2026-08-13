@@ -147,6 +147,33 @@ const DockTraversalResult& WorldPartitionRuntime::LastTraversal(
     return held == nullptr ? kNone : held->LastTraversal;
 }
 
+void WorldPartitionRuntime::DemandForSource(FocusSourceId source,
+                                            std::vector<ZoneId>& out) const
+{
+    out.clear();
+    const FocusSource* held = FindSource(source);
+    if (!HasManifest_ || held == nullptr || !held->Focus.IsValid())
+        return;
+
+    ZoneFocusSource one;
+    one.Source = source;
+    one.Focus = held->Focus;
+    if (held->HasPosition)
+        one.Position = held->Position;
+
+    // The focus zone's own graph overrides, exactly as the merged pass resolves
+    // them: a peer standing in a zone that widens its neighborhood is owed the
+    // wider one.
+    const WorldPartitionStreamingConfig config =
+        ResolveGraphStreamingConfig(Manifest_, held->Focus, Config_);
+
+    for (const ZoneDemandRecord& record :
+         ComputeZoneDemand(Manifest_, Index_, std::span{ &one, 1 }, {}, config))
+    {
+        out.push_back(record.Zone);
+    }
+}
+
 bool WorldPartitionRuntime::RemoveFocusSource(FocusSourceId source)
 {
     const auto at = std::find_if(Sources_.begin(), Sources_.end(),

@@ -2,8 +2,10 @@
 
 #include <ecs/EntityId.h>
 #include <net/NetSession.h>
+#include <net/ReplicationRuntime.h>
 #include <zone/ZoneDemand.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -61,8 +63,38 @@ public:
     // the partition is the one that acts on them.
     [[nodiscard]] std::span<const FocusSourceId> Held() const { return Held_; }
 
+    // What each peer should be holding open: the union of the neighborhoods of
+    // everything that peer drives, ready to hand to
+    // ReplicationRuntime::PublishZoneScope. Ascending by peer, and each peer's
+    // zones ascending and deduplicated, which is what that call requires.
+    //
+    // The spans point into storage this object owns and the next Update
+    // rewrites, so it is read within the frame that produced it.
+    //
+    // Computed from each source's focus as it stood entering this frame, which
+    // is one frame behind a player who crosses a boundary during it. That costs
+    // nothing: with any hop count at all the room being entered was already a
+    // neighbor, so it was already granted and already acked, and the lag is only
+    // ever in when the room behind stops being offered.
+    [[nodiscard]] std::span<const NetPeerZoneInterest> Interest() const
+    {
+        return Interest_;
+    }
+
 private:
+    // One peer wanting one zone, before the duplicates between the things it
+    // drives are collapsed.
+    struct Claim
+    {
+        std::uint32_t Peer = 0;
+        ZoneId Zone;
+    };
+
     std::vector<FocusSourceId> Held_;
-    // Reused rather than rebuilt: this runs every frame.
+    // All reused rather than rebuilt: this runs every frame.
     std::vector<FocusSourceId> Live_;
+    std::vector<Claim> Claims_;
+    std::vector<ZoneId> SourceZones_;
+    std::vector<ZoneId> InterestZones_;
+    std::vector<NetPeerZoneInterest> Interest_;
 };

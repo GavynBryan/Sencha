@@ -153,6 +153,26 @@ public:
 
     [[nodiscard]] std::span<const ZoneDemandRecord> DemandRecords() const { return Records_; }
 
+    // The zones one focus source alone demands, ascending, replacing whatever
+    // `out` held. Empty for a source that is not held or has no resolved focus.
+    //
+    // The same pure policy the merged set is built from, asked about one source
+    // instead of all of them. That is what a networked peer's interest set is:
+    // an authority holds the union of everybody's neighborhoods, but what it
+    // may tell any one peer about is that peer's own.
+    //
+    // Pins are deliberately not included. A pin is the authority's scripted
+    // floor on its own residency and says nothing about which player should be
+    // told what; folding it in here would grant every peer every pinned zone.
+    // The consequence, stated because it is a real one: a zone held resident
+    // only by a pin is not in anybody's interest set, so nothing in it reaches
+    // any peer until a player is near it.
+    //
+    // Costs one demand computation per call, which is a BFS bounded by the hop
+    // count and a vector the size of the result. Called once per peer per frame
+    // by a session, so it is bounded by the player count and not by the world.
+    void DemandForSource(FocusSourceId source, std::vector<ZoneId>& out) const;
+
     // True while a refused load is being withheld from reissue. Demand cannot
     // express this on its own: a demanded, non-resident zone is indistinguishable
     // from one that will never load, so reissuing from demand alone rebuilds a
