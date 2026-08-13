@@ -5,6 +5,7 @@
 #include <net/NetSpawnRecipe.h>
 #include <net/ClientPrediction.h>
 #include <net/NetSnapshotAck.h>
+#include <net/NetZoneScope.h>
 #include <net/ReplicationCodec.h>
 #include <net/ReplicationLayout.h>
 
@@ -159,6 +160,15 @@ public:
         return Entities;
     }
 
+    // Which zones this peer has been told to hold and which it has proved it
+    // holds. Kept here rather than in a second map keyed the same way, because
+    // it is the same category of fact as everything else on this type: what
+    // this peer knows. It is also where the writer needs it, and a writer that
+    // had to be handed the scope separately is one that could be handed the
+    // wrong peer's.
+    [[nodiscard]] NetZoneScope& Zones() { return Scope; }
+    [[nodiscard]] const NetZoneScope& Zones() const { return Scope; }
+
 private:
     // What one snapshot told this peer: which entities, and how far through the
     // authority's history each was carried.
@@ -177,6 +187,7 @@ private:
     // Starts at one, because zero is the acknowledgement's "nothing yet".
     std::uint32_t NextSequence = 1;
     std::uint32_t First = 0;
+    NetZoneScope Scope;
 };
 
 //-----------------------------------------------------------------------------

@@ -2,8 +2,10 @@
 
 #include <ecs/World.h>
 #include <ecs/WorldComponentSchema.h>
+#include <world/RuntimeWorld.h>
 
 #include <algorithm>
+#include <array>
 
 namespace
 {
@@ -206,6 +208,152 @@ SnapshotApplyResult ReplicationRuntime::Apply(std::span<const std::byte> payload
     return applied;
 }
 
+ReplicationRuntime::ZoneScopeStats ReplicationRuntime::PublishZoneScope(
+    NetSession& session, std::span<const NetPeerZoneInterest> interest)
+{
+    ZoneScopeStats stats;
+    if (session.Role() != NetSessionRole::Host)
+        return stats;
+
+    // Small and fixed: one verb and one zone id.
+    std::array<std::byte, 32> scratch{};
+    std::vector<ZoneId> revoking;
+
+    for (const PeerId peer : session.ConnectedPeers())
+    {
+        ReplicationPeerState& baseline = Peers[peer];
+        NetZoneScope& scope = baseline.Zones();
+
+        std::span<const ZoneId> wanted;
+        for (const NetPeerZoneInterest& record : interest)
+        {
+            if (record.Peer == peer)
+            {
+                wanted = record.Zones;
+                break;
+            }
+        }
+
+        const auto send = [&](ZoneId zone, NetZoneScopeVerb verb) {
+            const std::size_t size = NetEncodeZoneScopeUpdate(
+                NetZoneScopeUpdate{ .Zone = zone, .Verb = verb }, scratch);
+            if (size == 0)
+                return false;
+            if (!session.Send(peer, NetChannelKind::ReliableOrdered,
+                              std::span<const std::byte>(scratch).subspan(0, size)))
+            {
+                return false;
+            }
+            stats.BytesQueued += size;
+            return true;
+        };
+
+        // Revokes are collected before they are applied, because dropping an
+        // entry invalidates the walk over the same storage.
+        revoking.clear();
+        for (const NetZoneScope::Entry& held : scope.Entries())
+        {
+            const bool stillWanted = std::binary_search(
+                wanted.begin(), wanted.end(), held.Zone,
+                [](ZoneId a, ZoneId b) { return a.Value < b.Value; });
+            if (!stillWanted)
+                revoking.push_back(held.Zone);
+        }
+
+        // Revoked before granted, so a peer at its own residency cap is told
+        // what it may let go before it is told to take more on.
+        for (const ZoneId zone : revoking)
+        {
+            if (!send(zone, NetZoneScopeVerb::Revoke))
+                continue;
+            (void)scope.Revoke(zone);
+            ++stats.Revokes;
+        }
+
+        for (const ZoneId zone : wanted)
+        {
+            if (!zone.IsValid() || scope.StateOf(zone) != NetZoneScopeState::None)
+                continue;
+            // Sent before the state moves: a grant the channel refused would
+            // otherwise leave the authority believing a room is loading that
+            // the peer was never told about, and nothing would ever say it
+            // again.
+            if (!send(zone, NetZoneScopeVerb::Grant))
+                continue;
+            (void)scope.Grant(zone);
+            ++stats.Grants;
+        }
+    }
+
+    return stats;
+}
+
+bool ReplicationRuntime::AcknowledgeZone(PeerId peer, ZoneId zone)
+{
+    const auto it = Peers.find(peer);
+    if (it == Peers.end())
+        return false;
+    return it->second.Zones().Acknowledge(zone);
+}
+
+void ReplicationRuntime::ApplyZoneScope(const NetZoneScopeUpdate& update)
+{
+    switch (update.Verb)
+    {
+    case NetZoneScopeVerb::Grant:
+        (void)LocalScope.Grant(update.Zone);
+        break;
+    case NetZoneScopeVerb::Revoke:
+        (void)LocalScope.Revoke(update.Zone);
+        break;
+    }
+}
+
+ReplicationRuntime::ZoneAckStats ReplicationRuntime::AcknowledgeResidentZones(
+    NetSession& session, const RuntimeWorld& world)
+{
+    ZoneAckStats stats;
+    if (session.Role() != NetSessionRole::Client || !session.IsConnected())
+        return stats;
+
+    std::array<std::byte, 32> scratch{};
+
+    // Collected before any of it is confirmed: acknowledging mutates the same
+    // storage the walk is reading.
+    std::vector<ZoneId> ready;
+    for (const NetZoneScope::Entry& held : LocalScope.Entries())
+    {
+        if (held.State == NetZoneScopeState::Granted
+            && world.IsZoneResident(held.Zone))
+        {
+            ready.push_back(held.Zone);
+        }
+    }
+
+    for (const ZoneId zone : ready)
+    {
+        const std::size_t size = NetEncodeZoneAck(zone, scratch);
+        if (size == 0)
+            continue;
+        // A client reaches its authority by sending to its own id, the same way
+        // its input does. Reliable: a lost ack is a room the authority never
+        // fills, and there is no next one to supersede it.
+        if (!session.Send(session.LocalPeerId(), NetChannelKind::ReliableOrdered,
+                          std::span<const std::byte>(scratch).subspan(0, size)))
+        {
+            continue;
+        }
+        // Marked only once the confirmation is actually queued, so a refused
+        // send is retried next frame rather than leaving the authority waiting
+        // on an ack that was never written.
+        (void)LocalScope.Acknowledge(zone);
+        ++stats.Acks;
+        stats.BytesQueued += size;
+    }
+
+    return stats;
+}
+
 const ReplicationPeerState* ReplicationRuntime::PeerBaseline(PeerId peer) const
 {
     const auto it = Peers.find(peer);
@@ -223,6 +371,7 @@ void ReplicationRuntime::Reset()
     Changes.Reset();
     Generation = 0;
     Peers.clear();
+    LocalScope.Clear();
     ClientMap.Clear();
     Applied = SnapshotApplyResult{};
     AppliedTick = 0;

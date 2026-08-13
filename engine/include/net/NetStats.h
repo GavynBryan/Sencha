@@ -32,16 +32,20 @@ enum class NetTrafficKind : std::uint8_t
     Snapshot,
     Command,
     CVar,
+    // Zone grants, revokes, and acks. Small messages, but they arrive in bursts
+    // as players cross boundaries, and separating them is what tells a session
+    // that is streaming hard apart from one that is simply busy.
+    Zone,
     // What a game sends for itself. Its own bucket rather than sharing the
     // catch-all, because "which traffic grew" is the first question anyone
     // asks, and a game's messages counted beside handshake and keepalives make
     // it unanswerable.
     Game,
-    // Handshake, keepalives, and anything a game sends for itself.
+    // Handshake, keepalives, and anything else the session itself spends.
     Other,
 };
 
-inline constexpr std::size_t kNetTrafficKinds = 5;
+inline constexpr std::size_t kNetTrafficKinds = 6;
 
 [[nodiscard]] std::string_view NetTrafficKindToString(NetTrafficKind kind);
 

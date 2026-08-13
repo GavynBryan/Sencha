@@ -15,6 +15,15 @@ class RuntimeWorld;
 class World;
 class WorldComponentSchema;
 
+// One peer's interest set: the zones it should be holding open. Computed by
+// whatever owns streaming policy; replication only ever compares it against
+// what that peer already has.
+struct NetPeerZoneInterest
+{
+    PeerId Peer;
+    std::span<const ZoneId> Zones;
+};
+
 // Ticks between snapshots out of the box: 30Hz against a 60Hz simulation. The
 // rate a snapshot is worth sending at is set by how fast a player can perceive
 // a change, not by how fast the world is stepped, and the interpolation buffer
@@ -106,6 +115,66 @@ public:
                          const ReplicationLayout& layout, std::uint64_t tick,
                          const PeerCommandRuntime* commands = nullptr,
                          const RuntimeWorld* zones = nullptr);
+
+    //-------------------------------------------------------------------------
+    // Zone scope
+    //
+    // Which rooms each peer is holding open. Kept here because it is per-peer
+    // replication state and this is where per-peer replication state lives; the
+    // policy that decides what a peer is interested in is somebody else's, and
+    // arrives as a list of zones.
+    //-------------------------------------------------------------------------
+
+    struct ZoneScopeStats
+    {
+        std::uint32_t Grants = 0;
+        std::uint32_t Revokes = 0;
+        std::size_t BytesQueued = 0;
+    };
+
+    // Brings every connected peer's scope into agreement with its interest set,
+    // sending only the differences.
+    //
+    // A peer with no entry in `interest` is interested in nothing and has
+    // everything revoked. Default deny rather than default keep: a caller that
+    // forgot a peer leaves it holding rooms nobody is near, and the failure of
+    // the opposite default -- a peer quietly retaining the whole world -- is
+    // exactly the one this mechanism exists to prevent.
+    //
+    // Each interest list must be sorted ascending and free of duplicates, which
+    // is what a zone demand set already is.
+    ZoneScopeStats PublishZoneScope(NetSession& session,
+                                    std::span<const NetPeerZoneInterest> interest);
+
+    // A peer reports it has finished loading a zone. False when it names one it
+    // was never granted, which is a peer claiming a room nobody offered it.
+    [[nodiscard]] bool AcknowledgeZone(PeerId peer, ZoneId zone);
+
+    // Client side: one grant or revoke from the authority, recorded.
+    void ApplyZoneScope(const NetZoneScopeUpdate& update);
+
+    // What the authority has told this machine to hold. Granted means it has
+    // been asked for and not yet confirmed; acked means the confirmation has
+    // gone out and state for it may arrive.
+    [[nodiscard]] const NetZoneScope& LocalZones() const { return LocalScope; }
+
+    // Client side: confirms every granted zone this machine has actually
+    // finished loading, and says nothing about the rest.
+    //
+    // Asked of the world rather than answered by whoever started the load,
+    // because "attached and finalized" is the world's own fact and the
+    // confirmation has to mean exactly that. A zone acked while it is still
+    // importing is a room the authority begins filling before there is anywhere
+    // to put it.
+    //
+    struct ZoneAckStats
+    {
+        std::uint32_t Acks = 0;
+        std::size_t BytesQueued = 0;
+    };
+
+    ZoneAckStats AcknowledgeResidentZones(NetSession& session,
+                                          const RuntimeWorld& world);
 
     // Simulation ticks between snapshots. One publishes as fast as the world
     // moves; higher trades freshness for bandwidth, which is the trade that
@@ -206,6 +275,8 @@ private:
     // must increase on every pass and a tick need not.
     std::uint64_t Generation = 0;
     std::unordered_map<PeerId, ReplicationPeerState> Peers;
+    // A client has one authority, so it has one scope rather than a map.
+    NetZoneScope LocalScope;
     ReplicationClientIdentity ClientMap;
     SnapshotApplyResult Applied;
     std::uint64_t AppliedTick = 0;

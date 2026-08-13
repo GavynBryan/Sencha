@@ -75,8 +75,15 @@ enum class NetPayloadKind : std::uint8_t
     // reliable channel, because unlike a snapshot there is no next one to
     // supersede a lost update.
     CVar = 3,
-    // 4 .. 63 are unallocated and the engine's. Cues, zone grants, and whatever
-    // the protocol grows next take numbers from here.
+    // Authority to client: hold this zone, or let it go. Reliable, because a
+    // lost one leaves the two machines disagreeing about which rooms exist for
+    // this peer and nothing later corrects it.
+    ZoneScope = 4,
+    // Client to authority: the named zone is loaded and attached here. What
+    // opens a zone for replication; see NetZoneScope.h.
+    ZoneAck = 5,
+    // 6 .. 63 are unallocated and the engine's. Cues, and whatever the protocol
+    // grows next, take numbers from here.
 };
 
 // The range a game may define its own payload kinds in.

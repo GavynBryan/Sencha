@@ -345,6 +345,38 @@ void Engine::RegisterNetFramePhases()
                 continue;
             }
 
+            // The authority deciding which rooms this machine holds open. Only
+            // recorded here; loading them is streaming's business and confirming
+            // them waits until the world says they are attached.
+            if (static_cast<NetPayloadKind>(delivery.Payload[0])
+                == NetPayloadKind::ZoneScope)
+            {
+                NetZoneScopeUpdate update;
+                if (NetDecodeZoneScopeUpdate(delivery.Payload, update))
+                    engine.Replication().ApplyZoneScope(update);
+                else
+                    log.Warn("net: refused a zone scope update from the authority");
+                continue;
+            }
+
+            // A peer reporting a room loaded. What opens that zone for its
+            // snapshots, so a peer naming one nobody granted it is trying to be
+            // sent a part of the world the authority did not decide it should
+            // see.
+            if (static_cast<NetPayloadKind>(delivery.Payload[0])
+                == NetPayloadKind::ZoneAck)
+            {
+                ZoneId zone;
+                if (!NetDecodeZoneAck(delivery.Payload, zone)
+                    || !engine.Replication().AcknowledgeZone(delivery.From, zone))
+                {
+                    log.Warn("net: refused a zone ack from peer {}",
+                             delivery.From.Value);
+                    session->StrikePeer(delivery.From, "unowed zone ack");
+                }
+                continue;
+            }
+
             // A player's request arriving. Buffered here and fed on the tick
             // clock, because a frame that runs several ticks owes a remote
             // player as many ticks of input as it gives the local one.
@@ -529,6 +561,17 @@ void Engine::RegisterNetFramePhases()
                 engine.Replication().AppliedAck());
             if (bytes > 0)
                 traffic.RecordOut(NetTrafficKind::Command, bytes);
+
+            // Rooms granted earlier that this machine has since finished
+            // loading. Here rather than at the grant, because residency
+            // processing runs between the pump that received it and this: a
+            // zone that attached during this frame is confirmed in the same
+            // frame it became real.
+            const ReplicationRuntime::ZoneAckStats acked =
+                engine.Replication().AcknowledgeResidentZones(*session,
+                                                              engine.World());
+            if (acked.Acks > 0)
+                traffic.RecordOut(NetTrafficKind::Zone, acked.BytesQueued, acked.Acks);
         }
 
         session->Flush(ctx.Runtime->GetCurrentFrame().WallTime.UnscaledElapsed);

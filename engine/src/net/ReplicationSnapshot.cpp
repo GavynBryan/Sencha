@@ -290,6 +290,7 @@ void ReplicationPeerState::Clear()
     Departed.clear();
     Pending.clear();
     First = 0;
+    Scope.Clear();
 }
 
 //=============================================================================
