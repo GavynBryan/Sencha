@@ -231,6 +231,7 @@ void WorldPartitionRuntime::RelocateFocus(FocusSourceId source, Vec3d position)
     held.HasPendingPosition = false;
     held.SuppressedDock = {};
     held.LastTraversal = {};
+    held.Entering = {};
     held.Grace = {};
 }
 
@@ -243,6 +244,7 @@ void WorldPartitionRuntime::SetFocus(FocusSourceId source, ZoneId zone)
     held.Focus = zone;
     held.SuppressedDock = {};
     held.LastTraversal = {};
+    held.Entering = {};
     held.Grace = {};
     held.HasPendingPosition = false;
     if (const ZoneHeader* header = FindHeader(zone); header != nullptr
@@ -465,6 +467,11 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
             == DockTraversalStatus::BlockedDestinationNotReady)
         {
             ++LateTraversalCount_;
+            held.Entering = held.LastTraversal.To;
+        }
+        else if (held.LastTraversal.Status == DockTraversalStatus::Crossed)
+        {
+            held.Entering = {};
         }
         held.Focus = state.Current;
         held.SuppressedDock = state.SuppressedDock;
@@ -490,6 +497,10 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
             .Focus = held.Focus,
             .Position = held.HasPosition ? std::optional<Vec3d>{ held.Position }
                                          : std::optional<Vec3d>{},
+            // A crossing this source is waiting on. Naming it keeps the cap
+            // from evicting the room it is walking into, which is the room it
+            // cannot finish walking into until the cap stops evicting it.
+            .Entering = held.Entering,
         });
     }
 

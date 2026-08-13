@@ -499,7 +499,8 @@ namespace
 
     ZoneFocusSource At(uint32_t source, uint64_t zone)
     {
-        return ZoneFocusSource{ FocusSourceId{ source }, ZoneId{ zone }, std::nullopt };
+        return ZoneFocusSource{ FocusSourceId{ source }, ZoneId{ zone },
+                                std::nullopt, ZoneId{} };
     }
 
     // A1 -> A2 -> A3 -> A4 -> A5, bilateral. Long enough that a middle zone is

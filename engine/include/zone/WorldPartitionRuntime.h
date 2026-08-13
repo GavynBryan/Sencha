@@ -231,6 +231,12 @@ private:
         float CapsuleCylinderHalfHeight = 0.0f;
         DockId SuppressedDock;
         DockTraversalResult LastTraversal;
+        // The zone a held-back crossing is waiting on, kept until the crossing
+        // completes. LastTraversal cannot answer this: it is cleared at the top
+        // of every Update and only refilled on a frame the caller supplied a
+        // new position, so a source that stops moving while it waits would stop
+        // asking for the room it is stuck in the doorway of.
+        ZoneId Entering;
         // The zone this source just left, held briefly so a doorway crossed at
         // speed does not evict the room behind it.
         LingerState Grace;

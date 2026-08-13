@@ -158,6 +158,19 @@ struct ZoneFocusSource
     // Absent when position is not meaningful (a scripted warp, a menu). Spatial
     // radius demand applies only to sources that have one.
     std::optional<Vec3d> Position;
+    // The zone this source is part way into, when a crossing is being held back
+    // waiting for it. Treated exactly as the focus is -- full participation and
+    // immune from eviction -- because it is where the source is going and a
+    // crossing cannot complete until it is resident.
+    //
+    // Without it a cap deadlocks its own traversal: the destination is only a
+    // neighbour of a focus, so it loses the eviction, and it stays a neighbour
+    // precisely because the crossing that would promote it is the one being
+    // held back. The source still advances, a room per attempt, while the
+    // world's idea of where it is trails where it actually is -- and everything
+    // downstream, residency and relevance both, is then computed for a room it
+    // has left.
+    ZoneId Entering;
 };
 
 // Pure. The demand set for one focus: the focus zone at full participation,

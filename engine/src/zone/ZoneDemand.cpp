@@ -475,6 +475,24 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
         if (mine.empty())
             continue;
         anySourceResolved = true;
+
+        // The room this source is part way into counts as somewhere it is,
+        // not somewhere it can see. It is already in `mine` as a neighbour --
+        // a dock is a graph edge -- so this promotes it rather than adding it.
+        if (source.Entering.IsValid() && source.Entering != source.Focus)
+        {
+            for (DemandEntry& entry : mine)
+            {
+                if (entry.Rank.Zone != source.Entering)
+                    continue;
+                entry.Desired = ZoneParticipation{ .Visible = true,
+                                                   .Physics = true,
+                                                   .Logic = true,
+                                                   .Audio = true };
+                entry.Focused = true;
+                break;
+            }
+        }
         if (entries.empty())
             entries = std::move(mine);
         else
@@ -609,6 +627,7 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
         .Focus = focus,
         .Position = focusPosition == nullptr ? std::optional<Vec3d>{}
                                              : std::optional<Vec3d>{ *focusPosition },
+        .Entering = {},
     };
     return ComputeZoneDemand(manifest, index, std::span(&source, 1), pins, config);
 }

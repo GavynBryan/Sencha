@@ -315,9 +315,10 @@ namespace
             }
         }
 
-        // Two players at opposite ends of an eight-room chain demand six
-        // rooms between them, which a budget sized for one player cannot
-        // hold. See the note on Harness's cap.
+        // Wide enough to hold both players' neighbourhoods at once. The cap no
+        // longer strands a crossing when it cannot (see ZoneTraversalCap), but
+        // it does still evict, and this gate is about the handoff rather than
+        // about what a tight budget does to it.
         Harness Authority{ 0, kZoneCount };
         NetOwnedFocus Focus;
         ReplicationAuthorityIdentity Identity;
@@ -447,33 +448,27 @@ TEST_F(ZoneTraversalGateTest, TheAuthorityNeverStopsPublishingWhileAPeerLoads)
 }
 
 //=============================================================================
-// A limitation, pinned rather than hidden
+// Several players against one budget
 //
-// The resident-zone cap bounds the merged demand of every focus source at once,
-// and it was sized when there could only be one. Two players in different parts
-// of a world demand more rooms than a budget meant for one, and what happens
-// then is worse than starvation.
+// ResidentZoneCap bounds the merged demand of every focus source at once, and
+// it was sized when there could only be one. Two players in different parts of
+// a world ask for more rooms than a budget meant for one, and what happens then
+// used to be worse than a full budget: a crossing is held back when its
+// destination is not resident, the destination lost the eviction because it was
+// only a neighbour of a focus rather than a focus itself, and it stayed a
+// neighbour precisely because the crossing that would promote it was the one
+// being held back. Players still advanced, a room per attempt, while the
+// world's idea of where they were trailed where they actually were -- so
+// residency and relevance were both computed for rooms they had left.
 //
-// A crossing is held back when its destination is not resident. Under a cap the
-// destination loses the eviction, because it is only a neighbour of a focus
-// rather than a focus itself -- and it stays a neighbour precisely because the
-// crossing it would complete is the thing being held back. The player still
-// advances, one room per crossing attempt, but the authority's idea of where
-// they are trails where they actually are. Relevance is then computed for a
-// room they left, and they walk into empty ones.
-//
-// This is a sizing rule as much as a defect -- with N focus sources the cap has
-// to be at least N times a neighbourhood, or sources starve each other -- but
-// the symptom is a silently wrong answer rather than a visibly full budget, and
-// that is the part worth a test.
-//
-// Asserted deliberately, in the shape the prediction contract uses: the day the
-// cap learns about several sources, or a crossing's destination becomes immune
-// the way its origin already is, this fails and says so.
+// A room a source is part way into now counts as somewhere it is, not somewhere
+// it can see, so the cap cannot evict what a crossing is waiting on.
 //=============================================================================
-TEST(ZoneTraversalCapLimitation, ASecondPlayerMakesTheAuthorityLoseTrackOfTheFirst)
+
+// The case that used to fail: a tight budget with more players in it than it
+// was sized for, and the world keeping up with both anyway.
+TEST(ZoneTraversalCap, ASingleFocusBudgetStillKeepsUpWithTwoPlayers)
 {
-    // The single-focus budget, with two players in it.
     Harness rig{ 0, 4 };
     ASSERT_TRUE(rig.LoadManifest().empty());
 
@@ -487,49 +482,43 @@ TEST(ZoneTraversalCapLimitation, ASecondPlayerMakesTheAuthorityLoseTrackOfTheFir
     rig.SettleLoads();
     ASSERT_EQ(rig.Partition().FocusZone(kInbound), ZoneAt(kZoneCount - 1));
 
-    // Both walk toward each other, a room at a time, with plenty of frames to
-    // settle at each step.
+    // The position is re-set every frame, the way a session does it from a
+    // pawn's transform: a held-back crossing only retries when a new position
+    // arrives, so a caller that sets one and then waits is waiting forever.
     for (int step = 1; step < 4; ++step)
     {
-        rig.Partition().SetFocus(kOutbound, Inside(step));
-        rig.Partition().SetFocus(kInbound, Inside(kZoneCount - 1 - step));
         for (int frame = 0; frame < 8; ++frame)
+        {
+            rig.Partition().SetFocus(kOutbound, Inside(step));
+            rig.Partition().SetFocus(kInbound, Inside(kZoneCount - 1 - step));
             rig.StepFrame();
+        }
         rig.SettleLoads();
     }
 
-    const ZoneId believed = rig.Partition().FocusZone(kInbound);
-    const ZoneId standing = ZoneAt(kZoneCount - 4);
-    EXPECT_NE(believed, standing)
-        << "the cap now keeps up with several players -- delete this test and "
-           "the note above it, and drop the widened cap in the gate fixture";
+    EXPECT_EQ(rig.Partition().FocusZone(kOutbound), ZoneAt(3))
+        << "the world lost track of where the first player is";
+    EXPECT_EQ(rig.Partition().FocusZone(kInbound), ZoneAt(kZoneCount - 4))
+        << "the world lost track of where the second player is";
 }
 
-// The same walk with a budget that fits both players keeps up exactly, which is
-// what says the cap is the cause rather than the traversal.
-TEST(ZoneTraversalCapLimitation, AWiderBudgetKeepsUpWithBoth)
+// A crossing still waits for its destination -- the immunity is about not
+// evicting the room, not about walking into one that is not there.
+TEST(ZoneTraversalCap, ACrossingStillWaitsForARoomThatIsNotLoadedYet)
 {
-    Harness rig{ 0, kZoneCount };
+    Harness rig{ 0, 4 };
     ASSERT_TRUE(rig.LoadManifest().empty());
 
-    constexpr FocusSourceId kOutbound{ 0x8000'0001 };
-    constexpr FocusSourceId kInbound{ 0x8000'0002 };
-
-    rig.Partition().SetFocus(kOutbound, Inside(0));
-    rig.Partition().SetFocus(kInbound, Inside(kZoneCount - 1));
+    rig.Partition().SetFocus(kPrimaryFocusSource, Inside(0));
     for (int frame = 0; frame < 12; ++frame)
         rig.StepFrame();
     rig.SettleLoads();
 
-    for (int step = 1; step < 4; ++step)
-    {
-        rig.Partition().SetFocus(kOutbound, Inside(step));
-        rig.Partition().SetFocus(kInbound, Inside(kZoneCount - 1 - step));
-        for (int frame = 0; frame < 8; ++frame)
-            rig.StepFrame();
-        rig.SettleLoads();
-    }
+    // Straight into a room two doorways away, which no neighbour preload has
+    // brought in. The sweep refuses to put the focus somewhere unloaded.
+    rig.Partition().SetFocus(kPrimaryFocusSource, Inside(4));
+    rig.StepFrame();
 
-    EXPECT_EQ(rig.Partition().FocusZone(kOutbound), ZoneAt(3));
-    EXPECT_EQ(rig.Partition().FocusZone(kInbound), ZoneAt(kZoneCount - 4));
+    EXPECT_NE(rig.Partition().FocusZone(kPrimaryFocusSource), ZoneAt(4))
+        << "a focus landed in a room the world had not loaded";
 }

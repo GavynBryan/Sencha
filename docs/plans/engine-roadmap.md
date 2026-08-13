@@ -684,10 +684,11 @@ which is ratified; this section owns the sequence and the gate.
    peer rather than left standing. **The traversal gate is met
    deterministically**: two players walk an eight-room chain in opposite
    directions and neither is ever missing what is in the room they are in. It
-   also found a real limitation — `ResidentZoneCap` is a single-focus budget,
-   and under it an authority's idea of where a second player is trails where
-   they are — pinned by a test rather than fixed, because what the cap
-   guarantees is a product decision. Still owed: zone baselines against authored
+   also found and fixed a real defect: under a single-focus `ResidentZoneCap` an
+   authority's idea of where a second player was trailed where they actually
+   were, because the cap evicted the room a held-back crossing was waiting on.
+   A room a source is part way into is now immune the way its origin already
+   was. Still owed: zone baselines against authored
    state, applier-side enforcement (a G6 concern), and cooked multi-zone content
    for a live run.
 
