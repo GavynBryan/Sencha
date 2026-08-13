@@ -1233,6 +1233,37 @@ neighborhood, with linger absorbing crossings, exactly as it absorbs one player
 today. Server memory is governed by the same knobs (cap, and cost budget once the
 review's Phase D lands), sized against the ratified 8-peer envelope (Section 14).
 
+*Landed 2026-08-12, in three pieces and with two deviations.* The pure policy
+takes `std::span<const ZoneFocusSource>` and merges as described; the five tests
+named above exist under `ZoneDemandSources`. `WorldPartitionRuntime` holds a
+vector of focus sources sorted by id, each carrying the traversal state that used
+to be a member of the runtime -- position, dock sweep, pending position, capsule,
+suppressed dock, last traversal, grace linger -- because crossing a doorway is
+something a player does rather than something the world does, and two players
+walking through different doors on the same frame is the ordinary case. The
+unqualified calls forward to source one.
+
+Deviations:
+
+- `ComputeZoneHopRanks` still takes one focus. Its result orders loads rather than
+  deciding residency, so the runtime calls it per source and merges the ranks
+  (minimum hop, then minimum cost) instead. A span form would have been a second
+  merge saying the same thing in a second place.
+- The net-to-zone mapping is keyed by **owned entity, not by peer**
+  (`net/NetOwnedFocus.h`). A peer can be driving more than one thing at once --
+  somebody in a turret still has a body sitting in it, in a zone that has to stay
+  simulated for them to get back into -- and per entity that is exactly the union
+  the merge already computes. Per peer it would have needed a rule for which of a
+  peer's entities counts, and every answer to that is arbitrary. `NetOwnedFocus`
+  holds the ids it minted so a source is released when nobody drives that entity
+  any more, and it takes the session role as a parameter: `NetOwner` replicates,
+  so a client walking the same column would stream the ground under every other
+  player as well as its own.
+
+The gate for this half is `NetOwnedFocusTests`, which drives the eight-zone
+traversal chain through real demand, async load, and residency processing with
+two peers at opposite ends.
+
 ### 8.2 Per-peer interest and the grant/ack residency protocol
 
 Interest is not computed twice: the authority already computed each peer's demand
@@ -1774,6 +1805,15 @@ things this pass landed.
   Depends on G2; wants zone review Phase A (containment focus) and composes with
   Phases C, D, E as they land. **Not required for the G4 gate** (see above), but
   required before a multi-zone session ships; the three-zone traversal is its gate.
+
+  *Status 2026-08-12: multi-source demand is done* (Section 8.1, three commits:
+  the pure policy, the runtime's per-source traversal state, and the
+  net-to-zone wiring). An authority now keeps resident the union of every
+  connected player's neighborhood and sweeps each of them through their own
+  doorway. Still owed: per-peer grant/ack/revoke, zone baselines, late join and
+  travel as grants, and the applier enforcement Section 6.5 currently records as
+  a correction. A live multi-zone smoke test additionally needs cooked
+  multi-zone content, which does not exist yet -- the template ships one level.
 - **G4. Ownership, input, prediction. The track gate lands here.** `NetOwner`;
   session role reaching `OnRegisterSystems` so role is composition rather than
   branches; the input channel over the action stream plus a per-tick

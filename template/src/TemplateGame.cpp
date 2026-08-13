@@ -47,6 +47,7 @@
 #include <movement/MovementRegistration.h>
 #include <net/NetReplicationComponents.h>
 #include <net/NetSpawnRecipe.h>
+#include <net/NetOwnedFocus.h>
 #include <net/NetOwnership.h>
 #include <net/NetSession.h>
 #include <net/PawnCommandCapture.h>
@@ -523,6 +524,16 @@ struct WorldPartitionUpdateSystem
                     controller->Height);
             }
         }
+
+        // Hosting, this player is one of several the world has to stay loaded
+        // around. Beside the focus above rather than instead of it: a listen
+        // server's own pawn is owned by no peer, so nothing else names it.
+        NetSession* session = Owner == nullptr ? nullptr : Owner->TryNet();
+        PeerFocus.Update(
+            world,
+            session == nullptr ? NetSessionRole::Standalone : session->Role(),
+            *Partition);
+
         Partition->Update(
             ctx.WallDeltaSeconds,
             *Loader,
@@ -577,9 +588,14 @@ struct WorldPartitionUpdateSystem
     std::optional<WorldPartitionRuntime>& Partition;
     std::optional<AsyncZoneLoader>& Loader;
     RuntimeWorld& Runtime;
+    // For the session's role. Held as the engine rather than as a session
+    // because a session is created and destroyed by console command at
+    // runtime, so there is no stable reference to one.
+    Engine* Owner = nullptr;
     // Owned by the physics step, which is where characters live. Null in a
     // configuration with no physics, where the transform is all there is.
     CharacterMoverPool* Movers = nullptr;
+    NetOwnedFocus PeerFocus;
     // Set by streaming on the wall clock, consumed by the next fixed tick.
     std::optional<Vec3d> PendingSafePosition;
 };
@@ -2088,6 +2104,7 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
             Partition,
             ZoneLoader,
             GetEngine().World());
+    partitionUpdate.Owner = &GetEngine();
     if (PhysicsStepSystem* step = ctx.Schedule.Get<PhysicsStepSystem>())
         partitionUpdate.Movers = &step->GetCharacterMovers();
 #ifdef SENCHA_ENABLE_COOK

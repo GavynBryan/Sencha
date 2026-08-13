@@ -677,7 +677,11 @@ which is ratified; this section owns the sequence and the gate.
    baselines, late join, travel. Not required for the track gate — a single-zone map
    with pawns in the persistent partition reaches it — but required before any
    multi-zone session ships. Gate: a scripted three-zone co-op traversal with zero
-   missed host ticks and no desync mismatches.
+   missed host ticks and no desync mismatches. **Multi-source demand landed**
+   (2026-08-12): an authority keeps resident the union of every connected
+   player's neighborhood, each swept through its own doorway. The per-peer
+   grant/ack/revoke protocol, zone baselines, late join, and travel are still
+   owed, as is cooked multi-zone content for a live traversal.
 
 7. **Session semantics (G5).** `CVarFlags::Replicated` and enforced `Cheat` gating,
    cvar sync, cue replication, desync hashing, a net stats panel. Load-bearing rather

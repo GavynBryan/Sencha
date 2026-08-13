@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/identity/StrongId.h>
+#include <core/metadata/Field.h>
 #include <ecs/ComponentTypeId.h>
 
 #include <cstdint>
