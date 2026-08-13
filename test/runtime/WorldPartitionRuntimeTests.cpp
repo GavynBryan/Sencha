@@ -666,3 +666,137 @@ TEST_F(WorldPartitionRuntimeTest, AStaleTokenCannotReleaseAReusedSlot)
     EXPECT_TRUE(Partition.IsParticipationLeaseValid(second));
     EXPECT_EQ(Partition.ParticipationLeaseCount(), 1u);
 }
+
+//=============================================================================
+// Several players at once
+//
+// An authority streams around every connected player, so what it holds resident
+// is the union of their neighborhoods. Hub <-> Hallway <-> Arena is the smallest
+// world that can tell the difference: with hop zero, one player in the Hub and
+// one in the Arena demand two zones that no single focus would ever ask for
+// together.
+//=============================================================================
+
+namespace
+{
+    constexpr FocusSourceId kFirstPlayer{ 1 };
+    constexpr FocusSourceId kSecondPlayer{ 2 };
+}
+
+TEST_F(WorldPartitionRuntimeTest, ResidencyIsTheUnionOfEveryPlayersNeighborhood)
+{
+    WorldPartitionStreamingConfig config;
+    config.HopCount = 0;  // focus only, so the union is unmistakable
+    LoadFixture(config);
+
+    Partition.SetFocus(kFirstPlayer, kHub);
+    Partition.SetFocus(kSecondPlayer, kArena);
+    Step();
+    Step();
+
+    EXPECT_NE(Zone(kHub), nullptr) << "the first player's zone is not resident";
+    EXPECT_NE(Zone(kArena), nullptr) << "the second player's zone is not resident";
+    EXPECT_EQ(Partition.FocusSourceCount(), 2u);
+}
+
+// Each focus keeps full participation, because a zone the authority does not
+// simulate is a player nothing happens around.
+TEST_F(WorldPartitionRuntimeTest, EveryPlayersOwnZoneIsSimulated)
+{
+    WorldPartitionStreamingConfig config;
+    config.HopCount = 0;
+    LoadFixture(config);
+
+    Partition.SetFocus(kFirstPlayer, kHub);
+    Partition.SetFocus(kSecondPlayer, kArena);
+    Step();
+    Step();
+
+    for (const ZoneId zone : { kHub, kArena })
+    {
+        const RuntimeZoneRecord* record = Zone(zone);
+        ASSERT_NE(record, nullptr);
+        EXPECT_TRUE(record->Participation.Logic)
+            << "zone " << zone.Value << " has a player in it and is not simulated";
+    }
+}
+
+// A player leaving releases what they alone were holding -- through linger,
+// like anything else that stops being demanded, rather than by tearing it out.
+TEST_F(WorldPartitionRuntimeTest, SourceRemovalReleasesItsDemand)
+{
+    WorldPartitionStreamingConfig config;
+    config.HopCount = 0;
+    config.LingerSeconds = 1.0;
+    LoadFixture(config);
+
+    Partition.SetFocus(kFirstPlayer, kHub);
+    Partition.SetFocus(kSecondPlayer, kArena);
+    Step();
+    Step();
+    ASSERT_NE(Zone(kArena), nullptr);
+
+    EXPECT_TRUE(Partition.RemoveFocusSource(kSecondPlayer));
+    EXPECT_FALSE(Partition.RemoveFocusSource(kSecondPlayer)) << "removed twice";
+
+    // Still there while it lingers: a player disconnecting mid-frame must not
+    // pull the floor out from under whatever is still finishing there.
+    Step(0.25);
+    EXPECT_NE(Zone(kArena), nullptr) << "the zone went without lingering at all";
+
+    Step(2.0);
+    Step();
+    EXPECT_EQ(Zone(kArena), nullptr) << "nothing released the departed player's zone";
+    EXPECT_NE(Zone(kHub), nullptr) << "the remaining player lost their own zone";
+}
+
+// The case that motivates focus immunity surviving the merge: one player's zone
+// must not expire because a different player stopped asking for it.
+TEST_F(WorldPartitionRuntimeTest, OnePlayerLeavingDoesNotUnloadAnotherStandingStill)
+{
+    WorldPartitionStreamingConfig config;
+    config.HopCount = 1;
+    config.LingerSeconds = 0.0;
+    LoadFixture(config);
+
+    // Both in the Hallway, so every zone they demand is demanded by both.
+    Partition.SetFocus(kFirstPlayer, kHallway);
+    Partition.SetFocus(kSecondPlayer, kHallway);
+    Step();
+    Step();
+    ASSERT_NE(Zone(kHallway), nullptr);
+
+    EXPECT_TRUE(Partition.RemoveFocusSource(kSecondPlayer));
+    Step(1.0);
+    Step();
+
+    const RuntimeZoneRecord* record = Zone(kHallway);
+    ASSERT_NE(record, nullptr) << "the remaining player was unloaded out from "
+                                 "under themselves";
+    EXPECT_TRUE(record->Participation.Logic);
+}
+
+// Two players walking through different doors on the same frame is the ordinary
+// case rather than a conflict, and each has to be swept through its own door.
+TEST_F(WorldPartitionRuntimeTest, EachPlayerCrossesItsOwnDoorway)
+{
+    WorldPartitionStreamingConfig config;
+    config.HopCount = 1;
+    LoadFixture(config);
+
+    Partition.SetFocus(kFirstPlayer, Vec3d{ 0, 2, 0 });    // Hub
+    Partition.SetFocus(kSecondPlayer, Vec3d{ 30, 2, 0 });  // Arena
+    Step();
+    Step();
+    ASSERT_EQ(Partition.FocusZone(kFirstPlayer), kHub);
+    ASSERT_EQ(Partition.FocusZone(kSecondPlayer), kArena);
+
+    // Both step toward the Hallway from opposite ends, in the same frame.
+    Partition.SetFocus(kFirstPlayer, Vec3d{ 12, 2, 0 });
+    Partition.SetFocus(kSecondPlayer, Vec3d{ 15, 2, 0 });
+    Step();
+    Step();
+
+    EXPECT_EQ(Partition.FocusZone(kFirstPlayer), kHallway);
+    EXPECT_EQ(Partition.FocusZone(kSecondPlayer), kHallway);
+}

@@ -52,21 +52,56 @@ public:
     [[nodiscard]] bool HasManifest() const { return HasManifest_; }
     [[nodiscard]] const WorldPartitionManifest& Manifest() const;
 
+    //-------------------------------------------------------------------------
+    // Focus
+    //
+    // Residency is kept around focus sources, plural. One is the ordinary case
+    // -- a player, or an editor preview -- and the unqualified calls below mean
+    // that one. An authority keeps one per connected player, and what it holds
+    // resident is the union of their neighborhoods: a zone nobody is near can
+    // go, a zone somebody is standing in cannot, and a zone one hop from
+    // anybody is treated as one hop away.
+    //
+    // Each source carries its own traversal state, because crossing a doorway
+    // is something a player does rather than something the world does. Two
+    // players walking through different doors on the same frame is the ordinary
+    // case, not a conflict.
+    //-------------------------------------------------------------------------
+
     // The one policy input. The first position resolves against coarse Zone
     // AABBs. Later movement is swept through authored dock planes during
     // Update, where destination physics residency can be verified.
-    void SetFocus(Vec3d position);
+    void SetFocus(Vec3d position) { SetFocus(kPrimaryFocusSource, position); }
+    void SetFocus(FocusSourceId source, Vec3d position);
     // Optional runtime-only focus shape for conservative late-residency
     // clamping. Height is the total capsule height; nothing is authored or
     // serialized on a Dock.
-    void SetFocusCapsule(float radius, float height);
+    void SetFocusCapsule(float radius, float height)
+    {
+        SetFocusCapsule(kPrimaryFocusSource, radius, height);
+    }
+    void SetFocusCapsule(FocusSourceId source, float radius, float height);
     // Explicit placement/recovery path for teleports, save restore, and
     // out-of-world fallback. Resolves coarse AABBs instead of sweeping docks.
-    void RelocateFocus(Vec3d position);
+    void RelocateFocus(Vec3d position)
+    {
+        RelocateFocus(kPrimaryFocusSource, position);
+    }
+    void RelocateFocus(FocusSourceId source, Vec3d position);
     // For when position is not meaningful (menus, scripted warps). Asserts the
     // zone exists in the manifest.
-    void SetFocus(ZoneId zone);
-    [[nodiscard]] ZoneId FocusZone() const { return Focus_; }
+    void SetFocus(ZoneId zone) { SetFocus(kPrimaryFocusSource, zone); }
+    void SetFocus(FocusSourceId source, ZoneId zone);
+
+    // Drops a source and everything it was holding open. What it alone demanded
+    // enters linger like anything else that stops being demanded, so a player
+    // leaving does not tear zones out from under the ones still there.
+    // False for a source that was not held.
+    bool RemoveFocusSource(FocusSourceId source);
+
+    [[nodiscard]] ZoneId FocusZone() const { return FocusZone(kPrimaryFocusSource); }
+    [[nodiscard]] ZoneId FocusZone(FocusSourceId source) const;
+    [[nodiscard]] std::size_t FocusSourceCount() const { return Sources_.size(); }
     [[nodiscard]] std::span<const DockEndpoint> DocksFrom(ZoneId zone) const;
     [[nodiscard]] std::span<const LinkEndpoint> LinksFrom(ZoneId zone) const;
     [[nodiscard]] const GraphRecord* FindGraph(GraphId graph) const;
@@ -79,8 +114,11 @@ public:
     // not resident; it is reset at the top of every Update.
     [[nodiscard]] const DockTraversalResult& LastTraversal() const
     {
-        return LastTraversal_;
+        return LastTraversal(kPrimaryFocusSource);
     }
+    // Empty for a source that is not held, which reads the same as a source
+    // that did not move.
+    [[nodiscard]] const DockTraversalResult& LastTraversal(FocusSourceId source) const;
     [[nodiscard]] uint64_t LateTraversalCount() const { return LateTraversalCount_; }
 
     // Authored/scripted long-lived floor. Existing semantics remain last-writer-
@@ -133,6 +171,7 @@ private:
         double Seconds = 0.0;
     };
 
+
     // A refusal plus the content identity it applies to.
     struct FailedLoad
     {
@@ -153,23 +192,42 @@ private:
     // content changed or which left the manifest.
     void ReconcileFailedLoads(AsyncZoneLoader& loader);
 
+    // Everything about one focus that another focus does not share. All of it
+    // was a member of the runtime when there could only be one.
+    struct FocusSource
+    {
+        FocusSourceId Id;
+        ZoneId Focus;
+        Vec3d Position{};
+        bool HasPosition = false;
+        // Where the dock sweep last ran from, which is not the same as the
+        // focus position: a crossing held back for an unready destination
+        // leaves the focus at a safe point while the sweep remembers where it
+        // actually got to.
+        Vec3d SweepPosition{};
+        Vec3d PendingPosition{};
+        bool HasPendingPosition = false;
+        float CapsuleRadius = 0.0f;
+        float CapsuleCylinderHalfHeight = 0.0f;
+        DockId SuppressedDock;
+        DockTraversalResult LastTraversal;
+        // The zone this source just left, held briefly so a doorway crossed at
+        // speed does not evict the room behind it.
+        LingerState Grace;
+    };
+
+    [[nodiscard]] FocusSource& SourceFor(FocusSourceId source);
+    [[nodiscard]] const FocusSource* FindSource(FocusSourceId source) const;
+
     ZoneLoadRecipeFn Recipe_;
     WorldPartitionStreamingConfig Config_;
     WorldPartitionManifest Manifest_;
     WorldPartitionIndex Index_;
     bool HasManifest_ = false;
-    ZoneId Focus_;
-    Vec3d FocusPosition_{};
-    bool HasFocusPosition_ = false;
-    Vec3d DockSweepPosition_{};
-    Vec3d PendingFocusPosition_{};
-    bool HasPendingFocusPosition_ = false;
-    float FocusCapsuleRadius_ = 0.0f;
-    float FocusCapsuleCylinderHalfHeight_ = 0.0f;
-    DockId SuppressedDock_;
-    DockTraversalResult LastTraversal_;
+    // Ordered by source id, so the demand merge and everything derived from it
+    // does not depend on the order players happened to arrive in.
+    std::vector<FocusSource> Sources_;
     uint64_t LateTraversalCount_ = 0;
-    LingerState TraversalGrace_;
     std::vector<ZonePin> Pins_;
     std::vector<ParticipationLeaseSlot> LeaseSlots_;
     std::vector<uint32_t> FreeLeaseSlots_;
