@@ -146,6 +146,21 @@ public:
     ZoneScopeStats PublishZoneScope(NetSession& session,
                                     std::span<const NetPeerZoneInterest> interest);
 
+    // Which zones scope control applies to: everything the streaming manifest
+    // names. Replaces whatever was set; empty means no zone is gated.
+    //
+    // Necessary because residency and streaming are not the same thing. A map
+    // loaded whole is one resident zone that no policy names, so nothing would
+    // ever compute interest for it and nothing would ever grant it -- and a
+    // snapshot writer that gated it would withhold the entire level from every
+    // peer forever. Declared rather than inferred, because "nobody has granted
+    // this yet" and "nobody ever will" look identical from inside the writer.
+    void SetStreamedZones(std::span<const ZoneId> zones);
+    [[nodiscard]] std::span<const ZoneId> StreamedZones() const
+    {
+        return StreamedZones_;
+    }
+
     // A peer reports it has finished loading a zone. False when it names one it
     // was never granted, which is a peer claiming a room nobody offered it.
     [[nodiscard]] bool AcknowledgeZone(PeerId peer, ZoneId zone);
@@ -277,6 +292,8 @@ private:
     std::unordered_map<PeerId, ReplicationPeerState> Peers;
     // A client has one authority, so it has one scope rather than a map.
     NetZoneScope LocalScope;
+    // Ascending: the writer binary-searches it once per entity per peer.
+    std::vector<ZoneId> StreamedZones_;
     ReplicationClientIdentity ClientMap;
     SnapshotApplyResult Applied;
     std::uint64_t AppliedTick = 0;

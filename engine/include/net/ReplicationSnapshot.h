@@ -336,6 +336,17 @@ struct SnapshotWriteRequest
     // replay owes. Without it a client cannot tell which of its own guesses the
     // state it just received already accounts for.
     std::uint64_t CommandAck = 0;
+    // The zones under scope control, ascending. Only these are gated by the
+    // peer's grants; an entity in any other zone is sent as it always was.
+    //
+    // The distinction is not pedantic. A zone can be resident without being
+    // streamed -- a map attached whole is one storage partition holding the
+    // level -- and nothing computes interest for a zone no streaming policy
+    // names, so nothing would ever grant it. Gating it would withhold that
+    // level from every peer, permanently, with no message that could ever undo
+    // it. Empty means no zone is gated, which is every session that loads a map
+    // rather than streaming a world.
+    std::span<const ZoneId> StreamedZones;
 };
 
 struct SnapshotWriteResult

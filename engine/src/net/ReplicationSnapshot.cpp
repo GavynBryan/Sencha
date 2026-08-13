@@ -582,6 +582,37 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
     // was lost still needs telling.
     for (NetEntityId id : changes.Departed())
         peer.NoteDeparted(id);
+
+    // Whether an entity's zone is one this peer may currently be told about.
+    // Ungated unless the zone is under scope control: see
+    // SnapshotWriteRequest::StreamedZones.
+    const std::span<const ZoneId> streamed = request.StreamedZones;
+    const auto withheld = [&](ZoneId zone) {
+        if (!zone.IsValid() || streamed.empty())
+            return false;
+        const bool controlled = std::binary_search(
+            streamed.begin(), streamed.end(), zone,
+            [](ZoneId a, ZoneId b) { return a.Value < b.Value; });
+        return controlled && !peer.Zones().CanReceive(zone);
+    };
+
+    // And anything it holds that it may no longer be told about: an entity that
+    // moved into a room this peer does not have, or one whose room was revoked
+    // when the player walked away from it.
+    //
+    // Destroyed for that peer rather than simply left out. A client that stops
+    // receiving an entity does not forget it -- it keeps whatever it last saw,
+    // standing exactly where it was, forever. Withholding is the flow-control
+    // rule; this is what makes withholding safe.
+    //
+    // Costs nothing for an entity the peer never had: NoteDeparted only owes a
+    // destroy for one it was actually written to.
+    for (const ReplicationChangeStore::EntityState& entity : changes.Live())
+    {
+        if (withheld(entity.Zone))
+            peer.NoteDeparted(entity.Id);
+    }
+
     const std::span<const NetEntityId> owedDestroys = peer.OwedDestroys();
 
     // What this peer is owed about each entity, and what saying it would cost.
@@ -591,6 +622,13 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
     planned.reserve(changes.Size());
     for (const ReplicationChangeStore::EntityState& entity : changes.Live())
     {
+        // The flow-control invariant, in the one place that decides what a peer
+        // is owed: nothing is ever said about a room the peer has not confirmed
+        // it holds. Not a budget decision and not a deferral -- there is nowhere
+        // on that machine to put it, so there is nothing to defer.
+        if (withheld(entity.Zone))
+            continue;
+
         PlannedEntity plan;
         if (PlanEntity(entity, layout, peer, request.OwnerPeer, masks, plan))
             planned.push_back(plan);

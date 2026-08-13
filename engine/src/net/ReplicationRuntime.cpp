@@ -110,6 +110,7 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
         request.Tick = tick;
         request.Sequence = baseline.NextSnapshotSequence();
         request.CommandAck = commands == nullptr ? 0 : commands->AckFor(peer);
+        request.StreamedZones = StreamedZones_;
 
         // What this peer has proved it holds, before the difference against it
         // is computed. The bound on how far it may fall behind is the peer
@@ -288,6 +289,16 @@ ReplicationRuntime::ZoneScopeStats ReplicationRuntime::PublishZoneScope(
     return stats;
 }
 
+void ReplicationRuntime::SetStreamedZones(std::span<const ZoneId> zones)
+{
+    StreamedZones_.assign(zones.begin(), zones.end());
+    std::sort(StreamedZones_.begin(), StreamedZones_.end(),
+              [](ZoneId a, ZoneId b) { return a.Value < b.Value; });
+    StreamedZones_.erase(
+        std::unique(StreamedZones_.begin(), StreamedZones_.end()),
+        StreamedZones_.end());
+}
+
 bool ReplicationRuntime::AcknowledgeZone(PeerId peer, ZoneId zone)
 {
     const auto it = Peers.find(peer);
@@ -372,6 +383,7 @@ void ReplicationRuntime::Reset()
     Generation = 0;
     Peers.clear();
     LocalScope.Clear();
+    StreamedZones_.clear();
     ClientMap.Clear();
     Applied = SnapshotApplyResult{};
     AppliedTick = 0;

@@ -539,6 +539,15 @@ struct WorldPartitionUpdateSystem
         // its own.
         if (session != nullptr)
         {
+            // Which zones scope control applies to. Only the ones this world's
+            // manifest names: a zone the streaming policy does not know is one
+            // no interest set can ever ask for, and gating it would withhold it
+            // from everybody with no message that could undo it.
+            StreamedZones.clear();
+            for (const ZoneHeader& zone : Partition->Manifest().Zones)
+                StreamedZones.push_back(zone.Id);
+            Owner->Replication().SetStreamedZones(StreamedZones);
+
             const ReplicationRuntime::ZoneScopeStats scope =
                 Owner->Replication().PublishZoneScope(*session,
                                                       PeerFocus.Interest());
@@ -612,6 +621,8 @@ struct WorldPartitionUpdateSystem
     // configuration with no physics, where the transform is all there is.
     CharacterMoverPool* Movers = nullptr;
     NetOwnedFocus PeerFocus;
+    // Reused rather than rebuilt: the manifest's zone list, once a frame.
+    std::vector<ZoneId> StreamedZones;
     // Set by streaming on the wall clock, consumed by the next fixed tick.
     std::optional<Vec3d> PendingSafePosition;
 };
