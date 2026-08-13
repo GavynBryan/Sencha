@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <ecs/World.h>
+#include <net/NetGrantedResidency.h>
 #include <net/NetOwnedFocus.h>
 #include <net/NetOwnership.h>
 #include <net/ReplicationRuntime.h>
@@ -336,4 +337,105 @@ TEST_F(NetOwnedFocusTest, AClientOffersNobodyAnything)
     Step(NetSessionRole::Client);
 
     EXPECT_TRUE(Focus.Interest().empty());
+}
+
+//=============================================================================
+// Loading what the authority granted
+//
+// The other side of the same conversation. A client streams around its own
+// pawn, and in steady state that agrees with what it was granted; these are the
+// cases where it does not.
+//=============================================================================
+
+namespace
+{
+    bool PinnedHere(const NetGrantedResidency& granted, int index)
+    {
+        const std::span<const ZoneId> pinned = granted.Pinned();
+        return std::find(pinned.begin(), pinned.end(), ZoneAt(index))
+               != pinned.end();
+    }
+}
+
+// The deadlock this exists to prevent: a player somewhere their own policy has
+// no reason to want. The authority withholds the room until it is acked, and
+// the ack waits on a load nothing asked for.
+TEST_F(NetOwnedFocusTest, AGrantedRoomIsLoadedEvenWithNoLocalReasonToWantIt)
+{
+    // This client is standing at one end of the chain, so its own policy wants
+    // rooms 0 and 1 and nothing else. Room 5 is somewhere it has no reason to
+    // load and the authority is waiting to be told it holds.
+    Rig.SetFocusToZone(0);
+    NetZoneScope scope;
+    NetGrantedResidency granted;
+    EXPECT_TRUE(scope.Grant(ZoneAt(5)));
+
+    for (int frame = 0; frame < 4; ++frame)
+    {
+        granted.Update(scope, Rig.Partition());
+        Rig.StepFrame();
+    }
+    Rig.SettleLoads();
+
+    EXPECT_TRUE(Resident(5)) << "a granted room was never loaded, so it can never "
+                                "be acked, so it is never filled";
+    EXPECT_TRUE(PinnedHere(granted, 5));
+}
+
+// A grant is enough. Waiting for the ack would be waiting for the load this is
+// meant to cause.
+TEST_F(NetOwnedFocusTest, AGrantIsEnoughToStartLoading)
+{
+    NetZoneScope scope;
+    NetGrantedResidency granted;
+    (void)scope.Grant(ZoneAt(2));
+
+    granted.Update(scope, Rig.Partition());
+
+    EXPECT_TRUE(PinnedHere(granted, 2));
+}
+
+// And the pin comes back off, or a client keeps every room it ever visited
+// resident for the rest of the session.
+TEST_F(NetOwnedFocusTest, ARevokedRoomIsUnpinnedAndLetGo)
+{
+    Rig.SetFocusToZone(0);
+    NetZoneScope scope;
+    NetGrantedResidency granted;
+    (void)scope.Grant(ZoneAt(5));
+    for (int frame = 0; frame < 4; ++frame)
+    {
+        granted.Update(scope, Rig.Partition());
+        Rig.StepFrame();
+    }
+    Rig.SettleLoads();
+    ASSERT_TRUE(Resident(5));
+
+    EXPECT_TRUE(scope.Revoke(ZoneAt(5)));
+    for (int frame = 0; frame < 4; ++frame)
+    {
+        granted.Update(scope, Rig.Partition());
+        Rig.StepFrame();
+    }
+    Rig.SettleLoads();
+
+    EXPECT_FALSE(PinnedHere(granted, 5));
+    EXPECT_FALSE(Resident(5)) << "a client holds every room it was ever granted";
+}
+
+// One room let go leaves the others where they were.
+TEST_F(NetOwnedFocusTest, UnpinningOneGrantLeavesTheOthers)
+{
+    NetZoneScope scope;
+    NetGrantedResidency granted;
+    (void)scope.Grant(ZoneAt(2));
+    (void)scope.Grant(ZoneAt(5));
+    granted.Update(scope, Rig.Partition());
+    ASSERT_EQ(granted.Pinned().size(), 2u);
+
+    (void)scope.Revoke(ZoneAt(2));
+    granted.Update(scope, Rig.Partition());
+
+    EXPECT_FALSE(PinnedHere(granted, 2));
+    EXPECT_TRUE(PinnedHere(granted, 5));
 }

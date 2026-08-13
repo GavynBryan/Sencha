@@ -875,6 +875,22 @@ own reference to "the applier's Section 6.5 violation rule" is pointing at inten
 rather than at code. Written here because a sentence in the present tense about a
 mechanism that does not exist is the kind a reader builds on.*
 
+*Update 2026-08-13: the flow control landed, on the writing side. The authority
+never sends entity state for a zone the peer has not acked, and anything that
+leaves a peer's scope is destroyed for that peer rather than left standing where
+it was. The applier still does not enforce it from the other side, and cannot
+yet: a snapshot carries no zone, so a client has nothing to check an arrival
+against. Applier enforcement matters against a hostile authority, which is the
+G6 posture rather than a shipped one; against an honest one the writer's
+withholding is what makes the invariant true. Recorded as owed, not as done.*
+
+*Also still true, and worth stating because it looks like a gap and is not: a
+client applies replicated entities into the persistent partition regardless of
+which zone they belong to. That is why revoking a zone destroys its entities for
+that peer explicitly -- unloading the zone on the client would not take them
+with it. Putting them in the granted zone's partition needs the zone on the
+wire, and buys storage tidiness rather than correctness.*
+
 *Also landed 2026-08-11: a snapshot is decoded in full before any of it is
 applied, so a truncated or corrupted one leaves the world and the identity map
 exactly as they were. It previously parsed and mutated in one pass and could
@@ -1806,14 +1822,29 @@ things this pass landed.
   Phases C, D, E as they land. **Not required for the G4 gate** (see above), but
   required before a multi-zone session ships; the three-zone traversal is its gate.
 
-  *Status 2026-08-12: multi-source demand is done* (Section 8.1, three commits:
-  the pure policy, the runtime's per-source traversal state, and the
-  net-to-zone wiring). An authority now keeps resident the union of every
-  connected player's neighborhood and sweeps each of them through their own
-  doorway. Still owed: per-peer grant/ack/revoke, zone baselines, late join and
-  travel as grants, and the applier enforcement Section 6.5 currently records as
-  a correction. A live multi-zone smoke test additionally needs cooked
-  multi-zone content, which does not exist yet -- the template ships one level.
+  *Status 2026-08-13: the negotiation and the flow control are done.* Multi-source
+  demand (Section 8.1); entity-to-zone attribution in the change store; the
+  grant/ack/revoke messages and per-peer scope; per-peer interest computed from
+  what each peer drives; the writer withholding state for any zone a peer has
+  not acked, and destroying for that peer anything that leaves its scope; and a
+  client pinning what it was granted so travel cannot deadlock against its own
+  local policy.
+
+  One rule discovered the hard way and worth carrying forward: **scope control
+  applies only to zones a streaming manifest names.** A map loaded whole is a
+  resident zone that no policy names, so nothing computes interest for it and
+  nothing would ever grant it -- gating it withholds the level from every peer
+  permanently. From inside the writer, "nobody has granted this yet" and "nobody
+  ever will" are indistinguishable, so the streamed set is declared rather than
+  inferred.
+
+  Still owed: zone baselines against authored state (Section 6.1), which is the
+  optimization that removes spawn messages for level content; applier-side
+  enforcement (Section 6.5, and only load-bearing under G6's hostile-authority
+  posture); and the scripted three-zone traversal gate, which needs cooked
+  multi-zone content that does not exist yet -- the template ships one level.
+  The contributor gate, adding a relevance policy without touching protocol
+  machinery, has a surface to be added to now but no second policy in it.
 - **G4. Ownership, input, prediction. The track gate lands here.** `NetOwner`;
   session role reaching `OnRegisterSystems` so role is composition rather than
   branches; the input channel over the action stream plus a per-tick

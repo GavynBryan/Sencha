@@ -47,6 +47,7 @@
 #include <movement/MovementRegistration.h>
 #include <net/NetReplicationComponents.h>
 #include <net/NetSpawnRecipe.h>
+#include <net/NetGrantedResidency.h>
 #include <net/NetOwnedFocus.h>
 #include <net/NetOwnership.h>
 #include <net/NetSession.h>
@@ -557,6 +558,17 @@ struct WorldPartitionUpdateSystem
                     NetTrafficKind::Zone, scope.BytesQueued,
                     scope.Grants + scope.Revokes);
             }
+
+            // And on a client, the other side of the same conversation: what
+            // the authority granted is a floor on what this machine loads.
+            // Without it a player who travels somewhere their own policy has no
+            // reason to want waits on a room the authority is waiting to be
+            // told about.
+            if (session->Role() == NetSessionRole::Client)
+            {
+                GrantedZones.Update(Owner->Replication().LocalZones(),
+                                    *Partition);
+            }
         }
 
         Partition->Update(
@@ -621,6 +633,7 @@ struct WorldPartitionUpdateSystem
     // configuration with no physics, where the transform is all there is.
     CharacterMoverPool* Movers = nullptr;
     NetOwnedFocus PeerFocus;
+    NetGrantedResidency GrantedZones;
     // Reused rather than rebuilt: the manifest's zone list, once a frame.
     std::vector<ZoneId> StreamedZones;
     // Set by streaming on the wall clock, consumed by the next fixed tick.
