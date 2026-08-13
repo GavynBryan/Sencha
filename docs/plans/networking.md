@@ -1888,24 +1888,37 @@ things this pass landed.
   automated two-process traversal is a separate decision, because a test cannot
   depend on generated content CI does not have.
 
-  Still owed: zone baselines against authored state (Section 6.1), which is the
-  optimization that removes spawn messages for level content, and applier-side
-  enforcement (Section 6.5, only load-bearing under G6's hostile-authority
-  posture).
-  *The contributor gate is met, and met by construction rather than by a new
-  mechanism.* A relevance policy is whatever produces a list of zones per peer.
-  Who is near what comes from `NetOwnedFocus`; how far that reaches is
-  `HopCount` and `Radius`, already per-zone data through the graph's streaming
-  overrides; always-relevant is adding a zone to every peer's list; same-zone is
-  passing the focus zone alone; and a rule of somebody's own is their own spans.
-  `test/runtime/ZoneRelevancePolicyTests.cpp` holds the tree to that with three
-  policies written entirely outside `net/` -- if a policy is ever baked into the
-  mechanism, those fail.
+  **Zone baselines: not built, and the reason is a measurement.** The
+  optimization is that both machines loaded the same cooked zone, so a grant
+  plus a delta against authored state would describe the room and a room nobody
+  has touched would cost nothing. What shipped is the identity half -- an
+  authored entity binds to the copy the client's own level load produced instead
+  of being duplicated (Section 6.1) -- and that half is what correctness needed.
 
-  The one thing a policy can get wrong is the ordering precondition: the
-  reconcile binary-searches each peer's list, and an unsorted one revokes rooms
-  the peer wanted and regrants them next frame, which reads as streaming thrash
-  rather than as a caller mistake. Asserted where it is read.
+  The other half optimizes something no content does. **Zero replicated authored
+  entities exist anywhere in the tree**: level geometry carries neither
+  `NetReplicated` nor `NetOwner`, and everything a session replicates is spawned
+  at runtime into the persistent partition. A steady-state host on the three-room
+  world measures a peak snapshot of 23 bytes against a 1173-byte budget, with
+  seeding and delta both at zero.
+
+  Building it would also take on real risk for that nothing: the two sides must
+  agree bit-for-bit on authored values, and a field where they disagree is a
+  client permanently wrong with no correction, because the whole point is that
+  the authority never mentions it.
+
+  The trigger is a shipped entity that is both authored and replicated -- the
+  networked door Section 4.2 names -- plus a seeding figure attributable to it.
+  `PublishStats::SeedingBytes` against `DeltaBytes` is the measurement, and
+  `net_status` already prints both.
+
+  **Applier-side enforcement: G6's, not G3's.** Section 6.5's rule needs the
+  zone on the wire, per entity, on the hottest path there is -- and it buys
+  nothing against an honest authority, because the writer's withholding is what
+  makes the invariant true. It is worth its bytes only alongside the rest of the
+  hostile-authority posture, which is where the zone would earn its place for
+  other reasons too. Recorded as G6 scope rather than as owed here.
+
 - **G4. Ownership, input, prediction. The track gate lands here.** `NetOwner`;
   session role reaching `OnRegisterSystems` so role is composition rather than
   branches; the input channel over the action stream plus a per-tick

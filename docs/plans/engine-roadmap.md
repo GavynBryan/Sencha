@@ -673,24 +673,29 @@ which is ratified; this section owns the sequence and the gate.
    found and closed: a standing input backlog one redundancy window deep, and
    local-only fields arriving zeroed on a snapshot-spawned entity.
 
-6. **Zone interest (G3).** Multi-source demand, per-peer zone grant/ack/revoke, zone
-   baselines, late join, travel. Not required for the track gate — a single-zone map
-   with pawns in the persistent partition reaches it — but required before any
-   multi-zone session ships. Gate: a scripted three-zone co-op traversal with zero
-   missed host ticks and no desync mismatches. **Landed 2026-08-13**: an
-   authority keeps resident the union of every connected player's neighborhood,
-   offers each peer only its own, and says nothing about a room a peer has not
-   confirmed it holds — with anything leaving a peer's scope destroyed for that
-   peer rather than left standing. **The traversal gate is met
-   deterministically**: two players walk an eight-room chain in opposite
-   directions and neither is ever missing what is in the room they are in. It
-   also found and fixed a real defect: under a single-focus `ResidentZoneCap` an
-   authority's idea of where a second player was trailed where they actually
-   were, because the cap evicted the room a held-back crossing was waiting on.
-   A room a source is part way into is now immune the way its origin already
-   was. Still owed: zone baselines against authored
-   state, applier-side enforcement (a G6 concern), and cooked multi-zone content
-   for a live run.
+6. **Zone interest (G3). Landed 2026-08-13.** Multi-source demand, per-peer zone
+   grant/ack/revoke, per-peer interest, and the flow-control invariant: an
+   authority holds the union of every player's neighbourhood, offers each peer
+   only its own, and says nothing about a room a peer has not confirmed it holds
+   — with anything leaving a peer's scope destroyed for that peer rather than
+   left standing. Gate: two players cross an eight-room chain in opposite
+   directions, checked at every step, and neither is ever missing what is in the
+   room they are in; run live across two processes on a generated three-room
+   world. *Desync mismatches are not asserted — desync hashing is G5 — so the
+   gate is the zero-missed-handoff half of what the line originally asked for.*
+
+   Two things it found. A `ResidentZoneCap` sized for one focus let the world
+   lose track of where a second player was, because the cap evicted the room a
+   held-back crossing was waiting on; a room a source is part way into is now
+   immune the way its origin already was. And scope control has to apply only to
+   zones a manifest names, or a map loaded whole is withheld from every peer
+   forever.
+
+   Not built, with reasons recorded in `networking.md`: zone baselines against
+   authored state (no content anywhere is both authored and replicated, so there
+   is nothing to measure and real bit-agreement risk to take on), and
+   applier-side enforcement (needs the zone on the wire per entity and buys
+   nothing against an honest authority — folded into G6).
 
 7. **Session semantics (G5).** `CVarFlags::Replicated` and enforced `Cheat` gating,
    cvar sync, cue replication, desync hashing, a net stats panel. Load-bearing rather
