@@ -18,6 +18,25 @@ class WorldComponentSchema;
 // One peer's interest set: the zones it should be holding open. Computed by
 // whatever owns streaming policy; replication only ever compares it against
 // what that peer already has.
+//
+// This is the whole relevance surface. A policy is whatever produces the list,
+// and adding one never means touching a payload kind, an encoder, a channel, or
+// the snapshot writer:
+//
+//   - who is near what      NetOwnedFocus, from what each peer drives
+//   - how far that reaches  HopCount and Radius, per zone, through the graph's
+//                           streaming overrides -- already data
+//   - always relevant       add the zone to every peer's list
+//   - same-zone only        pass the focus zone alone
+//   - a rule of your own    build your own spans and pass those instead
+//
+// `Zones` must be sorted ascending and free of duplicates. The reconcile
+// binary-searches it, and an unsorted list does not fail -- it revokes rooms the
+// peer wanted and regrants them next frame, which reads as streaming thrash
+// rather than as a caller mistake. Asserted where it is read.
+//
+// See test/runtime/ZoneRelevancePolicyTests.cpp, which holds this claim to
+// three policies written entirely outside net/.
 struct NetPeerZoneInterest
 {
     PeerId Peer;

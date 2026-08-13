@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 
 namespace
 {
@@ -234,6 +235,17 @@ ReplicationRuntime::ZoneScopeStats ReplicationRuntime::PublishZoneScope(
                 break;
             }
         }
+
+        // The revoke pass binary-searches this. An unsorted or repeated list
+        // does not fail here -- it quietly revokes rooms the peer wanted and
+        // regrants them next frame, which reads as streaming thrash rather than
+        // as a caller mistake. A relevance policy is a list of zones, so this is
+        // the one thing a new policy can get wrong, and it says so where it is
+        // written rather than where it hurts.
+        assert(std::is_sorted(wanted.begin(), wanted.end(),
+                              [](ZoneId a, ZoneId b) { return a.Value < b.Value; })
+               && std::adjacent_find(wanted.begin(), wanted.end()) == wanted.end()
+               && "a peer's interest set must be sorted by zone id and unique");
 
         const auto send = [&](ZoneId zone, NetZoneScopeVerb verb) {
             const std::size_t size = NetEncodeZoneScopeUpdate(

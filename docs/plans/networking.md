@@ -1734,13 +1734,19 @@ rather than against the plan:
 | Add another interpolated property | suspicious | **specialist, and says so** | the API states poses are the only interpolated type and names the trigger |
 | Diagnose why one entity is not replicating | no | mid-level | `net_entity <netid> [peer]` |
 | Diagnose a failed ownership transfer | no | mid-level | `net_owners`, plus the consistency assertion firing where it breaks |
-| Add a relevance rule | not yet defined | not yet defined | G3's gate, deliberately |
+| Add a relevance rule | not yet defined | mid-level | `NetPeerZoneInterest` -- a policy is a list of zones per peer; held by `ZoneRelevancePolicyTests` |
 
-Eleven of fifteen mid-level, four specialist for stated inherent reasons, none
-suspicious. The two specialist prediction and interpolation tasks are specialist
-because replaying a second domain and blending a second type are real design work,
-not because an implementation detail leaked -- and both now say so at the point
-somebody would otherwise assume they were supported.
+Thirteen of fifteen mid-level, two specialist for stated inherent reasons, none
+suspicious. *(This paragraph read "eleven and four" until 2026-08-13, which was
+the plan's projection rather than a count of the table above it. Corrected by
+counting.)* The relevance rule is the row that moved last: the audit could not
+score it because scoped replication did not exist, and it scores mid-level now
+by construction rather than through a mechanism built to make it so.
+
+The two specialist tasks are prediction and interpolation, and they are
+specialist because replaying a second domain and blending a second type are real
+design work, not because an implementation detail leaked -- and both now say so
+at the point somebody would otherwise assume they were supported.
 
 Three defects the audit did not name were found while closing it, and are recorded
 because their shape generalizes. A reliable message from a client to its authority
@@ -1843,8 +1849,20 @@ things this pass landed.
   enforcement (Section 6.5, and only load-bearing under G6's hostile-authority
   posture); and the scripted three-zone traversal gate, which needs cooked
   multi-zone content that does not exist yet -- the template ships one level.
-  The contributor gate, adding a relevance policy without touching protocol
-  machinery, has a surface to be added to now but no second policy in it.
+  *The contributor gate is met, and met by construction rather than by a new
+  mechanism.* A relevance policy is whatever produces a list of zones per peer.
+  Who is near what comes from `NetOwnedFocus`; how far that reaches is
+  `HopCount` and `Radius`, already per-zone data through the graph's streaming
+  overrides; always-relevant is adding a zone to every peer's list; same-zone is
+  passing the focus zone alone; and a rule of somebody's own is their own spans.
+  `test/runtime/ZoneRelevancePolicyTests.cpp` holds the tree to that with three
+  policies written entirely outside `net/` -- if a policy is ever baked into the
+  mechanism, those fail.
+
+  The one thing a policy can get wrong is the ordering precondition: the
+  reconcile binary-searches each peer's list, and an unsorted one revokes rooms
+  the peer wanted and regrants them next frame, which reads as streaming thrash
+  rather than as a caller mistake. Asserted where it is read.
 - **G4. Ownership, input, prediction. The track gate lands here.** `NetOwner`;
   session role reaching `OnRegisterSystems` so role is composition rather than
   branches; the input channel over the action stream plus a per-tick
