@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
+class RuntimeWorld;
 class World;
 class WorldComponentSchema;
 
@@ -97,9 +98,14 @@ public:
     // Called every frame; whether it publishes is its own business (see
     // SetPublishInterval). Peer bookkeeping happens on every call regardless of
     // cadence, so a peer that leaves stops costing memory at once.
+    //
+    // `zones` is what tells the change store which zone each entity is resident
+    // in. Null on a world with no partition runtime, where every entity is
+    // persistent.
     PublishStats Publish(NetSession& session, World& world,
                          const ReplicationLayout& layout, std::uint64_t tick,
-                         const PeerCommandRuntime* commands = nullptr);
+                         const PeerCommandRuntime* commands = nullptr,
+                         const RuntimeWorld* zones = nullptr);
 
     // Simulation ticks between snapshots. One publishes as fast as the world
     // moves; higher trades freshness for bandwidth, which is the trade that

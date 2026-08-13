@@ -3,6 +3,7 @@
 #include <core/identity/Id.h>
 #include <net/ReplicationLayout.h>
 #include <net/ReplicationSnapshot.h>
+#include <zone/ZoneId.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -10,6 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
+class RuntimeWorld;
 class World;
 
 //=============================================================================
@@ -71,6 +73,14 @@ public:
         // entity it already has instead of building a second one beside it.
         // Invalid for anything the authority spawned at runtime.
         PersistentEntityId Persistent;
+        // The streamed zone this entity is resident in, or invalid for the
+        // persistent partition -- which is where everything a session spawns
+        // lives, and which every peer has by definition. Recorded as the zone
+        // rather than as the storage partition it was read from: a partition is
+        // a runtime slot that is recycled as zones come and go, while a zone id
+        // is the name a grant can be written in and the name both machines
+        // already agree on.
+        ZoneId Zone;
         // Ordered by wire index, so a snapshot writes components in a fixed
         // order without sorting per peer.
         std::vector<ComponentState> Components;
@@ -95,9 +105,17 @@ public:
     // and stamps the runs that moved with `generation`. Generations must
     // increase; the caller owns the counter because it also names the snapshots
     // that carry the result.
+    //
+    // `zones` answers which zone an entity's storage partition belongs to, and
+    // is null on a world with no partition runtime -- a single-level game, or a
+    // test -- where every entity is persistent and no zone gates anything. It is
+    // read once per chunk rather than once per entity: a chunk belongs to
+    // exactly one partition, which is the whole reason partitions are how zone
+    // residency is expressed.
     void Update(World& world, const ReplicationLayout& layout,
                 ReplicationAuthorityIdentity& identity,
-                std::uint64_t generation);
+                std::uint64_t generation,
+                const RuntimeWorld* zones = nullptr);
 
     // Everything alive as of the last Update, ordered by NetEntityId so two
     // runs of the same simulation produce the same snapshot bytes.

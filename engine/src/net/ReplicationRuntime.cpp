@@ -44,7 +44,8 @@ void ReplicationRuntime::SetSnapshotBytes(std::size_t bytes)
 
 ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
     NetSession& session, World& world, const ReplicationLayout& layout,
-    std::uint64_t tick, const PeerCommandRuntime* commands)
+    std::uint64_t tick, const PeerCommandRuntime* commands,
+    const RuntimeWorld* zones)
 {
     PublishStats stats;
     if (session.Role() != NetSessionRole::Host)
@@ -90,7 +91,7 @@ ReplicationRuntime::PublishStats ReplicationRuntime::Publish(
     // once and read by every peer. The generation is this store's own count of
     // publishes, not the simulation tick: it has to increase on every pass and
     // the tick does not (a paused authority still publishes).
-    Changes.Update(world, layout, Identity, ++Generation);
+    Changes.Update(world, layout, Identity, ++Generation, zones);
 
     for (PeerId peer : peers)
     {

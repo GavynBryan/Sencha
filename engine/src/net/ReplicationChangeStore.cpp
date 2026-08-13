@@ -4,6 +4,7 @@
 #include <ecs/World.h>
 #include <net/NetReplicationComponents.h>
 #include <net/ReplicationCodec.h>
+#include <world/RuntimeWorld.h>
 #include <world/identity/PersistentIdComponent.h>
 
 #include <algorithm>
@@ -27,7 +28,8 @@ void ReplicationChangeStore::Reset()
 
 void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layout,
                                     ReplicationAuthorityIdentity& identity,
-                                    std::uint64_t generation)
+                                    std::uint64_t generation,
+                                    const RuntimeWorld* zones)
 {
     assert(generation > LastGeneration
            && "Change generations must increase; a repeat would hide movement.");
@@ -84,6 +86,18 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
     // running it cannot make everything look changed on the next tick.
     Query<With<NetReplicated>> replicated(world);
     replicated.ForEachChunk([&](auto& view) {
+        // Once per chunk. Zone residency is expressed as storage partitions and
+        // a chunk lives in exactly one, so every row here shares an answer.
+        ZoneId chunkZone;
+        if (zones != nullptr && view.Partition() != PersistentStoragePartition)
+        {
+            if (const RuntimeZoneRecord* record =
+                    zones->FindPartition(view.Partition()))
+            {
+                chunkZone = record->Id;
+            }
+        }
+
         for (std::uint32_t row = 0; row < view.Count(); ++row)
         {
             const EntityId entity = view.Entity(row);
@@ -92,6 +106,7 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
             EntityState& state = Published[id];
             state.Id = id;
             state.SeenAt = generation;
+            state.Zone = chunkZone;
 
             // Read every pass rather than once: an entity's authored identity
             // does not change, but which entity a NetEntityId names can, and
