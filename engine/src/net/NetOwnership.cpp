@@ -95,6 +95,7 @@ PeerId NetOwnerOf(const World& world, EntityId entity)
 
 void NetOwnedBy(const World& world, PeerId peer, std::vector<EntityId>& out)
 {
+    out.clear();
     if (!peer.IsValid() || !TracksOwnership(world))
         return;
 

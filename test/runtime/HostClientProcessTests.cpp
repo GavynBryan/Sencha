@@ -206,6 +206,42 @@ namespace
         std::filesystem::path LogPath;
     };
 
+    // Types a console line and waits for evidence it did something, retrying
+    // while it does not.
+    //
+    // Absorbs exactly one transient, and only this one: a client can name an
+    // object only once replication has given it one, and how many frames that
+    // takes depends on what else the machine is doing. Sleeping long enough
+    // instead is a guess that holds until the suite runs on a busy machine,
+    // which is where this was found. Bounded, so a request that genuinely never
+    // works still fails rather than hanging.
+    [[nodiscard]] bool SendUntilLogged(const AppProcess& process,
+                                       const std::string& line,
+                                       std::string_view needle,
+                                       std::string* out = nullptr)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + kDeadline;
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (!process.Send(line))
+                return false;
+            const auto attemptUntil =
+                std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+            while (std::chrono::steady_clock::now() < attemptUntil)
+            {
+                std::string text = process.Log();
+                if (text.find(needle) != std::string::npos)
+                {
+                    if (out != nullptr)
+                        *out = std::move(text);
+                    return true;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(25));
+            }
+        }
+        return false;
+    }
+
     // The port an ephemeral bind actually got. Asking for port 0 is what keeps
     // this test from colliding with a real server, or with itself.
     [[nodiscard]] bool ParseHostPort(const std::string& log, std::string& port)
@@ -294,10 +330,8 @@ TEST(HostClientProcess, AClientTakesATurretAndGivesItBack)
 
     // The turret has to have arrived before it can be named, and it arrives as
     // ordinary replicated state rather than as anything the client waited for.
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-
-    ASSERT_TRUE(client.Send("turret"));
-    EXPECT_TRUE(client.WaitForLog("asked the authority about turret", &clientLog))
+    ASSERT_TRUE(SendUntilLogged(client, "turret",
+                                "asked the authority about turret", &clientLog))
         << "the client could not name the turret replication gave it:\n"
         << clientLog;
     EXPECT_TRUE(host.WaitForLog("took the turret", &hostLog))
@@ -322,6 +356,84 @@ TEST(HostClientProcess, AClientTakesATurretAndGivesItBack)
     EXPECT_TRUE(client.StopAndWait(&clientExit));
     EXPECT_EQ(clientExit, 0);
 
+    int hostExit = -1;
+    EXPECT_TRUE(host.StopAndWait(&hostExit));
+    EXPECT_EQ(hostExit, 0);
+}
+
+// Two players at once, as three real processes.
+//
+// Everything about this stack is written for many peers and, until this, every
+// live exercise of it had exactly one. One peer cannot tell a per-peer floor
+// from a global one, cannot show ownership being refused to somebody who does
+// not hold it, and cannot show a peer leaving without the session emptying.
+//
+// So: two clients join, each is served its own pawn, one takes the turret and
+// the other is refused it, and one leaves while the other keeps playing.
+TEST(HostClientProcess, ADedicatedHostServesTwoClientsAtOnce)
+{
+    AppProcess host({ "+map", "levels/test", "+host", "0" }, TempLogPath("host2"));
+    ASSERT_TRUE(host.Started());
+
+    std::string hostLog;
+    ASSERT_TRUE(host.WaitForLog("hosting on", &hostLog)) << hostLog;
+    std::string port;
+    ASSERT_TRUE(ParseHostPort(hostLog, port)) << hostLog;
+    ASSERT_TRUE(host.WaitForLog("placed a turret", &hostLog)) << hostLog;
+
+    AppProcess first({ "+connect", "127.0.0.1:" + port }, TempLogPath("two-c1"));
+    ASSERT_TRUE(first.Started());
+    std::string firstLog;
+    ASSERT_TRUE(first.WaitForLog("predicting this player's own pawn", &firstLog))
+        << firstLog;
+
+    AppProcess second({ "+connect", "127.0.0.1:" + port }, TempLogPath("two-c2"));
+    ASSERT_TRUE(second.Started());
+    std::string secondLog;
+    ASSERT_TRUE(second.WaitForLog("predicting this player's own pawn", &secondLog))
+        << secondLog;
+
+    // Two peers, two pawns. Each client predicts its own and mirrors the other.
+    ASSERT_TRUE(host.WaitForLog("spawned a pawn for peer 2", &hostLog))
+        << "the second peer was never served:\n" << hostLog;
+    ASSERT_TRUE(host.Send("net_owners"));
+    EXPECT_TRUE(host.WaitForLog("2 owns 1", &hostLog))
+        << "the authority does not record the second peer driving anything:\n"
+        << hostLog;
+    EXPECT_NE(hostLog.find("1 owns 1"), std::string::npos)
+        << "serving a second peer disturbed the first:\n" << hostLog;
+
+    // One turret, two claimants. The second is refused because the authority
+    // reads who owns it from its own record rather than from the request.
+    ASSERT_TRUE(SendUntilLogged(first, "turret",
+                                "asked the authority about turret", &firstLog))
+        << firstLog;
+    ASSERT_TRUE(host.WaitForLog("peer 1 took the turret", &hostLog)) << hostLog;
+
+    ASSERT_TRUE(SendUntilLogged(second, "turret",
+                                "asked the authority about turret", &secondLog))
+        << "the second client never managed to name the turret:\n" << secondLog;
+    EXPECT_TRUE(host.WaitForLog("peer 2 sent payload kind", &hostLog))
+        << "a second claim on a turret somebody else is driving was not "
+           "refused:\n" << hostLog;
+    EXPECT_EQ(hostLog.find("peer 2 took the turret"), std::string::npos)
+        << "two peers were given the same turret:\n" << hostLog;
+
+    // One leaves; the other keeps playing and the session does not empty.
+    int secondExit = -1;
+    EXPECT_TRUE(second.StopAndWait(&secondExit));
+    EXPECT_EQ(secondExit, 0);
+    EXPECT_TRUE(host.WaitForLog("removed the pawn for peer", &hostLog))
+        << "the departed peer's pawn was left behind:\n" << hostLog;
+
+    ASSERT_TRUE(host.Send("net_status"));
+    EXPECT_TRUE(host.WaitForLog("peers      1", &hostLog))
+        << "the host does not report exactly one peer after the other left:\n"
+        << hostLog;
+
+    int firstExit = -1;
+    EXPECT_TRUE(first.StopAndWait(&firstExit));
+    EXPECT_EQ(firstExit, 0);
     int hostExit = -1;
     EXPECT_TRUE(host.StopAndWait(&hostExit));
     EXPECT_EQ(hostExit, 0);

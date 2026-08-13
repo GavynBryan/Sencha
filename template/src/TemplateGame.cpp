@@ -989,7 +989,6 @@ private:
             // Asked of the component that already answers it. A map beside it
             // would be a second copy of the same fact, and the copy is what
             // goes stale the first time ownership moves.
-            owned.clear();
             NetOwnedBy(world, peer, owned);
             if (!owned.empty())
                 continue;

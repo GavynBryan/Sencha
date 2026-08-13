@@ -335,3 +335,32 @@ TEST(NetComposition, TheInputChannelIsOrderedAroundTheGamesOwnSystem)
     EXPECT_TRUE(schedule.Has<PawnCommandCaptureSystem>());
     EXPECT_TRUE(schedule.Has<ActionConsumer>());
 }
+
+// The shape every caller actually writes: one vector, reused around a loop over
+// peers. An appending answer leaves each peer holding everything the peers
+// before it owned, which reads as one player driving another's pawn -- and is
+// invisible until a session has a second peer in it, which is where a live
+// three-process run found it.
+TEST(NetOwnership, AskingAboutASecondPeerDoesNotInheritTheFirstsEntities)
+{
+    OwnershipWorld fixture;
+    const EntityId mine = fixture.Pawn();
+    const EntityId yours = fixture.Pawn();
+    NetSetOwner(fixture.Entities, mine, PeerId{ 1 });
+    NetSetOwner(fixture.Entities, yours, PeerId{ 2 });
+
+    std::vector<EntityId> owned;
+    NetOwnedBy(fixture.Entities, PeerId{ 1 }, owned);
+    ASSERT_EQ(owned.size(), 1u);
+    EXPECT_EQ(owned.front(), mine);
+
+    NetOwnedBy(fixture.Entities, PeerId{ 2 }, owned);
+    ASSERT_EQ(owned.size(), 1u)
+        << "the second peer was credited with the first peer's entities";
+    EXPECT_EQ(owned.front(), yours);
+
+    // And a peer that owns nothing answers with nothing rather than with
+    // whoever was asked about last.
+    NetOwnedBy(fixture.Entities, PeerId{ 3 }, owned);
+    EXPECT_TRUE(owned.empty());
+}

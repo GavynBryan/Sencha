@@ -377,8 +377,21 @@ void Engine::RegisterNetFramePhases()
                 };
                 if (!engine.NetMessages().Route(session->Role(), kind, message))
                 {
-                    log.Warn("net: nothing answered payload kind {} from peer {}",
-                             kind, delivery.From.Value);
+                    // A kind nothing answers and a kind whose handler said no
+                    // are the same strike and entirely different problems: one
+                    // sends somebody looking for a missing Bind, the other for
+                    // why a request was rejected. Worth the extra lookup on a
+                    // path that only runs when something already went wrong.
+                    if (engine.NetMessages().IsBound(kind))
+                    {
+                        log.Warn("net: peer {} sent payload kind {} and it was "
+                                 "refused", delivery.From.Value, kind);
+                    }
+                    else
+                    {
+                        log.Warn("net: nothing answered payload kind {} from "
+                                 "peer {}", kind, delivery.From.Value);
+                    }
                     session->StrikePeer(delivery.From, "unanswerable payload");
                 }
                 continue;

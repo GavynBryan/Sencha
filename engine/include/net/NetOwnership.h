@@ -61,9 +61,15 @@ void NetForgetOwnerPeer(World& world, PeerId peer);
 // Whoever owns it, or an invalid PeerId for the authority.
 [[nodiscard]] PeerId NetOwnerOf(const World& world, EntityId entity);
 
-// Everything `peer` owns, appended to `out`. Walks the NetOwner column, so it
-// costs the number of entities somebody drives rather than the size of the
-// world.
+// Everything `peer` owns, replacing whatever `out` held. Walks the NetOwner
+// column, so it costs the number of entities somebody drives rather than the
+// size of the world.
+//
+// Fills rather than appends, and the difference is not stylistic: the natural
+// use is one reused vector around a loop over peers, and an appending version
+// answers that with every earlier peer's entities still in it. That reads as
+// one peer owning another's pawn, which is alarming, wrong, and invisible
+// until a session has two peers in it.
 //
 // This is what replaces a game keeping its own peer-to-entity map beside the
 // component that already says it -- and it is the map, not the component, that

@@ -35,7 +35,7 @@
 // Bumped on any wire change. There are no cross-version sessions: the handshake
 // refuses a mismatch with a reason rather than trying to negotiate, which is
 // the only honest posture while the format is still moving.
-inline constexpr std::uint16_t kNetProtocolVersion = 5;
+inline constexpr std::uint16_t kNetProtocolVersion = 6;
 
 // Every message begins with this so a decoder can dispatch before it trusts
 // anything else. Values are explicit because they are wire format: reordering

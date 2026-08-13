@@ -176,7 +176,11 @@ private:
 
     // Send state.
     std::uint16_t NextUnreliableSequence = 0;
-    std::uint16_t NextReliableSequence = 0;
+    // Starts at one, because zero is what a packet carries when it has nothing
+    // to acknowledge. A first message numbered zero matches that empty ack, so
+    // it retires itself against a peer that has never seen it -- and, being no
+    // longer outstanding, is never resent.
+    std::uint16_t NextReliableSequence = 1;
     std::uint16_t NextMessageId = 0;
     std::vector<Outbound> Outstanding;
     std::vector<Packet> PendingUnreliable;
