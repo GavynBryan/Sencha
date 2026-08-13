@@ -147,24 +147,29 @@ class Harness
 public:
     // Worker count is the async lane's only timing knob. Zero is the
     // deterministic reference; a settled traversal must match it at any count.
-    explicit Harness(unsigned taskThreads = 0)
+    // `residentZoneCap` is the streaming budget. The default is the bench's,
+    // and the counted bounds in StreamingTraversalTests depend on it. A test
+    // with more than one focus needs its own: the cap bounds the merged demand
+    // of every source at once, so two players in different parts of the chain
+    // do not fit a budget sized for one.
+    explicit Harness(unsigned taskThreads = 0, int residentZoneCap = 4)
         : TaskThreads_(taskThreads)
         , Tasks_(taskThreads)
         , Schema_(Schema())
         , World_(Schema_)
         , SceneContext_(Logging_)
         , Loader_(Tasks_, World_, Schema_, Serializers_, SceneContext_, FrameLoop_)
-        , Partition_(MakeRecipe(), Config())
+        , Partition_(MakeRecipe(), Config(residentZoneCap))
     {
         World_.Entities().AddResource<PropagationOrderCache>();
     }
 
-    static WorldPartitionStreamingConfig Config()
+    static WorldPartitionStreamingConfig Config(int residentZoneCap = 4)
     {
         WorldPartitionStreamingConfig config;
         config.HopCount = 1;         // focus plus immediate neighbours
         config.LingerSeconds = 0.0;  // unload as soon as demand drops
-        config.ResidentZoneCap = 4;
+        config.ResidentZoneCap = residentZoneCap;
         return config;
     }
 

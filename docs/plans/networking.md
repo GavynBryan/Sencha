@@ -1844,11 +1844,37 @@ things this pass landed.
   ever will" are indistinguishable, so the streamed set is declared rather than
   inferred.
 
+  *The traversal gate is met deterministically* (`ZoneTraversalGateTests`): two
+  players walk an eight-room chain in opposite directions through the whole
+  closed loop -- authority streaming, per-peer interest, grants, client loading,
+  acks, snapshots -- and neither is ever, at any step, missing what is standing
+  in the room they are in. Checked at every step rather than at the ends,
+  because a handoff one frame late is a player walking into an empty room and
+  both ends still look right. The live version still needs cooked multi-zone
+  content, which does not exist -- the template ships one level.
+
+  **A limitation the gate found, and did not paper over.** `ResidentZoneCap`
+  bounds the merged demand of every focus source at once, and it was sized when
+  there could only be one. Two players in different parts of a world demand more
+  rooms than a budget meant for one, and the symptom is worse than a full
+  budget: a crossing is held back when its destination is not resident, the
+  destination loses the eviction because it is only a neighbour rather than a
+  focus, and it stays a neighbour precisely because the crossing that would
+  promote it is the thing being held back. The player advances anyway, a room
+  per attempt, but the authority's idea of where they are trails where they
+  actually are -- so relevance is computed for a room they left, and they walk
+  into empty ones.
+
+  Pinned by `ZoneTraversalCapLimitation` rather than fixed, because the fix is a
+  choice about what the cap guarantees: raise it per source, make a pending
+  crossing's destination immune the way its origin already is, or declare the
+  cap a per-source budget. That is a product decision about streaming memory,
+  not a defect with one obvious repair.
+
   Still owed: zone baselines against authored state (Section 6.1), which is the
   optimization that removes spawn messages for level content; applier-side
   enforcement (Section 6.5, and only load-bearing under G6's hostile-authority
-  posture); and the scripted three-zone traversal gate, which needs cooked
-  multi-zone content that does not exist yet -- the template ships one level.
+  posture); and cooked multi-zone content for a live traversal.
   *The contributor gate is met, and met by construction rather than by a new
   mechanism.* A relevance policy is whatever produces a list of zones per peer.
   Who is near what comes from `NetOwnedFocus`; how far that reaches is

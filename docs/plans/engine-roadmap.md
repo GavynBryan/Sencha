@@ -681,9 +681,15 @@ which is ratified; this section owns the sequence and the gate.
    authority keeps resident the union of every connected player's neighborhood,
    offers each peer only its own, and says nothing about a room a peer has not
    confirmed it holds — with anything leaving a peer's scope destroyed for that
-   peer rather than left standing. Still owed: zone baselines against authored
-   state, applier-side enforcement (a G6 concern), and the traversal gate
-   itself, which needs cooked multi-zone content that does not exist yet.
+   peer rather than left standing. **The traversal gate is met
+   deterministically**: two players walk an eight-room chain in opposite
+   directions and neither is ever missing what is in the room they are in. It
+   also found a real limitation — `ResidentZoneCap` is a single-focus budget,
+   and under it an authority's idea of where a second player is trails where
+   they are — pinned by a test rather than fixed, because what the cap
+   guarantees is a product decision. Still owed: zone baselines against authored
+   state, applier-side enforcement (a G6 concern), and cooked multi-zone content
+   for a live run.
 
 7. **Session semantics (G5).** `CVarFlags::Replicated` and enforced `Cheat` gating,
    cvar sync, cue replication, desync hashing, a net stats panel. Load-bearing rather
