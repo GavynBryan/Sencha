@@ -1,5 +1,7 @@
 #include <net/NetStatusReport.h>
 
+#include <net/NetZoneScope.h>
+
 #include <ecs/World.h>
 #include <net/ClientPrediction.h>
 #include <net/NetOwnership.h>
@@ -628,6 +630,83 @@ std::string NetFormatOwners(const NetSession* session, const World& entities,
             }
         }
     }
+    Trim(out);
+    return out;
+}
+
+namespace
+{
+    const char* ZoneStateName(NetZoneScopeState state)
+    {
+        switch (state)
+        {
+        case NetZoneScopeState::None:    break;
+        case NetZoneScopeState::Granted: return "loading";
+        case NetZoneScopeState::Acked:   return "open";
+        }
+        return "none";
+    }
+
+    void ZoneLines(std::string& out, const NetZoneScope& scope)
+    {
+        if (scope.Size() == 0)
+        {
+            out += std::string("no zones");
+            return;
+        }
+        bool first = true;
+        for (const NetZoneScope::Entry& entry : scope.Entries())
+        {
+            if (!first)
+                Continue(out);
+            first = false;
+            out += Line("  %016" PRIx64 " %s", entry.Zone.Value,
+                        ZoneStateName(entry.State));
+        }
+    }
+}
+
+std::string NetFormatZones(const NetSession* session,
+                           const ReplicationRuntime* replication)
+{
+    if (session == nullptr || replication == nullptr)
+        return "standalone (no session)";
+
+    std::string out;
+
+    // Which zones are gated at all. Empty means none are, which is not a fault:
+    // a session that loaded a map rather than streaming a world has one zone no
+    // policy names, and nothing about it is withheld from anybody.
+    const std::span<const ZoneId> streamed = replication->StreamedZones();
+    Section(out, "streamed");
+    out += streamed.empty()
+               ? std::string("none (nothing is zone-gated)")
+               : Line("%zu zone(s) under scope control", streamed.size());
+
+    if (session->Role() == NetSessionRole::Host)
+    {
+        for (const PeerId peer : session->ConnectedPeers())
+        {
+            const ReplicationPeerState* baseline = replication->PeerBaseline(peer);
+            Section(out, "peer");
+            if (baseline == nullptr)
+            {
+                out += Line("%u has no baseline yet", peer.Value);
+                continue;
+            }
+            out += Line("%u holds %zu", peer.Value, baseline->Zones().Size());
+            Continue(out);
+            ZoneLines(out, baseline->Zones());
+        }
+        Trim(out);
+        return out;
+    }
+
+    // A client has one authority, so it has one answer. "loading" here and
+    // "loading" on the host mean different things a moment apart: this machine
+    // has been told to hold the room, and the host has not been told it does.
+    Section(out, "granted");
+    ZoneLines(out, replication->LocalZones());
     Trim(out);
     return out;
 }

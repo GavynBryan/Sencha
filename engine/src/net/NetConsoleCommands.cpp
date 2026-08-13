@@ -502,6 +502,21 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
     });
 
     registry.RegisterCommand({
+        .Name = "net_zones",
+        .Owner = "engine",
+        .Usage = "net_zones",
+        .Help = "Print which zones each peer has been granted and which it has "
+                "confirmed it holds -- the one reason an entity may not be "
+                "arriving that no other readout shows.",
+        .Callback = [&engine](ConsoleExecutionContext&,
+                              std::span<const std::string>) {
+            ConsoleResult result;
+            result.Info(NetFormatZones(engine.TryNet(), &engine.Replication()));
+            return result;
+        },
+    });
+
+    registry.RegisterCommand({
         .Name = "net_components",
         .Owner = "engine",
         .Usage = "net_components",

@@ -85,3 +85,15 @@ struct NetEntityReportSources
 [[nodiscard]] std::string NetFormatOwners(const NetSession* session,
                                           const World& entities,
                                           const ReplicationRuntime* replication);
+
+//-----------------------------------------------------------------------------
+// Which rooms each peer is holding
+//
+// The one question a streamed session raises that nothing else answers: an
+// entity that is not arriving may be behind a budget, a floor, or a zone the
+// peer has not acked, and only the last of those is invisible from every other
+// readout. On a host this is per peer; on a client it is what this machine was
+// granted and what it has confirmed.
+//-----------------------------------------------------------------------------
+[[nodiscard]] std::string NetFormatZones(const NetSession* session,
+                                         const ReplicationRuntime* replication);
