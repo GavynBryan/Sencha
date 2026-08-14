@@ -24,7 +24,7 @@ class WorldComponentSchema;
 // and adding one never means touching a payload kind, an encoder, a channel, or
 // the snapshot writer:
 //
-//   - who is near what      NetOwnedFocus, from what each peer drives
+//   - who is near what      NetZoneStreaming, from what each peer drives
 //   - how far that reaches  HopCount and Radius, per zone, through the graph's
 //                           streaming overrides -- already data
 //   - always relevant       add the zone to every peer's list

@@ -2,7 +2,7 @@
 
 #include <ecs/World.h>
 #include <net/LoopbackTransport.h>
-#include <net/NetOwnedFocus.h>
+#include <net/NetZoneStreaming.h>
 #include <net/NetOwnership.h>
 #include <net/NetSession.h>
 #include <net/NetZoneScope.h>
@@ -107,8 +107,10 @@ namespace
         {
             for (int frame = 0; frame < frames; ++frame)
             {
-                Focus.Update(Rig.World().Entities(), NetSessionRole::Host,
-                             Rig.Partition());
+                // Streaming only; each case publishes its own interest set
+                // below, which is the point of the surface.
+                Focus.Update(Rig.World().Entities(), &Host, Replication,
+                             Rig.Partition(), nullptr);
                 Rig.StepFrame();
             }
             Rig.SettleLoads();
@@ -144,7 +146,7 @@ namespace
         NetSession First{ FirstTransport };
         NetSession Second{ SecondTransport };
         ReplicationRuntime Replication;
-        NetOwnedFocus Focus;
+        NetZoneStreaming Focus;
         std::vector<ZoneId> StreamedZones;
         double Now = 0.0;
     };
@@ -220,7 +222,7 @@ TEST_F(RelevancePolicyTest, SameZoneOnlyNarrowsWhatAPeerIsOffered)
     RunStreaming();
 
     const ZoneId standingIn =
-        Rig.Partition().FocusZone(NetFocusSourceFor(pawn));
+        Rig.Partition().FocusZone(NetZoneStreaming::SourceFor(pawn));
     ASSERT_TRUE(standingIn.IsValid());
 
     const NetPeerZoneInterest interest{ .Peer = FirstPeer(),

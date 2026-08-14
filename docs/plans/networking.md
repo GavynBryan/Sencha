@@ -1266,17 +1266,22 @@ Deviations:
   (minimum hop, then minimum cost) instead. A span form would have been a second
   merge saying the same thing in a second place.
 - The net-to-zone mapping is keyed by **owned entity, not by peer**
-  (`net/NetOwnedFocus.h`). A peer can be driving more than one thing at once --
-  somebody in a turret still has a body sitting in it, in a zone that has to stay
-  simulated for them to get back into -- and per entity that is exactly the union
-  the merge already computes. Per peer it would have needed a rule for which of a
-  peer's entities counts, and every answer to that is arbitrary. `NetOwnedFocus`
-  holds the ids it minted so a source is released when nobody drives that entity
-  any more, and it takes the session role as a parameter: `NetOwner` replicates,
-  so a client walking the same column would stream the ground under every other
-  player as well as its own.
+  (`net/NetZoneStreaming.h`). A peer can be driving more than one thing at once
+  -- somebody in a turret still has a body sitting in it, in a room that has to
+  stay simulated for them to get back into -- and per entity that is exactly the
+  union the merge already computes. Per peer it would have needed a rule for
+  which of a peer's entities counts, and every answer to that is arbitrary.
 
-The gate for this half is `NetOwnedFocusTests`, which drives the eight-zone
+*Consolidated 2026-08-13.* All of it -- following the local player, following
+every peer, offering each peer its own neighbourhood, and loading what the
+authority granted -- is one call the engine makes, and a game reaches it by
+handing its partition runtime over once (`Engine::SetWorldStreaming`). It was
+four calls in one exact order, and getting the order wrong was silent: focus
+before the streaming update or a player streams a frame behind themselves,
+grants after it or a peer is offered rooms from before it moved. A game had no
+way to know that order and no reason to.
+
+The gate for this half is `NetZoneStreamingTests`, which drives the eight-zone
 traversal chain through real demand, async load, and residency processing with
 two peers at opposite ends.
 

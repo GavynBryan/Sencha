@@ -5,6 +5,8 @@
 #include <jobs/AsyncTaskQueue.h>
 #include <runtime/FrameDriver.h>
 #include <world/RuntimeWorld.h>
+#include <zone/AsyncZoneLoader.h>
+#include <zone/WorldPartitionRuntime.h>
 #include <world/transform/TransformHistory.h>
 #include <core/console/ConsoleService.h>
 #include <movement/FreeLocomotionSystem.h>
@@ -52,6 +54,13 @@ bool Engine::HasPresentation() const
 // A windowed process shows this in its overlay. A dedicated host has no
 // overlay, and a command whose result went nowhere is a command an operator has
 // no way to know failed -- including the ones its own startup script ran.
+void Engine::SetWorldStreaming(WorldPartitionRuntime* partition,
+                               AsyncZoneLoader* loader)
+{
+    StreamedWorld = partition;
+    StreamedWorldLoader = loader;
+}
+
 void Engine::LogConsoleResult(Logger& log, const ConsoleResult& result)
 {
     for (const ConsoleOutputEntry& entry : result.Output)
@@ -640,8 +649,24 @@ void Engine::RegisterSimulationFramePhases()
         engine.World().FlushLifecycleRequests();
     });
 
-    driver.Register(FramePhase::ZoneResidency, [&engine, &config](PhaseContext&) {
+    driver.Register(FramePhase::ZoneResidency, [&engine, &config](PhaseContext& ctx) {
         RuntimeWorld& runtimeWorld = engine.World();
+
+        // Streaming first, so a room a grant asked for this frame reaches
+        // residency processing in this one rather than the next.
+        if (WorldPartitionRuntime* partition = engine.WorldStreaming())
+        {
+            engine.ZoneStreaming().Update(runtimeWorld.Entities(), engine.TryNet(),
+                                          engine.Replication(), *partition,
+                                          &engine.NetTraffic());
+            if (AsyncZoneLoader* loader = engine.WorldStreamingLoader())
+            {
+                partition->Update(
+                    ctx.Runtime->GetCurrentFrame().WallTime.UnscaledDt,
+                    *loader, runtimeWorld);
+            }
+        }
+
         ZoneResidencyContext residency{
             .Config = config,
             .Entities = runtimeWorld.Entities(),

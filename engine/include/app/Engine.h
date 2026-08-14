@@ -15,6 +15,7 @@
 #include <net/ClientPrediction.h>
 #include <net/ReplicationInterpolation.h>
 #include <net/NetStats.h>
+#include <net/NetZoneStreaming.h>
 #include <net/NetTickEstimator.h>
 #include <net/PeerCommandRuntime.h>
 #include <net/ReplicationRuntime.h>
@@ -102,6 +103,33 @@ public:
     }
     // What the session is spending, as rates. Counting only: nothing reads it
     // to decide anything, so recording into it raises no ordering question.
+    //-------------------------------------------------------------------------
+    // World streaming
+    //
+    // A game that streams a world hands its partition runtime and loader over
+    // once, and the engine drives both from then on: it updates streaming in
+    // the zone-residency phase, keeps the world loaded around whoever this
+    // machine drives, and -- in a session -- around every connected player as
+    // well, offering each peer only its own neighbourhood.
+    //
+    // One call rather than four in a fixed order. Getting that order wrong was
+    // silent, and a game had no way to know the order or reason to.
+    //
+    // Null on unload. The pointers are the game's to own; the engine only
+    // borrows them, and holds nothing past a null.
+    //-------------------------------------------------------------------------
+    void SetWorldStreaming(WorldPartitionRuntime* partition,
+                           AsyncZoneLoader* loader);
+    [[nodiscard]] WorldPartitionRuntime* WorldStreaming() const
+    {
+        return StreamedWorld;
+    }
+    [[nodiscard]] AsyncZoneLoader* WorldStreamingLoader() const
+    {
+        return StreamedWorldLoader;
+    }
+    [[nodiscard]] NetZoneStreaming& ZoneStreaming() { return ZoneStreamingState; }
+
     [[nodiscard]] NetStats& NetTraffic() { return NetStatsState; }
     [[nodiscard]] const NetStats& NetTraffic() const { return NetStatsState; }
     // What the authority's clock is called, as seen from a client. Meaningless
@@ -331,6 +359,9 @@ private:
     NetCVarPublisher CVarPublisherState;
     PeerCommandRuntime PeerCommandState;
     NetStats NetStatsState;
+    NetZoneStreaming ZoneStreamingState;
+    WorldPartitionRuntime* StreamedWorld = nullptr;
+    AsyncZoneLoader* StreamedWorldLoader = nullptr;
     NetTickEstimator NetClockState;
     ClientPrediction PredictionState;
     ReplicationInterpolation InterpolationState;

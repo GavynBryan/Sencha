@@ -1,9 +1,10 @@
 #include <gtest/gtest.h>
 
 #include <ecs/World.h>
-#include <net/NetGrantedResidency.h>
-#include <net/NetOwnedFocus.h>
+#include <net/NetZoneStreaming.h>
+#include <net/LoopbackTransport.h>
 #include <net/NetOwnership.h>
+#include <net/NetSession.h>
 #include <net/NetReplicationComponents.h>
 #include <net/NetZoneScope.h>
 #include <net/ReplicationChangeStore.h>
@@ -48,6 +49,14 @@ namespace
     using StreamingTraversal::kZoneCount;
     using StreamingTraversal::kZoneSpan;
 
+    NetIdentity GateIdentity()
+    {
+        return NetIdentity{ .ModuleFingerprint = 0x9a7e,
+                            .ReplicationTableHash = 0x1de,
+                            .WorldIdentity = 0,
+                            .FixedTickRateMilliHz = 60000 };
+    }
+
     Vec3d Inside(int index)
     {
         return Vec3d{ static_cast<float>(index * kZoneSpan + kZoneSpan * 0.5),
@@ -72,7 +81,6 @@ namespace
         std::unique_ptr<Harness> Rig;
         ReplicationClientIdentity Identity;
         NetZoneScope Scope;
-        NetGrantedResidency Granted;
     };
 
     class ZoneTraversalGateTest : public ::testing::Test
@@ -81,6 +89,7 @@ namespace
         void SetUp() override
         {
             ASSERT_TRUE(Authority.LoadManifest().empty());
+            ASSERT_TRUE(Host.Host(0, GateIdentity()));
             for (const ZoneHeader& zone : Authority.Partition().Manifest().Zones)
                 Streamed.push_back(zone.Id);
             Landmarks.assign(kZoneCount, EntityId{});
@@ -155,7 +164,10 @@ namespace
 
             // Streaming: the authority holds the union of everybody's
             // neighbourhoods and works out what each of them may be told about.
-            Focus.Update(world, NetSessionRole::Host, Authority.Partition());
+            // A real host session, because being a host is what makes the
+            // authority stream around its peers. The grant exchange below is
+            // still driven by hand, so what is deterministic stays so.
+            Focus.Update(world, &Host, Scopes, Authority.Partition(), nullptr);
             const std::span<const NetPeerZoneInterest> interest = Focus.Interest();
 
             // Grants and revokes, delivered straight into each client's scope.
@@ -200,7 +212,14 @@ namespace
             {
                 Player& player = *held;
                 player.Rig->Partition().SetFocus(Inside(player.Standing));
-                player.Granted.Update(player.Scope, player.Rig->Partition());
+                for (const NetZoneScope::Entry& entry : player.Scope.Entries())
+                {
+                    player.Rig->Partition().PinZone(
+                        entry.Zone, ZoneParticipation{ .Visible = true,
+                                                       .Physics = true,
+                                                       .Logic = true,
+                                                       .Audio = true });
+                }
                 player.Rig->StepFrame();
 
                 std::vector<ZoneId> ready;
@@ -320,7 +339,13 @@ namespace
         // it does still evict, and this gate is about the handoff rather than
         // about what a tight budget does to it.
         Harness Authority{ 0, kZoneCount };
-        NetOwnedFocus Focus;
+        LoopbackNetwork Network;
+        LoopbackTransport HostTransport{ Network };
+        NetSession Host{ HostTransport };
+        NetZoneStreaming Focus;
+        // Where the streaming half records what it offered. The grants below
+        // are applied by hand rather than sent, so this holds nothing else.
+        ReplicationRuntime Scopes;
         ReplicationAuthorityIdentity Identity;
         ReplicationChangeStore Changes;
         std::vector<std::unique_ptr<Player>> Players;

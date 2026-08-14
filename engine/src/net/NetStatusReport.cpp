@@ -674,17 +674,18 @@ std::string NetFormatZones(const NetSession* session,
 
     std::string out;
 
-    // Which zones are gated at all. Empty means none are, which is not a fault:
-    // a session that loaded a map rather than streaming a world has one zone no
-    // policy names, and nothing about it is withheld from anybody.
-    const std::span<const ZoneId> streamed = replication->StreamedZones();
-    Section(out, "streamed");
-    out += streamed.empty()
-               ? std::string("none (nothing is zone-gated)")
-               : Line("%zu zone(s) under scope control", streamed.size());
-
     if (session->Role() == NetSessionRole::Host)
     {
+        // Which zones are gated at all, and only on the machine that gates
+        // them. Empty is not a fault: a session that loaded a map rather than
+        // streaming a world has one room no policy names, and nothing about it
+        // is withheld from anybody.
+        const std::span<const ZoneId> streamed = replication->StreamedZones();
+        Section(out, "streamed");
+        out += streamed.empty()
+                   ? std::string("none (nothing is zone-gated)")
+                   : Line("%zu zone(s) under scope control", streamed.size());
+
         for (const PeerId peer : session->ConnectedPeers())
         {
             const ReplicationPeerState* baseline = replication->PeerBaseline(peer);

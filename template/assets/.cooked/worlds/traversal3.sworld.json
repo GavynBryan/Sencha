@@ -1,0 +1,223 @@
+{
+  "format_version": 4,
+  "name": "Traversal3",
+  "start_zone": "ff1c3501bbc3e970",
+  "world_scene": "levels/traversal3_world.level.json",
+  "cooked_world_scene": ".cooked/levels/_world-generations/traversal3/world_scene/9249799557f9b84a.cooked.json",
+  "cooked_world_collision": ".cooked/levels/_world-generations/traversal3/world_scene/9249799557f9b84a.collision.json",
+  "world_scene_content_hash": "9249799557f9b84a",
+  "graphs": [
+    {
+      "id": "4b0ca27cf51e407b",
+      "name": "Graph 1"
+    }
+  ],
+  "zones": [
+    {
+      "id": "ff1c3501bbc3e970",
+      "name": "Zone 1",
+      "graph": "4b0ca27cf51e407b",
+      "scene": "levels/zone_1.level.json",
+      "bounds": {
+        "min": [
+          -8,
+          0,
+          -8
+        ],
+        "max": [
+          8,
+          6,
+          8
+        ]
+      },
+      "bounds_overridden": true,
+      "cooked_scene": ".cooked/levels/_world-generations/traversal3/ff1c3501bbc3e970/f7a6eb39e4b435a6.cooked.json",
+      "cooked_collision": ".cooked/levels/_world-generations/traversal3/ff1c3501bbc3e970/f7a6eb39e4b435a6.collision.json",
+      "content_hash": "f7a6eb39e4b435a6",
+      "dock_endpoints": [
+        {
+          "id": "a1384831e0e406c3",
+          "owner_zone": "ff1c3501bbc3e970",
+          "other_zone": "00dc63f8e9f7969a",
+          "side": "a",
+          "origin": [
+            8,
+            1.5,
+            0
+          ],
+          "normal": [
+            1,
+            -0,
+            -0
+          ],
+          "right": [
+            0,
+            0,
+            -1
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ],
+          "half_extents": [
+            3,
+            1.5
+          ],
+          "directions": 3
+        }
+      ]
+    },
+    {
+      "id": "00dc63f8e9f7969a",
+      "name": "Room 2",
+      "graph": "4b0ca27cf51e407b",
+      "scene": "levels/room_2.level.json",
+      "bounds": {
+        "min": [
+          8,
+          0,
+          -8
+        ],
+        "max": [
+          24,
+          6,
+          8
+        ]
+      },
+      "bounds_overridden": true,
+      "cooked_scene": ".cooked/levels/_world-generations/traversal3/00dc63f8e9f7969a/fdc8222b5ed72539.cooked.json",
+      "cooked_collision": ".cooked/levels/_world-generations/traversal3/00dc63f8e9f7969a/fdc8222b5ed72539.collision.json",
+      "content_hash": "fdc8222b5ed72539",
+      "dock_endpoints": [
+        {
+          "id": "2c448213f92a0a19",
+          "owner_zone": "00dc63f8e9f7969a",
+          "other_zone": "cd4723e01c9d299c",
+          "side": "a",
+          "origin": [
+            24,
+            1.5,
+            0
+          ],
+          "normal": [
+            1,
+            -0,
+            -0
+          ],
+          "right": [
+            0,
+            0,
+            -1
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ],
+          "half_extents": [
+            3,
+            1.5
+          ],
+          "directions": 3
+        },
+        {
+          "id": "a1384831e0e406c3",
+          "owner_zone": "00dc63f8e9f7969a",
+          "other_zone": "ff1c3501bbc3e970",
+          "side": "b",
+          "origin": [
+            8,
+            1.5,
+            0
+          ],
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "right": [
+            -0,
+            -0,
+            1
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ],
+          "half_extents": [
+            3,
+            1.5
+          ],
+          "directions": 3
+        }
+      ]
+    },
+    {
+      "id": "cd4723e01c9d299c",
+      "name": "Room 3",
+      "graph": "4b0ca27cf51e407b",
+      "scene": "levels/room_3.level.json",
+      "bounds": {
+        "min": [
+          24,
+          0,
+          -8
+        ],
+        "max": [
+          40,
+          6,
+          8
+        ]
+      },
+      "bounds_overridden": true,
+      "cooked_scene": ".cooked/levels/_world-generations/traversal3/cd4723e01c9d299c/3ae2b031996dd933.cooked.json",
+      "cooked_collision": ".cooked/levels/_world-generations/traversal3/cd4723e01c9d299c/3ae2b031996dd933.collision.json",
+      "content_hash": "3ae2b031996dd933",
+      "dock_endpoints": [
+        {
+          "id": "2c448213f92a0a19",
+          "owner_zone": "cd4723e01c9d299c",
+          "other_zone": "00dc63f8e9f7969a",
+          "side": "b",
+          "origin": [
+            24,
+            1.5,
+            0
+          ],
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "right": [
+            -0,
+            -0,
+            1
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ],
+          "half_extents": [
+            3,
+            1.5
+          ],
+          "directions": 3
+        }
+      ]
+    }
+  ],
+  "dock_debug_map": [
+    {
+      "id": "2c448213f92a0a19",
+      "authored_entity": "0000000100000001"
+    },
+    {
+      "id": "a1384831e0e406c3",
+      "authored_entity": "0000000100000000"
+    }
+  ]
+}

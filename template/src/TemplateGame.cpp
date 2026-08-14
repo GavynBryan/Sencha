@@ -47,8 +47,6 @@
 #include <movement/MovementRegistration.h>
 #include <net/NetReplicationComponents.h>
 #include <net/NetSpawnRecipe.h>
-#include <net/NetGrantedResidency.h>
-#include <net/NetOwnedFocus.h>
 #include <net/NetOwnership.h>
 #include <net/NetSession.h>
 #include <net/PawnCommandCapture.h>
@@ -491,96 +489,27 @@ void ConfigureRuntimeResources(
 
 struct WorldPartitionUpdateSystem
 {
-    WorldPartitionUpdateSystem(
-        std::optional<WorldPartitionRuntime>& partition,
-        std::optional<AsyncZoneLoader>& loader,
-        RuntimeWorld& runtimeWorld)
+    explicit WorldPartitionUpdateSystem(
+        std::optional<WorldPartitionRuntime>& partition)
         : Partition(partition)
-        , Loader(loader)
-        , Runtime(runtimeWorld)
     {
     }
 
     void FrameUpdate(FrameUpdateContext& ctx)
     {
-        if (!Partition || !Partition->HasManifest() || !Loader)
+        (void)ctx;
+        if (!Partition || !Partition->HasManifest())
             return;
 
-        World& world = ctx.Entities;
-        // Read rather than remembered: the pawn streaming follows is whichever
-        // one the player is driving now, and joining a session replaces it.
-        const EntityId pawn = LocalControlSubjectOf(world);
-        if (pawn.IsValid())
-        {
-            if (const WorldTransform* transform =
-                    world.TryGet<WorldTransform>(pawn))
-            {
-                Partition->SetFocus(transform->Value.Position);
-            }
-            if (const CharacterController* controller =
-                    world.TryGet<CharacterController>(pawn))
-            {
-                Partition->SetFocusCapsule(
-                    controller->Radius,
-                    controller->Height);
-            }
-        }
-
-        // Hosting, this player is one of several the world has to stay loaded
-        // around. Beside the focus above rather than instead of it: a listen
-        // server's own pawn is owned by no peer, so nothing else names it.
-        NetSession* session = Owner == nullptr ? nullptr : Owner->TryNet();
-        PeerFocus.Update(
-            world,
-            session == nullptr ? NetSessionRole::Standalone : session->Role(),
-            *Partition);
-
-        // And what each of them may be told about. Same neighborhoods, read the
-        // other way round: the authority holds the union, each peer is offered
-        // its own.
-        if (session != nullptr)
-        {
-            // Which zones scope control applies to. Only the ones this world's
-            // manifest names: a zone the streaming policy does not know is one
-            // no interest set can ever ask for, and gating it would withhold it
-            // from everybody with no message that could undo it.
-            StreamedZones.clear();
-            for (const ZoneHeader& zone : Partition->Manifest().Zones)
-                StreamedZones.push_back(zone.Id);
-            Owner->Replication().SetStreamedZones(StreamedZones);
-
-            const ReplicationRuntime::ZoneScopeStats scope =
-                Owner->Replication().PublishZoneScope(*session,
-                                                      PeerFocus.Interest());
-            if (scope.BytesQueued > 0)
-            {
-                Owner->NetTraffic().RecordOut(
-                    NetTrafficKind::Zone, scope.BytesQueued,
-                    scope.Grants + scope.Revokes);
-            }
-
-            // And on a client, the other side of the same conversation: what
-            // the authority granted is a floor on what this machine loads.
-            // Without it a player who travels somewhere their own policy has no
-            // reason to want waits on a room the authority is waiting to be
-            // told about.
-            if (session->Role() == NetSessionRole::Client)
-            {
-                GrantedZones.Update(Owner->Replication().LocalZones(),
-                                    *Partition);
-            }
-        }
-
-        Partition->Update(
-            ctx.WallDeltaSeconds,
-            *Loader,
-            Runtime);
-
-        // A crossing the destination is not ready for leaves the pawn where the
-        // sweep last had it fully inside the source zone. Streaming decides
-        // that here, on the wall clock, but moving the pawn is simulation, so
-        // the position is recorded and applied on the next fixed tick.
-        if (pawn.IsValid()
+        // Streaming itself is the engine's: it was handed this partition when
+        // the world loaded and drives it in the zone-residency phase.
+        //
+        // What is left here is a gameplay decision. A crossing the destination
+        // is not ready for leaves the pawn where the sweep last had it fully
+        // inside the room it is leaving; streaming decides that on the wall
+        // clock, but moving a pawn is simulation, so the position is recorded
+        // and applied on the next fixed tick.
+        if (LocalControlSubjectOf(ctx.Entities).IsValid()
             && Partition->LastTraversal().Status
                 == DockTraversalStatus::BlockedDestinationNotReady)
         {
@@ -623,19 +552,9 @@ struct WorldPartitionUpdateSystem
     }
 
     std::optional<WorldPartitionRuntime>& Partition;
-    std::optional<AsyncZoneLoader>& Loader;
-    RuntimeWorld& Runtime;
-    // For the session's role. Held as the engine rather than as a session
-    // because a session is created and destroyed by console command at
-    // runtime, so there is no stable reference to one.
-    Engine* Owner = nullptr;
     // Owned by the physics step, which is where characters live. Null in a
     // configuration with no physics, where the transform is all there is.
     CharacterMoverPool* Movers = nullptr;
-    NetOwnedFocus PeerFocus;
-    NetGrantedResidency GrantedZones;
-    // Reused rather than rebuilt: the manifest's zone list, once a frame.
-    std::vector<ZoneId> StreamedZones;
     // Set by streaming on the wall clock, consumed by the next fixed tick.
     std::optional<Vec3d> PendingSafePosition;
 };
@@ -1547,10 +1466,15 @@ void TemplateGame::OnStart(GameStartupContext&)
         },
     });
 
+    // A dedicated host has nobody at a keyboard, so it is told how to serve
+    // rather than how to play.
     std::printf("Sencha game template\n");
     std::printf("  Load a map: +map levels/<name>\n");
     std::printf("  Load a world: +world <name>\n");
-    std::printf("  Right mouse: look | WASD: move | Space: jump\n");
+    if (GetEngine().Config().Runtime.HasLocalPlayer)
+        std::printf("  Right mouse: look | WASD: move | Space: jump\n");
+    else
+        std::printf("  Host a session: +host [port] | see net_status, net_zones\n");
 }
 
 ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
@@ -1905,6 +1829,11 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
     if (focus.IsValid() && zoneExists(focus))
         Partition->SetFocus(focus);
 
+    // Handed over once. From here the engine keeps the world loaded around
+    // whoever this machine drives and, in a session, around every connected
+    // player -- and offers each peer only its own neighbourhood.
+    engine.SetWorldStreaming(&*Partition, &*ZoneLoader);
+
     result.Info("loading world '" + std::string(worldName) + "'");
     return result;
 }
@@ -2140,11 +2069,7 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     }
 
     WorldPartitionUpdateSystem& partitionUpdate =
-        ctx.Schedule.Register<WorldPartitionUpdateSystem>(
-            Partition,
-            ZoneLoader,
-            GetEngine().World());
-    partitionUpdate.Owner = &GetEngine();
+        ctx.Schedule.Register<WorldPartitionUpdateSystem>(Partition);
     if (PhysicsStepSystem* step = ctx.Schedule.Get<PhysicsStepSystem>())
         partitionUpdate.Movers = &step->GetCharacterMovers();
 #ifdef SENCHA_ENABLE_COOK
@@ -2241,6 +2166,8 @@ void TemplateGame::OnShutdown(GameShutdownContext&)
     }
 
     PlayZoneActive = false;
+    // Before the runtime it points at goes.
+    GetEngine().SetWorldStreaming(nullptr, nullptr);
     Partition.reset();
     ZoneLoader.reset();
     SceneContext.reset();

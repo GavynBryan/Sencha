@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "entities": [
+    {
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              16,
+              -16,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "StaticMesh": {
+          "mesh": {
+            "id": "84feb7ced664ebf9",
+            "path": "asset://levels/_world-generations/traversal3/00dc63f8e9f7969a/fdc8222b5ed72539/cell_1_-1_0.smesh"
+          },
+          "materials": [
+            {
+              "id": "3654820ec38aab53",
+              "path": "asset://materials/dev/gray.smat"
+            }
+          ],
+          "visible": true,
+          "layer_mask": 4294967295,
+          "section_mask": 4294967295
+        }
+      }
+    }
+  ],
+  "hierarchy": []
+}
