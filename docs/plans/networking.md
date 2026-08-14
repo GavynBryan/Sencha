@@ -1888,10 +1888,17 @@ things this pass landed.
   Not all three, which is scoped relevance doing its job across two real
   processes.
 
-  The authored world is tracked; its cooked form is not (`template/.gitignore`
-  excludes `.cooked/`), so a live run is two commands: generate, then host. An
-  automated two-process traversal is a separate decision, because a test cannot
-  depend on generated content CI does not have.
+  The authored world is tracked; its cooked form is not, like every other cook
+  output. A live run is two commands -- cook, then host:
+
+  ```
+  SENCHA_TRAVERSAL_ROOT=template/assets \
+    ./build/test/level_cook_tests --gtest_filter=TraversalWorld.Generate
+  cd template && ../build/app/app --game build/game.so +world traversal3 +host
+  ```
+
+  An automated two-process traversal is a separate decision, because a test
+  cannot depend on generated content CI does not have.
 
   **Zone baselines: not built, and the reason is a measurement.** The
   optimization is that both machines loaded the same cooked zone, so a grant
