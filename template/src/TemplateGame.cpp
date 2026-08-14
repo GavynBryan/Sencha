@@ -1117,7 +1117,13 @@ void TemplateGame::OnStart(GameStartupContext&)
         // ownership are the engine's to install; this is content.
         world.AddComponent<NetSpawnRecipe>(
             pawn, NetSpawnRecipe{ .Id = kPlayerPawnRecipe });
-        log.Info("TemplateGame: spawned a pawn for peer {}", peer);
+        // Named rather than numbered for the one with no peer behind it. Peer
+        // zero is the authority, so "a pawn for peer 0" describes the person at
+        // this machine as a connection that does not exist.
+        if (peer == kNetAuthorityPeer)
+            log.Info("TemplateGame: spawned a pawn for the player at this machine");
+        else
+            log.Info("TemplateGame: spawned a pawn for peer {}", peer);
         return pawn;
     };
 
