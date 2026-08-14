@@ -72,17 +72,28 @@ TEST(NetPlayer, AdmittingAPeerTwiceIsTheSameParticipant)
     EXPECT_EQ(NetAdmitPlayer(fixture.Entities, PeerId{ 1 }), first);
 }
 
-// A participant with no peer behind it: a player standing alone, or a bot. It
-// reads this machine's own devices rather than a slot nothing will ever fill.
-TEST(NetPlayer, AParticipantWithNoPeerReadsTheLocalSource)
+// Having no peer does not mean reading this machine's devices. Only the person
+// sitting here does that; a bot or a script has no peer either, and handing them
+// the local source is how a host ends up watching their own keys drive somebody
+// else.
+TEST(NetPlayer, OnlyTheParticipantAtThisMachineReadsTheLocalSource)
 {
     PlayerWorld fixture;
 
-    const EntityId player = NetAdmitPlayer(fixture.Entities, PeerId{});
+    const EntityId me = NetAdmitPlayer(fixture.Entities, PeerId{},
+                                       NetParticipantPresence::Local);
+    const EntityId bot = NetAdmitPlayer(fixture.Entities, PeerId{},
+                                        NetParticipantPresence::Simulated);
 
-    ASSERT_TRUE(player.IsValid());
-    EXPECT_EQ(fixture.ControlOf(player).Source, kLocalInputActionSource);
-    EXPECT_EQ(fixture.Entities.TryGet<NetPlayer>(player)->Peer, kNetAuthorityPeer);
+    ASSERT_TRUE(me.IsValid());
+    ASSERT_TRUE(bot.IsValid());
+    EXPECT_EQ(fixture.ControlOf(me).Source, kLocalInputActionSource);
+    EXPECT_NE(fixture.ControlOf(bot).Source, kLocalInputActionSource);
+
+    // Both record the authority, which is why the peer number cannot be what
+    // tells them apart.
+    EXPECT_EQ(fixture.Entities.TryGet<NetPlayer>(me)->Peer, kNetAuthorityPeer);
+    EXPECT_EQ(fixture.Entities.TryGet<NetPlayer>(bot)->Peer, kNetAuthorityPeer);
 }
 
 // The whole reason the player exists: dying does not remove somebody from the

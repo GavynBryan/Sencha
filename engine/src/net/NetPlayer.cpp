@@ -105,10 +105,24 @@ EntityId NetAdmitPlayer(World& world, PeerId peer,
         NetPlayer{ .Peer = peer.IsValid() ? peer.Value : kNetAuthorityPeer });
 
     NetPlayerControl control;
-    // A participant with no peer reads this machine's own devices; one with a
-    // peer reads the slot its commands land in.
-    control.Source = peer.IsValid() ? NetSourceForPeer(world, peer)
-                                    : kLocalInputActionSource;
+    // Where this participant's input comes from, which follows what it is rather
+    // than whether it has a peer.
+    //
+    // Only the person at this machine reads the devices on this desk. A peer
+    // reads the slot its commands land in, and anything else driven here -- a
+    // bot, a script, a cutscene -- gets an id of its own. Choosing on the peer
+    // alone handed the local devices to every one of those, which is the
+    // crossed-keys defect: a host running one bot would watch it steer off the
+    // keyboard in front of them.
+    if (peer.IsValid())
+        control.Source = NetSourceForPeer(world, peer);
+    else if (presence == NetParticipantPresence::Local)
+        control.Source = kLocalInputActionSource;
+    else
+        control.Source = (world.HasResource<InputActionSourceIds>()
+                              ? world.GetResource<InputActionSourceIds>()
+                              : world.AddResource<InputActionSourceIds>())
+                             .Allocate();
     world.AddComponent<NetPlayerControl>(player, control);
 
     if (presence == NetParticipantPresence::Local

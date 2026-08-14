@@ -266,6 +266,43 @@ TEST(NetParticipant, ASimulatedParticipantWithNoPeerDoesNotTakeLocalControl)
     EXPECT_FALSE(LocalControlSubjectOf(fixture.Entities).IsValid())
         << "a bot took the camera off the person at this machine";
     EXPECT_FALSE(NetLocalPlayerOf(fixture.Entities).IsValid());
+
+    // And it does not read the devices on this desk either. Not taking the
+    // camera is the visible half; this is the half that decides whether the
+    // person hosting watches their own keys drive somebody else.
+    EXPECT_NE(fixture.ControlOf(bot).Source, kLocalInputActionSource)
+        << "a bot steers off the keyboard in front of the host";
+    EXPECT_EQ(fixture.Entities.TryGet<InputActionSourceRef>(
+                  fixture.ControlOf(bot).Body)->Source,
+              fixture.ControlOf(bot).Source);
+}
+
+// Three kinds of participant, three different places their input comes from.
+// The one that had no id of its own is the one a bot needs.
+TEST(NetParticipant, EachKindOfParticipantReadsItsOwnSource)
+{
+    ParticipantWorld fixture;
+    fixture.ProvideBodies();
+
+    const EntityId me =
+        NetAdmitParticipant(fixture.Entities, PeerId{}, fixture.Policies,
+                            NetParticipantPresence::Local);
+    const EntityId peer =
+        NetAdmitParticipant(fixture.Entities, PeerId{ 1 }, fixture.Policies);
+    const EntityId bot =
+        NetAdmitParticipant(fixture.Entities, PeerId{}, fixture.Policies,
+                            NetParticipantPresence::Simulated);
+
+    const InputActionSourceId mine = fixture.ControlOf(me).Source;
+    const InputActionSourceId theirs = fixture.ControlOf(peer).Source;
+    const InputActionSourceId botSource = fixture.ControlOf(bot).Source;
+
+    EXPECT_EQ(mine, kLocalInputActionSource)
+        << "the person at this machine stopped reading its devices";
+    EXPECT_EQ(theirs, NetFindSourceForPeer(fixture.Entities, PeerId{ 1 }));
+    EXPECT_NE(botSource, mine);
+    EXPECT_NE(botSource, theirs)
+        << "a bot and a peer were handed the same source";
 }
 
 // Two would be two cameras and two sets of look input on one machine. Peerless
