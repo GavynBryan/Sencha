@@ -15,6 +15,8 @@
 #include <net/ReplicationChangeStore.h>
 #include <net/ReplicationSchemas.h>
 #include <net/ReplicationSnapshot.h>
+#include <world/identity/PersistentEntityIndex.h>
+#include <world/identity/PersistentIdComponent.h>
 #include <world/transform/TransformHistory.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
@@ -128,7 +130,12 @@ namespace
             // what a peer has confirmed, and a harness that never confirmed
             // would be testing a peer that never answers -- which has its own
             // test below.
-            if (Acknowledge)
+            // Complete rather than Ok, for the reason ReplicationRuntime uses
+            // the same predicate: a snapshot that deferred an authored entity
+            // left a consistent world and still did not land everything it
+            // described, and confirming it would raise a floor past state the
+            // client does not hold.
+            if (Acknowledge && LastApply.Complete())
             {
                 ClientAck.Observe(LastApply.Sequence);
                 Peer.Acknowledge(ClientAck);
@@ -958,10 +965,10 @@ TEST(ReplicationPrediction, ARecipeWrittenLocalFieldSurvivesSnapshotsAndReconcil
                                                         .Generation = 2 } };
 
     NetSpawnRecipes recipes;
-    recipes.Register(7, [local](World& world, EntityId entity) {
+    ASSERT_TRUE(recipes.Register(7, [local](World& world, EntityId entity) {
         if (CharacterMovement* movement = world.TryGet<CharacterMovement>(entity))
             movement->Profile = local;
-    });
+    }));
 
     const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
     pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 7 });
@@ -1256,11 +1263,11 @@ TEST(ReplicationVisibility, ARecipeCompletesTheEntityOnArrival)
     // proven by the counter rather than by a duplicate add bringing the process
     // down. A test that detects a regression by crashing reports it as no
     // output at all, which is easy to misread as passing.
-    recipes.Register(7, [&built](World& world, EntityId entity) {
+    ASSERT_TRUE(recipes.Register(7, [&built](World& world, EntityId entity) {
         ++built;
         if (!world.HasComponent<WorldTransformHistory>(entity))
             world.AddComponent<WorldTransformHistory>(entity, WorldTransformHistory{});
-    });
+    }));
 
     const EntityId authority = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
     pair.Authority.AddComponent<NetSpawnRecipe>(authority, NetSpawnRecipe{ .Id = 7 });
@@ -1291,6 +1298,9 @@ TEST(ReplicationVisibility, AnUnknownRecipeIsCountedNotFatal)
 
     EXPECT_TRUE(pair.LastApply.Ok());
     EXPECT_EQ(pair.LastApply.RecipesMissing, 1u);
+    // Which recipe, not just how many: the count alone does not shorten the
+    // search for a body that is in the right place and invisible.
+    EXPECT_EQ(pair.LastApply.FirstMissingRecipe, 99);
     EXPECT_TRUE(pair.Mirror(authority).IsValid())
         << "the entity still exists with the state it was sent";
 }
@@ -1357,6 +1367,7 @@ TEST(ReplicationSnapshotHostile, AnUnknownComponentKeyIsRefused)
     writer.WriteBits(0, Wire::CountBits);    // nothing destroyed
     writer.WriteBits(1, Wire::CountBits);    // one entity
     writer.WriteVarUInt(1);                  // its identity
+    writer.WriteBits(0, Wire::AuthoredPresentBits);  // not an authored entity
     writer.WriteBits(1, Wire::ComponentCountBits);
     writer.WriteBits(0xFE, Wire::ComponentIndexBits);  // a key this build lacks
 
@@ -1946,4 +1957,602 @@ TEST(ReplicationBudget, TheSameSimulationProducesTheSameStreamTwice)
     ASSERT_EQ(first.size(), second.size());
     for (std::size_t i = 0; i < first.size(); ++i)
         EXPECT_EQ(first[i], second[i]) << "snapshot " << i << " differed";
+}
+
+//=============================================================================
+// A refused snapshot changes nothing
+//
+// The applier reads a snapshot whole before it writes any of it, so a
+// truncation or a corruption anywhere in the body is discovered with the world
+// and the identity map untouched. That is the property the two passes exist
+// for, and it is checked by mutilating a snapshot known to be good and then
+// comparing the client against what it was.
+//
+// Each case gets a fixture of its own. A snapshot that survives being mutilated
+// is still a snapshot: it applies, and it leaves a client that is no longer the
+// one the next case is supposed to start from.
+//=============================================================================
+
+namespace
+{
+    // Everything an apply is allowed to change, in a form two of which can be
+    // compared. Keyed by the identity that named each entity, because a local
+    // handle only means something beside one.
+    struct ClientState
+    {
+        struct Entity
+        {
+            std::uint64_t Id = 0;
+            bool Alive = false;
+            std::vector<std::pair<std::uint32_t, std::vector<std::byte>>> Components;
+
+            bool operator==(const Entity&) const = default;
+        };
+        std::vector<Entity> Entities;
+
+        bool operator==(const ClientState&) const = default;
+    };
+
+    ClientState CaptureClient(const Pair& pair)
+    {
+        ClientState state;
+        for (const auto& [id, entity] : pair.ClientIdentity.All())
+        {
+            ClientState::Entity captured;
+            captured.Id = id.Value;
+            captured.Alive = pair.Client.IsAlive(entity);
+            if (captured.Alive)
+            {
+                for (const ReplicatedComponent& component : pair.Layout.Components())
+                {
+                    if (!pair.Client.IsRegistered(component.Type))
+                        continue;
+                    const ComponentId column =
+                        pair.Client.GetComponentIdByType(component.Type);
+                    if (!pair.Client.HasComponent(entity, column))
+                        continue;
+                    const auto* bytes = static_cast<const std::byte*>(
+                        pair.Client.GetComponentRaw(entity, column));
+                    captured.Components.emplace_back(
+                        component.Type.Value,
+                        std::vector<std::byte>(bytes, bytes + component.Size));
+                }
+            }
+            state.Entities.push_back(std::move(captured));
+        }
+        std::sort(state.Entities.begin(), state.Entities.end(),
+                  [](const ClientState::Entity& a, const ClientState::Entity& b) {
+                      return a.Id < b.Id;
+                  });
+        return state;
+    }
+
+    // Applies bytes without the harness's own expectations, because these tests
+    // are about snapshots that are meant to be refused.
+    SnapshotApplyResult ApplyRaw(Pair& pair, std::span<const std::byte> bytes,
+                                 ReplicationInterpolation* interpolation = nullptr)
+    {
+        SnapshotApplyRequest apply;
+        apply.Target = &pair.Client;
+        apply.Schema = &pair.Schema;
+        apply.Layout = &pair.Layout;
+        apply.Identity = &pair.ClientIdentity;
+        apply.Interpolation = interpolation;
+        return ReplicationApplySnapshot(apply, bytes);
+    }
+
+    // A client holding several entities, and one more snapshot describing
+    // updates and a spawn together -- so a partial apply would have something
+    // to damage. Deterministic, so every fixture reaches the same state.
+    std::vector<std::byte> BusySnapshot(Pair& pair)
+    {
+        std::vector<EntityId> spawned;
+        for (int i = 0; i < 4; ++i)
+            spawned.push_back(pair.SpawnReplicated(PoseAt(float(i), 0.0f, 0.0f)));
+        pair.Replicate();
+
+        for (const EntityId entity : spawned)
+        {
+            if (LocalTransform* pose = pair.Authority.TryGet<LocalTransform>(entity))
+                pose->Value.Position.X += 1.0f;
+        }
+        (void)pair.SpawnReplicated(PoseAt(9.0f, 9.0f, 9.0f));
+
+        ++pair.Tick;
+        pair.Changes.Update(pair.Authority, pair.Layout, pair.Identity,
+                            ++pair.Generation);
+        SnapshotWriteRequest write;
+        write.Changes = &pair.Changes;
+        write.Layout = &pair.Layout;
+        write.Peer = &pair.Peer;
+        write.Tick = pair.Tick;
+        write.Sequence = pair.Peer.NextSnapshotSequence();
+        const SnapshotWriteResult result = ReplicationWriteSnapshot(
+            write, std::span(pair.Scratch).subspan(0, pair.Budget));
+        EXPECT_TRUE(result.Ok);
+        return std::vector<std::byte>(pair.Scratch.begin(),
+                                      pair.Scratch.begin() + result.BytesWritten);
+    }
+}
+
+TEST(ReplicationSnapshotAtomicity, NoTruncationLeavesTheWorldPartlyChanged)
+{
+    Pair reference;
+    const std::vector<std::byte> whole = BusySnapshot(reference);
+    ASSERT_GT(whole.size(), 8u);
+    const ClientState before = CaptureClient(reference);
+
+    for (std::size_t cut = 0; cut < whole.size(); ++cut)
+    {
+        Pair pair;
+        const std::vector<std::byte> again = BusySnapshot(pair);
+        ASSERT_EQ(again, whole) << "the fixture is not reproducible";
+        ASSERT_EQ(CaptureClient(pair), before);
+
+        const SnapshotApplyResult applied =
+            ApplyRaw(pair, std::span(whole).subspan(0, cut));
+        if (applied.Ok())
+            continue;  // a prefix that happened to be a whole smaller snapshot
+
+        EXPECT_EQ(CaptureClient(pair), before)
+            << "truncating at byte " << cut << " changed the client anyway";
+    }
+}
+
+// The pose buffer is state a refused apply can damage as surely as the world is,
+// and it is easier to damage: a mirrored pose is staged against what the
+// authority last said, so reading the shadow at all used to be enough to begin
+// tracking an entity the snapshot then turned out not to describe. Tracking is
+// reachable through Commit alone now, which runs only in the pass that cannot
+// fail -- this is that shape asserted rather than assumed.
+TEST(ReplicationSnapshotAtomicity, NoTruncationLeavesAPoseTrackBehind)
+{
+    Pair reference;
+    const std::vector<std::byte> whole = BusySnapshot(reference);
+    ASSERT_GT(whole.size(), 8u);
+
+    for (std::size_t cut = 0; cut < whole.size(); ++cut)
+    {
+        Pair pair;
+        const std::vector<std::byte> again = BusySnapshot(pair);
+        ASSERT_EQ(again, whole) << "the fixture is not reproducible";
+
+        ReplicationInterpolation interpolation;
+        ASSERT_EQ(interpolation.TrackedCount(), 0u);
+
+        const SnapshotApplyResult applied =
+            ApplyRaw(pair, std::span(whole).subspan(0, cut), &interpolation);
+        if (applied.Ok())
+            continue;  // a prefix that happened to be a whole smaller snapshot
+
+        EXPECT_EQ(interpolation.TrackedCount(), 0u)
+            << "truncating at byte " << cut << " left a track for an entity the "
+               "snapshot never went on to describe";
+    }
+}
+
+TEST(ReplicationSnapshotAtomicity, NoMutationLeavesTheWorldPartlyChanged)
+{
+    Pair reference;
+    const std::vector<std::byte> whole = BusySnapshot(reference);
+    const ClientState before = CaptureClient(reference);
+
+    for (std::size_t i = 0; i < whole.size(); ++i)
+    {
+        for (int bit = 0; bit < 8; ++bit)
+        {
+            std::vector<std::byte> mutated = whole;
+            mutated[i] ^= static_cast<std::byte>(1u << bit);
+
+            Pair pair;
+            (void)BusySnapshot(pair);
+
+            const SnapshotApplyResult applied = ApplyRaw(pair, mutated);
+            if (applied.Ok())
+                continue;  // a flip the format tolerates; it described some
+                           // other valid world, which is not this test's business
+
+            EXPECT_EQ(CaptureClient(pair), before)
+                << "flipping bit " << bit << " of byte " << i
+                << " changed the client anyway";
+        }
+    }
+}
+
+//=============================================================================
+// A component that goes away
+//
+// Removing a component is an ordinary thing to do to an entity, and until the
+// wire could say it, doing so on a replicated entity meant every client that
+// had been shown the component kept it -- and, worse, a client joining later
+// was sent it, because a fresh floor owes whatever the store still holds.
+//=============================================================================
+
+TEST(ReplicationRemoval, ARemovedComponentLeavesTheClient)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 3 });
+    pair.Replicate(3);
+
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+    ASSERT_NE(pair.Client.TryGet<NetOwner>(mirror), nullptr);
+
+    pair.Authority.RemoveComponent<NetOwner>(authority);
+    pair.Replicate(3);
+
+    EXPECT_EQ(pair.LastApply.ComponentsRemoved, 1u);
+    EXPECT_EQ(pair.Client.TryGet<NetOwner>(mirror), nullptr)
+        << "the client kept a component the authority no longer has";
+    EXPECT_NE(pair.Client.TryGet<LocalTransform>(mirror), nullptr)
+        << "removing one component took another with it";
+}
+
+// The case that made this worth building rather than documenting. A peer that
+// joins after the removal has a floor of zero, so everything the store holds is
+// owed to it -- and what the store held was the component's last bytes.
+TEST(ReplicationRemoval, APeerJoiningAfterwardsIsNeverSentIt)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(2.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 1 });
+    pair.Replicate(1);
+    pair.Authority.RemoveComponent<NetOwner>(authority);
+    pair.Replicate(1);
+
+    // A second client, hearing about this world for the first time.
+    World latecomer;
+    pair.Schema.Apply(latecomer);
+    ReplicationClientIdentity latecomerIdentity;
+    ReplicationPeerState fresh;
+
+    ++pair.Tick;
+    pair.Changes.Update(pair.Authority, pair.Layout, pair.Identity, ++pair.Generation);
+    SnapshotWriteRequest write;
+    write.Changes = &pair.Changes;
+    write.Layout = &pair.Layout;
+    write.Peer = &fresh;
+    write.Tick = pair.Tick;
+    write.Sequence = fresh.NextSnapshotSequence();
+    const SnapshotWriteResult written = ReplicationWriteSnapshot(
+        write, std::span(pair.Scratch).subspan(0, pair.Budget));
+    ASSERT_TRUE(written.Ok);
+
+    SnapshotApplyRequest apply;
+    apply.Target = &latecomer;
+    apply.Schema = &pair.Schema;
+    apply.Layout = &pair.Layout;
+    apply.Identity = &latecomerIdentity;
+    const SnapshotApplyResult applied = ReplicationApplySnapshot(
+        apply, std::span(pair.Scratch).subspan(0, written.BytesWritten));
+    ASSERT_TRUE(applied.Ok()) << SnapshotApplyErrorToString(applied.Error);
+
+    const NetEntityId id = pair.Identity.TryFind(authority);
+    const EntityId seeded = latecomerIdentity.TryResolve(id);
+    ASSERT_TRUE(seeded.IsValid());
+    EXPECT_EQ(latecomer.TryGet<NetOwner>(seeded), nullptr)
+        << "a peer that never saw the component was sent it anyway";
+    EXPECT_NE(latecomer.TryGet<LocalTransform>(seeded), nullptr);
+}
+
+// Removals are owed until confirmed, exactly as destroys are: a lost snapshot
+// must not be the only time the news travelled.
+TEST(ReplicationRemoval, ARemovalIsResentUntilThePeerConfirmsIt)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(3.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 2 });
+    pair.Replicate(2);
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_NE(pair.Client.TryGet<NetOwner>(mirror), nullptr);
+
+    // The snapshot carrying the removal never arrives.
+    pair.Authority.RemoveComponent<NetOwner>(authority);
+    pair.Deliver = false;
+    pair.Replicate(2);
+    pair.Deliver = true;
+    EXPECT_NE(pair.Client.TryGet<NetOwner>(mirror), nullptr);
+
+    pair.Replicate(2);
+    EXPECT_EQ(pair.Client.TryGet<NetOwner>(mirror), nullptr)
+        << "the removal was said once, into a snapshot that was lost";
+}
+
+TEST(ReplicationRemoval, RemovingAndAddingBackConverges)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(4.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 5 });
+    pair.Replicate(5);
+
+    pair.Authority.RemoveComponent<NetOwner>(authority);
+    pair.Replicate(5);
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_EQ(pair.Client.TryGet<NetOwner>(mirror), nullptr);
+
+    pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 9 });
+    pair.Replicate(9);
+
+    const NetOwner* owner = pair.Client.TryGet<NetOwner>(mirror);
+    ASSERT_NE(owner, nullptr) << "the component came back and the client missed it";
+    EXPECT_EQ(owner->Peer, 9u);
+}
+
+// A removal for something the client never had describes a state it is already
+// in, so it is not an error and not counted.
+TEST(ReplicationRemoval, ARemovalForAComponentNeverHeldIsNotAnError)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(5.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 6 });
+    pair.Replicate(6);
+
+    // Removed before the peer below is ever told the entity exists.
+    pair.Authority.RemoveComponent<NetOwner>(authority);
+
+    World latecomer;
+    pair.Schema.Apply(latecomer);
+    ReplicationClientIdentity latecomerIdentity;
+    ReplicationPeerState fresh;
+
+    ++pair.Tick;
+    pair.Changes.Update(pair.Authority, pair.Layout, pair.Identity, ++pair.Generation);
+    SnapshotWriteRequest write;
+    write.Changes = &pair.Changes;
+    write.Layout = &pair.Layout;
+    write.Peer = &fresh;
+    write.Tick = pair.Tick;
+    write.Sequence = fresh.NextSnapshotSequence();
+    const SnapshotWriteResult written = ReplicationWriteSnapshot(
+        write, std::span(pair.Scratch).subspan(0, pair.Budget));
+    ASSERT_TRUE(written.Ok);
+
+    SnapshotApplyRequest apply;
+    apply.Target = &latecomer;
+    apply.Schema = &pair.Schema;
+    apply.Layout = &pair.Layout;
+    apply.Identity = &latecomerIdentity;
+    const SnapshotApplyResult applied = ReplicationApplySnapshot(
+        apply, std::span(pair.Scratch).subspan(0, written.BytesWritten));
+    EXPECT_TRUE(applied.Ok()) << SnapshotApplyErrorToString(applied.Error);
+    EXPECT_EQ(applied.ComponentsRemoved, 0u)
+        << "counted a removal of something that was never there";
+}
+
+//=============================================================================
+// Authored entities
+//
+// A door in a level exists on both machines because both loaded the level, not
+// because one told the other. Their runtime handles differ and their authored
+// identities do not, so a snapshot that says nothing about the authored one
+// leaves a client building a second door beside the one it already had --
+// bare, in the wrong partition, and indistinguishable to everything holding a
+// handle on either.
+//=============================================================================
+
+namespace
+{
+    // Puts an entity in a world under an authored identity, the way a level
+    // load does: the component registers it in the index through its own
+    // lifecycle hook.
+    EntityId Author(World& world, PersistentEntityId id, const Transform3f& pose)
+    {
+        const EntityId entity = world.CreateEntity();
+        world.AddComponent<PersistentIdComponent>(entity, PersistentIdComponent{ id });
+        world.AddComponent<LocalTransform>(entity, LocalTransform{ pose });
+        return entity;
+    }
+}
+
+TEST(ReplicationAuthored, AClientRecognisesItsOwnCopyInsteadOfBuildingASecond)
+{
+    Pair pair;
+    pair.Authority.AddResource<PersistentEntityIndex>();
+    pair.Client.AddResource<PersistentEntityIndex>();
+
+    const PersistentEntityId door{ 4242 };
+    const EntityId authority = Author(pair.Authority, door, PoseAt(3.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetReplicated>(authority);
+    // The client loaded the same level, so it already has one.
+    const EntityId local = Author(pair.Client, door, PoseAt(3.0f, 0.0f, 0.0f));
+
+    pair.Replicate();
+
+    EXPECT_EQ(pair.LastApply.AuthoredBound, 1u);
+    EXPECT_EQ(pair.LastApply.EntitiesSpawned, 0u)
+        << "the client built a second copy of an entity it already had";
+    EXPECT_EQ(pair.Mirror(authority), local)
+        << "the wire identity did not land on the client's own copy";
+    EXPECT_NE(pair.Client.TryGet<PersistentIdComponent>(local), nullptr)
+        << "binding took the authored identity off the entity";
+}
+
+TEST(ReplicationAuthored, AuthoredStateFollowsOntoTheClientsOwnCopy)
+{
+    Pair pair;
+    pair.Authority.AddResource<PersistentEntityIndex>();
+    pair.Client.AddResource<PersistentEntityIndex>();
+
+    const PersistentEntityId lift{ 77 };
+    const EntityId authority = Author(pair.Authority, lift, PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetReplicated>(authority);
+    const EntityId local = Author(pair.Client, lift, PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    if (LocalTransform* pose = pair.Authority.TryGet<LocalTransform>(authority))
+        pose->Value.Position.Y += 4.0f;
+    pair.Replicate();
+
+    const LocalTransform* moved = pair.Client.TryGet<LocalTransform>(local);
+    ASSERT_NE(moved, nullptr);
+    EXPECT_NEAR(moved->Value.Position.Y, 4.0f, kWirePosition);
+}
+
+// The client is admitted before it loads the map, so a snapshot naming an
+// authored entity can arrive first. Building one then is the duplicate this
+// exists to prevent, so the record is read and dropped -- and because nothing
+// about it is recorded as confirmed, it comes back.
+TEST(ReplicationAuthored, AnEntityNamedBeforeTheLevelLoadsIsDeferredNotDuplicated)
+{
+    Pair pair;
+    pair.Authority.AddResource<PersistentEntityIndex>();
+    pair.Client.AddResource<PersistentEntityIndex>();
+
+    const PersistentEntityId gate{ 9001 };
+    const EntityId authority = Author(pair.Authority, gate, PoseAt(2.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetReplicated>(authority);
+
+    // The client has not loaded the level yet.
+    pair.Replicate();
+    EXPECT_EQ(pair.LastApply.AuthoredDeferred, 1u);
+    EXPECT_EQ(pair.LastApply.EntitiesSpawned, 0u)
+        << "an entity arrived before its level and was built anyway";
+    EXPECT_FALSE(pair.Mirror(authority).IsValid());
+
+    // The level loads.
+    const EntityId local = Author(pair.Client, gate, PoseAt(2.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    EXPECT_EQ(pair.LastApply.AuthoredBound, 1u);
+    EXPECT_EQ(pair.Mirror(authority), local);
+}
+
+// A runtime spawn has no authored identity and must keep behaving exactly as
+// it did: the wire creates it, because nothing else will.
+TEST(ReplicationAuthored, ADynamicEntityIsStillCreatedByTheWire)
+{
+    Pair pair;
+    pair.Authority.AddResource<PersistentEntityIndex>();
+    pair.Client.AddResource<PersistentEntityIndex>();
+
+    const EntityId authority = pair.SpawnReplicated(PoseAt(5.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    EXPECT_EQ(pair.LastApply.EntitiesSpawned, 1u);
+    EXPECT_EQ(pair.LastApply.AuthoredBound, 0u);
+    EXPECT_EQ(pair.LastApply.AuthoredDeferred, 0u);
+    EXPECT_TRUE(pair.Mirror(authority).IsValid());
+}
+
+// A world with no index at all -- every test world before this, and every
+// single-player one -- must not start deferring entities it would have built.
+TEST(ReplicationAuthored, AWorldWithoutAnIndexIsUnaffected)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(6.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    EXPECT_EQ(pair.LastApply.EntitiesSpawned, 1u);
+    EXPECT_EQ(pair.LastApply.AuthoredDeferred, 0u);
+    EXPECT_TRUE(pair.Mirror(authority).IsValid());
+}
+
+//=============================================================================
+// Naming an entity across the wire
+//
+// Each side held one direction of the map, which is one direction short of
+// what a message needs. An authority could not answer "which of my entities is
+// this identity a peer just sent me", so it had no way to validate an object a
+// peer names; a client could not answer "what do I call the thing I am looking
+// at", so naming one meant walking every entry it had.
+//=============================================================================
+
+TEST(ReplicationIdentity, TheAuthorityResolvesAnIdentityItMinted)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    const NetEntityId id = pair.Identity.TryFind(authority);
+    ASSERT_TRUE(id.IsValid());
+    EXPECT_EQ(pair.Identity.TryResolve(id), authority);
+}
+
+TEST(ReplicationIdentity, TheAuthorityNamesNothingForAnIdentityItNeverMinted)
+{
+    Pair pair;
+    (void)pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    EXPECT_FALSE(pair.Identity.TryResolve(NetEntityId{ 9999 }).IsValid());
+    EXPECT_FALSE(pair.Identity.TryResolve(NetEntityId{}).IsValid());
+}
+
+// The case a message has to survive: a peer naming something that has since
+// died. Resolution stops as soon as the publish walk sweeps it.
+TEST(ReplicationIdentity, AnIdentityStopsResolvingOnceItsEntityIsGone)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+    pair.Replicate();
+    const NetEntityId id = pair.Identity.TryFind(authority);
+    ASSERT_TRUE(pair.Identity.TryResolve(id).IsValid());
+
+    pair.Authority.DestroyEntity(authority);
+    pair.Replicate();
+
+    EXPECT_FALSE(pair.Identity.TryResolve(id).IsValid())
+        << "an identity outlived the entity it named";
+}
+
+TEST(ReplicationIdentity, AClientNamesAnEntityReplicationGaveIt)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(2.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+
+    const NetEntityId named = pair.ClientIdentity.TryFind(mirror);
+    EXPECT_TRUE(named.IsValid());
+    EXPECT_EQ(named, pair.Identity.TryFind(authority))
+        << "the two sides disagree about what to call one entity";
+}
+
+// The security-relevant half. A client may only name what the authority gave
+// it, so its own local entities have no wire name at all -- otherwise a peer
+// could address something the authority has never heard of.
+TEST(ReplicationIdentity, AClientCannotNameAnEntityItMadeItself)
+{
+    Pair pair;
+    (void)pair.SpawnReplicated(PoseAt(3.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    const EntityId local = pair.Client.CreateEntity();
+    EXPECT_FALSE(pair.ClientIdentity.TryFind(local).IsValid());
+}
+
+TEST(ReplicationIdentity, AClientForgetsTheNameOfADestroyedEntity)
+{
+    Pair pair;
+    const EntityId authority = pair.SpawnReplicated(PoseAt(4.0f, 0.0f, 0.0f));
+    pair.Replicate();
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(pair.ClientIdentity.TryFind(mirror).IsValid());
+
+    pair.Authority.DestroyEntity(authority);
+    pair.Replicate();
+
+    EXPECT_FALSE(pair.ClientIdentity.TryFind(mirror).IsValid())
+        << "a name survived the entity it belonged to";
+}
+
+// Binding an identity onto a different entity -- which is what recognising an
+// authored copy does -- must not leave the old pairing behind in either
+// direction.
+TEST(ReplicationIdentity, RebindingAnIdentityLeavesNoStaleName)
+{
+    ReplicationClientIdentity identity;
+    const EntityId first{ 1, 1 };
+    const EntityId second{ 2, 1 };
+
+    identity.Bind(NetEntityId{ 7 }, first);
+    identity.Bind(NetEntityId{ 7 }, second);
+
+    EXPECT_EQ(identity.TryResolve(NetEntityId{ 7 }), second);
+    EXPECT_EQ(identity.TryFind(second), NetEntityId{ 7 });
+    EXPECT_FALSE(identity.TryFind(first).IsValid())
+        << "the entity the identity moved off still answers to it";
 }

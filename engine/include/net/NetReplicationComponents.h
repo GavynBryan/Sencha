@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/identity/StrongId.h>
+#include <core/metadata/Field.h>
 #include <ecs/ComponentTypeId.h>
 
 #include <cstdint>
@@ -46,6 +47,14 @@ SENCHA_DECLARE_COMPONENT_TYPE(NetReplicated, "sencha.net_replicated");
 // through the snapshot that carries this component, so it is in the replicated
 // table like any other data.
 //-----------------------------------------------------------------------------
+// No peer. PeerId mints from one, so zero can never name one, and an entity
+// nobody owns and an entity the authority owns are deliberately the same thing.
+//
+// Write this rather than removing the component. A snapshot carries values, and
+// a client reads the owner every tick to decide what it may be shown, so
+// "no longer yours" has to be a number rather than an absence.
+inline constexpr std::uint32_t kNetAuthorityPeer = 0;
+
 struct NetOwner
 {
     // Deliberately the raw peer number rather than PeerId: components are data,

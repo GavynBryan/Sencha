@@ -45,10 +45,40 @@ namespace
         return false;
     }
 
-    bool QuantizationIsUsable(const FieldQuantization& q)
+    // Whether the codec has a load and a store sized to this leaf. Integers are
+    // the only category whose declared width is not implied by its name: bool,
+    // float, and double each have exactly one, while every integral narrower
+    // than four bytes is described as the 32-bit category and kept at its own
+    // size.
+    bool WidthIsAddressable(FieldScalar scalar, std::size_t size)
+    {
+        switch (scalar)
+        {
+        case FieldScalar::Bool:   return size == sizeof(bool);
+        case FieldScalar::Int32:
+        case FieldScalar::UInt32: return size == 1 || size == 2 || size == 4;
+        case FieldScalar::Float:  return size == sizeof(float);
+        case FieldScalar::Double: return size == sizeof(double);
+        case FieldScalar::Color3:
+        case FieldScalar::Unsupported:
+            break;
+        }
+        return false;
+    }
+
+    bool QuantizationIsUsable(FieldScalar scalar, const FieldQuantization& q)
     {
         if (!q.IsQuantized())
             return true;
+        // Only a float has a range to quantize into, and only the float paths
+        // in the codec consult one. Refused here rather than ignored there:
+        // the sizer reserves the declared bits for anything that carries a
+        // range, so a range on an integer makes the planner and the writer
+        // disagree about the same field -- and at the moment a snapshot is
+        // filled to its budget, that disagreement is a peer that silently
+        // receives nothing at all.
+        if (scalar != FieldScalar::Float)
+            return false;
         // 32 bits is the ceiling because the encoder works in a 32-bit integer
         // domain; a range that is empty or not finite has no fixed-point form.
         return q.Bits <= 32
@@ -67,6 +97,8 @@ std::string_view ReplicationLayoutErrorToString(ReplicationLayoutError error)
     case ReplicationLayoutError::NoReplicatedFields:  return "no replicated fields";
     case ReplicationLayoutError::InvalidQuantization: return "invalid quantization range";
     case ReplicationLayoutError::TooManyFields:       return "too many replicated fields";
+    case ReplicationLayoutError::ContradictoryFieldPolicy:
+        return "owner-only and everyone-but-owner on one field";
     }
     return "unknown";
 }
@@ -102,8 +134,19 @@ bool ReplicationLayout::AddErased(ComponentTypeId type,
 
     for (const RuntimeField& field : fields)
     {
+        // Checked first because it subsumes the rest: a field that never leaves
+        // this machine cannot also be contradictory about who receives it, and
+        // an inherited LocalOnly landing on a member that named an audience of
+        // its own is a narrowing rather than a disagreement.
         if (field.LocalOnly)
             continue;
+
+        if (field.OwnerOnly && field.OwnerLocal)
+        {
+            Fail(ReplicationLayoutError::ContradictoryFieldPolicy,
+                 std::string(name) + "." + field.Name);
+            return false;
+        }
 
         if (!IsWireScalar(field.Scalar))
         {
@@ -111,7 +154,16 @@ bool ReplicationLayout::AddErased(ComponentTypeId type,
                  std::string(name) + "." + field.Name);
             return false;
         }
-        if (!QuantizationIsUsable(field.Quantization))
+
+        // A Color3 leaf is three floats the flattener collapsed into one entry;
+        // the wire treats it as the three floats it is. Resolved before
+        // anything is validated, so every check below asks about the scalar the
+        // codec will actually see rather than the one the schema wrote down.
+        const bool packedColor = field.Scalar == FieldScalar::Color3;
+        const FieldScalar wire = packedColor ? FieldScalar::Float : field.Scalar;
+        const std::size_t wireSize = packedColor ? sizeof(float) : field.Size;
+
+        if (!QuantizationIsUsable(wire, field.Quantization))
         {
             Fail(ReplicationLayoutError::InvalidQuantization,
                  std::string(name) + "." + field.Name);
@@ -121,21 +173,22 @@ bool ReplicationLayout::AddErased(ComponentTypeId type,
         ReplicatedField out;
         out.Name = field.Name;
         out.Offset = field.Offset;
-        out.Size = field.Size;
-        // A Color3 leaf is three floats the flattener collapsed into one entry;
-        // the wire treats it as the three floats it is.
-        out.Count = field.Scalar == FieldScalar::Color3
-                        ? std::uint8_t{ 3 }
-                        : field.Count;
-        out.Size = field.Scalar == FieldScalar::Color3 ? sizeof(float) : field.Size;
-        out.Scalar = field.Scalar == FieldScalar::Color3 ? FieldScalar::Float
-                                                        : field.Scalar;
+        out.Count = packedColor ? std::uint8_t{ 3 } : field.Count;
+        out.Size = wireSize;
+        out.Scalar = wire;
         out.Quantization = field.Quantization;
         out.OwnerOnly = field.OwnerOnly;
         out.OwnerLocal = field.OwnerLocal;
 
         assert(out.Offset + out.Count * out.Size <= size
                && "a replicated field runs past the end of its component");
+        // The width the codec will actually touch, which is not the same
+        // question as the one above: that one asks whether the field fits its
+        // component, this one asks whether the codec has an access sized to the
+        // field. Every integral narrower than four bytes lands in the 32-bit
+        // category, so the category cannot answer it.
+        assert(WidthIsAddressable(out.Scalar, out.Size)
+               && "a replicated field has a width the codec cannot address");
         component.Fields.push_back(std::move(out));
     }
 

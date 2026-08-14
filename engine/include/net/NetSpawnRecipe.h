@@ -45,8 +45,12 @@ inline constexpr NetSpawnRecipeId kNetNoSpawnRecipe = 0;
 
 //-----------------------------------------------------------------------------
 // The component that carries it. Replicated like any other data, so a spawn
-// needs no message of its own and a recipe that changes mid-life is simply a
-// value change.
+// needs no message of its own.
+//
+// Read once, when the entity first arrives: a recipe describes how to build
+// something, not what it currently is, and re-running one over a live entity
+// has no defined meaning against the components it already added. Changing the
+// id on a live entity therefore replicates the new value and builds nothing.
 //-----------------------------------------------------------------------------
 struct NetSpawnRecipe
 {
@@ -90,9 +94,19 @@ public:
     using Builder = std::function<void(World&, EntityId)>;
 
     // Ids are the game's to choose and must match on both ends, the same way
-    // the replicated component table must. Registering over an existing id
-    // replaces it, which is what a module reload wants.
-    void Register(NetSpawnRecipeId id, Builder build);
+    // the replicated component table must.
+    //
+    // False for an id that is already registered, for a null builder, and for
+    // zero, which names the absence of a recipe rather than one of them. A
+    // second claim on an id is refused rather than allowed to replace the
+    // first: two features that both picked seven would otherwise produce a
+    // build where one silently wears the other's presentation, and the symptom
+    // -- an entity whose state is right and whose appearance is not -- is
+    // nowhere near the registration that caused it.
+    //
+    // A module reload re-registers from Clear(), so replacement never needed to
+    // be the way an id changes hands.
+    [[nodiscard]] bool Register(NetSpawnRecipeId id, Builder build);
     void Clear() { Builders.clear(); }
 
     // Runs the recipe for `id`, if one is registered. A name this build does

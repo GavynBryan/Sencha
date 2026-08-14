@@ -2,6 +2,7 @@
 
 #include "PlayerStartComponent.h"
 #include "SpinComponent.h"
+#include "TurretMount.h"
 
 #include <abilities/AbilityKit.h>
 #include <app/DefaultRenderPipeline.h>
@@ -46,6 +47,7 @@
 #include <movement/MovementRegistration.h>
 #include <net/NetReplicationComponents.h>
 #include <net/NetSpawnRecipe.h>
+#include <net/NetOwnership.h>
 #include <net/NetSession.h>
 #include <net/PawnCommandCapture.h>
 #include <net/PeerCommandRuntime.h>
@@ -77,6 +79,7 @@
 #include <array>
 #include <cassert>
 #include <cmath>
+#include <numbers>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
@@ -319,6 +322,33 @@ void BuildPawnBody(
     ensure(LookOrientation{});
 }
 
+// A turret's body, on whichever machine has one. Far less than a pawn's,
+// because a turret is not simulated: it has a pose, it aims, and it is drawn.
+// Idempotent for the same reason BuildPawnBody is -- on a client this runs on
+// an entity replication has already given a transform and a mount.
+void BuildTurretBody(World& world, EntityId turret,
+                     const ResolvedPlayerAvatar& avatar)
+{
+    const auto ensure = [&world, turret]<typename T>(const T& value)
+    {
+        if (!world.HasComponent<T>(turret))
+            world.AddComponent<T>(turret, value);
+    };
+
+    // What its driver's aim lands in, and what TurretAimSystem reads.
+    ensure(LookOrientation{});
+    ensure(WorldTransformHistory{});
+    // Standing in for a model the template does not ship. A turret that cannot
+    // be seen would still work and would prove nothing to anybody running it.
+    if (avatar.IsValid())
+    {
+        ensure(StaticMeshComponent{
+            .Mesh = avatar.Mesh,
+            .Materials = avatar.Materials,
+        });
+    }
+}
+
 EntityId SpawnPawn(
     World& world,
     const Vec3d& spawnPosition,
@@ -328,32 +358,6 @@ EntityId SpawnPawn(
     const EntityId pawn = CreateTransformEntity(world, spawnPosition);
     BuildPawnBody(world, pawn, movementProfile, avatar);
     return pawn;
-}
-
-//=============================================================================
-// LocalPlayerPawn
-//
-// Which pawn this process's player drives. One record, written only by
-// AttachLocalPlayer, which is what makes "at most one" a fact rather than a
-// hope: two copies of this answer is how a body the player drives ends up
-// beside a second one the camera is riding.
-//
-// Holds the id without keeping it alive. A pawn that has been destroyed --
-// unloaded with its zone, or handed over to the authority on join -- reads back
-// as no pawn at all, so nothing has to remember to clear this.
-//=============================================================================
-struct LocalPlayerPawn
-{
-    EntityId Value;
-};
-
-// The pawn this process's player drives, or an invalid id when there is none.
-EntityId LocalPawnOf(const World& world)
-{
-    const LocalPlayerPawn* record = world.TryGetResource<LocalPlayerPawn>();
-    if (record == nullptr || !record->Value.IsValid() || !world.IsAlive(record->Value))
-        return EntityId{};
-    return record->Value;
 }
 
 //=============================================================================
@@ -379,29 +383,22 @@ void PublishPlayContent(World& world, std::optional<StoragePartitionId> partitio
         world.AddResource<PlayContentPartition>().Value = partition;
 }
 
-// Points this process's camera and local input at a pawn, and takes those away
-// from whatever held them before. Exactly one pawn per process drives the
-// player's view, and this transition is the only thing that decides which:
-// every path that provides a pawn comes through here.
+// Takes local control of a pawn and points this process's camera at it.
 //
-// Everything here is a presentation or input fact about this machine, which is
-// why none of it replicates.
-void AttachLocalPlayer(World& world, EntityId pawn, Logger& log)
+// Which entity this machine drives, the look control that follows from it, and
+// the prediction that follows from that are the engine's -- one call, so the
+// half that used to be forgotten cannot be. What is left here is the camera,
+// which is a presentation choice: first person, orbit, or spectator is not a
+// fact about the network.
+void AttachLocalPlayer(World& world, EntityId pawn, ClientPrediction* prediction,
+                       Logger& log)
 {
+    NetSetLocalControl(world, pawn, prediction);
+
     const Vec3d position =
         world.TryGet<LocalTransform>(pawn) != nullptr
             ? world.TryGet<LocalTransform>(pawn)->Value.Position
             : Vec3d{};
-
-    // Release the previous holder first. Leaving the tag behind would leave a
-    // second entity turning with the player's mouse and steering off the same
-    // input, one of which the camera is not on.
-    const EntityId previous = LocalPawnOf(world);
-    if (previous.IsValid() && previous != pawn
-        && world.HasComponent<LocalLookControl>(previous))
-    {
-        world.RemoveComponent<LocalLookControl>(previous);
-    }
 
     EntityId camera = FindFirstCamera(world, PersistentStoragePartition);
     if (!camera.IsValid())
@@ -411,10 +408,6 @@ void AttachLocalPlayer(World& world, EntityId pawn, Logger& log)
     }
     world.GetResource<ActiveCameraService>().SetActive(camera);
 
-    // The tag marks this as the entity the local player's look action turns.
-    if (!world.HasComponent<LocalLookControl>(pawn))
-        world.AddComponent<LocalLookControl>(pawn, {});
-
     CameraRig rig{};
     rig.Target = pawn;
     rig.Mode = CameraRigMode::FirstPerson;
@@ -422,11 +415,6 @@ void AttachLocalPlayer(World& world, EntityId pawn, Logger& log)
         *existing = rig;
     else
         world.AddComponent<CameraRig>(camera, rig);
-
-    if (LocalPlayerPawn* record = world.TryGetResource<LocalPlayerPawn>())
-        record->Value = pawn;
-    else
-        world.AddResource<LocalPlayerPawn>().Value = pawn;
 
     log.Info("TemplateGame: local player attached to its pawn");
 }
@@ -444,7 +432,9 @@ void SpawnPlayerAvatar(
 {
     const EntityId pawn = SpawnPawn(
         world, FindPlayerStart(world, spawnPartition), movementProfile, avatar);
-    AttachLocalPlayer(world, pawn, log);
+    // No prediction: this machine defines this pawn rather than guessing ahead
+    // of somebody else's answer about it.
+    AttachLocalPlayer(world, pawn, nullptr, log);
 }
 
 void ConfigureRuntimeResources(
@@ -499,50 +489,27 @@ void ConfigureRuntimeResources(
 
 struct WorldPartitionUpdateSystem
 {
-    WorldPartitionUpdateSystem(
-        std::optional<WorldPartitionRuntime>& partition,
-        std::optional<AsyncZoneLoader>& loader,
-        RuntimeWorld& runtimeWorld)
+    explicit WorldPartitionUpdateSystem(
+        std::optional<WorldPartitionRuntime>& partition)
         : Partition(partition)
-        , Loader(loader)
-        , Runtime(runtimeWorld)
     {
     }
 
     void FrameUpdate(FrameUpdateContext& ctx)
     {
-        if (!Partition || !Partition->HasManifest() || !Loader)
+        (void)ctx;
+        if (!Partition || !Partition->HasManifest())
             return;
 
-        World& world = ctx.Entities;
-        // Read rather than remembered: the pawn streaming follows is whichever
-        // one the player is driving now, and joining a session replaces it.
-        const EntityId pawn = LocalPawnOf(world);
-        if (pawn.IsValid())
-        {
-            if (const WorldTransform* transform =
-                    world.TryGet<WorldTransform>(pawn))
-            {
-                Partition->SetFocus(transform->Value.Position);
-            }
-            if (const CharacterController* controller =
-                    world.TryGet<CharacterController>(pawn))
-            {
-                Partition->SetFocusCapsule(
-                    controller->Radius,
-                    controller->Height);
-            }
-        }
-        Partition->Update(
-            ctx.WallDeltaSeconds,
-            *Loader,
-            Runtime);
-
-        // A crossing the destination is not ready for leaves the pawn where the
-        // sweep last had it fully inside the source zone. Streaming decides
-        // that here, on the wall clock, but moving the pawn is simulation, so
-        // the position is recorded and applied on the next fixed tick.
-        if (pawn.IsValid()
+        // Streaming itself is the engine's: it was handed this partition when
+        // the world loaded and drives it in the zone-residency phase.
+        //
+        // What is left here is a gameplay decision. A crossing the destination
+        // is not ready for leaves the pawn where the sweep last had it fully
+        // inside the room it is leaving; streaming decides that on the wall
+        // clock, but moving a pawn is simulation, so the position is recorded
+        // and applied on the next fixed tick.
+        if (LocalControlSubjectOf(ctx.Entities).IsValid()
             && Partition->LastTraversal().Status
                 == DockTraversalStatus::BlockedDestinationNotReady)
         {
@@ -558,7 +525,7 @@ struct WorldPartitionUpdateSystem
             return;
 
         World& world = ctx.Entities;
-        const EntityId pawn = LocalPawnOf(world);
+        const EntityId pawn = LocalControlSubjectOf(world);
         if (!pawn.IsValid())
         {
             PendingSafePosition.reset();
@@ -585,8 +552,6 @@ struct WorldPartitionUpdateSystem
     }
 
     std::optional<WorldPartitionRuntime>& Partition;
-    std::optional<AsyncZoneLoader>& Loader;
-    RuntimeWorld& Runtime;
     // Owned by the physics step, which is where characters live. Null in a
     // configuration with no physics, where the transform is all there is.
     CharacterMoverPool* Movers = nullptr;
@@ -716,6 +681,155 @@ struct CharacterInputSystem
 enum : NetSpawnRecipeId
 {
     kPlayerPawnRecipe = 1,
+    kTurretRecipe = 2,
+};
+
+// What this game says over the wire. The engine reserves everything below
+// kNetFirstGamePayloadKind for itself, so a game's kinds start there and can
+// never be swallowed by the dispatch that answers snapshots and commands.
+enum : std::uint8_t
+{
+    // "Put me in that turret", or "take me out of the one I am in". One kind
+    // for both because the authority already knows which of them a peer means:
+    // it holds the record of who owns what, and a request that disagreed with
+    // it would be refused anyway.
+    kTurretRequestKind = kNetFirstGamePayloadKind,
+};
+
+// The body of a turret request: which turret, by the name replication gave it.
+// Hand-written encode and decode against NetWriter/NetReader, which is the
+// same idiom every untrusted decode in the engine is written in -- bounded,
+// typed failure, nothing sized from what the sender claimed.
+std::vector<std::byte> EncodeTurretRequest(NetEntityId target)
+{
+    std::array<std::byte, sizeof(std::uint64_t)> storage{};
+    NetWriter writer(storage);
+    writer.WriteU64(target.Value);
+    const std::span<const std::byte> written = writer.Written();
+    return std::vector<std::byte>(written.begin(), written.end());
+}
+
+bool DecodeTurretRequest(std::span<const std::byte> body, NetEntityId& out)
+{
+    NetReader reader(body);
+    std::uint64_t value = 0;
+    if (!reader.ReadU64(value) || !reader.AtEnd())
+        return false;
+    out = NetEntityId{ value };
+    return out.IsValid();
+}
+
+//=============================================================================
+// Answering a turret request
+//
+// Everything the authority needs to decide is on the authority. The message
+// carries one field -- which turret -- and every other fact is looked up here:
+// who sent it comes from the session's own peer record, what that names comes
+// from the identity map replication minted, and whether the sender is allowed
+// it comes from the ownership the authority itself wrote. A message that could
+// be believed about any of those would be a message a peer could use to drive
+// somebody else's body.
+//
+// Taking a turret parks the driver's pawn rather than leaving them owning both.
+// One peer, one thing driven, which is what the engine's local-control slot
+// says and is a design decision rather than a limitation worked around: a
+// player at a fixed gun is not also running around.
+//=============================================================================
+bool AnswerTurretRequest(void* context, const NetMessageContext& message)
+{
+    Logger& log = *static_cast<Logger*>(context);
+    World& world = message.Entities;
+
+    NetEntityId named;
+    if (!DecodeTurretRequest(message.Body, named))
+        return false;
+    if (message.Objects == nullptr)
+        return false;
+
+    // The one translation a client is allowed to ask for, and it fails closed:
+    // an identity this authority never minted, or one it has released, names
+    // nothing at all.
+    const EntityId turret =
+        message.Objects->AuthorityEntities().TryResolve(named);
+    if (!turret.IsValid() || !world.IsAlive(turret))
+        return false;
+    if (!world.HasComponent<TurretMount>(turret))
+        return false;
+
+    const PeerId owner = NetOwnerOf(world, turret);
+    TurretSeat* seat = world.TryGet<TurretSeat>(turret);
+
+    if (owner == message.From)
+    {
+        // Getting out. The body that was parked is theirs again, and the gun
+        // goes back to the authority for the next person to ask for.
+        NetClearOwner(world, turret);
+        if (seat != nullptr && seat->Pawn.IsValid() && world.IsAlive(seat->Pawn))
+            NetSetOwner(world, seat->Pawn, message.From);
+        if (seat != nullptr)
+            seat->Pawn = EntityId{};
+        log.Info("TemplateGame: peer {} left the turret", message.From.Value);
+        return true;
+    }
+
+    // Somebody else is driving it. Refused rather than taken: a request that
+    // could evict its current driver is a request worth sending constantly.
+    if (owner.IsValid())
+        return false;
+
+    std::vector<EntityId> owned;
+    NetOwnedBy(world, message.From, owned);
+
+    NetSetOwner(world, turret, message.From);
+    if (seat == nullptr)
+    {
+        world.AddComponent<TurretSeat>(turret, TurretSeat{});
+        seat = world.TryGet<TurretSeat>(turret);
+    }
+    // Their body waits where they left it. Recorded on the turret, once, so
+    // putting somebody back cannot disagree with what took them out.
+    seat->Pawn = owned.empty() ? EntityId{} : owned.front();
+    for (const EntityId pawn : owned)
+        NetClearOwner(world, pawn);
+
+    log.Info("TemplateGame: peer {} took the turret", message.From.Value);
+    return true;
+}
+
+//=============================================================================
+// TurretAimSystem
+//
+// Points a turret where its driver is looking. The engine already hands a
+// peer's aim to the entity that peer owns, so this reads what arrived and turns
+// it into the one number that travels: no branch on who is driving, no branch
+// on whether anybody is.
+//=============================================================================
+struct TurretAimSystem
+{
+    void FixedLogic(FixedLogicContext& ctx)
+    {
+        World& world = ctx.Entities;
+        if (!world.IsRegistered<TurretMount>() || !world.IsRegistered<LookOrientation>())
+            return;
+
+        Query<Write<TurretMount>, Read<LookOrientation>> query(world);
+        query.ForEachChunk([](auto& view) {
+            auto mounts = view.template Write<TurretMount>();
+            auto looks = view.template Read<LookOrientation>();
+            for (std::uint32_t index = 0; index < view.Count(); ++index)
+            {
+                // Look yaw is a running total and grows without bound; a
+                // turret points somewhere, so it is wrapped here rather than
+                // sent at a resolution that has to cover every turn a player
+                // has ever made.
+                constexpr float pi = std::numbers::pi_v<float>;
+                float yaw = std::fmod(looks[index].Yaw + pi, 2.0f * pi);
+                if (yaw < 0.0f)
+                    yaw += 2.0f * pi;
+                mounts[index].Yaw = yaw - pi;
+            }
+        });
+    }
 };
 
 //=============================================================================
@@ -741,7 +855,6 @@ struct SessionPlayerSystem
     Engine* Owner = nullptr;
     MovementProfileHandle Profile;
     ResolvedPlayerAvatar Avatar;
-    std::unordered_map<std::uint32_t, EntityId> PeerPawns;
     // Whether anybody is playing in this process. A dedicated host simulates
     // every pawn and owns none of them: set from the launch configuration at
     // the composition root, never inferred from whether this process can draw.
@@ -762,11 +875,12 @@ struct SessionPlayerSystem
             // The authority owns every pawn in a session, this player's
             // included. Providing one here as well is the second provider.
             if (replicationReady && session->IsConnected())
-                AdoptReplicatedPawns(world, session->LocalPeerId().Value);
+                FollowLocalControl(world);
             return;
         }
 
         ProvideLocalPawn(world);
+        ProvideTurret(world);
 
         if (role == NetSessionRole::Host && replicationReady)
             ServePeers(world, *session);
@@ -792,10 +906,39 @@ private:
             world.TryGetResource<PlayContentPartition>();
         if (content == nullptr)
             return;
-        if (LocalPawnOf(world).IsValid())
+        if (LocalControlSubjectOf(world).IsValid())
             return;
 
         SpawnPlayerAvatar(world, Log(), content->Value, Profile, Avatar);
+    }
+
+    // One turret, near the authored start, on whichever machine is authority.
+    // Placed rather than authored so the template ships the possession path
+    // without every level having to carry a turret; a real game would author
+    // them and this would go.
+    void ProvideTurret(World& world)
+    {
+        if (TurretPlaced || !world.IsRegistered<TurretMount>())
+            return;
+        const PlayContentPartition* content =
+            world.TryGetResource<PlayContentPartition>();
+        if (content == nullptr)
+            return;
+
+        Vec3d at = FindPlayerStart(world, std::nullopt);
+        at.X += 3.0f;
+
+        const EntityId turret = CreateTransformEntity(
+            world, at, content->Value.value_or(PersistentStoragePartition));
+        world.AddComponent<TurretMount>(turret, TurretMount{});
+        // What arrives on a peer's machine as state; the recipe gives it the
+        // rest of a body there, the same way a pawn gets one.
+        world.AddComponent<NetReplicated>(turret);
+        world.AddComponent<NetSpawnRecipe>(
+            turret, NetSpawnRecipe{ .Id = kTurretRecipe });
+        BuildTurretBody(world, turret, Avatar);
+        TurretPlaced = true;
+        Log().Info("TemplateGame: placed a turret; `turret` takes it");
     }
 
     void ServePeers(World& world, NetSession& session)
@@ -805,7 +948,7 @@ private:
         // most likely to be standing next to. Read each frame rather than
         // remembered, because the pawn appears when content loads and that can
         // be after this system is registered.
-        const EntityId local = LocalPawnOf(world);
+        const EntityId local = LocalControlSubjectOf(world);
         if (local.IsValid() && !world.HasComponent<NetReplicated>(local))
         {
             world.AddComponent<NetReplicated>(local);
@@ -815,103 +958,130 @@ private:
 
         const std::vector<PeerId> peers = session.ConnectedPeers();
 
+        std::vector<EntityId> owned;
         for (PeerId peer : peers)
         {
-            if (PeerPawns.contains(peer.Value))
+            // Asked of the component that already answers it. A map beside it
+            // would be a second copy of the same fact, and the copy is what
+            // goes stale the first time ownership moves.
+            NetOwnedBy(world, peer, owned);
+            if (!owned.empty())
                 continue;
 
             // Offset laterally from the authored start so two players do not
-            // arrive inside each other. A proper multi-start rotation is the
-            // level's business, not this system's.
+            // arrive inside each other, by peer id so a peer lands in the same
+            // place however many others are present. A proper multi-start
+            // rotation is the level's business, not this system's.
             //
             // Unfiltered: a map's content is imported into its own zone
             // partition, so a start looked for only in the persistent one is a
             // start that is never found and a peer that arrives at the origin.
             Vec3d spawn = FindPlayerStart(world, std::nullopt);
-            spawn.X += 2.0f * static_cast<float>(PeerPawns.size() + 1);
+            spawn.X += 2.0f * static_cast<float>(peer.Value);
 
             const EntityId pawn = SpawnPawn(world, spawn, Profile, Avatar);
             world.AddComponent<NetReplicated>(pawn);
-            world.AddComponent<NetOwner>(pawn, NetOwner{ .Peer = peer.Value });
             world.AddComponent<NetSpawnRecipe>(
                 pawn, NetSpawnRecipe{ .Id = kPlayerPawnRecipe });
-            // Whose keys steer it. Without this the pawn reads the local
-            // source, which is the possession bug in one component: the person
-            // running the server would drive every pawn they are simulating on
-            // someone else's behalf.
-            world.AddComponent<InputActionSourceRef>(
-                pawn, InputActionSourceRef{ .Source = peer.Value });
-            PeerPawns.emplace(peer.Value, pawn);
+            // Whose pawn this is, and everything that follows from it: whose
+            // aim turns it, whose keys move it, and whose snapshot carries the
+            // state only its owner may see.
+            NetSetOwner(world, pawn, peer);
             Log().Info("TemplateGame: spawned a pawn for peer {}", peer.Value);
         }
 
-        // A peer that left takes its pawn with it.
-        for (auto it = PeerPawns.begin(); it != PeerPawns.end(); )
+        // A peer that left takes its pawn with it. The engine hands the
+        // entities a departing peer owned back to the authority, so what is
+        // left behind is a player pawn nobody drives -- which the host's own
+        // pawn also looks like, and is why that one is excluded by name.
+        // A body waiting for its driver to get out of a turret is unowned and
+        // is not abandoned. Read off the turrets, which hold the only record of
+        // it, rather than marked on the pawn as well -- a second copy of one
+        // fact is the copy that goes stale.
+        std::vector<EntityId> parked;
+        const World& reading = world;
+        reading.ForEachComponent<TurretSeat>(
+            [&](EntityId, const TurretSeat& seat) {
+                if (seat.Pawn.IsValid())
+                    parked.push_back(seat.Pawn);
+            });
+
+        std::vector<EntityId> orphans;
+        reading.ForEachComponent<NetSpawnRecipe>(
+            [&](EntityId entity, const NetSpawnRecipe& recipe) {
+                if (recipe.Id != kPlayerPawnRecipe || entity == local)
+                    return;
+                if (NetOwnerOf(world, entity).IsValid())
+                    return;
+                if (std::find(parked.begin(), parked.end(), entity) != parked.end())
+                    return;
+                orphans.push_back(entity);
+            });
+
+        for (const EntityId orphan : orphans)
         {
-            const bool present = std::any_of(
-                peers.begin(), peers.end(),
-                [id = it->first](PeerId peer) { return peer.Value == id; });
-            if (present)
-            {
-                ++it;
+            if (!world.IsAlive(orphan))
                 continue;
-            }
-            if (world.IsAlive(it->second))
-                world.DestroyEntity(it->second);
-            Log().Info("TemplateGame: removed the pawn for peer {}", it->first);
-            it = PeerPawns.erase(it);
+            world.DestroyEntity(orphan);
+            Log().Info("TemplateGame: removed the pawn for peer that left");
         }
     }
 
-    void AdoptReplicatedPawns(World& world, std::uint32_t self)
+    // What this machine has to do about driving a pawn, once the engine has
+    // decided which one that is.
+    //
+    // This used to be a scan of every entity replication had created, looking
+    // for one whose NetOwner named this peer -- which is the question the
+    // engine now answers before the frame's first tick, and answers without an
+    // unordered_map walk whose winner changed with hash order.
+    void FollowLocalControl(World& world)
     {
-        // Everything replication created for this client, which is the only
-        // definitive list: an entity is not marked on this side, and querying
-        // by NetOwner would miss every pawn the authority drives itself --
-        // including the host's own player.
-        // What each replicated entity *is* -- body, pose history, derived
-        // columns -- is the spawn recipe's job now, run once at spawn. What is
-        // left here is possession: which of them this player drives.
-        EntityId mine;
-        for (const auto& [id, entity] : Owner->Replication().ClientEntities().All())
-        {
-            if (!world.IsAlive(entity))
-                continue;
-            if (const NetOwner* owner = world.TryGet<NetOwner>(entity);
-                owner != nullptr && owner->Peer == self)
-            {
-                mine = entity;
-            }
-        }
-
-        if (!mine.IsValid() || mine == LocalPawnOf(world))
+        const EntityId subject = LocalControlSubjectOf(world);
+        if (subject == Followed)
             return;
 
         // A pawn this process provided for itself before joining is now
-        // someone else's job to simulate. Leaving it would leave a second body
-        // standing where the player used to be. Local only: a replicated
-        // entity destroyed here would be recreated by the next snapshot
-        // without the fields that have not changed since.
-        const EntityId previous = LocalPawnOf(world);
-        if (previous.IsValid() && !world.HasComponent<NetReplicated>(previous))
-            world.DestroyEntity(previous);
+        // somebody else's job to simulate, and leaving it would leave a second
+        // body standing where the player used to be. Local only: a replicated
+        // entity destroyed here would come back on the next snapshot without
+        // the fields that have not changed since.
+        if (Followed.IsValid() && world.IsAlive(Followed)
+            && !world.HasComponent<NetReplicated>(Followed))
+        {
+            world.DestroyEntity(Followed);
+        }
+        Followed = subject;
 
-        // This pawn becomes a full simulation participant on this machine.
-        // A player holding a key cannot wait for the round trip to see it,
-        // so the client runs the same systems over the same input and the
-        // authority's snapshots become something to reconcile against
-        // rather than something to obey.
+        if (!subject.IsValid())
+            return;
+
+        // This pawn becomes a full simulation participant on this machine. A
+        // player holding a key cannot wait for the round trip to see it, so the
+        // client runs the same systems over the same input and the authority's
+        // snapshots become something to reconcile against rather than obey.
         //
-        // The same archetype the authority built, from the same function:
-        // two machines simulating one pawn from the same input have to be
+        // The same archetype the authority built, from the same function: two
+        // machines simulating one pawn from the same input have to be
         // simulating the same pawn.
-        if (!world.HasComponent<MovementIntent>(mine))
-            BuildPawnBody(world, mine, Profile, Avatar);
+        // What this machine drives is not always a pawn. A turret already has
+        // everything it needs from its own recipe, and giving it a character's
+        // body would put a mover and a locomotion mode on a thing that is
+        // bolted to the floor.
+        if (!world.HasComponent<TurretMount>(subject)
+            && !world.HasComponent<MovementIntent>(subject))
+        {
+            BuildPawnBody(world, subject, Profile, Avatar);
+        }
 
-        AttachLocalPlayer(world, mine, Log());
-        Owner->Prediction().SetPredicted(mine);
+        AttachLocalPlayer(world, subject, &Owner->Prediction(), Log());
         Log().Info("TemplateGame: predicting this player's own pawn");
     }
+
+    // The pawn this machine was last told to drive, so taking up a new one is
+    // an edge rather than something re-derived every frame.
+    EntityId Followed;
+    bool TurretPlaced = false;
+
 };
 
 struct SpinSystem
@@ -981,7 +1151,7 @@ void TemplateGame::OnStart(GameStartupContext&)
     // A snapshot brings the state; this brings everything a body needs to be
     // seen, which is content both ends already have and neither has to be told
     // about. The avatar is resolved once here rather than per spawn.
-    engine.SpawnRecipes().Register(
+    const bool pawnRecipeRegistered = engine.SpawnRecipes().Register(
         kPlayerPawnRecipe,
         [this](World& world, EntityId entity) {
             Logger& log = GetEngine().Logging().GetLogger<TemplateGame>();
@@ -1034,6 +1204,45 @@ void TemplateGame::OnStart(GameStartupContext&)
 
             log.Info("TemplateGame: built a replicated player pawn");
         });
+    if (!pawnRecipeRegistered)
+    {
+        // Nothing downstream can tell this apart from an authority running
+        // content this build does not have, so it is said here, where the id is
+        // known to be ours and the cause is a second claim on it.
+        GetEngine().Logging().GetLogger<TemplateGame>().Error(
+            "TemplateGame: spawn recipe {} was already registered; replicated "
+            "player pawns will arrive without a body",
+            static_cast<unsigned>(kPlayerPawnRecipe));
+    }
+
+    // The same two lines for the turret: what arrives as replicated state, and
+    // what this machine has to add for it to be seen and aimed.
+    if (!engine.SpawnRecipes().Register(
+            kTurretRecipe,
+            [this](World& world, EntityId entity) {
+                Logger& log = GetEngine().Logging().GetLogger<TemplateGame>();
+                BuildTurretBody(world, entity, ResolvePlayerAvatar(log));
+            }))
+    {
+        GetEngine().Logging().GetLogger<TemplateGame>().Error(
+            "TemplateGame: spawn recipe {} was already registered; turrets will "
+            "arrive without a body", static_cast<unsigned>(kTurretRecipe));
+    }
+
+    // Where a client's turret request is answered. One kind, one direction, one
+    // handler -- and the direction is checked before the handler is reached, so
+    // a client sending itself an authority-to-client kind is refused by the
+    // router rather than by every handler having to think about it.
+    if (!engine.NetMessages().Bind(
+            kTurretRequestKind, NetMessageDirection::ClientToAuthority,
+            &AnswerTurretRequest,
+            &engine.Logging().GetLogger<TemplateGame>()))
+    {
+        engine.Logging().GetLogger<TemplateGame>().Error(
+            "TemplateGame: payload kind {} was already answered; turret "
+            "requests will not be handled",
+            static_cast<unsigned>(kTurretRequestKind));
+    }
 
     ScanAssetsDirectory(
         std::string(kAuthoredRoot),
@@ -1149,6 +1358,18 @@ void TemplateGame::OnStart(GameStartupContext&)
     });
 
     engine.Console().Registry().RegisterCommand({
+        .Name = "turret",
+        .Owner = "game",
+        .Usage = "turret",
+        .Help = "Take the nearest turret, or leave the one you are in.",
+        .RequiredPhase = ConsolePhase::GameLoaded,
+        .Callback = [this](ConsoleExecutionContext&,
+                           std::span<const std::string>) {
+            return RequestTurret();
+        },
+    });
+
+    engine.Console().Registry().RegisterCommand({
         .Name = "camera_mode",
         .Owner = "game",
         .Usage = "camera_mode <first|third|fixed>",
@@ -1245,10 +1466,15 @@ void TemplateGame::OnStart(GameStartupContext&)
         },
     });
 
+    // A dedicated host has nobody at a keyboard, so it is told how to serve
+    // rather than how to play.
     std::printf("Sencha game template\n");
     std::printf("  Load a map: +map levels/<name>\n");
     std::printf("  Load a world: +world <name>\n");
-    std::printf("  Right mouse: look | WASD: move | Space: jump\n");
+    if (GetEngine().Config().Runtime.HasLocalPlayer)
+        std::printf("  Right mouse: look | WASD: move | Space: jump\n");
+    else
+        std::printf("  Host a session: +host [port] | see net_status, net_zones\n");
 }
 
 ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
@@ -1603,6 +1829,11 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
     if (focus.IsValid() && zoneExists(focus))
         Partition->SetFocus(focus);
 
+    // Handed over once. From here the engine keeps the world loaded around
+    // whoever this machine drives and, in a session, around every connected
+    // player -- and offers each peer only its own neighbourhood.
+    engine.SetWorldStreaming(&*Partition, &*ZoneLoader);
+
     result.Info("loading world '" + std::string(worldName) + "'");
     return result;
 }
@@ -1640,6 +1871,99 @@ ConsoleResult TemplateGame::FocusWorldZone(
 
     PendingZoneFocus = *zone;
     result.Info("zone focus queued for the next world load");
+    return result;
+}
+
+// The client's half of taking a turret, and the whole of what a game has to
+// write to address a networked object: find the one you mean, ask replication
+// what it is called, and send that.
+//
+// Naming it is the part that could not be written before. A local EntityId is
+// an index into one World and means nothing on another machine, so a request
+// carrying one would be a request the authority could only guess at; the
+// identity map is what turns "this thing in front of me" into something both
+// machines agree about, and it refuses to name anything replication did not
+// hand this machine -- so a client cannot invent an object and ask for it.
+ConsoleResult TemplateGame::RequestTurret()
+{
+    ConsoleResult result;
+    Engine& engine = GetEngine();
+    NetSession* session = engine.TryNet();
+    if (session == nullptr || session->Role() != NetSessionRole::Client
+        || !session->IsConnected())
+    {
+        result.Status = ConsoleStatus::InvalidArguments;
+        result.Error("not connected to an authority");
+        return result;
+    }
+
+    const World& world = engine.World().Entities();
+    if (!world.IsRegistered<TurretMount>())
+    {
+        result.Status = ConsoleStatus::InvalidArguments;
+        result.Error("this build has no turrets");
+        return result;
+    }
+
+    // Already driving one: the same request means getting out, because the
+    // authority holds the record of who owns what and can tell the difference
+    // without being told.
+    EntityId target = LocalControlSubjectOf(world);
+    if (!target.IsValid() || !world.HasComponent<TurretMount>(target))
+    {
+        // Otherwise the nearest one to wherever this player is standing.
+        const LocalTransform* here =
+            target.IsValid() ? world.TryGet<LocalTransform>(target) : nullptr;
+        const Vec3d from = here == nullptr ? Vec3d::Zero() : here->Value.Position;
+
+        target = EntityId{};
+        double nearest = 0.0;
+        world.ForEachComponent<TurretMount>(
+            [&](EntityId entity, const TurretMount&) {
+                const LocalTransform* pose = world.TryGet<LocalTransform>(entity);
+                if (pose == nullptr)
+                    return;
+                const double distance =
+                    (pose->Value.Position - from).SqrMagnitude();
+                if (!target.IsValid() || distance < nearest)
+                {
+                    target = entity;
+                    nearest = distance;
+                }
+            });
+    }
+
+    if (!target.IsValid())
+    {
+        result.Status = ConsoleStatus::InvalidArguments;
+        result.Error("no turret here");
+        return result;
+    }
+
+    const NetEntityId named =
+        engine.Replication().ClientEntities().TryFind(target);
+    if (!named.IsValid())
+    {
+        result.Status = ConsoleStatus::InvalidArguments;
+        result.Error("that turret is not one replication gave this machine");
+        return result;
+    }
+
+    // Reliable: a request that is dropped is a key press that did nothing, and
+    // nothing later supersedes it. That is a fact about the message rather than
+    // something the engine could decide.
+    const std::size_t sent = NetSendToAuthority(
+        *session, NetChannelKind::ReliableOrdered, kTurretRequestKind,
+        EncodeTurretRequest(named), &engine.NetTraffic());
+    if (sent == 0)
+    {
+        result.Status = ConsoleStatus::InvalidArguments;
+        result.Error("could not queue the request");
+        return result;
+    }
+
+    result.Info("asked the authority about turret "
+                + std::to_string(named.Value));
     return result;
 }
 
@@ -1717,14 +2041,16 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     ctx.Schedule.After<LookIntegrationSystem, InputActionResolveSystem>();
     ctx.Schedule.After<CharacterInputSystem, LookIntegrationSystem>();
     ctx.Schedule.After<CharacterInputSystem, InputActionResolveSystem>();
-    // A remote player's actions have to be in their source before anything
-    // reads one, the same way the local player's have to be resolved first.
-    ctx.Schedule.After<CharacterInputSystem, PeerCommandFeedSystem>();
-    // What gets written down is what the tick went on to simulate, so capture
-    // follows the derivation and precedes everything that acts on it.
-    ctx.Schedule.After<PawnCommandCaptureSystem, CharacterInputSystem>();
+    // The two edges the net input channel needs around whichever system turns
+    // actions into intent. Declared by the engine, which owns why they exist.
+    OrderNetInputAround<CharacterInputSystem>(ctx.Schedule);
     OrderMovementAfterInput<CharacterInputSystem>(ctx.Schedule);
     ctx.Schedule.Register<SpinSystem>();
+    // A turret points where its driver looks. After the look integrates, for
+    // the same reason the character steers after it: the value it reads is
+    // this tick's aim rather than last tick's.
+    ctx.Schedule.Register<TurretAimSystem>();
+    ctx.Schedule.After<TurretAimSystem, LookIntegrationSystem>();
 
     // Waits on content with no session, and on the authority with one: either
     // way its first act each frame is to ask where this player's pawn comes
@@ -1743,10 +2069,7 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     }
 
     WorldPartitionUpdateSystem& partitionUpdate =
-        ctx.Schedule.Register<WorldPartitionUpdateSystem>(
-            Partition,
-            ZoneLoader,
-            GetEngine().World());
+        ctx.Schedule.Register<WorldPartitionUpdateSystem>(Partition);
     if (PhysicsStepSystem* step = ctx.Schedule.Get<PhysicsStepSystem>())
         partitionUpdate.Movers = &step->GetCharacterMovers();
 #ifdef SENCHA_ENABLE_COOK
@@ -1843,6 +2166,8 @@ void TemplateGame::OnShutdown(GameShutdownContext&)
     }
 
     PlayZoneActive = false;
+    // Before the runtime it points at goes.
+    GetEngine().SetWorldStreaming(nullptr, nullptr);
     Partition.reset();
     ZoneLoader.reset();
     SceneContext.reset();

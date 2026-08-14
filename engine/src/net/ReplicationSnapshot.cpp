@@ -7,6 +7,7 @@
 #include <ecs/WorldComponentSchema.h>
 #include <net/NetReplicationComponents.h>
 #include <net/ReplicationInterpolation.h>
+#include <world/identity/PersistentEntityIndex.h>
 #include <world/transform/DerivedTransform.h>
 
 #include <algorithm>
@@ -15,6 +16,70 @@
 
 namespace
 {
+    //-------------------------------------------------------------------------
+    // A decoded snapshot, before any of it has been applied.
+    //
+    // A snapshot is read whole and then written whole. The two halves are split
+    // because they fail differently: reading is where a peer's bytes can be
+    // wrong, and writing is where the world changes, and those must not be the
+    // same pass. They were, and a truncation partway through left entities
+    // already destroyed, others already created, and a third half-written --
+    // with nothing to undo any of it.
+    //
+    // The created ones were the lasting damage. An entity bound to an identity
+    // but never finished is not spawned again on the next snapshot, so it never
+    // runs its recipe and never gains a world transform: correct in state,
+    // invisible on screen, for the rest of the session.
+    //
+    // So the read half may fail anywhere, having touched neither the world nor
+    // the identity map, and the write half cannot fail at all.
+    //-------------------------------------------------------------------------
+    enum class SnapshotSink : std::uint8_t
+    {
+        // Straight onto the entity.
+        World,
+        // Held for the predictor to argue with what this machine simulated.
+        Prediction,
+        // Held with the tick it describes, to be presented later.
+        Interpolation,
+    };
+
+    struct PlannedComponent
+    {
+        const ReplicatedComponent* Layout = nullptr;
+        SnapshotSink Sink = SnapshotSink::World;
+        // Where this component's decoded bytes start in the plan's arena.
+        std::size_t Offset = 0;
+        // Whether the entity will already carry the column when this is
+        // written: overwrite in place, or add. Decided while reading, which is
+        // sound because reading changes nothing that could make it wrong.
+        bool PresentInWorld = false;
+    };
+
+    struct PlannedEntityUpdate
+    {
+        NetEntityId Id;
+        // The entity this lands on, or invalid when the write half has to
+        // create one.
+        EntityId Local;
+        bool Spawned = false;
+        std::size_t FirstComponent = 0;
+        std::uint32_t ComponentCount = 0;
+        // Components the entity no longer carries, as wire keys into the
+        // layout. Indices rather than pointers, into the plan's own list.
+        std::size_t FirstRemoval = 0;
+        std::uint32_t RemovalCount = 0;
+        // The wire named an authored entity this machine has not loaded yet.
+        // Its bytes are read so the stream stays aligned and then dropped, and
+        // the snapshot is reported incomplete so it is never acknowledged --
+        // which is what keeps the authority's floor where it was and makes the
+        // entity arrive again.
+        bool Deferred = false;
+        // Bind the identity at commit. True for an authored entity recognised
+        // through the index rather than created here.
+        bool BindIdentity = false;
+    };
+
     // A count is bounded by the entity cap and checked against it on the way in,
     // so a width that could not address the cap would be a decoder refusing
     // snapshots the writer is allowed to produce.
@@ -27,6 +92,10 @@ namespace
         ReplicationSnapshotWire::ComponentCountBits;
     constexpr std::uint8_t kComponentIndexBits =
         ReplicationSnapshotWire::ComponentIndexBits;
+    constexpr std::uint8_t kAuthoredPresentBits =
+        ReplicationSnapshotWire::AuthoredPresentBits;
+    constexpr std::uint8_t kRemovalsPresentBits =
+        ReplicationSnapshotWire::RemovalsPresentBits;
 
     void WriteNetEntityId(NetBitWriter& writer, NetEntityId id)
     {
@@ -42,15 +111,20 @@ namespace
         return true;
     }
 
-    // What one identity costs on the wire, which the fill has to know before it
-    // writes one. Not a constant any more: an identity is as wide as it needs
-    // to be.
-    std::size_t NetEntityIdBits(NetEntityId id)
+    // What a variable-width value costs on the wire, which the fill has to know
+    // before it writes one.
+    std::size_t VarUIntBits(std::uint64_t value)
     {
         std::size_t groups = 1;
-        for (std::uint64_t rest = id.Value >> 7; rest != 0; rest >>= 7)
+        for (std::uint64_t rest = value >> 7; rest != 0; rest >>= 7)
             ++groups;
         return groups * 8;
+    }
+
+    // Not a constant any more: an identity is as wide as it needs to be.
+    std::size_t NetEntityIdBits(NetEntityId id)
+    {
+        return VarUIntBits(id.Value);
     }
 }
 
@@ -216,6 +290,7 @@ void ReplicationPeerState::Clear()
     Departed.clear();
     Pending.clear();
     First = 0;
+    Scope.Clear();
 }
 
 //=============================================================================
@@ -230,7 +305,14 @@ NetEntityId ReplicationAuthorityIdentity::IdFor(EntityId entity)
 
     const NetEntityId minted{ NextId++ };
     Forward.emplace(entity, minted);
+    Reverse.emplace(minted, entity);
     return minted;
+}
+
+EntityId ReplicationAuthorityIdentity::TryResolve(NetEntityId id) const
+{
+    const auto it = Reverse.find(id);
+    return it == Reverse.end() ? EntityId{} : it->second;
 }
 
 NetEntityId ReplicationAuthorityIdentity::TryFind(EntityId entity) const
@@ -241,13 +323,20 @@ NetEntityId ReplicationAuthorityIdentity::TryFind(EntityId entity) const
 
 void ReplicationAuthorityIdentity::Release(EntityId entity)
 {
-    Forward.erase(entity);
+    const auto it = Forward.find(entity);
+    if (it == Forward.end())
+        return;
+    Reverse.erase(it->second);
+    Forward.erase(it);
 }
 
 void ReplicationAuthorityIdentity::ForgetDead(const World& world)
 {
-    std::erase_if(Forward, [&world](const auto& entry) {
-        return !world.IsAlive(entry.first);
+    std::erase_if(Forward, [&](const auto& entry) {
+        if (world.IsAlive(entry.first))
+            return false;
+        Reverse.erase(entry.second);
+        return true;
     });
 }
 
@@ -257,14 +346,32 @@ EntityId ReplicationClientIdentity::TryResolve(NetEntityId id) const
     return it == Entries.end() ? EntityId{} : it->second;
 }
 
+NetEntityId ReplicationClientIdentity::TryFind(EntityId entity) const
+{
+    const auto it = Names.find(entity);
+    return it == Names.end() ? NetEntityId{} : it->second;
+}
+
 void ReplicationClientIdentity::Bind(NetEntityId id, EntityId entity)
 {
+    // Rebinding an identity onto a different entity -- which is what
+    // recognising an authored copy does -- drops the old pairing from both
+    // directions, so nothing goes on answering to a name it has lost.
+    const auto existing = Entries.find(id);
+    if (existing != Entries.end())
+        Names.erase(existing->second);
+
     Entries[id] = entity;
+    Names[entity] = id;
 }
 
 void ReplicationClientIdentity::Unbind(NetEntityId id)
 {
-    Entries.erase(id);
+    const auto it = Entries.find(id);
+    if (it == Entries.end())
+        return;
+    Names.erase(it->second);
+    Entries.erase(it);
 }
 
 //=============================================================================
@@ -273,27 +380,6 @@ void ReplicationClientIdentity::Unbind(NetEntityId id)
 
 namespace
 {
-    // Which runs of a component a peer is owed: the ones that moved after its
-    // floor, plus every gated one when ownership moved after its floor, and
-    // then only those this peer may see at all.
-    std::uint64_t OwedFields(const ReplicatedComponent& component,
-                             const ReplicationChangeStore::ComponentState& held,
-                             std::uint64_t floor, bool ownershipMoved,
-                             bool forOwner)
-    {
-        std::uint64_t owed = 0;
-        for (std::size_t run = 0; run < component.Fields.size(); ++run)
-        {
-            const bool moved =
-                run < held.ChangedAt.size() && held.ChangedAt[run] > floor;
-            const bool gated =
-                component.Fields[run].OwnerOnly || component.Fields[run].OwnerLocal;
-            if (moved || (gated && ownershipMoved))
-                owed |= (std::uint64_t{ 1 } << run);
-        }
-        return owed & ReplicationVisibleFields(component, forOwner);
-    }
-
     // The fixed part of every snapshot: the tick, this snapshot's name, the
     // command acknowledgement, and the two counts.
     constexpr std::size_t kHeaderBits = ReplicationSnapshotWire::TickBits
@@ -316,6 +402,16 @@ namespace
         // order. Held rather than recomputed at write time so the bytes written
         // are necessarily the bytes measured.
         std::size_t FirstMask = 0;
+        // Whether this record carries the entity's authored identity.
+        bool SendAuthored = false;
+        // How many of the entity's recorded removals this peer has not been
+        // told about. They are the leading ones: a removal is recorded with the
+        // generation it happened at, and the list is only ever appended to.
+        std::uint32_t OwedRemovals = 0;
+        // This peer has confirmed nothing about it, so what it costs is the
+        // whole entity rather than what moved. The expensive half of a join,
+        // and the half that is supposed to stop.
+        bool Seeding = false;
         // Driven by the peer this snapshot is for. Everything else this peer
         // receives is mirrored and presented a fixed distance in the past, so a
         // late sample is smoothed over; its own entity is what its prediction
@@ -341,8 +437,41 @@ namespace
         const bool ownershipMoved = entity.OwnerChangedAt > floor;
 
         const std::size_t first = masks.size();
-        std::size_t bits = NetEntityIdBits(entity.Id) + kComponentCountBits;
+        // One bit for whether anything was removed, and the count only when
+        // something was. A component leaving is rare and an entity is common,
+        // so a byte-wide count on every entity of every snapshot costs more
+        // over a seeding datagram than the removals it describes ever will.
+        std::size_t bits = NetEntityIdBits(entity.Id) + kComponentCountBits
+                         + kRemovalsPresentBits;
+
+        // Whether the authored identity rides with this record. Sent while the
+        // peer has confirmed nothing about the entity, which is exactly while
+        // it might still have to recognise its own copy rather than build one.
+        // The bit itself is unconditional: a reader cannot infer what a writer
+        // knew about its floor, and a bit the two disagree about is the rest of
+        // the snapshot read at the wrong offset.
+        const bool sendAuthored = entity.Persistent.IsValid() && !peer.Knows(entity.Id);
+        bits += kAuthoredPresentBits;
+        if (sendAuthored)
+            bits += VarUIntBits(entity.Persistent.Value);
+
         bool owedAnything = false;
+
+        // A component this peer was shown and has not been told is gone. Owed
+        // to a peer whose floor predates the removal, which is also every peer
+        // that has never heard of the entity -- harmless, because a client
+        // removing a component it does not have is already true.
+        std::uint32_t owedRemovals = 0;
+        for (const ReplicationChangeStore::RemovedComponent& gone : entity.Removed)
+        {
+            if (gone.RemovedAt <= floor)
+                continue;
+            ++owedRemovals;
+            bits += kComponentIndexBits;
+        }
+        if (owedRemovals != 0)
+            bits += kComponentCountBits;
+        owedAnything = owedAnything || owedRemovals != 0;
 
         for (const ReplicationChangeStore::ComponentState& held : entity.Components)
         {
@@ -353,7 +482,7 @@ namespace
             assert(component != nullptr && "store holds a component the layout lost");
 
             const std::uint64_t owed =
-                OwedFields(*component, held, floor, ownershipMoved, isOwner);
+                ReplicationOwedFields(*component, held, floor, ownershipMoved, isOwner);
             masks.push_back(owed);
             owedAnything = owedAnything || owed != 0;
             bits += kComponentIndexBits
@@ -375,6 +504,9 @@ namespace
             .LastSentAt = peer.LastSentAt(entity.Id),
             .Bits = bits,
             .FirstMask = first,
+            .SendAuthored = sendAuthored,
+            .OwedRemovals = owedRemovals,
+            .Seeding = !peer.Knows(entity.Id),
             .Owned = isOwner,
         };
         return true;
@@ -391,6 +523,32 @@ namespace
     // zone would otherwise spend a whole datagram on the news while the player's
     // own entity waited behind it.
     constexpr std::size_t kMaxDestroysPerSnapshot = 32;
+
+    // Keeps the costliest few, largest first, ties by identity so the list is
+    // the same for two runs of one simulation. A fixed four-slot shift rather
+    // than a sort: this runs once per entity actually written, and the whole
+    // point of a bounded answer is that finding it costs nothing worth
+    // measuring.
+    void NoteCost(std::array<SnapshotWriteResult::EntityCost,
+                             SnapshotWriteResult::kCostliestTracked>& top,
+                  NetEntityId id, std::size_t bits)
+    {
+        const auto beats = [&](const SnapshotWriteResult::EntityCost& held) {
+            return bits > held.Bits
+                || (bits == held.Bits && (held.Id.Value == 0
+                                          || id.Value < held.Id.Value));
+        };
+
+        std::size_t at = top.size();
+        while (at > 0 && beats(top[at - 1]))
+            --at;
+        if (at == top.size())
+            return;
+
+        for (std::size_t i = top.size() - 1; i > at; --i)
+            top[i] = top[i - 1];
+        top[at] = SnapshotWriteResult::EntityCost{ id, bits };
+    }
 }
 
 SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request,
@@ -424,6 +582,37 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
     // was lost still needs telling.
     for (NetEntityId id : changes.Departed())
         peer.NoteDeparted(id);
+
+    // Whether an entity's zone is one this peer may currently be told about.
+    // Ungated unless the zone is under scope control: see
+    // SnapshotWriteRequest::StreamedZones.
+    const std::span<const ZoneId> streamed = request.StreamedZones;
+    const auto withheld = [&](ZoneId zone) {
+        if (!zone.IsValid() || streamed.empty())
+            return false;
+        const bool controlled = std::binary_search(
+            streamed.begin(), streamed.end(), zone,
+            [](ZoneId a, ZoneId b) { return a.Value < b.Value; });
+        return controlled && !peer.Zones().CanReceive(zone);
+    };
+
+    // And anything it holds that it may no longer be told about: an entity that
+    // moved into a room this peer does not have, or one whose room was revoked
+    // when the player walked away from it.
+    //
+    // Destroyed for that peer rather than simply left out. A client that stops
+    // receiving an entity does not forget it -- it keeps whatever it last saw,
+    // standing exactly where it was, forever. Withholding is the flow-control
+    // rule; this is what makes withholding safe.
+    //
+    // Costs nothing for an entity the peer never had: NoteDeparted only owes a
+    // destroy for one it was actually written to.
+    for (const ReplicationChangeStore::EntityState& entity : changes.Live())
+    {
+        if (withheld(entity.Zone))
+            peer.NoteDeparted(entity.Id);
+    }
+
     const std::span<const NetEntityId> owedDestroys = peer.OwedDestroys();
 
     // What this peer is owed about each entity, and what saying it would cost.
@@ -433,6 +622,13 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
     planned.reserve(changes.Size());
     for (const ReplicationChangeStore::EntityState& entity : changes.Live())
     {
+        // The flow-control invariant, in the one place that decides what a peer
+        // is owed: nothing is ever said about a room the peer has not confirmed
+        // it holds. Not a budget decision and not a deferral -- there is nowhere
+        // on that machine to put it, so there is nothing to defer.
+        if (withheld(entity.Zone))
+            continue;
+
         PlannedEntity plan;
         if (PlanEntity(entity, layout, peer, request.OwnerPeer, masks, plan))
             planned.push_back(plan);
@@ -543,6 +739,8 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
         }
         used += plan.Bits;
         sending.push_back(&plan);
+        (plan.Seeding ? result.SeedingBits : result.DeltaBits) += plan.Bits;
+        NoteCost(result.Costliest, plan.Entity->Id, plan.Bits);
     }
 
     NetBitWriter writer(out);
@@ -560,6 +758,9 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
         const ReplicationChangeStore::EntityState& entity = *plan->Entity;
 
         WriteNetEntityId(writer, entity.Id);
+        writer.WriteBool(plan->SendAuthored);
+        if (plan->SendAuthored)
+            writer.WriteVarUInt(entity.Persistent.Value);
         writer.WriteBits(static_cast<std::uint32_t>(entity.Components.size()),
                          kComponentCountBits);
 
@@ -573,6 +774,23 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
                                             masks[plan->FirstMask + i], writer))
             {
                 return result;
+            }
+        }
+
+        // Then what the entity stopped carrying. After the components rather
+        // than before them, so a component removed and added back inside one
+        // peer's floor arrives as an add: the wire says what the entity has,
+        // and then what it does not.
+        writer.WriteBool(plan->OwedRemovals != 0);
+        if (plan->OwedRemovals != 0)
+        {
+            writer.WriteBits(plan->OwedRemovals, kComponentCountBits);
+            const std::uint64_t floor = peer.Floor(entity.Id);
+            for (const ReplicationChangeStore::RemovedComponent& gone : entity.Removed)
+            {
+                if (gone.RemovedAt <= floor)
+                    continue;
+                writer.WriteBits(gone.WireIndex, kComponentIndexBits);
             }
         }
     }
@@ -644,6 +862,11 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
         return result;
     }
 
+    //-------------------------------------------------------------------------
+    // Read. Nothing below here touches the world or the identity map.
+    //-------------------------------------------------------------------------
+    std::vector<NetEntityId> destroyed;
+    destroyed.reserve(destroyedCount);
     for (std::uint32_t i = 0; i < destroyedCount; ++i)
     {
         NetEntityId id;
@@ -652,28 +875,42 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
             result.Error = SnapshotApplyError::Truncated;
             return result;
         }
-
-        const EntityId entity = identity.TryResolve(id);
-        identity.Unbind(id);
-        // Poses held for an entity that is gone describe nothing, and the handle
-        // will be handed out again to something else.
-        if (request.Interpolation != nullptr && entity.IsValid())
-            request.Interpolation->Forget(entity);
-        // An identity this client never had is not an error: it can be an
-        // entity destroyed before the client was ever told it existed.
-        if (entity.IsValid() && world.IsAlive(entity))
-        {
-            world.DestroyEntity(entity);
-            ++result.EntitiesDestroyed;
-        }
+        destroyed.push_back(id);
     }
 
-    std::vector<std::byte> staging;
+    // Sorted so an update can ask whether its identity is one this same
+    // snapshot releases, without a scan per entity. The writer never names an
+    // entity in both lists; a peer that does would otherwise have its update
+    // resolve to an entity the destroy pass is about to remove, and the write
+    // half would land on a dead handle.
+    std::vector<NetEntityId> releasing = destroyed;
+    std::sort(releasing.begin(), releasing.end(),
+              [](NetEntityId a, NetEntityId b) { return a.Value < b.Value; });
+    const auto isReleasing = [&releasing](NetEntityId id) {
+        return std::binary_search(
+            releasing.begin(), releasing.end(), id,
+            [](NetEntityId a, NetEntityId b) { return a.Value < b.Value; });
+    };
+
+    std::vector<PlannedEntityUpdate> planned;
+    std::vector<PlannedComponent> plannedComponents;
+    std::vector<const ReplicatedComponent*> plannedRemovals;
+    // One arena for every component's decoded bytes, so the write half reads
+    // from a single allocation rather than one per component.
+    std::vector<std::byte> decoded;
+    planned.reserve(updatedCount);
+
     for (std::uint32_t i = 0; i < updatedCount; ++i)
     {
+        // Field order is the wire contract: identity, then the authored key,
+        // then the component count. Read in the order the writer writes them.
         NetEntityId id;
+        bool hasAuthored = false;
+        std::uint64_t authored = 0;
         std::uint32_t componentCount = 0;
         if (!ReadNetEntityId(reader, id)
+            || !reader.ReadBool(hasAuthored)
+            || (hasAuthored && !reader.ReadVarUInt(authored))
             || !reader.ReadBits(kComponentCountBits, componentCount))
         {
             result.Error = SnapshotApplyError::Truncated;
@@ -685,18 +922,45 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
             return result;
         }
 
-        EntityId entity = identity.TryResolve(id);
-        const bool spawned = !entity.IsValid() || !world.IsAlive(entity);
-        if (spawned)
+        PlannedEntityUpdate update;
+        update.Id = id;
+        update.Local = identity.TryResolve(id);
+        update.Spawned = isReleasing(id) || !update.Local.IsValid()
+                      || !world.IsAlive(update.Local);
+        if (update.Spawned)
+            update.Local = EntityId{};
+
+        // An authored entity is already here under its own identity, because
+        // this machine loaded the same level. Recognising it is the difference
+        // between a door and two doors.
+        if (update.Spawned && hasAuthored)
         {
-            entity = world.CreateEntity(StoragePartitionId{ request.Partition });
-            identity.Bind(id, entity);
-            ++result.EntitiesSpawned;
+            const PersistentEntityIndex* index =
+                world.TryGetResource<PersistentEntityIndex>();
+            const EntityId existing =
+                index == nullptr ? EntityId{}
+                                 : index->TryResolve(PersistentEntityId{ authored });
+            if (existing.IsValid() && world.IsAlive(existing))
+            {
+                update.Local = existing;
+                update.Spawned = false;
+                update.BindIdentity = true;
+                ++result.AuthoredBound;
+            }
+            else
+            {
+                // The level has not finished loading, or this build does not
+                // have the entity. Creating one would be the duplicate this
+                // exists to avoid, so the record is read and dropped.
+                update.Deferred = true;
+                ++result.AuthoredDeferred;
+            }
         }
-        else
-        {
-            ++result.EntitiesUpdated;
-        }
+        update.FirstComponent = plannedComponents.size();
+        update.ComponentCount = componentCount;
+
+        const EntityId entity = update.Local;
+        const bool spawned = update.Spawned;
 
         for (std::uint32_t c = 0; c < componentCount; ++c)
         {
@@ -734,12 +998,32 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
             // here. It is decoded onto the authority's own view of it, which is
             // what the delta is against, and handed to the predictor to argue
             // with what this machine simulated.
-            if (request.Prediction != nullptr
+            // Which of this entity's already-planned components this one
+            // repeats, if any. The writer never names a component twice for one
+            // entity; a peer that does gets what it would have got when applies
+            // were immediate -- the second decoded against the first's result,
+            // and the first's write already there.
+            const PlannedComponent* earlier = nullptr;
+            for (std::size_t p = update.FirstComponent; p < plannedComponents.size(); ++p)
+            {
+                if (plannedComponents[p].Layout == component)
+                    earlier = &plannedComponents[p];
+            }
+
+            PlannedComponent slot;
+            slot.Layout = component;
+            slot.Offset = decoded.size();
+            decoded.resize(slot.Offset + component->Size);
+            // Taken after the resize, which is why nothing holds one across it.
+            const std::span<std::byte> target(decoded.data() + slot.Offset,
+                                              component->Size);
+
+            if (request.Prediction != nullptr && !spawned
                 && request.Prediction->Intercepts(entity, component->Type))
             {
-                const std::span<std::byte> shadow =
-                    request.Prediction->AuthoritativeBytes(component->Type);
-                if (shadow.size() != component->Size)
+                slot.Sink = SnapshotSink::Prediction;
+                if (request.Prediction->AuthoritativeBytes(component->Type).size()
+                    != component->Size)
                 {
                     result.Error = SnapshotApplyError::UnknownComponentStorage;
                     return result;
@@ -751,7 +1035,12 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
                 // exactly those values, which makes it the only correct seed --
                 // starting from the type's defaults would silently discard
                 // everything said before the pawn became this machine's own.
-                if (!request.Prediction->HasAuthoritativeState(component->Type))
+                if (earlier != nullptr)
+                {
+                    std::memcpy(target.data(), decoded.data() + earlier->Offset,
+                                component->Size);
+                }
+                else if (!request.Prediction->HasAuthoritativeState(component->Type))
                 {
                     const ComponentId column =
                         world.GetComponentIdByType(component->Type);
@@ -760,20 +1049,28 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
                                            : nullptr;
                     if (held != nullptr)
                     {
-                        std::memcpy(shadow.data(), held, component->Size);
+                        std::memcpy(target.data(), held, component->Size);
                     }
-                    else if (!schema.WriteDefaultBytes(component->Type, shadow))
+                    else if (!schema.WriteDefaultBytes(component->Type, target))
                     {
                         result.Error = SnapshotApplyError::UnknownComponentStorage;
                         return result;
                     }
                 }
-                if (!ReplicationDecodeComponent(*component, reader, shadow))
+                else
+                {
+                    // A delta against what the authority last said, which is
+                    // what the shadow already holds.
+                    const std::span<const std::byte> shadow =
+                        request.Prediction->AuthoritativeBytes(component->Type);
+                    std::memcpy(target.data(), shadow.data(), component->Size);
+                }
+                if (!ReplicationDecodeComponent(*component, reader, target))
                 {
                     result.Error = SnapshotApplyError::Truncated;
                     return result;
                 }
-                request.Prediction->MarkSeen(component->Type);
+                plannedComponents.push_back(slot);
                 continue;
             }
 
@@ -786,30 +1083,193 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
             // it is currently correcting it: with prediction off the local pawn
             // still runs its own movement here, and holding its pose back would
             // leave the authority's word with nowhere to land.
-            const bool ownPawn = request.Prediction != nullptr
+            const bool ownPawn = request.Prediction != nullptr && !spawned
                               && request.Prediction->Predicts(entity);
             if (request.Interpolation != nullptr && !ownPawn
-                && request.Interpolation->Intercepts(component->Type))
+                && request.Interpolation->InterceptsPose(component->Type))
             {
-                const std::span<std::byte> shadow =
-                    request.Interpolation->AuthoritativeBytes(entity);
-                if (shadow.size() != component->Size)
+                slot.Sink = SnapshotSink::Interpolation;
+                // Only what the pose interceptor answers for reaches here, and
+                // that is one component type, so the staging buffer and the
+                // shadow are the same size by construction rather than by check.
+                assert(component->Size == sizeof(LocalTransform));
+                const LocalTransform* shadow =
+                    spawned ? nullptr
+                            : request.Interpolation->TryAuthoritative(entity);
+                if (earlier != nullptr)
+                {
+                    std::memcpy(target.data(), decoded.data() + earlier->Offset,
+                                component->Size);
+                }
+                else if (shadow != nullptr)
+                {
+                    std::memcpy(target.data(), shadow, component->Size);
+                }
+                else if (!schema.WriteDefaultBytes(component->Type, target))
                 {
                     result.Error = SnapshotApplyError::UnknownComponentStorage;
                     return result;
                 }
-                if (!request.Interpolation->HasAuthoritativeState(entity)
-                    && !schema.WriteDefaultBytes(component->Type, shadow))
-                {
-                    result.Error = SnapshotApplyError::UnknownComponentStorage;
-                    return result;
-                }
-                if (!ReplicationDecodeComponent(*component, reader, shadow))
+                if (!ReplicationDecodeComponent(*component, reader, target))
                 {
                     result.Error = SnapshotApplyError::Truncated;
                     return result;
                 }
-                request.Interpolation->Commit(entity, result.Tick);
+                slot.PresentInWorld =
+                    earlier != nullptr
+                    || (!spawned
+                        && world.HasComponent(
+                               entity, world.GetComponentIdByType(component->Type)));
+                plannedComponents.push_back(slot);
+                continue;
+            }
+
+            slot.Sink = SnapshotSink::World;
+            const ComponentId column = world.GetComponentIdByType(component->Type);
+            const bool present =
+                earlier != nullptr
+                || (!spawned && world.HasComponent(entity, column));
+            slot.PresentInWorld = present;
+
+            if (earlier != nullptr)
+            {
+                std::memcpy(target.data(), decoded.data() + earlier->Offset,
+                            component->Size);
+            }
+            else if (!spawned && world.HasComponent(entity, column))
+            {
+                const void* current = world.GetComponentRaw(entity, column);
+                if (current != nullptr)
+                    std::memcpy(target.data(), current, component->Size);
+                else if (!schema.WriteDefaultBytes(component->Type, target))
+                {
+                    result.Error = SnapshotApplyError::UnknownComponentStorage;
+                    return result;
+                }
+            }
+            else if (!schema.WriteDefaultBytes(component->Type, target))
+            {
+                result.Error = SnapshotApplyError::UnknownComponentStorage;
+                return result;
+            }
+
+            if (!ReplicationDecodeComponent(*component, reader, target))
+            {
+                result.Error = SnapshotApplyError::Truncated;
+                return result;
+            }
+            plannedComponents.push_back(slot);
+        }
+
+        bool anyRemoved = false;
+        std::uint32_t removalCount = 0;
+        if (!reader.ReadBool(anyRemoved))
+        {
+            result.Error = SnapshotApplyError::Truncated;
+            return result;
+        }
+        if (anyRemoved && !reader.ReadBits(kComponentCountBits, removalCount))
+        {
+            result.Error = SnapshotApplyError::Truncated;
+            return result;
+        }
+        if (removalCount > caps.MaxComponentsPerEntity)
+        {
+            result.Error = SnapshotApplyError::CapExceeded;
+            return result;
+        }
+        update.FirstRemoval = plannedRemovals.size();
+        update.RemovalCount = removalCount;
+        for (std::uint32_t r = 0; r < removalCount; ++r)
+        {
+            std::uint32_t wireIndex = 0;
+            if (!reader.ReadBits(kComponentIndexBits, wireIndex))
+            {
+                result.Error = SnapshotApplyError::Truncated;
+                return result;
+            }
+            const ReplicatedComponent* component =
+                layout.At(static_cast<std::uint8_t>(wireIndex));
+            if (component == nullptr)
+            {
+                result.Error = SnapshotApplyError::UnknownComponent;
+                return result;
+            }
+            plannedRemovals.push_back(component);
+        }
+
+        planned.push_back(update);
+    }
+
+    //-------------------------------------------------------------------------
+    // Write. The snapshot has decoded in full, so nothing here can refuse.
+    //-------------------------------------------------------------------------
+    for (NetEntityId id : destroyed)
+    {
+        const EntityId entity = identity.TryResolve(id);
+        identity.Unbind(id);
+        // Poses held for an entity that is gone describe nothing, and the handle
+        // will be handed out again to something else.
+        if (request.Interpolation != nullptr && entity.IsValid())
+            request.Interpolation->Forget(entity);
+        // An identity this client never had is not an error: it can be an
+        // entity destroyed before the client was ever told it existed.
+        if (entity.IsValid() && world.IsAlive(entity))
+        {
+            world.DestroyEntity(entity);
+            ++result.EntitiesDestroyed;
+        }
+    }
+
+    for (const PlannedEntityUpdate& update : planned)
+    {
+        // Read to keep the stream aligned, and nothing more. The authority
+        // still holds it as unconfirmed, so it arrives again once this machine
+        // can recognise it.
+        if (update.Deferred)
+            continue;
+
+        EntityId entity = update.Local;
+        if (update.Spawned)
+        {
+            entity = world.CreateEntity(StoragePartitionId{ request.Partition });
+            identity.Bind(update.Id, entity);
+            ++result.EntitiesSpawned;
+        }
+        else
+        {
+            // An authored entity meeting its wire identity for the first time.
+            // The entity is the one the level load made; only the binding is
+            // new, which is what keeps its zone, its authored components, and
+            // every handle already held on it.
+            if (update.BindIdentity)
+                identity.Bind(update.Id, entity);
+            ++result.EntitiesUpdated;
+        }
+
+        for (std::uint32_t c = 0; c < update.ComponentCount; ++c)
+        {
+            const PlannedComponent& slot =
+                plannedComponents[update.FirstComponent + c];
+            const ReplicatedComponent& component = *slot.Layout;
+            const std::span<const std::byte> value(decoded.data() + slot.Offset,
+                                                   component.Size);
+
+            switch (slot.Sink)
+            {
+            case SnapshotSink::Prediction:
+            {
+                const std::span<std::byte> shadow =
+                    request.Prediction->AuthoritativeBytes(component.Type);
+                std::memcpy(shadow.data(), value.data(), component.Size);
+                request.Prediction->MarkSeen(component.Type);
+                break;
+            }
+            case SnapshotSink::Interpolation:
+            {
+                LocalTransform pose;
+                std::memcpy(&pose, value.data(), sizeof(pose));
+                request.Interpolation->Commit(entity, result.Tick, pose);
 
                 // The component still has to exist, because presenting a pose
                 // means writing into it every tick and nothing can be written
@@ -817,45 +1277,43 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
                 // authority's own value the first time, so a newly mirrored
                 // entity appears where it belongs rather than at the origin and
                 // then slides in from there.
-                if (!world.HasComponent(entity,
-                                        world.GetComponentIdByType(component->Type))
-                    && !schema.ImportComponent(world, entity, component->Type, shadow))
+                if (!slot.PresentInWorld)
                 {
-                    result.Error = SnapshotApplyError::ComponentAddFailed;
-                    return result;
+                    const bool added = schema.ImportComponent(world, entity,
+                                                              component.Type, value);
+                    assert(added && "a component the read half accepted would not add");
+                    (void)added;
                 }
-                continue;
+                break;
             }
+            case SnapshotSink::World:
+            {
+                const bool wrote =
+                    slot.PresentInWorld
+                        ? schema.SetComponentBytes(world, entity, component.Type, value)
+                        : schema.ImportComponent(world, entity, component.Type, value);
+                assert(wrote && "a component the read half accepted would not write");
+                (void)wrote;
+                break;
+            }
+            }
+        }
 
-            staging.assign(component->Size, std::byte{ 0 });
-            const ComponentId column = world.GetComponentIdByType(component->Type);
-            const bool present = world.HasComponent(entity, column);
-            if (present)
+        // What the entity stopped carrying. After the writes, because the same
+        // snapshot can carry a component's new value and another's departure,
+        // and the order the wire states is the order the authority meant.
+        //
+        // A component the entity does not have is not a failure: a peer told
+        // about a removal it never saw the addition of is already in the state
+        // the message describes.
+        for (std::uint32_t r = 0; r < update.RemovalCount; ++r)
+        {
+            const ReplicatedComponent& gone =
+                *plannedRemovals[update.FirstRemoval + r];
+            if (world.IsRegistered(gone.Type))
             {
-                const void* current = world.GetComponentRaw(entity, column);
-                if (current != nullptr)
-                    std::memcpy(staging.data(), current, component->Size);
-            }
-            else if (!schema.WriteDefaultBytes(component->Type, staging))
-            {
-                result.Error = SnapshotApplyError::UnknownComponentStorage;
-                return result;
-            }
-
-            if (!ReplicationDecodeComponent(*component, reader, staging))
-            {
-                result.Error = SnapshotApplyError::Truncated;
-                return result;
-            }
-
-            const bool wrote =
-                present
-                    ? schema.SetComponentBytes(world, entity, component->Type, staging)
-                    : schema.ImportComponent(world, entity, component->Type, staging);
-            if (!wrote)
-            {
-                result.Error = SnapshotApplyError::ComponentAddFailed;
-                return result;
+                if (schema.RemoveComponent(world, entity, gone.Type))
+                    ++result.ComponentsRemoved;
             }
         }
 
@@ -868,7 +1326,7 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
 
         // Last, and only once: the recipe completes an entity that already
         // holds everything the wire had to say about it.
-        if (spawned && request.Recipes != nullptr)
+        if (update.Spawned && request.Recipes != nullptr)
         {
             NetSpawnRecipeId recipeId = kNetNoSpawnRecipe;
             if (world.IsRegistered<NetSpawnRecipe>())
@@ -879,6 +1337,8 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
             if (recipeId != kNetNoSpawnRecipe
                 && !request.Recipes->Build(recipeId, world, entity))
             {
+                if (result.RecipesMissing == 0)
+                    result.FirstMissingRecipe = recipeId;
                 ++result.RecipesMissing;
             }
         }

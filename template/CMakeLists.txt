@@ -49,6 +49,15 @@ else()
     # not install SenchaWarnings.cmake, so a standalone build of this same file
     # keeps whatever diagnostics the game project chose.
     sencha_warnings(template_game)
-    set_target_properties(template_game PROPERTIES
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build")
+    # Only the primary build tree owns template/build/game.so, the path
+    # project.senchaproj resolves. Every configure of this repo builds a target
+    # by the same name, so without this the last one to link decides which
+    # module the editor and the two-process tests load -- and a sanitizer build
+    # writes one an uninstrumented host cannot load at all, which surfaces as
+    # the host silently failing to start rather than as anything about modules.
+    # A second tree keeps its module beside its own binaries.
+    if(CMAKE_BINARY_DIR STREQUAL "${CMAKE_SOURCE_DIR}/build")
+        set_target_properties(template_game PROPERTIES
+            LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build")
+    endif()
 endif()

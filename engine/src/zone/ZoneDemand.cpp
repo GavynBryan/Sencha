@@ -267,12 +267,7 @@ std::vector<ZoneHopRank> ComputeZoneHopRanks(const WorldPartitionManifest& manif
     return ranks;
 }
 
-std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& manifest,
-                                                const WorldPartitionIndex& index,
-                                                ZoneId focus,
-                                                std::span<const ZonePin> pins,
-                                                const WorldPartitionStreamingConfig& config,
-                                                const Vec3d* focusPosition)
+namespace
 {
     struct DemandEntry
     {
@@ -280,8 +275,23 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
         ZoneParticipation Desired;
         std::vector<ZoneDemandReasonRecord> Reasons;
         bool              Pinned = false;
+        // Some source is standing here. Full participation and immunity from
+        // eviction follow from it, and with several sources it is no longer the
+        // same question as "is this zone the focus".
+        bool              Focused = false;
     };
 
+    // Everything one source asks for, before pins, before the cap, and before
+    // any other source is considered. Empty for a focus the manifest does not
+    // have, which is how a source that has not resolved yet contributes nothing
+    // rather than contributing a guess.
+    std::vector<DemandEntry> AccumulateSourceDemand(
+        const WorldPartitionManifest& manifest,
+        const WorldPartitionIndex& index,
+        ZoneId focus,
+        const Vec3d* focusPosition,
+        const WorldPartitionStreamingConfig& config)
+    {
     // The caller decides what "no focus yet" means; the policy does not guess.
     const WorldPartitionStreamingConfig focusConfig =
         ResolveGraphStreamingConfig(manifest, focus, config);
@@ -303,6 +313,7 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
         {
             entry.Desired = ZoneParticipation{ .Visible = true, .Physics = true,
                                                .Logic = true, .Audio = true };
+            entry.Focused = true;
             AddReason(entry.Reasons, { ZoneDemandReason::Focus, focus, 0, 0, {} });
         }
         else
@@ -401,6 +412,100 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
         }
     }
 
+    return entries;
+    }
+
+    // Folds one source's demand into the set built so far. A zone several
+    // sources want keeps the smallest hop any of them gave it -- and with it the
+    // reason that hop came from, so the record still names a real edge -- while
+    // participation unions and reasons accumulate.
+    void MergeSourceDemand(std::vector<DemandEntry>& into,
+                           const std::vector<DemandEntry>& from)
+    {
+        for (const DemandEntry& add : from)
+        {
+            const auto held = std::find_if(
+                into.begin(), into.end(), [&](const DemandEntry& existing)
+                { return existing.Rank.Zone == add.Rank.Zone; });
+            if (held == into.end())
+            {
+                into.push_back(add);
+                continue;
+            }
+
+            // Strictly nearer wins, so an equal hop keeps the earlier source's
+            // reason and the merge does not depend on connection order.
+            if (add.Rank.Hop < held->Rank.Hop
+                || (add.Rank.Hop == held->Rank.Hop && add.Rank.Cost < held->Rank.Cost))
+            {
+                const bool wasFocused = held->Focused;
+                std::vector<ZoneDemandReasonRecord> reasons = std::move(held->Reasons);
+                const ZoneParticipation desired = held->Desired;
+                held->Rank = add.Rank;
+                held->Reasons = std::move(reasons);
+                held->Desired = desired;
+                held->Focused = wasFocused;
+            }
+
+            held->Desired.Visible |= add.Desired.Visible;
+            held->Desired.Physics |= add.Desired.Physics;
+            held->Desired.Logic   |= add.Desired.Logic;
+            held->Desired.Audio   |= add.Desired.Audio;
+            held->Focused = held->Focused || add.Focused;
+            for (const ZoneDemandReasonRecord& reason : add.Reasons)
+                AddReason(held->Reasons, reason);
+        }
+    }
+}
+
+std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& manifest,
+                                                const WorldPartitionIndex& index,
+                                                std::span<const ZoneFocusSource> sources,
+                                                std::span<const ZonePin> pins,
+                                                const WorldPartitionStreamingConfig& config)
+{
+    std::vector<DemandEntry> entries;
+    bool anySourceResolved = false;
+    for (const ZoneFocusSource& source : sources)
+    {
+        const Vec3d position = source.Position.value_or(Vec3d{});
+        std::vector<DemandEntry> mine = AccumulateSourceDemand(
+            manifest, index, source.Focus,
+            source.Position.has_value() ? &position : nullptr, config);
+        if (mine.empty())
+            continue;
+        anySourceResolved = true;
+
+        // The room this source is part way into counts as somewhere it is,
+        // not somewhere it can see. It is already in `mine` as a neighbour --
+        // a dock is a graph edge -- so this promotes it rather than adding it.
+        if (source.Entering.IsValid() && source.Entering != source.Focus)
+        {
+            for (DemandEntry& entry : mine)
+            {
+                if (entry.Rank.Zone != source.Entering)
+                    continue;
+                entry.Desired = ZoneParticipation{ .Visible = true,
+                                                   .Physics = true,
+                                                   .Logic = true,
+                                                   .Audio = true };
+                entry.Focused = true;
+                break;
+            }
+        }
+        if (entries.empty())
+            entries = std::move(mine);
+        else
+            MergeSourceDemand(entries, mine);
+    }
+
+    // No source resolved to anything the manifest has. Pins are deliberately not
+    // applied here: a world with no valid focus has nothing to hold zones open
+    // around, and answering with pins alone would report residency the runtime
+    // is not going to establish.
+    if (!anySourceResolved)
+        return {};
+
     // Pins OR their minimum onto whatever the zone already earned. A pin on a
     // zone the manifest does not contain is ignored: validation owns reporting
     // broken content; the policy stays total.
@@ -408,7 +513,10 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
     {
         if (!pin.Zone.IsValid() || !ZoneExists(manifest, pin.Zone))
             continue;
-        DemandEntry* existing = find(pin.Zone);
+        const auto found = std::find_if(
+            entries.begin(), entries.end(), [&](const DemandEntry& entry)
+            { return entry.Rank.Zone == pin.Zone; });
+        DemandEntry* existing = found == entries.end() ? nullptr : &*found;
         if (existing == nullptr)
         {
             DemandEntry entry;
@@ -465,7 +573,7 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
         std::vector<size_t> evictable;
         for (size_t i = 0; i < entries.size(); ++i)
             if (GraphOf(manifest, entries[i].Rank.Zone) == graph
-                && entries[i].Rank.Zone != focus && !entries[i].Pinned)
+                && !entries[i].Focused && !entries[i].Pinned)
                 evictable.push_back(i);
         std::sort(evictable.begin(), evictable.end(),
                   [&](size_t a, size_t b)
@@ -501,6 +609,27 @@ std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& ma
         records.push_back(ZoneDemandRecord{
             entry.Rank.Zone, entry.Desired, entry.Reasons });
     return records;
+}
+
+std::vector<ZoneDemandRecord> ComputeZoneDemand(const WorldPartitionManifest& manifest,
+                                                const WorldPartitionIndex& index,
+                                                ZoneId focus,
+                                                std::span<const ZonePin> pins,
+                                                const WorldPartitionStreamingConfig& config,
+                                                const Vec3d* focusPosition)
+{
+    // Kept because single focus is what single-player, the editor preview, and
+    // every existing test mean, and spelling it as a one-element array at each
+    // of those call sites would be ceremony rather than clarity. It forwards
+    // rather than duplicating, so the two can never answer differently.
+    const ZoneFocusSource source{
+        .Source = kPrimaryFocusSource,
+        .Focus = focus,
+        .Position = focusPosition == nullptr ? std::optional<Vec3d>{}
+                                             : std::optional<Vec3d>{ *focusPosition },
+        .Entering = {},
+    };
+    return ComputeZoneDemand(manifest, index, std::span(&source, 1), pins, config);
 }
 
 bool IsDemandedFor(const ZoneDemandRecord& record, ZoneDemandReason reason)

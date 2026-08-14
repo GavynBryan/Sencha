@@ -5,13 +5,16 @@
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleTypes.h>
 #include <net/NetSession.h>
+#include <net/NetStatusReport.h>
 #include <net/ReplicationLayout.h>
+#include <world/RuntimeWorld.h>
 #include <net/ClientPrediction.h>
 #include <net/PeerCommandRuntime.h>
 #include <net/UdpTransport.h>
 
 #include <algorithm>
 #include <charconv>
+#include <limits>
 #include <memory>
 #include <string>
 #include <variant>
@@ -47,6 +50,13 @@ namespace
         return identity;
     }
 
+    bool ParseUnsigned(std::string_view text, std::uint64_t& out)
+    {
+        const auto result =
+            std::from_chars(text.data(), text.data() + text.size(), out);
+        return result.ec == std::errc{} && result.ptr == text.data() + text.size();
+    }
+
     bool ParsePort(std::string_view text, std::uint16_t& out)
     {
         unsigned value = 0;
@@ -60,35 +70,6 @@ namespace
         return true;
     }
 
-    std::string_view DescribeRole(NetSessionRole role)
-    {
-        switch (role)
-        {
-        case NetSessionRole::Host:   return "host";
-        case NetSessionRole::Client: return "client";
-        case NetSessionRole::Standalone: break;
-        }
-        return "standalone";
-    }
-
-    std::string_view DescribeFailure(NetJoinFailure failure)
-    {
-        switch (failure)
-        {
-        case NetJoinFailure::Refused:        return "refused";
-        case NetJoinFailure::TimedOut:       return "timed out";
-        case NetJoinFailure::TransportError: return "transport error";
-        case NetJoinFailure::Ended:          return "session ended";
-        case NetJoinFailure::None:           break;
-        }
-        return "";
-    }
-
-    std::string DescribeRoundTrip(std::uint64_t microseconds)
-    {
-        return std::to_string(microseconds / 1000) + "."
-             + std::to_string((microseconds / 100) % 10) + "ms";
-    }
 }
 
 void NetApplyConsoleAuthority(ConsoleRegistry& registry, const NetSession* session)
@@ -126,6 +107,15 @@ namespace
                     static_cast<std::uint32_t>(std::max<std::int64_t>(1, *ticks));
                 engine.Replication().SetPublishInterval(value);
                 engine.Interpolation().SetSnapshotInterval(value);
+            }
+        }
+        if (const CVarMetadata* probe = registry.FindCVar("net.desync_interval"))
+        {
+            if (const std::int64_t* ticks =
+                    std::get_if<std::int64_t>(&probe->CurrentValue))
+            {
+                engine.Replication().SetDesyncInterval(
+                    static_cast<std::uint32_t>(std::max<std::int64_t>(0, *ticks)));
             }
         }
         if (const CVarMetadata* budget = registry.FindCVar("net.snapshot_bytes"))
@@ -197,6 +187,26 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
                     static_cast<std::size_t>(std::max<std::int64_t>(0, *ticks)));
             }
         },
+    });
+
+    registry.RegisterCVar({
+        .Name = "net.desync_interval",
+        .Owner = "engine",
+        .Type = CVarType::Int,
+        .DefaultValue = static_cast<std::int64_t>(0),
+        .CurrentValue = static_cast<std::int64_t>(0),
+        // Developer, and off by default. It exists to catch replication defects
+        // in development and soak, not to run in a shipped session: it costs
+        // outbound bytes per peer to answer a question nobody is asking unless
+        // something is already suspected.
+        .Flags = CVarFlags::Developer | CVarFlags::Replicated,
+        .Help = "Ticks between desync probes, or 0 for off. The authority sends "
+                "what it believes each peer holds as a hash per entity; a peer "
+                "that folds a different answer logs it. Use net_entity <netid> "
+                "for which component and which value.",
+        .Source = { "engine defaults" },
+        .Min = static_cast<std::int64_t>(0),
+        .Max = static_cast<std::int64_t>(600),
     });
 
     registry.RegisterCVar({
@@ -463,6 +473,79 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
     });
 
     registry.RegisterCommand({
+        .Name = "net_entity",
+        .Owner = "engine",
+        .Usage = "net_entity <netid> [peer]",
+        .Help = "Print one replicated object's record: owner, when each field "
+                "run last moved, and how far each peer has got with it. Naming "
+                "a peer reports what that peer is still owed, by name.",
+        .Callback = [&engine](ConsoleExecutionContext&,
+                              std::span<const std::string> args) {
+            ConsoleResult result;
+            std::uint64_t id = 0;
+            if (args.empty() || !ParseUnsigned(args[0], id))
+            {
+                result.Status = ConsoleStatus::InvalidArguments;
+                result.Error("usage: net_entity <netid> [peer]");
+                return result;
+            }
+
+            PeerId focus;
+            if (args.size() > 1)
+            {
+                std::uint64_t peer = 0;
+                if (!ParseUnsigned(args[1], peer) || peer == 0
+                    || peer > std::numeric_limits<std::uint32_t>::max())
+                {
+                    result.Status = ConsoleStatus::InvalidArguments;
+                    result.Error("peer ids start at 1");
+                    return result;
+                }
+                focus = PeerId{ static_cast<std::uint32_t>(peer) };
+            }
+
+            NetEntityReportSources sources;
+            sources.Session = engine.TryNet();
+            sources.Replication = &engine.Replication();
+            sources.Layout = &engine.ReplicatedComponents();
+            result.Info(NetFormatEntity(sources, NetEntityId{ id }, focus));
+            return result;
+        },
+    });
+
+    registry.RegisterCommand({
+        .Name = "net_owners",
+        .Owner = "engine",
+        .Usage = "net_owners",
+        .Help = "Print what this machine drives and, on a host, what each peer "
+                "owns -- straight off the NetOwner column, which is the only "
+                "record of it.",
+        .Callback = [&engine](ConsoleExecutionContext&,
+                              std::span<const std::string>) {
+            ConsoleResult result;
+            result.Info(NetFormatOwners(engine.TryNet(),
+                                        engine.World().Entities(),
+                                        &engine.Replication()));
+            return result;
+        },
+    });
+
+    registry.RegisterCommand({
+        .Name = "net_zones",
+        .Owner = "engine",
+        .Usage = "net_zones",
+        .Help = "Print which zones each peer has been granted and which it has "
+                "confirmed it holds -- the one reason an entity may not be "
+                "arriving that no other readout shows.",
+        .Callback = [&engine](ConsoleExecutionContext&,
+                              std::span<const std::string>) {
+            ConsoleResult result;
+            result.Info(NetFormatZones(engine.TryNet(), &engine.Replication()));
+            return result;
+        },
+    });
+
+    registry.RegisterCommand({
         .Name = "net_components",
         .Owner = "engine",
         .Usage = "net_components",
@@ -513,50 +596,25 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
         .Name = "net_status",
         .Owner = "engine",
         .Usage = "net_status",
-        .Help = "Print session role, local address, peers, and handshake outcome.",
+        .Help = "Print what the session is doing: traffic by kind, replication "
+                "budget and deferral, per-peer input depth and channel health, "
+                "and a client's prediction, interpolation, and clock.",
         .Callback = [&engine](ConsoleExecutionContext&,
                               std::span<const std::string>) {
+            // The whole account, not a summary of it. A dedicated host has no
+            // overlay, so this is the only place the numbers that decide
+            // whether a session is healthy can be read at all.
+            NetStatusSources sources;
+            sources.Session = engine.TryNet();
+            sources.Traffic = &engine.NetTraffic();
+            sources.Replication = &engine.Replication();
+            sources.Commands = &engine.PeerCommands();
+            sources.Prediction = &engine.Prediction();
+            sources.Interpolation = &engine.Interpolation();
+            sources.Clock = &engine.NetClock();
+
             ConsoleResult result;
-            const NetSession* session = engine.TryNet();
-            if (session == nullptr)
-            {
-                result.Info("standalone (no session)");
-                return result;
-            }
-
-            std::string text = std::string(DescribeRole(session->Role()));
-            text += " at " + NetAddressToString(session->LocalAddress());
-
-            if (session->Role() == NetSessionRole::Client)
-            {
-                text += session->IsConnected() ? "; admitted as peer "
-                                                   + std::to_string(session->LocalPeerId().Value)
-                                               : "; not admitted";
-                if (session->RoundTripMicroseconds() > 0)
-                    text += "; rtt " + DescribeRoundTrip(session->RoundTripMicroseconds());
-            }
-            else
-            {
-                text += "; peers " + std::to_string(session->ConnectedPeers().size());
-                for (PeerId id : session->ConnectedPeers())
-                {
-                    const NetPeer* peer = session->FindPeer(id);
-                    if (peer != nullptr && peer->RoundTripMicroseconds > 0)
-                    {
-                        text += "; peer " + std::to_string(id.Value) + " rtt "
-                              + DescribeRoundTrip(peer->RoundTripMicroseconds);
-                    }
-                }
-            }
-            if (session->JoinFailure() != NetJoinFailure::None)
-            {
-                text += "; " + std::string(DescribeFailure(session->JoinFailure()))
-                      + ": " + session->JoinFailureReason();
-            }
-
-            text += "; strikes " + std::to_string(session->StrikesIssued());
-            text += "; refusals " + std::to_string(session->Refusals());
-            result.Info(text);
+            result.Info(NetFormatStatus(sources));
             return result;
         },
     });

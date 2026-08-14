@@ -118,7 +118,9 @@ private:
     static void TopoSort(std::vector<DispatchEntry<TContext>>& entries);
 
     template<typename TContext>
-    static void AddDependency(std::vector<DispatchEntry<TContext>>& entries,
+    // False when this phase list has no entry for `tid`, so After can tell a
+    // real ordering from one that landed nowhere.
+    static bool AddDependency(std::vector<DispatchEntry<TContext>>& entries,
                               std::type_index tid,
                               std::type_index dep);
 
@@ -197,15 +199,34 @@ void EngineSchedule::After()
 {
     const std::type_index tid(typeid(T));
     const std::type_index dep(typeid(TDep));
-    AddDependency(ZoneResidencyEntries, tid, dep);
-    AddDependency(PreSimulateEntries, tid, dep);
-    AddDependency(FixedLogicEntries, tid, dep);
-    AddDependency(PhysicsEntries, tid, dep);
-    AddDependency(PostFixedEntries, tid, dep);
-    AddDependency(FrameUpdateEntries, tid, dep);
-    AddDependency(ExtractRenderEntries, tid, dep);
-    AddDependency(AudioEntries, tid, dep);
-    AddDependency(EndFrameEntries, tid, dep);
+
+    // An edge between systems one of which is not registered is a typo, not an
+    // ordering. Asserted rather than ignored because an ordering that quietly
+    // does not exist is the one scheduling fault that never shows up as a
+    // crash: it shows up as a remote player a tick behind, months later, on
+    // someone else's machine.
+    assert(TypeIndex.contains(tid)
+           && "After<T, TDep>: T is not registered in this schedule");
+    assert(TypeIndex.contains(dep)
+           && "After<T, TDep>: TDep is not registered in this schedule");
+
+    bool landed = false;
+    landed |= AddDependency(ZoneResidencyEntries, tid, dep);
+    landed |= AddDependency(PreSimulateEntries, tid, dep);
+    landed |= AddDependency(FixedLogicEntries, tid, dep);
+    landed |= AddDependency(PhysicsEntries, tid, dep);
+    landed |= AddDependency(PostFixedEntries, tid, dep);
+    landed |= AddDependency(FrameUpdateEntries, tid, dep);
+    landed |= AddDependency(ExtractRenderEntries, tid, dep);
+    landed |= AddDependency(AudioEntries, tid, dep);
+    landed |= AddDependency(EndFrameEntries, tid, dep);
+
+    // Two systems that share no phase have no order to declare. Being told so
+    // is better than believing one was declared: the dependency is recorded per
+    // phase list, so an edge between a PreSimulate system and a FrameUpdate one
+    // silently describes nothing.
+    assert(landed && "After<T, TDep>: T and TDep share no frame phase");
+    (void)landed;
 }
 
 template<typename T>
@@ -229,18 +250,28 @@ void EngineSchedule::Run(const std::vector<DispatchEntry<TContext>>& entries, TC
 }
 
 template<typename TContext>
-void EngineSchedule::AddDependency(std::vector<DispatchEntry<TContext>>& entries,
+bool EngineSchedule::AddDependency(std::vector<DispatchEntry<TContext>>& entries,
                                    std::type_index tid,
                                    std::type_index dep)
 {
+    // Both ends, in this list. A dependency naming a type the list does not
+    // contain is one the sort has nothing to order against and drops, so
+    // recording it would be the silent no-op this returns false to report --
+    // and the two ends being in different phases is exactly how that happens.
+    DispatchEntry<TContext>* subject = nullptr;
+    bool hasDependency = false;
     for (auto& entry : entries)
     {
         if (entry.TypeId == tid)
-        {
-            entry.DependsOn.push_back(dep);
-            return;
-        }
+            subject = &entry;
+        if (entry.TypeId == dep)
+            hasDependency = true;
     }
+    if (subject == nullptr || !hasDependency)
+        return false;
+
+    subject->DependsOn.push_back(dep);
+    return true;
 }
 
 template<typename TContext>

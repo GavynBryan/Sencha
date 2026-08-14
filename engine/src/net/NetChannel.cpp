@@ -116,6 +116,10 @@ bool NetChannelSet::Send(NetChannelKind kind, std::span<const std::byte> message
                 ? 0
                 : std::min(kNetMaxFragmentPayloadBytes, message.size() - offset);
         const std::uint16_t sequence = NextReliableSequence++;
+        // Wrapping onto zero would reopen the same hole 65535 messages into a
+        // session rather than at the start of one.
+        if (NextReliableSequence == 0)
+            NextReliableSequence = 1;
         Outstanding.push_back(Outbound{
             .Sequence = sequence,
             .Packet = BuildPacket(kind,
@@ -167,6 +171,13 @@ std::vector<NetChannelSet::Packet> NetChannelSet::Drain(double nowSeconds)
 
 void NetChannelSet::AckOutbound(std::uint16_t ack, std::uint32_t ackBits)
 {
+    // Nothing received, so nothing proved. Every packet carries an ack whether
+    // or not its sender has anything to report, and reading the empty one as
+    // proof of sequence zero is how a first reliable message retired itself
+    // against a peer that had never seen it.
+    if (ack == 0)
+        return;
+
     const auto acked = [&](std::uint16_t sequence) {
         if (sequence == ack)
             return true;
@@ -228,8 +239,13 @@ std::vector<std::vector<std::byte>> NetChannelSet::Receive(
             | (static_cast<std::uint16_t>(packet[at + 1]) << 8));
     };
 
+    // Membership, not an upper bound. The bound worked only while the kinds
+    // started at zero, and they no longer do: a leading byte below the range
+    // would have been cast to a kind nothing handles and fallen through the
+    // channel-specific branches as though it were reliable.
     const auto kindRaw = static_cast<std::uint8_t>(packet[0]);
-    if (kindRaw > static_cast<std::uint8_t>(NetChannelKind::ReliableOrdered))
+    if (kindRaw != static_cast<std::uint8_t>(NetChannelKind::UnreliableSequenced)
+        && kindRaw != static_cast<std::uint8_t>(NetChannelKind::ReliableOrdered))
     {
         error = NetDecodeError::UnknownMessage;
         return delivered;

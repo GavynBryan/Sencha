@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <app/EngineSchedule.h>
+
+#include <algorithm>
 #include <core/config/EngineConfig.h>
 #include <ecs/WorldComponentSchema.h>
 #include <input/InputFrame.h>
@@ -241,4 +243,89 @@ TEST_F(EngineScheduleTest, RuntimeWorldBuildsDomainPartitionView)
     EXPECT_FALSE(view.Logic.Contains(physics.Partition));
 
     harness.EndView();
+}
+
+//=============================================================================
+// Ordering that does not exist
+//
+// A dependency is recorded per phase list, against an entry that has to be
+// there to receive it. Both ways of missing were silent, and a scheduling
+// fault that is silent is the one nobody finds: it does not crash, it reorders
+// two systems by however their registration happened to fall, and the symptom
+// turns up somewhere else entirely.
+//=============================================================================
+
+namespace
+{
+    // Registered nowhere, so an edge naming it has nothing to attach to.
+    struct NeverRegistered
+    {
+        void FixedLogic(FixedLogicContext&) {}
+    };
+
+    // A different phase from FixedA, so the two share no list.
+    struct FrameOnly
+    {
+        void FrameUpdate(FrameUpdateContext&) {}
+    };
+}
+
+TEST(EngineScheduleOrderingDeath, AnEdgeNamingAnUnregisteredSystemDies)
+{
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    ScheduleHarness harness;
+    harness.Schedule.Register<FixedA>();
+
+    EXPECT_DEATH((harness.Schedule.After<FixedA, NeverRegistered>()),
+                 "not registered");
+}
+
+TEST(EngineScheduleOrderingDeath, AnEdgeOnAnUnregisteredSubjectDies)
+{
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    ScheduleHarness harness;
+    harness.Schedule.Register<FixedA>();
+
+    EXPECT_DEATH((harness.Schedule.After<NeverRegistered, FixedA>()),
+                 "not registered");
+}
+
+// Both are registered and there is still no ordering to record, because a
+// dependency lives in the phase list the two share and they share none.
+TEST(EngineScheduleOrderingDeath, AnEdgeBetweenSystemsSharingNoPhaseDies)
+{
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    ScheduleHarness harness;
+    harness.Schedule.Register<FixedA>();
+    harness.Schedule.Register<FrameOnly>();
+
+    EXPECT_DEATH((harness.Schedule.After<FrameOnly, FixedA>()),
+                 "share no frame phase");
+}
+
+TEST(EngineScheduleOrdering, AnEdgeWithinOnePhaseIsRecorded)
+{
+    ScheduleHarness harness;
+    harness.Schedule.Register<FixedA>();
+    harness.Schedule.Register<FixedB>();
+    harness.Schedule.After<FixedB, FixedA>();
+    harness.Schedule.Init();
+
+    CallLog.clear();
+    const FrameZoneView& view = harness.BuildView();
+    FixedLogicContext ctx{
+        .Config = harness.Config,
+        .Runtime = harness.Runtime,
+        .Time = {},
+        .Entities = *view.Entities,
+        .Partitions = view.Logic,
+    };
+    harness.Schedule.RunFixedLogic(ctx);
+    harness.EndView();
+
+    const auto a = std::find(CallLog.begin(), CallLog.end(), "A::FixedLogic");
+    const auto b = std::find(CallLog.begin(), CallLog.end(), "B::FixedLogic");
+    ASSERT_NE(a, CallLog.end());
+    ASSERT_NE(b, CallLog.end());
+    EXPECT_LT(a, b);
 }

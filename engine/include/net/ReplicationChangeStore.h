@@ -1,7 +1,9 @@
 #pragma once
 
+#include <core/identity/Id.h>
 #include <net/ReplicationLayout.h>
 #include <net/ReplicationSnapshot.h>
+#include <zone/ZoneId.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -9,6 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
+class RuntimeWorld;
 class World;
 
 //=============================================================================
@@ -45,14 +48,44 @@ public:
         std::vector<std::byte> Bytes;
         // One entry per field run: the generation that run last moved at.
         std::vector<std::uint64_t> ChangedAt;
+        // The last pass that found this component on the entity, for the same
+        // reason EntityState carries one: what a pass did not see is gone.
+        std::uint64_t SeenAt = 0;
+    };
+
+    // A component an entity used to carry. Held until every peer has been told,
+    // the same way a destroyed entity is: a peer that has been shown the
+    // component and not shown it going keeps it forever, and a peer that joins
+    // afterwards would otherwise be sent state the authority does not have.
+    struct RemovedComponent
+    {
+        std::uint8_t WireIndex = 0;
+        // When it went. A peer whose floor is below this has not been told.
+        std::uint64_t RemovedAt = 0;
     };
 
     struct EntityState
     {
         NetEntityId Id;
+        // The authored identity this entity was loaded under, when it has one.
+        // Both machines load the same level and reach the same value under
+        // different runtime handles, so this is what lets a client recognise an
+        // entity it already has instead of building a second one beside it.
+        // Invalid for anything the authority spawned at runtime.
+        PersistentEntityId Persistent;
+        // The streamed zone this entity is resident in, or invalid for the
+        // persistent partition -- which is where everything a session spawns
+        // lives, and which every peer has by definition. Recorded as the zone
+        // rather than as the storage partition it was read from: a partition is
+        // a runtime slot that is recycled as zones come and go, while a zone id
+        // is the name a grant can be written in and the name both machines
+        // already agree on.
+        ZoneId Zone;
         // Ordered by wire index, so a snapshot writes components in a fixed
         // order without sorting per peer.
         std::vector<ComponentState> Components;
+        // Ordered by wire index for the same reason.
+        std::vector<RemovedComponent> Removed;
         // Zero when nobody owns it, which is everything the authority drives.
         std::uint32_t Owner = 0;
         // When ownership last moved. Whether a field is visible to a peer
@@ -72,9 +105,17 @@ public:
     // and stamps the runs that moved with `generation`. Generations must
     // increase; the caller owns the counter because it also names the snapshots
     // that carry the result.
+    //
+    // `zones` answers which zone an entity's storage partition belongs to, and
+    // is null on a world with no partition runtime -- a single-level game, or a
+    // test -- where every entity is persistent and no zone gates anything. It is
+    // read once per chunk rather than once per entity: a chunk belongs to
+    // exactly one partition, which is the whole reason partitions are how zone
+    // residency is expressed.
     void Update(World& world, const ReplicationLayout& layout,
                 ReplicationAuthorityIdentity& identity,
-                std::uint64_t generation);
+                std::uint64_t generation,
+                const RuntimeWorld* zones = nullptr);
 
     // Everything alive as of the last Update, ordered by NetEntityId so two
     // runs of the same simulation produce the same snapshot bytes.
@@ -106,3 +147,16 @@ private:
     std::vector<NetEntityId> DepartedEntities;
     std::uint64_t LastGeneration = 0;
 };
+
+// Which runs of a component a peer is owed: the ones that moved after its
+// floor, plus every gated one when ownership moved after its floor, and then
+// only those this peer may see at all.
+//
+// A free function beside the store rather than a private step of the writer,
+// because a diagnostic that answers "why has this field not reached that peer"
+// has to answer it with the rule the writer actually applies. Two copies of it
+// would agree until the day the answer mattered.
+[[nodiscard]] std::uint64_t ReplicationOwedFields(
+    const ReplicatedComponent& component,
+    const ReplicationChangeStore::ComponentState& held,
+    std::uint64_t floor, bool ownershipMoved, bool forOwner);

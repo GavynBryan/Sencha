@@ -188,7 +188,7 @@ std::size_t NetEncodePlayerCommand(const NetPlayerCommand& command,
     // with a bit saying whether another follows, and a bit writer cannot be
     // rewound to correct one: running out halfway would leave a message
     // claiming input it does not carry.
-    const std::size_t headerBits = kActionCountBits + 64 + 64;
+    const std::size_t headerBits = kActionCountBits + 64 + 64 + 1;
     std::size_t budget = writer.BitsRemaining();
     if (budget < headerBits)
         return 0;
@@ -221,6 +221,10 @@ std::size_t NetEncodePlayerCommand(const NetPlayerCommand& command,
 
     writer.WriteBits(command.SnapshotAck.Newest(), 32);
     writer.WriteBits(command.SnapshotAck.Window(), 32);
+    // Whether any input follows. The acknowledgement above travels either way,
+    // which is what lets a client with nothing to say still confirm what it has
+    // applied.
+    writer.WriteBool(true);
     writer.WriteBits(actions, kActionCountBits);
     writer.WriteU64(newestTick);
 
@@ -239,6 +243,16 @@ std::size_t NetEncodePlayerCommand(const NetPlayerCommand& command,
     return writer.Overflowed() ? 0 : count;
 }
 
+bool NetEncodeCommandAck(const NetSnapshotAck& ack, NetBitWriter& writer)
+{
+    if (writer.BitsRemaining() < 64 + 1)
+        return false;
+    writer.WriteBits(ack.Newest(), 32);
+    writer.WriteBits(ack.Window(), 32);
+    writer.WriteBool(false);
+    return !writer.Overflowed();
+}
+
 bool NetDecodePlayerCommand(NetBitReader& reader, NetPlayerCommand& out)
 {
     out = NetPlayerCommand{};
@@ -247,10 +261,25 @@ bool NetDecodePlayerCommand(NetBitReader& reader, NetPlayerCommand& out)
     std::uint64_t newestTick = 0;
     std::uint32_t ackNewest = 0;
     std::uint32_t ackWindow = 0;
+    bool hasRecords = false;
     if (!reader.ReadBits(32, ackNewest)
         || !reader.ReadBits(32, ackWindow)
-        || !reader.ReadBits(kActionCountBits, actions)
-        || !reader.ReadU64(newestTick))
+        || !reader.ReadBool(hasRecords))
+    {
+        return false;
+    }
+    if (!hasRecords)
+    {
+        // An acknowledgement and nothing else. Valid, and the whole message.
+        out.SnapshotAck.Observe(ackNewest);
+        for (std::uint32_t back = NetSnapshotAck::kWindow; back > 0; --back)
+        {
+            if ((ackWindow & (1u << (back - 1))) != 0 && ackNewest > back)
+                out.SnapshotAck.Observe(ackNewest - back);
+        }
+        return true;
+    }
+    if (!reader.ReadBits(kActionCountBits, actions) || !reader.ReadU64(newestTick))
     {
         return false;
     }

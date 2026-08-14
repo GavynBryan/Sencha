@@ -20,6 +20,9 @@ std::string_view NetTrafficKindToString(NetTrafficKind kind)
     case NetTrafficKind::Snapshot: return "snapshot";
     case NetTrafficKind::Command:  return "command";
     case NetTrafficKind::CVar:     return "cvar";
+    case NetTrafficKind::Zone:     return "zone";
+    case NetTrafficKind::Desync:   return "desync";
+    case NetTrafficKind::Game:     return "game";
     case NetTrafficKind::Other:    break;
     }
     return "other";
@@ -32,9 +35,19 @@ NetTrafficKind NetTrafficKindOf(NetPayloadKind payload)
     case NetPayloadKind::Snapshot: return NetTrafficKind::Snapshot;
     case NetPayloadKind::Command:  return NetTrafficKind::Command;
     case NetPayloadKind::CVar:     return NetTrafficKind::CVar;
+    case NetPayloadKind::ZoneScope:
+    case NetPayloadKind::ZoneAck:  return NetTrafficKind::Zone;
+    case NetPayloadKind::DesyncHash: return NetTrafficKind::Desync;
     case NetPayloadKind::Invalid:  break;
     }
     return NetTrafficKind::Other;
+}
+
+NetTrafficKind NetTrafficKindOf(std::uint8_t payloadKind)
+{
+    if (payloadKind >= kNetFirstGamePayloadKind)
+        return NetTrafficKind::Game;
+    return NetTrafficKindOf(static_cast<NetPayloadKind>(payloadKind));
 }
 
 void NetStats::RecordIn(NetTrafficKind kind, std::size_t bytes,

@@ -12,6 +12,7 @@
 #include <debug/DebugService.h>
 #include <jobs/AsyncTaskQueue.h>
 #include <jobs/JobSystem.h>
+#include <prediction/PawnStateReplay.h>
 #include <runtime/FrameDriver.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
@@ -537,6 +538,24 @@ int Engine::Run(Game& game)
     // fact of the build, and a session starting must not be the moment it is
     // first asked.
     PredictionState.Bind(ReplicationLayoutState);
+
+    // Said once, at startup, because the alternative is finding out from a
+    // value that will not stay where its owner put it. Which components are
+    // declared predicted is a fact of the build, so this is decided before the
+    // first frame rather than watched for.
+    {
+        std::vector<std::string_view> unresumed;
+        CollectUnresumedPredictedComponents(ReplicationLayoutState, unresumed);
+        Logger& log = LoggingState.GetLogger<Engine>();
+        for (const std::string_view name : unresumed)
+        {
+            log.Warn("prediction: '{}' is declared Predicted, but re-running a "
+                     "tick does not resume it. Its owner's copy will be put "
+                     "back to the authority's last word at every snapshot and "
+                     "not carried forward from there.",
+                     name);
+        }
+    }
 
     assert(!RuntimeWorldState && "Engine::Run called with a live runtime world");
     RuntimeWorldState =

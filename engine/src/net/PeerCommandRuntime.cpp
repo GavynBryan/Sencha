@@ -102,8 +102,33 @@ std::size_t PeerCommandRuntime::SendLocal(NetSession& session,
 {
     if (session.Role() != NetSessionRole::Client || !session.IsConnected())
         return 0;
+
     if (ring.Size() == 0)
-        return 0;
+    {
+        // Nothing simulated, but possibly something to confirm. Only when the
+        // acknowledgement has moved: a client that has applied nothing new
+        // repeating the same one would be a datagram a tick saying so.
+        if (snapshotAck.Newest() == 0 || snapshotAck.Newest() == LastAckSent)
+            return 0;
+
+        if (Scratch.size() < kNetMaxPayloadBytes)
+            Scratch.resize(kNetMaxPayloadBytes);
+        Scratch[0] = static_cast<std::byte>(NetPayloadKind::Command);
+
+        NetBitWriter ackWriter(
+            std::span<std::byte>(Scratch).subspan(kNetPayloadKindBytes));
+        if (!NetEncodeCommandAck(snapshotAck, ackWriter))
+            return 0;
+
+        const std::size_t ackBytes = kNetPayloadKindBytes + ackWriter.BytesWritten();
+        if (!session.Send(session.LocalPeerId(), NetChannelKind::UnreliableSequenced,
+                          std::span<const std::byte>(Scratch).subspan(0, ackBytes)))
+        {
+            return 0;
+        }
+        LastAckSent = snapshotAck.Newest();
+        return ackBytes;
+    }
 
     // Straight off the ring: these are the ticks this machine simulated, under
     // the names it simulated them by, with the aim each was taken with. Nothing
@@ -152,6 +177,9 @@ void PeerCommandRuntime::Reset()
 {
     Buffers.clear();
     Consumed.clear();
+    // Sequences are per session, so what was confirmed in the last one says
+    // nothing about this one.
+    LastAckSent = 0;
 }
 
 std::uint64_t PeerCommandRuntime::AckFor(PeerId peer) const

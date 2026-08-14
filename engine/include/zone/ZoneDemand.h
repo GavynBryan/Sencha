@@ -137,6 +137,42 @@ struct ZoneContainmentResult
 [[nodiscard]] ZoneId ResolveFocusZone(const WorldPartitionManifest& manifest,
                                       Vec3d position, ZoneId previous);
 
+// Who a residency demand is on behalf of.
+//
+// A zone-layer identity on purpose: an authority streams around every player at
+// once, but "player" is a networking word and this module does not have one. The
+// net layer maps a PeerId onto a source id and the policy never learns which is
+// which, so the same merge serves a server holding sixteen neighborhoods, an
+// editor previewing one, and a split-screen game that has no session at all.
+using FocusSourceId = StrongId<struct FocusSourceIdTag, uint32_t>;
+
+// What a single-focus caller is: source one. Named so the single-source
+// overloads and the span ones describe the same thing rather than two things
+// that happen to agree.
+inline constexpr FocusSourceId kPrimaryFocusSource{ 1 };
+
+struct ZoneFocusSource
+{
+    FocusSourceId Source;
+    ZoneId Focus;
+    // Absent when position is not meaningful (a scripted warp, a menu). Spatial
+    // radius demand applies only to sources that have one.
+    std::optional<Vec3d> Position;
+    // The zone this source is part way into, when a crossing is being held back
+    // waiting for it. Treated exactly as the focus is -- full participation and
+    // immune from eviction -- because it is where the source is going and a
+    // crossing cannot complete until it is resident.
+    //
+    // Without it a cap deadlocks its own traversal: the destination is only a
+    // neighbour of a focus, so it loses the eviction, and it stays a neighbour
+    // precisely because the crossing that would promote it is the one being
+    // held back. The source still advances, a room per attempt, while the
+    // world's idea of where it is trails where it actually is -- and everything
+    // downstream, residency and relevance both, is then computed for a room it
+    // has left.
+    ZoneId Entering;
+};
+
 // Pure. The demand set for one focus: the focus zone at full participation,
 // its graph neighbors within HopCount hops at the config's preload
 // participation, zones within Radius of the focus position likewise (when a
@@ -150,3 +186,39 @@ ComputeZoneDemand(const WorldPartitionManifest& manifest,
                   std::span<const ZonePin> pins,
                   const WorldPartitionStreamingConfig& config,
                   const Vec3d* focusPosition = nullptr);
+
+// The same policy over several focus sources at once, which is what an
+// authority streaming around every connected player needs: its residency is the
+// union of their neighborhoods, and linger absorbs their crossings exactly as it
+// absorbs one player's today.
+//
+// The merge, stated because it is the whole contract:
+//
+// - A zone's hop rank is the *minimum* over the sources that demanded it, so a
+//   zone one hop from anybody is treated as one hop away rather than as far as
+//   the furthest player who can see it. The within-rank cost tiebreak merges the
+//   same way, so nearer still survives longer.
+// - Every source's focus zone gets full participation and immunity from
+//   eviction. A player standing in a zone the cap would otherwise drop is a
+//   player the authority stops simulating around.
+// - Spatial radius applies per source, from that source's own position.
+// - The cap and the eviction comparator are unchanged, applied once to the
+//   merged set. Focus zones and pins may exceed it, exactly as focus does with
+//   one source.
+// - Reasons accumulate across sources rather than collapsing, so "why is this
+//   zone resident, and for whom" stays answerable.
+//
+// Sources are expected sorted by source id; ties in the merge resolve toward the
+// earlier source, which is what makes the result independent of the order peers
+// happened to connect in.
+//
+// One source produces byte-identical records to the overload above. That is a
+// property this is built to have rather than one it is tested into: a source's
+// demand is accumulated by the same code either way, and the merge is a no-op
+// when there is nothing to merge with.
+[[nodiscard]] std::vector<ZoneDemandRecord>
+ComputeZoneDemand(const WorldPartitionManifest& manifest,
+                  const WorldPartitionIndex& index,
+                  std::span<const ZoneFocusSource> sources,
+                  std::span<const ZonePin> pins,
+                  const WorldPartitionStreamingConfig& config);

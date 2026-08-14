@@ -22,6 +22,28 @@ bool CharacterTickModeSupported(const World& world, EntityId entity)
         && movement->Mode == modes->FreeMode();
 }
 
+bool CharacterTickResumes(ComponentTypeId type)
+{
+    // Advanced by the step below: locomotion integrates velocity, the sweep
+    // writes the pose and what the character came to rest against, and the jump
+    // gate carries its own state between ticks.
+    if (type == ResolveComponentTypeId<KinematicState>()
+        || type == ResolveComponentTypeId<SupportState>()
+        || type == ResolveComponentTypeId<LocalTransform>()
+        || type == ResolveComponentTypeId<JumpState>())
+    {
+        return true;
+    }
+
+    // Read rather than advanced, and still resumed: the step derives everything
+    // above from these, and neither is a function of its own previous value.
+    // The mode is chosen by an arbiter from other state and the tuning is
+    // re-resolved from the profile every tick, so a restored copy is corrected
+    // by the next live tick rather than left behind by the replayed ones.
+    return type == ResolveComponentTypeId<CharacterMovement>()
+        || type == ResolveComponentTypeId<ResolvedMovementTuning>();
+}
+
 void StepCharacterTick(World& world,
                        CharacterMoverPool* movers,
                        EntityId entity,

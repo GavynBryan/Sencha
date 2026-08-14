@@ -1,6 +1,7 @@
 #pragma once
 
 #include <app/DefaultRenderPipeline.h>
+#include <net/NetMessageRouter.h>
 #include <net/NetSession.h>
 #include <app/EngineSchedule.h>
 #include <core/console/ConsoleLineFeed.h>
@@ -14,6 +15,7 @@
 #include <net/ClientPrediction.h>
 #include <net/ReplicationInterpolation.h>
 #include <net/NetStats.h>
+#include <net/NetZoneStreaming.h>
 #include <net/NetTickEstimator.h>
 #include <net/PeerCommandRuntime.h>
 #include <net/ReplicationRuntime.h>
@@ -101,6 +103,33 @@ public:
     }
     // What the session is spending, as rates. Counting only: nothing reads it
     // to decide anything, so recording into it raises no ordering question.
+    //-------------------------------------------------------------------------
+    // World streaming
+    //
+    // A game that streams a world hands its partition runtime and loader over
+    // once, and the engine drives both from then on: it updates streaming in
+    // the zone-residency phase, keeps the world loaded around whoever this
+    // machine drives, and -- in a session -- around every connected player as
+    // well, offering each peer only its own neighbourhood.
+    //
+    // One call rather than four in a fixed order. Getting that order wrong was
+    // silent, and a game had no way to know the order or reason to.
+    //
+    // Null on unload. The pointers are the game's to own; the engine only
+    // borrows them, and holds nothing past a null.
+    //-------------------------------------------------------------------------
+    void SetWorldStreaming(WorldPartitionRuntime* partition,
+                           AsyncZoneLoader* loader);
+    [[nodiscard]] WorldPartitionRuntime* WorldStreaming() const
+    {
+        return StreamedWorld;
+    }
+    [[nodiscard]] AsyncZoneLoader* WorldStreamingLoader() const
+    {
+        return StreamedWorldLoader;
+    }
+    [[nodiscard]] NetZoneStreaming& ZoneStreaming() { return ZoneStreamingState; }
+
     [[nodiscard]] NetStats& NetTraffic() { return NetStatsState; }
     [[nodiscard]] const NetStats& NetTraffic() const { return NetStatsState; }
     // What the authority's clock is called, as seen from a client. Meaningless
@@ -135,22 +164,14 @@ public:
         return SpawnRecipeState;
     }
 
-    // Channel payloads from the most recent pump that replication did not
-    // claim: the game's own traffic, commands above all. Cleared at the start
-    // of each pump, so a system that runs in the frame sees exactly that
-    // frame's. The engine deliberately does not interpret any of it -- what a
-    // command means is the game's business.
-    [[nodiscard]] std::span<const NetSession::Delivery> NetDeliveries() const
+    // Where a game's own payload kinds are answered. Registered by the game and
+    // outlives any one session, because it describes what the game says rather
+    // than who it is connected to -- the same lifetime as the spawn recipes.
+    [[nodiscard]] NetMessageRouter& NetMessages() { return NetMessageState; }
+    [[nodiscard]] const NetMessageRouter& NetMessages() const
     {
-        return PendingNetDeliveries;
+        return NetMessageState;
     }
-
-    // Called by the net pump phase only.
-    void RetainNetDelivery(const NetSession::Delivery& delivery)
-    {
-        PendingNetDeliveries.push_back(delivery);
-    }
-    void ClearNetDeliveries() { PendingNetDeliveries.clear(); }
 
     [[nodiscard]] EngineConfig& Config() { return Configuration; }
     [[nodiscard]] const EngineConfig& Config() const
@@ -334,10 +355,13 @@ private:
     WorldComponentSchema RuntimeComponentSchemaState;
     ReplicationLayout ReplicationLayoutState;
     ReplicationRuntime ReplicationState;
-    std::vector<NetSession::Delivery> PendingNetDeliveries;
+    NetMessageRouter NetMessageState;
     NetCVarPublisher CVarPublisherState;
     PeerCommandRuntime PeerCommandState;
     NetStats NetStatsState;
+    NetZoneStreaming ZoneStreamingState;
+    WorldPartitionRuntime* StreamedWorld = nullptr;
+    AsyncZoneLoader* StreamedWorldLoader = nullptr;
     NetTickEstimator NetClockState;
     ClientPrediction PredictionState;
     ReplicationInterpolation InterpolationState;

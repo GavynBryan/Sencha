@@ -5,6 +5,8 @@
 #include <jobs/AsyncTaskQueue.h>
 #include <runtime/FrameDriver.h>
 #include <world/RuntimeWorld.h>
+#include <zone/AsyncZoneLoader.h>
+#include <zone/WorldPartitionRuntime.h>
 #include <world/transform/TransformHistory.h>
 #include <core/console/ConsoleService.h>
 #include <movement/FreeLocomotionSystem.h>
@@ -12,6 +14,8 @@
 #include <physics/CharacterMoverPool.h>
 #include <physics/components/CharacterMoverLink.h>
 #include <net/NetConsoleCommands.h>
+#include <net/NetMessageRouter.h>
+#include <net/NetOwnership.h>
 #include <net/NetSession.h>
 #include <net/ReplicationSnapshot.h>
 #include <physics/PhysicsStepSystem.h>
@@ -50,6 +54,13 @@ bool Engine::HasPresentation() const
 // A windowed process shows this in its overlay. A dedicated host has no
 // overlay, and a command whose result went nowhere is a command an operator has
 // no way to know failed -- including the ones its own startup script ran.
+void Engine::SetWorldStreaming(WorldPartitionRuntime* partition,
+                               AsyncZoneLoader* loader)
+{
+    StreamedWorld = partition;
+    StreamedWorldLoader = loader;
+}
+
 void Engine::LogConsoleResult(Logger& log, const ConsoleResult& result)
 {
     for (const ConsoleOutputEntry& entry : result.Output)
@@ -164,7 +175,6 @@ void Engine::RegisterNetFramePhases()
         if (session->Role() == NetSessionRole::Host)
             session->SetAnnouncedMap(engine.Console().CurrentMap());
 
-        engine.ClearNetDeliveries();
         const std::vector<NetSession::Delivery> deliveries = session->Pump(now);
 
         // Everything that arrived, counted before anything decides what to do
@@ -201,6 +211,11 @@ void Engine::RegisterNetFramePhases()
                 // input describes ticks nobody will simulate.
                 engine.Replication().ForgetPeer(event.Peer);
                 engine.PeerCommands().ForgetPeer(event.Peer);
+                // The entities they were driving, handed back, and the input
+                // source their commands were landing in, closed. Nothing else
+                // closes one, and an entity left naming a peer that has gone
+                // reads its input from a source that will never fill again.
+                NetForgetOwnerPeer(engine.World().Entities(), event.Peer);
             }
         }
 
@@ -298,6 +313,13 @@ void Engine::RegisterNetFramePhases()
                      session->JoinFailureReason().empty()
                          ? "disconnected"
                          : session->JoinFailureReason());
+            // Whatever this machine was driving belonged to a session that no
+            // longer exists. A timeout does not destroy the session, so without
+            // this the client goes on predicting a pawn nothing will ever
+            // correct, and holds the look control that stops it being given a
+            // fresh one.
+            NetSetLocalControl(engine.World().Entities(), EntityId{},
+                               &engine.Prediction());
         }
         wasClient = isClient;
         wasAdmitted = isAdmitted;
@@ -332,6 +354,60 @@ void Engine::RegisterNetFramePhases()
                 continue;
             }
 
+            // The authority deciding which rooms this machine holds open. Only
+            // recorded here; loading them is streaming's business and confirming
+            // them waits until the world says they are attached.
+            if (static_cast<NetPayloadKind>(delivery.Payload[0])
+                == NetPayloadKind::ZoneScope)
+            {
+                NetZoneScopeUpdate update;
+                if (NetDecodeZoneScopeUpdate(delivery.Payload, update))
+                    engine.Replication().ApplyZoneScope(update);
+                else
+                    log.Warn("net: refused a zone scope update from the authority");
+                continue;
+            }
+
+            // A peer reporting a room loaded. What opens that zone for its
+            // snapshots, so a peer naming one nobody granted it is trying to be
+            // sent a part of the world the authority did not decide it should
+            // see.
+            if (static_cast<NetPayloadKind>(delivery.Payload[0])
+                == NetPayloadKind::ZoneAck)
+            {
+                ZoneId zone;
+                if (!NetDecodeZoneAck(delivery.Payload, zone)
+                    || !engine.Replication().AcknowledgeZone(delivery.From, zone))
+                {
+                    log.Warn("net: refused a zone ack from peer {}",
+                             delivery.From.Value);
+                    session->StrikePeer(delivery.From, "unowed zone ack");
+                }
+                continue;
+            }
+
+            // What the authority believes this machine holds. Dev-only, and a
+            // mismatch is logged rather than acted on: it exists to catch a
+            // replication defect while somebody is looking for one.
+            if (static_cast<NetPayloadKind>(delivery.Payload[0])
+                == NetPayloadKind::DesyncHash)
+            {
+                std::uint64_t reportedTick = 0;
+                const NetDesyncResult desync = engine.Replication().CheckDesync(
+                    delivery.Payload, world, engine.ReplicatedComponents(),
+                    &engine.Interpolation(), session->LocalPeerId(),
+                    &reportedTick);
+                if (desync.Diverged > 0)
+                {
+                    log.Warn("net: desync at tick {}: {} of {} entities differ; "
+                             "first is net {} -- try net_entity {}",
+                             reportedTick, desync.Diverged, desync.Compared,
+                             desync.FirstDiverged.Value,
+                             desync.FirstDiverged.Value);
+                }
+                continue;
+            }
+
             // A player's request arriving. Buffered here and fed on the tick
             // clock, because a frame that runs several ticks owes a remote
             // player as many ticks of input as it gives the local one.
@@ -342,16 +418,45 @@ void Engine::RegisterNetFramePhases()
                 {
                     log.Warn("net: refused a command from peer {}",
                              delivery.From.Value);
+                    session->StrikePeer(delivery.From, "malformed command");
                 }
                 continue;
             }
 
-            // Anything else that is not a snapshot is the game's; it is kept
-            // for this frame rather than interpreted here.
-            if (static_cast<NetPayloadKind>(delivery.Payload[0])
-                != NetPayloadKind::Snapshot)
+            // A game's own message. Answered here, in the pump that answers
+            // the engine's, rather than parked in a buffer for a system that
+            // might read it -- which is what used to happen, to a buffer
+            // nothing ever read.
+            const std::uint8_t kind =
+                static_cast<std::uint8_t>(delivery.Payload[0]);
+            if (kind != static_cast<std::uint8_t>(NetPayloadKind::Snapshot))
             {
-                engine.RetainNetDelivery(delivery);
+                const NetMessageContext message{
+                    .From = delivery.From,
+                    .Entities = world,
+                    .Objects = &engine.Replication(),
+                    .Body = std::span<const std::byte>(delivery.Payload)
+                                .subspan(kNetPayloadKindBytes),
+                };
+                if (!engine.NetMessages().Route(session->Role(), kind, message))
+                {
+                    // A kind nothing answers and a kind whose handler said no
+                    // are the same strike and entirely different problems: one
+                    // sends somebody looking for a missing Bind, the other for
+                    // why a request was rejected. Worth the extra lookup on a
+                    // path that only runs when something already went wrong.
+                    if (engine.NetMessages().IsBound(kind))
+                    {
+                        log.Warn("net: peer {} sent payload kind {} and it was "
+                                 "refused", delivery.From.Value, kind);
+                    }
+                    else
+                    {
+                        log.Warn("net: nothing answered payload kind {} from "
+                                 "peer {}", kind, delivery.From.Value);
+                    }
+                    session->StrikePeer(delivery.From, "unanswerable payload");
+                }
                 continue;
             }
 
@@ -404,6 +509,30 @@ void Engine::RegisterNetFramePhases()
                                           simulation.GetFixedDt());
             }
 
+            // An entity whose recipe this build does not have is alive, holds
+            // the right state, and has nothing to draw it -- which reads as a
+            // rendering bug from every direction except this one. Reported per
+            // arrival rather than per frame: a recipe runs when an entity first
+            // appears, so this is bounded by spawns and not by frame rate.
+            // What the authority just said about ownership, turned into the one
+            // fact this machine acts on. Here rather than in a system because
+            // this is where the fact arrives and where structural work on
+            // arriving state already happens: it settles before the frame's
+            // first tick, so nothing has an ordering to declare against it, and
+            // no tick runs having predicted a body this client no longer drives.
+            if (isAdmitted)
+            {
+                NetReconcileLocalControl(world, session->LocalPeerId(),
+                                         engine.Prediction());
+            }
+
+            if (applied.RecipesMissing > 0)
+            {
+                log.Warn("net: {} spawn(s) named recipe {} and others this build "
+                         "did not register; those entities arrived bare",
+                         applied.RecipesMissing, applied.FirstMissingRecipe);
+            }
+
             if (!applied.Ok())
             {
                 // A snapshot that will not decode means the authority is
@@ -435,9 +564,21 @@ void Engine::RegisterNetFramePhases()
                 engine.Replication().Publish(
                     *session, world, engine.ReplicatedComponents(),
                     ctx.Runtime->GetSimulationClock().GetTickIndex(),
-                    &engine.PeerCommands());
+                    &engine.PeerCommands(), &engine.World());
             traffic.RecordOut(NetTrafficKind::Snapshot, published.BytesQueued,
                               published.SnapshotsSent);
+
+            // What the authority believes each peer holds, after the snapshot
+            // that told them. Off unless net.desync_interval says otherwise.
+            const ReplicationRuntime::DesyncStats probes =
+                engine.Replication().PublishDesync(
+                    *session, engine.ReplicatedComponents(),
+                    ctx.Runtime->GetSimulationClock().GetTickIndex());
+            if (probes.Reports > 0)
+            {
+                traffic.RecordOut(NetTrafficKind::Desync, probes.BytesQueued,
+                                  probes.Reports);
+            }
 
             // Cheap when nothing changed: it compares what each peer was last
             // told and sends only differences.
@@ -463,6 +604,17 @@ void Engine::RegisterNetFramePhases()
                 engine.Replication().AppliedAck());
             if (bytes > 0)
                 traffic.RecordOut(NetTrafficKind::Command, bytes);
+
+            // Rooms granted earlier that this machine has since finished
+            // loading. Here rather than at the grant, because residency
+            // processing runs between the pump that received it and this: a
+            // zone that attached during this frame is confirmed in the same
+            // frame it became real.
+            const ReplicationRuntime::ZoneAckStats acked =
+                engine.Replication().AcknowledgeResidentZones(*session,
+                                                              engine.World());
+            if (acked.Acks > 0)
+                traffic.RecordOut(NetTrafficKind::Zone, acked.BytesQueued, acked.Acks);
         }
 
         session->Flush(ctx.Runtime->GetCurrentFrame().WallTime.UnscaledElapsed);
@@ -497,8 +649,24 @@ void Engine::RegisterSimulationFramePhases()
         engine.World().FlushLifecycleRequests();
     });
 
-    driver.Register(FramePhase::ZoneResidency, [&engine, &config](PhaseContext&) {
+    driver.Register(FramePhase::ZoneResidency, [&engine, &config](PhaseContext& ctx) {
         RuntimeWorld& runtimeWorld = engine.World();
+
+        // Streaming first, so a room a grant asked for this frame reaches
+        // residency processing in this one rather than the next.
+        if (WorldPartitionRuntime* partition = engine.WorldStreaming())
+        {
+            engine.ZoneStreaming().Update(runtimeWorld.Entities(), engine.TryNet(),
+                                          engine.Replication(), *partition,
+                                          &engine.NetTraffic());
+            if (AsyncZoneLoader* loader = engine.WorldStreamingLoader())
+            {
+                partition->Update(
+                    ctx.Runtime->GetCurrentFrame().WallTime.UnscaledDt,
+                    *loader, runtimeWorld);
+            }
+        }
+
         ZoneResidencyContext residency{
             .Config = config,
             .Entities = runtimeWorld.Entities(),

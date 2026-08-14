@@ -644,9 +644,13 @@ which is ratified; this section owns the sequence and the gate.
    met on screen. Interest scoping is item 6; a snapshot today covers everything
    marked replicated.
 
-4. **Ownership, input, prediction (G4). Track gate.** `NetOwner`; session role as
-   composition at `OnRegisterSystems`; the input channel over the tick-stamped action
-   records plus per-tick aim; per-peer pawn spawn; input-delay mode end to end.
+4. **Ownership, input, prediction (G4). Track gate.** `NetOwner`; the input channel
+   over the tick-stamped action records plus per-tick aim; per-peer pawn spawn;
+   input-delay mode end to end. (Session role as composition at `OnRegisterSystems`
+   was part of this item and is now closed rather than owed: a session is created by
+   console command long after registration, so the role would be Standalone in every
+   process that goes on to host. `networking.md` Section 7.2 records what ships
+   instead.)
    Prediction and reconciliation follow item 5. **Track gate: two instances on one
    machine, one hosting, each seeing the other's pawn move under
    server-authoritative simulation** — where "seeing" is observed motion, not
@@ -669,16 +673,37 @@ which is ratified; this section owns the sequence and the gate.
    found and closed: a standing input backlog one redundancy window deep, and
    local-only fields arriving zeroed on a snapshot-spawned entity.
 
-6. **Zone interest (G3).** Multi-source demand, per-peer zone grant/ack/revoke, zone
-   baselines, late join, travel. Not required for the track gate — a single-zone map
-   with pawns in the persistent partition reaches it — but required before any
-   multi-zone session ships. Gate: a scripted three-zone co-op traversal with zero
-   missed host ticks and no desync mismatches.
+6. **Zone interest (G3). Landed 2026-08-13.** Multi-source demand, per-peer zone
+   grant/ack/revoke, per-peer interest, and the flow-control invariant: an
+   authority holds the union of every player's neighbourhood, offers each peer
+   only its own, and says nothing about a room a peer has not confirmed it holds
+   — with anything leaving a peer's scope destroyed for that peer rather than
+   left standing. Gate: two players cross an eight-room chain in opposite
+   directions, checked at every step, and neither is ever missing what is in the
+   room they are in; run live across two processes on a generated three-room
+   world. *Desync mismatches are not asserted — desync hashing is G5 — so the
+   gate is the zero-missed-handoff half of what the line originally asked for.*
 
-7. **Session semantics (G5).** `CVarFlags::Replicated` and enforced `Cheat` gating,
-   cvar sync, cue replication, desync hashing, a net stats panel. Load-bearing rather
-   than hygienic: the console ships in every build (see Recorded decisions), so this
-   is the shipping gate on what a player's own console can reach in a session.
+   Two things it found. A `ResidentZoneCap` sized for one focus let the world
+   lose track of where a second player was, because the cap evicted the room a
+   held-back crossing was waiting on; a room a source is part way into is now
+   immune the way its origin already was. And scope control has to apply only to
+   zones a manifest names, or a map loaded whole is withheld from every peer
+   forever.
+
+   Not built, with reasons recorded in `networking.md`: zone baselines against
+   authored state (no content anywhere is both authored and replicated, so there
+   is nothing to measure and real bit-agreement risk to take on), and
+   applier-side enforcement (needs the zone on the wire per entity and buys
+   nothing against an honest authority — folded into G6).
+
+7. **Session semantics (G5). Substantially landed.** `CVarFlags::Replicated` and
+   enforced `Cheat` gating, cvar sync, and the stats surface shipped earlier;
+   desync hashing landed 2026-08-13 (`net.desync_interval`, developer and off by
+   default). Load-bearing rather than hygienic: the console ships in every build
+   (see Recorded decisions), so this is the shipping gate on what a player's own
+   console can reach in a session. Cue replication is recorded as having no
+   consumer — there is no cue system in the tree to carry.
 
 8. **Hardening (G6).** libsodium AEAD and the auth-token seam; rate budgets and
    strikes; malformed-traffic soak in both directions, including a hostile authority

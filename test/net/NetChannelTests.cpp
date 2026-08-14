@@ -440,3 +440,41 @@ TEST(NetChannel, AStragglerIsRetiredAfterTheWindowHasMovedOn)
     EXPECT_EQ(link.A.OutstandingReliable(), 0u)
         << "the straggler was walked past the ack horizon and can never be retired";
 }
+
+//=============================================================================
+// The first reliable message
+//
+// Found by running a dedicated server with two clients: a client's request
+// reached the authority most of the time and, under load, silently did not --
+// and the client's channel reported nothing outstanding, so nothing ever
+// resent it.
+//
+// An ack of zero means "I have received no reliable datagram", and a first
+// message numbered zero matched it exactly, so the message retired itself
+// against a peer that had never seen it -- and, being no longer outstanding,
+// was never resent. Every peer sends packets carrying that empty ack before it
+// has received anything reliable, and both ends of a session start there.
+//=============================================================================
+
+TEST(NetChannel, AFirstReliableMessageIsNotRetiredByAnEmptyAck)
+{
+    Link link;
+    // B has received nothing, so anything it sends carries an empty ack. A
+    // snapshot-shaped stream is exactly this: unreliable, constant, and with
+    // nothing to report.
+    EXPECT_TRUE(link.B.Send(NetChannelKind::UnreliableSequenced, Bytes("tick")));
+    EXPECT_TRUE(link.A.Send(NetChannelKind::ReliableOrdered, Bytes("take the turret")));
+
+    // A's first message is lost, and B's empty ack arrives.
+    EXPECT_TRUE(link.Pump(link.A, link.B, { 0 }).empty());
+    link.Pump(link.B, link.A);
+
+    EXPECT_EQ(link.A.OutstandingReliable(), 1u)
+        << "an ack that acknowledged nothing retired the message anyway, so "
+           "nothing will ever resend it";
+
+    // And it does arrive, because it was still owed.
+    link.Now += 1.0;
+    const std::vector<std::string> delivered = link.Pump(link.A, link.B);
+    EXPECT_EQ(delivered, std::vector<std::string>{ "take the turret" });
+}

@@ -472,3 +472,256 @@ TEST(EngineReplicationLayout, EveryFieldLiesInsideItsComponent)
         }
     }
 }
+
+//=============================================================================
+// Quantization belongs to floats
+//
+// A range describes a continuous value. The sizer reserves the declared bits
+// for any field that carries one, and the writer spends them only on a float,
+// so a range anywhere else makes the two disagree about the same field. What
+// that costs is not a rounding error: an entity measured to fit a snapshot and
+// then written wider overflows the writer, the whole snapshot is refused, and
+// the peer it was for receives nothing -- every tick, for as long as the field
+// is declared that way.
+//=============================================================================
+
+namespace
+{
+    struct RangedInteger
+    {
+        std::uint32_t Value = 0;
+    };
+
+    struct RangedDouble
+    {
+        double Value = 0.0;
+    };
+
+    struct RangedBool
+    {
+        bool Value = false;
+    };
+
+    struct RangedNarrow
+    {
+        std::uint16_t Value = 0;
+    };
+}
+
+template <>
+struct TypeSchema<RangedInteger>
+{
+    static constexpr std::string_view Name = "test.RangedInteger";
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("value", &RangedInteger::Value).Quantize(0.0f, 1.0f, 8),
+        };
+    }
+};
+
+template <>
+struct TypeSchema<RangedDouble>
+{
+    static constexpr std::string_view Name = "test.RangedDouble";
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("value", &RangedDouble::Value).Quantize(0.0f, 1.0f, 8),
+        };
+    }
+};
+
+template <>
+struct TypeSchema<RangedBool>
+{
+    static constexpr std::string_view Name = "test.RangedBool";
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("value", &RangedBool::Value).Quantize(0.0f, 1.0f, 8),
+        };
+    }
+};
+
+template <>
+struct TypeSchema<RangedNarrow>
+{
+    static constexpr std::string_view Name = "test.RangedNarrow";
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("value", &RangedNarrow::Value).Quantize(0.0f, 1.0f, 8),
+        };
+    }
+};
+
+TEST(ReplicationLayoutQuantization, ARangeOnAnIntegerIsRefusedByName)
+{
+    ReplicationLayout layout;
+    EXPECT_FALSE(layout.Add<RangedInteger>());
+    EXPECT_EQ(layout.Error(), ReplicationLayoutError::InvalidQuantization);
+    EXPECT_NE(layout.ErrorDetail().find("value"), std::string::npos)
+        << "the refusal has to name the field, or nobody can find it";
+}
+
+TEST(ReplicationLayoutQuantization, ARangeOnADoubleIsRefused)
+{
+    ReplicationLayout layout;
+    EXPECT_FALSE(layout.Add<RangedDouble>());
+    EXPECT_EQ(layout.Error(), ReplicationLayoutError::InvalidQuantization);
+}
+
+TEST(ReplicationLayoutQuantization, ARangeOnABoolIsRefused)
+{
+    ReplicationLayout layout;
+    EXPECT_FALSE(layout.Add<RangedBool>());
+    EXPECT_EQ(layout.Error(), ReplicationLayoutError::InvalidQuantization);
+}
+
+// The narrow integer case specifically: it is the one where the sizer's answer
+// (eight bits) and the writer's (thirty-two) are furthest apart.
+TEST(ReplicationLayoutQuantization, ARangeOnANarrowIntegerIsRefused)
+{
+    ReplicationLayout layout;
+    EXPECT_FALSE(layout.Add<RangedNarrow>());
+    EXPECT_EQ(layout.Error(), ReplicationLayoutError::InvalidQuantization);
+}
+
+// A colour is three floats wearing one entry, so a range on it is a range on
+// floats and has to survive.
+TEST(ReplicationLayoutQuantization, TheEngineTableQuantizesOnlyFloats)
+{
+    ReplicationLayout layout;
+    ComponentRegistrar components(nullptr, nullptr, &layout);
+    RegisterEngineComponents(components);
+    ASSERT_EQ(layout.Error(), ReplicationLayoutError::None) << layout.ErrorDetail();
+
+    for (const ReplicatedComponent& component : layout.Components())
+    {
+        for (const ReplicatedField& field : component.Fields)
+        {
+            if (!field.Quantization.IsQuantized())
+                continue;
+            EXPECT_EQ(field.Scalar, FieldScalar::Float)
+                << component.Name << "." << field.Name;
+        }
+    }
+}
+
+//=============================================================================
+// Field policy has to name a reachable audience
+//=============================================================================
+
+namespace
+{
+    struct SeenByNobody
+    {
+        float Value = 0.0f;
+    };
+
+    struct PrivateSubtree
+    {
+        Vec3d Inner;
+    };
+
+    // LocalOnly is a narrowing of any audience, not a disagreement with one:
+    // the field stays off the wire either way, so the pair is redundant rather
+    // than impossible and has to keep registering.
+    struct LocalAndOwned
+    {
+        float Value = 0.0f;
+        float Kept = 0.0f;
+    };
+}
+
+template <>
+struct TypeSchema<SeenByNobody>
+{
+    static constexpr std::string_view Name = "test.SeenByNobody";
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("value", &SeenByNobody::Value).OwnerOnly().OwnerLocal(),
+        };
+    }
+};
+
+template <>
+struct TypeSchema<PrivateSubtree>
+{
+    static constexpr std::string_view Name = "test.PrivateSubtree";
+    static auto Fields()
+    {
+        // Nobody writes both here. The composite says owner-only, and the
+        // annotation reaches the three floats underneath it -- so a member that
+        // said everyone-but-owner would be the one producing the pair.
+        return std::tuple{
+            MakeField("inner", &PrivateSubtree::Inner).OwnerOnly().OwnerLocal(),
+        };
+    }
+};
+
+template <>
+struct TypeSchema<LocalAndOwned>
+{
+    static constexpr std::string_view Name = "test.LocalAndOwned";
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("value", &LocalAndOwned::Value).LocalOnly().OwnerOnly(),
+            MakeField("kept", &LocalAndOwned::Kept),
+        };
+    }
+};
+
+TEST(ReplicationFieldPolicy, AFieldSentToNobodyIsRefusedByName)
+{
+    ReplicationLayout layout;
+    EXPECT_FALSE(layout.Add<SeenByNobody>());
+    EXPECT_EQ(layout.Error(), ReplicationLayoutError::ContradictoryFieldPolicy);
+    EXPECT_NE(layout.ErrorDetail().find("value"), std::string::npos);
+}
+
+// The case nobody writes on purpose: the pair arrives at the leaf by
+// inheritance, so the refusal has to name the leaf rather than the member that
+// carried the annotation down.
+TEST(ReplicationFieldPolicy, AContradictionInheritedByAScalarIsStillRefused)
+{
+    ReplicationLayout layout;
+    EXPECT_FALSE(layout.Add<PrivateSubtree>());
+    EXPECT_EQ(layout.Error(), ReplicationLayoutError::ContradictoryFieldPolicy);
+    EXPECT_NE(layout.ErrorDetail().find("inner"), std::string::npos);
+}
+
+TEST(ReplicationFieldPolicy, LocalOnlyNarrowsAnAudienceRatherThanContradictingIt)
+{
+    ReplicationLayout layout;
+    ASSERT_TRUE(layout.Add<LocalAndOwned>());
+    EXPECT_EQ(layout.Error(), ReplicationLayoutError::None) << layout.ErrorDetail();
+
+    const ReplicatedComponent* component =
+        layout.Find(ResolveComponentTypeId<LocalAndOwned>());
+    ASSERT_NE(component, nullptr);
+    ASSERT_EQ(component->Fields.size(), 1u) << "the local field reached the wire";
+    EXPECT_EQ(component->Fields[0].Name, "kept");
+}
+
+// Nothing shipping may be declared this way, and the check above is what keeps
+// it that way.
+TEST(ReplicationFieldPolicy, NoEngineFieldIsSentToNobody)
+{
+    ReplicationLayout layout;
+    ComponentRegistrar components(nullptr, nullptr, &layout);
+    RegisterEngineComponents(components);
+    ASSERT_EQ(layout.Error(), ReplicationLayoutError::None) << layout.ErrorDetail();
+
+    for (const ReplicatedComponent& component : layout.Components())
+    {
+        for (const ReplicatedField& field : component.Fields)
+        {
+            EXPECT_FALSE(field.OwnerOnly && field.OwnerLocal)
+                << component.Name << "." << field.Name;
+        }
+    }
+}

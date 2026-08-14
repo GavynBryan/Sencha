@@ -15,13 +15,22 @@ namespace
     }
 
     // The admitted-peer paths peek the leading byte to route control messages
-    // before channel delivery. That is only unambiguous while no control type
-    // shares a value with a channel kind's leading byte.
-    constexpr auto kHighestChannelKind =
-        static_cast<std::uint8_t>(NetChannelKind::ReliableOrdered);
-    static_assert(static_cast<std::uint8_t>(NetMessageType::Disconnect) > kHighestChannelKind);
-    static_assert(static_cast<std::uint8_t>(NetMessageType::Ping) > kHighestChannelKind);
-    static_assert(static_cast<std::uint8_t>(NetMessageType::Pong) > kHighestChannelKind);
+    // before channel delivery, so a control type sharing a value with a channel
+    // kind is a channel whose packets are answered as handshake and never
+    // delivered. Every type those paths peek is listed here -- the previous
+    // three left out Hello and CookieEcho, and Hello shared its value with
+    // ReliableOrdered, so a client could not send the authority a reliable
+    // message at all.
+    constexpr auto kLowestChannelKind =
+        static_cast<std::uint8_t>(NetChannelKind::UnreliableSequenced);
+    static_assert(static_cast<std::uint8_t>(NetChannelKind::ReliableOrdered)
+                      >= kLowestChannelKind,
+                  "the channel kinds have to form one range above the control types");
+    static_assert(static_cast<std::uint8_t>(NetMessageType::Hello) < kLowestChannelKind);
+    static_assert(static_cast<std::uint8_t>(NetMessageType::CookieEcho) < kLowestChannelKind);
+    static_assert(static_cast<std::uint8_t>(NetMessageType::Disconnect) < kLowestChannelKind);
+    static_assert(static_cast<std::uint8_t>(NetMessageType::Ping) < kLowestChannelKind);
+    static_assert(static_cast<std::uint8_t>(NetMessageType::Pong) < kLowestChannelKind);
 }
 
 std::string_view NetDescribeIdentityMismatch(const NetIdentity& local,
@@ -238,6 +247,20 @@ void NetSession::RefuseAt(const NetAddress& address, std::string_view reason)
     refuse.Reason = std::string(reason.substr(
         0, std::min(reason.size(), NetDefaultCaps().MaxReasonBytes)));
     SendRaw(address, NetEncodeRefuse(refuse, scratch));
+}
+
+void NetSession::StrikePeer(PeerId peer, std::string_view why)
+{
+    if (CurrentRole != NetSessionRole::Host)
+        return;
+    for (NetPeer& known : Peers)
+    {
+        if (known.Id == peer)
+        {
+            Strike(known, why);
+            return;
+        }
+    }
 }
 
 void NetSession::Strike(NetPeer& peer, std::string_view why)

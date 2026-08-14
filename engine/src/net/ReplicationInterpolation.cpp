@@ -4,7 +4,7 @@
 
 #include <algorithm>
 
-bool ReplicationInterpolation::Intercepts(ComponentTypeId type) const
+bool ReplicationInterpolation::InterceptsPose(ComponentTypeId type) const
 {
     return Enabled && type == ResolveComponentTypeId<LocalTransform>();
 }
@@ -53,27 +53,26 @@ void ReplicationInterpolation::Record(EntityId entity, std::uint64_t authorityTi
     ++track.Count;
 }
 
-std::span<std::byte> ReplicationInterpolation::AuthoritativeBytes(EntityId entity)
-{
-    Track& track = Entities[entity];
-    return std::span<std::byte>(reinterpret_cast<std::byte*>(&track.Authoritative),
-                                sizeof(track.Authoritative));
-}
-
-bool ReplicationInterpolation::HasAuthoritativeState(EntityId entity) const
+const LocalTransform* ReplicationInterpolation::TryAuthoritative(
+    EntityId entity) const
 {
     const auto it = Entities.find(entity);
-    return it != Entities.end() && it->second.SeenAuthority;
+    if (it == Entities.end() || !it->second.SeenAuthority)
+        return nullptr;
+    return &it->second.Authoritative;
 }
 
-void ReplicationInterpolation::Commit(EntityId entity, std::uint64_t authorityTick)
+void ReplicationInterpolation::Commit(EntityId entity,
+                                      std::uint64_t authorityTick,
+                                      const LocalTransform& pose)
 {
-    const auto it = Entities.find(entity);
-    if (it == Entities.end())
+    if (!entity.IsValid())
         return;
 
-    it->second.SeenAuthority = true;
-    Record(entity, authorityTick, it->second.Authoritative);
+    Track& track = Entities[entity];
+    track.Authoritative = pose;
+    track.SeenAuthority = true;
+    Record(entity, authorityTick, pose);
 }
 
 std::optional<LocalTransform> ReplicationInterpolation::Resolve(

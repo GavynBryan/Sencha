@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 #include <math/Vec.h>
 
@@ -45,3 +46,18 @@ void StepCharacterTick(World& world,
                        float fixedDeltaSeconds,
                        Vec3d gravity,
                        Vec3d upAxis);
+
+// Whether re-running a tick puts this component back in step: either the tick
+// advances it forward, or it is the state the tick derives those from and
+// nothing between ticks moves it on its own.
+//
+// The question belongs to a caller that re-runs ticks to recover from an
+// authority's correction. Such a caller restores a set of components and then
+// steps; for a component outside this set the restore happens and the step does
+// not, so whatever the caller had advanced since the authority's tick is
+// discarded and never made up. That is invisible from the component's own
+// behaviour, which is why it is worth being able to ask.
+//
+// Answered here because the body of StepCharacterTick is the answer -- a stage
+// added to the tick is a component added to this list, in the same edit.
+[[nodiscard]] bool CharacterTickResumes(ComponentTypeId type);

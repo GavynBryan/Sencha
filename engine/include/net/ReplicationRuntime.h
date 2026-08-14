@@ -3,15 +3,46 @@
 #include <net/NetSession.h>
 #include <net/NetSpawnRecipe.h>
 #include <net/PeerCommandRuntime.h>
+#include <net/NetDesyncProbe.h>
 #include <net/ReplicationChangeStore.h>
 #include <net/ReplicationSnapshot.h>
 
+#include <array>
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
 
+class RuntimeWorld;
 class World;
 class WorldComponentSchema;
+
+// One peer's interest set: the zones it should be holding open. Computed by
+// whatever owns streaming policy; replication only ever compares it against
+// what that peer already has.
+//
+// This is the whole relevance surface. A policy is whatever produces the list,
+// and adding one never means touching a payload kind, an encoder, a channel, or
+// the snapshot writer:
+//
+//   - who is near what      NetZoneStreaming, from what each peer drives
+//   - how far that reaches  HopCount and Radius, per zone, through the graph's
+//                           streaming overrides -- already data
+//   - always relevant       add the zone to every peer's list
+//   - same-zone only        pass the focus zone alone
+//   - a rule of your own    build your own spans and pass those instead
+//
+// `Zones` must be sorted ascending and free of duplicates. The reconcile
+// binary-searches it, and an unsorted list does not fail -- it revokes rooms the
+// peer wanted and regrants them next frame, which reads as streaming thrash
+// rather than as a caller mistake. Asserted where it is read.
+//
+// See test/runtime/ZoneRelevancePolicyTests.cpp, which holds this claim to
+// three policies written entirely outside net/.
+struct NetPeerZoneInterest
+{
+    PeerId Peer;
+    std::span<const ZoneId> Zones;
+};
 
 // Ticks between snapshots out of the box: 30Hz against a 60Hz simulation. The
 // rate a snapshot is worth sending at is set by how fast a player can perceive
@@ -68,6 +99,21 @@ public:
         // something other than bytes is doing the limiting.
         std::size_t PeakSnapshotBytes = 0;
         std::size_t BudgetBytes = 0;
+        // Destroys that did not fit. Owed until confirmed either way, but a
+        // number that stays up means a sweep is draining slower than it grows.
+        std::uint32_t DestroysDeferred = 0;
+        // What the bytes bought, summed over the peers served: entities a peer
+        // had confirmed nothing about, against differences from what it holds.
+        // A body that is still mostly seeding seconds after a join is a peer
+        // that is not converging, which used to look like plain bandwidth.
+        std::size_t SeedingBytes = 0;
+        std::size_t DeltaBytes = 0;
+        // The costliest few entities of this publish, largest first, taking the
+        // most any one peer paid for each. Bounded and deliberately small: it
+        // answers "which entity is eating the budget" without a capture format,
+        // a file, or a viewer.
+        std::array<SnapshotWriteResult::EntityCost,
+                   SnapshotWriteResult::kCostliestTracked> Costliest{};
     };
 
     // Authority side. Writes one snapshot per connected peer and queues it on
@@ -81,9 +127,121 @@ public:
     // Called every frame; whether it publishes is its own business (see
     // SetPublishInterval). Peer bookkeeping happens on every call regardless of
     // cadence, so a peer that leaves stops costing memory at once.
+    //
+    // `zones` is what tells the change store which zone each entity is resident
+    // in. Null on a world with no partition runtime, where every entity is
+    // persistent.
     PublishStats Publish(NetSession& session, World& world,
                          const ReplicationLayout& layout, std::uint64_t tick,
-                         const PeerCommandRuntime* commands = nullptr);
+                         const PeerCommandRuntime* commands = nullptr,
+                         const RuntimeWorld* zones = nullptr);
+
+    //-------------------------------------------------------------------------
+    // Zone scope
+    //
+    // Which rooms each peer is holding open. Kept here because it is per-peer
+    // replication state and this is where per-peer replication state lives; the
+    // policy that decides what a peer is interested in is somebody else's, and
+    // arrives as a list of zones.
+    //-------------------------------------------------------------------------
+
+    struct ZoneScopeStats
+    {
+        std::uint32_t Grants = 0;
+        std::uint32_t Revokes = 0;
+        std::size_t BytesQueued = 0;
+    };
+
+    // Brings every connected peer's scope into agreement with its interest set,
+    // sending only the differences.
+    //
+    // A peer with no entry in `interest` is interested in nothing and has
+    // everything revoked. Default deny rather than default keep: a caller that
+    // forgot a peer leaves it holding rooms nobody is near, and the failure of
+    // the opposite default -- a peer quietly retaining the whole world -- is
+    // exactly the one this mechanism exists to prevent.
+    //
+    // Each interest list must be sorted ascending and free of duplicates, which
+    // is what a zone demand set already is.
+    ZoneScopeStats PublishZoneScope(NetSession& session,
+                                    std::span<const NetPeerZoneInterest> interest);
+
+    // Which zones scope control applies to: everything the streaming manifest
+    // names. Replaces whatever was set; empty means no zone is gated.
+    //
+    // Necessary because residency and streaming are not the same thing. A map
+    // loaded whole is one resident zone that no policy names, so nothing would
+    // ever compute interest for it and nothing would ever grant it -- and a
+    // snapshot writer that gated it would withhold the entire level from every
+    // peer forever. Declared rather than inferred, because "nobody has granted
+    // this yet" and "nobody ever will" look identical from inside the writer.
+    void SetStreamedZones(std::span<const ZoneId> zones);
+    [[nodiscard]] std::span<const ZoneId> StreamedZones() const
+    {
+        return StreamedZones_;
+    }
+
+    // A peer reports it has finished loading a zone. False when it names one it
+    // was never granted, which is a peer claiming a room nobody offered it.
+    [[nodiscard]] bool AcknowledgeZone(PeerId peer, ZoneId zone);
+
+    //-------------------------------------------------------------------------
+    // Desync probes
+    //
+    // Dev-only, off unless asked for. See NetDesyncProbe.h for what is folded
+    // and why the two rules that shape it are not optional.
+    //-------------------------------------------------------------------------
+
+    // Ticks between probes; zero is off.
+    void SetDesyncInterval(std::uint32_t ticks) { DesyncInterval = ticks; }
+    [[nodiscard]] std::uint32_t DesyncIntervalTicks() const
+    {
+        return DesyncInterval;
+    }
+
+    struct DesyncStats
+    {
+        std::uint32_t Reports = 0;
+        std::size_t BytesQueued = 0;
+    };
+
+    // Authority: one report per peer when the cadence has come round. Called
+    // after Publish, so what it describes is what the peer was just told.
+    DesyncStats PublishDesync(NetSession& session, const ReplicationLayout& layout,
+                              std::uint64_t tick);
+
+    // Client: compares an arriving report against this machine's own state.
+    [[nodiscard]] NetDesyncResult CheckDesync(
+        std::span<const std::byte> payload, const World& world,
+        const ReplicationLayout& layout,
+        const ReplicationInterpolation* interpolation, PeerId self,
+        std::uint64_t* reportedTick = nullptr);
+
+    // Client side: one grant or revoke from the authority, recorded.
+    void ApplyZoneScope(const NetZoneScopeUpdate& update);
+
+    // What the authority has told this machine to hold. Granted means it has
+    // been asked for and not yet confirmed; acked means the confirmation has
+    // gone out and state for it may arrive.
+    [[nodiscard]] const NetZoneScope& LocalZones() const { return LocalScope; }
+
+    // Client side: confirms every granted zone this machine has actually
+    // finished loading, and says nothing about the rest.
+    //
+    // Asked of the world rather than answered by whoever started the load,
+    // because "attached and finalized" is the world's own fact and the
+    // confirmation has to mean exactly that. A zone acked while it is still
+    // importing is a room the authority begins filling before there is anywhere
+    // to put it.
+    //
+    struct ZoneAckStats
+    {
+        std::uint32_t Acks = 0;
+        std::size_t BytesQueued = 0;
+    };
+
+    ZoneAckStats AcknowledgeResidentZones(NetSession& session,
+                                          const RuntimeWorld& world);
 
     // Simulation ticks between snapshots. One publishes as fast as the world
     // moves; higher trades freshness for bandwidth, which is the trade that
@@ -122,6 +280,13 @@ public:
                               ClientPrediction* prediction = nullptr,
                               ReplicationInterpolation* interpolation = nullptr);
 
+    // Client side. What the last snapshot this machine applied did to it:
+    // spawned, updated, destroyed, components removed, authored entities bound
+    // or deferred, recipes it had no builder for. Every one of these was
+    // computed and discarded, so "why did that not appear" had no answer short
+    // of a debugger.
+    [[nodiscard]] const SnapshotApplyResult& LastApply() const { return Applied; }
+
     // Client side. The newest snapshot tick this machine has applied. Used for
     // the shared clock; what the authority is told about delivery is the ack
     // below, which names snapshots rather than moments.
@@ -145,6 +310,30 @@ public:
         return ClientMap;
     }
 
+    // The authority's half of the same question: which of this machine's
+    // entities a wire identity names. Const on purpose -- minting belongs to
+    // the publish walk, and an identity handed out for an entity the walk never
+    // visits is one nothing would ever release.
+    [[nodiscard]] const ReplicationAuthorityIdentity& AuthorityEntities() const
+    {
+        return Identity;
+    }
+
+    // What has been published and when each part of it last moved, and how far
+    // through that history one peer has been carried. Together these answer why
+    // a field has or has not reached a peer, which was previously answerable
+    // only by reading the writer.
+    //
+    // Const, and const is load-bearing. Both are the publish walk's to write:
+    // a floor moved by anything else is a peer credited with state it never
+    // proved it holds, which is silent and permanent.
+    [[nodiscard]] const ReplicationChangeStore& PublishedState() const
+    {
+        return Changes;
+    }
+    // Null for a peer this authority is not serving.
+    [[nodiscard]] const ReplicationPeerState* PeerBaseline(PeerId peer) const;
+
 private:
     ReplicationAuthorityIdentity Identity;
     ReplicationChangeStore Changes;
@@ -153,7 +342,12 @@ private:
     // must increase on every pass and a tick need not.
     std::uint64_t Generation = 0;
     std::unordered_map<PeerId, ReplicationPeerState> Peers;
+    // A client has one authority, so it has one scope rather than a map.
+    NetZoneScope LocalScope;
+    // Ascending: the writer binary-searches it once per entity per peer.
+    std::vector<ZoneId> StreamedZones_;
     ReplicationClientIdentity ClientMap;
+    SnapshotApplyResult Applied;
     std::uint64_t AppliedTick = 0;
     NetSnapshotAck AppliedAcks;
 
@@ -161,6 +355,10 @@ private:
     // change, so a default that disagreed with the cvar's would mean the
     // engine ran at a rate nobody chose until someone happened to set it.
     std::uint32_t PublishInterval = kNetDefaultSnapshotInterval;
+    std::uint32_t DesyncInterval = 0;
+    std::uint64_t LastDesyncTick = 0;
+    bool HasProbed = false;
+    std::vector<NetDesyncSample> ProbeSamples;
     // The tick a snapshot last went out on, and whether one ever has. Compared
     // as a difference rather than a remainder on purpose: a host running slower
     // than its tick rate advances the tick index by several per frame, and a

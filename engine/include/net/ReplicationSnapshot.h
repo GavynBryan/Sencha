@@ -5,9 +5,11 @@
 #include <net/NetSpawnRecipe.h>
 #include <net/ClientPrediction.h>
 #include <net/NetSnapshotAck.h>
+#include <net/NetZoneScope.h>
 #include <net/ReplicationCodec.h>
 #include <net/ReplicationLayout.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -158,6 +160,19 @@ public:
         return Entities;
     }
 
+    // Which zones this peer has been told to hold and which it has proved it
+    // holds. Kept here rather than in a second map keyed the same way, because
+    // it is the same category of fact as everything else on this type: what
+    // this peer knows. It is also where the writer needs it, and a writer that
+    // had to be handed the scope separately is one that could be handed the
+    // wrong peer's.
+    [[nodiscard]] NetZoneScope& Zones() { return Scope; }
+    [[nodiscard]] const NetZoneScope& Zones() const { return Scope; }
+
+    // Where this peer's next desync probe resumes. Per peer because coverage is
+    // per peer: what one has fully proved is not what another has.
+    [[nodiscard]] std::size_t& DesyncCursor() { return ProbeCursor; }
+
 private:
     // What one snapshot told this peer: which entities, and how far through the
     // authority's history each was carried.
@@ -176,6 +191,8 @@ private:
     // Starts at one, because zero is the acknowledgement's "nothing yet".
     std::uint32_t NextSequence = 1;
     std::uint32_t First = 0;
+    NetZoneScope Scope;
+    std::size_t ProbeCursor = 0;
 };
 
 //-----------------------------------------------------------------------------
@@ -188,6 +205,20 @@ public:
     // for as long as it lives.
     [[nodiscard]] NetEntityId IdFor(EntityId entity);
     [[nodiscard]] NetEntityId TryFind(EntityId entity) const;
+
+    // The direction the wire arrives in: what one of this authority's entities
+    // a peer just named, or nothing.
+    //
+    // Invalid for an identity this authority never minted or has since
+    // released, which is the whole check a message needs to do before acting on
+    // an object a peer chose. Held as a map rather than searched for, because
+    // the search would be on a path whose length a peer decides.
+    //
+    // A caller still asks the world whether the entity is alive. This is
+    // cleaned at publish, so between two publishes it can still name one that
+    // has just died.
+    [[nodiscard]] EntityId TryResolve(NetEntityId id) const;
+
     void Release(EntityId entity);
     // Drops identities for entities the world no longer has. Without this the
     // map grows for the life of the session: an entity that is destroyed is
@@ -198,6 +229,10 @@ public:
 
 private:
     std::unordered_map<EntityId, NetEntityId, EntityIdHash> Forward;
+    // The same pairs the other way round. One hash node per replicated entity,
+    // one insert per identity minted, and one erase inside the sweep that
+    // already walks them -- nothing per publish and nothing per snapshot.
+    std::unordered_map<NetEntityId, EntityId> Reverse;
     // Starts at one: zero is the strong id's invalid sentinel.
     std::uint64_t NextId = 1;
 };
@@ -209,9 +244,19 @@ class ReplicationClientIdentity
 {
 public:
     [[nodiscard]] EntityId TryResolve(NetEntityId id) const;
+
+    // What to call an entity this machine can see, when asking the authority to
+    // do something about it. Invalid for anything replication did not put here,
+    // which is exactly the set a client is not entitled to name.
+    [[nodiscard]] NetEntityId TryFind(EntityId entity) const;
+
     void Bind(NetEntityId id, EntityId entity);
     void Unbind(NetEntityId id);
-    void Clear() { Entries.clear(); }
+    void Clear()
+    {
+        Entries.clear();
+        Names.clear();
+    }
 
     [[nodiscard]] std::size_t Size() const { return Entries.size(); }
     [[nodiscard]] const std::unordered_map<NetEntityId, EntityId>& All() const
@@ -221,6 +266,7 @@ public:
 
 private:
     std::unordered_map<NetEntityId, EntityId> Entries;
+    std::unordered_map<EntityId, NetEntityId, EntityIdHash> Names;
 };
 
 //-----------------------------------------------------------------------------
@@ -254,6 +300,17 @@ struct ReplicationSnapshotWire
     static constexpr std::uint8_t CountBits = 11;
     static constexpr std::uint8_t ComponentCountBits = 8;
     static constexpr std::uint8_t ComponentIndexBits = 8;
+    // Whether an entity record carries the authored identity that lets a client
+    // recognise its own copy, and whether it carries any removals. One bit
+    // each, on every entity of every snapshot, because a reader cannot infer
+    // either from anything it holds -- and a presence bit the two sides
+    // disagree about is the rest of the snapshot read at the wrong offset.
+    //
+    // Bits rather than counts because both are rare and an entity is not: a
+    // byte-wide removal count on every entity cost more across a seeding
+    // datagram than the removals it described ever would.
+    static constexpr std::uint8_t AuthoredPresentBits = 1;
+    static constexpr std::uint8_t RemovalsPresentBits = 1;
 };
 
 [[nodiscard]] const ReplicationCaps& ReplicationDefaultCaps();
@@ -284,6 +341,17 @@ struct SnapshotWriteRequest
     // replay owes. Without it a client cannot tell which of its own guesses the
     // state it just received already accounts for.
     std::uint64_t CommandAck = 0;
+    // The zones under scope control, ascending. Only these are gated by the
+    // peer's grants; an entity in any other zone is sent as it always was.
+    //
+    // The distinction is not pedantic. A zone can be resident without being
+    // streamed -- a map attached whole is one storage partition holding the
+    // level -- and nothing computes interest for a zone no streaming policy
+    // names, so nothing would ever grant it. Gating it would withhold that
+    // level from every peer, permanently, with no message that could ever undo
+    // it. Empty means no zone is gated, which is every session that loads a map
+    // rather than streaming a world.
+    std::span<const ZoneId> StreamedZones;
 };
 
 struct SnapshotWriteResult
@@ -308,6 +376,30 @@ struct SnapshotWriteResult
     // rather than as waiting since the session began.
     std::uint32_t OldestDeferredSnapshots = 0;
     std::size_t BytesWritten = 0;
+
+    // Split by what the bits bought: entities this peer had confirmed nothing
+    // about, against differences from what it already holds. Seeding is the
+    // expensive half and the temporary one, so "is this peer still being
+    // seeded" stops being a guess about a total that looks high. They sum to
+    // the body, so a body that is mostly seeding several seconds after a join
+    // is a peer that is not converging.
+    std::size_t SeedingBits = 0;
+    std::size_t DeltaBits = 0;
+
+    // The entities this snapshot spent the most on, largest first, ties by
+    // identity so two runs of one simulation report the same list.
+    //
+    // Bounded and tiny on purpose. "Which entity is eating the budget" is the
+    // question people actually ask, and answering it with a handful of names
+    // needs no capture format, no file, and no viewer -- while a per-message
+    // trace would need all three and is a different feature.
+    static constexpr std::size_t kCostliestTracked = 4;
+    struct EntityCost
+    {
+        NetEntityId Id;
+        std::size_t Bits = 0;
+    };
+    std::array<EntityCost, kCostliestTracked> Costliest{};
 };
 
 // Encodes one snapshot into `out`, filling it as far as it goes: `out` is the
@@ -385,8 +477,25 @@ struct SnapshotApplyResult
     // authority may run content a client did not register -- but the entity is
     // bare, so it is counted rather than silently dropped.
     std::uint32_t RecipesMissing = 0;
+    // Which recipe the first of those named. Carried because the count alone
+    // cannot be acted on: this failure looks like an entity that is in the
+    // right place with the right state and nothing drawing it, and the one
+    // thing that shortens the search is the number the authority asked for.
+    NetSpawnRecipeId FirstMissingRecipe = kNetNoSpawnRecipe;
     std::uint32_t EntitiesUpdated = 0;
     std::uint32_t EntitiesDestroyed = 0;
+    // Authored entities recognised through the world's persistent index rather
+    // than created: the client's own copy, now answering to a wire identity.
+    std::uint32_t AuthoredBound = 0;
+    // Authored entities the wire named that this machine cannot resolve yet,
+    // because the level is still loading. Read and dropped rather than
+    // duplicated; the authority still holds them unconfirmed and offers them
+    // again.
+    std::uint32_t AuthoredDeferred = 0;
+    // Components taken off entities that had them. Counts only the ones that
+    // were there: a removal for a component this client never gained describes
+    // a state it is already in.
+    std::uint32_t ComponentsRemoved = 0;
     // Whether this snapshot should drive a reconcile of the predicted pawn.
     // True for every snapshot a predicting client applies, not only ones that
     // carried the pawn's own state: the shadow holds the authority's last word
@@ -397,6 +506,14 @@ struct SnapshotApplyResult
     bool ReconcilePredicted = false;
 
     [[nodiscard]] bool Ok() const { return Error == SnapshotApplyError::None; }
+
+    // Whether everything the snapshot described actually landed. A snapshot
+    // that deferred an authored entity is Ok -- the world it left behind is
+    // consistent -- but it is not complete, and acknowledging it would tell the
+    // authority this client holds an entity it decided not to build. The
+    // floor would rise, the authored identity would stop being sent, and the
+    // client would never get another chance to recognise its own copy.
+    [[nodiscard]] bool Complete() const { return Ok() && AuthoredDeferred == 0; }
 };
 
 // Decodes a snapshot onto the target world. Structural work -- creating an

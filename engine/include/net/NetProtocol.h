@@ -35,7 +35,7 @@
 // Bumped on any wire change. There are no cross-version sessions: the handshake
 // refuses a mismatch with a reason rather than trying to negotiate, which is
 // the only honest posture while the format is still moving.
-inline constexpr std::uint16_t kNetProtocolVersion = 4;
+inline constexpr std::uint16_t kNetProtocolVersion = 6;
 
 // Every message begins with this so a decoder can dispatch before it trusts
 // anything else. Values are explicit because they are wire format: reordering
@@ -75,7 +75,35 @@ enum class NetPayloadKind : std::uint8_t
     // reliable channel, because unlike a snapshot there is no next one to
     // supersede a lost update.
     CVar = 3,
+    // Authority to client: hold this zone, or let it go. Reliable, because a
+    // lost one leaves the two machines disagreeing about which rooms exist for
+    // this peer and nothing later corrects it.
+    ZoneScope = 4,
+    // Client to authority: the named zone is loaded and attached here. What
+    // opens a zone for replication; see NetZoneScope.h.
+    ZoneAck = 5,
+    // Authority to client, dev-only: what the authority believes this peer
+    // holds, as a hash per entity. Unreliable, because a lost one is answered
+    // by the next.
+    DesyncHash = 6,
+    // 7 .. 63 are unallocated and the engine's. Cues, and whatever the protocol
+    // grows next, take numbers from here.
 };
+
+// The range a game may define its own payload kinds in.
+//
+// Stated as numbers rather than left implicit at the end of the enum. A game
+// that picked four and an engine that later took four would not fail to
+// compile: they would decode one message as another, on two builds that each
+// look correct on their own. The gap is deliberate room for the engine to grow
+// without ever reaching a shipped game's number.
+//
+// Below this range the engine's own decoders run first, so a binding there is
+// a handler that is never reached.
+inline constexpr std::uint8_t kNetFirstGamePayloadKind = 64;
+inline constexpr std::uint8_t kNetLastGamePayloadKind = 255;
+inline constexpr std::size_t kNetGamePayloadKindCount =
+    static_cast<std::size_t>(kNetLastGamePayloadKind - kNetFirstGamePayloadKind) + 1;
 
 // What the kind byte costs a payload. Every encoder writes it first and every
 // consumer strips it, so the offset is stated once rather than re-derived as a

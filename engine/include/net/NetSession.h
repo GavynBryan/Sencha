@@ -219,8 +219,32 @@ public:
     [[nodiscard]] std::uint64_t RoundTripMicroseconds() const { return RttMicroseconds; }
 
     // Diagnostics for the status command.
+    // Records that a payload from this peer did not decode, or did not pass the
+    // layer above.
+    //
+    // Payload decoding happens above the session -- a command is the command
+    // runtime's business, a game's message is the game's -- so the judgement
+    // that a peer is sending nonsense has to be able to come back down. It
+    // counts on the same scale as a malformed datagram, because the two are one
+    // fault seen from two layers, and enough of them disconnects the peer.
+    //
+    // Does nothing on a client, which has one peer and no authority over it.
+    void StrikePeer(PeerId peer, std::string_view why);
+
     [[nodiscard]] std::uint64_t StrikesIssued() const { return TotalStrikes; }
     [[nodiscard]] std::uint64_t Refusals() const { return TotalRefusals; }
+
+    // Client side, for diagnostics only: the channels toward the authority, so
+    // "is the reliable channel backing up" is answerable from outside. Null on
+    // a host, which keeps one set per peer on the peer record instead.
+    //
+    // Const, and const is the point. Everything about sequencing, ACKs, and
+    // retransmission is the channel's, and a diagnostic that could reach in and
+    // change it would be a second opinion about the reliable window.
+    [[nodiscard]] const NetChannelSet* AuthorityChannels() const
+    {
+        return CurrentRole == NetSessionRole::Client ? &ClientChannels : nullptr;
+    }
 
 private:
     [[nodiscard]] NetPeer* PeerByAddress(const NetAddress& address);

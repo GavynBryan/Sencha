@@ -32,6 +32,12 @@
 // value. Declared as `static constexpr bool Predicted = true;` on the schema,
 // beside Replicated. Read here rather than passed in by the registrar, so a
 // layout built directly still knows the fact.
+//
+// This routes bytes and does not schedule work. The value is restored to the
+// authority's word before the unanswered ticks are re-run; whether it is then
+// carried forward depends entirely on whether that re-run steps it, and what
+// re-runs is character movement. Declaring it on something else is answered at
+// startup rather than silently -- see prediction/PawnStateReplay.h.
 template <typename T>
 inline constexpr bool ComponentIsPredicted = []
 {
@@ -99,6 +105,17 @@ enum class ReplicationLayoutError : std::uint8_t
     InvalidQuantization,
     // More replicated fields than one field mask can address.
     TooManyFields,
+    // OwnerOnly and OwnerLocal on the same field: one says the owner is the
+    // only peer who may see it, the other says the owner is the only peer who
+    // may not. The field reaches nobody, while still costing a mask bit in
+    // every encode and a slot against the per-component field budget.
+    //
+    // Reachable without anyone writing both, because a composite's annotation
+    // reaches the scalars underneath it: an OwnerOnly struct with an OwnerLocal
+    // member produces this at the leaf. Refused rather than resolved -- there
+    // is no reading of the pair that is safe to guess at, and picking the
+    // member over the composite would send what the composite called private.
+    ContradictoryFieldPolicy,
 };
 
 // A component's per-field presence mask is one machine word, so this is how

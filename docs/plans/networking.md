@@ -2,9 +2,11 @@
 
 Status: ratified design, in execution (reviewed 2026-07-10, ratified and corrected
 2026-08-07; player envelope revised to 16 and replication rebuilt for it
-2026-08-09). This is roadmap Track G. The model, the module layout, the protocol
-shape, and the security posture below are decided; the phase list in Section 12 is
-the execution plan and carries per-phase status. Sessions, channels, replication,
+2026-08-09; protocol raised to version 5 on 2026-08-11, when component removal,
+authored-entity identity, and an acknowledgement that travels without input all
+changed the wire and took one bump together). This is roadmap Track G. The model,
+the module layout, the protocol shape, and the security posture below are decided;
+the phase list in Section 12 is the execution plan and carries per-phase status. Sessions, channels, replication,
 input, the shared clock, and prediction have landed, and replication has since
 been rebuilt around per-entity floors and a per-peer byte budget (Section 6.3,
 phase G-S); interest scoping, event replication, desync hashing, and hardening
@@ -308,10 +310,12 @@ One session model, three configurations, one binary:
   without a measured need; revisit trigger: profiling shows meaningful cost from
   Visible/Audio bookkeeping on a headless host).
 
-Roles are composition, not branches: the game's `OnRegisterSystems` receives the
-session role and registers the appropriate system set (Section 7.2). The engine does
-not scatter `if (IsServer)` through systems; a system either runs in a role or is not
-registered in it.
+Roles are composition, not branches, in the sense that matters: the engine does not
+scatter `if (IsServer)` through systems. What that does *not* mean is a role handed to
+`OnRegisterSystems` -- that shape is architecturally closed and Section 7.2 records
+why. What replaced it is that the net systems are registered unconditionally and are
+inert with no session, which costs one null check each and cannot be wrong about a
+role that does not exist yet.
 
 ---
 
@@ -418,8 +422,9 @@ document proposed. The scheme is `PersistentEntityId`
 when an entity is authored — not by the cook — serialized per entity in scene
 documents, carried verbatim through the cook, and resolved at runtime through the
 `PersistentEntityIndex` world resource. Runtime `EntityId` values are never
-persisted. `PersistentIdComponent` is registered last in `ComponentManifest.h`
-(manifest order is serialized state; append only). `SerializedEntityId` no longer
+persisted. `PersistentIdComponent` is registered last in
+`RegisterWorldComponents` (`world/WorldComponentRegistration.h`); registration
+order is serialized state, so it is append-only. `SerializedEntityId` no longer
 exists.
 
 Two consequences for this track, both load-bearing:
@@ -624,7 +629,24 @@ Identity assignment has two cases:
   resolved on each side through its own `PersistentEntityIndex`. No fallback scheme
   is needed; this shipped ahead of the track. No spawn messages for authored
   content, ever: a zone grant plus a
-  baseline delta against authored state fully describes it. This is the single
+  baseline delta against authored state fully describes it.
+
+  *Partly landed 2026-08-11, and not the way this describes.* Authored entities
+  still take a `NetEntityId` like everything else; what changed is that an entity
+  record carries its `PersistentEntityId` while the peer has confirmed nothing
+  about it, so a client binds the wire identity to the copy its own level load
+  produced instead of building a second one beside it. Before this, marking an
+  authored entity `NetReplicated` silently duplicated it on every client, and
+  nothing in the tree had done so, which is why nothing had noticed.
+
+  A client that cannot resolve the key yet -- admission precedes the map load, so
+  a snapshot can name an authored entity before the level produces it -- reads the
+  record and drops it, and reports the snapshot incomplete so it is not
+  acknowledged. That last part is what makes the deferral sound: the floor stays
+  where it was and the entity is described again.
+
+  The zone-grant-and-baseline form above still needs G3. This is the identity
+  half only, which is what a single-zone session needs and all it needs. This is the single
   biggest bandwidth and simplicity win the architecture hands us, and it is also
   exactly the `ZoneStateRecord` overlay shape (created/destroyed/changed against
   authored), which is why Section 3.4 insists the two share one identity.
@@ -657,10 +679,11 @@ scene serialization (`SceneChunkId`) and asset fields (`.AsAsset(...)`):
   the Section 5 remap, entity references encode as `NetEntityId` through the map
   (unmapped references refuse at the writer with a validation error, not silently).
 
-One registration fold, `EngineReplicatedComponents`, mirrors
-`EngineSceneComponents` (`world/ComponentManifest.h`), and game modules append their
-own in `OnRegisterComponents`, so the replication registry cannot drift from storage
-registration (the manifest-fold precedent). The writer and applier are schema-driven;
+There is no separate replication registry to drift: `ComponentRegistrar::Add<T>`
+puts one component into storage, the scene serializers, and the replicated table at
+once, deciding each from what that component's own `TypeSchema` declares. The engine
+names its own in `RegisterEngineComponents` and a game module appends its own in
+`OnRegisterComponents`, which is the whole of what a game writes. The writer and applier are schema-driven;
 adding a replicated component to a game is a schema edit plus a manifest entry, zero
 netcode. This satisfies OCP through data and the existing registration seam rather
 than a new interface.
@@ -803,6 +826,14 @@ components replicate generically like any other data.
 
 ### 6.5 Client apply and interpolation
 
+*Component removal landed 2026-08-11, as a per-entity list of wire keys behind a
+presence bit, owed until every peer's floor passes the generation it happened at
+-- the shape destroys already had, one level down. Before it, the publish walk
+skipped past a component the entity no longer had without erasing what it last
+knew, so every peer that had been shown it kept it permanently, and a peer
+joining afterwards was sent it: a fresh floor owes whatever the store still
+holds.*
+
 All structural application (spawn, destroy, component add/remove) happens at one
 defined point: the start of the client's fixed tick, before any system runs, through
 a `CommandBuffer` flush plus direct creation for spawns (the scene-load precedent:
@@ -836,6 +867,35 @@ A snapshot that references a zone the client has not finished loading cannot occ
 by protocol (grants gate replication, Section 8.2); the applier treats it as a
 protocol violation, not a queue-and-hope case.
 
+*Correction 2026-08-11: the applier does no such thing, and cannot -- there is no
+zone or scope concept anywhere in `engine/src/net/`. `SnapshotApplyRequest` carries
+one `Partition`, which is the persistent one. This paragraph describes the applier
+half of the grant flow control in Section 8.2, which arrives with G3; Section 8.2's
+own reference to "the applier's Section 6.5 violation rule" is pointing at intent
+rather than at code. Written here because a sentence in the present tense about a
+mechanism that does not exist is the kind a reader builds on.*
+
+*Update 2026-08-13: the flow control landed, on the writing side. The authority
+never sends entity state for a zone the peer has not acked, and anything that
+leaves a peer's scope is destroyed for that peer rather than left standing where
+it was. The applier still does not enforce it from the other side, and cannot
+yet: a snapshot carries no zone, so a client has nothing to check an arrival
+against. Applier enforcement matters against a hostile authority, which is the
+G6 posture rather than a shipped one; against an honest one the writer's
+withholding is what makes the invariant true. Recorded as owed, not as done.*
+
+*Also still true, and worth stating because it looks like a gap and is not: a
+client applies replicated entities into the persistent partition regardless of
+which zone they belong to. That is why revoking a zone destroys its entities for
+that peer explicitly -- unloading the zone on the client would not take them
+with it. Putting them in the granted zone's partition needs the zone on the
+wire, and buys storage tidiness rather than correctness.*
+
+*Also landed 2026-08-11: a snapshot is decoded in full before any of it is
+applied, so a truncated or corrupted one leaves the world and the identity map
+exactly as they were. It previously parsed and mutated in one pass and could
+return with entities destroyed, created, and half-written.*
+
 ---
 
 ## 7. Ownership and input
@@ -853,10 +913,29 @@ the component.
 
 ### 7.2 Role composition without branches
 
-- **Authority-only systems** (AI, ability activation, effect lifetime, spawning,
-  scoring): registered only when the session role is Host or HeadlessHost, in the
-  game's `OnRegisterSystems` (which receives the role). One decision at the
-  composition root, per SOLID-as-applied; no `IsServer` branches inside systems.
+- **Authority-only systems**, as planned: registered only for a Host role, in the
+  game's `OnRegisterSystems`, which would receive the role.
+
+  *Closed 2026-08-12, not owed.* `OnRegisterSystems` cannot receive a useful role,
+  and the reason is a lifecycle fact rather than a missing field. A session is
+  created by the `host` or `connect` console command at an arbitrary later moment,
+  and `EngineSchedule::Register` asserts after `Init()` -- so at registration the
+  role is Standalone in every process that will go on to host, which is precisely
+  the case the field exists to serve. A field that is wrong for its own motivating
+  case is worse than no field.
+
+  What ships instead: the net systems register unconditionally and are inert with no
+  session (`RegisterNetSystems`, and the two frame phases, each one null check), and
+  role-dependent work is a runtime read of `NetSession::Role()` at the one place per
+  frame that owns the decision -- `SessionPlayerSystem::FrameUpdate` in the template
+  is the worked example. That is a branch, and it is one branch at a composition
+  point rather than a branch per system, which is what the rule was protecting.
+
+  Ordering that genuinely belongs to the engine but names a game's type is expressed
+  as a template parameterized by that type (`OrderNetInputAround<T>`), so the edge is
+  maintained beside the systems that require it rather than restated in every game.
+  `EngineSchedule::AddDependency` refuses an edge whose ends share no phase rather
+  than silently dropping it, which is how a mis-declared one is now found.
 - **Client-side gating of zone content** rides participation, which already exists:
   on a client, granted zones converge to participation without Logic
   (Visible, Physics, Audio per the normal demand policy), so fixed-logic systems
@@ -922,6 +1001,11 @@ the validator (directive 3).
 Scope: the local player's pawn and its directly-driven state (movement stack,
 character controller, ability cooldown and cost bookkeeping needed for responsive
 activation). Not rigid bodies, not other entities, not zone content. Mechanism:
+
+*What shipped is narrower than this line, deliberately: the replay steps character
+movement, and the ability bookkeeping named here is the deferred item at the end of
+this section rather than something the `Predicted` flag reaches. See "What the
+declaration buys" below.*
 
 - The client runs the predicted subset of fixed systems (a registered list, the
   composition root again) for its pawn each tick using its own input, tagging
@@ -1014,21 +1098,35 @@ Moving it up deleted the seam and its wiring outright.
 Which components get intercepted is a fact of the schema, not a list netcode keeps:
 a component declares `Predicted = true` beside `Replicated = true`, `ReplicationLayout`
 carries it on `ReplicatedComponent`, and `ClientPrediction::Bind` compiles the shadow
-from the sealed table at startup -- so `net` names no component type, and a game whose
-characters carry state of their own extends what a replay resumes from by declaring it
-on that state. The engine's set is `LocalTransform`, `KinematicState`, `SupportState`,
-`CharacterMovement`, and `JumpState`. The flag is deliberately outside `TableHash`:
+from the sealed table at startup -- so `net` names no component type. The engine's set
+is `LocalTransform`, `KinematicState`, `SupportState`, `CharacterMovement`, and
+`JumpState`. The flag is deliberately outside `TableHash`:
 the hash exists so two builds know they agree on how to read each other's snapshots,
 and prediction changes only where the receiver lands the decoded bytes -- never the
 encoding -- so folding it in would refuse a handshake between builds that understand
 each other perfectly.
 
+What the declaration buys is that staging, and only that. It routes bytes; it does
+not schedule work. Restoring is half of resuming and the other half is something
+re-running the ticks the authority has not answered, which is `PawnStateReplay`, which
+steps character movement. A component that step does not touch is staged and restored
+exactly the same way and then left at the authority's last word, so whatever its owner
+advanced since is discarded -- at the snapshot rate, silently, with nothing about the
+component's own behaviour looking wrong. So declaring `Predicted` on state a game
+carries of its own is not how a replay is extended; extending a replay means a second
+replay step beside the character one, which is Section 12's deferred work with a named
+trigger. Until then the build reports the gap instead of leaving it to be discovered:
+`CollectUnresumedPredictedComponents` (`prediction/PawnStateReplay.h`) is walked once
+at startup beside `Bind`, and every predicted component the tick does not resume is
+named in a warning saying what will happen to it.
+
 What one re-run tick *does* belongs to movement (`StepCharacterTick`, composing
 `StepFreeLocomotion` → `StepJump` → `ComposeMotion` → `Movers->Step`, with the same
-mailbox-rebuild rule the live tick has). `PawnStateReplay` decides which ticks to run
-and what to do when they cannot be. A second implementation of the tick itself would
-reintroduce, as a difference between two codebases, exactly the divergence replaying
-exists to remove.
+mailbox-rebuild rule the live tick has). It also answers `CharacterTickResumes`, in
+the same file, so a stage added to the tick and the set that reports on it move in one
+edit. `PawnStateReplay` decides which ticks to run and what to do when they cannot be.
+A second implementation of the tick itself would reintroduce, as a difference between
+two codebases, exactly the divergence replaying exists to remove.
 
 Two definitions of a character tick do exist, and the split is deliberate rather than
 tolerated. The scheduled path is stage-major over chunks -- every entity through
@@ -1150,6 +1248,42 @@ The server's residency is then automatically the union of every player's
 neighborhood, with linger absorbing crossings, exactly as it absorbs one player
 today. Server memory is governed by the same knobs (cap, and cost budget once the
 review's Phase D lands), sized against the ratified 8-peer envelope (Section 14).
+
+*Landed 2026-08-12, in three pieces and with two deviations.* The pure policy
+takes `std::span<const ZoneFocusSource>` and merges as described; the five tests
+named above exist under `ZoneDemandSources`. `WorldPartitionRuntime` holds a
+vector of focus sources sorted by id, each carrying the traversal state that used
+to be a member of the runtime -- position, dock sweep, pending position, capsule,
+suppressed dock, last traversal, grace linger -- because crossing a doorway is
+something a player does rather than something the world does, and two players
+walking through different doors on the same frame is the ordinary case. The
+unqualified calls forward to source one.
+
+Deviations:
+
+- `ComputeZoneHopRanks` still takes one focus. Its result orders loads rather than
+  deciding residency, so the runtime calls it per source and merges the ranks
+  (minimum hop, then minimum cost) instead. A span form would have been a second
+  merge saying the same thing in a second place.
+- The net-to-zone mapping is keyed by **owned entity, not by peer**
+  (`net/NetZoneStreaming.h`). A peer can be driving more than one thing at once
+  -- somebody in a turret still has a body sitting in it, in a room that has to
+  stay simulated for them to get back into -- and per entity that is exactly the
+  union the merge already computes. Per peer it would have needed a rule for
+  which of a peer's entities counts, and every answer to that is arbitrary.
+
+*Consolidated 2026-08-13.* All of it -- following the local player, following
+every peer, offering each peer its own neighbourhood, and loading what the
+authority granted -- is one call the engine makes, and a game reaches it by
+handing its partition runtime over once (`Engine::SetWorldStreaming`). It was
+four calls in one exact order, and getting the order wrong was silent: focus
+before the streaming update or a player streams a frame behind themselves,
+grants after it or a peer is offered rooms from before it moved. A game had no
+way to know that order and no reason to.
+
+The gate for this half is `NetZoneStreamingTests`, which drives the eight-zone
+traversal chain through real demand, async load, and residency processing with
+two peers at opposite ends.
 
 ### 8.2 Per-peer interest and the grant/ack residency protocol
 
@@ -1328,10 +1462,19 @@ table syncs are the most complex messages in the protocol), so the fuzz corpus
 weights authority-to-client messages accordingly. Strikes on a client disconnect it
 from the offending session. Rules, enforced by review and tests:
 
-- Length-prefixed everything; every count validated against remaining bytes and
-  against a per-message-type cap table (max peers, max zones per grant, max
-  entities per delta, max component payload = schema-computed size, max string =
-  reason-text cap). No allocation sized by wire data beyond the caps.
+- Every count validated against remaining bytes and against a per-message-type
+  cap table (max peers, max zones per grant, max entities per delta, max
+  component payload = schema-computed size, max string = reason-text cap). No
+  allocation sized by wire data beyond the caps.
+
+  *Correction 2026-08-11: this rule said "length-prefixed everything", which the
+  snapshot body has never been and is not going to be. A snapshot is a bit
+  stream whose every offset depends on the compiled layout and on all preceding
+  data; per-entity or per-section prefixes would cost bytes on the hottest path
+  to buy a skip-ahead nothing performs. The handshake and control messages are
+  length-prefixed, and are what the rule accurately describes. What the snapshot
+  body relies on instead is the cap table above and the whole-then-write applier
+  in Section 6.5.*
 - Decoders are pure functions over `std::span<const std::byte>` returning value
   types or a typed error; no engine services, no logging, no side effects, so they
   fuzz in isolation.
@@ -1389,6 +1532,18 @@ structural first, then the Section 10.2 hardening discipline pointed the other w
   identity map, with spawns applied before references within a message; replicated
   parent links are cycle-checked before the transform system sees them. A malformed
   message is never partially applied; violations strike and disconnect.
+
+  *Status 2026-08-11: the never-partially-applied half is now true of snapshots
+  and is the reason the applier reads a whole snapshot before writing any of it
+  (Section 6.5). The rest of this paragraph is still a description of intent.
+  Unquantized floats are not checked for finiteness -- a float field is 32 bits
+  bit-cast, so a hostile authority can put NaN into any of them; enum payloads
+  are not range-checked; there are no replicated entity references or parent
+  links to validate, because the layout refuses an entity handle as a field.
+  And nothing strikes: the snapshot path logs a refusal, and `NetSession::Strike`
+  is private and reachable only from datagram decode. The whole paragraph is
+  scoped to the hostile-authority posture, which is G6 and not yet claimed --
+  v1 clients trust their authority.*
 - **Bounded client resources.** Grant counts, per-zone entity caps, snapshot ring
   depth, reliable-window sizes, and event rates bound what a hostile authority can
   make a client allocate; exceeding a cap is a protocol violation, not a growth
@@ -1557,6 +1712,94 @@ after the 2026-08-07 playtest: every World-level assertion passed while replicat
 motion never reached the screen, because the tests stopped one derivation short of
 what extraction actually reads.
 
+### 12.0 Contributor readiness, re-audited 2026-08-12
+
+Track G was audited against a single question: can a competent mid-level game or
+engine programmer implement ordinary multiplayer features without descending into
+replication protocol internals? The transport and protocol firewall passed
+outright -- no gameplay code anywhere touches a socket, a sequence number, an ack
+window, or a fragment, and `CheckNetIsolation.cmake` holds public net headers to
+the same bar. Everything the audit found was *above* transport, and the work below
+is what closed it. The fifteen tasks it scored, re-walked against the shipped tree
+rather than against the plan:
+
+| Task | Was | Is | What closed it |
+|---|---|---|---|
+| Add a replicated component | mid-level | mid-level | unchanged |
+| Add an owner-only field | mid-level | mid-level | contradictory flag pairs now refused by name |
+| Add a small integer field | **silently corrupting** | mid-level | width-aware codec access; unimplementable widths refused at registration |
+| Add another spawned replicated object | mid-level | mid-level | duplicate and null recipe registration refused |
+| Remove a replicated component | **silently stale on clients** | mid-level | removal travels, owed until acknowledged |
+| Add a networked authored door | **silently duplicated** | mid-level | authored key binds through `PersistentEntityIndex`; unloaded levels defer and converge |
+| Send a client-to-authority request | **not writable** | mid-level | `NetMessageRouter` + `NetSendToAuthority`; sender and direction are the engine's |
+| Send an unreliable cosmetic event | mid-level | mid-level | the channel is an argument, which is a product decision not transport knowledge |
+| Possess an object | **five representations by hand** | mid-level | `NetSetOwner`; every derivation follows |
+| Transfer ownership | **no path existed** | mid-level | one call; no frame exists with two drivers |
+| Add a predicted cooldown | suspicious | **specialist, and says so** | the build names it at startup and states what will happen to it |
+| Add another interpolated property | suspicious | **specialist, and says so** | the API states poses are the only interpolated type and names the trigger |
+| Diagnose why one entity is not replicating | no | mid-level | `net_entity <netid> [peer]` |
+| Diagnose a failed ownership transfer | no | mid-level | `net_owners`, plus the consistency assertion firing where it breaks |
+| Add a relevance rule | not yet defined | mid-level | `NetPeerZoneInterest` -- a policy is a list of zones per peer; held by `ZoneRelevancePolicyTests` |
+
+Thirteen of fifteen mid-level, two specialist for stated inherent reasons, none
+suspicious. *(This paragraph read "eleven and four" until 2026-08-13, which was
+the plan's projection rather than a count of the table above it. Corrected by
+counting.)* The relevance rule is the row that moved last: the audit could not
+score it because scoped replication did not exist, and it scores mid-level now
+by construction rather than through a mechanism built to make it so.
+
+The two specialist tasks are prediction and interpolation, and they are
+specialist because replaying a second domain and blending a second type are real
+design work, not because an implementation detail leaked -- and both now say so
+at the point somebody would otherwise assume they were supported.
+
+Three defects the audit did not name were found while closing it, and are recorded
+because their shape generalizes. A reliable message from a client to its authority
+was answered with a handshake challenge and never delivered: `NetChannelKind`
+collided with `NetMessageType` in the first byte the host peeks, and the guard for
+exactly that asserted three of the five types the branch reads. It survived because
+nothing in the tree had ever sent one -- commands ride unreliable, and the retained
+delivery buffer had no callers -- and because the session suite covered two of the
+four direction-by-channel combinations, the two that worked. The channel kinds are
+numbered above the message types now, so the collision fails to compile. Second, the
+channel's kind validation was an upper bound, correct only while kinds started at
+zero; it asks membership now. Third, the snapshot applier mutated the world at
+thirteen failure returns, and the lasting damage was an entity created before a
+mid-entity failure: bound to an identity, never spawned again, so its recipe never
+ran and it stayed correct in state and invisible on screen for the session. Apply is
+staged -- read whole, then write whole -- and truncation and mutation corpora prove
+no refusal changes anything.
+
+What this pass deliberately did not build, each recorded with a trigger rather than
+left implied: a universal RPC framework, a distinct network-object handle, replicated
+entity references as component fields, generic rollback, generalized interpolation,
+per-category bandwidth policy, a capture format, and recipe tables in the handshake
+identity. Section 11 of the plan behind this work holds the reasoning for each.
+
+The packaged-bundle pass was run rather than left to be described.
+`scripts/package_bundle.sh` produced a server and a client bundle from the template
+content; the server bundle hosted `levels/test` on UDP, the client bundle joined it,
+and all three questions were answered from what the server printed at its own
+terminal with no overlay anywhere: the traffic and which kind of it grew (7.0 KiB/s
+of command in against 939 B/s of snapshot out -- a session whose inbound cost is the
+player's own input), whether the budget was the constraint (peak 56 of 1173 B at 5
+per cent with nothing deferred, so emphatically not), and what the peer cost (8.3 ms,
+no strikes, two ticks queued). `net_owners` then named the entity that peer drove and
+its network identity, and reported the host driving nothing, which is what a
+dedicated host should say.
+
+Two things that run surfaced, neither a networking defect and neither fixed here.
+The template's startup banner prints player control hints unconditionally, so a
+dedicated server's terminal opens by explaining which mouse button looks around. And
+the machine's cooked template content is a `.smesh` version behind the loader
+(`scripts/migrate_smesh_v4_to_v5.py` exists for exactly this), so the client bundle
+joined, was served a pawn, and predicted it correctly while the level's geometry
+failed to stage -- which is stale generated content rather than anything tracked, but
+it does mean the visual half of that pass is owed a re-cook.
+
+Still owed here: zone interest, which is G3 and specialist and depends on three
+things this pass landed.
+
 - **G0. Foundations (no netcode). MOSTLY LANDED.** Section 3.1's paced tick scheduler,
   3.2's mover-state fix, 3.3's tick-stamped input records, and 3.4's stable identity
   all shipped on their own tracks. What remains: **the headless frame loop**
@@ -1589,6 +1832,105 @@ what extraction actually reads.
   Depends on G2; wants zone review Phase A (containment focus) and composes with
   Phases C, D, E as they land. **Not required for the G4 gate** (see above), but
   required before a multi-zone session ships; the three-zone traversal is its gate.
+
+  *Status 2026-08-13: the negotiation and the flow control are done.* Multi-source
+  demand (Section 8.1); entity-to-zone attribution in the change store; the
+  grant/ack/revoke messages and per-peer scope; per-peer interest computed from
+  what each peer drives; the writer withholding state for any zone a peer has
+  not acked, and destroying for that peer anything that leaves its scope; and a
+  client pinning what it was granted so travel cannot deadlock against its own
+  local policy.
+
+  One rule discovered the hard way and worth carrying forward: **scope control
+  applies only to zones a streaming manifest names.** A map loaded whole is a
+  resident zone that no policy names, so nothing computes interest for it and
+  nothing would ever grant it -- gating it withholds the level from every peer
+  permanently. From inside the writer, "nobody has granted this yet" and "nobody
+  ever will" are indistinguishable, so the streamed set is declared rather than
+  inferred.
+
+  *The traversal gate is met deterministically* (`ZoneTraversalGateTests`): two
+  players walk an eight-room chain in opposite directions through the whole
+  closed loop -- authority streaming, per-peer interest, grants, client loading,
+  acks, snapshots -- and neither is ever, at any step, missing what is standing
+  in the room they are in. Checked at every step rather than at the ends,
+  because a handoff one frame late is a player walking into an empty room and
+  both ends still look right. The live version still needs cooked multi-zone
+  content, which does not exist -- the template ships one level.
+
+  **A defect the gate found, and fixed.** `ResidentZoneCap` bounds the merged
+  demand of every focus source at once and was sized when there could only be
+  one. Two players in different parts of a world ask for more rooms than a
+  budget meant for one, and what happened then was worse than a full budget: a
+  crossing is held back when its destination is not resident, the destination
+  lost the eviction because it was only a neighbour of a focus rather than a
+  focus itself, and it stayed a neighbour precisely because the crossing that
+  would promote it was the one being held back. Players advanced anyway, a room
+  per attempt, while the world's idea of where they were trailed where they
+  actually were -- so residency and relevance were both computed for rooms they
+  had left.
+
+  The fix is one concept, not a new mechanism: a room a source is part way into
+  counts as somewhere it *is* rather than somewhere it can see, so it is immune
+  from eviction exactly as its origin already was. `ZoneFocusSource::Entering`
+  carries it, and the runtime remembers it until the crossing completes --
+  `LastTraversal` cannot, because it is cleared every update and only refilled
+  on a frame the caller supplied a new position.
+
+  Sizing is still a real constraint: N players want N neighbourhoods, and a cap
+  below that evicts continuously. That is honest budget pressure an operator can
+  see, which is what the old behaviour was not.
+
+  *Run live 2026-08-13.* A dedicated host loads `traversal3` (three rooms in a
+  line, two doorways, generated by `TraversalWorld.Generate`), a client joins,
+  and `net_zones` on both sides agrees: three zones under scope control, the
+  peer holding two of them -- its room and its neighbour -- granted and acked.
+  Not all three, which is scoped relevance doing its job across two real
+  processes.
+
+  The authored world is tracked; its cooked form is not, like every other cook
+  output. A live run is two commands -- cook, then host:
+
+  ```
+  SENCHA_TRAVERSAL_ROOT=template/assets \
+    ./build/test/level_cook_tests --gtest_filter=TraversalWorld.Generate
+  cd template && ../build/app/app --game build/game.so +world traversal3 +host
+  ```
+
+  An automated two-process traversal is a separate decision, because a test
+  cannot depend on generated content CI does not have.
+
+  **Zone baselines: not built, and the reason is a measurement.** The
+  optimization is that both machines loaded the same cooked zone, so a grant
+  plus a delta against authored state would describe the room and a room nobody
+  has touched would cost nothing. What shipped is the identity half -- an
+  authored entity binds to the copy the client's own level load produced instead
+  of being duplicated (Section 6.1) -- and that half is what correctness needed.
+
+  The other half optimizes something no content does. **Zero replicated authored
+  entities exist anywhere in the tree**: level geometry carries neither
+  `NetReplicated` nor `NetOwner`, and everything a session replicates is spawned
+  at runtime into the persistent partition. A steady-state host on the three-room
+  world measures a peak snapshot of 23 bytes against a 1173-byte budget, with
+  seeding and delta both at zero.
+
+  Building it would also take on real risk for that nothing: the two sides must
+  agree bit-for-bit on authored values, and a field where they disagree is a
+  client permanently wrong with no correction, because the whole point is that
+  the authority never mentions it.
+
+  The trigger is a shipped entity that is both authored and replicated -- the
+  networked door Section 4.2 names -- plus a seeding figure attributable to it.
+  `PublishStats::SeedingBytes` against `DeltaBytes` is the measurement, and
+  `net_status` already prints both.
+
+  **Applier-side enforcement: G6's, not G3's.** Section 6.5's rule needs the
+  zone on the wire, per entity, on the hottest path there is -- and it buys
+  nothing against an honest authority, because the writer's withholding is what
+  makes the invariant true. It is worth its bytes only alongside the rest of the
+  hostile-authority posture, which is where the zone would earn its place for
+  other reasons too. Recorded as G6 scope rather than as owed here.
+
 - **G4. Ownership, input, prediction. The track gate lands here.** `NetOwner`;
   session role reaching `OnRegisterSystems` so role is composition rather than
   branches; the input channel over the action stream plus a per-tick
@@ -1677,9 +2019,49 @@ what extraction actually reads.
   fine while its queue is deep is being made late by the authority rather than
   by the network -- the distinction that cost a live session to find by hand.
   `net.command_slack` makes the buffer's tolerance an authority-owned
-  (`Replicated`) tunable rather than a constant. Still open in this phase:
-  event/cue replication and desync hashing. Per-zone scope sizes wait on zone
-  interest, which has no scopes to size yet.
+  (`Replicated`) tunable rather than a constant.
+
+  *Status 2026-08-13: desync hashing landed; cue replication is recorded as
+  having no consumer.* `net/NetDesyncProbe.h` folds what the authority believes
+  a peer holds into a hash per entity, the peer folds its own copy the same way,
+  and a mismatch names the entity and points at `net_entity <netid>` for which
+  component and which value. `net.desync_interval` is `Developer` and off by
+  default: it costs outbound bytes per peer to answer a question nobody is
+  asking unless something is already suspected.
+
+  Three rules decide whether it is worth having, and each is a test:
+
+  - **Only entities a peer has fully proved.** A client's view is a mix of
+    generations by design, so "the world at tick T" is something no client ever
+    holds; only an entity whose every run was already confirmed at that peer's
+    floor is one the two sides should agree about.
+  - **Only fields that peer was eligible to receive.** A field withheld from a
+    non-owner is one that peer holds whatever its applier left in, and folding
+    it reports divergence on every entity with an owner-gated field.
+  - **Predicted state excluded only on the entity that peer drives.** This one
+    was wrong first: excluding predicted components everywhere is intuitive and
+    leaves the probe folding almost nothing, because the transform is predicted.
+    Elsewhere a predicted component is ordinary replicated state.
+
+  A check that fires falsely gets turned off, and a check that is off catches
+  nothing, which is why all three are rules rather than refinements.
+
+  **Cue replication: no consumer.** Section 6.4 says `ICueSink` "stays the
+  game-facing surface"; there is no `ICueSink` in the tree, and no cue system of
+  any kind. Building the wire for one would be guessing at the shape of the
+  thing it carries. The trigger is a cue system existing.
+
+  *Status 2026-08-12: the same account now reaches a terminal.* The panel is ImGui
+  and a dedicated host has no overlay, so the one process where budget occupancy,
+  deferral age, unsendable entities, and per-peer queue depth decide whether a
+  session is healthy could read none of them. `net_status` prints all of it
+  (`net/NetStatusReport.h`), `net_entity <netid> [peer]` answers why one object is
+  not reaching one peer using the writer's own owed-field rule, and `net_owners`
+  answers who drives what. Four counters that were computed every publish and every
+  apply and then discarded are surfaced: what the last snapshot did to a client, the
+  seeding-versus-delta split, deferred destroys, and a bounded costliest-entity
+  list -- which answers "what is eating the budget" without the capture format this
+  plan declined to build.
 - **G-P. Prediction. Split out 2026-08-08; depends on G4a.**
 
   *P1, the shared tick: landed.* Prediction rests on both machines naming the
@@ -1813,6 +2195,15 @@ what extraction actually reads.
   one process. Still owed from this phase: the scripted traversal soak with
   zero-missed-tick assertions (rides Track C's script machinery and Track E's
   CI), and Windows packaging (Track F).*
+
+  *Status 2026-08-12: that test now drives both processes by console, over a pipe
+  onto the child's stdin, which is how a dedicated server is actually operated --
+  a test that drove it any other way would be exercising a path nobody uses. It
+  covers the template's turret: a client names a replicated object, asks for it on
+  the reliable channel, takes it, and hands it back, with the authority's record
+  read back through `net_owners`. That is also the only coverage that could have
+  caught the channel-kind collision, since it is the first reliable message any
+  client in this tree has ever sent its authority.*
 
   *Deviation from Sections 2.3 and 7.2, recorded: there is no `HeadlessHost`
   value in `NetSessionRole`. Hosting is hosting on the wire, and a fourth role
@@ -1999,6 +2390,14 @@ owed before the phase that depends on them.
    which is a change to the command wire format and therefore a protocol bump.
    Deliberately not taken inside the replication-scaling work. The sixteen-peer
    soak runs entirely on this path, which is why its numbers are a lower bound.
+
+   *Answered 2026-08-11.* The command message carries one bit for whether input
+   follows, and an acknowledgement alone is nine bytes against a command's
+   dozens. It is sent only when the acknowledgement has moved, so a client with
+   nothing new to confirm sends nothing at all. Rode the protocol bump that
+   component removal and authored identity took together. The soak's numbers are
+   no longer a lower bound for this reason, though they were taken before the
+   change and have not been retaken.
 
 7. **Interpolation across a long gap.** Bracketing two samples far apart draws an
    entity sliding between them. A rule that snaps instead of blending past some
