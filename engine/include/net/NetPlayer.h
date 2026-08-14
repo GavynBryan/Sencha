@@ -105,8 +105,35 @@ static_assert(std::is_trivially_copyable_v<NetPlayerControl>,
 SENCHA_DECLARE_COMPONENT_TYPE(NetPlayerControl, "sencha.net_player_control");
 
 //-----------------------------------------------------------------------------
+// NetLocalParticipant
+//
+// The player this machine's own person is. At most one, and absent on a
+// dedicated host, which simulates everybody and presents nobody.
+//
+// Not the same question as having no peer: a bot has no peer either, and a
+// process running four of them presents none of them. This is what decides
+// whether a body arriving for a participant also takes the camera and the look
+// input -- including on a respawn, which is why it is a mark on the player
+// rather than something a caller remembers to do.
+//
+// Never replicated: which participant is yours is a fact about where you are
+// sitting, and every machine has a different answer.
+//-----------------------------------------------------------------------------
+struct NetLocalParticipant
+{
+};
+
+static_assert(std::is_empty_v<NetLocalParticipant>,
+              "NetLocalParticipant is a tag: presence is its whole meaning");
+
+SENCHA_DECLARE_COMPONENT_TYPE(NetLocalParticipant, "sencha.net_local_participant");
+
+//-----------------------------------------------------------------------------
 // Finding one
 //-----------------------------------------------------------------------------
+
+// The player this machine presents, or an invalid id when it presents nobody.
+[[nodiscard]] EntityId NetLocalPlayerOf(const World& world);
 
 // The player driven by this peer, or an invalid id. A walk of the NetPlayer
 // column, so it costs the number of participants rather than the size of the
@@ -129,8 +156,23 @@ SENCHA_DECLARE_COMPONENT_TYPE(NetPlayerControl, "sencha.net_player_control");
 // which is where a player belongs: a participant that vanished because the room
 // it was created in unloaded would take the session's record of them with it.
 //
+// Whether an admitted participant is the one this machine presents. Passed at
+// admission rather than set afterwards, because a body is bound during
+// admission and whether that body takes the camera depends on the answer.
+enum class NetParticipantPresence : std::uint8_t
+{
+    // Simulated here, presented elsewhere or nowhere: a remote peer's player, a
+    // bot, every player on a dedicated host.
+    Simulated,
+    // The person at this machine.
+    Local,
+};
+
 // Structural.
-EntityId NetAdmitPlayer(World& world, PeerId peer, std::uint16_t partition = 0);
+EntityId NetAdmitPlayer(World& world, PeerId peer,
+                        NetParticipantPresence presence
+                        = NetParticipantPresence::Simulated,
+                        std::uint16_t partition = 0);
 
 //-----------------------------------------------------------------------------
 // Possession

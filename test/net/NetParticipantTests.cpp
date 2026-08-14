@@ -222,3 +222,113 @@ TEST(NetParticipant, AGameThatRegistersNoPoliciesStillAdmits)
     EXPECT_FALSE(fixture.ControlOf(player).Body.IsValid());
     EXPECT_EQ(NetPlayerForPeer(fixture.Entities, PeerId{ 8 }), player);
 }
+
+//=============================================================================
+// The person at this machine
+//
+// A local participant goes through the same lifecycle as a peer's. What is
+// different is only that the body it is given also takes the look input and the
+// camera -- and that is a mark on the player rather than something a caller
+// remembers, so it holds on a respawn as well as on a join.
+//=============================================================================
+
+TEST(NetParticipant, ALocalParticipantsBodyTakesLocalControl)
+{
+    ParticipantWorld fixture;
+    fixture.ProvideBodies();
+
+    const EntityId player =
+        NetAdmitParticipant(fixture.Entities, PeerId{}, fixture.Policies,
+                            NetParticipantPresence::Local);
+
+    ASSERT_TRUE(player.IsValid());
+    const EntityId body = fixture.ControlOf(player).Body;
+    ASSERT_TRUE(body.IsValid());
+    EXPECT_EQ(LocalControlSubjectOf(fixture.Entities), body)
+        << "this machine was given a body and is not driving it";
+    EXPECT_TRUE(fixture.Entities.HasComponent<LocalLookControl>(body));
+    EXPECT_EQ(NetLocalPlayerOf(fixture.Entities), player);
+}
+
+// A host running bots presents none of them. Having no peer is not the same
+// question as being the person sitting here.
+TEST(NetParticipant, ASimulatedParticipantWithNoPeerDoesNotTakeLocalControl)
+{
+    ParticipantWorld fixture;
+    fixture.ProvideBodies();
+
+    const EntityId bot =
+        NetAdmitParticipant(fixture.Entities, PeerId{}, fixture.Policies,
+                            NetParticipantPresence::Simulated);
+
+    ASSERT_TRUE(bot.IsValid());
+    ASSERT_TRUE(fixture.ControlOf(bot).Body.IsValid());
+    EXPECT_FALSE(LocalControlSubjectOf(fixture.Entities).IsValid())
+        << "a bot took the camera off the person at this machine";
+    EXPECT_FALSE(NetLocalPlayerOf(fixture.Entities).IsValid());
+}
+
+// Two would be two cameras and two sets of look input on one machine. Peerless
+// participants all record the authority, so the peer number cannot be what
+// tells them apart.
+TEST(NetParticipant, AskingForTheLocalParticipantTwiceIsTheSamePerson)
+{
+    ParticipantWorld fixture;
+    fixture.ProvideBodies();
+
+    const EntityId first =
+        NetAdmitParticipant(fixture.Entities, PeerId{}, fixture.Policies,
+                            NetParticipantPresence::Local);
+    const EntityId second =
+        NetAdmitParticipant(fixture.Entities, PeerId{}, fixture.Policies,
+                            NetParticipantPresence::Local);
+
+    EXPECT_EQ(first, second);
+    EXPECT_EQ(fixture.Asked, 1) << "the second ask built a second body";
+}
+
+// A bot beside the local player is a different participant, not the same one.
+TEST(NetParticipant, ABotBesideTheLocalPlayerIsADifferentParticipant)
+{
+    ParticipantWorld fixture;
+    fixture.ProvideBodies();
+
+    const EntityId me =
+        NetAdmitParticipant(fixture.Entities, PeerId{}, fixture.Policies,
+                            NetParticipantPresence::Local);
+    const EntityId bot =
+        NetAdmitParticipant(fixture.Entities, PeerId{}, fixture.Policies,
+                            NetParticipantPresence::Simulated);
+
+    ASSERT_TRUE(me.IsValid());
+    ASSERT_TRUE(bot.IsValid());
+    EXPECT_NE(me, bot) << "the bot and the player at this machine are one person";
+    EXPECT_EQ(LocalControlSubjectOf(fixture.Entities),
+              fixture.ControlOf(me).Body);
+}
+
+// The respawn case. A body arriving later takes the camera the same way the
+// first one did, because the mark is on the player rather than on the moment.
+TEST(NetParticipant, ALocalParticipantTakesUpABodyGivenLater)
+{
+    ParticipantWorld fixture;
+    bool ready = false;
+    fixture.Policies.ProvideBody = [&](World&, EntityId) {
+        ++fixture.Asked;
+        return ready ? fixture.Thing() : EntityId{};
+    };
+
+    const EntityId player =
+        NetAdmitParticipant(fixture.Entities, PeerId{}, fixture.Policies,
+                            NetParticipantPresence::Local);
+    ASSERT_FALSE(LocalControlSubjectOf(fixture.Entities).IsValid());
+
+    ready = true;
+    const EntityId body =
+        NetRequestPlayerBody(fixture.Entities, player, fixture.Policies);
+
+    ASSERT_TRUE(body.IsValid());
+    EXPECT_EQ(LocalControlSubjectOf(fixture.Entities), body)
+        << "a respawned body did not take the camera back";
+    EXPECT_TRUE(fixture.Entities.HasComponent<LocalLookControl>(body));
+}

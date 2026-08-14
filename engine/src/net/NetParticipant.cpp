@@ -6,9 +6,10 @@
 #include <net/NetReplicationComponents.h>
 
 EntityId NetAdmitParticipant(World& world, PeerId peer,
-                             const NetParticipantPolicies& policies)
+                             const NetParticipantPolicies& policies,
+                             NetParticipantPresence presence)
 {
-    const EntityId player = NetAdmitPlayer(world, peer);
+    const EntityId player = NetAdmitPlayer(world, peer, presence);
     if (!player.IsValid())
         return player;
 
@@ -52,6 +53,19 @@ EntityId NetRequestPlayerBody(World& world, EntityId player,
         NetSetOwner(world, body, PeerId{ identity->Peer });
 
     NetPossess(world, player, body);
+
+    // A body arriving for the person at this machine also takes the look input
+    // and the camera. Keyed off the mark on the player rather than off whoever
+    // happened to ask, so a respawn does it as reliably as a join does.
+    //
+    // No prediction: this machine defines this body rather than guessing ahead
+    // of somebody else's answer about it. A client's own pawn arrives
+    // replicated and is taken up by NetReconcileLocalControl instead.
+    if (world.IsRegistered<NetLocalParticipant>()
+        && world.HasComponent<NetLocalParticipant>(player))
+    {
+        NetSetLocalControl(world, body, nullptr);
+    }
 
     // Re-fetched rather than held across the calls above: all of them are
     // structural, and a component pointer does not survive structural change.

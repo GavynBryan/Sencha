@@ -394,6 +394,11 @@ struct PlayContentPartition
 // moment the answer changes.
 void RequestBodiesForWaitingPlayers(Engine& engine)
 {
+    // This machine's own person, if it has one and is the authority for it.
+    // The engine decides both; the game only knows when there is somewhere to
+    // put a body, which is now.
+    (void)engine.AdmitLocalPlayer();
+
     World& world = engine.World().Entities();
     if (!world.IsRegistered<NetPlayer>())
         return;
@@ -422,11 +427,14 @@ void PublishPlayContent(World& world, std::optional<StoragePartitionId> partitio
 // half that used to be forgotten cannot be. What is left here is the camera,
 // which is a presentation choice: first person, orbit, or spectator is not a
 // fact about the network.
-void AttachLocalPlayer(World& world, EntityId pawn, ClientPrediction* prediction,
-                       Logger& log)
+// Points this machine's camera at whatever it is driving.
+//
+// Only the camera. Which entity that is, whose input reaches it, and whether it
+// is predicted are all the engine's answers now -- this reacts to them rather
+// than deciding any of them, which is what stops the game from holding a second
+// copy of an answer that can go stale.
+void AttachLocalPlayer(World& world, EntityId pawn, Logger& log)
 {
-    NetSetLocalControl(world, pawn, prediction);
-
     const Vec3d position =
         world.TryGet<LocalTransform>(pawn) != nullptr
             ? world.TryGet<LocalTransform>(pawn)->Value.Position
@@ -449,37 +457,6 @@ void AttachLocalPlayer(World& world, EntityId pawn, ClientPrediction* prediction
         world.AddComponent<CameraRig>(camera, rig);
 
     log.Info("TemplateGame: local player attached to its pawn");
-}
-
-// Builds this player a pawn at the authored start and takes possession of it.
-// The pawn is not handed back: which one the player drives is the record
-// AttachLocalPlayer wrote, and a second copy of that answer is the thing this
-// file no longer keeps.
-void SpawnPlayerAvatar(
-    World& world,
-    Logger& log,
-    std::optional<StoragePartitionId> spawnPartition,
-    MovementProfileHandle movementProfile,
-    const ResolvedPlayerAvatar& avatar)
-{
-    const EntityId pawn = SpawnPawn(
-        world, FindPlayerStart(world, spawnPartition), movementProfile, avatar);
-
-    // Marked whether or not this process ever hosts. The person running a
-    // listen server is a player too, and a client that could not see them would
-    // be missing the one pawn it is most likely to be standing next to. Costs a
-    // column and nothing else in a process with no session.
-    if (world.IsRegistered<NetReplicated>()
-        && !world.HasComponent<NetReplicated>(pawn))
-    {
-        world.AddComponent<NetReplicated>(pawn);
-        world.AddComponent<NetSpawnRecipe>(
-            pawn, NetSpawnRecipe{ .Id = kPlayerPawnRecipe });
-    }
-
-    // No prediction: this machine defines this pawn rather than guessing ahead
-    // of somebody else's answer about it.
-    AttachLocalPlayer(world, pawn, nullptr, log);
 }
 
 void ConfigureRuntimeResources(
@@ -871,83 +848,35 @@ struct TurretAimSystem
 //=============================================================================
 // SessionPlayerSystem
 //
-// Decides where this process's player pawns come from, every frame, from
-// whichever side of a session it is on.
+// Presents whichever body this machine ended up driving.
 //
-// Standing alone or hosting, this process provides its own pawn as soon as
-// there is loaded content to put it in. Hosting, every connected peer also gets
-// one, marked replicated and owned by them, and loses it when they go. As a
-// client, pawns arrive as replicated state instead: this gives them the body
-// every machine already has the content for and takes possession of the one
-// this player owns.
-//
-// One decision point rather than a spawn hanging off each load callback. Two
-// providers racing -- a load finishing after a join, or before it -- is how a
-// client ends up driving a body the authority knows nothing about while the
-// pawn it does know about walks alongside.
+// Where that body came from is not this system's question any more. Who is a
+// participant, which of them this process provides and which arrive replicated,
+// and what happens to a body when its player leaves are all decided by the
+// engine, at the points where the session role is actually known. What is left
+// here is the half that is genuinely a game's: the camera, and giving a pawn
+// this machine is about to simulate the rest of its body.
 //=============================================================================
 struct SessionPlayerSystem
 {
     Engine* Owner = nullptr;
     MovementProfileHandle Profile;
     ResolvedPlayerAvatar Avatar;
-    // Whether anybody is playing in this process. A dedicated host simulates
-    // every pawn and owns none of them: set from the launch configuration at
-    // the composition root, never inferred from whether this process can draw.
-    bool ProvidesLocalPlayer = true;
 
     void FrameUpdate(FrameUpdateContext& ctx)
     {
         World& world = ctx.Entities;
-        NetSession* session = Owner == nullptr ? nullptr : Owner->TryNet();
-        const NetSessionRole role =
-            session == nullptr ? NetSessionRole::Standalone : session->Role();
 
-        const bool replicationReady =
-            world.IsRegistered<NetReplicated>() && world.IsRegistered<NetOwner>();
-
-        if (role == NetSessionRole::Client)
-        {
-            // The authority owns every pawn in a session, this player's
-            // included. Providing one here as well is the second provider.
-            if (replicationReady && session->IsConnected())
-                FollowLocalControl(world);
-            return;
-        }
-
-        ProvideLocalPawn(world);
+        // No role anywhere in here. Who provides participants and who receives
+        // them replicated is the engine's decision, taken where the session
+        // role is actually known; what is left is presenting whichever body
+        // this machine ended up driving.
+        FollowLocalControl(world);
         ProvideTurret(world);
-
-        // Peers get their pawns through the engine's participant lifecycle now,
-        // registered once in OnStart. Nothing loops over them here.
-        (void)replicationReady;
     }
 
 private:
     Logger& Log() { return Owner->Logging().GetLogger<TemplateGame>(); }
-
-    // The pawn this process's player drives, when providing it is this
-    // process's job. Nothing is placed before a load publishes somewhere to
-    // put it, and nothing is placed on top of a pawn that already exists --
-    // which is the same check whether the last one came from a load or from a
-    // session this process has since left.
-    void ProvideLocalPawn(World& world)
-    {
-        // A dedicated host has nobody to provide one for. Everything a pawn is
-        // for here -- possession, the look input that steers it, the camera it
-        // is presented through -- describes a player at this machine.
-        if (!ProvidesLocalPlayer)
-            return;
-
-        const PlayContentPartition* content =
-            world.TryGetResource<PlayContentPartition>();
-        if (content == nullptr)
-            return;
-        if (LocalControlSubjectOf(world).IsValid())
-            return;
-
-        SpawnPlayerAvatar(world, Log(), content->Value, Profile, Avatar);
-    }
 
     // One turret, near the authored start, on whichever machine is authority.
     // Placed rather than authored so the template ships the possession path
@@ -990,42 +919,29 @@ private:
         const EntityId subject = LocalControlSubjectOf(world);
         if (subject == Followed)
             return;
-
-        // A pawn this process provided for itself before joining is now
-        // somebody else's job to simulate, and leaving it would leave a second
-        // body standing where the player used to be. Local only: a replicated
-        // entity destroyed here would come back on the next snapshot without
-        // the fields that have not changed since.
-        if (Followed.IsValid() && world.IsAlive(Followed)
-            && !world.HasComponent<NetReplicated>(Followed))
-        {
-            world.DestroyEntity(Followed);
-        }
         Followed = subject;
 
         if (!subject.IsValid())
             return;
 
-        // This pawn becomes a full simulation participant on this machine. A
-        // player holding a key cannot wait for the round trip to see it, so the
-        // client runs the same systems over the same input and the authority's
-        // snapshots become something to reconcile against rather than obey.
+        // A pawn that arrived replicated carries only what the wire had to say
+        // about it, and this machine is about to simulate it rather than mirror
+        // it: a player holding a key cannot wait for the round trip. Built from
+        // the same function the authority used, because two machines simulating
+        // one pawn from the same input have to be simulating the same pawn.
         //
-        // The same archetype the authority built, from the same function: two
-        // machines simulating one pawn from the same input have to be
-        // simulating the same pawn.
-        // What this machine drives is not always a pawn. A turret already has
-        // everything it needs from its own recipe, and giving it a character's
-        // body would put a mover and a locomotion mode on a thing that is
-        // bolted to the floor.
+        // Not always a pawn, though. A turret has everything it needs from its
+        // own recipe, and giving it a character's body would put a mover and a
+        // locomotion mode on something bolted to the floor.
         if (!world.HasComponent<TurretMount>(subject)
             && !world.HasComponent<MovementIntent>(subject))
         {
             BuildPawnBody(world, subject, Profile, Avatar);
         }
 
-        AttachLocalPlayer(world, subject, &Owner->Prediction(), Log());
-        Log().Info("TemplateGame: predicting this player's own pawn");
+        AttachLocalPlayer(world, subject, Log());
+        if (Owner->Prediction().Predicts(subject))
+            Log().Info("TemplateGame: predicting this player's own pawn");
     }
 
     // The pawn this machine was last told to drive, so taking up a new one is
@@ -2054,7 +1970,6 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
         // The authority simulates movement whether or not anyone is watching,
         // so the profile is resolved in every configuration.
         players.Profile = ResolvePlayerMovementProfile(log);
-        players.ProvidesLocalPlayer = GetEngine().Config().Runtime.HasLocalPlayer;
         // Resolves to no body on a process that cannot hold a mesh, which is
         // exactly what a bodyless pawn wants.
         players.Avatar = ResolvePlayerAvatar(log);

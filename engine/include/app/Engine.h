@@ -178,6 +178,24 @@ public:
         return ParticipantState;
     }
 
+    // Admits this process's own player through the same lifecycle a peer goes
+    // through, and returns it. Idempotent: asking twice is the same person.
+    //
+    // Called by the game when its content is ready, because the engine cannot
+    // observe a map load. Everything else about it is the engine's: a process
+    // with no local player and a client both answer with nothing, the latter
+    // because the authority owns every participant in a session and this
+    // machine's arrives replicated like the rest.
+    EntityId AdmitLocalPlayer();
+
+    // Gives up this process's own player, if it has one. What it was driving is
+    // let go of and its body reaped through the ordinary policy.
+    //
+    // Joining a session is the caller: a player provided locally before the
+    // join is a second body standing where the authority's copy of this person
+    // is about to appear.
+    void RetireLocalPlayer();
+
     // Where a game's own payload kinds are answered. Registered by the game and
     // outlives any one session, because it describes what the game says rather
     // than who it is connected to -- the same lifetime as the spawn recipes.

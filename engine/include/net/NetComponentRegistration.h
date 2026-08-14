@@ -20,4 +20,5 @@ inline void RegisterNetComponents(ComponentRegistrar& registrar)
     registrar.Add<NetSpawnRecipe>();
     registrar.Add<NetPlayer>();
     registrar.Add<NetPlayerControl>();
+    registrar.Add<NetLocalParticipant>();
 }

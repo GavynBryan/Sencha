@@ -411,6 +411,32 @@ const AsyncTaskQueue& Engine::Tasks() const
     return *TaskQueueInstance;
 }
 
+EntityId Engine::AdmitLocalPlayer()
+{
+    if (!Configuration.Runtime.HasLocalPlayer || RuntimeWorldState == nullptr)
+        return EntityId{};
+
+    // On a client the authority owns every participant, this machine's person
+    // included, and it arrives replicated. Admitting one here as well is the
+    // second provider that used to leave somebody driving a body the authority
+    // knew nothing about while the one it did know about walked alongside.
+    if (NetState != nullptr && NetState->Role() == NetSessionRole::Client)
+        return EntityId{};
+
+    return NetAdmitParticipant(RuntimeWorldState->Entities(), PeerId{},
+                               ParticipantState,
+                               NetParticipantPresence::Local);
+}
+
+void Engine::RetireLocalPlayer()
+{
+    if (RuntimeWorldState == nullptr)
+        return;
+
+    auto& entities = RuntimeWorldState->Entities();
+    NetRetireParticipant(entities, NetLocalPlayerOf(entities), ParticipantState);
+}
+
 void Engine::ResetNetSessionState()
 {
     ReplicationState.Reset();

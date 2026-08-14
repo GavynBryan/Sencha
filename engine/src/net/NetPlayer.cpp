@@ -57,14 +57,47 @@ EntityId NetPlayerForPeer(const World& world, PeerId peer)
     return found;
 }
 
-EntityId NetAdmitPlayer(World& world, PeerId peer, std::uint16_t partition)
+EntityId NetLocalPlayerOf(const World& world)
+{
+    if (!TracksPlayers(world) || !world.IsRegistered<NetLocalParticipant>())
+        return EntityId{};
+
+    // Walked over the players and probed, rather than iterated by the mark
+    // itself: the mark is a zero-size tag, so it has no column to walk.
+    EntityId found;
+    world.ForEachComponent<NetPlayer>([&](EntityId player, const NetPlayer&) {
+        if (!found.IsValid() && world.HasComponent<NetLocalParticipant>(player))
+            found = player;
+    });
+    return found;
+}
+
+EntityId NetAdmitPlayer(World& world, PeerId peer,
+                        NetParticipantPresence presence, std::uint16_t partition)
 {
     if (!TracksPlayers(world))
         return EntityId{};
 
     // Admitting the same peer twice is the same participant, not a second one.
-    if (const EntityId existing = NetPlayerForPeer(world, peer); existing.IsValid())
-        return existing;
+    //
+    // Only for a real peer, though. Peerless participants all record the
+    // authority, so deduplicating on that number would make a host's own player
+    // and every bot it runs the same person.
+    if (peer.IsValid())
+    {
+        if (const EntityId existing = NetPlayerForPeer(world, peer);
+            existing.IsValid())
+        {
+            return existing;
+        }
+    }
+    else if (presence == NetParticipantPresence::Local)
+    {
+        // At most one of these, and it is a fact rather than a convention: two
+        // would be two cameras and two sets of look input on one machine.
+        if (const EntityId existing = NetLocalPlayerOf(world); existing.IsValid())
+            return existing;
+    }
 
     const EntityId player = world.CreateEntity(StoragePartitionId{ partition });
     world.AddComponent<NetPlayer>(
@@ -77,6 +110,12 @@ EntityId NetAdmitPlayer(World& world, PeerId peer, std::uint16_t partition)
     control.Source = peer.IsValid() ? NetSourceForPeer(world, peer)
                                     : kLocalInputActionSource;
     world.AddComponent<NetPlayerControl>(player, control);
+
+    if (presence == NetParticipantPresence::Local
+        && world.IsRegistered<NetLocalParticipant>())
+    {
+        world.AddComponent<NetLocalParticipant>(player, {});
+    }
 
     // Players travel. A client that could not see the other participants could
     // not name them on a scoreboard, and could not find its own.

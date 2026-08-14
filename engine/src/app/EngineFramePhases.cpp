@@ -249,6 +249,16 @@ void Engine::RegisterNetFramePhases()
 
         if (isAdmitted)
         {
+            // A player this process provided for itself before joining is now
+            // somebody else's to simulate, and the authority's copy of this
+            // person is on its way. Leaving it would leave a second body
+            // standing where the player used to be.
+            //
+            // Cheap to ask every frame -- it walks the participants, of which
+            // there is at most one marked local -- and it answers nothing at
+            // all after the first time.
+            engine.RetireLocalPlayer();
+
             // Seeded from admission, then kept fresh by the snapshots below.
             // Only the seed comes from here: the keepalive's copy is refreshed
             // every few seconds, and feeding a stale number in every frame

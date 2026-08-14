@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ecs/EntityId.h>
+#include <net/NetPlayer.h>
 #include <net/NetSession.h>
 
 #include <functional>
@@ -46,7 +47,9 @@ struct NetParticipantPolicies
 //
 // Structural.
 EntityId NetAdmitParticipant(World& world, PeerId peer,
-                             const NetParticipantPolicies& policies);
+                             const NetParticipantPolicies& policies,
+                             NetParticipantPresence presence
+                             = NetParticipantPresence::Simulated);
 
 // Asks for a body for a player that has none, and binds what comes back:
 // replicated, owned by the participant, and driven by them.
