@@ -2007,9 +2007,37 @@ things this pass landed.
   fine while its queue is deep is being made late by the authority rather than
   by the network -- the distinction that cost a live session to find by hand.
   `net.command_slack` makes the buffer's tolerance an authority-owned
-  (`Replicated`) tunable rather than a constant. Still open in this phase:
-  event/cue replication and desync hashing. Per-zone scope sizes wait on zone
-  interest, which has no scopes to size yet.
+  (`Replicated`) tunable rather than a constant.
+
+  *Status 2026-08-13: desync hashing landed; cue replication is recorded as
+  having no consumer.* `net/NetDesyncProbe.h` folds what the authority believes
+  a peer holds into a hash per entity, the peer folds its own copy the same way,
+  and a mismatch names the entity and points at `net_entity <netid>` for which
+  component and which value. `net.desync_interval` is `Developer` and off by
+  default: it costs outbound bytes per peer to answer a question nobody is
+  asking unless something is already suspected.
+
+  Three rules decide whether it is worth having, and each is a test:
+
+  - **Only entities a peer has fully proved.** A client's view is a mix of
+    generations by design, so "the world at tick T" is something no client ever
+    holds; only an entity whose every run was already confirmed at that peer's
+    floor is one the two sides should agree about.
+  - **Only fields that peer was eligible to receive.** A field withheld from a
+    non-owner is one that peer holds whatever its applier left in, and folding
+    it reports divergence on every entity with an owner-gated field.
+  - **Predicted state excluded only on the entity that peer drives.** This one
+    was wrong first: excluding predicted components everywhere is intuitive and
+    leaves the probe folding almost nothing, because the transform is predicted.
+    Elsewhere a predicted component is ordinary replicated state.
+
+  A check that fires falsely gets turned off, and a check that is off catches
+  nothing, which is why all three are rules rather than refinements.
+
+  **Cue replication: no consumer.** Section 6.4 says `ICueSink` "stays the
+  game-facing surface"; there is no `ICueSink` in the tree, and no cue system of
+  any kind. Building the wire for one would be guessing at the shape of the
+  thing it carries. The trigger is a cue system existing.
 
   *Status 2026-08-12: the same account now reaches a terminal.* The panel is ImGui
   and a dedicated host has no overlay, so the one process where budget occupancy,

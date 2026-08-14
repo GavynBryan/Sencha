@@ -109,6 +109,15 @@ namespace
                 engine.Interpolation().SetSnapshotInterval(value);
             }
         }
+        if (const CVarMetadata* probe = registry.FindCVar("net.desync_interval"))
+        {
+            if (const std::int64_t* ticks =
+                    std::get_if<std::int64_t>(&probe->CurrentValue))
+            {
+                engine.Replication().SetDesyncInterval(
+                    static_cast<std::uint32_t>(std::max<std::int64_t>(0, *ticks)));
+            }
+        }
         if (const CVarMetadata* budget = registry.FindCVar("net.snapshot_bytes"))
         {
             if (const std::int64_t* bytes =
@@ -178,6 +187,26 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
                     static_cast<std::size_t>(std::max<std::int64_t>(0, *ticks)));
             }
         },
+    });
+
+    registry.RegisterCVar({
+        .Name = "net.desync_interval",
+        .Owner = "engine",
+        .Type = CVarType::Int,
+        .DefaultValue = static_cast<std::int64_t>(0),
+        .CurrentValue = static_cast<std::int64_t>(0),
+        // Developer, and off by default. It exists to catch replication defects
+        // in development and soak, not to run in a shipped session: it costs
+        // outbound bytes per peer to answer a question nobody is asking unless
+        // something is already suspected.
+        .Flags = CVarFlags::Developer | CVarFlags::Replicated,
+        .Help = "Ticks between desync probes, or 0 for off. The authority sends "
+                "what it believes each peer holds as a hash per entity; a peer "
+                "that folds a different answer logs it. Use net_entity <netid> "
+                "for which component and which value.",
+        .Source = { "engine defaults" },
+        .Min = static_cast<std::int64_t>(0),
+        .Max = static_cast<std::int64_t>(600),
     });
 
     registry.RegisterCVar({

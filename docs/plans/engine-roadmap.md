@@ -697,10 +697,13 @@ which is ratified; this section owns the sequence and the gate.
    applier-side enforcement (needs the zone on the wire per entity and buys
    nothing against an honest authority — folded into G6).
 
-7. **Session semantics (G5).** `CVarFlags::Replicated` and enforced `Cheat` gating,
-   cvar sync, cue replication, desync hashing, a net stats panel. Load-bearing rather
-   than hygienic: the console ships in every build (see Recorded decisions), so this
-   is the shipping gate on what a player's own console can reach in a session.
+7. **Session semantics (G5). Substantially landed.** `CVarFlags::Replicated` and
+   enforced `Cheat` gating, cvar sync, and the stats surface shipped earlier;
+   desync hashing landed 2026-08-13 (`net.desync_interval`, developer and off by
+   default). Load-bearing rather than hygienic: the console ships in every build
+   (see Recorded decisions), so this is the shipping gate on what a player's own
+   console can reach in a session. Cue replication is recorded as having no
+   consumer — there is no cue system in the tree to carry.
 
 8. **Hardening (G6).** libsodium AEAD and the auth-token seam; rate budgets and
    strikes; malformed-traffic soak in both directions, including a hostile authority

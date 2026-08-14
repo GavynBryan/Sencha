@@ -36,6 +36,9 @@ enum class NetTrafficKind : std::uint8_t
     // as players cross boundaries, and separating them is what tells a session
     // that is streaming hard apart from one that is simply busy.
     Zone,
+    // Desync probes. Their own bucket because they are dev-only and the first
+    // question about a diagnostic is always what it costs.
+    Desync,
     // What a game sends for itself. Its own bucket rather than sharing the
     // catch-all, because "which traffic grew" is the first question anyone
     // asks, and a game's messages counted beside handshake and keepalives make
@@ -45,7 +48,7 @@ enum class NetTrafficKind : std::uint8_t
     Other,
 };
 
-inline constexpr std::size_t kNetTrafficKinds = 6;
+inline constexpr std::size_t kNetTrafficKinds = 7;
 
 [[nodiscard]] std::string_view NetTrafficKindToString(NetTrafficKind kind);
 

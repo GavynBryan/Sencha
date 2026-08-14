@@ -3,6 +3,7 @@
 #include <net/NetSession.h>
 #include <net/NetSpawnRecipe.h>
 #include <net/PeerCommandRuntime.h>
+#include <net/NetDesyncProbe.h>
 #include <net/ReplicationChangeStore.h>
 #include <net/ReplicationSnapshot.h>
 
@@ -184,6 +185,38 @@ public:
     // was never granted, which is a peer claiming a room nobody offered it.
     [[nodiscard]] bool AcknowledgeZone(PeerId peer, ZoneId zone);
 
+    //-------------------------------------------------------------------------
+    // Desync probes
+    //
+    // Dev-only, off unless asked for. See NetDesyncProbe.h for what is folded
+    // and why the two rules that shape it are not optional.
+    //-------------------------------------------------------------------------
+
+    // Ticks between probes; zero is off.
+    void SetDesyncInterval(std::uint32_t ticks) { DesyncInterval = ticks; }
+    [[nodiscard]] std::uint32_t DesyncIntervalTicks() const
+    {
+        return DesyncInterval;
+    }
+
+    struct DesyncStats
+    {
+        std::uint32_t Reports = 0;
+        std::size_t BytesQueued = 0;
+    };
+
+    // Authority: one report per peer when the cadence has come round. Called
+    // after Publish, so what it describes is what the peer was just told.
+    DesyncStats PublishDesync(NetSession& session, const ReplicationLayout& layout,
+                              std::uint64_t tick);
+
+    // Client: compares an arriving report against this machine's own state.
+    [[nodiscard]] NetDesyncResult CheckDesync(
+        std::span<const std::byte> payload, const World& world,
+        const ReplicationLayout& layout,
+        const ReplicationInterpolation* interpolation, PeerId self,
+        std::uint64_t* reportedTick = nullptr);
+
     // Client side: one grant or revoke from the authority, recorded.
     void ApplyZoneScope(const NetZoneScopeUpdate& update);
 
@@ -322,6 +355,10 @@ private:
     // change, so a default that disagreed with the cvar's would mean the
     // engine ran at a rate nobody chose until someone happened to set it.
     std::uint32_t PublishInterval = kNetDefaultSnapshotInterval;
+    std::uint32_t DesyncInterval = 0;
+    std::uint64_t LastDesyncTick = 0;
+    bool HasProbed = false;
+    std::vector<NetDesyncSample> ProbeSamples;
     // The tick a snapshot last went out on, and whether one ever has. Compared
     // as a difference rather than a remainder on purpose: a host running slower
     // than its tick rate advances the tick index by several per frame, and a

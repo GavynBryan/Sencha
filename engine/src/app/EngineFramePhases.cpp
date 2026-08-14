@@ -377,6 +377,28 @@ void Engine::RegisterNetFramePhases()
                 continue;
             }
 
+            // What the authority believes this machine holds. Dev-only, and a
+            // mismatch is logged rather than acted on: it exists to catch a
+            // replication defect while somebody is looking for one.
+            if (static_cast<NetPayloadKind>(delivery.Payload[0])
+                == NetPayloadKind::DesyncHash)
+            {
+                std::uint64_t reportedTick = 0;
+                const NetDesyncResult desync = engine.Replication().CheckDesync(
+                    delivery.Payload, world, engine.ReplicatedComponents(),
+                    &engine.Interpolation(), session->LocalPeerId(),
+                    &reportedTick);
+                if (desync.Diverged > 0)
+                {
+                    log.Warn("net: desync at tick {}: {} of {} entities differ; "
+                             "first is net {} -- try net_entity {}",
+                             reportedTick, desync.Diverged, desync.Compared,
+                             desync.FirstDiverged.Value,
+                             desync.FirstDiverged.Value);
+                }
+                continue;
+            }
+
             // A player's request arriving. Buffered here and fed on the tick
             // clock, because a frame that runs several ticks owes a remote
             // player as many ticks of input as it gives the local one.
@@ -536,6 +558,18 @@ void Engine::RegisterNetFramePhases()
                     &engine.PeerCommands(), &engine.World());
             traffic.RecordOut(NetTrafficKind::Snapshot, published.BytesQueued,
                               published.SnapshotsSent);
+
+            // What the authority believes each peer holds, after the snapshot
+            // that told them. Off unless net.desync_interval says otherwise.
+            const ReplicationRuntime::DesyncStats probes =
+                engine.Replication().PublishDesync(
+                    *session, engine.ReplicatedComponents(),
+                    ctx.Runtime->GetSimulationClock().GetTickIndex());
+            if (probes.Reports > 0)
+            {
+                traffic.RecordOut(NetTrafficKind::Desync, probes.BytesQueued,
+                                  probes.Reports);
+            }
 
             // Cheap when nothing changed: it compares what each peer was last
             // told and sends only differences.

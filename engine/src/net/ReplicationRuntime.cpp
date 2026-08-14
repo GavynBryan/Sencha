@@ -301,6 +301,72 @@ ReplicationRuntime::ZoneScopeStats ReplicationRuntime::PublishZoneScope(
     return stats;
 }
 
+ReplicationRuntime::DesyncStats ReplicationRuntime::PublishDesync(
+    NetSession& session, const ReplicationLayout& layout, std::uint64_t tick)
+{
+    DesyncStats stats;
+    if (DesyncInterval == 0 || session.Role() != NetSessionRole::Host)
+        return stats;
+
+    // Paced by difference for the same reason publishing is: a frame that ran
+    // several ticks moves the index by several, and a stride it never lands on
+    // exactly would silence this for the rest of the session.
+    if (HasProbed && tick >= LastDesyncTick
+        && (tick - LastDesyncTick) < DesyncInterval)
+    {
+        return stats;
+    }
+    LastDesyncTick = tick;
+    HasProbed = true;
+
+    std::array<std::byte, kNetPayloadKindBytes + 1 + 8
+                              + kNetMaxDesyncSamples * 16> scratch{};
+
+    for (const PeerId peer : session.ConnectedPeers())
+    {
+        const auto held = Peers.find(peer);
+        if (held == Peers.end())
+            continue;
+
+        NetBuildDesyncReport(Changes, layout, held->second, peer.Value,
+                             held->second.DesyncCursor(), ProbeSamples);
+        if (ProbeSamples.empty())
+            continue;
+
+        const std::size_t size = NetEncodeDesyncReport(tick, ProbeSamples, scratch);
+        if (size == 0)
+            continue;
+        // Unreliable: a probe that arrives late has nothing to say about a
+        // world that has moved on, and the next one asks again.
+        if (!session.Send(peer, NetChannelKind::UnreliableSequenced,
+                          std::span<const std::byte>(scratch).subspan(0, size)))
+        {
+            continue;
+        }
+        ++stats.Reports;
+        stats.BytesQueued += size;
+    }
+
+    return stats;
+}
+
+NetDesyncResult ReplicationRuntime::CheckDesync(
+    std::span<const std::byte> payload, const World& world,
+    const ReplicationLayout& layout,
+    const ReplicationInterpolation* interpolation, PeerId self,
+    std::uint64_t* reportedTick)
+{
+    NetDesyncResult result;
+    std::uint64_t tick = 0;
+    std::vector<NetDesyncSample> samples;
+    if (!NetDecodeDesyncReport(payload, tick, samples))
+        return result;
+    if (reportedTick != nullptr)
+        *reportedTick = tick;
+    return NetCheckDesyncReport(world, layout, ClientMap, interpolation,
+                                self.Value, samples);
+}
+
 void ReplicationRuntime::SetStreamedZones(std::span<const ZoneId> zones)
 {
     StreamedZones_.assign(zones.begin(), zones.end());
@@ -401,6 +467,8 @@ void ReplicationRuntime::Reset()
     AppliedTick = 0;
     AppliedAcks.Clear();
     LastPublishedTick = 0;
+    LastDesyncTick = 0;
+    HasProbed = false;
     HasPublished = false;
     Published = PublishStats{};
 }

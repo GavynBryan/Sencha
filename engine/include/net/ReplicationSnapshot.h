@@ -169,6 +169,10 @@ public:
     [[nodiscard]] NetZoneScope& Zones() { return Scope; }
     [[nodiscard]] const NetZoneScope& Zones() const { return Scope; }
 
+    // Where this peer's next desync probe resumes. Per peer because coverage is
+    // per peer: what one has fully proved is not what another has.
+    [[nodiscard]] std::size_t& DesyncCursor() { return ProbeCursor; }
+
 private:
     // What one snapshot told this peer: which entities, and how far through the
     // authority's history each was carried.
@@ -188,6 +192,7 @@ private:
     std::uint32_t NextSequence = 1;
     std::uint32_t First = 0;
     NetZoneScope Scope;
+    std::size_t ProbeCursor = 0;
 };
 
 //-----------------------------------------------------------------------------

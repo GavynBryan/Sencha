@@ -122,6 +122,26 @@ private:
 void ReplicationSnapToWire(const ReplicatedComponent& component,
                            std::span<std::byte> componentBytes);
 
+// Folds the named field runs of one component into a rolling hash, so two
+// machines can say whether they hold the same value without sending the value.
+//
+// Only the bytes the fields declare, run by run. Never the whole component: the
+// padding between two fields is uninitialized on both sides and folding it
+// would report divergence in bytes neither machine has an opinion about.
+//
+// The caller chooses the mask, and the choice is the whole design. Fold what
+// the peer was eligible to receive -- ReplicationVisibleFields answers that per
+// peer -- because an owner-only field withheld from a non-owner is a field both
+// sides are correct to disagree about, and a check that fires on those gets
+// turned off, which is worse than not having it.
+//
+// Bytes are expected already snapped to wire precision on the authority's side.
+// Order matters: the same fields folded in a different order give a different
+// hash, which is why both sides walk the layout rather than their own storage.
+[[nodiscard]] std::uint64_t ReplicationFoldFields(
+    std::uint64_t hash, const ReplicatedComponent& component,
+    std::span<const std::byte> componentBytes, std::uint64_t fields);
+
 //-----------------------------------------------------------------------------
 // Component encode and decode
 //

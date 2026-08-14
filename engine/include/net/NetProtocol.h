@@ -82,7 +82,11 @@ enum class NetPayloadKind : std::uint8_t
     // Client to authority: the named zone is loaded and attached here. What
     // opens a zone for replication; see NetZoneScope.h.
     ZoneAck = 5,
-    // 6 .. 63 are unallocated and the engine's. Cues, and whatever the protocol
+    // Authority to client, dev-only: what the authority believes this peer
+    // holds, as a hash per entity. Unreliable, because a lost one is answered
+    // by the next.
+    DesyncHash = 6,
+    // 7 .. 63 are unallocated and the engine's. Cues, and whatever the protocol
     // grows next, take numbers from here.
 };
 

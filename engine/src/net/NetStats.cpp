@@ -21,6 +21,7 @@ std::string_view NetTrafficKindToString(NetTrafficKind kind)
     case NetTrafficKind::Command:  return "command";
     case NetTrafficKind::CVar:     return "cvar";
     case NetTrafficKind::Zone:     return "zone";
+    case NetTrafficKind::Desync:   return "desync";
     case NetTrafficKind::Game:     return "game";
     case NetTrafficKind::Other:    break;
     }
@@ -36,6 +37,7 @@ NetTrafficKind NetTrafficKindOf(NetPayloadKind payload)
     case NetPayloadKind::CVar:     return NetTrafficKind::CVar;
     case NetPayloadKind::ZoneScope:
     case NetPayloadKind::ZoneAck:  return NetTrafficKind::Zone;
+    case NetPayloadKind::DesyncHash: return NetTrafficKind::Desync;
     case NetPayloadKind::Invalid:  break;
     }
     return NetTrafficKind::Other;

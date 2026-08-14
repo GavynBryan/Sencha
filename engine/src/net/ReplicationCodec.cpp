@@ -502,6 +502,40 @@ void ReplicationSnapToWire(const ReplicatedComponent& component,
     }
 }
 
+std::uint64_t ReplicationFoldFields(std::uint64_t hash,
+                                    const ReplicatedComponent& component,
+                                    std::span<const std::byte> componentBytes,
+                                    std::uint64_t fields)
+{
+    assert(componentBytes.size() == component.Size);
+
+    // FNV-1a's constants over a 64-bit accumulator. Chosen for being one line
+    // and order-dependent rather than for collision strength: this compares two
+    // machines that should agree exactly, so what matters is that a changed byte
+    // changes the answer and that both sides fold identically.
+    constexpr std::uint64_t kPrime = 1099511628211ull;
+
+    for (std::size_t run = 0; run < component.Fields.size(); ++run)
+    {
+        if ((fields & (std::uint64_t{ 1 } << run)) == 0)
+            continue;
+        const ReplicatedField& field = component.Fields[run];
+
+        // The run index folds in as well, so two adjacent runs with swapped
+        // values do not hash the same as the pair in the right places.
+        hash = (hash ^ static_cast<std::uint64_t>(run)) * kPrime;
+
+        for (std::uint8_t i = 0; i < field.Count; ++i)
+        {
+            const std::byte* at = ScalarAt(componentBytes, field, i);
+            for (std::size_t byte = 0; byte < field.Size; ++byte)
+                hash = (hash ^ std::to_integer<std::uint64_t>(at[byte])) * kPrime;
+        }
+    }
+
+    return hash;
+}
+
 //=============================================================================
 // Component encode and decode
 //=============================================================================
