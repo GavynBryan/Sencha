@@ -11,6 +11,7 @@
 #include <ecs/WorldComponentSchema.h>
 #include <net/ReplicationLayout.h>
 #include <net/NetCVarSync.h>
+#include <net/NetParticipant.h>
 #include <net/NetSpawnRecipe.h>
 #include <net/ClientPrediction.h>
 #include <net/ReplicationInterpolation.h>
@@ -162,6 +163,19 @@ public:
     [[nodiscard]] const NetSpawnRecipes& SpawnRecipes() const
     {
         return SpawnRecipeState;
+    }
+
+    // What a participant is made of, and where its body comes from. Registered
+    // by the game for the same reason as the recipes: it describes this game's
+    // idea of a player rather than anything about a connection, so it outlives
+    // every session the process runs.
+    [[nodiscard]] NetParticipantPolicies& Participants()
+    {
+        return ParticipantState;
+    }
+    [[nodiscard]] const NetParticipantPolicies& Participants() const
+    {
+        return ParticipantState;
     }
 
     // Where a game's own payload kinds are answered. Registered by the game and
@@ -366,6 +380,7 @@ private:
     ClientPrediction PredictionState;
     ReplicationInterpolation InterpolationState;
     NetSpawnRecipes SpawnRecipeState;
+    NetParticipantPolicies ParticipantState;
     std::unique_ptr<RuntimeWorld> RuntimeWorldState;
     RuntimeFrameLoop RuntimeLoop;
     ConsoleStartupScript StartupScript;

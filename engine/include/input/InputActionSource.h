@@ -40,6 +40,30 @@ using InputActionSourceId = std::uint32_t;
 inline constexpr InputActionSourceId kLocalInputActionSource = 0;
 
 //-----------------------------------------------------------------------------
+// InputActionSourceIds
+//
+// The one place a non-local source id comes from.
+//
+// Sources have several producers -- a session admitting a peer, a bot, a script
+// driving an actor through a scene -- and they share one id space. Each
+// producer numbering its own is how a bot ends up reading a peer's actions, and
+// the collision reads as a possession defect rather than an allocation one.
+//
+// Minted and never reused. A reference outliving the thing it named then names
+// nothing rather than whoever came next, which is the same reason a NetEntityId
+// is minted from one.
+//-----------------------------------------------------------------------------
+class InputActionSourceIds
+{
+public:
+    [[nodiscard]] InputActionSourceId Allocate() { return ++Last; }
+
+private:
+    // Source zero belongs to this machine's own devices and is never handed out.
+    InputActionSourceId Last = kLocalInputActionSource;
+};
+
+//-----------------------------------------------------------------------------
 // The reference an entity carries. Absent means source zero, so this exists
 // only on entities some other source steers.
 //-----------------------------------------------------------------------------

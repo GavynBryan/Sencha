@@ -48,6 +48,7 @@
 #include <net/NetReplicationComponents.h>
 #include <net/NetSpawnRecipe.h>
 #include <net/NetOwnership.h>
+#include <net/NetPlayer.h>
 #include <net/NetSession.h>
 #include <net/PawnCommandCapture.h>
 #include <net/PeerCommandRuntime.h>
@@ -104,6 +105,16 @@ constexpr std::string_view kInputActionSetPath =
 constexpr std::string_view kInputProfilePath =
     "asset://data/input_default.sdata";
 constexpr ZoneId kPlayZone{ 1 };
+
+// What this game's replicated entities are. Ids match on both ends because
+// both ends are the same build running the same content; they are the game's
+// vocabulary, not the engine's.
+enum : NetSpawnRecipeId
+{
+    kPlayerPawnRecipe = 1,
+    kTurretRecipe = 2,
+};
+
 
 struct SceneBuildResult
 {
@@ -375,6 +386,27 @@ struct PlayContentPartition
     std::optional<StoragePartitionId> Value;
 };
 
+// Content has arrived, so anybody admitted before it can have a body now.
+//
+// The engine asks once, at admission, and never again on its own -- which is
+// what keeps "waiting for a map to load" from being indistinguishable from
+// "spectating for good". Asking again is the game's call, and this is the
+// moment the answer changes.
+void RequestBodiesForWaitingPlayers(Engine& engine)
+{
+    World& world = engine.World().Entities();
+    if (!world.IsRegistered<NetPlayer>())
+        return;
+
+    std::vector<EntityId> waiting;
+    const World& reading = world;
+    reading.ForEachComponent<NetPlayer>(
+        [&](EntityId player, const NetPlayer&) { waiting.push_back(player); });
+
+    for (const EntityId player : waiting)
+        (void)NetRequestPlayerBody(world, player, engine.Participants());
+}
+
 void PublishPlayContent(World& world, std::optional<StoragePartitionId> partition)
 {
     if (PlayContentPartition* existing = world.TryGetResource<PlayContentPartition>())
@@ -432,6 +464,19 @@ void SpawnPlayerAvatar(
 {
     const EntityId pawn = SpawnPawn(
         world, FindPlayerStart(world, spawnPartition), movementProfile, avatar);
+
+    // Marked whether or not this process ever hosts. The person running a
+    // listen server is a player too, and a client that could not see them would
+    // be missing the one pawn it is most likely to be standing next to. Costs a
+    // column and nothing else in a process with no session.
+    if (world.IsRegistered<NetReplicated>()
+        && !world.HasComponent<NetReplicated>(pawn))
+    {
+        world.AddComponent<NetReplicated>(pawn);
+        world.AddComponent<NetSpawnRecipe>(
+            pawn, NetSpawnRecipe{ .Id = kPlayerPawnRecipe });
+    }
+
     // No prediction: this machine defines this pawn rather than guessing ahead
     // of somebody else's answer about it.
     AttachLocalPlayer(world, pawn, nullptr, log);
@@ -675,15 +720,6 @@ struct CharacterInputSystem
     }
 };
 
-// What this game's replicated entities are. Ids match on both ends because
-// both ends are the same build running the same content; they are the game's
-// vocabulary, not the engine's.
-enum : NetSpawnRecipeId
-{
-    kPlayerPawnRecipe = 1,
-    kTurretRecipe = 2,
-};
-
 // What this game says over the wire. The engine reserves everything below
 // kNetFirstGamePayloadKind for itself, so a game's kinds start there and can
 // never be swallowed by the dispatch that answers snapshots and commands.
@@ -756,18 +792,23 @@ bool AnswerTurretRequest(void* context, const NetMessageContext& message)
     if (!world.HasComponent<TurretMount>(turret))
         return false;
 
+    // Who is asking, as a participant rather than as a peer number. Their body
+    // is on the player, which is the only place it is written down.
+    const EntityId player = NetPlayerForPeer(world, message.From);
+    const NetPlayerControl* control =
+        player.IsValid() ? world.TryGet<NetPlayerControl>(player) : nullptr;
+    if (control == nullptr)
+        return false;
+
     const PeerId owner = NetOwnerOf(world, turret);
-    TurretSeat* seat = world.TryGet<TurretSeat>(turret);
 
     if (owner == message.From)
     {
-        // Getting out. The body that was parked is theirs again, and the gun
-        // goes back to the authority for the next person to ask for.
+        // Getting out. The gun goes back to the authority for the next person
+        // to ask for, and their input returns to the body that never stopped
+        // being theirs.
         NetClearOwner(world, turret);
-        if (seat != nullptr && seat->Pawn.IsValid() && world.IsAlive(seat->Pawn))
-            NetSetOwner(world, seat->Pawn, message.From);
-        if (seat != nullptr)
-            seat->Pawn = EntityId{};
+        NetPossess(world, player, control->Body);
         log.Info("TemplateGame: peer {} left the turret", message.From.Value);
         return true;
     }
@@ -777,20 +818,15 @@ bool AnswerTurretRequest(void* context, const NetMessageContext& message)
     if (owner.IsValid())
         return false;
 
-    std::vector<EntityId> owned;
-    NetOwnedBy(world, message.From, owned);
-
+    // Owned so its owner-only state reaches the driver, and driven so their
+    // keys reach it. Two calls because they are two facts: a gun somebody is at
+    // the controls of is not necessarily a gun that belongs to them, and it is
+    // that difference that leaves the gun standing when its driver quits.
+    //
+    // Their body keeps its owner through all of this. It is still theirs while
+    // they are elsewhere, and only what they drive has moved.
     NetSetOwner(world, turret, message.From);
-    if (seat == nullptr)
-    {
-        world.AddComponent<TurretSeat>(turret, TurretSeat{});
-        seat = world.TryGet<TurretSeat>(turret);
-    }
-    // Their body waits where they left it. Recorded on the turret, once, so
-    // putting somebody back cannot disagree with what took them out.
-    seat->Pawn = owned.empty() ? EntityId{} : owned.front();
-    for (const EntityId pawn : owned)
-        NetClearOwner(world, pawn);
+    NetPossess(world, player, turret);
 
     log.Info("TemplateGame: peer {} took the turret", message.From.Value);
     return true;
@@ -882,8 +918,9 @@ struct SessionPlayerSystem
         ProvideLocalPawn(world);
         ProvideTurret(world);
 
-        if (role == NetSessionRole::Host && replicationReady)
-            ServePeers(world, *session);
+        // Peers get their pawns through the engine's participant lifecycle now,
+        // registered once in OnStart. Nothing loops over them here.
+        (void)replicationReady;
     }
 
 private:
@@ -939,92 +976,6 @@ private:
         BuildTurretBody(world, turret, Avatar);
         TurretPlaced = true;
         Log().Info("TemplateGame: placed a turret; `turret` takes it");
-    }
-
-    void ServePeers(World& world, NetSession& session)
-    {
-        // The host is a player too. Without this a client would see everyone
-        // except the person running the server, which is the one pawn they are
-        // most likely to be standing next to. Read each frame rather than
-        // remembered, because the pawn appears when content loads and that can
-        // be after this system is registered.
-        const EntityId local = LocalControlSubjectOf(world);
-        if (local.IsValid() && !world.HasComponent<NetReplicated>(local))
-        {
-            world.AddComponent<NetReplicated>(local);
-            world.AddComponent<NetSpawnRecipe>(
-                local, NetSpawnRecipe{ .Id = kPlayerPawnRecipe });
-        }
-
-        const std::vector<PeerId> peers = session.ConnectedPeers();
-
-        std::vector<EntityId> owned;
-        for (PeerId peer : peers)
-        {
-            // Asked of the component that already answers it. A map beside it
-            // would be a second copy of the same fact, and the copy is what
-            // goes stale the first time ownership moves.
-            NetOwnedBy(world, peer, owned);
-            if (!owned.empty())
-                continue;
-
-            // Offset laterally from the authored start so two players do not
-            // arrive inside each other, by peer id so a peer lands in the same
-            // place however many others are present. A proper multi-start
-            // rotation is the level's business, not this system's.
-            //
-            // Unfiltered: a map's content is imported into its own zone
-            // partition, so a start looked for only in the persistent one is a
-            // start that is never found and a peer that arrives at the origin.
-            Vec3d spawn = FindPlayerStart(world, std::nullopt);
-            spawn.X += 2.0f * static_cast<float>(peer.Value);
-
-            const EntityId pawn = SpawnPawn(world, spawn, Profile, Avatar);
-            world.AddComponent<NetReplicated>(pawn);
-            world.AddComponent<NetSpawnRecipe>(
-                pawn, NetSpawnRecipe{ .Id = kPlayerPawnRecipe });
-            // Whose pawn this is, and everything that follows from it: whose
-            // aim turns it, whose keys move it, and whose snapshot carries the
-            // state only its owner may see.
-            NetSetOwner(world, pawn, peer);
-            Log().Info("TemplateGame: spawned a pawn for peer {}", peer.Value);
-        }
-
-        // A peer that left takes its pawn with it. The engine hands the
-        // entities a departing peer owned back to the authority, so what is
-        // left behind is a player pawn nobody drives -- which the host's own
-        // pawn also looks like, and is why that one is excluded by name.
-        // A body waiting for its driver to get out of a turret is unowned and
-        // is not abandoned. Read off the turrets, which hold the only record of
-        // it, rather than marked on the pawn as well -- a second copy of one
-        // fact is the copy that goes stale.
-        std::vector<EntityId> parked;
-        const World& reading = world;
-        reading.ForEachComponent<TurretSeat>(
-            [&](EntityId, const TurretSeat& seat) {
-                if (seat.Pawn.IsValid())
-                    parked.push_back(seat.Pawn);
-            });
-
-        std::vector<EntityId> orphans;
-        reading.ForEachComponent<NetSpawnRecipe>(
-            [&](EntityId entity, const NetSpawnRecipe& recipe) {
-                if (recipe.Id != kPlayerPawnRecipe || entity == local)
-                    return;
-                if (NetOwnerOf(world, entity).IsValid())
-                    return;
-                if (std::find(parked.begin(), parked.end(), entity) != parked.end())
-                    return;
-                orphans.push_back(entity);
-            });
-
-        for (const EntityId orphan : orphans)
-        {
-            if (!world.IsAlive(orphan))
-                continue;
-            world.DestroyEntity(orphan);
-            Log().Info("TemplateGame: removed the pawn for peer that left");
-        }
     }
 
     // What this machine has to do about driving a pawn, once the engine has
@@ -1214,6 +1165,45 @@ void TemplateGame::OnStart(GameStartupContext&)
             "player pawns will arrive without a body",
             static_cast<unsigned>(kPlayerPawnRecipe));
     }
+
+    // What a participant is in this game, and where its body comes from. The
+    // engine runs the lifecycle -- admit, compose, ask for a body, bind it,
+    // reap on departure -- and these answer the two questions only the game
+    // can. A peer loop and an orphan sweep used to live here instead.
+    engine.Participants().ProvideBody =
+        [this](World& world, EntityId player) -> EntityId
+    {
+        // Nowhere to put a body until content has loaded. Returning none is an
+        // ordinary answer, and the engine does not ask again on its own -- the
+        // map load asks, once it has somewhere to put one.
+        if (world.TryGetResource<PlayContentPartition>() == nullptr)
+            return EntityId{};
+
+        Logger& log = GetEngine().Logging().GetLogger<TemplateGame>();
+        const NetPlayer* who = world.TryGet<NetPlayer>(player);
+        const std::uint32_t peer = who == nullptr ? 0u : who->Peer;
+
+        // Offset laterally from the authored start so two players do not arrive
+        // inside each other, by peer id so somebody lands in the same place
+        // however many others are present. A proper multi-start rotation is the
+        // level's business, not this policy's.
+        //
+        // Unfiltered: a map's content is imported into its own zone partition,
+        // so a start looked for only in the persistent one is a start that is
+        // never found and a peer that arrives at the origin.
+        Vec3d spawn = FindPlayerStart(world, std::nullopt);
+        spawn.X += 2.0f * static_cast<float>(peer);
+
+        const EntityId pawn = SpawnPawn(world, spawn,
+                                        ResolvePlayerMovementProfile(log),
+                                        ResolvePlayerAvatar(log));
+        // What the body is on whichever machine receives it. Replication and
+        // ownership are the engine's to install; this is content.
+        world.AddComponent<NetSpawnRecipe>(
+            pawn, NetSpawnRecipe{ .Id = kPlayerPawnRecipe });
+        log.Info("TemplateGame: spawned a pawn for peer {}", peer);
+        return pawn;
+    };
 
     // The same two lines for the turret: what arrives as replicated state, and
     // what this machine has to add for it to be seen and aimed.
@@ -1579,6 +1569,7 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
             // that finished after a join would otherwise place a second body
             // beside the one the authority is already simulating.
             PublishPlayContent(runtime.Entities(), zone.Partition);
+            RequestBodiesForWaitingPlayers(GetEngine());
             PlayZoneActive = true;
             return true;
         },
@@ -1814,6 +1805,7 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
     // A world's scene imports into the persistent partition, so that is where
     // a pawn belongs. Providing one is the session's decision.
     PublishPlayContent(engine.World().Entities(), PersistentStoragePartition);
+    RequestBodiesForWaitingPlayers(engine);
 
     ZoneId focus = PendingZoneFocus;
     PendingZoneFocus = ZoneId{};

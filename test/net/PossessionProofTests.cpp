@@ -6,6 +6,7 @@
 #include <net/ClientPrediction.h>
 #include <net/NetMessageRouter.h>
 #include <net/NetOwnership.h>
+#include <net/NetPlayer.h>
 #include <net/NetReplicationComponents.h>
 #include <net/NetSpawnRecipe.h>
 #include <net/ReplicationChangeStore.h>
@@ -15,6 +16,7 @@
 #include <world/transform/TransformComponents.h>
 
 #include <array>
+#include <iostream>
 #include <cstring>
 #include <vector>
 
@@ -122,6 +124,9 @@ namespace
         std::uint64_t Generation = 0;
         std::uint64_t Tick = 0;
         SnapshotApplyResult LastApply;
+        // What the last snapshot actually cost, so a claim about the wire can be
+        // measured rather than asserted.
+        std::size_t LastBytes = 0;
 
         // The peer this session's client is.
         static constexpr std::uint32_t kSelf = 2;
@@ -163,6 +168,7 @@ namespace
             const SnapshotWriteResult written =
                 ReplicationWriteSnapshot(write, Scratch);
             ASSERT_TRUE(written.Ok);
+            LastBytes = written.BytesWritten;
 
             SnapshotApplyRequest apply;
             apply.Target = &Client;
@@ -236,7 +242,13 @@ namespace
                 return false;
             }
 
+            // Owned so its owner-only state reaches the driver, and driven so
+            // their keys reach it. Two facts, and a game that means both says
+            // both -- which is exactly what leaves the gun standing when its
+            // driver disconnects.
             NetSetOwner(message.Entities, target, message.From);
+            NetPossess(message.Entities,
+                       NetAdmitPlayer(message.Entities, message.From), target);
             ++self.Grants;
             return true;
         }
@@ -297,7 +309,15 @@ TEST(PossessionProof, AClientTakesATurretAndGivesItBack)
     const InputActionSourceRef* steering =
         session.Authority.TryGet<InputActionSourceRef>(turret);
     ASSERT_NE(steering, nullptr) << "whose keys drive it was never installed";
-    EXPECT_EQ(steering->Source, Session::kSelf);
+    const EntityId driver =
+        NetPlayerForPeer(session.Authority, PeerId{ Session::kSelf });
+    ASSERT_TRUE(driver.IsValid()) << "granting it did not admit a participant";
+    EXPECT_EQ(steering->Source,
+              session.Authority.TryGet<NetPlayerControl>(driver)->Source)
+        << "the turret reads a source that is not this player's";
+    EXPECT_EQ(session.Authority.TryGet<NetPlayerControl>(driver)->ControlSubject,
+              turret)
+        << "the player was never recorded as driving what it took";
 
     session.Replicate();
     EXPECT_EQ(LocalControlSubjectOf(session.Client), mirror);
@@ -319,12 +339,16 @@ TEST(PossessionProof, AClientTakesATurretAndGivesItBack)
     EXPECT_FLOAT_EQ(seen->Charge, 0.75f)
         << "the owner was not sent the state only an owner may see";
 
-    // 7 and 8. The player gives it back, and everything comes off.
+    // 7 and 8. The player gives it back, and everything comes off. Both facts,
+    // because the game installed both: handing the gun back to the authority
+    // does not by itself tip its driver out of the seat.
     NetClearOwner(session.Authority, turret);
+    NetPossess(session.Authority, driver, EntityId{});
     session.Replicate();
 
     EXPECT_FALSE(NetOwnerOf(session.Authority, turret).IsValid());
     EXPECT_EQ(session.Authority.TryGet<InputActionSourceRef>(turret), nullptr);
+    EXPECT_FALSE(session.Authority.HasComponent<NetDrivenBy>(turret));
     EXPECT_FALSE(LocalControlSubjectOf(session.Client).IsValid())
         << "the client still drives a turret it handed back";
     EXPECT_FALSE(session.Client.HasComponent<LocalLookControl>(mirror));
@@ -338,14 +362,24 @@ TEST(PossessionProof, ATurretMovesBetweenPeersWithoutEitherLettingGoFirst)
 {
     Session session;
     const EntityId turret = SpawnTurret(session.Authority, 1.0f);
+    const EntityId first = NetAdmitPlayer(session.Authority, PeerId{ 2 });
+    const EntityId second = NetAdmitPlayer(session.Authority, PeerId{ 3 });
+
     NetSetOwner(session.Authority, turret, PeerId{ 2 });
-    ASSERT_EQ(session.Authority.TryGet<InputActionSourceRef>(turret)->Source, 2u);
+    NetPossess(session.Authority, first, turret);
+    ASSERT_EQ(session.Authority.TryGet<InputActionSourceRef>(turret)->Source,
+              session.Authority.TryGet<NetPlayerControl>(first)->Source);
 
     NetSetOwner(session.Authority, turret, PeerId{ 3 });
+    NetPossess(session.Authority, second, turret);
 
     EXPECT_EQ(NetOwnerOf(session.Authority, turret), PeerId{ 3 });
-    EXPECT_EQ(session.Authority.TryGet<InputActionSourceRef>(turret)->Source, 3u)
+    EXPECT_EQ(session.Authority.TryGet<InputActionSourceRef>(turret)->Source,
+              session.Authority.TryGet<NetPlayerControl>(second)->Source)
         << "one peer's aim turns a turret another peer's keys still move";
+    EXPECT_FALSE(
+        session.Authority.TryGet<NetPlayerControl>(first)->ControlSubject.IsValid())
+        << "the peer that lost the turret is still recorded as driving it";
 
     std::vector<EntityId> owned;
     NetOwnedBy(session.Authority, PeerId{ 2 }, owned);
@@ -456,4 +490,48 @@ TEST(PossessionProof, APeerJoiningLaterSeesTheTurretAsItIsNow)
         << "a peer joining after the handback was told somebody still drives it";
     EXPECT_EQ(latecomer.TryGet<TurretHeat>(seeded)->Charge, 0.0f)
         << "owner-only state reached a peer that does not own it";
+}
+
+// What a participant costs on the wire.
+//
+// Measured rather than asserted: "one more replicated entity per player" is a
+// cheap claim to make and an expensive one to be wrong about, and the per-peer
+// bill is the term that decides how many players fit in a session.
+//
+// Two sessions rather than two snapshots of one, because a snapshot is a
+// difference: the cost of a participant is what it adds to the FIRST one that
+// describes it, not to a later one that has nothing new to say.
+TEST(PossessionProof, AParticipantCostsAKnownNumberOfSnapshotBytes)
+{
+    Session without;
+    (void)SpawnTurret(without.Authority, 1.0f);
+    without.Replicate();
+
+    Session with;
+    (void)SpawnTurret(with.Authority, 1.0f);
+    const EntityId player =
+        NetAdmitPlayer(with.Authority, PeerId{ Session::kSelf });
+    ASSERT_TRUE(player.IsValid());
+    with.Replicate();
+
+    ASSERT_GT(without.LastBytes, 0u);
+    ASSERT_GT(with.LastBytes, without.LastBytes)
+        << "the participant never reached the wire at all";
+
+    const std::size_t perParticipant = with.LastBytes - without.LastBytes;
+
+    // Recorded as a bound rather than an equality: the envelope's field widths
+    // are free to change, and what matters is that a participant stays a
+    // rounding error against the 1173-byte snapshot budget rather than becoming
+    // a term in it.
+    EXPECT_LE(perParticipant, 32u)
+        << "a participant costs " << perParticipant
+        << " bytes of every snapshot that first describes it, which is no "
+           "longer a rounding error against the budget";
+
+    // Reported unconditionally so the number is in the log rather than only in
+    // somebody's memory of having checked it once.
+    std::cout << "[ measured ] participant snapshot cost: " << perParticipant
+              << " bytes (baseline " << without.LastBytes << " -> "
+              << with.LastBytes << ")\n";
 }

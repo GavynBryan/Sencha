@@ -16,6 +16,7 @@
 #include <net/NetConsoleCommands.h>
 #include <net/NetMessageRouter.h>
 #include <net/NetOwnership.h>
+#include <net/NetPlayer.h>
 #include <net/NetSession.h>
 #include <net/ReplicationSnapshot.h>
 #include <physics/PhysicsStepSystem.h>
@@ -202,6 +203,16 @@ void Engine::RegisterNetFramePhases()
             {
                 log.Info("net: peer {} joined from {}",
                          event.Peer.Value, NetAddressToString(event.Address));
+                // Admission is what makes somebody a participant, and only the
+                // authority performs it: a client receives players as
+                // replicated state, so building one here as well would leave a
+                // machine holding two representations of the same person.
+                if (session->Role() == NetSessionRole::Host)
+                {
+                    (void)NetAdmitParticipant(engine.World().Entities(),
+                                              event.Peer,
+                                              engine.Participants());
+                }
             }
             else
             {
@@ -215,7 +226,21 @@ void Engine::RegisterNetFramePhases()
                 // source their commands were landing in, closed. Nothing else
                 // closes one, and an entity left naming a peer that has gone
                 // reads its input from a source that will never fill again.
-                NetForgetOwnerPeer(engine.World().Entities(), event.Peer);
+                auto& entities = engine.World().Entities();
+                NetForgetOwnerPeer(entities, event.Peer);
+                // The participant itself: what it was driving let go of, its
+                // body reaped if the game's policy allows, and the player
+                // destroyed. What it drove is never destroyed -- somebody who
+                // disconnects at the controls of something does not take it
+                // with them.
+                const EntityId reaped = NetRetireParticipant(
+                    entities, NetPlayerForPeer(entities, event.Peer),
+                    engine.Participants());
+                if (reaped.IsValid())
+                {
+                    log.Info("net: removed the pawn for peer {} that left",
+                             event.Peer.Value);
+                }
             }
         }
 

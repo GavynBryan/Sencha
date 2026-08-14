@@ -10,11 +10,11 @@
 //=============================================================================
 // Replication components
 //
-// The two facts the replication writer reads off an entity: whether it travels
-// at all, and who it belongs to. Both are plain data, and both are absent from
-// the overwhelming majority of entities -- a level's worth of authored geometry
-// carries neither, which is what keeps the writer's work proportional to what
-// actually moves rather than to what exists.
+// What the replication writer reads off an entity: whether it travels at all,
+// who it belongs to, and whose input currently reaches it. All plain data, and
+// all absent from the overwhelming majority of entities -- a level's worth of
+// authored geometry carries none of them, which is what keeps the writer's work
+// proportional to what actually moves rather than to what exists.
 //=============================================================================
 
 //-----------------------------------------------------------------------------
@@ -79,6 +79,49 @@ struct TypeSchema<NetOwner>
     {
         return std::tuple{
             MakeField("peer", &NetOwner::Peer),
+        };
+    }
+};
+
+//-----------------------------------------------------------------------------
+// NetDrivenBy
+//
+// Which peer's input currently reaches this entity, and a client's whole answer
+// to which of the entities it holds is the one it drives.
+//
+// Carries the peer rather than the player entity or the input source, because a
+// peer number is a name both machines already agree on: an entity handle means
+// nothing across the wire, and a source id means something different on each
+// machine -- on the authority it names a peer's command buffer, while on that
+// peer's own machine the same entity reads the devices on the desk.
+//
+// Distinct from NetOwner, which says who a thing belongs to. The two agree for a
+// player's own pawn and part company the moment somebody drives a vehicle they
+// do not own -- which is also what decides that a driver disconnecting does not
+// take the vehicle with them.
+//-----------------------------------------------------------------------------
+struct NetDrivenBy
+{
+    std::uint32_t Peer = kNetAuthorityPeer;
+};
+
+static_assert(std::is_trivially_copyable_v<NetDrivenBy>,
+              "NetDrivenBy must be trivially copyable to live in ECS chunks");
+
+SENCHA_DECLARE_COMPONENT_TYPE(NetDrivenBy, "sencha.net_driven_by");
+
+template <>
+struct TypeSchema<NetDrivenBy>
+{
+    static constexpr std::string_view Name = "NetDrivenBy";
+    // A client cannot tell which of the entities it holds is the one its own
+    // input reaches until the authority says so.
+    static constexpr bool Replicated = true;
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("peer", &NetDrivenBy::Peer),
         };
     }
 };

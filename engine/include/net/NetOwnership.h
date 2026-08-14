@@ -1,9 +1,11 @@
 #pragma once
 
 #include <ecs/EntityId.h>
+#include <input/InputActionSource.h>
 #include <net/NetSession.h>
 
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 class ClientPrediction;
@@ -75,6 +77,32 @@ void NetForgetOwnerPeer(World& world, PeerId peer);
 // component that already says it -- and it is the map, not the component, that
 // goes stale when ownership moves.
 void NetOwnedBy(const World& world, PeerId peer, std::vector<EntityId>& out);
+
+//-----------------------------------------------------------------------------
+// A peer's input source
+//
+// Which slot in the source table a peer's arriving commands land in, allocated
+// on first use and held until the peer is forgotten.
+//
+// Deliberately not the peer's own number, which is what it used to be. Peer ids
+// and source ids are separate namespaces that happened to agree while peers
+// were the only thing producing input: drawing one from the other leaves no id
+// for a source with no peer behind it, which is every bot, script, and cutscene
+// that will ever drive an actor.
+//-----------------------------------------------------------------------------
+struct NetPeerSources
+{
+    std::unordered_map<std::uint32_t, InputActionSourceId> Sources;
+};
+
+// This peer's source, allocating one if it has none yet.
+[[nodiscard]] InputActionSourceId NetSourceForPeer(World& world, PeerId peer);
+
+// This peer's source, or the local source when it has none. Const, so it never
+// allocates: a question asked about a peer that was never admitted is answered
+// rather than made true by asking.
+[[nodiscard]] InputActionSourceId NetFindSourceForPeer(const World& world,
+                                                       PeerId peer);
 
 //-----------------------------------------------------------------------------
 // LocalControlSubject

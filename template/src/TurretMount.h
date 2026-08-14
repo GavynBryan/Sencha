@@ -49,17 +49,8 @@ struct TypeSchema<TurretMount>
     }
 };
 
-// Where a driver's own body is waiting while they are in the turret.
-//
-// The authority's record and nobody else's: it holds a runtime entity handle,
-// which means nothing on another machine, and no client has any reason to know
-// it. One copy of the fact, on the turret, so returning somebody to their body
-// cannot disagree with what took them out of it.
-struct TurretSeat
-{
-    EntityId Pawn;
-};
-
-// No schema: it neither replicates nor cooks, so all it needs is an identity
-// its storage column can be found under.
-SENCHA_DECLARE_COMPONENT_TYPE(TurretSeat, "template.turret_seat");
+// Where a driver's body waits while they are in the turret is not recorded
+// here. It is NetPlayerControl::Body on the player, which is where it belongs:
+// the body is a fact about the person, not about the gun, and every other
+// mechanism that takes somebody out of their body would otherwise need its own
+// copy of it.

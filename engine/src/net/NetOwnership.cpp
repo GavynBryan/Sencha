@@ -32,17 +32,46 @@ void NetSetOwner(World& world, EntityId entity, PeerId peer)
     else
         world.AddComponent<NetOwner>(entity, NetOwner{ .Peer = peer.Value });
 
-    // The second half of the same fact. NetOwner decides whose aim turns the
-    // entity; this decides whose keys move it, and the two disagreeing is the
-    // shape of the defect where a host steers a pawn it is only simulating on
-    // someone else's behalf.
-    if (!world.IsRegistered<InputActionSourceRef>())
-        return;
-    if (InputActionSourceRef* source = world.TryGet<InputActionSourceRef>(entity))
-        source->Source = peer.Value;
-    else
-        world.AddComponent<InputActionSourceRef>(
-            entity, InputActionSourceRef{ .Source = peer.Value });
+    // Whose input reaches it is deliberately not installed here. Ownership says
+    // who a thing belongs to; NetPossess says who is at its controls. They agree
+    // for a player's own pawn and part company for a vehicle somebody drives and
+    // nobody owns, and it is their difference that keeps a departing driver from
+    // taking the vehicle with them.
+}
+
+InputActionSourceId NetSourceForPeer(World& world, PeerId peer)
+{
+    if (!peer.IsValid())
+        return kLocalInputActionSource;
+
+    NetPeerSources& mapping = world.HasResource<NetPeerSources>()
+        ? world.GetResource<NetPeerSources>()
+        : world.AddResource<NetPeerSources>();
+
+    const auto it = mapping.Sources.find(peer.Value);
+    if (it != mapping.Sources.end())
+        return it->second;
+
+    InputActionSourceIds& ids = world.HasResource<InputActionSourceIds>()
+        ? world.GetResource<InputActionSourceIds>()
+        : world.AddResource<InputActionSourceIds>();
+
+    const InputActionSourceId allocated = ids.Allocate();
+    mapping.Sources.emplace(peer.Value, allocated);
+    return allocated;
+}
+
+InputActionSourceId NetFindSourceForPeer(const World& world, PeerId peer)
+{
+    if (!peer.IsValid())
+        return kLocalInputActionSource;
+
+    const NetPeerSources* mapping = world.TryGetResource<NetPeerSources>();
+    if (mapping == nullptr)
+        return kLocalInputActionSource;
+
+    const auto it = mapping->Sources.find(peer.Value);
+    return it == mapping->Sources.end() ? kLocalInputActionSource : it->second;
 }
 
 void NetClearOwner(World& world, EntityId entity)
@@ -56,13 +85,9 @@ void NetClearOwner(World& world, EntityId entity)
     if (NetOwner* owner = world.TryGet<NetOwner>(entity))
         owner->Peer = kNetAuthorityPeer;
 
-    // The reference is not replicated and means "somebody else's keys", so
-    // absence is the right way to say there is nobody.
-    if (world.IsRegistered<InputActionSourceRef>()
-        && world.HasComponent<InputActionSourceRef>(entity))
-    {
-        world.RemoveComponent<InputActionSourceRef>(entity);
-    }
+    // Whoever is at the controls stays there. Handing a vehicle back to the
+    // authority does not tip its driver out of the seat, and a caller that means
+    // both says both.
 }
 
 void NetForgetOwnerPeer(World& world, PeerId peer)
@@ -78,11 +103,22 @@ void NetForgetOwnerPeer(World& world, PeerId peer)
     // The slot its commands were landing in. Nothing else closes one, so a
     // session that admits and drops peers all evening accumulates an action
     // state per peer until the process exits.
-    if (InputActionSourceTable* sources =
-            world.TryGetResource<InputActionSourceTable>())
+    const InputActionSourceId source = NetFindSourceForPeer(world, peer);
+    if (source != kLocalInputActionSource)
     {
-        sources->Close(peer.Value);
+        if (InputActionSourceTable* sources =
+                world.TryGetResource<InputActionSourceTable>())
+        {
+            sources->Close(source);
+        }
     }
+
+    // And the mapping itself. A session hands peer ids out in order and a new
+    // session starts over, so a peer number outlives the peer that held it;
+    // leaving the entry would hand the next holder the departed one's source,
+    // and with it whatever input was still sitting in that slot.
+    if (NetPeerSources* mapping = world.TryGetResource<NetPeerSources>())
+        mapping->Sources.erase(peer.Value);
 }
 
 PeerId NetOwnerOf(const World& world, EntityId entity)
@@ -153,16 +189,19 @@ void NetSetLocalControl(World& world, EntityId entity, ClientPrediction* predict
 
 void NetReconcileLocalControl(World& world, PeerId self, ClientPrediction& prediction)
 {
-    if (!self.IsValid() || !TracksOwnership(world))
+    if (!self.IsValid() || !world.IsRegistered<NetDrivenBy>())
         return;
 
-    // The lowest-numbered entity this peer owns, so two of them is a stable
-    // answer rather than one that changes with hash order. Owning two is not a
-    // supported shape yet; picking deterministically is what makes it a
-    // reportable bug instead of an intermittent one.
+    // What this peer drives, which is not the same question as what it owns. A
+    // player at a turret owns their body and the turret both; only one of them
+    // is where their input goes, and asking ownership could not tell which.
+    //
+    // Lowest-numbered of any duplicates. NetPossess gives a player one subject
+    // at a time, so two is a defect rather than a shape -- deterministic here is
+    // what makes such a defect reportable instead of intermittent.
     EntityId mine;
-    world.ForEachComponent<NetOwner>([&](EntityId entity, const NetOwner& owner) {
-        if (owner.Peer != self.Value)
+    world.ForEachComponent<NetDrivenBy>([&](EntityId entity, const NetDrivenBy& driven) {
+        if (driven.Peer != self.Value)
             return;
         if (!mine.IsValid() || entity.Index < mine.Index)
             mine = entity;

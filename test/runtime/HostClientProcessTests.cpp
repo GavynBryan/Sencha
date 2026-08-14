@@ -339,10 +339,13 @@ TEST(HostClientProcess, AClientTakesATurretAndGivesItBack)
         << hostLog;
 
     // What the authority records, read the way an operator would read it. The
-    // peer owns the turret and no longer owns the pawn it walked in on: one
-    // peer drives one thing.
+    // peer owns the turret AND the body it walked in on: owning and driving are
+    // separate facts, so climbing into a gun does not make somebody stop owning
+    // themselves. One thing is driven; two are owned.
     ASSERT_TRUE(host.Send("net_owners"));
-    EXPECT_TRUE(host.WaitForLog("owns 1", &hostLog)) << hostLog;
+    EXPECT_TRUE(host.WaitForLog("owns 2", &hostLog))
+        << "taking a turret took the driver's own body away from them:\n"
+        << hostLog;
     EXPECT_EQ(hostLog.find("NOT REPLICATED"), std::string::npos)
         << "the peer owns something no peer can be told about:\n" << hostLog;
 
