@@ -117,6 +117,30 @@ TEST(ParticipantLifecycle, TakingASubjectClearsItsPreviousParticipant)
               InputActionSourceId{ 3 });
 }
 
+TEST(ParticipantLifecycle, DisplacementNamesTheFirstParticipantItTookFrom)
+{
+    ParticipantWorld fixture;
+    const EntityId first = fixture.Lifecycle.Admit(
+        fixture.Entities, InputActionSourceId{ 2 }).Participant;
+    const EntityId second = fixture.Lifecycle.Admit(
+        fixture.Entities, InputActionSourceId{ 3 }).Participant;
+    const EntityId claimant = fixture.Lifecycle.Admit(
+        fixture.Entities, InputActionSourceId{ 4 }).Participant;
+    const EntityId subject = fixture.Thing();
+    // Two holders at once is the state this API exists to prevent, so it has to
+    // be written directly rather than reached through SetControlSubject.
+    fixture.Entities.TryGet<ParticipantControl>(first)->ControlSubject = subject;
+    fixture.Entities.TryGet<ParticipantControl>(second)->ControlSubject = subject;
+
+    const ParticipantControlChange change = fixture.Lifecycle.SetControlSubject(
+        fixture.Entities, claimant, subject);
+
+    EXPECT_EQ(change.DisplacedParticipant, first);
+    EXPECT_FALSE(fixture.Control(first).ControlSubject.IsValid());
+    EXPECT_FALSE(fixture.Control(second).ControlSubject.IsValid());
+    EXPECT_EQ(fixture.Control(claimant).ControlSubject, subject);
+}
+
 TEST(ParticipantLifecycle, BodyAssignmentIsExplicitAndDoesNotPoll)
 {
     ParticipantWorld fixture;

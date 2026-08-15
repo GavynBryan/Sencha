@@ -43,18 +43,26 @@ namespace
         {
             return *Entities.TryGet<ParticipantControl>(participant);
         }
+
+        // Opt-in rather than a constructor default: other tests here install
+        // policies that answer differently, and a test asserting on Built or
+        // Asked should show where those counts come from.
+        void CountPolicyCalls()
+        {
+            Projection.Policies().BuildParticipant =
+                [&](World&, EntityId) { ++Built; };
+            Projection.Policies().ProvideBody = [&](World&, EntityId) {
+                ++Asked;
+                return Thing();
+            };
+        }
     };
 }
 
 TEST(SessionParticipantProjection, AdmissionOwnsTheWholePeerInvariant)
 {
     ProjectionWorld fixture;
-    fixture.Projection.Policies().BuildParticipant =
-        [&](World&, EntityId) { ++fixture.Built; };
-    fixture.Projection.Policies().ProvideBody = [&](World&, EntityId) {
-        ++fixture.Asked;
-        return fixture.Thing();
-    };
+    fixture.CountPolicyCalls();
 
     const SessionParticipantAdmission admitted =
         fixture.Projection.AdmitPeer(fixture.Entities, PeerId{ 3 });
@@ -76,12 +84,7 @@ TEST(SessionParticipantProjection, AdmissionOwnsTheWholePeerInvariant)
 TEST(SessionParticipantProjection, ReadmissionDoesNotRebuildOrRebind)
 {
     ProjectionWorld fixture;
-    fixture.Projection.Policies().BuildParticipant =
-        [&](World&, EntityId) { ++fixture.Built; };
-    fixture.Projection.Policies().ProvideBody = [&](World&, EntityId) {
-        ++fixture.Asked;
-        return fixture.Thing();
-    };
+    fixture.CountPolicyCalls();
     const SessionParticipantAdmission first =
         fixture.Projection.AdmitPeer(fixture.Entities, PeerId{ 4 });
 

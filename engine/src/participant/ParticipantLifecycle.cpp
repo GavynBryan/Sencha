@@ -43,6 +43,57 @@ namespace
             world.AddComponent<InputActionSourceRef>(
                 subject, InputActionSourceRef{ .Source = source });
     }
+
+    // Takes the subject away from whoever else is holding it, so that no frame
+    // exists in which two participants steer one entity. Returns the first one
+    // displaced, which is the one the caller reports.
+    //
+    // Collected under a const view first, then mutated: iterating non-const
+    // would both count as a write for change detection and mutate the storage
+    // being walked. The two passes are the point, not an accident.
+    EntityId ClearSubjectFromOtherParticipants(World& world, EntityId participant,
+                                               EntityId subject)
+    {
+        std::vector<EntityId> displaced;
+        const World& reading = world;
+        reading.ForEachComponent<ParticipantControl>(
+            [&](EntityId other, const ParticipantControl& held) {
+                if (other != participant && held.ControlSubject == subject)
+                    displaced.push_back(other);
+            });
+
+        EntityId first;
+        for (const EntityId other : displaced)
+        {
+            if (ParticipantControl* held = world.TryGet<ParticipantControl>(other))
+                held->ControlSubject = EntityId{};
+            if (world.IsRegistered<LocalParticipant>()
+                && world.HasComponent<LocalParticipant>(other))
+            {
+                SetLocalControlSubject(world, EntityId{});
+            }
+            if (!first.IsValid())
+                first = other;
+        }
+        return first;
+    }
+
+    // False means the participant went out from under us. The control pointer
+    // is re-read on both sides of ApplyInputReference because that call adds or
+    // removes a component, and an archetype move relocates rows.
+    [[nodiscard]] bool BindSubject(World& world, EntityId participant, EntityId subject)
+    {
+        ParticipantControl* control = world.TryGet<ParticipantControl>(participant);
+        if (control == nullptr)
+            return false;
+        ApplyInputReference(world, subject, control->Source);
+
+        control = world.TryGet<ParticipantControl>(participant);
+        if (control == nullptr)
+            return false;
+        control->ControlSubject = subject;
+        return true;
+    }
 }
 
 EntityId LocalParticipantOf(const World& world)
@@ -134,35 +185,10 @@ ParticipantControlChange ParticipantLifecycle::SetControlSubject(
 
     if (current.IsValid())
     {
-        std::vector<EntityId> displaced;
-        const World& reading = world;
-        reading.ForEachComponent<ParticipantControl>(
-            [&](EntityId other, const ParticipantControl& held) {
-                if (other != participant && held.ControlSubject == current)
-                    displaced.push_back(other);
-            });
-
-        for (const EntityId other : displaced)
-        {
-            if (ParticipantControl* held = world.TryGet<ParticipantControl>(other))
-                held->ControlSubject = EntityId{};
-            if (world.IsRegistered<LocalParticipant>()
-                && world.HasComponent<LocalParticipant>(other))
-            {
-                SetLocalControlSubject(world, EntityId{});
-            }
-            if (!change.DisplacedParticipant.IsValid())
-                change.DisplacedParticipant = other;
-        }
-
-        control = world.TryGet<ParticipantControl>(participant);
-        if (control == nullptr)
+        change.DisplacedParticipant =
+            ClearSubjectFromOtherParticipants(world, participant, current);
+        if (!BindSubject(world, participant, current))
             return change;
-        ApplyInputReference(world, current, control->Source);
-        control = world.TryGet<ParticipantControl>(participant);
-        if (control == nullptr)
-            return change;
-        control->ControlSubject = current;
     }
 
     if (world.IsRegistered<LocalParticipant>()

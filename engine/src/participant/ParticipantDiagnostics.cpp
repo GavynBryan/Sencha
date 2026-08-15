@@ -1,11 +1,11 @@
 #include <participant/ParticipantDiagnostics.h>
 
+#include <ecs/EntityText.h>
 #include <ecs/World.h>
 #include <input/InputActionSource.h>
 #include <participant/LocalControl.h>
 #include <participant/ParticipantControl.h>
 
-#include <cstdio>
 #include <string_view>
 #include <utility>
 
@@ -33,13 +33,133 @@ namespace
         return "unknown participant invariant";
     }
 
-    void AppendEntity(std::string& out, EntityId entity)
+    // `localParticipant` carries the first one seen across the whole walk, so
+    // the second and later ones are the failures rather than the first.
+    void ValidateLocalParticipantUniqueness(const World& world, EntityId participant,
+                                            EntityId& localParticipant,
+                                            ParticipantValidation& report)
     {
-        char buffer[48];
-        const int length = std::snprintf(buffer, sizeof(buffer), "%u:%u",
-                                         entity.Index, entity.Generation);
-        if (length > 0)
-            out.append(buffer, static_cast<std::size_t>(length));
+        if (!world.IsRegistered<LocalParticipant>()
+            || !world.HasComponent<LocalParticipant>(participant))
+        {
+            return;
+        }
+
+        if (!localParticipant.IsValid())
+        {
+            localParticipant = participant;
+            return;
+        }
+
+        report.Failures.push_back({
+            .Issue = ParticipantInvariantIssue::DuplicateLocalParticipant,
+            .Participant = participant,
+            .Subject = localParticipant,
+        });
+    }
+
+    // False means the subject cannot carry the remaining invariants: there is
+    // either nothing at the controls, or what is there is already dead. Both
+    // cases stop the caller, and only the second is a failure.
+    //
+    // `subjects` accumulates across the walk, so a subject claimed twice is
+    // reported against the participant that claimed it second.
+    [[nodiscard]] bool ValidateControlSubjectIdentity(
+        const World& world, EntityId participant, const ParticipantControl& control,
+        std::vector<std::pair<EntityId, EntityId>>& subjects,
+        ParticipantValidation& report)
+    {
+        if (!control.ControlSubject.IsValid())
+            return false;
+        if (!world.IsAlive(control.ControlSubject))
+        {
+            report.Failures.push_back({
+                .Issue = ParticipantInvariantIssue::DeadControlSubject,
+                .Participant = participant,
+                .Subject = control.ControlSubject,
+            });
+            return false;
+        }
+
+        for (const auto& [otherSubject, otherParticipant] : subjects)
+        {
+            if (otherSubject == control.ControlSubject)
+            {
+                report.Failures.push_back({
+                    .Issue = ParticipantInvariantIssue::DuplicateControlSubject,
+                    .Participant = participant,
+                    .Subject = otherParticipant,
+                });
+                break;
+            }
+        }
+        subjects.emplace_back(control.ControlSubject, participant);
+        return true;
+    }
+
+    // Three readings of one reference, mutually exclusive: source zero is
+    // represented by the component's absence, so its presence is as wrong as a
+    // non-local source's absence.
+    void ValidateInputReference(const World& world, EntityId participant,
+                                const ParticipantControl& control,
+                                ParticipantValidation& report)
+    {
+        const InputActionSourceRef* input =
+            world.TryGet<InputActionSourceRef>(control.ControlSubject);
+        if (control.Source == kLocalInputActionSource)
+        {
+            if (input != nullptr)
+            {
+                report.Failures.push_back({
+                    .Issue = ParticipantInvariantIssue::UnexpectedLocalInputReference,
+                    .Participant = participant,
+                    .Subject = control.ControlSubject,
+                });
+            }
+        }
+        else if (input == nullptr)
+        {
+            report.Failures.push_back({
+                .Issue = ParticipantInvariantIssue::MissingInputReference,
+                .Participant = participant,
+                .Subject = control.ControlSubject,
+            });
+        }
+        else if (input->Source != control.Source)
+        {
+            report.Failures.push_back({
+                .Issue = ParticipantInvariantIssue::WrongInputSource,
+                .Participant = participant,
+                .Subject = control.ControlSubject,
+            });
+        }
+    }
+
+    // Runs after the walk because it audits the resource against whichever
+    // participant the walk settled on as the local one. An invalid
+    // `localParticipant` expects an empty resource.
+    void ValidateLocalControlProjection(const World& world, EntityId localParticipant,
+                                        ParticipantValidation& report)
+    {
+        EntityId expectedLocal;
+        if (localParticipant.IsValid())
+        {
+            if (const ParticipantControl* control =
+                    world.TryGet<ParticipantControl>(localParticipant))
+            {
+                expectedLocal = control->ControlSubject;
+            }
+        }
+
+        const EntityId held = LocalControlSubjectOf(world);
+        if (held == expectedLocal)
+            return;
+
+        report.Failures.push_back({
+            .Issue = ParticipantInvariantIssue::LocalControlMismatch,
+            .Participant = localParticipant,
+            .Subject = held,
+        });
     }
 }
 
@@ -55,97 +175,20 @@ ParticipantValidation ValidateParticipants(const World& world)
     world.ForEachComponent<ParticipantControl>(
         [&](EntityId participant, const ParticipantControl& control) {
             sawParticipant = true;
-            if (world.IsRegistered<LocalParticipant>()
-                && world.HasComponent<LocalParticipant>(participant))
+            ValidateLocalParticipantUniqueness(world, participant, localParticipant,
+                                               report);
+            if (!ValidateControlSubjectIdentity(world, participant, control, subjects,
+                                                report))
             {
-                if (localParticipant.IsValid())
-                {
-                    report.Failures.push_back({
-                        .Issue = ParticipantInvariantIssue::DuplicateLocalParticipant,
-                        .Participant = participant,
-                        .Subject = localParticipant,
-                    });
-                }
-                else
-                {
-                    localParticipant = participant;
-                }
-            }
-
-            if (!control.ControlSubject.IsValid())
-                return;
-            if (!world.IsAlive(control.ControlSubject))
-            {
-                report.Failures.push_back({
-                    .Issue = ParticipantInvariantIssue::DeadControlSubject,
-                    .Participant = participant,
-                    .Subject = control.ControlSubject,
-                });
                 return;
             }
-
-            for (const auto& [otherSubject, otherParticipant] : subjects)
-            {
-                if (otherSubject == control.ControlSubject)
-                {
-                    report.Failures.push_back({
-                        .Issue = ParticipantInvariantIssue::DuplicateControlSubject,
-                        .Participant = participant,
-                        .Subject = otherParticipant,
-                    });
-                    break;
-                }
-            }
-            subjects.emplace_back(control.ControlSubject, participant);
-
-            const InputActionSourceRef* input =
-                world.TryGet<InputActionSourceRef>(control.ControlSubject);
-            if (control.Source == kLocalInputActionSource)
-            {
-                if (input != nullptr)
-                {
-                    report.Failures.push_back({
-                        .Issue = ParticipantInvariantIssue::UnexpectedLocalInputReference,
-                        .Participant = participant,
-                        .Subject = control.ControlSubject,
-                    });
-                }
-            }
-            else if (input == nullptr)
-            {
-                report.Failures.push_back({
-                    .Issue = ParticipantInvariantIssue::MissingInputReference,
-                    .Participant = participant,
-                    .Subject = control.ControlSubject,
-                });
-            }
-            else if (input->Source != control.Source)
-            {
-                report.Failures.push_back({
-                    .Issue = ParticipantInvariantIssue::WrongInputSource,
-                    .Participant = participant,
-                    .Subject = control.ControlSubject,
-                });
-            }
+            ValidateInputReference(world, participant, control, report);
         });
 
-    EntityId expectedLocal;
-    if (localParticipant.IsValid())
-    {
-        if (const ParticipantControl* control =
-                world.TryGet<ParticipantControl>(localParticipant))
-        {
-            expectedLocal = control->ControlSubject;
-        }
-    }
-    if (sawParticipant && LocalControlSubjectOf(world) != expectedLocal)
-    {
-        report.Failures.push_back({
-            .Issue = ParticipantInvariantIssue::LocalControlMismatch,
-            .Participant = localParticipant,
-            .Subject = LocalControlSubjectOf(world),
-        });
-    }
+    // A world with no participants at all has no local half to disagree with,
+    // so a stale resource there is not this validator's finding.
+    if (sawParticipant)
+        ValidateLocalControlProjection(world, localParticipant, report);
 
     return report;
 }
@@ -160,15 +203,15 @@ std::string FormatParticipantStatus(const World& world)
             [&](EntityId participant, const ParticipantControl& control) {
                 ++count;
                 out += "participant ";
-                AppendEntity(out, participant);
+                AppendEntityText(out, participant);
                 out += " body ";
                 if (control.Body.IsValid())
-                    AppendEntity(out, control.Body);
+                    AppendEntityText(out, control.Body);
                 else
                     out += "none";
                 out += " controls ";
                 if (control.ControlSubject.IsValid())
-                    AppendEntity(out, control.ControlSubject);
+                    AppendEntityText(out, control.ControlSubject);
                 else
                     out += "none";
                 out += '\n';
@@ -181,7 +224,7 @@ std::string FormatParticipantStatus(const World& world)
     const EntityId local = LocalControlSubjectOf(world);
     out += "local control ";
     if (local.IsValid())
-        AppendEntity(out, local);
+        AppendEntityText(out, local);
     else
         out += "none";
 
@@ -192,9 +235,9 @@ std::string FormatParticipantStatus(const World& world)
         out += "\n  ";
         out += Name(failure.Issue);
         out += " participant ";
-        AppendEntity(out, failure.Participant);
+        AppendEntityText(out, failure.Participant);
         out += " subject ";
-        AppendEntity(out, failure.Subject);
+        AppendEntityText(out, failure.Subject);
     }
     return out;
 }
