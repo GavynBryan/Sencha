@@ -267,6 +267,18 @@ namespace
         port = match[1].str();
         return true;
     }
+
+    // Stops a process the way an operator would and expects it to go quietly.
+    // Every case here ends with two or three of these, and a process that
+    // refuses to stop and one that stops badly are different faults -- so both
+    // are reported, and both name which process they mean.
+    void ExpectCleanStop(AppProcess& process, std::string_view what)
+    {
+        int exitCode = -1;
+        EXPECT_TRUE(process.StopAndWait(&exitCode))
+            << what << " did not stop when asked";
+        EXPECT_EQ(exitCode, 0) << what << " did not exit cleanly";
+    }
 }
 
 // Every case here hosts a map, and a map is cooked output. The cook runs as the
@@ -323,15 +335,11 @@ TEST_F(HostClientProcess, ADedicatedHostServesAJoiningClient)
         << "a dedicated host must not provision a player of its own:\n" << hostLog;
 
     // Leaving is part of the contract: the host notices and releases the pawn.
-    int clientExit = -1;
-    EXPECT_TRUE(client.StopAndWait(&clientExit));
-    EXPECT_EQ(clientExit, 0);
+    ExpectCleanStop(client, "the client");
     EXPECT_TRUE(host.WaitForLog("removed the pawn for peer", &hostLog))
         << "host never released the departed peer's pawn:\n" << hostLog;
 
-    int hostExit = -1;
-    EXPECT_TRUE(host.StopAndWait(&hostExit)) << "host did not stop when asked";
-    EXPECT_EQ(hostExit, 0);
+    ExpectCleanStop(host, "the host");
 }
 
 // The possession path, end to end, across two real processes.
@@ -394,13 +402,8 @@ TEST_F(HostClientProcess, AClientTakesATurretAndGivesItBack)
     EXPECT_TRUE(host.WaitForLog("left the turret", &hostLog))
         << "the client could not give the turret back:\n" << hostLog;
 
-    int clientExit = -1;
-    EXPECT_TRUE(client.StopAndWait(&clientExit));
-    EXPECT_EQ(clientExit, 0);
-
-    int hostExit = -1;
-    EXPECT_TRUE(host.StopAndWait(&hostExit));
-    EXPECT_EQ(hostExit, 0);
+    ExpectCleanStop(client, "the client");
+    ExpectCleanStop(host, "the host");
 }
 
 // Two players at once, as three real processes.
@@ -462,9 +465,7 @@ TEST_F(HostClientProcess, ADedicatedHostServesTwoClientsAtOnce)
         << "two peers were given the same turret:\n" << hostLog;
 
     // One leaves; the other keeps playing and the session does not empty.
-    int secondExit = -1;
-    EXPECT_TRUE(second.StopAndWait(&secondExit));
-    EXPECT_EQ(secondExit, 0);
+    ExpectCleanStop(second, "the second client");
     EXPECT_TRUE(host.WaitForLog("removed the pawn for peer", &hostLog))
         << "the departed peer's pawn was left behind:\n" << hostLog;
 
@@ -473,12 +474,8 @@ TEST_F(HostClientProcess, ADedicatedHostServesTwoClientsAtOnce)
         << "the host does not report exactly one peer after the other left:\n"
         << hostLog;
 
-    int firstExit = -1;
-    EXPECT_TRUE(first.StopAndWait(&firstExit));
-    EXPECT_EQ(firstExit, 0);
-    int hostExit = -1;
-    EXPECT_TRUE(host.StopAndWait(&hostExit));
-    EXPECT_EQ(hostExit, 0);
+    ExpectCleanStop(first, "the first client");
+    ExpectCleanStop(host, "the host");
 }
 
 // The account a dedicated host can give of itself. It has no window and no
@@ -505,11 +502,8 @@ TEST_F(HostClientProcess, ADedicatedHostAnswersForItselfOverTheConsole)
     EXPECT_TRUE(hostLog.find("publish") != std::string::npos) << hostLog;
     EXPECT_TRUE(hostLog.find("starved") != std::string::npos) << hostLog;
 
-    int clientExit = -1;
-    EXPECT_TRUE(client.StopAndWait(&clientExit));
-    int hostExit = -1;
-    EXPECT_TRUE(host.StopAndWait(&hostExit));
-    EXPECT_EQ(hostExit, 0);
+    ExpectCleanStop(client, "the client");
+    ExpectCleanStop(host, "the host");
 }
 
 // A host with no graphics services still loads the world it is simulating.
@@ -527,9 +521,7 @@ TEST_F(HostClientProcess, ADedicatedHostLoadsItsMap)
     // it reported. A zone that failed says so on the way through.
     std::this_thread::sleep_for(std::chrono::seconds(2));
 
-    int exitCode = -1;
-    EXPECT_TRUE(host.StopAndWait(&exitCode));
-    EXPECT_EQ(exitCode, 0);
+    ExpectCleanStop(host, "the host");
 
     log = host.Log();
     EXPECT_EQ(log.find("scene load error"), std::string::npos)
