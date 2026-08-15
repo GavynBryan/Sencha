@@ -41,5 +41,8 @@
 // v9: the fixed-tick, physics, post-fixed, render-extract, audio, and end-frame
 // contexts no longer carry an InputFrame. Simulation reads resolved actions from
 // InputActionState; PreSimulate (where the mapper runs) and FrameUpdate (editor
-// and debug tooling) still expose the raw device frame.
-#define SENCHA_GAME_ABI_VERSION 9u
+// and debug tooling) still expose the raw device frame. v10: participant
+// lifecycle/control moved out of net into its own SDK domain, the old NetPlayer
+// and NetParticipant surface was removed, and Engine now exposes typed
+// participant outcomes through the session projection owner.
+#define SENCHA_GAME_ABI_VERSION 10u

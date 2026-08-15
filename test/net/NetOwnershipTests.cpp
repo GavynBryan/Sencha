@@ -6,6 +6,7 @@
 #include <net/ClientPrediction.h>
 #include <app/EngineSchedule.h>
 #include <net/NetOwnership.h>
+#include <net/NetPeerInputSource.h>
 #include <net/PeerCommandRuntime.h>
 #include <net/NetReplicationComponents.h>
 #include <world/ComponentRegistrar.h>
@@ -51,9 +52,9 @@ namespace
     }
 }
 
-// Ownership says who a thing belongs to. Who is at its controls is NetPossess,
-// and keeping them apart is what leaves a vehicle standing when the peer driving
-// it disconnects -- see NetPlayerTests.
+// Ownership says who a thing belongs to. Participant control says who is at
+// its controls, and keeping them apart is what leaves a vehicle standing when
+// the peer driving it disconnects.
 TEST(NetOwnership, GrantingRecordsWhoItBelongsToAndNotWhoDrivesIt)
 {
     OwnershipWorld fixture;
@@ -132,7 +133,7 @@ TEST(NetOwnership, APeerLeavingReleasesEverythingItDrove)
 
 // Nothing else closes one, so every peer that ever connects would otherwise
 // leave an action state behind for the life of the process.
-TEST(NetOwnership, APeerLeavingClosesTheSourceItsCommandsLandedIn)
+TEST(NetPeerInputSource, APeerLeavingClosesTheSourceItsCommandsLandedIn)
 {
     OwnershipWorld fixture;
     InputActionSourceTable& sources =
@@ -145,7 +146,7 @@ TEST(NetOwnership, APeerLeavingClosesTheSourceItsCommandsLandedIn)
     (void)sources.Open(source, 4);
     ASSERT_NE(sources.Find(source), nullptr);
 
-    NetForgetOwnerPeer(fixture.Entities, PeerId{ 7 });
+    NetReleasePeerSource(fixture.Entities, PeerId{ 7 });
 
     EXPECT_EQ(sources.Find(source), nullptr)
         << "the peer left and its input slot did not";
@@ -154,7 +155,7 @@ TEST(NetOwnership, APeerLeavingClosesTheSourceItsCommandsLandedIn)
 // A source id is not a peer id. They were the same number while peers were the
 // only thing producing input, which left nothing for a source with no peer
 // behind it -- a bot, a script, a cutscene driving an actor.
-TEST(NetOwnership, APeersSourceIsAllocatedRatherThanItsOwnNumber)
+TEST(NetPeerInputSource, APeersSourceIsAllocatedRatherThanItsOwnNumber)
 {
     OwnershipWorld fixture;
     InputActionSourceIds& ids =
@@ -174,14 +175,14 @@ TEST(NetOwnership, APeersSourceIsAllocatedRatherThanItsOwnNumber)
 
 // A session hands peer numbers out in order and a new session starts over, so a
 // number outlives the peer that held it.
-TEST(NetOwnership, APeerNumberUsedAgainDoesNotInheritTheOldSource)
+TEST(NetPeerInputSource, APeerNumberUsedAgainDoesNotInheritTheOldSource)
 {
     OwnershipWorld fixture;
     const InputActionSourceId first =
         NetSourceForPeer(fixture.Entities, PeerId{ 2 });
     ASSERT_NE(first, kLocalInputActionSource);
 
-    NetForgetOwnerPeer(fixture.Entities, PeerId{ 2 });
+    NetReleasePeerSource(fixture.Entities, PeerId{ 2 });
     EXPECT_EQ(NetFindSourceForPeer(fixture.Entities, PeerId{ 2 }),
               kLocalInputActionSource)
         << "the departed peer's mapping outlived it";
@@ -189,171 +190,6 @@ TEST(NetOwnership, APeerNumberUsedAgainDoesNotInheritTheOldSource)
     (void)NetSourceForPeer(fixture.Entities, PeerId{ 2 });
     EXPECT_NE(NetFindSourceForPeer(fixture.Entities, PeerId{ 2 }), first)
         << "a new holder of the number inherited the old one's input slot";
-}
-
-//=============================================================================
-// Local control
-//=============================================================================
-
-TEST(NetLocalControl, TakingControlInstallsThePerMachineFacts)
-{
-    OwnershipWorld fixture;
-    ClientPrediction prediction;
-    const EntityId pawn = fixture.Pawn();
-
-    NetSetLocalControl(fixture.Entities, pawn, &prediction);
-
-    EXPECT_EQ(LocalControlSubjectOf(fixture.Entities), pawn);
-    EXPECT_TRUE(fixture.Entities.HasComponent<LocalLookControl>(pawn));
-    EXPECT_EQ(prediction.Predicted(), pawn);
-}
-
-// The falling edge, which nothing did before: a client that stopped owning its
-// pawn went on predicting it and went on turning it with the player's mouse.
-TEST(NetLocalControl, RelinquishingTakesThemAllBackOff)
-{
-    OwnershipWorld fixture;
-    ClientPrediction prediction;
-    const EntityId pawn = fixture.Pawn();
-    NetSetLocalControl(fixture.Entities, pawn, &prediction);
-
-    NetSetLocalControl(fixture.Entities, EntityId{}, &prediction);
-
-    EXPECT_FALSE(LocalControlSubjectOf(fixture.Entities).IsValid());
-    EXPECT_FALSE(fixture.Entities.HasComponent<LocalLookControl>(pawn));
-    EXPECT_FALSE(prediction.Predicted().IsValid())
-        << "the client still predicts a pawn it no longer drives";
-}
-
-TEST(NetLocalControl, MovingControlLeavesNothingOnTheOldEntity)
-{
-    OwnershipWorld fixture;
-    ClientPrediction prediction;
-    const EntityId first = fixture.Pawn();
-    const EntityId second = fixture.Pawn();
-
-    NetSetLocalControl(fixture.Entities, first, &prediction);
-    NetSetLocalControl(fixture.Entities, second, &prediction);
-
-    EXPECT_FALSE(fixture.Entities.HasComponent<LocalLookControl>(first))
-        << "two entities turn with one mouse";
-    EXPECT_TRUE(fixture.Entities.HasComponent<LocalLookControl>(second));
-    EXPECT_EQ(prediction.Predicted(), second);
-}
-
-// An authority drives a pawn and predicts nothing about it, so it asks for one
-// without a predictor and nothing dereferences a null.
-TEST(NetLocalControl, AMachineThatPredictsNothingStillTakesControl)
-{
-    OwnershipWorld fixture;
-    const EntityId pawn = fixture.Pawn();
-
-    NetSetLocalControl(fixture.Entities, pawn, nullptr);
-
-    EXPECT_EQ(LocalControlSubjectOf(fixture.Entities), pawn);
-    EXPECT_TRUE(fixture.Entities.HasComponent<LocalLookControl>(pawn));
-}
-
-TEST(NetLocalControl, ADestroyedSubjectReadsBackAsNone)
-{
-    OwnershipWorld fixture;
-    ClientPrediction prediction;
-    const EntityId pawn = fixture.Pawn();
-    NetSetLocalControl(fixture.Entities, pawn, &prediction);
-
-    fixture.Entities.DestroyEntity(pawn);
-
-    EXPECT_FALSE(LocalControlSubjectOf(fixture.Entities).IsValid());
-}
-
-//=============================================================================
-// Reconciling the two, on a client
-//=============================================================================
-
-// A client reconciles against what it is told it DRIVES, not what it is told it
-// owns. The two differ for a player whose body is theirs while they are at the
-// controls of something else, and asking ownership could not tell which of the
-// two to take up. Written directly here because that is what a snapshot does.
-TEST(NetLocalControlReconcile, AClientTakesUpWhatTheAuthoritySaysItDrives)
-{
-    OwnershipWorld fixture;
-    ClientPrediction prediction;
-    const EntityId mine = fixture.Pawn();
-    const EntityId theirs = fixture.Pawn();
-    fixture.Entities.AddComponent<NetDrivenBy>(mine, NetDrivenBy{ .Peer = 2 });
-    fixture.Entities.AddComponent<NetDrivenBy>(theirs, NetDrivenBy{ .Peer = 3 });
-
-    NetReconcileLocalControl(fixture.Entities, PeerId{ 2 }, prediction);
-
-    EXPECT_EQ(LocalControlSubjectOf(fixture.Entities), mine);
-    EXPECT_FALSE(fixture.Entities.HasComponent<LocalLookControl>(theirs));
-}
-
-// Owning it is not driving it. A client whose body is still theirs while
-// somebody else is at its controls must not take it up.
-TEST(NetLocalControlReconcile, OwningSomethingIsNotEnoughToDriveIt)
-{
-    OwnershipWorld fixture;
-    ClientPrediction prediction;
-    const EntityId pawn = fixture.Pawn();
-    NetSetOwner(fixture.Entities, pawn, PeerId{ 2 });
-
-    NetReconcileLocalControl(fixture.Entities, PeerId{ 2 }, prediction);
-
-    EXPECT_FALSE(LocalControlSubjectOf(fixture.Entities).IsValid());
-}
-
-TEST(NetLocalControlReconcile, AClientLetsGoWhenControlMovesAway)
-{
-    OwnershipWorld fixture;
-    ClientPrediction prediction;
-    const EntityId pawn = fixture.Pawn();
-    fixture.Entities.AddComponent<NetDrivenBy>(pawn, NetDrivenBy{ .Peer = 2 });
-    NetReconcileLocalControl(fixture.Entities, PeerId{ 2 }, prediction);
-    ASSERT_EQ(LocalControlSubjectOf(fixture.Entities), pawn);
-
-    // The authority handed it to somebody else, and the client is told by the
-    // replicated component changing under it.
-    fixture.Entities.TryGet<NetDrivenBy>(pawn)->Peer = 9;
-    NetReconcileLocalControl(fixture.Entities, PeerId{ 2 }, prediction);
-
-    EXPECT_FALSE(LocalControlSubjectOf(fixture.Entities).IsValid());
-    EXPECT_FALSE(fixture.Entities.HasComponent<LocalLookControl>(pawn));
-    EXPECT_FALSE(prediction.Predicted().IsValid());
-}
-
-TEST(NetLocalControlReconcile, AClientDrivingNothingDrivesNothing)
-{
-    OwnershipWorld fixture;
-    ClientPrediction prediction;
-    const EntityId theirs = fixture.Pawn();
-    fixture.Entities.AddComponent<NetDrivenBy>(theirs, NetDrivenBy{ .Peer = 8 });
-
-    NetReconcileLocalControl(fixture.Entities, PeerId{ 2 }, prediction);
-
-    EXPECT_FALSE(LocalControlSubjectOf(fixture.Entities).IsValid());
-}
-
-// NetPossess gives a player one subject at a time, so two entities naming the
-// same driver is a defect rather than a shape. Resolving it the same way every
-// time is what makes such a defect reportable instead of intermittent.
-TEST(NetLocalControlReconcile, TwoDrivenEntitiesResolveTheSameWayEveryTime)
-{
-    OwnershipWorld fixture;
-    ClientPrediction prediction;
-    const EntityId first = fixture.Pawn();
-    const EntityId second = fixture.Pawn();
-    fixture.Entities.AddComponent<NetDrivenBy>(first, NetDrivenBy{ .Peer = 2 });
-    fixture.Entities.AddComponent<NetDrivenBy>(second, NetDrivenBy{ .Peer = 2 });
-
-    NetReconcileLocalControl(fixture.Entities, PeerId{ 2 }, prediction);
-    const EntityId chosen = LocalControlSubjectOf(fixture.Entities);
-
-    for (int repeat = 0; repeat < 8; ++repeat)
-    {
-        NetReconcileLocalControl(fixture.Entities, PeerId{ 2 }, prediction);
-        EXPECT_EQ(LocalControlSubjectOf(fixture.Entities), chosen);
-    }
 }
 
 //=============================================================================

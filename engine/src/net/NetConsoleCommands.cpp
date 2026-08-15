@@ -517,9 +517,9 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
         .Name = "net_owners",
         .Owner = "engine",
         .Usage = "net_owners",
-        .Help = "Print what this machine drives and, on a host, what each peer "
-                "owns -- straight off the NetOwner column, which is the only "
-                "record of it.",
+        .Help = "On a host, print what each peer owns straight off the NetOwner "
+                "column. Use participant_status for control and participant "
+                "projection state.",
         .Callback = [&engine](ConsoleExecutionContext&,
                               std::span<const std::string>) {
             ConsoleResult result;

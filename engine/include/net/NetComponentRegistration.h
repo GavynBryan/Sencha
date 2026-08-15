@@ -1,6 +1,6 @@
 #pragma once
 
-#include <net/NetPlayer.h>
+#include <net/NetParticipantIdentity.h>
 #include <net/NetReplicationComponents.h>
 #include <net/NetSpawnRecipe.h>
 #include <world/ComponentRegistrar.h>
@@ -18,7 +18,5 @@ inline void RegisterNetComponents(ComponentRegistrar& registrar)
     registrar.Add<NetOwner>();
     registrar.Add<NetDrivenBy>();
     registrar.Add<NetSpawnRecipe>();
-    registrar.Add<NetPlayer>();
-    registrar.Add<NetPlayerControl>();
-    registrar.Add<NetLocalParticipant>();
+    registrar.Add<NetParticipantIdentity>();
 }

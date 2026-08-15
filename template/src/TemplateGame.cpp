@@ -46,12 +46,14 @@
 #include <input/InputRegistration.h>
 #include <movement/MovementRegistration.h>
 #include <net/NetReplicationComponents.h>
+#include <net/NetParticipantIdentity.h>
 #include <net/NetSpawnRecipe.h>
 #include <net/NetOwnership.h>
-#include <net/NetPlayer.h>
 #include <net/NetSession.h>
 #include <net/PawnCommandCapture.h>
 #include <net/PeerCommandRuntime.h>
+#include <participant/ParticipantControl.h>
+#include <participant/LocalControl.h>
 #include <movement/MovementTags.h>
 #include <physics/CollisionShapeCache.h>
 #include <physics/CharacterMoverPool.h>
@@ -392,24 +394,26 @@ struct PlayContentPartition
 // what keeps "waiting for a map to load" from being indistinguishable from
 // "spectating for good". Asking again is the game's call, and this is the
 // moment the answer changes.
-void RequestBodiesForWaitingPlayers(Engine& engine)
+void RequestBodiesForWaitingParticipants(Engine& engine)
 {
     // This machine's own person, if it has one and is the authority for it.
     // The engine decides both; the game only knows when there is somewhere to
     // put a body, which is now.
-    (void)engine.AdmitLocalPlayer();
+    (void)engine.AdmitLocalParticipant();
 
     World& world = engine.World().Entities();
-    if (!world.IsRegistered<NetPlayer>())
+    if (!world.IsRegistered<ParticipantControl>())
         return;
 
     std::vector<EntityId> waiting;
     const World& reading = world;
-    reading.ForEachComponent<NetPlayer>(
-        [&](EntityId player, const NetPlayer&) { waiting.push_back(player); });
+    reading.ForEachComponent<ParticipantControl>(
+        [&](EntityId participant, const ParticipantControl&) {
+            waiting.push_back(participant);
+        });
 
-    for (const EntityId player : waiting)
-        (void)NetRequestPlayerBody(world, player, engine.Participants());
+    for (const EntityId participant : waiting)
+        (void)engine.RequestParticipantBody(participant);
 }
 
 void PublishPlayContent(World& world, std::optional<StoragePartitionId> partition)
@@ -750,7 +754,8 @@ bool DecodeTurretRequest(std::span<const std::byte> body, NetEntityId& out)
 //=============================================================================
 bool AnswerTurretRequest(void* context, const NetMessageContext& message)
 {
-    Logger& log = *static_cast<Logger*>(context);
+    Engine& engine = *static_cast<Engine*>(context);
+    Logger& log = engine.Logging().GetLogger<TemplateGame>();
     World& world = message.Entities;
 
     NetEntityId named;
@@ -770,10 +775,12 @@ bool AnswerTurretRequest(void* context, const NetMessageContext& message)
         return false;
 
     // Who is asking, as a participant rather than as a peer number. Their body
-    // is on the player, which is the only place it is written down.
-    const EntityId player = NetPlayerForPeer(world, message.From);
-    const NetPlayerControl* control =
-        player.IsValid() ? world.TryGet<NetPlayerControl>(player) : nullptr;
+    // is on the participant, which is the only place it is written down.
+    const EntityId participant = NetParticipantForPeer(world, message.From);
+    const ParticipantControl* control =
+        participant.IsValid()
+            ? world.TryGet<ParticipantControl>(participant)
+            : nullptr;
     if (control == nullptr)
         return false;
 
@@ -785,7 +792,7 @@ bool AnswerTurretRequest(void* context, const NetMessageContext& message)
         // to ask for, and their input returns to the body that never stopped
         // being theirs.
         NetClearOwner(world, turret);
-        NetPossess(world, player, control->Body);
+        (void)engine.SetParticipantControlSubject(participant, control->Body);
         log.Info("TemplateGame: peer {} left the turret", message.From.Value);
         return true;
     }
@@ -803,7 +810,7 @@ bool AnswerTurretRequest(void* context, const NetMessageContext& message)
     // Their body keeps its owner through all of this. It is still theirs while
     // they are elsewhere, and only what they drive has moved.
     NetSetOwner(world, turret, message.From);
-    NetPossess(world, player, turret);
+    (void)engine.SetParticipantControlSubject(participant, turret);
 
     log.Info("TemplateGame: peer {} took the turret", message.From.Value);
     return true;
@@ -1087,7 +1094,7 @@ void TemplateGame::OnStart(GameStartupContext&)
     // reap on departure -- and these answer the two questions only the game
     // can. A peer loop and an orphan sweep used to live here instead.
     engine.Participants().ProvideBody =
-        [this](World& world, EntityId player) -> EntityId
+        [this](World& world, EntityId participant) -> EntityId
     {
         // Nowhere to put a body until content has loaded. Returning none is an
         // ordinary answer, and the engine does not ask again on its own -- the
@@ -1096,7 +1103,8 @@ void TemplateGame::OnStart(GameStartupContext&)
             return EntityId{};
 
         Logger& log = GetEngine().Logging().GetLogger<TemplateGame>();
-        const NetPlayer* who = world.TryGet<NetPlayer>(player);
+        const NetParticipantIdentity* who =
+            world.TryGet<NetParticipantIdentity>(participant);
         const std::uint32_t peer = who == nullptr ? 0u : who->Peer;
 
         // Offset laterally from the authored start so two players do not arrive
@@ -1148,7 +1156,7 @@ void TemplateGame::OnStart(GameStartupContext&)
     if (!engine.NetMessages().Bind(
             kTurretRequestKind, NetMessageDirection::ClientToAuthority,
             &AnswerTurretRequest,
-            &engine.Logging().GetLogger<TemplateGame>()))
+            &engine))
     {
         engine.Logging().GetLogger<TemplateGame>().Error(
             "TemplateGame: payload kind {} was already answered; turret "
@@ -1491,7 +1499,7 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
             // that finished after a join would otherwise place a second body
             // beside the one the authority is already simulating.
             PublishPlayContent(runtime.Entities(), zone.Partition);
-            RequestBodiesForWaitingPlayers(GetEngine());
+            RequestBodiesForWaitingParticipants(GetEngine());
             PlayZoneActive = true;
             return true;
         },
@@ -1727,7 +1735,7 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
     // A world's scene imports into the persistent partition, so that is where
     // a pawn belongs. Providing one is the session's decision.
     PublishPlayContent(engine.World().Entities(), PersistentStoragePartition);
-    RequestBodiesForWaitingPlayers(engine);
+    RequestBodiesForWaitingParticipants(engine);
 
     ZoneId focus = PendingZoneFocus;
     PendingZoneFocus = ZoneId{};

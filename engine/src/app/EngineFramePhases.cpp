@@ -16,9 +16,9 @@
 #include <net/NetConsoleCommands.h>
 #include <net/NetMessageRouter.h>
 #include <net/NetOwnership.h>
-#include <net/NetPlayer.h>
 #include <net/NetSession.h>
 #include <net/ReplicationSnapshot.h>
+#include <participant/LocalControl.h>
 #include <physics/PhysicsStepSystem.h>
 #include <prediction/PawnStateReplay.h>
 #include <world/transform/TransformPropagation.h>
@@ -209,9 +209,8 @@ void Engine::RegisterNetFramePhases()
                 // machine holding two representations of the same person.
                 if (session->Role() == NetSessionRole::Host)
                 {
-                    (void)NetAdmitParticipant(engine.World().Entities(),
-                                              event.Peer,
-                                              engine.Participants());
+                    (void)engine.ParticipantProjection.AdmitPeer(
+                        engine.World().Entities(), event.Peer);
                 }
             }
             else
@@ -222,21 +221,12 @@ void Engine::RegisterNetFramePhases()
                 // input describes ticks nobody will simulate.
                 engine.Replication().ForgetPeer(event.Peer);
                 engine.PeerCommands().ForgetPeer(event.Peer);
-                // The entities they were driving, handed back, and the input
-                // source their commands were landing in, closed. Nothing else
-                // closes one, and an entity left naming a peer that has gone
-                // reads its input from a source that will never fill again.
                 auto& entities = engine.World().Entities();
-                NetForgetOwnerPeer(entities, event.Peer);
-                // The participant itself: what it was driving let go of, its
-                // body reaped if the game's policy allows, and the player
-                // destroyed. What it drove is never destroyed -- somebody who
-                // disconnects at the controls of something does not take it
-                // with them.
-                const EntityId reaped = NetRetireParticipant(
-                    entities, NetPlayerForPeer(entities, event.Peer),
-                    engine.Participants());
-                if (reaped.IsValid())
+                // One owner releases the participant, driven subject, body,
+                // ownership projection, and peer input source together.
+                const SessionParticipantRetirement retired =
+                    engine.ParticipantProjection.RetirePeer(entities, event.Peer);
+                if (retired.Retirement.BodyReaped)
                 {
                     log.Info("net: removed the pawn for peer {} that left",
                              event.Peer.Value);
@@ -257,7 +247,7 @@ void Engine::RegisterNetFramePhases()
             // Cheap to ask every frame -- it walks the participants, of which
             // there is at most one marked local -- and it answers nothing at
             // all after the first time.
-            engine.RetireLocalPlayer();
+            (void)engine.RetireLocalParticipant();
 
             // Seeded from admission, then kept fresh by the snapshots below.
             // Only the seed comes from here: the keepalive's copy is refreshed
@@ -353,8 +343,8 @@ void Engine::RegisterNetFramePhases()
             // this the client goes on predicting a pawn nothing will ever
             // correct, and holds the look control that stops it being given a
             // fresh one.
-            NetSetLocalControl(engine.World().Entities(), EntityId{},
-                               &engine.Prediction());
+            (void)SetLocalControlSubject(engine.World().Entities(), EntityId{});
+            engine.Prediction().SetPredicted(EntityId{});
         }
         wasClient = isClient;
         wasAdmitted = isAdmitted;
@@ -557,8 +547,8 @@ void Engine::RegisterNetFramePhases()
             // no tick runs having predicted a body this client no longer drives.
             if (isAdmitted)
             {
-                NetReconcileLocalControl(world, session->LocalPeerId(),
-                                         engine.Prediction());
+                engine.ParticipantProjection.ReconcileClientControl(
+                    world, session->LocalPeerId(), engine.Prediction());
             }
 
             if (applied.RecipesMissing > 0)
@@ -691,9 +681,10 @@ void Engine::RegisterSimulationFramePhases()
         // residency processing in this one rather than the next.
         if (WorldPartitionRuntime* partition = engine.WorldStreaming())
         {
-            engine.ZoneStreaming().Update(runtimeWorld.Entities(), engine.TryNet(),
-                                          engine.Replication(), *partition,
-                                          &engine.NetTraffic());
+            engine.ZoneStreaming().Update(
+                runtimeWorld.Entities(),
+                LocalControlSubjectOf(runtimeWorld.Entities()), engine.TryNet(),
+                engine.Replication(), *partition, &engine.NetTraffic());
             if (AsyncZoneLoader* loader = engine.WorldStreamingLoader())
             {
                 partition->Update(

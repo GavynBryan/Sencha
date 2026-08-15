@@ -7,6 +7,7 @@
 #include <input/InputActionSource.h>
 #include <input/InputActionState.h>
 #include <net/NetOwnership.h>
+#include <net/NetPeerInputSource.h>
 #include <net/NetReplicationComponents.h>
 #include <net/PawnCommandCapture.h>
 

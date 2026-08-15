@@ -1,16 +1,19 @@
 #include <gtest/gtest.h>
 
+#include <app/SessionParticipantProjection.h>
 #include <controller/LookOrientation.h>
 #include <ecs/World.h>
 #include <input/InputActionSource.h>
 #include <net/ClientPrediction.h>
 #include <net/NetMessageRouter.h>
 #include <net/NetOwnership.h>
-#include <net/NetPlayer.h>
+#include <net/NetParticipantIdentity.h>
 #include <net/NetReplicationComponents.h>
 #include <net/NetSpawnRecipe.h>
 #include <net/ReplicationChangeStore.h>
 #include <net/ReplicationSnapshot.h>
+#include <participant/LocalControl.h>
+#include <participant/ParticipantControl.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/transform/TransformComponents.h>
@@ -119,6 +122,7 @@ namespace
         NetSnapshotAck ClientAck;
         ClientPrediction Prediction;
         NetSpawnRecipes Recipes;
+        SessionParticipantProjection Participants;
 
         std::vector<std::byte> Scratch;
         std::uint64_t Generation = 0;
@@ -189,7 +193,8 @@ namespace
             }
 
             // What the engine does in the pump, once snapshots have landed.
-            NetReconcileLocalControl(Client, PeerId{ kSelf }, Prediction);
+            Participants.ReconcileClientControl(Client, PeerId{ kSelf },
+                                                Prediction);
         }
 
         EntityId Mirror(EntityId authorityEntity) const
@@ -247,8 +252,11 @@ namespace
             // both -- which is exactly what leaves the gun standing when its
             // driver disconnects.
             NetSetOwner(message.Entities, target, message.From);
-            NetPossess(message.Entities,
-                       NetAdmitPlayer(message.Entities, message.From), target);
+            const EntityId participant = session.Participants
+                .AdmitPeer(message.Entities, message.From)
+                .Admission.Participant;
+            (void)session.Participants.SetControlSubject(
+                message.Entities, participant, target);
             ++self.Grants;
             return true;
         }
@@ -310,12 +318,12 @@ TEST(PossessionProof, AClientTakesATurretAndGivesItBack)
         session.Authority.TryGet<InputActionSourceRef>(turret);
     ASSERT_NE(steering, nullptr) << "whose keys drive it was never installed";
     const EntityId driver =
-        NetPlayerForPeer(session.Authority, PeerId{ Session::kSelf });
+        NetParticipantForPeer(session.Authority, PeerId{ Session::kSelf });
     ASSERT_TRUE(driver.IsValid()) << "granting it did not admit a participant";
     EXPECT_EQ(steering->Source,
-              session.Authority.TryGet<NetPlayerControl>(driver)->Source)
+              session.Authority.TryGet<ParticipantControl>(driver)->Source)
         << "the turret reads a source that is not this player's";
-    EXPECT_EQ(session.Authority.TryGet<NetPlayerControl>(driver)->ControlSubject,
+    EXPECT_EQ(session.Authority.TryGet<ParticipantControl>(driver)->ControlSubject,
               turret)
         << "the player was never recorded as driving what it took";
 
@@ -343,7 +351,8 @@ TEST(PossessionProof, AClientTakesATurretAndGivesItBack)
     // because the game installed both: handing the gun back to the authority
     // does not by itself tip its driver out of the seat.
     NetClearOwner(session.Authority, turret);
-    NetPossess(session.Authority, driver, EntityId{});
+    (void)session.Participants.SetControlSubject(session.Authority, driver,
+                                                EntityId{});
     session.Replicate();
 
     EXPECT_FALSE(NetOwnerOf(session.Authority, turret).IsValid());
@@ -362,23 +371,25 @@ TEST(PossessionProof, ATurretMovesBetweenPeersWithoutEitherLettingGoFirst)
 {
     Session session;
     const EntityId turret = SpawnTurret(session.Authority, 1.0f);
-    const EntityId first = NetAdmitPlayer(session.Authority, PeerId{ 2 });
-    const EntityId second = NetAdmitPlayer(session.Authority, PeerId{ 3 });
+    const EntityId first = session.Participants
+        .AdmitPeer(session.Authority, PeerId{ 2 }).Admission.Participant;
+    const EntityId second = session.Participants
+        .AdmitPeer(session.Authority, PeerId{ 3 }).Admission.Participant;
 
     NetSetOwner(session.Authority, turret, PeerId{ 2 });
-    NetPossess(session.Authority, first, turret);
+    (void)session.Participants.SetControlSubject(session.Authority, first, turret);
     ASSERT_EQ(session.Authority.TryGet<InputActionSourceRef>(turret)->Source,
-              session.Authority.TryGet<NetPlayerControl>(first)->Source);
+              session.Authority.TryGet<ParticipantControl>(first)->Source);
 
     NetSetOwner(session.Authority, turret, PeerId{ 3 });
-    NetPossess(session.Authority, second, turret);
+    (void)session.Participants.SetControlSubject(session.Authority, second, turret);
 
     EXPECT_EQ(NetOwnerOf(session.Authority, turret), PeerId{ 3 });
     EXPECT_EQ(session.Authority.TryGet<InputActionSourceRef>(turret)->Source,
-              session.Authority.TryGet<NetPlayerControl>(second)->Source)
+              session.Authority.TryGet<ParticipantControl>(second)->Source)
         << "one peer's aim turns a turret another peer's keys still move";
     EXPECT_FALSE(
-        session.Authority.TryGet<NetPlayerControl>(first)->ControlSubject.IsValid())
+        session.Authority.TryGet<ParticipantControl>(first)->ControlSubject.IsValid())
         << "the peer that lost the turret is still recorded as driving it";
 
     std::vector<EntityId> owned;
@@ -509,8 +520,9 @@ TEST(PossessionProof, AParticipantCostsAKnownNumberOfSnapshotBytes)
 
     Session with;
     (void)SpawnTurret(with.Authority, 1.0f);
-    const EntityId player =
-        NetAdmitPlayer(with.Authority, PeerId{ Session::kSelf });
+    const EntityId player = with.Participants
+        .AdmitPeer(with.Authority, PeerId{ Session::kSelf })
+        .Admission.Participant;
     ASSERT_TRUE(player.IsValid());
     with.Replicate();
 

@@ -590,23 +590,15 @@ std::string NetFormatEntity(const NetEntityReportSources& sources, NetEntityId i
 }
 
 //=============================================================================
-// Who drives what
+// Network ownership
 //=============================================================================
 
 std::string NetFormatOwners(const NetSession* session, const World& entities,
                             const ReplicationRuntime* replication)
 {
     std::string out;
-    // The one entity this machine drives, whichever machine it is. A client
-    // with none while its pawn is plainly moving is the shape of a possession
-    // that did not take.
-    const EntityId local = LocalControlSubjectOf(entities);
-    Section(out, "local");
-    out += local.IsValid() ? Line("entity %u:%u", local.Index, local.Generation)
-                           : std::string("nothing driven here");
-
     if (session == nullptr || session->Role() != NetSessionRole::Host)
-        return out;
+        return "network ownership requires a host session";
 
     std::vector<EntityId> owned;
     for (const PeerId peer : session->ConnectedPeers())

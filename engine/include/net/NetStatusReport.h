@@ -77,10 +77,10 @@ struct NetEntityReportSources
                                           NetEntityId id, PeerId focus);
 
 //-----------------------------------------------------------------------------
-// Who drives what
+// Network ownership
 //
-// Straight off the NetOwner column, which is the only record of it. Diagnosing
-// a possession that went wrong used to mean grepping one log line in a game.
+// Straight off the NetOwner column, which is the only record of it. Participant
+// and control state are reported by participant_status at their owning layer.
 //-----------------------------------------------------------------------------
 [[nodiscard]] std::string NetFormatOwners(const NetSession* session,
                                           const World& entities,

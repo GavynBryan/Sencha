@@ -109,7 +109,7 @@ namespace
             {
                 // Streaming only; each case publishes its own interest set
                 // below, which is the point of the surface.
-                Focus.Update(Rig.World().Entities(), &Host, Replication,
+                Focus.Update(Rig.World().Entities(), EntityId{}, &Host, Replication,
                              Rig.Partition(), nullptr);
                 Rig.StepFrame();
             }

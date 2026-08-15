@@ -50,7 +50,7 @@ struct TypeSchema<TurretMount>
 };
 
 // Where a driver's body waits while they are in the turret is not recorded
-// here. It is NetPlayerControl::Body on the player, which is where it belongs:
+// here. It is ParticipantControl::Body on the participant, where it belongs:
 // the body is a fact about the person, not about the gun, and every other
 // mechanism that takes somebody out of their body would otherwise need its own
 // copy of it.

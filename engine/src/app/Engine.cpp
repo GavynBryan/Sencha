@@ -1,4 +1,5 @@
 #include <app/Engine.h>
+#include <app/SessionParticipantDiagnostics.h>
 #include <app/EngineConsoleBuiltins.h>
 #include <net/NetConsoleCommands.h>
 #include <app/Game.h>
@@ -411,30 +412,63 @@ const AsyncTaskQueue& Engine::Tasks() const
     return *TaskQueueInstance;
 }
 
-EntityId Engine::AdmitLocalPlayer()
+SessionParticipantAdmission Engine::AdmitLocalParticipant()
 {
     if (!Configuration.Runtime.HasLocalPlayer || RuntimeWorldState == nullptr)
-        return EntityId{};
+        return {};
 
     // On a client the authority owns every participant, this machine's person
     // included, and it arrives replicated. Admitting one here as well is the
     // second provider that used to leave somebody driving a body the authority
     // knew nothing about while the one it did know about walked alongside.
     if (NetState != nullptr && NetState->Role() == NetSessionRole::Client)
-        return EntityId{};
+        return {};
 
-    return NetAdmitParticipant(RuntimeWorldState->Entities(), PeerId{},
-                               ParticipantState,
-                               NetParticipantPresence::Local);
+    return ParticipantProjection.AdmitLocal(RuntimeWorldState->Entities());
 }
 
-void Engine::RetireLocalPlayer()
+SessionParticipantAdmission Engine::AdmitSimulatedParticipant(
+    InputActionSourceId source)
 {
     if (RuntimeWorldState == nullptr)
-        return;
+        return {};
+    return ParticipantProjection.AdmitSimulated(RuntimeWorldState->Entities(),
+                                                source);
+}
+
+ParticipantBodyChange Engine::RequestParticipantBody(EntityId participant)
+{
+    if (RuntimeWorldState == nullptr)
+        return {};
+    return ParticipantProjection.RequestBody(RuntimeWorldState->Entities(),
+                                              participant);
+}
+
+ParticipantControlChange Engine::SetParticipantControlSubject(
+    EntityId participant, EntityId subject)
+{
+    if (RuntimeWorldState == nullptr)
+        return {};
+    return ParticipantProjection.SetControlSubject(
+        RuntimeWorldState->Entities(), participant, subject);
+}
+
+SessionParticipantRetirement Engine::RetireParticipant(EntityId participant)
+{
+    if (RuntimeWorldState == nullptr)
+        return {};
+    return ParticipantProjection.RetireParticipant(
+        RuntimeWorldState->Entities(), participant);
+}
+
+SessionParticipantRetirement Engine::RetireLocalParticipant()
+{
+    if (RuntimeWorldState == nullptr)
+        return {};
 
     auto& entities = RuntimeWorldState->Entities();
-    NetRetireParticipant(entities, NetLocalPlayerOf(entities), ParticipantState);
+    return ParticipantProjection.RetireParticipant(
+        entities, LocalParticipantOf(entities));
 }
 
 void Engine::ResetNetSessionState()
@@ -815,5 +849,21 @@ void Engine::RegisterEngineConsoleBuiltins(ConsoleService& console, DebugService
         registry, RenderCaptureStore, PendingProfileMode, RenderCaptureOutputPath);
 #endif
     EngineConsoleBuiltins::RegisterHostCommands(console, [this] { RequestExit(); });
+    registry.RegisterCommand({
+        .Name = "participant_status",
+        .Owner = "engine",
+        .Usage = "participant_status",
+        .Help = "Print participant, control, and session-projection state, then "
+                "validate their invariants on demand.",
+        .Callback = [this](ConsoleExecutionContext&,
+                           std::span<const std::string>) {
+            ConsoleResult result;
+            result.Info(RuntimeWorldState == nullptr
+                ? "no runtime world"
+                : FormatSessionParticipantStatus(
+                      RuntimeWorldState->Entities()));
+            return result;
+        },
+    });
     EngineConsoleBuiltins::ApplyConfigAssignments(console, Configuration.Console);
 }

@@ -69,6 +69,10 @@ file(GLOB_RECURSE NET_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/net/*.cpp
 )
 
+file(GLOB_RECURSE PARTICIPANT_TEST_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/participant/*.cpp
+)
+
 add_executable(core_tests ${CORE_TEST_SOURCES})
 target_link_libraries(core_tests PRIVATE sencha_engine GTest::gtest_main)
 # Committed content lives in the source tree, not beside the test binary.
@@ -213,6 +217,14 @@ if(NET_TEST_SOURCES)
     list(APPEND SENCHA_TEST_TARGETS net_tests)
 endif()
 
+if(PARTICIPANT_TEST_SOURCES)
+    add_executable(participant_tests ${PARTICIPANT_TEST_SOURCES})
+    target_link_libraries(participant_tests PRIVATE sencha_engine GTest::gtest_main)
+    target_compile_definitions(participant_tests PRIVATE
+        SENCHA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+    list(APPEND SENCHA_TEST_TARGETS participant_tests)
+endif()
+
 # Held to the same warning set as the code under test, applied over the
 # accumulated list so a test executable added above cannot miss it.
 foreach(sencha_test_target IN LISTS SENCHA_TEST_TARGETS)
@@ -232,6 +244,12 @@ gtest_discover_tests(math_geometry_tests
 
 if(TARGET net_tests)
     gtest_discover_tests(net_tests
+        DISCOVERY_TIMEOUT 30
+    )
+endif()
+
+if(TARGET participant_tests)
+    gtest_discover_tests(participant_tests
         DISCOVERY_TIMEOUT 30
     )
 endif()
