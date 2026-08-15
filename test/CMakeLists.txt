@@ -69,6 +69,10 @@ file(GLOB_RECURSE NET_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/net/*.cpp
 )
 
+file(GLOB_RECURSE PARTICIPANT_TEST_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/participant/*.cpp
+)
+
 add_executable(core_tests ${CORE_TEST_SOURCES})
 target_link_libraries(core_tests PRIVATE sencha_engine GTest::gtest_main)
 # Committed content lives in the source tree, not beside the test binary.
@@ -213,6 +217,14 @@ if(NET_TEST_SOURCES)
     list(APPEND SENCHA_TEST_TARGETS net_tests)
 endif()
 
+if(PARTICIPANT_TEST_SOURCES)
+    add_executable(participant_tests ${PARTICIPANT_TEST_SOURCES})
+    target_link_libraries(participant_tests PRIVATE sencha_engine GTest::gtest_main)
+    target_compile_definitions(participant_tests PRIVATE
+        SENCHA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+    list(APPEND SENCHA_TEST_TARGETS participant_tests)
+endif()
+
 # Held to the same warning set as the code under test, applied over the
 # accumulated list so a test executable added above cannot miss it.
 foreach(sencha_test_target IN LISTS SENCHA_TEST_TARGETS)
@@ -236,16 +248,56 @@ if(TARGET net_tests)
     )
 endif()
 
+if(TARGET participant_tests)
+    gtest_discover_tests(participant_tests
+        DISCOVERY_TIMEOUT 30
+    )
+endif()
+
 if(TARGET engine_feature_tests)
     gtest_discover_tests(engine_feature_tests
         DISCOVERY_TIMEOUT 30
     )
 endif()
 
+# The map the two-process hosting cases load is cooked output. A checkout
+# carries the authored level and not the cook of it, and no build step produces
+# one, so that coverage only ever ran where an earlier local cook happened to
+# have left a scene behind -- and reported success everywhere it had not.
+#
+# Cooked by the level-cook test binary rather than from inside runtime_tests:
+# the cook lives in the editor authoring library, and a runtime test binary must
+# not link that.
+set(SENCHA_HOST_MAP_FIXTURE "")
+if(TARGET runtime_tests AND TARGET app AND TARGET template_game
+   AND TARGET level_cook_tests)
+    set(SENCHA_HOST_MAP_FIXTURE TemplateHostMap)
+    add_test(NAME CookTemplateHostMap
+        COMMAND level_cook_tests --gtest_filter=CookLevel.Generate)
+    set_tests_properties(CookTemplateHostMap PROPERTIES
+        FIXTURES_SETUP ${SENCHA_HOST_MAP_FIXTURE}
+        ENVIRONMENT
+            "SENCHA_COOK_LEVEL=${CMAKE_SOURCE_DIR}/template/assets/levels/room_2.level.json;SENCHA_COOK_ROOT=${CMAKE_SOURCE_DIR}/template/assets")
+    # Tells the cases apart: with the fixture wired a missing scene is a
+    # failure, and without it they have no way to get one and skip instead.
+    target_compile_definitions(runtime_tests PRIVATE SENCHA_TEST_HOST_MAP_COOKED=1)
+endif()
+
+# The fixture requirement lands on every runtime case rather than only the
+# hosting ones: gtest_discover_tests names tests at build time, so a property
+# set here cannot pick out a suite. The cost is that a cook failure leaves the
+# rest of this target unrun -- loud, and pointing at the right thing.
 if(TARGET runtime_tests)
-    gtest_discover_tests(runtime_tests
-        DISCOVERY_TIMEOUT 30
-    )
+    if(SENCHA_HOST_MAP_FIXTURE)
+        gtest_discover_tests(runtime_tests
+            DISCOVERY_TIMEOUT 30
+            PROPERTIES FIXTURES_REQUIRED ${SENCHA_HOST_MAP_FIXTURE}
+        )
+    else()
+        gtest_discover_tests(runtime_tests
+            DISCOVERY_TIMEOUT 30
+        )
+    endif()
 endif()
 
 if(TARGET ecs_tests)

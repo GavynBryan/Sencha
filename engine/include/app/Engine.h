@@ -1,6 +1,7 @@
 #pragma once
 
 #include <app/DefaultRenderPipeline.h>
+#include <app/SessionParticipantProjection.h>
 #include <net/NetMessageRouter.h>
 #include <net/NetSession.h>
 #include <app/EngineSchedule.h>
@@ -163,6 +164,47 @@ public:
     {
         return SpawnRecipeState;
     }
+
+    // What a participant is made of, and where its body comes from. Registered
+    // by the game for the same reason as the recipes: it describes this game's
+    // idea of a player rather than anything about a connection, so it outlives
+    // every session the process runs.
+    [[nodiscard]] ParticipantPolicies& Participants()
+    {
+        return ParticipantProjection.Policies();
+    }
+    [[nodiscard]] const ParticipantPolicies& Participants() const
+    {
+        return ParticipantProjection.Policies();
+    }
+
+    // Admits this process's own player through the same lifecycle a peer goes
+    // through, and returns it. Idempotent: asking twice is the same person.
+    //
+    // Called by the game when its content is ready, because the engine cannot
+    // observe a map load. Everything else about it is the engine's: a process
+    // with no local player and a client both answer with nothing, the latter
+    // because the authority owns every participant in a session and this
+    // machine's arrives replicated like the rest.
+    SessionParticipantAdmission AdmitLocalParticipant();
+
+    // Adds a peerless simulated participant, such as a bot. Unlike the local
+    // participant it does not take presentation control.
+    SessionParticipantAdmission AdmitSimulatedParticipant(
+        InputActionSourceId source);
+
+    ParticipantBodyChange RequestParticipantBody(EntityId participant);
+    ParticipantControlChange SetParticipantControlSubject(
+        EntityId participant, EntityId subject);
+
+    // Gives up this process's own player, if it has one. What it was driving is
+    // let go of and its body reaped through the ordinary policy.
+    //
+    // Joining a session is the caller: a player provided locally before the
+    // join is a second body standing where the authority's copy of this person
+    // is about to appear.
+    SessionParticipantRetirement RetireParticipant(EntityId participant);
+    SessionParticipantRetirement RetireLocalParticipant();
 
     // Where a game's own payload kinds are answered. Registered by the game and
     // outlives any one session, because it describes what the game says rather
@@ -366,6 +408,7 @@ private:
     ClientPrediction PredictionState;
     ReplicationInterpolation InterpolationState;
     NetSpawnRecipes SpawnRecipeState;
+    SessionParticipantProjection ParticipantProjection;
     std::unique_ptr<RuntimeWorld> RuntimeWorldState;
     RuntimeFrameLoop RuntimeLoop;
     ConsoleStartupScript StartupScript;

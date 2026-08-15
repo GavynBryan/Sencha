@@ -9,6 +9,7 @@
 #include <movement/MovementRegistration.h>
 #include <net/NetComponentRegistration.h>
 #include <net/ReplicationLayout.h>
+#include <participant/ParticipantComponentRegistration.h>
 #include <physics/PhysicsRegistration.h>
 #include <render/RenderComponentRegistration.h>
 #include <world/ComponentRegistrar.h>
@@ -50,6 +51,7 @@ void RegisterEngineComponents(ComponentRegistrar& registrar)
 
     RegisterControllerComponents(registrar);
     RegisterInputComponents(registrar);
+    RegisterParticipantComponents(registrar);
     RegisterNetComponents(registrar);
 }
 

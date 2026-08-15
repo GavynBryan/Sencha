@@ -6,6 +6,7 @@
 #include <net/ClientPrediction.h>
 #include <app/EngineSchedule.h>
 #include <net/NetOwnership.h>
+#include <net/NetPeerInputSource.h>
 #include <net/PeerCommandRuntime.h>
 #include <net/NetReplicationComponents.h>
 #include <world/ComponentRegistrar.h>
@@ -51,7 +52,10 @@ namespace
     }
 }
 
-TEST(NetOwnership, GrantingInstallsEverythingThatFollowsFromIt)
+// Ownership says who a thing belongs to. Participant control says who is at
+// its controls, and keeping them apart is what leaves a vehicle standing when
+// the peer driving it disconnects.
+TEST(NetOwnership, GrantingRecordsWhoItBelongsToAndNotWhoDrivesIt)
 {
     OwnershipWorld fixture;
     const EntityId pawn = fixture.Pawn();
@@ -61,13 +65,12 @@ TEST(NetOwnership, GrantingInstallsEverythingThatFollowsFromIt)
     const NetOwner* owner = fixture.Entities.TryGet<NetOwner>(pawn);
     ASSERT_NE(owner, nullptr);
     EXPECT_EQ(owner->Peer, 3u);
-
-    const InputActionSourceRef* source =
-        fixture.Entities.TryGet<InputActionSourceRef>(pawn);
-    ASSERT_NE(source, nullptr) << "whose aim turns it was set and whose keys move "
-                                 "it was not";
-    EXPECT_EQ(source->Source, 3u);
     EXPECT_EQ(NetOwnerOf(fixture.Entities, pawn), PeerId{ 3 });
+
+    EXPECT_EQ(fixture.Entities.TryGet<InputActionSourceRef>(pawn), nullptr)
+        << "granting ownership put somebody at the controls as well";
+    EXPECT_FALSE(fixture.Entities.HasComponent<NetDrivenBy>(pawn))
+        << "a thing somebody owns was reported as a thing somebody drives";
 }
 
 TEST(NetOwnership, GrantingTwiceChangesNothing)
@@ -78,12 +81,11 @@ TEST(NetOwnership, GrantingTwiceChangesNothing)
     NetSetOwner(fixture.Entities, pawn, PeerId{ 2 });
 
     EXPECT_EQ(NetOwnerOf(fixture.Entities, pawn), PeerId{ 2 });
-    EXPECT_EQ(fixture.Entities.TryGet<InputActionSourceRef>(pawn)->Source, 2u);
+    EXPECT_EQ(OwnedBy(fixture.Entities, PeerId{ 2 }).size(), 1u);
 }
 
-// One call, because two would leave a frame in which the old owner's keys and
-// the new owner's aim both reach the same entity.
-TEST(NetOwnership, TransferMovesEveryDerivedFactAtOnce)
+// One call, because two would leave a frame in which two peers both hold it.
+TEST(NetOwnership, TransferMovesOwnershipAtOnce)
 {
     OwnershipWorld fixture;
     const EntityId pawn = fixture.Pawn();
@@ -92,9 +94,8 @@ TEST(NetOwnership, TransferMovesEveryDerivedFactAtOnce)
     NetSetOwner(fixture.Entities, pawn, PeerId{ 2 });
 
     EXPECT_EQ(NetOwnerOf(fixture.Entities, pawn), PeerId{ 2 });
-    EXPECT_EQ(fixture.Entities.TryGet<InputActionSourceRef>(pawn)->Source, 2u)
-        << "the new owner's aim turns a pawn the old owner's keys still move";
-    EXPECT_TRUE(OwnedBy(fixture.Entities, PeerId{ 1 }).empty());
+    EXPECT_TRUE(OwnedBy(fixture.Entities, PeerId{ 1 }).empty())
+        << "the old owner still holds what the new one was given";
     EXPECT_EQ(OwnedBy(fixture.Entities, PeerId{ 2 }).size(), 1u);
 }
 
@@ -110,8 +111,6 @@ TEST(NetOwnership, RelinquishingHandsItBackAsAValue)
     ASSERT_NE(owner, nullptr)
         << "the component went, and a snapshot cannot say a component is gone";
     EXPECT_EQ(owner->Peer, kNetAuthorityPeer);
-    EXPECT_EQ(fixture.Entities.TryGet<InputActionSourceRef>(pawn), nullptr)
-        << "an entity nobody owns still reads somebody's keys";
     EXPECT_FALSE(NetOwnerOf(fixture.Entities, pawn).IsValid());
 }
 
@@ -130,170 +129,67 @@ TEST(NetOwnership, APeerLeavingReleasesEverythingItDrove)
     EXPECT_TRUE(OwnedBy(fixture.Entities, PeerId{ 5 }).empty());
     EXPECT_EQ(OwnedBy(fixture.Entities, PeerId{ 6 }).size(), 1u)
         << "one peer leaving disowned another peer's entity";
-    EXPECT_EQ(fixture.Entities.TryGet<InputActionSourceRef>(first), nullptr);
-    EXPECT_EQ(fixture.Entities.TryGet<InputActionSourceRef>(second), nullptr);
 }
 
 // Nothing else closes one, so every peer that ever connects would otherwise
 // leave an action state behind for the life of the process.
-TEST(NetOwnership, APeerLeavingClosesTheSourceItsCommandsLandedIn)
+TEST(NetPeerInputSource, APeerLeavingClosesTheSourceItsCommandsLandedIn)
 {
     OwnershipWorld fixture;
     InputActionSourceTable& sources =
         fixture.Entities.AddResource<InputActionSourceTable>();
-    (void)sources.Open(7, 4);
-    ASSERT_NE(sources.Find(7), nullptr);
 
-    NetForgetOwnerPeer(fixture.Entities, PeerId{ 7 });
+    // Opened under the id the peer's commands actually land in, which is
+    // allocated rather than assumed to be the peer's own number.
+    const InputActionSourceId source =
+        NetSourceForPeer(fixture.Entities, PeerId{ 7 });
+    (void)sources.Open(source, 4);
+    ASSERT_NE(sources.Find(source), nullptr);
 
-    EXPECT_EQ(sources.Find(7), nullptr) << "the peer left and its input slot did not";
+    NetReleasePeerSource(fixture.Entities, PeerId{ 7 });
+
+    EXPECT_EQ(sources.Find(source), nullptr)
+        << "the peer left and its input slot did not";
 }
 
-//=============================================================================
-// Local control
-//=============================================================================
-
-TEST(NetLocalControl, TakingControlInstallsThePerMachineFacts)
+// A source id is not a peer id. They were the same number while peers were the
+// only thing producing input, which left nothing for a source with no peer
+// behind it -- a bot, a script, a cutscene driving an actor.
+TEST(NetPeerInputSource, APeersSourceIsAllocatedRatherThanItsOwnNumber)
 {
     OwnershipWorld fixture;
-    ClientPrediction prediction;
-    const EntityId pawn = fixture.Pawn();
+    InputActionSourceIds& ids =
+        fixture.Entities.AddResource<InputActionSourceIds>();
 
-    NetSetLocalControl(fixture.Entities, pawn, &prediction);
+    // Something with no peer behind it takes an id first, so the peer's cannot
+    // silently coincide with its own number.
+    const InputActionSourceId bot = ids.Allocate();
 
-    EXPECT_EQ(LocalControlSubjectOf(fixture.Entities), pawn);
-    EXPECT_TRUE(fixture.Entities.HasComponent<LocalLookControl>(pawn));
-    EXPECT_EQ(prediction.Predicted(), pawn);
+    const InputActionSourceId peerSource =
+        NetSourceForPeer(fixture.Entities, PeerId{ 1 });
+
+    EXPECT_NE(peerSource, bot) << "a bot and a peer were handed the same source";
+    EXPECT_NE(peerSource, kLocalInputActionSource)
+        << "a remote peer's commands land in this machine's own action state";
 }
 
-// The falling edge, which nothing did before: a client that stopped owning its
-// pawn went on predicting it and went on turning it with the player's mouse.
-TEST(NetLocalControl, RelinquishingTakesThemAllBackOff)
+// A session hands peer numbers out in order and a new session starts over, so a
+// number outlives the peer that held it.
+TEST(NetPeerInputSource, APeerNumberUsedAgainDoesNotInheritTheOldSource)
 {
     OwnershipWorld fixture;
-    ClientPrediction prediction;
-    const EntityId pawn = fixture.Pawn();
-    NetSetLocalControl(fixture.Entities, pawn, &prediction);
+    const InputActionSourceId first =
+        NetSourceForPeer(fixture.Entities, PeerId{ 2 });
+    ASSERT_NE(first, kLocalInputActionSource);
 
-    NetSetLocalControl(fixture.Entities, EntityId{}, &prediction);
+    NetReleasePeerSource(fixture.Entities, PeerId{ 2 });
+    EXPECT_EQ(NetFindSourceForPeer(fixture.Entities, PeerId{ 2 }),
+              kLocalInputActionSource)
+        << "the departed peer's mapping outlived it";
 
-    EXPECT_FALSE(LocalControlSubjectOf(fixture.Entities).IsValid());
-    EXPECT_FALSE(fixture.Entities.HasComponent<LocalLookControl>(pawn));
-    EXPECT_FALSE(prediction.Predicted().IsValid())
-        << "the client still predicts a pawn it no longer drives";
-}
-
-TEST(NetLocalControl, MovingControlLeavesNothingOnTheOldEntity)
-{
-    OwnershipWorld fixture;
-    ClientPrediction prediction;
-    const EntityId first = fixture.Pawn();
-    const EntityId second = fixture.Pawn();
-
-    NetSetLocalControl(fixture.Entities, first, &prediction);
-    NetSetLocalControl(fixture.Entities, second, &prediction);
-
-    EXPECT_FALSE(fixture.Entities.HasComponent<LocalLookControl>(first))
-        << "two entities turn with one mouse";
-    EXPECT_TRUE(fixture.Entities.HasComponent<LocalLookControl>(second));
-    EXPECT_EQ(prediction.Predicted(), second);
-}
-
-// An authority drives a pawn and predicts nothing about it, so it asks for one
-// without a predictor and nothing dereferences a null.
-TEST(NetLocalControl, AMachineThatPredictsNothingStillTakesControl)
-{
-    OwnershipWorld fixture;
-    const EntityId pawn = fixture.Pawn();
-
-    NetSetLocalControl(fixture.Entities, pawn, nullptr);
-
-    EXPECT_EQ(LocalControlSubjectOf(fixture.Entities), pawn);
-    EXPECT_TRUE(fixture.Entities.HasComponent<LocalLookControl>(pawn));
-}
-
-TEST(NetLocalControl, ADestroyedSubjectReadsBackAsNone)
-{
-    OwnershipWorld fixture;
-    ClientPrediction prediction;
-    const EntityId pawn = fixture.Pawn();
-    NetSetLocalControl(fixture.Entities, pawn, &prediction);
-
-    fixture.Entities.DestroyEntity(pawn);
-
-    EXPECT_FALSE(LocalControlSubjectOf(fixture.Entities).IsValid());
-}
-
-//=============================================================================
-// Reconciling the two, on a client
-//=============================================================================
-
-TEST(NetLocalControlReconcile, AClientTakesUpThePawnTheAuthorityGaveIt)
-{
-    OwnershipWorld fixture;
-    ClientPrediction prediction;
-    const EntityId mine = fixture.Pawn();
-    const EntityId theirs = fixture.Pawn();
-    NetSetOwner(fixture.Entities, mine, PeerId{ 2 });
-    NetSetOwner(fixture.Entities, theirs, PeerId{ 3 });
-
-    NetReconcileLocalControl(fixture.Entities, PeerId{ 2 }, prediction);
-
-    EXPECT_EQ(LocalControlSubjectOf(fixture.Entities), mine);
-    EXPECT_FALSE(fixture.Entities.HasComponent<LocalLookControl>(theirs));
-}
-
-TEST(NetLocalControlReconcile, AClientLetsGoWhenOwnershipMovesAway)
-{
-    OwnershipWorld fixture;
-    ClientPrediction prediction;
-    const EntityId pawn = fixture.Pawn();
-    NetSetOwner(fixture.Entities, pawn, PeerId{ 2 });
-    NetReconcileLocalControl(fixture.Entities, PeerId{ 2 }, prediction);
-    ASSERT_EQ(LocalControlSubjectOf(fixture.Entities), pawn);
-
-    // The authority gave it to somebody else, and the client is told by the
-    // replicated component changing under it.
-    NetSetOwner(fixture.Entities, pawn, PeerId{ 9 });
-    NetReconcileLocalControl(fixture.Entities, PeerId{ 2 }, prediction);
-
-    EXPECT_FALSE(LocalControlSubjectOf(fixture.Entities).IsValid());
-    EXPECT_FALSE(fixture.Entities.HasComponent<LocalLookControl>(pawn));
-    EXPECT_FALSE(prediction.Predicted().IsValid());
-}
-
-TEST(NetLocalControlReconcile, AClientOwningNothingDrivesNothing)
-{
-    OwnershipWorld fixture;
-    ClientPrediction prediction;
-    const EntityId theirs = fixture.Pawn();
-    NetSetOwner(fixture.Entities, theirs, PeerId{ 8 });
-
-    NetReconcileLocalControl(fixture.Entities, PeerId{ 2 }, prediction);
-
-    EXPECT_FALSE(LocalControlSubjectOf(fixture.Entities).IsValid());
-}
-
-// Owning two is not a supported shape. Resolving it the same way every time is
-// what makes that a reportable bug rather than an intermittent one -- the scan
-// this replaced walked an unordered_map and its winner changed between frames.
-TEST(NetLocalControlReconcile, TwoOwnedEntitiesResolveTheSameWayEveryTime)
-{
-    OwnershipWorld fixture;
-    ClientPrediction prediction;
-    const EntityId first = fixture.Pawn();
-    const EntityId second = fixture.Pawn();
-    NetSetOwner(fixture.Entities, first, PeerId{ 2 });
-    NetSetOwner(fixture.Entities, second, PeerId{ 2 });
-
-    NetReconcileLocalControl(fixture.Entities, PeerId{ 2 }, prediction);
-    const EntityId chosen = LocalControlSubjectOf(fixture.Entities);
-
-    for (int repeat = 0; repeat < 8; ++repeat)
-    {
-        NetReconcileLocalControl(fixture.Entities, PeerId{ 2 }, prediction);
-        EXPECT_EQ(LocalControlSubjectOf(fixture.Entities), chosen);
-    }
+    (void)NetSourceForPeer(fixture.Entities, PeerId{ 2 });
+    EXPECT_NE(NetFindSourceForPeer(fixture.Entities, PeerId{ 2 }), first)
+        << "a new holder of the number inherited the old one's input slot";
 }
 
 //=============================================================================

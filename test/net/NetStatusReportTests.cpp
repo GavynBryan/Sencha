@@ -287,7 +287,7 @@ TEST(NetEntityReport, APeerThatHasConfirmedNothingIsDistinguishedFromOneNeverSen
     EXPECT_TRUE(Mentions(text, "sencha.net_owner:peer")) << text;
 }
 
-TEST(NetOwnersReport, AHostReportsWhatEachPeerDrives)
+TEST(NetOwnersReport, AHostReportsWhatEachPeerOwns)
 {
     Published published;
     const std::string text =
@@ -312,17 +312,6 @@ TEST(NetOwnersReport, AnOwnedEntityReplicationCannotNameIsCalledOut)
         NetFormatOwners(&published.Link.Host, published.Entities,
                         &published.Replication);
     EXPECT_TRUE(Mentions(text, "NOT REPLICATED")) << text;
-}
-
-TEST(NetOwnersReport, WhatThisMachineDrivesIsReportedWithOrWithoutASession)
-{
-    Published published;
-    EXPECT_TRUE(Mentions(NetFormatOwners(nullptr, published.Entities, nullptr),
-                         "nothing driven here"));
-
-    NetSetLocalControl(published.Entities, published.Subject, nullptr);
-    EXPECT_TRUE(Mentions(NetFormatOwners(nullptr, published.Entities, nullptr),
-                         "entity "));
 }
 
 // The counters that were computed on every publish and every apply and then

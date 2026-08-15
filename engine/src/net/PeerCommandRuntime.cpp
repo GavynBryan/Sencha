@@ -6,6 +6,8 @@
 #include <ecs/World.h>
 #include <input/InputActionSource.h>
 #include <input/InputActionState.h>
+#include <net/NetOwnership.h>
+#include <net/NetPeerInputSource.h>
 #include <net/NetReplicationComponents.h>
 #include <net/PawnCommandCapture.h>
 
@@ -58,9 +60,11 @@ void PeerCommandRuntime::Feed(World& world, std::uint64_t tick)
             continue;
         Consumed.emplace(peer, record);
 
-        // A peer's id is its input source id. Peer ids start at one and source
-        // zero is this machine's own, so the two spaces cannot collide.
-        InputActionState& state = sources.Open(peer.Value, actionCount);
+        // Asked rather than derived from the peer number: a source is allocated
+        // for a peer on admission and is not its id, so that ids remain
+        // available to sources with no peer behind them.
+        InputActionState& state =
+            sources.Open(NetSourceForPeer(world, peer), actionCount);
         const std::span<InputActionValue> storage = state.BeginTick(tick);
 
         // Every slot is written, not just the ones the record filled: the ring

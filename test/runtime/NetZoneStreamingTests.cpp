@@ -92,7 +92,8 @@ namespace
         {
             for (int frame = 0; frame < frames; ++frame)
             {
-                Streaming.Update(Rig.World().Entities(), session, Replication,
+                Streaming.Update(Rig.World().Entities(), LocalSubject, session,
+                                 Replication,
                                  Rig.Partition(), nullptr);
                 Rig.StepFrame();
             }
@@ -127,6 +128,7 @@ namespace
         Harness Rig{ 0, kZoneCount };
         NetZoneStreaming Streaming;
         ReplicationRuntime Replication;
+        EntityId LocalSubject;
         LoopbackNetwork Network;
         LoopbackTransport HostTransport{ Network };
         LoopbackTransport ClientTransport{ Network };
@@ -145,7 +147,7 @@ TEST_F(NetZoneStreamingTest, WithNoSessionTheWorldFollowsTheLocalPlayer)
     Transform3f placed;
     placed.Position = InZone(3);
     world.AddComponent<WorldTransform>(pawn, WorldTransform{ placed });
-    NetSetLocalControl(world, pawn, nullptr);
+    LocalSubject = pawn;
 
     Step(nullptr);
 

@@ -47,6 +47,20 @@ namespace
 {
     constexpr std::chrono::seconds kDeadline{ 45 };
 
+    // The map these cases host. Deliberately a level the checkout carries, so
+    // the cook that produces the runtime scene has an authored source: a level
+    // cooked once on one machine and never committed reads as passing coverage
+    // everywhere it was never cooked.
+    constexpr std::string_view kHostMap = "levels/room_2.level";
+
+    // Where the cook lands it. Derived from the map name rather than written
+    // out again, so the two cannot drift apart.
+    [[nodiscard]] std::filesystem::path CookedMapScene()
+    {
+        return std::filesystem::path(SENCHA_REPO_ROOT) / "template/assets/.cooked"
+            / (std::string(kHostMap) + ".cooked.json");
+    }
+
     std::filesystem::path TempLogPath(std::string_view suffix)
     {
         static int counter = 0;
@@ -253,11 +267,48 @@ namespace
         port = match[1].str();
         return true;
     }
+
+    // Stops a process the way an operator would and expects it to go quietly.
+    // Every case here ends with two or three of these, and a process that
+    // refuses to stop and one that stops badly are different faults -- so both
+    // are reported, and both name which process they mean.
+    void ExpectCleanStop(AppProcess& process, std::string_view what)
+    {
+        int exitCode = -1;
+        EXPECT_TRUE(process.StopAndWait(&exitCode))
+            << what << " did not stop when asked";
+        EXPECT_EQ(exitCode, 0) << what << " did not exit cleanly";
+    }
 }
 
-TEST(HostClientProcess, ADedicatedHostServesAJoiningClient)
+// Every case here hosts a map, and a map is cooked output. The cook runs as the
+// CookTemplateHostMap ctest fixture rather than from inside this binary,
+// because it lives in the editor authoring library and a runtime test must not
+// link that.
+//
+// Reported here as well as required there so a missing scene is one clear
+// failure instead of five forty-five-second timeouts with nothing naming the
+// cause.
+class HostClientProcess : public testing::Test
 {
-    AppProcess host({ "+map", "levels/test", "+host", "0" }, TempLogPath("host"));
+protected:
+    void SetUp() override
+    {
+        const std::filesystem::path scene = CookedMapScene();
+        if (std::filesystem::exists(scene))
+            return;
+#if defined(SENCHA_TEST_HOST_MAP_COOKED)
+        FAIL() << "the CookTemplateHostMap fixture did not produce " << scene;
+#else
+        GTEST_SKIP() << "this configuration builds no level cook, so the map "
+                        "these cases host cannot be produced";
+#endif
+    }
+};
+
+TEST_F(HostClientProcess, ADedicatedHostServesAJoiningClient)
+{
+    AppProcess host({ "+map", std::string(kHostMap), "+host", "0" }, TempLogPath("host"));
     ASSERT_TRUE(host.Started());
 
     std::string hostLog;
@@ -284,15 +335,11 @@ TEST(HostClientProcess, ADedicatedHostServesAJoiningClient)
         << "a dedicated host must not provision a player of its own:\n" << hostLog;
 
     // Leaving is part of the contract: the host notices and releases the pawn.
-    int clientExit = -1;
-    EXPECT_TRUE(client.StopAndWait(&clientExit));
-    EXPECT_EQ(clientExit, 0);
+    ExpectCleanStop(client, "the client");
     EXPECT_TRUE(host.WaitForLog("removed the pawn for peer", &hostLog))
         << "host never released the departed peer's pawn:\n" << hostLog;
 
-    int hostExit = -1;
-    EXPECT_TRUE(host.StopAndWait(&hostExit)) << "host did not stop when asked";
-    EXPECT_EQ(hostExit, 0);
+    ExpectCleanStop(host, "the host");
 }
 
 // The possession path, end to end, across two real processes.
@@ -308,9 +355,9 @@ TEST(HostClientProcess, ADedicatedHostServesAJoiningClient)
 // twice -- which is where the last serious defect in this area was hiding: a
 // reliable message from a client was being answered with a handshake challenge
 // and never delivered, and nothing but a real client sending one could see it.
-TEST(HostClientProcess, AClientTakesATurretAndGivesItBack)
+TEST_F(HostClientProcess, AClientTakesATurretAndGivesItBack)
 {
-    AppProcess host({ "+map", "levels/test", "+host", "0" }, TempLogPath("host"));
+    AppProcess host({ "+map", std::string(kHostMap), "+host", "0" }, TempLogPath("host"));
     ASSERT_TRUE(host.Started());
 
     std::string hostLog;
@@ -339,10 +386,13 @@ TEST(HostClientProcess, AClientTakesATurretAndGivesItBack)
         << hostLog;
 
     // What the authority records, read the way an operator would read it. The
-    // peer owns the turret and no longer owns the pawn it walked in on: one
-    // peer drives one thing.
+    // peer owns the turret AND the body it walked in on: owning and driving are
+    // separate facts, so climbing into a gun does not make somebody stop owning
+    // themselves. One thing is driven; two are owned.
     ASSERT_TRUE(host.Send("net_owners"));
-    EXPECT_TRUE(host.WaitForLog("owns 1", &hostLog)) << hostLog;
+    EXPECT_TRUE(host.WaitForLog("owns 2", &hostLog))
+        << "taking a turret took the driver's own body away from them:\n"
+        << hostLog;
     EXPECT_EQ(hostLog.find("NOT REPLICATED"), std::string::npos)
         << "the peer owns something no peer can be told about:\n" << hostLog;
 
@@ -352,13 +402,8 @@ TEST(HostClientProcess, AClientTakesATurretAndGivesItBack)
     EXPECT_TRUE(host.WaitForLog("left the turret", &hostLog))
         << "the client could not give the turret back:\n" << hostLog;
 
-    int clientExit = -1;
-    EXPECT_TRUE(client.StopAndWait(&clientExit));
-    EXPECT_EQ(clientExit, 0);
-
-    int hostExit = -1;
-    EXPECT_TRUE(host.StopAndWait(&hostExit));
-    EXPECT_EQ(hostExit, 0);
+    ExpectCleanStop(client, "the client");
+    ExpectCleanStop(host, "the host");
 }
 
 // Two players at once, as three real processes.
@@ -370,9 +415,9 @@ TEST(HostClientProcess, AClientTakesATurretAndGivesItBack)
 //
 // So: two clients join, each is served its own pawn, one takes the turret and
 // the other is refused it, and one leaves while the other keeps playing.
-TEST(HostClientProcess, ADedicatedHostServesTwoClientsAtOnce)
+TEST_F(HostClientProcess, ADedicatedHostServesTwoClientsAtOnce)
 {
-    AppProcess host({ "+map", "levels/test", "+host", "0" }, TempLogPath("host2"));
+    AppProcess host({ "+map", std::string(kHostMap), "+host", "0" }, TempLogPath("host2"));
     ASSERT_TRUE(host.Started());
 
     std::string hostLog;
@@ -420,9 +465,7 @@ TEST(HostClientProcess, ADedicatedHostServesTwoClientsAtOnce)
         << "two peers were given the same turret:\n" << hostLog;
 
     // One leaves; the other keeps playing and the session does not empty.
-    int secondExit = -1;
-    EXPECT_TRUE(second.StopAndWait(&secondExit));
-    EXPECT_EQ(secondExit, 0);
+    ExpectCleanStop(second, "the second client");
     EXPECT_TRUE(host.WaitForLog("removed the pawn for peer", &hostLog))
         << "the departed peer's pawn was left behind:\n" << hostLog;
 
@@ -431,19 +474,15 @@ TEST(HostClientProcess, ADedicatedHostServesTwoClientsAtOnce)
         << "the host does not report exactly one peer after the other left:\n"
         << hostLog;
 
-    int firstExit = -1;
-    EXPECT_TRUE(first.StopAndWait(&firstExit));
-    EXPECT_EQ(firstExit, 0);
-    int hostExit = -1;
-    EXPECT_TRUE(host.StopAndWait(&hostExit));
-    EXPECT_EQ(hostExit, 0);
+    ExpectCleanStop(first, "the first client");
+    ExpectCleanStop(host, "the host");
 }
 
 // The account a dedicated host can give of itself. It has no window and no
 // overlay, so this is the only way to ask it anything.
-TEST(HostClientProcess, ADedicatedHostAnswersForItselfOverTheConsole)
+TEST_F(HostClientProcess, ADedicatedHostAnswersForItselfOverTheConsole)
 {
-    AppProcess host({ "+map", "levels/test", "+host", "0" }, TempLogPath("status"));
+    AppProcess host({ "+map", std::string(kHostMap), "+host", "0" }, TempLogPath("status"));
     ASSERT_TRUE(host.Started());
 
     std::string hostLog;
@@ -463,19 +502,16 @@ TEST(HostClientProcess, ADedicatedHostAnswersForItselfOverTheConsole)
     EXPECT_TRUE(hostLog.find("publish") != std::string::npos) << hostLog;
     EXPECT_TRUE(hostLog.find("starved") != std::string::npos) << hostLog;
 
-    int clientExit = -1;
-    EXPECT_TRUE(client.StopAndWait(&clientExit));
-    int hostExit = -1;
-    EXPECT_TRUE(host.StopAndWait(&hostExit));
-    EXPECT_EQ(hostExit, 0);
+    ExpectCleanStop(client, "the client");
+    ExpectCleanStop(host, "the host");
 }
 
 // A host with no graphics services still loads the world it is simulating.
 // Before render assets could be declined, every level containing a mesh failed
 // to load here and left the host with no entities and no collision.
-TEST(HostClientProcess, ADedicatedHostLoadsItsMap)
+TEST_F(HostClientProcess, ADedicatedHostLoadsItsMap)
 {
-    AppProcess host({ "+map", "levels/test" }, TempLogPath("maponly"));
+    AppProcess host({ "+map", std::string(kHostMap) }, TempLogPath("maponly"));
     ASSERT_TRUE(host.Started());
 
     std::string log;
@@ -485,9 +521,7 @@ TEST(HostClientProcess, ADedicatedHostLoadsItsMap)
     // it reported. A zone that failed says so on the way through.
     std::this_thread::sleep_for(std::chrono::seconds(2));
 
-    int exitCode = -1;
-    EXPECT_TRUE(host.StopAndWait(&exitCode));
-    EXPECT_EQ(exitCode, 0);
+    ExpectCleanStop(host, "the host");
 
     log = host.Log();
     EXPECT_EQ(log.find("scene load error"), std::string::npos)
