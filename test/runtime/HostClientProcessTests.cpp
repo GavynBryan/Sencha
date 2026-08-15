@@ -47,6 +47,20 @@ namespace
 {
     constexpr std::chrono::seconds kDeadline{ 45 };
 
+    // The map these cases host. Deliberately a level the checkout carries, so
+    // the cook that produces the runtime scene has an authored source: a level
+    // cooked once on one machine and never committed reads as passing coverage
+    // everywhere it was never cooked.
+    constexpr std::string_view kHostMap = "levels/room_2.level";
+
+    // Where the cook lands it. Derived from the map name rather than written
+    // out again, so the two cannot drift apart.
+    [[nodiscard]] std::filesystem::path CookedMapScene()
+    {
+        return std::filesystem::path(SENCHA_REPO_ROOT) / "template/assets/.cooked"
+            / (std::string(kHostMap) + ".cooked.json");
+    }
+
     std::filesystem::path TempLogPath(std::string_view suffix)
     {
         static int counter = 0;
@@ -255,9 +269,34 @@ namespace
     }
 }
 
-TEST(HostClientProcess, ADedicatedHostServesAJoiningClient)
+// Every case here hosts a map, and a map is cooked output. The cook runs as the
+// CookTemplateHostMap ctest fixture rather than from inside this binary,
+// because it lives in the editor authoring library and a runtime test must not
+// link that.
+//
+// Reported here as well as required there so a missing scene is one clear
+// failure instead of five forty-five-second timeouts with nothing naming the
+// cause.
+class HostClientProcess : public testing::Test
 {
-    AppProcess host({ "+map", "levels/test", "+host", "0" }, TempLogPath("host"));
+protected:
+    void SetUp() override
+    {
+        const std::filesystem::path scene = CookedMapScene();
+        if (std::filesystem::exists(scene))
+            return;
+#if defined(SENCHA_TEST_HOST_MAP_COOKED)
+        FAIL() << "the CookTemplateHostMap fixture did not produce " << scene;
+#else
+        GTEST_SKIP() << "this configuration builds no level cook, so the map "
+                        "these cases host cannot be produced";
+#endif
+    }
+};
+
+TEST_F(HostClientProcess, ADedicatedHostServesAJoiningClient)
+{
+    AppProcess host({ "+map", std::string(kHostMap), "+host", "0" }, TempLogPath("host"));
     ASSERT_TRUE(host.Started());
 
     std::string hostLog;
@@ -308,9 +347,9 @@ TEST(HostClientProcess, ADedicatedHostServesAJoiningClient)
 // twice -- which is where the last serious defect in this area was hiding: a
 // reliable message from a client was being answered with a handshake challenge
 // and never delivered, and nothing but a real client sending one could see it.
-TEST(HostClientProcess, AClientTakesATurretAndGivesItBack)
+TEST_F(HostClientProcess, AClientTakesATurretAndGivesItBack)
 {
-    AppProcess host({ "+map", "levels/test", "+host", "0" }, TempLogPath("host"));
+    AppProcess host({ "+map", std::string(kHostMap), "+host", "0" }, TempLogPath("host"));
     ASSERT_TRUE(host.Started());
 
     std::string hostLog;
@@ -373,9 +412,9 @@ TEST(HostClientProcess, AClientTakesATurretAndGivesItBack)
 //
 // So: two clients join, each is served its own pawn, one takes the turret and
 // the other is refused it, and one leaves while the other keeps playing.
-TEST(HostClientProcess, ADedicatedHostServesTwoClientsAtOnce)
+TEST_F(HostClientProcess, ADedicatedHostServesTwoClientsAtOnce)
 {
-    AppProcess host({ "+map", "levels/test", "+host", "0" }, TempLogPath("host2"));
+    AppProcess host({ "+map", std::string(kHostMap), "+host", "0" }, TempLogPath("host2"));
     ASSERT_TRUE(host.Started());
 
     std::string hostLog;
@@ -444,9 +483,9 @@ TEST(HostClientProcess, ADedicatedHostServesTwoClientsAtOnce)
 
 // The account a dedicated host can give of itself. It has no window and no
 // overlay, so this is the only way to ask it anything.
-TEST(HostClientProcess, ADedicatedHostAnswersForItselfOverTheConsole)
+TEST_F(HostClientProcess, ADedicatedHostAnswersForItselfOverTheConsole)
 {
-    AppProcess host({ "+map", "levels/test", "+host", "0" }, TempLogPath("status"));
+    AppProcess host({ "+map", std::string(kHostMap), "+host", "0" }, TempLogPath("status"));
     ASSERT_TRUE(host.Started());
 
     std::string hostLog;
@@ -476,9 +515,9 @@ TEST(HostClientProcess, ADedicatedHostAnswersForItselfOverTheConsole)
 // A host with no graphics services still loads the world it is simulating.
 // Before render assets could be declined, every level containing a mesh failed
 // to load here and left the host with no entities and no collision.
-TEST(HostClientProcess, ADedicatedHostLoadsItsMap)
+TEST_F(HostClientProcess, ADedicatedHostLoadsItsMap)
 {
-    AppProcess host({ "+map", "levels/test" }, TempLogPath("maponly"));
+    AppProcess host({ "+map", std::string(kHostMap) }, TempLogPath("maponly"));
     ASSERT_TRUE(host.Started());
 
     std::string log;

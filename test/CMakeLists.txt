@@ -260,10 +260,44 @@ if(TARGET engine_feature_tests)
     )
 endif()
 
+# The map the two-process hosting cases load is cooked output. A checkout
+# carries the authored level and not the cook of it, and no build step produces
+# one, so that coverage only ever ran where an earlier local cook happened to
+# have left a scene behind -- and reported success everywhere it had not.
+#
+# Cooked by the level-cook test binary rather than from inside runtime_tests:
+# the cook lives in the editor authoring library, and a runtime test binary must
+# not link that.
+set(SENCHA_HOST_MAP_FIXTURE "")
+if(TARGET runtime_tests AND TARGET app AND TARGET template_game
+   AND TARGET level_cook_tests)
+    set(SENCHA_HOST_MAP_FIXTURE TemplateHostMap)
+    add_test(NAME CookTemplateHostMap
+        COMMAND level_cook_tests --gtest_filter=CookLevel.Generate)
+    set_tests_properties(CookTemplateHostMap PROPERTIES
+        FIXTURES_SETUP ${SENCHA_HOST_MAP_FIXTURE}
+        ENVIRONMENT
+            "SENCHA_COOK_LEVEL=${CMAKE_SOURCE_DIR}/template/assets/levels/room_2.level.json;SENCHA_COOK_ROOT=${CMAKE_SOURCE_DIR}/template/assets")
+    # Tells the cases apart: with the fixture wired a missing scene is a
+    # failure, and without it they have no way to get one and skip instead.
+    target_compile_definitions(runtime_tests PRIVATE SENCHA_TEST_HOST_MAP_COOKED=1)
+endif()
+
+# The fixture requirement lands on every runtime case rather than only the
+# hosting ones: gtest_discover_tests names tests at build time, so a property
+# set here cannot pick out a suite. The cost is that a cook failure leaves the
+# rest of this target unrun -- loud, and pointing at the right thing.
 if(TARGET runtime_tests)
-    gtest_discover_tests(runtime_tests
-        DISCOVERY_TIMEOUT 30
-    )
+    if(SENCHA_HOST_MAP_FIXTURE)
+        gtest_discover_tests(runtime_tests
+            DISCOVERY_TIMEOUT 30
+            PROPERTIES FIXTURES_REQUIRED ${SENCHA_HOST_MAP_FIXTURE}
+        )
+    else()
+        gtest_discover_tests(runtime_tests
+            DISCOVERY_TIMEOUT 30
+        )
+    endif()
 endif()
 
 if(TARGET ecs_tests)
