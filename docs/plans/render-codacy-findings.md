@@ -418,6 +418,48 @@ Prefer the script over `CMAKE_CXX_CLANG_TIDY`, which would slow every developer
 build, and over Codacy's hosted Clang-Tidy, which cannot see this repository's
 build flags or Vulkan include paths and would report unreliably.
 
+### 5.1 Initial baseline
+
+Recorded 2026-08-16 from `scripts/run_render_tidy.sh build`, LLVM 21.1.8, over
+106 translation units.
+
+The first run reported 158 findings, 102 of them `performance-enum-size`. That
+check is wrong for this layer rather than informative: GPU-facing, cooked, and
+wire-facing enums carry the width their format specifies, and shrinking one to
+fit its current value set would change a layout the other side reads. It is
+disabled in `.clang-tidy` with that reason, which leaves the baseline at **56**:
+
+| Check | Count |
+| --- | --- |
+| `bugprone-unchecked-optional-access` | 18 |
+| `bugprone-implicit-widening-of-multiplication-result` | 8 |
+| `performance-inefficient-string-concatenation` | 6 |
+| `bugprone-incorrect-roundings` | 2 |
+| `bugprone-suspicious-memory-comparison` | 1 |
+| `bugprone-multi-level-implicit-pointer-conversion` | 1 |
+| `bugprone-inc-dec-in-conditions` | 1 |
+| `bugprone-suspicious-include` | 1 |
+| `performance-unnecessary-value-param` | 1 |
+| `performance-unnecessary-copy-initialization` | 1 |
+
+Note that a `#` cannot appear inside `.clang-tidy`'s `Checks:` block: it is a
+YAML folded scalar, so the comment becomes part of the check string and
+silently disables nothing.
+
+None of these are triaged yet, and triaging them is not part of this document's
+scope — the run is advisory precisely so the list can be worked down
+deliberately. Two are worth naming as the most likely to be real:
+
+- `MeshCook.cpp:748` compares `StaticMeshVertex` with `memcmp` though the type
+  has no unique object representation. This is the vertex weld path, where
+  padding bytes deciding equality would affect which vertices merge. It sits on
+  a determinism-sensitive path, so it wants its own change with its own test
+  rather than a drive-by fix.
+- `bugprone-implicit-widening-of-multiplication-result` is the same defect class
+  as sections 1.1 and 1.2. The one instance checked so far,
+  `TextureCook.cpp:249`, is a false positive: the indices reach at most 60 in a
+  64-byte block and the source index already widens. The other seven are unread.
+
 ## 6. Declined, with reasons
 
 Recorded so they are not re-opened.
