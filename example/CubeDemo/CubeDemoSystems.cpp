@@ -258,8 +258,11 @@ void RegisterCubeDemoSystems(
     schedule.Register<MouseTraceSystem>(freeCamera);
     schedule.Register<FreeCameraLookSystem>(freeCamera);
     schedule.Register<FreeCameraMovementSystem>(freeCamera);
-    schedule.After<MouseTraceSystem, InputActionResolveSystem>();
-    schedule.After<FreeCameraLookSystem, InputActionResolveSystem>();
+    // Only the FixedLogic reader takes an edge. MouseTraceSystem and
+    // FreeCameraLookSystem are FrameUpdate systems reading the presentation
+    // snapshot, and FramePhase::Update already follows the ScheduleTicks phase
+    // that resolves it -- After is phase-local, so an edge from either would
+    // record nothing and assert. See input.md, "reading actions".
     schedule.After<FreeCameraMovementSystem, InputActionResolveSystem>();
     schedule.Register<CubeSpinSystem>(scene);
 }

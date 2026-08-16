@@ -163,9 +163,21 @@ if(FRAMEWORK_TEST_SOURCES)
     # code over engine headers. Compiling that one translation unit here tests it
     # where it lives rather than duplicating the schema (the brush_tests and
     # editor_tests discipline: link the GUI-free code directly).
+    # Same discipline for the examples' schedule composition: link the
+    # GUI-free registration TUs directly so a bad After edge fails under ctest
+    # instead of only on a Debug boot.
+    #
+    # One FreeCamera.cpp for both. example/CubeDemo and example/SceneViewer
+    # carry byte-identical copies of FreeCamera.{h,cpp}, so a single definition
+    # resolves both systems TUs; linking both would be a duplicate symbol. If
+    # the two ever diverge, this needs to become two test executables.
     add_executable(framework_tests
         ${FRAMEWORK_TEST_SOURCES}
-        ${CMAKE_SOURCE_DIR}/template/src/PlayerAvatarData.cpp)
+        ${CMAKE_SOURCE_DIR}/template/src/PlayerAvatarData.cpp
+        ${CMAKE_SOURCE_DIR}/example/CubeDemo/CubeDemoSystems.cpp
+        ${CMAKE_SOURCE_DIR}/example/CubeDemo/CubeDemoScene.cpp
+        ${CMAKE_SOURCE_DIR}/example/CubeDemo/FreeCamera.cpp
+        ${CMAKE_SOURCE_DIR}/example/SceneViewer/SceneViewerSystems.cpp)
     target_include_directories(framework_tests PRIVATE ${CMAKE_SOURCE_DIR}/template/src)
     target_link_libraries(framework_tests PRIVATE sencha_engine GTest::gtest_main)
     # The template's shipped gameplay data lives in the source tree, so the
