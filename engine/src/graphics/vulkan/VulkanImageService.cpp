@@ -298,6 +298,20 @@ uint32_t VulkanImageService::GetMipLevels(ImageHandle handle) const
     return entry ? entry->MipLevels : 0;
 }
 
+ImageUploadTarget VulkanImageService::DescribeTarget(const ImageEntry& entry)
+{
+    return ImageUploadTarget{
+        .Format = entry.Format,
+        .Extent = entry.Extent,
+        .Depth = entry.Depth,
+        .MipLevels = entry.MipLevels,
+        .ArrayLayers = entry.ArrayLayers,
+        .ViewType = entry.ViewType,
+        .AspectMask = entry.AspectMask,
+        .GenerateMips = entry.GenerateMips,
+    };
+}
+
 bool VulkanImageService::Upload(ImageHandle handle, const void* data, VkDeviceSize size)
 {
     if (data == nullptr || size == 0) return false;
@@ -308,17 +322,9 @@ bool VulkanImageService::Upload(ImageHandle handle, const void* data, VkDeviceSi
         Log.Error("Upload: invalid ImageHandle");
         return false;
     }
-    // 3D images upload as one region spanning every depth slice (they are a
-    // single array layer); cube/array images still have no upload path.
-    const bool is3d = entry->ViewType == VK_IMAGE_VIEW_TYPE_3D;
-    if ((entry->ViewType != VK_IMAGE_VIEW_TYPE_2D && !is3d) || entry->ArrayLayers != 1)
+    if (const ImageUploadCheck check = ValidateImageUpload(DescribeTarget(*entry), size); !check)
     {
-        Log.Error("Upload supports 2D and 3D single-layer images only");
-        return false;
-    }
-    if (is3d && entry->GenerateMips)
-    {
-        Log.Error("Upload: mip generation is not supported for 3D images");
+        Log.Error("{}", check.Error);
         return false;
     }
 
@@ -425,32 +431,11 @@ bool VulkanImageService::UploadMips(ImageHandle handle, const void* data, VkDevi
         Log.Error("UploadMips: invalid ImageHandle");
         return false;
     }
-    if (entry->ViewType != VK_IMAGE_VIEW_TYPE_2D || entry->ArrayLayers != 1)
+    if (const ImageUploadCheck check = ValidateImageMipUpload(DescribeTarget(*entry), size, regions);
+        !check)
     {
-        Log.Error("UploadMips supports 2D single-layer images only");
+        Log.Error("{}", check.Error);
         return false;
-    }
-
-    if (entry->GenerateMips)
-    {
-        Log.Error("UploadMips: image was created with GenerateMips; cooked chains are explicit");
-        return false;
-    }
-
-    for (const MipUploadRegion& region : regions)
-    {
-        if (region.MipLevel >= entry->MipLevels)
-        {
-            Log.Error("UploadMips: region mip {} out of range (image has {})",
-                      region.MipLevel, entry->MipLevels);
-            return false;
-        }
-        if (region.Offset >= size)
-        {
-            Log.Error("UploadMips: region offset {} beyond blob size {}",
-                      static_cast<uint64_t>(region.Offset), static_cast<uint64_t>(size));
-            return false;
-        }
     }
 
     // Staging buffer holding the whole packed chain.
