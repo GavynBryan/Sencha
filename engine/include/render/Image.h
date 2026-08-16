@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -25,7 +26,11 @@ enum class PixelFormat : uint8_t
 // to the GPU and hands back a TextureHandle.
 //
 // stb_image always produces tightly-packed RGBA (4 bytes per pixel), so
-// BytesPerPixel() is always 4 and ByteSize() == Width * Height * 4.
+// BytesPerPixel() is always 4.
+//
+// IsValid() is the buffer's size contract, not just a populated-ness check:
+// consumers size copies out of Pixels from Width and Height, so a valid Image
+// must own exactly Width * Height * 4 bytes.
 //=============================================================================
 struct Image
 {
@@ -34,7 +39,19 @@ struct Image
     uint32_t Height = 0;
     PixelFormat Format = PixelFormat::RGBA8_SRGB;
 
-    [[nodiscard]] bool     IsValid()       const { return !Pixels.empty() && Width > 0 && Height > 0; }
+    [[nodiscard]] bool IsValid() const
+    {
+        if (Width == 0 || Height == 0)
+            return false;
+        // Compared in pixels rather than bytes: the product of two uint32_t
+        // dimensions always fits in uint64_t, but that product times four does
+        // not, so the byte form can wrap and admit a short buffer.
+        return Pixels.size() % BytesPerPixel() == 0
+            && Pixels.size() / BytesPerPixel() == uint64_t(Width) * uint64_t(Height);
+    }
+
     [[nodiscard]] uint32_t BytesPerPixel() const { return 4; }
-    [[nodiscard]] uint32_t ByteSize()      const { return Width * Height * BytesPerPixel(); }
+
+    // The storage actually owned, never a value recomputed from the dimensions.
+    [[nodiscard]] std::size_t ByteSize() const { return Pixels.size(); }
 };

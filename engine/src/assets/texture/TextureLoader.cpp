@@ -37,7 +37,11 @@ bool LoadStexFromBytes(std::span<const std::byte> bytes, TextureData& out, std::
         return Fail(error, "stex: mip table out of range");
     if (header.PixelDataOffset < mipTableEnd)
         return Fail(error, "stex: pixel data overlaps mip table");
-    if (uint64_t(header.PixelDataOffset) + header.PixelDataSize > bytes.size())
+    // Subtraction rather than addition: PixelDataSize is a file-controlled
+    // uint64_t, so the sum form wraps and admits an out-of-range blob. The
+    // offset needs its own bound first, or the subtraction underflows instead.
+    if (header.PixelDataOffset > bytes.size()
+        || header.PixelDataSize > bytes.size() - header.PixelDataOffset)
         return Fail(error, "stex: pixel data out of range");
 
     TextureData texture;

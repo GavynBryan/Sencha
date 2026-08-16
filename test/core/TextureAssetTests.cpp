@@ -19,6 +19,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -188,6 +189,45 @@ TEST(StexRoundTrip, RejectsInvalidDataAndCorruptContainers)
     std::vector<std::byte> badVersion = bytes;
     badVersion[4] = std::byte{ 0x7F };
     EXPECT_FALSE(LoadStexFromBytes(badVersion, out));
+}
+
+// The pixel-data range check reads two file-controlled fields of different
+// widths. Both ends of the range have to be rejected without the arithmetic
+// wrapping into a pass.
+TEST(StexRoundTrip, RejectsPixelRangesThatOverflowTheHeaderArithmetic)
+{
+    const TextureData good = MakeBlockCompressedFixture(TexturePixelFormat::BC7, 8);
+    std::vector<std::byte> bytes;
+    ASSERT_TRUE(WriteStexToBytes(good, bytes));
+
+    const auto patchHeader = [&bytes](auto&& mutate) {
+        std::vector<std::byte> copy = bytes;
+        StexFileHeader header;
+        std::memcpy(&header, copy.data(), sizeof(header));
+        mutate(header);
+        std::memcpy(copy.data(), &header, sizeof(header));
+        return copy;
+    };
+
+    // PixelDataOffset + PixelDataSize wraps past zero, so an addition-based
+    // bound reports a tiny in-range sum and admits the whole blob.
+    const std::vector<std::byte> wrapping = patchHeader([](StexFileHeader& h) {
+        h.PixelDataSize = ~uint64_t(0) - uint64_t(h.PixelDataOffset) + 1;
+    });
+    TextureData out;
+    std::string error;
+    EXPECT_FALSE(LoadStexFromBytes(wrapping, out, &error));
+    EXPECT_EQ(error, "stex: pixel data out of range");
+
+    // An offset past the end must stay rejected: expressing the bound as a
+    // subtraction underflows instead of wrapping if the offset is unchecked.
+    const std::vector<std::byte> farOffset = patchHeader([&bytes](StexFileHeader& h) {
+        h.PixelDataOffset = static_cast<uint32_t>(bytes.size() + 1024);
+        h.PixelDataSize = 16;
+    });
+    error.clear();
+    EXPECT_FALSE(LoadStexFromBytes(farOffset, out, &error));
+    EXPECT_EQ(error, "stex: pixel data out of range");
 }
 
 #ifdef SENCHA_ENABLE_COOK

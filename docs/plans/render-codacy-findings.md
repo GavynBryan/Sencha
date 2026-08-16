@@ -1,7 +1,8 @@
 # Rendering and Graphics Codacy Findings
 
-Status: triaged, not started. Every finding below was read against source; the
-verdicts are recorded so they do not get re-litigated.
+Status: triaged and implementation-reviewed, not started. Every finding below
+was read against source; the verdicts are recorded so they do not get
+re-litigated.
 
 Sencha was connected to Codacy on 2026-08-15. The first analysis ran against
 `e9f9a32d` using Codacy's unmodified default coding standard and produced 626
@@ -9,9 +10,10 @@ findings. Nobody selected those patterns for this codebase, so the set is a raw
 tool baseline rather than a reviewed defect list.
 
 The triage below was performed against `e9f9a32d` and re-checked at `d3e53e1a`.
-The commits between the two touch only `net/`, `participant/`, `app/`,
-`template/`, and `test/`, so no finding, verdict, or line reference here is
-affected by them.
+The commits between the two touch `app/`, `ecs/`, `input/`, `net/`,
+`participant/`, `world/`, `template/`, and `test/`, but none of the rendering,
+graphics, or graphics-asset paths reviewed here. No finding, verdict, or line
+reference is affected by them.
 
 Filtering to the rendering and graphics domain gives 114 findings:
 
@@ -28,19 +30,19 @@ signatures, 16 Flawfinder `memcpy` warnings, 3 Cppcheck ErrorProne and scope
 hits, 1 ShellCheck.
 
 The overwhelming majority are false positives or benign truths. The genuine
-content is small: two defects in the cooked-texture path, one service-boundary
-validation gap, and four cases of duplication that the line-count patterns
-surfaced as a side effect. Two of the "always true" findings are wrong in a way
-that matters — acting on them introduces an unsigned underflow — and one
-"reduce scope" finding would cost a multi-megabyte allocation per bake round if
-applied.
+content is small: two defects in the cooked-texture path, one upload-service
+validation family affecting both entry points, and four cases of duplication
+that the line-count patterns surfaced as a side effect. Two of the "always
+true" findings are wrong in a way that matters — acting on them introduces an
+unsigned underflow — and one "reduce scope" finding would cost a
+multi-megabyte allocation per bake round if applied.
 
 The goal is therefore not a zero issue count. It is to fix what is broken,
 remove the duplication the tool correctly pointed at, and retune the analyzer so
 its future output is signal. Separately, the repository already carries a
 render-scoped [`.clang-tidy`](../../.clang-tidy) that runs from neither CMake nor
-CI; that config would produce far better findings than Lizard line counts, and
-section 5 turns it on.
+CI. Section 5 expands it to the graphics asset pipeline and runs it with the
+repository's real compile database.
 
 ## 1. Defects
 
@@ -62,12 +64,24 @@ This is not memory-unsafe: `texture.Blob.resize(header.PixelDataSize)` runs
 first and throws for any value large enough to have wrapped. The impact is an
 uncaught exception on a malformed cooked asset.
 
-Reformulate as a subtraction that cannot wrap, after the existing offset check:
-`header.PixelDataSize > bytes.size() - header.PixelDataOffset`.
+The overlap check does not prove that `PixelDataOffset` itself lies inside the
+stream, so the subtraction needs its own offset guard:
 
-Regression coverage goes in `test/core/TextureAssetTests.cpp`: a stream with a
-wrapping `PixelDataSize` is rejected with the existing
-`"stex: pixel data out of range"` diagnostic rather than throwing.
+```cpp
+if (header.PixelDataOffset > bytes.size()
+    || header.PixelDataSize > bytes.size() - header.PixelDataOffset)
+```
+
+Regression coverage goes in `test/core/TextureAssetTests.cpp`:
+
+- a stream with a wrapping `PixelDataSize` is rejected with the existing
+  `"stex: pixel data out of range"` diagnostic rather than throwing;
+- a `PixelDataOffset` beyond the end of the stream is still rejected, protecting
+  the subtraction form from reintroducing an offset underflow.
+
+The wrapping-size test must be observed failing against the old check for the
+intended reason. The offset-only case preserves behavior the old addition check
+already handled.
 
 ### 1.2 `Image` carries an unenforced size invariant
 
@@ -78,33 +92,73 @@ the declared dimensions — out of `image.Pixels`. The only guard is
 that as `!Pixels.empty() && Width > 0 && Height > 0`. It never checks that
 `Pixels.size()` agrees with the dimensions.
 
-This holds today only because every in-tree producer is `LoadImageFromFile` or
-`LoadImageFromMemory` ([`ImageLoader.cpp`](../../engine/src/render/ImageLoader.cpp)),
-which assign exactly `w * h * 4` from stb_image. It is a latent over-read waiting
-on the first hand-constructed `Image`: a procedural texture, a test fixture, a
-future decoder.
+The runtime producers today are `LoadImageFromFile` and `LoadImageFromMemory`
+([`ImageLoader.cpp`](../../engine/src/render/ImageLoader.cpp)), which assign
+exactly `w * h * 4` from stb_image. Tests already hand-construct valid images;
+the first inconsistent fixture, procedural texture, or future decoder would
+turn the latent over-read into a real one.
 
-The invariant belongs to `Image`, not to the copy site, so the check moves into
-`Image::IsValid()`. While there, `Image::ByteSize()` computes `Width * Height * 4`
-in `uint32_t` arithmetic and overflows past roughly 32k squared; it should widen
-to `uint64_t`. `ByteSize()` is reachable through an installed header, so check
-`TextureCache` and the `VulkanImageService` callers for narrowing at the
-assignment before widening.
+The invariant belongs to `Image`, not to the copy site, so `Image::IsValid()`
+must require an exact tightly packed RGBA buffer. Avoid forming
+`Width * Height * 4` in a fixed-width type: after rejecting zero dimensions,
+compare `Pixels.size() / BytesPerPixel()` with the `uint64_t` product
+`Width * Height` and require a zero remainder. The product of two `uint32_t`
+dimensions fits in `uint64_t`; multiplying that result by four does not always
+fit.
 
-### 1.3 `UploadMips` does not bound regions at the service boundary
+`Image::ByteSize()` should return the actual owned storage size,
+`Pixels.size()`, as `std::size_t`, rather than recomputing a second potentially
+overflowing value from the dimensions. Its only runtime consumer already casts
+to `VkDeviceSize`. This is an intentional host-SDK source change in an installed
+inline header, but it does not touch the game-module ABI.
+
+The owning `Image` tests in `test/engine_features/AssetTests.cpp` cover exact,
+undersized, oversized, and extreme-dimension buffers, plus `ByteSize()`
+reporting the actual owned bytes. A compile-time assertion locks its
+`std::size_t` result type without requiring a multi-gigabyte allocation. At
+least the undersized and oversized validity tests must fail before the fix
+without invoking the unsafe cook copy.
+
+### 1.3 The Vulkan upload boundary trusts caller-sized staging buffers
 
 [`VulkanImageService.cpp`](../../engine/src/graphics/vulkan/VulkanImageService.cpp)
 line 448 validates only `region.Offset >= size` for each region, never that the
-region *ends* inside the staging buffer, and `MipUploadRegion` carries no byte
-size at all. The `vkCmdCopyBufferToImage` extents come from `region.Width` and
-`region.Height`, so a region near the end of the blob makes the GPU read past
-the staging allocation.
+region *ends* inside the staging buffer. The `vkCmdCopyBufferToImage` footprint
+comes from the image format and `region.Width`/`region.Height`, so a region near
+the end of the blob makes the GPU read past the staging allocation.
 
 This is safe today only because `TextureCache::UploadGpuImage` runs
 `ValidateTextureData` first, which proves the mip table exactly tiles the blob.
 `UploadMips` is a public service API that a future caller can reach without the
-validator, so the end bound belongs at the boundary. It folds into item 2.1,
-which rewrites this function's staging path anyway.
+validator, so the complete copy contract belongs at the service boundary.
+
+`VulkanImageService::Upload` has the same gap: it allocates the caller's `size`
+but records a copy of the entry's full width, height, depth, and format. All
+three current callers provide the correct size, but a short public-API call can
+still make the GPU read past its staging allocation.
+
+Add one GPU-independent validation mechanism at the Vulkan image boundary. It
+computes tight copy footprints for the formats the service currently uploads
+and validates before staging allocation or command recording:
+
+- `Upload`: the available size covers the full base-mip extent, including depth;
+- `UploadMips`: every target mip appears exactly once, its dimensions match the
+  image's mip extent, its offset satisfies the format's block alignment, and
+  its computed footprint fits in `size - Offset` without addition overflow;
+- both paths: the format is one whose block dimensions and byte size the
+  validator understands, and the entry uses the color aspect the current copy,
+  blit, and barrier path supports.
+
+Do not add a caller-authored `ByteSize` to `MipUploadRegion`: checking a claimed
+size would not prove how many bytes Vulkan reads. If depth or stencil upload is
+needed later, extend the copy and every barrier together; do not switch only the
+whole-chain barriers to `entry->AspectMask`.
+
+The validator is a narrow test boundary justified by the lack of a device
+harness. Extract the current permissive checks into it first and wire both
+service methods through it, then add malformed base-size, region-end,
+wrong-extent, duplicate/missing-mip, alignment, format, and aspect cases. The
+new rejection cases must be observed failing before the checks are tightened.
 
 ## 2. Duplication
 
@@ -121,21 +175,22 @@ verbatim:
 - the `UNDEFINED` to `TRANSFER_DST` whole-chain barrier (358-372 against 489-503),
 - the `TRANSFER_DST` to `SHADER_READ_ONLY` barrier (396-411 against 525-539).
 
-Both also hardcode `AspectMask` to `VK_IMAGE_ASPECT_COLOR_BIT` rather than
-reading `entry->AspectMask`. That is harmless while only color images take the
-upload path, and worth correcting once there is a shared helper to correct it
-in.
+Keep the upload path explicitly color-only as item 1.3 specifies; the copy,
+optional blit, and barriers then agree on one supported aspect.
 
-An anonymous-namespace RAII `StagingBuffer` plus a
+Use an anonymous-namespace RAII `StagingBuffer` plus a
 `TransitionWholeChain(cmd, entry, from, to)` helper, both file-local in
-`VulkanImageService.cpp`. These are private details of one service with no
-second consumer; a separate translation unit would be a seam with no boundary
-behind it. The result halves both functions and makes the actual difference
-between them visible — one `VkBufferImageCopy` against N.
+`VulkanImageService.cpp`. `StagingBuffer` owns creation, mapped copy, flush, and
+destruction; command-buffer acquisition remains visibly owned by the service
+method. These are private details of one service with no second consumer, so a
+separate translation unit would be a seam with no boundary behind it. The
+result halves both functions and makes the actual difference visible — one
+`VkBufferImageCopy` against N.
 
-Nothing under `test/` references `VulkanImageService`, and there is no Vulkan
-device harness in this repository. This change is blind and is verified by
-running the app.
+The pure validation mechanism from item 1.3 protects the boundary behavior.
+There is still no Vulkan device harness for the staging and command-recording
+shape, so exercise both valid upload paths in the application after the
+refactor.
 
 ### 2.2 The glTF importers share a preamble and a mesh loop
 
@@ -144,8 +199,8 @@ running the app.
 identical 30-line cgltf preamble — parse, error message, `CgltfDataPtr`,
 `cgltf_load_buffers` with the same external-URI rejection string, zero-mesh
 check (765-790 against 666-693) — and then run the same per-mesh name
-resolution and primitive accumulation. `ImportGltfScene` is a strict superset
-that additionally handles skeletons, skin remapping, and animation clips.
+resolution and primitive accumulation. `ImportGltfScene` additionally handles
+skeletons, skin remapping, and animation clips.
 
 Both are public API in
 [`MeshCook.h`](../../engine/include/assets/cook/MeshCook.h) with real separate
@@ -154,16 +209,17 @@ the same file:
 
 - `ParseGltf(bytes, CgltfDataPtr& out, std::string* error)`, which removes the
   preamble duplication outright;
-- `AccumulatePrimitives(mesh, nameForErrors, ImportedGltfMesh&, std::vector<MeshSkinInfluence>* influences, std::string* error)`,
-  the shared geometry loop, taking its skinning output optionally exactly as
-  `ReadPrimitive` already does.
+- `ReadMeshGeometry(mesh, nameForErrors, ImportedGltfMesh&, std::vector<MeshSkinInfluence>* influences, std::string* error)`,
+  which owns the zero-primitive check, primitive accumulation, section assembly,
+  bounds recomputation, and `ValidateMeshGeometry` error joining. Its skinning
+  output is optional exactly as `ReadPrimitive` already allows.
 
 This is well protected. `test/core/MeshCookTests.cpp` has 14 tests, including
 `ExternalBufferUriIsRejected`, `MalformedBytesAreRejected`, and
 `ImportIsDeterministic`, all of which exercise the shared preamble;
-`test/core/SkeletalCookTests.cpp` has 4 tests on `ImportGltfScene`;
-`test/level_cook/BrushBakeTests.cpp` uses the mesh path. Both sides of the
-extraction are covered.
+`test/core/SkeletalCookTests.cpp` has 5 tests on `ImportGltfScene`; and
+`test/level_cook/BrushBakeTests.cpp` includes the `GltfMeshExport` round trip.
+Both sides of the extraction are covered.
 
 ### 2.3 `MeshForwardPass` writes its pipeline description twice
 
@@ -173,47 +229,44 @@ extraction are covered.
 vertex attribute today means editing two identical lists.
 
 Extract a file-local `MakeMeshPipelineBase()` returning `GraphicsPipelineDesc`;
-each caller then overrides roughly six fields. `GraphicsPipelineDesc` is a value
-type with a defaulted `operator==`, so equivalence stays mechanically checkable
-by inspection even without a test. There is no test coverage; verify by running.
+each caller then overrides its shaders, formats, depth state, and blend state.
+There is no direct test coverage; keep this as a stand-alone change and verify
+the normal and debug/overdraw pipelines by running the application.
 
-### 2.4 The two lightmap bake channels share nine parameters
+### 2.4 The lightmap bake channels re-expand an existing context
 
 [`DocumentLightmapBake.cpp`](../../editor/kyusu/src/document/DocumentLightmapBake.cpp)
 `BakeFreshDirect` (line 120) and `BakeFreshAo` (line 165) take 12 parameters
-each, of which nine are identical and in identical order. Only the out-artifact
-differs. Both are file-local statics in an anonymous namespace, so a
-`BakeChannelContext` struct costs no API churn and no header edit, and the two
-call sites collapse to two lines each. Lowest-risk item in the set.
+each, of which 11 are identical and in identical order. Only the out-artifact
+differs. Seven of those common arguments are already owned by
+[`DocumentCookContext`](../../editor/kyusu/src/document/DocumentCookContext.h),
+whose stated purpose is to keep cook stages from re-listing this cluster.
+
+Pass the existing `DocumentCookContext` plus the four channel inputs and the
+output artifact to each file-local function. Do not introduce a second
+`BakeChannelContext`. The focused `BakedLightingCookTest` suite covers both
+fresh channels and reuse behavior.
 
 ## 3. Parameter lists
 
 The codebase carries 80-plus `*Desc`, `*Params`, `*Services`, and `*Context` POD
-structs. Descriptor structs are the established idiom here, so these introduce
-no new mechanism.
+structs. That makes a descriptor an established option, not an automatic answer
+to every long signature.
 
 ### 3.1 `Renderer::Renderer`
 
 [`Renderer.cpp`](../../engine/src/graphics/vulkan/Renderer.cpp) line 38 takes 15
-parameters, and its body is an `IsValid()` conjunction followed by 14
-consecutive `Services.X = &x;` assignments into a member of type
-`RendererServices` — a struct that already exists in
-[`Renderer.h`](../../engine/include/graphics/vulkan/Renderer.h) with exactly
-those fields.
+parameters, but the shape is the explicit Vulkan composition root. Fourteen
+arguments become feature-visible pointers in `RendererServices`; the remaining
+`VulkanFrameService&` initializes the renderer's private `Frames` reference and
+is deliberately absent from the feature bundle.
 
-Taking `const RendererServices&` deletes the assignment block entirely. The
-`Log(logging.GetLogger<Renderer>())` member initializer becomes
-`services.Logging->GetLogger<Renderer>()`.
-
-On the ABI question: `engine/include/` is installed wholesale, so `Renderer.h`
-is a public SDK header. But
-[`check_module_abi.sh`](../../scripts/check_module_abi.sh) explicitly bars
-`graphics/` from the hashed game-module ABI surface, whose dirs are `app`,
-`input`, `world/serialization`, `core/metadata`, `core/console`, and `ecs`. This
-is a host-level SDK change, not a module ABI break. The only in-tree
-construction site is a single member initializer in
-[`GraphicsServices.cpp`](../../engine/src/graphics/vulkan/GraphicsServices.cpp)
-at line 68. Run the ABI and isolation checks regardless.
+Replacing the constructor with only `const RendererServices&` therefore cannot
+initialize the current object. Adding `Frames` to that bundle would expose an
+unneeded backend service to every render feature and would weaken non-null
+constructor references into nullable pointers. There is one in-tree
+construction site and no duplicated policy or resolution logic. Decline this
+finding: the long signature accurately spells the ownership graph.
 
 ### 3.2 `RenderExtractionSystem::Extract`
 
@@ -223,8 +276,17 @@ line 82 takes 9 parameters, four of which are read-only caches
 `RenderExtractCaches` struct in the owning header reduces the call to
 `Extract(world, partitions, caches, camera, queue, alpha)`.
 
-Signature only. The body stays as it is; it already delegates to three extracted
-free functions covered by `test/runtime/ZoneLightmapResolutionTests.cpp`.
+The bundle contains references for the three required caches and the existing
+optional `TextureCache*`. Add the bundled overload as the preferred entry point,
+but keep the installed nine-parameter overload as a forwarding compatibility
+shim. The extraction body and hot-path work stay unchanged; constructing the
+bundle allocates nothing. `ZoneLightmapResolutionTests` protects the pure
+partition-to-lightmap pieces, while the full build protects both public
+signatures and the one in-tree caller.
+
+This adds a host-SDK API without removing the old one and does not change the
+game-module ABI. Run the module isolation check anyway because the owning header
+is installed.
 
 ### 3.3 Deferred and declined
 
@@ -244,9 +306,19 @@ This is the largest part of the count and the smallest part of the diff.
 
 No suppression goes in source comments. A wall of inline annotations across the
 render layer is exactly the narration this repository's comment rules prohibit.
-Dispositions are recorded in a checked-in `.codacy.yaml` at the repository root
-— none exists today, so there is currently nowhere to record any of this — plus
-per-pattern threshold changes on the repository's coding standard.
+This document is the checked-in technical record of the dispositions. Codacy's
+`.codacy.yaml` supports path exclusions and limited engine configuration, not
+per-issue dispositions or these pattern parameters, so do not add an otherwise
+empty file for that purpose. Adding one also supersedes ignored-file settings
+from the Codacy UI; if a future path exclusion requires the file, inventory and
+preserve every existing ignored path first.
+
+Apply pattern and threshold changes in this repository's Code Patterns settings,
+not to an organization-wide standard shared by unrelated repositories. Record
+the exact settings, analysis date, tool versions, and resulting count in this
+section when the retuning is performed. Mark individual retained findings in
+Codacy with the appropriate false-positive or accepted-use reason and a concise
+comment pointing to the invariant recorded here.
 
 ### 4.1 Lizard thresholds
 
@@ -255,25 +327,31 @@ rendering 114. A 50-line method limit is not a defensible standard for Vulkan
 object creation, glTF attribute unpacking, or descriptor-set construction. This
 is the pattern misfiring at scale.
 
-Raise the method threshold to 150 non-comment lines, which still catches
+After the defect and de-duplication work lands, raise the method threshold to
+150 non-comment lines and the file threshold to 900. This still catches
 `ImportGltfScene` at 237 and `ScheduleViews` at 210 while clearing the
-verbose-but-atomic Vulkan blocks, and the file threshold to roughly 900. Then
-re-review the survivors, which will be a short list.
+verbose-but-atomic Vulkan blocks. Re-run analysis and review every survivor
+before recording the new baseline.
 
 ### 4.2 Flawfinder `memcpy`
 
-Disable the pattern for this repository. It fires on every `memcpy` regardless
-of context and cannot distinguish a `resize()` on the preceding line from an
-unchecked copy. Thirteen of the sixteen rendering hits are provably sized copies
-into fixed arrays with clamped counts, or into scratch-ring grants sized by the
-same `sizeof` expression. It has a 100 percent false-positive rate here and a
-100-finding footprint repository-wide. Section 5 covers this class properly.
+Keep the pattern enabled until all 100 repository-wide findings have been
+reviewed. The rendering triage proves only that its 16 findings are benign: the
+tool fires on every `memcpy` and cannot distinguish a `resize()` on the
+preceding line from an unchecked copy. That is evidence of poor precision in
+this domain, not evidence that the other 84 calls are safe.
 
-An optional cosmetic follow-up, not required: `MeshSerializer.cpp` line 49 and
-`TextureSerializer.cpp` line 64 are `ostringstream::str()` to `vector<byte>`
-handoffs that read more clearly as `out.assign(...)`.
+Export the complete finding list, classify every call, fix any real size or
+lifetime defects first, and record the result here. Disable the pattern at the
+repository level only if the complete review establishes that it contributes no
+signal. Otherwise keep it enabled and disposition the reviewed false positives
+individually. Section 5 deliberately includes `assets/`, but clang-tidy is a
+complement, not proof that every `memcpy` has a valid data-dependent bound.
 
 ### 4.3 The three Cppcheck dispositions
+
+Keep the pattern enabled and mark these individual issues as false positives in
+Codacy; none warrants a source suppression.
 
 **`ShadowResidency.cpp` lines 578 and 614, "condition `budget > 0` is always
 true": false positive, and acting on it introduces a bug.** `budget` is
@@ -313,22 +391,28 @@ own CI guard.
 
 [`.clang-tidy`](../../.clang-tidy) already exists, enabling `bugprone-*` and
 `performance-*` with `HeaderFilterRegex` scoped to
-`engine/(src|include)/(render|graphics|profiling)/`. It was added by commit
-`e1c5b9ea` and runs from neither CMake nor CI, and Codacy's hosted Clang-Tidy
-produces zero findings.
+`engine/(src|include)/(render|graphics|profiling)/`. It has been run during a
+past render audit but runs from neither CMake nor CI today. The current scope
+also excludes `assets/`, where this triage found both CPU-side texture defects.
 
 Add `scripts/run_render_tidy.sh` alongside the existing `check_*.sh` guards,
-driving `run-clang-tidy` over the render, graphics, and profiling translation
-units from a `compile_commands.json`.
+driving `run-clang-tidy` over the `assets`, `render`, `graphics`, and `profiling`
+translation units from a `compile_commands.json`. Expand `HeaderFilterRegex` to
+the same four engine subtrees. The script accepts a build directory, verifies
+that its compile database and the required tools exist, prints the clang-tidy
+version, and returns the analyzer's status.
 
-Two constraints shape this. First, it cannot run where the other guards run: the
-existing `check_*.sh` are read-only source greps run deliberately before the
-build, and clang-tidy needs a compile database, so it must run after configure.
-Add `CMAKE_EXPORT_COMPILE_COMMANDS` to the dev preset if it is not already set.
-Second, it starts advisory rather than gating. This codebase has never run
-clang-tidy, so turning it on surfaces a fresh unbounded finding set; land the
-script, run it, read the output, and decide gating separately. Do not add a
-failing CI leg in the same change.
+`CMAKE_EXPORT_COMPILE_COMMANDS` is already enabled in the base preset and at the
+root CMake level, so no configure change is needed. Run after the build, not
+merely after configure: generated headers and compiled shader artifacts must
+exist before clang-tidy parses every translation unit.
+
+Run the script locally first, fix or record every actionable finding, and save
+the initial versioned baseline. Then install the distro-pinned `clang-tidy` in
+the Linux CI job and add a post-build advisory step with `continue-on-error` and
+a bounded step timeout. Capture its output in the job log. It starts advisory
+because this repository has no continuously maintained baseline; converting it
+to a required gate is a separate decision after the output is stable.
 
 Prefer the script over `CMAKE_CXX_CLANG_TIDY`, which would slow every developer
 build, and over Codacy's hosted Clang-Tidy, which cannot see this repository's
@@ -351,36 +435,49 @@ Recorded so they are not re-opened.
 
 ## 7. Order of work
 
-Independently reviewable commits on `render-codacy-findings`. Never push to
-`main`.
+Use independently reviewable work units on `render-codacy-findings`; keep each
+unrelated code change in its own commit and never push to `main`.
 
-1. Analyzer retuning: `.codacy.yaml`, the coding-standard thresholds, and the
-   SC2001 one-liner. No engine code. Re-run analysis and record the new
-   baseline.
-2. Texture path defects, items 1.1 and 1.2, with regression tests. Small,
-   test-protected, highest actual value.
+1. Texture path defects, items 1.1 and 1.2, with owning regression tests. Small,
+   test-protected, highest immediate value.
+2. Vulkan upload validation, item 1.3: extract and wire the behavior-preserving
+   pure validator, observe the malformed cases fail, then tighten both service
+   entry points. Keep this separate from staging refactoring.
 3. glTF import de-duplication, item 2.2. Largest diff, fully test-protected.
-4. Lightmap bake context struct, item 2.4. File-local and trivial.
-5. `RendererServices` constructor and `RenderExtractCaches`, items 3.1 and 3.2.
-   Signature only; run the ABI and isolation checks.
-6. Vulkan upload de-duplication and region bounds, items 2.1 and 1.3. Blind, and
-   verified by running the app. Lands last and alone so a visual regression has
-   an unambiguous cause.
-7. The clang-tidy script, section 5, advisory only.
-
-`MakeMeshPipelineBase` (2.3) can ride with step 6 or stand alone; it is also
-blind.
+4. Reuse `DocumentCookContext` in the lightmap channels, item 2.4. File-local and
+   covered by end-to-end cook tests.
+5. Add `RenderExtractCaches` while retaining the forwarding compatibility
+   overload, item 3.2. Run the host build and module isolation checks.
+6. Vulkan staging and barrier de-duplication, item 2.1. Validation behavior is
+   already protected by step 2; exercise both valid upload paths in the app.
+7. `MakeMeshPipelineBase`, item 2.3, as its own change so any visual regression
+   has an unambiguous cause.
+8. Expand and wire the advisory clang-tidy run from section 5, run it locally,
+   and record its initial versioned baseline before adding the advisory CI step.
+9. Analyzer retuning from section 4 and the SC2001 correction. Review all 100
+   Flawfinder findings before deciding its repository-wide status, apply Lizard
+   settings repository-locally, re-run Codacy, and record the new baseline here.
 
 ## 8. Verification
 
 Focused, per step:
 
 ```sh
-ctest --test-dir build -R 'TextureAsset|TextureCook' --output-on-failure
-ctest --test-dir build -R 'MeshCook|SkeletalCook|BrushBake' --output-on-failure
-ctest --test-dir build -R 'ShadowResidency|ZoneLightmapResolution' --output-on-failure
+ctest --test-dir build -R '^(Image|TextureData|StexRoundTrip|TextureCook|TextureAssetLoaderStex)\.' --output-on-failure
+ctest --test-dir build -R '^VulkanImageUploadValidation\.' --output-on-failure
+ctest --test-dir build -R '^(MeshCook|SkeletalCook|BrushBake|GltfMeshExport)\.' --output-on-failure
+ctest --test-dir build -R '^BakedLightingCookTest\.' --output-on-failure
+ctest --test-dir build -R '^(ShadowResidency|ZoneLightmapResolution)\.' --output-on-failure
 ./scripts/check_module_abi.sh .
 ./scripts/check_render_portability.sh
+```
+
+After item 1, exercise the malformed-image coverage under AddressSanitizer:
+
+```sh
+cmake --preset asan
+cmake --build --preset asan --parallel
+ctest --test-dir build-asan -R '^(Image|TextureData|StexRoundTrip|TextureCook|TextureAssetLoaderStex)\.' --output-on-failure
 ```
 
 Full gate before each push:
@@ -393,17 +490,26 @@ git diff --check
 ```
 
 `VulkanImageService`, `VulkanPipelineCache`, `VulkanFrameService`, `Renderer`,
-`MeshForwardPass`, and `LightBindings` have no references anywhere under
-`test/`; there is no Vulkan device harness in this repository. Steps 5 and 6 are
-confirmed by running the app:
+`MeshForwardPass`, and `LightBindings` have no device-backed tests. The pure
+validator covers rejection without a GPU; the staging and pipeline changes are
+confirmed by running:
 
-- SceneViewer on a textured, mip-mapped, shadow-casting scene, since the mip
-  chain and both upload paths are only exercised by real texture loads;
-- the Kyusu viewport, which confirms `Renderer` construction and the editor
-  render feature still come up.
+- SceneViewer on a cooked, mip-mapped, shadow-casting scene with a baked probe
+  volume, covering `UploadMips`, the 3D `Upload` path, and normal forward
+  pipelines;
+- the Kyusu viewport with the editor skin loaded, covering the 2D `Upload` path;
+- the renderer's debug and overdraw views, covering both pipeline-base consumers.
 
 Compare against a pre-change capture, running foreground with
 `SENCHA_PRESENT_MODE=IMMEDIATE`.
 
-The regression tests for items 1.1 and 1.2 must be confirmed to fail before the
-fix, for the intended reason.
+After the dev build, run the advisory analyzer and preserve its output with the
+tool version:
+
+```sh
+./scripts/run_render_tidy.sh build
+```
+
+The regression tests for items 1.1 and 1.2, and the newly rejected validation
+cases for item 1.3, must be confirmed to fail before their respective checks are
+tightened, for the intended reasons described above.

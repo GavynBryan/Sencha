@@ -2,6 +2,10 @@
 #include <render/Image.h>
 #include <render/ImageLoader.h>
 
+#include <cstddef>
+#include <type_traits>
+#include <utility>
+
 // ============================================================================
 // Image struct
 // ============================================================================
@@ -30,6 +34,59 @@ TEST(Image, ByteSize)
     img.Height = 8;
     img.Pixels.resize(img.Width * img.Height * 4u);
     EXPECT_EQ(img.ByteSize(), 16u * 8u * 4u);
+}
+
+// ByteSize reports storage actually owned. Consumers size copies out of Pixels
+// with it, so it must never be recomputed from the dimensions.
+TEST(Image, ByteSizeReportsOwnedStorageNotTheDimensions)
+{
+    static_assert(std::is_same_v<decltype(std::declval<const Image&>().ByteSize()), std::size_t>,
+                  "ByteSize must not narrow the owned size");
+
+    Image img;
+    img.Width  = 64;
+    img.Height = 64;
+    img.Pixels.resize(8);
+    EXPECT_FALSE(img.IsValid());
+    EXPECT_EQ(img.ByteSize(), 8u);
+}
+
+// Consumers copy Width * Height * 4 bytes out of Pixels on the strength of
+// IsValid alone, so a buffer that disagrees with the dimensions is not valid.
+TEST(Image, ValidityRequiresExactlyTightlyPackedRgba)
+{
+    Image img;
+    img.Width  = 4;
+    img.Height = 4;
+
+    img.Pixels.assign(4u * 4u * 4u, 0xFF);
+    EXPECT_TRUE(img.IsValid());
+
+    img.Pixels.assign(4u * 4u * 4u - 1u, 0xFF);
+    EXPECT_FALSE(img.IsValid()) << "an undersized buffer would be over-read";
+
+    img.Pixels.assign(4u * 4u * 4u + 1u, 0xFF);
+    EXPECT_FALSE(img.IsValid()) << "a buffer that is not a whole number of pixels is malformed";
+
+    img.Pixels.assign(4u * 4u * 4u + 4u, 0xFF);
+    EXPECT_FALSE(img.IsValid()) << "an oversized buffer disagrees with the declared extent";
+}
+
+// Width * Height fits in uint64_t; that product times four does not. Validity
+// must be decided in pixels so the byte form cannot wrap into a pass.
+TEST(Image, ExtremeDimensionsDoNotWrapIntoValidity)
+{
+    Image img;
+    img.Width  = 1u << 16;
+    img.Height = 1u << 16;
+    img.Pixels.assign(64, 0xFF);
+    EXPECT_FALSE(img.IsValid());
+
+    // 2^32 pixels * 4 bytes is exactly 2^34, which truncates to zero in 32 bits.
+    img.Width  = 1u << 16;
+    img.Height = 1u << 16;
+    img.Pixels.clear();
+    EXPECT_FALSE(img.IsValid());
 }
 
 TEST(Image, BytesPerPixelAlwaysFour)
