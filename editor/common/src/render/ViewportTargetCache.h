@@ -2,6 +2,7 @@
 
 #include "viewport/ViewportId.h"
 
+#include <graphics/FramesInFlight.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
 #include <graphics/vulkan/VulkanImageService.h>
@@ -60,7 +61,11 @@ public:
     [[nodiscard]] ImTextureID Display(ViewportId id, VkExtent2D extent);
 
 private:
-    static constexpr uint32_t kMaxSlots = 4; // upper bound on frames in flight
+    // Slot count comes from the engine's frames-in-flight authority rather
+    // than a local guess; a private bound smaller than the configured count
+    // used to fold every frame onto slot 0, so the UI sampled the target the
+    // next frame was rendering into.
+    static constexpr uint32_t kMaxSlots = kMaxFramesInFlight;
 
     struct Slot
     {

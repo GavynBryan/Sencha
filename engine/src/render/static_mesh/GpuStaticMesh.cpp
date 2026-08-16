@@ -1,6 +1,7 @@
 #include <render/static_mesh/GpuStaticMesh.h>
 
 #include <core/logging/Logger.h>
+#include <graphics/vulkan/VulkanBufferService.h>
 #include <render/static_mesh/MeshValidation.h>
 
 bool UploadMeshGeometryToGpu(VulkanBufferService& buffers,

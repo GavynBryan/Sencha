@@ -1,5 +1,6 @@
 #include <graphics/vulkan/GraphicsServices.h>
 
+#include <graphics/FramesInFlight.h>
 #include <platform/SdlWindow.h>
 #include <platform/SdlWindowService.h>
 
@@ -29,7 +30,7 @@ VulkanBootstrapPolicy GraphicsServices::BuildPolicy(const EngineConfig& config,
 
 std::uint32_t GraphicsServices::ResolveFramesInFlight(const EngineConfig& config)
 {
-    return config.Graphics.FramesInFlight == 0 ? 1u : config.Graphics.FramesInFlight;
+    return ClampFramesInFlight(config.Graphics.FramesInFlight);
 }
 
 GraphicsServices::GraphicsServices(LoggingProvider& logging,
@@ -39,6 +40,16 @@ GraphicsServices::GraphicsServices(LoggingProvider& logging,
     : GraphicsServices(logging, BuildPolicy(config, windows), ResolveFramesInFlight(config),
                        config.Graphics.FrameScratchBytesPerFrame, window)
 {
+    // Reported once here rather than by the clamp, which stays pure. Silence
+    // would leave a configured 8 running as 4 with no way to tell from a log.
+    const std::uint32_t requested = config.Graphics.FramesInFlight;
+    const std::uint32_t resolved = ResolveFramesInFlight(config);
+    if (requested != resolved)
+    {
+        logging.GetLogger<GraphicsServices>().Warn(
+            "graphics.framesInFlight {} is outside the supported range [{}, {}]; using {}",
+            requested, kMinFramesInFlight, kMaxFramesInFlight, resolved);
+    }
 }
 
 GraphicsServices::GraphicsServices(LoggingProvider& logging,

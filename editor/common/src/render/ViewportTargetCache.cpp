@@ -6,6 +6,7 @@
 #include <imgui_impl_vulkan.h>
 
 #include <algorithm>
+#include <cassert>
 
 namespace
 {
@@ -33,7 +34,14 @@ void ViewportTargetCache::Teardown()
 void ViewportTargetCache::BeginFrame(uint32_t frameInFlightIndex)
 {
     ++FrameCounter;
-    CurrentSlot = frameInFlightIndex < kMaxSlots ? frameInFlightIndex : 0;
+    // GraphicsServices clamps the configured count to kMaxFramesInFlight, so
+    // the index is in range by construction. The assert catches a broken
+    // contract in development; the fallback keeps a release build from
+    // indexing past the array if one ever is. It must not be slot 0 -- that is
+    // the slot most likely to still be in flight, which is what made the old
+    // fold corrupt rather than degrade.
+    assert(frameInFlightIndex < kMaxSlots);
+    CurrentSlot = frameInFlightIndex < kMaxSlots ? frameInFlightIndex : kMaxSlots - 1;
     FlushRetiredSets(/*force*/ false);
 }
 

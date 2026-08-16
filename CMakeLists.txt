@@ -61,6 +61,13 @@ add_test(NAME physics_isolation
 add_test(NAME net_isolation
     COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/cmake/CheckNetIsolation.cmake")
 
+# Render-domain firewall, inverted: graphics/vulkan/ owns the backend, and
+# engine/{include,src}/render must stay clean so render policy can be read and
+# tested without a device. Its allowlist is the not-yet-migrated files and only
+# ever shrinks.
+add_test(NAME render_isolation
+    COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/cmake/CheckRenderIsolation.cmake")
+
 # All SENCHA_ENABLE_* feature flags are declared here, before any subdirectory
 # consumes them.
 include("${CMAKE_SOURCE_DIR}/cmake/SenchaOptions.cmake")

@@ -1,12 +1,13 @@
 #pragma once
 
-#include <graphics/vulkan/VulkanBufferService.h>
+#include <graphics/BufferHandle.h>
 #include <render/static_mesh/MeshGeometry.h>
 #include <render/static_mesh/StaticMeshSection.h>
 
 #include <vector>
 
 class Logger;
+class VulkanBufferService;
 
 // The GPU residency of a mesh's geometry — the immutable vertex/index
 // buffers plus the section table. Shared by static and skinned meshes: both

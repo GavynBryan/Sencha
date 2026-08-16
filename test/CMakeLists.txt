@@ -369,4 +369,10 @@ if(NOT WIN32)
         NAME gameplay_input_discipline
         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_gameplay_input.sh ${CMAKE_SOURCE_DIR}
     )
+    # Ran only in the CI workflow until now, so a local `ctest` never saw a
+    # portability regression. It reads source and needs no build.
+    add_test(
+        NAME render_portability
+        COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_render_portability.sh ${CMAKE_SOURCE_DIR}
+    )
 endif()

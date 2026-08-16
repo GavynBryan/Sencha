@@ -27,7 +27,7 @@ namespace
         active.SetActive(entity);
         CameraRenderData camera;
         EXPECT_TRUE(CameraRenderDataSystem::Build(
-            active, world, VkExtent2D{ 1280, 720 }, camera));
+            active, world, RenderExtent{ 1280, 720 }, camera));
         return camera;
     }
 }

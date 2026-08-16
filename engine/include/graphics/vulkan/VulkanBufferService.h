@@ -2,6 +2,7 @@
 
 #include <core/handle/Handle.h>
 #include <core/logging/LoggingProvider.h>
+#include <graphics/BufferHandle.h>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 
@@ -46,9 +47,8 @@ enum class BufferMemory : uint8_t
     Readback,
 };
 
-// Generational handle to a GPU buffer owned by VulkanBufferService. One of the
-// engine's unified Handle<Tag> types (handle convergence).
-using BufferHandle = Handle<struct BufferHandleTag>;
+// BufferHandle itself lives in graphics/BufferHandle.h so holders can name it
+// without the Vulkan headers; it arrives here through that include.
 
 struct BufferCreateInfo
 {
