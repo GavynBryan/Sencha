@@ -2,6 +2,7 @@
 
 #include <core/handle/Handle.h>
 #include <core/logging/LoggingProvider.h>
+#include <graphics/vulkan/VulkanImageUploadValidation.h>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 
@@ -92,13 +93,9 @@ public:
     bool Upload(ImageHandle handle, const void* data, VkDeviceSize size);
 
     // One mip's extent and byte offset within the blob handed to UploadMips.
-    struct MipUploadRegion
-    {
-        uint32_t MipLevel = 0;
-        uint32_t Width = 0;
-        uint32_t Height = 0;
-        VkDeviceSize Offset = 0;
-    };
+    // Owned by the upload-validation contract, which is where the copy
+    // footprint these describe is computed.
+    using MipUploadRegion = ImageMipUploadRegion;
 
     // Upload a pre-generated mip chain in one staging pass: `data` is the
     // packed blob, `regions` describe each level. For cooked textures — the
@@ -147,6 +144,8 @@ private:
     [[nodiscard]] ImageEntry* Resolve(ImageHandle handle);
     [[nodiscard]] const ImageEntry* Resolve(ImageHandle handle) const;
     [[nodiscard]] ImageHandle MakeHandle(uint32_t index, uint32_t generation) const;
+
+    [[nodiscard]] static ImageUploadTarget DescribeTarget(const ImageEntry& entry);
 
     [[nodiscard]] bool CreateDefaultView(ImageEntry& entry);
     void RecordMipChain(VkCommandBuffer cmd, ImageEntry& entry);

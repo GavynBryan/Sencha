@@ -18,6 +18,40 @@
 #include <cstddef>
 #include <cstring>
 
+namespace
+{
+    // The vertex interface every forward mesh pipeline shares. The lit, unlit,
+    // debug-view, and overdraw pipelines differ only in shading and blend
+    // state, so the binding and attribute layout is described once: adding a
+    // vertex attribute is one edit, not one edit per pipeline family.
+    GraphicsPipelineDesc MakeMeshPipelineBase(ShaderHandle vertexShader,
+                                              VkPipelineLayout layout)
+    {
+        GraphicsPipelineDesc base{};
+        base.VertexShader = vertexShader;
+        base.Layout = layout;
+        base.VertexBindings = {
+            { 0, sizeof(StaticMeshVertex), VK_VERTEX_INPUT_RATE_VERTEX },
+            { 1, sizeof(MeshInstanceData), VK_VERTEX_INPUT_RATE_INSTANCE },
+        };
+        base.VertexAttributes = {
+            { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Position) },
+            { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Normal) },
+            { 2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(StaticMeshVertex, Uv0) },
+            { 3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) },
+            { 4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) + 16 },
+            { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) + 32 },
+            { 6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) + 48 },
+            { 7, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(StaticMeshVertex, Tangent) },
+            { 8, 0, VK_FORMAT_R16G16_UNORM, offsetof(StaticMeshVertex, LightmapU) },
+            { 9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, LightmapScaleBias) },
+        };
+        base.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        base.DepthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
+        return base;
+    }
+} // namespace
+
 static_assert(offsetof(MeshPushConstants, BaseColor) == 0);
 static_assert(offsetof(MeshPushConstants, EmissiveFactor) == 16);
 static_assert(offsetof(MeshPushConstants, NormalScale) == 32);
@@ -145,30 +179,10 @@ bool MeshForwardPass::EnsurePipelines(const FrameContext& frame)
         return true;
     }
 
-    GraphicsPipelineDesc base{};
-    base.VertexShader = VertexShader;
+    GraphicsPipelineDesc base = MakeMeshPipelineBase(VertexShader, PipelineLayout);
     base.FragmentShader = FragmentShader;
-    base.Layout = PipelineLayout;
-    base.VertexBindings = {
-        { 0, sizeof(StaticMeshVertex), VK_VERTEX_INPUT_RATE_VERTEX },
-        { 1, sizeof(MeshInstanceData), VK_VERTEX_INPUT_RATE_INSTANCE },
-    };
-    base.VertexAttributes = {
-        { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Position) },
-        { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Normal) },
-        { 2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(StaticMeshVertex, Uv0) },
-        { 3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) },
-        { 4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) + 16 },
-        { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) + 32 },
-        { 6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) + 48 },
-        { 7, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(StaticMeshVertex, Tangent) },
-        { 8, 0, VK_FORMAT_R16G16_UNORM, offsetof(StaticMeshVertex, LightmapU) },
-        { 9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, LightmapScaleBias) },
-    };
-    base.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     base.DepthTest = true;
     base.DepthWrite = true;
-    base.DepthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
     base.ColorBlend = { ColorBlendAttachmentDesc{} };
     base.ColorFormats = { frame.TargetFormat };
     base.DepthFormat = frame.DepthFormat;
@@ -226,30 +240,10 @@ bool MeshForwardPass::EnsureDebugPipelines(const FrameContext& frame,
         return true;
     }
 
-    GraphicsPipelineDesc base{};
-    base.VertexShader = VertexShader;
+    GraphicsPipelineDesc base = MakeMeshPipelineBase(VertexShader, PipelineLayout);
     base.FragmentShader = DebugFragmentShader;
-    base.Layout = PipelineLayout;
-    base.VertexBindings = {
-        { 0, sizeof(StaticMeshVertex), VK_VERTEX_INPUT_RATE_VERTEX },
-        { 1, sizeof(MeshInstanceData), VK_VERTEX_INPUT_RATE_INSTANCE },
-    };
-    base.VertexAttributes = {
-        { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Position) },
-        { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Normal) },
-        { 2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(StaticMeshVertex, Uv0) },
-        { 3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) },
-        { 4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) + 16 },
-        { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) + 32 },
-        { 6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, World) + 48 },
-        { 7, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(StaticMeshVertex, Tangent) },
-        { 8, 0, VK_FORMAT_R16G16_UNORM, offsetof(StaticMeshVertex, LightmapU) },
-        { 9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(MeshInstanceData, LightmapScaleBias) },
-    };
-    base.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     base.DepthTest = !overdraw;
     base.DepthWrite = !overdraw;
-    base.DepthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
     ColorBlendAttachmentDesc blend{};
     if (overdraw)
     {

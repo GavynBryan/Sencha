@@ -117,16 +117,14 @@ namespace
         return true;
     }
 
-    bool BakeFreshDirect(const std::vector<LightmapSurfaceSamples>& sampleMaps,
+    bool BakeFreshDirect(const DocumentCookContext& ctx,
+                         const std::vector<LightmapSurfaceSamples>& sampleMaps,
                          const LightmapAtlasLayout& atlasLayout,
                          const DocumentCookSnapshot& snapshot, const BakeBvh& occluders,
-                         std::string_view stem, const std::filesystem::path& assetsRoot,
-                         CookArtifactTransaction& transaction,
-                         DocumentArtifactCatalog& catalog, CookStepProgress& progress,
-                         LoggingProvider& logging,
-                         std::optional<CookedArtifact>& directArtifact,
-                         DocumentCookResult& result)
+                         std::optional<CookedArtifact>& directArtifact)
     {
+        DocumentCookResult& result = ctx.Result;
+        CookStepProgress& progress = ctx.Progress;
         std::vector<std::uint32_t> atlasPixels(
             static_cast<std::size_t>(atlasLayout.Width) * atlasLayout.Height, 0u);
         for (std::size_t c = 0; c < sampleMaps.size(); ++c)
@@ -149,27 +147,28 @@ namespace
         atlas.Blob.resize(atlasPixels.size() * sizeof(std::uint32_t));
         std::memcpy(atlas.Blob.data(), atlasPixels.data(), atlas.Blob.size());
 
-        const std::string atlasRel = LightmapAtlasRel(stem);
+        const std::string atlasRel = LightmapAtlasRel(ctx.Stem());
         const std::string atlasAssetPath = "asset://" + atlasRel;
-        TextureSerializer textureSerializer(logging);
+        TextureSerializer textureSerializer(ctx.Logging);
         if (!textureSerializer.WriteToFile(
-                transaction.Stage(assetsRoot / ".cooked" / atlasRel).generic_string(), atlas))
+                ctx.Transaction.Stage(ctx.AssetsRoot / ".cooked" / atlasRel).generic_string(),
+                atlas))
         {
             result.Error = "CookDocument: could not write lightmap atlas '" + atlasRel + "'";
             return false;
         }
-        directArtifact = catalog.AddSceneTexture(atlasAssetPath, ".cooked/" + atlasRel);
+        directArtifact = ctx.Catalog.AddSceneTexture(atlasAssetPath, ".cooked/" + atlasRel);
         return true;
     }
 
-    bool BakeFreshAo(const std::vector<LightmapSurfaceSamples>& sampleMaps,
+    bool BakeFreshAo(const DocumentCookContext& ctx,
+                     const std::vector<LightmapSurfaceSamples>& sampleMaps,
                      const LightmapAtlasLayout& atlasLayout,
                      const DocumentCookSnapshot& snapshot, const BakeBvh& occluders,
-                     std::string_view stem, const std::filesystem::path& assetsRoot,
-                     CookArtifactTransaction& transaction, DocumentArtifactCatalog& catalog,
-                     CookStepProgress& progress, LoggingProvider& logging,
-                     std::optional<CookedArtifact>& aoArtifact, DocumentCookResult& result)
+                     std::optional<CookedArtifact>& aoArtifact)
     {
+        DocumentCookResult& result = ctx.Result;
+        CookStepProgress& progress = ctx.Progress;
         const LightingCookParams& params = snapshot.Lighting;
         // The AO plane initializes white: texels no chart covers (including the
         // reserved border and the (0, 0) texel unbaked items sample) must never
@@ -199,16 +198,17 @@ namespace
                                           aoPixels.size() } };
         aoAtlas.Blob.assign(aoPixels.begin(), aoPixels.end());
 
-        const std::string aoRel = AoAtlasRel(stem);
+        const std::string aoRel = AoAtlasRel(ctx.Stem());
         const std::string aoAssetPath = "asset://" + aoRel;
-        TextureSerializer textureSerializer(logging);
+        TextureSerializer textureSerializer(ctx.Logging);
         if (!textureSerializer.WriteToFile(
-                transaction.Stage(assetsRoot / ".cooked" / aoRel).generic_string(), aoAtlas))
+                ctx.Transaction.Stage(ctx.AssetsRoot / ".cooked" / aoRel).generic_string(),
+                aoAtlas))
         {
             result.Error = "CookDocument: could not write AO atlas '" + aoRel + "'";
             return false;
         }
-        aoArtifact = catalog.AddSceneTexture(aoAssetPath, ".cooked/" + aoRel);
+        aoArtifact = ctx.Catalog.AddSceneTexture(aoAssetPath, ".cooked/" + aoRel);
         return true;
     }
 } // namespace
@@ -223,11 +223,9 @@ bool BakeDocumentLightmap(const DocumentCookContext& ctx,
                           std::optional<CookedArtifact>& aoArtifact)
 {
     const std::filesystem::path& assetsRoot = ctx.AssetsRoot;
-    const std::string_view stem = ctx.Stem();
     CookArtifactTransaction& transaction = ctx.Transaction;
     DocumentArtifactCatalog& catalog = ctx.Catalog;
     CookStepProgress& progress = ctx.Progress;
-    LoggingProvider& logging = ctx.Logging;
     DocumentCookResult& result = ctx.Result;
 
     result.DirectLightCount = snapshot.BakeLights.size();
@@ -258,8 +256,8 @@ bool BakeDocumentLightmap(const DocumentCookContext& ctx,
         result.ReusedSteps.push_back(std::string(CookStepIds::DirectLightmap));
         RestoreDocumentCookResultMetadata(reuse.Direct->Metadata, result);
     }
-    else if (!BakeFreshDirect(sampleMaps, atlasLayout, snapshot, occlusionBvh, stem, assetsRoot,
-                              transaction, catalog, progress, logging, directArtifact, result))
+    else if (!BakeFreshDirect(ctx, sampleMaps, atlasLayout, snapshot, occlusionBvh,
+                              directArtifact))
         return false;
     progress.Complete();
 
@@ -275,8 +273,7 @@ bool BakeDocumentLightmap(const DocumentCookContext& ctx,
             }
             result.ReusedSteps.push_back(std::string(CookStepIds::AmbientOcclusion));
         }
-        else if (!BakeFreshAo(sampleMaps, atlasLayout, snapshot, occlusionBvh, stem, assetsRoot,
-                              transaction, catalog, progress, logging, aoArtifact, result))
+        else if (!BakeFreshAo(ctx, sampleMaps, atlasLayout, snapshot, occlusionBvh, aoArtifact))
             return false;
         progress.Complete();
     }

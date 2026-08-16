@@ -582,6 +582,112 @@ namespace
         default: supported = false; return AnimationChannelPath::Translation; // weights, etc.
         }
     }
+
+    // Parse a self-contained glTF and load its buffers. No base path is passed:
+    // a source must carry its own data (.glb or data: URIs) so the cooked
+    // cache's single-source-hash staleness stays honest.
+    bool ParseGltf(std::span<const std::byte> bytes, CgltfDataPtr& out, std::string* error)
+    {
+        cgltf_options options{};
+        cgltf_data* rawData = nullptr;
+        cgltf_result result = cgltf_parse(&options, bytes.data(), bytes.size(), &rawData);
+        if (result != cgltf_result_success)
+        {
+            SetError(error, "glTF parse failed: " + CgltfResultMessage(result));
+            return false;
+        }
+        out.reset(rawData);
+
+        result = cgltf_load_buffers(&options, out.get(), nullptr);
+        if (result != cgltf_result_success)
+        {
+            SetError(error,
+                     result == cgltf_result_unknown_format
+                         ? "external buffer URIs are not supported: export a self-contained "
+                           ".glb (or embed buffers as data: URIs)"
+                         : "glTF buffer load failed: " + CgltfResultMessage(result));
+            return false;
+        }
+
+        if (out->meshes_count == 0)
+        {
+            SetError(error, "source contains no meshes");
+            return false;
+        }
+
+        return true;
+    }
+
+    // Accumulate one glTF mesh's primitives into a single geometry, one section
+    // per primitive, and validate the result. `influences` opts the caller into
+    // the skinning stream; when null, skin attributes are not read.
+    bool ReadMeshGeometry(const cgltf_mesh& gltfMesh,
+                          std::string_view nameForErrors,
+                          ImportedGltfMesh& imported,
+                          std::vector<MeshSkinInfluence>* influences,
+                          std::string* error)
+    {
+        if (gltfMesh.primitives_count == 0)
+        {
+            SetError(error, std::format("mesh '{}' has no primitives", nameForErrors));
+            return false;
+        }
+
+        for (cgltf_size primitiveIndex = 0; primitiveIndex < gltfMesh.primitives_count;
+             ++primitiveIndex)
+        {
+            std::vector<StaticMeshVertex> vertices;
+            std::vector<uint32_t> indices;
+            std::vector<MeshSkinInfluence> primitiveInfluences;
+            if (!ReadPrimitive(gltfMesh.primitives[primitiveIndex], nameForErrors, primitiveIndex,
+                               vertices, indices, error,
+                               influences != nullptr ? &primitiveInfluences : nullptr))
+            {
+                return false;
+            }
+
+            MeshGeometry& mesh = imported.Geometry;
+            const uint32_t vertexBase = static_cast<uint32_t>(mesh.Vertices.size());
+
+            StaticMeshSection section;
+            section.IndexOffset = static_cast<uint32_t>(mesh.Indices.size());
+            section.IndexCount = static_cast<uint32_t>(indices.size());
+            section.VertexOffset = vertexBase;
+            section.VertexCount = static_cast<uint32_t>(vertices.size());
+            section.MaterialSlot = static_cast<uint32_t>(primitiveIndex);
+            mesh.Sections.push_back(section);
+
+            mesh.Vertices.insert(mesh.Vertices.end(), vertices.begin(), vertices.end());
+            mesh.Indices.reserve(mesh.Indices.size() + indices.size());
+            for (const uint32_t index : indices)
+                mesh.Indices.push_back(vertexBase + index);
+
+            if (influences != nullptr)
+                influences->insert(influences->end(), primitiveInfluences.begin(),
+                                   primitiveInfluences.end());
+        }
+
+        RecomputeMeshBounds(imported.Geometry);
+
+        // Geometry only. The skinning invariants need the skeleton's assigned
+        // artifact path, so the serializer validates those once the importer
+        // fills SkeletonPath.
+        const MeshValidationResult validation = ValidateMeshGeometry(imported.Geometry);
+        if (!validation.IsValid())
+        {
+            std::string joined;
+            for (const MeshValidationError& validationError : validation.Errors)
+            {
+                if (!joined.empty())
+                    joined += "; ";
+                joined += validationError.Message;
+            }
+            SetError(error, std::format("mesh '{}' is invalid: {}", nameForErrors, joined));
+            return false;
+        }
+
+        return true;
+    }
 } // namespace
 
 bool GenerateSectionTangents(std::vector<StaticMeshVertex>& vertices,
@@ -665,34 +771,9 @@ bool ImportGltfMeshes(std::span<const std::byte> bytes,
 {
     out.clear();
 
-    cgltf_options options{};
-    cgltf_data* rawData = nullptr;
-    cgltf_result result = cgltf_parse(&options, bytes.data(), bytes.size(), &rawData);
-    if (result != cgltf_result_success)
-    {
-        SetError(error, "glTF parse failed: " + CgltfResultMessage(result));
+    CgltfDataPtr data;
+    if (!ParseGltf(bytes, data, error))
         return false;
-    }
-    CgltfDataPtr data(rawData);
-
-    // No base path: a source must be self-contained (.glb or data: URIs) so
-    // the cooked cache's single-source-hash staleness stays honest.
-    result = cgltf_load_buffers(&options, data.get(), nullptr);
-    if (result != cgltf_result_success)
-    {
-        SetError(error,
-                 result == cgltf_result_unknown_format
-                     ? "external buffer URIs are not supported: export a self-contained "
-                       ".glb (or embed buffers as data: URIs)"
-                     : "glTF buffer load failed: " + CgltfResultMessage(result));
-        return false;
-    }
-
-    if (data->meshes_count == 0)
-    {
-        SetError(error, "source contains no meshes");
-        return false;
-    }
 
     for (cgltf_size meshIndex = 0; meshIndex < data->meshes_count; ++meshIndex)
     {
@@ -701,56 +782,11 @@ bool ImportGltfMeshes(std::span<const std::byte> bytes,
         const std::string_view nameForErrors =
             meshName.empty() ? std::string_view("<unnamed>") : std::string_view(meshName);
 
-        if (gltfMesh.primitives_count == 0)
-        {
-            SetError(error, std::format("mesh '{}' has no primitives", nameForErrors));
-            return false;
-        }
-
         ImportedGltfMesh imported;
         imported.Name = meshName;
 
-        for (cgltf_size primitiveIndex = 0; primitiveIndex < gltfMesh.primitives_count; ++primitiveIndex)
-        {
-            std::vector<StaticMeshVertex> vertices;
-            std::vector<uint32_t> indices;
-            if (!ReadPrimitive(gltfMesh.primitives[primitiveIndex], nameForErrors,
-                               primitiveIndex, vertices, indices, error))
-            {
-                return false;
-            }
-
-            MeshGeometry& mesh = imported.Geometry;
-            const uint32_t vertexBase = static_cast<uint32_t>(mesh.Vertices.size());
-
-            StaticMeshSection section;
-            section.IndexOffset = static_cast<uint32_t>(mesh.Indices.size());
-            section.IndexCount = static_cast<uint32_t>(indices.size());
-            section.VertexOffset = vertexBase;
-            section.VertexCount = static_cast<uint32_t>(vertices.size());
-            section.MaterialSlot = static_cast<uint32_t>(primitiveIndex);
-            mesh.Sections.push_back(section);
-
-            mesh.Vertices.insert(mesh.Vertices.end(), vertices.begin(), vertices.end());
-            mesh.Indices.reserve(mesh.Indices.size() + indices.size());
-            for (const uint32_t index : indices)
-                mesh.Indices.push_back(vertexBase + index);
-        }
-
-        RecomputeMeshBounds(imported.Geometry);
-        const MeshValidationResult validation = ValidateMeshGeometry(imported.Geometry);
-        if (!validation.IsValid())
-        {
-            std::string joined;
-            for (const MeshValidationError& validationError : validation.Errors)
-            {
-                if (!joined.empty())
-                    joined += "; ";
-                joined += validationError.Message;
-            }
-            SetError(error, std::format("mesh '{}' is invalid: {}", nameForErrors, joined));
+        if (!ReadMeshGeometry(gltfMesh, nameForErrors, imported, nullptr, error))
             return false;
-        }
 
         out.push_back(std::move(imported));
     }
@@ -762,32 +798,9 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
 {
     out = {};
 
-    cgltf_options options{};
-    cgltf_data* rawData = nullptr;
-    cgltf_result result = cgltf_parse(&options, bytes.data(), bytes.size(), &rawData);
-    if (result != cgltf_result_success)
-    {
-        SetError(error, "glTF parse failed: " + CgltfResultMessage(result));
+    CgltfDataPtr data;
+    if (!ParseGltf(bytes, data, error))
         return false;
-    }
-    CgltfDataPtr data(rawData);
-
-    result = cgltf_load_buffers(&options, data.get(), nullptr);
-    if (result != cgltf_result_success)
-    {
-        SetError(error,
-                 result == cgltf_result_unknown_format
-                     ? "external buffer URIs are not supported: export a self-contained "
-                       ".glb (or embed buffers as data: URIs)"
-                     : "glTF buffer load failed: " + CgltfResultMessage(result));
-        return false;
-    }
-
-    if (data->meshes_count == 0)
-    {
-        SetError(error, "source contains no meshes");
-        return false;
-    }
 
     // Skeletons, one per skin. Keep each skin's skin-local → skeleton remap,
     // and a node → (skin, skeleton-joint) lookup for animation channels.
@@ -819,12 +832,6 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
         const std::string_view nameForErrors =
             meshName.empty() ? std::string_view("<unnamed>") : std::string_view(meshName);
 
-        if (gltfMesh.primitives_count == 0)
-        {
-            SetError(error, std::format("mesh '{}' has no primitives", nameForErrors));
-            return false;
-        }
-
         const std::vector<int> meshSkins = MeshSkinIndices(*data, gltfMesh);
         if (meshSkins.size() > 1)
         {
@@ -842,35 +849,10 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
         imported.SkinIndex = skinIndex;
 
         std::vector<MeshSkinInfluence> meshInfluences;
-        for (cgltf_size primitiveIndex = 0; primitiveIndex < gltfMesh.primitives_count; ++primitiveIndex)
+        if (!ReadMeshGeometry(gltfMesh, nameForErrors, imported,
+                              skinned ? &meshInfluences : nullptr, error))
         {
-            std::vector<StaticMeshVertex> vertices;
-            std::vector<uint32_t> indices;
-            std::vector<MeshSkinInfluence> influences;
-            if (!ReadPrimitive(gltfMesh.primitives[primitiveIndex], nameForErrors, primitiveIndex,
-                               vertices, indices, error, skinned ? &influences : nullptr))
-            {
-                return false;
-            }
-
-            MeshGeometry& mesh = imported.Geometry;
-            const uint32_t vertexBase = static_cast<uint32_t>(mesh.Vertices.size());
-
-            StaticMeshSection section;
-            section.IndexOffset = static_cast<uint32_t>(mesh.Indices.size());
-            section.IndexCount = static_cast<uint32_t>(indices.size());
-            section.VertexOffset = vertexBase;
-            section.VertexCount = static_cast<uint32_t>(vertices.size());
-            section.MaterialSlot = static_cast<uint32_t>(primitiveIndex);
-            mesh.Sections.push_back(section);
-
-            mesh.Vertices.insert(mesh.Vertices.end(), vertices.begin(), vertices.end());
-            mesh.Indices.reserve(mesh.Indices.size() + indices.size());
-            for (const uint32_t index : indices)
-                mesh.Indices.push_back(vertexBase + index);
-
-            if (skinned)
-                meshInfluences.insert(meshInfluences.end(), influences.begin(), influences.end());
+            return false;
         }
 
         if (skinned)
@@ -899,25 +881,6 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
             skinning.JointCount = static_cast<uint32_t>(out.Skeletons[skinIndex].Data.Joints.size());
             skinning.Influences = std::move(meshInfluences);
             imported.Skinning = std::move(skinning);
-        }
-
-        RecomputeMeshBounds(imported.Geometry);
-
-        // Validate geometry now; the skinning invariants (which need the
-        // skeleton's assigned artifact path) are validated by the serializer
-        // once the importer fills SkeletonPath.
-        const MeshValidationResult validation = ValidateMeshGeometry(imported.Geometry);
-        if (!validation.IsValid())
-        {
-            std::string joined;
-            for (const MeshValidationError& validationError : validation.Errors)
-            {
-                if (!joined.empty())
-                    joined += "; ";
-                joined += validationError.Message;
-            }
-            SetError(error, std::format("mesh '{}' is invalid: {}", nameForErrors, joined));
-            return false;
         }
 
         out.Meshes.push_back(std::move(imported));

@@ -227,8 +227,9 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
     {
         CpuScopeTimer timer(scopes, CpuScope::Extraction);
         RenderExtractor.Extract(
-            world, ctx.Partitions, *Meshes, *Materials, *MaterialSets, Camera,
-            Queue, Textures, ctx.Presentation.Alpha);
+            world, ctx.Partitions,
+            RenderExtractCaches{ *Meshes, *Materials, *MaterialSets, Textures },
+            Camera, Queue, ctx.Presentation.Alpha);
         Queue.SortOpaque();
     }
 

@@ -35,6 +35,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes \
+            clang-tidy \
             glslc \
             libvulkan-dev \
             ninja-build
@@ -64,6 +65,16 @@ jobs:
           path: build-ci.log
           if-no-files-found: error
           retention-days: 7
+
+      # Advisory, not a gate. This tree has no maintained clang-tidy baseline
+      # yet, so the run exists to make the findings visible in the job log;
+      # promoting it to a required check is a separate decision once the output
+      # is stable. Needs the build, not just the configure: it parses generated
+      # headers that only exist afterwards.
+      - name: Render layer clang-tidy (advisory)
+        continue-on-error: true
+        timeout-minutes: 20
+        run: ./scripts/run_render_tidy.sh build-ci
 
       - name: Test
         run: |

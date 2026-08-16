@@ -61,6 +61,17 @@ void BuildZoneLightmapTable(
     std::span<const ZoneLightmapIndices> table,
     StoragePartitionId partition);
 
+// The read-only caches one extraction resolves against. `Textures` stays
+// optional: without it, items carry no lightmap. Holds references into the
+// caller's frame and owns nothing, so constructing one allocates nothing.
+struct RenderExtractCaches
+{
+    const StaticMeshCache& Meshes;
+    const MaterialCache& Materials;
+    const MaterialSetCache& MaterialSets;
+    const TextureCache* Textures = nullptr;
+};
+
 //=============================================================================
 // RenderExtractionSystem
 //
@@ -75,13 +86,20 @@ void BuildZoneLightmapTable(
 class RenderExtractionSystem
 {
 public:
-    // `textures` resolves each resident zone's ZoneLightmapComponent to the
-    // bindless atlas index stamped on that zone's items; null leaves items
-    // without a lightmap.
     // `interpolationAlpha` is how far this frame sits past the last completed
     // simulation tick (PresentationTime::Alpha). Entities carrying
     // WorldTransformHistory render the blend at that point; everything else
     // renders its live WorldTransform.
+    void Extract(
+        const World& world,
+        const StoragePartitionSet& partitions,
+        const RenderExtractCaches& caches,
+        const CameraRenderData& camera,
+        RenderQueue& queue,
+        double interpolationAlpha = 1.0);
+
+    // Same extraction with the caches spelled out. Retained for callers built
+    // against the older signature; forwards to the bundled form.
     void Extract(
         const World& world,
         const StoragePartitionSet& partitions,

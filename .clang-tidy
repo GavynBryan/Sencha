@@ -1,8 +1,26 @@
+# Defect-focused checks for the render, graphics, profiling, and asset layers.
+# Run via scripts/run_render_tidy.sh, which needs a built compile database.
+#
+# Disabled checks and why:
+#   bugprone-easily-swappable-parameters  fires on nearly every geometry and
+#       Vulkan signature; the parameters are distinct concepts with the same
+#       primitive type, which no rename fixes.
+#   bugprone-narrowing-conversions        the engine is deliberately float for
+#       transforms and 32-bit for GPU-facing indices; this fires on the
+#       conversions that design implies.
+#   performance-enum-size                 enum widths here are chosen, not
+#       incidental. GPU-facing, cooked, and wire-facing enums carry the size
+#       their format specifies, and shrinking one to fit its current value set
+#       would change a layout the other side depends on.
+#
+# Comments cannot live inside the Checks block below: it is a YAML folded
+# scalar, so a '#' there becomes part of the check string rather than a comment.
 Checks: >
   bugprone-*,
   performance-*,
   -bugprone-easily-swappable-parameters,
-  -bugprone-narrowing-conversions
+  -bugprone-narrowing-conversions,
+  -performance-enum-size
 WarningsAsErrors: ''
-HeaderFilterRegex: 'engine/(src|include)/(render|graphics|profiling)/'
+HeaderFilterRegex: 'engine/(src|include)/(assets|render|graphics|profiling)/'
 FormatStyle: none
