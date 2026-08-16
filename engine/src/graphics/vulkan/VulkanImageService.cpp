@@ -25,6 +25,105 @@ namespace
         const uint32_t m = std::max(extent.width, extent.height);
         return m == 0 ? 1u : FloorLog2(m) + 1u;
     }
+
+    // A host-visible buffer holding one upload's bytes for the life of the
+    // submission. Both upload paths need exactly this and used to spell it out
+    // twice, including the destroy on every early return.
+    class StagingBuffer
+    {
+    public:
+        StagingBuffer(VmaAllocator allocator, const void* data, VkDeviceSize size)
+            : Allocator(allocator)
+        {
+            VkBufferCreateInfo bufferInfo{};
+            bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            bufferInfo.size = size;
+            bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+            bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+            VmaAllocationCreateInfo allocInfo{};
+            allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+            allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
+                            | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+            VmaAllocationInfo mapped{};
+            Result = vmaCreateBuffer(
+                Allocator, &bufferInfo, &allocInfo, &Buffer, &Allocation, &mapped);
+            if (Result != VK_SUCCESS)
+                return;
+
+            std::memcpy(mapped.pMappedData, data, static_cast<size_t>(size));
+            vmaFlushAllocation(Allocator, Allocation, 0, size);
+        }
+
+        ~StagingBuffer()
+        {
+            if (Buffer != VK_NULL_HANDLE)
+                vmaDestroyBuffer(Allocator, Buffer, Allocation);
+        }
+
+        StagingBuffer(const StagingBuffer&) = delete;
+        StagingBuffer& operator=(const StagingBuffer&) = delete;
+        StagingBuffer(StagingBuffer&&) = delete;
+        StagingBuffer& operator=(StagingBuffer&&) = delete;
+
+        [[nodiscard]] bool IsValid() const { return Result == VK_SUCCESS; }
+        [[nodiscard]] VkResult GetResult() const { return Result; }
+        [[nodiscard]] VkBuffer Get() const { return Buffer; }
+
+    private:
+        VmaAllocator Allocator = VK_NULL_HANDLE;
+        VkBuffer Buffer = VK_NULL_HANDLE;
+        VmaAllocation Allocation = VK_NULL_HANDLE;
+        VkResult Result = VK_ERROR_INITIALIZATION_FAILED;
+    };
+
+    // Both upload paths bracket their copies with a transition covering every
+    // mip of the image at once. The color aspect is hardcoded because the copy
+    // and the mip blit are color-only; the upload validator refuses anything
+    // else, so this stays in agreement with what is actually recorded.
+    void TransitionWholeChain(VkCommandBuffer cmd,
+                              VkImage image,
+                              uint32_t mipLevels,
+                              VkImageLayout oldLayout,
+                              VkImageLayout newLayout,
+                              VkPipelineStageFlags2 srcStage,
+                              VkPipelineStageFlags2 dstStage,
+                              VkAccessFlags2 srcAccess,
+                              VkAccessFlags2 dstAccess)
+    {
+        VulkanBarriers::ImageTransition t{};
+        t.Image = image;
+        t.OldLayout = oldLayout;
+        t.NewLayout = newLayout;
+        t.SrcStage = srcStage;
+        t.DstStage = dstStage;
+        t.SrcAccess = srcAccess;
+        t.DstAccess = dstAccess;
+        t.AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        t.BaseMipLevel = 0;
+        t.LevelCount = mipLevels;
+        VulkanBarriers::TransitionImage(cmd, t);
+    }
+
+    void TransitionChainToTransferDst(VkCommandBuffer cmd, VkImage image, uint32_t mipLevels)
+    {
+        TransitionWholeChain(cmd, image, mipLevels,
+                             VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                             VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_2_COPY_BIT,
+                             0, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+    }
+
+    void TransitionChainToShaderRead(VkCommandBuffer cmd, VkImage image, uint32_t mipLevels)
+    {
+        TransitionWholeChain(cmd, image, mipLevels,
+                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                             VK_PIPELINE_STAGE_2_COPY_BIT,
+                             VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                             VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                             VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+    }
 }
 
 VulkanImageService::VulkanImageService(
@@ -328,54 +427,19 @@ bool VulkanImageService::Upload(ImageHandle handle, const void* data, VkDeviceSi
         return false;
     }
 
-    // Staging buffer.
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = size;
-    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
-    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
-                    | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-    VkBuffer staging = VK_NULL_HANDLE;
-    VmaAllocation stagingAllocation = VK_NULL_HANDLE;
-    VmaAllocationInfo stagingResult{};
-    VkResult result = vmaCreateBuffer(
-        Allocator, &bufferInfo, &allocInfo, &staging, &stagingAllocation, &stagingResult);
-    if (result != VK_SUCCESS)
+    const StagingBuffer staging(Allocator, data, size);
+    if (!staging.IsValid())
     {
-        Log.Error("image upload: staging vmaCreateBuffer failed ({})", static_cast<int>(result));
+        Log.Error("image upload: staging vmaCreateBuffer failed ({})",
+                  static_cast<int>(staging.GetResult()));
         return false;
     }
-
-    std::memcpy(stagingResult.pMappedData, data, static_cast<size_t>(size));
-    vmaFlushAllocation(Allocator, stagingAllocation, 0, size);
 
     VkCommandBuffer cmd = UploadCtx->Begin();
     if (cmd == VK_NULL_HANDLE)
-    {
-        vmaDestroyBuffer(Allocator, staging, stagingAllocation);
         return false;
-    }
 
-    // UNDEFINED -> TRANSFER_DST across the whole mip chain (base + children).
-    {
-        VulkanBarriers::ImageTransition t{};
-        t.Image = entry->Image;
-        t.OldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        t.NewLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        t.SrcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-        t.DstStage = VK_PIPELINE_STAGE_2_COPY_BIT;
-        t.SrcAccess = 0;
-        t.DstAccess = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        t.AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        t.BaseMipLevel = 0;
-        t.LevelCount = entry->MipLevels;
-        VulkanBarriers::TransitionImage(cmd, t);
-    }
+    TransitionChainToTransferDst(cmd, entry->Image, entry->MipLevels);
 
     // Copy staging into base mip.
     VkBufferImageCopy region{};
@@ -390,34 +454,16 @@ bool VulkanImageService::Upload(ImageHandle handle, const void* data, VkDeviceSi
     region.imageExtent = { entry->Extent.width, entry->Extent.height, entry->Depth };
 
     vkCmdCopyBufferToImage(
-        cmd, staging, entry->Image,
+        cmd, staging.Get(), entry->Image,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         1, &region);
 
     if (entry->GenerateMips && entry->MipLevels > 1)
-    {
         RecordMipChain(cmd, *entry);
-    }
     else
-    {
-        // Transition the whole image (all mips) to SHADER_READ_ONLY.
-        VulkanBarriers::ImageTransition t{};
-        t.Image = entry->Image;
-        t.OldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        t.NewLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        t.SrcStage = VK_PIPELINE_STAGE_2_COPY_BIT;
-        t.DstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-        t.SrcAccess = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        t.DstAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-        t.AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        t.BaseMipLevel = 0;
-        t.LevelCount = entry->MipLevels;
-        VulkanBarriers::TransitionImage(cmd, t);
-    }
+        TransitionChainToShaderRead(cmd, entry->Image, entry->MipLevels);
 
-    const bool ok = UploadCtx->Submit(cmd);
-    vmaDestroyBuffer(Allocator, staging, stagingAllocation);
-    return ok;
+    return UploadCtx->Submit(cmd);
 }
 
 bool VulkanImageService::UploadMips(ImageHandle handle, const void* data, VkDeviceSize size,
@@ -438,54 +484,19 @@ bool VulkanImageService::UploadMips(ImageHandle handle, const void* data, VkDevi
         return false;
     }
 
-    // Staging buffer holding the whole packed chain.
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = size;
-    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
-    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
-                    | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-    VkBuffer staging = VK_NULL_HANDLE;
-    VmaAllocation stagingAllocation = VK_NULL_HANDLE;
-    VmaAllocationInfo stagingResult{};
-    VkResult result = vmaCreateBuffer(
-        Allocator, &bufferInfo, &allocInfo, &staging, &stagingAllocation, &stagingResult);
-    if (result != VK_SUCCESS)
+    const StagingBuffer staging(Allocator, data, size);
+    if (!staging.IsValid())
     {
-        Log.Error("mip upload: staging vmaCreateBuffer failed ({})", static_cast<int>(result));
+        Log.Error("mip upload: staging vmaCreateBuffer failed ({})",
+                  static_cast<int>(staging.GetResult()));
         return false;
     }
-
-    std::memcpy(stagingResult.pMappedData, data, static_cast<size_t>(size));
-    vmaFlushAllocation(Allocator, stagingAllocation, 0, size);
 
     VkCommandBuffer cmd = UploadCtx->Begin();
     if (cmd == VK_NULL_HANDLE)
-    {
-        vmaDestroyBuffer(Allocator, staging, stagingAllocation);
         return false;
-    }
 
-    // UNDEFINED -> TRANSFER_DST across the whole chain.
-    {
-        VulkanBarriers::ImageTransition t{};
-        t.Image = entry->Image;
-        t.OldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        t.NewLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        t.SrcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-        t.DstStage = VK_PIPELINE_STAGE_2_COPY_BIT;
-        t.SrcAccess = 0;
-        t.DstAccess = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        t.AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        t.BaseMipLevel = 0;
-        t.LevelCount = entry->MipLevels;
-        VulkanBarriers::TransitionImage(cmd, t);
-    }
+    TransitionChainToTransferDst(cmd, entry->Image, entry->MipLevels);
 
     std::vector<VkBufferImageCopy> copies;
     copies.reserve(regions.size());
@@ -505,28 +516,13 @@ bool VulkanImageService::UploadMips(ImageHandle handle, const void* data, VkDevi
     }
 
     vkCmdCopyBufferToImage(
-        cmd, staging, entry->Image,
+        cmd, staging.Get(), entry->Image,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         static_cast<uint32_t>(copies.size()), copies.data());
 
-    {
-        VulkanBarriers::ImageTransition t{};
-        t.Image = entry->Image;
-        t.OldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        t.NewLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        t.SrcStage = VK_PIPELINE_STAGE_2_COPY_BIT;
-        t.DstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-        t.SrcAccess = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        t.DstAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-        t.AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        t.BaseMipLevel = 0;
-        t.LevelCount = entry->MipLevels;
-        VulkanBarriers::TransitionImage(cmd, t);
-    }
+    TransitionChainToShaderRead(cmd, entry->Image, entry->MipLevels);
 
-    const bool ok = UploadCtx->Submit(cmd);
-    vmaDestroyBuffer(Allocator, staging, stagingAllocation);
-    return ok;
+    return UploadCtx->Submit(cmd);
 }
 
 void VulkanImageService::RecordMipChain(VkCommandBuffer cmd, ImageEntry& entry)
