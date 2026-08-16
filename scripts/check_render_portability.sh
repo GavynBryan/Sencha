@@ -45,7 +45,7 @@ check() {
     if [ -n "$hits" ]; then
         echo "FAIL: $name"
         echo "  $why"
-        echo "$hits" | sed 's/^/    /'
+        echo "    ${hits//$'\n'/$'\n'    }"
         failures=$((failures + 1))
     else
         echo "ok:   $name"

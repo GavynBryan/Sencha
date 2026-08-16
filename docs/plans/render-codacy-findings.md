@@ -320,6 +320,58 @@ section when the retuning is performed. Mark individual retained findings in
 Codacy with the appropriate false-positive or accepted-use reason and a concise
 comment pointing to the invariant recorded here.
 
+### 4.0 What was applied, 2026-08-16
+
+Against the analysis of record for `d3e53e1a` (624 findings; the 626 first
+reported were against `e9f9a32d`, and two net/participant commits cleared two).
+
+Applied at the repository level, which is where Codacy accepts parameter
+changes even while a tool follows a coding standard:
+
+| Setting | From | To |
+| --- | --- | --- |
+| `Lizard_nloc-medium` threshold | 50 | 150 |
+| `Lizard_file-nloc-medium` threshold | 500 | 900 |
+| `Lizard_parameter-count-medium` threshold | 8 | 8 (unchanged) |
+
+The five Cppcheck findings in section 4.3 are marked ignored as false
+positives (`PATCH .../issues/{issueId}` with `{"ignored": true}`): both
+`ShadowResidency` budget guards, the `TextureCook` run-once sentinel, and both
+`ProbeBake` ping-pong buffers. The pattern stays enabled.
+
+Two items could not be completed and are not done:
+
+- **`flawfinder_memcpy` is still enabled.** The full review section 4.2 requires
+  is complete — all 100 findings were read, and all 100 are benign, so the
+  pattern contributes no signal in this repository and meets the plan's bar for
+  disabling. Codacy refuses: *"Cannot disable a pattern that is enabled by a
+  Coding Standard."* The standard governing it (`Default coding standard`, id
+  165914, applied to Sencha alone but flagged as the organization default)
+  exposes only GET and DELETE over the API, so disabling the pattern means
+  cloning the standard, editing the clone, promoting it, and re-pointing the
+  repository — or detaching the repository from standards entirely. Both are
+  structural changes to the Codacy account rather than the threshold retuning
+  this section authorizes, so they are left for an explicit decision. Doing it
+  through the Codacy UI's Code Patterns page is the smaller path.
+- **The post-retune baseline is not recorded.** Codacy applies pattern changes
+  on the next analysis rather than recomputing stored results, and the API
+  exposes no way to trigger one. The counts above are therefore still the
+  pre-retune numbers. The new baseline lands when this branch is pushed and
+  analyzed, and belongs in this table then.
+
+The full `memcpy` review is worth keeping rather than repeating. Every finding
+falls into one of: a `std::min` clamp into a fixed buffer (the editor and
+`InlineString` string paths), a `resize` immediately above the copy (the
+serializers, the `ostringstream` handoffs, the test fixtures), a `sizeof(T)`
+copy into or out of a `T` guarded by an equality check on the byte count (the
+ECS schema and component paths), an ECS column copy whose stride is asserted
+equal on both sides, a bounds-checked reader or writer (`NetWriter::Reserve`,
+the animation and skeleton readers), or a fixed-size protocol field
+(`UdpTransport`'s 4- and 16-byte address copies). The audio loader deserves a
+specific mention: `AudioClipSerializer` already compares sample counts rather
+than byte products and bounds its offset before subtracting, which is the same
+shape section 1.1 had to introduce in `TextureLoader`.
+
 ### 4.1 Lizard thresholds
 
 `Lizard_nloc-medium` is 387 of the 626 findings repository-wide and 79 of the
