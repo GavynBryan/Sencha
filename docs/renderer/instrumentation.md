@@ -28,7 +28,7 @@ frame or append a capture record. A candidate store that is itself null (no
 timestamp support on the device, profiling compiled out) stays null.
 
 The mode is latched once per frame, at the very top of
-`FramePhase::ExtractRenderPacket`, before any extraction or recording reads the
+`FramePhase::ExtractRender`, before any extraction or recording reads the
 bundle. One frame therefore sees exactly one mode.
 
 **Consumers cache the bundle pointer, never its members.** The pointer is stable

@@ -42,7 +42,7 @@ Read in this order on a first pass.
 | Document | Covers |
 |---|---|
 | [architecture.md](architecture.md) | Layering, ownership, module topology, dependency graphs, allowed direction of reference |
-| [frame.md](frame.md) | The frame from `FramePhase::ExtractRenderPacket` to present: what runs where, synchronization objects, swapchain lifecycle |
+| [frame.md](frame.md) | The frame from `FramePhase::ExtractRender` to present: what runs where, synchronization objects, swapchain lifecycle |
 | [vulkan-backend.md](vulkan-backend.md) | Every service in `GraphicsServices`: bootstrap policy, device floor, memory, descriptors, caches, scratch, barriers |
 | [features-and-passes.md](features-and-passes.md) | `IRenderFeature` contract, phase buckets, `MeshForwardPass`, `ShadowDepthPass`, the queue and its sort key |
 | [lighting.md](lighting.md) | Light components, extraction and selection, GPU packing, the shading equation, style cvars |

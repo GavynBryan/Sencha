@@ -86,7 +86,7 @@ and image views), so no submitted frame may still be executing at that point.
 
 ```mermaid
 graph LR
-  subgraph Extract [ExtractRenderPacket phase]
+  subgraph Extract [ExtractRender phase]
     Cam[CameraRenderDataSystem] --> CamData[CameraRenderData]
     RES[RenderExtractionSystem] --> Q[RenderQueue]
     LES[LightExtractionSystem] --> LS[RenderLightSet]

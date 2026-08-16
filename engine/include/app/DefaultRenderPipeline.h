@@ -26,8 +26,8 @@ class VulkanSwapchainService;
 // DefaultRenderPipeline
 //
 // Collects the engine's built-in render state and extraction behavior. Bridges
-// scene data, asset stores, renderer configuration, and render features into a
-// RenderPacket.
+// scene data, asset stores, renderer configuration, and render features into
+// the render queue and light set the registered features draw from.
 //=============================================================================
 class DefaultRenderPipeline
 {

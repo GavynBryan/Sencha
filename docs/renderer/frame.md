@@ -9,8 +9,8 @@ The renderer occupies two of the eleven `FramePhase` slots
 | Phase | Renderer work |
 |---|---|
 | `RebuildGraphics` (2) | `VulkanSwapchainService::Recreate`, `VulkanFrameService::ResetAfterSwapchainRecreate`, `Renderer::NotifySwapchainRecreated` |
-| `ExtractRenderPacket` (8) | latch the profile mode, propagate visible transforms, run every registered extract system (`DefaultRenderPipeline::ExtractRender`) |
-| `Render` (9) | `Renderer::DrawFrameScheduled`, then push the timing sample and the stats frame |
+| `ExtractRender` (10) | latch the profile mode, propagate visible transforms, run every registered extract system (`DefaultRenderPipeline::ExtractRender`) |
+| `Render` (11) | `Renderer::DrawFrameScheduled`, then push the timing sample and the stats frame |
 
 Lifecycle-only frames (resize, minimize, swapchain rebuild) skip extract and
 render but still pump platform events and stamp telemetry.

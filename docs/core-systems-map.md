@@ -121,9 +121,9 @@ compile time, not by runtime type lookup.
 | `ScheduleTicks` | Build `FrameZoneView` from zone participation and convert elapsed wall time into this frame's fixed-tick budget. |
 | `Simulate` | Run fixed-phase systems, physics systems, transform propagation, then post-fixed systems. |
 | `Update` | Run presentation-rate systems and then audio systems. |
-| `ExtractRenderPacket` | Propagate visible transforms, extract camera and render queue data. |
-| `Render` | Submit the current packet through `Renderer`. |
-| `EndFrame` | Run cleanup/end systems, record lifecycle timing, end runtime frame, flip packet buffers, pace. |
+| `ExtractRender` | Propagate visible transforms, extract camera and render queue data. |
+| `Render` | Record and submit the frame through `Renderer`. |
+| `EndFrame` | Run cleanup/end systems, record lifecycle timing, end runtime frame, pace. |
 
 Simulation runs on a fixed timestep decoupled from presentation.
 `RuntimeFrameLoop` accumulates each frame's elapsed wall time (scaled by
@@ -419,16 +419,16 @@ The render path has three layers:
 3. Render features, such as `MeshRenderFeature`, which bridge render-domain
    data to Vulkan commands.
 
-`DefaultRenderPipeline` owns the built-in render queue and camera render data.
-The built-in mesh feature receives references to those extracted objects, while
-`RenderPacket` carries frame/presentation metadata and renderable flags. During
-`ExtractRenderPacket`, the pipeline:
+`DefaultRenderPipeline` owns the built-in render queue and camera render data,
+and the built-in mesh feature receives references to those extracted objects.
+Extraction and rendering happen in the same frame: there is no buffered
+sim-to-render handoff, so the renderer reads the state extraction just built.
+During `ExtractRender`, the pipeline:
 
 - finds the first active camera in visible registries
 - builds Vulkan-style camera matrices and frustum
 - extracts static mesh components into `RenderQueue`
 - sorts opaque items
-- writes camera/renderable flags into `RenderPacket`
 
 `RenderExtractionSystem` copies data out of ECS. It intentionally emits
 `RenderQueueItem` values, not pointers into chunks, so structural changes after

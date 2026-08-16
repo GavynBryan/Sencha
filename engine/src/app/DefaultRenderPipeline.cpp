@@ -191,11 +191,9 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
 
 #ifdef SENCHA_ENABLE_VULKAN
     if (Swapchain == nullptr)
-    {
-        ctx.PacketWrite.Renderable = false;
         return;
-    }
-    const VkExtent2D extent = Swapchain->GetExtent();
+    const VkExtent2D swapchainExtent = Swapchain->GetExtent();
+    const RenderExtent extent{ swapchainExtent.width, swapchainExtent.height };
 #else
     (void)ctx;
     return;
@@ -207,17 +205,13 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
     const ActiveCameraService* activeCamera =
         world.TryGetResource<ActiveCameraService>();
     if (activeCamera == nullptr || !activeCamera->HasActive())
-    {
-        ctx.PacketWrite.Renderable = false;
         return;
-    }
 
     const EntityId cameraEntity = activeCamera->GetActive();
     if (!world.IsAlive(cameraEntity)
         || !ctx.Partitions.Contains(world.GetEntityPartition(cameraEntity))
         || !CameraRenderDataSystem::Build(*activeCamera, world, extent, Camera))
     {
-        ctx.PacketWrite.Renderable = false;
         return;
     }
 
@@ -288,7 +282,4 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         }
     }
 
-    ctx.PacketWrite.Camera = Camera;
-    ctx.PacketWrite.HasCamera = true;
-    ctx.PacketWrite.Renderable = true;
 }

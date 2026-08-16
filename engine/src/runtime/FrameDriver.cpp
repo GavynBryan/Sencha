@@ -14,7 +14,7 @@ const char* ToString(FramePhase phase)
     case FramePhase::Simulate: return "Simulate";
     case FramePhase::FlushNet: return "FlushNet";
     case FramePhase::Update: return "Update";
-    case FramePhase::ExtractRenderPacket: return "ExtractRenderPacket";
+    case FramePhase::ExtractRender: return "ExtractRender";
     case FramePhase::Render: return "Render";
     case FramePhase::EndFrame: return "EndFrame";
     case FramePhase::Count: return "Count";
@@ -67,8 +67,6 @@ void FrameDriver::StepOnce()
     PhaseContext ctx;
     ctx.Runtime = &Runtime;
     ctx.Input = &Input;
-    ctx.PacketWrite = &Packets.WriteSlot();
-    ctx.PacketRead = &Packets.ReadSlot();
 
     if (Trace) Trace->BeginFrame(Runtime.GetCurrentFrame().WallTime.FrameIndex);
 
@@ -79,7 +77,6 @@ void FrameDriver::StepOnce()
         InvokePhase(FramePhase::EndFrame, ctx);
         if (Trace) Trace->EndFrame(Runtime.GetCurrentFrame().WallTime.FrameIndex);
         Runtime.EndFrame();
-        Packets.Flip();
         Pacer.WaitForLifecycleIdle();
         return;
     }
@@ -118,14 +115,10 @@ void FrameDriver::StepOnce()
     Runtime.BuildPresentationFrame();
     InvokePhase(FramePhase::Update, ctx);
 
-    ctx.PacketWrite->Reset();
-    ctx.PacketWrite->FrameIndex = Runtime.GetCurrentFrame().WallTime.FrameIndex;
-    ctx.PacketWrite->Presentation = Runtime.GetCurrentFrame().Presentation;
-
     const bool lifecycleOnly = Runtime.GetCurrentFrame().LifecycleOnly;
     if (!lifecycleOnly)
     {
-        InvokePhase(FramePhase::ExtractRenderPacket, ctx);
+        InvokePhase(FramePhase::ExtractRender, ctx);
         InvokePhase(FramePhase::Render, ctx);
     }
 
@@ -134,7 +127,6 @@ void FrameDriver::StepOnce()
     if (Trace) Trace->EndFrame(Runtime.GetCurrentFrame().WallTime.FrameIndex);
 
     Runtime.EndFrame();
-    Packets.Flip();
 
     if (lifecycleOnly)
         Pacer.WaitForLifecycleIdle();
