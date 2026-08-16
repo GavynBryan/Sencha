@@ -81,48 +81,43 @@ namespace
     // Both upload paths bracket their copies with a transition covering every
     // mip of the image at once. The color aspect is hardcoded because the copy
     // and the mip blit are color-only; the upload validator refuses anything
-    // else, so this stays in agreement with what is actually recorded.
-    void TransitionWholeChain(VkCommandBuffer cmd,
-                              VkImage image,
-                              uint32_t mipLevels,
-                              VkImageLayout oldLayout,
-                              VkImageLayout newLayout,
-                              VkPipelineStageFlags2 srcStage,
-                              VkPipelineStageFlags2 dstStage,
-                              VkAccessFlags2 srcAccess,
-                              VkAccessFlags2 dstAccess)
+    // else, so these stay in agreement with what is actually recorded.
+    //
+    // ImageTransition is already the descriptor for this, so each transition
+    // fills one directly rather than routing through a general helper that
+    // would only ever be called these two ways.
+    VulkanBarriers::ImageTransition WholeChain(VkImage image, uint32_t mipLevels)
     {
         VulkanBarriers::ImageTransition t{};
         t.Image = image;
-        t.OldLayout = oldLayout;
-        t.NewLayout = newLayout;
-        t.SrcStage = srcStage;
-        t.DstStage = dstStage;
-        t.SrcAccess = srcAccess;
-        t.DstAccess = dstAccess;
         t.AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         t.BaseMipLevel = 0;
         t.LevelCount = mipLevels;
-        VulkanBarriers::TransitionImage(cmd, t);
+        return t;
     }
 
     void TransitionChainToTransferDst(VkCommandBuffer cmd, VkImage image, uint32_t mipLevels)
     {
-        TransitionWholeChain(cmd, image, mipLevels,
-                             VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                             VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_2_COPY_BIT,
-                             0, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+        VulkanBarriers::ImageTransition t = WholeChain(image, mipLevels);
+        t.OldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        t.NewLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        t.SrcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+        t.DstStage = VK_PIPELINE_STAGE_2_COPY_BIT;
+        t.SrcAccess = 0;
+        t.DstAccess = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        VulkanBarriers::TransitionImage(cmd, t);
     }
 
     void TransitionChainToShaderRead(VkCommandBuffer cmd, VkImage image, uint32_t mipLevels)
     {
-        TransitionWholeChain(cmd, image, mipLevels,
-                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                             VK_PIPELINE_STAGE_2_COPY_BIT,
-                             VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                             VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                             VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+        VulkanBarriers::ImageTransition t = WholeChain(image, mipLevels);
+        t.OldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        t.NewLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        t.SrcStage = VK_PIPELINE_STAGE_2_COPY_BIT;
+        t.DstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        t.SrcAccess = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        t.DstAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+        VulkanBarriers::TransitionImage(cmd, t);
     }
 }
 
