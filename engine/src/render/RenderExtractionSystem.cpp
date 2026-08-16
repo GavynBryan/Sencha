@@ -90,6 +90,24 @@ void RenderExtractionSystem::Extract(
     const TextureCache* textures,
     double interpolationAlpha)
 {
+    Extract(world, partitions,
+            RenderExtractCaches{ meshes, materials, materialSets, textures },
+            camera, queue, interpolationAlpha);
+}
+
+void RenderExtractionSystem::Extract(
+    const World& world,
+    const StoragePartitionSet& partitions,
+    const RenderExtractCaches& caches,
+    const CameraRenderData& camera,
+    RenderQueue& queue,
+    double interpolationAlpha)
+{
+    const StaticMeshCache& meshes = caches.Meshes;
+    const MaterialCache& materials = caches.Materials;
+    const MaterialSetCache& materialSets = caches.MaterialSets;
+    const TextureCache* textures = caches.Textures;
+
     if (!world.IsRegistered<WorldTransform>()
         || !world.IsRegistered<StaticMeshComponent>())
     {
