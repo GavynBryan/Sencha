@@ -17,15 +17,15 @@ void ProbeVolumeSet::Setup(VulkanImageService* images,
     Logging = logging;
 }
 
-std::size_t ProbeVolumeSet::AddZoneVolumes(StoragePartitionId zone,
-                                           const ProbeVolumeFile& file)
+std::size_t ProbeVolumeSet::AddVolumes(StoragePartitionId partition,
+                                       const ProbeVolumeFile& file)
 {
     if (Images == nullptr || Bindings == nullptr)
         return 0;
-    ReleaseZone(zone);
+    ReleasePartition(partition);
 
-    ZoneRecord record;
-    record.Partition = zone;
+    PartitionRecord record;
+    record.Partition = partition;
     for (const ProbeVolumeRecord& volume : file.Volumes)
     {
         const std::uint32_t count = volume.Grid.PointCount();
@@ -41,17 +41,8 @@ std::size_t ProbeVolumeSet::AddZoneVolumes(StoragePartitionId zone,
             continue;
         }
 
-        std::uint32_t slot = kMaxActiveProbeVolumes;
-        for (std::uint32_t candidate = 0; candidate < kMaxActiveProbeVolumes;
-             ++candidate)
-        {
-            if (!SlotUsed[candidate])
-            {
-                slot = candidate;
-                break;
-            }
-        }
-        if (slot == kMaxActiveProbeVolumes)
+        const std::uint32_t slot = Slots.Acquire();
+        if (slot == ProbeVolumeSlotTable::kInvalidSlot)
         {
             if (Logging != nullptr)
                 Logging->GetLogger<ProbeVolumeSet>().Warn(
@@ -92,6 +83,10 @@ std::size_t ProbeVolumeSet::AddZoneVolumes(StoragePartitionId zone,
             for (const ImageHandle& channel : resident.Channels)
                 if (channel.IsValid())
                     Images->Destroy(channel);
+            // The slot was taken before the upload was attempted, and nothing
+            // has been bound to it, so hand it straight back rather than
+            // stranding it for the lifetime of the set.
+            Slots.Release(slot);
             if (Logging != nullptr)
                 Logging->GetLogger<ProbeVolumeSet>().Warn(
                     "probe volume {}: GPU upload failed, volume dropped",
@@ -105,7 +100,6 @@ std::size_t ProbeVolumeSet::AddZoneVolumes(StoragePartitionId zone,
                                  Images->GetView(resident.Channels[2]));
         resident.Header = MakeGpuProbeVolume(volume.Grid, volume.Priority,
                                              volume.StableIndex, slot);
-        SlotUsed[slot] = true;
         record.Volumes.push_back(resident);
     }
 
@@ -116,27 +110,27 @@ std::size_t ProbeVolumeSet::AddZoneVolumes(StoragePartitionId zone,
             Logging->GetLogger<ProbeVolumeSet>().Info(
                 "probe volumes resident: {} added ({} total)", added,
                 ResidentVolumeCount() + added);
-        Zones.push_back(std::move(record));
+        Partitions.push_back(std::move(record));
     }
     return added;
 }
 
-void ProbeVolumeSet::ReleaseZone(StoragePartitionId zone)
+void ProbeVolumeSet::ReleasePartition(StoragePartitionId partition)
 {
-    const auto it = std::find_if(Zones.begin(), Zones.end(),
-                                 [&](const ZoneRecord& record)
-                                 { return record.Partition == zone; });
-    if (it == Zones.end())
+    const auto it = std::find_if(Partitions.begin(), Partitions.end(),
+                                 [&](const PartitionRecord& record)
+                                 { return record.Partition == partition; });
+    if (it == Partitions.end())
         return;
     ReleaseVolumes(it->Volumes);
-    Zones.erase(it);
+    Partitions.erase(it);
 }
 
 void ProbeVolumeSet::ReleaseAll()
 {
-    for (ZoneRecord& zone : Zones)
-        ReleaseVolumes(zone.Volumes);
-    Zones.clear();
+    for (PartitionRecord& record : Partitions)
+        ReleaseVolumes(record.Volumes);
+    Partitions.clear();
 }
 
 void ProbeVolumeSet::ReleaseVolumes(std::vector<ResidentVolume>& volumes)
@@ -149,7 +143,7 @@ void ProbeVolumeSet::ReleaseVolumes(std::vector<ResidentVolume>& volumes)
             for (const ImageHandle& channel : volume.Channels)
                 if (channel.IsValid())
                     Images->Destroy(channel);
-        SlotUsed[volume.Slot] = false;
+        Slots.Release(volume.Slot);
     }
     volumes.clear();
 }
@@ -157,11 +151,11 @@ void ProbeVolumeSet::ReleaseVolumes(std::vector<ResidentVolume>& volumes)
 void ProbeVolumeSet::AppendActive(const StoragePartitionSet& partitions,
                                   RenderLightSet& lights) const
 {
-    for (const ZoneRecord& zone : Zones)
+    for (const PartitionRecord& record : Partitions)
     {
-        if (!partitions.Contains(zone.Partition))
+        if (!partitions.Contains(record.Partition))
             continue;
-        for (const ResidentVolume& volume : zone.Volumes)
+        for (const ResidentVolume& volume : record.Volumes)
             (void)lights.AddProbeVolume(volume.Header);
     }
 }
@@ -169,8 +163,8 @@ void ProbeVolumeSet::AppendActive(const StoragePartitionSet& partitions,
 std::size_t ProbeVolumeSet::ResidentVolumeCount() const
 {
     std::size_t count = 0;
-    for (const ZoneRecord& zone : Zones)
-        count += zone.Volumes.size();
+    for (const PartitionRecord& record : Partitions)
+        count += record.Volumes.size();
     return count;
 }
 
@@ -201,6 +195,6 @@ void AttachZoneProbes(ProbeVolumeSet& set, RuntimeZoneRecord& zone,
 {
     if (file.Volumes.empty())
         return;
-    if (set.AddZoneVolumes(zone.Partition, file) > 0)
+    if (set.AddVolumes(zone.Partition, file) > 0)
         zone.Resources.Register<ZoneProbeResidency>(&set, zone.Partition);
 }

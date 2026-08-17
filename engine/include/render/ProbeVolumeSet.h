@@ -4,6 +4,7 @@
 #include <ecs/StoragePartitionId.h>
 #include <ecs/StoragePartitionSet.h>
 #include <render/LightBindings.h>
+#include <render/ProbeVolumeSlotTable.h>
 #include <render/RenderLight.h>
 
 #include <cstdint>
@@ -41,8 +42,8 @@ public:
     // Uploads every volume in `file` and assigns binding slots. Re-adding a
     // partition releases its previous volumes first (zone reload). Returns the
     // number of volumes made resident.
-    std::size_t AddZoneVolumes(StoragePartitionId zone, const ProbeVolumeFile& file);
-    void ReleaseZone(StoragePartitionId zone);
+    std::size_t AddVolumes(StoragePartitionId partition, const ProbeVolumeFile& file);
+    void ReleasePartition(StoragePartitionId partition);
     void ReleaseAll();
 
     // Appends the resident volume headers of every visible partition to the
@@ -59,7 +60,7 @@ private:
         ImageHandle Channels[kProbeVolumeChannelCount];
         GpuProbeVolume Header;
     };
-    struct ZoneRecord
+    struct PartitionRecord
     {
         StoragePartitionId Partition;
         std::vector<ResidentVolume> Volumes;
@@ -70,8 +71,8 @@ private:
     VulkanImageService* Images = nullptr;
     std::shared_ptr<LightBindings> Bindings;
     LoggingProvider* Logging = nullptr;
-    std::vector<ZoneRecord> Zones;
-    bool SlotUsed[kMaxActiveProbeVolumes] = {};
+    std::vector<PartitionRecord> Partitions;
+    ProbeVolumeSlotTable Slots;
 };
 
 //=============================================================================
@@ -83,9 +84,9 @@ private:
 //=============================================================================
 struct ZoneProbeResidency
 {
-    ZoneProbeResidency(ProbeVolumeSet* set, StoragePartitionId zone)
+    ZoneProbeResidency(ProbeVolumeSet* set, StoragePartitionId partition)
         : Set(set)
-        , Zone(zone)
+        , Partition(partition)
     {
     }
     ZoneProbeResidency(const ZoneProbeResidency&) = delete;
@@ -93,11 +94,11 @@ struct ZoneProbeResidency
     ~ZoneProbeResidency()
     {
         if (Set != nullptr)
-            Set->ReleaseZone(Zone);
+            Set->ReleasePartition(Partition);
     }
 
     ProbeVolumeSet* Set = nullptr;
-    StoragePartitionId Zone;
+    StoragePartitionId Partition;
 };
 
 // Reads the probe payload cooked beside a scene: for
