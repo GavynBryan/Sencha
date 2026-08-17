@@ -19,6 +19,7 @@
 #include <render/RenderLightCVars.h>
 #include <world/registry/Registry.h>
 
+#include <graphics/vulkan/RenderScope.h>
 #include <graphics/vulkan/VulkanBarriers.h>
 
 #include <optional>
@@ -376,125 +377,105 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         VulkanBarriers::TransitionImage(frame.Cmd, t);
     }
 
-    VkRenderingAttachmentInfo colorAttach{};
-    colorAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    colorAttach.imageView = target.ColorView;
-    colorAttach.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    colorAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttach.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttach.clearValue.color = { { 0.05f, 0.09f, 0.12f, 1.0f } };
+    // The offscreen target is RGBA16F linear; the scene pipelines key on these
+    // formats and rebuild their RGBA16F variant transparently.
+    RenderScopeDesc scope{};
+    scope.Area.offset = { 0, 0 };
+    scope.Area.extent = target.Extent;
+    scope.Color.View = target.ColorView;
+    scope.Color.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    scope.Color.Clear.color = { { 0.05f, 0.09f, 0.12f, 1.0f } };
+    scope.ColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+    scope.Depth.View = target.DepthView;
+    scope.Depth.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    scope.Depth.StoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    scope.Depth.Clear.depthStencil = { 1.0f, 0 };
+    scope.DepthFormat = Services.DepthFormat;
+    scope.Phase = RenderPhase::Offscreen;
 
-    VkRenderingAttachmentInfo depthAttach{};
-    depthAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    depthAttach.imageView = target.DepthView;
-    depthAttach.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    depthAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttach.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttach.clearValue.depthStencil = { 1.0f, 0 };
+    {
+        const RenderScope rendering(frame, scope);
+        const FrameContext& local = rendering.Context();
 
-    VkRenderingInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    info.renderArea.offset = { 0, 0 };
-    info.renderArea.extent = target.Extent;
-    info.layerCount = 1;
-    info.colorAttachmentCount = 1;
-    info.pColorAttachments = &colorAttach;
-    info.pDepthAttachment = &depthAttach;
+        EditorDocument& focusDocument = World.FocusDocument();
+        const EditorScene& scene = focusDocument.GetScene();
 
-    vkCmdBeginRendering(frame.Cmd, &info);
+        Backdrop.DrawViewport(local.Cmd, viewport, local.TargetExtent, local.TargetFormat, local.DepthFormat);
+        Grid.DrawViewport(local.Cmd, viewport, GridCfg, GridStyleCache, local.TargetExtent, local.TargetFormat, local.DepthFormat);
 
-    // Local frame context describing the offscreen target (RGBA16F linear); the scene
-    // pipelines key on these formats and rebuild their RGBA16F variant transparently.
-    FrameContext local{};
-    local.Cmd = frame.Cmd;
-    local.FrameInFlightIndex = frame.FrameInFlightIndex;
-    local.TargetExtent = target.Extent;
-    local.TargetFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-    local.DepthView = target.DepthView;
-    local.DepthFormat = Services.DepthFormat;
-    local.Phase = RenderPhase::Offscreen;
-    local.Retirement = frame.Retirement;
-
-    EditorDocument& focusDocument = World.FocusDocument();
-    const EditorScene& scene = focusDocument.GetScene();
-
-    Backdrop.DrawViewport(local.Cmd, viewport, local.TargetExtent, local.TargetFormat, local.DepthFormat);
-    Grid.DrawViewport(local.Cmd, viewport, GridCfg, GridStyleCache, local.TargetExtent, local.TargetFormat, local.DepthFormat);
-
-    // Context zones (open, visible, not the focus) render dimmed and reduced:
-    // solid-preview or wireframe body plus component visuals, modulated by the
-    // theme dim constant. No real-material pass, no selection highlight, no
-    // hover glow; picking never sees them, so they read as present but inert.
-    World.VisitOpenZones(
-        [&](ZoneId zone, EditorDocument& document, const ZoneViewState& view)
-        {
-            if (&document == &focusDocument || !view.VisibleInEditor)
-                return;
-            const EditorScene& contextScene = document.GetScene();
-            if (viewport.Shading == ViewportShading::Solid)
+        // Context zones (open, visible, not the focus) render dimmed and reduced:
+        // solid-preview or wireframe body plus component visuals, modulated by the
+        // theme dim constant. No real-material pass, no selection highlight, no
+        // hover glow; picking never sees them, so they read as present but inert.
+        World.VisitOpenZones(
+            [&](ZoneId zone, EditorDocument& document, const ZoneViewState& view)
             {
-                // Real materials under the grey overlay when the WYSIWYG path
-                // is up; the checker fallback only without an asset system.
-                const auto it = ContextBuilders.find(zone.Value);
-                if (MaterialPath && it != ContextBuilders.end())
+                if (&document == &focusDocument || !view.VisibleInEditor)
+                    return;
+                const EditorScene& contextScene = document.GetScene();
+                if (viewport.Shading == ViewportShading::Solid)
                 {
-                    // Full-bright neutral ambient under a translucent grey wash:
-                    // the textures stay readable and the grey does not depend on
-                    // whether a focus-zone light happens to reach this zone.
-                    RenderLightSet contextLights;
-                    contextLights.AmbientSky = Vec<3>(1.0f, 1.0f, 1.0f);
-                    contextLights.AmbientGround = Vec<3>(1.0f, 1.0f, 1.0f);
-#ifdef SENCHA_ENABLE_RENDER_PROFILING
-                    contextLights.DebugView = WorldView.DebugViewMode;
-#endif
-                    Forward.Draw(local, viewport.BuildRenderData(), contextLights,
-                                 it->second->BrushQueue(), *MeshCache, *MaterialStore);
-                    // Placed meshes cannot receive the brush-triangle wash, so
-                    // the overlay folds into their multiply tint instead (exact
-                    // on white, close on bright textures).
-                    const Vec4& wash = EditorTheme::ContextZoneOverlay;
-                    const Vec4 meshDim(1.0f - wash.W + wash.X * wash.W,
-                                       1.0f - wash.W + wash.Y * wash.W,
-                                       1.0f - wash.W + wash.Z * wash.W, 1.0f);
-                    Forward.Draw(local, viewport.BuildRenderData(), contextLights,
-                                 it->second->MeshQueue(), *MeshCache, *MaterialStore,
-                                 meshDim);
-                    BrushFills.DrawZoneOverlay(local, viewport, contextScene,
-                                               EditorTheme::ContextZoneOverlay);
+                    // Real materials under the grey overlay when the WYSIWYG path
+                    // is up; the checker fallback only without an asset system.
+                    const auto it = ContextBuilders.find(zone.Value);
+                    if (MaterialPath && it != ContextBuilders.end())
+                    {
+                        // Full-bright neutral ambient under a translucent grey wash:
+                        // the textures stay readable and the grey does not depend on
+                        // whether a focus-zone light happens to reach this zone.
+                        RenderLightSet contextLights;
+                        contextLights.AmbientSky = Vec<3>(1.0f, 1.0f, 1.0f);
+                        contextLights.AmbientGround = Vec<3>(1.0f, 1.0f, 1.0f);
+    #ifdef SENCHA_ENABLE_RENDER_PROFILING
+                        contextLights.DebugView = WorldView.DebugViewMode;
+    #endif
+                        Forward.Draw(local, viewport.BuildRenderData(), contextLights,
+                                     it->second->BrushQueue(), *MeshCache, *MaterialStore);
+                        // Placed meshes cannot receive the brush-triangle wash, so
+                        // the overlay folds into their multiply tint instead (exact
+                        // on white, close on bright textures).
+                        const Vec4& wash = EditorTheme::ContextZoneOverlay;
+                        const Vec4 meshDim(1.0f - wash.W + wash.X * wash.W,
+                                           1.0f - wash.W + wash.Y * wash.W,
+                                           1.0f - wash.W + wash.Z * wash.W, 1.0f);
+                        Forward.Draw(local, viewport.BuildRenderData(), contextLights,
+                                     it->second->MeshQueue(), *MeshCache, *MaterialStore,
+                                     meshDim);
+                        BrushFills.DrawZoneOverlay(local, viewport, contextScene,
+                                                   EditorTheme::ContextZoneOverlay);
+                    }
+                    else
+                    {
+                        BrushSolid.DrawViewportTinted(local, viewport, contextScene,
+                                                      EditorTheme::ContextZoneDim);
+                    }
                 }
                 else
                 {
-                    BrushSolid.DrawViewportTinted(local, viewport, contextScene,
-                                                  EditorTheme::ContextZoneDim);
+                    const Vec4 dimmedWire(EditorTheme::ContextZoneDim.X, 0.0f, 0.0f, 1.0f);
+                    Wireframe.DrawWireframe(local, viewport, contextScene, dimmedWire);
                 }
-            }
-            else
-            {
-                const Vec4 dimmedWire(EditorTheme::ContextZoneDim.X, 0.0f, 0.0f, 1.0f);
-                Wireframe.DrawWireframe(local, viewport, contextScene, dimmedWire);
-            }
-            Visuals.DrawViewport(local, viewport, contextScene, EditorTheme::ContextZoneDim);
-        });
+                Visuals.DrawViewport(local, viewport, contextScene, EditorTheme::ContextZoneDim);
+            });
 
-    // The focus zone renders exactly as a single document does.
-    if (IBrushBodyRenderer* body = BodyRenderers[static_cast<std::size_t>(viewport.Shading)])
-        body->DrawViewport(local, viewport, scene);
-    // Placed meshes draw in every viewport so they read regardless of shading: through
-    // the real-material queue when active, else the procedural-checker fallback.
-    if (MaterialPath)
-        Forward.Draw(local, viewport.BuildRenderData(), QueueBuilder->Lights(),
-                     QueueBuilder->MeshQueue(), *MeshCache, *MaterialStore);
-    else
-        Meshes.DrawViewport(local, viewport, scene);
-    Visuals.DrawViewport(local, viewport, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
-    IrradianceVolumes.DrawViewport(local, viewport, scene);
-    Highlight.DrawViewport(local, viewport, scene, *Session());
-    if (WorldView.ShowZoneBounds || WorldView.StreamingPreview)
-        ZoneBounds.DrawViewport(local, viewport, World, WorldView);
-    Affordances.DrawViewport(local, viewport);
-    Preview.DrawViewport(local, viewport);
-
-    vkCmdEndRendering(frame.Cmd);
+        // The focus zone renders exactly as a single document does.
+        if (IBrushBodyRenderer* body = BodyRenderers[static_cast<std::size_t>(viewport.Shading)])
+            body->DrawViewport(local, viewport, scene);
+        // Placed meshes draw in every viewport so they read regardless of shading: through
+        // the real-material queue when active, else the procedural-checker fallback.
+        if (MaterialPath)
+            Forward.Draw(local, viewport.BuildRenderData(), QueueBuilder->Lights(),
+                         QueueBuilder->MeshQueue(), *MeshCache, *MaterialStore);
+        else
+            Meshes.DrawViewport(local, viewport, scene);
+        Visuals.DrawViewport(local, viewport, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+        IrradianceVolumes.DrawViewport(local, viewport, scene);
+        Highlight.DrawViewport(local, viewport, scene, *Session());
+        if (WorldView.ShowZoneBounds || WorldView.StreamingPreview)
+            ZoneBounds.DrawViewport(local, viewport, World, WorldView);
+        Affordances.DrawViewport(local, viewport);
+        Preview.DrawViewport(local, viewport);
+    }
 
     // Color: COLOR_ATTACHMENT -> SHADER_READ_ONLY for the UI's ImGui::Image sample.
     transitionColor(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -538,42 +519,26 @@ void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorV
     viewport.RegionMax = ImVec2(static_cast<float>(target.BloomExtent.width),
                                 static_cast<float>(target.BloomExtent.height));
 
-    VkRenderingAttachmentInfo glowColor{};
-    glowColor.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    glowColor.imageView = target.BloomView[0];
-    glowColor.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    glowColor.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    glowColor.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    glowColor.clearValue.color = { { 0.0f, 0.0f, 0.0f, 1.0f } };
+    // Depth is attached but neither loaded nor stored: the wide-line pipeline
+    // expects a depth format, and this pass does not test against it.
+    RenderScopeDesc glowScope{};
+    glowScope.Area.extent = target.BloomExtent;
+    glowScope.Color.View = target.BloomView[0];
+    glowScope.Color.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    glowScope.Color.Clear.color = { { 0.0f, 0.0f, 0.0f, 1.0f } };
+    glowScope.ColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+    glowScope.Depth.View = target.DepthView;
+    glowScope.Depth.LoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    glowScope.Depth.StoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    glowScope.Depth.Clear.depthStencil = { 1.0f, 0 };
+    glowScope.DepthFormat = Services.DepthFormat;
+    glowScope.Phase = RenderPhase::Offscreen;
 
-    VkRenderingAttachmentInfo glowDepth{};
-    glowDepth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    glowDepth.imageView = target.DepthView;
-    glowDepth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    glowDepth.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    glowDepth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    glowDepth.clearValue.depthStencil = { 1.0f, 0 };
-
-    VkRenderingInfo glowInfo{};
-    glowInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    glowInfo.renderArea.extent = target.BloomExtent;
-    glowInfo.layerCount = 1;
-    glowInfo.colorAttachmentCount = 1;
-    glowInfo.pColorAttachments = &glowColor;
-    glowInfo.pDepthAttachment = &glowDepth;
-    vkCmdBeginRendering(frame.Cmd, &glowInfo);
-
-    FrameContext glowCtx{};
-    glowCtx.Cmd = frame.Cmd;
-    glowCtx.FrameInFlightIndex = frame.FrameInFlightIndex;
-    glowCtx.TargetExtent = target.BloomExtent;
-    glowCtx.TargetFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-    glowCtx.DepthView = target.DepthView;
-    glowCtx.DepthFormat = Services.DepthFormat;
-    glowCtx.Phase = RenderPhase::Offscreen;
-    Highlight.SubmitActiveGlowSource(glowCtx, viewport, World.FocusDocument().GetScene());
-
-    vkCmdEndRendering(frame.Cmd);
+    {
+        const RenderScope glowRendering(frame, glowScope);
+        Highlight.SubmitActiveGlowSource(glowRendering.Context(), viewport,
+                                         World.FocusDocument().GetScene());
+    }
 
     VulkanBarriers::ImageTransition toRead{};
     toRead.Image = target.BloomImage[0];

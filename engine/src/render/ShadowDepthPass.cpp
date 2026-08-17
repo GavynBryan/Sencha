@@ -1,5 +1,6 @@
 #include <render/ShadowDepthPass.h>
 
+#include <graphics/vulkan/RenderScope.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
 #include <graphics/vulkan/VulkanFrameScratch.h>
@@ -266,28 +267,18 @@ bool ShadowDepthPass::RecordView(const FrameContext& frame,
             static_cast<std::uint32_t>(VisibleCasters.size()) - stream.Count;
     }
 
-    VkRenderingAttachmentInfo depthAttachment{};
-    depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    depthAttachment.imageView = target.Attachment;
-    depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    depthAttachment.clearValue.depthStencil = { 1.0f, 0 };
-
-    VkRenderingInfo rendering{};
-    rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    rendering.renderArea = target.RenderArea;
-    rendering.layerCount = 1;
-    rendering.pDepthAttachment = &depthAttachment;
-    vkCmdBeginRendering(frame.Cmd, &rendering);
+    RenderScopeDesc scope{};
+    scope.Area = target.RenderArea;
+    scope.Depth.View = target.Attachment;
+    scope.Depth.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    scope.Depth.StoreOp = VK_ATTACHMENT_STORE_OP_STORE;
+    scope.Depth.Clear.depthStencil = { 1.0f, 0 };
+    const RenderScope rendering(frame, scope);
 
     // A view nothing casts into still renders: a cleared target is the
-    // correct depth for "nothing occludes".
+    // correct depth for "nothing occludes". The scope closes on the way out.
     if (stream.Count == 0)
-    {
-        vkCmdEndRendering(frame.Cmd);
         return true;
-    }
     BindView(frame, uniformOffset);
 
     vkCmdSetViewport(frame.Cmd, 0, 1, &target.Viewport);
@@ -345,7 +336,6 @@ bool ShadowDepthPass::RecordView(const FrameContext& frame,
         ++LastStats.InstanceRuns;
         first = last;
     }
-    vkCmdEndRendering(frame.Cmd);
     return true;
 }
 

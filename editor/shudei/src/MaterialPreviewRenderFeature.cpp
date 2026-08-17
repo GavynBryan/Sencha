@@ -2,6 +2,7 @@
 
 #include <assets/runtime/RuntimeAssets.h>
 #include <graphics/vulkan/VulkanBarriers.h>
+#include <graphics/vulkan/RenderScope.h>
 #include <math/geometry/3d/Frustum.h>
 #include <render/CameraProjection.h>
 
@@ -118,85 +119,66 @@ void MaterialPreviewRenderFeature::OnDraw(const FrameContext& frame)
         VulkanBarriers::TransitionImage(frame.Cmd, t);
     }
 
-    VkRenderingAttachmentInfo colorAttach{};
-    colorAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    colorAttach.imageView = target->ColorView;
-    colorAttach.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    colorAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttach.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    RenderScopeDesc scope{};
+    scope.Area.offset = { 0, 0 };
+    scope.Area.extent = target->Extent;
+    scope.Color.View = target->ColorView;
+    scope.Color.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     // Black base; the backdrop draw paints the glowing grid over it.
-    colorAttach.clearValue.color = { { 0.0f, 0.0f, 0.0f, 1.0f } };
+    scope.Color.Clear.color = { { 0.0f, 0.0f, 0.0f, 1.0f } };
+    scope.ColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+    scope.Depth.View = target->DepthView;
+    scope.Depth.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    scope.Depth.StoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    scope.Depth.Clear.depthStencil = { 1.0f, 0 };
+    scope.DepthFormat = Services.DepthFormat;
+    scope.Phase = RenderPhase::Offscreen;
 
-    VkRenderingAttachmentInfo depthAttach{};
-    depthAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    depthAttach.imageView = target->DepthView;
-    depthAttach.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    depthAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttach.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttach.clearValue.depthStencil = { 1.0f, 0 };
-
-    VkRenderingInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    info.renderArea.offset = { 0, 0 };
-    info.renderArea.extent = target->Extent;
-    info.layerCount = 1;
-    info.colorAttachmentCount = 1;
-    info.pColorAttachments = &colorAttach;
-    info.pDepthAttachment = &depthAttach;
-    vkCmdBeginRendering(frame.Cmd, &info);
-
-    Backdrop.Draw(frame.Cmd, target->Extent, VK_FORMAT_R16G16B16A16_SFLOAT,
-                  Services.DepthFormat, BackdropStyle);
-
-    if (Material.IsValid())
     {
-        const float aspect = target->Extent.height > 0
-            ? static_cast<float>(target->Extent.width) / static_cast<float>(target->Extent.height)
-            : 1.0f;
+        const RenderScope rendering(frame, scope);
 
-        const Vec3d eye(Distance * std::cos(Pitch) * std::sin(Yaw),
-                        Distance * std::sin(Pitch),
-                        Distance * std::cos(Pitch) * std::cos(Yaw));
+        Backdrop.Draw(frame.Cmd, target->Extent, VK_FORMAT_R16G16B16A16_SFLOAT,
+                      Services.DepthFormat, BackdropStyle);
 
-        CameraRenderData camera;
-        camera.Position = eye;
-        camera.View = Mat4::MakeLookAt(eye, Vec3d(0.0f, 0.0f, 0.0f), Vec3d(0.0f, 1.0f, 0.0f));
-        camera.Projection = MakeVulkanPerspective(0.9f, aspect, 0.05f, 50.0f);
-        camera.ViewProjection = camera.Projection * camera.View;
-        camera.ViewFrustum = Frustum::FromViewProjection(camera.ViewProjection);
+        if (Material.IsValid())
+        {
+            const float aspect = target->Extent.height > 0
+                ? static_cast<float>(target->Extent.width) / static_cast<float>(target->Extent.height)
+                : 1.0f;
 
-        // Key light rides above the camera's shoulder so orbiting keeps the lit
-        // side facing the viewer.
-        Lights.Reset();
-        PointLightComponent key;
-        key.Color = Vec<3>(1.0f, 1.0f, 1.0f);
-        key.Intensity = LightIntensity;
-        key.Range = 30.0f;
-        Lights.AddPoint(eye * 1.5f + Vec3d(0.0f, 1.0f, 0.0f), key);
+            const Vec3d eye(Distance * std::cos(Pitch) * std::sin(Yaw),
+                            Distance * std::sin(Pitch),
+                            Distance * std::cos(Pitch) * std::cos(Yaw));
 
-        RenderQueueItem item;
-        item.Mesh = Meshes[static_cast<std::size_t>(Active)];
-        item.Material = Material;
-        item.SectionIndex = 0;
-        item.WorldMatrix = Mat4::Identity();
-        Queue.Reset();
-        Queue.AddOpaque(item);
-        Queue.SortOpaque();
+            CameraRenderData camera;
+            camera.Position = eye;
+            camera.View = Mat4::MakeLookAt(eye, Vec3d(0.0f, 0.0f, 0.0f), Vec3d(0.0f, 1.0f, 0.0f));
+            camera.Projection = MakeVulkanPerspective(0.9f, aspect, 0.05f, 50.0f);
+            camera.ViewProjection = camera.Projection * camera.View;
+            camera.ViewFrustum = Frustum::FromViewProjection(camera.ViewProjection);
 
-        FrameContext local{};
-        local.Cmd = frame.Cmd;
-        local.FrameInFlightIndex = frame.FrameInFlightIndex;
-        local.TargetExtent = target->Extent;
-        local.TargetFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-        local.DepthView = target->DepthView;
-        local.DepthFormat = Services.DepthFormat;
-        local.Phase = RenderPhase::Offscreen;
-        local.Retirement = frame.Retirement;
+            // Key light rides above the camera's shoulder so orbiting keeps the lit
+            // side facing the viewer.
+            Lights.Reset();
+            PointLightComponent key;
+            key.Color = Vec<3>(1.0f, 1.0f, 1.0f);
+            key.Intensity = LightIntensity;
+            key.Range = 30.0f;
+            Lights.AddPoint(eye * 1.5f + Vec3d(0.0f, 1.0f, 0.0f), key);
 
-        Forward.Draw(local, camera, Lights, Queue, *Assets.StaticMeshes, Assets.Materials);
+            RenderQueueItem item;
+            item.Mesh = Meshes[static_cast<std::size_t>(Active)];
+            item.Material = Material;
+            item.SectionIndex = 0;
+            item.WorldMatrix = Mat4::Identity();
+            Queue.Reset();
+            Queue.AddOpaque(item);
+            Queue.SortOpaque();
+
+            Forward.Draw(rendering.Context(), camera, Lights, Queue,
+                         *Assets.StaticMeshes, Assets.Materials);
+        }
     }
-
-    vkCmdEndRendering(frame.Cmd);
 
     transitionColor(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                     VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
