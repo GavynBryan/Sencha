@@ -102,6 +102,10 @@ struct FrameContext
     VkImageView DepthView = VK_NULL_HANDLE;
     VkFormat DepthFormat = VK_FORMAT_UNDEFINED;
     RenderPhase Phase = RenderPhase::MainColor;
+    // Fence-anchored frame clock. A feature releasing a GPU resource the
+    // renderer may still be reading stamps it from here and frees it once this
+    // reports it retired, rather than counting frames itself.
+    GpuFrameRetirement Retirement;
 };
 
 struct RendererFrameTiming

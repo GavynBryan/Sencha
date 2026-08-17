@@ -245,6 +245,7 @@ void Renderer::RecordOffscreenPhase(const VulkanFrame& frame)
     ctx.FrameInFlightIndex = frame.FrameIndex;
     ctx.TargetExtent = frame.SwapchainExtent;
     ctx.Phase = RenderPhase::Offscreen;
+    ctx.Retirement = Frames.GetRetirement();
 
     for (IRenderFeature* feat : bucket)
         feat->OnDraw(ctx);
@@ -326,6 +327,7 @@ void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
     ctx.DepthView = DepthTarget->GetView();
     ctx.DepthFormat = DepthTarget->GetFormat();
     ctx.Phase = RenderPhase::MainColor;
+    ctx.Retirement = Frames.GetRetirement();
 
     for (IRenderFeature* feat : PhaseBuckets[static_cast<size_t>(RenderPhase::MainColor)])
     {

@@ -3,6 +3,7 @@
 #include "viewport/ViewportId.h"
 
 #include <graphics/FramesInFlight.h>
+#include <graphics/GpuFrameRetirement.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
 #include <graphics/vulkan/VulkanImageService.h>
@@ -48,7 +49,7 @@ public:
     };
 
     // -- Render side (Offscreen phase), in this order ------------------------
-    void BeginFrame(uint32_t frameInFlightIndex);
+    void BeginFrame(uint32_t frameInFlightIndex, GpuFrameRetirement retirement);
     // Ensure the current slot's target for `id` matches its requested size (creating
     // or resizing as needed). nullopt until the panel has requested a size.
     [[nodiscard]] std::optional<RenderView> AcquireForRender(ViewportId id);
@@ -98,13 +99,14 @@ private:
     struct RetiredSet
     {
         VkDescriptorSet Set = VK_NULL_HANDLE;
-        uint64_t RetireAfter = 0;
+        // Frame this set stopped being displayed; freed once the renderer's
+        // fence-anchored clock reports that frame retired.
+        uint64_t Stamp = 0;
     };
 
     RendererServices Services{};
     std::vector<Target> Targets;
     std::vector<RetiredSet> RetiredSets;
-    uint64_t FrameCounter = 0;
+    GpuFrameRetirement Retirement;
     uint32_t CurrentSlot = 0;
-    static constexpr uint64_t kRetireFrames = kMaxSlots; // > frames in flight
 };

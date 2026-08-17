@@ -3,6 +3,8 @@
 #include "ImGuiTextureBinding.h"
 #include "ThumbnailEviction.h"
 
+#include <graphics/GpuFrameRetirement.h>
+
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -40,7 +42,7 @@ public:
                            const AssetRegistry& registry);
 
     // Advances the LRU clock; call once per UI frame before any Thumbnail().
-    void BeginFrame();
+    void BeginFrame(GpuFrameRetirement retirement);
 
     // The ImGui texture id for the material's base color, loading it on first
     // request; 0 while unresolved or for a texture-less material (the caller
@@ -77,7 +79,9 @@ private:
     struct Retiring
     {
         std::unique_ptr<ImGuiTextureBinding> Binding;
-        int FramesLeft = 0;
+        // Frame the binding was evicted on; released once the renderer's
+        // fence-anchored clock reports that frame retired.
+        std::uint64_t Stamp = 0;
     };
 
     // The material's base color texture path; empty when the material has none
@@ -96,5 +100,6 @@ private:
 
     std::unordered_map<std::string, Entry> Entries;
     std::vector<Retiring> RetireList;
+    GpuFrameRetirement Retirement;
     std::uint64_t Frame = 0;
 };

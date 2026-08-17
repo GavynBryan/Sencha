@@ -799,9 +799,20 @@ void EditorServices::ProcessFrame()
         if (panel != nullptr && !panel->IsVisible())
             panel->ClearViewportRegion();
 
-    // One LRU tick per frame, before the UI panels request thumbnails.
+    // One LRU tick per frame, before the UI panels request thumbnails. The
+    // renderer's fence-anchored clock decides when an evicted binding's
+    // descriptor set is safe to free; this used to be a local countdown of
+    // four, which is one short of the guarantee at the maximum frames-in-flight.
     if (Thumbnails)
-        Thumbnails->BeginFrame();
+    {
+        GpuFrameRetirement retirement;
+        if (const GraphicsServices* graphics =
+                EnginePtr != nullptr ? EnginePtr->TryGraphics() : nullptr)
+        {
+            retirement = graphics->Frames.GetRetirement();
+        }
+        Thumbnails->BeginFrame(retirement);
+    }
 }
 
 namespace

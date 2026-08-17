@@ -6,14 +6,6 @@
 #include <utility>
 #include <vector>
 
-namespace
-{
-    // Frames an evicted binding is kept before destruction: longer than any
-    // realistic frames-in-flight, so the GPU is done sampling its descriptor
-    // set by the time ImGuiTextureBinding::Release frees it.
-    constexpr int kRetireFrames = 4;
-}
-
 MaterialThumbnailCache::MaterialThumbnailCache(AssetSystem& assets,
                                                TextureCache& textures,
                                                VulkanImageService& images,
@@ -27,13 +19,14 @@ MaterialThumbnailCache::MaterialThumbnailCache(AssetSystem& assets,
 {
 }
 
-void MaterialThumbnailCache::BeginFrame()
+void MaterialThumbnailCache::BeginFrame(GpuFrameRetirement retirement)
 {
     ++Frame;
+    Retirement = retirement;
 
     for (auto it = RetireList.begin(); it != RetireList.end();)
     {
-        if (--it->FramesLeft <= 0)
+        if (Retirement.IsRetired(it->Stamp))
             it = RetireList.erase(it);
         else
             ++it;
@@ -43,7 +36,7 @@ void MaterialThumbnailCache::BeginFrame()
 void MaterialThumbnailCache::Retire(Entry& entry)
 {
     if (entry.Binding != nullptr)
-        RetireList.push_back(Retiring{ std::move(entry.Binding), kRetireFrames });
+        RetireList.push_back(Retiring{ std::move(entry.Binding), Retirement.Stamp() });
 }
 
 std::string MaterialThumbnailCache::ResolveBaseColor(const std::string& materialPath) const

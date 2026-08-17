@@ -80,7 +80,7 @@ ImTextureID MaterialPreviewRenderFeature::Display(VkExtent2D extent)
 
 void MaterialPreviewRenderFeature::OnDraw(const FrameContext& frame)
 {
-    Targets.BeginFrame(frame.FrameInFlightIndex);
+    Targets.BeginFrame(frame.FrameInFlightIndex, frame.Retirement);
     const std::optional<ViewportTargetCache::RenderView> target = Targets.AcquireForRender(kPreviewView);
     if (!target)
         return;
@@ -191,6 +191,7 @@ void MaterialPreviewRenderFeature::OnDraw(const FrameContext& frame)
         local.DepthView = target->DepthView;
         local.DepthFormat = Services.DepthFormat;
         local.Phase = RenderPhase::Offscreen;
+        local.Retirement = frame.Retirement;
 
         Forward.Draw(local, camera, Lights, Queue, *Assets.StaticMeshes, Assets.Materials);
     }

@@ -31,9 +31,10 @@ void ViewportTargetCache::Teardown()
     FlushRetiredSets(/*force*/ true);
 }
 
-void ViewportTargetCache::BeginFrame(uint32_t frameInFlightIndex)
+void ViewportTargetCache::BeginFrame(uint32_t frameInFlightIndex,
+                                     GpuFrameRetirement retirement)
 {
-    ++FrameCounter;
+    Retirement = retirement;
     // GraphicsServices clamps the configured count to kMaxFramesInFlight, so
     // the index is in range by construction. The assert catches a broken
     // contract in development; the fallback keeps a release build from
@@ -49,7 +50,7 @@ void ViewportTargetCache::FlushRetiredSets(bool force)
 {
     for (auto it = RetiredSets.begin(); it != RetiredSets.end();)
     {
-        if (force || it->RetireAfter <= FrameCounter)
+        if (force || Retirement.IsRetired(it->Stamp))
         {
             ImGui_ImplVulkan_RemoveTexture(it->Set);
             it = RetiredSets.erase(it);
@@ -81,7 +82,7 @@ void ViewportTargetCache::DestroySlot(Slot& slot)
     if (slot.ImGuiSet != VK_NULL_HANDLE)
     {
         // Defer: a prior in-flight frame may still sample this set.
-        RetiredSets.push_back({ slot.ImGuiSet, FrameCounter + kRetireFrames });
+        RetiredSets.push_back({ slot.ImGuiSet, Retirement.Stamp() });
         slot.ImGuiSet = VK_NULL_HANDLE;
     }
     if (!slot.Color.IsNull())

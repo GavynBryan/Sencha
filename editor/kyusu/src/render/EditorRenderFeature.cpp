@@ -155,7 +155,7 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
     BloomParamsCache.Intensity = readFloatCvar("editor.bloom.intensity", 1.0f);
     BloomParamsCache.Radius    = readFloatCvar("editor.bloom.radius", 2.0f);
 
-    Targets.BeginFrame(frame.FrameInFlightIndex);
+    Targets.BeginFrame(frame.FrameInFlightIndex, frame.Retirement);
     Highlight.BeginFrame();
 
     // Build the scene draw queues once per frame; the per-viewport camera is applied at
@@ -433,6 +433,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     local.DepthView = target.DepthView;
     local.DepthFormat = Services.DepthFormat;
     local.Phase = RenderPhase::Offscreen;
+    local.Retirement = frame.Retirement;
 
     EditorDocument& focusDocument = World.FocusDocument();
     const EditorScene& scene = focusDocument.GetScene();
