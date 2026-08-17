@@ -1,6 +1,7 @@
 #include <render/MeshDrawInstance.h>
 
 #include <render/RenderQueue.h>
+#include <render/SectionMaterial.h>
 
 std::uint32_t EmitMeshSections(const MeshDrawInstance& instance,
                                const GpuStaticMesh& mesh,
@@ -18,10 +19,8 @@ std::uint32_t EmitMeshSections(const MeshDrawInstance& instance,
         if ((instance.SectionMask & (1u << sectionIndex)) == 0)
             continue;
 
-        const std::uint32_t slot = mesh.Sections[sectionIndex].MaterialSlot;
-        const MaterialHandle materialHandle = slot < slotMaterials.size()
-            ? slotMaterials[slot]
-            : slotMaterials.back();
+        const MaterialHandle materialHandle =
+            ResolveSectionMaterial(mesh, sectionIndex, slotMaterials);
         const Material* material = materials.Get(materialHandle);
         if (material == nullptr)
             continue;

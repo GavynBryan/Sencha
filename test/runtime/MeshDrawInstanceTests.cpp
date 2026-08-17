@@ -12,6 +12,7 @@
 #include <render/MaterialCache.h>
 #include <render/MeshDrawInstance.h>
 #include <render/RenderQueue.h>
+#include <render/SectionMaterial.h>
 
 namespace
 {
@@ -212,4 +213,40 @@ TEST(EmitMeshSections, AppendsRatherThanReplacing)
     EmitMeshSections(instance, mesh, slots, materials, queue);
     EmitMeshSections(instance, mesh, slots, materials, queue);
     EXPECT_EQ(queue.Opaque().size(), 2u);
+}
+
+// --- the slot rule the shadow path must agree with ---
+
+TEST(ResolveSectionMaterial, MapsThroughTheSlotNotTheSectionIndex)
+{
+    const GpuStaticMesh mesh = MakeMesh({ 2, 0 });
+    const MaterialHandle a{ 1, 1 };
+    const MaterialHandle b{ 2, 1 };
+    const MaterialHandle c{ 3, 1 };
+    const MaterialHandle slots[] = { a, b, c };
+
+    EXPECT_EQ(ResolveSectionMaterial(mesh, 0, slots), c);
+    EXPECT_EQ(ResolveSectionMaterial(mesh, 1, slots), a);
+}
+
+TEST(ResolveSectionMaterial, FallsBackToTheLastEntryForAnUnderBoundSet)
+{
+    // An under-bound set must still draw. Mesh extraction and shadow-caster
+    // extraction both rely on this, and a divergence would have an object cast
+    // its shadow from a material it does not render with.
+    const GpuStaticMesh mesh = MakeMesh({ 9 });
+    const MaterialHandle only{ 1, 1 };
+    const MaterialHandle slots[] = { only };
+
+    EXPECT_EQ(ResolveSectionMaterial(mesh, 0, slots), only);
+}
+
+TEST(ResolveSectionMaterial, ReturnsAnInvalidHandleForAnEmptySetOrAMissingSection)
+{
+    const GpuStaticMesh mesh = MakeMesh({ 0 });
+    const MaterialHandle only{ 1, 1 };
+    const MaterialHandle slots[] = { only };
+
+    EXPECT_FALSE(ResolveSectionMaterial(mesh, 0, {}).IsValid());
+    EXPECT_FALSE(ResolveSectionMaterial(mesh, 5, slots).IsValid());
 }

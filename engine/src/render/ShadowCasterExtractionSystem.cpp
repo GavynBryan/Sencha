@@ -5,6 +5,7 @@
 #include <core/hash/Fnv1a.h>
 #include <math/geometry/3d/AabbTransform.h>
 #include <render/RenderEntityKey.h>
+#include <render/SectionMaterial.h>
 
 namespace
 {
@@ -34,10 +35,8 @@ ShadowCasterGatherResult AppendShadowCasterSections(
         if ((sectionMask & (1u << sectionIndex)) == 0)
             continue;
 
-        const std::uint32_t slot = mesh.Sections[sectionIndex].MaterialSlot;
-        const MaterialHandle materialHandle = slot < sectionMaterials.size()
-            ? sectionMaterials[slot]
-            : sectionMaterials.back();
+        const MaterialHandle materialHandle =
+            ResolveSectionMaterial(mesh, sectionIndex, sectionMaterials);
         const Material* material = materials.Get(materialHandle);
         if (material == nullptr)
             continue;
