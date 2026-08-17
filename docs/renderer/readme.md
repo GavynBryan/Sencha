@@ -79,3 +79,43 @@ Read in this order on a first pass.
   them. See [constraints.md](constraints.md#performance-budgets).
 - Anything guarded by `SENCHA_ENABLE_RENDER_PROFILING` is called out
   explicitly. That define is ON in `dev` and OFF in the shipping preset.
+
+## Verifying a render change against a GPU
+
+The headless suite covers render *policy*; it cannot tell you whether a change
+still records legal Vulkan. That needs a live run with the validation layer, and
+two things make a naive attempt silently useless.
+
+**Use a level with runtime shadow-casting lights.** No authored level in the
+repo had a single light until `shadow_probe.level.json`, and a light with
+`bake_contribution: direct` leaves the runtime forward set entirely — it
+schedules no shadow view, so the shadow pass never executes and the run proves
+nothing.
+
+**Use enough frames.** Zones load through `AsyncZoneLoader`, so nothing renders
+for roughly the first hundred frames. A 30- or 60-frame run exits before the
+zone is resident and reports no validation errors because *nothing was
+recorded*. Use 300.
+
+```sh
+# Cook the fixture. SENCHA_COOK_LEVEL is the authored document path, not a level
+# name, and only *.level.json files are authored documents. Run the binary
+# directly: ctest truncates the failure message.
+SENCHA_COOK_LEVEL=$PWD/template/assets/levels/shadow_probe.level.json \
+SENCHA_COOK_ROOT=$PWD/template/assets \
+  ./build/test/level_cook_tests --gtest_filter='CookLevel.Generate'
+
+# Run it. The cooked artifact takes the full stem, so the map is
+# levels/shadow_probe.level.
+cd template && SENCHA_PRESENT_MODE=IMMEDIATE \
+  ../build/example/SceneViewer/app +map levels/shadow_probe.level \
+  +set app.exit_after_frames 300 2>&1 | grep -E 'VUID-|Validation Error'
+```
+
+**Prove the instrument before trusting a clean result.** A clean run and a run
+that never executed your code look identical. Either drop a temporary `printf`
+in the path under test, or inject a known-bad call — a `vkCreateBuffer` with
+`size = 0` fires `VUID-VkBufferCreateInfo-size-00912` — and confirm it appears.
+Synchronization validation specifically is a separate story: it accepts its
+enable flag and still emits nothing on this distro's layer build, so a
+"syncval clean" result needs its own negative control.
