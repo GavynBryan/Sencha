@@ -9,6 +9,7 @@
 #include <assets/cook/BrushClustering.h>   // CookBrushGeometry
 #include <assets/cook/BrushGeometryCook.h> // CollectMaterialOrder, BakeBrushFacesToStaticMesh
 #include <assets/runtime/AssetSystem.h>
+#include <core/hash/Fnv1a.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/Logger.h>
@@ -44,38 +45,25 @@
 
 namespace
 {
-    constexpr uint64_t kFnvOffset = 1469598103934665603ull;
-    constexpr uint64_t kFnvPrime = 1099511628211ull;
-
-    void HashBytes(uint64_t& h, const void* data, std::size_t n)
-    {
-        const auto* p = static_cast<const unsigned char*>(data);
-        for (std::size_t i = 0; i < n; ++i)
-        {
-            h ^= p[i];
-            h *= kFnvPrime;
-        }
-    }
-
     // Content hash of the collected brushes: the bake is skipped (no GPU upload)
     // when this is unchanged. Covers each face's material path and the input
     // vertices (position/normal/uv); tangents are bake output, not input.
     uint64_t HashBrushes(const std::vector<CookBrushGeometry>& brushes)
     {
-        uint64_t h = kFnvOffset;
+        uint64_t h = kFnv1aOffsetBasis;
         for (const CookBrushGeometry& brush : brushes)
         {
             for (const CookFace& face : brush.Faces)
             {
-                HashBytes(h, face.Material.Path.data(), face.Material.Path.size());
+                HashFnv1aBytes(h, face.Material.Path.data(), face.Material.Path.size());
                 for (const StaticMeshVertex& v : face.Triangles)
                 {
-                    HashBytes(h, &v.Position, sizeof(v.Position));
-                    HashBytes(h, &v.Normal, sizeof(v.Normal));
-                    HashBytes(h, &v.Uv0, sizeof(v.Uv0));
+                    HashFnv1aValue(h, v.Position);
+                    HashFnv1aValue(h, v.Normal);
+                    HashFnv1aValue(h, v.Uv0);
                 }
             }
-            HashBytes(h, "|", 1); // brush boundary, so regrouping faces changes the hash
+            HashFnv1aByte(h, '|'); // brush boundary, so regrouping faces changes the hash
         }
         return h;
     }
@@ -127,7 +115,7 @@ void SceneRenderQueueBuilder::Build(const EditorDocument& document)
     // Probe volumes are cook inputs (they select the .sprobe lattice), so
     // editing one restales the badge like a brush or light edit does. No
     // visibility filter: the cook bakes hidden volumes too.
-    uint64_t probeVolumesHash = kFnvOffset;
+    uint64_t probeVolumesHash = kFnv1aOffsetBasis;
     const EditorScene& scene = document.GetScene();
     const World& world = scene.GetRegistry().Components;
     if (world.IsRegistered<IrradianceVolumeComponent>())
@@ -138,9 +126,8 @@ void SceneRenderQueueBuilder::Build(const EditorDocument& document)
                 const Transform3f* transform = scene.TryGetTransform(entity);
                 if (transform == nullptr)
                     return;
-                HashBytes(probeVolumesHash, &transform->Position,
-                          sizeof(transform->Position));
-                HashBytes(probeVolumesHash, &volume, sizeof(volume));
+                HashFnv1aValue(probeVolumesHash, transform->Position);
+                HashFnv1aValue(probeVolumesHash, volume);
             });
     }
 

@@ -3,32 +3,17 @@
 
 #include "document/EditorDocument.h"
 
+#include <core/hash/Fnv1a.h>
 #include <render/LightComponentTypes.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
-
-namespace
-{
-    constexpr std::uint64_t kFnvOffset = 1469598103934665603ull;
-    constexpr std::uint64_t kFnvPrime = 1099511628211ull;
-
-    void HashBytes(std::uint64_t& hash, const void* data, std::size_t size)
-    {
-        const auto* bytes = static_cast<const unsigned char*>(data);
-        for (std::size_t index = 0; index < size; ++index)
-        {
-            hash ^= bytes[index];
-            hash *= kFnvPrime;
-        }
-    }
-}
 
 EditorLightGather GatherEditorLights(const EditorDocument& document,
                                      bool skipBakedDirect,
                                      float globalShadowSoftness)
 {
     EditorLightGather result;
-    result.ContentHash = kFnvOffset;
+    result.ContentHash = kFnv1aOffsetBasis;
     const EditorScene& scene = document.GetScene();
     const Registry& registry = scene.GetRegistry();
     const World& world = registry.Components;
@@ -44,9 +29,8 @@ EditorLightGather GatherEditorLights(const EditorDocument& document,
             point != nullptr && point->Enabled
             && IsUsableForwardLight(point->Intensity, point->Range))
         {
-            HashBytes(result.ContentHash, &transform->Position,
-                      sizeof(transform->Position));
-            HashBytes(result.ContentHash, point, sizeof(*point));
+            HashFnv1aValue(result.ContentHash, transform->Position);
+            HashFnv1aValue(result.ContentHash, *point);
             if (!skipBakedDirect
                 || point->BakeContribution != LightBakeContribution::Direct)
                 result.Candidates.push_back(MakePointLightCandidate(
@@ -58,9 +42,8 @@ EditorLightGather GatherEditorLights(const EditorDocument& document,
             spot != nullptr && spot->Enabled
             && IsUsableForwardLight(spot->Intensity, spot->Range))
         {
-            HashBytes(result.ContentHash, &transform->Position,
-                      sizeof(transform->Position));
-            HashBytes(result.ContentHash, spot, sizeof(*spot));
+            HashFnv1aValue(result.ContentHash, transform->Position);
+            HashFnv1aValue(result.ContentHash, *spot);
             if (!skipBakedDirect
                 || spot->BakeContribution != LightBakeContribution::Direct)
                 result.Candidates.push_back(MakeSpotLightCandidate(

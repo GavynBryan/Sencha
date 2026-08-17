@@ -2,20 +2,13 @@
 
 #include <world/transform/TransformHistory.h>
 
+#include <core/hash/Fnv1a.h>
 #include <math/geometry/3d/AabbTransform.h>
 #include <render/RenderEntityKey.h>
 
 namespace
 {
 
-    constexpr std::uint64_t kFnvOffset = 1469598103934665603ull;
-    constexpr std::uint64_t kFnvPrime = 1099511628211ull;
-
-    void HashByte(std::uint64_t& hash, std::uint8_t value)
-    {
-        hash ^= value;
-        hash *= kFnvPrime;
-    }
 }
 
 ShadowCasterGatherResult AppendShadowCasterSections(
@@ -29,7 +22,7 @@ ShadowCasterGatherResult AppendShadowCasterSections(
     ShadowCasterSet& casters)
 {
     ShadowCasterGatherResult result;
-    result.MaterialStateHash = kFnvOffset;
+    result.MaterialStateHash = kFnv1aOffsetBasis;
     result.WorldBounds = worldBounds;
     if (sectionMaterials.empty())
         return result;
@@ -52,9 +45,9 @@ ShadowCasterGatherResult AppendShadowCasterSections(
         // Every resolvable masked section feeds the hash, so a section whose
         // material stops or starts casting reads as a state change even
         // before the mask difference is considered.
-        HashByte(result.MaterialStateHash, static_cast<std::uint8_t>(sectionIndex));
-        HashByte(result.MaterialStateHash, material->CastShadows ? 1u : 0u);
-        HashByte(result.MaterialStateHash, material->DoubleSided ? 1u : 0u);
+        HashFnv1aByte(result.MaterialStateHash, static_cast<std::uint8_t>(sectionIndex));
+        HashFnv1aByte(result.MaterialStateHash, material->CastShadows ? 1u : 0u);
+        HashFnv1aByte(result.MaterialStateHash, material->DoubleSided ? 1u : 0u);
 
         if (!material->CastShadows)
             continue;

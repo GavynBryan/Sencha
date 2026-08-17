@@ -1,38 +1,28 @@
 #include <render/ShadowResidency.h>
 
+#include <core/hash/Fnv1a.h>
+
 #include <algorithm>
 #include <bit>
 
 namespace
 {
-    constexpr std::uint64_t kFnvOffset = 1469598103934665603ull;
-    constexpr std::uint64_t kFnvPrime = 1099511628211ull;
-
-    void HashBytes(std::uint64_t& hash, const void* data, std::size_t size)
-    {
-        const auto* bytes = static_cast<const unsigned char*>(data);
-        for (std::size_t index = 0; index < size; ++index)
-        {
-            hash ^= bytes[index];
-            hash *= kFnvPrime;
-        }
-    }
 }
 
 std::uint64_t HashSpotShadowState(const SpotShadowView& view, std::uint32_t tileSize)
 {
-    std::uint64_t hash = kFnvOffset;
-    HashBytes(hash, &view.ViewProjection, sizeof(view.ViewProjection));
-    HashBytes(hash, &view.SamplingParams, sizeof(view.SamplingParams));
-    HashBytes(hash, &tileSize, sizeof(tileSize));
+    std::uint64_t hash = kFnv1aOffsetBasis;
+    HashFnv1aValue(hash, view.ViewProjection);
+    HashFnv1aValue(hash, view.SamplingParams);
+    HashFnv1aValue(hash, tileSize);
     return hash;
 }
 
 std::uint64_t HashPointShadowState(const PointShadowView& view)
 {
-    std::uint64_t hash = kFnvOffset;
-    HashBytes(hash, &view.PositionFar, sizeof(view.PositionFar));
-    HashBytes(hash, &view.Params, sizeof(view.Params));
+    std::uint64_t hash = kFnv1aOffsetBasis;
+    HashFnv1aValue(hash, view.PositionFar);
+    HashFnv1aValue(hash, view.Params);
     return hash;
 }
 
