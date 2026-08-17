@@ -2,25 +2,11 @@
 
 #include <world/transform/TransformHistory.h>
 
+#include <math/geometry/3d/AabbTransform.h>
 #include <render/RenderEntityKey.h>
 
 namespace
 {
-    Aabb3d TransformBounds(const Aabb3d& local, const Mat4& world)
-    {
-        Aabb3d result = Aabb3d::Empty();
-        for (int x = 0; x < 2; ++x)
-        for (int y = 0; y < 2; ++y)
-        for (int z = 0; z < 2; ++z)
-        {
-            const Vec3d point(
-                x == 0 ? local.Min.X : local.Max.X,
-                y == 0 ? local.Min.Y : local.Max.Y,
-                z == 0 ? local.Min.Z : local.Max.Z);
-            result.ExpandToInclude(world.TransformPoint(point));
-        }
-        return result;
-    }
 
     constexpr std::uint64_t kFnvOffset = 1469598103934665603ull;
     constexpr std::uint64_t kFnvPrime = 1099511628211ull;
@@ -99,7 +85,7 @@ ShadowCasterGatherResult AppendShadowCasters(
 
     return AppendShadowCasterSections(renderer.Mesh, mesh, sectionMaterials, materials,
                                       renderer.SectionMask, worldMatrix,
-                                      TransformBounds(mesh.LocalBounds, worldMatrix),
+                                      TransformAabb(mesh.LocalBounds, worldMatrix),
                                       casters);
 }
 

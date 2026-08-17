@@ -3,6 +3,7 @@
 #include <world/transform/TransformHistory.h>
 
 #include <graphics/vulkan/TextureCache.h>
+#include <render/MeshDrawInstance.h>
 #include <render/ZoneLightmapComponent.h>
 
 #include <algorithm>
@@ -12,22 +13,6 @@ namespace
 std::size_t TableSlot(StoragePartitionId partition)
 {
     return static_cast<std::size_t>(partition.Value);
-}
-
-Aabb3d TransformBounds(const Aabb3d& local, const Mat4& world)
-{
-    Aabb3d result = Aabb3d::Empty();
-    for (int x = 0; x < 2; ++x)
-    for (int y = 0; y < 2; ++y)
-    for (int z = 0; z < 2; ++z)
-    {
-        Vec3d point(
-            x == 0 ? local.Min.X : local.Max.X,
-            y == 0 ? local.Min.Y : local.Max.Y,
-            z == 0 ? local.Min.Z : local.Max.Z);
-        result.ExpandToInclude(world.TransformPoint(point));
-    }
-    return result;
 }
 } // namespace
 
@@ -52,6 +37,27 @@ void CollectZoneLightmaps(
                 .Ao = lightmap.Ao,
             });
         });
+}
+
+void ResolveZoneLightmapIndices(
+    std::span<const ZoneLightmapBinding> bindings,
+    const TextureCache& textures,
+    std::vector<std::pair<StoragePartitionId, ZoneLightmapIndices>>& out)
+{
+    out.clear();
+    out.reserve(bindings.size());
+    for (const ZoneLightmapBinding& binding : bindings)
+    {
+        ZoneLightmapIndices indices;
+        const BindlessImageIndex lightmap =
+            textures.GetBindlessIndex(binding.Texture);
+        if (lightmap.IsValid())
+            indices.Lightmap = lightmap.Value;
+        const BindlessImageIndex ao = textures.GetBindlessIndex(binding.Ao);
+        if (ao.IsValid())
+            indices.Ao = ao.Value;
+        out.emplace_back(binding.Partition, indices);
+    }
 }
 
 void BuildZoneLightmapTable(
@@ -122,21 +128,7 @@ void RenderExtractionSystem::Extract(
     if (textures != nullptr)
     {
         CollectZoneLightmaps(world, partitions, LightmapBindings);
-        ResolvedLightmaps.clear();
-        ResolvedLightmaps.reserve(LightmapBindings.size());
-        for (const ZoneLightmapBinding& binding : LightmapBindings)
-        {
-            ZoneLightmapIndices indices;
-            const BindlessImageIndex lightmap =
-                textures->GetBindlessIndex(binding.Texture);
-            if (lightmap.IsValid())
-                indices.Lightmap = lightmap.Value;
-            const BindlessImageIndex ao =
-                textures->GetBindlessIndex(binding.Ao);
-            if (ao.IsValid())
-                indices.Ao = ao.Value;
-            ResolvedLightmaps.emplace_back(binding.Partition, indices);
-        }
+        ResolveZoneLightmapIndices(LightmapBindings, *textures, ResolvedLightmaps);
         BuildZoneLightmapTable(ResolvedLightmaps, LightmapTable);
     }
 
@@ -175,7 +167,7 @@ void RenderExtractionSystem::Extract(
 
             const Mat4 worldMatrix = poseAt(i).ToMat4();
             const Aabb3d worldBounds =
-                TransformBounds(mesh->LocalBounds, worldMatrix);
+                TransformAabb(mesh->LocalBounds, worldMatrix);
             if (!camera.ViewFrustum.IntersectsAabb(worldBounds))
                 continue;
 
@@ -184,39 +176,17 @@ void RenderExtractionSystem::Extract(
                 worldBounds.Center().Y,
                 worldBounds.Center().Z,
                 1.0f);
-            const float cameraDepth = -cameraSpaceCenter.Z;
 
-            for (uint32_t sectionIndex = 0;
-                 sectionIndex < static_cast<uint32_t>(mesh->Sections.size());
-                 ++sectionIndex)
-            {
-                if ((renderer.SectionMask & (1u << sectionIndex)) == 0)
-                    continue;
-
-                const uint32_t slot =
-                    mesh->Sections[sectionIndex].MaterialSlot;
-                const MaterialHandle materialHandle =
-                    slot < sectionMaterials->size()
-                        ? (*sectionMaterials)[slot]
-                        : sectionMaterials->back();
-                const Material* material = materials.Get(materialHandle);
-                if (material == nullptr)
-                    continue;
-
-                RenderQueueItem item{};
-                item.Mesh = renderer.Mesh;
-                item.Material = materialHandle;
-                item.SectionIndex = sectionIndex;
-                item.WorldMatrix = worldMatrix;
-                item.WorldBounds = worldBounds;
-                item.CameraDepth = cameraDepth;
-                item.Pass = material->Pass;
-                item.Pipeline = SelectOpaquePipeline(*material);
-                item.LightmapTextureIndex = lightmap.Lightmap;
-                item.AoTextureIndex = lightmap.Ao;
-                item.LightmapScaleBias = renderer.LightmapScaleBias;
-                queue.AddOpaque(item);
-            }
+            MeshDrawInstance instance;
+            instance.Mesh = renderer.Mesh;
+            instance.WorldMatrix = worldMatrix;
+            instance.WorldBounds = worldBounds;
+            instance.SectionMask = renderer.SectionMask;
+            instance.CameraDepth = -cameraSpaceCenter.Z;
+            instance.LightmapTextureIndex = lightmap.Lightmap;
+            instance.AoTextureIndex = lightmap.Ao;
+            instance.LightmapScaleBias = renderer.LightmapScaleBias;
+            EmitMeshSections(instance, *mesh, *sectionMaterials, materials, queue);
         }
     };
 

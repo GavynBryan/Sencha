@@ -14,8 +14,11 @@
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
+#include <math/geometry/3d/AabbTransform.h>
 #include <graphics/vulkan/TextureCache.h>
 #include <render/MaterialSetCache.h>
+#include <render/MeshDrawInstance.h>
+#include <render/RenderExtractionSystem.h>
 #include <render/IrradianceVolumeComponent.h>
 #include <render/PointLightComponent.h>
 #include <render/ShadowCasterExtractionSystem.h>
@@ -77,20 +80,6 @@ namespace
         return h;
     }
 
-    Aabb3d TransformBounds(const Aabb3d& local, const Mat4& world)
-    {
-        Aabb3d result = Aabb3d::Empty();
-        for (int x = 0; x < 2; ++x)
-        for (int y = 0; y < 2; ++y)
-        for (int z = 0; z < 2; ++z)
-        {
-            Vec3d p(x == 0 ? local.Min.X : local.Max.X,
-                    y == 0 ? local.Min.Y : local.Max.Y,
-                    z == 0 ? local.Min.Z : local.Max.Z);
-            result.ExpandToInclude(world.TransformPoint(p));
-        }
-        return result;
-    }
 }
 
 SceneRenderQueueBuilder::SceneRenderQueueBuilder(AssetSystem& assets,
@@ -220,23 +209,18 @@ void SceneRenderQueueBuilder::EmitBrushQueue()
         if (mesh == nullptr)
             continue;
 
+        // Brush geometry is baked in world space (BrushTessellate), so it sits
+        // at identity. Its section bounds are already world-space, which the
+        // shared emit cannot express through one instance-wide box, so each
+        // section is emitted on its own.
         for (uint32_t section = 0; section < static_cast<uint32_t>(mesh->Sections.size()); ++section)
         {
-            const uint32_t slot = mesh->Sections[section].MaterialSlot;
-            const MaterialHandle material =
-                slot < entry.SlotMaterials.size() ? entry.SlotMaterials[slot] : MaterialHandle{};
-            if (!material.IsValid())
-                continue;
-
-            RenderQueueItem item{};
-            item.Mesh = entry.Mesh;
-            item.Material = material;
-            item.SectionIndex = section;
-            // Brush geometry is baked in world space (BrushTessellate), so it sits
-            // at identity; its section bounds are already world-space.
-            item.WorldMatrix = Mat4::Identity();
-            item.WorldBounds = mesh->Sections[section].LocalBounds;
-            Brushes.AddOpaque(item);
+            MeshDrawInstance instance;
+            instance.Mesh = entry.Mesh;
+            instance.WorldMatrix = Mat4::Identity();
+            instance.WorldBounds = mesh->Sections[section].LocalBounds;
+            instance.SectionMask = 1u << section;
+            EmitMeshSections(instance, *mesh, entry.SlotMaterials, Materials, Brushes);
         }
     }
     Brushes.SortOpaque();
@@ -265,31 +249,13 @@ void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
             continue;
 
         const Mat4 worldMatrix = transform->ToMat4();
-        const Aabb3d worldBounds = TransformBounds(mesh->LocalBounds, worldMatrix);
 
-        for (uint32_t section = 0; section < static_cast<uint32_t>(mesh->Sections.size()); ++section)
-        {
-            if ((renderer->SectionMask & (1u << section)) == 0)
-                continue;
-
-            // Map section to material via MaterialSlot, last-member fallback for an
-            // under-bound set — identical to RenderExtractionSystem so a placed mesh
-            // reads the same in the editor and the game.
-            const uint32_t slot = mesh->Sections[section].MaterialSlot;
-            const MaterialHandle material = slot < sectionMaterials->size()
-                ? (*sectionMaterials)[slot]
-                : sectionMaterials->back();
-            if (!material.IsValid())
-                continue;
-
-            RenderQueueItem item{};
-            item.Mesh = renderer->Mesh;
-            item.Material = material;
-            item.SectionIndex = section;
-            item.WorldMatrix = worldMatrix;
-            item.WorldBounds = worldBounds;
-            PlacedMeshes.AddOpaque(item);
-        }
+        MeshDrawInstance instance;
+        instance.Mesh = renderer->Mesh;
+        instance.WorldMatrix = worldMatrix;
+        instance.WorldBounds = TransformAabb(mesh->LocalBounds, worldMatrix);
+        instance.SectionMask = renderer->SectionMask;
+        EmitMeshSections(instance, *mesh, *sectionMaterials, Materials, PlacedMeshes);
     }
     PlacedMeshes.SortOpaque();
 }
@@ -338,21 +304,29 @@ void SceneRenderQueueBuilder::EmitPreviewQueue()
     Brushes.Reset();
     const World& world = PreviewRegistry->Components;
 
-    std::uint32_t lightmapIndex = UINT32_MAX;
-    std::uint32_t aoIndex = UINT32_MAX;
+    // Per partition, through the same resolution the runtime uses. Collapsing
+    // every zone's atlas to one pair of indices stamped whichever zone happened
+    // to be visited last onto every other zone's meshes, so a multi-zone
+    // preview disagreed with the game it is previewing.
+    //
+    // The filter set is built first because the runtime's collector takes the
+    // frame's resident partitions, and a preview snapshot wants all of them.
+    std::vector<ZoneLightmapIndices> lightmapTable;
     if (Textures != nullptr && world.IsRegistered<ZoneLightmapComponent>())
+    {
+        StoragePartitionSet lightmapPartitions;
         world.ForEachComponent<ZoneLightmapComponent>(
-            [&](EntityId, const ZoneLightmapComponent& lightmap)
+            [&](EntityId entity, const ZoneLightmapComponent&)
             {
-                const BindlessImageIndex index =
-                    Textures->GetBindlessIndex(lightmap.Texture);
-                if (index.IsValid())
-                    lightmapIndex = index.Value;
-                const BindlessImageIndex ao =
-                    Textures->GetBindlessIndex(lightmap.Ao);
-                if (ao.IsValid())
-                    aoIndex = ao.Value;
+                lightmapPartitions.Add(world.GetEntityPartition(entity));
             });
+
+        std::vector<ZoneLightmapBinding> bindings;
+        std::vector<std::pair<StoragePartitionId, ZoneLightmapIndices>> resolved;
+        CollectZoneLightmaps(world, lightmapPartitions, bindings);
+        ResolveZoneLightmapIndices(bindings, *Textures, resolved);
+        BuildZoneLightmapTable(resolved, lightmapTable);
+    }
 
     if (world.IsRegistered<StaticMeshComponent>() && world.IsRegistered<LocalTransform>())
         world.ForEachComponent<StaticMeshComponent>(
@@ -369,30 +343,18 @@ void SceneRenderQueueBuilder::EmitPreviewQueue()
                     return;
 
                 const Mat4 worldMatrix = transform->Value.ToMat4();
-                const Aabb3d worldBounds = TransformBounds(mesh->LocalBounds, worldMatrix);
-                for (uint32_t section = 0;
-                     section < static_cast<uint32_t>(mesh->Sections.size()); ++section)
-                {
-                    if ((renderer.SectionMask & (1u << section)) == 0)
-                        continue;
-                    const uint32_t slot = mesh->Sections[section].MaterialSlot;
-                    const MaterialHandle material = slot < sectionMaterials->size()
-                        ? (*sectionMaterials)[slot]
-                        : sectionMaterials->back();
-                    if (!material.IsValid())
-                        continue;
+                const ZoneLightmapIndices lightmap = LookupZoneLightmap(
+                    lightmapTable, world.GetEntityPartition(entity));
 
-                    RenderQueueItem item{};
-                    item.Mesh = renderer.Mesh;
-                    item.Material = material;
-                    item.SectionIndex = section;
-                    item.WorldMatrix = worldMatrix;
-                    item.WorldBounds = worldBounds;
-                    item.LightmapTextureIndex = lightmapIndex;
-                    item.AoTextureIndex = aoIndex;
-                    item.LightmapScaleBias = renderer.LightmapScaleBias;
-                    Brushes.AddOpaque(item);
-                }
+                MeshDrawInstance instance;
+                instance.Mesh = renderer.Mesh;
+                instance.WorldMatrix = worldMatrix;
+                instance.WorldBounds = TransformAabb(mesh->LocalBounds, worldMatrix);
+                instance.SectionMask = renderer.SectionMask;
+                instance.LightmapTextureIndex = lightmap.Lightmap;
+                instance.AoTextureIndex = lightmap.Ao;
+                instance.LightmapScaleBias = renderer.LightmapScaleBias;
+                EmitMeshSections(instance, *mesh, *sectionMaterials, Materials, Brushes);
             });
     Brushes.SortOpaque();
 }

@@ -47,6 +47,14 @@ void CollectZoneLightmaps(
     const StoragePartitionSet& partitions,
     std::vector<ZoneLightmapBinding>& out);
 
+// Turns each binding's texture handles into the bindless slots draw items
+// carry. A handle the cache cannot resolve leaves that slot invalid, which the
+// shader reads as "no baked contribution" rather than as an error.
+void ResolveZoneLightmapIndices(
+    std::span<const ZoneLightmapBinding> bindings,
+    const TextureCache& textures,
+    std::vector<std::pair<StoragePartitionId, ZoneLightmapIndices>>& out);
+
 // Scatters already-resolved per-partition indices into a table indexed by
 // partition value, so the extraction loop answers "which atlas does this chunk
 // sample?" with one bounds check and one index. Entries for partitions without
