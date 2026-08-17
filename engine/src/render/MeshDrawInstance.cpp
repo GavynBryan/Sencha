@@ -12,6 +12,17 @@ std::uint32_t EmitMeshSections(const MeshDrawInstance& instance,
     if (slotMaterials.empty())
         return 0;
 
+    // A mesh with no lightmap UVs cannot sample its zone's atlas: every lookup
+    // would land on texel (0,0). It has worked because the packer reserves that
+    // texel black and the AO plane initialises white, so the sample happened to
+    // contribute nothing -- correct by arrangement rather than by decision, and
+    // only while both of those hold. Deciding it here also drops a per-fragment
+    // texture fetch the shader was making to read a known-black texel.
+    const std::uint32_t lightmapIndex =
+        mesh.HasLightmapUvs ? instance.LightmapTextureIndex : UINT32_MAX;
+    const std::uint32_t aoIndex =
+        mesh.HasLightmapUvs ? instance.AoTextureIndex : UINT32_MAX;
+
     std::uint32_t emitted = 0;
     const auto sectionCount = static_cast<std::uint32_t>(mesh.Sections.size());
     for (std::uint32_t sectionIndex = 0; sectionIndex < sectionCount; ++sectionIndex)
@@ -38,8 +49,8 @@ std::uint32_t EmitMeshSections(const MeshDrawInstance& instance,
         // back-face culled in the viewport but not in game.
         item.Pass = material->Pass;
         item.Pipeline = SelectOpaquePipeline(*material);
-        item.LightmapTextureIndex = instance.LightmapTextureIndex;
-        item.AoTextureIndex = instance.AoTextureIndex;
+        item.LightmapTextureIndex = lightmapIndex;
+        item.AoTextureIndex = aoIndex;
         item.LightmapScaleBias = instance.LightmapScaleBias;
         queue.AddOpaque(item);
         ++emitted;

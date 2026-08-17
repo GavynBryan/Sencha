@@ -24,6 +24,19 @@ struct GpuStaticMesh
 
     Aabb3d LocalBounds = Aabb3d::Empty();
 
+    // Whether any vertex carries a non-zero lightmap UV. The .smesh header
+    // records the same fact as kSmeshFlagLightmapUv, but that is a tooling
+    // hint the loader never propagates, and meshes built in memory
+    // (CreateFromData, cooked brush cells) never pass through a header at all
+    // -- so it is derived from the geometry at upload, which covers every
+    // source uniformly.
+    //
+    // Extraction reads it to decide whether an instance may sample its zone's
+    // baked atlas. Without it, an unbaked mesh in a baked zone still got the
+    // atlas index stamped and landed on the packer's reserved black border
+    // texel: the right pixels, by arrangement rather than by decision.
+    bool HasLightmapUvs = false;
+
     std::vector<StaticMeshSection> Sections;
 };
 

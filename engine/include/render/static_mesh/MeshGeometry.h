@@ -32,3 +32,22 @@ struct MeshGeometry
     Aabb3d LocalBounds = Aabb3d::Empty();
     std::vector<StaticMeshSection> Sections;
 };
+
+// Whether any vertex carries a non-zero lightmap UV, which is what decides
+// whether an instance may sample its zone's baked atlas.
+//
+// Derived from the vertices rather than read from the .smesh header flag: the
+// flag is a tooling hint the loader does not propagate, and geometry built in
+// memory (preview primitives, cooked brush cells) never passes through a
+// header. Deriving it covers every source with one rule.
+//
+// A mesh whose lightmap UVs are all exactly zero is indistinguishable from one
+// that was never unwrapped, and that is the intended reading: origin-only UVs
+// carry no bake.
+[[nodiscard]] inline bool GeometryHasLightmapUvs(const MeshGeometry& geometry)
+{
+    for (const StaticMeshVertex& vertex : geometry.Vertices)
+        if (vertex.LightmapU != 0 || vertex.LightmapV != 0)
+            return true;
+    return false;
+}

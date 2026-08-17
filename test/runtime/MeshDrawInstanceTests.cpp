@@ -17,9 +17,11 @@
 namespace
 {
 
-GpuStaticMesh MakeMesh(std::initializer_list<std::uint32_t> materialSlots)
+GpuStaticMesh MakeMesh(std::initializer_list<std::uint32_t> materialSlots,
+                       bool hasLightmapUvs = true)
 {
     GpuStaticMesh mesh;
+    mesh.HasLightmapUvs = hasLightmapUvs;
     for (const std::uint32_t slot : materialSlots)
     {
         StaticMeshSection section;
@@ -249,4 +251,64 @@ TEST(ResolveSectionMaterial, ReturnsAnInvalidHandleForAnEmptySetOrAMissingSectio
 
     EXPECT_FALSE(ResolveSectionMaterial(mesh, 0, {}).IsValid());
     EXPECT_FALSE(ResolveSectionMaterial(mesh, 5, slots).IsValid());
+}
+
+// --- baked-atlas participation ---
+
+TEST(EmitMeshSections, PassesTheZoneAtlasToAMeshThatHasLightmapUvs)
+{
+    MaterialCache materials;
+    const MaterialHandle lit =
+        materials.Create(MakeMaterial(MaterialShading::StandardLit, false));
+    const GpuStaticMesh mesh = MakeMesh({ 0 }, /*hasLightmapUvs*/ true);
+    const MaterialHandle slots[] = { lit };
+
+    RenderQueue queue;
+    MeshDrawInstance instance;
+    instance.LightmapTextureIndex = 4;
+    instance.AoTextureIndex = 5;
+
+    ASSERT_EQ(EmitMeshSections(instance, mesh, slots, materials, queue), 1u);
+    EXPECT_EQ(queue.Opaque()[0].LightmapTextureIndex, 4u);
+    EXPECT_EQ(queue.Opaque()[0].AoTextureIndex, 5u);
+}
+
+TEST(EmitMeshSections, WithholdsTheZoneAtlasFromAMeshWithoutLightmapUvs)
+{
+    MaterialCache materials;
+    const MaterialHandle lit =
+        materials.Create(MakeMaterial(MaterialShading::StandardLit, false));
+    const GpuStaticMesh mesh = MakeMesh({ 0 }, /*hasLightmapUvs*/ false);
+    const MaterialHandle slots[] = { lit };
+
+    RenderQueue queue;
+    MeshDrawInstance instance;
+    instance.LightmapTextureIndex = 4;
+    instance.AoTextureIndex = 5;
+
+    ASSERT_EQ(EmitMeshSections(instance, mesh, slots, materials, queue), 1u);
+    // Every lookup would resolve to texel (0,0). That reads as black today only
+    // because the packer reserves the border and the AO plane starts white; the
+    // sentinel makes the shader skip the fetch instead of depending on it.
+    EXPECT_EQ(queue.Opaque()[0].LightmapTextureIndex, UINT32_MAX);
+    EXPECT_EQ(queue.Opaque()[0].AoTextureIndex, UINT32_MAX);
+}
+
+TEST(EmitMeshSections, WithholdingTheAtlasDoesNotDropTheInstanceRemap)
+{
+    // LightmapScaleBias is per-instance data, never a merge criterion, and the
+    // shader ignores it once the index is invalid -- so it rides through
+    // unchanged rather than being special-cased alongside the indices.
+    MaterialCache materials;
+    const MaterialHandle lit =
+        materials.Create(MakeMaterial(MaterialShading::StandardLit, false));
+    const GpuStaticMesh mesh = MakeMesh({ 0 }, /*hasLightmapUvs*/ false);
+    const MaterialHandle slots[] = { lit };
+
+    RenderQueue queue;
+    MeshDrawInstance instance;
+    instance.LightmapScaleBias = Vec4{ 0.5f, 0.5f, 0.25f, 0.25f };
+
+    ASSERT_EQ(EmitMeshSections(instance, mesh, slots, materials, queue), 1u);
+    EXPECT_FLOAT_EQ(queue.Opaque()[0].LightmapScaleBias.X, 0.5f);
 }

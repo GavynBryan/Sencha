@@ -52,6 +52,7 @@ bool UploadMeshGeometryToGpu(VulkanBufferService& buffers,
         .VertexCount = static_cast<uint32_t>(geometry.Vertices.size()),
         .IndexCount = static_cast<uint32_t>(geometry.Indices.size()),
         .LocalBounds = geometry.LocalBounds,
+        .HasLightmapUvs = GeometryHasLightmapUvs(geometry),
         .Sections = geometry.Sections,
     };
     return true;
