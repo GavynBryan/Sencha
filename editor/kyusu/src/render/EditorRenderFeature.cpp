@@ -14,7 +14,9 @@
 #include <app/EngineConsoleBuiltins.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/console/ConsoleRegistry.h>
+#include <core/console/CVarRead.h>
 #include <core/console/ConsoleTypes.h>
+#include <render/RenderLightCVars.h>
 #include <world/registry/Registry.h>
 
 #include <graphics/vulkan/VulkanBarriers.h>
@@ -128,32 +130,18 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
 
     // Match play-mode backface culling by default; the cvar lets you draw both sides to
     // diagnose inverted/missing-winding geometry. Missing cvar falls back to culling.
-    bool cullBackfaces = true;
-    if (const CVarMetadata* cvar = Console->FindCVar("editor.cull_backfaces");
-        cvar != nullptr && std::holds_alternative<bool>(cvar->CurrentValue))
-        cullBackfaces = std::get<bool>(cvar->CurrentValue);
-    Solid.SetCullBackfaces(cullBackfaces);
+    Solid.SetCullBackfaces(ReadCVarBool(Console, "editor.cull_backfaces", true));
 
     // Live look knobs via cvars (dial in the dev console).
-    const auto readFloatCvar = [&](const char* name, float fallback)
-    {
-        if (const CVarMetadata* cvar = Console->FindCVar(name);
-            cvar != nullptr && std::holds_alternative<double>(cvar->CurrentValue))
-            return static_cast<float>(std::get<double>(cvar->CurrentValue));
-        return fallback;
-    };
-    GridStyleCache.CellPx     = readFloatCvar("editor.grid.cell_px", 14.0f);
-    GridStyleCache.Opacity    = readFloatCvar("editor.grid.opacity", 0.6f);
-    GridStyleCache.Brightness = readFloatCvar("editor.grid.brightness", 0.62f);
-    GridStyleCache.FadeStart  = readFloatCvar("editor.grid.fade_start", -0.3f);
+    GridStyleCache.CellPx     = ReadCVarFloat(Console, "editor.grid.cell_px", 14.0f);
+    GridStyleCache.Opacity    = ReadCVarFloat(Console, "editor.grid.opacity", 0.6f);
+    GridStyleCache.Brightness = ReadCVarFloat(Console, "editor.grid.brightness", 0.62f);
+    GridStyleCache.FadeStart  = ReadCVarFloat(Console, "editor.grid.fade_start", -0.3f);
 
-    BloomEnabled = true;
-    if (const CVarMetadata* cvar = Console->FindCVar("editor.bloom.enable");
-        cvar != nullptr && std::holds_alternative<bool>(cvar->CurrentValue))
-        BloomEnabled = std::get<bool>(cvar->CurrentValue);
-    BloomParamsCache.Threshold = readFloatCvar("editor.bloom.threshold", 1.0f);
-    BloomParamsCache.Intensity = readFloatCvar("editor.bloom.intensity", 1.0f);
-    BloomParamsCache.Radius    = readFloatCvar("editor.bloom.radius", 2.0f);
+    BloomEnabled = ReadCVarBool(Console, "editor.bloom.enable", true);
+    BloomParamsCache.Threshold = ReadCVarFloat(Console, "editor.bloom.threshold", 1.0f);
+    BloomParamsCache.Intensity = ReadCVarFloat(Console, "editor.bloom.intensity", 1.0f);
+    BloomParamsCache.Radius    = ReadCVarFloat(Console, "editor.bloom.radius", 2.0f);
 
     Targets.BeginFrame(frame.FrameInFlightIndex, frame.Retirement);
     Highlight.BeginFrame();
@@ -166,19 +154,11 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
         // Stamp the live render.* tunables before Build: the shadow-view
         // gather multiplies in ShadowSoftness, so it must be current when the
         // lights are packed. Reset() inside Build preserves these fields.
-        // Defaults match RenderLightSet's neutral cool fill.
         RenderLightSet& lights = QueueBuilder->Lights();
-        lights.AmbientSky = Vec<3>(readFloatCvar("render.ambient.sky_r", 0.10f),
-                                   readFloatCvar("render.ambient.sky_g", 0.12f),
-                                   readFloatCvar("render.ambient.sky_b", 0.15f));
-        lights.AmbientGround = Vec<3>(readFloatCvar("render.ambient.ground_r", 0.04f),
-                                      readFloatCvar("render.ambient.ground_g", 0.03f),
-                                      readFloatCvar("render.ambient.ground_b", 0.02f));
-        lights.ShadowDarkness = readFloatCvar("render.shadow.darkness", 1.0f);
-        lights.ShadowSoftness = readFloatCvar("render.shadow.softness", 1.0f);
-        lights.ShadowBiasConstant = readFloatCvar("render.shadow.bias_const", 4.0f);
-        lights.ShadowBiasSlope = readFloatCvar("render.shadow.bias_slope", 2.0f);
+        ApplyRendererCVars(Console, lights);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
+        // The one tunable the shared reader leaves alone: the editor selects it
+        // from its view menu rather than from render.debug.view.
         lights.DebugView = WorldView.DebugViewMode;
 #endif
 

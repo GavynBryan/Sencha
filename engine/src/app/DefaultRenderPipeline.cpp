@@ -1,7 +1,9 @@
 #include <app/DefaultRenderPipeline.h>
 
 #include <app/EngineConsoleBuiltins.h>
+#include <core/console/CVarRead.h>
 #include <core/console/ConsoleRegistry.h>
+#include <render/RenderLightCVars.h>
 #include <profiling/CpuScopeTimings.h>
 #include <profiling/RenderStats.h>
 #include <world/transform/TransformComponents.h>
@@ -20,80 +22,22 @@
 
 namespace
 {
-    float ReadDoubleCVar(const ConsoleRegistry* console,
-                         std::string_view name,
-                         float fallback)
-    {
-        if (console == nullptr)
-            return fallback;
-        const CVarMetadata* metadata = console->FindCVar(name);
-        if (metadata == nullptr)
-            return fallback;
-        const double* value = std::get_if<double>(&metadata->CurrentValue);
-        return value != nullptr ? static_cast<float>(*value) : fallback;
-    }
-
-    bool ReadBoolCVar(const ConsoleRegistry* console,
-                      std::string_view name,
-                      bool fallback)
-    {
-        if (console == nullptr)
-            return fallback;
-        const CVarMetadata* metadata = console->FindCVar(name);
-        if (metadata == nullptr)
-            return fallback;
-        const bool* value = std::get_if<bool>(&metadata->CurrentValue);
-        return value != nullptr ? *value : fallback;
-    }
-
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     RenderDebugView ReadDebugViewCVar(const ConsoleRegistry* console)
     {
-        if (console == nullptr)
-            return RenderDebugView::None;
-        const CVarMetadata* metadata = console->FindCVar("render.debug.view");
-        if (metadata == nullptr)
-            return RenderDebugView::None;
-        const std::string* value = std::get_if<std::string>(&metadata->CurrentValue);
         RenderDebugView view = RenderDebugView::None;
-        if (value != nullptr)
-            (void)ParseRenderDebugView(*value, view);
+        (void)ParseRenderDebugView(
+            ReadCVarString(console, "render.debug.view", ""), view);
         return view;
     }
 #endif
 
-    void ApplyRendererCVars(const ConsoleRegistry* console, RenderLightSet& lights)
+    void ApplyRendererTunables(const ConsoleRegistry* console, RenderLightSet& lights)
     {
-        lights.AmbientSky = Vec<3>(
-            ReadDoubleCVar(console, "render.ambient.sky_r", lights.AmbientSky.X),
-            ReadDoubleCVar(console, "render.ambient.sky_g", lights.AmbientSky.Y),
-            ReadDoubleCVar(console, "render.ambient.sky_b", lights.AmbientSky.Z));
-        lights.AmbientGround = Vec<3>(
-            ReadDoubleCVar(console, "render.ambient.ground_r", lights.AmbientGround.X),
-            ReadDoubleCVar(console, "render.ambient.ground_g", lights.AmbientGround.Y),
-            ReadDoubleCVar(console, "render.ambient.ground_b", lights.AmbientGround.Z));
-        lights.DiffuseWrap = ReadDoubleCVar(
-            console, "render.style.diffuse_wrap", lights.DiffuseWrap);
-        lights.MinAmbient = ReadDoubleCVar(
-            console, "render.style.min_ambient", lights.MinAmbient);
-        lights.Exposure = ReadDoubleCVar(console, "render.exposure", lights.Exposure);
-        lights.TonemapKnee = ReadDoubleCVar(
-            console, "render.tonemap.knee", lights.TonemapKnee);
-        lights.TonemapEnabled = ReadBoolCVar(
-            console, "render.tonemap", lights.TonemapEnabled);
-        lights.ShadowDarkness = ReadDoubleCVar(
-            console, "render.shadow.darkness", lights.ShadowDarkness);
-        lights.ShadowSoftness = ReadDoubleCVar(
-            console, "render.shadow.softness", lights.ShadowSoftness);
-        lights.ShadowBiasConstant = ReadDoubleCVar(
-            console, "render.shadow.bias_const", lights.ShadowBiasConstant);
-        lights.ShadowBiasSlope = ReadDoubleCVar(
-            console, "render.shadow.bias_slope", lights.ShadowBiasSlope);
-        lights.BakedDirectEnabled = ReadBoolCVar(
-            console, "render.baked_direct.enabled", lights.BakedDirectEnabled);
-        lights.BakedAoEnabled = ReadBoolCVar(
-            console, "render.ao.enabled", lights.BakedAoEnabled);
+        ApplyRendererCVars(console, lights);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
+        // Not part of the shared reader: the editor drives this from its own
+        // view menu, so the cvar is only the game's source for it.
         lights.DebugView = ReadDebugViewCVar(console);
 #endif
     }
@@ -231,7 +175,7 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
     {
         CpuScopeTimer timer(scopes, CpuScope::LightSelection);
         Lights.Reset();
-        ApplyRendererCVars(Console, Lights);
+        ApplyRendererTunables(Console, Lights);
         LightExtractor.Extract(world, ctx.Partitions, Camera, Lights,
                                ShadowRequests, PointShadowRequests, &lightCounts);
         ProbeVolumes.AppendActive(ctx.Partitions, Lights);
