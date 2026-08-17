@@ -3,6 +3,7 @@
 #include <assets/runtime/RuntimeAssets.h>
 #include <graphics/vulkan/VulkanBarriers.h>
 #include <math/geometry/3d/Frustum.h>
+#include <render/CameraProjection.h>
 
 #include <algorithm>
 #include <cmath>
@@ -12,19 +13,6 @@ namespace
     // The cache keys targets by ViewportId; the preview has exactly one view.
     constexpr ViewportId kPreviewView{ 1 };
 
-    // Same convention as the editor viewports (EditorCamera): Vulkan clip space,
-    // Y flipped, reverse-less 0..1 depth.
-    Mat4 MakeVulkanPerspective(float fovYRadians, float aspect, float nearPlane, float farPlane)
-    {
-        const float tanHalfFov = std::tan(fovYRadians * 0.5f);
-        Mat4 result;
-        result[0][0] = 1.0f / (aspect * tanHalfFov);
-        result[1][1] = -1.0f / tanHalfFov;
-        result[2][2] = farPlane / (nearPlane - farPlane);
-        result[2][3] = (farPlane * nearPlane) / (nearPlane - farPlane);
-        result[3][2] = -1.0f;
-        return result;
-    }
 }
 
 MaterialPreviewRenderFeature::MaterialPreviewRenderFeature(RuntimeAssets& assets)
