@@ -1,5 +1,6 @@
 #pragma once
 
+#include <graphics/vulkan/PipelineVariantSet.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
 #include <render/Camera.h>
@@ -162,17 +163,16 @@ private:
     ShaderHandle DebugFragmentShader;
 #endif
     VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
-    std::array<VkPipeline, 4> OpaquePipelines{};
+    // One variant per OpaquePipelineId: lit and unlit, back-face culled and
+    // double-sided.
+    PipelineVariantSet<4, AttachmentFormatKey> OpaquePipelines;
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
-    std::array<VkPipeline, 2> DebugPipelines{};
-    std::array<VkPipeline, 2> OverdrawPipelines{};
+    // The debug families carry only the cull axis -- the channel itself is a
+    // frame-uniform value, not a pipeline variant -- so a queue item's
+    // pipeline id is masked down to its low bit before indexing them.
+    PipelineVariantSet<2, AttachmentFormatKey> DebugPipelines;
+    PipelineVariantSet<2, AttachmentFormatKey> OverdrawPipelines;
     RenderDebugView ActiveDebugView = RenderDebugView::None;
-    VkFormat CachedDebugColorFormat = VK_FORMAT_UNDEFINED;
-    VkFormat CachedDebugDepthFormat = VK_FORMAT_UNDEFINED;
-    VkFormat CachedOverdrawColorFormat = VK_FORMAT_UNDEFINED;
-    VkFormat CachedOverdrawDepthFormat = VK_FORMAT_UNDEFINED;
 #endif
-    VkFormat CachedColorFormat = VK_FORMAT_UNDEFINED;
-    VkFormat CachedDepthFormat = VK_FORMAT_UNDEFINED;
     DrawStats LastStats;
 };

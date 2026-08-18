@@ -116,63 +116,45 @@ void ShadowDepthPass::Setup(const RendererServices& services, LightBindings& bin
 
 bool ShadowDepthPass::EnsurePipelines(const RenderLightSet& lights)
 {
-    const float biasConstant = std::max(lights.ShadowBiasConstant, 0.0f);
-    const float biasSlope = std::max(lights.ShadowBiasSlope, 0.0f);
-    if (BackPipeline != VK_NULL_HANDLE
-        && FlippedBackPipeline != VK_NULL_HANDLE
-        && DoubleSidedPipeline != VK_NULL_HANDLE
-        && CachedBiasConstant == biasConstant
-        && CachedBiasSlope == biasSlope)
-    {
-        return true;
-    }
     if (PipelineLayout == VK_NULL_HANDLE)
         return false;
 
-    GraphicsPipelineDesc base{};
-    base.VertexShader = VertexShader;
-    base.FragmentShader = FragmentShader;
-    base.Layout = PipelineLayout;
-    base.VertexBindings = {
-        { 0, sizeof(StaticMeshVertex), VK_VERTEX_INPUT_RATE_VERTEX },
-        { 1, sizeof(Mat4), VK_VERTEX_INPUT_RATE_INSTANCE },
-    };
-    base.VertexAttributes = {
-        { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Position) },
-        { 3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 0 },
-        { 4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 16 },
-        { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 32 },
-        { 6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 48 },
-    };
-    base.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    base.DepthTest = true;
-    base.DepthWrite = true;
-    base.DepthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
-    base.DepthBiasEnable = true;
-    base.DepthBiasConstant = biasConstant;
-    base.DepthBiasSlope = biasSlope;
-    base.DepthFormat = VK_FORMAT_D16_UNORM;
+    const ShadowDepthBias bias{ std::max(lights.ShadowBiasConstant, 0.0f),
+                                std::max(lights.ShadowBiasSlope, 0.0f) };
 
-    base.CullMode = VK_CULL_MODE_BACK_BIT;
-    const VkPipeline backPipeline = PipelineCache->GetGraphicsPipeline(base);
-    base.FrontFace = VK_FRONT_FACE_CLOCKWISE;
-    const VkPipeline flippedBackPipeline = PipelineCache->GetGraphicsPipeline(base);
-    base.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    base.CullMode = VK_CULL_MODE_NONE;
-    const VkPipeline doubleSidedPipeline = PipelineCache->GetGraphicsPipeline(base);
-    if (backPipeline == VK_NULL_HANDLE
-        || flippedBackPipeline == VK_NULL_HANDLE
-        || doubleSidedPipeline == VK_NULL_HANDLE)
-    {
-        return false;
-    }
+    return Pipelines.Ensure(bias, [&](std::size_t index) {
+        GraphicsPipelineDesc desc{};
+        desc.VertexShader = VertexShader;
+        desc.FragmentShader = FragmentShader;
+        desc.Layout = PipelineLayout;
+        desc.VertexBindings = {
+            { 0, sizeof(StaticMeshVertex), VK_VERTEX_INPUT_RATE_VERTEX },
+            { 1, sizeof(Mat4), VK_VERTEX_INPUT_RATE_INSTANCE },
+        };
+        desc.VertexAttributes = {
+            { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(StaticMeshVertex, Position) },
+            { 3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 0 },
+            { 4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 16 },
+            { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 32 },
+            { 6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 48 },
+        };
+        desc.DepthTest = true;
+        desc.DepthWrite = true;
+        desc.DepthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
+        desc.DepthBiasEnable = true;
+        desc.DepthBiasConstant = bias.Constant;
+        desc.DepthBiasSlope = bias.Slope;
+        desc.DepthFormat = VK_FORMAT_D16_UNORM;
 
-    BackPipeline = backPipeline;
-    FlippedBackPipeline = flippedBackPipeline;
-    DoubleSidedPipeline = doubleSidedPipeline;
-    CachedBiasConstant = biasConstant;
-    CachedBiasSlope = biasSlope;
-    return true;
+        const auto variant = static_cast<ShadowPipelineId>(index);
+        desc.CullMode = variant == ShadowPipelineId::DoubleSided
+            ? VK_CULL_MODE_NONE
+            : VK_CULL_MODE_BACK_BIT;
+        desc.FrontFace = variant == ShadowPipelineId::FlippedBack
+            ? VK_FRONT_FACE_CLOCKWISE
+            : VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        return PipelineCache->GetGraphicsPipeline(desc);
+    });
 }
 
 VkDeviceSize ShadowDepthPass::UploadView(const Mat4& viewProjection)
@@ -307,9 +289,8 @@ bool ShadowDepthPass::RecordView(const FrameContext& frame,
         const GpuStaticMesh* mesh = meshes.Get(lead.Mesh);
         const StaticMeshSection& section = mesh->Sections[lead.SectionIndex];
 
-        const VkPipeline pipeline = lead.DoubleSided
-            ? DoubleSidedPipeline
-            : (flipFrontFace ? FlippedBackPipeline : BackPipeline);
+        const VkPipeline pipeline = Pipelines.Get(
+            static_cast<std::size_t>(SelectShadowPipeline(lead.DoubleSided, flipFrontFace)));
         if (pipeline != LastPipeline)
         {
             vkCmdBindPipeline(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
@@ -454,11 +435,7 @@ void ShadowDepthPass::Teardown()
     }
     VertexShader = {};
     FragmentShader = {};
-    BackPipeline = VK_NULL_HANDLE;
-    FlippedBackPipeline = VK_NULL_HANDLE;
-    DoubleSidedPipeline = VK_NULL_HANDLE;
-    CachedBiasConstant = -1.0f;
-    CachedBiasSlope = -1.0f;
+    Pipelines.Reset();
     PipelineLayout = VK_NULL_HANDLE;
     Bindings = nullptr;
 }

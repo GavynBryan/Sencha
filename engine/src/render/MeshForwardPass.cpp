@@ -169,94 +169,46 @@ void MeshForwardPass::Setup(const RendererServices& services, LightBindings& bin
 
 bool MeshForwardPass::EnsurePipelines(const FrameContext& frame)
 {
-    bool complete = true;
-    for (VkPipeline pipeline : OpaquePipelines)
-        complete = complete && pipeline != VK_NULL_HANDLE;
-    if (complete
-        && CachedColorFormat == frame.TargetFormat
-        && CachedDepthFormat == frame.DepthFormat)
-    {
-        return true;
-    }
-
-    GraphicsPipelineDesc base = MakeMeshPipelineBase(VertexShader, PipelineLayout);
-    base.FragmentShader = FragmentShader;
-    base.DepthTest = true;
-    base.DepthWrite = true;
-    base.ColorBlend = { ColorBlendAttachmentDesc{} };
-    base.ColorFormats = { frame.TargetFormat };
-    base.DepthFormat = frame.DepthFormat;
-
     static constexpr const char* kPipelineNames[4] = {
         "Forward/StandardLitBack",
         "Forward/StandardLitDoubleSided",
         "Forward/UnlitBack",
         "Forward/UnlitDoubleSided",
     };
-    for (uint32_t index = 0; index < OpaquePipelines.size(); ++index)
-    {
-        GraphicsPipelineDesc desc = base;
-        const bool unlit = index >= static_cast<uint32_t>(OpaquePipelineId::UnlitBack);
-        const bool doubleSided = (index & 1u) != 0;
-        desc.FragmentSpecializationConstants = {
-            ShaderSpecializationConstant{ .Id = 0, .Value = unlit ? 1u : 0u }
-        };
-        desc.CullMode = doubleSided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
-        OpaquePipelines[index] = Pipelines->GetGraphicsPipeline(desc);
-        if (OpaquePipelines[index] == VK_NULL_HANDLE)
-            return false;
-        VulkanDebugLabels::NameObject(
-            Device, VK_OBJECT_TYPE_PIPELINE,
-            reinterpret_cast<std::uint64_t>(OpaquePipelines[index]),
-            kPipelineNames[index]);
-    }
 
-    CachedColorFormat = frame.TargetFormat;
-    CachedDepthFormat = frame.DepthFormat;
-    return true;
+    return OpaquePipelines.Ensure(
+        AttachmentFormatKey{ frame.TargetFormat, frame.DepthFormat },
+        [&](std::size_t index) {
+            GraphicsPipelineDesc desc = MakeMeshPipelineBase(VertexShader, PipelineLayout);
+            desc.FragmentShader = FragmentShader;
+            desc.DepthTest = true;
+            desc.DepthWrite = true;
+            desc.ColorBlend = { ColorBlendAttachmentDesc{} };
+            desc.ColorFormats = { frame.TargetFormat };
+            desc.DepthFormat = frame.DepthFormat;
+
+            const bool unlit = index >= static_cast<std::size_t>(OpaquePipelineId::UnlitBack);
+            const bool doubleSided = (index & 1u) != 0;
+            desc.FragmentSpecializationConstants = {
+                ShaderSpecializationConstant{ .Id = 0, .Value = unlit ? 1u : 0u }
+            };
+            desc.CullMode = doubleSided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
+
+            const VkPipeline pipeline = Pipelines->GetGraphicsPipeline(desc);
+            if (pipeline != VK_NULL_HANDLE)
+            {
+                VulkanDebugLabels::NameObject(Device, VK_OBJECT_TYPE_PIPELINE,
+                                              reinterpret_cast<std::uint64_t>(pipeline),
+                                              kPipelineNames[index]);
+            }
+            return pipeline;
+        });
 }
 
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
 bool MeshForwardPass::EnsureDebugPipelines(const FrameContext& frame,
                                            bool overdraw)
 {
-    std::array<VkPipeline, 2>& pipelines = overdraw
-        ? OverdrawPipelines
-        : DebugPipelines;
-    VkFormat& cachedColor = overdraw
-        ? CachedOverdrawColorFormat
-        : CachedDebugColorFormat;
-    VkFormat& cachedDepth = overdraw
-        ? CachedOverdrawDepthFormat
-        : CachedDebugDepthFormat;
-
-    bool complete = true;
-    for (VkPipeline pipeline : pipelines)
-        complete = complete && pipeline != VK_NULL_HANDLE;
-    if (complete
-        && cachedColor == frame.TargetFormat
-        && cachedDepth == frame.DepthFormat)
-    {
-        return true;
-    }
-
-    GraphicsPipelineDesc base = MakeMeshPipelineBase(VertexShader, PipelineLayout);
-    base.FragmentShader = DebugFragmentShader;
-    base.DepthTest = !overdraw;
-    base.DepthWrite = !overdraw;
-    ColorBlendAttachmentDesc blend{};
-    if (overdraw)
-    {
-        blend.BlendEnable = true;
-        blend.SrcColor = VK_BLEND_FACTOR_ONE;
-        blend.DstColor = VK_BLEND_FACTOR_ONE;
-        blend.SrcAlpha = VK_BLEND_FACTOR_ZERO;
-        blend.DstAlpha = VK_BLEND_FACTOR_ONE;
-    }
-    base.ColorBlend = { blend };
-    base.ColorFormats = { frame.TargetFormat };
-    base.DepthFormat = frame.DepthFormat;
-
     static constexpr const char* kDebugNames[2] = {
         "Forward/DebugBack",
         "Forward/DebugDoubleSided",
@@ -265,22 +217,42 @@ bool MeshForwardPass::EnsureDebugPipelines(const FrameContext& frame,
         "Forward/OverdrawBack",
         "Forward/OverdrawDoubleSided",
     };
-    for (std::uint32_t index = 0; index < pipelines.size(); ++index)
-    {
-        GraphicsPipelineDesc desc = base;
-        desc.CullMode = index == 0 ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
-        pipelines[index] = Pipelines->GetGraphicsPipeline(desc);
-        if (pipelines[index] == VK_NULL_HANDLE)
-            return false;
-        VulkanDebugLabels::NameObject(
-            Device, VK_OBJECT_TYPE_PIPELINE,
-            reinterpret_cast<std::uint64_t>(pipelines[index]),
-            overdraw ? kOverdrawNames[index] : kDebugNames[index]);
-    }
 
-    cachedColor = frame.TargetFormat;
-    cachedDepth = frame.DepthFormat;
-    return true;
+    // Overdraw counts fragments rather than shading them, so it drops the
+    // depth test and blends additively; the two families are otherwise the
+    // same debug shader over the same cull axis.
+    auto build = [&](std::size_t index) {
+        GraphicsPipelineDesc desc = MakeMeshPipelineBase(VertexShader, PipelineLayout);
+        desc.FragmentShader = DebugFragmentShader;
+        desc.DepthTest = !overdraw;
+        desc.DepthWrite = !overdraw;
+        ColorBlendAttachmentDesc blend{};
+        if (overdraw)
+        {
+            blend.BlendEnable = true;
+            blend.SrcColor = VK_BLEND_FACTOR_ONE;
+            blend.DstColor = VK_BLEND_FACTOR_ONE;
+            blend.SrcAlpha = VK_BLEND_FACTOR_ZERO;
+            blend.DstAlpha = VK_BLEND_FACTOR_ONE;
+        }
+        desc.ColorBlend = { blend };
+        desc.ColorFormats = { frame.TargetFormat };
+        desc.DepthFormat = frame.DepthFormat;
+        desc.CullMode = index == 0 ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
+
+        const VkPipeline pipeline = Pipelines->GetGraphicsPipeline(desc);
+        if (pipeline != VK_NULL_HANDLE)
+        {
+            VulkanDebugLabels::NameObject(Device, VK_OBJECT_TYPE_PIPELINE,
+                                          reinterpret_cast<std::uint64_t>(pipeline),
+                                          overdraw ? kOverdrawNames[index] : kDebugNames[index]);
+        }
+        return pipeline;
+    };
+
+    const AttachmentFormatKey key{ frame.TargetFormat, frame.DepthFormat };
+    return overdraw ? OverdrawPipelines.Ensure(key, build)
+                    : DebugPipelines.Ensure(key, build);
 }
 #endif
 
@@ -426,28 +398,25 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
         if (mesh == nullptr || material == nullptr || item.SectionIndex >= mesh->Sections.size())
             continue;
 
-        uint32_t pipelineIndex = static_cast<uint32_t>(item.Pipeline);
-        const VkPipeline* pipelineSet = OpaquePipelines.data();
-        std::size_t pipelineCount = OpaquePipelines.size();
+        const auto pipelineIndex = static_cast<std::size_t>(item.Pipeline);
+        VkPipeline pipeline = VK_NULL_HANDLE;
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
         if (ActiveDebugView != RenderDebugView::None)
         {
-            pipelineIndex &= 1u;
-            if (ActiveDebugView == RenderDebugView::Overdraw)
-            {
-                pipelineSet = OverdrawPipelines.data();
-                pipelineCount = OverdrawPipelines.size();
-            }
-            else
-            {
-                pipelineSet = DebugPipelines.data();
-                pipelineCount = DebugPipelines.size();
-            }
+            // Debug families carry the cull axis only, so the lit/unlit half
+            // of the id is dropped rather than indexing past their end.
+            const std::size_t cullVariant = pipelineIndex & 1u;
+            pipeline = ActiveDebugView == RenderDebugView::Overdraw
+                ? OverdrawPipelines.Get(cullVariant)
+                : DebugPipelines.Get(cullVariant);
         }
+        else
 #endif
-        if (pipelineIndex >= pipelineCount)
+        {
+            pipeline = OpaquePipelines.Get(pipelineIndex);
+        }
+        if (pipeline == VK_NULL_HANDLE)
             continue;
-        const VkPipeline pipeline = pipelineSet[pipelineIndex];
         if (pipeline != lastPipeline)
         {
             vkCmdBindPipeline(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
@@ -583,21 +552,15 @@ void MeshForwardPass::Teardown()
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     DebugFragmentShader = {};
 #endif
-    OpaquePipelines.fill(VK_NULL_HANDLE);
+    OpaquePipelines.Reset();
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
-    DebugPipelines.fill(VK_NULL_HANDLE);
-    OverdrawPipelines.fill(VK_NULL_HANDLE);
+    DebugPipelines.Reset();
+    OverdrawPipelines.Reset();
     ActiveDebugView = RenderDebugView::None;
-    CachedDebugColorFormat = VK_FORMAT_UNDEFINED;
-    CachedDebugDepthFormat = VK_FORMAT_UNDEFINED;
-    CachedOverdrawColorFormat = VK_FORMAT_UNDEFINED;
-    CachedOverdrawDepthFormat = VK_FORMAT_UNDEFINED;
 #endif
     if (PipelineLayout != VK_NULL_HANDLE && Device != VK_NULL_HANDLE)
         vkDestroyPipelineLayout(Device, PipelineLayout, nullptr);
     PipelineLayout = VK_NULL_HANDLE;
-    CachedColorFormat = VK_FORMAT_UNDEFINED;
-    CachedDepthFormat = VK_FORMAT_UNDEFINED;
     Bindings = nullptr;
     Device = VK_NULL_HANDLE;
 }
