@@ -60,3 +60,26 @@
     result[2][3] = nearPlane / (nearPlane - farPlane);
     return result;
 }
+
+// Maps a clip-space position back to the world-space *direction* it was seen
+// along, for anything shaded by where the eye is looking rather than by where a
+// surface is: the background gradient today, a cubemap or an atmosphere later.
+//
+// The view matrix's translation is dropped before inverting, so what comes back
+// out is a direction rather than a point. Keeping the translation would make
+// the result move with the camera, which for a background means the sky slides
+// as the player walks.
+//
+// The Y flip lives in the projection (see above), so it inverts along with it:
+// clip y = -1 is the top of the screen and must reconstruct to a direction
+// above the horizon. Nothing else in the pipeline would catch that being
+// backwards.
+[[nodiscard]] inline Mat4 MakeInverseSkyViewProjection(const Mat4& view,
+                                                       const Mat4& projection)
+{
+    Mat4 rotationOnly = view;
+    rotationOnly[0][3] = 0.0f;
+    rotationOnly[1][3] = 0.0f;
+    rotationOnly[2][3] = 0.0f;
+    return (projection * rotationOnly).Inverse();
+}

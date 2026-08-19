@@ -121,11 +121,33 @@ if(SENCHA_ENABLE_VULKAN)
         VAR_NAME kShadowDepthFragSpv
         OUT_HEADER _shadow_depth_frag_header
     )
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sky_gradient.vert.glsl"
+        STAGE vert
+        OUTPUT_SPV _sky_gradient_vert_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_sky_gradient_vert_spv}"
+        VAR_NAME kSkyGradientVertSpv
+        OUT_HEADER _sky_gradient_vert_header
+    )
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sky_gradient.frag.glsl"
+        STAGE frag
+        OUTPUT_SPV _sky_gradient_frag_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_sky_gradient_frag_spv}"
+        VAR_NAME kSkyGradientFragSpv
+        OUT_HEADER _sky_gradient_frag_header
+    )
     list(APPEND SENCHA_ENGINE_GENERATED_HEADERS
         "${_mesh_forward_vert_header}"
         "${_mesh_forward_frag_header}"
         "${_shadow_depth_vert_header}"
         "${_shadow_depth_frag_header}"
+        "${_sky_gradient_vert_header}"
+        "${_sky_gradient_frag_header}"
     )
     if(SENCHA_ENABLE_RENDER_PROFILING)
         list(APPEND SENCHA_ENGINE_GENERATED_HEADERS

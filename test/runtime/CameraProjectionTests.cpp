@@ -153,3 +153,105 @@ TEST(VulkanOrthographic, KeepsWAtOneSoDepthIsLinear)
     EXPECT_FLOAT_EQ(clip.W, 1.0f);
     EXPECT_NEAR(clip.Z, 0.25f, 1e-5f);
 }
+
+// --- sky view-projection inverse ---
+//
+// Reconstructs the world direction a clip-space position was seen along. The
+// two things that can be wrong here are silent: a sky that slides with the
+// camera, and a sky that is upside down because the projection's Y flip was
+// not accounted for.
+
+namespace
+{
+
+// The direction a pixel at (ndcX, ndcY) looks along. Mirrors what the sky
+// fragment shader does with the same matrix.
+Vec<3> SkyDirection(const Mat4& inverse, float ndcX, float ndcY)
+{
+    const Vec4 p = inverse * Vec4{ ndcX, ndcY, 1.0f, 1.0f };
+    return Vec<3>(p.X / p.W, p.Y / p.W, p.Z / p.W).Normalized();
+}
+
+// A camera at `eye` looking down -Z with Y up, and a 90-degree vertical field
+// of view so the frustum half-angles are exactly 45 degrees on a square target.
+Mat4 LevelView(Vec<3> eye)
+{
+    return Mat4::MakeLookAt(eye, eye + Vec<3>(0.0f, 0.0f, -1.0f), Vec<3>(0.0f, 1.0f, 0.0f));
+}
+
+} // namespace
+
+TEST(InverseSkyViewProjection, ReconstructsTheForwardDirectionAtScreenCentre)
+{
+    const Mat4 projection = MakeVulkanPerspective(kPi * 0.5f, 1.0f, 0.1f, 100.0f);
+    const Mat4 inverse = MakeInverseSkyViewProjection(LevelView(Vec<3>()), projection);
+
+    const Vec<3> centre = SkyDirection(inverse, 0.0f, 0.0f);
+    EXPECT_NEAR(centre.X, 0.0f, 1e-5f);
+    EXPECT_NEAR(centre.Y, 0.0f, 1e-5f);
+    EXPECT_NEAR(centre.Z, -1.0f, 1e-5f);
+}
+
+TEST(InverseSkyViewProjection, IgnoresWhereTheCameraIs)
+{
+    // The reason the view matrix's translation is dropped. Keeping it would
+    // make every reconstructed direction depend on the camera's position,
+    // which for a background means the sky slides as the player walks.
+    const Mat4 projection = MakeVulkanPerspective(kPi * 0.5f, 1.6f, 0.1f, 100.0f);
+    const Mat4 atOrigin = MakeInverseSkyViewProjection(LevelView(Vec<3>()), projection);
+    const Mat4 farAway =
+        MakeInverseSkyViewProjection(LevelView(Vec<3>(1000.0f, -400.0f, 7000.0f)), projection);
+
+    for (const float x : { -1.0f, -0.3f, 0.0f, 0.6f, 1.0f })
+    {
+        for (const float y : { -1.0f, 0.0f, 1.0f })
+        {
+            const Vec<3> a = SkyDirection(atOrigin, x, y);
+            const Vec<3> b = SkyDirection(farAway, x, y);
+            EXPECT_NEAR(a.X, b.X, 1e-4f) << "ndc " << x << "," << y;
+            EXPECT_NEAR(a.Y, b.Y, 1e-4f) << "ndc " << x << "," << y;
+            EXPECT_NEAR(a.Z, b.Z, 1e-4f) << "ndc " << x << "," << y;
+        }
+    }
+}
+
+TEST(InverseSkyViewProjection, PutsTheTopOfTheScreenAboveTheHorizon)
+{
+    // Vulkan NDC has +Y down and the flip lives in the projection, so clip
+    // y = -1 is the top edge. If that inverts, the gradient renders upside
+    // down and nothing else in the pipeline notices.
+    const Mat4 projection = MakeVulkanPerspective(kPi * 0.5f, 1.0f, 0.1f, 100.0f);
+    const Mat4 inverse = MakeInverseSkyViewProjection(LevelView(Vec<3>()), projection);
+
+    EXPECT_GT(SkyDirection(inverse, 0.0f, -1.0f).Y, 0.5f) << "top edge";
+    EXPECT_LT(SkyDirection(inverse, 0.0f, 1.0f).Y, -0.5f) << "bottom edge";
+}
+
+TEST(InverseSkyViewProjection, SpreadsTheEdgesToTheProjectionsHalfAngles)
+{
+    // A 90-degree vertical field of view on a square target puts the top edge
+    // 45 degrees above forward, so its direction is an equal mix of up and
+    // forward. This is what ties the gradient to the lens rather than to an
+    // arbitrary screen-space ramp.
+    const Mat4 projection = MakeVulkanPerspective(kPi * 0.5f, 1.0f, 0.1f, 100.0f);
+    const Mat4 inverse = MakeInverseSkyViewProjection(LevelView(Vec<3>()), projection);
+
+    const Vec<3> top = SkyDirection(inverse, 0.0f, -1.0f);
+    const float halfRoot2 = 0.70710678f;
+    EXPECT_NEAR(top.Y, halfRoot2, 1e-4f);
+    EXPECT_NEAR(top.Z, -halfRoot2, 1e-4f);
+}
+
+TEST(InverseSkyViewProjection, FollowsWhereTheCameraLooks)
+{
+    // Rotation is the half that must survive: a camera turned to face +X sees
+    // +X at the centre of the screen.
+    const Mat4 projection = MakeVulkanPerspective(kPi * 0.5f, 1.0f, 0.1f, 100.0f);
+    const Mat4 view = Mat4::MakeLookAt(Vec<3>(), Vec<3>(1.0f, 0.0f, 0.0f), Vec<3>(0.0f, 1.0f, 0.0f));
+    const Mat4 inverse = MakeInverseSkyViewProjection(view, projection);
+
+    const Vec<3> centre = SkyDirection(inverse, 0.0f, 0.0f);
+    EXPECT_NEAR(centre.X, 1.0f, 1e-5f);
+    EXPECT_NEAR(centre.Y, 0.0f, 1e-5f);
+    EXPECT_NEAR(centre.Z, 0.0f, 1e-5f);
+}

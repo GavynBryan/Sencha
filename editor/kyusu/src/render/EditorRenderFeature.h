@@ -26,6 +26,7 @@
 #include "viewport/ViewportShading.h"
 
 #include <graphics/vulkan/Renderer.h>
+#include <graphics/vulkan/SkyGradientPass.h>
 #include <render/MeshForwardPass.h>
 #include <render/ShadowCasterSet.h>
 #include <render/ShadowResidency.h>
@@ -142,6 +143,10 @@ private:
     WorldViewSettings& WorldView;
     GridStyle              GridStyleCache{}; // refreshed per frame from editor.grid.* cvars
     ViewportBackdropRenderer Backdrop;
+    // Drawn instead of the backdrop in perspective viewports, so what the
+    // editor shows matches what the game shows. Ortho viewports keep the
+    // backdrop: a sky in a 2D working view describes nothing.
+    SkyGradientPass        Sky;
     GpuGridRenderer        Grid;
     // Declared before the renderers that bind a reference to it at construction.
     // (The feature owns the one shared solid pipeline.)

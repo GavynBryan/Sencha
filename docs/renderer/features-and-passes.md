@@ -37,7 +37,7 @@ enum class RenderPhase : uint8_t { Offscreen = 0, MainColor = 1, Count };
 | Phase | Rendering scope | Used by |
 |---|---|---|
 | `Offscreen` | none is opened. The feature owns its own passes, targets, and image barriers | `ShadowRenderFeature`, `EditorRenderFeature` |
-| `MainColor` | the swapchain color plus depth scope is already open | `MeshRenderFeature`, the ImGui debug overlay |
+| `MainColor` | the swapchain color plus depth scope is already open | `SkyRenderFeature`, `MeshRenderFeature`, the ImGui debug overlay |
 
 The enum comment reserves Shadow, Opaque, Transparent, UI, and Post. Adding one
 means adding an enum value before `Count` and a `RecordXPhase` in `Renderer`;
@@ -81,6 +81,16 @@ OnDraw: ShadowDepthPass::Draw(frame, lights, scheduledViews, scheduledFaces,
         publish DrawStats into RenderStats
 Teardown: pass, then bindings
 ```
+
+### `SkyRenderFeature` (MainColor)
+
+Drives `SkyGradientPass`, and is the only place that decides where the
+background's colours come from — today `RenderLightSet::AmbientSky` and
+`AmbientGround`, which is where `render.ambient.*` lands. Registered **before**
+`MeshRenderFeature`, because registration order is draw order within a phase and
+the pass fills the view without a depth test.
+
+`render.sky.enabled false` skips it, leaving the host's flat clear.
 
 ### `MeshRenderFeature` (MainColor)
 
@@ -282,11 +292,15 @@ dynamic-rendering scope per view.
 Three, all from `shadow_depth.vert/frag` with depth bias enabled and depth
 format `D16_UNORM`:
 
-| Pipeline | Front face | Cull | Used for |
+| Variant | Front face | Cull | Used for |
 |---|---|---|---|
-| `BackPipeline` | counter-clockwise | back | spot views, single-sided casters |
-| `FlippedBackPipeline` | clockwise | back | point faces, single-sided casters |
-| `DoubleSidedPipeline` | counter-clockwise | none | double-sided casters in either kind of view |
+| `ShadowPipelineId::Back` | counter-clockwise | back | spot views, single-sided casters |
+| `ShadowPipelineId::FlippedBack` | clockwise | back | point faces, single-sided casters |
+| `ShadowPipelineId::DoubleSided` | counter-clockwise | none | double-sided casters in either kind of view |
+
+They live in a `PipelineVariantSet` keyed on `ShadowDepthBias`, so retuning
+`render.shadow.bias_const` or `bias_slope` rebuilds the family once;
+`SelectShadowPipeline` picks the variant.
 
 The flipped variant exists because the unflipped cube-face projection mirrors
 winding.
@@ -345,3 +359,47 @@ A view whose recording could not proceed is reported twice:
 - `RevokeGrant`, which clears `ShadowIndex` on every packed light pointing at
   that slot, so the forward pass this frame does not sample content against a
   record it was not rendered with.
+
+## `SkyGradientPass`
+
+`engine/src/graphics/vulkan/SkyGradientPass.cpp`. Fills the view with a vertical
+gradient before anything else draws into it.
+
+It lives in the backend rather than in `render/` because it takes a matrix and
+two colours and names no render-domain type — no camera, no light set, no queue,
+no cache. `SkyRenderFeature` and `EditorRenderFeature` each decide where those
+values come from; the pass cannot know.
+
+The gradient is not a decorative ramp. `mesh_forward.frag.glsl` lights every
+surface with `mix(AmbientGround, AmbientSky, 0.5 + 0.5 * n.y)`, and this shades
+the background with the same expression for the direction the eye is looking. So
+the background *is* what the ambient term already claims the surroundings are,
+and the two cannot drift apart.
+
+### Why it draws first, without a depth test
+
+Drawing it last at the far plane against cleared depth would skip the pixels
+geometry already covers. It would also make correctness depend on each host's
+draw order, and the editor viewport interleaves a backdrop, a grid, bodies, and
+overlays whose depth behaviour differs. The game and the editor agreeing is the
+requirement; one full-screen fill of a ten-instruction shader is the price.
+
+A consequence worth keeping: with no depth state, the pass needs no depth
+attachment and no second pipeline variant for hosts that lack one.
+
+### Inputs
+
+| Input | Source |
+|---|---|
+| inverse view-projection | `MakeInverseSkyViewProjection` in `render/CameraProjection.h`, which strips the view translation so the result is a direction and the gradient does not slide with the camera |
+| `SkyGradientParams` | two linear-RGB colours. The seam a future authored environment record fills instead of the cvars |
+
+Everything fits in a 96-byte push block, so the pass binds no descriptor sets
+and depends on neither the frame uniform nor the lighting bindings.
+
+### Hosts
+
+| Host | Where |
+|---|---|
+| `SkyRenderFeature` | game, `MainColor`, registered before `MeshRenderFeature` |
+| `EditorRenderFeature` | inside the per-viewport `RenderScope`, **perspective viewports only** — ortho views keep `ViewportBackdropRenderer`, since a sky in a 2D working view describes nothing |

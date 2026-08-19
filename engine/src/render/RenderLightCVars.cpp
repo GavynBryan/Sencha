@@ -34,4 +34,5 @@ void ApplyRendererCVars(const ConsoleRegistry* console, RenderLightSet& lights)
         console, "render.baked_direct.enabled", lights.BakedDirectEnabled);
     lights.BakedAoEnabled = ReadCVarBool(
         console, "render.ao.enabled", lights.BakedAoEnabled);
+    lights.SkyEnabled = ReadCVarBool(console, "render.sky.enabled", lights.SkyEnabled);
 }

@@ -16,6 +16,7 @@
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/CVarRead.h>
 #include <core/console/ConsoleTypes.h>
+#include <render/CameraProjection.h>
 #include <render/RenderLightCVars.h>
 #include <world/registry/Registry.h>
 
@@ -90,6 +91,7 @@ bool EditorRenderFeature::Setup(const RendererServices& services)
     Services = services;
     Log = services.Logging ? &services.Logging->GetLogger<EditorRenderFeature>() : nullptr;
     Backdrop.Setup(services);
+    Sky.Setup(services);
     Grid.Setup(services);
     Solid.Setup(services);
     if (!Lighting.Setup(services))
@@ -400,7 +402,22 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         EditorDocument& focusDocument = World.FocusDocument();
         const EditorScene& scene = focusDocument.GetScene();
 
-        Backdrop.DrawViewport(local.Cmd, viewport, local.TargetExtent, local.TargetFormat, local.DepthFormat);
+        // A perspective viewport shows the game's background; an ortho one keeps
+        // the flat editor backdrop, since a sky in a 2D working view describes
+        // nothing. Either way exactly one of the two fills the target.
+        const RenderLightSet& viewLights = QueueBuilder->Lights();
+        if (viewport.Orientation == ViewportOrientation::Perspective && viewLights.SkyEnabled)
+        {
+            const CameraRenderData viewCamera = viewport.BuildRenderData();
+            Sky.Draw(local,
+                     MakeInverseSkyViewProjection(viewCamera.View, viewCamera.Projection),
+                     SkyGradientParams{ .Top = viewLights.AmbientSky,
+                                        .Bottom = viewLights.AmbientGround });
+        }
+        else
+        {
+            Backdrop.DrawViewport(local.Cmd, viewport, local.TargetExtent, local.TargetFormat, local.DepthFormat);
+        }
         Grid.DrawViewport(local.Cmd, viewport, GridCfg, GridStyleCache, local.TargetExtent, local.TargetFormat, local.DepthFormat);
 
         // Context zones (open, visible, not the focus) render dimmed and reduced:
@@ -573,6 +590,7 @@ void EditorRenderFeature::ReleaseSceneResources()
 void EditorRenderFeature::Teardown()
 {
     Backdrop.Teardown();
+    Sky.Teardown();
     Grid.Teardown();
     Solid.Teardown();
     Forward.Teardown();

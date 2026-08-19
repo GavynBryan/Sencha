@@ -12,6 +12,8 @@ directory: engine shaders are compiled at build time and baked into the binary.
 | `mesh_debug_view.frag.glsl` | fragment | `kMeshDebugViewFragSpv`, only when `SENCHA_ENABLE_RENDER_PROFILING` |
 | `shadow_depth.vert.glsl` | vertex | `kShadowDepthVertSpv` |
 | `shadow_depth.frag.glsl` | fragment | `kShadowDepthFragSpv` (empty body; depth only) |
+| `sky_gradient.vert.glsl` | vertex | `kSkyGradientVertSpv` (full-screen triangle, no vertex buffer) |
+| `sky_gradient.frag.glsl` | fragment | `kSkyGradientFragSpv` |
 | `mesh_frame.glsli` | include | frame UBO block and its structs |
 | `mesh_material.glsli` | include | fragment inputs, push constants, bindless sampling, tonemap |
 | `lighting.glsli` | include | direct-light terms and shadow visibility composition |

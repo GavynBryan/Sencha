@@ -79,6 +79,12 @@ set(RENDER_VULKAN_ALLOWED ${RENDER_RECORDING_SET} ${RENDER_VULKAN_PENDING})
 # VulkanBufferService is the design working, not a leak.
 set(RENDER_HEADER_BACKEND_ALLOWED
     "/engine/include/render/ShadowRenderFeature.h"  # bridge type; Renderer.h only
+    # Holds a graphics/vulkan/SkyGradientPass by value. That pass takes a matrix
+    # and two colours and names no render-domain type, so it is backend rather
+    # than a recording bridge -- which is why the recording set above did not
+    # grow. What is left in render/ is the feature that decides where the two
+    # colours come from, and it propagates the pass header to its consumers.
+    "/engine/include/render/SkyRenderFeature.h"
     ${RENDER_RECORDING_SET}
 )
 

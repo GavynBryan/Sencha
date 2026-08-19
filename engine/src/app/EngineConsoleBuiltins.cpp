@@ -174,6 +174,19 @@ namespace EngineConsoleBuiltins
         });
 
         registry.RegisterCVar({
+            .Name = "render.sky.enabled",
+            .Owner = "engine",
+            .Type = CVarType::Bool,
+            .DefaultValue = true,
+            .CurrentValue = true,
+            .Flags = CVarFlags::Archive,
+            .Help = "Draws the background from the render.ambient.sky/ground "
+                    "hemisphere instead of a flat clear. Off restores the flat "
+                    "background in both the game and editor viewports.",
+            .Source = { "renderer defaults" },
+        });
+
+        registry.RegisterCVar({
             .Name = "time.timescale",
             .Owner = "engine",
             .Type = CVarType::Double,

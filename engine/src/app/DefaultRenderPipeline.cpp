@@ -14,6 +14,7 @@
 #include <graphics/vulkan/VulkanSwapchainService.h>
 #include <render/MeshRenderFeature.h>
 #include <render/ShadowRenderFeature.h>
+#include <render/SkyRenderFeature.h>
 #endif
 
 #include <algorithm>
@@ -84,6 +85,13 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     // zones stream and hands headers to extraction. Uploads only ever happen
     // after the shadow feature's Setup has created the set.
     ProbeVolumes.Setup(&graphics.Images, bindings, Logging);
+    // Before the mesh feature: registration order is draw order within a phase,
+    // and the background fills the view without a depth test.
+    if (graphics.MainRenderer.AddFeature(
+            std::make_unique<SkyRenderFeature>(Camera, Lights)) == nullptr)
+    {
+        return false;
+    }
     return graphics.MainRenderer.AddFeature(std::make_unique<MeshRenderFeature>(
         Queue, *Meshes, *Materials, Camera, Lights, std::move(bindings))) != nullptr;
 #else
