@@ -4,6 +4,7 @@
 #define SENCHA_DEBUG_VIEWS 1
 #include "mesh_frame.glsli"
 #include "shadow_sampling.glsli"
+#include "tonemap.glsli"
 #include "mesh_material.glsli"
 #include "lighting.glsli"
 

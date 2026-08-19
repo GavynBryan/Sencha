@@ -412,7 +412,10 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
             Sky.Draw(local,
                      MakeInverseSkyViewProjection(viewCamera.View, viewCamera.Projection),
                      SkyGradientParams{ .Top = viewLights.AmbientSky,
-                                        .Bottom = viewLights.AmbientGround });
+                                        .Bottom = viewLights.AmbientGround,
+                                        .Exposure = viewLights.Exposure,
+                                        .TonemapKnee = viewLights.TonemapKnee,
+                                        .TonemapEnabled = viewLights.TonemapEnabled });
         }
         else
         {

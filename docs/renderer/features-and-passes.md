@@ -392,7 +392,8 @@ attachment and no second pipeline variant for hosts that lack one.
 | Input | Source |
 |---|---|
 | inverse view-projection | `MakeInverseSkyViewProjection` in `render/CameraProjection.h`, which strips the view translation so the result is a direction and the gradient does not slide with the camera |
-| `SkyGradientParams` | two linear-RGB colours. The seam a future authored environment record fills instead of the cvars |
+| `SkyGradientParams` colours | two linear-RGB values. The seam a future authored environment record fills instead of the cvars |
+| `SkyGradientParams` output transform | exposure, tonemap knee, tonemap on/off, applied through the shared `tonemap.glsli`. Without it the background sits in a different display space than the geometry, and raising `render.exposure` brightens the scene but not the sky it is lit by |
 
 Everything fits in a 96-byte push block, so the pass binds no descriptor sets
 and depends on neither the frame uniform nor the lighting bindings.

@@ -1,0 +1,35 @@
+// The renderer's display transform, shared by everything that writes final
+// pixels. Kept apart from mesh_material.glsli because that file also declares
+// the material push block and the bindless sampler array, and a pass that only
+// needs the curve should not inherit a descriptor layout to get it.
+//
+// ApplyShoulder is a soft rolloff above `knee`: below it the value is
+// untouched, above it the remaining range is compressed asymptotically toward
+// 1, so bright values compress instead of clipping flat.
+
+vec3 ApplyShoulder(vec3 color, float knee)
+{
+    float clampedKnee = clamp(knee, 0.0, 0.999);
+    float shoulderRange = 1.0 - clampedKnee;
+    vec3 result = color;
+    for (int channel = 0; channel < 3; ++channel)
+    {
+        if (result[channel] <= clampedKnee)
+            continue;
+        float s = (result[channel] - clampedKnee) / shoulderRange;
+        result[channel] = clampedKnee + shoulderRange * s / (1.0 + s);
+    }
+    return result;
+}
+
+// Exposure, then the shoulder. Callers pass the values from wherever they hold
+// them -- the frame uniform for the mesh passes, push constants for the sky --
+// so a pass that skips this lands in a different display space than the
+// geometry drawn in front of it.
+vec3 ApplyOutputTransform(vec3 color, float exposure, float knee, bool tonemap)
+{
+    color *= max(exposure, 0.0);
+    if (tonemap)
+        return ApplyShoulder(color, knee);
+    return clamp(color, 0.0, 1.0);
+}

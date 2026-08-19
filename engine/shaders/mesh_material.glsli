@@ -96,25 +96,8 @@ vec3 ResolveEmission()
          * emissiveTexture;
 }
 
-vec3 ApplyShoulder(vec3 color, float knee)
-{
-    float clampedKnee = clamp(knee, 0.0, 0.999);
-    float shoulderRange = 1.0 - clampedKnee;
-    vec3 result = color;
-    for (int channel = 0; channel < 3; ++channel)
-    {
-        if (result[channel] <= clampedKnee)
-            continue;
-        float s = (result[channel] - clampedKnee) / shoulderRange;
-        result[channel] = clampedKnee + shoulderRange * s / (1.0 + s);
-    }
-    return result;
-}
-
 vec3 ResolveOutput(vec3 color)
 {
-    color *= max(frame.StyleParams.z, 0.0);
-    if (frame.TonemapEnabled != 0u)
-        return ApplyShoulder(color, frame.StyleParams.w);
-    return clamp(color, 0.0, 1.0);
+    return ApplyOutputTransform(color, frame.StyleParams.z, frame.StyleParams.w,
+                                frame.TonemapEnabled != 0u);
 }

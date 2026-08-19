@@ -30,10 +30,19 @@
 
 struct SkyGradientParams
 {
-    // Linear RGB. The swapchain is sRGB and encodes on write, so these are not
-    // pre-brightened.
+    // The environment. Linear RGB -- the swapchain is sRGB and encodes on
+    // write, so these are not pre-brightened. This is the pair a future
+    // authored source replaces.
     Vec<3> Top;
     Vec<3> Bottom;
+
+    // The display transform, mirroring ResolveOutput in mesh_material.glsli.
+    // The background has to land in the same space as the geometry in front of
+    // it, or raising the exposure brightens the scene and not the sky it is
+    // supposedly lit by.
+    float Exposure = 1.0f;
+    float TonemapKnee = 0.8f;
+    bool TonemapEnabled = true;
 };
 
 // Mirrored by the push block in sky_gradient.frag.glsl; offsets are asserted
@@ -43,6 +52,8 @@ struct SkyPushConstants
     Mat4 InverseViewProjection;
     Vec4 Top;
     Vec4 Bottom;
+    // x: exposure, y: tonemap knee, z: tonemap enabled.
+    Vec4 Output;
 };
 
 class SkyGradientPass

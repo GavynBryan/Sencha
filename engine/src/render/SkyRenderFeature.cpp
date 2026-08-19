@@ -26,7 +26,10 @@ void SkyRenderFeature::OnDraw(const FrameContext& frame)
     Pass.Draw(frame,
               MakeInverseSkyViewProjection(Camera->View, Camera->Projection),
               SkyGradientParams{ .Top = Lights->AmbientSky,
-                                 .Bottom = Lights->AmbientGround });
+                                 .Bottom = Lights->AmbientGround,
+                                 .Exposure = Lights->Exposure,
+                                 .TonemapKnee = Lights->TonemapKnee,
+                                 .TonemapEnabled = Lights->TonemapEnabled });
 }
 
 void SkyRenderFeature::Teardown()

@@ -12,9 +12,10 @@
 static_assert(offsetof(SkyPushConstants, InverseViewProjection) == 0);
 static_assert(offsetof(SkyPushConstants, Top) == 64);
 static_assert(offsetof(SkyPushConstants, Bottom) == 80);
+static_assert(offsetof(SkyPushConstants, Output) == 96);
 // The guaranteed minimum push-constant range is 128 bytes, so this fits on any
 // conformant device without a capability query.
-static_assert(sizeof(SkyPushConstants) == 96);
+static_assert(sizeof(SkyPushConstants) == 112);
 
 void SkyGradientPass::Setup(const RendererServices& services)
 {
@@ -105,6 +106,7 @@ void SkyGradientPass::Draw(const FrameContext& frame,
     push.InverseViewProjection = inverseViewProjection.Transposed();
     push.Top = Vec4(sky.Top.X, sky.Top.Y, sky.Top.Z, 1.0f);
     push.Bottom = Vec4(sky.Bottom.X, sky.Bottom.Y, sky.Bottom.Z, 1.0f);
+    push.Output = Vec4(sky.Exposure, sky.TonemapKnee, sky.TonemapEnabled ? 1.0f : 0.0f, 0.0f);
 
     vkCmdBindPipeline(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline.Get(0));
     vkCmdSetViewport(frame.Cmd, 0, 1, &viewport);
