@@ -164,6 +164,16 @@ std::optional<RenderTargetView> RenderTargetStore::Acquire(RenderTargetId id)
     Slot& slot = target->Slots[CurrentSlot];
     if (TargetSlotNeedsRebuild(slot.Built, target->Desc, !slot.Color.IsNull()))
         BuildSlot(slot, target->Desc);
+    return Peek(id);
+}
+
+std::optional<RenderTargetView> RenderTargetStore::Peek(RenderTargetId id)
+{
+    Target* target = Resolve(id);
+    if (target == nullptr)
+        return std::nullopt;
+
+    Slot& slot = target->Slots[CurrentSlot];
     if (slot.Color.IsNull())
         return std::nullopt;
 

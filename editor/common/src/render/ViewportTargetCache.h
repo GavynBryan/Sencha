@@ -1,31 +1,34 @@
 #pragma once
 
+#include "ImGuiTargetPresenter.h"
 #include "viewport/ViewportId.h"
 
-#include <graphics/FramesInFlight.h>
 #include <graphics/GpuFrameRetirement.h>
+#include <graphics/RenderTargetId.h>
+#include <graphics/vulkan/RenderTargetStore.h>
 #include <graphics/vulkan/Renderer.h>
-#include <graphics/vulkan/VulkanDescriptorCache.h>
-#include <graphics/vulkan/VulkanImageService.h>
 
 #include <imgui.h>
 
-#include <array>
 #include <cstdint>
-#include <optional>
 #include <span>
 #include <vector>
 
-// Per-viewport offscreen color (+depth) targets, so each editor viewport renders
-// into its own HDR texture shown in the UI via ImGui::Image. Color targets are
-// per-frame-in-flight: frames overlap on the GPU, so frame N's ImGui sampling of a
-// target must not race frame N+1's render into it. RGBA16F gives bloom headroom; the
-// sRGB swapchain store does the single linear->display encode when ImGui samples it.
+// Maps editor viewports onto engine render targets: one scene target (HDR
+// colour + depth) plus two full-resolution bloom ping-pong planes per viewport,
+// shown in the UI through ImGui::Image.
+//
+// The images, their per-frame-in-flight slots, resizing, and retirement all
+// belong to RenderTargetStore now; what is left here is the editor's own
+// business -- which ViewportId owns which targets, the bloom pair being a
+// property of an editor viewport rather than of targets in general, and the
+// ImGui binding, which the engine must not know about.
 //
 // The render side (Offscreen phase) calls BeginFrame then AcquireForRender per
-// viewport; the UI side (panel draw) calls Display to record the on-screen size and
-// fetch the current texture. There is a one-frame size lag (the render uses the size
-// the panel recorded last frame), the same lag the screen-rect rendering already had.
+// viewport; the UI side (panel draw) calls Display to record the on-screen size
+// and fetch the current texture. There is a one-frame size lag -- the render
+// uses the size the panel recorded last frame -- which is the lag the
+// screen-rect rendering already had.
 class ViewportTargetCache
 {
 public:
@@ -50,8 +53,8 @@ public:
 
     // -- Render side (Offscreen phase), in this order ------------------------
     void BeginFrame(uint32_t frameInFlightIndex, GpuFrameRetirement retirement);
-    // Ensure the current slot's target for `id` matches its requested size (creating
-    // or resizing as needed). nullopt until the panel has requested a size.
+    // The current slot's images for `id`, sized to what the panel last
+    // requested. nullopt until the panel has requested a size.
     [[nodiscard]] std::optional<RenderView> AcquireForRender(ViewportId id);
     // Destroy targets for viewports not in `live` (closed or re-laid-out).
     void Prune(std::span<const ViewportId> live);
@@ -62,51 +65,19 @@ public:
     [[nodiscard]] ImTextureID Display(ViewportId id, VkExtent2D extent);
 
 private:
-    // Slot count comes from the engine's frames-in-flight authority rather
-    // than a local guess; a private bound smaller than the configured count
-    // used to fold every frame onto slot 0, so the UI sampled the target the
-    // next frame was rendering into.
-    static constexpr uint32_t kMaxSlots = kMaxFramesInFlight;
-
-    struct Slot
-    {
-        ImageHandle     Color{};
-        ImageHandle     Depth{};
-        ImageHandle     Bloom[2]{};
-        VkExtent2D      Extent{};
-        VkExtent2D      BloomExtent{};
-        VkDescriptorSet ImGuiSet = VK_NULL_HANDLE;
-        VkImageLayout   ColorLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        VkImageLayout   BloomLayout[2]{ VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED };
-        BindlessImageIndex BloomBindless[2]{};
-    };
-    struct Target
+    struct Entry
     {
         ViewportId Id{};
-        VkExtent2D Requested{};
-        std::array<Slot, kMaxSlots> Slots{};
+        RenderTargetId Scene;
+        RenderTargetId Bloom[2];
     };
 
-    [[nodiscard]] Target* Find(ViewportId id);
-    [[nodiscard]] Target& FindOrAdd(ViewportId id);
-    void ResizeSlot(Slot& slot, VkExtent2D extent);
-    void DestroySlot(Slot& slot);
-    // ImGui_ImplVulkan_RemoveTexture frees the set immediately, so a set retired on
-    // resize must outlive any in-flight frame still sampling it. Free eligible ones
-    // (or all, on teardown when the device is idle).
-    void FlushRetiredSets(bool force);
-
-    struct RetiredSet
-    {
-        VkDescriptorSet Set = VK_NULL_HANDLE;
-        // Frame this set stopped being displayed; freed once the renderer's
-        // fence-anchored clock reports that frame retired.
-        uint64_t Stamp = 0;
-    };
+    [[nodiscard]] Entry* Find(ViewportId id);
+    [[nodiscard]] Entry& FindOrAdd(ViewportId id);
+    void Release(Entry& entry);
 
     RendererServices Services{};
-    std::vector<Target> Targets;
-    std::vector<RetiredSet> RetiredSets;
-    GpuFrameRetirement Retirement;
-    uint32_t CurrentSlot = 0;
+    RenderTargetStore Store;
+    ImGuiTargetPresenter Presenter;
+    std::vector<Entry> Entries;
 };

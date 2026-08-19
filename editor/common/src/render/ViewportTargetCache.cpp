@@ -1,12 +1,8 @@
 #include "ViewportTargetCache.h"
 
-#include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanSamplerCache.h>
 
-#include <imgui_impl_vulkan.h>
-
 #include <algorithm>
-#include <cassert>
 
 namespace
 {
@@ -16,212 +12,135 @@ constexpr VkFormat kColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 void ViewportTargetCache::Setup(const RendererServices& services)
 {
     Services = services;
+    Store.Setup(services);
+    // Nearest, not linear: the target is displayed 1:1, and bilinear resampling
+    // beats against the 1px grid and wireframe lines (moire). Nearest copies
+    // pixels verbatim, so the composited image matches direct-to-swapchain
+    // rendering.
+    Presenter.Setup(services.Samplers->GetNearestClamp());
 }
 
 void ViewportTargetCache::Teardown()
 {
-    // Freeing descriptor sets requires the GPU to have finished with them, but the
-    // engine may still have frames in flight when features tear down.
-    if (Services.Device != nullptr)
-        vkDeviceWaitIdle(Services.Device->GetDevice());
-    for (Target& t : Targets)
-        for (Slot& s : t.Slots)
-            DestroySlot(s);
-    Targets.clear();
-    FlushRetiredSets(/*force*/ true);
+    // Order matters: the presenter's sets reference views the store owns, and
+    // the store waits the device out, which is also what makes freeing the
+    // sets safe.
+    for (Entry& entry : Entries)
+        Release(entry);
+    Entries.clear();
+    Store.Teardown();
+    Presenter.Teardown();
 }
 
 void ViewportTargetCache::BeginFrame(uint32_t frameInFlightIndex,
                                      GpuFrameRetirement retirement)
 {
-    Retirement = retirement;
-    // GraphicsServices clamps the configured count to kMaxFramesInFlight, so
-    // the index is in range by construction. The assert catches a broken
-    // contract in development; the fallback keeps a release build from
-    // indexing past the array if one ever is. It must not be slot 0 -- that is
-    // the slot most likely to still be in flight, which is what made the old
-    // fold corrupt rather than degrade.
-    assert(frameInFlightIndex < kMaxSlots);
-    CurrentSlot = frameInFlightIndex < kMaxSlots ? frameInFlightIndex : kMaxSlots - 1;
-    FlushRetiredSets(/*force*/ false);
+    Store.BeginFrame(frameInFlightIndex, retirement);
+    Presenter.BeginFrame(retirement);
 }
 
-void ViewportTargetCache::FlushRetiredSets(bool force)
+ViewportTargetCache::Entry* ViewportTargetCache::Find(ViewportId id)
 {
-    for (auto it = RetiredSets.begin(); it != RetiredSets.end();)
-    {
-        if (force || Retirement.IsRetired(it->Stamp))
-        {
-            ImGui_ImplVulkan_RemoveTexture(it->Set);
-            it = RetiredSets.erase(it);
-        }
-        else
-        {
-            ++it;
-        }
-    }
+    const auto it = std::find_if(Entries.begin(), Entries.end(),
+                                 [id](const Entry& e) { return e.Id == id; });
+    return it != Entries.end() ? &*it : nullptr;
 }
 
-ViewportTargetCache::Target* ViewportTargetCache::Find(ViewportId id)
+ViewportTargetCache::Entry& ViewportTargetCache::FindOrAdd(ViewportId id)
 {
-    const auto it = std::find_if(Targets.begin(), Targets.end(),
-                                 [id](const Target& t) { return t.Id == id; });
-    return it != Targets.end() ? &*it : nullptr;
-}
-
-ViewportTargetCache::Target& ViewportTargetCache::FindOrAdd(ViewportId id)
-{
-    if (Target* existing = Find(id))
+    if (Entry* existing = Find(id))
         return *existing;
-    Targets.push_back(Target{ .Id = id });
-    return Targets.back();
+
+    RenderTargetDesc scene{};
+    scene.ColorFormat = kColorFormat;
+    scene.DepthFormat = Services.DepthFormat;
+    // ImGui binds this one itself, through the presenter.
+    scene.Read = RenderTargetRead::Sampled;
+    scene.DebugName = "viewport_color";
+
+    // Full resolution, not half: a half-res glow source stair-steps the
+    // wireframe lines, and the blur cannot smooth diagonal stair-steps, so the
+    // halo looks wavy. Full-res keeps the source line straight, at the cost of
+    // a few extra full-res passes. A linear sampler gives a smooth blur.
+    RenderTargetDesc bloom{};
+    bloom.ColorFormat = kColorFormat;
+    bloom.Read = RenderTargetRead::Bindless;
+    bloom.Sampler = Services.Samplers->GetLinearClamp();
+    bloom.DebugName = "viewport_bloom";
+
+    Entries.push_back(Entry{
+        .Id = id,
+        .Scene = Store.Create(scene),
+        .Bloom = { Store.Create(bloom), Store.Create(bloom) },
+    });
+    return Entries.back();
 }
 
-void ViewportTargetCache::DestroySlot(Slot& slot)
+void ViewportTargetCache::Release(Entry& entry)
 {
-    if (slot.ImGuiSet != VK_NULL_HANDLE)
-    {
-        // Defer: a prior in-flight frame may still sample this set.
-        RetiredSets.push_back({ slot.ImGuiSet, Retirement.Stamp() });
-        slot.ImGuiSet = VK_NULL_HANDLE;
-    }
-    if (!slot.Color.IsNull())
-    {
-        Services.Images->Destroy(slot.Color);
-        slot.Color = {};
-    }
-    if (!slot.Depth.IsNull())
-    {
-        Services.Images->Destroy(slot.Depth);
-        slot.Depth = {};
-    }
-    for (int i = 0; i < 2; ++i)
-    {
-        if (slot.BloomBindless[i].IsValid())
-        {
-            Services.Descriptors->UnregisterSampledImage(slot.BloomBindless[i]);
-            slot.BloomBindless[i] = {};
-        }
-        if (!slot.Bloom[i].IsNull())
-        {
-            Services.Images->Destroy(slot.Bloom[i]);
-            slot.Bloom[i] = {};
-        }
-        slot.BloomLayout[i] = VK_IMAGE_LAYOUT_UNDEFINED;
-    }
-    slot.Extent = {};
-    slot.BloomExtent = {};
-    slot.ColorLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-}
-
-void ViewportTargetCache::ResizeSlot(Slot& slot, VkExtent2D extent)
-{
-    // Destroy defers through the image service's deletion queue, so retiring the old
-    // images here is safe even while a prior frame still samples them.
-    DestroySlot(slot);
-
-    ImageCreateInfo color;
-    color.Format = kColorFormat;
-    color.Extent = extent;
-    color.Usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    color.AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    color.DebugName = "viewport_color";
-    slot.Color = Services.Images->Create(color);
-
-    ImageCreateInfo depth;
-    depth.Format = Services.DepthFormat;
-    depth.Extent = extent;
-    depth.Usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    depth.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-    depth.DebugName = "viewport_depth";
-    slot.Depth = Services.Images->Create(depth);
-
-    if (slot.Color.IsNull() || slot.Depth.IsNull())
-    {
-        DestroySlot(slot);
-        return;
-    }
-
-    slot.Extent = extent;
-    slot.ColorLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    // Nearest, not linear: the target is displayed 1:1, and bilinear resampling beats
-    // against the 1px grid/wireframe lines (moire). Nearest copies pixels verbatim, so
-    // the composited image matches direct-to-swapchain rendering.
-    slot.ImGuiSet = ImGui_ImplVulkan_AddTexture(
-        Services.Samplers->GetNearestClamp(),
-        Services.Images->GetView(slot.Color),
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-    // Bloom ping-pong targets + bindless sample slots; a linear sampler gives a smooth
-    // blur. Full resolution (not half): a half-res glow source stair-steps the wireframe
-    // lines, and the blur can't smooth diagonal stair-steps, so the halo looks wavy.
-    // Full-res keeps the source line straight. (Cost is a few extra full-res passes.)
-    slot.BloomExtent = extent;
-    for (int i = 0; i < 2; ++i)
-    {
-        ImageCreateInfo bloom;
-        bloom.Format = kColorFormat;
-        bloom.Extent = slot.BloomExtent;
-        bloom.Usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        bloom.AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        bloom.DebugName = "viewport_bloom";
-        slot.Bloom[i] = Services.Images->Create(bloom);
-        slot.BloomLayout[i] = VK_IMAGE_LAYOUT_UNDEFINED;
-    }
-    const VkSampler bloomSampler = Services.Samplers->GetLinearClamp();
-    slot.BloomBindless[0] = Services.Descriptors->RegisterSampledImage(slot.Bloom[0], bloomSampler);
-    slot.BloomBindless[1] = Services.Descriptors->RegisterSampledImage(slot.Bloom[1], bloomSampler);
+    Presenter.Release(entry.Scene);
+    Store.Destroy(entry.Scene);
+    for (RenderTargetId& bloom : entry.Bloom)
+        Store.Destroy(bloom);
 }
 
 std::optional<ViewportTargetCache::RenderView> ViewportTargetCache::AcquireForRender(ViewportId id)
 {
-    Target* t = Find(id);
-    if (t == nullptr || t->Requested.width == 0 || t->Requested.height == 0)
+    Entry* entry = Find(id);
+    if (entry == nullptr)
         return std::nullopt;
 
-    Slot& slot = t->Slots[CurrentSlot];
-    if (slot.Color.IsNull() || slot.Extent.width != t->Requested.width
-        || slot.Extent.height != t->Requested.height)
-        ResizeSlot(slot, t->Requested);
-    if (slot.Color.IsNull())
+    const std::optional<RenderTargetView> scene = Store.Acquire(entry->Scene);
+    if (!scene.has_value())
         return std::nullopt;
+    const std::optional<RenderTargetView> bloom0 = Store.Acquire(entry->Bloom[0]);
+    const std::optional<RenderTargetView> bloom1 = Store.Acquire(entry->Bloom[1]);
+    // The scene target is what the viewport needs to render at all; bloom is an
+    // effect that degrades to off, so a failed bloom plane is not fatal here.
+    // EditorBloomPass checks its images before recording.
+    const bool haveBloom = bloom0.has_value() && bloom1.has_value();
 
-    return RenderView{
-        .ColorImage = Services.Images->GetImage(slot.Color),
-        .DepthImage = Services.Images->GetImage(slot.Depth),
-        .ColorView = Services.Images->GetView(slot.Color),
-        .DepthView = Services.Images->GetView(slot.Depth),
-        .Extent = slot.Extent,
-        .ColorLayout = &slot.ColorLayout,
-        .BloomImage = { Services.Images->GetImage(slot.Bloom[0]), Services.Images->GetImage(slot.Bloom[1]) },
-        .BloomView = { Services.Images->GetView(slot.Bloom[0]), Services.Images->GetView(slot.Bloom[1]) },
-        .BloomLayout = { &slot.BloomLayout[0], &slot.BloomLayout[1] },
-        .BloomExtent = slot.BloomExtent,
-        .BloomBindless = { slot.BloomBindless[0].Value, slot.BloomBindless[1].Value },
-    };
+    RenderView view{};
+    view.ColorImage = scene->ColorImage;
+    view.DepthImage = scene->DepthImage;
+    view.ColorView = scene->ColorView;
+    view.DepthView = scene->DepthView;
+    view.Extent = scene->Extent;
+    view.ColorLayout = scene->ColorLayout;
+    if (haveBloom)
+    {
+        view.BloomImage[0] = bloom0->ColorImage;
+        view.BloomImage[1] = bloom1->ColorImage;
+        view.BloomView[0] = bloom0->ColorView;
+        view.BloomView[1] = bloom1->ColorView;
+        view.BloomLayout[0] = bloom0->ColorLayout;
+        view.BloomLayout[1] = bloom1->ColorLayout;
+        view.BloomExtent = bloom0->Extent;
+        view.BloomBindless[0] = bloom0->BindlessIndex;
+        view.BloomBindless[1] = bloom1->BindlessIndex;
+    }
+    return view;
 }
 
 void ViewportTargetCache::Prune(std::span<const ViewportId> live)
 {
-    for (auto it = Targets.begin(); it != Targets.end();)
+    for (auto it = Entries.begin(); it != Entries.end();)
     {
-        const bool keep = std::find(live.begin(), live.end(), it->Id) != live.end();
-        if (keep)
+        if (std::find(live.begin(), live.end(), it->Id) != live.end())
         {
             ++it;
             continue;
         }
-        for (Slot& s : it->Slots)
-            DestroySlot(s);
-        it = Targets.erase(it);
+        Release(*it);
+        it = Entries.erase(it);
     }
 }
 
 ImTextureID ViewportTargetCache::Display(ViewportId id, VkExtent2D extent)
 {
-    Target& t = FindOrAdd(id);
-    t.Requested = extent;
-    const VkDescriptorSet set = t.Slots[CurrentSlot].ImGuiSet;
-    // VkDescriptorSet -> ImTextureID (ImU64), the ImGui Vulkan backend's convention.
-    return set != VK_NULL_HANDLE ? (ImTextureID)set : (ImTextureID)0;
+    Entry& entry = FindOrAdd(id);
+    Store.SetExtent(entry.Scene, extent);
+    for (RenderTargetId bloom : entry.Bloom)
+        Store.SetExtent(bloom, extent);
+    return Presenter.Present(Store, entry.Scene);
 }

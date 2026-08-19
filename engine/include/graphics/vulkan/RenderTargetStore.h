@@ -137,6 +137,15 @@ public:
     // when the id is stale, the extent is still zero, or creation failed.
     [[nodiscard]] std::optional<RenderTargetView> Acquire(RenderTargetId id);
 
+    // This frame's images only if they already exist; never builds.
+    //
+    // For readers rather than renderers. A reader that builds would hand back
+    // an image in UNDEFINED layout that nothing has written, and sampling that
+    // is a validation error, not merely a blank frame -- which is exactly what
+    // happens when the UI asks for a viewport's texture in the same frame the
+    // panel first appeared, before the render side has had a size to work with.
+    [[nodiscard]] std::optional<RenderTargetView> Peek(RenderTargetId id);
+
     [[nodiscard]] std::size_t ResidentCount() const;
 
 private:
