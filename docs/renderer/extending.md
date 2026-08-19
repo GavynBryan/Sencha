@@ -38,9 +38,10 @@ private:
 ```
 
 **2. Cache in `Setup`, never in `OnDraw`.** Take the pointers you need out of
-`RendererServices` and build shaders, layouts, and pipelines there. Prewarm
-pipelines if the formats are already known (`services.Swapchain->GetFormat()`
-and `services.DepthFormat`), so the first visible frame is not a hitch.
+`RendererServices` and build shaders and layouts there. Pipelines go in a
+`PipelineVariantSet`; prewarm it if the formats are already known
+(`services.Swapchain->GetFormat()` and `services.DepthFormat`), so the first
+visible frame is not a hitch. See [record a pass](#record-a-pass).
 
 Return `false` only when the feature cannot record legal commands. If it can
 degrade to drawing nothing while the frame still presents, return `true` and log
@@ -72,8 +73,110 @@ Both need new enum entries; see [add a scope](#add-a-cpu-or-gpu-scope) and
 
 **6. Test what you can.** A feature needs a live device, so the testable part is
 whatever you factored out of it. Put the arithmetic and the policy in a plain
-type with no Vulkan handles (`FrameScratchRing` and `ShadowAtlasAllocator` are
-the models) and unit-test that.
+type with no Vulkan handles and unit-test that. The models are
+`FrameScratchRing`, `ShadowAtlasAllocator`, `MakeScopeContext`, `MeshBindState`,
+and `MeshDrawTally` — the last two are the shape to copy when the thing you
+need to test is reachable only from inside a recording loop.
+
+---
+
+## Record a pass
+
+A feature decides *what* to draw. Recording is *how* it reaches the command
+buffer, and three mechanisms cover it. A pass that hand-writes one of them is
+either doing something genuinely unusual — say so in a comment — or copying a
+bug, which is how all three of these came to exist.
+
+**The rendering scope.** `RenderScope`
+(`engine/include/graphics/vulkan/RenderScope.h`) is the attachment structs,
+`vkCmdBeginRendering`, and the matching end as an RAII pair, plus `Context()`:
+the `FrameContext` describing what is bound *inside* the scope.
+
+```cpp
+RenderScopeDesc scope{};
+scope.Area.extent = target.Extent;
+scope.Color.View = target.ColorView;
+scope.Color.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+scope.ColorFormat = target.ColorFormat;
+scope.Phase = RenderPhase::Offscreen;
+
+const RenderScope rendering(frame, scope);
+Pass.Draw(rendering.Context(), ...);
+```
+
+Take the inner context from `Context()` rather than filling a `FrameContext`
+yourself. A hand-built one silently zeroes every field it does not mention, and
+the fields grow: when the fence-anchored retirement clock landed, two of the
+three hand-built contexts would have handed their passes a clock reading zero —
+"nothing has ever retired" — which frees a resource the GPU is still reading.
+
+Barriers stay outside the scope, with the pass. The sites transition genuinely
+different things at genuinely different granularities — a swapchain image, an
+ImGui-sampled offscreen target, a shadow atlas transitioned once around *all*
+its views — and that granularity is pass policy, not scope boilerplate.
+Viewport and scissor are the caller's for the same reason: a pass drawing one
+full-target quad and a pass drawing into an atlas tile want different answers,
+and both are one call.
+
+**The pipeline family.** `PipelineVariantSet<Count, Key>` owns a family and the
+rule for discarding it — valid only for the key it was built against, and only
+once every variant in it exists.
+
+```cpp
+return OpaquePipelines.Ensure(
+    AttachmentFormatKey{ frame.TargetFormat, frame.DepthFormat },
+    [&](std::size_t index) {
+        GraphicsPipelineDesc desc = MakeBase();
+        desc.CullMode = index == 0 ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
+        return Pipelines->GetGraphicsPipeline(desc);
+    });
+```
+
+The key is whatever the pipelines actually depend on: attachment formats for
+the mesh passes, the depth-bias pair for the shadow pass. Build the whole
+description inside the callable — it does not run in the steady state, so the
+vectors a `GraphicsPipelineDesc` holds are allocated on a rebuild rather than
+once a frame. A build that fails part-way records nothing and retries the whole
+family, so do not add a "did it work" flag beside the set; that is the
+duplication it replaced.
+
+Call `Reset()` in `Teardown`. The pipelines belong to `VulkanPipelineCache` for
+the life of the service; the set only forgets them.
+
+**The draw.** `MeshDrawSubmitter` emits the binds a run still needs, then the
+indexed instanced draw, and counts both.
+
+```cpp
+MeshDrawCommand draw{};
+draw.Pipeline = pipeline;
+draw.VertexBuffer = Buffers->GetBuffer(mesh->VertexBuffer);
+draw.IndexBuffer = Buffers->GetBuffer(mesh->IndexBuffer);
+draw.IndexCount = section.IndexCount;
+draw.IndexOffset = section.IndexOffset;
+draw.InstanceCount = run.Count;
+draw.FirstInstance = run.First;
+Submitter.Submit(frame.Cmd, draw);
+```
+
+Call `Invalidate()` whenever anything else binds to the same command buffer.
+The shadow pass rebinds its per-view instance stream at every view, so what the
+submitter recorded for the previous view no longer describes the buffer;
+missing that drops the first bind of every view after the first.
+
+It deliberately does not own merge policy, per-view binds, the instance stream,
+or push constants. That is where the two callers genuinely differ — the forward
+pass merges on material identity and pushes per draw, the shadow pass merges on
+mesh and section and pushes nothing — and parameterizing those is how this
+becomes the generic command stream that was considered and rejected.
+
+**What stays hand-written**, so nobody absorbs it into a mechanism:
+`Renderer::RecordMainColorPhase`'s swapchain transitions and cross-frame depth
+barrier, because no attachment declaration expresses "two frames ago";
+`LightBindings`' pool transitions and clear-at-creation; `EditorBloomPass`'s
+ping-pong aliasing, where sub-pass N's target is N+1's sampled source;
+descriptor set 2 creation and the update-after-bind probe slot swap; and
+frame-scratch partial-grant clipping, which runs before the run list is final
+because the grant changes how many draws exist.
 
 ---
 
@@ -136,13 +239,14 @@ FragmentShader = Shaders->CreateModuleFromSpirv(
 and destroy it in `Teardown` with `Shaders->Destroy(FragmentShader)`.
 
 **4. Build the pipeline** through `VulkanPipelineCache::GetGraphicsPipeline`
-with a fully populated `GraphicsPipelineDesc`. Everything the desc does not
-carry is fixed: dynamic viewport and scissor, line width 1.0, one sample, no
-stencil.
+with a fully populated `GraphicsPipelineDesc`, from inside a
+`PipelineVariantSet::Ensure` callable. Everything the desc does not carry is
+fixed: dynamic viewport and scissor, line width 1.0, one sample, no stencil.
 
-**5. Name it.** `VulkanDebugLabels::NameObject(device, VK_OBJECT_TYPE_PIPELINE,
-handle, "Decal/Opaque")`. Object naming is creation-time metadata and costs
-nothing per frame; it is what makes a GPU capture readable.
+**5. Name it**, in that same callable, once the handle is non-null:
+`VulkanDebugLabels::NameObject(device, VK_OBJECT_TYPE_PIPELINE, handle,
+"Decal/Opaque")`. Object naming is creation-time metadata and costs nothing per
+frame; it is what makes a GPU capture readable.
 
 ---
 
@@ -156,8 +260,8 @@ the material.
 2. **`.smat` schema and loader**: add the field so it round-trips. New fields
    need an explicit default or previously cooked assets fail to load.
 3. **`MeshPushConstants`** (`engine/include/render/MeshForwardPass.h`): add the
-   field. Watch std140 alignment; the struct is 80 bytes today and there are two
-   `uint32` pad slots at the end.
+   field. Watch std140 alignment; the struct is 80 bytes today, with one
+   `uint32` pad slot left at offset 76.
 4. **`static_assert` block** in `engine/src/render/MeshForwardPass.cpp`: add an
    offset assert for the new field and update `sizeof`.
 5. **`MeshForwardPass::DrawRuns`**: copy the field out of the `Material` into
@@ -243,7 +347,8 @@ Use this when the value is constant for the whole frame.
    be read against.
 2. Accumulate it **unconditionally** in the producing pass's local `DrawStats`,
    at run granularity. Do not branch on the instrumentation bundle in the draw
-   loop.
+   loop. Anything countable from a `MeshDrawCommand` and its bind delta belongs
+   in `MeshDrawTally` instead, so both passes get it at once.
 3. Copy it into `RenderStats` at pass exit, inside the existing
    `Instrumentation->Stats != nullptr` check.
 4. Bump `RenderCapture::kSchemaVersion` and add the field to both
@@ -303,9 +408,10 @@ Tunables are cvars, not constants, and not recompiles.
    applies, and `EnumValues` for string enums.
 2. Read it in `DefaultRenderPipeline::ApplyRendererCVars` into `RenderLightSet`,
    or in whatever per-frame read point the consumer already has.
-3. If it feeds pipeline state (the depth-bias pair does), the owning pass must
-   detect the change and rebuild. `ShadowDepthPass::EnsurePipelines` caches the
-   last values and compares.
+3. If it feeds pipeline state (the depth-bias pair does), it belongs in the
+   owning pass's `PipelineVariantSet` key rather than in a comparison the pass
+   writes itself. `ShadowDepthPass` keys on `ShadowDepthBias`, so changing
+   either cvar rebuilds the family once.
 4. If it changes what a cached shadow tile should contain, invalidate: the
    editor calls `ShadowResidency::InvalidateAll` when the bias cvars change,
    because the bias is baked into rendered tiles.
