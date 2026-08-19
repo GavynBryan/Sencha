@@ -1,5 +1,6 @@
 #pragma once
 
+#include <graphics/vulkan/MeshDrawSubmitter.h>
 #include <graphics/vulkan/PipelineVariantSet.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
@@ -80,6 +81,8 @@ public:
     {
         std::uint32_t ViewsRendered = 0;
         std::uint32_t PointFacesRendered = 0;
+        // Casters covered by the emitted draws, summed over views. A caster
+        // drawn into six cube faces counts six times.
         std::uint32_t CasterDraws = 0;
         // Frustum tests across every rendered view, and the survivors. Both
         // accumulate over views, so a caster tested by six cube faces counts
@@ -88,9 +91,9 @@ public:
         std::uint32_t CastersVisible = 0;
         // Casters the frame scratch could not carry, summed over views.
         std::uint32_t CastersDropped = 0;
-        // Instanced draws emitted. Casters sharing a pipeline, mesh, and
-        // section collapse into one, so this scales with distinct draws times
-        // views rather than with caster count.
+        // Draw calls emitted. Casters sharing a pipeline, mesh, and section
+        // collapse into one, so CasterDraws divided by this is the batching
+        // factor -- equal values mean nothing merged.
         std::uint32_t InstanceRuns = 0;
         // Set when the pass had views to render and abandoned all of them
         // (missing pipelines, or a frame-scratch request it could not serve).
@@ -137,14 +140,10 @@ private:
     ShaderHandle FragmentShader;
     VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
     PipelineVariantSet<kShadowPipelineCount, ShadowDepthBias> Pipelines;
+    MeshDrawSubmitter Submitter;
     DrawStats LastStats;
 
     // Per-view visible set, in draw-run order. Held across frames so a view
     // walk does not allocate.
     std::vector<std::uint32_t> VisibleCasters;
-
-    // Bind-state dedup within one view.
-    VkPipeline LastPipeline = VK_NULL_HANDLE;
-    VkBuffer LastVertexBuffer = VK_NULL_HANDLE;
-    VkBuffer LastIndexBuffer = VK_NULL_HANDLE;
 };

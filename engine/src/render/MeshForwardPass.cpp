@@ -382,9 +382,11 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
 {
     const std::vector<RenderQueueItem>& items = queue.Opaque();
     const std::vector<uint32_t>& order = queue.OpaqueOrder();
-    VkPipeline lastPipeline = VK_NULL_HANDLE;
-    VkBuffer lastVertexBuffer = VK_NULL_HANDLE;
-    VkBuffer lastIndexBuffer = VK_NULL_HANDLE;
+
+    // BindFrameState and the instance stream have just been bound, so nothing
+    // this submitter recorded on an earlier frame still describes the buffer.
+    Submitter.ClearTally();
+    Submitter.Invalidate();
 
     for (const RenderQueueRun& run : queue.OpaqueRuns())
     {
@@ -417,16 +419,8 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
         }
         if (pipeline == VK_NULL_HANDLE)
             continue;
-        if (pipeline != lastPipeline)
-        {
-            vkCmdBindPipeline(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-            lastPipeline = pipeline;
-            ++LastStats.PipelineSwitches;
-        }
 
         const StaticMeshSection& section = mesh->Sections[item.SectionIndex];
-        const VkBuffer vertexBuffer = Buffers->GetBuffer(mesh->VertexBuffer);
-        const VkBuffer indexBuffer = Buffers->GetBuffer(mesh->IndexBuffer);
 
         MeshPushConstants push{};
         push.BaseColor = Vec4{ material->BaseColor.X * tint.X, material->BaseColor.Y * tint.Y,
@@ -447,26 +441,28 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
         push.LightmapTextureIndex = item.LightmapTextureIndex;
         push.AoTextureIndex = item.AoTextureIndex;
 
-        if (vertexBuffer != lastVertexBuffer)
-        {
-            VkDeviceSize vertexOffset = 0;
-            vkCmdBindVertexBuffers(frame.Cmd, 0, 1, &vertexBuffer, &vertexOffset);
-            lastVertexBuffer = vertexBuffer;
-        }
-        if (indexBuffer != lastIndexBuffer)
-        {
-            vkCmdBindIndexBuffer(frame.Cmd, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-            lastIndexBuffer = indexBuffer;
-        }
+        // Push constants are layout-scoped rather than pipeline-scoped, so
+        // this is independent of whatever the submitter decides to rebind.
         vkCmdPushConstants(frame.Cmd, PipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(push), &push);
         ++LastStats.MaterialSwitches;
-        vkCmdDrawIndexed(frame.Cmd, section.IndexCount, drawCount,
-                         section.IndexOffset, 0, run.First);
-        ++LastStats.DrawCalls;
-        LastStats.Triangles += section.IndexCount / 3u * drawCount;
+
+        MeshDrawCommand draw{};
+        draw.Pipeline = pipeline;
+        draw.VertexBuffer = Buffers->GetBuffer(mesh->VertexBuffer);
+        draw.IndexBuffer = Buffers->GetBuffer(mesh->IndexBuffer);
+        draw.IndexCount = section.IndexCount;
+        draw.IndexOffset = section.IndexOffset;
+        draw.InstanceCount = drawCount;
+        draw.FirstInstance = run.First;
+        Submitter.Submit(frame.Cmd, draw);
     }
+
+    const MeshDrawTally& tally = Submitter.Tally();
+    LastStats.DrawCalls = tally.Draws;
+    LastStats.Triangles = tally.Triangles;
+    LastStats.PipelineSwitches = tally.PipelineBinds;
 }
 
 void MeshForwardPass::Draw(const FrameContext& frame,

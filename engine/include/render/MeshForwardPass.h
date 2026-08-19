@@ -1,5 +1,6 @@
 #pragma once
 
+#include <graphics/vulkan/MeshDrawSubmitter.h>
 #include <graphics/vulkan/PipelineVariantSet.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
@@ -174,5 +175,6 @@ private:
     PipelineVariantSet<2, AttachmentFormatKey> OverdrawPipelines;
     RenderDebugView ActiveDebugView = RenderDebugView::None;
 #endif
+    MeshDrawSubmitter Submitter;
     DrawStats LastStats;
 };

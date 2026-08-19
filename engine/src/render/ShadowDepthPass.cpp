@@ -269,11 +269,9 @@ bool ShadowDepthPass::RecordView(const FrameContext& frame,
 
     const VkBuffer instanceBuffer = Buffers->GetBuffer(stream.Grant.Buffer);
     vkCmdBindVertexBuffers(frame.Cmd, 1, 1, &instanceBuffer, &stream.Grant.Offset);
-    // The instance stream is per view, so the mesh bindings dedup'd across
-    // views no longer describe this command buffer's state.
-    LastPipeline = VK_NULL_HANDLE;
-    LastVertexBuffer = VK_NULL_HANDLE;
-    LastIndexBuffer = VK_NULL_HANDLE;
+    // The instance stream is per view, so what the submitter recorded for the
+    // previous view no longer describes this command buffer's state.
+    Submitter.Invalidate();
 
     for (std::uint32_t first = 0; first < stream.Count;)
     {
@@ -289,32 +287,17 @@ bool ShadowDepthPass::RecordView(const FrameContext& frame,
         const GpuStaticMesh* mesh = meshes.Get(lead.Mesh);
         const StaticMeshSection& section = mesh->Sections[lead.SectionIndex];
 
-        const VkPipeline pipeline = Pipelines.Get(
+        MeshDrawCommand draw{};
+        draw.Pipeline = Pipelines.Get(
             static_cast<std::size_t>(SelectShadowPipeline(lead.DoubleSided, flipFrontFace)));
-        if (pipeline != LastPipeline)
-        {
-            vkCmdBindPipeline(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-            LastPipeline = pipeline;
-        }
+        draw.VertexBuffer = Buffers->GetBuffer(mesh->VertexBuffer);
+        draw.IndexBuffer = Buffers->GetBuffer(mesh->IndexBuffer);
+        draw.IndexCount = section.IndexCount;
+        draw.IndexOffset = section.IndexOffset;
+        draw.InstanceCount = last - first;
+        draw.FirstInstance = first;
+        Submitter.Submit(frame.Cmd, draw);
 
-        const VkBuffer vertexBuffer = Buffers->GetBuffer(mesh->VertexBuffer);
-        const VkBuffer indexBuffer = Buffers->GetBuffer(mesh->IndexBuffer);
-        if (vertexBuffer != LastVertexBuffer)
-        {
-            VkDeviceSize vertexOffset = 0;
-            vkCmdBindVertexBuffers(frame.Cmd, 0, 1, &vertexBuffer, &vertexOffset);
-            LastVertexBuffer = vertexBuffer;
-        }
-        if (indexBuffer != LastIndexBuffer)
-        {
-            vkCmdBindIndexBuffer(frame.Cmd, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-            LastIndexBuffer = indexBuffer;
-        }
-
-        vkCmdDrawIndexed(frame.Cmd, section.IndexCount, last - first,
-                         section.IndexOffset, 0, first);
-        ++LastStats.CasterDraws;
-        ++LastStats.InstanceRuns;
         first = last;
     }
     return true;
@@ -329,6 +312,7 @@ void ShadowDepthPass::Draw(const FrameContext& frame,
                            ShadowResidency* residency)
 {
     LastStats = DrawStats{};
+    Submitter.ClearTally();
     if (Bindings == nullptr)
         return;
     const bool drawSpots = Bindings->HasAtlas() && !views.empty();
@@ -424,6 +408,13 @@ void ShadowDepthPass::Draw(const FrameContext& frame,
         }
         Bindings->TransitionCubePoolForRead(frame.Cmd);
     }
+
+    // Summed over every view this frame. Draws and the casters they cover are
+    // separate numbers: their ratio is what says whether batching collapsed
+    // anything.
+    const MeshDrawTally& tally = Submitter.Tally();
+    LastStats.CasterDraws = tally.Instances;
+    LastStats.InstanceRuns = tally.Draws;
 }
 
 void ShadowDepthPass::Teardown()
