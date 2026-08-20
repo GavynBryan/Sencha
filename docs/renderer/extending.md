@@ -363,7 +363,13 @@ Use this when the value is constant for the whole frame.
    `DefaultRenderPipeline::ApplyRendererCVars`.
 6. Check the size against the 8 KiB soft budget in
    [constraints.md](constraints.md#performance-budgets). The block is 5712 bytes
-   today.
+   today. Nothing enforces it at runtime beyond a warning, because clamping the
+   descriptor range would hand the shader less than the block it declares --
+   `FrameUniformRangeTests` is what fails when the block crosses the line.
+
+Nothing to do about the descriptor range itself: the pass declares the block it
+reads through `RequireFrameUniformRange` and the cache keeps the largest
+declaration, so growing the block cannot leave another pass short.
 
 ---
 

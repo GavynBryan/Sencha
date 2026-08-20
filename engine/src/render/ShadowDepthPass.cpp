@@ -106,7 +106,7 @@ void ShadowDepthPass::Setup(const RendererServices& services, LightBindings& bin
         kShadowDepthFragSpv, kShadowDepthFragSpvWordCount, "Shadow depth fragment");
 
     PipelineLayout = Descriptors->GetDefaultPipelineLayout();
-    Descriptors->SetFrameUniformBuffer(Scratch->GetBuffer(), sizeof(Mat4));
+    Descriptors->RequireFrameUniformRange(Scratch->GetBuffer(), sizeof(Mat4));
 
     // Compile the depth variants at load. The bias values come from cvars, so
     // this warms the defaults; a run that changes them rebuilds once through

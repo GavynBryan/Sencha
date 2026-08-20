@@ -107,8 +107,9 @@ bool EditorRenderFeature::Setup(const RendererServices& services)
             Log->Warn("Point shadow cube pool creation failed; viewport shadows disabled");
         ShadowPass.Setup(services, Lighting);
     }
-    // After ShadowPass: the forward pass's frame-UBO range write must be the
-    // last one so every dynamic-offset bind covers the largest block.
+    // After ShadowPass, which creates the set-2 layout this reads. The frame-UBO
+    // range no longer depends on the order: each pass declares the block it
+    // needs and the descriptor cache keeps the largest.
     Forward.Setup(services, Lighting);
     Lines.Setup(services);
     WideLines.Setup(services);

@@ -148,7 +148,7 @@ void MeshForwardPass::Setup(const RendererServices& services, LightBindings& bin
     if (vkCreatePipelineLayout(Device, &layoutInfo, nullptr, &PipelineLayout) != VK_SUCCESS)
         PipelineLayout = VK_NULL_HANDLE;
 
-    Descriptors->SetFrameUniformBuffer(Scratch->GetBuffer(), sizeof(MeshFrameUniforms));
+    Descriptors->RequireFrameUniformRange(Scratch->GetBuffer(), sizeof(MeshFrameUniforms));
 
     // Build the pipeline set now rather than inside the first Draw. Both
     // formats are already known here, and driver compilation of the four

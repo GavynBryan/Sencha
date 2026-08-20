@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
+#include <graphics/FrameUniformRange.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanImageService.h>
 #include <vulkan/vulkan.h>
@@ -90,11 +91,19 @@ public:
 
     // -- Frame UBO ----------------------------------------------------------
     //
-    // Point binding 0 at `buffer` covering [0, range). Per-frame or per-draw
-    // data is then addressed via a dynamic offset at vkCmdBindDescriptorSets
-    // time. Call once when the frame UBO backing buffer is created; safe to
-    // call again if the backing buffer changes.
-    void SetFrameUniformBuffer(BufferHandle buffer, VkDeviceSize range);
+    // Point binding 0 at `buffer` and declare that at least `requiredRange`
+    // bytes of it are covered. Per-frame or per-draw data is then addressed via
+    // a dynamic offset at vkCmdBindDescriptorSets time.
+    //
+    // A declaration, not an assignment: several passes share the one binding
+    // and each knows only its own block, so the cache keeps the largest range
+    // anyone has asked for. Calling with a smaller range than a previous caller
+    // is a no-op rather than a shrink, which is what makes the order passes set
+    // themselves up in stop mattering.
+    void RequireFrameUniformRange(BufferHandle buffer, VkDeviceSize requiredRange);
+
+    // The range the descriptor currently carries.
+    [[nodiscard]] VkDeviceSize GetFrameUniformRange() const { return FrameUniformRange; }
 
     // -- Bindless sampled images --------------------------------------------
     //
@@ -156,6 +165,9 @@ private:
     VkDescriptorSetLayout BindlessSetLayout = VK_NULL_HANDLE;
     VkDescriptorSet FrameSet = VK_NULL_HANDLE;
     VkDescriptorSet BindlessSet = VK_NULL_HANDLE;
+    // The largest range any pass has declared, and the buffer it was declared
+    // against. Kept so a later, smaller declaration does not rewrite it.
+    VkDeviceSize FrameUniformRange = 0;
 
     std::vector<PipelineLayoutEntry> PipelineLayouts;
 
