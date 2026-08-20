@@ -33,6 +33,7 @@ public:
     // false depth-tests against the scene.
     void Submit(const FrameContext& frame,
                 const EditorViewport& viewport,
+                const CameraRenderData& camera,
                 std::span<const EditorLineSegment> segments,
                 bool onTop = false,
                 std::string_view source = {});

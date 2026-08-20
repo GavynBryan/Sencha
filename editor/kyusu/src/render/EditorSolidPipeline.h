@@ -26,6 +26,7 @@ public:
     void Setup(const RendererServices& services);
     void Submit(const FrameContext& frame,
                 const EditorViewport& viewport,
+                const CameraRenderData& camera,
                 std::span<const EditorSolidVertex> vertices);
     // Backface-cull the solid pass to match play mode (default on); off draws both sides.
     void SetCullBackfaces(bool on);

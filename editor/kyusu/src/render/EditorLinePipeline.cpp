@@ -25,10 +25,11 @@ void EditorLinePipeline::Setup(const RendererServices& services)
 
 void EditorLinePipeline::Submit(const FrameContext& frame,
                                 const EditorViewport& viewport,
+                                const CameraRenderData& camera,
                                 std::span<const EditorLineVertex> vertices,
                                 bool onTop)
 {
-    Pipeline.Submit(frame, viewport, vertices, onTop);
+    Pipeline.Submit(frame, viewport, camera, vertices, onTop);
 }
 
 void EditorLinePipeline::Teardown()

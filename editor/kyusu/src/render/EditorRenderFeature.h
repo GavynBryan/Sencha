@@ -147,7 +147,8 @@ private:
     // Renders the active wireframe glow source and composites the bloom onto the scene
     // color (no-op when the viewport has no bloom target). Runs after the scene pass.
     void RecordViewportBloom(const FrameContext& frame, EditorViewport& viewport,
-                             const ViewportTargetCache::RenderView& target);
+                             const ViewportTargetCache::RenderView& target,
+                             const CameraRenderData& camera);
 
     WorldDocument&         World;
     std::function<const ManipulatorSession*()> Session;

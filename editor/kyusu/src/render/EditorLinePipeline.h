@@ -26,6 +26,7 @@ public:
     // visible through geometry; false depth-tests against the scene.
     void Submit(const FrameContext& frame,
                 const EditorViewport& viewport,
+                const CameraRenderData& camera,
                 std::span<const EditorLineVertex> vertices,
                 bool onTop = false);
     void Teardown();

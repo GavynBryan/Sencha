@@ -27,23 +27,6 @@
 #include <variant>
 #include <vector>
 
-namespace
-{
-
-// The camera the target is rendered through, which is not the camera the panel
-// is drawn at: the target carries the size the panel reported last frame, so
-// mid-resize the two disagree for a frame, and a camera built from the panel's
-// current rect would render one stretched frame into every drag.
-CameraRenderData CameraForTarget(const EditorViewport& viewport, VkExtent2D extent)
-{
-    const float width = static_cast<float>(extent.width);
-    const float height = static_cast<float>(extent.height);
-    const float aspect = width > 0.0f && height > 0.0f ? width / height : 1.0f;
-    return viewport.Camera.BuildRenderData(aspect);
-}
-
-} // namespace
-
 EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
                                          WorldDocument& world,
                                          EditorAffordanceService& affordances,
@@ -252,7 +235,8 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
                       .Target = slot.Target.Scene,
                       // Built once here rather than by each renderer inside the
                       // view: same camera, same frame, one construction.
-                      .Camera = CameraForTarget(*slot.Viewport, slot.Target.Extent),
+                      .Camera = slot.Viewport->CameraForExtent(slot.Target.Extent.width,
+                                                              slot.Target.Extent.height),
                       .User = &slot },
             .Record = { [](void* self, const FrameContext& context, const FrameView& view)
                         { static_cast<EditorRenderFeature*>(self)->RecordViewportView(context, view); },
@@ -481,7 +465,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         {
             Backdrop.DrawViewport(local.Cmd, viewport, local.TargetExtent, local.TargetFormat, local.DepthFormat);
         }
-        Grid.DrawViewport(local.Cmd, viewport, GridCfg, GridStyleCache, local.TargetExtent, local.TargetFormat, local.DepthFormat);
+        Grid.DrawViewport(local.Cmd, viewport, camera, GridCfg, GridStyleCache, local.TargetExtent, local.TargetFormat, local.DepthFormat);
 
         // Context zones (open, visible, not the focus) render dimmed and reduced:
         // solid-preview or wireframe body plus component visuals, modulated by the
@@ -521,40 +505,40 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
                         Forward.Draw(local, camera, contextLights,
                                      it->second->MeshQueue(), *MeshCache, *MaterialStore,
                                      meshDim);
-                        BrushFills.DrawZoneOverlay(local, viewport, contextScene,
+                        BrushFills.DrawZoneOverlay(local, viewport, camera, contextScene,
                                                    EditorTheme::ContextZoneOverlay);
                     }
                     else
                     {
-                        BrushSolid.DrawViewportTinted(local, viewport, contextScene,
+                        BrushSolid.DrawViewportTinted(local, viewport, camera, contextScene,
                                                       EditorTheme::ContextZoneDim);
                     }
                 }
                 else
                 {
                     const Vec4 dimmedWire(EditorTheme::ContextZoneDim.X, 0.0f, 0.0f, 1.0f);
-                    Wireframe.DrawWireframe(local, viewport, contextScene, dimmedWire);
+                    Wireframe.DrawWireframe(local, viewport, camera, contextScene, dimmedWire);
                 }
-                Visuals.DrawViewport(local, viewport, contextScene, EditorTheme::ContextZoneDim);
+                Visuals.DrawViewport(local, viewport, camera, contextScene, EditorTheme::ContextZoneDim);
             });
 
         // The focus zone renders exactly as a single document does.
         if (IBrushBodyRenderer* body = BodyRenderers[static_cast<std::size_t>(viewport.Shading)])
-            body->DrawViewport(local, viewport, scene);
+            body->DrawViewport(local, viewport, camera, scene);
         // Placed meshes draw in every viewport so they read regardless of shading: through
         // the real-material queue when active, else the procedural-checker fallback.
         if (MaterialPath)
             Forward.Draw(local, camera, QueueBuilder->Lights(),
                          QueueBuilder->MeshQueue(), *MeshCache, *MaterialStore);
         else
-            Meshes.DrawViewport(local, viewport, scene);
-        Visuals.DrawViewport(local, viewport, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
-        IrradianceVolumes.DrawViewport(local, viewport, scene);
-        Highlight.DrawViewport(local, viewport, scene, *Session());
+            Meshes.DrawViewport(local, viewport, camera, scene);
+        Visuals.DrawViewport(local, viewport, camera, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+        IrradianceVolumes.DrawViewport(local, viewport, camera, scene);
+        Highlight.DrawViewport(local, viewport, camera, scene, *Session());
         if (WorldView.ShowZoneBounds || WorldView.StreamingPreview)
-            ZoneBounds.DrawViewport(local, viewport, World, WorldView);
-        Affordances.DrawViewport(local, viewport);
-        Preview.DrawViewport(local, viewport);
+            ZoneBounds.DrawViewport(local, viewport, camera, World, WorldView);
+        Affordances.DrawViewport(local, viewport, camera);
+        Preview.DrawViewport(local, viewport, camera);
     }
 
     // Color: COLOR_ATTACHMENT -> SHADER_READ_ONLY for the UI's ImGui::Image sample.
@@ -564,14 +548,15 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     *target.ColorLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     if (BloomEnabled)
-        RecordViewportBloom(frame, viewport, target);
+        RecordViewportBloom(frame, viewport, target, camera);
 
     viewport.RegionMin = savedMin;
     viewport.RegionMax = savedMax;
 }
 
 void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorViewport& viewport,
-                                              const ViewportTargetCache::RenderView& target)
+                                              const ViewportTargetCache::RenderView& target,
+                                              const CameraRenderData& camera)
 {
     if (target.BloomImage[0] == VK_NULL_HANDLE)
         return;
@@ -616,7 +601,7 @@ void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorV
 
     {
         const RenderScope glowRendering(frame, glowScope);
-        Highlight.SubmitActiveGlowSource(glowRendering.Context(), viewport,
+        Highlight.SubmitActiveGlowSource(glowRendering.Context(), viewport, camera,
                                          World.FocusDocument().GetScene());
     }
 

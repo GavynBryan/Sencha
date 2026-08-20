@@ -28,9 +28,10 @@ void EditorSolidPipeline::Setup(const RendererServices& services)
 
 void EditorSolidPipeline::Submit(const FrameContext& frame,
                                  const EditorViewport& viewport,
+                                 const CameraRenderData& camera,
                                  std::span<const EditorSolidVertex> vertices)
 {
-    Pipeline.Submit(frame, viewport, vertices);
+    Pipeline.Submit(frame, viewport, camera, vertices);
 }
 
 void EditorSolidPipeline::SetCullBackfaces(bool on)

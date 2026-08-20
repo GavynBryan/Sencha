@@ -43,6 +43,7 @@ IrradianceVolumeRenderer::IrradianceVolumeRenderer(SelectionService& selection,
 
 void IrradianceVolumeRenderer::DrawViewport(const FrameContext& frame,
                                             const EditorViewport& viewport,
+                                            const CameraRenderData& camera,
                                             const EditorScene& scene)
 {
     const World& world = scene.GetRegistry().Components;
@@ -95,8 +96,8 @@ void IrradianceVolumeRenderer::DrawViewport(const FrameContext& frame,
     }
 
     if (!segments.empty())
-        WideLines.Submit(frame, viewport, segments, /*onTop*/ false,
+        WideLines.Submit(frame, viewport, camera, segments, /*onTop*/ false,
                          "IrradianceVolumeRenderer");
     if (!points.empty())
-        Lines.Submit(frame, viewport, points);
+        Lines.Submit(frame, viewport, camera, points);
 }

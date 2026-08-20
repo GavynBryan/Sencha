@@ -88,6 +88,13 @@ CameraRenderData EditorViewport::BuildRenderData() const
     return Camera.BuildRenderData(AspectRatio());
 }
 
+CameraRenderData EditorViewport::CameraForExtent(uint32_t width, uint32_t height) const
+{
+    const float w = static_cast<float>(width);
+    const float h = static_cast<float>(height);
+    return Camera.BuildRenderData(w > 0.0f && h > 0.0f ? w / h : 1.0f);
+}
+
 bool EditorViewport::Contains(ImVec2 point) const
 {
     return point.x >= RegionMin.x

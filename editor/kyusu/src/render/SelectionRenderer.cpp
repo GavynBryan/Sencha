@@ -61,6 +61,7 @@ const std::vector<EdgeElement>& SelectionRenderer::EdgesFor(EntityId entity,
 }
 
 void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                                     const CameraRenderData& camera,
                                      const EditorScene& scene, const ManipulatorSession& session)
 {
     const std::span<const SelectableRef> selection = Selection.GetSelection();
@@ -155,13 +156,14 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
     // feedback and gizmos draw on top. The face fill goes down before the on-top
     // strokes so outlines and gizmos read over the translucent quad.
     if (!occluded.empty())
-        Lines.Submit(frame, viewport, occluded, /*onTop*/ false, "SelectionRenderer.occluded");
+        Lines.Submit(frame, viewport, camera, occluded, /*onTop*/ false, "SelectionRenderer.occluded");
     if (!faceFill.empty())
-        Fill.Submit(frame, viewport, faceFill, /*onTop*/ true);
-    Lines.Submit(frame, viewport, onTop, /*onTop*/ true, "SelectionRenderer.onTop");
+        Fill.Submit(frame, viewport, camera, faceFill, /*onTop*/ true);
+    Lines.Submit(frame, viewport, camera, onTop, /*onTop*/ true, "SelectionRenderer.onTop");
 }
 
 void SelectionRenderer::SubmitActiveGlowSource(const FrameContext& frame, const EditorViewport& viewport,
+                                               const CameraRenderData& camera,
                                                const EditorScene& scene)
 {
     std::vector<EditorLineSegment> segments;
@@ -175,7 +177,7 @@ void SelectionRenderer::SubmitActiveGlowSource(const FrameContext& frame, const 
                         EditorTheme::ActiveLinePixels);
     }
     if (!segments.empty())
-        Lines.Submit(frame, viewport, segments, /*onTop*/ true, "SelectionRenderer.activeGlow");
+        Lines.Submit(frame, viewport, camera, segments, /*onTop*/ true, "SelectionRenderer.activeGlow");
 }
 
 std::vector<EntityId> SelectionRenderer::GatherActiveBodies(const EditorScene& scene) const

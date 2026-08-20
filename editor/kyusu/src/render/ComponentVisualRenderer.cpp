@@ -83,6 +83,7 @@ const ComponentVisualRenderer::MeshEdges& ComponentVisualRenderer::EdgesFor(std:
 }
 
 void ComponentVisualRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                                           const CameraRenderData& camera,
                                            const EditorScene& scene, const Vec4& tint)
 {
     const Vec4 color(EditorTheme::ComponentVisual.X * tint.X,
@@ -119,5 +120,5 @@ void ComponentVisualRenderer::DrawViewport(const FrameContext& frame, const Edit
         }
     }
 
-    Lines.Submit(frame, viewport, vertices);
+    Lines.Submit(frame, viewport, camera, vertices);
 }

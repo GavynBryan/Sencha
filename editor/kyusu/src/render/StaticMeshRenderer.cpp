@@ -69,6 +69,7 @@ void StaticMeshRenderer::PruneInvalidIndices(const std::string& assetPath, MeshG
 }
 
 void StaticMeshRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                                      const CameraRenderData& camera,
                                       const EditorScene& scene)
 {
     if (Assets == nullptr)
@@ -111,5 +112,5 @@ void StaticMeshRenderer::DrawViewport(const FrameContext& frame, const EditorVie
         }
     }
 
-    Solid.Submit(frame, viewport, vertices);
+    Solid.Submit(frame, viewport, camera, vertices);
 }

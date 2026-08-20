@@ -16,12 +16,14 @@ WireframeRenderer::WireframeRenderer(SelectionService& selection,
 }
 
 void WireframeRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                                     const CameraRenderData& camera,
                                      const EditorScene& scene)
 {
-    DrawWireframe(frame, viewport, scene, Vec4(1.0f, 0.0f, 0.0f, 1.0f));
+    DrawWireframe(frame, viewport, camera, scene, Vec4(1.0f, 0.0f, 0.0f, 1.0f));
 }
 
 void WireframeRenderer::DrawWireframe(const FrameContext& frame, const EditorViewport& viewport,
+                                      const CameraRenderData& camera,
                                       const EditorScene& scene, const Vec4& color)
 {
     // Brushes whose full wireframe the selection/hover already draws (bright anti-aliased
@@ -50,7 +52,7 @@ void WireframeRenderer::DrawWireframe(const FrameContext& frame, const EditorVie
             AppendBrushMesh(vertices, mesh, transform, color);
         });
 
-    Lines.Submit(frame, viewport, vertices);
+    Lines.Submit(frame, viewport, camera, vertices);
 }
 
 void WireframeRenderer::AppendBrushMesh(std::vector<EditorLineVertex>& vertices,

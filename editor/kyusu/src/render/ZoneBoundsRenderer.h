@@ -22,6 +22,7 @@ public:
     explicit ZoneBoundsRenderer(EditorWideLinePipeline& lines);
 
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                      const CameraRenderData& camera,
                       WorldDocument& world, WorldViewSettings& view);
 
 private:

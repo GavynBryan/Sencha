@@ -26,6 +26,7 @@ public:
                        MaterialCache& materials);
 
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                      const CameraRenderData& camera,
                       const EditorScene&) override;
 
 private:
