@@ -10,12 +10,18 @@
 #include "lighting.glsli"
 
 layout(constant_id = 0) const bool MATERIAL_UNLIT = false;
+// Alpha masking is a pipeline variant rather than a branch every material pays
+// for: a fragment shader that can discard loses early depth testing, and an
+// opaque scene should not give that up to serve the masked materials in it.
+layout(constant_id = 1) const bool MATERIAL_ALPHA_MASK = false;
 
 layout(location = 0) out vec4 outColor;
 
 void main()
 {
     vec4 baseColor = SampleBaseColor();
+    if (MATERIAL_ALPHA_MASK && baseColor.a < pushData.AlphaCutoff)
+        discard;
     vec3 emission = ResolveEmission();
 
     if (MATERIAL_UNLIT)

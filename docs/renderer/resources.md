@@ -89,7 +89,8 @@ Fields that drive renderer behavior rather than shading math:
 | `DoubleSided` | selects the cull-none pipeline in both the forward and shadow passes |
 | `ReceiveShadows` | pushed per draw; the shader returns full visibility when clear |
 | `CastShadows` | filters sections out of the caster set, and feeds the caster state hash |
-| `AlphaMode` | `Blend` is accepted, warns, and renders opaque. There is no transparent pass |
+| `AlphaMode` | `Mask` selects a masked pipeline variant; the fragment shader discards below `AlphaCutoff`. `Blend` is accepted, warns, and renders opaque -- there is no transparent pass |
+| `AlphaCutoff` | pushed per draw at offset 76, read by the masked variants only. **Shadow casters ignore it**: `ShadowCasterItem` carries no material and the shadow vertex layout carries no UVs, so a masked surface still casts its whole silhouette |
 
 `MaterialCache` entries own the `TextureCacheHandle` references their descriptor
 indices point at, so releasing a material releases its textures. The ownership

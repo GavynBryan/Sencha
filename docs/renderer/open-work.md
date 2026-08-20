@@ -11,9 +11,10 @@ unblocks it. Measurement artifacts for the executed work remain under
 | Item | State |
 |---|---|
 | Transparency pass | No blended pipeline exists. `MaterialAlphaMode::Blend` is accepted, warns at load, and renders opaque. `ShaderPassId` has one value |
+| Alpha-tested shadow casters | The forward and debug passes discard, but shadows do not: `ShadowCasterItem` carries no material handle and the shadow vertex layout carries no UVs, so a masked surface casts an unmasked silhouette. Structural, and scheduled with the shadow work rather than with materials |
 | Post-processing pass | No post phase. Exposure and the tonemap shoulder run inside the forward fragment shader |
 | Directional lights and cascaded shadows | `GpuLightType::Directional` exists in the enum and the fragment loop skips it. Lands with the outdoor/sun need. The rule that baked AO must never contain sunlight is already recorded against that work |
-| Skybox | None |
+| Skybox | No cubemap. The background is the procedural gradient drawn from the ambient hemisphere (`SkyGradientPass`) |
 | GPU skinning | `SkinnedMeshData` and `SkinnedMeshCache` load the data; there is no skinning pass and no palette upload |
 | Particles | None |
 | Compute pipelines | `VulkanPipelineCache` builds graphics pipelines only |

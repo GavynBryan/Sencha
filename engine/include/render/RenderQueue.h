@@ -5,27 +5,46 @@
 #include <render/Material.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 #include <vector>
 
+// The forward opaque pipeline family, three independent binary axes packed into
+// the id: bit 0 double-sided, bit 1 unlit, bit 2 alpha-masked. The bits are the
+// contract -- the pass builds each variant from them, and the debug families
+// select their own narrower axes by masking, rather than by a parallel table
+// that would have to be kept in step.
 enum class OpaquePipelineId : uint8_t
 {
     StandardLitBack = 0,
     StandardLitDoubleSided = 1,
     UnlitBack = 2,
     UnlitDoubleSided = 3,
+    StandardLitBackMasked = 4,
+    StandardLitDoubleSidedMasked = 5,
+    UnlitBackMasked = 6,
+    UnlitDoubleSidedMasked = 7,
 };
+
+inline constexpr std::size_t kOpaquePipelineCount = 8;
+
+inline constexpr uint8_t kOpaquePipelineDoubleSidedBit = 1u;
+inline constexpr uint8_t kOpaquePipelineUnlitBit = 2u;
+inline constexpr uint8_t kOpaquePipelineMaskedBit = 4u;
 
 [[nodiscard]] constexpr OpaquePipelineId SelectOpaquePipeline(const Material& material)
 {
+    uint8_t id = 0;
+    if (material.DoubleSided)
+        id |= kOpaquePipelineDoubleSidedBit;
     if (material.Shading == MaterialShading::Unlit)
-        return material.DoubleSided
-            ? OpaquePipelineId::UnlitDoubleSided
-            : OpaquePipelineId::UnlitBack;
-    return material.DoubleSided
-        ? OpaquePipelineId::StandardLitDoubleSided
-        : OpaquePipelineId::StandardLitBack;
+        id |= kOpaquePipelineUnlitBit;
+    // Blend has no transparent phase yet and falls back to opaque, which is
+    // what the loader warns about; only Mask cuts fragments.
+    if (material.AlphaMode == MaterialAlphaMode::Mask)
+        id |= kOpaquePipelineMaskedBit;
+    return static_cast<OpaquePipelineId>(id);
 }
 
 //=============================================================================

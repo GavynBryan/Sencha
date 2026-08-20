@@ -20,7 +20,7 @@ layout(push_constant) uniform MeshPush
     uint ReceiveShadows;
     uint LightmapTextureIndex;
     uint AoTextureIndex;
-    uint Pad2;
+    float AlphaCutoff;
 } pushData;
 
 layout(set = 1, binding = 0) uniform sampler2D BindlessTextures[1024];

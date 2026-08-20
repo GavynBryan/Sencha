@@ -8,6 +8,10 @@
 #include "mesh_material.glsli"
 #include "lighting.glsli"
 
+// Matches the lit shader's constant id: a debug view that kept the fragments
+// the lit pass discards would describe geometry that is not on screen.
+layout(constant_id = 1) const bool MATERIAL_ALPHA_MASK = false;
+
 layout(location = 0) out vec4 outColor;
 
 const uint DEBUG_WORLD_NORMALS = 1u;
@@ -35,6 +39,8 @@ vec3 HeatColor(float value)
 void main()
 {
     vec4 baseColor = SampleBaseColor();
+    if (MATERIAL_ALPHA_MASK && baseColor.a < pushData.AlphaCutoff)
+        discard;
     vec3 orm = SampleOrm();
     vec3 geometricNormal = normalize(inWorldNormal);
     vec3 normal = ResolveWorldNormal(geometricNormal);

@@ -6,12 +6,20 @@
 uint64_t BuildOpaqueSortKey(const RenderQueueItem& item)
 {
     // Key layout (MSB -> LSB):
-    // [8b pass][2b pipeline][14b material][20b mesh][4b section][16b depth]
+    // [8b pass][3b pipeline][13b material][20b mesh][4b section][16b depth]
+    //
+    // The pipeline field is sized to hold every OpaquePipelineId, not merely
+    // today's count: a value wider than its field carries into the pass bits
+    // above it, which would sort a draw into another pass entirely. The
+    // material field gives up the bit, and it is the field that can afford to
+    // -- truncation there costs sort quality only, since runs are built from
+    // the item fields rather than from the key.
+    static_assert(kOpaquePipelineCount <= 8, "pipeline field is 3 bits wide");
     uint32_t depthBits = 0;
     std::memcpy(&depthBits, &item.CameraDepth, sizeof(depthBits));
     return (static_cast<uint64_t>(item.Pass) << 56)
-         | (static_cast<uint64_t>(item.Pipeline) << 54)
-         | (static_cast<uint64_t>(SlotIndex(item.Material) & 0x3FFFu) << 40)
+         | (static_cast<uint64_t>(item.Pipeline) << 53)
+         | (static_cast<uint64_t>(SlotIndex(item.Material) & 0x1FFFu) << 40)
          | (static_cast<uint64_t>(SlotIndex(item.Mesh) & 0xFFFFFu) << 20)
          | (static_cast<uint64_t>(item.SectionIndex & 0xFu) << 16)
          | (depthBits >> 16);

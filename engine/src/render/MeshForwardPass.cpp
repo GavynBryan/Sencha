@@ -65,6 +65,7 @@ static_assert(offsetof(MeshPushConstants, EmissiveTextureIndex) == 60);
 static_assert(offsetof(MeshPushConstants, ReceiveShadows) == 64);
 static_assert(offsetof(MeshPushConstants, LightmapTextureIndex) == 68);
 static_assert(offsetof(MeshPushConstants, AoTextureIndex) == 72);
+static_assert(offsetof(MeshPushConstants, AlphaCutoff) == 76);
 static_assert(sizeof(MeshPushConstants) == 80);
 
 static_assert(offsetof(MeshInstanceData, World) == 0);
@@ -169,11 +170,15 @@ void MeshForwardPass::Setup(const RendererServices& services, LightBindings& bin
 
 bool MeshForwardPass::EnsurePipelines(const FrameContext& frame)
 {
-    static constexpr const char* kPipelineNames[4] = {
+    static constexpr const char* kPipelineNames[kOpaquePipelineCount] = {
         "Forward/StandardLitBack",
         "Forward/StandardLitDoubleSided",
         "Forward/UnlitBack",
         "Forward/UnlitDoubleSided",
+        "Forward/StandardLitBackMasked",
+        "Forward/StandardLitDoubleSidedMasked",
+        "Forward/UnlitBackMasked",
+        "Forward/UnlitDoubleSidedMasked",
     };
 
     return OpaquePipelines.Ensure(
@@ -187,10 +192,15 @@ bool MeshForwardPass::EnsurePipelines(const FrameContext& frame)
             desc.ColorFormats = { frame.TargetFormat };
             desc.DepthFormat = frame.DepthFormat;
 
-            const bool unlit = index >= static_cast<std::size_t>(OpaquePipelineId::UnlitBack);
-            const bool doubleSided = (index & 1u) != 0;
+            // Read the axes as bits. The old test for unlit was "index is at
+            // or past UnlitBack", which stops being true the moment a third
+            // axis is added above it.
+            const bool doubleSided = (index & kOpaquePipelineDoubleSidedBit) != 0;
+            const bool unlit = (index & kOpaquePipelineUnlitBit) != 0;
+            const bool masked = (index & kOpaquePipelineMaskedBit) != 0;
             desc.FragmentSpecializationConstants = {
-                ShaderSpecializationConstant{ .Id = 0, .Value = unlit ? 1u : 0u }
+                ShaderSpecializationConstant{ .Id = 0, .Value = unlit ? 1u : 0u },
+                ShaderSpecializationConstant{ .Id = 1, .Value = masked ? 1u : 0u }
             };
             desc.CullMode = doubleSided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
 
@@ -209,13 +219,17 @@ bool MeshForwardPass::EnsurePipelines(const FrameContext& frame)
 bool MeshForwardPass::EnsureDebugPipelines(const FrameContext& frame,
                                            bool overdraw)
 {
-    static constexpr const char* kDebugNames[2] = {
+    static constexpr const char* kDebugNames[kDebugPipelineCount] = {
         "Forward/DebugBack",
         "Forward/DebugDoubleSided",
+        "Forward/DebugBackMasked",
+        "Forward/DebugDoubleSidedMasked",
     };
-    static constexpr const char* kOverdrawNames[2] = {
+    static constexpr const char* kOverdrawNames[kDebugPipelineCount] = {
         "Forward/OverdrawBack",
         "Forward/OverdrawDoubleSided",
+        "Forward/OverdrawBackMasked",
+        "Forward/OverdrawDoubleSidedMasked",
     };
 
     // Overdraw counts fragments rather than shading them, so it drops the
@@ -238,7 +252,11 @@ bool MeshForwardPass::EnsureDebugPipelines(const FrameContext& frame,
         desc.ColorBlend = { blend };
         desc.ColorFormats = { frame.TargetFormat };
         desc.DepthFormat = frame.DepthFormat;
-        desc.CullMode = index == 0 ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
+        desc.CullMode = (index & 1u) != 0 ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
+        // Only the mask constant: the debug shader has no lit/unlit variant.
+        desc.FragmentSpecializationConstants = {
+            ShaderSpecializationConstant{ .Id = 1, .Value = (index & 2u) != 0 ? 1u : 0u }
+        };
 
         const VkPipeline pipeline = Pipelines->GetGraphicsPipeline(desc);
         if (pipeline != VK_NULL_HANDLE)
@@ -405,12 +423,13 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
         if (ActiveDebugView != RenderDebugView::None)
         {
-            // Debug families carry the cull axis only, so the lit/unlit half
-            // of the id is dropped rather than indexing past their end.
-            const std::size_t cullVariant = pipelineIndex & 1u;
+            // Debug families carry the cull and mask axes only, so the
+            // lit/unlit half of the id is dropped rather than indexing past
+            // their end.
+            const std::size_t debugVariant = DebugPipelineIndex(item.Pipeline);
             pipeline = ActiveDebugView == RenderDebugView::Overdraw
-                ? OverdrawPipelines.Get(cullVariant)
-                : DebugPipelines.Get(cullVariant);
+                ? OverdrawPipelines.Get(debugVariant)
+                : DebugPipelines.Get(debugVariant);
         }
         else
 #endif
@@ -440,6 +459,9 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
         push.ReceiveShadows = material->ReceiveShadows ? 1u : 0u;
         push.LightmapTextureIndex = item.LightmapTextureIndex;
         push.AoTextureIndex = item.AoTextureIndex;
+        // Only the masked variants read it, so an opaque material's value is
+        // carried but never consulted.
+        push.AlphaCutoff = material->AlphaCutoff;
 
         // Push constants are layout-scoped rather than pipeline-scoped, so
         // this is independent of whatever the submitter decides to rebind.

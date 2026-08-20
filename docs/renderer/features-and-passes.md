@@ -153,29 +153,47 @@ the per-frame sort does not reallocate.
 
 ### Pipeline variants
 
-Four opaque pipelines, indexed by `OpaquePipelineId`:
+Eight opaque pipelines, indexed by `OpaquePipelineId`. The index is three
+independent bits rather than a list: bit 0 double-sided, bit 1 unlit, bit 2
+alpha-masked. `SelectOpaquePipeline` sets them from the material, and the pass
+reads them back the same way.
 
-| Index | Name | Specialization `constant_id 0` (`MATERIAL_UNLIT`) | Cull |
-|---|---|---|---|
-| 0 | `Forward/StandardLitBack` | 0 | back |
-| 1 | `Forward/StandardLitDoubleSided` | 0 | none |
-| 2 | `Forward/UnlitBack` | 1 | back |
-| 3 | `Forward/UnlitDoubleSided` | 1 | none |
+| Index | Name | `constant_id 0` (`MATERIAL_UNLIT`) | `constant_id 1` (`MATERIAL_ALPHA_MASK`) | Cull |
+|---|---|---|---|---|
+| 0 | `Forward/StandardLitBack` | 0 | 0 | back |
+| 1 | `Forward/StandardLitDoubleSided` | 0 | 0 | none |
+| 2 | `Forward/UnlitBack` | 1 | 0 | back |
+| 3 | `Forward/UnlitDoubleSided` | 1 | 0 | none |
+| 4 | `Forward/StandardLitBackMasked` | 0 | 1 | back |
+| 5 | `Forward/StandardLitDoubleSidedMasked` | 0 | 1 | none |
+| 6 | `Forward/UnlitBackMasked` | 1 | 1 | back |
+| 7 | `Forward/UnlitDoubleSidedMasked` | 1 | 1 | none |
 
-All four share one vertex and one fragment module. Unlit is a specialization
-constant, not a branch and not a second shader. Common state: front face
+All eight share one vertex and one fragment module. Unlit and alpha masking are
+specialization constants, not branches and not second shaders. Masking is a
+variant rather than a branch for a reason worth keeping: a fragment shader that
+can `discard` gives up early depth testing, and an opaque scene should not pay
+that to serve the masked materials in it. Common state: front face
 counter-clockwise, depth test and write on, `LESS_OR_EQUAL`, no blend, one color
 attachment in the swapchain format, depth in the depth target's format.
 
-Under `SENCHA_ENABLE_RENDER_PROFILING` there are two more pairs built from
-`mesh_debug_view.frag.glsl`: `Forward/Debug{Back,DoubleSided}` and
-`Forward/Overdraw{Back,DoubleSided}`. The overdraw pair disables depth test and
-write and uses additive blending; the pass clears the color attachment before
-drawing with it. When a debug view is active the pipeline index is masked to its
-low bit (double-sided or not), so lit and unlit collapse to one debug pipeline.
+The masked variants discard when the sampled base-colour alpha falls below
+`MeshPushConstants::AlphaCutoff`. Shadow casters do not: `ShadowCasterItem`
+carries no material and the shadow vertex layout no UVs, so a masked surface
+still casts its whole silhouette.
+
+Under `SENCHA_ENABLE_RENDER_PROFILING` there are two more families of four built
+from `mesh_debug_view.frag.glsl`: `Forward/Debug{Back,DoubleSided}{,Masked}` and
+`Forward/Overdraw{Back,DoubleSided}{,Masked}`. The overdraw family disables depth
+test and write and uses additive blending; the pass clears the color attachment
+before drawing with it. Those families carry the cull and mask axes but not
+lit/unlit -- the channel is a frame-uniform value, not a variant -- so
+`DebugPipelineIndex` folds a queue item's id onto them. Masking survives the
+fold deliberately: a debug view that kept the fragments the lit pass discards
+would describe geometry that is not on screen.
 
 Pipelines are built at the end of `Setup` (prewarm) rather than on the first
-draw. Both formats are already known there, and driver compilation of the four
+draw. Both formats are already known there, and driver compilation of the
 variants costs tens of milliseconds: paid at load it is invisible, paid on the
 first visible frame it is a hitch. `EnsurePipelines` still rebuilds if a format
 changes later.

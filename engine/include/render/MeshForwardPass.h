@@ -62,6 +62,18 @@ struct MeshFrameUniforms
     std::uint32_t DebugViewPad2 = 0;
 };
 
+// The debug and overdraw families vary over two of the opaque family's three
+// axes: cull mode and alpha masking. Bit 0 double-sided, bit 1 masked.
+inline constexpr std::size_t kDebugPipelineCount = 4;
+
+// Folds an opaque pipeline id onto the debug families' narrower axes.
+[[nodiscard]] constexpr std::size_t DebugPipelineIndex(OpaquePipelineId id)
+{
+    const auto bits = static_cast<std::uint8_t>(id);
+    return static_cast<std::size_t>((bits & kOpaquePipelineDoubleSidedBit) != 0 ? 1u : 0u)
+         | static_cast<std::size_t>((bits & kOpaquePipelineMaskedBit) != 0 ? 2u : 0u);
+}
+
 struct MeshPushConstants
 {
     Vec4 BaseColor;
@@ -81,7 +93,10 @@ struct MeshPushConstants
     // Bindless slot of the zone's baked-AO plane (lightmap UVs); UINT32_MAX
     // leaves ambient unmodulated. Uniform per run, merge identity too.
     std::uint32_t AoTextureIndex = UINT32_MAX;
-    std::uint32_t Pad2 = 0;
+    // Fragments whose base-colour alpha falls below this are discarded, in the
+    // masked pipeline variants only. Ignored by the others, so an opaque
+    // material keeps its early-depth path.
+    float AlphaCutoff = 0.0f;
 };
 
 // Binding 1 of the mesh vertex input: one entry per drawn instance, written
@@ -165,14 +180,16 @@ private:
 #endif
     VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
     // One variant per OpaquePipelineId: lit and unlit, back-face culled and
-    // double-sided.
-    PipelineVariantSet<4, AttachmentFormatKey> OpaquePipelines;
+    // double-sided, opaque and alpha-masked.
+    PipelineVariantSet<kOpaquePipelineCount, AttachmentFormatKey> OpaquePipelines;
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
-    // The debug families carry only the cull axis -- the channel itself is a
-    // frame-uniform value, not a pipeline variant -- so a queue item's
-    // pipeline id is masked down to its low bit before indexing them.
-    PipelineVariantSet<2, AttachmentFormatKey> DebugPipelines;
-    PipelineVariantSet<2, AttachmentFormatKey> OverdrawPipelines;
+    // The debug families carry the cull and alpha-mask axes and drop the
+    // lit/unlit one -- the channel itself is a frame-uniform value, not a
+    // pipeline variant. A queue item's pipeline id is folded down to those two
+    // bits by DebugPipelineIndex before indexing them. Masking has to survive
+    // into the debug views or they describe geometry the lit pass cut away.
+    PipelineVariantSet<kDebugPipelineCount, AttachmentFormatKey> DebugPipelines;
+    PipelineVariantSet<kDebugPipelineCount, AttachmentFormatKey> OverdrawPipelines;
     RenderDebugView ActiveDebugView = RenderDebugView::None;
 #endif
     MeshDrawSubmitter Submitter;
