@@ -37,6 +37,10 @@ public:
 
     struct RenderView
     {
+        // The scene target these images belong to, for a caller that has to
+        // name the target rather than attach it -- a declared frame view says
+        // where it renders before anything resolves the images.
+        RenderTargetId Scene;
         VkImage       ColorImage = VK_NULL_HANDLE;
         VkImage       DepthImage = VK_NULL_HANDLE;
         VkImageView   ColorView = VK_NULL_HANDLE;

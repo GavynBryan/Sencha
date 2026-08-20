@@ -101,6 +101,7 @@ std::optional<ViewportTargetCache::RenderView> ViewportTargetCache::AcquireForRe
     const bool haveBloom = bloom0.has_value() && bloom1.has_value();
 
     RenderView view{};
+    view.Scene = entry->Scene;
     view.ColorImage = scene->ColorImage;
     view.DepthImage = scene->DepthImage;
     view.ColorView = scene->ColorView;

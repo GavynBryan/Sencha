@@ -180,6 +180,74 @@ because the grant changes how many draws exist.
 
 ---
 
+## Add a view
+
+A host with more than one view declares what its frame is made of and lets
+`FrameComposition` (`engine/include/render/FrameComposition.h`) order it, rather
+than calling its passes in an order a comment explains. `EditorRenderFeature` is
+the worked example: shadow arbitration is one piece of work, every live viewport
+is a view that waits on it.
+
+Two node kinds, one scheduler:
+
+- **A view** names a target, carries the camera it renders through, and carries
+  an opaque `User` pointer so the host can find the panel or capture face it
+  belongs to. The composition hands the whole `FrameView` back to the record
+  body, which is why the camera is built once by the declaring host instead of
+  by every renderer inside the view.
+- **Work** is a subsystem's contribution that is not a declared view. It owns
+  whatever internal views and targets it needs and exposes only the dependency
+  point it produces.
+
+```cpp
+// Once, in Setup:
+Composition.Setup(services.Logging);
+ShadowAtlasReady = Composition.DeclarePoint("ShadowAtlasReady");
+
+// Per frame:
+Composition.Clear();
+Composition.AddWork({
+    .Name = "shadow_residency",
+    .Record = { [](void* self, const FrameContext& context)
+                { static_cast<MyHost*>(self)->RecordShadows(context); }, this },
+    .Produces = ShadowAtlasReady,
+});
+const DependencyPointId dependsOn[] = { ShadowAtlasReady };
+for (ViewSlot& slot : Slots)
+    Composition.AddView({
+        .View = { .Name = "viewport", .Target = slot.Target, .Camera = slot.Camera,
+                  .User = &slot },
+        .Record = { [](void* self, const FrameContext& context, const FrameView& view)
+                    { static_cast<MyHost*>(self)->RecordView(context, view); }, this },
+        .DependsOn = dependsOn,
+    });
+Composition.Execute(frame);
+```
+
+Rules worth knowing before you use it:
+
+- **A specialised subsystem publishes a dependency point; it does not contribute
+  one node per internal view.** `ShadowResidency` owns budgets, priorities, and
+  steal hysteresis, and moving its per-slot scheduling into a static frame
+  description would leak dynamic policy upward. The boundary is about who owns
+  the scheduling, not about which attachments a node writes.
+- **The composition does not acquire targets, open scopes, or place barriers.**
+  A view names its target so the frame can be described and validated; the
+  record body resolves it and does its own transitions, because barrier
+  granularity is pass policy.
+- **A node that cannot run takes its dependents with it.** Missing producer,
+  duplicate producer, no target, no body, or a cycle: each is reported once by
+  name and the node is skipped, and so is anything waiting on it. A view that
+  did not render must not be sampled as though it had.
+- **Record bodies are function pointers, not `std::function`.** The composition
+  is rebuilt every frame; a capture large enough to hold a real record body
+  would allocate on every assignment. Bind with a capture-less lambda, and keep
+  whatever the `User` pointer refers to alive for the frame.
+- **Declare the points once and reuse the ids.** `Clear()` drops the nodes and
+  keeps the points.
+
+---
+
 ## Add a render phase
 
 Only when a feature genuinely cannot run inside `Offscreen` or `MainColor`. A
@@ -436,7 +504,8 @@ A host needs to provide, per frame:
 The ordering constraints from the game path apply unchanged: the lighting
 bindings must be set up before `MeshForwardPass::Setup` (which reads the set
 layout), and shadow views must be recorded before the forward pass that samples
-them.
+them. A host with more than one view states that second constraint as a
+dependency rather than as call order — see "Add a view".
 
 Two things the editor does that a host should copy:
 

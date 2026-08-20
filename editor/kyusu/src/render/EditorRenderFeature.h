@@ -27,6 +27,7 @@
 
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/SkyGradientPass.h>
+#include <render/FrameComposition.h>
 #include <render/MeshForwardPass.h>
 #include <render/ShadowCasterSet.h>
 #include <render/ShadowResidency.h>
@@ -118,10 +119,23 @@ public:
     }
 
 private:
+    // One live viewport and the target it renders into, resolved before the
+    // frame is composed so a declared view can name the target and a record
+    // body can find its way back to the panel.
+    struct ViewSlot
+    {
+        EditorViewport* Viewport = nullptr;
+        ViewportTargetCache::RenderView Target;
+    };
+
+    // The composition's entry point for a viewport view: recovers the slot the
+    // view was declared with and renders it with the camera the view carries.
+    void RecordViewportView(const FrameContext& frame, const FrameView& view);
     // Render one viewport's scene chain into its offscreen color+depth target, with
     // the surrounding layout transitions and rendering scope.
     void RenderViewportOffscreen(const FrameContext& frame, EditorViewport& viewport,
-                                 const ViewportTargetCache::RenderView& target);
+                                 const ViewportTargetCache::RenderView& target,
+                                 const CameraRenderData& camera);
     // Runs the focus scene's shadow arbitration and records the scheduled
     // depth views, then publishes the panel snapshot. Called once per frame
     // before any viewport renders.
@@ -209,6 +223,15 @@ private:
     BrushPreviewRenderer   Preview;
     // Per-viewport offscreen targets this feature renders into; the UI composites them.
     ViewportTargetCache    Targets;
+    // What this frame is made of. The shadow atlas is arbitrated and recorded
+    // once as work; every viewport is a view that waits on it. The ordering
+    // used to be a comment above the viewport loop.
+    FrameComposition       Composition;
+    DependencyPointId      ShadowAtlasReady;
+    // Retained across frames: rebuilt every frame, but the storage is not, and
+    // a declared view holds a pointer into ViewSlots until the frame executes.
+    std::vector<ViewSlot>  ViewSlots;
+    std::vector<ViewportId> LiveViewports;
     EditorBloomPass        Bloom;
     bool                   BloomEnabled = true;     // editor.bloom.enable
     BloomParams            BloomParamsCache{};       // editor.bloom.threshold/intensity/radius

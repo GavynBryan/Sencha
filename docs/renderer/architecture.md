@@ -176,3 +176,9 @@ This is the reason the passes are factored as plain classes with a `Setup /
 Draw / Teardown` shape instead of living inside the features: the editor drives
 the identical depth and forward paths, so what a viewport shows is what the game
 renders. Do not add game-specific state to a pass; add it to the feature.
+
+Being the multi-view host is also why the editor is where `FrameComposition`
+runs. Its frame is declared rather than sequenced by hand: shadow arbitration is
+work that produces `ShadowAtlasReady`, and every live viewport is a view that
+waits on that point, so the ordering is a dependency the scheduler enforces
+instead of a comment above a loop. See "Add a view" in `extending.md`.

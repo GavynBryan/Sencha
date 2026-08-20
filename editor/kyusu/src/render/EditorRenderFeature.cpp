@@ -27,6 +27,23 @@
 #include <variant>
 #include <vector>
 
+namespace
+{
+
+// The camera the target is rendered through, which is not the camera the panel
+// is drawn at: the target carries the size the panel reported last frame, so
+// mid-resize the two disagree for a frame, and a camera built from the panel's
+// current rect would render one stretched frame into every drag.
+CameraRenderData CameraForTarget(const EditorViewport& viewport, VkExtent2D extent)
+{
+    const float width = static_cast<float>(extent.width);
+    const float height = static_cast<float>(extent.height);
+    const float aspect = width > 0.0f && height > 0.0f ? width / height : 1.0f;
+    return viewport.Camera.BuildRenderData(aspect);
+}
+
+} // namespace
+
 EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
                                          WorldDocument& world,
                                          EditorAffordanceService& affordances,
@@ -115,6 +132,8 @@ bool EditorRenderFeature::Setup(const RendererServices& services)
     Fills.Setup(services);
     Targets.Setup(services);
     Bloom.Setup(services);
+    Composition.Setup(services.Logging);
+    ShadowAtlasReady = Composition.DeclarePoint("ShadowAtlasReady");
     if (Log != nullptr)
         Log->Info("EditorRenderFeature setup complete");
     // Each viewport renderer degrades on its own (a failed lighting set
@@ -148,6 +167,7 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
 
     Targets.BeginFrame(frame.FrameInFlightIndex, frame.Retirement);
     Highlight.BeginFrame();
+    Composition.Clear();
 
     // Build the scene draw queues once per frame; the per-viewport camera is applied at
     // draw time, so every viewport reuses the same brush + placed-mesh queues. Brush
@@ -184,33 +204,72 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
                         *LoggingRef);
                 builder->Build(document);
             });
-        // Arbitrate and record the focus scene's shadow atlas once per frame,
-        // before any viewport rendering scope opens. Every Solid viewport
-        // then samples the same tiles.
-        UpdateShadowResidency(frame);
+        // Arbitrating and recording the focus scene's shadow atlas is one
+        // frame's work that every Solid viewport then samples, so it is
+        // declared as work the views wait on rather than called first and
+        // documented as such.
+        Composition.AddWork({
+            .Name = "shadow_residency",
+            .Record = { [](void* self, const FrameContext& context)
+                        { static_cast<EditorRenderFeature*>(self)->UpdateShadowResidency(context); },
+                        this },
+            .Produces = ShadowAtlasReady,
+        });
     }
 
-    // Render every viewport that is actually on screen. A hidden panel zeroes its
+    // Every viewport that is actually on screen. A hidden panel zeroes its
     // viewport's rect, so a degenerate rect means "not shown this frame"; its
     // target is pruned below and rebuilt when the panel reappears.
-    std::vector<EditorViewport*> live;
+    ViewSlots.clear();
+    LiveViewports.clear();
     for (const auto& viewport : Layout.All())
-        if (viewport != nullptr
-            && viewport->RegionMax.x > viewport->RegionMin.x
-            && viewport->RegionMax.y > viewport->RegionMin.y)
-            live.push_back(&*viewport);
-
-    std::vector<ViewportId> liveIds;
-    liveIds.reserve(live.size());
-    for (EditorViewport* viewport : live)
     {
-        liveIds.push_back(viewport->Id);
-        if (std::optional<ViewportTargetCache::RenderView> target = Targets.AcquireForRender(viewport->Id))
-            RenderViewportOffscreen(frame, *viewport, *target);
+        if (viewport == nullptr
+            || viewport->RegionMax.x <= viewport->RegionMin.x
+            || viewport->RegionMax.y <= viewport->RegionMin.y)
+            continue;
+        // Pruning is about which panels the layout still shows, so it counts a
+        // viewport whose target is not renderable yet -- a panel in its first
+        // frame has not reported a size.
+        LiveViewports.push_back(viewport->Id);
+        if (std::optional<ViewportTargetCache::RenderView> target =
+                Targets.AcquireForRender(viewport->Id))
+            ViewSlots.push_back({ .Viewport = &*viewport, .Target = *target });
     }
 
+    // Without the material path there is no shadow work to wait on, and a view
+    // that waited on a point nobody produced would be skipped outright.
+    const DependencyPointId shadowDependency[] = { ShadowAtlasReady };
+    const std::span<const DependencyPointId> viewDependsOn =
+        MaterialPath ? std::span<const DependencyPointId>(shadowDependency)
+                     : std::span<const DependencyPointId>{};
+
+    // Separate loop on purpose: a declared view holds a pointer into ViewSlots,
+    // and pushing to it above would move the ones already declared.
+    for (ViewSlot& slot : ViewSlots)
+        Composition.AddView({
+            .View = { .Name = "viewport",
+                      .Target = slot.Target.Scene,
+                      // Built once here rather than by each renderer inside the
+                      // view: same camera, same frame, one construction.
+                      .Camera = CameraForTarget(*slot.Viewport, slot.Target.Extent),
+                      .User = &slot },
+            .Record = { [](void* self, const FrameContext& context, const FrameView& view)
+                        { static_cast<EditorRenderFeature*>(self)->RecordViewportView(context, view); },
+                        this },
+            .DependsOn = viewDependsOn,
+        });
+
+    Composition.Execute(frame);
+
     // Drop targets for viewports the layout no longer shows.
-    Targets.Prune(liveIds);
+    Targets.Prune(LiveViewports);
+}
+
+void EditorRenderFeature::RecordViewportView(const FrameContext& frame, const FrameView& view)
+{
+    ViewSlot& slot = *static_cast<ViewSlot*>(view.User);
+    RenderViewportOffscreen(frame, *slot.Viewport, slot.Target, view.Camera);
 }
 
 void EditorRenderFeature::UpdateShadowResidency(const FrameContext& frame)
@@ -330,12 +389,14 @@ Vec<3> EditorRenderFeature::ShadowScoreOrigin() const
 }
 
 void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, EditorViewport& viewport,
-                                                  const ViewportTargetCache::RenderView& target)
+                                                  const ViewportTargetCache::RenderView& target,
+                                                  const CameraRenderData& camera)
 {
-    // The scene renderers derive their Vulkan viewport/scissor from the viewport's
-    // screen rect; the offscreen target is origin-(0,0) and sized to the region, so
-    // override the rect for this pass (same size, so the camera aspect is unchanged)
-    // and restore it after. Picking reads the screen rect on the input path, not here.
+    // The scene renderers derive their Vulkan viewport/scissor -- and, until they
+    // are handed the camera above, their own aspect ratio -- from the viewport's
+    // screen rect. The offscreen target is origin-(0,0) and sized to the target,
+    // so override the rect for this pass and restore it after. Picking reads the
+    // screen rect on the input path, not here.
     const ImVec2 savedMin = viewport.RegionMin;
     const ImVec2 savedMax = viewport.RegionMax;
     viewport.RegionMin = ImVec2(0.0f, 0.0f);
@@ -408,9 +469,8 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         const RenderLightSet& viewLights = QueueBuilder->Lights();
         if (viewport.Orientation == ViewportOrientation::Perspective && viewLights.SkyEnabled)
         {
-            const CameraRenderData viewCamera = viewport.BuildRenderData();
             Sky.Draw(local,
-                     MakeInverseSkyViewProjection(viewCamera.View, viewCamera.Projection),
+                     MakeInverseSkyViewProjection(camera.View, camera.Projection),
                      SkyGradientParams{ .Top = viewLights.AmbientSky,
                                         .Bottom = viewLights.AmbientGround,
                                         .Exposure = viewLights.Exposure,
@@ -449,7 +509,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     #ifdef SENCHA_ENABLE_RENDER_PROFILING
                         contextLights.DebugView = WorldView.DebugViewMode;
     #endif
-                        Forward.Draw(local, viewport.BuildRenderData(), contextLights,
+                        Forward.Draw(local, camera, contextLights,
                                      it->second->BrushQueue(), *MeshCache, *MaterialStore);
                         // Placed meshes cannot receive the brush-triangle wash, so
                         // the overlay folds into their multiply tint instead (exact
@@ -458,7 +518,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
                         const Vec4 meshDim(1.0f - wash.W + wash.X * wash.W,
                                            1.0f - wash.W + wash.Y * wash.W,
                                            1.0f - wash.W + wash.Z * wash.W, 1.0f);
-                        Forward.Draw(local, viewport.BuildRenderData(), contextLights,
+                        Forward.Draw(local, camera, contextLights,
                                      it->second->MeshQueue(), *MeshCache, *MaterialStore,
                                      meshDim);
                         BrushFills.DrawZoneOverlay(local, viewport, contextScene,
@@ -484,7 +544,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         // Placed meshes draw in every viewport so they read regardless of shading: through
         // the real-material queue when active, else the procedural-checker fallback.
         if (MaterialPath)
-            Forward.Draw(local, viewport.BuildRenderData(), QueueBuilder->Lights(),
+            Forward.Draw(local, camera, QueueBuilder->Lights(),
                          QueueBuilder->MeshQueue(), *MeshCache, *MaterialStore);
         else
             Meshes.DrawViewport(local, viewport, scene);
