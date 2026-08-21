@@ -62,6 +62,17 @@ struct MeshFrameUniforms
     std::uint32_t DebugViewPad2 = 0;
 };
 
+// The transparent family varies over the opaque family's low two axes -- bit 0
+// double-sided, bit 1 unlit -- and never the mask bit, since the alpha modes
+// are exclusive. Folding an opaque id keeps the classifier in one place.
+inline constexpr std::size_t kTransparentPipelineCount = 4;
+
+[[nodiscard]] constexpr std::size_t TransparentPipelineIndex(OpaquePipelineId id)
+{
+    return static_cast<std::size_t>(static_cast<std::uint8_t>(id)
+                                    & (kOpaquePipelineDoubleSidedBit | kOpaquePipelineUnlitBit));
+}
+
 // The debug and overdraw families vary over two of the opaque family's three
 // axes: cull mode and alpha masking. Bit 0 double-sided, bit 1 masked.
 inline constexpr std::size_t kDebugPipelineCount = 4;
@@ -148,14 +159,17 @@ public:
 
 private:
     [[nodiscard]] bool EnsurePipelines(const FrameContext& frame);
+    [[nodiscard]] bool EnsureTransparentPipelines(const FrameContext& frame);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     [[nodiscard]] bool EnsureDebugPipelines(const FrameContext& frame,
                                             bool overdraw);
 #endif
     [[nodiscard]] std::optional<VkDeviceSize> UploadFrameUniforms(
         const CameraRenderData& camera, const RenderLightSet& lights);
-    // Uploads and binds the instance stream, returning how many draw-order
-    // entries it covers. Zero means the slice had no room at all.
+    // Uploads and binds the instance stream -- the opaque draw order followed
+    // by the view's transparent order -- returning how many entries it covers.
+    // Zero means the slice had no room at all. A short grant clips from the
+    // tail, so transparent items drop before world geometry does.
     [[nodiscard]] uint32_t BindInstanceStream(const FrameContext& frame,
                                              const RenderQueue& queue);
     void BindFrameState(const FrameContext& frame, VkDeviceSize uniformOffset);
@@ -164,6 +178,11 @@ private:
     void DrawRuns(const FrameContext& frame, const RenderQueue& queue,
                   StaticMeshCache& meshes, MaterialCache& materials, Vec4 tint,
                   uint32_t streamedInstances);
+    // One draw per item, in TransparentOrder, never merged: instances inside
+    // one draw have no order against each other, and order is the contract.
+    void DrawTransparent(const FrameContext& frame, const RenderQueue& queue,
+                         StaticMeshCache& meshes, MaterialCache& materials,
+                         Vec4 tint, uint32_t streamedInstances);
 
     VulkanBufferService* Buffers = nullptr;
     VulkanDescriptorCache* Descriptors = nullptr;
@@ -182,6 +201,11 @@ private:
     // One variant per OpaquePipelineId: lit and unlit, back-face culled and
     // double-sided, opaque and alpha-masked.
     PipelineVariantSet<kOpaquePipelineCount, AttachmentFormatKey> OpaquePipelines;
+    // Blended geometry: depth test on, depth write off, straight-alpha over.
+    PipelineVariantSet<kTransparentPipelineCount, AttachmentFormatKey> TransparentPipelines;
+    // Per-view draw order for the transparent list, retained across frames so
+    // the per-view sort does not reallocate.
+    std::vector<std::uint32_t> TransparentOrder;
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     // The debug families carry the cull and alpha-mask axes and drop the
     // lit/unlit one -- the channel itself is a frame-uniform value, not a

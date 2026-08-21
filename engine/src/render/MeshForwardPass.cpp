@@ -244,6 +244,57 @@ bool MeshForwardPass::EnsurePipelines(const FrameContext& frame)
         });
 }
 
+bool MeshForwardPass::EnsureTransparentPipelines(const FrameContext& frame)
+{
+    static constexpr const char* kTransparentNames[kTransparentPipelineCount] = {
+        "Forward/TransparentLitBack",
+        "Forward/TransparentLitDoubleSided",
+        "Forward/TransparentUnlitBack",
+        "Forward/TransparentUnlitDoubleSided",
+    };
+
+    return TransparentPipelines.Ensure(
+        AttachmentFormatKey{ frame.TargetFormat, frame.DepthFormat },
+        [&](std::size_t index) {
+            GraphicsPipelineDesc desc = MakeMeshPipelineBase(VertexShader, PipelineLayout);
+            desc.FragmentShader = FragmentShader;
+            // Test against the opaque scene, never behind it; write nothing,
+            // so blended surfaces do not occlude each other by draw order.
+            desc.DepthTest = true;
+            desc.DepthWrite = false;
+            // Straight-alpha over, matching the shader's unpremultiplied
+            // output. Alpha composites as over too -- ONE, not SRC_ALPHA -- so
+            // a target that started opaque stays opaque and the editor's UI
+            // composite cannot see through the viewport.
+            ColorBlendAttachmentDesc blend{};
+            blend.BlendEnable = true;
+            blend.SrcColor = VK_BLEND_FACTOR_SRC_ALPHA;
+            blend.DstColor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            blend.SrcAlpha = VK_BLEND_FACTOR_ONE;
+            blend.DstAlpha = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            desc.ColorBlend = { blend };
+            desc.ColorFormats = { frame.TargetFormat };
+            desc.DepthFormat = frame.DepthFormat;
+
+            const bool doubleSided = (index & kOpaquePipelineDoubleSidedBit) != 0;
+            const bool unlit = (index & kOpaquePipelineUnlitBit) != 0;
+            desc.FragmentSpecializationConstants = {
+                ShaderSpecializationConstant{ .Id = 0, .Value = unlit ? 1u : 0u },
+                ShaderSpecializationConstant{ .Id = 1, .Value = 0u }
+            };
+            desc.CullMode = doubleSided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
+
+            const VkPipeline pipeline = Pipelines->GetGraphicsPipeline(desc);
+            if (pipeline != VK_NULL_HANDLE)
+            {
+                VulkanDebugLabels::NameObject(Device, VK_OBJECT_TYPE_PIPELINE,
+                                              reinterpret_cast<std::uint64_t>(pipeline),
+                                              kTransparentNames[index]);
+            }
+            return pipeline;
+        });
+}
+
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
 bool MeshForwardPass::EnsureDebugPipelines(const FrameContext& frame,
                                            bool overdraw)
@@ -375,19 +426,32 @@ uint32_t MeshForwardPass::BindInstanceStream(const FrameContext& frame,
 {
     const std::vector<RenderQueueItem>& items = queue.Opaque();
     const std::vector<uint32_t>& order = queue.OpaqueOrder();
+    const std::vector<RenderQueueItem>& transparent = queue.Transparent();
 
     // A short grant is a prefix of the draw order, not a gap in it: draws
     // index instances by queue position, and every run left over would need
-    // slice space that the short grant just proved is gone.
+    // slice space that the short grant just proved is gone. Transparent
+    // instances sit at the tail, after every opaque one, so they are also the
+    // first to be clipped -- effects drop before world geometry does.
     auto stream = Scratch->AllocateVertexElements(
-        static_cast<uint32_t>(order.size()), sizeof(MeshInstanceData));
+        static_cast<uint32_t>(order.size() + TransparentOrder.size()),
+        sizeof(MeshInstanceData));
     if (!stream.IsValid())
         return 0;
 
+    const uint32_t opaqueCount =
+        std::min(stream.Count, static_cast<uint32_t>(order.size()));
     MeshInstanceData* instances = static_cast<MeshInstanceData*>(stream.Grant.Mapped);
-    for (uint32_t i = 0; i < stream.Count; ++i)
+    for (uint32_t i = 0; i < opaqueCount; ++i)
     {
         const RenderQueueItem& item = items[order[i]];
+        instances[i].World = item.WorldMatrix.Transposed();
+        instances[i].LightmapScaleBias = item.LightmapScaleBias;
+    }
+    for (uint32_t i = opaqueCount; i < stream.Count; ++i)
+    {
+        const RenderQueueItem& item =
+            transparent[TransparentOrder[i - opaqueCount]];
         instances[i].World = item.WorldMatrix.Transposed();
         instances[i].LightmapScaleBias = item.LightmapScaleBias;
     }
@@ -515,6 +579,90 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
     LastStats.PipelineSwitches = tally.PipelineBinds;
 }
 
+void MeshForwardPass::DrawTransparent(const FrameContext& frame, const RenderQueue& queue,
+                                      StaticMeshCache& meshes, MaterialCache& materials,
+                                      Vec4 tint, uint32_t streamedInstances)
+{
+    const std::vector<RenderQueueItem>& items = queue.Transparent();
+    const uint32_t opaqueCount = static_cast<uint32_t>(queue.OpaqueOrder().size());
+
+    for (uint32_t position = 0; position < TransparentOrder.size(); ++position)
+    {
+        // Instance data for this draw sits at opaqueCount + position; past the
+        // streamed grant there is nothing to read.
+        const uint32_t instanceIndex = opaqueCount + position;
+        if (instanceIndex >= streamedInstances)
+            break;
+
+        const RenderQueueItem& item = items[TransparentOrder[position]];
+        const GpuStaticMesh* mesh = meshes.Get(item.Mesh);
+        const Material* material = materials.Get(item.Material);
+        if (mesh == nullptr || material == nullptr
+            || item.SectionIndex >= mesh->Sections.size())
+            continue;
+
+        VkPipeline pipeline = VK_NULL_HANDLE;
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+        if (ActiveDebugView != RenderDebugView::None)
+        {
+            // Debug channels inspect geometry, so blended items appear in them
+            // -- opaquely, which is the point: a debug view wants the surface,
+            // not the composite.
+            pipeline = ActiveDebugView == RenderDebugView::Overdraw
+                ? OverdrawPipelines.Get(DebugPipelineIndex(item.Pipeline))
+                : DebugPipelines.Get(DebugPipelineIndex(item.Pipeline));
+        }
+        else
+#endif
+        {
+            pipeline = TransparentPipelines.Get(TransparentPipelineIndex(item.Pipeline));
+        }
+        if (pipeline == VK_NULL_HANDLE)
+            continue;
+
+        const StaticMeshSection& section = mesh->Sections[item.SectionIndex];
+
+        MeshPushConstants push{};
+        push.BaseColor = Vec4{ material->BaseColor.X * tint.X, material->BaseColor.Y * tint.Y,
+                               material->BaseColor.Z * tint.Z, material->BaseColor.W * tint.W };
+        push.EmissiveFactor = Vec4(material->EmissiveFactor.X,
+                                   material->EmissiveFactor.Y,
+                                   material->EmissiveFactor.Z,
+                                   material->EmissiveStrength);
+        push.NormalScale = material->NormalScale;
+        push.RoughnessFactor = material->RoughnessFactor;
+        push.MetallicFactor = material->MetallicFactor;
+        push.SpecularIntensity = material->SpecularIntensity;
+        push.BaseColorTextureIndex = material->BaseColorTextureIndex;
+        push.NormalTextureIndex = material->NormalTextureIndex;
+        push.OrmTextureIndex = material->OrmTextureIndex;
+        push.EmissiveTextureIndex = material->EmissiveTextureIndex;
+        push.ReceiveShadows = material->ReceiveShadows ? 1u : 0u;
+        push.LightmapTextureIndex = item.LightmapTextureIndex;
+        push.AoTextureIndex = item.AoTextureIndex;
+        push.AlphaCutoff = material->AlphaCutoff;
+
+        vkCmdPushConstants(frame.Cmd, PipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(push), &push);
+        ++LastStats.MaterialSwitches;
+
+        MeshDrawCommand draw{};
+        draw.Pipeline = pipeline;
+        draw.VertexBuffer = Buffers->GetBuffer(mesh->VertexBuffer);
+        draw.IndexBuffer = Buffers->GetBuffer(mesh->IndexBuffer);
+        draw.IndexCount = section.IndexCount;
+        draw.IndexOffset = section.IndexOffset;
+        draw.InstanceCount = 1;
+        draw.FirstInstance = instanceIndex;
+        Submitter.Submit(frame.Cmd, draw);
+    }
+
+    const MeshDrawTally& tally = Submitter.Tally();
+    LastStats.DrawCalls = tally.Draws;
+    LastStats.Triangles = tally.Triangles;
+    LastStats.PipelineSwitches = tally.PipelineBinds;
+}
+
 void MeshForwardPass::Draw(const FrameContext& frame,
                            const CameraRenderData& camera,
                            const RenderLightSet& lights,
@@ -524,13 +672,18 @@ void MeshForwardPass::Draw(const FrameContext& frame,
                            Vec4 tint)
 {
     LastStats = DrawStats{
-        .QueueItems = static_cast<uint32_t>(queue.OpaqueOrder().size()),
+        .QueueItems = static_cast<uint32_t>(queue.OpaqueOrder().size()
+                                            + queue.Transparent().size()),
     };
 
     if (PipelineLayout == VK_NULL_HANDLE || frame.DepthFormat == VK_FORMAT_UNDEFINED)
         return;
-    if (queue.OpaqueOrder().empty())
+    if (queue.OpaqueOrder().empty() && queue.Transparent().empty())
         return;
+
+    // Back-to-front for this view. Per call rather than per frame: a host may
+    // replay one queue under several cameras, and the order belongs to each.
+    BuildTransparentOrder(queue.Transparent(), camera.Position, TransparentOrder);
 
     // Past this point the pass has work, so every early return is a frame
     // that renders none of it.
@@ -539,11 +692,15 @@ void MeshForwardPass::Draw(const FrameContext& frame,
         LastStats.Skipped = true;
         LastStats.InstancesDropped = LastStats.QueueItems;
     };
+    // The transparent family only has to exist when something blends.
+    const bool wantTransparent = !TransparentOrder.empty();
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     ActiveDebugView = lights.DebugView;
     if (ActiveDebugView == RenderDebugView::None)
     {
         if (!EnsurePipelines(frame))
+            return giveUp();
+        if (wantTransparent && !EnsureTransparentPipelines(frame))
             return giveUp();
     }
     else if (!EnsureDebugPipelines(
@@ -553,6 +710,8 @@ void MeshForwardPass::Draw(const FrameContext& frame,
     }
 #else
     if (!EnsurePipelines(frame))
+        return giveUp();
+    if (wantTransparent && !EnsureTransparentPipelines(frame))
         return giveUp();
 #endif
 
@@ -581,6 +740,7 @@ void MeshForwardPass::Draw(const FrameContext& frame,
     }
 #endif
     DrawRuns(frame, queue, meshes, materials, tint, streamed);
+    DrawTransparent(frame, queue, meshes, materials, tint, streamed);
 }
 
 void MeshForwardPass::Teardown()
@@ -599,6 +759,7 @@ void MeshForwardPass::Teardown()
     DebugFragmentShader = {};
 #endif
     OpaquePipelines.Reset();
+    TransparentPipelines.Reset();
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     DebugPipelines.Reset();
     OverdrawPipelines.Reset();

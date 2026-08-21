@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -109,11 +110,35 @@ public:
     [[nodiscard]] const std::vector<uint32_t>& OpaqueOrder() const { return OpaqueOrderIndices; }
     [[nodiscard]] const std::vector<RenderQueueRun>& OpaqueRuns() const { return OpaqueRunList; }
 
+    // Blended items are stored unsorted: their draw order is decided per view
+    // by BuildTransparentOrder, because a host may replay one queue under
+    // several cameras and back-to-front is a property of the camera.
+    void AddTransparent(const RenderQueueItem& item);
+    [[nodiscard]] const std::vector<RenderQueueItem>& Transparent() const
+    {
+        return TransparentItems;
+    }
+
 private:
     std::vector<RenderQueueItem> OpaqueItems;
+    std::vector<RenderQueueItem> TransparentItems;
     std::vector<uint32_t> OpaqueOrderIndices;
     std::vector<RenderQueueRun> OpaqueRunList;
     // Reused (key, index) scratch for SortOpaque, kept across frames so the
     // per-frame sort does not reallocate.
     std::vector<std::pair<uint64_t, uint32_t>> OpaqueSortScratch;
 };
+
+// Fills `order` with indices into `items`, farthest bounds centre from
+// `viewPosition` first. Blending is order-dependent, so this is a correctness
+// sort, not a state optimization: the opaque path may reorder freely for bind
+// efficiency, this one may not. Distance rather than a projected view depth
+// because it needs nothing but the camera position -- no forward axis to get
+// wrong per host -- and the failure cases (large coplanar surfaces crossing at
+// grazing angles) are shared by both metrics. Ties break by queue index, so
+// the order is deterministic whenever extraction order is.
+//
+// `order` is caller-retained scratch: cleared and refilled, never shrunk.
+void BuildTransparentOrder(std::span<const RenderQueueItem> items,
+                           const Vec3d& viewPosition,
+                           std::vector<uint32_t>& order);

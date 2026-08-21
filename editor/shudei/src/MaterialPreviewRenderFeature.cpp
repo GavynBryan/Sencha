@@ -166,13 +166,25 @@ void MaterialPreviewRenderFeature::OnDraw(const FrameContext& frame)
             key.Range = 30.0f;
             Lights.AddPoint(eye * 1.5f + Vec3d(0.0f, 1.0f, 0.0f), key);
 
+            // Through the same classifier a scene view uses, so the preview
+            // shows the pipeline the material will actually draw with --
+            // unlit, double-sided, masked, or blended. A hand-built opaque
+            // item previewed every one of those through StandardLitBack.
             RenderQueueItem item;
             item.Mesh = Meshes[static_cast<std::size_t>(Active)];
             item.Material = Material;
             item.SectionIndex = 0;
             item.WorldMatrix = Mat4::Identity();
             Queue.Reset();
-            Queue.AddOpaque(item);
+            if (const ::Material* resolved = Assets.Materials.Get(Material))
+            {
+                item.Pipeline = SelectOpaquePipeline(*resolved);
+                item.Pass = resolved->Pass;
+            }
+            if (item.Pass == ShaderPassId::ForwardTransparent)
+                Queue.AddTransparent(item);
+            else
+                Queue.AddOpaque(item);
             Queue.SortOpaque();
 
             Forward.Draw(rendering.Context(), camera, Lights, Queue,

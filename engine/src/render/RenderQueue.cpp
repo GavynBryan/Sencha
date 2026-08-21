@@ -28,8 +28,40 @@ uint64_t BuildOpaqueSortKey(const RenderQueueItem& item)
 void RenderQueue::Reset()
 {
     OpaqueItems.clear();
+    TransparentItems.clear();
     OpaqueOrderIndices.clear();
     OpaqueRunList.clear();
+}
+
+void RenderQueue::AddTransparent(const RenderQueueItem& item)
+{
+    // No sort key: the opaque key exists to group state, and grouping is
+    // exactly what a blended draw must never do at the cost of order.
+    TransparentItems.push_back(item);
+}
+
+void BuildTransparentOrder(std::span<const RenderQueueItem> items,
+                           const Vec3d& viewPosition,
+                           std::vector<uint32_t>& order)
+{
+    order.clear();
+    order.reserve(items.size());
+    for (uint32_t index = 0; index < items.size(); ++index)
+        order.push_back(index);
+
+    std::sort(order.begin(), order.end(),
+              [&](uint32_t leftIndex, uint32_t rightIndex)
+              {
+                  const Vec3d leftOffset =
+                      items[leftIndex].WorldBounds.Center() - viewPosition;
+                  const Vec3d rightOffset =
+                      items[rightIndex].WorldBounds.Center() - viewPosition;
+                  const float left = leftOffset.Dot(leftOffset);
+                  const float right = rightOffset.Dot(rightOffset);
+                  if (left != right)
+                      return left > right; // farther first
+                  return leftIndex < rightIndex;
+              });
 }
 
 void RenderQueue::AddOpaque(const RenderQueueItem& item)

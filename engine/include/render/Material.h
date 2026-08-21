@@ -17,7 +17,9 @@ using MaterialHandle = Handle<struct MaterialHandleTag>;
 // Identifies the render pass a material belongs to. Used as the high bits of the sort key.
 enum class ShaderPassId : uint16_t
 {
-    ForwardOpaque = 0
+    ForwardOpaque = 0,
+    // Blended geometry, drawn after every opaque item, back-to-front per view.
+    ForwardTransparent = 1,
 };
 
 enum class MaterialShading : uint8_t

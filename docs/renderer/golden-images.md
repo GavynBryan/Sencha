@@ -32,8 +32,12 @@ here — a threshold that hides a one-percent shading change hides the defects
 this is for.
 
 It **skips** without a display rather than failing, so a machine that cannot run
-it says so instead of blocking. It needs no cooked content: the scene loads from
-`template/assets` directly.
+it says so instead of blocking. It cooks its own fixtures on every run -- the
+runtime loads only cooked scenes and `.cooked/` is gitignored, so a test that
+assumed the cook existed passed only on machines with local leftovers, which is
+exactly how the first version of this harness shipped. The cook being inside
+the net is also correct on its own terms: a cook change that moves the image
+should fail here.
 
 ## When it fails
 

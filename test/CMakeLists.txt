@@ -245,9 +245,11 @@ if(RENDER_GOLDEN_TEST_SOURCES AND SENCHA_ENABLE_VULKAN)
         # as game<ext> beside itself, and only the bundle directory has one.
         SENCHA_GOLDEN_APP="$<TARGET_FILE_DIR:SceneViewer>/app"
         SENCHA_GOLDEN_CONTENT_ROOT="${CMAKE_SOURCE_DIR}/template"
-        SENCHA_GOLDEN_REFERENCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/render_golden/references")
-    # The host and the default game module have to exist before a scene renders.
-    add_dependencies(render_golden_tests app SceneViewer)
+        SENCHA_GOLDEN_REFERENCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/render_golden/references"
+        SENCHA_GOLDEN_COOK="$<TARGET_FILE:level_cook_tests>")
+    # The host, the default game module, and the cook have to exist before a
+    # scene renders; the test cooks its own fixtures.
+    add_dependencies(render_golden_tests app SceneViewer level_cook_tests)
     list(APPEND SENCHA_TEST_TARGETS render_golden_tests)
 endif()
 

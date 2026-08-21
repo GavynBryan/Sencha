@@ -134,11 +134,15 @@ bool MaterialAssetLoader::CommitReload(AssetStaging&& staged)
 }
 
 Material MaterialAssetLoader::ResolveDescription(const MaterialDescription& desc,
-                                                 std::string_view path,
+                                                 std::string_view,
                                                  std::vector<TextureCacheHandle>& outOwned)
 {
     Material material;
-    material.Pass = ShaderPassId::ForwardOpaque;
+    // The one classification point: a material's pass is decided at load and
+    // consumers route on it, rather than each re-deriving it from AlphaMode.
+    material.Pass = desc.AlphaMode == MaterialAlphaMode::Blend
+        ? ShaderPassId::ForwardTransparent
+        : ShaderPassId::ForwardOpaque;
     material.Shading = desc.Shading;
     material.BaseColor = desc.BaseColorFactor;
     material.EmissiveFactor = desc.EmissiveFactor;
@@ -153,12 +157,6 @@ Material MaterialAssetLoader::ResolveDescription(const MaterialDescription& desc
     material.ReceiveShadows = desc.ReceiveShadows;
     material.CastShadows = desc.CastShadows;
 
-    if (material.AlphaMode == MaterialAlphaMode::Blend)
-    {
-        Log.Warn("MaterialAssetLoader: material '{}' uses alpha_mode 'blend'; "
-                 "transparent phase not implemented, rendering opaque",
-                 path);
-    }
 
     ResolveTextureSlot(desc.BaseColorTexture, /*srgb*/ true,
                        material.BaseColorTextureIndex, outOwned);

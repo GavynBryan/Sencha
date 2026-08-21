@@ -59,6 +59,25 @@ struct GoldenScene
         || (wayland != nullptr && wayland[0] != '\0');
 }
 
+// The runtime loads only cooked scenes, and .cooked/ is gitignored -- nothing
+// populates it, so a test that assumes it exists passes only on machines with
+// local leftovers. Cook the fixture on every run instead: it costs well under
+// a second per scene, and it puts the cook inside the net, which is where it
+// belongs -- a cook change that moves the image should fail this test.
+[[nodiscard]] bool CookScene(const GoldenScene& scene)
+{
+    const std::string command =
+        std::string("SENCHA_COOK_LEVEL=") + SENCHA_GOLDEN_CONTENT_ROOT + "/assets/"
+        + scene.Map + ".json"
+        + " SENCHA_COOK_ROOT=" + SENCHA_GOLDEN_CONTENT_ROOT + "/assets "
+        + SENCHA_GOLDEN_COOK + " --gtest_filter=CookLevel.Generate >/dev/null 2>&1";
+    std::system(command.c_str());
+
+    const std::filesystem::path cooked = std::filesystem::path(SENCHA_GOLDEN_CONTENT_ROOT)
+        / "assets" / ".cooked" / (std::string(scene.Map) + ".cooked.json");
+    return std::filesystem::exists(cooked);
+}
+
 // Renders `scene` and writes the capture to `output`. False when the run did
 // not produce a file, which is a failed render rather than a changed image.
 [[nodiscard]] bool RenderScene(const GoldenScene& scene, const std::filesystem::path& output)
@@ -118,6 +137,8 @@ void CheckScene(const GoldenScene& scene)
     const std::filesystem::path actual =
         ReferenceDir() / (std::string(scene.Name) + ".actual.png");
 
+    ASSERT_TRUE(CookScene(scene))
+        << "the level did not cook, so nothing below this describes the renderer";
     ASSERT_TRUE(RenderScene(scene, actual))
         << "the run produced no capture at all, so the renderer failed rather than changed";
 
@@ -161,4 +182,12 @@ void CheckScene(const GoldenScene& scene)
 TEST(GoldenImage, ShadowProbeSceneIsUnchanged)
 {
     CheckScene({ .Name = "shadow_probe", .Map = "levels/shadow_probe.level" });
+}
+
+// The same geometry through a blended default material: the transparent pass's
+// pixel proof. If blend ever silently falls back to opaque again, this frame
+// stops showing the background through the floor and the comparison fails.
+TEST(GoldenImage, BlendedMaterialStillBlends)
+{
+    CheckScene({ .Name = "transparency", .Map = "levels/golden_transparency.level" });
 }

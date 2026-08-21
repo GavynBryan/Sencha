@@ -10,7 +10,7 @@ unblocks it. Measurement artifacts for the executed work remain under
 
 | Item | State |
 |---|---|
-| Transparency pass | No blended pipeline exists. `MaterialAlphaMode::Blend` is accepted, warns at load, and renders opaque. `ShaderPassId` has one value |
+| Transparency limits | Blend works: per-view back-to-front, one draw per item, depth write off. What does not exist: order-independent transparency (sorting is per draw, so interpenetrating blended surfaces resolve by bounds-centre distance), and blended surfaces still cast full-silhouette shadows -- the same caster-material gap as Mask |
 | Alpha-tested shadow casters | The forward and debug passes discard, but shadows do not: `ShadowCasterItem` carries no material handle and the shadow vertex layout carries no UVs, so a masked surface casts an unmasked silhouette. Structural, and scheduled with the shadow work rather than with materials |
 | Post-processing pass | No post phase. Exposure and the tonemap shoulder run inside the forward fragment shader |
 | Directional lights and cascaded shadows | `GpuLightType::Directional` exists in the enum and the fragment loop skips it. Lands with the outdoor/sun need. The rule that baked AO must never contain sunlight is already recorded against that work |

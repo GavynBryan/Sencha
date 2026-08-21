@@ -52,7 +52,16 @@ std::uint32_t EmitMeshSections(const MeshDrawInstance& instance,
         item.LightmapTextureIndex = lightmapIndex;
         item.AoTextureIndex = aoIndex;
         item.LightmapScaleBias = instance.LightmapScaleBias;
-        queue.AddOpaque(item);
+        // Blend is a different pass, not a pipeline bit: order replaces state
+        // grouping as what the sort is for, so the item goes to the list whose
+        // order is decided per view. The loader classified the pass at load
+        // time; this routes on it. Mask stayed opaque -- it cuts fragments but
+        // writes depth like anything else.
+        item.Pass = material->Pass;
+        if (item.Pass == ShaderPassId::ForwardTransparent)
+            queue.AddTransparent(item);
+        else
+            queue.AddOpaque(item);
         ++emitted;
     }
     return emitted;
