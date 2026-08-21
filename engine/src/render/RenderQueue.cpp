@@ -95,6 +95,7 @@ void RenderQueue::SortOpaque()
                 OpaqueItems[OpaqueOrderIndices[OpaqueRunList.back().First]];
             if (item.Pipeline == head.Pipeline
                 && item.Mesh == head.Mesh
+                && item.SkinnedMesh == head.SkinnedMesh
                 && item.SectionIndex == head.SectionIndex
                 && item.Material == head.Material
                 && item.Pass == head.Pass

@@ -3,6 +3,7 @@
 #include <math/Mat.h>
 #include <math/geometry/3d/Aabb3d.h>
 #include <render/Material.h>
+#include <render/skinned_mesh/SkinnedMeshHandle.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 
 #include <cstddef>
@@ -58,6 +59,11 @@ inline constexpr uint8_t kOpaquePipelineMaskedBit = 4u;
 struct RenderQueueItem
 {
     StaticMeshHandle Mesh;
+    // Valid instead of Mesh for a skinned item (rest geometry resolved through
+    // SkinnedMeshCache). Part of the run-merge identity: the two handle spaces
+    // alias slot indices, so without it a static and a skinned item could
+    // merge into one run and draw the wrong geometry.
+    SkinnedMeshHandle SkinnedMesh;
     MaterialHandle Material;
     uint32_t SectionIndex = 0;
     Mat4 WorldMatrix = Mat4::Identity();

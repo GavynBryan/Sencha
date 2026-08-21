@@ -7,6 +7,7 @@
 #include <render/Material.h>
 #include <render/MaterialCache.h>
 #include <render/static_mesh/GpuStaticMesh.h>
+#include <render/skinned_mesh/SkinnedMeshHandle.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 
 #include <cstdint>
@@ -39,16 +40,19 @@ class RenderQueue;
 // says so, and UploadMeshGeometryToGpu serves StaticMeshCache and
 // SkinnedMeshCache alike).
 //
-// So when a skinned draw path lands, the thing to generalize is the queue
-// item's handle plus whatever discriminates the kind -- not this struct, which
-// would follow. That is deliberately not designed ahead of a second kind
-// existing: SkinnedMeshHandle, SkinnedMeshCache, and SkinnedMeshData are in the
-// asset layer today with no component and no pass, so the shape of the
-// generalization is not yet knowable from the tree.
+// The second kind exists now, and the generalization is the one this comment
+// predicted: the skinned handle rides beside the static one and discriminates
+// the residency to resolve through. Exactly one of the two is valid per
+// instance. At rest pose the skinned entry's rest geometry -- a GpuStaticMesh
+// like any other -- serves the draw; a posed path replaces where the vertices
+// come from, not this expansion.
 //=============================================================================
 struct MeshDrawInstance
 {
     StaticMeshHandle Mesh;
+    // Valid instead of Mesh for a skinned instance; the item resolves through
+    // SkinnedMeshCache. Never both.
+    SkinnedMeshHandle SkinnedMesh;
     Mat4 WorldMatrix = Mat4::Identity();
     Aabb3d WorldBounds = Aabb3d::Empty();
 

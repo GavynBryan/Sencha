@@ -1,5 +1,8 @@
 #include "DocumentFileActions.h"
 
+#include <core/console/ConsoleRegistry.h>
+#include <core/console/ConsoleTypes.h>
+
 #include "EditorDocument.h"
 #include "WorldDocument.h"
 #include "project/MaterialLibrary.h"
@@ -41,6 +44,43 @@ DocumentFileActions::DocumentFileActions(SdlWindow& window, WorldDocument& world
     , Materials(materials)
     , ContentRoots(std::move(contentRoots))
 {
+}
+
+void DocumentFileActions::RegisterCommands(ConsoleRegistry& registry)
+{
+    registry.RegisterCommand({
+        .Name = "editor.open",
+        .Owner = "editor",
+        .Usage = "editor.open <path>",
+        .Help = "Open a level or world document by path, without the file "
+                "dialog. Synchronous: the document is open when this returns, "
+                "so a startup script can cook it with the next command.",
+        .Callback = [this](ConsoleExecutionContext&,
+                           std::span<const std::string> args) {
+            ConsoleResult result;
+            if (args.size() != 1)
+            {
+                result.Status = ConsoleStatus::InvalidArguments;
+                result.Error("expected exactly one path");
+                return result;
+            }
+            const std::string& path = args[0];
+            const bool loaded = IsWorldPath(path)
+                ? World.LoadWorld(path)
+                : World.Load(path);
+            if (!loaded)
+            {
+                result.Status = ConsoleStatus::ExecutionFailed;
+                result.Error("could not open '" + path + "'");
+                return result;
+            }
+            RescanMaterials(path);
+            LogUnresolvedFaceMaterials(path);
+            UpdateTitle();
+            result.Info("opened '" + path + "'");
+            return result;
+        },
+    });
 }
 
 void DocumentFileActions::New()

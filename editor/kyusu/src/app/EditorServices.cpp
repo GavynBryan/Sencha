@@ -171,6 +171,7 @@ void EditorServices::BuildFileActions()
     Files = std::make_unique<DocumentFileActions>(
         *Window, Workspace->World, [this] { Workspace->ResolvePendingEdits(); },
         *Materials, std::move(contentRoots));
+    Files->RegisterCommands(engine.Console().Registry());
 }
 
 void EditorServices::BuildInput()

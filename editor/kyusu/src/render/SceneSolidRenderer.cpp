@@ -19,5 +19,7 @@ void SceneSolidRenderer::DrawViewport(const FrameContext& frame, const EditorVie
                                       const CameraRenderData& camera,
                                       const EditorScene&)
 {
+    // Brush cells are welded static geometry; the brush queue cannot carry a
+    // skinned item, so there is no skinned cache to hand here.
     Pass.Draw(frame, camera, Queues.Lights(), Queues.BrushQueue(), Meshes, Materials);
 }

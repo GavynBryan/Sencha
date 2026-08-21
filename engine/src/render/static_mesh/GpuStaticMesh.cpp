@@ -58,6 +58,35 @@ bool UploadMeshGeometryToGpu(VulkanBufferService& buffers,
     return true;
 }
 
+BufferHandle UploadVertexSideStreamToGpu(VulkanBufferService& buffers,
+                                         std::span<const std::byte> bytes,
+                                         const char* debugName,
+                                         Logger& log)
+{
+    if (bytes.empty())
+        return {};
+
+    BufferCreateInfo info{};
+    info.Size = bytes.size();
+    info.Usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    info.Memory = BufferMemory::GpuOnly;
+    info.DebugName = debugName;
+
+    const BufferHandle handle = buffers.Create(info);
+    if (!handle.IsValid())
+    {
+        log.Error("UploadVertexSideStreamToGpu: buffer creation failed ({})", debugName);
+        return {};
+    }
+    if (!buffers.Upload(handle, bytes.data(), info.Size))
+    {
+        log.Error("UploadVertexSideStreamToGpu: upload failed ({})", debugName);
+        buffers.Destroy(handle);
+        return {};
+    }
+    return handle;
+}
+
 void DestroyGpuMesh(VulkanBufferService& buffers, GpuStaticMesh& mesh)
 {
     if (mesh.VertexBuffer.IsValid())

@@ -489,7 +489,8 @@ void MeshForwardPass::BindFrameState(const FrameContext& frame, VkDeviceSize uni
 
 void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& queue,
                                StaticMeshCache& meshes, MaterialCache& materials,
-                               Vec4 tint, uint32_t streamedInstances)
+                               const SkinnedMeshCache* skinnedMeshes, Vec4 tint,
+                               uint32_t streamedInstances)
 {
     const std::vector<RenderQueueItem>& items = queue.Opaque();
     const std::vector<uint32_t>& order = queue.OpaqueOrder();
@@ -506,7 +507,9 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
         const uint32_t drawCount =
             std::min(run.Count, streamedInstances - run.First);
         const RenderQueueItem& item = items[order[run.First]];
-        const GpuStaticMesh* mesh = meshes.Get(item.Mesh);
+        const GpuStaticMesh* mesh = item.SkinnedMesh.IsValid()
+            ? (skinnedMeshes != nullptr ? skinnedMeshes->Get(item.SkinnedMesh) : nullptr)
+            : meshes.Get(item.Mesh);
         const Material* material = materials.Get(item.Material);
         if (mesh == nullptr || material == nullptr || item.SectionIndex >= mesh->Sections.size())
             continue;
@@ -581,7 +584,8 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
 
 void MeshForwardPass::DrawTransparent(const FrameContext& frame, const RenderQueue& queue,
                                       StaticMeshCache& meshes, MaterialCache& materials,
-                                      Vec4 tint, uint32_t streamedInstances)
+                                      const SkinnedMeshCache* skinnedMeshes, Vec4 tint,
+                                      uint32_t streamedInstances)
 {
     const std::vector<RenderQueueItem>& items = queue.Transparent();
     const uint32_t opaqueCount = static_cast<uint32_t>(queue.OpaqueOrder().size());
@@ -595,7 +599,9 @@ void MeshForwardPass::DrawTransparent(const FrameContext& frame, const RenderQue
             break;
 
         const RenderQueueItem& item = items[TransparentOrder[position]];
-        const GpuStaticMesh* mesh = meshes.Get(item.Mesh);
+        const GpuStaticMesh* mesh = item.SkinnedMesh.IsValid()
+            ? (skinnedMeshes != nullptr ? skinnedMeshes->Get(item.SkinnedMesh) : nullptr)
+            : meshes.Get(item.Mesh);
         const Material* material = materials.Get(item.Material);
         if (mesh == nullptr || material == nullptr
             || item.SectionIndex >= mesh->Sections.size())
@@ -669,6 +675,7 @@ void MeshForwardPass::Draw(const FrameContext& frame,
                            const RenderQueue& queue,
                            StaticMeshCache& meshes,
                            MaterialCache& materials,
+                           const SkinnedMeshCache* skinnedMeshes,
                            Vec4 tint)
 {
     LastStats = DrawStats{
@@ -739,8 +746,8 @@ void MeshForwardPass::Draw(const FrameContext& frame,
         vkCmdClearAttachments(frame.Cmd, 1, &clear, 1, &rect);
     }
 #endif
-    DrawRuns(frame, queue, meshes, materials, tint, streamed);
-    DrawTransparent(frame, queue, meshes, materials, tint, streamed);
+    DrawRuns(frame, queue, meshes, materials, skinnedMeshes, tint, streamed);
+    DrawTransparent(frame, queue, meshes, materials, skinnedMeshes, tint, streamed);
 }
 
 void MeshForwardPass::Teardown()

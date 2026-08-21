@@ -254,6 +254,58 @@ bool SceneFieldCodec<StaticMeshHandle>::Load(IReadArchive& archive,
     return archive.Ok();
 }
 
+bool SceneFieldCodec<SkinnedMeshHandle>::Save(IWriteArchive& archive,
+                                              std::string_view key,
+                                              SkinnedMeshHandle value,
+                                              SceneSerializationContext& context)
+{
+    if (!archive.IsText())
+        return RejectBinaryWrite(archive, key);
+
+    if (!context.Assets)
+    {
+        GetSceneLogger(context).Error("SceneFieldCodec<SkinnedMeshHandle>: missing AssetSystem for field '{}'", key);
+        archive.MarkInvalidField(key);
+        return false;
+    }
+
+    return WriteTypedAssetPath(archive, key, context.Assets->GetPathForSkinnedMesh(value), context);
+}
+
+bool SceneFieldCodec<SkinnedMeshHandle>::Load(IReadArchive& archive,
+                                              std::string_view key,
+                                              SkinnedMeshHandle& value,
+                                              SceneSerializationContext& context)
+{
+    if (!archive.IsText())
+        return RejectBinaryRead(archive, key);
+
+    std::string path;
+    if (!ReadTypedAssetPath(archive, key, AssetType::SkinnedMesh, path, context))
+        return false;
+
+    if (!context.Assets)
+    {
+        GetSceneLogger(context).Error("SceneFieldCodec<SkinnedMeshHandle>: missing AssetSystem for field '{}'", key);
+        archive.MarkInvalidField(key);
+        return false;
+    }
+
+    if (LacksCapability(AssetType::SkinnedMesh, context))
+        return archive.Ok();
+
+    value = context.Assets->LoadSkinnedMesh(path);
+    if (!value.IsValid())
+    {
+        GetSceneLogger(context).Error("SceneFieldCodec<SkinnedMeshHandle>: failed to load skinned mesh asset '{}'",
+                                      path);
+        archive.MarkInvalidField(key);
+        return false;
+    }
+
+    return archive.Ok();
+}
+
 bool SceneFieldCodec<MaterialHandle>::Save(IWriteArchive& archive,
                                            std::string_view key,
                                            MaterialHandle value,

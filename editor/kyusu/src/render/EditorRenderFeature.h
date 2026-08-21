@@ -203,6 +203,7 @@ private:
     RuntimeAssets*     RuntimeAssetsRef = nullptr;
     LoggingProvider*   LoggingRef = nullptr;
     StaticMeshCache*       MeshCache = nullptr;        // for the unconditional MeshQueue draw
+    const SkinnedMeshCache* SkinnedMeshCacheRef = nullptr; // rest-pose skinned draws, WYSIWYG
     MaterialCache*         MaterialStore = nullptr;
     bool                   MaterialPath = false;
     // Declared before the line renderers: they bind a reference to it at

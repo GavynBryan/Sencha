@@ -44,6 +44,11 @@ struct GoldenScene
 {
     const char* Name;
     const char* Map;
+    // Cook through the editor rather than the assetless level cook. A level
+    // that places assets by handle needs the asset-full cook: handles cannot
+    // reproduce their paths without their stores, and the editor is the
+    // process composed with all of them.
+    bool EditorCook = false;
 };
 
 [[nodiscard]] std::filesystem::path ReferenceDir()
@@ -64,13 +69,31 @@ struct GoldenScene
 // local leftovers. Cook the fixture on every run instead: it costs well under
 // a second per scene, and it puts the cook inside the net, which is where it
 // belongs -- a cook change that moves the image should fail this test.
-[[nodiscard]] bool CookScene(const GoldenScene& scene)
+// Fixtures the scenes place (the skinned rig) regenerate before every run, so
+// the artifacts always match the current format version instead of rotting as
+// committed bytes.
+[[nodiscard]] bool GenerateFixtures()
 {
     const std::string command =
-        std::string("SENCHA_COOK_LEVEL=") + SENCHA_GOLDEN_CONTENT_ROOT + "/assets/"
-        + scene.Map + ".json"
-        + " SENCHA_COOK_ROOT=" + SENCHA_GOLDEN_CONTENT_ROOT + "/assets "
-        + SENCHA_GOLDEN_COOK + " --gtest_filter=CookLevel.Generate >/dev/null 2>&1";
+        std::string("SENCHA_SKINNED_FIXTURE_ROOT=") + SENCHA_GOLDEN_CONTENT_ROOT + "/assets "
+        + SENCHA_GOLDEN_COOK + " --gtest_filter=SkinnedFixture.Generate >/dev/null 2>&1";
+    std::system(command.c_str());
+    return std::filesystem::exists(std::filesystem::path(SENCHA_GOLDEN_CONTENT_ROOT)
+                                   / "assets" / "meshes" / "dev" / "golden_rig.skmesh");
+}
+
+[[nodiscard]] bool CookScene(const GoldenScene& scene)
+{
+    const std::string authored = std::string(SENCHA_GOLDEN_CONTENT_ROOT) + "/assets/"
+        + scene.Map + ".json";
+    const std::string command = scene.EditorCook
+        ? std::string("SENCHA_PRESENT_MODE=IMMEDIATE ") + SENCHA_GOLDEN_EDITOR
+            + " --project " + SENCHA_GOLDEN_CONTENT_ROOT + "/project.senchaproj"
+            + " +editor.open " + authored
+            + " +cook full +set app.exit_after_frames 3000 >/dev/null 2>&1"
+        : std::string("SENCHA_COOK_LEVEL=") + authored
+            + " SENCHA_COOK_ROOT=" + SENCHA_GOLDEN_CONTENT_ROOT + "/assets "
+            + SENCHA_GOLDEN_COOK + " --gtest_filter=CookLevel.Generate >/dev/null 2>&1";
     std::system(command.c_str());
 
     const std::filesystem::path cooked = std::filesystem::path(SENCHA_GOLDEN_CONTENT_ROOT)
@@ -137,6 +160,8 @@ void CheckScene(const GoldenScene& scene)
     const std::filesystem::path actual =
         ReferenceDir() / (std::string(scene.Name) + ".actual.png");
 
+    ASSERT_TRUE(GenerateFixtures())
+        << "the skinned fixture did not generate, so the scenes cannot reference it";
     ASSERT_TRUE(CookScene(scene))
         << "the level did not cook, so nothing below this describes the renderer";
     ASSERT_TRUE(RenderScene(scene, actual))
@@ -182,6 +207,15 @@ void CheckScene(const GoldenScene& scene)
 TEST(GoldenImage, ShadowProbeSceneIsUnchanged)
 {
     CheckScene({ .Name = "shadow_probe", .Map = "levels/shadow_probe.level" });
+}
+
+// A rest-pose skinned mesh in a cooked level -- the P5 gate, permanent. The
+// red two-box column resolves through SkinnedMeshCache: component, codec,
+// cook, load, retain, extraction, and draw all have to hold for it to appear.
+TEST(GoldenImage, ARestPoseSkinnedMeshDraws)
+{
+    CheckScene({ .Name = "skinned_rest", .Map = "levels/golden_skinned.level",
+                 .EditorCook = true });
 }
 
 // The same geometry through a blended default material: the transparent pass's

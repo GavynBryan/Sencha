@@ -14,9 +14,11 @@ MeshRenderFeature::MeshRenderFeature(RenderQueue& queue,
                                      MaterialCache& materials,
                                      const CameraRenderData& camera,
                                      const RenderLightSet& lights,
-                                     std::shared_ptr<LightBindings> bindings)
+                                     std::shared_ptr<LightBindings> bindings,
+                                     const SkinnedMeshCache* skinnedMeshes)
     : Queue(&queue)
     , Meshes(&meshes)
+    , SkinnedMeshes(skinnedMeshes)
     , Materials(&materials)
     , Camera(&camera)
     , Lights(&lights)
@@ -51,7 +53,7 @@ void MeshRenderFeature::OnDraw(const FrameContext& frame)
         CpuScopeTimer timer(
             Instrumentation != nullptr ? Instrumentation->CpuScopes : nullptr,
             CpuScope::ForwardRecord);
-        Pass.Draw(frame, *Camera, *Lights, *Queue, *Meshes, *Materials);
+        Pass.Draw(frame, *Camera, *Lights, *Queue, *Meshes, *Materials, SkinnedMeshes);
     }
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     if (gpuScopes != nullptr)

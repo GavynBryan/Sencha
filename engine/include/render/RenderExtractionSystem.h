@@ -8,6 +8,7 @@
 #include <render/MaterialSetCache.h>
 #include <render/RenderQueue.h>
 #include <render/StaticMeshComponent.h>
+#include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <render/TextureHandle.h>
 #include <render/static_mesh/StaticMeshCache.h>
 #include <world/transform/TransformComponents.h>
@@ -78,6 +79,9 @@ struct RenderExtractCaches
     const MaterialCache& Materials;
     const MaterialSetCache& MaterialSets;
     const TextureCache* Textures = nullptr;
+    // Optional: without it, skinned components extract nothing and a scene of
+    // static meshes pays nothing.
+    const SkinnedMeshCache* SkinnedMeshes = nullptr;
 };
 
 //=============================================================================
@@ -126,6 +130,11 @@ private:
                         Without<WorldTransformHistory>>> CachedQuery;
     std::optional<Query<Read<WorldTransformHistory>,
                         Read<StaticMeshComponent>>> CachedInterpolatedQuery;
+    std::optional<Query<Read<WorldTransform>,
+                        Read<SkinnedMeshComponent>,
+                        Without<WorldTransformHistory>>> CachedSkinnedQuery;
+    std::optional<Query<Read<WorldTransformHistory>,
+                        Read<SkinnedMeshComponent>>> CachedSkinnedInterpolatedQuery;
     // Retained across frames so a steady-state extract allocates nothing; both
     // are rebuilt from scratch each call.
     std::vector<ZoneLightmapBinding> LightmapBindings;

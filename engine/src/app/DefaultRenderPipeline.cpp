@@ -55,9 +55,11 @@ DefaultRenderPipeline::DefaultRenderPipeline(LoggingProvider* logging,
 void DefaultRenderPipeline::SetAssetStores(StaticMeshCache& meshes,
                                            MaterialCache& materials,
                                            MaterialSetCache& materialSets,
-                                           TextureCache* textures)
+                                           TextureCache* textures,
+                                           const SkinnedMeshCache* skinnedMeshes)
 {
     Meshes = &meshes;
+    SkinnedMeshes = skinnedMeshes;
     Materials = &materials;
     MaterialSets = &materialSets;
     Textures = textures;
@@ -93,7 +95,8 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
         return false;
     }
     return graphics.MainRenderer.AddFeature(std::make_unique<MeshRenderFeature>(
-        Queue, *Meshes, *Materials, Camera, Lights, std::move(bindings))) != nullptr;
+        Queue, *Meshes, *Materials, Camera, Lights, std::move(bindings),
+        SkinnedMeshes)) != nullptr;
 #else
     (void)graphics;
     return false;
@@ -174,7 +177,7 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         CpuScopeTimer timer(scopes, CpuScope::Extraction);
         RenderExtractor.Extract(
             world, ctx.Partitions,
-            RenderExtractCaches{ *Meshes, *Materials, *MaterialSets, Textures },
+            RenderExtractCaches{ *Meshes, *Materials, *MaterialSets, Textures, SkinnedMeshes },
             Camera, Queue, ctx.Presentation.Alpha);
         Queue.SortOpaque();
     }

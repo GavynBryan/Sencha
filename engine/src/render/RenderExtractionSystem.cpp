@@ -132,10 +132,18 @@ void RenderExtractionSystem::Extract(
         BuildZoneLightmapTable(ResolvedLightmaps, LightmapTable);
     }
 
+    const bool skinnedRegistered = world.IsRegistered<SkinnedMeshComponent>();
     if (LastWorld != &world || !CachedQuery.has_value())
     {
         CachedQuery.emplace(world);
         CachedInterpolatedQuery.emplace(world);
+        CachedSkinnedQuery.reset();
+        CachedSkinnedInterpolatedQuery.reset();
+        if (skinnedRegistered)
+        {
+            CachedSkinnedQuery.emplace(world);
+            CachedSkinnedInterpolatedQuery.emplace(world);
+        }
         LastWorld = &world;
     }
 
@@ -200,6 +208,72 @@ void RenderExtractionSystem::Extract(
     {
         const auto histories = view.template Read<WorldTransformHistory>();
         emitChunk(view, [&](uint32_t i) {
+            return ResolvePresentationPose(histories[i], interpolationAlpha);
+        });
+    });
+
+    // Skinned instances, drawn at rest until a pose source exists: the entry's
+    // rest geometry is a GpuStaticMesh like any other, so the expansion is the
+    // same -- only the residency it resolves through differs. No lightmap and
+    // no atlas stamp: a skinned mesh is the canonical movable non-receiver.
+    const SkinnedMeshCache* skinnedMeshes = caches.SkinnedMeshes;
+    if (skinnedMeshes == nullptr || !skinnedRegistered)
+        return;
+
+    const auto emitSkinnedChunk = [&](auto& view, auto&& poseAt)
+    {
+        const auto renderers = view.template Read<SkinnedMeshComponent>();
+
+        for (uint32_t i = 0; i < view.Count(); ++i)
+        {
+            const SkinnedMeshComponent& renderer = renderers[i];
+            if (!renderer.Visible)
+                continue;
+
+            if (view.Entity(i) == camera.ExcludedEntity)
+                continue;
+
+            const GpuStaticMesh* mesh = skinnedMeshes->Get(renderer.Mesh);
+            const std::vector<MaterialHandle>* sectionMaterials =
+                materialSets.Get(renderer.Materials);
+            if (mesh == nullptr || sectionMaterials == nullptr
+                || sectionMaterials->empty())
+            {
+                continue;
+            }
+
+            const Mat4 worldMatrix = poseAt(i).ToMat4();
+            const Aabb3d worldBounds =
+                TransformAabb(mesh->LocalBounds, worldMatrix);
+            if (!camera.ViewFrustum.IntersectsAabb(worldBounds))
+                continue;
+
+            const Vec4 cameraSpaceCenter = camera.View * Vec4(
+                worldBounds.Center().X,
+                worldBounds.Center().Y,
+                worldBounds.Center().Z,
+                1.0f);
+
+            MeshDrawInstance instance;
+            instance.SkinnedMesh = renderer.Mesh;
+            instance.WorldMatrix = worldMatrix;
+            instance.WorldBounds = worldBounds;
+            instance.SectionMask = renderer.SectionMask;
+            instance.CameraDepth = -cameraSpaceCenter.Z;
+            EmitMeshSections(instance, *mesh, *sectionMaterials, materials, queue);
+        }
+    };
+
+    CachedSkinnedQuery->ForEachChunkIn(partitions, [&](auto& view)
+    {
+        const auto transforms = view.template Read<WorldTransform>();
+        emitSkinnedChunk(view, [&](uint32_t i) -> const Transform3f& { return transforms[i].Value; });
+    });
+
+    CachedSkinnedInterpolatedQuery->ForEachChunkIn(partitions, [&](auto& view)
+    {
+        const auto histories = view.template Read<WorldTransformHistory>();
+        emitSkinnedChunk(view, [&](uint32_t i) {
             return ResolvePresentationPose(histories[i], interpolationAlpha);
         });
     });

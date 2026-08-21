@@ -39,6 +39,11 @@ exactly how the first version of this harness shipped. The cook being inside
 the net is also correct on its own terms: a cook change that moves the image
 should fail here.
 
+Scenes that place assets by handle (the skinned rig) cook through the editor
+instead -- `kyusu +editor.open <level> +cook full` -- because a handle cannot
+reproduce its path without its store, and the editor is the process composed
+with all of them. The assetless cook is for brush-only levels.
+
 ## When it fails
 
 One of two things is true, and only a person can say which.

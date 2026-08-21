@@ -6,6 +6,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <render/skinned_mesh/SkinnedMeshData.h>
 #include <render/skinned_mesh/SkinnedMeshHandle.h>
+#include <graphics/BufferHandle.h>
 #include <render/static_mesh/GpuStaticMesh.h>
 
 #include <cstdint>
@@ -28,6 +29,11 @@ struct SkinnedMeshEntry
 {
     GpuStaticMesh Mesh;          // rest geometry on the GPU
     MeshSkinning Skinning;       // CPU influence stream + joint count (Decision N)
+    // The influence stream on the GPU, parallel to the vertex buffer. Created
+    // with both vertex-attribute and storage usage because Decision N has not
+    // chosen between vertex-shader skinning and compute pre-skin -- the flags
+    // are free, and either consumer binds this buffer as it is.
+    BufferHandle Influences;
     SkeletonCacheHandle OwnedSkeleton; // releasing the mesh releases the skeleton
 
     uint32_t Generation = 0;

@@ -70,6 +70,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     if (runtimeAssets != nullptr)
     {
         MeshCache = runtimeAssets->StaticMeshes.get();
+        SkinnedMeshCacheRef = runtimeAssets->SkinnedMeshes.get();
         MaterialStore = &runtimeAssets->Materials;
         QueueBuilder.emplace(runtimeAssets->Assets, *runtimeAssets->StaticMeshes,
                              runtimeAssets->Materials, runtimeAssets->MaterialSets,
@@ -495,7 +496,8 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
                         contextLights.DebugView = WorldView.DebugViewMode;
     #endif
                         Forward.Draw(local, camera, contextLights,
-                                     it->second->BrushQueue(), *MeshCache, *MaterialStore);
+                                     it->second->BrushQueue(), *MeshCache, *MaterialStore,
+                                     SkinnedMeshCacheRef);
                         // Placed meshes cannot receive the brush-triangle wash, so
                         // the overlay folds into their multiply tint instead (exact
                         // on white, close on bright textures).
@@ -505,7 +507,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
                                            1.0f - wash.W + wash.Z * wash.W, 1.0f);
                         Forward.Draw(local, camera, contextLights,
                                      it->second->MeshQueue(), *MeshCache, *MaterialStore,
-                                     meshDim);
+                                     SkinnedMeshCacheRef, meshDim);
                         BrushFills.DrawZoneOverlay(local, viewport, camera, contextScene,
                                                    EditorTheme::ContextZoneOverlay);
                     }
@@ -530,7 +532,8 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         // the real-material queue when active, else the procedural-checker fallback.
         if (MaterialPath)
             Forward.Draw(local, camera, QueueBuilder->Lights(),
-                         QueueBuilder->MeshQueue(), *MeshCache, *MaterialStore);
+                         QueueBuilder->MeshQueue(), *MeshCache, *MaterialStore,
+                         SkinnedMeshCacheRef);
         else
             Meshes.DrawViewport(local, viewport, camera, scene);
         Visuals.DrawViewport(local, viewport, camera, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));

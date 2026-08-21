@@ -14,6 +14,7 @@
 #include <render/ShadowCasterExtractionSystem.h>
 #include <render/ShadowCasterSet.h>
 #include <render/ShadowResidency.h>
+#include <render/skinned_mesh/SkinnedMeshCache.h>
 #include <render/static_mesh/StaticMeshCache.h>
 
 #include <vector>
@@ -43,7 +44,8 @@ public:
 
     void SetAssetStores(StaticMeshCache& meshes, MaterialCache& materials,
                         MaterialSetCache& materialSets,
-                        TextureCache* textures = nullptr);
+                        TextureCache* textures = nullptr,
+                        const SkinnedMeshCache* skinnedMeshes = nullptr);
     bool AddMeshRenderFeature(GraphicsServices& graphics);
     void ExtractRender(RenderExtractContext& ctx);
 
@@ -81,6 +83,7 @@ private:
     std::vector<PointShadowRequest> PointShadowRequests;
     CameraRenderData Camera;
     StaticMeshCache* Meshes = nullptr;
+    const SkinnedMeshCache* SkinnedMeshes = nullptr;
     MaterialCache* Materials = nullptr;
     MaterialSetCache* MaterialSets = nullptr;
     TextureCache* Textures = nullptr;

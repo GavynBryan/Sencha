@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+class ConsoleRegistry;
 class SdlWindow;
 class WorldDocument;
 class EditorDocument;
@@ -26,6 +27,12 @@ public:
     DocumentFileActions(SdlWindow& window, WorldDocument& world,
                         std::function<void()> resolvePendingEdits,
                         MaterialLibrary& materials, std::vector<std::string> contentRoots);
+
+    // Console surface: editor.open <path>, the scriptable half of RequestOpen.
+    // An unattended cook needs to open a document without a file dialog, and
+    // the console runs on the main thread, so the load is synchronous -- a
+    // startup script's next command sees the document already open.
+    void RegisterCommands(ConsoleRegistry& registry);
 
     void New();
     void NewWorld();

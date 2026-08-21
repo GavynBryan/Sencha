@@ -7,6 +7,7 @@
 #include <core/text/InlineString.h>
 #include <render/Material.h>
 #include <render/MaterialSetCache.h>
+#include <render/skinned_mesh/SkinnedMeshHandle.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 #include <render/TextureHandle.h>
 #include <world/serialization/SceneSerializationContext.h>
@@ -55,6 +56,20 @@ struct SceneFieldCodec<StaticMeshHandle>
     static bool Load(IReadArchive& archive,
                      std::string_view key,
                      StaticMeshHandle& value,
+                     SceneSerializationContext& context);
+};
+
+template<>
+struct SceneFieldCodec<SkinnedMeshHandle>
+{
+    static bool Save(IWriteArchive& archive,
+                     std::string_view key,
+                     SkinnedMeshHandle value,
+                     SceneSerializationContext& context);
+
+    static bool Load(IReadArchive& archive,
+                     std::string_view key,
+                     SkinnedMeshHandle& value,
                      SceneSerializationContext& context);
 };
 

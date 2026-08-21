@@ -4,6 +4,7 @@
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
 #include <render/StaticMeshComponent.h>
+#include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <render/ZoneLightmapComponent.h>
 #include <world/ComponentRegistrar.h>
 
@@ -13,6 +14,7 @@
 inline void RegisterRenderComponents(ComponentRegistrar& registrar)
 {
     registrar.Add<StaticMeshComponent>();
+    registrar.Add<SkinnedMeshComponent>();
     registrar.Add<ZoneLightmapComponent>();
     registrar.Add<IrradianceVolumeComponent>();
     registrar.Add<PointLightComponent>();

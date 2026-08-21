@@ -3,6 +3,7 @@
 #include <audio/AudioSourceComponent.h>
 #include <components/ActiveCameraService.h>
 #include <render/StaticMeshComponent.h>
+#include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <render/ZoneLightmapComponent.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
@@ -16,7 +17,8 @@ void InitializeSceneRegistry(
     AudioClipCache* audioClips,
     AudioService* audio,
     CaptionRuntime* captions,
-    TextureCache* textures)
+    TextureCache* textures,
+    SkinnedMeshCache* skinnedMeshes)
 {
     registry.Resources.Register<ActiveCameraService>();
     // The same feature registrars the runtime composes its sealed vocabulary
@@ -27,6 +29,9 @@ void InitializeSceneRegistry(
     RegisterEngineComponents(components);
     registry.Components.AddResource<StaticMeshComponentAssets>(
         meshes,
+        materialSets);
+    registry.Components.AddResource<SkinnedMeshComponentAssets>(
+        skinnedMeshes,
         materialSets);
     registry.Components.AddResource<ZoneLightmapComponentAssets>(textures);
     registry.Components.AddResource<AudioSourceRuntime>(

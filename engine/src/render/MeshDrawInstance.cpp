@@ -38,6 +38,7 @@ std::uint32_t EmitMeshSections(const MeshDrawInstance& instance,
 
         RenderQueueItem item{};
         item.Mesh = instance.Mesh;
+        item.SkinnedMesh = instance.SkinnedMesh;
         item.Material = materialHandle;
         item.SectionIndex = sectionIndex;
         item.WorldMatrix = instance.WorldMatrix;

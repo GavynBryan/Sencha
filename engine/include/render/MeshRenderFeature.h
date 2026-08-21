@@ -22,7 +22,8 @@ public:
                       MaterialCache& materials,
                       const CameraRenderData& camera,
                       const RenderLightSet& lights,
-                      std::shared_ptr<LightBindings> bindings);
+                      std::shared_ptr<LightBindings> bindings,
+                      const SkinnedMeshCache* skinnedMeshes = nullptr);
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::MainColor; }
     [[nodiscard]] bool Setup(const RendererServices& services) override;
@@ -32,6 +33,7 @@ public:
 private:
     RenderQueue* Queue = nullptr;
     StaticMeshCache* Meshes = nullptr;
+    const SkinnedMeshCache* SkinnedMeshes = nullptr;
     MaterialCache* Materials = nullptr;
     const CameraRenderData* Camera = nullptr;
     const RenderLightSet* Lights = nullptr;

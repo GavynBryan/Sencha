@@ -209,6 +209,9 @@ void SceneViewerGame::OnStart(GameStartupContext&)
     world.AddResource<StaticMeshComponentAssets>(
         runtimeAssets.StaticMeshes.get(),
         &runtimeAssets.MaterialSets);
+    world.AddResource<SkinnedMeshComponentAssets>(
+        runtimeAssets.SkinnedMeshes.get(),
+        &runtimeAssets.MaterialSets);
     world.AddResource<ZoneLightmapComponentAssets>(
         runtimeAssets.Textures.get());
     world.AddResource<AudioSourceRuntime>(
@@ -244,7 +247,8 @@ void SceneViewerGame::OnStart(GameStartupContext&)
             *runtimeAssets.StaticMeshes,
             runtimeAssets.Materials,
             runtimeAssets.MaterialSets,
-            runtimeAssets.Textures.get());
+            runtimeAssets.Textures.get(),
+            runtimeAssets.SkinnedMeshes.get());
         pipeline->AddMeshRenderFeature(graphics);
     }
 

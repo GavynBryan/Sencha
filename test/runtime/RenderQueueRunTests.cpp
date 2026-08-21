@@ -48,3 +48,24 @@ TEST(RenderQueueRuns, DifferentAtlasIndicesSplitRuns)
         totalItems += run.Count;
     EXPECT_EQ(totalItems, 3u);
 }
+
+TEST(RenderQueueRuns, DifferentSkinnedMeshesNeverMergeIntoOneRun)
+{
+    // Skinned items carry a null static handle, so the static-mesh equality
+    // that splits every other pair is blind to them: two different skinned
+    // meshes with the same material and pipeline agree on every static field.
+    // Only the skinned handle in the run-merge identity keeps them apart --
+    // merged, one of them would draw with the other's geometry.
+    RenderQueueItem first;
+    first.SkinnedMesh = SkinnedMeshHandle{ 7, 1 };
+    RenderQueueItem second;
+    second.SkinnedMesh = SkinnedMeshHandle{ 8, 1 };
+
+    RenderQueue queue;
+    queue.AddOpaque(first);
+    queue.AddOpaque(second);
+    queue.SortOpaque();
+
+    ASSERT_EQ(queue.OpaqueRuns().size(), 2u)
+        << "two different skinned meshes collapsed into one instanced draw";
+}

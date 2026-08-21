@@ -9,6 +9,7 @@
 #include <render/MaterialCache.h>
 #include <render/RenderLight.h>
 #include <render/RenderQueue.h>
+#include <render/skinned_mesh/SkinnedMeshCache.h>
 #include <render/static_mesh/StaticMeshCache.h>
 
 #include <array>
@@ -127,12 +128,16 @@ public:
     // least dummy-backed) before this call, or the pass stays inert and
     // draws nothing.
     void Setup(const RendererServices& services, LightBindings& bindings);
+    // `skinnedMeshes` resolves items whose SkinnedMesh handle is valid (rest
+    // geometry today); null makes those items skip, and a host with no skinned
+    // content passes nothing.
     void Draw(const FrameContext& frame,
               const CameraRenderData& camera,
               const RenderLightSet& lights,
               const RenderQueue& queue,
               StaticMeshCache& meshes,
               MaterialCache& materials,
+              const SkinnedMeshCache* skinnedMeshes = nullptr,
               Vec4 tint = Vec4{ 1.0f, 1.0f, 1.0f, 1.0f });
     void Teardown();
 
@@ -176,13 +181,15 @@ private:
     // Draws are clipped to `streamedInstances`: a run past the stream has no
     // instance data to read.
     void DrawRuns(const FrameContext& frame, const RenderQueue& queue,
-                  StaticMeshCache& meshes, MaterialCache& materials, Vec4 tint,
+                  StaticMeshCache& meshes, MaterialCache& materials,
+                  const SkinnedMeshCache* skinnedMeshes, Vec4 tint,
                   uint32_t streamedInstances);
     // One draw per item, in TransparentOrder, never merged: instances inside
     // one draw have no order against each other, and order is the contract.
     void DrawTransparent(const FrameContext& frame, const RenderQueue& queue,
                          StaticMeshCache& meshes, MaterialCache& materials,
-                         Vec4 tint, uint32_t streamedInstances);
+                         const SkinnedMeshCache* skinnedMeshes, Vec4 tint,
+                         uint32_t streamedInstances);
 
     VulkanBufferService* Buffers = nullptr;
     VulkanDescriptorCache* Descriptors = nullptr;
