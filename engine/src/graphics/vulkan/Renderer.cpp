@@ -83,6 +83,7 @@ Renderer::Renderer(LoggingProvider& logging,
     DepthTarget = std::make_unique<VulkanDepthTarget>(images, physicalDevice);
     DepthTarget->Create(swapchain.GetExtent());
     Services.DepthFormat = DepthTarget->GetFormat();
+    ImageCapture.Setup(Services);
     Valid = true;
 }
 
@@ -95,6 +96,9 @@ Renderer::~Renderer()
     // samplers), so no submitted frame may still be executing when they do.
     if (Services.Device != nullptr && Services.Device->GetDevice() != VK_NULL_HANDLE)
         vkDeviceWaitIdle(Services.Device->GetDevice());
+    // After the wait, so a capture recorded on the last frame still reaches
+    // disk instead of being dropped on the way out.
+    ImageCapture.Teardown();
     for (auto& feature : OwnedFeatures)
     {
         if (feature) feature->Teardown();
@@ -207,6 +211,11 @@ RenderFrameResult Renderer::DrawFrameScheduled()
         stats.ScratchAllocFailures = Services.Scratch->GetFailedAllocationCount();
     }
 
+    // After EndFrame, so the frame that carried the copy has been submitted and
+    // the retirement clock can start reporting it done.
+    ImageCapture.Drain(Frames.GetRetirement());
+    ++FramesDrawn;
+
     const VulkanFrameStatus end = Frames.EndFrame(frame);
     LastTiming.TotalSeconds = SecondsSince(totalStart);
     if (end == VulkanFrameStatus::SwapchainOutOfDate
@@ -224,6 +233,26 @@ RenderFrameResult Renderer::DrawFrameScheduled()
         return RenderFrameResult::Failed;
     }
     return RenderFrameResult::Presented;
+}
+
+FrameContext Renderer::MakeCaptureContext(const VulkanFrame& frame) const
+{
+    FrameContext context;
+    context.Cmd = frame.CommandBuffer;
+    context.FrameInFlightIndex = frame.FrameIndex;
+    context.TargetExtent = frame.SwapchainExtent;
+    context.TargetFormat = frame.SwapchainFormat;
+    context.Phase = RenderPhase::MainColor;
+    context.Retirement = Frames.GetRetirement();
+    return context;
+}
+
+bool Renderer::CaptureFrame(std::string path, std::uint64_t atFrame)
+{
+    if (!Swapchain.AreImagesCapturable())
+        return false;
+    ImageCapture.Request(std::move(path), atFrame);
+    return true;
 }
 
 void Renderer::NotifySwapchainRecreated()
@@ -335,6 +364,11 @@ void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
     }
 
     vkCmdEndRendering(frame.CommandBuffer);
+
+    // Before the present transition, with the image still a colour attachment:
+    // this is the finished frame, and capture leaves the layout as it found it.
+    ImageCapture.Record(MakeCaptureContext(frame), FramesDrawn, frame.SwapchainImage,
+                        frame.SwapchainExtent, frame.SwapchainFormat);
 
     VulkanBarriers::TransitionFromColorAttachmentToPresent(
         frame.CommandBuffer, frame.SwapchainImage);

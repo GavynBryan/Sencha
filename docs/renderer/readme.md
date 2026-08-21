@@ -51,6 +51,7 @@ Read in this order on a first pass.
 | [resources.md](resources.md) | Meshes, materials, material sets, textures, bindless slots, ref-counting and hot reload |
 | [shaders.md](shaders.md) | GLSL layout, include topology, offline compile and embed, CPU/GPU struct contracts, specialization |
 | [instrumentation.md](instrumentation.md) | Profile mode ladder, counters, CPU and GPU scopes, capture export, debug views, the bench harness |
+| [golden-images.md](golden-images.md) | The pixel-level regression net: what it catches that headless tests cannot, and what to do when it fails |
 | [constraints.md](constraints.md) | Hard limits, invariants, traps, determinism and portability rules |
 | [extending.md](extending.md) | Step-by-step recipes: new feature, new pass, new shader, new material parameter, new counter, new debug view |
 | [open-work.md](open-work.md) | Known gaps carried forward from the executed renderer plans, with what each is blocked on |
@@ -111,6 +112,12 @@ cd template && SENCHA_PRESENT_MODE=IMMEDIATE \
   ../build/example/SceneViewer/app +map levels/shadow_probe.level \
   +set app.exit_after_frames 300 2>&1 | grep -E 'VUID-|Validation Error'
 ```
+
+**A clean validation run says nothing about the picture.** The layers check API
+misuse, not whether the right pixels came out, and most of this renderer's draw
+paths are content-dependent -- an editor booted with no document reaches almost
+none of them. `render_golden_tests` is the detector that does look at the image;
+see [golden-images.md](golden-images.md).
 
 **Prove the instrument before trusting a clean result.** A clean run and a run
 that never executed your code look identical. Either drop a temporary `printf`

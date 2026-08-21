@@ -42,6 +42,10 @@ public:
 
     [[nodiscard]] bool IsValid() const { return Swapchain != VK_NULL_HANDLE; }
     [[nodiscard]] VkSwapchainKHR GetSwapchain() const { return Swapchain; }
+    // Whether presented images can be read back (the surface offered
+    // TRANSFER_SRC). False leaves frame capture unavailable rather than broken.
+    [[nodiscard]] bool AreImagesCapturable() const { return CapturableImages; }
+
     [[nodiscard]] VkFormat GetFormat() const { return Format; }
     [[nodiscard]] VkColorSpaceKHR GetColorSpace() const { return ColorSpace; }
     [[nodiscard]] VkPresentModeKHR GetPresentMode() const { return PresentMode; }
@@ -58,6 +62,8 @@ public:
     bool Recreate(WindowExtent desiredExtent);
 
 private:
+    bool CapturableImages = false;
+
     struct SwapchainSupport
     {
         VkSurfaceCapabilitiesKHR Capabilities{};

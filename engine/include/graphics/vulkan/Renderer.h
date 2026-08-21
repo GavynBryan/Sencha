@@ -1,6 +1,9 @@
 #pragma once
 
+#include <string>
+
 #include <core/logging/LoggingProvider.h>
+#include <graphics/vulkan/FrameImageCapture.h>
 #include <graphics/vulkan/VulkanFrameService.h>
 #include <vulkan/vulkan.h>
 
@@ -197,7 +200,23 @@ public:
         Services.Instrumentation = instrumentation;
     }
 
+    // Write a presented frame to `path` as a PNG, once this renderer has drawn
+    // `atFrame` of them. False when the surface did not offer readback usage,
+    // in which case nothing is armed.
+    [[nodiscard]] bool CaptureFrame(std::string path, std::uint64_t atFrame);
+
+    // Frames this renderer has drawn. Monotonic and its own count: the loop
+    // above it counts driven frames, which includes the ones that resized or
+    // rebuilt a swapchain instead of rendering.
+    [[nodiscard]] std::uint64_t GetFramesDrawn() const { return FramesDrawn; }
+
 private:
+    // The context handed to frame capture: the same command buffer and clock
+    // the features saw, without the attachment fields, which describe a scope
+    // that has already closed by the time the frame is copied.
+    [[nodiscard]] FrameContext MakeCaptureContext(const VulkanFrame& frame) const;
+
+
     Logger& Log;
     VulkanSwapchainService& Swapchain;
     VulkanFrameService& Frames;
@@ -210,6 +229,8 @@ private:
     std::unique_ptr<VulkanDepthTarget> DepthTarget;
     VkImageLayout DepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     RendererFrameTiming LastTiming;
+    FrameImageCapture ImageCapture;
+    std::uint64_t FramesDrawn = 0;
 
     // Validates phase, runs Setup(), pushes into OwnedFeatures/PhaseBuckets.
     // Returns the raw pointer on success, nullptr on failure.
