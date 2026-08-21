@@ -5,6 +5,10 @@ layout(location = 3) in vec3 inWorldTangent;
 layout(location = 4) in float inTangentSign;
 layout(location = 5) in vec2 inLightmapUv;
 
+// The one GLSL mirror of MeshPushConstants (render/MeshForwardPass.h), whose
+// static asserts pin every offset. Fragment-only by contract -- the pass
+// declares its push range for this stage alone, so a vertex shader cannot
+// grow a second copy without widening that range first.
 layout(push_constant) uniform MeshPush
 {
     vec4 BaseColor;

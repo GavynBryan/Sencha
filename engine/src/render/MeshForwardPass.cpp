@@ -72,22 +72,47 @@ static_assert(offsetof(MeshInstanceData, World) == 0);
 static_assert(offsetof(MeshInstanceData, LightmapScaleBias) == 64);
 static_assert(sizeof(MeshInstanceData) == 80);
 
+// The frame block's layout contract, in chained form: each field starts where
+// the previous one ends, which is the std140 property the GLSL mirror relies on
+// -- the compiler inserted no padding of its own, only the explicit pad
+// members. Chained rather than absolute so that inserting a field (a cascade
+// array is the expected one) renumbers nothing below it; the absolute anchors
+// are the first field and the total size at the end, and only the size is a
+// conscious edit on insertion.
 static_assert(offsetof(MeshFrameUniforms, ViewProjection) == 0);
-static_assert(offsetof(MeshFrameUniforms, ViewPositionTime) == 64);
-static_assert(offsetof(MeshFrameUniforms, AmbientSky) == 80);
-static_assert(offsetof(MeshFrameUniforms, AmbientGround) == 96);
-static_assert(offsetof(MeshFrameUniforms, StyleParams) == 112);
-static_assert(offsetof(MeshFrameUniforms, LightCount) == 128);
-static_assert(offsetof(MeshFrameUniforms, TonemapEnabled) == 132);
-static_assert(offsetof(MeshFrameUniforms, ShadowDarkness) == 136);
-static_assert(offsetof(MeshFrameUniforms, Lights) == 144);
-static_assert(offsetof(MeshFrameUniforms, SpotShadowCount) == 4240);
-static_assert(offsetof(MeshFrameUniforms, SpotShadows) == 4256);
-static_assert(offsetof(MeshFrameUniforms, PointShadowCount) == 5024);
-static_assert(offsetof(MeshFrameUniforms, PointShadows) == 5040);
-static_assert(offsetof(MeshFrameUniforms, ProbeVolumeCount) == 5168);
-static_assert(offsetof(MeshFrameUniforms, ProbeVolumes) == 5184);
-static_assert(offsetof(MeshFrameUniforms, DebugView) == 5696);
+static_assert(offsetof(MeshFrameUniforms, ViewPositionTime)
+              == offsetof(MeshFrameUniforms, ViewProjection) + sizeof(Mat4));
+static_assert(offsetof(MeshFrameUniforms, AmbientSky)
+              == offsetof(MeshFrameUniforms, ViewPositionTime) + sizeof(Vec4));
+static_assert(offsetof(MeshFrameUniforms, AmbientGround)
+              == offsetof(MeshFrameUniforms, AmbientSky) + sizeof(Vec4));
+static_assert(offsetof(MeshFrameUniforms, StyleParams)
+              == offsetof(MeshFrameUniforms, AmbientGround) + sizeof(Vec4));
+static_assert(offsetof(MeshFrameUniforms, LightCount)
+              == offsetof(MeshFrameUniforms, StyleParams) + sizeof(Vec4));
+// Four scalars -- LightCount, TonemapEnabled, ShadowDarkness, BakedDirectEnabled
+// -- fill one 16-byte slot, so the light array lands aligned with no hidden pad.
+static_assert(offsetof(MeshFrameUniforms, Lights)
+              == offsetof(MeshFrameUniforms, LightCount) + 4 * sizeof(std::uint32_t));
+static_assert(offsetof(MeshFrameUniforms, SpotShadowCount)
+              == offsetof(MeshFrameUniforms, Lights) + sizeof(GpuLight) * kMaxForwardLights);
+// Count plus three more scalars (BakedAoEnabled and two pads) per section, so
+// each array starts on the 16-byte boundary std140 gives its GLSL twin.
+static_assert(offsetof(MeshFrameUniforms, SpotShadows)
+              == offsetof(MeshFrameUniforms, SpotShadowCount) + 4 * sizeof(std::uint32_t));
+static_assert(offsetof(MeshFrameUniforms, PointShadowCount)
+              == offsetof(MeshFrameUniforms, SpotShadows)
+                     + sizeof(GpuSpotShadow) * kMaxSpotShadows);
+static_assert(offsetof(MeshFrameUniforms, PointShadows)
+              == offsetof(MeshFrameUniforms, PointShadowCount) + 4 * sizeof(std::uint32_t));
+static_assert(offsetof(MeshFrameUniforms, ProbeVolumeCount)
+              == offsetof(MeshFrameUniforms, PointShadows)
+                     + sizeof(GpuPointShadow) * kMaxPointShadows);
+static_assert(offsetof(MeshFrameUniforms, ProbeVolumes)
+              == offsetof(MeshFrameUniforms, ProbeVolumeCount) + 4 * sizeof(std::uint32_t));
+static_assert(offsetof(MeshFrameUniforms, DebugView)
+              == offsetof(MeshFrameUniforms, ProbeVolumes)
+                     + sizeof(GpuProbeVolume) * kMaxActiveProbeVolumes);
 static_assert(sizeof(GpuSpotShadow) == 96);
 static_assert(offsetof(GpuSpotShadow, ViewProjection) == 0);
 static_assert(offsetof(GpuSpotShadow, AtlasScaleBias) == 64);
@@ -129,8 +154,12 @@ void MeshForwardPass::Setup(const RendererServices& services, LightBindings& bin
     if (!bindings.IsValid())
         return;
 
+    // Fragment only. The vertex stage carried a copy of the block for years
+    // without reading a field of it, and the copy drifted -- stale names over
+    // the right offsets. One mirror, one stage: a vertex-stage consumer must
+    // widen this *and* the vkCmdPushConstants flags below together.
     VkPushConstantRange push{};
-    push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    push.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     push.offset = 0;
     push.size = sizeof(MeshPushConstants);
 
@@ -465,8 +494,7 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
 
         // Push constants are layout-scoped rather than pipeline-scoped, so
         // this is independent of whatever the submitter decides to rebind.
-        vkCmdPushConstants(frame.Cmd, PipelineLayout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+        vkCmdPushConstants(frame.Cmd, PipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(push), &push);
         ++LastStats.MaterialSwitches;
 

@@ -14,24 +14,6 @@ layout(location = 7) in vec4 inTangent;
 layout(location = 8) in vec2 inLightmapUv;        // unorm16 atlas UV
 layout(location = 9) in vec4 inLightmapScaleBias; // per-instance rect remap
 
-layout(push_constant) uniform MeshPush
-{
-    vec4 BaseColor;
-    vec4 EmissiveFactor;
-    float NormalScale;
-    float RoughnessFactor;
-    float MetallicFactor;
-    float SpecularIntensity;
-    uint BaseColorTextureIndex;
-    uint NormalTextureIndex;
-    uint OrmTextureIndex;
-    uint EmissiveTextureIndex;
-    uint ReceiveShadows;
-    uint LightmapTextureIndex;
-    uint Pad1;
-    uint Pad2;
-} pushData;
-
 layout(location = 0) out vec3 outWorldNormal;
 layout(location = 1) out vec2 outUv0;
 layout(location = 2) out vec3 outWorldPos;

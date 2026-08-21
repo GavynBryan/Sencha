@@ -328,15 +328,18 @@ the material.
 2. **`.smat` schema and loader**: add the field so it round-trips. New fields
    need an explicit default or previously cooked assets fail to load.
 3. **`MeshPushConstants`** (`engine/include/render/MeshForwardPass.h`): add the
-   field. Watch std140 alignment; the struct is 80 bytes today, with one
-   `uint32` pad slot left at offset 76.
+   field. Watch std140 alignment; the struct is a full 80 bytes today, so a new
+   field grows it -- there is room, the budget is the 128-byte guaranteed
+   minimum and the block is pushed for the fragment stage only.
 4. **`static_assert` block** in `engine/src/render/MeshForwardPass.cpp`: add an
    offset assert for the new field and update `sizeof`.
 5. **`MeshForwardPass::DrawRuns`**: copy the field out of the `Material` into
    the push struct.
-6. **`mesh_material.glsli` and `mesh_forward.vert.glsl`**: add the field to both
-   push blocks, at the same offset. The blocks must stay byte-identical across
-   stages; only names are free.
+6. **`mesh_material.glsli`**: add the field to the push block there, at the
+   same offset. That is the only GLSL mirror -- the vertex shader carried a
+   second copy for years without reading a field of it, and the copy drifted,
+   so it was deleted rather than shared. Both fragment shaders (lit and debug
+   view) include this one block.
 7. If the value changes the **pipeline** (a new cull mode, a new blend state)
    rather than shading math, it belongs in `OpaquePipelineId` and
    `SelectOpaquePipeline` instead, and the pipeline array grows.
@@ -354,8 +357,11 @@ Use this when the value is constant for the whole frame.
    field. Respect std140: `vec3` occupies 16 bytes, and a scalar following an
    array needs the array to have ended on a 16-byte boundary. Add explicit pad
    members rather than relying on the compiler.
-2. **`static_assert` block**: add an offset assert and update
-   `sizeof(MeshFrameUniforms)`.
+2. **`static_assert` block**: the asserts are chained -- each field starts
+   where the previous one ends -- so inserting a field renumbers nothing below
+   it. Add one chain link for the new field, repair the link of the field that
+   now follows it, and update the absolute `sizeof(MeshFrameUniforms)` at the
+   end, which is the one conscious edit.
 3. **`mesh_frame.glsli`**: mirror the field at the same offset, with the same
    padding.
 4. **`MeshForwardPass::UploadFrameUniforms`**: write it.

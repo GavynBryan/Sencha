@@ -101,7 +101,7 @@ layout(set = 1, binding = 0) uniform sampler2D BindlessTextures[1024]; // materi
 layout(set = 2, binding = 0) uniform sampler2DShadow        SpotShadowAtlas;
 layout(set = 2, binding = 1) uniform samplerCubeArrayShadow PointShadowCubes;
 layout(set = 2, binding = 2) uniform sampler3D ProbeVolumes[8 * 3];
-layout(push_constant) uniform MeshPush { ... } pushData;               // 80 bytes, VS+FS
+layout(push_constant) uniform MeshPush { ... } pushData;               // 80 bytes, FS only
 ```
 
 Vertex attribute locations are shared between the forward and shadow vertex
@@ -109,15 +109,21 @@ shaders so the instance-matrix convention cannot drift: locations 3 to 6 are
 always the four rows of the per-instance world matrix, whatever else a shader
 declares.
 
-`mesh_forward.vert.glsl` declares the push block with the same size and layout
-as the fragment side but names the trailing slot it does not read `Pad1`. The
-block must stay byte-identical across stages; only the names are free.
+The push block lives in one GLSL place: `mesh_material.glsli`, which both
+fragment shaders include. The vertex shader carried a byte-identical copy for
+years without reading a field of it, and the copy drifted -- stale names over
+the right offsets -- so it was deleted and the push range narrowed to the
+fragment stage. A vertex-stage consumer must widen the range in
+`MeshForwardPass::Setup` and the `vkCmdPushConstants` flags together, which is
+what makes a second silent copy impossible rather than merely discouraged.
 
 ## Specialization constants
 
-`MATERIAL_UNLIT` (`constant_id = 0`, bool) in `mesh_forward.frag.glsl`. The
-pipeline cache hashes fragment specialization constants as part of the pipeline
-desc, so the four opaque variants are four distinct `VkPipeline` objects sharing
+`MATERIAL_UNLIT` (`constant_id = 0`, bool) and `MATERIAL_ALPHA_MASK`
+(`constant_id = 1`, bool) in `mesh_forward.frag.glsl`; the debug-view shader
+carries the mask constant too. The pipeline cache hashes fragment
+specialization constants as part of the pipeline
+desc, so the eight opaque variants are distinct `VkPipeline` objects sharing
 two `VkShaderModule` objects.
 
 Use a specialization constant, not a uniform branch, when the value is constant
