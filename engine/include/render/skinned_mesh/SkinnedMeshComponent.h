@@ -32,16 +32,28 @@
 // no baked-lighting fields because a skinned mesh is the canonical movable
 // non-receiver (it gets no chart; direct light for it arrives with the baked-
 // fallback light mode), no LayerMask because the camera-side counterpart does
-// not exist, and no CastShadows because the caster path does not read skinned
-// components yet -- a serialized field nothing consumes is how the alpha-mask
-// defect shipped. Each field arrives with its reader, defaulted so scenes
-// cooked before it keep loading.
+// not exist, and no CastShadows-into-light-maps because that caster path does
+// not read skinned components yet. Each field arrives with its reader,
+// defaulted so scenes cooked before it keep loading -- a serialized field
+// nothing consumes is how the alpha-mask defect shipped.
+//
+// Shadow participation is three independent facts, each read by exactly one
+// system, never a combined mode: bake occlusion (AffectsBakedLighting, absent
+// here -- a movable mesh must not bake its shadow in at the cook pose),
+// light-map casting (CastShadows, absent here until the map-caster path reads
+// skinned geometry), and the grounding silhouette below.
 //=============================================================================
 struct SkinnedMeshComponent
 {
     SkinnedMeshHandle Mesh;
     MaterialSetHandle Materials;
     bool Visible = true;
+    // Grounds this mesh with a projected silhouette shadow (the cheap crisp
+    // technique for things that move). Read only by the projected-shadow
+    // gather. On by default: characters are the primary consumer, and the
+    // objects that want it off -- world-attached articulated geometry like
+    // doors -- are placed meshes, not skinned ones, today.
+    bool CastsProjectedShadow = true;
     uint32_t SectionMask = 0xFFFFFFFFu;
     static_assert(kMaxMeshSections <= sizeof(decltype(SectionMask)) * 8,
                   "SectionMask must hold one bit per section that "
@@ -98,11 +110,15 @@ struct TypeSchema<SkinnedMeshComponent>
 
     static auto Fields()
     {
+        // Defaulted so scenes cooked before the field existed keep loading.
+        const SkinnedMeshComponent defaults;
         return std::tuple{
             MakeField("mesh", &SkinnedMeshComponent::Mesh).AsAsset(AssetType::SkinnedMesh),
             MakeField("materials", &SkinnedMeshComponent::Materials)
                 .AsAsset(AssetType::Material, AssetArity::List),
             MakeField("visible", &SkinnedMeshComponent::Visible),
+            MakeField("casts_projected_shadow", &SkinnedMeshComponent::CastsProjectedShadow)
+                .Default(defaults.CastsProjectedShadow),
             MakeField("section_mask", &SkinnedMeshComponent::SectionMask),
         };
     }
