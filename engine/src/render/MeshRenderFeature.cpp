@@ -1,5 +1,7 @@
 #include <render/MeshRenderFeature.h>
 
+#include <graphics/vulkan/ProjectedShadowProjectPass.h>
+
 #include <profiling/CpuScopeTimings.h>
 #include <profiling/RenderInstrumentation.h>
 #include <profiling/RenderStats.h>
@@ -15,7 +17,8 @@ MeshRenderFeature::MeshRenderFeature(RenderQueue& queue,
                                      const CameraRenderData& camera,
                                      const RenderLightSet& lights,
                                      std::shared_ptr<LightBindings> bindings,
-                                     const SkinnedMeshCache* skinnedMeshes)
+                                     const SkinnedMeshCache* skinnedMeshes,
+                                     std::shared_ptr<const ProjectedShadowFrameData> projectedShadows)
     : Queue(&queue)
     , Meshes(&meshes)
     , SkinnedMeshes(skinnedMeshes)
@@ -23,13 +26,21 @@ MeshRenderFeature::MeshRenderFeature(RenderQueue& queue,
     , Camera(&camera)
     , Lights(&lights)
     , Bindings(std::move(bindings))
+    , ProjectedShadows(std::move(projectedShadows))
 {
 }
+
+MeshRenderFeature::~MeshRenderFeature() = default;
 
 bool MeshRenderFeature::Setup(const RendererServices& services)
 {
     Instrumentation = services.Instrumentation;
     Pass.Setup(services, *Bindings);
+    if (ProjectedShadows != nullptr)
+    {
+        ProjectPass = std::make_unique<ProjectedShadowProjectPass>();
+        ProjectPass->Setup(services);
+    }
     // The pass degrades to inert when the lighting bindings are unusable,
     // which is a deliberate policy: the frame still presents. That is not a
     // setup failure.
@@ -53,7 +64,18 @@ void MeshRenderFeature::OnDraw(const FrameContext& frame)
         CpuScopeTimer timer(
             Instrumentation != nullptr ? Instrumentation->CpuScopes : nullptr,
             CpuScope::ForwardRecord);
-        Pass.Draw(frame, *Camera, *Lights, *Queue, *Meshes, *Materials, SkinnedMeshes);
+        const MeshForwardPass::DrawToken token = Pass.DrawOpaque(
+            frame, *Camera, *Lights, *Queue, *Meshes, *Materials, SkinnedMeshes);
+        if (ProjectPass != nullptr && ProjectedShadows->Ready)
+        {
+            ProjectedShadowProjectionInput input;
+            input.VertexStride = ProjectedShadows->VertexStride;
+            input.Casters = ProjectedShadows->Casters;
+            input.Receivers = ProjectedShadows->Receivers;
+            ProjectPass->Draw(frame, input);
+        }
+        Pass.DrawTransparent(frame, *Queue, *Meshes, *Materials, SkinnedMeshes,
+                             Vec4{ 1.0f, 1.0f, 1.0f, 1.0f }, token);
     }
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     if (gpuScopes != nullptr)
@@ -80,5 +102,7 @@ void MeshRenderFeature::OnDraw(const FrameContext& frame)
 
 void MeshRenderFeature::Teardown()
 {
+    if (ProjectPass != nullptr)
+        ProjectPass->Teardown();
     Pass.Teardown();
 }

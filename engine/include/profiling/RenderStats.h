@@ -50,6 +50,13 @@ struct RenderStats
     std::uint32_t ShadowSlotsHeld = 0;
     std::uint32_t ShadowCacheHits = 0;
     std::uint32_t ShadowRequestsDenied = 0;
+    // Projected object shadows: grounding casters gathered by extraction,
+    // the subset that rendered a silhouette tile, casters the budget dropped
+    // (farthest first, deterministic), and receiver re-draw calls recorded.
+    std::uint32_t ProjectedCastersGathered = 0;
+    std::uint32_t ProjectedCastersRendered = 0;
+    std::uint32_t ProjectedCastersDropped = 0;
+    std::uint32_t ProjectedReceiverDraws = 0;
     std::uint32_t AtlasTiles1024 = 0;
     std::uint32_t AtlasTiles512 = 0;
     std::uint32_t AtlasTiles256 = 0;

@@ -4,6 +4,51 @@ Two pools, one arbiter, one depth pass. Everything CPU-side is deterministic:
 identical request and event sequences produce identical slot assignment, atlas
 placement, and view schedules.
 
+## Projected object shadows
+
+The grounding technique for things that move (spec §17, the Source 1 role):
+each caster renders its silhouette into a tile of one small R8 atlas from a
+per-caster shadow direction, and nearby static receivers are re-drawn with
+that tile projected onto them, darkening multiplicatively. Crisp by
+construction -- the silhouette is the mesh's own coverage at tile resolution,
+unfiltered beyond the bilinear tap.
+
+Participation is one authored fact, `SkinnedMeshComponent::CastsProjectedShadow`
+(default on), read only by the projected-shadow gather. It is one leg of the
+three-flag seam: `AffectsBakedLighting` feeds the bake's occluders,
+`CastShadows` feeds the light shadow maps, and no combined mode exists.
+Skinned meshes deliberately do not enter the light-map caster path; doors and
+other movable placed meshes already do, through `StaticMeshComponent`.
+
+The direction comes from the lights actually affecting the caster: an
+intensity-weighted blend (the forward shader's own attenuation shape, squared)
+over the packed forward set plus a constant-weight authored fallback, smoothed
+exponentially per caster so two lights swapping dominance cannot pop the
+shadow. `render.shadow.projected.dir_*` is the fallback's interim source; an
+authored environment record replaces it. Policies -- direction, ranking,
+budget, tiles, projection fit, receiver gather, scissor -- are pure functions
+in `render/ProjectedShadow*` with headless tests; the two backend passes
+(`graphics/vulkan/ProjectedShadowSilhouettePass`, `...ProjectPass`) take plain
+data.
+
+Frame shape: silhouettes render in the Offscreen phase (game:
+`ProjectedShadowRenderFeature`; editor: a `projected_silhouettes` composition
+work node). Projection applies per view between the forward pass's opaque and
+transparent halves (`MeshForwardPass::DrawOpaque` / `DrawTransparent`) -- a
+shadow multiplied onto glass is paint, not shadow. Receivers are static opaque
+queue items inside the caster's swept volume, capped per caster, scissored to
+the volume's screen rect; skinned items never receive (a blob multiplied onto
+another character reads as dirt).
+
+Budgets are cvars (`render.shadow.projected.max_casters`, `.tile_px`,
+`.max_receivers`), deterministic and counted: nearest casters win,
+`RenderEntityKey` ties, the drop published through
+`RenderStats::ProjectedCastersDropped`. Known limits, accepted and recorded:
+overlapping casters double-darken shared receivers; no self-shadowing or
+receiver-normal test; rest-pose silhouettes until the animation runtime lands;
+the editor's brush-queue transparents draw before projection (two-queue split).
+
+
 ## Storage
 
 | | Spot | Point |

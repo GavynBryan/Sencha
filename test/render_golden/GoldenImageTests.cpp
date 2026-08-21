@@ -218,6 +218,15 @@ TEST(GoldenImage, ARestPoseSkinnedMeshDraws)
                  .EditorCook = true });
 }
 
+// A skinned caster standing on a floor with a projected grounding shadow --
+// the §17 pixel gate. Everything from the flag to the multiply blend has to
+// hold for the dark patch at the caster's base to survive comparison.
+TEST(GoldenImage, AProjectedShadowGroundsItsCaster)
+{
+    CheckScene({ .Name = "projected_shadow", .Map = "levels/golden_projected_shadow.level",
+                 .EditorCook = true });
+}
+
 // The same geometry through a blended default material: the transparent pass's
 // pixel proof. If blend ever silently falls back to opaque again, this frame
 // stops showing the background through the floor and the comparison fails.

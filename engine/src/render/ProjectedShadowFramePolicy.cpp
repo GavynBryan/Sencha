@@ -131,6 +131,59 @@ Aabb3d ProjectedShadowSweptBounds(const ProjectedShadowCaster& caster,
     return swept;
 }
 
+ProjectedShadowScreenRect ComputeProjectedShadowScreenRect(
+    const Aabb3d& sweptBounds,
+    const Mat4& cameraViewProjection,
+    std::uint32_t targetWidth,
+    std::uint32_t targetHeight)
+{
+    float minX = 1.0f, minY = 1.0f, maxX = -1.0f, maxY = -1.0f;
+    int behind = 0;
+    const Vec<3>& lo = sweptBounds.Min;
+    const Vec<3>& hi = sweptBounds.Max;
+    for (int corner = 0; corner < 8; ++corner)
+    {
+        const Vec4 clip = cameraViewProjection
+            * Vec4((corner & 1) != 0 ? hi.X : lo.X,
+                   (corner & 2) != 0 ? hi.Y : lo.Y,
+                   (corner & 4) != 0 ? hi.Z : lo.Z, 1.0f);
+        if (clip.W <= 1e-5f)
+        {
+            // A corner behind the eye has no meaningful projection.
+            ++behind;
+            continue;
+        }
+        const float x = clip.X / clip.W;
+        const float y = clip.Y / clip.W;
+        minX = std::min(minX, x); maxX = std::max(maxX, x);
+        minY = std::min(minY, y); maxY = std::max(maxY, y);
+    }
+
+    // Entirely behind the eye: nothing to shade. Straddling the near plane: a
+    // rect built from the surviving corners could clip visible shadow, so be
+    // conservative -- a larger rect costs fill, a smaller one clips.
+    if (behind == 8)
+        return ProjectedShadowScreenRect{};
+    if (behind > 0)
+        return ProjectedShadowScreenRect{ 0, 0, targetWidth, targetHeight };
+    if (maxX < -1.0f || minX > 1.0f || maxY < -1.0f || minY > 1.0f)
+        return ProjectedShadowScreenRect{}; // fully off screen
+
+    const float width = static_cast<float>(targetWidth);
+    const float height = static_cast<float>(targetHeight);
+    const float left = std::clamp((minX * 0.5f + 0.5f) * width, 0.0f, width);
+    const float right = std::clamp((maxX * 0.5f + 0.5f) * width, 0.0f, width);
+    const float top = std::clamp((minY * 0.5f + 0.5f) * height, 0.0f, height);
+    const float bottom = std::clamp((maxY * 0.5f + 0.5f) * height, 0.0f, height);
+
+    ProjectedShadowScreenRect rect;
+    rect.X = static_cast<std::int32_t>(left);
+    rect.Y = static_cast<std::int32_t>(top);
+    rect.Width = static_cast<std::uint32_t>(std::ceil(right) - std::floor(left));
+    rect.Height = static_cast<std::uint32_t>(std::ceil(bottom) - std::floor(top));
+    return rect;
+}
+
 std::uint32_t GatherProjectedShadowReceivers(std::span<const RenderQueueItem> items,
                                              const Aabb3d& sweptBounds,
                                              std::uint32_t cap,

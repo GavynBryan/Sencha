@@ -31,6 +31,8 @@ enum class CpuScope : std::uint8_t
     ShadowRecord,
     // Recording the forward opaque pass.
     ForwardRecord,
+    // Gathering projected-shadow casters and smoothing their directions.
+    ProjectedShadowGather,
     Count
 };
 

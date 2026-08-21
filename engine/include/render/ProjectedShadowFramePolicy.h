@@ -79,6 +79,25 @@ struct ProjectedShadowTileRect
 [[nodiscard]] Aabb3d ProjectedShadowSweptBounds(
     const ProjectedShadowCaster& caster, float maxDistance);
 
+// Screen-space bounds of the swept volume in one view, clamped to the
+// target: the projection pass's scissor, so fragments the shadow cannot
+// reach are never shaded. Width zero means "nothing visible, skip".
+// Conservative when the volume crosses the near plane (full target): a
+// wrong-but-larger rect costs fill, a wrong-but-smaller one clips shadow.
+struct ProjectedShadowScreenRect
+{
+    std::int32_t X = 0;
+    std::int32_t Y = 0;
+    std::uint32_t Width = 0;
+    std::uint32_t Height = 0;
+};
+
+[[nodiscard]] ProjectedShadowScreenRect ComputeProjectedShadowScreenRect(
+    const Aabb3d& sweptBounds,
+    const Mat4& cameraViewProjection,
+    std::uint32_t targetWidth,
+    std::uint32_t targetHeight);
+
 // Appends the queue indices of items the swept bounds touch, static items
 // only -- an item with a valid SkinnedMesh is a caster-class object, and a
 // grounding blob multiplied onto another character reads as dirt, not

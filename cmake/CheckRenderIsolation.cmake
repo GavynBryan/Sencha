@@ -85,6 +85,12 @@ set(RENDER_HEADER_BACKEND_ALLOWED
     # grow. What is left in render/ is the feature that decides where the two
     # colours come from, and it propagates the pass header to its consumers.
     "/engine/include/render/SkyRenderFeature.h"
+    # Holds the silhouette pass by value, the SkyRenderFeature shape again:
+    # both projected-shadow passes take only plain data (handles, matrices,
+    # ints), so the recording lives in the backend and the recording set did
+    # not grow. What remains in render/ is the orchestration that decides
+    # which casters, which tiles, and which receivers.
+    "/engine/include/render/ProjectedShadowRenderFeature.h"
     ${RENDER_RECORDING_SET}
 )
 

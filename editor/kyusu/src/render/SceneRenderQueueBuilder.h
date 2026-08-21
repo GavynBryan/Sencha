@@ -4,6 +4,7 @@
 #include <render/LightSelection.h>
 #include <render/RenderLight.h>
 #include <render/RenderQueue.h>
+#include <render/ProjectedShadowTypes.h>
 #include <render/ShadowCasterSet.h>
 #include <render/ShadowResidencyTypes.h>
 #include <render/static_mesh/StaticMeshHandle.h>
@@ -111,6 +112,11 @@ public:
     [[nodiscard]] const ShadowCasterSet& Casters() const { return SceneCasters; }
     [[nodiscard]] ShadowCasterSet& Casters() { return SceneCasters; }
 
+    // The frame's projected-shadow casters (per object, the grounding flag's
+    // reader). Gathered by Build alongside the other queues; the feature ranks
+    // and budgets from it per frame.
+    [[nodiscard]] ProjectedShadowSet& ProjectedCasters() { return ProjectedSet; }
+
 private:
     // One cooked brush's GPU mesh, owned here (Create/Destroy), plus the material
     // handle per material slot (index = StaticMeshSection::MaterialSlot).
@@ -156,6 +162,7 @@ private:
 
     RenderQueue Brushes;
     RenderQueue PlacedMeshes;
+    ProjectedShadowSet ProjectedSet;
     RenderLightSet SceneLights;
     ShadowCasterSet SceneCasters;
     std::vector<ForwardLightCandidate> LightCandidates;

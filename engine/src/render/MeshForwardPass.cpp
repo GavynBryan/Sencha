@@ -582,10 +582,10 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
     LastStats.PipelineSwitches = tally.PipelineBinds;
 }
 
-void MeshForwardPass::DrawTransparent(const FrameContext& frame, const RenderQueue& queue,
-                                      StaticMeshCache& meshes, MaterialCache& materials,
-                                      const SkinnedMeshCache* skinnedMeshes, Vec4 tint,
-                                      uint32_t streamedInstances)
+void MeshForwardPass::RecordTransparentItems(const FrameContext& frame, const RenderQueue& queue,
+                                             StaticMeshCache& meshes, MaterialCache& materials,
+                                             const SkinnedMeshCache* skinnedMeshes, Vec4 tint,
+                                             uint32_t streamedInstances)
 {
     const std::vector<RenderQueueItem>& items = queue.Transparent();
     const uint32_t opaqueCount = static_cast<uint32_t>(queue.OpaqueOrder().size());
@@ -678,15 +678,29 @@ void MeshForwardPass::Draw(const FrameContext& frame,
                            const SkinnedMeshCache* skinnedMeshes,
                            Vec4 tint)
 {
+    const DrawToken token =
+        DrawOpaque(frame, camera, lights, queue, meshes, materials, skinnedMeshes, tint);
+    DrawTransparent(frame, queue, meshes, materials, skinnedMeshes, tint, token);
+}
+
+MeshForwardPass::DrawToken MeshForwardPass::DrawOpaque(const FrameContext& frame,
+                                                       const CameraRenderData& camera,
+                                                       const RenderLightSet& lights,
+                                                       const RenderQueue& queue,
+                                                       StaticMeshCache& meshes,
+                                                       MaterialCache& materials,
+                                                       const SkinnedMeshCache* skinnedMeshes,
+                                                       Vec4 tint)
+{
     LastStats = DrawStats{
         .QueueItems = static_cast<uint32_t>(queue.OpaqueOrder().size()
                                             + queue.Transparent().size()),
     };
 
     if (PipelineLayout == VK_NULL_HANDLE || frame.DepthFormat == VK_FORMAT_UNDEFINED)
-        return;
+        return DrawToken{};
     if (queue.OpaqueOrder().empty() && queue.Transparent().empty())
-        return;
+        return DrawToken{};
 
     // Back-to-front for this view. Per call rather than per frame: a host may
     // replay one queue under several cameras, and the order belongs to each.
@@ -698,6 +712,7 @@ void MeshForwardPass::Draw(const FrameContext& frame,
     {
         LastStats.Skipped = true;
         LastStats.InstancesDropped = LastStats.QueueItems;
+        return DrawToken{};
     };
     // The transparent family only has to exist when something blends.
     const bool wantTransparent = !TransparentOrder.empty();
@@ -747,7 +762,30 @@ void MeshForwardPass::Draw(const FrameContext& frame,
     }
 #endif
     DrawRuns(frame, queue, meshes, materials, skinnedMeshes, tint, streamed);
-    DrawTransparent(frame, queue, meshes, materials, skinnedMeshes, tint, streamed);
+    return DrawToken{ .Valid = true,
+                      .UniformOffset = *uniformOffset,
+                      .StreamedInstances = streamed };
+}
+
+void MeshForwardPass::DrawTransparent(const FrameContext& frame,
+                                      const RenderQueue& queue,
+                                      StaticMeshCache& meshes,
+                                      MaterialCache& materials,
+                                      const SkinnedMeshCache* skinnedMeshes,
+                                      Vec4 tint,
+                                      const DrawToken& token)
+{
+    if (!token.Valid || TransparentOrder.empty())
+        return;
+
+    // An interleaved pass bound its own pipeline, sets, viewport, and
+    // scissor; rebind ours and forget what the submitter thinks is bound.
+    // The instance stream at binding 1 survives -- vertex bindings are
+    // command-buffer state and the interleaved pass binds only binding 0.
+    BindFrameState(frame, token.UniformOffset);
+    Submitter.Invalidate();
+    RecordTransparentItems(frame, queue, meshes, materials, skinnedMeshes, tint,
+                           token.StreamedInstances);
 }
 
 void MeshForwardPass::Teardown()

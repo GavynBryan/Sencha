@@ -8,6 +8,9 @@
 #include <render/MaterialCache.h>
 #include <render/MaterialSetCache.h>
 #include <render/ProbeVolumeSet.h>
+#include <render/ProjectedShadowDirection.h>
+#include <render/ProjectedShadowExtractionSystem.h>
+#include <render/ProjectedShadowFramePolicy.h>
 #include <render/RenderExtractionSystem.h>
 #include <render/RenderLight.h>
 #include <render/RenderQueue.h>
@@ -70,6 +73,14 @@ private:
 
     RenderQueue Queue;
     RenderLightSet Lights;
+    // Projected object shadows: the frame's casters with smoothed directions,
+    // the retained smoothing state, and the cvar-read budgets the Offscreen
+    // feature ranks against. The baked projection data crosses to the mesh
+    // feature through a shared pointer created at feature registration.
+    ProjectedShadowSet ProjectedCasters;
+    std::vector<ProjectedShadowDirectionState> ProjectedDirections;
+    ProjectedShadowBudgets ProjectedBudgets;
+    ProjectedShadowExtractionSystem ProjectedExtractor;
     ProbeVolumeSet ProbeVolumes;
     ShadowCasterSet ShadowCasters;
     ShadowResidency Residency;

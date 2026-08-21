@@ -1,5 +1,8 @@
 #include <app/DefaultRenderPipeline.h>
 
+#include <render/ProjectedShadowCVars.h>
+#include <render/ProjectedShadowRenderFeature.h>
+
 #include <app/EngineConsoleBuiltins.h>
 #include <core/console/CVarRead.h>
 #include <core/console/ConsoleRegistry.h>
@@ -87,6 +90,23 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     // zones stream and hands headers to extraction. Uploads only ever happen
     // after the shadow feature's Setup has created the set.
     ProbeVolumes.Setup(&graphics.Images, bindings, Logging);
+    // Grounding silhouettes render in the Offscreen phase and hand the mesh
+    // feature fully-baked projections; the shared pointer is the only channel
+    // between them. Registered only with a skinned cache: without one there
+    // are no casters, and the mesh feature's null pointer keeps its fast path.
+    std::shared_ptr<ProjectedShadowFrameData> projectedShadows;
+    if (SkinnedMeshes != nullptr)
+    {
+        projectedShadows = std::make_shared<ProjectedShadowFrameData>();
+        if (graphics.MainRenderer.AddFeature(
+                std::make_unique<ProjectedShadowRenderFeature>(
+                    ProjectedCasters, Lights, Queue, Camera, *Meshes,
+                    *SkinnedMeshes, ProjectedBudgets, projectedShadows))
+            == nullptr)
+        {
+            return false;
+        }
+    }
     // Before the mesh feature: registration order is draw order within a phase,
     // and the background fills the view without a depth test.
     if (graphics.MainRenderer.AddFeature(
@@ -96,7 +116,7 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     }
     return graphics.MainRenderer.AddFeature(std::make_unique<MeshRenderFeature>(
         Queue, *Meshes, *Materials, Camera, Lights, std::move(bindings),
-        SkinnedMeshes)) != nullptr;
+        SkinnedMeshes, std::move(projectedShadows))) != nullptr;
 #else
     (void)graphics;
     return false;
@@ -216,6 +236,27 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         Residency.Update(ShadowRequests, PointShadowRequests, CasterEvents,
                          EngineConsoleBuiltins::ReadShadowResidencyBudgets(Console));
         Residency.ApplyGrants(Lights);
+    }
+
+    {
+        // After light selection: directions read the packed forward set, so a
+        // caster grounds away from the lights that actually made the frame.
+        CpuScopeTimer timer(scopes, CpuScope::ProjectedShadowGather);
+        ProjectedBudgets = ReadProjectedShadowBudgets(Console);
+        ProjectedCasters.Reset();
+        if (Lights.ProjectedShadowsEnabled && SkinnedMeshes != nullptr)
+        {
+            ProjectedExtractor.Extract(world, ctx.Partitions, *SkinnedMeshes,
+                                       ProjectedCasters, ctx.Presentation.Alpha);
+            ProjectedShadowDirectionParams params;
+            params.FallbackDirection = Lights.ProjectedShadowFallbackDirection;
+            params.SmoothingRate = Lights.ProjectedShadowSmoothing;
+            UpdateProjectedShadowDirections(
+                ProjectedCasters,
+                std::span<const GpuLight>(Lights.Lights, Lights.Count),
+                ProjectedDirections,
+                static_cast<float>(ctx.Presentation.DeltaSeconds), params);
+        }
     }
 
     if (Instrumentation != nullptr && Instrumentation->Stats != nullptr)

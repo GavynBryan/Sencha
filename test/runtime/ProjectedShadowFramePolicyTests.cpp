@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <render/CameraProjection.h>
 #include <render/ProjectedShadowFramePolicy.h>
 
 namespace
@@ -138,4 +139,39 @@ TEST(ProjectedShadowFramePolicy, ReceiversExcludeSkinnedItemsAndHonorTheCap)
     ASSERT_EQ(receivers.size(), 1u);
     EXPECT_EQ(receivers[0], 0u); // queue order: the floor came first
     EXPECT_EQ(excluded, 1u);     // the below-item hit the cap
+}
+
+TEST(ProjectedShadowFramePolicy, TheScreenRectBoundsTheVolumeAndClampsToTheTarget)
+{
+    // A view from above, looking down -Z at a box around the origin.
+    const Mat4 view = Mat4::MakeLookAt(Vec3d(0.0f, 2.0f, 10.0f),
+                                       Vec3d(0.0f, 2.0f, 0.0f),
+                                       Vec3d(0.0f, 1.0f, 0.0f));
+    const Mat4 projection = MakeVulkanPerspective(1.2f, 16.0f / 9.0f, 0.1f, 100.0f);
+    const Mat4 viewProjection = projection * view;
+
+    const Aabb3d centered =
+        Aabb3d::FromCenterHalfExtent(Vec3d(0.0f, 2.0f, 0.0f), Vec3d(1.0f, 1.0f, 1.0f));
+    const ProjectedShadowScreenRect rect =
+        ComputeProjectedShadowScreenRect(centered, viewProjection, 1280, 720);
+
+    // On screen, roughly centered, and a small fraction of the target.
+    ASSERT_GT(rect.Width, 0u);
+    EXPECT_GT(rect.X, 300);
+    EXPECT_LT(rect.X + static_cast<std::int32_t>(rect.Width), 1000);
+    EXPECT_LT(rect.Width, 700u);
+
+    // Fully off screen: empty rect, the caster is skipped for this view.
+    const Aabb3d behind =
+        Aabb3d::FromCenterHalfExtent(Vec3d(0.0f, 2.0f, 40.0f), Vec3d(1.0f, 1.0f, 1.0f));
+    EXPECT_EQ(ComputeProjectedShadowScreenRect(behind, viewProjection, 1280, 720).Width, 0u);
+
+    // Crossing the near plane: conservative full-target rect, never a
+    // truncated one that would clip visible shadow.
+    const Aabb3d straddling =
+        Aabb3d::FromCenterHalfExtent(Vec3d(0.0f, 2.0f, 10.0f), Vec3d(1.0f, 1.0f, 1.0f));
+    const ProjectedShadowScreenRect full =
+        ComputeProjectedShadowScreenRect(straddling, viewProjection, 1280, 720);
+    EXPECT_EQ(full.Width, 1280u);
+    EXPECT_EQ(full.Height, 720u);
 }

@@ -10,6 +10,7 @@ const char* ToString(CpuScope scope)
     case CpuScope::ShadowResidency: return "Extract/ShadowResidency";
     case CpuScope::ShadowRecord:   return "Record/ShadowViews";
     case CpuScope::ForwardRecord:  return "Record/ForwardOpaque";
+    case CpuScope::ProjectedShadowGather: return "Extract/ProjectedShadows";
     case CpuScope::Count:          break;
     }
     return "?";
