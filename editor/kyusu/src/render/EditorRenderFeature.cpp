@@ -74,7 +74,8 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
         MaterialStore = &runtimeAssets->Materials;
         QueueBuilder.emplace(runtimeAssets->Assets, *runtimeAssets->StaticMeshes,
                              runtimeAssets->Materials, runtimeAssets->MaterialSets,
-                             logging, runtimeAssets->Textures.get());
+                             logging, runtimeAssets->Textures.get(),
+                             runtimeAssets->SkinnedMeshes.get());
         SceneSolid.emplace(Forward, *QueueBuilder, *runtimeAssets->StaticMeshes,
                            runtimeAssets->Materials);
         MaterialPath = true;
@@ -186,7 +187,8 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
                     builder = std::make_unique<SceneRenderQueueBuilder>(
                         RuntimeAssetsRef->Assets, *RuntimeAssetsRef->StaticMeshes,
                         RuntimeAssetsRef->Materials, RuntimeAssetsRef->MaterialSets,
-                        *LoggingRef);
+                        *LoggingRef, nullptr,
+                        RuntimeAssetsRef->SkinnedMeshes.get());
                 builder->Build(document);
             });
         // Arbitrating and recording the focus scene's shadow atlas is one
@@ -636,6 +638,7 @@ void EditorRenderFeature::ReleaseSceneResources()
     SceneSolid.reset();
     QueueBuilder.reset();
     MeshCache = nullptr;
+    SkinnedMeshCacheRef = nullptr;
     MaterialStore = nullptr;
 }
 

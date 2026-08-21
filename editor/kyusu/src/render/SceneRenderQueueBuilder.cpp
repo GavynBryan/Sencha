@@ -19,6 +19,7 @@
 #include <graphics/vulkan/TextureCache.h>
 #include <render/MaterialSetCache.h>
 #include <render/MeshDrawInstance.h>
+#include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <render/RenderExtractionSystem.h>
 #include <render/IrradianceVolumeComponent.h>
 #include <render/PointLightComponent.h>
@@ -75,12 +76,14 @@ SceneRenderQueueBuilder::SceneRenderQueueBuilder(AssetSystem& assets,
                                                  MaterialCache& materials,
                                                  MaterialSetCache& materialSets,
                                                  LoggingProvider& logging,
-                                                 TextureCache* textures)
+                                                 TextureCache* textures,
+                                                 SkinnedMeshCache* skinnedMeshes)
     : Assets(assets)
     , Meshes(meshes)
     , Materials(materials)
     , MaterialSets(materialSets)
     , Textures(textures)
+    , SkinnedMeshes(skinnedMeshes)
     , Logging(logging)
     , Log(logging.GetLogger<SceneRenderQueueBuilder>())
 {
@@ -244,6 +247,41 @@ void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
         instance.SectionMask = renderer->SectionMask;
         EmitMeshSections(instance, *mesh, *sectionMaterials, Materials, PlacedMeshes);
     }
+
+    // Skinned placements, at rest geometry through the same expansion the
+    // runtime uses. No lightmap or AO stamp: a skinned mesh is the canonical
+    // movable non-receiver. Without a skinned cache the loop emits nothing.
+    if (SkinnedMeshes != nullptr)
+    {
+        for (const EntityId entity : scene.GetAllEntities())
+        {
+            if (!scene.IsEntityVisible(entity))
+                continue;
+            const SkinnedMeshComponent* renderer =
+                world.TryGet<SkinnedMeshComponent>(entity);
+            if (renderer == nullptr || !renderer->Visible)
+                continue;
+
+            const GpuStaticMesh* mesh = SkinnedMeshes->Get(renderer->Mesh);
+            const std::vector<MaterialHandle>* sectionMaterials =
+                MaterialSets.Get(renderer->Materials);
+            if (mesh == nullptr || sectionMaterials == nullptr
+                || sectionMaterials->empty())
+                continue;
+            const Transform3f* transform = scene.TryGetTransform(entity);
+            if (transform == nullptr)
+                continue;
+
+            const Mat4 worldMatrix = transform->ToMat4();
+
+            MeshDrawInstance instance;
+            instance.SkinnedMesh = renderer->Mesh;
+            instance.WorldMatrix = worldMatrix;
+            instance.WorldBounds = TransformAabb(mesh->LocalBounds, worldMatrix);
+            instance.SectionMask = renderer->SectionMask;
+            EmitMeshSections(instance, *mesh, *sectionMaterials, Materials, PlacedMeshes);
+        }
+    }
     PlacedMeshes.SortOpaque();
 }
 
@@ -271,7 +309,7 @@ void SceneRenderQueueBuilder::SetLightmapPreview(const LightmapPreviewSource& so
 
     auto registry = std::make_unique<Registry>();
     InitializeSceneRegistry(*registry, &Meshes, &MaterialSets,
-                            nullptr, nullptr, nullptr, Textures);
+                            nullptr, nullptr, nullptr, Textures, SkinnedMeshes);
     SceneSerializationContext context(Logging, &Assets);
     SceneLoadError loadError;
     if (!LoadSceneJson(*json, *registry, EditorSceneSerializers(), context, &loadError))
@@ -341,6 +379,34 @@ void SceneRenderQueueBuilder::EmitPreviewQueue()
                 instance.LightmapTextureIndex = lightmap.Lightmap;
                 instance.AoTextureIndex = lightmap.Ao;
                 instance.LightmapScaleBias = renderer.LightmapScaleBias;
+                EmitMeshSections(instance, *mesh, *sectionMaterials, Materials, Brushes);
+            });
+
+    // Skinned placements appear in the preview too: the cooked scene carries
+    // them (the runtime draws them), and a character vanishing when the
+    // preview toggles would misrepresent the cook. No lightmap stamp.
+    if (SkinnedMeshes != nullptr && world.IsRegistered<SkinnedMeshComponent>()
+        && world.IsRegistered<LocalTransform>())
+        world.ForEachComponent<SkinnedMeshComponent>(
+            [&](EntityId entity, const SkinnedMeshComponent& renderer)
+            {
+                if (!renderer.Visible)
+                    return;
+                const LocalTransform* transform = world.TryGet<LocalTransform>(entity);
+                const GpuStaticMesh* mesh = SkinnedMeshes->Get(renderer.Mesh);
+                const std::vector<MaterialHandle>* sectionMaterials =
+                    MaterialSets.Get(renderer.Materials);
+                if (transform == nullptr || mesh == nullptr
+                    || sectionMaterials == nullptr || sectionMaterials->empty())
+                    return;
+
+                const Mat4 worldMatrix = transform->Value.ToMat4();
+
+                MeshDrawInstance instance;
+                instance.SkinnedMesh = renderer.Mesh;
+                instance.WorldMatrix = worldMatrix;
+                instance.WorldBounds = TransformAabb(mesh->LocalBounds, worldMatrix);
+                instance.SectionMask = renderer.SectionMask;
                 EmitMeshSections(instance, *mesh, *sectionMaterials, Materials, Brushes);
             });
     Brushes.SortOpaque();
