@@ -6,13 +6,15 @@
 // contribution -- instead of multiplying. Darkness is not applied here: the
 // composite multiplies the scene by (1 - darkness * mask) exactly once.
 layout(location = 0) in vec3 inWorldPos;
+layout(location = 1) in vec3 inWorldNormal;
 
 layout(set = 0, binding = 0) uniform ProjectedShadowFrame
 {
     mat4 CameraViewProjection;
     mat4 ShadowViewProjection;
     vec4 TileScaleBias;
-    vec4 Params; // x unused, y fade start, z silhouette bindless index
+    vec4 Params;        // x occluder index, y fade start, z silhouette index
+    vec4 DirectionBias; // xyz shadow direction, w normalized depth bias
 } frame;
 
 layout(set = 1, binding = 0) uniform sampler2D BindlessTextures[1024];
@@ -37,5 +39,11 @@ void main()
     // smoothly instead of ending at a hard far plane.
     float fade = 1.0 - smoothstep(frame.Params.y, 1.0, shadowClip.z);
 
-    outAmount = mask * fade * inside;
+    // A surface facing away from the shadow direction cannot receive -- the
+    // back of a wall inside the volume stays clean. The shoulder fades
+    // grazing surfaces instead of popping them.
+    float facing = smoothstep(
+        0.0, 0.2, -dot(normalize(inWorldNormal), frame.DirectionBias.xyz));
+
+    outAmount = mask * fade * inside * facing;
 }

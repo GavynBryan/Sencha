@@ -355,9 +355,11 @@ void EditorRenderFeature::RecordProjectedSilhouettes(const FrameContext& frame)
 
         ProjectedShadowProjection projection;
         projection.Uniform.ShadowViewProjection = viewProjection;
+        projection.Uniform.DirectionBias = Vec4(
+            caster.Direction.X, caster.Direction.Y, caster.Direction.Z, 0.0f);
         projection.Uniform.TileScaleBias =
             ProjectedShadowTileUvScaleBias(grid, thisTile);
-        projection.Uniform.Params = Vec4(lights.ProjectedShadowDarkness,
+        projection.Uniform.Params = Vec4(0.0f,
                                          lights.ProjectedShadowFadeStart,
                                          0.0f, 0.0f);
         projection.FirstReceiver =

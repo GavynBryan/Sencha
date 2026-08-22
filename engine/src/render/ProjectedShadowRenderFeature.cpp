@@ -125,6 +125,8 @@ void ProjectedShadowRenderFeature::OnDraw(const FrameContext& frame)
         projection.Uniform.Params = Vec4(0.0f,
                                          Lights->ProjectedShadowFadeStart,
                                          0.0f, 0.0f);
+        projection.Uniform.DirectionBias = Vec4(
+            caster.Direction.X, caster.Direction.Y, caster.Direction.Z, 0.0f);
         projection.ScissorX = rect.X;
         projection.ScissorY = rect.Y;
         projection.ScissorWidth = rect.Width;

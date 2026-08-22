@@ -23,7 +23,8 @@ static_assert(offsetof(ProjectedShadowProjectUniform, CameraViewProjection) == 0
 static_assert(offsetof(ProjectedShadowProjectUniform, ShadowViewProjection) == 64);
 static_assert(offsetof(ProjectedShadowProjectUniform, TileScaleBias) == 128);
 static_assert(offsetof(ProjectedShadowProjectUniform, Params) == 144);
-static_assert(sizeof(ProjectedShadowProjectUniform) == 160);
+static_assert(offsetof(ProjectedShadowProjectUniform, DirectionBias) == 160);
+static_assert(sizeof(ProjectedShadowProjectUniform) == 176);
 
 namespace
 {
@@ -142,6 +143,7 @@ bool ProjectedShadowProjectPass::EnsureMaskPipeline(VkFormat depthFormat)
             };
             desc.VertexAttributes = {
                 { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 },
+                { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, 12 }, // StaticMeshVertex::Normal
             };
             desc.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
             desc.CullMode = VK_CULL_MODE_BACK_BIT;

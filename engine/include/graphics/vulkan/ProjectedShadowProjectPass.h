@@ -49,11 +49,16 @@ struct ProjectedShadowProjectUniform
     Mat4 CameraViewProjection;
     Mat4 ShadowViewProjection;
     Vec4 TileScaleBias;
-    // x unused, y fade start (in shadow-depth [0,1]), z silhouette bindless
-    // index as a float (exact for every index the 1024-slot table can hold),
-    // w unused. Darkness deliberately absent: it is applied once by the
-    // composite, which is what keeps overlap from multiplying it.
+    // x occluder-depth bindless index, y fade start (in shadow-depth [0,1]),
+    // z silhouette bindless index (both indices as floats -- exact for every
+    // index the 1024-slot table can hold), w unused. Darkness deliberately
+    // absent: it is applied once by the composite, which is what keeps
+    // overlap from multiplying it.
     Vec4 Params;
+    // xyz: the caster's smoothed shadow direction, for the receiver-facing
+    // test. w: the depth bias in normalized shadow-depth units, converted
+    // per caster from the world-unit cvar by the host.
+    Vec4 DirectionBias;
 };
 
 struct ProjectedReceiverDraw
