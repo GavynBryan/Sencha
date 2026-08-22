@@ -88,13 +88,24 @@ ImportResult BlendMeshImporter::Import(const ImportInput& input, ICookOutputWrit
     if (!WriteFileBytes(blendPath, input.Bytes))
         return ImportResult{ .Error = "blend import: could not stage .blend to temp file" };
 
-    // export_apply bakes modifiers; tangents are deliberately not exported —
-    // the glTF path generates them (MikkTSpace, Decision M). Textures stay
-    // out of the .glb: the texture pipeline owns images, this cook owns
-    // geometry.
+    // export_apply bakes modifiers. Textures stay out of the .glb: the texture
+    // pipeline owns images, this cook owns geometry.
+    //
+    // Tangents are exported only for a skinned source, and the asymmetry is a
+    // contract rather than a preference. A static mesh gets cook-side
+    // MikkTSpace tangents (Decision M), which de-index and re-weld vertices; a
+    // skinned mesh cannot, because that re-weld would desync the influence
+    // stream running parallel to the vertices, so the glTF importer rejects a
+    // skinned primitive without authored TANGENT. Exporting them
+    // unconditionally would instead change every static mesh's cooked bytes.
+    // The decision needs the scene, so Blender makes it: one expression, no
+    // second invocation to inspect the file.
     const std::string pythonExpr = std::format(
-        "import bpy; bpy.ops.export_scene.gltf("
-        "filepath=r'{}', export_format='GLB', export_apply=True, export_image_format='NONE')",
+        "import bpy; "
+        "skinned=any(o.type=='ARMATURE' for o in bpy.data.objects); "
+        "bpy.ops.export_scene.gltf("
+        "filepath=r'{}', export_format='GLB', export_apply=True, "
+        "export_image_format='NONE', export_tangents=skinned)",
         glbPath.generic_string());
 
 #ifdef _WIN32
