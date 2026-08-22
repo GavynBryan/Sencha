@@ -62,6 +62,5 @@ private:
     // Assembly scratch, retained across frames.
     std::vector<ProjectedSilhouetteCasterDraw> CasterDraws;
     std::vector<ProjectedSilhouetteSectionDraw> SectionDraws;
-    std::vector<Mat4> CasterViewProjections;
     std::vector<std::uint32_t> ReceiverIndices;
 };

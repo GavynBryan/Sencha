@@ -40,6 +40,10 @@ struct RenderLightSet
     // in the silhouette's [0,1] depth space.
     float ProjectedShadowFadeStart = 0.35f;
     float ProjectedShadowSmoothing = 8.0f;
+    // Minimum downward pitch of the derived direction, degrees below
+    // horizontal; lights below a caster's center cannot push the grounding
+    // shadow up or flat.
+    float ProjectedShadowMinPitchDegrees = 20.0f;
     Vec<3> ProjectedShadowFallbackDirection = Vec<3>(0.0f, -1.0f, 0.0f);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     RenderDebugView DebugView = RenderDebugView::None;

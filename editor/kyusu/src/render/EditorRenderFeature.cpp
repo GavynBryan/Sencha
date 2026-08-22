@@ -288,6 +288,7 @@ void EditorRenderFeature::RecordProjectedSilhouettes(const FrameContext& frame)
     ProjectedShadowDirectionParams params;
     params.FallbackDirection = lights.ProjectedShadowFallbackDirection;
     params.SmoothingRate = lights.ProjectedShadowSmoothing;
+    params.MinPitchDegrees = lights.ProjectedShadowMinPitchDegrees;
     UpdateProjectedShadowDirections(
         casters, std::span<const GpuLight>(lights.Lights, lights.Count),
         ProjectedDirections, std::min(ImGui::GetIO().DeltaTime, 0.1f), params);
@@ -297,9 +298,19 @@ void EditorRenderFeature::RecordProjectedSilhouettes(const FrameContext& frame)
     const ProjectedShadowTileGrid grid = MakeProjectedShadowTileGrid(
         ProjectedBudgets.MaxCasters, ProjectedBudgets.TilePixels);
 
+    // One pass per caster builds the silhouette draw and its projection
+    // record together, so a skipped caster (unresident mesh, masked-out
+    // sections, no receivers) can never skew a later caster's tile or
+    // view-projection: the tile ordinal IS the position in casterDraws,
+    // which is the ordinal the silhouette pass renders. The atlas bindless
+    // index is not known until that pass has run, so it is stamped into the
+    // collected uniforms afterwards.
+    //
+    // Receivers come from both WYSIWYG queues -- brush cells and placed
+    // meshes both live in the shared static cache.
     std::vector<ProjectedSilhouetteCasterDraw> casterDraws;
     std::vector<ProjectedSilhouetteSectionDraw> sectionDraws;
-    std::vector<Mat4> viewProjections;
+    ProjectedFrame.VertexStride = sizeof(StaticMeshVertex);
     for (const ProjectedShadowCaster& caster : casters.Casters)
     {
         const GpuStaticMesh* mesh = SkinnedMeshCacheRef->Get(caster.Mesh);
@@ -325,34 +336,9 @@ void EditorRenderFeature::RecordProjectedSilhouettes(const FrameContext& frame)
             static_cast<std::uint32_t>(sectionDraws.size()) - draw.FirstSection;
         if (draw.SectionCount == 0)
             continue;
+        const std::uint32_t thisTile =
+            static_cast<std::uint32_t>(casterDraws.size());
         casterDraws.push_back(draw);
-        viewProjections.push_back(viewProjection);
-    }
-    if (casterDraws.empty())
-        return;
-
-    ProjectedSilhouetteInput silhouettes;
-    silhouettes.TilesPerRow = grid.TilesPerRow;
-    silhouettes.TilePixels = grid.TilePixels;
-    silhouettes.Casters = casterDraws;
-    silhouettes.Sections = sectionDraws;
-    if (!ProjectedSilhouettes.Draw(frame, silhouettes))
-        return;
-    const std::uint32_t atlasIndex = ProjectedSilhouettes.AtlasBindlessIndex();
-
-    // View-agnostic projection half. Receivers come from both WYSIWYG queues
-    // -- brush cells and placed meshes both live in the shared static cache.
-    ProjectedFrame.VertexStride = sizeof(StaticMeshVertex);
-    std::uint32_t tile = 0;
-    std::uint32_t drawIndex = 0;
-    for (const ProjectedShadowCaster& caster : casters.Casters)
-    {
-        const GpuStaticMesh* mesh = SkinnedMeshCacheRef->Get(caster.Mesh);
-        if (mesh == nullptr)
-            continue;
-        const Mat4& viewProjection = viewProjections[drawIndex];
-        ++drawIndex;
-        const std::uint32_t thisTile = tile++;
 
         const Aabb3d swept =
             ProjectedShadowSweptBounds(caster, ProjectedBudgets.MaxDistance);
@@ -363,7 +349,7 @@ void EditorRenderFeature::RecordProjectedSilhouettes(const FrameContext& frame)
             ProjectedShadowTileUvScaleBias(grid, thisTile);
         projection.Uniform.Params = Vec4(lights.ProjectedShadowDarkness,
                                          lights.ProjectedShadowFadeStart,
-                                         static_cast<float>(atlasIndex), 0.0f);
+                                         0.0f, 0.0f);
         projection.FirstReceiver =
             static_cast<std::uint32_t>(ProjectedFrame.Receivers.size());
 
@@ -402,6 +388,30 @@ void EditorRenderFeature::RecordProjectedSilhouettes(const FrameContext& frame)
         ProjectedFrame.Casters.push_back(projection);
         ProjectedSweptBounds.push_back(swept);
     }
+    if (casterDraws.empty())
+    {
+        ProjectedFrame.Reset();
+        ProjectedSweptBounds.clear();
+        return;
+    }
+
+    ProjectedSilhouetteInput silhouettes;
+    silhouettes.TilesPerRow = grid.TilesPerRow;
+    silhouettes.TilePixels = grid.TilePixels;
+    silhouettes.Casters = casterDraws;
+    silhouettes.Sections = sectionDraws;
+    if (!ProjectedSilhouettes.Draw(frame, silhouettes))
+    {
+        // The projections sample an atlas that never rendered this frame.
+        ProjectedFrame.Reset();
+        ProjectedSweptBounds.clear();
+        return;
+    }
+    const float atlasIndex =
+        static_cast<float>(ProjectedSilhouettes.AtlasBindlessIndex());
+    for (ProjectedShadowProjection& projection : ProjectedFrame.Casters)
+        projection.Uniform.Params.Z = atlasIndex;
+
     ProjectedFrame.Ready = !ProjectedFrame.Casters.empty();
 }
 

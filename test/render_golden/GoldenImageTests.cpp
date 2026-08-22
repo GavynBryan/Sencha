@@ -227,6 +227,18 @@ TEST(GoldenImage, AProjectedShadowGroundsItsCaster)
                  .EditorCook = true });
 }
 
+// One light, one caster, asymmetric on purpose: the light sits up-left of the
+// rig, so the streak must land on the right -- away from it -- with an extent
+// that is analytic from the light and bounds alone. Pins the side and reach of
+// the derived direction; a flipped, degenerate, or unclamped direction moves
+// this frame where the symmetric multi-light scenes might not.
+TEST(GoldenImage, AProjectedShadowFallsAwayFromItsLight)
+{
+    CheckScene({ .Name = "projected_direction",
+                 .Map = "levels/golden_projected_direction.level",
+                 .EditorCook = true });
+}
+
 // The same geometry through a blended default material: the transparent pass's
 // pixel proof. If blend ever silently falls back to opaque again, this frame
 // stops showing the background through the floor and the comparison fails.

@@ -59,11 +59,16 @@ void ProjectedShadowRenderFeature::OnDraw(const FrameContext& frame)
     const ProjectedShadowTileGrid grid =
         MakeProjectedShadowTileGrid(Budgets->MaxCasters, Budgets->TilePixels);
 
-    // Silhouette assembly: geometry resolved once, view-projections kept for
-    // the projection uniforms below.
+    // One pass per caster builds the silhouette draw and its projection
+    // record together, so a skipped caster (unresident mesh, masked-out
+    // sections, off-screen, no receivers) can never skew a later caster's
+    // tile or view-projection: the tile ordinal IS the position in
+    // CasterDraws, which is the ordinal the silhouette pass renders. The
+    // atlas bindless index is not known until the silhouette pass has run,
+    // so it is stamped into the collected uniforms afterwards.
     CasterDraws.clear();
     SectionDraws.clear();
-    CasterViewProjections.clear();
+    Output->VertexStride = sizeof(StaticMeshVertex);
     for (const ProjectedShadowCaster& caster : Casters->Casters)
     {
         const GpuStaticMesh* mesh = SkinnedMeshes->Get(caster.Mesh);
@@ -91,40 +96,17 @@ void ProjectedShadowRenderFeature::OnDraw(const FrameContext& frame)
             static_cast<std::uint32_t>(SectionDraws.size()) - draw.FirstSection;
         if (draw.SectionCount == 0)
             continue;
+        const std::uint32_t thisTile =
+            static_cast<std::uint32_t>(CasterDraws.size());
         CasterDraws.push_back(draw);
-        CasterViewProjections.push_back(viewProjection);
-    }
-    if (CasterDraws.empty())
-        return;
 
-    ProjectedSilhouetteInput silhouettes;
-    silhouettes.TilesPerRow = grid.TilesPerRow;
-    silhouettes.TilePixels = grid.TilePixels;
-    silhouettes.Casters = CasterDraws;
-    silhouettes.Sections = SectionDraws;
-    if (!Silhouettes.Draw(frame, silhouettes))
-        return;
-    const std::uint32_t atlasIndex = Silhouettes.AtlasBindlessIndex();
-
-    // Projection assembly, fully baked for the game's one view: camera matrix
-    // and scissor included, so the mesh feature only records.
-    Output->VertexStride = sizeof(StaticMeshVertex);
-    std::uint32_t tile = 0;
-    std::uint32_t drawIndex = 0;
-    for (const ProjectedShadowCaster& caster : Casters->Casters)
-    {
-        const GpuStaticMesh* mesh = SkinnedMeshes->Get(caster.Mesh);
-        if (mesh == nullptr)
-            continue;
-        const Mat4& viewProjection = CasterViewProjections[drawIndex];
-        ++drawIndex;
-
+        // Projection record, fully baked for the game's one view: camera
+        // matrix and scissor included, so the mesh feature only records.
         const Aabb3d swept =
             ProjectedShadowSweptBounds(caster, Budgets->MaxDistance);
         const ProjectedShadowScreenRect rect = ComputeProjectedShadowScreenRect(
             swept, Camera->ViewProjection,
             frame.TargetExtent.width, frame.TargetExtent.height);
-        const std::uint32_t thisTile = tile++;
         if (rect.Width == 0 || rect.Height == 0)
             continue;
 
@@ -142,7 +124,7 @@ void ProjectedShadowRenderFeature::OnDraw(const FrameContext& frame)
             ProjectedShadowTileUvScaleBias(grid, thisTile);
         projection.Uniform.Params = Vec4(Lights->ProjectedShadowDarkness,
                                          Lights->ProjectedShadowFadeStart,
-                                         static_cast<float>(atlasIndex), 0.0f);
+                                         0.0f, 0.0f);
         projection.ScissorX = rect.X;
         projection.ScissorY = rect.Y;
         projection.ScissorWidth = rect.Width;
@@ -173,6 +155,27 @@ void ProjectedShadowRenderFeature::OnDraw(const FrameContext& frame)
         if (projection.ReceiverCount > 0)
             Output->Casters.push_back(projection);
     }
+    if (CasterDraws.empty())
+    {
+        Output->Reset();
+        return;
+    }
+
+    ProjectedSilhouetteInput silhouettes;
+    silhouettes.TilesPerRow = grid.TilesPerRow;
+    silhouettes.TilePixels = grid.TilePixels;
+    silhouettes.Casters = CasterDraws;
+    silhouettes.Sections = SectionDraws;
+    if (!Silhouettes.Draw(frame, silhouettes))
+    {
+        // The projections sample an atlas that never rendered this frame.
+        Output->Reset();
+        return;
+    }
+    const float atlasIndex =
+        static_cast<float>(Silhouettes.AtlasBindlessIndex());
+    for (ProjectedShadowProjection& projection : Output->Casters)
+        projection.Uniform.Params.Z = atlasIndex;
 
     Output->Ready = !Output->Casters.empty();
     if (stats != nullptr)

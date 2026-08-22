@@ -24,8 +24,12 @@ The direction comes from the lights actually affecting the caster: an
 intensity-weighted blend (the forward shader's own attenuation shape, squared)
 over the packed forward set plus a constant-weight authored fallback, smoothed
 exponentially per caster so two lights swapping dominance cannot pop the
-shadow. `render.shadow.projected.dir_*` is the fallback's interim source; an
-authored environment record replaces it. Policies -- direction, ranking,
+shadow. The blend is clamped onto a grounding cone -- at least
+`render.shadow.projected.min_pitch` degrees below horizontal -- because a
+light below a caster's center (a floor lamp beside a tall character) would
+otherwise push the direction up or flat and paint the caster's bounds as a
+featureless slab across the floor. `render.shadow.projected.dir_*` is the
+fallback's interim source; an authored environment record replaces it. Policies -- direction, ranking,
 budget, tiles, projection fit, receiver gather, scissor -- are pure functions
 in `render/ProjectedShadow*` with headless tests; the two backend passes
 (`graphics/vulkan/ProjectedShadowSilhouettePass`, `...ProjectPass`) take plain

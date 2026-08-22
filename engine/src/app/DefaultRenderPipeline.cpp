@@ -251,6 +251,7 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
             ProjectedShadowDirectionParams params;
             params.FallbackDirection = Lights.ProjectedShadowFallbackDirection;
             params.SmoothingRate = Lights.ProjectedShadowSmoothing;
+            params.MinPitchDegrees = Lights.ProjectedShadowMinPitchDegrees;
             UpdateProjectedShadowDirections(
                 ProjectedCasters,
                 std::span<const GpuLight>(Lights.Lights, Lights.Count),

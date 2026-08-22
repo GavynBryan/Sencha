@@ -51,6 +51,69 @@ TEST(ProjectedShadowDirection, AStrongNearbyLightOwnsTheDirection)
     EXPECT_LT(direction.Y, -0.5f);
 }
 
+// A light below the caster's center must not push the grounding shadow up or
+// flat: a floor lamp or muzzle flash beside a tall caster would otherwise
+// paint the caster's bounds as a featureless slab across the floor. The blend
+// keeps its horizontal course but is clamped onto the grounding cone.
+TEST(ProjectedShadowDirection, ALightBelowTheCasterStillGrounds)
+{
+    const GpuLight lights[] = { PointLight(Vec<3>(0.0f, 0.5f, 0.0f), 30.0f, 20.0f) };
+    ProjectedShadowDirectionParams params;
+
+    const Vec<3> direction = ProjectedShadowTargetDirection(
+        lights, Vec<3>(2.0f, 1.0f, 0.0f), params);
+
+    constexpr float kDegreesToRadians = 0.01745329251994329577f;
+    const float maxY = -std::sin(params.MinPitchDegrees * kDegreesToRadians);
+    EXPECT_LE(direction.Y, maxY + 1e-5f);
+    EXPECT_GT(direction.X, 0.5f); // the horizontal course survives the clamp
+    EXPECT_NEAR(std::sqrt(direction.Dot(direction)), 1.0f, 1e-4f);
+}
+
+// Directly below there is no horizontal course to keep, and steepening a
+// straight-up direction is meaningless: the fallback takes over.
+TEST(ProjectedShadowDirection, ALightDirectlyBelowFallsBack)
+{
+    const GpuLight lights[] = { PointLight(Vec<3>(2.0f, 0.0f, 0.0f), 30.0f, 20.0f) };
+    ProjectedShadowDirectionParams params;
+    params.FallbackDirection = Vec<3>(0.0f, -1.0f, 0.0f);
+    params.FallbackWeight = 0.0f; // isolate the degenerate-input path
+
+    const Vec<3> direction = ProjectedShadowTargetDirection(
+        lights, Vec<3>(2.0f, 1.0f, 0.0f), params);
+
+    EXPECT_NEAR(direction.X, 0.0f, 1e-4f);
+    EXPECT_NEAR(direction.Y, -1.0f, 1e-4f);
+    EXPECT_NEAR(direction.Z, 0.0f, 1e-4f);
+}
+
+// The retained state obeys the cone too: smoothing between two legal
+// directions must not surface an illegal intermediate.
+TEST(ProjectedShadowDirection, SmoothingStaysInsideTheGroundingCone)
+{
+    ProjectedShadowDirectionParams params;
+    constexpr float kDegreesToRadians = 0.01745329251994329577f;
+    const float maxY = -std::sin(params.MinPitchDegrees * kDegreesToRadians);
+
+    ProjectedShadowSet set;
+    set.Casters.push_back(CasterAt(Vec<3>(2.0f, 1.0f, 0.0f), 1));
+    std::vector<ProjectedShadowDirectionState> state;
+
+    // Settle against a light on one side, then swing it below the caster on
+    // the other side: every smoothed frame must stay on the cone.
+    GpuLight light = PointLight(Vec<3>(-4.0f, 5.0f, 0.0f), 30.0f, 20.0f);
+    for (int i = 0; i < 60; ++i)
+        UpdateProjectedShadowDirections(set, { &light, 1 }, state, 1.0f / 60.0f, params);
+
+    light = PointLight(Vec<3>(6.0f, 0.2f, 0.0f), 30.0f, 20.0f);
+    for (int i = 0; i < 60; ++i)
+    {
+        UpdateProjectedShadowDirections(set, { &light, 1 }, state, 1.0f / 60.0f, params);
+        EXPECT_LE(set.Casters[0].Direction.Y, maxY + 1e-4f)
+            << "frame " << i << " left the grounding cone";
+    }
+}
+
 TEST(ProjectedShadowDirection, NoLightMeansTheFallback)
 {
     ProjectedShadowDirectionParams params;

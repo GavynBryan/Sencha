@@ -65,6 +65,11 @@ void RegisterProjectedShadowCVars(ConsoleRegistry& registry)
     RegisterDouble(registry, "render.shadow.projected.smoothing", 8.0,
                    "Per-second convergence rate of a caster's shadow "
                    "direction toward its lights.", 0.5, 60.0);
+    RegisterDouble(registry, "render.shadow.projected.min_pitch", 20.0,
+                   "Minimum downward pitch of a derived shadow direction, "
+                   "degrees below horizontal. Keeps grounding shadows "
+                   "grounding when a light sits below a caster's center.",
+                   0.0, 89.0);
     RegisterDouble(registry, "render.shadow.projected.dir_x", 0.0,
                    "Fallback shadow direction X, used when no light dominates "
                    "a caster. Interim source: an authored environment record "

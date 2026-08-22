@@ -39,6 +39,14 @@ struct ProjectedShadowDirectionParams
     // Exponential smoothing rate (per second). The blend converges as
     // 1 - exp(-rate * dt): higher snaps, lower drifts.
     float SmoothingRate = 8.0f;
+    // Minimum downward pitch, degrees below horizontal. A grounding shadow
+    // whose direction points up or skims the floor cannot ground -- a light
+    // below the caster's center (floor lamp, muzzle flash, a low sconce next
+    // to a tall caster) would otherwise paint the caster's bounds as a
+    // featureless slab across the floor. The blend is clamped onto this cone;
+    // a near-vertical-up blend has no horizontal course to keep and takes the
+    // fallback instead.
+    float MinPitchDegrees = 20.0f;
     // Frames a caster may go unseen before its smoothing state is dropped.
     std::uint32_t EvictAfterFrames = 300;
 };

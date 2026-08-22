@@ -61,6 +61,30 @@ Vec<3> Normalized(const Vec<3>& v, const Vec<3>& fallback)
     return length > 1e-5f ? v * (1.0f / length) : fallback;
 }
 
+// Clamps a unit direction onto the grounding cone: at least `minPitchDegrees`
+// below horizontal. The horizontal course is kept and the descent steepened,
+// which is continuous in the input everywhere the cone boundary is crossed.
+// A direction with no meaningful horizontal course (near vertical, up or
+// down) cannot keep one, so it resolves to the fallback.
+Vec<3> ClampToGroundingPitch(const Vec<3>& direction,
+                             float minPitchDegrees,
+                             const Vec<3>& fallback)
+{
+    constexpr float degreesToRadians = 0.01745329251994329577f;
+    const float pitch = std::clamp(minPitchDegrees, 0.0f, 89.0f) * degreesToRadians;
+    const float maxY = -std::sin(pitch);
+    if (direction.Y <= maxY)
+        return direction;
+
+    const float horizontal = std::sqrt(
+        direction.X * direction.X + direction.Z * direction.Z);
+    if (horizontal < 1e-4f)
+        return fallback;
+
+    const float scale = std::cos(pitch) / horizontal;
+    return Vec<3>(direction.X * scale, maxY, direction.Z * scale);
+}
+
 } // namespace
 
 Vec<3> ProjectedShadowTargetDirection(std::span<const GpuLight> lights,
@@ -75,7 +99,9 @@ Vec<3> ProjectedShadowTargetDirection(std::span<const GpuLight> lights,
         const float weight = LightWeightAt(light, casterCenter);
         sum = sum + DirectionFrom(light, casterCenter) * (weight * weight);
     }
-    return Normalized(sum, params.FallbackDirection);
+    return ClampToGroundingPitch(Normalized(sum, params.FallbackDirection),
+                                 params.MinPitchDegrees,
+                                 params.FallbackDirection);
 }
 
 void UpdateProjectedShadowDirections(ProjectedShadowSet& set,
@@ -101,9 +127,10 @@ void UpdateProjectedShadowDirections(ProjectedShadowSet& set,
             // nlerp: normalized blend of unit directions. Enough for
             // grounding -- slerp's constant angular velocity buys nothing a
             // blob shadow can show.
-            it->Direction = Normalized(
-                it->Direction + (target - it->Direction) * blend,
-                params.FallbackDirection);
+            it->Direction = ClampToGroundingPitch(
+                Normalized(it->Direction + (target - it->Direction) * blend,
+                           params.FallbackDirection),
+                params.MinPitchDegrees, params.FallbackDirection);
             it->UnseenFrames = 0;
             caster.Direction = it->Direction;
         }
