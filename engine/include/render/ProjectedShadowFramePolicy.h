@@ -27,7 +27,12 @@ struct ProjectedShadowBudgets
     // Silhouette tile edge in pixels. The atlas is a fixed equal-size grid,
     // ceil(sqrt(MaxCasters)) tiles per row -- uniform tiles need no
     // allocator, an index is the whole placement.
-    std::uint32_t TilePixels = 128;
+    std::uint32_t TilePixels = 256;
+    // Silhouette blur reach in atlas texels (separable pass over the tiles
+    // before projection samples them); 0 leaves the coverage sharp. Capped
+    // well inside the projection fit's border padding so the blur cannot
+    // pull a neighbouring tile's silhouette into this one.
+    float SoftnessTexels = 3.0f;
     // Receiver re-draws per caster; past the cap the shadow fades out on
     // whatever was not drawn, bounded rather than surprising.
     std::uint32_t MaxReceiversPerCaster = 24;

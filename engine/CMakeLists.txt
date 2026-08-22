@@ -145,7 +145,9 @@ if(SENCHA_ENABLE_VULKAN)
         "projected_shadow_silhouette.vert.glsl|vert|kProjectedShadowSilhouetteVertSpv"
         "projected_shadow_silhouette.frag.glsl|frag|kProjectedShadowSilhouetteFragSpv"
         "projected_shadow_project.vert.glsl|vert|kProjectedShadowProjectVertSpv"
-        "projected_shadow_project.frag.glsl|frag|kProjectedShadowProjectFragSpv")
+        "projected_shadow_project.frag.glsl|frag|kProjectedShadowProjectFragSpv"
+        "projected_shadow_blur.vert.glsl|vert|kProjectedShadowBlurVertSpv"
+        "projected_shadow_blur.frag.glsl|frag|kProjectedShadowBlurFragSpv")
         string(REPLACE "|" ";" _pshadow_entry "${_pshadow_entry}")
         list(GET _pshadow_entry 0 _pshadow_file)
         list(GET _pshadow_entry 1 _pshadow_stage)

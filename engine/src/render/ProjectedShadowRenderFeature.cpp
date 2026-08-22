@@ -164,6 +164,7 @@ void ProjectedShadowRenderFeature::OnDraw(const FrameContext& frame)
     ProjectedSilhouetteInput silhouettes;
     silhouettes.TilesPerRow = grid.TilesPerRow;
     silhouettes.TilePixels = grid.TilePixels;
+    silhouettes.SoftnessTexels = Budgets->SoftnessTexels;
     silhouettes.Casters = CasterDraws;
     silhouettes.Sections = SectionDraws;
     if (!Silhouettes.Draw(frame, silhouettes))

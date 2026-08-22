@@ -398,6 +398,7 @@ void EditorRenderFeature::RecordProjectedSilhouettes(const FrameContext& frame)
     ProjectedSilhouetteInput silhouettes;
     silhouettes.TilesPerRow = grid.TilesPerRow;
     silhouettes.TilePixels = grid.TilePixels;
+    silhouettes.SoftnessTexels = ProjectedBudgets.SoftnessTexels;
     silhouettes.Casters = casterDraws;
     silhouettes.Sections = sectionDraws;
     if (!ProjectedSilhouettes.Draw(frame, silhouettes))

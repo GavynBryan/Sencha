@@ -39,7 +39,7 @@ struct RenderLightSet
     // Where along the projection depth the shadow starts releasing contact,
     // in the silhouette's [0,1] depth space.
     float ProjectedShadowFadeStart = 0.35f;
-    float ProjectedShadowSmoothing = 8.0f;
+    float ProjectedShadowSmoothing = 16.0f;
     // Minimum downward pitch of the derived direction, degrees below
     // horizontal; lights below a caster's center cannot push the grounding
     // shadow up or flat.

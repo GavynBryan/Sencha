@@ -9,12 +9,26 @@
 
 #include <shaders/kProjectedShadowSilhouetteVertSpv.h>
 #include <shaders/kProjectedShadowSilhouetteFragSpv.h>
+#include <shaders/kProjectedShadowBlurVertSpv.h>
+#include <shaders/kProjectedShadowBlurFragSpv.h>
 
 namespace
 {
 // The silhouette is coverage, not depth or colour: one channel is the whole
-// story, and R8 keeps a 512^2 atlas at 256 KB per frame in flight.
+// story, and R8 keeps the atlas at 1 MB per frame in flight at the default
+// 4x4 grid of 256px tiles (the blur scratch doubles that).
 constexpr VkFormat kSilhouetteFormat = VK_FORMAT_R8_UNORM;
+
+// The blur's fragment push block: one axis step and the source's bindless
+// slot. Layout mirrors projected_shadow_blur.frag.glsl.
+struct BlurPush
+{
+    float StepU = 0.0f;
+    float StepV = 0.0f;
+    std::uint32_t SourceIndex = 0;
+    float Pad = 0.0f;
+};
+static_assert(sizeof(BlurPush) == 16);
 }
 
 void ProjectedShadowSilhouettePass::Setup(const RendererServices& services,
@@ -36,6 +50,18 @@ void ProjectedShadowSilhouettePass::Setup(const RendererServices& services,
     };
     PipelineLayout = services.Descriptors->GetPipelineLayout(push);
 
+    BlurVertexShader = services.Shaders->CreateModuleFromSpirv(
+        kProjectedShadowBlurVertSpv, kProjectedShadowBlurVertSpvWordCount,
+        "Projected shadow blur vertex");
+    BlurFragmentShader = services.Shaders->CreateModuleFromSpirv(
+        kProjectedShadowBlurFragSpv, kProjectedShadowBlurFragSpvWordCount,
+        "Projected shadow blur fragment");
+
+    const std::vector<VkPushConstantRange> blurPush{
+        VkPushConstantRange{ VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BlurPush) },
+    };
+    BlurPipelineLayout = services.Descriptors->GetPipelineLayout(blurPush);
+
     RenderTargetDesc desc{};
     desc.Extent = { 512, 512 }; // resized to the live grid on first Draw
     desc.ColorFormat = kSilhouetteFormat;
@@ -43,24 +69,34 @@ void ProjectedShadowSilhouettePass::Setup(const RendererServices& services,
     desc.Sampler = services.Samplers->GetLinearClamp();
     desc.DebugName = "projected_shadow_silhouettes";
     Atlas = Store.Create(desc);
+    desc.DebugName = "projected_shadow_blur_scratch";
+    BlurScratch = Store.Create(desc);
 
     (void)EnsurePipeline(kSilhouetteFormat);
+    (void)EnsureBlurPipeline(kSilhouetteFormat);
 }
 
 void ProjectedShadowSilhouettePass::Teardown()
 {
     Store.Teardown();
     Atlas = {};
+    BlurScratch = {};
     BindlessIndex = UINT32_MAX;
     if (Services.Shaders != nullptr)
     {
         Services.Shaders->Destroy(VertexShader);
         Services.Shaders->Destroy(FragmentShader);
+        Services.Shaders->Destroy(BlurVertexShader);
+        Services.Shaders->Destroy(BlurFragmentShader);
     }
     VertexShader = {};
     FragmentShader = {};
+    BlurVertexShader = {};
+    BlurFragmentShader = {};
     Pipeline.Reset();
+    BlurPipeline.Reset();
     PipelineLayout = VK_NULL_HANDLE;
+    BlurPipelineLayout = VK_NULL_HANDLE;
 }
 
 bool ProjectedShadowSilhouettePass::EnsurePipeline(VkFormat colorFormat)
@@ -91,6 +127,118 @@ bool ProjectedShadowSilhouettePass::EnsurePipeline(VkFormat colorFormat)
             desc.DepthFormat = VK_FORMAT_UNDEFINED;
             return Services.Pipelines->GetGraphicsPipeline(desc);
         });
+}
+
+bool ProjectedShadowSilhouettePass::EnsureBlurPipeline(VkFormat colorFormat)
+{
+    if (BlurPipelineLayout == VK_NULL_HANDLE)
+        return false;
+
+    return BlurPipeline.Ensure(
+        AttachmentFormatKey{ colorFormat, VK_FORMAT_UNDEFINED },
+        [&](std::size_t) {
+            GraphicsPipelineDesc desc{};
+            desc.VertexShader = BlurVertexShader;
+            desc.FragmentShader = BlurFragmentShader;
+            desc.Layout = BlurPipelineLayout;
+            desc.CullMode = VK_CULL_MODE_NONE;
+            desc.DepthTest = false;
+            desc.DepthWrite = false;
+            desc.ColorBlend = { ColorBlendAttachmentDesc{} };
+            desc.ColorFormats = { colorFormat };
+            desc.DepthFormat = VK_FORMAT_UNDEFINED;
+            return Services.Pipelines->GetGraphicsPipeline(desc);
+        });
+}
+
+bool ProjectedShadowSilhouettePass::BlurAtlas(const FrameContext& frame,
+                                              const RenderTargetView& atlas,
+                                              VkExtent2D extent,
+                                              float softnessTexels)
+{
+    if (!EnsureBlurPipeline(kSilhouetteFormat))
+        return false;
+    const VkPipeline pipeline = BlurPipeline.Get(0);
+    if (pipeline == VK_NULL_HANDLE)
+        return false;
+
+    Store.SetExtent(BlurScratch, extent);
+    const std::optional<RenderTargetView> scratch = Store.Acquire(BlurScratch);
+    if (!scratch.has_value() || scratch->ColorView == VK_NULL_HANDLE
+        || scratch->BindlessIndex == UINT32_MAX || atlas.BindlessIndex == UINT32_MAX)
+        return false;
+
+    const float texelStep = softnessTexels / (3.0f * static_cast<float>(extent.width));
+
+    const VkDescriptorSet bindlessSet = Services.Descriptors->GetBindlessSet();
+    VkViewport viewport{};
+    viewport.width = static_cast<float>(extent.width);
+    viewport.height = static_cast<float>(extent.height);
+    viewport.maxDepth = 1.0f;
+    VkRect2D fullScissor{};
+    fullScissor.extent = extent;
+
+    const auto blurInto = [&](const RenderTargetView& target,
+                              std::uint32_t sourceIndex, float stepU, float stepV)
+    {
+        RenderScopeDesc scope{};
+        scope.Area.extent = extent;
+        scope.Color.View = target.ColorView;
+        // Every texel is overwritten by the full-screen triangle.
+        scope.Color.LoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        scope.ColorFormat = kSilhouetteFormat;
+        scope.Phase = RenderPhase::Offscreen;
+
+        const RenderScope rendering(frame, scope);
+        vkCmdBindPipeline(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        vkCmdSetViewport(frame.Cmd, 0, 1, &viewport);
+        vkCmdSetScissor(frame.Cmd, 0, 1, &fullScissor);
+        vkCmdBindDescriptorSets(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                BlurPipelineLayout, 1, 1, &bindlessSet, 0, nullptr);
+        const BlurPush push{ stepU, stepV, sourceIndex, 0.0f };
+        vkCmdPushConstants(frame.Cmd, BlurPipelineLayout,
+                           VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
+        vkCmdDraw(frame.Cmd, 3, 1, 0, 0);
+    };
+
+    const auto transition = [&](const RenderTargetView& target,
+                                VkImageLayout oldLayout, VkImageLayout newLayout,
+                                bool fromShaderRead)
+    {
+        VulkanBarriers::ImageTransition barrier{};
+        barrier.Image = target.ColorImage;
+        barrier.OldLayout = oldLayout;
+        barrier.NewLayout = newLayout;
+        barrier.SrcStage = fromShaderRead ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
+                                          : VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        barrier.DstStage = fromShaderRead ? VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
+                                          : VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        barrier.SrcAccess = fromShaderRead ? VK_ACCESS_2_SHADER_SAMPLED_READ_BIT
+                                           : VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+        barrier.DstAccess = fromShaderRead ? VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
+                                           : VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+        barrier.AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        VulkanBarriers::TransitionImage(frame.Cmd, barrier);
+        *target.ColorLayout = newLayout;
+    };
+
+    // Horizontal: atlas (already SHADER_READ) -> scratch.
+    transition(*scratch,
+               *scratch->ColorLayout == VK_IMAGE_LAYOUT_UNDEFINED
+                   ? VK_IMAGE_LAYOUT_UNDEFINED
+                   : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+               VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, true);
+    blurInto(*scratch, atlas.BindlessIndex, texelStep, 0.0f);
+    transition(*scratch, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, false);
+
+    // Vertical: scratch -> atlas, which ends SHADER_READ for projection.
+    transition(atlas, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+               VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, true);
+    blurInto(atlas, scratch->BindlessIndex, 0.0f, texelStep);
+    transition(atlas, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, false);
+    return true;
 }
 
 bool ProjectedShadowSilhouettePass::Draw(const FrameContext& frame,
@@ -197,6 +345,11 @@ bool ProjectedShadowSilhouettePass::Draw(const FrameContext& frame,
     toRead.AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     VulkanBarriers::TransitionImage(frame.Cmd, toRead);
     *view->ColorLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    // Soften the coverage in atlas space. A failed blur leaves the sharp
+    // atlas, which is a valid frame, not a skipped one.
+    if (input.SoftnessTexels > 0.0f)
+        (void)BlurAtlas(frame, *view, { extent, extent }, input.SoftnessTexels);
 
     BindlessIndex = view->BindlessIndex;
     return BindlessIndex != UINT32_MAX;

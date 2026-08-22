@@ -38,7 +38,7 @@ struct ProjectedShadowDirectionParams
     float FallbackWeight = 0.05f;
     // Exponential smoothing rate (per second). The blend converges as
     // 1 - exp(-rate * dt): higher snaps, lower drifts.
-    float SmoothingRate = 8.0f;
+    float SmoothingRate = 16.0f;
     // Minimum downward pitch, degrees below horizontal. A grounding shadow
     // whose direction points up or skims the floor cannot ground -- a light
     // below the caster's center (floor lamp, muzzle flash, a low sconce next

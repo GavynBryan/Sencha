@@ -62,7 +62,7 @@ void RegisterProjectedShadowCVars(ConsoleRegistry& registry)
     RegisterDouble(registry, "render.shadow.projected.fade_start", 0.35,
                    "Where along the projection depth the shadow starts "
                    "fading, as a fraction of its reach.", 0.0, 1.0);
-    RegisterDouble(registry, "render.shadow.projected.smoothing", 8.0,
+    RegisterDouble(registry, "render.shadow.projected.smoothing", 16.0,
                    "Per-second convergence rate of a caster's shadow "
                    "direction toward its lights.", 0.5, 60.0);
     RegisterDouble(registry, "render.shadow.projected.min_pitch", 20.0,
@@ -78,8 +78,11 @@ void RegisterProjectedShadowCVars(ConsoleRegistry& registry)
                    "Fallback shadow direction Y.");
     RegisterDouble(registry, "render.shadow.projected.dir_z", 0.0,
                    "Fallback shadow direction Z.");
-    RegisterDouble(registry, "render.shadow.projected.tile_px", 128.0,
+    RegisterDouble(registry, "render.shadow.projected.tile_px", 256.0,
                    "Silhouette tile edge in pixels.", 32.0, 512.0);
+    RegisterDouble(registry, "render.shadow.projected.softness", 3.0,
+                   "Silhouette blur reach in atlas texels; 0 is sharp "
+                   "coverage, higher is a wider, softer penumbra.", 0.0, 8.0);
     RegisterDouble(registry, "render.shadow.projected.max_casters", 16.0,
                    "Projected-shadow casters per frame; the farthest drop "
                    "first and the drop is counted.", 1.0, 64.0);
@@ -99,6 +102,9 @@ ProjectedShadowBudgets ReadProjectedShadowBudgets(const ConsoleRegistry* registr
     budgets.MaxReceiversPerCaster = static_cast<std::uint32_t>(std::clamp(
         ReadDouble(registry, "render.shadow.projected.max_receivers",
                    static_cast<float>(budgets.MaxReceiversPerCaster)), 1.0f, 256.0f));
+    budgets.SoftnessTexels = std::clamp(
+        ReadDouble(registry, "render.shadow.projected.softness",
+                   budgets.SoftnessTexels), 0.0f, 8.0f);
     budgets.MaxDistance = std::clamp(
         ReadDouble(registry, "render.shadow.projected.max_distance",
                    budgets.MaxDistance),

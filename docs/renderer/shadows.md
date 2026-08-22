@@ -11,7 +11,12 @@ each caster renders its silhouette into a tile of one small R8 atlas from a
 per-caster shadow direction, and nearby static receivers are re-drawn with
 that tile projected onto them, darkening multiplicatively. Crisp by
 construction -- the silhouette is the mesh's own coverage at tile resolution,
-unfiltered beyond the bilinear tap.
+blurred in atlas space (`render.shadow.projected.softness`, texels of
+separable-blur reach) so the projected edge is a penumbra that magnifies
+smoothly on close receivers instead of texel stairs; the blur costs atlas
+texels once per frame, not shadowed screen pixels. Softness stays well inside
+the projection fit's 5% border padding, which is what keeps one tile's blur
+out of its neighbour.
 
 Participation is one authored fact, `SkinnedMeshComponent::CastsProjectedShadow`
 (default on), read only by the projected-shadow gather. It is one leg of the
