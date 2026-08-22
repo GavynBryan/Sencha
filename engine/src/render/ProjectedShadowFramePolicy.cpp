@@ -206,3 +206,37 @@ std::uint32_t GatherProjectedShadowReceivers(std::span<const RenderQueueItem> it
     }
     return excluded;
 }
+
+ProjectedShadowScreenRect UnionProjectedShadowScreenRects(
+    std::span<const ProjectedShadowScreenRect> rects)
+{
+    std::int32_t minX = 0, minY = 0, maxX = 0, maxY = 0;
+    bool any = false;
+    for (const ProjectedShadowScreenRect& rect : rects)
+    {
+        if (rect.Width == 0 || rect.Height == 0)
+            continue;
+        const std::int32_t right = rect.X + static_cast<std::int32_t>(rect.Width);
+        const std::int32_t bottom = rect.Y + static_cast<std::int32_t>(rect.Height);
+        if (!any)
+        {
+            minX = rect.X; minY = rect.Y; maxX = right; maxY = bottom;
+            any = true;
+        }
+        else
+        {
+            minX = std::min(minX, rect.X);
+            minY = std::min(minY, rect.Y);
+            maxX = std::max(maxX, right);
+            maxY = std::max(maxY, bottom);
+        }
+    }
+    if (!any)
+        return {};
+    return ProjectedShadowScreenRect{
+        .X = minX,
+        .Y = minY,
+        .Width = static_cast<std::uint32_t>(maxX - minX),
+        .Height = static_cast<std::uint32_t>(maxY - minY),
+    };
+}

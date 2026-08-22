@@ -97,6 +97,11 @@ struct ProjectedShadowScreenRect
     std::uint32_t Height = 0;
 };
 
+// The union of per-caster rects: where the composite may touch the frame.
+// Empty rects contribute nothing; all-empty unions to empty.
+[[nodiscard]] ProjectedShadowScreenRect UnionProjectedShadowScreenRects(
+    std::span<const ProjectedShadowScreenRect> rects);
+
 [[nodiscard]] ProjectedShadowScreenRect ComputeProjectedShadowScreenRect(
     const Aabb3d& sweptBounds,
     const Mat4& cameraViewProjection,

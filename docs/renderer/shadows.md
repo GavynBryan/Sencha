@@ -53,9 +53,22 @@ Budgets are cvars (`render.shadow.projected.max_casters`, `.tile_px`,
 `.max_receivers`), deterministic and counted: nearest casters win,
 `RenderEntityKey` ties, the drop published through
 `RenderStats::ProjectedCastersDropped`. Known limits, accepted and recorded:
-overlapping casters double-darken shared receivers; no self-shadowing or
-receiver-normal test; rest-pose silhouettes until the animation runtime lands;
-the editor's brush-queue transparents draw before projection (two-queue split).
+no self-shadowing or receiver-normal test; rest-pose silhouettes until the
+animation runtime lands; the editor's brush-queue transparents draw before
+projection (two-queue split).
+
+Overlap resolves to the union, not a product. Receiver re-draws write
+`silhouette * fade` into a shared R8 screen mask with blend op MAX, and one
+composite -- scissored to the union of the casters' screen rects -- applies
+`scene *= 1 - darkness * mask` exactly once, so a pixel under N shadows is
+exactly as dark as under the strongest one. The mask pass needs the opaque
+depth in its own scope, so the host's rendering instance is suspended and
+resumed around it (`RenderScopeInterruption` owns the suspend/resume
+dependencies: depth write->read on suspend; colour write->load and depth
+read->read/write on resume; the pass owns its own mask transitions). The
+game's MainColor depth is stored rather than discarded for the same reason.
+The editor's one mask target is sized to its largest viewport and every view
+renders at the origin, so the composite maps view UVs by scale alone.
 
 
 ## Storage

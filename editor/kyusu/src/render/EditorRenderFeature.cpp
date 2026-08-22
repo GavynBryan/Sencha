@@ -246,6 +246,16 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
         MaterialPath ? std::span<const DependencyPointId>(shadowDependency)
                      : std::span<const DependencyPointId>{};
 
+    // The shared mask target's extent for this frame: the largest live
+    // viewport, so every view's DrawMask sees the same extent and the store
+    // never rebuilds mid-frame.
+    MaskExtent = {};
+    for (const ViewSlot& slot : ViewSlots)
+    {
+        MaskExtent.width = std::max(MaskExtent.width, slot.Target.Extent.width);
+        MaskExtent.height = std::max(MaskExtent.height, slot.Target.Extent.height);
+    }
+
     // Separate loop on purpose: a declared view holds a pointer into ViewSlots,
     // and pushing to it above would move the ones already declared.
     for (ViewSlot& slot : ViewSlots)
@@ -600,9 +610,16 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     scope.Color.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     scope.Color.Clear.color = { { 0.05f, 0.09f, 0.12f, 1.0f } };
     scope.ColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+    const bool projectHere = ProjectedFrame.Ready && MaterialPath
+        && viewport.Orientation == ViewportOrientation::Perspective
+        && viewport.Shading == ViewportShading::Solid;
     scope.Depth.View = target.DepthView;
     scope.Depth.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    scope.Depth.StoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    // A projecting view suspends this instance mid-frame to write the shadow
+    // mask against the opaque depth; the contents must survive that boundary.
+    // Every other view keeps the discard.
+    scope.Depth.StoreOp = projectHere ? VK_ATTACHMENT_STORE_OP_STORE
+                                      : VK_ATTACHMENT_STORE_OP_DONT_CARE;
     scope.Depth.Clear.depthStencil = { 1.0f, 0 };
     scope.DepthFormat = Services.DepthFormat;
     scope.Phase = RenderPhase::Offscreen;
@@ -703,15 +720,13 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         // editor's two-queue split, not of the mechanism.
         if (MaterialPath)
         {
-            const bool projectHere = ProjectedFrame.Ready
-                && viewport.Orientation == ViewportOrientation::Perspective
-                && viewport.Shading == ViewportShading::Solid;
             const MeshForwardPass::DrawToken token = Forward.DrawOpaque(
                 local, camera, QueueBuilder->Lights(),
                 QueueBuilder->MeshQueue(), *MeshCache, *MaterialStore,
                 SkinnedMeshCacheRef);
             if (projectHere)
             {
+                UnionScratch.clear();
                 for (std::size_t i = 0; i < ProjectedFrame.Casters.size(); ++i)
                 {
                     ProjectedShadowProjection& projection = ProjectedFrame.Casters[i];
@@ -724,12 +739,29 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
                     projection.ScissorY = rect.Y;
                     projection.ScissorWidth = rect.Width;
                     projection.ScissorHeight = rect.Height;
+                    UnionScratch.push_back(rect);
                 }
                 ProjectedShadowProjectionInput input;
                 input.VertexStride = ProjectedFrame.VertexStride;
                 input.Casters = ProjectedFrame.Casters;
                 input.Receivers = ProjectedFrame.Receivers;
-                ProjectedProject.Draw(local, input);
+
+                // The mask needs this view's opaque depth in its own scope:
+                // suspend the viewport's instance, write the mask, resume,
+                // composite once. One shared mask target serves every view
+                // in turn -- views record sequentially, and each renders at
+                // the origin, so the composite maps UVs by scale alone.
+                const ProjectedShadowScreenRect unionRect =
+                    UnionProjectedShadowScreenRects(UnionScratch);
+                RenderScopeInterruption gap(local);
+                const bool masked =
+                    ProjectedProject.DrawMask(local, input, MaskExtent);
+                gap.Resume();
+                if (masked)
+                    ProjectedProject.Composite(
+                        local, QueueBuilder->Lights().ProjectedShadowDarkness,
+                        unionRect.X, unionRect.Y,
+                        unionRect.Width, unionRect.Height);
             }
             Forward.DrawTransparent(local, QueueBuilder->MeshQueue(), *MeshCache,
                                     *MaterialStore, SkinnedMeshCacheRef,

@@ -334,7 +334,12 @@ void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
     depthAttach.imageView = DepthTarget->GetView();
     depthAttach.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     depthAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttach.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    // STORE, not DONT_CARE: a feature may split this phase into two rendering
+    // instances around mid-phase offscreen work (RenderScopeInterruption), and
+    // the depth contents must survive that boundary for the resumed instance
+    // and the intervening read-only test. Cost is one depth writeback on
+    // desktop; measured by the projected-shadow bench A/B rather than assumed.
+    depthAttach.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     depthAttach.clearValue.depthStencil = { 1.0f, 0 };
 
     VkRenderingInfo renderingInfo{};
@@ -353,6 +358,7 @@ void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
     ctx.FrameInFlightIndex = frame.FrameIndex;
     ctx.TargetExtent = frame.SwapchainExtent;
     ctx.TargetFormat = frame.SwapchainFormat;
+    ctx.TargetView = frame.SwapchainImageView;
     ctx.DepthView = DepthTarget->GetView();
     ctx.DepthFormat = DepthTarget->GetFormat();
     ctx.Phase = RenderPhase::MainColor;

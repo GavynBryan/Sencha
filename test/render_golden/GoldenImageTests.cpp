@@ -239,6 +239,18 @@ TEST(GoldenImage, AProjectedShadowFallsAwayFromItsLight)
                  .EditorCook = true });
 }
 
+// Two casters whose shadows cross on the floor, at different distances from
+// one light so the overlapping contributions are unequal and soft-edged. The
+// mask's MAX blend means the crossing region resolves to the strongest
+// single contribution -- per pixel, both == min(A alone, B alone) -- instead
+// of the multiplied darkening this frame showed before the mask existed.
+TEST(GoldenImage, OverlappingShadowsResolveToTheirUnion)
+{
+    CheckScene({ .Name = "projected_overlap",
+                 .Map = "levels/golden_projected_overlap.level",
+                 .EditorCook = true });
+}
+
 // The same geometry through a blended default material: the transparent pass's
 // pixel proof. If blend ever silently falls back to opaque again, this frame
 // stops showing the background through the floor and the comparison fails.

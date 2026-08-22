@@ -63,4 +63,5 @@ private:
     std::vector<ProjectedSilhouetteCasterDraw> CasterDraws;
     std::vector<ProjectedSilhouetteSectionDraw> SectionDraws;
     std::vector<std::uint32_t> ReceiverIndices;
+    std::vector<ProjectedShadowScreenRect> UnionScratch;
 };

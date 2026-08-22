@@ -249,6 +249,11 @@ private:
     std::vector<ProjectedShadowDirectionState> ProjectedDirections;
     ProjectedShadowFrameData ProjectedFrame;
     std::vector<Aabb3d> ProjectedSweptBounds;
+    // One mask target serves every viewport in turn (views record
+    // sequentially); sized once per frame to the largest live viewport so
+    // per-view extents never churn the store.
+    VkExtent2D MaskExtent{};
+    std::vector<ProjectedShadowScreenRect> UnionScratch;
     std::vector<std::uint32_t> ProjectedReceiverScratch;
     ProjectedShadowBudgets ProjectedBudgets;
     // Retained across frames: rebuilt every frame, but the storage is not, and

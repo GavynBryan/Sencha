@@ -175,3 +175,40 @@ TEST(ProjectedShadowFramePolicy, TheScreenRectBoundsTheVolumeAndClampsToTheTarge
     EXPECT_EQ(full.Width, 1280u);
     EXPECT_EQ(full.Height, 720u);
 }
+
+// The composite's scissor: union of the per-caster rects, with empty rects
+// contributing nothing.
+TEST(ProjectedShadowFramePolicy, ScreenRectUnionCoversAllAndIgnoresEmpty)
+{
+    struct Case
+    {
+        const char* Name;
+        std::vector<ProjectedShadowScreenRect> Rects;
+        ProjectedShadowScreenRect Expected;
+    };
+    const Case cases[] = {
+        { "empty input", {}, {} },
+        { "single", { { 10, 20, 30, 40 } }, { 10, 20, 30, 40 } },
+        { "disjoint pair",
+          { { 0, 0, 10, 10 }, { 100, 50, 20, 20 } },
+          { 0, 0, 120, 70 } },
+        { "contained", { { 0, 0, 100, 100 }, { 10, 10, 5, 5 } },
+          { 0, 0, 100, 100 } },
+        { "empty rects ignored",
+          { { 5, 5, 0, 7 }, { 40, 40, 8, 8 }, { 9, 9, 3, 0 } },
+          { 40, 40, 8, 8 } },
+        { "all empty", { { 1, 2, 0, 0 }, { 3, 4, 0, 5 } }, {} },
+        { "negative origins",
+          { { -20, -10, 30, 15 }, { 5, 2, 10, 10 } },
+          { -20, -10, 35, 22 } },
+    };
+    for (const Case& c : cases)
+    {
+        const ProjectedShadowScreenRect got =
+            UnionProjectedShadowScreenRects(c.Rects);
+        EXPECT_EQ(got.X, c.Expected.X) << c.Name;
+        EXPECT_EQ(got.Y, c.Expected.Y) << c.Name;
+        EXPECT_EQ(got.Width, c.Expected.Width) << c.Name;
+        EXPECT_EQ(got.Height, c.Expected.Height) << c.Name;
+    }
+}

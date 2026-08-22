@@ -102,6 +102,11 @@ struct FrameContext
     uint32_t FrameInFlightIndex = 0;
     VkExtent2D TargetExtent{};
     VkFormat TargetFormat = VK_FORMAT_UNDEFINED;
+    // The bound colour attachment. Carried so a feature that must interleave
+    // offscreen work mid-phase can resume an equivalent rendering instance
+    // (RenderScopeInterruption); everything else draws inside the active
+    // instance and never needs it.
+    VkImageView TargetView = VK_NULL_HANDLE;
     VkImageView DepthView = VK_NULL_HANDLE;
     VkFormat DepthFormat = VK_FORMAT_UNDEFINED;
     RenderPhase Phase = RenderPhase::MainColor;

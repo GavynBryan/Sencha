@@ -1,6 +1,7 @@
 #include <render/MeshRenderFeature.h>
 
 #include <graphics/vulkan/ProjectedShadowProjectPass.h>
+#include <graphics/vulkan/RenderScope.h>
 
 #include <profiling/CpuScopeTimings.h>
 #include <profiling/RenderInstrumentation.h>
@@ -68,11 +69,26 @@ void MeshRenderFeature::OnDraw(const FrameContext& frame)
             frame, *Camera, *Lights, *Queue, *Meshes, *Materials, SkinnedMeshes);
         if (ProjectPass != nullptr && ProjectedShadows->Ready)
         {
+            // Union-of-shadows: the receivers write a screen mask while the
+            // phase's instance is suspended (the mask pass needs the opaque
+            // depth in its own scope), then one composite inside the resumed
+            // instance applies darkness exactly once. When Ready is false
+            // this whole block vanishes and the phase records as a single
+            // instance, exactly as before the mask existed.
             ProjectedShadowProjectionInput input;
             input.VertexStride = ProjectedShadows->VertexStride;
             input.Casters = ProjectedShadows->Casters;
             input.Receivers = ProjectedShadows->Receivers;
-            ProjectPass->Draw(frame, input);
+            RenderScopeInterruption gap(frame);
+            const bool masked =
+                ProjectPass->DrawMask(frame, input, frame.TargetExtent);
+            gap.Resume();
+            if (masked)
+                ProjectPass->Composite(frame, ProjectedShadows->Darkness,
+                                       ProjectedShadows->UnionX,
+                                       ProjectedShadows->UnionY,
+                                       ProjectedShadows->UnionWidth,
+                                       ProjectedShadows->UnionHeight);
         }
         Pass.DrawTransparent(frame, *Queue, *Meshes, *Materials, SkinnedMeshes,
                              Vec4{ 1.0f, 1.0f, 1.0f, 1.0f }, token);

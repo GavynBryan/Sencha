@@ -122,7 +122,7 @@ void ProjectedShadowRenderFeature::OnDraw(const FrameContext& frame)
         projection.Uniform.ShadowViewProjection = viewProjection;
         projection.Uniform.TileScaleBias =
             ProjectedShadowTileUvScaleBias(grid, thisTile);
-        projection.Uniform.Params = Vec4(Lights->ProjectedShadowDarkness,
+        projection.Uniform.Params = Vec4(0.0f,
                                          Lights->ProjectedShadowFadeStart,
                                          0.0f, 0.0f);
         projection.ScissorX = rect.X;
@@ -177,6 +177,23 @@ void ProjectedShadowRenderFeature::OnDraw(const FrameContext& frame)
         static_cast<float>(Silhouettes.AtlasBindlessIndex());
     for (ProjectedShadowProjection& projection : Output->Casters)
         projection.Uniform.Params.Z = atlasIndex;
+
+    // The composite's reach and its one application of darkness.
+    UnionScratch.clear();
+    for (const ProjectedShadowProjection& projection : Output->Casters)
+        UnionScratch.push_back(ProjectedShadowScreenRect{
+            .X = projection.ScissorX,
+            .Y = projection.ScissorY,
+            .Width = projection.ScissorWidth,
+            .Height = projection.ScissorHeight,
+        });
+    const ProjectedShadowScreenRect unionRect =
+        UnionProjectedShadowScreenRects(UnionScratch);
+    Output->Darkness = Lights->ProjectedShadowDarkness;
+    Output->UnionX = unionRect.X;
+    Output->UnionY = unionRect.Y;
+    Output->UnionWidth = unionRect.Width;
+    Output->UnionHeight = unionRect.Height;
 
     Output->Ready = !Output->Casters.empty();
     if (stats != nullptr)
