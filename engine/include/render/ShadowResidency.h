@@ -4,6 +4,7 @@
 #include <render/ShadowAtlasAllocator.h>
 #include <render/ShadowCasterSet.h>
 #include <render/ShadowResidencyTypes.h>
+#include <render/ShadowSlotPool.h>
 
 #include <cstdint>
 #include <span>
@@ -82,11 +83,11 @@ public:
     // slots referenced by a grant.
     [[nodiscard]] const SpotShadowView& SlotRecord(std::uint32_t slot) const
     {
-        return Slots[slot].Rendered;
+        return SpotRendered[slot];
     }
     [[nodiscard]] const PointShadowView& PointSlotRecord(std::uint32_t slot) const
     {
-        return PointSlots[slot].Rendered;
+        return PointRendered[slot];
     }
     [[nodiscard]] SpotShadowSlotInfo SlotInfo(std::uint32_t slot) const;
     [[nodiscard]] PointShadowSlotInfo PointSlotInfo(std::uint32_t slot) const;
@@ -110,50 +111,6 @@ public:
     void Reset();
 
 private:
-    struct Slot
-    {
-        bool Live = false;
-        RenderEntityKey Owner;
-        ShadowAtlasAllocation Allocation;
-        ShadowUpdatePolicy Policy = ShadowUpdatePolicy::OnChange;
-        std::uint64_t StateHash = 0;
-        Sphere Volume;
-        SpotShadowView Rendered;
-        bool EverRendered = false;
-        bool Invalid = false;
-        std::uint32_t AcquiredFrame = 0;
-        std::uint32_t LastRenderedFrame = 0;
-        std::uint32_t InvalidatedFrame = 0;
-        std::uint32_t OutscoredFrames = 0;
-
-        // Per-frame transients, rebuilt by Update.
-        std::uint32_t RequestIndex = UINT32_MAX;
-        float EffectiveScore = 0.0f;
-        bool ScheduledThisFrame = false;
-    };
-
-    struct PointSlot
-    {
-        bool Live = false;
-        RenderEntityKey Owner;
-        ShadowUpdatePolicy Policy = ShadowUpdatePolicy::OnChange;
-        std::uint64_t StateHash = 0;
-        Sphere Volume;
-        PointShadowView Rendered;
-        std::uint32_t PendingFaces = 0;
-        bool EverRendered = false;
-        bool Invalid = false;
-        std::uint32_t AcquiredFrame = 0;
-        std::uint32_t LastRenderedFrame = 0;
-        std::uint32_t InvalidatedFrame = 0;
-        std::uint32_t OutscoredFrames = 0;
-
-        // Per-frame transients, rebuilt by Update.
-        std::uint32_t RequestIndex = UINT32_MAX;
-        float EffectiveScore = 0.0f;
-        bool ScheduledThisFrame = false;
-    };
-
     void IntakeEvents(std::span<const ShadowCasterEvent> events);
     void MatchRequests(std::span<const SpotShadowRequest> requests);
     void MatchPointRequests(std::span<const PointShadowRequest> requests);
@@ -171,20 +128,26 @@ private:
     void BuildGrants(std::span<const SpotShadowRequest> requests,
                      std::span<const PointShadowRequest> pointRequests);
 
-    void AcquireSlot(Slot& slot, const SpotShadowRequest& request,
+    void AcquireSlot(ShadowSlotState& slot, const SpotShadowRequest& request,
                      std::uint32_t requestIndex,
                      const ShadowAtlasAllocation& allocation);
-    void AcquirePointSlot(PointSlot& slot, const PointShadowRequest& request,
+    void AcquirePointSlot(ShadowSlotState& slot, const PointShadowRequest& request,
                           std::uint32_t requestIndex);
-    void ReleaseSlot(Slot& slot);
-    void MarkInvalid(Slot& slot);
-    void MarkPointInvalid(PointSlot& slot);
+    void ReleaseSlot(ShadowSlotState& slot);
+    void MarkInvalid(ShadowSlotState& slot);
+    void MarkPointInvalid(ShadowSlotState& slot);
     [[nodiscard]] ShadowAtlasAllocation AllocateWithDowngrade(std::uint32_t tileSize);
     [[nodiscard]] bool IsRequestGranted(std::uint32_t requestIndex) const;
     [[nodiscard]] bool IsPointRequestGranted(std::uint32_t requestIndex) const;
 
-    Slot Slots[kMaxSpotShadows];
-    PointSlot PointSlots[kMaxPointShadows];
+    // The pool-neutral slot state (ShadowSlotPool.h) plus the typed extras
+    // beside it, indexed by slot: what makes a spot slot a spot slot lives
+    // here, not in a second state struct.
+    ShadowSlotState Slots[kMaxSpotShadows];
+    ShadowSlotState PointSlots[kMaxPointShadows];
+    ShadowAtlasAllocation SpotAllocations[kMaxSpotShadows];
+    SpotShadowView SpotRendered[kMaxSpotShadows];
+    PointShadowView PointRendered[kMaxPointShadows];
     ShadowAtlasAllocator Atlas;
     std::vector<SpotShadowGrant> FrameGrants;
     std::vector<PointShadowGrant> FramePointGrants;
