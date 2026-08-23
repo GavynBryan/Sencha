@@ -18,6 +18,11 @@ struct EnumValue
 {
     E Value;
     std::string_view Name;
+    // Display metadata, editor-only. Display is what a selector shows in
+    // place of the humanized Name; Tooltip explains the choice on hover.
+    // Archives round-trip Name and never read either.
+    std::string_view Display{};
+    std::string_view Tooltip{};
 };
 
 //=============================================================================
@@ -58,6 +63,8 @@ struct EnumOption
 {
     std::int64_t     Value = 0;
     std::string_view Name;
+    std::string_view Display{};
+    std::string_view Tooltip{};
 };
 
 namespace EnumSchemaDetail
@@ -71,6 +78,8 @@ namespace EnumSchemaDetail
         {
             out[i].Value = static_cast<std::int64_t>(EnumSchema<E>::Values[i].Value);
             out[i].Name = EnumSchema<E>::Values[i].Name;
+            out[i].Display = EnumSchema<E>::Values[i].Display;
+            out[i].Tooltip = EnumSchema<E>::Values[i].Tooltip;
         }
         return out;
     }();

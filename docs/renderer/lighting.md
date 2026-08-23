@@ -89,6 +89,43 @@ each packed light that wants a shadow emits one request, in pack order,
 The two tiers are the cap guarantee: a baked light can never evict a live
 one, and zones bake precisely so few live lights remain.
 
+## The options, in designer terms
+
+The inspector shows these labels (schema display metadata; the persisted
+strings in parentheses never change). The two unrelated meanings "static"
+used to carry are split: **Lighting** is about baking, **Shadow Update** is
+about shadow-map cadence, and neither implies the other.
+
+**Lighting** (`bake_contribution`) -- how a light participates in baking,
+which happens when the zone cooks:
+
+| Label | Persisted | Shadow maps | Lightmaps | Probes (bounce) | Per-frame cost |
+|---|---|---|---|---|---|
+| Realtime | `none` | if it casts | no | no | full |
+| Mixed (realtime light, baked bounce) | `indirect` | if it casts | no | yes* | full |
+| Baked | `direct` | never | yes | yes* | fills leftover light slots only; skipped by lightmapped surfaces |
+
+\* Bounce reaches probes only where the zone has probe volumes; without one,
+Mixed is simply Realtime and a Baked light's bounce goes nowhere.
+
+A Baked light is baked for the world and live for what moves: lightmapped
+surfaces read it from the atlas, movable and unmapped surfaces are lit by it
+directly.
+
+**Shadow Update** (`shadow_update`) -- how often a casting light's shadow
+map re-renders. Unrelated to baking:
+
+| Label | Persisted | Re-renders |
+|---|---|---|
+| Every Frame | `every_frame` | every frame |
+| On Change | `on_change` | when casters inside the light change |
+| Cached (renders once) | `static` | once per slot acquisition |
+
+**Mesh flags** (`StaticMeshComponent`): "Casts Shadows (shadow maps)"
+(`cast_shadows`) puts the mesh into realtime shadow maps; "Blocks Baked
+Light" (`affects_baked_lighting`) makes it occlude the bake -- off for
+anything that moves, or its shadow bakes in at the cooked pose.
+
 The tie-break on `RenderEntityKey` is what makes selection deterministic: keys
 order by registry kind, then persistent `ZoneId` for zone registries or runtime
 registry id otherwise, then entity index and generation. Two lights with

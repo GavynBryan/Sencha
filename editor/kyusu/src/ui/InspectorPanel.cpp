@@ -113,6 +113,15 @@ namespace
         }
     }
 
+    // What a selector shows for one option: its declared display name, else
+    // the humanized persisted string. Selection always writes the value; the
+    // persisted string never changes with the display.
+    std::string EnumOptionLabel(const EnumOption& option)
+    {
+        return option.Display.empty() ? HumanizeFieldLabel(std::string(option.Name))
+                                      : std::string(option.Display);
+    }
+
     // A combo edit is atomic: selecting an option both begins and commits the
     // edit in one frame, unlike a drag's activate/deactivate pair.
     FieldEdit DrawEnumField(const RuntimeField& field, void* ptr, const std::string& id)
@@ -123,7 +132,7 @@ namespace
         std::string preview;
         for (const EnumOption& option : field.Enum)
             if (option.Value == current)
-                preview = HumanizeFieldLabel(std::string(option.Name));
+                preview = EnumOptionLabel(option);
         // A value outside the schema's table (hand-edited data, removed
         // enumerator) shows as its raw number rather than pretending.
         if (preview.empty())
@@ -134,19 +143,41 @@ namespace
             for (const EnumOption& option : field.Enum)
             {
                 const bool selected = option.Value == current;
-                if (ImGui::Selectable(HumanizeFieldLabel(std::string(option.Name)).c_str(), selected)
+                if (ImGui::Selectable(EnumOptionLabel(option).c_str(), selected)
                     && !selected)
                 {
                     WriteEnumUnderlying(ptr, field, option.Value);
                     edit.Activated = true;
                     edit.Committed = true;
                 }
+                if (!option.Tooltip.empty()
+                    && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+                    ImGui::SetTooltip("%.*s",
+                                      static_cast<int>(option.Tooltip.size()),
+                                      option.Tooltip.data());
                 if (selected)
                     ImGui::SetItemDefaultFocus();
             }
             ImGui::EndCombo();
         }
         return edit;
+    }
+
+    // One row's left-column text: the schema's declared label when it has
+    // one, else the humanized persisted name. A declared tooltip shows on
+    // hover. Display only -- ids and serialization keep the raw path.
+    void DrawFieldLabel(const RuntimeField& field)
+    {
+        ImGui::AlignTextToFramePadding();
+        if (field.Label.empty())
+            ImGui::TextUnformatted(HumanizeFieldLabel(field.Name).c_str());
+        else
+            ImGui::TextUnformatted(field.Label.data(),
+                                   field.Label.data() + field.Label.size());
+        if (!field.Tooltip.empty()
+            && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+            ImGui::SetTooltip("%.*s", static_cast<int>(field.Tooltip.size()),
+                              field.Tooltip.data());
     }
 
     // Lays out one row as [label column | widget column], the widget filling the
@@ -157,8 +188,7 @@ namespace
         FieldEdit edit;
         void* ptr = component + field.Offset;
 
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(HumanizeFieldLabel(field.Name).c_str());
+        DrawFieldLabel(field);
         ImGui::SameLine(labelWidth);
         ImGui::SetNextItemWidth(-FLT_MIN);
 
@@ -436,8 +466,7 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
 
     if (field.Arity != AssetArity::List)
     {
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(HumanizeFieldLabel(field.Name).c_str());
+        DrawFieldLabel(field);
         ImGui::SameLine(labelWidth);
         ImGui::SetNextItemWidth(-FLT_MIN);
 
@@ -456,8 +485,7 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
     // List arity (per-slot materials): an ordered slot per index. The slot count
     // is the authored set length, free to grow or shrink; a mesh section past the
     // end falls back to the last member at render time (StaticMeshComponent).
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(HumanizeFieldLabel(field.Name).c_str());
+    DrawFieldLabel(field);
 
     ImGui::PushID(field.Name.c_str());
     ImGui::Indent();

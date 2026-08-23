@@ -62,6 +62,11 @@ struct RuntimeField
     // Scalar stays the underlying integer kind and the bytes at Offset are
     // unchanged, so a consumer without enum awareness still works.
     std::span<const EnumOption> Enum{};
+    // Display metadata from the field declaration, editor-only: the row label
+    // an inspector shows instead of humanizing Name, and its hover text.
+    // string_views into the schema's literals, alive for the program.
+    std::string_view Label{};
+    std::string_view Tooltip{};
     // Replication metadata, inherited from the nearest annotated ancestor: a
     // range tagged on a Vec3 member applies to each of its floats, and a
     // subtree excluded from the wire excludes every leaf under it. A consumer
@@ -187,6 +192,10 @@ namespace RuntimeSchemaDetail
                 out.OwnerOnly = ownerOnly;
                 out.OwnerLocal = ownerLocal;
                 out.LocalOnly = localOnly;
+                // Display metadata stays with the member it was declared on;
+                // a label on a composite does not rename the leaves inside it.
+                out.Label = field.DisplayLabel;
+                out.Tooltip = field.DisplayTooltip;
             };
 
             using MemberType = std::remove_cvref_t<M>;

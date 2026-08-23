@@ -53,17 +53,32 @@ struct TypeSchema<SpotLightComponent>
             MakeField("enabled", &SpotLightComponent::Enabled)
                 .Default(defaults.Enabled),
             MakeField("cast_shadows", &SpotLightComponent::CastShadows)
-                .Default(defaults.CastShadows),
+                .Default(defaults.CastShadows)
+                .Tooltip("Renders a realtime shadow map for this light. "
+                         "Costs one of the frame's budgeted shadow slots."),
             MakeField("shadow_resolution", &SpotLightComponent::ShadowResolution)
-                .Default(defaults.ShadowResolution),
+                .Default(defaults.ShadowResolution)
+                .Tooltip("Requested shadow-map tile size: Low 256, Medium "
+                         "512, High 1024."),
             MakeField("shadow_update", &SpotLightComponent::ShadowUpdate)
-                .Default(defaults.ShadowUpdate),
+                .Default(defaults.ShadowUpdate)
+                .Label("Shadow Update")
+                .Tooltip("How often this light's shadow map re-renders. "
+                         "Unrelated to baked lighting."),
             MakeField("shadow_softness", &SpotLightComponent::ShadowSoftness)
-                .Default(defaults.ShadowSoftness),
+                .Default(defaults.ShadowSoftness)
+                .Tooltip("Widens the shadow filter, in texels, on top of the "
+                         "global softness setting."),
             MakeField("shadow_bias_scale", &SpotLightComponent::ShadowBiasScale)
-                .Default(defaults.ShadowBiasScale),
+                .Default(defaults.ShadowBiasScale)
+                .Tooltip("Scales the depth bias that stops a surface "
+                         "shadowing itself. Raise if lit surfaces stripe; "
+                         "lower if shadows detach from their objects."),
             MakeField("bake_contribution", &SpotLightComponent::BakeContribution)
-                .Default(defaults.BakeContribution),
+                .Default(defaults.BakeContribution)
+                .Label("Lighting")
+                .Tooltip("How this light participates in baked lighting. "
+                         "Baking happens when the zone cooks."),
         };
     }
 };

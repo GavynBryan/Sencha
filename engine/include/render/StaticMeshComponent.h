@@ -115,9 +115,17 @@ struct TypeSchema<StaticMeshComponent>
                 .AsAsset(AssetType::Material, AssetArity::List),
             MakeField("visible", &StaticMeshComponent::Visible),
             MakeField("cast_shadows", &StaticMeshComponent::CastShadows)
-                .Default(defaults.CastShadows),
+                .Default(defaults.CastShadows)
+                .Label("Casts Shadows (shadow maps)")
+                .Tooltip("This mesh renders into realtime shadow maps. "
+                         "Unrelated to baked lighting."),
             MakeField("affects_baked_lighting", &StaticMeshComponent::AffectsBakedLighting)
-                .Default(defaults.AffectsBakedLighting),
+                .Default(defaults.AffectsBakedLighting)
+                .Label("Blocks Baked Light")
+                .Tooltip("This mesh occludes light during the bake: it casts "
+                         "shadows into lightmaps and probe bounce. Turn off "
+                         "for anything that moves, or its shadow bakes in at "
+                         "the cooked pose."),
             MakeField("layer_mask", &StaticMeshComponent::LayerMask),
             MakeField("section_mask", &StaticMeshComponent::SectionMask),
             MakeField("lightmap_scale_bias", &StaticMeshComponent::LightmapScaleBias)

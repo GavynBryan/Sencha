@@ -9,9 +9,12 @@
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/JsonArchive.h>
+#include <math/MathSchemas.h>
 #include <render/MaterialCache.h>
+#include <render/PointLightComponent.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 #include <world/registry/Registry.h>
+#include <world/serialization/ComponentSerializer.h>
 #include <world/serialization/SceneFieldCodec.h>
 #include <world/serialization/SceneSerializer.h>
 
@@ -497,4 +500,40 @@ TEST(SceneFieldCodec, AMeshBearingSceneStillLoadsWhereMeshesCannotBeHeld)
         registry.Components.TryGet<SceneCodecMeshComponent>(alive[0]);
     ASSERT_NE(mesh, nullptr);
     EXPECT_FALSE(mesh->Mesh.IsValid()) << "with no mesh behind it";
+}
+
+// Display metadata (Field labels/tooltips, enum display names) is editor-only:
+// a labeled component must serialize under its persisted field names and load
+// back identical, with nothing the labels touched in the archive. The light
+// components are the labeled surface, so one of them is the fixture.
+TEST(SceneFieldCodec, DisplayMetadataNeverReachesTheArchive)
+{
+    LoggingProvider logging;
+    SceneSerializationContext context(logging);
+
+    PointLightComponent light;
+    light.Intensity = 7.5f;
+    light.CastShadows = true;
+    light.ShadowUpdate = ShadowUpdatePolicy::Static;
+    light.BakeContribution = LightBakeContribution::Direct;
+
+    JsonWriteArchive archive;
+    ASSERT_TRUE(SceneComponentSerialization::SaveFields(archive, light, context));
+    JsonValue json = archive.TakeValue();
+
+    // Persisted keys and enum strings, not the display strings.
+    ASSERT_NE(json.Find("bake_contribution"), nullptr);
+    EXPECT_EQ(json.Find("bake_contribution")->AsString(), "direct");
+    ASSERT_NE(json.Find("shadow_update"), nullptr);
+    EXPECT_EQ(json.Find("shadow_update")->AsString(), "static");
+    EXPECT_EQ(json.Find("Lighting"), nullptr);
+    EXPECT_EQ(json.Find("Shadow Update"), nullptr);
+
+    JsonReadArchive reader(json);
+    PointLightComponent loaded;
+    ASSERT_TRUE(SceneComponentSerialization::LoadFields(reader, loaded, context));
+    EXPECT_FLOAT_EQ(loaded.Intensity, 7.5f);
+    EXPECT_TRUE(loaded.CastShadows);
+    EXPECT_EQ(loaded.ShadowUpdate, ShadowUpdatePolicy::Static);
+    EXPECT_EQ(loaded.BakeContribution, LightBakeContribution::Direct);
 }
