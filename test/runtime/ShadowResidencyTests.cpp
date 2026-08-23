@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <core/hash/Fnv1a.h>
 #include <render/ShadowResidency.h>
 
 #include <algorithm>
@@ -781,4 +782,341 @@ TEST(ShadowResidency, AnUncontestedAbsentSlotRetainsItsCachedContent)
     EXPECT_TRUE(HasGrantForLight(residency, 0));
     EXPECT_TRUE(residency.ScheduledViews().empty())
         << "the returning light re-rendered despite its slot being retained";
+}
+
+// ─── Characterization: the recorded pool asymmetries ─────────────────────────
+//
+// The four tests below document CURRENT behavior ahead of the pool
+// unification, so the refactor cannot change any of it silently. They do not
+// endorse it: the EveryFrame point behavior in particular is the recorded
+// defect-1 candidate, and the decision about it lands separately with its
+// own failing-first test.
+
+// A moving EveryFrame point light (state hash changing every frame) has its
+// face rotation reset to all six every frame by MarkPointInvalid, so under a
+// budget clamp the early faces re-render forever, the later faces starve,
+// and the grant -- which needs every face rendered against one state -- is
+// withheld indefinitely. The spot twin below shows the other pool treats the
+// same situation as a no-op.
+TEST(ShadowResidency, EveryFramePointHashChurnResetsRotationAndWithholdsTheGrant)
+{
+    ShadowResidency residency;
+    ShadowResidencyBudgets budgets;
+    budgets.MinInvalidatedViewsPerFrame = 0;
+
+    // Establish the cube fully rendered and granted with an open budget.
+    budgets.MaxViewsPerFrame = 0;
+    std::vector<PointShadowRequest> points{
+        MakePointRequest(1, 0, 3.0f, ShadowUpdatePolicy::EveryFrame, 1),
+    };
+    residency.Update({}, points, {}, budgets);
+    ASSERT_EQ(residency.PointGrants().size(), 1u);
+
+    // Now clamp to two views and move the light every frame.
+    budgets.MaxViewsPerFrame = 2;
+    for (std::uint32_t frame = 0; frame < 12; ++frame)
+    {
+        points[0] = MakePointRequest(1, 0, 3.0f,
+                                     ShadowUpdatePolicy::EveryFrame,
+                                     100 + frame);
+        residency.Update({}, points, {}, budgets);
+
+        ASSERT_EQ(residency.ScheduledPointFaces().size(), 2u);
+        // The reset pre-empts the rotation: always faces 0 and 1.
+        EXPECT_EQ(residency.ScheduledPointFaces()[0].Face, 0u);
+        EXPECT_EQ(residency.ScheduledPointFaces()[1].Face, 1u);
+        // Four faces stay stale against the rendered record, so the grant
+        // never returns while the light keeps moving.
+        EXPECT_TRUE(residency.PointGrants().empty());
+    }
+}
+
+// The spot pool's predicate skips EveryFrame entirely: the same per-frame
+// hash churn neither invalidates nor destabilizes anything, because an
+// EveryFrame tile re-renders whole whenever it is scheduled.
+TEST(ShadowResidency, EveryFrameSpotHashChurnKeepsItsGrant)
+{
+    ShadowResidency residency;
+    ShadowResidencyBudgets budgets;
+    budgets.MaxViewsPerFrame = 1;
+    budgets.MinInvalidatedViewsPerFrame = 0;
+
+    std::vector<SpotShadowRequest> spots{
+        MakeRequest(1, 0, 3.0f, ShadowUpdatePolicy::EveryFrame, 512, 1),
+    };
+    residency.Update(spots, {}, {}, budgets);
+    ASSERT_TRUE(HasGrantForLight(residency, 0));
+
+    for (std::uint32_t frame = 0; frame < 12; ++frame)
+    {
+        spots[0] = MakeRequest(1, 0, 3.0f, ShadowUpdatePolicy::EveryFrame,
+                               512, 100 + frame);
+        residency.Update(spots, {}, {}, budgets);
+
+        EXPECT_EQ(residency.ScheduledViews().size(), 1u);
+        EXPECT_TRUE(HasGrantForLight(residency, 0));
+        EXPECT_FALSE(residency.SlotInfo(0).Invalid);
+    }
+}
+
+// An OnChange point light's hash change dirties every face and withholds the
+// grant until the whole cube re-renders against the new state -- the point
+// predicate's common case, previously untested.
+TEST(ShadowResidency, OnChangePointHashChangeRerendersAllSixFaces)
+{
+    ShadowResidency residency;
+    std::vector<PointShadowRequest> points{
+        MakePointRequest(1, 0, 3.0f, ShadowUpdatePolicy::OnChange, 1),
+    };
+    residency.Update({}, points, {}, kUnlimited);
+    ASSERT_EQ(residency.PointGrants().size(), 1u);
+
+    // Unchanged state: fully cached, nothing scheduled.
+    residency.Update({}, points, {}, kUnlimited);
+    EXPECT_TRUE(residency.ScheduledPointFaces().empty());
+    EXPECT_EQ(residency.FrameStats().Point.CachedSlots, 1u);
+
+    // Changed state: all six faces re-render; with an open budget the grant
+    // returns within the same frame.
+    points[0] = MakePointRequest(1, 0, 3.0f, ShadowUpdatePolicy::OnChange, 2);
+    residency.Update({}, points, {}, kUnlimited);
+    EXPECT_EQ(residency.ScheduledPointFaces().size(), kPointShadowFaceCount);
+    EXPECT_EQ(residency.PointGrants().size(), 1u);
+}
+
+// Stealing a spot slot whose victim sat invalid behaves exactly like
+// stealing a valid one: the new owner re-queues from scratch through the
+// never-rendered path and the grant transfers identically. Pinned because
+// the acquire paths differ internally (AcquirePointSlot resets the Invalid
+// flag, AcquireSlot does not), and the unification must be able to erase
+// that difference without moving behavior -- this test is the proof that
+// the stale state was unobservable.
+TEST(ShadowResidency, StealingAnInvalidHolderMatchesStealingAValidOne)
+{
+    const auto runScenario = [](bool invalidateVictim)
+    {
+        ShadowResidency residency;
+        ShadowResidencyBudgets budgets;
+        budgets.MaxSlots = 2;
+        budgets.MaxViewsPerFrame = 0;
+        budgets.MinInvalidatedViewsPerFrame = 0;
+
+        // An EveryFrame anchor that soaks the one-view budget later, and the
+        // OnChange victim.
+        std::vector<SpotShadowRequest> spots{
+            MakeRequest(1, 0, 100.0f, ShadowUpdatePolicy::EveryFrame, 512, 1),
+            MakeRequest(2, 1, 2.0f, ShadowUpdatePolicy::OnChange, 512, 1),
+        };
+        residency.Update(spots, {}, {}, budgets);
+
+        // Starve the victim: one view per frame, taken by the anchor. An
+        // invalidated victim stays invalid for the whole outscore run.
+        budgets.MaxViewsPerFrame = 1;
+        if (invalidateVictim)
+            spots[1] = MakeRequest(2, 1, 2.0f, ShadowUpdatePolicy::OnChange,
+                                   512, 2);
+
+        // The contender outscores the victim until the steal threshold.
+        spots.insert(spots.begin() + 1,
+                     MakeRequest(3, 2, 50.0f, ShadowUpdatePolicy::OnChange,
+                                 512, 7));
+
+        std::vector<std::uint32_t> grantedLights;
+        std::vector<std::size_t> viewCounts;
+        for (std::uint32_t frame = 0;
+             frame < ShadowResidency::kStealOutscoredFrames + 4; ++frame)
+        {
+            residency.Update(spots, {}, {}, budgets);
+            viewCounts.push_back(residency.ScheduledViews().size());
+            grantedLights.clear();
+            for (const SpotShadowGrant& grant : residency.Grants())
+                grantedLights.push_back(grant.LightIndex);
+        }
+        return std::pair(grantedLights, viewCounts);
+    };
+
+    const auto [grantsInvalid, viewsInvalid] = runScenario(true);
+    const auto [grantsValid, viewsValid] = runScenario(false);
+
+    // Post-steal, the contender's light holds the grant in both runs.
+    EXPECT_EQ(grantsInvalid, (std::vector<std::uint32_t>{ 0u, 2u }));
+    EXPECT_EQ(grantsInvalid, grantsValid);
+    EXPECT_EQ(viewsInvalid, viewsValid);
+}
+
+// ─── The trajectory digest ───────────────────────────────────────────────────
+//
+// One scripted scenario across both pools -- all three policies, hash drift,
+// tier changes, caster events, slot-budget eviction, steals, an absent
+// owner, view-budget clamps, InvalidateAll, and recording failures -- with
+// every frame's observable output (scheduled views and faces, grants, stats,
+// per-slot info) folded into one FNV digest. The pinned constant is the
+// refactor gate: each stage of the pool unification must reproduce it
+// exactly, and only a deliberate behavior change (with its own failing-first
+// test) may re-record it.
+//
+// The digest folds explicit fields in fixed order, never raw struct bytes
+// (padding), and lives only in this test on this toolchain -- the Fnv1a
+// header's rule that such digests are never serialized identities holds.
+
+namespace
+{
+    void FoldFrame(std::uint64_t& digest, const ShadowResidency& residency)
+    {
+        for (const SpotShadowViewJob& job : residency.ScheduledViews())
+        {
+            HashFnv1aValue(digest, job.SlotIndex);
+            HashFnv1aValue(digest, job.Allocation.X);
+            HashFnv1aValue(digest, job.Allocation.Y);
+            HashFnv1aValue(digest, job.Allocation.Size);
+            HashFnv1aValue(digest, job.ViewProjection);
+        }
+        for (const PointShadowFaceJob& job : residency.ScheduledPointFaces())
+        {
+            HashFnv1aValue(digest, job.SlotIndex);
+            HashFnv1aValue(digest, job.Face);
+            HashFnv1aValue(digest, job.ViewProjection);
+        }
+        for (const SpotShadowGrant& grant : residency.Grants())
+        {
+            HashFnv1aValue(digest, grant.LightIndex);
+            HashFnv1aValue(digest, grant.SlotIndex);
+        }
+        for (const PointShadowGrant& grant : residency.PointGrants())
+        {
+            HashFnv1aValue(digest, grant.LightIndex);
+            HashFnv1aValue(digest, grant.SlotIndex);
+        }
+
+        const ShadowFrameStats& stats = residency.FrameStats();
+        for (const ShadowPoolFrameStats& pool : { stats.Spot, stats.Point })
+        {
+            HashFnv1aValue(digest, pool.RequestCount);
+            HashFnv1aValue(digest, pool.HeldRequests);
+            HashFnv1aValue(digest, pool.DeniedRequests);
+            HashFnv1aValue(digest, pool.CachedSlots);
+        }
+        HashFnv1aValue(digest, stats.ViewsScheduled);
+
+        for (std::uint32_t index = 0; index < kMaxSpotShadows; ++index)
+        {
+            const SpotShadowSlotInfo info = residency.SlotInfo(index);
+            HashFnv1aValue(digest, info.Live);
+            HashFnv1aValue(digest, info.Owner.Scope);
+            HashFnv1aValue(digest, info.Owner.Entity.Index);
+            HashFnv1aValue(digest, info.Owner.Entity.Generation);
+            HashFnv1aValue(digest, info.Allocation.X);
+            HashFnv1aValue(digest, info.Allocation.Y);
+            HashFnv1aValue(digest, info.Allocation.Size);
+            HashFnv1aValue(digest, info.Policy);
+            HashFnv1aValue(digest, info.EverRendered);
+            HashFnv1aValue(digest, info.Invalid);
+            HashFnv1aValue(digest, info.FramesSinceAcquired);
+            HashFnv1aValue(digest, info.FramesSinceRendered);
+        }
+        for (std::uint32_t index = 0; index < kMaxPointShadows; ++index)
+        {
+            const PointShadowSlotInfo info = residency.PointSlotInfo(index);
+            HashFnv1aValue(digest, info.Live);
+            HashFnv1aValue(digest, info.Owner.Scope);
+            HashFnv1aValue(digest, info.Owner.Entity.Index);
+            HashFnv1aValue(digest, info.Owner.Entity.Generation);
+            HashFnv1aValue(digest, info.Policy);
+            HashFnv1aValue(digest, info.EverRendered);
+            HashFnv1aValue(digest, info.Invalid);
+            HashFnv1aValue(digest, info.PendingFaces);
+            HashFnv1aValue(digest, info.FramesSinceAcquired);
+            HashFnv1aValue(digest, info.FramesSinceRendered);
+        }
+    }
+}
+
+TEST(ShadowResidency, ATrajectoryDigestPinsTheArbiterEndToEnd)
+{
+    ShadowResidency residency;
+    std::uint64_t digest = kFnv1aOffsetBasis;
+
+    for (std::uint32_t frame = 1; frame <= 500; ++frame)
+    {
+        ShadowResidencyBudgets budgets;
+        // Spot slots clamp to 3 so the strong contender must steal, then to
+        // 2 so budget enforcement evicts a live holder.
+        budgets.MaxSlots = frame >= 300 && frame < 340 ? 2u
+                         : frame >= 80 ? 3u
+                                       : kMaxSpotShadows;
+        budgets.MaxPointSlots = frame >= 180 ? 3u : kMaxPointShadows;
+        // A view-budget clamp era, an open era, and a second clamp.
+        budgets.MaxViewsPerFrame = frame >= 60 && frame < 200 ? 3u
+                                 : frame >= 380 ? 5u
+                                                : 0u;
+        budgets.MinInvalidatedViewsPerFrame = 1;
+
+        // Requests arrive score-descending, as the real callers pack them.
+        std::vector<SpotShadowRequest> spots;
+        if (frame >= 100)
+            spots.push_back(MakeRequest(4, 3, 50.0f,
+                                        ShadowUpdatePolicy::OnChange, 512, 7));
+        // The EveryFrame anchor disappears for a stretch (absent owner).
+        if (frame < 220 || frame >= 260)
+            spots.push_back(MakeRequest(1, 0, 10.0f,
+                                        ShadowUpdatePolicy::EveryFrame, 512, 1));
+        // OnChange with stepped hash drift and two tier changes.
+        spots.push_back(MakeRequest(
+            2, 1, 8.0f, ShadowUpdatePolicy::OnChange,
+            frame >= 400 ? 256u : frame >= 150 ? 1024u : 512u,
+            1 + frame / 30));
+        // Static with per-frame hash drift the policy must ignore.
+        spots.push_back(MakeRequest(3, 2, 6.0f,
+                                    ShadowUpdatePolicy::Static, 512, frame));
+
+        std::vector<PointShadowRequest> points;
+        if (frame >= 200)
+            points.push_back(MakePointRequest(
+                14, 7, 20.0f, ShadowUpdatePolicy::OnChange, 3));
+        // EveryFrame point with slow hash drift (the recorded rotation-reset
+        // regime), OnChange with stepped drift, Static with per-frame drift.
+        points.push_back(MakePointRequest(
+            11, 4, 9.0f, ShadowUpdatePolicy::EveryFrame, 1 + frame / 45));
+        points.push_back(MakePointRequest(
+            12, 5, 7.0f, ShadowUpdatePolicy::OnChange, 1 + frame / 60));
+        points.push_back(MakePointRequest(
+            13, 6, 5.0f, ShadowUpdatePolicy::Static, frame));
+
+        // Caster churn near the OnChange spot (entity 2, x = 20) and the
+        // OnChange point (entity 12, x = 120).
+        std::vector<ShadowCasterEvent> events;
+        if (frame % 90 == 0)
+        {
+            events.push_back(ShadowCasterEvent{
+                .Change = ShadowCasterEvent::Kind::Changed,
+                .Bounds = Aabb3d(Vec3d(19.0f, -1.0f, -1.0f),
+                                 Vec3d(21.0f, 1.0f, 1.0f)),
+            });
+            events.push_back(ShadowCasterEvent{
+                .Change = ShadowCasterEvent::Kind::Changed,
+                .Bounds = Aabb3d(Vec3d(119.0f, -1.0f, -1.0f),
+                                 Vec3d(121.0f, 1.0f, 1.0f)),
+            });
+        }
+
+        residency.Update(spots, points, events, budgets);
+
+        // Recording failures on scheduled work, and the console invalidate.
+        if (frame == 130 && !residency.ScheduledViews().empty())
+            residency.MarkViewFailed(residency.ScheduledViews()[0].SlotIndex);
+        if (frame == 131 && !residency.ScheduledPointFaces().empty())
+            residency.MarkPointFaceFailed(
+                residency.ScheduledPointFaces()[0].SlotIndex,
+                residency.ScheduledPointFaces()[0].Face);
+        if (frame == 250)
+            residency.InvalidateAll();
+
+        FoldFrame(digest, residency);
+    }
+
+    EXPECT_EQ(digest, 0xc18f8d11c39705b9ULL)
+        << "trajectory digest moved: 0x" << std::hex << digest
+        << ". A refactor stage must reproduce it exactly; only a deliberate "
+           "behavior change re-records it, in the same commit, with the "
+           "delta named.";
 }
