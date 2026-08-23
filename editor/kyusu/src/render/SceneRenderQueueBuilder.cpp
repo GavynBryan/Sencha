@@ -19,7 +19,6 @@
 #include <graphics/vulkan/TextureCache.h>
 #include <render/MaterialSetCache.h>
 #include <render/MeshDrawInstance.h>
-#include <render/ProjectedShadowExtractionSystem.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <render/RenderExtractionSystem.h>
 #include <render/IrradianceVolumeComponent.h>
@@ -106,7 +105,6 @@ void SceneRenderQueueBuilder::Build(const EditorDocument& document)
         // still feeds the shadow casters below (it is the same geometry).
         EmitPreviewQueue();
         PlacedMeshes.Reset();
-        ProjectedSet.Reset();
         PlacedMeshes.SortOpaque();
     }
     else
@@ -221,7 +219,6 @@ void SceneRenderQueueBuilder::EmitBrushQueue()
 void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
 {
     PlacedMeshes.Reset();
-    ProjectedSet.Reset();
 
     const EditorScene& scene = document.GetScene();
     const World& world = scene.GetRegistry().Components;
@@ -283,12 +280,6 @@ void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
             instance.WorldBounds = TransformAabb(mesh->LocalBounds, worldMatrix);
             instance.SectionMask = renderer->SectionMask;
             EmitMeshSections(instance, *mesh, *sectionMaterials, Materials, PlacedMeshes);
-
-            // Same walk feeds the grounding gather: the pure rule decides, and
-            // the editor's per-document scope keys the smoothing state.
-            AppendProjectedShadowCaster(
-                *renderer, *mesh, worldMatrix,
-                MakeRenderEntityKey(scene.GetRegistry(), entity), ProjectedSet);
         }
     }
     PlacedMeshes.SortOpaque();

@@ -1,8 +1,5 @@
 #include <render/MeshRenderFeature.h>
 
-#include <graphics/vulkan/ProjectedShadowProjectPass.h>
-#include <graphics/vulkan/RenderScope.h>
-
 #include <profiling/CpuScopeTimings.h>
 #include <profiling/RenderInstrumentation.h>
 #include <profiling/RenderStats.h>
@@ -18,8 +15,7 @@ MeshRenderFeature::MeshRenderFeature(RenderQueue& queue,
                                      const CameraRenderData& camera,
                                      const RenderLightSet& lights,
                                      std::shared_ptr<LightBindings> bindings,
-                                     const SkinnedMeshCache* skinnedMeshes,
-                                     std::shared_ptr<const ProjectedShadowFrameData> projectedShadows)
+                                     const SkinnedMeshCache* skinnedMeshes)
     : Queue(&queue)
     , Meshes(&meshes)
     , SkinnedMeshes(skinnedMeshes)
@@ -27,21 +23,13 @@ MeshRenderFeature::MeshRenderFeature(RenderQueue& queue,
     , Camera(&camera)
     , Lights(&lights)
     , Bindings(std::move(bindings))
-    , ProjectedShadows(std::move(projectedShadows))
 {
 }
-
-MeshRenderFeature::~MeshRenderFeature() = default;
 
 bool MeshRenderFeature::Setup(const RendererServices& services)
 {
     Instrumentation = services.Instrumentation;
     Pass.Setup(services, *Bindings);
-    if (ProjectedShadows != nullptr)
-    {
-        ProjectPass = std::make_unique<ProjectedShadowProjectPass>();
-        ProjectPass->Setup(services);
-    }
     // The pass degrades to inert when the lighting bindings are unusable,
     // which is a deliberate policy: the frame still presents. That is not a
     // setup failure.
@@ -65,33 +53,8 @@ void MeshRenderFeature::OnDraw(const FrameContext& frame)
         CpuScopeTimer timer(
             Instrumentation != nullptr ? Instrumentation->CpuScopes : nullptr,
             CpuScope::ForwardRecord);
-        const MeshForwardPass::DrawToken token = Pass.DrawOpaque(
-            frame, *Camera, *Lights, *Queue, *Meshes, *Materials, SkinnedMeshes);
-        if (ProjectPass != nullptr && ProjectedShadows->Ready)
-        {
-            // Union-of-shadows: the receivers write a screen mask while the
-            // phase's instance is suspended (the mask pass needs the opaque
-            // depth in its own scope), then one composite inside the resumed
-            // instance applies darkness exactly once. When Ready is false
-            // this whole block vanishes and the phase records as a single
-            // instance, exactly as before the mask existed.
-            ProjectedShadowProjectionInput input;
-            input.VertexStride = ProjectedShadows->VertexStride;
-            input.Casters = ProjectedShadows->Casters;
-            input.Receivers = ProjectedShadows->Receivers;
-            RenderScopeInterruption gap(frame);
-            const bool masked =
-                ProjectPass->DrawMask(frame, input, frame.TargetExtent);
-            gap.Resume();
-            if (masked)
-                ProjectPass->Composite(frame, ProjectedShadows->Darkness,
-                                       ProjectedShadows->UnionX,
-                                       ProjectedShadows->UnionY,
-                                       ProjectedShadows->UnionWidth,
-                                       ProjectedShadows->UnionHeight);
-        }
-        Pass.DrawTransparent(frame, *Queue, *Meshes, *Materials, SkinnedMeshes,
-                             Vec4{ 1.0f, 1.0f, 1.0f, 1.0f }, token);
+        Pass.Draw(frame, *Camera, *Lights, *Queue, *Meshes, *Materials,
+                  SkinnedMeshes);
     }
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     if (gpuScopes != nullptr)
@@ -118,7 +81,5 @@ void MeshRenderFeature::OnDraw(const FrameContext& frame)
 
 void MeshRenderFeature::Teardown()
 {
-    if (ProjectPass != nullptr)
-        ProjectPass->Teardown();
     Pass.Teardown();
 }

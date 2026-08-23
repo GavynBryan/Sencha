@@ -128,16 +128,6 @@ public:
     // least dummy-backed) before this call, or the pass stays inert and
     // draws nothing.
     void Setup(const RendererServices& services, LightBindings& bindings);
-    // Carries what DrawTransparent needs from the opaque half: the frame
-    // uniform's dynamic offset and how many instance-stream entries the
-    // scratch grant covered. Invalid when the opaque half drew nothing --
-    // DrawTransparent then draws nothing too, by construction.
-    struct DrawToken
-    {
-        bool Valid = false;
-        VkDeviceSize UniformOffset = 0;
-        uint32_t StreamedInstances = 0;
-    };
 
     // `skinnedMeshes` resolves items whose SkinnedMesh handle is valid (rest
     // geometry today); null makes those items skip, and a host with no skinned
@@ -150,32 +140,6 @@ public:
               MaterialCache& materials,
               const SkinnedMeshCache* skinnedMeshes = nullptr,
               Vec4 tint = Vec4{ 1.0f, 1.0f, 1.0f, 1.0f });
-
-    // The two halves of Draw, for hosts that record something between opaque
-    // geometry and the blended items -- projected object shadows are the
-    // consumer, and spec §63 orders them before transparency because a shadow
-    // multiplied onto glass is paint, not shadow. Draw() is exactly
-    // DrawOpaque then DrawTransparent, so hosts with nothing to interleave
-    // never see the seam.
-    [[nodiscard]] DrawToken DrawOpaque(const FrameContext& frame,
-                                       const CameraRenderData& camera,
-                                       const RenderLightSet& lights,
-                                       const RenderQueue& queue,
-                                       StaticMeshCache& meshes,
-                                       MaterialCache& materials,
-                                       const SkinnedMeshCache* skinnedMeshes = nullptr,
-                                       Vec4 tint = Vec4{ 1.0f, 1.0f, 1.0f, 1.0f });
-
-    // Re-binds the frame state the interleaved pass disturbed (sets,
-    // viewport, scissor) and invalidates the submitter's bind memory before
-    // recording the blended items back-to-front.
-    void DrawTransparent(const FrameContext& frame,
-                         const RenderQueue& queue,
-                         StaticMeshCache& meshes,
-                         MaterialCache& materials,
-                         const SkinnedMeshCache* skinnedMeshes,
-                         Vec4 tint,
-                         const DrawToken& token);
     void Teardown();
 
     // Pass-local totals, maintained unconditionally at run granularity (the
@@ -200,6 +164,32 @@ public:
     [[nodiscard]] DrawStats GetLastDrawStats() const { return LastStats; }
 
 private:
+    // Carries what the transparent half needs from the opaque half: how many
+    // instance-stream entries the scratch grant covered. Invalid when the
+    // opaque half drew nothing -- the transparent half then draws nothing
+    // too, by construction.
+    struct DrawToken
+    {
+        bool Valid = false;
+        uint32_t StreamedInstances = 0;
+    };
+
+    [[nodiscard]] DrawToken DrawOpaque(const FrameContext& frame,
+                                       const CameraRenderData& camera,
+                                       const RenderLightSet& lights,
+                                       const RenderQueue& queue,
+                                       StaticMeshCache& meshes,
+                                       MaterialCache& materials,
+                                       const SkinnedMeshCache* skinnedMeshes,
+                                       Vec4 tint);
+    // Records the blended items back-to-front after the opaque half.
+    void DrawTransparent(const FrameContext& frame,
+                         const RenderQueue& queue,
+                         StaticMeshCache& meshes,
+                         MaterialCache& materials,
+                         const SkinnedMeshCache* skinnedMeshes,
+                         Vec4 tint,
+                         const DrawToken& token);
     [[nodiscard]] bool EnsurePipelines(const FrameContext& frame);
     [[nodiscard]] bool EnsureTransparentPipelines(const FrameContext& frame);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING

@@ -17,7 +17,6 @@
 #include <core/console/CVarRead.h>
 #include <core/console/ConsoleTypes.h>
 #include <render/CameraProjection.h>
-#include <render/ProjectedShadowCVars.h>
 #include <render/RenderLightCVars.h>
 #include <world/registry/Registry.h>
 
@@ -119,11 +118,8 @@ bool EditorRenderFeature::Setup(const RendererServices& services)
     Fills.Setup(services);
     Targets.Setup(services);
     Bloom.Setup(services);
-    ProjectedSilhouettes.Setup(services, sizeof(StaticMeshVertex));
-    ProjectedProject.Setup(services);
     Composition.Setup(services.Logging);
     ShadowAtlasReady = Composition.DeclarePoint("ShadowAtlasReady");
-    ProjectedSilhouettesReady = Composition.DeclarePoint("ProjectedSilhouettesReady");
     if (Log != nullptr)
         Log->Info("EditorRenderFeature setup complete");
     // Each viewport renderer degrades on its own (a failed lighting set
@@ -206,16 +202,6 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
                         this },
             .Produces = ShadowAtlasReady,
         });
-        // Always produced while the material path is up, even with zero
-        // casters: the views' dependency list is static, and a point nobody
-        // produced would skip every view.
-        Composition.AddWork({
-            .Name = "projected_silhouettes",
-            .Record = { [](void* self, const FrameContext& context)
-                        { static_cast<EditorRenderFeature*>(self)->RecordProjectedSilhouettes(context); },
-                        this },
-            .Produces = ProjectedSilhouettesReady,
-        });
     }
 
     // Every viewport that is actually on screen. A hidden panel zeroes its
@@ -240,21 +226,10 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
 
     // Without the material path there is no shadow work to wait on, and a view
     // that waited on a point nobody produced would be skipped outright.
-    const DependencyPointId shadowDependency[] = { ShadowAtlasReady,
-                                                   ProjectedSilhouettesReady };
+    const DependencyPointId shadowDependency[] = { ShadowAtlasReady };
     const std::span<const DependencyPointId> viewDependsOn =
         MaterialPath ? std::span<const DependencyPointId>(shadowDependency)
                      : std::span<const DependencyPointId>{};
-
-    // The shared mask target's extent for this frame: the largest live
-    // viewport, so every view's DrawMask sees the same extent and the store
-    // never rebuilds mid-frame.
-    MaskExtent = {};
-    for (const ViewSlot& slot : ViewSlots)
-    {
-        MaskExtent.width = std::max(MaskExtent.width, slot.Target.Extent.width);
-        MaskExtent.height = std::max(MaskExtent.height, slot.Target.Extent.height);
-    }
 
     // Separate loop on purpose: a declared view holds a pointer into ViewSlots,
     // and pushing to it above would move the ones already declared.
@@ -279,182 +254,6 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
     Targets.Prune(LiveViewports);
 }
 
-void EditorRenderFeature::RecordProjectedSilhouettes(const FrameContext& frame)
-{
-    ProjectedFrame.Reset();
-    ProjectedSweptBounds.clear();
-    if (QueueBuilder == std::nullopt || SkinnedMeshCacheRef == nullptr)
-        return;
-
-    const RenderLightSet& lights = QueueBuilder->Lights();
-    ProjectedShadowSet& casters = QueueBuilder->ProjectedCasters();
-    if (!lights.ProjectedShadowsEnabled || casters.Casters.empty())
-        return;
-
-    ProjectedBudgets = ReadProjectedShadowBudgets(Console);
-
-    // Directions smooth against the UI clock; the editor has no simulation
-    // tick, and what the smoothing needs is only a monotonic dt.
-    ProjectedShadowDirectionParams params;
-    params.FallbackDirection = lights.ProjectedShadowFallbackDirection;
-    params.SmoothingRate = lights.ProjectedShadowSmoothing;
-    params.MinPitchDegrees = lights.ProjectedShadowMinPitchDegrees;
-    UpdateProjectedShadowDirections(
-        casters, std::span<const GpuLight>(lights.Lights, lights.Count),
-        ProjectedDirections, std::min(ImGui::GetIO().DeltaTime, 0.1f), params);
-
-    RankAndClampProjectedCasters(casters, ShadowScoreOrigin(),
-                                 ProjectedBudgets.MaxCasters);
-    const ProjectedShadowTileGrid grid = MakeProjectedShadowTileGrid(
-        ProjectedBudgets.MaxCasters, ProjectedBudgets.TilePixels);
-
-    // One pass per caster builds the silhouette draw and its projection
-    // record together, so a skipped caster (unresident mesh, masked-out
-    // sections, no receivers) can never skew a later caster's tile or
-    // view-projection: the tile ordinal IS the position in casterDraws,
-    // which is the ordinal the silhouette pass renders. The atlas bindless
-    // index is not known until that pass has run, so it is stamped into the
-    // collected uniforms afterwards.
-    //
-    // Receivers come from both WYSIWYG queues -- brush cells and placed
-    // meshes both live in the shared static cache.
-    std::vector<ProjectedSilhouetteCasterDraw> casterDraws;
-    std::vector<ProjectedSilhouetteSectionDraw> sectionDraws;
-    std::vector<ProjectedSilhouetteOccluderDraw> occluderDraws;
-    ProjectedFrame.VertexStride = sizeof(StaticMeshVertex);
-    for (const ProjectedShadowCaster& caster : casters.Casters)
-    {
-        const GpuStaticMesh* mesh = SkinnedMeshCacheRef->Get(caster.Mesh);
-        if (mesh == nullptr)
-            continue;
-        const ProjectedShadowProjectionFit fit =
-            FitProjectedShadowProjection(caster, ProjectedBudgets.MaxDistance);
-        const Mat4& viewProjection = fit.ViewProjection;
-        ProjectedSilhouetteCasterDraw draw;
-        draw.Mvp = viewProjection * caster.WorldMatrix;
-        draw.FirstSection = static_cast<std::uint32_t>(sectionDraws.size());
-        for (std::uint32_t section = 0; section < mesh->Sections.size(); ++section)
-        {
-            if ((caster.SectionMask & (1u << section)) == 0)
-                continue;
-            sectionDraws.push_back(ProjectedSilhouetteSectionDraw{
-                .Vertex = mesh->VertexBuffer,
-                .Index = mesh->IndexBuffer,
-                .IndexCount = mesh->Sections[section].IndexCount,
-                .IndexOffset = mesh->Sections[section].IndexOffset,
-            });
-        }
-        draw.SectionCount =
-            static_cast<std::uint32_t>(sectionDraws.size()) - draw.FirstSection;
-        if (draw.SectionCount == 0)
-            continue;
-        const std::uint32_t thisTile =
-            static_cast<std::uint32_t>(casterDraws.size());
-        const std::uint32_t firstOccluder =
-            static_cast<std::uint32_t>(occluderDraws.size());
-        casterDraws.push_back(draw);
-
-        const Aabb3d swept =
-            ProjectedShadowSweptBounds(caster, ProjectedBudgets.MaxDistance);
-
-        ProjectedShadowProjection projection;
-        projection.Uniform.ShadowViewProjection = viewProjection;
-        projection.Uniform.DirectionBias = Vec4(
-            caster.Direction.X, caster.Direction.Y, caster.Direction.Z,
-            fit.DepthRange > 0.0f
-                ? ProjectedBudgets.BiasWorld / fit.DepthRange : 0.0f);
-        projection.Uniform.TileScaleBias =
-            ProjectedShadowTileUvScaleBias(grid, thisTile);
-        projection.Uniform.Params = Vec4(0.0f,
-                                         lights.ProjectedShadowFadeStart,
-                                         0.0f, 0.0f);
-        projection.FirstReceiver =
-            static_cast<std::uint32_t>(ProjectedFrame.Receivers.size());
-
-        const auto appendReceivers = [&](const RenderQueue& queue)
-        {
-            ProjectedReceiverScratch.clear();
-            GatherProjectedShadowReceivers(queue.Opaque(), swept,
-                                           ProjectedBudgets.MaxReceiversPerCaster,
-                                           ProjectedReceiverScratch);
-            for (const std::uint32_t itemIndex : ProjectedReceiverScratch)
-            {
-                const RenderQueueItem& item = queue.Opaque()[itemIndex];
-                const GpuStaticMesh* receiverMesh = MeshCache->Get(item.Mesh);
-                if (receiverMesh == nullptr
-                    || item.SectionIndex >= receiverMesh->Sections.size())
-                    continue;
-                const StaticMeshSection& section =
-                    receiverMesh->Sections[item.SectionIndex];
-                ProjectedFrame.Receivers.push_back(ProjectedReceiverDraw{
-                    .Vertex = receiverMesh->VertexBuffer,
-                    .Index = receiverMesh->IndexBuffer,
-                    .IndexCount = section.IndexCount,
-                    .IndexOffset = section.IndexOffset,
-                    .World = item.WorldMatrix,
-                });
-                // The receiver set doubles as the occluder set: projection
-                // stops at the first of these surfaces along the shadow ray.
-                occluderDraws.push_back(ProjectedSilhouetteOccluderDraw{
-                    .Vertex = receiverMesh->VertexBuffer,
-                    .Index = receiverMesh->IndexBuffer,
-                    .IndexCount = section.IndexCount,
-                    .IndexOffset = section.IndexOffset,
-                    .Mvp = viewProjection * item.WorldMatrix,
-                });
-            }
-        };
-        appendReceivers(QueueBuilder->BrushQueue());
-        appendReceivers(QueueBuilder->MeshQueue());
-
-        casterDraws.back().FirstOccluder = firstOccluder;
-        casterDraws.back().OccluderCount =
-            static_cast<std::uint32_t>(occluderDraws.size()) - firstOccluder;
-        projection.ReceiverCount =
-            static_cast<std::uint32_t>(ProjectedFrame.Receivers.size())
-            - projection.FirstReceiver;
-        if (projection.ReceiverCount == 0)
-            continue;
-        ProjectedFrame.Casters.push_back(projection);
-        ProjectedSweptBounds.push_back(swept);
-    }
-    if (casterDraws.empty())
-    {
-        ProjectedFrame.Reset();
-        ProjectedSweptBounds.clear();
-        return;
-    }
-
-    ProjectedSilhouetteInput silhouettes;
-    silhouettes.TilesPerRow = grid.TilesPerRow;
-    silhouettes.TilePixels = grid.TilePixels;
-    silhouettes.SoftnessTexels = ProjectedBudgets.SoftnessTexels;
-    silhouettes.Casters = casterDraws;
-    silhouettes.Sections = sectionDraws;
-    silhouettes.Occluders = occluderDraws;
-    if (!ProjectedSilhouettes.Draw(frame, silhouettes))
-    {
-        // The projections sample an atlas that never rendered this frame.
-        ProjectedFrame.Reset();
-        ProjectedSweptBounds.clear();
-        return;
-    }
-    const float atlasIndex =
-        static_cast<float>(ProjectedSilhouettes.AtlasBindlessIndex());
-    const std::uint32_t occluderSlot = ProjectedSilhouettes.OccluderBindlessIndex();
-    const float occluderIndex = occluderSlot != UINT32_MAX
-        ? static_cast<float>(occluderSlot) : 0.0f;
-    const float occlusionEnabled = occluderSlot != UINT32_MAX ? 1.0f : 0.0f;
-    for (ProjectedShadowProjection& projection : ProjectedFrame.Casters)
-    {
-        projection.Uniform.Params.X = occluderIndex;
-        projection.Uniform.Params.Z = atlasIndex;
-        projection.Uniform.Params.W = occlusionEnabled;
-    }
-
-    ProjectedFrame.Ready = !ProjectedFrame.Casters.empty();
-}
-
 void EditorRenderFeature::RecordViewportView(const FrameContext& frame, const FrameView& view)
 {
     ViewSlot& slot = *static_cast<ViewSlot*>(view.User);
@@ -471,7 +270,6 @@ void EditorRenderFeature::UpdateShadowResidency(const FrameContext& frame)
     if (!(sceneRegistry == ShadowSceneRegistry))
     {
         Residency.Reset();
-        ProjectedDirections.clear();
         ShadowSceneRegistry = sceneRegistry;
     }
 
@@ -639,16 +437,9 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     scope.Color.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     scope.Color.Clear.color = { { 0.05f, 0.09f, 0.12f, 1.0f } };
     scope.ColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-    const bool projectHere = ProjectedFrame.Ready && MaterialPath
-        && viewport.Orientation == ViewportOrientation::Perspective
-        && viewport.Shading == ViewportShading::Solid;
     scope.Depth.View = target.DepthView;
     scope.Depth.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    // A projecting view suspends this instance mid-frame to write the shadow
-    // mask against the opaque depth; the contents must survive that boundary.
-    // Every other view keeps the discard.
-    scope.Depth.StoreOp = projectHere ? VK_ATTACHMENT_STORE_OP_STORE
-                                      : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    scope.Depth.StoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     scope.Depth.Clear.depthStencil = { 1.0f, 0 };
     scope.DepthFormat = Services.DepthFormat;
     scope.Phase = RenderPhase::Offscreen;
@@ -741,60 +532,11 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
             body->DrawViewport(local, viewport, camera, scene);
         // Placed meshes draw in every viewport so they read regardless of shading: through
         // the real-material queue when active, else the procedural-checker fallback.
-        // Perspective Solid viewports apply the grounding projections between the
-        // opaque and transparent halves, the same ordering the game uses; ortho
-        // working views skip them the way they skip the sky -- a blob under a
-        // character describes nothing in a 2D view. Brush transparents drew with
-        // the body above, so a shadow can land on them: recorded limit of the
-        // editor's two-queue split, not of the mechanism.
         if (MaterialPath)
         {
-            const MeshForwardPass::DrawToken token = Forward.DrawOpaque(
-                local, camera, QueueBuilder->Lights(),
-                QueueBuilder->MeshQueue(), *MeshCache, *MaterialStore,
-                SkinnedMeshCacheRef);
-            if (projectHere)
-            {
-                UnionScratch.clear();
-                for (std::size_t i = 0; i < ProjectedFrame.Casters.size(); ++i)
-                {
-                    ProjectedShadowProjection& projection = ProjectedFrame.Casters[i];
-                    projection.Uniform.CameraViewProjection = camera.ViewProjection;
-                    const ProjectedShadowScreenRect rect =
-                        ComputeProjectedShadowScreenRect(
-                            ProjectedSweptBounds[i], camera.ViewProjection,
-                            local.TargetExtent.width, local.TargetExtent.height);
-                    projection.ScissorX = rect.X;
-                    projection.ScissorY = rect.Y;
-                    projection.ScissorWidth = rect.Width;
-                    projection.ScissorHeight = rect.Height;
-                    UnionScratch.push_back(rect);
-                }
-                ProjectedShadowProjectionInput input;
-                input.VertexStride = ProjectedFrame.VertexStride;
-                input.Casters = ProjectedFrame.Casters;
-                input.Receivers = ProjectedFrame.Receivers;
-
-                // The mask needs this view's opaque depth in its own scope:
-                // suspend the viewport's instance, write the mask, resume,
-                // composite once. One shared mask target serves every view
-                // in turn -- views record sequentially, and each renders at
-                // the origin, so the composite maps UVs by scale alone.
-                const ProjectedShadowScreenRect unionRect =
-                    UnionProjectedShadowScreenRects(UnionScratch);
-                RenderScopeInterruption gap(local);
-                const bool masked =
-                    ProjectedProject.DrawMask(local, input, MaskExtent);
-                gap.Resume();
-                if (masked)
-                    ProjectedProject.Composite(
-                        local, QueueBuilder->Lights().ProjectedShadowDarkness,
-                        unionRect.X, unionRect.Y,
-                        unionRect.Width, unionRect.Height);
-            }
-            Forward.DrawTransparent(local, QueueBuilder->MeshQueue(), *MeshCache,
-                                    *MaterialStore, SkinnedMeshCacheRef,
-                                    Vec4(1.0f, 1.0f, 1.0f, 1.0f), token);
+            Forward.Draw(local, camera, QueueBuilder->Lights(),
+                         QueueBuilder->MeshQueue(), *MeshCache, *MaterialStore,
+                         SkinnedMeshCacheRef);
         }
         else
             Meshes.DrawViewport(local, viewport, camera, scene);
@@ -916,6 +658,4 @@ void EditorRenderFeature::Teardown()
     Fills.Teardown();
     Targets.Teardown();
     Bloom.Teardown();
-    ProjectedSilhouettes.Teardown();
-    ProjectedProject.Teardown();
 }

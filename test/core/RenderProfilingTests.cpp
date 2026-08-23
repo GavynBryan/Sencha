@@ -180,9 +180,9 @@ TEST(RenderCapture, JsonEnvelopeCarriesSchemaCvarsAndUnitKeyedFrames)
     ASSERT_TRUE(parsed.has_value()) << error.Message;
     const JsonValue& root = *parsed;
     ASSERT_NE(root.Find("schema_version"), nullptr);
-    // Last moved by the projected-object-shadow counters joining the frame
-    // record (v5).
-    EXPECT_EQ(root.Find("schema_version")->AsNumber(), 5.0);
+    // Last moved by the projected-object-shadow counters leaving the frame
+    // record (v6).
+    EXPECT_EQ(root.Find("schema_version")->AsNumber(), 6.0);
     EXPECT_EQ(root.Find("frame_count")->AsNumber(), 3.0);
     ASSERT_NE(root.Find("cvars"), nullptr);
     ASSERT_NE(root.Find("cvars")->Find("render.profile.mode"), nullptr);

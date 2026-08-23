@@ -762,9 +762,7 @@ MeshForwardPass::DrawToken MeshForwardPass::DrawOpaque(const FrameContext& frame
     }
 #endif
     DrawRuns(frame, queue, meshes, materials, skinnedMeshes, tint, streamed);
-    return DrawToken{ .Valid = true,
-                      .UniformOffset = *uniformOffset,
-                      .StreamedInstances = streamed };
+    return DrawToken{ .Valid = true, .StreamedInstances = streamed };
 }
 
 void MeshForwardPass::DrawTransparent(const FrameContext& frame,
@@ -778,12 +776,8 @@ void MeshForwardPass::DrawTransparent(const FrameContext& frame,
     if (!token.Valid || TransparentOrder.empty())
         return;
 
-    // An interleaved pass bound its own pipeline, sets, viewport, and
-    // scissor; rebind ours and forget what the submitter thinks is bound.
-    // The instance stream at binding 1 survives -- vertex bindings are
-    // command-buffer state and the interleaved pass binds only binding 0.
-    BindFrameState(frame, token.UniformOffset);
-    Submitter.Invalidate();
+    // The frame state and instance stream the opaque half bound are still
+    // current; only the pipeline changes, and the submitter handles that.
     RecordTransparentItems(frame, queue, meshes, materials, skinnedMeshes, tint,
                            token.StreamedInstances);
 }

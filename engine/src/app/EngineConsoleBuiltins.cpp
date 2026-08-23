@@ -1,7 +1,5 @@
 #include <app/EngineConsoleBuiltins.h>
 
-#include <render/ProjectedShadowCVars.h>
-
 #include <app/DefaultRenderPipeline.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
@@ -174,10 +172,6 @@ namespace EngineConsoleBuiltins
                     "Off yields byte-identical direct lighting and shadows.",
             .Source = { "renderer defaults" },
         });
-
-        // Feature-owned console surfaces register themselves; this root only
-        // delegates, so it does not accrete every subsystem's knob names.
-        RegisterProjectedShadowCVars(registry);
 
         registry.RegisterCVar({
             .Name = "render.sky.enabled",

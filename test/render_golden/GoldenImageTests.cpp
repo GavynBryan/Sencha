@@ -218,51 +218,6 @@ TEST(GoldenImage, ARestPoseSkinnedMeshDraws)
                  .EditorCook = true });
 }
 
-// A skinned caster standing on a floor with a projected grounding shadow --
-// the §17 pixel gate. Everything from the flag to the multiply blend has to
-// hold for the dark patch at the caster's base to survive comparison.
-TEST(GoldenImage, AProjectedShadowGroundsItsCaster)
-{
-    CheckScene({ .Name = "projected_shadow", .Map = "levels/golden_projected_shadow.level",
-                 .EditorCook = true });
-}
-
-// One light, one caster, asymmetric on purpose: the light sits up-left of the
-// rig, so the streak must land on the right -- away from it -- with an extent
-// that is analytic from the light and bounds alone. Pins the side and reach of
-// the derived direction; a flipped, degenerate, or unclamped direction moves
-// this frame where the symmetric multi-light scenes might not.
-TEST(GoldenImage, AProjectedShadowFallsAwayFromItsLight)
-{
-    CheckScene({ .Name = "projected_direction",
-                 .Map = "levels/golden_projected_direction.level",
-                 .EditorCook = true });
-}
-
-// Two casters whose shadows cross on the floor, at different distances from
-// one light so the overlapping contributions are unequal and soft-edged. The
-// mask's MAX blend means the crossing region resolves to the strongest
-// single contribution -- per pixel, both == min(A alone, B alone) -- instead
-// of the multiplied darkening this frame showed before the mask existed.
-TEST(GoldenImage, OverlappingShadowsResolveToTheirUnion)
-{
-    CheckScene({ .Name = "projected_overlap",
-                 .Map = "levels/golden_projected_overlap.level",
-                 .EditorCook = true });
-}
-
-// A wall between the caster and the floor beyond it: the shadow lands on the
-// first receiver surface along the ray and nowhere else -- nothing behind
-// the wall, nothing on faces turned away from the shadow direction. The
-// occluder depth tile and the receiver-facing test are both load-bearing in
-// this frame; HL2 shipped the leak this scene forbids.
-TEST(GoldenImage, AWallStopsAProjectedShadow)
-{
-    CheckScene({ .Name = "projected_occlusion",
-                 .Map = "levels/golden_projected_occlusion.level",
-                 .EditorCook = true });
-}
-
 // The same geometry through a blended default material: the transparent pass's
 // pixel proof. If blend ever silently falls back to opaque again, this frame
 // stops showing the background through the floor and the comparison fails.

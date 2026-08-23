@@ -28,23 +28,6 @@ struct RenderLightSet
     // than left as the host's flat clear. Off restores the pre-gradient look in
     // both the game and the editor viewport.
     bool SkyEnabled = true;
-
-    // Projected object shadows (the grounding silhouettes for things that
-    // move). The fallback direction is what a caster grounds along when no
-    // light dominates it -- the interim authoring source, cvar-fed like the
-    // sky colours until an authored environment record replaces it.
-    bool ProjectedShadowsEnabled = true;
-    float ProjectedShadowDarkness = 0.55f;
-    float ProjectedShadowMaxDistance = 6.0f;
-    // Where along the projection depth the shadow starts releasing contact,
-    // in the silhouette's [0,1] depth space.
-    float ProjectedShadowFadeStart = 0.35f;
-    float ProjectedShadowSmoothing = 16.0f;
-    // Minimum downward pitch of the derived direction, degrees below
-    // horizontal; lights below a caster's center cannot push the grounding
-    // shadow up or flat.
-    float ProjectedShadowMinPitchDegrees = 20.0f;
-    Vec<3> ProjectedShadowFallbackDirection = Vec<3>(0.0f, -1.0f, 0.0f);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     RenderDebugView DebugView = RenderDebugView::None;
 #endif

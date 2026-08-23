@@ -108,9 +108,6 @@ void RenderStatsPanel::Draw()
 	ImGui::Text("  casters tested %u  visible %u  runs %u",
 	            stats->ShadowCastersTested, stats->ShadowCastersVisible,
 	            stats->ShadowInstanceRuns);
-	ImGui::Text("  projected: gathered %u  rendered %u  dropped %u  receiver draws %u",
-	            stats->ProjectedCastersGathered, stats->ProjectedCastersRendered,
-	            stats->ProjectedCastersDropped, stats->ProjectedReceiverDraws);
 
 	ImGui::Separator();
 	ImGui::Text("Frame services");

@@ -35,24 +35,4 @@ void ApplyRendererCVars(const ConsoleRegistry* console, RenderLightSet& lights)
     lights.BakedAoEnabled = ReadCVarBool(
         console, "render.ao.enabled", lights.BakedAoEnabled);
     lights.SkyEnabled = ReadCVarBool(console, "render.sky.enabled", lights.SkyEnabled);
-    lights.ProjectedShadowsEnabled =
-        ReadCVarBool(console, "render.shadow.projected", lights.ProjectedShadowsEnabled);
-    lights.ProjectedShadowDarkness = ReadCVarFloat(
-        console, "render.shadow.projected.darkness", lights.ProjectedShadowDarkness);
-    lights.ProjectedShadowMaxDistance = ReadCVarFloat(
-        console, "render.shadow.projected.max_distance", lights.ProjectedShadowMaxDistance);
-    lights.ProjectedShadowFadeStart = ReadCVarFloat(
-        console, "render.shadow.projected.fade_start", lights.ProjectedShadowFadeStart);
-    lights.ProjectedShadowSmoothing = ReadCVarFloat(
-        console, "render.shadow.projected.smoothing", lights.ProjectedShadowSmoothing);
-    lights.ProjectedShadowMinPitchDegrees = ReadCVarFloat(
-        console, "render.shadow.projected.min_pitch",
-        lights.ProjectedShadowMinPitchDegrees);
-    lights.ProjectedShadowFallbackDirection = Vec<3>(
-        ReadCVarFloat(console, "render.shadow.projected.dir_x",
-                      lights.ProjectedShadowFallbackDirection.X),
-        ReadCVarFloat(console, "render.shadow.projected.dir_y",
-                      lights.ProjectedShadowFallbackDirection.Y),
-        ReadCVarFloat(console, "render.shadow.projected.dir_z",
-                      lights.ProjectedShadowFallbackDirection.Z));
 }

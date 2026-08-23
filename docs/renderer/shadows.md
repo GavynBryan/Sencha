@@ -4,110 +4,22 @@ Two pools, one arbiter, one depth pass. Everything CPU-side is deterministic:
 identical request and event sequences produce identical slot assignment, atlas
 placement, and view schedules.
 
-## Projected object shadows
+## Projected object shadows: removed
 
-The grounding technique for things that move (spec §17, the Source 1 role):
-each caster renders its silhouette into a tile of one small R8 atlas from a
-per-caster shadow direction, and nearby static receivers are re-drawn with
-that tile projected onto them, darkening multiplicatively. Crisp by
-construction -- the silhouette is the mesh's own coverage at tile resolution,
-blurred in atlas space (`render.shadow.projected.softness`, texels of
-separable-blur reach) so the projected edge is a penumbra that magnifies
-smoothly on close receivers instead of texel stairs; the blur costs atlas
-texels once per frame, not shadowed screen pixels. Softness stays well inside
-the projection fit's 5% border padding, which is what keeps one tile's blur
-out of its neighbour.
+The Source-1-style grounding silhouettes (silhouette atlas, per-caster derived
+direction, receiver re-draw with a screen-space union mask) shipped and were
+then removed by owner ruling (2026-08-23): the target games do not want the
+look, and the technique's post-multiply application can never agree with real
+shadow maps where they overlap -- a projected shadow inside a shadow-mapped
+region reads as cut off, which is inherent to multiplying final colour rather
+than participating in the light term. Skinned meshes therefore cast no
+shadows at all right now: a recorded stylistic ruling, not a gap.
 
-Participation is one authored fact, `SkinnedMeshComponent::CastsProjectedShadow`
-(default on), read only by the projected-shadow gather. It is one leg of the
-three-flag seam: `AffectsBakedLighting` feeds the bake's occluders,
-`CastShadows` feeds the light shadow maps, and no combined mode exists.
-Skinned meshes deliberately do not enter the light-map caster path; doors and
-other movable placed meshes already do, through `StaticMeshComponent`.
-
-The direction comes from the lights actually affecting the caster: an
-intensity-weighted blend (the forward shader's own attenuation shape, squared)
-over the packed forward set plus a constant-weight authored fallback, smoothed
-exponentially per caster so two lights swapping dominance cannot pop the
-shadow. The blend is clamped onto a grounding cone -- at least
-`render.shadow.projected.min_pitch` degrees below horizontal -- because a
-light below a caster's center (a floor lamp beside a tall character) would
-otherwise push the direction up or flat and paint the caster's bounds as a
-featureless slab across the floor. `render.shadow.projected.dir_*` is the
-fallback's interim source; an authored environment record replaces it. Policies -- direction, ranking,
-budget, tiles, projection fit, receiver gather, scissor -- are pure functions
-in `render/ProjectedShadow*` with headless tests; the two backend passes
-(`graphics/vulkan/ProjectedShadowSilhouettePass`, `...ProjectPass`) take plain
-data.
-
-Frame shape: silhouettes render in the Offscreen phase (game:
-`ProjectedShadowRenderFeature`; editor: a `projected_silhouettes` composition
-work node). Projection applies per view between the forward pass's opaque and
-transparent halves (`MeshForwardPass::DrawOpaque` / `DrawTransparent`) -- a
-shadow multiplied onto glass is paint, not shadow. Receivers are static opaque
-queue items inside the caster's swept volume, capped per caster, scissored to
-the volume's screen rect; skinned items never receive (a blob multiplied onto
-another character reads as dirt).
-
-Budgets are cvars (`render.shadow.projected.max_casters`, `.tile_px`,
-`.max_receivers`), deterministic and counted: nearest casters win,
-`RenderEntityKey` ties, the drop published through
-`RenderStats::ProjectedCastersDropped`. Known limits, accepted and recorded:
-no caster self-shadowing (casters never receive); rest-pose silhouettes until
-the animation runtime lands; the editor's brush-queue transparents draw
-before projection (two-queue split); one blended direction per caster, so N
-lights never yield N shadows; a projected shadow multiplies whatever
-lighting the receiver already has, so it can double-darken a region a real
-light's shadow map or the bake already darkened -- retiring that means
-folding the mask into the direct-light term, a lighting-model decision, not
-a pass fix; a receiver surface lying nearly parallel to the shadow direction
-can receive without blocking (its occluder-tile footprint thins below a
-texel and rasterization drops it), so a silhouette can paint both that
-surface and geometry beyond it -- the retirement path, if wanted, is a
-MIN-dilation pass over the occluder tile.
-
-Projection is occlusion-tested and facing-tested. The receiver re-draw
-carries the mesh normal and rejects surfaces facing away from the shadow
-direction over a short smoothstep shoulder, so the back of a wall inside
-the volume stays clean. Each caster's receiver set doubles as its occluder
-set: the same surfaces render depth-only into an R16F tile beside the
-silhouette (blend op MIN over a far-cleared tile -- the blend is the depth
-test), and projection keeps a shadow only on the first receiver surface
-along the ray (`render.shadow.projected.bias`, world units, normalized per
-caster by the fit's depth range, plus an fwidth slope term). A wall between
-the caster and the floor beyond it stops the shadow -- the leak Source
-shipped for life. Characters neither receive nor block each other, and a
-caster never occludes itself.
-
-The shadow lands only where it can physically reach. Receivers carry their
-normal into the mask pass and surfaces facing away from the shadow direction
-are rejected over a short smoothstep shoulder, so the back of a wall inside
-the volume stays clean. Alongside each silhouette tile, the caster's receiver
-set renders depth-only into an R16F occluder tile (blend MIN over a far-
-cleared tile: the blend is the depth test, no depth attachment involved), and
-projection keeps the shadow only on the first receiver surface along the ray
--- a wall between the caster and the floor beyond stores its depth in front,
-and the floor fails the test instead of catching the shadow through the wall.
-The receiver set doubles as the occluder set, so anything that can catch a
-shadow blocks it, characters neither receive nor block each other, and the
-caster never occludes itself. The bias converting world units
-(`render.shadow.projected.bias`) into normalized shadow depth comes from the
-fit's depth range per caster, plus an fwidth slope term; walls thinner than
-about twice the bias leak, which is an authoring rule, not a bug.
-
-Overlap resolves to the union, not a product. Receiver re-draws write
-`silhouette * fade` into a shared R8 screen mask with blend op MAX, and one
-composite -- scissored to the union of the casters' screen rects -- applies
-`scene *= 1 - darkness * mask` exactly once, so a pixel under N shadows is
-exactly as dark as under the strongest one. The mask pass needs the opaque
-depth in its own scope, so the host's rendering instance is suspended and
-resumed around it (`RenderScopeInterruption` owns the suspend/resume
-dependencies: depth write->read on suspend; colour write->load and depth
-read->read/write on resume; the pass owns its own mask transitions). The
-game's MainColor depth is stored rather than discarded for the same reason.
-The editor's one mask target is sized to its largest viewport and every view
-renders at the origin, so the composite maps view UVs by scale alone.
-
+The reusable arithmetic survives as `render/TextureProjectionPolicy` (ortho
+fit, swept bounds, receiver gather, screen rects, atlas tiling), and
+`docs/renderer/texture-projection.md` records how to rebuild the illusion --
+or a decal system -- from it. Commit `e18ebe9a` holds the last complete
+implementation.
 
 ## Storage
 

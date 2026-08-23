@@ -153,7 +153,7 @@ happens inside the explicit serialize calls.
 | `render.capture.output` | when non-empty in capture mode, per-frame records are written to this path |
 
 The serialized format is the machine-analysis interface, not a log: a
-schema-versioned envelope (`kSchemaVersion = 4`), stable keys, explicit units
+schema-versioned envelope (`kSchemaVersion = 6`), stable keys, explicit units
 (`_ms`, `_bytes`, `_count`).
 
 `SetEnvironment` records device, driver, validation state, and build identity

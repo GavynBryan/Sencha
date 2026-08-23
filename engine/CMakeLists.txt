@@ -141,34 +141,6 @@ if(SENCHA_ENABLE_VULKAN)
         VAR_NAME kSkyGradientFragSpv
         OUT_HEADER _sky_gradient_frag_header
     )
-    foreach(_pshadow_entry
-        "projected_shadow_silhouette.vert.glsl|vert|kProjectedShadowSilhouetteVertSpv"
-        "projected_shadow_silhouette.frag.glsl|frag|kProjectedShadowSilhouetteFragSpv"
-        "projected_shadow_project.vert.glsl|vert|kProjectedShadowProjectVertSpv"
-        "projected_shadow_project.frag.glsl|frag|kProjectedShadowProjectFragSpv"
-        "projected_shadow_blur.vert.glsl|vert|kProjectedShadowBlurVertSpv"
-        "projected_shadow_blur.frag.glsl|frag|kProjectedShadowBlurFragSpv"
-        "projected_shadow_composite.vert.glsl|vert|kProjectedShadowCompositeVertSpv"
-        "projected_shadow_composite.frag.glsl|frag|kProjectedShadowCompositeFragSpv"
-        "projected_shadow_occluder.vert.glsl|vert|kProjectedShadowOccluderVertSpv"
-        "projected_shadow_occluder.frag.glsl|frag|kProjectedShadowOccluderFragSpv")
-        string(REPLACE "|" ";" _pshadow_entry "${_pshadow_entry}")
-        list(GET _pshadow_entry 0 _pshadow_file)
-        list(GET _pshadow_entry 1 _pshadow_stage)
-        list(GET _pshadow_entry 2 _pshadow_var)
-        sencha_compile_shader(
-            SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${_pshadow_file}"
-            STAGE ${_pshadow_stage}
-            OUTPUT_SPV _pshadow_spv
-        )
-        sencha_embed_spirv(
-            SOURCE_SPV "${_pshadow_spv}"
-            VAR_NAME ${_pshadow_var}
-            OUT_HEADER _pshadow_header
-        )
-        list(APPEND SENCHA_ENGINE_GENERATED_HEADERS "${_pshadow_header}")
-    endforeach()
-
     list(APPEND SENCHA_ENGINE_GENERATED_HEADERS
         "${_mesh_forward_vert_header}"
         "${_mesh_forward_frag_header}"

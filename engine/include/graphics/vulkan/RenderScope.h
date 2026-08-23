@@ -65,48 +65,6 @@ struct RenderScopeDesc
 [[nodiscard]] FrameContext MakeScopeContext(const FrameContext& outer,
                                             const RenderScopeDesc& desc);
 
-//=============================================================================
-// RenderScopeInterruption
-//
-// Suspends the ACTIVE rendering instance so mid-phase offscreen work can run
-// against its attachments, then resumes an equivalent instance. The one
-// consumer shape: opaque draws -> project shadows into a screen mask reading
-// the depth attachment -> resume -> composite + transparent.
-//
-// The synchronization is owned here, not by callers:
-//  - construction ends the instance and makes the depth attachment's writes
-//    visible to intervening read-only depth tests;
-//  - Resume() orders the suspended instance's colour writes and the
-//    intervening depth reads before an equivalent instance re-begins with
-//    both attachments LOADed;
-//  - the destructor resumes if the caller has not, so the phase cannot be
-//    left suspended (an assert flags the forgetful caller in debug).
-//
-// Requires the outer instance's colour attachment to have been recorded with
-// STORE (Renderer's MainColor depth is STORE for the same reason). Not a
-// frame graph: one instance out, the same instance shape back in.
-//=============================================================================
-class RenderScopeInterruption
-{
-public:
-    // `frame` must describe the active instance: Cmd recording inside it,
-    // TargetView/DepthView the bound attachments.
-    explicit RenderScopeInterruption(const FrameContext& frame);
-    ~RenderScopeInterruption();
-
-    RenderScopeInterruption(const RenderScopeInterruption&) = delete;
-    RenderScopeInterruption& operator=(const RenderScopeInterruption&) = delete;
-    RenderScopeInterruption(RenderScopeInterruption&&) = delete;
-    RenderScopeInterruption& operator=(RenderScopeInterruption&&) = delete;
-
-    // Re-begins the equivalent instance (colour + depth LOAD). Idempotent.
-    void Resume();
-
-private:
-    FrameContext Frame;
-    bool Resumed = false;
-};
-
 class RenderScope
 {
 public:

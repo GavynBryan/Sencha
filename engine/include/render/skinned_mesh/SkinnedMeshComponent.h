@@ -37,23 +37,17 @@
 // defaulted so scenes cooked before it keep loading -- a serialized field
 // nothing consumes is how the alpha-mask defect shipped.
 //
-// Shadow participation is three independent facts, each read by exactly one
+// Shadow participation is two independent facts, each read by exactly one
 // system, never a combined mode: bake occlusion (AffectsBakedLighting, absent
-// here -- a movable mesh must not bake its shadow in at the cook pose),
+// here -- a movable mesh must not bake its shadow in at the cook pose) and
 // light-map casting (CastShadows, absent here until the map-caster path reads
-// skinned geometry), and the grounding silhouette below.
+// skinned geometry).
 //=============================================================================
 struct SkinnedMeshComponent
 {
     SkinnedMeshHandle Mesh;
     MaterialSetHandle Materials;
     bool Visible = true;
-    // Grounds this mesh with a projected silhouette shadow (the cheap crisp
-    // technique for things that move). Read only by the projected-shadow
-    // gather. On by default: characters are the primary consumer, and the
-    // objects that want it off -- world-attached articulated geometry like
-    // doors -- are placed meshes, not skinned ones, today.
-    bool CastsProjectedShadow = true;
     uint32_t SectionMask = 0xFFFFFFFFu;
     static_assert(kMaxMeshSections <= sizeof(decltype(SectionMask)) * 8,
                   "SectionMask must hold one bit per section that "
@@ -110,15 +104,11 @@ struct TypeSchema<SkinnedMeshComponent>
 
     static auto Fields()
     {
-        // Defaulted so scenes cooked before the field existed keep loading.
-        const SkinnedMeshComponent defaults;
         return std::tuple{
             MakeField("mesh", &SkinnedMeshComponent::Mesh).AsAsset(AssetType::SkinnedMesh),
             MakeField("materials", &SkinnedMeshComponent::Materials)
                 .AsAsset(AssetType::Material, AssetArity::List),
             MakeField("visible", &SkinnedMeshComponent::Visible),
-            MakeField("casts_projected_shadow", &SkinnedMeshComponent::CastsProjectedShadow)
-                .Default(defaults.CastsProjectedShadow),
             MakeField("section_mask", &SkinnedMeshComponent::SectionMask),
         };
     }

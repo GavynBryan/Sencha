@@ -26,12 +26,8 @@
 #include "viewport/ViewportShading.h"
 
 #include <graphics/vulkan/Renderer.h>
-#include <graphics/vulkan/ProjectedShadowProjectPass.h>
-#include <graphics/vulkan/ProjectedShadowSilhouettePass.h>
 #include <graphics/vulkan/SkyGradientPass.h>
 #include <render/FrameComposition.h>
-#include <render/ProjectedShadowDirection.h>
-#include <render/ProjectedShadowFramePolicy.h>
 #include <render/MeshForwardPass.h>
 #include <render/ShadowCasterSet.h>
 #include <render/ShadowResidency.h>
@@ -132,10 +128,6 @@ private:
         ViewportTargetCache::RenderView Target;
     };
 
-    // Renders every caster's silhouette tile and bakes the view-agnostic
-    // half of the projections (receivers, shadow matrices, tiles); the
-    // per-view half (camera, scissor) fills in RenderViewportOffscreen.
-    void RecordProjectedSilhouettes(const FrameContext& frame);
     // The composition's entry point for a viewport view: recovers the slot the
     // view was declared with and renders it with the camera the view carries.
     void RecordViewportView(const FrameContext& frame, const FrameView& view);
@@ -238,24 +230,6 @@ private:
     // used to be a comment above the viewport loop.
     FrameComposition       Composition;
     DependencyPointId      ShadowAtlasReady;
-    DependencyPointId      ProjectedSilhouettesReady;
-    // Projected object shadows, WYSIWYG with the game: silhouettes render
-    // once per frame as composition work; each perspective Solid viewport
-    // applies them between its opaque and transparent halves with its own
-    // camera and scissor. Direction state resets with the focus scene, like
-    // the residency arbiter.
-    ProjectedShadowSilhouettePass ProjectedSilhouettes;
-    ProjectedShadowProjectPass ProjectedProject;
-    std::vector<ProjectedShadowDirectionState> ProjectedDirections;
-    ProjectedShadowFrameData ProjectedFrame;
-    std::vector<Aabb3d> ProjectedSweptBounds;
-    // One mask target serves every viewport in turn (views record
-    // sequentially); sized once per frame to the largest live viewport so
-    // per-view extents never churn the store.
-    VkExtent2D MaskExtent{};
-    std::vector<ProjectedShadowScreenRect> UnionScratch;
-    std::vector<std::uint32_t> ProjectedReceiverScratch;
-    ProjectedShadowBudgets ProjectedBudgets;
     // Retained across frames: rebuilt every frame, but the storage is not, and
     // a declared view holds a pointer into ViewSlots until the frame executes.
     std::vector<ViewSlot>  ViewSlots;
