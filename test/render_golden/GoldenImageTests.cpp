@@ -251,6 +251,18 @@ TEST(GoldenImage, OverlappingShadowsResolveToTheirUnion)
                  .EditorCook = true });
 }
 
+// A wall between the caster and the floor beyond it: the shadow lands on the
+// first receiver surface along the ray and nowhere else -- nothing behind
+// the wall, nothing on faces turned away from the shadow direction. The
+// occluder depth tile and the receiver-facing test are both load-bearing in
+// this frame; HL2 shipped the leak this scene forbids.
+TEST(GoldenImage, AWallStopsAProjectedShadow)
+{
+    CheckScene({ .Name = "projected_occlusion",
+                 .Map = "levels/golden_projected_occlusion.level",
+                 .EditorCook = true });
+}
+
 // The same geometry through a blended default material: the transparent pass's
 // pixel proof. If blend ever silently falls back to opaque again, this frame
 // stops showing the background through the floor and the comparison fails.

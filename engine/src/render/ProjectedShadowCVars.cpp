@@ -80,6 +80,11 @@ void RegisterProjectedShadowCVars(ConsoleRegistry& registry)
                    "Fallback shadow direction Z.");
     RegisterDouble(registry, "render.shadow.projected.tile_px", 256.0,
                    "Silhouette tile edge in pixels.", 32.0, 512.0);
+    RegisterDouble(registry, "render.shadow.projected.bias", 0.03,
+                   "Occlusion depth bias in world units. Fragments within "
+                   "this distance of the nearest receiver along the shadow "
+                   "ray still receive; walls thinner than about twice this "
+                   "leak.", 0.005, 0.5);
     RegisterDouble(registry, "render.shadow.projected.softness", 3.0,
                    "Silhouette blur reach in atlas texels; 0 is sharp "
                    "coverage, higher is a wider, softer penumbra.", 0.0, 8.0);
@@ -102,6 +107,9 @@ ProjectedShadowBudgets ReadProjectedShadowBudgets(const ConsoleRegistry* registr
     budgets.MaxReceiversPerCaster = static_cast<std::uint32_t>(std::clamp(
         ReadDouble(registry, "render.shadow.projected.max_receivers",
                    static_cast<float>(budgets.MaxReceiversPerCaster)), 1.0f, 256.0f));
+    budgets.BiasWorld = std::clamp(
+        ReadDouble(registry, "render.shadow.projected.bias",
+                   budgets.BiasWorld), 0.005f, 0.5f);
     budgets.SoftnessTexels = std::clamp(
         ReadDouble(registry, "render.shadow.projected.softness",
                    budgets.SoftnessTexels), 0.0f, 8.0f);

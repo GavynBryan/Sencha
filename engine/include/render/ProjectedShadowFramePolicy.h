@@ -38,6 +38,10 @@ struct ProjectedShadowBudgets
     std::uint32_t MaxReceiversPerCaster = 24;
     // How far the shadow projects along its direction, in world units.
     float MaxDistance = 6.0f;
+    // Occlusion depth bias, world units: how far behind the nearest receiver
+    // a fragment may sit and still count as that surface. Walls thinner than
+    // roughly twice this leak; content rule, not a bug.
+    float BiasWorld = 0.03f;
 };
 
 // Ranks casters nearest-to-view first (RenderEntityKey ties, so the order is
@@ -76,7 +80,17 @@ struct ProjectedShadowTileRect
 // its direction, far plane extended by the projection distance, a small pad
 // so the silhouette never touches the tile border (the sampler clamps, and a
 // border texel of shadow would smear across the receiver).
-[[nodiscard]] Mat4 MakeProjectedShadowViewProjection(
+// The caster's light-space fit: the ortho view-projection its silhouette and
+// projection share, plus the depth range (world units from near to far) that
+// normalized shadow-depth values span -- what converts a world-unit bias
+// into the [0,1] depth the occlusion test compares in.
+struct ProjectedShadowProjectionFit
+{
+    Mat4 ViewProjection;
+    float DepthRange = 0.0f;
+};
+
+[[nodiscard]] ProjectedShadowProjectionFit FitProjectedShadowProjection(
     const ProjectedShadowCaster& caster, float maxDistance);
 
 // World-space bounds of everything the shadow can touch: the caster's bounds

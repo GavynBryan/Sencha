@@ -53,9 +53,47 @@ Budgets are cvars (`render.shadow.projected.max_casters`, `.tile_px`,
 `.max_receivers`), deterministic and counted: nearest casters win,
 `RenderEntityKey` ties, the drop published through
 `RenderStats::ProjectedCastersDropped`. Known limits, accepted and recorded:
-no self-shadowing or receiver-normal test; rest-pose silhouettes until the
-animation runtime lands; the editor's brush-queue transparents draw before
-projection (two-queue split).
+no caster self-shadowing (casters never receive); rest-pose silhouettes until
+the animation runtime lands; the editor's brush-queue transparents draw
+before projection (two-queue split); one blended direction per caster, so N
+lights never yield N shadows; a projected shadow multiplies whatever
+lighting the receiver already has, so it can double-darken a region a real
+light's shadow map or the bake already darkened -- retiring that means
+folding the mask into the direct-light term, a lighting-model decision, not
+a pass fix; a receiver surface lying nearly parallel to the shadow direction
+can receive without blocking (its occluder-tile footprint thins below a
+texel and rasterization drops it), so a silhouette can paint both that
+surface and geometry beyond it -- the retirement path, if wanted, is a
+MIN-dilation pass over the occluder tile.
+
+Projection is occlusion-tested and facing-tested. The receiver re-draw
+carries the mesh normal and rejects surfaces facing away from the shadow
+direction over a short smoothstep shoulder, so the back of a wall inside
+the volume stays clean. Each caster's receiver set doubles as its occluder
+set: the same surfaces render depth-only into an R16F tile beside the
+silhouette (blend op MIN over a far-cleared tile -- the blend is the depth
+test), and projection keeps a shadow only on the first receiver surface
+along the ray (`render.shadow.projected.bias`, world units, normalized per
+caster by the fit's depth range, plus an fwidth slope term). A wall between
+the caster and the floor beyond it stops the shadow -- the leak Source
+shipped for life. Characters neither receive nor block each other, and a
+caster never occludes itself.
+
+The shadow lands only where it can physically reach. Receivers carry their
+normal into the mask pass and surfaces facing away from the shadow direction
+are rejected over a short smoothstep shoulder, so the back of a wall inside
+the volume stays clean. Alongside each silhouette tile, the caster's receiver
+set renders depth-only into an R16F occluder tile (blend MIN over a far-
+cleared tile: the blend is the depth test, no depth attachment involved), and
+projection keeps the shadow only on the first receiver surface along the ray
+-- a wall between the caster and the floor beyond stores its depth in front,
+and the floor fails the test instead of catching the shadow through the wall.
+The receiver set doubles as the occluder set, so anything that can catch a
+shadow blocks it, characters neither receive nor block each other, and the
+caster never occludes itself. The bias converting world units
+(`render.shadow.projected.bias`) into normalized shadow depth comes from the
+fit's depth range per caster, plus an fwidth slope term; walls thinner than
+about twice the bias leak, which is an authoring rule, not a bug.
 
 Overlap resolves to the union, not a product. Receiver re-draws write
 `silhouette * fade` into a shared R8 screen mask with blend op MAX, and one

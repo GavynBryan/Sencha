@@ -38,12 +38,28 @@ struct ProjectedSilhouetteSectionDraw
 };
 
 // One caster: its light-space MVP and the range of section draws it owns,
-// rendered into the tile matching its position in the caster order.
+// rendered into the tile matching its position in the caster order. The
+// occluder range is the caster's receiver set rendered depth-only into the
+// occluder tile -- the same surfaces that can catch the shadow are the ones
+// that block it.
 struct ProjectedSilhouetteCasterDraw
 {
     Mat4 Mvp;
     std::uint32_t FirstSection = 0;
     std::uint32_t SectionCount = 0;
+    std::uint32_t FirstOccluder = 0;
+    std::uint32_t OccluderCount = 0;
+};
+
+// One receiver rendered as an occluder into a caster's depth tile, with its
+// light-space MVP precomputed by the assembler.
+struct ProjectedSilhouetteOccluderDraw
+{
+    BufferHandle Vertex;
+    BufferHandle Index;
+    std::uint32_t IndexCount = 0;
+    std::uint32_t IndexOffset = 0;
+    Mat4 Mvp;
 };
 
 struct ProjectedSilhouetteInput
@@ -55,6 +71,7 @@ struct ProjectedSilhouetteInput
     float SoftnessTexels = 3.0f;
     std::span<const ProjectedSilhouetteCasterDraw> Casters;
     std::span<const ProjectedSilhouetteSectionDraw> Sections;
+    std::span<const ProjectedSilhouetteOccluderDraw> Occluders;
 };
 
 class ProjectedShadowSilhouettePass
@@ -76,6 +93,12 @@ public:
     // built it. Valid for the frame Draw ran in.
     [[nodiscard]] std::uint32_t AtlasBindlessIndex() const { return BindlessIndex; }
 
+    // The occluder-depth atlas for the same tiles: per texel, the nearest
+    // receiver depth along the shadow ray, 1.0 where nothing blocks.
+    // UINT32_MAX when the frame produced none (no occluders, or the format
+    // cannot blend on this device); projection then skips the occlusion term.
+    [[nodiscard]] std::uint32_t OccluderBindlessIndex() const { return OccluderIndex; }
+
 private:
     [[nodiscard]] bool EnsurePipeline(VkFormat colorFormat);
 
@@ -87,11 +110,19 @@ private:
                                  VkExtent2D extent,
                                  float softnessTexels);
 
+    [[nodiscard]] bool EnsureOccluderPipeline();
+    [[nodiscard]] bool DrawOccluders(const FrameContext& frame,
+                                     const ProjectedSilhouetteInput& input,
+                                     VkExtent2D extent);
+
     RendererServices Services{};
     RenderTargetStore Store;
     RenderTargetId Atlas;
     RenderTargetId BlurScratch;
+    RenderTargetId OccluderAtlas;
     std::uint32_t BindlessIndex = UINT32_MAX;
+    std::uint32_t OccluderIndex = UINT32_MAX;
+    bool OccluderBlendCapable = false;
 
     ShaderHandle VertexShader;
     ShaderHandle FragmentShader;
@@ -99,9 +130,13 @@ private:
     ShaderHandle BlurVertexShader;
     ShaderHandle BlurFragmentShader;
     VkPipelineLayout BlurPipelineLayout = VK_NULL_HANDLE;
+    ShaderHandle OccluderVertexShader;
+    ShaderHandle OccluderFragmentShader;
+    VkPipelineLayout OccluderPipelineLayout = VK_NULL_HANDLE;
     std::uint32_t VertexStride = 0;
     PipelineVariantSet<1, AttachmentFormatKey> Pipeline;
     PipelineVariantSet<1, AttachmentFormatKey> BlurPipeline;
+    PipelineVariantSet<1, AttachmentFormatKey> OccluderPipeline;
 
     [[nodiscard]] bool EnsureBlurPipeline(VkFormat colorFormat);
 };

@@ -60,8 +60,8 @@ Vec4 ProjectedShadowTileUvScaleBias(const ProjectedShadowTileGrid& grid,
                 static_cast<float>(index / grid.TilesPerRow) * scale);
 }
 
-Mat4 MakeProjectedShadowViewProjection(const ProjectedShadowCaster& caster,
-                                       float maxDistance)
+ProjectedShadowProjectionFit FitProjectedShadowProjection(
+    const ProjectedShadowCaster& caster, float maxDistance)
 {
     const Vec<3> center = caster.WorldBounds.Center();
     const Vec<3> direction = caster.Direction;
@@ -114,9 +114,12 @@ Mat4 MakeProjectedShadowViewProjection(const ProjectedShadowCaster& caster,
     // projection reach.
     const float nearPlane = std::max(-maxZ - pad, 1e-3f);
     const float farPlane = -minZ + maxDistance + pad;
-    return MakeVulkanOrthographic(minX - pad, maxX + pad,
-                                  minY - pad, maxY + pad,
-                                  nearPlane, farPlane) * view;
+    return ProjectedShadowProjectionFit{
+        .ViewProjection = MakeVulkanOrthographic(minX - pad, maxX + pad,
+                                                 minY - pad, maxY + pad,
+                                                 nearPlane, farPlane) * view,
+        .DepthRange = farPlane - nearPlane,
+    };
 }
 
 Aabb3d ProjectedShadowSweptBounds(const ProjectedShadowCaster& caster,

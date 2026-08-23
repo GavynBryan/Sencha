@@ -320,14 +320,16 @@ void EditorRenderFeature::RecordProjectedSilhouettes(const FrameContext& frame)
     // meshes both live in the shared static cache.
     std::vector<ProjectedSilhouetteCasterDraw> casterDraws;
     std::vector<ProjectedSilhouetteSectionDraw> sectionDraws;
+    std::vector<ProjectedSilhouetteOccluderDraw> occluderDraws;
     ProjectedFrame.VertexStride = sizeof(StaticMeshVertex);
     for (const ProjectedShadowCaster& caster : casters.Casters)
     {
         const GpuStaticMesh* mesh = SkinnedMeshCacheRef->Get(caster.Mesh);
         if (mesh == nullptr)
             continue;
-        const Mat4 viewProjection =
-            MakeProjectedShadowViewProjection(caster, ProjectedBudgets.MaxDistance);
+        const ProjectedShadowProjectionFit fit =
+            FitProjectedShadowProjection(caster, ProjectedBudgets.MaxDistance);
+        const Mat4& viewProjection = fit.ViewProjection;
         ProjectedSilhouetteCasterDraw draw;
         draw.Mvp = viewProjection * caster.WorldMatrix;
         draw.FirstSection = static_cast<std::uint32_t>(sectionDraws.size());
@@ -348,6 +350,8 @@ void EditorRenderFeature::RecordProjectedSilhouettes(const FrameContext& frame)
             continue;
         const std::uint32_t thisTile =
             static_cast<std::uint32_t>(casterDraws.size());
+        const std::uint32_t firstOccluder =
+            static_cast<std::uint32_t>(occluderDraws.size());
         casterDraws.push_back(draw);
 
         const Aabb3d swept =
@@ -356,7 +360,9 @@ void EditorRenderFeature::RecordProjectedSilhouettes(const FrameContext& frame)
         ProjectedShadowProjection projection;
         projection.Uniform.ShadowViewProjection = viewProjection;
         projection.Uniform.DirectionBias = Vec4(
-            caster.Direction.X, caster.Direction.Y, caster.Direction.Z, 0.0f);
+            caster.Direction.X, caster.Direction.Y, caster.Direction.Z,
+            fit.DepthRange > 0.0f
+                ? ProjectedBudgets.BiasWorld / fit.DepthRange : 0.0f);
         projection.Uniform.TileScaleBias =
             ProjectedShadowTileUvScaleBias(grid, thisTile);
         projection.Uniform.Params = Vec4(0.0f,
@@ -387,11 +393,23 @@ void EditorRenderFeature::RecordProjectedSilhouettes(const FrameContext& frame)
                     .IndexOffset = section.IndexOffset,
                     .World = item.WorldMatrix,
                 });
+                // The receiver set doubles as the occluder set: projection
+                // stops at the first of these surfaces along the shadow ray.
+                occluderDraws.push_back(ProjectedSilhouetteOccluderDraw{
+                    .Vertex = receiverMesh->VertexBuffer,
+                    .Index = receiverMesh->IndexBuffer,
+                    .IndexCount = section.IndexCount,
+                    .IndexOffset = section.IndexOffset,
+                    .Mvp = viewProjection * item.WorldMatrix,
+                });
             }
         };
         appendReceivers(QueueBuilder->BrushQueue());
         appendReceivers(QueueBuilder->MeshQueue());
 
+        casterDraws.back().FirstOccluder = firstOccluder;
+        casterDraws.back().OccluderCount =
+            static_cast<std::uint32_t>(occluderDraws.size()) - firstOccluder;
         projection.ReceiverCount =
             static_cast<std::uint32_t>(ProjectedFrame.Receivers.size())
             - projection.FirstReceiver;
@@ -413,6 +431,7 @@ void EditorRenderFeature::RecordProjectedSilhouettes(const FrameContext& frame)
     silhouettes.SoftnessTexels = ProjectedBudgets.SoftnessTexels;
     silhouettes.Casters = casterDraws;
     silhouettes.Sections = sectionDraws;
+    silhouettes.Occluders = occluderDraws;
     if (!ProjectedSilhouettes.Draw(frame, silhouettes))
     {
         // The projections sample an atlas that never rendered this frame.
@@ -422,8 +441,16 @@ void EditorRenderFeature::RecordProjectedSilhouettes(const FrameContext& frame)
     }
     const float atlasIndex =
         static_cast<float>(ProjectedSilhouettes.AtlasBindlessIndex());
+    const std::uint32_t occluderSlot = ProjectedSilhouettes.OccluderBindlessIndex();
+    const float occluderIndex = occluderSlot != UINT32_MAX
+        ? static_cast<float>(occluderSlot) : 0.0f;
+    const float occlusionEnabled = occluderSlot != UINT32_MAX ? 1.0f : 0.0f;
     for (ProjectedShadowProjection& projection : ProjectedFrame.Casters)
+    {
+        projection.Uniform.Params.X = occluderIndex;
         projection.Uniform.Params.Z = atlasIndex;
+        projection.Uniform.Params.W = occlusionEnabled;
+    }
 
     ProjectedFrame.Ready = !ProjectedFrame.Casters.empty();
 }

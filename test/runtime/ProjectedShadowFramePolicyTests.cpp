@@ -89,7 +89,8 @@ TEST(ProjectedShadowFramePolicy, TheProjectionContainsEveryCasterCorner)
         unit = unit * (1.0f / length);
         caster.Direction = unit;
 
-        const Mat4 viewProjection = MakeProjectedShadowViewProjection(caster, 6.0f);
+        const Mat4 viewProjection =
+            FitProjectedShadowProjection(caster, 6.0f).ViewProjection;
 
         const Vec<3>& lo = caster.WorldBounds.Min;
         const Vec<3>& hi = caster.WorldBounds.Max;
@@ -211,4 +212,24 @@ TEST(ProjectedShadowFramePolicy, ScreenRectUnionCoversAllAndIgnoresEmpty)
         EXPECT_EQ(got.Width, c.Expected.Width) << c.Name;
         EXPECT_EQ(got.Height, c.Expected.Height) << c.Name;
     }
+}
+
+// The fit's depth range is what converts the world-unit occlusion bias into
+// normalized shadow depth; it must cover the caster's own span plus the
+// projection reach, and grow with that reach.
+TEST(ProjectedShadowFramePolicy, FitDepthRangeCoversCasterAndReach)
+{
+    ProjectedShadowCaster caster;
+    caster.WorldBounds = Aabb3d::FromCenterHalfExtent(
+        Vec<3>(2.0f, 1.0f, 0.0f), Vec3d(1.0f, 1.0f, 1.0f));
+    caster.Direction = Vec<3>(0.0f, -1.0f, 0.0f);
+
+    const ProjectedShadowProjectionFit near =
+        FitProjectedShadowProjection(caster, 2.0f);
+    const ProjectedShadowProjectionFit far =
+        FitProjectedShadowProjection(caster, 10.0f);
+
+    // At least the bounds' own extent along the direction plus the reach.
+    EXPECT_GT(near.DepthRange, 2.0f + 2.0f - 0.5f);
+    EXPECT_GT(far.DepthRange, near.DepthRange + 7.9f);
 }

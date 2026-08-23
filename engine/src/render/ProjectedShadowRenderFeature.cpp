@@ -68,6 +68,7 @@ void ProjectedShadowRenderFeature::OnDraw(const FrameContext& frame)
     // so it is stamped into the collected uniforms afterwards.
     CasterDraws.clear();
     SectionDraws.clear();
+    OccluderDraws.clear();
     Output->VertexStride = sizeof(StaticMeshVertex);
     for (const ProjectedShadowCaster& caster : Casters->Casters)
     {
@@ -75,8 +76,9 @@ void ProjectedShadowRenderFeature::OnDraw(const FrameContext& frame)
         if (mesh == nullptr)
             continue;
 
-        const Mat4 viewProjection =
-            MakeProjectedShadowViewProjection(caster, Budgets->MaxDistance);
+        const ProjectedShadowProjectionFit fit =
+            FitProjectedShadowProjection(caster, Budgets->MaxDistance);
+        const Mat4& viewProjection = fit.ViewProjection;
 
         ProjectedSilhouetteCasterDraw draw;
         draw.Mvp = viewProjection * caster.WorldMatrix;
@@ -98,6 +100,8 @@ void ProjectedShadowRenderFeature::OnDraw(const FrameContext& frame)
             continue;
         const std::uint32_t thisTile =
             static_cast<std::uint32_t>(CasterDraws.size());
+        const std::uint32_t firstOccluder =
+            static_cast<std::uint32_t>(OccluderDraws.size());
         CasterDraws.push_back(draw);
 
         // Projection record, fully baked for the game's one view: camera
@@ -126,7 +130,8 @@ void ProjectedShadowRenderFeature::OnDraw(const FrameContext& frame)
                                          Lights->ProjectedShadowFadeStart,
                                          0.0f, 0.0f);
         projection.Uniform.DirectionBias = Vec4(
-            caster.Direction.X, caster.Direction.Y, caster.Direction.Z, 0.0f);
+            caster.Direction.X, caster.Direction.Y, caster.Direction.Z,
+            fit.DepthRange > 0.0f ? Budgets->BiasWorld / fit.DepthRange : 0.0f);
         projection.ScissorX = rect.X;
         projection.ScissorY = rect.Y;
         projection.ScissorWidth = rect.Width;
@@ -150,7 +155,20 @@ void ProjectedShadowRenderFeature::OnDraw(const FrameContext& frame)
                 .IndexOffset = section.IndexOffset,
                 .World = item.WorldMatrix,
             });
+            // The same surfaces that can catch the shadow are the ones that
+            // block it: render them depth-only into the caster's occluder
+            // tile so projection stops at the first one.
+            OccluderDraws.push_back(ProjectedSilhouetteOccluderDraw{
+                .Vertex = receiverMesh->VertexBuffer,
+                .Index = receiverMesh->IndexBuffer,
+                .IndexCount = section.IndexCount,
+                .IndexOffset = section.IndexOffset,
+                .Mvp = viewProjection * item.WorldMatrix,
+            });
         }
+        CasterDraws.back().FirstOccluder = firstOccluder;
+        CasterDraws.back().OccluderCount =
+            static_cast<std::uint32_t>(OccluderDraws.size()) - firstOccluder;
         projection.ReceiverCount =
             static_cast<std::uint32_t>(Output->Receivers.size())
             - projection.FirstReceiver;
@@ -169,6 +187,7 @@ void ProjectedShadowRenderFeature::OnDraw(const FrameContext& frame)
     silhouettes.SoftnessTexels = Budgets->SoftnessTexels;
     silhouettes.Casters = CasterDraws;
     silhouettes.Sections = SectionDraws;
+    silhouettes.Occluders = OccluderDraws;
     if (!Silhouettes.Draw(frame, silhouettes))
     {
         // The projections sample an atlas that never rendered this frame.
@@ -177,8 +196,16 @@ void ProjectedShadowRenderFeature::OnDraw(const FrameContext& frame)
     }
     const float atlasIndex =
         static_cast<float>(Silhouettes.AtlasBindlessIndex());
+    const std::uint32_t occluderSlot = Silhouettes.OccluderBindlessIndex();
+    const float occluderIndex = occluderSlot != UINT32_MAX
+        ? static_cast<float>(occluderSlot) : 0.0f;
+    const float occlusionEnabled = occluderSlot != UINT32_MAX ? 1.0f : 0.0f;
     for (ProjectedShadowProjection& projection : Output->Casters)
+    {
+        projection.Uniform.Params.X = occluderIndex;
         projection.Uniform.Params.Z = atlasIndex;
+        projection.Uniform.Params.W = occlusionEnabled;
+    }
 
     // The composite's reach and its one application of darkness.
     UnionScratch.clear();
