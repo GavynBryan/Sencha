@@ -46,9 +46,13 @@ enum class LightBakeContribution : std::uint8_t
     // light's bounce feeds the irradiance-probe bake, so its mood reaches
     // probe-lit ambient without paying for baked direct.
     Indirect,
-    // The light's direct diffuse is baked into the zone's lightmap atlas and
-    // the light is removed from the runtime forward set (no per-frame cost, no
-    // cap slot, no shadow). For static fill/accent lights on static geometry.
+    // The light's direct diffuse is baked into the zone's lightmap atlas. At
+    // runtime the light stays in the forward set flagged baked, ranked below
+    // every live light (it can fill empty cap slots but never evict live
+    // light) and never requesting a shadow slot: receivers that own a chart
+    // skip it in-shader because their copy is in the lightmap, while movable
+    // and uncharted receivers are lit by it live. For static fill/accent
+    // lights whose rooms must still light what walks through them.
     Direct,
 };
 

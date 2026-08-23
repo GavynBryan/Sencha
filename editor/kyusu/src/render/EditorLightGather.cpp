@@ -9,7 +9,6 @@
 #include <render/SpotLightComponent.h>
 
 EditorLightGather GatherEditorLights(const EditorDocument& document,
-                                     bool skipBakedDirect,
                                      float globalShadowSoftness)
 {
     EditorLightGather result;
@@ -31,11 +30,9 @@ EditorLightGather GatherEditorLights(const EditorDocument& document,
         {
             HashFnv1aValue(result.ContentHash, transform->Position);
             HashFnv1aValue(result.ContentHash, *point);
-            if (!skipBakedDirect
-                || point->BakeContribution != LightBakeContribution::Direct)
-                result.Candidates.push_back(MakePointLightCandidate(
-                    MakeRenderEntityKey(registry, entity), transform->Position,
-                    *point, globalShadowSoftness));
+            result.Candidates.push_back(MakePointLightCandidate(
+                MakeRenderEntityKey(registry, entity), transform->Position,
+                *point, globalShadowSoftness));
         }
 
         if (const SpotLightComponent* spot = world.TryGet<SpotLightComponent>(entity);
@@ -44,11 +41,9 @@ EditorLightGather GatherEditorLights(const EditorDocument& document,
         {
             HashFnv1aValue(result.ContentHash, transform->Position);
             HashFnv1aValue(result.ContentHash, *spot);
-            if (!skipBakedDirect
-                || spot->BakeContribution != LightBakeContribution::Direct)
-                result.Candidates.push_back(MakeSpotLightCandidate(
-                    MakeRenderEntityKey(registry, entity), *transform,
-                    *spot, globalShadowSoftness));
+            result.Candidates.push_back(MakeSpotLightCandidate(
+                MakeRenderEntityKey(registry, entity), *transform,
+                *spot, globalShadowSoftness));
         }
     }
     return result;

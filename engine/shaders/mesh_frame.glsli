@@ -7,6 +7,12 @@ const uint MAX_POINT_SHADOWS = 4u;
 const uint MAX_PROBE_VOLUMES = 8u;
 const uint PROBE_VOLUME_CHANNELS = 3u;
 
+// GpuLight.Type packs kGpuLightBakedBit above the type value: a baked light
+// is skipped by receivers that own a lightmap chart (their copy of it is in
+// the atlas) and lights everything else live.
+const uint LIGHT_BAKED_BIT = 0x80000000u;
+const uint LIGHT_TYPE_MASK = 0x7FFFFFFFu;
+
 struct GpuLight
 {
     vec4 PositionRange;

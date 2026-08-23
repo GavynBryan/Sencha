@@ -16,11 +16,13 @@ here. This document covers what the renderer consumes.
 ## Baked static direct
 
 A light authored `LightBakeContribution::Direct` has its diffuse contribution
-baked into the zone's lightmap atlas and is **removed from the runtime forward
-set** at extraction. It takes no cap slot, costs nothing per frame, and casts no
-runtime shadow. That exclusion is exactly what prevents double counting: the
-shader adds the baked term unconditionally, and the lights that fed it are not
-in the loop.
+baked into the zone's lightmap atlas, and at runtime stays in the forward set
+**flagged baked** (`kGpuLightBakedBit` in `GpuLight::Type`): a receiver that
+owns a chart skips it in the fragment loop -- which is what prevents double
+counting, since the shader adds the baked term for exactly those receivers --
+while movable and uncharted receivers are lit by it live. Baked lights pack
+strictly after every live light (they can fill empty cap slots, never evict
+live light) and never request a runtime shadow slot.
 
 ### Addressing
 

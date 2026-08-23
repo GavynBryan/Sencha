@@ -112,7 +112,7 @@ void SceneRenderQueueBuilder::Build(const EditorDocument& document)
         EmitBrushQueue();
         BuildMeshQueue(document);
     }
-    BuildLights(document, /*skipDirectLights*/ preview);
+    BuildLights(document);
     BuildShadowCasters(document);
 
     // Probe volumes are cook inputs (they select the .sprobe lattice), so
@@ -412,8 +412,7 @@ void SceneRenderQueueBuilder::EmitPreviewQueue()
     Brushes.SortOpaque();
 }
 
-void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document,
-                                          bool skipDirectLights)
+void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document)
 {
     // Reset() clears only the packed counts; the ambient tints and shadow
     // tunables are owned by the caller (EditorRenderFeature stamps them from
@@ -423,7 +422,7 @@ void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document,
     SceneLights.Reset();
     LightSelectionCurrent = false;
     EditorLightGather gathered = GatherEditorLights(
-        document, skipDirectLights, SceneLights.ShadowSoftness);
+        document, SceneLights.ShadowSoftness);
     LightCandidates = std::move(gathered.Candidates);
     LightsHash = gathered.ContentHash;
 }

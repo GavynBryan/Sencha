@@ -13,13 +13,18 @@ ForwardLightCandidate MakePointLightCandidate(
     RenderEntityKey key, const Vec<3>& position,
     const PointLightComponent& light, float globalShadowSoftness)
 {
+    const bool baked =
+        light.BakeContribution == LightBakeContribution::Direct;
     ForwardLightCandidate candidate{
         .Key = key,
         .Position = position,
         .Range = light.Range,
         .Intensity = light.Intensity,
         .Light = MakePointGpuLight(position, light),
-        .WantsPointShadow = light.CastShadows,
+        .Baked = baked,
+        // A baked light's shadowing is the bake's job; it never competes for
+        // a shadow slot in a zone lit specifically to avoid that cost.
+        .WantsPointShadow = light.CastShadows && !baked,
         .SpotShadow = {},
         .PointShadow = {},
         .ShadowBounds = {},
@@ -39,13 +44,16 @@ ForwardLightCandidate MakeSpotLightCandidate(
     const SpotLightComponent& light, float globalShadowSoftness)
 {
     const Vec<3> direction = transform.Forward();
+    const bool baked =
+        light.BakeContribution == LightBakeContribution::Direct;
     ForwardLightCandidate candidate{
         .Key = key,
         .Position = transform.Position,
         .Range = light.Range,
         .Intensity = light.Intensity,
         .Light = MakeSpotGpuLight(transform.Position, direction, light),
-        .WantsSpotShadow = light.CastShadows,
+        .Baked = baked,
+        .WantsSpotShadow = light.CastShadows && !baked,
         .WantsPointShadow = false,
         .SpotShadow = {},
         .PointShadow = {},
@@ -79,9 +87,14 @@ void SelectForwardLights(
     for (ForwardLightCandidate& candidate : candidates)
         candidate.Score = LightImportanceScore(
             candidate.Position, candidate.Range, candidate.Intensity, viewOrigin);
+    // Two tiers: every live light packs before any baked one, so filling the
+    // cap with baked lights can never evict live light -- baked lights only
+    // take the slots live lights left empty. Within a tier: score, then key.
     std::sort(candidates.begin(), candidates.end(),
         [](const ForwardLightCandidate& a, const ForwardLightCandidate& b)
         {
+            if (a.Baked != b.Baked)
+                return b.Baked;
             if (a.Score != b.Score)
                 return a.Score > b.Score;
             return a.Key < b.Key;

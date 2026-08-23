@@ -189,20 +189,23 @@ TEST(LightExtraction, SkipsLightsOutsideTheActivePartitions)
     EXPECT_FLOAT_EQ(lights.Lights[0].ColorIntensity.W, 4.0f);
 }
 
-TEST(LightExtraction, ExcludesBakedDirectLights)
+TEST(LightExtraction, PacksBakedDirectLightsFlaggedAfterLiveOnes)
 {
     World world = MakeLightWorld();
 
-    // A baked-direct light contributes only through the per-vertex channel, so
-    // it must never enter the runtime set (no cost, no cap slot, no shadow),
-    // for either light type.
+    // A baked-direct light stays in the forward set so movers receive it
+    // live; it carries the baked bit for the shader's charted-receiver skip,
+    // packs after every live light regardless of score, and never requests
+    // a shadow slot.
     PointLightComponent bakedPoint{};
     bakedPoint.Intensity = 5.0f;
+    bakedPoint.CastShadows = true;
     bakedPoint.BakeContribution = LightBakeContribution::Direct;
     MakePoint(world, Vec<3>(0.0f, 0.0f, -2.0f), bakedPoint);
 
     SpotLightComponent bakedSpot{};
     bakedSpot.Intensity = 5.0f;
+    bakedSpot.CastShadows = true;
     bakedSpot.BakeContribution = LightBakeContribution::Direct;
     MakeSpot(world, Vec<3>(0.0f, 0.0f, -3.0f), bakedSpot);
 
@@ -211,10 +214,19 @@ TEST(LightExtraction, ExcludesBakedDirectLights)
     MakePoint(world, Vec<3>(0.0f, 0.0f, -2.0f), dynamicPoint);
 
     RenderLightSet lights;
-    Extract(world, lights);
+    std::vector<SpotShadowRequest> requests;
+    std::vector<PointShadowRequest> pointRequests;
+    Extract(world, lights, &requests, &pointRequests);
 
-    ASSERT_EQ(lights.Count, 1u);
+    ASSERT_EQ(lights.Count, 3u);
+    // The dimmer live light packs first; the brighter baked pair follows.
+    EXPECT_EQ(lights.Lights[0].Type & 0x80000000u, 0u);
     EXPECT_FLOAT_EQ(lights.Lights[0].ColorIntensity.W, 4.0f);
+    EXPECT_NE(lights.Lights[1].Type & 0x80000000u, 0u);
+    EXPECT_NE(lights.Lights[2].Type & 0x80000000u, 0u);
+    // CastShadows on a baked light is a bake fact, not a slot request.
+    EXPECT_TRUE(requests.empty());
+    EXPECT_TRUE(pointRequests.empty());
 }
 
 TEST(LightExtraction, PrioritizesInfluentialLightsBeforeTheCap)

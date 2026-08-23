@@ -52,6 +52,14 @@ ForwardLightCandidate PointCandidateAt(
         MakeKey(index), position, MakePoint(intensity, range), 1.0f);
 }
 
+ForwardLightCandidate BakedPointCandidateAt(
+    std::uint32_t index, const Vec<3>& position, float intensity, float range = 10.0f)
+{
+    PointLightComponent light = MakePoint(intensity, range);
+    light.BakeContribution = LightBakeContribution::Direct;
+    return MakePointLightCandidate(MakeKey(index), position, light, 1.0f);
+}
+
 struct SelectionResult
 {
     RenderLightSet Lights;
@@ -252,6 +260,112 @@ TEST(SelectForwardLights, StopsAtTheForwardLightCapAndKeepsTheBrightest)
                     static_cast<float>(overflow));
     EXPECT_FLOAT_EQ(result.Lights.Lights[kMaxForwardLights - 1].ColorIntensity.W,
                     static_cast<float>(overflow - kMaxForwardLights + 1));
+}
+
+// -- SelectForwardLights: the baked tier -------------------------------------
+
+TEST(MakeLightCandidate, FlagsBakedLightsAndNeverRequestsTheirShadows)
+{
+    const Vec<3> at(0.0f, 0.0f, 5.0f);
+
+    PointLightComponent point = MakePoint(3.0f, 10.0f, /*castShadows*/ true);
+    point.BakeContribution = LightBakeContribution::Direct;
+    const ForwardLightCandidate bakedPoint =
+        MakePointLightCandidate(MakeKey(1), at, point, 1.0f);
+    EXPECT_TRUE(bakedPoint.Baked);
+    // CastShadows on a baked light describes the bake; the runtime never
+    // spends a slot on it.
+    EXPECT_FALSE(bakedPoint.WantsPointShadow);
+    EXPECT_NE(bakedPoint.Light.Type & kGpuLightBakedBit, 0u);
+    EXPECT_EQ(bakedPoint.Light.Type & kGpuLightTypeMask,
+              static_cast<std::uint32_t>(GpuLightType::Point));
+
+    SpotLightComponent spot = MakeSpot(3.0f, 10.0f, /*castShadows*/ true);
+    spot.BakeContribution = LightBakeContribution::Direct;
+    Transform3f transform;
+    transform.Position = at;
+    const ForwardLightCandidate bakedSpot =
+        MakeSpotLightCandidate(MakeKey(2), transform, spot, 1.0f);
+    EXPECT_TRUE(bakedSpot.Baked);
+    EXPECT_FALSE(bakedSpot.WantsSpotShadow);
+    EXPECT_NE(bakedSpot.Light.Type & kGpuLightBakedBit, 0u);
+    EXPECT_EQ(bakedSpot.Light.Type & kGpuLightTypeMask,
+              static_cast<std::uint32_t>(GpuLightType::Spot));
+
+    // Indirect stays a live light: realtime direct, baked bounce.
+    point.BakeContribution = LightBakeContribution::Indirect;
+    const ForwardLightCandidate indirect =
+        MakePointLightCandidate(MakeKey(3), at, point, 1.0f);
+    EXPECT_FALSE(indirect.Baked);
+    EXPECT_TRUE(indirect.WantsPointShadow);
+    EXPECT_EQ(indirect.Light.Type & kGpuLightBakedBit, 0u);
+}
+
+TEST(SelectForwardLights, PacksEveryLiveLightBeforeAnyBakedOne)
+{
+    const Vec<3> at(0.0f, 0.0f, 5.0f);
+    // The baked light outscores both live ones; it still packs last.
+    std::vector<ForwardLightCandidate> candidates{
+        BakedPointCandidateAt(1, at, 100.0f),
+        PointCandidateAt(2, at, 2.0f),
+        PointCandidateAt(3, at, 1.0f),
+    };
+
+    const SelectionResult result = Select(candidates);
+
+    ASSERT_EQ(result.Lights.Count, 3u);
+    EXPECT_EQ(result.Lights.Lights[0].Type & kGpuLightBakedBit, 0u);
+    EXPECT_FLOAT_EQ(result.Lights.Lights[0].ColorIntensity.W, 2.0f);
+    EXPECT_EQ(result.Lights.Lights[1].Type & kGpuLightBakedBit, 0u);
+    EXPECT_FLOAT_EQ(result.Lights.Lights[1].ColorIntensity.W, 1.0f);
+    EXPECT_NE(result.Lights.Lights[2].Type & kGpuLightBakedBit, 0u);
+}
+
+TEST(SelectForwardLights, ABakedLightCanNeverEvictALiveOne)
+{
+    const Vec<3> at(0.0f, 0.0f, 5.0f);
+    struct Case
+    {
+        std::uint32_t Live;
+        std::uint32_t Baked;
+        std::uint32_t ExpectLivePacked;
+        std::uint32_t ExpectBakedPacked;
+        const char* Why;
+    };
+    const Case cases[] = {
+        { kMaxForwardLights, 8, kMaxForwardLights, 0,
+          "a full live cap leaves no slot for any baked light" },
+        { kMaxForwardLights - 2, 8, kMaxForwardLights - 2, 2,
+          "baked lights take exactly the slots live lights left empty" },
+        { 4, 4, 4, 4, "an uncontended frame packs both tiers whole" },
+        { 0, kMaxForwardLights + 4, 0, kMaxForwardLights,
+          "an all-baked zone still fills the cap by score" },
+    };
+    for (const Case& c : cases)
+    {
+        std::vector<ForwardLightCandidate> candidates;
+        // Baked lights are all brighter than every live light, so any
+        // eviction bug would surface as a missing live light.
+        for (std::uint32_t i = 0; i < c.Live; ++i)
+            candidates.push_back(
+                PointCandidateAt(i, at, 1.0f + static_cast<float>(i)));
+        for (std::uint32_t i = 0; i < c.Baked; ++i)
+            candidates.push_back(BakedPointCandidateAt(
+                1000 + i, at, 1000.0f + static_cast<float>(i)));
+
+        const SelectionResult result = Select(candidates);
+
+        std::uint32_t livePacked = 0, bakedPacked = 0;
+        for (std::uint32_t i = 0; i < result.Lights.Count; ++i)
+        {
+            if ((result.Lights.Lights[i].Type & kGpuLightBakedBit) != 0u)
+                ++bakedPacked;
+            else
+                ++livePacked;
+        }
+        EXPECT_EQ(livePacked, c.ExpectLivePacked) << c.Why;
+        EXPECT_EQ(bakedPacked, c.ExpectBakedPacked) << c.Why;
+    }
 }
 
 TEST(SelectForwardLights, ResetsPriorStateSoAFrameNeverInheritsTheLast)

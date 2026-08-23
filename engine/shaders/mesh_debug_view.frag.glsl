@@ -127,10 +127,15 @@ void main()
     float rawShadow = 1.0;
     bool hasShadow = false;
 
+    bool chartedReceiver = pushData.LightmapTextureIndex != 0xFFFFFFFFu;
     uint count = min(frame.LightCount, MAX_LIGHTS);
     for (uint i = 0u; i < count; ++i)
     {
         GpuLight light = frame.Lights[i];
+        // Match the lit pass: charted receivers skip baked lights.
+        if ((light.Type & LIGHT_BAKED_BIT) != 0u && chartedReceiver)
+            continue;
+        light.Type &= LIGHT_TYPE_MASK;
         if (light.Type > 1u)
             continue;
 

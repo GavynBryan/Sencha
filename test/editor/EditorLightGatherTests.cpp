@@ -60,7 +60,7 @@ TEST(EditorLightGather, MatchesRuntimeSelectionBeyondForwardBudget)
     }
 
     const CameraRenderData camera = MakeCamera();
-    EditorLightGather gathered = GatherEditorLights(document, false, 1.0f);
+    EditorLightGather gathered = GatherEditorLights(document, 1.0f);
     RenderLightSet editorLights;
     std::vector<SpotShadowRequest> editorSpots;
     std::vector<PointShadowRequest> editorPoints;

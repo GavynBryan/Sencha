@@ -50,10 +50,17 @@ void main()
     vec3 specularTint = mix(vec3(1.0), baseColor.rgb, metallic);
     float diffuseWrap = max(frame.StyleParams.x, 0.0);
 
+    bool chartedReceiver = pushData.LightmapTextureIndex != 0xFFFFFFFFu;
     uint count = min(frame.LightCount, MAX_LIGHTS);
     for (uint i = 0u; i < count; ++i)
     {
         GpuLight light = frame.Lights[i];
+        // A charted receiver's copy of a baked light is already in its
+        // lightmap; skipping the live light here is what keeps the term
+        // single-counted. Everything else receives baked lights live.
+        if ((light.Type & LIGHT_BAKED_BIT) != 0u && chartedReceiver)
+            continue;
+        light.Type &= LIGHT_TYPE_MASK;
         if (light.Type > 1u)
             continue;
 
@@ -77,9 +84,9 @@ void main()
         lit += specularTint * terms.Specular * terms.Radiance;
     }
 
-    // Baked static direct diffuse (diffuse only, no specular). The lights that
-    // fed this term are excluded from the runtime set above, so it does not
-    // double-count. Zero on unbaked meshes.
+    // Baked static direct diffuse (diffuse only, no specular). The lights
+    // that fed this term are skipped by the loop above on charted receivers,
+    // so it does not double-count. Zero on unbaked meshes.
     if (frame.BakedDirectEnabled != 0u)
         lit += baseColor.rgb * SampleBakedDirect();
 

@@ -52,10 +52,6 @@ void LightExtractionSystem::Extract(
                 {
                     continue;
                 }
-                // Baked-direct lights contribute only through the zone
-                // lightmap; they never enter the runtime forward set.
-                if (light.BakeContribution == LightBakeContribution::Direct)
-                    continue;
 
                 const Vec<3>& position = transforms[i].Value.Position;
                 const Sphere bounds(position, light.Range);
@@ -87,10 +83,6 @@ void LightExtractionSystem::Extract(
                 {
                     continue;
                 }
-                // Baked-direct lights contribute only through the zone
-                // lightmap; they never enter the runtime forward set.
-                if (light.BakeContribution == LightBakeContribution::Direct)
-                    continue;
 
                 const Vec<3>& position = transforms[i].Value.Position;
                 const Vec<3> direction = transforms[i].Value.Forward();

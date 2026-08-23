@@ -13,6 +13,10 @@ struct ForwardLightCandidate
     float Range = 0.0f;
     float Intensity = 0.0f;
     GpuLight Light;
+    // Direct-baked: packs after every live light, so a baked light can never
+    // evict one, and never requests a shadow slot. The GpuLight carries the
+    // same fact as kGpuLightBakedBit for the shader's charted-receiver skip.
+    bool Baked = false;
     bool WantsSpotShadow = false;
     bool WantsPointShadow = false;
     SpotShadowView SpotShadow;

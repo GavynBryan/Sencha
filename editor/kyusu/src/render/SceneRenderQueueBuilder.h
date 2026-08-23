@@ -124,7 +124,7 @@ private:
     void EmitBrushQueue();
     void EmitPreviewQueue();
     void BuildMeshQueue(const EditorDocument& document);
-    void BuildLights(const EditorDocument& document, bool skipDirectLights);
+    void BuildLights(const EditorDocument& document);
     void BuildShadowCasters(const EditorDocument& document);
     void ReleaseBrushMeshes();
 

@@ -44,15 +44,21 @@ field for schema symmetry but ignore it; every cube face is a fixed 512.
 
 `LightBakeContribution`:
 
-| Value | Runtime forward set | Probe bake | Lightmap bake |
-|---|---|---|---|
-| `None` | yes | no | no |
-| `Indirect` | yes | yes | no |
-| `Direct` | **no** | yes | yes |
+| Value | Runtime forward set | Runtime shadow | Probe bake | Lightmap bake |
+|---|---|---|---|---|
+| `None` | yes | if it casts | no | no |
+| `Indirect` | yes | if it casts | yes | no |
+| `Direct` | yes, **flagged baked** | never | yes | yes |
 
-`Direct` is what removes a static fill light from the per-frame cost entirely:
-it is excluded from extraction, takes no cap slot, and casts no runtime shadow.
-See [baked-lighting.md](baked-lighting.md).
+A `Direct` light is baked for the world and live for what moves: its diffuse
+is in the zone lightmap, and at runtime it stays in the forward set carrying
+`kGpuLightBakedBit` so a receiver that owns a chart skips it in-shader (the
+lightmap already holds its copy) while movable and uncharted receivers are
+lit by it live -- including specular, which charted receivers deliberately do
+not get from baked lights (the atlas is diffuse-only, recorded). Baked lights
+pack strictly after every live light, so they can fill empty cap slots but
+never evict live light, and they never request a shadow slot. See
+[baked-lighting.md](baked-lighting.md).
 
 ## Extraction and selection
 
@@ -61,23 +67,27 @@ enabled light:
 
 1. reject if `Intensity` or `Range` is non-finite or non-positive
    (`IsUsableForwardLight`)
-2. reject if `BakeContribution == Direct`
-3. reject if the light's bounding volume misses the camera frustum. Point lights
+2. reject if the light's bounding volume misses the camera frustum. Point lights
    test a sphere of `Range`; spot lights test `MakeSpotBoundingSphere`, the
    sphere circumscribing the cone
-4. build a `ForwardLightCandidate`, including the shadow view and shadow bounds
-   when the light casts
+3. build a `ForwardLightCandidate`, including the shadow view and shadow bounds
+   when the light casts (a `Direct`-baked candidate is flagged and never wants
+   a shadow)
 
 `SelectForwardLights` (`engine/src/render/LightSelection.cpp`) then applies the
 one policy shared by the runtime and the editor:
 
 ```
 score = intensity * clamp(range / max(distance, 1e-4), 0, 1)^2
-sort by score descending, ties broken by RenderEntityKey (stable, deterministic)
+sort live lights before baked ones, then by score descending, ties broken by
+  RenderEntityKey (stable, deterministic)
 pack the first min(candidates, 64) into RenderLightSet
 each packed light that wants a shadow emits one request, in pack order,
   carrying the packed light index
 ```
+
+The two tiers are the cap guarantee: a baked light can never evict a live
+one, and zones bake precisely so few live lights remain.
 
 The tie-break on `RenderEntityKey` is what makes selection deterministic: keys
 order by registry kind, then persistent `ZoneId` for zone registries or runtime
@@ -102,10 +112,13 @@ identical scores always sort the same way across runs.
 | 60 | `ConeOffset` | 0 | `-cosOuter * ConeScale` |
 
 `ConeScale` and `ConeOffset` precompute the smoothstep-free cone falloff so the
-fragment shader does one multiply-add and a clamp.
+fragment shader does one multiply-add and a clamp. A `Direct`-baked light ORs
+`kGpuLightBakedBit` (bit 31) into `Type`; the low bits stay the type value.
 
-`GpuLightType::Directional = 2` exists in the enum. The fragment loop skips any
-light with `Type > 1`, so an unimplemented type is inert rather than wrong.
+`GpuLightType::Directional = 2` exists in the enum. The fragment loop strips
+`LIGHT_BAKED_BIT` (skipping baked lights first when the receiver owns a chart)
+and then skips any light with `Type > 1`, so an unimplemented type is inert
+rather than wrong.
 
 `RenderLightSet` is the frame aggregate: the packed light array, the spot and
 point shadow record arrays, the probe volume headers, and the style scalars.
@@ -135,6 +148,9 @@ lit      = baseColor.rgb * ambient * clamp(orm.r, 0, 1) * SampleBakedAo()
 Then the light loop, over `min(LightCount, 64)`:
 
 ```glsl
+if ((light.Type & LIGHT_BAKED_BIT) != 0u
+    && chartedReceiver) continue;                    // its copy is in the lightmap
+light.Type &= LIGHT_TYPE_MASK;
 if (light.Type > 1u) continue;                       // unimplemented types are inert
 
 toLight = light.PositionRange.xyz - worldPos;
@@ -179,8 +195,8 @@ The specular exponent is `exp2(mix(11, 1, roughness))`, so roughness 0 gives
 metallic)`.
 
 Baked static direct is added after the loop, diffuse only, and never
-double-counts because the lights that fed it were excluded from the runtime set
-at extraction:
+double-counts because charted receivers skip the baked-flagged lights inside
+the loop:
 
 ```glsl
 if (frame.BakedDirectEnabled != 0u)
