@@ -784,21 +784,21 @@ TEST(ShadowResidency, AnUncontestedAbsentSlotRetainsItsCachedContent)
         << "the returning light re-rendered despite its slot being retained";
 }
 
-// ─── Characterization: the recorded pool asymmetries ─────────────────────────
+// ─── The pool invalidation contracts ─────────────────────────────────────────
 //
-// The four tests below document CURRENT behavior ahead of the pool
-// unification, so the refactor cannot change any of it silently. They do not
-// endorse it: the EveryFrame point behavior in particular is the recorded
-// defect-1 candidate, and the decision about it lands separately with its
-// own failing-first test.
+// Written first as characterization ahead of the pool unification, then
+// flipped to the decided contract: hash-change invalidation is OnChange's
+// mechanism on both pools, EveryFrame slots rely on their own re-render
+// loops, and stealing an invalidated holder is indistinguishable from
+// stealing a valid one.
 
-// A moving EveryFrame point light (state hash changing every frame) has its
-// face rotation reset to all six every frame by MarkPointInvalid, so under a
-// budget clamp the early faces re-render forever, the later faces starve,
-// and the grant -- which needs every face rendered against one state -- is
-// withheld indefinitely. The spot twin below shows the other pool treats the
-// same situation as a no-op.
-TEST(ShadowResidency, EveryFramePointHashChurnResetsRotationAndWithholdsTheGrant)
+// A moving EveryFrame point light (state hash changing every frame) keeps
+// its face rotation: an EveryFrame slot's staleness is already bounded by
+// its own re-render loop, so a hash change must not reset the rotation --
+// that reset made the early faces re-render forever, starved the later
+// faces, and withheld the grant indefinitely. The spot twin below shows
+// the pools now agree: hash churn on an EveryFrame slot is a no-op.
+TEST(ShadowResidency, EveryFramePointHashChurnKeepsItsRotation)
 {
     ShadowResidency residency;
     ShadowResidencyBudgets budgets;
@@ -812,8 +812,11 @@ TEST(ShadowResidency, EveryFramePointHashChurnResetsRotationAndWithholdsTheGrant
     residency.Update({}, points, {}, budgets);
     ASSERT_EQ(residency.PointGrants().size(), 1u);
 
-    // Now clamp to two views and move the light every frame.
+    // Now clamp to two views and move the light every frame: the rotation
+    // advances two faces per frame and wraps, so every face stays covered
+    // and the grant returns whenever a rotation completes.
     budgets.MaxViewsPerFrame = 2;
+    std::uint32_t grantedFrames = 0;
     for (std::uint32_t frame = 0; frame < 12; ++frame)
     {
         points[0] = MakePointRequest(1, 0, 3.0f,
@@ -822,18 +825,18 @@ TEST(ShadowResidency, EveryFramePointHashChurnResetsRotationAndWithholdsTheGrant
         residency.Update({}, points, {}, budgets);
 
         ASSERT_EQ(residency.ScheduledPointFaces().size(), 2u);
-        // The reset pre-empts the rotation: always faces 0 and 1.
-        EXPECT_EQ(residency.ScheduledPointFaces()[0].Face, 0u);
-        EXPECT_EQ(residency.ScheduledPointFaces()[1].Face, 1u);
-        // Four faces stay stale against the rendered record, so the grant
-        // never returns while the light keeps moving.
-        EXPECT_TRUE(residency.PointGrants().empty());
+        EXPECT_EQ(residency.ScheduledPointFaces()[0].Face, (frame * 2u) % 6u);
+        EXPECT_EQ(residency.ScheduledPointFaces()[1].Face, (frame * 2u + 1u) % 6u);
+        if (!residency.PointGrants().empty())
+            ++grantedFrames;
     }
+    // Every third frame completes a rotation against one rendered state.
+    EXPECT_EQ(grantedFrames, 4u);
 }
 
-// The spot pool's predicate skips EveryFrame entirely: the same per-frame
-// hash churn neither invalidates nor destabilizes anything, because an
-// EveryFrame tile re-renders whole whenever it is scheduled.
+// The spot pool treats the same churn identically: an EveryFrame tile
+// re-renders whole whenever it is scheduled, so a hash change neither
+// invalidates nor destabilizes anything.
 TEST(ShadowResidency, EveryFrameSpotHashChurnKeepsItsGrant)
 {
     ShadowResidency residency;
@@ -1133,7 +1136,7 @@ TEST(ShadowResidency, ATrajectoryDigestPinsTheArbiterEndToEnd)
         FoldFrame(digest, residency);
     }
 
-    EXPECT_EQ(digest, 0x3575c087ae5ecb6dULL)
+    EXPECT_EQ(digest, 0x0e130ba19fc1ed8fULL)
         << "trajectory digest moved: 0x" << std::hex << digest
         << ". A refactor stage must reproduce it exactly; only a deliberate "
            "behavior change re-records it, in the same commit, with the "

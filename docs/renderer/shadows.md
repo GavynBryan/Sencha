@@ -171,6 +171,15 @@ starve the oldest invalidations indefinitely.
 Cross-pool ordering is total: by frame stamp, then spot before point, then slot
 index. There is no unordered container anywhere in the schedule.
 
+The schedule and every mechanical pool rule are written once over the
+pool-neutral slot state (`render/ShadowSlotPool.h`): a pool is a span of
+slots plus its sub-view mask (one bit for a spot tile, six face bits for a
+point cube) and two hooks, and `ShadowResidency` composes the two pools
+while owning the atlas allocator, the typed rendered records, and the
+per-pool invalidation policies. "Spot before point" is "lower pool ordinal
+wins"; a third pool would be one more descriptor entry, not another copy of
+the scheduling.
+
 ### Failure handling
 
 `ShadowDepthPass` reports back into the arbiter:

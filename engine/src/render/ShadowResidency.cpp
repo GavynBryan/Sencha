@@ -256,7 +256,13 @@ void ShadowResidency::MatchPointRequests(std::span<const PointShadowRequest> req
             {
                 slot.PendingSubViews = 0;
             }
-            if (slot.Policy != ShadowUpdatePolicy::Static
+            // Hash-change invalidation is OnChange's mechanism, same as the
+            // spot pool: an EveryFrame slot's staleness is already bounded
+            // by its own re-render rotation, and resetting that rotation on
+            // every change made a moving light re-render its first faces
+            // forever while the rest starved. Static ignores drift by
+            // contract.
+            if (slot.Policy == ShadowUpdatePolicy::OnChange
                 && slot.StateHash != request.StateHash)
             {
                 MarkPointInvalid(slot);
@@ -436,6 +442,12 @@ void ShadowResidency::AcquireSlot(ShadowSlotState& slot, const SpotShadowRequest
     slot.Volume = request.Bounds;
     SpotRendered[&slot - Slots] = {};
     slot.EverRendered = false;
+    // A stolen slot may arrive still flagged from its previous owner; the
+    // new owner's invalidation stamp must be its own. (The stale stamp was
+    // proven unobservable -- the never-rendered path re-queues the slot
+    // before anything reads it -- so this is state hygiene, matching
+    // AcquirePointSlot, not a behavior change.)
+    slot.Invalid = false;
     slot.AcquiredFrame = FrameNumber;
     slot.OutscoredFrames = 0;
     slot.RequestIndex = requestIndex;
