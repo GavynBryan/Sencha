@@ -1028,6 +1028,25 @@ namespace
             HashFnv1aValue(digest, info.FramesSinceAcquired);
             HashFnv1aValue(digest, info.FramesSinceRendered);
         }
+
+        // The retained GPU records ApplyGrants copies onto the light set --
+        // what cached content is actually sampled with. Without these, a
+        // refactor could corrupt a slot's rendered state unseen.
+        for (std::uint32_t index = 0; index < kMaxSpotShadows; ++index)
+        {
+            const SpotShadowView& record = residency.SlotRecord(index);
+            HashFnv1aValue(digest, record.ViewProjection);
+            HashFnv1aValue(digest, record.AtlasScaleBias);
+            HashFnv1aValue(digest, record.SamplingParams);
+            HashFnv1aValue(digest, record.LightIndex);
+        }
+        for (std::uint32_t index = 0; index < kMaxPointShadows; ++index)
+        {
+            const PointShadowView& record = residency.PointSlotRecord(index);
+            HashFnv1aValue(digest, record.PositionFar);
+            HashFnv1aValue(digest, record.Params);
+            HashFnv1aValue(digest, record.LightIndex);
+        }
     }
 }
 
@@ -1114,7 +1133,7 @@ TEST(ShadowResidency, ATrajectoryDigestPinsTheArbiterEndToEnd)
         FoldFrame(digest, residency);
     }
 
-    EXPECT_EQ(digest, 0xc18f8d11c39705b9ULL)
+    EXPECT_EQ(digest, 0x3575c087ae5ecb6dULL)
         << "trajectory digest moved: 0x" << std::hex << digest
         << ". A refactor stage must reproduce it exactly; only a deliberate "
            "behavior change re-records it, in the same commit, with the "
