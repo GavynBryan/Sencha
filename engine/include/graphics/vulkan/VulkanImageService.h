@@ -147,6 +147,13 @@ private:
 
     [[nodiscard]] static ImageUploadTarget DescribeTarget(const ImageEntry& entry);
 
+    // The legality gauntlet over an ImageCreateInfo, logging the reason for a
+    // refusal: extent, view-type support, 3D depth/layers, cube squareness and
+    // layer multiples, and where mip chains are allowed.
+    [[nodiscard]] bool ValidateCreateInfo(const ImageCreateInfo& info) const;
+    // The explicit, generated, or single-level mip count `info` asks for.
+    [[nodiscard]] static uint32_t ResolveMipLevels(const ImageCreateInfo& info);
+
     [[nodiscard]] bool CreateDefaultView(ImageEntry& entry);
     void RecordMipChain(VkCommandBuffer cmd, ImageEntry& entry);
 };
