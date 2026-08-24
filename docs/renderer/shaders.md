@@ -135,7 +135,7 @@ frame.
 
 There is no reflection step. Three mechanisms hold the contract:
 
-1. **`static_assert` walls.** `engine/src/render/MeshForwardPass.cpp` asserts the
+1. **`static_assert` walls.** `engine/src/render/pass/MeshForwardPass.cpp` asserts the
    offset of every field of `MeshPushConstants`, `MeshInstanceData`,
    `MeshFrameUniforms`, `GpuSpotShadow`, `GpuPointShadow`, and `GpuLight`, plus
    the total size of each. Adding a field in the wrong place fails the build.

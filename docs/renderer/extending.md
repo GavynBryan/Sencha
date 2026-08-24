@@ -15,8 +15,11 @@ A feature is the unit of "some subsystem draws things". Use one when the work
 has its own GPU resources, its own pipelines, and its own place in the phase
 order.
 
-**1. Declare it.** One header and one `.cpp` under `engine/include/render` and
-`engine/src/render`, named for the mechanism, not the content.
+**1. Declare it.** One header and one `.cpp` under
+`engine/include/render/feature` and `engine/src/render/feature`, named for the
+mechanism, not the content. The contract is
+`graphics/RenderFeature.h`, and nothing in the declaration names a graphics
+API.
 
 ```cpp
 class DecalRenderFeature : public IRenderFeature
@@ -25,8 +28,8 @@ public:
     DecalRenderFeature(DecalQueue& queue, StaticMeshCache& meshes);
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::MainColor; }
-    [[nodiscard]] bool Setup(const RendererServices& services) override;
-    void OnDraw(const FrameContext& frame) override;
+    [[nodiscard]] bool Setup(const RenderFeatureServices& services) override;
+    void OnDraw(const RenderFrame& frame) override;
     void Teardown() override;
 
 private:
@@ -37,21 +40,24 @@ private:
 };
 ```
 
-**2. Cache in `Setup`, never in `OnDraw`.** Take the pointers you need out of
-`RendererServices` and build shaders and layouts there. Pipelines go in a
-`PipelineVariantSet`; prewarm it if the formats are already known
-(`services.Swapchain->GetFormat()` and `services.DepthFormat`), so the first
-visible frame is not a hitch. See [record a pass](#record-a-pass).
+**2. Cache in `Setup`, never in `OnDraw`.** Take what you need out of
+`RenderFeatureServices`: `Buffers` and `Images` create GPU resources by neutral
+description, `Scratch` serves per-frame transient memory, `Logging` and
+`Instrumentation` are pointers to cache. A feature that drives a recording pass
+hands `*services.Backend` straight through to it -- that is the only reason to
+touch the field, and policy code never reads it. Pipelines belong to the pass,
+in a `PipelineVariantSet`; prewarm it if the formats are already known, so the
+first visible frame is not a hitch. See [record a pass](#record-a-pass).
 
 Return `false` only when the feature cannot record legal commands. If it can
 degrade to drawing nothing while the frame still presents, return `true` and log
 a warning; that is the policy `ShadowRenderFeature` follows when the lighting
 bindings fail.
 
-**3. Release in `Teardown`.** It runs in `~Renderer` after `vkDeviceWaitIdle`
-and before any Vulkan service unwinds. Destroy pipelines layouts, descriptor
-pools, samplers, and image views you created directly; hand cache-owned handles
-back to their caches.
+**3. Release in `Teardown`.** It runs in `~Renderer` after the device is idle
+and before any backend service unwinds. Release the buffers and images you
+created through `GpuBuffers` / `GpuImages`, hand cache-owned handles back to
+their caches, and let the pass tear down whatever it created directly.
 
 **4. Register it.** In `DefaultRenderPipeline::AddMeshRenderFeature` (or the
 game's own composition root):
@@ -65,11 +71,13 @@ Registration order inside a phase is draw order. If your feature produces
 something another feature samples, it must be registered earlier **and** be in
 an earlier phase.
 
-**5. Instrument it.** Wrap `OnDraw`'s body in a `CpuScopeTimer` and, under
-`SENCHA_ENABLE_RENDER_PROFILING`, a debug label plus a GPU scope. Publish
-pass-local totals into `RenderStats` when `Instrumentation->Stats` is non-null.
-Both need new enum entries; see [add a scope](#add-a-cpu-or-gpu-scope) and
-[add a counter](#add-a-counter).
+**5. Instrument it.** Wrap `OnDraw`'s body in a `CpuScopeTimer`, and bracket
+the recording with `BeginGpuScope(frame, GpuScope::Decals)` /
+`EndGpuScope(frame, ...)` -- they carry the debug label and the timestamp pair,
+and no-op when profiling is off or compiled out, so a feature needs no `#ifdef`
+of its own. Publish pass-local totals into `RenderStats` when
+`Instrumentation->Stats` is non-null. Both need new enum entries; see
+[add a scope](#add-a-cpu-or-gpu-scope) and [add a counter](#add-a-counter).
 
 **6. Test what you can.** A feature needs a live device, so the testable part is
 whatever you factored out of it. Put the arithmetic and the policy in a plain
@@ -327,11 +335,11 @@ the material.
    default that reproduces current behavior.
 2. **`.smat` schema and loader**: add the field so it round-trips. New fields
    need an explicit default or previously cooked assets fail to load.
-3. **`MeshPushConstants`** (`engine/include/render/MeshForwardPass.h`): add the
+3. **`MeshPushConstants`** (`engine/include/render/pass/MeshForwardPass.h`): add the
    field. Watch std140 alignment; the struct is a full 80 bytes today, so a new
    field grows it -- there is room, the budget is the 128-byte guaranteed
    minimum and the block is pushed for the fragment stage only.
-4. **`static_assert` block** in `engine/src/render/MeshForwardPass.cpp`: add an
+4. **`static_assert` block** in `engine/src/render/pass/MeshForwardPass.cpp`: add an
    offset assert for the new field and update `sizeof`.
 5. **`MeshForwardPass::DrawRuns`**: copy the field out of the `Material` into
    the push struct.
@@ -353,7 +361,7 @@ the material.
 
 Use this when the value is constant for the whole frame.
 
-1. **`MeshFrameUniforms`** (`engine/include/render/MeshForwardPass.h`): add the
+1. **`MeshFrameUniforms`** (`engine/include/render/pass/MeshForwardPass.h`): add the
    field. Respect std140: `vec3` occupies 16 bytes, and a scalar following an
    array needs the array to have ended on a 16-byte boundary. Add explicit pad
    members rather than relying on the compiler.
@@ -454,25 +462,20 @@ per-frame string work exists anywhere.
 
 **GPU**: add the value to `GpuScope`
 (`engine/include/profiling/RenderInstrumentation.h`) before `Count`, add its
-case to `ToString` in `RenderInstrumentation.cpp`, and bracket the work:
+case to `ToString` in `RenderInstrumentation.cpp`, and bracket the work from a
+feature's `OnDraw`:
 
 ```cpp
-#ifdef SENCHA_ENABLE_RENDER_PROFILING
-    if (gpuScopes != nullptr)
-    {
-        VulkanDebugLabels::BeginLabel(frame.Cmd, ToString(GpuScope::Yours));
-        gpuScopes->BeginScope(frame.Cmd, GpuScope::Yours);
-    }
-#endif
+    BeginGpuScope(frame, GpuScope::Yours);
     // work
-#ifdef SENCHA_ENABLE_RENDER_PROFILING
-    if (gpuScopes != nullptr)
-    {
-        gpuScopes->EndScope(frame.Cmd, GpuScope::Yours);
-        VulkanDebugLabels::EndLabel(frame.Cmd);
-    }
-#endif
+    EndGpuScope(frame, GpuScope::Yours);
 ```
+
+Both carry the debug label and the timestamp pair, and both no-op when
+instrumentation is inactive or compiled out -- the `#ifdef` lives once, in the
+backend definition, not in every caller. Inside the backend, where there is a
+command buffer but no `RenderFrame`, call `GpuTimestampPool` and
+`VulkanDebugLabels` directly under `SENCHA_ENABLE_RENDER_PROFILING`.
 
 The query pool sizes itself from `kGpuScopeCount`, so nothing else changes.
 
@@ -502,6 +505,9 @@ Tunables are cvars, not constants, and not recompiles.
 
 `MeshForwardPass` and `ShadowDepthPass` are plain classes so a host other than
 the game renderer can drive them. `EditorRenderFeature` is the worked example.
+Both take a `DrawContext` -- one struct of references naming everything the
+call reads -- so a host that replays one queue under several cameras rebuilds
+only that.
 
 A host needs to provide, per frame:
 
@@ -524,8 +530,8 @@ Two things the editor does that a host should copy:
 - Reset the arbiter when the scene identity changes. Slot state describes one
   scene's lights, so a focus or document switch resets rather than letting stale
   holders age out through steal hysteresis.
-- Use the `tint` parameter of `MeshForwardPass::Draw` for draw-level dimming
-  instead of mutating materials.
+- Use `DrawContext::Tint` for draw-level dimming instead of mutating
+  materials.
 
 ---
 
@@ -543,3 +549,8 @@ Two things the editor does that a host should copy:
   across frames. Cache the bundle pointer and re-read the members.
 - Do not add a field to `RenderStats` with no producer.
 - Do not serialize a render handle. Scene data persists asset paths.
+- Do not include a `graphics/vulkan/` header from `render/`. Device resources
+  come through `GpuBuffers` / `GpuImages` / `GpuFrameScratch`, the frame
+  contract through `graphics/RenderFeature.h`. The isolation check enforces
+  this for headers and implementation files alike; the recording set in
+  `render/pass/` is the one licensed exception, and it is closed.

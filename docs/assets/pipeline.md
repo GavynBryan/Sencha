@@ -874,7 +874,7 @@ Test-verified (753 tests green; 22 new across
 Test-verified (764 tests green; 11 new in `test/core/TextureAssetTests.cpp`,
 TSan-clean), Decisions E and L made real:
 
-- `render/TextureData.{h,cpp}` — the widened upload seam: format-tagged,
+- `assets/texture/TextureData.{h,cpp}` — the widened upload seam: format-tagged,
   usage-tagged, mip-tabled CPU texture, backend-free. BC4/BC5/BC7(/sRGB)
   are first-class alongside RGBA8 from v1, and `ValidateTextureData` pins
   the structural invariants (contiguous mips, halving extents, exact blob

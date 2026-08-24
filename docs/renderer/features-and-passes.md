@@ -2,16 +2,17 @@
 
 ## `IRenderFeature`
 
-The one runtime seam in the backend. Declared in
-`engine/include/graphics/vulkan/Renderer.h`.
+The one runtime seam between render policy and the backend. Declared in
+`engine/include/graphics/RenderFeature.h`, and backend-neutral: a feature is
+declarable without a graphics API in scope.
 
 ```cpp
 class IRenderFeature
 {
 public:
     virtual RenderPhase GetPhase() const = 0;
-    virtual bool Setup(const RendererServices& services) = 0;
-    virtual void OnDraw(const FrameContext& frame) = 0;
+    virtual bool Setup(const RenderFeatureServices& services) = 0;
+    virtual void OnDraw(const RenderFrame& frame) = 0;
     virtual void Teardown() {}
 };
 ```
@@ -19,9 +20,9 @@ public:
 | Hook | When | Contract |
 |---|---|---|
 | `GetPhase` | any time | one feature, one phase, constant for its lifetime |
-| `Setup` | inside `Renderer::AddFeature` | cache service pointers, create up-front GPU resources. Returning `false` means the feature is unusable: `AddFeature` tears it down and refuses to register it, rather than leaving an inert feature in a phase bucket |
-| `OnDraw` | once per frame, in phase order, in registration order within a phase | record commands. For `MainColor` the command buffer is already inside `vkCmdBeginRendering` on the swapchain image. Other phases open their own scopes |
-| `Teardown` | in `~Renderer`, after `vkDeviceWaitIdle`, before any Vulkan service unwinds | release everything the feature still holds |
+| `Setup` | inside `Renderer::AddFeature` | cache what the feature needs, create up-front GPU resources. Returning `false` means the feature is unusable: `AddFeature` tears it down and refuses to register it, rather than leaving an inert feature in a phase bucket |
+| `OnDraw` | once per frame, in phase order, in registration order within a phase | record commands, through the passes the feature drives. For `MainColor` the command stream is already inside the swapchain rendering scope. Other phases open their own |
+| `Teardown` | in `~Renderer`, after the device is idle, before any backend service unwinds | release everything the feature still holds |
 
 Degradation versus failure is a real distinction here. `ShadowRenderFeature::Setup`
 returns `true` even when `LightBindings::Setup` fails, because the frame still
@@ -44,25 +45,37 @@ means adding an enum value before `Count` and a `RecordXPhase` in `Renderer`;
 the feature interface does not change. The phase bucket array is sized by
 `RenderPhase::Count`, and an empty bucket costs one branch.
 
-### `RendererServices` and `FrameContext`
+### `RenderFeatureServices` and `RenderFrame`
 
-`Setup` receives every backend pointer at once and features cache what they
-need. There are no service lookups in the hot path.
+`Setup` receives everything at once and features cache what they need. There
+are no service lookups in the hot path.
 
-`FrameContext` is the entire per-frame payload handed to `OnDraw`:
+| `RenderFeatureServices` field | Meaning |
+|---|---|
+| `Logging` | the logging provider |
+| `Instrumentation` | the profiling bundle (see below) |
+| `Buffers` / `Images` | create, upload, and destroy GPU resources by neutral description |
+| `Scratch` | the per-frame bump allocator |
+| `Backend` | the active backend's service bundle. Only a feature driving a recording pass touches it, and only to hand it through |
+
+`RenderFrame` is the entire per-frame payload handed to `OnDraw`:
 
 | Field | Meaning |
 |---|---|
-| `Cmd` | this frame's primary command buffer, already begun |
 | `FrameInFlightIndex` | slot index, for anything the feature keeps per slot |
-| `TargetExtent` | swapchain extent |
-| `TargetFormat` | swapchain format. `VK_FORMAT_UNDEFINED` in the Offscreen phase |
-| `DepthView` / `DepthFormat` | the main depth target. Both null/undefined in the Offscreen phase |
+| `TargetExtent` | render-target dimensions |
 | `Phase` | which bucket is being recorded |
+| `Retirement` | fence-anchored frame clock, for releasing GPU resources safely |
+| `Instrumentation` | the bundle again, so `BeginGpuScope` needs nothing else |
+| `Backend` | the backend `FrameContext` -- the command stream, attachment formats, and depth view a recording pass needs |
 
-`RendererServices::Instrumentation` is a stable pointer to a bundle whose
-**members flip** with `render.profile.mode`. Cache the bundle, re-read its
-members per frame, never cache the members.
+The backend halves (`RendererServices`, `FrameContext`, declared in
+`graphics/vulkan/Renderer.h`) are what the recording set consumes. A second
+backend defines its own behind the same forward declarations.
+
+`Instrumentation` is a stable pointer to a bundle whose **members flip** with
+`render.profile.mode`. Cache the bundle, re-read its members per frame, never
+cache the members.
 
 ## The two built-in features
 
@@ -149,7 +162,7 @@ the per-frame sort does not reallocate.
 
 ## `MeshForwardPass`
 
-`engine/src/render/MeshForwardPass.cpp`. Draws every opaque run.
+`engine/src/render/pass/MeshForwardPass.cpp`. Draws every opaque run.
 
 ### Pipeline variants
 
@@ -301,7 +314,7 @@ addressed through set 0's dynamic offset. Layout is asserted field by field in
 
 ## `ShadowDepthPass`
 
-`engine/src/render/ShadowDepthPass.cpp`. Records the arbiter's scheduled views:
+`engine/src/render/pass/ShadowDepthPass.cpp`. Records the arbiter's scheduled views:
 spot tiles into the atlas, point faces into the cube pool, one depth-only
 dynamic-rendering scope per view.
 
@@ -381,7 +394,7 @@ A view whose recording could not proceed is reported twice:
 ## `SkinnedPosePass` and `SkinnedPoseRenderFeature`
 
 `engine/src/graphics/vulkan/SkinnedPosePass.cpp` plus its Offscreen feature
-in `engine/src/render/SkinnedPoseRenderFeature.cpp`. The pre-skin dispatch
+in `engine/src/render/feature/SkinnedPoseRenderFeature.cpp`. The pre-skin dispatch
 (pipeline Decision N, resolved to compute pre-skin): one compute invocation
 per vertex blends the joint palette into the rest geometry and writes a
 posed vertex buffer, which every geometry pass then draws exactly as static

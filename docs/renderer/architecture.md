@@ -7,16 +7,36 @@ split is enforced by directory and by include direction.
 
 ```
 render/            scene-facing. Knows ECS, components, math, asset caches.
-                   Knows Vulkan only through the backend services it is handed.
+                   Names no graphics API at all, except in render/pass/.
+
+render/pass/       the recording set. The one surface that turns render-domain
+                   state into device commands, and the one that a second
+                   backend would twin. Closed: three passes, by contract.
+
+graphics/          the neutral shelf. Handles, descriptions, extents, the
+                   frame contract -- what both halves may name.
 
 graphics/vulkan/   backend. Knows Vulkan, the platform surface, and logging.
                    Knows nothing about ECS, zones, components, or gameplay.
 ```
 
-`graphics/vulkan/Renderer.h` is the one header both halves include: it declares
-`IRenderFeature`, `RendererServices`, and `FrameContext`. A render feature is
-the bridge type. It lives in `render/` (or in an editor target), implements the
-backend's interface, and holds references to render-domain state.
+`graphics/RenderFeature.h` is the header both halves include: it declares
+`RenderPhase`, `IRenderFeature`, and the two structs a feature is handed --
+`RenderFeatureServices` at setup and `RenderFrame` per draw. Neither names a
+graphics API. Each carries a `Backend` pointer to the active backend's
+`RendererServices` / `FrameContext` (declared in `graphics/vulkan/Renderer.h`),
+which only a feature driving a recording pass dereferences, and which it hands
+straight through rather than reading.
+
+A render feature is the bridge type. It lives in `render/feature/` (or in an
+editor target), implements the neutral interface, and holds references to
+render-domain state. Device resources reach it through the neutral surfaces --
+`GpuBuffers`, `GpuImages`, `GpuFrameScratch` -- so a feature that owns no pass
+never includes a backend header.
+
+`render/` is organized by role: `feature/` drives passes, `extract/` copies
+simulation state into render-domain data, `pass/` records, and the root holds
+the policy, queues, components, and types the rest is built from.
 
 The rule that keeps this honest: **the backend never reads live ECS state**.
 Extraction copies what a frame needs into transient render-domain structures
@@ -56,7 +76,7 @@ graph TD
   Shaders --> Pipelines[VulkanPipelineCache]
   Buffers --> Desc[VulkanDescriptorCache]
   Images --> Desc
-  Buffers --> Scratch[VulkanFrameScratch]
+  Buffers --> Scratch[GpuFrameScratch]
   Phys --> Scratch
   Device --> Swap[VulkanSwapchainService]
   Surface --> Swap
@@ -118,7 +138,9 @@ features. It is the only place that knows the whole render-domain shape.
 | Layer | May reference | May not reference |
 |---|---|---|
 | `graphics/vulkan/` | core logging, config, platform window/surface, Vulkan, VMA | ECS, world, zone, render-domain types, gameplay |
-| `render/` | core, math, ecs, world transforms, asset caches, `graphics/vulkan` service types | app, runtime frame loop, editor, game code |
+| `render/` | core, math, ecs, world transforms, asset caches, the `graphics/` neutral shelf | `graphics/vulkan/`, app, runtime frame loop, editor, game code |
+| `render/pass/` | everything `render/` may, plus Vulkan | ECS chunks, app, editor, game code |
+| `render/feature/` | everything `render/` may, plus `render/pass/` headers and the one backend pass it owns by value | any other backend header |
 | `profiling/` | core, `graphics/vulkan` (timestamp pool only), render stats | render-domain types, ECS |
 | `app/DefaultRenderPipeline` | everything above | editor, game-specific types |
 | Editor render features | everything above, plus editor state | nothing new; they are ordinary `IRenderFeature` implementations |
@@ -134,7 +156,7 @@ seeing it.
 |---|---|---|
 | Vulkan objects (device, swapchain, pools, pipelines) | `GraphicsServices` members | engine |
 | Feature GPU objects (shadow atlas, cube pool, lighting set) | `LightBindings`, held by `shared_ptr` shared between the two features | renderer |
-| Per-frame transient GPU memory | `VulkanFrameScratch` ring | one frame slice, rotated |
+| Per-frame transient GPU memory | `GpuFrameScratch` ring | one frame slice, rotated |
 | Draw list | `RenderQueue` in `DefaultRenderPipeline` | rebuilt every frame |
 | Packed lights and shadow records | `RenderLightSet` in `DefaultRenderPipeline` | rebuilt every frame |
 | Shadow slot ownership, atlas placement, cached-content validity | `ShadowResidency` | persists across frames |

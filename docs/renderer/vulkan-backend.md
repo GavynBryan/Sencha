@@ -195,7 +195,7 @@ the destructor.
 
 ## Frame scratch
 
-`VulkanFrameScratch` is one persistently mapped host-visible ring buffer split
+`GpuFrameScratch` is one persistently mapped host-visible ring buffer split
 into `FramesInFlight` equal slices. `BeginFrame` rotates to the next slice and
 resets its bump cursor. Callers write straight through the returned pointer:
 no staging, no flush, no fence on the scratch itself.

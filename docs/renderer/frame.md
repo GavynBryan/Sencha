@@ -61,7 +61,7 @@ DrawFrameScheduled
     vkAcquireNextImageKHR                                    [signals ImageAvailable]
     wait on the acquired image's last-recorded fence         [if same generation]
     vkResetCommandPool + vkBeginCommandBuffer
-  VulkanFrameScratch::BeginFrame                             [rotate slice, reset cursor]
+  GpuFrameScratch::BeginFrame                             [rotate slice, reset cursor]
   GpuTimestampPool::BeginFrame                               [collect previous, reset queries]
   RecordOffscreenPhase                                       [GpuScope::PhaseOffscreen]
     for each Offscreen feature: OnDraw   (features own their own rendering scopes)

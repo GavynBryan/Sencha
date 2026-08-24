@@ -11,7 +11,7 @@ unblocks it. Measurement artifacts for the executed work remain under
 | Item | State |
 |---|---|
 | Transparency limits | Blend works: per-view back-to-front, one draw per item, depth write off. What does not exist: order-independent transparency (sorting is per draw, so interpenetrating blended surfaces resolve by bounds-centre distance), and blended surfaces still cast full-silhouette shadows -- the same caster-material gap as Mask |
-| Alpha-tested shadow casters | The forward and debug passes discard, but shadows do not: `ShadowCasterItem` carries no material handle and the shadow vertex layout carries no UVs, so a masked surface casts an unmasked silhouette. Structural, and scheduled with the shadow work rather than with materials |
+| Alpha-tested shadow casters | The forward and debug passes discard, but shadows do not: `ShadowCasterItem` carries the material handle now, so what remains is UVs in the shadow vertex layout and a discard in `shadow_depth.frag`, which is an empty main today. A masked surface still casts an unmasked silhouette until both land |
 | Post-processing pass | No post phase. Exposure and the tonemap shoulder run inside the forward fragment shader |
 | Directional lights and cascaded shadows | `GpuLightType::Directional` exists in the enum and the fragment loop skips it. Lands with the outdoor/sun need. The rule that baked AO must never contain sunlight is already recorded against that work |
 | Skybox | No cubemap. The background is the procedural gradient drawn from the ambient hemisphere (`SkyGradientPass`) |
@@ -76,12 +76,34 @@ device-lost fault injection are owed in the same bucket.
 
 ## Smaller items
 
+- **The editor render tree has no isolation fence.** `cmake/CheckRenderIsolation.cmake`
+  covers `engine/{include,src}/render` only. `editor/kyusu/src/render` names 81
+  distinct Vulkan symbols across 12 files, and `EditorBloomPass` is a complete
+  offscreen post chain -- backend code living in an editor `render/` directory.
+  Nothing enforces where that line sits. The engine-side rules are the template
+  when someone draws it.
+- **Complexity outliers left standing.** Measured 2026-08-24 across the render
+  and graphics trees (median function 10 lines, 6% above cyclomatic 10, so the
+  tree is healthy and the pain is local). Five worst cases were fixed; these
+  were recorded instead: `MeshForwardPass.cpp` at 834 lines and
+  `LightBindings.cpp` at 633 (both one cohesive mechanism, so a split needs a
+  seam rather than a line count); `EditorRenderFeature.cpp` at 663 with a
+  15-parameter constructor; `VulkanFrameService::BeginFrame` / `EndFrame` at
+  cyclomatic 26 and 23, which is `VkResult` triage fan-out rather than
+  algorithm; `FrameComposition::Resolve` at 27, a multi-phase topological sort
+  in one function; and `Renderer`'s own 15-parameter constructor.
+- **`graphics/vulkan/` headers stay installed and unfingerprinted.** The
+  neutral contract means a module implementing `IRenderFeature` no longer needs
+  them, but `install(DIRECTORY include/)` still ships them and the ABI
+  fingerprint does not cover them, so a host-style module composing asset
+  stacks from raw services (the template does) can still skew silently. An SDK
+  surface question, not a render one.
 - **No pre-device hook for render features.** `Contribute` was removed: it
   could never fire, because `GraphicsServices` creates the device during
   `Engine::Initialize`, before any hook that could build a feature. A game that
   needs a device extension or feature bit needs a hook at engine configuration
   time, where `EngineConfig` is still mutable and the policy has not been built.
-- **Headless testability.** `VulkanFrameScratch`, `ShadowDepthPass`,
+- **Headless testability.** `GpuFrameScratch`, `ShadowDepthPass`,
   `Renderer::AddFeature`, and `StaticMeshCache` all need a live device to
   construct, so their contracts cannot be tested headlessly. One case was fixed
   by extracting `FrameScratchRing`; the others rest on code review and live
