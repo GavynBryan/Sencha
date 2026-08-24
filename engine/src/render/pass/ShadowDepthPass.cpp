@@ -303,14 +303,15 @@ bool ShadowDepthPass::RecordView(const FrameContext& frame,
     return true;
 }
 
-void ShadowDepthPass::Draw(const FrameContext& frame,
-                           RenderLightSet& lights,
-                           std::span<const SpotShadowViewJob> views,
-                           std::span<const PointShadowFaceJob> pointFaces,
-                           const ShadowCasterSet& casters,
-                           StaticMeshCache& meshes,
-                           ShadowResidency* residency)
+void ShadowDepthPass::Draw(const FrameContext& frame, const DrawContext& ctx)
 {
+    RenderLightSet& lights = ctx.Lights;
+    const std::span<const SpotShadowViewJob> views = ctx.Views;
+    const std::span<const PointShadowFaceJob> pointFaces = ctx.PointFaces;
+    const ShadowCasterSet& casters = ctx.Casters;
+    StaticMeshCache& meshes = ctx.Meshes;
+    ShadowResidency* residency = ctx.Residency;
+
     LastStats = DrawStats{};
     Submitter.ClearTally();
     if (Bindings == nullptr)

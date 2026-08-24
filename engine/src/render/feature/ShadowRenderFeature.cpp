@@ -51,8 +51,14 @@ void ShadowRenderFeature::OnDraw(const RenderFrame& frame)
         CpuScopeTimer timer(
             Instrumentation != nullptr ? Instrumentation->CpuScopes : nullptr,
             CpuScope::ShadowRecord);
-        Pass.Draw(*frame.Backend, Lights, Residency.ScheduledViews(),
-                  Residency.ScheduledPointFaces(), Casters, Meshes, &Residency);
+        Pass.Draw(*frame.Backend,
+                  ShadowDepthPass::DrawContext{
+                      .Lights = Lights,
+                      .Views = Residency.ScheduledViews(),
+                      .PointFaces = Residency.ScheduledPointFaces(),
+                      .Casters = Casters,
+                      .Meshes = Meshes,
+                      .Residency = &Residency });
     }
     EndGpuScope(frame, GpuScope::ShadowViews);
 

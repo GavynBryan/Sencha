@@ -66,13 +66,19 @@ class ShadowDepthPass
 {
 public:
     void Setup(const RendererServices& services, LightBindings& bindings);
-    void Draw(const FrameContext& frame,
-              RenderLightSet& lights,
-              std::span<const SpotShadowViewJob> views,
-              std::span<const PointShadowFaceJob> pointFaces,
-              const ShadowCasterSet& casters,
-              StaticMeshCache& meshes,
-              ShadowResidency* residency);
+    // Everything one Draw call reads. `Residency`, when given, hears about
+    // views the pass had to abandon so cached content survives and the view
+    // re-queues.
+    struct DrawContext
+    {
+        RenderLightSet& Lights;
+        std::span<const SpotShadowViewJob> Views;
+        std::span<const PointShadowFaceJob> PointFaces;
+        const ShadowCasterSet& Casters;
+        StaticMeshCache& Meshes;
+        ShadowResidency* Residency = nullptr;
+    };
+    void Draw(const FrameContext& frame, const DrawContext& ctx);
     void Teardown();
 
     // Pass-local totals at view/draw granularity, maintained unconditionally

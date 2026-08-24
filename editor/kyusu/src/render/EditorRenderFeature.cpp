@@ -303,9 +303,13 @@ void EditorRenderFeature::UpdateShadowResidency(const FrameContext& frame)
     Residency.Update(requests, pointRequests, CasterEvents, budgets);
     Residency.ApplyGrants(lights);
 
-    ShadowPass.Draw(frame, lights, Residency.ScheduledViews(),
-                    Residency.ScheduledPointFaces(),
-                    QueueBuilder->Casters(), *MeshCache, &Residency);
+    ShadowPass.Draw(frame, ShadowDepthPass::DrawContext{
+                               .Lights = lights,
+                               .Views = Residency.ScheduledViews(),
+                               .PointFaces = Residency.ScheduledPointFaces(),
+                               .Casters = QueueBuilder->Casters(),
+                               .Meshes = *MeshCache,
+                               .Residency = &Residency });
 
     ShadowFrame.Active = Lighting.HasAtlas() || Lighting.HasCubePool();
     ShadowFrame.FocusRegistry = sceneRegistry;
@@ -501,9 +505,13 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     #ifdef SENCHA_ENABLE_RENDER_PROFILING
                         contextLights.DebugView = WorldView.DebugViewMode;
     #endif
-                        Forward.Draw(local, camera, contextLights,
-                                     it->second->BrushQueue(), *MeshCache, *MaterialStore,
-                                     SkinnedMeshCacheRef);
+                        Forward.Draw(local, MeshForwardPass::DrawContext{
+                                                .Camera = camera,
+                                                .Lights = contextLights,
+                                                .Queue = it->second->BrushQueue(),
+                                                .Meshes = *MeshCache,
+                                                .Materials = *MaterialStore,
+                                                .SkinnedMeshes = SkinnedMeshCacheRef });
                         // Placed meshes cannot receive the brush-triangle wash, so
                         // the overlay folds into their multiply tint instead (exact
                         // on white, close on bright textures).
@@ -511,9 +519,14 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
                         const Vec4 meshDim(1.0f - wash.W + wash.X * wash.W,
                                            1.0f - wash.W + wash.Y * wash.W,
                                            1.0f - wash.W + wash.Z * wash.W, 1.0f);
-                        Forward.Draw(local, camera, contextLights,
-                                     it->second->MeshQueue(), *MeshCache, *MaterialStore,
-                                     SkinnedMeshCacheRef, meshDim);
+                        Forward.Draw(local, MeshForwardPass::DrawContext{
+                                                .Camera = camera,
+                                                .Lights = contextLights,
+                                                .Queue = it->second->MeshQueue(),
+                                                .Meshes = *MeshCache,
+                                                .Materials = *MaterialStore,
+                                                .SkinnedMeshes = SkinnedMeshCacheRef,
+                                                .Tint = meshDim });
                         BrushFills.DrawZoneOverlay(local, viewport, camera, contextScene,
                                                    EditorTheme::ContextZoneOverlay);
                     }
@@ -538,9 +551,13 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         // the real-material queue when active, else the procedural-checker fallback.
         if (MaterialPath)
         {
-            Forward.Draw(local, camera, QueueBuilder->Lights(),
-                         QueueBuilder->MeshQueue(), *MeshCache, *MaterialStore,
-                         SkinnedMeshCacheRef);
+            Forward.Draw(local, MeshForwardPass::DrawContext{
+                                    .Camera = camera,
+                                    .Lights = QueueBuilder->Lights(),
+                                    .Queue = QueueBuilder->MeshQueue(),
+                                    .Meshes = *MeshCache,
+                                    .Materials = *MaterialStore,
+                                    .SkinnedMeshes = SkinnedMeshCacheRef });
         }
         else
             Meshes.DrawViewport(local, viewport, camera, scene);

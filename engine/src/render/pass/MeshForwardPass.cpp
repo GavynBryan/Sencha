@@ -507,11 +507,14 @@ BufferHandle ResolveVertexBuffer(const RenderQueueItem& item,
 }
 } // namespace
 
-void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& queue,
-                               StaticMeshCache& meshes, MaterialCache& materials,
-                               const SkinnedMeshCache* skinnedMeshes, Vec4 tint,
+void MeshForwardPass::DrawRuns(const FrameContext& frame, const DrawContext& ctx,
                                uint32_t streamedInstances)
 {
+    const RenderQueue& queue = ctx.Queue;
+    StaticMeshCache& meshes = ctx.Meshes;
+    MaterialCache& materials = ctx.Materials;
+    const SkinnedMeshCache* skinnedMeshes = ctx.SkinnedMeshes;
+    const Vec4 tint = ctx.Tint;
     const std::vector<RenderQueueItem>& items = queue.Opaque();
     const std::vector<uint32_t>& order = queue.OpaqueOrder();
 
@@ -603,11 +606,15 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
     LastStats.PipelineSwitches = tally.PipelineBinds;
 }
 
-void MeshForwardPass::RecordTransparentItems(const FrameContext& frame, const RenderQueue& queue,
-                                             StaticMeshCache& meshes, MaterialCache& materials,
-                                             const SkinnedMeshCache* skinnedMeshes, Vec4 tint,
+void MeshForwardPass::RecordTransparentItems(const FrameContext& frame,
+                                             const DrawContext& ctx,
                                              uint32_t streamedInstances)
 {
+    const RenderQueue& queue = ctx.Queue;
+    StaticMeshCache& meshes = ctx.Meshes;
+    MaterialCache& materials = ctx.Materials;
+    const SkinnedMeshCache* skinnedMeshes = ctx.SkinnedMeshes;
+    const Vec4 tint = ctx.Tint;
     const std::vector<RenderQueueItem>& items = queue.Transparent();
     const uint32_t opaqueCount = static_cast<uint32_t>(queue.OpaqueOrder().size());
 
@@ -691,29 +698,18 @@ void MeshForwardPass::RecordTransparentItems(const FrameContext& frame, const Re
     LastStats.PipelineSwitches = tally.PipelineBinds;
 }
 
-void MeshForwardPass::Draw(const FrameContext& frame,
-                           const CameraRenderData& camera,
-                           const RenderLightSet& lights,
-                           const RenderQueue& queue,
-                           StaticMeshCache& meshes,
-                           MaterialCache& materials,
-                           const SkinnedMeshCache* skinnedMeshes,
-                           Vec4 tint)
+void MeshForwardPass::Draw(const FrameContext& frame, const DrawContext& ctx)
 {
-    const DrawToken token =
-        DrawOpaque(frame, camera, lights, queue, meshes, materials, skinnedMeshes, tint);
-    DrawTransparent(frame, queue, meshes, materials, skinnedMeshes, tint, token);
+    const DrawToken token = DrawOpaque(frame, ctx);
+    DrawTransparent(frame, ctx, token);
 }
 
 MeshForwardPass::DrawToken MeshForwardPass::DrawOpaque(const FrameContext& frame,
-                                                       const CameraRenderData& camera,
-                                                       const RenderLightSet& lights,
-                                                       const RenderQueue& queue,
-                                                       StaticMeshCache& meshes,
-                                                       MaterialCache& materials,
-                                                       const SkinnedMeshCache* skinnedMeshes,
-                                                       Vec4 tint)
+                                                       const DrawContext& ctx)
 {
+    const CameraRenderData& camera = ctx.Camera;
+    const RenderLightSet& lights = ctx.Lights;
+    const RenderQueue& queue = ctx.Queue;
     LastStats = DrawStats{
         .QueueItems = static_cast<uint32_t>(queue.OpaqueOrder().size()
                                             + queue.Transparent().size()),
@@ -783,16 +779,12 @@ MeshForwardPass::DrawToken MeshForwardPass::DrawOpaque(const FrameContext& frame
         vkCmdClearAttachments(frame.Cmd, 1, &clear, 1, &rect);
     }
 #endif
-    DrawRuns(frame, queue, meshes, materials, skinnedMeshes, tint, streamed);
+    DrawRuns(frame, ctx, streamed);
     return DrawToken{ .Valid = true, .StreamedInstances = streamed };
 }
 
 void MeshForwardPass::DrawTransparent(const FrameContext& frame,
-                                      const RenderQueue& queue,
-                                      StaticMeshCache& meshes,
-                                      MaterialCache& materials,
-                                      const SkinnedMeshCache* skinnedMeshes,
-                                      Vec4 tint,
+                                      const DrawContext& ctx,
                                       const DrawToken& token)
 {
     if (!token.Valid || TransparentOrder.empty())
@@ -800,8 +792,7 @@ void MeshForwardPass::DrawTransparent(const FrameContext& frame,
 
     // The frame state and instance stream the opaque half bound are still
     // current; only the pipeline changes, and the submitter handles that.
-    RecordTransparentItems(frame, queue, meshes, materials, skinnedMeshes, tint,
-                           token.StreamedInstances);
+    RecordTransparentItems(frame, ctx, token.StreamedInstances);
 }
 
 void MeshForwardPass::Teardown()

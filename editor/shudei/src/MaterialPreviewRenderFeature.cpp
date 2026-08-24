@@ -189,8 +189,12 @@ void MaterialPreviewRenderFeature::OnDraw(const RenderFrame& renderFrame)
                 Queue.AddOpaque(item);
             Queue.SortOpaque();
 
-            Forward.Draw(rendering.Context(), camera, Lights, Queue,
-                         *Assets.StaticMeshes, Assets.Materials);
+            Forward.Draw(rendering.Context(),
+                         MeshForwardPass::DrawContext{ .Camera = camera,
+                                                       .Lights = Lights,
+                                                       .Queue = Queue,
+                                                       .Meshes = *Assets.StaticMeshes,
+                                                       .Materials = Assets.Materials });
         }
     }
 

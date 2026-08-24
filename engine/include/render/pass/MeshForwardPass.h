@@ -134,17 +134,22 @@ public:
     // pre-pose behavior, and the fallback when a dispatch was skipped.
     void SetSkinnedPoses(const SkinnedPoseFrameData* poses) { Poses = poses; }
 
-    // `skinnedMeshes` resolves items whose SkinnedMesh handle is valid (rest
-    // geometry today); null makes those items skip, and a host with no skinned
-    // content passes nothing.
-    void Draw(const FrameContext& frame,
-              const CameraRenderData& camera,
-              const RenderLightSet& lights,
-              const RenderQueue& queue,
-              StaticMeshCache& meshes,
-              MaterialCache& materials,
-              const SkinnedMeshCache* skinnedMeshes = nullptr,
-              Vec4 tint = Vec4{ 1.0f, 1.0f, 1.0f, 1.0f });
+    // Everything one Draw call reads, so hosts replaying one queue under
+    // several cameras rebuild only this. `SkinnedMeshes` resolves items whose
+    // SkinnedMesh handle is valid (rest geometry when no pose is bound); null
+    // makes those items skip, and a host with no skinned content passes
+    // nothing.
+    struct DrawContext
+    {
+        const CameraRenderData& Camera;
+        const RenderLightSet& Lights;
+        const RenderQueue& Queue;
+        StaticMeshCache& Meshes;
+        MaterialCache& Materials;
+        const SkinnedMeshCache* SkinnedMeshes = nullptr;
+        Vec4 Tint = Vec4{ 1.0f, 1.0f, 1.0f, 1.0f };
+    };
+    void Draw(const FrameContext& frame, const DrawContext& ctx);
     void Teardown();
 
     // Pass-local totals, maintained unconditionally at run granularity (the
@@ -180,20 +185,9 @@ private:
     };
 
     [[nodiscard]] DrawToken DrawOpaque(const FrameContext& frame,
-                                       const CameraRenderData& camera,
-                                       const RenderLightSet& lights,
-                                       const RenderQueue& queue,
-                                       StaticMeshCache& meshes,
-                                       MaterialCache& materials,
-                                       const SkinnedMeshCache* skinnedMeshes,
-                                       Vec4 tint);
+                                       const DrawContext& ctx);
     // Records the blended items back-to-front after the opaque half.
-    void DrawTransparent(const FrameContext& frame,
-                         const RenderQueue& queue,
-                         StaticMeshCache& meshes,
-                         MaterialCache& materials,
-                         const SkinnedMeshCache* skinnedMeshes,
-                         Vec4 tint,
+    void DrawTransparent(const FrameContext& frame, const DrawContext& ctx,
                          const DrawToken& token);
     [[nodiscard]] bool EnsurePipelines(const FrameContext& frame);
     [[nodiscard]] bool EnsureTransparentPipelines(const FrameContext& frame);
@@ -212,15 +206,11 @@ private:
     void BindFrameState(const FrameContext& frame, VkDeviceSize uniformOffset);
     // Draws are clipped to `streamedInstances`: a run past the stream has no
     // instance data to read.
-    void DrawRuns(const FrameContext& frame, const RenderQueue& queue,
-                  StaticMeshCache& meshes, MaterialCache& materials,
-                  const SkinnedMeshCache* skinnedMeshes, Vec4 tint,
+    void DrawRuns(const FrameContext& frame, const DrawContext& ctx,
                   uint32_t streamedInstances);
     // One draw per item, in TransparentOrder, never merged: instances inside
     // one draw have no order against each other, and order is the contract.
-    void RecordTransparentItems(const FrameContext& frame, const RenderQueue& queue,
-                                StaticMeshCache& meshes, MaterialCache& materials,
-                                const SkinnedMeshCache* skinnedMeshes, Vec4 tint,
+    void RecordTransparentItems(const FrameContext& frame, const DrawContext& ctx,
                                 uint32_t streamedInstances);
 
     VulkanBufferService* Buffers = nullptr;

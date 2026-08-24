@@ -43,8 +43,13 @@ void MeshRenderFeature::OnDraw(const RenderFrame& frame)
         CpuScopeTimer timer(
             Instrumentation != nullptr ? Instrumentation->CpuScopes : nullptr,
             CpuScope::ForwardRecord);
-        Pass.Draw(*frame.Backend, *Camera, *Lights, *Queue, *Meshes, *Materials,
-                  SkinnedMeshes);
+        Pass.Draw(*frame.Backend,
+                  MeshForwardPass::DrawContext{ .Camera = *Camera,
+                                                .Lights = *Lights,
+                                                .Queue = *Queue,
+                                                .Meshes = *Meshes,
+                                                .Materials = *Materials,
+                                                .SkinnedMeshes = SkinnedMeshes });
     }
     EndGpuScope(frame, GpuScope::ForwardOpaque);
 
