@@ -6,7 +6,7 @@
 
 #include <world/transform/TransformHistory.h>
 
-#include <graphics/vulkan/TextureCache.h>
+#include <assets/texture/TextureCache.h>
 #include <render/MeshDrawInstance.h>
 #include <render/ZoneLightmapComponent.h>
 

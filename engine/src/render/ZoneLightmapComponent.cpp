@@ -1,6 +1,6 @@
 #include <render/ZoneLightmapComponent.h>
 
-#include <graphics/vulkan/TextureCache.h>
+#include <assets/texture/TextureCache.h>
 
 void ComponentTraits<ZoneLightmapComponent>::OnAdd(
     ZoneLightmapComponent& component, World& world, EntityId)

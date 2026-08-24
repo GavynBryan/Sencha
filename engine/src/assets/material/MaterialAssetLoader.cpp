@@ -4,7 +4,7 @@
 #include <assets/runtime/AssetSystem.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
-#include <graphics/vulkan/TextureCache.h>
+#include <assets/texture/TextureCache.h>
 #include <render/MaterialCache.h>
 
 #include <format>

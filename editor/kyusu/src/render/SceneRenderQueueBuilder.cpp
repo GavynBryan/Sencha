@@ -16,7 +16,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
 #include <math/geometry/3d/AabbTransform.h>
-#include <graphics/vulkan/TextureCache.h>
+#include <assets/texture/TextureCache.h>
 #include <render/MaterialSetCache.h>
 #include <render/MeshDrawInstance.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>

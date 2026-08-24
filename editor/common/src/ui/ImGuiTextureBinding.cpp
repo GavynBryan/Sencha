@@ -1,7 +1,7 @@
 #include "ui/ImGuiTextureBinding.h"
 
 #include <assets/runtime/AssetSystem.h>
-#include <graphics/vulkan/TextureCache.h>
+#include <assets/texture/TextureCache.h>
 #include <graphics/vulkan/VulkanSamplerCache.h>
 
 #include <imgui_impl_vulkan.h>
@@ -103,7 +103,10 @@ ImTextureID ImGuiTextureBinding::TextureId()
 
 VkExtent2D ImGuiTextureBinding::Extent() const
 {
-    return Handle.IsValid() ? Textures.GetExtent(Handle) : VkExtent2D{};
+    if (!Handle.IsValid())
+        return {};
+    const RenderExtent extent = Textures.GetExtent(Handle);
+    return { extent.Width, extent.Height };
 }
 
 void ImGuiTextureBinding::RetireSet()

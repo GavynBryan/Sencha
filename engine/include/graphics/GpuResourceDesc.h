@@ -67,6 +67,40 @@ enum class GpuImageViewKind : std::uint8_t
     Volume,
 };
 
+// Texel filtering within and across mip levels.
+enum class SamplerFilter : std::uint8_t
+{
+    Linear,
+    Nearest,
+};
+
+// What sampling outside [0,1) reads.
+enum class SamplerAddress : std::uint8_t
+{
+    Repeat,
+    ClampToEdge,
+};
+
+// MaxLod value meaning "never clamp the mip chain". Large enough for any
+// real chain; backends with an explicit no-clamp constant map it there.
+inline constexpr float kSamplerLodUnclamped = 1000.0f;
+
+// How an image is sampled. Samplers are pure immutable state, deduplicated
+// by the backend sampler cache; describe what you want and share the result.
+struct SamplerDesc
+{
+    SamplerFilter MinFilter = SamplerFilter::Linear;
+    SamplerFilter MagFilter = SamplerFilter::Linear;
+    SamplerFilter MipmapMode = SamplerFilter::Linear;
+    SamplerAddress AddressModeU = SamplerAddress::Repeat;
+    SamplerAddress AddressModeV = SamplerAddress::Repeat;
+    SamplerAddress AddressModeW = SamplerAddress::Repeat;
+    float MaxAnisotropy = 0.0f; // 0 disables anisotropy
+    float MaxLod = kSamplerLodUnclamped;
+
+    bool operator==(const SamplerDesc&) const = default;
+};
+
 // A sampled image. Every image created through this description is
 // shader-sampled color data that can be uploaded to; attachments and other
 // specialized usages are backend territory (render targets go through

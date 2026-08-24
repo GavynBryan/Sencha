@@ -3,7 +3,7 @@
 #include <assets/texture/TextureFormat.h>
 #include <assets/texture/TextureLoader.h>
 #include <core/logging/LoggingProvider.h>
-#include <graphics/vulkan/TextureCache.h>
+#include <assets/texture/TextureCache.h>
 #include <assets/texture/Image.h>
 #include <assets/texture/ImageLoader.h>
 #include <assets/texture/TextureData.h>

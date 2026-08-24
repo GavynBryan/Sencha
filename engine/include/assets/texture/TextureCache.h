@@ -5,15 +5,20 @@
 #include <core/assets/AssetCache.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/handle/Owned.h>
-#include <graphics/vulkan/VulkanDescriptorCache.h>
-#include <graphics/vulkan/VulkanImageService.h>
-#include <graphics/vulkan/VulkanSamplerCache.h>
+#include <graphics/BindlessImageIndex.h>
+#include <graphics/GpuResourceDesc.h>
+#include <graphics/ImageHandle.h>
+#include <graphics/RenderExtent.h>
 #include <render/TextureHandle.h>
 
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
+
+class VulkanDescriptorCache;
+class VulkanImageService;
+class VulkanSamplerCache;
 
 //=============================================================================
 // TextureEntry
@@ -25,7 +30,7 @@ struct TextureEntry
 {
     ImageHandle        GpuImage;
     BindlessImageIndex Bindless;
-    VkExtent2D         Extent{};
+    RenderExtent       Extent{};
     // The sampler this entry was registered with — kept so a hot reload
     // (Stage 6) can repoint the same bindless slot at the new image with the
     // original sampler.
@@ -114,7 +119,7 @@ public:
     // -- Accessors ------------------------------------------------------------
 
     [[nodiscard]] BindlessImageIndex GetBindlessIndex(TextureHandle handle) const;
-    [[nodiscard]] VkExtent2D         GetExtent(TextureHandle handle) const;
+    [[nodiscard]] RenderExtent       GetExtent(TextureHandle handle) const;
 
     // The entry's current GPU image. Not stable across hot reloads: a reload
     // swaps the entry's image in place, so a caller holding a view or
@@ -153,7 +158,7 @@ private:
     // `newSampler` replaces the entry's sampler in the same descriptor write
     // (a recook may change the authored filter).
     [[nodiscard]] bool ReloadEntryImage(std::string_view path, ImageHandle newImage,
-                                        VkExtent2D extent,
+                                        RenderExtent extent,
                                         const SamplerDesc* newSampler = nullptr);
 
     Logger&                Log;

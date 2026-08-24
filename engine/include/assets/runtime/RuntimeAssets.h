@@ -11,7 +11,7 @@
 #include <movement/MovementProfileData.h>
 #include <core/assets/AssetRegistry.h>
 #include <assets/runtime/AssetSystem.h>
-#include <graphics/vulkan/TextureCache.h>
+#include <assets/texture/TextureCache.h>
 #include <render/MaterialCache.h>
 #include <render/MaterialSetCache.h>
 #include <render/skinned_mesh/SkinnedMeshCache.h>
