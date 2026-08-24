@@ -75,7 +75,8 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
         QueueBuilder.emplace(runtimeAssets->Assets, *runtimeAssets->StaticMeshes,
                              runtimeAssets->Materials, runtimeAssets->MaterialSets,
                              logging, runtimeAssets->Textures.get(),
-                             runtimeAssets->SkinnedMeshes.get());
+                             runtimeAssets->SkinnedMeshes.get(),
+                             &runtimeAssets->AnimationClips);
         SceneSolid.emplace(Forward, *QueueBuilder, *runtimeAssets->StaticMeshes,
                            runtimeAssets->Materials);
         MaterialPath = true;
@@ -188,7 +189,8 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
                         RuntimeAssetsRef->Assets, *RuntimeAssetsRef->StaticMeshes,
                         RuntimeAssetsRef->Materials, RuntimeAssetsRef->MaterialSets,
                         *LoggingRef, nullptr,
-                        RuntimeAssetsRef->SkinnedMeshes.get());
+                        RuntimeAssetsRef->SkinnedMeshes.get(),
+                        &RuntimeAssetsRef->AnimationClips);
                 builder->Build(document);
             });
         // Arbitrating and recording the focus scene's shadow atlas is one

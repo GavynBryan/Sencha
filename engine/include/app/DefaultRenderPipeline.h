@@ -43,10 +43,14 @@ public:
     [[nodiscard]] CameraRenderData& GetCameraData() { return Camera; }
     [[nodiscard]] const CameraRenderData& GetCameraData() const { return Camera; }
 
+    // `clips` and `skeletons` arrive together: a clip poses a skeleton, and
+    // without both, skinned instances render at bind pose.
     void SetAssetStores(StaticMeshCache& meshes, MaterialCache& materials,
                         MaterialSetCache& materialSets,
                         TextureCache* textures = nullptr,
-                        const SkinnedMeshCache* skinnedMeshes = nullptr);
+                        const SkinnedMeshCache* skinnedMeshes = nullptr,
+                        const AnimationClipCache* clips = nullptr,
+                        const SkeletonCache* skeletons = nullptr);
     bool AddMeshRenderFeature(GraphicsServices& graphics);
     void ExtractRender(RenderExtractContext& ctx);
 
@@ -89,6 +93,8 @@ private:
     CameraRenderData Camera;
     StaticMeshCache* Meshes = nullptr;
     const SkinnedMeshCache* SkinnedMeshes = nullptr;
+    const AnimationClipCache* AnimationClips = nullptr;
+    const SkeletonCache* Skeletons = nullptr;
     MaterialCache* Materials = nullptr;
     MaterialSetCache* MaterialSets = nullptr;
     TextureCache* Textures = nullptr;

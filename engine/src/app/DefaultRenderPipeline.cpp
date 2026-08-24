@@ -57,10 +57,14 @@ void DefaultRenderPipeline::SetAssetStores(StaticMeshCache& meshes,
                                            MaterialCache& materials,
                                            MaterialSetCache& materialSets,
                                            TextureCache* textures,
-                                           const SkinnedMeshCache* skinnedMeshes)
+                                           const SkinnedMeshCache* skinnedMeshes,
+                                           const AnimationClipCache* clips,
+                                           const SkeletonCache* skeletons)
 {
     Meshes = &meshes;
     SkinnedMeshes = skinnedMeshes;
+    AnimationClips = clips;
+    Skeletons = skeletons;
     Materials = &materials;
     MaterialSets = &materialSets;
     Textures = textures;
@@ -195,7 +199,8 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
             SkinnedPoses->Reset();
         RenderExtractor.Extract(
             world, ctx.Partitions,
-            RenderExtractCaches{ *Meshes, *Materials, *MaterialSets, Textures, SkinnedMeshes },
+            RenderExtractCaches{ *Meshes, *Materials, *MaterialSets, Textures,
+                                 SkinnedMeshes, AnimationClips, Skeletons },
             Camera, Queue, ctx.Presentation.Alpha, SkinnedPoses.get());
         Queue.SortOpaque();
     }

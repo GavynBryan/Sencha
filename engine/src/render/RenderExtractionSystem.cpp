@@ -1,5 +1,9 @@
 #include <render/RenderExtractionSystem.h>
 
+#include <anim/AnimationClipPlayerComponent.h>
+#include <anim/AnimationClipSampling.h>
+#include <anim/SkinningPalette.h>
+
 #include <world/transform/TransformHistory.h>
 
 #include <graphics/vulkan/TextureCache.h>
@@ -256,9 +260,9 @@ void RenderExtractionSystem::Extract(
                 1.0f);
 
             // Register the entity's pose slot: one per entity (every section
-            // shares it). No pose source exists yet, so the palette is the
-            // bind identity -- which is exactly what makes the pre-skin path
-            // reproduce the rest bytes and keeps skinned_rest the gate.
+            // shares it). A clip player poses the skeleton at its current
+            // time; without one the palette stays the bind identity, which
+            // reproduces the rest bytes exactly.
             std::uint32_t poseSlot = UINT32_MAX;
             if (skinnedPoses != nullptr)
             {
@@ -278,6 +282,33 @@ void RenderExtractionSystem::Extract(
                     });
                     skinnedPoses->Palettes.resize(
                         paletteOffset + skinning->JointCount, Mat4::Identity());
+
+                    // Pose evaluation is per rendered frame, not per tick:
+                    // the player advanced its time on the fixed tick and
+                    // this samples whatever it currently holds.
+                    const SkeletonData* skeleton =
+                        caches.Skeletons != nullptr
+                            ? caches.Skeletons->Get(
+                                  skinnedMeshes->GetSkeletonHandle(renderer.Mesh))
+                            : nullptr;
+                    const AnimationClipPlayerComponent* player =
+                        world.TryGet<AnimationClipPlayerComponent>(view.Entity(i));
+                    const AnimationClipData* clip =
+                        (player != nullptr && caches.AnimationClips != nullptr)
+                            ? caches.AnimationClips->Get(player->Clip)
+                            : nullptr;
+                    if (clip != nullptr && skeleton != nullptr
+                        && skeleton->Joints.size() == skinning->JointCount)
+                    {
+                        SampleAnimationClip(*clip, *skeleton,
+                                            player->TimeSeconds, PoseScratch);
+                        BuildPosedModelTransforms(*skeleton, PoseScratch,
+                                                  ModelScratch);
+                        BuildSkinningPalette(*skeleton, ModelScratch,
+                                             PaletteScratch);
+                        std::copy(PaletteScratch.begin(), PaletteScratch.end(),
+                                  skinnedPoses->Palettes.begin() + paletteOffset);
+                    }
                 }
             }
 

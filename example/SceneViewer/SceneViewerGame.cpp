@@ -2,6 +2,8 @@
 
 #include "SceneViewerSystems.h"
 
+#include <anim/AnimationClipPlaybackSystem.h>
+#include <anim/AnimationClipPlayerComponent.h>
 #include <input/InputActionResolveSystem.h>
 #include <input/InputActionState.h>
 #include <input/InputBindingCache.h>
@@ -212,6 +214,8 @@ void SceneViewerGame::OnStart(GameStartupContext&)
     world.AddResource<SkinnedMeshComponentAssets>(
         runtimeAssets.SkinnedMeshes.get(),
         &runtimeAssets.MaterialSets);
+    world.AddResource<AnimationClipComponentAssets>(
+        &runtimeAssets.AnimationClips);
     world.AddResource<ZoneLightmapComponentAssets>(
         runtimeAssets.Textures.get());
     world.AddResource<AudioSourceRuntime>(
@@ -248,7 +252,9 @@ void SceneViewerGame::OnStart(GameStartupContext&)
             runtimeAssets.Materials,
             runtimeAssets.MaterialSets,
             runtimeAssets.Textures.get(),
-            runtimeAssets.SkinnedMeshes.get());
+            runtimeAssets.SkinnedMeshes.get(),
+            &runtimeAssets.AnimationClips,
+            &runtimeAssets.Skeletons);
         pipeline->AddMeshRenderFeature(graphics);
     }
 
@@ -379,6 +385,8 @@ void SceneViewerGame::OnRegisterSystems(
         RuntimeAssetState().DataAssets,
         GetEngine().Logging());
     RegisterSceneViewerSystems(ctx.Schedule, FreeCam, ScriptedCameraEnabled);
+    // Clip playback: the viewer is where a posed character gets looked at.
+    RegisterAnimationSystems(ctx.Schedule);
 }
 
 void SceneViewerGame::OnPlatformEvent(

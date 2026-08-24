@@ -1,5 +1,6 @@
 #pragma once
 
+#include <anim/AnimationClipHandle.h>
 #include <audio/AudioClipCache.h>
 #include <audio/Caption.h>
 #include <core/assets/AssetRef.h>
@@ -70,6 +71,20 @@ struct SceneFieldCodec<SkinnedMeshHandle>
     static bool Load(IReadArchive& archive,
                      std::string_view key,
                      SkinnedMeshHandle& value,
+                     SceneSerializationContext& context);
+};
+
+template<>
+struct SceneFieldCodec<AnimationClipHandle>
+{
+    static bool Save(IWriteArchive& archive,
+                     std::string_view key,
+                     AnimationClipHandle value,
+                     SceneSerializationContext& context);
+
+    static bool Load(IReadArchive& archive,
+                     std::string_view key,
+                     AnimationClipHandle& value,
                      SceneSerializationContext& context);
 };
 

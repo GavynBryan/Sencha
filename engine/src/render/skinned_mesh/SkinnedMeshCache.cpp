@@ -94,6 +94,12 @@ BufferHandle SkinnedMeshCache::GetInfluences(SkinnedMeshHandle handle) const
     return entry ? entry->Influences : BufferHandle{};
 }
 
+SkeletonHandle SkinnedMeshCache::GetSkeletonHandle(SkinnedMeshHandle handle) const
+{
+    const SkinnedMeshEntry* entry = Resolve(handle);
+    return entry ? entry->OwnedSkeleton.GetToken() : SkeletonHandle{};
+}
+
 std::string_view SkinnedMeshCache::GetName(SkinnedMeshHandle handle) const
 {
     return GetRegisteredPath(handle);

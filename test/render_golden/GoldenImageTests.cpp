@@ -218,6 +218,19 @@ TEST(GoldenImage, ARestPoseSkinnedMeshDraws)
                  .EditorCook = true });
 }
 
+// The same rig posed by a clip: the pose gate. The player is paused
+// (rate 0) at 0.5s of a one-second bend, so the pose is a fixed authored
+// value rather than a function of how many fixed ticks the wall clock
+// happened to allow -- a playing clip cannot be captured deterministically
+// under the tick accumulator. Everything from the clip asset through
+// sampling, the palette, the compute dispatch, and the posed draw has to
+// hold for the upper box to sit rotated a quarter turn.
+TEST(GoldenImage, AClipPosesASkinnedMesh)
+{
+    CheckScene({ .Name = "skinned_pose", .Map = "levels/golden_skinned_pose.level",
+                 .EditorCook = true });
+}
+
 // The same geometry through a blended default material: the transparent pass's
 // pixel proof. If blend ever silently falls back to opaque again, this frame
 // stops showing the background through the floor and the comparison fails.

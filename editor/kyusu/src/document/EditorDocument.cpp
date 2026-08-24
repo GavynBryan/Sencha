@@ -11,6 +11,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <render/Camera.h>
 #include <render/StaticMeshComponent.h>
+#include <anim/AnimationClipPlayerComponent.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <world/serialization/IComponentSerializer.h>
 #include <world/serialization/SceneSerializationContext.h>
@@ -109,6 +110,8 @@ void EditorDocument::SetAssetEnvironment(RuntimeAssets& assets)
         world.AddResource<StaticMeshComponentAssets>(assets.StaticMeshes.get(), &assets.MaterialSets);
     if (!world.HasResource<SkinnedMeshComponentAssets>())
         world.AddResource<SkinnedMeshComponentAssets>(assets.SkinnedMeshes.get(), &assets.MaterialSets);
+    if (!world.HasResource<AnimationClipComponentAssets>())
+        world.AddResource<AnimationClipComponentAssets>(&assets.AnimationClips);
 }
 
 void EditorDocument::SetRegistryIdentity(RegistryId id, ZoneId zone)

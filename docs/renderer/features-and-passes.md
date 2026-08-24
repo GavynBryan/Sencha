@@ -406,9 +406,15 @@ rather than a dropped draw. `PoseSlot` joins the run-merge identity: two
 entities sharing one skinned mesh pose independently and must not collapse
 into one instanced draw.
 
-Until a pose source exists every palette is the bind identity, so the
-dispatch reproduces the rest vertices bit-for-bit and the `skinned_rest`
-golden is the gate for the whole path.
+An instance with no clip player poses at the bind identity, so the dispatch
+reproduces its rest vertices bit-for-bit -- which is why `skinned_rest`
+stays byte-identical through the compute path and is the gate for it.
+`AnimationClipPlayerComponent` supplies the pose for the rest: extraction
+samples the clip at the player's current time
+(`anim/AnimationClipSampling.h`), composes model-space transforms, and
+builds the palette through the existing `BuildSkinningPalette`. Pose
+evaluation happens once per rendered frame, not once per fixed tick; the
+player's time is the only thing the tick advances.
 
 ## `SkyGradientPass`
 

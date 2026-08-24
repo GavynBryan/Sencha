@@ -77,13 +77,15 @@ SceneRenderQueueBuilder::SceneRenderQueueBuilder(AssetSystem& assets,
                                                  MaterialSetCache& materialSets,
                                                  LoggingProvider& logging,
                                                  TextureCache* textures,
-                                                 SkinnedMeshCache* skinnedMeshes)
+                                                 SkinnedMeshCache* skinnedMeshes,
+                                                 AnimationClipCache* animationClips)
     : Assets(assets)
     , Meshes(meshes)
     , Materials(materials)
     , MaterialSets(materialSets)
     , Textures(textures)
     , SkinnedMeshes(skinnedMeshes)
+    , AnimationClips(animationClips)
     , Logging(logging)
     , Log(logging.GetLogger<SceneRenderQueueBuilder>())
 {
@@ -309,7 +311,8 @@ void SceneRenderQueueBuilder::SetLightmapPreview(const LightmapPreviewSource& so
 
     auto registry = std::make_unique<Registry>();
     InitializeSceneRegistry(*registry, &Meshes, &MaterialSets,
-                            nullptr, nullptr, nullptr, Textures, SkinnedMeshes);
+                            nullptr, nullptr, nullptr, Textures, SkinnedMeshes,
+                            AnimationClips);
     SceneSerializationContext context(Logging, &Assets);
     SceneLoadError loadError;
     if (!LoadSceneJson(*json, *registry, EditorSceneSerializers(), context, &loadError))

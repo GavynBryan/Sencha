@@ -7,6 +7,8 @@
 #include <render/MaterialCache.h>
 #include <render/MaterialSetCache.h>
 #include <render/RenderQueue.h>
+#include <anim/AnimationClipCache.h>
+#include <anim/SkeletonCache.h>
 #include <render/SkinnedPoseFrameData.h>
 #include <render/StaticMeshComponent.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
@@ -83,6 +85,11 @@ struct RenderExtractCaches
     // Optional: without it, skinned components extract nothing and a scene of
     // static meshes pays nothing.
     const SkinnedMeshCache* SkinnedMeshes = nullptr;
+    // Optional, and needed together: a clip supplies the pose and the
+    // skeleton supplies what it poses. Without either, skinned instances
+    // stay at bind (identity palette), which is the rest-pose draw.
+    const AnimationClipCache* AnimationClips = nullptr;
+    const SkeletonCache* Skeletons = nullptr;
 };
 
 //=============================================================================
@@ -135,6 +142,10 @@ private:
                         Without<WorldTransformHistory>>> CachedQuery;
     std::optional<Query<Read<WorldTransformHistory>,
                         Read<StaticMeshComponent>>> CachedInterpolatedQuery;
+    // Scratch for one instance's pose, reused across instances and frames.
+    std::vector<Transform3f> PoseScratch;
+    std::vector<Mat4> ModelScratch;
+    std::vector<Mat4> PaletteScratch;
     std::optional<Query<Read<WorldTransform>,
                         Read<SkinnedMeshComponent>,
                         Without<WorldTransformHistory>>> CachedSkinnedQuery;

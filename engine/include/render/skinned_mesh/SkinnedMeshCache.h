@@ -73,6 +73,9 @@ public:
     // vertex), the pre-skin dispatch's second input. Null handle when the
     // mesh is not resident.
     [[nodiscard]] BufferHandle GetInfluences(SkinnedMeshHandle handle) const;
+    // The skeleton this mesh is skinned to; resolve it through SkeletonCache
+    // to reach the joint data a pose needs.
+    [[nodiscard]] SkeletonHandle GetSkeletonHandle(SkinnedMeshHandle handle) const;
     [[nodiscard]] std::string_view GetName(SkinnedMeshHandle handle) const;
     [[nodiscard]] bool IsAlive(SkinnedMeshHandle handle) const;
 

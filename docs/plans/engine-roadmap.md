@@ -233,9 +233,14 @@ Each item states its mechanism, version, the seam it builds on, and its gate.
    `anim/Skeleton.h`, and their caches, which load today and are consumed by nothing.
    The `IPoseModifier` seam is added only when the second modifier exists (the graph
    output plus one procedural modifier such as look-at); until then the concrete system
-   stands alone (directive 4). Blocked by Track B item 1 (skinned rendering). Gate: a
-   data-authored locomotion graph drives a skinned character on a cooked level, and the
-   serial and parallel paths produce bit-identical poses.
+   stands alone (directive 4). No longer blocked: Track B item 1 shipped (compute
+   pre-skin, Decision N resolved 2026-08-23), and with it the first slice of this item
+   -- `anim/AnimationClipSampling.h` samples a cooked clip into a local pose,
+   `AnimationClipPlayerComponent` + `AnimationClipPlaybackSystem` advance one clip on
+   the fixed tick, and a clip poses a skinned character on a cooked level
+   (`skinned_pose` golden). What remains for the gate: the data-authored blend/state
+   graph asset, and the serial/parallel bit-identical pose comparison. Deferred with
+   it: blending, pose history for presentation interpolation, and editor playback.
 
 3. **Scripting runtime (v1.0; owner decision 2026-07-02, recorded in Section 11).** An
    embedded Lua-family VM hosted as an engine service. The design constraints that keep

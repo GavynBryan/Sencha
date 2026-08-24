@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 
 #include <anim/SkinningPalette.h>
+#include <assets/animation/AnimationClipSerializer.h>
 #include <assets/skeleton/SkeletonSerializer.h>
 #include <assets/static_mesh/MeshSerializer.h>
 #include <core/logging/LoggingProvider.h>
@@ -121,6 +122,33 @@ TEST(SkinnedFixture, Generate)
     MeshSerializer serializer(logging);
     ASSERT_TRUE(serializer.WriteSkinnedToFile(
         (directory / "golden_rig.skmesh").generic_string(), mesh));
+
+    // A clip for the pose gate: the upper joint bends a quarter turn about
+    // X over one second, linear. One track, one joint -- so the golden's
+    // mid-clip pose is analytic (half the bend at 0.5s) and the lower joint
+    // staying at bind proves sparse tracks leave everything else alone.
+    AnimationClipData clip;
+    clip.SkeletonPath = "asset://meshes/dev/golden_rig.sskel";
+    clip.DurationSeconds = 1.0f;
+    AnimationJointTrack bend;
+    bend.JointIndex = 1;
+    bend.Path = AnimationChannelPath::Rotation;
+    bend.Interpolation = AnimationInterpolation::Linear;
+    bend.TimesSeconds = { 0.0f, 1.0f };
+    for (const float angle : { 0.0f, 1.5707963f })
+    {
+        const Quatf rotation = Quatf::FromAxisAngle(Vec3d::Right(), angle);
+        bend.Values.push_back(rotation.X);
+        bend.Values.push_back(rotation.Y);
+        bend.Values.push_back(rotation.Z);
+        bend.Values.push_back(rotation.W);
+    }
+    clip.Tracks.push_back(bend);
+    ASSERT_TRUE(ValidateAnimationClipData(clip, &error)) << error;
+
+    std::vector<std::byte> clipBytes;
+    ASSERT_TRUE(WriteSanimToBytes(clip, clipBytes, &error)) << error;
+    ASSERT_TRUE(WriteBytes(directory / "golden_rig.sanim", clipBytes));
 
     std::printf("skinned fixture: %zu vertices, %u joints -> %s\n",
                 mesh.Geometry.Vertices.size(), mesh.Skinning.JointCount,

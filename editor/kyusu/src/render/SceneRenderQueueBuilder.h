@@ -9,6 +9,7 @@
 #include <render/static_mesh/StaticMeshHandle.h>
 
 class SkinnedMeshCache;
+class AnimationClipCache;
 
 #include <cstdint>
 #include <filesystem>
@@ -63,7 +64,8 @@ public:
                             MaterialSetCache& materialSets,
                             LoggingProvider& logging,
                             TextureCache* textures = nullptr,
-                            SkinnedMeshCache* skinnedMeshes = nullptr);
+                            SkinnedMeshCache* skinnedMeshes = nullptr,
+                            AnimationClipCache* animationClips = nullptr);
     ~SceneRenderQueueBuilder();
 
     SceneRenderQueueBuilder(const SceneRenderQueueBuilder&) = delete;
@@ -134,6 +136,7 @@ private:
     MaterialSetCache& MaterialSets;
     TextureCache* Textures = nullptr;
     SkinnedMeshCache* SkinnedMeshes = nullptr;
+    AnimationClipCache* AnimationClips = nullptr;
     LoggingProvider& Logging;
     Logger& Log;
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <anim/AnimationClipPlayerComponent.h>
 #include <render/IrradianceVolumeComponent.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
@@ -15,6 +16,9 @@ inline void RegisterRenderComponents(ComponentRegistrar& registrar)
 {
     registrar.Add<StaticMeshComponent>();
     registrar.Add<SkinnedMeshComponent>();
+    // The pose source for the skinned meshes above; authored beside them
+    // and sampled by the same extraction walk.
+    registrar.Add<AnimationClipPlayerComponent>();
     registrar.Add<ZoneLightmapComponent>();
     registrar.Add<IrradianceVolumeComponent>();
     registrar.Add<PointLightComponent>();
