@@ -72,7 +72,7 @@ GraphicsServices::GraphicsServices(LoggingProvider& logging,
     , Pipelines(logging, Device, Shaders)
     , Descriptors(logging, Device, Buffers, Images)
     , Scratch(logging, Device, PhysicalDevice, Buffers,
-              VulkanFrameScratch::Config{ .FramesInFlight = framesInFlight,
+              GpuFrameScratch::Config{ .FramesInFlight = framesInFlight,
                                           .BytesPerFrame = scratchBytesPerFrame })
     , Swapchain(logging, Device, PhysicalDevice, Surface, Queues, window.GetExtent())
     , Frames(logging, Device, Queues, Swapchain, DeletionQueue, framesInFlight)

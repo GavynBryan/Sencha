@@ -1,13 +1,12 @@
 #include <render/skinned_mesh/SkinnedMeshCache.h>
 
-#include <graphics/vulkan/VulkanBufferService.h>
 
 #include <span>
 #include <utility>
 
-SkinnedMeshCache::SkinnedMeshCache(LoggingProvider& logging, VulkanBufferService& buffers)
+SkinnedMeshCache::SkinnedMeshCache(LoggingProvider& logging, GpuBuffers buffers)
     : Log(logging.GetLogger<SkinnedMeshCache>())
-    , Buffers(&buffers)
+    , Buffers(buffers)
 {
     ReserveNullSlot();
 }
@@ -30,19 +29,19 @@ SkinnedMeshHandle SkinnedMeshCache::CreateFromData(std::string_view name,
     SkinnedMeshEntry entry;
     // Rest geometry is the pre-skin dispatch's input as well as a fallback
     // vertex stream, so it is created readable both ways.
-    if (!UploadMeshGeometryToGpu(*Buffers, data.Geometry, entry.Mesh, Log,
+    if (!UploadMeshGeometryToGpu(Buffers, data.Geometry, entry.Mesh, Log,
                                  MeshVertexAccess::VertexAndCompute))
         return {};
 
     if (!data.Skinning.Influences.empty())
     {
         entry.Influences = UploadVertexSideStreamToGpu(
-            *Buffers, std::as_bytes(std::span(data.Skinning.Influences)),
+            Buffers, std::as_bytes(std::span(data.Skinning.Influences)),
             "Skinned mesh influences", Log);
         if (!entry.Influences.IsValid())
         {
             Log.Error("SkinnedMeshCache: influence upload failed for '{}'", name);
-            DestroyGpuMesh(*Buffers, entry.Mesh);
+            DestroyGpuMesh(Buffers, entry.Mesh);
             return {};
         }
     }
@@ -113,8 +112,8 @@ bool SkinnedMeshCache::IsAlive(SkinnedMeshHandle handle) const
 
 void SkinnedMeshCache::OnFree(SkinnedMeshEntry& entry)
 {
-    DestroyGpuMesh(*Buffers, entry.Mesh);
-    Buffers->Destroy(entry.Influences);
+    DestroyGpuMesh(Buffers, entry.Mesh);
+    Buffers.Destroy(entry.Influences);
     entry.Influences = {};
     entry.Skinning = {};
     entry.OwnedSkeleton.Reset(); // releases the skeleton reference

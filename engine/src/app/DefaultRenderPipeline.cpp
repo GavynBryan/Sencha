@@ -106,7 +106,7 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     // Probe residency shares the lighting set: it swaps binding-2 slots as
     // zones stream and hands headers to extraction. Uploads only ever happen
     // after the shadow feature's Setup has created the set.
-    ProbeVolumes.Setup(&graphics.Images, bindings, Logging);
+    ProbeVolumes.Setup(GpuImages{&graphics.Images}, bindings, Logging);
     // Before the mesh feature: registration order is draw order within a phase,
     // and the background fills the view without a depth test.
     if (graphics.MainRenderer.AddFeature(

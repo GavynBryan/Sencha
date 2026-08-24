@@ -41,13 +41,13 @@ public:
     void Teardown();
 
     // Points volume slot `slot` at its three SH channel textures (R, G, B
-    // coefficient volumes, 3D views in SHADER_READ_ONLY layout), or back at
-    // the dummy. Binding 2 is update-after-bind: both are safe while frames
+    // coefficient volumes, resolved to their 3D views here), or back at the
+    // dummy. Binding 2 is update-after-bind: both are safe while frames
     // holding the set are in flight, as long as no in-flight frame's UBO
     // headers still reference the slot (the caller parks a slot for a frame
     // before reusing it, or relies on zone teardown's device-idle).
-    void SetProbeVolume(std::uint32_t slot, VkImageView r, VkImageView g,
-                        VkImageView b);
+    void SetProbeVolume(std::uint32_t slot, ImageHandle r, ImageHandle g,
+                        ImageHandle b);
     void ResetProbeVolume(std::uint32_t slot);
 
     [[nodiscard]] bool IsValid() const;

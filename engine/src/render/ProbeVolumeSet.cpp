@@ -1,14 +1,14 @@
 #include <render/ProbeVolumeSet.h>
 
 #include <core/logging/LoggingProvider.h>
-#include <graphics/vulkan/VulkanImageService.h>
+#include <render/pass/LightBindings.h>
 #include <world/RuntimeWorld.h>
 
 #include <algorithm>
 #include <fstream>
 #include <string_view>
 
-void ProbeVolumeSet::Setup(VulkanImageService* images,
+void ProbeVolumeSet::Setup(GpuImages images,
                            std::shared_ptr<LightBindings> bindings,
                            LoggingProvider* logging)
 {
@@ -20,7 +20,7 @@ void ProbeVolumeSet::Setup(VulkanImageService* images,
 std::size_t ProbeVolumeSet::AddVolumes(StoragePartitionId partition,
                                        const ProbeVolumeFile& file)
 {
-    if (Images == nullptr || Bindings == nullptr)
+    if (!Images.IsValid() || Bindings == nullptr)
         return 0;
     ReleasePartition(partition);
 
@@ -58,18 +58,15 @@ std::size_t ProbeVolumeSet::AddVolumes(StoragePartitionId partition,
         for (std::uint32_t channel = 0; channel < kProbeVolumeChannelCount;
              ++channel)
         {
-            resident.Channels[channel] = Images->Create(ImageCreateInfo{
-                .Format = VK_FORMAT_R16G16B16A16_SFLOAT,
+            resident.Channels[channel] = Images.Create(ImageDesc{
+                .Format = GpuFormat::Rgba16Float,
                 .Extent = { volume.Grid.DimsX, volume.Grid.DimsY },
-                .Usage = VK_IMAGE_USAGE_SAMPLED_BIT
-                       | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-                .AspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .ViewType = VK_IMAGE_VIEW_TYPE_3D,
                 .Depth = volume.Grid.DimsZ,
+                .ViewKind = GpuImageViewKind::Volume,
                 .DebugName = "Probe volume SH channel",
             });
             if (!resident.Channels[channel].IsValid()
-                || !Images->Upload(
+                || !Images.Upload(
                     resident.Channels[channel],
                     volume.ShHalf.data() + channel * planeHalves,
                     planeHalves * sizeof(std::uint16_t)))
@@ -82,7 +79,7 @@ std::size_t ProbeVolumeSet::AddVolumes(StoragePartitionId partition,
         {
             for (const ImageHandle& channel : resident.Channels)
                 if (channel.IsValid())
-                    Images->Destroy(channel);
+                    Images.Destroy(channel);
             // The slot was taken before the upload was attempted, and nothing
             // has been bound to it, so hand it straight back rather than
             // stranding it for the lifetime of the set.
@@ -94,10 +91,8 @@ std::size_t ProbeVolumeSet::AddVolumes(StoragePartitionId partition,
             continue;
         }
 
-        Bindings->SetProbeVolume(slot,
-                                 Images->GetView(resident.Channels[0]),
-                                 Images->GetView(resident.Channels[1]),
-                                 Images->GetView(resident.Channels[2]));
+        Bindings->SetProbeVolume(slot, resident.Channels[0],
+                                 resident.Channels[1], resident.Channels[2]);
         resident.Header = MakeGpuProbeVolume(volume.Grid, volume.Priority,
                                              volume.StableIndex, slot);
         record.Volumes.push_back(resident);
@@ -139,10 +134,10 @@ void ProbeVolumeSet::ReleaseVolumes(std::vector<ResidentVolume>& volumes)
     {
         if (Bindings != nullptr)
             Bindings->ResetProbeVolume(volume.Slot);
-        if (Images != nullptr)
+        if (Images.IsValid())
             for (const ImageHandle& channel : volume.Channels)
                 if (channel.IsValid())
-                    Images->Destroy(channel);
+                    Images.Destroy(channel);
         Slots.Release(volume.Slot);
     }
     volumes.clear();

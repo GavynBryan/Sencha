@@ -1,6 +1,6 @@
 #include <render/feature/SkinnedPoseRenderFeature.h>
 
-#include <graphics/vulkan/VulkanFrameScratch.h>
+#include <graphics/GpuFrameScratch.h>
 #include <profiling/RenderInstrumentation.h>
 
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
@@ -113,7 +113,7 @@ void SkinnedPoseRenderFeature::OnDraw(const FrameContext& frame)
     // its slice rotation plus the frame fence order the write against the
     // dispatch that reads it.
     const std::uint64_t paletteBytes = data.Palettes.size() * sizeof(Mat4);
-    const VulkanFrameScratch::Allocation palettes =
+    const GpuFrameScratch::Allocation palettes =
         Scratch->Allocate(paletteBytes, kPaletteAlignment);
     if (!palettes.IsValid())
         return; // items fall back to rest geometry, counted as not Ready

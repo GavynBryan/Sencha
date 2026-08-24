@@ -18,7 +18,7 @@
 # one into the backend would invert the dependency it is there to keep pointing
 # downward. Those files name Vulkan permanently and correctly.
 #
-# So the list is in two parts. The recording set is closed: it is what a device
+# So the allowlist is the recording set, and it is closed: it is what a device
 # is genuinely required to test, and it is the population P4's pass mechanisms
 # are meant to shrink by absorbing the duplicated preambles, not by relocating
 # the passes. Everything else in render/ is policy and must stay clean.
@@ -54,17 +54,7 @@ set(RENDER_RECORDING_SET
     "/engine/src/render/pass/ShadowDepthPass.cpp"
 )
 
-# Policy files that reach the backend directly and should not. Shrink this.
-set(RENDER_VULKAN_PENDING
-    # Creates and uploads the SH channel images inline. The residency policy is
-    # split out into ProbeVolumeSlotTable; what remains here is image creation,
-    # which wants an upload seam rather than a move.
-    "/engine/src/render/ProbeVolumeSet.cpp"
-    # Buffer upload for mesh geometry; the header is already clean.
-    "/engine/src/render/static_mesh/GpuStaticMesh.cpp"
-)
-
-set(RENDER_VULKAN_ALLOWED ${RENDER_RECORDING_SET} ${RENDER_VULKAN_PENDING})
+set(RENDER_VULKAN_ALLOWED ${RENDER_RECORDING_SET})
 
 # A render *header* may name one backend header: graphics/vulkan/Renderer.h,
 # which architecture.md calls "the one header both halves include" -- it
@@ -177,7 +167,5 @@ if(VIOLATIONS)
 endif()
 
 list(LENGTH RENDER_RECORDING_SET recording_count)
-list(LENGTH RENDER_VULKAN_PENDING pending_count)
 message(STATUS
-    "render isolation OK (${recording_count} recording file(s) by contract, "
-    "${pending_count} awaiting cleanup)")
+    "render isolation OK (${recording_count} recording file(s) by contract)")

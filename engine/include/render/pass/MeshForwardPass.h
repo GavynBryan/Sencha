@@ -225,7 +225,7 @@ private:
 
     VulkanBufferService* Buffers = nullptr;
     VulkanDescriptorCache* Descriptors = nullptr;
-    VulkanFrameScratch* Scratch = nullptr;
+    GpuFrameScratch* Scratch = nullptr;
     VulkanPipelineCache* Pipelines = nullptr;
     VulkanShaderCache* Shaders = nullptr;
     LightBindings* Bindings = nullptr;

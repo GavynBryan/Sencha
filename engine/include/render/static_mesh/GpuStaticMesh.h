@@ -1,6 +1,7 @@
 #pragma once
 
 #include <graphics/BufferHandle.h>
+#include <graphics/GpuBuffers.h>
 #include <assets/static_mesh/MeshGeometry.h>
 #include <assets/static_mesh/StaticMeshSection.h>
 
@@ -9,7 +10,6 @@
 #include <vector>
 
 class Logger;
-class VulkanBufferService;
 
 // The GPU residency of a mesh's geometry — the immutable vertex/index
 // buffers plus the section table. Shared by static and skinned meshes: both
@@ -55,7 +55,7 @@ enum class MeshVertexAccess : std::uint8_t
 // false (logging the reason) on validation failure or a buffer/upload error,
 // leaving no buffers leaked. Shared by StaticMeshCache and SkinnedMeshCache.
 [[nodiscard]] bool UploadMeshGeometryToGpu(
-    VulkanBufferService& buffers,
+    GpuBuffers buffers,
     const MeshGeometry& geometry,
     GpuStaticMesh& out,
     Logger& log,
@@ -63,15 +63,14 @@ enum class MeshVertexAccess : std::uint8_t
 
 // Destroys the GPU buffers `mesh` holds and clears them. Safe on an
 // already-empty mesh.
-void DestroyGpuMesh(VulkanBufferService& buffers, GpuStaticMesh& mesh);
+void DestroyGpuMesh(GpuBuffers buffers, GpuStaticMesh& mesh);
 
 // Uploads an opaque per-vertex side stream (the skinning influence stream is
 // the consumer) to a GPU-only buffer usable as either a vertex-attribute
 // stream or a storage buffer -- both usages are set because the reader's
 // binding model may not be decided yet, and the flags cost nothing. Returns a
-// null handle on failure. Lives here so the backend usage flags stay inside
-// the one translation unit the isolation check already licenses for uploads.
-[[nodiscard]] BufferHandle UploadVertexSideStreamToGpu(VulkanBufferService& buffers,
+// null handle on failure.
+[[nodiscard]] BufferHandle UploadVertexSideStreamToGpu(GpuBuffers buffers,
                                                        std::span<const std::byte> bytes,
                                                        const char* debugName,
                                                        Logger& log);

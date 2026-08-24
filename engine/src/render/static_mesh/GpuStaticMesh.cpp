@@ -1,10 +1,9 @@
 #include <render/static_mesh/GpuStaticMesh.h>
 
 #include <core/logging/Logger.h>
-#include <graphics/vulkan/VulkanBufferService.h>
 #include <assets/static_mesh/MeshValidation.h>
 
-bool UploadMeshGeometryToGpu(VulkanBufferService& buffers,
+bool UploadMeshGeometryToGpu(GpuBuffers buffers,
                              const MeshGeometry& geometry,
                              GpuStaticMesh& out,
                              Logger& log,
@@ -18,17 +17,17 @@ bool UploadMeshGeometryToGpu(VulkanBufferService& buffers,
         return false;
     }
 
-    BufferCreateInfo vbInfo{};
+    BufferDesc vbInfo{};
     vbInfo.Size = sizeof(StaticMeshVertex) * geometry.Vertices.size();
-    vbInfo.Usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    vbInfo.Usage = GpuBufferUsage::Vertex;
     if (access == MeshVertexAccess::VertexAndCompute)
-        vbInfo.Usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        vbInfo.Usage = vbInfo.Usage | GpuBufferUsage::Storage;
     vbInfo.Memory = BufferMemory::GpuOnly;
     vbInfo.DebugName = "Mesh vertex buffer";
 
-    BufferCreateInfo ibInfo{};
+    BufferDesc ibInfo{};
     ibInfo.Size = sizeof(uint32_t) * geometry.Indices.size();
-    ibInfo.Usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+    ibInfo.Usage = GpuBufferUsage::Index;
     ibInfo.Memory = BufferMemory::GpuOnly;
     ibInfo.DebugName = "Mesh index buffer";
 
@@ -61,7 +60,7 @@ bool UploadMeshGeometryToGpu(VulkanBufferService& buffers,
     return true;
 }
 
-BufferHandle UploadVertexSideStreamToGpu(VulkanBufferService& buffers,
+BufferHandle UploadVertexSideStreamToGpu(GpuBuffers buffers,
                                          std::span<const std::byte> bytes,
                                          const char* debugName,
                                          Logger& log)
@@ -69,9 +68,9 @@ BufferHandle UploadVertexSideStreamToGpu(VulkanBufferService& buffers,
     if (bytes.empty())
         return {};
 
-    BufferCreateInfo info{};
+    BufferDesc info{};
     info.Size = bytes.size();
-    info.Usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    info.Usage = GpuBufferUsage::Vertex | GpuBufferUsage::Storage;
     info.Memory = BufferMemory::GpuOnly;
     info.DebugName = debugName;
 
@@ -90,7 +89,7 @@ BufferHandle UploadVertexSideStreamToGpu(VulkanBufferService& buffers,
     return handle;
 }
 
-void DestroyGpuMesh(VulkanBufferService& buffers, GpuStaticMesh& mesh)
+void DestroyGpuMesh(GpuBuffers buffers, GpuStaticMesh& mesh)
 {
     if (mesh.VertexBuffer.IsValid())
         buffers.Destroy(mesh.VertexBuffer);

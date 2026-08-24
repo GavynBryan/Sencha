@@ -1,25 +1,25 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
+#include <graphics/BufferHandle.h>
 #include <graphics/FrameScratchRing.h>
-#include <graphics/vulkan/VulkanBufferService.h>
-#include <vulkan/vulkan.h>
 
 #include <cstdint>
 
+class VulkanBufferService;
 class VulkanDeviceService;
 class VulkanPhysicalDeviceService;
 
 //=============================================================================
-// VulkanFrameScratch
+// GpuFrameScratch
 //
 // Per-frame bump allocator backed by one persistently-mapped host-visible
 // ring buffer. Carves the buffer into `FramesInFlight` equal slices; at the
 // start of each frame `BeginFrame()` rotates to the next slice and resets
 // its bump cursor. Callers write directly through the returned mapped
 // pointer -- there is no staging, no flush, no fence on the scratch itself.
-// The no-flush part rests on the buffer being coherent, which
-// VulkanBufferService requires for host-visible allocations.
+// The no-flush part rests on the buffer being coherent, which the backend
+// buffer service requires for host-visible allocations.
 //
 // Typical uses:
 //   - Per-draw UBOs surfaced to VulkanDescriptorCache's dynamic UBO binding
@@ -33,45 +33,49 @@ class VulkanPhysicalDeviceService;
 //
 // The backing buffer's usage flags are UNIFORM | STORAGE | VERTEX. Index
 // buffers and transfer-src are out of scope: indices are usually static,
-// and staged GPU uploads run through VulkanBufferService::Upload.
+// and staged GPU uploads run through the buffer service.
 //
 // The single backing BufferHandle is stable for the service's entire life
 // and is what callers point VulkanDescriptorCache::SetFrameUniformBuffer
 // at once during setup.
+//
+// The interface is backend-neutral -- handles, offsets, mapped pointers.
+// Construction and the ring's memory are backend work, defined in
+// src/graphics/vulkan/GpuFrameScratch.cpp.
 //=============================================================================
 
-class VulkanFrameScratch
+class GpuFrameScratch
 {
 public:
     // Vertex and instance streams bind at this alignment.
-    static constexpr VkDeviceSize kVertexAlignment = 16;
+    static constexpr std::uint64_t kVertexAlignment = 16;
 
     struct Config
     {
         uint32_t FramesInFlight = 2;
-        VkDeviceSize BytesPerFrame = 1024 * 1024; // 1 MB per slice by default
+        std::uint64_t BytesPerFrame = 1024 * 1024; // 1 MB per slice by default
     };
 
     struct Allocation
     {
-        BufferHandle Buffer;     // The ring buffer. Same for every allocation.
-        VkDeviceSize Offset = 0; // Byte offset from the start of the ring.
-        void* Mapped = nullptr;  // Writable pointer == ring base + Offset.
+        BufferHandle Buffer;       // The ring buffer. Same for every allocation.
+        std::uint64_t Offset = 0;  // Byte offset from the start of the ring.
+        void* Mapped = nullptr;    // Writable pointer == ring base + Offset.
 
         [[nodiscard]] bool IsValid() const { return Mapped != nullptr; }
     };
 
-    VulkanFrameScratch(LoggingProvider& logging,
-                       VulkanDeviceService& device,
-                       VulkanPhysicalDeviceService& physicalDevice,
-                       VulkanBufferService& buffers,
-                       Config config);
-    ~VulkanFrameScratch();
+    GpuFrameScratch(LoggingProvider& logging,
+                    VulkanDeviceService& device,
+                    VulkanPhysicalDeviceService& physicalDevice,
+                    VulkanBufferService& buffers,
+                    Config config);
+    ~GpuFrameScratch();
 
-    VulkanFrameScratch(const VulkanFrameScratch&) = delete;
-    VulkanFrameScratch& operator=(const VulkanFrameScratch&) = delete;
-    VulkanFrameScratch(VulkanFrameScratch&&) = delete;
-    VulkanFrameScratch& operator=(VulkanFrameScratch&&) = delete;
+    GpuFrameScratch(const GpuFrameScratch&) = delete;
+    GpuFrameScratch& operator=(const GpuFrameScratch&) = delete;
+    GpuFrameScratch(GpuFrameScratch&&) = delete;
+    GpuFrameScratch& operator=(GpuFrameScratch&&) = delete;
 
     [[nodiscard]] bool IsValid() const { return Valid; }
 
@@ -81,14 +85,14 @@ public:
 
     // Generic aligned allocation. Returns an invalid Allocation if the
     // request would overflow the current frame's slice.
-    [[nodiscard]] Allocation Allocate(VkDeviceSize size, VkDeviceSize alignment);
+    [[nodiscard]] Allocation Allocate(std::uint64_t size, std::uint64_t alignment);
 
     // Aligned to the device's minUniformBufferOffsetAlignment so the
     // returned offset is a legal dynamic-UBO base.
-    [[nodiscard]] Allocation AllocateUniform(VkDeviceSize size);
+    [[nodiscard]] Allocation AllocateUniform(std::uint64_t size);
 
     // 16-byte aligned, suitable for vertex / instance streams.
-    [[nodiscard]] Allocation AllocateVertex(VkDeviceSize size);
+    [[nodiscard]] Allocation AllocateVertex(std::uint64_t size);
 
     // A partial grant: `Count` elements were served, which may be fewer than
     // asked for. Zero means the slice had no room at all.
@@ -106,19 +110,19 @@ public:
     // there means the caller drops the entire pass; this lets it draw what fits
     // and come back for the rest. Only a zero grant counts as a failure.
     [[nodiscard]] ElementAllocation AllocateVertexElements(uint32_t maxElements,
-                                                           VkDeviceSize stride);
+                                                           std::uint64_t stride);
 
     // -- Accessors ----------------------------------------------------------
 
     [[nodiscard]] BufferHandle GetBuffer() const { return RingBuffer; }
-    [[nodiscard]] VkDeviceSize GetBytesPerFrame() const { return Ring.GetBytesPerFrame(); }
-    [[nodiscard]] VkDeviceSize GetUniformAlignment() const { return UniformAlignment; }
+    [[nodiscard]] std::uint64_t GetBytesPerFrame() const { return Ring.GetBytesPerFrame(); }
+    [[nodiscard]] std::uint64_t GetUniformAlignment() const { return UniformAlignment; }
     [[nodiscard]] uint32_t GetFramesInFlight() const { return Ring.GetFramesInFlight(); }
     // Largest per-frame cursor ever reached, for sizing BytesPerFrame.
-    [[nodiscard]] VkDeviceSize GetHighWaterBytes() const { return Ring.GetHighWaterBytes(); }
+    [[nodiscard]] std::uint64_t GetHighWaterBytes() const { return Ring.GetHighWaterBytes(); }
     // This frame's slice use, and the requests it could not serve. Both
     // reset in BeginFrame, so they describe the frame being recorded.
-    [[nodiscard]] VkDeviceSize GetUsedBytes() const { return Ring.GetUsedBytes(); }
+    [[nodiscard]] std::uint64_t GetUsedBytes() const { return Ring.GetUsedBytes(); }
     [[nodiscard]] uint32_t GetFailedAllocationCount() const
     {
         return Ring.GetFailedAllocationCount();
@@ -137,5 +141,5 @@ private:
 
     // Slice geometry and cursors; this type owns only the memory behind them.
     FrameScratchRing Ring;
-    VkDeviceSize UniformAlignment = 256;
+    std::uint64_t UniformAlignment = 256;
 };

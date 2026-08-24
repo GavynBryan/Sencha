@@ -23,7 +23,7 @@ class VulkanSamplerCache;
 class VulkanShaderCache;
 class VulkanPipelineCache;
 class VulkanDescriptorCache;
-class VulkanFrameScratch;
+class GpuFrameScratch;
 class VulkanUploadContextService;
 class VulkanDepthTarget;
 struct RenderInstrumentation;
@@ -84,7 +84,7 @@ struct RendererServices
     VulkanShaderCache* Shaders = nullptr;
     VulkanPipelineCache* Pipelines = nullptr;
     VulkanDescriptorCache* Descriptors = nullptr;
-    VulkanFrameScratch* Scratch = nullptr;
+    GpuFrameScratch* Scratch = nullptr;
     VulkanUploadContextService* Upload = nullptr;
     VkFormat DepthFormat = VK_FORMAT_UNDEFINED;
     // The engine's instrumentation bundle. The pointer is stable for the
@@ -157,7 +157,7 @@ public:
              VulkanShaderCache& shaders,
              VulkanPipelineCache& pipelines,
              VulkanDescriptorCache& descriptors,
-             VulkanFrameScratch& scratch,
+             GpuFrameScratch& scratch,
              VulkanUploadContextService& upload);
     ~Renderer();
 

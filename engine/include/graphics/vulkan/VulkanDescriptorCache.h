@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
+#include <graphics/BindlessImageIndex.h>
 #include <graphics/FrameUniformRange.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanImageService.h>
@@ -41,13 +42,8 @@ class VulkanDeviceService;
 // any pipeline that wants the bindless set just goes through the cache.
 //=============================================================================
 
-struct BindlessImageIndex
-{
-    uint32_t Value = UINT32_MAX;
-
-    [[nodiscard]] bool IsValid() const { return Value != UINT32_MAX; }
-    bool operator==(const BindlessImageIndex&) const = default;
-};
+// BindlessImageIndex lives in graphics/BindlessImageIndex.h so holders can
+// name it without the Vulkan headers; it arrives here through that include.
 
 class VulkanDescriptorCache
 {

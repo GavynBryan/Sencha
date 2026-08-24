@@ -3,7 +3,7 @@
 #include <graphics/vulkan/RenderScope.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
-#include <graphics/vulkan/VulkanFrameScratch.h>
+#include <graphics/GpuFrameScratch.h>
 #include <graphics/vulkan/VulkanPipelineCache.h>
 #include <math/geometry/3d/Frustum.h>
 #include <shaders/kShadowDepthFragSpv.h>
@@ -223,7 +223,7 @@ bool ShadowDepthPass::RecordView(const FrameContext& frame,
 
     // Transforms for this view only, in run order, so identical draws are
     // adjacent and collapse into one instanced call.
-    VulkanFrameScratch::ElementAllocation stream;
+    GpuFrameScratch::ElementAllocation stream;
     VkDeviceSize uniformOffset = VK_WHOLE_SIZE;
     if (!VisibleCasters.empty())
     {

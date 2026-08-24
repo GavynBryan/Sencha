@@ -6,7 +6,7 @@
 #include <graphics/vulkan/VulkanDescriptorCache.h>
 #include <graphics/vulkan/VulkanDepthTarget.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
-#include <graphics/vulkan/VulkanFrameScratch.h>
+#include <graphics/GpuFrameScratch.h>
 #include <graphics/vulkan/VulkanImageService.h>
 #include <graphics/vulkan/VulkanPhysicalDeviceService.h>
 #include <graphics/vulkan/VulkanPipelineCache.h>
@@ -48,7 +48,7 @@ Renderer::Renderer(LoggingProvider& logging,
                    VulkanShaderCache& shaders,
                    VulkanPipelineCache& pipelines,
                    VulkanDescriptorCache& descriptors,
-                   VulkanFrameScratch& scratch,
+                   GpuFrameScratch& scratch,
                    VulkanUploadContextService& upload)
     : Log(logging.GetLogger<Renderer>())
     , Swapchain(swapchain)

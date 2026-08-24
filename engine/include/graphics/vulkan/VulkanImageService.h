@@ -2,6 +2,7 @@
 
 #include <core/handle/Handle.h>
 #include <core/logging/LoggingProvider.h>
+#include <graphics/ImageHandle.h>
 #include <graphics/vulkan/VulkanImageUploadValidation.h>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
@@ -42,9 +43,8 @@ class VulkanUploadContextService;
 // Upload runs on the graphics queue to avoid queue-family ownership
 // transfers. Same rationale as VulkanBufferService.
 //=============================================================================
-// Generational handle to a GPU image owned by VulkanImageService. One of the
-// engine's unified Handle<Tag> types (handle convergence).
-using ImageHandle = Handle<struct ImageHandleTag>;
+// ImageHandle lives in graphics/ImageHandle.h so holders can name it without
+// the Vulkan headers; it arrives here through that include.
 
 struct ImageCreateInfo
 {

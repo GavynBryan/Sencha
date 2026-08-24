@@ -52,13 +52,14 @@ bool LightBindings::Setup(const RendererServices& services)
     return true;
 }
 
-void LightBindings::SetProbeVolume(std::uint32_t slot, VkImageView r,
-                                   VkImageView g, VkImageView b)
+void LightBindings::SetProbeVolume(std::uint32_t slot, ImageHandle r,
+                                   ImageHandle g, ImageHandle b)
 {
     if (slot >= kMaxActiveProbeVolumes || !IsValid())
         return;
     const std::uint32_t base = slot * kProbeVolumeChannelCount;
-    const VkImageView views[kProbeVolumeChannelCount] = { r, g, b };
+    const VkImageView views[kProbeVolumeChannelCount] = {
+        Images->GetView(r), Images->GetView(g), Images->GetView(b) };
     for (std::uint32_t channel = 0; channel < kProbeVolumeChannelCount; ++channel)
     {
         WriteBinding(2, base + channel, ProbeSampler, views[channel],
@@ -70,8 +71,7 @@ void LightBindings::ResetProbeVolume(std::uint32_t slot)
 {
     if (slot >= kMaxActiveProbeVolumes || !IsValid())
         return;
-    const VkImageView dummy = Images->GetView(DummyProbeVolume);
-    SetProbeVolume(slot, dummy, dummy, dummy);
+    SetProbeVolume(slot, DummyProbeVolume, DummyProbeVolume, DummyProbeVolume);
 }
 
 bool LightBindings::CreateSamplers()

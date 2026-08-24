@@ -1,4 +1,6 @@
-#include <graphics/vulkan/VulkanFrameScratch.h>
+#include <graphics/GpuFrameScratch.h>
+
+#include <graphics/vulkan/VulkanBufferService.h>
 
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanPhysicalDeviceService.h>
@@ -17,23 +19,23 @@ namespace
     }
 }
 
-VulkanFrameScratch::VulkanFrameScratch(LoggingProvider& logging,
+GpuFrameScratch::GpuFrameScratch(LoggingProvider& logging,
                                        VulkanDeviceService& device,
                                        VulkanPhysicalDeviceService& physicalDevice,
                                        VulkanBufferService& buffers,
-                                       VulkanFrameScratch::Config config)
-    : Log(logging.GetLogger<VulkanFrameScratch>())
+                                       GpuFrameScratch::Config config)
+    : Log(logging.GetLogger<GpuFrameScratch>())
     , Buffers(&buffers)
 {
     if (!device.IsValid() || !physicalDevice.IsValid() || !buffers.IsValid())
     {
-        Log.Error("Cannot create VulkanFrameScratch: upstream services not valid");
+        Log.Error("Cannot create GpuFrameScratch: upstream services not valid");
         return;
     }
 
     if (config.FramesInFlight == 0 || config.BytesPerFrame == 0)
     {
-        Log.Error("VulkanFrameScratch Config must specify nonzero FramesInFlight and BytesPerFrame");
+        Log.Error("GpuFrameScratch Config must specify nonzero FramesInFlight and BytesPerFrame");
         return;
     }
 
@@ -51,19 +53,19 @@ VulkanFrameScratch::VulkanFrameScratch(LoggingProvider& logging,
                | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
                | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
     info.Memory = BufferMemory::HostVisible;
-    info.DebugName = "VulkanFrameScratch.Ring";
+    info.DebugName = "GpuFrameScratch.Ring";
 
     RingBuffer = buffers.Create(info);
     if (!RingBuffer.IsValid())
     {
-        Log.Error("VulkanFrameScratch: failed to create ring buffer");
+        Log.Error("GpuFrameScratch: failed to create ring buffer");
         return;
     }
 
     MappedBase = buffers.GetMappedPointer(RingBuffer);
     if (MappedBase == nullptr)
     {
-        Log.Error("VulkanFrameScratch: ring buffer has no host mapping");
+        Log.Error("GpuFrameScratch: ring buffer has no host mapping");
         buffers.Destroy(RingBuffer);
         RingBuffer = {};
         return;
@@ -72,7 +74,7 @@ VulkanFrameScratch::VulkanFrameScratch(LoggingProvider& logging,
     Valid = true;
 }
 
-VulkanFrameScratch::~VulkanFrameScratch()
+GpuFrameScratch::~GpuFrameScratch()
 {
     if (RingBuffer.IsValid() && Buffers != nullptr)
     {
@@ -80,13 +82,13 @@ VulkanFrameScratch::~VulkanFrameScratch()
     }
 }
 
-void VulkanFrameScratch::BeginFrame()
+void GpuFrameScratch::BeginFrame()
 {
     if (!Valid) return;
     Ring.BeginFrame();
 }
 
-VulkanFrameScratch::Allocation VulkanFrameScratch::Allocate(VkDeviceSize size, VkDeviceSize alignment)
+GpuFrameScratch::Allocation GpuFrameScratch::Allocate(VkDeviceSize size, VkDeviceSize alignment)
 {
     if (!Valid) return {};
 
@@ -96,7 +98,7 @@ VulkanFrameScratch::Allocation VulkanFrameScratch::Allocate(VkDeviceSize size, V
     {
         if (size != 0)
         {
-            Log.Error("VulkanFrameScratch: allocation of {} bytes at cursor {} exceeds "
+            Log.Error("GpuFrameScratch: allocation of {} bytes at cursor {} exceeds "
                       "frame slice capacity ({})",
                       static_cast<uint64_t>(size),
                       static_cast<uint64_t>(Ring.GetUsedBytes()),
@@ -107,7 +109,7 @@ VulkanFrameScratch::Allocation VulkanFrameScratch::Allocate(VkDeviceSize size, V
     return MakeAllocation(grant);
 }
 
-VulkanFrameScratch::Allocation VulkanFrameScratch::MakeAllocation(
+GpuFrameScratch::Allocation GpuFrameScratch::MakeAllocation(
     const FrameScratchRing::Grant& grant) const
 {
     Allocation out;
@@ -117,17 +119,17 @@ VulkanFrameScratch::Allocation VulkanFrameScratch::MakeAllocation(
     return out;
 }
 
-VulkanFrameScratch::Allocation VulkanFrameScratch::AllocateUniform(VkDeviceSize size)
+GpuFrameScratch::Allocation GpuFrameScratch::AllocateUniform(VkDeviceSize size)
 {
     return Allocate(size, UniformAlignment);
 }
 
-VulkanFrameScratch::Allocation VulkanFrameScratch::AllocateVertex(VkDeviceSize size)
+GpuFrameScratch::Allocation GpuFrameScratch::AllocateVertex(VkDeviceSize size)
 {
     return Allocate(size, kVertexAlignment);
 }
 
-VulkanFrameScratch::ElementAllocation VulkanFrameScratch::AllocateVertexElements(
+GpuFrameScratch::ElementAllocation GpuFrameScratch::AllocateVertexElements(
     uint32_t maxElements, VkDeviceSize stride)
 {
     if (!Valid) return {};
@@ -138,7 +140,7 @@ VulkanFrameScratch::ElementAllocation VulkanFrameScratch::AllocateVertexElements
     {
         if (maxElements != 0 && stride != 0)
         {
-            Log.Error("VulkanFrameScratch: no room for a {}-byte element at cursor {} "
+            Log.Error("GpuFrameScratch: no room for a {}-byte element at cursor {} "
                       "of frame slice capacity ({})",
                       static_cast<uint64_t>(stride),
                       static_cast<uint64_t>(Ring.GetUsedBytes()),

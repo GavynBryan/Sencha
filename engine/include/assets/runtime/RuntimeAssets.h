@@ -70,8 +70,8 @@ struct RuntimeAssets
                   VulkanSamplerCache& samplers)
         : RuntimeAssets(logging,
                         std::make_unique<TextureCache>(logging, images, descriptors, samplers),
-                        std::make_unique<StaticMeshCache>(logging, buffers),
-                        std::make_unique<SkinnedMeshCache>(logging, buffers))
+                        std::make_unique<StaticMeshCache>(logging, GpuBuffers{&buffers}),
+                        std::make_unique<SkinnedMeshCache>(logging, GpuBuffers{&buffers}))
     {
     }
 

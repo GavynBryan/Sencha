@@ -7,7 +7,7 @@
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
-#include <graphics/vulkan/VulkanFrameScratch.h>
+#include <graphics/GpuFrameScratch.h>
 #include <graphics/vulkan/VulkanPipelineCache.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
 
@@ -265,7 +265,7 @@ private:
     VulkanBufferService* Buffers = nullptr;
     VulkanShaderCache* Shaders = nullptr;
     VulkanPipelineCache* Pipelines = nullptr;
-    VulkanFrameScratch* Scratch = nullptr;
+    GpuFrameScratch* Scratch = nullptr;
     Logger* Log = nullptr;
     bool LoggedOverflow = false;
     VkDevice Device = VK_NULL_HANDLE;

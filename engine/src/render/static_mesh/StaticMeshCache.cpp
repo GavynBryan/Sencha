@@ -1,11 +1,10 @@
 #include <render/static_mesh/StaticMeshCache.h>
 
-#include <graphics/vulkan/VulkanBufferService.h>
 #include <assets/static_mesh/MeshValidation.h>
 
-StaticMeshCache::StaticMeshCache(LoggingProvider& logging, VulkanBufferService& buffers)
+StaticMeshCache::StaticMeshCache(LoggingProvider& logging, GpuBuffers buffers)
     : Log(logging.GetLogger<StaticMeshCache>())
-    , Buffers(&buffers)
+    , Buffers(buffers)
 {
     ReserveNullSlot();
 }
@@ -66,20 +65,20 @@ void StaticMeshCache::Destroy(StaticMeshHandle handle)
 bool StaticMeshCache::ReloadInPlace(std::string_view path, const MeshGeometry& data)
 {
     GpuStaticMesh newMesh;
-    if (!UploadMeshGeometryToGpu(*Buffers, data, newMesh, Log))
+    if (!UploadMeshGeometryToGpu(Buffers, data, newMesh, Log))
         return false;
 
     StaticMeshEntry* entry = Resolve(FindRegisteredHandle(path));
     if (entry == nullptr)
     {
         // Not resident — nothing to swap. Discard the buffers we just built.
-        DestroyGpuMesh(*Buffers, newMesh);
+        DestroyGpuMesh(Buffers, newMesh);
         return false;
     }
 
     // Retire the old buffers through the deletion queue, then adopt the new
     // geometry. Generation, refcount, and the handle are untouched.
-    DestroyGpuMesh(*Buffers, entry->Mesh);
+    DestroyGpuMesh(Buffers, entry->Mesh);
     entry->Mesh = std::move(newMesh);
     return true;
 }
@@ -103,7 +102,7 @@ bool StaticMeshCache::IsAlive(StaticMeshHandle handle) const
 
 void StaticMeshCache::OnFree(StaticMeshEntry& entry)
 {
-    DestroyGpuMesh(*Buffers, entry.Mesh);
+    DestroyGpuMesh(Buffers, entry.Mesh);
     entry.Alive = false;
 }
 
@@ -114,7 +113,7 @@ bool StaticMeshCache::IsEntryLive(const StaticMeshEntry& entry) const
 
 bool StaticMeshCache::UploadMesh(const MeshGeometry& data, StaticMeshEntry& out)
 {
-    if (!UploadMeshGeometryToGpu(*Buffers, data, out.Mesh, Log))
+    if (!UploadMeshGeometryToGpu(Buffers, data, out.Mesh, Log))
         return false;
     out.Alive = true;
     return true;

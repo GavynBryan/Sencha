@@ -13,7 +13,6 @@
 #include <string>
 #include <string_view>
 
-class VulkanBufferService;
 
 //=============================================================================
 // SkinnedMeshCache (docs/assets/pipeline.md, Decisions J, M, N)
@@ -46,7 +45,7 @@ class SkinnedMeshCache final
     : public AssetCache<SkinnedMeshCache, SkinnedMeshHandle, SkinnedMeshEntry, AssetType::SkinnedMesh>
 {
 public:
-    SkinnedMeshCache(LoggingProvider& logging, VulkanBufferService& buffers);
+    SkinnedMeshCache(LoggingProvider& logging, GpuBuffers buffers);
     ~SkinnedMeshCache() override;
 
     SkinnedMeshCache(const SkinnedMeshCache&) = delete;
@@ -86,5 +85,5 @@ private:
     bool IsEntryLive(const SkinnedMeshEntry& entry) const;
 
     Logger& Log;
-    VulkanBufferService* Buffers = nullptr;
+    GpuBuffers Buffers;
 };

@@ -4,7 +4,7 @@
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
-#include <graphics/vulkan/VulkanFrameScratch.h>
+#include <graphics/GpuFrameScratch.h>
 #include <graphics/vulkan/VulkanPipelineCache.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
 #include <graphics/vulkan/VulkanSwapchainService.h>

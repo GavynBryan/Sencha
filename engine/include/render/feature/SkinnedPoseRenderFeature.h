@@ -64,7 +64,7 @@ private:
 
     std::shared_ptr<SkinnedPoseFrameData> FrameData;
     const SkinnedMeshCache* SkinnedMeshes = nullptr;
-    VulkanFrameScratch* Scratch = nullptr;
+    GpuFrameScratch* Scratch = nullptr;
     const RenderInstrumentation* Instrumentation = nullptr;
     SkinnedPosePass Pass;
     std::vector<PosedSlots> Slots;

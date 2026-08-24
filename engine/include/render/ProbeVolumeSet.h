@@ -3,7 +3,7 @@
 #include <assets/probes/ProbeVolumeFormat.h>
 #include <ecs/StoragePartitionId.h>
 #include <ecs/StoragePartitionSet.h>
-#include <render/pass/LightBindings.h>
+#include <graphics/GpuImages.h>
 #include <render/ProbeVolumeSlotTable.h>
 #include <render/RenderLight.h>
 
@@ -11,8 +11,8 @@
 #include <memory>
 #include <vector>
 
+class LightBindings;
 class LoggingProvider;
-class VulkanImageService;
 struct RuntimeZoneRecord;
 
 //=============================================================================
@@ -36,7 +36,7 @@ struct RuntimeZoneRecord;
 class ProbeVolumeSet
 {
 public:
-    void Setup(VulkanImageService* images, std::shared_ptr<LightBindings> bindings,
+    void Setup(GpuImages images, std::shared_ptr<LightBindings> bindings,
                LoggingProvider* logging);
 
     // Uploads every volume in `file` and assigns binding slots. Re-adding a
@@ -68,7 +68,7 @@ private:
 
     void ReleaseVolumes(std::vector<ResidentVolume>& volumes);
 
-    VulkanImageService* Images = nullptr;
+    GpuImages Images;
     std::shared_ptr<LightBindings> Bindings;
     LoggingProvider* Logging = nullptr;
     std::vector<PartitionRecord> Partitions;

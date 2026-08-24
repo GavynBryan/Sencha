@@ -8,7 +8,7 @@
 #include <graphics/vulkan/VulkanDeletionQueueService.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
-#include <graphics/vulkan/VulkanFrameScratch.h>
+#include <graphics/GpuFrameScratch.h>
 #include <graphics/vulkan/VulkanFrameService.h>
 #include <graphics/vulkan/VulkanImageService.h>
 #include <graphics/vulkan/VulkanInstanceService.h>
@@ -55,7 +55,7 @@ struct GraphicsServices
     VulkanShaderCache           Shaders;
     VulkanPipelineCache         Pipelines;
     VulkanDescriptorCache       Descriptors;
-    VulkanFrameScratch          Scratch;
+    GpuFrameScratch          Scratch;
     VulkanSwapchainService      Swapchain;
     VulkanFrameService          Frames;
     // Named MainRenderer, not Renderer: a member may not share its type's name.

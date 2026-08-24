@@ -2,6 +2,7 @@
 
 #include <core/handle/Handle.h>
 #include <core/logging/LoggingProvider.h>
+#include <graphics/ShaderHandle.h>
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
@@ -67,9 +68,8 @@ enum class ShaderStage : uint8_t
     Compute,
 };
 
-// Generational handle to a shader module owned by VulkanShaderCache. One of
-// the engine's unified Handle<Tag> types (handle convergence).
-using ShaderHandle = Handle<struct ShaderHandleTag>;
+// ShaderHandle lives in graphics/ShaderHandle.h so holders can name it
+// without the Vulkan headers; it arrives here through that include.
 
 class VulkanShaderCache
 {
