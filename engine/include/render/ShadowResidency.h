@@ -23,7 +23,9 @@
 // hold one cube each; every face is an individual view for the clamp, and a
 // slot tracks the faces still pending so a budget-split render continues
 // where it left off. A point light stays ungranted until all six faces have
-// rendered at least once.
+// rendered at least once, and thereafter holds its grant through rotations
+// and re-renders: face age is bounded by the schedule, and a slightly stale
+// face beats a flickering shadow.
 //
 // Scoring and hysteresis: a slot holder's score gets a fixed multiplier, and
 // a contender must outscore a holder for a fixed run of consecutive frames
@@ -106,7 +108,8 @@ public:
     // re-queues instead of being treated as rendered.
     void MarkViewFailed(std::uint32_t slot);
     // Only the failed face re-queues; the slot's other faces already match
-    // its rendered record. The grant is withheld until the face re-renders.
+    // its rendered record. The grant is withheld for the failure frame and
+    // returns from cached faces while the face waits to re-render.
     void MarkPointFaceFailed(std::uint32_t slot, std::uint32_t face);
     void Reset();
 

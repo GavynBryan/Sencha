@@ -142,9 +142,11 @@ points (`HashPointShadowState`).
 
 Point slots track `PendingFaces`, a six-bit mask. A point light stays ungranted
 until every face has rendered at least once, which is why a newly acquired point
-slot bursts its faces. `MarkPointInvalid` re-dirties all six, including faces a
-previous invalidation already re-rendered, because a state change moves the
-whole cube.
+slot bursts its faces -- and thereafter it holds its grant through rotations and
+re-renders: pending faces mean the schedule owes work, not that the cube is
+unsampleable, and a slightly stale face beats a flickering shadow.
+`MarkPointInvalid` re-dirties all six, including faces a previous invalidation
+already re-rendered, because a state change moves the whole cube.
 
 ### View scheduling order
 
@@ -187,8 +189,9 @@ the scheduling.
 - `MarkViewFailed(slot)`: clears `EverRendered`, marks invalid, and erases the
   slot's grant from this frame's list.
 - `MarkPointFaceFailed(slot, face)`: re-sets that one pending bit and erases the
-  grant. The slot's other faces already match its rendered record, so only the
-  failed face re-queues.
+  grant for the failure frame. The slot's other faces already match its
+  rendered record, so only the failed face re-queues, and the grant returns
+  from the cached faces on the next frame while it waits.
 
 Both are paired with `RevokeGrant` on the light set, so nothing samples a slot
 whose content does not match its published record.

@@ -418,10 +418,15 @@ void ShadowResidency::BuildGrants(std::span<const SpotShadowRequest> requests,
             .SlotIndex = static_cast<std::uint32_t>(&slot - Slots),
         });
     }
+    // EverRendered alone gates the grant: a cube must never be sampled
+    // before its first full rotation (garbage faces), but once every face
+    // has rendered, pending re-render work -- a clamped EveryFrame
+    // rotation, a budget-split invalidation drain, a failed face -- serves
+    // the cached faces rather than dropping the shadow. Face age is
+    // bounded by the schedule queues; a stale face beats a flicker.
     for (const ShadowSlotState& slot : PointSlots)
     {
-        if (!slot.Live || slot.RequestIndex == UINT32_MAX
-            || !slot.EverRendered || slot.PendingSubViews != 0)
+        if (!slot.Live || slot.RequestIndex == UINT32_MAX || !slot.EverRendered)
             continue;
         FramePointGrants.push_back(PointShadowGrant{
             .LightIndex = pointRequests[slot.RequestIndex].LightIndex,

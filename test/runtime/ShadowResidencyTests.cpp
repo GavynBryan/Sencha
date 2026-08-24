@@ -184,8 +184,9 @@ TEST(ShadowResidency, InvalidatedPointCubeDrainsUnderSaturatedSpotWork)
         EXPECT_EQ(residency.ScheduledViews().size(), 5u);
         ASSERT_EQ(residency.ScheduledPointFaces().size(), 1u);
         EXPECT_EQ(residency.ScheduledPointFaces()[0].Face, frame);
-        EXPECT_EQ(HasPointGrantForLight(residency, 5),
-                  frame + 1u == kPointShadowFaceCount);
+        // The cube has rendered fully before; the budget-split re-render
+        // serves cached faces rather than dropping the shadow mid-drain.
+        EXPECT_TRUE(HasPointGrantForLight(residency, 5));
     }
 }
 
@@ -830,8 +831,9 @@ TEST(ShadowResidency, EveryFramePointHashChurnKeepsItsRotation)
         if (!residency.PointGrants().empty())
             ++grantedFrames;
     }
-    // Every third frame completes a rotation against one rendered state.
-    EXPECT_EQ(grantedFrames, 4u);
+    // Once every face has rendered, the grant holds through rotations: a
+    // clamped cube serving slightly stale faces beats a flickering shadow.
+    EXPECT_EQ(grantedFrames, 12u);
 }
 
 // The spot pool treats the same churn identically: an EveryFrame tile
@@ -884,6 +886,41 @@ TEST(ShadowResidency, OnChangePointHashChangeRerendersAllSixFaces)
     points[0] = MakePointRequest(1, 0, 3.0f, ShadowUpdatePolicy::OnChange, 2);
     residency.Update({}, points, {}, kUnlimited);
     EXPECT_EQ(residency.ScheduledPointFaces().size(), kPointShadowFaceCount);
+    EXPECT_EQ(residency.PointGrants().size(), 1u);
+}
+
+// A face whose recording failed withholds the grant for exactly the
+// failure frame. Even when the budget cannot re-render the face yet, the
+// slot re-grants from its cached faces -- one stale face beats a vanished
+// shadow -- and the face re-queues through the invalidated path.
+TEST(ShadowResidency, AFailedFaceWithholdsTheGrantForOneFrame)
+{
+    ShadowResidency residency;
+    std::vector<PointShadowRequest> points{
+        MakePointRequest(1, 0, 3.0f, ShadowUpdatePolicy::OnChange, 1),
+    };
+    residency.Update({}, points, {}, kUnlimited);
+    ASSERT_EQ(residency.PointGrants().size(), 1u);
+
+    residency.MarkPointFaceFailed(0, 2);
+    EXPECT_TRUE(residency.PointGrants().empty());
+
+    // An EveryFrame spot soaks the whole view budget, so the failed face
+    // cannot re-render -- the grant still returns, serving cached faces.
+    std::vector<SpotShadowRequest> spots{
+        MakeRequest(9, 8, 100.0f, ShadowUpdatePolicy::EveryFrame),
+    };
+    ShadowResidencyBudgets starved = kUnlimited;
+    starved.MaxViewsPerFrame = 1;
+    starved.MinInvalidatedViewsPerFrame = 0;
+    residency.Update(spots, points, {}, starved);
+    EXPECT_TRUE(residency.ScheduledPointFaces().empty());
+    EXPECT_EQ(residency.PointGrants().size(), 1u);
+
+    // With budget again, exactly the failed face re-renders.
+    residency.Update(spots, points, {}, kUnlimited);
+    ASSERT_EQ(residency.ScheduledPointFaces().size(), 1u);
+    EXPECT_EQ(residency.ScheduledPointFaces()[0].Face, 2u);
     EXPECT_EQ(residency.PointGrants().size(), 1u);
 }
 
@@ -1136,7 +1173,7 @@ TEST(ShadowResidency, ATrajectoryDigestPinsTheArbiterEndToEnd)
         FoldFrame(digest, residency);
     }
 
-    EXPECT_EQ(digest, 0x0e130ba19fc1ed8fULL)
+    EXPECT_EQ(digest, 0xd2723a6da0468cffULL)
         << "trajectory digest moved: 0x" << std::hex << digest
         << ". A refactor stage must reproduce it exactly; only a deliberate "
            "behavior change re-records it, in the same commit, with the "
