@@ -136,6 +136,29 @@ public:
         double interpolationAlpha = 1.0);
 
 private:
+    // The four jobs one extraction performs, in call order. Each fills or
+    // reads the retained members below; none holds state of its own.
+    void ResolveLightmaps(const World& world, const StoragePartitionSet& partitions,
+                          const TextureCache* textures);
+    void EnsureQueries(const World& world, bool skinnedRegistered);
+    void EmitStaticMeshes(const StoragePartitionSet& partitions,
+                          const RenderExtractCaches& caches,
+                          const CameraRenderData& camera, RenderQueue& queue,
+                          double interpolationAlpha);
+    void EmitSkinnedMeshes(const World& world, const StoragePartitionSet& partitions,
+                           const RenderExtractCaches& caches,
+                           const CameraRenderData& camera, RenderQueue& queue,
+                           double interpolationAlpha,
+                           SkinnedPoseFrameData* skinnedPoses);
+    // Registers one visible skinned entity's pose: appends its instance and
+    // palette to `skinnedPoses` and samples the entity's clip player into the
+    // palette (bind identity without one). Returns the instance's pose slot,
+    // or UINT32_MAX when the mesh carries no skinning data.
+    [[nodiscard]] std::uint32_t RegisterSkinnedPose(
+        const World& world, const RenderExtractCaches& caches,
+        const SkinnedMeshComponent& renderer, EntityId entity,
+        SkinnedPoseFrameData& skinnedPoses);
+
     const World* LastWorld = nullptr;
     std::optional<Query<Read<WorldTransform>,
                         Read<StaticMeshComponent>,

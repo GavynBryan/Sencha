@@ -114,44 +114,63 @@ void RenderExtractionSystem::Extract(
     double interpolationAlpha,
     SkinnedPoseFrameData* skinnedPoses)
 {
-    const StaticMeshCache& meshes = caches.Meshes;
-    const MaterialCache& materials = caches.Materials;
-    const MaterialSetCache& materialSets = caches.MaterialSets;
-    const TextureCache* textures = caches.Textures;
-
     if (!world.IsRegistered<WorldTransform>()
         || !world.IsRegistered<StaticMeshComponent>())
     {
         return;
     }
 
+    ResolveLightmaps(world, partitions, caches.Textures);
+
+    const bool skinnedRegistered = world.IsRegistered<SkinnedMeshComponent>();
+    EnsureQueries(world, skinnedRegistered);
+
+    EmitStaticMeshes(partitions, caches, camera, queue, interpolationAlpha);
+
+    if (caches.SkinnedMeshes == nullptr || !skinnedRegistered)
+        return;
+    EmitSkinnedMeshes(world, partitions, caches, camera, queue,
+                      interpolationAlpha, skinnedPoses);
+}
+
+void RenderExtractionSystem::ResolveLightmaps(
+    const World& world, const StoragePartitionSet& partitions,
+    const TextureCache* textures)
+{
     // Each resident zone owns its own baked atlas, so the indices are resolved
     // per partition and looked up per chunk. Resolving one atlas for the whole
     // world would stamp whichever zone happened to be visited last onto every
     // other zone's meshes.
     LightmapTable.clear();
-    if (textures != nullptr)
-    {
-        CollectZoneLightmaps(world, partitions, LightmapBindings);
-        ResolveZoneLightmapIndices(LightmapBindings, *textures, ResolvedLightmaps);
-        BuildZoneLightmapTable(ResolvedLightmaps, LightmapTable);
-    }
+    if (textures == nullptr)
+        return;
+    CollectZoneLightmaps(world, partitions, LightmapBindings);
+    ResolveZoneLightmapIndices(LightmapBindings, *textures, ResolvedLightmaps);
+    BuildZoneLightmapTable(ResolvedLightmaps, LightmapTable);
+}
 
-    const bool skinnedRegistered = world.IsRegistered<SkinnedMeshComponent>();
-    if (LastWorld != &world || !CachedQuery.has_value())
+void RenderExtractionSystem::EnsureQueries(const World& world,
+                                           bool skinnedRegistered)
+{
+    if (LastWorld == &world && CachedQuery.has_value())
+        return;
+    CachedQuery.emplace(world);
+    CachedInterpolatedQuery.emplace(world);
+    CachedSkinnedQuery.reset();
+    CachedSkinnedInterpolatedQuery.reset();
+    if (skinnedRegistered)
     {
-        CachedQuery.emplace(world);
-        CachedInterpolatedQuery.emplace(world);
-        CachedSkinnedQuery.reset();
-        CachedSkinnedInterpolatedQuery.reset();
-        if (skinnedRegistered)
-        {
-            CachedSkinnedQuery.emplace(world);
-            CachedSkinnedInterpolatedQuery.emplace(world);
-        }
-        LastWorld = &world;
+        CachedSkinnedQuery.emplace(world);
+        CachedSkinnedInterpolatedQuery.emplace(world);
     }
+    LastWorld = &world;
+}
 
+void RenderExtractionSystem::EmitStaticMeshes(
+    const StoragePartitionSet& partitions, const RenderExtractCaches& caches,
+    const CameraRenderData& camera, RenderQueue& queue,
+    double interpolationAlpha)
+{
     // Whether an entity carries pose history is an archetype property, so the
     // two paths are separate chunk walks rather than a per-entity branch.
     const auto emitChunk = [&](auto& view, auto&& poseAt)
@@ -169,9 +188,9 @@ void RenderExtractionSystem::Extract(
             if (view.Entity(i) == camera.ExcludedEntity)
                 continue;
 
-            const GpuStaticMesh* mesh = meshes.Get(renderer.Mesh);
+            const GpuStaticMesh* mesh = caches.Meshes.Get(renderer.Mesh);
             const std::vector<MaterialHandle>* sectionMaterials =
-                materialSets.Get(renderer.Materials);
+                caches.MaterialSets.Get(renderer.Materials);
             if (mesh == nullptr || sectionMaterials == nullptr
                 || sectionMaterials->empty())
             {
@@ -199,7 +218,8 @@ void RenderExtractionSystem::Extract(
             instance.LightmapTextureIndex = lightmap.Lightmap;
             instance.AoTextureIndex = lightmap.Ao;
             instance.LightmapScaleBias = renderer.LightmapScaleBias;
-            EmitMeshSections(instance, *mesh, *sectionMaterials, materials, queue);
+            EmitMeshSections(instance, *mesh, *sectionMaterials,
+                             caches.Materials, queue);
         }
     };
 
@@ -216,14 +236,19 @@ void RenderExtractionSystem::Extract(
             return ResolvePresentationPose(histories[i], interpolationAlpha);
         });
     });
+}
 
-    // Skinned instances, drawn at rest until a pose source exists: the entry's
-    // rest geometry is a GpuStaticMesh like any other, so the expansion is the
-    // same -- only the residency it resolves through differs. No lightmap and
-    // no atlas stamp: a skinned mesh is the canonical movable non-receiver.
-    const SkinnedMeshCache* skinnedMeshes = caches.SkinnedMeshes;
-    if (skinnedMeshes == nullptr || !skinnedRegistered)
-        return;
+// Skinned instances, drawn at rest until a pose source exists: the entry's
+// rest geometry is a GpuStaticMesh like any other, so the expansion is the
+// same -- only the residency it resolves through differs. No lightmap and
+// no atlas stamp: a skinned mesh is the canonical movable non-receiver.
+void RenderExtractionSystem::EmitSkinnedMeshes(
+    const World& world, const StoragePartitionSet& partitions,
+    const RenderExtractCaches& caches, const CameraRenderData& camera,
+    RenderQueue& queue, double interpolationAlpha,
+    SkinnedPoseFrameData* skinnedPoses)
+{
+    const SkinnedMeshCache& skinnedMeshes = *caches.SkinnedMeshes;
 
     const auto emitSkinnedChunk = [&](auto& view, auto&& poseAt)
     {
@@ -238,9 +263,9 @@ void RenderExtractionSystem::Extract(
             if (view.Entity(i) == camera.ExcludedEntity)
                 continue;
 
-            const GpuStaticMesh* mesh = skinnedMeshes->Get(renderer.Mesh);
+            const GpuStaticMesh* mesh = skinnedMeshes.Get(renderer.Mesh);
             const std::vector<MaterialHandle>* sectionMaterials =
-                materialSets.Get(renderer.Materials);
+                caches.MaterialSets.Get(renderer.Materials);
             if (mesh == nullptr || sectionMaterials == nullptr
                 || sectionMaterials->empty())
             {
@@ -259,57 +284,11 @@ void RenderExtractionSystem::Extract(
                 worldBounds.Center().Z,
                 1.0f);
 
-            // Register the entity's pose slot: one per entity (every section
-            // shares it). A clip player poses the skeleton at its current
-            // time; without one the palette stays the bind identity, which
-            // reproduces the rest bytes exactly.
             std::uint32_t poseSlot = UINT32_MAX;
             if (skinnedPoses != nullptr)
             {
-                const MeshSkinning* skinning =
-                    skinnedMeshes->GetSkinning(renderer.Mesh);
-                if (skinning != nullptr && skinning->JointCount > 0)
-                {
-                    poseSlot = static_cast<std::uint32_t>(
-                        skinnedPoses->Instances.size());
-                    const auto paletteOffset = static_cast<std::uint32_t>(
-                        skinnedPoses->Palettes.size());
-                    skinnedPoses->Instances.push_back(SkinnedPoseInstance{
-                        .Mesh = renderer.Mesh,
-                        .Key = RenderEntityKey{ .Entity = view.Entity(i) },
-                        .PaletteOffset = paletteOffset,
-                        .JointCount = skinning->JointCount,
-                    });
-                    skinnedPoses->Palettes.resize(
-                        paletteOffset + skinning->JointCount, Mat4::Identity());
-
-                    // Pose evaluation is per rendered frame, not per tick:
-                    // the player advanced its time on the fixed tick and
-                    // this samples whatever it currently holds.
-                    const SkeletonData* skeleton =
-                        caches.Skeletons != nullptr
-                            ? caches.Skeletons->Get(
-                                  skinnedMeshes->GetSkeletonHandle(renderer.Mesh))
-                            : nullptr;
-                    const AnimationClipPlayerComponent* player =
-                        world.TryGet<AnimationClipPlayerComponent>(view.Entity(i));
-                    const AnimationClipData* clip =
-                        (player != nullptr && caches.AnimationClips != nullptr)
-                            ? caches.AnimationClips->Get(player->Clip)
-                            : nullptr;
-                    if (clip != nullptr && skeleton != nullptr
-                        && skeleton->Joints.size() == skinning->JointCount)
-                    {
-                        SampleAnimationClip(*clip, *skeleton,
-                                            player->TimeSeconds, PoseScratch);
-                        BuildPosedModelTransforms(*skeleton, PoseScratch,
-                                                  ModelScratch);
-                        BuildSkinningPalette(*skeleton, ModelScratch,
-                                             PaletteScratch);
-                        std::copy(PaletteScratch.begin(), PaletteScratch.end(),
-                                  skinnedPoses->Palettes.begin() + paletteOffset);
-                    }
-                }
+                poseSlot = RegisterSkinnedPose(world, caches, renderer,
+                                               view.Entity(i), *skinnedPoses);
             }
 
             MeshDrawInstance instance;
@@ -319,7 +298,8 @@ void RenderExtractionSystem::Extract(
             instance.SectionMask = renderer.SectionMask;
             instance.CameraDepth = -cameraSpaceCenter.Z;
             instance.PoseSlot = poseSlot;
-            EmitMeshSections(instance, *mesh, *sectionMaterials, materials, queue);
+            EmitMeshSections(instance, *mesh, *sectionMaterials,
+                             caches.Materials, queue);
         }
     };
 
@@ -336,4 +316,56 @@ void RenderExtractionSystem::Extract(
             return ResolvePresentationPose(histories[i], interpolationAlpha);
         });
     });
+}
+
+std::uint32_t RenderExtractionSystem::RegisterSkinnedPose(
+    const World& world, const RenderExtractCaches& caches,
+    const SkinnedMeshComponent& renderer, EntityId entity,
+    SkinnedPoseFrameData& skinnedPoses)
+{
+    const SkinnedMeshCache& skinnedMeshes = *caches.SkinnedMeshes;
+
+    // One slot per entity (every section shares it). A clip player poses the
+    // skeleton at its current time; without one the palette stays the bind
+    // identity, which reproduces the rest bytes exactly.
+    const MeshSkinning* skinning = skinnedMeshes.GetSkinning(renderer.Mesh);
+    if (skinning == nullptr || skinning->JointCount == 0)
+        return UINT32_MAX;
+
+    const auto poseSlot =
+        static_cast<std::uint32_t>(skinnedPoses.Instances.size());
+    const auto paletteOffset =
+        static_cast<std::uint32_t>(skinnedPoses.Palettes.size());
+    skinnedPoses.Instances.push_back(SkinnedPoseInstance{
+        .Mesh = renderer.Mesh,
+        .Key = RenderEntityKey{ .Entity = entity },
+        .PaletteOffset = paletteOffset,
+        .JointCount = skinning->JointCount,
+    });
+    skinnedPoses.Palettes.resize(paletteOffset + skinning->JointCount,
+                                 Mat4::Identity());
+
+    // Pose evaluation is per rendered frame, not per tick: the player
+    // advanced its time on the fixed tick and this samples whatever it
+    // currently holds.
+    const SkeletonData* skeleton =
+        caches.Skeletons != nullptr
+            ? caches.Skeletons->Get(skinnedMeshes.GetSkeletonHandle(renderer.Mesh))
+            : nullptr;
+    const AnimationClipPlayerComponent* player =
+        world.TryGet<AnimationClipPlayerComponent>(entity);
+    const AnimationClipData* clip =
+        (player != nullptr && caches.AnimationClips != nullptr)
+            ? caches.AnimationClips->Get(player->Clip)
+            : nullptr;
+    if (clip != nullptr && skeleton != nullptr
+        && skeleton->Joints.size() == skinning->JointCount)
+    {
+        SampleAnimationClip(*clip, *skeleton, player->TimeSeconds, PoseScratch);
+        BuildPosedModelTransforms(*skeleton, PoseScratch, ModelScratch);
+        BuildSkinningPalette(*skeleton, ModelScratch, PaletteScratch);
+        std::copy(PaletteScratch.begin(), PaletteScratch.end(),
+                  skinnedPoses.Palettes.begin() + paletteOffset);
+    }
+    return poseSlot;
 }
