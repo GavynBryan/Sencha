@@ -191,6 +191,7 @@ endif()
 # command, traffic, and clock runtimes by value.
 file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     "${SENCHA_ENGINE_INCLUDE_DIR}/app/*.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/graphics/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/input/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/net/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/serialization/*.h"

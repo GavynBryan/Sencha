@@ -1,7 +1,7 @@
 #pragma once
 
 #include <graphics/RenderTargetId.h>
-#include <graphics/vulkan/Renderer.h>
+#include <graphics/RenderFeature.h>
 #include <render/extract/Camera.h>
 
 #include <cstdint>
@@ -75,19 +75,19 @@ struct FrameView;
 //
 // Bind one with a capture-less lambda, which converts to the function pointer:
 //
-//   .Record = { [](void* self, const FrameContext& frame, const FrameView& view)
+//   .Record = { [](void* self, const RenderFrame& frame, const FrameView& view)
 //               { static_cast<EditorRenderFeature*>(self)->RecordView(frame, view); },
 //               this }
 
 struct FrameWorkRecord
 {
-    void (*Fn)(void* self, const FrameContext& frame) = nullptr;
+    void (*Fn)(void* self, const RenderFrame& frame) = nullptr;
     void* Self = nullptr;
 };
 
 struct FrameViewRecord
 {
-    void (*Fn)(void* self, const FrameContext& frame, const FrameView& view) = nullptr;
+    void (*Fn)(void* self, const RenderFrame& frame, const FrameView& view) = nullptr;
     void* Self = nullptr;
 };
 
@@ -191,7 +191,7 @@ public:
     [[nodiscard]] std::span<const FrameNodeId> Resolve();
 
     // Resolve, then run each scheduled node's record body in order.
-    void Execute(const FrameContext& frame);
+    void Execute(const RenderFrame& frame);
 
     [[nodiscard]] std::string_view NameOf(FrameNodeId id) const;
     [[nodiscard]] std::span<const FrameCompositionDiagnostic> Diagnostics() const

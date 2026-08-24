@@ -3,10 +3,6 @@
 #include <graphics/GpuFrameScratch.h>
 #include <profiling/RenderInstrumentation.h>
 
-#ifdef SENCHA_ENABLE_RENDER_PROFILING
-#include <graphics/vulkan/GpuTimestampPool.h>
-#include <graphics/vulkan/VulkanDebugLabels.h>
-#endif
 
 #include <cstdint>
 #include <cstring>
@@ -31,11 +27,11 @@ SkinnedPoseRenderFeature::SkinnedPoseRenderFeature(
 {
 }
 
-bool SkinnedPoseRenderFeature::Setup(const RendererServices& services)
+bool SkinnedPoseRenderFeature::Setup(const RenderFeatureServices& services)
 {
     Scratch = services.Scratch;
     Instrumentation = services.Instrumentation;
-    Pass.Setup(services);
+    Pass.Setup(*services.Backend);
     return true;
 }
 
@@ -97,7 +93,7 @@ void SkinnedPoseRenderFeature::PruneStale()
     }
 }
 
-void SkinnedPoseRenderFeature::OnDraw(const FrameContext& frame)
+void SkinnedPoseRenderFeature::OnDraw(const RenderFrame& frame)
 {
     ++FrameCounter;
     PruneStale();
@@ -150,24 +146,9 @@ void SkinnedPoseRenderFeature::OnDraw(const FrameContext& frame)
         });
     }
 
-#ifdef SENCHA_ENABLE_RENDER_PROFILING
-    GpuTimestampPool* gpuScopes = Instrumentation != nullptr
-        ? Instrumentation->GpuTimestamps
-        : nullptr;
-    if (gpuScopes != nullptr)
-    {
-        VulkanDebugLabels::BeginLabel(frame.Cmd, ToString(GpuScope::SkinPose));
-        gpuScopes->BeginScope(frame.Cmd, GpuScope::SkinPose);
-    }
-#endif
-    const std::uint32_t recorded = Pass.Record(frame, DispatchScratch);
-#ifdef SENCHA_ENABLE_RENDER_PROFILING
-    if (gpuScopes != nullptr)
-    {
-        gpuScopes->EndScope(frame.Cmd, GpuScope::SkinPose);
-        VulkanDebugLabels::EndLabel(frame.Cmd);
-    }
-#endif
+    BeginGpuScope(frame, GpuScope::SkinPose);
+    const std::uint32_t recorded = Pass.Record(*frame.Backend, DispatchScratch);
+    EndGpuScope(frame, GpuScope::SkinPose);
     // A job the pass could not record (budget, allocation) left its slot's
     // entry stale-but-valid in PosedBuffers only if it dispatched; the pass
     // records in order and only drops the tail, so invalidate the tail.

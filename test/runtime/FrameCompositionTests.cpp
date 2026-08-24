@@ -33,7 +33,7 @@ struct WorkBody
     Trace* Log = nullptr;
     std::string Name;
 
-    static void Run(void* self, const FrameContext&)
+    static void Run(void* self, const RenderFrame&)
     {
         auto& body = *static_cast<WorkBody*>(self);
         body.Log->Ran.push_back(body.Name);
@@ -47,7 +47,7 @@ struct ViewBody
     Trace* Log = nullptr;
     const FrameView* Last = nullptr;
 
-    static void Run(void* self, const FrameContext&, const FrameView& view)
+    static void Run(void* self, const RenderFrame&, const FrameView& view)
     {
         auto& body = *static_cast<ViewBody*>(self);
         body.Log->Ran.emplace_back(view.Name);
@@ -117,7 +117,7 @@ TEST(FrameComposition, ADependentRunsAfterItsProducerNoMatterWhenItWasDeclared)
                           .Record = { &WorkBody::Run, &shadows },
                           .Produces = ready });
 
-    const FrameContext frame{};
+    const RenderFrame frame{};
     composition.Execute(frame);
 
     EXPECT_EQ(log.Ran, (std::vector<std::string>{ "shadows", "viewport" }));
@@ -142,7 +142,7 @@ TEST(FrameComposition, ManyViewsOnOneProducerRunInDeclarationOrderAfterIt)
                               .Record = { &ViewBody::Run, &views },
                               .DependsOn = depends });
 
-    const FrameContext frame{};
+    const RenderFrame frame{};
     composition.Execute(frame);
 
     EXPECT_EQ(log.Ran, (std::vector<std::string>{ "shadows", "top", "front", "side",
@@ -166,7 +166,7 @@ TEST(FrameComposition, TheViewHandedToARecordBodyIsTheOneThatWasDeclared)
                                     .User = &panel },
                           .Record = { &ViewBody::Run, &body } });
 
-    const FrameContext frame{};
+    const RenderFrame frame{};
     composition.Execute(frame);
 
     ASSERT_NE(body.Last, nullptr);
@@ -189,7 +189,7 @@ TEST(FrameComposition, AViewWaitingOnAPointNobodyProducesDoesNotRun)
                           .Record = { &ViewBody::Run, &body },
                           .DependsOn = depends });
 
-    const FrameContext frame{};
+    const RenderFrame frame{};
     composition.Execute(frame);
 
     EXPECT_TRUE(log.Ran.empty());
@@ -206,7 +206,7 @@ TEST(FrameComposition, AViewWithNoTargetDoesNotRun)
     composition.AddView({ .View = { .Name = "viewport" },
                           .Record = { &ViewBody::Run, &body } });
 
-    const FrameContext frame{};
+    const RenderFrame frame{};
     composition.Execute(frame);
 
     EXPECT_TRUE(log.Ran.empty());
@@ -239,7 +239,7 @@ TEST(FrameComposition, SkippingAProducerSkipsEverythingDownstreamOfIt)
                           .Record = { &ViewBody::Run, &views },
                           .DependsOn = onComposited });
 
-    const FrameContext frame{};
+    const RenderFrame frame{};
     composition.Execute(frame);
 
     EXPECT_TRUE(log.Ran.empty());
@@ -264,7 +264,7 @@ TEST(FrameComposition, UnrelatedNodesStillRunWhenOneBranchIsSkipped)
                           .DependsOn = onMissing });
     composition.AddWork({ .Name = "healthy", .Record = { &WorkBody::Run, &healthy } });
 
-    const FrameContext frame{};
+    const RenderFrame frame{};
     composition.Execute(frame);
 
     EXPECT_EQ(log.Ran, (std::vector<std::string>{ "healthy" }));
@@ -291,7 +291,7 @@ TEST(FrameComposition, ACycleRunsNothingInIt)
     composition.AddWork({ .Name = "downstream", .Record = { &WorkBody::Run, &downstream },
                           .DependsOn = onA });
 
-    const FrameContext frame{};
+    const RenderFrame frame{};
     composition.Execute(frame);
 
     EXPECT_TRUE(log.Ran.empty());
@@ -320,7 +320,7 @@ TEST(FrameComposition, TwoNodesProducingOnePointLeaveTheFirstOneHoldingIt)
                           .Record = { &ViewBody::Run, &views },
                           .DependsOn = depends });
 
-    const FrameContext frame{};
+    const RenderFrame frame{};
     composition.Execute(frame);
 
     // The duplicate is the node that loses, and the dependent still runs behind
@@ -374,7 +374,7 @@ TEST(FrameComposition, ClearingTheFrameKeepsPointIdsUsable)
         composition.AddView({ .View = { .Name = "viewport", .Target = SomeTarget() },
                               .Record = { &ViewBody::Run, &views },
                               .DependsOn = depends });
-        const FrameContext frame{};
+        const RenderFrame frame{};
         composition.Execute(frame);
     }
 

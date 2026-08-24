@@ -44,5 +44,10 @@
 // and debug tooling) still expose the raw device frame. v10: participant
 // lifecycle/control moved out of net into its own SDK domain, the old NetPlayer
 // and NetParticipant surface was removed, and Engine now exposes typed
-// participant outcomes through the session projection owner.
-#define SENCHA_GAME_ABI_VERSION 10u
+// participant outcomes through the session projection owner. v11: the render
+// feature contract went neutral -- RenderPhase, IRenderFeature, and the new
+// RenderFeatureServices / RenderFrame types moved to graphics/RenderFeature.h,
+// and Setup/OnDraw take those instead of the backend RendererServices /
+// FrameContext (still reachable through their Backend pointers). The
+// fingerprint now covers graphics/*.h, the neutral shelf.
+#define SENCHA_GAME_ABI_VERSION 11u

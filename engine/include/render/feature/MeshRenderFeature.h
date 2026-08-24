@@ -31,8 +31,8 @@ public:
                       std::shared_ptr<const SkinnedPoseFrameData> skinnedPoses = nullptr);
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::MainColor; }
-    [[nodiscard]] bool Setup(const RendererServices& services) override;
-    void OnDraw(const FrameContext& frame) override;
+    [[nodiscard]] bool Setup(const RenderFeatureServices& services) override;
+    void OnDraw(const RenderFrame& frame) override;
     void Teardown() override;
 
 private:

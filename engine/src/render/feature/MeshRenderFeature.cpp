@@ -4,10 +4,6 @@
 #include <profiling/RenderInstrumentation.h>
 #include <profiling/RenderStats.h>
 
-#ifdef SENCHA_ENABLE_RENDER_PROFILING
-#include <graphics/vulkan/GpuTimestampPool.h>
-#include <graphics/vulkan/VulkanDebugLabels.h>
-#endif
 
 MeshRenderFeature::MeshRenderFeature(RenderQueue& queue,
                                      StaticMeshCache& meshes,
@@ -28,10 +24,10 @@ MeshRenderFeature::MeshRenderFeature(RenderQueue& queue,
 {
 }
 
-bool MeshRenderFeature::Setup(const RendererServices& services)
+bool MeshRenderFeature::Setup(const RenderFeatureServices& services)
 {
     Instrumentation = services.Instrumentation;
-    Pass.Setup(services, *Bindings);
+    Pass.Setup(*services.Backend, *Bindings);
     Pass.SetSkinnedPoses(SkinnedPoses.get());
     // The pass degrades to inert when the lighting bindings are unusable,
     // which is a deliberate policy: the frame still presents. That is not a
@@ -39,33 +35,18 @@ bool MeshRenderFeature::Setup(const RendererServices& services)
     return true;
 }
 
-void MeshRenderFeature::OnDraw(const FrameContext& frame)
+void MeshRenderFeature::OnDraw(const RenderFrame& frame)
 {
     if (Queue == nullptr || Lights == nullptr) return;
-#ifdef SENCHA_ENABLE_RENDER_PROFILING
-    GpuTimestampPool* gpuScopes = Instrumentation != nullptr
-        ? Instrumentation->GpuTimestamps
-        : nullptr;
-    if (gpuScopes != nullptr)
-    {
-        VulkanDebugLabels::BeginLabel(frame.Cmd, ToString(GpuScope::ForwardOpaque));
-        gpuScopes->BeginScope(frame.Cmd, GpuScope::ForwardOpaque);
-    }
-#endif
+    BeginGpuScope(frame, GpuScope::ForwardOpaque);
     {
         CpuScopeTimer timer(
             Instrumentation != nullptr ? Instrumentation->CpuScopes : nullptr,
             CpuScope::ForwardRecord);
-        Pass.Draw(frame, *Camera, *Lights, *Queue, *Meshes, *Materials,
+        Pass.Draw(*frame.Backend, *Camera, *Lights, *Queue, *Meshes, *Materials,
                   SkinnedMeshes);
     }
-#ifdef SENCHA_ENABLE_RENDER_PROFILING
-    if (gpuScopes != nullptr)
-    {
-        gpuScopes->EndScope(frame.Cmd, GpuScope::ForwardOpaque);
-        VulkanDebugLabels::EndLabel(frame.Cmd);
-    }
-#endif
+    EndGpuScope(frame, GpuScope::ForwardOpaque);
 
     if (Instrumentation != nullptr && Instrumentation->Stats != nullptr)
     {

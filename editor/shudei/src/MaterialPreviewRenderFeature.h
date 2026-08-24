@@ -29,8 +29,8 @@ public:
     explicit MaterialPreviewRenderFeature(RuntimeAssets& assets);
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::Offscreen; }
-    [[nodiscard]] bool Setup(const RendererServices& services) override;
-    void OnDraw(const FrameContext& frame) override;
+    [[nodiscard]] bool Setup(const RenderFeatureServices& services) override;
+    void OnDraw(const RenderFrame& frame) override;
     void Teardown() override;
 
     // UI side: record the on-screen size, get the texture to display.

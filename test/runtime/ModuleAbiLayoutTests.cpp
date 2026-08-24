@@ -6,6 +6,7 @@
 // the suite. (docs/architecture/hardening-and-consolidation.md W6.)
 
 #include <app/GameModuleAbi.h>  // GameModuleAbi
+#include <graphics/RenderFeature.h>  // RenderFeatureServices, RenderFrame
 
 #include <gtest/gtest.h>
 
@@ -30,4 +31,31 @@ TEST(ModuleAbi, DescriptorLayoutIsFrozen)
     EXPECT_EQ(sizeof(GameModuleAbi), 40u);
     EXPECT_EQ(offsetof(GameModuleAbi, StructSize), 0u);
     EXPECT_EQ(SenchaThisBuildAbi().StructSize, sizeof(GameModuleAbi));
+}
+
+// The feature contract's parameter structs are module-facing: a module's
+// IRenderFeature receives them by reference and reads members at compiled-in
+// offsets. The fingerprint (graphics/*.h) catches accidental drift and refuses
+// the module at load; these freezes make a deliberate change loud at build
+// time, where the version bump it requires is decided.
+static_assert(sizeof(RenderFrame) == 48, "RenderFrame layout changed — bump SENCHA_GAME_ABI_VERSION");
+static_assert(offsetof(RenderFrame, FrameInFlightIndex) == 0, "RenderFrame layout changed");
+static_assert(offsetof(RenderFrame, TargetExtent) == 4, "RenderFrame layout changed");
+static_assert(offsetof(RenderFrame, Phase) == 12, "RenderFrame layout changed");
+static_assert(offsetof(RenderFrame, Retirement) == 16, "RenderFrame layout changed");
+static_assert(offsetof(RenderFrame, Instrumentation) == 32, "RenderFrame layout changed");
+static_assert(offsetof(RenderFrame, Backend) == 40, "RenderFrame layout changed");
+static_assert(sizeof(RenderFeatureServices) == 48,
+              "RenderFeatureServices layout changed — bump SENCHA_GAME_ABI_VERSION");
+static_assert(offsetof(RenderFeatureServices, Logging) == 0, "RenderFeatureServices layout changed");
+static_assert(offsetof(RenderFeatureServices, Instrumentation) == 8, "RenderFeatureServices layout changed");
+static_assert(offsetof(RenderFeatureServices, Buffers) == 16, "RenderFeatureServices layout changed");
+static_assert(offsetof(RenderFeatureServices, Images) == 24, "RenderFeatureServices layout changed");
+static_assert(offsetof(RenderFeatureServices, Scratch) == 32, "RenderFeatureServices layout changed");
+static_assert(offsetof(RenderFeatureServices, Backend) == 40, "RenderFeatureServices layout changed");
+
+TEST(ModuleAbi, FeatureContractLayoutIsFrozen)
+{
+    EXPECT_EQ(sizeof(RenderFrame), 48u);
+    EXPECT_EQ(sizeof(RenderFeatureServices), 48u);
 }

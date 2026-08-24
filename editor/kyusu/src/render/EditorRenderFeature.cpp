@@ -89,8 +89,9 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     }
 }
 
-bool EditorRenderFeature::Setup(const RendererServices& services)
+bool EditorRenderFeature::Setup(const RenderFeatureServices& featureServices)
 {
+    const RendererServices& services = *featureServices.Backend;
     Services = services;
     Log = services.Logging ? &services.Logging->GetLogger<EditorRenderFeature>() : nullptr;
     Backdrop.Setup(services);
@@ -129,8 +130,9 @@ bool EditorRenderFeature::Setup(const RendererServices& services)
     return true;
 }
 
-void EditorRenderFeature::OnDraw(const FrameContext& frame)
+void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
 {
+    const FrameContext& frame = *renderFrame.Backend;
     if (!LoggedFirstDraw && Log != nullptr)
     {
         Log->Info("EditorRenderFeature drawing");
@@ -199,8 +201,8 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
         // documented as such.
         Composition.AddWork({
             .Name = "shadow_residency",
-            .Record = { [](void* self, const FrameContext& context)
-                        { static_cast<EditorRenderFeature*>(self)->UpdateShadowResidency(context); },
+            .Record = { [](void* self, const RenderFrame& context)
+                        { static_cast<EditorRenderFeature*>(self)->UpdateShadowResidency(*context.Backend); },
                         this },
             .Produces = ShadowAtlasReady,
         });
@@ -244,13 +246,13 @@ void EditorRenderFeature::OnDraw(const FrameContext& frame)
                       .Camera = slot.Viewport->CameraForExtent(slot.Target.Extent.width,
                                                               slot.Target.Extent.height),
                       .User = &slot },
-            .Record = { [](void* self, const FrameContext& context, const FrameView& view)
-                        { static_cast<EditorRenderFeature*>(self)->RecordViewportView(context, view); },
+            .Record = { [](void* self, const RenderFrame& context, const FrameView& view)
+                        { static_cast<EditorRenderFeature*>(self)->RecordViewportView(*context.Backend, view); },
                         this },
             .DependsOn = viewDependsOn,
         });
 
-    Composition.Execute(frame);
+    Composition.Execute(renderFrame);
 
     // Drop targets for viewports the layout no longer shows.
     Targets.Prune(LiveViewports);

@@ -21,8 +21,9 @@ MaterialPreviewRenderFeature::MaterialPreviewRenderFeature(RuntimeAssets& assets
 {
 }
 
-bool MaterialPreviewRenderFeature::Setup(const RendererServices& services)
+bool MaterialPreviewRenderFeature::Setup(const RenderFeatureServices& featureServices)
 {
+    const RendererServices& services = *featureServices.Backend;
     Services = services;
     Targets.Setup(services);
     Backdrop.Setup(services);
@@ -79,8 +80,9 @@ ImTextureID MaterialPreviewRenderFeature::Display(VkExtent2D extent)
     return Targets.Display(kPreviewView, extent);
 }
 
-void MaterialPreviewRenderFeature::OnDraw(const FrameContext& frame)
+void MaterialPreviewRenderFeature::OnDraw(const RenderFrame& renderFrame)
 {
+    const FrameContext& frame = *renderFrame.Backend;
     Targets.BeginFrame(frame.FrameInFlightIndex, frame.Retirement);
     const std::optional<ViewportTargetCache::RenderView> target = Targets.AcquireForRender(kPreviewView);
     if (!target)

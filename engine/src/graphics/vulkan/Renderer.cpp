@@ -25,6 +25,55 @@
 
 #include <chrono>
 
+// The neutral frame view over a backend FrameContext. The context outlives
+// the OnDraw call it is projected for, so the Backend pointer is safe for
+// exactly as long as the feature holds the frame -- the same lifetime the
+// context reference had.
+[[nodiscard]] static RenderFrame MakeRenderFrame(
+    const FrameContext& ctx, const RenderInstrumentation* instrumentation)
+{
+    RenderFrame frame;
+    frame.FrameInFlightIndex = ctx.FrameInFlightIndex;
+    frame.TargetExtent = { ctx.TargetExtent.width, ctx.TargetExtent.height };
+    frame.Phase = ctx.Phase;
+    frame.Retirement = ctx.Retirement;
+    frame.Instrumentation = instrumentation;
+    frame.Backend = &ctx;
+    return frame;
+}
+
+void BeginGpuScope(const RenderFrame& frame, GpuScope scope)
+{
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    GpuTimestampPool* pool = frame.Instrumentation != nullptr
+        ? frame.Instrumentation->GpuTimestamps
+        : nullptr;
+    if (pool == nullptr || frame.Backend == nullptr)
+        return;
+    VulkanDebugLabels::BeginLabel(frame.Backend->Cmd, ToString(scope));
+    pool->BeginScope(frame.Backend->Cmd, scope);
+#else
+    (void)frame;
+    (void)scope;
+#endif
+}
+
+void EndGpuScope(const RenderFrame& frame, GpuScope scope)
+{
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    GpuTimestampPool* pool = frame.Instrumentation != nullptr
+        ? frame.Instrumentation->GpuTimestamps
+        : nullptr;
+    if (pool == nullptr || frame.Backend == nullptr)
+        return;
+    pool->EndScope(frame.Backend->Cmd, scope);
+    VulkanDebugLabels::EndLabel(frame.Backend->Cmd);
+#else
+    (void)frame;
+    (void)scope;
+#endif
+}
+
 namespace
 {
     using RendererClock = std::chrono::steady_clock;
@@ -123,7 +172,14 @@ IRenderFeature* Renderer::AddFeatureImpl(std::unique_ptr<IRenderFeature> feature
         return nullptr;
     }
 
-    if (!feature->Setup(Services))
+    RenderFeatureServices featureServices;
+    featureServices.Logging = Services.Logging;
+    featureServices.Instrumentation = Services.Instrumentation;
+    featureServices.Buffers = GpuBuffers{Services.Buffers};
+    featureServices.Images = GpuImages{Services.Images};
+    featureServices.Scratch = Services.Scratch;
+    featureServices.Backend = &Services;
+    if (!feature->Setup(featureServices))
     {
         Log.Error("Renderer::AddFeature: feature setup failed; not registered");
         feature->Teardown();
@@ -277,7 +333,7 @@ void Renderer::RecordOffscreenPhase(const VulkanFrame& frame)
     ctx.Retirement = Frames.GetRetirement();
 
     for (IRenderFeature* feat : bucket)
-        feat->OnDraw(ctx);
+        feat->OnDraw(MakeRenderFrame(ctx, Services.Instrumentation));
 }
 
 void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
@@ -360,7 +416,7 @@ void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
 
     for (IRenderFeature* feat : PhaseBuckets[static_cast<size_t>(RenderPhase::MainColor)])
     {
-        feat->OnDraw(ctx);
+        feat->OnDraw(MakeRenderFrame(ctx, Services.Instrumentation));
     }
 
     vkCmdEndRendering(frame.CommandBuffer);

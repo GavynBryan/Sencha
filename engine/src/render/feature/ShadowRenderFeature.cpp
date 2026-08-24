@@ -5,10 +5,6 @@
 #include <profiling/RenderInstrumentation.h>
 #include <profiling/RenderStats.h>
 
-#ifdef SENCHA_ENABLE_RENDER_PROFILING
-#include <graphics/vulkan/GpuTimestampPool.h>
-#include <graphics/vulkan/VulkanDebugLabels.h>
-#endif
 
 ShadowRenderFeature::ShadowRenderFeature(
     std::shared_ptr<LightBindings> bindings,
@@ -24,14 +20,14 @@ ShadowRenderFeature::ShadowRenderFeature(
 {
 }
 
-bool ShadowRenderFeature::Setup(const RendererServices& services)
+bool ShadowRenderFeature::Setup(const RenderFeatureServices& services)
 {
     Logger* log = services.Logging != nullptr
         ? &services.Logging->GetLogger<ShadowRenderFeature>()
         : nullptr;
 
     Instrumentation = services.Instrumentation;
-    if (!Bindings->Setup(services))
+    if (!Bindings->Setup(*services.Backend))
     {
         if (log != nullptr)
             log->Warn("Lighting bindings failed to set up; lit rendering disabled");
@@ -44,36 +40,21 @@ bool ShadowRenderFeature::Setup(const RendererServices& services)
     if (!Bindings->CreateCubePool() && log != nullptr)
         log->Warn("Point shadow cube pool creation failed; point shadows disabled");
 
-    Pass.Setup(services, *Bindings);
+    Pass.Setup(*services.Backend, *Bindings);
     return true;
 }
 
-void ShadowRenderFeature::OnDraw(const FrameContext& frame)
+void ShadowRenderFeature::OnDraw(const RenderFrame& frame)
 {
-#ifdef SENCHA_ENABLE_RENDER_PROFILING
-    GpuTimestampPool* gpuScopes = Instrumentation != nullptr
-        ? Instrumentation->GpuTimestamps
-        : nullptr;
-    if (gpuScopes != nullptr)
-    {
-        VulkanDebugLabels::BeginLabel(frame.Cmd, ToString(GpuScope::ShadowViews));
-        gpuScopes->BeginScope(frame.Cmd, GpuScope::ShadowViews);
-    }
-#endif
+    BeginGpuScope(frame, GpuScope::ShadowViews);
     {
         CpuScopeTimer timer(
             Instrumentation != nullptr ? Instrumentation->CpuScopes : nullptr,
             CpuScope::ShadowRecord);
-        Pass.Draw(frame, Lights, Residency.ScheduledViews(),
+        Pass.Draw(*frame.Backend, Lights, Residency.ScheduledViews(),
                   Residency.ScheduledPointFaces(), Casters, Meshes, &Residency);
     }
-#ifdef SENCHA_ENABLE_RENDER_PROFILING
-    if (gpuScopes != nullptr)
-    {
-        gpuScopes->EndScope(frame.Cmd, GpuScope::ShadowViews);
-        VulkanDebugLabels::EndLabel(frame.Cmd);
-    }
-#endif
+    EndGpuScope(frame, GpuScope::ShadowViews);
 
     if (Instrumentation != nullptr && Instrumentation->Stats != nullptr)
     {

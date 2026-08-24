@@ -88,8 +88,8 @@ public:
     // Offscreen: this feature renders each viewport into its own texture before the
     // swapchain (MainColor) pass opens; the UI then composites those textures.
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::Offscreen; }
-    [[nodiscard]] bool Setup(const RendererServices& services) override;
-    void OnDraw(const FrameContext& frame) override;
+    [[nodiscard]] bool Setup(const RenderFeatureServices& services) override;
+    void OnDraw(const RenderFrame& frame) override;
     void Teardown() override;
 
     // The viewport offscreen targets, shared with ViewportPanel (which displays them

@@ -3,6 +3,7 @@
 #include <string>
 
 #include <core/logging/LoggingProvider.h>
+#include <graphics/RenderFeature.h>
 #include <graphics/vulkan/FrameImageCapture.h>
 #include <graphics/vulkan/VulkanFrameService.h>
 #include <vulkan/vulkan.h>
@@ -58,18 +59,14 @@ struct RenderInstrumentation;
 //     time, before the device is built -- there is no such hook today.
 //=============================================================================
 
-enum class RenderPhase : uint8_t
-{
-    // Features here own their render passes/targets (no swapchain pass is open) and
-    // run before MainColor: e.g. the editor rendering viewports to offscreen textures.
-    Offscreen = 0,
-    MainColor = 1,
-    // Reserved for: Shadow, Opaque, Transparent, UI, Post...
-    Count
-};
+// RenderPhase, IRenderFeature, RenderFeatureServices, and RenderFrame live in
+// graphics/RenderFeature.h -- the neutral feature contract. What follows here
+// is the Vulkan side of it: the backend bundle behind
+// RenderFeatureServices::Backend and the recording state behind
+// RenderFrame::Backend.
 
-// Direct service pointers handed to features in Setup(). Features should
-// cache whichever ones they need and never reach for engine services again.
+// Direct service pointers behind the feature contract. Recording passes cache
+// whichever ones they need at Setup and never reach for engine services again.
 struct RendererServices
 {
     LoggingProvider* Logging = nullptr;
@@ -115,30 +112,6 @@ struct RendererFrameTiming
 {
     double RecordSeconds = 0.0;
     double TotalSeconds = 0.0;
-};
-
-class IRenderFeature
-{
-public:
-    virtual ~IRenderFeature() = default;
-
-    // Which phase this feature runs in. One feature, one phase.
-    [[nodiscard]] virtual RenderPhase GetPhase() const = 0;
-
-    // Runs once, inside Renderer::AddFeature. Cache service pointers here.
-    // Do any up-front GPU resource creation here too. Returning false means
-    // the feature is not usable: AddFeature tears it down and refuses to
-    // register it, rather than leaving an inert feature in a phase bucket.
-    [[nodiscard]] virtual bool Setup(const RendererServices& services) = 0;
-
-    // Per-frame record. For MainColor features the command buffer is
-    // already inside vkCmdBeginRendering on the swapchain image. Features
-    // in future phases that open their own passes own their own begin/end.
-    virtual void OnDraw(const FrameContext& frame) = 0;
-
-    // Runs in ~Renderer before any Vulkan service is torn down. Release
-    // any GPU resources the feature still holds here.
-    virtual void Teardown() {}
 };
 
 class Renderer

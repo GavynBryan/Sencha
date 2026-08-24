@@ -244,7 +244,7 @@ std::span<const FrameNodeId> FrameComposition::Resolve()
     return Order;
 }
 
-void FrameComposition::Execute(const FrameContext& frame)
+void FrameComposition::Execute(const RenderFrame& frame)
 {
     for (const FrameNodeId id : Resolve())
     {
