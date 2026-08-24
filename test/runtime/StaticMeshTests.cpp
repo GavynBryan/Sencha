@@ -7,9 +7,9 @@
 #include <assets/static_mesh/MeshSerializer.h>
 #include <assets/static_mesh/StaticMeshFormat.h>
 #include <core/logging/LoggingProvider.h>
-#include <render/static_mesh/StaticMeshPrimitives.h>
-#include <render/static_mesh/MeshGeometry.h>
-#include <render/static_mesh/MeshValidation.h>
+#include <assets/static_mesh/StaticMeshPrimitives.h>
+#include <assets/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/MeshValidation.h>
 
 namespace
 {

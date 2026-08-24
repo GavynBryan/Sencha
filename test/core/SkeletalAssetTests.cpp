@@ -7,7 +7,7 @@
 #include <assets/static_mesh/MeshLoader.h>
 #include <assets/static_mesh/MeshSerializer.h>
 #include <core/logging/LoggingProvider.h>
-#include <render/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/MeshGeometry.h>
 
 #include <gtest/gtest.h>
 

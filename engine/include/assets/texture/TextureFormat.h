@@ -1,6 +1,6 @@
 #pragma once
 
-#include <render/TextureData.h>
+#include <assets/texture/TextureData.h>
 
 #include <cstdint>
 

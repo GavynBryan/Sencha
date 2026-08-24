@@ -5,8 +5,8 @@
 #include <core/assets/AssetSource.h>
 #include <core/logging/LoggingProvider.h>
 #include <jobs/JobSystem.h>
-#include <render/Image.h>
-#include <render/TextureData.h>
+#include <assets/texture/Image.h>
+#include <assets/texture/TextureData.h>
 
 #ifdef SENCHA_ENABLE_COOK
 #include <assets/cook/ImportOnDemand.h>

@@ -4,9 +4,9 @@
 #include <assets/texture/TextureLoader.h>
 #include <core/logging/LoggingProvider.h>
 #include <graphics/vulkan/TextureCache.h>
-#include <render/Image.h>
-#include <render/ImageLoader.h>
-#include <render/TextureData.h>
+#include <assets/texture/Image.h>
+#include <assets/texture/ImageLoader.h>
+#include <assets/texture/TextureData.h>
 
 #include <format>
 #include <optional>

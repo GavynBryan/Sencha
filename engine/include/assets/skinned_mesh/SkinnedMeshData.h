@@ -1,6 +1,6 @@
 #pragma once
 
-#include <render/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/MeshGeometry.h>
 
 #include <cstdint>
 #include <string>

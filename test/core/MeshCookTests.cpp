@@ -13,7 +13,7 @@
 #include <assets/cook/MeshCook.h>
 #include <assets/static_mesh/MeshLoader.h>
 #include <core/logging/LoggingProvider.h>
-#include <render/skinned_mesh/SkinnedMeshData.h>
+#include <assets/skinned_mesh/SkinnedMeshData.h>
 
 #include <cstdint>
 #include <cstdlib>

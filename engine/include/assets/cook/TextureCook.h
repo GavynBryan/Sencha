@@ -1,7 +1,7 @@
 #pragma once
 
 #include <assets/cook/AssetImporter.h>
-#include <render/TextureData.h>
+#include <assets/texture/TextureData.h>
 
 #include <string>
 #include <string_view>

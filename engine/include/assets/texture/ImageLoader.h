@@ -1,6 +1,6 @@
 #pragma once
 
-#include <render/Image.h>
+#include <assets/texture/Image.h>
 
 #include <optional>
 #include <string_view>

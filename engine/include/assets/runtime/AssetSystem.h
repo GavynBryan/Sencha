@@ -17,7 +17,7 @@
 #include <render/MaterialSetCache.h>
 #include <render/TextureHandle.h>
 #include <render/skinned_mesh/SkinnedMeshHandle.h>
-#include <render/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/MeshGeometry.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 
 #include <initializer_list>

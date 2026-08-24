@@ -1,7 +1,7 @@
 #include <render/static_mesh/StaticMeshCache.h>
 
 #include <graphics/vulkan/VulkanBufferService.h>
-#include <render/static_mesh/MeshValidation.h>
+#include <assets/static_mesh/MeshValidation.h>
 
 StaticMeshCache::StaticMeshCache(LoggingProvider& logging, VulkanBufferService& buffers)
     : Log(logging.GetLogger<StaticMeshCache>())

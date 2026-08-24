@@ -1,4 +1,4 @@
-#include <render/TextureData.h>
+#include <assets/texture/TextureData.h>
 
 bool ValidateTextureData(const TextureData& texture)
 {

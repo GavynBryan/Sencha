@@ -4,7 +4,7 @@
 #include <core/assets/AssetCache.h>
 #include <core/handle/Owned.h>
 #include <core/logging/LoggingProvider.h>
-#include <render/skinned_mesh/SkinnedMeshData.h>
+#include <assets/skinned_mesh/SkinnedMeshData.h>
 #include <render/skinned_mesh/SkinnedMeshHandle.h>
 #include <graphics/BufferHandle.h>
 #include <render/static_mesh/GpuStaticMesh.h>

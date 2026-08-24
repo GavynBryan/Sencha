@@ -1,7 +1,7 @@
 #pragma once
 
-#include <render/Image.h>
-#include <render/TextureData.h>
+#include <assets/texture/Image.h>
+#include <assets/texture/TextureData.h>
 #include <core/assets/AssetCache.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/handle/Owned.h>

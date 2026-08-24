@@ -9,7 +9,7 @@
 #include <render/MaterialSetCache.h>
 #include <render/skinned_mesh/SkinnedMeshCache.h>
 #include <render/skinned_mesh/SkinnedMeshHandle.h>
-#include <render/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/MeshGeometry.h>
 
 #include <cstdint>
 #include <string_view>

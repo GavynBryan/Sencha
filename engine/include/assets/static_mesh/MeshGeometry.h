@@ -1,7 +1,7 @@
 #pragma once
 
-#include <render/static_mesh/StaticMeshSection.h>
-#include <render/static_mesh/StaticMeshVertex.h>
+#include <assets/static_mesh/StaticMeshSection.h>
+#include <assets/static_mesh/StaticMeshVertex.h>
 
 #include <cstddef>
 #include <vector>

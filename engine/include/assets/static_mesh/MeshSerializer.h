@@ -1,7 +1,7 @@
 #pragma once
 
-#include <render/skinned_mesh/SkinnedMeshData.h>
-#include <render/static_mesh/MeshGeometry.h>
+#include <assets/skinned_mesh/SkinnedMeshData.h>
+#include <assets/static_mesh/MeshGeometry.h>
 
 #include <cstddef>
 #include <string_view>

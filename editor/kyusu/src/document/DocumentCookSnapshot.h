@@ -9,7 +9,7 @@
 #include <ecs/EntityId.h>
 #include <math/Mat.h>
 #include <math/spatial/GridTransform3d.h>
-#include <render/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/MeshGeometry.h>
 
 #include <cstdint>
 #include <vector>

@@ -16,9 +16,9 @@
 #include <assets/skeleton/SkeletonSerializer.h>
 #include <assets/static_mesh/MeshSerializer.h>
 #include <core/logging/LoggingProvider.h>
-#include <render/skinned_mesh/SkinnedMeshData.h>
-#include <render/static_mesh/MeshValidation.h>
-#include <render/static_mesh/StaticMeshPrimitives.h>
+#include <assets/skinned_mesh/SkinnedMeshData.h>
+#include <assets/static_mesh/MeshValidation.h>
+#include <assets/static_mesh/StaticMeshPrimitives.h>
 
 #include <cstdlib>
 #include <filesystem>

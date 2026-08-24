@@ -1,7 +1,7 @@
 #pragma once
 
 #include <assets/cook/TextureImportSettings.h>
-#include <render/TextureData.h>
+#include <assets/texture/TextureData.h>
 
 #include <optional>
 #include <span>

@@ -1,7 +1,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-#include <render/ImageLoader.h>
+#include <assets/texture/ImageLoader.h>
 
 #include <string>
 

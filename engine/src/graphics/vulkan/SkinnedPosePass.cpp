@@ -3,7 +3,7 @@
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanPipelineCache.h>
-#include <render/static_mesh/StaticMeshVertex.h>
+#include <assets/static_mesh/StaticMeshVertex.h>
 #include <shaders/kSkinPoseCompSpv.h>
 
 namespace

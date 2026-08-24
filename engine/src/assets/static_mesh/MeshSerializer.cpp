@@ -3,7 +3,7 @@
 #include <assets/static_mesh/StaticMeshFormat.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/BinaryWriter.h>
-#include <render/static_mesh/MeshValidation.h>
+#include <assets/static_mesh/MeshValidation.h>
 
 #include <cstring>
 #include <fstream>

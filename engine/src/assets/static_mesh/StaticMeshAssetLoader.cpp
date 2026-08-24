@@ -1,7 +1,7 @@
 #include <assets/static_mesh/StaticMeshAssetLoader.h>
 
 #include <core/logging/LoggingProvider.h>
-#include <render/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/MeshGeometry.h>
 #include <render/static_mesh/StaticMeshCache.h>
 
 #include <format>

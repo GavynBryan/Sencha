@@ -4,7 +4,7 @@
 #include <core/handle/Owned.h>
 #include <core/logging/LoggingProvider.h>
 #include <render/static_mesh/GpuStaticMesh.h>
-#include <render/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/MeshGeometry.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 
 #include <cstdint>

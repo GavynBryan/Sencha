@@ -7,9 +7,9 @@
 #include <core/assets/AssetSource.h>
 #include <assets/runtime/AssetSystem.h>
 #include <core/logging/LoggingProvider.h>
-#include <render/Image.h>
+#include <assets/texture/Image.h>
 #include <render/MaterialCache.h>
-#include <render/static_mesh/StaticMeshPrimitives.h>
+#include <assets/static_mesh/StaticMeshPrimitives.h>
 
 #include <gtest/gtest.h>
 

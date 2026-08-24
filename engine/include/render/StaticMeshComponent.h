@@ -7,7 +7,7 @@
 #include <ecs/World.h>
 #include <render/Material.h>
 #include <render/MaterialSetCache.h>
-#include <render/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/MeshGeometry.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 #include <render/static_mesh/StaticMeshCache.h>
 #include <ecs/EntityId.h>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/assets/AssetRef.h>
-#include <render/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/MeshGeometry.h>
 
 #include <filesystem>
 #include <span>

@@ -1,4 +1,4 @@
-#include <render/static_mesh/MeshValidation.h>
+#include <assets/static_mesh/MeshValidation.h>
 
 #include <anim/Skeleton.h>
 #include <core/assets/AssetPath.h>

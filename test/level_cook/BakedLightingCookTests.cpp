@@ -16,7 +16,7 @@
 #include <ecs/World.h>
 #include <render/LightComponentTypes.h>
 #include <render/PointLightComponent.h>
-#include <render/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/MeshGeometry.h>
 
 #include <gtest/gtest.h>
 

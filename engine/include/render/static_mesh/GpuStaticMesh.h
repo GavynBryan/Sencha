@@ -1,8 +1,8 @@
 #pragma once
 
 #include <graphics/BufferHandle.h>
-#include <render/static_mesh/MeshGeometry.h>
-#include <render/static_mesh/StaticMeshSection.h>
+#include <assets/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/StaticMeshSection.h>
 
 #include <cstddef>
 #include <span>

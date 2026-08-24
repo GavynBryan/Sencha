@@ -7,7 +7,7 @@
 #include <assets/static_mesh/MeshLoader.h>
 #include <core/logging/Logger.h>
 #include <graphics/vulkan/Renderer.h>
-#include <render/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/MeshGeometry.h>
 
 #include <string>
 #include <unordered_map>

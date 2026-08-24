@@ -1,6 +1,6 @@
-#include <render/static_mesh/StaticMeshPrimitives.h>
+#include <assets/static_mesh/StaticMeshPrimitives.h>
 
-#include <render/static_mesh/MeshValidation.h>
+#include <assets/static_mesh/MeshValidation.h>
 
 namespace
 {
