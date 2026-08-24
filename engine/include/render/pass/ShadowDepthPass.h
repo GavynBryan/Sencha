@@ -116,6 +116,19 @@ private:
     };
 
     [[nodiscard]] bool EnsurePipelines(const RenderLightSet& lights);
+    // One atlas tile / one cube face as a recording target.
+    [[nodiscard]] ViewTarget MakeSpotTarget(const SpotShadowViewJob& view) const;
+    [[nodiscard]] ViewTarget MakeCubeFaceTarget(const PointShadowFaceJob& face) const;
+    // A view the pass could not record: the arbiter (when given) re-queues it
+    // so cached content survives, and its current-frame light grant is revoked
+    // so the forward pass never samples that content against a record it was
+    // not rendered with.
+    void FailSpotView(const SpotShadowViewJob& view, const DrawContext& ctx);
+    void FailPointFace(const PointShadowFaceJob& face, const DrawContext& ctx);
+    // The two recording halves: transition for write, record each scheduled
+    // view or face (failing the ones that cannot record), transition for read.
+    void DrawSpotViews(const FrameContext& frame, const DrawContext& ctx);
+    void DrawPointFaces(const FrameContext& frame, const DrawContext& ctx);
     // Fills VisibleCasters with the casters this view can see, in draw-run
     // order. `lightSphere` (xyz = position, w = range) rejects casters the
     // light cannot reach at all before the frustum test; null skips it.

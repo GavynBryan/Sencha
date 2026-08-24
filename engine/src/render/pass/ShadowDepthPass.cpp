@@ -305,110 +305,31 @@ bool ShadowDepthPass::RecordView(const FrameContext& frame,
 
 void ShadowDepthPass::Draw(const FrameContext& frame, const DrawContext& ctx)
 {
-    RenderLightSet& lights = ctx.Lights;
-    const std::span<const SpotShadowViewJob> views = ctx.Views;
-    const std::span<const PointShadowFaceJob> pointFaces = ctx.PointFaces;
-    const ShadowCasterSet& casters = ctx.Casters;
-    StaticMeshCache& meshes = ctx.Meshes;
-    ShadowResidency* residency = ctx.Residency;
-
     LastStats = DrawStats{};
     Submitter.ClearTally();
     if (Bindings == nullptr)
         return;
-    const bool drawSpots = Bindings->HasAtlas() && !views.empty();
-    const bool drawPoints = Bindings->HasCubePool() && !pointFaces.empty();
+    const bool drawSpots = Bindings->HasAtlas() && !ctx.Views.empty();
+    const bool drawPoints = Bindings->HasCubePool() && !ctx.PointFaces.empty();
     if (!drawSpots && !drawPoints)
         return;
 
     // Only a recording failure leaves targets untouched, reported so cached
     // content is not sampled as fresh.
-    if (!casters.Items.empty() && !EnsurePipelines(lights))
+    if (!ctx.Casters.Items.empty() && !EnsurePipelines(ctx.Lights))
     {
-        for (const SpotShadowViewJob& view : views)
-        {
-            if (residency != nullptr)
-                residency->MarkViewFailed(view.SlotIndex);
-            RevokeGrant(lights, GpuLightType::Spot, view.SlotIndex);
-        }
-        for (const PointShadowFaceJob& face : pointFaces)
-        {
-            if (residency != nullptr)
-                residency->MarkPointFaceFailed(face.SlotIndex, face.Face);
-            RevokeGrant(lights, GpuLightType::Point, face.SlotIndex);
-        }
+        for (const SpotShadowViewJob& view : ctx.Views)
+            FailSpotView(view, ctx);
+        for (const PointShadowFaceJob& face : ctx.PointFaces)
+            FailPointFace(face, ctx);
         LastStats.Skipped = true;
         return;
     }
 
     if (drawSpots)
-    {
-        Bindings->TransitionAtlasForWrite(frame.Cmd);
-        for (const SpotShadowViewJob& view : views)
-        {
-            ViewTarget target;
-            target.Attachment = Bindings->GetAtlasView();
-            target.RenderArea.offset = {
-                static_cast<std::int32_t>(view.Allocation.X),
-                static_cast<std::int32_t>(view.Allocation.Y),
-            };
-            target.RenderArea.extent = { view.Allocation.Size, view.Allocation.Size };
-            target.Viewport.x = static_cast<float>(
-                view.Allocation.X + kSpotShadowGuardTexels);
-            target.Viewport.y = static_cast<float>(
-                view.Allocation.Y + kSpotShadowGuardTexels);
-            target.Viewport.width = static_cast<float>(
-                view.Allocation.Size - 2u * kSpotShadowGuardTexels);
-            target.Viewport.height = target.Viewport.width;
-            target.Viewport.minDepth = 0.0f;
-            target.Viewport.maxDepth = 1.0f;
-
-            // Spot views cull against their own frustum only: the cone is
-            // already what the frustum describes.
-            if (!RecordView(frame, target, view.ViewProjection, casters, meshes,
-                            nullptr, false))
-            {
-                if (residency != nullptr)
-                    residency->MarkViewFailed(view.SlotIndex);
-                RevokeGrant(lights, GpuLightType::Spot, view.SlotIndex);
-                continue;
-            }
-            ++LastStats.ViewsRendered;
-        }
-        Bindings->TransitionAtlasForRead(frame.Cmd);
-    }
-
+        DrawSpotViews(frame, ctx);
     if (drawPoints)
-    {
-        Vec4 pointSphere{};
-        Bindings->TransitionCubePoolForWrite(frame.Cmd);
-        for (const PointShadowFaceJob& face : pointFaces)
-        {
-            ViewTarget target;
-            target.Attachment = Bindings->GetCubeFaceView(face.SlotIndex, face.Face);
-            target.RenderArea.extent = {
-                kPointShadowFaceExtent, kPointShadowFaceExtent };
-            target.Viewport.width = static_cast<float>(kPointShadowFaceExtent);
-            target.Viewport.height = static_cast<float>(kPointShadowFaceExtent);
-            target.Viewport.minDepth = 0.0f;
-            target.Viewport.maxDepth = 1.0f;
-
-            const Vec4* sphere =
-                FindPointLightSphere(lights, face.SlotIndex, pointSphere)
-                    ? &pointSphere : nullptr;
-            if (target.Attachment == VK_NULL_HANDLE
-                || !RecordView(frame, target, face.ViewProjection, casters, meshes,
-                               sphere, true))
-            {
-                if (residency != nullptr)
-                    residency->MarkPointFaceFailed(face.SlotIndex, face.Face);
-                RevokeGrant(lights, GpuLightType::Point, face.SlotIndex);
-                continue;
-            }
-            ++LastStats.PointFacesRendered;
-        }
-        Bindings->TransitionCubePoolForRead(frame.Cmd);
-    }
+        DrawPointFaces(frame, ctx);
 
     // Summed over every view this frame. Draws and the casters they cover are
     // separate numbers: their ratio is what says whether batching collapsed
@@ -416,6 +337,100 @@ void ShadowDepthPass::Draw(const FrameContext& frame, const DrawContext& ctx)
     const MeshDrawTally& tally = Submitter.Tally();
     LastStats.CasterDraws = tally.Instances;
     LastStats.InstanceRuns = tally.Draws;
+}
+
+ShadowDepthPass::ViewTarget ShadowDepthPass::MakeSpotTarget(
+    const SpotShadowViewJob& view) const
+{
+    ViewTarget target;
+    target.Attachment = Bindings->GetAtlasView();
+    target.RenderArea.offset = {
+        static_cast<std::int32_t>(view.Allocation.X),
+        static_cast<std::int32_t>(view.Allocation.Y),
+    };
+    target.RenderArea.extent = { view.Allocation.Size, view.Allocation.Size };
+    target.Viewport.x = static_cast<float>(
+        view.Allocation.X + kSpotShadowGuardTexels);
+    target.Viewport.y = static_cast<float>(
+        view.Allocation.Y + kSpotShadowGuardTexels);
+    target.Viewport.width = static_cast<float>(
+        view.Allocation.Size - 2u * kSpotShadowGuardTexels);
+    target.Viewport.height = target.Viewport.width;
+    target.Viewport.minDepth = 0.0f;
+    target.Viewport.maxDepth = 1.0f;
+    return target;
+}
+
+ShadowDepthPass::ViewTarget ShadowDepthPass::MakeCubeFaceTarget(
+    const PointShadowFaceJob& face) const
+{
+    ViewTarget target;
+    target.Attachment = Bindings->GetCubeFaceView(face.SlotIndex, face.Face);
+    target.RenderArea.extent = {
+        kPointShadowFaceExtent, kPointShadowFaceExtent };
+    target.Viewport.width = static_cast<float>(kPointShadowFaceExtent);
+    target.Viewport.height = static_cast<float>(kPointShadowFaceExtent);
+    target.Viewport.minDepth = 0.0f;
+    target.Viewport.maxDepth = 1.0f;
+    return target;
+}
+
+void ShadowDepthPass::FailSpotView(const SpotShadowViewJob& view,
+                                   const DrawContext& ctx)
+{
+    if (ctx.Residency != nullptr)
+        ctx.Residency->MarkViewFailed(view.SlotIndex);
+    RevokeGrant(ctx.Lights, GpuLightType::Spot, view.SlotIndex);
+}
+
+void ShadowDepthPass::FailPointFace(const PointShadowFaceJob& face,
+                                    const DrawContext& ctx)
+{
+    if (ctx.Residency != nullptr)
+        ctx.Residency->MarkPointFaceFailed(face.SlotIndex, face.Face);
+    RevokeGrant(ctx.Lights, GpuLightType::Point, face.SlotIndex);
+}
+
+void ShadowDepthPass::DrawSpotViews(const FrameContext& frame,
+                                    const DrawContext& ctx)
+{
+    Bindings->TransitionAtlasForWrite(frame.Cmd);
+    for (const SpotShadowViewJob& view : ctx.Views)
+    {
+        // Spot views cull against their own frustum only: the cone is
+        // already what the frustum describes.
+        if (!RecordView(frame, MakeSpotTarget(view), view.ViewProjection,
+                        ctx.Casters, ctx.Meshes, nullptr, false))
+        {
+            FailSpotView(view, ctx);
+            continue;
+        }
+        ++LastStats.ViewsRendered;
+    }
+    Bindings->TransitionAtlasForRead(frame.Cmd);
+}
+
+void ShadowDepthPass::DrawPointFaces(const FrameContext& frame,
+                                     const DrawContext& ctx)
+{
+    Vec4 pointSphere{};
+    Bindings->TransitionCubePoolForWrite(frame.Cmd);
+    for (const PointShadowFaceJob& face : ctx.PointFaces)
+    {
+        const ViewTarget target = MakeCubeFaceTarget(face);
+        const Vec4* sphere =
+            FindPointLightSphere(ctx.Lights, face.SlotIndex, pointSphere)
+                ? &pointSphere : nullptr;
+        if (target.Attachment == VK_NULL_HANDLE
+            || !RecordView(frame, target, face.ViewProjection, ctx.Casters,
+                           ctx.Meshes, sphere, true))
+        {
+            FailPointFace(face, ctx);
+            continue;
+        }
+        ++LastStats.PointFacesRendered;
+    }
+    Bindings->TransitionCubePoolForRead(frame.Cmd);
 }
 
 void ShadowDepthPass::Teardown()
