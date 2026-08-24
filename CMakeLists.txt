@@ -63,8 +63,8 @@ add_test(NAME net_isolation
 
 # Render-domain firewall, inverted: graphics/vulkan/ owns the backend, and
 # engine/{include,src}/render must stay clean so render policy can be read and
-# tested without a device. Its allowlist is the not-yet-migrated files and only
-# ever shrinks.
+# tested without a device. The one licensed exception is the closed recording
+# set in render/pass/ -- the per-backend surface a second backend would twin.
 add_test(NAME render_isolation
     COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/cmake/CheckRenderIsolation.cmake")
 

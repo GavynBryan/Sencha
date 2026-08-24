@@ -1,6 +1,6 @@
 #pragma once
 
-#include <graphics/vulkan/Renderer.h>
+#include <graphics/RenderFeature.h>
 #include <render/pass/LightBindings.h>
 #include <render/RenderLight.h>
 #include <render/ShadowCasterSet.h>
