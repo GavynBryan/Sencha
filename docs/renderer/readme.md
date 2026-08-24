@@ -64,11 +64,11 @@ Read in this order on a first pass.
 | Where scene state becomes render data | `engine/src/app/DefaultRenderPipeline.cpp` |
 | Where the swapchain image is acquired and presented | `engine/src/graphics/vulkan/VulkanFrameService.cpp` |
 | Where phases are recorded | `engine/src/graphics/vulkan/Renderer.cpp` |
-| Where opaque geometry is drawn | `engine/src/render/MeshForwardPass.cpp` |
-| Where shadow depth is drawn | `engine/src/render/ShadowDepthPass.cpp` |
+| Where opaque geometry is drawn | `engine/src/render/pass/MeshForwardPass.cpp` |
+| Where shadow depth is drawn | `engine/src/render/pass/ShadowDepthPass.cpp` |
 | Who owns a shadow slot | `engine/src/render/ShadowResidency.cpp` |
 | The fragment shading model | `engine/shaders/lighting.glsli`, `engine/shaders/mesh_forward.frag.glsl` |
-| The frame uniform block | `engine/include/render/MeshForwardPass.h` and `engine/shaders/mesh_frame.glsli` |
+| The frame uniform block | `engine/include/render/pass/MeshForwardPass.h` and `engine/shaders/mesh_frame.glsli` |
 
 ## Conventions used here
 

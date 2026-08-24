@@ -1,6 +1,6 @@
 // Keep these caps in sync with engine/include/render/LightGpuTypes.h. The
 // MeshFrame block below is the std140 twin of MeshFrameUniforms in
-// render/MeshForwardPass.h, whose static_assert wall is the layout contract.
+// render/pass/MeshForwardPass.h, whose static_assert wall is the layout contract.
 const uint MAX_LIGHTS = 64u;
 const uint MAX_SPOT_SHADOWS = 8u;
 const uint MAX_POINT_SHADOWS = 4u;

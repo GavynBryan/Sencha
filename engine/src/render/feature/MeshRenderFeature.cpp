@@ -1,4 +1,4 @@
-#include <render/MeshRenderFeature.h>
+#include <render/feature/MeshRenderFeature.h>
 
 #include <profiling/CpuScopeTimings.h>
 #include <profiling/RenderInstrumentation.h>

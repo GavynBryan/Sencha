@@ -1,4 +1,4 @@
-#include <render/MeshForwardPass.h>
+#include <render/pass/MeshForwardPass.h>
 
 #include <graphics/vulkan/VulkanDebugLabels.h>
 #include <graphics/vulkan/VulkanBufferService.h>

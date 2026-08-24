@@ -2,7 +2,7 @@
 
 #include <graphics/RenderTargetId.h>
 #include <graphics/vulkan/Renderer.h>
-#include <render/Camera.h>
+#include <render/extract/Camera.h>
 
 #include <cstdint>
 #include <span>

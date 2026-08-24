@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <render/MaterialCache.h>
-#include <render/ShadowCasterExtractionSystem.h>
+#include <render/extract/ShadowCasterExtractionSystem.h>
 #include <render/ShadowCasterSet.h>
 #include <render/StaticMeshComponent.h>
 

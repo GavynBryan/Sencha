@@ -1,4 +1,4 @@
-#include <render/Camera.h>
+#include <render/extract/Camera.h>
 
 #include <camera/CameraRig.h>
 #include <render/CameraProjection.h>

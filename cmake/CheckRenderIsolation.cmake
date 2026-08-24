@@ -46,12 +46,12 @@ get_filename_component(REPO "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 # Closed by design. A new entry here is a claim that the renderer grew a fourth
 # recording surface, which is a design review, not a checkbox.
 set(RENDER_RECORDING_SET
-    "/engine/include/render/LightBindings.h"           # descriptor set 2, shadow pool images
-    "/engine/include/render/MeshForwardPass.h"         # forward draw recording
-    "/engine/include/render/ShadowDepthPass.h"         # shadow view recording
-    "/engine/src/render/LightBindings.cpp"
-    "/engine/src/render/MeshForwardPass.cpp"
-    "/engine/src/render/ShadowDepthPass.cpp"
+    "/engine/include/render/pass/LightBindings.h"           # descriptor set 2, shadow pool images
+    "/engine/include/render/pass/MeshForwardPass.h"         # forward draw recording
+    "/engine/include/render/pass/ShadowDepthPass.h"         # shadow view recording
+    "/engine/src/render/pass/LightBindings.cpp"
+    "/engine/src/render/pass/MeshForwardPass.cpp"
+    "/engine/src/render/pass/ShadowDepthPass.cpp"
 )
 
 # Policy files that reach the backend directly and should not. Shrink this.
@@ -78,19 +78,19 @@ set(RENDER_VULKAN_ALLOWED ${RENDER_RECORDING_SET} ${RENDER_VULKAN_PENDING})
 # knowing Vulkan through the services it is handed, so a .cpp calling
 # VulkanBufferService is the design working, not a leak.
 set(RENDER_HEADER_BACKEND_ALLOWED
-    "/engine/include/render/ShadowRenderFeature.h"  # bridge type; Renderer.h only
+    "/engine/include/render/feature/ShadowRenderFeature.h"  # bridge type; Renderer.h only
     # Holds a graphics/vulkan/SkyGradientPass by value. That pass takes a matrix
     # and two colours and names no render-domain type, so it is backend rather
     # than a recording bridge -- which is why the recording set above did not
     # grow. What is left in render/ is the feature that decides where the two
     # colours come from, and it propagates the pass header to its consumers.
-    "/engine/include/render/SkyRenderFeature.h"
+    "/engine/include/render/feature/SkyRenderFeature.h"
     # Holds the pre-skin compute pass by value, the SkyRenderFeature shape
     # again: the pass takes plain data (buffers, counts, offsets), so the
     # dispatch and its barrier live in the backend and the recording set did
     # not grow. What remains in render/ is the policy -- which instances,
     # which palettes, and the posed buffers' lifecycle.
-    "/engine/include/render/SkinnedPoseRenderFeature.h"
+    "/engine/include/render/feature/SkinnedPoseRenderFeature.h"
     ${RENDER_RECORDING_SET}
 )
 

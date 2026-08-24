@@ -10,7 +10,7 @@
 #include <core/serialization/BinaryReader.h>
 #include <core/serialization/BinaryWriter.h>
 #include <core/serialization/Serialize.h>
-#include <render/Camera.h>
+#include <render/extract/Camera.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/SceneFormat.h>
 #include <world/serialization/SceneSerializer.h>

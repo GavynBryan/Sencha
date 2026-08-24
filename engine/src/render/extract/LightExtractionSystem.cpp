@@ -1,4 +1,4 @@
-#include <render/LightExtractionSystem.h>
+#include <render/extract/LightExtractionSystem.h>
 
 #include <math/geometry/3d/Sphere.h>
 #include <render/LightSelection.h>

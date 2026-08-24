@@ -1,7 +1,7 @@
 #pragma once
 
 #include <math/Quat.h>
-#include <render/Camera.h>
+#include <render/extract/Camera.h>
 
 struct EditorCamera
 {

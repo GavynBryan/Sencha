@@ -11,7 +11,7 @@
 #include <gtest/gtest.h>
 
 #include <graphics/vulkan/PipelineVariantSet.h>
-#include <render/ShadowDepthPass.h>
+#include <render/pass/ShadowDepthPass.h>
 
 #include <vector>
 

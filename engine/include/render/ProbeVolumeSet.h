@@ -3,7 +3,7 @@
 #include <assets/probes/ProbeVolumeFormat.h>
 #include <ecs/StoragePartitionId.h>
 #include <ecs/StoragePartitionSet.h>
-#include <render/LightBindings.h>
+#include <render/pass/LightBindings.h>
 #include <render/ProbeVolumeSlotTable.h>
 #include <render/RenderLight.h>
 

@@ -12,10 +12,10 @@
 #include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanSwapchainService.h>
-#include <render/MeshRenderFeature.h>
-#include <render/ShadowRenderFeature.h>
-#include <render/SkinnedPoseRenderFeature.h>
-#include <render/SkyRenderFeature.h>
+#include <render/feature/MeshRenderFeature.h>
+#include <render/feature/ShadowRenderFeature.h>
+#include <render/feature/SkinnedPoseRenderFeature.h>
+#include <render/feature/SkyRenderFeature.h>
 #endif
 
 #include <algorithm>

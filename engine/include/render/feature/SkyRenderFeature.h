@@ -1,7 +1,7 @@
 #pragma once
 
 #include <graphics/vulkan/SkyGradientPass.h>
-#include <render/Camera.h>
+#include <render/extract/Camera.h>
 #include <render/RenderLight.h>
 
 //=============================================================================

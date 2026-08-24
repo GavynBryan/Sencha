@@ -1,4 +1,4 @@
-#include <render/ShadowDepthPass.h>
+#include <render/pass/ShadowDepthPass.h>
 
 #include <graphics/vulkan/RenderScope.h>
 #include <graphics/vulkan/VulkanBufferService.h>

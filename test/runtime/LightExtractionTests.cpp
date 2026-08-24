@@ -4,8 +4,8 @@
 #include <components/CameraComponent.h>
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
-#include <render/Camera.h>
-#include <render/LightExtractionSystem.h>
+#include <render/extract/Camera.h>
+#include <render/extract/LightExtractionSystem.h>
 #include <render/PointLightComponent.h>
 #include <render/RenderLight.h>
 #include <render/SpotLightComponent.h>

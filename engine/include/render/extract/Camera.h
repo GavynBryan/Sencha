@@ -7,7 +7,7 @@
 #include <math/Vec.h>
 #include <math/geometry/3d/Frustum.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <render/RenderExtent.h>
+#include <graphics/RenderExtent.h>
 
 //=============================================================================
 // CameraRenderData

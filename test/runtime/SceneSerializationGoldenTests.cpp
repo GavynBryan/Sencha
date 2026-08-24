@@ -16,7 +16,7 @@
 #include <core/json/JsonStringify.h>
 #include <core/serialization/BinaryWriter.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <render/Camera.h>
+#include <render/extract/Camera.h>
 #include <render/PointLightComponent.h>
 #include <render/StaticMeshComponent.h>
 #include <world/ComponentRegistrar.h>

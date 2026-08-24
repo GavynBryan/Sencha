@@ -1,10 +1,10 @@
 #pragma once
 
 #include <graphics/vulkan/Renderer.h>
-#include <render/LightBindings.h>
+#include <render/pass/LightBindings.h>
 #include <render/RenderLight.h>
 #include <render/ShadowCasterSet.h>
-#include <render/ShadowDepthPass.h>
+#include <render/pass/ShadowDepthPass.h>
 #include <render/ShadowResidency.h>
 #include <render/static_mesh/StaticMeshCache.h>
 

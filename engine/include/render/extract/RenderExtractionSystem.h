@@ -3,7 +3,7 @@
 #include <ecs/Query.h>
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
-#include <render/Camera.h>
+#include <render/extract/Camera.h>
 #include <render/MaterialCache.h>
 #include <render/MaterialSetCache.h>
 #include <render/RenderQueue.h>

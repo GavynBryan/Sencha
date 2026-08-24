@@ -9,7 +9,7 @@
 #include <core/serialization/JsonArchive.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
-#include <render/Camera.h>
+#include <render/extract/Camera.h>
 #include <render/StaticMeshComponent.h>
 #include <anim/AnimationClipPlayerComponent.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>

@@ -28,10 +28,10 @@
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/SkyGradientPass.h>
 #include <render/FrameComposition.h>
-#include <render/MeshForwardPass.h>
+#include <render/pass/MeshForwardPass.h>
 #include <render/ShadowCasterSet.h>
 #include <render/ShadowResidency.h>
-#include <render/ShadowDepthPass.h>
+#include <render/pass/ShadowDepthPass.h>
 #include <world/registry/RegistryId.h>
 
 #include <array>

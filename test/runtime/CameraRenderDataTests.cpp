@@ -4,7 +4,7 @@
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
 #include <ecs/World.h>
-#include <render/Camera.h>
+#include <render/extract/Camera.h>
 #include <world/transform/TransformComponents.h>
 
 namespace

@@ -11,7 +11,7 @@
 
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
-#include <render/RenderExtractionSystem.h>
+#include <render/extract/RenderExtractionSystem.h>
 #include <render/ZoneLightmapComponent.h>
 
 #include <cstdint>

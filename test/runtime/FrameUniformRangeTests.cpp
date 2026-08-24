@@ -11,7 +11,7 @@
 #include <gtest/gtest.h>
 
 #include <graphics/FrameUniformRange.h>
-#include <render/MeshForwardPass.h>
+#include <render/pass/MeshForwardPass.h>
 
 #include <math/Mat.h>
 

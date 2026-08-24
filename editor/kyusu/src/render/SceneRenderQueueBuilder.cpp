@@ -20,10 +20,10 @@
 #include <render/MaterialSetCache.h>
 #include <render/MeshDrawInstance.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
-#include <render/RenderExtractionSystem.h>
+#include <render/extract/RenderExtractionSystem.h>
 #include <render/IrradianceVolumeComponent.h>
 #include <render/PointLightComponent.h>
-#include <render/ShadowCasterExtractionSystem.h>
+#include <render/extract/ShadowCasterExtractionSystem.h>
 #include <render/SpotLightComponent.h>
 #include <render/RenderEntityKey.h>
 #include <render/StaticMeshComponent.h>

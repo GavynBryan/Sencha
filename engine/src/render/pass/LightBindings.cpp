@@ -1,4 +1,4 @@
-#include <render/LightBindings.h>
+#include <render/pass/LightBindings.h>
 
 #include <graphics/vulkan/VulkanBarriers.h>
 #include <graphics/vulkan/VulkanDeviceService.h>

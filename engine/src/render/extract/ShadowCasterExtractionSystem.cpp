@@ -1,4 +1,4 @@
-#include <render/ShadowCasterExtractionSystem.h>
+#include <render/extract/ShadowCasterExtractionSystem.h>
 
 #include <world/transform/TransformHistory.h>
 

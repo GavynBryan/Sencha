@@ -2,7 +2,7 @@
 
 #include "IBrushBodyRenderer.h"
 
-#include <render/MeshForwardPass.h>
+#include <render/pass/MeshForwardPass.h>
 
 class SceneRenderQueueBuilder;
 class StaticMeshCache;

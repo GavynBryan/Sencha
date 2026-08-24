@@ -1,4 +1,4 @@
-#include <render/SkinnedPoseRenderFeature.h>
+#include <render/feature/SkinnedPoseRenderFeature.h>
 
 #include <graphics/vulkan/VulkanFrameScratch.h>
 #include <profiling/RenderInstrumentation.h>

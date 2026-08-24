@@ -17,7 +17,7 @@
 // Scene data describing a camera's projection. Lives in components/, not render/,
 // so gameplay, the editor's scene authoring, and the cook can name it without
 // pulling the renderer (Vulkan). The renderer consumes it (CameraRenderDataSystem
-// in render/Camera.h); it does not own it.
+// in render/extract/Camera.h); it does not own it.
 //
 // FovYRadians is ignored for Orthographic cameras; OrthographicHeight is ignored
 // for Perspective cameras.

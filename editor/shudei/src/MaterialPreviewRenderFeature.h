@@ -6,7 +6,7 @@
 #include "render/ViewportTargetCache.h"
 
 #include <graphics/vulkan/Renderer.h>
-#include <render/MeshForwardPass.h>
+#include <render/pass/MeshForwardPass.h>
 #include <render/RenderLight.h>
 #include <render/RenderQueue.h>
 

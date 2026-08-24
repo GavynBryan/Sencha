@@ -11,7 +11,7 @@
 
 #include <gtest/gtest.h>
 
-#include <render/MeshForwardPass.h>
+#include <render/pass/MeshForwardPass.h>
 #include <render/RenderQueue.h>
 
 namespace

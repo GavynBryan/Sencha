@@ -4,7 +4,7 @@
 #include <graphics/vulkan/PipelineVariantSet.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
-#include <render/LightBindings.h>
+#include <render/pass/LightBindings.h>
 #include <render/RenderLight.h>
 #include <render/ShadowCasterSet.h>
 #include <render/ShadowResidency.h>

@@ -1,4 +1,4 @@
-#include <render/SkyRenderFeature.h>
+#include <render/feature/SkyRenderFeature.h>
 
 #include <render/CameraProjection.h>
 

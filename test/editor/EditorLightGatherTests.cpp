@@ -7,8 +7,8 @@
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
 #include <core/logging/LoggingProvider.h>
-#include <render/Camera.h>
-#include <render/LightExtractionSystem.h>
+#include <render/extract/Camera.h>
+#include <render/extract/LightExtractionSystem.h>
 #include <ecs/StoragePartitionSet.h>
 #include <render/PointLightComponent.h>
 #include <world/transform/TransformComponents.h>
