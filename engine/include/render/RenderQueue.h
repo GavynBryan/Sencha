@@ -83,6 +83,11 @@ struct RenderQueueItem
     // identity for cooked cells (their UVs are absolute atlas coordinates).
     // Varies freely within a run: per-instance data, never merge criteria.
     Vec4 LightmapScaleBias = Vec4{ 1.0f, 1.0f, 0.0f, 0.0f };
+    // Index into the frame's SkinnedPoseFrameData for a posed skinned item;
+    // UINT32_MAX draws the rest geometry. Run-merge identity: two entities
+    // sharing one skinned mesh pose independently and must not merge into
+    // one instanced draw.
+    uint32_t PoseSlot = UINT32_MAX;
     uint64_t SortKey = 0;
 };
 

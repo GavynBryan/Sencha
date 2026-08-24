@@ -107,7 +107,8 @@ void RenderExtractionSystem::Extract(
     const RenderExtractCaches& caches,
     const CameraRenderData& camera,
     RenderQueue& queue,
-    double interpolationAlpha)
+    double interpolationAlpha,
+    SkinnedPoseFrameData* skinnedPoses)
 {
     const StaticMeshCache& meshes = caches.Meshes;
     const MaterialCache& materials = caches.Materials;
@@ -254,12 +255,39 @@ void RenderExtractionSystem::Extract(
                 worldBounds.Center().Z,
                 1.0f);
 
+            // Register the entity's pose slot: one per entity (every section
+            // shares it). No pose source exists yet, so the palette is the
+            // bind identity -- which is exactly what makes the pre-skin path
+            // reproduce the rest bytes and keeps skinned_rest the gate.
+            std::uint32_t poseSlot = UINT32_MAX;
+            if (skinnedPoses != nullptr)
+            {
+                const MeshSkinning* skinning =
+                    skinnedMeshes->GetSkinning(renderer.Mesh);
+                if (skinning != nullptr && skinning->JointCount > 0)
+                {
+                    poseSlot = static_cast<std::uint32_t>(
+                        skinnedPoses->Instances.size());
+                    const auto paletteOffset = static_cast<std::uint32_t>(
+                        skinnedPoses->Palettes.size());
+                    skinnedPoses->Instances.push_back(SkinnedPoseInstance{
+                        .Mesh = renderer.Mesh,
+                        .Key = RenderEntityKey{ .Entity = view.Entity(i) },
+                        .PaletteOffset = paletteOffset,
+                        .JointCount = skinning->JointCount,
+                    });
+                    skinnedPoses->Palettes.resize(
+                        paletteOffset + skinning->JointCount, Mat4::Identity());
+                }
+            }
+
             MeshDrawInstance instance;
             instance.SkinnedMesh = renderer.Mesh;
             instance.WorldMatrix = worldMatrix;
             instance.WorldBounds = worldBounds;
             instance.SectionMask = renderer.SectionMask;
             instance.CameraDepth = -cameraSpaceCenter.Z;
+            instance.PoseSlot = poseSlot;
             EmitMeshSections(instance, *mesh, *sectionMaterials, materials, queue);
         }
     };

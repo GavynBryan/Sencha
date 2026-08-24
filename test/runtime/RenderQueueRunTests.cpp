@@ -69,3 +69,36 @@ TEST(RenderQueueRuns, DifferentSkinnedMeshesNeverMergeIntoOneRun)
     ASSERT_EQ(queue.OpaqueRuns().size(), 2u)
         << "two different skinned meshes collapsed into one instanced draw";
 }
+
+TEST(RenderQueueRuns, PosedSkinnedInstancesNeverMerge)
+{
+    // Two entities sharing one skinned mesh pose independently: each draws
+    // from its own posed vertex buffer, so merging them into one instanced
+    // draw would render both with whichever pose won. Their pose slots are
+    // the only difference, and that alone must split the run.
+    RenderQueue queue;
+    for (std::uint32_t slot = 0; slot < 2; ++slot)
+    {
+        RenderQueueItem item{};
+        item.SkinnedMesh = SkinnedMeshHandle{ 4, 1 };
+        item.Material = MaterialHandle{ 1, 1 };
+        item.PoseSlot = slot;
+        queue.AddOpaque(item);
+    }
+    queue.SortOpaque();
+    EXPECT_EQ(queue.OpaqueRuns().size(), 2u);
+
+    // Unposed skinned items (no pose produced this frame) share rest
+    // geometry and still merge, which is the pre-pose behavior.
+    RenderQueue rest;
+    for (std::uint32_t i = 0; i < 2; ++i)
+    {
+        RenderQueueItem item{};
+        item.SkinnedMesh = SkinnedMeshHandle{ 4, 1 };
+        item.Material = MaterialHandle{ 1, 1 };
+        rest.AddOpaque(item);
+    }
+    rest.SortOpaque();
+    ASSERT_EQ(rest.OpaqueRuns().size(), 1u);
+    EXPECT_EQ(rest.OpaqueRuns()[0].Count, 2u);
+}

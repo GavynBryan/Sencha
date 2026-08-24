@@ -85,6 +85,12 @@ set(RENDER_HEADER_BACKEND_ALLOWED
     # grow. What is left in render/ is the feature that decides where the two
     # colours come from, and it propagates the pass header to its consumers.
     "/engine/include/render/SkyRenderFeature.h"
+    # Holds the pre-skin compute pass by value, the SkyRenderFeature shape
+    # again: the pass takes plain data (buffers, counts, offsets), so the
+    # dispatch and its barrier live in the backend and the recording set did
+    # not grow. What remains in render/ is the policy -- which instances,
+    # which palettes, and the posed buffers' lifecycle.
+    "/engine/include/render/SkinnedPoseRenderFeature.h"
     ${RENDER_RECORDING_SET}
 )
 

@@ -378,6 +378,38 @@ A view whose recording could not proceed is reported twice:
   that slot, so the forward pass this frame does not sample content against a
   record it was not rendered with.
 
+## `SkinnedPosePass` and `SkinnedPoseRenderFeature`
+
+`engine/src/graphics/vulkan/SkinnedPosePass.cpp` plus its Offscreen feature
+in `engine/src/render/SkinnedPoseRenderFeature.cpp`. The pre-skin dispatch
+(pipeline Decision N, resolved to compute pre-skin): one compute invocation
+per vertex blends the joint palette into the rest geometry and writes a
+posed vertex buffer, which every geometry pass then draws exactly as static
+geometry -- `MeshForwardPass` swaps which buffer it binds and nothing else
+changes.
+
+The split follows `SkyGradientPass`: the pass takes plain data (buffer
+handles, counts, byte offsets) and owns the GPU resources -- the compute
+pipeline, its descriptor pools, the posed buffers, and the one barrier
+making the dispatch's storage writes visible to vertex fetches. The feature
+owns the policy: which instances pose, where their palettes come from, and
+the per-frame-in-flight buffer lifecycle (a frame still reading slot N's
+buffer must not race the next frame's dispatch into it).
+
+`SkinnedPoseFrameData` is the channel. Extraction fills one entry per
+visible skinned entity, with its palette, and stamps the matching
+`RenderQueueItem::PoseSlot`; the feature dispatches and fills in the posed
+buffers; the forward pass reads them. A slot with no posed buffer -- the
+pass hit its per-frame dispatch budget, or scratch had no room for the
+palettes -- falls back to rest geometry, which is a visible degradation
+rather than a dropped draw. `PoseSlot` joins the run-merge identity: two
+entities sharing one skinned mesh pose independently and must not collapse
+into one instanced draw.
+
+Until a pose source exists every palette is the bind identity, so the
+dispatch reproduces the rest vertices bit-for-bit and the `skinned_rest`
+golden is the gate for the whole path.
+
 ## `SkyGradientPass`
 
 `engine/src/graphics/vulkan/SkyGradientPass.cpp`. Fills the view with a vertical

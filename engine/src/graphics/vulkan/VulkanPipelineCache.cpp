@@ -57,6 +57,10 @@ VulkanPipelineCache::~VulkanPipelineCache()
         if (entry.Pipeline != VK_NULL_HANDLE)
             vkDestroyPipeline(Device, entry.Pipeline, nullptr);
     Entries.clear();
+    for (auto& entry : ComputeEntries)
+        if (entry.Pipeline != VK_NULL_HANDLE)
+            vkDestroyPipeline(Device, entry.Pipeline, nullptr);
+    ComputeEntries.clear();
 
     if (DriverCache != VK_NULL_HANDLE)
     {
@@ -129,6 +133,48 @@ VkPipeline VulkanPipelineCache::GetGraphicsPipeline(const GraphicsPipelineDesc& 
         return VK_NULL_HANDLE;
 
     Entries.push_back({ hash, desc, pipeline });
+    return pipeline;
+}
+
+VkPipeline VulkanPipelineCache::GetComputePipeline(const ComputePipelineDesc& desc)
+{
+    if (!Valid)
+        return VK_NULL_HANDLE;
+
+    for (auto& entry : ComputeEntries)
+        if (entry.Desc == desc)
+            return entry.Pipeline;
+
+    const VkShaderModule module = Shaders->GetModule(desc.ComputeShader);
+    if (module == VK_NULL_HANDLE)
+    {
+        Log.Error("GetComputePipeline: invalid shader handle");
+        return VK_NULL_HANDLE;
+    }
+    if (desc.Layout == VK_NULL_HANDLE)
+    {
+        Log.Error("GetComputePipeline: ComputePipelineDesc.Layout is null");
+        return VK_NULL_HANDLE;
+    }
+
+    VkComputePipelineCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    info.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    info.stage.module = module;
+    info.stage.pName = "main";
+    info.layout = desc.Layout;
+
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    const VkResult result = vkCreateComputePipelines(
+        Device, DriverCache, 1, &info, nullptr, &pipeline);
+    if (result != VK_SUCCESS)
+    {
+        Log.Error("vkCreateComputePipelines failed ({})", static_cast<int>(result));
+        return VK_NULL_HANDLE;
+    }
+
+    ComputeEntries.push_back({ desc, pipeline });
     return pipeline;
 }
 

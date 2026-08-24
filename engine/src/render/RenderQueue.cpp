@@ -96,6 +96,7 @@ void RenderQueue::SortOpaque()
             if (item.Pipeline == head.Pipeline
                 && item.Mesh == head.Mesh
                 && item.SkinnedMesh == head.SkinnedMesh
+                && item.PoseSlot == head.PoseSlot
                 && item.SectionIndex == head.SectionIndex
                 && item.Material == head.Material
                 && item.Pass == head.Pass

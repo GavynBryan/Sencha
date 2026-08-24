@@ -14,6 +14,7 @@
 #include <graphics/vulkan/VulkanSwapchainService.h>
 #include <render/MeshRenderFeature.h>
 #include <render/ShadowRenderFeature.h>
+#include <render/SkinnedPoseRenderFeature.h>
 #include <render/SkyRenderFeature.h>
 #endif
 
@@ -73,10 +74,25 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
 
     Swapchain = &graphics.Swapchain;
 
+    // Posed skinned geometry is produced before anything draws it, so the
+    // pose feature registers ahead of the shadow feature (which will want
+    // posed casters when skinned shadows land) and the mesh feature.
+    if (SkinnedMeshes != nullptr)
+    {
+        SkinnedPoses = std::make_shared<SkinnedPoseFrameData>();
+        if (graphics.MainRenderer.AddFeature(
+                std::make_unique<SkinnedPoseRenderFeature>(SkinnedPoses,
+                                                           *SkinnedMeshes))
+            == nullptr)
+        {
+            return false;
+        }
+    }
+
     // The shadow feature renders the atlas the forward pass samples. Adding it
-    // first runs its Setup first, so the lighting set layout exists when the
-    // forward pass builds its pipeline layout; Offscreen also records before
-    // MainColor, so tiles are written before they are read.
+    // before the mesh feature runs its Setup first, so the lighting set layout
+    // exists when the forward pass builds its pipeline layout; Offscreen also
+    // records before MainColor, so tiles are written before they are read.
     auto bindings = std::make_shared<LightBindings>();
     if (graphics.MainRenderer.AddFeature(std::make_unique<ShadowRenderFeature>(
             bindings, Lights, ShadowCasters, *Meshes, Residency)) == nullptr)
@@ -96,7 +112,7 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     }
     return graphics.MainRenderer.AddFeature(std::make_unique<MeshRenderFeature>(
         Queue, *Meshes, *Materials, Camera, Lights, std::move(bindings),
-        SkinnedMeshes)) != nullptr;
+        SkinnedMeshes, SkinnedPoses)) != nullptr;
 #else
     (void)graphics;
     return false;
@@ -175,10 +191,12 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
 
     {
         CpuScopeTimer timer(scopes, CpuScope::Extraction);
+        if (SkinnedPoses != nullptr)
+            SkinnedPoses->Reset();
         RenderExtractor.Extract(
             world, ctx.Partitions,
             RenderExtractCaches{ *Meshes, *Materials, *MaterialSets, Textures, SkinnedMeshes },
-            Camera, Queue, ctx.Presentation.Alpha);
+            Camera, Queue, ctx.Presentation.Alpha, SkinnedPoses.get());
         Queue.SortOpaque();
     }
 

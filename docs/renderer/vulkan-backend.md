@@ -323,11 +323,30 @@ back raw handles, which is deliberate: samplers outlive any single caller, are
 shared across draws, and go straight into descriptor writes. Do not destroy
 anything it returns.
 
+## Compute
+
+`VulkanPipelineCache::GetComputePipeline` mirrors the graphics path over a
+`ComputePipelineDesc` -- a shader handle and a layout, because a compute
+pipeline has no other state. Entries are compared linearly rather than
+hashed: there are a handful of them and the desc compares in two loads.
+
+The one consumer is `SkinnedPosePass`, the pre-skin dispatch (pipeline
+Decision N). It records in the Offscreen phase, which opens no rendering
+scope, so a compute-only feature needs no new phase and no special casing;
+it owns its own descriptor pools (one per frame in flight, reset before
+that slot's jobs allocate) and its own barrier.
+
 ## Barriers
 
 `VulkanBarriers` is a namespace of free functions, not a service: barriers are a
 hot-path concern and the caller owns the command buffer. Everything is sync2,
 which the device floor guarantees.
+
+Buffer-visibility barriers are written inline by the pass that needs them --
+there is one (`SkinnedPosePass`, compute storage writes to vertex-attribute
+reads) and a helper for a single caller would be indirection, not
+abstraction. `VulkanBarriers` stays image-only until a second consumer
+appears.
 
 `ImageTransition` carries the full pair of scopes explicitly. Convenience
 wrappers exist for the swapchain image transitions (`TransitionForColorAttachment`,

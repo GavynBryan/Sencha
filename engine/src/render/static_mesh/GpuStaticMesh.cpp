@@ -7,7 +7,8 @@
 bool UploadMeshGeometryToGpu(VulkanBufferService& buffers,
                              const MeshGeometry& geometry,
                              GpuStaticMesh& out,
-                             Logger& log)
+                             Logger& log,
+                             MeshVertexAccess access)
 {
     const MeshValidationResult validation = ValidateMeshGeometry(geometry);
     if (!validation.IsValid())
@@ -20,6 +21,8 @@ bool UploadMeshGeometryToGpu(VulkanBufferService& buffers,
     BufferCreateInfo vbInfo{};
     vbInfo.Size = sizeof(StaticMeshVertex) * geometry.Vertices.size();
     vbInfo.Usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    if (access == MeshVertexAccess::VertexAndCompute)
+        vbInfo.Usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     vbInfo.Memory = BufferMemory::GpuOnly;
     vbInfo.DebugName = "Mesh vertex buffer";
 

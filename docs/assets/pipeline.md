@@ -546,6 +546,23 @@ scale** (low by genre construction, so the VRAM cost is probably noise).
 If shadows land before skinning does, pre-skin is likely winning — but that
 is a forecast, not a decision.
 
+**RESOLVED (owner, 2026-08-23): compute pre-skin.** The forecast fired --
+`ShadowDepthPass` shipped as a live second geometry pass before skinning
+did, so vertex-shader skinning owed it a variant immediately. Measured
+against the tree at decision time, that branch would have forked
+`MakeMeshPipelineBase`, doubled the forward families from 20 pipelines to
+40 (shadow 3 -> 6 whenever skinned casters land), widened the mesh push
+range to the vertex stage against the drift warning recorded there, and
+contradicted the renderer's own no-parallel-pipelines invariant. Pre-skin
+touches none of that: `SkinnedPoseRenderFeature` dispatches
+`skin_pose.comp` in the Offscreen phase and every geometry pass draws the
+posed buffer as ordinary static vertices, so nothing downstream of
+`GpuStaticMesh` changed. The reserved seam landed as predicted -- the
+per-item field is `RenderQueueItem::PoseSlot`, indexing the frame's
+`SkinnedPoseFrameData`, rather than a palette reference. The cost is the
+one this section priced: one posed vertex buffer per instance per frame in
+flight, and one dispatch plus one barrier per frame.
+
 What the **asset side guarantees regardless** — this is why Stage 5 can
 ship formats before the choice is made:
 

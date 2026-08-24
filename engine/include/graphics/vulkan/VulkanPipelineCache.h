@@ -91,6 +91,15 @@ struct GraphicsPipelineDesc
     bool operator==(const GraphicsPipelineDesc&) const = default;
 };
 
+// A compute pipeline is its shader and its layout; there is no other state.
+struct ComputePipelineDesc
+{
+    ShaderHandle ComputeShader;
+    VkPipelineLayout Layout = VK_NULL_HANDLE;
+
+    bool operator==(const ComputePipelineDesc&) const = default;
+};
+
 class VulkanPipelineCache
 {
 public:
@@ -106,12 +115,19 @@ public:
 
     [[nodiscard]] bool IsValid() const { return Valid; }
     [[nodiscard]] VkPipeline GetGraphicsPipeline(const GraphicsPipelineDesc& desc);
+    [[nodiscard]] VkPipeline GetComputePipeline(const ComputePipelineDesc& desc);
 
 private:
     struct Entry
     {
         uint64_t Hash = 0;
         GraphicsPipelineDesc Desc;
+        VkPipeline Pipeline = VK_NULL_HANDLE;
+    };
+
+    struct ComputeEntry
+    {
+        ComputePipelineDesc Desc;
         VkPipeline Pipeline = VK_NULL_HANDLE;
     };
 
@@ -122,6 +138,9 @@ private:
     bool Valid = false;
 
     std::vector<Entry> Entries;
+    // Linear like Entries: compute pipelines are counted on one hand and the
+    // desc compares in two loads, so a hash buys nothing here.
+    std::vector<ComputeEntry> ComputeEntries;
 
     [[nodiscard]] uint64_t HashDesc(const GraphicsPipelineDesc& desc) const;
     [[nodiscard]] VkPipeline CreateGraphicsPipeline(const GraphicsPipelineDesc& desc);

@@ -28,7 +28,10 @@ SkinnedMeshHandle SkinnedMeshCache::CreateFromData(std::string_view name,
             return existing;
 
     SkinnedMeshEntry entry;
-    if (!UploadMeshGeometryToGpu(*Buffers, data.Geometry, entry.Mesh, Log))
+    // Rest geometry is the pre-skin dispatch's input as well as a fallback
+    // vertex stream, so it is created readable both ways.
+    if (!UploadMeshGeometryToGpu(*Buffers, data.Geometry, entry.Mesh, Log,
+                                 MeshVertexAccess::VertexAndCompute))
         return {};
 
     if (!data.Skinning.Influences.empty())
@@ -83,6 +86,12 @@ const MeshSkinning* SkinnedMeshCache::GetSkinning(SkinnedMeshHandle handle) cons
 {
     const SkinnedMeshEntry* entry = Resolve(handle);
     return entry ? &entry->Skinning : nullptr;
+}
+
+BufferHandle SkinnedMeshCache::GetInfluences(SkinnedMeshHandle handle) const
+{
+    const SkinnedMeshEntry* entry = Resolve(handle);
+    return entry ? entry->Influences : BufferHandle{};
 }
 
 std::string_view SkinnedMeshCache::GetName(SkinnedMeshHandle handle) const

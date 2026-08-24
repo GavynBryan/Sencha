@@ -487,6 +487,26 @@ void MeshForwardPass::BindFrameState(const FrameContext& frame, VkDeviceSize uni
                             2, 1, &lightingSet, 0, nullptr);
 }
 
+namespace
+{
+// A posed skinned item draws from the buffer the pre-skin dispatch wrote;
+// everything else (and a skinned item whose pose was not produced this
+// frame) draws its resident vertices. The posed buffer holds the same
+// StaticMeshVertex layout at the same stride, so nothing else changes.
+BufferHandle ResolveVertexBuffer(const RenderQueueItem& item,
+                                 const GpuStaticMesh& mesh,
+                                 const SkinnedPoseFrameData* poses)
+{
+    if (poses != nullptr && poses->Ready && item.PoseSlot != UINT32_MAX
+        && item.PoseSlot < poses->PosedBuffers.size()
+        && poses->PosedBuffers[item.PoseSlot].IsValid())
+    {
+        return poses->PosedBuffers[item.PoseSlot];
+    }
+    return mesh.VertexBuffer;
+}
+} // namespace
+
 void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& queue,
                                StaticMeshCache& meshes, MaterialCache& materials,
                                const SkinnedMeshCache* skinnedMeshes, Vec4 tint,
@@ -567,7 +587,8 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const RenderQueue& que
 
         MeshDrawCommand draw{};
         draw.Pipeline = pipeline;
-        draw.VertexBuffer = Buffers->GetBuffer(mesh->VertexBuffer);
+        draw.VertexBuffer =
+            Buffers->GetBuffer(ResolveVertexBuffer(item, *mesh, Poses));
         draw.IndexBuffer = Buffers->GetBuffer(mesh->IndexBuffer);
         draw.IndexCount = section.IndexCount;
         draw.IndexOffset = section.IndexOffset;
@@ -654,7 +675,8 @@ void MeshForwardPass::RecordTransparentItems(const FrameContext& frame, const Re
 
         MeshDrawCommand draw{};
         draw.Pipeline = pipeline;
-        draw.VertexBuffer = Buffers->GetBuffer(mesh->VertexBuffer);
+        draw.VertexBuffer =
+            Buffers->GetBuffer(ResolveVertexBuffer(item, *mesh, Poses));
         draw.IndexBuffer = Buffers->GetBuffer(mesh->IndexBuffer);
         draw.IndexCount = section.IndexCount;
         draw.IndexOffset = section.IndexOffset;

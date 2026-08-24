@@ -42,13 +42,24 @@ struct GpuStaticMesh
     std::vector<StaticMeshSection> Sections;
 };
 
+// How a mesh's vertex buffer will be read. Rest geometry that a skinning
+// dispatch poses is also read as a storage buffer, which the buffer must be
+// created for; static geometry pays only the vertex usage.
+enum class MeshVertexAccess : std::uint8_t
+{
+    VertexOnly,
+    VertexAndCompute,
+};
+
 // Validates and uploads `geometry` into GPU buffers, filling `out`. Returns
 // false (logging the reason) on validation failure or a buffer/upload error,
 // leaving no buffers leaked. Shared by StaticMeshCache and SkinnedMeshCache.
-[[nodiscard]] bool UploadMeshGeometryToGpu(VulkanBufferService& buffers,
-                                           const MeshGeometry& geometry,
-                                           GpuStaticMesh& out,
-                                           Logger& log);
+[[nodiscard]] bool UploadMeshGeometryToGpu(
+    VulkanBufferService& buffers,
+    const MeshGeometry& geometry,
+    GpuStaticMesh& out,
+    Logger& log,
+    MeshVertexAccess access = MeshVertexAccess::VertexOnly);
 
 // Destroys the GPU buffers `mesh` holds and clears them. Safe on an
 // already-empty mesh.

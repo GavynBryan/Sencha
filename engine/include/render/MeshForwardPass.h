@@ -9,6 +9,7 @@
 #include <render/MaterialCache.h>
 #include <render/RenderLight.h>
 #include <render/RenderQueue.h>
+#include <render/SkinnedPoseFrameData.h>
 #include <render/skinned_mesh/SkinnedMeshCache.h>
 #include <render/static_mesh/StaticMeshCache.h>
 
@@ -128,6 +129,10 @@ public:
     // least dummy-backed) before this call, or the pass stays inert and
     // draws nothing.
     void Setup(const RendererServices& services, LightBindings& bindings);
+    // The frame's posed skinned geometry, produced by the Offscreen pose
+    // feature. Null (or not Ready) draws skinned items at rest -- the
+    // pre-pose behavior, and the fallback when a dispatch was skipped.
+    void SetSkinnedPoses(const SkinnedPoseFrameData* poses) { Poses = poses; }
 
     // `skinnedMeshes` resolves items whose SkinnedMesh handle is valid (rest
     // geometry today); null makes those items skip, and a host with no skinned
@@ -224,6 +229,7 @@ private:
     VulkanPipelineCache* Pipelines = nullptr;
     VulkanShaderCache* Shaders = nullptr;
     LightBindings* Bindings = nullptr;
+    const SkinnedPoseFrameData* Poses = nullptr;
     VkDevice Device = VK_NULL_HANDLE;
 
     ShaderHandle VertexShader;

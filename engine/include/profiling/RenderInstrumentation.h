@@ -36,6 +36,7 @@ enum class GpuScope : std::uint8_t
     PhaseOffscreen,
     PhaseMainColor,
     ShadowViews,
+    SkinPose,
     ForwardOpaque,
     Count
 };

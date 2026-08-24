@@ -15,7 +15,8 @@ MeshRenderFeature::MeshRenderFeature(RenderQueue& queue,
                                      const CameraRenderData& camera,
                                      const RenderLightSet& lights,
                                      std::shared_ptr<LightBindings> bindings,
-                                     const SkinnedMeshCache* skinnedMeshes)
+                                     const SkinnedMeshCache* skinnedMeshes,
+                                     std::shared_ptr<const SkinnedPoseFrameData> skinnedPoses)
     : Queue(&queue)
     , Meshes(&meshes)
     , SkinnedMeshes(skinnedMeshes)
@@ -23,6 +24,7 @@ MeshRenderFeature::MeshRenderFeature(RenderQueue& queue,
     , Camera(&camera)
     , Lights(&lights)
     , Bindings(std::move(bindings))
+    , SkinnedPoses(std::move(skinnedPoses))
 {
 }
 
@@ -30,6 +32,7 @@ bool MeshRenderFeature::Setup(const RendererServices& services)
 {
     Instrumentation = services.Instrumentation;
     Pass.Setup(services, *Bindings);
+    Pass.SetSkinnedPoses(SkinnedPoses.get());
     // The pass degrades to inert when the lighting bindings are unusable,
     // which is a deliberate policy: the frame still presents. That is not a
     // setup failure.

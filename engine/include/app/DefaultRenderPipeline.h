@@ -12,6 +12,7 @@
 #include <render/RenderLight.h>
 #include <render/RenderQueue.h>
 #include <render/ShadowCasterExtractionSystem.h>
+#include <render/SkinnedPoseFrameData.h>
 #include <render/ShadowCasterSet.h>
 #include <render/ShadowResidency.h>
 #include <render/skinned_mesh/SkinnedMeshCache.h>
@@ -70,6 +71,10 @@ private:
 
     RenderQueue Queue;
     RenderLightSet Lights;
+    // The frame's skinned instances and their palettes. Extraction fills it,
+    // the Offscreen pose feature poses them, the mesh feature draws them; the
+    // shared pointer is the channel between the two features.
+    std::shared_ptr<SkinnedPoseFrameData> SkinnedPoses;
     ProbeVolumeSet ProbeVolumes;
     ShadowCasterSet ShadowCasters;
     ShadowResidency Residency;

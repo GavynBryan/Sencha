@@ -53,6 +53,7 @@ std::uint32_t EmitMeshSections(const MeshDrawInstance& instance,
         item.LightmapTextureIndex = lightmapIndex;
         item.AoTextureIndex = aoIndex;
         item.LightmapScaleBias = instance.LightmapScaleBias;
+        item.PoseSlot = instance.PoseSlot;
         // Blend is a different pass, not a pipeline bit: order replaces state
         // grouping as what the sort is for, so the item goes to the list whose
         // order is decided per view. The loader classified the pass at load

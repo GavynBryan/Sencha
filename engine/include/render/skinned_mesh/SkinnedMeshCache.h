@@ -69,6 +69,10 @@ public:
 
     [[nodiscard]] const GpuStaticMesh* Get(SkinnedMeshHandle handle) const;
     [[nodiscard]] const MeshSkinning* GetSkinning(SkinnedMeshHandle handle) const;
+    // The GPU-resident influence stream (joints u16x4 + weights u8x4 per
+    // vertex), the pre-skin dispatch's second input. Null handle when the
+    // mesh is not resident.
+    [[nodiscard]] BufferHandle GetInfluences(SkinnedMeshHandle handle) const;
     [[nodiscard]] std::string_view GetName(SkinnedMeshHandle handle) const;
     [[nodiscard]] bool IsAlive(SkinnedMeshHandle handle) const;
 

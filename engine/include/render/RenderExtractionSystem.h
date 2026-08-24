@@ -7,6 +7,7 @@
 #include <render/MaterialCache.h>
 #include <render/MaterialSetCache.h>
 #include <render/RenderQueue.h>
+#include <render/SkinnedPoseFrameData.h>
 #include <render/StaticMeshComponent.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <render/TextureHandle.h>
@@ -102,13 +103,17 @@ public:
     // simulation tick (PresentationTime::Alpha). Entities carrying
     // WorldTransformHistory render the blend at that point; everything else
     // renders its live WorldTransform.
+    // `skinnedPoses`, when given, receives one instance (and its joint
+    // palette) per visible skinned entity; emitted items carry the matching
+    // PoseSlot. Null keeps skinned items on their rest geometry.
     void Extract(
         const World& world,
         const StoragePartitionSet& partitions,
         const RenderExtractCaches& caches,
         const CameraRenderData& camera,
         RenderQueue& queue,
-        double interpolationAlpha = 1.0);
+        double interpolationAlpha = 1.0,
+        SkinnedPoseFrameData* skinnedPoses = nullptr);
 
     // Same extraction with the caches spelled out. Retained for callers built
     // against the older signature; forwards to the bundled form.

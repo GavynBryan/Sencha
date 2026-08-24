@@ -69,6 +69,9 @@ struct MeshDrawInstance
     std::uint32_t LightmapTextureIndex = UINT32_MAX;
     std::uint32_t AoTextureIndex = UINT32_MAX;
     Vec4 LightmapScaleBias = Vec4{ 1.0f, 1.0f, 0.0f, 0.0f };
+    // The instance's slot in the frame's SkinnedPoseFrameData; UINT32_MAX
+    // draws rest geometry. Every section the expansion emits shares it.
+    std::uint32_t PoseSlot = UINT32_MAX;
 };
 
 // Appends one opaque item per section `instance.SectionMask` selects, resolving
