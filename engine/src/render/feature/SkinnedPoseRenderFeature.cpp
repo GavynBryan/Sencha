@@ -14,8 +14,11 @@ namespace
 // character from churning buffer creation every time it clips the frustum.
 constexpr std::uint32_t kPruneAfterFrames = 60;
 
-// Storage-buffer descriptor offsets must honor the device minimum; 256 is
-// the largest minStorageBufferOffsetAlignment any real device reports.
+// Storage-buffer descriptor offsets must honor the device minimum, and 256 is
+// the ceiling the Vulkan spec puts on minStorageBufferOffsetAlignment. This
+// aligns the base of the frame's combined palette allocation; the per-instance
+// offsets inside it are pre-aligned by SkinnedPoseFrameData::AppendInstance,
+// so every offset the dispatch derives is legal end to end.
 constexpr std::uint64_t kPaletteAlignment = 256;
 } // namespace
 

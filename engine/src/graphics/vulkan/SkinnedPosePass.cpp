@@ -1,7 +1,9 @@
 #include <graphics/vulkan/SkinnedPosePass.h>
 
+#include <graphics/FrameScratchRing.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
+#include <graphics/vulkan/VulkanPhysicalDeviceService.h>
 #include <graphics/vulkan/VulkanPipelineCache.h>
 #include <assets/static_mesh/StaticMeshVertex.h>
 #include <shaders/kSkinPoseCompSpv.h>
@@ -22,7 +24,24 @@ void SkinnedPosePass::Setup(const RendererServices& services)
     Buffers = services.Buffers;
     Pipelines = services.Pipelines;
     Shaders = services.Shaders;
+    Log = services.Logging != nullptr
+        ? &services.Logging->GetLogger<SkinnedPosePass>() : nullptr;
     Device = services.Device != nullptr ? services.Device->GetDevice() : VK_NULL_HANDLE;
+    if (services.PhysicalDevice != nullptr)
+    {
+        StorageOffsetAlignment =
+            services.PhysicalDevice->GetProperties().limits.minStorageBufferOffsetAlignment;
+        if (StorageOffsetAlignment == 0)
+            StorageOffsetAlignment = 1;
+        if (Log != nullptr && StorageOffsetAlignment > kMaxDescriptorOffsetAlignment)
+        {
+            // Vulkan caps this limit at 256, which is what the palette packing
+            // upstream aligns to without querying anything.
+            Log->Error("minStorageBufferOffsetAlignment is {}, above the {} byte "
+                       "ceiling palette packing assumes; poses will be skipped",
+                       StorageOffsetAlignment, kMaxDescriptorOffsetAlignment);
+        }
+    }
     if (Device == VK_NULL_HANDLE || Shaders == nullptr)
         return;
 
@@ -135,6 +154,18 @@ std::uint32_t SkinnedPosePass::Record(const FrameContext& frame,
             || posed == VK_NULL_HANDLE || palette == VK_NULL_HANDLE
             || dispatch.VertexCount == 0)
         {
+            continue;
+        }
+        if (dispatch.PaletteOffset % StorageOffsetAlignment != 0)
+        {
+            // Writing this into a descriptor would be undefined behavior the
+            // validation layers report as VUID-VkWriteDescriptorSet-descriptorType-00327.
+            if (Log != nullptr)
+            {
+                Log->Error("Palette offset {} is not a multiple of the device's {} byte "
+                           "storage alignment; skipping the dispatch",
+                           dispatch.PaletteOffset, StorageOffsetAlignment);
+            }
             continue;
         }
 

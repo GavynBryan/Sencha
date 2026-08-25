@@ -2,6 +2,29 @@
 
 #include <cstdint>
 
+// The largest offset alignment a descriptor binding into the ring can demand.
+// Vulkan caps both minUniformBufferOffsetAlignment and
+// minStorageBufferOffsetAlignment at 256 bytes, so no conformant device asks
+// for more.
+inline constexpr std::uint64_t kMaxDescriptorOffsetAlignment = 256;
+
+// The slice size a ring must use for every slice boundary to be a legal
+// descriptor offset. The ring aligns its cursor relative to the slice, so an
+// allocation's absolute offset inherits the slice base's alignment: a slice
+// size that is not a multiple of the binding alignment leaves every slice
+// after the first serving aligned-looking offsets that are absolutely
+// misaligned.
+[[nodiscard]] constexpr std::uint64_t ResolveScratchSliceBytes(
+    std::uint64_t bytesPerFrame, std::uint64_t uniformAlignment)
+{
+    const std::uint64_t alignment = uniformAlignment > kMaxDescriptorOffsetAlignment
+        ? uniformAlignment
+        : kMaxDescriptorOffsetAlignment;
+    if (alignment == 0)
+        return bytesPerFrame;
+    return (bytesPerFrame + alignment - 1) / alignment * alignment;
+}
+
 //=============================================================================
 // FrameScratchRing
 //

@@ -71,7 +71,12 @@ private:
     VulkanBufferService* Buffers = nullptr;
     VulkanPipelineCache* Pipelines = nullptr;
     VulkanShaderCache* Shaders = nullptr;
+    Logger* Log = nullptr;
     VkDevice Device = VK_NULL_HANDLE;
+    // minStorageBufferOffsetAlignment, queried at setup. Palette offsets are
+    // pre-aligned upstream against the spec's 256-byte ceiling; this is what
+    // proves that upstream promise against the device actually running.
+    VkDeviceSize StorageOffsetAlignment = 1;
 
     ShaderHandle ComputeShader;
     VkDescriptorSetLayout SetLayout = VK_NULL_HANDLE;

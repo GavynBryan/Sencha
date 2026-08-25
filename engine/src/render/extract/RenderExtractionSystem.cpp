@@ -332,18 +332,10 @@ std::uint32_t RenderExtractionSystem::RegisterSkinnedPose(
     if (skinning == nullptr || skinning->JointCount == 0)
         return UINT32_MAX;
 
-    const auto poseSlot =
-        static_cast<std::uint32_t>(skinnedPoses.Instances.size());
-    const auto paletteOffset =
-        static_cast<std::uint32_t>(skinnedPoses.Palettes.size());
-    skinnedPoses.Instances.push_back(SkinnedPoseInstance{
-        .Mesh = renderer.Mesh,
-        .Key = RenderEntityKey{ .Entity = entity },
-        .PaletteOffset = paletteOffset,
-        .JointCount = skinning->JointCount,
-    });
-    skinnedPoses.Palettes.resize(paletteOffset + skinning->JointCount,
-                                 Mat4::Identity());
+    const std::uint32_t poseSlot = skinnedPoses.AppendInstance(
+        renderer.Mesh, RenderEntityKey{ .Entity = entity }, skinning->JointCount);
+    const std::uint32_t paletteOffset =
+        skinnedPoses.Instances[poseSlot].PaletteOffset;
 
     // Pose evaluation is per rendered frame, not per tick: the player
     // advanced its time on the fixed tick and this samples whatever it

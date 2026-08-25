@@ -6,18 +6,6 @@
 #include <graphics/vulkan/VulkanPhysicalDeviceService.h>
 
 #include <algorithm>
-#include <limits>
-
-namespace
-{
-    VkDeviceSize AlignUp(VkDeviceSize value, VkDeviceSize alignment)
-    {
-        if (alignment <= 1) return value;
-        if (value > std::numeric_limits<VkDeviceSize>::max() - (alignment - 1))
-            return std::numeric_limits<VkDeviceSize>::max();
-        return (value + alignment - 1) & ~(alignment - 1);
-    }
-}
 
 GpuFrameScratch::GpuFrameScratch(LoggingProvider& logging,
                                        VulkanDeviceService& device,
@@ -42,10 +30,13 @@ GpuFrameScratch::GpuFrameScratch(LoggingProvider& logging,
     UniformAlignment = physicalDevice.GetProperties().limits.minUniformBufferOffsetAlignment;
     if (UniformAlignment == 0) UniformAlignment = 1;
 
-    // Pad the per-frame slice up to the UBO alignment so slice boundaries
-    // themselves land on a legal dynamic-offset boundary.
-    Ring = FrameScratchRing(config.FramesInFlight,
-                            AlignUp(config.BytesPerFrame, UniformAlignment));
+    // Pad the per-frame slice so slice boundaries themselves land on a legal
+    // descriptor-offset boundary -- for storage bindings as well as uniform
+    // ones, since the ring aligns cursors within a slice and the pose palettes
+    // bind out of it as storage buffers.
+    Ring = FrameScratchRing(
+        config.FramesInFlight,
+        ResolveScratchSliceBytes(config.BytesPerFrame, UniformAlignment));
 
     BufferCreateInfo info{};
     info.Size = Ring.GetTotalBytes();
