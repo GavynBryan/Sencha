@@ -81,6 +81,12 @@ GraphicsServices::GraphicsServices(LoggingProvider& logging,
 {
 }
 
+void GraphicsServices::WaitIdle() const
+{
+    if (Device.GetDevice() != VK_NULL_HANDLE)
+        vkDeviceWaitIdle(Device.GetDevice());
+}
+
 bool GraphicsServices::IsValid() const
 {
     return Instance.IsValid()

@@ -30,7 +30,10 @@ class VulkanSamplerCache;
 // artifact yet; producing one would slot into the base-color resolve step).
 //
 // Teardown follows ImGuiTextureBinding's contract: destroy or Clear() while
-// the asset system and the ImGui Vulkan backend are both alive.
+// the asset system and the ImGui Vulkan backend are both alive, and with the
+// GPU idle -- the bindings free their descriptor sets inline, so a frame still
+// executing would be referencing freed sets. The editor hosts establish that
+// by draining the device at the top of their shutdown.
 //=============================================================================
 class MaterialThumbnailCache
 {

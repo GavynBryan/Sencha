@@ -3,6 +3,7 @@
 #include "EditorServices.h"
 
 #include <app/Engine.h>
+#include <graphics/vulkan/GraphicsServices.h>
 #include <platform/PlatformServices.h>
 #include <platform/SdlWindow.h>
 
@@ -53,6 +54,14 @@ void EditorApp::OnPlatformEvent(PlatformEventContext& ctx)
 
 void EditorApp::OnShutdown(GameShutdownContext&)
 {
+    // Drain the GPU first. The frame loop returns without waiting, so the last
+    // frames it submitted may still be executing, and EditorServices frees ImGui
+    // descriptor sets inline as it goes -- thumbnail bindings destroy their sets
+    // the moment they are dropped. The renderer's own wait happens far later, in
+    // its destructor, which is well after those frees.
+    if (GraphicsServices* graphics = GetEngine().TryGraphics())
+        graphics->WaitIdle();
+
     // Tear the editor down inside the Game shutdown window: EditorServices releases
     // the asset system before the engine frees the graphics services its caches
     // borrow.

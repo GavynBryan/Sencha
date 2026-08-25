@@ -102,6 +102,13 @@ service below it unwinds. Features hold handles into the caches, and some
 destroy Vulkan objects directly (`LightBindings` owns a descriptor pool, samplers,
 and image views), so no submitted frame may still be executing at that point.
 
+That wait covers the renderer's own teardown, and nothing earlier. A host that
+frees GPU resources during **its** shutdown -- which for the editors is where
+ImGui descriptor sets go, since `ImGuiTextureBinding` frees its set the moment
+it is dropped -- runs well before it, because the frame loop returns without
+draining and `game.OnShutdown` follows immediately. Those hosts call
+`GraphicsServices::WaitIdle()` first and establish the boundary themselves.
+
 ## Render-domain graph
 
 ```mermaid
