@@ -35,9 +35,9 @@ class VulkanPhysicalDeviceService;
 // buffers and transfer-src are out of scope: indices are usually static,
 // and staged GPU uploads run through the buffer service.
 //
-// The single backing BufferHandle is stable for the service's entire life
-// and is what callers point VulkanDescriptorCache::SetFrameUniformBuffer
-// at once during setup.
+// The single backing BufferHandle is stable for the service's entire life,
+// which is what lets the renderer point VulkanDescriptorCache's frame binding
+// at it once and leave passes to declare only the range they need.
 //
 // The interface is backend-neutral -- handles, offsets, mapped pointers.
 // Construction and the ring's memory are backend work, defined in

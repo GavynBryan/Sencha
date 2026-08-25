@@ -48,7 +48,7 @@ std::uint32_t EmitMeshSections(const MeshDrawInstance& instance,
         // host gets them. The editor used to leave them at their defaults,
         // which drew unlit materials lit and double-sided materials
         // back-face culled in the viewport but not in game.
-        item.Pass = material->Pass;
+        item.Pass = ResolveMaterialPass(*material);
         item.Pipeline = SelectOpaquePipeline(*material);
         item.LightmapTextureIndex = lightmapIndex;
         item.AoTextureIndex = aoIndex;
@@ -56,10 +56,8 @@ std::uint32_t EmitMeshSections(const MeshDrawInstance& instance,
         item.PoseSlot = instance.PoseSlot;
         // Blend is a different pass, not a pipeline bit: order replaces state
         // grouping as what the sort is for, so the item goes to the list whose
-        // order is decided per view. The loader classified the pass at load
-        // time; this routes on it. Mask stayed opaque -- it cuts fragments but
+        // order is decided per view. Mask stays opaque -- it cuts fragments but
         // writes depth like anything else.
-        item.Pass = material->Pass;
         if (item.Pass == ShaderPassId::ForwardTransparent)
             queue.AddTransparent(item);
         else

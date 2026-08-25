@@ -215,6 +215,7 @@ private:
 
     VulkanBufferService* Buffers = nullptr;
     VulkanDescriptorCache* Descriptors = nullptr;
+    Logger* Log = nullptr;
     GpuFrameScratch* Scratch = nullptr;
     VulkanPipelineCache* Pipelines = nullptr;
     VulkanShaderCache* Shaders = nullptr;

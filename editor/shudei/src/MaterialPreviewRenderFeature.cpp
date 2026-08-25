@@ -181,7 +181,7 @@ void MaterialPreviewRenderFeature::OnDraw(const RenderFrame& renderFrame)
             if (const ::Material* resolved = Assets.Materials.Get(Material))
             {
                 item.Pipeline = SelectOpaquePipeline(*resolved);
-                item.Pass = resolved->Pass;
+                item.Pass = ResolveMaterialPass(*resolved);
             }
             if (item.Pass == ShaderPassId::ForwardTransparent)
                 Queue.AddTransparent(item);

@@ -128,6 +128,11 @@ Renderer::Renderer(LoggingProvider& logging,
     Services.Scratch = &scratch;
     Services.Upload = &upload;
 
+    // Binding 0 names the scratch ring for the rest of the cache's life. Passes
+    // then declare only the range their block needs, so no pass can point the
+    // shared binding somewhere its peers do not expect.
+    descriptors.SetFrameUniformBuffer(scratch.GetBuffer());
+
     ImageLayouts.assign(swapchain.GetImageCount(), VK_IMAGE_LAYOUT_UNDEFINED);
     DepthTarget = std::make_unique<VulkanDepthTarget>(images, physicalDevice);
     DepthTarget->Create(swapchain.GetExtent());
@@ -272,8 +277,11 @@ RenderFrameResult Renderer::DrawFrameScheduled()
         stats.ScratchAllocFailures = Services.Scratch->GetFailedAllocationCount();
     }
 
-    // After EndFrame, so the frame that carried the copy has been submitted and
-    // the retirement clock can start reporting it done.
+    // Before EndFrame, and deliberately: the retirement clock only advances in
+    // BeginFrame, so a capture recorded this frame cannot retire until a later
+    // one proves its fence either way. Draining here also covers the early
+    // returns below, where a resize or a suboptimal swapchain would otherwise
+    // hold a finished capture back a frame.
     ImageCapture.Drain(Frames.GetRetirement());
     ++FramesDrawn;
 
@@ -326,7 +334,7 @@ void Renderer::RecordOffscreenPhase(const VulkanFrame& frame)
 {
     auto& bucket = PhaseBuckets[static_cast<size_t>(RenderPhase::Offscreen)];
     if (bucket.empty())
-        return; // the runtime registers no offscreen features: nothing to do
+        return; // nothing registered in this phase: no work to record
 
     // No swapchain rendering scope is opened here. Each offscreen feature owns its
     // own render passes, targets, and image barriers.

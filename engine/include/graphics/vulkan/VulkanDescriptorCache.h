@@ -89,16 +89,19 @@ public:
 
     // -- Frame UBO ----------------------------------------------------------
     //
-    // Point binding 0 at `buffer` and declare that at least `requiredRange`
-    // bytes of it are covered. Per-frame or per-draw data is then addressed via
+    // Binding 0 names one buffer for the cache's whole life -- the renderer's
+    // scratch ring -- set once at construction. Passes then declare only how
+    // much of it their block needs; per-frame or per-draw data is addressed via
     // a dynamic offset at vkCmdBindDescriptorSets time.
-    //
-    // A declaration, not an assignment: several passes share the one binding
-    // and each knows only its own block, so the cache keeps the largest range
-    // anyone has asked for. Calling with a smaller range than a previous caller
-    // is a no-op rather than a shrink, which is what makes the order passes set
-    // themselves up in stop mattering.
-    void RequireFrameUniformRange(BufferHandle buffer, VkDeviceSize requiredRange);
+    void SetFrameUniformBuffer(BufferHandle buffer);
+
+    // Declare that at least `requiredRange` bytes of the frame buffer are
+    // covered. A declaration, not an assignment: several passes share the one
+    // binding and each knows only its own block, so the cache keeps the largest
+    // range anyone has asked for. Calling with a smaller range than a previous
+    // caller is a no-op rather than a shrink, which is what makes the order
+    // passes set themselves up in stop mattering.
+    void RequireFrameUniformRange(VkDeviceSize requiredRange);
 
     // The range the descriptor currently carries.
     [[nodiscard]] VkDeviceSize GetFrameUniformRange() const { return FrameUniformRange; }
@@ -179,6 +182,9 @@ private:
     std::vector<PipelineLayoutEntry> PipelineLayouts;
 
     std::unordered_map<BindlessKey, BindlessImageIndex, BindlessKeyHash> BindlessLookup;
+    // Binding 0's buffer, set once. Passes declare ranges into it, never a
+    // buffer of their own.
+    BufferHandle FrameUniformBuffer{};
     RetiredSlotQueue BindlessRetired;
     // Refreshed once per frame by the renderer. Defaults to a clock that has
     // retired nothing, so slots released before the first frame stay held

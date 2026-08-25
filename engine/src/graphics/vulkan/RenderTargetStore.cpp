@@ -1,3 +1,4 @@
+#include <string>
 #include <graphics/vulkan/RenderTargetStore.h>
 
 #include <graphics/vulkan/VulkanDeviceService.h>
@@ -135,7 +136,12 @@ void RenderTargetStore::BuildSlot(Slot& slot, const RenderTargetDesc& desc)
         depth.Extent = desc.Extent;
         depth.Usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
         depth.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        depth.DebugName = "render_target_depth";
+        // Named after its target: every depth image sharing one label makes a
+        // capture unreadable the moment a second viewport exists.
+        const std::string depthName =
+            std::string(desc.DebugName != nullptr ? desc.DebugName : "render_target")
+            + "_depth";
+        depth.DebugName = depthName.c_str();
         slot.Depth = Services.Images->Create(depth);
         if (slot.Depth.IsNull())
         {

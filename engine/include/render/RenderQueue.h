@@ -42,8 +42,9 @@ inline constexpr uint8_t kOpaquePipelineMaskedBit = 4u;
         id |= kOpaquePipelineDoubleSidedBit;
     if (material.Shading == MaterialShading::Unlit)
         id |= kOpaquePipelineUnlitBit;
-    // Blend has no transparent phase yet and falls back to opaque, which is
-    // what the loader warns about; only Mask cuts fragments.
+    // This picks the pipeline within a pass, not the pass: Blend routes to the
+    // transparent phase through ResolveMaterialPass, and only Mask changes the
+    // pipeline, because it cuts fragments.
     if (material.AlphaMode == MaterialAlphaMode::Mask)
         id |= kOpaquePipelineMaskedBit;
     return static_cast<OpaquePipelineId>(id);

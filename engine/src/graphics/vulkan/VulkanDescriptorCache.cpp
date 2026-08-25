@@ -235,15 +235,34 @@ VkPipelineLayout VulkanDescriptorCache::GetDefaultPipelineLayout()
     return GetPipelineLayout(kNone);
 }
 
-void VulkanDescriptorCache::RequireFrameUniformRange(BufferHandle buffer,
-                                                    VkDeviceSize requiredRange)
+void VulkanDescriptorCache::SetFrameUniformBuffer(BufferHandle buffer)
 {
     if (!Valid) return;
 
-    VkBuffer vkBuf = Buffers->GetBuffer(buffer);
+    if (Buffers->GetBuffer(buffer) == VK_NULL_HANDLE)
+    {
+        Log.Error("SetFrameUniformBuffer: invalid BufferHandle");
+        return;
+    }
+    if (FrameUniformBuffer.IsValid() && !(FrameUniformBuffer == buffer))
+    {
+        // Binding 0 carries whichever buffer the widest declaration wrote, so a
+        // second buffer here would silently leave passes reading the first.
+        Log.Error("SetFrameUniformBuffer: the frame uniform buffer is already set; "
+                  "one buffer serves binding 0 for the cache's life");
+        return;
+    }
+    FrameUniformBuffer = buffer;
+}
+
+void VulkanDescriptorCache::RequireFrameUniformRange(VkDeviceSize requiredRange)
+{
+    if (!Valid) return;
+
+    VkBuffer vkBuf = Buffers->GetBuffer(FrameUniformBuffer);
     if (vkBuf == VK_NULL_HANDLE)
     {
-        Log.Error("RequireFrameUniformRange: invalid BufferHandle");
+        Log.Error("RequireFrameUniformRange: no frame uniform buffer is set");
         return;
     }
 

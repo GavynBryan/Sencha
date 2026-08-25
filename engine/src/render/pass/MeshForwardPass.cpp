@@ -137,6 +137,8 @@ void MeshForwardPass::Setup(const RendererServices& services, LightBindings& bin
     Pipelines = services.Pipelines;
     Shaders = services.Shaders;
     Bindings = &bindings;
+    Log = services.Logging != nullptr
+        ? &services.Logging->GetLogger<MeshForwardPass>() : nullptr;
     Device = services.Device != nullptr ? services.Device->GetDevice() : VK_NULL_HANDLE;
 
     VertexShader = Shaders->CreateModuleFromSpirv(
@@ -152,7 +154,14 @@ void MeshForwardPass::Setup(const RendererServices& services, LightBindings& bin
     // Without valid lighting bindings there is no legal set-2 layout to
     // build against; leaving PipelineLayout null keeps Draw inert.
     if (!bindings.IsValid())
+    {
+        // The shadow feature warns when its bindings fail to set up, but this
+        // is where the consequence lands: no forward geometry at all.
+        if (Log != nullptr)
+            Log->Error("Lighting bindings are invalid; the forward pass is inert "
+                       "and no mesh geometry will draw");
         return;
+    }
 
     // Fragment only. The vertex stage carried a copy of the block for years
     // without reading a field of it, and the copy drifted -- stale names over
@@ -175,9 +184,13 @@ void MeshForwardPass::Setup(const RendererServices& services, LightBindings& bin
     layoutInfo.pushConstantRangeCount = 1;
     layoutInfo.pPushConstantRanges = &push;
     if (vkCreatePipelineLayout(Device, &layoutInfo, nullptr, &PipelineLayout) != VK_SUCCESS)
+    {
         PipelineLayout = VK_NULL_HANDLE;
+        if (Log != nullptr)
+            Log->Error("Forward pipeline layout creation failed; the pass is inert");
+    }
 
-    Descriptors->RequireFrameUniformRange(Scratch->GetBuffer(), sizeof(MeshFrameUniforms));
+    Descriptors->RequireFrameUniformRange(sizeof(MeshFrameUniforms));
 
     // Build the pipeline set now rather than inside the first Draw. Both
     // formats are already known here, and driver compilation of the four

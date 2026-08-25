@@ -78,6 +78,7 @@ private:
 
     VulkanPipelineCache* Pipelines = nullptr;
     VulkanShaderCache* Shaders = nullptr;
+    Logger* Log = nullptr;
     VkDevice Device = VK_NULL_HANDLE;
 
     ShaderHandle VertexShader;

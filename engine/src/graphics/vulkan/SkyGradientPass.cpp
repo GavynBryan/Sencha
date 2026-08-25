@@ -21,7 +21,15 @@ void SkyGradientPass::Setup(const RendererServices& services)
 {
     Pipelines = services.Pipelines;
     Shaders = services.Shaders;
+    Log = services.Logging != nullptr
+        ? &services.Logging->GetLogger<SkyGradientPass>() : nullptr;
     Device = services.Device != nullptr ? services.Device->GetDevice() : VK_NULL_HANDLE;
+    if (Device == VK_NULL_HANDLE || Shaders == nullptr)
+    {
+        if (Log != nullptr)
+            Log->Error("Sky gradient setup skipped: no device or shader cache");
+        return;
+    }
 
     VertexShader = Shaders->CreateModuleFromSpirv(
         kSkyGradientVertSpv, kSkyGradientVertSpvWordCount, "Sky gradient vertex");
@@ -38,7 +46,14 @@ void SkyGradientPass::Setup(const RendererServices& services)
     layoutInfo.pushConstantRangeCount = 1;
     layoutInfo.pPushConstantRanges = &push;
     if (vkCreatePipelineLayout(Device, &layoutInfo, nullptr, &PipelineLayout) != VK_SUCCESS)
+    {
         PipelineLayout = VK_NULL_HANDLE;
+        // The background stays the host's flat clear -- degraded, not illegal --
+        // but silently, which is what this says out loud.
+        if (Log != nullptr)
+            Log->Error("Sky gradient pipeline layout creation failed; "
+                       "the background falls back to the clear color");
+    }
 
     // Compile against the swapchain's formats at load. A host rendering into
     // some other target rebuilds once through the variant set.

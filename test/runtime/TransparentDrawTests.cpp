@@ -26,10 +26,10 @@ GpuStaticMesh MakeMesh()
     return mesh;
 }
 
+// Alpha mode is what a material authors; the pass follows from it.
 Material MakeMaterial(ShaderPassId pass)
 {
     Material material;
-    material.Pass = pass;
     if (pass == ShaderPassId::ForwardTransparent)
         material.AlphaMode = MaterialAlphaMode::Blend;
     return material;
@@ -157,4 +157,29 @@ TEST(TransparentPipelineIndex, KeepsCullAndShadingAndNeverTheMaskBit)
     for (std::size_t id = 0; id < kOpaquePipelineCount; ++id)
         EXPECT_LT(TransparentPipelineIndex(static_cast<OpaquePipelineId>(id)),
                   kTransparentPipelineCount);
+}
+
+// Pass used to be stored on the material beside AlphaMode, set by the loader
+// and trusted by everyone downstream. Nothing validated the pair, so a
+// procedurally registered material could carry Blend with ForwardOpaque and
+// get transparent blending sorted as opaque geometry. Deriving it removes the
+// disagreement structurally; these pin the mapping that replaced it.
+TEST(MaterialPassDerivation, BlendDrawsInTheTransparentPass)
+{
+    Material material;
+    material.AlphaMode = MaterialAlphaMode::Blend;
+    EXPECT_EQ(ResolveMaterialPass(material), ShaderPassId::ForwardTransparent);
+}
+
+TEST(MaterialPassDerivation, OpaqueAndMaskShareTheForwardPass)
+{
+    Material opaque;
+    EXPECT_EQ(ResolveMaterialPass(opaque), ShaderPassId::ForwardOpaque);
+
+    Material masked;
+    masked.AlphaMode = MaterialAlphaMode::Mask;
+    // Mask cuts fragments in the shader and writes depth like opaque geometry,
+    // so it shares the pass and differs only in pipeline.
+    EXPECT_EQ(ResolveMaterialPass(masked), ShaderPassId::ForwardOpaque);
+    EXPECT_NE(SelectOpaquePipeline(masked), SelectOpaquePipeline(opaque));
 }

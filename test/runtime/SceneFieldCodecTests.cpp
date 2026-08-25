@@ -140,7 +140,7 @@ TEST(SceneFieldCodec, GenericComponentSerializerWritesTypedMaterialHandleAsPathS
     AssetSystem assets(logging, assetRegistry, nullptr, &materials);
     MaterialHandle material = assets.RegisterProceduralMaterial(
         "asset://materials/dev/red.smat",
-        Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
+        Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
 
     Registry registry;
     registry.Components.RegisterComponent<SceneCodecMaterialComponent>();
@@ -173,7 +173,7 @@ TEST(SceneFieldCodec, MaterialHandleWritesPathString)
     AssetSystem assets(logging, registry, nullptr, &materials);
     MaterialHandle handle = assets.RegisterProceduralMaterial(
         "asset://materials/dev/red.smat",
-        Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
+        Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
 
     SceneSerializationContext context(logging, &assets);
     JsonWriteArchive archive;
@@ -192,7 +192,7 @@ TEST(SceneFieldCodec, MaterialHandleLoadsPathString)
     MaterialCache materials;
     MaterialHandle registered = materials.Register(
         "asset://materials/dev/red.smat",
-        Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
+        Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
     AssetSystem assets(logging, registry, nullptr, &materials);
 
     auto parsed = JsonParse(R"("asset://materials/dev/red.smat")");
@@ -213,7 +213,7 @@ TEST(SceneFieldCodec, MaterialHandleLoadsLegacyAssetRefObject)
     MaterialCache materials;
     MaterialHandle registered = materials.Register(
         "asset://materials/dev/red.smat",
-        Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
+        Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
     AssetSystem assets(logging, registry, nullptr, &materials);
 
     auto parsed = JsonParse(R"({ "type": "Material", "path": "asset://materials/dev/red.smat" })");
@@ -238,7 +238,7 @@ TEST(SceneFieldCodec, MaterialIdWinsOverStalePath)
     MaterialCache materials;
     MaterialHandle registered = materials.Register(
         "asset://materials/dev/renamed.smat",
-        Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
+        Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
     AssetSystem assets(logging, registry, nullptr, &materials);
 
     auto parsed = JsonParse(R"({ "id": "000000000000beef", "path": "asset://materials/dev/old.smat" })");
@@ -259,7 +259,7 @@ TEST(SceneFieldCodec, MaterialHandleFallsBackToPathForUnknownId)
     MaterialCache materials;
     MaterialHandle registered = materials.Register(
         "asset://materials/dev/red.smat",
-        Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
+        Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
     AssetSystem assets(logging, registry, nullptr, &materials);
 
     auto parsed = JsonParse(R"({ "id": "00000000000dead0", "path": "asset://materials/dev/red.smat" })");
@@ -335,7 +335,7 @@ TEST(SceneFieldCodec, MaterialHandleRejectsRegistryTypeMismatch)
     MaterialCache materials;
     [[maybe_unused]] MaterialHandle material = materials.Register(
         "asset://materials/dev/red.smat",
-        Material{ .Pass = ShaderPassId::ForwardOpaque, .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
+        Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
     AssetSystem assets(logging, registry, nullptr, &materials);
 
     auto parsed = JsonParse(R"("asset://materials/dev/red.smat")");

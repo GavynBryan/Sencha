@@ -138,11 +138,6 @@ Material MaterialAssetLoader::ResolveDescription(const MaterialDescription& desc
                                                  std::vector<TextureCacheHandle>& outOwned)
 {
     Material material;
-    // The one classification point: a material's pass is decided at load and
-    // consumers route on it, rather than each re-deriving it from AlphaMode.
-    material.Pass = desc.AlphaMode == MaterialAlphaMode::Blend
-        ? ShaderPassId::ForwardTransparent
-        : ShaderPassId::ForwardOpaque;
     material.Shading = desc.Shading;
     material.BaseColor = desc.BaseColorFactor;
     material.EmissiveFactor = desc.EmissiveFactor;

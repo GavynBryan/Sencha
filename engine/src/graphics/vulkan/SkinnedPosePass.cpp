@@ -65,6 +65,11 @@ void SkinnedPosePass::Setup(const RendererServices& services)
         != VK_SUCCESS)
     {
         SetLayout = VK_NULL_HANDLE;
+        // Skinned instances fall back to rest geometry from here -- visible as
+        // characters frozen at bind pose, with nothing else to explain it.
+        if (Log != nullptr)
+            Log->Error("Skin pose descriptor set layout creation failed; "
+                       "skinned meshes will draw at rest");
         return;
     }
 
@@ -81,6 +86,9 @@ void SkinnedPosePass::Setup(const RendererServices& services)
         != VK_SUCCESS)
     {
         PipelineLayout = VK_NULL_HANDLE;
+        if (Log != nullptr)
+            Log->Error("Skin pose pipeline layout creation failed; "
+                       "skinned meshes will draw at rest");
         return;
     }
 
@@ -97,7 +105,12 @@ void SkinnedPosePass::Setup(const RendererServices& services)
     for (VkDescriptorPool& pool : Pools)
     {
         if (vkCreateDescriptorPool(Device, &poolInfo, nullptr, &pool) != VK_SUCCESS)
+        {
             pool = VK_NULL_HANDLE;
+            if (Log != nullptr)
+                Log->Error("Skin pose descriptor pool creation failed; frames using "
+                           "this slot will draw skinned meshes at rest");
+        }
     }
 }
 

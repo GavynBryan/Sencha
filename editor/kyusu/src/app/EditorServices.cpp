@@ -388,8 +388,15 @@ void EditorServices::BuildViewportRendering()
         Assets ? &Assets->Assets : nullptr,
         Assets ? &Assets->Registry : nullptr,
         Assets ? &*Assets : nullptr);
-    RenderFeature = renderFeature.get();
-    engine.Graphics().MainRenderer.AddFeature(std::move(renderFeature));
+    // Adopt what AddFeature returns rather than the pointer before it: setup
+    // failure destroys the feature and returns null, and a cached raw pointer
+    // would outlive it.
+    RenderFeature = engine.Graphics().MainRenderer.AddFeature(std::move(renderFeature));
+    if (RenderFeature == nullptr)
+    {
+        std::fprintf(stderr, "[editor] viewport render feature failed to set up; "
+                             "viewports will not draw\n");
+    }
 }
 
 void EditorServices::BuildUi(bool consoleOpenOnStart)
@@ -418,6 +425,8 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     };
     auto uiFeature = std::make_unique<EditorUiFeature>(engine, *Window, instance, frames,
                                                        "kyusu.imgui.ini", layoutRatios);
+    // Provisional, for the panel and chrome wiring below; reassigned from what
+    // AddFeature returns once the feature is actually registered.
     UiFeature = uiFeature.get();
     UiFeature->SetUndoActions(
         [this]() { if (Commands) Commands->Undo(); },
@@ -652,7 +661,20 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     Browser = browserPanel.get();
     UiFeature->AddPanel(std::move(browserPanel));
 
-    renderer.AddFeature(std::move(uiFeature));
+    // Same rule as the render feature, and it bites harder here: EditorUiFeature
+    // has real failure paths (no graphics queue family, descriptor pool, SDL or
+    // Vulkan backend init), and the panels below are owned BY the feature, so a
+    // failure takes them with it.
+    UiFeature = renderer.AddFeature(std::move(uiFeature));
+    if (UiFeature == nullptr)
+    {
+        std::fprintf(stderr, "[editor] UI feature failed to set up; "
+                             "editor panels are unavailable\n");
+        PerspectivePanel = nullptr;
+        OrthoPanel = nullptr;
+        ConsolePanel = nullptr;
+        Browser = nullptr;
+    }
 }
 
 void EditorServices::RegisterSystems(EngineSchedule& schedule)
