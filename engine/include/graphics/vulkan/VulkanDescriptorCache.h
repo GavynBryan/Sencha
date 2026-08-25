@@ -3,6 +3,8 @@
 #include <core/logging/LoggingProvider.h>
 #include <graphics/BindlessImageIndex.h>
 #include <graphics/FrameUniformRange.h>
+#include <graphics/GpuFrameRetirement.h>
+#include <graphics/RetiredSlotQueue.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanImageService.h>
 #include <vulkan/vulkan.h>
@@ -101,6 +103,12 @@ public:
     // The range the descriptor currently carries.
     [[nodiscard]] VkDeviceSize GetFrameUniformRange() const { return FrameUniformRange; }
 
+    // Hands the cache this frame's retirement clock, which is what lets
+    // released bindless slots come back into circulation. The cache is
+    // constructed before the frame service that owns the clock, so it arrives
+    // per frame as a value rather than as a constructor dependency.
+    void BeginFrame(GpuFrameRetirement retirement) { Retirement = retirement; }
+
     // -- Bindless sampled images --------------------------------------------
     //
     // Assign a bindless slot to (image, sampler). Re-registering the same
@@ -108,9 +116,12 @@ public:
     // index is what gameplay code writes into per-sprite instance data.
     [[nodiscard]] BindlessImageIndex RegisterSampledImage(ImageHandle image, VkSampler sampler);
 
-    // Releases a slot. The descriptor write isn't actively revoked -- it
-    // just becomes a dangling slot that will be overwritten the next time
-    // RegisterSampledImage allocates a fresh index.
+    // Releases a slot. The descriptor write isn't actively revoked; the slot
+    // is held until the GPU retires every frame that could still resolve it,
+    // and only then becomes available to RegisterSampledImage. Handing it back
+    // immediately would let a submitted frame sample whatever the next
+    // registration wrote there, because a command buffer resolves a bindless
+    // index when it executes, not when it was recorded.
     void UnregisterSampledImage(BindlessImageIndex index);
 
     // Repoints an existing bindless slot at a new (image, sampler) without
@@ -168,7 +179,11 @@ private:
     std::vector<PipelineLayoutEntry> PipelineLayouts;
 
     std::unordered_map<BindlessKey, BindlessImageIndex, BindlessKeyHash> BindlessLookup;
-    std::vector<uint32_t> BindlessFreeSlots;
+    RetiredSlotQueue BindlessRetired;
+    // Refreshed once per frame by the renderer. Defaults to a clock that has
+    // retired nothing, so slots released before the first frame stay held
+    // rather than recycling against an unproven boundary.
+    GpuFrameRetirement Retirement;
     uint32_t BindlessNextSlot = 0;
 
     [[nodiscard]] bool CreatePoolAndLayouts();

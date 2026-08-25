@@ -180,6 +180,11 @@ bool TextureCache::ReloadEntryImage(std::string_view path, ImageHandle newImage,
     // Repoint the existing bindless slot at the new image (same index, so
     // materials are unaffected), then retire the old image through the
     // deletion queue. Generation, refcount, and the handle are untouched.
+    //
+    // Deliberately in place rather than release-and-reacquire: the slot keeps
+    // naming the same logical texture, so the worst an in-flight frame sees is
+    // one frame of mixed old and new content. Recycling the index instead
+    // would invalidate every material already carrying it.
     VkSampler vkSampler = Samplers->Get(entry->Sampler);
     Descriptors->UpdateSampledImage(entry->Bindless, newImage, vkSampler);
     Images->Destroy(entry->GpuImage);

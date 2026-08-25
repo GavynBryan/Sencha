@@ -219,6 +219,11 @@ RenderFrameResult Renderer::DrawFrameScheduled()
     // any feature draws -- feature code allocates transient UBOs from it.
     Services.Scratch->BeginFrame();
 
+    // The descriptor cache holds released bindless slots until the GPU proves
+    // it is done with the frames that could still resolve them; this is where
+    // it learns how far that proof has advanced.
+    Services.Descriptors->BeginFrame(Frames.GetRetirement());
+
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     GpuTimestampPool* gpuScopes = Services.Instrumentation != nullptr
         ? Services.Instrumentation->GpuTimestamps

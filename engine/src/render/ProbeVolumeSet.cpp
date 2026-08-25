@@ -128,6 +128,11 @@ void ProbeVolumeSet::ReleaseAll()
     Partitions.clear();
 }
 
+// The slot number recycles immediately, which is safe for the same reason the
+// probe descriptor writes are: binding 2 is update-after-bind, and a slot
+// reused before an in-flight frame retires shows that frame one frame of a
+// different volume rather than a freed one -- the images themselves go through
+// the deletion queue. Zones stream at the drain point, not mid-frame.
 void ProbeVolumeSet::ReleaseVolumes(std::vector<ResidentVolume>& volumes)
 {
     for (ResidentVolume& volume : volumes)

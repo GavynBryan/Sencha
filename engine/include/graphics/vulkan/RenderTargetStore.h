@@ -1,7 +1,6 @@
 #pragma once
 
 #include <graphics/FramesInFlight.h>
-#include <graphics/GpuFrameRetirement.h>
 #include <graphics/RenderTargetId.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
@@ -16,7 +15,9 @@
 // RenderTargetStore
 //
 // Offscreen colour (+ depth) targets, sized on request, one set per frame in
-// flight, destroyed through the fence-anchored retirement clock.
+// flight. Images are destroyed through the image service's deletion queue and
+// bindless indices through the descriptor cache's retirement gate, so the
+// store holds no retirement clock of its own.
 //
 // This is the editor's ViewportTargetCache generalised and moved down. That
 // cache is already shared by Kyusu's viewports and Shudei's material preview,
@@ -121,9 +122,8 @@ public:
     void Setup(const RendererServices& services);
     void Teardown();
 
-    // Selects this frame's slot and advances the retirement clock the store
-    // frees against. Call once per frame, before any Acquire.
-    void BeginFrame(std::uint32_t frameInFlightIndex, GpuFrameRetirement retirement);
+    // Selects this frame's slot. Call once per frame, before any Acquire.
+    void BeginFrame(std::uint32_t frameInFlightIndex);
 
     [[nodiscard]] RenderTargetId Create(const RenderTargetDesc& desc);
     void Destroy(RenderTargetId id);
@@ -175,6 +175,5 @@ private:
     // Index 0 is the reserved null slot, matching every other handle pool.
     std::vector<Target> Targets{ Target{} };
     std::vector<std::uint32_t> FreeList;
-    GpuFrameRetirement Retirement;
     std::uint32_t CurrentSlot = 0;
 };

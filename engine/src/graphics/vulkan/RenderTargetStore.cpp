@@ -27,10 +27,8 @@ void RenderTargetStore::Teardown()
     FreeList.clear();
 }
 
-void RenderTargetStore::BeginFrame(std::uint32_t frameInFlightIndex,
-                                   GpuFrameRetirement retirement)
+void RenderTargetStore::BeginFrame(std::uint32_t frameInFlightIndex)
 {
-    Retirement = retirement;
     // GraphicsServices clamps the configured count, so the index is in range by
     // construction; the assert catches a broken contract in development and the
     // resolve keeps a release build from indexing past the array.

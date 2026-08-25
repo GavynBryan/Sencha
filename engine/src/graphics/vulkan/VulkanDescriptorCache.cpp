@@ -298,16 +298,17 @@ BindlessImageIndex VulkanDescriptorCache::RegisterSampledImage(ImageHandle image
     }
 
     uint32_t slot;
-    if (!BindlessFreeSlots.empty())
+    if (const std::optional<uint32_t> recycled = BindlessRetired.TryPop(Retirement))
     {
-        slot = BindlessFreeSlots.back();
-        BindlessFreeSlots.pop_back();
+        slot = *recycled;
     }
     else
     {
         if (BindlessNextSlot >= kBindlessImageCapacity)
         {
-            Log.Error("Bindless image capacity ({}) exhausted", kBindlessImageCapacity);
+            Log.Error("Bindless image capacity ({}) exhausted ({} released slot(s) "
+                      "still held for in-flight frames)",
+                      kBindlessImageCapacity, BindlessRetired.PendingCount());
             return {};
         }
         slot = BindlessNextSlot++;
@@ -328,7 +329,9 @@ void VulkanDescriptorCache::UnregisterSampledImage(BindlessImageIndex index)
     {
         if (it->second == index)
         {
-            BindlessFreeSlots.push_back(index.Value);
+            // Stamped, not recycled: a frame already submitted can still
+            // resolve this index when it executes.
+            BindlessRetired.Push(index.Value, Retirement.Stamp());
             BindlessLookup.erase(it);
             return;
         }

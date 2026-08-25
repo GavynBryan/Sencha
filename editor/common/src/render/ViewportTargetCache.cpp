@@ -35,7 +35,9 @@ void ViewportTargetCache::Teardown()
 void ViewportTargetCache::BeginFrame(uint32_t frameInFlightIndex,
                                      GpuFrameRetirement retirement)
 {
-    Store.BeginFrame(frameInFlightIndex, retirement);
+    Store.BeginFrame(frameInFlightIndex);
+    // The presenter is the one here that retires anything of its own: the
+    // ImGui descriptor sets it hands the UI outlive the target they name.
     Presenter.BeginFrame(retirement);
 }
 
