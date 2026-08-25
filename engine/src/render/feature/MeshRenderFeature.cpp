@@ -12,7 +12,8 @@ MeshRenderFeature::MeshRenderFeature(RenderQueue& queue,
                                      const RenderLightSet& lights,
                                      std::shared_ptr<LightBindings> bindings,
                                      const SkinnedMeshCache* skinnedMeshes,
-                                     std::shared_ptr<const SkinnedPoseFrameData> skinnedPoses)
+                                     std::shared_ptr<const SkinnedPoseFrameData> skinnedPoses,
+                                     ProbeVolumeSet* probes)
     : Queue(&queue)
     , Meshes(&meshes)
     , SkinnedMeshes(skinnedMeshes)
@@ -21,6 +22,7 @@ MeshRenderFeature::MeshRenderFeature(RenderQueue& queue,
     , Lights(&lights)
     , Bindings(std::move(bindings))
     , SkinnedPoses(std::move(skinnedPoses))
+    , Probes(probes)
 {
 }
 
@@ -37,6 +39,12 @@ bool MeshRenderFeature::Setup(const RenderFeatureServices& services)
 
 void MeshRenderFeature::OnDraw(const RenderFrame& frame)
 {
+    // Ahead of the early-out: a frame that draws nothing still retires the
+    // probe slots whose zones unloaded, and a stalled reclaim would deny the
+    // zone streaming in behind them.
+    if (Probes != nullptr)
+        Probes->BeginFrame(frame.Retirement);
+
     if (Queue == nullptr || Lights == nullptr) return;
     BeginGpuScope(frame, GpuScope::ForwardOpaque);
     {

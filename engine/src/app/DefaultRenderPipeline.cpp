@@ -110,7 +110,7 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     graphics.MainRenderer.StageFeature(
         std::make_unique<MeshRenderFeature>(
             Queue, *Meshes, *Materials, Camera, Lights, bindings,
-            SkinnedMeshes, SkinnedPoses),
+            SkinnedMeshes, SkinnedPoses, &ProbeVolumes),
         FeatureRegistration{ .Id = "runtime_mesh", .DependsOn = kMeshDeps });
 
     graphics.MainRenderer.StageFeature(

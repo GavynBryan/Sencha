@@ -260,9 +260,11 @@ bool LightBindings::CreateSetObjects()
     };
 
     // Binding 2 swaps probe volumes in and out while frames holding this set
-    // are still in flight (zones stream at the drain point, not between
-    // frames), so it is update-after-bind, the same contract the bindless
-    // material set relies on. The shadow bindings stay write-once-at-setup.
+    // are still in flight, so it is update-after-bind, the same contract the
+    // bindless material set relies on. It is not partially bound: every
+    // element must name a live view, which is why a vacated slot points at the
+    // dummy rather than at nothing. The shadow bindings stay
+    // write-once-at-setup.
     constexpr std::uint32_t bindingCount = sizeof(bindings) / sizeof(bindings[0]);
     VkDescriptorBindingFlags bindingFlags[bindingCount] = {};
     bindingFlags[2] = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;

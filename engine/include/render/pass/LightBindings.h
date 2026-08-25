@@ -42,10 +42,12 @@ public:
 
     // Points volume slot `slot` at its three SH channel textures (R, G, B
     // coefficient volumes, resolved to their 3D views here), or back at the
-    // dummy. Binding 2 is update-after-bind: both are safe while frames
-    // holding the set are in flight, as long as no in-flight frame's UBO
-    // headers still reference the slot (the caller parks a slot for a frame
-    // before reusing it, or relies on zone teardown's device-idle).
+    // dummy. Binding 2 is update-after-bind, so both are safe while frames
+    // holding the set are in flight -- but only for a slot no in-flight
+    // frame's UBO headers still name, since update-after-bind does not cover
+    // an element a pending submission is dynamically using. ProbeVolumeSet is
+    // what holds a vacated slot until the frames that named it retire; a
+    // second caller would owe the same.
     void SetProbeVolume(std::uint32_t slot, ImageHandle r, ImageHandle g,
                         ImageHandle b);
     void ResetProbeVolume(std::uint32_t slot);

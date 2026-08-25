@@ -1,6 +1,7 @@
 #pragma once
 
 #include <render/pass/MeshForwardPass.h>
+#include <render/ProbeVolumeSet.h>
 #include <render/SkinnedPoseFrameData.h>
 
 #include <memory>
@@ -21,6 +22,12 @@ public:
     // `skinnedPoses` carries the frame's posed skinned geometry (produced by
     // SkinnedPoseRenderFeature in the Offscreen phase). Null draws skinned
     // items at rest.
+    //
+    // `probes` is the residency this feature's pass samples through binding 2.
+    // The feature drives its frame clock because reclaiming a probe slot has
+    // to happen against the frames that actually submitted, and the render
+    // phase is the only place that number is current -- see
+    // ProbeVolumeSet::BeginFrame. Null for a host with no probe residency.
     MeshRenderFeature(RenderQueue& queue,
                       StaticMeshCache& meshes,
                       MaterialCache& materials,
@@ -28,7 +35,8 @@ public:
                       const RenderLightSet& lights,
                       std::shared_ptr<LightBindings> bindings,
                       const SkinnedMeshCache* skinnedMeshes = nullptr,
-                      std::shared_ptr<const SkinnedPoseFrameData> skinnedPoses = nullptr);
+                      std::shared_ptr<const SkinnedPoseFrameData> skinnedPoses = nullptr,
+                      ProbeVolumeSet* probes = nullptr);
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::MainColor; }
     [[nodiscard]] bool Setup(const RenderFeatureServices& services) override;
@@ -44,6 +52,7 @@ private:
     const RenderLightSet* Lights = nullptr;
     std::shared_ptr<LightBindings> Bindings;
     std::shared_ptr<const SkinnedPoseFrameData> SkinnedPoses;
+    ProbeVolumeSet* Probes = nullptr;
     const RenderInstrumentation* Instrumentation = nullptr;
     MeshForwardPass Pass;
 };

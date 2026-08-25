@@ -44,11 +44,16 @@ std::size_t ProbeVolumeSet::AddVolumes(StoragePartitionId partition,
         const std::uint32_t slot = Slots.Acquire();
         if (slot == ProbeVolumeSlotTable::kInvalidSlot)
         {
+            // Retiring slots are counted so churn reads differently from a
+            // full set: a zone reload releases and re-acquires in one call, so
+            // it transiently needs both copies' slots and can be denied for
+            // the frames its predecessor takes to retire.
             if (Logging != nullptr)
                 Logging->GetLogger<ProbeVolumeSet>().Warn(
-                    "probe volume {}: all {} slots resident, volume denied "
-                    "(hemispheric fallback)",
-                    volume.StableIndex, kMaxActiveProbeVolumes);
+                    "probe volume {}: no free slot of {} ({} retiring), volume "
+                    "denied (hemispheric fallback)",
+                    volume.StableIndex, kMaxActiveProbeVolumes,
+                    Slots.CountIn(ProbeVolumeSlotTable::State::Retiring));
             continue;
         }
 
@@ -128,15 +133,33 @@ void ProbeVolumeSet::ReleaseAll()
     Partitions.clear();
 }
 
-// The slot number recycles immediately, which is safe for the same reason the
-// probe descriptor writes are: binding 2 is update-after-bind, and a slot
-// reused before an in-flight frame retires shows that frame one frame of a
-// different volume rather than a freed one -- the images themselves go through
-// the deletion queue. Zones stream at the drain point, not mid-frame.
+// Nothing is torn down here. Deferring the image destroy protects the memory
+// but says nothing about the identity: the slot number is what an in-flight
+// frame's uniform header carries, and the shader resolves it into binding 2 at
+// execution time. Handing the slot straight back would let a frame sample the
+// next zone's volume through this zone's world-to-uvw mapping, and rewriting
+// the descriptor to the dummy would mutate an element that frame is still
+// dynamically using, which update-after-bind does not permit.
 void ProbeVolumeSet::ReleaseVolumes(std::vector<ResidentVolume>& volumes)
 {
-    for (ResidentVolume& volume : volumes)
+    for (const ResidentVolume& volume : volumes)
     {
+        Slots.BeginRetire(volume.Slot);
+        Retiring.push_back(RetiringVolume{ volume, Retirement.Stamp() });
+    }
+    volumes.clear();
+}
+
+void ProbeVolumeSet::BeginFrame(GpuFrameRetirement retirement)
+{
+    Retirement = retirement;
+    std::size_t reclaimed = 0;
+    while (!Retiring.empty() && Retirement.IsRetired(Retiring.front().Stamp))
+    {
+        const ResidentVolume& volume = Retiring.front().Volume;
+        // Descriptor first, then the images it named: binding 2 has no
+        // partially-bound bit, so the element must point at the dummy before
+        // its views become destroyable.
         if (Bindings != nullptr)
             Bindings->ResetProbeVolume(volume.Slot);
         if (Images.IsValid())
@@ -144,8 +167,16 @@ void ProbeVolumeSet::ReleaseVolumes(std::vector<ResidentVolume>& volumes)
                 if (channel.IsValid())
                     Images.Destroy(channel);
         Slots.Release(volume.Slot);
+        Retiring.erase(Retiring.begin());
+        ++reclaimed;
     }
-    volumes.clear();
+    // Symmetric with the residency line in AddVolumes, and the only way a live
+    // run can tell a working gate from a stalled one: slots that never come
+    // back deny every zone that streams in behind them.
+    if (reclaimed > 0 && Logging != nullptr)
+        Logging->GetLogger<ProbeVolumeSet>().Info(
+            "probe volume slots reclaimed: {} ({} still retiring)", reclaimed,
+            Retiring.size());
 }
 
 void ProbeVolumeSet::AppendActive(const StoragePartitionSet& partitions,

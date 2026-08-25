@@ -100,6 +100,16 @@ device-lost fault injection are owed in the same bucket.
   defect: a future early return, or anything that reads the rect during
   recording, gets target-local coordinates where it expects screen ones. The fix
   is a draw context carrying the target-local rect explicitly.
+- **No streaming content carries probe volumes.** Probe slots now retire on the
+  frame clock before they recycle, but nothing checked in unloads a zone that
+  owns an `IrradianceVolume` mid-run: `probe_spike` is a single map, and the
+  `traversal3` world's zones have no probes cooked. The gate was proven live by
+  forcing a release from a temporary probe (held one frame, reclaimed the next,
+  no validation errors), and the slot state machine is covered headlessly. What
+  is not covered is the real path -- unload, reclaim, and the zone streaming in
+  behind it re-acquiring the slot. A probe volume authored into a streamed zone
+  would close it, and would also exercise the transient 2x slot demand a zone
+  reload creates.
 - **Scratch reservations are not built.** Per-consumer accounting landed
   (`ScratchTag`), so an exhausted slice now names who filled it. Reservations or
   protected minimums would change which allocations succeed, and there is no
