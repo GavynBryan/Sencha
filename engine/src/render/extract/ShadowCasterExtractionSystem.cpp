@@ -81,6 +81,25 @@ ShadowCasterGatherResult AppendShadowCasters(
                                       casters);
 }
 
+
+void AppendShadowCasterRecord(ShadowCasterSet& casters,
+                              RenderEntityKey key,
+                              StaticMeshHandle mesh,
+                              MaterialSetHandle materials,
+                              const ShadowCasterGatherResult& gathered)
+{
+    casters.Records.push_back(ShadowCasterRecord{
+        .Key = key,
+        .State = ShadowCasterState{
+            .WorldBounds = QuantizeShadowCasterBounds(gathered.WorldBounds),
+            .Mesh = mesh,
+            .Materials = materials,
+            .EffectiveShadowSectionMask = gathered.EffectiveSectionMask,
+            .ShadowMaterialStateHash = gathered.MaterialStateHash,
+        },
+    });
+}
+
 void ShadowCasterExtractionSystem::Extract(
     const World& world,
     const StoragePartitionSet& partitions,
@@ -130,16 +149,9 @@ void ShadowCasterExtractionSystem::Extract(
             if (gathered.EffectiveSectionMask == 0 || !emitRecords)
                 continue;
 
-            casters.Records.push_back(ShadowCasterRecord{
-                .Key = RenderEntityKey{ .Entity = view.Entity(i) },
-                .State = ShadowCasterState{
-                    .WorldBounds = QuantizeShadowCasterBounds(gathered.WorldBounds),
-                    .Mesh = renderer.Mesh,
-                    .Materials = renderer.Materials,
-                    .EffectiveShadowSectionMask = gathered.EffectiveSectionMask,
-                    .ShadowMaterialStateHash = gathered.MaterialStateHash,
-                },
-            });
+            AppendShadowCasterRecord(
+                casters, RenderEntityKey{ .Entity = view.Entity(i) },
+                renderer.Mesh, renderer.Materials, gathered);
         }
     };
 

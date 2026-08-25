@@ -480,16 +480,9 @@ void SceneRenderQueueBuilder::BuildShadowCasters(const EditorDocument& document)
 
         RenderEntityKey key = MakeRenderEntityKey(
             registry, EntityId{ .Index = 0x80000000u | ordinal, .Generation = 0 });
-        SceneCasters.Records.push_back(ShadowCasterRecord{
-            .Key = key,
-            .State = ShadowCasterState{
-                .WorldBounds = QuantizeShadowCasterBounds(gathered.WorldBounds),
-                .Mesh = entry.Mesh,
-                .Materials = MaterialSetHandle{},
-                .EffectiveShadowSectionMask = gathered.EffectiveSectionMask,
-                .ShadowMaterialStateHash = gathered.MaterialStateHash,
-            },
-        });
+        // Cooked brush cells carry their materials in the mesh, not a set.
+        AppendShadowCasterRecord(SceneCasters, key, entry.Mesh,
+                                 MaterialSetHandle{}, gathered);
     }
 
     const World& world = registry.Components;
@@ -513,16 +506,8 @@ void SceneRenderQueueBuilder::BuildShadowCasters(const EditorDocument& document)
         if (gathered.EffectiveSectionMask == 0)
             continue;
 
-        SceneCasters.Records.push_back(ShadowCasterRecord{
-            .Key = MakeRenderEntityKey(registry, entity),
-            .State = ShadowCasterState{
-                .WorldBounds = QuantizeShadowCasterBounds(gathered.WorldBounds),
-                .Mesh = renderer->Mesh,
-                .Materials = renderer->Materials,
-                .EffectiveShadowSectionMask = gathered.EffectiveSectionMask,
-                .ShadowMaterialStateHash = gathered.MaterialStateHash,
-            },
-        });
+        AppendShadowCasterRecord(SceneCasters, MakeRenderEntityKey(registry, entity),
+                                 renderer->Mesh, renderer->Materials, gathered);
     }
 }
 

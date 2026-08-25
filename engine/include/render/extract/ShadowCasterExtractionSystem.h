@@ -56,6 +56,19 @@ ShadowCasterGatherResult AppendShadowCasters(
     const Mat4& worldMatrix,
     ShadowCasterSet& casters);
 
+// Records one gathered instance in the change table the caster diff reads.
+// Shared because the fields are the diff's identity: a site that assembled the
+// record itself and forgot one -- the quantized bounds, the material state
+// hash -- would stop invalidating shadows for changes in whatever it dropped,
+// and only in that host. The runtime extractor and both of the editor's
+// gathers (cooked brush cells, placed entities) go through here.
+void AppendShadowCasterRecord(
+    ShadowCasterSet& casters,
+    RenderEntityKey key,
+    StaticMeshHandle mesh,
+    MaterialSetHandle materials,
+    const ShadowCasterGatherResult& gathered);
+
 class ShadowCasterExtractionSystem
 {
 public:
