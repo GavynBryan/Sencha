@@ -96,7 +96,7 @@ Every engine shader binds the same three sets. See
 [vulkan-backend.md](vulkan-backend.md#descriptor-sets) for the full table.
 
 ```glsl
-layout(set = 0, binding = 0) uniform MeshFrame { ... } frame;          // dynamic UBO
+layout(set = 0, binding = 0) uniform MeshView { ... } frame;          // dynamic UBO
 layout(set = 1, binding = 0) uniform sampler2D BindlessTextures[1024]; // material textures
 layout(set = 2, binding = 0) uniform sampler2DShadow        SpotShadowAtlas;
 layout(set = 2, binding = 1) uniform samplerCubeArrayShadow PointShadowCubes;

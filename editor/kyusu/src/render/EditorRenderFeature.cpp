@@ -22,7 +22,6 @@
 
 #include <graphics/vulkan/RenderScope.h>
 #include <graphics/vulkan/RenderTargetSession.h>
-#include <graphics/vulkan/VulkanBarriers.h>
 
 #include <optional>
 #include <variant>
@@ -563,60 +562,47 @@ void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorV
     // in the scene pass; this is purely the glow's source. The viewport depth is attached
     // but untested (the wide-line pipeline expects a depth format). Then bloom it onto the
     // scene; the color ends in SHADER_READ_ONLY for the UI composite.
-    VulkanBarriers::ImageTransition toColor{};
-    toColor.Image = target.BloomImage[0];
-    toColor.OldLayout = *target.BloomLayout[0];
-    toColor.NewLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    toColor.SrcStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-    toColor.DstStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-    toColor.SrcAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-    toColor.DstAccess = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-    toColor.AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    VulkanBarriers::TransitionImage(frame.Cmd, toColor);
-
-    const ImVec2 savedMin = viewport.RegionMin;
-    const ImVec2 savedMax = viewport.RegionMax;
-    viewport.RegionMin = ImVec2(0.0f, 0.0f);
-    viewport.RegionMax = ImVec2(static_cast<float>(target.BloomExtent.width),
-                                static_cast<float>(target.BloomExtent.height));
-
-    // Depth is attached but neither loaded nor stored: the wide-line pipeline
-    // expects a depth format, and this pass does not test against it.
-    RenderScopeDesc glowScope{};
-    glowScope.Area.extent = target.BloomExtent;
-    glowScope.Color.View = target.BloomView[0];
-    glowScope.Color.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    glowScope.Color.Clear.color = { { 0.0f, 0.0f, 0.0f, 1.0f } };
-    glowScope.ColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-    glowScope.Depth.View = target.DepthView;
-    glowScope.Depth.LoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    glowScope.Depth.StoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    glowScope.Depth.Clear.depthStencil = { 1.0f, 0 };
-    glowScope.DepthFormat = Services.DepthFormat;
-    glowScope.Phase = RenderPhase::Offscreen;
-
     {
-        const RenderScope glowRendering(frame, glowScope);
-        Highlight.SubmitActiveGlowSource(glowRendering.Context(), viewport, camera,
-                                         World.FocusDocument().GetScene());
+        // Single-plane: the scene session above already left the shared depth
+        // in DEPTH_ATTACHMENT_OPTIMAL, and this pass attaches it DONT_CARE
+        // without testing, so it has no depth of its own to bracket.
+        RenderTargetSession glowTarget(frame.Cmd, target.BloomImage[0],
+                                       target.BloomLayout[0]);
+
+        const ImVec2 savedMin = viewport.RegionMin;
+        const ImVec2 savedMax = viewport.RegionMax;
+        viewport.RegionMin = ImVec2(0.0f, 0.0f);
+        viewport.RegionMax = ImVec2(static_cast<float>(target.BloomExtent.width),
+                                    static_cast<float>(target.BloomExtent.height));
+
+        // Depth is attached but neither loaded nor stored: the wide-line pipeline
+        // expects a depth format, and this pass does not test against it.
+        RenderScopeDesc glowScope{};
+        glowScope.Area.extent = target.BloomExtent;
+        glowScope.Color.View = target.BloomView[0];
+        glowScope.Color.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        glowScope.Color.Clear.color = { { 0.0f, 0.0f, 0.0f, 1.0f } };
+        glowScope.ColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+        glowScope.Depth.View = target.DepthView;
+        glowScope.Depth.LoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        glowScope.Depth.StoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        glowScope.Depth.Clear.depthStencil = { 1.0f, 0 };
+        glowScope.DepthFormat = Services.DepthFormat;
+        glowScope.Phase = RenderPhase::Offscreen;
+
+        {
+            const RenderScope glowRendering(frame, glowScope);
+            Highlight.SubmitActiveGlowSource(glowRendering.Context(), viewport, camera,
+                                             World.FocusDocument().GetScene());
+        }
+
+        viewport.RegionMin = savedMin;
+        viewport.RegionMax = savedMax;
     }
 
-    VulkanBarriers::ImageTransition toRead{};
-    toRead.Image = target.BloomImage[0];
-    toRead.OldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    toRead.NewLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    toRead.SrcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-    toRead.DstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-    toRead.SrcAccess = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-    toRead.DstAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-    toRead.AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    VulkanBarriers::TransitionImage(frame.Cmd, toRead);
-    *target.BloomLayout[0] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
+    // Outside the session: the bloom chain samples bloom[0], which the session's
+    // exit is what makes readable.
     Bloom.Record(frame, target, BloomParamsCache);
-
-    viewport.RegionMin = savedMin;
-    viewport.RegionMax = savedMax;
 }
 
 void EditorRenderFeature::Teardown()
