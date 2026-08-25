@@ -2,7 +2,7 @@
 #extension GL_GOOGLE_include_directive : require
 
 #define SENCHA_DEBUG_VIEWS 1
-#include "mesh_frame.glsli"
+#include "mesh_view.glsli"
 #include "shadow_sampling.glsli"
 #include "tonemap.glsli"
 #include "mesh_material.glsli"

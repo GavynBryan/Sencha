@@ -266,7 +266,7 @@ directly because set 2 belongs to `LightBindings`.
 ### The frame UBO range
 
 There is one set 0, and both mesh passes bind it: `ShadowDepthPass` reads
-`sizeof(Mat4)` (64 bytes), `MeshForwardPass` reads `sizeof(MeshFrameUniforms)`
+`sizeof(Mat4)` (64 bytes), `MeshForwardPass` reads `sizeof(MeshViewUniforms)`
 (5712 bytes). Each calls `VulkanDescriptorCache::RequireFrameUniformRange` in
 its `Setup` to declare what its own shader block covers, and the cache keeps the
 largest anyone has declared. The shadow pass then reads the first 64 bytes of a
@@ -285,7 +285,7 @@ The 8 KiB budget in `constraints.md` is a design line rather than a hardware
 limit, so it is reported rather than enforced -- clamping would hand a shader a
 range shorter than the block it declares, which is the failure the mechanism
 exists to prevent. `RequireFrameUniformRange` warns past it, and
-`FrameUniformRangeTests` fails if `MeshFrameUniforms` crosses it.
+`FrameUniformRangeTests` fails if `MeshViewUniforms` crosses it.
 
 ## Pipelines and shaders
 

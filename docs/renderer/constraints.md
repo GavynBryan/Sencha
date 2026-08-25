@@ -7,7 +7,7 @@ in [shaders.md](shaders.md#keeping-cpu-and-gpu-structs-in-sync).
 
 | Limit | Value | Constant | Also declared in |
 |---|---|---|---|
-| Forward lights per frame | 64 | `kMaxForwardLights` | `mesh_frame.glsli` `MAX_LIGHTS` |
+| Forward lights per frame | 64 | `kMaxForwardLights` | `mesh_view.glsli` `MAX_LIGHTS` |
 | Spot shadow slots | 8 | `kMaxSpotShadows` | `MAX_SPOT_SHADOWS` |
 | Point shadow slots | 4 | `kMaxPointShadows` | `MAX_POINT_SHADOWS` |
 | Point cube faces | 6 | `kPointShadowFaceCount` | implicit |
@@ -21,7 +21,7 @@ in [shaders.md](shaders.md#keeping-cpu-and-gpu-structs-in-sync).
 | Spot filter reach | 7 texels | `kSpotShadowFilterReachTexels`, asserted `< guard` | |
 | Point face extent | 512 | `kPointShadowFaceExtent` | |
 | Shadow softness clamp | 0.5 to 4.0 texels | `kSpotShadowSoftnessMin/MaxTexels` | clamped again in GLSL |
-| Frame UBO size | 5712 bytes | `sizeof(MeshFrameUniforms)`, asserted | |
+| View UBO size | 5712 bytes | `sizeof(MeshViewUniforms)`, asserted | |
 | Push constant size | 80 bytes | `sizeof(MeshPushConstants)`, asserted | |
 | Fixed shadow memory | 20 MiB (8 atlas + 12 cubes) | derived | |
 

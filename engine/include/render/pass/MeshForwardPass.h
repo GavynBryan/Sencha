@@ -31,7 +31,11 @@ struct GpuPointShadow
     Vec4 Params;
 };
 
-struct MeshFrameUniforms
+// One upload per VIEW, not per frame: the pass uploads this at the top of every
+// Draw, and the editor issues several Draws per frame (one per viewport, plus
+// per context zone). Anything genuinely constant across the whole frame is
+// still uploaded once per view here -- there is no frame-scoped block.
+struct MeshViewUniforms
 {
     Mat4 ViewProjection;
     Vec4 ViewPositionTime;
@@ -195,7 +199,7 @@ private:
     [[nodiscard]] bool EnsureDebugPipelines(const FrameContext& frame,
                                             bool overdraw);
 #endif
-    [[nodiscard]] std::optional<VkDeviceSize> UploadFrameUniforms(
+    [[nodiscard]] std::optional<VkDeviceSize> UploadViewUniforms(
         const CameraRenderData& camera, const RenderLightSet& lights);
     // Uploads and binds the instance stream -- the opaque draw order followed
     // by the view's transparent order -- returning how many entries it covers.

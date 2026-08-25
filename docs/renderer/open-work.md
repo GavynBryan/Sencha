@@ -82,13 +82,43 @@ device-lost fault injection are owed in the same bucket.
   offscreen post chain -- backend code living in an editor `render/` directory.
   Nothing enforces where that line sits. The engine-side rules are the template
   when someone draws it.
+- **The editor's queue building is a second traversal.** `SceneRenderQueueBuilder`
+  walks `EditorScene` entities, cooked brush meshes, and a lightmap-preview
+  snapshot rather than the ECS chunks the runtime walks. The per-item kernels
+  ARE shared -- `EmitMeshSections`, `SelectForwardLights`, the caster gathers and
+  `AppendShadowCasterRecord` -- so classification cannot drift; what stays
+  separate is traversal over genuinely different sources, plus one documented
+  behavioural difference (the editor's light gather does not frustum-cull,
+  because every viewport samples one atlas). Examined 2026-08-25 and
+  deliberately not converged further: a shared record layer over different
+  traversals adds indirection without removing a divergence risk.
+- **Viewport rendering still mutates UI-owned state.** `RenderViewportOffscreen`
+  saves `EditorViewport::RegionMin`/`RegionMax`, overwrites them with a
+  target-local rect so the grid and backdrop can derive viewport and scissor,
+  and restores them after. No exit path currently escapes the window, and the
+  camera no longer comes from that rect, so this is a latent trap rather than a
+  defect: a future early return, or anything that reads the rect during
+  recording, gets target-local coordinates where it expects screen ones. The fix
+  is a draw context carrying the target-local rect explicitly.
+- **Scratch reservations are not built.** Per-consumer accounting landed
+  (`ScratchTag`), so an exhausted slice now names who filled it. Reservations or
+  protected minimums would change which allocations succeed, and there is no
+  observed exhaustion to size them against -- a nonzero per-tag failure count in
+  a real scene is the trigger.
+- **Feature status is a bool.** `Setup` returning true after a pass failed to
+  build is deliberate degradation (the frame still presents), and the failing
+  passes now log what will be missing. A structured Ready/Degraded/Failed status
+  is what a host would need to *surface* that state in UI; nothing wants to
+  today, and it would change the fingerprinted feature contract, so it waits for
+  a consumer.
 - **Complexity outliers left standing.** Measured 2026-08-24 across the render
   and graphics trees (median function 10 lines, 6% above cyclomatic 10, so the
   tree is healthy and the pain is local). Five worst cases were fixed; these
   were recorded instead: `MeshForwardPass.cpp` at 834 lines and
   `LightBindings.cpp` at 633 (both one cohesive mechanism, so a split needs a
   seam rather than a line count); `EditorRenderFeature.cpp` at 663 with a
-  15-parameter constructor; `VulkanFrameService::BeginFrame` / `EndFrame` at
+  15-parameter constructor (its `ReleaseSceneResources` hook is gone, but the
+  breadth remains); `VulkanFrameService::BeginFrame` / `EndFrame` at
   cyclomatic 26 and 23, which is `VkResult` triage fan-out rather than
   algorithm; `FrameComposition::Resolve` at 27, a multi-phase topological sort
   in one function; and `Renderer`'s own 15-parameter constructor.

@@ -279,7 +279,7 @@ phase is a point in the command stream with its own rendering scope policy.
 
 ## Add an engine shader
 
-**1. Write the GLSL** in `engine/shaders`. Include `mesh_frame.glsli` if you
+**1. Write the GLSL** in `engine/shaders`. Include `mesh_view.glsli` if you
 need the frame UBO, and follow the include order in
 [shaders.md](shaders.md#include-topology).
 
@@ -357,22 +357,26 @@ the material.
 
 ---
 
-## Add a frame-uniform field
+## Add a view-uniform field
 
-Use this when the value is constant for the whole frame.
+Use this for a value the shader needs that varies per view, or is constant and
+cheap enough to re-upload per view. The block is uploaded once per `Draw`, and
+the editor issues several per frame -- one per viewport, plus one per context
+zone -- so "compute it once outside the loop" is the wrong instinct here: there
+is no frame-scoped uniform block to put it in.
 
-1. **`MeshFrameUniforms`** (`engine/include/render/pass/MeshForwardPass.h`): add the
+1. **`MeshViewUniforms`** (`engine/include/render/pass/MeshForwardPass.h`): add the
    field. Respect std140: `vec3` occupies 16 bytes, and a scalar following an
    array needs the array to have ended on a 16-byte boundary. Add explicit pad
    members rather than relying on the compiler.
 2. **`static_assert` block**: the asserts are chained -- each field starts
    where the previous one ends -- so inserting a field renumbers nothing below
    it. Add one chain link for the new field, repair the link of the field that
-   now follows it, and update the absolute `sizeof(MeshFrameUniforms)` at the
+   now follows it, and update the absolute `sizeof(MeshViewUniforms)` at the
    end, which is the one conscious edit.
-3. **`mesh_frame.glsli`**: mirror the field at the same offset, with the same
+3. **`mesh_view.glsli`**: mirror the field at the same offset, with the same
    padding.
-4. **`MeshForwardPass::UploadFrameUniforms`**: write it.
+4. **`MeshForwardPass::UploadViewUniforms`**: write it.
 5. **Source**: usually `RenderLightSet`, filled from a cvar in
    `DefaultRenderPipeline::ApplyRendererCVars`.
 6. Check the size against the 8 KiB soft budget in
@@ -393,7 +397,7 @@ declaration, so growing the block cannot leave another pass short.
    `.Default(defaults.Field)` entry in its `TypeSchema::Fields()`. Without the
    default, previously cooked scenes fail to load.
 2. If the GPU needs it, add it to `GpuLight` (currently exactly 64 bytes and
-   asserted) and to the `GpuLight` struct in `mesh_frame.glsli`. Prefer packing
+   asserted) and to the `GpuLight` struct in `mesh_view.glsli`. Prefer packing
    into an existing `vec4`'s spare component over growing the struct: 64 lights
    times the growth lands directly in the frame UBO budget.
 3. Pack it in `MakePointGpuLight` / `MakeSpotGpuLight`

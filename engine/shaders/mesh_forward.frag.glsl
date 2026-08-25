@@ -2,7 +2,7 @@
 #extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_nonuniform_qualifier : require
 
-#include "mesh_frame.glsli"
+#include "mesh_view.glsli"
 #include "shadow_sampling.glsli"
 #include "probe_sampling.glsli"
 #include "tonemap.glsli"

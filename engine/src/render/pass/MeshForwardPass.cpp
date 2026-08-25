@@ -79,39 +79,39 @@ static_assert(sizeof(MeshInstanceData) == 80);
 // array is the expected one) renumbers nothing below it; the absolute anchors
 // are the first field and the total size at the end, and only the size is a
 // conscious edit on insertion.
-static_assert(offsetof(MeshFrameUniforms, ViewProjection) == 0);
-static_assert(offsetof(MeshFrameUniforms, ViewPositionTime)
-              == offsetof(MeshFrameUniforms, ViewProjection) + sizeof(Mat4));
-static_assert(offsetof(MeshFrameUniforms, AmbientSky)
-              == offsetof(MeshFrameUniforms, ViewPositionTime) + sizeof(Vec4));
-static_assert(offsetof(MeshFrameUniforms, AmbientGround)
-              == offsetof(MeshFrameUniforms, AmbientSky) + sizeof(Vec4));
-static_assert(offsetof(MeshFrameUniforms, StyleParams)
-              == offsetof(MeshFrameUniforms, AmbientGround) + sizeof(Vec4));
-static_assert(offsetof(MeshFrameUniforms, LightCount)
-              == offsetof(MeshFrameUniforms, StyleParams) + sizeof(Vec4));
+static_assert(offsetof(MeshViewUniforms, ViewProjection) == 0);
+static_assert(offsetof(MeshViewUniforms, ViewPositionTime)
+              == offsetof(MeshViewUniforms, ViewProjection) + sizeof(Mat4));
+static_assert(offsetof(MeshViewUniforms, AmbientSky)
+              == offsetof(MeshViewUniforms, ViewPositionTime) + sizeof(Vec4));
+static_assert(offsetof(MeshViewUniforms, AmbientGround)
+              == offsetof(MeshViewUniforms, AmbientSky) + sizeof(Vec4));
+static_assert(offsetof(MeshViewUniforms, StyleParams)
+              == offsetof(MeshViewUniforms, AmbientGround) + sizeof(Vec4));
+static_assert(offsetof(MeshViewUniforms, LightCount)
+              == offsetof(MeshViewUniforms, StyleParams) + sizeof(Vec4));
 // Four scalars -- LightCount, TonemapEnabled, ShadowDarkness, BakedDirectEnabled
 // -- fill one 16-byte slot, so the light array lands aligned with no hidden pad.
-static_assert(offsetof(MeshFrameUniforms, Lights)
-              == offsetof(MeshFrameUniforms, LightCount) + 4 * sizeof(std::uint32_t));
-static_assert(offsetof(MeshFrameUniforms, SpotShadowCount)
-              == offsetof(MeshFrameUniforms, Lights) + sizeof(GpuLight) * kMaxForwardLights);
+static_assert(offsetof(MeshViewUniforms, Lights)
+              == offsetof(MeshViewUniforms, LightCount) + 4 * sizeof(std::uint32_t));
+static_assert(offsetof(MeshViewUniforms, SpotShadowCount)
+              == offsetof(MeshViewUniforms, Lights) + sizeof(GpuLight) * kMaxForwardLights);
 // Count plus three more scalars (BakedAoEnabled and two pads) per section, so
 // each array starts on the 16-byte boundary std140 gives its GLSL twin.
-static_assert(offsetof(MeshFrameUniforms, SpotShadows)
-              == offsetof(MeshFrameUniforms, SpotShadowCount) + 4 * sizeof(std::uint32_t));
-static_assert(offsetof(MeshFrameUniforms, PointShadowCount)
-              == offsetof(MeshFrameUniforms, SpotShadows)
+static_assert(offsetof(MeshViewUniforms, SpotShadows)
+              == offsetof(MeshViewUniforms, SpotShadowCount) + 4 * sizeof(std::uint32_t));
+static_assert(offsetof(MeshViewUniforms, PointShadowCount)
+              == offsetof(MeshViewUniforms, SpotShadows)
                      + sizeof(GpuSpotShadow) * kMaxSpotShadows);
-static_assert(offsetof(MeshFrameUniforms, PointShadows)
-              == offsetof(MeshFrameUniforms, PointShadowCount) + 4 * sizeof(std::uint32_t));
-static_assert(offsetof(MeshFrameUniforms, ProbeVolumeCount)
-              == offsetof(MeshFrameUniforms, PointShadows)
+static_assert(offsetof(MeshViewUniforms, PointShadows)
+              == offsetof(MeshViewUniforms, PointShadowCount) + 4 * sizeof(std::uint32_t));
+static_assert(offsetof(MeshViewUniforms, ProbeVolumeCount)
+              == offsetof(MeshViewUniforms, PointShadows)
                      + sizeof(GpuPointShadow) * kMaxPointShadows);
-static_assert(offsetof(MeshFrameUniforms, ProbeVolumes)
-              == offsetof(MeshFrameUniforms, ProbeVolumeCount) + 4 * sizeof(std::uint32_t));
-static_assert(offsetof(MeshFrameUniforms, DebugView)
-              == offsetof(MeshFrameUniforms, ProbeVolumes)
+static_assert(offsetof(MeshViewUniforms, ProbeVolumes)
+              == offsetof(MeshViewUniforms, ProbeVolumeCount) + 4 * sizeof(std::uint32_t));
+static_assert(offsetof(MeshViewUniforms, DebugView)
+              == offsetof(MeshViewUniforms, ProbeVolumes)
                      + sizeof(GpuProbeVolume) * kMaxActiveProbeVolumes);
 static_assert(sizeof(GpuSpotShadow) == 96);
 static_assert(offsetof(GpuSpotShadow, ViewProjection) == 0);
@@ -120,7 +120,7 @@ static_assert(offsetof(GpuSpotShadow, SamplingParams) == 80);
 static_assert(sizeof(GpuPointShadow) == 32);
 static_assert(offsetof(GpuPointShadow, PositionFar) == 0);
 static_assert(offsetof(GpuPointShadow, Params) == 16);
-static_assert(sizeof(MeshFrameUniforms) == 5712);
+static_assert(sizeof(MeshViewUniforms) == 5712);
 static_assert(offsetof(GpuLight, PositionRange) == 0);
 static_assert(offsetof(GpuLight, DirectionCone) == 16);
 static_assert(offsetof(GpuLight, ColorIntensity) == 32);
@@ -190,7 +190,7 @@ void MeshForwardPass::Setup(const RendererServices& services, LightBindings& bin
             Log->Error("Forward pipeline layout creation failed; the pass is inert");
     }
 
-    Descriptors->RequireFrameUniformRange(sizeof(MeshFrameUniforms));
+    Descriptors->RequireFrameUniformRange(sizeof(MeshViewUniforms));
 
     // Build the pipeline set now rather than inside the first Draw. Both
     // formats are already known here, and driver compilation of the four
@@ -367,10 +367,10 @@ bool MeshForwardPass::EnsureDebugPipelines(const FrameContext& frame,
 }
 #endif
 
-std::optional<VkDeviceSize> MeshForwardPass::UploadFrameUniforms(
+std::optional<VkDeviceSize> MeshForwardPass::UploadViewUniforms(
     const CameraRenderData& camera, const RenderLightSet& lights)
 {
-    MeshFrameUniforms uniforms{};
+    MeshViewUniforms uniforms{};
     uniforms.ViewProjection = camera.ViewProjection.Transposed();
     uniforms.ViewPositionTime = Vec4(camera.Position.X, camera.Position.Y, camera.Position.Z, 0.0f);
     uniforms.AmbientSky = Vec4(lights.AmbientSky.X, lights.AmbientSky.Y, lights.AmbientSky.Z, 0.0f);
@@ -427,7 +427,7 @@ std::optional<VkDeviceSize> MeshForwardPass::UploadFrameUniforms(
     uniforms.DebugView = static_cast<std::uint32_t>(lights.DebugView);
 #endif
 
-    auto allocation = Scratch->AllocateUniform(sizeof(MeshFrameUniforms),
+    auto allocation = Scratch->AllocateUniform(sizeof(MeshViewUniforms),
                                                ScratchTag::ForwardViewUniforms);
     if (!allocation.IsValid())
         return std::nullopt;
@@ -769,7 +769,7 @@ MeshForwardPass::DrawToken MeshForwardPass::DrawOpaque(const FrameContext& frame
         return giveUp();
 #endif
 
-    const std::optional<VkDeviceSize> uniformOffset = UploadFrameUniforms(camera, lights);
+    const std::optional<VkDeviceSize> uniformOffset = UploadViewUniforms(camera, lights);
     if (!uniformOffset.has_value())
         return giveUp();
     const uint32_t streamed = BindInstanceStream(frame, queue);

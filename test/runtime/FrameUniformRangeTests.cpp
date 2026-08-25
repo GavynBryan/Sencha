@@ -19,7 +19,7 @@ TEST(FrameUniformRange, KeepsTheLargestDeclarationRegardlessOfOrder)
 {
     // The two real declarations, in both orders. Neither may lose.
     const std::uint64_t shadow = sizeof(Mat4);
-    const std::uint64_t forward = sizeof(MeshFrameUniforms);
+    const std::uint64_t forward = sizeof(MeshViewUniforms);
 
     std::uint64_t shadowFirst = 0;
     shadowFirst = ResolveFrameUniformRange(shadowFirst, shadow);
@@ -46,8 +46,8 @@ TEST(FrameUniformRange, TheForwardBlockIsInsideTheRecordedBudget)
     // The budget is a design line rather than a hardware one, so nothing
     // enforces it at runtime beyond a warning. This is what notices when a
     // frame-uniform field pushes the block past it.
-    EXPECT_FALSE(FrameUniformRangeExceedsBudget(sizeof(MeshFrameUniforms)))
-        << "MeshFrameUniforms is " << sizeof(MeshFrameUniforms) << " bytes against a "
+    EXPECT_FALSE(FrameUniformRangeExceedsBudget(sizeof(MeshViewUniforms)))
+        << "MeshViewUniforms is " << sizeof(MeshViewUniforms) << " bytes against a "
         << kFrameUniformBudgetBytes << " byte budget; per-frame data this large belongs "
            "in a storage buffer";
     EXPECT_TRUE(FrameUniformRangeExceedsBudget(kFrameUniformBudgetBytes + 1));

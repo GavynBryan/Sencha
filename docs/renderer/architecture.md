@@ -49,7 +49,9 @@ so a structural change after extraction cannot invalidate a draw.
 `GraphicsServices` (`engine/include/graphics/vulkan/GraphicsServices.h`) is the
 Vulkan dependency graph written out as member declaration order. Members are
 constructed top to bottom and destroyed in reverse, which is the entire
-teardown-ordering mechanism: there is no shutdown sequencer.
+teardown-ordering mechanism for the services: there is no shutdown sequencer.
+(Render features are ordered separately, by the dependencies their host
+declares -- see `FeatureRegistrationOrder`.)
 
 ```mermaid
 graph TD
@@ -180,8 +182,9 @@ else is either a Vulkan object with engine lifetime or a per-frame value.
 The forward pipeline layout needs the lighting descriptor set layout (set 2) to
 exist before it can be created, and the shadow pass needs to have created the
 atlas and cube images that the set points at. Both features therefore hold the
-same `shared_ptr<LightBindings>`, and `DefaultRenderPipeline::AddMeshRenderFeature`
-adds `ShadowRenderFeature` **first** so that its `Setup` runs first.
+same `shared_ptr<LightBindings>`, and the mesh feature **declares a dependency
+on the shadow feature**, so the resolver runs the shadow `Setup` first however
+the host staged them.
 
 That ordering is load-bearing twice over:
 

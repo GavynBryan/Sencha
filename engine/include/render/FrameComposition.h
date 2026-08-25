@@ -18,12 +18,13 @@ class LoggingProvider;
 // and subsystem work, the dependencies between them, and the order that
 // satisfies those dependencies.
 //
-// The edges exist today as prose. The editor runs shadow arbitration once
-// before its viewport loop and says so in a comment; the game gets the same
-// ordering from feature registration order plus a comment in
-// AddMeshRenderFeature plus invariant 6 in the docs. A second view host
-// therefore has to re-derive the order by reading those comments, which is how
-// the editor and the material preview came to hold two copies of one shape.
+// This orders work and views WITHIN a frame -- the editor runs shadow
+// arbitration once, then every live viewport waits on its product. Feature
+// lifecycle order is a different question, answered by the dependencies a host
+// declares at registration (see FeatureRegistrationOrder); both used to be
+// prose, and a second view host had to re-derive the order by reading it, which
+// is how the editor and the material preview came to hold two copies of one
+// shape.
 //
 // The boundary, ratified 2026-08-19: composition views are *externally
 // declared* frame views. A specialised render subsystem may own internal views

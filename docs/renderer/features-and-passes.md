@@ -20,9 +20,15 @@ public:
 | Hook | When | Contract |
 |---|---|---|
 | `GetPhase` | any time | one feature, one phase, constant for its lifetime |
-| `Setup` | inside `Renderer::AddFeature` | cache what the feature needs, create up-front GPU resources. Returning `false` means the feature is unusable: `AddFeature` tears it down and refuses to register it, rather than leaving an inert feature in a phase bucket |
-| `OnDraw` | once per frame, in phase order, in registration order within a phase | record commands, through the passes the feature drives. For `MainColor` the command stream is already inside the swapchain rendering scope. Other phases open their own |
-| `Teardown` | in `~Renderer`, after the device is idle, before any backend service unwinds | release everything the feature still holds |
+| `Setup` | at `AddFeature`, or at `CommitStagedFeatures` for a staged batch -- there in dependency order, so a feature's Setup can build what another's reads | cache what the feature needs, create up-front GPU resources. Returning `false` means the feature is unusable: it is torn down and not registered, and anything declaring a dependency on it is skipped too |
+| `OnDraw` | once per frame, in phase order, in resolved dependency order within a phase | record commands, through the passes the feature drives. For `MainColor` the command stream is already inside the swapchain rendering scope. Other phases open their own |
+| `Teardown` | at `RemoveFeature`, or in `~Renderer` in reverse resolved order, after the device is idle | release everything the feature still holds, including state borrowed from the host -- a host removes the feature while that state is still alive |
+
+Order between features is declared, not implied by the call order: a host stages
+features with the ids they depend on and commits the batch, and the resolver
+produces setup, recording, and teardown order from those edges. Ties break by
+staging index. A graph fault -- unknown id, duplicate, cycle -- refuses the whole
+batch rather than registering part of it.
 
 Degradation versus failure is a real distinction here. `ShadowRenderFeature::Setup`
 returns `true` even when `LightBindings::Setup` fails, because the frame still
@@ -99,9 +105,9 @@ Teardown: pass, then bindings
 
 Drives `SkyGradientPass`, and is the only place that decides where the
 background's colours come from — today `RenderLightSet::AmbientSky` and
-`AmbientGround`, which is where `render.ambient.*` lands. Registered **before**
-`MeshRenderFeature`, because registration order is draw order within a phase and
-the pass fills the view without a depth test.
+`AmbientGround`, which is where `render.ambient.*` lands. `MeshRenderFeature` **declares a dependency on it**, because
+the pass fills the view without a depth test and so must record first within
+the phase.
 
 `render.sky.enabled false` skips it, leaving the host's flat clear.
 
@@ -200,7 +206,7 @@ from `mesh_debug_view.frag.glsl`: `Forward/Debug{Back,DoubleSided}{,Masked}` and
 `Forward/Overdraw{Back,DoubleSided}{,Masked}`. The overdraw family disables depth
 test and write and uses additive blending; the pass clears the color attachment
 before drawing with it. Those families carry the cull and mask axes but not
-lit/unlit -- the channel is a frame-uniform value, not a variant -- so
+lit/unlit -- the channel is a view-uniform value, not a variant -- so
 `DebugPipelineIndex` folds a queue item's id onto them. Masking survives the
 fold deliberately: a debug view that kept the fragments the lit pass discards
 would describe geometry that is not on screen.
@@ -237,7 +243,7 @@ Draw(frame, camera, lights, queue, meshes, materials, tint)
   bail if the pipeline layout is null or the depth format is undefined
   bail if the queue is empty                          (not a skip: there is no work)
   EnsurePipelines / EnsureDebugPipelines              (failure => Skipped)
-  UploadFrameUniforms   -> scratch AllocateUniform    (failure => Skipped)
+  UploadViewUniforms   -> scratch AllocateUniform    (failure => Skipped)
   BindInstanceStream    -> scratch AllocateVertexElements, partial allowed
                            writes transposed world matrices + scale/bias
                            binds binding 1            (zero grant => Skipped)
@@ -287,9 +293,12 @@ passes white; the editor uses it to dim context zones.
 
 ### Frame uniform block
 
-`MeshFrameUniforms`, 5712 bytes, uploaded once per frame into scratch and
-addressed through set 0's dynamic offset. Layout is asserted field by field in
-`MeshForwardPass.cpp` and mirrored in `engine/shaders/mesh_frame.glsli`.
+`MeshViewUniforms`, 5712 bytes, uploaded once per **view** into scratch and
+addressed through set 0's dynamic offset. Once per view, not once per frame:
+the upload happens at the top of every `Draw`, and the editor issues several
+per frame -- one per viewport, plus one per context zone. A four-viewport
+editor frame spends around 68 KiB of its slice here. Layout is asserted field by field in
+`MeshForwardPass.cpp` and mirrored in `engine/shaders/mesh_view.glsli`.
 
 | Offset | Field | Notes |
 |---|---|---|

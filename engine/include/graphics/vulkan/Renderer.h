@@ -38,9 +38,11 @@ struct RenderInstrumentation;
 //
 // Design constraints Sencha locks in at this layer:
 //
-//   * Features are owned by the Renderer (unique_ptr). Setup() runs once
-//     at AddFeature time; Teardown() runs in the Renderer destructor before
-//     any Vulkan service is torn down.
+//   * Features are owned by the Renderer (unique_ptr). Setup() runs once, at
+//     AddFeature time or at the batch commit for a staged feature; Teardown()
+//     runs in the Renderer destructor, in reverse resolved order, before any
+//     Vulkan service is torn down -- or earlier at RemoveFeature, which is how
+//     a host tears a feature down while state it borrows is still alive.
 //
 //   * The per-frame path is flat. OnDraw() receives a small, cache-dense
 //     FrameContext and nothing else -- there are no service lookups in

@@ -14,7 +14,7 @@ directory: engine shaders are compiled at build time and baked into the binary.
 | `shadow_depth.frag.glsl` | fragment | `kShadowDepthFragSpv` (empty body; depth only) |
 | `sky_gradient.vert.glsl` | vertex | `kSkyGradientVertSpv` (full-screen triangle, no vertex buffer) |
 | `sky_gradient.frag.glsl` | fragment | `kSkyGradientFragSpv` |
-| `mesh_frame.glsli` | include | frame UBO block and its structs |
+| `mesh_view.glsli` | include | frame UBO block and its structs |
 | `mesh_material.glsli` | include | fragment inputs, push constants, bindless sampling, tonemap |
 | `lighting.glsli` | include | direct-light terms and shadow visibility composition |
 | `shadow_sampling.glsli` | include | spot and point shadow filters |
@@ -28,7 +28,7 @@ are built the same way.
 
 ```mermaid
 graph TD
-  frag[mesh_forward.frag.glsl] --> frame[mesh_frame.glsli]
+  frag[mesh_forward.frag.glsl] --> frame[mesh_view.glsli]
   frag --> shadow[shadow_sampling.glsli]
   frag --> probe[probe_sampling.glsli]
   frag --> tone[tonemap.glsli]
@@ -137,9 +137,9 @@ There is no reflection step. Three mechanisms hold the contract:
 
 1. **`static_assert` walls.** `engine/src/render/pass/MeshForwardPass.cpp` asserts the
    offset of every field of `MeshPushConstants`, `MeshInstanceData`,
-   `MeshFrameUniforms`, `GpuSpotShadow`, `GpuPointShadow`, and `GpuLight`, plus
+   `MeshViewUniforms`, `GpuSpotShadow`, `GpuPointShadow`, and `GpuLight`, plus
    the total size of each. Adding a field in the wrong place fails the build.
-2. **Hand-mirrored caps.** `engine/shaders/mesh_frame.glsli` opens with
+2. **Hand-mirrored caps.** `engine/shaders/mesh_view.glsli` opens with
    `MAX_LIGHTS`, `MAX_SPOT_SHADOWS`, `MAX_POINT_SHADOWS`, `MAX_PROBE_VOLUMES`,
    and `PROBE_VOLUME_CHANNELS`, with a comment pointing at the C++ header. These
    are not generated; changing one side without the other produces a silently
@@ -147,7 +147,7 @@ There is no reflection step. Three mechanisms hold the contract:
 3. **`std140` discipline.** The frame block is a plain uniform block, so it obeys
    std140: `vec3` occupies 16 bytes, arrays of scalars are padded to 16, and
    struct members align to their largest member. The C++ side matches that by
-   hand with explicit `Pad` members, which is why `MeshFrameUniforms` has
+   hand with explicit `Pad` members, which is why `MeshViewUniforms` has
    `ShadowPad1`, `ProbePad0`, `DebugViewPad0`, and so on.
 
 The matrix convention: `Mat4` is row-major on the CPU and every upload

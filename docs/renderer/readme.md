@@ -12,8 +12,9 @@ code is right and the document is a bug.
 ## What the renderer is
 
 A single-pipeline forward renderer on Vulkan 1.3 core (dynamic rendering,
-synchronization2, descriptor indexing). One opaque forward pass over a sorted,
-instanced draw queue, preceded by an offscreen depth-only shadow phase. Lighting
+synchronization2, descriptor indexing). A sorted, instanced forward pass over an
+opaque queue and a back-to-front transparent one, preceded by an offscreen phase
+that runs the skinning dispatch and the depth-only shadow renders. Lighting
 is punctual point and spot lights evaluated per fragment against a fixed
 64-light frame budget, plus baked lightmaps, baked ambient occlusion, and baked
 L1 irradiance probe volumes streamed per zone.
@@ -29,11 +30,11 @@ code paths.
 | Lights | Point and spot, punctual, per-fragment loop, 64 per frame max |
 | Shadows | Spot: one 2048 D16 quadtree atlas. Point: 4-cube D16 array, 512 per face |
 | Baked | Per-zone lightmap atlas (RGB9E5), AO plane (R8), L1 SH probe volumes (RGBA16F 3D) |
-| Transparency | Not implemented. Blend materials warn and render opaque |
+| Transparency | Blend materials draw back-to-front per view, depth write off, after opaque |
 | Post | Not implemented. Exposure and a tonemap shoulder run inside the forward shader |
 | Directional lights | Not implemented |
-| Skinning | Mesh data and caches exist; no GPU skinning pass yet |
-| Compute | No compute pipelines |
+| Skinning | Compute pre-skin: one dispatch poses vertices, every later pass draws them as static geometry |
+| Compute | One pipeline, the skinning pre-pass |
 
 ## Documents
 
@@ -68,7 +69,7 @@ Read in this order on a first pass.
 | Where shadow depth is drawn | `engine/src/render/pass/ShadowDepthPass.cpp` |
 | Who owns a shadow slot | `engine/src/render/ShadowResidency.cpp` |
 | The fragment shading model | `engine/shaders/lighting.glsli`, `engine/shaders/mesh_forward.frag.glsl` |
-| The frame uniform block | `engine/include/render/pass/MeshForwardPass.h` and `engine/shaders/mesh_frame.glsli` |
+| The view uniform block | `engine/include/render/pass/MeshForwardPass.h` and `engine/shaders/mesh_view.glsli` |
 
 ## Conventions used here
 

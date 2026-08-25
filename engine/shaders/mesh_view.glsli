@@ -1,5 +1,5 @@
 // Keep these caps in sync with engine/include/render/LightGpuTypes.h. The
-// MeshFrame block below is the std140 twin of MeshFrameUniforms in
+// MeshView block below is the std140 twin of MeshViewUniforms in
 // render/pass/MeshForwardPass.h, whose static_assert wall is the layout contract.
 const uint MAX_LIGHTS = 64u;
 const uint MAX_SPOT_SHADOWS = 8u;
@@ -51,7 +51,7 @@ struct GpuProbeVolume
     vec4 UvwMaxStableIndex; // xyz lattice max, w cook-order id (final tiebreak)
 };
 
-layout(set = 0, binding = 0) uniform MeshFrame
+layout(set = 0, binding = 0) uniform MeshView
 {
     mat4 ViewProjection;
     vec4 ViewPositionTime;

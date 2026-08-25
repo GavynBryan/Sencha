@@ -283,6 +283,6 @@ slot for re-render.
 | Active probe volumes | 8 | `kMaxActiveProbeVolumes` |
 
 These are compile-time constants in `engine/include/render/LightGpuTypes.h` and
-are mirrored by hand at the top of `engine/shaders/mesh_frame.glsli`. Changing
+are mirrored by hand at the top of `engine/shaders/mesh_view.glsli`. Changing
 one means changing both, plus the `static_assert` offsets in
 `MeshForwardPass.cpp`. See [shaders.md](shaders.md#keeping-cpu-and-gpu-structs-in-sync).

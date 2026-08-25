@@ -114,7 +114,7 @@ everything between the two writes rather than a single stage.
 ## Debug views
 
 `SENCHA_ENABLE_RENDER_PROFILING` only. Set `render.debug.view` to select a
-channel; the value reaches the shader through `MeshFrameUniforms::DebugView` and
+channel; the value reaches the shader through `MeshViewUniforms::DebugView` and
 switches the forward pass to the debug pipeline family.
 
 | Value | `RenderDebugView` | Shows |
