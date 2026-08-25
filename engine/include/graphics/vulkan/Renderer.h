@@ -186,10 +186,16 @@ public:
     // which case nothing is registered and the staged features are destroyed.
     //
     // A feature whose Setup returns false is skipped along with everything that
-    // declared a dependency on it, and its id lands in `failedIds` if given, so
-    // a host can null whatever it cached. That is degradation, not a broken
-    // graph, so the rest of the batch still commits.
-    bool CommitStagedFeatures(std::vector<std::string_view>* failedIds = nullptr);
+    // declared a dependency on it. That is degradation, not a broken graph, so
+    // the rest of the batch still commits.
+    //
+    // Either way, every id whose feature is gone lands in `failedIds` if given,
+    // including all of them on a graph fault. One reading, one action: a host
+    // nulls what it staged and cached. The pointers StageFeature handed back
+    // are dangling by the time this returns, so ignoring both the result and
+    // the list leaves them dereferenceable-looking and dead.
+    [[nodiscard]] bool CommitStagedFeatures(
+        std::vector<std::string_view>* failedIds = nullptr);
 
     // Tears down a registered feature and drops it, with the GPU drained first.
     // Legal only for a feature nothing else declares a dependency on -- removing
@@ -198,7 +204,11 @@ public:
     // For a host that must release a feature while the state it borrows is
     // still alive: an editor's render feature holds meshes and materials its
     // asset system owns, and the renderer outlives both.
-    bool RemoveFeature(IRenderFeature* feature);
+    //
+    // False means the feature is still registered -- unknown, not owned, or
+    // refused because something depends on it -- so a caller that goes on to
+    // free what the feature borrows has to know.
+    [[nodiscard]] bool RemoveFeature(IRenderFeature* feature);
 
     // Render frame scheduler entry point: acquire -> scratch rotate -> phase
     // iterate -> transition -> submit/present. Returns structured lifecycle

@@ -108,8 +108,13 @@ MaterialEditorServices::~MaterialEditorServices()
     // system below is gone. Removal runs its teardown here.
     if (Preview != nullptr && EnginePtr != nullptr)
     {
-        if (GraphicsServices* graphics = EnginePtr->TryGraphics())
-            graphics->MainRenderer.RemoveFeature(Preview);
+        GraphicsServices* graphics = EnginePtr->TryGraphics();
+        if (graphics == nullptr || !graphics->MainRenderer.RemoveFeature(Preview))
+        {
+            std::fprintf(stderr, "[shudei] material preview feature could not be "
+                                 "removed; the caches it borrows are being "
+                                 "destroyed underneath it\n");
+        }
         Preview = nullptr;
     }
     // Panel-owned bindings still release inline; the panel belongs to the UI
@@ -249,7 +254,14 @@ void MaterialEditorServices::BuildUi()
     // panels the feature owns -- Textures points into one, and the destructor
     // releases GPU refs through it.
     std::vector<std::string_view> failed;
-    renderer.CommitStagedFeatures(&failed);
+    if (!renderer.CommitStagedFeatures(&failed))
+    {
+        // A refused batch registers nothing, so the list names every staged id
+        // and the clauses below null all of them; the renderer has already
+        // logged which declaration was at fault.
+        std::fprintf(stderr, "[shudei] render feature batch was refused; "
+                             "the editor runs without its own features\n");
+    }
     const auto didFail = [&failed](std::string_view id)
     {
         return std::find(failed.begin(), failed.end(), id) != failed.end();

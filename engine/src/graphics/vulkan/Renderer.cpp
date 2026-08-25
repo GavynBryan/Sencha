@@ -210,6 +210,12 @@ bool Renderer::CommitStagedFeatures(std::vector<std::string_view>* failedIds)
                           problem.Id, ToString(problem.Fault));
             }
         }
+        // Every staged id is reported, not none: the batch failing as a whole
+        // destroys all of them, so a host reading only the list would see an
+        // empty one and keep pointers to features that no longer exist.
+        if (failedIds != nullptr)
+            for (const FeatureRegistration& registration : StagedRegistrations)
+                failedIds->push_back(registration.Id);
         StagedFeatures.clear();
         StagedRegistrations.clear();
         return false;
