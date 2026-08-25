@@ -73,6 +73,13 @@ private:
     void PublishExtractionStats(RenderStats& stats,
                                 const LightExtractionCounts& lightCounts) const;
 
+    // Empties every per-frame collection the features read. Runs before any
+    // path that can abandon extraction, so a frame that cannot extract
+    // publishes an empty frame rather than last frame's: the features run
+    // unconditionally and would otherwise re-record a stale shadow schedule
+    // and re-dispatch stale skinning against a camera that no longer exists.
+    void PublishEmptyFrameOutputs();
+
     RenderQueue Queue;
     RenderLightSet Lights;
     // The frame's skinned instances and their palettes. Extraction fills it,

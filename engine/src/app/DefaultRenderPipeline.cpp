@@ -159,8 +159,27 @@ void DefaultRenderPipeline::PublishExtractionStats(
     }
 }
 
+void DefaultRenderPipeline::PublishEmptyFrameOutputs()
+{
+    Queue.Reset();
+    if (SkinnedPoses != nullptr)
+        SkinnedPoses->Reset();
+    Lights.Reset();
+    // The sky is the one feature with no data dependency to fall empty: it
+    // draws from the ambient hemisphere whatever the queue holds. Clearing the
+    // flag is what makes it skip a frame with no camera, rather than paint the
+    // background through a stale view matrix.
+    Lights.SkyEnabled = false;
+    ShadowRequests.clear();
+    PointShadowRequests.clear();
+    CasterEvents.clear();
+    Residency.ClearFrameSchedule();
+}
+
 void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
 {
+    PublishEmptyFrameOutputs();
+
     if (Meshes == nullptr || Materials == nullptr || MaterialSets == nullptr)
         return;
 
@@ -173,8 +192,6 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
     (void)ctx;
     return;
 #endif
-
-    Queue.Reset();
 
     World& world = ctx.Entities;
     const ActiveCameraService* activeCamera =
@@ -195,8 +212,6 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
 
     {
         CpuScopeTimer timer(scopes, CpuScope::Extraction);
-        if (SkinnedPoses != nullptr)
-            SkinnedPoses->Reset();
         RenderExtractor.Extract(
             world, ctx.Partitions,
             RenderExtractCaches{ *Meshes, *Materials, *MaterialSets, Textures,
@@ -208,7 +223,11 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
     LightExtractionCounts lightCounts;
     {
         CpuScopeTimer timer(scopes, CpuScope::LightSelection);
-        Lights.Reset();
+        // Back on by default before the tunables read, which takes the current
+        // value as its default: leaving the empty frame's cleared flag in place
+        // would latch the sky off for the rest of the session whenever the cvar
+        // is unset.
+        Lights.SkyEnabled = true;
         ApplyRendererTunables(Console, Lights);
         LightExtractor.Extract(world, ctx.Partitions, Camera, Lights,
                                ShadowRequests, PointShadowRequests, &lightCounts);
@@ -222,7 +241,6 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
             world, ctx.Partitions, *Meshes, *Materials, *MaterialSets,
             ShadowCasters, wantsCasterEvents, ctx.Presentation.Alpha);
 
-        CasterEvents.clear();
         if (wantsCasterEvents)
         {
             // The retained table is only as fresh as the last frame that built

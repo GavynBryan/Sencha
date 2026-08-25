@@ -612,6 +612,14 @@ std::uint32_t ShadowResidency::LivePointSlotCount() const
     return LiveShadowSlotCount(std::span<const ShadowSlotState>(PointSlots));
 }
 
+void ShadowResidency::ClearFrameSchedule()
+{
+    FrameGrants.clear();
+    FramePointGrants.clear();
+    FrameViews.clear();
+    FramePointFaces.clear();
+}
+
 void ShadowResidency::InvalidateAll()
 {
     for (ShadowSlotState& slot : Slots)

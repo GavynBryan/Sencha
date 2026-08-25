@@ -1090,13 +1090,20 @@ namespace
     }
 }
 
-TEST(ShadowResidency, ATrajectoryDigestPinsTheArbiterEndToEnd)
+// The scripted 500-frame trajectory, folded into one digest. `clearEachFrame`
+// runs ClearFrameSchedule() where a real frame would -- at extraction entry,
+// before the frame's requests arrive -- so the two callers prove that emptying
+// the frame's outputs disturbs no residency policy carried across frames.
+[[nodiscard]] std::uint64_t RunTrajectoryDigest(bool clearEachFrame)
 {
     ShadowResidency residency;
     std::uint64_t digest = kFnv1aOffsetBasis;
 
     for (std::uint32_t frame = 1; frame <= 500; ++frame)
     {
+        if (clearEachFrame)
+            residency.ClearFrameSchedule();
+
         ShadowResidencyBudgets budgets;
         // Spot slots clamp to 3 so the strong contender must steal, then to
         // 2 so budget enforcement evicts a live holder.
@@ -1173,9 +1180,39 @@ TEST(ShadowResidency, ATrajectoryDigestPinsTheArbiterEndToEnd)
         FoldFrame(digest, residency);
     }
 
-    EXPECT_EQ(digest, 0xd2723a6da0468cffULL)
-        << "trajectory digest moved: 0x" << std::hex << digest
-        << ". A refactor stage must reproduce it exactly; only a deliberate "
-           "behavior change re-records it, in the same commit, with the "
-           "delta named.";
+    return digest;
+}
+
+TEST(ShadowResidency, ATrajectoryDigestPinsTheArbiterEndToEnd)
+{
+    EXPECT_EQ(RunTrajectoryDigest(false), 0xd2723a6da0468cffULL)
+        << "trajectory digest moved. A refactor stage must reproduce it "
+           "exactly; only a deliberate behavior change re-records it, in the "
+           "same commit, with the delta named.";
+}
+
+TEST(ShadowResidency, ClearingTheFrameScheduleDisturbsNoPolicy)
+{
+    // Same trajectory, with an empty frame's clear ahead of every update. It
+    // empties this frame's grants and scheduled work only: slot ownership,
+    // atlas placement, cached-content validity, and the frame counter all
+    // survive, so the arbiter takes the identical path.
+    EXPECT_EQ(RunTrajectoryDigest(true), 0xd2723a6da0468cffULL);
+}
+
+TEST(ShadowResidency, ClearFrameScheduleEmptiesGrantsAndScheduledWork)
+{
+    ShadowResidency residency;
+    std::vector<SpotShadowRequest> spots{ MakeRequest(1, 0, 10.0f) };
+    residency.Update(spots, {}, {}, ShadowResidencyBudgets{});
+    ASSERT_FALSE(residency.ScheduledViews().empty());
+
+    residency.ClearFrameSchedule();
+
+    EXPECT_TRUE(residency.ScheduledViews().empty());
+    EXPECT_TRUE(residency.ScheduledPointFaces().empty());
+    EXPECT_TRUE(residency.Grants().empty());
+    EXPECT_TRUE(residency.PointGrants().empty());
+    // The slot itself is still held: only the frame's output was cleared.
+    EXPECT_EQ(residency.LiveSlotCount(), 1u);
 }

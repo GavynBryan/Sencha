@@ -101,6 +101,14 @@ public:
     [[nodiscard]] std::uint32_t LiveSlotCount() const;
     [[nodiscard]] std::uint32_t LivePointSlotCount() const;
 
+    // Empties this frame's grants and scheduled work without touching slot
+    // residency, atlas placement, or cached-content validity. For a frame that
+    // extracted nothing: the schedule is per-frame output, so leaving last
+    // frame's in place would re-record it, while running Update with no
+    // requests would age policy state as though the frame had really asked for
+    // nothing.
+    void ClearFrameSchedule();
+
     // Marks every rendered slot for re-render (render.shadow.invalidate and
     // editor edits that bypass extracted state).
     void InvalidateAll();
