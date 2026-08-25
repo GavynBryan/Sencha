@@ -4,11 +4,91 @@
 #include <graphics/BufferHandle.h>
 #include <graphics/FrameScratchRing.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <string_view>
 
 class VulkanBufferService;
 class VulkanDeviceService;
 class VulkanPhysicalDeviceService;
+
+// Which consumer an allocation is for. One slice serves skin palettes, shadow
+// matrices, editor view uniforms, instance streams, and forward view uniforms,
+// consumed in feature order; when it runs out, the pass that happens to be
+// last silently draws less. Aggregate counters cannot say which consumer took
+// the budget, so every allocation names itself.
+//
+// A closed enum rather than a string: the set is known, it indexes the counter
+// arrays, and it keeps capture columns stable across runs. Names are
+// mechanical -- ImmediateVertices is the immediate-mode vertex stream, not
+// "the editor".
+enum class ScratchTag : std::uint8_t
+{
+    SkinningPalettes,
+    ShadowViewUniforms,
+    ShadowInstanceTransforms,
+    ForwardViewUniforms,
+    ForwardInstanceData,
+    ImmediateVertices,
+    Count,
+};
+
+[[nodiscard]] std::string_view ToString(ScratchTag tag);
+
+// Per-consumer slice accounting. Used and failure counts describe the frame
+// being recorded; the high-water mark persists, which is what sizing a slice
+// wants. Pure, so the policy is testable without a device.
+class ScratchTagCounters
+{
+public:
+    static constexpr std::size_t kTagCount = static_cast<std::size_t>(ScratchTag::Count);
+
+    void BeginFrame()
+    {
+        for (std::size_t i = 0; i < kTagCount; ++i)
+        {
+            Used[i] = 0;
+            Failed[i] = 0;
+        }
+    }
+
+    void RecordGrant(ScratchTag tag, std::uint64_t bytes)
+    {
+        const auto i = static_cast<std::size_t>(tag);
+        if (i >= kTagCount) return;
+        Used[i] += bytes;
+        if (Used[i] > HighWater[i])
+            HighWater[i] = Used[i];
+    }
+
+    void RecordFailure(ScratchTag tag)
+    {
+        const auto i = static_cast<std::size_t>(tag);
+        if (i < kTagCount)
+            ++Failed[i];
+    }
+
+    [[nodiscard]] std::uint64_t UsedBytes(ScratchTag tag) const
+    {
+        const auto i = static_cast<std::size_t>(tag);
+        return i < kTagCount ? Used[i] : 0;
+    }
+    [[nodiscard]] std::uint64_t HighWaterBytes(ScratchTag tag) const
+    {
+        const auto i = static_cast<std::size_t>(tag);
+        return i < kTagCount ? HighWater[i] : 0;
+    }
+    [[nodiscard]] std::uint32_t FailedAllocations(ScratchTag tag) const
+    {
+        const auto i = static_cast<std::size_t>(tag);
+        return i < kTagCount ? Failed[i] : 0;
+    }
+
+private:
+    std::uint64_t Used[kTagCount]{};
+    std::uint64_t HighWater[kTagCount]{};
+    std::uint32_t Failed[kTagCount]{};
+};
 
 //=============================================================================
 // GpuFrameScratch
@@ -85,14 +165,15 @@ public:
 
     // Generic aligned allocation. Returns an invalid Allocation if the
     // request would overflow the current frame's slice.
-    [[nodiscard]] Allocation Allocate(std::uint64_t size, std::uint64_t alignment);
+    [[nodiscard]] Allocation Allocate(std::uint64_t size, std::uint64_t alignment,
+                                      ScratchTag tag);
 
     // Aligned to the device's minUniformBufferOffsetAlignment so the
     // returned offset is a legal dynamic-UBO base.
-    [[nodiscard]] Allocation AllocateUniform(std::uint64_t size);
+    [[nodiscard]] Allocation AllocateUniform(std::uint64_t size, ScratchTag tag);
 
     // 16-byte aligned, suitable for vertex / instance streams.
-    [[nodiscard]] Allocation AllocateVertex(std::uint64_t size);
+    [[nodiscard]] Allocation AllocateVertex(std::uint64_t size, ScratchTag tag);
 
     // A partial grant: `Count` elements were served, which may be fewer than
     // asked for. Zero means the slice had no room at all.
@@ -110,7 +191,8 @@ public:
     // there means the caller drops the entire pass; this lets it draw what fits
     // and come back for the rest. Only a zero grant counts as a failure.
     [[nodiscard]] ElementAllocation AllocateVertexElements(uint32_t maxElements,
-                                                           std::uint64_t stride);
+                                                           std::uint64_t stride,
+                                                           ScratchTag tag);
 
     // -- Accessors ----------------------------------------------------------
 
@@ -127,6 +209,9 @@ public:
     {
         return Ring.GetFailedAllocationCount();
     }
+    // The same numbers broken down by consumer, which is what names the cause
+    // when a slice runs out.
+    [[nodiscard]] const ScratchTagCounters& GetTagCounters() const { return TagCounters; }
 
 private:
     // Turns a ring offset into a binding plus a writable pointer.
@@ -141,5 +226,6 @@ private:
 
     // Slice geometry and cursors; this type owns only the memory behind them.
     FrameScratchRing Ring;
+    ScratchTagCounters TagCounters;
     std::uint64_t UniformAlignment = 256;
 };

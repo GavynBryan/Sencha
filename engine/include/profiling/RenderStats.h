@@ -1,5 +1,7 @@
 #pragma once
 
+#include <graphics/GpuFrameScratch.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -74,6 +76,13 @@ struct RenderStats
     std::uint64_t ScratchBytesPerFrame = 0;
     std::uint32_t ScratchAllocFailures = 0;
     std::uint32_t PassesSkipped = 0;
+    // The same slice, per consumer. The aggregates above say the budget ran
+    // out; these say who took it, which is the question a frame that silently
+    // dropped its scene actually raises -- one slice serves skinning, shadows,
+    // editor views, and the forward pass, consumed in feature order.
+    std::uint64_t ScratchTagHighWaterBytes[ScratchTagCounters::kTagCount]{};
+    std::uint64_t ScratchTagUsedBytes[ScratchTagCounters::kTagCount]{};
+    std::uint32_t ScratchTagFailures[ScratchTagCounters::kTagCount]{};
 };
 
 // Ring of finished frames' stats, pushed once per rendered frame while the

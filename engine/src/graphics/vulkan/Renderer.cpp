@@ -407,6 +407,14 @@ RenderFrameResult Renderer::DrawFrameScheduled()
         stats.ScratchUsedBytes = Services.Scratch->GetUsedBytes();
         stats.ScratchBytesPerFrame = Services.Scratch->GetBytesPerFrame();
         stats.ScratchAllocFailures = Services.Scratch->GetFailedAllocationCount();
+        const ScratchTagCounters& tags = Services.Scratch->GetTagCounters();
+        for (std::size_t i = 0; i < ScratchTagCounters::kTagCount; ++i)
+        {
+            const auto tag = static_cast<ScratchTag>(i);
+            stats.ScratchTagHighWaterBytes[i] = tags.HighWaterBytes(tag);
+            stats.ScratchTagUsedBytes[i] = tags.UsedBytes(tag);
+            stats.ScratchTagFailures[i] = tags.FailedAllocations(tag);
+        }
     }
 
     // Before EndFrame, and deliberately: the retirement clock only advances in

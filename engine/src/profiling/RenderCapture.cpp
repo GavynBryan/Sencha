@@ -17,6 +17,25 @@ namespace
 		double Value;
 	};
 
+	// Column names for the per-consumer scratch fields, built once: FrameFields
+	// borrows its key pointer, and the tag set is closed, so one static table
+	// serves every frame.
+	const std::vector<std::string>& ScratchTagColumnNames()
+	{
+		static const std::vector<std::string> names = []
+		{
+			std::vector<std::string> out;
+			for (std::size_t i = 0; i < ScratchTagCounters::kTagCount; ++i)
+			{
+				const std::string tag(ToString(static_cast<ScratchTag>(i)));
+				out.push_back("scratch_" + tag + "_high_water_bytes");
+				out.push_back("scratch_" + tag + "_failures_count");
+			}
+			return out;
+		}();
+		return names;
+	}
+
 	std::vector<FrameFields> BuildFrameFields(const RenderCapture::FrameRecord& record)
 	{
 		const TimingFrameSample& timing = record.Timing;
@@ -67,6 +86,17 @@ namespace
 			{ "scratch_alloc_failures_count", static_cast<double>(stats.ScratchAllocFailures) },
 			{ "passes_skipped_count", static_cast<double>(stats.PassesSkipped) },
 		};
+		// Per-consumer slice columns, appended so the fixed set above keeps its
+		// order: a capture that shows the budget exhausted can then say which
+		// consumer took it.
+		const std::vector<std::string>& tagColumns = ScratchTagColumnNames();
+		for (std::size_t i = 0; i < ScratchTagCounters::kTagCount; ++i)
+		{
+			fields.push_back({ tagColumns[i * 2].c_str(),
+			                   static_cast<double>(stats.ScratchTagHighWaterBytes[i]) });
+			fields.push_back({ tagColumns[i * 2 + 1].c_str(),
+			                   static_cast<double>(stats.ScratchTagFailures[i]) });
+		}
 		return fields;
 	}
 

@@ -24,7 +24,9 @@ class RenderCapture
 {
 public:
 	static constexpr std::size_t kDefaultCapacityFrames = 4096;
-	static constexpr std::uint32_t kSchemaVersion = 6;
+	// 7: per-consumer scratch columns (scratch_<tag>_high_water_bytes and
+	// _failures_count) appended after the fixed set.
+	static constexpr std::uint32_t kSchemaVersion = 7;
 
 	struct FrameRecord
 	{

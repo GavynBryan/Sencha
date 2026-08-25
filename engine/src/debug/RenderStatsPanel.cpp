@@ -121,6 +121,27 @@ void RenderStatsPanel::Draw()
 		                   "  scratch failures %u  passes skipped %u",
 		                   stats->ScratchAllocFailures, stats->PassesSkipped);
 	}
+	// Per consumer, so an exhausted slice names who filled it rather than only
+	// who happened to ask last.
+	for (std::size_t i = 0; i < ScratchTagCounters::kTagCount; ++i)
+	{
+		const std::uint64_t high = stats->ScratchTagHighWaterBytes[i];
+		if (high == 0 && stats->ScratchTagFailures[i] == 0)
+			continue;
+		const char* name = ToString(static_cast<ScratchTag>(i)).data();
+		if (stats->ScratchTagFailures[i] > 0)
+		{
+			ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
+			                   "    %s %.1f KiB peak, %u failed", name,
+			                   static_cast<float>(high) / 1024.0f,
+			                   stats->ScratchTagFailures[i]);
+		}
+		else
+		{
+			ImGui::Text("    %s %.1f KiB peak", name,
+			            static_cast<float>(high) / 1024.0f);
+		}
+	}
 
 	ImGui::End();
 }

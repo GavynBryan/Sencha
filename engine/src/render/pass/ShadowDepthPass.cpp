@@ -160,7 +160,8 @@ bool ShadowDepthPass::EnsurePipelines(const RenderLightSet& lights)
 VkDeviceSize ShadowDepthPass::UploadView(const Mat4& viewProjection)
 {
     const Mat4 transposed = viewProjection.Transposed();
-    auto allocation = Scratch->AllocateUniform(sizeof(transposed));
+    auto allocation = Scratch->AllocateUniform(sizeof(transposed),
+                                               ScratchTag::ShadowViewUniforms);
     if (!allocation.IsValid())
         return VK_WHOLE_SIZE;
     std::memcpy(allocation.Mapped, &transposed, sizeof(transposed));
@@ -235,7 +236,8 @@ bool ShadowDepthPass::RecordView(const FrameContext& frame,
             return false;
         }
         stream = Scratch->AllocateVertexElements(
-            static_cast<std::uint32_t>(VisibleCasters.size()), sizeof(Mat4));
+            static_cast<std::uint32_t>(VisibleCasters.size()), sizeof(Mat4),
+            ScratchTag::ShadowInstanceTransforms);
         if (!stream.IsValid())
             return false;
 

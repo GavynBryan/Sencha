@@ -73,13 +73,30 @@ GpuFrameScratch::~GpuFrameScratch()
     }
 }
 
+std::string_view ToString(ScratchTag tag)
+{
+    switch (tag)
+    {
+        case ScratchTag::SkinningPalettes:         return "skinning_palettes";
+        case ScratchTag::ShadowViewUniforms:       return "shadow_view_uniforms";
+        case ScratchTag::ShadowInstanceTransforms: return "shadow_instance_transforms";
+        case ScratchTag::ForwardViewUniforms:      return "forward_view_uniforms";
+        case ScratchTag::ForwardInstanceData:      return "forward_instance_data";
+        case ScratchTag::ImmediateVertices:        return "immediate_vertices";
+        case ScratchTag::Count:                    break;
+    }
+    return "unknown";
+}
+
 void GpuFrameScratch::BeginFrame()
 {
     if (!Valid) return;
     Ring.BeginFrame();
+    TagCounters.BeginFrame();
 }
 
-GpuFrameScratch::Allocation GpuFrameScratch::Allocate(VkDeviceSize size, VkDeviceSize alignment)
+GpuFrameScratch::Allocation GpuFrameScratch::Allocate(VkDeviceSize size, VkDeviceSize alignment,
+                                                     ScratchTag tag)
 {
     if (!Valid) return {};
 
@@ -87,16 +104,19 @@ GpuFrameScratch::Allocation GpuFrameScratch::Allocate(VkDeviceSize size, VkDevic
         Ring.Allocate(size, alignment == 0 ? 1 : alignment);
     if (!grant.IsValid())
     {
+        TagCounters.RecordFailure(tag);
         if (size != 0)
         {
-            Log.Error("GpuFrameScratch: allocation of {} bytes at cursor {} exceeds "
+            Log.Error("GpuFrameScratch: {} asked for {} bytes at cursor {}, past the "
                       "frame slice capacity ({})",
+                      ToString(tag),
                       static_cast<uint64_t>(size),
                       static_cast<uint64_t>(Ring.GetUsedBytes()),
                       static_cast<uint64_t>(Ring.GetBytesPerFrame()));
         }
         return {};
     }
+    TagCounters.RecordGrant(tag, grant.Bytes);
     return MakeAllocation(grant);
 }
 
@@ -110,18 +130,18 @@ GpuFrameScratch::Allocation GpuFrameScratch::MakeAllocation(
     return out;
 }
 
-GpuFrameScratch::Allocation GpuFrameScratch::AllocateUniform(VkDeviceSize size)
+GpuFrameScratch::Allocation GpuFrameScratch::AllocateUniform(VkDeviceSize size, ScratchTag tag)
 {
-    return Allocate(size, UniformAlignment);
+    return Allocate(size, UniformAlignment, tag);
 }
 
-GpuFrameScratch::Allocation GpuFrameScratch::AllocateVertex(VkDeviceSize size)
+GpuFrameScratch::Allocation GpuFrameScratch::AllocateVertex(VkDeviceSize size, ScratchTag tag)
 {
-    return Allocate(size, kVertexAlignment);
+    return Allocate(size, kVertexAlignment, tag);
 }
 
 GpuFrameScratch::ElementAllocation GpuFrameScratch::AllocateVertexElements(
-    uint32_t maxElements, VkDeviceSize stride)
+    uint32_t maxElements, VkDeviceSize stride, ScratchTag tag)
 {
     if (!Valid) return {};
 
@@ -129,16 +149,19 @@ GpuFrameScratch::ElementAllocation GpuFrameScratch::AllocateVertexElements(
         Ring.AllocateElements(maxElements, stride, kVertexAlignment);
     if (!grant.IsValid())
     {
+        TagCounters.RecordFailure(tag);
         if (maxElements != 0 && stride != 0)
         {
-            Log.Error("GpuFrameScratch: no room for a {}-byte element at cursor {} "
-                      "of frame slice capacity ({})",
+            Log.Error("GpuFrameScratch: {} had no room for a {}-byte element at cursor "
+                      "{} of frame slice capacity ({})",
+                      ToString(tag),
                       static_cast<uint64_t>(stride),
                       static_cast<uint64_t>(Ring.GetUsedBytes()),
                       static_cast<uint64_t>(Ring.GetBytesPerFrame()));
         }
         return {};
     }
+    TagCounters.RecordGrant(tag, grant.Bytes);
 
     ElementAllocation out;
     out.Grant = MakeAllocation(grant);

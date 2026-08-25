@@ -427,7 +427,8 @@ std::optional<VkDeviceSize> MeshForwardPass::UploadFrameUniforms(
     uniforms.DebugView = static_cast<std::uint32_t>(lights.DebugView);
 #endif
 
-    auto allocation = Scratch->AllocateUniform(sizeof(MeshFrameUniforms));
+    auto allocation = Scratch->AllocateUniform(sizeof(MeshFrameUniforms),
+                                               ScratchTag::ForwardViewUniforms);
     if (!allocation.IsValid())
         return std::nullopt;
     std::memcpy(allocation.Mapped, &uniforms, sizeof(uniforms));
@@ -448,7 +449,7 @@ uint32_t MeshForwardPass::BindInstanceStream(const FrameContext& frame,
     // first to be clipped -- effects drop before world geometry does.
     auto stream = Scratch->AllocateVertexElements(
         static_cast<uint32_t>(order.size() + TransparentOrder.size()),
-        sizeof(MeshInstanceData));
+        sizeof(MeshInstanceData), ScratchTag::ForwardInstanceData);
     if (!stream.IsValid())
         return 0;
 

@@ -113,7 +113,8 @@ void SkinnedPoseRenderFeature::OnDraw(const RenderFrame& frame)
     // dispatch that reads it.
     const std::uint64_t paletteBytes = data.Palettes.size() * sizeof(Mat4);
     const GpuFrameScratch::Allocation palettes =
-        Scratch->Allocate(paletteBytes, kPaletteAlignment);
+        Scratch->Allocate(paletteBytes, kPaletteAlignment,
+                          ScratchTag::SkinningPalettes);
     if (!palettes.IsValid())
         return; // items fall back to rest geometry, counted as not Ready
     std::memcpy(palettes.Mapped, data.Palettes.data(),

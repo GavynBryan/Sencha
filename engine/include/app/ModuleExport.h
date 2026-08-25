@@ -49,5 +49,7 @@
 // RenderFeatureServices / RenderFrame types moved to graphics/RenderFeature.h,
 // and Setup/OnDraw take those instead of the backend RendererServices /
 // FrameContext (still reachable through their Backend pointers). The
-// fingerprint now covers graphics/*.h, the neutral shelf.
-#define SENCHA_GAME_ABI_VERSION 11u
+// fingerprint now covers graphics/*.h, the neutral shelf. v12: GpuFrameScratch
+// allocations name their consumer -- the Allocate family takes a ScratchTag, so
+// one slice's budget can be attributed per feature instead of only in aggregate.
+#define SENCHA_GAME_ABI_VERSION 12u

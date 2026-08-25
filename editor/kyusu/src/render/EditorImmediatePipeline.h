@@ -121,7 +121,7 @@ public:
         }
 
         const VkDeviceSize byteCount = sizeof(TVertex) * vertices.size();
-        const auto allocation = Scratch->AllocateVertex(byteCount);
+        const auto allocation = Scratch->AllocateVertex(byteCount, ScratchTag::ImmediateVertices);
         if (!allocation.IsValid())
         {
             // The scratch error names no caller; identify the pipeline and the
