@@ -1,7 +1,8 @@
 #include "MaterialPreviewRenderFeature.h"
 
 #include <assets/runtime/RuntimeAssets.h>
-#include <graphics/vulkan/VulkanBarriers.h>
+#include <graphics/vulkan/RenderTargetSession.h>
+#include <graphics/vulkan/VulkanSamplerCache.h>
 #include <graphics/vulkan/RenderScope.h>
 #include <math/geometry/3d/Frustum.h>
 #include <render/CameraProjection.h>
@@ -11,9 +12,9 @@
 
 namespace
 {
-    // The cache keys targets by ViewportId; the preview has exactly one view.
-    constexpr ViewportId kPreviewView{ 1 };
-
+// HDR so the backdrop's glow and lit surfaces survive the tonemap, matching
+// what a viewport renders into.
+constexpr VkFormat kPreviewColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 }
 
 MaterialPreviewRenderFeature::MaterialPreviewRenderFeature(RuntimeAssets& assets)
@@ -26,6 +27,15 @@ bool MaterialPreviewRenderFeature::Setup(const RenderFeatureServices& featureSer
     const RendererServices& services = *featureServices.Backend;
     Services = services;
     Targets.Setup(services);
+    if (services.Samplers != nullptr)
+        Presenter.Setup(services.Samplers->GetLinearClamp());
+    RenderTargetDesc scene{};
+    scene.ColorFormat = kPreviewColorFormat;
+    scene.DepthFormat = services.DepthFormat;
+    // ImGui binds this itself, through the presenter.
+    scene.Read = RenderTargetRead::Sampled;
+    scene.DebugName = "material_preview";
+    SceneTarget = Targets.Create(scene);
     Backdrop.Setup(services);
     if (!Lighting.Setup(services) && services.Logging != nullptr)
     {
@@ -60,7 +70,10 @@ void MaterialPreviewRenderFeature::Teardown()
     Forward.Teardown();
     Lighting.Teardown();
     Backdrop.Teardown();
+    Presenter.Release(SceneTarget);
     Targets.Teardown();
+    Presenter.Teardown();
+    SceneTarget = {};
 }
 
 void MaterialPreviewRenderFeature::Orbit(float yawDelta, float pitchDelta)
@@ -76,49 +89,22 @@ void MaterialPreviewRenderFeature::Zoom(float wheelDelta)
 
 ImTextureID MaterialPreviewRenderFeature::Display(VkExtent2D extent)
 {
-    return Targets.Display(kPreviewView, extent);
+    Targets.SetExtent(SceneTarget, extent);
+    return Presenter.Present(Targets, SceneTarget);
 }
 
 void MaterialPreviewRenderFeature::OnDraw(const RenderFrame& renderFrame)
 {
     const FrameContext& frame = *renderFrame.Backend;
-    Targets.BeginFrame(frame.FrameInFlightIndex, frame.Retirement);
-    const std::optional<ViewportTargetCache::RenderView> target = Targets.AcquireForRender(kPreviewView);
+    Targets.BeginFrame(frame.FrameInFlightIndex);
+    Presenter.BeginFrame(frame.Retirement);
+    const std::optional<RenderTargetView> target = Targets.Acquire(SceneTarget);
     if (!target)
         return;
 
-    const auto transitionColor = [&](VkImageLayout oldLayout, VkImageLayout newLayout,
-                                     VkPipelineStageFlags2 srcStage, VkPipelineStageFlags2 dstStage,
-                                     VkAccessFlags2 srcAccess, VkAccessFlags2 dstAccess)
-    {
-        VulkanBarriers::ImageTransition t{};
-        t.Image = target->ColorImage;
-        t.OldLayout = oldLayout;
-        t.NewLayout = newLayout;
-        t.SrcStage = srcStage;
-        t.DstStage = dstStage;
-        t.SrcAccess = srcAccess;
-        t.DstAccess = dstAccess;
-        t.AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        VulkanBarriers::TransitionImage(frame.Cmd, t);
-    };
-
-    transitionColor(*target->ColorLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                    VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                    VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-    {
-        VulkanBarriers::ImageTransition t{};
-        t.Image = target->DepthImage;
-        t.OldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        t.NewLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-        t.SrcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-        t.DstStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-        t.SrcAccess = 0;
-        t.DstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT
-                    | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        t.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        VulkanBarriers::TransitionImage(frame.Cmd, t);
-    }
+    // Brackets the recording below and commits the layout the store remembers.
+    RenderTargetSession session(frame.Cmd, target->ColorImage, target->ColorLayout,
+                                target->DepthImage);
 
     RenderScopeDesc scope{};
     scope.Area.offset = { 0, 0 };
@@ -127,7 +113,7 @@ void MaterialPreviewRenderFeature::OnDraw(const RenderFrame& renderFrame)
     scope.Color.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     // Black base; the backdrop draw paints the glowing grid over it.
     scope.Color.Clear.color = { { 0.0f, 0.0f, 0.0f, 1.0f } };
-    scope.ColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+    scope.ColorFormat = kPreviewColorFormat;
     scope.Depth.View = target->DepthView;
     scope.Depth.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     scope.Depth.StoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -138,7 +124,7 @@ void MaterialPreviewRenderFeature::OnDraw(const RenderFrame& renderFrame)
     {
         const RenderScope rendering(frame, scope);
 
-        Backdrop.Draw(frame.Cmd, target->Extent, VK_FORMAT_R16G16B16A16_SFLOAT,
+        Backdrop.Draw(frame.Cmd, target->Extent, kPreviewColorFormat,
                       Services.DepthFormat, BackdropStyle);
 
         if (Material.IsValid())
@@ -197,8 +183,5 @@ void MaterialPreviewRenderFeature::OnDraw(const RenderFrame& renderFrame)
         }
     }
 
-    transitionColor(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                    VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
-    *target->ColorLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    // Session ends here: sampled, and the store's layout committed.
 }

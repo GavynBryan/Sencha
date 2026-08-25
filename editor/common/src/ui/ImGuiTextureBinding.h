@@ -19,11 +19,11 @@ class VulkanSamplerCache;
 // reload swaps the entry's GPU image in place.
 //
 // Retired descriptor sets are freed a few TextureId() calls later, not
-// immediately: an in-flight frame may still sample them (same rule as
-// ViewportTargetCache). Release() must run while the asset system and the
-// ImGui Vulkan backend are both alive; owners torn down after either must
-// release explicitly (destruction order in editor apps puts render features
-// after the asset system).
+// immediately: an in-flight frame may still sample them (the same rule
+// ImGuiTargetPresenter follows for the sets it hands the UI). Release() must
+// run while the asset system and the ImGui Vulkan backend are both alive, and
+// with the GPU idle -- the editor hosts drain the device at the top of their
+// shutdown for exactly that reason.
 //=============================================================================
 class ImGuiTextureBinding
 {

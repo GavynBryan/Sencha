@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ImGuiTargetPresenter.h"
+#include "render/ImGuiTargetPresenter.h"
 #include "viewport/ViewportId.h"
 
 #include <graphics/GpuFrameRetirement.h>
@@ -14,9 +14,14 @@
 #include <span>
 #include <vector>
 
-// Maps editor viewports onto engine render targets: one scene target (HDR
+// Maps kyusu's viewports onto engine render targets: one scene target (HDR
 // colour + depth) plus two full-resolution bloom ping-pong planes per viewport,
 // shown in the UI through ImGui::Image.
+//
+// Kyusu-local, not editor-common: the bloom pair per viewport is this editor's
+// policy, and its one other consumer -- shudei's material preview -- owns a
+// single target directly rather than inventing a viewport identity for it.
+// ImGuiTargetPresenter stays common; the ImGui binding is the shared part.
 //
 // The images, their per-frame-in-flight slots, resizing, and retirement all
 // belong to RenderTargetStore now; what is left here is the editor's own

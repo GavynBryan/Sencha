@@ -93,7 +93,7 @@ Shared shell (`editor/common/src/`):
 | `interaction/` | Drag-interaction host (`InteractionHost`). | `IInteraction` |
 | `input/` | Generic input primitives (`InputRouter` handler chain + pointer capture, `ShortcutRegistry`, `KeymapFile`, `UiInputGuard`). | router handlers |
 | `ui/` | ImGui shell (`EditorUiFeature`: context, docking, menu, per-app ini), theme/skin (`EditorUiStyle`, `EditorThemeFile`, `EditorThemeStartup`, `ThemePreferences`), console panel, `ScopedPanel`, `SchemaWidgets`. | `IEditorPanel` |
-| `render/` | Offscreen per-view targets (`ViewportTargetCache`). | -- |
+| `render/` | ImGui presentation of offscreen targets (`ImGuiTargetPresenter`). | -- |
 | `viewport/` | `ViewportId`. | -- |
 | `project/` | Project descriptor + resolution + mounting + spawning (`Project`, `ProjectArgs`, `ProjectContentMount`, `ProcessLaunch`, `MaterialLibrary`). | -- |
 
@@ -116,8 +116,8 @@ Level editor (`editor/kyusu/src/`):
 Material editor (`editor/shudei/src/`, flat): `MaterialEditorApp` +
 `MaterialEditorServices`, `MaterialEditSession` (open/edit/save/duplicate,
 headless-tested), `EditMaterialCommand`, `PreviewPrimitives` (procedural
-sphere/cube/plane), `MaterialPreviewRenderFeature` (MeshForwardPass into a
-ViewportTargetCache slot), and the browser/inspector/preview panels. Live
+sphere/cube/plane), `MaterialPreviewRenderFeature` (MeshForwardPass into its own
+offscreen target), and the browser/inspector/preview panels. Live
 preview swaps the working description into the resident material via
 `MaterialAssetLoader::CommitReload`.
 

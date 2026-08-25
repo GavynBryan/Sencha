@@ -21,6 +21,7 @@
 #include <world/registry/Registry.h>
 
 #include <graphics/vulkan/RenderScope.h>
+#include <graphics/vulkan/RenderTargetSession.h>
 #include <graphics/vulkan/VulkanBarriers.h>
 
 #include <optional>
@@ -399,42 +400,10 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     viewport.RegionMax = ImVec2(static_cast<float>(target.Extent.width),
                                 static_cast<float>(target.Extent.height));
 
-    const auto transitionColor = [&](VkImageLayout oldLayout, VkImageLayout newLayout,
-                                     VkPipelineStageFlags2 srcStage, VkPipelineStageFlags2 dstStage,
-                                     VkAccessFlags2 srcAccess, VkAccessFlags2 dstAccess)
-    {
-        VulkanBarriers::ImageTransition t{};
-        t.Image = target.ColorImage;
-        t.OldLayout = oldLayout;
-        t.NewLayout = newLayout;
-        t.SrcStage = srcStage;
-        t.DstStage = dstStage;
-        t.SrcAccess = srcAccess;
-        t.DstAccess = dstAccess;
-        t.AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        VulkanBarriers::TransitionImage(frame.Cmd, t);
-    };
-
-    // Color: whatever it held (UNDEFINED on first use, else SHADER_READ from when it
-    // was last sampled) -> COLOR_ATTACHMENT.
-    transitionColor(*target.ColorLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                    VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                    VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-
-    // Depth is cleared and discarded each pass, so its prior contents never matter.
-    {
-        VulkanBarriers::ImageTransition t{};
-        t.Image = target.DepthImage;
-        t.OldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        t.NewLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-        t.SrcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-        t.DstStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-        t.SrcAccess = 0;
-        t.DstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT
-                    | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        t.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        VulkanBarriers::TransitionImage(frame.Cmd, t);
-    }
+    // Brackets the recording below: both planes into attachment layouts now,
+    // color back to sampled and the store's layout committed at scope end.
+    RenderTargetSession session(frame.Cmd, target.ColorImage, target.ColorLayout,
+                                target.DepthImage);
 
     // The offscreen target is RGBA16F linear; the scene pipelines key on these
     // formats and rebuild their RGBA16F variant transparently.
@@ -570,11 +539,9 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         Preview.DrawViewport(local, viewport, camera);
     }
 
-    // Color: COLOR_ATTACHMENT -> SHADER_READ_ONLY for the UI's ImGui::Image sample.
-    transitionColor(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                    VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
-    *target.ColorLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    // Sampled and committed, so the UI's ImGui::Image can read it -- and so
+    // bloom below starts from a target whose layout is what the store says.
+    session.End();
 
     if (BloomEnabled)
         RecordViewportBloom(frame, viewport, target, camera);

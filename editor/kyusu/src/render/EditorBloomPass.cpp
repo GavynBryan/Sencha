@@ -1,6 +1,6 @@
 #include "EditorBloomPass.h"
 
-#include <graphics/vulkan/VulkanBarriers.h>
+#include <graphics/vulkan/RenderTargetSession.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanPipelineCache.h>
@@ -29,21 +29,6 @@ struct BloomPush
     Vec2d         Texel{}; // blur step direction * texel size; (0,0) when unused
 };
 
-void TransitionColor(VkCommandBuffer cmd, VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout,
-                     VkPipelineStageFlags2 srcStage, VkPipelineStageFlags2 dstStage,
-                     VkAccessFlags2 srcAccess, VkAccessFlags2 dstAccess)
-{
-    VulkanBarriers::ImageTransition t{};
-    t.Image = image;
-    t.OldLayout = oldLayout;
-    t.NewLayout = newLayout;
-    t.SrcStage = srcStage;
-    t.DstStage = dstStage;
-    t.SrcAccess = srcAccess;
-    t.DstAccess = dstAccess;
-    t.AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    VulkanBarriers::TransitionImage(cmd, t);
-}
 }
 
 void EditorBloomPass::Setup(const RendererServices& services)
@@ -132,13 +117,15 @@ void EditorBloomPass::Record(const FrameContext& frame,
     const VkDescriptorSet bindless = Descriptors->GetBindlessSet();
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, Layout, 0, 1, &bindless, 0, nullptr);
 
-    // One full-screen pass: dst -> COLOR_ATTACHMENT, draw, dst -> SHADER_READ.
+    // One full-screen pass, bracketed by a session: dst becomes an attachment,
+    // the draw happens, dst goes back to sampled.
     const auto runPass = [&](VkImage dstImage, VkImageView dstView, VkImageLayout* dstLayout,
                              VkExtent2D extent, VkPipeline pipeline, const BloomPush& push, bool loadExisting)
     {
-        TransitionColor(cmd, dstImage, *dstLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                        VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+        // Brackets this pass: into an attachment now, back to sampled and the
+        // layout committed when the session ends -- which is what makes the
+        // next pass's source layout true.
+        RenderTargetSession session(cmd, dstImage, dstLayout);
 
         VkRenderingAttachmentInfo color{};
         color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -163,11 +150,6 @@ void EditorBloomPass::Record(const FrameContext& frame,
         vkCmdPushConstants(cmd, Layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
         vkCmdDraw(cmd, 3, 1, 0, 0);
         vkCmdEndRendering(cmd);
-
-        TransitionColor(cmd, dstImage, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
-        *dstLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     };
 
     const float invW = 1.0f / static_cast<float>(std::max(1u, t.BloomExtent.width));
