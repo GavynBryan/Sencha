@@ -66,6 +66,8 @@
 #include <platform/SdlWindow.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -73,7 +75,20 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <variant>
+#include <vector>
+
+namespace
+{
+// The editor's two render features and the one edge between them: the render
+// feature's teardown frees ImGui descriptor sets through the backend the UI
+// feature owns, so it must tear down first. Reverse-resolved teardown gives
+// that ordering; before the edge existed it came from registration order.
+constexpr std::string_view kEditorRenderFeatureId = "editor_render";
+constexpr std::string_view kEditorUiFeatureId = "editor_ui";
+constexpr std::array<std::string_view, 1> kEditorRenderDependsOn{ kEditorUiFeatureId };
+} // namespace
 
 EditorServices::EditorServices(Engine& engine,
                                SdlWindow& window,
@@ -388,15 +403,13 @@ void EditorServices::BuildViewportRendering()
         Assets ? &Assets->Assets : nullptr,
         Assets ? &Assets->Registry : nullptr,
         Assets ? &*Assets : nullptr);
-    // Adopt what AddFeature returns rather than the pointer before it: setup
-    // failure destroys the feature and returns null, and a cached raw pointer
-    // would outlive it.
-    RenderFeature = engine.Graphics().MainRenderer.AddFeature(std::move(renderFeature));
-    if (RenderFeature == nullptr)
-    {
-        std::fprintf(stderr, "[editor] viewport render feature failed to set up; "
-                             "viewports will not draw\n");
-    }
+    // Staged, not added: the commit happens at the end of BuildUi, once the UI
+    // feature this one depends on has been staged too. The pointer is good only
+    // if the commit reports the id succeeded.
+    RenderFeature = engine.Graphics().MainRenderer.StageFeature(
+        std::move(renderFeature),
+        FeatureRegistration{ .Id = kEditorRenderFeatureId,
+                             .DependsOn = kEditorRenderDependsOn });
 }
 
 void EditorServices::BuildUi(bool consoleOpenOnStart)
@@ -661,19 +674,35 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     Browser = browserPanel.get();
     UiFeature->AddPanel(std::move(browserPanel));
 
-    // Same rule as the render feature, and it bites harder here: EditorUiFeature
-    // has real failure paths (no graphics queue family, descriptor pool, SDL or
-    // Vulkan backend init), and the panels below are owned BY the feature, so a
-    // failure takes them with it.
-    UiFeature = renderer.AddFeature(std::move(uiFeature));
-    if (UiFeature == nullptr)
+    renderer.StageFeature(std::move(uiFeature),
+                          FeatureRegistration{ .Id = kEditorUiFeatureId });
+
+    // Both features are staged now, so the batch can resolve. Setup runs here,
+    // in dependency order, and a feature that fails takes its dependents and
+    // the pointers cached against them with it. EditorUiFeature has real
+    // failure paths -- no graphics queue family, descriptor pool, SDL or Vulkan
+    // backend init -- and it owns the panels below.
+    std::vector<std::string_view> failed;
+    renderer.CommitStagedFeatures(&failed);
+    const auto didFail = [&failed](std::string_view id)
+    {
+        return std::find(failed.begin(), failed.end(), id) != failed.end();
+    };
+    if (didFail(kEditorUiFeatureId))
     {
         std::fprintf(stderr, "[editor] UI feature failed to set up; "
                              "editor panels are unavailable\n");
+        UiFeature = nullptr;
         PerspectivePanel = nullptr;
         OrthoPanel = nullptr;
         ConsolePanel = nullptr;
         Browser = nullptr;
+    }
+    if (didFail(kEditorRenderFeatureId))
+    {
+        std::fprintf(stderr, "[editor] viewport render feature failed to set up; "
+                             "viewports will not draw\n");
+        RenderFeature = nullptr;
     }
 }
 

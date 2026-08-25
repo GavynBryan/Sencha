@@ -31,7 +31,20 @@
 #include <graphics/vulkan/Renderer.h>
 #include <platform/SdlWindow.h>
 
+#include <algorithm>
+#include <array>
 #include <cstdio>
+#include <string_view>
+#include <vector>
+
+namespace
+{
+// Same edge as kyusu: the preview feature's teardown releases ImGui texture
+// bindings through the backend the UI feature owns.
+constexpr std::string_view kPreviewFeatureId = "material_preview";
+constexpr std::string_view kUiFeatureId = "editor_ui";
+constexpr std::array<std::string_view, 1> kPreviewDependsOn{ kUiFeatureId };
+} // namespace
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -159,7 +172,10 @@ void MaterialEditorServices::BuildUi()
     Renderer& renderer = engine.Graphics().MainRenderer;
 
     auto preview = std::make_unique<MaterialPreviewRenderFeature>(*Assets);
-    Preview = renderer.AddFeature(std::move(preview));
+    Preview = renderer.StageFeature(
+        std::move(preview),
+        FeatureRegistration{ .Id = kPreviewFeatureId,
+                             .DependsOn = kPreviewDependsOn });
 
     auto uiFeature = std::make_unique<EditorUiFeature>(
         engine, *Window, engine.Graphics().Instance, engine.Graphics().Frames,
@@ -207,7 +223,7 @@ void MaterialEditorServices::BuildUi()
     Textures = texturesPanel.get();
     UiFeature->AddPanel(std::move(texturesPanel));
     // The preview panel holds a reference, so it can only exist if the feature
-    // registered. Its setup can fail on shader or pipeline-layout creation.
+    // was staged. Whether its setup succeeds is reported by the commit below.
     if (Preview != nullptr)
     {
         UiFeature->AddPanel(std::make_unique<MaterialPreviewPanel>(
@@ -219,16 +235,27 @@ void MaterialEditorServices::BuildUi()
                              "the preview panel is unavailable\n");
     }
 
-    // Adopt what AddFeature returns: setup failure destroys the feature, taking
-    // the panels it owns with it, and Textures points into one of them -- the
-    // destructor releases GPU refs through it.
-    UiFeature = renderer.AddFeature(std::move(uiFeature));
-    if (UiFeature == nullptr)
+    renderer.StageFeature(std::move(uiFeature),
+                          FeatureRegistration{ .Id = kUiFeatureId });
+
+    // Commit both: setup runs in dependency order, and a failure takes the
+    // panels the feature owns -- Textures points into one, and the destructor
+    // releases GPU refs through it.
+    std::vector<std::string_view> failed;
+    renderer.CommitStagedFeatures(&failed);
+    const auto didFail = [&failed](std::string_view id)
+    {
+        return std::find(failed.begin(), failed.end(), id) != failed.end();
+    };
+    if (didFail(kUiFeatureId))
     {
         std::fprintf(stderr, "[shudei] UI feature failed to set up; "
                              "editor panels are unavailable\n");
+        UiFeature = nullptr;
         Textures = nullptr;
     }
+    if (didFail(kPreviewFeatureId))
+        Preview = nullptr;
 }
 
 void MaterialEditorServices::RegisterPreviewBackdropCVars()

@@ -19,7 +19,10 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <memory>
+#include <span>
+#include <string_view>
 #include <variant>
 
 namespace
@@ -78,45 +81,65 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
 
     Swapchain = &graphics.Swapchain;
 
-    // Posed skinned geometry is produced before anything draws it, so the
-    // pose feature registers ahead of the shadow feature (which will want
-    // posed casters when skinned shadows land) and the mesh feature.
+    // Declared edges, not call order. Each one is a real constraint that used
+    // to live in a comment above the call that happened to satisfy it:
+    //
+    //   shadow -> pose   posed skinned geometry exists before anything that
+    //                    will draw it as a caster.
+    //   mesh   -> shadow the shadow feature's Setup creates the lighting set
+    //                    layout the forward pass builds its pipeline layout
+    //                    against, and Offscreen records the atlas before
+    //                    MainColor samples it.
+    //   mesh   -> sky    within MainColor the background fills the view with
+    //                    no depth test, so it records first.
+    //
+    // Staging order below is deliberately not the resolved order: the resolver
+    // produces the order, and the goldens are what prove it.
+    static constexpr std::string_view kPose = "runtime_skinned_pose";
+    static constexpr std::string_view kShadow = "runtime_shadow";
+    static constexpr std::string_view kSky = "runtime_sky";
+    static constexpr std::array<std::string_view, 1> kShadowDeps{ kPose };
+    static constexpr std::array<std::string_view, 2> kMeshDeps{ kShadow, kSky };
+
+    auto bindings = std::make_shared<LightBindings>();
+    // Constructed before the mesh feature is staged, which captures it: staging
+    // order is free, but the values a feature is constructed with are not.
+    if (SkinnedMeshes != nullptr)
+        SkinnedPoses = std::make_shared<SkinnedPoseFrameData>();
+
+    graphics.MainRenderer.StageFeature(
+        std::make_unique<MeshRenderFeature>(
+            Queue, *Meshes, *Materials, Camera, Lights, bindings,
+            SkinnedMeshes, SkinnedPoses),
+        FeatureRegistration{ .Id = "runtime_mesh", .DependsOn = kMeshDeps });
+
+    graphics.MainRenderer.StageFeature(
+        std::make_unique<SkyRenderFeature>(Camera, Lights),
+        FeatureRegistration{ .Id = kSky });
+
+    graphics.MainRenderer.StageFeature(
+        std::make_unique<ShadowRenderFeature>(
+            bindings, Lights, ShadowCasters, *Meshes, Residency),
+        FeatureRegistration{ .Id = kShadow,
+                             .DependsOn = SkinnedMeshes != nullptr
+                                 ? std::span<const std::string_view>(kShadowDeps)
+                                 : std::span<const std::string_view>{} });
+
     if (SkinnedMeshes != nullptr)
     {
-        SkinnedPoses = std::make_shared<SkinnedPoseFrameData>();
-        if (graphics.MainRenderer.AddFeature(
-                std::make_unique<SkinnedPoseRenderFeature>(SkinnedPoses,
-                                                           *SkinnedMeshes))
-            == nullptr)
-        {
-            return false;
-        }
+        graphics.MainRenderer.StageFeature(
+            std::make_unique<SkinnedPoseRenderFeature>(SkinnedPoses, *SkinnedMeshes),
+            FeatureRegistration{ .Id = kPose });
     }
 
-    // The shadow feature renders the atlas the forward pass samples. Adding it
-    // before the mesh feature runs its Setup first, so the lighting set layout
-    // exists when the forward pass builds its pipeline layout; Offscreen also
-    // records before MainColor, so tiles are written before they are read.
-    auto bindings = std::make_shared<LightBindings>();
-    if (graphics.MainRenderer.AddFeature(std::make_unique<ShadowRenderFeature>(
-            bindings, Lights, ShadowCasters, *Meshes, Residency)) == nullptr)
-    {
+    if (!graphics.MainRenderer.CommitStagedFeatures())
         return false;
-    }
+
     // Probe residency shares the lighting set: it swaps binding-2 slots as
     // zones stream and hands headers to extraction. Uploads only ever happen
     // after the shadow feature's Setup has created the set.
     ProbeVolumes.Setup(GpuImages{&graphics.Images}, bindings, Logging);
-    // Before the mesh feature: registration order is draw order within a phase,
-    // and the background fills the view without a depth test.
-    if (graphics.MainRenderer.AddFeature(
-            std::make_unique<SkyRenderFeature>(Camera, Lights)) == nullptr)
-    {
-        return false;
-    }
-    return graphics.MainRenderer.AddFeature(std::make_unique<MeshRenderFeature>(
-        Queue, *Meshes, *Materials, Camera, Lights, std::move(bindings),
-        SkinnedMeshes, SkinnedPoses)) != nullptr;
+    return true;
 #else
     (void)graphics;
     return false;
