@@ -96,12 +96,6 @@ public:
     // via ImGui::Image). Owned here so its GPU resources tear down with this feature.
     [[nodiscard]] ViewportTargetCache& GetViewportTargets() { return Targets; }
 
-    // Release the scene queues' GPU brush meshes + material refs. The feature itself
-    // tears down later in ~Renderer (after the engine frees graphics), but these handles
-    // borrow the asset caches, so EditorServices calls this before it resets the asset
-    // system, mirroring how the document's StaticMeshComponents release first.
-    void ReleaseSceneResources();
-
     // The frame's shadow arbitration snapshot, read by the lighting panel.
     [[nodiscard]] const ShadowResidencyReadout& ShadowReadout() const
     {

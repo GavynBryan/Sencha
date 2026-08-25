@@ -103,10 +103,17 @@ MaterialEditorServices::MaterialEditorServices(Engine& engine,
 
 MaterialEditorServices::~MaterialEditorServices()
 {
-    // Release GPU refs while the caches live: the render features (and the
-    // panels they own) tear down later, in ~Renderer.
-    if (Preview != nullptr)
-        Preview->ReleaseResources();
+    // Remove the preview feature while the caches it borrows still live: the
+    // renderer would otherwise hold it until ~Renderer, well after the asset
+    // system below is gone. Removal runs its teardown here.
+    if (Preview != nullptr && EnginePtr != nullptr)
+    {
+        if (GraphicsServices* graphics = EnginePtr->TryGraphics())
+            graphics->MainRenderer.RemoveFeature(Preview);
+        Preview = nullptr;
+    }
+    // Panel-owned bindings still release inline; the panel belongs to the UI
+    // feature, which tears down in ~Renderer.
     if (Textures != nullptr)
         Textures->ReleasePreviewResources();
     if (Assets)

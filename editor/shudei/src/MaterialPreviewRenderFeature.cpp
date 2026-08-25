@@ -47,14 +47,8 @@ bool MaterialPreviewRenderFeature::Setup(const RenderFeatureServices& featureSer
 
 void MaterialPreviewRenderFeature::Teardown()
 {
-    Forward.Teardown();
-    Lighting.Teardown();
-    Backdrop.Teardown();
-    Targets.Teardown();
-}
-
-void MaterialPreviewRenderFeature::ReleaseResources()
-{
+    // Asset refs first: these borrow the editor's asset system, which outlives
+    // this feature only because the host removes it before tearing that down.
     for (StaticMeshHandle& mesh : Meshes)
     {
         if (mesh.IsValid())
@@ -62,6 +56,11 @@ void MaterialPreviewRenderFeature::ReleaseResources()
         mesh = StaticMeshHandle{};
     }
     Material = MaterialHandle{};
+
+    Forward.Teardown();
+    Lighting.Teardown();
+    Backdrop.Teardown();
+    Targets.Teardown();
 }
 
 void MaterialPreviewRenderFeature::Orbit(float yawDelta, float pitchDelta)

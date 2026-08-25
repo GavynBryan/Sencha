@@ -131,12 +131,17 @@ EditorServices::~EditorServices()
     Router.reset();
     Navigation.reset();
     Shortcuts.reset();
-    // After Workspace: the document's StaticMeshComponents release into these caches
-    // on teardown. The render feature's scene queues also hold StaticMeshCache handles +
-    // material refs and tear down later (in ~Renderer), so release them here too.
-    // Before the engine frees the graphics services the caches borrow.
-    if (RenderFeature != nullptr)
-        RenderFeature->ReleaseSceneResources();
+    // After Workspace: the document's StaticMeshComponents release into these
+    // caches on teardown. The render feature borrows them too -- its scene queues
+    // hold StaticMeshCache handles and material refs -- and the renderer would
+    // otherwise keep it alive until ~Renderer, long after these caches are gone.
+    // Removing it runs its teardown here, while what it borrows still exists.
+    if (RenderFeature != nullptr && EnginePtr != nullptr)
+    {
+        if (GraphicsServices* graphics = EnginePtr->TryGraphics())
+            graphics->MainRenderer.RemoveFeature(RenderFeature);
+        RenderFeature = nullptr;
+    }
     // The thumbnail bindings release texture refs through Assets and free ImGui
     // descriptor sets, so this must land after the render feature's release and
     // before Assets goes away (the panels referencing the cache never touch it

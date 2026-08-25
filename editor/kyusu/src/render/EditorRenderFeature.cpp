@@ -652,10 +652,12 @@ void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorV
     viewport.RegionMax = savedMax;
 }
 
-void EditorRenderFeature::ReleaseSceneResources()
+void EditorRenderFeature::Teardown()
 {
-    // Point the Solid body back at the checker so nothing dereferences the released
-    // builder, then drop the brush GPU meshes + material refs while the caches live.
+    // Scene resources first: the brush GPU meshes and material refs below are
+    // borrowed from the editor's asset caches, which outlive this feature only
+    // because the host removes it before releasing them. Point the Solid body
+    // back at the checker so nothing dereferences the released builder.
     BodyRenderers[static_cast<std::size_t>(ViewportShading::Solid)] = &BrushSolid;
     MaterialPath = false;
     SceneSolid.reset();
@@ -663,10 +665,7 @@ void EditorRenderFeature::ReleaseSceneResources()
     MeshCache = nullptr;
     SkinnedMeshCacheRef = nullptr;
     MaterialStore = nullptr;
-}
 
-void EditorRenderFeature::Teardown()
-{
     Backdrop.Teardown();
     Sky.Teardown();
     Grid.Teardown();

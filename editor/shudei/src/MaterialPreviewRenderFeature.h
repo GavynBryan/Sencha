@@ -40,11 +40,6 @@ public:
     void SetPrimitive(PreviewPrimitive primitive) { Active = primitive; }
     [[nodiscard]] PreviewPrimitive GetPrimitive() const { return Active; }
 
-    // Drops the primitive meshes while the caches still live (the feature
-    // itself tears down later, in ~Renderer). Call before the asset system
-    // is released.
-    void ReleaseResources();
-
     void Orbit(float yawDelta, float pitchDelta);
     void Zoom(float wheelDelta);
 
