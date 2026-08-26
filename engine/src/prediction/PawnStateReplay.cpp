@@ -69,7 +69,15 @@ PawnReplayResult ReplayPawnState(const PawnReplayRequest& request)
             RequestTransformHistorySnap(world, pawn);
     };
 
-    if (request.Replay)
+    // A driven subject a character tick was never going to move -- a fixed gun,
+    // or anything else with an aim and a trigger and no way to walk -- has not
+    // diverged from the authority, so the restore above is the whole answer.
+    //
+    // Deliberately not snapped. A snap discards every unanswered command, and
+    // for a subject whose input is entirely actions those records are the only
+    // copy of a trigger pull: the window that exists to survive a lost datagram
+    // would be emptied on every snapshot instead.
+    if (request.Replay && CharacterTickSubject(world, pawn))
     {
         // Rules this machine does not implement. Replaying under the wrong ones
         // would be a quiet disagreement; moving the pawn is a visible one.

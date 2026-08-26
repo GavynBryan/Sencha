@@ -446,6 +446,53 @@ TEST(PawnStateReplay, SnapsUnderRulesItCannotRunEvenWithNothingToReplay)
     EXPECT_EQ(result.TicksReplayed, 0u);
 }
 
+// A driven subject a character tick was never going to move -- a fixed gun,
+// which has an aim and a trigger and no way to walk. Nothing about it can have
+// diverged, so the authority's word is the whole answer.
+//
+// It must not be snapped, and the ring is where that shows. A snap clears every
+// unanswered command; for a subject whose input is entirely actions those
+// records are the only copy of a trigger pull, so the window that exists to
+// survive a lost datagram would be emptied on every snapshot that arrived.
+TEST(PawnStateReplay, ASubjectThatIsNotACharacterKeepsItsUnansweredCommands)
+{
+    Machine machine;
+
+    // Everything a driven thing needs except the movement that would make it a
+    // character: somewhere to stand, and nothing to walk with.
+    const EntityId mount = machine.Entities.CreateEntity();
+    machine.Entities.AddComponent<LocalTransform>(
+        mount, LocalTransform{ Transform3f{ Vec3d(3.0f, 2.0f, 0.0f),
+                                            Quatf::Identity(), Vec3d::One() } });
+
+    ClientPrediction prediction;
+    prediction.Bind(machine.Layout);
+    prediction.SetPredicted(mount);
+
+    const LocalTransform authority{ Transform3f{ Vec3d(3.0f, 2.0f, 0.0f),
+                                                 Quatf::Identity(),
+                                                 Vec3d::One() } };
+    const ComponentTypeId type = ResolveComponentTypeId<LocalTransform>();
+    const std::span<std::byte> bytes = prediction.AuthoritativeBytes(type);
+    ASSERT_EQ(bytes.size(), sizeof(authority));
+    std::memcpy(bytes.data(), &authority, sizeof(authority));
+    prediction.MarkSeen(type);
+
+    const std::vector<PawnCommandTick> script = ScriptedRun(100, 6);
+    for (const PawnCommandTick& record : script)
+        prediction.Commands().Push(record);
+
+    const PawnReplayResult result =
+        ReplayPawnState(RequestFor(machine, prediction, 99));
+
+    ASSERT_TRUE(result.Ran);
+    EXPECT_FALSE(result.Snapped)
+        << "a subject no character tick would have moved cannot have diverged";
+    EXPECT_EQ(result.TicksReplayed, 0u);
+    EXPECT_EQ(prediction.Commands().Size(), script.size())
+        << "the unanswered window was emptied; a lost datagram now loses input";
+}
+
 //=============================================================================
 // What Predicted does not buy
 //

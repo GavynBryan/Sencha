@@ -25,6 +25,16 @@ struct MovementIntent;
 // is what the live tick did, because it is the same kernels in the same order.
 //=============================================================================
 
+// Whether a character tick applies to this entity at all, which is to say
+// whether it is a character. Something driven that does not walk -- a fixed gun
+// with an aim and a trigger and no way to move -- is not one.
+//
+// Distinct from the mode question below, and the distinction decides what a
+// caller does about it. A character under rules this machine cannot re-run has
+// diverged and has to be put back where the authority says. A thing that was
+// never going to be moved by a character tick has not diverged at all.
+[[nodiscard]] bool CharacterTickSubject(const World& world, EntityId entity);
+
 // Whether this entity's current locomotion mode is one StepCharacterTick
 // implements. A caller that cannot step an unsupported mode has to be able to
 // ask without stepping, because the answer decides what to do even when there

@@ -21,15 +21,18 @@ void PawnCommandCaptureSystem::FixedLogic(FixedLogicContext& ctx)
     if (!Clock->HasEstimate())
         return;
 
-    const MovementIntent* intent = ctx.Entities.TryGet<MovementIntent>(pawn);
-    if (intent == nullptr)
-        return;
-
     PawnCommandTick record;
     // Far enough ahead that the command lands before the authority reaches the
     // tick it asks for. This is the name both machines use for it.
     record.Tick = Clock->CommandTickAt(ctx.Time.TickIndex);
-    record.Intent = *intent;
+
+    // Not every driven thing walks. A fixed gun has an aim and a trigger and no
+    // intent to move at all, and a subject without one still has to be heard:
+    // the actions are what the authority derives from, and the aim is what its
+    // body is turned by. Absent, the record carries the zeroed intent it was
+    // built with, which replays as a tick nobody asked to move on.
+    if (const MovementIntent* intent = ctx.Entities.TryGet<MovementIntent>(pawn))
+        record.Intent = *intent;
 
     if (const LookOrientation* look = ctx.Entities.TryGet<LookOrientation>(pawn))
     {
