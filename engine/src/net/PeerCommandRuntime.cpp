@@ -1,6 +1,7 @@
 #include <net/PeerCommandRuntime.h>
 
 #include <app/EngineSchedule.h>
+#include <controller/AimFacingSystem.h>
 #include <controller/LookOrientation.h>
 #include <ecs/Query.h>
 #include <ecs/World.h>
@@ -219,4 +220,27 @@ void RegisterNetSystems(EngineSchedule& schedule, PeerCommandRuntime& commands,
     schedule.Register<PeerCommandFeedSystem>(commands);
     schedule.Register<ReplicationInterpolationSystem>(interpolation, prediction, clock);
     schedule.Register<PawnCommandCaptureSystem>(prediction, clock);
+
+    // Where a body that faces its aim sits between the two things that write a
+    // pose. Declared here rather than in controller, which has no business
+    // knowing a network exists; net already reads the aim a peer sent.
+    //
+    // Conditional because a game may register the net systems without the
+    // controller ones. Present or absent, the pair below is all-or-nothing --
+    // both edges name the same system.
+    if (schedule.Has<AimFacingSystem>())
+    {
+        // An authority turns a remote peer's body to the aim that peer's
+        // command carried, in the tick it arrived rather than the one after.
+        // Facing already waits on look integration, which is enough to land it
+        // after the feed as the phase sorts today; the requirement is stated
+        // anyway, because it is a requirement either way and the thing it
+        // currently rides on is not about a network at all.
+        schedule.After<AimFacingSystem, PeerCommandFeedSystem>();
+        // On a machine only watching, the authority's rotation is the answer
+        // and arrives interpolated. Facing still runs there -- it costs a
+        // quaternion and covers the window before the first sample lands -- but
+        // it must not be what survives the tick.
+        schedule.After<ReplicationInterpolationSystem, AimFacingSystem>();
+    }
 }

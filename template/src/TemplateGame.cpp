@@ -345,6 +345,10 @@ void BuildPawnBody(
     // a remote player is aiming somewhere too, and that is what makes their
     // body face the right way.
     ensure(LookOrientation{});
+    // And the body turns to it, which is what "the right way" means to anybody
+    // watching them. This game is first person, so facing is aim; a
+    // third-person one would leave this off and face along movement instead.
+    ensure(AimFacing{});
 }
 
 // A turret's body, on whichever machine has one. Far less than a pawn's,
@@ -362,6 +366,10 @@ void BuildTurretBody(World& world, EntityId turret,
 
     // What its driver's aim lands in, and what TurretAimSystem reads.
     ensure(LookOrientation{});
+    // A gun that did not turn where its driver looked would be a gun nobody
+    // could tell was being driven. Placement sets the pose it starts at; from
+    // the first tick this owns its rotation.
+    ensure(AimFacing{});
     ensure(WorldTransformHistory{});
     // Standing in for a model the template does not ship. A turret that cannot
     // be seen would still work and would prove nothing to anybody running it.
