@@ -4,15 +4,15 @@
 #include <core/assets/AssetCache.h>
 #include <core/handle/Owned.h>
 #include <core/logging/LoggingProvider.h>
-#include <render/skinned_mesh/SkinnedMeshData.h>
+#include <assets/skinned_mesh/SkinnedMeshData.h>
 #include <render/skinned_mesh/SkinnedMeshHandle.h>
+#include <graphics/BufferHandle.h>
 #include <render/static_mesh/GpuStaticMesh.h>
 
 #include <cstdint>
 #include <string>
 #include <string_view>
 
-class VulkanBufferService;
 
 //=============================================================================
 // SkinnedMeshCache (docs/assets/pipeline.md, Decisions J, M, N)
@@ -28,6 +28,11 @@ struct SkinnedMeshEntry
 {
     GpuStaticMesh Mesh;          // rest geometry on the GPU
     MeshSkinning Skinning;       // CPU influence stream + joint count (Decision N)
+    // The influence stream on the GPU, parallel to the vertex buffer. Created
+    // with both vertex-attribute and storage usage because Decision N has not
+    // chosen between vertex-shader skinning and compute pre-skin -- the flags
+    // are free, and either consumer binds this buffer as it is.
+    BufferHandle Influences;
     SkeletonCacheHandle OwnedSkeleton; // releasing the mesh releases the skeleton
 
     uint32_t Generation = 0;
@@ -40,7 +45,7 @@ class SkinnedMeshCache final
     : public AssetCache<SkinnedMeshCache, SkinnedMeshHandle, SkinnedMeshEntry, AssetType::SkinnedMesh>
 {
 public:
-    SkinnedMeshCache(LoggingProvider& logging, VulkanBufferService& buffers);
+    SkinnedMeshCache(LoggingProvider& logging, GpuBuffers buffers);
     ~SkinnedMeshCache() override;
 
     SkinnedMeshCache(const SkinnedMeshCache&) = delete;
@@ -63,6 +68,13 @@ public:
 
     [[nodiscard]] const GpuStaticMesh* Get(SkinnedMeshHandle handle) const;
     [[nodiscard]] const MeshSkinning* GetSkinning(SkinnedMeshHandle handle) const;
+    // The GPU-resident influence stream (joints u16x4 + weights u8x4 per
+    // vertex), the pre-skin dispatch's second input. Null handle when the
+    // mesh is not resident.
+    [[nodiscard]] BufferHandle GetInfluences(SkinnedMeshHandle handle) const;
+    // The skeleton this mesh is skinned to; resolve it through SkeletonCache
+    // to reach the joint data a pose needs.
+    [[nodiscard]] SkeletonHandle GetSkeletonHandle(SkinnedMeshHandle handle) const;
     [[nodiscard]] std::string_view GetName(SkinnedMeshHandle handle) const;
     [[nodiscard]] bool IsAlive(SkinnedMeshHandle handle) const;
 
@@ -73,5 +85,5 @@ private:
     bool IsEntryLive(const SkinnedMeshEntry& entry) const;
 
     Logger& Log;
-    VulkanBufferService* Buffers = nullptr;
+    GpuBuffers Buffers;
 };

@@ -3,8 +3,8 @@
 
 #include <assets/texture/TextureSerializer.h>
 #include <jobs/JobSystem.h>
-#include <render/Image.h>
-#include <render/ImageLoader.h>
+#include <assets/texture/Image.h>
+#include <assets/texture/ImageLoader.h>
 
 #include <math.h>
 #include <string.h>

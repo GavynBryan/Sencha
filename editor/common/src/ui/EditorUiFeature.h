@@ -50,8 +50,8 @@ public:
     EditorUiFeature& operator=(EditorUiFeature&&) = delete;
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::MainColor; }
-    [[nodiscard]] bool Setup(const RendererServices& services) override;
-    void OnDraw(const FrameContext& frame) override;
+    [[nodiscard]] bool Setup(const RenderFeatureServices& services) override;
+    void OnDraw(const RenderFrame& frame) override;
     void Teardown() override;
 
     bool ProcessSdlEvent(const SDL_Event& event);

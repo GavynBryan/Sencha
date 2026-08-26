@@ -77,6 +77,32 @@ template <> struct TypeSchema<NamedEnumComp>
     }
 };
 
+// Display metadata: a labeled/tooltipped field and a display-named enum value
+// beside plain ones, so the tests can pin both presence and absence.
+enum class Blend : std::uint8_t { Off = 0, Soft = 1 };
+template <> struct EnumSchema<Blend>
+{
+    static constexpr std::array Values = {
+        EnumValue{ Blend::Off,  "off" },
+        EnumValue{ Blend::Soft, "soft", "Soft (feathered)",
+                   "Feathers the edge over a short ramp." },
+    };
+};
+struct LabeledComp { Blend B = Blend::Off; float Rate = 0.f; };
+template <> struct TypeSchema<LabeledComp>
+{
+    static constexpr std::string_view Name = "test.labeled";
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("blend", &LabeledComp::B)
+                .Label("Edge Blend")
+                .Tooltip("How the edge resolves."),
+            MakeField("rate", &LabeledComp::Rate),
+        };
+    }
+};
+
 // A handle-shaped leaf (no TypeSchema) tagged as an asset reference. Stands in
 // for StaticMeshHandle/MaterialSetHandle so the reflection test stays in core.
 struct FakeHandle { std::uint32_t Index = 0; std::uint32_t Generation = 0; };
@@ -284,6 +310,35 @@ TEST(RuntimeSchema, EnumMapsToUnderlyingKindAndSize)
     EXPECT_EQ(mode->Size, sizeof(Mode));          // but only one byte wide
     // No EnumSchema, no option table: the leaf stays a bare integer.
     EXPECT_TRUE(mode->Enum.empty());
+}
+
+TEST(RuntimeSchema, DisplayMetadataReachesTheLeafAndOnlyTheLeafDeclaringIt)
+{
+    const auto& fields = RuntimeFieldsOf<LabeledComp>();
+    const RuntimeField* blend = Find(fields, "blend");
+    ASSERT_NE(blend, nullptr);
+    // The persisted identity is untouched: the leaf's Name is still the
+    // schema string an archive writes; the label rides beside it.
+    EXPECT_EQ(blend->Name, "blend");
+    EXPECT_EQ(blend->Label, "Edge Blend");
+    EXPECT_EQ(blend->Tooltip, "How the edge resolves.");
+
+    const RuntimeField* rate = Find(fields, "rate");
+    ASSERT_NE(rate, nullptr);
+    EXPECT_TRUE(rate->Label.empty());
+    EXPECT_TRUE(rate->Tooltip.empty());
+}
+
+TEST(RuntimeSchema, EnumOptionsCarryDeclaredDisplayNamesAndTooltips)
+{
+    const auto options = EnumOptionsOf<Blend>();
+    ASSERT_EQ(options.size(), 2u);
+    EXPECT_EQ(options[0].Name, "off");
+    EXPECT_TRUE(options[0].Display.empty());
+    EXPECT_TRUE(options[0].Tooltip.empty());
+    EXPECT_EQ(options[1].Name, "soft");
+    EXPECT_EQ(options[1].Display, "Soft (feathered)");
+    EXPECT_EQ(options[1].Tooltip, "Feathers the edge over a short ramp.");
 }
 
 TEST(RuntimeSchema, SchemaedEnumCarriesItsOptionTable)

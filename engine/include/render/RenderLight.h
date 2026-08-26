@@ -24,6 +24,10 @@ struct RenderLightSet
     float ShadowBiasSlope = 2.0f;
     bool BakedDirectEnabled = true;
     bool BakedAoEnabled = true;
+    // Whether the background is drawn from the ambient hemisphere above rather
+    // than left as the host's flat clear. Off restores the pre-gradient look in
+    // both the game and the editor viewport.
+    bool SkyEnabled = true;
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     RenderDebugView DebugView = RenderDebugView::None;
 #endif

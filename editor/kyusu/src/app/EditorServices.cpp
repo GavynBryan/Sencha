@@ -66,6 +66,8 @@
 #include <platform/SdlWindow.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -73,7 +75,20 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <variant>
+#include <vector>
+
+namespace
+{
+// The editor's two render features and the one edge between them: the render
+// feature's teardown frees ImGui descriptor sets through the backend the UI
+// feature owns, so it must tear down first. Reverse-resolved teardown gives
+// that ordering; before the edge existed it came from registration order.
+constexpr std::string_view kEditorRenderFeatureId = "editor_render";
+constexpr std::string_view kEditorUiFeatureId = "editor_ui";
+constexpr std::array<std::string_view, 1> kEditorRenderDependsOn{ kEditorUiFeatureId };
+} // namespace
 
 EditorServices::EditorServices(Engine& engine,
                                SdlWindow& window,
@@ -111,21 +126,39 @@ EditorServices::~EditorServices()
     Files.reset();
     CookRuntime.reset();
     UnloadGameModule();
+    // Before Workspace, not after: the render feature holds references straight
+    // into it -- the world document, the viewport layout, grid and world-view
+    // settings, a lambda reading the manipulator session, and five sub-renderers
+    // bound to selection, mesh-edit, overlay, preview and affordance state. Its
+    // Teardown touches none of them today, which is the only reason the previous
+    // order survived; nothing enforced that, and the next line added to Teardown
+    // would have made it a use-after-free. The renderer would otherwise hold the
+    // feature until ~Renderer, long after all of this is gone.
+    if (RenderFeature != nullptr && EnginePtr != nullptr)
+    {
+        GraphicsServices* graphics = EnginePtr->TryGraphics();
+        // Refusal means the feature is still registered and still holding
+        // references into what is about to be destroyed. Nothing depends on it
+        // today, so this is a guard against a future edge, not a live path.
+        if (graphics == nullptr || !graphics->MainRenderer.RemoveFeature(RenderFeature))
+        {
+            std::fprintf(stderr, "[editor] viewport render feature could not be "
+                                 "removed; editor state it borrows is being "
+                                 "destroyed underneath it\n");
+        }
+        RenderFeature = nullptr;
+    }
     Workspace.reset();
     Commands.reset();
     Router.reset();
     Navigation.reset();
     Shortcuts.reset();
-    // After Workspace: the document's StaticMeshComponents release into these caches
-    // on teardown. The render feature's scene queues also hold StaticMeshCache handles +
-    // material refs and tear down later (in ~Renderer), so release them here too.
-    // Before the engine frees the graphics services the caches borrow.
-    if (RenderFeature != nullptr)
-        RenderFeature->ReleaseSceneResources();
-    // The thumbnail bindings release texture refs through Assets and free ImGui
-    // descriptor sets, so this must land after the render feature's release and
-    // before Assets goes away (the panels referencing the cache never touch it
-    // in their destructors).
+    // Last, and after both: the document's StaticMeshComponents release into
+    // these caches as it dies, and the render feature held handles into them
+    // too, so Assets has to outlive both. The thumbnail bindings release
+    // texture refs through Assets and free ImGui descriptor sets, so they land
+    // between (the panels referencing the cache never touch it in their
+    // destructors).
     Thumbnails.reset();
     SourceWatch.reset();
     Assets.reset();
@@ -171,6 +204,7 @@ void EditorServices::BuildFileActions()
     Files = std::make_unique<DocumentFileActions>(
         *Window, Workspace->World, [this] { Workspace->ResolvePendingEdits(); },
         *Materials, std::move(contentRoots));
+    Files->RegisterCommands(engine.Console().Registry());
 }
 
 void EditorServices::BuildInput()
@@ -387,8 +421,13 @@ void EditorServices::BuildViewportRendering()
         Assets ? &Assets->Assets : nullptr,
         Assets ? &Assets->Registry : nullptr,
         Assets ? &*Assets : nullptr);
-    RenderFeature = renderFeature.get();
-    engine.Graphics().MainRenderer.AddFeature(std::move(renderFeature));
+    // Staged, not added: the commit happens at the end of BuildUi, once the UI
+    // feature this one depends on has been staged too. The pointer is good only
+    // if the commit reports the id succeeded.
+    RenderFeature = engine.Graphics().MainRenderer.StageFeature(
+        std::move(renderFeature),
+        FeatureRegistration{ .Id = kEditorRenderFeatureId,
+                             .DependsOn = kEditorRenderDependsOn });
 }
 
 void EditorServices::BuildUi(bool consoleOpenOnStart)
@@ -417,6 +456,8 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     };
     auto uiFeature = std::make_unique<EditorUiFeature>(engine, *Window, instance, frames,
                                                        "kyusu.imgui.ini", layoutRatios);
+    // Provisional, for the panel and chrome wiring below; reassigned from what
+    // AddFeature returns once the feature is actually registered.
     UiFeature = uiFeature.get();
     UiFeature->SetUndoActions(
         [this]() { if (Commands) Commands->Undo(); },
@@ -527,16 +568,28 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         else
             orthoId = viewport->Id;
     }
-    auto perspectivePanel = std::make_unique<ViewportPanel>(
-        Workspace->Layout, Workspace->Interaction.Marquee, Workspace->Interaction.Overlay,
-        RenderFeature->GetViewportTargets(), "Viewport", DockSlot::Center, 1.0f, perspectiveId);
-    PerspectivePanel = perspectivePanel.get();
-    UiFeature->AddPanel(std::move(perspectivePanel));
-    auto orthoPanel = std::make_unique<ViewportPanel>(
-        Workspace->Layout, Workspace->Interaction.Marquee, Workspace->Interaction.Overlay,
-        RenderFeature->GetViewportTargets(), "Ortho", DockSlot::CenterBottom, 1.0f, orthoId);
-    OrthoPanel = orthoPanel.get();
-    UiFeature->AddPanel(std::move(orthoPanel));
+    // The viewport and lighting panels read state the render feature owns, and
+    // staging hands back nothing when the renderer never came up. Skipping them
+    // leaves an editor with no viewports, which is what a dead renderer means
+    // anyway; dereferencing would just make it a crash instead of a message.
+    if (RenderFeature != nullptr)
+    {
+        auto perspectivePanel = std::make_unique<ViewportPanel>(
+            Workspace->Layout, Workspace->Interaction.Marquee, Workspace->Interaction.Overlay,
+            RenderFeature->GetViewportTargets(), "Viewport", DockSlot::Center, 1.0f, perspectiveId);
+        PerspectivePanel = perspectivePanel.get();
+        UiFeature->AddPanel(std::move(perspectivePanel));
+        auto orthoPanel = std::make_unique<ViewportPanel>(
+            Workspace->Layout, Workspace->Interaction.Marquee, Workspace->Interaction.Overlay,
+            RenderFeature->GetViewportTargets(), "Ortho", DockSlot::CenterBottom, 1.0f, orthoId);
+        OrthoPanel = orthoPanel.get();
+        UiFeature->AddPanel(std::move(orthoPanel));
+    }
+    else
+    {
+        std::fprintf(stderr, "[editor] no viewport render feature; "
+                             "viewport panels are unavailable\n");
+    }
     auto editorConsole = std::make_unique<EditorConsolePanel>(debug.GetLogSink(), console);
     ConsolePanel = editorConsole.get();
     ConsolePanel->SetVisible(consoleOpenOnStart);
@@ -560,46 +613,51 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     const auto previewBuilder = [this]() -> SceneRenderQueueBuilder* {
         return RenderFeature != nullptr ? RenderFeature->FocusQueueBuilder() : nullptr;
     };
-    UiFeature->AddPanel(std::make_unique<LightingPanel>(
-        RenderFeature->ShadowReadout(), Workspace->Selection, *Commands,
-        [this] { if (RenderFeature != nullptr) RenderFeature->InvalidateShadows(); },
-        [this]() -> std::uint32_t {
-            return LightingReadModel::CountDirectBakeLights(
-                Workspace->World.FocusDocument().GetRegistry().Components);
-        },
-        [this, previewBuilder]() -> LightingPanel::BakedPreviewState {
-            SceneRenderQueueBuilder* builder = previewBuilder();
-            const CookSession::Record* record =
-                CookRuntime != nullptr ? CookRuntime->LastRecord() : nullptr;
-            if (builder == nullptr || record == nullptr)
-                return LightingPanel::BakedPreviewState::Unavailable;
-            if (!builder->LightmapPreviewEnabled() || !builder->LightmapPreviewLoaded())
-                return LightingPanel::BakedPreviewState::Off;
-            return builder->LightmapPreviewStale()
-                ? LightingPanel::BakedPreviewState::Stale
-                : LightingPanel::BakedPreviewState::Fresh;
-        },
-        [this, previewBuilder](bool enabled) {
-            SceneRenderQueueBuilder* builder = previewBuilder();
-            if (builder == nullptr)
-                return;
-            if (enabled && CookRuntime != nullptr)
-                CookRuntime->RefreshPreviewNow(*builder);
-            builder->SetLightmapPreviewEnabled(enabled);
-        },
-        [this]() -> LightingPanel::ProbeSummary {
-            LightingPanel::ProbeSummary summary;
-            summary.AuthoredVolumes = LightingReadModel::CountAuthoredIrradianceVolumes(
-                Workspace->World.FocusDocument().GetRegistry().Components);
-            if (const CookSession::Record* record =
-                    CookRuntime != nullptr ? CookRuntime->LastRecord() : nullptr)
-            {
-                summary.HasCook = true;
-                summary.CookedVolumes = record->ProbeVolumeCount;
-                summary.CookedProbes = record->ProbeCount;
-            }
-            return summary;
-        }));
+    // Same reason as the viewport panels: the shadow readout is the render
+    // feature's own state, so there is nothing to show without it.
+    if (RenderFeature != nullptr)
+    {
+        UiFeature->AddPanel(std::make_unique<LightingPanel>(
+            RenderFeature->ShadowReadout(), Workspace->Selection, *Commands,
+            [this] { if (RenderFeature != nullptr) RenderFeature->InvalidateShadows(); },
+            [this]() -> std::uint32_t {
+                return LightingReadModel::CountDirectBakeLights(
+                    Workspace->World.FocusDocument().GetRegistry().Components);
+            },
+            [this, previewBuilder]() -> LightingPanel::BakedPreviewState {
+                SceneRenderQueueBuilder* builder = previewBuilder();
+                const CookSession::Record* record =
+                    CookRuntime != nullptr ? CookRuntime->LastRecord() : nullptr;
+                if (builder == nullptr || record == nullptr)
+                    return LightingPanel::BakedPreviewState::Unavailable;
+                if (!builder->LightmapPreviewEnabled() || !builder->LightmapPreviewLoaded())
+                    return LightingPanel::BakedPreviewState::Off;
+                return builder->LightmapPreviewStale()
+                    ? LightingPanel::BakedPreviewState::Stale
+                    : LightingPanel::BakedPreviewState::Fresh;
+            },
+            [this, previewBuilder](bool enabled) {
+                SceneRenderQueueBuilder* builder = previewBuilder();
+                if (builder == nullptr)
+                    return;
+                if (enabled && CookRuntime != nullptr)
+                    CookRuntime->RefreshPreviewNow(*builder);
+                builder->SetLightmapPreviewEnabled(enabled);
+            },
+            [this]() -> LightingPanel::ProbeSummary {
+                LightingPanel::ProbeSummary summary;
+                summary.AuthoredVolumes = LightingReadModel::CountAuthoredIrradianceVolumes(
+                    Workspace->World.FocusDocument().GetRegistry().Components);
+                if (const CookSession::Record* record =
+                        CookRuntime != nullptr ? CookRuntime->LastRecord() : nullptr)
+                {
+                    summary.HasCook = true;
+                    summary.CookedVolumes = record->ProbeVolumeCount;
+                    summary.CookedProbes = record->ProbeCount;
+                }
+                return summary;
+            }));
+    }
     UiFeature->AddPanel(std::make_unique<ToolPropertiesPanel>(
         [this]() -> IMeshEditTarget* { return Workspace->Interaction.Sink.get(); },
         [this]() -> ManipulationSink* { return Workspace->Interaction.Sink.get(); },
@@ -651,7 +709,43 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     Browser = browserPanel.get();
     UiFeature->AddPanel(std::move(browserPanel));
 
-    renderer.AddFeature(std::move(uiFeature));
+    renderer.StageFeature(std::move(uiFeature),
+                          FeatureRegistration{ .Id = kEditorUiFeatureId });
+
+    // Both features are staged now, so the batch can resolve. Setup runs here,
+    // in dependency order, and a feature that fails takes its dependents and
+    // the pointers cached against them with it. EditorUiFeature has real
+    // failure paths -- no graphics queue family, descriptor pool, SDL or Vulkan
+    // backend init -- and it owns the panels below.
+    std::vector<std::string_view> failed;
+    if (!renderer.CommitStagedFeatures(&failed))
+    {
+        // The renderer has already named the graph problem per offending id.
+        // What matters here is that a refused batch registers nothing, so the
+        // list names every staged id and the clauses below null all of them.
+        std::fprintf(stderr, "[editor] render feature batch was refused; "
+                             "the editor runs without its own features\n");
+    }
+    const auto didFail = [&failed](std::string_view id)
+    {
+        return std::find(failed.begin(), failed.end(), id) != failed.end();
+    };
+    if (didFail(kEditorUiFeatureId))
+    {
+        std::fprintf(stderr, "[editor] UI feature failed to set up; "
+                             "editor panels are unavailable\n");
+        UiFeature = nullptr;
+        PerspectivePanel = nullptr;
+        OrthoPanel = nullptr;
+        ConsolePanel = nullptr;
+        Browser = nullptr;
+    }
+    if (didFail(kEditorRenderFeatureId))
+    {
+        std::fprintf(stderr, "[editor] viewport render feature failed to set up; "
+                             "viewports will not draw\n");
+        RenderFeature = nullptr;
+    }
 }
 
 void EditorServices::RegisterSystems(EngineSchedule& schedule)
@@ -799,9 +893,20 @@ void EditorServices::ProcessFrame()
         if (panel != nullptr && !panel->IsVisible())
             panel->ClearViewportRegion();
 
-    // One LRU tick per frame, before the UI panels request thumbnails.
+    // One LRU tick per frame, before the UI panels request thumbnails. The
+    // renderer's fence-anchored clock decides when an evicted binding's
+    // descriptor set is safe to free; this used to be a local countdown of
+    // four, which is one short of the guarantee at the maximum frames-in-flight.
     if (Thumbnails)
-        Thumbnails->BeginFrame();
+    {
+        GpuFrameRetirement retirement;
+        if (const GraphicsServices* graphics =
+                EnginePtr != nullptr ? EnginePtr->TryGraphics() : nullptr)
+        {
+            retirement = graphics->Frames.GetRetirement();
+        }
+        Thumbnails->BeginFrame(retirement);
+    }
 }
 
 namespace

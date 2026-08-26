@@ -1,14 +1,14 @@
 #include <render/ProbeVolumeSet.h>
 
 #include <core/logging/LoggingProvider.h>
-#include <graphics/vulkan/VulkanImageService.h>
+#include <render/pass/LightBindings.h>
 #include <world/RuntimeWorld.h>
 
 #include <algorithm>
 #include <fstream>
 #include <string_view>
 
-void ProbeVolumeSet::Setup(VulkanImageService* images,
+void ProbeVolumeSet::Setup(GpuImages images,
                            std::shared_ptr<LightBindings> bindings,
                            LoggingProvider* logging)
 {
@@ -17,15 +17,15 @@ void ProbeVolumeSet::Setup(VulkanImageService* images,
     Logging = logging;
 }
 
-std::size_t ProbeVolumeSet::AddZoneVolumes(StoragePartitionId zone,
-                                           const ProbeVolumeFile& file)
+std::size_t ProbeVolumeSet::AddVolumes(StoragePartitionId partition,
+                                       const ProbeVolumeFile& file)
 {
-    if (Images == nullptr || Bindings == nullptr)
+    if (!Images.IsValid() || Bindings == nullptr)
         return 0;
-    ReleaseZone(zone);
+    ReleasePartition(partition);
 
-    ZoneRecord record;
-    record.Partition = zone;
+    PartitionRecord record;
+    record.Partition = partition;
     for (const ProbeVolumeRecord& volume : file.Volumes)
     {
         const std::uint32_t count = volume.Grid.PointCount();
@@ -41,23 +41,19 @@ std::size_t ProbeVolumeSet::AddZoneVolumes(StoragePartitionId zone,
             continue;
         }
 
-        std::uint32_t slot = kMaxActiveProbeVolumes;
-        for (std::uint32_t candidate = 0; candidate < kMaxActiveProbeVolumes;
-             ++candidate)
+        const std::uint32_t slot = Slots.Acquire();
+        if (slot == ProbeVolumeSlotTable::kInvalidSlot)
         {
-            if (!SlotUsed[candidate])
-            {
-                slot = candidate;
-                break;
-            }
-        }
-        if (slot == kMaxActiveProbeVolumes)
-        {
+            // Retiring slots are counted so churn reads differently from a
+            // full set: a zone reload releases and re-acquires in one call, so
+            // it transiently needs both copies' slots and can be denied for
+            // the frames its predecessor takes to retire.
             if (Logging != nullptr)
                 Logging->GetLogger<ProbeVolumeSet>().Warn(
-                    "probe volume {}: all {} slots resident, volume denied "
-                    "(hemispheric fallback)",
-                    volume.StableIndex, kMaxActiveProbeVolumes);
+                    "probe volume {}: no free slot of {} ({} retiring), volume "
+                    "denied (hemispheric fallback)",
+                    volume.StableIndex, kMaxActiveProbeVolumes,
+                    Slots.CountIn(ProbeVolumeSlotTable::State::Retiring));
             continue;
         }
 
@@ -67,18 +63,15 @@ std::size_t ProbeVolumeSet::AddZoneVolumes(StoragePartitionId zone,
         for (std::uint32_t channel = 0; channel < kProbeVolumeChannelCount;
              ++channel)
         {
-            resident.Channels[channel] = Images->Create(ImageCreateInfo{
-                .Format = VK_FORMAT_R16G16B16A16_SFLOAT,
+            resident.Channels[channel] = Images.Create(ImageDesc{
+                .Format = GpuFormat::Rgba16Float,
                 .Extent = { volume.Grid.DimsX, volume.Grid.DimsY },
-                .Usage = VK_IMAGE_USAGE_SAMPLED_BIT
-                       | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-                .AspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .ViewType = VK_IMAGE_VIEW_TYPE_3D,
                 .Depth = volume.Grid.DimsZ,
+                .ViewKind = GpuImageViewKind::Volume,
                 .DebugName = "Probe volume SH channel",
             });
             if (!resident.Channels[channel].IsValid()
-                || !Images->Upload(
+                || !Images.Upload(
                     resident.Channels[channel],
                     volume.ShHalf.data() + channel * planeHalves,
                     planeHalves * sizeof(std::uint16_t)))
@@ -91,7 +84,11 @@ std::size_t ProbeVolumeSet::AddZoneVolumes(StoragePartitionId zone,
         {
             for (const ImageHandle& channel : resident.Channels)
                 if (channel.IsValid())
-                    Images->Destroy(channel);
+                    Images.Destroy(channel);
+            // The slot was taken before the upload was attempted, and nothing
+            // has been bound to it, so hand it straight back rather than
+            // stranding it for the lifetime of the set.
+            Slots.Release(slot);
             if (Logging != nullptr)
                 Logging->GetLogger<ProbeVolumeSet>().Warn(
                     "probe volume {}: GPU upload failed, volume dropped",
@@ -99,13 +96,10 @@ std::size_t ProbeVolumeSet::AddZoneVolumes(StoragePartitionId zone,
             continue;
         }
 
-        Bindings->SetProbeVolume(slot,
-                                 Images->GetView(resident.Channels[0]),
-                                 Images->GetView(resident.Channels[1]),
-                                 Images->GetView(resident.Channels[2]));
+        Bindings->SetProbeVolume(slot, resident.Channels[0],
+                                 resident.Channels[1], resident.Channels[2]);
         resident.Header = MakeGpuProbeVolume(volume.Grid, volume.Priority,
                                              volume.StableIndex, slot);
-        SlotUsed[slot] = true;
         record.Volumes.push_back(resident);
     }
 
@@ -116,52 +110,83 @@ std::size_t ProbeVolumeSet::AddZoneVolumes(StoragePartitionId zone,
             Logging->GetLogger<ProbeVolumeSet>().Info(
                 "probe volumes resident: {} added ({} total)", added,
                 ResidentVolumeCount() + added);
-        Zones.push_back(std::move(record));
+        Partitions.push_back(std::move(record));
     }
     return added;
 }
 
-void ProbeVolumeSet::ReleaseZone(StoragePartitionId zone)
+void ProbeVolumeSet::ReleasePartition(StoragePartitionId partition)
 {
-    const auto it = std::find_if(Zones.begin(), Zones.end(),
-                                 [&](const ZoneRecord& record)
-                                 { return record.Partition == zone; });
-    if (it == Zones.end())
+    const auto it = std::find_if(Partitions.begin(), Partitions.end(),
+                                 [&](const PartitionRecord& record)
+                                 { return record.Partition == partition; });
+    if (it == Partitions.end())
         return;
     ReleaseVolumes(it->Volumes);
-    Zones.erase(it);
+    Partitions.erase(it);
 }
 
 void ProbeVolumeSet::ReleaseAll()
 {
-    for (ZoneRecord& zone : Zones)
-        ReleaseVolumes(zone.Volumes);
-    Zones.clear();
+    for (PartitionRecord& record : Partitions)
+        ReleaseVolumes(record.Volumes);
+    Partitions.clear();
 }
 
+// Nothing is torn down here. Deferring the image destroy protects the memory
+// but says nothing about the identity: the slot number is what an in-flight
+// frame's uniform header carries, and the shader resolves it into binding 2 at
+// execution time. Handing the slot straight back would let a frame sample the
+// next zone's volume through this zone's world-to-uvw mapping, and rewriting
+// the descriptor to the dummy would mutate an element that frame is still
+// dynamically using, which update-after-bind does not permit.
 void ProbeVolumeSet::ReleaseVolumes(std::vector<ResidentVolume>& volumes)
 {
-    for (ResidentVolume& volume : volumes)
+    for (const ResidentVolume& volume : volumes)
     {
-        if (Bindings != nullptr)
-            Bindings->ResetProbeVolume(volume.Slot);
-        if (Images != nullptr)
-            for (const ImageHandle& channel : volume.Channels)
-                if (channel.IsValid())
-                    Images->Destroy(channel);
-        SlotUsed[volume.Slot] = false;
+        Slots.BeginRetire(volume.Slot);
+        Retiring.push_back(RetiringVolume{ volume, Retirement.Stamp() });
     }
     volumes.clear();
+}
+
+void ProbeVolumeSet::BeginFrame(GpuFrameRetirement retirement)
+{
+    Retirement = retirement;
+    std::size_t reclaimed = 0;
+    while (!Retiring.empty() && Retirement.IsRetired(Retiring.front().Stamp))
+    {
+        const ResidentVolume& volume = Retiring.front().Volume;
+        // Descriptor first, then the images it named: binding 2 has no
+        // partially-bound bit, so the element must point at the dummy before
+        // its views become destroyable.
+        if (Bindings != nullptr)
+            Bindings->ResetProbeVolume(volume.Slot);
+        if (Images.IsValid())
+            for (const ImageHandle& channel : volume.Channels)
+                if (channel.IsValid())
+                    Images.Destroy(channel);
+        Slots.Release(volume.Slot);
+        Retiring.erase(Retiring.begin());
+        ++reclaimed;
+    }
+    // Symmetric with the residency line in AddVolumes, and the only way a live
+    // run can tell a working gate from a stalled one: slots that never come
+    // back deny every zone that streams in behind them.
+    if (reclaimed > 0 && Logging != nullptr)
+        Logging->GetLogger<ProbeVolumeSet>().Info(
+            "probe volume slots reclaimed: {} ({} still retiring)", reclaimed,
+            Retiring.size());
 }
 
 void ProbeVolumeSet::AppendActive(const StoragePartitionSet& partitions,
                                   RenderLightSet& lights) const
 {
-    for (const ZoneRecord& zone : Zones)
+    for (const PartitionRecord& record : Partitions)
     {
-        if (!partitions.Contains(zone.Partition))
+        if (!partitions.Contains(record.Partition))
             continue;
-        for (const ResidentVolume& volume : zone.Volumes)
+        for (const ResidentVolume& volume : record.Volumes)
             (void)lights.AddProbeVolume(volume.Header);
     }
 }
@@ -169,8 +194,8 @@ void ProbeVolumeSet::AppendActive(const StoragePartitionSet& partitions,
 std::size_t ProbeVolumeSet::ResidentVolumeCount() const
 {
     std::size_t count = 0;
-    for (const ZoneRecord& zone : Zones)
-        count += zone.Volumes.size();
+    for (const PartitionRecord& record : Partitions)
+        count += record.Volumes.size();
     return count;
 }
 
@@ -201,6 +226,6 @@ void AttachZoneProbes(ProbeVolumeSet& set, RuntimeZoneRecord& zone,
 {
     if (file.Volumes.empty())
         return;
-    if (set.AddZoneVolumes(zone.Partition, file) > 0)
+    if (set.AddVolumes(zone.Partition, file) > 0)
         zone.Resources.Register<ZoneProbeResidency>(&set, zone.Partition);
 }

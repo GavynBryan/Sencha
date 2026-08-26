@@ -15,7 +15,7 @@
 #include <assets/cook/TextureCook.h>
 #include <assets/texture/TextureSerializer.h>
 #include <project/CookProfile.h>
-#include <render/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/MeshGeometry.h>
 
 #include <cmath>
 #include <cstddef>

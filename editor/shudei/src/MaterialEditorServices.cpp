@@ -31,7 +31,20 @@
 #include <graphics/vulkan/Renderer.h>
 #include <platform/SdlWindow.h>
 
+#include <algorithm>
+#include <array>
 #include <cstdio>
+#include <string_view>
+#include <vector>
+
+namespace
+{
+// Same edge as kyusu: the preview feature's teardown releases ImGui texture
+// bindings through the backend the UI feature owns.
+constexpr std::string_view kPreviewFeatureId = "material_preview";
+constexpr std::string_view kUiFeatureId = "editor_ui";
+constexpr std::array<std::string_view, 1> kPreviewDependsOn{ kUiFeatureId };
+} // namespace
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -90,10 +103,22 @@ MaterialEditorServices::MaterialEditorServices(Engine& engine,
 
 MaterialEditorServices::~MaterialEditorServices()
 {
-    // Release GPU refs while the caches live: the render features (and the
-    // panels they own) tear down later, in ~Renderer.
-    if (Preview != nullptr)
-        Preview->ReleaseResources();
+    // Remove the preview feature while the caches it borrows still live: the
+    // renderer would otherwise hold it until ~Renderer, well after the asset
+    // system below is gone. Removal runs its teardown here.
+    if (Preview != nullptr && EnginePtr != nullptr)
+    {
+        GraphicsServices* graphics = EnginePtr->TryGraphics();
+        if (graphics == nullptr || !graphics->MainRenderer.RemoveFeature(Preview))
+        {
+            std::fprintf(stderr, "[shudei] material preview feature could not be "
+                                 "removed; the caches it borrows are being "
+                                 "destroyed underneath it\n");
+        }
+        Preview = nullptr;
+    }
+    // Panel-owned bindings still release inline; the panel belongs to the UI
+    // feature, which tears down in ~Renderer.
     if (Textures != nullptr)
         Textures->ReleasePreviewResources();
     if (Assets)
@@ -159,11 +184,16 @@ void MaterialEditorServices::BuildUi()
     Renderer& renderer = engine.Graphics().MainRenderer;
 
     auto preview = std::make_unique<MaterialPreviewRenderFeature>(*Assets);
-    Preview = renderer.AddFeature(std::move(preview));
+    Preview = renderer.StageFeature(
+        std::move(preview),
+        FeatureRegistration{ .Id = kPreviewFeatureId,
+                             .DependsOn = kPreviewDependsOn });
 
     auto uiFeature = std::make_unique<EditorUiFeature>(
         engine, *Window, engine.Graphics().Instance, engine.Graphics().Frames,
         "shudei.imgui.ini");
+    // Provisional, for the panel wiring below; reassigned from what AddFeature
+    // returns once the feature is registered.
     UiFeature = uiFeature.get();
     UiFeature->SetUndoActions(
         [this]() { if (MaterialEditTab* tab = Tabs.Active()) tab->Commands.Undo(); },
@@ -204,10 +234,47 @@ void MaterialEditorServices::BuildUi()
         { CreateMaterialFromTexture(textureVirtualPath); });
     Textures = texturesPanel.get();
     UiFeature->AddPanel(std::move(texturesPanel));
-    UiFeature->AddPanel(std::make_unique<MaterialPreviewPanel>(
-        *Preview, Tabs, [this](std::size_t index) { CloseTab(index); }));
+    // The preview panel holds a reference, so it can only exist if the feature
+    // was staged. Whether its setup succeeds is reported by the commit below.
+    if (Preview != nullptr)
+    {
+        UiFeature->AddPanel(std::make_unique<MaterialPreviewPanel>(
+            *Preview, Tabs, [this](std::size_t index) { CloseTab(index); }));
+    }
+    else
+    {
+        std::fprintf(stderr, "[shudei] preview render feature failed to set up; "
+                             "the preview panel is unavailable\n");
+    }
 
-    renderer.AddFeature(std::move(uiFeature));
+    renderer.StageFeature(std::move(uiFeature),
+                          FeatureRegistration{ .Id = kUiFeatureId });
+
+    // Commit both: setup runs in dependency order, and a failure takes the
+    // panels the feature owns -- Textures points into one, and the destructor
+    // releases GPU refs through it.
+    std::vector<std::string_view> failed;
+    if (!renderer.CommitStagedFeatures(&failed))
+    {
+        // A refused batch registers nothing, so the list names every staged id
+        // and the clauses below null all of them; the renderer has already
+        // logged which declaration was at fault.
+        std::fprintf(stderr, "[shudei] render feature batch was refused; "
+                             "the editor runs without its own features\n");
+    }
+    const auto didFail = [&failed](std::string_view id)
+    {
+        return std::find(failed.begin(), failed.end(), id) != failed.end();
+    };
+    if (didFail(kUiFeatureId))
+    {
+        std::fprintf(stderr, "[shudei] UI feature failed to set up; "
+                             "editor panels are unavailable\n");
+        UiFeature = nullptr;
+        Textures = nullptr;
+    }
+    if (didFail(kPreviewFeatureId))
+        Preview = nullptr;
 }
 
 void MaterialEditorServices::RegisterPreviewBackdropCVars()

@@ -4,6 +4,23 @@ Two pools, one arbiter, one depth pass. Everything CPU-side is deterministic:
 identical request and event sequences produce identical slot assignment, atlas
 placement, and view schedules.
 
+## Projected object shadows: removed
+
+The Source-1-style grounding silhouettes (silhouette atlas, per-caster derived
+direction, receiver re-draw with a screen-space union mask) shipped and were
+then removed by owner ruling (2026-08-23): the target games do not want the
+look, and the technique's post-multiply application can never agree with real
+shadow maps where they overlap -- a projected shadow inside a shadow-mapped
+region reads as cut off, which is inherent to multiplying final colour rather
+than participating in the light term. Skinned meshes therefore cast no
+shadows at all right now: a recorded stylistic ruling, not a gap.
+
+The reusable arithmetic survives as `render/TextureProjectionPolicy` (ortho
+fit, swept bounds, receiver gather, screen rects, atlas tiling), and
+`docs/renderer/texture-projection.md` records how to rebuild the illusion --
+or a decal system -- from it. Commit `e18ebe9a` holds the last complete
+implementation.
+
 ## Storage
 
 | | Spot | Point |
@@ -125,9 +142,11 @@ points (`HashPointShadowState`).
 
 Point slots track `PendingFaces`, a six-bit mask. A point light stays ungranted
 until every face has rendered at least once, which is why a newly acquired point
-slot bursts its faces. `MarkPointInvalid` re-dirties all six, including faces a
-previous invalidation already re-rendered, because a state change moves the
-whole cube.
+slot bursts its faces -- and thereafter it holds its grant through rotations and
+re-renders: pending faces mean the schedule owes work, not that the cube is
+unsampleable, and a slightly stale face beats a flickering shadow.
+`MarkPointInvalid` re-dirties all six, including faces a previous invalidation
+already re-rendered, because a state change moves the whole cube.
 
 ### View scheduling order
 
@@ -154,6 +173,15 @@ starve the oldest invalidations indefinitely.
 Cross-pool ordering is total: by frame stamp, then spot before point, then slot
 index. There is no unordered container anywhere in the schedule.
 
+The schedule and every mechanical pool rule are written once over the
+pool-neutral slot state (`render/ShadowSlotPool.h`): a pool is a span of
+slots plus its sub-view mask (one bit for a spot tile, six face bits for a
+point cube) and two hooks, and `ShadowResidency` composes the two pools
+while owning the atlas allocator, the typed rendered records, and the
+per-pool invalidation policies. "Spot before point" is "lower pool ordinal
+wins"; a third pool would be one more descriptor entry, not another copy of
+the scheduling.
+
 ### Failure handling
 
 `ShadowDepthPass` reports back into the arbiter:
@@ -161,8 +189,9 @@ index. There is no unordered container anywhere in the schedule.
 - `MarkViewFailed(slot)`: clears `EverRendered`, marks invalid, and erases the
   slot's grant from this frame's list.
 - `MarkPointFaceFailed(slot, face)`: re-sets that one pending bit and erases the
-  grant. The slot's other faces already match its rendered record, so only the
-  failed face re-queues.
+  grant for the failure frame. The slot's other faces already match its
+  rendered record, so only the failed face re-queues, and the grant returns
+  from the cached faces on the next frame while it waits.
 
 Both are paired with `RevokeGrant` on the light set, so nothing samples a slot
 whose content does not match its published record.

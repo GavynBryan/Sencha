@@ -52,10 +52,10 @@ ImGuiDebugOverlay::~ImGuiDebugOverlay()
 	Teardown();
 }
 
-bool ImGuiDebugOverlay::Setup(const RendererServices& services)
+bool ImGuiDebugOverlay::Setup(const RenderFeatureServices& services)
 {
 	Log = services.Logging ? &services.Logging->GetLogger<ImGuiDebugOverlay>() : nullptr;
-	Valid = InitImGui(services);
+	Valid = InitImGui(*services.Backend);
 	if (Valid && Log)
 		Log->Info("ImGui debug overlay ready - press ` to toggle");
 	// Nothing this feature does works without an ImGui context, so a failed
@@ -63,7 +63,7 @@ bool ImGuiDebugOverlay::Setup(const RendererServices& services)
 	return Valid;
 }
 
-void ImGuiDebugOverlay::OnDraw(const FrameContext& frame)
+void ImGuiDebugOverlay::OnDraw(const RenderFrame& frame)
 {
 	if (!Valid)
 		return;
@@ -79,7 +79,7 @@ void ImGuiDebugOverlay::OnDraw(const FrameContext& frame)
 	}
 
 	ImGui::Render();
-	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), frame.Cmd);
+	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), frame.Backend->Cmd);
 }
 
 void ImGuiDebugOverlay::Teardown()

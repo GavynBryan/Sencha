@@ -3,6 +3,7 @@
 #include "MaterialEditorServices.h"
 
 #include <app/Engine.h>
+#include <graphics/vulkan/GraphicsServices.h>
 #include <platform/PlatformServices.h>
 #include <platform/SdlWindow.h>
 
@@ -47,6 +48,12 @@ void MaterialEditorApp::OnPlatformEvent(PlatformEventContext& ctx)
 
 void MaterialEditorApp::OnShutdown(GameShutdownContext&)
 {
+    // Drain the GPU first: the frame loop returns without waiting, and the
+    // texture preview frees its ImGui descriptor set inline as the services go
+    // away. The renderer's own wait is much later, in its destructor.
+    if (GraphicsServices* graphics = GetEngine().TryGraphics())
+        graphics->WaitIdle();
+
     // Release the asset system inside the Game shutdown window, before the
     // engine frees the graphics services its caches borrow.
     Services.reset();

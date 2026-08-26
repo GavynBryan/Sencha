@@ -53,6 +53,7 @@ void EditorWideLinePipeline::Setup(const RendererServices& services)
 
 void EditorWideLinePipeline::Submit(const FrameContext& frame,
                                     const EditorViewport& viewport,
+                                    const CameraRenderData& camera,
                                     std::span<const EditorLineSegment> segments,
                                     bool onTop,
                                     std::string_view source)
@@ -70,7 +71,7 @@ void EditorWideLinePipeline::Submit(const FrameContext& frame,
     for (std::size_t offset = 0; offset < segments.size(); offset += maxPerSubmit)
     {
         const std::size_t count = std::min(maxPerSubmit, segments.size() - offset);
-        Pipeline.Submit(frame, viewport, segments.subspan(offset, count), onTop);
+        Pipeline.Submit(frame, viewport, camera, segments.subspan(offset, count), onTop);
     }
 }
 

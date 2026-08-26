@@ -189,12 +189,12 @@ const VulkanImageService::ImageEntry* VulkanImageService::Resolve(ImageHandle ha
     return &entry;
 }
 
-ImageHandle VulkanImageService::Create(const ImageCreateInfo& info)
+bool VulkanImageService::ValidateCreateInfo(const ImageCreateInfo& info) const
 {
     if (info.Extent.width == 0 || info.Extent.height == 0)
     {
         Log.Error("ImageCreateInfo must specify nonzero extent");
-        return {};
+        return false;
     }
 
     const bool is3d = info.ViewType == VK_IMAGE_VIEW_TYPE_3D;
@@ -203,32 +203,44 @@ ImageHandle VulkanImageService::Create(const ImageCreateInfo& info)
     {
         Log.Error("ImageCreateInfo view type {} is not supported",
                   static_cast<int>(info.ViewType));
-        return {};
+        return false;
     }
     if (is3d && (info.Depth == 0 || info.ArrayLayers != 1))
     {
         Log.Error("3D images need a nonzero depth and a single array layer");
-        return {};
+        return false;
     }
     if (isCubeArray
         && (info.ArrayLayers == 0 || info.ArrayLayers % 6 != 0
             || info.Extent.width != info.Extent.height))
     {
         Log.Error("Cube-array images need square extents and a multiple of six layers");
-        return {};
+        return false;
     }
     if (info.ViewType != VK_IMAGE_VIEW_TYPE_2D
         && (info.GenerateMips || info.MipLevels > 1))
     {
         Log.Error("Mip chains are supported for 2D images only");
-        return {};
+        return false;
     }
+    return true;
+}
 
-    uint32_t mipLevels = info.MipLevels == 0 ? 1u : info.MipLevels;
+uint32_t VulkanImageService::ResolveMipLevels(const ImageCreateInfo& info)
+{
     if (info.GenerateMips)
-    {
-        mipLevels = MaxMipLevels(info.Extent);
-    }
+        return MaxMipLevels(info.Extent);
+    return info.MipLevels == 0 ? 1u : info.MipLevels;
+}
+
+ImageHandle VulkanImageService::Create(const ImageCreateInfo& info)
+{
+    if (!ValidateCreateInfo(info))
+        return {};
+
+    const bool is3d = info.ViewType == VK_IMAGE_VIEW_TYPE_3D;
+    const bool isCubeArray = info.ViewType == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
+    const uint32_t mipLevels = ResolveMipLevels(info);
 
     // Ensure usage is consistent with requested behavior.
     VkImageUsageFlags usage = info.Usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT;

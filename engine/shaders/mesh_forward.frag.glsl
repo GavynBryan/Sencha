@@ -2,19 +2,26 @@
 #extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_nonuniform_qualifier : require
 
-#include "mesh_frame.glsli"
+#include "mesh_view.glsli"
 #include "shadow_sampling.glsli"
 #include "probe_sampling.glsli"
+#include "tonemap.glsli"
 #include "mesh_material.glsli"
 #include "lighting.glsli"
 
 layout(constant_id = 0) const bool MATERIAL_UNLIT = false;
+// Alpha masking is a pipeline variant rather than a branch every material pays
+// for: a fragment shader that can discard loses early depth testing, and an
+// opaque scene should not give that up to serve the masked materials in it.
+layout(constant_id = 1) const bool MATERIAL_ALPHA_MASK = false;
 
 layout(location = 0) out vec4 outColor;
 
 void main()
 {
     vec4 baseColor = SampleBaseColor();
+    if (MATERIAL_ALPHA_MASK && baseColor.a < pushData.AlphaCutoff)
+        discard;
     vec3 emission = ResolveEmission();
 
     if (MATERIAL_UNLIT)
@@ -43,10 +50,17 @@ void main()
     vec3 specularTint = mix(vec3(1.0), baseColor.rgb, metallic);
     float diffuseWrap = max(frame.StyleParams.x, 0.0);
 
+    bool chartedReceiver = pushData.LightmapTextureIndex != 0xFFFFFFFFu;
     uint count = min(frame.LightCount, MAX_LIGHTS);
     for (uint i = 0u; i < count; ++i)
     {
         GpuLight light = frame.Lights[i];
+        // A charted receiver's copy of a baked light is already in its
+        // lightmap; skipping the live light here is what keeps the term
+        // single-counted. Everything else receives baked lights live.
+        if ((light.Type & LIGHT_BAKED_BIT) != 0u && chartedReceiver)
+            continue;
+        light.Type &= LIGHT_TYPE_MASK;
         if (light.Type > 1u)
             continue;
 
@@ -70,9 +84,9 @@ void main()
         lit += specularTint * terms.Specular * terms.Radiance;
     }
 
-    // Baked static direct diffuse (diffuse only, no specular). The lights that
-    // fed this term are excluded from the runtime set above, so it does not
-    // double-count. Zero on unbaked meshes.
+    // Baked static direct diffuse (diffuse only, no specular). The lights
+    // that fed this term are skipped by the loop above on charted receivers,
+    // so it does not double-count. Zero on unbaked meshes.
     if (frame.BakedDirectEnabled != 0u)
         lit += baseColor.rgb * SampleBakedDirect();
 

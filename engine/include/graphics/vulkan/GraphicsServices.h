@@ -8,7 +8,7 @@
 #include <graphics/vulkan/VulkanDeletionQueueService.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
-#include <graphics/vulkan/VulkanFrameScratch.h>
+#include <graphics/GpuFrameScratch.h>
 #include <graphics/vulkan/VulkanFrameService.h>
 #include <graphics/vulkan/VulkanImageService.h>
 #include <graphics/vulkan/VulkanInstanceService.h>
@@ -55,7 +55,7 @@ struct GraphicsServices
     VulkanShaderCache           Shaders;
     VulkanPipelineCache         Pipelines;
     VulkanDescriptorCache       Descriptors;
-    VulkanFrameScratch          Scratch;
+    GpuFrameScratch          Scratch;
     VulkanSwapchainService      Swapchain;
     VulkanFrameService          Frames;
     // Named MainRenderer, not Renderer: a member may not share its type's name.
@@ -73,6 +73,13 @@ struct GraphicsServices
 
     // True when every service in the chain initialized successfully.
     [[nodiscard]] bool IsValid() const;
+
+    // Blocks until the GPU has finished every submitted frame. A host that
+    // destroys objects holding GPU resources during its own shutdown -- before
+    // the renderer's teardown wait, which comes much later -- needs this
+    // boundary first: the frame loop can submit and return without draining,
+    // so up to frames-in-flight command buffers may still be executing.
+    void WaitIdle() const;
 
 private:
     GraphicsServices(LoggingProvider& logging,

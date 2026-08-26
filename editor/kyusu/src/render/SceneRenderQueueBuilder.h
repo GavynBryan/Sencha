@@ -8,6 +8,9 @@
 #include <render/ShadowResidencyTypes.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 
+class SkinnedMeshCache;
+class AnimationClipCache;
+
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -52,12 +55,17 @@ struct Registry;
 class SceneRenderQueueBuilder
 {
 public:
+    // `skinnedMeshes` is optional the same way `textures` is: without it,
+    // skinned placements simply emit nothing. Non-const because the preview
+    // registry's component lifecycle retains through it.
     SceneRenderQueueBuilder(AssetSystem& assets,
                             StaticMeshCache& meshes,
                             MaterialCache& materials,
                             MaterialSetCache& materialSets,
                             LoggingProvider& logging,
-                            TextureCache* textures = nullptr);
+                            TextureCache* textures = nullptr,
+                            SkinnedMeshCache* skinnedMeshes = nullptr,
+                            AnimationClipCache* animationClips = nullptr);
     ~SceneRenderQueueBuilder();
 
     SceneRenderQueueBuilder(const SceneRenderQueueBuilder&) = delete;
@@ -118,7 +126,7 @@ private:
     void EmitBrushQueue();
     void EmitPreviewQueue();
     void BuildMeshQueue(const EditorDocument& document);
-    void BuildLights(const EditorDocument& document, bool skipDirectLights);
+    void BuildLights(const EditorDocument& document);
     void BuildShadowCasters(const EditorDocument& document);
     void ReleaseBrushMeshes();
 
@@ -127,6 +135,8 @@ private:
     MaterialCache& Materials;
     MaterialSetCache& MaterialSets;
     TextureCache* Textures = nullptr;
+    SkinnedMeshCache* SkinnedMeshes = nullptr;
+    AnimationClipCache* AnimationClips = nullptr;
     LoggingProvider& Logging;
     Logger& Log;
 

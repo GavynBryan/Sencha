@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include <render/Image.h>
-#include <render/ImageLoader.h>
+#include <assets/texture/Image.h>
+#include <assets/texture/ImageLoader.h>
 
 #include <cstddef>
 #include <type_traits>

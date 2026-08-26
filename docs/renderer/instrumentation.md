@@ -28,7 +28,7 @@ frame or append a capture record. A candidate store that is itself null (no
 timestamp support on the device, profiling compiled out) stays null.
 
 The mode is latched once per frame, at the very top of
-`FramePhase::ExtractRenderPacket`, before any extraction or recording reads the
+`FramePhase::ExtractRender`, before any extraction or recording reads the
 bundle. One frame therefore sees exactly one mode.
 
 **Consumers cache the bundle pointer, never its members.** The pointer is stable
@@ -114,7 +114,7 @@ everything between the two writes rather than a single stage.
 ## Debug views
 
 `SENCHA_ENABLE_RENDER_PROFILING` only. Set `render.debug.view` to select a
-channel; the value reaches the shader through `MeshFrameUniforms::DebugView` and
+channel; the value reaches the shader through `MeshViewUniforms::DebugView` and
 switches the forward pass to the debug pipeline family.
 
 | Value | `RenderDebugView` | Shows |
@@ -153,7 +153,7 @@ happens inside the explicit serialize calls.
 | `render.capture.output` | when non-empty in capture mode, per-frame records are written to this path |
 
 The serialized format is the machine-analysis interface, not a log: a
-schema-versioned envelope (`kSchemaVersion = 4`), stable keys, explicit units
+schema-versioned envelope (`kSchemaVersion = 6`), stable keys, explicit units
 (`_ms`, `_bytes`, `_count`).
 
 `SetEnvironment` records device, driver, validation state, and build identity

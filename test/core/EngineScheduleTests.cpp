@@ -201,12 +201,9 @@ TEST_F(EngineScheduleTest, DispatchesOnlyImplementedPhases)
     };
     harness.Schedule.RunFrameUpdate(frame);
 
-    RenderPacketDoubleBuffer packets;
     RenderExtractContext extract{
         .Config = harness.Config,
         .Runtime = harness.Runtime,
-        .PacketWrite = packets.WriteSlot(),
-        .PacketRead = packets.ReadSlot(),
         .Presentation = {},
         .Entities = *view.Entities,
         .Partitions = view.Visible,

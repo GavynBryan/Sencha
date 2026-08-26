@@ -964,7 +964,7 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
         }
     });
 
-    driver.Register(FramePhase::ExtractRenderPacket, [&engine, &config](PhaseContext& ctx) {
+    driver.Register(FramePhase::ExtractRender, [&engine, &config](PhaseContext& ctx) {
         // Before any extraction or recording reads the bundle, so one frame
         // sees exactly one profile mode.
         engine.ApplyPendingRenderProfileMode();
@@ -981,9 +981,7 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
         RenderExtractContext extract{
             .Config = config,
             .Runtime = *ctx.Runtime,
-            .PacketWrite = *ctx.PacketWrite,
-            .PacketRead = *ctx.PacketRead,
-            .Presentation = ctx.PacketWrite->Presentation,
+            .Presentation = ctx.Runtime->GetCurrentFrame().Presentation,
             .Entities = entities,
             .Partitions = zones.Visible,
         };

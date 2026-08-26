@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
+#include <graphics/GpuResourceDesc.h>
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
@@ -24,19 +25,9 @@ class VulkanDeviceService;
 // The cache owns every sampler it hands out and destroys them at service
 // teardown. Do not vkDestroySampler on anything returned from Get().
 //=============================================================================
-struct SamplerDesc
-{
-    VkFilter MinFilter = VK_FILTER_LINEAR;
-    VkFilter MagFilter = VK_FILTER_LINEAR;
-    VkSamplerMipmapMode MipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    VkSamplerAddressMode AddressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    VkSamplerAddressMode AddressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    VkSamplerAddressMode AddressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    float MaxAnisotropy = 0.0f; // 0 disables anisotropy
-    float MaxLod = VK_LOD_CLAMP_NONE;
-
-    bool operator==(const SamplerDesc&) const = default;
-};
+// SamplerDesc lives in graphics/GpuResourceDesc.h so describers of sampling
+// state stay free of the Vulkan headers; it arrives here through that
+// include, and CreateSampler translates it at this boundary.
 
 class VulkanSamplerCache
 {

@@ -17,7 +17,9 @@ using MaterialHandle = Handle<struct MaterialHandleTag>;
 // Identifies the render pass a material belongs to. Used as the high bits of the sort key.
 enum class ShaderPassId : uint16_t
 {
-    ForwardOpaque = 0
+    ForwardOpaque = 0,
+    // Blended geometry, drawn after every opaque item, back-to-front per view.
+    ForwardTransparent = 1,
 };
 
 enum class MaterialShading : uint8_t
@@ -26,9 +28,9 @@ enum class MaterialShading : uint8_t
     Unlit = 1,
 };
 
-// Authored alpha behavior. Blend maps to a transparent phase that has no
-// pipeline yet: loaders accept it, warn, and the material renders opaque until
-// that phase exists.
+// Authored alpha behavior, and the single source for which pass a material
+// draws in: Blend routes to the transparent phase, Opaque and Mask to the
+// forward one (Mask discards in the fragment shader rather than blending).
 enum class MaterialAlphaMode : uint8_t
 {
     Opaque = 0,
@@ -48,7 +50,6 @@ enum class MaterialAlphaMode : uint8_t
 //=============================================================================
 struct Material
 {
-    ShaderPassId Pass = ShaderPassId::ForwardOpaque;
     MaterialShading Shading = MaterialShading::StandardLit;
 
     Vec4 BaseColor = Vec4(1.0f, 1.0f, 1.0f, 1.0f);
@@ -71,3 +72,14 @@ struct Material
     bool ReceiveShadows = true;
     bool CastShadows = true;
 };
+
+// Which pass a material draws in. Derived at the emission boundary rather than
+// stored beside AlphaMode: two fields saying the same thing can disagree, and
+// nothing validated them -- a Blend material carrying ForwardOpaque would have
+// sorted with opaque geometry while selecting a blended pipeline.
+[[nodiscard]] constexpr ShaderPassId ResolveMaterialPass(const Material& material)
+{
+    return material.AlphaMode == MaterialAlphaMode::Blend
+        ? ShaderPassId::ForwardTransparent
+        : ShaderPassId::ForwardOpaque;
+}

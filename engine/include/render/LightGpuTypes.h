@@ -19,6 +19,14 @@ enum class GpuLightType : std::uint32_t
     Directional = 2,
 };
 
+// High bit of GpuLight::Type, set when the light's direct diffuse is baked
+// into zone lightmaps (LightBakeContribution::Direct). The light stays in the
+// forward set so movable and uncharted receivers get it live; a receiver that
+// owns a chart skips it in-shader, because its copy is already in the atlas.
+// The low bits remain the GpuLightType value.
+inline constexpr std::uint32_t kGpuLightBakedBit = 0x80000000u;
+inline constexpr std::uint32_t kGpuLightTypeMask = ~kGpuLightBakedBit;
+
 struct GpuLight
 {
     Vec4 PositionRange;
@@ -238,7 +246,9 @@ struct PointShadowView
     result.DirectionCone = Vec4(0.0f, 0.0f, 0.0f, 0.0f);
     result.ColorIntensity = Vec4(
         light.Color.X, light.Color.Y, light.Color.Z, light.Intensity);
-    result.Type = static_cast<std::uint32_t>(GpuLightType::Point);
+    result.Type = static_cast<std::uint32_t>(GpuLightType::Point)
+        | (light.BakeContribution == LightBakeContribution::Direct
+               ? kGpuLightBakedBit : 0u);
     return result;
 }
 
@@ -260,7 +270,9 @@ struct PointShadowView
         worldDirection.X, worldDirection.Y, worldDirection.Z, cosOuter);
     result.ColorIntensity = Vec4(
         light.Color.X, light.Color.Y, light.Color.Z, light.Intensity);
-    result.Type = static_cast<std::uint32_t>(GpuLightType::Spot);
+    result.Type = static_cast<std::uint32_t>(GpuLightType::Spot)
+        | (light.BakeContribution == LightBakeContribution::Direct
+               ? kGpuLightBakedBit : 0u);
     result.ConeScale = scale;
     result.ConeOffset = -cosOuter * scale;
     return result;

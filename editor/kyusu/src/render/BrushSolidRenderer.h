@@ -22,9 +22,11 @@ public:
     explicit BrushSolidRenderer(EditorSolidPipeline& solid);
 
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                      const CameraRenderData& camera,
                       const EditorScene& scene) override;
     // Same path with every per-material tint modulated (context-zone dimming).
     void DrawViewportTinted(const FrameContext& frame, const EditorViewport& viewport,
+                            const CameraRenderData& camera,
                             const EditorScene& scene, const Vec4& tint);
 
 private:

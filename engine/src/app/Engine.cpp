@@ -193,6 +193,53 @@ bool Engine::Initialize()
     }
     // Before any feature is added, so every feature Setup sees the bundle.
     GraphicsState->MainRenderer.SetInstrumentation(&InstrumentationBundle);
+
+    // Registered here rather than with the other render commands, which run
+    // before graphics exist. Kept out of the module-facing headers on purpose:
+    // a screenshot is a dev facility and not worth an ABI fingerprint change,
+    // which would reject every game module built against the old one.
+    ConsoleState->Registry().RegisterCommand({
+        .Name = "render.screenshot",
+        .Owner = "engine",
+        .Usage = "render.screenshot <path.png> [frame]",
+        .Help = "Write a rendered frame to a PNG. With a frame number, waits "
+                "until the renderer has drawn that many -- the first frames of "
+                "a run are a window appearing and assets still arriving, so an "
+                "unattended capture should name a frame the scene has settled "
+                "by. Unavailable when the surface offers no readback usage.",
+        .Callback = [this](ConsoleExecutionContext&,
+                           std::span<const std::string> args) {
+            ConsoleResult result;
+            if (args.empty() || args.size() > 2)
+            {
+                result.Status = ConsoleStatus::InvalidArguments;
+                result.Error("expected <path.png> [frame]");
+                return result;
+            }
+            std::uint64_t atFrame = 0;
+            if (args.size() == 2)
+            {
+                try
+                {
+                    atFrame = static_cast<std::uint64_t>(std::stoull(args[1]));
+                }
+                catch (const std::exception&)
+                {
+                    result.Status = ConsoleStatus::InvalidArguments;
+                    result.Error("frame must be a non-negative integer");
+                    return result;
+                }
+            }
+            if (!GraphicsState->MainRenderer.CaptureFrame(args[0], atFrame))
+            {
+                result.Status = ConsoleStatus::ExecutionFailed;
+                result.Error("this surface does not support reading frames back");
+                return result;
+            }
+            result.Info(std::format("capture armed for frame {} -> {}", atFrame, args[0]));
+            return result;
+        },
+    });
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     // A zero timestampPeriod means the device cannot timestamp; the pool
     // stays permanently inert and Gpu mode degrades to Counters behavior.

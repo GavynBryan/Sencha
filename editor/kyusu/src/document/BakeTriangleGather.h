@@ -2,7 +2,7 @@
 
 #include <assets/cook/BakeBvh.h>
 #include <math/Mat.h>
-#include <render/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/MeshGeometry.h>
 
 #include <cstddef>
 #include <vector>

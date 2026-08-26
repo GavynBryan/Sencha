@@ -3,6 +3,8 @@
 #include "ImGuiTextureBinding.h"
 #include "ThumbnailEviction.h"
 
+#include <graphics/GpuFrameRetirement.h>
+
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -28,7 +30,10 @@ class VulkanSamplerCache;
 // artifact yet; producing one would slot into the base-color resolve step).
 //
 // Teardown follows ImGuiTextureBinding's contract: destroy or Clear() while
-// the asset system and the ImGui Vulkan backend are both alive.
+// the asset system and the ImGui Vulkan backend are both alive, and with the
+// GPU idle -- the bindings free their descriptor sets inline, so a frame still
+// executing would be referencing freed sets. The editor hosts establish that
+// by draining the device at the top of their shutdown.
 //=============================================================================
 class MaterialThumbnailCache
 {
@@ -40,7 +45,7 @@ public:
                            const AssetRegistry& registry);
 
     // Advances the LRU clock; call once per UI frame before any Thumbnail().
-    void BeginFrame();
+    void BeginFrame(GpuFrameRetirement retirement);
 
     // The ImGui texture id for the material's base color, loading it on first
     // request; 0 while unresolved or for a texture-less material (the caller
@@ -77,7 +82,9 @@ private:
     struct Retiring
     {
         std::unique_ptr<ImGuiTextureBinding> Binding;
-        int FramesLeft = 0;
+        // Frame the binding was evicted on; released once the renderer's
+        // fence-anchored clock reports that frame retired.
+        std::uint64_t Stamp = 0;
     };
 
     // The material's base color texture path; empty when the material has none
@@ -96,5 +103,6 @@ private:
 
     std::unordered_map<std::string, Entry> Entries;
     std::vector<Retiring> RetireList;
+    GpuFrameRetirement Retirement;
     std::uint64_t Frame = 0;
 };

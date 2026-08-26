@@ -15,7 +15,8 @@ class BrushPreviewRenderer
 public:
     BrushPreviewRenderer(PreviewBuffer& preview, EditorLinePipeline& lines);
 
-    void DrawViewport(const FrameContext& frame, const EditorViewport& viewport);
+    void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+        const CameraRenderData& camera);
 
 private:
     PreviewBuffer& Preview;

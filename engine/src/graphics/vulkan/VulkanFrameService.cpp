@@ -131,6 +131,11 @@ VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
         }
 
         current.Submitted = false;
+        // The wait just proved this slot's last frame complete. That frame is
+        // the oldest one outstanding -- slots are used strictly round-robin --
+        // so everything numbered at or below it is now safe to release.
+        Retirement.RetiredThrough = AdvanceRetiredThrough(
+            Retirement.RetiredThrough, current.SubmittedFrameNumber);
         DeletionQueue->AdvanceFrame();
     }
 
@@ -237,6 +242,10 @@ VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
             : VulkanFrameStatus::Error;
     }
 
+    // Numbered only once the frame is certain to record: an acquire that bails
+    // out above must not consume a number, or the retirement boundary would
+    // trail a frame that never existed.
+    ++Retirement.Current;
     frame.FrameIndex = CurrentFrame;
     frame.ImageIndex = imageIndex;
     frame.CommandBuffer = current.CommandBuffer;
@@ -314,6 +323,7 @@ VulkanFrameStatus VulkanFrameService::EndFrame(const VulkanFrame& frame)
     }
 
     current.Submitted = true;
+    current.SubmittedFrameNumber = Retirement.Current;
     if (frame.ImageIndex < ImageInFlightFences.size())
     {
         ImageInFlightFences[frame.ImageIndex] = SwapchainImageFrameState{

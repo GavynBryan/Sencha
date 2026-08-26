@@ -1,6 +1,6 @@
 #pragma once
 
-#include <render/static_mesh/StaticMeshVertex.h>
+#include <assets/static_mesh/StaticMeshVertex.h>
 
 #include <cstdint>
 

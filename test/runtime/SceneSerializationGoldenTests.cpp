@@ -16,7 +16,7 @@
 #include <core/json/JsonStringify.h>
 #include <core/serialization/BinaryWriter.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <render/Camera.h>
+#include <render/extract/Camera.h>
 #include <render/PointLightComponent.h>
 #include <render/StaticMeshComponent.h>
 #include <world/ComponentRegistrar.h>
@@ -98,8 +98,11 @@ TEST(SceneSerializationGolden, BinaryPayloadIsUnchanged)
     // Order is not a format contract -- the reader dispatches on each chunk's
     // id, proven by SceneSerializer.ADifferentRegistrationOrderReadsTheSameScene
     // -- so a change here is only ever a prompt to check that nothing about the
-    // scene's content changed. The size below did not.
-    EXPECT_EQ(HashOfString(bytes), 0x4f218e01c3cc43beULL)
+    // scene's content changed. Last moved by AnimationClipPlayerComponent
+    // joining the engine set, which adds one empty chunk; the JSON golden
+    // beside this was untouched, which is the check that no existing content
+    // moved.
+    EXPECT_EQ(HashOfString(bytes), 0x34707cc853ca48a1ULL)
         << "scene binary changed; if that was intended, update the constant."
         << " size=" << bytes.size();
 }

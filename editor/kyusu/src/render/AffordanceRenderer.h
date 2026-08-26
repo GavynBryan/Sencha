@@ -15,7 +15,8 @@ public:
                        EditorFillPipeline& fills)
         : Affordances(affordances), Lines(lines), Fills(fills) {}
 
-    void DrawViewport(const FrameContext& frame, const EditorViewport& viewport);
+    void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+        const CameraRenderData& camera);
 
 private:
     EditorAffordanceService& Affordances;

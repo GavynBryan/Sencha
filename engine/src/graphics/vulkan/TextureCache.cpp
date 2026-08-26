@@ -1,4 +1,4 @@
-#include <graphics/vulkan/TextureCache.h>
+#include <assets/texture/TextureCache.h>
 
 #include <graphics/vulkan/VulkanDescriptorCache.h>
 #include <graphics/vulkan/VulkanImageService.h>
@@ -163,7 +163,7 @@ bool TextureCache::ReloadInPlace(std::string_view path, const Image& image)
     return ReloadEntryImage(path, gpuImage, { image.Width, image.Height });
 }
 
-bool TextureCache::ReloadEntryImage(std::string_view path, ImageHandle newImage, VkExtent2D extent,
+bool TextureCache::ReloadEntryImage(std::string_view path, ImageHandle newImage, RenderExtent extent,
                                     const SamplerDesc* newSampler)
 {
     TextureEntry* entry = Resolve(FindRegisteredHandle(path));
@@ -180,6 +180,11 @@ bool TextureCache::ReloadEntryImage(std::string_view path, ImageHandle newImage,
     // Repoint the existing bindless slot at the new image (same index, so
     // materials are unaffected), then retire the old image through the
     // deletion queue. Generation, refcount, and the handle are untouched.
+    //
+    // Deliberately in place rather than release-and-reacquire: the slot keeps
+    // naming the same logical texture, so the worst an in-flight frame sees is
+    // one frame of mixed old and new content. Recycling the index instead
+    // would invalidate every material already carrying it.
     VkSampler vkSampler = Samplers->Get(entry->Sampler);
     Descriptors->UpdateSampledImage(entry->Bindless, newImage, vkSampler);
     Images->Destroy(entry->GpuImage);
@@ -194,9 +199,9 @@ SamplerDesc TextureCache::SamplerForTextureData(const TextureData& texture)
     SamplerDesc sampler;
     if (texture.Filter == TextureFilter::Nearest)
     {
-        sampler.MinFilter = VK_FILTER_NEAREST;
-        sampler.MagFilter = VK_FILTER_NEAREST;
-        sampler.MipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        sampler.MinFilter = SamplerFilter::Nearest;
+        sampler.MagFilter = SamplerFilter::Nearest;
+        sampler.MipmapMode = SamplerFilter::Nearest;
         sampler.MaxAnisotropy = 0.0f;
     }
     return sampler;
@@ -210,10 +215,10 @@ BindlessImageIndex TextureCache::GetBindlessIndex(TextureHandle handle) const
     return entry ? entry->Bindless : BindlessImageIndex{};
 }
 
-VkExtent2D TextureCache::GetExtent(TextureHandle handle) const
+RenderExtent TextureCache::GetExtent(TextureHandle handle) const
 {
     const TextureEntry* entry = Resolve(handle);
-    return entry ? entry->Extent : VkExtent2D{};
+    return entry ? entry->Extent : RenderExtent{};
 }
 
 ImageHandle TextureCache::GetGpuImage(TextureHandle handle) const

@@ -186,12 +186,25 @@ several phases — charge while held, loose on release — where no one mode
 describes what the consumer wants.
 
 `Tick()` is this tick's record; `Frame()` is the presentation snapshot, which is
-what a camera or a menu wants. A system that reads actions must be ordered after
-the resolve system:
+what a camera or a menu wants. Which clock a reader is on also decides how it is
+ordered against the resolve system, because `EngineSchedule::After` is
+phase-local: it records an edge only in phase lists both systems appear in, and
+an edge between systems sharing no phase orders nothing and asserts.
+
+A `FixedLogic` or `PreSimulate` reader shares a phase with the resolve system,
+so it declares the edge:
 
 ```cpp
 ctx.Schedule.After<CharacterInputSystem, InputActionResolveSystem>();
 ```
+
+A `FrameUpdate` reader must not. `InputActionResolveSystem::PreSimulate` runs in
+`FramePhase::ScheduleTicks` and `FrameUpdate` systems run in
+`FramePhase::Update`, so every frame resolves input before presentation-rate
+systems read it. The ordering is structural; declaring it as an edge only trips
+the assert. Note this is a reason to keep a camera or menu system on
+`FrameUpdate` rather than moving it to satisfy an edge -- reading the
+presentation snapshot at tick rate is the bug the phase split exists to prevent.
 
 Adding an action costs one entry in the action set, one binding in the profile,
 and one field wherever it is consumed. No engine edit, no central switch.

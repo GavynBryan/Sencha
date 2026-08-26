@@ -3,8 +3,8 @@
 #include <anim/AnimationClip.h>
 #include <anim/Skeleton.h>
 #include <assets/cook/AssetImporter.h>
-#include <render/skinned_mesh/SkinnedMeshData.h>
-#include <render/static_mesh/MeshGeometry.h>
+#include <assets/skinned_mesh/SkinnedMeshData.h>
+#include <assets/static_mesh/MeshGeometry.h>
 
 #include <cstdint>
 #include <optional>

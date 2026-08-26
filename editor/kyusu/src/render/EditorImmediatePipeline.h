@@ -7,7 +7,7 @@
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
-#include <graphics/vulkan/VulkanFrameScratch.h>
+#include <graphics/GpuFrameScratch.h>
 #include <graphics/vulkan/VulkanPipelineCache.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
 
@@ -89,7 +89,11 @@ public:
 
     // onTop = true draws without depth-testing (overlays visible through geometry);
     // false depth-tests against the scene. DepthWrite comes from the config.
+    // The camera is the view's, handed in rather than rebuilt from the
+    // viewport: one view renders through one camera, and a submission that
+    // derived its own could disagree with the pass beside it.
     void Submit(const FrameContext& frame, const EditorViewport& viewport,
+                const CameraRenderData& camera,
                 std::span<const TVertex> vertices, bool onTop = false)
     {
         if (PipelineLayout == VK_NULL_HANDLE || Scratch == nullptr || Buffers == nullptr
@@ -117,7 +121,7 @@ public:
         }
 
         const VkDeviceSize byteCount = sizeof(TVertex) * vertices.size();
-        const auto allocation = Scratch->AllocateVertex(byteCount);
+        const auto allocation = Scratch->AllocateVertex(byteCount, ScratchTag::ImmediateVertices);
         if (!allocation.IsValid())
         {
             // The scratch error names no caller; identify the pipeline and the
@@ -150,9 +154,8 @@ public:
         };
         scissor.extent = { static_cast<uint32_t>(vpWidth), static_cast<uint32_t>(vpHeight) };
 
-        const CameraRenderData renderData = viewport.BuildRenderData();
         const PushConstants push{
-            .ViewProjection = renderData.ViewProjection.Transposed(),
+            .ViewProjection = camera.ViewProjection.Transposed(),
             .ViewportPixels = Vec2d{ vpWidth, vpHeight },
         };
 
@@ -262,7 +265,7 @@ private:
     VulkanBufferService* Buffers = nullptr;
     VulkanShaderCache* Shaders = nullptr;
     VulkanPipelineCache* Pipelines = nullptr;
-    VulkanFrameScratch* Scratch = nullptr;
+    GpuFrameScratch* Scratch = nullptr;
     Logger* Log = nullptr;
     bool LoggedOverflow = false;
     VkDevice Device = VK_NULL_HANDLE;

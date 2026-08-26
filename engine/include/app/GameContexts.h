@@ -4,7 +4,6 @@
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 #include <input/InputFrame.h>
-#include <runtime/RenderPacket.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <time/FrameClock.h>
 #include <world/RuntimeWorld.h>
@@ -156,8 +155,6 @@ struct RenderExtractContext
 {
     EngineConfig& Config;
     RuntimeFrameLoop& Runtime;
-    RenderPacket& PacketWrite;
-    RenderPacket& PacketRead;
     PresentationTime Presentation;
     World& Entities;
     const StoragePartitionSet& Partitions;

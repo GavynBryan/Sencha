@@ -163,9 +163,21 @@ if(FRAMEWORK_TEST_SOURCES)
     # code over engine headers. Compiling that one translation unit here tests it
     # where it lives rather than duplicating the schema (the brush_tests and
     # editor_tests discipline: link the GUI-free code directly).
+    # Same discipline for the examples' schedule composition: link the
+    # GUI-free registration TUs directly so a bad After edge fails under ctest
+    # instead of only on a Debug boot.
+    #
+    # One FreeCamera.cpp for both. example/CubeDemo and example/SceneViewer
+    # carry byte-identical copies of FreeCamera.{h,cpp}, so a single definition
+    # resolves both systems TUs; linking both would be a duplicate symbol. If
+    # the two ever diverge, this needs to become two test executables.
     add_executable(framework_tests
         ${FRAMEWORK_TEST_SOURCES}
-        ${CMAKE_SOURCE_DIR}/template/src/PlayerAvatarData.cpp)
+        ${CMAKE_SOURCE_DIR}/template/src/PlayerAvatarData.cpp
+        ${CMAKE_SOURCE_DIR}/example/CubeDemo/CubeDemoSystems.cpp
+        ${CMAKE_SOURCE_DIR}/example/CubeDemo/CubeDemoScene.cpp
+        ${CMAKE_SOURCE_DIR}/example/CubeDemo/FreeCamera.cpp
+        ${CMAKE_SOURCE_DIR}/example/SceneViewer/SceneViewerSystems.cpp)
     target_include_directories(framework_tests PRIVATE ${CMAKE_SOURCE_DIR}/template/src)
     target_link_libraries(framework_tests PRIVATE sencha_engine GTest::gtest_main)
     # The template's shipped gameplay data lives in the source tree, so the
@@ -217,6 +229,31 @@ if(NET_TEST_SOURCES)
     list(APPEND SENCHA_TEST_TARGETS net_tests)
 endif()
 
+# The renderer's only pixel-level coverage: renders scenes through the shipped
+# host and compares against committed reference images. Its own target because
+# it is the one suite that needs a GPU and a display, and because it drives a
+# separate process rather than linking what it tests. It skips, rather than
+# fails, where it cannot run.
+file(GLOB_RECURSE RENDER_GOLDEN_TEST_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/render_golden/*.cpp
+)
+if(RENDER_GOLDEN_TEST_SOURCES AND SENCHA_ENABLE_VULKAN)
+    add_executable(render_golden_tests ${RENDER_GOLDEN_TEST_SOURCES})
+    target_link_libraries(render_golden_tests PRIVATE sencha_engine GTest::gtest_main)
+    target_compile_definitions(render_golden_tests PRIVATE
+        # The bundled host, not the bare target: `app` discovers its game module
+        # as game<ext> beside itself, and only the bundle directory has one.
+        SENCHA_GOLDEN_APP="$<TARGET_FILE_DIR:SceneViewer>/app"
+        SENCHA_GOLDEN_CONTENT_ROOT="${CMAKE_SOURCE_DIR}/template"
+        SENCHA_GOLDEN_REFERENCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/render_golden/references"
+        SENCHA_GOLDEN_COOK="$<TARGET_FILE:level_cook_tests>"
+        SENCHA_GOLDEN_EDITOR="$<TARGET_FILE:kyusu>")
+    # The host, the default game module, and the cook have to exist before a
+    # scene renders; the test cooks its own fixtures.
+    add_dependencies(render_golden_tests app SceneViewer level_cook_tests kyusu)
+    list(APPEND SENCHA_TEST_TARGETS render_golden_tests)
+endif()
+
 if(PARTICIPANT_TEST_SOURCES)
     add_executable(participant_tests ${PARTICIPANT_TEST_SOURCES})
     target_link_libraries(participant_tests PRIVATE sencha_engine GTest::gtest_main)
@@ -251,6 +288,13 @@ endif()
 if(TARGET participant_tests)
     gtest_discover_tests(participant_tests
         DISCOVERY_TIMEOUT 30
+    )
+endif()
+
+if(TARGET render_golden_tests)
+    # Longer discovery and run: each case launches the host and renders a scene.
+    gtest_discover_tests(render_golden_tests
+        DISCOVERY_TIMEOUT 60
     )
 endif()
 
@@ -368,5 +412,11 @@ if(NOT WIN32)
     add_test(
         NAME gameplay_input_discipline
         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_gameplay_input.sh ${CMAKE_SOURCE_DIR}
+    )
+    # Ran only in the CI workflow until now, so a local `ctest` never saw a
+    # portability regression. It reads source and needs no build.
+    add_test(
+        NAME render_portability
+        COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_render_portability.sh ${CMAKE_SOURCE_DIR}
     )
 endif()

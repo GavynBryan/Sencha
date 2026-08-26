@@ -22,9 +22,11 @@ public:
                       const EditorOverlayState& overlay, EditorLinePipeline& lines);
 
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                      const CameraRenderData& camera,
                       const EditorScene& scene) override;
     // The context-zone caller passes a pre-dimmed color.
     void DrawWireframe(const FrameContext& frame, const EditorViewport& viewport,
+                       const CameraRenderData& camera,
                        const EditorScene& scene, const Vec4& color);
 
 private:

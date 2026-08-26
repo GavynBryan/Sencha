@@ -12,11 +12,14 @@ directory: engine shaders are compiled at build time and baked into the binary.
 | `mesh_debug_view.frag.glsl` | fragment | `kMeshDebugViewFragSpv`, only when `SENCHA_ENABLE_RENDER_PROFILING` |
 | `shadow_depth.vert.glsl` | vertex | `kShadowDepthVertSpv` |
 | `shadow_depth.frag.glsl` | fragment | `kShadowDepthFragSpv` (empty body; depth only) |
-| `mesh_frame.glsli` | include | frame UBO block and its structs |
+| `sky_gradient.vert.glsl` | vertex | `kSkyGradientVertSpv` (full-screen triangle, no vertex buffer) |
+| `sky_gradient.frag.glsl` | fragment | `kSkyGradientFragSpv` |
+| `mesh_view.glsli` | include | frame UBO block and its structs |
 | `mesh_material.glsli` | include | fragment inputs, push constants, bindless sampling, tonemap |
 | `lighting.glsli` | include | direct-light terms and shadow visibility composition |
 | `shadow_sampling.glsli` | include | spot and point shadow filters |
 | `probe_sampling.glsli` | include | probe volume selection and SH evaluation |
+| `tonemap.glsli` | include | exposure and the shoulder curve, shared by the mesh and sky passes |
 
 Editor shaders live under `editor/kyusu/src/render` with their own pipelines and
 are built the same way.
@@ -25,20 +28,29 @@ are built the same way.
 
 ```mermaid
 graph TD
-  frag[mesh_forward.frag.glsl] --> frame[mesh_frame.glsli]
+  frag[mesh_forward.frag.glsl] --> frame[mesh_view.glsli]
   frag --> shadow[shadow_sampling.glsli]
   frag --> probe[probe_sampling.glsli]
+  frag --> tone[tonemap.glsli]
   frag --> mat[mesh_material.glsli]
   frag --> light[lighting.glsli]
   dbg[mesh_debug_view.frag.glsl] --> frame
   dbg --> shadow
+  dbg --> tone
   dbg --> mat
   dbg --> light
   vert[mesh_forward.vert.glsl] --> frame
+  sky[sky_gradient.frag.glsl] --> tone
   shadow -.reads.-> frame
   probe -.reads.-> frame
   light -.reads.-> mat
+  mat -.calls.-> tone
 ```
+
+`tonemap.glsli` is the exception to the pattern below: it declares no
+descriptors and reads no globals, taking exposure and knee as arguments, which
+is what lets the sky pass share the display transform without inheriting the
+material push block and the bindless sampler array.
 
 Include order is load bearing and not defensive: the `.glsli` files declare no
 include guards and assume their dependencies are already in scope.
@@ -84,12 +96,12 @@ Every engine shader binds the same three sets. See
 [vulkan-backend.md](vulkan-backend.md#descriptor-sets) for the full table.
 
 ```glsl
-layout(set = 0, binding = 0) uniform MeshFrame { ... } frame;          // dynamic UBO
+layout(set = 0, binding = 0) uniform MeshView { ... } frame;          // dynamic UBO
 layout(set = 1, binding = 0) uniform sampler2D BindlessTextures[1024]; // material textures
 layout(set = 2, binding = 0) uniform sampler2DShadow        SpotShadowAtlas;
 layout(set = 2, binding = 1) uniform samplerCubeArrayShadow PointShadowCubes;
 layout(set = 2, binding = 2) uniform sampler3D ProbeVolumes[8 * 3];
-layout(push_constant) uniform MeshPush { ... } pushData;               // 80 bytes, VS+FS
+layout(push_constant) uniform MeshPush { ... } pushData;               // 80 bytes, FS only
 ```
 
 Vertex attribute locations are shared between the forward and shadow vertex
@@ -97,15 +109,21 @@ shaders so the instance-matrix convention cannot drift: locations 3 to 6 are
 always the four rows of the per-instance world matrix, whatever else a shader
 declares.
 
-`mesh_forward.vert.glsl` declares the push block with the same size and layout
-as the fragment side but names the trailing slot it does not read `Pad1`. The
-block must stay byte-identical across stages; only the names are free.
+The push block lives in one GLSL place: `mesh_material.glsli`, which both
+fragment shaders include. The vertex shader carried a byte-identical copy for
+years without reading a field of it, and the copy drifted -- stale names over
+the right offsets -- so it was deleted and the push range narrowed to the
+fragment stage. A vertex-stage consumer must widen the range in
+`MeshForwardPass::Setup` and the `vkCmdPushConstants` flags together, which is
+what makes a second silent copy impossible rather than merely discouraged.
 
 ## Specialization constants
 
-`MATERIAL_UNLIT` (`constant_id = 0`, bool) in `mesh_forward.frag.glsl`. The
-pipeline cache hashes fragment specialization constants as part of the pipeline
-desc, so the four opaque variants are four distinct `VkPipeline` objects sharing
+`MATERIAL_UNLIT` (`constant_id = 0`, bool) and `MATERIAL_ALPHA_MASK`
+(`constant_id = 1`, bool) in `mesh_forward.frag.glsl`; the debug-view shader
+carries the mask constant too. The pipeline cache hashes fragment
+specialization constants as part of the pipeline
+desc, so the eight opaque variants are distinct `VkPipeline` objects sharing
 two `VkShaderModule` objects.
 
 Use a specialization constant, not a uniform branch, when the value is constant
@@ -117,11 +135,11 @@ frame.
 
 There is no reflection step. Three mechanisms hold the contract:
 
-1. **`static_assert` walls.** `engine/src/render/MeshForwardPass.cpp` asserts the
+1. **`static_assert` walls.** `engine/src/render/pass/MeshForwardPass.cpp` asserts the
    offset of every field of `MeshPushConstants`, `MeshInstanceData`,
-   `MeshFrameUniforms`, `GpuSpotShadow`, `GpuPointShadow`, and `GpuLight`, plus
+   `MeshViewUniforms`, `GpuSpotShadow`, `GpuPointShadow`, and `GpuLight`, plus
    the total size of each. Adding a field in the wrong place fails the build.
-2. **Hand-mirrored caps.** `engine/shaders/mesh_frame.glsli` opens with
+2. **Hand-mirrored caps.** `engine/shaders/mesh_view.glsli` opens with
    `MAX_LIGHTS`, `MAX_SPOT_SHADOWS`, `MAX_POINT_SHADOWS`, `MAX_PROBE_VOLUMES`,
    and `PROBE_VOLUME_CHANNELS`, with a comment pointing at the C++ header. These
    are not generated; changing one side without the other produces a silently
@@ -129,7 +147,7 @@ There is no reflection step. Three mechanisms hold the contract:
 3. **`std140` discipline.** The frame block is a plain uniform block, so it obeys
    std140: `vec3` occupies 16 bytes, arrays of scalars are padded to 16, and
    struct members align to their largest member. The C++ side matches that by
-   hand with explicit `Pad` members, which is why `MeshFrameUniforms` has
+   hand with explicit `Pad` members, which is why `MeshViewUniforms` has
    `ShadowPad1`, `ProbePad0`, `DebugViewPad0`, and so on.
 
 The matrix convention: `Mat4` is row-major on the CPU and every upload

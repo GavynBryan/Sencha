@@ -11,7 +11,7 @@
 #include <movement/MovementProfileData.h>
 #include <core/assets/AssetRegistry.h>
 #include <assets/runtime/AssetSystem.h>
-#include <graphics/vulkan/TextureCache.h>
+#include <assets/texture/TextureCache.h>
 #include <render/MaterialCache.h>
 #include <render/MaterialSetCache.h>
 #include <render/skinned_mesh/SkinnedMeshCache.h>
@@ -70,8 +70,8 @@ struct RuntimeAssets
                   VulkanSamplerCache& samplers)
         : RuntimeAssets(logging,
                         std::make_unique<TextureCache>(logging, images, descriptors, samplers),
-                        std::make_unique<StaticMeshCache>(logging, buffers),
-                        std::make_unique<SkinnedMeshCache>(logging, buffers))
+                        std::make_unique<StaticMeshCache>(logging, GpuBuffers{&buffers}),
+                        std::make_unique<SkinnedMeshCache>(logging, GpuBuffers{&buffers}))
     {
     }
 

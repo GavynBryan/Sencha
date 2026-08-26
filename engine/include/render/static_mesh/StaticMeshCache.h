@@ -4,14 +4,13 @@
 #include <core/handle/Owned.h>
 #include <core/logging/LoggingProvider.h>
 #include <render/static_mesh/GpuStaticMesh.h>
-#include <render/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/MeshGeometry.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 
 #include <cstdint>
 #include <string>
 #include <string_view>
 
-class VulkanBufferService;
 
 struct StaticMeshEntry
 {
@@ -29,7 +28,7 @@ class StaticMeshCache final
     : public AssetCache<StaticMeshCache, StaticMeshHandle, StaticMeshEntry, AssetType::StaticMesh>
 {
 public:
-    StaticMeshCache(LoggingProvider& logging, VulkanBufferService& buffers);
+    StaticMeshCache(LoggingProvider& logging, GpuBuffers buffers);
     ~StaticMeshCache() override;
 
     StaticMeshCache(const StaticMeshCache&) = delete;
@@ -65,5 +64,5 @@ private:
     bool UploadMesh(const MeshGeometry& data, StaticMeshEntry& out);
 
     Logger& Log;
-    VulkanBufferService* Buffers = nullptr;
+    GpuBuffers Buffers;
 };

@@ -3,7 +3,6 @@
 #include <input/InputFrame.h>
 #include <runtime/FramePacer.h>
 #include <runtime/FrameTrace.h>
-#include <runtime/RenderPacket.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <world/RuntimeWorld.h>
 
@@ -33,7 +32,7 @@ enum class FramePhase : int
     // before presentation has consumed anything.
     FlushNet = 8,
     Update = 9,
-    ExtractRenderPacket = 10,
+    ExtractRender = 10,
     Render = 11,
     EndFrame = 12,
     Count,
@@ -45,8 +44,6 @@ struct PhaseContext
 {
     RuntimeFrameLoop* Runtime = nullptr;
     InputFrame* Input = nullptr;
-    RenderPacket* PacketWrite = nullptr;
-    RenderPacket* PacketRead = nullptr;
     FixedSimTime CurrentTick{};
 
     // RuntimeWorld-owned scratch built once after zone residency and valid until
@@ -88,7 +85,6 @@ private:
     RuntimeFrameLoop& Runtime;
     FramePacer Pacer;
     InputFrame Input;
-    RenderPacketDoubleBuffer Packets;
     ChromeJsonFrameTrace* Trace = nullptr;
     std::function<bool()> ShouldExitPredicate;
     std::vector<FramePhaseCallback> Phases[static_cast<int>(FramePhase::Count)];

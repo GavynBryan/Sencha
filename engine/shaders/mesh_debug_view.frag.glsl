@@ -2,10 +2,15 @@
 #extension GL_GOOGLE_include_directive : require
 
 #define SENCHA_DEBUG_VIEWS 1
-#include "mesh_frame.glsli"
+#include "mesh_view.glsli"
 #include "shadow_sampling.glsli"
+#include "tonemap.glsli"
 #include "mesh_material.glsli"
 #include "lighting.glsli"
+
+// Matches the lit shader's constant id: a debug view that kept the fragments
+// the lit pass discards would describe geometry that is not on screen.
+layout(constant_id = 1) const bool MATERIAL_ALPHA_MASK = false;
 
 layout(location = 0) out vec4 outColor;
 
@@ -34,6 +39,8 @@ vec3 HeatColor(float value)
 void main()
 {
     vec4 baseColor = SampleBaseColor();
+    if (MATERIAL_ALPHA_MASK && baseColor.a < pushData.AlphaCutoff)
+        discard;
     vec3 orm = SampleOrm();
     vec3 geometricNormal = normalize(inWorldNormal);
     vec3 normal = ResolveWorldNormal(geometricNormal);
@@ -120,10 +127,15 @@ void main()
     float rawShadow = 1.0;
     bool hasShadow = false;
 
+    bool chartedReceiver = pushData.LightmapTextureIndex != 0xFFFFFFFFu;
     uint count = min(frame.LightCount, MAX_LIGHTS);
     for (uint i = 0u; i < count; ++i)
     {
         GpuLight light = frame.Lights[i];
+        // Match the lit pass: charted receivers skip baked lights.
+        if ((light.Type & LIGHT_BAKED_BIT) != 0u && chartedReceiver)
+            continue;
+        light.Type &= LIGHT_TYPE_MASK;
         if (light.Type > 1u)
             continue;
 

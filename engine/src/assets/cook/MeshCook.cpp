@@ -6,7 +6,7 @@
 #include <core/hash/ContentHash.h>
 #include <core/logging/LoggingProvider.h>
 #include <math/Quat.h>
-#include <render/static_mesh/MeshValidation.h>
+#include <assets/static_mesh/MeshValidation.h>
 
 #define CGLTF_IMPLEMENTATION
 #include <cgltf.h>

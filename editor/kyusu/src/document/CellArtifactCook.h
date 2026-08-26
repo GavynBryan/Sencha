@@ -5,7 +5,7 @@
 #include <assets/cook/BrushClustering.h>
 #include <core/json/JsonValue.h>
 #include <math/Vec.h>
-#include <render/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/MeshGeometry.h>
 
 #include <filesystem>
 #include <string>

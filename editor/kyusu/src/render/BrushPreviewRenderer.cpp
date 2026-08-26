@@ -11,7 +11,8 @@ BrushPreviewRenderer::BrushPreviewRenderer(PreviewBuffer& preview, EditorLinePip
 {
 }
 
-void BrushPreviewRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport)
+void BrushPreviewRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                                        const CameraRenderData& camera)
 {
     const std::optional<PreviewMesh>& preview = Preview.GetMesh();
     if (!preview)
@@ -46,5 +47,5 @@ void BrushPreviewRenderer::DrawViewport(const FrameContext& frame, const EditorV
 
     // onTop: the dragged preview is never occluded, including when it rests flush
     // on a surface in perspective.
-    Lines.Submit(frame, viewport, vertices, /*onTop*/ true);
+    Lines.Submit(frame, viewport, camera, vertices, /*onTop*/ true);
 }

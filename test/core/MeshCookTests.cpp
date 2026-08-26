@@ -13,6 +13,7 @@
 #include <assets/cook/MeshCook.h>
 #include <assets/static_mesh/MeshLoader.h>
 #include <core/logging/LoggingProvider.h>
+#include <assets/skinned_mesh/SkinnedMeshData.h>
 
 #include <cstdint>
 #include <cstdlib>
@@ -382,43 +383,80 @@ TEST(MeshCook, LoaderRejectsVersionOneSmesh)
 
 // -- Blender front end -----------------------------------------------------------
 
+namespace
+{
+    // The Blender front end shells out by design, so these tests need the real
+    // executable. Skipping keeps the suite green on a machine without it.
+    [[nodiscard]] bool BlenderAvailable()
+    {
+#ifdef _WIN32
+        constexpr const char* kProbe = "blender --version > NUL 2>&1";
+#else
+        constexpr const char* kProbe = "blender --version > /dev/null 2>&1";
+#endif
+        return std::getenv("SENCHA_BLENDER") != nullptr || std::system(kProbe) == 0;
+    }
+
+    // Authors a .blend with Blender itself and returns its bytes. `setupPython`
+    // runs against the factory-default scene (one mesh, "Cube") before the save,
+    // so a case describes only what it adds.
+    [[nodiscard]] bool AuthorBlendFile(const std::filesystem::path& blendPath,
+                                       std::string_view setupPython,
+                                       std::vector<std::byte>& outBytes)
+    {
+        const std::string command =
+            "blender --background --factory-startup --python-exit-code 1 --python-expr \""
+            + std::string(setupPython)
+            + "import bpy; bpy.ops.wm.save_as_mainfile(filepath=r'"
+            + blendPath.generic_string() +
+#ifdef _WIN32
+            "')\" > NUL 2>&1";
+#else
+            "')\" > /dev/null 2>&1";
+#endif
+        if (std::system(command.c_str()) != 0)
+            return false;
+
+        std::ifstream file(blendPath, std::ios::binary);
+        if (!file.is_open())
+            return false;
+        file.seekg(0, std::ios::end);
+        const auto size = file.tellg();
+        file.seekg(0, std::ios::beg);
+        outBytes.resize(static_cast<std::size_t>(size));
+        file.read(reinterpret_cast<char*>(outBytes.data()), size);
+        return file.good();
+    }
+
+    // Scoped temp directory for a .blend fixture.
+    struct ScopedTestDir
+    {
+        std::filesystem::path Path;
+
+        ScopedTestDir()
+            : Path(std::filesystem::temp_directory_path()
+                   / ("sencha_blend_test_"
+                      + std::to_string(std::random_device{}())))
+        {
+            std::filesystem::create_directories(Path);
+        }
+
+        ~ScopedTestDir()
+        {
+            std::error_code ec;
+            std::filesystem::remove_all(Path, ec);
+        }
+    };
+} // namespace
+
 TEST(MeshCook, BlendImportsThroughHeadlessBlender)
 {
-#ifdef _WIN32
-    constexpr const char* kProbe = "blender --version > NUL 2>&1";
-#else
-    constexpr const char* kProbe = "blender --version > /dev/null 2>&1";
-#endif
-    if (std::getenv("SENCHA_BLENDER") == nullptr && std::system(kProbe) != 0)
+    if (!BlenderAvailable())
         GTEST_SKIP() << "Blender not installed; .blend cook is a dev-machine-optional path";
 
-    // Author a .blend with Blender itself: the factory default scene
-    // contains one mesh ("Cube").
-    std::random_device rd;
-    const std::filesystem::path dir =
-        std::filesystem::temp_directory_path() / ("sencha_blend_test_" + std::to_string(rd()));
-    std::filesystem::create_directories(dir);
-    const std::filesystem::path blendPath = dir / "scene.blend";
-
-    const std::string saveCommand =
-        "blender --background --factory-startup --python-exit-code 1 --python-expr "
-        "\"import bpy; bpy.ops.wm.save_as_mainfile(filepath=r'"
-        + blendPath.generic_string() +
-#ifdef _WIN32
-        "')\" > NUL 2>&1";
-#else
-        "')\" > /dev/null 2>&1";
-#endif
-    ASSERT_EQ(std::system(saveCommand.c_str()), 0);
-
-    std::ifstream file(blendPath, std::ios::binary);
-    ASSERT_TRUE(file.is_open());
-    file.seekg(0, std::ios::end);
-    const auto size = file.tellg();
-    file.seekg(0, std::ios::beg);
-    std::vector<std::byte> blendBytes(static_cast<std::size_t>(size));
-    file.read(reinterpret_cast<char*>(blendBytes.data()), size);
-    ASSERT_TRUE(file.good());
+    ScopedTestDir dir;
+    std::vector<std::byte> blendBytes;
+    ASSERT_TRUE(AuthorBlendFile(dir.Path / "scene.blend", "", blendBytes));
 
     BlendMeshImporter importer;
     MemoryCookOutputWriter output;
@@ -437,9 +475,71 @@ TEST(MeshCook, BlendImportsThroughHeadlessBlender)
         output.Files.at(".cooked/meshes/scene.blend.smesh"), loaded));
     EXPECT_EQ(loaded.Vertices.size() % 4, 0u); // a cube: 6 quads, welded corners
     EXPECT_GE(loaded.Indices.size(), 36u);
+}
 
-    std::error_code ec;
-    std::filesystem::remove_all(dir, ec);
+// A rigged .blend must reach the runtime as a skinned mesh. The cook exports
+// tangents only for a skinned source, because the glTF importer rejects a
+// skinned primitive without authored TANGENT (cook-side MikkTSpace re-welds
+// vertices, which would desync the parallel influence stream). Without that
+// export the import fails outright, so this covers the asymmetry from the
+// authored file down to the loaded influences.
+TEST(MeshCook, RiggedBlendImportsAsASkinnedMesh)
+{
+    if (!BlenderAvailable())
+        GTEST_SKIP() << "Blender not installed; .blend cook is a dev-machine-optional path";
+
+    ScopedTestDir dir;
+    std::vector<std::byte> blendBytes;
+    ASSERT_TRUE(AuthorBlendFile(
+        dir.Path / "rigged.blend",
+        // Bind the factory cube to a one-bone armature with automatic weights.
+        "import bpy; "
+        "bpy.ops.object.armature_add(enter_editmode=False, location=(0,0,-1)); "
+        "arm=bpy.context.object; "
+        "cube=bpy.data.objects['Cube']; "
+        "cube.select_set(True); "
+        "bpy.context.view_layer.objects.active=arm; "
+        "bpy.ops.object.parent_set(type='ARMATURE_AUTO'); ",
+        blendBytes));
+
+    BlendMeshImporter importer;
+    MemoryCookOutputWriter output;
+    const ImportResult result =
+        importer.Import(ImportInput{ "meshes/rigged.blend", blendBytes }, output);
+    ASSERT_TRUE(result.IsValid()) << result.Error;
+
+    // A skeleton and a skinned mesh, each '#'-suffixed (a skinned source is
+    // never the single-static-mesh case that keeps the bare source path).
+    const CookedArtifact* skeleton = nullptr;
+    const CookedArtifact* mesh = nullptr;
+    for (const CookedArtifact& artifact : result.Artifacts)
+    {
+        if (artifact.Type == AssetType::Skeleton)
+            skeleton = &artifact;
+        else if (artifact.Type == AssetType::SkinnedMesh)
+            mesh = &artifact;
+    }
+    ASSERT_NE(skeleton, nullptr);
+    ASSERT_NE(mesh, nullptr);
+    EXPECT_TRUE(skeleton->FileRelPath.ends_with(".sskel"));
+    EXPECT_TRUE(mesh->FileRelPath.ends_with(".skmesh"));
+
+    LoggingProvider logging;
+    MeshLoader loader(logging);
+    SkinnedMeshData loaded;
+    ASSERT_TRUE(loader.LoadSkinnedFromBytes(output.Files.at(mesh->FileRelPath), loaded));
+    EXPECT_EQ(loaded.Skinning.Influences.size(), loaded.Geometry.Vertices.size());
+    EXPECT_EQ(loaded.Skinning.SkeletonPath, skeleton->Path);
+    EXPECT_GT(loaded.Skinning.JointCount, 0u);
+
+    // Every vertex is bound: the cook normalizes weights to sum to 255, so a
+    // vertex the exporter left unweighted would show up as a zero row here.
+    for (const MeshSkinInfluence& influence : loaded.Skinning.Influences)
+    {
+        const int total = influence.Weights[0] + influence.Weights[1]
+            + influence.Weights[2] + influence.Weights[3];
+        ASSERT_EQ(total, 255);
+    }
 }
 
 #endif // SENCHA_ENABLE_COOK

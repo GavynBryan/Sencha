@@ -235,21 +235,53 @@ VkPipelineLayout VulkanDescriptorCache::GetDefaultPipelineLayout()
     return GetPipelineLayout(kNone);
 }
 
-void VulkanDescriptorCache::SetFrameUniformBuffer(BufferHandle buffer, VkDeviceSize range)
+void VulkanDescriptorCache::SetFrameUniformBuffer(BufferHandle buffer)
 {
     if (!Valid) return;
 
-    VkBuffer vkBuf = Buffers->GetBuffer(buffer);
-    if (vkBuf == VK_NULL_HANDLE)
+    if (Buffers->GetBuffer(buffer) == VK_NULL_HANDLE)
     {
         Log.Error("SetFrameUniformBuffer: invalid BufferHandle");
         return;
     }
+    if (FrameUniformBuffer.IsValid() && !(FrameUniformBuffer == buffer))
+    {
+        // Binding 0 carries whichever buffer the widest declaration wrote, so a
+        // second buffer here would silently leave passes reading the first.
+        Log.Error("SetFrameUniformBuffer: the frame uniform buffer is already set; "
+                  "one buffer serves binding 0 for the cache's life");
+        return;
+    }
+    FrameUniformBuffer = buffer;
+}
+
+void VulkanDescriptorCache::RequireFrameUniformRange(VkDeviceSize requiredRange)
+{
+    if (!Valid) return;
+
+    VkBuffer vkBuf = Buffers->GetBuffer(FrameUniformBuffer);
+    if (vkBuf == VK_NULL_HANDLE)
+    {
+        Log.Error("RequireFrameUniformRange: no frame uniform buffer is set");
+        return;
+    }
+
+    if (FrameUniformRangeExceedsBudget(requiredRange))
+    {
+        Log.Warn("RequireFrameUniformRange: {} bytes is past the {} byte frame UBO budget; "
+                 "per-frame data this large belongs in a storage buffer",
+                 static_cast<std::uint64_t>(requiredRange), kFrameUniformBudgetBytes);
+    }
+
+    const VkDeviceSize resolved = ResolveFrameUniformRange(FrameUniformRange, requiredRange);
+    if (resolved == FrameUniformRange)
+        return;
+    FrameUniformRange = resolved;
 
     VkDescriptorBufferInfo bufInfo{};
     bufInfo.buffer = vkBuf;
     bufInfo.offset = 0;
-    bufInfo.range = range;
+    bufInfo.range = resolved;
 
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -285,16 +317,17 @@ BindlessImageIndex VulkanDescriptorCache::RegisterSampledImage(ImageHandle image
     }
 
     uint32_t slot;
-    if (!BindlessFreeSlots.empty())
+    if (const std::optional<uint32_t> recycled = BindlessRetired.TryPop(Retirement))
     {
-        slot = BindlessFreeSlots.back();
-        BindlessFreeSlots.pop_back();
+        slot = *recycled;
     }
     else
     {
         if (BindlessNextSlot >= kBindlessImageCapacity)
         {
-            Log.Error("Bindless image capacity ({}) exhausted", kBindlessImageCapacity);
+            Log.Error("Bindless image capacity ({}) exhausted ({} released slot(s) "
+                      "still held for in-flight frames)",
+                      kBindlessImageCapacity, BindlessRetired.PendingCount());
             return {};
         }
         slot = BindlessNextSlot++;
@@ -315,7 +348,9 @@ void VulkanDescriptorCache::UnregisterSampledImage(BindlessImageIndex index)
     {
         if (it->second == index)
         {
-            BindlessFreeSlots.push_back(index.Value);
+            // Stamped, not recycled: a frame already submitted can still
+            // resolve this index when it executes.
+            BindlessRetired.Push(index.Value, Retirement.Stamp());
             BindlessLookup.erase(it);
             return;
         }

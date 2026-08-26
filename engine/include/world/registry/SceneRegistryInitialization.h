@@ -5,6 +5,8 @@ class AudioService;
 class CaptionRuntime;
 class MaterialSetCache;
 struct Registry;
+class SkinnedMeshCache;
+class AnimationClipCache;
 class StaticMeshCache;
 class TextureCache;
 
@@ -25,4 +27,6 @@ void InitializeSceneRegistry(
     AudioClipCache* audioClips = nullptr,
     AudioService* audio = nullptr,
     CaptionRuntime* captions = nullptr,
-    TextureCache* textures = nullptr);
+    TextureCache* textures = nullptr,
+    SkinnedMeshCache* skinnedMeshes = nullptr,
+    AnimationClipCache* clips = nullptr);

@@ -88,12 +88,12 @@ already handled.
 [`TextureCook.cpp`](../../engine/src/assets/cook/TextureCook.cpp) line 219 copies
 `texture.Mips[0].ByteSize` — which is `Width * Height * 4`, derived purely from
 the declared dimensions — out of `image.Pixels`. The only guard is
-`image.IsValid()`, and [`Image`](../../engine/include/render/Image.h) defines
+`image.IsValid()`, and [`Image`](../../engine/include/assets/texture/Image.h) defines
 that as `!Pixels.empty() && Width > 0 && Height > 0`. It never checks that
 `Pixels.size()` agrees with the dimensions.
 
 The runtime producers today are `LoadImageFromFile` and `LoadImageFromMemory`
-([`ImageLoader.cpp`](../../engine/src/render/ImageLoader.cpp)), which assign
+([`ImageLoader.cpp`](../../engine/src/assets/texture/ImageLoader.cpp)), which assign
 exactly `w * h * 4` from stb_image. Tests already hand-construct valid images;
 the first inconsistent fixture, procedural texture, or future decoder would
 turn the latent over-read into a real one.
@@ -223,7 +223,7 @@ Both sides of the extraction are covered.
 
 ### 2.3 `MeshForwardPass` writes its pipeline description twice
 
-[`MeshForwardPass.cpp`](../../engine/src/render/MeshForwardPass.cpp)
+[`MeshForwardPass.cpp`](../../engine/src/render/pass/MeshForwardPass.cpp)
 `EnsurePipelines` (line 136) and `EnsureDebugPipelines` (line 206) contain about
 35 byte-identical lines of vertex bindings and ten vertex attributes. Adding a
 vertex attribute today means editing two identical lists.
@@ -270,7 +270,7 @@ finding: the long signature accurately spells the ownership graph.
 
 ### 3.2 `RenderExtractionSystem::Extract`
 
-[`RenderExtractionSystem.cpp`](../../engine/src/render/RenderExtractionSystem.cpp)
+[`RenderExtractionSystem.cpp`](../../engine/src/render/extract/RenderExtractionSystem.cpp)
 line 82 takes 9 parameters, four of which are read-only caches
 (`StaticMeshCache`, `MaterialCache`, `MaterialSetCache`, `TextureCache*`). A
 `RenderExtractCaches` struct in the owning header reduces the call to

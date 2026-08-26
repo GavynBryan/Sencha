@@ -2,7 +2,7 @@
 
 #include <core/json/JsonStringify.h>
 #include <core/json/JsonValue.h>
-#include <render/static_mesh/StaticMeshVertex.h>
+#include <assets/static_mesh/StaticMeshVertex.h>
 
 #include <algorithm>
 #include <cstdint>

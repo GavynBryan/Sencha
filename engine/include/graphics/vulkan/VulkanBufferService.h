@@ -2,6 +2,8 @@
 
 #include <core/handle/Handle.h>
 #include <core/logging/LoggingProvider.h>
+#include <graphics/BufferHandle.h>
+#include <graphics/GpuResourceDesc.h>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 
@@ -39,16 +41,9 @@ class VulkanUploadContextService;
 // transfer queue becomes a later optimization with a release/acquire barrier
 // pair, not an API change.
 //=============================================================================
-enum class BufferMemory : uint8_t
-{
-    GpuOnly,
-    HostVisible,
-    Readback,
-};
-
-// Generational handle to a GPU buffer owned by VulkanBufferService. One of the
-// engine's unified Handle<Tag> types (handle convergence).
-using BufferHandle = Handle<struct BufferHandleTag>;
+// BufferHandle lives in graphics/BufferHandle.h and BufferMemory in
+// graphics/GpuResourceDesc.h so holders can name them without the Vulkan
+// headers; both arrive here through those includes.
 
 struct BufferCreateInfo
 {

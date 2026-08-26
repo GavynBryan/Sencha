@@ -27,7 +27,7 @@
 #include <core/json/JsonParser.h>
 #include <core/logging/ConsoleLogSink.h>
 #include <core/logging/LoggingProvider.h>
-#include <render/static_mesh/StaticMeshPrimitives.h>
+#include <assets/static_mesh/StaticMeshPrimitives.h>
 
 #include <cstdio>
 #include <filesystem>

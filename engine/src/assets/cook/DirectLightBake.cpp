@@ -5,7 +5,7 @@
 #include <cstdint>
 
 #include <assets/cook/BakeBvh.h>
-#include <render/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/MeshGeometry.h>
 
 namespace
 {

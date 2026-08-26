@@ -17,6 +17,7 @@ ZoneBoundsRenderer::ZoneBoundsRenderer(EditorWideLinePipeline& lines)
 }
 
 void ZoneBoundsRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                                      const CameraRenderData& camera,
                                       WorldDocument& world, WorldViewSettings& view)
 {
     if (!world.IsWorld())
@@ -106,5 +107,5 @@ void ZoneBoundsRenderer::DrawViewport(const FrameContext& frame, const EditorVie
     // Preview lines draw on top: the author is usually INSIDE a zone, where
     // depth-tested bounds hide behind the room's own walls.
     if (!segments.empty())
-        Lines.Submit(frame, viewport, segments, /*onTop*/ view.StreamingPreview, "ZoneBoundsRenderer");
+        Lines.Submit(frame, viewport, camera, segments, /*onTop*/ view.StreamingPreview, "ZoneBoundsRenderer");
 }

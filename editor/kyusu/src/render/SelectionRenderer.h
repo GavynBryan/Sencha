@@ -38,12 +38,14 @@ public:
     // Scene and session are per-call: both are rebuilt when the workspace swaps
     // the edited document, so the renderer holds neither.
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                      const CameraRenderData& camera,
                       const EditorScene& scene, const ManipulatorSession& session);
 
     // Submits just the active-body wireframe, bright and on-top (no depth test), into
     // the current render pass. Used as the bloom glow source so the glow comes from the
     // full, unclipped line rather than the depth-tested (and self-clipped) scene copy.
     void SubmitActiveGlowSource(const FrameContext& frame, const EditorViewport& viewport,
+                                const CameraRenderData& camera,
                                 const EditorScene& scene);
 
 private:

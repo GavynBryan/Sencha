@@ -1,10 +1,13 @@
 // Evidence generator (docs/plans/evidence/baked-direct/): cooks the baked
 // counterpart of the light-stress measurement scene. 96 small accent point
 // lights authored LightBakeContribution::Direct over a floor brush, so every
-// light bakes into cell vertices and none enters the runtime forward set. The
-// dynamic version of this regime caps at 64 visible lights and silently drops
-// the rest (docs/plans/evidence/point-light-cost/); the baked version must
-// render all 96 pools with LightsVisible == 0 and nothing dropped.
+// light bakes into the zone lightmap. The dynamic version of this regime caps
+// at 64 visible lights and silently drops the rest
+// (docs/plans/evidence/point-light-cost/); the baked version must render all
+// 96 pools. Baked lights re-enter the forward set flagged (movers receive
+// them live; the charted floor skips them in-shader), so this scene is also
+// the worst-case fixture for that skip: a full cap of baked lights over a
+// receiver that shades none of them.
 //
 // Skipped unless SENCHA_BAKED_STRESS_ROOT names the assets root to cook into.
 

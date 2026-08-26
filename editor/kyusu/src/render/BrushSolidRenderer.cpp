@@ -39,12 +39,14 @@ BrushSolidRenderer::BrushSolidRenderer(EditorSolidPipeline& solid)
 }
 
 void BrushSolidRenderer::DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                                      const CameraRenderData& camera,
                                       const EditorScene& scene)
 {
-    DrawViewportTinted(frame, viewport, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+    DrawViewportTinted(frame, viewport, camera, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
 }
 
 void BrushSolidRenderer::DrawViewportTinted(const FrameContext& frame, const EditorViewport& viewport,
+                                            const CameraRenderData& camera,
                                             const EditorScene& scene, const Vec4& tint)
 {
     std::vector<EditorSolidVertex> vertices;
@@ -55,7 +57,7 @@ void BrushSolidRenderer::DrawViewportTinted(const FrameContext& frame, const Edi
             AppendBrushMesh(vertices, mesh, transform, tint);
         });
 
-    Solid.Submit(frame, viewport, vertices);
+    Solid.Submit(frame, viewport, camera, vertices);
 }
 
 void BrushSolidRenderer::AppendBrushMesh(std::vector<EditorSolidVertex>& vertices,

@@ -47,7 +47,10 @@ private:
     std::optional<AsyncZoneLoader> ZoneLoader;
     EntityId CameraEntity;
     FreeCamera FreeCam;
-    // Held for the process: the viewer is always in its fly context.
+    // Held for the whole session: the viewer is always in its fly context.
+    // Released in OnShutdown, not by this Game's destructor -- the module's
+    // static instance is destroyed at dlclose, after the InputContextSet the
+    // lease detaches from is gone.
     InputContextLease FlyInput;
     // Armed by sceneviewer.camera.scripted; read by the scripted-path system.
     bool ScriptedCameraEnabled = false;

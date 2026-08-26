@@ -5,6 +5,7 @@
 #include "TurretMount.h"
 
 #include <abilities/AbilityKit.h>
+#include <anim/AnimationClipPlaybackSystem.h>
 #include <app/DefaultRenderPipeline.h>
 #include <app/Engine.h>
 #ifdef SENCHA_ENABLE_DEBUG_UI
@@ -1944,6 +1945,9 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     }
 
     RegisterAbilityKitSystems(ctx.Schedule);
+    // Clip playback advances animation time on the fixed tick; the render
+    // extract samples whatever time it leaves behind.
+    RegisterAnimationSystems(ctx.Schedule);
     RegisterMovementSystems(ctx.Schedule, RuntimeAssetState().DataAssets,
                             &GetEngine().Logging());
     RegisterInputSystems(

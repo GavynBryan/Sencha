@@ -221,8 +221,9 @@ EditorUiFeature::~EditorUiFeature()
     Teardown();
 }
 
-bool EditorUiFeature::Setup(const RendererServices& services)
+bool EditorUiFeature::Setup(const RenderFeatureServices& featureServices)
 {
+    const RendererServices& services = *featureServices.Backend;
     Log = services.Logging ? &services.Logging->GetLogger<EditorUiFeature>() : nullptr;
     Valid = InitImGui(services);
     if (Log != nullptr)
@@ -232,8 +233,9 @@ bool EditorUiFeature::Setup(const RendererServices& services)
     return Valid;
 }
 
-void EditorUiFeature::OnDraw(const FrameContext& frame)
+void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
 {
+    const FrameContext& frame = *renderFrame.Backend;
     if (!Valid)
         return;
 

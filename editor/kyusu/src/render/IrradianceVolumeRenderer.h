@@ -21,6 +21,7 @@ public:
                              EditorLinePipeline& lines);
 
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                      const CameraRenderData& camera,
                       const EditorScene& scene);
 
 private:

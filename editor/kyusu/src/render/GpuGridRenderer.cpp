@@ -60,6 +60,7 @@ void GpuGridRenderer::Setup(const RendererServices& services)
 
 void GpuGridRenderer::DrawViewport(VkCommandBuffer cmd,
                                    const EditorViewport& viewport,
+                                   const CameraRenderData& camera,
                                    const GridSettings& gridSettings,
                                    const GridStyle& style,
                                    VkExtent2D targetExtent,
@@ -134,8 +135,6 @@ void GpuGridRenderer::DrawViewport(VkCommandBuffer cmd,
 
     // --- camera + grid push constants ----------------------------------------
 
-    const CameraRenderData renderData = viewport.BuildRenderData();
-
     const GridPlane grid = viewport.GetGrid(gridSettings);
 
     const bool perspective =
@@ -168,7 +167,7 @@ void GpuGridRenderer::DrawViewport(VkCommandBuffer cmd,
     }
 
     GridPushConstants push{};
-    push.ViewProj      = renderData.ViewProjection.Transposed();
+    push.ViewProj      = camera.ViewProjection.Transposed();
     push.GridCenter    = gridCenter;
     push.HalfExtent    = viewport.Camera.Far;
     push.AxisU         = grid.AxisU;

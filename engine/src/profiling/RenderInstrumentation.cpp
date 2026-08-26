@@ -19,6 +19,7 @@ const char* ToString(GpuScope scope)
     case GpuScope::PhaseOffscreen:  return "Phase/Offscreen";
     case GpuScope::PhaseMainColor:  return "Phase/MainColor";
     case GpuScope::ShadowViews: return "Shadow/Views";
+    case GpuScope::SkinPose:    return "Skin/Pose";
     case GpuScope::ForwardOpaque:   return "Forward/Opaque";
     case GpuScope::Count:           break;
     }

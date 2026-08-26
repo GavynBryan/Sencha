@@ -1,7 +1,9 @@
 #include <app/DefaultRenderPipeline.h>
 
 #include <app/EngineConsoleBuiltins.h>
+#include <core/console/CVarRead.h>
 #include <core/console/ConsoleRegistry.h>
+#include <render/RenderLightCVars.h>
 #include <profiling/CpuScopeTimings.h>
 #include <profiling/RenderStats.h>
 #include <world/transform/TransformComponents.h>
@@ -10,90 +12,37 @@
 #include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanSwapchainService.h>
-#include <render/MeshRenderFeature.h>
-#include <render/ShadowRenderFeature.h>
+#include <render/feature/MeshRenderFeature.h>
+#include <render/feature/ShadowRenderFeature.h>
+#include <render/feature/SkinnedPoseRenderFeature.h>
+#include <render/feature/SkyRenderFeature.h>
 #endif
 
 #include <algorithm>
+#include <array>
 #include <memory>
+#include <span>
+#include <string_view>
 #include <variant>
 
 namespace
 {
-    float ReadDoubleCVar(const ConsoleRegistry* console,
-                         std::string_view name,
-                         float fallback)
-    {
-        if (console == nullptr)
-            return fallback;
-        const CVarMetadata* metadata = console->FindCVar(name);
-        if (metadata == nullptr)
-            return fallback;
-        const double* value = std::get_if<double>(&metadata->CurrentValue);
-        return value != nullptr ? static_cast<float>(*value) : fallback;
-    }
-
-    bool ReadBoolCVar(const ConsoleRegistry* console,
-                      std::string_view name,
-                      bool fallback)
-    {
-        if (console == nullptr)
-            return fallback;
-        const CVarMetadata* metadata = console->FindCVar(name);
-        if (metadata == nullptr)
-            return fallback;
-        const bool* value = std::get_if<bool>(&metadata->CurrentValue);
-        return value != nullptr ? *value : fallback;
-    }
-
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     RenderDebugView ReadDebugViewCVar(const ConsoleRegistry* console)
     {
-        if (console == nullptr)
-            return RenderDebugView::None;
-        const CVarMetadata* metadata = console->FindCVar("render.debug.view");
-        if (metadata == nullptr)
-            return RenderDebugView::None;
-        const std::string* value = std::get_if<std::string>(&metadata->CurrentValue);
         RenderDebugView view = RenderDebugView::None;
-        if (value != nullptr)
-            (void)ParseRenderDebugView(*value, view);
+        (void)ParseRenderDebugView(
+            ReadCVarString(console, "render.debug.view", ""), view);
         return view;
     }
 #endif
 
-    void ApplyRendererCVars(const ConsoleRegistry* console, RenderLightSet& lights)
+    void ApplyRendererTunables(const ConsoleRegistry* console, RenderLightSet& lights)
     {
-        lights.AmbientSky = Vec<3>(
-            ReadDoubleCVar(console, "render.ambient.sky_r", lights.AmbientSky.X),
-            ReadDoubleCVar(console, "render.ambient.sky_g", lights.AmbientSky.Y),
-            ReadDoubleCVar(console, "render.ambient.sky_b", lights.AmbientSky.Z));
-        lights.AmbientGround = Vec<3>(
-            ReadDoubleCVar(console, "render.ambient.ground_r", lights.AmbientGround.X),
-            ReadDoubleCVar(console, "render.ambient.ground_g", lights.AmbientGround.Y),
-            ReadDoubleCVar(console, "render.ambient.ground_b", lights.AmbientGround.Z));
-        lights.DiffuseWrap = ReadDoubleCVar(
-            console, "render.style.diffuse_wrap", lights.DiffuseWrap);
-        lights.MinAmbient = ReadDoubleCVar(
-            console, "render.style.min_ambient", lights.MinAmbient);
-        lights.Exposure = ReadDoubleCVar(console, "render.exposure", lights.Exposure);
-        lights.TonemapKnee = ReadDoubleCVar(
-            console, "render.tonemap.knee", lights.TonemapKnee);
-        lights.TonemapEnabled = ReadBoolCVar(
-            console, "render.tonemap", lights.TonemapEnabled);
-        lights.ShadowDarkness = ReadDoubleCVar(
-            console, "render.shadow.darkness", lights.ShadowDarkness);
-        lights.ShadowSoftness = ReadDoubleCVar(
-            console, "render.shadow.softness", lights.ShadowSoftness);
-        lights.ShadowBiasConstant = ReadDoubleCVar(
-            console, "render.shadow.bias_const", lights.ShadowBiasConstant);
-        lights.ShadowBiasSlope = ReadDoubleCVar(
-            console, "render.shadow.bias_slope", lights.ShadowBiasSlope);
-        lights.BakedDirectEnabled = ReadBoolCVar(
-            console, "render.baked_direct.enabled", lights.BakedDirectEnabled);
-        lights.BakedAoEnabled = ReadBoolCVar(
-            console, "render.ao.enabled", lights.BakedAoEnabled);
+        ApplyRendererCVars(console, lights);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
+        // Not part of the shared reader: the editor drives this from its own
+        // view menu, so the cvar is only the game's source for it.
         lights.DebugView = ReadDebugViewCVar(console);
 #endif
     }
@@ -110,9 +59,15 @@ DefaultRenderPipeline::DefaultRenderPipeline(LoggingProvider* logging,
 void DefaultRenderPipeline::SetAssetStores(StaticMeshCache& meshes,
                                            MaterialCache& materials,
                                            MaterialSetCache& materialSets,
-                                           TextureCache* textures)
+                                           TextureCache* textures,
+                                           const SkinnedMeshCache* skinnedMeshes,
+                                           const AnimationClipCache* clips,
+                                           const SkeletonCache* skeletons)
 {
     Meshes = &meshes;
+    SkinnedMeshes = skinnedMeshes;
+    AnimationClips = clips;
+    Skeletons = skeletons;
     Materials = &materials;
     MaterialSets = &materialSets;
     Textures = textures;
@@ -126,22 +81,65 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
 
     Swapchain = &graphics.Swapchain;
 
-    // The shadow feature renders the atlas the forward pass samples. Adding it
-    // first runs its Setup first, so the lighting set layout exists when the
-    // forward pass builds its pipeline layout; Offscreen also records before
-    // MainColor, so tiles are written before they are read.
+    // Declared edges, not call order. Each one is a real constraint that used
+    // to live in a comment above the call that happened to satisfy it:
+    //
+    //   shadow -> pose   posed skinned geometry exists before anything that
+    //                    will draw it as a caster.
+    //   mesh   -> shadow the shadow feature's Setup creates the lighting set
+    //                    layout the forward pass builds its pipeline layout
+    //                    against, and Offscreen records the atlas before
+    //                    MainColor samples it.
+    //   mesh   -> sky    within MainColor the background fills the view with
+    //                    no depth test, so it records first.
+    //
+    // Staging order below is deliberately not the resolved order: the resolver
+    // produces the order, and the goldens are what prove it.
+    static constexpr std::string_view kPose = "runtime_skinned_pose";
+    static constexpr std::string_view kShadow = "runtime_shadow";
+    static constexpr std::string_view kSky = "runtime_sky";
+    static constexpr std::array<std::string_view, 1> kShadowDeps{ kPose };
+    static constexpr std::array<std::string_view, 2> kMeshDeps{ kShadow, kSky };
+
     auto bindings = std::make_shared<LightBindings>();
-    if (graphics.MainRenderer.AddFeature(std::make_unique<ShadowRenderFeature>(
-            bindings, Lights, ShadowCasters, *Meshes, Residency)) == nullptr)
+    // Constructed before the mesh feature is staged, which captures it: staging
+    // order is free, but the values a feature is constructed with are not.
+    if (SkinnedMeshes != nullptr)
+        SkinnedPoses = std::make_shared<SkinnedPoseFrameData>();
+
+    graphics.MainRenderer.StageFeature(
+        std::make_unique<MeshRenderFeature>(
+            Queue, *Meshes, *Materials, Camera, Lights, bindings,
+            SkinnedMeshes, SkinnedPoses, &ProbeVolumes),
+        FeatureRegistration{ .Id = "runtime_mesh", .DependsOn = kMeshDeps });
+
+    graphics.MainRenderer.StageFeature(
+        std::make_unique<SkyRenderFeature>(Camera, Lights),
+        FeatureRegistration{ .Id = kSky });
+
+    graphics.MainRenderer.StageFeature(
+        std::make_unique<ShadowRenderFeature>(
+            bindings, Lights, ShadowCasters, *Meshes, Residency),
+        FeatureRegistration{ .Id = kShadow,
+                             .DependsOn = SkinnedMeshes != nullptr
+                                 ? std::span<const std::string_view>(kShadowDeps)
+                                 : std::span<const std::string_view>{} });
+
+    if (SkinnedMeshes != nullptr)
     {
-        return false;
+        graphics.MainRenderer.StageFeature(
+            std::make_unique<SkinnedPoseRenderFeature>(SkinnedPoses, *SkinnedMeshes),
+            FeatureRegistration{ .Id = kPose });
     }
+
+    if (!graphics.MainRenderer.CommitStagedFeatures())
+        return false;
+
     // Probe residency shares the lighting set: it swaps binding-2 slots as
     // zones stream and hands headers to extraction. Uploads only ever happen
     // after the shadow feature's Setup has created the set.
-    ProbeVolumes.Setup(&graphics.Images, bindings, Logging);
-    return graphics.MainRenderer.AddFeature(std::make_unique<MeshRenderFeature>(
-        Queue, *Meshes, *Materials, Camera, Lights, std::move(bindings))) != nullptr;
+    ProbeVolumes.Setup(GpuImages{&graphics.Images}, bindings, Logging);
+    return true;
 #else
     (void)graphics;
     return false;
@@ -184,40 +182,51 @@ void DefaultRenderPipeline::PublishExtractionStats(
     }
 }
 
+void DefaultRenderPipeline::PublishEmptyFrameOutputs()
+{
+    Queue.Reset();
+    if (SkinnedPoses != nullptr)
+        SkinnedPoses->Reset();
+    Lights.Reset();
+    // The sky is the one feature with no data dependency to fall empty: it
+    // draws from the ambient hemisphere whatever the queue holds. Clearing the
+    // flag is what makes it skip a frame with no camera, rather than paint the
+    // background through a stale view matrix.
+    Lights.SkyEnabled = false;
+    ShadowRequests.clear();
+    PointShadowRequests.clear();
+    CasterEvents.clear();
+    Residency.ClearFrameSchedule();
+}
+
 void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
 {
+    PublishEmptyFrameOutputs();
+
     if (Meshes == nullptr || Materials == nullptr || MaterialSets == nullptr)
         return;
 
 #ifdef SENCHA_ENABLE_VULKAN
     if (Swapchain == nullptr)
-    {
-        ctx.PacketWrite.Renderable = false;
         return;
-    }
-    const VkExtent2D extent = Swapchain->GetExtent();
+    const VkExtent2D swapchainExtent = Swapchain->GetExtent();
+    const RenderExtent extent{ swapchainExtent.width, swapchainExtent.height };
 #else
     (void)ctx;
     return;
 #endif
 
-    Queue.Reset();
-
     World& world = ctx.Entities;
     const ActiveCameraService* activeCamera =
         world.TryGetResource<ActiveCameraService>();
     if (activeCamera == nullptr || !activeCamera->HasActive())
-    {
-        ctx.PacketWrite.Renderable = false;
         return;
-    }
 
     const EntityId cameraEntity = activeCamera->GetActive();
     if (!world.IsAlive(cameraEntity)
         || !ctx.Partitions.Contains(world.GetEntityPartition(cameraEntity))
         || !CameraRenderDataSystem::Build(*activeCamera, world, extent, Camera))
     {
-        ctx.PacketWrite.Renderable = false;
         return;
     }
 
@@ -228,16 +237,21 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         CpuScopeTimer timer(scopes, CpuScope::Extraction);
         RenderExtractor.Extract(
             world, ctx.Partitions,
-            RenderExtractCaches{ *Meshes, *Materials, *MaterialSets, Textures },
-            Camera, Queue, ctx.Presentation.Alpha);
+            RenderExtractCaches{ *Meshes, *Materials, *MaterialSets, Textures,
+                                 SkinnedMeshes, AnimationClips, Skeletons },
+            Camera, Queue, ctx.Presentation.Alpha, SkinnedPoses.get());
         Queue.SortOpaque();
     }
 
     LightExtractionCounts lightCounts;
     {
         CpuScopeTimer timer(scopes, CpuScope::LightSelection);
-        Lights.Reset();
-        ApplyRendererCVars(Console, Lights);
+        // Back on by default before the tunables read, which takes the current
+        // value as its default: leaving the empty frame's cleared flag in place
+        // would latch the sky off for the rest of the session whenever the cvar
+        // is unset.
+        Lights.SkyEnabled = true;
+        ApplyRendererTunables(Console, Lights);
         LightExtractor.Extract(world, ctx.Partitions, Camera, Lights,
                                ShadowRequests, PointShadowRequests, &lightCounts);
         ProbeVolumes.AppendActive(ctx.Partitions, Lights);
@@ -250,7 +264,6 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
             world, ctx.Partitions, *Meshes, *Materials, *MaterialSets,
             ShadowCasters, wantsCasterEvents, ctx.Presentation.Alpha);
 
-        CasterEvents.clear();
         if (wantsCasterEvents)
         {
             // The retained table is only as fresh as the last frame that built
@@ -288,7 +301,4 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         }
     }
 
-    ctx.PacketWrite.Camera = Camera;
-    ctx.PacketWrite.HasCamera = true;
-    ctx.PacketWrite.Renderable = true;
 }

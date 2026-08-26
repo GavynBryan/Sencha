@@ -9,6 +9,9 @@
 #include "document/DocumentCook.h"
 #include "document/DocumentSerialization.h"
 
+#include <core/logging/ConsoleLogSink.h>
+#include <core/logging/LoggingProvider.h>
+
 #include <gtest/gtest.h>
 
 #include <cstdlib>
@@ -23,8 +26,13 @@ TEST(CookLevel, Generate)
         GTEST_SKIP() << "set SENCHA_COOK_LEVEL and SENCHA_COOK_ROOT to cook a level";
 
     RegisterDocumentSerializers();
+    // With a console sink, so a load or cook failure names its reason instead
+    // of surfacing as a bare 'could not load'.
+    LoggingProvider logging;
+    logging.AddSink<ConsoleLogSink>();
     const DocumentCookResult result = CookDocument(
-        std::filesystem::path(level), std::filesystem::path(root), /*cellSize*/ 16.0);
+        std::filesystem::path(level), std::filesystem::path(root), /*cellSize*/ 16.0,
+        &logging);
     ASSERT_TRUE(result.Success) << result.Error;
     std::printf("cooked '%s': cells=%zu directLights=%zu atlas=%ux%u probes=%zu\n",
                 level, result.CellCount, result.DirectLightCount,

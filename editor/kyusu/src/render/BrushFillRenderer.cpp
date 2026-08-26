@@ -30,6 +30,7 @@ BrushFillRenderer::BrushFillRenderer(EditorFillPipeline& fills)
 
 void BrushFillRenderer::DrawZoneOverlay(const FrameContext& frame,
                                         const EditorViewport& viewport,
+                                        const CameraRenderData& camera,
                                         const EditorScene& scene, const Vec4& color)
 {
     std::vector<EditorLineVertex> vertices;
@@ -39,5 +40,5 @@ void BrushFillRenderer::DrawZoneOverlay(const FrameContext& frame,
             AppendBrushFill(vertices, mesh, transform, color);
         });
     if (!vertices.empty())
-        Fills.Submit(frame, viewport, vertices, /*onTop*/ false);
+        Fills.Submit(frame, viewport, camera, vertices, /*onTop*/ false);
 }

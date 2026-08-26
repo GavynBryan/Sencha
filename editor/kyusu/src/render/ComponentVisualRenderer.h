@@ -26,6 +26,7 @@ public:
     // tint modulates the visual color (context-zone dimming); pass white for
     // the focus zone.
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
+                      const CameraRenderData& camera,
                       const EditorScene& scene, const Vec4& tint);
 
 private:

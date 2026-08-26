@@ -6,12 +6,13 @@
 #include <ecs/ComponentTraits.h>
 #include <ecs/EntityId.h>
 #include <ecs/World.h>
-#include <graphics/vulkan/TextureCache.h>
 #include <render/TextureHandle.h>
 
 #include <cstdint>
 #include <string_view>
 #include <tuple>
+
+class TextureCache;
 
 //=============================================================================
 // ZoneLightmapComponent
@@ -39,28 +40,18 @@ struct ZoneLightmapComponentAssets
     TextureCache* Textures = nullptr;
 };
 
+// Defined in ZoneLightmapComponent.cpp. Retaining a texture needs the cache's
+// definition, and this header is pulled in by scene serialization, schema
+// startup, and the editor's queue builder -- none of which should acquire a
+// dependency on the Vulkan-side texture cache to name a component. Sibling
+// components can inline their hooks because their caches (StaticMeshCache,
+// MaterialSetCache) live under render/; TextureCache does not.
 template <>
 struct ComponentTraits<ZoneLightmapComponent>
 {
-    static void OnAdd(ZoneLightmapComponent& component, World& world, EntityId)
-    {
-        auto* assets = world.TryGetResource<ZoneLightmapComponentAssets>();
-        if (assets != nullptr && assets->Textures != nullptr)
-        {
-            assets->Textures->Retain(component.Texture);
-            assets->Textures->Retain(component.Ao);
-        }
-    }
-
-    static void OnRemove(const ZoneLightmapComponent& component, World& world, EntityId)
-    {
-        auto* assets = world.TryGetResource<ZoneLightmapComponentAssets>();
-        if (assets != nullptr && assets->Textures != nullptr)
-        {
-            assets->Textures->Release(component.Texture);
-            assets->Textures->Release(component.Ao);
-        }
-    }
+    static void OnAdd(ZoneLightmapComponent& component, World& world, EntityId);
+    static void OnRemove(const ZoneLightmapComponent& component, World& world,
+                         EntityId);
 };
 
 template <>

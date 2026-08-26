@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
+#include <graphics/GpuFrameRetirement.h>
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
@@ -80,6 +81,11 @@ public:
     void ResetAfterSwapchainRecreate();
     [[nodiscard]] const VulkanFrameTiming& GetLastTiming() const { return LastTiming; }
 
+    // The fence-anchored frame clock. Callers holding a GPU resource the
+    // renderer may still be reading stamp it on release and free it once this
+    // reports it retired, instead of counting frames themselves.
+    [[nodiscard]] GpuFrameRetirement GetRetirement() const { return Retirement; }
+
 private:
     struct FrameData
     {
@@ -89,6 +95,11 @@ private:
         VkFence InFlightFence = VK_NULL_HANDLE;
         uint64_t PresentId = 0;
         uint64_t PresentIdSwapchainGeneration = 0;
+        // Frame number that last submitted work on this slot. Waiting this
+        // slot's fence proves that frame complete; recording the number rather
+        // than deriving it from a count keeps the retirement boundary right
+        // when a frame errors out before submitting.
+        uint64_t SubmittedFrameNumber = 0;
         bool Submitted = false;
         bool AcquireSuboptimal = false;
     };
@@ -109,6 +120,7 @@ private:
     std::vector<VkSemaphore> ImageRenderFinishedSemaphores;
     uint32_t CurrentFrame = 0;
     uint64_t NextPresentId = 1;
+    GpuFrameRetirement Retirement;
     PFN_vkWaitForPresentKHR WaitForPresentFn = nullptr;
     bool PresentWaitEnabled = false;
     bool Valid = false;

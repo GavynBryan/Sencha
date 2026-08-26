@@ -1,6 +1,10 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
+#include <graphics/BindlessImageIndex.h>
+#include <graphics/FrameUniformRange.h>
+#include <graphics/GpuFrameRetirement.h>
+#include <graphics/RetiredSlotQueue.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanImageService.h>
 #include <vulkan/vulkan.h>
@@ -40,13 +44,8 @@ class VulkanDeviceService;
 // any pipeline that wants the bindless set just goes through the cache.
 //=============================================================================
 
-struct BindlessImageIndex
-{
-    uint32_t Value = UINT32_MAX;
-
-    [[nodiscard]] bool IsValid() const { return Value != UINT32_MAX; }
-    bool operator==(const BindlessImageIndex&) const = default;
-};
+// BindlessImageIndex lives in graphics/BindlessImageIndex.h so holders can
+// name it without the Vulkan headers; it arrives here through that include.
 
 class VulkanDescriptorCache
 {
@@ -90,11 +89,28 @@ public:
 
     // -- Frame UBO ----------------------------------------------------------
     //
-    // Point binding 0 at `buffer` covering [0, range). Per-frame or per-draw
-    // data is then addressed via a dynamic offset at vkCmdBindDescriptorSets
-    // time. Call once when the frame UBO backing buffer is created; safe to
-    // call again if the backing buffer changes.
-    void SetFrameUniformBuffer(BufferHandle buffer, VkDeviceSize range);
+    // Binding 0 names one buffer for the cache's whole life -- the renderer's
+    // scratch ring -- set once at construction. Passes then declare only how
+    // much of it their block needs; per-frame or per-draw data is addressed via
+    // a dynamic offset at vkCmdBindDescriptorSets time.
+    void SetFrameUniformBuffer(BufferHandle buffer);
+
+    // Declare that at least `requiredRange` bytes of the frame buffer are
+    // covered. A declaration, not an assignment: several passes share the one
+    // binding and each knows only its own block, so the cache keeps the largest
+    // range anyone has asked for. Calling with a smaller range than a previous
+    // caller is a no-op rather than a shrink, which is what makes the order
+    // passes set themselves up in stop mattering.
+    void RequireFrameUniformRange(VkDeviceSize requiredRange);
+
+    // The range the descriptor currently carries.
+    [[nodiscard]] VkDeviceSize GetFrameUniformRange() const { return FrameUniformRange; }
+
+    // Hands the cache this frame's retirement clock, which is what lets
+    // released bindless slots come back into circulation. The cache is
+    // constructed before the frame service that owns the clock, so it arrives
+    // per frame as a value rather than as a constructor dependency.
+    void BeginFrame(GpuFrameRetirement retirement) { Retirement = retirement; }
 
     // -- Bindless sampled images --------------------------------------------
     //
@@ -103,9 +119,12 @@ public:
     // index is what gameplay code writes into per-sprite instance data.
     [[nodiscard]] BindlessImageIndex RegisterSampledImage(ImageHandle image, VkSampler sampler);
 
-    // Releases a slot. The descriptor write isn't actively revoked -- it
-    // just becomes a dangling slot that will be overwritten the next time
-    // RegisterSampledImage allocates a fresh index.
+    // Releases a slot. The descriptor write isn't actively revoked; the slot
+    // is held until the GPU retires every frame that could still resolve it,
+    // and only then becomes available to RegisterSampledImage. Handing it back
+    // immediately would let a submitted frame sample whatever the next
+    // registration wrote there, because a command buffer resolves a bindless
+    // index when it executes, not when it was recorded.
     void UnregisterSampledImage(BindlessImageIndex index);
 
     // Repoints an existing bindless slot at a new (image, sampler) without
@@ -156,11 +175,21 @@ private:
     VkDescriptorSetLayout BindlessSetLayout = VK_NULL_HANDLE;
     VkDescriptorSet FrameSet = VK_NULL_HANDLE;
     VkDescriptorSet BindlessSet = VK_NULL_HANDLE;
+    // The largest range any pass has declared, and the buffer it was declared
+    // against. Kept so a later, smaller declaration does not rewrite it.
+    VkDeviceSize FrameUniformRange = 0;
 
     std::vector<PipelineLayoutEntry> PipelineLayouts;
 
     std::unordered_map<BindlessKey, BindlessImageIndex, BindlessKeyHash> BindlessLookup;
-    std::vector<uint32_t> BindlessFreeSlots;
+    // Binding 0's buffer, set once. Passes declare ranges into it, never a
+    // buffer of their own.
+    BufferHandle FrameUniformBuffer{};
+    RetiredSlotQueue BindlessRetired;
+    // Refreshed once per frame by the renderer. Defaults to a clock that has
+    // retired nothing, so slots released before the first frame stay held
+    // rather than recycling against an unproven boundary.
+    GpuFrameRetirement Retirement;
     uint32_t BindlessNextSlot = 0;
 
     [[nodiscard]] bool CreatePoolAndLayouts();

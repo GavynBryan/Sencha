@@ -2,16 +2,17 @@
 
 ## `IRenderFeature`
 
-The one runtime seam in the backend. Declared in
-`engine/include/graphics/vulkan/Renderer.h`.
+The one runtime seam between render policy and the backend. Declared in
+`engine/include/graphics/RenderFeature.h`, and backend-neutral: a feature is
+declarable without a graphics API in scope.
 
 ```cpp
 class IRenderFeature
 {
 public:
     virtual RenderPhase GetPhase() const = 0;
-    virtual bool Setup(const RendererServices& services) = 0;
-    virtual void OnDraw(const FrameContext& frame) = 0;
+    virtual bool Setup(const RenderFeatureServices& services) = 0;
+    virtual void OnDraw(const RenderFrame& frame) = 0;
     virtual void Teardown() {}
 };
 ```
@@ -19,9 +20,15 @@ public:
 | Hook | When | Contract |
 |---|---|---|
 | `GetPhase` | any time | one feature, one phase, constant for its lifetime |
-| `Setup` | inside `Renderer::AddFeature` | cache service pointers, create up-front GPU resources. Returning `false` means the feature is unusable: `AddFeature` tears it down and refuses to register it, rather than leaving an inert feature in a phase bucket |
-| `OnDraw` | once per frame, in phase order, in registration order within a phase | record commands. For `MainColor` the command buffer is already inside `vkCmdBeginRendering` on the swapchain image. Other phases open their own scopes |
-| `Teardown` | in `~Renderer`, after `vkDeviceWaitIdle`, before any Vulkan service unwinds | release everything the feature still holds |
+| `Setup` | at `AddFeature`, or at `CommitStagedFeatures` for a staged batch -- there in dependency order, so a feature's Setup can build what another's reads | cache what the feature needs, create up-front GPU resources. Returning `false` means the feature is unusable: it is torn down and not registered, and anything declaring a dependency on it is skipped too |
+| `OnDraw` | once per frame, in phase order, in resolved dependency order within a phase | record commands, through the passes the feature drives. For `MainColor` the command stream is already inside the swapchain rendering scope. Other phases open their own |
+| `Teardown` | at `RemoveFeature`, or in `~Renderer` in reverse resolved order, after the device is idle | release everything the feature still holds, including state borrowed from the host -- a host removes the feature while that state is still alive |
+
+Order between features is declared, not implied by the call order: a host stages
+features with the ids they depend on and commits the batch, and the resolver
+produces setup, recording, and teardown order from those edges. Ties break by
+staging index. A graph fault -- unknown id, duplicate, cycle -- refuses the whole
+batch rather than registering part of it.
 
 Degradation versus failure is a real distinction here. `ShadowRenderFeature::Setup`
 returns `true` even when `LightBindings::Setup` fails, because the frame still
@@ -37,32 +44,44 @@ enum class RenderPhase : uint8_t { Offscreen = 0, MainColor = 1, Count };
 | Phase | Rendering scope | Used by |
 |---|---|---|
 | `Offscreen` | none is opened. The feature owns its own passes, targets, and image barriers | `ShadowRenderFeature`, `EditorRenderFeature` |
-| `MainColor` | the swapchain color plus depth scope is already open | `MeshRenderFeature`, the ImGui debug overlay |
+| `MainColor` | the swapchain color plus depth scope is already open | `SkyRenderFeature`, `MeshRenderFeature`, the ImGui debug overlay |
 
 The enum comment reserves Shadow, Opaque, Transparent, UI, and Post. Adding one
 means adding an enum value before `Count` and a `RecordXPhase` in `Renderer`;
 the feature interface does not change. The phase bucket array is sized by
 `RenderPhase::Count`, and an empty bucket costs one branch.
 
-### `RendererServices` and `FrameContext`
+### `RenderFeatureServices` and `RenderFrame`
 
-`Setup` receives every backend pointer at once and features cache what they
-need. There are no service lookups in the hot path.
+`Setup` receives everything at once and features cache what they need. There
+are no service lookups in the hot path.
 
-`FrameContext` is the entire per-frame payload handed to `OnDraw`:
+| `RenderFeatureServices` field | Meaning |
+|---|---|
+| `Logging` | the logging provider |
+| `Instrumentation` | the profiling bundle (see below) |
+| `Buffers` / `Images` | create, upload, and destroy GPU resources by neutral description |
+| `Scratch` | the per-frame bump allocator |
+| `Backend` | the active backend's service bundle. Only a feature driving a recording pass touches it, and only to hand it through |
+
+`RenderFrame` is the entire per-frame payload handed to `OnDraw`:
 
 | Field | Meaning |
 |---|---|
-| `Cmd` | this frame's primary command buffer, already begun |
 | `FrameInFlightIndex` | slot index, for anything the feature keeps per slot |
-| `TargetExtent` | swapchain extent |
-| `TargetFormat` | swapchain format. `VK_FORMAT_UNDEFINED` in the Offscreen phase |
-| `DepthView` / `DepthFormat` | the main depth target. Both null/undefined in the Offscreen phase |
+| `TargetExtent` | render-target dimensions |
 | `Phase` | which bucket is being recorded |
+| `Retirement` | fence-anchored frame clock, for releasing GPU resources safely |
+| `Instrumentation` | the bundle again, so `BeginGpuScope` needs nothing else |
+| `Backend` | the backend `FrameContext` -- the command stream, attachment formats, and depth view a recording pass needs |
 
-`RendererServices::Instrumentation` is a stable pointer to a bundle whose
-**members flip** with `render.profile.mode`. Cache the bundle, re-read its
-members per frame, never cache the members.
+The backend halves (`RendererServices`, `FrameContext`, declared in
+`graphics/vulkan/Renderer.h`) are what the recording set consumes. A second
+backend defines its own behind the same forward declarations.
+
+`Instrumentation` is a stable pointer to a bundle whose **members flip** with
+`render.profile.mode`. Cache the bundle, re-read its members per frame, never
+cache the members.
 
 ## The two built-in features
 
@@ -81,6 +100,16 @@ OnDraw: ShadowDepthPass::Draw(frame, lights, scheduledViews, scheduledFaces,
         publish DrawStats into RenderStats
 Teardown: pass, then bindings
 ```
+
+### `SkyRenderFeature` (MainColor)
+
+Drives `SkyGradientPass`, and is the only place that decides where the
+background's colours come from — today `RenderLightSet::AmbientSky` and
+`AmbientGround`, which is where `render.ambient.*` lands. `MeshRenderFeature` **declares a dependency on it**, because
+the pass fills the view without a depth test and so must record first within
+the phase.
+
+`render.sky.enabled false` skips it, leaving the host's flat clear.
 
 ### `MeshRenderFeature` (MainColor)
 
@@ -139,33 +168,51 @@ the per-frame sort does not reallocate.
 
 ## `MeshForwardPass`
 
-`engine/src/render/MeshForwardPass.cpp`. Draws every opaque run.
+`engine/src/render/pass/MeshForwardPass.cpp`. Draws every opaque run.
 
 ### Pipeline variants
 
-Four opaque pipelines, indexed by `OpaquePipelineId`:
+Eight opaque pipelines, indexed by `OpaquePipelineId`. The index is three
+independent bits rather than a list: bit 0 double-sided, bit 1 unlit, bit 2
+alpha-masked. `SelectOpaquePipeline` sets them from the material, and the pass
+reads them back the same way.
 
-| Index | Name | Specialization `constant_id 0` (`MATERIAL_UNLIT`) | Cull |
-|---|---|---|---|
-| 0 | `Forward/StandardLitBack` | 0 | back |
-| 1 | `Forward/StandardLitDoubleSided` | 0 | none |
-| 2 | `Forward/UnlitBack` | 1 | back |
-| 3 | `Forward/UnlitDoubleSided` | 1 | none |
+| Index | Name | `constant_id 0` (`MATERIAL_UNLIT`) | `constant_id 1` (`MATERIAL_ALPHA_MASK`) | Cull |
+|---|---|---|---|---|
+| 0 | `Forward/StandardLitBack` | 0 | 0 | back |
+| 1 | `Forward/StandardLitDoubleSided` | 0 | 0 | none |
+| 2 | `Forward/UnlitBack` | 1 | 0 | back |
+| 3 | `Forward/UnlitDoubleSided` | 1 | 0 | none |
+| 4 | `Forward/StandardLitBackMasked` | 0 | 1 | back |
+| 5 | `Forward/StandardLitDoubleSidedMasked` | 0 | 1 | none |
+| 6 | `Forward/UnlitBackMasked` | 1 | 1 | back |
+| 7 | `Forward/UnlitDoubleSidedMasked` | 1 | 1 | none |
 
-All four share one vertex and one fragment module. Unlit is a specialization
-constant, not a branch and not a second shader. Common state: front face
+All eight share one vertex and one fragment module. Unlit and alpha masking are
+specialization constants, not branches and not second shaders. Masking is a
+variant rather than a branch for a reason worth keeping: a fragment shader that
+can `discard` gives up early depth testing, and an opaque scene should not pay
+that to serve the masked materials in it. Common state: front face
 counter-clockwise, depth test and write on, `LESS_OR_EQUAL`, no blend, one color
 attachment in the swapchain format, depth in the depth target's format.
 
-Under `SENCHA_ENABLE_RENDER_PROFILING` there are two more pairs built from
-`mesh_debug_view.frag.glsl`: `Forward/Debug{Back,DoubleSided}` and
-`Forward/Overdraw{Back,DoubleSided}`. The overdraw pair disables depth test and
-write and uses additive blending; the pass clears the color attachment before
-drawing with it. When a debug view is active the pipeline index is masked to its
-low bit (double-sided or not), so lit and unlit collapse to one debug pipeline.
+The masked variants discard when the sampled base-colour alpha falls below
+`MeshPushConstants::AlphaCutoff`. Shadow casters do not: `ShadowCasterItem`
+carries no material and the shadow vertex layout no UVs, so a masked surface
+still casts its whole silhouette.
+
+Under `SENCHA_ENABLE_RENDER_PROFILING` there are two more families of four built
+from `mesh_debug_view.frag.glsl`: `Forward/Debug{Back,DoubleSided}{,Masked}` and
+`Forward/Overdraw{Back,DoubleSided}{,Masked}`. The overdraw family disables depth
+test and write and uses additive blending; the pass clears the color attachment
+before drawing with it. Those families carry the cull and mask axes but not
+lit/unlit -- the channel is a view-uniform value, not a variant -- so
+`DebugPipelineIndex` folds a queue item's id onto them. Masking survives the
+fold deliberately: a debug view that kept the fragments the lit pass discards
+would describe geometry that is not on screen.
 
 Pipelines are built at the end of `Setup` (prewarm) rather than on the first
-draw. Both formats are already known there, and driver compilation of the four
+draw. Both formats are already known there, and driver compilation of the
 variants costs tens of milliseconds: paid at load it is invisible, paid on the
 first visible frame it is a hitch. `EnsurePipelines` still rebuilds if a format
 changes later.
@@ -196,7 +243,7 @@ Draw(frame, camera, lights, queue, meshes, materials, tint)
   bail if the pipeline layout is null or the depth format is undefined
   bail if the queue is empty                          (not a skip: there is no work)
   EnsurePipelines / EnsureDebugPipelines              (failure => Skipped)
-  UploadFrameUniforms   -> scratch AllocateUniform    (failure => Skipped)
+  UploadViewUniforms   -> scratch AllocateUniform    (failure => Skipped)
   BindInstanceStream    -> scratch AllocateVertexElements, partial allowed
                            writes transposed world matrices + scale/bias
                            binds binding 1            (zero grant => Skipped)
@@ -246,9 +293,12 @@ passes white; the editor uses it to dim context zones.
 
 ### Frame uniform block
 
-`MeshFrameUniforms`, 5712 bytes, uploaded once per frame into scratch and
-addressed through set 0's dynamic offset. Layout is asserted field by field in
-`MeshForwardPass.cpp` and mirrored in `engine/shaders/mesh_frame.glsli`.
+`MeshViewUniforms`, 5712 bytes, uploaded once per **view** into scratch and
+addressed through set 0's dynamic offset. Once per view, not once per frame:
+the upload happens at the top of every `Draw`, and the editor issues several
+per frame -- one per viewport, plus one per context zone. A four-viewport
+editor frame spends around 68 KiB of its slice here. Layout is asserted field by field in
+`MeshForwardPass.cpp` and mirrored in `engine/shaders/mesh_view.glsli`.
 
 | Offset | Field | Notes |
 |---|---|---|
@@ -273,7 +323,7 @@ addressed through set 0's dynamic offset. Layout is asserted field by field in
 
 ## `ShadowDepthPass`
 
-`engine/src/render/ShadowDepthPass.cpp`. Records the arbiter's scheduled views:
+`engine/src/render/pass/ShadowDepthPass.cpp`. Records the arbiter's scheduled views:
 spot tiles into the atlas, point faces into the cube pool, one depth-only
 dynamic-rendering scope per view.
 
@@ -282,11 +332,15 @@ dynamic-rendering scope per view.
 Three, all from `shadow_depth.vert/frag` with depth bias enabled and depth
 format `D16_UNORM`:
 
-| Pipeline | Front face | Cull | Used for |
+| Variant | Front face | Cull | Used for |
 |---|---|---|---|
-| `BackPipeline` | counter-clockwise | back | spot views, single-sided casters |
-| `FlippedBackPipeline` | clockwise | back | point faces, single-sided casters |
-| `DoubleSidedPipeline` | counter-clockwise | none | double-sided casters in either kind of view |
+| `ShadowPipelineId::Back` | counter-clockwise | back | spot views, single-sided casters |
+| `ShadowPipelineId::FlippedBack` | clockwise | back | point faces, single-sided casters |
+| `ShadowPipelineId::DoubleSided` | counter-clockwise | none | double-sided casters in either kind of view |
+
+They live in a `PipelineVariantSet` keyed on `ShadowDepthBias`, so retuning
+`render.shadow.bias_const` or `bias_slope` rebuilds the family once;
+`SelectShadowPipeline` picks the variant.
 
 The flipped variant exists because the unflipped cube-face projection mirrors
 winding.
@@ -345,3 +399,86 @@ A view whose recording could not proceed is reported twice:
 - `RevokeGrant`, which clears `ShadowIndex` on every packed light pointing at
   that slot, so the forward pass this frame does not sample content against a
   record it was not rendered with.
+
+## `SkinnedPosePass` and `SkinnedPoseRenderFeature`
+
+`engine/src/graphics/vulkan/SkinnedPosePass.cpp` plus its Offscreen feature
+in `engine/src/render/feature/SkinnedPoseRenderFeature.cpp`. The pre-skin dispatch
+(pipeline Decision N, resolved to compute pre-skin): one compute invocation
+per vertex blends the joint palette into the rest geometry and writes a
+posed vertex buffer, which every geometry pass then draws exactly as static
+geometry -- `MeshForwardPass` swaps which buffer it binds and nothing else
+changes.
+
+The split follows `SkyGradientPass`: the pass takes plain data (buffer
+handles, counts, byte offsets) and owns the GPU resources -- the compute
+pipeline, its descriptor pools, the posed buffers, and the one barrier
+making the dispatch's storage writes visible to vertex fetches. The feature
+owns the policy: which instances pose, where their palettes come from, and
+the per-frame-in-flight buffer lifecycle (a frame still reading slot N's
+buffer must not race the next frame's dispatch into it).
+
+`SkinnedPoseFrameData` is the channel. Extraction fills one entry per
+visible skinned entity, with its palette, and stamps the matching
+`RenderQueueItem::PoseSlot`; the feature dispatches and fills in the posed
+buffers; the forward pass reads them. A slot with no posed buffer -- the
+pass hit its per-frame dispatch budget, or scratch had no room for the
+palettes -- falls back to rest geometry, which is a visible degradation
+rather than a dropped draw. `PoseSlot` joins the run-merge identity: two
+entities sharing one skinned mesh pose independently and must not collapse
+into one instanced draw.
+
+An instance with no clip player poses at the bind identity, so the dispatch
+reproduces its rest vertices bit-for-bit -- which is why `skinned_rest`
+stays byte-identical through the compute path and is the gate for it.
+`AnimationClipPlayerComponent` supplies the pose for the rest: extraction
+samples the clip at the player's current time
+(`anim/AnimationClipSampling.h`), composes model-space transforms, and
+builds the palette through the existing `BuildSkinningPalette`. Pose
+evaluation happens once per rendered frame, not once per fixed tick; the
+player's time is the only thing the tick advances.
+
+## `SkyGradientPass`
+
+`engine/src/graphics/vulkan/SkyGradientPass.cpp`. Fills the view with a vertical
+gradient before anything else draws into it.
+
+It lives in the backend rather than in `render/` because it takes a matrix and
+two colours and names no render-domain type — no camera, no light set, no queue,
+no cache. `SkyRenderFeature` and `EditorRenderFeature` each decide where those
+values come from; the pass cannot know.
+
+The gradient is not a decorative ramp. `mesh_forward.frag.glsl` lights every
+surface with `mix(AmbientGround, AmbientSky, 0.5 + 0.5 * n.y)`, and this shades
+the background with the same expression for the direction the eye is looking. So
+the background *is* what the ambient term already claims the surroundings are,
+and the two cannot drift apart.
+
+### Why it draws first, without a depth test
+
+Drawing it last at the far plane against cleared depth would skip the pixels
+geometry already covers. It would also make correctness depend on each host's
+draw order, and the editor viewport interleaves a backdrop, a grid, bodies, and
+overlays whose depth behaviour differs. The game and the editor agreeing is the
+requirement; one full-screen fill of a ten-instruction shader is the price.
+
+A consequence worth keeping: with no depth state, the pass needs no depth
+attachment and no second pipeline variant for hosts that lack one.
+
+### Inputs
+
+| Input | Source |
+|---|---|
+| inverse view-projection | `MakeInverseSkyViewProjection` in `render/CameraProjection.h`, which strips the view translation so the result is a direction and the gradient does not slide with the camera |
+| `SkyGradientParams` colours | two linear-RGB values. The seam a future authored environment record fills instead of the cvars |
+| `SkyGradientParams` output transform | exposure, tonemap knee, tonemap on/off, applied through the shared `tonemap.glsli`. Without it the background sits in a different display space than the geometry, and raising `render.exposure` brightens the scene but not the sky it is lit by |
+
+Everything fits in a 96-byte push block, so the pass binds no descriptor sets
+and depends on neither the frame uniform nor the lighting bindings.
+
+### Hosts
+
+| Host | Where |
+|---|---|
+| `SkyRenderFeature` | game, `MainColor`, registered before `MeshRenderFeature` |
+| `EditorRenderFeature` | inside the per-viewport `RenderScope`, **perspective viewports only** — ortho views keep `ViewportBackdropRenderer`, since a sky in a 2D working view describes nothing |

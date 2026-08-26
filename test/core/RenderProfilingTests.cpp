@@ -122,6 +122,10 @@ namespace
         record.Stats.ScratchUsedBytes = frame * 1024;
         record.Stats.ScratchBytesPerFrame = 1024 * 1024;
         record.Stats.ScratchAllocFailures = static_cast<std::uint32_t>(frame);
+        record.Stats.ScratchTagHighWaterBytes[
+            static_cast<std::size_t>(ScratchTag::ForwardInstanceData)] = frame * 256;
+        record.Stats.ScratchTagFailures[
+            static_cast<std::size_t>(ScratchTag::ForwardViewUniforms)] = 1;
         record.Stats.PassesSkipped = static_cast<std::uint32_t>(frame);
         record.Stats.InstancesDropped = static_cast<std::uint32_t>(frame * 3);
         record.Stats.ShadowCastersTested = static_cast<std::uint32_t>(frame * 100);
@@ -180,7 +184,9 @@ TEST(RenderCapture, JsonEnvelopeCarriesSchemaCvarsAndUnitKeyedFrames)
     ASSERT_TRUE(parsed.has_value()) << error.Message;
     const JsonValue& root = *parsed;
     ASSERT_NE(root.Find("schema_version"), nullptr);
-    EXPECT_EQ(root.Find("schema_version")->AsNumber(), 4.0);
+    // Last moved by the per-consumer scratch columns joining the frame record
+    // (v7).
+    EXPECT_EQ(root.Find("schema_version")->AsNumber(), 7.0);
     EXPECT_EQ(root.Find("frame_count")->AsNumber(), 3.0);
     ASSERT_NE(root.Find("cvars"), nullptr);
     ASSERT_NE(root.Find("cvars")->Find("render.profile.mode"), nullptr);
@@ -195,6 +201,18 @@ TEST(RenderCapture, JsonEnvelopeCarriesSchemaCvarsAndUnitKeyedFrames)
     EXPECT_EQ(first.Find("point_shadow_faces_rendered_count")->AsNumber(), 2.0);
     ASSERT_NE(first.Find("point_shadow_cubes_held_count"), nullptr);
     EXPECT_EQ(first.Find("point_shadow_cubes_held_count")->AsNumber(), 1.0);
+    // Per-consumer scratch columns: one high-water and one failure count for
+    // every tag, so a capture can name which consumer filled the slice.
+    for (std::size_t i = 0; i < ScratchTagCounters::kTagCount; ++i)
+    {
+        const std::string tag(ToString(static_cast<ScratchTag>(i)));
+        EXPECT_NE(first.Find("scratch_" + tag + "_high_water_bytes"), nullptr)
+            << "missing high-water column for " << tag;
+        EXPECT_NE(first.Find("scratch_" + tag + "_failures_count"), nullptr)
+            << "missing failure column for " << tag;
+    }
+    EXPECT_EQ(first.Find("scratch_forward_instance_data_high_water_bytes")->AsNumber(), 256.0);
+    EXPECT_EQ(first.Find("scratch_forward_view_uniforms_failures_count")->AsNumber(), 1.0);
     ASSERT_NE(first.Find("raw_dt_ms"), nullptr);
     EXPECT_NEAR(first.Find("raw_dt_ms")->AsNumber(), 16.0, 1.0e-6);
     // Scope 0 was collected; the frame carries its span in milliseconds.

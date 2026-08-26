@@ -4,6 +4,7 @@
 # runtime; see app/main.cpp.
 add_library(SceneViewer MODULE
     SceneViewerGame.cpp
+    SceneViewerSystems.cpp
     FreeCamera.cpp)
 target_link_libraries(SceneViewer PRIVATE engine)
 sencha_warnings(SceneViewer)

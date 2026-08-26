@@ -1,0 +1,85 @@
+// Keep these caps in sync with engine/include/render/LightGpuTypes.h. The
+// MeshView block below is the std140 twin of MeshViewUniforms in
+// render/pass/MeshForwardPass.h, whose static_assert wall is the layout contract.
+const uint MAX_LIGHTS = 64u;
+const uint MAX_SPOT_SHADOWS = 8u;
+const uint MAX_POINT_SHADOWS = 4u;
+const uint MAX_PROBE_VOLUMES = 8u;
+const uint PROBE_VOLUME_CHANNELS = 3u;
+
+// GpuLight.Type packs kGpuLightBakedBit above the type value: a baked light
+// is skipped by receivers that own a lightmap chart (their copy of it is in
+// the atlas) and lights everything else live.
+const uint LIGHT_BAKED_BIT = 0x80000000u;
+const uint LIGHT_TYPE_MASK = 0x7FFFFFFFu;
+
+struct GpuLight
+{
+    vec4 PositionRange;
+    vec4 DirectionCone;
+    vec4 ColorIntensity;
+    uint Type;
+    uint ShadowIndex;
+    float ConeScale;
+    float ConeOffset;
+};
+
+struct GpuSpotShadow
+{
+    mat4 ViewProjection;
+    vec4 AtlasScaleBias;
+    vec4 SamplingParams; // world texel size, softness in texels, bias scale, unused
+};
+
+// State the cube faces were rendered with; the cube array layer is the
+// record's own index.
+struct GpuPointShadow
+{
+    vec4 PositionFar; // rendered light position, far plane
+    vec4 Params;      // near plane, softness in texels, bias scale, unused
+};
+
+// One resident irradiance-probe volume: uvw = worldPos * Scale + Bias maps
+// into its three SH channel textures, whose binding-2 elements start at
+// ScaleChannelBase.w. UvwMin/Max bound the lattice's texel centers, so the
+// contains test and the sampler clamp agree.
+struct GpuProbeVolume
+{
+    vec4 ScaleChannelBase;  // xyz world->uvw scale, w first binding-2 element
+    vec4 BiasPriority;      // xyz world->uvw bias, w authored priority
+    vec4 UvwMinVolume;      // xyz lattice min, w world volume (smaller wins)
+    vec4 UvwMaxStableIndex; // xyz lattice max, w cook-order id (final tiebreak)
+};
+
+layout(set = 0, binding = 0) uniform MeshView
+{
+    mat4 ViewProjection;
+    vec4 ViewPositionTime;
+    vec4 AmbientSky;
+    vec4 AmbientGround;
+    vec4 StyleParams; // diffuse wrap, minimum ambient, exposure, tonemap knee
+    uint LightCount;
+    uint TonemapEnabled;
+    float ShadowDarkness;
+    uint BakedDirectEnabled; // 1 = add the baked-static-direct vertex term.
+    GpuLight Lights[MAX_LIGHTS];
+    uint SpotShadowCount;
+    uint BakedAoEnabled; // 1 = baked AO modulates the ambient term.
+    uint ShadowPad1;
+    uint ShadowPad2;
+    GpuSpotShadow SpotShadows[MAX_SPOT_SHADOWS];
+    uint PointShadowCount;
+    uint PointShadowPad0;
+    uint PointShadowPad1;
+    uint PointShadowPad2;
+    GpuPointShadow PointShadows[MAX_POINT_SHADOWS];
+    uint ProbeVolumeCount;
+    uint ProbePad0;
+    uint ProbePad1;
+    uint ProbePad2;
+    GpuProbeVolume ProbeVolumes[MAX_PROBE_VOLUMES];
+    uint DebugView;
+    uint DebugViewPad0;
+    uint DebugViewPad1;
+    uint DebugViewPad2;
+} frame;

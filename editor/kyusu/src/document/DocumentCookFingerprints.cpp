@@ -5,7 +5,7 @@
 #include <assets/cook/CookFingerprint.h>
 #include <core/hash/ContentHash.h>
 #include <core/json/JsonStringify.h>
-#include <render/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/MeshGeometry.h>
 
 #include <string>
 #include <string_view>

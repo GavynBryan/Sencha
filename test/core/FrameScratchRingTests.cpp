@@ -3,8 +3,12 @@
 // slice holds, and a stream that cannot fit whole at all.
 
 #include <graphics/FrameScratchRing.h>
+#include <graphics/GpuFrameScratch.h>
 
 #include <gtest/gtest.h>
+
+#include <string>
+#include <string_view>
 
 namespace
 {
@@ -131,5 +135,58 @@ TEST(FrameScratchRing, TheOneInstanceOverBoundaryStillRendersWhatFits)
             ring.AllocateElements(requested, kInstanceStride, 16);
         ASSERT_TRUE(run.IsValid()) << requested << " instances";
         EXPECT_GE(run.Bytes / kInstanceStride, exactFit - 1);
+    }
+}
+
+// One scratch slice serves skinning, shadows, editor views, and the forward
+// pass, consumed in feature order. The aggregate counters say the budget ran
+// out; these are what say which consumer took it.
+
+TEST(ScratchTagCounters, AttributesGrantsAndFailuresPerConsumer)
+{
+    ScratchTagCounters counters;
+    counters.RecordGrant(ScratchTag::SkinningPalettes, 512);
+    counters.RecordGrant(ScratchTag::ForwardInstanceData, 128);
+    counters.RecordFailure(ScratchTag::ForwardViewUniforms);
+
+    EXPECT_EQ(counters.UsedBytes(ScratchTag::SkinningPalettes), 512u);
+    EXPECT_EQ(counters.UsedBytes(ScratchTag::ForwardInstanceData), 128u);
+    EXPECT_EQ(counters.UsedBytes(ScratchTag::ShadowViewUniforms), 0u);
+    EXPECT_EQ(counters.FailedAllocations(ScratchTag::ForwardViewUniforms), 1u);
+    EXPECT_EQ(counters.FailedAllocations(ScratchTag::SkinningPalettes), 0u);
+}
+
+TEST(ScratchTagCounters, GrantsAccumulateWithinAFrame)
+{
+    ScratchTagCounters counters;
+    counters.RecordGrant(ScratchTag::ImmediateVertices, 100);
+    counters.RecordGrant(ScratchTag::ImmediateVertices, 250);
+    EXPECT_EQ(counters.UsedBytes(ScratchTag::ImmediateVertices), 350u);
+}
+
+TEST(ScratchTagCounters, BeginFrameResetsUseButKeepsTheHighWaterMark)
+{
+    // Sizing a slice wants the peak across the session; diagnosing a frame
+    // wants that frame alone.
+    ScratchTagCounters counters;
+    counters.RecordGrant(ScratchTag::ShadowInstanceTransforms, 4096);
+    counters.RecordFailure(ScratchTag::ShadowInstanceTransforms);
+
+    counters.BeginFrame();
+    EXPECT_EQ(counters.UsedBytes(ScratchTag::ShadowInstanceTransforms), 0u);
+    EXPECT_EQ(counters.FailedAllocations(ScratchTag::ShadowInstanceTransforms), 0u);
+    EXPECT_EQ(counters.HighWaterBytes(ScratchTag::ShadowInstanceTransforms), 4096u);
+
+    counters.RecordGrant(ScratchTag::ShadowInstanceTransforms, 1024);
+    EXPECT_EQ(counters.HighWaterBytes(ScratchTag::ShadowInstanceTransforms), 4096u);
+}
+
+TEST(ScratchTagCounters, EveryTagHasAStableName)
+{
+    for (std::size_t i = 0; i < ScratchTagCounters::kTagCount; ++i)
+    {
+        const std::string_view name = ToString(static_cast<ScratchTag>(i));
+        EXPECT_FALSE(name.empty());
+        EXPECT_NE(name, "unknown");
     }
 }

@@ -5,6 +5,10 @@ layout(location = 3) in vec3 inWorldTangent;
 layout(location = 4) in float inTangentSign;
 layout(location = 5) in vec2 inLightmapUv;
 
+// The one GLSL mirror of MeshPushConstants (render/pass/MeshForwardPass.h), whose
+// static asserts pin every offset. Fragment-only by contract -- the pass
+// declares its push range for this stage alone, so a vertex shader cannot
+// grow a second copy without widening that range first.
 layout(push_constant) uniform MeshPush
 {
     vec4 BaseColor;
@@ -20,7 +24,7 @@ layout(push_constant) uniform MeshPush
     uint ReceiveShadows;
     uint LightmapTextureIndex;
     uint AoTextureIndex;
-    uint Pad2;
+    float AlphaCutoff;
 } pushData;
 
 layout(set = 1, binding = 0) uniform sampler2D BindlessTextures[1024];
@@ -96,25 +100,8 @@ vec3 ResolveEmission()
          * emissiveTexture;
 }
 
-vec3 ApplyShoulder(vec3 color, float knee)
-{
-    float clampedKnee = clamp(knee, 0.0, 0.999);
-    float shoulderRange = 1.0 - clampedKnee;
-    vec3 result = color;
-    for (int channel = 0; channel < 3; ++channel)
-    {
-        if (result[channel] <= clampedKnee)
-            continue;
-        float s = (result[channel] - clampedKnee) / shoulderRange;
-        result[channel] = clampedKnee + shoulderRange * s / (1.0 + s);
-    }
-    return result;
-}
-
 vec3 ResolveOutput(vec3 color)
 {
-    color *= max(frame.StyleParams.z, 0.0);
-    if (frame.TonemapEnabled != 0u)
-        return ApplyShoulder(color, frame.StyleParams.w);
-    return clamp(color, 0.0, 1.0);
+    return ApplyOutputTransform(color, frame.StyleParams.z, frame.StyleParams.w,
+                                frame.TonemapEnabled != 0u);
 }

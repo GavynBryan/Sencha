@@ -3,10 +3,13 @@
 #include "PreviewBackdropRenderer.h"
 #include "PreviewPrimitives.h"
 
-#include "render/ViewportTargetCache.h"
+#include "render/ImGuiTargetPresenter.h"
+
+#include <graphics/RenderTargetId.h>
+#include <graphics/vulkan/RenderTargetStore.h>
 
 #include <graphics/vulkan/Renderer.h>
-#include <render/MeshForwardPass.h>
+#include <render/pass/MeshForwardPass.h>
 #include <render/RenderLight.h>
 #include <render/RenderQueue.h>
 
@@ -19,7 +22,7 @@ struct RuntimeAssets;
 //
 // The material editor's single offscreen view: one procedural primitive, one
 // material, one point light plus hemispheric ambient, drawn through the
-// runtime MeshForwardPass into a ViewportTargetCache slot the preview panel
+// runtime MeshForwardPass into an offscreen target the preview panel
 // shows via ImGui::Image. Orbit state lives here; the panel feeds it mouse
 // deltas.
 //=============================================================================
@@ -29,8 +32,8 @@ public:
     explicit MaterialPreviewRenderFeature(RuntimeAssets& assets);
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::Offscreen; }
-    [[nodiscard]] bool Setup(const RendererServices& services) override;
-    void OnDraw(const FrameContext& frame) override;
+    [[nodiscard]] bool Setup(const RenderFeatureServices& services) override;
+    void OnDraw(const RenderFrame& frame) override;
     void Teardown() override;
 
     // UI side: record the on-screen size, get the texture to display.
@@ -39,11 +42,6 @@ public:
     void SetMaterial(MaterialHandle material) { Material = material; }
     void SetPrimitive(PreviewPrimitive primitive) { Active = primitive; }
     [[nodiscard]] PreviewPrimitive GetPrimitive() const { return Active; }
-
-    // Drops the primitive meshes while the caches still live (the feature
-    // itself tears down later, in ~Renderer). Call before the asset system
-    // is released.
-    void ReleaseResources();
 
     void Orbit(float yawDelta, float pitchDelta);
     void Zoom(float wheelDelta);
@@ -56,7 +54,13 @@ public:
 
 private:
     RuntimeAssets& Assets;
-    ViewportTargetCache Targets;
+    // One scene target, owned directly. The preview is not a viewport host: it
+    // has a single view and no bloom, and going through the viewport cache meant
+    // inventing a ViewportId for a layout that does not exist and allocating two
+    // full-resolution bloom planes per frame in flight that nothing ever read.
+    RenderTargetStore Targets;
+    ImGuiTargetPresenter Presenter;
+    RenderTargetId SceneTarget;
     PreviewBackdropRenderer Backdrop;
     // The forward pass requires the lighting bindings for its descriptor
     // layout. The preview never renders shadow tiles, so it skips atlas

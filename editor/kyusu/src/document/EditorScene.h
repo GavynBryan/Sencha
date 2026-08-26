@@ -11,7 +11,7 @@
 #include <math/MathSchemas.h>
 #include <math/geometry/3d/Aabb3d.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <render/Camera.h>
+#include <render/extract/Camera.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/registry/Registry.h>
 #include <zone/WorldPartitionIds.h>

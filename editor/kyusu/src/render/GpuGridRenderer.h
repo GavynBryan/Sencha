@@ -18,12 +18,15 @@ struct GridStyle
     float FadeStart  = 0.2f;  // horizon fade start, as a fraction of the reach
 };
 
+struct CameraRenderData;
+
 class GpuGridRenderer
 {
 public:
     void Setup(const RendererServices& services);
     void DrawViewport(VkCommandBuffer cmd,
                       const EditorViewport& viewport,
+                      const CameraRenderData& camera,
                       const GridSettings& gridSettings,
                       const GridStyle& style,
                       VkExtent2D targetExtent,

@@ -1,12 +1,13 @@
 #include <render/static_mesh/GpuStaticMesh.h>
 
 #include <core/logging/Logger.h>
-#include <render/static_mesh/MeshValidation.h>
+#include <assets/static_mesh/MeshValidation.h>
 
-bool UploadMeshGeometryToGpu(VulkanBufferService& buffers,
+bool UploadMeshGeometryToGpu(GpuBuffers buffers,
                              const MeshGeometry& geometry,
                              GpuStaticMesh& out,
-                             Logger& log)
+                             Logger& log,
+                             MeshVertexAccess access)
 {
     const MeshValidationResult validation = ValidateMeshGeometry(geometry);
     if (!validation.IsValid())
@@ -16,15 +17,17 @@ bool UploadMeshGeometryToGpu(VulkanBufferService& buffers,
         return false;
     }
 
-    BufferCreateInfo vbInfo{};
+    BufferDesc vbInfo{};
     vbInfo.Size = sizeof(StaticMeshVertex) * geometry.Vertices.size();
-    vbInfo.Usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    vbInfo.Usage = GpuBufferUsage::Vertex;
+    if (access == MeshVertexAccess::VertexAndCompute)
+        vbInfo.Usage = vbInfo.Usage | GpuBufferUsage::Storage;
     vbInfo.Memory = BufferMemory::GpuOnly;
     vbInfo.DebugName = "Mesh vertex buffer";
 
-    BufferCreateInfo ibInfo{};
+    BufferDesc ibInfo{};
     ibInfo.Size = sizeof(uint32_t) * geometry.Indices.size();
-    ibInfo.Usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+    ibInfo.Usage = GpuBufferUsage::Index;
     ibInfo.Memory = BufferMemory::GpuOnly;
     ibInfo.DebugName = "Mesh index buffer";
 
@@ -51,12 +54,42 @@ bool UploadMeshGeometryToGpu(VulkanBufferService& buffers,
         .VertexCount = static_cast<uint32_t>(geometry.Vertices.size()),
         .IndexCount = static_cast<uint32_t>(geometry.Indices.size()),
         .LocalBounds = geometry.LocalBounds,
+        .HasLightmapUvs = GeometryHasLightmapUvs(geometry),
         .Sections = geometry.Sections,
     };
     return true;
 }
 
-void DestroyGpuMesh(VulkanBufferService& buffers, GpuStaticMesh& mesh)
+BufferHandle UploadVertexSideStreamToGpu(GpuBuffers buffers,
+                                         std::span<const std::byte> bytes,
+                                         const char* debugName,
+                                         Logger& log)
+{
+    if (bytes.empty())
+        return {};
+
+    BufferDesc info{};
+    info.Size = bytes.size();
+    info.Usage = GpuBufferUsage::Vertex | GpuBufferUsage::Storage;
+    info.Memory = BufferMemory::GpuOnly;
+    info.DebugName = debugName;
+
+    const BufferHandle handle = buffers.Create(info);
+    if (!handle.IsValid())
+    {
+        log.Error("UploadVertexSideStreamToGpu: buffer creation failed ({})", debugName);
+        return {};
+    }
+    if (!buffers.Upload(handle, bytes.data(), info.Size))
+    {
+        log.Error("UploadVertexSideStreamToGpu: upload failed ({})", debugName);
+        buffers.Destroy(handle);
+        return {};
+    }
+    return handle;
+}
+
+void DestroyGpuMesh(GpuBuffers buffers, GpuStaticMesh& mesh)
 {
     if (mesh.VertexBuffer.IsValid())
         buffers.Destroy(mesh.VertexBuffer);

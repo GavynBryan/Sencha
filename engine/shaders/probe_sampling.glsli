@@ -1,4 +1,4 @@
-// Irradiance-probe volume sampling. Requires mesh_frame.glsli and, in the
+// Irradiance-probe volume sampling. Requires mesh_view.glsli and, in the
 // including shader, GL_EXT_nonuniform_qualifier (volume selection is per
 // fragment, so the sampler index is not dynamically uniform within a draw).
 layout(set = 2, binding = 2)

@@ -1,7 +1,7 @@
 #include "ui/ImGuiTextureBinding.h"
 
 #include <assets/runtime/AssetSystem.h>
-#include <graphics/vulkan/TextureCache.h>
+#include <assets/texture/TextureCache.h>
 #include <graphics/vulkan/VulkanSamplerCache.h>
 
 #include <imgui_impl_vulkan.h>
@@ -53,8 +53,11 @@ void ImGuiTextureBinding::Release()
     BoundImage = {};
     Path.clear();
 
-    // Immediate frees: Release runs at teardown (or explicit reset), where
-    // the owner has already stopped drawing with these sets.
+    // Immediate frees: Release runs at teardown (or explicit reset), where the
+    // owner has already stopped drawing with these sets. That the owner stopped
+    // recording is not enough on its own -- frames it already submitted can
+    // still be executing -- so the editor hosts drain the GPU before tearing
+    // down anything that holds bindings (EditorApp::OnShutdown).
     if (Set != VK_NULL_HANDLE)
     {
         ImGui_ImplVulkan_RemoveTexture(Set);
@@ -103,7 +106,10 @@ ImTextureID ImGuiTextureBinding::TextureId()
 
 VkExtent2D ImGuiTextureBinding::Extent() const
 {
-    return Handle.IsValid() ? Textures.GetExtent(Handle) : VkExtent2D{};
+    if (!Handle.IsValid())
+        return {};
+    const RenderExtent extent = Textures.GetExtent(Handle);
+    return { extent.Width, extent.Height };
 }
 
 void ImGuiTextureBinding::RetireSet()

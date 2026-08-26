@@ -1,6 +1,11 @@
 #pragma once
 
+#include <string>
+
 #include <core/logging/LoggingProvider.h>
+#include <graphics/RenderFeature.h>
+#include <graphics/vulkan/FeatureRegistrationOrder.h>
+#include <graphics/vulkan/FrameImageCapture.h>
 #include <graphics/vulkan/VulkanFrameService.h>
 #include <vulkan/vulkan.h>
 
@@ -20,7 +25,7 @@ class VulkanSamplerCache;
 class VulkanShaderCache;
 class VulkanPipelineCache;
 class VulkanDescriptorCache;
-class VulkanFrameScratch;
+class GpuFrameScratch;
 class VulkanUploadContextService;
 class VulkanDepthTarget;
 struct RenderInstrumentation;
@@ -33,9 +38,11 @@ struct RenderInstrumentation;
 //
 // Design constraints Sencha locks in at this layer:
 //
-//   * Features are owned by the Renderer (unique_ptr). Setup() runs once
-//     at AddFeature time; Teardown() runs in the Renderer destructor before
-//     any Vulkan service is torn down.
+//   * Features are owned by the Renderer (unique_ptr). Setup() runs once, at
+//     AddFeature time or at the batch commit for a staged feature; Teardown()
+//     runs in the Renderer destructor, in reverse resolved order, before any
+//     Vulkan service is torn down -- or earlier at RemoveFeature, which is how
+//     a host tears a feature down while state it borrows is still alive.
 //
 //   * The per-frame path is flat. OnDraw() receives a small, cache-dense
 //     FrameContext and nothing else -- there are no service lookups in
@@ -55,18 +62,14 @@ struct RenderInstrumentation;
 //     time, before the device is built -- there is no such hook today.
 //=============================================================================
 
-enum class RenderPhase : uint8_t
-{
-    // Features here own their render passes/targets (no swapchain pass is open) and
-    // run before MainColor: e.g. the editor rendering viewports to offscreen textures.
-    Offscreen = 0,
-    MainColor = 1,
-    // Reserved for: Shadow, Opaque, Transparent, UI, Post...
-    Count
-};
+// RenderPhase, IRenderFeature, RenderFeatureServices, and RenderFrame live in
+// graphics/RenderFeature.h -- the neutral feature contract. What follows here
+// is the Vulkan side of it: the backend bundle behind
+// RenderFeatureServices::Backend and the recording state behind
+// RenderFrame::Backend.
 
-// Direct service pointers handed to features in Setup(). Features should
-// cache whichever ones they need and never reach for engine services again.
+// Direct service pointers behind the feature contract. Recording passes cache
+// whichever ones they need at Setup and never reach for engine services again.
 struct RendererServices
 {
     LoggingProvider* Logging = nullptr;
@@ -81,7 +84,7 @@ struct RendererServices
     VulkanShaderCache* Shaders = nullptr;
     VulkanPipelineCache* Pipelines = nullptr;
     VulkanDescriptorCache* Descriptors = nullptr;
-    VulkanFrameScratch* Scratch = nullptr;
+    GpuFrameScratch* Scratch = nullptr;
     VulkanUploadContextService* Upload = nullptr;
     VkFormat DepthFormat = VK_FORMAT_UNDEFINED;
     // The engine's instrumentation bundle. The pointer is stable for the
@@ -102,36 +105,16 @@ struct FrameContext
     VkImageView DepthView = VK_NULL_HANDLE;
     VkFormat DepthFormat = VK_FORMAT_UNDEFINED;
     RenderPhase Phase = RenderPhase::MainColor;
+    // Fence-anchored frame clock. A feature releasing a GPU resource the
+    // renderer may still be reading stamps it from here and frees it once this
+    // reports it retired, rather than counting frames itself.
+    GpuFrameRetirement Retirement;
 };
 
 struct RendererFrameTiming
 {
     double RecordSeconds = 0.0;
     double TotalSeconds = 0.0;
-};
-
-class IRenderFeature
-{
-public:
-    virtual ~IRenderFeature() = default;
-
-    // Which phase this feature runs in. One feature, one phase.
-    [[nodiscard]] virtual RenderPhase GetPhase() const = 0;
-
-    // Runs once, inside Renderer::AddFeature. Cache service pointers here.
-    // Do any up-front GPU resource creation here too. Returning false means
-    // the feature is not usable: AddFeature tears it down and refuses to
-    // register it, rather than leaving an inert feature in a phase bucket.
-    [[nodiscard]] virtual bool Setup(const RendererServices& services) = 0;
-
-    // Per-frame record. For MainColor features the command buffer is
-    // already inside vkCmdBeginRendering on the swapchain image. Features
-    // in future phases that open their own passes own their own begin/end.
-    virtual void OnDraw(const FrameContext& frame) = 0;
-
-    // Runs in ~Renderer before any Vulkan service is torn down. Release
-    // any GPU resources the feature still holds here.
-    virtual void Teardown() {}
 };
 
 class Renderer
@@ -150,7 +133,7 @@ public:
              VulkanShaderCache& shaders,
              VulkanPipelineCache& pipelines,
              VulkanDescriptorCache& descriptors,
-             VulkanFrameScratch& scratch,
+             GpuFrameScratch& scratch,
              VulkanUploadContextService& upload);
     ~Renderer();
 
@@ -166,6 +149,10 @@ public:
     // lifetime; callers that need to reach it later cache this pointer, but
     // features are expected to cache their own service pointers in Setup() and
     // are driven each frame through the Renderer's internal phase buckets.
+    //
+    // A feature with no declared dependencies: a batch of one, committed
+    // immediately. Hosts whose features depend on each other stage them and
+    // commit the batch instead.
     template <typename T>
     T* AddFeature(std::unique_ptr<T> feature)
     {
@@ -173,8 +160,55 @@ public:
                       "T must derive from IRenderFeature");
         if (!Valid || !feature) return nullptr;
         return static_cast<T*>(
-            AddFeatureImpl(std::unique_ptr<IRenderFeature>(feature.release())));
+            AddFeatureImpl(std::unique_ptr<IRenderFeature>(feature.release()), {}));
     }
+
+    // Hold a feature and its declared dependencies until CommitStagedFeatures.
+    // Returns the pointer the feature will have if the batch commits, so a host
+    // can wire panels and callbacks against it -- but the pointer is only good
+    // once the commit reports the id succeeded.
+    //
+    // Setup does NOT run here: it runs at commit time, in resolved order, which
+    // is what lets one feature's Setup depend on another's having already run.
+    template <typename T>
+    T* StageFeature(std::unique_ptr<T> feature, const FeatureRegistration& registration)
+    {
+        static_assert(std::is_base_of_v<IRenderFeature, T>,
+                      "T must derive from IRenderFeature");
+        if (!Valid || !feature) return nullptr;
+        return static_cast<T*>(StageFeatureImpl(
+            std::unique_ptr<IRenderFeature>(feature.release()), registration));
+    }
+
+    // Resolves the staged batch, runs each Setup in dependency order, and
+    // registers what succeeded. Returns false when the batch as a whole could
+    // not be ordered -- a duplicate id, an unknown dependency, or a cycle -- in
+    // which case nothing is registered and the staged features are destroyed.
+    //
+    // A feature whose Setup returns false is skipped along with everything that
+    // declared a dependency on it. That is degradation, not a broken graph, so
+    // the rest of the batch still commits.
+    //
+    // Either way, every id whose feature is gone lands in `failedIds` if given,
+    // including all of them on a graph fault. One reading, one action: a host
+    // nulls what it staged and cached. The pointers StageFeature handed back
+    // are dangling by the time this returns, so ignoring both the result and
+    // the list leaves them dereferenceable-looking and dead.
+    [[nodiscard]] bool CommitStagedFeatures(
+        std::vector<std::string_view>* failedIds = nullptr);
+
+    // Tears down a registered feature and drops it, with the GPU drained first.
+    // Legal only for a feature nothing else declares a dependency on -- removing
+    // a producer out from under its consumers is refused and logged.
+    //
+    // For a host that must release a feature while the state it borrows is
+    // still alive: an editor's render feature holds meshes and materials its
+    // asset system owns, and the renderer outlives both.
+    //
+    // False means the feature is still registered -- unknown, not owned, or
+    // refused because something depends on it -- so a caller that goes on to
+    // free what the feature borrows has to know.
+    [[nodiscard]] bool RemoveFeature(IRenderFeature* feature);
 
     // Render frame scheduler entry point: acquire -> scratch rotate -> phase
     // iterate -> transition -> submit/present. Returns structured lifecycle
@@ -193,7 +227,23 @@ public:
         Services.Instrumentation = instrumentation;
     }
 
+    // Write a presented frame to `path` as a PNG, once this renderer has drawn
+    // `atFrame` of them. False when the surface did not offer readback usage,
+    // in which case nothing is armed.
+    [[nodiscard]] bool CaptureFrame(std::string path, std::uint64_t atFrame);
+
+    // Frames this renderer has drawn. Monotonic and its own count: the loop
+    // above it counts driven frames, which includes the ones that resized or
+    // rebuilt a swapchain instead of rendering.
+    [[nodiscard]] std::uint64_t GetFramesDrawn() const { return FramesDrawn; }
+
 private:
+    // The context handed to frame capture: the same command buffer and clock
+    // the features saw, without the attachment fields, which describe a scope
+    // that has already closed by the time the frame is copied.
+    [[nodiscard]] FrameContext MakeCaptureContext(const VulkanFrame& frame) const;
+
+
     Logger& Log;
     VulkanSwapchainService& Swapchain;
     VulkanFrameService& Frames;
@@ -202,14 +252,26 @@ private:
 
     std::vector<std::unique_ptr<IRenderFeature>> OwnedFeatures;
     std::vector<IRenderFeature*> PhaseBuckets[static_cast<size_t>(RenderPhase::Count)];
+    // Parallel to OwnedFeatures: what each registered feature declared, which
+    // is what a removal consults to refuse orphaning a consumer. Ids point at
+    // string literals owned by the host.
+    std::vector<FeatureRegistration> RegisteredOrder;
+    // Staged but not yet committed, with the declarations they were staged with.
+    std::vector<std::unique_ptr<IRenderFeature>> StagedFeatures;
+    std::vector<FeatureRegistration> StagedRegistrations;
     std::vector<VkImageLayout> ImageLayouts;
     std::unique_ptr<VulkanDepthTarget> DepthTarget;
     VkImageLayout DepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     RendererFrameTiming LastTiming;
+    FrameImageCapture ImageCapture;
+    std::uint64_t FramesDrawn = 0;
 
+    IRenderFeature* StageFeatureImpl(std::unique_ptr<IRenderFeature> feature,
+                                     const FeatureRegistration& registration);
     // Validates phase, runs Setup(), pushes into OwnedFeatures/PhaseBuckets.
     // Returns the raw pointer on success, nullptr on failure.
-    IRenderFeature* AddFeatureImpl(std::unique_ptr<IRenderFeature> feature);
+    IRenderFeature* AddFeatureImpl(std::unique_ptr<IRenderFeature> feature,
+                                   const FeatureRegistration& registration);
 
     void RecordOffscreenPhase(const VulkanFrame& frame);
     void RecordMainColorPhase(const VulkanFrame& frame);

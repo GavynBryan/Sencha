@@ -1,7 +1,7 @@
 #include "EditorSkin.h"
 
 #include <graphics/vulkan/VulkanSamplerCache.h>
-#include <render/ImageLoader.h>
+#include <assets/texture/ImageLoader.h>
 
 #include <imgui_impl_vulkan.h>
 

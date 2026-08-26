@@ -26,10 +26,12 @@
 #include "viewport/ViewportShading.h"
 
 #include <graphics/vulkan/Renderer.h>
-#include <render/MeshForwardPass.h>
+#include <graphics/vulkan/SkyGradientPass.h>
+#include <render/FrameComposition.h>
+#include <render/pass/MeshForwardPass.h>
 #include <render/ShadowCasterSet.h>
 #include <render/ShadowResidency.h>
-#include <render/ShadowDepthPass.h>
+#include <render/pass/ShadowDepthPass.h>
 #include <world/registry/RegistryId.h>
 
 #include <array>
@@ -86,19 +88,13 @@ public:
     // Offscreen: this feature renders each viewport into its own texture before the
     // swapchain (MainColor) pass opens; the UI then composites those textures.
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::Offscreen; }
-    [[nodiscard]] bool Setup(const RendererServices& services) override;
-    void OnDraw(const FrameContext& frame) override;
+    [[nodiscard]] bool Setup(const RenderFeatureServices& services) override;
+    void OnDraw(const RenderFrame& frame) override;
     void Teardown() override;
 
     // The viewport offscreen targets, shared with ViewportPanel (which displays them
     // via ImGui::Image). Owned here so its GPU resources tear down with this feature.
     [[nodiscard]] ViewportTargetCache& GetViewportTargets() { return Targets; }
-
-    // Release the scene queues' GPU brush meshes + material refs. The feature itself
-    // tears down later in ~Renderer (after the engine frees graphics), but these handles
-    // borrow the asset caches, so EditorServices calls this before it resets the asset
-    // system, mirroring how the document's StaticMeshComponents release first.
-    void ReleaseSceneResources();
 
     // The frame's shadow arbitration snapshot, read by the lighting panel.
     [[nodiscard]] const ShadowResidencyReadout& ShadowReadout() const
@@ -117,10 +113,23 @@ public:
     }
 
 private:
+    // One live viewport and the target it renders into, resolved before the
+    // frame is composed so a declared view can name the target and a record
+    // body can find its way back to the panel.
+    struct ViewSlot
+    {
+        EditorViewport* Viewport = nullptr;
+        ViewportTargetCache::RenderView Target;
+    };
+
+    // The composition's entry point for a viewport view: recovers the slot the
+    // view was declared with and renders it with the camera the view carries.
+    void RecordViewportView(const FrameContext& frame, const FrameView& view);
     // Render one viewport's scene chain into its offscreen color+depth target, with
     // the surrounding layout transitions and rendering scope.
     void RenderViewportOffscreen(const FrameContext& frame, EditorViewport& viewport,
-                                 const ViewportTargetCache::RenderView& target);
+                                 const ViewportTargetCache::RenderView& target,
+                                 const CameraRenderData& camera);
     // Runs the focus scene's shadow arbitration and records the scheduled
     // depth views, then publishes the panel snapshot. Called once per frame
     // before any viewport renders.
@@ -132,7 +141,8 @@ private:
     // Renders the active wireframe glow source and composites the bloom onto the scene
     // color (no-op when the viewport has no bloom target). Runs after the scene pass.
     void RecordViewportBloom(const FrameContext& frame, EditorViewport& viewport,
-                             const ViewportTargetCache::RenderView& target);
+                             const ViewportTargetCache::RenderView& target,
+                             const CameraRenderData& camera);
 
     WorldDocument&         World;
     std::function<const ManipulatorSession*()> Session;
@@ -142,6 +152,10 @@ private:
     WorldViewSettings& WorldView;
     GridStyle              GridStyleCache{}; // refreshed per frame from editor.grid.* cvars
     ViewportBackdropRenderer Backdrop;
+    // Drawn instead of the backdrop in perspective viewports, so what the
+    // editor shows matches what the game shows. Ortho viewports keep the
+    // backdrop: a sky in a 2D working view describes nothing.
+    SkyGradientPass        Sky;
     GpuGridRenderer        Grid;
     // Declared before the renderers that bind a reference to it at construction.
     // (The feature owns the one shared solid pipeline.)
@@ -183,6 +197,7 @@ private:
     RuntimeAssets*     RuntimeAssetsRef = nullptr;
     LoggingProvider*   LoggingRef = nullptr;
     StaticMeshCache*       MeshCache = nullptr;        // for the unconditional MeshQueue draw
+    const SkinnedMeshCache* SkinnedMeshCacheRef = nullptr; // rest-pose skinned draws, WYSIWYG
     MaterialCache*         MaterialStore = nullptr;
     bool                   MaterialPath = false;
     // Declared before the line renderers: they bind a reference to it at
@@ -204,6 +219,15 @@ private:
     BrushPreviewRenderer   Preview;
     // Per-viewport offscreen targets this feature renders into; the UI composites them.
     ViewportTargetCache    Targets;
+    // What this frame is made of. The shadow atlas is arbitrated and recorded
+    // once as work; every viewport is a view that waits on it. The ordering
+    // used to be a comment above the viewport loop.
+    FrameComposition       Composition;
+    DependencyPointId      ShadowAtlasReady;
+    // Retained across frames: rebuilt every frame, but the storage is not, and
+    // a declared view holds a pointer into ViewSlots until the frame executes.
+    std::vector<ViewSlot>  ViewSlots;
+    std::vector<ViewportId> LiveViewports;
     EditorBloomPass        Bloom;
     bool                   BloomEnabled = true;     // editor.bloom.enable
     BloomParams            BloomParamsCache{};       // editor.bloom.threshold/intensity/radius

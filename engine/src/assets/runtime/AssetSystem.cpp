@@ -5,7 +5,7 @@
 #include <anim/AnimationClipCache.h>
 #include <anim/SkeletonCache.h>
 #include <audio/AudioClipCache.h>
-#include <graphics/vulkan/TextureCache.h>
+#include <assets/texture/TextureCache.h>
 #include <render/MaterialCache.h>
 #include <render/MaterialSetCache.h>
 #include <render/skinned_mesh/SkinnedMeshCache.h>

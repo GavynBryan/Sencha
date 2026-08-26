@@ -7,8 +7,8 @@
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
 #include <core/logging/LoggingProvider.h>
-#include <render/Camera.h>
-#include <render/LightExtractionSystem.h>
+#include <render/extract/Camera.h>
+#include <render/extract/LightExtractionSystem.h>
 #include <ecs/StoragePartitionSet.h>
 #include <render/PointLightComponent.h>
 #include <world/transform/TransformComponents.h>
@@ -27,7 +27,7 @@ namespace
         active.SetActive(entity);
         CameraRenderData camera;
         EXPECT_TRUE(CameraRenderDataSystem::Build(
-            active, world, VkExtent2D{ 1280, 720 }, camera));
+            active, world, RenderExtent{ 1280, 720 }, camera));
         return camera;
     }
 }
@@ -60,7 +60,7 @@ TEST(EditorLightGather, MatchesRuntimeSelectionBeyondForwardBudget)
     }
 
     const CameraRenderData camera = MakeCamera();
-    EditorLightGather gathered = GatherEditorLights(document, false, 1.0f);
+    EditorLightGather gathered = GatherEditorLights(document, 1.0f);
     RenderLightSet editorLights;
     std::vector<SpotShadowRequest> editorSpots;
     std::vector<PointShadowRequest> editorPoints;

@@ -542,6 +542,16 @@ void CubeDemoGame::OnShutdown(GameShutdownContext&)
     ZoneLoader.reset();
     SceneContext.reset();
 
+    // Before Assets goes: the cache's compiled entries hold Owned handles into
+    // RuntimeAssets::DataAssets, and Owned detaches from its owner in its
+    // destructor. Left to the World's own teardown the entries would detach
+    // from a destroyed cache.
+    if (InputBindingCache* bindings =
+            runtime.Entities().TryGetResource<InputBindingCache>())
+    {
+        bindings->Clear();
+    }
+
     // Release the GPU-backed asset caches while OnShutdown still runs with the
     // engine (device, allocators, descriptor pools) up. Zone detach above
     // returned the zone's mesh and texture handles to these caches; the hot

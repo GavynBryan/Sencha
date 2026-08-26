@@ -4,7 +4,7 @@
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
 #include <ecs/World.h>
-#include <render/Camera.h>
+#include <render/extract/Camera.h>
 #include <world/transform/TransformComponents.h>
 
 namespace
@@ -42,7 +42,7 @@ namespace
             return CameraRenderDataSystem::Build(
                 WorldState.GetResource<ActiveCameraService>(),
                 WorldState,
-                VkExtent2D{ 1280, 720 },
+                RenderExtent{ 1280, 720 },
                 out);
         }
 
@@ -105,7 +105,7 @@ TEST(CameraRenderDataExclusion, WorldWithoutTheRigComponentStillBuilds)
     ASSERT_TRUE(CameraRenderDataSystem::Build(
         world.GetResource<ActiveCameraService>(),
         world,
-        VkExtent2D{ 1280, 720 },
+        RenderExtent{ 1280, 720 },
         data));
     EXPECT_FALSE(data.ExcludedEntity.IsValid());
 }

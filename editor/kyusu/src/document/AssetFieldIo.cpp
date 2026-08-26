@@ -4,6 +4,8 @@
 #include <assets/runtime/AssetSystem.h>
 #include <render/MaterialSetCache.h>
 #include <render/static_mesh/StaticMeshHandle.h>
+#include <anim/AnimationClipHandle.h>
+#include <render/skinned_mesh/SkinnedMeshHandle.h>
 
 #include <cassert>
 #include <cstring>
@@ -62,6 +64,23 @@ AssetFieldValue ReadAssetField(AssetSystem& assets, AssetType type,
         return value;
     }
 
+    if (type == AssetType::SkinnedMesh && arity == AssetArity::Single)
+    {
+        std::string path(assets.GetPathForSkinnedMesh(ReadHandle<SkinnedMeshHandle>(field)));
+        if (!path.empty())
+            value.Refs.push_back(RefFromPath(assets, std::move(path), type));
+        return value;
+    }
+
+    if (type == AssetType::AnimationClip && arity == AssetArity::Single)
+    {
+        std::string path(assets.GetPathForAnimationClip(
+            ReadHandle<AnimationClipHandle>(field)));
+        if (!path.empty())
+            value.Refs.push_back(RefFromPath(assets, std::move(path), type));
+        return value;
+    }
+
     if (type == AssetType::Material && arity == AssetArity::List)
     {
         const MaterialSetHandle set = ReadHandle<MaterialSetHandle>(field);
@@ -90,6 +109,35 @@ void ApplyAssetField(AssetSystem& assets, AssetType type, AssetArity arity,
                                                    : assets.LoadStaticMesh(path);
         WriteHandle(field, next);            // acquire-then-write
         assets.ReleaseStaticMesh(old);       // release the replaced handle last
+        return;
+    }
+
+    if (type == AssetType::SkinnedMesh && arity == AssetArity::Single)
+    {
+        const std::string path = value.Refs.empty()
+            ? std::string{}
+            : ResolvePath(assets, value.Refs.front(), type);
+
+        const SkinnedMeshHandle old = ReadHandle<SkinnedMeshHandle>(field);
+        const SkinnedMeshHandle next = path.empty() ? SkinnedMeshHandle{}
+                                                    : assets.LoadSkinnedMesh(path);
+        WriteHandle(field, next);            // acquire-then-write
+        assets.ReleaseSkinnedMesh(old);      // release the replaced handle last
+        return;
+    }
+
+    if (type == AssetType::AnimationClip && arity == AssetArity::Single)
+    {
+        const std::string path = value.Refs.empty()
+            ? std::string{}
+            : ResolvePath(assets, value.Refs.front(), type);
+
+        const AnimationClipHandle old = ReadHandle<AnimationClipHandle>(field);
+        const AnimationClipHandle next = path.empty()
+            ? AnimationClipHandle{}
+            : assets.LoadAnimationClip(path);
+        WriteHandle(field, next);            // acquire-then-write
+        assets.ReleaseAnimationClip(old);    // release the replaced handle last
         return;
     }
 

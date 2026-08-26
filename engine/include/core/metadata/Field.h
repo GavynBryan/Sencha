@@ -83,6 +83,11 @@ struct Field
     // back. Aim is the case: a player's view must follow their mouse now, not
     // at the end of a round trip.
     bool IsOwnerLocal = false;
+    // Display metadata, editor-only: what an inspector row shows instead of
+    // the humanized field name, and what its hover explains. Serialization
+    // and the wire never read either -- the persisted key stays Name.
+    std::string_view DisplayLabel{};
+    std::string_view DisplayTooltip{};
 
     Field& Optional()
     {
@@ -134,6 +139,20 @@ struct Field
     Field& LocalOnly()
     {
         IsLocalOnly = true;
+        return *this;
+    }
+
+    // The label an inspector row shows in place of the humanized field name.
+    // The argument must outlive the schema (string literals do).
+    Field& Label(std::string_view label)
+    {
+        DisplayLabel = label;
+        return *this;
+    }
+
+    Field& Tooltip(std::string_view tooltip)
+    {
+        DisplayTooltip = tooltip;
         return *this;
     }
 };

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <assets/cook/AssetImporter.h> // kImportSettingsSuffix
-#include <render/TextureData.h>
+#include <assets/texture/TextureData.h>
 
 #include <cstddef>
 #include <span>

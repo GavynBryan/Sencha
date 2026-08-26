@@ -371,7 +371,15 @@ bool VulkanSwapchainService::CreateSwapchain(WindowExtent desiredExtent,
     createInfo.imageColorSpace = surfaceFormat.colorSpace;
     createInfo.imageExtent = extent;
     createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    // TRANSFER_SRC is what lets a presented frame be read back to disk. Asked
+    // for rather than required: a surface that does not offer it still renders,
+    // and capture reports itself unavailable instead of failing to boot.
+    VkImageUsageFlags imageUsage =
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    if ((support.Capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0)
+        imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    CapturableImages = (imageUsage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0;
+    createInfo.imageUsage = imageUsage;
     createInfo.preTransform = support.Capabilities.currentTransform;
     createInfo.compositeAlpha = compositeAlpha;
     createInfo.presentMode = presentMode;

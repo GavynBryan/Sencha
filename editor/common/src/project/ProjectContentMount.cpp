@@ -3,7 +3,9 @@
 #include "project/Project.h"
 
 #include <assets/cook/AssetImporter.h>
+#include <assets/cook/BlendCook.h>
 #include <assets/cook/ImportOnDemand.h>
+#include <assets/cook/MeshCook.h>
 #include <assets/cook/TextureCook.h>
 #include <core/assets/AssetIdMap.h>
 #include <core/assets/AssetRegistry.h>
@@ -26,14 +28,25 @@ void MountProjectContent(const ProjectDescriptor& project,
         ScanAssetsDirectory((std::filesystem::path(root) / ".cooked").string(),
                             assets.Registry, assets.Assets.Kinds());
 
-        // Cook source textures on demand (.png -> .stex) and register the cooked
-        // overlay, so a material's asset://...png resolves to its cooked .stex with a
-        // bindless slot: the same resolve the runtime uses, which is what makes the
-        // Solid viewport WYSIWYG. Editors are cook-enabled; cooked wins over the scan.
+        // Cook source assets on demand and register the cooked overlay, so a
+        // material's asset://...png resolves to its cooked .stex with a bindless
+        // slot and a placed asset://...blend resolves to its cooked mesh: the same
+        // resolve the runtime uses, which is what makes the Solid viewport
+        // WYSIWYG. Editors are cook-enabled; cooked wins over the scan.
+        //
+        // Meshes belong here for the same reason textures do. Without them the
+        // .glb and .blend import paths exist, are tested, and are reachable from
+        // nothing -- a source mesh dropped into a project never becomes an asset,
+        // so it can never be placed. The work is hash-gated by the cooked-cache
+        // index, so an unchanged source costs a hash and a lookup.
         {
             PngTextureImporter textureImporter(jobs);
+            GltfMeshImporter gltfImporter;
+            BlendMeshImporter blendImporter;
             AssetImporterRegistry importers;
             importers.Register(textureImporter);
+            importers.Register(gltfImporter);
+            importers.Register(blendImporter);
             (void)ImportAssetsOnDemand(root, importers, assets.Registry, logging);
         }
         RegisterCookedAssets(root, assets.Registry);

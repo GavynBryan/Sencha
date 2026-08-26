@@ -1,38 +1,123 @@
 #include <render/ShadowResidency.h>
 
+#include <core/hash/Fnv1a.h>
+
 #include <algorithm>
-#include <bit>
 
 namespace
 {
-    constexpr std::uint64_t kFnvOffset = 1469598103934665603ull;
-    constexpr std::uint64_t kFnvPrime = 1099511628211ull;
+// A spot tile renders as one sub-view: bit 0.
+constexpr std::uint32_t kSpotAllSubViewsMask = 0x1u;
 
-    void HashBytes(std::uint64_t& hash, const void* data, std::size_t size)
+// What each pool's schedule hook needs, threaded as the descriptor's self
+// (the hooks are capture-free function pointers). Budget accounting stays
+// with the scheduler; the hooks only emit the job and stamp the slot.
+struct SpotScheduleContext
+{
+    std::span<const SpotShadowRequest> Requests;
+    const ShadowSlotState* SlotsBase = nullptr;
+    const ShadowAtlasAllocation* Allocations = nullptr;
+    SpotShadowView* Rendered = nullptr;
+    std::vector<SpotShadowViewJob>* Views = nullptr;
+    std::uint32_t FrameNumber = 0;
+};
+
+bool SpotEligible(const void* selfErased, const ShadowSlotState& slot)
+{
+    const auto* self = static_cast<const SpotScheduleContext*>(selfErased);
+    return self->Allocations[&slot - self->SlotsBase].IsValid();
+}
+
+void ScheduleSpotSubView(void* selfErased, ShadowSlotState& slot, std::uint32_t)
+{
+    auto* self = static_cast<SpotScheduleContext*>(selfErased);
+    const std::uint32_t index =
+        static_cast<std::uint32_t>(&slot - self->SlotsBase);
+    const SpotShadowRequest& request = self->Requests[slot.RequestIndex];
+    const ShadowAtlasAllocation& allocation = self->Allocations[index];
+    self->Views->push_back(SpotShadowViewJob{
+        .SlotIndex = index,
+        .Allocation = allocation,
+        .ViewProjection = request.ViewProjection,
+    });
+    // The request's receiver-offset texel size was derived for the
+    // reference tier; rescale it to the granted tile's logical interior
+    // so a downgraded tile offsets by its real (coarser) texels.
+    Vec4 samplingParams = request.SamplingParams;
+    samplingParams.X *= static_cast<float>(kSpotShadowInnerExtent)
+        / static_cast<float>(allocation.Size - 2u * kSpotShadowGuardTexels);
+    self->Rendered[index] = SpotShadowView{
+        .ViewProjection = request.ViewProjection,
+        .AtlasScaleBias = ShadowAtlasAllocator::InsetScaleBias(allocation),
+        .SamplingParams = samplingParams,
+        .LightIndex = request.LightIndex,
+    };
+    slot.StateHash = request.StateHash;
+    slot.PendingSubViews &= ~kSpotAllSubViewsMask;
+    slot.EverRendered = true;
+    slot.Invalid = false;
+    slot.ScheduledThisFrame = true;
+    slot.LastRenderedFrame = self->FrameNumber;
+}
+
+struct PointScheduleContext
+{
+    std::span<const PointShadowRequest> Requests;
+    const ShadowSlotState* SlotsBase = nullptr;
+    PointShadowView* Rendered = nullptr;
+    std::vector<PointShadowFaceJob>* Faces = nullptr;
+    std::uint32_t FrameNumber = 0;
+};
+
+bool PointEligible(const void*, const ShadowSlotState&)
+{
+    return true;
+}
+
+void SchedulePointSubView(void* selfErased, ShadowSlotState& slot,
+                          std::uint32_t face)
+{
+    auto* self = static_cast<PointScheduleContext*>(selfErased);
+    const std::uint32_t index =
+        static_cast<std::uint32_t>(&slot - self->SlotsBase);
+    const PointShadowRequest& request = self->Requests[slot.RequestIndex];
+    const Vec<3> position(request.View.PositionFar.X,
+                          request.View.PositionFar.Y,
+                          request.View.PositionFar.Z);
+    self->Faces->push_back(PointShadowFaceJob{
+        .SlotIndex = index,
+        .Face = face,
+        .ViewProjection = MakePointShadowFaceViewProjection(
+            position, face, request.View.Params.X, request.View.PositionFar.W),
+    });
+    self->Rendered[index] = request.View;
+    self->Rendered[index].LightIndex = request.LightIndex;
+    slot.StateHash = request.StateHash;
+    slot.PendingSubViews &= ~(1u << face);
+    slot.ScheduledThisFrame = true;
+    slot.LastRenderedFrame = self->FrameNumber;
+    if (slot.PendingSubViews == 0)
     {
-        const auto* bytes = static_cast<const unsigned char*>(data);
-        for (std::size_t index = 0; index < size; ++index)
-        {
-            hash ^= bytes[index];
-            hash *= kFnvPrime;
-        }
+        slot.EverRendered = true;
+        slot.Invalid = false;
     }
 }
+} // namespace
 
 std::uint64_t HashSpotShadowState(const SpotShadowView& view, std::uint32_t tileSize)
 {
-    std::uint64_t hash = kFnvOffset;
-    HashBytes(hash, &view.ViewProjection, sizeof(view.ViewProjection));
-    HashBytes(hash, &view.SamplingParams, sizeof(view.SamplingParams));
-    HashBytes(hash, &tileSize, sizeof(tileSize));
+    std::uint64_t hash = kFnv1aOffsetBasis;
+    HashFnv1aValue(hash, view.ViewProjection);
+    HashFnv1aValue(hash, view.SamplingParams);
+    HashFnv1aValue(hash, tileSize);
     return hash;
 }
 
 std::uint64_t HashPointShadowState(const PointShadowView& view)
 {
-    std::uint64_t hash = kFnvOffset;
-    HashBytes(hash, &view.PositionFar, sizeof(view.PositionFar));
-    HashBytes(hash, &view.Params, sizeof(view.Params));
+    std::uint64_t hash = kFnv1aOffsetBasis;
+    HashFnv1aValue(hash, view.PositionFar);
+    HashFnv1aValue(hash, view.Params);
     return hash;
 }
 
@@ -65,7 +150,7 @@ void ShadowResidency::Update(std::span<const SpotShadowRequest> requests,
     Stats.Point.RequestCount = static_cast<std::uint32_t>(pointRequests.size());
     Stats.ViewsScheduled = static_cast<std::uint32_t>(
         FrameViews.size() + FramePointFaces.size());
-    for (const Slot& slot : Slots)
+    for (const ShadowSlotState& slot : Slots)
     {
         if (!slot.Live || slot.RequestIndex == UINT32_MAX)
             continue;
@@ -73,12 +158,12 @@ void ShadowResidency::Update(std::span<const SpotShadowRequest> requests,
         if (slot.EverRendered && !slot.ScheduledThisFrame)
             ++Stats.Spot.CachedSlots;
     }
-    for (const PointSlot& slot : PointSlots)
+    for (const ShadowSlotState& slot : PointSlots)
     {
         if (!slot.Live || slot.RequestIndex == UINT32_MAX)
             continue;
         ++Stats.Point.HeldRequests;
-        if (slot.EverRendered && slot.PendingFaces == 0
+        if (slot.EverRendered && slot.PendingSubViews == 0
             && !slot.ScheduledThisFrame)
             ++Stats.Point.CachedSlots;
     }
@@ -91,49 +176,22 @@ void ShadowResidency::IntakeEvents(std::span<const ShadowCasterEvent> events)
     if (events.empty())
         return;
 
-    for (Slot& slot : Slots)
-    {
-        if (!slot.Live || slot.Policy != ShadowUpdatePolicy::OnChange || slot.Invalid)
-            continue;
-        for (const ShadowCasterEvent& event : events)
-        {
-            if (slot.Volume.Intersects(event.Bounds))
-            {
-                MarkInvalid(slot);
-                break;
-            }
-        }
-    }
-    for (PointSlot& slot : PointSlots)
-    {
-        if (!slot.Live || slot.Policy != ShadowUpdatePolicy::OnChange || slot.Invalid)
-            continue;
-        for (const ShadowCasterEvent& event : events)
-        {
-            if (slot.Volume.Intersects(event.Bounds))
-            {
-                MarkPointInvalid(slot);
-                break;
-            }
-        }
-    }
+    IntakeShadowCasterEvents(std::span<ShadowSlotState>(Slots), events,
+                     [this](ShadowSlotState& slot) { MarkInvalid(slot); });
+    IntakeShadowCasterEvents(std::span<ShadowSlotState>(PointSlots), events,
+                     [this](ShadowSlotState& slot) { MarkPointInvalid(slot); });
 }
 
 void ShadowResidency::MatchRequests(std::span<const SpotShadowRequest> requests)
 {
-    for (Slot& slot : Slots)
-    {
-        slot.RequestIndex = UINT32_MAX;
-        slot.EffectiveScore = 0.0f;
-        slot.ScheduledThisFrame = false;
-    }
+    ResetShadowFrameTransients(std::span<ShadowSlotState>(Slots));
 
     for (std::uint32_t requestIndex = 0;
          requestIndex < static_cast<std::uint32_t>(requests.size());
          ++requestIndex)
     {
         const SpotShadowRequest& request = requests[requestIndex];
-        for (Slot& slot : Slots)
+        for (ShadowSlotState& slot : Slots)
         {
             if (!slot.Live || !(slot.Owner == request.Key)
                 || slot.RequestIndex != UINT32_MAX)
@@ -146,13 +204,15 @@ void ShadowResidency::MatchRequests(std::span<const SpotShadowRequest> requests)
             slot.Policy = request.Policy;
             slot.Volume = request.Bounds;
 
-            if (slot.Allocation.Size != request.TileSize)
+            ShadowAtlasAllocation& allocation =
+                SpotAllocations[&slot - Slots];
+            if (allocation.Size != request.TileSize)
             {
                 // The old tile's contents are unusable in a differently
                 // placed rect, so a tier change re-acquires: the freed node
                 // guarantees the downgrade chain terminates in a fit.
-                Atlas.Free(slot.Allocation);
-                slot.Allocation = AllocateWithDowngrade(request.TileSize);
+                Atlas.Free(allocation);
+                allocation = AllocateWithDowngrade(request.TileSize);
                 slot.EverRendered = false;
                 slot.AcquiredFrame = FrameNumber;
                 MarkInvalid(slot);
@@ -169,19 +229,14 @@ void ShadowResidency::MatchRequests(std::span<const SpotShadowRequest> requests)
 
 void ShadowResidency::MatchPointRequests(std::span<const PointShadowRequest> requests)
 {
-    for (PointSlot& slot : PointSlots)
-    {
-        slot.RequestIndex = UINT32_MAX;
-        slot.EffectiveScore = 0.0f;
-        slot.ScheduledThisFrame = false;
-    }
+    ResetShadowFrameTransients(std::span<ShadowSlotState>(PointSlots));
 
     for (std::uint32_t requestIndex = 0;
          requestIndex < static_cast<std::uint32_t>(requests.size());
          ++requestIndex)
     {
         const PointShadowRequest& request = requests[requestIndex];
-        for (PointSlot& slot : PointSlots)
+        for (ShadowSlotState& slot : PointSlots)
         {
             if (!slot.Live || !(slot.Owner == request.Key)
                 || slot.RequestIndex != UINT32_MAX)
@@ -199,9 +254,15 @@ void ShadowResidency::MatchPointRequests(std::span<const PointShadowRequest> req
             if (slot.Policy != ShadowUpdatePolicy::EveryFrame
                 && !slot.Invalid && slot.EverRendered)
             {
-                slot.PendingFaces = 0;
+                slot.PendingSubViews = 0;
             }
-            if (slot.Policy != ShadowUpdatePolicy::Static
+            // Hash-change invalidation is OnChange's mechanism, same as the
+            // spot pool: an EveryFrame slot's staleness is already bounded
+            // by its own re-render rotation, and resetting that rotation on
+            // every change made a moving light re-render its first faces
+            // forever while the rest starved. Static ignores drift by
+            // contract.
+            if (slot.Policy == ShadowUpdatePolicy::OnChange
                 && slot.StateHash != request.StateHash)
             {
                 MarkPointInvalid(slot);
@@ -213,38 +274,18 @@ void ShadowResidency::MatchPointRequests(std::span<const PointShadowRequest> req
 
 void ShadowResidency::EnforceSlotBudget(std::uint32_t maxSlots)
 {
-    while (LiveSlotCount() > maxSlots)
-    {
-        Slot* lowest = nullptr;
-        for (Slot& slot : Slots)
-        {
-            if (!slot.Live)
-                continue;
-            if (lowest == nullptr || slot.EffectiveScore < lowest->EffectiveScore)
-                lowest = &slot;
-        }
-        if (lowest == nullptr)
-            return;
-        ReleaseSlot(*lowest);
-    }
+    EnforceShadowSlotBudget(std::span<ShadowSlotState>(Slots), maxSlots,
+                    [this](ShadowSlotState& slot) { ReleaseSlot(slot); });
 }
 
 void ShadowResidency::EnforcePointSlotBudget(std::uint32_t maxSlots)
 {
-    while (LivePointSlotCount() > maxSlots)
-    {
-        PointSlot* lowest = nullptr;
-        for (PointSlot& slot : PointSlots)
-        {
-            if (!slot.Live)
-                continue;
-            if (lowest == nullptr || slot.EffectiveScore < lowest->EffectiveScore)
-                lowest = &slot;
-        }
-        if (lowest == nullptr)
-            return;
-        *lowest = PointSlot{};
-    }
+    EnforceShadowSlotBudget(std::span<ShadowSlotState>(PointSlots), maxSlots,
+                    [this](ShadowSlotState& slot)
+                    {
+                        PointRendered[&slot - PointSlots] = {};
+                        slot = ShadowSlotState{};
+                    });
 }
 
 void ShadowResidency::GrantFreeSlots(std::span<const SpotShadowRequest> requests,
@@ -264,7 +305,7 @@ void ShadowResidency::GrantFreeSlots(std::span<const SpotShadowRequest> requests
         if (!allocation.IsValid())
             return; // atlas exhausted; lower-scored requests cannot fit either
 
-        for (Slot& slot : Slots)
+        for (ShadowSlotState& slot : Slots)
         {
             if (slot.Live)
                 continue;
@@ -286,7 +327,7 @@ void ShadowResidency::GrantFreePointSlots(
         if (IsPointRequestGranted(requestIndex))
             continue;
 
-        for (PointSlot& slot : PointSlots)
+        for (ShadowSlotState& slot : PointSlots)
         {
             if (slot.Live)
                 continue;
@@ -298,354 +339,77 @@ void ShadowResidency::GrantFreePointSlots(
 
 void ShadowResidency::ApplyHysteresisAndSteals(std::span<const SpotShadowRequest> requests)
 {
-    // Contenders: requests still without a slot, strongest first (requests
-    // already arrive score-descending). Holders: live slots, weakest first.
-    std::vector<std::uint32_t> contenders;
-    for (std::uint32_t requestIndex = 0;
-         requestIndex < static_cast<std::uint32_t>(requests.size());
-         ++requestIndex)
-    {
-        if (!IsRequestGranted(requestIndex))
-            contenders.push_back(requestIndex);
-    }
-
-    std::vector<Slot*> holders;
-    for (Slot& slot : Slots)
-    {
-        if (slot.Live)
-            holders.push_back(&slot);
-    }
-    std::stable_sort(holders.begin(), holders.end(),
-        [](const Slot* a, const Slot* b)
+    ApplyShadowSlotHysteresis(
+        std::span<ShadowSlotState>(Slots), requests, kStealOutscoredFrames,
+        [&](ShadowSlotState& holder, std::uint32_t requestIndex)
         {
-            return a->EffectiveScore < b->EffectiveScore;
+            const SpotShadowRequest& request = requests[requestIndex];
+            Atlas.Free(SpotAllocations[&holder - Slots]);
+            const ShadowAtlasAllocation allocation =
+                AllocateWithDowngrade(request.TileSize);
+            AcquireSlot(holder, request, requestIndex, allocation);
         });
-
-    // Pair the strongest contender with the weakest holder and so on; a
-    // holder's outscored run only grows while a contender strictly beats it,
-    // and a steal happens only after the run reaches the threshold.
-    for (std::size_t pair = 0; pair < holders.size(); ++pair)
-    {
-        Slot& holder = *holders[pair];
-        const bool outscored = pair < contenders.size()
-            && requests[contenders[pair]].Score > holder.EffectiveScore;
-        if (!outscored)
-        {
-            holder.OutscoredFrames = 0;
-            continue;
-        }
-
-        // Hysteresis exists to stop ownership flickering between two lights that
-        // are both asking for a slot. A holder that produced no request this frame
-        // is not competing: its owner was culled, or destroyed outright when its
-        // zone detached. Making a waiting light outscore an absent holder for a
-        // fixed run only delays a grant that nothing contests. Uncontended slots
-        // still retain their cached content, so a brief absence stays free.
-        ++holder.OutscoredFrames;
-        if (holder.RequestIndex != UINT32_MAX
-            && holder.OutscoredFrames < kStealOutscoredFrames)
-        {
-            continue;
-        }
-
-        const SpotShadowRequest& request = requests[contenders[pair]];
-        Atlas.Free(holder.Allocation);
-        const ShadowAtlasAllocation allocation =
-            AllocateWithDowngrade(request.TileSize);
-        AcquireSlot(holder, request, contenders[pair], allocation);
-    }
 }
 
 void ShadowResidency::ApplyPointHysteresisAndSteals(
     std::span<const PointShadowRequest> requests)
 {
-    std::vector<std::uint32_t> contenders;
-    for (std::uint32_t requestIndex = 0;
-         requestIndex < static_cast<std::uint32_t>(requests.size());
-         ++requestIndex)
-    {
-        if (!IsPointRequestGranted(requestIndex))
-            contenders.push_back(requestIndex);
-    }
-
-    std::vector<PointSlot*> holders;
-    for (PointSlot& slot : PointSlots)
-    {
-        if (slot.Live)
-            holders.push_back(&slot);
-    }
-    std::stable_sort(holders.begin(), holders.end(),
-        [](const PointSlot* a, const PointSlot* b)
+    ApplyShadowSlotHysteresis(
+        std::span<ShadowSlotState>(PointSlots), requests, kStealOutscoredFrames,
+        [&](ShadowSlotState& holder, std::uint32_t requestIndex)
         {
-            return a->EffectiveScore < b->EffectiveScore;
+            AcquirePointSlot(holder, requests[requestIndex], requestIndex);
         });
-
-    for (std::size_t pair = 0; pair < holders.size(); ++pair)
-    {
-        PointSlot& holder = *holders[pair];
-        const bool outscored = pair < contenders.size()
-            && requests[contenders[pair]].Score > holder.EffectiveScore;
-        if (!outscored)
-        {
-            holder.OutscoredFrames = 0;
-            continue;
-        }
-
-        // An absent holder is not competing; see the spot path above.
-        ++holder.OutscoredFrames;
-        if (holder.RequestIndex != UINT32_MAX
-            && holder.OutscoredFrames < kStealOutscoredFrames)
-        {
-            continue;
-        }
-
-        AcquirePointSlot(holder, requests[contenders[pair]], contenders[pair]);
-    }
 }
 
 void ShadowResidency::ScheduleViews(std::span<const SpotShadowRequest> requests,
                                     std::span<const PointShadowRequest> pointRequests,
                                     const ShadowResidencyBudgets& budgets)
 {
-    std::uint32_t budget = budgets.MaxViewsPerFrame == 0
-        ? UINT32_MAX
-        : budgets.MaxViewsPerFrame;
-
-    const auto scheduleSpot = [&](Slot& slot)
-    {
-        const SpotShadowRequest& request = requests[slot.RequestIndex];
-        FrameViews.push_back(SpotShadowViewJob{
-            .SlotIndex = static_cast<std::uint32_t>(&slot - Slots),
-            .Allocation = slot.Allocation,
-            .ViewProjection = request.ViewProjection,
-        });
-        // The request's receiver-offset texel size was derived for the
-        // reference tier; rescale it to the granted tile's logical interior
-        // so a downgraded tile offsets by its real (coarser) texels.
-        Vec4 samplingParams = request.SamplingParams;
-        samplingParams.X *= static_cast<float>(kSpotShadowInnerExtent)
-            / static_cast<float>(slot.Allocation.Size - 2u * kSpotShadowGuardTexels);
-        slot.Rendered = SpotShadowView{
-            .ViewProjection = request.ViewProjection,
-            .AtlasScaleBias = ShadowAtlasAllocator::InsetScaleBias(slot.Allocation),
-            .SamplingParams = samplingParams,
-            .LightIndex = request.LightIndex,
-        };
-        slot.StateHash = request.StateHash;
-        slot.EverRendered = true;
-        slot.Invalid = false;
-        slot.ScheduledThisFrame = true;
-        slot.LastRenderedFrame = FrameNumber;
-        --budget;
+    SpotScheduleContext spotContext{
+        .Requests = requests,
+        .SlotsBase = Slots,
+        .Allocations = SpotAllocations,
+        .Rendered = SpotRendered,
+        .Views = &FrameViews,
+        .FrameNumber = FrameNumber,
     };
-
-    const auto schedulePointFace = [&](PointSlot& slot, std::uint32_t face)
-    {
-        const PointShadowRequest& request = pointRequests[slot.RequestIndex];
-        const Vec<3> position(request.View.PositionFar.X,
-                              request.View.PositionFar.Y,
-                              request.View.PositionFar.Z);
-        FramePointFaces.push_back(PointShadowFaceJob{
-            .SlotIndex = static_cast<std::uint32_t>(&slot - PointSlots),
-            .Face = face,
-            .ViewProjection = MakePointShadowFaceViewProjection(
-                position, face, request.View.Params.X, request.View.PositionFar.W),
-        });
-        slot.Rendered = request.View;
-        slot.Rendered.LightIndex = request.LightIndex;
-        slot.StateHash = request.StateHash;
-        slot.PendingFaces &= ~(1u << face);
-        slot.ScheduledThisFrame = true;
-        slot.LastRenderedFrame = FrameNumber;
-        if (slot.PendingFaces == 0)
-        {
-            slot.EverRendered = true;
-            slot.Invalid = false;
-        }
-        --budget;
+    PointScheduleContext pointContext{
+        .Requests = pointRequests,
+        .SlotsBase = PointSlots,
+        .Rendered = PointRendered,
+        .Faces = &FramePointFaces,
+        .FrameNumber = FrameNumber,
     };
-
-    const auto spotSchedulable = [](const Slot& slot)
-    {
-        return slot.Live && slot.RequestIndex != UINT32_MAX
-            && slot.Allocation.IsValid() && !slot.ScheduledThisFrame;
+    // Pool ordinal is the cross-pool tie-break (lower wins), so the spot
+    // pool comes first to keep tiles ahead of faces on equal frame stamps.
+    ShadowSlotPool pools[] = {
+        ShadowSlotPool{
+            .Slots = Slots,
+            .AllSubViewsMask = kSpotAllSubViewsMask,
+            .BurstRespectsReserve = false,
+            .EveryFrameSkipsScheduled = true,
+            .Eligible = &SpotEligible,
+            .ScheduleSubView = &ScheduleSpotSubView,
+            .Self = &spotContext,
+        },
+        ShadowSlotPool{
+            .Slots = PointSlots,
+            .AllSubViewsMask = kAllPointFacesMask,
+            .BurstRespectsReserve = true,
+            .Eligible = &PointEligible,
+            .ScheduleSubView = &SchedulePointSubView,
+            .Self = &pointContext,
+        },
     };
-    const auto pointSchedulable = [](const PointSlot& slot)
-    {
-        return slot.Live && slot.RequestIndex != UINT32_MAX;
-    };
-
-    // References into either pool, ordered by a frame stamp with spot slots
-    // winning ties, then slot index, so the cross-pool order is total.
-    struct SlotRef
-    {
-        std::uint32_t Frame = 0;
-        bool IsPoint = false;
-        std::uint32_t Index = 0;
-    };
-    const auto refOrder = [](const SlotRef& a, const SlotRef& b)
-    {
-        if (a.Frame != b.Frame)
-            return a.Frame < b.Frame;
-        if (a.IsPoint != b.IsPoint)
-            return !a.IsPoint;
-        return a.Index < b.Index;
-    };
-
-    std::vector<SlotRef> neverRendered;
-    for (std::uint32_t index = 0; index < kMaxSpotShadows; ++index)
-    {
-        if (spotSchedulable(Slots[index]) && !Slots[index].EverRendered)
-            neverRendered.push_back({ Slots[index].AcquiredFrame, false, index });
-    }
-    for (std::uint32_t index = 0; index < kMaxPointShadows; ++index)
-    {
-        if (pointSchedulable(PointSlots[index]) && !PointSlots[index].EverRendered)
-            neverRendered.push_back({ PointSlots[index].AcquiredFrame, true, index });
-    }
-    std::sort(neverRendered.begin(), neverRendered.end(), refOrder);
-
-    // Invalidated cached slots (non-EveryFrame), oldest invalidation first.
-    std::vector<SlotRef> invalidated;
-    for (std::uint32_t index = 0; index < kMaxSpotShadows; ++index)
-    {
-        const Slot& slot = Slots[index];
-        if (spotSchedulable(slot) && slot.Invalid && slot.EverRendered
-            && slot.Policy != ShadowUpdatePolicy::EveryFrame)
-        {
-            invalidated.push_back({ slot.InvalidatedFrame, false, index });
-        }
-    }
-    for (std::uint32_t index = 0; index < kMaxPointShadows; ++index)
-    {
-        const PointSlot& slot = PointSlots[index];
-        if (pointSchedulable(slot) && slot.Invalid && slot.EverRendered
-            && slot.Policy != ShadowUpdatePolicy::EveryFrame)
-        {
-            invalidated.push_back({ slot.InvalidatedFrame, true, index });
-        }
-    }
-    std::sort(invalidated.begin(), invalidated.end(), refOrder);
-
-    // The reserved allotment keeps EveryFrame demand and never-rendered
-    // point-face bursts from starving the oldest invalidations.
-    std::uint32_t invalidatedDemand = 0;
-    for (const SlotRef& ref : invalidated)
-    {
-        invalidatedDemand += ref.IsPoint
-            ? std::popcount(PointSlots[ref.Index].PendingFaces)
-            : 1u;
-    }
-    const std::uint32_t reserve = std::min(
-        budgets.MinInvalidatedViewsPerFrame, invalidatedDemand);
-
-    // Never-rendered slots first. Spot tiles may use the full budget; point
-    // face bursts stop short of the reserved invalidation views.
-    for (const SlotRef& ref : neverRendered)
-    {
-        if (budget == 0)
-            break;
-        if (!ref.IsPoint)
-        {
-            scheduleSpot(Slots[ref.Index]);
-            continue;
-        }
-        PointSlot& slot = PointSlots[ref.Index];
-        for (std::uint32_t face = 0;
-             face < kPointShadowFaceCount && budget > reserve;
-             ++face)
-        {
-            if ((slot.PendingFaces & (1u << face)) != 0)
-                schedulePointFace(slot, face);
-        }
-    }
-
-    // Serve the reserve, oldest invalidation first; a point slot re-renders
-    // one face per reserved view and keeps the rest pending.
-    std::uint32_t reserveRemaining = reserve;
-    for (const SlotRef& ref : invalidated)
-    {
-        if (reserveRemaining == 0 || budget == 0)
-            break;
-        if (!ref.IsPoint)
-        {
-            scheduleSpot(Slots[ref.Index]);
-            --reserveRemaining;
-            continue;
-        }
-        PointSlot& slot = PointSlots[ref.Index];
-        for (std::uint32_t face = 0;
-             face < kPointShadowFaceCount && reserveRemaining > 0 && budget > 0;
-             ++face)
-        {
-            if ((slot.PendingFaces & (1u << face)) != 0)
-            {
-                schedulePointFace(slot, face);
-                --reserveRemaining;
-            }
-        }
-    }
-
-    // EveryFrame slots in stable slot order, spot pool then point pool. A
-    // point slot refills its face rotation only once the previous rotation
-    // finished, so a budget clamp still cycles coverage over all six faces.
-    for (Slot& slot : Slots)
-    {
-        if (budget == 0)
-            break;
-        if (spotSchedulable(slot) && slot.EverRendered
-            && slot.Policy == ShadowUpdatePolicy::EveryFrame)
-        {
-            scheduleSpot(slot);
-        }
-    }
-    for (PointSlot& slot : PointSlots)
-    {
-        if (budget == 0)
-            break;
-        if (!pointSchedulable(slot) || !slot.EverRendered
-            || slot.Policy != ShadowUpdatePolicy::EveryFrame)
-        {
-            continue;
-        }
-        if (slot.PendingFaces == 0)
-            slot.PendingFaces = kAllPointFacesMask;
-        for (std::uint32_t face = 0;
-             face < kPointShadowFaceCount && budget > 0;
-             ++face)
-        {
-            if ((slot.PendingFaces & (1u << face)) != 0)
-                schedulePointFace(slot, face);
-        }
-    }
-
-    // Remaining budget drains the rest of the invalidated backlog; pending
-    // masks and the spot schedulable check skip work the reserve already did.
-    for (const SlotRef& ref : invalidated)
-    {
-        if (budget == 0)
-            break;
-        if (!ref.IsPoint)
-        {
-            if (spotSchedulable(Slots[ref.Index]))
-                scheduleSpot(Slots[ref.Index]);
-            continue;
-        }
-        PointSlot& slot = PointSlots[ref.Index];
-        for (std::uint32_t face = 0;
-             face < kPointShadowFaceCount && budget > 0;
-             ++face)
-        {
-            if ((slot.PendingFaces & (1u << face)) != 0)
-                schedulePointFace(slot, face);
-        }
-    }
+    ScheduleShadowSubViews(pools, budgets.MaxViewsPerFrame,
+                           budgets.MinInvalidatedViewsPerFrame);
 }
 
 void ShadowResidency::BuildGrants(std::span<const SpotShadowRequest> requests,
                                   std::span<const PointShadowRequest> pointRequests)
 {
-    for (const Slot& slot : Slots)
+    for (const ShadowSlotState& slot : Slots)
     {
         if (!slot.Live || slot.RequestIndex == UINT32_MAX || !slot.EverRendered)
             continue;
@@ -654,10 +418,15 @@ void ShadowResidency::BuildGrants(std::span<const SpotShadowRequest> requests,
             .SlotIndex = static_cast<std::uint32_t>(&slot - Slots),
         });
     }
-    for (const PointSlot& slot : PointSlots)
+    // EverRendered alone gates the grant: a cube must never be sampled
+    // before its first full rotation (garbage faces), but once every face
+    // has rendered, pending re-render work -- a clamped EveryFrame
+    // rotation, a budget-split invalidation drain, a failed face -- serves
+    // the cached faces rather than dropping the shadow. Face age is
+    // bounded by the schedule queues; a stale face beats a flicker.
+    for (const ShadowSlotState& slot : PointSlots)
     {
-        if (!slot.Live || slot.RequestIndex == UINT32_MAX
-            || !slot.EverRendered || slot.PendingFaces != 0)
+        if (!slot.Live || slot.RequestIndex == UINT32_MAX || !slot.EverRendered)
             continue;
         FramePointGrants.push_back(PointShadowGrant{
             .LightIndex = pointRequests[slot.RequestIndex].LightIndex,
@@ -666,18 +435,24 @@ void ShadowResidency::BuildGrants(std::span<const SpotShadowRequest> requests,
     }
 }
 
-void ShadowResidency::AcquireSlot(Slot& slot, const SpotShadowRequest& request,
+void ShadowResidency::AcquireSlot(ShadowSlotState& slot, const SpotShadowRequest& request,
                                   std::uint32_t requestIndex,
                                   const ShadowAtlasAllocation& allocation)
 {
     slot.Live = true;
     slot.Owner = request.Key;
-    slot.Allocation = allocation;
+    SpotAllocations[&slot - Slots] = allocation;
     slot.Policy = request.Policy;
     slot.StateHash = request.StateHash;
     slot.Volume = request.Bounds;
-    slot.Rendered = {};
+    SpotRendered[&slot - Slots] = {};
     slot.EverRendered = false;
+    // A stolen slot may arrive still flagged from its previous owner; the
+    // new owner's invalidation stamp must be its own. (The stale stamp was
+    // proven unobservable -- the never-rendered path re-queues the slot
+    // before anything reads it -- so this is state hygiene, matching
+    // AcquirePointSlot, not a behavior change.)
+    slot.Invalid = false;
     slot.AcquiredFrame = FrameNumber;
     slot.OutscoredFrames = 0;
     slot.RequestIndex = requestIndex;
@@ -685,7 +460,7 @@ void ShadowResidency::AcquireSlot(Slot& slot, const SpotShadowRequest& request,
     MarkInvalid(slot);
 }
 
-void ShadowResidency::AcquirePointSlot(PointSlot& slot,
+void ShadowResidency::AcquirePointSlot(ShadowSlotState& slot,
                                        const PointShadowRequest& request,
                                        std::uint32_t requestIndex)
 {
@@ -694,8 +469,8 @@ void ShadowResidency::AcquirePointSlot(PointSlot& slot,
     slot.Policy = request.Policy;
     slot.StateHash = request.StateHash;
     slot.Volume = request.Bounds;
-    slot.Rendered = {};
-    slot.PendingFaces = kAllPointFacesMask;
+    PointRendered[&slot - PointSlots] = {};
+    slot.PendingSubViews = kAllPointFacesMask;
     slot.EverRendered = false;
     slot.Invalid = false;
     slot.AcquiredFrame = FrameNumber;
@@ -705,22 +480,27 @@ void ShadowResidency::AcquirePointSlot(PointSlot& slot,
     MarkPointInvalid(slot);
 }
 
-void ShadowResidency::ReleaseSlot(Slot& slot)
+void ShadowResidency::ReleaseSlot(ShadowSlotState& slot)
 {
-    Atlas.Free(slot.Allocation);
-    slot = Slot{};
+    Atlas.Free(SpotAllocations[&slot - Slots]);
+    SpotAllocations[&slot - Slots] = {};
+    SpotRendered[&slot - Slots] = {};
+    slot = ShadowSlotState{};
 }
 
-void ShadowResidency::MarkInvalid(Slot& slot)
+void ShadowResidency::MarkInvalid(ShadowSlotState& slot)
 {
     if (!slot.Invalid)
     {
         slot.Invalid = true;
         slot.InvalidatedFrame = FrameNumber;
     }
+    // A spot tile re-renders whole, so any invalidation dirties its one
+    // sub-view -- the same rule MarkPointInvalid applies to all six faces.
+    slot.PendingSubViews = kSpotAllSubViewsMask;
 }
 
-void ShadowResidency::MarkPointInvalid(PointSlot& slot)
+void ShadowResidency::MarkPointInvalid(ShadowSlotState& slot)
 {
     if (!slot.Invalid)
     {
@@ -729,7 +509,7 @@ void ShadowResidency::MarkPointInvalid(PointSlot& slot)
     }
     // State changes dirty every face, including any a previous invalidation
     // already re-rendered.
-    slot.PendingFaces = kAllPointFacesMask;
+    slot.PendingSubViews = kAllPointFacesMask;
 }
 
 ShadowAtlasAllocation ShadowResidency::AllocateWithDowngrade(std::uint32_t tileSize)
@@ -745,22 +525,12 @@ ShadowAtlasAllocation ShadowResidency::AllocateWithDowngrade(std::uint32_t tileS
 
 bool ShadowResidency::IsRequestGranted(std::uint32_t requestIndex) const
 {
-    for (const Slot& slot : Slots)
-    {
-        if (slot.Live && slot.RequestIndex == requestIndex)
-            return true;
-    }
-    return false;
+    return IsShadowRequestGranted(std::span<const ShadowSlotState>(Slots), requestIndex);
 }
 
 bool ShadowResidency::IsPointRequestGranted(std::uint32_t requestIndex) const
 {
-    for (const PointSlot& slot : PointSlots)
-    {
-        if (slot.Live && slot.RequestIndex == requestIndex)
-            return true;
-    }
-    return false;
+    return IsShadowRequestGranted(std::span<const ShadowSlotState>(PointSlots), requestIndex);
 }
 
 void ShadowResidency::ApplyGrants(RenderLightSet& lights) const
@@ -769,24 +539,24 @@ void ShadowResidency::ApplyGrants(RenderLightSet& lights) const
         lights.Lights[grant.LightIndex].ShadowIndex = grant.SlotIndex;
     lights.SpotShadowCount = SlotHighWater();
     for (std::uint32_t slot = 0; slot < lights.SpotShadowCount; ++slot)
-        lights.SpotShadows[slot] = Slots[slot].Rendered;
+        lights.SpotShadows[slot] = SpotRendered[slot];
 
     for (const PointShadowGrant& grant : FramePointGrants)
         lights.Lights[grant.LightIndex].ShadowIndex = grant.SlotIndex;
     lights.PointShadowCount = PointSlotHighWater();
     for (std::uint32_t slot = 0; slot < lights.PointShadowCount; ++slot)
-        lights.PointShadows[slot] = PointSlots[slot].Rendered;
+        lights.PointShadows[slot] = PointRendered[slot];
 }
 
 SpotShadowSlotInfo ShadowResidency::SlotInfo(std::uint32_t slot) const
 {
     if (slot >= kMaxSpotShadows)
         return {};
-    const Slot& state = Slots[slot];
+    const ShadowSlotState& state = Slots[slot];
     return SpotShadowSlotInfo{
         .Live = state.Live,
         .Owner = state.Owner,
-        .Allocation = state.Allocation,
+        .Allocation = SpotAllocations[slot],
         .Policy = state.Policy,
         .EverRendered = state.EverRendered,
         .Invalid = state.Invalid,
@@ -801,14 +571,14 @@ PointShadowSlotInfo ShadowResidency::PointSlotInfo(std::uint32_t slot) const
 {
     if (slot >= kMaxPointShadows)
         return {};
-    const PointSlot& state = PointSlots[slot];
+    const ShadowSlotState& state = PointSlots[slot];
     return PointShadowSlotInfo{
         .Live = state.Live,
         .Owner = state.Owner,
         .Policy = state.Policy,
         .EverRendered = state.EverRendered,
         .Invalid = state.Invalid,
-        .PendingFaces = state.PendingFaces,
+        .PendingFaces = state.PendingSubViews,
         .FramesSinceAcquired = FrameNumber - state.AcquiredFrame,
         .FramesSinceRendered = state.EverRendered
             ? FrameNumber - state.LastRenderedFrame
@@ -818,65 +588,46 @@ PointShadowSlotInfo ShadowResidency::PointSlotInfo(std::uint32_t slot) const
 
 std::uint32_t ShadowResidency::SlotHighWater() const
 {
-    std::uint32_t highWater = 0;
-    for (std::uint32_t index = 0; index < kMaxSpotShadows; ++index)
-    {
-        if (Slots[index].Live)
-            highWater = index + 1;
-    }
-    return highWater;
+    return ShadowSlotHighWater(std::span<const ShadowSlotState>(Slots));
 }
 
 std::uint32_t ShadowResidency::PointSlotHighWater() const
 {
-    std::uint32_t highWater = 0;
-    for (std::uint32_t index = 0; index < kMaxPointShadows; ++index)
-    {
-        if (PointSlots[index].Live)
-            highWater = index + 1;
-    }
-    return highWater;
+    return ShadowSlotHighWater(std::span<const ShadowSlotState>(PointSlots));
 }
 
 bool ShadowResidency::HasOnChangeSlots() const
 {
-    for (const Slot& slot : Slots)
-    {
-        if (slot.Live && slot.Policy == ShadowUpdatePolicy::OnChange)
-            return true;
-    }
-    for (const PointSlot& slot : PointSlots)
-    {
-        if (slot.Live && slot.Policy == ShadowUpdatePolicy::OnChange)
-            return true;
-    }
-    return false;
+    return HasOnChangeShadowSlots(std::span<const ShadowSlotState>(Slots))
+        || HasOnChangeShadowSlots(std::span<const ShadowSlotState>(PointSlots));
 }
 
 std::uint32_t ShadowResidency::LiveSlotCount() const
 {
-    std::uint32_t count = 0;
-    for (const Slot& slot : Slots)
-        count += slot.Live ? 1u : 0u;
-    return count;
+    return LiveShadowSlotCount(std::span<const ShadowSlotState>(Slots));
 }
 
 std::uint32_t ShadowResidency::LivePointSlotCount() const
 {
-    std::uint32_t count = 0;
-    for (const PointSlot& slot : PointSlots)
-        count += slot.Live ? 1u : 0u;
-    return count;
+    return LiveShadowSlotCount(std::span<const ShadowSlotState>(PointSlots));
+}
+
+void ShadowResidency::ClearFrameSchedule()
+{
+    FrameGrants.clear();
+    FramePointGrants.clear();
+    FrameViews.clear();
+    FramePointFaces.clear();
 }
 
 void ShadowResidency::InvalidateAll()
 {
-    for (Slot& slot : Slots)
+    for (ShadowSlotState& slot : Slots)
     {
         if (slot.Live && slot.EverRendered)
             MarkInvalid(slot);
     }
-    for (PointSlot& slot : PointSlots)
+    for (ShadowSlotState& slot : PointSlots)
     {
         if (slot.Live && slot.EverRendered)
             MarkPointInvalid(slot);
@@ -900,8 +651,8 @@ void ShadowResidency::MarkPointFaceFailed(std::uint32_t slot, std::uint32_t face
     {
         return;
     }
-    PointSlot& state = PointSlots[slot];
-    state.PendingFaces |= 1u << face;
+    ShadowSlotState& state = PointSlots[slot];
+    state.PendingSubViews |= 1u << face;
     if (!state.Invalid)
     {
         state.Invalid = true;
@@ -913,10 +664,16 @@ void ShadowResidency::MarkPointFaceFailed(std::uint32_t slot, std::uint32_t face
 
 void ShadowResidency::Reset()
 {
-    for (Slot& slot : Slots)
-        slot = Slot{};
-    for (PointSlot& slot : PointSlots)
-        slot = PointSlot{};
+    for (ShadowSlotState& slot : Slots)
+        slot = ShadowSlotState{};
+    for (ShadowSlotState& slot : PointSlots)
+        slot = ShadowSlotState{};
+    for (ShadowAtlasAllocation& allocation : SpotAllocations)
+        allocation = {};
+    for (SpotShadowView& rendered : SpotRendered)
+        rendered = {};
+    for (PointShadowView& rendered : PointRendered)
+        rendered = {};
     Atlas.Reset();
     FrameGrants.clear();
     FramePointGrants.clear();

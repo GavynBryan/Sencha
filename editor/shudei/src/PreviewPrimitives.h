@@ -1,6 +1,6 @@
 #pragma once
 
-#include <render/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/MeshGeometry.h>
 
 // The material preview's stand-in surfaces. Procedurally built (no asset
 // dependency) with full position/normal/uv/tangent streams so every material

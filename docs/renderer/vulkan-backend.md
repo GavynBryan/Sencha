@@ -195,7 +195,7 @@ the destructor.
 
 ## Frame scratch
 
-`VulkanFrameScratch` is one persistently mapped host-visible ring buffer split
+`GpuFrameScratch` is one persistently mapped host-visible ring buffer split
 into `FramesInFlight` equal slices. `BeginFrame` rotates to the next slice and
 resets its bump cursor. Callers write straight through the returned pointer:
 no staging, no flush, no fence on the scratch itself.
@@ -208,7 +208,7 @@ no staging, no flush, no fence on the scratch itself.
 - The per-slice size is padded up to `minUniformBufferOffsetAlignment` so slice
   boundaries themselves land on a legal dynamic-offset base.
 - The single backing `BufferHandle` is stable for the service's life. It is what
-  `VulkanDescriptorCache::SetFrameUniformBuffer` points at once during setup.
+  `VulkanDescriptorCache::RequireFrameUniformRange` points at during setup.
 
 Four allocation entry points:
 
@@ -263,20 +263,29 @@ Pipeline layouts are cached by push-constant signature. Every layout the cache
 returns uses sets 0 and 1; `MeshForwardPass` builds its own three-set layout
 directly because set 2 belongs to `LightBindings`.
 
-### The frame UBO range trap
+### The frame UBO range
 
-Both passes call `VulkanDescriptorCache::SetFrameUniformBuffer` in their `Setup`,
-and there is only one set 0. `ShadowDepthPass` asks for `sizeof(Mat4)` (64
-bytes); `MeshForwardPass` asks for `sizeof(MeshFrameUniforms)` (5712 bytes). The
-last writer wins, and the feature registration order in
-`DefaultRenderPipeline::AddMeshRenderFeature` puts the shadow feature first, so
-the forward pass's larger range is what the descriptor ends up with. The shadow
-pass then reads the first 64 bytes of a 5712-byte range, which is legal.
+There is one set 0, and both mesh passes bind it: `ShadowDepthPass` reads
+`sizeof(Mat4)` (64 bytes), `MeshForwardPass` reads `sizeof(MeshViewUniforms)`
+(5712 bytes). Each calls `VulkanDescriptorCache::RequireFrameUniformRange` in
+its `Setup` to declare what its own shader block covers, and the cache keeps the
+largest anyone has declared. The shadow pass then reads the first 64 bytes of a
+5712-byte range, which is legal.
 
-Reversing that order would leave a 64-byte range under a shader that declares a
-5712-byte block. If you add a third pass that binds set 0, size its range
-request accordingly, or the pass that needs the largest block must be the last
-to set it.
+It used to be a trap. The call assigned the range rather than declaring a
+minimum, so the last writer won and correctness rested on feature registration
+order -- the shadow feature registering first in
+`DefaultRenderPipeline::AddMeshRenderFeature`, and `ShadowPass.Setup` running
+before `Forward.Setup` in the editor, each host carrying the rule in a comment.
+Reversing either would have left a 64-byte range under a shader declaring the
+larger block. A third pass that binds set 0 now needs no ordering care: declare
+the block it reads.
+
+The 8 KiB budget in `constraints.md` is a design line rather than a hardware
+limit, so it is reported rather than enforced -- clamping would hand a shader a
+range shorter than the block it declares, which is the failure the mechanism
+exists to prevent. `RequireFrameUniformRange` warns past it, and
+`FrameUniformRangeTests` fails if `MeshViewUniforms` crosses it.
 
 ## Pipelines and shaders
 
@@ -314,11 +323,30 @@ back raw handles, which is deliberate: samplers outlive any single caller, are
 shared across draws, and go straight into descriptor writes. Do not destroy
 anything it returns.
 
+## Compute
+
+`VulkanPipelineCache::GetComputePipeline` mirrors the graphics path over a
+`ComputePipelineDesc` -- a shader handle and a layout, because a compute
+pipeline has no other state. Entries are compared linearly rather than
+hashed: there are a handful of them and the desc compares in two loads.
+
+The one consumer is `SkinnedPosePass`, the pre-skin dispatch (pipeline
+Decision N). It records in the Offscreen phase, which opens no rendering
+scope, so a compute-only feature needs no new phase and no special casing;
+it owns its own descriptor pools (one per frame in flight, reset before
+that slot's jobs allocate) and its own barrier.
+
 ## Barriers
 
 `VulkanBarriers` is a namespace of free functions, not a service: barriers are a
 hot-path concern and the caller owns the command buffer. Everything is sync2,
 which the device floor guarantees.
+
+Buffer-visibility barriers are written inline by the pass that needs them --
+there is one (`SkinnedPosePass`, compute storage writes to vertex-attribute
+reads) and a helper for a single caller would be indirection, not
+abstraction. `VulkanBarriers` stays image-only until a second consumer
+appears.
 
 `ImageTransition` carries the full pair of scopes explicitly. Convenience
 wrappers exist for the swapchain image transitions (`TransitionForColorAttachment`,

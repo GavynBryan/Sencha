@@ -65,14 +65,24 @@ VkSampler VulkanSamplerCache::Get(const SamplerDesc& desc)
 
 VkSampler VulkanSamplerCache::CreateSampler(const SamplerDesc& desc)
 {
+    const auto filter = [](SamplerFilter f)
+    { return f == SamplerFilter::Nearest ? VK_FILTER_NEAREST : VK_FILTER_LINEAR; };
+    const auto address = [](SamplerAddress a)
+    {
+        return a == SamplerAddress::ClampToEdge ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+                                                : VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    };
+
     VkSamplerCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    info.minFilter = desc.MinFilter;
-    info.magFilter = desc.MagFilter;
-    info.mipmapMode = desc.MipmapMode;
-    info.addressModeU = desc.AddressModeU;
-    info.addressModeV = desc.AddressModeV;
-    info.addressModeW = desc.AddressModeW;
+    info.minFilter = filter(desc.MinFilter);
+    info.magFilter = filter(desc.MagFilter);
+    info.mipmapMode = desc.MipmapMode == SamplerFilter::Nearest
+        ? VK_SAMPLER_MIPMAP_MODE_NEAREST
+        : VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    info.addressModeU = address(desc.AddressModeU);
+    info.addressModeV = address(desc.AddressModeV);
+    info.addressModeW = address(desc.AddressModeW);
     info.anisotropyEnable = desc.MaxAnisotropy > 0.0f ? VK_TRUE : VK_FALSE;
     info.maxAnisotropy = desc.MaxAnisotropy;
     info.compareEnable = VK_FALSE;
@@ -95,41 +105,35 @@ VkSampler VulkanSamplerCache::CreateSampler(const SamplerDesc& desc)
 VkSampler VulkanSamplerCache::GetLinearRepeat()
 {
     SamplerDesc d{};
-    d.MinFilter = VK_FILTER_LINEAR;
-    d.MagFilter = VK_FILTER_LINEAR;
-    d.MipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     return Get(d);
 }
 
 VkSampler VulkanSamplerCache::GetLinearClamp()
 {
     SamplerDesc d{};
-    d.MinFilter = VK_FILTER_LINEAR;
-    d.MagFilter = VK_FILTER_LINEAR;
-    d.MipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    d.AddressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    d.AddressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    d.AddressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    d.AddressModeU = SamplerAddress::ClampToEdge;
+    d.AddressModeV = SamplerAddress::ClampToEdge;
+    d.AddressModeW = SamplerAddress::ClampToEdge;
     return Get(d);
 }
 
 VkSampler VulkanSamplerCache::GetNearestRepeat()
 {
     SamplerDesc d{};
-    d.MinFilter = VK_FILTER_NEAREST;
-    d.MagFilter = VK_FILTER_NEAREST;
-    d.MipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    d.MinFilter = SamplerFilter::Nearest;
+    d.MagFilter = SamplerFilter::Nearest;
+    d.MipmapMode = SamplerFilter::Nearest;
     return Get(d);
 }
 
 VkSampler VulkanSamplerCache::GetNearestClamp()
 {
     SamplerDesc d{};
-    d.MinFilter = VK_FILTER_NEAREST;
-    d.MagFilter = VK_FILTER_NEAREST;
-    d.MipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-    d.AddressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    d.AddressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    d.AddressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    d.MinFilter = SamplerFilter::Nearest;
+    d.MagFilter = SamplerFilter::Nearest;
+    d.MipmapMode = SamplerFilter::Nearest;
+    d.AddressModeU = SamplerAddress::ClampToEdge;
+    d.AddressModeV = SamplerAddress::ClampToEdge;
+    d.AddressModeW = SamplerAddress::ClampToEdge;
     return Get(d);
 }

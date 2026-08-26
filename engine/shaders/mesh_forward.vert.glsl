@@ -1,7 +1,7 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
 
-#include "mesh_frame.glsli"
+#include "mesh_view.glsli"
 
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
@@ -13,24 +13,6 @@ layout(location = 6) in vec4 inWorld3;
 layout(location = 7) in vec4 inTangent;
 layout(location = 8) in vec2 inLightmapUv;        // unorm16 atlas UV
 layout(location = 9) in vec4 inLightmapScaleBias; // per-instance rect remap
-
-layout(push_constant) uniform MeshPush
-{
-    vec4 BaseColor;
-    vec4 EmissiveFactor;
-    float NormalScale;
-    float RoughnessFactor;
-    float MetallicFactor;
-    float SpecularIntensity;
-    uint BaseColorTextureIndex;
-    uint NormalTextureIndex;
-    uint OrmTextureIndex;
-    uint EmissiveTextureIndex;
-    uint ReceiveShadows;
-    uint LightmapTextureIndex;
-    uint Pad1;
-    uint Pad2;
-} pushData;
 
 layout(location = 0) out vec3 outWorldNormal;
 layout(location = 1) out vec2 outUv0;

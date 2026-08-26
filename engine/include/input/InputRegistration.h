@@ -29,8 +29,21 @@ struct InputProfileBinding
 // with a different profile to replace the control scheme at runtime.
 void RegisterInputMapping(World& world, DataAssetCache& dataAssets, InputProfileHandle profile);
 
-// Registers the resolve system. Order any system that reads actions after it
-// with EngineSchedule::After.
+// Registers the resolve system, which resolves in two phases: PreSimulate for
+// the presentation snapshot, FixedLogic for each tick's record.
+//
+// Ordering a reader after it depends on which clock the reader is on, because
+// EngineSchedule::After is phase-local -- an edge between systems that share no
+// phase list records nothing and asserts.
+//
+//   FixedLogic or PreSimulate readers (InputActionState::Tick()) share a phase
+//   with the resolve system, so they need the edge:
+//       schedule.After<CharacterInputSystem, InputActionResolveSystem>();
+//
+//   FrameUpdate readers (InputActionState::Frame(), the presentation snapshot a
+//   camera or menu wants) must NOT declare one. PreSimulate runs in
+//   FramePhase::ScheduleTicks and FrameUpdate in FramePhase::Update, so the
+//   frame order already puts resolution first; the edge would only assert.
 void RegisterInputSystems(EngineSchedule& schedule,
                           DataAssetCache& dataAssets,
                           LoggingProvider& logging);

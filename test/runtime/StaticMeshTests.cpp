@@ -7,8 +7,9 @@
 #include <assets/static_mesh/MeshSerializer.h>
 #include <assets/static_mesh/StaticMeshFormat.h>
 #include <core/logging/LoggingProvider.h>
-#include <render/static_mesh/StaticMeshPrimitives.h>
-#include <render/static_mesh/MeshValidation.h>
+#include <assets/static_mesh/StaticMeshPrimitives.h>
+#include <assets/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/MeshValidation.h>
 
 namespace
 {
@@ -240,4 +241,48 @@ TEST(StaticMeshSerialization, RejectsPriorVersion)
 
     MeshGeometry loaded;
     EXPECT_FALSE(loader.LoadFromBytes(bytes, loaded));
+}
+
+// --- lightmap-UV presence: the baked-atlas participation gate ---
+//
+// Extraction reads GpuStaticMesh::HasLightmapUvs to decide whether an instance
+// may sample its zone's baked atlas. That field is filled during GPU upload,
+// which needs a device, so the rule it is filled from lives here where it runs
+// headlessly. Getting it wrong is silent: a mesh wrongly marked as carrying UVs
+// samples the atlas at texel (0,0) instead of skipping the fetch.
+
+TEST(GeometryHasLightmapUvs, IsFalseForGeometryThatWasNeverUnwrapped)
+{
+    MeshGeometry geometry = MakeValidMesh();
+    for (const StaticMeshVertex& vertex : geometry.Vertices)
+    {
+        ASSERT_EQ(vertex.LightmapU, 0);
+        ASSERT_EQ(vertex.LightmapV, 0);
+    }
+    EXPECT_FALSE(GeometryHasLightmapUvs(geometry));
+}
+
+TEST(GeometryHasLightmapUvs, IsFalseForEmptyGeometry)
+{
+    EXPECT_FALSE(GeometryHasLightmapUvs(MeshGeometry{}));
+}
+
+TEST(GeometryHasLightmapUvs, IsTrueWhenAnyVertexCarriesAUv)
+{
+    MeshGeometry geometry = MakeValidMesh();
+    ASSERT_GE(geometry.Vertices.size(), 3u);
+    // The last vertex, so a scan that stops early still has to reach it.
+    geometry.Vertices.back().LightmapV = 1;
+    EXPECT_TRUE(GeometryHasLightmapUvs(geometry));
+}
+
+TEST(GeometryHasLightmapUvs, ChecksBothAxes)
+{
+    MeshGeometry onlyU = MakeValidMesh();
+    onlyU.Vertices[0].LightmapU = 7;
+    EXPECT_TRUE(GeometryHasLightmapUvs(onlyU));
+
+    MeshGeometry onlyV = MakeValidMesh();
+    onlyV.Vertices[0].LightmapV = 7;
+    EXPECT_TRUE(GeometryHasLightmapUvs(onlyV));
 }

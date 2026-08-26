@@ -14,7 +14,7 @@
 #include <core/serialization/BinaryWriter.h>
 #include <core/serialization/Serialize.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <render/Camera.h>
+#include <render/extract/Camera.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
 #include <render/StaticMeshComponent.h>

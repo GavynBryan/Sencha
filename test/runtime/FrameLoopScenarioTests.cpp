@@ -3,7 +3,6 @@
 #include <runtime/FrameDiscontinuityBus.h>
 #include <runtime/FrameDriver.h>
 #include <runtime/FramePacer.h>
-#include <runtime/RenderPacket.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <runtime/SwapchainRebuildWorker.h>
 
@@ -521,21 +520,6 @@ TEST(SwapchainRebuildWorker, RunningRequestQueuesFollowUpAndReportsCompletedExte
     ASSERT_EQ(seen.size(), 2u);
     EXPECT_EQ(seen[0].Width, 1280u);
     EXPECT_EQ(seen[1].Width, 1600u);
-}
-
-// ---------------------------------------------------------------------------
-// RenderPacketDoubleBuffer
-// ---------------------------------------------------------------------------
-
-TEST(RenderPacketDoubleBuffer, FlipSwapsReadAndWriteSlots)
-{
-    RenderPacketDoubleBuffer buffer;
-    buffer.WriteSlot().FrameIndex = 1;
-    buffer.Flip();
-    EXPECT_EQ(buffer.ReadSlot().FrameIndex, 1u);
-    buffer.WriteSlot().FrameIndex = 2;
-    buffer.Flip();
-    EXPECT_EQ(buffer.ReadSlot().FrameIndex, 2u);
 }
 
 // ---------------------------------------------------------------------------

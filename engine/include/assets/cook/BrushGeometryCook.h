@@ -1,8 +1,8 @@
 #pragma once
 
 #include <core/assets/AssetRef.h>
-#include <render/static_mesh/MeshGeometry.h>
-#include <render/static_mesh/StaticMeshVertex.h>
+#include <assets/static_mesh/MeshGeometry.h>
+#include <assets/static_mesh/StaticMeshVertex.h>
 
 #include <span>
 #include <string>

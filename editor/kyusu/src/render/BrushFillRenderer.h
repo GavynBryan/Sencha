@@ -19,6 +19,7 @@ public:
     explicit BrushFillRenderer(EditorFillPipeline& fills);
 
     void DrawZoneOverlay(const FrameContext& frame, const EditorViewport& viewport,
+                         const CameraRenderData& camera,
                          const EditorScene& scene, const Vec4& color);
 
 private:

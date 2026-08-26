@@ -9,16 +9,21 @@
 #include <assets/cook/BrushClustering.h>   // CookBrushGeometry
 #include <assets/cook/BrushGeometryCook.h> // CollectMaterialOrder, BakeBrushFacesToStaticMesh
 #include <assets/runtime/AssetSystem.h>
+#include <core/hash/Fnv1a.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
-#include <graphics/vulkan/TextureCache.h>
+#include <math/geometry/3d/AabbTransform.h>
+#include <assets/texture/TextureCache.h>
 #include <render/MaterialSetCache.h>
+#include <render/MeshDrawInstance.h>
+#include <render/skinned_mesh/SkinnedMeshComponent.h>
+#include <render/extract/RenderExtractionSystem.h>
 #include <render/IrradianceVolumeComponent.h>
 #include <render/PointLightComponent.h>
-#include <render/ShadowCasterExtractionSystem.h>
+#include <render/extract/ShadowCasterExtractionSystem.h>
 #include <render/SpotLightComponent.h>
 #include <render/RenderEntityKey.h>
 #include <render/StaticMeshComponent.h>
@@ -41,56 +46,29 @@
 
 namespace
 {
-    constexpr uint64_t kFnvOffset = 1469598103934665603ull;
-    constexpr uint64_t kFnvPrime = 1099511628211ull;
-
-    void HashBytes(uint64_t& h, const void* data, std::size_t n)
-    {
-        const auto* p = static_cast<const unsigned char*>(data);
-        for (std::size_t i = 0; i < n; ++i)
-        {
-            h ^= p[i];
-            h *= kFnvPrime;
-        }
-    }
-
     // Content hash of the collected brushes: the bake is skipped (no GPU upload)
     // when this is unchanged. Covers each face's material path and the input
     // vertices (position/normal/uv); tangents are bake output, not input.
     uint64_t HashBrushes(const std::vector<CookBrushGeometry>& brushes)
     {
-        uint64_t h = kFnvOffset;
+        uint64_t h = kFnv1aOffsetBasis;
         for (const CookBrushGeometry& brush : brushes)
         {
             for (const CookFace& face : brush.Faces)
             {
-                HashBytes(h, face.Material.Path.data(), face.Material.Path.size());
+                HashFnv1aBytes(h, face.Material.Path.data(), face.Material.Path.size());
                 for (const StaticMeshVertex& v : face.Triangles)
                 {
-                    HashBytes(h, &v.Position, sizeof(v.Position));
-                    HashBytes(h, &v.Normal, sizeof(v.Normal));
-                    HashBytes(h, &v.Uv0, sizeof(v.Uv0));
+                    HashFnv1aValue(h, v.Position);
+                    HashFnv1aValue(h, v.Normal);
+                    HashFnv1aValue(h, v.Uv0);
                 }
             }
-            HashBytes(h, "|", 1); // brush boundary, so regrouping faces changes the hash
+            HashFnv1aByte(h, '|'); // brush boundary, so regrouping faces changes the hash
         }
         return h;
     }
 
-    Aabb3d TransformBounds(const Aabb3d& local, const Mat4& world)
-    {
-        Aabb3d result = Aabb3d::Empty();
-        for (int x = 0; x < 2; ++x)
-        for (int y = 0; y < 2; ++y)
-        for (int z = 0; z < 2; ++z)
-        {
-            Vec3d p(x == 0 ? local.Min.X : local.Max.X,
-                    y == 0 ? local.Min.Y : local.Max.Y,
-                    z == 0 ? local.Min.Z : local.Max.Z);
-            result.ExpandToInclude(world.TransformPoint(p));
-        }
-        return result;
-    }
 }
 
 SceneRenderQueueBuilder::SceneRenderQueueBuilder(AssetSystem& assets,
@@ -98,12 +76,16 @@ SceneRenderQueueBuilder::SceneRenderQueueBuilder(AssetSystem& assets,
                                                  MaterialCache& materials,
                                                  MaterialSetCache& materialSets,
                                                  LoggingProvider& logging,
-                                                 TextureCache* textures)
+                                                 TextureCache* textures,
+                                                 SkinnedMeshCache* skinnedMeshes,
+                                                 AnimationClipCache* animationClips)
     : Assets(assets)
     , Meshes(meshes)
     , Materials(materials)
     , MaterialSets(materialSets)
     , Textures(textures)
+    , SkinnedMeshes(skinnedMeshes)
+    , AnimationClips(animationClips)
     , Logging(logging)
     , Log(logging.GetLogger<SceneRenderQueueBuilder>())
 {
@@ -132,13 +114,13 @@ void SceneRenderQueueBuilder::Build(const EditorDocument& document)
         EmitBrushQueue();
         BuildMeshQueue(document);
     }
-    BuildLights(document, /*skipDirectLights*/ preview);
+    BuildLights(document);
     BuildShadowCasters(document);
 
     // Probe volumes are cook inputs (they select the .sprobe lattice), so
     // editing one restales the badge like a brush or light edit does. No
     // visibility filter: the cook bakes hidden volumes too.
-    uint64_t probeVolumesHash = kFnvOffset;
+    uint64_t probeVolumesHash = kFnv1aOffsetBasis;
     const EditorScene& scene = document.GetScene();
     const World& world = scene.GetRegistry().Components;
     if (world.IsRegistered<IrradianceVolumeComponent>())
@@ -149,9 +131,8 @@ void SceneRenderQueueBuilder::Build(const EditorDocument& document)
                 const Transform3f* transform = scene.TryGetTransform(entity);
                 if (transform == nullptr)
                     return;
-                HashBytes(probeVolumesHash, &transform->Position,
-                          sizeof(transform->Position));
-                HashBytes(probeVolumesHash, &volume, sizeof(volume));
+                HashFnv1aValue(probeVolumesHash, transform->Position);
+                HashFnv1aValue(probeVolumesHash, volume);
             });
     }
 
@@ -220,23 +201,18 @@ void SceneRenderQueueBuilder::EmitBrushQueue()
         if (mesh == nullptr)
             continue;
 
+        // Brush geometry is baked in world space (BrushTessellate), so it sits
+        // at identity. Its section bounds are already world-space, which the
+        // shared emit cannot express through one instance-wide box, so each
+        // section is emitted on its own.
         for (uint32_t section = 0; section < static_cast<uint32_t>(mesh->Sections.size()); ++section)
         {
-            const uint32_t slot = mesh->Sections[section].MaterialSlot;
-            const MaterialHandle material =
-                slot < entry.SlotMaterials.size() ? entry.SlotMaterials[slot] : MaterialHandle{};
-            if (!material.IsValid())
-                continue;
-
-            RenderQueueItem item{};
-            item.Mesh = entry.Mesh;
-            item.Material = material;
-            item.SectionIndex = section;
-            // Brush geometry is baked in world space (BrushTessellate), so it sits
-            // at identity; its section bounds are already world-space.
-            item.WorldMatrix = Mat4::Identity();
-            item.WorldBounds = mesh->Sections[section].LocalBounds;
-            Brushes.AddOpaque(item);
+            MeshDrawInstance instance;
+            instance.Mesh = entry.Mesh;
+            instance.WorldMatrix = Mat4::Identity();
+            instance.WorldBounds = mesh->Sections[section].LocalBounds;
+            instance.SectionMask = 1u << section;
+            EmitMeshSections(instance, *mesh, entry.SlotMaterials, Materials, Brushes);
         }
     }
     Brushes.SortOpaque();
@@ -265,30 +241,47 @@ void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
             continue;
 
         const Mat4 worldMatrix = transform->ToMat4();
-        const Aabb3d worldBounds = TransformBounds(mesh->LocalBounds, worldMatrix);
 
-        for (uint32_t section = 0; section < static_cast<uint32_t>(mesh->Sections.size()); ++section)
+        MeshDrawInstance instance;
+        instance.Mesh = renderer->Mesh;
+        instance.WorldMatrix = worldMatrix;
+        instance.WorldBounds = TransformAabb(mesh->LocalBounds, worldMatrix);
+        instance.SectionMask = renderer->SectionMask;
+        EmitMeshSections(instance, *mesh, *sectionMaterials, Materials, PlacedMeshes);
+    }
+
+    // Skinned placements, at rest geometry through the same expansion the
+    // runtime uses. No lightmap or AO stamp: a skinned mesh is the canonical
+    // movable non-receiver. Without a skinned cache the loop emits nothing.
+    if (SkinnedMeshes != nullptr)
+    {
+        for (const EntityId entity : scene.GetAllEntities())
         {
-            if ((renderer->SectionMask & (1u << section)) == 0)
+            if (!scene.IsEntityVisible(entity))
+                continue;
+            const SkinnedMeshComponent* renderer =
+                world.TryGet<SkinnedMeshComponent>(entity);
+            if (renderer == nullptr || !renderer->Visible)
                 continue;
 
-            // Map section to material via MaterialSlot, last-member fallback for an
-            // under-bound set — identical to RenderExtractionSystem so a placed mesh
-            // reads the same in the editor and the game.
-            const uint32_t slot = mesh->Sections[section].MaterialSlot;
-            const MaterialHandle material = slot < sectionMaterials->size()
-                ? (*sectionMaterials)[slot]
-                : sectionMaterials->back();
-            if (!material.IsValid())
+            const GpuStaticMesh* mesh = SkinnedMeshes->Get(renderer->Mesh);
+            const std::vector<MaterialHandle>* sectionMaterials =
+                MaterialSets.Get(renderer->Materials);
+            if (mesh == nullptr || sectionMaterials == nullptr
+                || sectionMaterials->empty())
+                continue;
+            const Transform3f* transform = scene.TryGetTransform(entity);
+            if (transform == nullptr)
                 continue;
 
-            RenderQueueItem item{};
-            item.Mesh = renderer->Mesh;
-            item.Material = material;
-            item.SectionIndex = section;
-            item.WorldMatrix = worldMatrix;
-            item.WorldBounds = worldBounds;
-            PlacedMeshes.AddOpaque(item);
+            const Mat4 worldMatrix = transform->ToMat4();
+
+            MeshDrawInstance instance;
+            instance.SkinnedMesh = renderer->Mesh;
+            instance.WorldMatrix = worldMatrix;
+            instance.WorldBounds = TransformAabb(mesh->LocalBounds, worldMatrix);
+            instance.SectionMask = renderer->SectionMask;
+            EmitMeshSections(instance, *mesh, *sectionMaterials, Materials, PlacedMeshes);
         }
     }
     PlacedMeshes.SortOpaque();
@@ -318,7 +311,8 @@ void SceneRenderQueueBuilder::SetLightmapPreview(const LightmapPreviewSource& so
 
     auto registry = std::make_unique<Registry>();
     InitializeSceneRegistry(*registry, &Meshes, &MaterialSets,
-                            nullptr, nullptr, nullptr, Textures);
+                            nullptr, nullptr, nullptr, Textures, SkinnedMeshes,
+                            AnimationClips);
     SceneSerializationContext context(Logging, &Assets);
     SceneLoadError loadError;
     if (!LoadSceneJson(*json, *registry, EditorSceneSerializers(), context, &loadError))
@@ -338,21 +332,29 @@ void SceneRenderQueueBuilder::EmitPreviewQueue()
     Brushes.Reset();
     const World& world = PreviewRegistry->Components;
 
-    std::uint32_t lightmapIndex = UINT32_MAX;
-    std::uint32_t aoIndex = UINT32_MAX;
+    // Per partition, through the same resolution the runtime uses. Collapsing
+    // every zone's atlas to one pair of indices stamped whichever zone happened
+    // to be visited last onto every other zone's meshes, so a multi-zone
+    // preview disagreed with the game it is previewing.
+    //
+    // The filter set is built first because the runtime's collector takes the
+    // frame's resident partitions, and a preview snapshot wants all of them.
+    std::vector<ZoneLightmapIndices> lightmapTable;
     if (Textures != nullptr && world.IsRegistered<ZoneLightmapComponent>())
+    {
+        StoragePartitionSet lightmapPartitions;
         world.ForEachComponent<ZoneLightmapComponent>(
-            [&](EntityId, const ZoneLightmapComponent& lightmap)
+            [&](EntityId entity, const ZoneLightmapComponent&)
             {
-                const BindlessImageIndex index =
-                    Textures->GetBindlessIndex(lightmap.Texture);
-                if (index.IsValid())
-                    lightmapIndex = index.Value;
-                const BindlessImageIndex ao =
-                    Textures->GetBindlessIndex(lightmap.Ao);
-                if (ao.IsValid())
-                    aoIndex = ao.Value;
+                lightmapPartitions.Add(world.GetEntityPartition(entity));
             });
+
+        std::vector<ZoneLightmapBinding> bindings;
+        std::vector<std::pair<StoragePartitionId, ZoneLightmapIndices>> resolved;
+        CollectZoneLightmaps(world, lightmapPartitions, bindings);
+        ResolveZoneLightmapIndices(bindings, *Textures, resolved);
+        BuildZoneLightmapTable(resolved, lightmapTable);
+    }
 
     if (world.IsRegistered<StaticMeshComponent>() && world.IsRegistered<LocalTransform>())
         world.ForEachComponent<StaticMeshComponent>(
@@ -369,36 +371,51 @@ void SceneRenderQueueBuilder::EmitPreviewQueue()
                     return;
 
                 const Mat4 worldMatrix = transform->Value.ToMat4();
-                const Aabb3d worldBounds = TransformBounds(mesh->LocalBounds, worldMatrix);
-                for (uint32_t section = 0;
-                     section < static_cast<uint32_t>(mesh->Sections.size()); ++section)
-                {
-                    if ((renderer.SectionMask & (1u << section)) == 0)
-                        continue;
-                    const uint32_t slot = mesh->Sections[section].MaterialSlot;
-                    const MaterialHandle material = slot < sectionMaterials->size()
-                        ? (*sectionMaterials)[slot]
-                        : sectionMaterials->back();
-                    if (!material.IsValid())
-                        continue;
+                const ZoneLightmapIndices lightmap = LookupZoneLightmap(
+                    lightmapTable, world.GetEntityPartition(entity));
 
-                    RenderQueueItem item{};
-                    item.Mesh = renderer.Mesh;
-                    item.Material = material;
-                    item.SectionIndex = section;
-                    item.WorldMatrix = worldMatrix;
-                    item.WorldBounds = worldBounds;
-                    item.LightmapTextureIndex = lightmapIndex;
-                    item.AoTextureIndex = aoIndex;
-                    item.LightmapScaleBias = renderer.LightmapScaleBias;
-                    Brushes.AddOpaque(item);
-                }
+                MeshDrawInstance instance;
+                instance.Mesh = renderer.Mesh;
+                instance.WorldMatrix = worldMatrix;
+                instance.WorldBounds = TransformAabb(mesh->LocalBounds, worldMatrix);
+                instance.SectionMask = renderer.SectionMask;
+                instance.LightmapTextureIndex = lightmap.Lightmap;
+                instance.AoTextureIndex = lightmap.Ao;
+                instance.LightmapScaleBias = renderer.LightmapScaleBias;
+                EmitMeshSections(instance, *mesh, *sectionMaterials, Materials, Brushes);
+            });
+
+    // Skinned placements appear in the preview too: the cooked scene carries
+    // them (the runtime draws them), and a character vanishing when the
+    // preview toggles would misrepresent the cook. No lightmap stamp.
+    if (SkinnedMeshes != nullptr && world.IsRegistered<SkinnedMeshComponent>()
+        && world.IsRegistered<LocalTransform>())
+        world.ForEachComponent<SkinnedMeshComponent>(
+            [&](EntityId entity, const SkinnedMeshComponent& renderer)
+            {
+                if (!renderer.Visible)
+                    return;
+                const LocalTransform* transform = world.TryGet<LocalTransform>(entity);
+                const GpuStaticMesh* mesh = SkinnedMeshes->Get(renderer.Mesh);
+                const std::vector<MaterialHandle>* sectionMaterials =
+                    MaterialSets.Get(renderer.Materials);
+                if (transform == nullptr || mesh == nullptr
+                    || sectionMaterials == nullptr || sectionMaterials->empty())
+                    return;
+
+                const Mat4 worldMatrix = transform->Value.ToMat4();
+
+                MeshDrawInstance instance;
+                instance.SkinnedMesh = renderer.Mesh;
+                instance.WorldMatrix = worldMatrix;
+                instance.WorldBounds = TransformAabb(mesh->LocalBounds, worldMatrix);
+                instance.SectionMask = renderer.SectionMask;
+                EmitMeshSections(instance, *mesh, *sectionMaterials, Materials, Brushes);
             });
     Brushes.SortOpaque();
 }
 
-void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document,
-                                          bool skipDirectLights)
+void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document)
 {
     // Reset() clears only the packed counts; the ambient tints and shadow
     // tunables are owned by the caller (EditorRenderFeature stamps them from
@@ -408,7 +425,7 @@ void SceneRenderQueueBuilder::BuildLights(const EditorDocument& document,
     SceneLights.Reset();
     LightSelectionCurrent = false;
     EditorLightGather gathered = GatherEditorLights(
-        document, skipDirectLights, SceneLights.ShadowSoftness);
+        document, SceneLights.ShadowSoftness);
     LightCandidates = std::move(gathered.Candidates);
     LightsHash = gathered.ContentHash;
 }
@@ -463,16 +480,9 @@ void SceneRenderQueueBuilder::BuildShadowCasters(const EditorDocument& document)
 
         RenderEntityKey key = MakeRenderEntityKey(
             registry, EntityId{ .Index = 0x80000000u | ordinal, .Generation = 0 });
-        SceneCasters.Records.push_back(ShadowCasterRecord{
-            .Key = key,
-            .State = ShadowCasterState{
-                .WorldBounds = QuantizeShadowCasterBounds(gathered.WorldBounds),
-                .Mesh = entry.Mesh,
-                .Materials = MaterialSetHandle{},
-                .EffectiveShadowSectionMask = gathered.EffectiveSectionMask,
-                .ShadowMaterialStateHash = gathered.MaterialStateHash,
-            },
-        });
+        // Cooked brush cells carry their materials in the mesh, not a set.
+        AppendShadowCasterRecord(SceneCasters, key, entry.Mesh,
+                                 MaterialSetHandle{}, gathered);
     }
 
     const World& world = registry.Components;
@@ -496,16 +506,8 @@ void SceneRenderQueueBuilder::BuildShadowCasters(const EditorDocument& document)
         if (gathered.EffectiveSectionMask == 0)
             continue;
 
-        SceneCasters.Records.push_back(ShadowCasterRecord{
-            .Key = MakeRenderEntityKey(registry, entity),
-            .State = ShadowCasterState{
-                .WorldBounds = QuantizeShadowCasterBounds(gathered.WorldBounds),
-                .Mesh = renderer->Mesh,
-                .Materials = renderer->Materials,
-                .EffectiveShadowSectionMask = gathered.EffectiveSectionMask,
-                .ShadowMaterialStateHash = gathered.MaterialStateHash,
-            },
-        });
+        AppendShadowCasterRecord(SceneCasters, MakeRenderEntityKey(registry, entity),
+                                 renderer->Mesh, renderer->Materials, gathered);
     }
 }
 
