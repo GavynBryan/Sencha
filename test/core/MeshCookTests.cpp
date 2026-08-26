@@ -434,10 +434,10 @@ namespace
         std::filesystem::path Path;
 
         ScopedTestDir()
+            : Path(std::filesystem::temp_directory_path()
+                   / ("sencha_blend_test_"
+                      + std::to_string(std::random_device{}())))
         {
-            std::random_device rd;
-            Path = std::filesystem::temp_directory_path()
-                / ("sencha_blend_test_" + std::to_string(rd()));
             std::filesystem::create_directories(Path);
         }
 

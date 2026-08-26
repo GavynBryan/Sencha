@@ -39,7 +39,7 @@ SkeletonData MakeChain()
 
 AnimationJointTrack MakeTranslationTrack(
     std::uint32_t joint, AnimationInterpolation interpolation,
-    std::vector<float> times, std::vector<Vec3d> values)
+    std::vector<float> times, const std::vector<Vec3d>& values)
 {
     AnimationJointTrack track;
     track.JointIndex = joint;
