@@ -166,6 +166,30 @@ TEST(ParticipantLifecycle, BodyAssignmentIsExplicitAndDoesNotPoll)
     EXPECT_EQ(fixture.Control(participant).Body, assigned.Body);
 }
 
+TEST(ParticipantLifecycle, ABodyThatCouldNotBeBoundIsDestroyed)
+{
+    ParticipantWorld fixture;
+    EntityId provided;
+    // Providing a body is the game's, and it is structural, so the participant
+    // it was asked for can be gone by the time it answers.
+    fixture.Lifecycle.Policies().ProvideBody =
+        [&](World& world, EntityId participant) {
+            provided = fixture.Thing();
+            world.DestroyEntity(participant);
+            return provided;
+        };
+    const EntityId participant = fixture.Lifecycle.Admit(
+        fixture.Entities, InputActionSourceId{ 11 }).Participant;
+
+    const ParticipantBodyChange change =
+        fixture.Lifecycle.RequestBody(fixture.Entities, participant);
+
+    EXPECT_EQ(change.Status, ParticipantBodyStatus::Unavailable);
+    EXPECT_FALSE(change.Body.IsValid());
+    EXPECT_FALSE(fixture.Entities.IsAlive(provided))
+        << "an unbindable body was left standing with nothing driving it";
+}
+
 TEST(ParticipantLifecycle, RetirementReapsTheBodyButNeverTheDrivenSubject)
 {
     ParticipantWorld fixture;

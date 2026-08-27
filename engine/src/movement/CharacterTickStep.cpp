@@ -11,6 +11,13 @@
 #include <physics/CharacterMoverPool.h>
 #include <world/transform/TransformComponents.h>
 
+bool CharacterTickSubject(const World& world, EntityId entity)
+{
+    // Read-only for the same reason as below: asking what something is must not
+    // mark a chunk's column changed.
+    return world.TryGet<CharacterMovement>(entity) != nullptr;
+}
+
 bool CharacterTickModeSupported(const World& world, EntityId entity)
 {
     // Read-only throughout: asking which rules a character moves under is not a

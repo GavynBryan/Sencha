@@ -54,7 +54,7 @@ private:
     ConsoleResult LoadWorld(std::string_view worldName);
     ConsoleResult FocusWorldZone(std::string_view zoneHex);
     ConsoleResult SetCameraMode(std::string_view modeName);
-    ConsoleResult RequestTurret();
+    ConsoleResult RequestTurret(bool placeOnly);
     void SetRelativeMouseMode(bool enabled);
     RuntimeAssets& RuntimeAssetState();
     DataAssetCacheHandle AcquireDataAsset(std::string_view path, Logger& log);

@@ -104,6 +104,34 @@ static_assert(std::is_empty_v<LocalLookControl>,
 SENCHA_DECLARE_COMPONENT_TYPE(LocalLookControl, "sencha.local_look_control");
 
 //=============================================================================
+// AimFacing
+//
+// Marks an entity whose transform rotation is its aim: the body turns to face
+// where its LookOrientation points, yaw only.
+//
+// Opt-in per entity, because facing is not always aim. A first-person character
+// and a fixed gun turn with the look; a third-person character usually faces
+// the way it is moving while the camera orbits somewhere else entirely. The
+// camera does not decide this and is not consulted -- it reads the same
+// orientation to place itself, and neither reader knows the other exists.
+//
+// The tag claims the entity's rotation. Nothing else may write the same
+// transform's rotation while it is present: whichever ran last would win, and
+// which that is would depend on schedule order. An authored rotation is
+// overwritten from the first tick, so an entity that must begin facing a
+// particular way is placed with the matching LookOrientation.Yaw rather than
+// with a rotation.
+//=============================================================================
+struct AimFacing
+{
+};
+
+static_assert(std::is_empty_v<AimFacing>,
+              "AimFacing is a tag: it carries no data");
+
+SENCHA_DECLARE_COMPONENT_TYPE(AimFacing, "sencha.aim_facing");
+
+//=============================================================================
 // LookInputBinding
 //
 // Which action turns a locally controlled entity. The game names the action, so

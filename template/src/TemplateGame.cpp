@@ -54,6 +54,7 @@
 #include <net/PawnCommandCapture.h>
 #include <net/PeerCommandRuntime.h>
 #include <participant/ParticipantControl.h>
+#include <participant/ParticipantLifecycle.h>
 #include <participant/LocalControl.h>
 #include <movement/MovementTags.h>
 #include <physics/CollisionShapeCache.h>
@@ -199,12 +200,16 @@ EntityId FindFirstCamera(
     return EntityId{};
 }
 
-Vec3d FindPlayerStart(
+// Where a level says players begin, or none when it does not say. The two
+// answers are kept apart rather than folded into a default here, because a
+// level with no start and a level whose start happens to be at the default are
+// the same picture from the outside and want different things said about them.
+std::optional<Vec3d> FindPlayerStart(
     const World& world,
     std::optional<StoragePartitionId> partition)
 {
     if (!world.IsRegistered<PlayerStartComponent>())
-        return Vec3d(0.0f, 2.0f, 0.0f);
+        return std::nullopt;
 
     for (EntityId entity : world.GetAliveEntities())
     {
@@ -222,16 +227,22 @@ Vec3d FindPlayerStart(
             return transform->Value.Position;
         }
     }
-    return Vec3d(0.0f, 2.0f, 0.0f);
+    return std::nullopt;
 }
+
+// Where a player goes when the level does not say. Above the origin rather than
+// on it, so a body lands on a floor at zero instead of inside it.
+inline constexpr Vec3d kDefaultPlayerStart{ 0.0f, 2.0f, 0.0f };
 
 EntityId CreateTransformEntity(
     World& world,
     const Vec3d& position,
-    StoragePartitionId partition = PersistentStoragePartition)
+    StoragePartitionId partition = PersistentStoragePartition,
+    const Vec3d& scale = Vec3d::One())
 {
     Transform3f transform;
     transform.Position = position;
+    transform.Scale = scale;
 
     const EntityId entity = world.CreateEntity(partition);
     world.AddComponent<LocalTransform>(
@@ -334,6 +345,10 @@ void BuildPawnBody(
     // a remote player is aiming somewhere too, and that is what makes their
     // body face the right way.
     ensure(LookOrientation{});
+    // And the body turns to it, which is what "the right way" means to anybody
+    // watching them. This game is first person, so facing is aim; a
+    // third-person one would leave this off and face along movement instead.
+    ensure(AimFacing{});
 }
 
 // A turret's body, on whichever machine has one. Far less than a pawn's,
@@ -351,9 +366,15 @@ void BuildTurretBody(World& world, EntityId turret,
 
     // What its driver's aim lands in, and what TurretAimSystem reads.
     ensure(LookOrientation{});
+    // A gun that did not turn where its driver looked would be a gun nobody
+    // could tell was being driven. Placement sets the pose it starts at; from
+    // the first tick this owns its rotation.
+    ensure(AimFacing{});
     ensure(WorldTransformHistory{});
     // Standing in for a model the template does not ship. A turret that cannot
     // be seen would still work and would prove nothing to anybody running it.
+    // Its pose is what tells it apart from a player wearing the same stand-in;
+    // that is placement's to set, and it replicates, so this does not touch it.
     if (avatar.IsValid())
     {
         ensure(StaticMeshComponent{
@@ -361,6 +382,36 @@ void BuildTurretBody(World& world, EntityId turret,
             .Materials = avatar.Materials,
         });
     }
+}
+
+// Wide and low, so the one mesh this template ships reads as a mount rather
+// than as a second player standing there. Scale is replicated state, so a
+// client's copy arrives with these proportions instead of deriving them.
+inline constexpr Vec3d kTurretProportions{ 1.2f, 0.4f, 1.2f };
+
+// A turret, put somewhere because somebody asked for one. Placed rather than
+// authored so the template ships the possession path without every level
+// having to carry a turret; a real game would author them and this would go.
+//
+// Authority-only by construction: this is reached from answering a request,
+// and a client answers none. A client's turrets arrive replicated, and the
+// recipe gives them the rest of a body there.
+EntityId PlaceTurret(
+    World& world,
+    const Vec3d& at,
+    StoragePartitionId partition,
+    const ResolvedPlayerAvatar& avatar)
+{
+    const EntityId turret =
+        CreateTransformEntity(world, at, partition, kTurretProportions);
+    world.AddComponent<TurretMount>(turret, TurretMount{});
+    // What arrives on a peer's machine as state; the recipe gives it the rest
+    // of a body there, the same way a pawn gets one.
+    world.AddComponent<NetReplicated>(turret);
+    world.AddComponent<NetSpawnRecipe>(
+        turret, NetSpawnRecipe{ .Id = kTurretRecipe });
+    BuildTurretBody(world, turret, avatar);
+    return turret;
 }
 
 EntityId SpawnPawn(
@@ -737,22 +788,129 @@ bool DecodeTurretRequest(std::span<const std::byte> body, NetEntityId& out)
     return out.IsValid();
 }
 
+// The nearest turret to a point, or none. Costs the number of turrets.
+EntityId NearestTurret(const World& world, const Vec3d& from)
+{
+    if (!world.IsRegistered<TurretMount>())
+        return EntityId{};
+
+    EntityId nearest;
+    float best = 0.0f;
+    world.ForEachComponent<TurretMount>(
+        [&](EntityId entity, const TurretMount&) {
+            const LocalTransform* pose = world.TryGet<LocalTransform>(entity);
+            if (pose == nullptr)
+                return;
+            const float distance = (pose->Value.Position - from).SqrMagnitude();
+            if (!nearest.IsValid() || distance < best)
+            {
+                nearest = entity;
+                best = distance;
+            }
+        });
+    return nearest;
+}
+
+// Whoever is at this entity's controls, as a participant, or none.
+//
+// Asked of the participants rather than of ownership because those answer
+// different questions: the player at the authority's own machine drives
+// without owning anything, so ownership calls their turret free.
+EntityId DriverOf(const World& world, EntityId subject)
+{
+    if (!subject.IsValid() || !world.IsRegistered<ParticipantControl>())
+        return EntityId{};
+
+    EntityId found;
+    world.ForEachComponent<ParticipantControl>(
+        [&](EntityId participant, const ParticipantControl& held) {
+            if (!found.IsValid() && held.ControlSubject == subject)
+                found = participant;
+        });
+    return found;
+}
+
+enum class TurretRequestOutcome : std::uint8_t
+{
+    Took,
+    Left,
+    Occupied,
+    Invalid,
+};
+
 //=============================================================================
 // Answering a turret request
 //
-// Everything the authority needs to decide is on the authority. The message
-// carries one field -- which turret -- and every other fact is looked up here:
-// who sent it comes from the session's own peer record, what that names comes
-// from the identity map replication minted, and whether the sender is allowed
-// it comes from the ownership the authority itself wrote. A message that could
-// be believed about any of those would be a message a peer could use to drive
-// somebody else's body.
+// One function for both directions and for whoever asked, because the question
+// is the same one either way: what is this participant driving now, and what
+// should it drive next. Everything it decides from is state the authority
+// holds -- who drives what, and who owns what -- so a client asking and the
+// player at this machine asking are answered by the same rules.
 //
-// Taking a turret parks the driver's pawn rather than leaving them owning both.
-// One peer, one thing driven, which is what the engine's local-control slot
-// says and is a design decision rather than a limitation worked around: a
+// Taking a turret parks the driver's pawn rather than leaving them owning
+// both. One participant, one thing driven, which is what the engine's control
+// slot says and is a design decision rather than a limitation worked around: a
 // player at a fixed gun is not also running around.
+//
+// `driver` is the peer to hand ownership to, or an invalid peer for the
+// authority's own player -- who needs none, because the authority already has
+// everything ownership would deliver.
 //=============================================================================
+TurretRequestOutcome ApplyTurretRequest(
+    Engine& engine,
+    World& world,
+    EntityId participant,
+    EntityId turret,
+    PeerId driver)
+{
+    const ParticipantControl* control =
+        participant.IsValid()
+            ? world.TryGet<ParticipantControl>(participant)
+            : nullptr;
+    if (control == nullptr)
+        return TurretRequestOutcome::Invalid;
+    if (!turret.IsValid() || !world.IsAlive(turret)
+        || !world.HasComponent<TurretMount>(turret))
+    {
+        return TurretRequestOutcome::Invalid;
+    }
+
+    if (control->ControlSubject == turret)
+    {
+        // Getting out. The gun goes back to the authority for the next person
+        // to ask for, and their input returns to the body that never stopped
+        // being theirs. Read before clearing ownership, which is structural
+        // and moves the row this points into.
+        const EntityId body = control->Body;
+        NetClearOwner(world, turret);
+        (void)engine.SetParticipantControlSubject(participant, body);
+        return TurretRequestOutcome::Left;
+    }
+
+    // Somebody else is at the controls. Refused rather than taken: a request
+    // that could evict its current driver is a request worth sending
+    // constantly.
+    if (DriverOf(world, turret).IsValid())
+        return TurretRequestOutcome::Occupied;
+
+    // Owned so its owner-only state reaches the driver, and driven so their
+    // keys reach it. Two facts, not one: a gun somebody is at the controls of
+    // is not necessarily a gun that belongs to them, and it is that difference
+    // that leaves the gun standing when its driver quits.
+    //
+    // Their body keeps its owner through all of this. It is still theirs while
+    // they are elsewhere, and only what they drive has moved.
+    if (driver.IsValid())
+        NetSetOwner(world, turret, driver);
+    (void)engine.SetParticipantControlSubject(participant, turret);
+    return TurretRequestOutcome::Took;
+}
+
+// What a client asked for, decided on the authority. The message carries one
+// field -- which turret -- and every other fact is looked up here: who sent it
+// comes from the session's own peer record, and what that names comes from the
+// identity map replication minted. A message that could be believed about
+// either would be a message a peer could use to drive somebody else's body.
 bool AnswerTurretRequest(void* context, const NetMessageContext& message)
 {
     Engine& engine = *static_cast<Engine*>(context);
@@ -770,51 +928,223 @@ bool AnswerTurretRequest(void* context, const NetMessageContext& message)
     // nothing at all.
     const EntityId turret =
         message.Objects->AuthorityEntities().TryResolve(named);
-    if (!turret.IsValid() || !world.IsAlive(turret))
-        return false;
-    if (!world.HasComponent<TurretMount>(turret))
-        return false;
 
-    // Who is asking, as a participant rather than as a peer number. Their body
-    // is on the participant, which is the only place it is written down.
+    // Who is asking, as a participant rather than as a peer number. What they
+    // drive and what their body is are both written down there.
     const EntityId participant = NetParticipantForPeer(world, message.From);
+
+    switch (ApplyTurretRequest(engine, world, participant, turret, message.From))
+    {
+    case TurretRequestOutcome::Took:
+        log.Info("TemplateGame: peer {} took the turret", message.From.Value);
+        return true;
+    case TurretRequestOutcome::Left:
+        log.Info("TemplateGame: peer {} left the turret", message.From.Value);
+        return true;
+    case TurretRequestOutcome::Occupied:
+    case TurretRequestOutcome::Invalid:
+        break;
+    }
+    return false;
+}
+
+// How far from whoever asked a placed turret stands. Far enough not to be
+// inside them, near enough to be the one they get when they ask again.
+inline constexpr float kTurretPlacementReach = 3.0f;
+
+// Where the player at this machine is standing, or none when nobody is. A
+// dedicated host is the second case and is not an error there: it has no
+// player of its own, and everything below still has to happen somewhere.
+std::optional<Vec3d> LocalPlayerPosition(const World& world)
+{
+    const EntityId subject = LocalControlSubjectOf(world);
+    if (!subject.IsValid())
+        return std::nullopt;
+    if (const LocalTransform* here = world.TryGet<LocalTransform>(subject))
+        return here->Value.Position;
+    return std::nullopt;
+}
+
+// Where a turret goes when somebody asks this machine for one: beside whoever
+// is playing here, or beside where the level says players begin, so a host
+// with nobody at it still puts the gun where people will arrive.
+Vec3d TurretPlacementNear(const World& world)
+{
+    Vec3d at = LocalPlayerPosition(world).value_or(
+        FindPlayerStart(world, std::nullopt).value_or(kDefaultPlayerStart));
+    at.X += kTurretPlacementReach;
+    return at;
+}
+
+// Putting one down, wherever this machine would put one. None when there is
+// nowhere to put it yet, which is the only way it fails.
+//
+// Authority-only, structurally: both callers are the authority answering a
+// request, and a client answers none.
+EntityId PlaceTurretForRequest(
+    World& world, const ResolvedPlayerAvatar& avatar, Logger& log)
+{
+    const PlayContentPartition* content =
+        world.TryGetResource<PlayContentPartition>();
+    if (content == nullptr)
+        return EntityId{};
+
+    const EntityId turret =
+        PlaceTurret(world, TurretPlacementNear(world),
+                    content->Value.value_or(PersistentStoragePartition), avatar);
+    log.Info("TemplateGame: placed a turret");
+    return turret;
+}
+
+// What both console paths say when there is nowhere to put one yet.
+constexpr std::string_view kNoContentForTurret =
+    "no loaded content to put a turret in";
+
+// The client half of the request: name the turret in terms the authority will
+// recognise, and send. Nothing is decided here -- what comes back is a
+// snapshot in which somebody drives something.
+ConsoleResult AskAuthorityForTurret(Engine& engine, NetSession& session)
+{
+    ConsoleResult result;
+    const World& world = engine.World().Entities();
+
+    if (!session.IsConnected())
+    {
+        result.Status = ConsoleStatus::InvalidArguments;
+        result.Error("not connected to an authority");
+        return result;
+    }
+
+    // Already driving one: the same request means getting out, because the
+    // authority holds the record of who drives what and can tell the
+    // difference without being told.
+    EntityId target = LocalControlSubjectOf(world);
+    if (!target.IsValid() || !world.HasComponent<TurretMount>(target))
+    {
+        // Otherwise the nearest one to wherever this player is standing.
+        target = NearestTurret(
+            world, LocalPlayerPosition(world).value_or(Vec3d::Zero()));
+    }
+
+    if (!target.IsValid())
+    {
+        result.Status = ConsoleStatus::InvalidArguments;
+        result.Error("no turret here");
+        return result;
+    }
+
+    const NetEntityId named =
+        engine.Replication().ClientEntities().TryFind(target);
+    if (!named.IsValid())
+    {
+        result.Status = ConsoleStatus::InvalidArguments;
+        result.Error("that turret is not one replication gave this machine");
+        return result;
+    }
+
+    // Reliable: a request that is dropped is a key press that did nothing, and
+    // nothing later supersedes it. That is a fact about the message rather than
+    // something the engine could decide.
+    const std::size_t sent = NetSendToAuthority(
+        session, NetChannelKind::ReliableOrdered, kTurretRequestKind,
+        EncodeTurretRequest(named), &engine.NetTraffic());
+    if (sent == 0)
+    {
+        result.Status = ConsoleStatus::InvalidArguments;
+        result.Error("could not queue the request");
+        return result;
+    }
+
+    result.Info("asked the authority about turret "
+                + std::to_string(named.Value));
+    return result;
+}
+
+// Putting one down without getting into it. Separate from taking one because
+// they are separate operations with separate callers: a dedicated host places
+// the gun its clients will ask for and has nobody to drive it, and conflating
+// the two would mean a host could only provide a turret by occupying it.
+//
+// Authority-only, and that is structural rather than checked twice: this is
+// the machine that decides what exists, and a client's turrets arrive
+// replicated.
+ConsoleResult PlaceTurretHere(
+    Engine& engine, const ResolvedPlayerAvatar& avatar, Logger& log)
+{
+    ConsoleResult result;
+    if (!PlaceTurretForRequest(engine.World().Entities(), avatar, log).IsValid())
+    {
+        result.Status = ConsoleStatus::InvalidArguments;
+        result.Error(std::string(kNoContentForTurret));
+        return result;
+    }
+    result.Info("placed a turret");
+    return result;
+}
+
+// The same request where this process is the authority the message would have
+// gone to, so it answers directly. A standalone game has no session at all; a
+// host has one and is still what its own player asks.
+//
+// Asking for a turret where there is none puts one down, so a player alone
+// with a console reaches the possession path in one command. A host wanting a
+// gun it does not climb into asks for that instead.
+ConsoleResult TakeTurretHere(
+    Engine& engine, const ResolvedPlayerAvatar& avatar, Logger& log)
+{
+    ConsoleResult result;
+    World& world = engine.World().Entities();
+
+    const EntityId participant = LocalParticipantOf(world);
     const ParticipantControl* control =
         participant.IsValid()
             ? world.TryGet<ParticipantControl>(participant)
             : nullptr;
     if (control == nullptr)
-        return false;
-
-    const PeerId owner = NetOwnerOf(world, turret);
-
-    if (owner == message.From)
     {
-        // Getting out. The gun goes back to the authority for the next person
-        // to ask for, and their input returns to the body that never stopped
-        // being theirs.
-        NetClearOwner(world, turret);
-        (void)engine.SetParticipantControlSubject(participant, control->Body);
-        log.Info("TemplateGame: peer {} left the turret", message.From.Value);
-        return true;
+        result.Status = ConsoleStatus::InvalidArguments;
+        result.Error("nobody is playing at this machine");
+        return result;
+    }
+    // Read out now: placing a turret below is structural, and anything after
+    // that would be reading a row that has moved.
+    EntityId target = control->ControlSubject;
+
+    // Already driving one: the same request means getting out. Otherwise the
+    // nearest one to wherever this player is standing, and one put down for
+    // them when the level has none.
+    if (!target.IsValid() || !world.HasComponent<TurretMount>(target))
+    {
+        const Vec3d from = LocalPlayerPosition(world).value_or(Vec3d::Zero());
+        target = NearestTurret(world, from);
+        if (!target.IsValid())
+            target = PlaceTurretForRequest(world, avatar, log);
+        if (!target.IsValid())
+        {
+            result.Status = ConsoleStatus::InvalidArguments;
+            result.Error(std::string(kNoContentForTurret));
+            return result;
+        }
     }
 
-    // Somebody else is driving it. Refused rather than taken: a request that
-    // could evict its current driver is a request worth sending constantly.
-    if (owner.IsValid())
-        return false;
-
-    // Owned so its owner-only state reaches the driver, and driven so their
-    // keys reach it. Two calls because they are two facts: a gun somebody is at
-    // the controls of is not necessarily a gun that belongs to them, and it is
-    // that difference that leaves the gun standing when its driver quits.
-    //
-    // Their body keeps its owner through all of this. It is still theirs while
-    // they are elsewhere, and only what they drive has moved.
-    NetSetOwner(world, turret, message.From);
-    (void)engine.SetParticipantControlSubject(participant, turret);
-
-    log.Info("TemplateGame: peer {} took the turret", message.From.Value);
-    return true;
+    switch (ApplyTurretRequest(engine, world, participant, target, PeerId{}))
+    {
+    case TurretRequestOutcome::Took:
+        result.Info("took the turret");
+        break;
+    case TurretRequestOutcome::Left:
+        result.Info("left the turret");
+        break;
+    case TurretRequestOutcome::Occupied:
+        result.Status = ConsoleStatus::InvalidArguments;
+        result.Error("somebody else is at that turret");
+        break;
+    case TurretRequestOutcome::Invalid:
+        result.Status = ConsoleStatus::InvalidArguments;
+        result.Error("no turret here");
+        break;
+    }
+    return result;
 }
 
 //=============================================================================
@@ -873,47 +1203,15 @@ struct SessionPlayerSystem
 
     void FrameUpdate(FrameUpdateContext& ctx)
     {
-        World& world = ctx.Entities;
-
         // No role anywhere in here. Who provides participants and who receives
         // them replicated is the engine's decision, taken where the session
         // role is actually known; what is left is presenting whichever body
         // this machine ended up driving.
-        FollowLocalControl(world);
-        ProvideTurret(world);
+        FollowLocalControl(ctx.Entities);
     }
 
 private:
     Logger& Log() { return Owner->Logging().GetLogger<TemplateGame>(); }
-
-    // One turret, near the authored start, on whichever machine is authority.
-    // Placed rather than authored so the template ships the possession path
-    // without every level having to carry a turret; a real game would author
-    // them and this would go.
-    void ProvideTurret(World& world)
-    {
-        if (TurretPlaced || !world.IsRegistered<TurretMount>())
-            return;
-        const PlayContentPartition* content =
-            world.TryGetResource<PlayContentPartition>();
-        if (content == nullptr)
-            return;
-
-        Vec3d at = FindPlayerStart(world, std::nullopt);
-        at.X += 3.0f;
-
-        const EntityId turret = CreateTransformEntity(
-            world, at, content->Value.value_or(PersistentStoragePartition));
-        world.AddComponent<TurretMount>(turret, TurretMount{});
-        // What arrives on a peer's machine as state; the recipe gives it the
-        // rest of a body there, the same way a pawn gets one.
-        world.AddComponent<NetReplicated>(turret);
-        world.AddComponent<NetSpawnRecipe>(
-            turret, NetSpawnRecipe{ .Id = kTurretRecipe });
-        BuildTurretBody(world, turret, Avatar);
-        TurretPlaced = true;
-        Log().Info("TemplateGame: placed a turret; `turret` takes it");
-    }
 
     // What this machine has to do about driving a pawn, once the engine has
     // decided which one that is.
@@ -955,8 +1253,6 @@ private:
     // The pawn this machine was last told to drive, so taking up a new one is
     // an edge rather than something re-derived every frame.
     EntityId Followed;
-    bool TurretPlaced = false;
-
 };
 
 struct SpinSystem
@@ -1108,15 +1404,25 @@ void TemplateGame::OnStart(GameStartupContext&)
             world.TryGet<NetParticipantIdentity>(participant);
         const std::uint32_t peer = who == nullptr ? 0u : who->Peer;
 
-        // Offset laterally from the authored start so two players do not arrive
-        // inside each other, by peer id so somebody lands in the same place
-        // however many others are present. A proper multi-start rotation is the
-        // level's business, not this policy's.
-        //
         // Unfiltered: a map's content is imported into its own zone partition,
         // so a start looked for only in the persistent one is a start that is
         // never found and a peer that arrives at the origin.
-        Vec3d spawn = FindPlayerStart(world, std::nullopt);
+        const std::optional<Vec3d> authored =
+            FindPlayerStart(world, std::nullopt);
+        // Said out loud once per spawn, because everything downstream of it
+        // looks exactly like a level that authored a start at the origin --
+        // including anything else the game puts near where a player begins.
+        if (!authored.has_value())
+        {
+            log.Warn("TemplateGame: no player_start in the loaded content; "
+                     "spawning at the default position");
+        }
+
+        // Offset laterally from the start so two players do not arrive inside
+        // each other, by peer id so somebody lands in the same place however
+        // many others are present. A proper multi-start rotation is the level's
+        // business, not this policy's.
+        Vec3d spawn = authored.value_or(kDefaultPlayerStart);
         spawn.X += 2.0f * static_cast<float>(peer);
 
         const EntityId pawn = SpawnPawn(world, spawn,
@@ -1281,12 +1587,20 @@ void TemplateGame::OnStart(GameStartupContext&)
     engine.Console().Registry().RegisterCommand({
         .Name = "turret",
         .Owner = "game",
-        .Usage = "turret",
-        .Help = "Take the nearest turret, or leave the one you are in.",
+        .Usage = "turret [place]",
+        .Help = "Take the nearest turret, or leave the one you are in; "
+                "`turret place` puts one down without taking it.",
         .RequiredPhase = ConsolePhase::GameLoaded,
         .Callback = [this](ConsoleExecutionContext&,
-                           std::span<const std::string>) {
-            return RequestTurret();
+                           std::span<const std::string> args) {
+            if (args.size() > 1 || (args.size() == 1 && args[0] != "place"))
+            {
+                ConsoleResult usage;
+                usage.Status = ConsoleStatus::InvalidArguments;
+                usage.Error("usage: turret [place]");
+                return usage;
+            }
+            return RequestTurret(!args.empty());
         },
     });
 
@@ -1807,87 +2121,41 @@ ConsoleResult TemplateGame::FocusWorldZone(
 // identity map is what turns "this thing in front of me" into something both
 // machines agree about, and it refuses to name anything replication did not
 // hand this machine -- so a client cannot invent an object and ask for it.
-ConsoleResult TemplateGame::RequestTurret()
+ConsoleResult TemplateGame::RequestTurret(bool placeOnly)
 {
     ConsoleResult result;
     Engine& engine = GetEngine();
-    NetSession* session = engine.TryNet();
-    if (session == nullptr || session->Role() != NetSessionRole::Client
-        || !session->IsConnected())
-    {
-        result.Status = ConsoleStatus::InvalidArguments;
-        result.Error("not connected to an authority");
-        return result;
-    }
 
-    const World& world = engine.World().Entities();
-    if (!world.IsRegistered<TurretMount>())
+    if (!engine.World().Entities().IsRegistered<TurretMount>())
     {
         result.Status = ConsoleStatus::InvalidArguments;
         result.Error("this build has no turrets");
         return result;
     }
 
-    // Already driving one: the same request means getting out, because the
-    // authority holds the record of who owns what and can tell the difference
-    // without being told.
-    EntityId target = LocalControlSubjectOf(world);
-    if (!target.IsValid() || !world.HasComponent<TurretMount>(target))
-    {
-        // Otherwise the nearest one to wherever this player is standing.
-        const LocalTransform* here =
-            target.IsValid() ? world.TryGet<LocalTransform>(target) : nullptr;
-        const Vec3d from = here == nullptr ? Vec3d::Zero() : here->Value.Position;
+    // A client decides nothing about who drives what, or about what exists, so
+    // it asks. Anywhere else -- a standalone game, and the player at a host's
+    // own machine -- this process is the authority that request would have been
+    // sent to, and the same rules answer it without one.
+    NetSession* session = engine.TryNet();
+    const bool client =
+        session != nullptr && session->Role() == NetSessionRole::Client;
 
-        target = EntityId{};
-        double nearest = 0.0;
-        world.ForEachComponent<TurretMount>(
-            [&](EntityId entity, const TurretMount&) {
-                const LocalTransform* pose = world.TryGet<LocalTransform>(entity);
-                if (pose == nullptr)
-                    return;
-                const double distance =
-                    (pose->Value.Position - from).SqrMagnitude();
-                if (!target.IsValid() || distance < nearest)
-                {
-                    target = entity;
-                    nearest = distance;
-                }
-            });
+    Logger& log = engine.Logging().GetLogger<TemplateGame>();
+    if (placeOnly)
+    {
+        if (client)
+        {
+            result.Status = ConsoleStatus::InvalidArguments;
+            result.Error("only the authority places turrets");
+            return result;
+        }
+        return PlaceTurretHere(engine, ResolvePlayerAvatar(log), log);
     }
 
-    if (!target.IsValid())
-    {
-        result.Status = ConsoleStatus::InvalidArguments;
-        result.Error("no turret here");
-        return result;
-    }
-
-    const NetEntityId named =
-        engine.Replication().ClientEntities().TryFind(target);
-    if (!named.IsValid())
-    {
-        result.Status = ConsoleStatus::InvalidArguments;
-        result.Error("that turret is not one replication gave this machine");
-        return result;
-    }
-
-    // Reliable: a request that is dropped is a key press that did nothing, and
-    // nothing later supersedes it. That is a fact about the message rather than
-    // something the engine could decide.
-    const std::size_t sent = NetSendToAuthority(
-        *session, NetChannelKind::ReliableOrdered, kTurretRequestKind,
-        EncodeTurretRequest(named), &engine.NetTraffic());
-    if (sent == 0)
-    {
-        result.Status = ConsoleStatus::InvalidArguments;
-        result.Error("could not queue the request");
-        return result;
-    }
-
-    result.Info("asked the authority about turret "
-                + std::to_string(named.Value));
-    return result;
+    if (client)
+        return AskAuthorityForTurret(engine, *session);
+    return TakeTurretHere(engine, ResolvePlayerAvatar(log), log);
 }
 
 ConsoleResult TemplateGame::SetCameraMode(std::string_view modeName)

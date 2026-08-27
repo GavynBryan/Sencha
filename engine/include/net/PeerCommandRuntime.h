@@ -122,6 +122,14 @@ private:
 // that never hosts or joins still registers them: they are inert with no
 // session, and composing a schedule by role would make the schedule depend on
 // something that is not known until a console command runs.
+// Registers the peer command feed, replication interpolation, and command
+// capture systems.
+//
+// Call after RegisterControllerSystems. When the controller systems are present
+// this orders a body that faces its aim between the feed that delivers a peer's
+// aim and the interpolation that owns a watched entity's pose; an edge naming a
+// system the schedule does not have yet is refused rather than silently
+// dropped, so registering in the other order loses the ordering, not the build.
 void RegisterNetSystems(EngineSchedule& schedule, PeerCommandRuntime& commands,
                         ClientPrediction& prediction,
                         ReplicationInterpolation& interpolation,

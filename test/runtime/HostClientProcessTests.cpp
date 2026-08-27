@@ -364,7 +364,10 @@ TEST_F(HostClientProcess, AClientTakesATurretAndGivesItBack)
     ASSERT_TRUE(host.WaitForLog("hosting on", &hostLog)) << hostLog;
     std::string port;
     ASSERT_TRUE(ParseHostPort(hostLog, port)) << hostLog;
-    ASSERT_TRUE(host.WaitForLog("placed a turret", &hostLog))
+    // Asked for rather than waited for: a turret is content the authority puts
+    // down, not something a map load produces. Retried because the map is
+    // still loading behind the port being open.
+    ASSERT_TRUE(SendUntilLogged(host, "turret place", "placed a turret", &hostLog))
         << "the host never placed a turret to take:\n" << hostLog;
 
     AppProcess client({ "+connect", "127.0.0.1:" + port }, TempLogPath("client"));
@@ -424,7 +427,8 @@ TEST_F(HostClientProcess, ADedicatedHostServesTwoClientsAtOnce)
     ASSERT_TRUE(host.WaitForLog("hosting on", &hostLog)) << hostLog;
     std::string port;
     ASSERT_TRUE(ParseHostPort(hostLog, port)) << hostLog;
-    ASSERT_TRUE(host.WaitForLog("placed a turret", &hostLog)) << hostLog;
+    ASSERT_TRUE(SendUntilLogged(host, "turret place", "placed a turret", &hostLog))
+        << hostLog;
 
     AppProcess first({ "+connect", "127.0.0.1:" + port }, TempLogPath("two-c1"));
     ASSERT_TRUE(first.Started());

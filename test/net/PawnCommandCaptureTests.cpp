@@ -31,7 +31,10 @@ namespace
 {
     struct CaptureHarness
     {
-        CaptureHarness()
+        // Without an intent the subject stands for something driven that does
+        // not walk -- a fixed gun, which has an aim and a trigger and nothing
+        // to move.
+        explicit CaptureHarness(bool withMovementIntent = true)
         {
             WorldState.RegisterComponent<LookOrientation>();
             WorldState.RegisterComponent<LocalLookControl>();
@@ -41,7 +44,8 @@ namespace
             Pawn = WorldState.CreateEntity();
             WorldState.AddComponent<LookOrientation>(Pawn, {});
             WorldState.AddComponent<LocalLookControl>(Pawn, {});
-            WorldState.AddComponent<MovementIntent>(Pawn, {});
+            if (withMovementIntent)
+                WorldState.AddComponent<MovementIntent>(Pawn, {});
 
             WorldState.AddResource<InputActionState>().Configure(1);
             WorldState.AddResource<LookInputBinding>().Look = InputActionId{ 1 };
@@ -146,6 +150,25 @@ TEST(PawnCommandCapture, EachTickIsFiledUnderTheAimItSimulatedWith)
         << "two ticks of one frame must not be filed under one aim";
     EXPECT_NEAR(records[0].Yaw, -0.02f, 1e-5f);
     EXPECT_NEAR(records[1].Yaw, -0.04f, 1e-5f);
+}
+
+// Not every driven thing walks, and the ones that do not still have to be
+// heard: their actions are what the authority derives from and their aim is
+// what it turns them by. Requiring an intent to move silenced them entirely --
+// a player at a fixed gun sent nothing at all, so the authority never learned
+// where they were pointing it and nobody watching saw it move.
+TEST(PawnCommandCapture, ASubjectThatCannotWalkStillSendsItsAim)
+{
+    CaptureHarness harness(false);
+    harness.RunFrameWithTicks(1, 0.02f);
+
+    const std::vector<PawnCommandTick> records = harness.Captured();
+    ASSERT_EQ(records.size(), 1u)
+        << "a driven subject with no intent to move was never heard from";
+    EXPECT_NEAR(records[0].Yaw, -0.02f, 1e-5f);
+    EXPECT_EQ(records[0].Intent.WishDir, Vec3d::Zero())
+        << "an absent intent must read as no intent to move";
+    EXPECT_FALSE(records[0].Intent.Jump);
 }
 
 // The records name distinct ticks, so the authority can place each aim on the

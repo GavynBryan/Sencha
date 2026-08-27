@@ -231,9 +231,24 @@ ParticipantBodyChange ParticipantLifecycle::RequestBody(
         return result;
     }
 
+    // Providing a body is structural and the policy is the game's, so the
+    // participant it was asked for can be gone by the time it answers. A body
+    // that did not end up bound is destroyed rather than reported as assigned:
+    // nothing refers to it and nothing drives it, so leaving it would stand a
+    // second copy of a player wherever the game spawns them, for good.
+    //
+    // The condition is where the subject actually landed rather than whether
+    // the call changed anything, so a policy that hands back the entity this
+    // participant already drives keeps it.
     result.Control = SetControlSubject(world, participant, body);
-    if (ParticipantControl* bound = world.TryGet<ParticipantControl>(participant))
-        bound->Body = body;
+    ParticipantControl* bound = world.TryGet<ParticipantControl>(participant);
+    if (bound == nullptr || bound->ControlSubject != body)
+    {
+        world.DestroyEntity(body);
+        result.Status = ParticipantBodyStatus::Unavailable;
+        return result;
+    }
+    bound->Body = body;
 
     result.Status = ParticipantBodyStatus::Assigned;
     result.Body = body;
