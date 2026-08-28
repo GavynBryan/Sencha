@@ -193,6 +193,27 @@ bool EditorDocument::IsDirty() const
     return Dirty;
 }
 
+Json5Value EditorDocument::SerializeEntityComponents(EntityId entity) const
+{
+    SceneSerializationContext context(Logging, Assets);
+    Json5Value components = Json5Value::MakeObject();
+    for (const auto& serializer : EditorSceneSerializers().Entries())
+    {
+        if (serializer->JsonKey() == "persistent_id")
+            continue;
+        if (!serializer->HasComponent(entity, Registry_))
+            continue;
+        JsonWriteArchive archive;
+        if (!serializer->Save(archive, entity, Registry_, context) || !archive.Ok())
+            continue;
+        JsonValue value = archive.TakeValue();
+        if (!value.IsNull())
+            components.Members.emplace_back(std::string(serializer->JsonKey()),
+                                            Json5FromJson(value));
+    }
+    return components;
+}
+
 SceneSourceDocument EditorDocument::BuildSceneSource() const
 {
     SceneSourceDocument out;
@@ -244,23 +265,7 @@ SceneSourceDocument EditorDocument::BuildSceneSource() const
         else if (const BakedBrushComponent* baked = Scene.TryGetBakedBrush(entity))
             savedMeshes.push_back(baked->Source);
 
-        // Fresh values from live state, one member per present component.
-        // Identity lives at record level, so its component is not serialized.
-        Json5Value fresh = Json5Value::MakeObject();
-        for (const auto& serializer : EditorSceneSerializers().Entries())
-        {
-            if (serializer->JsonKey() == "persistent_id")
-                continue;
-            if (!serializer->HasComponent(entity, Registry_))
-                continue;
-            JsonWriteArchive archive;
-            if (!serializer->Save(archive, entity, Registry_, context) || !archive.Ok())
-                continue;
-            JsonValue component = archive.TakeValue();
-            if (!component.IsNull())
-                fresh.Members.emplace_back(std::string(serializer->JsonKey()),
-                                           Json5FromJson(component));
-        }
+        Json5Value fresh = SerializeEntityComponents(entity);
 
         if (const auto retained = retainedById.find(id->Id.Value);
             retained != retainedById.end())

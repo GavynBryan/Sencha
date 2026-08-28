@@ -15,6 +15,13 @@
 // whole source, an entity id is one entity.
 using SceneInstanceId = StrongId<struct SceneInstanceIdTag, std::uint64_t>;
 
+// The 16-hex-digit text form every scene-source id uses, instance and entity
+// alike -- one id vocabulary, one spelling.
+[[nodiscard]] inline std::string SceneIdText(std::uint64_t id)
+{
+    return PersistentEntityIdToString(PersistentEntityId{ id });
+}
+
 //=============================================================================
 // SceneElementPath
 //
@@ -39,7 +46,7 @@ struct SceneElementPath
         {
             if (i > 0)
                 out.push_back('/');
-            out += PersistentEntityIdToString(PersistentEntityId{ Elements[i] });
+            out += SceneIdText(Elements[i]);
         }
         return out;
     }

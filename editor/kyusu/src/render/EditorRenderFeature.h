@@ -15,6 +15,7 @@
 #include "BrushFillRenderer.h"
 #include "SceneRenderQueueBuilder.h"
 #include "SceneThumbnailCache.h"
+#include "ThumbnailStudio.h"
 #include "SceneSolidRenderer.h"
 #include "SelectionRenderer.h"
 #include "ShadowResidencyReadout.h"
@@ -196,6 +197,7 @@ private:
     float                  ShadowBiasSlope = -1.0f;
     MeshForwardPass        Forward;
     std::optional<SceneRenderQueueBuilder> QueueBuilder;
+    std::optional<ThumbnailStudio> Studio;
     std::optional<SceneThumbnailCache> Thumbnails;
     std::optional<SceneSolidRenderer>      SceneSolid;
     // One WYSIWYG queue builder per open context zone (lazily created, dropped

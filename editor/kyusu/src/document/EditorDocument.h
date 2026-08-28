@@ -25,6 +25,7 @@ class AssetRegistry;
 struct RuntimeAssets;
 struct IComponentSerializer;
 
+class PersistentEntityIndex;
 class EditorDocument
 {
 public:
@@ -126,6 +127,12 @@ public:
     // cooks -- a cook that minted would bake ids the source never recorded.
     void MintMissingInstanceIds();
 
+    // One entity's components as the serializers say they are right now, as
+    // an ordered Json5 object -- identity excluded, since it lives at record
+    // level. The one shape the source build, the projection baselines, and
+    // the harvest diffs all speak.
+    [[nodiscard]] Json5Value SerializeEntityComponents(EntityId entity) const;
+
     // In-memory serialization to and from .sscene text. Save and Load are the
     // file-backed wrappers. Known component values always come from live
     // document state; everything this build does not know -- unknown
@@ -176,6 +183,9 @@ public:
     void SetDefaultMaterial(AssetRef material);
 
 private:
+    // The lazily built source lookup over ContentRoots_.
+    [[nodiscard]] SceneSourceCache& EnsureSourceCache();
+
     // Builds the document's current source form: live values merged over the
     // retained source's trivia and unknowns. ToSceneText renders it; Save also
     // scans it for unresolved asset references before writing.
@@ -187,6 +197,31 @@ private:
     // projection, and deletions into suppressions. Runs before every save and
     // every re-projection, so the records are always the authority at rest.
     void HarvestInstanceOverrides();
+
+    // The harvest's working state for one instance record, filled by the
+    // three phases below in order.
+    struct RecordHarvest
+    {
+        std::vector<std::pair<SceneElementPath, Json5Value>> Patches;
+        std::vector<std::pair<SceneElementPath, Json5Value>> Added;
+        std::vector<std::pair<SceneElementPath, std::vector<std::string>>> Removed;
+        std::vector<SceneAddedEntity> AddedEntities;
+        std::vector<SceneElementPath> Suppressed;
+        // Seen distinguishes "the projection produced this placement's root"
+        // from "this record was never projected at all" -- a freshly placed
+        // record, or one whose source failed to resolve. The harvest can only
+        // speak about what the projection produced.
+        bool RootSeen = false;
+        bool RootAlive = false;
+    };
+    void HarvestProjectedElements(
+        const PersistentEntityIndex& index,
+        std::unordered_map<std::uint64_t, RecordHarvest>& byInstance);
+    void AbsorbAuthoredChildren(
+        std::unordered_map<std::uint64_t, RecordHarvest>& byInstance);
+    void FoldHarvestsIntoRecords(
+        const PersistentEntityIndex& index,
+        std::unordered_map<std::uint64_t, RecordHarvest>& byInstance);
 
     // One expanded entity the projection owns, keyed by its persistent id.
     struct ProjectedElement

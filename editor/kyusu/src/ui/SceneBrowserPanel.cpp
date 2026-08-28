@@ -1,6 +1,7 @@
 #include "SceneBrowserPanel.h"
 
 #include "ui/ScopedPanel.h"
+#include "ui/TextFilterMatch.h"
 #include "fonts/IconsFontAwesome6.h"
 
 #include "commands/CommandStack.h"
@@ -8,6 +9,7 @@
 #include "document/EditorDocument.h"
 #include "document/WorldDocument.h"
 #include "render/SceneThumbnailCache.h"
+#include "scene_source/SceneSourcePaths.h"
 #include "ui/EditorUiStyle.h"
 
 #include <imgui.h>
@@ -18,20 +20,6 @@
 
 namespace
 {
-    [[nodiscard]] bool ContainsCaseInsensitive(std::string_view haystack,
-                                               std::string_view needle)
-    {
-        if (needle.empty())
-            return true;
-        const auto it = std::search(
-            haystack.begin(), haystack.end(), needle.begin(), needle.end(),
-            [](char a, char b)
-            {
-                return std::tolower(static_cast<unsigned char>(a))
-                    == std::tolower(static_cast<unsigned char>(b));
-            });
-        return it != haystack.end();
-    }
 } // namespace
 
 SceneBrowserPanel::SceneBrowserPanel(WorldDocument& world, SelectionService& selection,
@@ -64,10 +52,10 @@ void SceneBrowserPanel::Rescan()
                 std::filesystem::relative(it->path(), root, relEc);
             if (relEc)
                 continue;
-            Entries.push_back(Entry{
-                .AssetPath = "asset://" + relative.generic_string(),
-                .Label = it->path().stem().string(),
-            });
+            std::string assetPath = "asset://" + relative.generic_string();
+            std::string label(SceneSourceStem(assetPath));
+            Entries.push_back(Entry{ .AssetPath = std::move(assetPath),
+                                     .Label = std::move(label) });
         }
     }
     std::sort(Entries.begin(), Entries.end(),
@@ -107,7 +95,7 @@ void SceneBrowserPanel::OnDraw()
 
     for (const Entry& entry : Entries)
     {
-        if (!ContainsCaseInsensitive(entry.AssetPath, FilterText))
+        if (!TextFilterMatch(entry.AssetPath, FilterText))
             continue;
 
         ImGui::PushID(entry.AssetPath.c_str());

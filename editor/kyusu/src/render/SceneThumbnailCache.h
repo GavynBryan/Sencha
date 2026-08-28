@@ -1,8 +1,6 @@
 #pragma once
 
-#include "ViewportTargetCache.h"
-
-#include <render/extract/Camera.h>
+#include "ThumbnailStudio.h"
 
 #include <filesystem>
 #include <memory>
@@ -12,44 +10,36 @@
 
 class EditorDocument;
 class LoggingProvider;
-class MaterialCache;
-class MeshForwardPass;
 class SceneRenderQueueBuilder;
-class SkyGradientPass;
-class StaticMeshCache;
 struct FrameContext;
 struct RuntimeAssets;
 
 //=============================================================================
 // SceneThumbnailCache
 //
-// Offscreen previews of .sscene sources for the browser: each requested scene
-// loads into a scratch document, frames its bounds from a three-quarter angle,
-// and renders once through the same forward pass the Solid viewport uses --
-// real materials, full-bright neutral ambient, sky gradient behind. Targets
-// and their ImGui bindings ride the ViewportTargetCache under synthetic
-// viewport ids, so the presenter, per-frame slots, and teardown are the ones
-// the viewports already trust.
+// Previews of .sscene sources for the browser: each requested scene loads
+// into a scratch document, its renderable bounds pick the framing, and the
+// ThumbnailStudio renders it. This cache owns what is scene-specific --
+// loading, bounding, queue building, and the entry lifecycle; how a preview
+// looks belongs to the studio.
 //
-// A thumbnail renders once per in-flight slot and then holds; requesting it
-// again is free. The scratch document and queue builder stay alive with the
-// entry because the recorded commands reference their GPU buffers and asset
-// handles.
+// An entry's scratch document and queue builder live only while their
+// recorded passes may still be in flight; once every slot holds the image,
+// the payload is released and the entry keeps nothing but its target.
 //=============================================================================
 class SceneThumbnailCache
 {
 public:
-    SceneThumbnailCache(ViewportTargetCache& targets,
-                        MeshForwardPass& forward,
-                        SkyGradientPass& sky,
+    SceneThumbnailCache(ThumbnailStudio& studio,
                         RuntimeAssets& assets,
                         StaticMeshCache& meshes,
-                        MaterialCache& materials,
-                        LoggingProvider& logging,
-                        VkFormat depthFormat);
+                        LoggingProvider& logging);
     ~SceneThumbnailCache();
 
     void SetContentRoots(std::vector<std::filesystem::path> roots);
+
+    // Advances the entry clock; call once per frame before any Thumbnail().
+    void BeginFrame();
 
     // UI side: the thumbnail texture for the source, 0 while it has not
     // rendered (the caller draws a placeholder). Requests it if new and marks
@@ -57,7 +47,8 @@ public:
     [[nodiscard]] ImTextureID Thumbnail(const std::string& assetPath);
 
     // Render side, inside the feature's offscreen recording: renders at most
-    // one pending thumbnail pass this frame.
+    // one pending thumbnail pass this frame, and releases payloads whose
+    // recorded passes are safely behind us.
     void RenderPending(const FrameContext& frame);
 
     // Keeps this cache's synthetic ids out of the viewport prune.
@@ -75,6 +66,9 @@ private:
         std::unique_ptr<SceneRenderQueueBuilder> Queues;
         CameraRenderData Camera;
         int RemainingPasses = 0;
+        // The frame after which the recorded passes cannot still be in
+        // flight, so the scratch payload may go.
+        std::uint64_t ReleasePayloadAfter = UINT64_MAX;
         bool Loaded = false;
         bool Failed = false;
         std::uint64_t LastUsedFrame = 0;
@@ -82,16 +76,11 @@ private:
 
     [[nodiscard]] bool LoadEntry(const std::string& assetPath, Entry& entry);
 
-    ViewportTargetCache& Targets;
-    MeshForwardPass& Forward;
-    SkyGradientPass& Sky;
+    ThumbnailStudio& Studio;
     RuntimeAssets& Assets;
     StaticMeshCache& Meshes;
-    MaterialCache& Materials;
     LoggingProvider& Logging;
-    VkFormat DepthFormat = VK_FORMAT_UNDEFINED;
     std::vector<std::filesystem::path> ContentRoots;
     std::unordered_map<std::string, Entry> Entries;
-    std::uint32_t NextTargetId = 0;
     std::uint64_t FrameClock = 0;
 };

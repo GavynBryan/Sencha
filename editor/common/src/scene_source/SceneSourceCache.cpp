@@ -1,5 +1,7 @@
 #include "scene_source/SceneSourceCache.h"
 
+#include "scene_source/SceneSourcePaths.h"
+
 #include <fstream>
 #include <sstream>
 
@@ -7,26 +9,7 @@ const SceneSourceDocument* SceneSourceCache::Find(std::string_view assetPath)
 {
     LastError_.clear();
 
-    constexpr std::string_view prefix = "asset://";
-    if (assetPath.rfind(prefix, 0) != 0)
-    {
-        LastError_ = "source reference '" + std::string(assetPath)
-            + "' is not an asset:// path";
-        return nullptr;
-    }
-    const std::string relative(assetPath.substr(prefix.size()));
-
-    std::filesystem::path file;
-    for (const std::filesystem::path& root : Roots)
-    {
-        std::error_code ec;
-        if (std::filesystem::path candidate = root / relative;
-            std::filesystem::is_regular_file(candidate, ec))
-        {
-            file = std::move(candidate);
-            break;
-        }
-    }
+    const std::filesystem::path file = ResolveSceneSourceFile(Roots, assetPath);
     if (file.empty())
     {
         LastError_ = "source '" + std::string(assetPath)

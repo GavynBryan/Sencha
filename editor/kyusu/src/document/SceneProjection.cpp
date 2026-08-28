@@ -8,7 +8,6 @@
 #include "DocumentSerialization.h"
 #include "EntityNameComponent.h"
 #include "brush/BrushMeshSerialization.h"
-#include "brush/BrushValidation.h"
 #include "scene_source/Json5Convert.h"
 
 #include <core/logging/Logger.h>
@@ -58,31 +57,6 @@ namespace
         return live.SameValueAs(baseline) ? Json5Value{} : live;
     }
 
-    // The entity's components as the serializers say they are right now --
-    // the same shape the baseline was captured in, so the diff is edits only.
-    [[nodiscard]] Json5Value SerializeLiveComponents(
-        const Registry& registry, EntityId entity,
-        LoggingProvider& logging, AssetSystem* assets)
-    {
-        SceneSerializationContext context(logging, assets);
-        Json5Value components = Json5Value::MakeObject();
-        for (const auto& serializer : EditorSceneSerializers().Entries())
-        {
-            if (serializer->JsonKey() == "persistent_id")
-                continue;
-            if (!serializer->HasComponent(entity, registry))
-                continue;
-            JsonWriteArchive archive;
-            if (!serializer->Save(archive, entity, registry, context) || !archive.Ok())
-                continue;
-            JsonValue value = archive.TakeValue();
-            if (!value.IsNull())
-                components.Members.emplace_back(std::string(serializer->JsonKey()),
-                                                Json5FromJson(value));
-        }
-        return components;
-    }
-
     // Strips the document-local components from a record destined for a
     // placement: brush geometry cannot cross documents by id.
     void StripDocumentLocal(Json5Value& components, Logger& log,
@@ -97,6 +71,36 @@ namespace
                      PersistentEntityIdToString(id));
     }
 
+    // The three ways one entity's components can differ from its baseline:
+    // changed fields (a sparse patch), whole components the baseline lacked,
+    // and baseline components the entity dropped. Document-local components
+    // never cross into records.
+    void DiffComponents(const Json5Value& live, const Json5Value& baseline,
+                        Json5Value& patch, Json5Value& added,
+                        std::vector<std::string>& removed)
+    {
+        for (const Json5Value::Member& member : live.Members)
+        {
+            if (IsDocumentLocalComponent(member.first))
+                continue;
+            const Json5Value* was = baseline.Find(member.first);
+            if (was == nullptr)
+            {
+                added.Members.push_back(member);
+                continue;
+            }
+            Json5Value diff = DiffValue(member.second, *was);
+            if (!diff.IsNull())
+                patch.Members.emplace_back(member.first, std::move(diff));
+        }
+        for (const Json5Value::Member& member : baseline.Members)
+            if (!IsDocumentLocalComponent(member.first)
+                && live.Find(member.first) == nullptr)
+            {
+                removed.push_back(member.first);
+            }
+    }
+
     [[nodiscard]] SceneElementPath InnerPath(const SceneElementPath& outer)
     {
         SceneElementPath inner;
@@ -109,6 +113,13 @@ void EditorDocument::SetContentRoots(std::vector<std::filesystem::path> roots)
 {
     ContentRoots_ = std::move(roots);
     SourceCache_.reset();
+}
+
+SceneSourceCache& EditorDocument::EnsureSourceCache()
+{
+    if (SourceCache_ == nullptr)
+        SourceCache_ = std::make_unique<SceneSourceCache>(ContentRoots_);
+    return *SourceCache_;
 }
 
 void EditorDocument::RebuildSceneProjection()
@@ -151,16 +162,14 @@ void EditorDocument::RebuildSceneProjection()
     if (Retained_.Instances.empty())
         return;
 
-    if (SourceCache_ == nullptr)
-        SourceCache_ = std::make_unique<SceneSourceCache>(ContentRoots_);
-
+    SceneSourceCache& sources = EnsureSourceCache();
     std::string resolveError;
     const std::optional<SceneCompositionResult> resolved =
-        ResolveSceneComposition(Retained_, *SourceCache_, &resolveError);
+        ResolveSceneComposition(Retained_, sources, &resolveError);
     if (!resolved.has_value())
     {
-        if (!SourceCache_->LastError().empty())
-            resolveError += " (" + SourceCache_->LastError() + ")";
+        if (!sources.LastError().empty())
+            resolveError += " (" + sources.LastError() + ")";
         ProjectionDiagnostics_.ResolveError = resolveError;
         Logging.GetLogger<EditorDocument>().Error(
             "scene projection: {}", resolveError);
@@ -217,13 +226,8 @@ void EditorDocument::RebuildSceneProjection()
                              "from its source sidecar", meshKey);
                     continue;
                 }
-                BrushMesh copy = BrushMeshFromJson(Json5ToJson(*mesh));
-                // The repair every serialized mesh gets on entry: face normals
-                // are cached members the tessellator reads, and a parse alone
-                // leaves them zero -- which lights as black, not as an error.
-                BrushValidateAndRepair(copy);
-                const BrushId copied =
-                    Scene.GetBrushMeshStore().Create(std::move(copy));
+                const BrushId copied = Scene.GetBrushMeshStore().Create(
+                    BrushMeshFromJson(Json5ToJson(*mesh)));
                 if (member.first == "brush")
                     Registry_.Components.AddComponent(entity, BrushComponent{ copied });
                 else
@@ -253,7 +257,7 @@ void EditorDocument::RebuildSceneProjection()
         record.Instance = element.Instance;
         record.Root = element.IsInstanceRoot;
         record.Added = element.IsAdded;
-        record.Baseline = SerializeLiveComponents(Registry_, entity, Logging, Assets);
+        record.Baseline = SerializeEntityComponents(entity);
         Projection_.emplace(element.Id.Value, std::move(record));
     }
 
@@ -279,12 +283,9 @@ void EditorDocument::RebuildSceneProjection()
 
 void EditorDocument::MintMissingInstanceIds()
 {
-    if (SourceCache_ == nullptr)
-        SourceCache_ = std::make_unique<SceneSourceCache>(ContentRoots_);
-
     std::string resolveError;
     const std::optional<SceneCompositionResult> resolved =
-        ResolveSceneComposition(Retained_, *SourceCache_, &resolveError);
+        ResolveSceneComposition(Retained_, EnsureSourceCache(), &resolveError);
     if (!resolved.has_value() || resolved->MissingIds.empty())
         return;
 
@@ -317,28 +318,22 @@ void EditorDocument::HarvestInstanceOverrides()
     if (index == nullptr)
         return;
 
-    // Fresh override state per record, with entries whose paths the projection
-    // never produced -- dangling, possibly meaningful to a build that can
-    // resolve more than this one -- carried over rather than dropped.
-    struct RecordHarvest
-    {
-        std::vector<std::pair<SceneElementPath, Json5Value>> Patches;
-        std::vector<std::pair<SceneElementPath, Json5Value>> Added;
-        std::vector<std::pair<SceneElementPath, std::vector<std::string>>> Removed;
-        std::vector<SceneAddedEntity> AddedEntities;
-        std::vector<SceneElementPath> Suppressed;
-        // Seen distinguishes "the projection produced this placement's root"
-        // from "this record was never projected at all" -- a freshly placed
-        // record, or one whose source failed to resolve. The harvest can only
-        // speak about what the projection produced; a record it never saw is
-        // not its to judge.
-        bool RootSeen = false;
-        bool RootAlive = false;
-    };
     std::unordered_map<std::uint64_t, RecordHarvest> byInstance;
     for (const SceneInstanceRecord& record : Retained_.Instances)
         byInstance.emplace(record.Id.Value, RecordHarvest{});
 
+    HarvestProjectedElements(*index, byInstance);
+    AbsorbAuthoredChildren(byInstance);
+    FoldHarvestsIntoRecords(*index, byInstance);
+}
+
+// Phase one: every element the projection produced lands in its instance's
+// harvest bucket -- the root's liveness, an added entity's whole record, a
+// member's sparse diff against its baseline, or a suppression.
+void EditorDocument::HarvestProjectedElements(
+    const PersistentEntityIndex& index,
+    std::unordered_map<std::uint64_t, RecordHarvest>& byInstance)
+{
     for (const auto& [pid, element] : Projection_)
     {
         const std::uint64_t owner = element.Path.Elements.front();
@@ -346,7 +341,7 @@ void EditorDocument::HarvestInstanceOverrides()
         if (harvest == byInstance.end())
             continue;
 
-        const EntityId entity = index->TryResolve(PersistentEntityId{ pid });
+        const EntityId entity = index.TryResolve(PersistentEntityId{ pid });
         const bool alive = entity.IsValid() && Scene.HasEntity(entity);
 
         if (element.Root)
@@ -375,8 +370,7 @@ void EditorDocument::HarvestInstanceOverrides()
                     {
                         record.ParentPath = InnerPath(projectedParent->second.Path);
                     }
-            record.Components =
-                SerializeLiveComponents(Registry_, entity, Logging, Assets);
+            record.Components = SerializeEntityComponents(entity);
             StripDocumentLocal(record.Components,
                                Logging.GetLogger<EditorDocument>(), record.Id);
             harvest->second.AddedEntities.push_back(std::move(record));
@@ -389,32 +383,11 @@ void EditorDocument::HarvestInstanceOverrides()
             continue;
         }
 
-        const Json5Value live =
-            SerializeLiveComponents(Registry_, entity, Logging, Assets);
-
+        const Json5Value live = SerializeEntityComponents(entity);
         Json5Value patch = Json5Value::MakeObject();
         Json5Value added = Json5Value::MakeObject();
         std::vector<std::string> removed;
-        for (const Json5Value::Member& member : live.Members)
-        {
-            if (IsDocumentLocalComponent(member.first))
-                continue;
-            const Json5Value* was = element.Baseline.Find(member.first);
-            if (was == nullptr)
-            {
-                added.Members.push_back(member);
-                continue;
-            }
-            Json5Value diff = DiffValue(member.second, *was);
-            if (!diff.IsNull())
-                patch.Members.emplace_back(member.first, std::move(diff));
-        }
-        for (const Json5Value::Member& member : element.Baseline.Members)
-            if (!IsDocumentLocalComponent(member.first)
-                && live.Find(member.first) == nullptr)
-            {
-                removed.push_back(member.first);
-            }
+        DiffComponents(live, element.Baseline, patch, added, removed);
 
         const SceneElementPath inner = InnerPath(element.Path);
         if (!patch.Members.empty())
@@ -424,11 +397,16 @@ void EditorDocument::HarvestInstanceOverrides()
         if (!removed.empty())
             harvest->second.Removed.emplace_back(inner, std::move(removed));
     }
+}
 
-    // Entities authored beneath the projection: a live local whose parent is a
-    // projected entity belongs to the placement as an added entity, not to the
-    // document's local list -- a local record cannot legally name a projected
-    // parent.
+// Phase two: entities authored beneath the projection. A live local whose
+// ancestry reaches a projected entity belongs to the placement as an added
+// entity, not to the document's local list -- a local record cannot legally
+// name a projected parent. Deeper authored trees inside an instance flatten
+// onto it: an added-entity record can only name a source path as its parent.
+void EditorDocument::AbsorbAuthoredChildren(
+    std::unordered_map<std::uint64_t, RecordHarvest>& byInstance)
+{
     const World& world = Registry_.Components;
     Logger& log = Logging.GetLogger<EditorDocument>();
     for (EntityId entity : Scene.GetAllEntities())
@@ -437,9 +415,6 @@ void EditorDocument::HarvestInstanceOverrides()
         if (id == nullptr || Projection_.contains(id->Id.Value))
             continue;
 
-        // Walk to the nearest projected ancestor. Deeper authored trees inside
-        // an instance flatten onto it: an added-entity record can only name a
-        // source path as its parent.
         const ProjectedElement* anchor = nullptr;
         bool crossedLocal = false;
         std::size_t hops = 0;
@@ -473,15 +448,22 @@ void EditorDocument::HarvestInstanceOverrides()
         record.Id = id->Id;
         record.ParentPath = anchor->Root ? SceneElementPath{}
                                          : InnerPath(anchor->Path);
-        record.Components = SerializeLiveComponents(Registry_, entity, Logging, Assets);
+        record.Components = SerializeEntityComponents(entity);
         StripDocumentLocal(record.Components, log, record.Id);
         harvest->second.AddedEntities.push_back(std::move(record));
         AbsorbedPids_.insert(id->Id.Value);
     }
+}
 
-    // Fold the harvests into the records. A dead root means the placement was
-    // deleted; carried dangling entries are the ones whose paths this
-    // projection did not produce.
+// Phase three: fold each harvest into its record. A record the projection
+// never produced a root for is not the harvest's to judge; a dead projected
+// root means the placement was deleted. Entries whose paths this projection
+// did not produce -- dangling, possibly meaningful to a build that resolves
+// more -- carry over rather than evaporating.
+void EditorDocument::FoldHarvestsIntoRecords(
+    const PersistentEntityIndex& index,
+    std::unordered_map<std::uint64_t, RecordHarvest>& byInstance)
+{
     const auto isProjectedPathOf = [&](std::uint64_t instance,
                                        const SceneElementPath& inner)
     {
@@ -505,11 +487,10 @@ void EditorDocument::HarvestInstanceOverrides()
         if (!harvest->second.RootAlive)
             return true; // the placement itself was deleted
 
-        // The root's live transform is the placement, and its live parent is
-        // the record's parent -- reparenting a placement is an ordinary
-        // hierarchy edit on its root.
+        // The root's live transform is the placement, its live parent is the
+        // record's parent, and its authored name is the record's name.
         if (const EntityId root =
-                index->TryResolve(PersistentEntityId{ record.Id.Value });
+                index.TryResolve(PersistentEntityId{ record.Id.Value });
             root.IsValid())
         {
             if (const Transform3f* local = Scene.TryGetLocalTransform(root))
@@ -555,7 +536,7 @@ void EditorDocument::HarvestInstanceOverrides()
         record.Suppressed = std::move(fresh.Suppressed);
 
         // Added-entity records whose entities this projection produced were
-        // re-harvested above; records the projection never saw carry as-is.
+        // re-harvested in phase one; records the projection never saw carry.
         for (SceneAddedEntity& prior : record.AddedEntities)
             if (!Projection_.contains(prior.Id.Value))
                 fresh.AddedEntities.push_back(std::move(prior));
@@ -569,12 +550,11 @@ SceneInstanceId EditorDocument::PlaceSceneInstance(std::string source,
                                                    PersistentEntityId parent,
                                                    std::string* error)
 {
-    if (SourceCache_ == nullptr)
-        SourceCache_ = std::make_unique<SceneSourceCache>(ContentRoots_);
-    if (SourceCache_->Find(source) == nullptr)
+    SceneSourceCache& sources = EnsureSourceCache();
+    if (sources.Find(source) == nullptr)
     {
         if (error != nullptr)
-            *error = SourceCache_->LastError();
+            *error = sources.LastError();
         return SceneInstanceId{};
     }
 

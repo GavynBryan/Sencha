@@ -16,11 +16,6 @@ namespace
         return false;
     }
 
-    [[nodiscard]] std::string IdText(std::uint64_t id)
-    {
-        return PersistentEntityIdToString(PersistentEntityId{ id });
-    }
-
     // ── Reading ──────────────────────────────────────────────────────────────
 
     bool ReadId(const Json5Value& object, std::string_view key, bool required,
@@ -110,7 +105,7 @@ namespace
         if (!ReadId(record, "id", true, id, error, "instance"))
             return false;
         out.Id = SceneInstanceId{ id };
-        const std::string what = "instance " + IdText(id);
+        const std::string what = "instance " + SceneIdText(id);
 
         std::uint64_t parent = 0;
         if (!ReadId(record, "parent", false, parent, error, what))
@@ -267,7 +262,7 @@ namespace
         const auto claim = [&](std::uint64_t id, std::string_view what) -> bool
         {
             if (!owned.insert(id).second)
-                return Fail(error, std::string(what) + ": id " + IdText(id)
+                return Fail(error, std::string(what) + ": id " + SceneIdText(id)
                     + " is already used elsewhere in the document");
             return true;
         };
@@ -280,10 +275,10 @@ namespace
             if (!claim(instance.Id.Value, "instances"))
                 return false;
             for (const auto& [path, minted] : instance.EntityIds)
-                if (!claim(minted.Value, "instance " + IdText(instance.Id.Value)))
+                if (!claim(minted.Value, "instance " + SceneIdText(instance.Id.Value)))
                     return false;
             for (const SceneAddedEntity& added : instance.AddedEntities)
-                if (!claim(added.Id.Value, "instance " + IdText(instance.Id.Value)))
+                if (!claim(added.Id.Value, "instance " + SceneIdText(instance.Id.Value)))
                     return false;
         }
 
@@ -302,11 +297,11 @@ namespace
             if (parent == 0)
                 return true;
             if (child == parent)
-                return Fail(error, std::string(what) + " " + IdText(child)
+                return Fail(error, std::string(what) + " " + SceneIdText(child)
                     + ": parents itself");
             if (!parentable.contains(parent))
-                return Fail(error, std::string(what) + " " + IdText(child)
-                    + ": parent " + IdText(parent) + " does not exist");
+                return Fail(error, std::string(what) + " " + SceneIdText(child)
+                    + ": parent " + SceneIdText(parent) + " does not exist");
             parentOf.emplace(child, parent);
             return true;
         };
@@ -326,7 +321,7 @@ namespace
                  ++steps)
             {
                 if (current == start)
-                    return Fail(error, "parent cycle through " + IdText(start));
+                    return Fail(error, "parent cycle through " + SceneIdText(start));
                 const auto next = parentOf.find(current);
                 current = next == parentOf.end() ? 0 : next->second;
             }
@@ -342,7 +337,7 @@ namespace
                     for (const std::string& name : names)
                         if (components.Find(name) != nullptr)
                             return Fail(error,
-                                "instance " + IdText(instance.Id.Value) + ": component '"
+                                "instance " + SceneIdText(instance.Id.Value) + ": component '"
                                     + name + "' on '" + removePath.ToString()
                                     + "' is both added and removed");
                 }
@@ -360,21 +355,22 @@ namespace
         return array;
     }
 
-    [[nodiscard]] Json5Value WriteTransform(const Transform3f& transform)
-    {
-        Json5Value object = Json5Value::MakeObject();
-        const float position[3] = { transform.Position.X, transform.Position.Y,
-                                    transform.Position.Z };
-        const float rotation[4] = { transform.Rotation.X, transform.Rotation.Y,
-                                    transform.Rotation.Z, transform.Rotation.W };
-        const float scale[3] = { transform.Scale.X, transform.Scale.Y,
-                                 transform.Scale.Z };
-        object.Members.emplace_back("position", WriteVec(position, 3));
-        object.Members.emplace_back("rotation", WriteVec(rotation, 4));
-        object.Members.emplace_back("scale", WriteVec(scale, 3));
-        return object;
-    }
 } // namespace
+
+Json5Value TransformToJson5(const Transform3f& transform)
+{
+    Json5Value object = Json5Value::MakeObject();
+    const float position[3] = { transform.Position.X, transform.Position.Y,
+                                transform.Position.Z };
+    const float rotation[4] = { transform.Rotation.X, transform.Rotation.Y,
+                                transform.Rotation.Z, transform.Rotation.W };
+    const float scale[3] = { transform.Scale.X, transform.Scale.Y,
+                             transform.Scale.Z };
+    object.Members.emplace_back("position", WriteVec(position, 3));
+    object.Members.emplace_back("rotation", WriteVec(rotation, 4));
+    object.Members.emplace_back("scale", WriteVec(scale, 3));
+    return object;
+}
 
 std::optional<SceneSourceDocument> ParseSceneSource(std::string_view text,
                                                     std::string* error)
@@ -464,7 +460,7 @@ std::optional<SceneSourceDocument> ParseSceneSource(std::string_view text,
                 entity.Id = PersistentEntityId{ id };
                 std::uint64_t parent = 0;
                 if (!ReadId(record, "parent", false, parent, error,
-                            "entity " + IdText(id)))
+                            "entity " + SceneIdText(id)))
                     return std::nullopt;
                 entity.Parent = PersistentEntityId{ parent };
                 if (const Json5Value* hidden = record.Find("hidden"))
@@ -475,7 +471,7 @@ std::optional<SceneSourceDocument> ParseSceneSource(std::string_view text,
                 {
                     if (!components->IsObject())
                     {
-                        (void)Fail(error, "entity " + IdText(id)
+                        (void)Fail(error, "entity " + SceneIdText(id)
                             + ": 'components' must be an object");
                         return std::nullopt;
                     }
@@ -532,9 +528,9 @@ std::string WriteSceneSource(const SceneSourceDocument& document)
     {
         Json5Value record = Json5Value::MakeObject();
         record.LeadingComments = entity.LeadingComments;
-        record.Members.emplace_back("id", Json5Value(IdText(entity.Id.Value)));
+        record.Members.emplace_back("id", Json5Value(SceneIdText(entity.Id.Value)));
         if (entity.Parent.IsValid())
-            record.Members.emplace_back("parent", Json5Value(IdText(entity.Parent.Value)));
+            record.Members.emplace_back("parent", Json5Value(SceneIdText(entity.Parent.Value)));
         if (entity.Hidden)
             record.Members.emplace_back("hidden", Json5Value(true));
         if (entity.Locked)
@@ -551,21 +547,21 @@ std::string WriteSceneSource(const SceneSourceDocument& document)
         {
             Json5Value record = Json5Value::MakeObject();
             record.LeadingComments = instance.LeadingComments;
-            record.Members.emplace_back("id", Json5Value(IdText(instance.Id.Value)));
+            record.Members.emplace_back("id", Json5Value(SceneIdText(instance.Id.Value)));
             if (instance.Parent.IsValid())
                 record.Members.emplace_back("parent",
-                    Json5Value(IdText(instance.Parent.Value)));
+                    Json5Value(SceneIdText(instance.Parent.Value)));
             record.Members.emplace_back("source", Json5Value(instance.Source));
             if (!instance.Name.empty())
                 record.Members.emplace_back("name", Json5Value(instance.Name));
-            record.Members.emplace_back("transform", WriteTransform(instance.Placement));
+            record.Members.emplace_back("transform", TransformToJson5(instance.Placement));
 
             if (!instance.EntityIds.empty())
             {
                 Json5Value ids = Json5Value::MakeObject();
                 for (const auto& [path, minted] : instance.EntityIds)
                     ids.Members.emplace_back(path.ToString(),
-                        Json5Value(IdText(minted.Value)));
+                        Json5Value(SceneIdText(minted.Value)));
                 record.Members.emplace_back("entity_ids", std::move(ids));
             }
             const auto writePathObject =
@@ -599,7 +595,7 @@ std::string WriteSceneSource(const SceneSourceDocument& document)
                 for (const SceneAddedEntity& entity : instance.AddedEntities)
                 {
                     Json5Value element = Json5Value::MakeObject();
-                    element.Members.emplace_back("id", Json5Value(IdText(entity.Id.Value)));
+                    element.Members.emplace_back("id", Json5Value(SceneIdText(entity.Id.Value)));
                     if (!entity.ParentPath.IsEmpty())
                         element.Members.emplace_back("parent_path",
                             Json5Value(entity.ParentPath.ToString()));

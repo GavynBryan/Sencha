@@ -13,36 +13,14 @@ namespace
         return false;
     }
 
-    [[nodiscard]] std::string IdText(std::uint64_t id)
-    {
-        return PersistentEntityIdToString(PersistentEntityId{ id });
-    }
-
-    [[nodiscard]] Json5Value NumberArray(const float* values, std::size_t count)
-    {
-        Json5Value array = Json5Value::MakeArray();
-        for (std::size_t i = 0; i < count; ++i)
-            array.Elements.emplace_back(static_cast<double>(values[i]));
-        return array;
-    }
-
     // The instance root's transform component, in exactly the shape
     // TypeSchema<LocalTransform> serializes ("Transform": { local: ... }), so
-    // downstream consumers load it like any authored transform.
+    // downstream consumers load it like any authored transform. The inner
+    // shape is the format's own.
     [[nodiscard]] Json5Value PlacementComponents(const Transform3f& placement)
     {
-        const float position[3] = { placement.Position.X, placement.Position.Y,
-                                    placement.Position.Z };
-        const float rotation[4] = { placement.Rotation.X, placement.Rotation.Y,
-                                    placement.Rotation.Z, placement.Rotation.W };
-        const float scale[3] = { placement.Scale.X, placement.Scale.Y,
-                                 placement.Scale.Z };
-        Json5Value local = Json5Value::MakeObject();
-        local.Members.emplace_back("position", NumberArray(position, 3));
-        local.Members.emplace_back("rotation", NumberArray(rotation, 4));
-        local.Members.emplace_back("scale", NumberArray(scale, 3));
         Json5Value transform = Json5Value::MakeObject();
-        transform.Members.emplace_back("local", std::move(local));
+        transform.Members.emplace_back("local", TransformToJson5(placement));
         Json5Value components = Json5Value::MakeObject();
         components.Members.emplace_back("Transform", std::move(transform));
         return components;
@@ -110,7 +88,7 @@ namespace
 
             const SceneSourceDocument* source = Sources.Find(instance.Source);
             if (source == nullptr)
-                return Fail(Error, "instance " + IdText(instance.Id.Value)
+                return Fail(Error, "instance " + SceneIdText(instance.Id.Value)
                     + ": source '" + instance.Source + "' did not resolve");
 
             SceneCompositionResult inner;
@@ -135,7 +113,7 @@ namespace
             // nothing forever.
             const auto danglingText = [&](const SceneElementPath& path)
             {
-                return IdText(instance.Id.Value) + ": " + path.ToString();
+                return SceneIdText(instance.Id.Value) + ": " + path.ToString();
             };
 
             // Apply overrides over the inner result, matched on inner paths.

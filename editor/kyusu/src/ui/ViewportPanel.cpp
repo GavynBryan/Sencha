@@ -1,5 +1,7 @@
 #include "ViewportPanel.h"
 
+#include "SceneBrowserPanel.h"
+
 #include "ui/EditorUiStyle.h"
 
 #include "EditorTheme.h"
@@ -119,7 +121,7 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
         if (SceneDrop && ImGui::BeginDragDropTarget())
         {
             if (const ImGuiPayload* payload =
-                    ImGui::AcceptDragDropPayload("KYUSU_SCENE_SOURCE"))
+                    ImGui::AcceptDragDropPayload(SceneBrowserPanel::kDragPayloadType))
             {
                 SceneDrop(viewport.Id, ImGui::GetMousePos(),
                           std::string_view(static_cast<const char*>(payload->Data),

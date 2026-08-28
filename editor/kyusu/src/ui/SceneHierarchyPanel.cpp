@@ -2,6 +2,7 @@
 
 #include "ui/EditorUiStyle.h"
 #include "ui/ScopedPanel.h"
+#include "ui/TextFilterMatch.h"
 #include "fonts/IconsFontAwesome6.h"
 
 #include "commands/CommandStack.h"
@@ -15,6 +16,7 @@
 #include "document/commands/ValueCommand.h"
 #include "document/EditorScene.h"
 #include "document/EntityNameComponent.h"
+#include "scene_source/SceneSourcePaths.h"
 #include "document/WorldDocument.h"
 #include "selection/commands/SelectCommand.h"
 #include "selection/SelectionService.h"
@@ -76,20 +78,6 @@ namespace
         return summary + " " + std::to_string(entity.Index);
     }
 
-    [[nodiscard]] bool ContainsCaseInsensitive(std::string_view haystack,
-                                               std::string_view needle)
-    {
-        if (needle.empty())
-            return true;
-        const auto it = std::search(
-            haystack.begin(), haystack.end(), needle.begin(), needle.end(),
-            [](char a, char b)
-            {
-                return std::tolower(static_cast<unsigned char>(a))
-                    == std::tolower(static_cast<unsigned char>(b));
-            });
-        return it != haystack.end();
-    }
 } // namespace
 
 // Per-frame draw state: the scene being drawn, the child index built once at
@@ -159,7 +147,7 @@ std::string_view SceneHierarchyPanel::GetTitle() const
 
 bool SceneHierarchyPanel::RowMatchesFilter(const DrawContext& ctx, EntityId entity) const
 {
-    return ContainsCaseInsensitive(RowLabel(ctx.Scene, entity), FilterText);
+    return TextFilterMatch(RowLabel(ctx.Scene, entity), FilterText);
 }
 
 bool SceneHierarchyPanel::BranchMatchesFilter(const DrawContext& ctx, EntityId entity) const
@@ -443,15 +431,8 @@ void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth)
     {
         // A nameless placement is called by its source, not by its components.
         const std::string source = ctx.Document.SceneInstanceSourceOf(entity);
-        const std::size_t slash = source.find_last_of('/');
-        const std::size_t stem = slash == std::string::npos ? sizeof("asset://") - 1
-                                                            : slash + 1;
-        std::string_view leaf(source);
-        leaf.remove_prefix(stem);
-        if (leaf.ends_with(".sscene"))
-            leaf.remove_suffix(sizeof(".sscene") - 1);
-        if (!leaf.empty())
-            rowText = std::string(leaf);
+        if (const std::string_view stem = SceneSourceStem(source); !stem.empty())
+            rowText = std::string(stem);
     }
     const bool renaming = RenamingId != 0 && RenamingId == pid;
     const std::string label = renaming

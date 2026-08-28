@@ -110,3 +110,8 @@ struct SceneSourceDocument
 // Renders the document in the canonical style. Deterministic: writing an
 // unmodified parse reproduces the same bytes the canonical writer produced.
 [[nodiscard]] std::string WriteSceneSource(const SceneSourceDocument& document);
+
+// The transform shape the format speaks ({position, rotation, scale}), shared
+// with composition so the synthetic root's component carries exactly what a
+// record would.
+[[nodiscard]] Json5Value TransformToJson5(const Transform3f& transform);

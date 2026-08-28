@@ -122,10 +122,14 @@ bool EditorRenderFeature::Setup(const RenderFeatureServices& featureServices)
     // After Targets and after Services carries the depth format the thumbnail
     // scopes declare.
     if (MaterialPath && RuntimeAssetsRef != nullptr)
-        Thumbnails.emplace(Targets, Forward, Sky, *RuntimeAssetsRef,
-                           *RuntimeAssetsRef->StaticMeshes,
-                           RuntimeAssetsRef->Materials,
-                           *LoggingRef, Services.DepthFormat);
+    {
+        Studio.emplace(Targets, Forward, Sky, *RuntimeAssetsRef->StaticMeshes,
+                       RuntimeAssetsRef->Materials,
+                       RuntimeAssetsRef->SkinnedMeshes.get(),
+                       Services.DepthFormat);
+        Thumbnails.emplace(*Studio, *RuntimeAssetsRef,
+                           *RuntimeAssetsRef->StaticMeshes, *LoggingRef);
+    }
     Bloom.Setup(services);
     Composition.Setup(services.Logging);
     ShadowAtlasReady = Composition.DeclarePoint("ShadowAtlasReady");
@@ -162,6 +166,8 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
     BloomParamsCache.Radius    = ReadCVarFloat(Console, "editor.bloom.radius", 2.0f);
 
     Targets.BeginFrame(frame.FrameInFlightIndex, frame.Retirement);
+    if (Thumbnails)
+        Thumbnails->BeginFrame();
     Highlight.BeginFrame();
     Composition.Clear();
 
@@ -636,6 +642,7 @@ void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorV
 void EditorRenderFeature::Teardown()
 {
     Thumbnails.reset();
+    Studio.reset();
     // Scene resources first: the brush GPU meshes and material refs below are
     // borrowed from the editor's asset caches, which outlive this feature only
     // because the host removes it before releasing them. Point the Solid body
