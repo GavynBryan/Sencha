@@ -9,6 +9,7 @@
 #include <zone/WorldPartitionManifest.h>
 
 #include <cassert>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <random>
@@ -47,6 +48,12 @@ struct LegacyTransitionMigrationReport
 class WorldDocument
 {
 public:
+    // Where every document this world owns resolves asset:// scene sources.
+    // EditorServices supplies the project's roots; cook drivers supply their
+    // assets root. Applied to the documents that already exist and to every
+    // one created afterwards.
+    void SetContentRoots(std::vector<std::filesystem::path> roots);
+
     explicit WorldDocument(LoggingProvider& logging);
     ~WorldDocument();   // writes the user sidecar so view state survives exit
 
@@ -294,6 +301,7 @@ private:
     std::unique_ptr<EditorDocument> LegacyDocument_;
     ZoneViewState LegacyView_;
 
+    std::vector<std::filesystem::path> ContentRoots_;
     uint16_t NextRegistryIndex_ = 2;
     std::mt19937_64 Rng_;
 };

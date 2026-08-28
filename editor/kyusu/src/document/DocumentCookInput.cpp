@@ -310,6 +310,25 @@ std::optional<DocumentCookInput> CollectDocumentCookInput(
     const DocumentCookOptions& options,
     std::string* error)
 {
+    // The cook consumes the live registry, and the projection is part of it.
+    // Anything unresolved -- a source that failed, a path with no recorded id,
+    // an override aimed at nothing -- would cook a scene that silently differs
+    // from what the placement means, so it refuses instead.
+    if (const auto& projection = document.GetProjectionDiagnostics();
+        !projection.Clean())
+    {
+        std::string message = "scene instances did not fully resolve:";
+        if (!projection.ResolveError.empty())
+            message += " " + projection.ResolveError;
+        for (const std::string& missing : projection.MissingIds)
+            message += " [missing id] " + missing;
+        for (const std::string& dangling : projection.DanglingOverrides)
+            message += " [dangling override] " + dangling;
+        if (error != nullptr)
+            *error = message;
+        return std::nullopt;
+    }
+
     const auto fail = [error](std::string message) -> std::optional<DocumentCookInput>
     {
         if (error != nullptr)
@@ -395,6 +414,7 @@ std::optional<ProbeHaloZone> CollectZoneBakeHalo(
     LoggingProvider silent;
     LoggingProvider& log = logging != nullptr ? *logging : silent;
     EditorDocument doc(log);
+    doc.SetContentRoots({ assetsRoot });
     if (assets != nullptr)
         doc.SetAssetEnvironment(*assets);
     if (!doc.Load(authoredLevelPath.generic_string()))

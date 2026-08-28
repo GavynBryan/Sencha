@@ -44,9 +44,17 @@ struct ResolvedSceneEntity
     // The innermost instance this entity came from; invalid for locals.
     SceneInstanceId Instance;
     bool IsInstanceRoot = false;
+    // True when the RESOLVING document's own placement record added this
+    // entity (D4). An inner document's additions arrive as ordinary members:
+    // the outer document overrides them, it does not own them.
+    bool IsAdded = false;
     bool Hidden = false;
     bool Locked = false;
     Json5Value Components;
+    // The brush-mesh sidecar of the document that defined this entity, so a
+    // consumer instantiating a brush component can fetch the geometry it
+    // names. Non-owning; valid while the source lookup's documents are.
+    const Json5Value* SourceBrushMeshes = nullptr;
 };
 
 struct SceneCompositionResult

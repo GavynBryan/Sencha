@@ -243,6 +243,7 @@ std::optional<WorldCookInput> CollectWorldCookInput(
             return fail("CookWorld: world scene '" + data->Manifest.WorldSceneRef
                 + "' has no saved file; save the world first");
         EditorDocument document(logging);
+        document.SetContentRoots({ assetsRoot });
         if (assets != nullptr)
             document.SetAssetEnvironment(*assets);
         if (!document.Load(scenePath.generic_string()))

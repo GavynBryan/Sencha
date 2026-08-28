@@ -263,6 +263,7 @@ DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
     LoggingProvider silent;
     LoggingProvider& log = logging != nullptr ? *logging : silent;
     EditorDocument doc(log);
+    doc.SetContentRoots({ assetsRoot });
     if (assets != nullptr)
         doc.SetAssetEnvironment(*assets);
     if (!doc.Load(authoredLevelPath.generic_string()))

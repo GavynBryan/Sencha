@@ -212,9 +212,6 @@ SceneSourceDocument EditorDocument::BuildSceneSource() const
         out.Settings.Members.emplace_back("default_material",
                                           Json5Value(DefaultMaterial.Path));
 
-    if (Scene.GetBrushMeshStore().Count() > 0)
-        out.BrushMeshes =
-            Json5FromJson(SerializeBrushMeshes(Scene.GetBrushMeshStore()));
 
     std::unordered_map<std::uint64_t, const SceneSourceEntity*> retainedById;
     for (const SceneSourceEntity& entity : Retained_.Entities)
@@ -222,11 +219,18 @@ SceneSourceDocument EditorDocument::BuildSceneSource() const
 
     SceneSerializationContext context(Logging, Assets);
     const World& world = Registry_.Components;
+    // Only meshes the written entities reference: projection copies and other
+    // strays must not accrete in the sidecar save over save.
+    std::vector<BrushId> savedMeshes;
     for (EntityId entity : Scene.GetAllEntities())
     {
         const auto* id = world.TryGet<PersistentIdComponent>(entity);
         if (id == nullptr || !id->Id.IsValid())
             continue; // untracked interlopers have no place in the file
+        // Derived projection entities live in their instance records, and
+        // entities the harvest absorbed into add_entities live there too.
+        if (Projection_.contains(id->Id.Value) || AbsorbedPids_.contains(id->Id.Value))
+            continue;
 
         SceneSourceEntity record;
         record.Id = id->Id;
@@ -235,6 +239,10 @@ SceneSourceDocument EditorDocument::BuildSceneSource() const
                 record.Parent = parentId->Id;
         record.Hidden = !Scene.IsEntityVisible(entity);
         record.Locked = Scene.IsEntityLocked(entity);
+        if (const BrushComponent* brush = Scene.TryGetBrush(entity))
+            savedMeshes.push_back(brush->Id);
+        else if (const BakedBrushComponent* baked = Scene.TryGetBakedBrush(entity))
+            savedMeshes.push_back(baked->Source);
 
         // Fresh values from live state, one member per present component.
         // Identity lives at record level, so its component is not serialized.
@@ -263,11 +271,22 @@ SceneSourceDocument EditorDocument::BuildSceneSource() const
         record.Components = std::move(fresh);
         out.Entities.push_back(std::move(record));
     }
+    if (!savedMeshes.empty())
+    {
+        Json5Value meshes = Json5Value::MakeObject();
+        for (const BrushId id : savedMeshes)
+            if (const BrushMesh* mesh = Scene.GetBrushMeshStore().Find(id))
+                meshes.Members.emplace_back(
+                    std::to_string(id.Value),
+                    Json5FromJson(BrushMeshToJson(*mesh)));
+        out.BrushMeshes = std::move(meshes);
+    }
     return out;
 }
 
-std::string EditorDocument::ToSceneText() const
+std::string EditorDocument::ToSceneText()
 {
+    HarvestInstanceOverrides();
     return WriteSceneSource(BuildSceneSource());
 }
 
@@ -376,6 +395,11 @@ bool EditorDocument::LoadFromSceneText(std::string_view text, std::string* error
         return fail("scene identity is invalid: " + identityError);
 
     Retained_ = std::move(*parsed);
+
+    // Expand the instance records into derived entities. Not an authored
+    // mutation: whatever it reports lands in the diagnostics, never in Dirty.
+    Projection_.clear();
+    RebuildSceneProjection();
 
     // The document was replaced wholesale, so whatever divergence the previous
     // contents had from disk went with them. Written directly because OnEdited
@@ -539,6 +563,7 @@ bool EditorDocument::Save()
     if (FilePath.empty())
         return false;
 
+    HarvestInstanceOverrides();
     const SceneSourceDocument source = BuildSceneSource();
     if (Catalog != nullptr)
     {
@@ -599,6 +624,9 @@ void EditorDocument::New()
 {
     Scene.Clear();
     Retained_ = SceneSourceDocument{};
+    Projection_.clear();
+    AbsorbedPids_.clear();
+    ProjectionDiagnostics_ = ProjectionDiagnostics{};
     FilePath.clear();
     Dirty = false;
 }

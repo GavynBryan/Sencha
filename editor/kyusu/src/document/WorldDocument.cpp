@@ -68,6 +68,18 @@ WorldDocument::WorldDocument(LoggingProvider& logging)
 {
 }
 
+void WorldDocument::SetContentRoots(std::vector<std::filesystem::path> roots)
+{
+    ContentRoots_ = std::move(roots);
+    if (LegacyDocument_ != nullptr)
+        LegacyDocument_->SetContentRoots(ContentRoots_);
+    if (WorldScene_ != nullptr)
+        WorldScene_->SetContentRoots(ContentRoots_);
+    for (auto& [zone, open] : OpenZones_)
+        if (open.Document != nullptr)
+            open.Document->SetContentRoots(ContentRoots_);
+}
+
 WorldDocument::~WorldDocument()
 {
     WriteUserSidecar();
@@ -151,6 +163,8 @@ bool WorldDocument::LoadWorld(std::string_view path)
         WorldScene_.reset();
         WorldSceneFocused_ = false;
         LegacyDocument_ = std::make_unique<EditorDocument>(Logging_);
+    LegacyDocument_->SetContentRoots(ContentRoots_);
+        LegacyDocument_->SetContentRoots(ContentRoots_);
         if (Assets_)
             LegacyDocument_->SetAssetEnvironment(*Assets_);
         NotifyEditedDocumentChanged();
@@ -356,6 +370,7 @@ bool WorldDocument::Load(std::string_view path)
     // is already open. Only a document that came up whole replaces the current
     // one, so a rejected file leaves the session exactly as it was.
     auto staged = std::make_unique<EditorDocument>(Logging_);
+    staged->SetContentRoots(ContentRoots_);
     if (Assets_)
         staged->SetAssetEnvironment(*Assets_);
     if (!staged->Load(path))
@@ -416,6 +431,7 @@ bool WorldDocument::LoadZone(ZoneId zone)
     }
 
     auto document = std::make_unique<EditorDocument>(Logging_);
+    document->SetContentRoots(ContentRoots_);
     document->OnEdited = [this] { Revalidate(); };
     document->SetRegistryIdentity(RegistryId{ NextRegistryIndex_++, 1 }, zone);
     if (Assets_)
@@ -1254,6 +1270,7 @@ void WorldDocument::RunValidation()
 void WorldDocument::CreateWorldSceneDocument()
 {
     WorldScene_ = std::make_unique<EditorDocument>(Logging_);
+    WorldScene_->SetContentRoots(ContentRoots_);
     WorldScene_->OnEdited = [this] { Revalidate(); };
     WorldScene_->SetRegistryIdentity(RegistryId{ NextRegistryIndex_++, 1 }, ZoneId{});
     if (Assets_)
@@ -1269,6 +1286,7 @@ void WorldDocument::CreateWorldSceneDocument()
         Logging_.GetLogger<WorldDocument>().Error(
             "cannot load world scene '{}'; the world scene starts empty", scenePath);
         WorldScene_ = std::make_unique<EditorDocument>(Logging_);
+    WorldScene_->SetContentRoots(ContentRoots_);
         WorldScene_->OnEdited = [this] { Revalidate(); };
         WorldScene_->SetRegistryIdentity(RegistryId{ NextRegistryIndex_++, 1 }, ZoneId{});
         if (Assets_)
@@ -1410,6 +1428,7 @@ void WorldDocument::CloseWorldToLegacy()
 {
     CloseWorldState();
     LegacyDocument_ = std::make_unique<EditorDocument>(Logging_);
+    LegacyDocument_->SetContentRoots(ContentRoots_);
     if (Assets_)
         LegacyDocument_->SetAssetEnvironment(*Assets_);
 }

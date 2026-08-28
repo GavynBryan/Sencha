@@ -87,6 +87,7 @@ namespace
                 resolved.Hidden = entity.Hidden;
                 resolved.Locked = entity.Locked;
                 resolved.Components = entity.Components;
+                resolved.SourceBrushMeshes = &document.BrushMeshes;
                 out.Entities.push_back(std::move(resolved));
             }
             for (const SceneInstanceRecord& instance : document.Instances)
@@ -280,6 +281,7 @@ namespace
                 emitted.Path = std::move(outerPath);
                 emitted.Instance = entity.Instance.IsValid() ? entity.Instance
                                                              : instance.Id;
+                emitted.IsAdded = false; // an inner add is the inner record's
                 out.Entities.push_back(std::move(emitted));
             }
 
@@ -307,6 +309,7 @@ namespace
                 }
                 emitted.Path.Elements = { instance.Id.Value, added.Id.Value };
                 emitted.Instance = instance.Id;
+                emitted.IsAdded = true;
                 emitted.Components = added.Components;
                 out.Entities.push_back(std::move(emitted));
             }

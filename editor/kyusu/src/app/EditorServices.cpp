@@ -192,6 +192,13 @@ void EditorServices::BuildFileActions()
     std::vector<std::string> contentRoots;
     if (Project)
         contentRoots = Project->ContentRoots;
+    // Scene instances resolve their asset:// sources against the same roots.
+    {
+        std::vector<std::filesystem::path> sourceRoots;
+        for (const std::string& root : contentRoots)
+            sourceRoots.emplace_back(root);
+        Workspace->World.SetContentRoots(std::move(sourceRoots));
+    }
     // Populate the material list up front (not just after Open/SaveAs): with a
     // project the pickable set is the project's, independent of any level.
     if (!contentRoots.empty())

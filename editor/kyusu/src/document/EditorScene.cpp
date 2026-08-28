@@ -78,21 +78,38 @@ bool EditorScene::EnsurePersistentId(EntityId entity)
 {
     World& world = Registry_.Components;
     PersistentIdComponent* id = world.TryGet<PersistentIdComponent>(entity);
+    auto* index = world.TryGetResource<PersistentEntityIndex>();
 
-    // The entity does not contribute to the index until it is adopted, so a
-    // successful insert means its id was genuinely free and it keeps it. A
-    // failed insert means another tracked entity already holds the value.
-    if (id != nullptr && IsAuthoredPersistentEntityId(id->Id)
-        && TakenIds_.insert(id->Id.Value).second)
+    if (id != nullptr && IsAuthoredPersistentEntityId(id->Id))
     {
-        return false;
+        // A successful insert means the id was genuinely free and the entity
+        // keeps it. A failed insert usually means another tracked entity holds
+        // the value -- but an id this document minted FOR this entity is
+        // reserved in TakenIds_ before the entity exists, so ownership is
+        // settled by the index: the component's own registration ran when the
+        // component was added, and if the id resolves to this entity, the
+        // reservation is this entity's.
+        if (TakenIds_.insert(id->Id.Value).second)
+            return false;
+        if (index != nullptr && index->TryResolve(id->Id) == entity)
+            return false;
     }
 
     const PersistentEntityId minted = MintPersistentId();
     if (id != nullptr)
+    {
+        // Through the index, or the old registration would keep resolving an
+        // id this entity no longer carries.
+        if (index != nullptr)
+            index->Unregister(id->Id, entity);
         id->Id = minted;
+        if (index != nullptr)
+            (void)index->Register(minted, entity);
+    }
     else
+    {
         world.AddComponent(entity, PersistentIdComponent{ minted });
+    }
     return true;
 }
 

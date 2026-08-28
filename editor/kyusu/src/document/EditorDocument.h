@@ -3,15 +3,21 @@
 #include "EntitySnapshot.h"
 #include "EditorScene.h"
 
+#include "scene_source/SceneComposition.h"
+#include "scene_source/SceneSourceCache.h"
 #include "scene_source/SceneSourceDocument.h"
 
 #include <core/assets/AssetRef.h>
 #include <core/json/JsonValue.h>
 #include <world/registry/Registry.h>
 
+#include <filesystem>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <functional>
+#include <unordered_map>
+#include <unordered_set>
 
 class LoggingProvider;
 class AssetSystem;
@@ -54,13 +60,48 @@ public:
     bool Load(std::string_view path);
     void New();
 
+    // Where asset://... source references resolve on disk. Set before Load on
+    // any document that may hold scene instances; a document with none never
+    // consults them.
+    void SetContentRoots(std::vector<std::filesystem::path> roots);
+
+    // What resolution and expansion of this document's instances reported.
+    // Empty when everything resolved; the cook refuses on anything here, the
+    // editor shows it and keeps working.
+    struct ProjectionDiagnostics
+    {
+        std::string ResolveError; // cycle or unresolvable source: nothing expanded
+        std::vector<std::string> MissingIds;
+        std::vector<std::string> DanglingOverrides;
+        [[nodiscard]] bool Clean() const
+        {
+            return ResolveError.empty() && MissingIds.empty()
+                && DanglingOverrides.empty();
+        }
+    };
+    [[nodiscard]] const ProjectionDiagnostics& GetProjectionDiagnostics() const
+    {
+        return ProjectionDiagnostics_;
+    }
+
+    // Destroys the derived instance entities and expands the instance records
+    // again. Load runs it; an explicit call re-projects after a record or
+    // source change.
+    void RebuildSceneProjection();
+
+    // Records fresh ids for every instance path resolution reported missing
+    // (a source that grew since the placement was recorded), then re-projects.
+    // An authoring act: marks the document dirty. Never called by loads or
+    // cooks -- a cook that minted would bake ids the source never recorded.
+    void MintMissingInstanceIds();
+
     // In-memory serialization to and from .sscene text. Save and Load are the
     // file-backed wrappers. Known component values always come from live
     // document state; everything this build does not know -- unknown
     // components, unknown fields, comments, instance records -- is carried
     // through the retained source, so a round trip loses nothing it did not
     // deliberately change.
-    [[nodiscard]] std::string ToSceneText() const;
+    [[nodiscard]] std::string ToSceneText();
     bool LoadFromSceneText(std::string_view text, std::string* error = nullptr);
 
     // Captures an entity's full persistent state (every registered component via
@@ -109,6 +150,27 @@ private:
     // scans it for unresolved asset references before writing.
     [[nodiscard]] SceneSourceDocument BuildSceneSource() const;
 
+    // Folds what happened to the projected entities back into the instance
+    // records: the root's transform into the placement, member edits into
+    // sparse patches, added and removed components, entities added beneath the
+    // projection, and deletions into suppressions. Runs before every save and
+    // every re-projection, so the records are always the authority at rest.
+    void HarvestInstanceOverrides();
+
+    // One expanded entity the projection owns, keyed by its persistent id.
+    struct ProjectedElement
+    {
+        SceneElementPath Path;
+        SceneInstanceId Instance;
+        bool Root = false;
+        // The placement's own added entity (D4): harvested back into the
+        // add_entities record, never into a patch.
+        bool Added = false;
+        // The entity's components as this document loaded them -- serializer
+        // shape, post-override -- so a harvest diff sees only live edits.
+        Json5Value Baseline;
+    };
+
     std::string FilePath;
     bool Dirty = false;
     Registry Registry_;
@@ -117,6 +179,14 @@ private:
     // components and fields, comments, instance records, root members from a
     // newer build. Loaded with the document, consulted on every save.
     SceneSourceDocument Retained_;
+
+    std::vector<std::filesystem::path> ContentRoots_;
+    std::unique_ptr<SceneSourceCache> SourceCache_;
+    std::unordered_map<std::uint64_t, ProjectedElement> Projection_;
+    // Entities absorbed into add_entities records by the last harvest, so the
+    // source build leaves them out of the local entity list.
+    std::unordered_set<std::uint64_t> AbsorbedPids_;
+    ProjectionDiagnostics ProjectionDiagnostics_;
     AssetRef DefaultMaterial{ AssetType::Material, "asset://materials/dev/gray.smat" };
 
     // Always present (constructor-injected). The asset system and catalog are
