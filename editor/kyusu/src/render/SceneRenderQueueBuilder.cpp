@@ -34,6 +34,7 @@
 #include <world/serialization/SceneSerializationContext.h>
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
+#include <world/transform/TransformPropagation.h>
 
 #include <algorithm>
 #include <cmath>
@@ -321,6 +322,11 @@ void SceneRenderQueueBuilder::SetLightmapPreview(const LightmapPreviewSource& so
         return;
     }
 
+    // The cooked scene carries local transforms plus parentage; compose the
+    // world transforms once. The snapshot never mutates, so one propagation is
+    // exact for its lifetime -- the runtime does the same thing every frame.
+    PropagateTransforms(registry->Components);
+
     PreviewRegistry = std::move(registry);
     PreviewDocHash = CurrentDocHash;
     PreviewStale = false;
@@ -356,13 +362,13 @@ void SceneRenderQueueBuilder::EmitPreviewQueue()
         BuildZoneLightmapTable(resolved, lightmapTable);
     }
 
-    if (world.IsRegistered<StaticMeshComponent>() && world.IsRegistered<LocalTransform>())
+    if (world.IsRegistered<StaticMeshComponent>() && world.IsRegistered<WorldTransform>())
         world.ForEachComponent<StaticMeshComponent>(
             [&](EntityId entity, const StaticMeshComponent& renderer)
             {
                 if (!renderer.Visible)
                     return;
-                const LocalTransform* transform = world.TryGet<LocalTransform>(entity);
+                const WorldTransform* transform = world.TryGet<WorldTransform>(entity);
                 const GpuStaticMesh* mesh = Meshes.Get(renderer.Mesh);
                 const std::vector<MaterialHandle>* sectionMaterials =
                     MaterialSets.Get(renderer.Materials);
@@ -389,13 +395,13 @@ void SceneRenderQueueBuilder::EmitPreviewQueue()
     // them (the runtime draws them), and a character vanishing when the
     // preview toggles would misrepresent the cook. No lightmap stamp.
     if (SkinnedMeshes != nullptr && world.IsRegistered<SkinnedMeshComponent>()
-        && world.IsRegistered<LocalTransform>())
+        && world.IsRegistered<WorldTransform>())
         world.ForEachComponent<SkinnedMeshComponent>(
             [&](EntityId entity, const SkinnedMeshComponent& renderer)
             {
                 if (!renderer.Visible)
                     return;
-                const LocalTransform* transform = world.TryGet<LocalTransform>(entity);
+                const WorldTransform* transform = world.TryGet<WorldTransform>(entity);
                 const GpuStaticMesh* mesh = SkinnedMeshes->Get(renderer.Mesh);
                 const std::vector<MaterialHandle>* sectionMaterials =
                     MaterialSets.Get(renderer.Materials);
