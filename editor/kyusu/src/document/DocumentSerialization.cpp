@@ -1,6 +1,7 @@
 #include "DocumentSerialization.h"
 
 #include "EditorScene.h"
+#include "EntityNameComponent.h"
 
 #include <core/serialization/Archive.h>
 #include <world/serialization/ComponentStorageTraits.h>
@@ -121,4 +122,5 @@ void RegisterDocumentSerializers()
     // Editor-only components.
     RegisterComponent<BrushComponent>(serializers);
     RegisterComponent<BakedBrushComponent>(serializers);
+    RegisterComponent<EntityNameComponent>(serializers);
 }

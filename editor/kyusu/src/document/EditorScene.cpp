@@ -501,6 +501,36 @@ bool EditorScene::IsEntityVisible(EntityId entity) const
     return !HiddenEntities.contains(entity.Index);
 }
 
+bool EditorScene::IsEntityEffectivelyVisible(EntityId entity) const
+{
+    if (!IsEntityVisible(entity))
+        return false;
+    std::size_t remaining = Entities.size();
+    for (EntityId parent = GetParent(entity);
+         parent.IsValid() && remaining > 0;
+         parent = GetParent(parent), --remaining)
+    {
+        if (!IsEntityVisible(parent))
+            return false;
+    }
+    return true;
+}
+
+bool EditorScene::IsEntityEffectivelyLocked(EntityId entity) const
+{
+    if (IsEntityLocked(entity))
+        return true;
+    std::size_t remaining = Entities.size();
+    for (EntityId parent = GetParent(entity);
+         parent.IsValid() && remaining > 0;
+         parent = GetParent(parent), --remaining)
+    {
+        if (IsEntityLocked(parent))
+            return true;
+    }
+    return false;
+}
+
 bool EditorScene::IsEntityLocked(EntityId entity) const
 {
     return LockedEntities.contains(entity.Index);

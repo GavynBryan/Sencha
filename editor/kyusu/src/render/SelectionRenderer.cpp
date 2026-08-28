@@ -98,7 +98,7 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
     // Preview body: the brush under the cursor a click would make active (edge-cut
     // hover, or another mesh hovered in an element mode). Thin wireframe, no glow and
     // no handles, so it reads as "would be selected" distinct from the active body.
-    if (Overlay.HoverBody.IsValid() && scene.IsEntityVisible(Overlay.HoverBody)
+    if (Overlay.HoverBody.IsValid() && scene.IsEntityEffectivelyVisible(Overlay.HoverBody)
         && std::find(bodies.begin(), bodies.end(), Overlay.HoverBody) == bodies.end())
     {
         const BrushMesh* mesh = scene.TryGetBrushMesh(Overlay.HoverBody);
@@ -114,7 +114,7 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
     {
         if (!selected.IsValid() || selected.Registry != scene.GetRegistry().Id)
             continue;
-        if (!scene.IsEntityVisible(selected.Entity))
+        if (!scene.IsEntityEffectivelyVisible(selected.Entity))
             continue;
 
         const BrushMesh* mesh = scene.TryGetBrushMesh(selected.Entity);
@@ -187,7 +187,7 @@ std::vector<EntityId> SelectionRenderer::GatherActiveBodies(const EditorScene& s
     {
         if (!ref.IsValid() || ref.Registry != scene.GetRegistry().Id || !ref.Entity.IsValid())
             continue;
-        if (!scene.IsEntityVisible(ref.Entity))
+        if (!scene.IsEntityEffectivelyVisible(ref.Entity))
             continue;
         if (std::find(bodies.begin(), bodies.end(), ref.Entity) == bodies.end())
             bodies.push_back(ref.Entity);
@@ -273,7 +273,7 @@ void SelectionRenderer::AppendHover(std::vector<EditorLineSegment>& segments, co
     const SelectableRef hovered = Overlay.Hover.Element;
     if (!hovered.IsValid() || hovered.Registry != scene.GetRegistry().Id)
         return;
-    if (!scene.IsEntityVisible(hovered.Entity))
+    if (!scene.IsEntityEffectivelyVisible(hovered.Entity))
         return;
 
     // An already-selected element keeps its selection color; painting the hover

@@ -268,7 +268,7 @@ void EditorWorkspace::SelectAll()
     if (kind == MeshElementKind::Object)
     {
         for (EntityId entity : scene.GetAllEntities())
-            if (scene.IsEntityVisible(entity) && !scene.IsEntityLocked(entity))
+            if (scene.IsEntityEffectivelyVisible(entity) && !scene.IsEntityEffectivelyLocked(entity))
                 gathered.push_back(SelectableRef::EntitySelection(registry, entity));
     }
     else

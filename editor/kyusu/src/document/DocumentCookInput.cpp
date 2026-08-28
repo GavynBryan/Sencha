@@ -250,8 +250,12 @@ JsonValue BuildPassthroughScene(const EditorDocument& document,
         if (JsonValue* components = FindMutable(entityJson, "components");
             components != nullptr && components->IsObject())
         {
+            // Editor-only annotations: the bake linkage and the authored
+            // display name. Neither exists in the runtime schema, and an
+            // unknown component key fails the zone import by design.
             std::erase_if(components->AsObject(),
-                [](const auto& field) { return field.first == "baked_brush"; });
+                [](const auto& field)
+                { return field.first == "baked_brush" || field.first == "name"; });
         }
         entities.push_back(std::move(entityJson));
     }

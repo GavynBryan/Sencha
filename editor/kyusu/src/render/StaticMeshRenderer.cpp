@@ -81,7 +81,7 @@ void StaticMeshRenderer::DrawViewport(const FrameContext& frame, const EditorVie
     std::vector<EditorSolidVertex> vertices;
     for (EntityId entity : scene.GetAllEntities())
     {
-        if (!scene.IsEntityVisible(entity))
+        if (!scene.IsEntityEffectivelyVisible(entity))
             continue;
         const StaticMeshComponent* mesh = world.TryGet<StaticMeshComponent>(entity);
         if (mesh == nullptr)

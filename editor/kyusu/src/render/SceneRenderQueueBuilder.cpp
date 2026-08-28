@@ -226,7 +226,7 @@ void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
     const World& world = scene.GetRegistry().Components;
     for (const EntityId entity : scene.GetAllEntities())
     {
-        if (!scene.IsEntityVisible(entity))
+        if (!scene.IsEntityEffectivelyVisible(entity))
             continue;
         const StaticMeshComponent* renderer = world.TryGet<StaticMeshComponent>(entity);
         if (renderer == nullptr || !renderer->Visible)
@@ -257,7 +257,7 @@ void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
     {
         for (const EntityId entity : scene.GetAllEntities())
         {
-            if (!scene.IsEntityVisible(entity))
+            if (!scene.IsEntityEffectivelyVisible(entity))
                 continue;
             const SkinnedMeshComponent* renderer =
                 world.TryGet<SkinnedMeshComponent>(entity);
@@ -488,7 +488,7 @@ void SceneRenderQueueBuilder::BuildShadowCasters(const EditorDocument& document)
     const World& world = registry.Components;
     for (const EntityId entity : scene.GetAllEntities())
     {
-        if (!scene.IsEntityVisible(entity))
+        if (!scene.IsEntityEffectivelyVisible(entity))
             continue;
         const StaticMeshComponent* renderer = world.TryGet<StaticMeshComponent>(entity);
         if (renderer == nullptr)

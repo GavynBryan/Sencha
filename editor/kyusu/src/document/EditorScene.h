@@ -218,10 +218,19 @@ public:
     // index (default: visible + unlocked) and cleared when the slot is destroyed
     // so a reused index can't inherit a stale flag. Hidden entities are skipped by
     // the renderers and picking; locked entities are skipped by picking.
+    // The entity's own view flags: what its eye and lock toggles show and what
+    // the document persists. Rendering and picking use the Effectively variants
+    // instead -- a flag inherits down the hierarchy without overwriting any
+    // child's own state, so unhiding a parent restores exactly what each child
+    // had.
     [[nodiscard]] bool IsEntityVisible(EntityId entity) const;
     [[nodiscard]] bool IsEntityLocked(EntityId entity) const;
     void SetEntityVisible(EntityId entity, bool visible);
     void SetEntityLocked(EntityId entity, bool locked);
+    // Own flag AND every ancestor's: what the viewport actually shows and what
+    // picking may actually hit.
+    [[nodiscard]] bool IsEntityEffectivelyVisible(EntityId entity) const;
+    [[nodiscard]] bool IsEntityEffectivelyLocked(EntityId entity) const;
 
     // The brush mesh store (serialized as a sidecar by EditorDocument).
     [[nodiscard]] BrushMeshStore& GetBrushMeshStore() { return BrushMeshes; }

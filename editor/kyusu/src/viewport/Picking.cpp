@@ -197,7 +197,7 @@ SelectableRef PickingService::PickBrushElement(const Ray3d& ray,
     {
         if (request.RestrictTo.IsValid() && entity != request.RestrictTo)
             continue;
-        if (!scene.IsEntityVisible(entity) || scene.IsEntityLocked(entity))
+        if (!scene.IsEntityEffectivelyVisible(entity) || scene.IsEntityEffectivelyLocked(entity))
             continue;
 
         candidates.clear();

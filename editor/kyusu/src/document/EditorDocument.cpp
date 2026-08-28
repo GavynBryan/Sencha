@@ -1,6 +1,7 @@
 #include "EditorDocument.h"
 
 #include "brush/BrushMeshSerialization.h"
+#include "EntityNameComponent.h"
 
 #include <core/assets/AssetRegistry.h>
 #include <assets/runtime/RuntimeAssets.h>
@@ -104,6 +105,7 @@ EditorDocument::EditorDocument(LoggingProvider& logging)
     world.RegisterComponent<BrushComponent>();
     world.RegisterComponent<BakedBrushComponent>();
     world.RegisterComponent<CameraComponent>();
+    world.RegisterComponent<EntityNameComponent>();
 
     // Register storage for every serializer the registry knows — engine, editor,
     // and any game module loaded at startup — so game components are available
@@ -157,6 +159,27 @@ JsonValue EditorDocument::ToJson() const
         root.AsObject().emplace_back("brush_meshes", SerializeBrushMeshes(Scene.GetBrushMeshStore()));
         if (DefaultMaterial.IsValid())
             root.AsObject().emplace_back("default_material", JsonValue(DefaultMaterial.Path));
+
+        // Per-entity view flags, keyed by persistent id so they survive the
+        // positional entity array being reordered. Only set flags are written;
+        // an absent id is visible and unlocked, which is also every entity's
+        // starting state.
+        JsonValue::Array hidden;
+        JsonValue::Array locked;
+        for (EntityId entity : Scene.GetAllEntities())
+        {
+            const auto* id = Registry_.Components.TryGet<PersistentIdComponent>(entity);
+            if (id == nullptr || !id->Id.IsValid())
+                continue;
+            if (!Scene.IsEntityVisible(entity))
+                hidden.push_back(JsonValue(PersistentEntityIdToString(id->Id)));
+            if (Scene.IsEntityLocked(entity))
+                locked.push_back(JsonValue(PersistentEntityIdToString(id->Id)));
+        }
+        if (!hidden.empty())
+            root.AsObject().emplace_back("hidden", JsonValue(std::move(hidden)));
+        if (!locked.empty())
+            root.AsObject().emplace_back("locked", JsonValue(std::move(locked)));
     }
     return root;
 }
@@ -186,6 +209,32 @@ bool EditorDocument::LoadFromJson(const JsonValue& root)
         ReportUnresolvedAssetRefs(root, *Catalog, Logging.GetLogger<EditorDocument>(), "load");
 
     Scene.SyncFromRegistry();
+
+    // Reapply persisted view flags through the identity index the sync above
+    // just populated. A stale id (its entity edited away externally) is simply
+    // skipped; view flags are conveniences, never load gates.
+    const auto applyFlags = [&](const char* key, auto&& apply)
+    {
+        const JsonValue* list = root.Find(key);
+        if (list == nullptr || !list->IsArray())
+            return;
+        const auto* index = Registry_.Components.TryGetResource<PersistentEntityIndex>();
+        if (index == nullptr)
+            return;
+        for (const JsonValue& value : list->AsArray())
+        {
+            if (!value.IsString())
+                continue;
+            if (const auto id = PersistentEntityIdFromString(value.AsString()))
+            {
+                const EntityId entity = index->TryResolve(*id);
+                if (entity.IsValid())
+                    apply(entity);
+            }
+        }
+    };
+    applyFlags("hidden", [&](EntityId entity) { Scene.SetEntityVisible(entity, false); });
+    applyFlags("locked", [&](EntityId entity) { Scene.SetEntityLocked(entity, true); });
 
     // Identity is authored, so a file that does not already carry it is rejected
     // rather than repaired: minting here would rewrite the document's identities

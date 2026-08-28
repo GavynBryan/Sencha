@@ -18,7 +18,7 @@ EditorLightGather GatherEditorLights(const EditorDocument& document,
     const World& world = registry.Components;
     for (const EntityId entity : scene.GetAllEntities())
     {
-        if (!scene.IsEntityVisible(entity))
+        if (!scene.IsEntityEffectivelyVisible(entity))
             continue;
         const Transform3f* transform = scene.TryGetWorldTransform(entity);
         if (transform == nullptr)

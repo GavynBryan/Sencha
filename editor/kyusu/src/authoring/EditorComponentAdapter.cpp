@@ -142,7 +142,7 @@ void EditorAffordanceService::Build(ViewportAffordanceOutput& output) const
 
     for (EntityId entity : scene.GetAllEntities())
     {
-        if (!scene.IsEntityVisible(entity))
+        if (!scene.IsEntityEffectivelyVisible(entity))
             continue;
         const Transform3f* transform = scene.TryGetWorldTransform(entity);
         for (const EditorComponentAdapterRegistry::Entry& entry : entries)
