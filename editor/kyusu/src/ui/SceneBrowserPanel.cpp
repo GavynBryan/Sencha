@@ -113,13 +113,16 @@ void SceneBrowserPanel::OnDraw()
         ImGui::PushID(entry.AssetPath.c_str());
         if (column > 0)
             ImGui::SameLine();
-        ImGui::BeginGroup();
 
         const bool isSelf = !focusPath.empty()
             && focusPath.ends_with(entry.AssetPath.substr(sizeof("asset://") - 1));
         const ImVec2 pos = ImGui::GetCursorScreenPos();
+        const float labelHeight = ImGui::GetFontSize() + 4.0f;
         ImGui::BeginDisabled(isSelf);
-        ImGui::InvisibleButton("##cell", ImVec2(kCell, kCell));
+        // One fixed-size item covers image and label, so the cell's layout
+        // footprint never varies with the name -- the label renders through
+        // the draw list, clipped, without advancing the cursor.
+        ImGui::InvisibleButton("##cell", ImVec2(kCell, kCell + labelHeight));
         if (ImGui::BeginDragDropSource())
         {
             ImGui::SetDragDropPayload(kDragPayloadType, entry.AssetPath.c_str(),
@@ -164,12 +167,12 @@ void SceneBrowserPanel::OnDraw()
         drawList->AddText(badge, ImGui::GetColorU32(EditorUi::Accent),
                           ICON_FA_BOX_OPEN);
 
-        // One clipped label line under the image.
-        ImGui::PushClipRect(ImVec2(pos.x, end.y),
-                            ImVec2(end.x, end.y + ImGui::GetFontSize() + 4.0f), true);
-        ImGui::TextUnformatted(entry.Label.c_str());
-        ImGui::PopClipRect();
-        ImGui::EndGroup();
+        // One clipped label line under the image, drawn without layout.
+        const ImVec4 labelClip(pos.x, end.y, end.x, end.y + labelHeight);
+        drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize(),
+                          ImVec2(pos.x, end.y + 2.0f),
+                          ImGui::GetColorU32(ImGuiCol_Text),
+                          entry.Label.c_str(), nullptr, 0.0f, &labelClip);
         ImGui::PopID();
 
         column = (column + 1) % columns;
