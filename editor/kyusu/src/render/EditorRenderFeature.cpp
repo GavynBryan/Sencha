@@ -119,6 +119,13 @@ bool EditorRenderFeature::Setup(const RenderFeatureServices& featureServices)
     WideLines.Setup(services);
     Fills.Setup(services);
     Targets.Setup(services);
+    // After Targets and after Services carries the depth format the thumbnail
+    // scopes declare.
+    if (MaterialPath && RuntimeAssetsRef != nullptr)
+        Thumbnails.emplace(Targets, Forward, Sky, *RuntimeAssetsRef,
+                           *RuntimeAssetsRef->StaticMeshes,
+                           RuntimeAssetsRef->Materials,
+                           *LoggingRef, Services.DepthFormat);
     Bloom.Setup(services);
     Composition.Setup(services.Logging);
     ShadowAtlasReady = Composition.DeclarePoint("ShadowAtlasReady");
@@ -206,6 +213,14 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
         // frame's work that every Solid viewport then samples, so it is
         // declared as work the views wait on rather than called first and
         // documented as such.
+        if (Thumbnails)
+            Composition.AddWork({
+                .Name = "scene_thumbnails",
+                .Record = { [](void* self, const RenderFrame& context)
+                            { static_cast<EditorRenderFeature*>(self)
+                                  ->Thumbnails->RenderPending(*context.Backend); },
+                            this },
+            });
         Composition.AddWork({
             .Name = "shadow_residency",
             .Record = { [](void* self, const RenderFrame& context)
@@ -261,7 +276,13 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
 
     Composition.Execute(renderFrame);
 
-    // Drop targets for viewports the layout no longer shows.
+    // Drop targets for viewports the layout no longer shows. Thumbnail
+    // targets are live as long as their entries are.
+    if (Thumbnails)
+    {
+        Thumbnails->TrimToBudget(64);
+        Thumbnails->AppendLiveViewports(LiveViewports);
+    }
     Targets.Prune(LiveViewports);
 }
 
@@ -614,6 +635,7 @@ void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorV
 
 void EditorRenderFeature::Teardown()
 {
+    Thumbnails.reset();
     // Scene resources first: the brush GPU meshes and material refs below are
     // borrowed from the editor's asset caches, which outlive this feature only
     // because the host removes it before releasing them. Point the Solid body

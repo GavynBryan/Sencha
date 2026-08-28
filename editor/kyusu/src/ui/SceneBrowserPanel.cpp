@@ -7,6 +7,8 @@
 #include "document/commands/SceneInstanceCommands.h"
 #include "document/EditorDocument.h"
 #include "document/WorldDocument.h"
+#include "render/SceneThumbnailCache.h"
+#include "ui/EditorUiStyle.h"
 
 #include <imgui.h>
 
@@ -34,11 +36,13 @@ namespace
 
 SceneBrowserPanel::SceneBrowserPanel(WorldDocument& world, SelectionService& selection,
                                      CommandStack& commands,
-                                     std::vector<std::filesystem::path> contentRoots)
+                                     std::vector<std::filesystem::path> contentRoots,
+                      std::function<SceneThumbnailCache*()> thumbnails)
     : WorldDoc(world)
     , Selection(selection)
     , Commands(commands)
     , ContentRoots(std::move(contentRoots))
+    , Thumbnails(std::move(thumbnails))
 {
 }
 
@@ -88,8 +92,14 @@ void SceneBrowserPanel::OnDraw()
     ImGui::Separator();
 
     // A scene must not be placed into itself; nesting deeper cycles is the
-    // resolver's refusal, but the direct case deserves a disabled row here.
+    // resolver's refusal, but the direct case deserves a disabled cell here.
     const std::string_view focusPath = WorldDoc.FocusDocument().GetDisplayName();
+    SceneThumbnailCache* thumbnails = Thumbnails ? Thumbnails() : nullptr;
+
+    constexpr float kCell = 96.0f;
+    const float rowWidth = ImGui::GetContentRegionAvail().x;
+    int column = 0;
+    const int columns = std::max(1, static_cast<int>(rowWidth / (kCell + 8.0f)));
 
     for (const Entry& entry : Entries)
     {
@@ -97,10 +107,15 @@ void SceneBrowserPanel::OnDraw()
             continue;
 
         ImGui::PushID(entry.AssetPath.c_str());
+        if (column > 0)
+            ImGui::SameLine();
+        ImGui::BeginGroup();
+
         const bool isSelf = !focusPath.empty()
             && focusPath.ends_with(entry.AssetPath.substr(sizeof("asset://") - 1));
+        const ImVec2 pos = ImGui::GetCursorScreenPos();
         ImGui::BeginDisabled(isSelf);
-        ImGui::Selectable((std::string(ICON_FA_BOX_OPEN "  ") + entry.Label).c_str());
+        ImGui::InvisibleButton("##cell", ImVec2(kCell, kCell));
         if (ImGui::BeginDragDropSource())
         {
             ImGui::SetDragDropPayload(kDragPayloadType, entry.AssetPath.c_str(),
@@ -120,11 +135,40 @@ void SceneBrowserPanel::OnDraw()
             ImGui::EndPopup();
         }
         ImGui::EndDisabled();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
+        if (hovered)
             ImGui::SetTooltip(isSelf ? "%s (open scene: cannot place into itself)"
                                      : "%s",
                               entry.AssetPath.c_str());
+
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        const ImVec2 end(pos.x + kCell, pos.y + kCell);
+        const ImTextureID preview =
+            thumbnails != nullptr ? thumbnails->Thumbnail(entry.AssetPath) : ImTextureID{};
+        if (preview)
+            drawList->AddImage(preview, pos, end);
+        else
+            drawList->AddRectFilled(pos, end, ImGui::GetColorU32(ImGuiCol_FrameBg));
+        drawList->AddRect(pos, end,
+                          ImGui::GetColorU32(hovered ? EditorUi::AccentHover
+                                                     : EditorUi::Border));
+        // The scene marker: the box in the lower-left corner, shadowed so it
+        // reads over any preview.
+        const ImVec2 badge(pos.x + 5.0f, end.y - ImGui::GetFontSize() - 4.0f);
+        drawList->AddText(ImVec2(badge.x + 1.0f, badge.y + 1.0f),
+                          ImGui::GetColorU32(EditorUi::AccentDim), ICON_FA_BOX_OPEN);
+        drawList->AddText(badge, ImGui::GetColorU32(EditorUi::Accent),
+                          ICON_FA_BOX_OPEN);
+
+        // One clipped label line under the image.
+        ImGui::PushClipRect(ImVec2(pos.x, end.y),
+                            ImVec2(end.x, end.y + ImGui::GetFontSize() + 4.0f), true);
+        ImGui::TextUnformatted(entry.Label.c_str());
+        ImGui::PopClipRect();
+        ImGui::EndGroup();
         ImGui::PopID();
+
+        column = (column + 1) % columns;
     }
     if (Entries.empty())
         ImGui::TextDisabled("no .sscene sources under the content roots");

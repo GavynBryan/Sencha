@@ -3,10 +3,12 @@
 #include "ui/IEditorPanel.h"
 
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <vector>
 
 class CommandStack;
+class SceneThumbnailCache;
 class SelectionService;
 class WorldDocument;
 
@@ -20,7 +22,8 @@ class SceneBrowserPanel : public IEditorPanel
 public:
     SceneBrowserPanel(WorldDocument& world, SelectionService& selection,
                       CommandStack& commands,
-                      std::vector<std::filesystem::path> contentRoots);
+                      std::vector<std::filesystem::path> contentRoots,
+                      std::function<SceneThumbnailCache*()> thumbnails);
 
     std::string_view GetTitle() const override { return "Scenes"; }
     void OnDraw() override;
@@ -43,6 +46,7 @@ private:
     SelectionService& Selection;
     CommandStack& Commands;
     std::vector<std::filesystem::path> ContentRoots;
+    std::function<SceneThumbnailCache*()> Thumbnails;
     std::vector<Entry> Entries;
     bool Scanned = false;
     char FilterText[64] = {};

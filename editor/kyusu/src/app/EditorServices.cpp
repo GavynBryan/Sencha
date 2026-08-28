@@ -34,6 +34,7 @@
 #include "ui/MaterialBrowserPanel.h"
 #include "ui/MaterialThumbnailCache.h"
 #include "ui/ToolPropertiesPanel.h"
+#include "render/SceneThumbnailCache.h"
 #include "ui/SceneBrowserPanel.h"
 #include "ui/SceneHierarchyPanel.h"
 #include "ui/WorldPartitionPanel.h"
@@ -649,9 +650,24 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         if (Project)
             for (const std::string& root : Project->ContentRoots)
                 sceneRoots.emplace_back(root);
+        // The thumbnail cache exists only after the render feature's Setup;
+        // the accessor resolves lazily and hands the roots over exactly once.
+        std::vector<std::filesystem::path> thumbnailRoots = sceneRoots;
+        auto thumbnails = [this, roots = std::move(thumbnailRoots),
+                           handed = false]() mutable -> SceneThumbnailCache*
+        {
+            SceneThumbnailCache* cache =
+                RenderFeature != nullptr ? RenderFeature->SceneThumbnails() : nullptr;
+            if (cache != nullptr && !handed)
+            {
+                cache->SetContentRoots(roots);
+                handed = true;
+            }
+            return cache;
+        };
         UiFeature->AddPanel(std::make_unique<SceneBrowserPanel>(
             Workspace->World, Workspace->Selection, *Commands,
-            std::move(sceneRoots)));
+            std::move(sceneRoots), std::move(thumbnails)));
     }
     UiFeature->AddPanel(std::make_unique<InspectorPanel>(
         Workspace->World, Workspace->Selection, *Commands,

@@ -14,6 +14,7 @@
 #include "IBrushBodyRenderer.h"
 #include "BrushFillRenderer.h"
 #include "SceneRenderQueueBuilder.h"
+#include "SceneThumbnailCache.h"
 #include "SceneSolidRenderer.h"
 #include "SelectionRenderer.h"
 #include "ShadowResidencyReadout.h"
@@ -107,6 +108,13 @@ public:
 
     // The focus document's queue builder, for the baked-lighting preview
     // controls (lighting panel). Null before Setup or without asset stores.
+    // Scene thumbnails for the browser; null until the WYSIWYG material path
+    // is up (no thumbnails without real materials to draw them with).
+    [[nodiscard]] SceneThumbnailCache* SceneThumbnails()
+    {
+        return Thumbnails ? &*Thumbnails : nullptr;
+    }
+
     [[nodiscard]] SceneRenderQueueBuilder* FocusQueueBuilder()
     {
         return QueueBuilder.has_value() ? &*QueueBuilder : nullptr;
@@ -188,6 +196,7 @@ private:
     float                  ShadowBiasSlope = -1.0f;
     MeshForwardPass        Forward;
     std::optional<SceneRenderQueueBuilder> QueueBuilder;
+    std::optional<SceneThumbnailCache> Thumbnails;
     std::optional<SceneSolidRenderer>      SceneSolid;
     // One WYSIWYG queue builder per open context zone (lazily created, dropped
     // when the zone closes): context zones render their real materials dimmed
