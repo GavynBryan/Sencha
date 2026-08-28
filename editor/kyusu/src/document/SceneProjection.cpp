@@ -8,6 +8,7 @@
 #include "DocumentSerialization.h"
 #include "EntityNameComponent.h"
 #include "brush/BrushMeshSerialization.h"
+#include "brush/BrushValidation.h"
 #include "scene_source/Json5Convert.h"
 
 #include <core/logging/Logger.h>
@@ -216,8 +217,13 @@ void EditorDocument::RebuildSceneProjection()
                              "from its source sidecar", meshKey);
                     continue;
                 }
-                const BrushId copied = Scene.GetBrushMeshStore().Create(
-                    BrushMeshFromJson(Json5ToJson(*mesh)));
+                BrushMesh copy = BrushMeshFromJson(Json5ToJson(*mesh));
+                // The repair every serialized mesh gets on entry: face normals
+                // are cached members the tessellator reads, and a parse alone
+                // leaves them zero -- which lights as black, not as an error.
+                BrushValidateAndRepair(copy);
+                const BrushId copied =
+                    Scene.GetBrushMeshStore().Create(std::move(copy));
                 if (member.first == "brush")
                     Registry_.Components.AddComponent(entity, BrushComponent{ copied });
                 else

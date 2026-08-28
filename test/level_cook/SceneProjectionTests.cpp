@@ -557,3 +557,51 @@ namespace
                     bodyBefore.X, 1.0e-4f);
     }
 } // namespace
+
+#include "document/BrushCookInput.h"
+
+namespace
+{
+    TEST_F(SceneInstanceCommandTest, AProjectedBrushBakesLikeAnAuthoredOne)
+    {
+        // The same door, authored directly and arrived through a placement.
+        EditorDocument direct(Logging);
+        direct.SetDefaultMaterial(AssetRef{ AssetType::Material,
+                                            "asset://materials/dev/gray.smat" });
+        (void)direct.GetScene().CreateBrush(Vec3d{ 5.0f, 1.0f, 0.0f });
+        direct.GetScene().RefreshDerivedTransforms();
+        const std::vector<CookBrushGeometry> authored =
+            CollectCookBrushes(direct.GetScene(), direct.GetDefaultMaterial());
+
+        EditorDocument host = LoadHost(HostText());
+        host.SetDefaultMaterial(AssetRef{ AssetType::Material,
+                                          "asset://materials/dev/gray.smat" });
+        host.GetScene().RefreshDerivedTransforms();
+        const std::vector<CookBrushGeometry> projected =
+            CollectCookBrushes(host.GetScene(), host.GetDefaultMaterial());
+
+        ASSERT_EQ(authored.size(), 1u);
+        ASSERT_EQ(projected.size(), 1u);
+        ASSERT_EQ(projected[0].Faces.size(), authored[0].Faces.size());
+
+        for (std::size_t f = 0; f < projected[0].Faces.size(); ++f)
+        {
+            const CookFace& copy = projected[0].Faces[f];
+            const CookFace& original = authored[0].Faces[f];
+            EXPECT_EQ(copy.Material.Path, original.Material.Path)
+                << "face " << f << " material diverged";
+            EXPECT_FALSE(copy.Material.Path.empty());
+            ASSERT_EQ(copy.Triangles.size(), original.Triangles.size());
+            for (std::size_t v = 0; v < copy.Triangles.size(); ++v)
+            {
+                const Vec3d n = copy.Triangles[v].Normal;
+                EXPECT_NEAR(n.Magnitude(), 1.0f, 1.0e-3f)
+                    << "face " << f << " vertex " << v << " normal degenerate: ("
+                    << n.X << ", " << n.Y << ", " << n.Z << ")";
+                const Vec3d expected = original.Triangles[v].Normal;
+                EXPECT_NEAR(n.Dot(expected), 1.0f, 1.0e-3f)
+                    << "face " << f << " vertex " << v << " normal diverged";
+            }
+        }
+    }
+} // namespace
