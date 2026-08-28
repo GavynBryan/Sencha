@@ -390,3 +390,55 @@ namespace
                   EntityId{});
     }
 } // namespace
+
+namespace
+{
+    TEST_F(SceneInstanceCommandTest, APlacedInstanceCooksIntoTheRuntimeScene)
+    {
+        // Author the host on disk: one placement, saved through the document.
+        EditorDocument host(Logging);
+        host.SetContentRoots({ Root });
+        Transform3f placement = Transform3f::Identity();
+        placement.Position = Vec3d{ 5.0f, 0.0f, 0.0f };
+        PlaceSceneInstanceCommand place("asset://props/door.sscene", placement,
+                                        host, Selection);
+        place.Execute();
+        ASSERT_TRUE(place.Placed());
+        fs::create_directories(Root / "levels");
+        fs::create_directories(Root / "materials/dev");
+        std::ofstream(Root / "materials/dev/gray.smat", std::ios::trunc) << "{}";
+        ASSERT_TRUE(host.SaveAs((Root / "levels/host.sscene").generic_string()));
+
+        // The cook loads the same projecting document, so the expanded
+        // entities -- authored identity included -- are simply part of the
+        // scene it bakes.
+        const DocumentCookResult cooked =
+            CookDocument(Root / "levels/host.sscene", Root, 16.0);
+        ASSERT_TRUE(cooked.Success) << cooked.Error;
+
+        std::ifstream file(cooked.CookedScenePath);
+        std::ostringstream buffer;
+        buffer << file.rdbuf();
+        const std::string scene = buffer.str();
+        // The light the door contributes, under its minted id, at rest in the
+        // cooked output the runtime will stream.
+        EXPECT_NE(scene.find("PointLight"), std::string::npos);
+        const EditorDocument reloaded = [&]
+        {
+            EditorDocument doc(Logging);
+            doc.SetContentRoots({ Root });
+            EXPECT_TRUE(doc.Load((Root / "levels/host.sscene").generic_string()));
+            return doc;
+        }();
+        for (EntityId entity : reloaded.GetScene().GetAllEntities())
+            if (reloaded.IsSceneInstanceMember(entity)
+                && reloaded.GetRegistry().Components
+                       .TryGet<PointLightComponent>(entity) != nullptr)
+            {
+                const std::string id =
+                    PersistentEntityIdToString(IdOf(reloaded, entity));
+                EXPECT_NE(scene.find(id), std::string::npos)
+                    << "cooked identity must be the minted id";
+            }
+    }
+} // namespace
