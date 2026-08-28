@@ -8,10 +8,11 @@
 #include <core/assets/AssetManifest.h>
 #include <core/assets/AssetKindRegistry.h>
 #include <core/assets/AssetRegistry.h>
-#include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
 #include <jobs/AsyncTaskQueue.h>
+#include <world/scene/SmapFormat.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 
 #include <gtest/gtest.h>
 
@@ -66,12 +67,27 @@ namespace
             return levelPath;
         }
 
-        [[nodiscard]] JsonValue ReadJson(const fs::path& p) const
+        [[nodiscard]] SmapContents ReadCookedScene(const fs::path& p) const
         {
-            std::ifstream f(p);
-            std::ostringstream buf;
-            buf << f.rdbuf();
-            return *JsonParse(buf.str());
+            SmapContents contents;
+            SmapError error;
+            EXPECT_TRUE(ReadSmapFile(p, EditorSceneSerializers(), contents, &error))
+                << error.Message;
+            return contents;
+        }
+
+        // The record's payload for a component named by its JSON key, or null.
+        [[nodiscard]] static const JsonValue* FindComponent(
+            const SmapEntityRecord& record, std::string_view key)
+        {
+            const IComponentSerializer* serializer =
+                EditorSceneSerializers().FindByJsonKey(key);
+            if (serializer == nullptr)
+                return nullptr;
+            for (const auto& [type, payload] : record.Components)
+                if (type == serializer->TypeId())
+                    return &payload;
+            return nullptr;
         }
 
         fs::path Root;
@@ -96,22 +112,16 @@ TEST_F(LevelCookTest, CooksPerCellMeshesAndScene)
     }
 
     EXPECT_TRUE(fs::exists(result.CookedScenePath));
-    EXPECT_TRUE(fs::exists(result.ManifestPath));
 
     // The cooked scene is brush-free and carries a StaticMesh-per-cell with a
     // materials array (the per-cell, per-section binding).
-    const JsonValue cooked = ReadJson(result.CookedScenePath);
-    const JsonValue* entities = cooked.Find("entities");
-    ASSERT_NE(entities, nullptr);
-    ASSERT_TRUE(entities->IsArray());
+    const SmapContents cooked = ReadCookedScene(result.CookedScenePath);
 
     std::size_t staticMeshEntities = 0;
-    for (const JsonValue& entity : entities->AsArray())
+    for (const SmapEntityRecord& entity : cooked.Entities)
     {
-        const JsonValue* components = entity.Find("components");
-        ASSERT_NE(components, nullptr);
-        EXPECT_EQ(components->Find("brush"), nullptr); // no brushes survive the cook
-        if (const JsonValue* sm = components->Find("StaticMesh"))
+        EXPECT_EQ(FindComponent(entity, "brush"), nullptr); // no brushes survive the cook
+        if (const JsonValue* sm = FindComponent(entity, "StaticMesh"))
         {
             ++staticMeshEntities;
             ASSERT_NE(sm->Find("materials"), nullptr);
@@ -142,20 +152,14 @@ TEST_F(LevelCookTest, CooksLiveDocumentWithoutSavingOrMutatingIt)
 
     // The cooked scene drops brushes, emits one cell StaticMesh, and passes the
     // camera entity through.
-    const JsonValue cooked = ReadJson(result.CookedScenePath);
-    const JsonValue* entities = cooked.Find("entities");
-    ASSERT_NE(entities, nullptr);
-    ASSERT_TRUE(entities->IsArray());
+    const SmapContents cooked = ReadCookedScene(result.CookedScenePath);
 
     int cameras = 0, staticMeshes = 0, brushes = 0;
-    for (const JsonValue& entity : entities->AsArray())
+    for (const SmapEntityRecord& entity : cooked.Entities)
     {
-        const JsonValue* components = entity.Find("components");
-        if (components == nullptr)
-            continue;
-        cameras += components->Find("Camera") != nullptr;
-        staticMeshes += components->Find("StaticMesh") != nullptr;
-        brushes += components->Find("brush") != nullptr;
+        cameras += FindComponent(entity, "Camera") != nullptr;
+        staticMeshes += FindComponent(entity, "StaticMesh") != nullptr;
+        brushes += FindComponent(entity, "brush") != nullptr;
     }
     EXPECT_EQ(cameras, 1);
     EXPECT_EQ(staticMeshes, 1);
@@ -252,8 +256,12 @@ TEST_F(LevelCookTest, CookedSceneFullyResolvesAgainstScannedRegistry)
     // record carrying the id the cook assigned. This is the headless proof that a
     // host can find everything a cooked level points at (the registration gate),
     // independent of GPU-backed mesh/material residency.
-    const JsonValue cooked = ReadJson(Root / ".cooked/levels/test.cooked.json");
-    const std::vector<std::string> refs = CollectAssetPaths(cooked);
+    const SmapContents cooked = ReadCookedScene(Root / ".cooked/levels/test.smap");
+    JsonValue::Array payloads;
+    for (const SmapEntityRecord& entity : cooked.Entities)
+        for (const auto& [type, payload] : entity.Components)
+            payloads.push_back(payload);
+    const std::vector<std::string> refs = CollectAssetPaths(JsonValue(std::move(payloads)));
     ASSERT_FALSE(refs.empty());
 
     for (const std::string& ref : refs)

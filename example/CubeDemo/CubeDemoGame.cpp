@@ -13,7 +13,7 @@
 #include <audio/AudioSourceComponent.h>
 #include <audio/CaptionRuntime.h>
 #include <core/assets/AssetIdMap.h>
-#include <core/assets/AssetManifest.h>
+#include <world/scene/SmapFormat.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/console/ConsoleService.h>
 #include <debug/DebugLogSink.h>
@@ -324,23 +324,23 @@ void CubeDemoGame::OnStart(GameStartupContext&)
         engine.Tasks());
 
     std::shared_ptr<AssetPreload> preload;
-    AssetManifest manifest;
-    std::string manifestError;
-    if (LoadAssetManifestFile(
-            "cube_demo_scene.manifest.json",
-            manifest,
-            &manifestError))
+    SmapContents metadata;
+    SmapError metadataError;
+    if (ReadSmapMetadataFile(
+            "cube_demo_scene.smap",
+            metadata,
+            &metadataError))
     {
         preload = Preloader->Begin(
-            ResolveManifestPaths(
-                manifest,
+            ResolveSmapDependencyPaths(
+                metadata.Dependencies,
                 runtimeAssets.Registry));
     }
     else
     {
         logging.GetLogger<CubeDemoGame>().Warn(
-            "CubeDemo: no asset manifest ({}); resolve-on-import",
-            manifestError);
+            "CubeDemo: no preload ({}); resolve-on-import",
+            metadataError.Message);
     }
 
     CaptionRuntime* captions = &engine.Captions();
@@ -348,31 +348,21 @@ void CubeDemoGame::OnStart(GameStartupContext&)
     captionSettings.ClosedCaptionsEnabled = true;
     captions->SetSettings(captionSettings);
 
-    auto parsed = std::make_shared<DemoSceneParse>();
     auto packageBuilt = std::make_shared<bool>(false);
     auto packageError = std::make_shared<std::string>();
     const ComponentSerializerRegistry* serializers = &engine.SceneSerializers();
     ZoneLoader->BeginLoad(
         kDemoZone,
-        [parsed, packageBuilt, packageError, serializers](
+        [packageBuilt, packageError, serializers](
             EntityBuildPackage& package)
         {
-            *parsed = ParseDemoSceneFile(
-                "cube_demo_scene.cooked.json");
-            if (!parsed->Json)
-                *parsed = ParseDemoSceneFile("cube_demo_scene.json");
-
-            SceneLoadError loadError;
             *packageBuilt = BuildDemoScenePackage(
                 package,
-                *parsed,
+                "cube_demo_scene.smap",
                 *serializers,
-                &loadError);
-            if (!*packageBuilt)
-                *packageError = loadError.Message;
+                packageError.get());
         },
         [this,
-         parsed,
          packageBuilt,
          packageError,
          &logging](
@@ -391,7 +381,6 @@ void CubeDemoGame::OnStart(GameStartupContext&)
                     Demo,
                     runtime,
                     zone,
-                    *parsed,
                     logging,
                     FreeCam))
             {

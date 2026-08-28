@@ -17,12 +17,9 @@
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
 #include <core/assets/AssetIdMap.h>
-#include <core/assets/AssetManifest.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
-#include <core/json/JsonParser.h>
-#include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <math/Quat.h>
@@ -37,7 +34,7 @@
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
 #include <world/build/EntityBuildPackage.h>
-#include <zone/ZonePackageSceneLoader.h>
+#include <world/scene/SmapFormat.h>
 
 #include <SDL3/SDL.h>
 
@@ -45,10 +42,8 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
-#include <fstream>
 #include <memory>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <utility>
 #include <variant>
@@ -71,34 +66,12 @@ void BuildScenePackage(
     const std::string& path,
     const ComponentSerializerRegistry& serializers)
 {
-    std::ifstream file(path);
-    if (!file.is_open())
+    SmapContents contents;
+    SmapError error;
+    if (!ReadSmapFile(path, serializers, contents, &error)
+        || !BuildEntityPackageFromSmap(contents, serializers, package, &error))
     {
-        result.Error = "could not open scene file '" + path + "'";
-        return;
-    }
-
-    std::ostringstream buffer;
-    buffer << file.rdbuf();
-    JsonParseError parseError;
-    const std::optional<JsonValue> json =
-        JsonParse(buffer.str(), &parseError);
-    if (!json)
-    {
-        result.Error = "scene JSON parse error at "
-            + std::to_string(parseError.Position)
-            + ": " + parseError.Message;
-        return;
-    }
-
-    SceneLoadError loadError;
-    if (!BuildEntityPackageFromSceneJson(
-            *json,
-            serializers,
-            package,
-            &loadError))
-    {
-        result.Error = loadError.Message;
+        result.Error = error.Message;
         return;
     }
 
@@ -304,31 +277,26 @@ ConsoleResult SceneViewerGame::LoadMap(
         return result;
     }
 
-    const std::string base =
+    const std::string scenePath =
         std::string(kCookedScanRoot) + "/"
-        + std::string(mapName);
-    const std::string scenePath = base + ".cooked.json";
-    const std::string manifestPath = base + ".manifest.json";
+        + std::string(mapName) + ".smap";
 
     std::shared_ptr<AssetPreload> preload;
-    AssetManifest manifest;
-    std::string manifestError;
-    if (LoadAssetManifestFile(
-            manifestPath,
-            manifest,
-            &manifestError))
+    SmapContents metadata;
+    SmapError metadataError;
+    if (ReadSmapMetadataFile(scenePath, metadata, &metadataError))
     {
         preload = Preloader->Begin(
-            ResolveManifestPaths(
-                manifest,
+            ResolveSmapDependencyPaths(
+                metadata.Dependencies,
                 runtimeAssets.Registry));
     }
     else
     {
         logging.GetLogger<SceneViewerGame>().Warn(
-            "SceneViewer: no manifest for '{}' ({}); resolve-on-import",
+            "SceneViewer: no preload for '{}' ({}); resolve-on-import",
             std::string(mapName),
-            manifestError);
+            metadataError.Message);
     }
 
     auto buildResult = std::make_shared<SceneBuildResult>();

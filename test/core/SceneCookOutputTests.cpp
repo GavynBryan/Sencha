@@ -1,9 +1,10 @@
 #include <assets/cook/SceneCookOutput.h>
 
 #include <core/assets/AssetIdMap.h>
-#include <core/assets/AssetManifest.h>
-#include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
+#include <world/scene/SmapFormat.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
+#include <world/serialization/SceneSerializer.h>
 
 #include <gtest/gtest.h>
 
@@ -12,7 +13,6 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -31,6 +31,7 @@ namespace
                    + "_" + std::to_string(reinterpret_cast<std::uintptr_t>(this)));
             fs::remove_all(Root);
             fs::create_directories(Root);
+            RegisterEngineSceneSerializers(Serializers);
         }
 
         void TearDown() override
@@ -57,15 +58,17 @@ namespace
             return [this](std::string_view p) { return Physical(p); };
         }
 
-        [[nodiscard]] JsonValue ReadJson(const fs::path& p) const
+        [[nodiscard]] bool Cook(const JsonValue& scene,
+                                std::span<const std::string> extraRefs,
+                                std::string* error)
         {
-            std::ifstream f(p);
-            std::ostringstream buf;
-            buf << f.rdbuf();
-            return *JsonParse(buf.str());
+            return WriteCookedScene(scene, extraRefs, /*collisionCells*/ {},
+                Serializers, Resolver(), Root / "asset_ids.json",
+                Root / "scene.smap", error);
         }
 
         fs::path Root;
+        ComponentSerializerRegistry Serializers;
     };
 
     // Minimal cooked scene referencing one mesh and one material.
@@ -84,7 +87,7 @@ namespace
     }
 }
 
-TEST_F(SceneCookOutputTest, ManifestCoversSceneRefsSmatIndirectionAndExtraRefs)
+TEST_F(SceneCookOutputTest, DependenciesCoverSceneRefsSmatIndirectionAndExtraRefs)
 {
     WriteFile("asset://meshes/cell.smesh", "smesh-bytes");
     WriteFile("asset://materials/gray.smat", R"({"albedo":"asset://textures/gray.stex"})");
@@ -94,20 +97,20 @@ TEST_F(SceneCookOutputTest, ManifestCoversSceneRefsSmatIndirectionAndExtraRefs)
 
     const JsonValue scene = SceneWith("asset://meshes/cell.smesh", "asset://materials/gray.smat");
     // brick.smat is real (a sidecar face material) but never appears in the scene
-    // JSON; it must still ride into the manifest and pull its own texture.
+    // JSON; it must still ride into the dependency table and pull its own texture.
     const std::vector<std::string> extraRefs = { "asset://materials/brick.smat" };
 
     std::string error;
-    ASSERT_TRUE(WriteCookedScene(scene, extraRefs, Resolver(),
-        Root / "asset_ids.json", Root / "scene.manifest.json", Root / "scene.cooked.json",
-        &error)) << error;
+    ASSERT_TRUE(Cook(scene, extraRefs, &error)) << error;
 
-    AssetManifest manifest;
-    ASSERT_TRUE(LoadAssetManifestFile((Root / "scene.manifest.json").generic_string(), manifest));
+    SmapContents metadata;
+    SmapError metadataError;
+    ASSERT_TRUE(ReadSmapMetadataFile(Root / "scene.smap", metadata, &metadataError))
+        << metadataError.Message;
 
     std::vector<std::string> got;
-    for (const AssetManifestEntry& e : manifest.Entries)
-        got.push_back(e.Path);
+    for (const SmapDependency& dependency : metadata.Dependencies)
+        got.push_back(dependency.Path);
 
     auto has = [&](const std::string& p) {
         return std::find(got.begin(), got.end(), p) != got.end();
@@ -118,6 +121,8 @@ TEST_F(SceneCookOutputTest, ManifestCoversSceneRefsSmatIndirectionAndExtraRefs)
     EXPECT_TRUE(has("asset://materials/brick.smat"));  // extra ref
     EXPECT_TRUE(has("asset://textures/brick.stex"));   // brick.smat indirection
     EXPECT_EQ(got.size(), 5u);
+    for (const SmapDependency& dependency : metadata.Dependencies)
+        EXPECT_TRUE(dependency.Id.IsValid()) << dependency.Path;
 }
 
 TEST_F(SceneCookOutputTest, CookedSceneStampsKnownRefs)
@@ -127,21 +132,23 @@ TEST_F(SceneCookOutputTest, CookedSceneStampsKnownRefs)
 
     const JsonValue scene = SceneWith("asset://meshes/cell.smesh", "asset://materials/gray.smat");
     std::string error;
-    ASSERT_TRUE(WriteCookedScene(scene, {}, Resolver(),
-        Root / "asset_ids.json", Root / "scene.manifest.json", Root / "scene.cooked.json",
-        &error)) << error;
+    ASSERT_TRUE(Cook(scene, {}, &error)) << error;
 
-    const JsonValue cooked = ReadJson(Root / "scene.cooked.json");
-    const JsonValue& staticMesh =
-        cooked.AsObject().at(1).second  // "entities"
-            .AsArray().at(0)
-            .AsObject().at(0).second     // "components"
-            .AsObject().at(0).second;    // "StaticMesh"
+    SmapContents contents;
+    SmapError readError;
+    ASSERT_TRUE(ReadSmapFile(Root / "scene.smap", Serializers, contents, &readError))
+        << readError.Message;
+    ASSERT_EQ(contents.Entities.size(), 1u);
+    ASSERT_EQ(contents.Entities[0].Components.size(), 1u);
 
     // The mesh ref is stamped from a bare string to {"id","path"}.
-    const JsonValue& mesh = staticMesh.AsObject().at(0).second; // "mesh"
-    ASSERT_TRUE(mesh.IsObject());
-    EXPECT_TRUE(mesh.AsObject().at(0).first == "id" || mesh.AsObject().at(1).first == "id");
+    const JsonValue& staticMesh = contents.Entities[0].Components[0].second;
+    const JsonValue* mesh = staticMesh.Find("mesh");
+    ASSERT_NE(mesh, nullptr);
+    ASSERT_TRUE(mesh->IsObject());
+    ASSERT_NE(mesh->Find("id"), nullptr);
+    ASSERT_NE(mesh->Find("path"), nullptr);
+    EXPECT_EQ(mesh->Find("path")->AsString(), "asset://meshes/cell.smesh");
 }
 
 TEST_F(SceneCookOutputTest, IdsAreStableAcrossRecook)
@@ -152,9 +159,7 @@ TEST_F(SceneCookOutputTest, IdsAreStableAcrossRecook)
 
     const auto cook = [&] {
         std::string error;
-        return WriteCookedScene(scene, {}, Resolver(),
-            Root / "asset_ids.json", Root / "scene.manifest.json", Root / "scene.cooked.json",
-            &error);
+        return Cook(scene, {}, &error);
     };
 
     ASSERT_TRUE(cook());
@@ -168,4 +173,22 @@ TEST_F(SceneCookOutputTest, IdsAreStableAcrossRecook)
     EXPECT_EQ(first.FindId("asset://meshes/cell.smesh"),
               second.FindId("asset://meshes/cell.smesh"));
     EXPECT_TRUE(first.FindId("asset://meshes/cell.smesh").IsValid());
+}
+
+TEST_F(SceneCookOutputTest, UnknownComponentRefusesTheCook)
+{
+    const JsonValue scene(JsonValue::Object{
+        { "version", JsonValue(1.0) },
+        { "entities", JsonValue(JsonValue::Array{
+            JsonValue(JsonValue::Object{
+                { "components", JsonValue(JsonValue::Object{
+                    { "NotARegisteredComponent", JsonValue(JsonValue::Object{}) },
+                }) },
+            }),
+        }) },
+    });
+
+    std::string error;
+    EXPECT_FALSE(Cook(scene, {}, &error));
+    EXPECT_NE(error.find("NotARegisteredComponent"), std::string::npos) << error;
 }

@@ -1062,10 +1062,10 @@ zero-thread deterministic). Decision A made real; Stage 4 closes with it.
   alongside bare path strings (authored) and the legacy `{type, path}`
   object. **Authored scenes are untouched** — saves still write bare
   paths, so the editor's save → load round trip is exactly as before;
-  the stamped form is cook output only. The proto-cook emits it as
-  `<scene-stem>.cooked.json` via a schema-agnostic walk (`StampAssetRefIds`
-  — unmapped refs stay plain strings, and `CollectAssetPaths` still sees
-  every path in stamped output because the object keeps the path field).
+  the stamped form is cook output only. The cook stamps refs via a
+  schema-agnostic walk (`StampAssetRefIds` — unmapped refs stay plain
+  strings) before compiling the scene into its binary `.smap`, whose
+  dependency table replaces the old manifest sidecar.
 - Manifest version 2: entries are `{id, path}` objects (id optional),
   version-1 path-string manifests still parse, and `ResolveManifestPaths`
   feeds the preloader id-first. CubeDemo loads the cooked scene with

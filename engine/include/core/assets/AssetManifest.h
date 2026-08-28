@@ -14,18 +14,17 @@ class JsonValue;
 // AssetManifest (docs/assets/pipeline.md, Decisions A and D)
 //
 // The flat list of asset refs a scene (or any JSON payload) references.
-// Derived data, never authored: hand-maintained manifests rot. The cook step
-// (and until it exists, the dev-asset generator) derives a manifest next to
-// each scene; AsyncZoneLoader preloads from it so a zone's assets stream
-// through the async lane before the zone attaches. A missing or stale
-// manifest is not an error — the zone load falls back to resolve-on-attach,
-// which is slower but correct.
+// Derived data, never authored: hand-maintained manifests rot. The cook
+// derives it and stores it as the .smap's dependency table, so a zone's
+// assets stream through the async lane before the zone attaches; an
+// unreadable table is not an error — the zone load falls back to
+// resolve-on-attach, which is slower but correct.
 //
-// Since version 2 (Stage 4e) each entry carries the cook-assigned stable id
-// alongside the path; resolution is id-first with the path as fallback
-// (ResolveManifestPaths). The type still always comes from the registry
-// record at load time, so the manifest never duplicates (and can never
-// contradict) the registry's knowledge.
+// Each entry carries the cook-assigned stable id alongside the path;
+// resolution is id-first with the path as fallback (ResolveManifestPaths).
+// The type still always comes from the registry record at load time, so the
+// manifest never duplicates (and can never contradict) the registry's
+// knowledge.
 //=============================================================================
 struct AssetManifestEntry
 {
@@ -43,8 +42,6 @@ struct AssetManifest
     std::vector<AssetManifestEntry> Entries;
 };
 
-inline constexpr uint32_t kAssetManifestVersion = 2;
-
 // Collects every unique "asset://" string in a JSON document, in encounter
 // order. Deliberately schema-agnostic: any component or payload that
 // serializes an asset reference as a path string is covered without this
@@ -57,13 +54,3 @@ inline constexpr uint32_t kAssetManifestVersion = 2;
 // + ApplyAssetIds, owner thread.
 [[nodiscard]] std::vector<std::string> ResolveManifestPaths(const AssetManifest& manifest,
                                                             const AssetRegistry& registry);
-
-[[nodiscard]] JsonValue AssetManifestToJson(const AssetManifest& manifest);
-[[nodiscard]] bool ParseAssetManifestJson(const JsonValue& root,
-                                          AssetManifest& out,
-                                          std::string* error = nullptr);
-
-[[nodiscard]] bool LoadAssetManifestFile(std::string_view path,
-                                         AssetManifest& out,
-                                         std::string* error = nullptr);
-[[nodiscard]] bool WriteAssetManifestFile(std::string_view path, const AssetManifest& manifest);

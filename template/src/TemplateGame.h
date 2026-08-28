@@ -17,6 +17,7 @@
 #include <assets/hotreload/AssetHotReloader.h>
 #include <assets/hotreload/AssetSourceWatcher.h>
 #endif
+#include <world/scene/SmapFormat.h>
 #include <world/serialization/SceneSerializationContext.h>
 #include <zone/AsyncZoneLoader.h>
 #include <zone/WorldPartitionRuntime.h>
@@ -81,7 +82,9 @@ private:
     // Held for the process: this game is always in its gameplay context. A
     // menu would take its own lease and drop this one.
     InputContextLease GameplayInput;
-    std::string PendingWorldSceneCollision;
+    // The world scene's collision cells when they arrived before physics did;
+    // loaded and cleared once the shape cache exists.
+    std::vector<SmapCollisionCell> PendingWorldSceneCollision;
     CollisionShapeCache* PhysicsShapes = nullptr;
 
 #ifdef SENCHA_ENABLE_COOK

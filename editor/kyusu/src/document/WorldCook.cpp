@@ -351,19 +351,15 @@ WorldCookResult ExecuteWorldCook(WorldCookInput input,
         std::error_code ec;
         const std::string sceneRef = fs::relative(
             cookedDocument.CookedScenePath, assetsRoot, ec).generic_string();
-        const std::string collisionRef = fs::relative(
-            cookedDocument.CollisionSidecarPath, assetsRoot, ec).generic_string();
         if (document.ZoneIndex != static_cast<std::size_t>(-1))
         {
             ZoneHeader& zone = cooked.Zones[document.ZoneIndex];
             zone.CookedSceneRef = sceneRef;
-            zone.CookedCollisionRef = collisionRef;
             zone.CookedContentHash = cookedDocument.ContentHash;
         }
         else
         {
             cooked.CookedWorldSceneRef = sceneRef;
-            cooked.CookedWorldCollisionRef = collisionRef;
             cooked.CookedWorldContentHash = cookedDocument.ContentHash;
         }
     }

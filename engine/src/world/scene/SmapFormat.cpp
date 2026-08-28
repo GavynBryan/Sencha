@@ -1,9 +1,11 @@
 #include <world/scene/SmapFormat.h>
 
+#include <core/assets/AssetManifest.h>
 #include <world/build/EntityBuildPackage.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
 #include <bit>
+#include <fstream>
 #include <iterator>
 #include <optional>
 #include <string>
@@ -41,12 +43,6 @@ class ByteBuilder
 {
 public:
     void U8(std::uint8_t value) { Bytes_.push_back(static_cast<std::byte>(value)); }
-
-    void U16(std::uint16_t value)
-    {
-        U8(static_cast<std::uint8_t>(value));
-        U8(static_cast<std::uint8_t>(value >> 8));
-    }
 
     void U32(std::uint32_t value)
     {
@@ -126,15 +122,6 @@ public:
         if (Offset_ >= Bytes_.size())
             return false;
         out = static_cast<std::uint8_t>(Bytes_[Offset_++]);
-        return true;
-    }
-
-    [[nodiscard]] bool U16(std::uint16_t& out)
-    {
-        std::uint64_t wide = 0;
-        if (!Little(2, wide))
-            return false;
-        out = static_cast<std::uint16_t>(wide);
         return true;
     }
 
@@ -420,31 +407,6 @@ constexpr int kMaxValueDepth = 256;
     return false; // unknown tag
 }
 
-// Serialization tags for the dependency table: closed, local, exhaustive so a
-// new AssetType nobody names here is a compile warning, not a silent Unknown.
-[[nodiscard]] bool IsKnownAssetType(std::uint16_t raw)
-{
-    switch (static_cast<AssetType>(raw))
-    {
-    case AssetType::Unknown:
-    case AssetType::StaticMesh:
-    case AssetType::Material:
-    case AssetType::Texture:
-    case AssetType::Scene:
-    case AssetType::Geometry:
-    case AssetType::Audio:
-    case AssetType::Script:
-    case AssetType::Skeleton:
-    case AssetType::AnimationClip:
-    case AssetType::SkinnedMesh:
-    case AssetType::Collision:
-    case AssetType::ProbeVolume:
-    case AssetType::Data:
-        return true;
-    }
-    return false;
-}
-
 // The persistent id an entity's own persistent_id component carries, when the
 // component is present and well-formed. Used to keep the record's identity
 // field and the component from ever disagreeing on disk.
@@ -465,6 +427,222 @@ struct SectionRange
     std::uint64_t Offset = 0;
     std::uint64_t Size = 0;
 };
+
+// The container below the records: header validated, content hash verified,
+// string table decoded, one bounds-checked reader per remaining section.
+struct ParsedContainer
+{
+    std::uint64_t ContentHash = 0;
+    std::vector<std::string> Strings;
+    ByteReader Dependencies{ {} };
+    ByteReader Entities{ {} };
+    ByteReader Collision{ {} };
+};
+
+[[nodiscard]] bool ParseContainer(std::span<const std::byte> bytes,
+                                  ParsedContainer& out,
+                                  SmapError* error)
+{
+    ByteReader header(bytes);
+    std::uint32_t magic = 0;
+    std::uint32_t version = 0;
+    std::uint32_t sectionCount = 0;
+    if (!header.U32(magic) || magic != kSmapMagic)
+    {
+        SetError(error, "Not a .smap file: bad magic.");
+        return false;
+    }
+    if (!header.U32(version) || version != kSmapVersion)
+    {
+        SetError(error, "Unsupported .smap version " + std::to_string(version)
+                            + " (this build reads version "
+                            + std::to_string(kSmapVersion)
+                            + "); recook the level.");
+        return false;
+    }
+    if (!header.U64(out.ContentHash) || !header.U32(sectionCount)
+        || sectionCount > 64)
+    {
+        SetError(error, "Truncated or malformed .smap header.");
+        return false;
+    }
+
+    std::vector<SectionRange> directory;
+    directory.reserve(sectionCount);
+    for (std::uint32_t i = 0; i < sectionCount; ++i)
+    {
+        SectionRange range;
+        if (!header.U32(range.Id) || !header.U64(range.Offset)
+            || !header.U64(range.Size) || range.Offset > bytes.size()
+            || range.Size > bytes.size() - range.Offset)
+        {
+            SetError(error, "Truncated or malformed .smap section directory.");
+            return false;
+        }
+        directory.push_back(range);
+    }
+
+    // Verify content before interpreting a single record. This is the whole
+    // corruption story: past this point malformed data means a writer bug,
+    // not a damaged file.
+    Fnv1a computed;
+    for (const SectionRange& range : directory)
+        computed.Bytes(bytes.subspan(static_cast<std::size_t>(range.Offset),
+                                     static_cast<std::size_t>(range.Size)));
+    if (computed.Value() != out.ContentHash)
+    {
+        SetError(error, ".smap content hash mismatch: the file is corrupt or "
+                        "was truncated after cooking.");
+        return false;
+    }
+
+    const auto section = [&](std::uint32_t id) -> std::optional<ByteReader> {
+        for (const SectionRange& range : directory)
+            if (range.Id == id)
+                return ByteReader(
+                    bytes.subspan(static_cast<std::size_t>(range.Offset),
+                                  static_cast<std::size_t>(range.Size)));
+        return std::nullopt;
+    };
+
+    auto tableReader = section(kSmapSectionStrings);
+    auto depsReader = section(kSmapSectionDependencies);
+    auto entityReader = section(kSmapSectionEntities);
+    auto collisionReader = section(kSmapSectionCollision);
+    if (!tableReader || !depsReader || !entityReader || !collisionReader)
+    {
+        SetError(error, ".smap is missing a required section.");
+        return false;
+    }
+    out.Dependencies = *depsReader;
+    out.Entities = *entityReader;
+    out.Collision = *collisionReader;
+
+    std::uint64_t count = 0;
+    if (!tableReader->Varint(count) || !tableReader->CanHold(count, 1))
+    {
+        SetError(error, "Malformed .smap string table.");
+        return false;
+    }
+    out.Strings.reserve(static_cast<std::size_t>(count));
+    for (std::uint64_t i = 0; i < count; ++i)
+    {
+        std::uint64_t length = 0;
+        std::string text;
+        if (!tableReader->Varint(length)
+            || !tableReader->Text(static_cast<std::size_t>(length), text))
+        {
+            SetError(error, "Malformed .smap string table.");
+            return false;
+        }
+        out.Strings.push_back(std::move(text));
+    }
+    if (!tableReader->AtEnd())
+    {
+        SetError(error, ".smap string table has trailing bytes.");
+        return false;
+    }
+    return true;
+}
+
+[[nodiscard]] bool ParseDependencies(ParsedContainer& container,
+                                     SmapContents& contents,
+                                     SmapError* error)
+{
+    ByteReader& reader = container.Dependencies;
+    std::uint64_t count = 0;
+    // id + at least one path-index byte
+    if (!reader.Varint(count) || !reader.CanHold(count, 9))
+    {
+        SetError(error, "Malformed .smap dependency table.");
+        return false;
+    }
+    contents.Dependencies.reserve(static_cast<std::size_t>(count));
+    for (std::uint64_t i = 0; i < count; ++i)
+    {
+        std::uint64_t id = 0;
+        std::uint64_t pathIndex = 0;
+        if (!reader.U64(id) || !reader.Varint(pathIndex)
+            || pathIndex >= container.Strings.size())
+        {
+            SetError(error, "Malformed .smap dependency table.");
+            return false;
+        }
+        contents.Dependencies.push_back(SmapDependency{
+            AssetId{ id },
+            container.Strings[static_cast<std::size_t>(pathIndex)] });
+    }
+    if (!reader.AtEnd())
+    {
+        SetError(error, ".smap dependency table has trailing bytes.");
+        return false;
+    }
+    return true;
+}
+
+[[nodiscard]] bool ParseCollision(ParsedContainer& container,
+                                  SmapContents& contents,
+                                  SmapError* error)
+{
+    ByteReader& reader = container.Collision;
+    std::uint64_t count = 0;
+    // at least one path-index byte + the three origin floats
+    if (!reader.Varint(count) || !reader.CanHold(count, 13))
+    {
+        SetError(error, "Malformed .smap collision section.");
+        return false;
+    }
+    contents.Collision.reserve(static_cast<std::size_t>(count));
+    for (std::uint64_t i = 0; i < count; ++i)
+    {
+        std::uint64_t pathIndex = 0;
+        SmapCollisionCell cell;
+        if (!reader.Varint(pathIndex) || pathIndex >= container.Strings.size()
+            || !reader.F32(cell.Origin.X) || !reader.F32(cell.Origin.Y)
+            || !reader.F32(cell.Origin.Z))
+        {
+            SetError(error, "Malformed .smap collision cell.");
+            return false;
+        }
+        cell.BlobPath = container.Strings[static_cast<std::size_t>(pathIndex)];
+        contents.Collision.push_back(std::move(cell));
+    }
+    if (!reader.AtEnd())
+    {
+        SetError(error, ".smap collision section has trailing bytes.");
+        return false;
+    }
+    return true;
+}
+
+[[nodiscard]] bool ReadFileBytes(const std::filesystem::path& path,
+                                 std::vector<std::byte>& out,
+                                 SmapError* error)
+{
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open())
+    {
+        SetError(error, "Could not open '" + path.generic_string() + "'.");
+        return false;
+    }
+    file.seekg(0, std::ios::end);
+    const std::streamoff size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    if (size < 0)
+    {
+        SetError(error, "Could not read '" + path.generic_string() + "'.");
+        return false;
+    }
+    out.resize(static_cast<std::size_t>(size));
+    file.read(reinterpret_cast<char*>(out.data()),
+              static_cast<std::streamsize>(out.size()));
+    if (!file.good() && !out.empty())
+    {
+        SetError(error, "Could not read '" + path.generic_string() + "'.");
+        return false;
+    }
+    return true;
+}
 
 } // namespace
 
@@ -565,7 +743,6 @@ bool WriteSmap(const SmapContents& contents,
     for (const SmapDependency& dependency : contents.Dependencies)
     {
         deps.U64(dependency.Id.Value);
-        deps.U16(static_cast<std::uint16_t>(dependency.Type));
         deps.Varint(strings.Intern(dependency.Path));
     }
 
@@ -644,145 +821,19 @@ bool ReadSmap(std::span<const std::byte> bytes,
               SmapContents& out,
               SmapError* error)
 {
-    ByteReader header(bytes);
-    std::uint32_t magic = 0;
-    std::uint32_t version = 0;
-    std::uint64_t contentHash = 0;
-    std::uint32_t sectionCount = 0;
-    if (!header.U32(magic) || magic != kSmapMagic)
-    {
-        SetError(error, "Not a .smap file: bad magic.");
+    ParsedContainer container;
+    if (!ParseContainer(bytes, container, error))
         return false;
-    }
-    if (!header.U32(version) || version != kSmapVersion)
-    {
-        SetError(error, "Unsupported .smap version " + std::to_string(version)
-                            + " (this build reads version "
-                            + std::to_string(kSmapVersion)
-                            + "); recook the level.");
-        return false;
-    }
-    if (!header.U64(contentHash) || !header.U32(sectionCount)
-        || sectionCount > 64)
-    {
-        SetError(error, "Truncated or malformed .smap header.");
-        return false;
-    }
-
-    std::vector<SectionRange> directory;
-    directory.reserve(sectionCount);
-    for (std::uint32_t i = 0; i < sectionCount; ++i)
-    {
-        SectionRange range;
-        if (!header.U32(range.Id) || !header.U64(range.Offset)
-            || !header.U64(range.Size) || range.Offset > bytes.size()
-            || range.Size > bytes.size() - range.Offset)
-        {
-            SetError(error, "Truncated or malformed .smap section directory.");
-            return false;
-        }
-        directory.push_back(range);
-    }
-
-    // Verify content before interpreting a single record. This is the whole
-    // corruption story: past this point malformed data means a writer bug,
-    // not a damaged file.
-    Fnv1a computed;
-    for (const SectionRange& range : directory)
-        computed.Bytes(bytes.subspan(static_cast<std::size_t>(range.Offset),
-                                     static_cast<std::size_t>(range.Size)));
-    if (computed.Value() != contentHash)
-    {
-        SetError(error, ".smap content hash mismatch: the file is corrupt or "
-                        "was truncated after cooking.");
-        return false;
-    }
-
-    const auto section = [&](std::uint32_t id) -> std::optional<ByteReader> {
-        for (const SectionRange& range : directory)
-            if (range.Id == id)
-                return ByteReader(
-                    bytes.subspan(static_cast<std::size_t>(range.Offset),
-                                  static_cast<std::size_t>(range.Size)));
-        return std::nullopt;
-    };
-
-    auto tableReader = section(kSmapSectionStrings);
-    auto depsReader = section(kSmapSectionDependencies);
-    auto entityReader = section(kSmapSectionEntities);
-    auto collisionReader = section(kSmapSectionCollision);
-    if (!tableReader || !depsReader || !entityReader || !collisionReader)
-    {
-        SetError(error, ".smap is missing a required section.");
-        return false;
-    }
-
-    std::vector<std::string> strings;
-    {
-        std::uint64_t count = 0;
-        if (!tableReader->Varint(count) || !tableReader->CanHold(count, 1))
-        {
-            SetError(error, "Malformed .smap string table.");
-            return false;
-        }
-        strings.reserve(static_cast<std::size_t>(count));
-        for (std::uint64_t i = 0; i < count; ++i)
-        {
-            std::uint64_t length = 0;
-            std::string text;
-            if (!tableReader->Varint(length)
-                || !tableReader->Text(static_cast<std::size_t>(length), text))
-            {
-                SetError(error, "Malformed .smap string table.");
-                return false;
-            }
-            strings.push_back(std::move(text));
-        }
-        if (!tableReader->AtEnd())
-        {
-            SetError(error, ".smap string table has trailing bytes.");
-            return false;
-        }
-    }
 
     SmapContents contents;
-    contents.ContentHash = contentHash;
+    contents.ContentHash = container.ContentHash;
+    if (!ParseDependencies(container, contents, error))
+        return false;
 
-    {
-        std::uint64_t count = 0;
-        // id + type + at least one path-index byte
-        if (!depsReader->Varint(count) || !depsReader->CanHold(count, 11))
-        {
-            SetError(error, "Malformed .smap dependency table.");
-            return false;
-        }
-        contents.Dependencies.reserve(static_cast<std::size_t>(count));
-        for (std::uint64_t i = 0; i < count; ++i)
-        {
-            std::uint64_t id = 0;
-            std::uint16_t type = 0;
-            std::uint64_t pathIndex = 0;
-            if (!depsReader->U64(id) || !depsReader->U16(type)
-                || !depsReader->Varint(pathIndex) || pathIndex >= strings.size()
-                || !IsKnownAssetType(type))
-            {
-                SetError(error, "Malformed .smap dependency table.");
-                return false;
-            }
-            contents.Dependencies.push_back(
-                SmapDependency{ AssetId{ id }, static_cast<AssetType>(type),
-                                strings[static_cast<std::size_t>(pathIndex)] });
-        }
-        if (!depsReader->AtEnd())
-        {
-            SetError(error, ".smap dependency table has trailing bytes.");
-            return false;
-        }
-    }
-
+    ByteReader& entityReader = container.Entities;
     std::uint64_t entityCount = 0;
     // persistent id + parent + at least one component-count byte
-    if (!entityReader->Varint(entityCount) || !entityReader->CanHold(entityCount, 13))
+    if (!entityReader.Varint(entityCount) || !entityReader.CanHold(entityCount, 13))
     {
         SetError(error, "Malformed .smap entity section.");
         return false;
@@ -793,10 +844,10 @@ bool ReadSmap(std::span<const std::byte> bytes,
         SmapEntityRecord record;
         std::uint64_t persistent = 0;
         std::uint64_t componentCount = 0;
-        if (!entityReader->U64(persistent) || !entityReader->U32(record.Parent)
-            || !entityReader->Varint(componentCount)
+        if (!entityReader.U64(persistent) || !entityReader.U32(record.Parent)
+            || !entityReader.Varint(componentCount)
             // type id + fingerprint + at least one payload byte
-            || !entityReader->CanHold(componentCount, 17))
+            || !entityReader.CanHold(componentCount, 17))
         {
             SetError(error, "Malformed .smap entity record.");
             return false;
@@ -814,7 +865,7 @@ bool ReadSmap(std::span<const std::byte> bytes,
         {
             std::uint64_t typeValue = 0;
             std::uint64_t fingerprint = 0;
-            if (!entityReader->U64(typeValue) || !entityReader->U64(fingerprint))
+            if (!entityReader.U64(typeValue) || !entityReader.U64(fingerprint))
             {
                 SetError(error, "Malformed .smap component record.");
                 return false;
@@ -842,7 +893,7 @@ bool ReadSmap(std::span<const std::byte> bytes,
             }
 
             JsonValue payload;
-            if (!DecodeValue(*entityReader, strings, payload, 0))
+            if (!DecodeValue(entityReader, container.Strings, payload, 0))
             {
                 SetError(error, "Malformed payload for component '"
                                     + std::string(serializer->JsonKey())
@@ -853,46 +904,71 @@ bool ReadSmap(std::span<const std::byte> bytes,
         }
         contents.Entities.push_back(std::move(record));
     }
-    if (!entityReader->AtEnd())
+    if (!entityReader.AtEnd())
     {
         SetError(error, ".smap entity section has trailing bytes.");
         return false;
     }
 
-    {
-        std::uint64_t count = 0;
-        // at least one path-index byte + the three origin floats
-        if (!collisionReader->Varint(count) || !collisionReader->CanHold(count, 13))
-        {
-            SetError(error, "Malformed .smap collision section.");
-            return false;
-        }
-        contents.Collision.reserve(static_cast<std::size_t>(count));
-        for (std::uint64_t i = 0; i < count; ++i)
-        {
-            std::uint64_t pathIndex = 0;
-            SmapCollisionCell cell;
-            if (!collisionReader->Varint(pathIndex) || pathIndex >= strings.size()
-                || !collisionReader->F32(cell.Origin.X)
-                || !collisionReader->F32(cell.Origin.Y)
-                || !collisionReader->F32(cell.Origin.Z))
-            {
-                SetError(error, "Malformed .smap collision cell.");
-                return false;
-            }
-            cell.BlobPath = strings[static_cast<std::size_t>(pathIndex)];
-            contents.Collision.push_back(std::move(cell));
-        }
-        if (!collisionReader->AtEnd())
-        {
-            SetError(error, ".smap collision section has trailing bytes.");
-            return false;
-        }
-    }
+    if (!ParseCollision(container, contents, error))
+        return false;
 
     out = std::move(contents);
     if (error != nullptr)
         error->Message.clear();
+    return true;
+}
+
+bool ReadSmapMetadata(std::span<const std::byte> bytes,
+                      SmapContents& out,
+                      SmapError* error)
+{
+    ParsedContainer container;
+    if (!ParseContainer(bytes, container, error))
+        return false;
+
+    SmapContents contents;
+    contents.ContentHash = container.ContentHash;
+    if (!ParseDependencies(container, contents, error)
+        || !ParseCollision(container, contents, error))
+        return false;
+
+    out = std::move(contents);
+    if (error != nullptr)
+        error->Message.clear();
+    return true;
+}
+
+bool ReadSmapFile(const std::filesystem::path& path,
+                  const ComponentSerializerRegistry& serializers,
+                  SmapContents& out,
+                  SmapError* error)
+{
+    std::vector<std::byte> bytes;
+    if (!ReadFileBytes(path, bytes, error))
+        return false;
+    if (!ReadSmap(bytes, serializers, out, error))
+    {
+        if (error != nullptr)
+            error->Message = "'" + path.generic_string() + "': " + error->Message;
+        return false;
+    }
+    return true;
+}
+
+bool ReadSmapMetadataFile(const std::filesystem::path& path,
+                          SmapContents& out,
+                          SmapError* error)
+{
+    std::vector<std::byte> bytes;
+    if (!ReadFileBytes(path, bytes, error))
+        return false;
+    if (!ReadSmapMetadata(bytes, out, error))
+    {
+        if (error != nullptr)
+            error->Message = "'" + path.generic_string() + "': " + error->Message;
+        return false;
+    }
     return true;
 }
 
@@ -953,4 +1029,15 @@ bool BuildEntityPackageFromSmap(const SmapContents& contents,
     if (error != nullptr)
         error->Message.clear();
     return true;
+}
+
+std::vector<std::string> ResolveSmapDependencyPaths(
+    std::span<const SmapDependency> dependencies, const AssetRegistry& registry)
+{
+    AssetManifest manifest;
+    manifest.Entries.reserve(dependencies.size());
+    for (const SmapDependency& dependency : dependencies)
+        manifest.Entries.push_back(
+            AssetManifestEntry{ dependency.Id, dependency.Path });
+    return ResolveManifestPaths(manifest, registry);
 }

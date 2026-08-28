@@ -14,6 +14,8 @@
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/BinaryReader.h>
 #include <render/IrradianceVolumeComponent.h>
+#include <world/scene/SmapFormat.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <zone/WorldPartitionManifest.h>
 #include <zone/WorldConnectionComponents.h>
@@ -125,7 +127,6 @@ TEST_F(WorldCookTest, CooksTwoZoneWorldToCookedManifest)
             EXPECT_NE(zone.CookedContentHash, 0u);
             EXPECT_FALSE(zone.CookedSceneRef.empty());
             EXPECT_TRUE(fs::exists(Root / zone.CookedSceneRef));
-            EXPECT_TRUE(fs::exists(Root / zone.CookedCollisionRef));
         }
         EXPECT_EQ(manifest.Zones[0].Id, first);
         EXPECT_EQ(manifest.Zones[1].Id, second);
@@ -266,11 +267,12 @@ TEST_F(WorldCookTest, CookReflectsCrossZoneMove)
 
     const auto cookedEntityCount = [this](const std::string& sceneRef)
     {
-        const auto json = JsonParse(ReadFile(Root / sceneRef));
-        EXPECT_TRUE(json.has_value());
-        const JsonValue* entities = json->Find("entities");
-        EXPECT_NE(entities, nullptr);
-        return entities->AsArray().size();
+        SmapContents contents;
+        SmapError error;
+        EXPECT_TRUE(ReadSmapFile(Root / sceneRef, EditorSceneSerializers(),
+                                 contents, &error))
+            << error.Message;
+        return contents.Entities.size();
     };
 
     const WorldCookResult before = CookWorld(world, Root, 16.0, Logging, nullptr);
@@ -310,10 +312,8 @@ TEST_F(WorldCookTest, CooksWorldSceneBesideZones)
     const WorldPartitionManifest manifest = ParseCookedManifest(cooked.CookedManifestPath);
     EXPECT_EQ(manifest.WorldSceneRef, "levels/test_world.sscene");
     ASSERT_FALSE(manifest.CookedWorldSceneRef.empty());
-    ASSERT_FALSE(manifest.CookedWorldCollisionRef.empty());
     EXPECT_NE(manifest.CookedWorldContentHash, 0u);
     EXPECT_TRUE(fs::exists(Root / manifest.CookedWorldSceneRef));
-    EXPECT_TRUE(fs::exists(Root / manifest.CookedWorldCollisionRef));
 }
 
 TEST_F(WorldCookTest, WorldSceneRecookIsByteIdenticalAndEditChangesOnlyItsHash)
@@ -357,7 +357,7 @@ namespace
 double ProbeC0Sum(const std::filesystem::path& cookedScenePath)
 {
     std::string probePath = cookedScenePath.generic_string();
-    constexpr std::string_view cookedSuffix = ".cooked.json";
+    constexpr std::string_view cookedSuffix = ".smap";
     EXPECT_TRUE(probePath.ends_with(cookedSuffix));
     probePath.resize(probePath.size() - cookedSuffix.size());
     probePath += "/probes.sprobe";
@@ -639,28 +639,22 @@ TEST_F(WorldCookTest, CookedSceneCarriesAuthoredIdsAndGeneratedEntitiesCarryNone
 
     const WorldPartitionManifest manifest = ParseCookedManifest(cooked.CookedManifestPath);
     ASSERT_FALSE(manifest.Zones.empty());
-    const auto sceneJson = JsonParse(ReadFile(Root / manifest.Zones[0].CookedSceneRef));
-    ASSERT_TRUE(sceneJson.has_value());
-    const JsonValue* entities = sceneJson->Find("entities");
-    ASSERT_NE(entities, nullptr);
+    SmapContents scene;
+    SmapError sceneError;
+    ASSERT_TRUE(ReadSmapFile(Root / manifest.Zones[0].CookedSceneRef,
+                             EditorSceneSerializers(), scene, &sceneError))
+        << sceneError.Message;
 
-    const std::string expected = PersistentEntityIdToString(authoredId->Id);
     bool sawAuthoredId = false;
     std::size_t withoutId = 0;
-    for (const JsonValue& entity : entities->AsArray())
+    for (const SmapEntityRecord& record : scene.Entities)
     {
-        const JsonValue* components = entity.Find("components");
-        ASSERT_NE(components, nullptr);
-        const JsonValue* persistent = components->Find("persistent_id");
-        if (persistent == nullptr)
+        if (!record.Persistent.IsValid())
         {
             ++withoutId;
             continue;
         }
-        const JsonValue* id = persistent->Find("id");
-        ASSERT_NE(id, nullptr);
-        ASSERT_TRUE(id->IsString());
-        sawAuthoredId = sawAuthoredId || id->AsString() == expected;
+        sawAuthoredId = sawAuthoredId || record.Persistent == authoredId->Id;
     }
     EXPECT_TRUE(sawAuthoredId)
         << "the authored entity's id must cook through verbatim";

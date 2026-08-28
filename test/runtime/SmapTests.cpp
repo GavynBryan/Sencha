@@ -96,8 +96,8 @@ JsonValue PersistentIdPayload(const std::string& hex)
 SmapContents MakeContents()
 {
     SmapContents contents;
-    contents.Dependencies.push_back(SmapDependency{
-        AssetId{ 77 }, AssetType::StaticMesh, "asset://meshes/crate.smesh" });
+    contents.Dependencies.push_back(
+        SmapDependency{ AssetId{ 77 }, "asset://meshes/crate.smesh" });
     contents.Collision.push_back(
         SmapCollisionCell{ ".cooked/levels/zone.scol", Vec3d(1.0f, 2.0f, 3.0f) });
 
@@ -140,7 +140,6 @@ TEST(SmapFormat, RoundTripPreservesEverySection)
 
     ASSERT_EQ(read.Dependencies.size(), 1u);
     EXPECT_EQ(read.Dependencies[0].Id, (AssetId{ 77 }));
-    EXPECT_EQ(read.Dependencies[0].Type, AssetType::StaticMesh);
     EXPECT_EQ(read.Dependencies[0].Path, "asset://meshes/crate.smesh");
 
     ASSERT_EQ(read.Collision.size(), 1u);

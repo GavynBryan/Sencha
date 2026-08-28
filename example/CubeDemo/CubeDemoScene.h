@@ -2,10 +2,8 @@
 
 #include "FreeCamera.h"
 
-#include <core/json/JsonValue.h>
 #include <ecs/EntityId.h>
 
-#include <optional>
 #include <string>
 #include <string_view>
 
@@ -14,7 +12,6 @@ class LoggingProvider;
 class RuntimeWorld;
 struct RuntimeZoneRecord;
 class EntityBuildPackage;
-struct SceneLoadError;
 
 struct DemoScene
 {
@@ -23,24 +20,17 @@ struct DemoScene
     EntityId CenterCubeChild;
 };
 
-struct DemoSceneParse
-{
-    std::optional<JsonValue> Json;
-    std::string Error;
-};
-
-DemoSceneParse ParseDemoSceneFile(std::string_view scenePath);
-
+// Reads the cooked demo scene and builds the zone package from it. On failure
+// `error` carries the reason and the package is untouched.
 bool BuildDemoScenePackage(
     EntityBuildPackage& package,
-    const DemoSceneParse& parsed,
+    std::string_view scenePath,
     const ComponentSerializerRegistry& serializers,
-    SceneLoadError* error = nullptr);
+    std::string* error = nullptr);
 
 bool FinalizeDemoScene(
     DemoScene& scene,
     RuntimeWorld& runtime,
     RuntimeZoneRecord& zone,
-    const DemoSceneParse& parsed,
     LoggingProvider& logging,
     FreeCamera& freeCamera);

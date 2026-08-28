@@ -39,9 +39,7 @@
     CookedCacheIndex cachedIndex;
     std::error_code ec;
     if (!CookedCacheIndex::LoadFromFile(paths.Index.generic_string(), cachedIndex)
-        || !std::filesystem::exists(paths.Scene, ec)
-        || !std::filesystem::exists(paths.Manifest, ec)
-        || !std::filesystem::exists(paths.Collision, ec))
+        || !std::filesystem::exists(paths.Scene, ec))
         return std::nullopt;
 
     const CookedSourceEntry* cached = cachedIndex.Find(sourceRel);
@@ -56,8 +54,6 @@
     result.ProfileId = request.Profile.Id;
     result.ContentHash = documentHash;
     result.CookedScenePath = paths.Scene;
-    result.ManifestPath = paths.Manifest;
-    result.CollisionSidecarPath = paths.Collision;
     if (const CookStepReceipt* publication =
             FindCookStepReceipt(cachedReceipt, DocumentCookStepIds::Publication))
         RestoreDocumentCookResultMetadata(publication->Metadata, result);

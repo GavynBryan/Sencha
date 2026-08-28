@@ -97,7 +97,7 @@ struct GoldenScene
     std::system(command.c_str());
 
     const std::filesystem::path cooked = std::filesystem::path(SENCHA_GOLDEN_CONTENT_ROOT)
-        / "assets" / ".cooked" / (std::string(scene.Map) + ".cooked.json");
+        / "assets" / ".cooked" / (std::string(scene.Map) + ".smap");
     return std::filesystem::exists(cooked);
 }
 

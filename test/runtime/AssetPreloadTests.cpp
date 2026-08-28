@@ -246,58 +246,6 @@ TEST(AssetManifest, CollectFindsNestedUniquePathsInOrder)
     EXPECT_EQ(paths[1], "asset://materials/dev/red.smat");
 }
 
-TEST(AssetManifest, JsonRoundTrip)
-{
-    AssetManifest manifest;
-    manifest.Entries = { { AssetId{ 0xabcdef0123456789ull }, "asset://a/b.smesh" },
-                         { AssetId{}, "asset://c/d.smat" } };
-
-    AssetManifest parsed;
-    std::string error;
-    ASSERT_TRUE(ParseAssetManifestJson(AssetManifestToJson(manifest), parsed, &error)) << error;
-    EXPECT_EQ(parsed.Entries, manifest.Entries);
-}
-
-TEST(AssetManifest, ParsesVersionOnePathStrings)
-{
-    const std::optional<JsonValue> v1 = JsonParse(
-        R"({"version": 1, "assets": ["asset://a/b.smesh", "asset://c/d.smat"]})");
-    ASSERT_TRUE(v1.has_value());
-
-    AssetManifest parsed;
-    std::string error;
-    ASSERT_TRUE(ParseAssetManifestJson(*v1, parsed, &error)) << error;
-    ASSERT_EQ(parsed.Entries.size(), 2u);
-    EXPECT_EQ(parsed.Entries[0].Path, "asset://a/b.smesh");
-    EXPECT_FALSE(parsed.Entries[0].Id.IsValid());
-}
-
-TEST(AssetManifest, ParseRejectsBadVersionAndShape)
-{
-    AssetManifest parsed;
-    const std::optional<JsonValue> wrongVersion =
-        JsonParse(R"({"version": 9, "assets": []})");
-    ASSERT_TRUE(wrongVersion.has_value());
-    EXPECT_FALSE(ParseAssetManifestJson(*wrongVersion, parsed));
-
-    const std::optional<JsonValue> badEntry =
-        JsonParse(R"({"version": 1, "assets": ["no_prefix"]})");
-    ASSERT_TRUE(badEntry.has_value());
-    EXPECT_FALSE(ParseAssetManifestJson(*badEntry, parsed));
-
-    // String entries belong to version 1, objects to version 2. Mixing
-    // shape and version is a malformed manifest, not a best-effort parse.
-    const std::optional<JsonValue> v2String =
-        JsonParse(R"({"version": 2, "assets": ["asset://a/b.smesh"]})");
-    ASSERT_TRUE(v2String.has_value());
-    EXPECT_FALSE(ParseAssetManifestJson(*v2String, parsed));
-
-    const std::optional<JsonValue> badId = JsonParse(
-        R"({"version": 2, "assets": [{"id": "xyz", "path": "asset://a/b.smesh"}]})");
-    ASSERT_TRUE(badId.has_value());
-    EXPECT_FALSE(ParseAssetManifestJson(*badId, parsed));
-}
-
 TEST(AssetManifest, ResolvePathsPrefersIdOverStalePath)
 {
     LoggingProvider logging;
@@ -323,14 +271,6 @@ TEST(AssetManifest, ResolvePathsPrefersIdOverStalePath)
     EXPECT_EQ(paths[0], "asset://meshes/renamed.smesh");
     EXPECT_EQ(paths[1], "asset://meshes/unknown_id.smesh");
     EXPECT_EQ(paths[2], "asset://meshes/no_id.smesh");
-}
-
-TEST(AssetManifest, LoadFileReportsMissing)
-{
-    AssetManifest manifest;
-    std::string error;
-    EXPECT_FALSE(LoadAssetManifestFile("does/not/exist.manifest.json", manifest, &error));
-    EXPECT_FALSE(error.empty());
 }
 
 // -- AssetPreloader, zero-thread ---------------------------------------------

@@ -16,9 +16,7 @@ struct DocumentCookPaths
 {
     std::string           Stem; // namespaced publication stem (no extension)
     std::filesystem::path CookedDir;
-    std::filesystem::path Scene;
-    std::filesystem::path Manifest;
-    std::filesystem::path Collision;
+    std::filesystem::path Scene; // the .smap, which carries dependencies and collision
     std::filesystem::path Receipt;
     std::filesystem::path Index;
 };
@@ -33,9 +31,7 @@ struct DocumentCookPaths
         ? std::string(stem)
         : outputNamespace + "/" + std::format("{:016x}", documentHash);
     paths.CookedDir = assetsRoot / ".cooked/levels";
-    paths.Scene = paths.CookedDir / (paths.Stem + ".cooked.json");
-    paths.Manifest = paths.CookedDir / (paths.Stem + ".manifest.json");
-    paths.Collision = paths.CookedDir / (paths.Stem + ".collision.json");
+    paths.Scene = paths.CookedDir / (paths.Stem + ".smap");
     paths.Receipt = DocumentCookReceiptPath(assetsRoot, sourceRel);
     paths.Index = assetsRoot / ".cooked/index.json";
     return paths;

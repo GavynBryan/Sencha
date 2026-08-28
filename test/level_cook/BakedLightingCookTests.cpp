@@ -16,6 +16,8 @@
 #include <ecs/World.h>
 #include <render/LightComponentTypes.h>
 #include <render/PointLightComponent.h>
+#include <world/scene/SmapFormat.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 #include <assets/static_mesh/MeshGeometry.h>
 
 #include <gtest/gtest.h>
@@ -27,6 +29,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <optional>
 #include <fstream>
 #include <iterator>
 #include <sstream>
@@ -353,12 +356,27 @@ protected:
         return false;
     }
 
-    bool CookedSceneNamesZoneLightmap()
+    // The cooked scene's ZoneLightmap payload, or nullopt when no entity
+    // carries one (nothing baked, or lighting withdrawn).
+    std::optional<JsonValue> CookedZoneLightmap()
     {
-        std::ifstream file(Root / ".cooked/levels/test.cooked.json");
-        std::ostringstream buffer;
-        buffer << file.rdbuf();
-        return buffer.str().find("ZoneLightmap") != std::string::npos;
+        SmapContents contents;
+        SmapError error;
+        if (!ReadSmapFile(Root / ".cooked/levels/test.smap",
+                          EditorSceneSerializers(), contents, &error))
+        {
+            ADD_FAILURE() << error.Message;
+            return std::nullopt;
+        }
+        const IComponentSerializer* serializer =
+            EditorSceneSerializers().FindByJsonKey("ZoneLightmap");
+        if (serializer == nullptr)
+            return std::nullopt;
+        for (const SmapEntityRecord& entity : contents.Entities)
+            for (const auto& [type, payload] : entity.Components)
+                if (type == serializer->TypeId())
+                    return payload;
+        return std::nullopt;
     }
 
     fs::path Root;
@@ -377,7 +395,7 @@ TEST_F(BakedLightingCookTest, DirectLightBakesAtlasAndVertexUvs)
     EXPECT_GT(result.LightmapAtlasWidth, 0u);
     EXPECT_GT(result.LightmapAtlasHeight, 0u);
     EXPECT_TRUE(fs::exists(Root / ".cooked/levels/test/lightmap.stex"));
-    EXPECT_TRUE(CookedSceneNamesZoneLightmap());
+    EXPECT_TRUE(CookedZoneLightmap().has_value());
     EXPECT_TRUE(AnyCellVertexHasLightmapUv());
 }
 
@@ -390,7 +408,7 @@ TEST_F(BakedLightingCookTest, NonBakedLightLeavesNoAtlas)
     EXPECT_EQ(result.DirectLightCount, 0u);
     EXPECT_EQ(result.LightmapAtlasWidth, 0u);
     EXPECT_FALSE(fs::exists(Root / ".cooked/levels/test/lightmap.stex"));
-    EXPECT_FALSE(CookedSceneNamesZoneLightmap());
+    EXPECT_FALSE(CookedZoneLightmap().has_value());
     EXPECT_FALSE(AnyCellVertexHasLightmapUv());
 }
 
@@ -423,10 +441,9 @@ TEST_F(BakedLightingCookTest, AoPlaneBakesBesideTheAtlas)
     EXPECT_LT(darkest, 200u);   // contact darkening near the wall base
     EXPECT_GT(fullyOpen, 0u);   // open floor and untouched fill stay white
 
-    std::ifstream scene(Root / ".cooked/levels/test.cooked.json");
-    std::ostringstream buffer;
-    buffer << scene.rdbuf();
-    EXPECT_NE(buffer.str().find("\"ao\""), std::string::npos);
+    const std::optional<JsonValue> lightmap = CookedZoneLightmap();
+    ASSERT_TRUE(lightmap.has_value());
+    EXPECT_NE(lightmap->Find("ao"), nullptr);
 }
 
 TEST_F(BakedLightingCookTest, AoDisabledCooksNoPlane)
@@ -441,10 +458,9 @@ TEST_F(BakedLightingCookTest, AoDisabledCooksNoPlane)
     EXPECT_TRUE(fs::exists(Root / ".cooked/levels/test/lightmap.stex"));
     EXPECT_FALSE(fs::exists(Root / ".cooked/levels/test/ao.stex"));
 
-    std::ifstream scene(Root / ".cooked/levels/test.cooked.json");
-    std::ostringstream buffer;
-    buffer << scene.rdbuf();
-    EXPECT_EQ(buffer.str().find("\"ao\""), std::string::npos);
+    const std::optional<JsonValue> lightmap = CookedZoneLightmap();
+    ASSERT_TRUE(lightmap.has_value());
+    EXPECT_EQ(lightmap->Find("ao"), nullptr);
 }
 
 TEST_F(BakedLightingCookTest, NoLightingProfileWithdrawsPublishedLighting)
@@ -464,10 +480,7 @@ TEST_F(BakedLightingCookTest, NoLightingProfileWithdrawsPublishedLighting)
     EXPECT_FALSE(fs::exists(Root / ".cooked/levels/test/lightmap.stex"));
     EXPECT_FALSE(fs::exists(Root / ".cooked/levels/test/ao.stex"));
 
-    std::ifstream scene(unlit.CookedScenePath);
-    std::ostringstream buffer;
-    buffer << scene.rdbuf();
-    EXPECT_EQ(buffer.str().find("ZoneLightmap"), std::string::npos);
+    EXPECT_FALSE(CookedZoneLightmap().has_value());
 }
 
 // A structure-only recook that neither targets lighting nor withdraws it keeps
@@ -481,7 +494,7 @@ TEST_F(BakedLightingCookTest, PreserveLightingKeepsSceneReferencingTheAtlas)
     ASSERT_TRUE(fs::exists(Root / ".cooked/levels/test/lightmap.stex"));
     const std::vector<std::byte> baseLightmap =
         ReadBytes(Root / ".cooked/levels/test/lightmap.stex");
-    ASSERT_TRUE(CookedSceneNamesZoneLightmap());
+    ASSERT_TRUE(CookedZoneLightmap().has_value());
 
     // Recook structure only. Lighting is neither targeted nor withdrawn, so its
     // disposition stays the default Preserve.
@@ -499,7 +512,7 @@ TEST_F(BakedLightingCookTest, PreserveLightingKeepsSceneReferencingTheAtlas)
     // rebuilt scene.
     EXPECT_TRUE(fs::exists(Root / ".cooked/levels/test/lightmap.stex"));
     EXPECT_EQ(ReadBytes(Root / ".cooked/levels/test/lightmap.stex"), baseLightmap);
-    EXPECT_TRUE(CookedSceneNamesZoneLightmap())
+    EXPECT_TRUE(CookedZoneLightmap().has_value())
         << "a preserved lighting output must stay referenced by the cooked scene";
 }
 
@@ -547,7 +560,7 @@ TEST_F(BakedLightingCookTest, PreserveLightingIsCumulativeAcrossStructureCooks)
             level, Root, 16.0, nullptr, nullptr, {}, {},
             DocumentCookOptions{ .Profile = &structureOnly });
         ASSERT_TRUE(preserved.Success) << preserved.Error;
-        EXPECT_TRUE(CookedSceneNamesZoneLightmap());
+        EXPECT_TRUE(CookedZoneLightmap().has_value());
         EXPECT_EQ(ReadBytes(Root / ".cooked/levels/test/lightmap.stex"), baseLightmap);
     }
 }
@@ -584,7 +597,7 @@ TEST_F(BakedLightingCookTest, LightingProfileRestoresWithdrawnStepArtifacts)
     EXPECT_EQ(ReadBytes(Root / ".cooked/levels/test/lightmap.stex"),
               originalLightmap);
     EXPECT_EQ(ReadBytes(Root / ".cooked/levels/test/ao.stex"), originalAo);
-    EXPECT_TRUE(CookedSceneNamesZoneLightmap());
+    EXPECT_TRUE(CookedZoneLightmap().has_value());
 }
 
 // Direct and AO cache independently: an AO-only parameter change reuses the

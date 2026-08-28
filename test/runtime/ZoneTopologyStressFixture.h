@@ -260,11 +260,10 @@ inline void AddStressLinkPair(WorldPartitionManifest& manifest,
             .Id = StressZoneAt(index),
             .Name = "Zone" + suffix,
             .Graph = StressGraphAt(GraphIndexOfZone(spec, index)),
-            .SceneRef = "levels/stress" + suffix + ".level.json",
+            .SceneRef = "levels/stress" + suffix + ".sscene",
             .Bounds = StressZoneBounds(spec, index),
             .BoundsOverridden = true,
-            .CookedSceneRef = "levels/stress" + suffix + ".cooked.json",
-            .CookedCollisionRef = "levels/stress" + suffix + ".collision.json",
+            .CookedSceneRef = "levels/stress" + suffix + ".smap",
             // Distinct per zone so failed-load suppression keys them apart.
             .CookedContentHash = 0xd000 + static_cast<std::uint64_t>(index),
         });

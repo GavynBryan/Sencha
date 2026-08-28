@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/assets/AssetId.h>
-#include <core/assets/AssetRef.h>
 #include <core/identity/Id.h>
 #include <core/json/JsonValue.h>
 #include <ecs/ComponentTypeId.h>
@@ -9,10 +8,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <span>
 #include <string>
 #include <vector>
 
+class AssetRegistry;
 class ComponentSerializerRegistry;
 class IComponentSerializer;
 
@@ -30,9 +31,9 @@ class IComponentSerializer;
 // a compact value encoding of the component's canonical serialized tree --
 // object keys and string values interned through the file-wide string table,
 // which is where the size over JSON text comes from. The fingerprint is the
-// skew gate: a reader
-// whose serializer no longer matches refuses loudly instead of quietly
-// reinterpreting fields. The encoding is a value tree rather than a raw
+// skew gate: a reader whose serializer no longer matches refuses loudly
+// instead of quietly reinterpreting fields.
+// The encoding is a value tree rather than a raw
 // positional field stream because cooked refs must be writable where no live
 // asset handle can exist (a headless cook); the tree decodes into the same
 // archive values the one serializer path has always consumed.
@@ -50,11 +51,12 @@ inline constexpr std::uint32_t kSmapSectionEntities = 0x53544E45;     // 'ENTS'
 inline constexpr std::uint32_t kSmapSectionCollision = 0x4C4C4F43;    // 'COLL'
 
 // One asset this scene needs resident: the stable id when the cook knew it,
-// the virtual path always (the dev-build fallback resolver).
+// the virtual path always (the dev-build fallback resolver). No type: what an
+// asset is comes from the registry record at load time, never from a scene's
+// claim about it.
 struct SmapDependency
 {
     AssetId Id;
-    AssetType Type = AssetType::Unknown;
     std::string Path;
 };
 
@@ -104,6 +106,32 @@ struct SmapError
                             SmapContents& out,
                             SmapError* error = nullptr);
 
+// ReadSmap over a file's bytes. A missing or unreadable file refuses with the
+// path named; everything else is ReadSmap's contract.
+[[nodiscard]] bool ReadSmapFile(const std::filesystem::path& path,
+                                const ComponentSerializerRegistry& serializers,
+                                SmapContents& out,
+                                SmapError* error = nullptr);
+
+// Decodes only the tables a consumer needs before any entity exists -- the
+// dependency list a preload warms and the collision cells -- leaving
+// `out.Entities` empty. No entity payload is decoded and no schema gate runs,
+// so this needs no serializer registry; the content hash is still verified.
+[[nodiscard]] bool ReadSmapMetadata(std::span<const std::byte> bytes,
+                                    SmapContents& out,
+                                    SmapError* error = nullptr);
+
+[[nodiscard]] bool ReadSmapMetadataFile(const std::filesystem::path& path,
+                                        SmapContents& out,
+                                        SmapError* error = nullptr);
+
+// Id-first resolution of the dependency table to the path list a preloader
+// consumes: an id the registry knows yields the record's current path
+// (rename-proof); anything else falls back to the cooked path. The same
+// contract ResolveManifestPaths has always had.
+[[nodiscard]] std::vector<std::string> ResolveSmapDependencyPaths(
+    std::span<const SmapDependency> dependencies, const AssetRegistry& registry);
+
 // The inverse of ReadSmap, kept beside it so the codec pair cannot drift.
 // Fingerprints are computed from `serializers` at write; a component id with
 // no registered serializer refuses. The scene-level cook policy that builds
@@ -115,10 +143,9 @@ struct SmapError
 
 class EntityBuildPackage;
 
-// Converts parsed contents into detached package entities, the same product
-// BuildEntityPackageFromSceneJson made from cooked JSON: serialized component
-// payloads for owner-thread decode, persistent identity lifted as import
-// metadata, parents wired by ordinal.
+// Converts parsed contents into detached package entities: serialized
+// component payloads for owner-thread decode, persistent identity lifted as
+// import metadata, parents wired by ordinal. Worker-safe, like ReadSmap.
 [[nodiscard]] bool BuildEntityPackageFromSmap(
     const SmapContents& contents,
     const ComponentSerializerRegistry& serializers,

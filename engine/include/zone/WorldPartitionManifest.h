@@ -107,9 +107,9 @@ struct ZoneHeader
     bool        BoundsOverridden = false;
 
     // Cooked-manifest-only fields; zero/empty in authored manifests. The world cook
-    // fills them; the runtime loading policy consumes them.
+    // fills them; the runtime loading policy consumes them. The cooked scene is a
+    // .smap, which carries the zone's collision cells itself.
     std::string CookedSceneRef{};
-    std::string CookedCollisionRef{};
     uint64_t    CookedContentHash = 0;
     std::vector<DockEndpoint> Docks{};
     std::vector<LinkEndpoint> Links{};
@@ -140,11 +140,10 @@ struct WorldPartitionManifest
     // empty means the world has none. It is not a zone: no id, no bounds, no
     // graph, no participation in the index or the demand policy.
     std::string WorldSceneRef;
-    // Cooked-manifest-only, the ZoneHeader trio's world-scene counterpart:
+    // Cooked-manifest-only, the ZoneHeader pair's world-scene counterpart:
     // zero/empty in authored manifests, filled by the world cook, consumed by
     // the runtime's world-start load.
     std::string CookedWorldSceneRef;
-    std::string CookedWorldCollisionRef;
     uint64_t    CookedWorldContentHash = 0;
     std::vector<GraphRecord>     Graphs;
     std::vector<ZoneHeader>       Zones;

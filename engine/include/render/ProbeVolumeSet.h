@@ -139,7 +139,7 @@ struct ZoneProbeResidency
 };
 
 // Reads the probe payload cooked beside a scene: for
-// `<dir>/<stem>.cooked.json` the cook writes `<dir>/<stem>/probes.sprobe`.
+// `<dir>/<stem>.smap` the cook writes `<dir>/<stem>/probes.sprobe`.
 // A missing file is the no-authored-volumes case, not an error (returns
 // false with `out` empty). Pure file IO, safe on a zone build task thread.
 bool ReadZoneProbeFile(const std::string& cookedScenePath, ProbeVolumeFile& out);

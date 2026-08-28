@@ -11,9 +11,12 @@
 #include <core/logging/LoggingProvider.h>
 #include <render/PointLightComponent.h>
 #include <world/identity/PersistentIdComponent.h>
+#include <world/scene/SmapFormat.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -419,13 +422,24 @@ namespace
             CookDocument(Root / "levels/host.sscene", Root, 16.0);
         ASSERT_TRUE(cooked.Success) << cooked.Error;
 
-        std::ifstream file(cooked.CookedScenePath);
-        std::ostringstream buffer;
-        buffer << file.rdbuf();
-        const std::string scene = buffer.str();
+        SmapContents scene;
+        SmapError sceneError;
+        ASSERT_TRUE(ReadSmapFile(cooked.CookedScenePath, EditorSceneSerializers(),
+                                 scene, &sceneError))
+            << sceneError.Message;
+
         // The light the door contributes, under its minted id, at rest in the
         // cooked output the runtime will stream.
-        EXPECT_NE(scene.find("PointLight"), std::string::npos);
+        const IComponentSerializer* lightSerializer =
+            EditorSceneSerializers().FindByJsonKey("PointLight");
+        ASSERT_NE(lightSerializer, nullptr);
+        std::vector<PersistentEntityId> cookedLightIds;
+        for (const SmapEntityRecord& record : scene.Entities)
+            for (const auto& [type, payload] : record.Components)
+                if (type == lightSerializer->TypeId())
+                    cookedLightIds.push_back(record.Persistent);
+        EXPECT_FALSE(cookedLightIds.empty());
+
         const EditorDocument reloaded = [&]
         {
             EditorDocument doc(Logging);
@@ -438,9 +452,10 @@ namespace
                 && reloaded.GetRegistry().Components
                        .TryGet<PointLightComponent>(entity) != nullptr)
             {
-                const std::string id =
-                    PersistentEntityIdToString(IdOf(reloaded, entity));
-                EXPECT_NE(scene.find(id), std::string::npos)
+                const PersistentEntityId id = IdOf(reloaded, entity);
+                EXPECT_NE(std::find(cookedLightIds.begin(), cookedLightIds.end(),
+                                    id),
+                          cookedLightIds.end())
                     << "cooked identity must be the minted id";
             }
     }

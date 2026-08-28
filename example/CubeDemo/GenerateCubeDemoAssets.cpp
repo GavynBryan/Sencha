@@ -5,21 +5,19 @@
 //      it through the file path like shipped content would. Generating at
 //      build time (rather than committing the binary) keeps the bytes in
 //      sync with StaticMeshVertex when the format version moves.
-//   2. Derives the scene's asset manifest — the transitive closure of every
+//   2. Derives the scene's dependency table — the transitive closure of every
 //      asset:// reference in the scene plus, for each referenced .smat, the
 //      texture refs inside it. Derived data, never authored (Decision D).
-//   3. Maintains the persisted asset id map (Decision A): every manifest
+//   3. Maintains the persisted asset id map (Decision A): every dependency
 //      path gets a stable id at first sight; renames keep theirs via the
 //      map's content hashes. The map at <assets-root>/asset_ids.json is the
 //      committed identity record — this tool only appends and rehashes.
-//   4. Emits the cooked scene, <scene-stem>.cooked.json: the authored scene
-//      with every known asset ref stamped {"id", "path"} so the runtime
-//      resolves by id with the path as fallback. The authored scene is
-//      never modified — it stays the editor's round-trip format.
+//   4. Emits the cooked scene, <scene-stem>.smap: the authored scene with
+//      every known asset ref stamped {"id", "path"}, compiled with its
+//      dependency table into the one binary the runtime reads. The authored
+//      scene is never modified — it stays the round-trip format.
 //
 // Usage: GenerateCubeDemoAssets <output-assets-root> <scene-file>
-//   The manifest is written next to the scene file as
-//   <scene-stem>.manifest.json.
 
 #include <assets/cook/SceneCookOutput.h>
 #include <assets/static_mesh/MeshSerializer.h>
@@ -28,6 +26,8 @@
 #include <core/logging/ConsoleLogSink.h>
 #include <core/logging/LoggingProvider.h>
 #include <assets/static_mesh/StaticMeshPrimitives.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
+#include <world/serialization/SceneSerializer.h>
 
 #include <cstdio>
 #include <filesystem>
@@ -108,21 +108,23 @@ int main(int argc, char** argv)
     if (!sceneJson)
         return 1;
 
-    std::filesystem::path manifestPath = scenePath;
-    manifestPath.replace_extension();
-    manifestPath += ".manifest.json";
-
     std::filesystem::path cookedScenePath = scenePath;
     cookedScenePath.replace_extension();
-    cookedScenePath += ".cooked.json";
+    cookedScenePath += ".smap";
+
+    // The demo scene carries only engine components, so the engine's own
+    // serializer set is the complete schema for the compile.
+    ComponentSerializerRegistry serializers;
+    RegisterEngineSceneSerializers(serializers);
 
     std::string cookError;
     const bool cooked = WriteCookedScene(
         *sceneJson,
         /*extraRefs*/ {},
+        /*collisionCells*/ {},
+        serializers,
         [&outRoot](std::string_view assetPath) { return PhysicalPathFor(outRoot, assetPath); },
         outRoot / kAssetIdMapFileName,
-        manifestPath,
         cookedScenePath,
         &cookError);
     if (!cooked)

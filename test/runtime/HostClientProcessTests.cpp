@@ -58,7 +58,7 @@ namespace
     [[nodiscard]] std::filesystem::path CookedMapScene()
     {
         return std::filesystem::path(SENCHA_REPO_ROOT) / "template/assets/.cooked"
-            / (std::string(kHostMap) + ".cooked.json");
+            / (std::string(kHostMap) + ".smap");
     }
 
     std::filesystem::path TempLogPath(std::string_view suffix)

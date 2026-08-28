@@ -6,16 +6,17 @@
 #include "CookStepProgress.h"
 #include "DocumentArtifactCatalog.h"
 #include "DocumentCookContext.h"
+#include "DocumentSerialization.h"
 
 #include <assets/cook/SceneCookOutput.h>
 #include <assets/static_mesh/MeshSerializer.h>
 #include <core/assets/AssetIdMap.h>
-#include <core/json/JsonStringify.h>
+#include <world/scene/SmapFormat.h>
 
-#include <fstream>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 
 bool WriteCookedSceneArtifacts(const DocumentCookContext& ctx,
                                JsonValue passthroughScene,
@@ -65,27 +66,28 @@ bool WriteCookedSceneArtifacts(const DocumentCookContext& ctx,
     std::error_code ec;
     std::filesystem::create_directories(paths.CookedDir, ec);
 
-    // Collision sidecar: the runtime loads this at map load (LoadZoneCollision) to
-    // spawn the level's static brush colliders. Empty array if no brushes.
+    // Collision cells fold into the .smap. A cook that skipped the collision
+    // step carries the active publication's cells forward, the same Preserve
+    // semantics the blob artifacts themselves get from the publication plan.
+    std::vector<SmapCollisionCell> collisionCells;
     if (emitCollision)
     {
-        JsonValue::Array sidecar;
-        sidecar.reserve(collisionEntries.size());
+        collisionCells.reserve(collisionEntries.size());
         for (const CellCollisionEntry& entry : collisionEntries)
-            sidecar.push_back(JsonValue(JsonValue::Object{
-                { "blob", JsonValue(entry.BlobRelPath) },
-                { "origin", JsonValue(JsonValue::Array{
-                    JsonValue(static_cast<double>(entry.Origin.X)),
-                    JsonValue(static_cast<double>(entry.Origin.Y)),
-                    JsonValue(static_cast<double>(entry.Origin.Z)) }) },
-            }));
-        std::ofstream sidecarFile(transaction.Stage(paths.Collision));
-        sidecarFile << JsonStringify(JsonValue(std::move(sidecar)), /*pretty*/ true);
-        if (!sidecarFile.good())
+            collisionCells.push_back(
+                SmapCollisionCell{ entry.BlobRelPath, entry.Origin });
+    }
+    else
+    {
+        SmapContents prior;
+        SmapError priorError;
+        if (!ReadSmapMetadataFile(paths.Scene, prior, &priorError))
         {
-            result.Error = "CookDocument: could not write collision sidecar";
+            result.Error = "CookDocument: cannot carry collision forward: "
+                + priorError.Message;
             return false;
         }
+        collisionCells = std::move(prior.Collision);
     }
 
     // asset:// resolution: Generated cell meshes live under .cooked/; every other
@@ -113,10 +115,10 @@ bool WriteCookedSceneArtifacts(const DocumentCookContext& ctx,
         result.Error = "CookDocument: " + cookError;
         return false;
     }
-    const std::filesystem::path stagedManifest = transaction.Stage(paths.Manifest);
-    const std::filesystem::path stagedScene = transaction.Stage(paths.Scene);
-    if (!WriteCookedScene(cooked, catalog.SceneRefs(), physicalPathFor,
-            transaction.Stage(idMapPath), stagedManifest, stagedScene, &cookError))
+    if (!WriteCookedScene(cooked, catalog.SceneRefs(), collisionCells,
+            EditorSceneSerializers(), physicalPathFor,
+            transaction.Stage(idMapPath), transaction.Stage(paths.Scene),
+            &cookError))
     {
         result.Error = "CookDocument: " + cookError;
         return false;

@@ -74,4 +74,4 @@ project directory (its CWD is the content root):
 ```
 
 Cook a level first (editor Cook, or the cook tooling) so
-`assets/.cooked/levels/<name>.cooked.json` exists.
+`assets/.cooked/levels/<name>.smap` exists.

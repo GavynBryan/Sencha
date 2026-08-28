@@ -112,8 +112,10 @@ DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
     progress.Complete();
     if (progress.Cancelled(result))
         return result;
+    // No prior published .smap means no prior collision cells to carry
+    // forward, so collision must be produced even if the profile skips it.
     const bool runCollision = runCollisionTarget
-        || !std::filesystem::exists(paths.Collision, cacheEc);
+        || !std::filesystem::exists(paths.Scene, cacheEc);
 
     // Pack the atlas and write final atlas UVs into the cell vertices BEFORE
     // the per-cell mesh bake: the weld compares whole vertices, so identical
@@ -242,8 +244,6 @@ DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
 
     result.Success = true;
     result.CookedScenePath = paths.Scene;
-    result.ManifestPath = paths.Manifest;
-    result.CollisionSidecarPath = paths.Collision;
     result.ContentHash = geometryHash;
     result.CellCount = cells.size();
     progress.Finish();

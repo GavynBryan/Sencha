@@ -22,7 +22,6 @@
 #include <controller/LookIntegrationSystem.h>
 #include <controller/LookOrientation.h>
 #include <core/assets/AssetIdMap.h>
-#include <core/assets/AssetManifest.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/config/EngineConfig.h>
 #include <core/console/ConsoleService.h>
@@ -75,8 +74,8 @@
 #include <world/transform/TransformHistory.h>
 #include <zone/WorldPartitionIds.h>
 #include <world/build/EntityBuildPackage.h>
+#include <world/scene/SmapFormat.h>
 #include <zone/ZonePackageImporter.h>
-#include <zone/ZonePackageSceneLoader.h>
 
 #include <SDL3/SDL.h>
 
@@ -124,33 +123,10 @@ struct SceneBuildResult
 {
     bool Success = false;
     std::string Error;
+    // The scene's collision cells, carried out of the worker's .smap read for
+    // the owner-thread finalize to spawn colliders from.
+    std::vector<SmapCollisionCell> Collision;
 };
-
-std::optional<JsonValue> ParseSceneFile(
-    const std::string& path,
-    std::string& error)
-{
-    std::ifstream file(path);
-    if (!file.is_open())
-    {
-        error = "could not open scene file '" + path + "'";
-        return std::nullopt;
-    }
-
-    std::ostringstream buffer;
-    buffer << file.rdbuf();
-
-    JsonParseError parseError;
-    std::optional<JsonValue> json =
-        JsonParse(buffer.str(), &parseError);
-    if (!json)
-    {
-        error = "scene JSON parse error at "
-            + std::to_string(parseError.Position)
-            + ": " + parseError.Message;
-    }
-    return json;
-}
 
 void BuildScenePackage(
     EntityBuildPackage& package,
@@ -158,26 +134,16 @@ void BuildScenePackage(
     const std::string& scenePath,
     const ComponentSerializerRegistry& serializers)
 {
-    std::string parseError;
-    const std::optional<JsonValue> json =
-        ParseSceneFile(scenePath, parseError);
-    if (!json)
+    SmapContents contents;
+    SmapError error;
+    if (!ReadSmapFile(scenePath, serializers, contents, &error)
+        || !BuildEntityPackageFromSmap(contents, serializers, package, &error))
     {
-        result.Error = std::move(parseError);
+        result.Error = error.Message;
         return;
     }
 
-    SceneLoadError loadError;
-    if (!BuildEntityPackageFromSceneJson(
-            *json,
-            serializers,
-            package,
-            &loadError))
-    {
-        result.Error = loadError.Message;
-        return;
-    }
-
+    result.Collision = std::move(contents.Collision);
     result.Success = true;
     result.Error.clear();
 }
@@ -1736,33 +1702,26 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
         return result;
     }
 
-    const std::string base =
+    const std::string scenePath =
         std::string(kCookedScanRoot) + "/"
-        + std::string(mapName);
-    const std::string scenePath = base + ".cooked.json";
-    const std::string manifestPath = base + ".manifest.json";
-    const std::string collisionSidecar =
-        base + ".collision.json";
+        + std::string(mapName) + ".smap";
 
+    // Warm the scene's dependency table before the load; a metadata read that
+    // fails leaves the slower resolve-on-import fallback, not an error.
     std::shared_ptr<AssetPreload> preload;
-    AssetManifest manifest;
-    std::string manifestError;
-    if (LoadAssetManifestFile(
-            manifestPath,
-            manifest,
-            &manifestError))
+    SmapContents metadata;
+    SmapError metadataError;
+    if (ReadSmapMetadataFile(scenePath, metadata, &metadataError))
     {
-        preload = Preloader->Begin(
-            ResolveManifestPaths(
-                manifest,
-                runtimeAssets.Registry));
+        preload = Preloader->Begin(ResolveSmapDependencyPaths(
+            metadata.Dependencies, runtimeAssets.Registry));
     }
     else
     {
         logging.GetLogger<TemplateGame>().Warn(
-            "TemplateGame: no manifest for '{}' ({}); resolve-on-import",
+            "TemplateGame: no preload for '{}' ({}); resolve-on-import",
             std::string(mapName),
-            manifestError);
+            metadataError.Message);
     }
 
     auto buildResult = std::make_shared<SceneBuildResult>();
@@ -1780,7 +1739,7 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
                 *serializers);
             (void)ReadZoneProbeFile(scenePath, *probes);
         },
-        [this, buildResult, probes, collisionSidecar, &logging](
+        [this, buildResult, probes, &logging](
             RuntimeWorld& runtime,
             RuntimeZoneRecord& zone)
         {
@@ -1797,7 +1756,7 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
                 LoadZoneCollision(
                     runtime.Entities(),
                     *PhysicsShapes,
-                    collisionSidecar,
+                    buildResult->Collision,
                     std::string(kCookedScanRoot),
                     zone.Partition);
             }
@@ -1896,33 +1855,21 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
             const std::string scenePath =
                 std::string(kAuthoredRoot) + "/"
                 + header.CookedSceneRef;
-            const std::string collisionPath =
-                std::string(kAuthoredRoot) + "/"
-                + header.CookedCollisionRef;
             auto buildResult =
                 std::make_shared<SceneBuildResult>();
             auto probes = std::make_shared<ProbeVolumeFile>();
 
             ZoneLoadRecipe recipe;
             // Warm the zone's assets (meshes, materials, the lightmap atlas)
-            // before attach, the same manifest convention as the map path:
-            // the manifest sits beside the cooked scene (.cooked.json ->
-            // .manifest.json). Missing manifest = resolve-on-attach fallback.
+            // before attach, from the .smap's own dependency table. A failed
+            // metadata read = resolve-on-attach fallback.
             {
-                std::string assetManifestPath = scenePath;
-                constexpr std::string_view cookedSuffix = ".cooked.json";
-                if (assetManifestPath.ends_with(cookedSuffix))
+                SmapContents metadata;
+                if (Preloader.has_value()
+                    && ReadSmapMetadataFile(scenePath, metadata, nullptr))
                 {
-                    assetManifestPath.resize(
-                        assetManifestPath.size() - cookedSuffix.size());
-                    assetManifestPath += ".manifest.json";
-                    AssetManifest assetManifest;
-                    if (Preloader.has_value()
-                        && LoadAssetManifestFile(assetManifestPath, assetManifest, nullptr))
-                    {
-                        recipe.Preload = Preloader->Begin(ResolveManifestPaths(
-                            assetManifest, RuntimeAssetState().Registry));
-                    }
+                    recipe.Preload = Preloader->Begin(ResolveSmapDependencyPaths(
+                        metadata.Dependencies, RuntimeAssetState().Registry));
                 }
             }
             recipe.Build =
@@ -1941,8 +1888,7 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
                  buildResult,
                  probes,
                  loggingPtr,
-                 assetSystem,
-                 collisionPath](
+                 assetSystem](
                     RuntimeWorld& runtime,
                     RuntimeZoneRecord& zone)
                 {
@@ -1959,7 +1905,7 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
                         LoadZoneCollision(
                             runtime.Entities(),
                             *PhysicsShapes,
-                            collisionPath,
+                            buildResult->Collision,
                             std::string(kCookedScanRoot),
                             zone.Partition);
                     }
@@ -1997,9 +1943,6 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
         const std::string scenePath =
             std::string(kAuthoredRoot) + "/"
             + loaded.CookedWorldSceneRef;
-        const std::string collisionPath =
-            std::string(kAuthoredRoot) + "/"
-            + loaded.CookedWorldCollisionRef;
 
         EntityBuildPackage package;
         SceneBuildResult buildResult;
@@ -2041,13 +1984,13 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
             LoadZoneCollision(
                 engine.World().Entities(),
                 *PhysicsShapes,
-                collisionPath,
+                buildResult.Collision,
                 std::string(kCookedScanRoot),
                 PersistentStoragePartition);
         }
-        else if (!loaded.CookedWorldCollisionRef.empty())
+        else if (!buildResult.Collision.empty())
         {
-            PendingWorldSceneCollision = collisionPath;
+            PendingWorldSceneCollision = std::move(buildResult.Collision);
         }
     }
 

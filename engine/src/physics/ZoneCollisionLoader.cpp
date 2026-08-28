@@ -3,12 +3,8 @@
 #include <cstddef>
 #include <fstream>
 #include <ios>
-#include <optional>
-#include <sstream>
 #include <vector>
 
-#include <core/json/JsonParser.h>
-#include <core/json/JsonValue.h>
 #include <ecs/ArchetypeSignature.h>
 #include <ecs/World.h>
 #include <math/geometry/3d/Transform3d.h>
@@ -34,45 +30,16 @@ std::vector<std::byte> ReadFileBytes(const std::string& path)
         return {};
     return bytes;
 }
-
-Vec3d ReadOrigin(const JsonValue& entry)
-{
-    const JsonValue* origin = entry.Find("origin");
-    if (origin == nullptr || !origin->IsArray()
-        || origin->AsArray().size() != 3)
-    {
-        return Vec3d::Zero();
-    }
-
-    const JsonValue::Array& values = origin->AsArray();
-    return Vec3d(
-        static_cast<float>(
-            values[0].IsNumber() ? values[0].AsNumber() : 0.0),
-        static_cast<float>(
-            values[1].IsNumber() ? values[1].AsNumber() : 0.0),
-        static_cast<float>(
-            values[2].IsNumber() ? values[2].AsNumber() : 0.0));
-}
 } // namespace
 
 int LoadZoneCollision(
     World& world,
     CollisionShapeCache& cache,
-    const std::string& sidecarPath,
+    std::span<const SmapCollisionCell> cells,
     const std::string& cookedRoot,
     StoragePartitionId partition)
 {
-    std::ifstream file(sidecarPath);
-    if (!file.is_open())
-        return 0;
-
-    std::ostringstream buffer;
-    buffer << file.rdbuf();
-
-    JsonParseError parseError;
-    std::optional<JsonValue> json =
-        JsonParse(buffer.str(), &parseError);
-    if (!json || !json->IsArray())
+    if (cells.empty())
         return 0;
 
     ArchetypeSignature colliderSignature;
@@ -80,17 +47,10 @@ int LoadZoneCollision(
     colliderSignature.set(world.GetComponentId<Collider>());
 
     int loaded = 0;
-    for (const JsonValue& entry : json->AsArray())
+    for (const SmapCollisionCell& cell : cells)
     {
-        if (!entry.IsObject())
-            continue;
-
-        const JsonValue* blob = entry.Find("blob");
-        if (blob == nullptr || !blob->IsString())
-            continue;
-
-        const std::vector<std::byte> bytes = ReadFileBytes(
-            cookedRoot + "/" + blob->AsString());
+        const std::vector<std::byte> bytes =
+            ReadFileBytes(cookedRoot + "/" + cell.BlobPath);
         if (bytes.empty())
             continue;
 
@@ -99,7 +59,7 @@ int LoadZoneCollision(
             continue;
 
         Transform3f transform;
-        transform.Position = ReadOrigin(entry);
+        transform.Position = cell.Origin;
 
         const EntityId entity = world.CreateEntityWithSignature(
             partition,

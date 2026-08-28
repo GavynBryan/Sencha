@@ -40,10 +40,9 @@ std::string ManifestJson(std::uint64_t hubHash)
         R"({"format_version":1,"name":"FailureFixture","start_zone":"00000000000000a1",)"
         R"("regions":[{"id":"00000000000000b1","name":"R"}],"zones":[)"
         R"({"id":"00000000000000a1","name":"Hub","region":"00000000000000b1",)"
-        R"("scene":"levels/hub.level.json",)"
+        R"("scene":"levels/hub.sscene",)"
         R"("bounds":{"min":[-8,0,-8],"max":[8,4,8]},)"
-        R"("cooked_scene":"levels/hub.cooked.json",)"
-        R"("cooked_collision":"levels/hub.collision.json",)"
+        R"("cooked_scene":"levels/hub.smap",)"
         R"("content_hash":")" + [hubHash]
         {
             char buffer[17];
@@ -52,10 +51,9 @@ std::string ManifestJson(std::uint64_t hubHash)
             return std::string(buffer);
         }() + R"("},)"
         R"({"id":"00000000000000a2","name":"Hallway","region":"00000000000000b1",)"
-        R"("scene":"levels/hall.level.json",)"
+        R"("scene":"levels/hall.sscene",)"
         R"("bounds":{"min":[9,0,-2],"max":[20,4,2]},)"
-        R"("cooked_scene":"levels/hall.cooked.json",)"
-        R"("cooked_collision":"levels/hall.collision.json",)"
+        R"("cooked_scene":"levels/hall.smap",)"
         R"("content_hash":"00000000000000d2"})"
         R"(]})";
 }

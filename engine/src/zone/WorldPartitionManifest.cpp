@@ -323,9 +323,6 @@ ReadWorldPartitionManifest(const JsonValue& root, std::string* error)
     if (!ReadOptionalString(root, "cooked_world_scene", manifest.CookedWorldSceneRef, error,
                             "cooked_world_scene"))
         return std::nullopt;
-    if (!ReadOptionalString(root, "cooked_world_collision", manifest.CookedWorldCollisionRef,
-                            error, "cooked_world_collision"))
-        return std::nullopt;
     if (const JsonValue* hash = root.Find("world_scene_content_hash"))
     {
         const auto decoded = hash->IsString() ? HexDecode(hash->AsString()) : std::nullopt;
@@ -434,9 +431,6 @@ ReadWorldPartitionManifest(const JsonValue& root, std::string* error)
                 return std::nullopt;
             if (!ReadOptionalString(entry, "cooked_scene", header.CookedSceneRef, error,
                                     std::format("zones[{}].cooked_scene", i)))
-                return std::nullopt;
-            if (!ReadOptionalString(entry, "cooked_collision", header.CookedCollisionRef, error,
-                                    std::format("zones[{}].cooked_collision", i)))
                 return std::nullopt;
             if (const JsonValue* hash = entry.Find("content_hash"))
             {
@@ -602,8 +596,6 @@ JsonValue WriteWorldPartitionManifest(const WorldPartitionManifest& manifest)
         root.emplace_back("world_scene", JsonValue{ manifest.WorldSceneRef });
     if (!manifest.CookedWorldSceneRef.empty())
         root.emplace_back("cooked_world_scene", JsonValue{ manifest.CookedWorldSceneRef });
-    if (!manifest.CookedWorldCollisionRef.empty())
-        root.emplace_back("cooked_world_collision", JsonValue{ manifest.CookedWorldCollisionRef });
     if (manifest.CookedWorldContentHash != 0)
         root.emplace_back("world_scene_content_hash",
                           JsonValue{ HexEncode(manifest.CookedWorldContentHash) });
@@ -649,8 +641,6 @@ JsonValue WriteWorldPartitionManifest(const WorldPartitionManifest& manifest)
 
         if (!header.CookedSceneRef.empty())
             entry.emplace_back("cooked_scene", JsonValue{ header.CookedSceneRef });
-        if (!header.CookedCollisionRef.empty())
-            entry.emplace_back("cooked_collision", JsonValue{ header.CookedCollisionRef });
         if (header.CookedContentHash != 0)
             entry.emplace_back("content_hash", JsonValue{ HexEncode(header.CookedContentHash) });
 
