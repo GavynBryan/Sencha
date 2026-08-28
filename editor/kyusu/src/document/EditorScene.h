@@ -93,6 +93,12 @@ public:
     // or claims exactly once; adopting an already-tracked entity does nothing.
     void TrackEntity(EntityId entity);
     void SetTransform(EntityId entity, const Transform3f& transform);
+    // Places the entity at a world-space transform, converting through its
+    // parent so the stored local transform stays the authored value. Everything
+    // that positions an entity from something the user sees -- a gizmo drag, a
+    // re-origin, a snap -- works in world space and belongs here; SetTransform
+    // is for the local value itself.
+    void SetWorldTransform(EntityId entity, const Transform3f& world);
     // Rebuilds the brush's mesh as an axis-aligned box of the given half-extents
     // (the box-editing path; general mesh edits go through BrushOps verbs).
     void SetBrushHalfExtents(EntityId entity, Vec3d halfExtents);
@@ -148,7 +154,16 @@ public:
     [[nodiscard]] bool HasEntity(EntityId entity) const;
     [[nodiscard]] uint32_t GetEntityCount() const;
     [[nodiscard]] std::span<const EntityId> GetAllEntities() const;
-    [[nodiscard]] const Transform3f* TryGetTransform(EntityId entity) const;
+    // The authored local transform: what the inspector edits and what the scene
+    // serializes. Correct answer only for a caller that also writes back a local
+    // value, or that works purely in the entity's own frame.
+    [[nodiscard]] const Transform3f* TryGetLocalTransform(EntityId entity) const;
+    // Where the entity actually is. Every spatial consumer -- rendering,
+    // picking, bounds, gizmo placement, geometry rebasing -- wants this one.
+    // Falls back to the local transform for an entity that has not yet reached
+    // a RefreshDerivedTransforms, which is the right answer for the unparented
+    // entity such a read can only be about.
+    [[nodiscard]] const Transform3f* TryGetWorldTransform(EntityId entity) const;
     [[nodiscard]] const BrushComponent* TryGetBrush(EntityId entity) const;
     [[nodiscard]] const BrushMesh* TryGetBrushMesh(EntityId entity) const;
     // The dormant source mesh of a baked brush (see BakedBrushComponent).

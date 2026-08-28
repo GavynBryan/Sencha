@@ -25,7 +25,7 @@ BrushManipulationSink::BrushManipulationSink(EditorScene& scene, EditorDocument&
 
 std::optional<Transform3f> BrushManipulationSink::ResolveTransform(EntityId entity) const
 {
-    if (const Transform3f* transform = Scene.TryGetTransform(entity))
+    if (const Transform3f* transform = Scene.TryGetWorldTransform(entity))
         return *transform;
     return std::nullopt;
 }
@@ -33,7 +33,7 @@ std::optional<Transform3f> BrushManipulationSink::ResolveTransform(EntityId enti
 std::optional<MeshEditTargetMesh> BrushManipulationSink::ResolveMesh(EntityId entity) const
 {
     const BrushMesh* mesh = Scene.TryGetBrushMesh(entity);
-    const Transform3f* transform = Scene.TryGetTransform(entity);
+    const Transform3f* transform = Scene.TryGetWorldTransform(entity);
     if (mesh == nullptr || transform == nullptr)
         return std::nullopt;
     return MeshEditTargetMesh{ .Mesh = mesh, .Transform = *transform };
@@ -41,7 +41,7 @@ std::optional<MeshEditTargetMesh> BrushManipulationSink::ResolveMesh(EntityId en
 
 void BrushManipulationSink::PreviewTransform(EntityId entity, const Transform3f& transform)
 {
-    Scene.SetTransform(entity, transform);
+    Scene.SetWorldTransform(entity, transform);
 }
 
 void BrushManipulationSink::PreviewMesh(EntityId entity, const BrushMesh& mesh)
@@ -57,7 +57,7 @@ void BrushManipulationSink::CommitTransforms(const std::vector<TransformEdit>& e
     std::vector<std::unique_ptr<ICommand>> commands;
     commands.reserve(edits.size());
     for (const TransformEdit& edit : edits)
-        commands.push_back(MakeMoveCommand(edit.Entity, edit.Before, edit.After, Scene, Document));
+        commands.push_back(MakeWorldMoveCommand(edit.Entity, edit.Before, edit.After, Scene, Document));
 
     Commands.Execute(std::make_unique<CompositeCommand>(std::move(commands)));
 }
@@ -111,7 +111,7 @@ void BrushManipulationSink::CommitDuplicate(std::span<const EntityId> sources,
     // reading them first keeps the observer independent of command internals.
     std::optional<Vec3d> offset;
     if (!transforms.empty())
-        if (const Transform3f* source = Scene.TryGetTransform(sources.front()))
+        if (const Transform3f* source = Scene.TryGetWorldTransform(sources.front()))
             offset = transforms.front().Position - source->Position;
     Commands.Execute(std::make_unique<DuplicateEntitiesCommand>(
         sources, transforms, Scene, Document, Selection, false, DuplicateRemap));

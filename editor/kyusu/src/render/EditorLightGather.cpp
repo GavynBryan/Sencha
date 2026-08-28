@@ -20,7 +20,7 @@ EditorLightGather GatherEditorLights(const EditorDocument& document,
     {
         if (!scene.IsEntityVisible(entity))
             continue;
-        const Transform3f* transform = scene.TryGetTransform(entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(entity);
         if (transform == nullptr)
             continue;
 

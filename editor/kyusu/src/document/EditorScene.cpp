@@ -215,6 +215,31 @@ void EditorScene::SetTransform(EntityId entity, const Transform3f& transform)
         local->Value = transform;
 }
 
+void EditorScene::SetWorldTransform(EntityId entity, const Transform3f& world)
+{
+    const World& components = Registry_.Components;
+    const Parent* parent = components.TryGet<Parent>(entity);
+    const WorldTransform* parentWorld =
+        parent != nullptr ? components.TryGet<WorldTransform>(parent->Entity) : nullptr;
+    if (parentWorld == nullptr)
+    {
+        SetTransform(entity, world);
+        return;
+    }
+
+    // The exact inverse of the parent-times-child composition transform
+    // propagation applies, so a value placed here reads back unchanged.
+    const Transform3f& frame = parentWorld->Value;
+    Transform3f local;
+    local.Position = frame.InverseTransformPoint(world.Position);
+    local.Rotation = frame.Rotation.Conjugate() * world.Rotation;
+    local.Scale = Vec3d(
+        frame.Scale.X != 0.0f ? world.Scale.X / frame.Scale.X : world.Scale.X,
+        frame.Scale.Y != 0.0f ? world.Scale.Y / frame.Scale.Y : world.Scale.Y,
+        frame.Scale.Z != 0.0f ? world.Scale.Z / frame.Scale.Z : world.Scale.Z);
+    SetTransform(entity, local);
+}
+
 void EditorScene::SetBrushHalfExtents(EntityId entity, Vec3d halfExtents)
 {
     SetBrushMesh(entity, BrushOps::MakeBox(halfExtents));
@@ -270,11 +295,19 @@ std::span<const EntityId> EditorScene::GetAllEntities() const
     return Entities;
 }
 
-const Transform3f* EditorScene::TryGetTransform(EntityId entity) const
+const Transform3f* EditorScene::TryGetLocalTransform(EntityId entity) const
 {
     const World& world = Registry_.Components;
     const LocalTransform* local = world.TryGet<LocalTransform>(entity);
     return local != nullptr ? &local->Value : nullptr;
+}
+
+const Transform3f* EditorScene::TryGetWorldTransform(EntityId entity) const
+{
+    const World& world = Registry_.Components;
+    if (const WorldTransform* derived = world.TryGet<WorldTransform>(entity))
+        return &derived->Value;
+    return TryGetLocalTransform(entity);
 }
 
 const BrushComponent* EditorScene::TryGetBrush(EntityId entity) const
@@ -336,7 +369,7 @@ std::optional<Aabb3d> EditorScene::TryGetWorldBounds(EntityId entity) const
     const BrushMesh* mesh = TryGetBrushMesh(entity);
     if (mesh == nullptr)
         mesh = TryGetDormantBrushMesh(entity); // a baked brush keeps its shape
-    const Transform3f* transform = TryGetTransform(entity);
+    const Transform3f* transform = TryGetWorldTransform(entity);
     if (mesh == nullptr || transform == nullptr || mesh->Vertices.empty())
         return std::nullopt;
 

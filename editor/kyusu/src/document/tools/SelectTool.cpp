@@ -31,7 +31,7 @@ std::vector<SelectableRef> GatherLoop(ToolContext& ctx, EditorViewport& viewport
 {
     const SelectableRef seed = ctx.Picking.PickLoopSeedEdge(viewport, pos, ctx.Scene, mode, restrictTo);
     const BrushMesh* mesh = seed.IsValid() ? ctx.Scene.TryGetBrushMesh(seed.Entity) : nullptr;
-    const Transform3f* transform = seed.IsValid() ? ctx.Scene.TryGetTransform(seed.Entity) : nullptr;
+    const Transform3f* transform = seed.IsValid() ? ctx.Scene.TryGetWorldTransform(seed.Entity) : nullptr;
     if (mesh == nullptr || transform == nullptr)
         return {};
     return GatherLoopSelection(*mesh, *transform, seed, mode);
@@ -41,7 +41,7 @@ std::vector<SelectableRef> GatherLoop(ToolContext& ctx, EditorViewport& viewport
 std::vector<SelectableRef> AllElementsOf(const EditorScene& scene, EntityId entity, MeshElementKind mode)
 {
     const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-    const Transform3f* transform = scene.TryGetTransform(entity);
+    const Transform3f* transform = scene.TryGetWorldTransform(entity);
     if (mesh == nullptr || transform == nullptr)
         return {};
     return MeshElements::AllRefs(*mesh, *transform, scene.GetRegistry().Id, entity, mode);

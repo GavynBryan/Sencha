@@ -84,7 +84,7 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
     for (EntityId entity : bodies)
     {
         const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-        const Transform3f* transform = scene.TryGetTransform(entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(entity);
         if (mesh == nullptr || transform == nullptr)
             continue;
         AppendWireframe(bodyLines, *mesh, *transform, entity, EditorTheme::ActiveWireframe,
@@ -102,7 +102,7 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
         && std::find(bodies.begin(), bodies.end(), Overlay.HoverBody) == bodies.end())
     {
         const BrushMesh* mesh = scene.TryGetBrushMesh(Overlay.HoverBody);
-        const Transform3f* transform = scene.TryGetTransform(Overlay.HoverBody);
+        const Transform3f* transform = scene.TryGetWorldTransform(Overlay.HoverBody);
         if (mesh != nullptr && transform != nullptr)
             AppendWireframe(bodyLines, *mesh, *transform, Overlay.HoverBody,
                             EditorTheme::PreviewWireframe, EditorTheme::PreviewLinePixels);
@@ -118,7 +118,7 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
             continue;
 
         const BrushMesh* mesh = scene.TryGetBrushMesh(selected.Entity);
-        const Transform3f* transform = scene.TryGetTransform(selected.Entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(selected.Entity);
         if (mesh == nullptr || transform == nullptr)
             continue;
 
@@ -170,7 +170,7 @@ void SelectionRenderer::SubmitActiveGlowSource(const FrameContext& frame, const 
     for (EntityId entity : GatherActiveBodies(scene))
     {
         const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-        const Transform3f* transform = scene.TryGetTransform(entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(entity);
         if (mesh == nullptr || transform == nullptr)
             continue;
         AppendWireframe(segments, *mesh, *transform, entity, EditorTheme::ActiveWireframe,
@@ -283,7 +283,7 @@ void SelectionRenderer::AppendHover(std::vector<EditorLineSegment>& segments, co
         return;
 
     const BrushMesh* mesh = scene.TryGetBrushMesh(hovered.Entity);
-    const Transform3f* transform = scene.TryGetTransform(hovered.Entity);
+    const Transform3f* transform = scene.TryGetWorldTransform(hovered.Entity);
     if (mesh == nullptr || transform == nullptr)
         return;
 

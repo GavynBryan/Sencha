@@ -52,7 +52,7 @@ std::optional<SelectedEdgePath> MakeSelectedEdgePath(const EditorScene& scene, E
                                                       std::span<const SelectableRef> refs)
 {
     const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-    const Transform3f* transform = scene.TryGetTransform(entity);
+    const Transform3f* transform = scene.TryGetWorldTransform(entity);
     if (mesh == nullptr || transform == nullptr)
         return std::nullopt;
 
@@ -131,7 +131,7 @@ std::optional<SelectedEdgePath> MakeSelectedEdgePath(const EditorScene& scene, E
 BrushOps::BridgePathSpec MakeBridgePathSpec(const EditorScene& scene, const SelectedEdgePath& path)
 {
     const BrushMesh& mesh = *scene.TryGetBrushMesh(path.Entity);
-    const Transform3f& transform = *scene.TryGetTransform(path.Entity);
+    const Transform3f& transform = *scene.TryGetWorldTransform(path.Entity);
 
     BrushOps::BridgePathSpec spec;
     spec.Closed = path.Closed;

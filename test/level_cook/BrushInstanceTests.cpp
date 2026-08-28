@@ -26,7 +26,7 @@ namespace
         EntityId Instantiate(EntityId source)
         {
             const std::array<EntityId, 1> sources = { source };
-            const std::array<Transform3f, 1> transforms = { *Scene.TryGetTransform(source) };
+            const std::array<Transform3f, 1> transforms = { *Scene.TryGetWorldTransform(source) };
             DuplicateEntitiesCommand command(sources, transforms, Scene, Document, Selection,
                                              /*asInstance*/ true);
             command.Execute();
@@ -80,7 +80,7 @@ namespace
         const BrushId shared = Scene.TryGetBrush(source)->Id;
 
         const std::array<EntityId, 1> sources = { source };
-        const std::array<Transform3f, 1> transforms = { *Scene.TryGetTransform(source) };
+        const std::array<Transform3f, 1> transforms = { *Scene.TryGetWorldTransform(source) };
         DuplicateEntitiesCommand command(sources, transforms, Scene, Document, Selection, true);
         command.Execute();
         command.Undo();

@@ -128,7 +128,7 @@ void SceneRenderQueueBuilder::Build(const EditorDocument& document)
         world.ForEachComponent<IrradianceVolumeComponent>(
             [&](EntityId entity, const IrradianceVolumeComponent& volume)
             {
-                const Transform3f* transform = scene.TryGetTransform(entity);
+                const Transform3f* transform = scene.TryGetWorldTransform(entity);
                 if (transform == nullptr)
                     return;
                 HashFnv1aValue(probeVolumesHash, transform->Position);
@@ -236,7 +236,7 @@ void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
         const std::vector<MaterialHandle>* sectionMaterials = MaterialSets.Get(renderer->Materials);
         if (mesh == nullptr || sectionMaterials == nullptr || sectionMaterials->empty())
             continue;
-        const Transform3f* transform = scene.TryGetTransform(entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(entity);
         if (transform == nullptr)
             continue;
 
@@ -270,7 +270,7 @@ void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
             if (mesh == nullptr || sectionMaterials == nullptr
                 || sectionMaterials->empty())
                 continue;
-            const Transform3f* transform = scene.TryGetTransform(entity);
+            const Transform3f* transform = scene.TryGetWorldTransform(entity);
             if (transform == nullptr)
                 continue;
 
@@ -496,7 +496,7 @@ void SceneRenderQueueBuilder::BuildShadowCasters(const EditorDocument& document)
         const GpuStaticMesh* mesh = Meshes.Get(renderer->Mesh);
         const std::vector<MaterialHandle>* sectionMaterials =
             MaterialSets.Get(renderer->Materials);
-        const Transform3f* transform = scene.TryGetTransform(entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(entity);
         if (mesh == nullptr || sectionMaterials == nullptr || transform == nullptr)
             continue;
 

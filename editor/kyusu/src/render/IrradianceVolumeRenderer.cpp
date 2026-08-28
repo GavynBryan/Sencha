@@ -69,7 +69,7 @@ void IrradianceVolumeRenderer::DrawViewport(const FrameContext& frame,
             world.TryGet<IrradianceVolumeComponent>(entity);
         if (volume == nullptr)
             continue;
-        const Transform3f* transform = scene.TryGetTransform(entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(entity);
         if (transform == nullptr)
             continue;
 

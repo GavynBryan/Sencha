@@ -71,7 +71,7 @@ void SelectionActions::Duplicate(bool asInstance)
     for (const EntityId entity : SelectedBrushEntities())
     {
         sources.push_back(entity);
-        const Transform3f* transform = scene.TryGetTransform(entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(entity);
         transforms.push_back(transform != nullptr ? *transform : Transform3f::Identity());
     }
     if (sources.empty())
@@ -90,7 +90,7 @@ void SelectionActions::DuplicateWithOffset(Vec3d offset)
     for (const EntityId entity : SelectedBrushEntities())
     {
         sources.push_back(entity);
-        const Transform3f* transform = scene.TryGetTransform(entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(entity);
         Transform3f placed = transform != nullptr ? *transform : Transform3f::Identity();
         placed.Position += offset;
         transforms.push_back(placed);

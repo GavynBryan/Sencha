@@ -25,13 +25,13 @@ public:
 
     void Execute() override
     {
-        Scene.SetTransform(Entity, AfterTransform);
+        Scene.SetWorldTransform(Entity, AfterTransform);
         Scene.SetBrushMesh(Entity, AfterMesh);
     }
 
     void Undo() override
     {
-        Scene.SetTransform(Entity, BeforeTransform);
+        Scene.SetWorldTransform(Entity, BeforeTransform);
         Scene.SetBrushMesh(Entity, BeforeMesh);
     }
 
@@ -50,7 +50,7 @@ private:
                                                                          EntityId entity,
                                                                          Vec3d newOrigin)
 {
-    const Transform3f* transform = scene.TryGetTransform(entity);
+    const Transform3f* transform = scene.TryGetWorldTransform(entity);
     const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
     if (transform == nullptr || mesh == nullptr)
         return nullptr;

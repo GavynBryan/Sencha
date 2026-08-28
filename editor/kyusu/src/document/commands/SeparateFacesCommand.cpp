@@ -63,7 +63,7 @@ void SeparateFacesCommand::Execute()
     }
 
     Scene.SetBrushMesh(Source, SourceAfter);
-    Created = Scene.CreateBrushFromMesh(*Scene.TryGetTransform(Source), SeparatedMesh);
+    Created = Scene.CreateBrushFromMesh(*Scene.TryGetWorldTransform(Source), SeparatedMesh);
 
     Selection.SetSelection({ SelectableRef::EntitySelection(Scene.GetRegistry().Id, Created) });
     Document.MarkDirty();
@@ -84,7 +84,7 @@ std::unique_ptr<ICommand> MakeSeparateFacesCommand(EntityId source,
                                                    SelectionService& selection)
 {
     const BrushMesh* mesh = scene.TryGetBrushMesh(source);
-    if (mesh == nullptr || scene.TryGetTransform(source) == nullptr || faces.empty())
+    if (mesh == nullptr || scene.TryGetWorldTransform(source) == nullptr || faces.empty())
         return nullptr;
 
     // Dedup + bounds-check; refuse to empty the source.

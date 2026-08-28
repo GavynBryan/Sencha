@@ -32,7 +32,7 @@ void GridEditing::SetOriginToSelection(GridSettings& grid, const EditorScene& sc
     if (vertexRef != nullptr)
     {
         const BrushMesh* mesh = scene.TryGetBrushMesh(vertexRef->Entity);
-        const Transform3f* transform = scene.TryGetTransform(vertexRef->Entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(vertexRef->Entity);
         if (mesh != nullptr && transform != nullptr)
         {
             if (const auto vertex = MeshElements::TryGetVertex(*mesh, *transform, vertexRef->ElementId))
@@ -73,7 +73,7 @@ void GridEditing::AlignToSelectedFace(GridSettings& grid, const EditorScene& sce
         return;
 
     const BrushMesh* mesh = scene.TryGetBrushMesh(faceRef.Entity);
-    const Transform3f* transform = scene.TryGetTransform(faceRef.Entity);
+    const Transform3f* transform = scene.TryGetWorldTransform(faceRef.Entity);
     if (mesh == nullptr || transform == nullptr)
         return;
 

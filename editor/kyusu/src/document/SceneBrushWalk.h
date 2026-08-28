@@ -24,7 +24,7 @@ void ForEachVisibleBrush(const EditorScene& scene, bool skipLocked, F&& fn)
         if (skipLocked && scene.IsEntityLocked(entity))
             continue;
         const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-        const Transform3f* transform = scene.TryGetTransform(entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(entity);
         if (mesh == nullptr || transform == nullptr)
             continue;
         fn(entity, *mesh, *transform);

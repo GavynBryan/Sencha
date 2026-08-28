@@ -282,7 +282,7 @@ void EditorWorkspace::SelectAll()
         for (EntityId entity : entities)
         {
             const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-            const Transform3f* transform = scene.TryGetTransform(entity);
+            const Transform3f* transform = scene.TryGetWorldTransform(entity);
             if (mesh == nullptr || transform == nullptr)
                 continue;
             std::vector<SelectableRef> refs = MeshElements::AllRefs(*mesh, *transform, registry, entity, kind);
@@ -387,7 +387,7 @@ void EditorWorkspace::UpdateOverlay()
         if (!ref.IsEntity())
             continue;
         const BrushMesh* mesh = scene.TryGetBrushMesh(ref.Entity);
-        const Transform3f* transform = scene.TryGetTransform(ref.Entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(ref.Entity);
         if (mesh == nullptr || transform == nullptr)
             continue;
         const Aabb3d entityBounds = BrushWorldBounds(*mesh, *transform);

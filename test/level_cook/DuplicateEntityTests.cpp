@@ -56,7 +56,7 @@ namespace
         const EntityId copy = Document.DuplicateEntity(source);
         EXPECT_TRUE(Scene.HasEntity(copy));
         EXPECT_EQ(Scene.GetEntityCount(), 2u);
-        ASSERT_NE(Scene.TryGetTransform(copy), nullptr);
-        EXPECT_FLOAT_EQ(Scene.TryGetTransform(copy)->Position.X, 1.0f);
+        ASSERT_NE(Scene.TryGetWorldTransform(copy), nullptr);
+        EXPECT_FLOAT_EQ(Scene.TryGetWorldTransform(copy)->Position.X, 1.0f);
     }
 } // namespace

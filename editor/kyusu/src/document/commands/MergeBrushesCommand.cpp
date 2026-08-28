@@ -60,7 +60,7 @@ void MergeBrushesCommand::Execute()
     if (!Captured)
     {
         TargetBefore = *Scene.TryGetBrushMesh(Target);
-        const Transform3f targetTransform = *Scene.TryGetTransform(Target);
+        const Transform3f targetTransform = *Scene.TryGetWorldTransform(Target);
 
         Merged = TargetBefore;
         SourceSnapshots.reserve(Sources.size());
@@ -68,7 +68,7 @@ void MergeBrushesCommand::Execute()
         {
             SourceSnapshots.push_back(Document.CaptureEntity(source));
             AppendRebased(Merged, targetTransform,
-                          *Scene.TryGetBrushMesh(source), *Scene.TryGetTransform(source));
+                          *Scene.TryGetBrushMesh(source), *Scene.TryGetWorldTransform(source));
         }
         BrushValidateAndRepair(Merged);
         Captured = true;
@@ -105,13 +105,13 @@ std::unique_ptr<ICommand> MakeMergeBrushesCommand(EntityId target,
                                                   EditorScene& scene, EditorDocument& document,
                                                   SelectionService& selection)
 {
-    if (scene.TryGetBrushMesh(target) == nullptr || scene.TryGetTransform(target) == nullptr)
+    if (scene.TryGetBrushMesh(target) == nullptr || scene.TryGetWorldTransform(target) == nullptr)
         return nullptr;
 
     std::vector<EntityId> valid;
     for (EntityId source : sources)
         if (source != target && scene.TryGetBrushMesh(source) != nullptr
-            && scene.TryGetTransform(source) != nullptr)
+            && scene.TryGetWorldTransform(source) != nullptr)
             valid.push_back(source);
     if (valid.empty())
         return nullptr;

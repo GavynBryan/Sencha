@@ -271,7 +271,7 @@ std::optional<PickingService::PickCandidate> PickingService::MakeBrushBodyCandid
                                                                                     const EditorScene& scene,
                                                                                     EntityId entity) const
 {
-    const Transform3f* transform = scene.TryGetTransform(entity);
+    const Transform3f* transform = scene.TryGetWorldTransform(entity);
     const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
     if (mesh == nullptr)
         mesh = scene.TryGetDormantBrushMesh(entity); // baked brushes stay clickable
@@ -294,7 +294,7 @@ void PickingService::GatherBrushFaceCandidates(const Ray3d& ray,
                                                EntityId entity,
                                                std::vector<PickCandidate>& outCandidates) const
 {
-    const Transform3f* transform = scene.TryGetTransform(entity);
+    const Transform3f* transform = scene.TryGetWorldTransform(entity);
     const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
     if (transform == nullptr || mesh == nullptr)
         return;
@@ -435,7 +435,7 @@ SelectableRef PickingService::PickLoopSeedEdge(const EditorViewport& viewport,
         return {};
 
     const BrushMesh* mesh = scene.TryGetBrushMesh(face.Entity);
-    const Transform3f* transform = scene.TryGetTransform(face.Entity);
+    const Transform3f* transform = scene.TryGetWorldTransform(face.Entity);
     if (mesh == nullptr || transform == nullptr || face.ElementId >= mesh->Faces.size())
         return {};
 

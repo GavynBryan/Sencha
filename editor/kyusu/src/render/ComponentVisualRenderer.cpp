@@ -99,7 +99,7 @@ void ComponentVisualRenderer::DrawViewport(const FrameContext& frame, const Edit
         if (!scene.IsEntityVisible(entity))
             continue;
 
-        const Transform3f* transform = scene.TryGetTransform(entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(entity);
         if (transform == nullptr)
             continue;
 

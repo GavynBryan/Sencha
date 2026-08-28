@@ -13,7 +13,7 @@ class EditorScene;
 class SelectionService;
 
 // The one brush-backed edit backend: previews by writing the live scene and
-// commits via the value-command factories (MakeMoveCommand / MakeEditBrushMeshCommand).
+// commits via the value-command factories (MakeWorldMoveCommand / MakeEditBrushMeshCommand).
 // Implements both the
 // manipulator-facing ManipulationSink (preview/commit during drags) and the
 // verb-facing IMeshEditTarget (resolve + make-command for MeshEditService). The
