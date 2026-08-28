@@ -31,7 +31,7 @@
 #include <world/RuntimeWorld.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
-#include <zone/ZoneLoadPackage.h>
+#include <world/build/EntityBuildPackage.h>
 
 #ifdef SENCHA_ENABLE_COOK
 #include <assets/cook/AudioCook.h>
@@ -355,7 +355,7 @@ void CubeDemoGame::OnStart(GameStartupContext&)
     ZoneLoader->BeginLoad(
         kDemoZone,
         [parsed, packageBuilt, packageError, serializers](
-            ZoneLoadPackage& package)
+            EntityBuildPackage& package)
         {
             *parsed = ParseDemoSceneFile(
                 "cube_demo_scene.cooked.json");

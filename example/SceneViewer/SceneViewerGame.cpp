@@ -36,7 +36,7 @@
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
-#include <zone/ZoneLoadPackage.h>
+#include <world/build/EntityBuildPackage.h>
 #include <zone/ZonePackageSceneLoader.h>
 
 #include <SDL3/SDL.h>
@@ -66,7 +66,7 @@ struct SceneBuildResult
 };
 
 void BuildScenePackage(
-    ZoneLoadPackage& package,
+    EntityBuildPackage& package,
     SceneBuildResult& result,
     const std::string& path,
     const ComponentSerializerRegistry& serializers)
@@ -92,7 +92,7 @@ void BuildScenePackage(
     }
 
     SceneLoadError loadError;
-    if (!BuildZonePackageFromSceneJson(
+    if (!BuildEntityPackageFromSceneJson(
             *json,
             serializers,
             package,
@@ -337,7 +337,7 @@ ConsoleResult SceneViewerGame::LoadMap(
     ZoneLoader->BeginLoad(
         kPlayZone,
         [buildResult, probes, serializers, scenePath](
-            ZoneLoadPackage& package)
+            EntityBuildPackage& package)
         {
             BuildScenePackage(
                 package,

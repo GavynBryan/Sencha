@@ -15,7 +15,7 @@ class TextureCache;
 //
 // This is the document/editor path: a registry built here is populated by the
 // scene serializer. Streamed runtime content takes the other route, arriving as
-// a ZoneLoadPackage imported into RuntimeWorld storage partitions.
+// an EntityBuildPackage imported into RuntimeWorld storage partitions.
 //
 // The caches are optional because a caller that only inspects structure does
 // not need to resolve assets; components whose cache is null keep unresolved

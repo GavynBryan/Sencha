@@ -3,7 +3,7 @@
 #include <core/identity/Id.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneFormat.h>
-#include <zone/ZoneLoadPackage.h>
+#include <world/build/EntityBuildPackage.h>
 
 #include <cstddef>
 #include <string>
@@ -19,17 +19,12 @@ void SetError(SceneLoadError* error, std::string message)
 }
 } // namespace
 
-bool BuildZonePackageFromSceneJson(
+bool BuildEntityPackageFromSceneJson(
     const JsonValue& root,
     const ComponentSerializerRegistry& serializers,
-    ZoneLoadPackage& package,
+    EntityBuildPackage& package,
     SceneLoadError* error)
 {
-    if (!package.Zone().IsValid())
-    {
-        SetError(error, "Zone package builder requires a valid ZoneId.");
-        return false;
-    }
     if (!root.IsObject())
     {
         SetError(error, "Scene JSON root must be an object.");
@@ -46,8 +41,8 @@ bool BuildZonePackageFromSceneJson(
         return false;
     }
 
-    ZoneLoadPackage built(package.Zone());
-    std::vector<ZoneLocalEntityId> entities;
+    EntityBuildPackage built;
+    std::vector<PackageEntityId> entities;
     entities.reserve(entitiesValue->AsArray().size());
 
     for (const JsonValue& entityValue : entitiesValue->AsArray())
@@ -58,7 +53,7 @@ bool BuildZonePackageFromSceneJson(
             return false;
         }
 
-        const ZoneLocalEntityId entity = built.CreateEntity();
+        const PackageEntityId entity = built.CreateEntity();
         entities.push_back(entity);
 
         const JsonValue* components = entityValue.Find("components");

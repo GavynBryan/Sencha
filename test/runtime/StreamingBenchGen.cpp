@@ -39,7 +39,7 @@
 #include <world/transform/PropagationOrderCache.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformPropagation.h>
-#include <zone/ZoneLoadPackage.h>
+#include <world/build/EntityBuildPackage.h>
 #include <zone/ZonePackageImporter.h>
 
 #include <algorithm>
@@ -93,12 +93,12 @@ void FillEntity(World& world, EntityId entity, int index)
     world.AddComponent(entity, light);
 }
 
-ZoneLoadPackage MakeZonePackage(ZoneId zone, int entities)
+EntityBuildPackage MakeZonePackage(int entities)
 {
-    ZoneLoadPackage package(zone);
+    EntityBuildPackage package;
     for (int index = 0; index < entities; ++index)
     {
-        const ZoneLocalEntityId entity = package.CreateEntity();
+        const PackageEntityId entity = package.CreateEntity();
         Transform3f transform;
         transform.Position = Vec3d(
             static_cast<float>(index % 64),
@@ -191,7 +191,7 @@ void MeasureImportAndDetach(int entities, int reps)
     for (int rep = 0; rep < reps; ++rep)
     {
         RuntimeWorld runtime(schema);
-        const ZoneLoadPackage package = MakeZonePackage(ZoneId{ 7 }, entities);
+        const EntityBuildPackage package = MakeZonePackage(entities);
 
         const uint64_t migrationsBefore = runtime.Entities().RowMigrationCount();
         const auto importStart = Clock::now();
@@ -199,6 +199,7 @@ void MeasureImportAndDetach(int entities, int reps)
         ASSERT_TRUE(ImportZonePackage(
             runtime,
             schema,
+            ZoneId{ 7 },
             package,
             ZoneParticipation{ .Visible = true },
             &error))
@@ -231,7 +232,7 @@ void MeasureChurn(int entities, int cycles)
 {
     const WorldComponentSchema schema = RuntimeSchema();
     RuntimeWorld runtime(schema);
-    const ZoneLoadPackage package = MakeZonePackage(ZoneId{ 1 }, entities);
+    const EntityBuildPackage package = MakeZonePackage(entities);
 
     size_t chunksAfterFirstCycle = 0;
     for (int cycle = 0; cycle < cycles; ++cycle)
@@ -240,6 +241,7 @@ void MeasureChurn(int entities, int cycles)
         ASSERT_TRUE(ImportZonePackage(
             runtime,
             schema,
+            ZoneId{ 1 },
             package,
             ZoneParticipation{ .Visible = true },
             &error))

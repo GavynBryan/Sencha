@@ -9,7 +9,7 @@
 #include <world/RuntimeWorld.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
-#include <zone/ZoneLoadPackage.h>
+#include <world/build/EntityBuildPackage.h>
 #include <zone/ZonePackageImporter.h>
 #include <zone/ZoneStateStore.h>
 
@@ -42,13 +42,12 @@ void FinishResidency(RuntimeWorld& runtime)
     runtime.FinalizeResidencyProcessing();
 }
 
-ZoneLoadPackage MakeIdentifiedPackage(ZoneId zone,
-                                      std::span<const PersistentEntityId> ids)
+EntityBuildPackage MakeIdentifiedPackage(std::span<const PersistentEntityId> ids)
 {
-    ZoneLoadPackage package(zone);
+    EntityBuildPackage package;
     for (const PersistentEntityId id : ids)
     {
-        const ZoneLocalEntityId local = package.CreateEntity();
+        const PackageEntityId local = package.CreateEntity();
         EXPECT_TRUE(package.AddComponent<PersistentIdComponent>(local, { id }));
         EXPECT_TRUE(package.SetPersistentId(local, id));
     }
@@ -149,7 +148,7 @@ TEST(ZoneStateMemory, DestroyedEntityStaysDestroyedAcrossRestream)
 
     ZoneImportError error;
     ASSERT_TRUE(ImportZonePackage(
-        runtime, schema, MakeIdentifiedPackage(zone, ids), LogicOnly(), &error))
+        runtime, schema, zone, MakeIdentifiedPackage(ids), LogicOnly(), &error))
         << error.Message;
     FinishResidency(runtime);
 
@@ -168,7 +167,7 @@ TEST(ZoneStateMemory, DestroyedEntityStaysDestroyedAcrossRestream)
 
     // Backtracking streams the zone back in from the same cooked package.
     ASSERT_TRUE(ImportZonePackage(
-        runtime, schema, MakeIdentifiedPackage(zone, ids), LogicOnly(), &error))
+        runtime, schema, zone, MakeIdentifiedPackage(ids), LogicOnly(), &error))
         << error.Message;
     FinishResidency(runtime);
 
@@ -188,7 +187,7 @@ TEST(ZoneStateMemory, UntouchedZoneRestreamsVerbatim)
 
     ZoneImportError error;
     ASSERT_TRUE(ImportZonePackage(
-        runtime, schema, MakeIdentifiedPackage(zone, ids), LogicOnly(), &error))
+        runtime, schema, zone, MakeIdentifiedPackage(ids), LogicOnly(), &error))
         << error.Message;
     FinishResidency(runtime);
 
@@ -197,7 +196,7 @@ TEST(ZoneStateMemory, UntouchedZoneRestreamsVerbatim)
     FinishResidency(runtime);
 
     ASSERT_TRUE(ImportZonePackage(
-        runtime, schema, MakeIdentifiedPackage(zone, ids), LogicOnly(), &error))
+        runtime, schema, zone, MakeIdentifiedPackage(ids), LogicOnly(), &error))
         << error.Message;
     FinishResidency(runtime);
 
@@ -213,15 +212,15 @@ TEST(ZonePackageIdentity, MetadataDisagreeingWithTheComponentFailsImport)
     const WorldComponentSchema schema = IdentityOnlySchema();
     RuntimeWorld runtime(schema);
 
-    ZoneLoadPackage package(ZoneId{ 51 });
-    const ZoneLocalEntityId local = package.CreateEntity();
+    EntityBuildPackage package;
+    const PackageEntityId local = package.CreateEntity();
     ASSERT_TRUE(package.AddComponent<PersistentIdComponent>(
         local, { PersistentEntityId{ 0xaaa } }));
     ASSERT_TRUE(package.SetPersistentId(local, PersistentEntityId{ 0xbbb }));
 
     ZoneImportError error;
     EXPECT_FALSE(ImportZonePackage(
-        runtime, schema, package, LogicOnly(), &error));
+        runtime, schema, ZoneId{ 51 }, package, LogicOnly(), &error));
     EXPECT_NE(error.Message.find("identity metadata"), std::string::npos)
         << error.Message;
     EXPECT_EQ(AliveCount(runtime.Entities()), 0u)
@@ -233,13 +232,13 @@ TEST(ZonePackageIdentity, MetadataWithoutTheComponentFailsImport)
     const WorldComponentSchema schema = IdentityOnlySchema();
     RuntimeWorld runtime(schema);
 
-    ZoneLoadPackage package(ZoneId{ 52 });
-    const ZoneLocalEntityId local = package.CreateEntity();
+    EntityBuildPackage package;
+    const PackageEntityId local = package.CreateEntity();
     ASSERT_TRUE(package.SetPersistentId(local, PersistentEntityId{ 0xccc }));
 
     ZoneImportError error;
     EXPECT_FALSE(ImportZonePackage(
-        runtime, schema, package, LogicOnly(), &error));
+        runtime, schema, ZoneId{ 52 }, package, LogicOnly(), &error));
     EXPECT_NE(error.Message.find("identity metadata"), std::string::npos)
         << error.Message;
 }
@@ -251,14 +250,14 @@ TEST(ZonePackageIdentity, ComponentWithoutMetadataFailsImport)
 
     // The dangerous direction: the entity would register in the index but never
     // be reachable by suppression, so destroying it would not survive a restream.
-    ZoneLoadPackage package(ZoneId{ 53 });
-    const ZoneLocalEntityId local = package.CreateEntity();
+    EntityBuildPackage package;
+    const PackageEntityId local = package.CreateEntity();
     ASSERT_TRUE(package.AddComponent<PersistentIdComponent>(
         local, { PersistentEntityId{ 0xddd } }));
 
     ZoneImportError error;
     EXPECT_FALSE(ImportZonePackage(
-        runtime, schema, package, LogicOnly(), &error));
+        runtime, schema, ZoneId{ 53 }, package, LogicOnly(), &error));
     EXPECT_NE(error.Message.find("identity metadata"), std::string::npos)
         << error.Message;
 }
@@ -270,12 +269,12 @@ TEST(ZonePackageIdentity, UnidentifiedEntitiesImportNormally)
     const WorldComponentSchema schema = IdentityOnlySchema();
     RuntimeWorld runtime(schema);
 
-    ZoneLoadPackage package(ZoneId{ 54 });
+    EntityBuildPackage package;
     (void)package.CreateEntity();
 
     ZoneImportError error;
     EXPECT_TRUE(ImportZonePackage(
-        runtime, schema, package, LogicOnly(), &error))
+        runtime, schema, ZoneId{ 54 }, package, LogicOnly(), &error))
         << error.Message;
     FinishResidency(runtime);
     EXPECT_EQ(AliveCount(runtime.Entities()), 1u);

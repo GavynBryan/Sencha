@@ -17,7 +17,7 @@
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializationContext.h>
 #include <zone/AsyncZoneLoader.h>
-#include <zone/ZoneLoadPackage.h>
+#include <world/build/EntityBuildPackage.h>
 
 #include <gtest/gtest.h>
 
@@ -596,7 +596,7 @@ TEST(ZoneAssetGating, AttachDefersUntilDependencyChainCompletes)
     bool finalized = false;
     (void)h.Loader.BeginLoad(
         zone,
-        [](ZoneLoadPackage&) {},
+        [](EntityBuildPackage&) {},
         [&](RuntimeWorld&, RuntimeZoneRecord&) { finalized = true; return true; },
         ZoneParticipation{ .Logic = true },
         preload);
@@ -641,7 +641,7 @@ TEST(ZoneAssetGating, CompletePreloadAttachesInline)
     ASSERT_TRUE(preload->IsComplete());
 
     const ZoneId zone{ 6 };
-    (void)h.Loader.BeginLoad(zone, [](ZoneLoadPackage&) {}, AsyncZoneLoader::FinalizeFn{},
+    (void)h.Loader.BeginLoad(zone, [](EntityBuildPackage&) {}, AsyncZoneLoader::FinalizeFn{},
                              ZoneParticipation{ .Logic = true }, preload);
 
     (void)h.Tasks.PumpWork();
@@ -660,7 +660,7 @@ TEST(ZoneAssetGating, CancelledPreloadNeverBlocksAttach)
     preload->Cancel();
 
     const ZoneId zone{ 9 };
-    (void)h.Loader.BeginLoad(zone, [](ZoneLoadPackage&) {}, AsyncZoneLoader::FinalizeFn{},
+    (void)h.Loader.BeginLoad(zone, [](EntityBuildPackage&) {}, AsyncZoneLoader::FinalizeFn{},
                              ZoneParticipation{ .Logic = true }, preload);
 
     (void)h.Tasks.PumpWork();

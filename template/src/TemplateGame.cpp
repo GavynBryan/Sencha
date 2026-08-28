@@ -74,7 +74,7 @@
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
 #include <zone/WorldPartitionIds.h>
-#include <zone/ZoneLoadPackage.h>
+#include <world/build/EntityBuildPackage.h>
 #include <zone/ZonePackageImporter.h>
 #include <zone/ZonePackageSceneLoader.h>
 
@@ -153,7 +153,7 @@ std::optional<JsonValue> ParseSceneFile(
 }
 
 void BuildScenePackage(
-    ZoneLoadPackage& package,
+    EntityBuildPackage& package,
     SceneBuildResult& result,
     const std::string& scenePath,
     const ComponentSerializerRegistry& serializers)
@@ -168,7 +168,7 @@ void BuildScenePackage(
     }
 
     SceneLoadError loadError;
-    if (!BuildZonePackageFromSceneJson(
+    if (!BuildEntityPackageFromSceneJson(
             *json,
             serializers,
             package,
@@ -1771,7 +1771,7 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
     ZoneLoader->BeginLoad(
         kPlayZone,
         [buildResult, probes, serializers, scenePath](
-            ZoneLoadPackage& package)
+            EntityBuildPackage& package)
         {
             BuildScenePackage(
                 package,
@@ -1927,7 +1927,7 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
             }
             recipe.Build =
                 [buildResult, probes, scenePath, serializers](
-                    ZoneLoadPackage& package)
+                    EntityBuildPackage& package)
                 {
                     BuildScenePackage(
                         package,
@@ -2001,7 +2001,7 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
             std::string(kAuthoredRoot) + "/"
             + loaded.CookedWorldCollisionRef;
 
-        ZoneLoadPackage package(kPlayZone);
+        EntityBuildPackage package;
         SceneBuildResult buildResult;
         BuildScenePackage(
             package,
@@ -2022,6 +2022,10 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
                 engine.RuntimeComponents(),
                 package,
                 PersistentStoragePartition,
+                // The world scene lives in the persistent partition but is
+                // saved under the play zone, so its state scope is that zone
+                // rather than the partition it occupies.
+                kPlayZone,
                 engine.SceneSerializers(),
                 *SceneContext,
                 &importError))

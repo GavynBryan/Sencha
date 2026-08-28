@@ -7,7 +7,7 @@
 #include <world/serialization/SceneSerializationContext.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/transform/TransformComponents.h>
-#include <zone/ZoneLoadPackage.h>
+#include <world/build/EntityBuildPackage.h>
 #include <zone/ZonePackageImporter.h>
 #include <zone/ZonePackageSceneLoader.h>
 
@@ -99,9 +99,9 @@ TEST(ZonePackageSceneLoader, ParsesOnWorkerShapeAndDecodesOnOwnerThread)
     const WorldComponentSchema schema = MakeSchema();
     RuntimeWorld runtime(schema);
 
-    ZoneLoadPackage package(ZoneId{ 40 });
+    EntityBuildPackage package;
     SceneLoadError buildError;
-    ASSERT_TRUE(BuildZonePackageFromSceneJson(
+    ASSERT_TRUE(BuildEntityPackageFromSceneJson(
         MakeSceneJson(),
         serializers,
         package,
@@ -115,6 +115,7 @@ TEST(ZonePackageSceneLoader, ParsesOnWorkerShapeAndDecodesOnOwnerThread)
     ASSERT_TRUE(ImportZonePackage(
         runtime,
         schema,
+        ZoneId{ 40 },
         package,
         serializers,
         context,
@@ -149,7 +150,7 @@ TEST(ZonePackageSceneLoader, ParsesOnWorkerShapeAndDecodesOnOwnerThread)
 TEST(ZonePackageSceneLoader, UnknownSerializedComponentRejectsWholePackage)
 {
     ComponentSerializerRegistry serializers = MakeSerializers();
-    ZoneLoadPackage package(ZoneId{ 41 });
+    EntityBuildPackage package;
 
     JsonValue scene(JsonValue::Object{
         { "version", JsonValue(static_cast<double>(SceneVersion)) },
@@ -164,7 +165,7 @@ TEST(ZonePackageSceneLoader, UnknownSerializedComponentRejectsWholePackage)
     });
 
     SceneLoadError error;
-    EXPECT_FALSE(BuildZonePackageFromSceneJson(
+    EXPECT_FALSE(BuildEntityPackageFromSceneJson(
         scene,
         serializers,
         package,
@@ -197,9 +198,9 @@ TEST(ZonePackageSceneLoader, LiftsPersistentIdIntoPackageMetadata)
         { "entities", JsonValue(std::move(entities)) },
     });
 
-    ZoneLoadPackage package(ZoneId{ 5 });
+    EntityBuildPackage package;
     SceneLoadError error;
-    ASSERT_TRUE(BuildZonePackageFromSceneJson(root, serializers, package, &error))
+    ASSERT_TRUE(BuildEntityPackageFromSceneJson(root, serializers, package, &error))
         << error.Message;
     ASSERT_EQ(package.EntityCount(), 2u);
     EXPECT_EQ(package.Entities()[0].PersistentId, (PersistentEntityId{ 0xaa }));

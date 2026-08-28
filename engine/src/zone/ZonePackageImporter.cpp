@@ -3,12 +3,12 @@
 #include <core/serialization/JsonArchive.h>
 #include <ecs/WorldComponentSchema.h>
 #include <world/RuntimeWorld.h>
+#include <world/build/EntityBuildPackage.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializationContext.h>
 #include <world/transform/DerivedTransform.h>
 #include <world/transform/TransformComponents.h>
-#include <zone/ZoneLoadPackage.h>
 #include <zone/ZoneStateStore.h>
 
 #include <cstddef>
@@ -37,7 +37,7 @@ void SeedDerivedTransform(World& world, EntityId entity, bool worldHasTransforms
     SeedDerivedWorldTransform(world, entity);
 }
 
-// ZonePackageEntity::PersistentId is import metadata lifted from the entity's
+// PackageEntity::PersistentId is import metadata lifted from the entity's
 // persistent_id component at package build, and the two decide different things:
 // the metadata drives destroyed-entity suppression before the row exists, the
 // component drives PersistentEntityIndex registration after it does. A package
@@ -63,7 +63,7 @@ bool PersistentIdentityAgrees(const World& world,
 bool BuildEntitySignature(
     const World& world,
     const WorldComponentSchema& schema,
-    const ZonePackageEntity& packageEntity,
+    const PackageEntity& packageEntity,
     bool parented,
     ArchetypeSignature& signature,
     std::string& failure)
@@ -71,7 +71,7 @@ bool BuildEntitySignature(
     signature.reset();
     bool hasLocalTransform = false;
 
-    for (const ZonePackageComponent& component : packageEntity.Components)
+    for (const PackageComponent& component : packageEntity.Components)
     {
         if (schema.Find(component.Type) == nullptr)
         {
@@ -104,7 +104,7 @@ bool ImportComponent(
     World& world,
     EntityId entity,
     const WorldComponentSchema& schema,
-    const ZonePackageComponent& component,
+    const PackageComponent& component,
     const ComponentSerializerRegistry* serializers,
     SceneSerializationContext* sceneContext,
     std::string& failure)
@@ -170,8 +170,9 @@ bool ImportComponent(
 bool ImportPackageIntoPartitionImpl(
     World& world,
     const WorldComponentSchema& schema,
-    const ZoneLoadPackage& package,
+    const EntityBuildPackage& package,
     StoragePartitionId partition,
+    ZoneId stateScope,
     const ComponentSerializerRegistry* serializers,
     SceneSerializationContext* sceneContext,
     ZoneImportError* error)
@@ -190,14 +191,17 @@ bool ImportPackageIntoPartitionImpl(
 
     // The zone state overlay: entities recorded destroyed in a prior residency
     // are not re-created. Worlds without the store (editor documents, plain
-    // test worlds) import the cooked scene verbatim.
-    const ZoneStateStore* zoneState = world.TryGetResource<ZoneStateStore>();
+    // test worlds) import the cooked scene verbatim, and so does an import that
+    // names no scope -- content built for this import alone has no prior
+    // residency to have destroyed anything.
+    const ZoneStateStore* zoneState =
+        stateScope.IsValid() ? world.TryGetResource<ZoneStateStore>() : nullptr;
 
     // Which entities are parented has to be known before any row is built, so
     // Parent joins the initial signature instead of costing a later archetype
     // transition per child.
     std::vector<bool> parented(package.EntityCount(), false);
-    for (const ZonePackageParent& relation : package.Parents())
+    for (const PackageParent& relation : package.Parents())
     {
         if (!package.ContainsEntity(relation.Child)
             || !package.ContainsEntity(relation.Parent))
@@ -215,10 +219,10 @@ bool ImportPackageIntoPartitionImpl(
 
     ArchetypeSignature signature;
     std::size_t packageIndex = 0;
-    for (const ZonePackageEntity& packageEntity : package.Entities())
+    for (const PackageEntity& packageEntity : package.Entities())
     {
         if (zoneState != nullptr && packageEntity.PersistentId.IsValid()
-            && zoneState->IsRecordedDestroyed(package.Zone(), packageEntity.PersistentId))
+            && zoneState->IsRecordedDestroyed(stateScope, packageEntity.PersistentId))
         {
             // The slot stays positionally aligned with the package's local
             // ids; parent relations that touch it are dropped below.
@@ -247,7 +251,7 @@ bool ImportPackageIntoPartitionImpl(
             world.CreateEntityWithSignature(partition, signature);
         entities.push_back(entity);
 
-        for (const ZonePackageComponent& component : packageEntity.Components)
+        for (const PackageComponent& component : packageEntity.Components)
         {
             if (!ImportComponent(
                     world,
@@ -271,7 +275,7 @@ bool ImportPackageIntoPartitionImpl(
         }
     }
 
-    for (const ZonePackageParent& relation : package.Parents())
+    for (const PackageParent& relation : package.Parents())
     {
         const EntityId child = entities[relation.Child.Value];
         const EntityId parent = entities[relation.Parent.Value];
@@ -290,16 +294,18 @@ bool ImportPackageIntoPartitionImpl(
     }
 
     // Successful import records what the cooked scene authored, so the detach
-    // capture can diff live state against it.
-    if (auto* mutableState = world.TryGetResource<ZoneStateStore>())
+    // capture can diff live state against it. Scopeless imports record nothing:
+    // there is no residency for a later detach to diff.
+    if (auto* mutableState =
+            stateScope.IsValid() ? world.TryGetResource<ZoneStateStore>() : nullptr)
     {
         std::vector<PersistentEntityId> authored;
         authored.reserve(package.EntityCount());
-        for (const ZonePackageEntity& packageEntity : package.Entities())
+        for (const PackageEntity& packageEntity : package.Entities())
             if (packageEntity.PersistentId.IsValid())
                 authored.push_back(packageEntity.PersistentId);
         if (!authored.empty())
-            mutableState->RecordAuthoredSet(package.Zone(), authored);
+            mutableState->RecordAuthoredSet(stateScope, authored);
     }
 
     if (error != nullptr)
@@ -310,19 +316,20 @@ bool ImportPackageIntoPartitionImpl(
 bool ImportZonePackageImpl(
     RuntimeWorld& runtime,
     const WorldComponentSchema& schema,
-    const ZoneLoadPackage& package,
+    ZoneId zone,
+    const EntityBuildPackage& package,
     const ComponentSerializerRegistry* serializers,
     SceneSerializationContext* sceneContext,
     bool publish,
     ZoneParticipation participation,
     ZoneImportError* error)
 {
-    if (!package.Zone().IsValid())
+    if (!zone.IsValid())
     {
-        SetError(error, "Zone package has an invalid ZoneId.");
+        SetError(error, "Zone import requires a valid ZoneId.");
         return false;
     }
-    if (runtime.FindZone(package.Zone()) != nullptr)
+    if (runtime.FindZone(zone) != nullptr)
     {
         SetError(
             error,
@@ -330,26 +337,25 @@ bool ImportZonePackageImpl(
         return false;
     }
 
-    RuntimeZoneRecord& importing =
-        runtime.BeginZoneImport(package.Zone());
+    RuntimeZoneRecord& importing = runtime.BeginZoneImport(zone);
     if (!ImportPackageIntoPartitionImpl(
             runtime.Entities(),
             schema,
             package,
             importing.Partition,
+            zone,
             serializers,
             sceneContext,
             error))
     {
-        const bool cancelled = runtime.CancelZoneImport(package.Zone());
+        const bool cancelled = runtime.CancelZoneImport(zone);
         (void)cancelled;
         return false;
     }
 
-    if (publish
-        && !runtime.PublishZone(package.Zone(), participation))
+    if (publish && !runtime.PublishZone(zone, participation))
     {
-        const bool cancelled = runtime.CancelZoneImport(package.Zone());
+        const bool cancelled = runtime.CancelZoneImport(zone);
         (void)cancelled;
         SetError(
             error,
@@ -366,8 +372,9 @@ bool ImportZonePackageImpl(
 bool ImportPackageIntoPartition(
     World& world,
     const WorldComponentSchema& schema,
-    const ZoneLoadPackage& package,
+    const EntityBuildPackage& package,
     StoragePartitionId partition,
+    ZoneId stateScope,
     ZoneImportError* error)
 {
     return ImportPackageIntoPartitionImpl(
@@ -375,6 +382,7 @@ bool ImportPackageIntoPartition(
         schema,
         package,
         partition,
+        stateScope,
         nullptr,
         nullptr,
         error);
@@ -383,8 +391,9 @@ bool ImportPackageIntoPartition(
 bool ImportPackageIntoPartition(
     World& world,
     const WorldComponentSchema& schema,
-    const ZoneLoadPackage& package,
+    const EntityBuildPackage& package,
     StoragePartitionId partition,
+    ZoneId stateScope,
     const ComponentSerializerRegistry& serializers,
     SceneSerializationContext& sceneContext,
     ZoneImportError* error)
@@ -394,6 +403,7 @@ bool ImportPackageIntoPartition(
         schema,
         package,
         partition,
+        stateScope,
         &serializers,
         &sceneContext,
         error);
@@ -402,12 +412,14 @@ bool ImportPackageIntoPartition(
 bool ImportZonePackageHidden(
     RuntimeWorld& runtime,
     const WorldComponentSchema& schema,
-    const ZoneLoadPackage& package,
+    ZoneId zone,
+    const EntityBuildPackage& package,
     ZoneImportError* error)
 {
     return ImportZonePackageImpl(
         runtime,
         schema,
+        zone,
         package,
         nullptr,
         nullptr,
@@ -419,7 +431,8 @@ bool ImportZonePackageHidden(
 bool ImportZonePackageHidden(
     RuntimeWorld& runtime,
     const WorldComponentSchema& schema,
-    const ZoneLoadPackage& package,
+    ZoneId zone,
+    const EntityBuildPackage& package,
     const ComponentSerializerRegistry& serializers,
     SceneSerializationContext& sceneContext,
     ZoneImportError* error)
@@ -427,6 +440,7 @@ bool ImportZonePackageHidden(
     return ImportZonePackageImpl(
         runtime,
         schema,
+        zone,
         package,
         &serializers,
         &sceneContext,
@@ -438,13 +452,15 @@ bool ImportZonePackageHidden(
 bool ImportZonePackage(
     RuntimeWorld& runtime,
     const WorldComponentSchema& schema,
-    const ZoneLoadPackage& package,
+    ZoneId zone,
+    const EntityBuildPackage& package,
     ZoneParticipation participation,
     ZoneImportError* error)
 {
     return ImportZonePackageImpl(
         runtime,
         schema,
+        zone,
         package,
         nullptr,
         nullptr,
@@ -456,7 +472,8 @@ bool ImportZonePackage(
 bool ImportZonePackage(
     RuntimeWorld& runtime,
     const WorldComponentSchema& schema,
-    const ZoneLoadPackage& package,
+    ZoneId zone,
+    const EntityBuildPackage& package,
     const ComponentSerializerRegistry& serializers,
     SceneSerializationContext& sceneContext,
     ZoneParticipation participation,
@@ -465,6 +482,7 @@ bool ImportZonePackage(
     return ImportZonePackageImpl(
         runtime,
         schema,
+        zone,
         package,
         &serializers,
         &sceneContext,

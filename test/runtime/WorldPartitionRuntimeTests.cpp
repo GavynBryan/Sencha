@@ -10,7 +10,7 @@
 #include <world/serialization/SceneSerializationContext.h>
 #include <zone/AsyncZoneLoader.h>
 #include <zone/WorldPartitionRuntime.h>
-#include <zone/ZoneLoadPackage.h>
+#include <world/build/EntityBuildPackage.h>
 
 #include "ZoneDockFixture.h"
 
@@ -133,7 +133,7 @@ protected:
         {
             const ZoneId zone = header.Id;
             ZoneLoadRecipe recipe;
-            recipe.Build = [](ZoneLoadPackage& package)
+            recipe.Build = [](EntityBuildPackage& package)
             {
                 package.CreateEntity();
             };
@@ -566,7 +566,7 @@ TEST(WorldPartitionRuntimeThreaded, MidBuildCancellationRetriesThenDetaches)
             ZoneLoadRecipe recipe;
             if (header.Id == kHallway)
             {
-                recipe.Build = [&](ZoneLoadPackage& package)
+                recipe.Build = [&](EntityBuildPackage& package)
                 {
                     started = true;
                     while (!release)
@@ -579,7 +579,7 @@ TEST(WorldPartitionRuntimeThreaded, MidBuildCancellationRetriesThenDetaches)
             }
             else
             {
-                recipe.Build = [](ZoneLoadPackage& package)
+                recipe.Build = [](EntityBuildPackage& package)
                 {
                     package.CreateEntity();
                 };

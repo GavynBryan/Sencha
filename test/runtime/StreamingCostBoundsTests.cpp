@@ -23,7 +23,7 @@
 #include <world/transform/PropagationOrderCache.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformPropagation.h>
-#include <zone/ZoneLoadPackage.h>
+#include <world/build/EntityBuildPackage.h>
 #include <zone/ZonePackageImporter.h>
 
 #include <cstdint>
@@ -42,12 +42,12 @@ WorldComponentSchema RuntimeSchema()
 
 // Three components per entity, one of which (LocalTransform) seeds a derived
 // WorldTransform on import — so the incremental path pays for that seeding too.
-ZoneLoadPackage MakeZonePackage(ZoneId zone, int entities)
+EntityBuildPackage MakeZonePackage(int entities)
 {
-    ZoneLoadPackage package(zone);
+    EntityBuildPackage package;
     for (int index = 0; index < entities; ++index)
     {
-        const ZoneLocalEntityId entity = package.CreateEntity();
+        const PackageEntityId entity = package.CreateEntity();
         Transform3f transform;
         transform.Position = Vec3d(static_cast<float>(index), 0.0f, 0.0f);
         package.AddComponent(entity, LocalTransform{ transform });
@@ -168,13 +168,14 @@ TEST(StreamingCostBounds, ImportPerformsNoRowMigrationsPerEntity)
 {
     const WorldComponentSchema schema = RuntimeSchema();
     RuntimeWorld runtime(schema);
-    const ZoneLoadPackage package = MakeZonePackage(ZoneId{ 1 }, kZoneEntities);
+    const EntityBuildPackage package = MakeZonePackage(kZoneEntities);
 
     const uint64_t before = runtime.Entities().RowMigrationCount();
     ZoneImportError error;
     ASSERT_TRUE(ImportZonePackage(
         runtime,
         schema,
+        ZoneId{ 1 },
         package,
         ZoneParticipation{ .Visible = true },
         &error))
@@ -237,7 +238,7 @@ TEST(StreamingCostBounds, StreamingChurnDoesNotGrowChunkCount)
 {
     const WorldComponentSchema schema = RuntimeSchema();
     RuntimeWorld runtime(schema);
-    const ZoneLoadPackage package = MakeZonePackage(ZoneId{ 1 }, kZoneEntities);
+    const EntityBuildPackage package = MakeZonePackage(kZoneEntities);
 
     const auto loadAndUnload = [&]
     {
@@ -245,6 +246,7 @@ TEST(StreamingCostBounds, StreamingChurnDoesNotGrowChunkCount)
         ASSERT_TRUE(ImportZonePackage(
             runtime,
             schema,
+            ZoneId{ 1 },
             package,
             ZoneParticipation{ .Visible = true },
             &error))

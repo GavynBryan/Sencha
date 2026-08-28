@@ -71,22 +71,22 @@ AsyncTaskHandle AsyncZoneLoader::BeginLoad(
     assert(!IsLoading(zone)
            && "AsyncZoneLoader::BeginLoad: zone load is already in flight");
 
-    AsyncTaskHandle handle = Tasks.Submit<std::unique_ptr<ZoneLoadPackage>>(
+    AsyncTaskHandle handle = Tasks.Submit<std::unique_ptr<EntityBuildPackage>>(
         // Work, on a task thread: package-local identity and owned CPU payloads
         // need no synchronization with the live entity world.
-        [zone, build = std::move(build)]() mutable {
-            auto package = std::make_unique<ZoneLoadPackage>(zone);
+        [build = std::move(build)]() mutable {
+            auto package = std::make_unique<EntityBuildPackage>();
             build(*package);
             return package;
         },
         // Commit, on the owner thread at the drain point. A cancelled preload
         // counts as complete; decoding may use its synchronous fallback.
         [this, zone, participation, finalize = std::move(finalize), assets](
-            std::unique_ptr<ZoneLoadPackage> package) mutable {
+            std::unique_ptr<EntityBuildPackage> package) mutable {
             if (assets && !assets->IsComplete() && !assets->IsCancelled())
             {
                 auto deferredPackage =
-                    std::make_shared<std::unique_ptr<ZoneLoadPackage>>(
+                    std::make_shared<std::unique_ptr<EntityBuildPackage>>(
                         std::move(package));
                 auto deferredFinalize =
                     std::make_shared<FinalizeFn>(std::move(finalize));
@@ -121,7 +121,7 @@ AsyncTaskHandle AsyncZoneLoader::BeginLoad(
 
 void AsyncZoneLoader::ImportAndFinalize(
     ZoneId zone,
-    std::unique_ptr<ZoneLoadPackage> package,
+    std::unique_ptr<EntityBuildPackage> package,
     FinalizeFn& finalize,
     ZoneParticipation participation,
     const std::shared_ptr<AssetPreload>& assets)
@@ -133,6 +133,7 @@ void AsyncZoneLoader::ImportAndFinalize(
         || !ImportZonePackageHidden(
             RuntimeWorldState,
             Schema,
+            zone,
             *package,
             Serializers,
             SceneContext,

@@ -4,13 +4,13 @@
 #include <world/serialization/SceneSerializer.h>
 
 class ComponentSerializerRegistry;
-class ZoneLoadPackage;
+class EntityBuildPackage;
 
 // Converts an already-parsed cooked scene into detached package-local entities
 // and serialized component payloads. Safe on a worker after component
 // registration is frozen: it performs no asset resolution and touches no World.
-[[nodiscard]] bool BuildZonePackageFromSceneJson(
+[[nodiscard]] bool BuildEntityPackageFromSceneJson(
     const JsonValue& root,
     const ComponentSerializerRegistry& serializers,
-    ZoneLoadPackage& package,
+    EntityBuildPackage& package,
     SceneLoadError* error = nullptr);

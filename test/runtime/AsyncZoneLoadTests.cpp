@@ -8,7 +8,7 @@
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializationContext.h>
 #include <zone/AsyncZoneLoader.h>
-#include <zone/ZoneLoadPackage.h>
+#include <world/build/EntityBuildPackage.h>
 
 #include <chrono>
 #include <thread>
@@ -29,11 +29,11 @@ WorldComponentSchema MakeSchema()
     return schema;
 }
 
-void BuildTestZone(ZoneLoadPackage& package, int entityCount)
+void BuildTestZone(EntityBuildPackage& package, int entityCount)
 {
     for (int i = 0; i < entityCount; ++i)
     {
-        const ZoneLocalEntityId entity = package.CreateEntity();
+        const PackageEntityId entity = package.CreateEntity();
         EXPECT_TRUE(package.AddComponent(entity, ZoneLoadMarker{ i }));
     }
 }
@@ -82,7 +82,7 @@ TEST(AsyncZoneLoad, ZeroThreadEndToEnd)
     const ZoneId zone{ 3 };
     auto handle = loader.BeginLoad(
         zone,
-        [](ZoneLoadPackage& package) { BuildTestZone(package, 64); },
+        [](EntityBuildPackage& package) { BuildTestZone(package, 64); },
         ZoneParticipation{ .Visible = true, .Logic = true });
 
     EXPECT_TRUE(loader.IsLoading(zone));
@@ -127,7 +127,7 @@ TEST(AsyncZoneLoad, FinalizeRunsWhileImportIsStillHidden)
 
     loader.BeginLoad(
         zone,
-        [](ZoneLoadPackage& package) { BuildTestZone(package, 5); },
+        [](EntityBuildPackage& package) { BuildTestZone(package, 5); },
         [&](RuntimeWorld& runtimeWorld, RuntimeZoneRecord& record) {
             finalized = true;
             EXPECT_EQ(record.State, RuntimeZoneLoadState::Importing);
@@ -178,7 +178,7 @@ TEST(AsyncZoneLoad, FailedFinalizeCancelsWithoutPublication)
     const ZoneId zone{ 12 };
     loader.BeginLoad(
         zone,
-        [](ZoneLoadPackage& package) { BuildTestZone(package, 4); },
+        [](EntityBuildPackage& package) { BuildTestZone(package, 4); },
         [](RuntimeWorld&, RuntimeZoneRecord&) { return false; },
         ZoneParticipation{ .Logic = true });
 
@@ -213,7 +213,7 @@ TEST(AsyncZoneLoad, DormantPreloadAttachesSeamlessly)
     const ZoneId nextRoom{ 11 };
     loader.BeginLoad(
         nextRoom,
-        [](ZoneLoadPackage& package) { BuildTestZone(package, 12); });
+        [](EntityBuildPackage& package) { BuildTestZone(package, 12); });
 
     tasks.PumpWork();
     tasks.DrainCompletions();
@@ -265,7 +265,7 @@ TEST(AsyncZoneLoad, CancelBeforeWorkDropsTheLoad)
 
     const ZoneId zone{ 4 };
     bool buildRan = false;
-    loader.BeginLoad(zone, [&](ZoneLoadPackage&) { buildRan = true; });
+    loader.BeginLoad(zone, [&](EntityBuildPackage&) { buildRan = true; });
 
     EXPECT_TRUE(loader.CancelLoad(zone));
     EXPECT_FALSE(loader.IsLoading(zone));
@@ -295,7 +295,7 @@ TEST(AsyncZoneLoad, CancelAfterWorkDropsTheImport)
     const ZoneId zone{ 5 };
     loader.BeginLoad(
         zone,
-        [](ZoneLoadPackage& package) { BuildTestZone(package, 8); });
+        [](EntityBuildPackage& package) { BuildTestZone(package, 8); });
 
     EXPECT_EQ(tasks.PumpWork(), 1u);
     EXPECT_TRUE(loader.CancelLoad(zone));
@@ -324,7 +324,7 @@ TEST(AsyncZoneLoad, ReloadAfterFinalDetachUsesFreshPartitionContent)
     const ZoneId zone{ 6 };
     loader.BeginLoad(
         zone,
-        [](ZoneLoadPackage& package) { BuildTestZone(package, 4); });
+        [](EntityBuildPackage& package) { BuildTestZone(package, 4); });
     tasks.PumpWork();
     tasks.DrainCompletions();
     ProcessResidency(world);
@@ -338,7 +338,7 @@ TEST(AsyncZoneLoad, ReloadAfterFinalDetachUsesFreshPartitionContent)
 
     loader.BeginLoad(
         zone,
-        [](ZoneLoadPackage& package) { BuildTestZone(package, 9); });
+        [](EntityBuildPackage& package) { BuildTestZone(package, 9); });
     tasks.PumpWork();
     tasks.DrainCompletions();
     ASSERT_TRUE(world.IsZoneResident(zone));
@@ -366,7 +366,7 @@ TEST(AsyncZoneLoad, ThreadedLoadCompletesViaPolling)
     std::thread::id buildThread;
     loader.BeginLoad(
         zone,
-        [&](ZoneLoadPackage& package) {
+        [&](EntityBuildPackage& package) {
             buildThread = std::this_thread::get_id();
             BuildTestZone(package, 32);
         },
@@ -410,7 +410,7 @@ TEST(AsyncZoneLoadContracts, BeginLoadOnLoadedZoneDies)
 
     world.AttachZone(ZoneId{ 2 });
     EXPECT_DEATH(
-        loader.BeginLoad(ZoneId{ 2 }, [](ZoneLoadPackage&) {}),
+        loader.BeginLoad(ZoneId{ 2 }, [](EntityBuildPackage&) {}),
         "already loaded or importing");
 }
 
@@ -432,8 +432,8 @@ TEST(AsyncZoneLoadContracts, BeginLoadWhileInFlightDies)
         sceneContext,
         runtime);
 
-    loader.BeginLoad(ZoneId{ 2 }, [](ZoneLoadPackage&) {});
+    loader.BeginLoad(ZoneId{ 2 }, [](EntityBuildPackage&) {});
     EXPECT_DEATH(
-        loader.BeginLoad(ZoneId{ 2 }, [](ZoneLoadPackage&) {}),
+        loader.BeginLoad(ZoneId{ 2 }, [](EntityBuildPackage&) {}),
         "already in flight");
 }

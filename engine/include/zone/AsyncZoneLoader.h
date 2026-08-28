@@ -4,7 +4,7 @@
 #include <jobs/AsyncTaskQueue.h>
 #include <zone/ZoneId.h>
 #include <zone/ZoneLoadFailure.h>
-#include <zone/ZoneLoadPackage.h>
+#include <world/build/EntityBuildPackage.h>
 #include <zone/ZoneParticipation.h>
 
 #include <functional>
@@ -35,7 +35,7 @@ class WorldComponentSchema;
 class AsyncZoneLoader
 {
 public:
-    using BuildFn = std::function<void(ZoneLoadPackage&)>;
+    using BuildFn = std::function<void(EntityBuildPackage&)>;
     using FinalizeFn =
         std::function<bool(RuntimeWorld&, RuntimeZoneRecord&)>;
 
@@ -104,7 +104,7 @@ private:
     void RemoveInFlight(ZoneId zone);
     void ImportAndFinalize(
         ZoneId zone,
-        std::unique_ptr<ZoneLoadPackage> package,
+        std::unique_ptr<EntityBuildPackage> package,
         FinalizeFn& finalize,
         ZoneParticipation participation,
         const std::shared_ptr<AssetPreload>& assets);

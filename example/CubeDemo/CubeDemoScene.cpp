@@ -6,7 +6,7 @@
 #include <world/RuntimeWorld.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
-#include <zone/ZoneLoadPackage.h>
+#include <world/build/EntityBuildPackage.h>
 #include <zone/ZonePackageSceneLoader.h>
 
 #include <algorithm>
@@ -45,7 +45,7 @@ DemoSceneParse ParseDemoSceneFile(std::string_view scenePath)
 }
 
 bool BuildDemoScenePackage(
-    ZoneLoadPackage& package,
+    EntityBuildPackage& package,
     const DemoSceneParse& parsed,
     const ComponentSerializerRegistry& serializers,
     SceneLoadError* error)
@@ -57,7 +57,7 @@ bool BuildDemoScenePackage(
         return false;
     }
 
-    return BuildZonePackageFromSceneJson(
+    return BuildEntityPackageFromSceneJson(
         *parsed.Json,
         serializers,
         package,

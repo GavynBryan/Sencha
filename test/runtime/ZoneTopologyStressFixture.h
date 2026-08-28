@@ -30,7 +30,7 @@
 #include <zone/AsyncZoneLoader.h>
 #include <zone/WorldPartitionManifest.h>
 #include <zone/WorldPartitionRuntime.h>
-#include <zone/ZoneLoadPackage.h>
+#include <world/build/EntityBuildPackage.h>
 
 #include <chrono>
 #include <cmath>
@@ -479,11 +479,11 @@ private:
             ZoneLoadRecipe recipe;
             const int entities = Spec_.EntitiesPerZone;
             const double span = Spec_.ZoneSpan;
-            recipe.Build = [index, entities, span](ZoneLoadPackage& package)
+            recipe.Build = [index, entities, span](EntityBuildPackage& package)
             {
                 for (int entity = 0; entity < entities; ++entity)
                 {
-                    const ZoneLocalEntityId id = package.CreateEntity();
+                    const PackageEntityId id = package.CreateEntity();
                     Transform3f transform;
                     transform.Position =
                         Vec3d(static_cast<float>(static_cast<double>(index) * span

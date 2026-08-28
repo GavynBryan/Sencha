@@ -13,7 +13,7 @@ class ComponentSerializerRegistry;
 class LoggingProvider;
 class RuntimeWorld;
 struct RuntimeZoneRecord;
-class ZoneLoadPackage;
+class EntityBuildPackage;
 struct SceneLoadError;
 
 struct DemoScene
@@ -32,7 +32,7 @@ struct DemoSceneParse
 DemoSceneParse ParseDemoSceneFile(std::string_view scenePath);
 
 bool BuildDemoScenePackage(
-    ZoneLoadPackage& package,
+    EntityBuildPackage& package,
     const DemoSceneParse& parsed,
     const ComponentSerializerRegistry& serializers,
     SceneLoadError* error = nullptr);
