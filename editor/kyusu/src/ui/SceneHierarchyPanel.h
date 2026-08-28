@@ -48,6 +48,9 @@ private:
     // a new branch appears expanded, which is where the entity the user just
     // made is.
     std::unordered_set<std::uint64_t> CollapsedIds;
+    // Placement rows invert the default: an instance reads as one thing until
+    // the user opens it, so this set records the ones opened.
+    std::unordered_set<std::uint64_t> ExpandedInstanceIds;
 
     // In-progress rename, by persistent id (zero when idle).
     std::uint64_t RenamingId = 0;

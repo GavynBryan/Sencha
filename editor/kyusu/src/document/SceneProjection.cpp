@@ -6,6 +6,7 @@
 #include "EditorDocument.h"
 
 #include "DocumentSerialization.h"
+#include "EntityNameComponent.h"
 #include "brush/BrushMeshSerialization.h"
 #include "scene_source/Json5Convert.h"
 
@@ -507,6 +508,13 @@ void EditorDocument::HarvestInstanceOverrides()
         {
             if (const Transform3f* local = Scene.TryGetLocalTransform(root))
                 record.Placement = *local;
+            record.Name.clear();
+            if (const auto* name =
+                    Registry_.Components.TryGet<EntityNameComponent>(root);
+                name != nullptr)
+            {
+                record.Name = std::string(name->Value.View());
+            }
             record.Parent = PersistentEntityId{};
             if (const EntityId parent = Scene.GetParent(root); parent.IsValid())
                 if (const auto* parentId =

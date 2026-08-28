@@ -213,6 +213,12 @@ namespace
             root.Instance = instance.Id;
             root.IsInstanceRoot = true;
             root.Components = PlacementComponents(instance.Placement);
+            if (!instance.Name.empty())
+            {
+                Json5Value name = Json5Value::MakeObject();
+                name.Members.emplace_back("value", Json5Value(instance.Name));
+                root.Components.Members.emplace_back("name", std::move(name));
+            }
             out.Entities.push_back(std::move(root));
 
             // Remap and emit the expanded content, in two phases so the

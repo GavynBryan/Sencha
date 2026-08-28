@@ -60,6 +60,9 @@ struct SceneInstanceRecord
     // Optional local parent: an entity id or another instance's id.
     PersistentEntityId Parent;
     std::string Source; // asset://....sscene
+    // Optional display name for this placement, shown where the placement is
+    // one thing (the hierarchy row). Empty means "call it by its source".
+    std::string Name;
     Transform3f Placement = Transform3f::Identity();
 
     // The persistent ids this document minted for the entities the instance

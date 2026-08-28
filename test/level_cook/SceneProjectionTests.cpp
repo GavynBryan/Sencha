@@ -81,7 +81,10 @@ namespace
         {
             return std::string(R"({
   format_version: 1,
-  entities: [ { id: '00000000000000aa', components: {} } ],
+  entities: [ { id: '00000000000000aa',
+      components: { Transform: { local: { position: [0, 0, 0],
+                                          rotation: [0, 0, 0, 1],
+                                          scale: [1, 1, 1] } } } } ],
   instances: [
     { id: '00000000000000f0', parent: '00000000000000aa',
       source: 'asset://props/door.sscene',
@@ -495,5 +498,62 @@ namespace
         placeDoorTwice->Execute();
         ASSERT_TRUE(placeDoorTwice->Placed());
         EXPECT_EQ(host.GetScene().GetEntityCount(), 8u);
+    }
+} // namespace
+
+#include "document/commands/RenameEntityCommand.h"
+#include "document/commands/SetSceneOriginCommand.h"
+
+namespace
+{
+    TEST_F(SceneInstanceCommandTest, RenamingThePlacementRootPersistsInTheRecord)
+    {
+        EditorDocument host = LoadHost(HostText());
+        const EntityId root = FindById(host, PersistentEntityId{ 0xf0 });
+        auto rename = MakeRenameEntityCommand(root, "Front Door",
+                                              host.GetScene(), host);
+        ASSERT_NE(rename, nullptr);
+        rename->Execute();
+
+        const std::string saved = host.ToSceneText();
+        EXPECT_NE(saved.find("name: \"Front Door\""), std::string::npos) << saved;
+
+        EditorDocument reloaded = LoadHost(saved);
+        const EntityId again = FindById(reloaded, PersistentEntityId{ 0xf0 });
+        const auto* name = reloaded.GetRegistry()
+                               .Components.TryGet<EntityNameComponent>(again);
+        ASSERT_NE(name, nullptr);
+        EXPECT_EQ(std::string(name->Value.View()), "Front Door");
+    }
+
+    TEST_F(SceneInstanceCommandTest, SetSceneOriginShiftsRootsAndUndoRestores)
+    {
+        EditorDocument host = LoadHost(HostText());
+        const EntityId local = FindById(host, PersistentEntityId{ 0xaa });
+        const EntityId body = FindById(host, PersistentEntityId{ 0x201 });
+        host.GetScene().RefreshDerivedTransforms();
+        const Vec3d bodyBefore =
+            host.GetScene().ComposeWorldTransform(body).Position;
+
+        // The body should sit at the origin afterwards; everything shifts by
+        // its world position, children following their roots.
+        auto command = MakeSetSceneOriginCommand(host.GetScene(), host, bodyBefore);
+        ASSERT_NE(command, nullptr);
+        command->Execute();
+        host.GetScene().RefreshDerivedTransforms();
+
+        const Vec3d bodyAfter =
+            host.GetScene().ComposeWorldTransform(body).Position;
+        EXPECT_NEAR(bodyAfter.X, 0.0f, 1.0e-4f);
+        EXPECT_NEAR(bodyAfter.Y, 0.0f, 1.0e-4f);
+        EXPECT_NEAR(bodyAfter.Z, 0.0f, 1.0e-4f);
+        // The local root moved by the same shift.
+        EXPECT_NEAR(host.GetScene().ComposeWorldTransform(local).Position.X,
+                    -bodyBefore.X, 1.0e-4f);
+
+        command->Undo();
+        host.GetScene().RefreshDerivedTransforms();
+        EXPECT_NEAR(host.GetScene().ComposeWorldTransform(body).Position.X,
+                    bodyBefore.X, 1.0e-4f);
     }
 } // namespace

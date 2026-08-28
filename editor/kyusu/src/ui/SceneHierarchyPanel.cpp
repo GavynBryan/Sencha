@@ -11,6 +11,7 @@
 #include "document/commands/RenameEntityCommand.h"
 #include "document/commands/ReparentEntitiesCommand.h"
 #include "document/commands/SceneInstanceCommands.h"
+#include "document/commands/SetSceneOriginCommand.h"
 #include "document/commands/ValueCommand.h"
 #include "document/EditorScene.h"
 #include "document/EntityNameComponent.h"
@@ -411,6 +412,9 @@ void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth)
     if (dimmed)
         ImGui::PushStyleColor(ImGuiCol_Text, EditorUi::TextDim);
 
+    const bool instanceRoot = ctx.Document.IsSceneInstanceRoot(entity);
+    const bool instanceMember = ctx.Document.IsSceneInstanceMember(entity);
+
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow
         | ImGuiTreeNodeFlags_SpanAvailWidth;
     if (children.empty())
@@ -420,29 +424,58 @@ void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth)
 
     // Open state is panel-owned (persistent-id keyed), not ImGui-owned, so a
     // rebuilt entity keeps its expansion. A filter forces branches open so the
-    // matches it kept are actually on screen.
-    const bool open = ctx.FilterActive || !CollapsedIds.contains(pid);
+    // matches it kept are actually on screen. Placements invert the default:
+    // an instance is one thing until deliberately opened.
+    const bool open = ctx.FilterActive
+        || (instanceRoot ? ExpandedInstanceIds.contains(pid)
+                         : !CollapsedIds.contains(pid));
     if (!children.empty())
         ImGui::SetNextItemOpen(open);
 
-    const bool instanceRoot = ctx.Document.IsSceneInstanceRoot(entity);
-    const bool instanceMember = ctx.Document.IsSceneInstanceMember(entity);
     const char* icon = instanceRoot ? ICON_FA_BOX_OPEN "  "
                      : instanceMember ? ICON_FA_LINK "  "
                      : children.empty() ? ICON_FA_CUBE "  "
                                         : ICON_FA_CUBES "  ";
+    std::string rowText = RowLabel(ctx.Scene, entity);
+    if (instanceRoot
+        && ctx.Scene.GetRegistry().Components.TryGet<EntityNameComponent>(entity)
+               == nullptr)
+    {
+        // A nameless placement is called by its source, not by its components.
+        const std::string source = ctx.Document.SceneInstanceSourceOf(entity);
+        const std::size_t slash = source.find_last_of('/');
+        const std::size_t stem = slash == std::string::npos ? sizeof("asset://") - 1
+                                                            : slash + 1;
+        std::string_view leaf(source);
+        leaf.remove_prefix(stem);
+        if (leaf.ends_with(".sscene"))
+            leaf.remove_suffix(sizeof(".sscene") - 1);
+        if (!leaf.empty())
+            rowText = std::string(leaf);
+    }
     const bool renaming = RenamingId != 0 && RenamingId == pid;
     const std::string label = renaming
         ? std::string("##renaming")
-        : std::string(icon) + RowLabel(ctx.Scene, entity) + "##row";
+        : std::string(icon) + rowText + "##row";
     const bool nodeOpen = ImGui::TreeNodeEx(label.c_str(), flags);
 
     if (!children.empty() && nodeOpen != open && !ctx.FilterActive)
     {
-        if (nodeOpen)
+        if (instanceRoot)
+        {
+            if (nodeOpen)
+                ExpandedInstanceIds.insert(pid);
+            else
+                ExpandedInstanceIds.erase(pid);
+        }
+        else if (nodeOpen)
+        {
             CollapsedIds.erase(pid);
+        }
         else
+        {
             CollapsedIds.insert(pid);
+        }
     }
 
     if (!renaming && (instanceRoot || instanceMember)
@@ -577,13 +610,37 @@ void SceneHierarchyPanel::OnDraw()
         for (EntityId ancestor = scene.GetParent(primary.Entity);
              ancestor.IsValid();
              ancestor = scene.GetParent(ancestor))
-            CollapsedIds.erase(PersistentOf(scene, ancestor));
+        {
+            const std::uint64_t ancestorPid = PersistentOf(scene, ancestor);
+            CollapsedIds.erase(ancestorPid);
+            if (document.IsSceneInstanceRoot(ancestor))
+                ExpandedInstanceIds.insert(ancestorPid);
+        }
     }
 
     // The scene root: the drop target that unparents, and the anchor the whole
     // tree hangs from so "drop between top-level rows" has somewhere legal to
     // land.
     ImGui::TextDisabled(ICON_FA_MAP "  Scene");
+    if (ImGui::BeginPopupContextItem("##scene_root_ctx"))
+    {
+        // Re-origin the source so it places well: the selection's world
+        // position becomes the scene's origin, which is the point a placement
+        // of this scene will pivot around.
+        const SelectableRef target = Selection.GetPrimarySelection();
+        const bool haveTarget = target.IsValid() && scene.HasEntity(target.Entity);
+        if (ImGui::MenuItem(ICON_FA_LOCATION_CROSSHAIRS "  Set Origin to Selection",
+                            nullptr, false, haveTarget))
+        {
+            if (auto command = MakeSetSceneOriginCommand(
+                    scene, document,
+                    scene.ComposeWorldTransform(target.Entity).Position))
+                Commands.Execute(std::move(command));
+        }
+        if (!haveTarget && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("select the entity that should sit at the origin");
+        ImGui::EndPopup();
+    }
     if (ImGui::BeginDragDropTarget())
     {
         if (ImGui::AcceptDragDropPayload(kDragPayloadType) != nullptr)

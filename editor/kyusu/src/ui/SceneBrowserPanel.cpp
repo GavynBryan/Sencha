@@ -84,7 +84,11 @@ void SceneBrowserPanel::OnDraw()
         Rescan();
 
     if (ImGui::Button(ICON_FA_ARROWS_ROTATE "  Refresh"))
+    {
         Rescan();
+        if (SceneThumbnailCache* cache = Thumbnails ? Thumbnails() : nullptr)
+            cache->Clear();
+    }
     ImGui::SameLine();
     ImGui::SetNextItemWidth(-1.0f);
     ImGui::InputTextWithHint("##filter", ICON_FA_MAGNIFYING_GLASS "  filter",

@@ -121,6 +121,8 @@ namespace
         if (source == nullptr || !source->IsString())
             return Fail(error, what + ": missing 'source'");
         out.Source = source->Text;
+        if (const Json5Value* name = record.Find("name"); name != nullptr && name->IsString())
+            out.Name = name->Text;
         if (out.Source.rfind("asset://", 0) != 0 || !out.Source.ends_with(".sscene"))
             return Fail(error, what + ": source must be an asset://...sscene reference, got '"
                 + out.Source + "'");
@@ -554,6 +556,8 @@ std::string WriteSceneSource(const SceneSourceDocument& document)
                 record.Members.emplace_back("parent",
                     Json5Value(IdText(instance.Parent.Value)));
             record.Members.emplace_back("source", Json5Value(instance.Source));
+            if (!instance.Name.empty())
+                record.Members.emplace_back("name", Json5Value(instance.Name));
             record.Members.emplace_back("transform", WriteTransform(instance.Placement));
 
             if (!instance.EntityIds.empty())

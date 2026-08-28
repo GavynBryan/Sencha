@@ -12,6 +12,8 @@
 #include <graphics/vulkan/RenderScope.h>
 #include <graphics/vulkan/RenderTargetSession.h>
 #include <render/StaticMeshComponent.h>
+#include <render/skinned_mesh/SkinnedMeshCache.h>
+#include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <render/pass/MeshForwardPass.h>
 #include <graphics/vulkan/SkyGradientPass.h>
 #include <render/static_mesh/GpuStaticMesh.h>
@@ -28,13 +30,17 @@ namespace
     // thumbnails count down from the top.
     constexpr std::uint32_t kThumbnailIdBase = 0x40000000;
 
-    // The scene's bounds as the thumbnail should frame them: brush bodies by
-    // their world bounds, placed meshes by their transformed local bounds,
-    // anything else by its position so an empty-looking scene still frames.
+    // The bounds the thumbnail frames: what actually DRAWS -- brush bodies,
+    // placed meshes, skinned meshes. Lights, markers, and bare transforms are
+    // invisible, and letting them into the frame is what made every cell fill
+    // by a different amount: a light floating above a floor pushed that
+    // scene's camera back while its neighbor's did not.
     [[nodiscard]] Aabb3d FrameBounds(const EditorDocument& document,
-                                     StaticMeshCache& meshes)
+                                     StaticMeshCache& meshes,
+                                     SkinnedMeshCache* skinned)
     {
         const EditorScene& scene = document.GetScene();
+        const World& world = document.GetRegistry().Components;
         Aabb3d bounds = Aabb3d::Empty();
         for (EntityId entity : scene.GetAllEntities())
         {
@@ -43,20 +49,28 @@ namespace
                 bounds.ExpandToInclude(*brush);
                 continue;
             }
-            const Transform3f* world = scene.TryGetWorldTransform(entity);
-            if (world == nullptr)
+            const Transform3f* transform = scene.TryGetWorldTransform(entity);
+            if (transform == nullptr)
                 continue;
-            const auto* placed = document.GetRegistry()
-                                     .Components.TryGet<StaticMeshComponent>(entity);
-            const GpuStaticMesh* mesh =
-                placed != nullptr ? meshes.Get(placed->Mesh) : nullptr;
-            if (mesh != nullptr)
-                bounds.ExpandToInclude(
-                    TransformAabb(mesh->LocalBounds, world->ToMat4()));
-            else
-                bounds.ExpandToInclude(Aabb3d::FromMinMax(
-                    world->Position - Vec3d::One() * 0.25f,
-                    world->Position + Vec3d::One() * 0.25f));
+            if (const auto* placed = world.TryGet<StaticMeshComponent>(entity))
+                if (const GpuStaticMesh* mesh = meshes.Get(placed->Mesh))
+                    bounds.ExpandToInclude(
+                        TransformAabb(mesh->LocalBounds, transform->ToMat4()));
+            if (const auto* rig = world.TryGet<SkinnedMeshComponent>(entity);
+                rig != nullptr && skinned != nullptr)
+                if (const GpuStaticMesh* mesh = skinned->Get(rig->Mesh))
+                    bounds.ExpandToInclude(
+                        TransformAabb(mesh->LocalBounds, transform->ToMat4()));
+        }
+        // A scene with nothing renderable (markers only) frames its entities'
+        // positions so the cell is at least honest about where things sit.
+        if (!bounds.IsValid())
+        {
+            for (EntityId entity : scene.GetAllEntities())
+                if (const Transform3f* transform = scene.TryGetWorldTransform(entity))
+                    bounds.ExpandToInclude(Aabb3d::FromMinMax(
+                        transform->Position - Vec3d::One() * 0.5f,
+                        transform->Position + Vec3d::One() * 0.5f));
         }
         if (!bounds.IsValid())
             bounds = Aabb3d::FromMinMax(Vec3d::One() * -0.5f, Vec3d::One() * 0.5f);
@@ -185,7 +199,8 @@ bool SceneThumbnailCache::LoadEntry(const std::string& assetPath, Entry& entry)
     }
 
     entry.Document->GetScene().RefreshDerivedTransforms();
-    entry.Camera = FrameCamera(FrameBounds(*entry.Document, Meshes));
+    entry.Camera = FrameCamera(FrameBounds(*entry.Document, Meshes,
+                                       Assets.SkinnedMeshes.get()));
 
     entry.Queues = std::make_unique<SceneRenderQueueBuilder>(
         Assets.Assets, *Assets.StaticMeshes, Assets.Materials, Assets.MaterialSets,
