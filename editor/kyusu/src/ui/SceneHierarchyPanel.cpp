@@ -10,6 +10,7 @@
 #include "document/commands/MoveEntitiesToZoneCommand.h"
 #include "document/commands/RenameEntityCommand.h"
 #include "document/commands/ReparentEntitiesCommand.h"
+#include "document/commands/SceneInstanceCommands.h"
 #include "document/commands/ValueCommand.h"
 #include "document/EditorScene.h"
 #include "document/EntityNameComponent.h"
@@ -251,16 +252,26 @@ void SceneHierarchyPanel::HandleRowDragDrop(DrawContext& ctx, EntityId entity)
         // Refusal happens at the target, while the user can still see why: a
         // drop that would put an entity under its own descendant never lands.
         bool legal = true;
+        const char* refusal = "cannot parent an entity beneath its own descendant";
         for (EntityId dragged : DragSet)
+        {
             if (dragged == entity || ctx.Scene.IsAncestorOf(dragged, entity))
             {
                 legal = false;
                 break;
             }
+            if (ctx.Document.IsSceneInstanceMember(dragged))
+            {
+                legal = false;
+                refusal = "linked to its scene source; use Break Scene "
+                          "Instance to restructure";
+                break;
+            }
+        }
 
         if (!legal)
         {
-            ImGui::SetTooltip("cannot parent an entity beneath its own descendant");
+            ImGui::SetTooltip("%s", refusal);
             (void)ImGui::AcceptDragDropPayload(kDragPayloadType,
                                                ImGuiDragDropFlags_AcceptPeekOnly);
         }
@@ -288,6 +299,15 @@ void SceneHierarchyPanel::DrawRowContextMenu(DrawContext& ctx, EntityId entity)
         if (const auto* name = world.TryGet<EntityNameComponent>(entity))
             std::snprintf(RenameBuffer, sizeof(RenameBuffer), "%s",
                           std::string(name->Value.View()).c_str());
+    }
+
+    if (ctx.Document.IsSceneInstanceRoot(entity)
+        && ImGui::MenuItem(ICON_FA_LINK_SLASH "  Break Scene Instance"))
+    {
+        const World& world = ctx.Scene.GetRegistry().Components;
+        if (const auto* id = world.TryGet<PersistentIdComponent>(entity))
+            Commands.Execute(std::make_unique<BreakSceneInstanceCommand>(
+                SceneInstanceId{ id->Id.Value }, ctx.Document));
     }
 
     if (ctx.Scene.GetParent(entity).IsValid()
@@ -405,11 +425,16 @@ void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth)
     if (!children.empty())
         ImGui::SetNextItemOpen(open);
 
+    const bool instanceRoot = ctx.Document.IsSceneInstanceRoot(entity);
+    const bool instanceMember = ctx.Document.IsSceneInstanceMember(entity);
+    const char* icon = instanceRoot ? ICON_FA_BOX_OPEN "  "
+                     : instanceMember ? ICON_FA_LINK "  "
+                     : children.empty() ? ICON_FA_CUBE "  "
+                                        : ICON_FA_CUBES "  ";
     const bool renaming = RenamingId != 0 && RenamingId == pid;
     const std::string label = renaming
         ? std::string("##renaming")
-        : std::string(children.empty() ? ICON_FA_CUBE "  " : ICON_FA_CUBES "  ")
-              + RowLabel(ctx.Scene, entity) + "##row";
+        : std::string(icon) + RowLabel(ctx.Scene, entity) + "##row";
     const bool nodeOpen = ImGui::TreeNodeEx(label.c_str(), flags);
 
     if (!children.empty() && nodeOpen != open && !ctx.FilterActive)
@@ -418,6 +443,16 @@ void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth)
             CollapsedIds.erase(pid);
         else
             CollapsedIds.insert(pid);
+    }
+
+    if (!renaming && (instanceRoot || instanceMember)
+        && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    {
+        const std::string source = ctx.Document.SceneInstanceSourceOf(entity);
+        if (!source.empty())
+            ImGui::SetTooltip(instanceRoot ? "%s" : "%s (linked; break the "
+                                                    "instance to restructure)",
+                              source.c_str());
     }
 
     if (renaming)

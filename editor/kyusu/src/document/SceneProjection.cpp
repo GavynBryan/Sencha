@@ -489,13 +489,20 @@ void EditorDocument::HarvestInstanceOverrides()
         if (!harvest->second.RootAlive)
             return true; // the placement itself was deleted
 
-        // The root's live transform is the placement.
+        // The root's live transform is the placement, and its live parent is
+        // the record's parent -- reparenting a placement is an ordinary
+        // hierarchy edit on its root.
         if (const EntityId root =
                 index->TryResolve(PersistentEntityId{ record.Id.Value });
             root.IsValid())
         {
             if (const Transform3f* local = Scene.TryGetLocalTransform(root))
                 record.Placement = *local;
+            record.Parent = PersistentEntityId{};
+            if (const EntityId parent = Scene.GetParent(root); parent.IsValid())
+                if (const auto* parentId =
+                        Registry_.Components.TryGet<PersistentIdComponent>(parent))
+                    record.Parent = parentId->Id;
         }
 
         RecordHarvest& fresh = harvest->second;
@@ -532,4 +539,123 @@ void EditorDocument::HarvestInstanceOverrides()
         record.AddedEntities = std::move(fresh.AddedEntities);
         return false;
     });
+}
+
+SceneInstanceId EditorDocument::PlaceSceneInstance(std::string source,
+                                                   const Transform3f& placement,
+                                                   PersistentEntityId parent,
+                                                   std::string* error)
+{
+    if (SourceCache_ == nullptr)
+        SourceCache_ = std::make_unique<SceneSourceCache>(ContentRoots_);
+    if (SourceCache_->Find(source) == nullptr)
+    {
+        if (error != nullptr)
+            *error = SourceCache_->LastError();
+        return SceneInstanceId{};
+    }
+
+    SceneInstanceRecord record;
+    record.Id = SceneInstanceId{ Scene.MintPersistentId().Value };
+    record.Parent = parent;
+    record.Source = std::move(source);
+    record.Placement = placement;
+    Retained_.Instances.push_back(std::move(record));
+
+    // Mints an id for every path the source contributes and re-projects; also
+    // the authoring act that marks the document dirty.
+    MintMissingInstanceIds();
+    return Retained_.Instances.back().Id;
+}
+
+const SceneInstanceRecord* EditorDocument::FindSceneInstance(SceneInstanceId id) const
+{
+    for (const SceneInstanceRecord& record : Retained_.Instances)
+        if (record.Id == id)
+            return &record;
+    return nullptr;
+}
+
+bool EditorDocument::RestoreSceneInstance(SceneInstanceRecord record)
+{
+    if (FindSceneInstance(record.Id) != nullptr)
+        return false;
+    Retained_.Instances.push_back(std::move(record));
+    MarkDirty();
+    RebuildSceneProjection();
+    return true;
+}
+
+bool EditorDocument::RemoveSceneInstance(SceneInstanceId id, SceneInstanceRecord* removed)
+{
+    // Harvest first so the captured record carries every unsaved edit; that is
+    // what makes an undo of the removal restore the placement as it was.
+    HarvestInstanceOverrides();
+    const auto found = std::find_if(Retained_.Instances.begin(),
+                                    Retained_.Instances.end(),
+                                    [&](const SceneInstanceRecord& record)
+                                    { return record.Id == id; });
+    if (found == Retained_.Instances.end())
+        return false;
+    if (removed != nullptr)
+        *removed = *found;
+    Retained_.Instances.erase(found);
+    MarkDirty();
+    RebuildSceneProjection();
+    return true;
+}
+
+bool EditorDocument::BreakSceneInstance(SceneInstanceId id, SceneInstanceRecord* broken)
+{
+    // The record must say everything the live entities do, because undo will
+    // rebuild the placement from it.
+    HarvestInstanceOverrides();
+    const auto found = std::find_if(Retained_.Instances.begin(),
+                                    Retained_.Instances.end(),
+                                    [&](const SceneInstanceRecord& record)
+                                    { return record.Id == id; });
+    if (found == Retained_.Instances.end())
+        return false;
+    if (broken != nullptr)
+        *broken = *found;
+
+    // The live entities stay exactly as they are; they simply stop being a
+    // projection. Everything the placement contributed -- nested content
+    // included -- becomes plain local entities of this document.
+    std::erase_if(Projection_, [&](const auto& entry)
+                  { return entry.second.Path.Elements.front() == id.Value; });
+    Retained_.Instances.erase(found);
+    MarkDirty();
+    return true;
+}
+
+bool EditorDocument::IsSceneInstanceMember(EntityId entity) const
+{
+    const auto* id = Registry_.Components.TryGet<PersistentIdComponent>(entity);
+    if (id == nullptr)
+        return false;
+    const auto found = Projection_.find(id->Id.Value);
+    return found != Projection_.end() && !found->second.Root;
+}
+
+bool EditorDocument::IsSceneInstanceRoot(EntityId entity) const
+{
+    const auto* id = Registry_.Components.TryGet<PersistentIdComponent>(entity);
+    if (id == nullptr)
+        return false;
+    const auto found = Projection_.find(id->Id.Value);
+    return found != Projection_.end() && found->second.Root;
+}
+
+std::string EditorDocument::SceneInstanceSourceOf(EntityId entity) const
+{
+    const auto* id = Registry_.Components.TryGet<PersistentIdComponent>(entity);
+    if (id == nullptr)
+        return {};
+    const auto found = Projection_.find(id->Id.Value);
+    if (found == Projection_.end())
+        return {};
+    const SceneInstanceRecord* record = FindSceneInstance(
+        SceneInstanceId{ found->second.Path.Elements.front() });
+    return record != nullptr ? record->Source : std::string{};
 }

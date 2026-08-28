@@ -14,6 +14,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -276,5 +277,116 @@ namespace
         EditorDocument reloaded = LoadHost(minted);
         EXPECT_TRUE(reloaded.GetProjectionDiagnostics().Clean());
         EXPECT_EQ(reloaded.GetScene().GetEntityCount(), 5u) << minted;
+    }
+} // namespace
+
+#include "document/commands/ReparentEntitiesCommand.h"
+#include "document/commands/SceneInstanceCommands.h"
+#include "selection/SelectionContext.h"
+#include "selection/SelectionService.h"
+
+namespace
+{
+    class SceneInstanceCommandTest : public SceneProjectionTest
+    {
+    protected:
+        SelectionContext Context;
+        SelectionService Selection{ Context };
+    };
+
+    TEST_F(SceneInstanceCommandTest, PlacementMintsOnceAndHoldsIdsAcrossUndoRedo)
+    {
+        EditorDocument host(Logging);
+        host.SetContentRoots({ Root });
+
+        Transform3f placement = Transform3f::Identity();
+        placement.Position = Vec3d{ 4.0f, 0.0f, 0.0f };
+        PlaceSceneInstanceCommand command("asset://props/door.sscene", placement,
+                                          host, Selection);
+        command.Execute();
+        ASSERT_TRUE(command.Placed());
+        ASSERT_EQ(host.GetScene().GetEntityCount(), 3u); // root + body + light
+        EXPECT_TRUE(host.IsDirty());
+
+        // The root landed selected, and identity is recorded, not re-derived.
+        const SelectableRef primary = Selection.GetPrimarySelection();
+        ASSERT_TRUE(primary.IsValid());
+        const PersistentEntityId rootId = IdOf(host, primary.Entity);
+        EXPECT_TRUE(host.IsSceneInstanceRoot(primary.Entity));
+
+        command.Undo();
+        EXPECT_EQ(host.GetScene().GetEntityCount(), 0u);
+
+        command.Execute(); // redo
+        ASSERT_EQ(host.GetScene().GetEntityCount(), 3u);
+        EXPECT_TRUE(FindById(host, rootId).IsValid())
+            << "redo must restore the same minted identity";
+
+        // The round trip carries the placement.
+        EditorDocument reloaded(Logging);
+        reloaded.SetContentRoots({ Root });
+        ASSERT_TRUE(reloaded.LoadFromSceneText(host.ToSceneText()));
+        EXPECT_TRUE(FindById(reloaded, rootId).IsValid());
+        EXPECT_EQ(reloaded.GetScene().GetEntityCount(), 3u);
+    }
+
+    TEST_F(SceneInstanceCommandTest, BreakSeversTheLinkAndUndoRestoresIt)
+    {
+        EditorDocument host = LoadHost(HostText());
+        const EntityId light = FindById(host, PersistentEntityId{ 0x202 });
+        auto* lamp = host.GetScene().GetRegistry()
+                         .Components.TryGet<PointLightComponent>(light);
+        ASSERT_NE(lamp, nullptr);
+        lamp->Intensity = 40.0f; // an override the break must not lose
+
+        BreakSceneInstanceCommand command(SceneInstanceId{ 0xf0 }, host);
+        command.Execute();
+
+        // Severed: same entities, no link, and the save writes them as locals.
+        ASSERT_EQ(host.GetScene().GetEntityCount(), 4u);
+        const EntityId root = FindById(host, PersistentEntityId{ 0xf0 });
+        EXPECT_FALSE(host.IsSceneInstanceRoot(root));
+        EXPECT_FALSE(host.IsSceneInstanceMember(
+            FindById(host, PersistentEntityId{ 0x201 })));
+        const std::string severed = host.ToSceneText();
+        EXPECT_EQ(severed.find("instances"), std::string::npos);
+        EXPECT_NE(severed.find("PointLight"), std::string::npos);
+
+        command.Undo();
+        ASSERT_EQ(host.GetScene().GetEntityCount(), 4u);
+        EXPECT_TRUE(host.IsSceneInstanceRoot(
+            FindById(host, PersistentEntityId{ 0xf0 })));
+        // The edit made before the break came back as the override it was.
+        const auto* restored = host.GetScene().GetRegistry()
+                                   .Components.TryGet<PointLightComponent>(
+                                       FindById(host, PersistentEntityId{ 0x202 }));
+        ASSERT_NE(restored, nullptr);
+        EXPECT_EQ(restored->Intensity, 40.0f);
+    }
+
+    TEST_F(SceneInstanceCommandTest, ReparentRefusesMembersAndAllowsTheRoot)
+    {
+        EditorDocument host = LoadHost(HostText());
+        const EntityId local = FindById(host, PersistentEntityId{ 0xaa });
+        const EntityId root = FindById(host, PersistentEntityId{ 0xf0 });
+        const EntityId body = FindById(host, PersistentEntityId{ 0x201 });
+
+        const std::array member{ body };
+        EXPECT_EQ(MakeReparentEntitiesCommand(member, local,
+                      ReparentTransformRule::KeepWorld, host.GetScene(), host),
+                  nullptr);
+
+        // The root is the placement and moves freely; unparenting it round
+        // trips through the record's parent field.
+        const std::array roots{ root };
+        auto command = MakeReparentEntitiesCommand(roots, EntityId{},
+            ReparentTransformRule::KeepWorld, host.GetScene(), host);
+        ASSERT_NE(command, nullptr);
+        command->Execute();
+
+        EditorDocument reloaded = LoadHost(host.ToSceneText());
+        EXPECT_EQ(reloaded.GetScene().GetParent(
+                      FindById(reloaded, PersistentEntityId{ 0xf0 })),
+                  EntityId{});
     }
 } // namespace

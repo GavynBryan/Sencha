@@ -89,6 +89,37 @@ public:
     // source change.
     void RebuildSceneProjection();
 
+    // ── Scene instances ─────────────────────────────────────────────────────
+
+    // Places `source` (asset://...sscene) at `placement`, minting the instance
+    // id and an id for every entity the source contributes, and projects it.
+    // Returns the invalid id with `error` set when the source does not
+    // resolve. An authoring act: the document is dirty afterwards.
+    SceneInstanceId PlaceSceneInstance(std::string source,
+                                       const Transform3f& placement,
+                                       PersistentEntityId parent = {},
+                                       std::string* error = nullptr);
+    // Re-adds a previously captured record verbatim -- the redo half of a
+    // placement command, which is what keeps minted ids stable across
+    // undo/redo. Refuses an id that is already placed.
+    bool RestoreSceneInstance(SceneInstanceRecord record);
+    // Removes the placement and its projection. The removed record, harvested
+    // up to the moment of removal, lands in `removed` for the undo to restore.
+    bool RemoveSceneInstance(SceneInstanceId id, SceneInstanceRecord* removed = nullptr);
+    // Severs the link: every entity the placement contributed becomes a plain
+    // local entity of this document, nested content flattened, and the record
+    // is gone. The captured record is the undo's rebuild input.
+    bool BreakSceneInstance(SceneInstanceId id, SceneInstanceRecord* broken = nullptr);
+
+    [[nodiscard]] const SceneInstanceRecord* FindSceneInstance(SceneInstanceId id) const;
+    // A derived, non-root member of a placement: editable in place, not
+    // restructurable -- reparenting it out has no override to land in.
+    [[nodiscard]] bool IsSceneInstanceMember(EntityId entity) const;
+    [[nodiscard]] bool IsSceneInstanceRoot(EntityId entity) const;
+    // The source path of the placement the entity belongs to, empty for
+    // entities outside any projection.
+    [[nodiscard]] std::string SceneInstanceSourceOf(EntityId entity) const;
+
     // Records fresh ids for every instance path resolution reported missing
     // (a source that grew since the placement was recorded), then re-projects.
     // An authoring act: marks the document dirty. Never called by loads or

@@ -28,11 +28,13 @@
 #include "ui/EditorThemeStartup.h"
 #include "ui/EditorToolbar.h"
 #include "ui/EditorUiFeature.h"
+#include "document/commands/SceneInstanceCommands.h"
 #include "ui/InspectorPanel.h"
 #include "ui/LightingPanel.h"
 #include "ui/MaterialBrowserPanel.h"
 #include "ui/MaterialThumbnailCache.h"
 #include "ui/ToolPropertiesPanel.h"
+#include "ui/SceneBrowserPanel.h"
 #include "ui/SceneHierarchyPanel.h"
 #include "ui/WorldPartitionPanel.h"
 #include "ui/GraphViewerPanel.h"
@@ -581,14 +583,48 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     // anyway; dereferencing would just make it a crash instead of a message.
     if (RenderFeature != nullptr)
     {
+        // A scene dropped from the browser lands where the cursor points:
+        // the nearest brush surface, or the working grid where the ray misses
+        // everything. One undoable command, the placement's root selected.
+        const auto placeDroppedScene =
+            [this](ViewportId viewportId, ImVec2 position, std::string_view source)
+        {
+            const EditorViewport* viewport = Workspace->Layout.Find(viewportId);
+            if (viewport == nullptr || Commands == nullptr)
+                return;
+            EditorDocument& document = Workspace->World.FocusDocument();
+            Vec3d point{};
+            if (const std::optional<SurfaceHit> hit = Workspace->Picking.PickSurface(
+                    *viewport, position, document.GetScene()))
+            {
+                point = hit->Point;
+            }
+            else if (const std::optional<Vec3d> onGrid =
+                         Workspace->Picking.ProjectPointToGrid(*viewport, position,
+                                                               Workspace->Grid))
+            {
+                point = *onGrid;
+            }
+            else
+            {
+                return;
+            }
+            Transform3f placement = Transform3f::Identity();
+            placement.Position = point;
+            Commands->Execute(std::make_unique<PlaceSceneInstanceCommand>(
+                std::string(source), placement, document, Workspace->Selection));
+        };
+
         auto perspectivePanel = std::make_unique<ViewportPanel>(
             Workspace->Layout, Workspace->Interaction.Marquee, Workspace->Interaction.Overlay,
             RenderFeature->GetViewportTargets(), "Viewport", DockSlot::Center, 1.0f, perspectiveId);
+        perspectivePanel->SetSceneDropHandler(placeDroppedScene);
         PerspectivePanel = perspectivePanel.get();
         UiFeature->AddPanel(std::move(perspectivePanel));
         auto orthoPanel = std::make_unique<ViewportPanel>(
             Workspace->Layout, Workspace->Interaction.Marquee, Workspace->Interaction.Overlay,
             RenderFeature->GetViewportTargets(), "Ortho", DockSlot::CenterBottom, 1.0f, orthoId);
+        orthoPanel->SetSceneDropHandler(placeDroppedScene);
         OrthoPanel = orthoPanel.get();
         UiFeature->AddPanel(std::move(orthoPanel));
     }
@@ -608,6 +644,15 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         Workspace->World, Workspace->Selection, *Commands, Workspace->Layout));
     UiFeature->AddPanel(std::make_unique<SceneHierarchyPanel>(
         Workspace->World, Workspace->Selection, *Commands));
+    {
+        std::vector<std::filesystem::path> sceneRoots;
+        if (Project)
+            for (const std::string& root : Project->ContentRoots)
+                sceneRoots.emplace_back(root);
+        UiFeature->AddPanel(std::make_unique<SceneBrowserPanel>(
+            Workspace->World, Workspace->Selection, *Commands,
+            std::move(sceneRoots)));
+    }
     UiFeature->AddPanel(std::make_unique<InspectorPanel>(
         Workspace->World, Workspace->Selection, *Commands,
         Workspace->Affordances->Registry()));

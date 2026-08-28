@@ -6,6 +6,7 @@
 
 #include <imgui.h>
 
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -39,6 +40,17 @@ public:
     // last drawn frame.
     [[nodiscard]] bool IsViewportRegionHovered() const { return RegionHovered; }
 
+    // Something dropped a scene source onto the render region: the viewport it
+    // landed in, the drop position in screen pixels, and the asset:// path the
+    // payload carried. The composition root installs the handler that picks a
+    // point and places; the panel only reports the drop.
+    using SceneDropHandler =
+        std::function<void(ViewportId, ImVec2, std::string_view)>;
+    void SetSceneDropHandler(SceneDropHandler handler)
+    {
+        SceneDrop = std::move(handler);
+    }
+
     // Zeroes the viewport's on-screen rect so ResolveAt cannot route input to a
     // view that is not being drawn. The composition root calls this each frame
     // the panel is hidden (OnDraw only runs for visible panels, so the panel
@@ -68,4 +80,5 @@ private:
     // 3D render-region rects collected this frame (the passthrough holes to keep
     // transparent); everything else in the panel gets the dark gap fill.
     std::vector<std::pair<ImVec2, ImVec2>> RegionRects;
+    SceneDropHandler SceneDrop;
 };

@@ -73,6 +73,12 @@ std::unique_ptr<ICommand> MakeReparentEntitiesCommand(std::span<const EntityId> 
     {
         if (!scene.HasEntity(entity))
             continue;
+        // A placement member's position in its structure comes from the
+        // source; there is no override a reparent could land in (D4 excludes
+        // it). Break the instance to restructure. The root is the placement
+        // itself and moves freely.
+        if (document.IsSceneInstanceMember(entity))
+            return nullptr;
         // A cycle disqualifies the gesture: half a drop landing is worse than
         // the drop refusing, and the drop target already showed the refusal.
         if (newParent.IsValid()
