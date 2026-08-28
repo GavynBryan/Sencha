@@ -10,14 +10,17 @@
 #include <functional>
 #include <memory>
 #include <span>
+#include <string_view>
 #include <vector>
 
 class AssetPreload;
+class AssetSystem;
 class ComponentSerializerRegistry;
 class RuntimeFrameLoop;
 class RuntimeWorld;
 struct RuntimeZoneRecord;
 struct SceneSerializationContext;
+struct SmapContents;
 class WorldComponentSchema;
 
 //=============================================================================
@@ -70,6 +73,31 @@ public:
         ZoneParticipation participation,
         std::shared_ptr<AssetPreload> assets);
 
+    // Extra task-thread work beside a scene parse (probe file IO), handed the
+    // parsed contents. Same restrictions as BuildFn.
+    using SceneStageFn = std::function<void(const SmapContents&)>;
+    // Owner-thread finalize with the scene's contents in hand (collision
+    // cells, dependency table); otherwise FinalizeFn's contract.
+    using SceneFinalizeFn =
+        std::function<bool(RuntimeWorld&, RuntimeZoneRecord&, const SmapContents&)>;
+
+    // The cooked-scene load: resolves `sceneAssetPath` through the asset
+    // front door, stages and parses the .smap on the task thread -- or skips
+    // both when the scene is already resident in the scene cache -- builds
+    // the package there, commits residency at the drain, imports, and
+    // publishes. The scene reference is scaffolding, released once
+    // publication settles either way; a pinned scene is its own consumer's
+    // lease. Returns an invalid handle (with the failure recorded) when the
+    // path does not resolve to a scene.
+    AsyncTaskHandle BeginLoadScene(
+        ZoneId zone,
+        std::string_view sceneAssetPath,
+        AssetSystem& assets,
+        SceneStageFn stageExtra,
+        SceneFinalizeFn finalize,
+        ZoneParticipation participation,
+        std::shared_ptr<AssetPreload> preload = nullptr);
+
     [[nodiscard]] bool IsLoading(ZoneId zone) const;
 
     // Best effort, like AsyncTaskQueue::Cancel: fails only while the build is
@@ -102,6 +130,16 @@ private:
     };
 
     void RemoveInFlight(ZoneId zone);
+    // Imports now, or parks the import on the preload's completion. `keepAlive`
+    // rides along so a caller-held reference (the scene lease) survives a
+    // deferred import and releases on the owner thread after it settles.
+    void CommitOrDefer(
+        ZoneId zone,
+        std::unique_ptr<EntityBuildPackage> package,
+        FinalizeFn finalize,
+        ZoneParticipation participation,
+        std::shared_ptr<AssetPreload> assets,
+        std::shared_ptr<void> keepAlive = nullptr);
     void ImportAndFinalize(
         ZoneId zone,
         std::unique_ptr<EntityBuildPackage> package,

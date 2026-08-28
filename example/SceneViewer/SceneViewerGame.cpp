@@ -54,31 +54,6 @@ constexpr std::string_view kAuthoredRoot = "assets";
 constexpr std::string_view kCookedScanRoot = "assets/.cooked";
 constexpr ZoneId kPlayZone{ 1 };
 
-struct SceneBuildResult
-{
-    bool Success = false;
-    std::string Error;
-};
-
-void BuildScenePackage(
-    EntityBuildPackage& package,
-    SceneBuildResult& result,
-    const std::string& path,
-    const ComponentSerializerRegistry& serializers)
-{
-    SmapContents contents;
-    SmapError error;
-    if (!ReadSmapFile(path, serializers, contents, &error)
-        || !BuildEntityPackageFromSmap(contents, serializers, package, &error))
-    {
-        result.Error = error.Message;
-        return;
-    }
-
-    result.Success = true;
-    result.Error.clear();
-}
-
 EntityId CreateViewerCamera(World& world)
 {
     Transform3f transform;
@@ -116,7 +91,8 @@ void SceneViewerGame::OnStart(GameStartupContext&)
         graphics.Buffers,
         graphics.Images,
         graphics.Descriptors,
-        graphics.Samplers);
+        graphics.Samplers,
+        engine.SceneSerializers());
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
 
     // Mount: authored assets, then the cooked overlay (cooked wins), then the
@@ -277,14 +253,22 @@ ConsoleResult SceneViewerGame::LoadMap(
         return result;
     }
 
-    const std::string scenePath =
-        std::string(kCookedScanRoot) + "/"
-        + std::string(mapName) + ".smap";
+    const std::string sceneAssetPath =
+        "asset://" + std::string(mapName) + ".smap";
+    const AssetRecord* sceneRecord =
+        runtimeAssets.Assets.Resolve(sceneAssetPath, AssetType::Scene);
+    if (sceneRecord == nullptr)
+    {
+        result.Error("no cooked map at '" + sceneAssetPath
+                     + "'; cook the level first");
+        return result;
+    }
+    const std::string sceneFilePath = sceneRecord->FilePath;
 
     std::shared_ptr<AssetPreload> preload;
     SmapContents metadata;
     SmapError metadataError;
-    if (ReadSmapMetadataFile(scenePath, metadata, &metadataError))
+    if (ReadSmapMetadataFile(sceneFilePath, metadata, &metadataError))
     {
         preload = Preloader->Begin(
             ResolveSmapDependencyPaths(
@@ -299,32 +283,20 @@ ConsoleResult SceneViewerGame::LoadMap(
             metadataError.Message);
     }
 
-    auto buildResult = std::make_shared<SceneBuildResult>();
     auto probes = std::make_shared<ProbeVolumeFile>();
-    const ComponentSerializerRegistry* serializers = &engine.SceneSerializers();
-    ZoneLoader->BeginLoad(
+    const AsyncTaskHandle load = ZoneLoader->BeginLoadScene(
         kPlayZone,
-        [buildResult, probes, serializers, scenePath](
-            EntityBuildPackage& package)
+        sceneAssetPath,
+        runtimeAssets.Assets,
+        [probes, sceneFilePath](const SmapContents&)
         {
-            BuildScenePackage(
-                package,
-                *buildResult,
-                scenePath,
-                *serializers);
-            (void)ReadZoneProbeFile(scenePath, *probes);
+            (void)ReadZoneProbeFile(sceneFilePath, *probes);
         },
-        [this, buildResult, probes, &logging](
+        [this, probes](
             RuntimeWorld&,
-            RuntimeZoneRecord& zone)
+            RuntimeZoneRecord& zone,
+            const SmapContents&)
         {
-            if (!buildResult->Success)
-            {
-                logging.GetLogger<SceneViewerGame>().Error(
-                    "SceneViewer: scene load error: {}",
-                    buildResult->Error);
-                return false;
-            }
             if (DefaultRenderPipeline* pipeline =
                     GetEngine().GetRenderPipeline())
             {
@@ -340,6 +312,11 @@ ConsoleResult SceneViewerGame::LoadMap(
             .Audio = true,
         },
         std::move(preload));
+    if (!load.IsValid())
+    {
+        result.Error("map load refused; see zone load failures");
+        return result;
+    }
 
     result.Info("loading map '" + std::string(mapName) + "'");
     return result;

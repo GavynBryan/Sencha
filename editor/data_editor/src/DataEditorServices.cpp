@@ -106,7 +106,8 @@ void DataEditorServices::InitAssets()
     Engine& engine = *EnginePtr;
     GraphicsServices& graphics = engine.Graphics();
     Assets.emplace(engine.Logging(), graphics.Buffers, graphics.Images,
-                   graphics.Descriptors, graphics.Samplers);
+                   graphics.Descriptors, graphics.Samplers,
+                   engine.SceneSerializers());
 
     if (!Project)
         return;

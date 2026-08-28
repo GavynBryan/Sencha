@@ -119,33 +119,14 @@ enum : NetSpawnRecipeId
 };
 
 
-struct SceneBuildResult
+// A cooked-manifest scene ref ("<.cooked-relative or root-relative path>")
+// as the asset:// path the cooked scan root registered it under.
+[[nodiscard]] std::string CookedRefToAssetPath(std::string_view ref)
 {
-    bool Success = false;
-    std::string Error;
-    // The scene's collision cells, carried out of the worker's .smap read for
-    // the owner-thread finalize to spawn colliders from.
-    std::vector<SmapCollisionCell> Collision;
-};
-
-void BuildScenePackage(
-    EntityBuildPackage& package,
-    SceneBuildResult& result,
-    const std::string& scenePath,
-    const ComponentSerializerRegistry& serializers)
-{
-    SmapContents contents;
-    SmapError error;
-    if (!ReadSmapFile(scenePath, serializers, contents, &error)
-        || !BuildEntityPackageFromSmap(contents, serializers, package, &error))
-    {
-        result.Error = error.Message;
-        return;
-    }
-
-    result.Collision = std::move(contents.Collision);
-    result.Success = true;
-    result.Error.clear();
+    constexpr std::string_view cookedPrefix = ".cooked/";
+    if (ref.starts_with(cookedPrefix))
+        ref.remove_prefix(cookedPrefix.size());
+    return "asset://" + std::string(ref);
 }
 
 EntityId FindFirstCamera(
@@ -1271,11 +1252,12 @@ void TemplateGame::OnStart(GameStartupContext&)
             graphics->Buffers,
             graphics->Images,
             graphics->Descriptors,
-            graphics->Samplers);
+            graphics->Samplers,
+            engine.SceneSerializers());
     }
     else
     {
-        Assets.emplace(logging);
+        Assets.emplace(logging, engine.SceneSerializers());
     }
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
 
@@ -1702,16 +1684,24 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
         return result;
     }
 
-    const std::string scenePath =
-        std::string(kCookedScanRoot) + "/"
-        + std::string(mapName) + ".smap";
+    const std::string sceneAssetPath =
+        "asset://" + std::string(mapName) + ".smap";
+    const AssetRecord* sceneRecord =
+        runtimeAssets.Assets.Resolve(sceneAssetPath, AssetType::Scene);
+    if (sceneRecord == nullptr)
+    {
+        result.Error("no cooked map at '" + sceneAssetPath
+                     + "'; cook the level first");
+        return result;
+    }
+    const std::string sceneFilePath = sceneRecord->FilePath;
 
     // Warm the scene's dependency table before the load; a metadata read that
     // fails leaves the slower resolve-on-import fallback, not an error.
     std::shared_ptr<AssetPreload> preload;
     SmapContents metadata;
     SmapError metadataError;
-    if (ReadSmapMetadataFile(scenePath, metadata, &metadataError))
+    if (ReadSmapMetadataFile(sceneFilePath, metadata, &metadataError))
     {
         preload = Preloader->Begin(ResolveSmapDependencyPaths(
             metadata.Dependencies, runtimeAssets.Registry));
@@ -1724,39 +1714,26 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
             metadataError.Message);
     }
 
-    auto buildResult = std::make_shared<SceneBuildResult>();
-    const ComponentSerializerRegistry* serializers = &engine.SceneSerializers();
     auto probes = std::make_shared<ProbeVolumeFile>();
-    ZoneLoader->BeginLoad(
+    const AsyncTaskHandle load = ZoneLoader->BeginLoadScene(
         kPlayZone,
-        [buildResult, probes, serializers, scenePath](
-            EntityBuildPackage& package)
+        sceneAssetPath,
+        runtimeAssets.Assets,
+        [probes, sceneFilePath](const SmapContents&)
         {
-            BuildScenePackage(
-                package,
-                *buildResult,
-                scenePath,
-                *serializers);
-            (void)ReadZoneProbeFile(scenePath, *probes);
+            (void)ReadZoneProbeFile(sceneFilePath, *probes);
         },
-        [this, buildResult, probes, &logging](
+        [this, probes](
             RuntimeWorld& runtime,
-            RuntimeZoneRecord& zone)
+            RuntimeZoneRecord& zone,
+            const SmapContents& contents)
         {
-            if (!buildResult->Success)
-            {
-                logging.GetLogger<TemplateGame>().Error(
-                    "TemplateGame: scene load error: {}",
-                    buildResult->Error);
-                return false;
-            }
-
             if (PhysicsShapes != nullptr)
             {
                 LoadZoneCollision(
                     runtime.Entities(),
                     *PhysicsShapes,
-                    buildResult->Collision,
+                    contents.Collision,
                     std::string(kCookedScanRoot),
                     zone.Partition);
             }
@@ -1784,6 +1761,11 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
             .Audio = true,
         },
         std::move(preload));
+    if (!load.IsValid())
+    {
+        result.Error("map load refused; see zone load failures");
+        return result;
+    }
 
     result.Info("loading map '" + std::string(mapName) + "'");
     return result;
@@ -1792,7 +1774,6 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
 ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
 {
     Engine& engine = GetEngine();
-    LoggingProvider& logging = engine.Logging();
     ConsoleResult result;
 
     if (PlayZoneActive
@@ -1843,20 +1824,15 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
 
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
     AssetSystem* assetSystem = &runtimeAssets.Assets;
-    LoggingProvider* loggingPtr = &logging;
-    const ComponentSerializerRegistry* serializers = &engine.SceneSerializers();
 
     const EngineRuntimeConfig& runtimeConfig =
         engine.Config().Runtime;
     Partition.emplace(
-        [this, assetSystem, loggingPtr, serializers](
-            const ZoneHeader& header)
+        [this, assetSystem](const ZoneHeader& header)
         {
             const std::string scenePath =
                 std::string(kAuthoredRoot) + "/"
                 + header.CookedSceneRef;
-            auto buildResult =
-                std::make_shared<SceneBuildResult>();
             auto probes = std::make_shared<ProbeVolumeFile>();
 
             ZoneLoadRecipe recipe;
@@ -1872,40 +1848,26 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
                         metadata.Dependencies, RuntimeAssetState().Registry));
                 }
             }
-            recipe.Build =
-                [buildResult, probes, scenePath, serializers](
-                    EntityBuildPackage& package)
-                {
-                    BuildScenePackage(
-                        package,
-                        *buildResult,
-                        scenePath,
-                        *serializers);
-                    (void)ReadZoneProbeFile(scenePath, *probes);
-                };
-            recipe.Finalize =
-                [this,
-                 buildResult,
-                 probes,
-                 loggingPtr,
-                 assetSystem](
+
+            ZoneSceneRecipe scene;
+            scene.AssetPath = CookedRefToAssetPath(header.CookedSceneRef);
+            scene.Assets = assetSystem;
+            scene.StageExtra = [probes, scenePath](const SmapContents&)
+            {
+                (void)ReadZoneProbeFile(scenePath, *probes);
+            };
+            scene.Finalize =
+                [this, probes](
                     RuntimeWorld& runtime,
-                    RuntimeZoneRecord& zone)
+                    RuntimeZoneRecord& zone,
+                    const SmapContents& contents)
                 {
-                    (void)assetSystem;
-                    if (!buildResult->Success)
-                    {
-                        loggingPtr->GetLogger<TemplateGame>().Error(
-                            "TemplateGame: zone scene load error: {}",
-                            buildResult->Error);
-                        return false;
-                    }
                     if (PhysicsShapes != nullptr)
                     {
                         LoadZoneCollision(
                             runtime.Entities(),
                             *PhysicsShapes,
-                            buildResult->Collision,
+                            contents.Collision,
                             std::string(kCookedScanRoot),
                             zone.Partition);
                     }
@@ -1917,6 +1879,7 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
                     }
                     return true;
                 };
+            recipe.Scene = std::move(scene);
             return recipe;
         },
         WorldPartitionStreamingConfig{
@@ -1940,22 +1903,29 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
     const WorldPartitionManifest& loaded = Partition->Manifest();
     if (!loaded.CookedWorldSceneRef.empty())
     {
-        const std::string scenePath =
-            std::string(kAuthoredRoot) + "/"
-            + loaded.CookedWorldSceneRef;
-
-        EntityBuildPackage package;
-        SceneBuildResult buildResult;
-        BuildScenePackage(
-            package,
-            buildResult,
-            scenePath,
-            engine.SceneSerializers());
-        if (!buildResult.Success)
+        // Synchronous through the front door: the world scene loads once at
+        // world start, so the async lane buys nothing here, and residency
+        // means a later spawn of the same scene shares the parse.
+        const SceneHandle worldScene = runtimeAssets.Assets.LoadScene(
+            CookedRefToAssetPath(loaded.CookedWorldSceneRef));
+        if (!worldScene.IsValid())
         {
             Partition.reset();
-            result.Error(
-                "world scene load error: " + buildResult.Error);
+            result.Error("world scene '" + loaded.CookedWorldSceneRef
+                         + "' failed to load");
+            return result;
+        }
+        const SmapContents* contents =
+            runtimeAssets.Assets.GetSceneContents(worldScene);
+
+        EntityBuildPackage package;
+        SmapError buildError;
+        if (!BuildEntityPackageFromSmap(*contents, engine.SceneSerializers(),
+                                        package, &buildError))
+        {
+            runtimeAssets.Assets.ReleaseScene(worldScene);
+            Partition.reset();
+            result.Error("world scene load error: " + buildError.Message);
             return result;
         }
 
@@ -1973,6 +1943,7 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
                 *SceneContext,
                 &importError))
         {
+            runtimeAssets.Assets.ReleaseScene(worldScene);
             Partition.reset();
             result.Error(
                 "world scene import error: " + importError.Message);
@@ -1984,14 +1955,17 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
             LoadZoneCollision(
                 engine.World().Entities(),
                 *PhysicsShapes,
-                buildResult.Collision,
+                contents->Collision,
                 std::string(kCookedScanRoot),
                 PersistentStoragePartition);
         }
-        else if (!buildResult.Collision.empty())
+        else if (!contents->Collision.empty())
         {
-            PendingWorldSceneCollision = std::move(buildResult.Collision);
+            PendingWorldSceneCollision = contents->Collision;
         }
+
+        // The imported entities are the product; the parse was scaffolding.
+        runtimeAssets.Assets.ReleaseScene(worldScene);
     }
 
     // A world's scene imports into the persistent partition, so that is where

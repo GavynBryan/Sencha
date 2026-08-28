@@ -1097,7 +1097,8 @@ void EditorServices::InitAssets()
     GraphicsServices& graphics = engine.Graphics();
     LoggingProvider& logging = engine.Logging();
 
-    Assets.emplace(logging, graphics.Buffers, graphics.Images, graphics.Descriptors, graphics.Samplers);
+    Assets.emplace(logging, graphics.Buffers, graphics.Images, graphics.Descriptors,
+                   graphics.Samplers, engine.SceneSerializers());
     if (!Project)
         return;
 

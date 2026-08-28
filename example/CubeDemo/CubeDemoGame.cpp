@@ -208,7 +208,8 @@ void CubeDemoGame::OnStart(GameStartupContext&)
         graphics.Buffers,
         graphics.Images,
         graphics.Descriptors,
-        graphics.Samplers);
+        graphics.Samplers,
+        engine.SceneSerializers());
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
 
     // The demo's own controls. Registered as a procedural profile so the camera
@@ -323,6 +324,15 @@ void CubeDemoGame::OnStart(GameStartupContext&)
         runtimeAssets.Assets,
         engine.Tasks());
 
+    // The demo scene sits beside the binary, outside any scanned content
+    // root, so its record registers explicitly.
+    (void)runtimeAssets.Registry.Register(AssetRecord{
+        .Type = AssetType::Scene,
+        .SourceKind = AssetSourceKind::File,
+        .Path = "asset://cube_demo_scene.smap",
+        .FilePath = "cube_demo_scene.smap",
+    });
+
     std::shared_ptr<AssetPreload> preload;
     SmapContents metadata;
     SmapError metadataError;
@@ -348,35 +358,16 @@ void CubeDemoGame::OnStart(GameStartupContext&)
     captionSettings.ClosedCaptionsEnabled = true;
     captions->SetSettings(captionSettings);
 
-    auto packageBuilt = std::make_shared<bool>(false);
-    auto packageError = std::make_shared<std::string>();
-    const ComponentSerializerRegistry* serializers = &engine.SceneSerializers();
-    ZoneLoader->BeginLoad(
+    ZoneLoader->BeginLoadScene(
         kDemoZone,
-        [packageBuilt, packageError, serializers](
-            EntityBuildPackage& package)
-        {
-            *packageBuilt = BuildDemoScenePackage(
-                package,
-                "cube_demo_scene.smap",
-                *serializers,
-                packageError.get());
-        },
-        [this,
-         packageBuilt,
-         packageError,
-         &logging](
+        "asset://cube_demo_scene.smap",
+        runtimeAssets.Assets,
+        AsyncZoneLoader::SceneStageFn{},
+        [this, &logging](
             RuntimeWorld& runtime,
-            RuntimeZoneRecord& zone)
+            RuntimeZoneRecord& zone,
+            const SmapContents&)
         {
-            if (!*packageBuilt)
-            {
-                logging.GetLogger<CubeDemoGame>().Error(
-                    "CubeDemo: scene package error: {}",
-                    *packageError);
-                return false;
-            }
-
             if (!FinalizeDemoScene(
                     Demo,
                     runtime,

@@ -17,8 +17,22 @@
 
 class RuntimeWorld;
 
+// The scene-driven production path: the zone's cooked scene, resolved and
+// staged through the asset front door (AsyncZoneLoader::BeginLoadScene).
+struct ZoneSceneRecipe
+{
+    std::string AssetPath; // asset://... of the cooked .smap
+    AssetSystem* Assets = nullptr;
+    AsyncZoneLoader::SceneStageFn StageExtra;
+    AsyncZoneLoader::SceneFinalizeFn Finalize;
+};
+
+// How one zone's content is produced -- exactly one path engaged. Cooked
+// content fills Scene; procedural and test content fills Build/Finalize and
+// constructs its package directly.
 struct ZoneLoadRecipe
 {
+    std::optional<ZoneSceneRecipe> Scene;
     AsyncZoneLoader::BuildFn      Build;
     AsyncZoneLoader::FinalizeFn   Finalize;
     std::shared_ptr<AssetPreload> Preload;

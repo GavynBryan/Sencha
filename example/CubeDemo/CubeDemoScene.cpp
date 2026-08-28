@@ -3,30 +3,9 @@
 #include <components/ActiveCameraService.h>
 #include <core/logging/LoggingProvider.h>
 #include <world/RuntimeWorld.h>
-#include <world/build/EntityBuildPackage.h>
-#include <world/scene/SmapFormat.h>
-#include <world/serialization/ComponentSerializerRegistry.h>
 
 #include <algorithm>
 #include <vector>
-
-bool BuildDemoScenePackage(
-    EntityBuildPackage& package,
-    std::string_view scenePath,
-    const ComponentSerializerRegistry& serializers,
-    std::string* error)
-{
-    SmapContents contents;
-    SmapError smapError;
-    if (!ReadSmapFile(std::string(scenePath), serializers, contents, &smapError)
-        || !BuildEntityPackageFromSmap(contents, serializers, package, &smapError))
-    {
-        if (error != nullptr)
-            *error = smapError.Message;
-        return false;
-    }
-    return true;
-}
 
 bool FinalizeDemoScene(
     DemoScene& scene,

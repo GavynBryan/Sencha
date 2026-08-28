@@ -156,7 +156,8 @@ void MaterialEditorServices::InitAssets()
     GraphicsServices& graphics = engine.Graphics();
 
     Assets.emplace(engine.Logging(), graphics.Buffers, graphics.Images,
-                   graphics.Descriptors, graphics.Samplers);
+                   graphics.Descriptors, graphics.Samplers,
+                   engine.SceneSerializers());
     Materials = std::make_unique<MaterialLibrary>(engine.Logging());
     if (!Project)
         return;

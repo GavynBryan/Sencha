@@ -11,6 +11,7 @@
 #include <movement/MovementProfileData.h>
 #include <core/assets/AssetRegistry.h>
 #include <assets/runtime/AssetSystem.h>
+#include <assets/scene/SceneCache.h>
 #include <assets/texture/TextureCache.h>
 #include <render/MaterialCache.h>
 #include <render/MaterialSetCache.h>
@@ -19,6 +20,7 @@
 
 #include <memory>
 
+class ComponentSerializerRegistry;
 class LoggingProvider;
 class VulkanBufferService;
 class VulkanDescriptorCache;
@@ -51,6 +53,9 @@ struct RuntimeAssets
     std::unique_ptr<SkinnedMeshCache> SkinnedMeshes;
     AnimationClipCache AnimationClips;
     AudioClipCache AudioClips;
+    // Parsed cooked scenes, plain CPU data: resident in every composition,
+    // windowed and headless alike -- a dedicated host spawns scenes too.
+    SceneCache Scenes;
 
     // Structured data. The subtype registry and schemas are separate from the
     // cache because a game module registers into them while the module is
@@ -63,12 +68,16 @@ struct RuntimeAssets
     AssetSystem Assets;
 
     // The windowed composition: every kind this engine knows is loadable.
+    // `sceneSerializers` is the component vocabulary scene loads validate
+    // against -- the host's one registry (Engine::SceneSerializers()), which
+    // game modules extend in place.
     RuntimeAssets(LoggingProvider& logging,
                   VulkanBufferService& buffers,
                   VulkanImageService& images,
                   VulkanDescriptorCache& descriptors,
-                  VulkanSamplerCache& samplers)
-        : RuntimeAssets(logging,
+                  VulkanSamplerCache& samplers,
+                  const ComponentSerializerRegistry& sceneSerializers)
+        : RuntimeAssets(logging, sceneSerializers,
                         std::make_unique<TextureCache>(logging, images, descriptors, samplers),
                         std::make_unique<StaticMeshCache>(logging, GpuBuffers{&buffers}),
                         std::make_unique<SkinnedMeshCache>(logging, GpuBuffers{&buffers}))
@@ -77,15 +86,17 @@ struct RuntimeAssets
 
     // The headless composition: no graphics services, so no cache can hold a
     // mesh or a texture. Everything else -- materials, material sets, skeletons,
-    // animation clips, audio, and the whole structured-data stack -- loads
-    // exactly as it does windowed.
-    explicit RuntimeAssets(LoggingProvider& logging)
-        : RuntimeAssets(logging, nullptr, nullptr, nullptr)
+    // animation clips, audio, scenes, and the whole structured-data stack --
+    // loads exactly as it does windowed.
+    RuntimeAssets(LoggingProvider& logging,
+                  const ComponentSerializerRegistry& sceneSerializers)
+        : RuntimeAssets(logging, sceneSerializers, nullptr, nullptr, nullptr)
     {
     }
 
 private:
     RuntimeAssets(LoggingProvider& logging,
+                  const ComponentSerializerRegistry& sceneSerializers,
                   std::unique_ptr<TextureCache> textures,
                   std::unique_ptr<StaticMeshCache> staticMeshes,
                   std::unique_ptr<SkinnedMeshCache> skinnedMeshes)
@@ -98,13 +109,14 @@ private:
         , SkinnedMeshes(std::move(skinnedMeshes))
         , AnimationClips()
         , AudioClips(logging)
+        , Scenes(logging)
         , DataTypes()
         , DataSchemas()
         , DataAssets()
         , DataLoader(logging, &DataTypes, &DataSchemas, &DataAssets)
         , Assets(logging, Registry, StaticMeshes.get(), &Materials, Textures.get(),
                  &AudioClips, &Skeletons, &AnimationClips, SkinnedMeshes.get(),
-                 &MaterialSets)
+                 &MaterialSets, &Scenes, &sceneSerializers)
     {
         // Unregistering a subtype with values still resident would leave the
         // cache holding a value nothing can interpret.
