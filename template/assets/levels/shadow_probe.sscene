@@ -1,7 +1,11 @@
 {
-  "version": 1,
+  "format_version": 1,
+  "settings": {
+    "default_material": "asset://materials/dev/gray.smat"
+  },
   "entities": [
     {
+      "id": "2feaeaa63f327931",
       "components": {
         "Transform": {
           "local": {
@@ -23,15 +27,13 @@
             ]
           }
         },
-        "persistent_id": {
-          "id": "2feaeaa63f327931"
-        },
         "brush": {
           "id": 1
         }
       }
     },
     {
+      "id": "051ade0000000001",
       "components": {
         "Transform": {
           "local": {
@@ -53,9 +55,6 @@
             ]
           }
         },
-        "persistent_id": {
-          "id": "051ade0000000001"
-        },
         "PointLight": {
           "color": [
             1.0,
@@ -75,6 +74,7 @@
       }
     },
     {
+      "id": "051ade0000000002",
       "components": {
         "Transform": {
           "local": {
@@ -96,9 +96,6 @@
             ]
           }
         },
-        "persistent_id": {
-          "id": "051ade0000000002"
-        },
         "PointLight": {
           "color": [
             0.6,
@@ -118,6 +115,7 @@
       }
     },
     {
+      "id": "051ade0000000003",
       "components": {
         "Transform": {
           "local": {
@@ -139,9 +137,6 @@
             ]
           }
         },
-        "persistent_id": {
-          "id": "051ade0000000003"
-        },
         "PointLight": {
           "color": [
             1.0,
@@ -159,91 +154,49 @@
           "bake_contribution": "none"
         }
       }
-    },
-    {
-      "components": {
-        "Transform": {
-          "local": {
-            "position": [
-              2.0,
-              0.0,
-              0.0
-            ],
-            "rotation": [
-              0,
-              0,
-              0,
-              1
-            ],
-            "scale": [
-              2.0,
-              2.0,
-              2.0
-            ]
-          }
-        },
-        "persistent_id": {
-          "id": "051ade00000000b1"
-        },
-        "SkinnedMesh": {
-          "mesh": "asset://meshes/dev/golden_rig.skmesh",
-          "materials": [
-            "asset://materials/dev/red.smat"
-          ],
-          "visible": true,
-          "section_mask": 4294967295
-        },
-        "AnimationClipPlayer": {
-          "clip": "asset://meshes/dev/golden_rig.sanim",
-          "time_seconds": 0.5,
-          "rate": 0.0,
-          "loop": true
-        }
-      }
     }
   ],
-  "hierarchy": [],
   "brush_meshes": {
     "1": {
       "vertices": [
         [
           -8,
-          -0.375,
+          -0.25,
           -8
         ],
         [
           8,
-          -0.375,
+          -0.25,
           -8
         ],
         [
           8,
-          0.375,
-          -8
-        ],
-        [
-          -8,
-          0.375,
+          0.25,
           -8
         ],
         [
           -8,
-          -0.375,
+          0.25,
+          -8
+        ],
+        [
+          -8,
+          -0.25,
           8
         ],
         [
           8,
-          -0.375,
+          -0.25,
           8
         ],
         [
           8,
-          0.375,
+          0.25,
           8
         ],
         [
           -8,
-          0.375,
+          0.25,
           8
         ]
       ],
@@ -430,6 +383,5 @@
         }
       ]
     }
-  },
-  "default_material": "asset://materials/dev/gray.smat"
+  }
 }

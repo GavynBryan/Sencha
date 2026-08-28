@@ -66,7 +66,7 @@ namespace
         const PersistentEntityId id = IdOf(source, entity);
 
         EditorDocument loaded(Logging);
-        ASSERT_TRUE(loaded.LoadFromJson(source.ToJson()));
+        ASSERT_TRUE(loaded.LoadFromSceneText(source.ToSceneText()));
         const EntityId restored = FindById(loaded, id);
         ASSERT_TRUE(restored.IsValid());
         EXPECT_EQ(NameOf(loaded, restored), "North Door");
@@ -117,7 +117,7 @@ namespace
         const PersistentEntityId plainId = IdOf(source, plain);
 
         EditorDocument loaded(Logging);
-        ASSERT_TRUE(loaded.LoadFromJson(source.ToJson()));
+        ASSERT_TRUE(loaded.LoadFromSceneText(source.ToSceneText()));
         const EditorScene& loadedScene = loaded.GetScene();
         EXPECT_FALSE(loadedScene.IsEntityVisible(FindById(loaded, hiddenId)));
         EXPECT_FALSE(loadedScene.IsEntityLocked(FindById(loaded, hiddenId)));
@@ -141,7 +141,7 @@ namespace
         const PersistentEntityId leafId = IdOf(source, leaf);
 
         EditorDocument loaded(Logging);
-        ASSERT_TRUE(loaded.LoadFromJson(source.ToJson()));
+        ASSERT_TRUE(loaded.LoadFromSceneText(source.ToSceneText()));
         EditorScene& loadedScene = loaded.GetScene();
 
         const EntityId loadedRoot = FindById(loaded, rootId);
@@ -199,5 +199,54 @@ namespace
 
         std::error_code ec;
         fs::remove_all(root, ec);
+    }
+} // namespace
+
+namespace
+{
+    // The retention contract on the live document: comments and unknowns ride
+    // through a load-edit-save cycle, while values a serializer owns are always
+    // the live state's -- a stale copy in the file must never win.
+    TEST_F(DocumentPersistenceTest, SavePreservesCommentsAndUnknownsButNotStaleValues)
+    {
+        constexpr std::string_view source = R"({
+  format_version: 1,
+  entities: [
+    // the boss door
+    { id: '00000000000000aa',
+      components: {
+        // where it stands
+        Transform: { local: { position: [1, 2, 3], rotation: [0, 0, 0, 1],
+                              scale: [1, 1, 1] },
+                     future_field: { flag: true } },
+        FutureGameComponent: { charge: 7 },
+      } },
+  ],
+  future_root_feature: { enabled: true },
+})";
+        EditorDocument doc(Logging);
+        ASSERT_TRUE(doc.LoadFromSceneText(source));
+        const EntityId entity = doc.GetScene().GetAllEntities()[0];
+
+        // A live edit after the load: the file's transform value is now stale.
+        Transform3f moved = *doc.GetScene().TryGetLocalTransform(entity);
+        moved.Position = Vec3d{ 9.0f, 9.0f, 9.0f };
+        doc.GetScene().SetTransform(entity, moved);
+
+        const std::string saved = doc.ToSceneText();
+        EXPECT_NE(saved.find("// the boss door"), std::string::npos);
+        EXPECT_NE(saved.find("// where it stands"), std::string::npos);
+        EXPECT_NE(saved.find("FutureGameComponent"), std::string::npos);
+        EXPECT_NE(saved.find("future_field"), std::string::npos);
+        EXPECT_NE(saved.find("future_root_feature"), std::string::npos);
+        // The live value won; the stale file value did not resurrect.
+        EXPECT_NE(saved.find("position: [9, 9, 9]"), std::string::npos) << saved;
+        EXPECT_EQ(saved.find("position: [1, 2, 3]"), std::string::npos) << saved;
+
+        // And the survivors still parse: a second document sees the unknowns.
+        EditorDocument reloaded(Logging);
+        ASSERT_TRUE(reloaded.LoadFromSceneText(saved));
+        const std::string again = reloaded.ToSceneText();
+        EXPECT_EQ(saved, again) << "save-twice must stay byte-identical";
     }
 } // namespace

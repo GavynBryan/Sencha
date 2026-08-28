@@ -310,7 +310,7 @@ DocumentCookResult CookDocument(const EditorDocument& liveDocument,
         return result;
     }
 
-    const std::string sourceRel = "levels/" + std::string(levelName) + ".level.json";
+    const std::string sourceRel = "levels/" + std::string(levelName) + ".sscene";
     return ExecuteDocumentCook(std::move(*input), levelName, sourceRel,
                                assetsRoot, logging);
 }

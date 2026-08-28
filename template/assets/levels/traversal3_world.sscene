@@ -1,7 +1,11 @@
 {
-  "version": 1,
+  "format_version": 1,
+  "settings": {
+    "default_material": "asset://materials/dev/gray.smat"
+  },
   "entities": [
     {
+      "id": "0a82d3d8720869b4",
       "components": {
         "Transform": {
           "local": {
@@ -23,9 +27,6 @@
             ]
           }
         },
-        "persistent_id": {
-          "id": "0a82d3d8720869b4"
-        },
         "World Dock": {
           "id": "a1384831e0e406c3",
           "zone_a": "ff1c3501bbc3e970",
@@ -39,6 +40,7 @@
       }
     },
     {
+      "id": "0bf8a4bd06e8c492",
       "components": {
         "Transform": {
           "local": {
@@ -60,9 +62,6 @@
             ]
           }
         },
-        "persistent_id": {
-          "id": "0bf8a4bd06e8c492"
-        },
         "World Dock": {
           "id": "2c448213f92a0a19",
           "zone_a": "00dc63f8e9f7969a",
@@ -75,8 +74,5 @@
         }
       }
     }
-  ],
-  "hierarchy": [],
-  "brush_meshes": {},
-  "default_material": "asset://materials/dev/gray.smat"
+  ]
 }

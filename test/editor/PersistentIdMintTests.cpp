@@ -2,12 +2,15 @@
 
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
+#include "scene_source/Json5Parser.h"
+#include "scene_source/Json5Writer.h"
 
 #include <core/identity/Id.h>
 #include <core/logging/LoggingProvider.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
+#include <functional>
 #include <string>
 #include <unordered_set>
 
@@ -35,41 +38,37 @@ protected:
     EditorDocument Document;
 };
 
-void StripPersistentIds(JsonValue& root)
+// Rewrites the saved text through the Json5 layer, modelling a hand-edited or
+// wholesale-copied file. Identity lives at record level in .sscene, so the
+// corruptions target the record's 'id' member.
+[[nodiscard]] std::string MutateEntityIds(
+    std::string_view text, const std::function<void(Json5Value&)>& mutate)
 {
-    JsonValue* entities = root.Find("entities");
-    if (entities == nullptr || !entities->IsArray())
-        return;
-    for (JsonValue& entity : entities->AsArray())
-    {
-        JsonValue* components = entity.Find("components");
-        if (components == nullptr || !components->IsObject())
-            continue;
-        auto& members = components->AsObject();
-        std::erase_if(members, [](const auto& member)
-                      { return member.first == "persistent_id"; });
-    }
+    Json5ParseError error;
+    std::optional<Json5Value> root = Json5Parse(text, &error);
+    EXPECT_TRUE(root.has_value()) << error.Message;
+    if (Json5Value* entities = root->FindMutable("entities"))
+        for (Json5Value& record : entities->Elements)
+            mutate(record);
+    return Json5Write(*root);
 }
 
-// Overwrites every entity's serialized id, modelling content no editor mint
-// produced (a hand-edited file, or one copied wholesale).
-void SetPersistentIds(JsonValue& root, PersistentEntityId id)
+[[nodiscard]] std::string StripPersistentIds(std::string_view text)
 {
-    JsonValue* entities = root.Find("entities");
-    if (entities == nullptr || !entities->IsArray())
-        return;
-    for (JsonValue& entity : entities->AsArray())
+    return MutateEntityIds(text, [](Json5Value& record)
     {
-        JsonValue* components = entity.Find("components");
-        if (components == nullptr || !components->IsObject())
-            continue;
-        JsonValue* persistent = components->Find("persistent_id");
-        if (persistent == nullptr || !persistent->IsObject())
-            continue;
-        auto& fields = persistent->AsObject();
-        std::erase_if(fields, [](const auto& field) { return field.first == "id"; });
-        fields.emplace_back("id", JsonValue(PersistentEntityIdToString(id)));
-    }
+        std::erase_if(record.Members, [](const Json5Value::Member& member)
+                      { return member.first == "id"; });
+    });
+}
+
+[[nodiscard]] std::string SetPersistentIds(std::string_view text, PersistentEntityId id)
+{
+    return MutateEntityIds(text, [&](Json5Value& record)
+    {
+        if (Json5Value* existing = record.FindMutable("id"))
+            *existing = Json5Value(PersistentEntityIdToString(id));
+    });
 }
 
 } // namespace
@@ -139,11 +138,11 @@ TEST_F(PersistentIdMintTest, RoundTripPreservesIdsAndLoadsClean)
     const PersistentEntityId firstId = IdOf(first);
     const PersistentEntityId secondId = IdOf(second);
 
-    const JsonValue saved = Document.ToJson();
+    const std::string saved = Document.ToSceneText();
 
     LoggingProvider logging;
     EditorDocument loaded(logging);
-    ASSERT_TRUE(loaded.LoadFromJson(saved));
+    ASSERT_TRUE(loaded.LoadFromSceneText(saved));
     EXPECT_FALSE(loaded.IsDirty());
 
     std::unordered_set<uint64_t> ids;
@@ -167,12 +166,11 @@ TEST_F(PersistentIdMintTest, FileWithoutIdentityIsRejected)
     (void)scene.CreateBrush(Vec3d{ 0, 0, 0 });
     (void)scene.CreateEntity(Vec3d{ 1, 0, 0 });
 
-    JsonValue saved = Document.ToJson();
-    StripPersistentIds(saved);
+    const std::string saved = StripPersistentIds(Document.ToSceneText());
 
     LoggingProvider logging;
     EditorDocument loaded(logging);
-    EXPECT_FALSE(loaded.LoadFromJson(saved));
+    EXPECT_FALSE(loaded.LoadFromSceneText(saved));
     EXPECT_EQ(loaded.GetScene().GetEntityCount(), 0u)
         << "a rejected load must not leave half a document behind";
 }
@@ -212,12 +210,12 @@ TEST_F(PersistentIdMintTest, ReservedNamespaceIdIsRejected)
     EditorScene& scene = Document.GetScene();
     (void)scene.CreateEntity(Vec3d{ 0, 0, 0 });
 
-    JsonValue saved = Document.ToJson();
-    SetPersistentIds(saved, PersistentEntityId{ PersistentEntityIdRuntimeBit | 0x1234 });
+    const std::string saved = SetPersistentIds(Document.ToSceneText(),
+        PersistentEntityId{ PersistentEntityIdRuntimeBit | 0x1234 });
 
     LoggingProvider logging;
     EditorDocument loaded(logging);
-    EXPECT_FALSE(loaded.LoadFromJson(saved));
+    EXPECT_FALSE(loaded.LoadFromSceneText(saved));
 }
 
 TEST_F(PersistentIdMintTest, DuplicateIdsInOneFileAreRejected)
@@ -228,12 +226,12 @@ TEST_F(PersistentIdMintTest, DuplicateIdsInOneFileAreRejected)
     (void)scene.CreateEntity(Vec3d{ 0, 0, 0 });
     (void)scene.CreateEntity(Vec3d{ 1, 0, 0 });
 
-    JsonValue saved = Document.ToJson();
-    SetPersistentIds(saved, PersistentEntityId{ 0x0badc0de });
+    const std::string saved = SetPersistentIds(Document.ToSceneText(),
+        PersistentEntityId{ 0x0badc0de });
 
     LoggingProvider logging;
     EditorDocument loaded(logging);
-    EXPECT_FALSE(loaded.LoadFromJson(saved));
+    EXPECT_FALSE(loaded.LoadFromSceneText(saved));
 }
 
 TEST_F(PersistentIdMintTest, UnsetIdInAFileIsRejected)
@@ -243,12 +241,12 @@ TEST_F(PersistentIdMintTest, UnsetIdInAFileIsRejected)
     EditorScene& scene = Document.GetScene();
     (void)scene.CreateEntity(Vec3d{ 0, 0, 0 });
 
-    JsonValue saved = Document.ToJson();
-    SetPersistentIds(saved, PersistentEntityId{});
+    const std::string saved = SetPersistentIds(Document.ToSceneText(),
+        PersistentEntityId{});
 
     LoggingProvider logging;
     EditorDocument loaded(logging);
-    EXPECT_FALSE(loaded.LoadFromJson(saved));
+    EXPECT_FALSE(loaded.LoadFromSceneText(saved));
 }
 
 TEST_F(PersistentIdMintTest, BulkCreationAndReloadKeepIdsUnique)
@@ -270,7 +268,7 @@ TEST_F(PersistentIdMintTest, BulkCreationAndReloadKeepIdsUnique)
     LoggingProvider logging;
     EditorDocument loaded(logging);
     loaded.MarkDirty();
-    ASSERT_TRUE(loaded.LoadFromJson(Document.ToJson()));
+    ASSERT_TRUE(loaded.LoadFromSceneText(Document.ToSceneText()));
     EXPECT_FALSE(loaded.IsDirty());
 
     std::unordered_set<uint64_t> reloaded;

@@ -85,7 +85,7 @@ struct GoldenScene
 [[nodiscard]] bool CookScene(const GoldenScene& scene)
 {
     const std::string authored = std::string(SENCHA_GOLDEN_CONTENT_ROOT) + "/assets/"
-        + scene.Map + ".json";
+        + scene.Map + ".sscene";
     const std::string command = scene.EditorCook
         ? std::string("SENCHA_PRESENT_MODE=IMMEDIATE ") + SENCHA_GOLDEN_EDITOR
             + " --project " + SENCHA_GOLDEN_CONTENT_ROOT + "/project.senchaproj"
@@ -206,7 +206,7 @@ void CheckScene(const GoldenScene& scene)
 // hemisphere, the sky gradient, and the display transform.
 TEST(GoldenImage, ShadowProbeSceneIsUnchanged)
 {
-    CheckScene({ .Name = "shadow_probe", .Map = "levels/shadow_probe.level" });
+    CheckScene({ .Name = "shadow_probe", .Map = "levels/shadow_probe" });
 }
 
 // A rest-pose skinned mesh in a cooked level -- the P5 gate, permanent. The
@@ -214,7 +214,7 @@ TEST(GoldenImage, ShadowProbeSceneIsUnchanged)
 // cook, load, retain, extraction, and draw all have to hold for it to appear.
 TEST(GoldenImage, ARestPoseSkinnedMeshDraws)
 {
-    CheckScene({ .Name = "skinned_rest", .Map = "levels/golden_skinned.level",
+    CheckScene({ .Name = "skinned_rest", .Map = "levels/golden_skinned",
                  .EditorCook = true });
 }
 
@@ -227,7 +227,7 @@ TEST(GoldenImage, ARestPoseSkinnedMeshDraws)
 // hold for the upper box to sit rotated a quarter turn.
 TEST(GoldenImage, AClipPosesASkinnedMesh)
 {
-    CheckScene({ .Name = "skinned_pose", .Map = "levels/golden_skinned_pose.level",
+    CheckScene({ .Name = "skinned_pose", .Map = "levels/golden_skinned_pose",
                  .EditorCook = true });
 }
 
@@ -236,5 +236,5 @@ TEST(GoldenImage, AClipPosesASkinnedMesh)
 // stops showing the background through the floor and the comparison fails.
 TEST(GoldenImage, BlendedMaterialStillBlends)
 {
-    CheckScene({ .Name = "transparency", .Map = "levels/golden_transparency.level" });
+    CheckScene({ .Name = "transparency", .Map = "levels/golden_transparency" });
 }

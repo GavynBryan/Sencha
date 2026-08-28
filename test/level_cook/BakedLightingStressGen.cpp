@@ -68,7 +68,7 @@ TEST(BakedLightingStress, Generate)
         doc.GetScene().GetRegistry().Components.AddComponent(entity, light);
     }
 
-    const fs::path levelPath = root / "levels/baked_stress_96.json";
+    const fs::path levelPath = root / "levels/baked_stress_96.sscene";
     fs::create_directories(levelPath.parent_path());
     ASSERT_TRUE(doc.SaveAs(levelPath.generic_string()));
 

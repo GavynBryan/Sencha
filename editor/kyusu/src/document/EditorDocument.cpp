@@ -3,6 +3,8 @@
 #include "brush/BrushMeshSerialization.h"
 #include "EntityNameComponent.h"
 
+#include "scene_source/Json5Convert.h"
+
 #include <core/assets/AssetRegistry.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/json/JsonParser.h>
@@ -22,6 +24,7 @@
 
 #include <fstream>
 #include <sstream>
+#include <unordered_map>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -30,48 +33,90 @@
 
 namespace
 {
-    // Collects every asset:// string anywhere in the JSON, shape-agnostic: a bare
-    // path value or a path nested in an {id, path} ref both surface, and any asset
-    // kind (mesh, material, future types) is found with no per-type knowledge.
-    void CollectAssetRefs(const JsonValue& value, std::vector<std::string>& out)
+    // Collects every asset:// string anywhere in a component subtree,
+    // shape-agnostic: a bare path value or a path nested in an {id, path} ref
+    // both surface, with no per-type knowledge.
+    void CollectAssetRefs5(const Json5Value& value, std::vector<std::string>& out)
     {
         if (value.IsString())
         {
-            const std::string& text = value.AsString();
-            if (text.rfind("asset://", 0) == 0)
-                out.push_back(text);
+            if (value.Text.rfind("asset://", 0) == 0)
+                out.push_back(value.Text);
         }
         else if (value.IsObject())
         {
-            for (const auto& member : value.AsObject())
-                CollectAssetRefs(member.second, out);
+            for (const Json5Value::Member& member : value.Members)
+                CollectAssetRefs5(member.second, out);
         }
         else if (value.IsArray())
         {
-            for (const JsonValue& element : value.AsArray())
-                CollectAssetRefs(element, out);
+            for (const Json5Value& element : value.Elements)
+                CollectAssetRefs5(element, out);
         }
     }
 
-    // Warns about references the catalog can't resolve. Fires when a document is
-    // reopened after a referenced asset was removed (the codec also fails the
-    // field; this is the consolidated, user-facing summary). A guard, not a gate:
-    // it never blocks load or save.
-    void ReportUnresolvedAssetRefs(const JsonValue& scene, const AssetRegistry& catalog,
-                                   Logger& log, std::string_view when)
+    // Comments matched onto the regenerated values by member name, recursively.
+    // Values are entirely the fresh side's; only trivia crosses.
+    void CarryTrivia(Json5Value& fresh, const Json5Value& retained)
     {
-        std::vector<std::string> refs;
-        CollectAssetRefs(scene, refs);
+        fresh.LeadingComments = retained.LeadingComments;
+        fresh.TrailingComments = retained.TrailingComments;
+        if (fresh.IsObject() && retained.IsObject())
+            for (Json5Value::Member& member : fresh.Members)
+                if (const Json5Value* match = retained.Find(member.first))
+                    CarryTrivia(member.second, *match);
+    }
 
-        std::size_t missing = 0;
-        for (const std::string& ref : refs)
-            if (!catalog.Contains(ref))
+    // The retention contract for one entity's components on save. Fresh values
+    // are authoritative for everything a serializer owns; the retained subtree
+    // contributes comments everywhere, unknown components wholesale, and
+    // unknown top-level fields inside known components. A retained member
+    // whose name a serializer DOES own but which is absent from fresh was
+    // removed or omitted by the serializer, and resurrecting its stale value
+    // would hand the document a second authority -- it is dropped.
+    void MergeRetainedComponents(Json5Value& fresh, const Json5Value& retained)
+    {
+        if (!retained.IsObject())
+            return;
+
+        for (Json5Value::Member& member : fresh.Members)
+        {
+            const Json5Value* match = retained.Find(member.first);
+            if (match == nullptr)
+                continue;
+            CarryTrivia(member.second, *match);
+
+            // Unknown top-level fields of a known component ride along.
+            const IComponentSerializer* serializer =
+                EditorSceneSerializers().FindByJsonKey(member.first);
+            if (serializer == nullptr || !member.second.IsObject()
+                || !match->IsObject())
             {
-                log.Warn("asset reference '{}' is unresolved ({})", ref, when);
-                ++missing;
+                continue;
             }
-        if (missing > 0)
-            log.Warn("{}: {} unresolved asset reference(s)", when, missing);
+            const std::span<const RuntimeField> fields = serializer->RuntimeFields();
+            for (const Json5Value::Member& retainedField : match->Members)
+            {
+                if (member.second.Find(retainedField.first) != nullptr)
+                    continue;
+                const bool known = std::any_of(fields.begin(), fields.end(),
+                    [&](const RuntimeField& field)
+                    { return field.Name == retainedField.first; });
+                if (!known)
+                    member.second.Members.push_back(retainedField);
+            }
+        }
+
+        for (const Json5Value::Member& retainedMember : retained.Members)
+        {
+            if (fresh.Find(retainedMember.first) != nullptr)
+                continue;
+            if (retainedMember.first == "persistent_id")
+                continue; // superseded by record-level identity
+            if (EditorSceneSerializers().FindByJsonKey(retainedMember.first) != nullptr)
+                continue; // known component, removed from the entity
+            fresh.Members.push_back(retainedMember);
+        }
     }
 } // namespace
 
@@ -148,105 +193,189 @@ bool EditorDocument::IsDirty() const
     return Dirty;
 }
 
-JsonValue EditorDocument::ToJson() const
+SceneSourceDocument EditorDocument::BuildSceneSource() const
 {
-    // Assets may be null (brush-only); the codec only touches it on asset fields,
-    // of which a brush-only scene has none.
-    SceneSerializationContext context(Logging, Assets);
-    JsonValue root = SaveSceneJson(Registry_, EditorSceneSerializers(), context);
-    if (root.IsObject())
-    {
-        root.AsObject().emplace_back("brush_meshes", SerializeBrushMeshes(Scene.GetBrushMeshStore()));
-        if (DefaultMaterial.IsValid())
-            root.AsObject().emplace_back("default_material", JsonValue(DefaultMaterial.Path));
+    SceneSourceDocument out;
+    out.Instances = Retained_.Instances;
+    out.UnknownRoot = Retained_.UnknownRoot;
+    out.LeadingComments = Retained_.LeadingComments;
+    out.TrailingComments = Retained_.TrailingComments;
+    out.EndComments = Retained_.EndComments;
 
-        // Per-entity view flags, keyed by persistent id so they survive the
-        // positional entity array being reordered. Only set flags are written;
-        // an absent id is visible and unlocked, which is also every entity's
-        // starting state.
-        JsonValue::Array hidden;
-        JsonValue::Array locked;
-        for (EntityId entity : Scene.GetAllEntities())
+    // Settings: retained members carried, the ones this build owns refreshed.
+    out.Settings = Retained_.Settings.IsObject() ? Retained_.Settings
+                                                 : Json5Value::MakeObject();
+    std::erase_if(out.Settings.Members,
+        [](const Json5Value::Member& member)
+        { return member.first == "default_material"; });
+    if (DefaultMaterial.IsValid())
+        out.Settings.Members.emplace_back("default_material",
+                                          Json5Value(DefaultMaterial.Path));
+
+    if (Scene.GetBrushMeshStore().Count() > 0)
+        out.BrushMeshes =
+            Json5FromJson(SerializeBrushMeshes(Scene.GetBrushMeshStore()));
+
+    std::unordered_map<std::uint64_t, const SceneSourceEntity*> retainedById;
+    for (const SceneSourceEntity& entity : Retained_.Entities)
+        retainedById.emplace(entity.Id.Value, &entity);
+
+    SceneSerializationContext context(Logging, Assets);
+    const World& world = Registry_.Components;
+    for (EntityId entity : Scene.GetAllEntities())
+    {
+        const auto* id = world.TryGet<PersistentIdComponent>(entity);
+        if (id == nullptr || !id->Id.IsValid())
+            continue; // untracked interlopers have no place in the file
+
+        SceneSourceEntity record;
+        record.Id = id->Id;
+        if (const EntityId parent = Scene.GetParent(entity); parent.IsValid())
+            if (const auto* parentId = world.TryGet<PersistentIdComponent>(parent))
+                record.Parent = parentId->Id;
+        record.Hidden = !Scene.IsEntityVisible(entity);
+        record.Locked = Scene.IsEntityLocked(entity);
+
+        // Fresh values from live state, one member per present component.
+        // Identity lives at record level, so its component is not serialized.
+        Json5Value fresh = Json5Value::MakeObject();
+        for (const auto& serializer : EditorSceneSerializers().Entries())
         {
-            const auto* id = Registry_.Components.TryGet<PersistentIdComponent>(entity);
-            if (id == nullptr || !id->Id.IsValid())
+            if (serializer->JsonKey() == "persistent_id")
                 continue;
-            if (!Scene.IsEntityVisible(entity))
-                hidden.push_back(JsonValue(PersistentEntityIdToString(id->Id)));
-            if (Scene.IsEntityLocked(entity))
-                locked.push_back(JsonValue(PersistentEntityIdToString(id->Id)));
+            if (!serializer->HasComponent(entity, Registry_))
+                continue;
+            JsonWriteArchive archive;
+            if (!serializer->Save(archive, entity, Registry_, context) || !archive.Ok())
+                continue;
+            JsonValue component = archive.TakeValue();
+            if (!component.IsNull())
+                fresh.Members.emplace_back(std::string(serializer->JsonKey()),
+                                           Json5FromJson(component));
         }
-        if (!hidden.empty())
-            root.AsObject().emplace_back("hidden", JsonValue(std::move(hidden)));
-        if (!locked.empty())
-            root.AsObject().emplace_back("locked", JsonValue(std::move(locked)));
+
+        if (const auto retained = retainedById.find(id->Id.Value);
+            retained != retainedById.end())
+        {
+            MergeRetainedComponents(fresh, retained->second->Components);
+            record.LeadingComments = retained->second->LeadingComments;
+        }
+        record.Components = std::move(fresh);
+        out.Entities.push_back(std::move(record));
     }
-    return root;
+    return out;
 }
 
-bool EditorDocument::LoadFromJson(const JsonValue& root)
+std::string EditorDocument::ToSceneText() const
+{
+    return WriteSceneSource(BuildSceneSource());
+}
+
+bool EditorDocument::LoadFromSceneText(std::string_view text, std::string* error)
 {
     // Destructive on entry and on failure: a rejected file leaves this document
     // empty, not as it was. Callers that must survive a bad file load into a
     // fresh document and swap only on success (WorldDocument::Load, LoadZone).
     Scene.Clear();
+    Retained_ = SceneSourceDocument{};
 
-    SceneLoadError loadError;
-    SceneSerializationContext context(Logging, Assets);
-    if (!LoadSceneJson(root, Registry_, EditorSceneSerializers(), context, &loadError))
+    std::string parseError;
+    std::optional<SceneSourceDocument> parsed = ParseSceneSource(text, &parseError);
+    if (!parsed.has_value())
     {
+        Logging.GetLogger<EditorDocument>().Error("scene source: {}", parseError);
+        if (error != nullptr)
+            *error = std::move(parseError);
         Scene.SyncFromRegistry();
         return false;
     }
 
-    if (const JsonValue* meshes = root.Find("brush_meshes"))
-        DeserializeBrushMeshes(*meshes, Scene.GetBrushMeshStore());
-
-    if (const JsonValue* material = root.Find("default_material"); material && material->IsString())
-        DefaultMaterial = AssetRef{ AssetType::Material, material->AsString() };
-
-    if (Catalog != nullptr)
-        ReportUnresolvedAssetRefs(root, *Catalog, Logging.GetLogger<EditorDocument>(), "load");
-
-    Scene.SyncFromRegistry();
-
-    // Reapply persisted view flags through the identity index the sync above
-    // just populated. A stale id (its entity edited away externally) is simply
-    // skipped; view flags are conveniences, never load gates.
-    const auto applyFlags = [&](const char* key, auto&& apply)
+    const auto fail = [&](std::string message)
     {
-        const JsonValue* list = root.Find(key);
-        if (list == nullptr || !list->IsArray())
-            return;
-        const auto* index = Registry_.Components.TryGetResource<PersistentEntityIndex>();
-        if (index == nullptr)
-            return;
-        for (const JsonValue& value : list->AsArray())
-        {
-            if (!value.IsString())
-                continue;
-            if (const auto id = PersistentEntityIdFromString(value.AsString()))
-            {
-                const EntityId entity = index->TryResolve(*id);
-                if (entity.IsValid())
-                    apply(entity);
-            }
-        }
-    };
-    applyFlags("hidden", [&](EntityId entity) { Scene.SetEntityVisible(entity, false); });
-    applyFlags("locked", [&](EntityId entity) { Scene.SetEntityLocked(entity, true); });
-
-    // Identity is authored, so a file that does not already carry it is rejected
-    // rather than repaired: minting here would rewrite the document's identities
-    // without the user asking and let a cook bake ids the source never recorded.
-    if (std::string identityError; !Scene.ValidateIdentities(&identityError))
-    {
-        Logging.GetLogger<EditorDocument>().Error(
-            "scene identity is invalid: {}", identityError);
+        Logging.GetLogger<EditorDocument>().Error("scene source: {}", message);
+        if (error != nullptr)
+            *error = std::move(message);
         Scene.Clear();
         Scene.SyncFromRegistry();
         return false;
+    };
+
+    SceneSerializationContext context(Logging, Assets);
+    for (const SceneSourceEntity& record : parsed->Entities)
+    {
+        const EntityId entity = Registry_.Components.CreateEntity();
+        // Identity first: the component trait registers it in the index the
+        // parent pass below resolves against.
+        Registry_.Components.AddComponent(entity, PersistentIdComponent{ record.Id });
+
+        for (const Json5Value::Member& member : record.Components.Members)
+        {
+            if (member.first == "persistent_id")
+                continue; // the record id is authoritative
+            IComponentSerializer* serializer =
+                EditorSceneSerializers().FindByJsonKey(member.first);
+            if (serializer == nullptr)
+                continue; // unknown component: retained, not lost
+            serializer->RegisterStorage(Registry_);
+            const JsonValue component = Json5ToJson(member.second);
+            JsonReadArchive archive(component);
+            if (!serializer->Load(archive, entity, Registry_, context))
+                return fail("entity " + PersistentEntityIdToString(record.Id)
+                    + ": component '" + member.first + "' failed to load");
+        }
+
+        Scene.TrackEntity(entity);
+        Scene.SetEntityVisible(entity, !record.Hidden);
+        Scene.SetEntityLocked(entity, record.Locked);
     }
+
+    // Parents second, once every record's identity is resolvable. A parent id
+    // naming an instance stays unwired here: the instance's entities are a
+    // derived projection, not part of the source load.
+    if (const auto* index = Registry_.Components.TryGetResource<PersistentEntityIndex>())
+        for (const SceneSourceEntity& record : parsed->Entities)
+        {
+            if (!record.Parent.IsValid())
+                continue;
+            const EntityId child = index->TryResolve(record.Id);
+            const EntityId parent = index->TryResolve(record.Parent);
+            if (child.IsValid() && parent.IsValid())
+                (void)Scene.SetParent(child, parent);
+        }
+
+    if (parsed->BrushMeshes.IsObject() && !parsed->BrushMeshes.Members.empty())
+        DeserializeBrushMeshes(Json5ToJson(parsed->BrushMeshes),
+                               Scene.GetBrushMeshStore());
+
+    if (const Json5Value* material = parsed->Settings.Find("default_material");
+        material != nullptr && material->IsString())
+    {
+        DefaultMaterial = AssetRef{ AssetType::Material, material->Text };
+    }
+
+    if (Catalog != nullptr)
+    {
+        std::vector<std::string> refs;
+        for (const SceneSourceEntity& record : parsed->Entities)
+            CollectAssetRefs5(record.Components, refs);
+        std::size_t missing = 0;
+        Logger& log = Logging.GetLogger<EditorDocument>();
+        for (const std::string& ref : refs)
+            if (!Catalog->Contains(ref))
+            {
+                log.Warn("asset reference '{}' is unresolved (load)", ref);
+                ++missing;
+            }
+        if (missing > 0)
+            log.Warn("load: {} unresolved asset reference(s)", missing);
+    }
+
+    // Identity is authored, so a file that does not already carry it is rejected
+    // rather than repaired (the parse enforces this; the check is the backstop).
+    if (std::string identityError; !Scene.ValidateIdentities(&identityError))
+        return fail("scene identity is invalid: " + identityError);
+
+    Retained_ = std::move(*parsed);
 
     // The document was replaced wholesale, so whatever divergence the previous
     // contents had from disk went with them. Written directly because OnEdited
@@ -410,10 +539,24 @@ bool EditorDocument::Save()
     if (FilePath.empty())
         return false;
 
-    const JsonValue json = ToJson();
+    const SceneSourceDocument source = BuildSceneSource();
     if (Catalog != nullptr)
-        ReportUnresolvedAssetRefs(json, *Catalog, Logging.GetLogger<EditorDocument>(), "save");
-    const std::string text = JsonStringify(json, /*pretty*/ true);
+    {
+        std::vector<std::string> refs;
+        for (const SceneSourceEntity& record : source.Entities)
+            CollectAssetRefs5(record.Components, refs);
+        std::size_t missing = 0;
+        Logger& log = Logging.GetLogger<EditorDocument>();
+        for (const std::string& ref : refs)
+            if (!Catalog->Contains(ref))
+            {
+                log.Warn("asset reference '{}' is unresolved (save)", ref);
+                ++missing;
+            }
+        if (missing > 0)
+            log.Warn("save: {} unresolved asset reference(s)", missing);
+    }
+    const std::string text = WriteSceneSource(source);
 
     std::ofstream file(FilePath, std::ios::binary | std::ios::trunc);
     if (!file.is_open())
@@ -445,12 +588,7 @@ bool EditorDocument::Load(std::string_view path)
     std::ostringstream buffer;
     buffer << file.rdbuf();
 
-    JsonParseError parseError;
-    const std::optional<JsonValue> root = JsonParse(buffer.str(), &parseError);
-    if (!root.has_value())
-        return false;
-
-    if (!LoadFromJson(*root))
+    if (!LoadFromSceneText(buffer.str()))
         return false;
 
     FilePath.assign(path);
@@ -460,6 +598,7 @@ bool EditorDocument::Load(std::string_view path)
 void EditorDocument::New()
 {
     Scene.Clear();
+    Retained_ = SceneSourceDocument{};
     FilePath.clear();
     Dirty = false;
 }

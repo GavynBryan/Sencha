@@ -60,7 +60,7 @@ namespace
             doc.GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
             doc.GetScene().CreateBrush(Vec3d{ 100, 0, 0 });
 
-            const fs::path levelPath = Root / "levels/test.json";
+            const fs::path levelPath = Root / "levels/test.sscene";
             fs::create_directories(levelPath.parent_path());
             EXPECT_TRUE(doc.SaveAs(levelPath.generic_string()));
             return levelPath;
@@ -185,7 +185,7 @@ TEST_F(LevelCookTest, ImmutableCookInputRunsThroughAsyncTaskHandoff)
             DocumentCookInput value = std::move(inputBox->value());
             inputBox->reset();
             return ExecuteDocumentCook(std::move(value), "async",
-                                       "levels/async.level.json", Root,
+                                       "levels/async.sscene", Root,
                                        workerLogging);
         },
         [&committed](DocumentCookResult result)

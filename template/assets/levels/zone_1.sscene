@@ -1,12 +1,16 @@
 {
-  "version": 1,
+  "format_version": 1,
+  "settings": {
+    "default_material": "asset://materials/dev/gray.smat"
+  },
   "entities": [
     {
+      "id": "781ef037f4d2e0b6",
       "components": {
         "Transform": {
           "local": {
             "position": [
-              16,
+              0,
               -0.25,
               0
             ],
@@ -23,145 +27,12 @@
             ]
           }
         },
-        "persistent_id": {
-          "id": "2feaeaa63f327931"
-        },
         "brush": {
           "id": 1
         }
       }
-    },
-    {
-      "components": {
-        "Transform": {
-          "local": {
-            "position": [
-              0.0,
-              3.0,
-              0.0
-            ],
-            "rotation": [
-              0,
-              0,
-              0,
-              1
-            ],
-            "scale": [
-              1,
-              1,
-              1
-            ]
-          }
-        },
-        "persistent_id": {
-          "id": "051ade0000000001"
-        },
-        "PointLight": {
-          "color": [
-            1.0,
-            0.9,
-            0.8
-          ],
-          "intensity": 30.0,
-          "range": 14.0,
-          "enabled": true,
-          "cast_shadows": true,
-          "shadow_resolution": "medium",
-          "shadow_update": "every_frame",
-          "shadow_softness": 1.0,
-          "shadow_bias_scale": 1.0,
-          "bake_contribution": "none"
-        }
-      }
-    },
-    {
-      "components": {
-        "Transform": {
-          "local": {
-            "position": [
-              6.0,
-              3.0,
-              4.0
-            ],
-            "rotation": [
-              0,
-              0,
-              0,
-              1
-            ],
-            "scale": [
-              1,
-              1,
-              1
-            ]
-          }
-        },
-        "persistent_id": {
-          "id": "051ade0000000002"
-        },
-        "PointLight": {
-          "color": [
-            0.6,
-            0.8,
-            1.0
-          ],
-          "intensity": 30.0,
-          "range": 14.0,
-          "enabled": true,
-          "cast_shadows": true,
-          "shadow_resolution": "medium",
-          "shadow_update": "every_frame",
-          "shadow_softness": 1.0,
-          "shadow_bias_scale": 1.0,
-          "bake_contribution": "none"
-        }
-      }
-    },
-    {
-      "components": {
-        "Transform": {
-          "local": {
-            "position": [
-              -6.0,
-              3.0,
-              -4.0
-            ],
-            "rotation": [
-              0,
-              0,
-              0,
-              1
-            ],
-            "scale": [
-              1,
-              1,
-              1
-            ]
-          }
-        },
-        "persistent_id": {
-          "id": "051ade0000000003"
-        },
-        "PointLight": {
-          "color": [
-            1.0,
-            0.7,
-            0.5
-          ],
-          "intensity": 30.0,
-          "range": 14.0,
-          "enabled": true,
-          "cast_shadows": true,
-          "shadow_resolution": "medium",
-          "shadow_update": "every_frame",
-          "shadow_softness": 1.0,
-          "shadow_bias_scale": 1.0,
-          "bake_contribution": "none"
-        }
-      }
     }
   ],
-  "hierarchy": [],
   "brush_meshes": {
     "1": {
       "vertices": [
@@ -389,6 +260,5 @@
         }
       ]
     }
-  },
-  "default_material": "asset://materials/dev/glass.smat"
+  }
 }

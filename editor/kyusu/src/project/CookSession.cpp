@@ -223,7 +223,7 @@ bool CookSession::Start(const CookProfile& profile,
     State->LastError.clear();
     State->Control = options.Control;
 
-    const std::string sourceRel = "levels/" + levelName + ".level.json";
+    const std::string sourceRel = "levels/" + levelName + ".sscene";
     auto inputBox = std::make_shared<std::optional<DocumentCookInput>>(
         std::move(*input));
     const std::shared_ptr<SharedState> state = State;

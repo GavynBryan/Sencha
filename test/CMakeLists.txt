@@ -321,7 +321,7 @@ if(TARGET runtime_tests AND TARGET app AND TARGET template_game
     set_tests_properties(CookTemplateHostMap PROPERTIES
         FIXTURES_SETUP ${SENCHA_HOST_MAP_FIXTURE}
         ENVIRONMENT
-            "SENCHA_COOK_LEVEL=${CMAKE_SOURCE_DIR}/template/assets/levels/room_2.level.json;SENCHA_COOK_ROOT=${CMAKE_SOURCE_DIR}/template/assets")
+            "SENCHA_COOK_LEVEL=${CMAKE_SOURCE_DIR}/template/assets/levels/room_2.sscene;SENCHA_COOK_ROOT=${CMAKE_SOURCE_DIR}/template/assets")
     # Tells the cases apart: with the fixture wired a missing scene is a
     # failure, and without it they have no way to get one and skip instead.
     target_compile_definitions(runtime_tests PRIVATE SENCHA_TEST_HOST_MAP_COOKED=1)

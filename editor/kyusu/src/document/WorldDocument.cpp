@@ -183,7 +183,7 @@ bool WorldDocument::SaveWorld()
     if (Manifest_.WorldSceneRef.empty())
     {
         const std::string base = SanitizeZoneFileName(fs::path(WorldPath_).stem().string());
-        std::string candidate = "levels/" + base + "_world.level.json";
+        std::string candidate = "levels/" + base + "_world.sscene";
         for (int suffix = 2;; ++suffix)
         {
             const auto taken = std::any_of(Manifest_.Zones.begin(), Manifest_.Zones.end(),
@@ -191,7 +191,7 @@ bool WorldDocument::SaveWorld()
                                            { return zone.SceneRef == candidate; });
             if (!taken)
                 break;
-            candidate = "levels/" + base + "_world_" + std::to_string(suffix) + ".level.json";
+            candidate = "levels/" + base + "_world_" + std::to_string(suffix) + ".sscene";
         }
         Manifest_.WorldSceneRef = std::move(candidate);
         MarkManifestEdited();
@@ -1011,7 +1011,7 @@ void WorldDocument::AssignSceneRefsForNewZones()
             continue;
 
         const std::string base = SanitizeZoneFileName(header.Name);
-        std::string candidate = "levels/" + base + ".level.json";
+        std::string candidate = "levels/" + base + ".sscene";
         for (int suffix = 2;; ++suffix)
         {
             const auto taken = candidate == Manifest_.WorldSceneRef
@@ -1020,7 +1020,7 @@ void WorldDocument::AssignSceneRefsForNewZones()
                                { return &other != &header && other.SceneRef == candidate; });
             if (!taken)
                 break;
-            candidate = "levels/" + base + "_" + std::to_string(suffix) + ".level.json";
+            candidate = "levels/" + base + "_" + std::to_string(suffix) + ".sscene";
         }
         header.SceneRef = std::move(candidate);
         MarkManifestEdited();

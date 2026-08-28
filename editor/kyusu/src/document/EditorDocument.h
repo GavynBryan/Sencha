@@ -3,6 +3,8 @@
 #include "EntitySnapshot.h"
 #include "EditorScene.h"
 
+#include "scene_source/SceneSourceDocument.h"
+
 #include <core/assets/AssetRef.h>
 #include <core/json/JsonValue.h>
 #include <world/registry/Registry.h>
@@ -52,12 +54,14 @@ public:
     bool Load(std::string_view path);
     void New();
 
-    // In-memory serialization (scene + brush meshes + default material). Save and
-    // Load are the file-backed wrappers; the live-document cook snapshots the
-    // editor's current state through these without writing the .level file, so an
-    // unsaved document still cooks.
-    [[nodiscard]] JsonValue ToJson() const;
-    bool LoadFromJson(const JsonValue& root);
+    // In-memory serialization to and from .sscene text. Save and Load are the
+    // file-backed wrappers. Known component values always come from live
+    // document state; everything this build does not know -- unknown
+    // components, unknown fields, comments, instance records -- is carried
+    // through the retained source, so a round trip loses nothing it did not
+    // deliberately change.
+    [[nodiscard]] std::string ToSceneText() const;
+    bool LoadFromSceneText(std::string_view text, std::string* error = nullptr);
 
     // Captures an entity's full persistent state (every registered component via
     // the serializer registry, plus the brush sidecar mesh and view flags) so a
@@ -100,10 +104,19 @@ public:
     void SetDefaultMaterial(AssetRef material);
 
 private:
+    // Builds the document's current source form: live values merged over the
+    // retained source's trivia and unknowns. ToSceneText renders it; Save also
+    // scans it for unresolved asset references before writing.
+    [[nodiscard]] SceneSourceDocument BuildSceneSource() const;
+
     std::string FilePath;
     bool Dirty = false;
     Registry Registry_;
     EditorScene Scene;
+    // What the file said that the live registry does not model: unknown
+    // components and fields, comments, instance records, root members from a
+    // newer build. Loaded with the document, consulted on every save.
+    SceneSourceDocument Retained_;
     AssetRef DefaultMaterial{ AssetType::Material, "asset://materials/dev/gray.smat" };
 
     // Always present (constructor-injected). The asset system and catalog are

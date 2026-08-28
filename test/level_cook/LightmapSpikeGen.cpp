@@ -148,7 +148,7 @@ TEST(LightmapSpike, Generate)
         doc.GetScene().GetRegistry().Components.AddComponent(entity, light);
     }
 
-    const fs::path levelPath = root / "levels/lightmap_spike.json";
+    const fs::path levelPath = root / "levels/lightmap_spike.sscene";
     fs::create_directories(levelPath.parent_path());
     ASSERT_TRUE(doc.SaveAs(levelPath.generic_string()));
 
@@ -162,7 +162,7 @@ TEST(LightmapSpike, Generate)
     // Coarse variant for the density side-by-side, cooked as its own level.
     EditorDocument coarseDoc(logging);
     ASSERT_TRUE(coarseDoc.Load(levelPath.generic_string()));
-    const fs::path coarsePath = root / "levels/lightmap_spike_coarse.json";
+    const fs::path coarsePath = root / "levels/lightmap_spike_coarse.sscene";
     ASSERT_TRUE(coarseDoc.SaveAs(coarsePath.generic_string()));
     LightingCookParams coarse{};
     coarse.LuxelSize = 0.5f;

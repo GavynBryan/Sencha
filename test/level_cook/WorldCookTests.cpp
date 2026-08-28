@@ -3,6 +3,8 @@
 #include "document/DocumentCook.h"
 #include "document/DocumentSerialization.h"
 #include "document/WorldCook.h"
+#include "scene_source/Json5Parser.h"
+#include "scene_source/Json5Writer.h"
 #include "document/WorldDocument.h"
 #include "document/commands/MoveEntitiesToZoneCommand.h"
 
@@ -68,33 +70,26 @@ protected:
         return *manifest;
     }
 
-    // Rewrites a saved zone file through a JSON edit, standing in for content
-    // the editor cannot author: a file that predates persistent identity, or one
-    // whose ids were written by hand.
+    // Rewrites a saved zone file through the scene-source layer, standing in
+    // for content the editor cannot author: a file that predates persistent
+    // identity, or one whose ids were written by hand.
     static void EditSavedScene(const fs::path& path,
-                               const std::function<void(JsonValue&)>& edit)
+                               const std::function<void(Json5Value&)>& edit)
     {
-        auto json = JsonParse(ReadFile(path));
-        ASSERT_TRUE(json.has_value()) << path.generic_string();
-        edit(*json);
-        std::ofstream(path, std::ios::binary | std::ios::trunc)
-            << JsonStringify(*json, true);
+        Json5ParseError error;
+        auto root = Json5Parse(ReadFile(path), &error);
+        ASSERT_TRUE(root.has_value()) << path.generic_string() << ": " << error.Message;
+        edit(*root);
+        std::ofstream(path, std::ios::binary | std::ios::trunc) << Json5Write(*root);
     }
 
-    static void StripPersistentIds(JsonValue& root)
+    static void StripPersistentIds(Json5Value& root)
     {
-        JsonValue* entities = root.Find("entities");
-        if (entities == nullptr || !entities->IsArray())
-            return;
-        for (JsonValue& entity : entities->AsArray())
-        {
-            JsonValue* components = entity.Find("components");
-            if (components == nullptr || !components->IsObject())
-                continue;
-            auto& members = components->AsObject();
-            std::erase_if(members, [](const auto& member)
-                          { return member.first == "persistent_id"; });
-        }
+        // Identity lives at record level in .sscene.
+        if (Json5Value* entities = root.FindMutable("entities"))
+            for (Json5Value& record : entities->Elements)
+                std::erase_if(record.Members, [](const Json5Value::Member& member)
+                              { return member.first == "id"; });
     }
 
     LoggingProvider Logging;   // sink-less: silent
@@ -313,7 +308,7 @@ TEST_F(WorldCookTest, CooksWorldSceneBesideZones)
     ASSERT_TRUE(cooked.Success) << cooked.Error;
 
     const WorldPartitionManifest manifest = ParseCookedManifest(cooked.CookedManifestPath);
-    EXPECT_EQ(manifest.WorldSceneRef, "levels/test_world.level.json");
+    EXPECT_EQ(manifest.WorldSceneRef, "levels/test_world.sscene");
     ASSERT_FALSE(manifest.CookedWorldSceneRef.empty());
     ASSERT_FALSE(manifest.CookedWorldCollisionRef.empty());
     EXPECT_NE(manifest.CookedWorldContentHash, 0u);

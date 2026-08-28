@@ -51,7 +51,7 @@ namespace
     // the cook that produces the runtime scene has an authored source: a level
     // cooked once on one machine and never committed reads as passing coverage
     // everywhere it was never cooked.
-    constexpr std::string_view kHostMap = "levels/room_2.level";
+    constexpr std::string_view kHostMap = "levels/room_2";
 
     // Where the cook lands it. Derived from the map name rather than written
     // out again, so the two cannot drift apart.

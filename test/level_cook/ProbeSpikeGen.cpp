@@ -92,7 +92,7 @@ TEST(ProbeSpike, Generate)
     if (!fs::exists(materialPath))
         std::ofstream(materialPath, std::ios::trunc) << "{}";
 
-    const fs::path levelPath = root / "levels/probe_spike.json";
+    const fs::path levelPath = root / "levels/probe_spike.sscene";
     fs::create_directories(levelPath.parent_path());
     ASSERT_TRUE(doc.SaveAs(levelPath.generic_string()));
 

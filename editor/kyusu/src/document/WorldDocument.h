@@ -40,7 +40,7 @@ struct LegacyTransitionMigrationReport
 
 // The container above EditorDocument: the authored partition manifest plus the set
 // of open zone documents. Exactly one of two modes at a time:
-//   Legacy: no manifest; one anonymous zone document (a bare .level.json). Every
+//   Legacy: no manifest; one anonymous zone document (a bare .sscene). Every
 //           existing single-level behavior routes through this mode unchanged.
 //   World:  manifest-backed (.sworld); zones open and close individually.
 // Constructed in legacy mode; LoadWorld and NewWorld switch to world mode.

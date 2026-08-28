@@ -21,7 +21,7 @@
 namespace
 {
 constexpr SDL_DialogFileFilter kDocumentFileFilters[] = {
-    { "Sencha Level", "json" },
+    { "Sencha Scene", "sscene" },
     { "Sencha World", "sworld" },
     { "All files", "*" },
 };

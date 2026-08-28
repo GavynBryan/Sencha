@@ -1,7 +1,11 @@
 {
-  "version": 1,
+  "format_version": 1,
+  "settings": {
+    "default_material": "asset://materials/dev/gray.smat"
+  },
   "entities": [
     {
+      "id": "12203122921dc9ce",
       "components": {
         "Transform": {
           "local": {
@@ -23,16 +27,12 @@
             ]
           }
         },
-        "persistent_id": {
-          "id": "12203122921dc9ce"
-        },
         "brush": {
           "id": 1
         }
       }
     }
   ],
-  "hierarchy": [],
   "brush_meshes": {
     "1": {
       "vertices": [
@@ -260,6 +260,5 @@
         }
       ]
     }
-  },
-  "default_material": "asset://materials/dev/gray.smat"
+  }
 }
