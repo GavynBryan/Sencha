@@ -320,6 +320,12 @@ void EditorDocument::HarvestInstanceOverrides()
         std::vector<std::pair<SceneElementPath, std::vector<std::string>>> Removed;
         std::vector<SceneAddedEntity> AddedEntities;
         std::vector<SceneElementPath> Suppressed;
+        // Seen distinguishes "the projection produced this placement's root"
+        // from "this record was never projected at all" -- a freshly placed
+        // record, or one whose source failed to resolve. The harvest can only
+        // speak about what the projection produced; a record it never saw is
+        // not its to judge.
+        bool RootSeen = false;
         bool RootAlive = false;
     };
     std::unordered_map<std::uint64_t, RecordHarvest> byInstance;
@@ -338,6 +344,7 @@ void EditorDocument::HarvestInstanceOverrides()
 
         if (element.Root)
         {
+            harvest->second.RootSeen = true;
             harvest->second.RootAlive = alive;
             continue;
         }
@@ -486,6 +493,8 @@ void EditorDocument::HarvestInstanceOverrides()
         const auto harvest = byInstance.find(record.Id.Value);
         if (harvest == byInstance.end())
             return false;
+        if (!harvest->second.RootSeen)
+            return false; // never projected: nothing to fold, nothing to judge
         if (!harvest->second.RootAlive)
             return true; // the placement itself was deleted
 
@@ -555,8 +564,9 @@ SceneInstanceId EditorDocument::PlaceSceneInstance(std::string source,
         return SceneInstanceId{};
     }
 
+    const SceneInstanceId id{ Scene.MintPersistentId().Value };
     SceneInstanceRecord record;
-    record.Id = SceneInstanceId{ Scene.MintPersistentId().Value };
+    record.Id = id;
     record.Parent = parent;
     record.Source = std::move(source);
     record.Placement = placement;
@@ -565,7 +575,16 @@ SceneInstanceId EditorDocument::PlaceSceneInstance(std::string source,
     // Mints an id for every path the source contributes and re-projects; also
     // the authoring act that marks the document dirty.
     MintMissingInstanceIds();
-    return Retained_.Instances.back().Id;
+
+    // By id, never by position: the mint's rebuild harvests, and the record's
+    // survival is the placement's success.
+    if (FindSceneInstance(id) == nullptr)
+    {
+        if (error != nullptr)
+            *error = "the placement did not survive projection";
+        return SceneInstanceId{};
+    }
+    return id;
 }
 
 const SceneInstanceRecord* EditorDocument::FindSceneInstance(SceneInstanceId id) const

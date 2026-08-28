@@ -442,3 +442,58 @@ namespace
             }
     }
 } // namespace
+
+#include "document/commands/DeleteEntityCommand.h"
+
+namespace
+{
+    TEST_F(SceneInstanceCommandTest, PlaceDeletePlaceAgainDoesNotCrash)
+    {
+        // A second source, so the second drag is a different scene.
+        {
+            EditorDocument lamp(Logging);
+            const EntityId bulb = lamp.GetScene().CreateEntity(Vec3d{ 0, 1, 0 });
+            PointLightComponent light{};
+            light.Intensity = 2.0f;
+            lamp.GetScene().GetRegistry().Components.AddComponent(bulb, light);
+            ASSERT_TRUE(lamp.SaveAs((Root / "props/lamp.sscene").generic_string()));
+        }
+
+        EditorDocument host(Logging);
+        host.SetContentRoots({ Root });
+
+        auto place = std::make_unique<PlaceSceneInstanceCommand>(
+            "asset://props/door.sscene", Transform3f::Identity(), host, Selection);
+        place->Execute();
+        ASSERT_TRUE(place->Placed());
+
+        // Delete the placement the way the hierarchy panel does: the selected
+        // root expands to its subtree.
+        const SelectableRef primary = Selection.GetPrimarySelection();
+        ASSERT_TRUE(primary.IsValid());
+        const EntityId root = primary.Entity;
+        auto erase = MakeDeleteEntitiesCommand(
+            std::span<const EntityId>(&root, 1), host.GetScene(), host, Selection);
+        erase->Execute();
+        EXPECT_EQ(host.GetScene().GetEntityCount(), 0u);
+
+        // The second drag.
+        auto placeAgain = std::make_unique<PlaceSceneInstanceCommand>(
+            "asset://props/lamp.sscene", Transform3f::Identity(), host, Selection);
+        placeAgain->Execute();
+        ASSERT_TRUE(placeAgain->Placed());
+        EXPECT_EQ(host.GetScene().GetEntityCount(), 2u); // lamp root + bulb
+
+        // And a same-source double placement, the other half of the report.
+        auto placeDoor = std::make_unique<PlaceSceneInstanceCommand>(
+            "asset://props/door.sscene", Transform3f::Identity(), host, Selection);
+        placeDoor->Execute();
+        ASSERT_TRUE(placeDoor->Placed());
+        EXPECT_EQ(host.GetScene().GetEntityCount(), 5u);
+        auto placeDoorTwice = std::make_unique<PlaceSceneInstanceCommand>(
+            "asset://props/door.sscene", Transform3f::Identity(), host, Selection);
+        placeDoorTwice->Execute();
+        ASSERT_TRUE(placeDoorTwice->Placed());
+        EXPECT_EQ(host.GetScene().GetEntityCount(), 8u);
+    }
+} // namespace
