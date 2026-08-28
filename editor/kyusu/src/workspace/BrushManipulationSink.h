@@ -31,6 +31,7 @@ public:
     // ManipulationSink
     [[nodiscard]] std::optional<Transform3f> ResolveTransform(EntityId entity) const override;
     [[nodiscard]] std::optional<MeshEditTargetMesh> ResolveMesh(EntityId entity) const override;
+    [[nodiscard]] EntityId GetParent(EntityId entity) const override;
     void PreviewTransform(EntityId entity, const Transform3f& transform) override;
     void PreviewMesh(EntityId entity, const BrushMesh& mesh) override;
     void CommitTransforms(const std::vector<TransformEdit>& edits) override;

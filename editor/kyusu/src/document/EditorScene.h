@@ -99,6 +99,35 @@ public:
     // re-origin, a snap -- works in world space and belongs here; SetTransform
     // is for the local value itself.
     void SetWorldTransform(EntityId entity, const Transform3f& world);
+
+    // The entity's world transform composed from the live local chain, walking
+    // its ancestry right now. Mutation paths use this rather than the derived
+    // WorldTransform component: the component is refreshed once per frame at
+    // the render boundary, and a mutation between refreshes must convert
+    // against what the scene IS, not what it last rendered as. Identity for an
+    // entity without a local transform.
+    [[nodiscard]] Transform3f ComposeWorldTransform(EntityId entity) const;
+
+    // The entity's spatial parent, invalid when it has none.
+    [[nodiscard]] EntityId GetParent(EntityId entity) const;
+    // Whether `ancestor` appears anywhere on `entity`'s parent chain. False for
+    // the entity itself; bounded, so it terminates even over damaged parentage.
+    [[nodiscard]] bool IsAncestorOf(EntityId ancestor, EntityId entity) const;
+    // Records `parent` as the entity's spatial parent; an invalid parent clears
+    // it. The local transform is untouched -- this is the raw relationship, and
+    // whether the entity should hold its world position across the change is the
+    // caller's decision, made with SetWorldTransform. Refuses (returns false)
+    // a dead child, a dead parent, self-parenting, and any parent that is a
+    // descendant of the child, so the scene can never hold a cycle.
+    bool SetParent(EntityId child, EntityId parent);
+    // Appends `root` and every descendant, parents before children. The order
+    // is what subtree operations need in both directions: forward for restore
+    // and duplication, reverse for leaf-up destruction.
+    void CollectSubtree(EntityId root, std::vector<EntityId>& out) const;
+    // Destroys `root` and every descendant, leaf-up, so no child ever survives
+    // its parent. DestroyEntity on a lone parent instead hands its children to
+    // their grandparent; this is for consumers that mean the whole branch.
+    void DestroySubtree(EntityId root);
     // Rebuilds the brush's mesh as an axis-aligned box of the given half-extents
     // (the box-editing path; general mesh edits go through BrushOps verbs).
     void SetBrushHalfExtents(EntityId entity, Vec3d halfExtents);

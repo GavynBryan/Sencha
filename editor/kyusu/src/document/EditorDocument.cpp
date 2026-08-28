@@ -245,6 +245,12 @@ EntitySnapshot EditorDocument::CaptureEntity(EntityId entity) const
             snapshot.Mesh = *mesh;
     }
 
+    // Parent by persistent identity: the handle dies with the entities, the
+    // identity survives the round trip through destruction and restore.
+    if (const EntityId parent = Scene.GetParent(entity); parent.IsValid())
+        if (const auto* parentId = Registry_.Components.TryGet<PersistentIdComponent>(parent))
+            snapshot.ParentId = parentId->Id;
+
     snapshot.Hidden = !Scene.IsEntityVisible(entity);
     snapshot.Locked = Scene.IsEntityLocked(entity);
     return snapshot;
@@ -306,6 +312,19 @@ EntityId EditorDocument::RestoreEntity(const EntitySnapshot& snapshot, bool fres
             Scene.GetBrushMeshStore().Set(snapshot.MeshId, *snapshot.Mesh);
         }
     }
+
+    // The parent resolves through live identity, so restore order matters to a
+    // subtree: a composite that destroyed leaf-up restores parent-first, and
+    // each child finds its parent already re-registered here. A parent that no
+    // longer exists leaves the entity unparented rather than failing the
+    // restore.
+    if (snapshot.ParentId.IsValid())
+        if (const auto* index = Registry_.Components.TryGetResource<PersistentEntityIndex>())
+        {
+            const EntityId parent = index->TryResolve(snapshot.ParentId);
+            if (parent.IsValid())
+                (void)Scene.SetParent(entity, parent);
+        }
 
     Scene.SetEntityVisible(entity, !snapshot.Hidden);
     Scene.SetEntityLocked(entity, snapshot.Locked);

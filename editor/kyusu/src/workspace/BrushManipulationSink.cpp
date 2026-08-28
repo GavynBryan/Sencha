@@ -8,6 +8,7 @@
 #include "commands/CompositeCommand.h"
 #include "selection/SelectionService.h"
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -21,6 +22,11 @@ BrushManipulationSink::BrushManipulationSink(EditorScene& scene, EditorDocument&
     , Selection(selection)
     , DuplicateRemap(std::move(duplicateRemap))
 {
+}
+
+EntityId BrushManipulationSink::GetParent(EntityId entity) const
+{
+    return Scene.GetParent(entity);
 }
 
 std::optional<Transform3f> BrushManipulationSink::ResolveTransform(EntityId entity) const
@@ -89,17 +95,40 @@ void BrushManipulationSink::SelectElements(std::span<const SelectableRef> refs)
 
 std::vector<EntityId> BrushManipulationSink::CreatePreviewDuplicates(std::span<const EntityId> sources)
 {
+    // A source means its branch. Copy each subtree parent-before-child, rebind
+    // the interior parent links onto the copies, and hand back only the root
+    // copies: the drag moves those, and the children follow through
+    // propagation exactly as they do on the originals.
     std::vector<EntityId> copies;
     copies.reserve(sources.size());
     for (EntityId source : sources)
-        copies.push_back(Document.DuplicateEntity(source));
+    {
+        std::vector<EntityId> subtree;
+        Scene.CollectSubtree(source, subtree);
+
+        std::vector<EntityId> subtreeCopies;
+        subtreeCopies.reserve(subtree.size());
+        for (EntityId member : subtree)
+        {
+            const EntityId copy = Document.DuplicateEntity(member);
+            const EntityId parent = Scene.GetParent(member);
+            const auto inBranch = std::find(subtree.begin(), subtree.end(), parent);
+            if (inBranch != subtree.end())
+                (void)Scene.SetParent(copy,
+                    subtreeCopies[static_cast<std::size_t>(inBranch - subtree.begin())]);
+            subtreeCopies.push_back(copy);
+        }
+        copies.push_back(subtreeCopies.front());
+    }
     return copies;
 }
 
 void BrushManipulationSink::DestroyPreviewEntities(std::span<const EntityId> entities)
 {
+    // Preview roots carry their copied branch; destroying just the root would
+    // hand the copied children to the scene as orphans.
     for (EntityId entity : entities)
-        Scene.DestroyEntity(entity);
+        Scene.DestroySubtree(entity);
 }
 
 void BrushManipulationSink::CommitDuplicate(std::span<const EntityId> sources,

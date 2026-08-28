@@ -123,11 +123,108 @@ bool EditorScene::ValidateIdentities(std::string* error) const
     return true;
 }
 
+Transform3f EditorScene::ComposeWorldTransform(EntityId entity) const
+{
+    const World& world = Registry_.Components;
+    Transform3f composed = Transform3f::Identity();
+    if (const LocalTransform* local = world.TryGet<LocalTransform>(entity))
+        composed = local->Value;
+
+    // Bounded like IsAncestorOf, so damaged parentage terminates.
+    std::size_t remaining = Entities.size();
+    for (EntityId parent = GetParent(entity);
+         parent.IsValid() && remaining > 0;
+         parent = GetParent(parent), --remaining)
+    {
+        if (const LocalTransform* local = world.TryGet<LocalTransform>(parent))
+            composed = local->Value * composed;
+    }
+    return composed;
+}
+
+EntityId EditorScene::GetParent(EntityId entity) const
+{
+    const Parent* parent = Registry_.Components.TryGet<Parent>(entity);
+    return parent != nullptr ? parent->Entity : EntityId{};
+}
+
+bool EditorScene::IsAncestorOf(EntityId ancestor, EntityId entity) const
+{
+    if (!ancestor.IsValid())
+        return false;
+
+    // Bounded by the entity count so damaged parentage (a cycle that predates
+    // the SetParent guard, or a stale id) walks off the end instead of forever.
+    std::size_t remaining = Entities.size();
+    for (EntityId current = GetParent(entity);
+         current.IsValid() && remaining > 0;
+         current = GetParent(current), --remaining)
+    {
+        if (current == ancestor)
+            return true;
+    }
+    return false;
+}
+
+bool EditorScene::SetParent(EntityId child, EntityId parent)
+{
+    World& world = Registry_.Components;
+    if (!world.IsAlive(child))
+        return false;
+
+    if (!parent.IsValid())
+    {
+        if (world.TryGet<Parent>(child) != nullptr)
+            world.RemoveComponent<Parent>(child);
+        return true;
+    }
+
+    if (!world.IsAlive(parent) || parent == child || IsAncestorOf(child, parent))
+        return false;
+
+    if (Parent* existing = world.TryGet<Parent>(child))
+        existing->Entity = parent;
+    else
+        world.AddComponent(child, Parent{ parent });
+    return true;
+}
+
+void EditorScene::CollectSubtree(EntityId root, std::vector<EntityId>& out) const
+{
+    if (!Registry_.Components.IsAlive(root))
+        return;
+
+    // Breadth-first over the tracked list. Quadratic in scene size for a deep
+    // tree, but subtree operations are user gestures over editor-scale scenes,
+    // not a per-frame path.
+    const std::size_t first = out.size();
+    out.push_back(root);
+    for (std::size_t cursor = first; cursor < out.size(); ++cursor)
+        for (EntityId candidate : Entities)
+            if (GetParent(candidate) == out[cursor])
+                out.push_back(candidate);
+}
+
+void EditorScene::DestroySubtree(EntityId root)
+{
+    std::vector<EntityId> subtree;
+    CollectSubtree(root, subtree);
+    for (auto it = subtree.rbegin(); it != subtree.rend(); ++it)
+        DestroyEntity(*it);
+}
+
 void EditorScene::RefreshDerivedTransforms()
 {
     World& world = Registry_.Components;
     if (!world.IsRegistered<LocalTransform>() || !world.IsRegistered<WorldTransform>())
         return;
+
+    // Change detection compares column versions against the frame counter, and
+    // an edit made in the same frame as the sweep that must observe it is
+    // invisible to that comparison (TransformPropagation.cpp spells this out).
+    // Each refresh is therefore one frame of the document's world; it is also
+    // what moves the sweeps off their frame-zero full-sweep fallback.
+    world.AdvanceFrame();
 
     // Authoring builds an entity component by component, so it arrives carrying
     // a local transform and no derived column. Seeding here rather than in each
@@ -180,6 +277,20 @@ void EditorScene::DestroyEntity(EntityId entity)
             BrushMeshes.Destroy(baked->Source);
     }
 
+    // A destroyed parent hands its children to their grandparent (or the root)
+    // at their current world position, so deleting one entity never teleports
+    // or strands a branch. Deleting a branch on purpose is DestroySubtree,
+    // which reaches here with no children left to adopt.
+    const EntityId grandparent = GetParent(entity);
+    for (EntityId candidate : Entities)
+    {
+        if (candidate == entity || GetParent(candidate) != entity)
+            continue;
+        const Transform3f held = ComposeWorldTransform(candidate);
+        (void)SetParent(candidate, grandparent);
+        SetWorldTransform(candidate, held);
+    }
+
     // Release the id while the component still exists. Undo of a delete restores
     // the snapshot's id, which only works because destruction frees it here.
     if (const auto* id = world.TryGet<PersistentIdComponent>(entity))
@@ -217,19 +328,18 @@ void EditorScene::SetTransform(EntityId entity, const Transform3f& transform)
 
 void EditorScene::SetWorldTransform(EntityId entity, const Transform3f& world)
 {
-    const World& components = Registry_.Components;
-    const Parent* parent = components.TryGet<Parent>(entity);
-    const WorldTransform* parentWorld =
-        parent != nullptr ? components.TryGet<WorldTransform>(parent->Entity) : nullptr;
-    if (parentWorld == nullptr)
+    const EntityId parent = GetParent(entity);
+    if (!parent.IsValid())
     {
         SetTransform(entity, world);
         return;
     }
 
     // The exact inverse of the parent-times-child composition transform
-    // propagation applies, so a value placed here reads back unchanged.
-    const Transform3f& frame = parentWorld->Value;
+    // propagation applies, so a value placed here reads back unchanged. The
+    // frame is composed live rather than read from the derived component,
+    // which can be a refresh behind the mutation being made.
+    const Transform3f frame = ComposeWorldTransform(parent);
     Transform3f local;
     local.Position = frame.InverseTransformPoint(world.Position);
     local.Rotation = frame.Rotation.Conjugate() * world.Rotation;

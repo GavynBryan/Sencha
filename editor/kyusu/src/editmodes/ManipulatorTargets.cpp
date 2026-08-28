@@ -12,6 +12,25 @@ std::vector<ObjectTarget> GatherObjectTargets(const ManipulatorContext& ctx)
     {
         if (!ref.IsEntity())
             continue;
+
+        // Topmost selected ancestor only: a selected child of a selected
+        // ancestor follows that ancestor through transform propagation, so
+        // handing it the delta as well would move it twice.
+        bool coveredByAncestor = false;
+        for (EntityId ancestor = ctx.Sink.GetParent(ref.Entity);
+             ancestor.IsValid() && !coveredByAncestor;
+             ancestor = ctx.Sink.GetParent(ancestor))
+        {
+            for (const SelectableRef& other : ctx.Selection.Items)
+                if (other.IsEntity() && other.Entity == ancestor)
+                {
+                    coveredByAncestor = true;
+                    break;
+                }
+        }
+        if (coveredByAncestor)
+            continue;
+
         if (const std::optional<Transform3f> transform = ctx.Sink.ResolveTransform(ref.Entity))
             items.push_back({ ref.Entity, *transform });
     }

@@ -40,6 +40,12 @@ struct ManipulationSink
     [[nodiscard]] virtual std::optional<Transform3f> ResolveTransform(EntityId entity) const = 0;
     [[nodiscard]] virtual std::optional<MeshEditTargetMesh> ResolveMesh(EntityId entity) const = 0;
 
+    // The entity's spatial parent, invalid when it has none. Target gathering
+    // needs ancestry to keep a parent and its child from both receiving one
+    // drag's delta -- the child follows through propagation, so applying it
+    // twice would double the motion.
+    [[nodiscard]] virtual EntityId GetParent(EntityId entity) const = 0;
+
     virtual void PreviewTransform(EntityId entity, const Transform3f& transform) = 0;
     virtual void PreviewMesh(EntityId entity, const BrushMesh& mesh) = 0;
 
