@@ -5,6 +5,8 @@
 
 #include <world/identity/PersistentIdComponent.h>
 #include <world/transform/TransformComponents.h>
+#include <world/transform/DerivedTransform.h>
+#include <world/transform/TransformPropagation.h>
 
 #include <algorithm>
 #include <utility>
@@ -119,6 +121,29 @@ bool EditorScene::ValidateIdentities(std::string* error) const
                 + " is held by two entities");
     }
     return true;
+}
+
+void EditorScene::RefreshDerivedTransforms()
+{
+    World& world = Registry_.Components;
+    if (!world.IsRegistered<LocalTransform>() || !world.IsRegistered<WorldTransform>())
+        return;
+
+    // Authoring builds an entity component by component, so it arrives carrying
+    // a local transform and no derived column. Seeding here rather than in each
+    // creation path keeps the pairing under one owner and covers the routes that
+    // do not go through Create* at all -- a restored snapshot, a loaded file, a
+    // recipe. Once an entity is seeded this costs one lookup and nothing else.
+    for (EntityId entity : Entities)
+    {
+        if (world.TryGet<LocalTransform>(entity) != nullptr
+            && world.TryGet<WorldTransform>(entity) == nullptr)
+        {
+            SeedDerivedWorldTransform(world, entity);
+        }
+    }
+
+    PropagateTransforms(world);
 }
 
 void EditorScene::DestroyEntity(EntityId entity)

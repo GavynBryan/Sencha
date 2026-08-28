@@ -14,6 +14,7 @@
 #include <anim/AnimationClipPlayerComponent.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <world/serialization/IComponentSerializer.h>
+#include <world/identity/PersistentEntityIndex.h>
 #include <world/serialization/SceneSerializationContext.h>
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
@@ -84,9 +85,22 @@ EditorDocument::EditorDocument(LoggingProvider& logging)
 
     Registry_.Resources.Register<ActiveCameraService>();
 
+    // The document resolves authored identity the same way the runtime does, so
+    // a stable id can be turned back into the entity holding it. The component's
+    // own traits populate this; without the resource they are inert and every
+    // lookup by persistent id is impossible.
+    Registry_.Components.AddResource<PersistentEntityIndex>();
+
     // Component registration must happen before any entity is created.
     World& world = Registry_.Components;
     world.RegisterComponent<LocalTransform>();
+    // Authored hierarchy, and the derived column that pairs with it. Both are
+    // pure-runtime types the document never serializes directly -- parentage
+    // persists as part of the scene's hierarchy, and the world transform is
+    // recomputed from it -- but the document must register them or a parented
+    // entity has nowhere to put either.
+    world.RegisterComponent<WorldTransform>();
+    world.RegisterComponent<Parent>();
     world.RegisterComponent<BrushComponent>();
     world.RegisterComponent<BakedBrushComponent>();
     world.RegisterComponent<CameraComponent>();

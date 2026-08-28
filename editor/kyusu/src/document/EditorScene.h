@@ -111,6 +111,14 @@ public:
             *existing = value;
     }
 
+    // Recomputes every entity's WorldTransform from its LocalTransform and
+    // parentage. The document has no single "mutation finished" point -- panels,
+    // tools, and commands all write transforms at different points in the frame
+    // -- so this is called once at the render extraction boundary, which is
+    // after everything that can move an entity this frame and before anything
+    // that reads where it ended up.
+    void RefreshDerivedTransforms();
+
     // Destroys every entity in the scene.
     void Clear();
 

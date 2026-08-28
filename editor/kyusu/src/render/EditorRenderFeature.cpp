@@ -174,6 +174,12 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
         lights.DebugView = WorldView.DebugViewMode;
 #endif
 
+        // Derived world transforms are refreshed here, immediately before the
+        // queues that read them. This feature is ordered after the UI feature,
+        // so every panel, tool, and gizmo has already made its edits for the
+        // frame; refreshing any earlier would render a parented entity a frame
+        // behind whatever moved it.
+        World.FocusDocument().GetScene().RefreshDerivedTransforms();
         QueueBuilder->Build(World.FocusDocument());
 
         // Context zones build their own queues so they render real materials.
@@ -193,6 +199,7 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
                         *LoggingRef, nullptr,
                         RuntimeAssetsRef->SkinnedMeshes.get(),
                         &RuntimeAssetsRef->AnimationClips);
+                document.GetScene().RefreshDerivedTransforms();
                 builder->Build(document);
             });
         // Arbitrating and recording the focus scene's shadow atlas is one
