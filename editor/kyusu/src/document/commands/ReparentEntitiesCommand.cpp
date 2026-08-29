@@ -77,15 +77,20 @@ void ReparentEntitiesCommand::Execute()
         for (EntityId entity : PreviousOrder)
             if (isMoved(entity))
                 moved.push_back(entity);
+        bool inserted = false;
         for (EntityId entity : PreviousOrder)
         {
             if (isMoved(entity))
                 continue;
             if (entity == InsertBefore)
+            {
                 next.insert(next.end(), moved.begin(), moved.end());
+                inserted = true;
+            }
             next.push_back(entity);
         }
-        if (next.size() != PreviousOrder.size())
+        // No anchor (or an anchor inside the moved block): the block lands last.
+        if (!inserted)
             next.insert(next.end(), moved.begin(), moved.end());
         (void)Scene.SetEntityOrder(next);
     }

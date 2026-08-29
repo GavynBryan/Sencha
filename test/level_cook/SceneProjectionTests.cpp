@@ -14,6 +14,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <render/PointLightComponent.h>
 #include <world/identity/PersistentIdComponent.h>
+#include <world/transform/TransformComponents.h>
 #include <world/scene/SmapFormat.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
@@ -352,6 +353,61 @@ namespace
         // Non-members have no baseline to reset to.
         const EntityId local = FindById(host, PersistentEntityId{ 0xaa });
         EXPECT_EQ(host.ProjectionBaselineOf(local), nullptr);
+    }
+
+    // The harvest walks the projection map; its append order is the saved
+    // file's block order. The contract is sorted projected-path order --
+    // bucket order would reshuffle override blocks whenever the map rehashes.
+    // Eight members give bucket order essentially no chance to coincide.
+    TEST_F(SceneProjectionTest, OverrideBlocksSaveInPathOrderAndRoundTripStable)
+    {
+        // A prop wide enough to expose iteration order: eight lit entities.
+        EditorDocument prop(Logging);
+        std::vector<PersistentEntityId> innerIds;
+        for (int i = 0; i < 8; ++i)
+        {
+            const EntityId entity =
+                prop.GetScene().CreateEntity(Vec3d{ 0, float(i), 0 });
+            PointLightComponent lamp{};
+            lamp.Intensity = 5.0f;
+            prop.GetScene().GetRegistry().Components.AddComponent(entity, lamp);
+            innerIds.push_back(IdOf(prop, entity));
+        }
+        ASSERT_TRUE(prop.SaveAs((Root / "props/panel.sscene").generic_string()));
+
+        EditorDocument host(Logging);
+        host.SetContentRoots({ Root });
+        const SceneInstanceId placed =
+            host.PlaceSceneInstance("asset://props/panel.sscene",
+                                    Transform3f::Identity(), {}, nullptr);
+        ASSERT_TRUE(placed.IsValid());
+        World& world = host.GetScene().GetRegistry().Components;
+        for (EntityId entity : host.GetScene().GetAllEntities())
+            if (auto* lamp = world.TryGet<PointLightComponent>(entity))
+                lamp->Intensity = 40.0f;
+
+        // Every patch block key, in file order, must be numerically sorted.
+        const std::string first = host.ToSceneText();
+        const std::size_t patchBlock = first.find("patch:");
+        ASSERT_NE(patchBlock, std::string::npos);
+        std::vector<std::string> sortedKeys;
+        for (const PersistentEntityId inner : innerIds)
+            sortedKeys.push_back(PersistentEntityIdToString(inner));
+        std::sort(sortedKeys.begin(), sortedKeys.end());
+        std::size_t cursor = patchBlock;
+        for (const std::string& key : sortedKeys)
+        {
+            const std::size_t at = first.find("\"" + key + "\"", cursor);
+            ASSERT_NE(at, std::string::npos) << key;
+            cursor = at;
+        }
+
+        // A reload rebuilds the projection map in a different insertion order;
+        // the saved text must not care.
+        EditorDocument reloaded(Logging);
+        reloaded.SetContentRoots({ Root });
+        ASSERT_TRUE(reloaded.LoadFromSceneText(first));
+        EXPECT_EQ(reloaded.ToSceneText(), first);
     }
 
     TEST_F(SceneProjectionTest, DeletingAMemberBecomesSuppression)

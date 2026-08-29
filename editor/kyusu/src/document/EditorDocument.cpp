@@ -23,6 +23,7 @@
 #include <world/transform/TransformComponents.h>
 
 #include <fstream>
+#include <algorithm>
 #include <sstream>
 #include <unordered_map>
 #include <string>
@@ -278,6 +279,14 @@ SceneSourceDocument EditorDocument::BuildSceneSource() const
     }
     if (!savedMeshes.empty())
     {
+        // Two entities may share one mesh (RestoreEntity keeps a restored
+        // brush on its shared id); the file gets each mesh once.
+        std::sort(savedMeshes.begin(), savedMeshes.end(),
+                  [](BrushId a, BrushId b) { return a.Value < b.Value; });
+        savedMeshes.erase(std::unique(savedMeshes.begin(), savedMeshes.end(),
+                                      [](BrushId a, BrushId b)
+                                      { return a.Value == b.Value; }),
+                          savedMeshes.end());
         Json5Value meshes = Json5Value::MakeObject();
         for (const BrushId id : savedMeshes)
             if (const BrushMesh* mesh = Scene.GetBrushMeshStore().Find(id))

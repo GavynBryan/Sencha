@@ -191,18 +191,22 @@ void EditorDocument::ExpandSceneProjection()
                     doomed.push_back(entity);
             }
         }
-        const auto depthOf = [&](EntityId entity)
+        // Depth computed once per entity: the comparator runs O(n log n)
+        // times and a chain walk per call turns the sort quadratic.
+        std::vector<std::pair<std::size_t, EntityId>> byDepth;
+        byDepth.reserve(doomed.size());
+        for (EntityId entity : doomed)
         {
             std::size_t depth = 0;
             for (EntityId parent = Scene.GetParent(entity);
                  parent.IsValid() && depth < doomed.size() + 1;
                  parent = Scene.GetParent(parent))
                 ++depth;
-            return depth;
-        };
-        std::sort(doomed.begin(), doomed.end(),
-                  [&](EntityId a, EntityId b) { return depthOf(a) > depthOf(b); });
-        for (EntityId entity : doomed)
+            byDepth.emplace_back(depth, entity);
+        }
+        std::sort(byDepth.begin(), byDepth.end(),
+                  [](const auto& a, const auto& b) { return a.first > b.first; });
+        for (const auto& [depth, entity] : byDepth)
             if (Scene.HasEntity(entity))
                 Scene.DestroyEntity(entity);
     }
@@ -461,8 +465,21 @@ void EditorDocument::HarvestProjectedElements(
     const PersistentEntityIndex& index,
     std::unordered_map<std::uint64_t, RecordHarvest>& byInstance)
 {
-    for (const auto& [pid, element] : Projection_)
+    // Sorted by projected path: this loop's append order becomes the saved
+    // file's patch/added/removed order, and unordered_map bucket order would
+    // reshuffle those blocks whenever the projection rehashes.
+    std::vector<std::pair<const std::uint64_t, ProjectedElement>*> ordered;
+    ordered.reserve(Projection_.size());
+    for (auto& entry : Projection_)
+        ordered.push_back(&entry);
+    std::sort(ordered.begin(), ordered.end(),
+              [](const auto* a, const auto* b)
+              { return a->second.Path.Elements < b->second.Path.Elements; });
+
+    for (const auto* entry : ordered)
     {
+        const std::uint64_t pid = entry->first;
+        const ProjectedElement& element = entry->second;
         const std::uint64_t owner = element.Path.Elements.front();
         const auto harvest = byInstance.find(owner);
         if (harvest == byInstance.end())
@@ -591,17 +608,23 @@ void EditorDocument::FoldHarvestsIntoRecords(
     const PersistentEntityIndex& index,
     std::unordered_map<std::uint64_t, RecordHarvest>& byInstance)
 {
+    // Each record probes this once per stored override, so the projection is
+    // indexed up front instead of rescanned (and re-allocated) per probe.
+    std::unordered_map<std::uint64_t, std::vector<std::vector<std::uint64_t>>>
+        projectedInner;
+    for (const auto& [pid, element] : Projection_)
+        if (!element.Root)
+            projectedInner[element.Path.Elements.front()].push_back(
+                InnerPath(element.Path).Elements);
+    for (auto& [instance, paths] : projectedInner)
+        std::sort(paths.begin(), paths.end());
     const auto isProjectedPathOf = [&](std::uint64_t instance,
                                        const SceneElementPath& inner)
     {
-        for (const auto& [pid, element] : Projection_)
-        {
-            if (element.Root || element.Path.Elements.front() != instance)
-                continue;
-            if (InnerPath(element.Path) == inner)
-                return true;
-        }
-        return false;
+        const auto found = projectedInner.find(instance);
+        return found != projectedInner.end()
+            && std::binary_search(found->second.begin(), found->second.end(),
+                                  inner.Elements);
     };
 
     std::erase_if(Retained_.Instances, [&](SceneInstanceRecord& record)

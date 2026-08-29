@@ -98,6 +98,21 @@ namespace
         EXPECT_EQ(Scene.TryGetBrushMesh(source)->Vertices.size(), editedCount);
     }
 
+    TEST_F(BrushInstanceTest, ASharedMeshSavesExactlyOnce)
+    {
+        const EntityId source = Scene.CreateBrush({}, { 1.0f, 1.0f, 1.0f });
+        (void)Instantiate(source);
+        const std::uint64_t meshId = Scene.TryGetBrush(source)->Id.Value;
+
+        // Two entities reference the mesh; the file must carry one copy, or a
+        // duplicate object key silently doubles the payload on every save.
+        const std::string text = Document.ToSceneText();
+        const std::string key = "\"" + std::to_string(meshId) + "\"";
+        const std::size_t first = text.find(key);
+        ASSERT_NE(first, std::string::npos);
+        EXPECT_EQ(text.find(key, first + key.size()), std::string::npos);
+    }
+
     TEST_F(BrushInstanceTest, MakeUniqueDivergesFromTheGroup)
     {
         const EntityId source = Scene.CreateBrush({}, { 1.0f, 1.0f, 1.0f });

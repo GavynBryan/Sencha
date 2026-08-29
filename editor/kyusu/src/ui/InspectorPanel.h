@@ -53,6 +53,9 @@ private:
     const BaselineEntry& BaselineFor(IComponentSerializer& serializer,
                                      EntityId entity, ComponentId component);
     std::unordered_map<ComponentId, BaselineEntry> BaselineCache;
+    // Per-component scratch for the field override verdicts (one memcmp per
+    // field per frame, shared by the header state and the row badges).
+    std::vector<char> FieldOverrideScratch;
     EntityId BaselineEntity = {};
     // Picker for an asset-handle field (RuntimeField tagged with an AssetType):
     // a combo of scanned assets of that type, applied via AssetFieldEditCommand.

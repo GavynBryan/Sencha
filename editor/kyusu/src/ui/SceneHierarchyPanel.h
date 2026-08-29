@@ -33,7 +33,8 @@ public:
 private:
     struct DrawContext;
 
-    void DrawRow(DrawContext& ctx, EntityId entity, int depth);
+    void DrawRow(DrawContext& ctx, EntityId entity, int depth,
+                 bool ancestorsVisible);
     void HandleRowClick(DrawContext& ctx, EntityId entity);
     void HandleRowDragDrop(DrawContext& ctx, EntityId entity);
     // The between-rows half of the drop gesture: a thin target that inserts
@@ -41,8 +42,8 @@ private:
     // `before` (invalid = last). Drawn only while a hierarchy drag is live.
     void DrawInsertionSlot(DrawContext& ctx, EntityId parent, EntityId before);
     void DrawRowContextMenu(DrawContext& ctx, EntityId entity);
-    [[nodiscard]] bool RowMatchesFilter(const DrawContext& ctx, EntityId entity) const;
-    [[nodiscard]] bool BranchMatchesFilter(const DrawContext& ctx, EntityId entity) const;
+    [[nodiscard]] bool RowMatchesFilter(DrawContext& ctx, EntityId entity) const;
+    [[nodiscard]] bool BranchMatchesFilter(DrawContext& ctx, EntityId entity) const;
 
     WorldDocument& WorldDoc;
     SelectionService& Selection;

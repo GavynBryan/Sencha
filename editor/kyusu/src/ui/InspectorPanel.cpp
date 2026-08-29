@@ -29,7 +29,9 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <span>
 #include <string>
+#include <utility>
 #include "document/DocumentSerialization.h"
 
 namespace
@@ -309,7 +311,11 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
                 && baseline->Bytes.size() == size
             ? baseline->Bytes.data()
             : nullptr;
-    const void* liveRaw = size > 0 ? world.GetComponentRaw(entity, id) : nullptr;
+    // After BaselineFor on purpose: a cache miss there creates and destroys a
+    // scratch entity, and structural change can relocate this pointer. Const
+    // access, so inspecting a component cannot mark its chunk changed.
+    const void* liveRaw =
+        size > 0 ? std::as_const(world).GetComponentRaw(entity, id) : nullptr;
     const auto fieldOverridden = [&](const RuntimeField& field)
     {
         if (baselineBytes == nullptr || liveRaw == nullptr
@@ -326,12 +332,16 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     bool componentOverridden = member && baseline != nullptr && !baseline->Present;
     // Whether a byte-level reset is even safe: RawComponentEditCommand is a
     // blind memcpy, which asset-handle fields (refcounted, session-local)
-    // must never travel through.
+    // must never travel through. The per-field verdicts feed the header here
+    // and the row badges below, so each field is compared exactly once.
     bool holdsAssetFields = false;
-    for (const RuntimeField& field : serializer.RuntimeFields())
+    const std::span<const RuntimeField> fields = serializer.RuntimeFields();
+    FieldOverrideScratch.assign(fields.size(), 0);
+    for (std::size_t i = 0; i < fields.size(); ++i)
     {
-        holdsAssetFields |= field.Asset != AssetType::Unknown;
-        componentOverridden |= fieldOverridden(field);
+        holdsAssetFields |= fields[i].Asset != AssetType::Unknown;
+        FieldOverrideScratch[i] = fieldOverridden(fields[i]) ? 1 : 0;
+        componentOverridden |= FieldOverrideScratch[i] != 0;
     }
 
     // Stable id from the JsonKey; the icon is display-only (kept out of the id).
@@ -421,7 +431,7 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     std::vector<std::byte> working(size);
     if (size > 0)
     {
-        const void* live = world.GetComponentRaw(entity, id);
+        const void* live = std::as_const(world).GetComponentRaw(entity, id);
         if (live == nullptr)
         {
             ImGui::PopID();
@@ -436,7 +446,7 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
 
     bool activated = false;
     bool committed = false;
-    for (const RuntimeField& field : serializer.RuntimeFields())
+    for (const RuntimeField& field : fields)
     {
         // Asset-handle fields resolve through the asset system, not raw scalar
         // bytes: the picker reads/writes the live component directly via its own
@@ -451,7 +461,7 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
         activated |= edit.Activated;
         committed |= edit.Committed;
 
-        if (!fieldOverridden(field))
+        if (FieldOverrideScratch[&field - fields.data()] == 0)
             continue;
         // The field's override badge sits in the label gutter, and the row's
         // last widget carries the reset in its context menu.
@@ -529,12 +539,17 @@ namespace
     // chooses a different entry ("(none)" yields an empty ref). `widgetId` must
     // be unique, so list slots push an index id around it.
     bool AssetPickCombo(const char* widgetId, const AssetFieldRef& current,
-                        const std::vector<CatalogEntry>& entries, AssetFieldRef& picked)
+                        const AssetRegistry& catalog, AssetType type,
+                        AssetFieldRef& picked)
     {
         bool changed = false;
         const char* preview = current.Path.empty() ? "(none)" : current.Path.c_str();
         if (ImGui::BeginCombo(widgetId, preview))
         {
+            // Built only while the dropdown is open: the scan and sort cover
+            // the whole catalog, which a closed combo never shows.
+            const std::vector<CatalogEntry> entries =
+                SortedAssetsOfType(catalog, type);
             if (ImGui::Selectable("(none)", current.Path.empty()) && !current.Path.empty())
             {
                 picked = AssetFieldRef{};
@@ -570,13 +585,11 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
     }
 
     World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
-    const void* base = world.GetComponentRaw(entity, component);
+    const void* base = std::as_const(world).GetComponentRaw(entity, component);
     if (base == nullptr)
         return;
     const void* fieldPtr = static_cast<const std::byte*>(base) + field.Offset;
     const AssetFieldValue current = ReadAssetField(*assets, field.Asset, field.Arity, fieldPtr);
-
-    const std::vector<CatalogEntry> entries = SortedAssetsOfType(*catalog, field.Asset);
 
     // One edit = one full before/after value through the refcount-balanced command.
     const auto apply = [&](AssetFieldValue next) {
@@ -593,7 +606,8 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
 
         const AssetFieldRef cur = current.Refs.empty() ? AssetFieldRef{} : current.Refs.front();
         AssetFieldRef picked;
-        if (AssetPickCombo(("##" + field.Name).c_str(), cur, entries, picked))
+        if (AssetPickCombo(("##" + field.Name).c_str(), cur, *catalog, field.Asset,
+                           picked))
         {
             AssetFieldValue next;
             if (!picked.Path.empty())
@@ -620,7 +634,7 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
 
         ImGui::SetNextItemWidth(-trim);
         AssetFieldRef picked;
-        if (AssetPickCombo("##slot", current.Refs[i], entries, picked))
+        if (AssetPickCombo("##slot", current.Refs[i], *catalog, field.Asset, picked))
         {
             AssetFieldValue next = current;
             next.Refs[i] = std::move(picked);

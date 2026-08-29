@@ -32,6 +32,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <unordered_map>
 #include <memory>
 #include <span>
 #include <string>
@@ -99,7 +100,12 @@ struct SceneHierarchyPanel::DrawContext
     std::vector<EntityId> Roots;
     std::vector<std::vector<EntityId>> Children; // parallel to Order
     std::vector<EntityId> Order;                 // every live entity, index for Children
+    std::unordered_map<EntityId, std::size_t, EntityIdHash> Slot; // entity -> Order index
     std::vector<EntityId> VisibleRows;           // rows drawn this frame, top to bottom
+    std::vector<std::string> Labels;             // parallel to Order, filled lazily
+    std::vector<char> LabelReady;                // parallel to Labels
+    std::vector<char> BranchMatches;             // filter verdict per Order index
+    std::unordered_set<EntityId, EntityIdHash> Selected; // this frame's selection
     bool FilterActive = false;
 
     // Deferred actions.
@@ -113,10 +119,22 @@ struct SceneHierarchyPanel::DrawContext
 
     [[nodiscard]] std::span<const EntityId> ChildrenOf(EntityId entity) const
     {
-        for (std::size_t i = 0; i < Order.size(); ++i)
-            if (Order[i] == entity)
-                return Children[i];
-        return {};
+        const auto found = Slot.find(entity);
+        return found != Slot.end() ? std::span<const EntityId>(Children[found->second])
+                                   : std::span<const EntityId>{};
+    }
+
+    // Row labels are serializer scans and heap strings, so each is built at
+    // most once per frame, on first use by the filter or the draw.
+    [[nodiscard]] const std::string& LabelOf(EntityId entity)
+    {
+        const std::size_t index = Slot.at(entity);
+        if (!LabelReady[index])
+        {
+            Labels[index] = RowLabel(Scene, entity);
+            LabelReady[index] = 1;
+        }
+        return Labels[index];
     }
 };
 
@@ -149,19 +167,31 @@ std::string_view SceneHierarchyPanel::GetTitle() const
     return TitleCache;
 }
 
-bool SceneHierarchyPanel::RowMatchesFilter(const DrawContext& ctx, EntityId entity) const
+bool SceneHierarchyPanel::RowMatchesFilter(DrawContext& ctx, EntityId entity) const
 {
-    return TextFilterMatch(RowLabel(ctx.Scene, entity), FilterText);
+    return TextFilterMatch(ctx.LabelOf(entity), FilterText);
 }
 
-bool SceneHierarchyPanel::BranchMatchesFilter(const DrawContext& ctx, EntityId entity) const
+bool SceneHierarchyPanel::BranchMatchesFilter(DrawContext& ctx, EntityId entity) const
 {
-    if (RowMatchesFilter(ctx, entity))
-        return true;
-    for (EntityId child : ctx.ChildrenOf(entity))
-        if (BranchMatchesFilter(ctx, child))
-            return true;
-    return false;
+    // Filled once per frame from the roots down; each entity's verdict is its
+    // own match or any child's, so DrawRow reads a bit instead of re-walking
+    // its subtree at every ancestor.
+    const auto fill = [&](auto&& self, EntityId node) -> bool
+    {
+        bool matches = RowMatchesFilter(ctx, node);
+        for (EntityId child : ctx.ChildrenOf(node))
+            matches = self(self, child) || matches;
+        ctx.BranchMatches[ctx.Slot.at(node)] = matches ? 1 : 0;
+        return matches;
+    };
+    if (ctx.BranchMatches.empty())
+    {
+        ctx.BranchMatches.resize(ctx.Order.size(), 0);
+        for (EntityId root : ctx.Roots)
+            (void)fill(fill, root);
+    }
+    return ctx.BranchMatches[ctx.Slot.at(entity)] != 0;
 }
 
 void SceneHierarchyPanel::HandleRowClick(DrawContext& ctx, EntityId entity)
@@ -448,7 +478,8 @@ void SceneHierarchyPanel::DrawRowContextMenu(DrawContext& ctx, EntityId entity)
     ImGui::EndPopup();
 }
 
-void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth)
+void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth,
+                                  bool ancestorsVisible)
 {
     // With a filter active, a branch with no match anywhere is pruned; a branch
     // with a deep match stays, ancestors included, or the match would appear to
@@ -458,15 +489,12 @@ void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth)
 
     const std::uint64_t pid = PersistentOf(ctx.Scene, entity);
     const std::span<const EntityId> children = ctx.ChildrenOf(entity);
-    const bool selected = [&]
-    {
-        for (const SelectableRef& ref : Selection.GetSelection())
-            if (ref.IsEntity() && ref.Entity == entity)
-                return true;
-        return false;
-    }();
+    const bool selected = ctx.Selected.contains(entity);
 
-    ImGui::PushID(static_cast<int>(pid ^ (pid >> 32)));
+    // Both halves of the id, so two rows can never alias their ImGui state
+    // (open flag, rename input, popup) on a folded-hash collision.
+    ImGui::PushID(static_cast<int>(pid >> 32));
+    ImGui::PushID(static_cast<int>(pid));
     ctx.VisibleRows.push_back(entity);
 
     // Own-flag toggles, undoable now that the flags persist with the document.
@@ -487,8 +515,10 @@ void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth)
     ImGui::SameLine();
 
     // Effectively hidden rows read dimmed -- their own flag or an ancestor's;
-    // the eye button above still shows the row's own state.
-    const bool dimmed = !ctx.Scene.IsEntityEffectivelyVisible(entity);
+    // the eye button above still shows the row's own state. The recursion
+    // already knows the ancestors' verdict, so no chain walk per row.
+    const bool effectivelyVisible = ancestorsVisible && visible;
+    const bool dimmed = !effectivelyVisible;
     if (dimmed)
         ImGui::PushStyleColor(ImGuiCol_Text, EditorUi::TextDim);
 
@@ -516,7 +546,7 @@ void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth)
                      : instanceMember ? ICON_FA_LINK "  "
                      : children.empty() ? ICON_FA_CUBE "  "
                                         : ICON_FA_CUBES "  ";
-    std::string rowText = RowLabel(ctx.Scene, entity);
+    std::string rowText = ctx.LabelOf(entity);
     if (instanceRoot
         && ctx.Scene.GetRegistry().Components.TryGet<EntityNameComponent>(entity)
                == nullptr)
@@ -621,12 +651,13 @@ void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth)
         for (EntityId child : children)
         {
             DrawInsertionSlot(ctx, entity, child);
-            DrawRow(ctx, child, depth + 1);
+            DrawRow(ctx, child, depth + 1, effectivelyVisible);
         }
         DrawInsertionSlot(ctx, entity, EntityId{});
         ImGui::TreePop();
     }
 
+    ImGui::PopID();
     ImGui::PopID();
 }
 
@@ -661,20 +692,24 @@ void SceneHierarchyPanel::OnDraw()
     // One pass over the tracked list builds the tree shape for the frame.
     ctx.Order.assign(scene.GetAllEntities().begin(), scene.GetAllEntities().end());
     ctx.Children.resize(ctx.Order.size());
+    ctx.Slot.reserve(ctx.Order.size());
+    for (std::size_t i = 0; i < ctx.Order.size(); ++i)
+        ctx.Slot.emplace(ctx.Order[i], i);
+    ctx.Labels.resize(ctx.Order.size());
+    ctx.LabelReady.assign(ctx.Order.size(), 0);
+    for (const SelectableRef& ref : Selection.GetSelection())
+        if (ref.IsEntity())
+            ctx.Selected.insert(ref.Entity);
     for (EntityId entity : ctx.Order)
     {
         const EntityId parent = scene.GetParent(entity);
-        if (!parent.IsValid() || !scene.HasEntity(parent))
-        {
+        const auto slot = parent.IsValid() ? ctx.Slot.find(parent) : ctx.Slot.end();
+        // An untracked parent (alive in the registry, absent from the list)
+        // has no row; its child shows at the root rather than vanishing.
+        if (slot == ctx.Slot.end())
             ctx.Roots.push_back(entity);
-            continue;
-        }
-        for (std::size_t i = 0; i < ctx.Order.size(); ++i)
-            if (ctx.Order[i] == parent)
-            {
-                ctx.Children[i].push_back(entity);
-                break;
-            }
+        else
+            ctx.Children[slot->second].push_back(entity);
     }
 
     // A selection made outside the panel gets revealed: expand its ancestry so
@@ -733,7 +768,7 @@ void SceneHierarchyPanel::OnDraw()
     for (EntityId root : ctx.Roots)
     {
         DrawInsertionSlot(ctx, EntityId{}, root);
-        DrawRow(ctx, root, 0);
+        DrawRow(ctx, root, 0, /*ancestorsVisible*/ true);
     }
     DrawInsertionSlot(ctx, EntityId{}, EntityId{});
 
