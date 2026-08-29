@@ -1,0 +1,2409 @@
+{
+  format_version: 1,
+  settings: {
+    default_material: "asset://materials/dev/gray.smat",
+  },
+  entities: [
+    {
+      id: "1f34ba1b75aa2be9",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, -5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 1,
+        },
+      },
+    },
+    {
+      id: "7d37061c1095735a",
+      components: {
+        Transform: {
+          local: {
+            position: [-5.5, 1.399999976158142, 4],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "3de09133bf03fe0a",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.9285714626312256, 1.399999976158142, 4],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "00946b1a09c3f6f1",
+      components: {
+        Transform: {
+          local: {
+            position: [-2.357142925262451, 1.399999976158142, 4],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "481d6b03152adbae",
+      components: {
+        Transform: {
+          local: {
+            position: [-0.7857141494750977, 1.399999976158142, 4],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "1b69fc98b0b6fb6c",
+      components: {
+        Transform: {
+          local: {
+            position: [0.7857141494750977, 1.399999976158142, 4],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "54433331afe3b2c8",
+      components: {
+        Transform: {
+          local: {
+            position: [2.357142925262451, 1.399999976158142, 4],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "2d735064553a502c",
+      components: {
+        Transform: {
+          local: {
+            position: [3.9285717010498047, 1.399999976158142, 4],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "2d1478b3dc710f64",
+      components: {
+        Transform: {
+          local: {
+            position: [5.5, 1.399999976158142, 4],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "1b3be95e70eafe7f",
+      components: {
+        Transform: {
+          local: {
+            position: [-5.5, 1.399999976158142, 2.3636364936828613],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "36bf77183cf3b250",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.9285714626312256, 1.399999976158142, 2.3636364936828613],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "2fec614391953c5c",
+      components: {
+        Transform: {
+          local: {
+            position: [-2.357142925262451, 1.399999976158142, 2.3636364936828613],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "26252e61bf34dda1",
+      components: {
+        Transform: {
+          local: {
+            position: [-0.7857141494750977, 1.399999976158142, 2.3636364936828613],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "1d3b99518765f354",
+      components: {
+        Transform: {
+          local: {
+            position: [0.7857141494750977, 1.399999976158142, 2.3636364936828613],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "63476828373615d7",
+      components: {
+        Transform: {
+          local: {
+            position: [2.357142925262451, 1.399999976158142, 2.3636364936828613],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "66fed635b4636f90",
+      components: {
+        Transform: {
+          local: {
+            position: [3.9285717010498047, 1.399999976158142, 2.3636364936828613],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "386be7d54364551f",
+      components: {
+        Transform: {
+          local: {
+            position: [5.5, 1.399999976158142, 2.3636364936828613],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "0ddc3e63c4e45711",
+      components: {
+        Transform: {
+          local: {
+            position: [-5.5, 1.399999976158142, 0.7272727489471436],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "126082be77e4d946",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.9285714626312256, 1.399999976158142, 0.7272727489471436],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "0a7eaafed42ec107",
+      components: {
+        Transform: {
+          local: {
+            position: [-2.357142925262451, 1.399999976158142, 0.7272727489471436],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "42bbdc134d9b662b",
+      components: {
+        Transform: {
+          local: {
+            position: [-0.7857141494750977, 1.399999976158142, 0.7272727489471436],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "4bbdb1c2f883d232",
+      components: {
+        Transform: {
+          local: {
+            position: [0.7857141494750977, 1.399999976158142, 0.7272727489471436],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "682fa4121210e05e",
+      components: {
+        Transform: {
+          local: {
+            position: [2.357142925262451, 1.399999976158142, 0.7272727489471436],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "071ff1303b475114",
+      components: {
+        Transform: {
+          local: {
+            position: [3.9285717010498047, 1.399999976158142, 0.7272727489471436],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "19c736edc42720e7",
+      components: {
+        Transform: {
+          local: {
+            position: [5.5, 1.399999976158142, 0.7272727489471436],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "600b95ed9c02f2b2",
+      components: {
+        Transform: {
+          local: {
+            position: [-5.5, 1.399999976158142, -0.9090909957885742],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "7d6825327f19ef87",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.9285714626312256, 1.399999976158142, -0.9090909957885742],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "7f0d1545c64555dd",
+      components: {
+        Transform: {
+          local: {
+            position: [-2.357142925262451, 1.399999976158142, -0.9090909957885742],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "23f0e022c37b6d56",
+      components: {
+        Transform: {
+          local: {
+            position: [-0.7857141494750977, 1.399999976158142, -0.9090909957885742],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "1be5d4593af724e7",
+      components: {
+        Transform: {
+          local: {
+            position: [0.7857141494750977, 1.399999976158142, -0.9090909957885742],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "3d778594f3ace61a",
+      components: {
+        Transform: {
+          local: {
+            position: [2.357142925262451, 1.399999976158142, -0.9090909957885742],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "302ec2452e48e3f1",
+      components: {
+        Transform: {
+          local: {
+            position: [3.9285717010498047, 1.399999976158142, -0.9090909957885742],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "59c32075c8aaefd1",
+      components: {
+        Transform: {
+          local: {
+            position: [5.5, 1.399999976158142, -0.9090909957885742],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "49cb723511928218",
+      components: {
+        Transform: {
+          local: {
+            position: [-5.5, 1.399999976158142, -2.545454502105713],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "5395f0148827dcd7",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.9285714626312256, 1.399999976158142, -2.545454502105713],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "4e1ce6534fb66607",
+      components: {
+        Transform: {
+          local: {
+            position: [-2.357142925262451, 1.399999976158142, -2.545454502105713],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "0ecf22ccda85eb26",
+      components: {
+        Transform: {
+          local: {
+            position: [-0.7857141494750977, 1.399999976158142, -2.545454502105713],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "1fc63ee9bcf31869",
+      components: {
+        Transform: {
+          local: {
+            position: [0.7857141494750977, 1.399999976158142, -2.545454502105713],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "38f079d39a59aed7",
+      components: {
+        Transform: {
+          local: {
+            position: [2.357142925262451, 1.399999976158142, -2.545454502105713],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "7f550c009ce3e5d5",
+      components: {
+        Transform: {
+          local: {
+            position: [3.9285717010498047, 1.399999976158142, -2.545454502105713],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "3a52f3fcbf33202c",
+      components: {
+        Transform: {
+          local: {
+            position: [5.5, 1.399999976158142, -2.545454502105713],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "15e137e92ea2c039",
+      components: {
+        Transform: {
+          local: {
+            position: [-5.5, 1.399999976158142, -4.181818008422852],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "5916c5ba3c61c5ee",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.9285714626312256, 1.399999976158142, -4.181818008422852],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "0777a6681b0f677f",
+      components: {
+        Transform: {
+          local: {
+            position: [-2.357142925262451, 1.399999976158142, -4.181818008422852],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "4f14d26df5da517e",
+      components: {
+        Transform: {
+          local: {
+            position: [-0.7857141494750977, 1.399999976158142, -4.181818008422852],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "75de46b77fc598ba",
+      components: {
+        Transform: {
+          local: {
+            position: [0.7857141494750977, 1.399999976158142, -4.181818008422852],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "72be0b1ecf027327",
+      components: {
+        Transform: {
+          local: {
+            position: [2.357142925262451, 1.399999976158142, -4.181818008422852],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "773f8d2a167cb423",
+      components: {
+        Transform: {
+          local: {
+            position: [3.9285717010498047, 1.399999976158142, -4.181818008422852],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "658ac5c79979aeab",
+      components: {
+        Transform: {
+          local: {
+            position: [5.5, 1.399999976158142, -4.181818008422852],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "27e2a12a2493df55",
+      components: {
+        Transform: {
+          local: {
+            position: [-5.5, 1.399999976158142, -5.818181991577148],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "3e7f9193fb7c0a82",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.9285714626312256, 1.399999976158142, -5.818181991577148],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "7415163157a6afba",
+      components: {
+        Transform: {
+          local: {
+            position: [-2.357142925262451, 1.399999976158142, -5.818181991577148],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "08bf281c22004015",
+      components: {
+        Transform: {
+          local: {
+            position: [-0.7857141494750977, 1.399999976158142, -5.818181991577148],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "0a9ea8652b05c2bb",
+      components: {
+        Transform: {
+          local: {
+            position: [0.7857141494750977, 1.399999976158142, -5.818181991577148],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "67c0720ff78b7247",
+      components: {
+        Transform: {
+          local: {
+            position: [2.357142925262451, 1.399999976158142, -5.818181991577148],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "13a5f98a2a5c9360",
+      components: {
+        Transform: {
+          local: {
+            position: [3.9285717010498047, 1.399999976158142, -5.818181991577148],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "47e0b27bc55bd2be",
+      components: {
+        Transform: {
+          local: {
+            position: [5.5, 1.399999976158142, -5.818181991577148],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "29fd77b43bc4842a",
+      components: {
+        Transform: {
+          local: {
+            position: [-5.5, 1.399999976158142, -7.454545021057129],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "696fcbe71078edab",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.9285714626312256, 1.399999976158142, -7.454545021057129],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "4db9555ac1edca84",
+      components: {
+        Transform: {
+          local: {
+            position: [-2.357142925262451, 1.399999976158142, -7.454545021057129],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "1875e8bd78e786f7",
+      components: {
+        Transform: {
+          local: {
+            position: [-0.7857141494750977, 1.399999976158142, -7.454545021057129],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "1e681a4f8c2cc353",
+      components: {
+        Transform: {
+          local: {
+            position: [0.7857141494750977, 1.399999976158142, -7.454545021057129],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "639a13b7fc5789a2",
+      components: {
+        Transform: {
+          local: {
+            position: [2.357142925262451, 1.399999976158142, -7.454545021057129],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "03e9d6945c5fdfea",
+      components: {
+        Transform: {
+          local: {
+            position: [3.9285717010498047, 1.399999976158142, -7.454545021057129],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "306aeead0b060e36",
+      components: {
+        Transform: {
+          local: {
+            position: [5.5, 1.399999976158142, -7.454545021057129],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "78cd34292e005d99",
+      components: {
+        Transform: {
+          local: {
+            position: [-5.5, 1.399999976158142, -9.090909004211426],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "3a87e8fcbbf7db67",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.9285714626312256, 1.399999976158142, -9.090909004211426],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "7b2f1523413985f3",
+      components: {
+        Transform: {
+          local: {
+            position: [-2.357142925262451, 1.399999976158142, -9.090909004211426],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "7df92bdc47d05508",
+      components: {
+        Transform: {
+          local: {
+            position: [-0.7857141494750977, 1.399999976158142, -9.090909004211426],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "4332624f3d348c67",
+      components: {
+        Transform: {
+          local: {
+            position: [0.7857141494750977, 1.399999976158142, -9.090909004211426],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "74ab866640b37c70",
+      components: {
+        Transform: {
+          local: {
+            position: [2.357142925262451, 1.399999976158142, -9.090909004211426],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "22007bde16220189",
+      components: {
+        Transform: {
+          local: {
+            position: [3.9285717010498047, 1.399999976158142, -9.090909004211426],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "6b70f203928a6f9b",
+      components: {
+        Transform: {
+          local: {
+            position: [5.5, 1.399999976158142, -9.090909004211426],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "5c8c1ace17c124ac",
+      components: {
+        Transform: {
+          local: {
+            position: [-5.5, 1.399999976158142, -10.727272987365723],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "571b4b73375dd9ad",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.9285714626312256, 1.399999976158142, -10.727272987365723],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "32bb0d6e75a086e0",
+      components: {
+        Transform: {
+          local: {
+            position: [-2.357142925262451, 1.399999976158142, -10.727272987365723],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "710843a819a908e8",
+      components: {
+        Transform: {
+          local: {
+            position: [-0.7857141494750977, 1.399999976158142, -10.727272987365723],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "02883361081b57cb",
+      components: {
+        Transform: {
+          local: {
+            position: [0.7857141494750977, 1.399999976158142, -10.727272987365723],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "168298dcd5e0bded",
+      components: {
+        Transform: {
+          local: {
+            position: [2.357142925262451, 1.399999976158142, -10.727272987365723],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "5886d4b4b5358000",
+      components: {
+        Transform: {
+          local: {
+            position: [3.9285717010498047, 1.399999976158142, -10.727272987365723],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "4c213401326fa738",
+      components: {
+        Transform: {
+          local: {
+            position: [5.5, 1.399999976158142, -10.727272987365723],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "450fecf1a66cf5db",
+      components: {
+        Transform: {
+          local: {
+            position: [-5.5, 1.399999976158142, -12.363636016845703],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "52d520135e74d912",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.9285714626312256, 1.399999976158142, -12.363636016845703],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "4557e3ad0bffc281",
+      components: {
+        Transform: {
+          local: {
+            position: [-2.357142925262451, 1.399999976158142, -12.363636016845703],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "0b36c390b044a1ed",
+      components: {
+        Transform: {
+          local: {
+            position: [-0.7857141494750977, 1.399999976158142, -12.363636016845703],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "7071c3910dc486f5",
+      components: {
+        Transform: {
+          local: {
+            position: [0.7857141494750977, 1.399999976158142, -12.363636016845703],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "7e39b28c4587054e",
+      components: {
+        Transform: {
+          local: {
+            position: [2.357142925262451, 1.399999976158142, -12.363636016845703],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "6ee65f37ebccec3f",
+      components: {
+        Transform: {
+          local: {
+            position: [3.9285717010498047, 1.399999976158142, -12.363636016845703],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "06110f507bd1f93e",
+      components: {
+        Transform: {
+          local: {
+            position: [5.5, 1.399999976158142, -12.363636016845703],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "6b7c9213b41a491b",
+      components: {
+        Transform: {
+          local: {
+            position: [-5.5, 1.399999976158142, -14],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "39c2fd2eb399608d",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.9285714626312256, 1.399999976158142, -14],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "5f18c5af23937363",
+      components: {
+        Transform: {
+          local: {
+            position: [-2.357142925262451, 1.399999976158142, -14],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "0e19cf2c3e84a04c",
+      components: {
+        Transform: {
+          local: {
+            position: [-0.7857141494750977, 1.399999976158142, -14],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "1aa80ba0d3e2415b",
+      components: {
+        Transform: {
+          local: {
+            position: [0.7857141494750977, 1.399999976158142, -14],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.05000000074505806, 0.10000000149011612, 1],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "54342e2721748d7a",
+      components: {
+        Transform: {
+          local: {
+            position: [2.357142925262451, 1.399999976158142, -14],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.9900000095367432, 0.6499999761581421, 0.2199999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "768d8609c671f2f1",
+      components: {
+        Transform: {
+          local: {
+            position: [3.9285717010498047, 1.399999976158142, -14],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.550000011920929, 0.15000000596046448, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "5b5d4528ada1a486",
+      components: {
+        Transform: {
+          local: {
+            position: [5.5, 1.399999976158142, -14],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.10000000149011612, 0.8500000238418579, 0.949999988079071],
+          intensity: 10,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+  ],
+  brush_meshes: {
+    "1": {
+      vertices: [
+        [-16, -0.25, -16],
+        [16, -0.25, -16],
+        [16, 0.25, -16],
+        [-16, 0.25, -16],
+        [-16, -0.25, 16],
+        [16, -0.25, 16],
+        [16, 0.25, 16],
+        [-16, 0.25, 16],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [3, 2, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 6, 7],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 5, 4],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 6, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 7, 3, 0],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [1, 2, 6, 5],
+        },
+      ],
+    },
+  },
+}

@@ -1,20 +1,18 @@
 // Byte-level golden for scene serialization.
 //
 // Round-trip tests prove a scene reads back as what it was; they do not prove
-// the bytes on disk are unchanged. This one pins the exact JSON text and binary
-// payload a fixed scene produces, so a change to serializer ownership,
-// registration order, or field emission that would silently rewrite every
-// cooked scene fails here first.
+// the bytes on disk are unchanged. This one pins the exact JSON text a fixed
+// scene produces, so a change to serializer ownership or field emission that
+// would silently rewrite every serialized scene fails here first.
 //
-// A deliberate format change updates these constants; anything else that moves
-// them is a defect. The scene below carries several component families on
-// purpose, including a parented entity, so chunk ordering is covered.
+// A deliberate format change updates the constant; anything else that moves
+// it is a defect. The scene below carries several component families on
+// purpose, including a parented entity.
 
 #include <gtest/gtest.h>
 
 #include <core/hash/ContentHash.h>
 #include <core/json/JsonStringify.h>
-#include <core/serialization/BinaryWriter.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <render/extract/Camera.h>
 #include <render/PointLightComponent.h>
@@ -78,30 +76,4 @@ TEST(SceneSerializationGolden, JsonTextIsUnchanged)
 
     EXPECT_EQ(HashOfString(json), 0xf0f7a73e5baf9829ULL)
         << "scene JSON changed; if that was intended, update the constant.\n" << json;
-}
-
-TEST(SceneSerializationGolden, BinaryPayloadIsUnchanged)
-{
-    const ComponentSerializerRegistry serializers = EngineSerializers();
-    Registry registry = MakeGoldenScene();
-    std::stringstream stream(std::ios::in | std::ios::out | std::ios::binary);
-    BinaryWriter writer(stream);
-    SceneSaveError error;
-    ASSERT_TRUE(SaveSceneBinary(registry, serializers, writer, &error)) << error.Message;
-
-    const std::string bytes = stream.str();
-    // The binary form writes one chunk per registered serializer, so this hash
-    // moves with the set AND the order of registration. Last moved by
-    // components being registered by the feature that owns them rather than
-    // from one central list, which put the chunks in a different order.
-    //
-    // Order is not a format contract -- the reader dispatches on each chunk's
-    // id, proven by SceneSerializer.ADifferentRegistrationOrderReadsTheSameScene
-    // -- so a change here is only ever a prompt to check that nothing about the
-    // scene's content changed. Last moved by SceneInstance joining the engine
-    // set, which adds one empty chunk; the JSON golden beside this was
-    // untouched, which is the check that no existing content moved.
-    EXPECT_EQ(HashOfString(bytes), 0x96e7c2fc0e49749dULL)
-        << "scene binary changed; if that was intended, update the constant."
-        << " size=" << bytes.size();
 }

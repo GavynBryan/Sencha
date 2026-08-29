@@ -10,8 +10,6 @@
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <core/serialization/BinaryFormat.h>
-#include <core/serialization/BinaryReader.h>
-#include <core/serialization/BinaryWriter.h>
 #include <core/serialization/Serialize.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <render/extract/Camera.h>
@@ -31,10 +29,6 @@
 
 namespace
 {
-    std::stringstream MakeBinaryStream()
-    {
-        return std::stringstream(std::ios::in | std::ios::out | std::ios::binary);
-    }
 
     Registry MakeSceneRegistry()
     {
@@ -68,150 +62,7 @@ namespace
         registry.Components.AddComponent(entity, WorldTransform{ transform });
     }
 
-    void SetParent(Registry& registry, EntityId child, EntityId parent)
-    {
-        registry.Components.AddComponent(child, Parent{ parent });
-    }
 }
-TEST(SceneSerializer, BinaryRoundTripsCleanRegistry)
-{
-    const ComponentSerializerRegistry serializers = MakeSerializers();
-    Registry source = MakeSceneRegistry();
-
-    EntityId parent = source.Components.CreateEntity();
-    EntityId child = source.Components.CreateEntity();
-
-    AddTransform(source, parent, MakeTransform(1.0f, 2.0f, 3.0f));
-    AddTransform(source, child, MakeTransform(4.0f, 5.0f, 6.0f));
-    SetParent(source, child, parent);
-
-    CameraComponent camera{
-        .Projection = ProjectionKind::Orthographic,
-        .FovYRadians = 0.75f,
-        .NearPlane = 0.25f,
-        .FarPlane = 250.0f,
-        .OrthographicHeight = 12.0f,
-    };
-    source.Components.AddComponent(parent, camera);
-
-    auto stream = MakeBinaryStream();
-    BinaryWriter writer(stream);
-    ASSERT_TRUE(SaveSceneBinary(source, serializers, writer));
-
-    stream.seekg(0);
-    BinaryReader reader(stream);
-    Registry loaded;
-    SceneLoadError error;
-    ASSERT_TRUE(LoadSceneBinary(reader, loaded, serializers, &error)) << error.Message;
-
-    EXPECT_EQ(loaded.Components.EntityCount(), 2u);
-
-    ASSERT_EQ(loaded.Components.CountComponents<LocalTransform>(), 2u);
-    ASSERT_EQ(loaded.Components.CountComponents<CameraComponent>(), 1u);
-    ASSERT_EQ(loaded.Components.CountComponents<Parent>(), 1u);
-
-    EntityId loadedChild;
-    EntityId loadedParent;
-    loaded.Components.ForEachComponent<Parent>([&](EntityId childEntity, const Parent& parentComponent)
-    {
-        loadedChild = childEntity;
-        loadedParent = parentComponent.Entity;
-    });
-
-    ASSERT_TRUE(loadedChild.IsValid());
-    ASSERT_TRUE(loadedParent.IsValid());
-    ASSERT_NE(loaded.Components.TryGet<LocalTransform>(loadedParent), nullptr);
-    EXPECT_EQ(loaded.Components.TryGet<LocalTransform>(loadedParent)->Value.Position, Vec3d(1.0f, 2.0f, 3.0f));
-
-    const CameraComponent* loadedCamera = loaded.Components.TryGet<CameraComponent>(loadedParent);
-    ASSERT_NE(loadedCamera, nullptr);
-    EXPECT_EQ(loadedCamera->Projection, ProjectionKind::Orthographic);
-    EXPECT_FLOAT_EQ(loadedCamera->OrthographicHeight, 12.0f);
-}
-
-// Chunk order is not part of the format. The writer emits one chunk per
-// registered serializer, so registration order decides the order they land in;
-// the reader dispatches on each chunk's id. Anything else would make a scene
-// readable only by a build whose components were registered in the same order
-// as the one that wrote it, which is the opposite of what the chunk id is for.
-TEST(SceneSerializer, ADifferentRegistrationOrderReadsTheSameScene)
-{
-    const ComponentSerializerRegistry writerSerializers = MakeSerializers();
-
-    // The same components, registered the other way round, so the chunks come
-    // out in a different order than the reader below expects them in.
-    ComponentSerializerRegistry readerSerializers;
-    RegisterComponent<CameraComponent>(readerSerializers);
-    RegisterComponent<LocalTransform>(readerSerializers);
-
-    // Guard against the test being vacuous: the two registries must genuinely
-    // disagree about order, or this proves nothing.
-    ASSERT_FALSE(writerSerializers.Entries().empty());
-    ASSERT_NE(writerSerializers.Entries().front()->TypeId(),
-              readerSerializers.Entries().front()->TypeId());
-
-    Registry source = MakeSceneRegistry();
-    const EntityId entity = source.Components.CreateEntity();
-    AddTransform(source, entity, MakeTransform(9.0f, 8.0f, 7.0f));
-    source.Components.AddComponent(entity, CameraComponent{ .FovYRadians = 0.5f });
-
-    auto stream = MakeBinaryStream();
-    BinaryWriter writer(stream);
-    ASSERT_TRUE(SaveSceneBinary(source, writerSerializers, writer));
-
-    stream.seekg(0);
-    BinaryReader reader(stream);
-    Registry loaded;
-    SceneLoadError error;
-    ASSERT_TRUE(LoadSceneBinary(reader, loaded, readerSerializers, &error)) << error.Message;
-
-    ASSERT_EQ(loaded.Components.CountComponents<LocalTransform>(), 1u);
-    ASSERT_EQ(loaded.Components.CountComponents<CameraComponent>(), 1u);
-
-    EntityId loadedEntity;
-    loaded.Components.ForEachComponent<CameraComponent>(
-        [&](EntityId e, const CameraComponent&) { loadedEntity = e; });
-    ASSERT_TRUE(loadedEntity.IsValid());
-    EXPECT_EQ(loaded.Components.TryGet<LocalTransform>(loadedEntity)->Value.Position,
-              Vec3d(9.0f, 8.0f, 7.0f));
-    EXPECT_FLOAT_EQ(loaded.Components.TryGet<CameraComponent>(loadedEntity)->FovYRadians, 0.5f);
-}
-
-TEST(SceneSerializer, BinaryLoadIsAdditiveAndRemapsEntityIndices)
-{
-    const ComponentSerializerRegistry serializers = MakeSerializers();
-    Registry source = MakeSceneRegistry();
-    EntityId sourceEntity = source.Components.CreateEntity();
-    AddTransform(source, sourceEntity, MakeTransform(8.0f, 0.0f, 0.0f));
-
-    auto stream = MakeBinaryStream();
-    BinaryWriter writer(stream);
-    ASSERT_TRUE(SaveSceneBinary(source, serializers, writer));
-
-    Registry loaded = MakeSceneRegistry();
-    EntityId preexisting = loaded.Components.CreateEntity();
-    AddTransform(loaded, preexisting, MakeTransform(-1.0f, 0.0f, 0.0f));
-
-    stream.seekg(0);
-    BinaryReader reader(stream);
-    ASSERT_TRUE(LoadSceneBinary(reader, loaded, serializers));
-
-    EXPECT_EQ(loaded.Components.EntityCount(), 2u);
-    ASSERT_EQ(loaded.Components.CountComponents<LocalTransform>(), 2u);
-    if (const LocalTransform* staleSource = loaded.Components.TryGet<LocalTransform>(
-            EntityId{ sourceEntity.Index, sourceEntity.Generation }))
-    {
-        EXPECT_NE(staleSource->Value.Position, Vec3d(8.0f, 0.0f, 0.0f));
-    }
-
-    bool foundRemapped = false;
-    loaded.Components.ForEachComponent<LocalTransform>([&](EntityId, const LocalTransform& component)
-    {
-        foundRemapped = foundRemapped || component.Value.Position == Vec3d(8.0f, 0.0f, 0.0f);
-    });
-    EXPECT_TRUE(foundRemapped);
-}
-
 TEST(SceneSerializer, JsonRoundTripsThroughStringifyAndParser)
 {
     const ComponentSerializerRegistry serializers = MakeSerializers();

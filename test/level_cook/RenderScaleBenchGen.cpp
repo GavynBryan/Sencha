@@ -100,7 +100,7 @@ void AuthorShadowLights(EditorDocument& doc, int count, float ringRadius,
 void CookAuthoredLevel(EditorDocument& doc, const fs::path& root,
                        const std::string& stem)
 {
-    const fs::path levelPath = root / "levels" / (stem + ".json");
+    const fs::path levelPath = root / "levels" / (stem + ".sscene");
     fs::create_directories(levelPath.parent_path());
     ASSERT_TRUE(doc.SaveAs(levelPath.generic_string()));
     const DocumentCookResult result = CookDocument(levelPath, root, /*cellSize*/ 16.0);

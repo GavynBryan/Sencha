@@ -1,8 +1,6 @@
 #include <world/serialization/SceneSerializer.h>
 
 #include <core/logging/LoggingProvider.h>
-#include <core/serialization/BinaryArchive.h>
-#include <core/serialization/BinaryFormat.h>
 #include <core/serialization/JsonArchive.h>
 #include <core/serialization/Serialize.h>
 #include <world/ComponentRegistrar.h>
@@ -15,7 +13,6 @@
 #include <algorithm>
 #include <cassert>
 #include <memory>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -23,27 +20,10 @@
 
 namespace
 {
-    void SetError(SceneSaveError* error, std::string message)
-    {
-        if (error)
-            error->Message = std::move(message);
-    }
-
     void SetError(SceneLoadError* error, std::string message)
     {
         if (error)
             error->Message = std::move(message);
-    }
-
-    IComponentSerializer* FindByChunkMutable(const ComponentSerializerRegistry& serializers,
-                                             std::uint32_t chunkId)
-    {
-        for (const auto& entry : serializers.Entries())
-        {
-            if (entry->BinaryChunkId() == chunkId)
-                return entry.get();
-        }
-        return nullptr;
     }
 
     IComponentSerializer* FindByJsonKey(const ComponentSerializerRegistry& serializers,
@@ -75,187 +55,6 @@ namespace
             registry.Components.AddComponent(child, Parent{ parent });
     }
 
-    bool SaveRegistryChunk(const std::vector<EntityId>& entities, BinaryWriter& writer)
-    {
-        ChunkWriter chunk;
-        if (!chunk.Begin(writer, SceneChunk::Registry, SceneVersion))
-            return false;
-
-        const auto count = static_cast<std::uint32_t>(entities.size());
-        if (!Serialize(writer, count))
-            return false;
-
-        for (EntityId entity : entities)
-        {
-            if (!Serialize(writer, entity.Index)
-                || !Serialize(writer, entity.Generation))
-            {
-                return false;
-            }
-        }
-
-        return chunk.End(writer);
-    }
-
-    bool SaveHierarchyChunk(const Registry& registry, BinaryWriter& writer)
-    {
-        std::vector<std::pair<EntityId, EntityId>> pairs;
-        if (registry.Components.IsRegistered<Parent>())
-        {
-            registry.Components.ForEachComponent<Parent>(
-                [&](EntityId child, const Parent& parent)
-                {
-                    if (parent.Entity.IsValid())
-                        pairs.emplace_back(child, parent.Entity);
-                });
-        }
-
-        ChunkWriter chunk;
-        if (!chunk.Begin(writer, SceneChunk::Hierarchy, SceneVersion))
-            return false;
-
-        const auto count = static_cast<std::uint32_t>(pairs.size());
-        if (!Serialize(writer, count))
-            return false;
-
-        for (const auto& [child, parent] : pairs)
-        {
-            if (!Serialize(writer, child.Index)
-                || !Serialize(writer, parent.Index))
-            {
-                return false;
-            }
-        }
-
-        return chunk.End(writer);
-    }
-
-    EntityId RemapEntity(
-        EntityIndex savedIndex,
-        const std::unordered_map<EntityIndex, EntityId>& remap)
-    {
-        auto it = remap.find(savedIndex);
-        return it == remap.end() ? EntityId{} : it->second;
-    }
-
-    bool LoadRegistryChunk(BinaryReader& reader,
-                           Registry& registry,
-                           std::unordered_map<EntityIndex, EntityId>& remap,
-                           std::vector<EntityId>& loadedEntities)
-    {
-        std::uint32_t count = 0;
-        if (!Deserialize(reader, count))
-            return false;
-
-        remap.reserve(count);
-        for (std::uint32_t i = 0; i < count; ++i)
-        {
-            EntityIndex savedIndex = 0;
-            std::uint32_t savedGeneration = 0;
-            if (!Deserialize(reader, savedIndex)
-                || !Deserialize(reader, savedGeneration))
-            {
-                return false;
-            }
-
-            EntityId runtime = registry.Components.CreateEntity();
-            remap[savedIndex] = runtime;
-            loadedEntities.push_back(runtime);
-        }
-
-        return true;
-    }
-
-    bool LoadHierarchyChunk(BinaryReader& reader,
-                            std::uint32_t count,
-                            Registry& registry,
-                            const std::unordered_map<EntityIndex, EntityId>& remap)
-    {
-        for (std::uint32_t i = 0; i < count; ++i)
-        {
-            EntityIndex childIndex = 0;
-            EntityIndex parentIndex = 0;
-            if (!Deserialize(reader, childIndex)
-                || !Deserialize(reader, parentIndex))
-            {
-                return false;
-            }
-
-            EntityId child = RemapEntity(childIndex, remap);
-            EntityId parent = RemapEntity(parentIndex, remap);
-            if (!child.IsValid() || !parent.IsValid())
-                return false;
-
-            SetParentComponent(registry, child, parent);
-        }
-
-        return true;
-    }
-
-    bool SaveComponentChunkBinary(const IComponentSerializer& serializer,
-                                  const std::vector<EntityId>& entities,
-                                  const Registry& registry,
-                                  BinaryWriter& writer,
-                                  SceneSerializationContext& context)
-    {
-        // Buffer component data first so the entity count (unknown upfront) can be
-        // written before the payload, as required by the chunk format.
-        std::stringstream payload(std::ios::in | std::ios::out | std::ios::binary);
-        BinaryWriter payloadWriter(payload);
-
-        std::uint32_t count = 0;
-        for (EntityId entity : entities)
-        {
-            if (!serializer.HasComponent(entity, registry))
-                continue;
-
-            if (!Serialize(payloadWriter, entity.Index))
-                return false;
-
-            BinaryWriteArchive archive(payloadWriter);
-            if (!serializer.Save(archive, entity, registry, context) || !archive.Ok())
-                return false;
-
-            ++count;
-        }
-
-        const std::string payloadBytes = payload.str();
-        if (!Serialize(writer, count))
-            return false;
-
-        if (!payloadBytes.empty()
-            && !writer.WriteBytes(payloadBytes.data(), static_cast<std::streamsize>(payloadBytes.size())))
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    bool LoadComponentChunkBinary(IComponentSerializer& serializer,
-                                  BinaryReader& reader,
-                                  std::uint32_t count,
-                                  Registry& registry,
-                                  const std::unordered_map<EntityIndex, EntityId>& remap,
-                                  SceneSerializationContext& context)
-    {
-        for (std::uint32_t i = 0; i < count; ++i)
-        {
-            EntityIndex savedOwner = 0;
-            if (!Deserialize(reader, savedOwner))
-                return false;
-
-            EntityId owner = RemapEntity(savedOwner, remap);
-            if (!owner.IsValid())
-                return false;
-
-            BinaryReadArchive archive(reader);
-            if (!serializer.Load(archive, owner, registry, context) || !archive.Ok())
-                return false;
-        }
-        return true;
-    }
-
     void RollbackLoadedEntities(const ComponentSerializerRegistry& serializers,
                                 Registry& registry,
                                 const std::vector<EntityId>& entities)
@@ -277,139 +76,6 @@ void RegisterEngineSceneSerializers(ComponentSerializerRegistry& serializers)
     // a scene can contain cannot drift from the runtime's.
     ComponentRegistrar registrar(nullptr, &serializers, nullptr);
     RegisterEngineComponents(registrar);
-}
-
-bool SaveSceneBinary(const Registry& registry,
-                     const ComponentSerializerRegistry& serializers,
-                     BinaryWriter& writer,
-                     SceneSaveError* error)
-{
-    LoggingProvider logging;
-    SceneSerializationContext context(logging);
-    return SaveSceneBinary(registry, serializers, writer, context, error);
-}
-
-bool SaveSceneBinary(const Registry& registry,
-                     const ComponentSerializerRegistry& serializers,
-                     BinaryWriter& writer,
-                     SceneSerializationContext& context,
-                     SceneSaveError* error)
-{
-    const auto entities = registry.Components.GetAliveEntities();
-
-    if (!WriteBinaryHeader(writer, SceneMagic, SceneVersion))
-    {
-        SetError(error, "Failed to write scene header.");
-        return false;
-    }
-
-    if (!SaveRegistryChunk(entities, writer))
-    {
-        SetError(error, "Failed to write entity registry chunk.");
-        return false;
-    }
-
-    if (!SaveHierarchyChunk(registry, writer))
-    {
-        SetError(error, "Failed to write transform hierarchy chunk.");
-        return false;
-    }
-
-    for (const auto& entry : serializers.Entries())
-    {
-        ChunkWriter chunk;
-        if (!chunk.Begin(writer, entry->BinaryChunkId(), SceneVersion)
-            || !SaveComponentChunkBinary(*entry, entities, registry, writer, context)
-            || !chunk.End(writer))
-        {
-            SetError(error, "Failed to write component chunk.");
-            return false;
-        }
-    }
-
-    return true;
-}
-
-bool LoadSceneBinary(BinaryReader& reader,
-                     Registry& registry,
-                     const ComponentSerializerRegistry& serializers,
-                     SceneLoadError* error)
-{
-    LoggingProvider logging;
-    SceneSerializationContext context(logging);
-    return LoadSceneBinary(reader, registry, serializers, context, error);
-}
-
-bool LoadSceneBinary(BinaryReader& reader,
-                     Registry& registry,
-                     const ComponentSerializerRegistry& serializers,
-                     SceneSerializationContext& context,
-                     SceneLoadError* error)
-{
-    BinaryHeader header;
-    if (!ReadBinaryHeader(reader, header)
-        || !ValidateBinaryHeader(header, SceneMagic, SceneVersion))
-    {
-        SetError(error, "Invalid scene header.");
-        return false;
-    }
-
-    std::unordered_map<EntityIndex, EntityId> remap;
-    std::vector<EntityId> loadedEntities;
-    bool loadedRegistry = false;
-
-    RegisterSerializedComponentStorage(serializers, registry);
-
-    while (true)
-    {
-        ChunkReader chunk;
-        if (!chunk.ReadHeader(reader))
-            break;
-
-        const ChunkHeader& chunkHeader = chunk.GetHeader();
-        bool ok = true;
-
-        if (chunkHeader.Id == SceneChunk::Registry)
-        {
-            ok = LoadRegistryChunk(reader, registry, remap, loadedEntities);
-            loadedRegistry = ok;
-        }
-        else if (chunkHeader.Id == SceneChunk::Hierarchy)
-        {
-            std::uint32_t count = 0;
-            ok = Deserialize(reader, count)
-                && LoadHierarchyChunk(reader, count, registry, remap);
-        }
-        else if (IComponentSerializer* entry = FindByChunkMutable(serializers, chunkHeader.Id))
-        {
-            std::uint32_t count = 0;
-            ok = Deserialize(reader, count)
-                && LoadComponentChunkBinary(*entry, reader, count, registry, remap, context);
-        }
-
-        if (!ok)
-        {
-            RollbackLoadedEntities(serializers, registry, loadedEntities);
-            SetError(error, "Failed to read scene chunk " + std::to_string(chunkHeader.Id) + ".");
-            return false;
-        }
-
-        if (!chunk.Skip(reader))
-        {
-            RollbackLoadedEntities(serializers, registry, loadedEntities);
-            SetError(error, "Failed to skip scene chunk remainder.");
-            return false;
-        }
-    }
-
-    if (!loadedRegistry)
-    {
-        RollbackLoadedEntities(serializers, registry, loadedEntities);
-        SetError(error, "Scene is missing entity registry chunk.");
-        return false;
-    }
-
-    return true;
 }
 
 JsonValue SaveSceneJson(const Registry& registry,

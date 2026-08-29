@@ -100,7 +100,7 @@ void AddProbeVolume(EditorDocument& doc, Vec3d center, Vec3d halfExtents,
 void CookAuthoredLevel(EditorDocument& doc, const fs::path& root,
                        const char* stem)
 {
-    const fs::path levelPath = root / "levels" / (std::string(stem) + ".json");
+    const fs::path levelPath = root / "levels" / (std::string(stem) + ".sscene");
     fs::create_directories(levelPath.parent_path());
     ASSERT_TRUE(doc.SaveAs(levelPath.generic_string()));
     const DocumentCookResult result = CookDocument(levelPath, root, /*cellSize*/ 16.0);
