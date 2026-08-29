@@ -5,6 +5,35 @@
   },
   "entities": [
     {
+      "id": "11c04b1a77e0c001",
+      "components": {
+        "name": {
+          "value": "Player Start"
+        },
+        "Transform": {
+          "local": {
+            "position": [
+              0,
+              1,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "player_start": {}
+      }
+    },
+    {
       "id": "2feaeaa63f327931",
       "components": {
         "Transform": {

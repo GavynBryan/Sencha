@@ -1,0 +1,33 @@
+{
+  "format_version": 1,
+  "entities": [
+    {
+      "id": "11c04b1a77e0a001",
+      "components": {
+        "name": {
+          "value": "Player Pawn"
+        },
+        "Transform": {
+          "local": {
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
