@@ -5,6 +5,8 @@
 
 #include "EditorDocument.h"
 
+#include "scene_source/SceneSourcePaths.h"
+
 #include "DocumentSerialization.h"
 #include "EntityNameComponent.h"
 #include "brush/BrushMeshSerialization.h"
@@ -353,6 +355,37 @@ void EditorDocument::MintMissingInstanceIds()
 
     MarkDirty();
     RebuildSceneProjection();
+}
+
+bool EditorDocument::DependsOnSource(std::string_view assetPath) const
+{
+    for (const SceneInstanceRecord& record : Retained_.Instances)
+        if (record.Source == assetPath)
+            return true;
+    return SourceCache_ != nullptr && SourceCache_->HasLoaded(assetPath);
+}
+
+bool EditorDocument::ReloadDependentSources(std::span<const std::string> assetPaths)
+{
+    bool any = false;
+    for (const std::string& assetPath : assetPaths)
+    {
+        if (!DependsOnSource(assetPath))
+            continue;
+        if (SourceCache_ != nullptr)
+            SourceCache_->Invalidate(assetPath);
+        any = true;
+    }
+    if (any)
+        RebuildSceneProjection();
+    return any;
+}
+
+std::string EditorDocument::SourceAssetPath() const
+{
+    if (FilePath.empty())
+        return {};
+    return MakeSceneSourcePath(ContentRoots_, FilePath);
 }
 
 void EditorDocument::HarvestInstanceOverrides()

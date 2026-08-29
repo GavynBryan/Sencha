@@ -214,6 +214,10 @@ bool WorldDocument::SaveWorld()
     AssignSceneRefsForNewZones();
     // Refresh derived bounds before the zone files write so they persist current.
     RefreshDerivedZoneBounds();
+    // Which source files this save rewrites: any open document that depends
+    // on one of them re-projects once every file is on disk (§3: saving a
+    // source rebuilds dependent open projections).
+    std::vector<std::string> savedSources;
     for (ZoneHeader& header : Manifest_.Zones)
     {
         const std::string scenePath = ResolveScenePath(header.SceneRef);
@@ -224,6 +228,7 @@ bool WorldDocument::SaveWorld()
         if (it != OpenZones_.end())
         {
             EditorDocument& document = *it->second.Document;
+            const bool wroteFile = !document.HasFilePath() || document.IsDirty();
             if (!document.HasFilePath())
             {
                 if (!document.SaveAs(scenePath))
@@ -237,6 +242,9 @@ bool WorldDocument::SaveWorld()
                 log.Error("failed to save zone scene '{}'", scenePath);
                 return false;
             }
+            if (wroteFile)
+                if (std::string source = document.SourceAssetPath(); !source.empty())
+                    savedSources.push_back(std::move(source));
         }
         else if (!fs::exists(scenePath, ec))
         {
@@ -257,6 +265,7 @@ bool WorldDocument::SaveWorld()
         const std::string scenePath = ResolveScenePath(Manifest_.WorldSceneRef);
         std::error_code ec;
         fs::create_directories(fs::path(scenePath).parent_path(), ec);
+        const bool wroteFile = !WorldScene_->HasFilePath() || WorldScene_->IsDirty();
         if (!WorldScene_->HasFilePath())
         {
             if (!WorldScene_->SaveAs(scenePath))
@@ -270,6 +279,9 @@ bool WorldDocument::SaveWorld()
             log.Error("failed to save world scene '{}'", scenePath);
             return false;
         }
+        if (wroteFile)
+            if (std::string source = WorldScene_->SourceAssetPath(); !source.empty())
+                savedSources.push_back(std::move(source));
     }
 
     const std::string text = JsonStringify(WriteWorldPartitionManifest(Manifest_), /*pretty*/ true);
@@ -285,8 +297,29 @@ bool WorldDocument::SaveWorld()
 
     WorldDirty_ = false;
     WriteUserSidecar();
+    PropagateSavedSources(savedSources);
     RunValidation();
     return true;
+}
+
+void WorldDocument::PropagateSavedSources(std::span<const std::string> savedSources)
+{
+    if (savedSources.empty())
+        return;
+
+    // Every open document, the savers included: a zone that both saved and
+    // places another saved zone still has to pick up the sibling's new
+    // content. A document never depends on itself (the resolver refuses
+    // cycles), so the saver is naturally excluded from its own reload.
+    auto& log = Logging_.GetLogger<WorldDocument>();
+    VisitOpenZones([&](ZoneId, EditorDocument& document, const ZoneViewState&)
+    {
+        if (document.ReloadDependentSources(savedSources))
+            log.Info("re-projected '{}' after its sources saved",
+                     document.GetDisplayName());
+    });
+    if (WorldScene_ != nullptr && WorldScene_->ReloadDependentSources(savedSources))
+        log.Info("re-projected the world scene after its sources saved");
 }
 
 bool WorldDocument::SaveWorldAs(std::string_view path)

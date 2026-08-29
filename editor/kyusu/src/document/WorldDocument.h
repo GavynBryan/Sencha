@@ -82,7 +82,10 @@ public:
     // world saved under the wrong extension must still open as a world.
     [[nodiscard]] static bool IsWorldManifestFile(std::string_view path);
     bool LoadWorld(std::string_view path);          // parses .sworld; sidecar or start zone picks focus
-    bool SaveWorld();                                // world file + every dirty zone document + sidecar
+    bool SaveWorld();
+    // After a save lands source files on disk: every open document that
+    // depends on one of them re-projects from the fresh content.
+    void PropagateSavedSources(std::span<const std::string> savedSources);                                // world file + every dirty zone document + sidecar
     // Enforces the .sworld extension (replacing whatever the dialog produced)
     // so saved worlds always round-trip through the extension fast path.
     bool SaveWorldAs(std::string_view path);

@@ -8,6 +8,8 @@
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
+#include "selection/SelectionContext.h"
+#include "selection/SelectionService.h"
 
 #include <core/logging/LoggingProvider.h>
 #include <render/PointLightComponent.h>
@@ -21,6 +23,7 @@
 #include <array>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 
 namespace
@@ -256,6 +259,63 @@ namespace
             << "a value back at its source is not an override\n" << saved;
     }
 
+    // §3: saving a source re-projects dependents, keeping their overrides and
+    // their selection. The rewrite happens within the same second as the
+    // first parse on purpose -- the timestamp cannot be trusted to move, so
+    // the explicit invalidation is what this exercises.
+    TEST_F(SceneProjectionTest, ASavedSourceReprojectsADependentInPlace)
+    {
+        EditorDocument host = LoadHost(HostText());
+        const EntityId light = FindById(host, PersistentEntityId{ 0x202 });
+        auto* lamp = host.GetScene().GetRegistry()
+                         .Components.TryGet<PointLightComponent>(light);
+        ASSERT_NE(lamp, nullptr);
+        ASSERT_EQ(lamp->Range, 3.0f); // the source's value
+        lamp->Intensity = 40.0f;      // a live override, must survive
+
+        SelectionContext context;
+        SelectionService selection(context);
+        selection.BindDocument(&host.GetScene().GetRegistry().Components);
+        host.SetProjectionObserver([&selection]
+                                   { selection.RetargetToDocument(); });
+        selection.ApplySelection(SelectableRef::EntitySelection(
+            host.GetScene().GetRegistry().Id, light));
+
+        // The source changes on disk: the same entities and ids, a wider
+        // range. Rewriting the saved text in place keeps the placement's
+        // recorded entity ids valid (a rename is out of scope here).
+        {
+            const fs::path doorPath = Root / "props/door.sscene";
+            std::ifstream in(doorPath);
+            std::string text((std::istreambuf_iterator<char>(in)),
+                             std::istreambuf_iterator<char>());
+            const std::string was = "range: 3";
+            const std::size_t at = text.find(was);
+            ASSERT_NE(at, std::string::npos) << text;
+            text.replace(at, was.size(), "range: 9");
+            std::ofstream(doorPath, std::ios::trunc) << text;
+        }
+
+        ASSERT_TRUE(host.DependsOnSource("asset://props/door.sscene"));
+        const std::string unrelated[] = { std::string("asset://props/other.sscene") };
+        EXPECT_FALSE(host.ReloadDependentSources(unrelated));
+
+        const std::string saved[] = { std::string("asset://props/door.sscene") };
+        ASSERT_TRUE(host.ReloadDependentSources(saved));
+
+        const EntityId reprojected = FindById(host, PersistentEntityId{ 0x202 });
+        ASSERT_TRUE(reprojected.IsValid());
+        const auto* applied = host.GetScene().GetRegistry()
+                                  .Components.TryGet<PointLightComponent>(
+                                      reprojected);
+        ASSERT_NE(applied, nullptr);
+        EXPECT_EQ(applied->Range, 9.0f)      << "the saved source's new value";
+        EXPECT_EQ(applied->Intensity, 40.0f) << "the live override, retained";
+
+        // And the selection followed the entity through the rebuild.
+        EXPECT_EQ(selection.GetPrimarySelection().Entity, reprojected);
+    }
+
     TEST_F(SceneProjectionTest, DeletingAMemberBecomesSuppression)
     {
         EditorDocument host = LoadHost(HostText());
@@ -349,8 +409,6 @@ namespace
 
 #include "document/commands/ReparentEntitiesCommand.h"
 #include "document/commands/SceneInstanceCommands.h"
-#include "selection/SelectionContext.h"
-#include "selection/SelectionService.h"
 
 namespace
 {

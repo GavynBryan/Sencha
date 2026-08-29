@@ -13,6 +13,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <functional>
@@ -136,6 +137,23 @@ public:
     // an inner instance id repeats across two placements of the same source
     // and could not address one group.
     [[nodiscard]] SceneInstanceId SceneInstanceOwnerOf(EntityId entity) const;
+
+    // Whether this document's placements reach `assetPath` -- directly, as a
+    // nested source its resolve had to read, or as a record whose resolve
+    // failed (a broken source that later saves valid must still trigger the
+    // dependent). The saver asks this before ordering a re-projection.
+    [[nodiscard]] bool DependsOnSource(std::string_view assetPath) const;
+
+    // Forgets the given sources' cached parses and re-projects once, when
+    // any of them is one this document depends on; false means none were and
+    // nothing happened. The explicit half of source invalidation (§3):
+    // timestamps alone can miss a same-second rewrite.
+    bool ReloadDependentSources(std::span<const std::string> assetPaths);
+
+    // This document's own identity as a source reference: the asset:// path
+    // its file is known by under the content roots, or empty for an unsaved
+    // document or one outside them.
+    [[nodiscard]] std::string SourceAssetPath() const;
 
     // Records fresh ids for every instance path resolution reported missing
     // (a source that grew since the placement was recorded), then re-projects.

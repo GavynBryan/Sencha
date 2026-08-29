@@ -15,6 +15,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/BinaryReader.h>
 #include <render/IrradianceVolumeComponent.h>
+#include <render/PointLightComponent.h>
 #include <world/scene/SmapFormat.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/identity/PersistentIdComponent.h>
@@ -132,6 +133,58 @@ TEST_F(WorldCookTest, CooksTwoZoneWorldToCookedManifest)
         EXPECT_EQ(manifest.Zones[0].Id, first);
         EXPECT_EQ(manifest.Zones[1].Id, second);
     }
+}
+
+// §3 at the world level: SaveWorld lands zone files on disk, then every open
+// document that places one of them re-projects from the fresh content.
+TEST_F(WorldCookTest, SavingAZoneReprojectsTheZoneThatPlacesIt)
+{
+    WorldDocument world(Logging);
+    world.SetContentRoots({ Root });
+    world.NewWorld("TestWorld");
+    const ZoneId prefabZone = world.Manifest().Zones[0].Id;
+    const ZoneId hostZone = world.AddZone(world.Manifest().Graphs[0].Id, "Host");
+    ASSERT_TRUE(world.SetZoneBounds(hostZone,
+        Aabb3d::FromMinMax(Vec3d{ 24, 0, -5 }, Vec3d{ 40, 4, 5 })));
+
+    // The prefab zone: one light. Saved once so the host can resolve it.
+    const EntityId light =
+        world.FocusDocument().GetScene().CreateEntity(Vec3d{ 0, 2, 0 });
+    PointLightComponent lamp{};
+    lamp.Range = 3.0f;
+    world.FocusDocument().GetScene().GetRegistry().Components.AddComponent(
+        light, lamp);
+    ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+    const std::string prefabRef = world.Manifest().Zones[0].SceneRef;
+
+    // The host zone places it.
+    ASSERT_TRUE(world.SetFocusZone(hostZone));
+    std::string placeError;
+    const SceneInstanceId placed = world.FocusDocument().PlaceSceneInstance(
+        "asset://" + prefabRef, Transform3f::Identity(), {}, &placeError);
+    ASSERT_TRUE(placed.IsValid()) << placeError;
+    const auto hostLightRange = [&]() -> float
+    {
+        for (EntityId entity : world.FocusDocument().GetScene().GetAllEntities())
+            if (const auto* projected =
+                    world.FocusDocument().GetRegistry()
+                        .Components.TryGet<PointLightComponent>(entity))
+                return projected->Range;
+        return -1.0f;
+    };
+    ASSERT_EQ(hostLightRange(), 3.0f);
+
+    // Edit the prefab zone and save the world: the host must show the new
+    // value without a reload.
+    ASSERT_TRUE(world.SetFocusZone(prefabZone));
+    world.FocusDocument().GetScene().GetRegistry()
+        .Components.TryGet<PointLightComponent>(light)->Range = 9.0f;
+    world.FocusDocument().MarkDirty();
+    ASSERT_TRUE(world.SetFocusZone(hostZone));
+    ASSERT_TRUE(world.SaveWorld());
+
+    EXPECT_EQ(hostLightRange(), 9.0f)
+        << "the placing zone did not re-project after its source saved";
 }
 
 TEST_F(WorldCookTest, RefusesGateBindingToMissingDock)

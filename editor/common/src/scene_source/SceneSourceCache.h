@@ -33,6 +33,22 @@ public:
     // it succeeded. One slot: the caller reports failures as it hits them.
     [[nodiscard]] const std::string& LastError() const { return LastError_; }
 
+    // Whether a resolve through this cache ever loaded `assetPath` --
+    // directly or as a nested source. This IS the dependency question: a
+    // document depends on exactly what its cache had to read.
+    [[nodiscard]] bool HasLoaded(std::string_view assetPath) const
+    {
+        return Entries.contains(std::string(assetPath));
+    }
+
+    // Drops one entry so the next Find re-reads the file. The explicit form
+    // of the timestamp invalidation, for the saver who KNOWS the file moved:
+    // same-second rewrites can leave mtime and size both unchanged.
+    void Invalidate(std::string_view assetPath)
+    {
+        Entries.erase(std::string(assetPath));
+    }
+
 private:
     struct Entry
     {
