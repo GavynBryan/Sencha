@@ -2,6 +2,7 @@
 
 #include <assets/runtime/AssetSystem.h>
 #include <assets/scene/SceneCache.h>
+#include <assets/scene/ScenePackageBuild.h>
 #include <core/logging/LoggingProvider.h>
 #include <world/RuntimeWorld.h>
 #include <world/build/EntityBuildPackage.h>
@@ -11,7 +12,6 @@
 #include <world/transform/TransformComponents.h>
 #include <zone/ZonePackageImporter.h>
 
-#include <any>
 #include <cassert>
 #include <utility>
 
@@ -52,8 +52,9 @@ struct SceneSpawnService::Request
 
     // Worker product, consumed at instantiation.
     std::unique_ptr<EntityBuildPackage> Package;
-    // Residency reference held from request until publication settles.
-    SceneHandle Scene;
+    // The settled build, holding the scene's residency reference from request
+    // until publication settles.
+    std::shared_ptr<ScenePackageBuild> Build;
     AssetId Source;
 };
 
@@ -115,93 +116,44 @@ SceneSpawnId SceneSpawnService::RequestSpawn(std::string_view sceneAssetPath,
     }
     record->Source = asset->Id;
 
-    // Owner thread: a resident scene skips the read and the parse; the shared
-    // payload is captured here so the task thread never touches the cache.
-    record->Scene = Assets->TryAcquireScene(asset->Path);
-    std::shared_ptr<const SmapContents> residentContents =
-        record->Scene.IsValid() ? Assets->GetSceneContentsShared(record->Scene)
-                                : nullptr;
-
-    struct SpawnWork
-    {
-        std::unique_ptr<EntityBuildPackage> Package;
-        AssetStaging Staging; // engaged only when the scene was not resident
-        bool Staged = false;
-        std::string Error;
-    };
-
+    // Shared rather than unique because the task closures must stay copyable;
+    // each phase still runs on exactly the thread its name says.
+    auto build = std::make_shared<ScenePackageBuild>(*Assets, *asset);
     const SceneInstanceId instance = record->Instance;
     const AssetId source = record->Source;
-    (void)Tasks.Submit<std::unique_ptr<SpawnWork>>(
+    (void)Tasks.Submit<int>(
         // Work, on a task thread: parse and package build against immutable
         // inputs; serializer registration is sealed before spawns run.
-        [this, asset = *asset, residentContents, instance, source]() mutable {
-            auto work = std::make_unique<SpawnWork>();
-            const SmapContents* contents = residentContents.get();
-            if (contents == nullptr)
-            {
-                work->Staging = Assets->StageScene(asset);
-                if (!work->Staging.IsValid())
-                {
-                    work->Error = std::move(work->Staging.Error);
-                    return work;
-                }
-                work->Staged = true;
-                contents = std::any_cast<SmapContents>(&work->Staging.Payload);
-            }
-
-            auto package = std::make_unique<EntityBuildPackage>();
-            SmapError buildError;
-            if (!BuildEntityPackageFromSmap(
-                    *contents, Serializers, *package,
-                    SmapPackageOptions{ .StripPersistentIdentity = true },
-                    &buildError))
-            {
-                work->Error = std::move(buildError.Message);
-                return work;
-            }
+        [this, build, instance, source]() {
+            build->Build(Serializers,
+                         SmapPackageOptions{ .StripPersistentIdentity = true });
 
             // Every spawned entity carries its group identity; the index
             // hooks make the spawn addressable the moment it imports.
-            for (std::uint32_t i = 0; i < package->EntityCount(); ++i)
-                (void)package->AddComponent(
-                    PackageEntityId{ i }, SceneInstance{ source, instance });
-
-            work->Package = std::move(package);
-            return work;
+            if (EntityBuildPackage* package = build->Package())
+                for (std::uint32_t i = 0; i < package->EntityCount(); ++i)
+                    (void)package->AddComponent(
+                        PackageEntityId{ i }, SceneInstance{ source, instance });
+            return 0;
         },
         // Commit, on the owner thread at the drain: record the product; the
         // pump publishes in request order.
-        [this, id = record->Id](std::unique_ptr<SpawnWork> work) {
+        [this, build, id = record->Id](int) {
             for (auto& pending : Requests)
             {
                 if (pending->Id != id)
                     continue;
-                if (work->Error.empty() && work->Staged)
-                {
-                    const SceneHandle committed =
-                        Assets != nullptr
-                            ? Assets->CommitScene(std::move(work->Staging))
-                            : SceneHandle{};
-                    if (committed.IsValid())
-                        pending->Scene = committed;
-                }
-                if (!work->Error.empty() || work->Package == nullptr)
+                if (!build->Settle())
                 {
                     pending->State = Request::Phase::Failed;
-                    pending->Error = work->Error.empty()
-                        ? "package was not produced" : std::move(work->Error);
+                    pending->Error = build->Error();
                     Logging.GetLogger<SceneSpawnService>().Error(
                         "SceneSpawnService: spawn of '{}' failed: {}",
                         pending->ScenePath, pending->Error);
-                    if (pending->Scene.IsValid() && Assets != nullptr)
-                    {
-                        Assets->ReleaseScene(pending->Scene);
-                        pending->Scene = SceneHandle{};
-                    }
                     return;
                 }
-                pending->Package = std::move(work->Package);
+                pending->Build = build;
+                pending->Package = build->TakePackage();
                 pending->State = Request::Phase::Ready;
                 return;
             }
@@ -302,10 +254,10 @@ void SceneSpawnService::Instantiate(Request& request)
     }
 
     // The parse was scaffolding either way; the entities are the product.
-    if (request.Scene.IsValid() && Assets != nullptr)
+    if (request.Build != nullptr)
     {
-        Assets->ReleaseScene(request.Scene);
-        request.Scene = SceneHandle{};
+        request.Build->ReleaseScene();
+        request.Build.reset();
     }
 }
 

@@ -7,6 +7,8 @@
 #include <world/serialization/ComponentSerializer.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
+#include "SmapSceneFixture.h"
+
 #include <gtest/gtest.h>
 
 #include <cstddef>
@@ -87,61 +89,26 @@ namespace
         AssetPreloader Preloader;
     };
 
-    // One temp .smap on disk plus its registry record, written by the given
-    // serializer set so skew scenarios can cook against a different schema.
-    class TempSceneAsset
+    // One entity carrying scene_asset_value plus one dependency: the minimal
+    // contents the front-door tests care about.
+    [[nodiscard]] SmapContents MakeSceneContents()
     {
-    public:
-        TempSceneAsset(AssetRegistry& registry,
-                       const ComponentSerializerRegistry& serializers,
-                       std::string_view name)
-        {
-            SmapContents contents;
-            contents.Dependencies.push_back(
-                SmapDependency{ AssetId{ 9 }, "asset://meshes/prop.smesh" });
-            SmapEntityRecord record;
-            record.Components.emplace_back(
-                MakeComponentTypeId("scene_asset_value"),
-                JsonValue(JsonValue::Object{ { "value", JsonValue(7.0) } }));
-            contents.Entities.push_back(std::move(record));
-
-            std::vector<std::byte> bytes;
-            SmapError error;
-            EXPECT_TRUE(WriteSmap(contents, serializers, bytes, &error))
-                << error.Message;
-
-            static int counter = 0;
-            File = std::filesystem::temp_directory_path()
-                / ("sencha_scene_asset_" + std::string(name) + "_"
-                   + std::to_string(++counter) + ".smap");
-            std::ofstream out(File, std::ios::binary | std::ios::trunc);
-            out.write(reinterpret_cast<const char*>(bytes.data()),
-                      static_cast<std::streamsize>(bytes.size()));
-
-            Path = "asset://levels/" + std::string(name) + ".smap";
-            EXPECT_TRUE(registry.Register(AssetRecord{
-                .Type = AssetType::Scene,
-                .SourceKind = AssetSourceKind::File,
-                .Path = Path,
-                .FilePath = File.generic_string(),
-            }));
-        }
-
-        ~TempSceneAsset()
-        {
-            std::error_code ec;
-            std::filesystem::remove(File, ec);
-        }
-
-        std::string Path;
-        std::filesystem::path File;
-    };
+        SmapContents contents;
+        contents.Dependencies.push_back(
+            SmapDependency{ AssetId{ 9 }, "asset://meshes/prop.smesh" });
+        SmapEntityRecord record;
+        record.Components.emplace_back(
+            MakeComponentTypeId("scene_asset_value"),
+            JsonValue(JsonValue::Object{ { "value", JsonValue(7.0) } }));
+        contents.Entities.push_back(std::move(record));
+        return contents;
+    }
 } // namespace
 
 TEST(SceneAsset, LoadsThroughTheFrontDoorAndDedupsResidency)
 {
     SceneAssetHarness h;
-    TempSceneAsset scene(h.Registry, h.Serializers, "hall");
+    TempSmapScene scene(h.Registry, h.Serializers, MakeSceneContents(), "hall");
 
     const SceneHandle first = h.Assets.LoadScene(scene.Path);
     ASSERT_TRUE(first.IsValid());
@@ -170,7 +137,7 @@ TEST(SceneAsset, SchemaSkewRefusesTheLoad)
     ComponentSerializerRegistry skewed;
     ASSERT_EQ(skewed.Register(std::make_unique<ComponentSerializer<SceneAssetSkew>>()),
               ComponentSerializerRegistry::RegisterResult::Added);
-    TempSceneAsset scene(h.Registry, skewed, "skewed");
+    TempSmapScene scene(h.Registry, skewed, MakeSceneContents(), "skewed");
 
     EXPECT_FALSE(h.Assets.LoadScene(scene.Path).IsValid());
     EXPECT_FALSE(h.Scenes.Find(scene.Path).IsValid());
@@ -193,7 +160,7 @@ TEST(SceneAsset, MissingFileFailsWithoutResidency)
 TEST(SceneAsset, PreloadStreamsSceneToResidency)
 {
     SceneAssetHarness h;
-    TempSceneAsset scene(h.Registry, h.Serializers, "streamed");
+    TempSmapScene scene(h.Registry, h.Serializers, MakeSceneContents(), "streamed");
 
     const std::vector<std::string> paths{ scene.Path };
     auto preload = h.Preloader.Begin(paths);

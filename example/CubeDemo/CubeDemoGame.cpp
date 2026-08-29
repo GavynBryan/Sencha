@@ -333,24 +333,14 @@ void CubeDemoGame::OnStart(GameStartupContext&)
         .FilePath = "cube_demo_scene.smap",
     });
 
-    std::shared_ptr<AssetPreload> preload;
-    SmapContents metadata;
-    SmapError metadataError;
-    if (ReadSmapMetadataFile(
-            "cube_demo_scene.smap",
-            metadata,
-            &metadataError))
-    {
-        preload = Preloader->Begin(
-            ResolveSmapDependencyPaths(
-                metadata.Dependencies,
-                runtimeAssets.Registry));
-    }
-    else
+    std::string preloadError;
+    std::shared_ptr<AssetPreload> preload =
+        Preloader->BeginSceneDependencies("cube_demo_scene.smap", &preloadError);
+    if (preload == nullptr)
     {
         logging.GetLogger<CubeDemoGame>().Warn(
             "CubeDemo: no preload ({}); resolve-on-import",
-            metadataError.Message);
+            preloadError);
     }
 
     CaptionRuntime* captions = &engine.Captions();

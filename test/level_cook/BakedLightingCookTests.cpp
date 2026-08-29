@@ -5,6 +5,7 @@
 // no graphics.
 
 #include "document/DocumentCook.h"
+#include "CookedSmapReaders.h"
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
 #include "brush/BrushMesh.h"
@@ -360,23 +361,8 @@ protected:
     // carries one (nothing baked, or lighting withdrawn).
     std::optional<JsonValue> CookedZoneLightmap()
     {
-        SmapContents contents;
-        SmapError error;
-        if (!ReadSmapFile(Root / ".cooked/levels/test.smap",
-                          EditorSceneSerializers(), contents, &error))
-        {
-            ADD_FAILURE() << error.Message;
-            return std::nullopt;
-        }
-        const IComponentSerializer* serializer =
-            EditorSceneSerializers().FindByJsonKey("ZoneLightmap");
-        if (serializer == nullptr)
-            return std::nullopt;
-        for (const SmapEntityRecord& entity : contents.Entities)
-            for (const auto& [type, payload] : entity.Components)
-                if (type == serializer->TypeId())
-                    return payload;
-        return std::nullopt;
+        return FindFirstCookedComponent(
+            ReadCookedScene(Root / ".cooked/levels/test.smap"), "ZoneLightmap");
     }
 
     fs::path Root;

@@ -30,6 +30,8 @@
 #include <vector>
 
 class CollisionShapeCache;
+struct ProbeVolumeFile;
+struct RuntimeZoneRecord;
 
 // The actions this game reads, resolved from the profile's action set once at
 // startup. Systems index by id from here; adding an action is an edit to
@@ -53,6 +55,14 @@ public:
 private:
     ConsoleResult LoadMap(std::string_view mapName);
     ConsoleResult LoadWorld(std::string_view worldName);
+    // The shared cooked-content attach for streamed scenes (+map and world
+    // zones): collision cells and the sibling probe file.
+    void AttachStreamedSceneContent(RuntimeWorld& runtime,
+                                    RuntimeZoneRecord& zone,
+                                    const SmapContents& contents,
+                                    const ProbeVolumeFile& probes);
+    [[nodiscard]] static AsyncZoneLoader::SceneStageFn MakeProbeStage(
+        std::string sceneFilePath, std::shared_ptr<ProbeVolumeFile> probes);
     ConsoleResult FocusWorldZone(std::string_view zoneHex);
     ConsoleResult SetCameraMode(std::string_view modeName);
     ConsoleResult RequestTurret(bool placeOnly);

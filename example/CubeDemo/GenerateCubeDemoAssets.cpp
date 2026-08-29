@@ -31,38 +31,12 @@
 
 #include <cstdio>
 #include <filesystem>
-#include <fstream>
 #include <optional>
-#include <sstream>
 #include <string>
 
 namespace
 {
     constexpr std::string_view kAssetPrefix = "asset://";
-
-    std::optional<JsonValue> ParseJsonFile(const std::filesystem::path& path)
-    {
-        std::ifstream file(path);
-        if (!file.is_open())
-        {
-            std::fprintf(stderr, "GenerateCubeDemoAssets: could not open '%s'\n",
-                         path.generic_string().c_str());
-            return std::nullopt;
-        }
-
-        std::ostringstream buffer;
-        buffer << file.rdbuf();
-
-        JsonParseError parseError;
-        std::optional<JsonValue> json = JsonParse(buffer.str(), &parseError);
-        if (!json)
-        {
-            std::fprintf(stderr, "GenerateCubeDemoAssets: JSON error in '%s' at %zu: %s\n",
-                         path.generic_string().c_str(), parseError.Position,
-                         parseError.Message.c_str());
-        }
-        return json;
-    }
 
     // Maps "asset://x/y.ext" to "<assetsRoot>/x/y.ext" — the inverse of the
     // scanner's MakeVirtualAssetPath.
@@ -104,9 +78,13 @@ int main(int argc, char** argv)
     // Manifest, id map, and stamped cooked scene: the shared cook-scene output
     // (one level of .smat indirection, stable ids, id-stamped scene). The demo's
     // asset:// mapping is the flat root/x; it has no Generated refs of its own.
-    std::optional<JsonValue> sceneJson = ParseJsonFile(scenePath);
+    std::string parseError;
+    std::optional<JsonValue> sceneJson = JsonParseFile(scenePath, &parseError);
     if (!sceneJson)
+    {
+        std::fprintf(stderr, "GenerateCubeDemoAssets: %s\n", parseError.c_str());
         return 1;
+    }
 
     std::filesystem::path cookedScenePath = scenePath;
     cookedScenePath.replace_extension();

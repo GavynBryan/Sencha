@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "document/DocumentCook.h"
+#include "CookedSmapReaders.h"
 #include "document/DocumentSerialization.h"
 #include "document/WorldCook.h"
 #include "scene_source/Json5Parser.h"
@@ -266,14 +267,7 @@ TEST_F(WorldCookTest, CookReflectsCrossZoneMove)
     ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
 
     const auto cookedEntityCount = [this](const std::string& sceneRef)
-    {
-        SmapContents contents;
-        SmapError error;
-        EXPECT_TRUE(ReadSmapFile(Root / sceneRef, EditorSceneSerializers(),
-                                 contents, &error))
-            << error.Message;
-        return contents.Entities.size();
-    };
+    { return ReadCookedScene(Root / sceneRef).Entities.size(); };
 
     const WorldCookResult before = CookWorld(world, Root, 16.0, Logging, nullptr);
     ASSERT_TRUE(before.Success) << before.Error;
@@ -639,11 +633,8 @@ TEST_F(WorldCookTest, CookedSceneCarriesAuthoredIdsAndGeneratedEntitiesCarryNone
 
     const WorldPartitionManifest manifest = ParseCookedManifest(cooked.CookedManifestPath);
     ASSERT_FALSE(manifest.Zones.empty());
-    SmapContents scene;
-    SmapError sceneError;
-    ASSERT_TRUE(ReadSmapFile(Root / manifest.Zones[0].CookedSceneRef,
-                             EditorSceneSerializers(), scene, &sceneError))
-        << sceneError.Message;
+    const SmapContents scene =
+        ReadCookedScene(Root / manifest.Zones[0].CookedSceneRef);
 
     bool sawAuthoredId = false;
     std::size_t withoutId = 0;

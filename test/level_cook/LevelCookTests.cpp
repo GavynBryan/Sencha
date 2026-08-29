@@ -1,5 +1,6 @@
 #include "document/DocumentCook.h"
 #include "document/EditorDocument.h"
+#include "CookedSmapReaders.h"
 #include "document/DocumentSerialization.h"
 
 #include <assets/cook/CookPrune.h>
@@ -67,29 +68,6 @@ namespace
             return levelPath;
         }
 
-        [[nodiscard]] SmapContents ReadCookedScene(const fs::path& p) const
-        {
-            SmapContents contents;
-            SmapError error;
-            EXPECT_TRUE(ReadSmapFile(p, EditorSceneSerializers(), contents, &error))
-                << error.Message;
-            return contents;
-        }
-
-        // The record's payload for a component named by its JSON key, or null.
-        [[nodiscard]] static const JsonValue* FindComponent(
-            const SmapEntityRecord& record, std::string_view key)
-        {
-            const IComponentSerializer* serializer =
-                EditorSceneSerializers().FindByJsonKey(key);
-            if (serializer == nullptr)
-                return nullptr;
-            for (const auto& [type, payload] : record.Components)
-                if (type == serializer->TypeId())
-                    return &payload;
-            return nullptr;
-        }
-
         fs::path Root;
         LoggingProvider Logging; // sink-less: a silent no-op for headless cooks
     };
@@ -120,8 +98,8 @@ TEST_F(LevelCookTest, CooksPerCellMeshesAndScene)
     std::size_t staticMeshEntities = 0;
     for (const SmapEntityRecord& entity : cooked.Entities)
     {
-        EXPECT_EQ(FindComponent(entity, "brush"), nullptr); // no brushes survive the cook
-        if (const JsonValue* sm = FindComponent(entity, "StaticMesh"))
+        EXPECT_EQ(FindCookedComponent(entity, "brush"), nullptr); // no brushes survive the cook
+        if (const JsonValue* sm = FindCookedComponent(entity, "StaticMesh"))
         {
             ++staticMeshEntities;
             ASSERT_NE(sm->Find("materials"), nullptr);
@@ -157,9 +135,9 @@ TEST_F(LevelCookTest, CooksLiveDocumentWithoutSavingOrMutatingIt)
     int cameras = 0, staticMeshes = 0, brushes = 0;
     for (const SmapEntityRecord& entity : cooked.Entities)
     {
-        cameras += FindComponent(entity, "Camera") != nullptr;
-        staticMeshes += FindComponent(entity, "StaticMesh") != nullptr;
-        brushes += FindComponent(entity, "brush") != nullptr;
+        cameras += FindCookedComponent(entity, "Camera") != nullptr;
+        staticMeshes += FindCookedComponent(entity, "StaticMesh") != nullptr;
+        brushes += FindCookedComponent(entity, "brush") != nullptr;
     }
     EXPECT_EQ(cameras, 1);
     EXPECT_EQ(staticMeshes, 1);

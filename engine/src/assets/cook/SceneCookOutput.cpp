@@ -12,33 +12,11 @@
 #include <cstdint>
 #include <fstream>
 #include <optional>
-#include <sstream>
 #include <unordered_set>
 #include <vector>
 
 namespace
 {
-    std::optional<JsonValue> ParseJsonFile(const std::filesystem::path& path, std::string* error)
-    {
-        std::ifstream file(path);
-        if (!file.is_open())
-        {
-            if (error)
-                *error = "WriteCookedScene: could not open '" + path.generic_string() + "'";
-            return std::nullopt;
-        }
-
-        std::ostringstream buffer;
-        buffer << file.rdbuf();
-
-        JsonParseError parseError;
-        std::optional<JsonValue> json = JsonParse(buffer.str(), &parseError);
-        if (!json && error)
-            *error = "WriteCookedScene: JSON error in '" + path.generic_string()
-                + "': " + parseError.Message;
-        return json;
-    }
-
     // The assembled scene's {version, entities, hierarchy} shape, compiled to
     // entity records: components keyed to their contract ids, the hierarchy's
     // positional relations to parent ordinals, and each entity's persistent_id
@@ -189,9 +167,15 @@ bool WriteCookedScene(
         if (!paths[i].ends_with(".smat"))
             continue;
 
-        std::optional<JsonValue> smatJson = ParseJsonFile(physicalPathFor(paths[i]), error);
+        std::string parseError;
+        std::optional<JsonValue> smatJson =
+            JsonParseFile(physicalPathFor(paths[i]), &parseError);
         if (!smatJson)
+        {
+            if (error)
+                *error = "WriteCookedScene: " + parseError;
             return false;
+        }
 
         for (std::string& ref : CollectAssetPaths(*smatJson))
         {

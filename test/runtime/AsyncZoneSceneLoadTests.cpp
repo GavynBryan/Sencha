@@ -17,6 +17,8 @@
 #include <world/serialization/SceneSerializationContext.h>
 #include <zone/AsyncZoneLoader.h>
 
+#include "SmapSceneFixture.h"
+
 #include <gtest/gtest.h>
 
 #include <chrono>
@@ -85,56 +87,23 @@ namespace
         AssetSystem Assets;
     };
 
-    // Writes a two-entity scene with one collision cell and registers it.
-    class TempZoneScene
+    // A two-entity scene with one collision cell.
+    [[nodiscard]] SmapContents MakeZoneContents()
     {
-    public:
-        TempZoneScene(SceneZoneHarness& h, std::string_view name)
+        SmapContents contents;
+        for (int i = 0; i < 2; ++i)
         {
-            SmapContents contents;
-            for (int i = 0; i < 2; ++i)
-            {
-                SmapEntityRecord record;
-                record.Components.emplace_back(
-                    MakeComponentTypeId("zone_scene_marker"),
-                    JsonValue(JsonValue::Object{
-                        { "value", JsonValue(static_cast<double>(i)) } }));
-                contents.Entities.push_back(std::move(record));
-            }
-            contents.Collision.push_back(
-                SmapCollisionCell{ "levels/cell.scol", Vec3d(1.0f, 0.0f, 0.0f) });
-
-            std::vector<std::byte> bytes;
-            SmapError error;
-            EXPECT_TRUE(WriteSmap(contents, h.Serializers, bytes, &error))
-                << error.Message;
-
-            static int counter = 0;
-            File = std::filesystem::temp_directory_path()
-                / ("sencha_zone_scene_" + std::string(name) + "_"
-                   + std::to_string(++counter) + ".smap");
-            std::ofstream out(File, std::ios::binary | std::ios::trunc);
-            out.write(reinterpret_cast<const char*>(bytes.data()),
-                      static_cast<std::streamsize>(bytes.size()));
-
-            Path = "asset://levels/" + std::string(name) + ".smap";
-            EXPECT_TRUE(h.Registry.Register(AssetRecord{
-                .Type = AssetType::Scene,
-                .SourceKind = AssetSourceKind::File,
-                .Path = Path,
-                .FilePath = File.generic_string(),
-            }));
+            SmapEntityRecord record;
+            record.Components.emplace_back(
+                MakeComponentTypeId("zone_scene_marker"),
+                JsonValue(JsonValue::Object{
+                    { "value", JsonValue(static_cast<double>(i)) } }));
+            contents.Entities.push_back(std::move(record));
         }
-
-        ~TempZoneScene()
-        {
-            std::error_code ec;
-            std::filesystem::remove(File, ec);
-        }
-
-        std::string Path;
-        std::filesystem::path File;
-    };
+        contents.Collision.push_back(
+            SmapCollisionCell{ "levels/cell.scol", Vec3d(1.0f, 0.0f, 0.0f) });
+        return contents;
+    }
 
     std::size_t CountMarkers(RuntimeWorld& world, ZoneId zone)
     {
@@ -155,7 +124,7 @@ namespace
 TEST(AsyncZoneSceneLoad, ZeroThreadEndToEnd)
 {
     SceneZoneHarness h;
-    TempZoneScene scene(h, "hall");
+    TempSmapScene scene(h.Registry, h.Serializers, MakeZoneContents(), "hall");
 
     std::size_t finalizeCollisionCells = 0;
     const ZoneId zone{ 5 };
@@ -185,7 +154,7 @@ TEST(AsyncZoneSceneLoad, ZeroThreadEndToEnd)
 TEST(AsyncZoneSceneLoad, ResidentSceneLoadsWithoutTouchingTheFile)
 {
     SceneZoneHarness h;
-    TempZoneScene scene(h, "pinned");
+    TempSmapScene scene(h.Registry, h.Serializers, MakeZoneContents(), "pinned");
 
     // Pin the scene resident, then delete the backing file: a load that still
     // succeeds provably never re-read or re-parsed it.
@@ -239,7 +208,7 @@ TEST(AsyncZoneSceneLoad, MissingSceneFileRecordsABuildFailure)
 TEST(AsyncZoneSceneLoad, ThreadedLoadsShareOneResidentSceneAcrossZones)
 {
     SceneZoneHarness h(1);
-    TempZoneScene scene(h, "shared");
+    TempSmapScene scene(h.Registry, h.Serializers, MakeZoneContents(), "shared");
 
     // Pinned resident up front: both loads read the one shared payload from
     // their task threads while the owner thread keeps working the cache.

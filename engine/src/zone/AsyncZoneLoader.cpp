@@ -2,6 +2,7 @@
 
 #include <assets/runtime/AssetPreloader.h>
 #include <assets/runtime/AssetSystem.h>
+#include <assets/scene/ScenePackageBuild.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/WorldComponentSchema.h>
 #include <runtime/RuntimeFrameLoop.h>
@@ -12,7 +13,6 @@
 #include <zone/ZonePackageImporter.h>
 
 #include <algorithm>
-#include <any>
 #include <string>
 #include <cassert>
 #include <memory>
@@ -120,75 +120,27 @@ AsyncTaskHandle AsyncZoneLoader::BeginLoadScene(
         return {};
     }
 
-    // Owner thread: a resident scene skips the read and the parse. The shared
-    // payload is captured here so the task thread never touches the cache.
-    SceneHandle residentScene = assets.TryAcquireScene(record->Path);
-    std::shared_ptr<const SmapContents> residentContents =
-        residentScene.IsValid() ? assets.GetSceneContentsShared(residentScene)
-                                : nullptr;
-
-    struct SceneWork
-    {
-        std::unique_ptr<EntityBuildPackage> Package;
-        AssetStaging Staging; // engaged only when the scene was not resident
-        bool Staged = false;
-        std::string Error;
-    };
-
-    AsyncTaskHandle handle = Tasks.Submit<std::unique_ptr<SceneWork>>(
+    // Shared rather than unique because the task closures must stay copyable;
+    // each phase of the build still runs on exactly the thread its name says.
+    auto build = std::make_shared<ScenePackageBuild>(assets, *record);
+    AsyncTaskHandle handle = Tasks.Submit<int>(
         // Work, on a task thread: file IO, parse, and package build against
         // immutable inputs. `Serializers` sees only const reads; module
         // registration is sealed before zones stream.
-        [this, record = *record, residentContents,
-         stageExtra = std::move(stageExtra), &assets]() mutable {
-            auto work = std::make_unique<SceneWork>();
-            const SmapContents* contents = residentContents.get();
-            if (contents == nullptr)
-            {
-                work->Staging = assets.StageScene(record);
-                if (!work->Staging.IsValid())
-                {
-                    work->Error = std::move(work->Staging.Error);
-                    return work;
-                }
-                work->Staged = true;
-                contents = std::any_cast<SmapContents>(&work->Staging.Payload);
-            }
-
-            auto package = std::make_unique<EntityBuildPackage>();
-            SmapError buildError;
-            if (!BuildEntityPackageFromSmap(*contents, Serializers, *package,
-                                            &buildError))
-            {
-                work->Error = std::move(buildError.Message);
-                return work;
-            }
-            if (stageExtra)
-                stageExtra(*contents);
-            work->Package = std::move(package);
-            return work;
+        [this, build, stageExtra = std::move(stageExtra)]() {
+            build->Build(Serializers);
+            if (stageExtra && build->Contents() != nullptr)
+                stageExtra(*build->Contents());
+            return 0;
         },
         // Commit, on the owner thread at the drain point: residency first,
         // then the ordinary import path.
-        [this, zone, participation, residentScene, &assets,
-         finalize = std::move(finalize),
-         preload](std::unique_ptr<SceneWork> work) mutable {
-            SceneHandle scene = residentScene;
-            if (work->Error.empty() && work->Staged)
-            {
-                scene = assets.CommitScene(std::move(work->Staging));
-                if (!scene.IsValid())
-                    work->Error = "scene contents did not commit into the cache";
-            }
-
-            if (!work->Error.empty() || work->Package == nullptr)
+        [this, zone, participation, build, finalize = std::move(finalize),
+         preload](int) mutable {
+            if (!build->Settle())
             {
                 RemoveInFlight(zone);
-                RecordFailure(zone, ZoneLoadStage::Build,
-                              work->Error.empty() ? "package was not produced"
-                                                  : std::move(work->Error));
-                if (scene.IsValid())
-                    assets.ReleaseScene(scene);
+                RecordFailure(zone, ZoneLoadStage::Build, build->Error());
                 if (preload)
                     preload->ReleaseAll();
                 return;
@@ -198,10 +150,10 @@ AsyncTaskHandle AsyncZoneLoader::BeginLoadScene(
             // the owner thread once publication settles, even when a pending
             // preload defers it. The payload itself is shared, so a finalize
             // that runs after an unrelated release still reads valid data.
-            std::shared_ptr<const SmapContents> contents =
-                assets.GetSceneContentsShared(scene);
+            std::shared_ptr<const SmapContents> contents = build->ContentsShared();
+            std::unique_ptr<EntityBuildPackage> package = build->TakePackage();
             std::shared_ptr<void> sceneLease(
-                nullptr, [scene, &assets](void*) { assets.ReleaseScene(scene); });
+                nullptr, [build](void*) { build->ReleaseScene(); });
 
             FinalizeFn wrapped;
             if (finalize)
@@ -210,7 +162,7 @@ AsyncTaskHandle AsyncZoneLoader::BeginLoadScene(
                     return finalize(world, zoneRecord, *contents);
                 };
 
-            CommitOrDefer(zone, std::move(work->Package), std::move(wrapped),
+            CommitOrDefer(zone, std::move(package), std::move(wrapped),
                           participation, std::move(preload),
                           std::move(sceneLease));
         });

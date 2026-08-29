@@ -4,6 +4,7 @@
 // what the editing session meant.
 
 #include "document/DocumentCook.h"
+#include "CookedSmapReaders.h"
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
@@ -422,42 +423,31 @@ namespace
             CookDocument(Root / "levels/host.sscene", Root, 16.0);
         ASSERT_TRUE(cooked.Success) << cooked.Error;
 
-        SmapContents scene;
-        SmapError sceneError;
-        ASSERT_TRUE(ReadSmapFile(cooked.CookedScenePath, EditorSceneSerializers(),
-                                 scene, &sceneError))
-            << sceneError.Message;
+        const SmapContents scene = ReadCookedScene(cooked.CookedScenePath);
 
         // The light the door contributes, under its minted id, at rest in the
         // cooked output the runtime will stream.
-        const IComponentSerializer* lightSerializer =
-            EditorSceneSerializers().FindByJsonKey("PointLight");
-        ASSERT_NE(lightSerializer, nullptr);
         std::vector<PersistentEntityId> cookedLightIds;
         for (const SmapEntityRecord& record : scene.Entities)
-            for (const auto& [type, payload] : record.Components)
-                if (type == lightSerializer->TypeId())
-                    cookedLightIds.push_back(record.Persistent);
+            if (FindCookedComponent(record, "PointLight") != nullptr)
+                cookedLightIds.push_back(record.Persistent);
         EXPECT_FALSE(cookedLightIds.empty());
 
         // D1: every expanded member carries its placement's identity into the
         // cooked scene -- one scene_instance id across the group, the source
         // named (as the stamped ref or the bare path, per the id map).
-        const IComponentSerializer* instanceSerializer =
-            EditorSceneSerializers().FindByJsonKey("scene_instance");
-        ASSERT_NE(instanceSerializer, nullptr);
         std::vector<std::string> groupIds;
         for (const SmapEntityRecord& record : scene.Entities)
-            for (const auto& [type, payload] : record.Components)
-                if (type == instanceSerializer->TypeId())
-                {
-                    ASSERT_TRUE(payload.IsObject());
-                    const JsonValue* instanceId = payload.Find("id");
-                    ASSERT_NE(instanceId, nullptr);
-                    ASSERT_TRUE(instanceId->IsString());
-                    groupIds.push_back(instanceId->AsString());
-                    ASSERT_NE(payload.Find("source"), nullptr);
-                }
+            if (const JsonValue* payload =
+                    FindCookedComponent(record, "scene_instance"))
+            {
+                ASSERT_TRUE(payload->IsObject());
+                const JsonValue* instanceId = payload->Find("id");
+                ASSERT_NE(instanceId, nullptr);
+                ASSERT_TRUE(instanceId->IsString());
+                groupIds.push_back(instanceId->AsString());
+                ASSERT_NE(payload->Find("source"), nullptr);
+            }
         // Root + light. The brush body bakes into cell geometry rather than
         // passing through, so it carries no membership.
         ASSERT_GE(groupIds.size(), 2u);

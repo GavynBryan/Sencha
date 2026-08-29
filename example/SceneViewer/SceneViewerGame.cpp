@@ -265,22 +265,15 @@ ConsoleResult SceneViewerGame::LoadMap(
     }
     const std::string sceneFilePath = sceneRecord->FilePath;
 
-    std::shared_ptr<AssetPreload> preload;
-    SmapContents metadata;
-    SmapError metadataError;
-    if (ReadSmapMetadataFile(sceneFilePath, metadata, &metadataError))
-    {
-        preload = Preloader->Begin(
-            ResolveSmapDependencyPaths(
-                metadata.Dependencies,
-                runtimeAssets.Registry));
-    }
-    else
+    std::string preloadError;
+    std::shared_ptr<AssetPreload> preload =
+        Preloader->BeginSceneDependencies(sceneFilePath, &preloadError);
+    if (preload == nullptr)
     {
         logging.GetLogger<SceneViewerGame>().Warn(
             "SceneViewer: no preload for '{}' ({}); resolve-on-import",
             std::string(mapName),
-            metadataError.Message);
+            preloadError);
     }
 
     auto probes = std::make_shared<ProbeVolumeFile>();

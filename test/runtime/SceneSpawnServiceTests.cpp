@@ -20,6 +20,8 @@
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
 
+#include "SmapSceneFixture.h"
+
 #include <gtest/gtest.h>
 
 #include <cstddef>
@@ -103,80 +105,47 @@ namespace
 
     // A two-entity scene: a root at (1,2,3) with an authored persistent id,
     // and a child parented to it.
-    class TempSpawnScene
+    [[nodiscard]] SmapContents MakeSpawnContents()
     {
-    public:
-        TempSpawnScene(SpawnHarness& h, std::string_view name)
-        {
-            SmapContents contents;
+        SmapContents contents;
 
-            SmapEntityRecord root;
-            root.Persistent = PersistentEntityId{ 0x77 };
-            root.Components.emplace_back(
-                MakeComponentTypeId("spawn_marker"),
-                JsonValue(JsonValue::Object{ { "value", JsonValue(1.0) } }));
-            root.Components.emplace_back(
-                MakeComponentTypeId("persistent_id"),
-                JsonValue(JsonValue::Object{
-                    { "id", JsonValue(std::string("0000000000000077")) } }));
-            root.Components.emplace_back(
-                MakeComponentTypeId("Transform"),
-                JsonValue(JsonValue::Object{
-                    { "local", JsonValue(JsonValue::Object{
-                        { "position", JsonValue(JsonValue::Array{
-                            JsonValue(1.0), JsonValue(2.0), JsonValue(3.0) }) },
-                        { "rotation", JsonValue(JsonValue::Array{
-                            JsonValue(0.0), JsonValue(0.0), JsonValue(0.0),
-                            JsonValue(1.0) }) },
-                        { "scale", JsonValue(JsonValue::Array{
-                            JsonValue(1.0), JsonValue(1.0), JsonValue(1.0) }) },
-                    }) } }));
-            contents.Entities.push_back(std::move(root));
+        SmapEntityRecord root;
+        root.Persistent = PersistentEntityId{ 0x77 };
+        root.Components.emplace_back(
+            MakeComponentTypeId("spawn_marker"),
+            JsonValue(JsonValue::Object{ { "value", JsonValue(1.0) } }));
+        root.Components.emplace_back(
+            MakeComponentTypeId("persistent_id"),
+            JsonValue(JsonValue::Object{
+                { "id", JsonValue(std::string("0000000000000077")) } }));
+        root.Components.emplace_back(
+            MakeComponentTypeId("Transform"),
+            JsonValue(JsonValue::Object{
+                { "local", JsonValue(JsonValue::Object{
+                    { "position", JsonValue(JsonValue::Array{
+                        JsonValue(1.0), JsonValue(2.0), JsonValue(3.0) }) },
+                    { "rotation", JsonValue(JsonValue::Array{
+                        JsonValue(0.0), JsonValue(0.0), JsonValue(0.0),
+                        JsonValue(1.0) }) },
+                    { "scale", JsonValue(JsonValue::Array{
+                        JsonValue(1.0), JsonValue(1.0), JsonValue(1.0) }) },
+                }) } }));
+        contents.Entities.push_back(std::move(root));
 
-            SmapEntityRecord child;
-            child.Parent = 0;
-            child.Components.emplace_back(
-                MakeComponentTypeId("spawn_marker"),
-                JsonValue(JsonValue::Object{ { "value", JsonValue(2.0) } }));
-            contents.Entities.push_back(std::move(child));
-
-            std::vector<std::byte> bytes;
-            SmapError error;
-            EXPECT_TRUE(WriteSmap(contents, h.Serializers, bytes, &error))
-                << error.Message;
-
-            static int counter = 0;
-            File = std::filesystem::temp_directory_path()
-                / ("sencha_spawn_scene_" + std::string(name) + "_"
-                   + std::to_string(++counter) + ".smap");
-            std::ofstream out(File, std::ios::binary | std::ios::trunc);
-            out.write(reinterpret_cast<const char*>(bytes.data()),
-                      static_cast<std::streamsize>(bytes.size()));
-
-            Path = "asset://scenes/" + std::string(name) + ".smap";
-            EXPECT_TRUE(h.Registry.Register(AssetRecord{
-                .Type = AssetType::Scene,
-                .SourceKind = AssetSourceKind::File,
-                .Path = Path,
-                .FilePath = File.generic_string(),
-            }));
-        }
-
-        ~TempSpawnScene()
-        {
-            std::error_code ec;
-            std::filesystem::remove(File, ec);
-        }
-
-        std::string Path;
-        std::filesystem::path File;
-    };
+        SmapEntityRecord child;
+        child.Parent = 0;
+        child.Components.emplace_back(
+            MakeComponentTypeId("spawn_marker"),
+            JsonValue(JsonValue::Object{ { "value", JsonValue(2.0) } }));
+        contents.Entities.push_back(std::move(child));
+        return contents;
+    }
 } // namespace
 
 TEST(SceneSpawnService, SpawnPublishesTransientEntitiesWithGroupIdentity)
 {
     SpawnHarness h;
-    TempSpawnScene scene(h, "lamp");
+    TempSmapScene scene(h.Registry, h.Serializers, MakeSpawnContents(), "lamp");
 
     Transform3f root = Transform3f::Identity();
     root.Position = Vec3d(10.0f, 0.0f, 0.0f);
@@ -229,7 +198,7 @@ TEST(SceneSpawnService, SpawnPublishesTransientEntitiesWithGroupIdentity)
 TEST(SceneSpawnService, PublishesInRequestOrderWhenBothAreReady)
 {
     SpawnHarness h;
-    TempSpawnScene scene(h, "pair");
+    TempSmapScene scene(h.Registry, h.Serializers, MakeSpawnContents(), "pair");
 
     const SceneSpawnId first =
         h.Service.RequestSpawn(scene.Path, Transform3f::Identity());
@@ -254,7 +223,7 @@ TEST(SceneSpawnService, PublishesInRequestOrderWhenBothAreReady)
 TEST(SceneSpawnService, AFailedHeadDoesNotWedgeTheQueue)
 {
     SpawnHarness h;
-    TempSpawnScene scene(h, "tail");
+    TempSmapScene scene(h.Registry, h.Serializers, MakeSpawnContents(), "tail");
 
     // The head request resolves but its file is gone: it fails at staging.
     EXPECT_TRUE(h.Registry.Register(AssetRecord{
@@ -282,7 +251,7 @@ TEST(SceneSpawnService, AFailedHeadDoesNotWedgeTheQueue)
 TEST(SceneSpawnService, DespawnDestroysTheGroupAndIndividualDestroyPrunesIt)
 {
     SpawnHarness h;
-    TempSpawnScene scene(h, "prune");
+    TempSmapScene scene(h.Registry, h.Serializers, MakeSpawnContents(), "prune");
 
     const SceneSpawnId id =
         h.Service.RequestSpawn(scene.Path, Transform3f::Identity());

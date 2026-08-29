@@ -1,8 +1,8 @@
 #include <physics/ZoneCollisionLoader.h>
 
+#include <core/io/FileBytes.h>
+
 #include <cstddef>
-#include <fstream>
-#include <ios>
 #include <vector>
 
 #include <ecs/ArchetypeSignature.h>
@@ -11,26 +11,6 @@
 #include <physics/CollisionShapeCache.h>
 #include <physics/components/Collider.h>
 #include <world/transform/TransformComponents.h>
-
-namespace
-{
-std::vector<std::byte> ReadFileBytes(const std::string& path)
-{
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file.is_open())
-        return {};
-
-    const std::streamsize size = file.tellg();
-    if (size <= 0)
-        return {};
-
-    file.seekg(0, std::ios::beg);
-    std::vector<std::byte> bytes(static_cast<size_t>(size));
-    if (!file.read(reinterpret_cast<char*>(bytes.data()), size))
-        return {};
-    return bytes;
-}
-} // namespace
 
 int LoadZoneCollision(
     World& world,
@@ -49,9 +29,9 @@ int LoadZoneCollision(
     int loaded = 0;
     for (const SmapCollisionCell& cell : cells)
     {
-        const std::vector<std::byte> bytes =
-            ReadFileBytes(cookedRoot + "/" + cell.BlobPath);
-        if (bytes.empty())
+        std::vector<std::byte> bytes;
+        if (!ReadFileBytes(cookedRoot + "/" + cell.BlobPath, bytes)
+            || bytes.empty())
             continue;
 
         const CollisionShapeHandle handle = cache.LoadBlob(bytes);

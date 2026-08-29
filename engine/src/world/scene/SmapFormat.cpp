@@ -1,11 +1,11 @@
 #include <world/scene/SmapFormat.h>
 
 #include <core/assets/AssetManifest.h>
+#include <core/io/FileBytes.h>
 #include <world/build/EntityBuildPackage.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
 #include <bit>
-#include <fstream>
 #include <iterator>
 #include <optional>
 #include <string>
@@ -200,6 +200,12 @@ private:
 // Hashing. FNV-1a, the same construction ComponentTypeId uses; the content
 // hash runs over the section payloads in directory order so any corruption or
 // truncation is caught before a single record is interpreted.
+//
+// Deliberately local rather than core/hash/Fnv1a.h: these hashes are written
+// into cooked files and checked by later builds, and the core header's
+// contract explicitly disclaims that stability ("never serialise one"). A
+// persisted format owns its hash construction, constants included, so no
+// cleanup of the shared helper can quietly invalidate every cooked scene.
 //-----------------------------------------------------------------------------
 
 constexpr std::uint64_t kFnvOffset = 14695981039346656037ull;
@@ -615,28 +621,11 @@ struct ParsedContainer
     return true;
 }
 
-[[nodiscard]] bool ReadFileBytes(const std::filesystem::path& path,
+[[nodiscard]] bool ReadSmapBytes(const std::filesystem::path& path,
                                  std::vector<std::byte>& out,
                                  SmapError* error)
 {
-    std::ifstream file(path, std::ios::binary);
-    if (!file.is_open())
-    {
-        SetError(error, "Could not open '" + path.generic_string() + "'.");
-        return false;
-    }
-    file.seekg(0, std::ios::end);
-    const std::streamoff size = file.tellg();
-    file.seekg(0, std::ios::beg);
-    if (size < 0)
-    {
-        SetError(error, "Could not read '" + path.generic_string() + "'.");
-        return false;
-    }
-    out.resize(static_cast<std::size_t>(size));
-    file.read(reinterpret_cast<char*>(out.data()),
-              static_cast<std::streamsize>(out.size()));
-    if (!file.good() && !out.empty())
+    if (!ReadFileBytes(path, out))
     {
         SetError(error, "Could not read '" + path.generic_string() + "'.");
         return false;
@@ -945,7 +934,7 @@ bool ReadSmapFile(const std::filesystem::path& path,
                   SmapError* error)
 {
     std::vector<std::byte> bytes;
-    if (!ReadFileBytes(path, bytes, error))
+    if (!ReadSmapBytes(path, bytes, error))
         return false;
     if (!ReadSmap(bytes, serializers, out, error))
     {
@@ -961,7 +950,7 @@ bool ReadSmapMetadataFile(const std::filesystem::path& path,
                           SmapError* error)
 {
     std::vector<std::byte> bytes;
-    if (!ReadFileBytes(path, bytes, error))
+    if (!ReadSmapBytes(path, bytes, error))
         return false;
     if (!ReadSmapMetadata(bytes, out, error))
     {

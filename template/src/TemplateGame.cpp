@@ -87,10 +87,8 @@
 #include <numbers>
 #include <cstdint>
 #include <cstdio>
-#include <fstream>
 #include <memory>
 #include <optional>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -1737,6 +1735,39 @@ void TemplateGame::OnStart(GameStartupContext&)
         std::printf("  Host a session: +host [port] | see net_status, net_zones\n");
 }
 
+// A streamed scene's cooked content, attached while the zone is still hidden:
+// collision from the cells the .smap carries, probes from the sibling cooked
+// file. The one body both the +map load and every world-zone recipe share.
+void TemplateGame::AttachStreamedSceneContent(RuntimeWorld& runtime,
+                                              RuntimeZoneRecord& zone,
+                                              const SmapContents& contents,
+                                              const ProbeVolumeFile& probes)
+{
+    if (PhysicsShapes != nullptr)
+    {
+        LoadZoneCollision(
+            runtime.Entities(),
+            *PhysicsShapes,
+            contents.Collision,
+            std::string(kCookedScanRoot),
+            zone.Partition);
+    }
+    if (DefaultRenderPipeline* pipeline = GetEngine().GetRenderPipeline())
+        AttachZoneProbes(pipeline->GetProbeVolumes(), zone, probes);
+}
+
+// The task-thread half beside the scene parse: probe file IO against the
+// cooked-scene path convention.
+AsyncZoneLoader::SceneStageFn TemplateGame::MakeProbeStage(
+    std::string sceneFilePath, std::shared_ptr<ProbeVolumeFile> probes)
+{
+    return [probes = std::move(probes),
+            sceneFilePath = std::move(sceneFilePath)](const SmapContents&)
+    {
+        (void)ReadZoneProbeFile(sceneFilePath, *probes);
+    };
+}
+
 ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
 {
     Engine& engine = GetEngine();
@@ -1775,20 +1806,15 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
 
     // Warm the scene's dependency table before the load; a metadata read that
     // fails leaves the slower resolve-on-import fallback, not an error.
-    std::shared_ptr<AssetPreload> preload;
-    SmapContents metadata;
-    SmapError metadataError;
-    if (ReadSmapMetadataFile(sceneFilePath, metadata, &metadataError))
-    {
-        preload = Preloader->Begin(ResolveSmapDependencyPaths(
-            metadata.Dependencies, runtimeAssets.Registry));
-    }
-    else
+    std::string preloadError;
+    std::shared_ptr<AssetPreload> preload =
+        Preloader->BeginSceneDependencies(sceneFilePath, &preloadError);
+    if (preload == nullptr)
     {
         logging.GetLogger<TemplateGame>().Warn(
             "TemplateGame: no preload for '{}' ({}); resolve-on-import",
             std::string(mapName),
-            metadataError.Message);
+            preloadError);
     }
 
     auto probes = std::make_shared<ProbeVolumeFile>();
@@ -1796,31 +1822,13 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
         kPlayZone,
         sceneAssetPath,
         runtimeAssets.Assets,
-        [probes, sceneFilePath](const SmapContents&)
-        {
-            (void)ReadZoneProbeFile(sceneFilePath, *probes);
-        },
+        MakeProbeStage(sceneFilePath, probes),
         [this, probes](
             RuntimeWorld& runtime,
             RuntimeZoneRecord& zone,
             const SmapContents& contents)
         {
-            if (PhysicsShapes != nullptr)
-            {
-                LoadZoneCollision(
-                    runtime.Entities(),
-                    *PhysicsShapes,
-                    contents.Collision,
-                    std::string(kCookedScanRoot),
-                    zone.Partition);
-            }
-
-            if (DefaultRenderPipeline* pipeline =
-                    GetEngine().GetRenderPipeline())
-            {
-                AttachZoneProbes(
-                    pipeline->GetProbeVolumes(), zone, *probes);
-            }
+            AttachStreamedSceneContent(runtime, zone, contents, *probes);
 
             // Where a pawn belongs, not a pawn. Who provides one is the
             // session's decision, taken every frame once this exists: a load
@@ -1868,25 +1876,12 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
     const std::string manifestPath =
         std::string(kCookedScanRoot) + "/worlds/"
         + std::string(worldName) + ".sworld.json";
-    std::ifstream file(manifestPath);
-    if (!file.is_open())
-    {
-        result.Error(
-            "no cooked world manifest at '" + manifestPath + "'");
-        return result;
-    }
-
-    std::ostringstream buffer;
-    buffer << file.rdbuf();
-    JsonParseError parseError;
+    std::string parseError;
     const std::optional<JsonValue> json =
-        JsonParse(buffer.str(), &parseError);
+        JsonParseFile(manifestPath, &parseError);
     if (!json)
     {
-        result.Error(
-            "world manifest parse error at "
-            + std::to_string(parseError.Position)
-            + ": " + parseError.Message);
+        result.Error("world manifest: " + parseError);
         return result;
     }
 
@@ -1916,44 +1911,20 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
             // Warm the zone's assets (meshes, materials, the lightmap atlas)
             // before attach, from the .smap's own dependency table. A failed
             // metadata read = resolve-on-attach fallback.
-            {
-                SmapContents metadata;
-                if (Preloader.has_value()
-                    && ReadSmapMetadataFile(scenePath, metadata, nullptr))
-                {
-                    recipe.Preload = Preloader->Begin(ResolveSmapDependencyPaths(
-                        metadata.Dependencies, RuntimeAssetState().Registry));
-                }
-            }
+            if (Preloader.has_value())
+                recipe.Preload = Preloader->BeginSceneDependencies(scenePath);
 
             ZoneSceneRecipe scene;
             scene.AssetPath = CookedRefToAssetPath(header.CookedSceneRef);
             scene.Assets = assetSystem;
-            scene.StageExtra = [probes, scenePath](const SmapContents&)
-            {
-                (void)ReadZoneProbeFile(scenePath, *probes);
-            };
+            scene.StageExtra = MakeProbeStage(scenePath, probes);
             scene.Finalize =
                 [this, probes](
                     RuntimeWorld& runtime,
                     RuntimeZoneRecord& zone,
                     const SmapContents& contents)
                 {
-                    if (PhysicsShapes != nullptr)
-                    {
-                        LoadZoneCollision(
-                            runtime.Entities(),
-                            *PhysicsShapes,
-                            contents.Collision,
-                            std::string(kCookedScanRoot),
-                            zone.Partition);
-                    }
-                    if (DefaultRenderPipeline* pipeline =
-                            GetEngine().GetRenderPipeline())
-                    {
-                        AttachZoneProbes(
-                            pipeline->GetProbeVolumes(), zone, *probes);
-                    }
+                    AttachStreamedSceneContent(runtime, zone, contents, *probes);
                     return true;
                 };
             recipe.Scene = std::move(scene);
