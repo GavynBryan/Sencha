@@ -313,11 +313,15 @@ void EditorScene::DestroyEntity(EntityId entity)
     if (const auto* id = world.TryGet<PersistentIdComponent>(entity))
         TakenIds_.erase(id->Id.Value);
 
+    // Flags go with the identity: the id was released above, so a later mint
+    // may hand it out again, and a lingering flag would attach to that
+    // stranger. (An undo-restored entity gets its flags back from the
+    // snapshot, not from here.)
+    HiddenEntities.erase(FlagKeyOf(entity));
+    LockedEntities.erase(FlagKeyOf(entity));
+
     world.DestroyEntity(entity);
     std::erase(Entities, entity);
-    // Drop any editor flags so a reused slot index starts visible + unlocked.
-    HiddenEntities.erase(entity.Index);
-    LockedEntities.erase(entity.Index);
 }
 
 void EditorScene::TrackEntity(EntityId entity)
@@ -513,9 +517,16 @@ const Registry& EditorScene::GetRegistry() const
     return Registry_;
 }
 
+std::uint64_t EditorScene::FlagKeyOf(EntityId entity) const
+{
+    const auto* id = Registry_.Components.TryGet<PersistentIdComponent>(entity);
+    return id != nullptr ? id->Id.Value : 0;
+}
+
 bool EditorScene::IsEntityVisible(EntityId entity) const
 {
-    return !HiddenEntities.contains(entity.Index);
+    const std::uint64_t key = FlagKeyOf(entity);
+    return key == 0 || !HiddenEntities.contains(key);
 }
 
 bool EditorScene::IsEntityEffectivelyVisible(EntityId entity) const
@@ -550,21 +561,28 @@ bool EditorScene::IsEntityEffectivelyLocked(EntityId entity) const
 
 bool EditorScene::IsEntityLocked(EntityId entity) const
 {
-    return LockedEntities.contains(entity.Index);
+    const std::uint64_t key = FlagKeyOf(entity);
+    return key != 0 && LockedEntities.contains(key);
 }
 
 void EditorScene::SetEntityVisible(EntityId entity, bool visible)
 {
+    const std::uint64_t key = FlagKeyOf(entity);
+    if (key == 0)
+        return;
     if (visible)
-        HiddenEntities.erase(entity.Index);
+        HiddenEntities.erase(key);
     else
-        HiddenEntities.insert(entity.Index);
+        HiddenEntities.insert(key);
 }
 
 void EditorScene::SetEntityLocked(EntityId entity, bool locked)
 {
+    const std::uint64_t key = FlagKeyOf(entity);
+    if (key == 0)
+        return;
     if (locked)
-        LockedEntities.insert(entity.Index);
+        LockedEntities.insert(key);
     else
-        LockedEntities.erase(entity.Index);
+        LockedEntities.erase(key);
 }

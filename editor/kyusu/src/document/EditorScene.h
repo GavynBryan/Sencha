@@ -21,6 +21,7 @@
 #include <span>
 #include <string_view>
 #include <type_traits>
+#include <cstdint>
 #include <unordered_set>
 #include <vector>
 
@@ -249,6 +250,13 @@ private:
     // restore an id.
     std::unordered_set<uint64_t> TakenIds_;
     // Sparse editor view flags keyed by slot index (membership = non-default).
-    std::unordered_set<EntityIndex> HiddenEntities;
-    std::unordered_set<EntityIndex> LockedEntities;
+    // Editor view flags, keyed by the entity's persistent id rather than its
+    // slot index: slots recycle across projection rebuilds and undo restores,
+    // and an index key would silently hand one entity's hide/lock to whatever
+    // occupies the slot next. The persistent id cannot alias. A key of zero
+    // (an unidentified scratch entity, or a stale handle whose slot was
+    // reused) is never stored and always reads visible + unlocked.
+    [[nodiscard]] std::uint64_t FlagKeyOf(EntityId entity) const;
+    std::unordered_set<std::uint64_t> HiddenEntities;
+    std::unordered_set<std::uint64_t> LockedEntities;
 };

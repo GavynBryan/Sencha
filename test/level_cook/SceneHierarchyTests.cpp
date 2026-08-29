@@ -44,6 +44,51 @@ namespace
         EXPECT_NEAR(actual.Z, expected.Z, kEpsilon);
     }
 
+    // Slot indices recycle; view flags must not follow them. A handle that
+    // went stale (its entity deleted, its slot reused) writes and reads
+    // nothing -- the new occupant's flags stay its own.
+    TEST_F(SceneHierarchyTest, AStaleHandleCannotTouchTheSlotsNewOccupant)
+    {
+        // An anchor keeps the interesting entities off slot zero, which the
+        // flag key uses as its nothing sentinel.
+        (void)Scene.CreateEntity(Vec3d{ 9, 9, 9 });
+        const EntityId first = Scene.CreateEntity(Vec3d{ 0, 0, 0 });
+        Scene.DestroyEntity(first);
+        const EntityId second = Scene.CreateEntity(Vec3d{ 1, 0, 0 });
+
+        // Guard against a vacuous test: the slot must actually be reused, or
+        // an index-keyed set would pass by accident.
+        ASSERT_NE(second.Index, 0u);
+        ASSERT_EQ(second.Index, first.Index);
+        ASSERT_NE(second.Generation, first.Generation);
+
+        // Writes through the stale handle land nowhere.
+        Scene.SetEntityVisible(first, false);
+        Scene.SetEntityLocked(first, true);
+        EXPECT_TRUE(Scene.IsEntityVisible(second));
+        EXPECT_FALSE(Scene.IsEntityLocked(second));
+
+        // And a real flag on the occupant does not leak back out through the
+        // stale handle either.
+        Scene.SetEntityVisible(second, false);
+        EXPECT_TRUE(Scene.IsEntityVisible(first));
+    }
+
+    // The flags are keyed on identity, so they survive the entity's handle
+    // changing -- which is exactly what a projection rebuild does to every
+    // expanded entity.
+    TEST_F(SceneHierarchyTest, FlagsFollowIdentityNotTheHandle)
+    {
+        const EntityId entity = Scene.CreateEntity(Vec3d{ 0, 0, 0 });
+        Scene.SetEntityVisible(entity, false);
+        EXPECT_FALSE(Scene.IsEntityVisible(entity));
+        Scene.SetEntityVisible(entity, true);
+        EXPECT_TRUE(Scene.IsEntityVisible(entity));
+        Scene.SetEntityLocked(entity, true);
+        EXPECT_TRUE(Scene.IsEntityLocked(entity));
+        EXPECT_TRUE(Scene.IsEntityEffectivelyLocked(entity));
+    }
+
     TEST_F(SceneHierarchyTest, UnparentedEntityWorldTransformMatchesItsLocal)
     {
         const EntityId entity = Scene.CreateEntity(Vec3d{ 3.0f, 4.0f, 5.0f });
