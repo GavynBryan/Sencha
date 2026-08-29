@@ -104,6 +104,7 @@ private:
     struct Request;
 
     void Instantiate(Request& request);
+    [[nodiscard]] Request* FindRequest(SceneSpawnId id) const;
 
     RuntimeWorld& WorldState;
     const WorldComponentSchema& Schema;
@@ -115,8 +116,17 @@ private:
 
     // Requests in arrival order; the earliest unpublished one publishes
     // first. Settled requests keep their small record so Status stays
-    // answerable for the session's lifetime.
+    // answerable for the session's lifetime. Ids mint sequentially and every
+    // request appends exactly one record, so Requests[id - 1] IS the record
+    // -- the invariant every by-id lookup stands on.
     std::deque<std::unique_ptr<Request>> Requests;
+    // The pump scans from here: everything before it is in a terminal state
+    // and can never become Ready again, so a long session's spawn history
+    // costs the frame nothing.
+    std::size_t FirstUnsettled = 0;
+    // Despawns queued since the last pump; drained instead of rescanning the
+    // whole history for DespawnQueued states.
+    std::vector<SceneSpawnId> PendingDespawns;
     std::uint64_t NextSpawnValue = 1;
     std::uint64_t NextInstanceValue = 1;
 };

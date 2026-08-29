@@ -6,6 +6,7 @@
 #include <world/serialization/ComponentSerializerRegistry.h>
 
 #include <bit>
+#include <cassert>
 #include <iterator>
 #include <optional>
 #include <string>
@@ -114,6 +115,7 @@ public:
     // `count` items of at least `minimumSize` bytes each could still follow.
     [[nodiscard]] bool CanHold(std::uint64_t count, std::size_t minimumSize) const
     {
+        assert(minimumSize > 0);
         return count <= Remaining() / minimumSize;
     }
 
@@ -653,6 +655,30 @@ std::uint64_t ComponentSchemaFingerprint(const IComponentSerializer& serializer)
     return hash.Value();
 }
 
+namespace
+{
+    // The fingerprint hashes every field of the schema; per-record recompute
+    // would pay that per component per entity. One entry per distinct
+    // serializer covers a whole read or write.
+    class FingerprintCache
+    {
+    public:
+        std::uint64_t Of(const IComponentSerializer& serializer)
+        {
+            const auto found = Known.find(&serializer);
+            if (found != Known.end())
+                return found->second;
+            const std::uint64_t fingerprint = ComponentSchemaFingerprint(serializer);
+            Known.emplace(&serializer, fingerprint);
+            return fingerprint;
+        }
+
+    private:
+        std::unordered_map<const IComponentSerializer*, std::uint64_t> Known;
+    };
+}
+
+
 bool WriteSmap(const SmapContents& contents,
                const ComponentSerializerRegistry& serializers,
                std::vector<std::byte>& out,
@@ -737,6 +763,7 @@ bool WriteSmap(const SmapContents& contents,
 
     ByteBuilder entities;
     entities.Varint(entityCount);
+    FingerprintCache fingerprints;
     for (const SmapEntityRecord& record : contents.Entities)
     {
         entities.U64(record.Persistent.Value);
@@ -745,7 +772,7 @@ bool WriteSmap(const SmapContents& contents,
         for (const auto& [type, payload] : record.Components)
         {
             entities.U64(type.Value);
-            entities.U64(ComponentSchemaFingerprint(*serializers.FindByType(type)));
+            entities.U64(fingerprints.Of(*serializers.FindByType(type)));
             EncodeValue(payload, strings, entities);
         }
     }
@@ -828,6 +855,7 @@ bool ReadSmap(std::span<const std::byte> bytes,
         return false;
     }
     contents.Entities.reserve(static_cast<std::size_t>(entityCount));
+    FingerprintCache fingerprints;
     for (std::uint64_t i = 0; i < entityCount; ++i)
     {
         SmapEntityRecord record;
@@ -870,7 +898,7 @@ bool ReadSmap(std::span<const std::byte> bytes,
                                       "the component set.");
                 return false;
             }
-            const std::uint64_t expected = ComponentSchemaFingerprint(*serializer);
+            const std::uint64_t expected = fingerprints.Of(*serializer);
             if (fingerprint != expected)
             {
                 SetError(error, "Component '" + std::string(serializer->JsonKey())

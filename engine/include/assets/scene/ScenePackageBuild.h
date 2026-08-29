@@ -49,7 +49,9 @@ public:
 
     // Valid on the task thread after a successful Build, for consumer policy
     // run beside it: stamping components into the package, reading sibling
-    // cooked artifacts against the contents.
+    // cooked artifacts against the contents. Borrowed for that window only --
+    // Settle() relocates the backing store, so never cache either pointer
+    // across the drain (ContentsShared() is the owning form).
     [[nodiscard]] EntityBuildPackage* Package();
     [[nodiscard]] const SmapContents* Contents() const;
 

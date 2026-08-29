@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 //=============================================================================
@@ -47,11 +48,19 @@ public:
                 return RegisterResult::Rejected;
         }
 
+        IComponentSerializer* raw = serializer.get();
         Entries_.push_back(std::move(serializer));
+        ByType_.emplace(raw->TypeId().Value, raw);
+        ByKey_.emplace(raw->JsonKey(), raw);
         return RegisterResult::Added;
     }
 
-    void Clear() { Entries_.clear(); }
+    void Clear()
+    {
+        Entries_.clear();
+        ByType_.clear();
+        ByKey_.clear();
+    }
 
     // Remove the serializer for a specific component identity. A module calls this
     // in Unregister to retract exactly its own serializers (and free them) while
@@ -63,6 +72,8 @@ public:
         {
             if ((*it)->TypeId() == type)
             {
+                ByType_.erase((*it)->TypeId().Value);
+                ByKey_.erase((*it)->JsonKey());
                 Entries_.erase(it);
                 return true;
             }
@@ -80,18 +91,14 @@ public:
     // serializers for owner-thread LoadIntoWorld calls.
     [[nodiscard]] IComponentSerializer* FindByType(ComponentTypeId type) const
     {
-        for (const auto& entry : Entries_)
-            if (entry->TypeId() == type)
-                return entry.get();
-        return nullptr;
+        const auto found = ByType_.find(type.Value);
+        return found != ByType_.end() ? found->second : nullptr;
     }
 
     [[nodiscard]] IComponentSerializer* FindByJsonKey(std::string_view key) const
     {
-        for (const auto& entry : Entries_)
-            if (key == entry->JsonKey())
-                return entry.get();
-        return nullptr;
+        const auto found = ByKey_.find(key);
+        return found != ByKey_.end() ? found->second : nullptr;
     }
 
     [[nodiscard]] IComponentSerializer* FindByChunkId(std::uint32_t chunkId) const
@@ -104,4 +111,9 @@ public:
 
 private:
     std::vector<std::unique_ptr<IComponentSerializer>> Entries_;
+    // Lookup runs per component per entity on load, save, and .smap paths;
+    // the maps keep it O(1). Key views borrow the serializers' own storage,
+    // so entries leave the maps in the same breath they leave Entries_.
+    std::unordered_map<std::uint64_t, IComponentSerializer*> ByType_;
+    std::unordered_map<std::string_view, IComponentSerializer*> ByKey_;
 };

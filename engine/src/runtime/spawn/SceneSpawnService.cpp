@@ -81,6 +81,15 @@ void SceneSpawnService::ConnectAssets(AssetSystem* assets)
         : nullptr;
 }
 
+SceneSpawnService::Request* SceneSpawnService::FindRequest(SceneSpawnId id) const
+{
+    // Ids mint sequentially from 1 and every RequestSpawn appends exactly one
+    // record before any early return, so the id names its deque slot.
+    if (!id.IsValid() || id.Value >= NextSpawnValue)
+        return nullptr;
+    return Requests[static_cast<std::size_t>(id.Value - 1)].get();
+}
+
 SceneSpawnId SceneSpawnService::RequestSpawn(std::string_view sceneAssetPath,
                                              const Transform3f& root,
                                              StoragePartitionId partition)
@@ -112,6 +121,7 @@ SceneSpawnId SceneSpawnService::RequestSpawn(std::string_view sceneAssetPath,
         record->State = Request::Phase::Failed;
         record->Error = "'" + record->ScenePath
             + "' did not resolve to a cooked scene asset";
+        log.Error("SceneSpawnService: spawn refused: {}", record->Error);
         return record->Id;
     }
     record->Source = asset->Id;
@@ -139,24 +149,21 @@ SceneSpawnId SceneSpawnService::RequestSpawn(std::string_view sceneAssetPath,
         // Commit, on the owner thread at the drain: record the product; the
         // pump publishes in request order.
         [this, build, id = record->Id](int) {
-            for (auto& pending : Requests)
+            Request* pending = FindRequest(id);
+            if (pending == nullptr)
+                return;
+            if (!build->Settle())
             {
-                if (pending->Id != id)
-                    continue;
-                if (!build->Settle())
-                {
-                    pending->State = Request::Phase::Failed;
-                    pending->Error = build->Error();
-                    Logging.GetLogger<SceneSpawnService>().Error(
-                        "SceneSpawnService: spawn of '{}' failed: {}",
-                        pending->ScenePath, pending->Error);
-                    return;
-                }
-                pending->Build = build;
-                pending->Package = build->TakePackage();
-                pending->State = Request::Phase::Ready;
+                pending->State = Request::Phase::Failed;
+                pending->Error = build->Error();
+                Logging.GetLogger<SceneSpawnService>().Error(
+                    "SceneSpawnService: spawn of '{}' failed: {}",
+                    pending->ScenePath, pending->Error);
                 return;
             }
+            pending->Build = build;
+            pending->Package = build->TakePackage();
+            pending->State = Request::Phase::Ready;
         });
 
     return record->Id;
@@ -164,52 +171,43 @@ SceneSpawnId SceneSpawnService::RequestSpawn(std::string_view sceneAssetPath,
 
 bool SceneSpawnService::RequestDespawn(SceneSpawnId id)
 {
-    for (auto& request : Requests)
-    {
-        if (request->Id != id)
-            continue;
-        if (request->State != Request::Phase::Live)
-            return false;
-        request->State = Request::Phase::DespawnQueued;
-        return true;
-    }
-    return false;
+    Request* request = FindRequest(id);
+    if (request == nullptr || request->State != Request::Phase::Live)
+        return false;
+    request->State = Request::Phase::DespawnQueued;
+    PendingDespawns.push_back(id);
+    return true;
 }
 
 SceneSpawnStatus SceneSpawnService::Status(SceneSpawnId id) const
 {
-    for (const auto& request : Requests)
+    const Request* request = FindRequest(id);
+    if (request == nullptr)
+        return SceneSpawnStatus::Unknown;
+    switch (request->State)
     {
-        if (request->Id != id)
-            continue;
-        switch (request->State)
-        {
-        case Request::Phase::Staging:
-        case Request::Phase::Ready:
-            return SceneSpawnStatus::Pending;
-        case Request::Phase::Live:
-        case Request::Phase::DespawnQueued:
-            return SceneSpawnStatus::Live;
-        case Request::Phase::Failed:
-            return SceneSpawnStatus::Failed;
-        case Request::Phase::Despawned:
-            return SceneSpawnStatus::Despawned;
-        }
+    case Request::Phase::Staging:
+    case Request::Phase::Ready:
+        return SceneSpawnStatus::Pending;
+    case Request::Phase::Live:
+    case Request::Phase::DespawnQueued:
+        return SceneSpawnStatus::Live;
+    case Request::Phase::Failed:
+        return SceneSpawnStatus::Failed;
+    case Request::Phase::Despawned:
+        return SceneSpawnStatus::Despawned;
     }
     return SceneSpawnStatus::Unknown;
 }
 
 std::span<const EntityId> SceneSpawnService::Entities(SceneSpawnId id) const
 {
-    for (const auto& request : Requests)
-    {
-        if (request->Id != id)
-            continue;
-        if (const auto* index =
-                WorldState.Entities().TryGetResource<SceneInstanceIndex>())
-            return index->Entities(request->Instance);
+    const Request* request = FindRequest(id);
+    if (request == nullptr)
         return {};
-    }
+    if (const auto* index =
+            WorldState.Entities().TryGetResource<SceneInstanceIndex>())
+        return index->Entities(request->Instance);
     return {};
 }
 
@@ -259,37 +257,54 @@ void SceneSpawnService::Instantiate(Request& request)
         request.Build->ReleaseScene();
         request.Build.reset();
     }
+    // Nothing logs the path after this point, and settled records are kept
+    // for the session; a long-running game should not hoard spawn strings.
+    request.ScenePath = std::string();
 }
 
 void SceneSpawnService::Pump()
 {
-    // Publication in request order: walk from the front and publish every
-    // consecutive settled-or-ready request, stopping at the first one still
-    // staging so a later completion can never leapfrog an earlier request.
-    for (auto& request : Requests)
+    // Publication in request order: walk from the first request that could
+    // still change and publish every consecutive settled-or-ready one,
+    // stopping at the first still staging so a later completion can never
+    // leapfrog an earlier request. The cursor then skips the settled prefix
+    // forever after -- the walk costs what is in flight, not the session's
+    // whole spawn history.
+    for (std::size_t i = FirstUnsettled; i < Requests.size(); ++i)
     {
-        if (request->State == Request::Phase::Staging)
+        Request& request = *Requests[i];
+        if (request.State == Request::Phase::Staging)
             break;
-        if (request->State == Request::Phase::Ready)
-            Instantiate(*request);
+        if (request.State == Request::Phase::Ready)
+            Instantiate(request);
+        if (i == FirstUnsettled)
+            ++FirstUnsettled;
     }
 
     // Despawns need no ordering: the group either exists or it does not.
-    for (auto& request : Requests)
+    if (!PendingDespawns.empty())
     {
-        if (request->State != Request::Phase::DespawnQueued)
-            continue;
-        if (const auto* index =
-                WorldState.Entities().TryGetResource<SceneInstanceIndex>())
+        const auto* index =
+            WorldState.Entities().TryGetResource<SceneInstanceIndex>();
+        for (const SceneSpawnId id : PendingDespawns)
         {
-            const std::span<const EntityId> members =
-                index->Entities(request->Instance);
-            // Destruction mutates the index through the component hooks, so
-            // destroy from a snapshot rather than the live span.
-            const std::vector<EntityId> snapshot(members.begin(), members.end());
-            for (EntityId entity : snapshot)
-                WorldState.Entities().DestroyEntity(entity);
+            Request* request = FindRequest(id);
+            if (request == nullptr
+                || request->State != Request::Phase::DespawnQueued)
+                continue;
+            if (index != nullptr)
+            {
+                const std::span<const EntityId> members =
+                    index->Entities(request->Instance);
+                // Destruction mutates the index through the component hooks,
+                // so destroy from a snapshot rather than the live span.
+                const std::vector<EntityId> snapshot(members.begin(),
+                                                     members.end());
+                for (EntityId entity : snapshot)
+                    WorldState.Entities().DestroyEntity(entity);
+            }
+            request->State = Request::Phase::Despawned;
         }
-        request->State = Request::Phase::Despawned;
+        PendingDespawns.clear();
     }
 }
