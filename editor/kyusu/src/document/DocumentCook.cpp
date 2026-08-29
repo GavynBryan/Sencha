@@ -311,7 +311,14 @@ DocumentCookResult CookDocument(const EditorDocument& liveDocument,
         return result;
     }
 
-    const std::string sourceRel = "levels/" + std::string(levelName) + ".sscene";
+    // The live document's real location names the cook (prefabs/ cooks under
+    // prefabs/); an unsaved document falls back to the levels/ convention.
+    std::string sourceRel = "levels/" + std::string(levelName) + ".sscene";
+    if (const std::string assetPath = liveDocument.SourceAssetPath();
+        assetPath.starts_with("asset://"))
+    {
+        sourceRel = assetPath.substr(sizeof("asset://") - 1);
+    }
     return ExecuteDocumentCook(std::move(*input), levelName, sourceRel,
                                assetsRoot, logging);
 }

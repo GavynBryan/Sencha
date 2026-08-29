@@ -218,7 +218,13 @@ bool WriteCookedScene(
         contents.Dependencies.push_back(SmapDependency{ id, path });
     }
 
-    if (idMap.IsDirty() && !idMap.SaveToFile(idMapPath.generic_string()))
+    // Written when dirty, and also when the staged file does not exist yet:
+    // the transaction registered it at Seed, and a registered-but-unwritten
+    // artifact fails the commit. A scene with no asset refs otherwise leaves
+    // exactly that hole.
+    std::error_code idMapExistsEc;
+    if ((idMap.IsDirty() || !std::filesystem::exists(idMapPath, idMapExistsEc))
+        && !idMap.SaveToFile(idMapPath.generic_string()))
     {
         if (error)
             *error = "WriteCookedScene: could not write '" + idMapPath.generic_string() + "'";

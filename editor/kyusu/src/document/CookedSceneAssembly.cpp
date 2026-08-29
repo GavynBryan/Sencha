@@ -64,7 +64,9 @@ bool WriteCookedSceneArtifacts(const DocumentCookContext& ctx,
         return false;
 
     std::error_code ec;
-    std::filesystem::create_directories(paths.CookedDir, ec);
+    // The stem carries the source's directory, so the .smap's own parent is
+    // the directory to guarantee, not the cooked root.
+    std::filesystem::create_directories(paths.Scene.parent_path(), ec);
 
     // Collision cells fold into the .smap. A cook that skipped the collision
     // step carries the active publication's cells forward, the same Preserve

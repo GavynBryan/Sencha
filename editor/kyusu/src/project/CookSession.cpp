@@ -223,7 +223,15 @@ bool CookSession::Start(const CookProfile& profile,
     State->LastError.clear();
     State->Control = options.Control;
 
-    const std::string sourceRel = "levels/" + levelName + ".sscene";
+    // The document's real location names the cook: prefabs/door.sscene
+    // publishes under prefabs/, levels under levels/. Unsaved documents fall
+    // back to the levels/ convention.
+    std::string sourceRel = "levels/" + levelName + ".sscene";
+    if (const std::string assetPath = World_.FocusDocument().SourceAssetPath();
+        assetPath.starts_with("asset://"))
+    {
+        sourceRel = assetPath.substr(sizeof("asset://") - 1);
+    }
     auto inputBox = std::make_shared<std::optional<DocumentCookInput>>(
         std::move(*input));
     const std::shared_ptr<SharedState> state = State;
@@ -236,7 +244,7 @@ bool CookSession::Start(const CookProfile& profile,
             return ExecuteDocumentCook(std::move(value), levelName, sourceRel,
                                        assetsRoot, workerLogging);
         },
-        [state, levelName](DocumentCookResult result)
+        [state, levelName, sourceRel](DocumentCookResult result)
         {
             state->Active = false;
             state->Cancelling = false;
@@ -254,7 +262,9 @@ bool CookSession::Start(const CookProfile& profile,
                 .Serial = state->Last.Serial + 1,
                 .ProbeVolumeCount = static_cast<std::uint32_t>(result.ProbeVolumeCount),
                 .ProbeCount = static_cast<std::uint32_t>(result.ProbeCount),
-                .Map = "levels/" + levelName,
+                .Map = sourceRel.ends_with(".sscene")
+                    ? sourceRel.substr(0, sourceRel.size() - sizeof(".sscene") + 1)
+                    : "levels/" + levelName,
                 .ProfileId = result.ProfileId,
                 .ReusedSteps = std::move(result.ReusedSteps),
                 .CacheHit = result.CacheHit,
