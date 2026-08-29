@@ -1,5 +1,7 @@
 #include "EditorScene.h"
 
+#include "EntityNameComponent.h"
+
 #include "brush/BrushBounds.h"
 #include "brush/BrushOps.h"
 
@@ -30,6 +32,8 @@ EntityId EditorScene::CreateBrushFromMesh(const Transform3f& transform, BrushMes
     world.AddComponent(entity, LocalTransform{ transform });
     world.AddComponent(entity, BrushComponent{ BrushMeshes.Create(std::move(mesh)) });
     world.AddComponent(entity, PersistentIdComponent{ MintPersistentId() });
+    world.AddComponent(entity,
+                       EntityNameComponent{ InlineString<64>(NextEntityName("Brush")) });
 
     Entities.push_back(entity);
     return entity;
@@ -45,6 +49,8 @@ EntityId EditorScene::CreateCamera(Vec3d position)
     world.AddComponent(entity, LocalTransform{ transform });
     world.AddComponent(entity, CameraComponent{});
     world.AddComponent(entity, PersistentIdComponent{ MintPersistentId() });
+    world.AddComponent(entity,
+                       EntityNameComponent{ InlineString<64>(NextEntityName("Camera")) });
 
     Entities.push_back(entity);
     return entity;
@@ -59,9 +65,44 @@ EntityId EditorScene::CreateEntity(Vec3d position)
     EntityId entity = world.CreateEntity();
     world.AddComponent(entity, LocalTransform{ transform });
     world.AddComponent(entity, PersistentIdComponent{ MintPersistentId() });
+    world.AddComponent(entity,
+                       EntityNameComponent{ InlineString<64>(NextEntityName("Entity")) });
 
     Entities.push_back(entity);
     return entity;
+}
+
+std::string EditorScene::NextEntityName(
+    std::string_view base, const std::unordered_set<std::string>* alsoTaken) const
+{
+    // The suffix must survive InlineString<64>'s silent truncation, or two
+    // long candidates could collapse into the same stored name. 63 usable
+    // chars minus room for " " and a generous suffix.
+    constexpr std::size_t kMaxBase = 63 - 12;
+    if (base.size() > kMaxBase)
+        base = base.substr(0, kMaxBase);
+
+    std::unordered_set<std::string> taken;
+    const World& world = Registry_.Components;
+    for (EntityId entity : Entities)
+        if (const auto* name = world.TryGet<EntityNameComponent>(entity))
+            taken.emplace(name->Value.View());
+
+    const auto isFree = [&](const std::string& candidate)
+    {
+        return !taken.contains(candidate)
+            && (alsoTaken == nullptr || !alsoTaken->contains(candidate));
+    };
+
+    std::string candidate(base);
+    if (isFree(candidate))
+        return candidate;
+    for (int suffix = 1;; ++suffix)
+    {
+        candidate = std::string(base) + " " + std::to_string(suffix);
+        if (isFree(candidate))
+            return candidate;
+    }
 }
 
 PersistentEntityId EditorScene::MintPersistentId()

@@ -10,8 +10,9 @@
 // The authored display name of an entity. Editor-only, like BrushComponent:
 // the hierarchy shows and edits it, the document serializes it, and the level
 // cook strips it from the passthrough scene so the runtime schema never has to
-// know it. An entity without one is labeled by its components instead, so the
-// component exists only on entities somebody actually named.
+// know it. The EditorScene factories stamp a default ("Entity", "Brush 1",
+// ...) on everything they mint; only loaded legacy content and projection-
+// expanded entities may lack one, and those are labeled by their components.
 struct EntityNameComponent
 {
     InlineString<64> Value;

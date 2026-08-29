@@ -19,6 +19,7 @@
 #include <optional>
 #include <random>
 #include <span>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <cstdint>
@@ -93,6 +94,15 @@ public:
     // is also where identity is established, so every route into the scene mints
     // or claims exactly once; adopting an already-tracked entity does nothing.
     void TrackEntity(EntityId entity);
+
+    // The smallest unused name on `base`: "Brush", then "Brush 1", "Brush 2"
+    // and so on. Scans the tracked list's authored names (projection-expanded
+    // instance entities included -- their names share the namespace).
+    // `alsoTaken` lets a batch claim names it has assigned but not yet
+    // written to an entity.
+    [[nodiscard]] std::string NextEntityName(
+        std::string_view base,
+        const std::unordered_set<std::string>* alsoTaken = nullptr) const;
 
     // Replaces the tracked order with `order`, a permutation of the current
     // list (anything else is refused untouched). Sibling rows in the

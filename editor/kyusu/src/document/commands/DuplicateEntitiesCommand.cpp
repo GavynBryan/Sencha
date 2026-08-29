@@ -9,6 +9,10 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <string>
+#include <string_view>
+#include <unordered_set>
+#include <utility>
 
 DuplicateEntitiesCommand::DuplicateEntitiesCommand(std::span<const EntityId> sources,
                                                    std::span<const Transform3f> transforms,
@@ -69,6 +73,31 @@ void DuplicateEntitiesCommand::Execute()
         }
         if (Remap)
             Remap(Snapshots);
+
+        // Copies claim their own names, once, into the snapshots -- so redo
+        // restores the same names it minted the first time. "Brush 2" joins
+        // the "Brush" family; a bespoke "North Door" starts its own. Every
+        // named member of the branch is rewritten, not only roots, or two
+        // live "Door Handle"s would result. Unnamed sources stay unnamed.
+        std::unordered_set<std::string> claimed;
+        for (EntitySnapshot& snapshot : Snapshots)
+        {
+            JsonValue* name = snapshot.Components.Find("name");
+            JsonValue* value = name != nullptr ? name->Find("value") : nullptr;
+            if (value == nullptr || !value->IsString() || value->AsString().empty())
+                continue;
+            std::string_view base = value->AsString();
+            if (const std::size_t space = base.find_last_of(' ');
+                space != std::string_view::npos && space + 1 < base.size()
+                && base.find_first_not_of("0123456789", space + 1)
+                       == std::string_view::npos)
+            {
+                base = base.substr(0, space);
+            }
+            std::string fresh = Scene.NextEntityName(base, &claimed);
+            claimed.insert(fresh);
+            *value = JsonValue(std::move(fresh));
+        }
         Captured = true;
     }
 
