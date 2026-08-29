@@ -388,6 +388,50 @@ struct PlayContentPartition
     std::optional<StoragePartitionId> Value;
 };
 
+//=============================================================================
+// PendingSceneSpawns
+//
+// Scene spawns settle at the frame drain, but the participant lifecycle asks
+// for a body synchronously -- so requests wait here, and the settlement
+// system re-asks when one lands. Live prefab bodies are remembered so a
+// reaped participant despawns its whole group, not just the root the
+// lifecycle knows about.
+//=============================================================================
+struct PendingSceneSpawns
+{
+    struct PawnRequest
+    {
+        EntityId Participant;
+        SceneSpawnId Spawn;
+    };
+    struct TurretRequest
+    {
+        SceneSpawnId Spawn;
+        EntityId Possessor; // invalid = placed without a taker
+    };
+    std::vector<PawnRequest> Pawns;
+    std::vector<TurretRequest> Turrets;
+    std::vector<std::pair<EntityId, SceneSpawnId>> LiveBodies;
+};
+
+PendingSceneSpawns& PendingSpawnsOf(World& world)
+{
+    if (PendingSceneSpawns* existing = world.TryGetResource<PendingSceneSpawns>())
+        return *existing;
+    return world.AddResource<PendingSceneSpawns>();
+}
+
+// The spawned group's root: the member without a parent. A prefab meant to be
+// spawned as one thing has exactly one; content that ships more is taken by
+// its first.
+EntityId SpawnedGroupRoot(const World& world, std::span<const EntityId> members)
+{
+    for (EntityId member : members)
+        if (world.TryGet<Parent>(member) == nullptr)
+            return member;
+    return {};
+}
+
 // Content has arrived, so anybody admitted before it can have a body now.
 //
 // The engine asks once, at admission, and never again on its own -- which is
@@ -929,19 +973,40 @@ Vec3d TurretPlacementNear(const World& world)
 //
 // Authority-only, structurally: both callers are the authority answering a
 // request, and a client answers none.
-EntityId PlaceTurretForRequest(
-    World& world, const ResolvedPlayerAvatar& avatar, Logger& log)
+// A placement either lands now (the procedural turret) or is in flight (the
+// settings-named prefab, settling at a later frame's drain).
+struct TurretPlacementOutcome
+{
+    EntityId Turret;
+    bool Requested = false;
+};
+
+TurretPlacementOutcome PlaceTurretForRequest(
+    Engine& engine, World& world, const CompiledGameSettings* settings,
+    const ResolvedPlayerAvatar& avatar, Logger& log)
 {
     const PlayContentPartition* content =
         world.TryGetResource<PlayContentPartition>();
     if (content == nullptr)
-        return EntityId{};
+        return {};
+
+    if (settings != nullptr && !settings->TurretScenePath.empty())
+    {
+        Transform3f root = Transform3f::Identity();
+        root.Position = TurretPlacementNear(world);
+        const SceneSpawnId id = engine.Spawns().RequestSpawn(
+            settings->TurretScenePath, root,
+            content->Value.value_or(PersistentStoragePartition));
+        PendingSpawnsOf(world).Turrets.push_back({ id, EntityId{} });
+        log.Info("TemplateGame: placing a turret");
+        return { EntityId{}, true };
+    }
 
     const EntityId turret =
         PlaceTurret(world, TurretPlacementNear(world),
                     content->Value.value_or(PersistentStoragePartition), avatar);
     log.Info("TemplateGame: placed a turret");
-    return turret;
+    return { turret, false };
 }
 
 // What both console paths say when there is nowhere to put one yet.
@@ -1017,16 +1082,19 @@ ConsoleResult AskAuthorityForTurret(Engine& engine, NetSession& session)
 // the machine that decides what exists, and a client's turrets arrive
 // replicated.
 ConsoleResult PlaceTurretHere(
-    Engine& engine, const ResolvedPlayerAvatar& avatar, Logger& log)
+    Engine& engine, const CompiledGameSettings* settings,
+    const ResolvedPlayerAvatar& avatar, Logger& log)
 {
     ConsoleResult result;
-    if (!PlaceTurretForRequest(engine.World().Entities(), avatar, log).IsValid())
+    const TurretPlacementOutcome placed = PlaceTurretForRequest(
+        engine, engine.World().Entities(), settings, avatar, log);
+    if (!placed.Turret.IsValid() && !placed.Requested)
     {
         result.Status = ConsoleStatus::InvalidArguments;
         result.Error(std::string(kNoContentForTurret));
         return result;
     }
-    result.Info("placed a turret");
+    result.Info(placed.Requested ? "placing a turret" : "placed a turret");
     return result;
 }
 
@@ -1038,7 +1106,8 @@ ConsoleResult PlaceTurretHere(
 // with a console reaches the possession path in one command. A host wanting a
 // gun it does not climb into asks for that instead.
 ConsoleResult TakeTurretHere(
-    Engine& engine, const ResolvedPlayerAvatar& avatar, Logger& log)
+    Engine& engine, const CompiledGameSettings* settings,
+    const ResolvedPlayerAvatar& avatar, Logger& log)
 {
     ConsoleResult result;
     World& world = engine.World().Entities();
@@ -1066,7 +1135,34 @@ ConsoleResult TakeTurretHere(
         const Vec3d from = LocalPlayerPosition(world).value_or(Vec3d::Zero());
         target = NearestTurret(world, from);
         if (!target.IsValid())
-            target = PlaceTurretForRequest(world, avatar, log);
+        {
+            // A placement already in flight is claimed rather than doubled;
+            // otherwise place one, and ride it if the prefab path made that
+            // asynchronous.
+            PendingSceneSpawns& pending = PendingSpawnsOf(world);
+            const auto inFlight = std::find_if(
+                pending.Turrets.begin(), pending.Turrets.end(),
+                [&](const PendingSceneSpawns::TurretRequest& request)
+                {
+                    return !request.Possessor.IsValid()
+                        || request.Possessor == participant;
+                });
+            if (inFlight != pending.Turrets.end())
+            {
+                inFlight->Possessor = participant;
+                result.Info("a turret is being placed; taking it when it lands");
+                return result;
+            }
+            const TurretPlacementOutcome placed = PlaceTurretForRequest(
+                engine, world, settings, avatar, log);
+            if (placed.Requested)
+            {
+                PendingSpawnsOf(world).Turrets.back().Possessor = participant;
+                result.Info("a turret is being placed; taking it when it lands");
+                return result;
+            }
+            target = placed.Turret;
+        }
         if (!target.IsValid())
         {
             result.Status = ConsoleStatus::InvalidArguments;
@@ -1201,6 +1297,92 @@ private:
     // The pawn this machine was last told to drive, so taking up a new one is
     // an edge rather than something re-derived every frame.
     EntityId Followed;
+};
+
+//=============================================================================
+// SpawnSettlementSystem
+//
+// Watches the pending scene spawns each frame, after the drain where the
+// spawn service publishes. A settled pawn request re-asks the participant
+// lifecycle (ProvideBody consumes the entry either way); a settled turret
+// gets its runtime body, its replication stamps, and its waiting driver.
+//=============================================================================
+struct SpawnSettlementSystem
+{
+    Engine* Owner = nullptr;
+    ResolvedPlayerAvatar Avatar;
+
+    void FrameUpdate(FrameUpdateContext& ctx)
+    {
+        World& world = ctx.Entities;
+        PendingSceneSpawns* pending = world.TryGetResource<PendingSceneSpawns>();
+        if (pending == nullptr)
+            return;
+        SceneSpawnService& spawns = Owner->Spawns();
+        Logger& log = Owner->Logging().GetLogger<TemplateGame>();
+
+        // Collected first: the re-ask reenters ProvideBody, which edits the
+        // very list this walks.
+        ReAskScratch.clear();
+        for (std::size_t i = 0; i < pending->Pawns.size();)
+        {
+            const PendingSceneSpawns::PawnRequest& request = pending->Pawns[i];
+            if (!world.IsAlive(request.Participant))
+            {
+                // The participant left before its body landed; the group has
+                // nobody to belong to.
+                (void)spawns.RequestDespawn(request.Spawn);
+                pending->Pawns[i] = pending->Pawns.back();
+                pending->Pawns.pop_back();
+                continue;
+            }
+            if (spawns.Status(request.Spawn) != SceneSpawnStatus::Pending)
+                ReAskScratch.push_back(request.Participant);
+            ++i;
+        }
+        for (const EntityId participant : ReAskScratch)
+            (void)Owner->RequestParticipantBody(participant);
+
+        for (std::size_t i = 0; i < pending->Turrets.size();)
+        {
+            const SceneSpawnId id = pending->Turrets[i].Spawn;
+            if (spawns.Status(id) == SceneSpawnStatus::Pending)
+            {
+                ++i;
+                continue;
+            }
+            const EntityId possessor = pending->Turrets[i].Possessor;
+            pending->Turrets[i] = pending->Turrets.back();
+            pending->Turrets.pop_back();
+
+            if (spawns.Status(id) != SceneSpawnStatus::Live)
+            {
+                log.Warn("TemplateGame: the turret prefab failed to spawn");
+                continue;
+            }
+            const EntityId root = SpawnedGroupRoot(world, spawns.Entities(id));
+            if (!root.IsValid() || world.TryGet<TurretMount>(root) == nullptr)
+            {
+                // Authoring rule: the mount rides the prefab's root, where
+                // possession and NearestTurret address it.
+                log.Error("TemplateGame: the turret prefab's root carries no "
+                          "turret_mount; dropping the placement");
+                (void)spawns.RequestDespawn(id);
+                continue;
+            }
+            world.AddComponent<NetReplicated>(root);
+            world.AddComponent<NetSpawnRecipe>(
+                root, NetSpawnRecipe{ .Id = kTurretRecipe });
+            BuildTurretBody(world, root, Avatar);
+            log.Info("TemplateGame: placed a turret");
+            if (possessor.IsValid() && world.IsAlive(possessor))
+                (void)ApplyTurretRequest(*Owner, world, possessor, root,
+                                         PeerId{});
+        }
+    }
+
+private:
+    std::vector<EntityId> ReAskScratch;
 };
 
 struct SpinSystem
@@ -1354,42 +1536,131 @@ void TemplateGame::OnStart(GameStartupContext&)
             world.TryGet<NetParticipantIdentity>(participant);
         const std::uint32_t peer = who == nullptr ? 0u : who->Peer;
 
-        // Unfiltered: a map's content is imported into its own zone partition,
-        // so a start looked for only in the persistent one is a start that is
-        // never found and a peer that arrives at the origin.
-        const std::optional<Vec3d> authored =
-            FindPlayerStart(world, std::nullopt);
-        // Said out loud once per spawn, because everything downstream of it
-        // looks exactly like a level that authored a start at the origin --
-        // including anything else the game puts near where a player begins.
-        if (!authored.has_value())
+        const auto spawnPosition = [&]() -> Vec3d
         {
-            log.Warn("TemplateGame: no player_start in the loaded content; "
-                     "spawning at the default position");
+            // Unfiltered: a map's content is imported into its own zone
+            // partition, so a start looked for only in the persistent one is a
+            // start that is never found and a peer that arrives at the origin.
+            const std::optional<Vec3d> authored =
+                FindPlayerStart(world, std::nullopt);
+            // Said out loud once per spawn, because everything downstream of
+            // it looks exactly like a level that authored a start at the
+            // origin -- including anything else near where a player begins.
+            if (!authored.has_value())
+            {
+                log.Warn("TemplateGame: no player_start in the loaded content; "
+                         "spawning at the default position");
+            }
+            // Offset laterally from the start so two players do not arrive
+            // inside each other, by peer id so somebody lands in the same
+            // place however many others are present. A proper multi-start
+            // rotation is the level's business, not this policy's.
+            Vec3d spawn = authored.value_or(kDefaultPlayerStart);
+            spawn.X += 2.0f * static_cast<float>(peer);
+            return spawn;
+        };
+
+        // Named rather than numbered for the one with no peer behind it. Peer
+        // zero is the authority, so "a pawn for peer 0" describes the person
+        // at this machine as a connection that does not exist.
+        const auto announce = [&](std::string_view how)
+        {
+            if (peer == kNetAuthorityPeer)
+                log.Info("TemplateGame: spawned a pawn for the player at "
+                         "this machine ({})", how);
+            else
+                log.Info("TemplateGame: spawned a pawn for peer {} ({})", peer,
+                         how);
+        };
+
+        const auto proceduralPawn = [&]() -> EntityId
+        {
+            const EntityId pawn = SpawnPawn(world, spawnPosition(),
+                                            ResolvePlayerMovementProfile(log),
+                                            ResolvePlayerAvatar(log));
+            // What the body is on whichever machine receives it. Replication
+            // and ownership are the engine's to install; this is content.
+            world.AddComponent<NetSpawnRecipe>(
+                pawn, NetSpawnRecipe{ .Id = kPlayerPawnRecipe });
+            announce("built-in");
+            return pawn;
+        };
+
+        const CompiledGameSettings* settings = ResolveGameSettings(log);
+        if (settings == nullptr || settings->PlayerPawnScenePath.empty())
+            return proceduralPawn();
+
+        // The prefab path is asynchronous: the first ask requests the spawn
+        // and answers "not yet"; the settlement system asks again when the
+        // request settles, and this branch then consumes it.
+        PendingSceneSpawns& pending = PendingSpawnsOf(world);
+        const auto entry = std::find_if(
+            pending.Pawns.begin(), pending.Pawns.end(),
+            [&](const PendingSceneSpawns::PawnRequest& request)
+            { return request.Participant == participant; });
+        if (entry == pending.Pawns.end())
+        {
+            Transform3f root = Transform3f::Identity();
+            root.Position = spawnPosition();
+            const SceneSpawnId id = GetEngine().Spawns().RequestSpawn(
+                settings->PlayerPawnScenePath, root, PersistentStoragePartition);
+            pending.Pawns.push_back({ participant, id });
+            return EntityId{};
         }
 
-        // Offset laterally from the start so two players do not arrive inside
-        // each other, by peer id so somebody lands in the same place however
-        // many others are present. A proper multi-start rotation is the level's
-        // business, not this policy's.
-        Vec3d spawn = authored.value_or(kDefaultPlayerStart);
-        spawn.X += 2.0f * static_cast<float>(peer);
+        switch (GetEngine().Spawns().Status(entry->Spawn))
+        {
+        case SceneSpawnStatus::Pending:
+            return EntityId{};
+        case SceneSpawnStatus::Live:
+        {
+            const EntityId root = SpawnedGroupRoot(
+                world, GetEngine().Spawns().Entities(entry->Spawn));
+            if (!root.IsValid())
+            {
+                // The group's partition unloaded underneath the request; a
+                // fresh ask starts over against the current content.
+                pending.Pawns.erase(entry);
+                return EntityId{};
+            }
+            // The same add-if-missing pass a replicated pawn gets: the prefab
+            // carries the authored identity, this carries the runtime state.
+            BuildPawnBody(world, root, ResolvePlayerMovementProfile(log),
+                          ResolvePlayerAvatar(log));
+            world.AddComponent<NetSpawnRecipe>(
+                root, NetSpawnRecipe{ .Id = kPlayerPawnRecipe });
+            pending.LiveBodies.emplace_back(participant, entry->Spawn);
+            pending.Pawns.erase(entry);
+            announce("pawn prefab");
+            return root;
+        }
+        case SceneSpawnStatus::Failed:
+        default:
+            log.Warn("TemplateGame: pawn prefab '{}' failed to spawn; using "
+                     "the built-in pawn", settings->PlayerPawnScenePath);
+            pending.Pawns.erase(entry);
+            return proceduralPawn();
+        }
+    };
 
-        const EntityId pawn = SpawnPawn(world, spawn,
-                                        ResolvePlayerMovementProfile(log),
-                                        ResolvePlayerAvatar(log));
-        // What the body is on whichever machine receives it. Replication and
-        // ownership are the engine's to install; this is content.
-        world.AddComponent<NetSpawnRecipe>(
-            pawn, NetSpawnRecipe{ .Id = kPlayerPawnRecipe });
-        // Named rather than numbered for the one with no peer behind it. Peer
-        // zero is the authority, so "a pawn for peer 0" describes the person at
-        // this machine as a connection that does not exist.
-        if (peer == kNetAuthorityPeer)
-            log.Info("TemplateGame: spawned a pawn for the player at this machine");
-        else
-            log.Info("TemplateGame: spawned a pawn for peer {}", peer);
-        return pawn;
+    // A prefab body is a group: the engine reaps the root like any body, and
+    // the queued despawn sweeps the group's remaining members at the next
+    // pump -- without it, prefab children would outlive the pawn outside any
+    // group index. Procedural bodies take only the engine-side destroy.
+    engine.Participants().ReapBody =
+        [this](World& world, EntityId participant, EntityId) -> bool
+    {
+        PendingSceneSpawns* pending = world.TryGetResource<PendingSceneSpawns>();
+        if (pending == nullptr)
+            return true;
+        const auto live = std::find_if(
+            pending->LiveBodies.begin(), pending->LiveBodies.end(),
+            [&](const auto& body) { return body.first == participant; });
+        if (live == pending->LiveBodies.end())
+            return true;
+        (void)GetEngine().Spawns().RequestDespawn(live->second);
+        pending->LiveBodies.erase(live);
+        return true;
     };
 
     // The same two lines for the turret: what arrives as replicated state, and
@@ -2121,12 +2392,14 @@ ConsoleResult TemplateGame::RequestTurret(bool placeOnly)
             result.Error("only the authority places turrets");
             return result;
         }
-        return PlaceTurretHere(engine, ResolvePlayerAvatar(log), log);
+        return PlaceTurretHere(engine, ResolveGameSettings(log),
+                               ResolvePlayerAvatar(log), log);
     }
 
     if (client)
         return AskAuthorityForTurret(engine, *session);
-    return TakeTurretHere(engine, ResolvePlayerAvatar(log), log);
+    return TakeTurretHere(engine, ResolveGameSettings(log),
+                          ResolvePlayerAvatar(log), log);
 }
 
 ConsoleResult TemplateGame::SetCameraMode(std::string_view modeName)
@@ -2230,6 +2503,14 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
         // Resolves to no body on a process that cannot hold a mesh, which is
         // exactly what a bodyless pawn wants.
         players.Avatar = ResolvePlayerAvatar(log);
+
+        // Settles pending scene spawns before the session presents bodies, so
+        // a pawn that lands this frame is followed this frame.
+        SpawnSettlementSystem& settlement =
+            ctx.Schedule.Register<SpawnSettlementSystem>();
+        settlement.Owner = &GetEngine();
+        settlement.Avatar = players.Avatar;
+        ctx.Schedule.After<SessionPlayerSystem, SpawnSettlementSystem>();
     }
 
     WorldPartitionUpdateSystem& partitionUpdate =

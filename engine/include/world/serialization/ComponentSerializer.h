@@ -9,6 +9,7 @@
 
 #include <cstddef>
 #include <cstring>
+#include <type_traits>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -132,13 +133,28 @@ public:
               const Registry& registry,
               SceneSerializationContext& context) const override
     {
-        const Component* component = registry.Components.IsRegistered<Component>()
-            ? registry.Components.TryGet<Component>(entity)
-            : nullptr;
-        if (!component)
-            return true;
+        if constexpr (std::is_empty_v<Component>)
+        {
+            // A tag's presence is its whole value: it has no column, so
+            // TryGet answers null even when the signature bit is set.
+            if (!registry.Components.IsRegistered<Component>()
+                || !registry.Components.HasComponent<Component>(entity))
+                return true;
+            const Component tag{};
+            return SceneComponentSerialization::SaveFields(archive, tag, context);
+        }
+        else
+        {
+            const Component* component =
+                registry.Components.IsRegistered<Component>()
+                    ? registry.Components.TryGet<Component>(entity)
+                    : nullptr;
+            if (!component)
+                return true;
 
-        return SceneComponentSerialization::SaveFields(archive, *component, context);
+            return SceneComponentSerialization::SaveFields(archive, *component,
+                                                           context);
+        }
     }
 
     bool Load(IReadArchive& archive,

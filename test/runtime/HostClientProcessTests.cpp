@@ -331,6 +331,11 @@ TEST_F(HostClientProcess, ADedicatedHostServesAJoiningClient)
     // player of its own anywhere in it.
     EXPECT_TRUE(host.WaitForLog("spawned a pawn for peer", &hostLog))
         << "host never served the peer:\n" << hostLog;
+    // The shipped game.sdata names a pawn prefab and the fixture cooked it,
+    // so the body must come from the scene spawn, never the fallback.
+    EXPECT_NE(hostLog.find("(pawn prefab)"), std::string::npos) << hostLog;
+    EXPECT_EQ(hostLog.find("using the built-in pawn"), std::string::npos)
+        << hostLog;
     EXPECT_EQ(hostLog.find("local player attached"), std::string::npos)
         << "a dedicated host must not provision a player of its own:\n" << hostLog;
 
