@@ -106,7 +106,9 @@ struct SceneHierarchyPanel::DrawContext
     std::vector<EntityId> ToDelete;
     ZoneId MoveTarget = {};
     EntityId DropParent = {};
+    EntityId DropBefore = {};
     bool DropRequested = false;
+    bool DropReorder = false;
     bool DropKeepLocal = false;
 
     [[nodiscard]] std::span<const EntityId> ChildrenOf(EntityId entity) const
@@ -209,6 +211,61 @@ void SceneHierarchyPanel::HandleRowClick(DrawContext& ctx, EntityId entity)
     Commands.Execute(std::make_unique<SelectCommand>(Selection, std::move(next)));
 }
 
+void SceneHierarchyPanel::DrawInsertionSlot(DrawContext& ctx, EntityId parent,
+                                            EntityId before)
+{
+    // A pruned tree has no meaningful between-rows order to point at.
+    if (ctx.FilterActive)
+        return;
+    const ImGuiPayload* dragged = ImGui::GetDragDropPayload();
+    if (dragged == nullptr || !dragged->IsDataType(kDragPayloadType))
+        return;
+
+    ImGui::PushID(before.IsValid() ? static_cast<int>(before.Index) : -1);
+    ImGui::InvisibleButton("##insert_slot",
+                           ImVec2(std::max(ImGui::GetContentRegionAvail().x, 1.0f),
+                                  4.0f));
+    if (ImGui::BeginDragDropTarget())
+    {
+        bool legal = true;
+        for (EntityId entity : DragSet)
+        {
+            if (entity == before
+                || (parent.IsValid()
+                    && (entity == parent || ctx.Scene.IsAncestorOf(entity, parent)))
+                || ctx.Document.IsSceneInstanceMember(entity))
+            {
+                legal = false;
+                break;
+            }
+        }
+        if (const ImGuiPayload* payload = legal
+                ? ImGui::AcceptDragDropPayload(
+                      kDragPayloadType,
+                      ImGuiDragDropFlags_AcceptBeforeDelivery
+                          | ImGuiDragDropFlags_AcceptNoDrawDefaultRect)
+                : nullptr)
+        {
+            const ImVec2 min = ImGui::GetItemRectMin();
+            const ImVec2 max = ImGui::GetItemRectMax();
+            const float y = 0.5f * (min.y + max.y);
+            ImGui::GetWindowDrawList()->AddLine(
+                ImVec2(min.x, y), ImVec2(max.x, y),
+                ImGui::GetColorU32(EditorUi::Accent), 2.0f);
+            if (payload->IsDelivery())
+            {
+                ctx.DropParent = parent;
+                ctx.DropBefore = before;
+                ctx.DropReorder = true;
+                ctx.DropRequested = true;
+                ctx.DropKeepLocal = ImGui::GetIO().KeyShift;
+            }
+        }
+        ImGui::EndDragDropTarget();
+    }
+    ImGui::PopID();
+}
+
 void SceneHierarchyPanel::HandleRowDragDrop(DrawContext& ctx, EntityId entity)
 {
     if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceNoDisableHover))
@@ -309,6 +366,29 @@ void SceneHierarchyPanel::DrawRowContextMenu(DrawContext& ctx, EntityId entity)
                 Commands.Execute(std::make_unique<BreakSceneInstanceCommand>(
                     SceneInstanceId{ id->Id.Value }, ctx.Document));
         }
+    }
+
+    {
+        const SelectableRef primary = Selection.GetPrimarySelection();
+        const bool haveParent = primary.IsEntity() && primary.Entity != entity
+            && ctx.Scene.HasEntity(primary.Entity)
+            && !ctx.Scene.IsAncestorOf(entity, primary.Entity)
+            && !ctx.Document.IsSceneInstanceMember(entity);
+        if (ImGui::MenuItem(ICON_FA_ARROW_DOWN "  Parent to Selected", nullptr,
+                            false, haveParent))
+        {
+            const EntityId targets[] = { entity };
+            if (auto command = MakeReparentEntitiesCommand(
+                    targets, primary.Entity,
+                    ImGui::GetIO().KeyShift ? ReparentTransformRule::KeepLocal
+                                            : ReparentTransformRule::KeepWorld,
+                    ctx.Scene, ctx.Document))
+                Commands.Execute(std::move(command));
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip(haveParent
+                ? "make this a child of the selected entity;\nhold Shift to keep the local transform"
+                : "select the entity that should become the parent");
     }
 
     if (ctx.Scene.GetParent(entity).IsValid()
@@ -539,7 +619,11 @@ void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth)
     if (!children.empty() && nodeOpen)
     {
         for (EntityId child : children)
+        {
+            DrawInsertionSlot(ctx, entity, child);
             DrawRow(ctx, child, depth + 1);
+        }
+        DrawInsertionSlot(ctx, entity, EntityId{});
         ImGui::TreePop();
     }
 
@@ -647,7 +731,11 @@ void SceneHierarchyPanel::OnDraw()
     ImGui::Indent();
 
     for (EntityId root : ctx.Roots)
+    {
+        DrawInsertionSlot(ctx, EntityId{}, root);
         DrawRow(ctx, root, 0);
+    }
+    DrawInsertionSlot(ctx, EntityId{}, EntityId{});
 
     ImGui::Unindent();
 
@@ -658,7 +746,7 @@ void SceneHierarchyPanel::OnDraw()
                 DragSet, ctx.DropParent,
                 ctx.DropKeepLocal ? ReparentTransformRule::KeepLocal
                                   : ReparentTransformRule::KeepWorld,
-                scene, document))
+                scene, document, ctx.DropReorder, ctx.DropBefore))
             Commands.Execute(std::move(command));
     }
 

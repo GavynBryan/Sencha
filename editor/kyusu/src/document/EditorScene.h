@@ -93,6 +93,13 @@ public:
     // is also where identity is established, so every route into the scene mints
     // or claims exactly once; adopting an already-tracked entity does nothing.
     void TrackEntity(EntityId entity);
+
+    // Replaces the tracked order with `order`, a permutation of the current
+    // list (anything else is refused untouched). Sibling rows in the
+    // hierarchy follow this order, and local entity records save in it;
+    // instance records keep their own order, so a reorder involving a
+    // placement's row holds for the session only.
+    bool SetEntityOrder(std::span<const EntityId> order);
     void SetTransform(EntityId entity, const Transform3f& transform);
     // Places the entity at a world-space transform, converting through its
     // parent so the stored local transform stays the authored value. Everything

@@ -28,12 +28,19 @@ enum class ReparentTransformRule : std::uint8_t
 // root) as a single undoable step. Undo restores each entity's previous parent
 // and its exact previous local transform rather than recomputing it, so a
 // round trip is bit-identical even where the conversion math would not be.
+//
+// With `reorder`, the entities are also moved in the scene's tracked order:
+// the block lands immediately before `insertBefore`, or at the end when that
+// is invalid -- the between-rows half of the hierarchy drop gesture. Entities
+// already under `newParent` then stay in the set (their order is the change)
+// but skip the transform work, so a pure reorder cannot drift a transform.
 class ReparentEntitiesCommand : public ICommand
 {
 public:
     ReparentEntitiesCommand(std::span<const EntityId> entities, EntityId newParent,
                             ReparentTransformRule rule,
-                            EditorScene& scene, EditorDocument& document);
+                            EditorScene& scene, EditorDocument& document,
+                            bool reorder = false, EntityId insertBefore = {});
 
     void Execute() override;
     void Undo() override;
@@ -52,6 +59,9 @@ private:
     EntityId        NewParent;
     ReparentTransformRule Rule;
     std::vector<Entry> Entries;
+    bool     Reorder;
+    EntityId InsertBefore;
+    std::vector<EntityId> PreviousOrder;
     bool Captured = false;
 };
 
@@ -63,4 +73,5 @@ private:
 // whole gesture rather than half-applying it.
 [[nodiscard]] std::unique_ptr<ICommand> MakeReparentEntitiesCommand(
     std::span<const EntityId> entities, EntityId newParent,
-    ReparentTransformRule rule, EditorScene& scene, EditorDocument& document);
+    ReparentTransformRule rule, EditorScene& scene, EditorDocument& document,
+    bool reorder = false, EntityId insertBefore = {});

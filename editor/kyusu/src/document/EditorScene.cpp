@@ -394,6 +394,19 @@ void EditorScene::Clear()
     LockedEntities.clear();
 }
 
+bool EditorScene::SetEntityOrder(std::span<const EntityId> order)
+{
+    if (order.size() != Entities.size())
+        return false;
+    std::unordered_set<EntityId, EntityIdHash> current(Entities.begin(),
+                                                       Entities.end());
+    for (EntityId entity : order)
+        if (current.erase(entity) == 0)
+            return false;
+    Entities.assign(order.begin(), order.end());
+    return true;
+}
+
 void EditorScene::SyncFromRegistry()
 {
     World& world = Registry_.Components;

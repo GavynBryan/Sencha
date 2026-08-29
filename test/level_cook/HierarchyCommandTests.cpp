@@ -13,11 +13,15 @@
 #include "selection/SelectionService.h"
 
 #include <core/logging/LoggingProvider.h>
+#include <world/identity/PersistentIdComponent.h>
 #include <world/transform/TransformComponents.h>
 
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstring>
+#include <span>
+#include <vector>
 
 namespace
 {
@@ -149,6 +153,111 @@ namespace
 
         EXPECT_EQ(Scene.GetParent(parent), destination);
         EXPECT_EQ(Scene.GetParent(child), parent);
+    }
+
+    TEST_F(HierarchyCommandTest, ABetweenRowsDropReordersWithoutTouchingTransforms)
+    {
+        const EntityId a = Scene.CreateEntity(Vec3d{ 1.0, 0.0, 0.0 });
+        const EntityId b = Scene.CreateEntity(Vec3d{ 2.0, 0.0, 0.0 });
+        const EntityId c = Scene.CreateEntity(Vec3d{ 3.0, 0.0, 0.0 });
+        const Transform3f before = *Scene.TryGetLocalTransform(c);
+
+        // c lands before a: a pure reorder among the same (root) siblings.
+        const EntityId targets[] = { c };
+        auto command = MakeReparentEntitiesCommand(
+            targets, EntityId{}, ReparentTransformRule::KeepWorld,
+            Scene, Document, /*reorder*/ true, /*insertBefore*/ a);
+        ASSERT_NE(command, nullptr);
+        command->Execute();
+
+        const std::span<const EntityId> order = Scene.GetAllEntities();
+        ASSERT_EQ(order.size(), 3u);
+        EXPECT_EQ(order[0], c);
+        EXPECT_EQ(order[1], a);
+        EXPECT_EQ(order[2], b);
+        // Same parent means the transform path never ran: bit-identical local.
+        EXPECT_EQ(std::memcmp(Scene.TryGetLocalTransform(c), &before,
+                              sizeof(Transform3f)),
+                  0);
+
+        command->Undo();
+        const std::span<const EntityId> restored = Scene.GetAllEntities();
+        EXPECT_EQ(restored[0], a);
+        EXPECT_EQ(restored[1], b);
+        EXPECT_EQ(restored[2], c);
+    }
+
+    TEST_F(HierarchyCommandTest, ABetweenRowsDropReparentsAndOrdersInOneStep)
+    {
+        const EntityId parent = Scene.CreateEntity(Vec3d{ 5.0, 0.0, 0.0 });
+        const EntityId first = Scene.CreateEntity(Vec3d{});
+        const EntityId second = Scene.CreateEntity(Vec3d{});
+        const EntityId mover = Scene.CreateEntity(Vec3d{ 8.0, 0.0, 0.0 });
+        ASSERT_TRUE(Scene.SetParent(first, parent));
+        ASSERT_TRUE(Scene.SetParent(second, parent));
+
+        const EntityId targets[] = { mover };
+        auto command = MakeReparentEntitiesCommand(
+            targets, parent, ReparentTransformRule::KeepWorld,
+            Scene, Document, /*reorder*/ true, /*insertBefore*/ second);
+        ASSERT_NE(command, nullptr);
+        command->Execute();
+
+        EXPECT_EQ(Scene.GetParent(mover), parent);
+        ExpectNear(WorldPositionOf(mover), Vec3d{ 8.0, 0.0, 0.0 });
+        // Sibling order is relative tracked order: first, mover, second.
+        std::vector<EntityId> siblings;
+        for (EntityId entity : Scene.GetAllEntities())
+            if (Scene.GetParent(entity) == parent)
+                siblings.push_back(entity);
+        ASSERT_EQ(siblings.size(), 3u);
+        EXPECT_EQ(siblings[0], first);
+        EXPECT_EQ(siblings[1], mover);
+        EXPECT_EQ(siblings[2], second);
+
+        command->Undo();
+        EXPECT_FALSE(Scene.GetParent(mover).IsValid());
+        const std::span<const EntityId> restored = Scene.GetAllEntities();
+        EXPECT_EQ(restored[3], mover);
+    }
+
+    TEST_F(HierarchyCommandTest, SetEntityOrderRefusesAnythingButAPermutation)
+    {
+        const EntityId a = Scene.CreateEntity(Vec3d{});
+        const EntityId b = Scene.CreateEntity(Vec3d{});
+
+        const EntityId shortList[] = { a };
+        EXPECT_FALSE(Scene.SetEntityOrder(shortList));
+        const EntityId duplicated[] = { a, a };
+        EXPECT_FALSE(Scene.SetEntityOrder(duplicated));
+        const EntityId swapped[] = { b, a };
+        EXPECT_TRUE(Scene.SetEntityOrder(swapped));
+        EXPECT_EQ(Scene.GetAllEntities()[0], b);
+    }
+
+    TEST_F(HierarchyCommandTest, SiblingOrderSurvivesASaveAndReload)
+    {
+        const EntityId a = Scene.CreateEntity(Vec3d{ 1.0, 0.0, 0.0 });
+        const EntityId b = Scene.CreateEntity(Vec3d{ 2.0, 0.0, 0.0 });
+        const auto pidOf = [](const EditorDocument& document, EntityId entity)
+        {
+            const auto* id = document.GetScene().GetRegistry()
+                                 .Components.TryGet<PersistentIdComponent>(entity);
+            return id != nullptr ? id->Id.Value : 0u;
+        };
+        const std::uint64_t pidA = pidOf(Document, a);
+        const std::uint64_t pidB = pidOf(Document, b);
+
+        const EntityId swapped[] = { b, a };
+        ASSERT_TRUE(Scene.SetEntityOrder(swapped));
+
+        EditorDocument reloaded(Logging);
+        ASSERT_TRUE(reloaded.LoadFromSceneText(Document.ToSceneText()));
+        const std::span<const EntityId> order =
+            reloaded.GetScene().GetAllEntities();
+        ASSERT_EQ(order.size(), 2u);
+        EXPECT_EQ(pidOf(reloaded, order[0]), pidB);
+        EXPECT_EQ(pidOf(reloaded, order[1]), pidA);
     }
 
     TEST_F(HierarchyCommandTest, DeleteRemovesTheBranchAndUndoRebuildsIt)

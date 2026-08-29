@@ -3,17 +3,21 @@
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
 
+#include <algorithm>
 #include <utility>
 
 ReparentEntitiesCommand::ReparentEntitiesCommand(std::span<const EntityId> entities,
                                                  EntityId newParent,
                                                  ReparentTransformRule rule,
                                                  EditorScene& scene,
-                                                 EditorDocument& document)
+                                                 EditorDocument& document,
+                                                 bool reorder, EntityId insertBefore)
     : Scene(scene)
     , Document(document)
     , NewParent(newParent)
     , Rule(rule)
+    , Reorder(reorder)
+    , InsertBefore(insertBefore)
 {
     Entries.reserve(entities.size());
     for (EntityId entity : entities)
@@ -35,17 +39,55 @@ void ReparentEntitiesCommand::Execute()
             // derived component can be a refresh behind an edit made this frame.
             entry.World = Scene.ComposeWorldTransform(entry.Entity);
         }
+        if (Reorder)
+        {
+            const std::span<const EntityId> order = Scene.GetAllEntities();
+            PreviousOrder.assign(order.begin(), order.end());
+        }
         Captured = true;
     }
 
     for (Entry& entry : Entries)
     {
+        // A same-parent entity is here only for its order; touching its
+        // transform would replace an authored local with a recomputation.
+        if (entry.PreviousParent == NewParent)
+            continue;
         if (!Scene.SetParent(entry.Entity, NewParent))
             continue;
         // The world value was captured against the old parentage; placing it
         // again under the new parent is exactly the no-visual-move contract.
         if (Rule == ReparentTransformRule::KeepWorld)
             Scene.SetWorldTransform(entry.Entity, entry.World);
+    }
+
+    if (Reorder)
+    {
+        const auto isMoved = [this](EntityId entity)
+        {
+            return std::any_of(Entries.begin(), Entries.end(),
+                [&](const Entry& e) { return e.Entity == entity; });
+        };
+        // The moved block keeps its previous relative order; the rest of the
+        // list keeps its order around the insertion point.
+        std::vector<EntityId> moved;
+        std::vector<EntityId> next;
+        moved.reserve(Entries.size());
+        next.reserve(PreviousOrder.size());
+        for (EntityId entity : PreviousOrder)
+            if (isMoved(entity))
+                moved.push_back(entity);
+        for (EntityId entity : PreviousOrder)
+        {
+            if (isMoved(entity))
+                continue;
+            if (entity == InsertBefore)
+                next.insert(next.end(), moved.begin(), moved.end());
+            next.push_back(entity);
+        }
+        if (next.size() != PreviousOrder.size())
+            next.insert(next.end(), moved.begin(), moved.end());
+        (void)Scene.SetEntityOrder(next);
     }
     Document.MarkDirty();
 }
@@ -54,10 +96,14 @@ void ReparentEntitiesCommand::Undo()
 {
     for (auto it = Entries.rbegin(); it != Entries.rend(); ++it)
     {
+        if (it->PreviousParent == NewParent)
+            continue;
         if (!Scene.SetParent(it->Entity, it->PreviousParent))
             continue;
         Scene.SetTransform(it->Entity, it->PreviousLocal);
     }
+    if (Reorder)
+        (void)Scene.SetEntityOrder(PreviousOrder);
     Document.MarkDirty();
 }
 
@@ -65,7 +111,8 @@ std::unique_ptr<ICommand> MakeReparentEntitiesCommand(std::span<const EntityId> 
                                                       EntityId newParent,
                                                       ReparentTransformRule rule,
                                                       EditorScene& scene,
-                                                      EditorDocument& document)
+                                                      EditorDocument& document,
+                                                      bool reorder, EntityId insertBefore)
 {
     std::vector<EntityId> targets;
     targets.reserve(entities.size());
@@ -84,7 +131,9 @@ std::unique_ptr<ICommand> MakeReparentEntitiesCommand(std::span<const EntityId> 
         if (newParent.IsValid()
             && (newParent == entity || scene.IsAncestorOf(entity, newParent)))
             return nullptr;
-        if (scene.GetParent(entity) == newParent)
+        // Already in place is a no-op -- unless the gesture is also an order,
+        // where staying under the same parent is the point.
+        if (!reorder && scene.GetParent(entity) == newParent)
             continue;
 
         // An entity rides along with any ancestor also in the set; reparenting
@@ -102,5 +151,6 @@ std::unique_ptr<ICommand> MakeReparentEntitiesCommand(std::span<const EntityId> 
 
     if (targets.empty())
         return nullptr;
-    return std::make_unique<ReparentEntitiesCommand>(targets, newParent, rule, scene, document);
+    return std::make_unique<ReparentEntitiesCommand>(targets, newParent, rule, scene,
+                                                     document, reorder, insertBefore);
 }
