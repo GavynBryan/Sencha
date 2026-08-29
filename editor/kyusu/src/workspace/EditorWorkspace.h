@@ -58,6 +58,7 @@ public:
     // clears the selection and the undo stack. Document open and focus change
     // both swap the edited document, so both reset through this one path.
     void ResetInteractionState();
+    void BindSelectionToActiveDocument();
 
     // Deletes the entity-kind selection as one undoable step (no-op if empty).
     void DeleteSelection();

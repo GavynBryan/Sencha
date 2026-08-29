@@ -337,6 +337,87 @@ namespace
         EXPECT_EQ(reloaded.GetScene().GetEntityCount(), 3u);
     }
 
+    // A projection rebuild destroys every expanded entity and recreates it, so
+    // a selection holding raw handles goes dead under the user. Identity is
+    // what survives; the handle is re-resolved from it.
+    TEST_F(SceneInstanceCommandTest, SelectionFollowsEntitiesThroughARebuild)
+    {
+        EditorDocument host(Logging);
+        host.SetContentRoots({ Root });
+        // The workspace's wiring, reproduced: identity source plus the
+        // rebuild announcement that drives the retarget.
+        Selection.BindDocument(&host.GetScene().GetRegistry().Components);
+        host.SetProjectionObserver([this] { Selection.RetargetToDocument(); });
+
+        PlaceSceneInstanceCommand place("asset://props/door.sscene",
+                                        Transform3f::Identity(), host, Selection);
+        place.Execute();
+        ASSERT_TRUE(place.Placed());
+
+        // Select the light the placement contributed: a projected member, not
+        // the root, so nothing re-selects it on our behalf.
+        EntityId light;
+        for (EntityId entity : host.GetScene().GetAllEntities())
+            if (host.GetRegistry().Components.TryGet<PointLightComponent>(entity)
+                != nullptr)
+                light = entity;
+        ASSERT_TRUE(light.IsValid());
+        const PersistentEntityId lightId = IdOf(host, light);
+
+        Selection.ApplySelection(SelectableRef::EntitySelection(
+            host.GetScene().GetRegistry().Id, light));
+        ASSERT_EQ(Selection.GetPrimarySelection().Entity, light);
+
+        host.RebuildSceneProjection();
+
+        // Guard against a vacuous test: the rebuild must really have recreated
+        // the entity under a different handle, or there was nothing to survive.
+        const EntityId rebuilt = FindById(host, lightId);
+        ASSERT_TRUE(rebuilt.IsValid());
+        ASSERT_NE(rebuilt, light) << "the rebuild did not recreate the entity";
+
+        const SelectableRef primary = Selection.GetPrimarySelection();
+        EXPECT_TRUE(primary.IsValid());
+        EXPECT_EQ(primary.Entity, rebuilt)
+            << "the selection must follow the entity to its new handle";
+        EXPECT_EQ(primary.Stable, lightId);
+        ASSERT_EQ(Selection.GetSelection().size(), 1u);
+        EXPECT_EQ(Selection.GetSelection()[0].Entity, rebuilt);
+    }
+
+    // The other half of the contract: an entity that is genuinely gone leaves
+    // the selection rather than lingering as an unresolvable ref.
+    TEST_F(SceneInstanceCommandTest, SelectionDropsWhatTheRebuildRemoved)
+    {
+        EditorDocument host(Logging);
+        host.SetContentRoots({ Root });
+        Selection.BindDocument(&host.GetScene().GetRegistry().Components);
+        host.SetProjectionObserver([this] { Selection.RetargetToDocument(); });
+
+        PlaceSceneInstanceCommand place("asset://props/door.sscene",
+                                        Transform3f::Identity(), host, Selection);
+        place.Execute();
+        ASSERT_TRUE(place.Placed());
+
+        EntityId light;
+        for (EntityId entity : host.GetScene().GetAllEntities())
+            if (host.GetRegistry().Components.TryGet<PointLightComponent>(entity)
+                != nullptr)
+                light = entity;
+        ASSERT_TRUE(light.IsValid());
+        Selection.ApplySelection(SelectableRef::EntitySelection(
+            host.GetScene().GetRegistry().Id, light));
+        ASSERT_FALSE(Selection.GetSelection().empty());
+
+        const SceneInstanceId owner = host.SceneInstanceOwnerOf(light);
+        ASSERT_TRUE(owner.IsValid());
+        ASSERT_TRUE(host.RemoveSceneInstance(owner));
+
+        EXPECT_TRUE(Selection.GetSelection().empty())
+            << "a removed entity must not stay selected";
+        EXPECT_FALSE(Selection.GetPrimarySelection().IsValid());
+    }
+
     TEST_F(SceneInstanceCommandTest, BreakSeversTheLinkAndUndoRestoresIt)
     {
         EditorDocument host = LoadHost(HostText());

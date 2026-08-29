@@ -1,6 +1,11 @@
 #include "SelectionService.h"
 
+#include <ecs/World.h>
+#include <world/identity/PersistentEntityIndex.h>
+#include <world/identity/PersistentIdComponent.h>
+
 #include <algorithm>
+#include <utility>
 
 SelectionService::SelectionService(ISelectionContext& context)
     : Context(context)
@@ -33,11 +38,10 @@ void SelectionService::SetSelection(std::vector<SelectableRef> selection)
     if (!selection.empty())
         primary = selection.back();
 
-    Context.SetSnapshot(SelectionSnapshot{
+    Commit(SelectionSnapshot{
         .Items = std::move(selection),
         .Primary = primary,
     });
-    Notify();
 }
 
 void SelectionService::AddSelection(SelectableRef selection)
@@ -49,8 +53,7 @@ void SelectionService::AddSelection(SelectableRef selection)
     if (std::find(snapshot.Items.begin(), snapshot.Items.end(), selection) == snapshot.Items.end())
         snapshot.Items.push_back(selection);
     snapshot.Primary = selection;
-    Context.SetSnapshot(std::move(snapshot));
-    Notify();
+    Commit(std::move(snapshot));
 }
 
 void SelectionService::ToggleSelection(SelectableRef selection)
@@ -70,8 +73,7 @@ void SelectionService::ToggleSelection(SelectableRef selection)
         snapshot.Items.erase(it);
         snapshot.Primary = snapshot.Items.empty() ? SelectableRef{} : snapshot.Items.back();
     }
-    Context.SetSnapshot(std::move(snapshot));
-    Notify();
+    Commit(std::move(snapshot));
 }
 
 void SelectionService::RemoveSelection(SelectableRef selection)
@@ -83,8 +85,7 @@ void SelectionService::RemoveSelection(SelectableRef selection)
 
     snapshot.Items.erase(it);
     snapshot.Primary = snapshot.Items.empty() ? SelectableRef{} : snapshot.Items.back();
-    Context.SetSnapshot(std::move(snapshot));
-    Notify();
+    Commit(std::move(snapshot));
 }
 
 void SelectionService::ApplySelection(SelectableRef selection)
@@ -95,23 +96,20 @@ void SelectionService::ApplySelection(SelectableRef selection)
         return;
     }
 
-    Context.SetSnapshot(SelectionSnapshot{
+    Commit(SelectionSnapshot{
         .Items = { selection },
         .Primary = selection,
     });
-    Notify();
 }
 
 void SelectionService::ApplySnapshot(SelectionSnapshot snapshot)
 {
-    Context.SetSnapshot(std::move(snapshot));
-    Notify();
+    Commit(std::move(snapshot));
 }
 
 void SelectionService::ClearSelection()
 {
-    Context.SetSnapshot({});
-    Notify();
+    Commit({});
 }
 
 void SelectionService::ClearMeshElementSelections()
@@ -128,6 +126,72 @@ void SelectionService::ClearMeshElementSelections()
         return; // no element selections to drop; don't churn observers
 
     SetSelection(std::move(kept));
+}
+
+void SelectionService::BindDocument(const World* world)
+{
+    Document = world;
+}
+
+void SelectionService::RetargetToDocument()
+{
+    if (Document == nullptr)
+        return;
+
+    // Re-committing the current snapshot normalizes it: handles re-resolve
+    // from identity and anything gone is dropped. Silent when nothing moved,
+    // so a rebuild that did not disturb the selection costs no observer churn.
+    SelectionSnapshot current = Context.GetSnapshot();
+    SelectionSnapshot retargeted = current;
+    for (SelectableRef& ref : retargeted.Items)
+        ref = Normalize(ref);
+    retargeted.Primary = Normalize(retargeted.Primary);
+
+    const bool moved =
+        retargeted.Items.size() != current.Items.size()
+        || !std::equal(retargeted.Items.begin(), retargeted.Items.end(),
+                       current.Items.begin(),
+                       [](const SelectableRef& a, const SelectableRef& b)
+                       { return a.Entity == b.Entity && a.Stable == b.Stable; })
+        || retargeted.Primary.Entity != current.Primary.Entity;
+    if (!moved)
+        return;
+
+    Commit(std::move(retargeted));
+}
+
+SelectableRef SelectionService::Normalize(SelectableRef ref) const
+{
+    if (Document == nullptr || !ref.Registry.IsValid())
+        return ref;
+
+    if (ref.Stable.IsValid())
+    {
+        // Identity leads: the handle is whatever this document says it is now,
+        // which is how a snapshot captured before a rebuild comes back live.
+        const auto* index = Document->TryGetResource<PersistentEntityIndex>();
+        ref.Entity = index != nullptr ? index->TryResolve(ref.Stable) : EntityId{};
+        return ref;
+    }
+
+    // A fresh ref off a pick or a query: stamp the identity it will be
+    // recognised by later. Entities a document does not identify keep their
+    // handle and stay handle-compared.
+    if (ref.Entity.IsValid())
+    {
+        if (const auto* id = Document->TryGet<PersistentIdComponent>(ref.Entity))
+            ref.Stable = id->Id;
+    }
+    return ref;
+}
+
+void SelectionService::Commit(SelectionSnapshot snapshot)
+{
+    for (SelectableRef& ref : snapshot.Items)
+        ref = Normalize(ref);
+    snapshot.Primary = Normalize(snapshot.Primary);
+    Context.SetSnapshot(std::move(snapshot));
+    Notify();
 }
 
 ISelectionContext& SelectionService::GetContext()

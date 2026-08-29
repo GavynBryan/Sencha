@@ -124,6 +124,17 @@ SceneSourceCache& EditorDocument::EnsureSourceCache()
 
 void EditorDocument::RebuildSceneProjection()
 {
+    ExpandSceneProjection();
+
+    // Every path through the expansion invalidated the previous projection's
+    // handles, including the ones that expanded nothing, so the announcement
+    // is unconditional.
+    if (ProjectionObserver_)
+        ProjectionObserver_();
+}
+
+void EditorDocument::ExpandSceneProjection()
+{
     // The records must already say everything the live projection knows,
     // because the projection is about to be destroyed.
     HarvestInstanceOverrides();

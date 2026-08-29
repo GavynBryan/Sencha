@@ -132,10 +132,25 @@ void EditorWorkspace::ResolvePendingEdits()
         pending.Commit();
 }
 
+// Points the selection at the focused document: identity comes from that
+// document's index, and a rebuild of its projection retargets the live
+// selection instead of leaving it holding recreated entities' dead handles.
+void EditorWorkspace::BindSelectionToActiveDocument()
+{
+    EditorDocument& document = ActiveDocument();
+    Selection.BindDocument(&document.GetScene().GetRegistry().Components);
+    document.SetProjectionObserver([this] { Selection.RetargetToDocument(); });
+}
+
 void EditorWorkspace::ResetInteractionState()
 {
     CancelDocumentTransactions();
     Selection.ClearSelection();
+
+    // The selection addresses one document, so identity stamping and handle
+    // resolution follow the focus. Rebinding before the tools rebuild means a
+    // ref picked in the new document is identified from its first frame.
+    BindSelectionToActiveDocument();
 
     // Transient view/interaction state that may reference the outgoing document.
     Interaction.ClearTransient();
@@ -160,6 +175,7 @@ void EditorWorkspace::Build()
     // focus, world scene focus, new, open, close to legacy) lands here, so the
     // stack rebinds from one place instead of each caller arranging it.
     World.OnEditedDocumentChanged = [this] { ResetInteractionState(); };
+    BindSelectionToActiveDocument();
 
     // The documents a preview staged state into are about to be destroyed.
     // Unwind now, while they are still alive; the rebuild follows from the

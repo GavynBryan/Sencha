@@ -90,6 +90,15 @@ public:
     // source change.
     void RebuildSceneProjection();
 
+    // Fired after every rebuild, once the new projection is live. Projected
+    // entities are destroyed and recreated, so anything holding their handles
+    // -- the workspace's selection, above all -- has to re-resolve, and this
+    // is how it learns without the document knowing who is listening.
+    void SetProjectionObserver(std::function<void()> observer)
+    {
+        ProjectionObserver_ = std::move(observer);
+    }
+
     // ── Scene instances ─────────────────────────────────────────────────────
 
     // Places `source` (asset://...sscene) at `placement`, minting the instance
@@ -260,6 +269,12 @@ private:
     // source build leaves them out of the local entity list.
     std::unordered_set<std::uint64_t> AbsorbedPids_;
     ProjectionDiagnostics ProjectionDiagnostics_;
+    // Announced after each rebuild; empty in hosts that hold no handles.
+    std::function<void()> ProjectionObserver_;
+
+    // The rebuild itself, with the many early exits its diagnostics need.
+    // RebuildSceneProjection wraps it so the announcement has one home.
+    void ExpandSceneProjection();
     AssetRef DefaultMaterial{ AssetType::Material, "asset://materials/dev/gray.smat" };
 
     // Always present (constructor-injected). The asset system and catalog are
