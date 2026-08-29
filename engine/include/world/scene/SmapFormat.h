@@ -143,6 +143,15 @@ struct SmapError
 
 class EntityBuildPackage;
 
+struct SmapPackageOptions
+{
+    // Drop authored persistent identity entirely: no import metadata and no
+    // persistent_id component. A runtime spawn is transient (v1), so a
+    // spawned copy must not collide with authored identity or participate in
+    // zone state memory.
+    bool StripPersistentIdentity = false;
+};
+
 // Converts parsed contents into detached package entities: serialized
 // component payloads for owner-thread decode, persistent identity lifted as
 // import metadata, parents wired by ordinal. Worker-safe, like ReadSmap.
@@ -150,4 +159,11 @@ class EntityBuildPackage;
     const SmapContents& contents,
     const ComponentSerializerRegistry& serializers,
     EntityBuildPackage& package,
+    SmapError* error = nullptr);
+
+[[nodiscard]] bool BuildEntityPackageFromSmap(
+    const SmapContents& contents,
+    const ComponentSerializerRegistry& serializers,
+    EntityBuildPackage& package,
+    const SmapPackageOptions& options,
     SmapError* error = nullptr);

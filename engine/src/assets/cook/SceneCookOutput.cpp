@@ -223,8 +223,15 @@ bool WriteCookedScene(
     {
         uint64_t contentHash = 0;
         (void)HashFileContents(physicalPathFor(path).generic_string(), contentHash);
-        contents.Dependencies.push_back(
-            SmapDependency{ idMap.EnsureId(path, contentHash, pathIsLive), path });
+        const AssetId id = idMap.EnsureId(path, contentHash, pathIsLive);
+
+        // Authored scene sources (scene_instance provenance) earn stable ids
+        // and stamp like every ref, but stay out of the dependency table: the
+        // table is what a runtime preload warms, and a .sscene is authoring
+        // data no runtime registry ever resolves.
+        if (path.ends_with(".sscene"))
+            continue;
+        contents.Dependencies.push_back(SmapDependency{ id, path });
     }
 
     if (idMap.IsDirty() && !idMap.SaveToFile(idMapPath.generic_string()))

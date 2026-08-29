@@ -4,6 +4,7 @@
 #include <input/SdlInputCapture.h>
 #include <jobs/AsyncTaskQueue.h>
 #include <runtime/FrameDriver.h>
+#include <runtime/spawn/SceneSpawnService.h>
 #include <world/RuntimeWorld.h>
 #include <zone/AsyncZoneLoader.h>
 #include <zone/WorldPartitionRuntime.h>
@@ -671,6 +672,9 @@ void Engine::RegisterSimulationFramePhases()
                 std::chrono::duration<double, std::milli>(config.Runtime.AsyncCommitBudgetMs));
         }
         engine.Tasks().DrainCompletions(budget);
+        // After completions so a spawn whose worker just finished can publish
+        // this frame; the pump itself enforces request order.
+        engine.Spawns().Pump();
         engine.World().FlushLifecycleRequests();
     });
 

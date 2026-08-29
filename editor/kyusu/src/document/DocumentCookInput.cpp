@@ -15,6 +15,7 @@
 #include <render/StaticMeshComponent.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/SceneSerializationContext.h>
+#include <world/scene/SceneInstance.h>
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
 
@@ -256,6 +257,20 @@ JsonValue BuildPassthroughScene(const EditorDocument& document,
             std::erase_if(components->AsObject(),
                 [](const auto& field)
                 { return field.first == "baked_brush" || field.first == "name"; });
+
+            // Expanded placement members carry their instance identity into
+            // the cooked scene (locked decision D1): the placement id, and
+            // the source as its asset path -- the cook stamps it to a stable
+            // id exactly like every other ref.
+            if (const SceneInstanceId owner = document.SceneInstanceOwnerOf(entity);
+                owner.IsValid())
+            {
+                components->AsObject().push_back({ "scene_instance",
+                    JsonValue(JsonValue::Object{
+                        { "source", JsonValue(document.SceneInstanceSourceOf(entity)) },
+                        { "id", JsonValue(SceneInstanceIdToString(owner)) },
+                    }) });
+            }
         }
         entities.push_back(std::move(entityJson));
     }

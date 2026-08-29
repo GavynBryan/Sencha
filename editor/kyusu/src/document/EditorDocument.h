@@ -121,6 +121,13 @@ public:
     // entities outside any projection.
     [[nodiscard]] std::string SceneInstanceSourceOf(EntityId entity) const;
 
+    // The owning placement's id for a projected entity, root and added
+    // children included; invalid outside any instance. This is the identity
+    // the cook stamps on expanded members: the outermost placement, because
+    // an inner instance id repeats across two placements of the same source
+    // and could not address one group.
+    [[nodiscard]] SceneInstanceId SceneInstanceOwnerOf(EntityId entity) const;
+
     // Records fresh ids for every instance path resolution reported missing
     // (a source that grew since the placement was recorded), then re-projects.
     // An authoring act: marks the document dirty. Never called by loads or

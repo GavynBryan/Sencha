@@ -440,6 +440,30 @@ namespace
                     cookedLightIds.push_back(record.Persistent);
         EXPECT_FALSE(cookedLightIds.empty());
 
+        // D1: every expanded member carries its placement's identity into the
+        // cooked scene -- one scene_instance id across the group, the source
+        // named (as the stamped ref or the bare path, per the id map).
+        const IComponentSerializer* instanceSerializer =
+            EditorSceneSerializers().FindByJsonKey("scene_instance");
+        ASSERT_NE(instanceSerializer, nullptr);
+        std::vector<std::string> groupIds;
+        for (const SmapEntityRecord& record : scene.Entities)
+            for (const auto& [type, payload] : record.Components)
+                if (type == instanceSerializer->TypeId())
+                {
+                    ASSERT_TRUE(payload.IsObject());
+                    const JsonValue* instanceId = payload.Find("id");
+                    ASSERT_NE(instanceId, nullptr);
+                    ASSERT_TRUE(instanceId->IsString());
+                    groupIds.push_back(instanceId->AsString());
+                    ASSERT_NE(payload.Find("source"), nullptr);
+                }
+        // Root + light. The brush body bakes into cell geometry rather than
+        // passing through, so it carries no membership.
+        ASSERT_GE(groupIds.size(), 2u);
+        for (const std::string& id : groupIds)
+            EXPECT_EQ(id, groupIds.front());
+
         const EditorDocument reloaded = [&]
         {
             EditorDocument doc(Logging);

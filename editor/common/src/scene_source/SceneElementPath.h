@@ -2,18 +2,13 @@
 
 #include <core/identity/Id.h>
 #include <core/identity/StrongId.h>
+#include <world/scene/SceneInstance.h> // SceneInstanceId: one id, engine-owned
 
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
-
-// Stable identity of one placed scene instance within its containing scene.
-// Same 64-bit editor-minted discipline as PersistentEntityId; distinct type
-// because the two name different things -- an instance is a placement of a
-// whole source, an entity id is one entity.
-using SceneInstanceId = StrongId<struct SceneInstanceIdTag, std::uint64_t>;
 
 // The 16-hex-digit text form every scene-source id uses, instance and entity
 // alike -- one id vocabulary, one spelling.

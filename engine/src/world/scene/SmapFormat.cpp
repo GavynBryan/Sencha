@@ -977,6 +977,16 @@ bool BuildEntityPackageFromSmap(const SmapContents& contents,
                                 EntityBuildPackage& package,
                                 SmapError* error)
 {
+    return BuildEntityPackageFromSmap(contents, serializers, package,
+                                      SmapPackageOptions{}, error);
+}
+
+bool BuildEntityPackageFromSmap(const SmapContents& contents,
+                                const ComponentSerializerRegistry& serializers,
+                                EntityBuildPackage& package,
+                                const SmapPackageOptions& options,
+                                SmapError* error)
+{
     EntityBuildPackage built;
     std::vector<PackageEntityId> entities;
     entities.reserve(contents.Entities.size());
@@ -997,6 +1007,9 @@ bool BuildEntityPackageFromSmap(const SmapContents& contents,
                                     + HexId(type.Value) + ".");
                 return false;
             }
+            if (options.StripPersistentIdentity
+                && serializer->JsonKey() == "persistent_id")
+                continue;
             if (!built.AddSerializedJson(entity, type, payload))
             {
                 SetError(error, ".smap entity " + std::to_string(i)
@@ -1007,7 +1020,7 @@ bool BuildEntityPackageFromSmap(const SmapContents& contents,
             }
         }
 
-        if (record.Persistent.IsValid())
+        if (!options.StripPersistentIdentity && record.Persistent.IsValid())
             (void)built.SetPersistentId(entity, record.Persistent);
     }
 

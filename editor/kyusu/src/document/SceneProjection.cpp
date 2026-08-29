@@ -660,6 +660,17 @@ bool EditorDocument::IsSceneInstanceRoot(EntityId entity) const
     return found != Projection_.end() && found->second.Root;
 }
 
+SceneInstanceId EditorDocument::SceneInstanceOwnerOf(EntityId entity) const
+{
+    const auto* id = Registry_.Components.TryGet<PersistentIdComponent>(entity);
+    if (id == nullptr)
+        return {};
+    const auto found = Projection_.find(id->Id.Value);
+    if (found == Projection_.end() || found->second.Path.Elements.empty())
+        return {};
+    return SceneInstanceId{ found->second.Path.Elements.front() };
+}
+
 std::string EditorDocument::SceneInstanceSourceOf(EntityId entity) const
 {
     const auto* id = Registry_.Components.TryGet<PersistentIdComponent>(entity);

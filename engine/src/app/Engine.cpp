@@ -15,6 +15,7 @@
 #include <jobs/JobSystem.h>
 #include <prediction/PawnStateReplay.h>
 #include <runtime/FrameDriver.h>
+#include <runtime/spawn/SceneSpawnService.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/RuntimeWorld.h>
@@ -99,6 +100,7 @@ bool Engine::Initialize()
         FrameDriverInstance.reset();
         TaskQueueInstance.reset();
         FramePoolInstance.reset();
+        SpawnServiceState.reset();
         RuntimeWorldState.reset();
 #ifdef SENCHA_ENABLE_VULKAN
         GraphicsState.reset();
@@ -291,6 +293,7 @@ void Engine::Shutdown()
     FrameDriverInstance.reset();
     TaskQueueInstance.reset();
     FramePoolInstance.reset();
+    SpawnServiceState.reset();
     RuntimeWorldState.reset();
 #ifdef SENCHA_ENABLE_DEBUG_UI
     // The renderer owns the feature; only the borrowed view is cleared here.
@@ -387,6 +390,13 @@ const RuntimeWorld& Engine::World() const
     assert(RuntimeWorldState
            && "Engine::World: valid after runtime schema sealing and before Shutdown");
     return *RuntimeWorldState;
+}
+
+SceneSpawnService& Engine::Spawns()
+{
+    assert(SpawnServiceState
+           && "Engine::Spawns: valid over the same span as Engine::World");
+    return *SpawnServiceState;
 }
 
 PlatformServices& Engine::Platform()
@@ -667,6 +677,9 @@ int Engine::Run(Game& game)
     assert(!RuntimeWorldState && "Engine::Run called with a live runtime world");
     RuntimeWorldState =
         std::make_unique<RuntimeWorld>(RuntimeComponentSchemaState);
+    SpawnServiceState = std::make_unique<SceneSpawnService>(
+        *RuntimeWorldState, RuntimeComponentSchemaState, SceneSerializerRegistry,
+        Tasks(), LoggingState);
 
     ConsoleService& console = Console();
     console.AdvancePhase(ConsolePhase::EngineReady);

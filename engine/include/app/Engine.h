@@ -53,6 +53,7 @@ class SdlGamepadCapture;
 class JobSystem;
 struct PlatformServices;
 class RuntimeWorld;
+class SceneSpawnService;
 
 // Owns the runtime services, frame loop, unified entity world, schedule, and
 // timing state. There is exactly one runtime entity universe per Engine run.
@@ -277,6 +278,13 @@ public:
     [[nodiscard]] RuntimeWorld& World();
     [[nodiscard]] const RuntimeWorld& World() const;
 
+    // Runtime scene spawning: cooked scenes placed at play time, published in
+    // request order at the async drain. Valid over the same span as World().
+    // The game connects its asset stack once in OnStart
+    // (Spawns().ConnectAssets(&runtimeAssets.Assets)); requests before that
+    // wiring fail with a status, not a crash.
+    [[nodiscard]] SceneSpawnService& Spawns();
+
     [[nodiscard]] RuntimeFrameLoop& Runtime() { return RuntimeLoop; }
     [[nodiscard]] const RuntimeFrameLoop& Runtime() const
     {
@@ -410,6 +418,8 @@ private:
     NetSpawnRecipes SpawnRecipeState;
     SessionParticipantProjection ParticipantProjection;
     std::unique_ptr<RuntimeWorld> RuntimeWorldState;
+    // Constructed with the world; torn down before it (it borrows the world).
+    std::unique_ptr<SceneSpawnService> SpawnServiceState;
     RuntimeFrameLoop RuntimeLoop;
     ConsoleStartupScript StartupScript;
     std::unique_ptr<FrameDriver> FrameDriverInstance;

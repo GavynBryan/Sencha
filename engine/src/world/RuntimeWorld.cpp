@@ -5,6 +5,7 @@
 #include <ecs/WorldComponentSchema.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
+#include <world/scene/SceneInstanceIndex.h>
 #include <zone/ZoneStateStore.h>
 
 #include <vector>
@@ -24,6 +25,10 @@ RuntimeWorld::RuntimeWorld(const WorldComponentSchema& schema)
     // Every driven world can resolve persistent identities; the identity
     // component's hooks maintain the index as zones import and detach.
     Entities_.AddResource<PersistentEntityIndex>();
+
+    // Likewise scene instance groups: the component's own hooks keep the
+    // index exact through streaming, spawning, and per-entity destruction.
+    Entities_.AddResource<SceneInstanceIndex>();
 
     // Zone state memory: the import path suppresses recorded-destroyed
     // entities and the detach path below captures the deviation, so a zone

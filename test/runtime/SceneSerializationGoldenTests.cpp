@@ -98,11 +98,10 @@ TEST(SceneSerializationGolden, BinaryPayloadIsUnchanged)
     // Order is not a format contract -- the reader dispatches on each chunk's
     // id, proven by SceneSerializer.ADifferentRegistrationOrderReadsTheSameScene
     // -- so a change here is only ever a prompt to check that nothing about the
-    // scene's content changed. Last moved by AnimationClipPlayerComponent
-    // joining the engine set, which adds one empty chunk; the JSON golden
-    // beside this was untouched, which is the check that no existing content
-    // moved.
-    EXPECT_EQ(HashOfString(bytes), 0x34707cc853ca48a1ULL)
+    // scene's content changed. Last moved by SceneInstance joining the engine
+    // set, which adds one empty chunk; the JSON golden beside this was
+    // untouched, which is the check that no existing content moved.
+    EXPECT_EQ(HashOfString(bytes), 0x96e7c2fc0e49749dULL)
         << "scene binary changed; if that was intended, update the constant."
         << " size=" << bytes.size();
 }

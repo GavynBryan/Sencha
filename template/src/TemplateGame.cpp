@@ -65,6 +65,7 @@
 #include <platform/PlatformServices.h>
 #include <platform/SdlWindow.h>
 #include <render/ProbeVolumeSet.h>
+#include <runtime/spawn/SceneSpawnService.h>
 #include <render/StaticMeshComponent.h>
 #include <render/ZoneLightmapComponent.h>
 #include <world/RuntimeWorld.h>
@@ -90,6 +91,7 @@
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -1529,6 +1531,81 @@ void TemplateGame::OnStart(GameStartupContext&)
                 return usage;
             }
             return LoadWorld(args[0]);
+        },
+    });
+
+    // The spawn service is engine-owned; the asset stack it resolves scenes
+    // through is this game's.
+    engine.Spawns().ConnectAssets(&runtimeAssets.Assets);
+
+    engine.Console().Registry().RegisterCommand({
+        .Name = "scene.spawn",
+        .Owner = "game",
+        .Usage = "scene.spawn <asset://...smap> [x y z]",
+        .Help = "Spawn a cooked scene at the given position (origin by default).",
+        .RequiredPhase = ConsolePhase::GameLoaded,
+        .Callback = [this](ConsoleExecutionContext&,
+                           std::span<const std::string> args) {
+            ConsoleResult result;
+            if (args.size() != 1 && args.size() != 4)
+            {
+                result.Error("usage: scene.spawn <asset://...smap> [x y z]");
+                return result;
+            }
+            Transform3f root = Transform3f::Identity();
+            if (args.size() == 4)
+            {
+                try
+                {
+                    root.Position = Vec3d(std::stof(args[1]), std::stof(args[2]),
+                                          std::stof(args[3]));
+                }
+                catch (const std::exception&)
+                {
+                    result.Error("scene.spawn: position must be three numbers");
+                    return result;
+                }
+            }
+            const SceneSpawnId id =
+                GetEngine().Spawns().RequestSpawn(args[0], root);
+            result.Info("spawn " + std::to_string(id.Value) + " requested ("
+                        + SceneSpawnStatusName(GetEngine().Spawns().Status(id))
+                        + ")");
+            return result;
+        },
+    });
+
+    engine.Console().Registry().RegisterCommand({
+        .Name = "scene.despawn",
+        .Owner = "game",
+        .Usage = "scene.despawn <spawn id>",
+        .Help = "Destroy a live scene spawn's entities.",
+        .RequiredPhase = ConsolePhase::GameLoaded,
+        .Callback = [this](ConsoleExecutionContext&,
+                           std::span<const std::string> args) {
+            ConsoleResult result;
+            if (args.size() != 1)
+            {
+                result.Error("usage: scene.despawn <spawn id>");
+                return result;
+            }
+            SceneSpawnId id{};
+            try
+            {
+                id.Value = std::stoull(args[0]);
+            }
+            catch (const std::exception&)
+            {
+                result.Error("scene.despawn: id must be a number");
+                return result;
+            }
+            if (GetEngine().Spawns().RequestDespawn(id))
+                result.Info("despawn queued");
+            else
+                result.Error("spawn " + std::to_string(id.Value) + " is "
+                             + SceneSpawnStatusName(
+                                 GetEngine().Spawns().Status(id)));
+            return result;
         },
     });
 

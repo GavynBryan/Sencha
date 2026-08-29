@@ -52,4 +52,8 @@
 // fingerprint now covers graphics/*.h, the neutral shelf. v12: GpuFrameScratch
 // allocations name their consumer -- the Allocate family takes a ScratchTag, so
 // one slice's budget can be attributed per feature instead of only in aggregate.
-#define SENCHA_GAME_ABI_VERSION 12u
+// v13: Engine owns SceneSpawnService and exposes it as Spawns() -- runtime
+// scene spawning over the cooked .smap pipeline; games wire their asset stack
+// via ConnectAssets in OnStart. Engine gained a member, so accessor offsets
+// moved.
+#define SENCHA_GAME_ABI_VERSION 13u
