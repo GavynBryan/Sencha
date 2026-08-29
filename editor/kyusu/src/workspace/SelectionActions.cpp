@@ -6,7 +6,7 @@
 #include "document/EditorScene.h"
 #include "document/WorldDocument.h"
 #include "document/commands/BakeBrushToMeshCommand.h"
-#include "document/commands/BreakInstanceCommand.h"
+#include "document/commands/DetachSharedBrushCommand.h"
 #include "document/commands/DuplicateEntitiesCommand.h"
 #include "document/commands/MergeBrushesCommand.h"
 #include "document/commands/SeparateFacesCommand.h"
@@ -121,7 +121,7 @@ void SelectionActions::MakeUnique()
     EditorScene& scene = document.GetScene();
     std::vector<std::unique_ptr<ICommand>> commands;
     for (const EntityId entity : SelectedBrushEntities())
-        if (auto command = MakeBreakInstanceCommand(scene, document, entity))
+        if (auto command = MakeDetachSharedBrushCommand(scene, document, entity))
             commands.push_back(std::move(command));
     ExecuteAsOneStep(std::move(commands));
 }

@@ -138,6 +138,19 @@ public:
     // and could not address one group.
     [[nodiscard]] SceneInstanceId SceneInstanceOwnerOf(EntityId entity) const;
 
+    // The source's serialized components for a projected member -- what "no
+    // override" looks like -- or null for locals, instance roots (their
+    // transform IS the placement), and the placement's own added entities
+    // (their source is themselves).
+    [[nodiscard]] const Json5Value* ProjectionBaselineOf(EntityId entity) const;
+
+    // One baseline component materialized as raw component bytes, for the
+    // inspector's field-level override comparison and reset. Empty when the
+    // entity has no baseline or the baseline lacks the component. Not a
+    // per-frame call: it builds the value on a scratch entity.
+    [[nodiscard]] std::vector<std::byte> BaselineComponentBytes(
+        EntityId entity, IComponentSerializer& serializer);
+
     // Whether this document's placements reach `assetPath` -- directly, as a
     // nested source its resolve had to read, or as a record whose resolve
     // failed (a broken source that later saves valid must still trigger the

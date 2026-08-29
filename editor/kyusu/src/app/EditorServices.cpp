@@ -644,7 +644,9 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     UiFeature->AddPanel(std::make_unique<GraphViewerPanel>(
         Workspace->World, Workspace->Selection, *Commands, Workspace->Layout));
     UiFeature->AddPanel(std::make_unique<SceneHierarchyPanel>(
-        Workspace->World, Workspace->Selection, *Commands));
+        Workspace->World, Workspace->Selection, *Commands,
+        [this](const std::string& assetPath)
+        { return Files != nullptr && Files->OpenSceneSource(assetPath); }));
     {
         std::vector<std::filesystem::path> sceneRoots;
         if (Project)

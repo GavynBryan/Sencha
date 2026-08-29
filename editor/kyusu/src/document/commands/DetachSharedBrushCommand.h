@@ -6,15 +6,17 @@
 
 #include <memory>
 
-// Breaks a brush entity out of its instance group: the entity gets its OWN copy
-// of the shared mesh (a fresh BrushId), so later edits no longer propagate to
-// the other instances. The copy is taken from the LIVE mesh, so every edit made
-// while instanced is kept. Undo repoints back to the shared id and frees the
-// copy.
-class BreakInstanceCommand : public ICommand
+// Detaches a brush entity from its shared mesh: the entity gets its OWN copy
+// (a fresh BrushId), so later edits no longer propagate to the other users of
+// the mesh. The copy is taken from the LIVE mesh, so every edit made while
+// shared is kept. Undo repoints back to the shared id and frees the copy.
+// Unrelated to scene instances (BreakSceneInstanceCommand severs a placement);
+// this is the brush-mesh-sharing mechanism only, which is why the name says
+// brush.
+class DetachSharedBrushCommand : public ICommand
 {
 public:
-    BreakInstanceCommand(EditorScene& scene, EditorDocument& document,
+    DetachSharedBrushCommand(EditorScene& scene, EditorDocument& document,
                          EntityId entity, BrushId sharedId)
         : Scene(scene), Document(document), Entity(entity), SharedId(sharedId) {}
 
@@ -44,11 +46,11 @@ private:
 };
 
 // nullptr when the entity is not an instanced brush (nothing to break from).
-[[nodiscard]] inline std::unique_ptr<ICommand> MakeBreakInstanceCommand(
+[[nodiscard]] inline std::unique_ptr<ICommand> MakeDetachSharedBrushCommand(
     EditorScene& scene, EditorDocument& document, EntityId entity)
 {
     const BrushComponent* brush = scene.TryGetBrush(entity);
     if (brush == nullptr || !scene.IsBrushInstanced(entity))
         return nullptr;
-    return std::make_unique<BreakInstanceCommand>(scene, document, entity, brush->Id);
+    return std::make_unique<DetachSharedBrushCommand>(scene, document, entity, brush->Id);
 }

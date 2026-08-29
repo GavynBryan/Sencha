@@ -119,10 +119,12 @@ struct SceneHierarchyPanel::DrawContext
 };
 
 SceneHierarchyPanel::SceneHierarchyPanel(WorldDocument& world,
-                                         SelectionService& selection, CommandStack& commands)
+                                         SelectionService& selection, CommandStack& commands,
+                                         std::function<bool(const std::string&)> openSceneSource)
     : WorldDoc(world)
     , Selection(selection)
     , Commands(commands)
+    , OpenSceneSource(std::move(openSceneSource))
 {
 }
 
@@ -290,13 +292,23 @@ void SceneHierarchyPanel::DrawRowContextMenu(DrawContext& ctx, EntityId entity)
                           std::string(name->Value.View()).c_str());
     }
 
-    if (ctx.Document.IsSceneInstanceRoot(entity)
-        && ImGui::MenuItem(ICON_FA_LINK_SLASH "  Break Scene Instance"))
+    if (ctx.Document.IsSceneInstanceRoot(entity))
     {
-        const World& world = ctx.Scene.GetRegistry().Components;
-        if (const auto* id = world.TryGet<PersistentIdComponent>(entity))
-            Commands.Execute(std::make_unique<BreakSceneInstanceCommand>(
-                SceneInstanceId{ id->Id.Value }, ctx.Document));
+        if (ImGui::MenuItem(ICON_FA_FILE_PEN "  Open Source"))
+        {
+            const std::string source = ctx.Document.SceneInstanceSourceOf(entity);
+            if (!OpenSceneSource || !OpenSceneSource(source))
+                std::fprintf(stderr,
+                             "[editor] source '%s' not found under any content root\n",
+                             source.c_str());
+        }
+        if (ImGui::MenuItem(ICON_FA_LINK_SLASH "  Break Scene Instance"))
+        {
+            const World& world = ctx.Scene.GetRegistry().Components;
+            if (const auto* id = world.TryGet<PersistentIdComponent>(entity))
+                Commands.Execute(std::make_unique<BreakSceneInstanceCommand>(
+                    SceneInstanceId{ id->Id.Value }, ctx.Document));
+        }
     }
 
     if (ctx.Scene.GetParent(entity).IsValid()

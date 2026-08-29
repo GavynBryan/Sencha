@@ -264,6 +264,25 @@ void InspectorPanel::ResetEditState()
     EditBefore.clear();
 }
 
+const InspectorPanel::BaselineEntry& InspectorPanel::BaselineFor(
+    IComponentSerializer& serializer, EntityId entity, ComponentId component)
+{
+    if (BaselineEntity != entity)
+    {
+        BaselineCache.clear();
+        BaselineEntity = entity;
+    }
+    const auto found = BaselineCache.find(component);
+    if (found != BaselineCache.end())
+        return found->second;
+
+    BaselineEntry entry;
+    entry.Bytes =
+        WorldDoc.FocusDocument().BaselineComponentBytes(entity, serializer);
+    entry.Present = !entry.Bytes.empty();
+    return BaselineCache.emplace(component, std::move(entry)).first->second;
+}
+
 void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId entity)
 {
     World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
@@ -275,6 +294,46 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     const std::size_t size = meta ? meta->Size : 0;
 
     const std::string key(serializer.JsonKey());
+
+    // Override state, for members of a scene instance: the baseline is what
+    // the placement's source says, and a field whose bytes differ from it is
+    // an override. Asset-handle and read-only fields stay out of the byte
+    // comparison -- handles are session-local values that differ even when
+    // they name the same asset.
+    EditorDocument& document = WorldDoc.FocusDocument();
+    const bool member = document.IsSceneInstanceMember(entity);
+    const BaselineEntry* baseline =
+        member ? &BaselineFor(serializer, entity, id) : nullptr;
+    const std::byte* baselineBytes =
+        baseline != nullptr && baseline->Present
+                && baseline->Bytes.size() == size
+            ? baseline->Bytes.data()
+            : nullptr;
+    const void* liveRaw = size > 0 ? world.GetComponentRaw(entity, id) : nullptr;
+    const auto fieldOverridden = [&](const RuntimeField& field)
+    {
+        if (baselineBytes == nullptr || liveRaw == nullptr
+            || field.Asset != AssetType::Unknown || field.ReadOnly)
+        {
+            return false;
+        }
+        const std::size_t span = field.Size * field.Count;
+        if (field.Offset + span > size)
+            return false;
+        return std::memcmp(static_cast<const std::byte*>(liveRaw) + field.Offset,
+                           baselineBytes + field.Offset, span) != 0;
+    };
+    bool componentOverridden = member && baseline != nullptr && !baseline->Present;
+    // Whether a byte-level reset is even safe: RawComponentEditCommand is a
+    // blind memcpy, which asset-handle fields (refcounted, session-local)
+    // must never travel through.
+    bool holdsAssetFields = false;
+    for (const RuntimeField& field : serializer.RuntimeFields())
+    {
+        holdsAssetFields |= field.Asset != AssetType::Unknown;
+        componentOverridden |= fieldOverridden(field);
+    }
+
     // Stable id from the JsonKey; the icon is display-only (kept out of the id).
     const std::string header = std::string(ICON_FA_CUBES "  ") + key + "###" + key;
     // Let the trash button below sit on top of the full-width header and take its
@@ -282,21 +341,56 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     ImGui::SetNextItemAllowOverlap();
     const bool open = ImGui::CollapsingHeader(header.c_str());
 
-    // Remove affordances on the header row: a right-click context menu (bound to
-    // the header, so registered before any later same-row item) and a right-
-    // aligned trash button. Both defer to PendingRemoval, executed after the loop.
-    // Suppressed for components the registry marks non-removable (the transform).
-    if (serializer.IsRemovable())
+    // Header affordances: a right-click context menu (remove, and reset for an
+    // overridden member component) and a right-aligned trash button. Removal
+    // defers to PendingRemoval, executed after the loop; suppressed for
+    // components the registry marks non-removable (the transform).
+    const bool resettable = componentOverridden && baselineBytes != nullptr
+        && !holdsAssetFields;
+    if (serializer.IsRemovable() || resettable)
     {
         if (ImGui::BeginPopupContextItem(("##ctx_" + key).c_str()))
         {
-            if (ImGui::MenuItem(ICON_FA_TRASH "  Remove Component"))
+            if (serializer.IsRemovable()
+                && ImGui::MenuItem(ICON_FA_TRASH "  Remove Component"))
                 PendingRemoval = &serializer;
+            if (resettable
+                && ImGui::MenuItem(ICON_FA_ROTATE_LEFT "  Reset to Source"))
+            {
+                std::vector<std::byte> current(size);
+                std::memcpy(current.data(), liveRaw, size);
+                Commands.Execute(std::make_unique<RawComponentEditCommand>(
+                    entity, id, std::move(current),
+                    std::vector<std::byte>(baselineBytes, baselineBytes + size),
+                    document.GetScene(), document));
+            }
             ImGui::EndPopup();
         }
+    }
+    if (serializer.IsRemovable())
+    {
         ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::GetFrameHeight());
         if (ImGui::SmallButton((std::string(ICON_FA_TRASH) + "##del_" + key).c_str()))
             PendingRemoval = &serializer;
+    }
+    // The override badge, in the header's right gutter beside the trash spot:
+    // a draw-list dot, so the layout never shifts as overrides come and go.
+    if (componentOverridden)
+    {
+        const ImVec2 rectMin = ImGui::GetItemRectMin();
+        const ImVec2 rectMax = ImGui::GetItemRectMax();
+        const float inset = ImGui::GetFrameHeight() * 1.8f;
+        ImGui::GetWindowDrawList()->AddCircleFilled(
+            ImVec2(ImGui::GetContentRegionMax().x + ImGui::GetWindowPos().x
+                       - inset,
+                   (rectMin.y + rectMax.y) * 0.5f),
+            3.0f, ImGui::GetColorU32(EditorUi::Accent));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(baseline != nullptr && !baseline->Present
+                                  ? "Added to this instance; the source has no "
+                                    "such component."
+                                  : "Overrides the placement's source. "
+                                    "Right-click to reset.");
     }
 
     if (!open)
@@ -307,7 +401,6 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     if (const IEditorComponentAdapter* adapter = Adapters.Find(serializer.TypeId());
         adapter != nullptr)
     {
-        EditorDocument& document = WorldDoc.FocusDocument();
         EditorComponentInspectorContext context{
                 .World = WorldDoc,
                 .Document = document,
@@ -353,9 +446,37 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
             DrawAssetField(field, entity, id, labelWidth);
             continue;
         }
+        const ImVec2 rowMin = ImGui::GetCursorScreenPos();
         const FieldEdit edit = DrawRuntimeField(field, working.data(), labelWidth);
         activated |= edit.Activated;
         committed |= edit.Committed;
+
+        if (!fieldOverridden(field))
+            continue;
+        // The field's override badge sits in the label gutter, and the row's
+        // last widget carries the reset in its context menu.
+        ImGui::GetWindowDrawList()->AddCircleFilled(
+            ImVec2(rowMin.x - 6.0f,
+                   rowMin.y + ImGui::GetFrameHeight() * 0.5f),
+            2.5f, ImGui::GetColorU32(EditorUi::Accent));
+        if (baselineBytes != nullptr
+            && ImGui::BeginPopupContextItem(
+                (std::string("##fieldctx_") + field.Name).c_str()))
+        {
+            if (ImGui::MenuItem(ICON_FA_ROTATE_LEFT "  Reset Field to Source"))
+            {
+                std::vector<std::byte> current(size);
+                std::memcpy(current.data(), liveRaw, size);
+                std::vector<std::byte> reset = current;
+                const std::size_t span = field.Size * field.Count;
+                std::memcpy(reset.data() + field.Offset,
+                            baselineBytes + field.Offset, span);
+                Commands.Execute(std::make_unique<RawComponentEditCommand>(
+                    entity, id, std::move(current), std::move(reset),
+                    document.GetScene(), document));
+            }
+            ImGui::EndPopup();
+        }
     }
 
     // Begin an undoable edit: snapshot the pre-edit bytes on widget activation.

@@ -5,7 +5,7 @@
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
 #include "document/DocumentSerialization.h"
-#include "document/commands/BreakInstanceCommand.h"
+#include "document/commands/DetachSharedBrushCommand.h"
 #include "document/commands/DuplicateEntitiesCommand.h"
 #include "selection/SelectionContext.h"
 #include "selection/SelectionService.h"
@@ -104,7 +104,7 @@ namespace
         const EntityId instance = Instantiate(source);
         const BrushId sharedId = Scene.TryGetBrush(source)->Id;
 
-        auto command = MakeBreakInstanceCommand(Scene, Document, instance);
+        auto command = MakeDetachSharedBrushCommand(Scene, Document, instance);
         ASSERT_NE(command, nullptr);
         command->Execute();
 
@@ -124,6 +124,6 @@ namespace
     TEST_F(BrushInstanceTest, MakeUniqueRejectsNonInstancedBrushes)
     {
         const EntityId lone = Scene.CreateBrush({}, { 1.0f, 1.0f, 1.0f });
-        EXPECT_EQ(MakeBreakInstanceCommand(Scene, Document, lone), nullptr);
+        EXPECT_EQ(MakeDetachSharedBrushCommand(Scene, Document, lone), nullptr);
     }
 }

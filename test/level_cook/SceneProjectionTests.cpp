@@ -20,6 +20,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstring>
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -314,6 +315,43 @@ namespace
 
         // And the selection followed the entity through the rebuild.
         EXPECT_EQ(selection.GetPrimarySelection().Entity, reprojected);
+    }
+
+    // The inspector's reset path in miniature: the baseline bytes ARE the
+    // source's values, and writing them over the live component erases the
+    // override on the next save. This is the byte-level contract the badge
+    // and the Reset menu stand on.
+    TEST_F(SceneProjectionTest, BaselineBytesResetAMemberToItsSource)
+    {
+        EditorDocument host = LoadHost(HostText());
+        const EntityId light = FindById(host, PersistentEntityId{ 0x202 });
+        World& world = host.GetScene().GetRegistry().Components;
+        auto* lamp = world.TryGet<PointLightComponent>(light);
+        ASSERT_NE(lamp, nullptr);
+        lamp->Intensity = 40.0f;
+
+        IComponentSerializer* serializer =
+            EditorSceneSerializers().FindByJsonKey("PointLight");
+        ASSERT_NE(serializer, nullptr);
+        const std::vector<std::byte> baseline =
+            host.BaselineComponentBytes(light, *serializer);
+        ASSERT_EQ(baseline.size(), sizeof(PointLightComponent));
+
+        // The baseline is the source, not the overridden live state.
+        const auto* asComponent =
+            reinterpret_cast<const PointLightComponent*>(baseline.data());
+        EXPECT_EQ(asComponent->Intensity, 5.0f);
+        EXPECT_EQ(asComponent->Range, 3.0f);
+
+        // Reset = write the baseline back; the override is gone from the save.
+        std::memcpy(world.GetComponentRaw(
+                        light, world.GetComponentIdByType(serializer->TypeId())),
+                    baseline.data(), baseline.size());
+        EXPECT_EQ(host.ToSceneText().find("intensity"), std::string::npos);
+
+        // Non-members have no baseline to reset to.
+        const EntityId local = FindById(host, PersistentEntityId{ 0xaa });
+        EXPECT_EQ(host.ProjectionBaselineOf(local), nullptr);
     }
 
     TEST_F(SceneProjectionTest, DeletingAMemberBecomesSuppression)

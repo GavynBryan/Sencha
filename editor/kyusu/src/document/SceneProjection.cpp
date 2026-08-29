@@ -13,6 +13,7 @@
 #include "scene_source/Json5Convert.h"
 
 #include <core/logging/Logger.h>
+#include <cstring>
 #include <core/serialization/JsonArchive.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
@@ -355,6 +356,52 @@ void EditorDocument::MintMissingInstanceIds()
 
     MarkDirty();
     RebuildSceneProjection();
+}
+
+const Json5Value* EditorDocument::ProjectionBaselineOf(EntityId entity) const
+{
+    const auto* id = Registry_.Components.TryGet<PersistentIdComponent>(entity);
+    if (id == nullptr)
+        return nullptr;
+    const auto found = Projection_.find(id->Id.Value);
+    if (found == Projection_.end() || found->second.Root || found->second.Added)
+        return nullptr;
+    return &found->second.Baseline;
+}
+
+std::vector<std::byte> EditorDocument::BaselineComponentBytes(
+    EntityId entity, IComponentSerializer& serializer)
+{
+    const Json5Value* baseline = ProjectionBaselineOf(entity);
+    if (baseline == nullptr)
+        return {};
+    const Json5Value* component = baseline->Find(serializer.JsonKey());
+    if (component == nullptr)
+        return {};
+
+    // Materialize on a scratch entity so the bytes come out of the same
+    // serializer path the live entity's went in through; never tracked, so
+    // it takes no part in the document beyond this call.
+    SceneSerializationContext context(Logging, Assets);
+    const EntityId scratch = Registry_.Components.CreateEntity();
+    serializer.RegisterStorage(Registry_);
+    const JsonValue value = Json5ToJson(*component);
+    JsonReadArchive archive(value);
+    std::vector<std::byte> bytes;
+    if (serializer.Load(archive, scratch, Registry_, context))
+    {
+        const ComponentId id =
+            Registry_.Components.GetComponentIdByType(serializer.TypeId());
+        const ComponentMeta* meta = Registry_.Components.GetMeta(id);
+        if (const void* raw = Registry_.Components.GetComponentRaw(scratch, id);
+            raw != nullptr && meta != nullptr && meta->Size > 0)
+        {
+            bytes.resize(meta->Size);
+            std::memcpy(bytes.data(), raw, meta->Size);
+        }
+    }
+    Registry_.Components.DestroyEntity(scratch);
+    return bytes;
 }
 
 bool EditorDocument::DependsOnSource(std::string_view assetPath) const

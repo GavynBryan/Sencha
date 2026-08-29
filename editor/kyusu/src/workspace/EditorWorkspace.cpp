@@ -11,7 +11,7 @@
 #include "brush/BrushBounds.h"
 #include "document/EditorScene.h"
 #include "document/commands/DeleteEntityCommand.h"
-#include "document/commands/BreakInstanceCommand.h"
+#include "document/commands/DetachSharedBrushCommand.h"
 #include "document/commands/DeferredCreateBrushCommand.h"
 #include "document/commands/DuplicateEntitiesCommand.h"
 #include "document/commands/MergeBrushesCommand.h"

@@ -7,6 +7,7 @@
 #include "WorldDocument.h"
 #include "project/MaterialLibrary.h"
 #include "SceneBrushWalk.h"
+#include "scene_source/SceneSourcePaths.h"
 
 #include <platform/SdlWindow.h>
 
@@ -103,6 +104,16 @@ void DocumentFileActions::Save()
 
     ResolvePendingEdits();
     World.Save();
+}
+
+bool DocumentFileActions::OpenSceneSource(std::string_view assetPath)
+{
+    std::vector<std::filesystem::path> roots(ContentRoots.begin(), ContentRoots.end());
+    const std::filesystem::path file = ResolveSceneSourceFile(roots, assetPath);
+    if (file.empty())
+        return false;
+    EnqueueFileAction(FileActionKind::Open, file.string());
+    return true;
 }
 
 void DocumentFileActions::RequestOpen()

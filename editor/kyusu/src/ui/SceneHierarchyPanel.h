@@ -5,6 +5,7 @@
 #include <ecs/EntityId.h>
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -19,8 +20,11 @@ struct SelectableRef;
 class SceneHierarchyPanel : public IEditorPanel
 {
 public:
+    // openSceneSource opens the .sscene an asset:// path names (the
+    // instance rows' Open Source item); false when it cannot be resolved.
     SceneHierarchyPanel(WorldDocument& world,
-                        SelectionService& selection, CommandStack& commands);
+                        SelectionService& selection, CommandStack& commands,
+                        std::function<bool(const std::string&)> openSceneSource);
 
     std::string_view GetTitle() const override;
     void OnDraw() override;
@@ -39,6 +43,7 @@ private:
     WorldDocument& WorldDoc;
     SelectionService& Selection;
     CommandStack& Commands;
+    std::function<bool(const std::string&)> OpenSceneSource;
     // GetTitle is const and the title varies with the focus zone; the ### suffix
     // keeps the ImGui window identity stable while the visible text changes.
     mutable std::string TitleCache;

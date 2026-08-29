@@ -8,6 +8,7 @@
 #include "document/EditorScene.h"
 
 #include <cstddef>
+#include <unordered_map>
 #include <vector>
 
 class CommandStack;
@@ -38,6 +39,21 @@ public:
 
 private:
     void DrawComponent(IComponentSerializer& serializer, EntityId entity);
+
+    // The source's bytes for one of the inspected member's components --
+    // what "no override" looks like, materialized once and cached. The
+    // generational entity key self-invalidates across projection rebuilds
+    // (a rebuilt member has a new handle); the cache clears whenever the
+    // inspected entity changes.
+    struct BaselineEntry
+    {
+        bool Present = false; // the source defines this component at all
+        std::vector<std::byte> Bytes;
+    };
+    const BaselineEntry& BaselineFor(IComponentSerializer& serializer,
+                                     EntityId entity, ComponentId component);
+    std::unordered_map<ComponentId, BaselineEntry> BaselineCache;
+    EntityId BaselineEntity = {};
     // Picker for an asset-handle field (RuntimeField tagged with an AssetType):
     // a combo of scanned assets of that type, applied via AssetFieldEditCommand.
     void DrawAssetField(const RuntimeField& field, EntityId entity,
