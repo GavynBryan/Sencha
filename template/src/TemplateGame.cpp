@@ -107,6 +107,7 @@ constexpr std::string_view kInputActionSetPath =
     "asset://data/input_actions.sdata";
 constexpr std::string_view kInputProfilePath =
     "asset://data/input_default.sdata";
+constexpr std::string_view kGameSettingsPath = "asset://data/game.sdata";
 constexpr ZoneId kPlayZone{ 1 };
 
 // What this game's replicated entities are. Ids match on both ends because
@@ -1263,8 +1264,9 @@ void TemplateGame::OnStart(GameStartupContext&)
 
     // This game's own data subtypes, registered into the registries it owns and
     // unregistered in OnShutdown while the module is still mapped: the registry
-    // holds function pointers into this module.
-    RegisterPlayerAvatarData(runtimeAssets.DataTypes, runtimeAssets.DataSchemas);
+    // holds function pointers into this module. One list, shared with the data
+    // editor through the OnRegisterDataAssetTypes hook.
+    OnRegisterDataAssetTypes(runtimeAssets.DataTypes, runtimeAssets.DataSchemas);
 
     // What a replicated player pawn becomes on whichever machine receives it.
     // A snapshot brings the state; this brings everything a body needs to be
@@ -2372,12 +2374,27 @@ void TemplateGame::OnShutdown(GameShutdownContext&)
     // drops the last one before the caches go away.
     ReleasePlayerAvatar();
     PlayerAvatarAsset.Reset();
+    GameSettingsAsset.Reset();
     // The subtype registration holds a function pointer into this module, and
     // unregistering refuses while values are still resident, so it follows the
     // handles above and precedes the cache going away.
     if (Assets.has_value())
-        UnregisterPlayerAvatarData(Assets->DataTypes, Assets->DataSchemas);
+        OnUnregisterDataAssetTypes(Assets->DataTypes, Assets->DataSchemas);
     Assets.reset();
+}
+
+void TemplateGame::OnRegisterDataAssetTypes(DataAssetTypeRegistry& types,
+                                            DataSchemaRegistry& schemas)
+{
+    RegisterPlayerAvatarData(types, schemas);
+    RegisterGameSettingsData(types, schemas);
+}
+
+void TemplateGame::OnUnregisterDataAssetTypes(DataAssetTypeRegistry& types,
+                                              DataSchemaRegistry& schemas)
+{
+    UnregisterGameSettingsData(types, schemas);
+    UnregisterPlayerAvatarData(types, schemas);
 }
 
 RuntimeAssets& TemplateGame::RuntimeAssetState()
@@ -2436,6 +2453,20 @@ MovementProfileHandle TemplateGame::ResolvePlayerMovementProfile(Logger& log)
 // Every failure path leaves the result invalid, which spawns a bodyless pawn
 // rather than refusing to spawn: a missing body is a content problem, not a
 // reason to have no player.
+const CompiledGameSettings* TemplateGame::ResolveGameSettings(Logger& log)
+{
+    if (!GameSettingsAsset.IsValid())
+        GameSettingsAsset = AcquireDataAsset(kGameSettingsPath, log);
+    if (!GameSettingsAsset.IsValid())
+        return nullptr;
+    const CompiledGameSettings* settings =
+        RuntimeAssetState().DataAssets.TryGet<CompiledGameSettings>(
+            GameSettingsAsset.GetToken(), "game.settings");
+    if (settings == nullptr)
+        log.Warn("TemplateGame: '{}' is not a game.settings", kGameSettingsPath);
+    return settings;
+}
+
 ResolvedPlayerAvatar TemplateGame::ResolvePlayerAvatar(Logger& log)
 {
     if (PlayerAvatar.IsValid())

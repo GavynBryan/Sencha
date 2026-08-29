@@ -10,6 +10,7 @@
 #include <input/InputContextSet.h>
 #include <movement/MovementProfileData.h>
 
+#include "GameSettingsData.h"
 #include "PlayerAvatarData.h"
 
 #ifdef SENCHA_ENABLE_COOK
@@ -47,6 +48,10 @@ class TemplateGame final : public Game
 {
 public:
     void OnRegisterComponents(ComponentRegistrar& registrar) override;
+    void OnRegisterDataAssetTypes(DataAssetTypeRegistry& types,
+                                  DataSchemaRegistry& schemas) override;
+    void OnUnregisterDataAssetTypes(DataAssetTypeRegistry& types,
+                                    DataSchemaRegistry& schemas) override;
     void OnStart(GameStartupContext& ctx) override;
     void OnRegisterSystems(SystemRegisterContext& ctx) override;
     void OnPlatformEvent(PlatformEventContext& ctx) override;
@@ -71,6 +76,9 @@ private:
     DataAssetCacheHandle AcquireDataAsset(std::string_view path, Logger& log);
     MovementProfileHandle ResolvePlayerMovementProfile(Logger& log);
     ResolvedPlayerAvatar ResolvePlayerAvatar(Logger& log);
+    // Read at every spawn request, never cached as a struct: a hot reload
+    // swaps the compiled value under the token and the next spawn sees it.
+    const CompiledGameSettings* ResolveGameSettings(Logger& log);
     void ReleasePlayerAvatar();
     void SetupInputMapping(Logger& log);
 
@@ -84,6 +92,7 @@ private:
     // Declared after Assets so their release runs before the cache is destroyed.
     DataAssetCacheHandle PlayerMovementProfile;
     DataAssetCacheHandle PlayerAvatarAsset;
+    DataAssetCacheHandle GameSettingsAsset;
     DataAssetCacheHandle InputActionSetAsset;
     DataAssetCacheHandle InputProfileAsset;
     // Resolved once and held for the process so spawning a second pawn does not

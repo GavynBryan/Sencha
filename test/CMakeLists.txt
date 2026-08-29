@@ -173,6 +173,7 @@ if(FRAMEWORK_TEST_SOURCES)
     # the two ever diverge, this needs to become two test executables.
     add_executable(framework_tests
         ${FRAMEWORK_TEST_SOURCES}
+        ${CMAKE_SOURCE_DIR}/template/src/GameSettingsData.cpp
         ${CMAKE_SOURCE_DIR}/template/src/PlayerAvatarData.cpp
         ${CMAKE_SOURCE_DIR}/example/CubeDemo/CubeDemoSystems.cpp
         ${CMAKE_SOURCE_DIR}/example/CubeDemo/CubeDemoScene.cpp
