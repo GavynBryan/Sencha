@@ -65,6 +65,7 @@ namespace
                 resolved.Hidden = entity.Hidden;
                 resolved.Locked = entity.Locked;
                 resolved.Components = entity.Components;
+                resolved.SourceComponents = entity.Components;
                 resolved.SourceBrushMeshes = &document.BrushMeshes;
                 out.Entities.push_back(std::move(resolved));
             }
@@ -150,6 +151,12 @@ namespace
                         out.DanglingOverrides.push_back(danglingText(path));
                 }
             };
+            // Everything this placement inherited, before it overrides any of
+            // it. Applied outward, so a nested instance's own overrides count
+            // as part of the source the outer placement overrides.
+            for (ResolvedSceneEntity& entity : inner.Entities)
+                entity.SourceComponents = entity.Components;
+
             applyByPath(instance.Patches,
                 [](ResolvedSceneEntity& entity, const Json5Value& patch)
                 { MergeInto(entity.Components, patch); });

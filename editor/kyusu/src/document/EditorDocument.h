@@ -275,6 +275,8 @@ private:
     // The rebuild itself, with the many early exits its diagnostics need.
     // RebuildSceneProjection wraps it so the announcement has one home.
     void ExpandSceneProjection();
+    [[nodiscard]] Json5Value SerializeSourceBaseline(
+        const Json5Value& components, SceneSerializationContext& context);
     AssetRef DefaultMaterial{ AssetType::Material, "asset://materials/dev/gray.smat" };
 
     // Always present (constructor-injected). The asset system and catalog are

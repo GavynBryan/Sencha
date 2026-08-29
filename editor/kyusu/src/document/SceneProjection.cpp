@@ -133,6 +133,42 @@ void EditorDocument::RebuildSceneProjection()
         ProjectionObserver_();
 }
 
+// The source's values in the shape a live entity serializes to.
+//
+// An override is "how this entity differs from what its source says", so that
+// is what the harvest has to diff against. Reading the baseline back off the
+// instantiated entity would measure against the post-override values instead,
+// and an override the load had already applied would look like no override at
+// all -- which silently dropped it from the record on the next save.
+//
+// The values are materialized on a scratch entity and read back through the
+// serializers, so both sides of the diff are serializer output rather than one
+// side being file text. The scratch is never tracked and never identified, so
+// it takes no part in the document beyond the moment it exists. Document-local
+// components (brush geometry, which names sidecar ids) never enter a diff, so
+// they are skipped.
+Json5Value EditorDocument::SerializeSourceBaseline(
+    const Json5Value& components, SceneSerializationContext& context)
+{
+    const EntityId scratch = Registry_.Components.CreateEntity();
+    for (const Json5Value::Member& member : components.Members)
+    {
+        if (IsDocumentLocalComponent(member.first))
+            continue;
+        IComponentSerializer* serializer =
+            EditorSceneSerializers().FindByJsonKey(member.first);
+        if (serializer == nullptr)
+            continue;
+        serializer->RegisterStorage(Registry_);
+        const JsonValue value = Json5ToJson(member.second);
+        JsonReadArchive archive(value);
+        (void)serializer->Load(archive, scratch, Registry_, context);
+    }
+    Json5Value baseline = SerializeEntityComponents(scratch);
+    Registry_.Components.DestroyEntity(scratch);
+    return baseline;
+}
+
 void EditorDocument::ExpandSceneProjection()
 {
     // The records must already say everything the live projection knows,
@@ -268,7 +304,7 @@ void EditorDocument::ExpandSceneProjection()
         record.Instance = element.Instance;
         record.Root = element.IsInstanceRoot;
         record.Added = element.IsAdded;
-        record.Baseline = SerializeEntityComponents(entity);
+        record.Baseline = SerializeSourceBaseline(element.SourceComponents, context);
         Projection_.emplace(element.Id.Value, std::move(record));
     }
 

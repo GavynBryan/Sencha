@@ -51,6 +51,12 @@ struct ResolvedSceneEntity
     bool Hidden = false;
     bool Locked = false;
     Json5Value Components;
+    // The same components as the entity's SOURCE defines them, before the
+    // resolving document's own overrides are merged on. This is the baseline
+    // an override is measured against: diffing live state against the
+    // post-override values would make an override already recorded look like
+    // no override at all, and the harvest would drop it.
+    Json5Value SourceComponents;
     // The brush-mesh sidecar of the document that defined this entity, so a
     // consumer instantiating a brush component can fetch the geometry it
     // names. Non-owning; valid while the source lookup's documents are.

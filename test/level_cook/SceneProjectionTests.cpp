@@ -196,6 +196,66 @@ namespace
         EXPECT_EQ(applied->Range, 3.0f); // the source's value, untouched
     }
 
+    // A saved override has to survive a session that merely opens the document
+    // and saves it again. The harvest rebuilds a projected path's records from
+    // the live entities, so an override the load applied must still be read
+    // back out of them rather than dropped as "nothing changed this session".
+    TEST_F(SceneProjectionTest, ASavedOverrideSurvivesAnEditlessRoundTrip)
+    {
+        EditorDocument host = LoadHost(HostText());
+        const EntityId light = FindById(host, PersistentEntityId{ 0x202 });
+        auto* lamp = host.GetScene().GetRegistry()
+                         .Components.TryGet<PointLightComponent>(light);
+        ASSERT_NE(lamp, nullptr);
+        lamp->Intensity = 40.0f;
+        const std::string first = host.ToSceneText();
+        ASSERT_NE(first.find("intensity"), std::string::npos);
+
+        // Open it again and save without touching anything.
+        EditorDocument reopened = LoadHost(first);
+        const std::string second = reopened.ToSceneText();
+        EXPECT_NE(second.find("intensity"), std::string::npos)
+            << "the override was dropped by an editless save\n" << second;
+        EXPECT_EQ(second, first);
+
+        // And the value is still applied after that second trip.
+        EditorDocument third = LoadHost(second);
+        const auto* applied = third.GetScene().GetRegistry()
+                                  .Components.TryGet<PointLightComponent>(
+                                      FindById(third, PersistentEntityId{ 0x202 }));
+        ASSERT_NE(applied, nullptr);
+        EXPECT_EQ(applied->Intensity, 40.0f);
+    }
+
+    // Because the baseline is what the SOURCE says, putting a value back to it
+    // leaves nothing to record. That is what makes an override resettable by
+    // editing, and what keeps a record from accreting no-op patches.
+    TEST_F(SceneProjectionTest, EditingAValueBackToItsSourceClearsTheOverride)
+    {
+        EditorDocument host = LoadHost(HostText());
+        const EntityId light = FindById(host, PersistentEntityId{ 0x202 });
+        auto* lamp = host.GetScene().GetRegistry()
+                         .Components.TryGet<PointLightComponent>(light);
+        ASSERT_NE(lamp, nullptr);
+        const float sourceIntensity = lamp->Intensity;
+        lamp->Intensity = 40.0f;
+        ASSERT_NE(host.ToSceneText().find("intensity"), std::string::npos);
+
+        // Reopen so the override arrives from the record rather than the live
+        // edit, then put the value back where the source had it.
+        EditorDocument reopened = LoadHost(host.ToSceneText());
+        auto* reloaded = reopened.GetScene().GetRegistry()
+                             .Components.TryGet<PointLightComponent>(
+                                 FindById(reopened, PersistentEntityId{ 0x202 }));
+        ASSERT_NE(reloaded, nullptr);
+        ASSERT_EQ(reloaded->Intensity, 40.0f);
+        reloaded->Intensity = sourceIntensity;
+
+        const std::string saved = reopened.ToSceneText();
+        EXPECT_EQ(saved.find("intensity"), std::string::npos)
+            << "a value back at its source is not an override\n" << saved;
+    }
+
     TEST_F(SceneProjectionTest, DeletingAMemberBecomesSuppression)
     {
         EditorDocument host = LoadHost(HostText());
