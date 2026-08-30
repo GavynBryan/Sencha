@@ -141,7 +141,41 @@ skips.
   through hand-written serializers, which expose no inspector fields at all.
   Trigger: a designer needing to pick a profile in the inspector.
 
-### P2 — Derived components as an invariant of the mutation primitive
+### P2 — Derived components as an invariant of the mutation primitive (landed)
+
+`ComponentTraits<T>::DerivedComponents` declares the set T cannot work without,
+beside T. The invariant lives in the typed add itself rather than in a layer
+above the World: `AddComponent<T>` provisions the owed set add-if-missing
+through the same typed path, which applies each provisioned component's own set
+in turn. The closure is therefore transitive by construction, duplicates
+collapse, and a cycle terminates on what is already there (and is refused at
+Seal, where the whole graph is visible). No ordering: an owed component's OnAdd
+may not assume a sibling.
+
+Every path inherits it because they all end in the typed add — content loads,
+code, and a snapshot creating a component on a client. `InitializeComponent`
+carries the same obligation, so a row somebody else built is not a way around
+it.
+
+The batch import keeps its own route for one reason: the typed add would
+migrate the row once per owed component, and a pawn owes eleven. The sealed
+schema mirrors each component's closure by id, `BuildEntitySignature` ORs it in,
+and the columns the package did not carry are written at their initializers with
+their hooks firing. A test proves the two routes build the same entity, and
+another proves the import still costs one row.
+
+`CharacterMovement` owes the eleven columns the movement tick reads and writes.
+The template stopped ensuring them: `BuildPawnBody` is down to the controller,
+the tuning source, the movement component, and the things a pawn is rather than
+the things it needs. On the prefab path only the avatar mesh is left, and
+`FollowLocalControl`'s reassembly is marked for deletion in P3.
+
+**Deferred to P3, with the reason:** the observer pawn. It replaces the
+procedural pawn, which is not deleted until `BuildPawnBody` is — and a body that
+flies with collision needs a locomotion arrangement of its own, since free
+locomotion projects the wish direction onto the ground plane by design. That is
+a movement change, not an ECS one, and it belongs in the commit that removes
+what it replaces.
 
 ### P3 — Recipe to prefab on the wire
 

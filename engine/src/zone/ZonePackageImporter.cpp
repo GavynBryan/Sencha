@@ -11,8 +11,10 @@
 #include <world/transform/TransformComponents.h>
 #include <zone/ZoneStateStore.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstring>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -57,23 +59,32 @@ bool PersistentIdentityAgrees(const World& world,
 }
 
 // Every column the entity will carry, so its row is built once. Declared
-// component types, plus the derived WorldTransform, plus Parent only when this
-// entity actually has a parent — an unwritten Parent column would silently
-// reparent the entity to a null id.
+// component types, everything those owe, the derived WorldTransform, and Parent
+// only when this entity actually has a parent — an unwritten Parent column would
+// silently reparent the entity to a null id.
+//
+// The owed set is in the signature rather than added afterwards for the same
+// reason the declared components are: the typed add would migrate the row once
+// per owed component, each migration copying every column added before it. A
+// pawn owes eleven. `owed` comes back holding the ones the package did not
+// declare for itself, which are the columns this import still has to write.
 bool BuildEntitySignature(
     const World& world,
     const WorldComponentSchema& schema,
     const PackageEntity& packageEntity,
     bool parented,
     ArchetypeSignature& signature,
+    std::vector<ComponentTypeId>& owed,
     std::string& failure)
 {
     signature.reset();
+    owed.clear();
     bool hasLocalTransform = false;
 
     for (const PackageComponent& component : packageEntity.Components)
     {
-        if (schema.Find(component.Type) == nullptr)
+        const WorldComponentSchema::Entry* entry = schema.Find(component.Type);
+        if (entry == nullptr)
         {
             failure =
                 "Package contains a component absent from the runtime schema.";
@@ -91,12 +102,67 @@ bool BuildEntitySignature(
         hasLocalTransform =
             hasLocalTransform
             || component.Type == ResolveComponentTypeId<LocalTransform>();
+
+        // A world with a partial vocabulary skips what it never registered,
+        // exactly as the typed add does.
+        for (const ComponentTypeId type : entry->Owed)
+        {
+            const ComponentId owedId = world.GetComponentIdByType(type);
+            if (owedId == InvalidComponentId)
+                continue;
+            signature.set(owedId);
+            owed.push_back(type);
+        }
     }
+
+    // What the package declares, it writes itself. Anything left is this
+    // import's to default.
+    std::erase_if(owed, [&](ComponentTypeId type) {
+        return std::any_of(packageEntity.Components.begin(),
+                           packageEntity.Components.end(),
+                           [&](const PackageComponent& component)
+                           { return component.Type == type; });
+    });
+    std::sort(owed.begin(), owed.end(),
+              [](ComponentTypeId a, ComponentTypeId b) { return a.Value < b.Value; });
+    owed.erase(std::unique(owed.begin(), owed.end()), owed.end());
 
     if (hasLocalTransform && world.IsRegistered<WorldTransform>())
         signature.set(world.GetComponentId<WorldTransform>());
     if (parented && world.IsRegistered<Parent>())
         signature.set(world.GetComponentId<Parent>());
+    return true;
+}
+
+// Writes the columns the entity owes but the package did not carry, at their
+// member initializers and with their OnAdd firing — the same thing the typed
+// add would have produced, without the row migration each one would have cost.
+bool WriteOwedComponents(World& world,
+                         EntityId entity,
+                         const WorldComponentSchema& schema,
+                         std::span<const ComponentTypeId> owed,
+                         std::vector<std::byte>& scratch,
+                         std::string& failure)
+{
+    for (const ComponentTypeId type : owed)
+    {
+        const WorldComponentSchema::Entry* entry = schema.Find(type);
+        if (entry == nullptr)
+        {
+            failure = "A component's derived set names a type the schema does "
+                      "not carry.";
+            return false;
+        }
+
+        scratch.assign(entry->Size, std::byte{});
+        if (!schema.WriteDefaultBytes(type, scratch)
+            || !schema.InitializeComponent(world, entity, type, scratch))
+        {
+            failure = "Could not provide the derived component '"
+                + std::string(entry->Name) + "'.";
+            return false;
+        }
+    }
     return true;
 }
 
@@ -223,6 +289,10 @@ bool ImportPackageIntoPartitionImpl(
         world.IsRegistered<LocalTransform>() && world.IsRegistered<WorldTransform>();
 
     ArchetypeSignature signature;
+    // Reused across entities: an import of a thousand pawns should not allocate
+    // a thousand owed lists.
+    std::vector<ComponentTypeId> owed;
+    std::vector<std::byte> owedDefaults;
     std::size_t packageIndex = 0;
     for (const PackageEntity& packageEntity : package.Entities())
     {
@@ -243,6 +313,7 @@ bool ImportPackageIntoPartitionImpl(
                 packageEntity,
                 parented[packageIndex],
                 signature,
+                owed,
                 failure))
         {
             return fail(std::move(failure));
@@ -270,6 +341,9 @@ bool ImportPackageIntoPartitionImpl(
                 return fail(std::move(failure));
             }
         }
+
+        if (!WriteOwedComponents(world, entity, schema, owed, owedDefaults, failure))
+            return fail(std::move(failure));
 
         SeedDerivedTransform(world, entity, worldHasTransforms);
 

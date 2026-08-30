@@ -8,7 +8,10 @@
 #include <ecs/World.h>
 #include <math/MathSchemas.h>
 #include <math/Vec.h>
+#include <movement/JumpState.h>
+#include <movement/MovementIntent.h>
 #include <movement/MovementProfileData.h>
+#include <world/transform/TransformHistory.h>
 
 #include <compare>
 #include <cstdint>
@@ -146,7 +149,9 @@ struct TypeSchema<LocomotionModeId>
     }
 };
 
-// Which locomotion mode this character is in.
+// Which locomotion mode this character is in. Carrying it is what makes an
+// entity something the movement systems step, which is why it is the component
+// that owes the per-tick scratch they read and write (see below).
 struct CharacterMovement
 {
     LocomotionModeId Mode{};
@@ -337,6 +342,46 @@ struct FlightSession
     uint8_t Active = 1;
 };
 SENCHA_DECLARE_COMPONENT_TYPE(FlightSession, "sencha.flight_session");
+
+//=============================================================================
+// What a moving character owes
+//
+// Declared here, at the bottom, because it names every component above.
+//
+// These are the columns the movement tick reads and writes: last step's
+// physical facts, this tick's request and resolved coefficients, the
+// contribution channels, and the composed motor request. None of them is
+// authored and none of them means anything on its own -- an entity with a
+// CharacterMovement and no MotionRequest is not a character with a missing
+// setting, it is a character that quietly stops matching the query that would
+// have moved it.
+//
+// That failure has no error to report and no frame to happen on, which is why
+// it is stated once here instead of ensured at every place a character is
+// built. Every path that adds a CharacterMovement -- content, code, a snapshot
+// arriving on a client -- provisions the whole set, because they all end in the
+// same typed add.
+//
+// The transform history is here for the same reason in a different register: a
+// body stepped at the tick rate and drawn at the frame rate needs the two poses
+// to interpolate between, and having them is not optional for something that
+// moves every tick.
+template <>
+struct ComponentTraits<CharacterMovement>
+{
+    using DerivedComponents = std::tuple<
+        MovementIntent,
+        JumpState,
+        KinematicState,
+        SupportState,
+        ResolvedMovementTuning,
+        LocomotionOutput,
+        MotionAxisOverride,
+        MotionImpulse,
+        MotionRequest,
+        ModeTransitionRequest,
+        WorldTransformHistory>;
+};
 
 static_assert(std::is_trivially_copyable_v<SupportState>);
 static_assert(std::is_trivially_copyable_v<CharacterMovement>);

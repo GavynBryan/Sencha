@@ -18,9 +18,11 @@
 #include <functional>
 #include <memory>
 #include <span>
+#include <tuple>
 #include <typeindex>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 // Forward declarations — defined in their own headers.
@@ -257,7 +259,8 @@ public:
             // Tag presence is the signature; there is no column to write and
             // AddComponent fires no hook for tags either.
             const EntityLocation loc = Entities.GetLocation(entity);
-            return ArchetypeList[loc.ArchetypeId]->Signature.test(GetComponentId<T>());
+            if (!ArchetypeList[loc.ArchetypeId]->Signature.test(GetComponentId<T>()))
+                return false;
         }
         else
         {
@@ -273,8 +276,14 @@ public:
                 ScopedLifecycleHook hookScope(*this);
                 ComponentTraits<T>::OnAdd(*slot, *this, entity);
             }
-            return true;
         }
+
+        // The same obligation the ordinary add carries. A caller that built the
+        // row at its final signature already put the owed columns in it, and
+        // this costs one signature test each; a caller that did not gets them
+        // the slow way rather than an entity missing them.
+        ProvideDerivedComponents<T>(entity);
+        return true;
     }
 
     void DestroyEntity(EntityId entity)
@@ -437,6 +446,10 @@ public:
             ScopedLifecycleHook hookScope(*this);
             ComponentTraits<T>::OnAdd(*ptr, *this, entity);
         }
+
+        // After T is whole, because an owed component's own hook may look at
+        // the entity and T is part of what it would see.
+        ProvideDerivedComponents<T>(entity);
     }
 
     template <typename T>
@@ -1020,6 +1033,36 @@ public:
     }
 
 private:
+    // Adds what T owes and does not already have, through the ordinary typed
+    // add -- which applies each provisioned component's own owed set, so one
+    // call settles the whole closure. A component the world never registered is
+    // skipped: a fixture with a partial vocabulary stays valid, exactly as it
+    // does for the derived transform.
+    template <typename U>
+    void ProvideDerivedComponent(EntityId entity)
+    {
+        if (!IsRegistered<U>() || HasComponent<U>(entity))
+            return;
+        AddComponent<U>(entity);
+    }
+
+    template <typename Owed, std::size_t... Index>
+    void ProvideDerivedComponents(EntityId entity, std::index_sequence<Index...>)
+    {
+        (ProvideDerivedComponent<std::tuple_element_t<Index, Owed>>(entity), ...);
+    }
+
+    template <typename T>
+    void ProvideDerivedComponents(EntityId entity)
+    {
+        if constexpr (ComponentOwesComponents<T>)
+        {
+            using Owed = typename ComponentTraits<T>::DerivedComponents;
+            ProvideDerivedComponents<Owed>(
+                entity, std::make_index_sequence<std::tuple_size_v<Owed>>{});
+        }
+    }
+
     EntityRegistry                          Entities;
     std::vector<std::unique_ptr<Archetype>> ArchetypeList;
 

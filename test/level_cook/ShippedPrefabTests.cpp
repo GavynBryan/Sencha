@@ -23,7 +23,9 @@
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MovementComponents.h>
+#include <movement/MovementIntent.h>
 #include <physics/components/CharacterController.h>
+#include <world/transform/TransformHistory.h>
 #include <world/ComponentRegistrar.h>
 #include <world/serialization/SceneSerializer.h>
 
@@ -73,17 +75,21 @@ namespace
             return found;
         }
 
+        // A component this document's vocabulary never had reads as absent
+        // rather than asserting, which is what a runtime-only column is here.
         template <typename T>
         [[nodiscard]] const T* Get(EntityId entity) const
         {
-            return Document.GetRegistry().Components.TryGet<T>(entity);
+            const World& world = Document.GetRegistry().Components;
+            return world.IsRegistered<T>() ? world.TryGet<T>(entity) : nullptr;
         }
 
         // A tag has no column, so TryGet answers null for one that is present.
         template <typename T>
         [[nodiscard]] bool Carries(EntityId entity) const
         {
-            return Document.GetRegistry().Components.HasComponent<T>(entity);
+            const World& world = Document.GetRegistry().Components;
+            return world.IsRegistered<T>() && world.HasComponent<T>(entity);
         }
 
         std::filesystem::path Root;
@@ -134,6 +140,20 @@ TEST_F(ShippedPrefabTest, ThePawnCarriesWhatMakesItAPawn)
     EXPECT_FLOAT_EQ(pawnAttributes->GetBase(attributes->FindAttribute("MoveSpeed")), 4.5f);
 
     EXPECT_NE(Get<AbilitySet>(pawn), nullptr);
+
+    // And the per-tick columns the movement step reads, which content does not
+    // author and never should: the movement component owes them, so a pawn
+    // built from this file alone is one the systems can already move.
+    EXPECT_NE(Get<MovementIntent>(pawn), nullptr);
+    EXPECT_NE(Get<ResolvedMovementTuning>(pawn), nullptr);
+    EXPECT_NE(Get<LocomotionOutput>(pawn), nullptr);
+    EXPECT_NE(Get<MotionRequest>(pawn), nullptr);
+    EXPECT_NE(Get<KinematicState>(pawn), nullptr);
+    EXPECT_NE(Get<SupportState>(pawn), nullptr);
+    // The pose history is not among them here: a document is an authoring
+    // world and never registered a presentation column, so the closure skips
+    // what this world does not know. The runtime one does register it.
+    EXPECT_FALSE(Carries<WorldTransformHistory>(pawn));
 }
 
 TEST_F(ShippedPrefabTest, TheTurretAimsAndTurns)

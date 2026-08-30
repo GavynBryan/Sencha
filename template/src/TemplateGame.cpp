@@ -203,6 +203,26 @@ EntityId CreateTransformEntity(
     return entity;
 }
 
+// The body other viewers see. A first-person camera targeting this pawn
+// excludes it, so the local player does not sit inside their own mesh; a
+// third-person camera draws it. Without a resolved avatar the pawn simply has
+// no body, which is a missing asset rather than a broken player.
+//
+// The one thing a pawn spawned from its prefab still needs from code: a scene
+// naming a mesh cannot round-trip through a cook composition that has no mesh
+// cache, so the avatar stays a data asset until the mesh moves into the prefab
+// (docs/plans/pawn-prefab-roadmap.md, P4).
+void AttachAvatarMesh(World& world,
+                      EntityId entity,
+                      const ResolvedPlayerAvatar& avatar)
+{
+    if (!avatar.IsValid() || world.HasComponent<StaticMeshComponent>(entity))
+        return;
+    world.AddComponent<StaticMeshComponent>(
+        entity,
+        StaticMeshComponent{ .Mesh = avatar.Mesh, .Materials = avatar.Materials });
+}
+
 // Everything that makes a body move and be seen, added to an entity that
 // already exists. Split from SpawnPawn because a client predicting its own pawn
 // needs this on an entity replication created, and a pawn that simulates on two
@@ -227,21 +247,16 @@ void BuildPawnBody(
     };
 
     ensure(CharacterController{});
-    ensure(MovementIntent{});
-    ensure(KinematicState{});
-    ensure(SupportState{});
-    ensure(ResolvedMovementTuning{});
-    ensure(LocomotionOutput{});
-    ensure(MotionAxisOverride{});
-    ensure(MotionImpulse{});
-    ensure(MotionRequest{});
-    ensure(ModeTransitionRequest{});
 
     // With an invalid profile handle the pawn resolves tuning from defaults
     // plus the MoveSpeed attribute, so a missing asset degrades to movement
     // that still works.
     ensure(MovementTuningSource{ .Profile = movementProfile });
 
+    // Every per-tick column a mover needs comes with this -- the request, the
+    // resolved coefficients, the contribution channels, the composed output,
+    // and the pose history it renders interpolated from. CharacterMovement owes
+    // them; see its ComponentTraits.
     CharacterMovement pawnMovement;
     if (const LocomotionModeRegistry* modes =
             world.TryGetResource<LocomotionModeRegistry>())
@@ -250,21 +265,7 @@ void BuildPawnBody(
     }
     ensure(pawnMovement);
 
-    // The pawn moves every tick and is what the camera watches, so it renders
-    // interpolated between ticks rather than stepping at the tick rate.
-    ensure(WorldTransformHistory{});
-
-    // The body other viewers see. A first-person camera targeting this pawn
-    // excludes it, so the local player does not sit inside their own mesh; a
-    // third-person camera draws it. Without a resolved avatar the pawn simply
-    // has no body, which is a missing asset rather than a broken player.
-    if (avatar.IsValid())
-    {
-        ensure(StaticMeshComponent{
-            .Mesh = avatar.Mesh,
-            .Materials = avatar.Materials,
-        });
-    }
+    AttachAvatarMesh(world, pawn, avatar);
 
     const MovementDefs* movementDefs =
         world.TryGetResource<MovementDefs>();
@@ -285,11 +286,10 @@ void BuildPawnBody(
         pawnAttributes.Add(movementDefs->MoveSpeed, 4.5f);
     ensure(pawnAttributes);
 
-    // Jump is not here: it steers the body, so it lives in the movement step
-    // where a predicted tick can replay it. AbilitySet is what a pawn's
-    // authority-validated actions would be granted through.
+    // What a pawn's authority-validated actions would be granted through. Jump
+    // is not one: it steers the body, so it lives in the movement step where a
+    // predicted tick can replay it, and its state comes with the movement.
     ensure(AbilitySet{});
-    ensure(JumpState{});
 
     // The pawn aims; a camera presents it. Every pawn has an orientation --
     // a remote player is aiming somewhere too, and that is what makes their
@@ -1292,14 +1292,16 @@ private:
         // the same function the authority used, because two machines simulating
         // one pawn from the same input have to be simulating the same pawn.
         //
-        // Not always a pawn, though. A turret has everything it needs from its
-        // own recipe, and giving it a character's body would put a mover and a
-        // locomotion mode on something bolted to the floor.
-        if (!world.HasComponent<TurretMount>(subject)
-            && !world.HasComponent<MovementIntent>(subject))
-        {
+        // Not a turret, though: giving one a character's body would put a mover
+        // and a locomotion mode on something bolted to the floor.
+        //
+        // Temporary. This exists because a client receives a pawn as loose
+        // components and has to reassemble it; once the spawn carries the
+        // prefab's identity the client instantiates the same archetype the
+        // authority did and there is nothing left to reassemble. Deleted with
+        // BuildPawnBody itself -- see docs/plans/pawn-prefab-roadmap.md, P3.
+        if (!world.HasComponent<TurretMount>(subject))
             BuildPawnBody(world, subject, Profile, Avatar);
-        }
 
         AttachLocalPlayer(world, subject, Log());
         if (Owner->Prediction().Predicts(subject))
@@ -1470,21 +1472,7 @@ void TemplateGame::OnStart(GameStartupContext&)
         kPlayerPawnRecipe,
         [this](World& world, EntityId entity) {
             Logger& log = GetEngine().Logging().GetLogger<TemplateGame>();
-            const ResolvedPlayerAvatar avatar = ResolvePlayerAvatar(log);
-            if (avatar.IsValid() && !world.HasComponent<StaticMeshComponent>(entity))
-            {
-                world.AddComponent<StaticMeshComponent>(
-                    entity,
-                    StaticMeshComponent{ .Mesh = avatar.Mesh,
-                                         .Materials = avatar.Materials });
-            }
-            // Pawns move every tick, so they present interpolated between
-            // ticks rather than stepping at the tick rate.
-            if (!world.HasComponent<WorldTransformHistory>(entity))
-            {
-                world.AddComponent<WorldTransformHistory>(
-                    entity, WorldTransformHistory{});
-            }
+            AttachAvatarMesh(world, entity, ResolvePlayerAvatar(log));
 
             // Which profile a pawn resolves tuning from is content this machine
             // already has, and a handle into its own asset cache is meaningless
@@ -1503,11 +1491,13 @@ void TemplateGame::OnStart(GameStartupContext&)
                     MovementTuningSource{ .Profile = ResolvePlayerMovementProfile(log) });
             }
 
+            // Mode is the authority's word and arrives on the wire, so a pawn
+            // replication already built has this; a locally spawned one starts
+            // free. Either way, adding it is what brings the per-tick columns
+            // the movement step needs -- including the pose history a body
+            // stepped at the tick rate renders interpolated from.
             if (!world.HasComponent<CharacterMovement>(entity))
             {
-                // Mode is the authority's word and arrives on the wire, so a
-                // pawn replication already built has one; a locally spawned
-                // one starts free.
                 CharacterMovement built;
                 if (const LocomotionModeRegistry* modes =
                         world.TryGetResource<LocomotionModeRegistry>())
@@ -1635,10 +1625,11 @@ void TemplateGame::OnStart(GameStartupContext&)
                 pending.Pawns.erase(entry);
                 return EntityId{};
             }
-            // The same add-if-missing pass a replicated pawn gets: the prefab
-            // carries the authored identity, this carries the runtime state.
-            BuildPawnBody(world, root, ResolvePlayerMovementProfile(log),
-                          ResolvePlayerAvatar(log));
+            // The prefab is the pawn: its controller, tuning, mode, aim, tags,
+            // attributes, and abilities are all authored, and the per-tick
+            // columns come with the movement component. Only the mesh is still
+            // code's to supply.
+            AttachAvatarMesh(world, root, ResolvePlayerAvatar(log));
             world.AddComponent<NetSpawnRecipe>(
                 root, NetSpawnRecipe{ .Id = kPlayerPawnRecipe });
             pending.LiveBodies.emplace_back(participant, entry->Spawn);

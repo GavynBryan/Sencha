@@ -2,6 +2,8 @@
 
 #include <ecs/EntityId.h>
 
+#include <tuple>
+
 // ComponentTraits<T>: opt-in specialization point for lifecycle hooks.
 // Default specialization is trivial — zero overhead for components without hooks.
 //
@@ -38,3 +40,32 @@ concept ComponentHasOnRemove =
     {
         ComponentTraits<T>::OnRemove(component, world, entity);
     };
+
+//=============================================================================
+// DerivedComponents
+//
+// The components T cannot work without, declared beside T:
+//
+//   template <>
+//   struct ComponentTraits<CharacterMovement>
+//   {
+//       using DerivedComponents = std::tuple<MovementIntent, KinematicState>;
+//   };
+//
+// A set, not a sequence. Adding T provisions everything in it that the entity
+// does not already carry, default-constructed, through the same typed add --
+// which applies each one's own owed set in turn, so the closure is transitive
+// by construction, duplicates collapse into the first one added, and a cycle
+// terminates on the component that is already there. Nothing here is ordered:
+// an owed component's OnAdd may not assume a sibling has arrived yet.
+//
+// This is for scratch a system reads and writes every tick -- the per-tick
+// request, the resolved coefficients, the composed output -- where a missing
+// column means the entity silently stops matching the query that would have
+// moved it. It is not for state that has to be seeded from something: the
+// provision is T{} and nothing else, so a component whose correct initial value
+// depends on the entity belongs with whatever computes it.
+//=============================================================================
+template <typename T>
+concept ComponentOwesComponents =
+    requires { typename ComponentTraits<T>::DerivedComponents; };

@@ -801,19 +801,58 @@ namespace
     {
         const EntityId pawn = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
         pair.Authority.AddComponent<NetOwner>(pawn, NetOwner{ .Peer = peer });
-        KinematicState motion;
-        motion.Velocity = Vec3d{ 3.0f, -1.0f, 0.5f };
-        pair.Authority.AddComponent<KinematicState>(pawn, motion);
-        SupportState support;
-        support.Kind = SupportKind::Stable;
-        support.SurfaceVelocity = Vec3d{ 0.25f, 0.0f, 0.0f };
-        pair.Authority.AddComponent<SupportState>(pawn, support);
+        // Velocity, support, and jump cooldown come with the movement
+        // component; the values a snapshot has to carry are written onto them.
         pair.Authority.AddComponent<CharacterMovement>(
             pawn, CharacterMovement{ .Mode = LocomotionModeId{ 2 } });
-        pair.Authority.AddComponent<JumpState>(
-            pawn, JumpState{ .CooldownRemaining = 0.12f });
+        pair.Authority.TryGet<KinematicState>(pawn)->Velocity =
+            Vec3d{ 3.0f, -1.0f, 0.5f };
+        SupportState& support = *pair.Authority.TryGet<SupportState>(pawn);
+        support.Kind = SupportKind::Stable;
+        support.SurfaceVelocity = Vec3d{ 0.25f, 0.0f, 0.0f };
+        pair.Authority.TryGet<JumpState>(pawn)->CooldownRemaining = 0.12f;
         return pawn;
     }
+}
+
+// A client's copy of a pawn is assembled from a snapshot, and a snapshot
+// carries only what travels. Everything else the movement step reads -- this
+// tick's request, the resolved coefficients, the contribution channels, the
+// composed output -- is per-tick scratch that never goes on the wire, and a
+// pawn missing any one of them stops matching the query that would have moved
+// it. No error, no frame it happens on: the pawn simply stands still while its
+// owner presses forward.
+//
+// It arrives because the movement component owes it, and replication creates
+// components through the same typed add everything else does.
+TEST(ReplicationPawnState, AReplicatedPawnArrivesAbleToMove)
+{
+    Pair pair;
+    const EntityId pawn = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(pawn, NetOwner{ .Peer = 7 });
+    pair.Authority.AddComponent<CharacterMovement>(
+        pawn, CharacterMovement{ .Mode = LocomotionModeId{ 1 } });
+
+    pair.Replicate(7);
+    const EntityId mirror = pair.Mirror(pawn);
+    ASSERT_TRUE(mirror.IsValid());
+
+    // None of these is replicated; all of them are owed.
+    EXPECT_TRUE(pair.Client.HasComponent<MovementIntent>(mirror));
+    EXPECT_TRUE(pair.Client.HasComponent<ResolvedMovementTuning>(mirror));
+    EXPECT_TRUE(pair.Client.HasComponent<LocomotionOutput>(mirror));
+    EXPECT_TRUE(pair.Client.HasComponent<MotionAxisOverride>(mirror));
+    EXPECT_TRUE(pair.Client.HasComponent<MotionImpulse>(mirror));
+    EXPECT_TRUE(pair.Client.HasComponent<MotionRequest>(mirror));
+    EXPECT_TRUE(pair.Client.HasComponent<ModeTransitionRequest>(mirror));
+    EXPECT_TRUE(pair.Client.HasComponent<WorldTransformHistory>(mirror));
+
+    // At their initializers, which for the composed request is the difference
+    // between standing still and being shoved toward the origin.
+    EXPECT_EQ(pair.Client.TryGet<MotionRequest>(mirror)->UpAxis,
+              MotionRequest{}.UpAxis);
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<ResolvedMovementTuning>(mirror)->MaxSpeed,
+                    ResolvedMovementTuning{}.MaxSpeed);
 }
 
 TEST(ReplicationPawnState, TheOwnerGetsWhatItNeedsToResumeSimulating)
@@ -899,10 +938,7 @@ TEST(ReplicationPawnState, TheShadowKeepsStateAnEmptyDeltaDidNotResend)
     schema.Seal();
     schema.Apply(scratch);
     const EntityId probe = scratch.CreateEntity();
-    scratch.AddComponent<KinematicState>(probe, KinematicState{});
-    scratch.AddComponent<SupportState>(probe, SupportState{});
     scratch.AddComponent<CharacterMovement>(probe, CharacterMovement{});
-    scratch.AddComponent<JumpState>(probe, JumpState{});
     scratch.AddComponent<LocalTransform>(probe, LocalTransform{});
     ASSERT_TRUE(prediction.RestoreTo(scratch, schema, probe));
 
