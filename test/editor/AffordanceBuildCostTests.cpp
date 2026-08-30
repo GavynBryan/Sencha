@@ -27,15 +27,19 @@ protected:
     [[nodiscard]] EditorAffordanceService& Affordances() { return *Workspace.Affordances; }
 };
 
-TEST_F(AffordanceBuildCostTest, WorkScalesWithAdaptersNotRegisteredComponentTypes)
+TEST_F(AffordanceBuildCostTest, WorkScalesWithAffordanceAuthorsNotRegisteredComponentTypes)
 {
-    // One adapter is registered (the world dock) against every serializable
-    // component type. Walking the registered types per entity would make the
-    // inner loop an order of magnitude wider than the work that can result.
+    // A handful of adapters are registered against every serializable component
+    // type, and most of them author inspector rows rather than viewport
+    // affordances. Walking the registered types -- or even every adapter -- per
+    // entity would make the inner loop an order of magnitude wider than the
+    // work that can result.
     const std::size_t adapters = Affordances().Registry().Entries().size();
+    const std::size_t authors = Affordances().Registry().ViewportEntries().size();
     const std::size_t serializers = EditorSceneSerializers().Entries().size();
     EXPECT_GT(serializers, adapters);
-    EXPECT_LE(adapters, 4u) << "affordance adapters grew; re-check the per-entity inner loop";
+    EXPECT_LT(authors, adapters) << "every adapter is in the per-entity loop";
+    EXPECT_LE(authors, 2u) << "affordance authors grew; re-check the per-entity inner loop";
 }
 
 TEST_F(AffordanceBuildCostTest, BuildingIsProportionalToVisibleEntities)

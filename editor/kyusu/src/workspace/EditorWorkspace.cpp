@@ -7,6 +7,7 @@
 #include "tools/ToolRegistry.h"
 
 #include "EditorTheme.h"
+#include "authoring/GameplayVocabularyAdapters.h"
 #include "authoring/WorldDockEditorAdapter.h"
 #include "brush/BrushBounds.h"
 #include "document/EditorScene.h"
@@ -164,6 +165,10 @@ void EditorWorkspace::Build()
     Affordances = std::make_unique<EditorAffordanceService>(
         World, Selection, Commands, Grid);
     Affordances->Registry().Register(MakeWorldDockEditorAdapter());
+    Affordances->Registry().Register(MakeGameplayTagEditorAdapter());
+    Affordances->Registry().Register(MakeAttributeSetEditorAdapter());
+    Affordances->Registry().Register(MakeAbilitySetEditorAdapter());
+    Affordances->Registry().Register(MakeCharacterMovementEditorAdapter());
     CreationRecipes.Register("world_dock", std::make_unique<WorldDockRecipe>());
     Picking.SetEntityProxyProvider(
         [this](const Ray3d& ray, const EditorScene& scene)

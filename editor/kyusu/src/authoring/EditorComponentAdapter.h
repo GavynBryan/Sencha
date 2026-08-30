@@ -104,8 +104,21 @@ class IEditorComponentAdapter
 {
 public:
     [[nodiscard]] virtual ComponentTypeId Type() const = 0;
-    virtual void BuildViewport(const EditorComponentContext& context,
-                               ViewportAffordanceOutput& output) const = 0;
+
+    // Viewport affordances for one entity carrying this component.
+    //
+    // The two below travel together. The affordance pass runs several times a
+    // frame across every visible entity, so an adapter with nothing to draw
+    // there has to be kept out of that loop rather than cost a component lookup
+    // per entity to discover it. Overriding BuildViewport without
+    // AuthorsViewportAffordances is affordances that never draw; the reverse is
+    // the wasted work this exists to avoid.
+    [[nodiscard]] virtual bool AuthorsViewportAffordances() const { return false; }
+    virtual void BuildViewport(const EditorComponentContext&,
+                               ViewportAffordanceOutput&) const {}
+
+    // Rows for this component in the inspector, in place of the generic
+    // field-driven ones. True when it drew them.
     virtual bool DrawInspector(EditorComponentInspectorContext&) const { return false; }
     [[nodiscard]] virtual bool AllowEntityScale() const { return true; }
     virtual ~IEditorComponentAdapter() = default;
@@ -130,6 +143,15 @@ public:
     };
     [[nodiscard]] std::span<const Entry> Entries() const { ResolveEntries(); return Resolved; }
 
+    // The subset the per-entity affordance pass walks. Resolved as a prefix of
+    // Entries, so an adapter that draws only inspector rows costs that loop
+    // nothing at all rather than one component lookup per visible entity.
+    [[nodiscard]] std::span<const Entry> ViewportEntries() const
+    {
+        ResolveEntries();
+        return { Resolved.data(), ViewportCount };
+    }
+
 private:
     // Rebuilt lazily when the adapter set or the serializer registry changes;
     // both are bring-up-time facts, so this settles after the first build.
@@ -137,6 +159,7 @@ private:
 
     std::unordered_map<ComponentTypeId, std::unique_ptr<IEditorComponentAdapter>> Adapters;
     mutable std::vector<Entry> Resolved;
+    mutable std::size_t ViewportCount = 0;
     mutable std::size_t ResolvedSerializerCount = 0;
 };
 

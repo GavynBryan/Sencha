@@ -20,6 +20,22 @@ namespace
     }
 }
 
+bool AttributeSet::Remove(AttributeId id)
+{
+    const int i = LowerBound(Ids, Count, id);
+    if (i >= Count || !(Ids[i] == id))
+        return false;
+
+    for (int j = i + 1; j < Count; ++j)
+    {
+        Ids[j - 1] = Ids[j];
+        Base[j - 1] = Base[j];
+        Current[j - 1] = Current[j];
+    }
+    --Count;
+    return true;
+}
+
 bool AttributeSet::Has(AttributeId id) const
 {
     const int i = LowerBound(Ids, Count, id);

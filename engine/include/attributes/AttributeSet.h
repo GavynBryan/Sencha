@@ -29,6 +29,12 @@ struct AttributeSet
     // (asserts in debug on overflow).
     bool Add(AttributeId id, float base);
 
+    // Drop an attribute's slot entirely, closing the gap so the block stays
+    // id-sorted. Returns false if absent. Authoring's counterpart to Add: an
+    // attribute the entity should no longer carry has no zero value that means
+    // the same thing.
+    bool Remove(AttributeId id);
+
     [[nodiscard]] bool Has(AttributeId id) const;
 
     // Set the base value of an existing attribute; returns false if absent.

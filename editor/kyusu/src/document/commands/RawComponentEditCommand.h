@@ -3,6 +3,7 @@
 #include "commands/ICommand.h"
 #include "document/EditorDocument.h"
 
+#include <cassert>
 #include <cstddef>
 #include <cstring>
 #include <utility>
@@ -38,6 +39,16 @@ private:
     void Apply(const std::vector<std::byte>& bytes)
     {
         World& world = Scene.GetRegistry().Components;
+        // The snapshot must be the whole component. A shorter one would leave
+        // the tail as it stands rather than as it was recorded; a longer one
+        // would write past the column. Both mean the snapshot was taken against
+        // a different type than the one being written.
+        const ComponentMeta* meta = world.GetMeta(Component);
+        assert(meta != nullptr && meta->Size == bytes.size()
+               && "RawComponentEditCommand: snapshot is not this component's size");
+        if (meta == nullptr || meta->Size != bytes.size())
+            return;
+
         if (void* dst = world.GetComponentRaw(Entity, Component))
         {
             std::memcpy(dst, bytes.data(), bytes.size());

@@ -176,6 +176,8 @@ public:
 
     bool AllowEntityScale() const override { return false; }
 
+    bool AuthorsViewportAffordances() const override { return true; }
+
     void BuildViewport(const EditorComponentContext& context,
                        ViewportAffordanceOutput& output) const override
     {
