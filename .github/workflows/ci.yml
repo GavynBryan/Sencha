@@ -63,7 +63,11 @@ jobs:
         with:
           name: linux-build-log
           path: build-ci.log
-          if-no-files-found: error
+          # A failure before the step that writes it legitimately leaves no log,
+          # and these steps run on any failure. Erroring there reports a missing
+          # artifact on top of the real failure, which is the one thing a reader
+          # scanning for the cause does not need. Same rule as the Windows leg.
+          if-no-files-found: ignore
           retention-days: 7
 
       # Advisory, not a gate. This tree has no maintained clang-tidy baseline
@@ -87,7 +91,7 @@ jobs:
         with:
           name: linux-test-log
           path: test-ci.log
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 7
 
   # The renderer has only ever been compiled by GCC on Linux. MSVC is a
