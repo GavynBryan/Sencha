@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cfloat>
 #include <cstdint>
 #include <cstdio>
@@ -510,6 +511,12 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
                 std::memcpy(current.data(), liveRaw, size);
                 std::vector<std::byte> reset = current;
                 const std::size_t span = field.Size * field.Count;
+                // Bounded, but not from here: this row only exists because the
+                // field compared as overridden, and that comparison refuses a
+                // field whose run leaves the component. Stated locally so the
+                // splice below does not depend on a reader finding that.
+                assert(field.Offset + span <= size
+                       && "a field's bytes lie outside its component");
                 std::memcpy(reset.data() + field.Offset,
                             baselineBytes + field.Offset, span);
                 Commands.Execute(std::make_unique<RawComponentEditCommand>(
