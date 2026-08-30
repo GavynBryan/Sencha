@@ -1,17 +1,19 @@
 #pragma once
 
+#include <world/serialization/IComponentSerializer.h>
+
+#include <memory>
+
 //=============================================================================
-// GameplayTagContainer scene-serializer registration
+// GameplayTagContainer scene serializer
 //
-// Registers an IComponentSerializer for GameplayTagContainer with the scene
-// serializer. Tags persist by name (see GameplayTagSerialization.h), resolved
-// through the GameplayTagRegistry stored as a world resource on the registry
-// being (de)serialized. Call once at startup, on the host's serializer registry.
+// Tags persist by name (see GameplayTagSerialization.h), resolved through the
+// GameplayTagRegistry stored as a world resource on the registry being
+// (de)serialized. A TypeSchema cannot state that: the container holds
+// registration-order ids, which are a fact about one process's startup and
+// nothing a file may carry.
 //
-// This lives in the framework rather than in the engine's own component
-// registration: the engine does not name gameplay types.
+// Hand this to ComponentRegistrar::AddSerializer beside the component's Add.
 //=============================================================================
 
-class ComponentSerializerRegistry;
-
-void RegisterGameplayTagSerializer(ComponentSerializerRegistry& serializers);
+[[nodiscard]] std::unique_ptr<IComponentSerializer> MakeGameplayTagContainerSerializer();

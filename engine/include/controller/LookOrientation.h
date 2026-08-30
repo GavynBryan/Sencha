@@ -2,10 +2,12 @@
 
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
+#include <core/serialization/FourCC.h>
 #include <ecs/ComponentTypeId.h>
 #include <input/InputAction.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -48,16 +50,16 @@ inline void ApplyLook(LookOrientation& look, float yaw, float pitch)
     look.Pitch = std::clamp(pitch, look.MinPitch, look.MaxPitch);
 }
 
-// Runtime-only: never scene-serialized (no SceneChunkId, absent from the scene
-// manifest). The schema is here because where something aims is one of the few
-// facts other machines must see, and the schema is what states which of these
-// bytes travel.
+// Saved and sent both. It is sent because where something aims is one of the
+// few facts other machines must see; it is saved because the pitch limits are
+// a property of the thing and because an authored yaw is how a placed body
+// states which way it begins facing -- the only way to state it for a body
+// carrying AimFacing, whose rotation is overwritten from the first tick.
 template <>
 struct TypeSchema<LookOrientation>
 {
     static constexpr std::string_view Name = "LookOrientation";
-    // Where a player is aiming: never authored, and changing constantly, which
-    // is why it replicates without being scene-serializable.
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('L', 'O', 'O', 'K');
     static constexpr bool Replicated = true;
 
     static auto Fields()
@@ -68,10 +70,14 @@ struct TypeSchema<LookOrientation>
             // angle folded into a circle -- so a fixed quantization range would
             // clamp a player who kept turning one way. It ships at full width
             // until the codec can carry a wrapping angle.
-            MakeField("yaw", &LookOrientation::Yaw).OwnerLocal(),
+            MakeField("yaw", &LookOrientation::Yaw)
+                .Default(defaults.Yaw)
+                .OwnerLocal()
+                .Tooltip("Which way this body starts out aiming, in radians."),
             // Pitch is bounded by the limits below, which are stricter than
             // this range, so nothing here can clamp.
             MakeField("pitch", &LookOrientation::Pitch)
+                .Default(defaults.Pitch)
                 .Quantize(-1.5707964f, 1.5707964f, 16)
                 .OwnerLocal(),
             // How far this thing can look is a property of the thing, identical
@@ -128,6 +134,17 @@ struct AimFacing
 
 static_assert(std::is_empty_v<AimFacing>,
               "AimFacing is a tag: it carries no data");
+
+// The tag's presence is its whole value, so the schema has no fields; it is
+// here so content can opt a placed body in without any code naming it.
+template <>
+struct TypeSchema<AimFacing>
+{
+    static constexpr std::string_view Name = "AimFacing";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('A', 'I', 'M', 'F');
+
+    static auto Fields() { return std::tuple{}; }
+};
 
 SENCHA_DECLARE_COMPONENT_TYPE(AimFacing, "sencha.aim_facing");
 

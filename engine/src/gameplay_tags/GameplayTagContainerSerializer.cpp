@@ -13,7 +13,6 @@
 #include <memory>
 #include <span>
 #include <vector>
-#include <world/serialization/ComponentSerializerRegistry.h>
 
 namespace
 {
@@ -130,8 +129,7 @@ public:
 };
 } // namespace
 
-void RegisterGameplayTagSerializer(ComponentSerializerRegistry& serializers)
+std::unique_ptr<IComponentSerializer> MakeGameplayTagContainerSerializer()
 {
-    (void)serializers.Register(
-        std::make_unique<GameplayTagContainerSerializer>());
+    return std::make_unique<GameplayTagContainerSerializer>();
 }

@@ -5,6 +5,7 @@
 #include <render/MaterialSetCache.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 #include <anim/AnimationClipHandle.h>
+#include <audio/AudioClipCache.h>
 #include <render/skinned_mesh/SkinnedMeshHandle.h>
 
 #include <cassert>
@@ -81,6 +82,14 @@ AssetFieldValue ReadAssetField(AssetSystem& assets, AssetType type,
         return value;
     }
 
+    if (type == AssetType::Audio && arity == AssetArity::Single)
+    {
+        std::string path(assets.GetPathForAudioClip(ReadHandle<AudioClipHandle>(field)));
+        if (!path.empty())
+            value.Refs.push_back(RefFromPath(assets, std::move(path), type));
+        return value;
+    }
+
     if (type == AssetType::Material && arity == AssetArity::List)
     {
         const MaterialSetHandle set = ReadHandle<MaterialSetHandle>(field);
@@ -138,6 +147,20 @@ void ApplyAssetField(AssetSystem& assets, AssetType type, AssetArity arity,
             : assets.LoadAnimationClip(path);
         WriteHandle(field, next);            // acquire-then-write
         assets.ReleaseAnimationClip(old);    // release the replaced handle last
+        return;
+    }
+
+    if (type == AssetType::Audio && arity == AssetArity::Single)
+    {
+        const std::string path = value.Refs.empty()
+            ? std::string{}
+            : ResolvePath(assets, value.Refs.front(), type);
+
+        const AudioClipHandle old = ReadHandle<AudioClipHandle>(field);
+        const AudioClipHandle next = path.empty() ? AudioClipHandle{}
+                                                  : assets.LoadAudioClip(path);
+        WriteHandle(field, next);            // acquire-then-write
+        assets.ReleaseAudioClip(old);        // release the replaced handle last
         return;
     }
 

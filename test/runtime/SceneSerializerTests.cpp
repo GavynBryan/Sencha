@@ -5,13 +5,19 @@
 
 #include <gtest/gtest.h>
 
+#include <attributes/AttributeRegistry.h>
+#include <attributes/AttributeSet.h>
 #include <audio/AudioCaptionComponent.h>
 #include <audio/AudioSourceComponent.h>
+#include <controller/LookOrientation.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <core/serialization/BinaryFormat.h>
 #include <core/serialization/Serialize.h>
+#include <gameplay_tags/GameplayTagContainer.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
 #include <math/geometry/3d/Transform3d.h>
+#include <physics/components/CharacterController.h>
 #include <render/extract/Camera.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
@@ -25,6 +31,7 @@
 #include <world/serialization/SceneFormat.h>
 #include <world/serialization/SceneSerializer.h>
 
+#include <optional>
 #include <sstream>
 
 namespace
@@ -249,6 +256,161 @@ TEST(SceneSerializer, LoadsLightRecordsCookedBeforeShadowFieldsExisted)
         EXPECT_EQ(light.ShadowUpdate, ShadowUpdatePolicy::OnChange);
         EXPECT_FLOAT_EQ(light.ShadowSoftness, 1.5f);
         EXPECT_EQ(light.BakeContribution, LightBakeContribution::None);
+    });
+}
+
+//=============================================================================
+// The components a controlled body is made of
+//
+// Their authored forms are what let content describe a body instead of code
+// building one. Two of them persist as names, because the runtime values are
+// registration-order ids; the rest are ordinary schema components whose only
+// missing piece was a chunk id.
+//=============================================================================
+
+TEST(SceneSerializer, AControlledBodyRoundTripsThroughJson)
+{
+    const ComponentSerializerRegistry serializers = MakeSerializers();
+    Registry source = MakeSceneRegistry();
+    EntityId entity = source.Components.CreateEntity();
+    AddTransform(source, entity, MakeTransform(0.0f, 0.0f, 0.0f));
+
+    CharacterController controller{};
+    controller.Radius = 0.42f;
+    controller.StepHeight = 0.5f;
+    source.Components.AddComponent(entity, controller);
+
+    LookOrientation look{};
+    look.Yaw = 1.25f;
+    look.MaxPitch = 0.9f;
+    source.Components.AddComponent(entity, look);
+
+    source.Components.AddComponent(entity, AimFacing{});
+
+    JsonValue json = SaveSceneJson(source, serializers);
+    auto parsed = JsonParse(JsonStringify(json, true));
+    ASSERT_TRUE(parsed.has_value());
+
+    Registry loaded;
+    ASSERT_TRUE(LoadSceneJson(*parsed, loaded, serializers));
+
+    ASSERT_EQ(loaded.Components.CountComponents<CharacterController>(), 1u);
+    loaded.Components.ForEachComponent<CharacterController>(
+        [](EntityId, const CharacterController& c)
+    {
+        EXPECT_FLOAT_EQ(c.Radius, 0.42f);
+        EXPECT_FLOAT_EQ(c.StepHeight, 0.5f);
+        // Untouched dimensions come back as the initializers, not as zero.
+        EXPECT_FLOAT_EQ(c.Height, CharacterController{}.Height);
+    });
+
+    ASSERT_EQ(loaded.Components.CountComponents<LookOrientation>(), 1u);
+    loaded.Components.ForEachComponent<LookOrientation>(
+        [](EntityId, const LookOrientation& c)
+    {
+        EXPECT_FLOAT_EQ(c.Yaw, 1.25f);
+        EXPECT_FLOAT_EQ(c.MaxPitch, 0.9f);
+    });
+
+    // A tag's presence is its whole value.
+    EXPECT_EQ(loaded.Components.CountComponents<AimFacing>(), 1u);
+}
+
+// A component whose fields are all absent still arrives, at its initializers.
+// This is what lets a prefab opt a body into a capsule without stating one.
+TEST(SceneSerializer, AnEmptyControllerLoadsAtItsInitializers)
+{
+    const ComponentSerializerRegistry serializers = MakeSerializers();
+    auto parsed = JsonParse(R"({
+        "version": 1,
+        "entities": [
+            {
+                "components": {
+                    "CharacterController": {},
+                    "AimFacing": {}
+                }
+            }
+        ]
+    })");
+    ASSERT_TRUE(parsed.has_value());
+
+    Registry loaded;
+    ASSERT_TRUE(LoadSceneJson(*parsed, loaded, serializers));
+
+    ASSERT_EQ(loaded.Components.CountComponents<CharacterController>(), 1u);
+    loaded.Components.ForEachComponent<CharacterController>(
+        [](EntityId, const CharacterController& c)
+    {
+        const CharacterController defaults{};
+        EXPECT_FLOAT_EQ(c.Radius, defaults.Radius);
+        EXPECT_FLOAT_EQ(c.Height, defaults.Height);
+        EXPECT_FLOAT_EQ(c.SlopeLimitDegrees, defaults.SlopeLimitDegrees);
+        EXPECT_FLOAT_EQ(c.SkinWidth, defaults.SkinWidth);
+    });
+    EXPECT_EQ(loaded.Components.CountComponents<AimFacing>(), 1u);
+}
+
+// Tags and attributes save the registered NAME, so a destination that
+// registered the same vocabulary in a different order still reads the same
+// values -- and reads them at all, which is what registering these serializers
+// beside their components bought.
+TEST(SceneSerializer, TagsAndAttributesRoundTripByName)
+{
+    const ComponentSerializerRegistry serializers = MakeSerializers();
+
+    Registry source = MakeSceneRegistry();
+    auto& sourceTags = source.Components.AddResource<GameplayTagRegistry>();
+    auto& sourceAttributes = source.Components.AddResource<AttributeRegistry>();
+    const std::optional<GameplayTagId> controlled =
+        sourceTags.RegisterTag("movement.controlled");
+    ASSERT_TRUE(controlled.has_value());
+    const AttributeId speed =
+        sourceAttributes.RegisterAttribute("MoveSpeed", 0.0f, 100.0f, 6.0f);
+
+    EntityId entity = source.Components.CreateEntity();
+    AddTransform(source, entity, MakeTransform(0.0f, 0.0f, 0.0f));
+
+    GameplayTagContainer tags{};
+    ASSERT_TRUE(tags.Grant(*controlled));
+    source.Components.AddComponent(entity, tags);
+
+    AttributeSet attributes{};
+    ASSERT_TRUE(attributes.Add(speed, 4.5f));
+    source.Components.AddComponent(entity, attributes);
+
+    JsonValue json = SaveSceneJson(source, serializers);
+    auto parsed = JsonParse(JsonStringify(json, true));
+    ASSERT_TRUE(parsed.has_value());
+
+    Registry loaded;
+    auto& loadedTags = loaded.Components.AddResource<GameplayTagRegistry>();
+    auto& loadedAttributes = loaded.Components.AddResource<AttributeRegistry>();
+    // Deliberately a different registration order, so a match on raw ids would
+    // be a coincidence rather than a round trip.
+    (void)loadedTags.RegisterTag("decoy.first");
+    (void)loadedAttributes.RegisterAttribute("Decoy", 0.0f, 1.0f, 0.0f);
+    const std::optional<GameplayTagId> loadedControlled =
+        loadedTags.RegisterTag("movement.controlled");
+    ASSERT_TRUE(loadedControlled.has_value());
+    const AttributeId loadedSpeed =
+        loadedAttributes.RegisterAttribute("MoveSpeed", 0.0f, 100.0f, 6.0f);
+    ASSERT_NE(loadedControlled->Value, controlled->Value);
+    ASSERT_NE(loadedSpeed.Value, speed.Value);
+
+    ASSERT_TRUE(LoadSceneJson(*parsed, loaded, serializers));
+
+    ASSERT_EQ(loaded.Components.CountComponents<GameplayTagContainer>(), 1u);
+    loaded.Components.ForEachComponent<GameplayTagContainer>(
+        [&](EntityId, const GameplayTagContainer& c)
+    {
+        EXPECT_TRUE(c.HasExact(*loadedControlled));
+    });
+
+    ASSERT_EQ(loaded.Components.CountComponents<AttributeSet>(), 1u);
+    loaded.Components.ForEachComponent<AttributeSet>(
+        [&](EntityId, const AttributeSet& c)
+    {
+        EXPECT_FLOAT_EQ(c.GetBase(loadedSpeed), 4.5f);
     });
 }
 

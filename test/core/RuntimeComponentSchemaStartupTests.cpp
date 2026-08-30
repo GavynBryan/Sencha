@@ -225,12 +225,16 @@ TEST(RuntimeComponentSchema, OneRegistrationFillsEveryRegistryConsistently)
     EXPECT_NE(serializers.FindByType(ResolveComponentTypeId<PointLightComponent>()), nullptr);
     EXPECT_EQ(layout.Find(ResolveComponentTypeId<PointLightComponent>()), nullptr);
 
-    EXPECT_NE(layout.Find(ResolveComponentTypeId<LookOrientation>()), nullptr);
-    EXPECT_EQ(serializers.FindByType(ResolveComponentTypeId<LookOrientation>()), nullptr);
+    // KinematicState is a fact the last step achieved, never authored.
+    EXPECT_NE(layout.Find(ResolveComponentTypeId<KinematicState>()), nullptr);
+    EXPECT_EQ(serializers.FindByType(ResolveComponentTypeId<KinematicState>()), nullptr);
 
-    // LocalTransform is the one that does both.
+    // Declaring both puts a component in both, and nothing about either policy
+    // is conditioned on the other.
     EXPECT_NE(serializers.FindByType(ResolveComponentTypeId<LocalTransform>()), nullptr);
     EXPECT_NE(layout.Find(ResolveComponentTypeId<LocalTransform>()), nullptr);
+    EXPECT_NE(serializers.FindByType(ResolveComponentTypeId<LookOrientation>()), nullptr);
+    EXPECT_NE(layout.Find(ResolveComponentTypeId<LookOrientation>()), nullptr);
 
     // And a runtime-only column is in storage alone.
     EXPECT_TRUE(schema.Contains(ResolveComponentTypeId<WorldTransform>()));

@@ -71,6 +71,7 @@
 #include <world/RuntimeWorld.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
+#include <world/transform/DerivedTransform.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
 #include <zone/WorldPartitionIds.h>
@@ -196,9 +197,9 @@ EntityId CreateTransformEntity(
     world.AddComponent<LocalTransform>(
         entity,
         LocalTransform{ transform });
-    world.AddComponent<WorldTransform>(
-        entity,
-        WorldTransform{ transform });
+    // WorldTransform is owed by the local one, not written by whoever happens
+    // to place an entity; the engine states that obligation in one place.
+    SeedDerivedWorldTransform(world, entity);
     return entity;
 }
 

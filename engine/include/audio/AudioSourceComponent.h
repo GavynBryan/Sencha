@@ -124,7 +124,7 @@ struct TypeSchema<AudioSourceComponent>
     static auto Fields()
     {
         return std::tuple{
-            MakeField("clip", &AudioSourceComponent::Clip),
+            MakeField("clip", &AudioSourceComponent::Clip).AsAsset(AssetType::Audio),
             MakeField("bus", &AudioSourceComponent::Bus).Default(BusName("Sfx")),
             MakeField("gain", &AudioSourceComponent::Gain).Default(1.0f),
             MakeField("pan", &AudioSourceComponent::Pan).Default(0.0f),
