@@ -938,80 +938,81 @@ TEST(ReplicationPrediction, OtherPlayersPawnsStillArriveAsState)
         << "a puppet has to be drawn where the authority says it is";
 }
 
-// What a machine knows about content it already has cannot travel, and does not
-// need to: a handle into one process's asset cache is a slot index that means
-// something else in another. The spawn recipe is where the receiving machine
-// fills those in -- so this pins the ordering that makes that work, which is
-// not obvious and which nothing else states.
+// What a machine derives for itself cannot travel, and does not need to: a
+// contact normal is re-derived by the first replayed sweep, and an asset handle
+// is a slot index that means something else in another process. The spawn
+// recipe is where the receiving machine fills such fields in -- so this pins the
+// ordering that makes that work, which is not obvious and which nothing else
+// states.
 //
 // Replication creates the component with type defaults before the recipe runs,
 // so a recipe writes onto an existing component rather than adding one. The
 // prediction shadow then seeds from the world's copy, which by that point holds
 // the recipe's value; and because a local-only field has no place in the wire
 // layout at all, no mask bit can ever address it and no later snapshot can take
-// it back. Break any link in that and a client silently runs on defaults while
-// the authority runs on authored content -- two simulations disagreeing for a
-// reason no amount of reconciling can fix, because reconciling is what carries
-// the disagreement.
+// it back. Break any link in that and a client silently runs on one value while
+// the authority runs on another -- two simulations disagreeing for a reason no
+// amount of reconciling can fix, because reconciling is what carries the
+// disagreement.
 TEST(ReplicationPrediction, ARecipeWrittenLocalFieldSurvivesSnapshotsAndReconcile)
 {
     Pair pair;
     ClientPrediction prediction;
     prediction.Bind(pair.Layout);
 
-    // A handle no cache minted, which is exactly the point: its value is this
-    // machine's business and it is never compared with the authority's.
-    const MovementProfileHandle local{ DataAssetHandle{ .Index = 5,
-                                                        .Generation = 2 } };
+    // A value only this machine has any business holding, which is the point:
+    // it is never compared with the authority's.
+    const Vec3d local(0.0f, 0.0f, 1.0f);
 
     NetSpawnRecipes recipes;
     ASSERT_TRUE(recipes.Register(7, [local](World& world, EntityId entity) {
-        if (CharacterMovement* movement = world.TryGet<CharacterMovement>(entity))
-            movement->Profile = local;
+        if (SupportState* support = world.TryGet<SupportState>(entity))
+            support->Normal = local;
     }));
 
     const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
     pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 7 });
-    pair.Authority.AddComponent<CharacterMovement>(
-        authority, CharacterMovement{ .Mode = LocomotionModeId{ 3 } });
+    SupportState authoritySupport{};
+    authoritySupport.Kind = SupportKind::Stable;
+    pair.Authority.AddComponent<SupportState>(authority, authoritySupport);
     pair.Authority.AddComponent<NetSpawnRecipe>(authority, NetSpawnRecipe{ .Id = 7 });
 
     pair.Replicate(7, &recipes);
     const EntityId mirror = pair.Mirror(authority);
     ASSERT_TRUE(mirror.IsValid());
-    const CharacterMovement* held = pair.Client.TryGet<CharacterMovement>(mirror);
+    const SupportState* held = pair.Client.TryGet<SupportState>(mirror);
     ASSERT_NE(held, nullptr);
-    ASSERT_EQ(held->Profile, local)
+    ASSERT_EQ(held->Normal, local)
         << "the recipe ran before the component existed, so it had nothing to "
            "write onto";
-    EXPECT_EQ(held->Mode.Value, 3u) << "the wire's own field did not arrive";
+    EXPECT_EQ(held->Kind, SupportKind::Stable) << "the wire's own field did not arrive";
 
     // Possession happens after the spawn, which is the order that matters: the
     // shadow cannot seed before this, so it seeds from a world copy the recipe
     // has already completed.
     prediction.SetPredicted(mirror);
 
-    pair.Authority.TryGet<CharacterMovement>(authority)->Mode = LocomotionModeId{ 4 };
+    pair.Authority.TryGet<SupportState>(authority)->Kind = SupportKind::Steep;
     pair.Replicate(7, &recipes, &prediction);
     ASSERT_TRUE(pair.LastApply.ReconcilePredicted);
-    EXPECT_EQ(pair.Client.TryGet<CharacterMovement>(mirror)->Profile, local)
+    EXPECT_EQ(pair.Client.TryGet<SupportState>(mirror)->Normal, local)
         << "an arriving snapshot overwrote a field it does not carry";
 
     // The reconcile itself: the shadow restores the whole component, so a field
     // the wire never mentions has to have been in the shadow to survive it.
     ASSERT_TRUE(prediction.RestoreTo(pair.Client, pair.Schema, mirror));
-    const CharacterMovement* restored = pair.Client.TryGet<CharacterMovement>(mirror);
+    const SupportState* restored = pair.Client.TryGet<SupportState>(mirror);
     ASSERT_NE(restored, nullptr);
-    EXPECT_EQ(restored->Profile, local)
-        << "the reconcile stamped a default over what this machine resolved, so "
-           "every replayed tick from here runs on the wrong tuning";
-    EXPECT_EQ(restored->Mode.Value, 4u)
+    EXPECT_EQ(restored->Normal, local)
+        << "the reconcile stamped a default over what this machine derived, so "
+           "every replayed tick from here runs on the wrong contact";
+    EXPECT_EQ(restored->Kind, SupportKind::Steep)
         << "the authority's own field did not survive the same restore";
 
     // And it stays put however long the session runs.
     pair.Replicate(7, &recipes, &prediction);
     pair.Replicate(7, &recipes, &prediction);
-    EXPECT_EQ(pair.Client.TryGet<CharacterMovement>(mirror)->Profile, local);
+    EXPECT_EQ(pair.Client.TryGet<SupportState>(mirror)->Normal, local);
 }
 
 //=============================================================================

@@ -30,7 +30,11 @@
         "turret_mount": {
           "yaw": 0,
           "rounds": 12
-        }
+        },
+        "LookOrientation": {
+          "yaw": 0
+        },
+        "AimFacing": {}
       }
     }
   ]

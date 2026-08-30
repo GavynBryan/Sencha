@@ -171,6 +171,40 @@ AssetLease AssetSystem::TryAcquireLease(std::string_view path, AssetType type)
     return store ? store->TryAcquireLease(path) : AssetLease{};
 }
 
+AssetLease AssetSystem::LoadLease(std::string_view path, AssetType type)
+{
+    const AssetRecord* record = Resolve(path, type);
+    if (record == nullptr)
+        return {};
+
+    if (AssetLease resident = TryAcquireLease(record->Path, type); resident.IsValid())
+        return resident;
+
+    IAssetStager* stager = LoaderFor(type);
+    if (stager == nullptr)
+    {
+        Log.Error("AssetSystem: no loader registered for {} '{}'",
+                  AssetTypeToString(type), record->Path);
+        return {};
+    }
+
+    AssetStaging staged = stager->LoadStaged(*record, Source);
+    if (!staged.IsValid())
+    {
+        Log.Error("AssetSystem: {}", staged.Error);
+        return {};
+    }
+
+    return Commit(std::move(staged));
+}
+
+std::string_view AssetSystem::GetPathForLease(AssetType type,
+                                              std::uint64_t token) const
+{
+    const IAssetStore* store = StoreFor(type);
+    return store != nullptr ? store->GetPath(token) : std::string_view{};
+}
+
 AssetLease AssetSystem::Commit(AssetStaging&& staged)
 {
     const AssetKindRegistration* kind = KindRegistry.Find(staged.Record.Type);

@@ -26,6 +26,36 @@
               1
             ]
           }
+        },
+        "CharacterController": {},
+        "MovementTuning": {
+          "profile": "asset://data/player_movement.sdata"
+        },
+        "CharacterMovement": {
+          "mode": "movement.mode.free"
+        },
+        "LookOrientation": {
+          "yaw": 0
+        },
+        "AimFacing": {},
+        "GameplayTags": {
+          "tags": [
+            {
+              "name": "movement.controlled",
+              "stacks": 1
+            }
+          ]
+        },
+        "Attributes": {
+          "attributes": [
+            {
+              "name": "MoveSpeed",
+              "base": 4.5
+            }
+          ]
+        },
+        "AbilitySet": {
+          "abilities": []
         }
       }
     }

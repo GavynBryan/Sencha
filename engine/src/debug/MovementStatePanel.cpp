@@ -198,23 +198,23 @@ void MovementStatePanel::DrawFacts(EntityId entity)
 
 void MovementStatePanel::DrawReloadStatus()
 {
-    const CharacterMovement* movement =
-        std::as_const(WorldState).TryGet<CharacterMovement>(Selected);
-    if (movement == nullptr || DataAssets == nullptr)
+    const MovementTuningSource* source =
+        std::as_const(WorldState).TryGet<MovementTuningSource>(Selected);
+    if (source == nullptr || DataAssets == nullptr)
         return;
 
     ImGui::Separator();
-    if (!movement->Profile.IsValid())
+    if (!source->Profile.IsValid())
     {
         ImGui::TextDisabled("No movement profile: defaults plus the MoveSpeed attribute.");
         return;
     }
 
     ImGui::Text("Profile: %.*s",
-                static_cast<int>(DataAssets->GetName(movement->Profile.Value).size()),
-                DataAssets->GetName(movement->Profile.Value).data());
+                static_cast<int>(DataAssets->GetName(source->Profile.Value).size()),
+                DataAssets->GetName(source->Profile.Value).data());
 
-    const uint64_t version = DataAssets->GetReloadVersion(movement->Profile.Value);
+    const uint64_t version = DataAssets->GetReloadVersion(source->Profile.Value);
     if (version != LastReloadVersion)
     {
         // Counted rather than shown raw: what a designer wants to know is that
@@ -260,8 +260,11 @@ void MovementStatePanel::DrawResolvedTuning(EntityId entity)
     if (bindings == nullptr)
         return;
 
+    const MovementTuningSource* source = world.TryGet<MovementTuningSource>(entity);
+
     std::string error;
-    const BoundMovementProfile* profile = bindings->Get(movement->Profile, &error);
+    const BoundMovementProfile* profile = bindings->Get(
+        source != nullptr ? source->Profile : MovementProfileHandle{}, &error);
     if (!error.empty())
         LastBindError = error;
     if (profile == nullptr)

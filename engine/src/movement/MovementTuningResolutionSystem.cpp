@@ -79,9 +79,15 @@ void MovementTuningResolutionSystem::StepImpl(World& world,
             // movement feel replaced because one layer named something that no
             // longer exists. Reported once per profile, because the alternative
             // is a designer re-tuning numbers that were never being read.
+            // The profile is a separate component because it never travels,
+            // so a character can be moving before one is authored for it.
+            const MovementTuningSource* source =
+                std::as_const(world).TryGet<MovementTuningSource>(entity);
+
             std::string bindError;
-            const BoundMovementProfile* profile =
-                bindings->Get(movement.Profile, &bindError);
+            const BoundMovementProfile* profile = bindings->Get(
+                source != nullptr ? source->Profile : MovementProfileHandle{},
+                &bindError);
             if (!bindError.empty() && Logging != nullptr)
             {
                 Logging->GetLogger<MovementTuningResolutionSystem>().Error(

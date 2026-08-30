@@ -14,6 +14,8 @@
 
 #include "TemplateComponents.h"
 
+#include <assets/runtime/RuntimeAssets.h>
+#include <core/assets/AssetRegistry.h>
 #include <core/logging/ConsoleLogSink.h>
 #include <core/logging/LoggingProvider.h>
 #include <world/ComponentRegistrar.h>
@@ -41,6 +43,14 @@ TEST(CookLevel, Generate)
     // of surfacing as a bare 'could not load'.
     LoggingProvider logging;
     logging.AddSink<ConsoleLogSink>();
+
+    // The headless asset composition, so authored content that names a data
+    // asset -- a movement profile, a game's own settings -- resolves rather
+    // than being dropped on the way through. Mesh and texture references still
+    // need the windowed composition: those caches hold GPU resources.
+    RuntimeAssets assets(logging, EditorSceneSerializers());
+    (void)ScanAssetsDirectory(root, assets.Registry, assets.Assets.Kinds());
+
     std::string_view remaining(levels);
     while (!remaining.empty())
     {
@@ -53,7 +63,7 @@ TEST(CookLevel, Generate)
             continue;
         const DocumentCookResult result = CookDocument(
             std::filesystem::path(level), std::filesystem::path(root),
-            /*cellSize*/ 16.0, &logging);
+            /*cellSize*/ 16.0, &logging, &assets);
         ASSERT_TRUE(result.Success) << level << ": " << result.Error;
         std::printf(
             "cooked '%.*s': cells=%zu directLights=%zu atlas=%ux%u probes=%zu\n",

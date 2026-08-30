@@ -1,5 +1,7 @@
 #include <world/serialization/SceneFieldCodec.h>
 
+#include <world/serialization/SceneAssetRef.h>
+
 #include <core/assets/AssetId.h>
 #include <assets/runtime/AssetSystem.h>
 #include <core/logging/LoggingProvider.h>
@@ -148,58 +150,59 @@ namespace
         return true;
     }
 
-    bool ReadTypedAssetPath(IReadArchive& archive,
-                            std::string_view key,
-                            AssetType expected,
-                            std::string& outPath,
-                            SceneSerializationContext& context)
+}
+
+bool ReadSceneAssetRef(IReadArchive& archive,
+                       std::string_view key,
+                       AssetType expected,
+                       std::string& outPath,
+                       SceneSerializationContext& context)
+{
+    if (archive.IsString(key))
     {
-        if (archive.IsString(key))
-        {
-            archive.Field(key, outPath);
-            if (!archive.Ok())
-                return false;
-
-            if (!outPath.empty())
-                return true;
-
-            GetSceneLogger(context).Error("SceneFieldCodec: field '{}' has an empty asset path", key);
-            archive.MarkMissingField(key);
+        archive.Field(key, outPath);
+        if (!archive.Ok())
             return false;
-        }
 
-        if (archive.IsObject(key))
-        {
-            archive.BeginObject(key);
-            const bool stamped = archive.HasField(std::string_view{"id"});
-            const bool ok = stamped
-                ? ReadStampedAssetRefFields(archive, key, expected, outPath, context)
-                : ReadLegacyAssetRefFields(archive, key, expected, outPath, context);
-            archive.End();
-            return ok && archive.Ok();
-        }
+        if (!outPath.empty())
+            return true;
 
-        GetSceneLogger(context).Error(
-            "SceneFieldCodec: field '{}' must be an asset path string or an AssetRef object", key);
+        GetSceneLogger(context).Error("SceneAssetRef: field '{}' has an empty asset path", key);
+        archive.MarkMissingField(key);
+        return false;
+    }
+
+    if (archive.IsObject(key))
+    {
+        archive.BeginObject(key);
+        const bool stamped = archive.HasField(std::string_view{"id"});
+        const bool ok = stamped
+            ? ReadStampedAssetRefFields(archive, key, expected, outPath, context)
+            : ReadLegacyAssetRefFields(archive, key, expected, outPath, context);
+        archive.End();
+        return ok && archive.Ok();
+    }
+
+    GetSceneLogger(context).Error(
+        "SceneAssetRef: field '{}' must be an asset path string or an AssetRef object", key);
+    archive.MarkInvalidField(key);
+    return false;
+}
+
+bool WriteSceneAssetRef(IWriteArchive& archive,
+                        std::string_view key,
+                        std::string_view path,
+                        SceneSerializationContext& context)
+{
+    if (path.empty())
+    {
+        GetSceneLogger(context).Error("SceneAssetRef: field '{}' has no registered asset path", key);
         archive.MarkInvalidField(key);
         return false;
     }
 
-    bool WriteTypedAssetPath(IWriteArchive& archive,
-                             std::string_view key,
-                             std::string_view path,
-                             SceneSerializationContext& context)
-    {
-        if (path.empty())
-        {
-            GetSceneLogger(context).Error("SceneFieldCodec: field '{}' has no registered asset path", key);
-            archive.MarkInvalidField(key);
-            return false;
-        }
-
-        archive.Field(key, path);
-        return archive.Ok();
-    }
+    archive.Field(key, path);
+    return archive.Ok();
 }
 
 bool SceneFieldCodec<StaticMeshHandle>::Save(IWriteArchive& archive,
@@ -217,7 +220,7 @@ bool SceneFieldCodec<StaticMeshHandle>::Save(IWriteArchive& archive,
         return false;
     }
 
-    return WriteTypedAssetPath(archive, key, context.Assets->GetPathForStaticMesh(value), context);
+    return WriteSceneAssetRef(archive, key, context.Assets->GetPathForStaticMesh(value), context);
 }
 
 bool SceneFieldCodec<StaticMeshHandle>::Load(IReadArchive& archive,
@@ -229,7 +232,7 @@ bool SceneFieldCodec<StaticMeshHandle>::Load(IReadArchive& archive,
         return RejectBinaryRead(archive, key);
 
     std::string path;
-    if (!ReadTypedAssetPath(archive, key, AssetType::StaticMesh, path, context))
+    if (!ReadSceneAssetRef(archive, key, AssetType::StaticMesh, path, context))
         return false;
 
     if (!context.Assets)
@@ -269,7 +272,7 @@ bool SceneFieldCodec<SkinnedMeshHandle>::Save(IWriteArchive& archive,
         return false;
     }
 
-    return WriteTypedAssetPath(archive, key, context.Assets->GetPathForSkinnedMesh(value), context);
+    return WriteSceneAssetRef(archive, key, context.Assets->GetPathForSkinnedMesh(value), context);
 }
 
 bool SceneFieldCodec<SkinnedMeshHandle>::Load(IReadArchive& archive,
@@ -281,7 +284,7 @@ bool SceneFieldCodec<SkinnedMeshHandle>::Load(IReadArchive& archive,
         return RejectBinaryRead(archive, key);
 
     std::string path;
-    if (!ReadTypedAssetPath(archive, key, AssetType::SkinnedMesh, path, context))
+    if (!ReadSceneAssetRef(archive, key, AssetType::SkinnedMesh, path, context))
         return false;
 
     if (!context.Assets)
@@ -321,7 +324,7 @@ bool SceneFieldCodec<AnimationClipHandle>::Save(IWriteArchive& archive,
         return false;
     }
 
-    return WriteTypedAssetPath(archive, key, context.Assets->GetPathForAnimationClip(value), context);
+    return WriteSceneAssetRef(archive, key, context.Assets->GetPathForAnimationClip(value), context);
 }
 
 bool SceneFieldCodec<AnimationClipHandle>::Load(IReadArchive& archive,
@@ -333,7 +336,7 @@ bool SceneFieldCodec<AnimationClipHandle>::Load(IReadArchive& archive,
         return RejectBinaryRead(archive, key);
 
     std::string path;
-    if (!ReadTypedAssetPath(archive, key, AssetType::AnimationClip, path, context))
+    if (!ReadSceneAssetRef(archive, key, AssetType::AnimationClip, path, context))
         return false;
 
     if (!context.Assets)
@@ -372,7 +375,7 @@ bool SceneFieldCodec<MaterialHandle>::Save(IWriteArchive& archive,
         return false;
     }
 
-    return WriteTypedAssetPath(archive, key, context.Assets->GetPathForMaterial(value), context);
+    return WriteSceneAssetRef(archive, key, context.Assets->GetPathForMaterial(value), context);
 }
 
 bool SceneFieldCodec<MaterialHandle>::Load(IReadArchive& archive,
@@ -384,7 +387,7 @@ bool SceneFieldCodec<MaterialHandle>::Load(IReadArchive& archive,
         return RejectBinaryRead(archive, key);
 
     std::string path;
-    if (!ReadTypedAssetPath(archive, key, AssetType::Material, path, context))
+    if (!ReadSceneAssetRef(archive, key, AssetType::Material, path, context))
         return false;
 
     if (!context.Assets)
@@ -431,7 +434,7 @@ bool SceneFieldCodec<MaterialSetHandle>::Save(IWriteArchive& archive,
         for (const MaterialHandle material : *members)
         {
             // Key is ignored inside an array scope; the element is appended.
-            if (!WriteTypedAssetPath(archive, key, context.Assets->GetPathForMaterial(material), context))
+            if (!WriteSceneAssetRef(archive, key, context.Assets->GetPathForMaterial(material), context))
             {
                 archive.End();
                 return false;
@@ -462,7 +465,7 @@ bool SceneFieldCodec<MaterialSetHandle>::Load(IReadArchive& archive,
 
     const auto resolveInto = [&](std::string_view refKey, std::vector<MaterialHandle>& out) {
         std::string path;
-        if (!ReadTypedAssetPath(archive, refKey, AssetType::Material, path, context))
+        if (!ReadSceneAssetRef(archive, refKey, AssetType::Material, path, context))
             return false;
         const MaterialHandle material = context.Assets->LoadMaterial(path);
         if (!material.IsValid())
@@ -539,7 +542,7 @@ bool SceneFieldCodec<TextureHandle>::Save(IWriteArchive& archive,
         return false;
     }
 
-    return WriteTypedAssetPath(archive, key, context.Assets->GetPathForTexture(value), context);
+    return WriteSceneAssetRef(archive, key, context.Assets->GetPathForTexture(value), context);
 }
 
 bool SceneFieldCodec<TextureHandle>::Load(IReadArchive& archive,
@@ -551,7 +554,7 @@ bool SceneFieldCodec<TextureHandle>::Load(IReadArchive& archive,
         return RejectBinaryRead(archive, key);
 
     std::string path;
-    if (!ReadTypedAssetPath(archive, key, AssetType::Texture, path, context))
+    if (!ReadSceneAssetRef(archive, key, AssetType::Texture, path, context))
         return false;
 
     if (!context.Assets)
@@ -590,7 +593,7 @@ bool SceneFieldCodec<AudioClipHandle>::Save(IWriteArchive& archive,
         return false;
     }
 
-    return WriteTypedAssetPath(archive, key, context.Assets->GetPathForAudioClip(value), context);
+    return WriteSceneAssetRef(archive, key, context.Assets->GetPathForAudioClip(value), context);
 }
 
 bool SceneFieldCodec<AudioClipHandle>::Load(IReadArchive& archive,
@@ -602,7 +605,7 @@ bool SceneFieldCodec<AudioClipHandle>::Load(IReadArchive& archive,
         return RejectBinaryRead(archive, key);
 
     std::string path;
-    if (!ReadTypedAssetPath(archive, key, AssetType::Audio, path, context))
+    if (!ReadSceneAssetRef(archive, key, AssetType::Audio, path, context))
         return false;
 
     if (!context.Assets)

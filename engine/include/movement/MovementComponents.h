@@ -1,8 +1,11 @@
 #pragma once
 
+#include <assets/data/DataAssetCache.h>
 #include <core/metadata/TypeSchema.h>
+#include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
+#include <ecs/World.h>
 #include <math/MathSchemas.h>
 #include <math/Vec.h>
 #include <movement/MovementProfileData.h>
@@ -143,11 +146,9 @@ struct TypeSchema<LocomotionModeId>
     }
 };
 
-// What this character is in movement terms: the authored profile it resolves
-// tuning from, and the locomotion mode it is currently in.
+// Which locomotion mode this character is in.
 struct CharacterMovement
 {
-    MovementProfileHandle Profile{};
     LocomotionModeId Mode{};
 };
 SENCHA_DECLARE_COMPONENT_TYPE(CharacterMovement, "sencha.character_movement");
@@ -174,10 +175,67 @@ struct TypeSchema<CharacterMovement>
     {
         return std::tuple{
             MakeField("mode", &CharacterMovement::Mode).OwnerOnly(),
-            // Which profile a character resolves tuning from is content both
-            // machines already loaded.
-            MakeField("profile", &CharacterMovement::Profile).LocalOnly(),
         };
+    }
+};
+
+//=============================================================================
+// MovementComponentAssets
+//
+// Where a movement component's authored profile lives, so the component's
+// lifecycle hooks can hold what it names. Null in a world composed without
+// structured data -- a bare test world, a registry opened only to inspect
+// structure -- where the hooks then do nothing.
+//=============================================================================
+struct MovementComponentAssets
+{
+    MovementComponentAssets() = default;
+    explicit MovementComponentAssets(DataAssetCache* profiles)
+        : Profiles(profiles)
+    {
+    }
+
+    DataAssetCache* Profiles = nullptr;
+};
+
+//=============================================================================
+// MovementTuningSource
+//
+// The authored profile this character resolves its coefficients from, as the
+// handle the tuning system binds through. Separate from CharacterMovement
+// because it is the one movement fact that never travels: which profile a
+// character uses is content both machines already loaded, and a component
+// carrying an asset handle cannot be replicated at all -- a snapshot
+// overwrites bytes in place, which would leave the handle unowned.
+//
+// An invalid handle is a working character on default coefficients plus the
+// speed attribute, so a missing profile degrades rather than breaking.
+//=============================================================================
+struct MovementTuningSource
+{
+    MovementProfileHandle Profile{};
+};
+SENCHA_DECLARE_COMPONENT_TYPE(MovementTuningSource, "sencha.movement_tuning_source");
+
+// The component owns one reference to its profile for as long as it carries
+// it. Whoever produced the handle owns their own and lets it go; this is what
+// keeps the profile resident afterwards, and what frees it when the last
+// character naming it is destroyed.
+template <>
+struct ComponentTraits<MovementTuningSource>
+{
+    static void OnAdd(MovementTuningSource& component, World& world, EntityId)
+    {
+        auto* assets = world.TryGetResource<MovementComponentAssets>();
+        if (assets != nullptr && assets->Profiles != nullptr)
+            assets->Profiles->Retain(component.Profile.Value);
+    }
+
+    static void OnRemove(const MovementTuningSource& component, World& world, EntityId)
+    {
+        auto* assets = world.TryGetResource<MovementComponentAssets>();
+        if (assets != nullptr && assets->Profiles != nullptr)
+            assets->Profiles->Release(component.Profile.Value);
     }
 };
 

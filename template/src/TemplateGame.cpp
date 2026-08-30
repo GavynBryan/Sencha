@@ -240,8 +240,9 @@ void BuildPawnBody(
     // With an invalid profile handle the pawn resolves tuning from defaults
     // plus the MoveSpeed attribute, so a missing asset degrades to movement
     // that still works.
+    ensure(MovementTuningSource{ .Profile = movementProfile });
+
     CharacterMovement pawnMovement;
-    pawnMovement.Profile = movementProfile;
     if (const LocomotionModeRegistry* modes =
             world.TryGetResource<LocomotionModeRegistry>())
     {
@@ -535,6 +536,16 @@ void ConfigureRuntimeResources(
     else
     {
         world.AddResource<ZoneLightmapComponentAssets>(assets.Textures.get());
+    }
+
+    if (MovementComponentAssets* movementAssets =
+            world.TryGetResource<MovementComponentAssets>())
+    {
+        movementAssets->Profiles = &assets.DataAssets;
+    }
+    else
+    {
+        world.AddResource<MovementComponentAssets>(&assets.DataAssets);
     }
 
     if (AudioSourceRuntime* audioRuntime =
@@ -1477,27 +1488,27 @@ void TemplateGame::OnStart(GameStartupContext&)
 
             // Which profile a pawn resolves tuning from is content this machine
             // already has, and a handle into its own asset cache is meaningless
-            // on any other -- so the field does not travel, and naming it is
-            // this side's job. It has to happen here rather than when the local
-            // player takes possession: replication has already created
-            // CharacterMovement by the time a recipe runs, and the possession
-            // path only adds components that are missing, so a profile written
-            // there would be dropped on exactly the machine that predicts. A
-            // pawn left on the default handle resolves engine tuning while the
+            // on any other -- so it never travels, and naming it is this side's
+            // job. A pawn left without one resolves engine tuning while the
             // authority runs the authored kind, and the two simulations then
             // disagree by design on every input.
-            const MovementProfileHandle profile = ResolvePlayerMovementProfile(log);
-            if (CharacterMovement* movement =
-                    world.TryGet<CharacterMovement>(entity))
+            //
+            // Added, never assigned into: the component owns a reference to its
+            // profile, and writing the handle in place would take one without
+            // the hook that balances it.
+            if (!world.HasComponent<MovementTuningSource>(entity))
             {
-                // Mode is the authority's word and arrives on the wire; only
-                // the profile is this machine's to fill in.
-                movement->Profile = profile;
+                world.AddComponent<MovementTuningSource>(
+                    entity,
+                    MovementTuningSource{ .Profile = ResolvePlayerMovementProfile(log) });
             }
-            else
+
+            if (!world.HasComponent<CharacterMovement>(entity))
             {
+                // Mode is the authority's word and arrives on the wire, so a
+                // pawn replication already built has one; a locally spawned
+                // one starts free.
                 CharacterMovement built;
-                built.Profile = profile;
                 if (const LocomotionModeRegistry* modes =
                         world.TryGetResource<LocomotionModeRegistry>())
                 {
@@ -2692,33 +2703,17 @@ RuntimeAssets& TemplateGame::RuntimeAssetState()
 DataAssetCacheHandle TemplateGame::AcquireDataAsset(std::string_view path, Logger& log)
 {
     RuntimeAssets& assets = RuntimeAssetState();
-    if (assets.DataAssets.Find(path).IsValid())
-        return assets.DataAssets.AcquireOwned(path);
-
-    const AssetRecord* record = assets.Registry.FindByPath(path);
-    if (record == nullptr)
+    AssetLease lease = assets.Assets.LoadLease(path, AssetType::Data);
+    if (!lease.IsValid())
     {
-        log.Warn("TemplateGame: '{}' is not in the asset registry", path);
+        log.Warn("TemplateGame: '{}' did not load; running without it", path);
         return {};
     }
 
-    AssetStaging staged =
-        assets.DataLoader.LoadStaged(*record, assets.Assets.DefaultSource());
-    if (!staged.IsValid())
-    {
-        log.Warn("TemplateGame: '{}' failed to load: {}", path, staged.Error);
-        return {};
-    }
-
-    const DataAssetHandle committed =
-        assets.DataLoader.CommitTyped(std::move(staged));
-    if (!committed.IsValid())
-        return {};
-
-    // CommitTyped hands over the creation reference; adopt rather than
-    // re-acquire so the count stays balanced.
-    return DataAssetCacheHandle(
-        &assets.DataAssets, committed, DataAssetCacheHandle::NoAttach);
+    // The owned handle takes its own reference; the load's goes with the lease
+    // at the end of this scope.
+    return DataAssetCacheHandle(&assets.DataAssets,
+                                DataAssetHandle::FromToken(lease.OpaqueToken()));
 }
 
 // Loads the pawn's movement profile synchronously the first time a pawn

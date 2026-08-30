@@ -3,6 +3,8 @@
 #include <anim/AnimationClipPlayerComponent.h>
 #include <audio/AudioSourceComponent.h>
 #include <components/ActiveCameraService.h>
+#include <movement/MovementComponents.h>
+#include <movement/MovementRegistration.h>
 #include <render/StaticMeshComponent.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <render/ZoneLightmapComponent.h>
@@ -41,4 +43,9 @@ void InitializeSceneRegistry(
         audioClips,
         audio,
         captions);
+    // Tags, attributes, abilities, and locomotion modes are named in content by
+    // the name they were registered under, so a registry that is going to hold
+    // a loaded scene needs the vocabulary those names resolve against -- the
+    // engine's own here, and a game module's when one is loaded.
+    RegisterMovement(registry.Components);
 }

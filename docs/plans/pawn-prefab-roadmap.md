@@ -103,7 +103,43 @@ skips.
   world transform; a stale comment claiming nothing attaches transform history
   is corrected.
 
-### P1 — Data-asset references authorable; `CharacterMovement` scene form
+### P1 — Data-asset references authorable; the movement scene form (landed)
+
+- `AssetSystem::LoadLease` / `GetPathForLease`: the synchronous load and the
+  path lookup for a kind the front door cannot name, structured data included.
+  A lease rather than a raw handle, because the caller is usually not the final
+  owner. The template's hand-rolled stage/commit is gone.
+- **`CharacterMovement` split.** The engine forbids a replicated component from
+  declaring lifecycle hooks (snapshot apply overwrites bytes in place and fires
+  none), so a component that owns an asset handle cannot be replicated. The
+  profile — already `LocalOnly`, so never on the wire — moved to
+  `MovementTuningSource`, which owns its reference through `ComponentTraits`.
+  `CharacterMovement` keeps the mode and stays replicated and predicted.
+- Both persist by name through hand-written serializers: the profile as an
+  asset reference, the mode as its registered name. So does `AbilitySet`.
+- `SceneAssetRef`: how a scene names an asset, extracted from the field codecs
+  so a hand-written serializer resolves references the same way — including the
+  `{id, path}` form the cook stamps, which is the shape a bespoke serializer is
+  most likely to get wrong. (It did, once.)
+- A registry that will hold a loaded scene now carries the vocabulary content
+  names resolve against — tags, attributes, abilities, locomotion modes — in
+  both the runtime and the editor document.
+- Content: the pawn prefab carries a controller, its movement tuning and mode,
+  its look orientation and aim facing, its tags, attributes, and ability set.
+  The turret carries its aim.
+
+**Deferred out of P1, with the reason:**
+
+- *The pawn's mesh stays with the avatar data asset.* A headless cook has no
+  mesh cache (a `StaticMeshCache` holds GPU resources), so a scene naming a mesh
+  cannot round-trip through one — it refuses on save rather than dropping the
+  reference. Moving the mesh into the prefab needs the cook to run in a
+  composition that can hold one. Folded into P4, where the avatar chain is
+  deleted anyway.
+- *An asset picker for data-asset fields in the inspector.* Nothing has a
+  schema-driven data-asset field yet; the two components that name one persist
+  through hand-written serializers, which expose no inspector fields at all.
+  Trigger: a designer needing to pick a profile in the inspector.
 
 ### P2 — Derived components as an invariant of the mutation primitive
 

@@ -187,6 +187,22 @@ public:
     // asset is not resident; never loads.
     [[nodiscard]] AssetLease TryAcquireLease(std::string_view path, AssetType type);
 
+    // The synchronous load every typed Load* does, for a kind this front door
+    // cannot name -- structured data, or a kind a game module registered.
+    // Resident paths gain a reference instead of re-staging, exactly as the
+    // typed loads do.
+    //
+    // A lease rather than a raw handle because the caller usually is not the
+    // final owner: a component that names the asset takes its own reference
+    // when it is added, and the load's reference has to be let go afterwards.
+    // A lease that goes out of scope does that on its own.
+    [[nodiscard]] AssetLease LoadLease(std::string_view path, AssetType type);
+
+    // The path a held token names, for a kind this front door cannot name.
+    // Empty when the kind is unregistered or the token names nothing.
+    [[nodiscard]] std::string_view GetPathForLease(AssetType type,
+                                                   std::uint64_t token) const;
+
     // Owner-thread commit of a staged payload, dispatched through the kind's
     // registered Commit. Returns the creation reference.
     [[nodiscard]] AssetLease Commit(AssetStaging&& staged);

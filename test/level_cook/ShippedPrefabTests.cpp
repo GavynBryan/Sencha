@@ -1,0 +1,179 @@
+// What the template's authored archetypes actually contain, read from the
+// checkout rather than restated here.
+//
+// A prefab that loses a component says nothing: the entity is built, it is just
+// missing the piece that made it a pawn, and the failure surfaces frames later
+// as something that will not move. Every component below is one the code used
+// to add by hand, so a silent drop here is a silent return to that.
+
+#include "document/DocumentCook.h"
+#include "document/EditorDocument.h"
+#include "document/DocumentSerialization.h"
+
+#include "TemplateComponents.h"
+
+#include <assets/runtime/RuntimeAssets.h>
+#include <attributes/AttributeRegistry.h>
+#include <attributes/AttributeSet.h>
+#include <abilities/AbilitySet.h>
+#include <controller/LookOrientation.h>
+#include <core/assets/AssetRegistry.h>
+#include <core/logging/LoggingProvider.h>
+#include <gameplay_tags/GameplayTagContainer.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
+#include <movement/LocomotionMode.h>
+#include <movement/MovementComponents.h>
+#include <physics/components/CharacterController.h>
+#include <world/ComponentRegistrar.h>
+#include <world/serialization/SceneSerializer.h>
+
+#include <gtest/gtest.h>
+
+#include <filesystem>
+#include <string>
+
+namespace
+{
+    class ShippedPrefabTest : public ::testing::Test
+    {
+    protected:
+        static void SetUpTestSuite()
+        {
+            RegisterDocumentSerializers();
+            ComponentRegistrar registrar(nullptr, &EditorSceneSerializers(), nullptr);
+            RegisterTemplateComponents(registrar);
+        }
+
+        void SetUp() override
+        {
+            Root = std::filesystem::path(SENCHA_REPO_ROOT) / "template/assets";
+            (void)ScanAssetsDirectory(Root.generic_string(), Assets.Registry,
+                                      Assets.Assets.Kinds());
+            Document.SetAssetEnvironment(Assets);
+            Document.SetContentRoots({ Root });
+        }
+
+        [[nodiscard]] bool LoadPrefab(const std::string& relative)
+        {
+            return Document.Load((Root / relative).generic_string());
+        }
+
+        // The prefab's single authored entity.
+        [[nodiscard]] EntityId Only() const
+        {
+            EntityId found{};
+            std::size_t count = 0;
+            Document.GetRegistry().Components.ForEachComponent<LocalTransform>(
+                [&](EntityId entity, const LocalTransform&)
+                {
+                    found = entity;
+                    ++count;
+                });
+            EXPECT_EQ(count, 1u) << "a prefab under test grew a second entity";
+            return found;
+        }
+
+        template <typename T>
+        [[nodiscard]] const T* Get(EntityId entity) const
+        {
+            return Document.GetRegistry().Components.TryGet<T>(entity);
+        }
+
+        // A tag has no column, so TryGet answers null for one that is present.
+        template <typename T>
+        [[nodiscard]] bool Carries(EntityId entity) const
+        {
+            return Document.GetRegistry().Components.HasComponent<T>(entity);
+        }
+
+        std::filesystem::path Root;
+        LoggingProvider Logging;
+        RuntimeAssets Assets{ Logging, EditorSceneSerializers() };
+        EditorDocument Document{ Logging };
+    };
+}
+
+TEST_F(ShippedPrefabTest, ThePawnCarriesWhatMakesItAPawn)
+{
+    ASSERT_TRUE(LoadPrefab("prefabs/player_pawn.sscene"));
+    const EntityId pawn = Only();
+    ASSERT_TRUE(pawn.IsValid());
+
+    // A body that collides, moves, aims, and turns to its aim.
+    EXPECT_NE(Get<CharacterController>(pawn), nullptr);
+    EXPECT_NE(Get<CharacterMovement>(pawn), nullptr);
+    EXPECT_NE(Get<LookOrientation>(pawn), nullptr);
+    EXPECT_TRUE(Carries<AimFacing>(pawn));
+
+    // The authored tuning, resolved rather than merely named: an unresolved
+    // profile is a pawn silently moving on engine defaults.
+    const MovementTuningSource* tuning = Get<MovementTuningSource>(pawn);
+    ASSERT_NE(tuning, nullptr);
+    EXPECT_TRUE(tuning->Profile.IsValid())
+        << "the pawn's movement profile did not resolve";
+
+    // The free mode by name, not by whatever id this process handed out.
+    const LocomotionModeRegistry* modes =
+        Document.GetRegistry().Components.TryGetResource<LocomotionModeRegistry>();
+    ASSERT_NE(modes, nullptr);
+    EXPECT_EQ(Get<CharacterMovement>(pawn)->Mode, modes->FreeMode());
+
+    // What movement systems select on, and the speed effects modify.
+    const GameplayTagRegistry* tags =
+        Document.GetRegistry().Components.TryGetResource<GameplayTagRegistry>();
+    ASSERT_NE(tags, nullptr);
+    const GameplayTagContainer* pawnTags = Get<GameplayTagContainer>(pawn);
+    ASSERT_NE(pawnTags, nullptr);
+    EXPECT_TRUE(pawnTags->HasExact(tags->FindTag("movement.controlled")));
+
+    const AttributeRegistry* attributes =
+        Document.GetRegistry().Components.TryGetResource<AttributeRegistry>();
+    ASSERT_NE(attributes, nullptr);
+    const AttributeSet* pawnAttributes = Get<AttributeSet>(pawn);
+    ASSERT_NE(pawnAttributes, nullptr);
+    EXPECT_FLOAT_EQ(pawnAttributes->GetBase(attributes->FindAttribute("MoveSpeed")), 4.5f);
+
+    EXPECT_NE(Get<AbilitySet>(pawn), nullptr);
+}
+
+TEST_F(ShippedPrefabTest, TheTurretAimsAndTurns)
+{
+    ASSERT_TRUE(LoadPrefab("prefabs/turret.sscene"));
+    const EntityId turret = Only();
+    ASSERT_TRUE(turret.IsValid());
+
+    EXPECT_NE(Get<LookOrientation>(turret), nullptr);
+    EXPECT_TRUE(Carries<AimFacing>(turret));
+    // A turret does not move, so it has neither a controller nor tuning.
+    EXPECT_EQ(Get<CharacterController>(turret), nullptr);
+    EXPECT_EQ(Get<MovementTuningSource>(turret), nullptr);
+}
+
+// The save side of the same contract: what the document read back it can write
+// back, so a round trip through the editor does not quietly empty the prefab.
+TEST_F(ShippedPrefabTest, ThePawnSurvivesADocumentRoundTrip)
+{
+    ASSERT_TRUE(LoadPrefab("prefabs/player_pawn.sscene"));
+    const std::string text = Document.ToSceneText();
+    ASSERT_FALSE(text.empty());
+
+    EditorDocument reloaded(Logging);
+    reloaded.SetAssetEnvironment(Assets);
+    reloaded.SetContentRoots({ Root });
+    ASSERT_TRUE(reloaded.LoadFromSceneText(text));
+
+    EntityId pawn{};
+    reloaded.GetRegistry().Components.ForEachComponent<LocalTransform>(
+        [&](EntityId entity, const LocalTransform&) { pawn = entity; });
+    ASSERT_TRUE(pawn.IsValid());
+
+    const MovementTuningSource* tuning =
+        reloaded.GetRegistry().Components.TryGet<MovementTuningSource>(pawn);
+    ASSERT_NE(tuning, nullptr);
+    EXPECT_TRUE(tuning->Profile.IsValid())
+        << "the saved document named no profile, so the round trip lost it";
+    EXPECT_NE(reloaded.GetRegistry().Components.TryGet<GameplayTagContainer>(pawn),
+              nullptr);
+    EXPECT_NE(reloaded.GetRegistry().Components.TryGet<AttributeSet>(pawn), nullptr);
+    EXPECT_TRUE(reloaded.GetRegistry().Components.HasComponent<AimFacing>(pawn));
+}

@@ -117,12 +117,16 @@ bool ImportComponent(
         return false;
     }
 
+    // Every failure below names the component: an import that says only "a
+    // component failed" leaves a whole prefab to bisect by hand.
+    const std::string named = std::string(" (") + std::string(entry->Name) + ")";
+
     if (component.SerializedJson.has_value())
     {
         if (serializers == nullptr || sceneContext == nullptr)
         {
             failure =
-                "Package contains serialized data without an import context.";
+                "Package contains serialized data without an import context" + named + ".";
             return false;
         }
 
@@ -131,7 +135,7 @@ bool ImportComponent(
         if (serializer == nullptr)
         {
             failure =
-                "Package serialized component has no registered decoder.";
+                "Package serialized component has no registered decoder" + named + ".";
             return false;
         }
 
@@ -143,7 +147,7 @@ bool ImportComponent(
                 *sceneContext)
             || !archive.Ok())
         {
-            failure = "Package serialized component decode failed.";
+            failure = "Package serialized component decode failed" + named + ".";
             return false;
         }
         return true;
@@ -152,7 +156,8 @@ bool ImportComponent(
     if (entry->Size != component.RuntimeBytes.size())
     {
         failure =
-            "Package component byte size does not match the runtime schema.";
+            "Package component byte size does not match the runtime schema"
+            + named + ".";
         return false;
     }
     if (!schema.InitializeComponent(

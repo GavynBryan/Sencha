@@ -4,6 +4,7 @@
 #include <abilities/AbilityActivationSystem.h>
 #include <abilities/AbilityRegistry.h>
 #include <abilities/AbilitySet.h>
+#include <abilities/AbilitySetSerializer.h>
 #include <app/EngineSchedule.h>
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
@@ -31,6 +32,8 @@ void RegisterAbilityKitComponents(ComponentRegistrar& registrar)
     registrar.AddSerializer(MakeAttributeSetSerializer());
 
     registrar.Add<AbilitySet>();
+    registrar.AddSerializer(MakeAbilitySetSerializer());
+
     registrar.Add<ActiveEffect>();
 }
 

@@ -157,6 +157,10 @@ if(LEVEL_COOK_TEST_SOURCES AND TARGET kyusu_authoring)
         ${CMAKE_SOURCE_DIR}/template/src/TemplateComponents.cpp)
     target_include_directories(level_cook_tests PRIVATE ${CMAKE_SOURCE_DIR}/template/src)
     target_link_libraries(level_cook_tests PRIVATE kyusu_authoring GTest::gtest_main)
+    # The shipped prefabs are content under test: a case reads them from the
+    # checkout rather than restating them.
+    target_compile_definitions(level_cook_tests PRIVATE
+        SENCHA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
     list(APPEND SENCHA_TEST_TARGETS level_cook_tests)
 endif()
 

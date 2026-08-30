@@ -16,6 +16,7 @@
 #include <render/StaticMeshComponent.h>
 #include <anim/AnimationClipPlayerComponent.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
+#include <movement/MovementRegistration.h>
 #include <world/serialization/IComponentSerializer.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/serialization/SceneSerializationContext.h>
@@ -158,6 +159,13 @@ EditorDocument::EditorDocument(LoggingProvider& logging)
     // (and inspectable/addable) before any entity exists. Idempotent.
     for (const auto& serializer : EditorSceneSerializers().Entries())
         serializer->RegisterStorage(Registry_);
+
+    // Storage is only half of what a loaded component needs. Tags, attributes,
+    // abilities, and locomotion modes are named in content and resolved against
+    // the registries that define them, so a document without those cannot read
+    // back what it wrote. This installs the engine's own vocabulary; a loaded
+    // game module adds its names to the same registries.
+    RegisterMovement(world);
 }
 
 void EditorDocument::SetAssetEnvironment(RuntimeAssets& assets)
@@ -174,6 +182,12 @@ void EditorDocument::SetAssetEnvironment(RuntimeAssets& assets)
         world.AddResource<SkinnedMeshComponentAssets>(assets.SkinnedMeshes.get(), &assets.MaterialSets);
     if (!world.HasResource<AnimationClipComponentAssets>())
         world.AddResource<AnimationClipComponentAssets>(&assets.AnimationClips);
+    // Registered empty with the movement components; this is the host naming
+    // where its structured data lives. Without it an authored movement profile
+    // is freed the moment the load lets go of it, and the document then saves a
+    // handle that names nothing.
+    if (auto* movement = world.TryGetResource<MovementComponentAssets>())
+        movement->Profiles = &assets.DataAssets;
 }
 
 void EditorDocument::SetRegistryIdentity(RegistryId id, ZoneId zone)
