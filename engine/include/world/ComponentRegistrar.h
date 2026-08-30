@@ -1,6 +1,8 @@
 #pragma once
 
+#include <core/assets/AssetRef.h>
 #include <core/metadata/TypeSchema.h>
+#include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/WorldComponentSchema.h>
 #include <net/ReplicationLayout.h>
@@ -90,6 +92,20 @@ template <typename T>
     return ok;
 }
 
+// Whether any of T's fields is an asset reference. A component that names an
+// asset has to own it: the scene load hands its reference over and lets go, so
+// the only thing keeping the asset alive afterwards is the component's own
+// OnAdd, and the only thing that frees it is the matching OnRemove.
+template <typename T>
+[[nodiscard]] bool ComponentNamesAnAsset()
+{
+    bool any = false;
+    std::apply([&](const auto&... field)
+               { ((any = any || field.Asset != AssetType::Unknown), ...); },
+               TypeSchema<T>::Fields());
+    return any;
+}
+
 class ComponentRegistrar
 {
 public:
@@ -127,6 +143,15 @@ public:
                    && "A schema default differs from the member initializer it "
                       "describes: the component would save as one value and "
                       "load as another.");
+        }
+
+        if constexpr (ComponentIsSceneSerialized<T>)
+        {
+            assert((!ComponentNamesAnAsset<T>()
+                    || (ComponentHasOnAdd<T> && ComponentHasOnRemove<T>))
+                   && "A component names an asset but has no ComponentTraits to "
+                      "retain and release it: loading one from a scene would "
+                      "leave the component holding an asset nothing owns.");
         }
 
         if (Storage != nullptr)

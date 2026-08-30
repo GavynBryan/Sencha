@@ -691,3 +691,56 @@ bool SceneFieldCodec<CaptionPriority>::Load(IReadArchive& archive,
     return LoadEnumField(archive, key, value, context,
                          CaptionPriorityFromString, "CaptionPriority");
 }
+
+// The inverse of Load: the scene load's own reference, dropped once the value
+// has been handed to whatever will own it. An invalid handle is a no-op, which
+// is what a field this process lacked the capability to resolve leaves behind.
+
+void SceneFieldCodec<StaticMeshHandle>::Release(StaticMeshHandle& value,
+                                                SceneSerializationContext& context)
+{
+    if (context.Assets != nullptr)
+        context.Assets->ReleaseStaticMesh(value);
+}
+
+void SceneFieldCodec<SkinnedMeshHandle>::Release(SkinnedMeshHandle& value,
+                                                 SceneSerializationContext& context)
+{
+    if (context.Assets != nullptr)
+        context.Assets->ReleaseSkinnedMesh(value);
+}
+
+void SceneFieldCodec<AnimationClipHandle>::Release(AnimationClipHandle& value,
+                                                   SceneSerializationContext& context)
+{
+    if (context.Assets != nullptr)
+        context.Assets->ReleaseAnimationClip(value);
+}
+
+void SceneFieldCodec<MaterialHandle>::Release(MaterialHandle& value,
+                                              SceneSerializationContext& context)
+{
+    if (context.Assets != nullptr)
+        context.Assets->ReleaseMaterial(value);
+}
+
+void SceneFieldCodec<MaterialSetHandle>::Release(MaterialSetHandle& value,
+                                                 SceneSerializationContext& context)
+{
+    if (context.Assets != nullptr)
+        context.Assets->ReleaseMaterialSet(value);
+}
+
+void SceneFieldCodec<TextureHandle>::Release(TextureHandle& value,
+                                             SceneSerializationContext& context)
+{
+    if (context.Assets != nullptr)
+        context.Assets->ReleaseTexture(value);
+}
+
+void SceneFieldCodec<AudioClipHandle>::Release(AudioClipHandle& value,
+                                               SceneSerializationContext& context)
+{
+    if (context.Assets != nullptr)
+        context.Assets->ReleaseAudioClip(value);
+}

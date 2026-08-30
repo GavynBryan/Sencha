@@ -23,6 +23,14 @@
 //
 // TypeSchema<T> describes fields and structure. SceneFieldCodec<T> describes
 // how each field type is persisted in scene files.
+//
+// A field type whose Load acquires something also declares Release, the
+// inverse: what to let go of when the loaded value is handed on or thrown
+// away. Loading an asset reference resolves a path to a held handle, and the
+// component that ends up carrying it takes its own reference through its
+// lifecycle hooks -- so the load's reference has to go, or every entity built
+// from content pins its assets forever. Field types that acquire nothing
+// declare nothing; the serializer asks whether the operation exists.
 //=============================================================================
 template<typename T>
 struct SceneFieldCodec
@@ -58,6 +66,8 @@ struct SceneFieldCodec<StaticMeshHandle>
                      std::string_view key,
                      StaticMeshHandle& value,
                      SceneSerializationContext& context);
+
+    static void Release(StaticMeshHandle& value, SceneSerializationContext& context);
 };
 
 template<>
@@ -72,6 +82,8 @@ struct SceneFieldCodec<SkinnedMeshHandle>
                      std::string_view key,
                      SkinnedMeshHandle& value,
                      SceneSerializationContext& context);
+
+    static void Release(SkinnedMeshHandle& value, SceneSerializationContext& context);
 };
 
 template<>
@@ -86,6 +98,8 @@ struct SceneFieldCodec<AnimationClipHandle>
                      std::string_view key,
                      AnimationClipHandle& value,
                      SceneSerializationContext& context);
+
+    static void Release(AnimationClipHandle& value, SceneSerializationContext& context);
 };
 
 template<>
@@ -100,6 +114,8 @@ struct SceneFieldCodec<MaterialHandle>
                      std::string_view key,
                      MaterialHandle& value,
                      SceneSerializationContext& context);
+
+    static void Release(MaterialHandle& value, SceneSerializationContext& context);
 };
 
 // A StaticMeshComponent's per-section materials persist as a JSON array of
@@ -119,6 +135,8 @@ struct SceneFieldCodec<MaterialSetHandle>
                      std::string_view key,
                      MaterialSetHandle& value,
                      SceneSerializationContext& context);
+
+    static void Release(MaterialSetHandle& value, SceneSerializationContext& context);
 };
 
 template<>
@@ -133,6 +151,8 @@ struct SceneFieldCodec<TextureHandle>
                      std::string_view key,
                      TextureHandle& value,
                      SceneSerializationContext& context);
+
+    static void Release(TextureHandle& value, SceneSerializationContext& context);
 };
 
 template<>
@@ -147,6 +167,8 @@ struct SceneFieldCodec<AudioClipHandle>
                      std::string_view key,
                      AudioClipHandle& value,
                      SceneSerializationContext& context);
+
+    static void Release(AudioClipHandle& value, SceneSerializationContext& context);
 };
 
 // Caption enums persist as author-readable strings ("Subtitle", not 1) in
