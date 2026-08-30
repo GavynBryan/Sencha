@@ -12,12 +12,22 @@
 #   rm -rf build build-release build-*
 # =============================================================================
 
-# Out-of-source build / output / install trees (any depth).
-# Generated CMake/Ninja/Make files all live inside these, so they need no
-# rules of their own as long as builds stay out-of-source.
-build*/
-out*/
-install*/
+# Out-of-source build / output / install trees. Generated CMake/Ninja/Make
+# files all live inside these, so they need no rules of their own as long as
+# builds stay out-of-source.
+#
+# Anchored to the root, and each nested build tree named explicitly. These
+# patterns used to match at any depth, which reads as the safer choice and is
+# not: "build" is an ordinary word for a source directory, and an unanchored
+# rule swallows one silently. engine/include/world/build/ went untracked that
+# way, and the first sign of it was a CI checkout failing to compile against a
+# header that exists on every machine that ever wrote it. A stray build tree
+# committed from a subdirectory is a loud diff; source that never reaches the
+# repository is not.
+/build*/
+/out*/
+/install*/
+template/build/
 _deps/
 
 # In-source configure safety net (the root CMakeLists forbids in-source builds,
