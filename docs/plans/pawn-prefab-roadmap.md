@@ -168,6 +168,15 @@ code, and a snapshot creating a component on a client. `InitializeComponent`
 carries the same obligation, so a row somebody else built is not a way around
 it.
 
+**Corrected after the fact.** That claim was false for the two routes that
+address a component only by id: `AddComponentRaw` and its coalesced-batch
+sibling, which is where a `CommandBuffer` flush lands and where the editor's Add
+Component menu lands. A pawn loaded from a file carried the eleven columns and a
+pawn hand-built in the inspector did not. The relation now lives on the `World`
+itself — recorded per component at registration, applied by every structural add
+— so "every path" is true of the primitives rather than of one surface above
+them. See docs/ecs/component-traits.md.
+
 The batch import keeps its own route for one reason: the typed add would
 migrate the row once per owed component, and a pawn owes eleven. The sealed
 schema mirrors each component's closure by id, `BuildEntitySignature` ORs it in,

@@ -387,9 +387,9 @@ SENCHA_DECLARE_COMPONENT_TYPE(FlightSession, "sencha.flight_session");
 //
 // That failure has no error to report and no frame to happen on, which is why
 // it is stated once here instead of ensured at every place a character is
-// built. Every path that adds a CharacterMovement -- content, code, a snapshot
-// arriving on a client -- provisions the whole set, because they all end in the
-// same typed add.
+// built. Every path that adds a CharacterMovement -- content, code, the editor
+// adding it by identity, a command buffer flushing it after a query -- ends in
+// one of the World's structural adds, and each of those applies the set.
 //
 // The transform history is here for the same reason in a different register: a
 // body stepped at the tick rate and drawn at the frame rate needs the two poses

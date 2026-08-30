@@ -57,11 +57,18 @@ concept ComponentHasOnRemove =
 //   };
 //
 // A set, not a sequence. Adding T provisions everything in it that the entity
-// does not already carry, default-constructed, through the same typed add --
-// which applies each one's own owed set in turn, so the closure is transitive
-// by construction, duplicates collapse into the first one added, and a cycle
-// terminates on the component that is already there. Nothing here is ordered:
-// an owed component's OnAdd may not assume a sibling has arrived yet.
+// does not already carry, default-constructed. Each provisioned component is
+// added through the typed add, which applies its own owed set in turn, so the
+// closure is transitive by construction, duplicates collapse into the first one
+// added, and a cycle terminates on the component that is already there.
+// Nothing here is ordered: an owed component's OnAdd may not assume a sibling
+// has arrived yet.
+//
+// A World records this per component at registration -- the only place it still
+// knows the type -- so every route into it applies the set, including the ones
+// that address a component only by id: a command buffer flushing a recorded
+// add, and an editor adding a component chosen from a registry. A component the
+// World never registered is skipped, so a partial vocabulary stays valid.
 //
 // This is for scratch a system reads and writes every tick -- the per-tick
 // request, the resolved coefficients, the composed output -- where a missing
