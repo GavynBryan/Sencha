@@ -88,6 +88,12 @@ private:
         const AssetRegistry& catalog, AssetSystem& assets, const RuntimeField& field);
     std::uint32_t                 OpenPicker = 0;
     std::vector<AssetPickerEntry> OpenPickerEntries;
+    // What the entity carries that its file does not describe: the per-tick
+    // columns a component declares it cannot work without, and the derived
+    // transform columns. Collapsed, read-only, and drawn after the authored
+    // components because it is not what a designer edits -- but drawn, because
+    // an entity that is quietly more than its file says is the surprise.
+    void DrawDerivedComponents(EntityId entity);
     void DrawAddComponentMenu(EntityId entity);
     void ResetEditState();
 

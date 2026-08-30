@@ -7,6 +7,7 @@
 #include "commands/CommandStack.h"
 #include "authoring/EditorComponentAdapter.h"
 #include "document/AssetFieldIo.h"
+#include "document/DerivedComponents.h"
 #include "document/commands/AssetFieldEditCommand.h"
 #include "document/commands/RawComponentEditCommand.h"
 #include "document/commands/RawComponentAddCommand.h"
@@ -798,6 +799,58 @@ void InspectorPanel::OnDraw()
         ResetEditState();
     }
 
+    DrawDerivedComponents(entity);
+
     ImGui::Separator();
     DrawAddComponentMenu(entity);
+}
+
+void InspectorPanel::DrawDerivedComponents(EntityId entity)
+{
+    const World& world =
+        std::as_const(WorldDoc.FocusDocument().GetScene().GetRegistry()).Components;
+    const std::vector<DerivedComponentRow> rows =
+        DerivedComponentsOn(world, EditorSceneSerializers(), entity);
+    if (rows.empty())
+        return;
+
+    // Recomputed rather than cached: one signature walk plus a lookup per
+    // component, for one selected entity, against a loop above that already
+    // builds a string and a byte copy per component per frame.
+    ImGui::PushStyleColor(ImGuiCol_Text, EditorUi::TextDim);
+    const std::string header = "Derived Components (" + std::to_string(rows.size())
+        + ")###derived_components";
+    const bool open = ImGui::CollapsingHeader(header.c_str());
+    ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+    {
+        ImGui::SetTooltip(
+            "On the entity, not in the scene file. Systems keep these; a "
+            "component that cannot work without them brings them along. "
+            "Nothing here is authored, and nothing here is saved.");
+    }
+    if (!open)
+        return;
+
+    ImGui::Indent();
+    for (const DerivedComponentRow& row : rows)
+    {
+        const std::string label = HumanizeFieldLabel(std::string(row.Name));
+        ImGui::BulletText("%s", label.c_str());
+        // The stable name on hover rather than in the row: it is a wire key,
+        // and it is what a search of the source will actually find.
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+            ImGui::SetTooltip("%.*s", static_cast<int>(row.Name.size()), row.Name.data());
+
+        const ComponentMeta* owner = row.ProvidedBy == InvalidComponentId
+            ? nullptr
+            : world.GetMeta(row.ProvidedBy);
+        if (owner == nullptr)
+            continue;
+
+        ImGui::SameLine();
+        ImGui::TextColored(EditorUi::TextDim, "from %s",
+                           HumanizeFieldLabel(std::string(owner->Name)).c_str());
+    }
+    ImGui::Unindent();
 }
