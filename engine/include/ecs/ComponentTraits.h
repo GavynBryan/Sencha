@@ -1,8 +1,12 @@
 #pragma once
 
+#include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 
+#include <cstddef>
 #include <tuple>
+#include <utility>
+#include <vector>
 
 // ComponentTraits<T>: opt-in specialization point for lifecycle hooks.
 // Default specialization is trivial — zero overhead for components without hooks.
@@ -69,3 +73,35 @@ concept ComponentHasOnRemove =
 template <typename T>
 concept ComponentOwesComponents =
     requires { typename ComponentTraits<T>::DerivedComponents; };
+
+namespace ComponentTraitsDetail
+{
+    template <typename Owed, std::size_t... Index>
+    void CollectOwedIds(std::vector<ComponentTypeId>& out, std::index_sequence<Index...>)
+    {
+        (out.push_back(ResolveComponentTypeId<std::tuple_element_t<Index, Owed>>()), ...);
+    }
+}
+
+// T's declared set as stable ids: the tuple expanded once, in declaration
+// order, duplicates included and nothing folded. Empty for a component that
+// owes nothing.
+//
+// Here rather than beside either consumer because there are two of them and
+// they sit on opposite sides of a header dependency: a World records this per
+// component so a type-erased add can provision by id, and a sealed
+// WorldComponentSchema folds it into the transitive closure the batch importer
+// ORs into an archetype signature. One expansion of the tuple, in one place.
+template <typename T>
+[[nodiscard]] inline std::vector<ComponentTypeId> DeclaredOwedIds()
+{
+    std::vector<ComponentTypeId> ids;
+    if constexpr (ComponentOwesComponents<T>)
+    {
+        using Owed = typename ComponentTraits<T>::DerivedComponents;
+        ids.reserve(std::tuple_size_v<Owed>);
+        ComponentTraitsDetail::CollectOwedIds<Owed>(
+            ids, std::make_index_sequence<std::tuple_size_v<Owed>>{});
+    }
+    return ids;
+}

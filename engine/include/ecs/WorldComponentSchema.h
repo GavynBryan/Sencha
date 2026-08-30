@@ -186,7 +186,7 @@ public:
             world.RemoveComponent<T>(entity);
             return true;
         };
-        entry.DeclaredOwed = DeclaredOwedIds<T>();
+        entry.DeclaredOwed = ::DeclaredOwedIds<T>();
         Entries_.push_back(std::move(entry));
         return true;
     }
@@ -327,26 +327,6 @@ public:
     }
 
 private:
-    template <typename Owed, std::size_t... Index>
-    static void CollectOwedIds(std::vector<ComponentTypeId>& out,
-                               std::index_sequence<Index...>)
-    {
-        (out.push_back(ResolveComponentTypeId<std::tuple_element_t<Index, Owed>>()), ...);
-    }
-
-    template <typename T>
-    static std::vector<ComponentTypeId> DeclaredOwedIds()
-    {
-        std::vector<ComponentTypeId> ids;
-        if constexpr (ComponentOwesComponents<T>)
-        {
-            using Owed = typename ComponentTraits<T>::DerivedComponents;
-            ids.reserve(std::tuple_size_v<Owed>);
-            CollectOwedIds<Owed>(ids, std::make_index_sequence<std::tuple_size_v<Owed>>{});
-        }
-        return ids;
-    }
-
     // Folds each component's declared set into everything it owes transitively.
     //
     // The typed add reaches the same set by recursion and stops on what is

@@ -284,3 +284,40 @@ TEST(DerivedComponents, TheImportBuildsTheRowOnce)
         << "the owed columns cost archetype transitions instead of joining the "
            "signature";
 }
+
+// What a World can say about the relation on its own, without a sealed schema.
+//
+// The two materializations answer different questions and must not be confused:
+// this one is the declared set, verbatim, which is the truthful attribution for
+// a reader asking "what brought this component here". The schema's is the
+// transitive closure, which is what the importer ORs into a signature before the
+// row exists.
+TEST(DerivedComponents, AComponentAnswersWhatItDeclares)
+{
+    World world;
+    MakeSchema().Apply(world);
+
+    const ComponentId owner = world.GetComponentId<Owner>();
+    const std::span<const ComponentTypeId> declared = world.DeclaredOwedComponents(owner);
+
+    // Declaration order, and the duplicate is still there: folding is the
+    // schema's job, and add-if-missing is what makes a repeat harmless.
+    ASSERT_EQ(declared.size(), 3u);
+    EXPECT_EQ(declared[0], ResolveComponentTypeId<FirstOwed>());
+    EXPECT_EQ(declared[1], ResolveComponentTypeId<OwedTag>());
+    EXPECT_EQ(declared[2], ResolveComponentTypeId<FirstOwed>());
+
+    // Not the closure: SecondOwed arrives because FirstOwed owes it, and saying
+    // Owner owed it would attribute it to the wrong component.
+    const auto holds = [&](ComponentTypeId type)
+    {
+        return std::find(declared.begin(), declared.end(), type) != declared.end();
+    };
+    EXPECT_FALSE(holds(ResolveComponentTypeId<SecondOwed>()));
+    EXPECT_EQ(world.DeclaredOwedComponents(world.GetComponentId<FirstOwed>()).size(), 1u);
+
+    EXPECT_TRUE(world.DeclaredOwedComponents(world.GetComponentId<Unrelated>()).empty());
+    // An id this world never handed out answers nothing rather than reading
+    // past its table.
+    EXPECT_TRUE(world.DeclaredOwedComponents(static_cast<ComponentId>(200)).empty());
+}
