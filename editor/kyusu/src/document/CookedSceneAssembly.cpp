@@ -120,7 +120,7 @@ bool WriteCookedSceneArtifacts(const DocumentCookContext& ctx,
     if (!WriteCookedScene(cooked, catalog.SceneRefs(), collisionCells,
             EditorSceneSerializers(), physicalPathFor,
             transaction.Stage(idMapPath), transaction.Stage(paths.Scene),
-            &cookError))
+            "asset://" + paths.Stem + ".smap", &cookError))
     {
         result.Error = "CookDocument: " + cookError;
         return false;

@@ -75,6 +75,7 @@ namespace
                  : field.Size == 2 ? ImGuiDataType_U16
                  : field.Size >= 8 ? ImGuiDataType_U64
                                    : ImGuiDataType_U32;
+        case FieldScalar::UInt64: return ImGuiDataType_U64;
         default:
             return ImGuiDataType_S32;
         }

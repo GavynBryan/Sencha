@@ -2,7 +2,7 @@
 
 #include <net/NetParticipantIdentity.h>
 #include <net/NetReplicationComponents.h>
-#include <net/NetSpawnRecipe.h>
+#include <net/NetSpawnPrefab.h>
 #include <world/ComponentRegistrar.h>
 
 // Which entities travel, who takes part, whose inputs drive them, and how a
@@ -17,6 +17,6 @@ inline void RegisterNetComponents(ComponentRegistrar& registrar)
     registrar.Add<NetReplicated>();
     registrar.Add<NetOwner>();
     registrar.Add<NetDrivenBy>();
-    registrar.Add<NetSpawnRecipe>();
+    registrar.Add<NetSpawnPrefab>();
     registrar.Add<NetParticipantIdentity>();
 }

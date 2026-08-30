@@ -326,6 +326,13 @@ TEST_F(HostClientProcess, ADedicatedHostServesAJoiningClient)
     std::string clientLog;
     EXPECT_TRUE(client.WaitForLog("predicting this player's own pawn", &clientLog))
         << "client never took possession:\n" << clientLog;
+    // And the body it is predicting came from the prefab the authority named,
+    // not from loose components it reassembled. A client that cannot build the
+    // prefab defers the spawn forever and says so every snapshot; the pawn it
+    // eventually possesses would then be one it built some other way.
+    EXPECT_EQ(clientLog.find("named a prefab this machine could not build"),
+              std::string::npos)
+        << "the client could not instantiate the pawn prefab:\n" << clientLog;
 
     // The host's side: a peer arrived and was given a pawn, with no local
     // player of its own anywhere in it.

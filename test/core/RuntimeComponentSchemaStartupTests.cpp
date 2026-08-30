@@ -20,7 +20,7 @@
 #include <movement/MovementIntent.h>
 #include <net/NetReplicationComponents.h>
 #include <input/InputActionSource.h>
-#include <net/NetSpawnRecipe.h>
+#include <net/NetSpawnPrefab.h>
 #include <physics/components/CharacterController.h>
 #include <physics/components/CharacterMoverLink.h>
 #include <physics/components/Collider.h>

@@ -64,7 +64,7 @@ namespace
         {
             return WriteCookedScene(scene, extraRefs, /*collisionCells*/ {},
                 Serializers, Resolver(), Root / "asset_ids.json",
-                Root / "scene.smap", error);
+                Root / "scene.smap", "asset://scene.smap", error);
         }
 
         fs::path Root;

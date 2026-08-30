@@ -34,6 +34,7 @@ namespace
         case FieldScalar::Int32:
         case FieldScalar::UInt32:
         case FieldScalar::Float:  return 32;
+        case FieldScalar::UInt64:
         case FieldScalar::Double: return 64;
         case FieldScalar::Color3:
         case FieldScalar::Unsupported:
@@ -187,6 +188,12 @@ namespace
         case FieldScalar::UInt32:
             writer.WriteU32(LoadUnsigned(at, field.Size));
             return;
+        case FieldScalar::UInt64:
+            // Full width and no quantization: the values that need this are
+            // identities, where every bit is the identity.
+            assert(field.Size == sizeof(std::uint64_t));
+            writer.WriteU64(LoadAs<std::uint64_t>(at));
+            return;
         case FieldScalar::Float:
             assert(field.Size == sizeof(float));
             writer.WriteFloat(LoadAs<float>(at));
@@ -248,6 +255,15 @@ namespace
             if (!reader.ReadU32(value))
                 return false;
             StoreUnsigned(at, field.Size, value);
+            return true;
+        }
+        case FieldScalar::UInt64:
+        {
+            assert(field.Size == sizeof(std::uint64_t));
+            std::uint64_t value = 0;
+            if (!reader.ReadU64(value))
+                return false;
+            StoreAs(at, value);
             return true;
         }
         case FieldScalar::Float:
@@ -624,8 +640,11 @@ std::size_t ReplicationEncodedComponentBits(const ReplicatedComponent& component
 
 bool ReplicationDecodeComponent(const ReplicatedComponent& component,
                                 NetBitReader& reader,
-                                std::span<std::byte> target)
+                                std::span<std::byte> target,
+                                std::uint64_t* fieldMask)
 {
+    if (fieldMask != nullptr)
+        *fieldMask = 0;
     if (target.size() != component.Size)
         return false;
 
@@ -651,5 +670,7 @@ bool ReplicationDecodeComponent(const ReplicatedComponent& component,
         }
     }
 
+    if (fieldMask != nullptr)
+        *fieldMask = mask;
     return true;
 }

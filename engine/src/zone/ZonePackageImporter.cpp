@@ -246,7 +246,8 @@ bool ImportPackageIntoPartitionImpl(
     ZoneId stateScope,
     const ComponentSerializerRegistry* serializers,
     SceneSerializationContext* sceneContext,
-    ZoneImportError* error)
+    ZoneImportError* error,
+    std::vector<EntityId>* created)
 {
     std::vector<EntityId> entities;
     entities.reserve(package.EntityCount());
@@ -387,6 +388,17 @@ bool ImportPackageIntoPartitionImpl(
             mutableState->RecordAuthoredSet(stateScope, authored);
     }
 
+    // The caller's own record of what it made -- which entity is the root, and
+    // which are the group a later teardown has to take with it. Only on
+    // success: a failed import destroyed everything it created.
+    if (created != nullptr)
+    {
+        created->clear();
+        for (const EntityId entity : entities)
+            if (entity.IsValid())
+                created->push_back(entity);
+    }
+
     if (error != nullptr)
         error->Message.clear();
     return true;
@@ -425,7 +437,8 @@ bool ImportZonePackageImpl(
             zone,
             serializers,
             sceneContext,
-            error))
+            error,
+            nullptr))
     {
         const bool cancelled = runtime.CancelZoneImport(zone);
         (void)cancelled;
@@ -464,7 +477,8 @@ bool ImportPackageIntoPartition(
         stateScope,
         nullptr,
         nullptr,
-        error);
+        error,
+        nullptr);
 }
 
 bool ImportPackageIntoPartition(
@@ -475,7 +489,8 @@ bool ImportPackageIntoPartition(
     ZoneId stateScope,
     const ComponentSerializerRegistry& serializers,
     SceneSerializationContext& sceneContext,
-    ZoneImportError* error)
+    ZoneImportError* error,
+    std::vector<EntityId>* created)
 {
     return ImportPackageIntoPartitionImpl(
         world,
@@ -485,7 +500,8 @@ bool ImportPackageIntoPartition(
         stateScope,
         &serializers,
         &sceneContext,
-        error);
+        error,
+        created);
 }
 
 bool ImportZonePackageHidden(

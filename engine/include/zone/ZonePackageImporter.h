@@ -1,10 +1,12 @@
 #pragma once
 
+#include <ecs/EntityId.h>
 #include <ecs/StoragePartitionId.h>
 #include <zone/ZoneId.h>
 #include <zone/ZoneParticipation.h>
 
 #include <string>
+#include <vector>
 
 class ComponentSerializerRegistry;
 class EntityBuildPackage;
@@ -39,6 +41,9 @@ struct ZoneImportError
     ZoneId stateScope,
     ZoneImportError* error = nullptr);
 
+// `created` receives the entities this call made, in package order, and only
+// when the import succeeds -- a caller spawning one group needs to know which
+// entity is its root and which are the rest it will have to take with it.
 [[nodiscard]] bool ImportPackageIntoPartition(
     World& world,
     const WorldComponentSchema& schema,
@@ -47,7 +52,8 @@ struct ZoneImportError
     ZoneId stateScope,
     const ComponentSerializerRegistry& serializers,
     SceneSerializationContext& sceneContext,
-    ZoneImportError* error = nullptr);
+    ZoneImportError* error = nullptr,
+    std::vector<EntityId>* created = nullptr);
 
 // Imports into a hidden RuntimeWorld partition but does not publish it. Used by
 // AsyncZoneLoader so owner-thread cache/backend/entity finalization can still

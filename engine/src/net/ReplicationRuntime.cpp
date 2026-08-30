@@ -169,7 +169,7 @@ SnapshotApplyResult ReplicationRuntime::Apply(std::span<const std::byte> payload
                                               World& world,
                                               const WorldComponentSchema& schema,
                                               const ReplicationLayout& layout,
-                                              const NetSpawnRecipes* recipes,
+                                              INetPrefabSpawner* prefabs,
                                               ClientPrediction* prediction,
                                               ReplicationInterpolation* interpolation)
 {
@@ -187,7 +187,7 @@ SnapshotApplyResult ReplicationRuntime::Apply(std::span<const std::byte> payload
     request.Schema = &schema;
     request.Layout = &layout;
     request.Identity = &ClientMap;
-    request.Recipes = recipes;
+    request.Prefabs = prefabs;
     request.Prediction = prediction;
     request.Interpolation = interpolation;
 

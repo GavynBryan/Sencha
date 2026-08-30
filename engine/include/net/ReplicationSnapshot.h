@@ -2,7 +2,7 @@
 
 #include <core/identity/StrongId.h>
 #include <ecs/EntityId.h>
-#include <net/NetSpawnRecipe.h>
+#include <net/NetSpawnPrefab.h>
 #include <net/ClientPrediction.h>
 #include <net/NetSnapshotAck.h>
 #include <net/NetZoneScope.h>
@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -453,11 +454,11 @@ struct SnapshotApplyRequest
     // rather than written, because the tick it describes is not the tick this
     // machine is about to draw.
     ReplicationInterpolation* Interpolation = nullptr;
-    // What a newly spawned entity becomes beyond its replicated state. Null
-    // means an entity is only what the wire said, which leaves it with no
-    // derived columns and nothing to draw it -- valid for a test, wrong for a
-    // game.
-    const NetSpawnRecipes* Recipes = nullptr;
+    // How a spawn that names a prefab is built, and how the group it made is
+    // taken back. Null means an entity is only what the wire said, which leaves
+    // it with no body -- valid for a test, wrong for a game, and any spawn that
+    // does name a prefab is deferred rather than built bare.
+    INetPrefabSpawner* Prefabs = nullptr;
     // Where newly spawned entities are created. Partition zero is the
     // persistent one and is where a session's pawns live.
     std::uint16_t Partition = 0;
@@ -473,15 +474,21 @@ struct SnapshotApplyResult
     // What the authority has finished simulating of this client's own input.
     std::uint64_t CommandAck = 0;
     std::uint32_t EntitiesSpawned = 0;
-    // Spawns that named a recipe this build does not have. Not an error -- an
-    // authority may run content a client did not register -- but the entity is
-    // bare, so it is counted rather than silently dropped.
-    std::uint32_t RecipesMissing = 0;
-    // Which recipe the first of those named. Carried because the count alone
-    // cannot be acted on: this failure looks like an entity that is in the
-    // right place with the right state and nothing drawing it, and the one
-    // thing that shortens the search is the number the authority asked for.
-    NetSpawnRecipeId FirstMissingRecipe = kNetNoSpawnRecipe;
+    // Spawns whose prefab this machine could not build yet, or at all. Read and
+    // dropped rather than built bare, and the snapshot is incomplete because of
+    // them, so the authority offers the entity again. A count that climbs
+    // without the entity ever arriving is content the two ends disagree about;
+    // the spawner names it in the log, once.
+    std::uint32_t PrefabsDeferred = 0;
+    // Replicated components a spawn carried that its prefab did not. The wire
+    // wins and the component is added, because an authority's state is not
+    // optional -- but the two ends disagree about what this entity is, and a
+    // body quietly missing a piece of itself is exactly the failure prefabs
+    // exist to remove. Counted and named rather than absorbed.
+    std::uint32_t PrefabComponentsAdded = 0;
+    // Which component the first of those was. The count alone cannot be acted
+    // on; the name is what points at the prefab that needs the component.
+    std::string_view FirstUnexpectedComponent;
     std::uint32_t EntitiesUpdated = 0;
     std::uint32_t EntitiesDestroyed = 0;
     // Authored entities recognised through the world's persistent index rather
@@ -513,7 +520,10 @@ struct SnapshotApplyResult
     // authority this client holds an entity it decided not to build. The
     // floor would rise, the authored identity would stop being sent, and the
     // client would never get another chance to recognise its own copy.
-    [[nodiscard]] bool Complete() const { return Ok() && AuthoredDeferred == 0; }
+    [[nodiscard]] bool Complete() const
+    {
+        return Ok() && AuthoredDeferred == 0 && PrefabsDeferred == 0;
+    }
 };
 
 // Decodes a snapshot onto the target world. Structural work -- creating an

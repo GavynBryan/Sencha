@@ -15,6 +15,7 @@
 #include <jobs/JobSystem.h>
 #include <prediction/PawnStateReplay.h>
 #include <runtime/FrameDriver.h>
+#include <runtime/spawn/NetPrefabSpawner.h>
 #include <runtime/spawn/SceneSpawnService.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
@@ -285,14 +286,12 @@ void Engine::Shutdown()
     if (NetState != nullptr)
         NetState->Disconnect("quit");
     NetState.reset();
-    // Recipes are callables a game module registered. A game clears its own in
-    // OnShutdown; this is the backstop, because the Engine's own destruction
-    // can run after the module is unmapped and destroying the callable then
-    // reaches into memory that is gone.
-    SpawnRecipeState.Clear();
     FrameDriverInstance.reset();
     TaskQueueInstance.reset();
     FramePoolInstance.reset();
+    // Before the world they borrow, and before the asset system whose scenes
+    // the prefab spawner holds resident.
+    NetPrefabState.reset();
     SpawnServiceState.reset();
     RuntimeWorldState.reset();
 #ifdef SENCHA_ENABLE_DEBUG_UI
@@ -390,6 +389,12 @@ const RuntimeWorld& Engine::World() const
     assert(RuntimeWorldState
            && "Engine::World: valid after runtime schema sealing and before Shutdown");
     return *RuntimeWorldState;
+}
+
+NetPrefabSpawner& Engine::NetPrefabs()
+{
+    assert(NetPrefabState && "Engine::NetPrefabs before Engine::Run");
+    return *NetPrefabState;
 }
 
 SceneSpawnService& Engine::Spawns()
@@ -680,6 +685,9 @@ int Engine::Run(Game& game)
     SpawnServiceState = std::make_unique<SceneSpawnService>(
         *RuntimeWorldState, RuntimeComponentSchemaState, SceneSerializerRegistry,
         Tasks(), LoggingState);
+    NetPrefabState = std::make_unique<NetPrefabSpawner>(
+        *RuntimeWorldState, RuntimeComponentSchemaState, SceneSerializerRegistry,
+        LoggingState);
 
     ConsoleService& console = Console();
     console.AdvancePhase(ConsolePhase::EngineReady);

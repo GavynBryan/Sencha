@@ -145,6 +145,7 @@ bool WriteCookedScene(
     const std::function<std::filesystem::path(std::string_view)>& physicalPathFor,
     const std::filesystem::path& idMapPath,
     const std::filesystem::path& cookedScenePath,
+    std::string_view sceneAssetPath,
     std::string* error)
 {
     // Scene refs first (encounter order), then the caller's extra refs, then one
@@ -217,6 +218,14 @@ bool WriteCookedScene(
             continue;
         contents.Dependencies.push_back(SmapDependency{ id, path });
     }
+
+    // The scene's own id. Every other cooked artifact earns one by being some
+    // scene's dependency; a scene is nobody's, so without this it is the one
+    // kind of content nothing can name -- which is exactly what a replicated
+    // spawn has to do to say what it built. Minted from the virtual path like
+    // any other, so two machines cooking the same content agree.
+    if (!sceneAssetPath.empty())
+        (void)idMap.EnsureId(sceneAssetPath, /*contentHash*/ 0, pathIsLive);
 
     // Written when dirty, and also when the staged file does not exist yet:
     // the transaction registered it at Seed, and a registered-but-unwritten

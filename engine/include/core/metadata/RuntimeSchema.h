@@ -29,6 +29,9 @@
 // only describes the data. (docs/plans/sencha-level-editor/02-...md §5.3.)
 //=============================================================================
 
+// Appended to, never reordered: the value is hashed into a component's schema
+// fingerprint, so renumbering these tells every cooked scene in existence that
+// the build that reads it is not the build that wrote it.
 enum class FieldScalar : std::uint8_t
 {
     Bool,
@@ -38,6 +41,7 @@ enum class FieldScalar : std::uint8_t
     Double,
     Color3,      // three contiguous floats edited as one RGB swatch (field tagged AsColor)
     Unsupported, // a leaf the descriptor cannot safely express (handle, string, …)
+    UInt64,      // full-width unsigned: an identity, where every bit is the identity
 };
 
 struct RuntimeField
@@ -121,6 +125,8 @@ namespace RuntimeSchemaDetail
             return FieldScalar::Int32;
         else if constexpr (std::is_integral_v<T> && std::is_unsigned_v<T> && sizeof(T) <= 4)
             return FieldScalar::UInt32;
+        else if constexpr (std::is_integral_v<T> && std::is_unsigned_v<T> && sizeof(T) == 8)
+            return FieldScalar::UInt64;
         else
             return FieldScalar::Unsupported;
     }

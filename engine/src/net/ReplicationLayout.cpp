@@ -35,6 +35,7 @@ namespace
         case FieldScalar::Bool:
         case FieldScalar::Int32:
         case FieldScalar::UInt32:
+        case FieldScalar::UInt64:
         case FieldScalar::Float:
         case FieldScalar::Double:
         case FieldScalar::Color3:
@@ -57,6 +58,9 @@ namespace
         case FieldScalar::Bool:   return size == sizeof(bool);
         case FieldScalar::Int32:
         case FieldScalar::UInt32: return size == 1 || size == 2 || size == 4;
+        // Full width only: what needs eight bytes is an identity, and half of
+        // one is not a smaller identity.
+        case FieldScalar::UInt64: return size == sizeof(std::uint64_t);
         case FieldScalar::Float:  return size == sizeof(float);
         case FieldScalar::Double: return size == sizeof(double);
         case FieldScalar::Color3:

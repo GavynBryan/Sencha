@@ -36,7 +36,9 @@ namespace
     // shape the layout has to refuse rather than silently truncate.
     struct Unsupported
     {
-        std::uint64_t Wide = 0;
+        // Signed and eight bytes wide: the codec carries unsigned identities at
+        // that width and nothing else, so this leaf has no encoder.
+        std::int64_t Wide = 0;
     };
 
     struct Nested

@@ -177,7 +177,59 @@ locomotion projects the wish direction onto the ground plane by design. That is
 a movement change, not an ECS one, and it belongs in the commit that removes
 what it replaces.
 
-### P3 — Recipe to prefab on the wire
+### P3 — Recipe to prefab on the wire (landed)
+
+`NetSpawnPrefab{ AssetId Scene }` replaces `NetSpawnRecipe{ u16 }`, and the
+overrides are the snapshot itself. `NetSpawnRecipes` — the registry where each
+game re-described its own entities in code, on both ends — is deleted, along
+with `BuildPawnBody`, `BuildTurretBody`, and the client-side reassembly in
+`FollowLocalControl`.
+
+**The gate, and what it actually found.** `AssetId` is minted from the asset's
+virtual path, so it does not depend on the order content was seen in; a test
+pins that. What the gate did not initially ask was whether scenes *have* ids —
+and they did not. The cook minted ids for what a scene references and never for
+the scene itself, because a scene is nobody's dependency. So the cook now mints
+one for the artifact it publishes. Without that, every prefab on the wire would
+have been the invalid id, and every client body would have deferred forever
+while the tests still passed.
+
+**How the applier changed.** The prefab is read out of the snapshot's own bytes
+while planning, and `Prepare` decides then whether it can be built. Not ready
+means deferred — read, dropped, unacknowledged, described again — exactly as an
+unresolved authored key already was. Never built bare.
+
+Two things the write had to learn, both because a prefab arrives already
+holding much of what the snapshot is about to say:
+
+- Whether a component is present is decided at the write for a spawn, not at
+  the plan. The plan could not know: the entity did not exist yet.
+- The write merges rather than overwrites. The staged image was seeded from
+  type defaults, so stamping it whole would erase everything the prefab set
+  that the wire does not carry — an aim limit, a tuning handle, anything
+  local-only. The decoder now reports which fields it carried, and only those
+  are written.
+
+A replicated component the snapshot carries that the prefab lacks is imported
+anyway — the wire is authoritative — and counted and named, because the two
+ends disagreeing about what an entity is must not be absorbed silently.
+
+`FieldScalar::UInt64` is appended rather than inserted: the value is hashed
+into every component's schema fingerprint. Even so, StrongId leaves moved from
+`Unsupported` to `UInt64`, so every cooked scene in an existing working tree
+needs one recook — reported loudly by the fingerprint gate, which is what it is
+for.
+
+The observer pawn replaces the procedural one: a capsule that collides and
+flies, built from engine behaviour only, steered from the full aim basis with
+its vertical channel forced through `MotionAxisOverride` — which is also what
+keeps gravity off it. Loud when it engages.
+
+**Recorded gap.** The cooked-cache key does not include the component schema, so
+a schema change leaves stale artifacts until something recooks. The failure is
+loud and names the component, so this is a convenience gap rather than a
+correctness one; the fix is to fold the schema identity of the components a
+document contains into its cook fingerprint.
 
 ### P4 — Camera in the prefab; residual deletions
 

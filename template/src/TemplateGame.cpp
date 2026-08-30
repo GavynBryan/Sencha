@@ -1,5 +1,7 @@
 #include "TemplateGame.h"
 
+#include "ObserverFlight.h"
+
 #include "PlayerStartComponent.h"
 #include "SpinComponent.h"
 #include "TurretMount.h"
@@ -37,6 +39,7 @@
 #include <movement/MovementDefs.h>
 #include <movement/JumpState.h>
 #include <movement/MovementComponents.h>
+#include <movement/MotionComposition.h>
 #include <movement/MovementIntent.h>
 #include <movement/MovementProfileBindingCache.h>
 #include <input/InputActionResolveSystem.h>
@@ -47,7 +50,9 @@
 #include <movement/MovementRegistration.h>
 #include <net/NetReplicationComponents.h>
 #include <net/NetParticipantIdentity.h>
-#include <net/NetSpawnRecipe.h>
+#include <net/NetSpawnPrefab.h>
+#include <runtime/spawn/NetPrefabSpawner.h>
+#include <world/scene/SceneInstance.h>
 #include <net/NetOwnership.h>
 #include <net/NetSession.h>
 #include <net/PawnCommandCapture.h>
@@ -110,15 +115,6 @@ constexpr std::string_view kInputProfilePath =
     "asset://data/input_default.sdata";
 constexpr std::string_view kGameSettingsPath = "asset://data/game.sdata";
 constexpr ZoneId kPlayZone{ 1 };
-
-// What this game's replicated entities are. Ids match on both ends because
-// both ends are the same build running the same content; they are the game's
-// vocabulary, not the engine's.
-enum : NetSpawnRecipeId
-{
-    kPlayerPawnRecipe = 1,
-    kTurretRecipe = 2,
-};
 
 
 // A cooked-manifest scene ref ("<.cooked-relative or root-relative path>")
@@ -203,6 +199,29 @@ EntityId CreateTransformEntity(
     return entity;
 }
 
+// Names the prefab a replicated body came from, so a peer instantiates the
+// same one instead of being handed loose components to reassemble. Read off the
+// group identity the spawn already stamped: the prefab's own asset id.
+//
+// A body built in code has none, and cannot get one -- there is no asset to
+// name. It still replicates its state; it simply arrives on a peer with no
+// body, which is the honest consequence of a game whose content did not load.
+void StampNetPrefab(World& world, EntityId root, Logger& log)
+{
+    const SceneInstance* group = world.TryGet<SceneInstance>(root);
+    if (group == nullptr || !group->Source.IsValid())
+    {
+        log.Warn("TemplateGame: a replicated body has no prefab identity; peers "
+                 "will see its state and no body");
+        return;
+    }
+    if (!world.HasComponent<NetSpawnPrefab>(root))
+    {
+        world.AddComponent<NetSpawnPrefab>(root,
+                                           NetSpawnPrefab{ .Scene = group->Source });
+    }
+}
+
 // The body other viewers see. A first-person camera targeting this pawn
 // excludes it, so the local player does not sit inside their own mesh; a
 // third-person camera draws it. Without a resolved avatar the pawn simply has
@@ -223,115 +242,53 @@ void AttachAvatarMesh(World& world,
         StaticMeshComponent{ .Mesh = avatar.Mesh, .Materials = avatar.Materials });
 }
 
-// Everything that makes a body move and be seen, added to an entity that
-// already exists. Split from SpawnPawn because a client predicting its own pawn
-// needs this on an entity replication created, and a pawn that simulates on two
-// machines has to be the same pawn on both -- one archetype, one place.
+// The body a game gets when the pawn it wanted could not be built: a capsule
+// that collides and flies.
 //
-// Nothing here is about who is watching: the camera and the local input marks
-// live in AttachLocalPlayer.
-void BuildPawnBody(
-    World& world,
-    EntityId pawn,
-    MovementProfileHandle movementProfile,
-    const ResolvedPlayerAvatar& avatar)
+// Nothing here is content. It exists precisely when content did not load, so
+// anything it depended on would be the thing that already failed -- no profile,
+// no prefab, no mesh. What it is made of is the movement layer everything else
+// uses, steered from the full aim basis rather than the ground plane.
+//
+// Loud where it is used, not here: a player flying a diagnostic body while the
+// game believes it is running is exactly the situation that must not go
+// unremarked.
+EntityId SpawnObserverPawn(World& world, const Vec3d& at)
 {
-    // Idempotent throughout. On the authority this runs on a bare entity; on a
-    // client it runs on one replication has already given a transform, an
-    // orientation, and a body, and adding a component twice is a structural
-    // error rather than an overwrite.
-    const auto ensure = [&world, pawn]<typename T>(const T& value)
-    {
-        if (!world.HasComponent<T>(pawn))
-            world.AddComponent<T>(pawn, value);
-    };
+    const EntityId pawn = CreateTransformEntity(world, at);
+    world.AddComponent<CharacterController>(pawn, CharacterController{});
+    world.AddComponent<ObserverFlight>(pawn);
 
-    ensure(CharacterController{});
-
-    // With an invalid profile handle the pawn resolves tuning from defaults
-    // plus the MoveSpeed attribute, so a missing asset degrades to movement
-    // that still works.
-    ensure(MovementTuningSource{ .Profile = movementProfile });
-
-    // Every per-tick column a mover needs comes with this -- the request, the
-    // resolved coefficients, the contribution channels, the composed output,
-    // and the pose history it renders interpolated from. CharacterMovement owes
-    // them; see its ComponentTraits.
-    CharacterMovement pawnMovement;
+    // Brings every per-tick column the movement step reads, so the observer is
+    // steered by the same systems a pawn is.
+    CharacterMovement movement;
     if (const LocomotionModeRegistry* modes =
             world.TryGetResource<LocomotionModeRegistry>())
     {
-        pawnMovement.Mode = modes->FreeMode();
+        movement.Mode = modes->FreeMode();
     }
-    ensure(pawnMovement);
+    world.AddComponent<CharacterMovement>(pawn, movement);
 
-    AttachAvatarMesh(world, pawn, avatar);
+    // It aims, and it turns to its aim: an observer that could not see where it
+    // was going would be no use as a way to look at a level.
+    world.AddComponent<LookOrientation>(pawn, LookOrientation{});
+    world.AddComponent<AimFacing>(pawn);
 
-    const MovementDefs* movementDefs =
-        world.TryGetResource<MovementDefs>();
+    // What the steering pass selects on, and the speed it flies at. Without a
+    // profile the tuning resolves to engine defaults plus this attribute, which
+    // is the whole answer for a body with no authored feel.
+    GameplayTagContainer tags{};
+    if (const MovementTags* movementTags = world.TryGetResource<MovementTags>())
+        tags.Grant(movementTags->Controlled);
+    world.AddComponent<GameplayTagContainer>(pawn, tags);
 
-    GameplayTagContainer pawnTags{};
-    if (const MovementTags* movementTags =
-            world.TryGetResource<MovementTags>())
-    {
-        pawnTags.Grant(movementTags->Controlled);
-    }
-    ensure(pawnTags);
+    AttributeSet attributes{};
+    if (const MovementDefs* defs = world.TryGetResource<MovementDefs>())
+        attributes.Add(defs->MoveSpeed, 8.0f);
+    world.AddComponent<AttributeSet>(pawn, attributes);
 
-    // The profile's base layer owns the authored top speed; this attribute is
-    // the effect-modifiable base and the whole answer when no profile loads,
-    // so keep it at a modest speed rather than a tuned one.
-    AttributeSet pawnAttributes{};
-    if (movementDefs != nullptr)
-        pawnAttributes.Add(movementDefs->MoveSpeed, 4.5f);
-    ensure(pawnAttributes);
-
-    // What a pawn's authority-validated actions would be granted through. Jump
-    // is not one: it steers the body, so it lives in the movement step where a
-    // predicted tick can replay it, and its state comes with the movement.
-    ensure(AbilitySet{});
-
-    // The pawn aims; a camera presents it. Every pawn has an orientation --
-    // a remote player is aiming somewhere too, and that is what makes their
-    // body face the right way.
-    ensure(LookOrientation{});
-    // And the body turns to it, which is what "the right way" means to anybody
-    // watching them. This game is first person, so facing is aim; a
-    // third-person one would leave this off and face along movement instead.
-    ensure(AimFacing{});
-}
-
-// A turret's body, on whichever machine has one. Far less than a pawn's,
-// because a turret is not simulated: it has a pose, it aims, and it is drawn.
-// Idempotent for the same reason BuildPawnBody is -- on a client this runs on
-// an entity replication has already given a transform and a mount.
-void BuildTurretBody(World& world, EntityId turret,
-                     const ResolvedPlayerAvatar& avatar)
-{
-    const auto ensure = [&world, turret]<typename T>(const T& value)
-    {
-        if (!world.HasComponent<T>(turret))
-            world.AddComponent<T>(turret, value);
-    };
-
-    // What its driver's aim lands in, and what TurretAimSystem reads.
-    ensure(LookOrientation{});
-    // A gun that did not turn where its driver looked would be a gun nobody
-    // could tell was being driven. Placement sets the pose it starts at; from
-    // the first tick this owns its rotation.
-    ensure(AimFacing{});
-    ensure(WorldTransformHistory{});
-    // Standing in for a model the template does not ship. A turret that cannot
-    // be seen would still work and would prove nothing to anybody running it.
-    // Its pose is what tells it apart from a player wearing the same stand-in;
-    // that is placement's to set, and it replicates, so this does not touch it.
-    if (avatar.IsValid())
-    {
-        ensure(StaticMeshComponent{
-            .Mesh = avatar.Mesh,
-            .Materials = avatar.Materials,
-        });
-    }
+    world.AddComponent<AbilitySet>(pawn, AbilitySet{});
+    return pawn;
 }
 
 // Wide and low, so the one mesh this template ships reads as a mount rather
@@ -344,35 +301,24 @@ inline constexpr Vec3d kTurretProportions{ 1.2f, 0.4f, 1.2f };
 // having to carry a turret; a real game would author them and this would go.
 //
 // Authority-only by construction: this is reached from answering a request,
-// and a client answers none. A client's turrets arrive replicated, and the
-// recipe gives them the rest of a body there.
+// and a client answers none.
+//
+// The built-in stand-in for the turret prefab, so it carries by hand the two
+// components the prefab authors: where its driver's aim lands, and the opt-in
+// that turns the gun to it. Replicated with no prefab to name, so a peer
+// receives its state and builds no body for it.
 EntityId PlaceTurret(
     World& world,
     const Vec3d& at,
-    StoragePartitionId partition,
-    const ResolvedPlayerAvatar& avatar)
+    StoragePartitionId partition)
 {
     const EntityId turret =
         CreateTransformEntity(world, at, partition, kTurretProportions);
     world.AddComponent<TurretMount>(turret, TurretMount{});
-    // What arrives on a peer's machine as state; the recipe gives it the rest
-    // of a body there, the same way a pawn gets one.
     world.AddComponent<NetReplicated>(turret);
-    world.AddComponent<NetSpawnRecipe>(
-        turret, NetSpawnRecipe{ .Id = kTurretRecipe });
-    BuildTurretBody(world, turret, avatar);
+    world.AddComponent<LookOrientation>(turret, LookOrientation{});
+    world.AddComponent<AimFacing>(turret);
     return turret;
-}
-
-EntityId SpawnPawn(
-    World& world,
-    const Vec3d& spawnPosition,
-    MovementProfileHandle movementProfile,
-    const ResolvedPlayerAvatar& avatar)
-{
-    const EntityId pawn = CreateTransformEntity(world, spawnPosition);
-    BuildPawnBody(world, pawn, movementProfile, avatar);
-    return pawn;
 }
 
 //=============================================================================
@@ -740,18 +686,43 @@ struct CharacterInputSystem
                 // for free.
                 const bool jump = input.Fired(actionIds->Jump);
 
-                const Quatf frame = Quatf::FromAxisAngle(
-                    Vec3d::Up(), orientations[index].Yaw);
+                // A walking body steers on the ground plane whatever it is
+                // looking at; a flying one goes where it is looking, which is
+                // the difference between the two and the whole of it.
+                const bool flying = world.HasComponent<ObserverFlight>(steered);
+                const Quatf frame = flying
+                    ? Quatf::FromAxisAngle(Vec3d::Up(), orientations[index].Yaw)
+                          * Quatf::FromAxisAngle(Vec3d::Right(),
+                                                 orientations[index].Pitch)
+                    : Quatf::FromAxisAngle(Vec3d::Up(), orientations[index].Yaw);
                 Vec3d wish =
                     frame.RotateVector(Vec3d::Forward()) * forward
                     + frame.RotateVector(Vec3d::Right()) * strafe;
-                wish.Y = 0.0f;
+                if (!flying)
+                    wish.Y = 0.0f;
                 const float squared = wish.SqrMagnitude();
                 if (squared > 1.0f)
                     wish = wish * (1.0f / std::sqrt(squared));
 
                 intents[index].WishDir = wish;
                 intents[index].Jump = jump;
+
+                // Free locomotion projects the wish onto the ground plane, so
+                // the vertical part of a flying body's intent has to arrive
+                // through the channel that replaces that axis outright --
+                // which is also what keeps gravity from being applied to it.
+                if (flying)
+                {
+                    // The same speed the planar channel resolves to, so the
+                    // body does not climb faster than it flies forward.
+                    const ResolvedMovementTuning* tuning =
+                        std::as_const(world).TryGet<ResolvedMovementTuning>(steered);
+                    const float speed =
+                        tuning != nullptr ? tuning->MaxSpeed
+                                          : ResolvedMovementTuning{}.MaxSpeed;
+                    (void)ForceSetUpMotionOverride(world, steered,
+                                                   wish.Y * speed);
+                }
             }
         });
     }
@@ -995,7 +966,7 @@ struct TurretPlacementOutcome
 
 TurretPlacementOutcome PlaceTurretForRequest(
     Engine& engine, World& world, const CompiledGameSettings* settings,
-    const ResolvedPlayerAvatar& avatar, Logger& log)
+    Logger& log)
 {
     const PlayContentPartition* content =
         world.TryGetResource<PlayContentPartition>();
@@ -1016,7 +987,7 @@ TurretPlacementOutcome PlaceTurretForRequest(
 
     const EntityId turret =
         PlaceTurret(world, TurretPlacementNear(world),
-                    content->Value.value_or(PersistentStoragePartition), avatar);
+                    content->Value.value_or(PersistentStoragePartition));
     log.Info("TemplateGame: placed a turret");
     return { turret, false };
 }
@@ -1094,12 +1065,11 @@ ConsoleResult AskAuthorityForTurret(Engine& engine, NetSession& session)
 // the machine that decides what exists, and a client's turrets arrive
 // replicated.
 ConsoleResult PlaceTurretHere(
-    Engine& engine, const CompiledGameSettings* settings,
-    const ResolvedPlayerAvatar& avatar, Logger& log)
+    Engine& engine, const CompiledGameSettings* settings, Logger& log)
 {
     ConsoleResult result;
     const TurretPlacementOutcome placed = PlaceTurretForRequest(
-        engine, engine.World().Entities(), settings, avatar, log);
+        engine, engine.World().Entities(), settings, log);
     if (!placed.Turret.IsValid() && !placed.Requested)
     {
         result.Status = ConsoleStatus::InvalidArguments;
@@ -1118,8 +1088,7 @@ ConsoleResult PlaceTurretHere(
 // with a console reaches the possession path in one command. A host wanting a
 // gun it does not climb into asks for that instead.
 ConsoleResult TakeTurretHere(
-    Engine& engine, const CompiledGameSettings* settings,
-    const ResolvedPlayerAvatar& avatar, Logger& log)
+    Engine& engine, const CompiledGameSettings* settings, Logger& log)
 {
     ConsoleResult result;
     World& world = engine.World().Entities();
@@ -1166,7 +1135,7 @@ ConsoleResult TakeTurretHere(
                 return result;
             }
             const TurretPlacementOutcome placed = PlaceTurretForRequest(
-                engine, world, settings, avatar, log);
+                engine, world, settings, log);
             if (placed.Requested)
             {
                 PendingSpawnsOf(world).Turrets.back().Possessor = participant;
@@ -1263,11 +1232,36 @@ struct SessionPlayerSystem
         // them replicated is the engine's decision, taken where the session
         // role is actually known; what is left is presenting whichever body
         // this machine ended up driving.
+        DressArrivedBodies(ctx.Entities);
         FollowLocalControl(ctx.Entities);
     }
 
 private:
     Logger& Log() { return Owner->Logging().GetLogger<TemplateGame>(); }
+
+    // Temporary, and the last of its kind: a body that arrived without a mesh
+    // gets the avatar's.
+    //
+    // A pawn a peer receives is instantiated from the prefab the authority
+    // named, so everything about it is authored -- except the mesh, which a
+    // prefab cannot yet carry because a headless cook has no cache that can
+    // hold one. This is what stands in until it can (see
+    // docs/plans/pawn-prefab-roadmap.md, P4), and it goes when the avatar data
+    // asset does.
+    void DressArrivedBodies(World& world)
+    {
+        if (!Avatar.IsValid())
+            return;
+
+        std::vector<EntityId> undressed;
+        Query<Read<CharacterMovement>, Without<StaticMeshComponent>> bodies(world);
+        bodies.ForEachChunk([&](auto& view) {
+            for (std::uint32_t i = 0; i < view.Count(); ++i)
+                undressed.push_back(view.Entity(i));
+        });
+        for (const EntityId body : undressed)
+            AttachAvatarMesh(world, body, Avatar);
+    }
 
     // What this machine has to do about driving a pawn, once the engine has
     // decided which one that is.
@@ -1286,23 +1280,10 @@ private:
         if (!subject.IsValid())
             return;
 
-        // A pawn that arrived replicated carries only what the wire had to say
-        // about it, and this machine is about to simulate it rather than mirror
-        // it: a player holding a key cannot wait for the round trip. Built from
-        // the same function the authority used, because two machines simulating
-        // one pawn from the same input have to be simulating the same pawn.
-        //
-        // Not a turret, though: giving one a character's body would put a mover
-        // and a locomotion mode on something bolted to the floor.
-        //
-        // Temporary. This exists because a client receives a pawn as loose
-        // components and has to reassemble it; once the spawn carries the
-        // prefab's identity the client instantiates the same archetype the
-        // authority did and there is nothing left to reassemble. Deleted with
-        // BuildPawnBody itself -- see docs/plans/pawn-prefab-roadmap.md, P3.
-        if (!world.HasComponent<TurretMount>(subject))
-            BuildPawnBody(world, subject, Profile, Avatar);
-
+        // Nothing to build. A pawn that arrived replicated was instantiated
+        // from the prefab the authority named, so it is already the same
+        // archetype the authority is simulating -- which is what makes
+        // predicting it from the same input produce the same pawn.
         AttachLocalPlayer(world, subject, Log());
         if (Owner->Prediction().Predicts(subject))
             Log().Info("TemplateGame: predicting this player's own pawn");
@@ -1385,9 +1366,7 @@ struct SpawnSettlementSystem
                 continue;
             }
             world.AddComponent<NetReplicated>(root);
-            world.AddComponent<NetSpawnRecipe>(
-                root, NetSpawnRecipe{ .Id = kTurretRecipe });
-            BuildTurretBody(world, root, Avatar);
+            StampNetPrefab(world, root, log);
             log.Info("TemplateGame: placed a turret");
             if (possessor.IsValid() && world.IsAlive(possessor))
                 (void)ApplyTurretRequest(*Owner, world, possessor, root,
@@ -1464,62 +1443,6 @@ void TemplateGame::OnStart(GameStartupContext&)
     // editor through the OnRegisterDataAssetTypes hook.
     OnRegisterDataAssetTypes(runtimeAssets.DataTypes, runtimeAssets.DataSchemas);
 
-    // What a replicated player pawn becomes on whichever machine receives it.
-    // A snapshot brings the state; this brings everything a body needs to be
-    // seen, which is content both ends already have and neither has to be told
-    // about. The avatar is resolved once here rather than per spawn.
-    const bool pawnRecipeRegistered = engine.SpawnRecipes().Register(
-        kPlayerPawnRecipe,
-        [this](World& world, EntityId entity) {
-            Logger& log = GetEngine().Logging().GetLogger<TemplateGame>();
-            AttachAvatarMesh(world, entity, ResolvePlayerAvatar(log));
-
-            // Which profile a pawn resolves tuning from is content this machine
-            // already has, and a handle into its own asset cache is meaningless
-            // on any other -- so it never travels, and naming it is this side's
-            // job. A pawn left without one resolves engine tuning while the
-            // authority runs the authored kind, and the two simulations then
-            // disagree by design on every input.
-            //
-            // Added, never assigned into: the component owns a reference to its
-            // profile, and writing the handle in place would take one without
-            // the hook that balances it.
-            if (!world.HasComponent<MovementTuningSource>(entity))
-            {
-                world.AddComponent<MovementTuningSource>(
-                    entity,
-                    MovementTuningSource{ .Profile = ResolvePlayerMovementProfile(log) });
-            }
-
-            // Mode is the authority's word and arrives on the wire, so a pawn
-            // replication already built has this; a locally spawned one starts
-            // free. Either way, adding it is what brings the per-tick columns
-            // the movement step needs -- including the pose history a body
-            // stepped at the tick rate renders interpolated from.
-            if (!world.HasComponent<CharacterMovement>(entity))
-            {
-                CharacterMovement built;
-                if (const LocomotionModeRegistry* modes =
-                        world.TryGetResource<LocomotionModeRegistry>())
-                {
-                    built.Mode = modes->FreeMode();
-                }
-                world.AddComponent<CharacterMovement>(entity, built);
-            }
-
-            log.Info("TemplateGame: built a replicated player pawn");
-        });
-    if (!pawnRecipeRegistered)
-    {
-        // Nothing downstream can tell this apart from an authority running
-        // content this build does not have, so it is said here, where the id is
-        // known to be ours and the cause is a second claim on it.
-        GetEngine().Logging().GetLogger<TemplateGame>().Error(
-            "TemplateGame: spawn recipe {} was already registered; replicated "
-            "player pawns will arrive without a body",
-            static_cast<unsigned>(kPlayerPawnRecipe));
-    }
-
     // What a participant is in this game, and where its body comes from. The
     // engine runs the lifecycle -- admit, compose, ask for a body, bind it,
     // reap on departure -- and these answer the two questions only the game
@@ -1575,22 +1498,22 @@ void TemplateGame::OnStart(GameStartupContext&)
                          how);
         };
 
-        const auto proceduralPawn = [&]() -> EntityId
+        // What this game hands a player when the pawn it wanted could not be
+        // built. Said at Warn because a player flying a diagnostic body while
+        // the game believes it is running is exactly what must not pass
+        // unremarked.
+        const auto observerPawn = [&]() -> EntityId
         {
-            const EntityId pawn = SpawnPawn(world, spawnPosition(),
-                                            ResolvePlayerMovementProfile(log),
-                                            ResolvePlayerAvatar(log));
-            // What the body is on whichever machine receives it. Replication
-            // and ownership are the engine's to install; this is content.
-            world.AddComponent<NetSpawnRecipe>(
-                pawn, NetSpawnRecipe{ .Id = kPlayerPawnRecipe });
-            announce("built-in");
+            log.Warn("TemplateGame: no player pawn prefab; the player gets the "
+                     "built-in observer body, which flies and has no content");
+            const EntityId pawn = SpawnObserverPawn(world, spawnPosition());
+            announce("observer");
             return pawn;
         };
 
         const CompiledGameSettings* settings = ResolveGameSettings(log);
         if (settings == nullptr || settings->PlayerPawnScenePath.empty())
-            return proceduralPawn();
+            return observerPawn();
 
         // The prefab path is asynchronous: the first ask requests the spawn
         // and answers "not yet"; the settlement system asks again when the
@@ -1630,8 +1553,7 @@ void TemplateGame::OnStart(GameStartupContext&)
             // columns come with the movement component. Only the mesh is still
             // code's to supply.
             AttachAvatarMesh(world, root, ResolvePlayerAvatar(log));
-            world.AddComponent<NetSpawnRecipe>(
-                root, NetSpawnRecipe{ .Id = kPlayerPawnRecipe });
+            StampNetPrefab(world, root, log);
             pending.LiveBodies.emplace_back(participant, entry->Spawn);
             pending.Pawns.erase(entry);
             announce("pawn prefab");
@@ -1642,7 +1564,7 @@ void TemplateGame::OnStart(GameStartupContext&)
             log.Warn("TemplateGame: pawn prefab '{}' failed to spawn; using "
                      "the built-in pawn", settings->PlayerPawnScenePath);
             pending.Pawns.erase(entry);
-            return proceduralPawn();
+            return observerPawn();
         }
     };
 
@@ -1665,20 +1587,6 @@ void TemplateGame::OnStart(GameStartupContext&)
         pending->LiveBodies.erase(live);
         return true;
     };
-
-    // The same two lines for the turret: what arrives as replicated state, and
-    // what this machine has to add for it to be seen and aimed.
-    if (!engine.SpawnRecipes().Register(
-            kTurretRecipe,
-            [this](World& world, EntityId entity) {
-                Logger& log = GetEngine().Logging().GetLogger<TemplateGame>();
-                BuildTurretBody(world, entity, ResolvePlayerAvatar(log));
-            }))
-    {
-        GetEngine().Logging().GetLogger<TemplateGame>().Error(
-            "TemplateGame: spawn recipe {} was already registered; turrets will "
-            "arrive without a body", static_cast<unsigned>(kTurretRecipe));
-    }
 
     // Where a client's turret request is answered. One kind, one direction, one
     // handler -- and the direction is checked before the handler is reached, so
@@ -1811,6 +1719,10 @@ void TemplateGame::OnStart(GameStartupContext&)
     // The spawn service is engine-owned; the asset stack it resolves scenes
     // through is this game's.
     engine.Spawns().ConnectAssets(&runtimeAssets.Assets);
+    // The same content stack, for the spawns a peer names rather than this
+    // machine asking for: without it every replicated prefab is unbuildable
+    // and every body a client is sent is deferred forever.
+    engine.NetPrefabs().ConnectAssets(&runtimeAssets.Assets);
 
     engine.Console().Registry().RegisterCommand({
         .Name = "scene.spawn",
@@ -2395,14 +2307,12 @@ ConsoleResult TemplateGame::RequestTurret(bool placeOnly)
             result.Error("only the authority places turrets");
             return result;
         }
-        return PlaceTurretHere(engine, ResolveGameSettings(log),
-                               ResolvePlayerAvatar(log), log);
+        return PlaceTurretHere(engine, ResolveGameSettings(log), log);
     }
 
     if (client)
         return AskAuthorityForTurret(engine, *session);
-    return TakeTurretHere(engine, ResolveGameSettings(log),
-                          ResolvePlayerAvatar(log), log);
+    return TakeTurretHere(engine, ResolveGameSettings(log), log);
 }
 
 ConsoleResult TemplateGame::SetCameraMode(std::string_view modeName)
@@ -2646,7 +2556,6 @@ void TemplateGame::OnShutdown(GameShutdownContext&)
     // The spawn recipe is a callable whose target lives in this module, for the
     // same reason the subtype registration below is: it has to go while the
     // module is still mapped.
-    GetEngine().SpawnRecipes().Clear();
     // Every lease this game holds into its own data-asset cache, dropped here.
     // Declaration order alone is not enough: Assets is reset explicitly below,
     // so anything still holding a lease at that point outlives its owner and

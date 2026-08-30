@@ -104,7 +104,7 @@ int main(int argc, char** argv)
         [&outRoot](std::string_view assetPath) { return PhysicalPathFor(outRoot, assetPath); },
         outRoot / kAssetIdMapFileName,
         cookedScenePath,
-        &cookError);
+        /*sceneAssetPath*/ {}, &cookError);
     if (!cooked)
     {
         std::fprintf(stderr, "GenerateCubeDemoAssets: %s\n", cookError.c_str());

@@ -653,11 +653,25 @@ Identity assignment has two cases:
 - **Dynamic entities** (pawns, projectiles, spawned pickups): authority mints a
   `NetEntityId` at spawn; creation replicates as (net id, archetype description as a
   list of `ComponentTypeId`s, initial component payloads). Client applies creations
-  and destructions at the defined apply point (Section 6.5). When prefab assets land
-  (Track D item 1), the archetype description collapses to an `AssetId` plus
-  overrides; the protocol reserves that encoding now but ships the explicit list
-  first (no dead field: the list form is the v1 wire format, the prefab form is a
-  recorded successor).
+  and destructions at the defined apply point (Section 6.5).
+
+  *The prefab successor landed 2026-08-30.* The archetype description is a
+  `NetSpawnPrefab` component carrying the prefab's `AssetId`, and the overrides
+  are the snapshot itself: the receiver instantiates the prefab and the delta
+  writes its own fields onto the root, leaving everything the wire does not
+  carry as the prefab authored it. The interim `NetSpawnRecipes` registry, where
+  each game re-described its own entities in code on both ends, is deleted.
+
+  What the id rests on: `AssetId` is minted from the asset's virtual path, so it
+  does not depend on the order content was seen in, and the cook now mints one
+  for the cooked scene itself rather than only for what a scene references. Two
+  machines agree because both ship the id map the cook wrote -- the same
+  same-content assumption a cooked scene's bytes already rest on.
+
+  A prefab the receiver cannot build is deferred exactly as an unresolved
+  authored key is: the record is read, nothing is created, and the snapshot goes
+  unacknowledged so the authority describes the entity again. Never built bare
+  -- an entity with its state and no body is the failure this replaces.
 
 Client-local entities (particles, presentation-only spawns) simply never enter the
 map; nothing about them crosses the wire.

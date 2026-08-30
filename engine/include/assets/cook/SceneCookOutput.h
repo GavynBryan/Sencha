@@ -42,4 +42,8 @@ class JsonValue;
     const std::function<std::filesystem::path(std::string_view)>& physicalPathFor,
     const std::filesystem::path& idMapPath,
     const std::filesystem::path& cookedScenePath,
+    // The virtual path the cooked scene will be registered under, so it earns a
+    // stable id of its own. Empty leaves the scene unnamed, which is what a
+    // caller with no registry to publish into wants.
+    std::string_view sceneAssetPath,
     std::string* error = nullptr);
