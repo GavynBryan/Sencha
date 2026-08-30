@@ -856,6 +856,27 @@ public:
         return ComponentMetas.size();
     }
 
+    // Every component `entity` carries, in ascending id order; empty for a dead
+    // entity. Caller-owned storage so a caller comparing two snapshots is not
+    // allocating twice per comparison.
+    //
+    // The entity's whole shape, which nothing else could ask for: the typed
+    // accessors need a type and GetMeta needs an id you already have. An
+    // authoring surface showing what an entity is, and an undo taking back
+    // what an add brought, both start here.
+    void ComponentIdsOn(EntityId entity, std::vector<ComponentId>& out) const
+    {
+        out.clear();
+        if (!Entities.IsAlive(entity))
+            return;
+
+        const EntityLocation loc = Entities.GetLocation(entity);
+        const ArchetypeSignature& signature = ArchetypeList[loc.ArchetypeId]->Signature;
+        for (ComponentId id = 0; id < ComponentMetas.size(); ++id)
+            if (signature.test(id))
+                out.push_back(id);
+    }
+
     // What `id` declares it cannot work without, as stated -- not the
     // transitive closure, and not filtered to what this World registered. For a
     // consumer that wants to say which component another one came from; the
@@ -948,6 +969,12 @@ public:
             ScopedLifecycleHook hookScope(*this);
             onAdd(ch->ColumnData(col) + dri * size, *this, entity);
         }
+
+        // Outside the hook scope, not inside it: provisioning ends in the typed
+        // add, which refuses to run while a lifecycle hook is on the stack. The
+        // ordering is otherwise the one the typed add documents -- the component
+        // is whole before anything it owes arrives to look at it.
+        ProvideDerivedComponents(entity, id);
     }
 
     void RemoveComponentRaw(
@@ -1048,6 +1075,14 @@ public:
 
         for (const Move& move : moves)
             Entities.SetLocation(move.Entity, move.Destination);
+
+        // Last, and by entity rather than by the locations recorded above: the
+        // first provisioned add relocates a row and every Destination in this
+        // list goes stale with it. One id for the whole run, so the check for
+        // "owes nothing" is paid once rather than per entity.
+        if (!DeclaredOwedComponents(id).empty())
+            for (const Move& move : moves)
+                ProvideDerivedComponents(move.Entity, id);
     }
 
     void RemoveComponentsRawBatch(

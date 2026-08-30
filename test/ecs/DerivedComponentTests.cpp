@@ -8,6 +8,7 @@
 // last of those reaches the set by a different route -- by id, off the sealed
 // schema -- which is exactly how it could drift.
 
+#include <ecs/CommandBuffer.h>
 #include <ecs/World.h>
 #include <ecs/WorldComponentSchema.h>
 #include <world/RuntimeWorld.h>
@@ -320,4 +321,140 @@ TEST(DerivedComponents, AComponentAnswersWhatItDeclares)
     // An id this world never handed out answers nothing rather than reading
     // past its table.
     EXPECT_TRUE(world.DeclaredOwedComponents(static_cast<ComponentId>(200)).empty());
+}
+
+// The routes that address a component by id rather than by type.
+//
+// A command buffer is the only way to change an entity's shape while a query is
+// iterating, so it is the route a gameplay system has to use -- and it erases
+// the type at record time. The editor's add menu erases it too, because it is
+// driven by the serializer registry and never names T. Both end in one of the
+// World's two raw adds, and there are two of them because Flush coalesces a run
+// of identical adds; a fix that reached only one would leave a hole that opens
+// at two entities and not at one.
+TEST(DerivedComponents, TheCommandBufferPathAgrees)
+{
+    const WorldComponentSchema schema = MakeSchema();
+
+    World typed;
+    schema.Apply(typed);
+    const EntityId built = typed.CreateEntity();
+    typed.AddComponent<Owner>(built, Owner{ 7 });
+
+    World buffered;
+    schema.Apply(buffered);
+    const EntityId recorded = buffered.CreateEntity();
+    {
+        CommandBuffer commands(buffered);
+        commands.AddComponent<Owner>(recorded, Owner{ 7 });
+        commands.Flush();
+    }
+
+    EXPECT_EQ(ShapeOf(buffered, schema, recorded), ShapeOf(typed, schema, built));
+}
+
+// The batched half. Owner carries no OnAdd hook, so a run of identical adds is
+// coalesced into AddComponentsRawBatch and never touches AddComponentRaw at
+// all. Pinned, so that adding a hook to Owner later fails here rather than
+// quietly turning this into a second copy of the test above.
+TEST(DerivedComponents, TheCommandBufferBatchPathAgrees)
+{
+    static_assert(!ComponentHasOnAdd<Owner>,
+                  "this test only exercises the batch path while Owner is "
+                  "hook-free: Flush coalesces on a null OnAdd hook");
+
+    const WorldComponentSchema schema = MakeSchema();
+
+    World typed;
+    schema.Apply(typed);
+    const EntityId built = typed.CreateEntity();
+    typed.AddComponent<Owner>(built, Owner{ 3 });
+    const Shape expected = ShapeOf(typed, schema, built);
+
+    World buffered;
+    schema.Apply(buffered);
+    std::vector<EntityId> entities;
+    for (int i = 0; i < 3; ++i)
+        entities.push_back(buffered.CreateEntity());
+    {
+        CommandBuffer commands(buffered);
+        for (const EntityId entity : entities)
+            commands.AddComponent<Owner>(entity, Owner{ 3 });
+        commands.Flush();
+    }
+
+    for (const EntityId entity : entities)
+        EXPECT_EQ(ShapeOf(buffered, schema, entity), expected);
+}
+
+// The primitive itself, rather than one of its callers: the editor's add menu
+// reaches it directly with bytes and an id.
+TEST(DerivedComponents, TheRawAddProvidesTheDeclaredSet)
+{
+    const WorldComponentSchema schema = MakeSchema();
+
+    World typed;
+    schema.Apply(typed);
+    const EntityId built = typed.CreateEntity();
+    typed.AddComponent<Owner>(built, Owner{ 11 });
+
+    World raw;
+    schema.Apply(raw);
+    const EntityId erased = raw.CreateEntity();
+    const Owner value{ 11 };
+    raw.AddComponentRaw(erased, raw.GetComponentId<Owner>(), &value,
+                        sizeof(Owner), alignof(Owner), nullptr);
+
+    EXPECT_EQ(ShapeOf(raw, schema, erased), ShapeOf(typed, schema, built));
+}
+
+// Provisioning is add-if-missing on this route too, so an authored value the
+// caller put there first is not replaced by a default one.
+TEST(DerivedComponents, WhatIsAlreadyThereIsLeftAloneOnTheRawPath)
+{
+    World world;
+    MakeSchema().Apply(world);
+    const EntityId entity = world.CreateEntity();
+    world.AddComponent<FirstOwed>(entity, FirstOwed{ 42 });
+
+    const Owner value{ 1 };
+    world.AddComponentRaw(entity, world.GetComponentId<Owner>(), &value,
+                          sizeof(Owner), alignof(Owner), nullptr);
+
+    ASSERT_NE(world.TryGet<FirstOwed>(entity), nullptr);
+    EXPECT_EQ(world.TryGet<FirstOwed>(entity)->Value, 42);
+    EXPECT_TRUE(world.HasComponent<OwedTag>(entity));
+}
+
+// Every component the entity carries, which is what an authoring surface has to
+// ask to show an entity's whole shape and what an undo diffs across its own add.
+TEST(DerivedComponents, AnEntityReportsEveryColumnItCarries)
+{
+    World world;
+    MakeSchema().Apply(world);
+    const EntityId entity = world.CreateEntity();
+
+    std::vector<ComponentId> ids;
+    world.ComponentIdsOn(entity, ids);
+    EXPECT_TRUE(ids.empty());
+
+    world.AddComponent<Owner>(entity, Owner{ 1 });
+    world.ComponentIdsOn(entity, ids);
+
+    // Ascending id order, so a reader gets the same list twice running.
+    EXPECT_TRUE(std::is_sorted(ids.begin(), ids.end()));
+    const auto holds = [&](ComponentId id)
+    {
+        return std::find(ids.begin(), ids.end(), id) != ids.end();
+    };
+    EXPECT_TRUE(holds(world.GetComponentId<Owner>()));
+    EXPECT_TRUE(holds(world.GetComponentId<FirstOwed>()));
+    EXPECT_TRUE(holds(world.GetComponentId<SecondOwed>())); // through FirstOwed
+    EXPECT_TRUE(holds(world.GetComponentId<OwedTag>()));
+    EXPECT_FALSE(holds(world.GetComponentId<Unrelated>()));
+    EXPECT_EQ(ids.size(), 4u);
+
+    world.DestroyEntity(entity);
+    world.ComponentIdsOn(entity, ids);
+    EXPECT_TRUE(ids.empty());
 }

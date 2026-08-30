@@ -21,6 +21,8 @@
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/serialization/SceneSerializationContext.h>
 #include <world/serialization/SceneSerializer.h>
+#include <world/ComponentRegistrar.h>
+#include <world/WorldComponentRegistration.h>
 #include <world/transform/TransformComponents.h>
 
 #include <fstream>
@@ -141,14 +143,16 @@ EditorDocument::EditorDocument(LoggingProvider& logging)
 
     // Component registration must happen before any entity is created.
     World& world = Registry_.Components;
-    world.RegisterComponent<LocalTransform>();
-    // Authored hierarchy, and the derived column that pairs with it. Both are
-    // pure-runtime types the document never serializes directly -- parentage
-    // persists as part of the scene's hierarchy, and the world transform is
-    // recomputed from it -- but the document must register them or a parented
-    // entity has nowhere to put either.
-    world.RegisterComponent<WorldTransform>();
-    world.RegisterComponent<Parent>();
+    // Where a thing is, what it hangs off, and what it is called across a save,
+    // through the same registrar the runtime composes from. Several of these
+    // are pure-runtime columns the document never serializes -- parentage
+    // persists as part of the scene's hierarchy, the world transform is
+    // recomputed from it, the pose history is presentation -- but a document
+    // that knows a smaller vocabulary than the runtime builds a smaller entity
+    // from the same file, which is the discrepancy this avoids: a component's
+    // owed set is provisioned only for what the world actually registered.
+    ComponentRegistrar registrar(world);
+    RegisterWorldComponents(registrar);
     world.RegisterComponent<BrushComponent>();
     world.RegisterComponent<BakedBrushComponent>();
     world.RegisterComponent<CameraComponent>();

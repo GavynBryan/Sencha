@@ -176,10 +176,12 @@ TEST_F(ShippedPrefabTest, ThePawnCarriesWhatMakesItAPawn)
     EXPECT_NE(Get<MotionRequest>(pawn), nullptr);
     EXPECT_NE(Get<KinematicState>(pawn), nullptr);
     EXPECT_NE(Get<SupportState>(pawn), nullptr);
-    // The pose history is not among them here: a document is an authoring
-    // world and never registered a presentation column, so the closure skips
-    // what this world does not know. The runtime one does register it.
-    EXPECT_FALSE(Carries<WorldTransformHistory>(pawn));
+    // Including the pose history, which a document used to skip because it
+    // registered a smaller vocabulary than the runtime and the closure only
+    // provisions what the world knows. A document that builds a smaller entity
+    // than the game does from the same file is a document that cannot be
+    // trusted to show what it is authoring.
+    EXPECT_NE(Get<WorldTransformHistory>(pawn), nullptr);
 
     // And the camera it is watched from, which the prefab places and names.
     // Possession takes the seat rather than the first camera it finds, so a
