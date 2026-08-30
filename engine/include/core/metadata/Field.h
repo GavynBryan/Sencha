@@ -73,6 +73,11 @@ struct Field
     // shows a swatch + picker instead of three drag fields. View-only: the
     // serialized form is unchanged (still the member's own [x,y,z] schema).
     bool IsColor = false;
+    // Editor hint: a float member tagged here is an angle in radians that an
+    // authoring surface shows and edits in degrees. View-only in the same way
+    // AsColor is -- the stored bytes, the scene, and the wire stay radians, and
+    // the persisted key keeps whatever the member is called.
+    bool IsDegrees = false;
     // Replication scope and precision. All three describe the member itself, so
     // they are declared once beside it rather than in a second registry that
     // could drift; a replication writer is the consumer. Tagging a member that
@@ -132,6 +137,14 @@ struct Field
     Field& AsColor()
     {
         IsColor = true;
+        return *this;
+    }
+
+    // An angle stored in radians and authored in degrees. Nobody pictures 1.4;
+    // everybody pictures 80 degrees.
+    Field& Degrees()
+    {
+        IsDegrees = true;
         return *this;
     }
 

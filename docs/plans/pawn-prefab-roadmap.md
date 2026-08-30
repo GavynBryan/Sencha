@@ -146,6 +146,11 @@ skips.
   schema-driven data-asset field yet; the two components that name one persist
   through hand-written serializers, which expose no inspector fields at all.
   Trigger: a designer needing to pick a profile in the inspector.
+  **Executed** — the trigger fired. `MovementTuningSource` describes its
+  profile as an `AsDataAsset` field narrowed to `movement.profile`; the four
+  components that persist as registry-resolved names draw their own inspector
+  rows; and a game module declares its vocabulary into every authoring document
+  through `Game::OnRegisterVocabulary`.
 
 ### P2 — Derived components as an invariant of the mutation primitive (landed)
 

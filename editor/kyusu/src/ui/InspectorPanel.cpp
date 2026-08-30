@@ -25,11 +25,13 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <array>
 #include <cfloat>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <numbers>
 #include <span>
 #include <string>
 #include <utility>
@@ -211,6 +213,32 @@ namespace
         if (!field.Enum.empty())
         {
             edit = DrawEnumField(field, ptr, id);
+            if (field.ReadOnly)
+                ImGui::EndDisabled();
+            return edit;
+        }
+
+        // An angle a designer thinks about in degrees, stored in radians. The
+        // conversion is the widget's alone: nothing but this row ever sees
+        // degrees, so the component, the scene, and the wire are unchanged.
+        if (field.DisplayDegrees && field.Scalar == FieldScalar::Float)
+        {
+            constexpr float kRadToDeg = 180.0f / std::numbers::pi_v<float>;
+            const int count = std::min<int>(field.Count, 4);
+            std::array<float, 4> degrees{};
+            for (int i = 0; i < count; ++i)
+                degrees[static_cast<std::size_t>(i)] =
+                    static_cast<const float*>(ptr)[i] * kRadToDeg;
+
+            ImGui::DragScalarN(id.c_str(), ImGuiDataType_Float, degrees.data(), count,
+                               0.5f, nullptr, nullptr, "%.1f\xc2\xb0");
+            if (ImGui::IsItemEdited())
+                for (int i = 0; i < count; ++i)
+                    static_cast<float*>(ptr)[i] =
+                        degrees[static_cast<std::size_t>(i)] / kRadToDeg;
+
+            edit.Activated = ImGui::IsItemActivated();
+            edit.Committed = ImGui::IsItemDeactivatedAfterEdit();
             if (field.ReadOnly)
                 ImGui::EndDisabled();
             return edit;

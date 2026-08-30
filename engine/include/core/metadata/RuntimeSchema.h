@@ -66,6 +66,10 @@ struct RuntimeField
     std::uint8_t Count = 1;
     // A leaf the editor shows but does not let the user edit (an identity id).
     bool         ReadOnly = false;
+    // A float leaf holding radians that an authoring surface shows in degrees.
+    // Display metadata, like Label: the bytes at Offset stay radians, so it
+    // stays out of ComponentSchemaFingerprint.
+    bool         DisplayDegrees = false;
     // Non-empty for an enum member with an EnumSchema: the named choices for
     // this leaf, so an editor draws a selector instead of a number field.
     // Scalar stays the underlying integer kind and the bytes at Offset are
@@ -208,6 +212,7 @@ namespace RuntimeSchemaDetail
                 out.Label = field.DisplayLabel;
                 out.Tooltip = field.DisplayTooltip;
                 out.DataSubtype = field.DataSubtype;
+                out.DisplayDegrees = field.IsDegrees;
             };
 
             using MemberType = std::remove_cvref_t<M>;

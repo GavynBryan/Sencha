@@ -73,20 +73,34 @@ struct TypeSchema<LookOrientation>
             MakeField("yaw", &LookOrientation::Yaw)
                 .Default(defaults.Yaw)
                 .OwnerLocal()
-                .Tooltip("Which way this body starts out aiming, in radians."),
+                .Degrees()
+                .Label("Facing")
+                .Tooltip("Which way this body starts out aiming. Stored in "
+                         "radians; a body carrying AimFacing begins turned to "
+                         "this rather than to its authored rotation."),
             // Pitch is bounded by the limits below, which are stricter than
             // this range, so nothing here can clamp.
             MakeField("pitch", &LookOrientation::Pitch)
                 .Default(defaults.Pitch)
                 .Quantize(-1.5707964f, 1.5707964f, 16)
-                .OwnerLocal(),
+                .OwnerLocal()
+                .Degrees()
+                .Label("Elevation")
+                .Tooltip("How far up or down this body starts out aiming."),
             // How far this thing can look is a property of the thing, identical
             // on every machine that loaded it. Sending it every tick would be
             // sending a constant.
             MakeField("min_pitch", &LookOrientation::MinPitch)
-                .Default(defaults.MinPitch).LocalOnly(),
+                .Default(defaults.MinPitch).LocalOnly()
+                .Degrees()
+                .Label("Look down limit")
+                .Tooltip("How far down this thing can aim. A property of the "
+                         "thing: a neck and a tank turret differ."),
             MakeField("max_pitch", &LookOrientation::MaxPitch)
-                .Default(defaults.MaxPitch).LocalOnly(),
+                .Default(defaults.MaxPitch).LocalOnly()
+                .Degrees()
+                .Label("Look up limit")
+                .Tooltip("How far up this thing can aim."),
         };
     }
 };

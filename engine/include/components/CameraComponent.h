@@ -62,7 +62,11 @@ struct TypeSchema<CameraComponent>
             MakeField("projection", &CameraComponent::Projection)
                 .Default(defaults.Projection),
             MakeField("fov_y_radians", &CameraComponent::FovYRadians)
-                .Default(defaults.FovYRadians),
+                .Default(defaults.FovYRadians)
+                .Degrees()
+                .Label("Field of view")
+                .Tooltip("Vertical angle the camera takes in. Ignored by an "
+                         "orthographic camera."),
             MakeField("near_plane", &CameraComponent::NearPlane)
                 .Default(defaults.NearPlane),
             MakeField("far_plane", &CameraComponent::FarPlane)

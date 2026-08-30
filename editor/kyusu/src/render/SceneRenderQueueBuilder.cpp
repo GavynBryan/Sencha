@@ -314,6 +314,9 @@ void SceneRenderQueueBuilder::SetLightmapPreview(const LightmapPreviewSource& so
     InitializeSceneRegistry(*registry, &Meshes, &MaterialSets,
                             nullptr, nullptr, nullptr, Textures, SkinnedMeshes,
                             AnimationClips);
+    // The engine vocabulary comes with the registry; a loaded module's does
+    // not, and a scene naming one of its tags would refuse to load without it.
+    InstallEditorModuleVocabulary(registry->Components);
     SceneSerializationContext context(Logging, &Assets);
     SceneLoadError loadError;
     if (!LoadSceneJson(*json, *registry, EditorSceneSerializers(), context, &loadError))
