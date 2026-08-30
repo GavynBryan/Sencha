@@ -205,6 +205,12 @@ std::string_view AssetSystem::GetPathForLease(AssetType type,
     return store != nullptr ? store->GetPath(token) : std::string_view{};
 }
 
+void AssetSystem::ReleaseLease(AssetType type, std::uint64_t token)
+{
+    if (IAssetStore* store = StoreFor(type); store != nullptr)
+        store->ReleaseToken(token);
+}
+
 AssetLease AssetSystem::Commit(AssetStaging&& staged)
 {
     const AssetKindRegistration* kind = KindRegistry.Find(staged.Record.Type);

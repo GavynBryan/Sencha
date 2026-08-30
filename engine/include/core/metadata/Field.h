@@ -20,6 +20,7 @@
 //   MakeField("tag",    &Actor::Tag).Optional()
 //   MakeField("mesh",   &Actor::Mesh).AsAsset(AssetType::StaticMesh)
 //   MakeField("mats",   &Actor::Mats).AsAsset(AssetType::Material, AssetArity::List)
+//   MakeField("profile", &Actor::Profile).AsDataAsset("movement.profile")
 //   MakeField("pos",    &Actor::Pos).Quantize(-4096.0f, 4096.0f, 20)
 //   MakeField("cooldown", &Actor::Cooldown).OwnerOnly()
 //   MakeField("blend",  &Actor::Blend).LocalOnly()
@@ -62,6 +63,12 @@ struct Field
     // here gets it.
     AssetType  Asset = AssetType::Unknown;
     AssetArity Arity = AssetArity::Single;
+    // Which subtype a structured-data reference accepts ("movement.profile").
+    // Only meaningful for an AssetType::Data member; empty means any data
+    // asset. Tooling narrows a picker to it, so a designer cannot bind a
+    // profile field to an input map. Never serialized -- the persisted form is
+    // still a path, and the subtype is what the file itself declares.
+    std::string_view DataSubtype{};
     // Editor hint: a 3-float member tagged here is an RGB color, so the inspector
     // shows a swatch + picker instead of three drag fields. View-only: the
     // serialized form is unchanged (still the member's own [x,y,z] schema).
@@ -106,6 +113,19 @@ struct Field
     {
         Asset = type;
         Arity = arity;
+        return *this;
+    }
+
+    // A reference to one structured-data asset of a named subtype. Kind and
+    // subtype are set together because a subtype without AssetType::Data
+    // describes nothing, and the pairing is what lets a picker offer only the
+    // assets the field can actually accept. The argument must outlive the
+    // schema (string literals do).
+    Field& AsDataAsset(std::string_view subtype)
+    {
+        Asset = AssetType::Data;
+        Arity = AssetArity::Single;
+        DataSubtype = subtype;
         return *this;
     }
 

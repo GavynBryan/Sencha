@@ -1,6 +1,7 @@
 #pragma once
 
 #include <assets/data/DataAssetCache.h>
+#include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
@@ -14,7 +15,9 @@
 #include <world/transform/TransformHistory.h>
 
 #include <compare>
+#include <cstddef>
 #include <cstdint>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 
@@ -221,6 +224,32 @@ struct MovementTuningSource
     MovementProfileHandle Profile{};
 };
 SENCHA_DECLARE_COMPONENT_TYPE(MovementTuningSource, "sencha.movement_tuning_source");
+
+// The handle wrapper is addressed by the asset-field editors at the member's
+// own offset, the way a mesh handle is: they copy handle bytes without naming
+// the wrapper. That only works while the wrapper is exactly its handle.
+static_assert(sizeof(MovementProfileHandle) == sizeof(DataAssetHandle));
+static_assert(offsetof(MovementProfileHandle, Value) == 0);
+
+// The scene form is the profile's path (see MovementTuningSourceSerializer);
+// this describes the same member for an authoring surface, which resolves the
+// handle through the asset system rather than reading its bytes as a number.
+template <>
+struct TypeSchema<MovementTuningSource>
+{
+    static constexpr std::string_view Name = "MovementTuning";
+
+    static auto Fields()
+    {
+        return std::make_tuple(
+            MakeField("profile", &MovementTuningSource::Profile)
+                .AsDataAsset(kMovementProfileTypeName)
+                .Label("Movement profile")
+                .Tooltip("Authored acceleration, friction, and jump coefficients. "
+                         "None leaves the character on engine defaults plus the "
+                         "MoveSpeed attribute."));
+    }
+};
 
 // The component owns one reference to its profile for as long as it carries
 // it. Whoever produced the handle owns their own and lets it go; this is what

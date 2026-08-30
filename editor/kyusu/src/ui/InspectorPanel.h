@@ -2,19 +2,25 @@
 
 #include "ui/IEditorPanel.h"
 
+#include <core/assets/AssetId.h>
 #include <ecs/ComponentId.h>
 #include <ecs/EntityId.h>
 
 #include "document/EditorScene.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
+class AssetRegistry;
+class AssetSystem;
 class CommandStack;
 class WorldDocument;
 class SelectionService;
 class EditorComponentAdapterRegistry;
+struct AssetFieldRef;
 struct IComponentSerializer;
 struct RuntimeField;
 
@@ -61,6 +67,27 @@ private:
     // a combo of scanned assets of that type, applied via AssetFieldEditCommand.
     void DrawAssetField(const RuntimeField& field, EntityId entity,
                         ComponentId component, float labelWidth);
+
+    // One picker combo. Returns true and fills `picked` when the user chooses a
+    // different entry ("(none)" yields an empty ref).
+    bool DrawAssetPickCombo(const char* widgetId, const AssetFieldRef& current,
+                            const AssetRegistry& catalog, AssetSystem& assets,
+                            const RuntimeField& field, AssetFieldRef& picked);
+
+    // What the open picker is offering, built when its popup appears. Scanning
+    // the catalog is per-picker work, and narrowing to a data subtype reads
+    // each candidate's envelope off disk -- neither belongs in every frame a
+    // designer holds a dropdown open. Keyed by ImGui id, so two list slots
+    // sharing a widget label still get their own list.
+    struct AssetPickerEntry
+    {
+        std::string Path;
+        AssetId     Id;
+    };
+    static std::vector<AssetPickerEntry> PickerCandidates(
+        const AssetRegistry& catalog, AssetSystem& assets, const RuntimeField& field);
+    std::uint32_t                 OpenPicker = 0;
+    std::vector<AssetPickerEntry> OpenPickerEntries;
     void DrawAddComponentMenu(EntityId entity);
     void ResetEditState();
 

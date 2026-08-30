@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 enum class MovementSupportCondition : uint8_t
@@ -72,6 +73,11 @@ struct CompiledMovementProfile
     std::vector<MovementProfileLayer> Layers;
     std::vector<MovementModeProfile> Modes;
 };
+
+// The subtype a movement profile declares in its .sdata envelope. Named here
+// so a component field can say which data assets it accepts and a picker can
+// offer only those.
+inline constexpr std::string_view kMovementProfileTypeName = "movement.profile";
 
 struct MovementProfileHandle
 {

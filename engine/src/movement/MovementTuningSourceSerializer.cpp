@@ -3,6 +3,7 @@
 #include <assets/runtime/AssetSystem.h>
 #include <core/assets/AssetLease.h>
 #include <core/logging/LoggingProvider.h>
+#include <core/metadata/RuntimeSchema.h>
 #include <core/serialization/FourCC.h>
 #include <ecs/ComponentTypeId.h>
 #include <movement/MovementComponents.h>
@@ -35,7 +36,14 @@ public:
         return MakeFourCC('M', 'T', 'U', 'N');
     }
 
-    std::span<const RuntimeField> RuntimeFields() const override { return {}; }
+    // The profile is a describable member: an asset handle at a known offset,
+    // exactly the shape an inspector already resolves through the asset system.
+    // The persisted form is still the path this serializer writes, not the
+    // session-local handle these bytes hold.
+    std::span<const RuntimeField> RuntimeFields() const override
+    {
+        return RuntimeFieldsOf<MovementTuningSource>();
+    }
 
     std::vector<std::byte> DefaultBytes() const override
     {

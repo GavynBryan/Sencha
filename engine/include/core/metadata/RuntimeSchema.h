@@ -56,6 +56,11 @@ struct RuntimeField
     // Arity says whether it is one handle or an ordered list (per-slot materials).
     AssetType    Asset = AssetType::Unknown;
     AssetArity   Arity = AssetArity::Single;
+    // Which subtype an AssetType::Data leaf accepts; empty means any. Filter
+    // metadata for an authoring surface, like Label and Tooltip: it narrows
+    // what a picker offers and never changes the bytes at Offset, so it stays
+    // out of ComponentSchemaFingerprint.
+    std::string_view DataSubtype{};
     // Contiguous same-typed scalars edited as one N-wide row (Vec/Quat); 1 is a
     // plain scalar. The leaf spans [Offset, Offset + Count*Size).
     std::uint8_t Count = 1;
@@ -202,6 +207,7 @@ namespace RuntimeSchemaDetail
                 // a label on a composite does not rename the leaves inside it.
                 out.Label = field.DisplayLabel;
                 out.Tooltip = field.DisplayTooltip;
+                out.DataSubtype = field.DataSubtype;
             };
 
             using MemberType = std::remove_cvref_t<M>;

@@ -203,6 +203,11 @@ public:
     [[nodiscard]] std::string_view GetPathForLease(AssetType type,
                                                    std::uint64_t token) const;
 
+    // Drops a reference the caller took as a lease and then relinquished into
+    // storage of its own. The Release* forwards above, for a kind this front
+    // door cannot name.
+    void ReleaseLease(AssetType type, std::uint64_t token);
+
     // Owner-thread commit of a staged payload, dispatched through the kind's
     // registered Commit. Returns the creation reference.
     [[nodiscard]] AssetLease Commit(AssetStaging&& staged);

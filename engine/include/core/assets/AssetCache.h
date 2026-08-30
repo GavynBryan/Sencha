@@ -141,6 +141,11 @@ public:
         }
     }
 
+    void ReleaseToken(uint64_t token) override
+    {
+        Release(THandle::FromToken(token));
+    }
+
     [[nodiscard]] std::string_view GetPath(uint64_t token) const override
     {
         return GetRegisteredPath(THandle::FromToken(token));

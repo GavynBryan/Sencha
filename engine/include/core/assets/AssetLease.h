@@ -91,6 +91,19 @@ public:
         Token = 0;
     }
 
+    // Hands the held reference to a caller that will own it by other means --
+    // a raw handle stored where the storage's own lifecycle releases it. The
+    // lease is empty afterwards and the reference is NOT dropped, so a caller
+    // that discards the returned token leaks it.
+    [[nodiscard]] uint64_t Relinquish()
+    {
+        const uint64_t token = Token;
+        TypeValue = AssetType::Unknown;
+        Owner = nullptr;
+        Token = 0;
+        return token;
+    }
+
     [[nodiscard]] bool IsValid() const
     {
         return TypeValue != AssetType::Unknown && Owner != nullptr && Token != 0;

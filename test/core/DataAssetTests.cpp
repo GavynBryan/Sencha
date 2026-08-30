@@ -1,4 +1,5 @@
 #include <assets/data/DataAssetCache.h>
+#include <assets/data/DataAssetSubtype.h>
 #include <assets/data/DataAssetLoader.h>
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <assets/runtime/AssetSystem.h>
@@ -14,6 +15,7 @@
 #include <fstream>
 #include <memory>
 #include <string>
+#include <string_view>
 
 namespace
 {
@@ -305,4 +307,43 @@ TEST(DataAssetKind, RegisteringTheKindMakesItVisibleThroughTheFrontDoor)
 
     lease.Reset();
     EXPECT_FALSE(assets.IsResident(file.Record().Path, AssetType::Data));
+}
+
+// The envelope peek: what a picker asks before an asset has been chosen, and
+// so before it can be loaded, validated, or made resident.
+TEST(DataAssetSubtype, ReadsTheDeclaredTypeAndNothingElse)
+{
+    struct Case
+    {
+        const char* Name;
+        std::string_view Json;
+        const char* Expected;
+    };
+    const Case cases[] = {
+        { "envelope", R"({"type":"movement.profile","version":1,"data":{}})",
+          "movement.profile" },
+        { "type only", R"({"type":"input.profile"})", "input.profile" },
+        { "no type", R"({"version":1,"data":{}})", "" },
+        { "type is not a string", R"({"type":7})", "" },
+        { "root is not an object", R"(["movement.profile"])", "" },
+        { "malformed", R"({"type":)", "" },
+        { "empty", "", "" },
+    };
+
+    for (const Case& c : cases)
+        EXPECT_EQ(PeekDataAssetSubtype(c.Json), c.Expected) << c.Name;
+}
+
+// The same answer read through the asset source, which is how an authoring
+// surface asks it about a registered but unloaded asset.
+TEST(DataAssetSubtype, ReadsThroughTheAssetSource)
+{
+    FileAssetSource source;
+    TempDataFile file;
+    file.Write(R"({"type":"test.definition","version":1,"data":{}})");
+    EXPECT_EQ(PeekDataAssetSubtype(source, file.Record()), "test.definition");
+
+    AssetRecord missing = file.Record();
+    missing.FilePath = "/nonexistent/sencha/peek.sdata";
+    EXPECT_EQ(PeekDataAssetSubtype(source, missing), "");
 }

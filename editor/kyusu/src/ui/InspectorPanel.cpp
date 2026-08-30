@@ -16,6 +16,7 @@
 #include "selection/SelectionService.h"
 
 #include <core/assets/AssetRegistry.h>
+#include <assets/data/DataAssetSubtype.h>
 #include <assets/runtime/AssetSystem.h>
 #include <core/metadata/RuntimeSchema.h>
 #include <world/serialization/IComponentSerializer.h>
@@ -520,55 +521,72 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     ImGui::PopID();
 }
 
-namespace
+// Stable, sorted assets of one kind (AssetRegistry::Records() is unordered),
+// narrowed to the subtype a structured-data field accepts. A field that names
+// no subtype takes any data asset, and a field of any other kind has nothing
+// to narrow by.
+std::vector<InspectorPanel::AssetPickerEntry> InspectorPanel::PickerCandidates(
+    const AssetRegistry& catalog, AssetSystem& assets, const RuntimeField& field)
 {
-    struct CatalogEntry { std::string Path; AssetId Id; };
+    std::vector<AssetPickerEntry> entries;
+    for (const auto& entry : catalog.Records())
+        if (entry.second.Type == field.Asset)
+            entries.push_back({ entry.first, entry.second.Id });
+    std::sort(entries.begin(), entries.end(),
+              [](const AssetPickerEntry& a, const AssetPickerEntry& b)
+              { return a.Path < b.Path; });
 
-    // Stable, sorted assets of one kind (AssetRegistry::Records() is unordered).
-    std::vector<CatalogEntry> SortedAssetsOfType(const AssetRegistry& catalog, AssetType type)
-    {
-        std::vector<CatalogEntry> entries;
-        for (const auto& entry : catalog.Records())
-            if (entry.second.Type == type)
-                entries.push_back({ entry.first, entry.second.Id });
-        std::sort(entries.begin(), entries.end(),
-                  [](const CatalogEntry& a, const CatalogEntry& b) { return a.Path < b.Path; });
+    if (field.Asset != AssetType::Data || field.DataSubtype.empty())
         return entries;
-    }
 
-    // One asset picker combo. Returns true and fills `picked` when the user
-    // chooses a different entry ("(none)" yields an empty ref). `widgetId` must
-    // be unique, so list slots push an index id around it.
-    bool AssetPickCombo(const char* widgetId, const AssetFieldRef& current,
-                        const AssetRegistry& catalog, AssetType type,
-                        AssetFieldRef& picked)
+    std::erase_if(entries, [&](const AssetPickerEntry& entry)
     {
-        bool changed = false;
-        const char* preview = current.Path.empty() ? "(none)" : current.Path.c_str();
-        if (ImGui::BeginCombo(widgetId, preview))
+        const AssetRecord* record = catalog.FindByPath(entry.Path);
+        return record == nullptr
+            || PeekDataAssetSubtype(assets.DefaultSource(), *record)
+                   != field.DataSubtype;
+    });
+    return entries;
+}
+
+bool InspectorPanel::DrawAssetPickCombo(const char* widgetId,
+                                        const AssetFieldRef& current,
+                                        const AssetRegistry& catalog,
+                                        AssetSystem& assets,
+                                        const RuntimeField& field,
+                                        AssetFieldRef& picked)
+{
+    bool changed = false;
+    const std::uint32_t pickerId = ImGui::GetID(widgetId);
+    const char* preview = current.Path.empty() ? "(none)" : current.Path.c_str();
+    if (ImGui::BeginCombo(widgetId, preview))
+    {
+        if (OpenPicker != pickerId || ImGui::IsWindowAppearing())
         {
-            // Built only while the dropdown is open: the scan and sort cover
-            // the whole catalog, which a closed combo never shows.
-            const std::vector<CatalogEntry> entries =
-                SortedAssetsOfType(catalog, type);
-            if (ImGui::Selectable("(none)", current.Path.empty()) && !current.Path.empty())
+            OpenPicker = pickerId;
+            OpenPickerEntries = PickerCandidates(catalog, assets, field);
+        }
+        if (ImGui::Selectable("(none)", current.Path.empty()) && !current.Path.empty())
+        {
+            picked = AssetFieldRef{};
+            changed = true;
+        }
+        if (OpenPickerEntries.empty())
+            ImGui::TextDisabled("%s", field.DataSubtype.empty()
+                                          ? "No assets of this kind in the project."
+                                          : "No matching assets in the project.");
+        for (const AssetPickerEntry& entry : OpenPickerEntries)
+        {
+            const bool selected = (entry.Path == current.Path);
+            if (ImGui::Selectable(entry.Path.c_str(), selected) && !selected)
             {
-                picked = AssetFieldRef{};
+                picked = AssetFieldRef{ entry.Id, entry.Path };
                 changed = true;
             }
-            for (const CatalogEntry& entry : entries)
-            {
-                const bool selected = (entry.Path == current.Path);
-                if (ImGui::Selectable(entry.Path.c_str(), selected) && !selected)
-                {
-                    picked = AssetFieldRef{ entry.Id, entry.Path };
-                    changed = true;
-                }
-            }
-            ImGui::EndCombo();
         }
-        return changed;
+        ImGui::EndCombo();
     }
+    return changed;
 }
 
 void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
@@ -607,8 +625,8 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
 
         const AssetFieldRef cur = current.Refs.empty() ? AssetFieldRef{} : current.Refs.front();
         AssetFieldRef picked;
-        if (AssetPickCombo(("##" + field.Name).c_str(), cur, *catalog, field.Asset,
-                           picked))
+        if (DrawAssetPickCombo(("##" + field.Name).c_str(), cur, *catalog, *assets,
+                               field, picked))
         {
             AssetFieldValue next;
             if (!picked.Path.empty())
@@ -635,7 +653,8 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
 
         ImGui::SetNextItemWidth(-trim);
         AssetFieldRef picked;
-        if (AssetPickCombo("##slot", current.Refs[i], *catalog, field.Asset, picked))
+        if (DrawAssetPickCombo("##slot", current.Refs[i], *catalog, *assets, field,
+                               picked))
         {
             AssetFieldValue next = current;
             next.Refs[i] = std::move(picked);
