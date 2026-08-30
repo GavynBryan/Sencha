@@ -478,6 +478,104 @@ void SceneHierarchyPanel::DrawRowContextMenu(DrawContext& ctx, EntityId entity)
     ImGui::EndPopup();
 }
 
+void SceneHierarchyPanel::DrawRowFlagToggles(DrawContext& ctx, EntityId entity)
+{
+    // Undoable now that the flags persist with the document.
+    const bool visible = ctx.Scene.IsEntityVisible(entity);
+    const bool locked = ctx.Scene.IsEntityLocked(entity);
+    EditorScene& scene = ctx.Scene;
+    if (ImGui::SmallButton(visible ? ICON_FA_EYE : ICON_FA_EYE_SLASH))
+        Commands.Execute(std::make_unique<ValueCommand<bool>>(
+            visible, !visible,
+            [&scene, entity](const bool& v) { scene.SetEntityVisible(entity, v); },
+            ctx.Document));
+    ImGui::SameLine();
+    if (ImGui::SmallButton(locked ? ICON_FA_LOCK : ICON_FA_LOCK_OPEN))
+        Commands.Execute(std::make_unique<ValueCommand<bool>>(
+            locked, !locked,
+            [&scene, entity](const bool& v) { scene.SetEntityLocked(entity, v); },
+            ctx.Document));
+    ImGui::SameLine();
+}
+
+std::string SceneHierarchyPanel::RowLabelText(DrawContext& ctx, EntityId entity,
+                                              bool instanceRoot, bool instanceMember,
+                                              bool leaf)
+{
+    const char* icon = instanceRoot ? ICON_FA_BOX_OPEN "  "
+                     : instanceMember ? ICON_FA_LINK "  "
+                     : leaf ? ICON_FA_CUBE "  "
+                            : ICON_FA_CUBES "  ";
+    std::string rowText = ctx.LabelOf(entity);
+    if (instanceRoot
+        && ctx.Scene.GetRegistry().Components.TryGet<EntityNameComponent>(entity)
+               == nullptr)
+    {
+        // A nameless placement is called by its source, not by its components.
+        const std::string source = ctx.Document.SceneInstanceSourceOf(entity);
+        if (const std::string_view stem = SceneSourceStem(source); !stem.empty())
+            rowText = std::string(stem);
+    }
+    return std::string(icon) + rowText;
+}
+
+void SceneHierarchyPanel::DrawRowRename(DrawContext& ctx, EntityId entity)
+{
+    ImGui::SameLine();
+    if (RenameFocusPending)
+    {
+        ImGui::SetKeyboardFocusHere();
+        RenameFocusPending = false;
+    }
+    const bool committed = ImGui::InputText(
+        "##rename_edit", RenameBuffer, sizeof(RenameBuffer),
+        ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+    const bool cancelled = ImGui::IsKeyPressed(ImGuiKey_Escape);
+    if (committed || (ImGui::IsItemDeactivated() && !cancelled))
+    {
+        if (auto command = MakeRenameEntityCommand(entity, RenameBuffer,
+                                                   ctx.Scene, ctx.Document))
+            Commands.Execute(std::move(command));
+        RenamingId = 0;
+    }
+    else if (cancelled)
+    {
+        RenamingId = 0;
+    }
+}
+
+bool SceneHierarchyPanel::RowOpenState(std::uint64_t pid, bool instanceRoot,
+                                       bool filterActive) const
+{
+    return filterActive
+        || (instanceRoot ? ExpandedInstanceIds.contains(pid)
+                         : !CollapsedIds.contains(pid));
+}
+
+void SceneHierarchyPanel::RememberRowOpenState(std::uint64_t pid, bool instanceRoot,
+                                               bool nodeOpen)
+{
+    // Two sets rather than one, because the two kinds default opposite ways:
+    // an ordinary branch is open unless collapsed, a placement is closed unless
+    // expanded. Storing only the departures from each default is what lets a
+    // document with neither set behave correctly.
+    if (instanceRoot)
+    {
+        if (nodeOpen)
+            ExpandedInstanceIds.insert(pid);
+        else
+            ExpandedInstanceIds.erase(pid);
+    }
+    else if (nodeOpen)
+    {
+        CollapsedIds.erase(pid);
+    }
+    else
+    {
+        CollapsedIds.insert(pid);
+    }
+}
+
 void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth,
                                   bool ancestorsVisible)
 {
@@ -497,22 +595,8 @@ void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth,
     ImGui::PushID(static_cast<int>(pid));
     ctx.VisibleRows.push_back(entity);
 
-    // Own-flag toggles, undoable now that the flags persist with the document.
     const bool visible = ctx.Scene.IsEntityVisible(entity);
-    const bool locked = ctx.Scene.IsEntityLocked(entity);
-    EditorScene& scene = ctx.Scene;
-    if (ImGui::SmallButton(visible ? ICON_FA_EYE : ICON_FA_EYE_SLASH))
-        Commands.Execute(std::make_unique<ValueCommand<bool>>(
-            visible, !visible,
-            [&scene, entity](const bool& v) { scene.SetEntityVisible(entity, v); },
-            ctx.Document));
-    ImGui::SameLine();
-    if (ImGui::SmallButton(locked ? ICON_FA_LOCK : ICON_FA_LOCK_OPEN))
-        Commands.Execute(std::make_unique<ValueCommand<bool>>(
-            locked, !locked,
-            [&scene, entity](const bool& v) { scene.SetEntityLocked(entity, v); },
-            ctx.Document));
-    ImGui::SameLine();
+    DrawRowFlagToggles(ctx, entity);
 
     // Effectively hidden rows read dimmed -- their own flag or an ancestor's;
     // the eye button above still shows the row's own state. The recursion
@@ -532,54 +616,20 @@ void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth,
     if (selected)
         flags |= ImGuiTreeNodeFlags_Selected;
 
-    // Open state is panel-owned (persistent-id keyed), not ImGui-owned, so a
-    // rebuilt entity keeps its expansion. A filter forces branches open so the
-    // matches it kept are actually on screen. Placements invert the default:
-    // an instance is one thing until deliberately opened.
-    const bool open = ctx.FilterActive
-        || (instanceRoot ? ExpandedInstanceIds.contains(pid)
-                         : !CollapsedIds.contains(pid));
+    // A filter forces branches open so the matches it kept are on screen.
+    const bool open = RowOpenState(pid, instanceRoot, ctx.FilterActive);
     if (!children.empty())
         ImGui::SetNextItemOpen(open);
 
-    const char* icon = instanceRoot ? ICON_FA_BOX_OPEN "  "
-                     : instanceMember ? ICON_FA_LINK "  "
-                     : children.empty() ? ICON_FA_CUBE "  "
-                                        : ICON_FA_CUBES "  ";
-    std::string rowText = ctx.LabelOf(entity);
-    if (instanceRoot
-        && ctx.Scene.GetRegistry().Components.TryGet<EntityNameComponent>(entity)
-               == nullptr)
-    {
-        // A nameless placement is called by its source, not by its components.
-        const std::string source = ctx.Document.SceneInstanceSourceOf(entity);
-        if (const std::string_view stem = SceneSourceStem(source); !stem.empty())
-            rowText = std::string(stem);
-    }
     const bool renaming = RenamingId != 0 && RenamingId == pid;
     const std::string label = renaming
         ? std::string("##renaming")
-        : std::string(icon) + rowText + "##row";
+        : RowLabelText(ctx, entity, instanceRoot, instanceMember, children.empty())
+              + "##row";
     const bool nodeOpen = ImGui::TreeNodeEx(label.c_str(), flags);
 
     if (!children.empty() && nodeOpen != open && !ctx.FilterActive)
-    {
-        if (instanceRoot)
-        {
-            if (nodeOpen)
-                ExpandedInstanceIds.insert(pid);
-            else
-                ExpandedInstanceIds.erase(pid);
-        }
-        else if (nodeOpen)
-        {
-            CollapsedIds.erase(pid);
-        }
-        else
-        {
-            CollapsedIds.insert(pid);
-        }
-    }
+        RememberRowOpenState(pid, instanceRoot, nodeOpen);
 
     if (!renaming && (instanceRoot || instanceMember)
         && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
@@ -593,27 +643,7 @@ void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth,
 
     if (renaming)
     {
-        ImGui::SameLine();
-        if (RenameFocusPending)
-        {
-            ImGui::SetKeyboardFocusHere();
-            RenameFocusPending = false;
-        }
-        const bool committed = ImGui::InputText(
-            "##rename_edit", RenameBuffer, sizeof(RenameBuffer),
-            ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
-        const bool cancelled = ImGui::IsKeyPressed(ImGuiKey_Escape);
-        if (committed || (ImGui::IsItemDeactivated() && !cancelled))
-        {
-            if (auto command = MakeRenameEntityCommand(entity, RenameBuffer,
-                                                       ctx.Scene, ctx.Document))
-                Commands.Execute(std::move(command));
-            RenamingId = 0;
-        }
-        else if (cancelled)
-        {
-            RenamingId = 0;
-        }
+        DrawRowRename(ctx, entity);
     }
     else
     {

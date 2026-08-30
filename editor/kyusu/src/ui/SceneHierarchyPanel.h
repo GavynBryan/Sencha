@@ -35,6 +35,24 @@ private:
 
     void DrawRow(DrawContext& ctx, EntityId entity, int depth,
                  bool ancestorsVisible);
+    // The row's own visibility and lock flags, as two undoable toggles. Own
+    // state, not effective: the row dims for an ancestor's hidden flag, but
+    // these buttons only ever report and set the entity's own.
+    void DrawRowFlagToggles(DrawContext& ctx, EntityId entity);
+    // What the row is called: an icon for what it is, then its name -- or its
+    // source's, for a placement nobody has named.
+    [[nodiscard]] static std::string RowLabelText(DrawContext& ctx, EntityId entity,
+                                                  bool instanceRoot, bool instanceMember,
+                                                  bool leaf);
+    // The inline rename field, live while this row is the one being renamed.
+    // Commits on Enter or focus loss, abandons on Escape.
+    void DrawRowRename(DrawContext& ctx, EntityId entity);
+    // Expansion is panel-owned and keyed on persistent id, so a rebuilt entity
+    // keeps it. A placement inverts the default: an instance reads as one
+    // thing until somebody opens it.
+    [[nodiscard]] bool RowOpenState(std::uint64_t pid, bool instanceRoot,
+                                    bool filterActive) const;
+    void RememberRowOpenState(std::uint64_t pid, bool instanceRoot, bool nodeOpen);
     void HandleRowClick(DrawContext& ctx, EntityId entity);
     void HandleRowDragDrop(DrawContext& ctx, EntityId entity);
     // The between-rows half of the drop gesture: a thin target that inserts

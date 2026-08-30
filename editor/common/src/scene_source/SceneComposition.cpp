@@ -28,6 +28,14 @@ namespace
         return false;
     }
 
+    // How an override that matched nothing is reported: the placement that
+    // carried it and the inner path it aimed at.
+    [[nodiscard]] std::string DanglingText(const SceneInstanceRecord& instance,
+                                           const SceneElementPath& path)
+    {
+        return SceneIdText(instance.Id.Value) + ": " + path.ToString();
+    }
+
     // The instance root's transform component, in exactly the shape
     // TypeSchema<LocalTransform> serializes ("Transform": { local: ... }), so
     // downstream consumers load it like any authored transform. The inner
@@ -58,6 +66,48 @@ namespace
                 target.Members.push_back(member);
         }
     }
+
+    //-------------------------------------------------------------------------
+    // SourceIndex
+    //
+    // The three lookups every phase of an expansion addresses the source's
+    // content through: which inner entity a path names, which identity the
+    // placement minted for that path, and which entity an id belongs to.
+    //
+    // Built once, before any override runs. The override pass rewrites
+    // component trees and nothing else -- no entity is added, dropped, or
+    // reordered -- so the indices and the pointers both stay valid across it.
+    //-------------------------------------------------------------------------
+    struct SourceIndex
+    {
+        std::unordered_map<SceneElementPath, PersistentEntityId, PathHash> MintedByPath;
+        std::unordered_map<SceneElementPath, std::size_t, PathHash>        ByPath;
+        std::unordered_map<std::uint64_t, const ResolvedSceneEntity*>      ById;
+
+        [[nodiscard]] static SourceIndex Build(const SceneInstanceRecord& instance,
+                                               const SceneCompositionResult& inner)
+        {
+            SourceIndex index;
+            for (const auto& [path, minted] : instance.EntityIds)
+                index.MintedByPath.emplace(path, minted);
+
+            index.ByPath.reserve(inner.Entities.size());
+            index.ById.reserve(inner.Entities.size());
+            for (std::size_t i = 0; i < inner.Entities.size(); ++i)
+            {
+                index.ByPath.emplace(inner.Entities[i].Path, i);
+                index.ById.emplace(inner.Entities[i].Id.Value, &inner.Entities[i]);
+            }
+            return index;
+        }
+
+        [[nodiscard]] ResolvedSceneEntity* At(SceneCompositionResult& inner,
+                                              const SceneElementPath& path) const
+        {
+            const auto found = ByPath.find(path);
+            return found != ByPath.end() ? &inner.Entities[found->second] : nullptr;
+        }
+    };
 
     class Resolver
     {
@@ -95,8 +145,30 @@ namespace
         std::string* Error = nullptr;
         std::vector<std::string> Stack; // sources in flight, for cycle detection
 
+        // One placement: resolve what it points at, override it, and emit the
+        // result into the outer scene under the placement's own identities.
         [[nodiscard]] bool Expand(const SceneInstanceRecord& instance,
                                   SceneCompositionResult& out)
+        {
+            SceneCompositionResult inner;
+            if (!ResolveSource(instance, inner, out))
+                return false;
+
+            const SourceIndex index = SourceIndex::Build(instance, inner);
+            const std::unordered_set<std::uint64_t> suppressed =
+                ApplyOverrides(instance, index, inner, out);
+
+            EmitInstanceRoot(instance, out);
+            EmitSourceEntities(instance, index, suppressed, inner, out);
+            EmitAddedEntities(instance, index, out);
+            return true;
+        }
+
+        // The source, resolved through its own expansion, with the diagnostics
+        // it produced folded outward. A source already in flight is a cycle.
+        [[nodiscard]] bool ResolveSource(const SceneInstanceRecord& instance,
+                                         SceneCompositionResult& inner,
+                                         SceneCompositionResult& out)
         {
             for (const std::string& inFlight : Stack)
                 if (inFlight == instance.Source)
@@ -107,55 +179,37 @@ namespace
                 return Fail(Error, "instance " + SceneIdText(instance.Id.Value)
                     + ": source '" + instance.Source + "' did not resolve");
 
-            SceneCompositionResult inner;
             Stack.push_back(instance.Source);
             const bool resolved = Resolve(*source, inner);
             Stack.pop_back();
             if (!resolved)
                 return false;
+
             out.MissingIds.insert(out.MissingIds.end(),
                                   inner.MissingIds.begin(), inner.MissingIds.end());
             out.DanglingOverrides.insert(out.DanglingOverrides.end(),
                                          inner.DanglingOverrides.begin(),
                                          inner.DanglingOverrides.end());
+            return true;
+        }
 
-            // The placement's recorded identities, by inner path.
-            std::unordered_map<SceneElementPath, PersistentEntityId, PathHash>
-                mintedByPath;
-            for (const auto& [path, minted] : instance.EntityIds)
-                mintedByPath.emplace(path, minted);
-
-            // Which inner entities each override targets, tracked so a target
-            // that matches nothing can be reported rather than silently doing
-            // nothing forever.
-            const auto danglingText = [&](const SceneElementPath& path)
-            {
-                return SceneIdText(instance.Id.Value) + ": " + path.ToString();
-            };
-
-            // Apply overrides over the inner result, matched on inner paths.
-            // One index serves every override family; the loops were each
-            // O(overrides x entities) as linear scans.
-            std::unordered_map<SceneElementPath, std::size_t, PathHash> innerByPath;
-            innerByPath.reserve(inner.Entities.size());
-            for (std::size_t entityIndex = 0; entityIndex < inner.Entities.size();
-                 ++entityIndex)
-                innerByPath.emplace(inner.Entities[entityIndex].Path, entityIndex);
-            const auto innerAt =
-                [&](const SceneElementPath& path) -> ResolvedSceneEntity*
-            {
-                const auto found = innerByPath.find(path);
-                return found != innerByPath.end() ? &inner.Entities[found->second]
-                                                  : nullptr;
-            };
-
-            std::unordered_set<std::uint64_t> suppressedIds;
+        // The placement's edits, applied over the resolved source. Returns the
+        // inner ids it suppressed, which the emit phase drops along with their
+        // descendants. An override that matches no inner path is reported
+        // rather than silently doing nothing forever.
+        [[nodiscard]] static std::unordered_set<std::uint64_t> ApplyOverrides(
+            const SceneInstanceRecord& instance,
+            const SourceIndex& index,
+            SceneCompositionResult& inner,
+            SceneCompositionResult& out)
+        {
+            std::unordered_set<std::uint64_t> suppressed;
             for (const SceneElementPath& path : instance.Suppressed)
             {
-                if (const ResolvedSceneEntity* entity = innerAt(path))
-                    suppressedIds.insert(entity->Id.Value);
+                if (const ResolvedSceneEntity* entity = index.At(inner, path))
+                    suppressed.insert(entity->Id.Value);
                 else
-                    out.DanglingOverrides.push_back(danglingText(path));
+                    out.DanglingOverrides.push_back(DanglingText(instance, path));
             }
 
             const auto applyByPath =
@@ -164,12 +218,13 @@ namespace
             {
                 for (const auto& [path, value] : group)
                 {
-                    if (ResolvedSceneEntity* entity = innerAt(path))
+                    if (ResolvedSceneEntity* entity = index.At(inner, path))
                         apply(*entity, value);
                     else
-                        out.DanglingOverrides.push_back(danglingText(path));
+                        out.DanglingOverrides.push_back(DanglingText(instance, path));
                 }
             };
+
             // Everything this placement inherited, before it overrides any of
             // it. Applied outward, so a nested instance's own overrides count
             // as part of the source the outer placement overrides.
@@ -192,7 +247,7 @@ namespace
                 });
             for (const auto& [path, names] : instance.RemovedComponents)
             {
-                if (ResolvedSceneEntity* entity = innerAt(path))
+                if (ResolvedSceneEntity* entity = index.At(inner, path))
                 {
                     for (const std::string& name : names)
                         std::erase_if(entity->Components.Members,
@@ -201,13 +256,18 @@ namespace
                 }
                 else
                 {
-                    out.DanglingOverrides.push_back(danglingText(path));
+                    out.DanglingOverrides.push_back(DanglingText(instance, path));
                 }
             }
+            return suppressed;
+        }
 
-            // The synthetic instance root: the placement as an ordinary entity
-            // whose identity is the instance id. Editing the placement is
-            // editing this entity's transform; source roots hang from it.
+        // The synthetic instance root: the placement as an ordinary entity
+        // whose identity is the instance id. Editing the placement is editing
+        // this entity's transform; source roots hang from it.
+        static void EmitInstanceRoot(const SceneInstanceRecord& instance,
+                                     SceneCompositionResult& out)
+        {
             ResolvedSceneEntity root;
             root.Id = PersistentEntityId{ instance.Id.Value };
             root.Parent = instance.Parent;
@@ -222,21 +282,23 @@ namespace
                 root.Components.Members.emplace_back("name", std::move(name));
             }
             out.Entities.push_back(std::move(root));
+        }
 
-            // Remap and emit the expanded content, in two phases so the
-            // outcome cannot depend on emission order: first the complete
-            // dropped set -- suppressed entities plus every path the placement
-            // has no minted id for -- then the survivors, where an entity with
-            // any dropped ancestor is out too, because a child must never
-            // outlive its branch.
-            std::unordered_map<std::uint64_t, const ResolvedSceneEntity*> innerById;
-            for (const ResolvedSceneEntity& entity : inner.Entities)
-                innerById.emplace(entity.Id.Value, &entity);
-
-            std::unordered_set<std::uint64_t> droppedIds = suppressedIds;
+        // Remap and emit the expanded content, in two phases so the outcome
+        // cannot depend on emission order: first the complete dropped set --
+        // suppressed entities plus every path the placement has no minted id
+        // for -- then the survivors, where an entity with any dropped ancestor
+        // is out too, because a child must never outlive its branch.
+        static void EmitSourceEntities(const SceneInstanceRecord& instance,
+                                       const SourceIndex& index,
+                                       const std::unordered_set<std::uint64_t>& suppressed,
+                                       SceneCompositionResult& inner,
+                                       SceneCompositionResult& out)
+        {
+            std::unordered_set<std::uint64_t> droppedIds = suppressed;
             for (const ResolvedSceneEntity& entity : inner.Entities)
             {
-                if (!mintedByPath.contains(entity.Path))
+                if (!index.MintedByPath.contains(entity.Path))
                 {
                     out.MissingIds.emplace_back(instance.Id, entity.Path);
                     droppedIds.insert(entity.Id.Value);
@@ -252,12 +314,28 @@ namespace
                 {
                     if (droppedIds.contains(current))
                         return true;
-                    const auto found = innerById.find(current);
-                    if (found == innerById.end() || !found->second->Parent.IsValid())
+                    const auto found = index.ById.find(current);
+                    if (found == index.ById.end() || !found->second->Parent.IsValid())
                         return false;
                     current = found->second->Parent.Value;
                 }
                 return false;
+            };
+
+            // The drop phase guarantees a minted id for every survivor and its
+            // parent; a miss here is a resolver defect, degraded to a dangling
+            // diagnostic rather than a throw on document open.
+            const auto parentOf =
+                [&](const ResolvedSceneEntity& child) -> const PersistentEntityId*
+            {
+                if (!child.Parent.IsValid())
+                    return nullptr;
+                const auto found = index.ById.find(child.Parent.Value);
+                if (found == index.ById.end())
+                    return nullptr;
+                const auto parentMinted = index.MintedByPath.find(found->second->Path);
+                return parentMinted != index.MintedByPath.end() ? &parentMinted->second
+                                                                : nullptr;
             };
 
             for (ResolvedSceneEntity& entity : inner.Entities)
@@ -265,38 +343,20 @@ namespace
                 if (isDropped(entity))
                     continue;
 
-                // The drop phase guarantees a minted id for every survivor and
-                // its parent; a miss here is a resolver defect, degraded to a
-                // dangling diagnostic rather than a throw on document open.
-                const auto minted = mintedByPath.find(entity.Path);
-                const auto parentOf =
-                    [&](const ResolvedSceneEntity& child)
-                        -> const PersistentEntityId*
-                {
-                    if (!child.Parent.IsValid())
-                        return nullptr;
-                    const auto found = innerById.find(child.Parent.Value);
-                    if (found == innerById.end())
-                        return nullptr;
-                    const auto parentMinted =
-                        mintedByPath.find(found->second->Path);
-                    return parentMinted != mintedByPath.end()
-                        ? &parentMinted->second
-                        : nullptr;
-                };
+                const auto minted = index.MintedByPath.find(entity.Path);
                 const PersistentEntityId* parentId = parentOf(entity);
-                assert(minted != mintedByPath.end());
-                if (minted == mintedByPath.end()
+                assert(minted != index.MintedByPath.end());
+                if (minted == index.MintedByPath.end()
                     || (entity.Parent.IsValid() && parentId == nullptr))
                 {
-                    out.DanglingOverrides.push_back(danglingText(entity.Path));
+                    out.DanglingOverrides.push_back(DanglingText(instance, entity.Path));
                     continue;
                 }
 
                 // The trees dominate the expansion's cost, and this scratch
                 // dies with the call; hand them over instead of copying. The
                 // small fields stay put -- descendants still resolve their
-                // parent's path through innerById.
+                // parent's path through the index.
                 Json5Value components =
                     std::exchange(entity.Components, Json5Value{});
                 Json5Value sourceComponents =
@@ -321,10 +381,15 @@ namespace
                 emitted.IsAdded = false; // an inner add is the inner record's
                 out.Entities.push_back(std::move(emitted));
             }
+        }
 
-            // Entities this placement adds inside the instance (D4). Their ids
-            // are recorded in the document like a local's; an empty parent path
-            // hangs them from the instance root.
+        // Entities this placement adds inside the instance (D4). Their ids are
+        // recorded in the document like a local's; an empty parent path hangs
+        // them from the instance root.
+        static void EmitAddedEntities(const SceneInstanceRecord& instance,
+                                      const SourceIndex& index,
+                                      SceneCompositionResult& out)
+        {
             for (const SceneAddedEntity& added : instance.AddedEntities)
             {
                 ResolvedSceneEntity emitted;
@@ -335,11 +400,11 @@ namespace
                 }
                 else
                 {
-                    const auto minted = mintedByPath.find(added.ParentPath);
-                    if (minted == mintedByPath.end())
+                    const auto minted = index.MintedByPath.find(added.ParentPath);
+                    if (minted == index.MintedByPath.end())
                     {
                         out.DanglingOverrides.push_back(
-                            danglingText(added.ParentPath));
+                            DanglingText(instance, added.ParentPath));
                         continue;
                     }
                     emitted.Parent = minted->second;
@@ -350,7 +415,6 @@ namespace
                 emitted.Components = added.Components;
                 out.Entities.push_back(std::move(emitted));
             }
-            return true;
         }
     };
 } // namespace
