@@ -2020,6 +2020,13 @@ things this pass landed.
   shape from, the interim form of the prefab encoding Section 6.1 already
   reserves for Track D item 1. Prediction depends on this phase: reconciliation
   built over hand-rolled adoption compounds the debt.
+
+  *Spawn status 2026-08-30: superseded by the prefab form.* The recipe registry
+  is deleted; a spawn carries the prefab's `AssetId` and the receiver
+  instantiates it (Section 6.1). The frozen-motion defect this described is now
+  closed twice over: the derived columns a mover needs are declared by the
+  component that needs them, and the entity a client builds is the prefab the
+  authority named rather than a reassembly of it.
 - **G5. Session semantics.** Cvar flag enforcement and sync (Section 9); event/cue
   replication (Section 6.4); desync hashing (Section 10.7); a net stats debug
   panel (rates, RTT, budget occupancy, per-zone scope sizes) on the existing

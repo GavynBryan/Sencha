@@ -231,10 +231,42 @@ loud and names the component, so this is a convenience gap rather than a
 correctness one; the fix is to fold the schema identity of the components a
 document contains into its cook fingerprint.
 
-### P4 — Camera in the prefab; residual deletions
+### P4 — Camera in the prefab; residual deletions (landed, one item blocked)
 
-Each phase's detail lives in the approved execution plan; this document records
-what landed and why. Phases update their own status line as they complete.
+The pawn prefab places the camera it is watched from, as a child carrying
+`CameraSeat`. The seat says which camera it is — `Primary` — and how it
+watches, so a third-person game is the same pawn prefab with a different
+camera child rather than a different code path. Possession reads the seat and
+provisions the rig from it; who is watching is still a fact about the machine,
+which is why the rig is not authored.
+
+Not "the first child with a camera": a pawn may carry several (a scope, a
+mirror, a cutscene angle), and picking by position means adding one silently
+changes which the player looks through. A second primary is reported.
+
+`CameraRigMode` and `CameraSeatRole` gained authored vocabularies, and
+`CameraComponent`'s fields gained defaults, so a placed camera states only what
+it means to change.
+
+Deleted: the game-lifetime movement-profile lease, `ResolvePlayerMovementProfile`,
+and the path constant. The prefab authors the profile; nothing threads it any
+more.
+
+**Blocked, and why: the avatar chain stays.** Deleting `player_avatar.sdata`
+requires the mesh to move into the prefab, and a scene naming a mesh cannot
+round-trip through a headless cook: a `StaticMeshCache` holds GPU buffers, so a
+process composed without graphics has no cache, the load leaves the handle
+invalid, and the save refuses because an invalid handle has no path to write.
+The fixture that cooks the shipped prefabs runs headless in CI, so this is not
+a matter of cooking them somewhere else.
+
+The contract underneath it: the scene codec makes a process able to *load* an
+asset in order to *name* one. A cook, a dependency scanner, and a headless
+validator all want the name and none of them want the bytes. The fix is a
+composition that resolves a path to a handle without reading the asset --
+identity without residency -- at which point the mesh moves into the prefab and
+the avatar data asset, `ResolvePlayerAvatar`, the threaded `Avatar` members, and
+the temporary pass that dresses arriving bodies all go together.
 
 ## 4. Rules this roadmap establishes
 

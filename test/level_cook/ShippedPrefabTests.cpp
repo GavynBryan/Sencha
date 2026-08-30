@@ -16,6 +16,8 @@
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
 #include <abilities/AbilitySet.h>
+#include <camera/CameraSeat.h>
+#include <components/CameraComponent.h>
 #include <controller/LookOrientation.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
@@ -60,19 +62,43 @@ namespace
             return Document.Load((Root / relative).generic_string());
         }
 
-        // The prefab's single authored entity.
-        [[nodiscard]] EntityId Only() const
+        // The prefab's root: the one entity nothing parents. A prefab with
+        // more than one has no single thing to bind an identity to, which the
+        // net spawner refuses outright.
+        [[nodiscard]] EntityId RootEntity() const
         {
+            const World& world = Document.GetRegistry().Components;
             EntityId found{};
             std::size_t count = 0;
-            Document.GetRegistry().Components.ForEachComponent<LocalTransform>(
+            world.ForEachComponent<LocalTransform>(
                 [&](EntityId entity, const LocalTransform&)
                 {
+                    if (world.TryGet<Parent>(entity) != nullptr)
+                        return;
                     found = entity;
                     ++count;
                 });
-            EXPECT_EQ(count, 1u) << "a prefab under test grew a second entity";
+            EXPECT_EQ(count, 1u) << "a prefab under test has more than one root";
             return found;
+        }
+
+        // A child of the root carrying T, or an invalid id.
+        template <typename T>
+        [[nodiscard]] EntityId ChildWith(EntityId root) const
+        {
+            const World& world = Document.GetRegistry().Components;
+            if (!world.IsRegistered<T>())
+                return EntityId{};
+            for (const EntityId entity : world.GetAliveEntities())
+            {
+                const Parent* parent = world.TryGet<Parent>(entity);
+                if (parent != nullptr && parent->Entity == root
+                    && world.HasComponent<T>(entity))
+                {
+                    return entity;
+                }
+            }
+            return EntityId{};
         }
 
         // A component this document's vocabulary never had reads as absent
@@ -102,7 +128,7 @@ namespace
 TEST_F(ShippedPrefabTest, ThePawnCarriesWhatMakesItAPawn)
 {
     ASSERT_TRUE(LoadPrefab("prefabs/player_pawn.sscene"));
-    const EntityId pawn = Only();
+    const EntityId pawn = RootEntity();
     ASSERT_TRUE(pawn.IsValid());
 
     // A body that collides, moves, aims, and turns to its aim.
@@ -154,12 +180,27 @@ TEST_F(ShippedPrefabTest, ThePawnCarriesWhatMakesItAPawn)
     // world and never registered a presentation column, so the closure skips
     // what this world does not know. The runtime one does register it.
     EXPECT_FALSE(Carries<WorldTransformHistory>(pawn));
+
+    // And the camera it is watched from, which the prefab places and names.
+    // Possession takes the seat rather than the first camera it finds, so a
+    // pawn that lost this would silently be watched from somewhere else.
+    const EntityId seatEntity = ChildWith<CameraSeat>(pawn);
+    ASSERT_TRUE(seatEntity.IsValid())
+        << "the pawn prefab carries no camera seat";
+    const CameraSeat* seat = Get<CameraSeat>(seatEntity);
+    ASSERT_NE(seat, nullptr);
+    EXPECT_EQ(seat->Role, CameraSeatRole::Primary);
+    EXPECT_EQ(seat->Mode, CameraRigMode::FirstPerson)
+        << "this template's player is first person; a third-person game is the "
+           "same pawn with a different seat";
+    EXPECT_NE(Get<CameraComponent>(seatEntity), nullptr)
+        << "a seat with no camera on it is a seat nothing can look through";
 }
 
 TEST_F(ShippedPrefabTest, TheTurretAimsAndTurns)
 {
     ASSERT_TRUE(LoadPrefab("prefabs/turret.sscene"));
-    const EntityId turret = Only();
+    const EntityId turret = RootEntity();
     ASSERT_TRUE(turret.IsValid());
 
     EXPECT_NE(Get<LookOrientation>(turret), nullptr);
@@ -183,8 +224,13 @@ TEST_F(ShippedPrefabTest, ThePawnSurvivesADocumentRoundTrip)
     ASSERT_TRUE(reloaded.LoadFromSceneText(text));
 
     EntityId pawn{};
-    reloaded.GetRegistry().Components.ForEachComponent<LocalTransform>(
-        [&](EntityId entity, const LocalTransform&) { pawn = entity; });
+    const World& reloadedWorld = reloaded.GetRegistry().Components;
+    reloadedWorld.ForEachComponent<LocalTransform>(
+        [&](EntityId entity, const LocalTransform&)
+        {
+            if (reloadedWorld.TryGet<Parent>(entity) == nullptr)
+                pawn = entity;
+        });
     ASSERT_TRUE(pawn.IsValid());
 
     const MovementTuningSource* tuning =

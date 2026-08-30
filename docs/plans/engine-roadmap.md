@@ -670,7 +670,9 @@ which is ratified; this section owns the sequence and the gate.
    code as local; the spawn payload gains a recipe identity so the receiver
    instantiates the full local shape — derived columns included — instead of
    each game hand-rolling adoption. Interim form of the prefab encoding the
-   protocol reserves for Track D item 1. Gate: a client jumps, and replicated
+   protocol reserves for Track D item 1; **superseded 2026-08-30** by
+   `NetSpawnPrefab`, which carries the prefab's `AssetId` and lets the receiver
+   instantiate it (see docs/plans/pawn-prefab-roadmap.md). Gate: a client jumps, and replicated
    motion is asserted at the extraction boundary. **Landed.** Motion is asserted
    through the components and derivation extraction queries match — a device-backed
    `Extract` call is out of reach of a headless suite — and the jump path is

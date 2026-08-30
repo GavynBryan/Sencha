@@ -58,6 +58,40 @@
           "abilities": []
         }
       }
+    },
+    {
+      "id": "11c04b1a77e0a002",
+      "parent": "11c04b1a77e0a001",
+      "components": {
+        "name": {
+          "value": "Player Camera"
+        },
+        "Transform": {
+          "local": {
+            "position": [
+              0,
+              0.7,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "Camera": {},
+        "CameraSeat": {
+          "role": "primary",
+          "mode": "first_person"
+        }
+      }
     }
   ]
 }

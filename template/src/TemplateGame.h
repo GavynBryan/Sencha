@@ -74,7 +74,6 @@ private:
     void SetRelativeMouseMode(bool enabled);
     RuntimeAssets& RuntimeAssetState();
     DataAssetCacheHandle AcquireDataAsset(std::string_view path, Logger& log);
-    MovementProfileHandle ResolvePlayerMovementProfile(Logger& log);
     ResolvedPlayerAvatar ResolvePlayerAvatar(Logger& log);
     // Read at every spawn request, never cached as a struct: a hot reload
     // swaps the compiled value under the token and the next spawn sees it.
@@ -90,7 +89,6 @@ private:
     std::optional<WorldPartitionRuntime> Partition;
     ZoneId PendingZoneFocus;
     // Declared after Assets so their release runs before the cache is destroyed.
-    DataAssetCacheHandle PlayerMovementProfile;
     DataAssetCacheHandle PlayerAvatarAsset;
     DataAssetCacheHandle GameSettingsAsset;
     DataAssetCacheHandle InputActionSetAsset;

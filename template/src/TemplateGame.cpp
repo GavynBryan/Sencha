@@ -18,6 +18,7 @@
 #include <camera/CameraFollowSystem.h>
 #include <camera/CameraRegistration.h>
 #include <camera/CameraRig.h>
+#include <camera/CameraSeat.h>
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
 #include <controller/ControllerRegistration.h>
@@ -105,8 +106,6 @@ namespace
 {
 constexpr std::string_view kAuthoredRoot = "assets";
 constexpr std::string_view kCookedScanRoot = "assets/.cooked";
-constexpr std::string_view kPlayerMovementProfilePath =
-    "asset://data/player_movement.sdata";
 constexpr std::string_view kPlayerAvatarPath =
     "asset://data/player_avatar.sdata";
 constexpr std::string_view kInputActionSetPath =
@@ -143,6 +142,39 @@ EntityId FindFirstCamera(
         }
     }
     return EntityId{};
+}
+
+// The camera a body carries for its player to look through, as the body itself
+// says: a descendant whose CameraSeat is the primary one.
+//
+// Not "the first camera child". A pawn may carry several -- a scope, a mirror,
+// an angle a cutscene chooses -- and picking by position means adding one
+// silently changes which the player looks through, with the symptom appearing
+// nowhere near the addition. A second primary is content disagreeing with
+// itself, so it is reported rather than resolved.
+EntityId PrimaryCameraSeatOf(const World& world, EntityId body, Logger& log)
+{
+    if (!world.IsRegistered<CameraSeat>() || !world.IsRegistered<Parent>())
+        return EntityId{};
+
+    EntityId found;
+    for (const EntityId entity : world.GetAliveEntities())
+    {
+        const Parent* parent = world.TryGet<Parent>(entity);
+        if (parent == nullptr || parent->Entity != body)
+            continue;
+        const CameraSeat* seat = world.TryGet<CameraSeat>(entity);
+        if (seat == nullptr || seat->Role != CameraSeatRole::Primary)
+            continue;
+        if (found.IsValid())
+        {
+            log.Error("TemplateGame: this body carries more than one primary "
+                      "camera seat; using the first and ignoring the rest");
+            break;
+        }
+        found = entity;
+    }
+    return found;
 }
 
 // Where a level says players begin, or none when it does not say. The two
@@ -436,17 +468,33 @@ void AttachLocalPlayer(World& world, EntityId pawn, Logger& log)
             ? world.TryGet<LocalTransform>(pawn)->Value.Position
             : Vec3d{};
 
-    EntityId camera = FindFirstCamera(world, PersistentStoragePartition);
-    if (!camera.IsValid())
+    // The body's own seat first: a pawn prefab places the camera it is watched
+    // from and says how. Falling back to any camera in the world, and then to
+    // making one, is what keeps a body with no seat -- the observer, a level
+    // whose prefab predates this -- playable rather than blind.
+    CameraSeat seat{};
+    EntityId camera = PrimaryCameraSeatOf(world, pawn, log);
+    if (camera.IsValid())
     {
-        camera = CreateTransformEntity(world, position);
-        world.AddComponent<CameraComponent>(camera, CameraComponent{});
+        seat = *world.TryGet<CameraSeat>(camera);
+    }
+    else
+    {
+        camera = FindFirstCamera(world, PersistentStoragePartition);
+        if (!camera.IsValid())
+        {
+            camera = CreateTransformEntity(world, position);
+            world.AddComponent<CameraComponent>(camera, CameraComponent{});
+        }
     }
     world.GetResource<ActiveCameraService>().SetActive(camera);
 
+    // The rig is provisioned at possession because who is watching is a fact
+    // about this machine; what it reads out of the seat is the authored half.
     CameraRig rig{};
     rig.Target = pawn;
-    rig.Mode = CameraRigMode::FirstPerson;
+    rig.Mode = seat.Mode;
+    rig.Distance = seat.Distance;
     if (CameraRig* existing = world.TryGet<CameraRig>(camera))
         *existing = rig;
     else
@@ -1223,7 +1271,6 @@ struct TurretAimSystem
 struct SessionPlayerSystem
 {
     Engine* Owner = nullptr;
-    MovementProfileHandle Profile;
     ResolvedPlayerAvatar Avatar;
 
     void FrameUpdate(FrameUpdateContext& ctx)
@@ -2410,9 +2457,6 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
         Logger& log = GetEngine().Logging().GetLogger<TemplateGame>();
         SessionPlayerSystem& players = ctx.Schedule.Register<SessionPlayerSystem>();
         players.Owner = &GetEngine();
-        // The authority simulates movement whether or not anyone is watching,
-        // so the profile is resolved in every configuration.
-        players.Profile = ResolvePlayerMovementProfile(log);
         // Resolves to no body on a process that cannot hold a mesh, which is
         // exactly what a bodyless pawn wants.
         players.Avatar = ResolvePlayerAvatar(log);
@@ -2560,7 +2604,6 @@ void TemplateGame::OnShutdown(GameShutdownContext&)
     // Declaration order alone is not enough: Assets is reset explicitly below,
     // so anything still holding a lease at that point outlives its owner and
     // calls through a destroyed vtable when the module unloads.
-    PlayerMovementProfile.Reset();
     InputActionSetAsset.Reset();
     InputProfileAsset.Reset();
     // The pawns that held their own references are destroyed above, so this
@@ -2619,13 +2662,6 @@ DataAssetCacheHandle TemplateGame::AcquireDataAsset(std::string_view path, Logge
 // Loads the pawn's movement profile synchronously the first time a pawn
 // spawns. The asset is game-lifetime, so the owned lease lives on the game;
 // the tuning system's binding cache adds its own reference on first resolve.
-MovementProfileHandle TemplateGame::ResolvePlayerMovementProfile(Logger& log)
-{
-    if (!PlayerMovementProfile.IsValid())
-        PlayerMovementProfile = AcquireDataAsset(kPlayerMovementProfilePath, log);
-    return MovementProfileHandle{ PlayerMovementProfile.GetToken() };
-}
-
 // Turns the authored avatar paths into mesh and material-set handles, once.
 // Every failure path leaves the result invalid, which spawns a bodyless pawn
 // rather than refusing to spawn: a missing body is a content problem, not a
