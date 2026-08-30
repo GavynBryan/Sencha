@@ -1,7 +1,7 @@
 # The Pawn Prefab Roadmap
 
-Status: executing (started 2026-08-29). Phase status is recorded per phase below
-and updated as each lands.
+Status: landed 2026-08-30, with one item blocked and its blocker written down
+(P4). Phase status is recorded per phase below.
 
 Audience: anyone touching component registration, scene serialization, derived
 component provisioning, net spawn, or the template game's archetypes.
@@ -13,10 +13,10 @@ The problem in one sentence:
 
 ---
 
-## 0. What the pawn actually is today
+## 0. What the pawn was
 
-`template/assets/prefabs/player_pawn.sscene` carries a name and a transform.
-Everything that makes a pawn a pawn is built in code, twice:
+`template/assets/prefabs/player_pawn.sscene` carried a name and a transform.
+Everything that made a pawn a pawn was built in code, twice:
 
 | Where | What it declares |
 | --- | --- |
@@ -25,9 +25,15 @@ Everything that makes a pawn a pawn is built in code, twice:
 | the prefab | name, transform |
 | `FollowLocalControl` | calls `BuildPawnBody` again on replicated subjects |
 
-The lists are kept in agreement by hand. When they disagree the failure is
+The lists were kept in agreement by hand. When they disagreed the failure was
 silent: an entity missing one scratch component simply stops matching a query
 and stops moving.
+
+The prefab now carries a controller, its movement tuning and mode, its aim and
+the opt-in that turns the body to it, its tags, its speed, its ability set, and
+the camera it is watched from. The per-tick scratch comes with the component
+that needs it. `BuildPawnBody`, the recipe registry, and the client-side
+reassembly are gone. What is still code: the avatar mesh, for the reason in P4.
 
 ## 1. Why it got that way
 
@@ -275,3 +281,8 @@ the temporary pass that dresses arriving bodies all go together.
    follow-up.
 3. Scratch components a system needs are owed by the component that triggers the
    system, not ensured by each caller.
+4. A gate proves the thing it is about, not a property near it. "Ids are minted
+   deterministically" was true and did not answer "do scenes have ids" -- which
+   was the question, and the answer was no.
+5. A body that cannot be built is refused, never approximated. An entity with
+   its state and no body has no error and no frame it happens on.

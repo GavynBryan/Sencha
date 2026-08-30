@@ -267,6 +267,13 @@ the project's module declared as `Addable` (a flag in its serializer/prefab meta
 
 ## 6. Prefabs (component templates) — minimal, this branch
 
+> **Superseded 2026-08-30.** Prefab assets landed: a prefab is an ordinary scene
+> document that cooks to its own `.smap`, placed instances carry an `asset://`
+> ref plus overrides, and a replicated spawn names one by `AssetId`
+> (docs/plans/pawn-prefab-roadmap.md). `PrefabRegistry` was never built; the
+> section below is what this branch planned instead, kept because the
+> authored-vs-cooked discipline it argues for is what the asset form follows.
+
 Full prefab *assets* are forecast (pipeline.md Decision O); this branch ships the **minimum
 that makes the player controller placeable and the door open**:
 
