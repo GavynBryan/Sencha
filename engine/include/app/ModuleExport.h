@@ -55,5 +55,8 @@
 // v13: Engine owns SceneSpawnService and exposes it as Spawns() -- runtime
 // scene spawning over the cooked .smap pipeline; games wire their asset stack
 // via ConnectAssets in OnStart. Engine gained a member, so accessor offsets
-// moved.
-#define SENCHA_GAME_ABI_VERSION 13u
+// moved. v14: added Game::OnRegisterVocabulary (a new trailing vtable slot), so
+// a module declares its gameplay tags, attributes, abilities, and locomotion
+// modes into any World -- the runtime's, and each of the editor's authoring
+// documents.
+#define SENCHA_GAME_ABI_VERSION 14u

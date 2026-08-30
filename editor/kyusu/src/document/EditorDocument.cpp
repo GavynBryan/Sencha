@@ -166,6 +166,7 @@ EditorDocument::EditorDocument(LoggingProvider& logging)
     // back what it wrote. This installs the engine's own vocabulary; a loaded
     // game module adds its names to the same registries.
     RegisterMovement(world);
+    InstallEditorModuleVocabulary(world);
 }
 
 void EditorDocument::SetAssetEnvironment(RuntimeAssets& assets)

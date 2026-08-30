@@ -128,7 +128,6 @@ EditorServices::~EditorServices()
     // tear them down before that state goes away.
     Files.reset();
     CookRuntime.reset();
-    UnloadGameModule();
     // Before Workspace, not after: the render feature holds references straight
     // into it -- the world document, the viewport layout, grid and world-view
     // settings, a lambda reading the manipulator session, and five sub-renderers
@@ -152,6 +151,12 @@ EditorServices::~EditorServices()
         RenderFeature = nullptr;
     }
     Workspace.reset();
+    // After the documents, not before: their worlds hold things the module
+    // compiled -- a locomotion mode's enter and exit closures, a game
+    // component's type-erased OnRemove hook and its stable name. Unmapping
+    // first leaves every one of those pointing into freed pages, and the
+    // document destructor is what runs them.
+    UnloadGameModule();
     Commands.reset();
     Router.reset();
     Navigation.reset();
@@ -1088,6 +1093,13 @@ void EditorServices::LoadGameModule()
     GameModule.Instance->OnRegisterComponents(registrar);
     const std::span<const ComponentTypeId> added = registrar.AddedSerializers();
     GameModuleSerializerTypes.assign(added.begin(), added.end());
+
+    // Storage is what a game component needs to exist in a document; its
+    // gameplay vocabulary is what the names inside authored content resolve
+    // against. Each document installs it into its own World, so this is held
+    // rather than run once.
+    SetEditorModuleVocabulary([game = GameModule.Instance](World& world)
+                              { game->OnRegisterVocabulary(world); });
     std::fprintf(stderr, "[editor] loaded game module '%s'\n", modulePath.c_str());
 }
 
@@ -1112,9 +1124,13 @@ void EditorServices::UnloadGameModule()
     if (!GameModule.IsValid())
         return;
 
-    // Retract the serializers while the module is still mapped, then unmap.
+    // Retract the serializers while the module is still mapped, then unmap. The
+    // vocabulary installer goes with them: its target is code in the module's
+    // image, so it must not outlive the mapping. Documents already built keep
+    // the names they were given -- they are values in their own worlds.
     for (ComponentTypeId type : GameModuleSerializerTypes)
         (void)EditorSceneSerializers().Remove(type);
     GameModuleSerializerTypes.clear();
+    SetEditorModuleVocabulary({});
     ModuleLoader.Unload(GameModule);
 }

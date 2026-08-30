@@ -8,8 +8,14 @@
 //
 // TEST_GAME_MODULE_PATH is injected by CMake as the built test_game_module path.
 
+#include <abilities/AbilityRegistry.h>
 #include <app/Game.h>
 #include <app/GameModuleLoader.h>
+#include <attributes/AttributeRegistry.h>
+#include <ecs/World.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
+#include <movement/LocomotionMode.h>
+#include <movement/MovementRegistration.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
@@ -24,6 +30,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <string>
 
 TEST(GameModuleLoader, RejectsMissingArtifact)
@@ -191,5 +198,50 @@ TEST(GameModuleLoader, ModuleComponentRoundTripsThroughSceneJson)
     // Entries the module allocated must go before the module is unmapped.
     for (ComponentTypeId type : registrar.AddedSerializers())
         (void)serializers.Remove(type);
+    loader.Unload(m);
+}
+
+// The vocabulary half of the module contract. A game's tags, attributes,
+// abilities, and locomotion modes are registration-order runtime values, so
+// unlike component types they cannot travel in a sealed schema -- every World
+// installs them for itself. This is what an editor calls on each authoring
+// document so a designer is offered the game's names rather than only the
+// engine's, and what a runtime world gets once its own vocabulary is in place.
+TEST(GameModuleLoader, ModuleDeclaresItsGameplayVocabularyIntoAnyWorld)
+{
+    GameModuleLoader loader;
+    std::string error;
+    LoadedModule m = loader.Load(TEST_GAME_MODULE_PATH, &error);
+    ASSERT_TRUE(m.IsValid()) << error;
+
+    // Scoped: a mode registration holds closures compiled inside the module, so
+    // the world has to die before the mapping does. That is the hook's stated
+    // lifetime rule, and it is a segfault when a host gets it backwards.
+    {
+        World world;
+        RegisterMovement(world);
+        ASSERT_FALSE(
+            world.TryGetResource<GameplayTagRegistry>()->FindTag("Spike.Grappling").IsValid());
+
+        m.Instance->OnRegisterVocabulary(world);
+
+        EXPECT_TRUE(
+            world.TryGetResource<GameplayTagRegistry>()->FindTag("Spike.Grappling").IsValid());
+        const AttributeRegistry& attributes = *world.TryGetResource<AttributeRegistry>();
+        const AttributeId range = attributes.FindAttribute("GrappleRange");
+        ASSERT_TRUE(range.IsValid());
+        EXPECT_FLOAT_EQ(attributes.DefaultBase(range), 12.0f);
+        EXPECT_FLOAT_EQ(attributes.Max(range), 50.0f);
+        EXPECT_TRUE(world.TryGetResource<AbilityRegistry>()->Find("Grapple").IsValid());
+        EXPECT_NE(world.TryGetResource<LocomotionModeRegistry>()->Find("spike.mode.grapple"),
+                  nullptr);
+
+        // Idempotent: a second document installing the same vocabulary gets the
+        // same ids rather than a second copy.
+        const std::size_t tags = world.TryGetResource<GameplayTagRegistry>()->Size();
+        m.Instance->OnRegisterVocabulary(world);
+        EXPECT_EQ(world.TryGetResource<GameplayTagRegistry>()->Size(), tags);
+    }
+
     loader.Unload(m);
 }

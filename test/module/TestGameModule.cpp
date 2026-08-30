@@ -5,18 +5,32 @@
 // leaves the host to retract it -- the in-tree analog of a shipped game.so,
 // exercised without running the game.
 
+#include <abilities/AbilityDefinition.h>
+#include <abilities/AbilityRegistry.h>
 #include <app/Game.h>
 #include <app/GameModule.h>
+#include <attributes/AttributeRegistry.h>
 #include <core/metadata/Field.h>
 #include <core/serialization/FourCC.h>
+#include <ecs/World.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
+#include <movement/LocomotionMode.h>
 #include <world/serialization/ComponentSerializer.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/ComponentRegistrar.h>
 #include <world/serialization/ComponentStorageTraits.h>
 
 #include <memory>
+#include <string>
 #include <string_view>
 #include <tuple>
+
+// The vocabulary this module declares, named here so a test can assert on the
+// same strings the module registers.
+inline constexpr std::string_view kGrappleTag = "Spike.Grappling";
+inline constexpr std::string_view kGrappleAttribute = "GrappleRange";
+inline constexpr std::string_view kGrappleAbility = "Grapple";
+inline constexpr std::string_view kGrappleMode = "spike.mode.grapple";
 
 // A purely game-defined component — the engine has never heard of it.
 struct GrappleHook
@@ -51,6 +65,24 @@ namespace
         void OnRegisterComponents(ComponentRegistrar& registrar) override
         {
             registrar.Add<GrappleHook>();
+        }
+
+        // Names, not types: content refers to these as strings and resolves
+        // them against whichever World it is loaded into, so every host that
+        // owns a World installs them for itself.
+        void OnRegisterVocabulary(World& world) override
+        {
+            if (auto* tags = world.TryGetResource<GameplayTagRegistry>())
+                (void)tags->RegisterTag(kGrappleTag);
+            if (auto* attributes = world.TryGetResource<AttributeRegistry>())
+                (void)attributes->RegisterAttribute(kGrappleAttribute, 0.0f, 50.0f, 12.0f);
+            if (auto* abilities = world.TryGetResource<AbilityRegistry>())
+                (void)abilities->Register(kGrappleAbility, AbilityDefinition{});
+            if (auto* modes = world.TryGetResource<LocomotionModeRegistry>();
+                modes != nullptr && modes->Find(kGrappleMode) == nullptr)
+            {
+                (void)modes->Register<GrappleHook>(std::string(kGrappleMode));
+            }
         }
     };
 }
