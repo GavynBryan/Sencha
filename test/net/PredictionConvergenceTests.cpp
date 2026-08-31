@@ -12,7 +12,7 @@
 #include <movement/LocomotionMode.h>
 #include <movement/MotionComposition.h>
 #include <assets/data/DataAssetCache.h>
-#include <movement/MovementComponents.h>
+#include <movement/MovementComponentSchemas.h>
 #include <movement/MovementProfileData.h>
 #include <movement/MovementTuningResolutionSystem.h>
 #include <movement/MovementIntent.h>

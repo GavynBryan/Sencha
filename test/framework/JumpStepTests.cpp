@@ -2,7 +2,8 @@
 
 #include <movement/JumpExecutionSystem.h>
 #include <movement/JumpState.h>
-#include <movement/MovementComponents.h>
+#include <movement/components/CharacterFacts.h>
+#include <movement/components/MovementTuning.h>
 
 //=============================================================================
 // Whether a character leaves the ground, decided from state and input alone.

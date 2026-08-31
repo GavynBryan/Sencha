@@ -20,7 +20,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
-#include <movement/MovementComponents.h>
+#include <movement/components/CharacterMovement.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/transform/TransformComponents.h>
 

@@ -8,7 +8,7 @@
 #include <movement/FreeLocomotionSystem.h>
 #include <movement/JumpExecutionSystem.h>
 #include <movement/MotionComposition.h>
-#include <movement/MovementComponents.h>
+#include <movement/MovementComponentSchemas.h>
 #include <movement/JumpState.h>
 #include <movement/MovementIntent.h>
 #include <movement/MovementProfileData.h>

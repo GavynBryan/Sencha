@@ -16,6 +16,7 @@
 #include <render/StaticMeshComponent.h>
 #include <anim/AnimationClipPlayerComponent.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
+#include <movement/MovementComponentAssets.h>
 #include <movement/MovementRegistration.h>
 #include <world/serialization/IComponentSerializer.h>
 #include <world/identity/PersistentEntityIndex.h>

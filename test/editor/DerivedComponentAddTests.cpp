@@ -15,7 +15,12 @@
 #include "document/commands/RawComponentAddCommand.h"
 
 #include <core/logging/LoggingProvider.h>
-#include <movement/MovementComponents.h>
+#include <movement/JumpState.h>
+#include <movement/MovementIntent.h>
+#include <movement/components/CharacterFacts.h>
+#include <movement/components/CharacterMovement.h>
+#include <movement/components/MotionChannels.h>
+#include <movement/components/MovementTuning.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/IComponentSerializer.h>
 #include <world/transform/DerivedTransform.h>

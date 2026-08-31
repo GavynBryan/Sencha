@@ -3,7 +3,7 @@
 #include <anim/AnimationClipPlayerComponent.h>
 #include <audio/AudioSourceComponent.h>
 #include <components/ActiveCameraService.h>
-#include <movement/MovementComponents.h>
+#include <movement/MovementComponentSchemas.h>
 #include <movement/MovementRegistration.h>
 #include <render/StaticMeshComponent.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>

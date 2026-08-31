@@ -3,7 +3,7 @@
 #include <controller/LookOrientation.h>
 #include <math/MathSchemas.h>
 #include <movement/JumpState.h>
-#include <movement/MovementComponents.h>
+#include <movement/MovementComponentSchemas.h>
 #include <net/ReplicationLayout.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>

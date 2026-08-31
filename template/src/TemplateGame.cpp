@@ -39,7 +39,9 @@
 #include <movement/LocomotionMode.h>
 #include <movement/MovementDefs.h>
 #include <movement/JumpState.h>
-#include <movement/MovementComponents.h>
+#include <movement/MovementComponentAssets.h>
+#include <movement/components/CharacterMovement.h>
+#include <movement/components/MovementTuning.h>
 #include <movement/MotionComposition.h>
 #include <movement/MovementIntent.h>
 #include <movement/MovementProfileBindingCache.h>

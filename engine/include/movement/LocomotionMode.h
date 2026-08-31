@@ -3,7 +3,7 @@
 #include <ecs/EntityId.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagId.h>
-#include <movement/MovementComponents.h>
+#include <movement/components/CharacterMovement.h>
 
 #include <cstdint>
 #include <functional>

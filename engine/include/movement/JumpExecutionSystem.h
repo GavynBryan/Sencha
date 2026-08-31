@@ -2,7 +2,8 @@
 
 #include <ecs/Query.h>
 #include <movement/JumpState.h>
-#include <movement/MovementComponents.h>
+#include <movement/components/CharacterFacts.h>
+#include <movement/components/MovementTuning.h>
 #include <movement/MovementIntent.h>
 
 #include <optional>

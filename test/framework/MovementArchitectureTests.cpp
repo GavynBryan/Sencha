@@ -5,7 +5,8 @@
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <movement/FreeLocomotionSystem.h>
 #include <movement/MotionComposition.h>
-#include <movement/MovementComponents.h>
+#include <movement/MovementComponentSchemas.h>
+#include <movement/components/MovementSessions.h>
 #include <movement/MovementIntent.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MovementModeSystems.h>

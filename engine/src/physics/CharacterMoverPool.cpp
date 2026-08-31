@@ -9,7 +9,8 @@
 #include <ecs/World.h>
 #include <physics/CharacterMover.h>
 #include <physics/PhysicsWorld.h>
-#include <movement/MovementComponents.h>
+#include <movement/components/CharacterFacts.h>
+#include <movement/components/MotionChannels.h>
 #include <physics/components/CharacterController.h>
 #include <physics/components/CharacterMoverLink.h>
 #include <world/transform/TransformComponents.h>

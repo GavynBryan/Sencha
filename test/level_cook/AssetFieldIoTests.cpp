@@ -11,7 +11,7 @@
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/metadata/RuntimeSchema.h>
-#include <movement/MovementComponents.h>
+#include <movement/components/CharacterMovement.h>
 #include <movement/MovementProfileData.h>
 #include <movement/MovementTuningSourceSerializer.h>
 #include <render/Material.h>

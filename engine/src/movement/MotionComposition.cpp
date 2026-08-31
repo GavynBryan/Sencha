@@ -2,7 +2,8 @@
 
 #include <app/GameContexts.h>
 #include <ecs/World.h>
-#include <movement/MovementComponents.h>
+#include <movement/components/CharacterFacts.h>
+#include <movement/components/MotionChannels.h>
 #include <ecs/Query.h>
 #include <ecs/StoragePartitionSet.h>
 

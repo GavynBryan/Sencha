@@ -3,6 +3,7 @@
 #include <app/GameContexts.h>
 #include <ecs/StoragePartitionSet.h>
 #include <movement/MotionComposition.h>
+#include <movement/components/MotionChannels.h>
 
 #include <algorithm>
 #include <cstdint>

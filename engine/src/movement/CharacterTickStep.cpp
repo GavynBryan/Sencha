@@ -6,7 +6,10 @@
 #include <movement/JumpState.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MotionComposition.h>
-#include <movement/MovementComponents.h>
+#include <movement/components/CharacterFacts.h>
+#include <movement/components/CharacterMovement.h>
+#include <movement/components/MotionChannels.h>
+#include <movement/components/MovementTuning.h>
 #include <movement/MovementIntent.h>
 #include <physics/CharacterMoverPool.h>
 #include <world/transform/TransformComponents.h>
