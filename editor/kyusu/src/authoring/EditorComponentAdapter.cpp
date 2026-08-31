@@ -112,13 +112,25 @@ void EditorComponentAdapterRegistry::ResolveEntries() const
     if (ResolvedSerializerCount == serializers.size() && Resolved.size() == Adapters.size())
         return;
 
+    // Affordance authors first, so the per-entity pass can walk a prefix. Both
+    // passes keep serializer-registration order within their half, which is
+    // what makes affordance output and diagnostics deterministic.
     Resolved.clear();
     Resolved.reserve(Adapters.size());
-    for (const auto& serializer : serializers)
+    for (const bool viewport : { true, false })
     {
-        const auto it = Adapters.find(serializer->TypeId());
-        if (it != Adapters.end())
+        for (const auto& serializer : serializers)
+        {
+            const auto it = Adapters.find(serializer->TypeId());
+            if (it == Adapters.end()
+                || it->second->AuthorsViewportAffordances() != viewport)
+            {
+                continue;
+            }
             Resolved.push_back({ it->second.get(), serializer.get() });
+        }
+        if (viewport)
+            ViewportCount = Resolved.size();
     }
     ResolvedSerializerCount = serializers.size();
 }
@@ -131,9 +143,11 @@ void EditorAffordanceService::Build(ViewportAffordanceOutput& output) const
     const ::Registry& registry = scene.GetRegistry();
     const SelectableRef selected = Selection.GetPrimarySelection();
 
-    // Adapters outer, entities inner: only registered adapters can contribute,
-    // and there are a handful of those against every registered component type.
-    const std::span<const EditorComponentAdapterRegistry::Entry> entries = Adapters.Entries();
+    // Adapters outer, entities inner: only adapters that author affordances can
+    // contribute, and there are a handful of those against every registered
+    // component type.
+    const std::span<const EditorComponentAdapterRegistry::Entry> entries =
+        Adapters.ViewportEntries();
     if (entries.empty())
     {
         AppendZoneBoundsTarget(output);
@@ -142,9 +156,9 @@ void EditorAffordanceService::Build(ViewportAffordanceOutput& output) const
 
     for (EntityId entity : scene.GetAllEntities())
     {
-        if (!scene.IsEntityVisible(entity))
+        if (!scene.IsEntityEffectivelyVisible(entity))
             continue;
-        const Transform3f* transform = scene.TryGetTransform(entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(entity);
         for (const EditorComponentAdapterRegistry::Entry& entry : entries)
         {
             if (!entry.Serializer->HasComponent(entity, registry))

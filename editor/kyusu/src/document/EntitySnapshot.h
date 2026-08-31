@@ -3,6 +3,7 @@
 #include "brush/BrushId.h"
 #include "brush/BrushMesh.h"
 
+#include <core/identity/Id.h>
 #include <core/json/JsonValue.h>
 
 #include <optional>
@@ -20,6 +21,12 @@ struct EntitySnapshot
     // only for a brush entity. The mesh lives in BrushMeshStore, not the registry.
     std::optional<BrushMesh> Mesh;
     BrushId MeshId;
+    // The spatial parent, by persistent identity rather than entity handle: the
+    // snapshot outlives the handles on both ends. Restore resolves it through
+    // the document's PersistentEntityIndex; a parent that no longer resolves
+    // restores the entity unparented, matching how destruction orphans a child
+    // rather than cascading into it.
+    PersistentEntityId ParentId;
     bool Hidden = false;
     bool Locked = false;
 };

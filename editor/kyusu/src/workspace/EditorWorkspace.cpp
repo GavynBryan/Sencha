@@ -7,11 +7,12 @@
 #include "tools/ToolRegistry.h"
 
 #include "EditorTheme.h"
+#include "authoring/GameplayVocabularyAdapters.h"
 #include "authoring/WorldDockEditorAdapter.h"
 #include "brush/BrushBounds.h"
 #include "document/EditorScene.h"
 #include "document/commands/DeleteEntityCommand.h"
-#include "document/commands/BreakInstanceCommand.h"
+#include "document/commands/DetachSharedBrushCommand.h"
 #include "document/commands/DeferredCreateBrushCommand.h"
 #include "document/commands/DuplicateEntitiesCommand.h"
 #include "document/commands/MergeBrushesCommand.h"
@@ -132,10 +133,25 @@ void EditorWorkspace::ResolvePendingEdits()
         pending.Commit();
 }
 
+// Points the selection at the focused document: identity comes from that
+// document's index, and a rebuild of its projection retargets the live
+// selection instead of leaving it holding recreated entities' dead handles.
+void EditorWorkspace::BindSelectionToActiveDocument()
+{
+    EditorDocument& document = ActiveDocument();
+    Selection.BindDocument(&document.GetScene().GetRegistry().Components);
+    document.SetProjectionObserver([this] { Selection.RetargetToDocument(); });
+}
+
 void EditorWorkspace::ResetInteractionState()
 {
     CancelDocumentTransactions();
     Selection.ClearSelection();
+
+    // The selection addresses one document, so identity stamping and handle
+    // resolution follow the focus. Rebinding before the tools rebuild means a
+    // ref picked in the new document is identified from its first frame.
+    BindSelectionToActiveDocument();
 
     // Transient view/interaction state that may reference the outgoing document.
     Interaction.ClearTransient();
@@ -149,6 +165,10 @@ void EditorWorkspace::Build()
     Affordances = std::make_unique<EditorAffordanceService>(
         World, Selection, Commands, Grid);
     Affordances->Registry().Register(MakeWorldDockEditorAdapter());
+    Affordances->Registry().Register(MakeGameplayTagEditorAdapter());
+    Affordances->Registry().Register(MakeAttributeSetEditorAdapter());
+    Affordances->Registry().Register(MakeAbilitySetEditorAdapter());
+    Affordances->Registry().Register(MakeCharacterMovementEditorAdapter());
     CreationRecipes.Register("world_dock", std::make_unique<WorldDockRecipe>());
     Picking.SetEntityProxyProvider(
         [this](const Ray3d& ray, const EditorScene& scene)
@@ -160,6 +180,7 @@ void EditorWorkspace::Build()
     // focus, world scene focus, new, open, close to legacy) lands here, so the
     // stack rebinds from one place instead of each caller arranging it.
     World.OnEditedDocumentChanged = [this] { ResetInteractionState(); };
+    BindSelectionToActiveDocument();
 
     // The documents a preview staged state into are about to be destroyed.
     // Unwind now, while they are still alive; the rebuild follows from the
@@ -268,7 +289,7 @@ void EditorWorkspace::SelectAll()
     if (kind == MeshElementKind::Object)
     {
         for (EntityId entity : scene.GetAllEntities())
-            if (scene.IsEntityVisible(entity) && !scene.IsEntityLocked(entity))
+            if (scene.IsEntityEffectivelyVisible(entity) && !scene.IsEntityEffectivelyLocked(entity))
                 gathered.push_back(SelectableRef::EntitySelection(registry, entity));
     }
     else
@@ -282,7 +303,7 @@ void EditorWorkspace::SelectAll()
         for (EntityId entity : entities)
         {
             const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-            const Transform3f* transform = scene.TryGetTransform(entity);
+            const Transform3f* transform = scene.TryGetWorldTransform(entity);
             if (mesh == nullptr || transform == nullptr)
                 continue;
             std::vector<SelectableRef> refs = MeshElements::AllRefs(*mesh, *transform, registry, entity, kind);
@@ -387,7 +408,7 @@ void EditorWorkspace::UpdateOverlay()
         if (!ref.IsEntity())
             continue;
         const BrushMesh* mesh = scene.TryGetBrushMesh(ref.Entity);
-        const Transform3f* transform = scene.TryGetTransform(ref.Entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(ref.Entity);
         if (mesh == nullptr || transform == nullptr)
             continue;
         const Aabb3d entityBounds = BrushWorldBounds(*mesh, *transform);

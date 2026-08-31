@@ -57,6 +57,49 @@ TEST(AssetIdMap, FirstSightMintsDeterministicallyFromPath)
     EXPECT_EQ(a.EnsureId(path, 0x1111), fromA);    // idempotent
 }
 
+// What lets an id travel between two processes: nothing about it depends on
+// the order the content was seen in. Two cooks that walked the same directory
+// in different orders, in different processes, agree on every id -- which is
+// the whole reason a spawn can name a prefab by id and expect the peer to
+// resolve the same one.
+//
+// The one thing this does not establish is that two machines have the same
+// content. They agree because both ship the id map the cook wrote, the same
+// way they agree about a cooked scene's bytes.
+TEST(AssetIdMap, MintingDoesNotDependOnTheOrderContentWasSeen)
+{
+    const std::vector<std::string> paths = {
+        "asset://prefabs/player_pawn.smap", "asset://prefabs/turret.smap",
+        "asset://meshes/dev/cube.smesh",    "asset://materials/dev/gray.smat",
+        "asset://data/player_movement.sdata",
+    };
+
+    AssetIdMap forward;
+    for (std::size_t i = 0; i < paths.size(); ++i)
+        (void)forward.EnsureId(paths[i], /*contentHash*/ i + 1);
+
+    AssetIdMap reversed;
+    for (std::size_t i = paths.size(); i-- > 0;)
+        (void)reversed.EnsureId(paths[i], i + 1);
+
+    // A third that saw only one of them, as a peer with a narrower content set
+    // would: the id it mints for that path is still the same id.
+    AssetIdMap partial;
+    const AssetId lone = partial.EnsureId(paths.front(), 0);
+
+    std::unordered_set<std::uint64_t> distinct;
+    for (const std::string& path : paths)
+    {
+        const AssetId id = forward.FindId(path);
+        ASSERT_TRUE(id.IsValid()) << path;
+        EXPECT_EQ(id, reversed.FindId(path))
+            << path << ": the id depends on when the content was seen";
+        distinct.insert(id.Value);
+    }
+    EXPECT_EQ(distinct.size(), paths.size()) << "two paths share an id";
+    EXPECT_EQ(lone, forward.FindId(paths.front()));
+}
+
 TEST(AssetIdMap, RenameInheritsIdViaContentHash)
 {
     constexpr uint64_t contentHash = 0xfeedface;

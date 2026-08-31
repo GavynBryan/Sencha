@@ -25,7 +25,7 @@ TEST_F(WorkspaceGridEditingTest, OriginFollowsASingleSelectedVertex)
     ASSERT_FALSE(vertices.empty());
 
     const auto* mesh = Scene().TryGetBrushMesh(brush);
-    const auto* transform = Scene().TryGetTransform(brush);
+    const auto* transform = Scene().TryGetWorldTransform(brush);
     ASSERT_NE(mesh, nullptr);
     ASSERT_NE(transform, nullptr);
     const auto expected = MeshElements::TryGetVertex(*mesh, *transform, vertices[0].ElementId);
@@ -78,7 +78,7 @@ TEST_F(WorkspaceGridEditingTest, AligningToAFacePutsTheFrameOnThatFacePlane)
     ASSERT_FALSE(faces.empty());
 
     const auto* mesh = Scene().TryGetBrushMesh(brush);
-    const auto* transform = Scene().TryGetTransform(brush);
+    const auto* transform = Scene().TryGetWorldTransform(brush);
     const auto face = MeshElements::TryGetFace(*mesh, *transform, faces[0].ElementId);
     ASSERT_TRUE(face.has_value());
 
@@ -108,7 +108,7 @@ TEST_F(WorkspaceGridEditingTest, FaceAlignedFrameNormalOpposesTheFaceNormal)
     ASSERT_FALSE(faces.empty());
 
     const auto* mesh = Scene().TryGetBrushMesh(brush);
-    const auto* transform = Scene().TryGetTransform(brush);
+    const auto* transform = Scene().TryGetWorldTransform(brush);
     const auto face = MeshElements::TryGetFace(*mesh, *transform, faces[0].ElementId);
     ASSERT_TRUE(face.has_value());
 

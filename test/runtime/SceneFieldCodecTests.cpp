@@ -8,6 +8,7 @@
 #include <assets/runtime/AssetSystem.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
+#include <core/serialization/FourCC.h>
 #include <core/serialization/JsonArchive.h>
 #include <math/MathSchemas.h>
 #include <render/MaterialCache.h>
@@ -128,6 +129,23 @@ namespace
         });
     }
 }
+
+// A zero-size marker: presence is the whole value. The serializer must test
+// presence with HasComponent -- a tag has no column, so TryGet answers null
+// even when the signature bit is set, and the naive shape silently drops
+// every tag from every save.
+struct SceneCodecTagComponent
+{
+};
+
+template <>
+struct TypeSchema<SceneCodecTagComponent>
+{
+    static constexpr std::string_view Name = "SceneCodecTag";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('T', 'T', 'A', 'G');
+
+    static auto Fields() { return std::tuple{}; }
+};
 
 TEST(SceneFieldCodec, GenericComponentSerializerWritesTypedMaterialHandleAsPathString)
 {
@@ -536,4 +554,30 @@ TEST(SceneFieldCodec, DisplayMetadataNeverReachesTheArchive)
     EXPECT_TRUE(loaded.CastShadows);
     EXPECT_EQ(loaded.ShadowUpdate, ShadowUpdatePolicy::Static);
     EXPECT_EQ(loaded.BakeContribution, LightBakeContribution::Direct);
+}
+
+TEST(SceneFieldCodec, APresentTagComponentSurvivesTheSave)
+{
+    ComponentSerializerRegistry serializers;
+    RegisterComponent<SceneCodecTagComponent>(serializers);
+
+    Registry registry;
+    registry.Components.RegisterComponent<SceneCodecTagComponent>();
+    const EntityId tagged = registry.Components.CreateEntity();
+    registry.Components.AddComponent(tagged, SceneCodecTagComponent{});
+    (void)registry.Components.CreateEntity(); // the unmarked control entity
+
+    LoggingProvider logging;
+    SceneSerializationContext context(logging);
+    const JsonValue json = SaveSceneJson(registry, serializers, context);
+
+    const JsonValue* entities = json.Find("entities");
+    ASSERT_NE(entities, nullptr);
+    ASSERT_EQ(entities->AsArray().size(), 2u);
+    const JsonValue* first = entities->AsArray()[0].Find("components");
+    const JsonValue* second = entities->AsArray()[1].Find("components");
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+    EXPECT_NE(first->Find("SceneCodecTag"), nullptr);
+    EXPECT_EQ(second->Find("SceneCodecTag"), nullptr);
 }

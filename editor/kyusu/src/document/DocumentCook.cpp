@@ -112,8 +112,10 @@ DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
     progress.Complete();
     if (progress.Cancelled(result))
         return result;
+    // No prior published .smap means no prior collision cells to carry
+    // forward, so collision must be produced even if the profile skips it.
     const bool runCollision = runCollisionTarget
-        || !std::filesystem::exists(paths.Collision, cacheEc);
+        || !std::filesystem::exists(paths.Scene, cacheEc);
 
     // Pack the atlas and write final atlas UVs into the cell vertices BEFORE
     // the per-cell mesh bake: the weld compares whole vertices, so identical
@@ -242,8 +244,6 @@ DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
 
     result.Success = true;
     result.CookedScenePath = paths.Scene;
-    result.ManifestPath = paths.Manifest;
-    result.CollisionSidecarPath = paths.Collision;
     result.ContentHash = geometryHash;
     result.CellCount = cells.size();
     progress.Finish();
@@ -263,6 +263,7 @@ DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
     LoggingProvider silent;
     LoggingProvider& log = logging != nullptr ? *logging : silent;
     EditorDocument doc(log);
+    doc.SetContentRoots({ assetsRoot });
     if (assets != nullptr)
         doc.SetAssetEnvironment(*assets);
     if (!doc.Load(authoredLevelPath.generic_string()))
@@ -310,7 +311,14 @@ DocumentCookResult CookDocument(const EditorDocument& liveDocument,
         return result;
     }
 
-    const std::string sourceRel = "levels/" + std::string(levelName) + ".level.json";
+    // The live document's real location names the cook (prefabs/ cooks under
+    // prefabs/); an unsaved document falls back to the levels/ convention.
+    std::string sourceRel = "levels/" + std::string(levelName) + ".sscene";
+    if (const std::string assetPath = liveDocument.SourceAssetPath();
+        assetPath.starts_with("asset://"))
+    {
+        sourceRel = assetPath.substr(sizeof("asset://") - 1);
+    }
     return ExecuteDocumentCook(std::move(*input), levelName, sourceRel,
                                assetsRoot, logging);
 }

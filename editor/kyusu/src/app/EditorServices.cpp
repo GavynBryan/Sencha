@@ -28,11 +28,14 @@
 #include "ui/EditorThemeStartup.h"
 #include "ui/EditorToolbar.h"
 #include "ui/EditorUiFeature.h"
+#include "document/commands/SceneInstanceCommands.h"
 #include "ui/InspectorPanel.h"
 #include "ui/LightingPanel.h"
 #include "ui/MaterialBrowserPanel.h"
 #include "ui/MaterialThumbnailCache.h"
 #include "ui/ToolPropertiesPanel.h"
+#include "render/SceneThumbnailCache.h"
+#include "ui/SceneBrowserPanel.h"
 #include "ui/SceneHierarchyPanel.h"
 #include "ui/WorldPartitionPanel.h"
 #include "ui/GraphViewerPanel.h"
@@ -125,7 +128,6 @@ EditorServices::~EditorServices()
     // tear them down before that state goes away.
     Files.reset();
     CookRuntime.reset();
-    UnloadGameModule();
     // Before Workspace, not after: the render feature holds references straight
     // into it -- the world document, the viewport layout, grid and world-view
     // settings, a lambda reading the manipulator session, and five sub-renderers
@@ -149,6 +151,12 @@ EditorServices::~EditorServices()
         RenderFeature = nullptr;
     }
     Workspace.reset();
+    // After the documents, not before: their worlds hold things the module
+    // compiled -- a locomotion mode's enter and exit closures, a game
+    // component's type-erased OnRemove hook and its stable name. Unmapping
+    // first leaves every one of those pointing into freed pages, and the
+    // document destructor is what runs them.
+    UnloadGameModule();
     Commands.reset();
     Router.reset();
     Navigation.reset();
@@ -192,6 +200,13 @@ void EditorServices::BuildFileActions()
     std::vector<std::string> contentRoots;
     if (Project)
         contentRoots = Project->ContentRoots;
+    // Scene instances resolve their asset:// sources against the same roots.
+    {
+        std::vector<std::filesystem::path> sourceRoots;
+        for (const std::string& root : contentRoots)
+            sourceRoots.emplace_back(root);
+        Workspace->World.SetContentRoots(std::move(sourceRoots));
+    }
     // Populate the material list up front (not just after Open/SaveAs): with a
     // project the pickable set is the project's, independent of any level.
     if (!contentRoots.empty())
@@ -574,14 +589,48 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     // anyway; dereferencing would just make it a crash instead of a message.
     if (RenderFeature != nullptr)
     {
+        // A scene dropped from the browser lands where the cursor points:
+        // the nearest brush surface, or the working grid where the ray misses
+        // everything. One undoable command, the placement's root selected.
+        const auto placeDroppedScene =
+            [this](ViewportId viewportId, ImVec2 position, std::string_view source)
+        {
+            const EditorViewport* viewport = Workspace->Layout.Find(viewportId);
+            if (viewport == nullptr || Commands == nullptr)
+                return;
+            EditorDocument& document = Workspace->World.FocusDocument();
+            Vec3d point{};
+            if (const std::optional<SurfaceHit> hit = Workspace->Picking.PickSurface(
+                    *viewport, position, document.GetScene()))
+            {
+                point = hit->Point;
+            }
+            else if (const std::optional<Vec3d> onGrid =
+                         Workspace->Picking.ProjectPointToGrid(*viewport, position,
+                                                               Workspace->Grid))
+            {
+                point = *onGrid;
+            }
+            else
+            {
+                return;
+            }
+            Transform3f placement = Transform3f::Identity();
+            placement.Position = point;
+            Commands->Execute(std::make_unique<PlaceSceneInstanceCommand>(
+                std::string(source), placement, document, Workspace->Selection));
+        };
+
         auto perspectivePanel = std::make_unique<ViewportPanel>(
             Workspace->Layout, Workspace->Interaction.Marquee, Workspace->Interaction.Overlay,
             RenderFeature->GetViewportTargets(), "Viewport", DockSlot::Center, 1.0f, perspectiveId);
+        perspectivePanel->SetSceneDropHandler(placeDroppedScene);
         PerspectivePanel = perspectivePanel.get();
         UiFeature->AddPanel(std::move(perspectivePanel));
         auto orthoPanel = std::make_unique<ViewportPanel>(
             Workspace->Layout, Workspace->Interaction.Marquee, Workspace->Interaction.Overlay,
             RenderFeature->GetViewportTargets(), "Ortho", DockSlot::CenterBottom, 1.0f, orthoId);
+        orthoPanel->SetSceneDropHandler(placeDroppedScene);
         OrthoPanel = orthoPanel.get();
         UiFeature->AddPanel(std::move(orthoPanel));
     }
@@ -600,7 +649,33 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     UiFeature->AddPanel(std::make_unique<GraphViewerPanel>(
         Workspace->World, Workspace->Selection, *Commands, Workspace->Layout));
     UiFeature->AddPanel(std::make_unique<SceneHierarchyPanel>(
-        Workspace->World, Workspace->Selection, *Commands));
+        Workspace->World, Workspace->Selection, *Commands,
+        [this](const std::string& assetPath)
+        { return Files != nullptr && Files->OpenSceneSource(assetPath); }));
+    {
+        std::vector<std::filesystem::path> sceneRoots;
+        if (Project)
+            for (const std::string& root : Project->ContentRoots)
+                sceneRoots.emplace_back(root);
+        // The thumbnail cache exists only after the render feature's Setup;
+        // the accessor resolves lazily and hands the roots over exactly once.
+        std::vector<std::filesystem::path> thumbnailRoots = sceneRoots;
+        auto thumbnails = [this, roots = std::move(thumbnailRoots),
+                           handed = false]() mutable -> SceneThumbnailCache*
+        {
+            SceneThumbnailCache* cache =
+                RenderFeature != nullptr ? RenderFeature->SceneThumbnails() : nullptr;
+            if (cache != nullptr && !handed)
+            {
+                cache->SetContentRoots(roots);
+                handed = true;
+            }
+            return cache;
+        };
+        UiFeature->AddPanel(std::make_unique<SceneBrowserPanel>(
+            Workspace->World, Workspace->Selection, *Commands,
+            std::move(sceneRoots), std::move(thumbnails)));
+    }
     UiFeature->AddPanel(std::make_unique<InspectorPanel>(
         Workspace->World, Workspace->Selection, *Commands,
         Workspace->Affordances->Registry()));
@@ -1018,6 +1093,13 @@ void EditorServices::LoadGameModule()
     GameModule.Instance->OnRegisterComponents(registrar);
     const std::span<const ComponentTypeId> added = registrar.AddedSerializers();
     GameModuleSerializerTypes.assign(added.begin(), added.end());
+
+    // Storage is what a game component needs to exist in a document; its
+    // gameplay vocabulary is what the names inside authored content resolve
+    // against. Each document installs it into its own World, so this is held
+    // rather than run once.
+    SetEditorModuleVocabulary([game = GameModule.Instance](World& world)
+                              { game->OnRegisterVocabulary(world); });
     std::fprintf(stderr, "[editor] loaded game module '%s'\n", modulePath.c_str());
 }
 
@@ -1029,7 +1111,8 @@ void EditorServices::InitAssets()
     GraphicsServices& graphics = engine.Graphics();
     LoggingProvider& logging = engine.Logging();
 
-    Assets.emplace(logging, graphics.Buffers, graphics.Images, graphics.Descriptors, graphics.Samplers);
+    Assets.emplace(logging, graphics.Buffers, graphics.Images, graphics.Descriptors,
+                   graphics.Samplers, engine.SceneSerializers());
     if (!Project)
         return;
 
@@ -1041,9 +1124,13 @@ void EditorServices::UnloadGameModule()
     if (!GameModule.IsValid())
         return;
 
-    // Retract the serializers while the module is still mapped, then unmap.
+    // Retract the serializers while the module is still mapped, then unmap. The
+    // vocabulary installer goes with them: its target is code in the module's
+    // image, so it must not outlive the mapping. Documents already built keep
+    // the names they were given -- they are values in their own worlds.
     for (ComponentTypeId type : GameModuleSerializerTypes)
         (void)EditorSceneSerializers().Remove(type);
     GameModuleSerializerTypes.clear();
+    SetEditorModuleVocabulary({});
     ModuleLoader.Unload(GameModule);
 }

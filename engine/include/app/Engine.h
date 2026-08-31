@@ -12,7 +12,7 @@
 #include <ecs/WorldComponentSchema.h>
 #include <net/ReplicationLayout.h>
 #include <net/NetCVarSync.h>
-#include <net/NetSpawnRecipe.h>
+#include <net/NetSpawnPrefab.h>
 #include <net/ClientPrediction.h>
 #include <net/ReplicationInterpolation.h>
 #include <net/NetStats.h>
@@ -53,6 +53,8 @@ class SdlGamepadCapture;
 class JobSystem;
 struct PlatformServices;
 class RuntimeWorld;
+class NetPrefabSpawner;
+class SceneSpawnService;
 
 // Owns the runtime services, frame loop, unified entity world, schedule, and
 // timing state. There is exactly one runtime entity universe per Engine run.
@@ -156,19 +158,15 @@ public:
         return InterpolationState;
     }
 
-    // What a replicated entity becomes on this machine. Registered by the game
-    // and outlives any one session, because it describes content rather than a
-    // connection.
-    [[nodiscard]] NetSpawnRecipes& SpawnRecipes() { return SpawnRecipeState; }
-    [[nodiscard]] const NetSpawnRecipes& SpawnRecipes() const
-    {
-        return SpawnRecipeState;
-    }
+    // How a replicated entity that names a prefab is built on this machine.
+    // Outlives any one session, because what it holds resident is content
+    // rather than anything about a connection.
+    [[nodiscard]] NetPrefabSpawner& NetPrefabs();
 
     // What a participant is made of, and where its body comes from. Registered
-    // by the game for the same reason as the recipes: it describes this game's
-    // idea of a player rather than anything about a connection, so it outlives
-    // every session the process runs.
+    // by the game, because it describes this game's idea of a player rather
+    // than anything about a connection, so it outlives every session the
+    // process runs.
     [[nodiscard]] ParticipantPolicies& Participants()
     {
         return ParticipantProjection.Policies();
@@ -276,6 +274,13 @@ public:
     // the same World.
     [[nodiscard]] RuntimeWorld& World();
     [[nodiscard]] const RuntimeWorld& World() const;
+
+    // Runtime scene spawning: cooked scenes placed at play time, published in
+    // request order at the async drain. Valid over the same span as World().
+    // The game connects its asset stack once in OnStart
+    // (Spawns().ConnectAssets(&runtimeAssets.Assets)); requests before that
+    // wiring fail with a status, not a crash.
+    [[nodiscard]] SceneSpawnService& Spawns();
 
     [[nodiscard]] RuntimeFrameLoop& Runtime() { return RuntimeLoop; }
     [[nodiscard]] const RuntimeFrameLoop& Runtime() const
@@ -407,9 +412,11 @@ private:
     NetTickEstimator NetClockState;
     ClientPrediction PredictionState;
     ReplicationInterpolation InterpolationState;
-    NetSpawnRecipes SpawnRecipeState;
     SessionParticipantProjection ParticipantProjection;
     std::unique_ptr<RuntimeWorld> RuntimeWorldState;
+    // Constructed with the world; torn down before it (they borrow the world).
+    std::unique_ptr<SceneSpawnService> SpawnServiceState;
+    std::unique_ptr<NetPrefabSpawner> NetPrefabState;
     RuntimeFrameLoop RuntimeLoop;
     ConsoleStartupScript StartupScript;
     std::unique_ptr<FrameDriver> FrameDriverInstance;

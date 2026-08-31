@@ -42,7 +42,7 @@ struct ComponentPayload
 // EntityId: no row exists yet, so there is nothing the World could be asked about.
 // Flush substitutes the real id.
 //
-// Mirrors ZoneLocalEntityId, which solves the same problem for a zone package
+// Mirrors PackageEntityId, which solves the same problem for an entity build package
 // built off the owner thread.
 struct PendingEntity
 {

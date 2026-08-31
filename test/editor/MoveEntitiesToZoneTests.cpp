@@ -82,7 +82,7 @@ TEST_F(MoveEntitiesToZoneTest, MoveRestoresEntityInTargetRegistry)
     EXPECT_EQ(Source().GetScene().GetEntityCount(), 0u);
     ASSERT_EQ(Target().GetScene().GetEntityCount(), 1u);
     const EntityId moved = Target().GetScene().GetAllEntities()[0];
-    const Transform3f* transform = Target().GetScene().TryGetTransform(moved);
+    const Transform3f* transform = Target().GetScene().TryGetWorldTransform(moved);
     ASSERT_NE(transform, nullptr);
     EXPECT_FLOAT_EQ(transform->Position.X, 5.0f);
 }
@@ -240,7 +240,7 @@ TEST_F(MoveEntitiesToZoneTest, EntityOutsideBoundsDoesNotRewriteOverrideOnSave)
     const Aabb3d override = World.Manifest().Zones[0].Bounds;
     ASSERT_TRUE(World.SetZoneBounds(SourceZone, override));
 
-    Transform3f moved = *Source().GetScene().TryGetTransform(Entity);
+    Transform3f moved = *Source().GetScene().TryGetWorldTransform(Entity);
     moved.Position = Vec3d{ 100.0f, 0.0f, 0.0f };
     Source().GetScene().SetTransform(Entity, moved);
     Source().MarkDirty();

@@ -1,10 +1,12 @@
 #pragma once
 
+#include <core/metadata/EnumSchema.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 #include <math/Quat.h>
 #include <math/Vec.h>
 
+#include <array>
 #include <cstdint>
 #include <type_traits>
 
@@ -31,6 +33,24 @@ enum class CameraRigMode : std::uint8_t
     FirstPerson,
     ThirdPerson,
     Fixed,
+};
+
+// Authored by name, because which of these a camera uses is the difference
+// between one game and another built on the same pawn.
+template <>
+struct EnumSchema<CameraRigMode>
+{
+    static constexpr std::array Values = {
+        EnumValue{ CameraRigMode::FirstPerson, "first_person", "First person",
+                   "The view sits where the camera is placed and turns with "
+                   "the body's aim." },
+        EnumValue{ CameraRigMode::ThirdPerson, "third_person", "Third person",
+                   "The view orbits the body at a distance, looking back at "
+                   "it along the aim." },
+        EnumValue{ CameraRigMode::Fixed, "fixed", "Fixed",
+                   "The camera stays where it was placed and is not moved by "
+                   "what it watches." },
+    };
 };
 
 struct CameraRig

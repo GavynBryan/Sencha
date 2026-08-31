@@ -2,18 +2,25 @@
 
 #include "ui/IEditorPanel.h"
 
+#include <core/assets/AssetId.h>
 #include <ecs/ComponentId.h>
 #include <ecs/EntityId.h>
 
 #include "document/EditorScene.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
+class AssetRegistry;
+class AssetSystem;
 class CommandStack;
 class WorldDocument;
 class SelectionService;
 class EditorComponentAdapterRegistry;
+struct AssetFieldRef;
 struct IComponentSerializer;
 struct RuntimeField;
 
@@ -38,10 +45,55 @@ public:
 
 private:
     void DrawComponent(IComponentSerializer& serializer, EntityId entity);
+
+    // The source's bytes for one of the inspected member's components --
+    // what "no override" looks like, materialized once and cached. The
+    // generational entity key self-invalidates across projection rebuilds
+    // (a rebuilt member has a new handle); the cache clears whenever the
+    // inspected entity changes.
+    struct BaselineEntry
+    {
+        bool Present = false; // the source defines this component at all
+        std::vector<std::byte> Bytes;
+    };
+    const BaselineEntry& BaselineFor(IComponentSerializer& serializer,
+                                     EntityId entity, ComponentId component);
+    std::unordered_map<ComponentId, BaselineEntry> BaselineCache;
+    // Per-component scratch for the field override verdicts (one memcmp per
+    // field per frame, shared by the header state and the row badges).
+    std::vector<char> FieldOverrideScratch;
+    EntityId BaselineEntity = {};
     // Picker for an asset-handle field (RuntimeField tagged with an AssetType):
     // a combo of scanned assets of that type, applied via AssetFieldEditCommand.
     void DrawAssetField(const RuntimeField& field, EntityId entity,
                         ComponentId component, float labelWidth);
+
+    // One picker combo. Returns true and fills `picked` when the user chooses a
+    // different entry ("(none)" yields an empty ref).
+    bool DrawAssetPickCombo(const char* widgetId, const AssetFieldRef& current,
+                            const AssetRegistry& catalog, AssetSystem& assets,
+                            const RuntimeField& field, AssetFieldRef& picked);
+
+    // What the open picker is offering, built when its popup appears. Scanning
+    // the catalog is per-picker work, and narrowing to a data subtype reads
+    // each candidate's envelope off disk -- neither belongs in every frame a
+    // designer holds a dropdown open. Keyed by ImGui id, so two list slots
+    // sharing a widget label still get their own list.
+    struct AssetPickerEntry
+    {
+        std::string Path;
+        AssetId     Id;
+    };
+    static std::vector<AssetPickerEntry> PickerCandidates(
+        const AssetRegistry& catalog, AssetSystem& assets, const RuntimeField& field);
+    std::uint32_t                 OpenPicker = 0;
+    std::vector<AssetPickerEntry> OpenPickerEntries;
+    // What the entity carries that its file does not describe: the per-tick
+    // columns a component declares it cannot work without, and the derived
+    // transform columns. Collapsed, read-only, and drawn after the authored
+    // components because it is not what a designer edits -- but drawn, because
+    // an entity that is quietly more than its file says is the surprise.
+    void DrawDerivedComponents(EntityId entity);
     void DrawAddComponentMenu(EntityId entity);
     void ResetEditState();
 

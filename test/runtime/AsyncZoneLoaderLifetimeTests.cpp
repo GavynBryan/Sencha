@@ -22,7 +22,7 @@
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializationContext.h>
 #include <zone/AsyncZoneLoader.h>
-#include <zone/ZoneLoadPackage.h>
+#include <world/build/EntityBuildPackage.h>
 
 #include <memory>
 #include <optional>
@@ -46,11 +46,11 @@ WorldComponentSchema LifetimeSchema()
     return schema;
 }
 
-void BuildLifetimeZone(ZoneLoadPackage& package, int entities)
+void BuildLifetimeZone(EntityBuildPackage& package, int entities)
 {
     for (int index = 0; index < entities; ++index)
     {
-        const ZoneLocalEntityId entity = package.CreateEntity();
+        const PackageEntityId entity = package.CreateEntity();
         (void)package.AddComponent(entity, LifetimeMarker{ index });
     }
 }
@@ -91,7 +91,7 @@ void LoadZoneToResident(LoaderHarness& harness, ZoneId zone, int entities = 8)
 {
     harness.Loader.BeginLoad(
         zone,
-        [entities](ZoneLoadPackage& package) { BuildLifetimeZone(package, entities); },
+        [entities](EntityBuildPackage& package) { BuildLifetimeZone(package, entities); },
         ZoneParticipation{ .Visible = true, .Logic = true });
     harness.Tasks.PumpWork();
     harness.Tasks.DrainCompletions();
@@ -110,7 +110,7 @@ TEST(AsyncZoneLoaderLifetime, DestroyingTheHarnessWithAQueuedLoadIsSafe)
         LoaderHarness harness(0);
         harness.Loader.BeginLoad(
             ZoneId{ 0x51 },
-            [&built](ZoneLoadPackage& package)
+            [&built](EntityBuildPackage& package)
             {
                 built = true;
                 BuildLifetimeZone(package, 32);
@@ -134,7 +134,7 @@ TEST(AsyncZoneLoaderLifetime, DestroyingTheHarnessWithAnUndrainedCommitIsSafe)
         LoaderHarness harness(0);
         harness.Loader.BeginLoad(
             ZoneId{ 0x52 },
-            [](ZoneLoadPackage& package) { BuildLifetimeZone(package, 32); },
+            [](EntityBuildPackage& package) { BuildLifetimeZone(package, 32); },
             [&committed](RuntimeWorld&, RuntimeZoneRecord&)
             {
                 committed = true;
@@ -161,7 +161,7 @@ TEST(AsyncZoneLoaderLifetime, DestroyingTheHarnessWithThreadedWorkInFlightIsSafe
         {
             harness.Loader.BeginLoad(
                 ZoneId{ 0x60 + index },
-                [](ZoneLoadPackage& package) { BuildLifetimeZone(package, 512); },
+                [](EntityBuildPackage& package) { BuildLifetimeZone(package, 512); },
                 ZoneParticipation{ .Visible = true, .Logic = true });
         }
         // No settle: destruction races the workers on purpose.
@@ -178,7 +178,7 @@ TEST(AsyncZoneLoaderLifetime, AHarnessRebuiltAfterAnAbandonedLoadStartsClean)
         LoaderHarness first(0);
         first.Loader.BeginLoad(
             ZoneId{ 0x70 },
-            [](ZoneLoadPackage& package) { BuildLifetimeZone(package, 64); },
+            [](EntityBuildPackage& package) { BuildLifetimeZone(package, 64); },
             ZoneParticipation{ .Visible = true });
         first.Tasks.PumpWork();
     }

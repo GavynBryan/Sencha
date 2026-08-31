@@ -10,6 +10,7 @@
 #include <input/InputContextSet.h>
 #include <movement/MovementProfileData.h>
 
+#include "GameSettingsData.h"
 #include "PlayerAvatarData.h"
 
 #ifdef SENCHA_ENABLE_COOK
@@ -17,6 +18,7 @@
 #include <assets/hotreload/AssetHotReloader.h>
 #include <assets/hotreload/AssetSourceWatcher.h>
 #endif
+#include <world/scene/SmapFormat.h>
 #include <world/serialization/SceneSerializationContext.h>
 #include <zone/AsyncZoneLoader.h>
 #include <zone/WorldPartitionRuntime.h>
@@ -29,6 +31,8 @@
 #include <vector>
 
 class CollisionShapeCache;
+struct ProbeVolumeFile;
+struct RuntimeZoneRecord;
 
 // The actions this game reads, resolved from the profile's action set once at
 // startup. Systems index by id from here; adding an action is an edit to
@@ -44,6 +48,10 @@ class TemplateGame final : public Game
 {
 public:
     void OnRegisterComponents(ComponentRegistrar& registrar) override;
+    void OnRegisterDataAssetTypes(DataAssetTypeRegistry& types,
+                                  DataSchemaRegistry& schemas) override;
+    void OnUnregisterDataAssetTypes(DataAssetTypeRegistry& types,
+                                    DataSchemaRegistry& schemas) override;
     void OnStart(GameStartupContext& ctx) override;
     void OnRegisterSystems(SystemRegisterContext& ctx) override;
     void OnPlatformEvent(PlatformEventContext& ctx) override;
@@ -52,14 +60,24 @@ public:
 private:
     ConsoleResult LoadMap(std::string_view mapName);
     ConsoleResult LoadWorld(std::string_view worldName);
+    // The shared cooked-content attach for streamed scenes (+map and world
+    // zones): collision cells and the sibling probe file.
+    void AttachStreamedSceneContent(RuntimeWorld& runtime,
+                                    RuntimeZoneRecord& zone,
+                                    const SmapContents& contents,
+                                    const ProbeVolumeFile& probes);
+    [[nodiscard]] static AsyncZoneLoader::SceneStageFn MakeProbeStage(
+        std::string sceneFilePath, std::shared_ptr<ProbeVolumeFile> probes);
     ConsoleResult FocusWorldZone(std::string_view zoneHex);
     ConsoleResult SetCameraMode(std::string_view modeName);
     ConsoleResult RequestTurret(bool placeOnly);
     void SetRelativeMouseMode(bool enabled);
     RuntimeAssets& RuntimeAssetState();
     DataAssetCacheHandle AcquireDataAsset(std::string_view path, Logger& log);
-    MovementProfileHandle ResolvePlayerMovementProfile(Logger& log);
     ResolvedPlayerAvatar ResolvePlayerAvatar(Logger& log);
+    // Read at every spawn request, never cached as a struct: a hot reload
+    // swaps the compiled value under the token and the next spawn sees it.
+    const CompiledGameSettings* ResolveGameSettings(Logger& log);
     void ReleasePlayerAvatar();
     void SetupInputMapping(Logger& log);
 
@@ -71,8 +89,8 @@ private:
     std::optional<WorldPartitionRuntime> Partition;
     ZoneId PendingZoneFocus;
     // Declared after Assets so their release runs before the cache is destroyed.
-    DataAssetCacheHandle PlayerMovementProfile;
     DataAssetCacheHandle PlayerAvatarAsset;
+    DataAssetCacheHandle GameSettingsAsset;
     DataAssetCacheHandle InputActionSetAsset;
     DataAssetCacheHandle InputProfileAsset;
     // Resolved once and held for the process so spawning a second pawn does not
@@ -81,7 +99,9 @@ private:
     // Held for the process: this game is always in its gameplay context. A
     // menu would take its own lease and drop this one.
     InputContextLease GameplayInput;
-    std::string PendingWorldSceneCollision;
+    // The world scene's collision cells when they arrived before physics did;
+    // loaded and cleared once the shape cache exists.
+    std::vector<SmapCollisionCell> PendingWorldSceneCollision;
     CollisionShapeCache* PhysicsShapes = nullptr;
 
 #ifdef SENCHA_ENABLE_COOK

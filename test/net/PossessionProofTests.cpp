@@ -9,7 +9,8 @@
 #include <net/NetOwnership.h>
 #include <net/NetParticipantIdentity.h>
 #include <net/NetReplicationComponents.h>
-#include <net/NetSpawnRecipe.h>
+#include <net/NetSpawnPrefab.h>
+#include "StubPrefabSpawner.h"
 #include <net/ReplicationChangeStore.h>
 #include <net/ReplicationSnapshot.h>
 #include <participant/LocalControl.h>
@@ -79,7 +80,7 @@ SENCHA_DECLARE_COMPONENT_TYPE(TurretHeat, "test.turret_heat");
 namespace
 {
     constexpr std::uint8_t kTakeTurret = kNetFirstGamePayloadKind;
-    constexpr NetSpawnRecipeId kTurretRecipe = 21;
+    constexpr AssetId kTurretPrefab{ 21u };
 
     // What a client sends to ask for a specific turret. The only field is the
     // object it names, which is the whole point: a request that can name an
@@ -121,7 +122,7 @@ namespace
         ReplicationPeerState Peer;
         NetSnapshotAck ClientAck;
         ClientPrediction Prediction;
-        NetSpawnRecipes Recipes;
+        StubPrefabSpawner Prefabs;
         SessionParticipantProjection Participants;
 
         std::vector<std::byte> Scratch;
@@ -148,13 +149,15 @@ namespace
                 << Layout.ErrorDetail();
             Prediction.Bind(Layout);
 
-            EXPECT_TRUE(Recipes.Register(
-                kTurretRecipe, [](World& world, EntityId entity) {
-                    // What a turret is on the receiving machine beyond its
-                    // replicated state.
-                    if (!world.HasComponent<LookOrientation>(entity))
-                        world.AddComponent<LookOrientation>(entity, LookOrientation{});
-                }));
+            // What a turret is on the receiving machine, which the authority
+            // names rather than describes.
+            Prefabs.Register(kTurretPrefab,
+                             [](World& world, StoragePartitionId partition) {
+                                 const EntityId entity = world.CreateEntity(partition);
+                                 world.AddComponent<LookOrientation>(entity,
+                                                                     LookOrientation{});
+                                 return std::vector<EntityId>{ entity };
+                             });
         }
 
         void Replicate()
@@ -179,7 +182,7 @@ namespace
             apply.Schema = &Schema;
             apply.Layout = &Layout;
             apply.Identity = &ClientIdentity;
-            apply.Recipes = &Recipes;
+            apply.Prefabs = &Prefabs;
             apply.Prediction = &Prediction;
             LastApply = ReplicationApplySnapshot(
                 apply, std::span(Scratch).subspan(0, written.BytesWritten));
@@ -270,8 +273,8 @@ namespace
         world.AddComponent<NetReplicated>(turret);
         world.AddComponent<LocalTransform>(turret, LocalTransform{ pose });
         world.AddComponent<TurretHeat>(turret, TurretHeat{});
-        world.AddComponent<NetSpawnRecipe>(turret,
-                                           NetSpawnRecipe{ .Id = kTurretRecipe });
+        world.AddComponent<NetSpawnPrefab>(turret,
+                                           NetSpawnPrefab{ .Scene = kTurretPrefab });
         return turret;
     }
 }
@@ -486,7 +489,7 @@ TEST(PossessionProof, APeerJoiningLaterSeesTheTurretAsItIsNow)
     apply.Schema = &session.Schema;
     apply.Layout = &session.Layout;
     apply.Identity = &latecomerIdentity;
-    apply.Recipes = &session.Recipes;
+    apply.Prefabs = &session.Prefabs;
     const SnapshotApplyResult applied = ReplicationApplySnapshot(
         apply, std::span(session.Scratch).subspan(0, written.BytesWritten));
     ASSERT_TRUE(applied.Ok()) << SnapshotApplyErrorToString(applied.Error);

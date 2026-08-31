@@ -229,7 +229,7 @@ void BrushTool::RefreshPending(ToolContext& ctx)
     if (!PendingEntity.IsValid())
         return;
     const BrushMesh* liveMesh = ctx.Scene.TryGetBrushMesh(PendingEntity);
-    const Transform3f* live = ctx.Scene.TryGetTransform(PendingEntity);
+    const Transform3f* live = ctx.Scene.TryGetLocalTransform(PendingEntity);
     if (liveMesh == nullptr || live == nullptr)
         return;
 

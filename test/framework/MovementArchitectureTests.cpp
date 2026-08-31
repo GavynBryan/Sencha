@@ -60,8 +60,8 @@ namespace
         {
             const EntityId entity = WorldState.CreateEntity();
             WorldState.AddComponent<GameplayTagContainer>(entity, {});
+            // The mailbox comes with the component that owes it.
             WorldState.AddComponent<CharacterMovement>(entity, CharacterMovement{ .Mode = Free });
-            WorldState.AddComponent<ModeTransitionRequest>(entity, {});
             WorldState.TryGet<GameplayTagContainer>(entity)->Grant(Modes->Find(Free)->ActiveTag);
             return entity;
         }

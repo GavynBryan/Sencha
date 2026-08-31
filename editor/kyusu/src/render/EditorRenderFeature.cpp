@@ -119,6 +119,17 @@ bool EditorRenderFeature::Setup(const RenderFeatureServices& featureServices)
     WideLines.Setup(services);
     Fills.Setup(services);
     Targets.Setup(services);
+    // After Targets and after Services carries the depth format the thumbnail
+    // scopes declare.
+    if (MaterialPath && RuntimeAssetsRef != nullptr)
+    {
+        Studio.emplace(Targets, Forward, Sky, *RuntimeAssetsRef->StaticMeshes,
+                       RuntimeAssetsRef->Materials,
+                       RuntimeAssetsRef->SkinnedMeshes.get(),
+                       Services.DepthFormat);
+        Thumbnails.emplace(*Studio, *RuntimeAssetsRef,
+                           *RuntimeAssetsRef->StaticMeshes, *LoggingRef);
+    }
     Bloom.Setup(services);
     Composition.Setup(services.Logging);
     ShadowAtlasReady = Composition.DeclarePoint("ShadowAtlasReady");
@@ -155,6 +166,8 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
     BloomParamsCache.Radius    = ReadCVarFloat(Console, "editor.bloom.radius", 2.0f);
 
     Targets.BeginFrame(frame.FrameInFlightIndex, frame.Retirement);
+    if (Thumbnails)
+        Thumbnails->BeginFrame();
     Highlight.BeginFrame();
     Composition.Clear();
 
@@ -174,6 +187,12 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
         lights.DebugView = WorldView.DebugViewMode;
 #endif
 
+        // Derived world transforms are refreshed here, immediately before the
+        // queues that read them. This feature is ordered after the UI feature,
+        // so every panel, tool, and gizmo has already made its edits for the
+        // frame; refreshing any earlier would render a parented entity a frame
+        // behind whatever moved it.
+        World.FocusDocument().GetScene().RefreshDerivedTransforms();
         QueueBuilder->Build(World.FocusDocument());
 
         // Context zones build their own queues so they render real materials.
@@ -193,12 +212,21 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
                         *LoggingRef, nullptr,
                         RuntimeAssetsRef->SkinnedMeshes.get(),
                         &RuntimeAssetsRef->AnimationClips);
+                document.GetScene().RefreshDerivedTransforms();
                 builder->Build(document);
             });
         // Arbitrating and recording the focus scene's shadow atlas is one
         // frame's work that every Solid viewport then samples, so it is
         // declared as work the views wait on rather than called first and
         // documented as such.
+        if (Thumbnails)
+            Composition.AddWork({
+                .Name = "scene_thumbnails",
+                .Record = { [](void* self, const RenderFrame& context)
+                            { static_cast<EditorRenderFeature*>(self)
+                                  ->Thumbnails->RenderPending(*context.Backend); },
+                            this },
+            });
         Composition.AddWork({
             .Name = "shadow_residency",
             .Record = { [](void* self, const RenderFrame& context)
@@ -254,7 +282,13 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
 
     Composition.Execute(renderFrame);
 
-    // Drop targets for viewports the layout no longer shows.
+    // Drop targets for viewports the layout no longer shows. Thumbnail
+    // targets are live as long as their entries are.
+    if (Thumbnails)
+    {
+        Thumbnails->TrimToBudget(64);
+        Thumbnails->AppendLiveViewports(LiveViewports);
+    }
     Targets.Prune(LiveViewports);
 }
 
@@ -607,6 +641,8 @@ void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorV
 
 void EditorRenderFeature::Teardown()
 {
+    Thumbnails.reset();
+    Studio.reset();
     // Scene resources first: the brush GPU meshes and material refs below are
     // borrowed from the editor's asset caches, which outlive this feature only
     // because the host removes it before releasing them. Point the Solid body

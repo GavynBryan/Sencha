@@ -7,6 +7,7 @@
 #include "commands/CommandStack.h"
 #include "authoring/EditorComponentAdapter.h"
 #include "document/AssetFieldIo.h"
+#include "document/DerivedComponents.h"
 #include "document/commands/AssetFieldEditCommand.h"
 #include "document/commands/RawComponentEditCommand.h"
 #include "document/commands/RawComponentAddCommand.h"
@@ -16,6 +17,7 @@
 #include "selection/SelectionService.h"
 
 #include <core/assets/AssetRegistry.h>
+#include <assets/data/DataAssetSubtype.h>
 #include <assets/runtime/AssetSystem.h>
 #include <core/metadata/RuntimeSchema.h>
 #include <world/serialization/IComponentSerializer.h>
@@ -24,12 +26,17 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <array>
+#include <cassert>
 #include <cfloat>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <numbers>
+#include <span>
 #include <string>
+#include <utility>
 #include "document/DocumentSerialization.h"
 
 namespace
@@ -73,6 +80,7 @@ namespace
                  : field.Size == 2 ? ImGuiDataType_U16
                  : field.Size >= 8 ? ImGuiDataType_U64
                                    : ImGuiDataType_U32;
+        case FieldScalar::UInt64: return ImGuiDataType_U64;
         default:
             return ImGuiDataType_S32;
         }
@@ -212,6 +220,32 @@ namespace
             return edit;
         }
 
+        // An angle a designer thinks about in degrees, stored in radians. The
+        // conversion is the widget's alone: nothing but this row ever sees
+        // degrees, so the component, the scene, and the wire are unchanged.
+        if (field.DisplayDegrees && field.Scalar == FieldScalar::Float)
+        {
+            constexpr float kRadToDeg = 180.0f / std::numbers::pi_v<float>;
+            const int count = std::min<int>(field.Count, 4);
+            std::array<float, 4> degrees{};
+            for (int i = 0; i < count; ++i)
+                degrees[static_cast<std::size_t>(i)] =
+                    static_cast<const float*>(ptr)[i] * kRadToDeg;
+
+            ImGui::DragScalarN(id.c_str(), ImGuiDataType_Float, degrees.data(), count,
+                               0.5f, nullptr, nullptr, "%.1f\xc2\xb0");
+            if (ImGui::IsItemEdited())
+                for (int i = 0; i < count; ++i)
+                    static_cast<float*>(ptr)[i] =
+                        degrees[static_cast<std::size_t>(i)] / kRadToDeg;
+
+            edit.Activated = ImGui::IsItemActivated();
+            edit.Committed = ImGui::IsItemDeactivatedAfterEdit();
+            if (field.ReadOnly)
+                ImGui::EndDisabled();
+            return edit;
+        }
+
         if (field.Scalar == FieldScalar::Bool)
             ImGui::Checkbox(id.c_str(), reinterpret_cast<bool*>(ptr));
         else if (field.Scalar == FieldScalar::Color3)
@@ -264,6 +298,25 @@ void InspectorPanel::ResetEditState()
     EditBefore.clear();
 }
 
+const InspectorPanel::BaselineEntry& InspectorPanel::BaselineFor(
+    IComponentSerializer& serializer, EntityId entity, ComponentId component)
+{
+    if (BaselineEntity != entity)
+    {
+        BaselineCache.clear();
+        BaselineEntity = entity;
+    }
+    const auto found = BaselineCache.find(component);
+    if (found != BaselineCache.end())
+        return found->second;
+
+    BaselineEntry entry;
+    entry.Bytes =
+        WorldDoc.FocusDocument().BaselineComponentBytes(entity, serializer);
+    entry.Present = !entry.Bytes.empty();
+    return BaselineCache.emplace(component, std::move(entry)).first->second;
+}
+
 void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId entity)
 {
     World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
@@ -275,6 +328,54 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     const std::size_t size = meta ? meta->Size : 0;
 
     const std::string key(serializer.JsonKey());
+
+    // Override state, for members of a scene instance: the baseline is what
+    // the placement's source says, and a field whose bytes differ from it is
+    // an override. Asset-handle and read-only fields stay out of the byte
+    // comparison -- handles are session-local values that differ even when
+    // they name the same asset.
+    EditorDocument& document = WorldDoc.FocusDocument();
+    const bool member = document.IsSceneInstanceMember(entity);
+    const BaselineEntry* baseline =
+        member ? &BaselineFor(serializer, entity, id) : nullptr;
+    const std::byte* baselineBytes =
+        baseline != nullptr && baseline->Present
+                && baseline->Bytes.size() == size
+            ? baseline->Bytes.data()
+            : nullptr;
+    // After BaselineFor on purpose: a cache miss there creates and destroys a
+    // scratch entity, and structural change can relocate this pointer. Const
+    // access, so inspecting a component cannot mark its chunk changed.
+    const void* liveRaw =
+        size > 0 ? std::as_const(world).GetComponentRaw(entity, id) : nullptr;
+    const auto fieldOverridden = [&](const RuntimeField& field)
+    {
+        if (baselineBytes == nullptr || liveRaw == nullptr
+            || field.Asset != AssetType::Unknown || field.ReadOnly)
+        {
+            return false;
+        }
+        const std::size_t span = field.Size * field.Count;
+        if (field.Offset + span > size)
+            return false;
+        return std::memcmp(static_cast<const std::byte*>(liveRaw) + field.Offset,
+                           baselineBytes + field.Offset, span) != 0;
+    };
+    bool componentOverridden = member && baseline != nullptr && !baseline->Present;
+    // Whether a byte-level reset is even safe: RawComponentEditCommand is a
+    // blind memcpy, which asset-handle fields (refcounted, session-local)
+    // must never travel through. The per-field verdicts feed the header here
+    // and the row badges below, so each field is compared exactly once.
+    bool holdsAssetFields = false;
+    const std::span<const RuntimeField> fields = serializer.RuntimeFields();
+    FieldOverrideScratch.assign(fields.size(), 0);
+    for (std::size_t i = 0; i < fields.size(); ++i)
+    {
+        holdsAssetFields |= fields[i].Asset != AssetType::Unknown;
+        FieldOverrideScratch[i] = fieldOverridden(fields[i]) ? 1 : 0;
+        componentOverridden |= FieldOverrideScratch[i] != 0;
+    }
+
     // Stable id from the JsonKey; the icon is display-only (kept out of the id).
     const std::string header = std::string(ICON_FA_CUBES "  ") + key + "###" + key;
     // Let the trash button below sit on top of the full-width header and take its
@@ -282,21 +383,56 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     ImGui::SetNextItemAllowOverlap();
     const bool open = ImGui::CollapsingHeader(header.c_str());
 
-    // Remove affordances on the header row: a right-click context menu (bound to
-    // the header, so registered before any later same-row item) and a right-
-    // aligned trash button. Both defer to PendingRemoval, executed after the loop.
-    // Suppressed for components the registry marks non-removable (the transform).
-    if (serializer.IsRemovable())
+    // Header affordances: a right-click context menu (remove, and reset for an
+    // overridden member component) and a right-aligned trash button. Removal
+    // defers to PendingRemoval, executed after the loop; suppressed for
+    // components the registry marks non-removable (the transform).
+    const bool resettable = componentOverridden && baselineBytes != nullptr
+        && !holdsAssetFields;
+    if (serializer.IsRemovable() || resettable)
     {
         if (ImGui::BeginPopupContextItem(("##ctx_" + key).c_str()))
         {
-            if (ImGui::MenuItem(ICON_FA_TRASH "  Remove Component"))
+            if (serializer.IsRemovable()
+                && ImGui::MenuItem(ICON_FA_TRASH "  Remove Component"))
                 PendingRemoval = &serializer;
+            if (resettable
+                && ImGui::MenuItem(ICON_FA_ROTATE_LEFT "  Reset to Source"))
+            {
+                std::vector<std::byte> current(size);
+                std::memcpy(current.data(), liveRaw, size);
+                Commands.Execute(std::make_unique<RawComponentEditCommand>(
+                    entity, id, std::move(current),
+                    std::vector<std::byte>(baselineBytes, baselineBytes + size),
+                    document.GetScene(), document));
+            }
             ImGui::EndPopup();
         }
+    }
+    if (serializer.IsRemovable())
+    {
         ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::GetFrameHeight());
         if (ImGui::SmallButton((std::string(ICON_FA_TRASH) + "##del_" + key).c_str()))
             PendingRemoval = &serializer;
+    }
+    // The override badge, in the header's right gutter beside the trash spot:
+    // a draw-list dot, so the layout never shifts as overrides come and go.
+    if (componentOverridden)
+    {
+        const ImVec2 rectMin = ImGui::GetItemRectMin();
+        const ImVec2 rectMax = ImGui::GetItemRectMax();
+        const float inset = ImGui::GetFrameHeight() * 1.8f;
+        ImGui::GetWindowDrawList()->AddCircleFilled(
+            ImVec2(ImGui::GetContentRegionMax().x + ImGui::GetWindowPos().x
+                       - inset,
+                   (rectMin.y + rectMax.y) * 0.5f),
+            3.0f, ImGui::GetColorU32(EditorUi::Accent));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(baseline != nullptr && !baseline->Present
+                                  ? "Added to this instance; the source has no "
+                                    "such component."
+                                  : "Overrides the placement's source. "
+                                    "Right-click to reset.");
     }
 
     if (!open)
@@ -307,7 +443,6 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     if (const IEditorComponentAdapter* adapter = Adapters.Find(serializer.TypeId());
         adapter != nullptr)
     {
-        EditorDocument& document = WorldDoc.FocusDocument();
         EditorComponentInspectorContext context{
                 .World = WorldDoc,
                 .Document = document,
@@ -328,7 +463,7 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     std::vector<std::byte> working(size);
     if (size > 0)
     {
-        const void* live = world.GetComponentRaw(entity, id);
+        const void* live = std::as_const(world).GetComponentRaw(entity, id);
         if (live == nullptr)
         {
             ImGui::PopID();
@@ -343,7 +478,7 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
 
     bool activated = false;
     bool committed = false;
-    for (const RuntimeField& field : serializer.RuntimeFields())
+    for (const RuntimeField& field : fields)
     {
         // Asset-handle fields resolve through the asset system, not raw scalar
         // bytes: the picker reads/writes the live component directly via its own
@@ -353,9 +488,43 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
             DrawAssetField(field, entity, id, labelWidth);
             continue;
         }
+        const ImVec2 rowMin = ImGui::GetCursorScreenPos();
         const FieldEdit edit = DrawRuntimeField(field, working.data(), labelWidth);
         activated |= edit.Activated;
         committed |= edit.Committed;
+
+        if (FieldOverrideScratch[&field - fields.data()] == 0)
+            continue;
+        // The field's override badge sits in the label gutter, and the row's
+        // last widget carries the reset in its context menu.
+        ImGui::GetWindowDrawList()->AddCircleFilled(
+            ImVec2(rowMin.x - 6.0f,
+                   rowMin.y + ImGui::GetFrameHeight() * 0.5f),
+            2.5f, ImGui::GetColorU32(EditorUi::Accent));
+        if (baselineBytes != nullptr
+            && ImGui::BeginPopupContextItem(
+                (std::string("##fieldctx_") + field.Name).c_str()))
+        {
+            if (ImGui::MenuItem(ICON_FA_ROTATE_LEFT "  Reset Field to Source"))
+            {
+                std::vector<std::byte> current(size);
+                std::memcpy(current.data(), liveRaw, size);
+                std::vector<std::byte> reset = current;
+                const std::size_t span = field.Size * field.Count;
+                // Bounded, but not from here: this row only exists because the
+                // field compared as overridden, and that comparison refuses a
+                // field whose run leaves the component. Stated locally so the
+                // splice below does not depend on a reader finding that.
+                assert(field.Offset + span <= size
+                       && "a field's bytes lie outside its component");
+                std::memcpy(reset.data() + field.Offset,
+                            baselineBytes + field.Offset, span);
+                Commands.Execute(std::make_unique<RawComponentEditCommand>(
+                    entity, id, std::move(current), std::move(reset),
+                    document.GetScene(), document));
+            }
+            ImGui::EndPopup();
+        }
     }
 
     // Begin an undoable edit: snapshot the pre-edit bytes on widget activation.
@@ -388,50 +557,72 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     ImGui::PopID();
 }
 
-namespace
+// Stable, sorted assets of one kind (AssetRegistry::Records() is unordered),
+// narrowed to the subtype a structured-data field accepts. A field that names
+// no subtype takes any data asset, and a field of any other kind has nothing
+// to narrow by.
+std::vector<InspectorPanel::AssetPickerEntry> InspectorPanel::PickerCandidates(
+    const AssetRegistry& catalog, AssetSystem& assets, const RuntimeField& field)
 {
-    struct CatalogEntry { std::string Path; AssetId Id; };
+    std::vector<AssetPickerEntry> entries;
+    for (const auto& entry : catalog.Records())
+        if (entry.second.Type == field.Asset)
+            entries.push_back({ entry.first, entry.second.Id });
+    std::sort(entries.begin(), entries.end(),
+              [](const AssetPickerEntry& a, const AssetPickerEntry& b)
+              { return a.Path < b.Path; });
 
-    // Stable, sorted assets of one kind (AssetRegistry::Records() is unordered).
-    std::vector<CatalogEntry> SortedAssetsOfType(const AssetRegistry& catalog, AssetType type)
-    {
-        std::vector<CatalogEntry> entries;
-        for (const auto& entry : catalog.Records())
-            if (entry.second.Type == type)
-                entries.push_back({ entry.first, entry.second.Id });
-        std::sort(entries.begin(), entries.end(),
-                  [](const CatalogEntry& a, const CatalogEntry& b) { return a.Path < b.Path; });
+    if (field.Asset != AssetType::Data || field.DataSubtype.empty())
         return entries;
-    }
 
-    // One asset picker combo. Returns true and fills `picked` when the user
-    // chooses a different entry ("(none)" yields an empty ref). `widgetId` must
-    // be unique, so list slots push an index id around it.
-    bool AssetPickCombo(const char* widgetId, const AssetFieldRef& current,
-                        const std::vector<CatalogEntry>& entries, AssetFieldRef& picked)
+    std::erase_if(entries, [&](const AssetPickerEntry& entry)
     {
-        bool changed = false;
-        const char* preview = current.Path.empty() ? "(none)" : current.Path.c_str();
-        if (ImGui::BeginCombo(widgetId, preview))
+        const AssetRecord* record = catalog.FindByPath(entry.Path);
+        return record == nullptr
+            || PeekDataAssetSubtype(assets.DefaultSource(), *record)
+                   != field.DataSubtype;
+    });
+    return entries;
+}
+
+bool InspectorPanel::DrawAssetPickCombo(const char* widgetId,
+                                        const AssetFieldRef& current,
+                                        const AssetRegistry& catalog,
+                                        AssetSystem& assets,
+                                        const RuntimeField& field,
+                                        AssetFieldRef& picked)
+{
+    bool changed = false;
+    const std::uint32_t pickerId = ImGui::GetID(widgetId);
+    const char* preview = current.Path.empty() ? "(none)" : current.Path.c_str();
+    if (ImGui::BeginCombo(widgetId, preview))
+    {
+        if (OpenPicker != pickerId || ImGui::IsWindowAppearing())
         {
-            if (ImGui::Selectable("(none)", current.Path.empty()) && !current.Path.empty())
+            OpenPicker = pickerId;
+            OpenPickerEntries = PickerCandidates(catalog, assets, field);
+        }
+        if (ImGui::Selectable("(none)", current.Path.empty()) && !current.Path.empty())
+        {
+            picked = AssetFieldRef{};
+            changed = true;
+        }
+        if (OpenPickerEntries.empty())
+            ImGui::TextDisabled("%s", field.DataSubtype.empty()
+                                          ? "No assets of this kind in the project."
+                                          : "No matching assets in the project.");
+        for (const AssetPickerEntry& entry : OpenPickerEntries)
+        {
+            const bool selected = (entry.Path == current.Path);
+            if (ImGui::Selectable(entry.Path.c_str(), selected) && !selected)
             {
-                picked = AssetFieldRef{};
+                picked = AssetFieldRef{ entry.Id, entry.Path };
                 changed = true;
             }
-            for (const CatalogEntry& entry : entries)
-            {
-                const bool selected = (entry.Path == current.Path);
-                if (ImGui::Selectable(entry.Path.c_str(), selected) && !selected)
-                {
-                    picked = AssetFieldRef{ entry.Id, entry.Path };
-                    changed = true;
-                }
-            }
-            ImGui::EndCombo();
         }
-        return changed;
+        ImGui::EndCombo();
     }
+    return changed;
 }
 
 void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
@@ -449,13 +640,11 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
     }
 
     World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
-    const void* base = world.GetComponentRaw(entity, component);
+    const void* base = std::as_const(world).GetComponentRaw(entity, component);
     if (base == nullptr)
         return;
     const void* fieldPtr = static_cast<const std::byte*>(base) + field.Offset;
     const AssetFieldValue current = ReadAssetField(*assets, field.Asset, field.Arity, fieldPtr);
-
-    const std::vector<CatalogEntry> entries = SortedAssetsOfType(*catalog, field.Asset);
 
     // One edit = one full before/after value through the refcount-balanced command.
     const auto apply = [&](AssetFieldValue next) {
@@ -472,7 +661,8 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
 
         const AssetFieldRef cur = current.Refs.empty() ? AssetFieldRef{} : current.Refs.front();
         AssetFieldRef picked;
-        if (AssetPickCombo(("##" + field.Name).c_str(), cur, entries, picked))
+        if (DrawAssetPickCombo(("##" + field.Name).c_str(), cur, *catalog, *assets,
+                               field, picked))
         {
             AssetFieldValue next;
             if (!picked.Path.empty())
@@ -499,7 +689,8 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
 
         ImGui::SetNextItemWidth(-trim);
         AssetFieldRef picked;
-        if (AssetPickCombo("##slot", current.Refs[i], entries, picked))
+        if (DrawAssetPickCombo("##slot", current.Refs[i], *catalog, *assets, field,
+                               picked))
         {
             AssetFieldValue next = current;
             next.Refs[i] = std::move(picked);
@@ -615,6 +806,58 @@ void InspectorPanel::OnDraw()
         ResetEditState();
     }
 
+    DrawDerivedComponents(entity);
+
     ImGui::Separator();
     DrawAddComponentMenu(entity);
+}
+
+void InspectorPanel::DrawDerivedComponents(EntityId entity)
+{
+    const World& world =
+        std::as_const(WorldDoc.FocusDocument().GetScene().GetRegistry()).Components;
+    const std::vector<DerivedComponentRow> rows =
+        DerivedComponentsOn(world, EditorSceneSerializers(), entity);
+    if (rows.empty())
+        return;
+
+    // Recomputed rather than cached: one signature walk plus a lookup per
+    // component, for one selected entity, against a loop above that already
+    // builds a string and a byte copy per component per frame.
+    ImGui::PushStyleColor(ImGuiCol_Text, EditorUi::TextDim);
+    const std::string header = "Derived Components (" + std::to_string(rows.size())
+        + ")###derived_components";
+    const bool open = ImGui::CollapsingHeader(header.c_str());
+    ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+    {
+        ImGui::SetTooltip(
+            "On the entity, not in the scene file. Systems keep these; a "
+            "component that cannot work without them brings them along. "
+            "Nothing here is authored, and nothing here is saved.");
+    }
+    if (!open)
+        return;
+
+    ImGui::Indent();
+    for (const DerivedComponentRow& row : rows)
+    {
+        const std::string label = HumanizeFieldLabel(std::string(row.Name));
+        ImGui::BulletText("%s", label.c_str());
+        // The stable name on hover rather than in the row: it is a wire key,
+        // and it is what a search of the source will actually find.
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+            ImGui::SetTooltip("%.*s", static_cast<int>(row.Name.size()), row.Name.data());
+
+        const ComponentMeta* owner = row.ProvidedBy == InvalidComponentId
+            ? nullptr
+            : world.GetMeta(row.ProvidedBy);
+        if (owner == nullptr)
+            continue;
+
+        ImGui::SameLine();
+        ImGui::TextColored(EditorUi::TextDim, "from %s",
+                           HumanizeFieldLabel(std::string(owner->Name)).c_str());
+    }
+    ImGui::Unindent();
 }

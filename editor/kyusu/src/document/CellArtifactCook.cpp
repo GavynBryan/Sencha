@@ -109,8 +109,8 @@ bool EmitCellArtifacts(const DocumentCookContext& ctx,
         }
 
         const std::string cellName = CellName(cell.Coord);
-        const std::string meshAssetPath = "asset://levels/" + stemStr + "/" + cellName;
-        const std::string meshRelPath = ".cooked/levels/" + stemStr + "/" + cellName;
+        const std::string meshAssetPath = "asset://" + stemStr + "/" + cellName;
+        const std::string meshRelPath = ".cooked/" + stemStr + "/" + cellName;
         const std::filesystem::path meshPhysical = assetsRoot / meshRelPath;
         const std::filesystem::path meshStaged = transaction.Stage(meshPhysical);
 
@@ -137,7 +137,7 @@ bool EmitCellArtifacts(const DocumentCookContext& ctx,
             if (!collisionBlob.empty())
             {
                 const std::string colRel =
-                    "levels/" + stemStr + "/" + CellBase(cell.Coord) + ".scol";
+                    stemStr + "/" + CellBase(cell.Coord) + ".scol";
                 const std::filesystem::path colPhysical = assetsRoot / ".cooked" / colRel;
                 const std::filesystem::path colStaged = transaction.Stage(colPhysical);
                 std::ofstream colFile(colStaged, std::ios::binary);

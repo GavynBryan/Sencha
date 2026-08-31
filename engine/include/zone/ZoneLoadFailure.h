@@ -5,15 +5,17 @@
 #include <cstdint>
 #include <string>
 
-// Which owner-thread stage of a zone load refused. Stages run in this order and a
-// load reports the first one that refused it.
+// Which stage of a zone load refused. Stages run in this order and a load
+// reports the first one that refused it.
 //
-// There is deliberately no Build stage: the async lane enforces a no-throw
-// contract and BuildFn returns void, so worker-side package construction has no
-// failure channel. Missing or corrupt content therefore surfaces as a Finalize
-// refusal, which is what a recipe's finalize callback is for.
+// Build failures exist only on the scene-driven path, whose worker stages and
+// parses the cooked scene and so has real ways to refuse (missing file,
+// corrupt image, schema skew). The raw BuildFn path has no failure channel --
+// it returns void under the async lane's no-throw contract -- so its missing
+// or corrupt content surfaces as a Finalize refusal instead.
 enum class ZoneLoadStage : std::uint8_t
 {
+    Build,     // scene staging or package construction failed
     Import,    // package import into the hidden partition failed
     Finalize,  // the recipe's finalize callback declined publication
     Publish,   // publication of an imported partition failed
@@ -23,6 +25,7 @@ enum class ZoneLoadStage : std::uint8_t
 {
     switch (stage)
     {
+    case ZoneLoadStage::Build:    return "build";
     case ZoneLoadStage::Import:   return "import";
     case ZoneLoadStage::Finalize: return "finalize";
     case ZoneLoadStage::Publish:  return "publish";

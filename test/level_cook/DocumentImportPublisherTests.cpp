@@ -52,7 +52,7 @@ TEST(DocumentImportPublisher, StagesBytesThroughTransactionAndCommitsWithIndex)
     CookedCacheIndex index;
 
     {
-        CookArtifactTransaction transaction(root.Path, "levels/test.level.json");
+        CookArtifactTransaction transaction(root.Path, "levels/test.sscene");
         DocumentImportPublisher publisher(transaction, root.Path, index);
 
         const std::vector<std::byte> bytes = Bytes("cooked stex bytes");
@@ -90,7 +90,7 @@ TEST(DocumentImportPublisher, AbandonedTransactionPublishesNothing)
     CookedCacheIndex index;
 
     {
-        CookArtifactTransaction transaction(root.Path, "levels/test.level.json");
+        CookArtifactTransaction transaction(root.Path, "levels/test.sscene");
         DocumentImportPublisher publisher(transaction, root.Path, index);
         const std::vector<std::byte> bytes = Bytes("cooked stex bytes");
         ASSERT_TRUE(publisher.WriteBytes(".cooked/textures/dev/checker.stex", bytes));

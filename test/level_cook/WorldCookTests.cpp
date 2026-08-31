@@ -1,8 +1,11 @@
 #include <gtest/gtest.h>
 
 #include "document/DocumentCook.h"
+#include "CookedSmapReaders.h"
 #include "document/DocumentSerialization.h"
 #include "document/WorldCook.h"
+#include "scene_source/Json5Parser.h"
+#include "scene_source/Json5Writer.h"
 #include "document/WorldDocument.h"
 #include "document/commands/MoveEntitiesToZoneCommand.h"
 
@@ -12,6 +15,9 @@
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/BinaryReader.h>
 #include <render/IrradianceVolumeComponent.h>
+#include <render/PointLightComponent.h>
+#include <world/scene/SmapFormat.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <zone/WorldPartitionManifest.h>
 #include <zone/WorldConnectionComponents.h>
@@ -68,33 +74,26 @@ protected:
         return *manifest;
     }
 
-    // Rewrites a saved zone file through a JSON edit, standing in for content
-    // the editor cannot author: a file that predates persistent identity, or one
-    // whose ids were written by hand.
+    // Rewrites a saved zone file through the scene-source layer, standing in
+    // for content the editor cannot author: a file that predates persistent
+    // identity, or one whose ids were written by hand.
     static void EditSavedScene(const fs::path& path,
-                               const std::function<void(JsonValue&)>& edit)
+                               const std::function<void(Json5Value&)>& edit)
     {
-        auto json = JsonParse(ReadFile(path));
-        ASSERT_TRUE(json.has_value()) << path.generic_string();
-        edit(*json);
-        std::ofstream(path, std::ios::binary | std::ios::trunc)
-            << JsonStringify(*json, true);
+        Json5ParseError error;
+        auto root = Json5Parse(ReadFile(path), &error);
+        ASSERT_TRUE(root.has_value()) << path.generic_string() << ": " << error.Message;
+        edit(*root);
+        std::ofstream(path, std::ios::binary | std::ios::trunc) << Json5Write(*root);
     }
 
-    static void StripPersistentIds(JsonValue& root)
+    static void StripPersistentIds(Json5Value& root)
     {
-        JsonValue* entities = root.Find("entities");
-        if (entities == nullptr || !entities->IsArray())
-            return;
-        for (JsonValue& entity : entities->AsArray())
-        {
-            JsonValue* components = entity.Find("components");
-            if (components == nullptr || !components->IsObject())
-                continue;
-            auto& members = components->AsObject();
-            std::erase_if(members, [](const auto& member)
-                          { return member.first == "persistent_id"; });
-        }
+        // Identity lives at record level in .sscene.
+        if (Json5Value* entities = root.FindMutable("entities"))
+            for (Json5Value& record : entities->Elements)
+                std::erase_if(record.Members, [](const Json5Value::Member& member)
+                              { return member.first == "id"; });
     }
 
     LoggingProvider Logging;   // sink-less: silent
@@ -130,11 +129,62 @@ TEST_F(WorldCookTest, CooksTwoZoneWorldToCookedManifest)
             EXPECT_NE(zone.CookedContentHash, 0u);
             EXPECT_FALSE(zone.CookedSceneRef.empty());
             EXPECT_TRUE(fs::exists(Root / zone.CookedSceneRef));
-            EXPECT_TRUE(fs::exists(Root / zone.CookedCollisionRef));
         }
         EXPECT_EQ(manifest.Zones[0].Id, first);
         EXPECT_EQ(manifest.Zones[1].Id, second);
     }
+}
+
+// §3 at the world level: SaveWorld lands zone files on disk, then every open
+// document that places one of them re-projects from the fresh content.
+TEST_F(WorldCookTest, SavingAZoneReprojectsTheZoneThatPlacesIt)
+{
+    WorldDocument world(Logging);
+    world.SetContentRoots({ Root });
+    world.NewWorld("TestWorld");
+    const ZoneId prefabZone = world.Manifest().Zones[0].Id;
+    const ZoneId hostZone = world.AddZone(world.Manifest().Graphs[0].Id, "Host");
+    ASSERT_TRUE(world.SetZoneBounds(hostZone,
+        Aabb3d::FromMinMax(Vec3d{ 24, 0, -5 }, Vec3d{ 40, 4, 5 })));
+
+    // The prefab zone: one light. Saved once so the host can resolve it.
+    const EntityId light =
+        world.FocusDocument().GetScene().CreateEntity(Vec3d{ 0, 2, 0 });
+    PointLightComponent lamp{};
+    lamp.Range = 3.0f;
+    world.FocusDocument().GetScene().GetRegistry().Components.AddComponent(
+        light, lamp);
+    ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+    const std::string prefabRef = world.Manifest().Zones[0].SceneRef;
+
+    // The host zone places it.
+    ASSERT_TRUE(world.SetFocusZone(hostZone));
+    std::string placeError;
+    const SceneInstanceId placed = world.FocusDocument().PlaceSceneInstance(
+        "asset://" + prefabRef, Transform3f::Identity(), {}, &placeError);
+    ASSERT_TRUE(placed.IsValid()) << placeError;
+    const auto hostLightRange = [&]() -> float
+    {
+        for (EntityId entity : world.FocusDocument().GetScene().GetAllEntities())
+            if (const auto* projected =
+                    world.FocusDocument().GetRegistry()
+                        .Components.TryGet<PointLightComponent>(entity))
+                return projected->Range;
+        return -1.0f;
+    };
+    ASSERT_EQ(hostLightRange(), 3.0f);
+
+    // Edit the prefab zone and save the world: the host must show the new
+    // value without a reload.
+    ASSERT_TRUE(world.SetFocusZone(prefabZone));
+    world.FocusDocument().GetScene().GetRegistry()
+        .Components.TryGet<PointLightComponent>(light)->Range = 9.0f;
+    world.FocusDocument().MarkDirty();
+    ASSERT_TRUE(world.SetFocusZone(hostZone));
+    ASSERT_TRUE(world.SaveWorld());
+
+    EXPECT_EQ(hostLightRange(), 9.0f)
+        << "the placing zone did not re-project after its source saved";
 }
 
 TEST_F(WorldCookTest, RefusesGateBindingToMissingDock)
@@ -270,13 +320,7 @@ TEST_F(WorldCookTest, CookReflectsCrossZoneMove)
     ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
 
     const auto cookedEntityCount = [this](const std::string& sceneRef)
-    {
-        const auto json = JsonParse(ReadFile(Root / sceneRef));
-        EXPECT_TRUE(json.has_value());
-        const JsonValue* entities = json->Find("entities");
-        EXPECT_NE(entities, nullptr);
-        return entities->AsArray().size();
-    };
+    { return ReadCookedScene(Root / sceneRef).Entities.size(); };
 
     const WorldCookResult before = CookWorld(world, Root, 16.0, Logging, nullptr);
     ASSERT_TRUE(before.Success) << before.Error;
@@ -313,12 +357,10 @@ TEST_F(WorldCookTest, CooksWorldSceneBesideZones)
     ASSERT_TRUE(cooked.Success) << cooked.Error;
 
     const WorldPartitionManifest manifest = ParseCookedManifest(cooked.CookedManifestPath);
-    EXPECT_EQ(manifest.WorldSceneRef, "levels/test_world.level.json");
+    EXPECT_EQ(manifest.WorldSceneRef, "levels/test_world.sscene");
     ASSERT_FALSE(manifest.CookedWorldSceneRef.empty());
-    ASSERT_FALSE(manifest.CookedWorldCollisionRef.empty());
     EXPECT_NE(manifest.CookedWorldContentHash, 0u);
     EXPECT_TRUE(fs::exists(Root / manifest.CookedWorldSceneRef));
-    EXPECT_TRUE(fs::exists(Root / manifest.CookedWorldCollisionRef));
 }
 
 TEST_F(WorldCookTest, WorldSceneRecookIsByteIdenticalAndEditChangesOnlyItsHash)
@@ -362,7 +404,7 @@ namespace
 double ProbeC0Sum(const std::filesystem::path& cookedScenePath)
 {
     std::string probePath = cookedScenePath.generic_string();
-    constexpr std::string_view cookedSuffix = ".cooked.json";
+    constexpr std::string_view cookedSuffix = ".smap";
     EXPECT_TRUE(probePath.ends_with(cookedSuffix));
     probePath.resize(probePath.size() - cookedSuffix.size());
     probePath += "/probes.sprobe";
@@ -644,28 +686,19 @@ TEST_F(WorldCookTest, CookedSceneCarriesAuthoredIdsAndGeneratedEntitiesCarryNone
 
     const WorldPartitionManifest manifest = ParseCookedManifest(cooked.CookedManifestPath);
     ASSERT_FALSE(manifest.Zones.empty());
-    const auto sceneJson = JsonParse(ReadFile(Root / manifest.Zones[0].CookedSceneRef));
-    ASSERT_TRUE(sceneJson.has_value());
-    const JsonValue* entities = sceneJson->Find("entities");
-    ASSERT_NE(entities, nullptr);
+    const SmapContents scene =
+        ReadCookedScene(Root / manifest.Zones[0].CookedSceneRef);
 
-    const std::string expected = PersistentEntityIdToString(authoredId->Id);
     bool sawAuthoredId = false;
     std::size_t withoutId = 0;
-    for (const JsonValue& entity : entities->AsArray())
+    for (const SmapEntityRecord& record : scene.Entities)
     {
-        const JsonValue* components = entity.Find("components");
-        ASSERT_NE(components, nullptr);
-        const JsonValue* persistent = components->Find("persistent_id");
-        if (persistent == nullptr)
+        if (!record.Persistent.IsValid())
         {
             ++withoutId;
             continue;
         }
-        const JsonValue* id = persistent->Find("id");
-        ASSERT_NE(id, nullptr);
-        ASSERT_TRUE(id->IsString());
-        sawAuthoredId = sawAuthoredId || id->AsString() == expected;
+        sawAuthoredId = sawAuthoredId || record.Persistent == authoredId->Id;
     }
     EXPECT_TRUE(sawAuthoredId)
         << "the authored entity's id must cook through verbatim";

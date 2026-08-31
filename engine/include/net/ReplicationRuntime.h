@@ -1,7 +1,7 @@
 #pragma once
 
 #include <net/NetSession.h>
-#include <net/NetSpawnRecipe.h>
+#include <net/NetSpawnPrefab.h>
 #include <net/PeerCommandRuntime.h>
 #include <net/NetDesyncProbe.h>
 #include <net/ReplicationChangeStore.h>
@@ -276,7 +276,7 @@ public:
     SnapshotApplyResult Apply(std::span<const std::byte> payload, World& world,
                               const WorldComponentSchema& schema,
                               const ReplicationLayout& layout,
-                              const NetSpawnRecipes* recipes = nullptr,
+                              INetPrefabSpawner* prefabs = nullptr,
                               ClientPrediction* prediction = nullptr,
                               ReplicationInterpolation* interpolation = nullptr);
 

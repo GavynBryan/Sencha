@@ -30,8 +30,6 @@ struct DocumentCookResult
     std::vector<std::string> ReusedSteps;
     std::vector<std::string> GeneratedMeshPaths; // asset:// per cell, in cook order
     std::filesystem::path    CookedScenePath;
-    std::filesystem::path    ManifestPath;
-    std::filesystem::path    CollisionSidecarPath;
     uint64_t                 ContentHash = 0; // the hash the cooked cache keyed this cook by
     std::size_t              CellCount = 0;
     std::size_t              DirectLightCount = 0;   // lights baked this cook

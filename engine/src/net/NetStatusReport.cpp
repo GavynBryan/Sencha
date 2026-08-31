@@ -245,16 +245,17 @@ namespace
                     applied.Tick, applied.EntitiesSpawned, applied.EntitiesUpdated,
                     applied.EntitiesDestroyed, applied.ComponentsRemoved);
 
-        // The two ways an entity arrives and does not appear. A missing recipe
-        // leaves it correct in state and invisible on screen; a deferred
-        // authored key means this machine has not loaded the level yet, and
-        // the snapshot deliberately goes unacknowledged so it comes again.
-        if (applied.RecipesMissing != 0 || applied.AuthoredDeferred != 0
+        // The two ways an entity the wire named is not here yet. Both go
+        // unacknowledged deliberately, so the authority describes them again:
+        // an authored key this machine has not loaded, and a prefab it cannot
+        // build. A count that never falls is content the two ends disagree
+        // about, and the log names which prefab.
+        if (applied.PrefabsDeferred != 0 || applied.AuthoredDeferred != 0
             || applied.AuthoredBound != 0)
         {
             Continue(out);
-            out += Line("%u recipe(s) missing, %u authored bound, %u deferred",
-                        applied.RecipesMissing, applied.AuthoredBound,
+            out += Line("%u prefab(s) deferred, %u authored bound, %u deferred",
+                        applied.PrefabsDeferred, applied.AuthoredBound,
                         applied.AuthoredDeferred);
         }
     }

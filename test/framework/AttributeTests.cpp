@@ -49,6 +49,34 @@ TEST(AttributeSet, AddSetGetStaysSorted)
         EXPECT_LT(s.Ids[i - 1].Value, s.Ids[i].Value);
 }
 
+TEST(AttributeSet, RemoveClosesTheGapAndKeepsTheBlockSorted)
+{
+    AttributeRegistry reg;
+    const AttributeId hp  = reg.RegisterAttribute("Health");
+    const AttributeId sta = reg.RegisterAttribute("Stamina");
+    const AttributeId mp  = reg.RegisterAttribute("Mana");
+
+    AttributeSet s{};
+    ASSERT_TRUE(s.Add(hp, 80.0f));
+    ASSERT_TRUE(s.Add(sta, 30.0f));
+    ASSERT_TRUE(s.Add(mp, 50.0f));
+
+    EXPECT_FALSE(s.Remove(reg.RegisterAttribute("Poise"))); // never added
+    EXPECT_TRUE(s.Remove(sta));                             // a middle slot
+    EXPECT_FALSE(s.Remove(sta));                            // and only once
+
+    EXPECT_EQ(s.Size(), 2u);
+    EXPECT_FALSE(s.Has(sta));
+    EXPECT_FLOAT_EQ(s.GetBase(hp), 80.0f);
+    EXPECT_FLOAT_EQ(s.GetBase(mp), 50.0f);
+    for (int i = 1; i < s.Count; ++i)
+        EXPECT_LT(s.Ids[i - 1].Value, s.Ids[i].Value);
+
+    EXPECT_TRUE(s.Remove(hp));
+    EXPECT_TRUE(s.Remove(mp));
+    EXPECT_TRUE(s.Empty());
+}
+
 TEST(AttributeResolve, ClampsCurrentFromBaseViaRegistry)
 {
     World world;

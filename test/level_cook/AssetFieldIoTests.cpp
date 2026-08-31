@@ -1,21 +1,36 @@
 // AssetFieldIo: the editor's live-handle asset I/O. The List (per-slot material)
-// path is the one that carries refcount risk, so it is exercised headlessly here
-// against a real AssetSystem with material caches. The Single (static mesh) path
-// needs a graphics-backed StaticMeshCache and is covered at runtime, not here.
+// and Data (structured data) paths are the ones that carry refcount risk, so
+// they are exercised headlessly here against real caches. The mesh Single paths
+// need a graphics-backed cache and are covered at runtime, not here.
 
 #include "document/AssetFieldIo.h"
 
+#include <core/assets/AssetLease.h>
 #include <core/assets/AssetRegistry.h>
 #include <assets/runtime/AssetSystem.h>
+#include <assets/runtime/RuntimeAssets.h>
 #include <core/logging/LoggingProvider.h>
+#include <core/metadata/RuntimeSchema.h>
+#include <movement/MovementComponents.h>
+#include <movement/MovementProfileData.h>
+#include <movement/MovementTuningSourceSerializer.h>
 #include <render/Material.h>
 #include <render/MaterialCache.h>
 #include <render/MaterialSetCache.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
+#include <world/serialization/IComponentSerializer.h>
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <initializer_list>
+#include <memory>
+#include <span>
 #include <string>
+#include <string_view>
+#include <system_error>
 
 namespace
 {
@@ -160,4 +175,185 @@ TEST(AssetFieldIo, MissingRefResolvesToEmptySlot)
     EXPECT_TRUE(read.Refs[0].Path.empty());
 
     f.Assets.ReleaseMaterialSet(field);
+}
+
+//=============================================================================
+// Structured data (AssetType::Data, Single)
+//
+// The one kind the asset front door cannot name a handle type for: it travels
+// as an opaque token, so the read resolves through GetPathForLease and the
+// apply moves a lease's reference into the field. A full headless RuntimeAssets
+// is the fixture because the data stack -- subtype registry, schemas, loader,
+// cache -- lives there rather than in AssetSystem.
+//=============================================================================
+namespace
+{
+    // A movement profile on disk, registered so the asset system can resolve
+    // it. The profile subtype is registered by RuntimeAssets itself.
+    class TempProfileFile
+    {
+    public:
+        explicit TempProfileFile(std::string_view name)
+        {
+            static int counter = 0;
+            File = std::filesystem::temp_directory_path()
+                / ("sencha_profile_" + std::string(name) + "_"
+                   + std::to_string(++counter) + ".sdata");
+            Virtual = "asset://data/" + std::string(name) + ".sdata";
+
+            std::ofstream out(File, std::ios::trunc);
+            out << R"({"type":"movement.profile","version":1,"data":{"name":")"
+                << name << R"(","layers":[{"name":"Base","set":{"max_speed":5}}]}})";
+        }
+
+        ~TempProfileFile()
+        {
+            std::error_code ec;
+            std::filesystem::remove(File, ec);
+        }
+
+        TempProfileFile(const TempProfileFile&) = delete;
+        TempProfileFile& operator=(const TempProfileFile&) = delete;
+
+        void RegisterIn(AssetRegistry& registry) const
+        {
+            AssetRecord record;
+            record.Type = AssetType::Data;
+            record.SourceKind = AssetSourceKind::File;
+            record.Path = Virtual;
+            record.FilePath = File.generic_string();
+            ASSERT_TRUE(registry.Register(record));
+        }
+
+        std::filesystem::path File;
+        std::string           Virtual;
+    };
+
+    AssetFieldValue ReadProfile(AssetSystem& assets, const MovementProfileHandle& field)
+    {
+        return ReadAssetField(assets, AssetType::Data, AssetArity::Single, &field);
+    }
+
+    void WriteProfile(AssetSystem& assets, MovementProfileHandle& field,
+                      const AssetFieldValue& value)
+    {
+        ApplyAssetField(assets, AssetType::Data, AssetArity::Single, &field, value);
+    }
+}
+
+TEST(AssetFieldIo, DataFieldRoundTripsThroughItsPath)
+{
+    LoggingProvider logging;
+    ComponentSerializerRegistry serializers;
+    RuntimeAssets assets(logging, serializers);
+    TempProfileFile profile("walk");
+    profile.RegisterIn(assets.Registry);
+
+    MovementProfileHandle field{};
+    EXPECT_TRUE(ReadProfile(assets.Assets, field).Refs.empty());
+
+    WriteProfile(assets.Assets, field, Value({ profile.Virtual.c_str() }));
+    ASSERT_TRUE(field.IsValid());
+
+    const AssetFieldValue read = ReadProfile(assets.Assets, field);
+    ASSERT_EQ(read.Refs.size(), 1u);
+    EXPECT_EQ(read.Refs[0].Path, profile.Virtual);
+
+    // Clearing the field releases the last reference, so the entry is freed.
+    WriteProfile(assets.Assets, field, AssetFieldValue{});
+    EXPECT_FALSE(field.IsValid());
+    EXPECT_FALSE(assets.DataAssets.Find(profile.Virtual).IsValid());
+}
+
+// The refcount claim, stated as residency: after an edit the field holds
+// exactly one reference to the new profile and none to the old one. An apply
+// that forgot to relinquish the load's lease would leave `first` resident with
+// nothing naming it; one that forgot to release the replaced handle would do
+// the same to `second` on the way back.
+TEST(AssetFieldIo, DataFieldHoldsExactlyOneReferenceAcrossEdits)
+{
+    LoggingProvider logging;
+    ComponentSerializerRegistry serializers;
+    RuntimeAssets assets(logging, serializers);
+    TempProfileFile first("first");
+    TempProfileFile second("second");
+    first.RegisterIn(assets.Registry);
+    second.RegisterIn(assets.Registry);
+
+    MovementProfileHandle field{};
+    WriteProfile(assets.Assets, field, Value({ first.Virtual.c_str() }));
+    WriteProfile(assets.Assets, field, Value({ second.Virtual.c_str() }));
+
+    EXPECT_FALSE(assets.DataAssets.Find(first.Virtual).IsValid());
+    ASSERT_TRUE(assets.DataAssets.Find(second.Virtual).IsValid());
+
+    // Undo's direction, which the edit command replays through the same call.
+    WriteProfile(assets.Assets, field, Value({ first.Virtual.c_str() }));
+    EXPECT_FALSE(assets.DataAssets.Find(second.Virtual).IsValid());
+    ASSERT_TRUE(assets.DataAssets.Find(first.Virtual).IsValid());
+
+    WriteProfile(assets.Assets, field, AssetFieldValue{});
+    EXPECT_FALSE(assets.DataAssets.Find(first.Virtual).IsValid());
+}
+
+// A profile that no longer resolves leaves the field unset rather than holding
+// a handle to nothing -- and still releases what it replaced.
+TEST(AssetFieldIo, DataFieldClearsWhenTheProfileIsGone)
+{
+    LoggingProvider logging;
+    ComponentSerializerRegistry serializers;
+    RuntimeAssets assets(logging, serializers);
+    TempProfileFile profile("present");
+    profile.RegisterIn(assets.Registry);
+
+    MovementProfileHandle field{};
+    WriteProfile(assets.Assets, field, Value({ profile.Virtual.c_str() }));
+    ASSERT_TRUE(field.IsValid());
+
+    WriteProfile(assets.Assets, field, Value({ "asset://data/missing.sdata" }));
+    EXPECT_FALSE(field.IsValid());
+    EXPECT_FALSE(assets.DataAssets.Find(profile.Virtual).IsValid());
+}
+
+// Relinquish hands the reference over rather than dropping it: the entry
+// survives the lease's destruction, and is freed by the release that follows.
+TEST(AssetFieldIo, RelinquishingALeaseKeepsTheReference)
+{
+    LoggingProvider logging;
+    ComponentSerializerRegistry serializers;
+    RuntimeAssets assets(logging, serializers);
+    TempProfileFile profile("kept");
+    profile.RegisterIn(assets.Registry);
+
+    std::uint64_t token = 0;
+    {
+        AssetLease lease = assets.Assets.LoadLease(profile.Virtual, AssetType::Data);
+        ASSERT_TRUE(lease.IsValid());
+        token = lease.Relinquish();
+        EXPECT_FALSE(lease.IsValid());
+    }
+    EXPECT_TRUE(assets.DataAssets.Find(profile.Virtual).IsValid());
+
+    // Find took a reference of its own; drop both.
+    assets.DataAssets.Release(assets.DataAssets.Find(profile.Virtual));
+    assets.DataAssets.Release(assets.DataAssets.Find(profile.Virtual));
+    assets.Assets.ReleaseLease(AssetType::Data, token);
+    EXPECT_FALSE(assets.DataAssets.Find(profile.Virtual).IsValid());
+}
+
+// The description the inspector draws from: one asset field, narrowed to the
+// subtype a movement profile declares. Without it the component is a bare
+// header in the inspector, which is what this whole path exists to fix.
+TEST(AssetFieldIo, MovementTuningDescribesItsProfileField)
+{
+    const std::unique_ptr<IComponentSerializer> serializer =
+        MakeMovementTuningSourceSerializer();
+    const std::span<const RuntimeField> fields = serializer->RuntimeFields();
+    ASSERT_EQ(fields.size(), 1u);
+    EXPECT_EQ(fields[0].Name, "profile");
+    EXPECT_EQ(fields[0].Offset, 0u);
+    EXPECT_EQ(fields[0].Asset, AssetType::Data);
+    EXPECT_EQ(fields[0].Arity, AssetArity::Single);
+    EXPECT_EQ(fields[0].DataSubtype, kMovementProfileTypeName);
+    EXPECT_FALSE(fields[0].Label.empty());
 }

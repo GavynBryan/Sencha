@@ -19,12 +19,12 @@ void ForEachVisibleBrush(const EditorScene& scene, bool skipLocked, F&& fn)
 {
     for (EntityId entity : scene.GetAllEntities())
     {
-        if (!scene.IsEntityVisible(entity))
+        if (!scene.IsEntityEffectivelyVisible(entity))
             continue;
-        if (skipLocked && scene.IsEntityLocked(entity))
+        if (skipLocked && scene.IsEntityEffectivelyLocked(entity))
             continue;
         const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-        const Transform3f* transform = scene.TryGetTransform(entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(entity);
         if (mesh == nullptr || transform == nullptr)
             continue;
         fn(entity, *mesh, *transform);

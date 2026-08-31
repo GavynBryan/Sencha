@@ -18,9 +18,11 @@
 #include <functional>
 #include <memory>
 #include <span>
+#include <tuple>
 #include <typeindex>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 // Forward declarations — defined in their own headers.
@@ -137,6 +139,13 @@ public:
             assert(existing.Size == size && existing.Alignment == align
                    && existing.IsTag == std::is_empty_v<T>
                    && "ComponentTypeId collision: same stable name, different storage layout.");
+            // And the same declared obligations. A translation unit that
+            // registers T without T's ComponentTraits in scope records an empty
+            // set; whichever registration ran first would then decide, for this
+            // whole World, whether a component arrives with what it needs.
+            assert(Provisioning[it->second].DeclaredOwed == DeclaredOwedIds<T>()
+                   && "Component registered twice with different DerivedComponents: "
+                      "one of the translation units cannot see the declaration.");
             return it->second;
         }
 
@@ -160,6 +169,18 @@ public:
             };
         }
         ComponentMetas.push_back(meta);
+
+        // What T owes, and how to give it. Captured here because this is the
+        // only place the World still knows T by type; everything downstream --
+        // a command buffer flushing a recorded add, the editor adding a
+        // component it knows only by id -- addresses components as ids and
+        // could not expand the tuple or default-construct the value.
+        ComponentProvisioning provisioning;
+        provisioning.DeclaredOwed = DeclaredOwedIds<T>();
+        provisioning.AddDefault = [](World& world, EntityId entity) {
+            world.AddComponent<T>(entity, T{});
+        };
+        Provisioning.push_back(std::move(provisioning));
 
         return id;
     }
@@ -257,7 +278,8 @@ public:
             // Tag presence is the signature; there is no column to write and
             // AddComponent fires no hook for tags either.
             const EntityLocation loc = Entities.GetLocation(entity);
-            return ArchetypeList[loc.ArchetypeId]->Signature.test(GetComponentId<T>());
+            if (!ArchetypeList[loc.ArchetypeId]->Signature.test(GetComponentId<T>()))
+                return false;
         }
         else
         {
@@ -273,8 +295,14 @@ public:
                 ScopedLifecycleHook hookScope(*this);
                 ComponentTraits<T>::OnAdd(*slot, *this, entity);
             }
-            return true;
         }
+
+        // The same obligation the ordinary add carries. A caller that built the
+        // row at its final signature already put the owed columns in it, and
+        // this costs one signature test each; a caller that did not gets them
+        // the slow way rather than an entity missing them.
+        ProvideDerivedComponents(entity, GetComponentId<T>());
+        return true;
     }
 
     void DestroyEntity(EntityId entity)
@@ -437,6 +465,10 @@ public:
             ScopedLifecycleHook hookScope(*this);
             ComponentTraits<T>::OnAdd(*ptr, *this, entity);
         }
+
+        // After T is whole, because an owed component's own hook may look at
+        // the entity and T is part of what it would see.
+        ProvideDerivedComponents(entity, id);
     }
 
     template <typename T>
@@ -817,6 +849,74 @@ public:
         return &ComponentMetas[id];
     }
 
+    // How many components this World knows, so a caller that walks them does
+    // not have to probe GetMeta until it returns null. Ids are dense from zero.
+    [[nodiscard]] std::size_t RegisteredComponentCount() const
+    {
+        return ComponentMetas.size();
+    }
+
+    // Every component `entity` carries, in ascending id order; empty for a dead
+    // entity. Caller-owned storage so a caller comparing two snapshots is not
+    // allocating twice per comparison.
+    //
+    // The entity's whole shape, which nothing else could ask for: the typed
+    // accessors need a type and GetMeta needs an id you already have. An
+    // authoring surface showing what an entity is, and an undo taking back
+    // what an add brought, both start here.
+    void ComponentIdsOn(EntityId entity, std::vector<ComponentId>& out) const
+    {
+        out.clear();
+        if (!Entities.IsAlive(entity))
+            return;
+
+        const EntityLocation loc = Entities.GetLocation(entity);
+        const ArchetypeSignature& signature = ArchetypeList[loc.ArchetypeId]->Signature;
+        for (ComponentId id = 0; id < ComponentMetas.size(); ++id)
+            if (signature.test(id))
+                out.push_back(id);
+    }
+
+    // What `id` declares it cannot work without, as stated -- not the
+    // transitive closure, and not filtered to what this World registered. For a
+    // consumer that wants to say which component another one came from; the
+    // provisioning below is what applies it.
+    [[nodiscard]] std::span<const ComponentTypeId> DeclaredOwedComponents(ComponentId id) const
+    {
+        if (id >= Provisioning.size())
+            return {};
+        return Provisioning[id].DeclaredOwed;
+    }
+
+    // Adds everything `id` owes that this World knows and `entity` does not
+    // already carry, default-constructed, through the ordinary typed add --
+    // which applies each provisioned component's own owed set, so one call
+    // settles the whole closure and a cycle terminates on what is already
+    // there. A component the World never registered is skipped, so a fixture
+    // with a partial vocabulary stays valid.
+    //
+    // A caller that has to undo its own add diffs the entity's components
+    // across the call rather than being handed a list: provisioning recurses,
+    // so what one call put on an entity is not only what this loop touched.
+    void ProvideDerivedComponents(EntityId entity, ComponentId id)
+    {
+        if (id >= Provisioning.size())
+            return;
+
+        // By value: nothing here registers a component, but the typed add below
+        // re-enters this World, and copying the small id list keeps the loop
+        // independent of the table's identity.
+        const std::vector<ComponentTypeId> owed = Provisioning[id].DeclaredOwed;
+        for (const ComponentTypeId type : owed)
+        {
+            const ComponentId owedId = GetComponentIdByType(type);
+            if (owedId == InvalidComponentId || HasComponent(entity, owedId))
+                continue;
+            if (Provisioning[owedId].AddDefault != nullptr)
+                Provisioning[owedId].AddDefault(*this, entity);
+        }
+    }
+
     // ── Type-erased mutation (used by CommandBuffer::Flush) ──────────────────
     //
     // These accept raw bytes and function pointers rather than templates so that
@@ -869,6 +969,12 @@ public:
             ScopedLifecycleHook hookScope(*this);
             onAdd(ch->ColumnData(col) + dri * size, *this, entity);
         }
+
+        // Outside the hook scope, not inside it: provisioning ends in the typed
+        // add, which refuses to run while a lifecycle hook is on the stack. The
+        // ordering is otherwise the one the typed add documents -- the component
+        // is whole before anything it owes arrives to look at it.
+        ProvideDerivedComponents(entity, id);
     }
 
     void RemoveComponentRaw(
@@ -969,6 +1075,14 @@ public:
 
         for (const Move& move : moves)
             Entities.SetLocation(move.Entity, move.Destination);
+
+        // Last, and by entity rather than by the locations recorded above: the
+        // first provisioned add relocates a row and every Destination in this
+        // list goes stale with it. One id for the whole run, so the check for
+        // "owes nothing" is paid once rather than per entity.
+        if (!DeclaredOwedComponents(id).empty())
+            for (const Move& move : moves)
+                ProvideDerivedComponents(move.Entity, id);
     }
 
     void RemoveComponentsRawBatch(
@@ -1020,6 +1134,14 @@ public:
     }
 
 private:
+    // How a component is provisioned when something else owes it. Filled at
+    // registration, index-aligned with ComponentMetas.
+    struct ComponentProvisioning
+    {
+        std::vector<ComponentTypeId>  DeclaredOwed;
+        void (*AddDefault)(World&, EntityId) = nullptr;
+    };
+
     EntityRegistry                          Entities;
     std::vector<std::unique_ptr<Archetype>> ArchetypeList;
 
@@ -1054,6 +1176,10 @@ private:
     std::unordered_map<ArchetypeSignature, uint32_t, SigHash> SignatureToArchetype;
 
     std::vector<ComponentMeta>                         ComponentMetas;
+    // Beside ComponentMetas rather than inside it: ComponentMeta travels
+    // through installed headers, and this is editor and command-buffer
+    // machinery no module reads.
+    std::vector<ComponentProvisioning>                 Provisioning;
     std::unordered_map<ComponentTypeId, ComponentId>   TypeToId;
     ComponentId NextComponentId = 0;
 
@@ -1091,6 +1217,7 @@ private:
         HookedRemoveIdsByArchetype = std::move(other.HookedRemoveIdsByArchetype);
         SignatureToArchetype = std::move(other.SignatureToArchetype);
         ComponentMetas = std::move(other.ComponentMetas);
+        Provisioning = std::move(other.Provisioning);
         TypeToId = std::move(other.TypeToId);
         NextComponentId = other.NextComponentId;
         Resources = std::move(other.Resources);

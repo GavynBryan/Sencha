@@ -348,8 +348,9 @@ namespace
             // them, and so the two machines' handles are visibly separate.
             if (AuthoredTuning)
             {
-                Authority.Entities.TryGet<CharacterMovement>(AuthorityPawn)->Profile =
-                    Authority.InstallProfile();
+                Authority.Entities.AddComponent<MovementTuningSource>(
+                    AuthorityPawn,
+                    MovementTuningSource{ .Profile = Authority.InstallProfile() });
             }
             return true;
         }
@@ -488,8 +489,9 @@ namespace
                 // prediction shadow seeds from a complete component.
                 if (AuthoredTuning)
                 {
-                    Mirror.Entities.TryGet<CharacterMovement>(ClientPawn)->Profile =
-                        Mirror.InstallProfile();
+                    Mirror.Entities.AddComponent<MovementTuningSource>(
+                        ClientPawn,
+                        MovementTuningSource{ .Profile = Mirror.InstallProfile() });
                 }
                 Prediction.SetPredicted(ClientPawn);
                 break;

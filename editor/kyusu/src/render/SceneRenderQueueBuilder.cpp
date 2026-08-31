@@ -34,6 +34,7 @@
 #include <world/serialization/SceneSerializationContext.h>
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
+#include <world/transform/TransformPropagation.h>
 
 #include <algorithm>
 #include <cmath>
@@ -128,7 +129,7 @@ void SceneRenderQueueBuilder::Build(const EditorDocument& document)
         world.ForEachComponent<IrradianceVolumeComponent>(
             [&](EntityId entity, const IrradianceVolumeComponent& volume)
             {
-                const Transform3f* transform = scene.TryGetTransform(entity);
+                const Transform3f* transform = scene.TryGetWorldTransform(entity);
                 if (transform == nullptr)
                     return;
                 HashFnv1aValue(probeVolumesHash, transform->Position);
@@ -226,7 +227,7 @@ void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
     const World& world = scene.GetRegistry().Components;
     for (const EntityId entity : scene.GetAllEntities())
     {
-        if (!scene.IsEntityVisible(entity))
+        if (!scene.IsEntityEffectivelyVisible(entity))
             continue;
         const StaticMeshComponent* renderer = world.TryGet<StaticMeshComponent>(entity);
         if (renderer == nullptr || !renderer->Visible)
@@ -236,7 +237,7 @@ void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
         const std::vector<MaterialHandle>* sectionMaterials = MaterialSets.Get(renderer->Materials);
         if (mesh == nullptr || sectionMaterials == nullptr || sectionMaterials->empty())
             continue;
-        const Transform3f* transform = scene.TryGetTransform(entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(entity);
         if (transform == nullptr)
             continue;
 
@@ -257,7 +258,7 @@ void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
     {
         for (const EntityId entity : scene.GetAllEntities())
         {
-            if (!scene.IsEntityVisible(entity))
+            if (!scene.IsEntityEffectivelyVisible(entity))
                 continue;
             const SkinnedMeshComponent* renderer =
                 world.TryGet<SkinnedMeshComponent>(entity);
@@ -270,7 +271,7 @@ void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
             if (mesh == nullptr || sectionMaterials == nullptr
                 || sectionMaterials->empty())
                 continue;
-            const Transform3f* transform = scene.TryGetTransform(entity);
+            const Transform3f* transform = scene.TryGetWorldTransform(entity);
             if (transform == nullptr)
                 continue;
 
@@ -313,6 +314,9 @@ void SceneRenderQueueBuilder::SetLightmapPreview(const LightmapPreviewSource& so
     InitializeSceneRegistry(*registry, &Meshes, &MaterialSets,
                             nullptr, nullptr, nullptr, Textures, SkinnedMeshes,
                             AnimationClips);
+    // The engine vocabulary comes with the registry; a loaded module's does
+    // not, and a scene naming one of its tags would refuse to load without it.
+    InstallEditorModuleVocabulary(registry->Components);
     SceneSerializationContext context(Logging, &Assets);
     SceneLoadError loadError;
     if (!LoadSceneJson(*json, *registry, EditorSceneSerializers(), context, &loadError))
@@ -320,6 +324,11 @@ void SceneRenderQueueBuilder::SetLightmapPreview(const LightmapPreviewSource& so
         Log.Error("lightmap preview: scene load error: {}", loadError.Message);
         return;
     }
+
+    // The cooked scene carries local transforms plus parentage; compose the
+    // world transforms once. The snapshot never mutates, so one propagation is
+    // exact for its lifetime -- the runtime does the same thing every frame.
+    PropagateTransforms(registry->Components);
 
     PreviewRegistry = std::move(registry);
     PreviewDocHash = CurrentDocHash;
@@ -356,13 +365,13 @@ void SceneRenderQueueBuilder::EmitPreviewQueue()
         BuildZoneLightmapTable(resolved, lightmapTable);
     }
 
-    if (world.IsRegistered<StaticMeshComponent>() && world.IsRegistered<LocalTransform>())
+    if (world.IsRegistered<StaticMeshComponent>() && world.IsRegistered<WorldTransform>())
         world.ForEachComponent<StaticMeshComponent>(
             [&](EntityId entity, const StaticMeshComponent& renderer)
             {
                 if (!renderer.Visible)
                     return;
-                const LocalTransform* transform = world.TryGet<LocalTransform>(entity);
+                const WorldTransform* transform = world.TryGet<WorldTransform>(entity);
                 const GpuStaticMesh* mesh = Meshes.Get(renderer.Mesh);
                 const std::vector<MaterialHandle>* sectionMaterials =
                     MaterialSets.Get(renderer.Materials);
@@ -389,13 +398,13 @@ void SceneRenderQueueBuilder::EmitPreviewQueue()
     // them (the runtime draws them), and a character vanishing when the
     // preview toggles would misrepresent the cook. No lightmap stamp.
     if (SkinnedMeshes != nullptr && world.IsRegistered<SkinnedMeshComponent>()
-        && world.IsRegistered<LocalTransform>())
+        && world.IsRegistered<WorldTransform>())
         world.ForEachComponent<SkinnedMeshComponent>(
             [&](EntityId entity, const SkinnedMeshComponent& renderer)
             {
                 if (!renderer.Visible)
                     return;
-                const LocalTransform* transform = world.TryGet<LocalTransform>(entity);
+                const WorldTransform* transform = world.TryGet<WorldTransform>(entity);
                 const GpuStaticMesh* mesh = SkinnedMeshes->Get(renderer.Mesh);
                 const std::vector<MaterialHandle>* sectionMaterials =
                     MaterialSets.Get(renderer.Materials);
@@ -488,7 +497,7 @@ void SceneRenderQueueBuilder::BuildShadowCasters(const EditorDocument& document)
     const World& world = registry.Components;
     for (const EntityId entity : scene.GetAllEntities())
     {
-        if (!scene.IsEntityVisible(entity))
+        if (!scene.IsEntityEffectivelyVisible(entity))
             continue;
         const StaticMeshComponent* renderer = world.TryGet<StaticMeshComponent>(entity);
         if (renderer == nullptr)
@@ -496,7 +505,7 @@ void SceneRenderQueueBuilder::BuildShadowCasters(const EditorDocument& document)
         const GpuStaticMesh* mesh = Meshes.Get(renderer->Mesh);
         const std::vector<MaterialHandle>* sectionMaterials =
             MaterialSets.Get(renderer->Materials);
-        const Transform3f* transform = scene.TryGetTransform(entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(entity);
         if (mesh == nullptr || sectionMaterials == nullptr || transform == nullptr)
             continue;
 

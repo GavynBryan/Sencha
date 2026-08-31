@@ -4,12 +4,15 @@
 #include <ecs/ComponentTypeId.h>
 #include <ecs/World.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstring>
 #include <span>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 // Frozen registration and import recipe for the complete component vocabulary
@@ -31,7 +34,16 @@ public:
         std::size_t Alignment = 1;
         bool IsTag = false;
 
+        // Everything this component owes, transitively, computed at Seal from
+        // the ComponentTraits declarations. The typed add walks the same graph
+        // at compile time; this is the by-id copy, for a caller composing an
+        // entity's whole signature before its row exists.
+        std::vector<ComponentTypeId> Owed;
+
     private:
+        // As declared, before the closure: what Seal folds together.
+        std::vector<ComponentTypeId> DeclaredOwed;
+
         using RegisterFn = ComponentId (*)(World&);
         using ImportFn = bool (*)(
             World&,
@@ -174,7 +186,8 @@ public:
             world.RemoveComponent<T>(entity);
             return true;
         };
-        Entries_.push_back(entry);
+        entry.DeclaredOwed = ::DeclaredOwedIds<T>();
+        Entries_.push_back(std::move(entry));
         return true;
     }
 
@@ -182,6 +195,7 @@ public:
     {
         assert(!Sealed_ && "WorldComponentSchema already sealed");
         assert(Entries_.size() <= MaxComponents);
+        ComputeOwedClosures();
         Sealed_ = true;
     }
 
@@ -313,6 +327,59 @@ public:
     }
 
 private:
+    // Folds each component's declared set into everything it owes transitively.
+    //
+    // The typed add reaches the same set by recursion and stops on what is
+    // already there, so a cycle terminates rather than hanging. It is still
+    // refused here: a component that owes something that owes it back describes
+    // two components that cannot be understood apart, which is a design to fix
+    // rather than a shape to support. Refused at composition, once, where the
+    // whole graph is visible.
+    void ComputeOwedClosures()
+    {
+        for (Entry& entry : Entries_)
+        {
+            std::vector<ComponentTypeId> pending = entry.DeclaredOwed;
+            entry.Owed.clear();
+            while (!pending.empty())
+            {
+                const ComponentTypeId next = pending.back();
+                pending.pop_back();
+
+                assert(next != entry.Type
+                       && "A component's DerivedComponents closure includes "
+                          "itself: two components that cannot be understood "
+                          "apart are one component.");
+                if (next == entry.Type)
+                    continue;
+
+                const bool seen = std::find(entry.Owed.begin(), entry.Owed.end(), next)
+                    != entry.Owed.end();
+                if (seen)
+                    continue;
+                entry.Owed.push_back(next);
+
+                if (const Entry* owed = Find(next))
+                    pending.insert(pending.end(),
+                                   owed->DeclaredOwed.begin(),
+                                   owed->DeclaredOwed.end());
+            }
+            // Registration order, so two builds of the same schema produce the
+            // same list and a signature built from it is the same signature.
+            std::sort(entry.Owed.begin(), entry.Owed.end(),
+                      [this](ComponentTypeId a, ComponentTypeId b)
+                      { return IndexOf(a) < IndexOf(b); });
+        }
+    }
+
+    [[nodiscard]] std::size_t IndexOf(ComponentTypeId type) const
+    {
+        for (std::size_t i = 0; i < Entries_.size(); ++i)
+            if (Entries_[i].Type == type)
+                return i;
+        return Entries_.size();
+    }
+
     std::vector<Entry> Entries_;
     bool Sealed_ = false;
 };

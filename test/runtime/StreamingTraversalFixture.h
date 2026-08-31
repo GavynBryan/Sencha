@@ -33,7 +33,7 @@
 #include <world/transform/TransformPropagation.h>
 #include <zone/AsyncZoneLoader.h>
 #include <zone/WorldPartitionRuntime.h>
-#include <zone/ZoneLoadPackage.h>
+#include <world/build/EntityBuildPackage.h>
 
 #include "ZoneDockFixture.h"
 
@@ -82,17 +82,15 @@ inline std::string ChainManifestJson()
             buffer,
             sizeof(buffer),
             R"({"id":"%016lx","name":"Zone%d","region":"00000000000000b1",)"
-            R"("scene":"levels/z%d.level.json",)"
+            R"("scene":"levels/z%d.sscene",)"
             R"("bounds":{"min":[%f,0,-8],"max":[%f,4,8]},)"
-            R"("cooked_scene":"levels/z%d.cooked.json",)"
-            R"("cooked_collision":"levels/z%d.collision.json",)"
+            R"("cooked_scene":"levels/z%d.smap",)"
             R"("content_hash":"%016lx"})",
             static_cast<unsigned long>(0xa0 + index),
             index,
             index,
             minX,
             minX + kZoneSpan,
-            index,
             index,
             static_cast<unsigned long>(0xd0 + index));
         json += buffer;
@@ -115,12 +113,12 @@ inline WorldComponentSchema Schema()
 }
 
 // One zone's worth of content, as a package a worker thread would have built.
-inline void BuildZoneContent(ZoneLoadPackage& package, int zoneIndex)
+inline void BuildZoneContent(EntityBuildPackage& package, int zoneIndex)
 {
-    std::vector<ZoneLocalEntityId> roots;
+    std::vector<PackageEntityId> roots;
     for (int index = 0; index < kEntitiesPerZone; ++index)
     {
-        const ZoneLocalEntityId entity = package.CreateEntity();
+        const PackageEntityId entity = package.CreateEntity();
 
         Transform3f transform;
         transform.Position = Vec3d(
@@ -308,7 +306,7 @@ private:
         {
             const int index = static_cast<int>(header.Id.Value - 0xa0);
             ZoneLoadRecipe recipe;
-            recipe.Build = [index](ZoneLoadPackage& package)
+            recipe.Build = [index](EntityBuildPackage& package)
             {
                 BuildZoneContent(package, index);
             };

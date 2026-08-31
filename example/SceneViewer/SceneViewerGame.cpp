@@ -17,12 +17,9 @@
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
 #include <core/assets/AssetIdMap.h>
-#include <core/assets/AssetManifest.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
-#include <core/json/JsonParser.h>
-#include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <math/Quat.h>
@@ -36,8 +33,8 @@
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
-#include <zone/ZoneLoadPackage.h>
-#include <zone/ZonePackageSceneLoader.h>
+#include <world/build/EntityBuildPackage.h>
+#include <world/scene/SmapFormat.h>
 
 #include <SDL3/SDL.h>
 
@@ -45,10 +42,8 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
-#include <fstream>
 #include <memory>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <utility>
 #include <variant>
@@ -58,53 +53,6 @@ namespace
 constexpr std::string_view kAuthoredRoot = "assets";
 constexpr std::string_view kCookedScanRoot = "assets/.cooked";
 constexpr ZoneId kPlayZone{ 1 };
-
-struct SceneBuildResult
-{
-    bool Success = false;
-    std::string Error;
-};
-
-void BuildScenePackage(
-    ZoneLoadPackage& package,
-    SceneBuildResult& result,
-    const std::string& path,
-    const ComponentSerializerRegistry& serializers)
-{
-    std::ifstream file(path);
-    if (!file.is_open())
-    {
-        result.Error = "could not open scene file '" + path + "'";
-        return;
-    }
-
-    std::ostringstream buffer;
-    buffer << file.rdbuf();
-    JsonParseError parseError;
-    const std::optional<JsonValue> json =
-        JsonParse(buffer.str(), &parseError);
-    if (!json)
-    {
-        result.Error = "scene JSON parse error at "
-            + std::to_string(parseError.Position)
-            + ": " + parseError.Message;
-        return;
-    }
-
-    SceneLoadError loadError;
-    if (!BuildZonePackageFromSceneJson(
-            *json,
-            serializers,
-            package,
-            &loadError))
-    {
-        result.Error = loadError.Message;
-        return;
-    }
-
-    result.Success = true;
-    result.Error.clear();
-}
 
 EntityId CreateViewerCamera(World& world)
 {
@@ -143,7 +91,8 @@ void SceneViewerGame::OnStart(GameStartupContext&)
         graphics.Buffers,
         graphics.Images,
         graphics.Descriptors,
-        graphics.Samplers);
+        graphics.Samplers,
+        engine.SceneSerializers());
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
 
     // Mount: authored assets, then the cooked overlay (cooked wins), then the
@@ -304,59 +253,43 @@ ConsoleResult SceneViewerGame::LoadMap(
         return result;
     }
 
-    const std::string base =
-        std::string(kCookedScanRoot) + "/"
-        + std::string(mapName);
-    const std::string scenePath = base + ".cooked.json";
-    const std::string manifestPath = base + ".manifest.json";
-
-    std::shared_ptr<AssetPreload> preload;
-    AssetManifest manifest;
-    std::string manifestError;
-    if (LoadAssetManifestFile(
-            manifestPath,
-            manifest,
-            &manifestError))
+    const std::string sceneAssetPath =
+        "asset://" + std::string(mapName) + ".smap";
+    const AssetRecord* sceneRecord =
+        runtimeAssets.Assets.Resolve(sceneAssetPath, AssetType::Scene);
+    if (sceneRecord == nullptr)
     {
-        preload = Preloader->Begin(
-            ResolveManifestPaths(
-                manifest,
-                runtimeAssets.Registry));
+        result.Error("no cooked map at '" + sceneAssetPath
+                     + "'; cook the level first");
+        return result;
     }
-    else
+    const std::string sceneFilePath = sceneRecord->FilePath;
+
+    std::string preloadError;
+    std::shared_ptr<AssetPreload> preload =
+        Preloader->BeginSceneDependencies(sceneFilePath, &preloadError);
+    if (preload == nullptr)
     {
         logging.GetLogger<SceneViewerGame>().Warn(
-            "SceneViewer: no manifest for '{}' ({}); resolve-on-import",
+            "SceneViewer: no preload for '{}' ({}); resolve-on-import",
             std::string(mapName),
-            manifestError);
+            preloadError);
     }
 
-    auto buildResult = std::make_shared<SceneBuildResult>();
     auto probes = std::make_shared<ProbeVolumeFile>();
-    const ComponentSerializerRegistry* serializers = &engine.SceneSerializers();
-    ZoneLoader->BeginLoad(
+    const AsyncTaskHandle load = ZoneLoader->BeginLoadScene(
         kPlayZone,
-        [buildResult, probes, serializers, scenePath](
-            ZoneLoadPackage& package)
+        sceneAssetPath,
+        runtimeAssets.Assets,
+        [probes, sceneFilePath](const SmapContents&)
         {
-            BuildScenePackage(
-                package,
-                *buildResult,
-                scenePath,
-                *serializers);
-            (void)ReadZoneProbeFile(scenePath, *probes);
+            (void)ReadZoneProbeFile(sceneFilePath, *probes);
         },
-        [this, buildResult, probes, &logging](
+        [this, probes](
             RuntimeWorld&,
-            RuntimeZoneRecord& zone)
+            RuntimeZoneRecord& zone,
+            const SmapContents&)
         {
-            if (!buildResult->Success)
-            {
-                logging.GetLogger<SceneViewerGame>().Error(
-                    "SceneViewer: scene load error: {}",
-                    buildResult->Error);
-                return false;
-            }
             if (DefaultRenderPipeline* pipeline =
                     GetEngine().GetRenderPipeline())
             {
@@ -372,6 +305,11 @@ ConsoleResult SceneViewerGame::LoadMap(
             .Audio = true,
         },
         std::move(preload));
+    if (!load.IsValid())
+    {
+        result.Error("map load refused; see zone load failures");
+        return result;
+    }
 
     result.Info("loading map '" + std::string(mapName) + "'");
     return result;

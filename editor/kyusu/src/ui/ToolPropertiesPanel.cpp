@@ -136,7 +136,8 @@ void ToolPropertiesPanel::DrawObjectVerbs()
             if (flow.Button("Make Unique"))
                 Actions.MakeUnique();
             if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Break from the instance group, keeping all instanced edits.");
+                ImGui::SetTooltip("Give this brush its own copy of the shared mesh,\n"
+                                  "keeping every edit made while shared.");
         }
 
         if (selectedBrushes >= 2 && flow.Button("Merge"))

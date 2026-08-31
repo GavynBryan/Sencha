@@ -84,7 +84,7 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
     for (EntityId entity : bodies)
     {
         const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-        const Transform3f* transform = scene.TryGetTransform(entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(entity);
         if (mesh == nullptr || transform == nullptr)
             continue;
         AppendWireframe(bodyLines, *mesh, *transform, entity, EditorTheme::ActiveWireframe,
@@ -98,11 +98,11 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
     // Preview body: the brush under the cursor a click would make active (edge-cut
     // hover, or another mesh hovered in an element mode). Thin wireframe, no glow and
     // no handles, so it reads as "would be selected" distinct from the active body.
-    if (Overlay.HoverBody.IsValid() && scene.IsEntityVisible(Overlay.HoverBody)
+    if (Overlay.HoverBody.IsValid() && scene.IsEntityEffectivelyVisible(Overlay.HoverBody)
         && std::find(bodies.begin(), bodies.end(), Overlay.HoverBody) == bodies.end())
     {
         const BrushMesh* mesh = scene.TryGetBrushMesh(Overlay.HoverBody);
-        const Transform3f* transform = scene.TryGetTransform(Overlay.HoverBody);
+        const Transform3f* transform = scene.TryGetWorldTransform(Overlay.HoverBody);
         if (mesh != nullptr && transform != nullptr)
             AppendWireframe(bodyLines, *mesh, *transform, Overlay.HoverBody,
                             EditorTheme::PreviewWireframe, EditorTheme::PreviewLinePixels);
@@ -114,11 +114,11 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
     {
         if (!selected.IsValid() || selected.Registry != scene.GetRegistry().Id)
             continue;
-        if (!scene.IsEntityVisible(selected.Entity))
+        if (!scene.IsEntityEffectivelyVisible(selected.Entity))
             continue;
 
         const BrushMesh* mesh = scene.TryGetBrushMesh(selected.Entity);
-        const Transform3f* transform = scene.TryGetTransform(selected.Entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(selected.Entity);
         if (mesh == nullptr || transform == nullptr)
             continue;
 
@@ -170,7 +170,7 @@ void SelectionRenderer::SubmitActiveGlowSource(const FrameContext& frame, const 
     for (EntityId entity : GatherActiveBodies(scene))
     {
         const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-        const Transform3f* transform = scene.TryGetTransform(entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(entity);
         if (mesh == nullptr || transform == nullptr)
             continue;
         AppendWireframe(segments, *mesh, *transform, entity, EditorTheme::ActiveWireframe,
@@ -187,7 +187,7 @@ std::vector<EntityId> SelectionRenderer::GatherActiveBodies(const EditorScene& s
     {
         if (!ref.IsValid() || ref.Registry != scene.GetRegistry().Id || !ref.Entity.IsValid())
             continue;
-        if (!scene.IsEntityVisible(ref.Entity))
+        if (!scene.IsEntityEffectivelyVisible(ref.Entity))
             continue;
         if (std::find(bodies.begin(), bodies.end(), ref.Entity) == bodies.end())
             bodies.push_back(ref.Entity);
@@ -273,7 +273,7 @@ void SelectionRenderer::AppendHover(std::vector<EditorLineSegment>& segments, co
     const SelectableRef hovered = Overlay.Hover.Element;
     if (!hovered.IsValid() || hovered.Registry != scene.GetRegistry().Id)
         return;
-    if (!scene.IsEntityVisible(hovered.Entity))
+    if (!scene.IsEntityEffectivelyVisible(hovered.Entity))
         return;
 
     // An already-selected element keeps its selection color; painting the hover
@@ -283,7 +283,7 @@ void SelectionRenderer::AppendHover(std::vector<EditorLineSegment>& segments, co
         return;
 
     const BrushMesh* mesh = scene.TryGetBrushMesh(hovered.Entity);
-    const Transform3f* transform = scene.TryGetTransform(hovered.Entity);
+    const Transform3f* transform = scene.TryGetWorldTransform(hovered.Entity);
     if (mesh == nullptr || transform == nullptr)
         return;
 

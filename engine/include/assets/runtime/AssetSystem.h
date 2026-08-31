@@ -5,6 +5,7 @@
 #include <assets/animation/AnimationClipAssetLoader.h>
 #include <assets/audio_clip/AudioClipAssetLoader.h>
 #include <assets/material/MaterialAssetLoader.h>
+#include <assets/scene/SceneAssetLoader.h>
 #include <assets/skeleton/SkeletonAssetLoader.h>
 #include <assets/skinned_mesh/SkinnedMeshAssetLoader.h>
 #include <assets/static_mesh/StaticMeshAssetLoader.h>
@@ -27,8 +28,10 @@
 
 class AnimationClipCache;
 class AudioClipCache;
+class ComponentSerializerRegistry;
 class MaterialCache;
 class LoggingProvider;
+class SceneCache;
 class SkeletonCache;
 class SkinnedMeshCache;
 class StaticMeshCache;
@@ -55,7 +58,12 @@ public:
                 SkeletonCache& skeletons,
                 AnimationClipCache& animationClips,
                 SkinnedMeshCache& skinnedMeshes,
-                MaterialSetCache& materialSets);
+                MaterialSetCache& materialSets,
+                SceneCache& scenes,
+                const ComponentSerializerRegistry& sceneSerializers);
+    // `sceneSerializers` is the component vocabulary scene staging validates
+    // against; without it the scene kind stages every load as a failure,
+    // which is a capability this composition was built without.
     AssetSystem(LoggingProvider& logging,
                 AssetRegistry& registry,
                 StaticMeshCache* meshes,
@@ -65,7 +73,9 @@ public:
                 SkeletonCache* skeletons = nullptr,
                 AnimationClipCache* animationClips = nullptr,
                 SkinnedMeshCache* skinnedMeshes = nullptr,
-                MaterialSetCache* materialSets = nullptr);
+                MaterialSetCache* materialSets = nullptr,
+                SceneCache* scenes = nullptr,
+                const ComponentSerializerRegistry* sceneSerializers = nullptr);
 
     [[nodiscard]] StaticMeshHandle LoadStaticMesh(std::string_view path);
     [[nodiscard]] SkinnedMeshHandle LoadSkinnedMesh(std::string_view path);
@@ -80,6 +90,25 @@ public:
 
     [[nodiscard]] SkeletonHandle LoadSkeleton(std::string_view path);
     [[nodiscard]] AnimationClipHandle LoadAnimationClip(std::string_view path);
+
+    // Resolves and loads a cooked scene into residency (refcount 1, owned by
+    // the caller). A resident path gains a reference instead of re-parsing.
+    [[nodiscard]] SceneHandle LoadScene(std::string_view path);
+    [[nodiscard]] SceneHandle TryAcquireScene(std::string_view path);
+    void ReleaseScene(SceneHandle handle);
+
+    // The scene load's two halves for callers that split them across the
+    // async lane themselves (zone streaming): StageScene is task-thread-safe
+    // by the staging contract, CommitScene is owner-thread and returns the
+    // resident handle (refcount 1, owned by the caller).
+    [[nodiscard]] AssetStaging StageScene(const AssetRecord& record);
+    [[nodiscard]] SceneHandle CommitScene(AssetStaging&& staged);
+
+    // Resident contents for a held handle; nullptr once released. The shared
+    // form is for consumers that read beyond the resolving drain callback.
+    [[nodiscard]] const SmapContents* GetSceneContents(SceneHandle handle) const;
+    [[nodiscard]] std::shared_ptr<const SmapContents>
+    GetSceneContentsShared(SceneHandle handle) const;
 
     [[nodiscard]] StaticMeshHandle RegisterProceduralStaticMesh(std::string_view path, MeshGeometry mesh);
     [[nodiscard]] MaterialHandle RegisterProceduralMaterial(std::string_view path, Material material);
@@ -158,6 +187,27 @@ public:
     // asset is not resident; never loads.
     [[nodiscard]] AssetLease TryAcquireLease(std::string_view path, AssetType type);
 
+    // The synchronous load every typed Load* does, for a kind this front door
+    // cannot name -- structured data, or a kind a game module registered.
+    // Resident paths gain a reference instead of re-staging, exactly as the
+    // typed loads do.
+    //
+    // A lease rather than a raw handle because the caller usually is not the
+    // final owner: a component that names the asset takes its own reference
+    // when it is added, and the load's reference has to be let go afterwards.
+    // A lease that goes out of scope does that on its own.
+    [[nodiscard]] AssetLease LoadLease(std::string_view path, AssetType type);
+
+    // The path a held token names, for a kind this front door cannot name.
+    // Empty when the kind is unregistered or the token names nothing.
+    [[nodiscard]] std::string_view GetPathForLease(AssetType type,
+                                                   std::uint64_t token) const;
+
+    // Drops a reference the caller took as a lease and then relinquished into
+    // storage of its own. The Release* forwards above, for a kind this front
+    // door cannot name.
+    void ReleaseLease(AssetType type, std::uint64_t token);
+
     // Owner-thread commit of a staged payload, dispatched through the kind's
     // registered Commit. Returns the creation reference.
     [[nodiscard]] AssetLease Commit(AssetStaging&& staged);
@@ -197,6 +247,7 @@ private:
     SkeletonCache* Skeletons = nullptr;
     AnimationClipCache* AnimationClips = nullptr;
     SkinnedMeshCache* SkinnedMeshes = nullptr;
+    SceneCache* Scenes = nullptr;
 
     FileAssetSource Source;
     StaticMeshAssetLoader MeshLoader;
@@ -206,5 +257,6 @@ private:
     SkeletonAssetLoader SkelLoader;
     AnimationClipAssetLoader AnimLoader;
     SkinnedMeshAssetLoader SkinnedLoader;
+    SceneAssetLoader SceneLoader;
     AssetKindRegistry KindRegistry;
 };

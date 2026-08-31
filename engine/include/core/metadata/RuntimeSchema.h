@@ -29,6 +29,9 @@
 // only describes the data. (docs/plans/sencha-level-editor/02-...md §5.3.)
 //=============================================================================
 
+// Appended to, never reordered: the value is hashed into a component's schema
+// fingerprint, so renumbering these tells every cooked scene in existence that
+// the build that reads it is not the build that wrote it.
 enum class FieldScalar : std::uint8_t
 {
     Bool,
@@ -38,6 +41,7 @@ enum class FieldScalar : std::uint8_t
     Double,
     Color3,      // three contiguous floats edited as one RGB swatch (field tagged AsColor)
     Unsupported, // a leaf the descriptor cannot safely express (handle, string, …)
+    UInt64,      // full-width unsigned: an identity, where every bit is the identity
 };
 
 struct RuntimeField
@@ -52,11 +56,20 @@ struct RuntimeField
     // Arity says whether it is one handle or an ordered list (per-slot materials).
     AssetType    Asset = AssetType::Unknown;
     AssetArity   Arity = AssetArity::Single;
+    // Which subtype an AssetType::Data leaf accepts; empty means any. Filter
+    // metadata for an authoring surface, like Label and Tooltip: it narrows
+    // what a picker offers and never changes the bytes at Offset, so it stays
+    // out of ComponentSchemaFingerprint.
+    std::string_view DataSubtype{};
     // Contiguous same-typed scalars edited as one N-wide row (Vec/Quat); 1 is a
     // plain scalar. The leaf spans [Offset, Offset + Count*Size).
     std::uint8_t Count = 1;
     // A leaf the editor shows but does not let the user edit (an identity id).
     bool         ReadOnly = false;
+    // A float leaf holding radians that an authoring surface shows in degrees.
+    // Display metadata, like Label: the bytes at Offset stay radians, so it
+    // stays out of ComponentSchemaFingerprint.
+    bool         DisplayDegrees = false;
     // Non-empty for an enum member with an EnumSchema: the named choices for
     // this leaf, so an editor draws a selector instead of a number field.
     // Scalar stays the underlying integer kind and the bytes at Offset are
@@ -121,6 +134,8 @@ namespace RuntimeSchemaDetail
             return FieldScalar::Int32;
         else if constexpr (std::is_integral_v<T> && std::is_unsigned_v<T> && sizeof(T) <= 4)
             return FieldScalar::UInt32;
+        else if constexpr (std::is_integral_v<T> && std::is_unsigned_v<T> && sizeof(T) == 8)
+            return FieldScalar::UInt64;
         else
             return FieldScalar::Unsupported;
     }
@@ -196,6 +211,8 @@ namespace RuntimeSchemaDetail
                 // a label on a composite does not rename the leaves inside it.
                 out.Label = field.DisplayLabel;
                 out.Tooltip = field.DisplayTooltip;
+                out.DataSubtype = field.DataSubtype;
+                out.DisplayDegrees = field.IsDegrees;
             };
 
             using MemberType = std::remove_cvref_t<M>;

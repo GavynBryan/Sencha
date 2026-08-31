@@ -54,13 +54,25 @@ struct TypeSchema<CameraComponent>
 
     static auto Fields()
     {
+        // Every field defaults to its member initializer, so a placed camera
+        // states only what it means to change -- a prefab's eye camera is a
+        // position and nothing else.
+        const CameraComponent defaults;
         return std::tuple{
-            MakeField("projection", &CameraComponent::Projection),
-            MakeField("fov_y_radians", &CameraComponent::FovYRadians),
-            MakeField("near_plane", &CameraComponent::NearPlane),
-            MakeField("far_plane", &CameraComponent::FarPlane),
+            MakeField("projection", &CameraComponent::Projection)
+                .Default(defaults.Projection),
+            MakeField("fov_y_radians", &CameraComponent::FovYRadians)
+                .Default(defaults.FovYRadians)
+                .Degrees()
+                .Label("Field of view")
+                .Tooltip("Vertical angle the camera takes in. Ignored by an "
+                         "orthographic camera."),
+            MakeField("near_plane", &CameraComponent::NearPlane)
+                .Default(defaults.NearPlane),
+            MakeField("far_plane", &CameraComponent::FarPlane)
+                .Default(defaults.FarPlane),
             MakeField("orthographic_height", &CameraComponent::OrthographicHeight)
-                .Default(CameraComponent{}.OrthographicHeight),
+                .Default(defaults.OrthographicHeight),
         };
     }
 };

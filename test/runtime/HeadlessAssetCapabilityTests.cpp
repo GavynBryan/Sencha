@@ -1,5 +1,7 @@
 #include <assets/runtime/AssetPreloader.h>
 #include <assets/runtime/RuntimeAssets.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
+#include <world/serialization/SceneSerializer.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
 #include <jobs/AsyncTaskQueue.h>
@@ -80,7 +82,9 @@ namespace
 TEST(HeadlessAssetCapability, HeadlessCompositionHoldsEveryKindButTheGpuOnes)
 {
     LoggingProvider logging;
-    RuntimeAssets assets(logging);
+    ComponentSerializerRegistry sceneSerializers;
+    RegisterEngineSceneSerializers(sceneSerializers);
+    RuntimeAssets assets(logging, sceneSerializers);
 
     EXPECT_FALSE(assets.Assets.HasStore(AssetType::StaticMesh));
     EXPECT_FALSE(assets.Assets.HasStore(AssetType::Texture));
@@ -92,6 +96,7 @@ TEST(HeadlessAssetCapability, HeadlessCompositionHoldsEveryKindButTheGpuOnes)
     EXPECT_TRUE(assets.Assets.HasStore(AssetType::Skeleton));
     EXPECT_TRUE(assets.Assets.HasStore(AssetType::AnimationClip));
     EXPECT_TRUE(assets.Assets.HasStore(AssetType::Data));
+    EXPECT_TRUE(assets.Assets.HasStore(AssetType::Scene));
 
     EXPECT_EQ(assets.StaticMeshes, nullptr);
     EXPECT_EQ(assets.Textures, nullptr);
@@ -104,7 +109,9 @@ TEST(HeadlessAssetCapability, HeadlessCompositionHoldsEveryKindButTheGpuOnes)
 TEST(HeadlessAssetCapability, LoadingAnUnsupportedKindYieldsNoHandle)
 {
     LoggingProvider logging;
-    RuntimeAssets assets(logging);
+    ComponentSerializerRegistry sceneSerializers;
+    RegisterEngineSceneSerializers(sceneSerializers);
+    RuntimeAssets assets(logging, sceneSerializers);
 
     const TempAsset mesh(assets.Registry, AssetType::StaticMesh, ".smesh", "not read");
     const TempAsset texture(assets.Registry, AssetType::Texture, ".stex", "not read");
@@ -119,7 +126,9 @@ TEST(HeadlessAssetCapability, LoadingAnUnsupportedKindYieldsNoHandle)
 TEST(HeadlessAssetCapability, MaterialsStillLoadWithoutATextureCache)
 {
     LoggingProvider logging;
-    RuntimeAssets assets(logging);
+    ComponentSerializerRegistry sceneSerializers;
+    RegisterEngineSceneSerializers(sceneSerializers);
+    RuntimeAssets assets(logging, sceneSerializers);
 
     const TempAsset material(assets.Registry, AssetType::Material, ".smat",
                              R"({"version": 2})");
@@ -134,7 +143,9 @@ TEST(HeadlessAssetCapability, PreloadSkipsKindsTheProcessCannotHold)
 {
     LoggingProvider logging;
     AsyncTaskQueue tasks(0);
-    RuntimeAssets assets(logging);
+    ComponentSerializerRegistry sceneSerializers;
+    RegisterEngineSceneSerializers(sceneSerializers);
+    RuntimeAssets assets(logging, sceneSerializers);
 
     const TempAsset mesh(assets.Registry, AssetType::StaticMesh, ".smesh", "not read");
     const TempAsset material(assets.Registry, AssetType::Material, ".smat",

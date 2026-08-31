@@ -202,7 +202,7 @@ std::size_t ProbeVolumeSet::ResidentVolumeCount() const
 bool ReadZoneProbeFile(const std::string& cookedScenePath, ProbeVolumeFile& out)
 {
     out.Volumes.clear();
-    constexpr std::string_view cookedSuffix = ".cooked.json";
+    constexpr std::string_view cookedSuffix = ".smap";
     if (!cookedScenePath.ends_with(cookedSuffix))
         return false;
     std::string probePath =

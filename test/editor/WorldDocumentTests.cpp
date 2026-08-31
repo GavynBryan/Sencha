@@ -221,10 +221,10 @@ TEST_F(WorldDocumentTest, SaveWritesSceneFilesForNewZones)
     ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
 
     ASSERT_EQ(world.Manifest().Zones.size(), 2u);
-    EXPECT_EQ(world.Manifest().Zones[0].SceneRef, "levels/zone_1.level.json");
-    EXPECT_EQ(world.Manifest().Zones[1].SceneRef, "levels/east_hall_2.level.json");
-    EXPECT_TRUE(fs::exists(Root / "levels/zone_1.level.json"));
-    EXPECT_TRUE(fs::exists(Root / "levels/east_hall_2.level.json"));
+    EXPECT_EQ(world.Manifest().Zones[0].SceneRef, "levels/zone_1.sscene");
+    EXPECT_EQ(world.Manifest().Zones[1].SceneRef, "levels/east_hall_2.sscene");
+    EXPECT_TRUE(fs::exists(Root / "levels/zone_1.sscene"));
+    EXPECT_TRUE(fs::exists(Root / "levels/east_hall_2.sscene"));
 }
 
 TEST_F(WorldDocumentTest, VisitOpenZonesFollowsManifestOrder)
@@ -310,7 +310,7 @@ TEST_F(WorldDocumentTest, SceneUnresolvedRecordFiresForMissingFile)
         second = world.AddZone(world.Manifest().Graphs[0].Id, "Second");
         ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
     }
-    fs::remove(Root / "levels/second.level.json");
+    fs::remove(Root / "levels/second.sscene");
 
     WorldDocument reloaded(Logging);
     ASSERT_TRUE(reloaded.LoadWorld(WorldPath()));
@@ -388,14 +388,14 @@ TEST_F(WorldDocumentTest, WorldSceneRoundTripsThroughSaveAndLoad)
         world.NewWorld("TestWorld");
         world.WorldSceneDocument().GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
         ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
-        EXPECT_EQ(world.Manifest().WorldSceneRef, "levels/test_world.level.json");
-        EXPECT_TRUE(fs::exists(Root / "levels/test_world.level.json"));
+        EXPECT_EQ(world.Manifest().WorldSceneRef, "levels/test_world.sscene");
+        EXPECT_TRUE(fs::exists(Root / "levels/test_world.sscene"));
     }
 
     WorldDocument reloaded(Logging);
     ASSERT_TRUE(reloaded.LoadWorld(WorldPath()));
 
-    EXPECT_EQ(reloaded.Manifest().WorldSceneRef, "levels/test_world.level.json");
+    EXPECT_EQ(reloaded.Manifest().WorldSceneRef, "levels/test_world.sscene");
     EXPECT_EQ(reloaded.WorldSceneDocument().GetScene().GetEntityCount(), 1u);
 
     // The world scene is not a zone: open-zone iteration never visits it.
@@ -511,7 +511,7 @@ TEST_F(WorldDocumentTest, LoadRoutesWorldManifestByContent)
     // A plain level file keeps routing to the legacy document.
     EditorDocument level(Logging);
     level.GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
-    const fs::path levelPath = Root / "plain.level.json";
+    const fs::path levelPath = Root / "plain.sscene";
     ASSERT_TRUE(level.SaveAs(levelPath.string()));
     ASSERT_TRUE(reopened.Load(levelPath.string()));
     EXPECT_FALSE(reopened.IsWorld());

@@ -1,5 +1,7 @@
 #include <assets/cook/BlendCook.h>
 
+#include <core/io/FileBytes.h>
+
 #include <assets/cook/MeshCook.h>
 #include <core/hash/ContentHash.h>
 
@@ -45,23 +47,6 @@ namespace
         return file.good();
     }
 
-    bool ReadFileBytes(const std::filesystem::path& path, std::vector<std::byte>& out)
-    {
-        std::ifstream file(path, std::ios::binary);
-        if (!file.is_open())
-            return false;
-
-        file.seekg(0, std::ios::end);
-        const std::streamoff size = file.tellg();
-        if (size < 0)
-            return false;
-        file.seekg(0, std::ios::beg);
-
-        out.resize(static_cast<std::size_t>(size));
-        if (size > 0)
-            file.read(reinterpret_cast<char*>(out.data()), size);
-        return file.good() || size == 0;
-    }
 } // namespace
 
 std::vector<std::string_view> BlendMeshImporter::SourceExtensions() const

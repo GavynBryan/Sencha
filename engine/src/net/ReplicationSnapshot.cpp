@@ -52,8 +52,15 @@ namespace
         std::size_t Offset = 0;
         // Whether the entity will already carry the column when this is
         // written: overwrite in place, or add. Decided while reading, which is
-        // sound because reading changes nothing that could make it wrong.
+        // sound for an entity that already exists, because reading changes
+        // nothing that could make it wrong. A spawn decides at the write --
+        // there was no entity to ask.
         bool PresentInWorld = false;
+        // Which fields the message actually carried. Only consulted where the
+        // staged baseline is not the receiver's own value: a prefab spawn,
+        // where the fields the wire left alone must keep what the prefab put
+        // there rather than the defaults staging started from.
+        std::uint64_t FieldMask = 0;
     };
 
     struct PlannedEntityUpdate
@@ -78,6 +85,10 @@ namespace
         // Bind the identity at commit. True for an authored entity recognised
         // through the index rather than created here.
         bool BindIdentity = false;
+        // The prefab this spawn instantiates, read out of the snapshot's own
+        // bytes while planning and already proved buildable by then. Invalid
+        // for a spawn that names none, which is a bare entity.
+        AssetId Prefab;
     };
 
     // A count is bounded by the entity cap and checked against it on the way in,
@@ -1153,7 +1164,8 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
                 return result;
             }
 
-            if (!ReplicationDecodeComponent(*component, reader, target))
+            if (!ReplicationDecodeComponent(*component, reader, target,
+                                            &slot.FieldMask))
             {
                 result.Error = SnapshotApplyError::Truncated;
                 return result;
@@ -1198,12 +1210,50 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
             plannedRemovals.push_back(component);
         }
 
+        // What this spawn is going to be, decided here rather than at the write
+        // where nothing may refuse. The prefab id is in the bytes just decoded,
+        // so it costs a walk of this entity's own components; the resolve and
+        // validation behind Prepare happen once per prefab per session.
+        //
+        // Not ready means deferred, never bare. An entity with its state and no
+        // body is the failure this replaces: it looks like nothing at all, on
+        // no particular frame. Deferring leaves the snapshot unacknowledged, so
+        // the authority describes the entity again and the next attempt finds
+        // whatever was missing.
+        if (update.Spawned && !update.Deferred)
+        {
+            for (std::size_t c = 0; c < update.ComponentCount; ++c)
+            {
+                const PlannedComponent& slot =
+                    plannedComponents[update.FirstComponent + c];
+                if (slot.Layout->Type != ResolveComponentTypeId<NetSpawnPrefab>())
+                    continue;
+                NetSpawnPrefab prefab{};
+                std::memcpy(&prefab, decoded.data() + slot.Offset, sizeof(prefab));
+                update.Prefab = prefab.Scene;
+                break;
+            }
+
+            if (update.Prefab.IsValid()
+                && (request.Prefabs == nullptr
+                    || request.Prefabs->Prepare(update.Prefab)
+                           != NetPrefabReadiness::Ready))
+            {
+                update.Deferred = true;
+                ++result.PrefabsDeferred;
+            }
+        }
+
         planned.push_back(update);
     }
 
     //-------------------------------------------------------------------------
     // Write. The snapshot has decoded in full, so nothing here can refuse.
     //-------------------------------------------------------------------------
+    // Reused across the whole apply: a prefab spawn merges each component it
+    // shares with the wire, and an allocation per component per spawn is a cost
+    // a join should not pay.
+    std::vector<std::byte> merged;
     for (NetEntityId id : destroyed)
     {
         const EntityId entity = identity.TryResolve(id);
@@ -1216,7 +1266,11 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
         // entity destroyed before the client was ever told it existed.
         if (entity.IsValid() && world.IsAlive(entity))
         {
-            world.DestroyEntity(entity);
+            // A prefab body is a group, and the wire only ever names its root.
+            if (request.Prefabs != nullptr)
+                request.Prefabs->Despawn(world, entity);
+            else
+                world.DestroyEntity(entity);
             ++result.EntitiesDestroyed;
         }
     }
@@ -1232,7 +1286,20 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
         EntityId entity = update.Local;
         if (update.Spawned)
         {
-            entity = world.CreateEntity(StoragePartitionId{ request.Partition });
+            // A prefab spawn instantiates the whole group and binds the wire
+            // identity to its root; a bare spawn is one entity the snapshot's
+            // components land on. Either way the identity is bound only once
+            // there is something to bind it to, so a failed instantiation
+            // leaves nothing behind and the authority describes it again.
+            entity = update.Prefab.IsValid() && request.Prefabs != nullptr
+                ? request.Prefabs->Instantiate(
+                      update.Prefab, world, StoragePartitionId{ request.Partition })
+                : world.CreateEntity(StoragePartitionId{ request.Partition });
+            if (!entity.IsValid())
+            {
+                ++result.PrefabsDeferred;
+                continue;
+            }
             identity.Bind(update.Id, entity);
             ++result.EntitiesSpawned;
         }
@@ -1277,7 +1344,11 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
                 // authority's own value the first time, so a newly mirrored
                 // entity appears where it belongs rather than at the origin and
                 // then slides in from there.
-                if (!slot.PresentInWorld)
+                const bool posePresent = update.Spawned
+                    ? world.HasComponent(
+                          entity, world.GetComponentIdByType(component.Type))
+                    : slot.PresentInWorld;
+                if (!posePresent)
                 {
                     const bool added = schema.ImportComponent(world, entity,
                                                               component.Type, value);
@@ -1288,10 +1359,59 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
             }
             case SnapshotSink::World:
             {
+                // For a spawn the plan could not know what the entity would
+                // carry, because the entity did not exist yet: a prefab arrives
+                // already holding much of what the snapshot is about to say.
+                // What the wire carries is authoritative either way; only
+                // whether to write or to add depends on this.
+                const bool present = update.Spawned
+                    ? world.HasComponent(
+                          entity, world.GetComponentIdByType(component.Type))
+                    : slot.PresentInWorld;
+
+                // A replicated component the prefab does not carry is a
+                // disagreement between the two ends about what this entity is.
+                // The wire wins -- an authority's state is not optional -- but
+                // it is counted and named, because the alternative is a body
+                // silently missing a piece of itself.
+                if (update.Spawned && update.Prefab.IsValid() && !present)
+                {
+                    if (result.PrefabComponentsAdded == 0)
+                        result.FirstUnexpectedComponent = component.Name;
+                    ++result.PrefabComponentsAdded;
+                }
+
+                // The staged image is only a whole answer when it was staged
+                // from the receiver's own value. On a prefab spawn it was
+                // staged from the type's defaults, so writing it whole would
+                // erase everything the prefab set that the wire does not carry
+                // -- an aim limit, a tuning handle, anything local-only. Merge
+                // instead: the prefab underneath, the wire's own fields on top.
+                std::span<const std::byte> writing = value;
+                if (present && update.Spawned && update.Prefab.IsValid())
+                {
+                    merged.assign(component.Size, std::byte{});
+                    const void* held = world.GetComponentRaw(
+                        entity, world.GetComponentIdByType(component.Type));
+                    if (held != nullptr)
+                        std::memcpy(merged.data(), held, component.Size);
+                    for (std::size_t f = 0; f < component.Fields.size(); ++f)
+                    {
+                        if ((slot.FieldMask & (std::uint64_t{ 1 } << f)) == 0)
+                            continue;
+                        const ReplicatedField& field = component.Fields[f];
+                        const std::size_t width =
+                            field.Size * static_cast<std::size_t>(field.Count);
+                        std::memcpy(merged.data() + field.Offset,
+                                    value.data() + field.Offset, width);
+                    }
+                    writing = merged;
+                }
+
                 const bool wrote =
-                    slot.PresentInWorld
-                        ? schema.SetComponentBytes(world, entity, component.Type, value)
-                        : schema.ImportComponent(world, entity, component.Type, value);
+                    present
+                        ? schema.SetComponentBytes(world, entity, component.Type, writing)
+                        : schema.ImportComponent(world, entity, component.Type, writing);
                 assert(wrote && "a component the read half accepted would not write");
                 (void)wrote;
                 break;
@@ -1324,24 +1444,6 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
         // the world transform, and nothing else would ever create it here.
         SeedDerivedWorldTransform(world, entity);
 
-        // Last, and only once: the recipe completes an entity that already
-        // holds everything the wire had to say about it.
-        if (update.Spawned && request.Recipes != nullptr)
-        {
-            NetSpawnRecipeId recipeId = kNetNoSpawnRecipe;
-            if (world.IsRegistered<NetSpawnRecipe>())
-            {
-                if (const NetSpawnRecipe* recipe = world.TryGet<NetSpawnRecipe>(entity))
-                    recipeId = recipe->Id;
-            }
-            if (recipeId != kNetNoSpawnRecipe
-                && !request.Recipes->Build(recipeId, world, entity))
-            {
-                if (result.RecipesMissing == 0)
-                    result.FirstMissingRecipe = recipeId;
-                ++result.RecipesMissing;
-            }
-        }
     }
 
     // Every snapshot a predicting client applies is a chance to reconcile,

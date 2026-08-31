@@ -1,5 +1,7 @@
 #include <core/json/JsonParser.h>
 #include <charconv>
+#include <fstream>
+#include <sstream>
 
 namespace
 {
@@ -352,4 +354,28 @@ std::optional<JsonValue> JsonParse(std::string_view input, JsonParseError* error
 {
 	Parser parser(input);
 	return parser.Parse(error);
+}
+
+std::optional<JsonValue> JsonParseFile(const std::filesystem::path& path,
+                                       std::string* error)
+{
+	std::ifstream file(path);
+	if (!file.is_open())
+	{
+		if (error != nullptr)
+			*error = "could not open '" + path.generic_string() + "'";
+		return std::nullopt;
+	}
+
+	std::ostringstream buffer;
+	buffer << file.rdbuf();
+
+	JsonParseError parseError;
+	std::optional<JsonValue> parsed = JsonParse(buffer.str(), &parseError);
+	if (!parsed.has_value() && error != nullptr)
+	{
+		*error = "JSON error in '" + path.generic_string() + "' at "
+			+ std::to_string(parseError.Position) + ": " + parseError.Message;
+	}
+	return parsed;
 }

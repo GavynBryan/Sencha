@@ -1,7 +1,7 @@
 #include <ecs/WorldComponentSchema.h>
 #include <world/RuntimeWorld.h>
 #include <world/transform/TransformComponents.h>
-#include <zone/ZoneLoadPackage.h>
+#include <world/build/EntityBuildPackage.h>
 #include <zone/ZonePackageImporter.h>
 
 #include <gtest/gtest.h>
@@ -77,9 +77,9 @@ TEST(ZonePackageImporter, PublishesComponentsHierarchyAndDerivedTransforms)
     const WorldComponentSchema schema = MakePackageSchema();
     RuntimeWorld runtime(schema);
 
-    ZoneLoadPackage package(ZoneId{ 10 });
-    const ZoneLocalEntityId root = package.CreateEntity();
-    const ZoneLocalEntityId child = package.CreateEntity();
+    EntityBuildPackage package;
+    const PackageEntityId root = package.CreateEntity();
+    const PackageEntityId child = package.CreateEntity();
 
     LocalTransform rootTransform;
     rootTransform.Value.Position = Vec3d{ 1.0f, 2.0f, 3.0f };
@@ -98,6 +98,7 @@ TEST(ZonePackageImporter, PublishesComponentsHierarchyAndDerivedTransforms)
     ASSERT_TRUE(ImportZonePackage(
         runtime,
         schema,
+        ZoneId{ 10 },
         package,
         LogicOnly(),
         &error)) << error.Message;
@@ -156,8 +157,8 @@ TEST(ZonePackageImporter, UnknownComponentRollsBackWholeHiddenPartition)
     const WorldComponentSchema schema = MakePackageSchema();
     RuntimeWorld runtime(schema);
 
-    ZoneLoadPackage package(ZoneId{ 20 });
-    const ZoneLocalEntityId entity = package.CreateEntity();
+    EntityBuildPackage package;
+    const PackageEntityId entity = package.CreateEntity();
     ASSERT_TRUE(package.AddComponent(entity, PackageValue{ 1 }));
     ASSERT_TRUE(package.AddComponent(entity, PackageUnknown{ 2 }));
 
@@ -165,6 +166,7 @@ TEST(ZonePackageImporter, UnknownComponentRollsBackWholeHiddenPartition)
     EXPECT_FALSE(ImportZonePackage(
         runtime,
         schema,
+        ZoneId{ 20 },
         package,
         {},
         &error));
@@ -184,9 +186,9 @@ TEST(ZonePackageImporter, ImportsPersistentWorldSceneIntoPartitionZero)
         existing,
         PackageValue{ 5 });
 
-    ZoneLoadPackage package(ZoneId{ 30 });
-    const ZoneLocalEntityId first = package.CreateEntity();
-    const ZoneLocalEntityId second = package.CreateEntity();
+    EntityBuildPackage package;
+    const PackageEntityId first = package.CreateEntity();
+    const PackageEntityId second = package.CreateEntity();
     ASSERT_TRUE(package.AddComponent(first, PackageValue{ 11 }));
     ASSERT_TRUE(package.AddComponent(second, PackageValue{ 22 }));
     ASSERT_TRUE(package.SetParent(second, first));
@@ -197,6 +199,7 @@ TEST(ZonePackageImporter, ImportsPersistentWorldSceneIntoPartitionZero)
         schema,
         package,
         PersistentStoragePartition,
+        ZoneId{ 30 },
         &error)) << error.Message;
 
     EXPECT_TRUE(runtime.Entities().IsAlive(existing));
@@ -217,9 +220,9 @@ TEST(ZonePackageImporter, PersistentImportFailurePreservesExistingEntities)
         existing,
         PackageValue{ 5 });
 
-    ZoneLoadPackage package(ZoneId{ 40 });
-    const ZoneLocalEntityId valid = package.CreateEntity();
-    const ZoneLocalEntityId invalid = package.CreateEntity();
+    EntityBuildPackage package;
+    const PackageEntityId valid = package.CreateEntity();
+    const PackageEntityId invalid = package.CreateEntity();
     ASSERT_TRUE(package.AddComponent(valid, PackageValue{ 11 }));
     ASSERT_TRUE(package.AddComponent(invalid, PackageUnknown{ 22 }));
 
@@ -229,6 +232,7 @@ TEST(ZonePackageImporter, PersistentImportFailurePreservesExistingEntities)
         schema,
         package,
         PersistentStoragePartition,
+        ZoneId{ 40 },
         &error));
     EXPECT_FALSE(error.Message.empty());
     EXPECT_TRUE(runtime.Entities().IsAlive(existing));
@@ -240,9 +244,9 @@ TEST(ZonePackageImporter, PersistentImportFailurePreservesExistingEntities)
 
 TEST(ZonePackageImporter, PackageRejectsDuplicateComponentsAndParents)
 {
-    ZoneLoadPackage package(ZoneId{ 50 });
-    const ZoneLocalEntityId first = package.CreateEntity();
-    const ZoneLocalEntityId second = package.CreateEntity();
+    EntityBuildPackage package;
+    const PackageEntityId first = package.CreateEntity();
+    const PackageEntityId second = package.CreateEntity();
 
     EXPECT_TRUE(package.AddComponent(first, PackageValue{ 1 }));
     EXPECT_FALSE(package.AddComponent(first, PackageValue{ 2 }));

@@ -168,3 +168,50 @@ By design, `ComponentTraits` specializations live near the component definition.
 
 The rule is intentionally small: hooks are synchronous, traceable, and minimal.
 They are not an observer bus.
+
+---
+
+## Derived components
+
+A component can declare the set it cannot work without:
+
+```cpp
+template <>
+struct ComponentTraits<CharacterMovement>
+{
+    using DerivedComponents = std::tuple<MovementIntent, KinematicState, SupportState /* … */>;
+};
+```
+
+Adding the component provisions everything in that set the entity does not
+already carry, default-constructed. This is for per-tick scratch a system reads
+and writes — the request, the resolved coefficients, the composed output — where
+a missing column is not a missing setting but an entity that silently stops
+matching the query that would have moved it. It is not for state that has to be
+seeded from something: the provision is `T{}` and nothing else.
+
+**Every route into a `World` applies it.** The `World` records each component's
+declared set at registration, which is the last place it knows the type, so the
+routes that address a component only by id apply it too: `CommandBuffer`'s flush
+(both its single and its coalesced-batch add), and an editor adding a component
+chosen from a registry. The batch importer reaches the same set by a different
+route — the sealed `WorldComponentSchema` folds it into a transitive closure and
+`BuildEntitySignature` ORs it in, so an imported entity costs one row migration
+instead of one per owed component. `test/ecs/DerivedComponentTests.cpp` binds
+the routes to the same result.
+
+Consequences worth knowing:
+
+- **Nothing is ordered.** An owed component's `OnAdd` may not assume a sibling
+  has arrived yet.
+- **Add-if-missing**, so a duplicate in a declared set is harmless and a cycle
+  terminates on what is already there. The schema additionally refuses a
+  component that owes itself, at `Seal`.
+- **A component the `World` never registered is skipped**, so a fixture or a
+  tool world with a partial vocabulary stays valid — and builds a smaller entity
+  than the runtime would from the same data, which is why an authoring world
+  should register the same vocabulary the game does.
+- **Removal does not un-provision.** Removing the component that owed a set
+  leaves the set behind, at runtime and in an editor alike.
+- The editor's inspector shows what an entity carries beyond what its file
+  describes, so a provisioned set is visible rather than a surprise.

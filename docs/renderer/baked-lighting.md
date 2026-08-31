@@ -93,7 +93,7 @@ mechanisms separable.
 ### Data
 
 A zone cooks a `.sprobe` file (`engine/include/assets/probes/ProbeVolumeFormat.h`,
-magic `SPRB`, version 1) beside its scene: for `<dir>/<stem>.cooked.json` the
+magic `SPRB`, version 1) beside its scene: for `<dir>/<stem>.smap` the
 cook writes `<dir>/<stem>/probes.sprobe`. A missing file means the zone
 authored no volumes, which is not an error.
 

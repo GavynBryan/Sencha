@@ -4,6 +4,8 @@
 #include <input/SdlInputCapture.h>
 #include <jobs/AsyncTaskQueue.h>
 #include <runtime/FrameDriver.h>
+#include <runtime/spawn/NetPrefabSpawner.h>
+#include <runtime/spawn/SceneSpawnService.h>
 #include <world/RuntimeWorld.h>
 #include <zone/AsyncZoneLoader.h>
 #include <zone/WorldPartitionRuntime.h>
@@ -489,7 +491,7 @@ void Engine::RegisterNetFramePhases()
                 engine.Replication().Apply(delivery.Payload, world,
                                            engine.RuntimeComponents(),
                                            engine.ReplicatedComponents(),
-                                           &engine.SpawnRecipes(),
+                                           &engine.NetPrefabs(),
                                            &engine.Prediction(),
                                            &engine.Interpolation());
 
@@ -551,11 +553,12 @@ void Engine::RegisterNetFramePhases()
                     world, session->LocalPeerId(), engine.Prediction());
             }
 
-            if (applied.RecipesMissing > 0)
+            if (applied.PrefabsDeferred > 0)
             {
-                log.Warn("net: {} spawn(s) named recipe {} and others this build "
-                         "did not register; those entities arrived bare",
-                         applied.RecipesMissing, applied.FirstMissingRecipe);
+                log.Warn("net: {} spawn(s) named a prefab this machine could "
+                         "not build; they were deferred rather than built bare "
+                         "and the authority will describe them again",
+                         applied.PrefabsDeferred);
             }
 
             if (!applied.Ok())
@@ -671,6 +674,9 @@ void Engine::RegisterSimulationFramePhases()
                 std::chrono::duration<double, std::milli>(config.Runtime.AsyncCommitBudgetMs));
         }
         engine.Tasks().DrainCompletions(budget);
+        // After completions so a spawn whose worker just finished can publish
+        // this frame; the pump itself enforces request order.
+        engine.Spawns().Pump();
         engine.World().FlushLifecycleRequests();
     });
 

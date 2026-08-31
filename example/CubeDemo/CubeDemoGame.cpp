@@ -13,7 +13,7 @@
 #include <audio/AudioSourceComponent.h>
 #include <audio/CaptionRuntime.h>
 #include <core/assets/AssetIdMap.h>
-#include <core/assets/AssetManifest.h>
+#include <world/scene/SmapFormat.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/console/ConsoleService.h>
 #include <debug/DebugLogSink.h>
@@ -31,7 +31,7 @@
 #include <world/RuntimeWorld.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
-#include <zone/ZoneLoadPackage.h>
+#include <world/build/EntityBuildPackage.h>
 
 #ifdef SENCHA_ENABLE_COOK
 #include <assets/cook/AudioCook.h>
@@ -208,7 +208,8 @@ void CubeDemoGame::OnStart(GameStartupContext&)
         graphics.Buffers,
         graphics.Images,
         graphics.Descriptors,
-        graphics.Samplers);
+        graphics.Samplers,
+        engine.SceneSerializers());
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
 
     // The demo's own controls. Registered as a procedural profile so the camera
@@ -323,24 +324,23 @@ void CubeDemoGame::OnStart(GameStartupContext&)
         runtimeAssets.Assets,
         engine.Tasks());
 
-    std::shared_ptr<AssetPreload> preload;
-    AssetManifest manifest;
-    std::string manifestError;
-    if (LoadAssetManifestFile(
-            "cube_demo_scene.manifest.json",
-            manifest,
-            &manifestError))
-    {
-        preload = Preloader->Begin(
-            ResolveManifestPaths(
-                manifest,
-                runtimeAssets.Registry));
-    }
-    else
+    // The demo scene sits beside the binary, outside any scanned content
+    // root, so its record registers explicitly.
+    (void)runtimeAssets.Registry.Register(AssetRecord{
+        .Type = AssetType::Scene,
+        .SourceKind = AssetSourceKind::File,
+        .Path = "asset://cube_demo_scene.smap",
+        .FilePath = "cube_demo_scene.smap",
+    });
+
+    std::string preloadError;
+    std::shared_ptr<AssetPreload> preload =
+        Preloader->BeginSceneDependencies("cube_demo_scene.smap", &preloadError);
+    if (preload == nullptr)
     {
         logging.GetLogger<CubeDemoGame>().Warn(
-            "CubeDemo: no asset manifest ({}); resolve-on-import",
-            manifestError);
+            "CubeDemo: no preload ({}); resolve-on-import",
+            preloadError);
     }
 
     CaptionRuntime* captions = &engine.Captions();
@@ -348,50 +348,20 @@ void CubeDemoGame::OnStart(GameStartupContext&)
     captionSettings.ClosedCaptionsEnabled = true;
     captions->SetSettings(captionSettings);
 
-    auto parsed = std::make_shared<DemoSceneParse>();
-    auto packageBuilt = std::make_shared<bool>(false);
-    auto packageError = std::make_shared<std::string>();
-    const ComponentSerializerRegistry* serializers = &engine.SceneSerializers();
-    ZoneLoader->BeginLoad(
+    ZoneLoader->BeginLoadScene(
         kDemoZone,
-        [parsed, packageBuilt, packageError, serializers](
-            ZoneLoadPackage& package)
-        {
-            *parsed = ParseDemoSceneFile(
-                "cube_demo_scene.cooked.json");
-            if (!parsed->Json)
-                *parsed = ParseDemoSceneFile("cube_demo_scene.json");
-
-            SceneLoadError loadError;
-            *packageBuilt = BuildDemoScenePackage(
-                package,
-                *parsed,
-                *serializers,
-                &loadError);
-            if (!*packageBuilt)
-                *packageError = loadError.Message;
-        },
-        [this,
-         parsed,
-         packageBuilt,
-         packageError,
-         &logging](
+        "asset://cube_demo_scene.smap",
+        runtimeAssets.Assets,
+        AsyncZoneLoader::SceneStageFn{},
+        [this, &logging](
             RuntimeWorld& runtime,
-            RuntimeZoneRecord& zone)
+            RuntimeZoneRecord& zone,
+            const SmapContents&)
         {
-            if (!*packageBuilt)
-            {
-                logging.GetLogger<CubeDemoGame>().Error(
-                    "CubeDemo: scene package error: {}",
-                    *packageError);
-                return false;
-            }
-
             if (!FinalizeDemoScene(
                     Demo,
                     runtime,
                     zone,
-                    *parsed,
                     logging,
                     FreeCam))
             {

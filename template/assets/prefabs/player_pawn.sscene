@@ -1,0 +1,97 @@
+{
+  "format_version": 1,
+  "entities": [
+    {
+      "id": "11c04b1a77e0a001",
+      "components": {
+        "name": {
+          "value": "Player Pawn"
+        },
+        "Transform": {
+          "local": {
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "CharacterController": {},
+        "MovementTuning": {
+          "profile": "asset://data/player_movement.sdata"
+        },
+        "CharacterMovement": {
+          "mode": "movement.mode.free"
+        },
+        "LookOrientation": {
+          "yaw": 0
+        },
+        "AimFacing": {},
+        "GameplayTags": {
+          "tags": [
+            {
+              "name": "movement.controlled",
+              "stacks": 1
+            }
+          ]
+        },
+        "Attributes": {
+          "attributes": [
+            {
+              "name": "MoveSpeed",
+              "base": 4.5
+            }
+          ]
+        },
+        "AbilitySet": {
+          "abilities": []
+        }
+      }
+    },
+    {
+      "id": "11c04b1a77e0a002",
+      "parent": "11c04b1a77e0a001",
+      "components": {
+        "name": {
+          "value": "Player Camera"
+        },
+        "Transform": {
+          "local": {
+            "position": [
+              0,
+              0.7,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "Camera": {},
+        "CameraSeat": {
+          "role": "primary",
+          "mode": "first_person"
+        }
+      }
+    }
+  ]
+}

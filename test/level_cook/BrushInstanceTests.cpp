@@ -5,7 +5,7 @@
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
 #include "document/DocumentSerialization.h"
-#include "document/commands/BreakInstanceCommand.h"
+#include "document/commands/DetachSharedBrushCommand.h"
 #include "document/commands/DuplicateEntitiesCommand.h"
 #include "selection/SelectionContext.h"
 #include "selection/SelectionService.h"
@@ -26,7 +26,7 @@ namespace
         EntityId Instantiate(EntityId source)
         {
             const std::array<EntityId, 1> sources = { source };
-            const std::array<Transform3f, 1> transforms = { *Scene.TryGetTransform(source) };
+            const std::array<Transform3f, 1> transforms = { *Scene.TryGetWorldTransform(source) };
             DuplicateEntitiesCommand command(sources, transforms, Scene, Document, Selection,
                                              /*asInstance*/ true);
             command.Execute();
@@ -80,7 +80,7 @@ namespace
         const BrushId shared = Scene.TryGetBrush(source)->Id;
 
         const std::array<EntityId, 1> sources = { source };
-        const std::array<Transform3f, 1> transforms = { *Scene.TryGetTransform(source) };
+        const std::array<Transform3f, 1> transforms = { *Scene.TryGetWorldTransform(source) };
         DuplicateEntitiesCommand command(sources, transforms, Scene, Document, Selection, true);
         command.Execute();
         command.Undo();
@@ -98,13 +98,28 @@ namespace
         EXPECT_EQ(Scene.TryGetBrushMesh(source)->Vertices.size(), editedCount);
     }
 
+    TEST_F(BrushInstanceTest, ASharedMeshSavesExactlyOnce)
+    {
+        const EntityId source = Scene.CreateBrush({}, { 1.0f, 1.0f, 1.0f });
+        (void)Instantiate(source);
+        const std::uint64_t meshId = Scene.TryGetBrush(source)->Id.Value;
+
+        // Two entities reference the mesh; the file must carry one copy, or a
+        // duplicate object key silently doubles the payload on every save.
+        const std::string text = Document.ToSceneText();
+        const std::string key = "\"" + std::to_string(meshId) + "\"";
+        const std::size_t first = text.find(key);
+        ASSERT_NE(first, std::string::npos);
+        EXPECT_EQ(text.find(key, first + key.size()), std::string::npos);
+    }
+
     TEST_F(BrushInstanceTest, MakeUniqueDivergesFromTheGroup)
     {
         const EntityId source = Scene.CreateBrush({}, { 1.0f, 1.0f, 1.0f });
         const EntityId instance = Instantiate(source);
         const BrushId sharedId = Scene.TryGetBrush(source)->Id;
 
-        auto command = MakeBreakInstanceCommand(Scene, Document, instance);
+        auto command = MakeDetachSharedBrushCommand(Scene, Document, instance);
         ASSERT_NE(command, nullptr);
         command->Execute();
 
@@ -124,6 +139,6 @@ namespace
     TEST_F(BrushInstanceTest, MakeUniqueRejectsNonInstancedBrushes)
     {
         const EntityId lone = Scene.CreateBrush({}, { 1.0f, 1.0f, 1.0f });
-        EXPECT_EQ(MakeBreakInstanceCommand(Scene, Document, lone), nullptr);
+        EXPECT_EQ(MakeDetachSharedBrushCommand(Scene, Document, lone), nullptr);
     }
 }

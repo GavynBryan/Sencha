@@ -12,6 +12,7 @@
 #include <effects/EffectRegistry.h>
 #include <gameplay_tags/GameplayTagQuery.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <movement/CharacterMovementSerializer.h>
 #include <movement/FreeLocomotionSystem.h>
 #include <movement/JumpExecutionSystem.h>
 #include <movement/LocomotionMode.h>
@@ -22,6 +23,7 @@
 #include <movement/MovementModeSystems.h>
 #include <movement/MovementTags.h>
 #include <movement/MovementTuningResolutionSystem.h>
+#include <movement/MovementTuningSourceSerializer.h>
 #include <world/ComponentRegistrar.h>
 
 namespace
@@ -49,7 +51,12 @@ void RegisterMovementComponents(ComponentRegistrar& registrar)
     registrar.Add<KinematicState>();
     registrar.Add<SupportState>();
     registrar.Add<Immersion>();
+    // The mode is a registration and the profile is an asset, so what content
+    // states for both is a name; the wire keeps the id the mode is.
     registrar.Add<CharacterMovement>();
+    registrar.AddSerializer(MakeCharacterMovementSerializer());
+    registrar.Add<MovementTuningSource>();
+    registrar.AddSerializer(MakeMovementTuningSourceSerializer());
     registrar.Add<ResolvedMovementTuning>();
     registrar.Add<LocomotionOutput>();
     registrar.Add<MotionAxisOverride>();
@@ -66,6 +73,13 @@ void RegisterMovementComponents(World& world)
 
     ComponentRegistrar registrar(world);
     RegisterMovementComponents(registrar);
+
+    // Where MovementTuningSource's hooks hold its profile. Registered empty
+    // beside the component rather than by each host, so a world that can carry
+    // the component can always answer where its asset lives; a host with a
+    // data-asset cache points this at it.
+    if (!world.HasResource<MovementComponentAssets>())
+        world.AddResource<MovementComponentAssets>(nullptr);
 
     (void)EnsureMovementTags(world);
 

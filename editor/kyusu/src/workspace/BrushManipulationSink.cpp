@@ -8,6 +8,7 @@
 #include "commands/CompositeCommand.h"
 #include "selection/SelectionService.h"
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -23,9 +24,14 @@ BrushManipulationSink::BrushManipulationSink(EditorScene& scene, EditorDocument&
 {
 }
 
+EntityId BrushManipulationSink::GetParent(EntityId entity) const
+{
+    return Scene.GetParent(entity);
+}
+
 std::optional<Transform3f> BrushManipulationSink::ResolveTransform(EntityId entity) const
 {
-    if (const Transform3f* transform = Scene.TryGetTransform(entity))
+    if (const Transform3f* transform = Scene.TryGetWorldTransform(entity))
         return *transform;
     return std::nullopt;
 }
@@ -33,7 +39,7 @@ std::optional<Transform3f> BrushManipulationSink::ResolveTransform(EntityId enti
 std::optional<MeshEditTargetMesh> BrushManipulationSink::ResolveMesh(EntityId entity) const
 {
     const BrushMesh* mesh = Scene.TryGetBrushMesh(entity);
-    const Transform3f* transform = Scene.TryGetTransform(entity);
+    const Transform3f* transform = Scene.TryGetWorldTransform(entity);
     if (mesh == nullptr || transform == nullptr)
         return std::nullopt;
     return MeshEditTargetMesh{ .Mesh = mesh, .Transform = *transform };
@@ -41,7 +47,7 @@ std::optional<MeshEditTargetMesh> BrushManipulationSink::ResolveMesh(EntityId en
 
 void BrushManipulationSink::PreviewTransform(EntityId entity, const Transform3f& transform)
 {
-    Scene.SetTransform(entity, transform);
+    Scene.SetWorldTransform(entity, transform);
 }
 
 void BrushManipulationSink::PreviewMesh(EntityId entity, const BrushMesh& mesh)
@@ -57,7 +63,7 @@ void BrushManipulationSink::CommitTransforms(const std::vector<TransformEdit>& e
     std::vector<std::unique_ptr<ICommand>> commands;
     commands.reserve(edits.size());
     for (const TransformEdit& edit : edits)
-        commands.push_back(MakeMoveCommand(edit.Entity, edit.Before, edit.After, Scene, Document));
+        commands.push_back(MakeWorldMoveCommand(edit.Entity, edit.Before, edit.After, Scene, Document));
 
     Commands.Execute(std::make_unique<CompositeCommand>(std::move(commands)));
 }
@@ -89,17 +95,40 @@ void BrushManipulationSink::SelectElements(std::span<const SelectableRef> refs)
 
 std::vector<EntityId> BrushManipulationSink::CreatePreviewDuplicates(std::span<const EntityId> sources)
 {
+    // A source means its branch. Copy each subtree parent-before-child, rebind
+    // the interior parent links onto the copies, and hand back only the root
+    // copies: the drag moves those, and the children follow through
+    // propagation exactly as they do on the originals.
     std::vector<EntityId> copies;
     copies.reserve(sources.size());
     for (EntityId source : sources)
-        copies.push_back(Document.DuplicateEntity(source));
+    {
+        std::vector<EntityId> subtree;
+        Scene.CollectSubtree(source, subtree);
+
+        std::vector<EntityId> subtreeCopies;
+        subtreeCopies.reserve(subtree.size());
+        for (EntityId member : subtree)
+        {
+            const EntityId copy = Document.DuplicateEntity(member);
+            const EntityId parent = Scene.GetParent(member);
+            const auto inBranch = std::find(subtree.begin(), subtree.end(), parent);
+            if (inBranch != subtree.end())
+                (void)Scene.SetParent(copy,
+                    subtreeCopies[static_cast<std::size_t>(inBranch - subtree.begin())]);
+            subtreeCopies.push_back(copy);
+        }
+        copies.push_back(subtreeCopies.front());
+    }
     return copies;
 }
 
 void BrushManipulationSink::DestroyPreviewEntities(std::span<const EntityId> entities)
 {
+    // Preview roots carry their copied branch; destroying just the root would
+    // hand the copied children to the scene as orphans.
     for (EntityId entity : entities)
-        Scene.DestroyEntity(entity);
+        Scene.DestroySubtree(entity);
 }
 
 void BrushManipulationSink::CommitDuplicate(std::span<const EntityId> sources,
@@ -111,7 +140,7 @@ void BrushManipulationSink::CommitDuplicate(std::span<const EntityId> sources,
     // reading them first keeps the observer independent of command internals.
     std::optional<Vec3d> offset;
     if (!transforms.empty())
-        if (const Transform3f* source = Scene.TryGetTransform(sources.front()))
+        if (const Transform3f* source = Scene.TryGetWorldTransform(sources.front()))
             offset = transforms.front().Position - source->Position;
     Commands.Execute(std::make_unique<DuplicateEntitiesCommand>(
         sources, transforms, Scene, Document, Selection, false, DuplicateRemap));

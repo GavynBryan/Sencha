@@ -1,14 +1,23 @@
 #pragma once
 
+#include <assets/data/DataAssetCache.h>
+#include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
+#include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
+#include <ecs/World.h>
 #include <math/MathSchemas.h>
 #include <math/Vec.h>
+#include <movement/JumpState.h>
+#include <movement/MovementIntent.h>
 #include <movement/MovementProfileData.h>
+#include <world/transform/TransformHistory.h>
 
 #include <compare>
+#include <cstddef>
 #include <cstdint>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 
@@ -143,11 +152,11 @@ struct TypeSchema<LocomotionModeId>
     }
 };
 
-// What this character is in movement terms: the authored profile it resolves
-// tuning from, and the locomotion mode it is currently in.
+// Which locomotion mode this character is in. Carrying it is what makes an
+// entity something the movement systems step, which is why it is the component
+// that owes the per-tick scratch they read and write (see below).
 struct CharacterMovement
 {
-    MovementProfileHandle Profile{};
     LocomotionModeId Mode{};
 };
 SENCHA_DECLARE_COMPONENT_TYPE(CharacterMovement, "sencha.character_movement");
@@ -174,10 +183,93 @@ struct TypeSchema<CharacterMovement>
     {
         return std::tuple{
             MakeField("mode", &CharacterMovement::Mode).OwnerOnly(),
-            // Which profile a character resolves tuning from is content both
-            // machines already loaded.
-            MakeField("profile", &CharacterMovement::Profile).LocalOnly(),
         };
+    }
+};
+
+//=============================================================================
+// MovementComponentAssets
+//
+// Where a movement component's authored profile lives, so the component's
+// lifecycle hooks can hold what it names. Null in a world composed without
+// structured data -- a bare test world, a registry opened only to inspect
+// structure -- where the hooks then do nothing.
+//=============================================================================
+struct MovementComponentAssets
+{
+    MovementComponentAssets() = default;
+    explicit MovementComponentAssets(DataAssetCache* profiles)
+        : Profiles(profiles)
+    {
+    }
+
+    DataAssetCache* Profiles = nullptr;
+};
+
+//=============================================================================
+// MovementTuningSource
+//
+// The authored profile this character resolves its coefficients from, as the
+// handle the tuning system binds through. Separate from CharacterMovement
+// because it is the one movement fact that never travels: which profile a
+// character uses is content both machines already loaded, and a component
+// carrying an asset handle cannot be replicated at all -- a snapshot
+// overwrites bytes in place, which would leave the handle unowned.
+//
+// An invalid handle is a working character on default coefficients plus the
+// speed attribute, so a missing profile degrades rather than breaking.
+//=============================================================================
+struct MovementTuningSource
+{
+    MovementProfileHandle Profile{};
+};
+SENCHA_DECLARE_COMPONENT_TYPE(MovementTuningSource, "sencha.movement_tuning_source");
+
+// The handle wrapper is addressed by the asset-field editors at the member's
+// own offset, the way a mesh handle is: they copy handle bytes without naming
+// the wrapper. That only works while the wrapper is exactly its handle.
+static_assert(sizeof(MovementProfileHandle) == sizeof(DataAssetHandle));
+static_assert(offsetof(MovementProfileHandle, Value) == 0);
+
+// The scene form is the profile's path (see MovementTuningSourceSerializer);
+// this describes the same member for an authoring surface, which resolves the
+// handle through the asset system rather than reading its bytes as a number.
+template <>
+struct TypeSchema<MovementTuningSource>
+{
+    static constexpr std::string_view Name = "MovementTuning";
+
+    static auto Fields()
+    {
+        return std::make_tuple(
+            MakeField("profile", &MovementTuningSource::Profile)
+                .AsDataAsset(kMovementProfileTypeName)
+                .Label("Movement profile")
+                .Tooltip("Authored acceleration, friction, and jump coefficients. "
+                         "None leaves the character on engine defaults plus the "
+                         "MoveSpeed attribute."));
+    }
+};
+
+// The component owns one reference to its profile for as long as it carries
+// it. Whoever produced the handle owns their own and lets it go; this is what
+// keeps the profile resident afterwards, and what frees it when the last
+// character naming it is destroyed.
+template <>
+struct ComponentTraits<MovementTuningSource>
+{
+    static void OnAdd(MovementTuningSource& component, World& world, EntityId)
+    {
+        auto* assets = world.TryGetResource<MovementComponentAssets>();
+        if (assets != nullptr && assets->Profiles != nullptr)
+            assets->Profiles->Retain(component.Profile.Value);
+    }
+
+    static void OnRemove(const MovementTuningSource& component, World& world, EntityId)
+    {
+        auto* assets = world.TryGetResource<MovementComponentAssets>();
+        if (assets != nullptr && assets->Profiles != nullptr)
+            assets->Profiles->Release(component.Profile.Value);
     }
 };
 
@@ -279,6 +371,46 @@ struct FlightSession
     uint8_t Active = 1;
 };
 SENCHA_DECLARE_COMPONENT_TYPE(FlightSession, "sencha.flight_session");
+
+//=============================================================================
+// What a moving character owes
+//
+// Declared here, at the bottom, because it names every component above.
+//
+// These are the columns the movement tick reads and writes: last step's
+// physical facts, this tick's request and resolved coefficients, the
+// contribution channels, and the composed motor request. None of them is
+// authored and none of them means anything on its own -- an entity with a
+// CharacterMovement and no MotionRequest is not a character with a missing
+// setting, it is a character that quietly stops matching the query that would
+// have moved it.
+//
+// That failure has no error to report and no frame to happen on, which is why
+// it is stated once here instead of ensured at every place a character is
+// built. Every path that adds a CharacterMovement -- content, code, the editor
+// adding it by identity, a command buffer flushing it after a query -- ends in
+// one of the World's structural adds, and each of those applies the set.
+//
+// The transform history is here for the same reason in a different register: a
+// body stepped at the tick rate and drawn at the frame rate needs the two poses
+// to interpolate between, and having them is not optional for something that
+// moves every tick.
+template <>
+struct ComponentTraits<CharacterMovement>
+{
+    using DerivedComponents = std::tuple<
+        MovementIntent,
+        JumpState,
+        KinematicState,
+        SupportState,
+        ResolvedMovementTuning,
+        LocomotionOutput,
+        MotionAxisOverride,
+        MotionImpulse,
+        MotionRequest,
+        ModeTransitionRequest,
+        WorldTransformHistory>;
+};
 
 static_assert(std::is_trivially_copyable_v<SupportState>);
 static_assert(std::is_trivially_copyable_v<CharacterMovement>);

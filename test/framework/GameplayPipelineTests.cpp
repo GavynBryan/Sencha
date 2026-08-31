@@ -70,25 +70,16 @@ EntityId SpawnControlledPawn(World& world)
 
     const EntityId pawn = world.CreateEntity();
     world.AddComponent<CharacterController>(pawn, CharacterController{});
-    world.AddComponent<MovementIntent>(pawn, MovementIntent{});
-    world.AddComponent<KinematicState>(pawn, KinematicState{});
 
-    // Stable support is the physical fact the whole tick reads: it gates the
-    // jump and keeps gravity out of the locomotion result.
-    SupportState support;
-    support.Kind = SupportKind::Stable;
-    world.AddComponent<SupportState>(pawn, support);
-
-    world.AddComponent<ResolvedMovementTuning>(pawn, ResolvedMovementTuning{});
-    world.AddComponent<LocomotionOutput>(pawn, LocomotionOutput{});
-    world.AddComponent<MotionAxisOverride>(pawn, MotionAxisOverride{});
-    world.AddComponent<MotionImpulse>(pawn, MotionImpulse{});
-    world.AddComponent<MotionRequest>(pawn, MotionRequest{});
-    world.AddComponent<ModeTransitionRequest>(pawn, ModeTransitionRequest{});
-
+    // The per-tick scratch the whole pipeline reads and writes comes with this:
+    // it is what CharacterMovement owes.
     CharacterMovement movement;
     movement.Mode = world.GetResource<LocomotionModeRegistry>().FreeMode();
     world.AddComponent<CharacterMovement>(pawn, movement);
+
+    // Stable support is the physical fact the whole tick reads: it gates the
+    // jump and keeps gravity out of the locomotion result.
+    world.TryGet<SupportState>(pawn)->Kind = SupportKind::Stable;
 
     GameplayTagContainer tagContainer;
     tagContainer.Grant(tags.Controlled);
@@ -99,7 +90,6 @@ EntityId SpawnControlledPawn(World& world)
     world.AddComponent<AttributeSet>(pawn, attributes);
 
     world.AddComponent<AbilitySet>(pawn, AbilitySet{});
-    world.AddComponent<JumpState>(pawn, JumpState{});
     return pawn;
 }
 } // namespace

@@ -18,6 +18,12 @@ executing.** Command buffers enforce this by deferring every structural change t
 time. The `World` maintains a query-depth counter; any direct structural call while the
 counter is non-zero is an assertion failure in debug builds.
 
+A flushed add carries the same obligations a direct one does. It fires the component's
+`OnAdd` hook, and it provisions whatever that component declares it cannot work without
+(`DerivedComponents`, see component-traits.md) — including on the batch path, where a run
+of identical hook-free adds is coalesced into one archetype transition per entity. An
+entity built through a command buffer is the entity the typed add builds.
+
 ---
 
 ## Creating a CommandBuffer

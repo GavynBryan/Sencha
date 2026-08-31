@@ -140,16 +140,7 @@ namespace
                                                    Quatf::Identity(),
                                                    Vec3d::One() } });
             Entities.AddComponent<CharacterController>(Pawn, CharacterController{});
-            Entities.AddComponent<MovementIntent>(Pawn, MovementIntent{});
-            Entities.AddComponent<JumpState>(Pawn, JumpState{});
-            Entities.AddComponent<KinematicState>(Pawn, KinematicState{});
-            Entities.AddComponent<SupportState>(Pawn, SupportState{});
-            Entities.AddComponent<ResolvedMovementTuning>(
-                Pawn, ResolvedMovementTuning{});
-            Entities.AddComponent<LocomotionOutput>(Pawn, LocomotionOutput{});
-            Entities.AddComponent<MotionAxisOverride>(Pawn, MotionAxisOverride{});
-            Entities.AddComponent<MotionImpulse>(Pawn, MotionImpulse{});
-            Entities.AddComponent<MotionRequest>(Pawn, MotionRequest{});
+            // The per-tick scratch arrives with the component that owes it.
             Entities.AddComponent<CharacterMovement>(
                 Pawn,
                 CharacterMovement{

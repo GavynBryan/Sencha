@@ -9,7 +9,7 @@
 
 namespace
 {
-    constexpr std::string_view kTypeName = "movement.profile";
+    constexpr std::string_view kTypeName = kMovementProfileTypeName;
 
     DataFieldSchema FloatField(std::string key,
                                std::string display,

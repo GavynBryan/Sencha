@@ -63,13 +63,13 @@ void IrradianceVolumeRenderer::DrawViewport(const FrameContext& frame,
     std::vector<EditorLineVertex> points;
     for (EntityId entity : scene.GetAllEntities())
     {
-        if (!scene.IsEntityVisible(entity))
+        if (!scene.IsEntityEffectivelyVisible(entity))
             continue;
         const IrradianceVolumeComponent* volume =
             world.TryGet<IrradianceVolumeComponent>(entity);
         if (volume == nullptr)
             continue;
-        const Transform3f* transform = scene.TryGetTransform(entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(entity);
         if (transform == nullptr)
             continue;
 

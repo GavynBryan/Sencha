@@ -15,6 +15,7 @@
 #include <render/StaticMeshComponent.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/SceneSerializationContext.h>
+#include <world/scene/SceneInstance.h>
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
 
@@ -250,8 +251,26 @@ JsonValue BuildPassthroughScene(const EditorDocument& document,
         if (JsonValue* components = FindMutable(entityJson, "components");
             components != nullptr && components->IsObject())
         {
+            // Editor-only annotations: the bake linkage and the authored
+            // display name. Neither exists in the runtime schema, and an
+            // unknown component key fails the zone import by design.
             std::erase_if(components->AsObject(),
-                [](const auto& field) { return field.first == "baked_brush"; });
+                [](const auto& field)
+                { return field.first == "baked_brush" || field.first == "name"; });
+
+            // Expanded placement members carry their instance identity into
+            // the cooked scene (locked decision D1): the placement id, and
+            // the source as its asset path -- the cook stamps it to a stable
+            // id exactly like every other ref.
+            if (const SceneInstanceId owner = document.SceneInstanceOwnerOf(entity);
+                owner.IsValid())
+            {
+                components->AsObject().push_back({ "scene_instance",
+                    JsonValue(JsonValue::Object{
+                        { "source", JsonValue(document.SceneInstanceSourceOf(entity)) },
+                        { "id", JsonValue(SceneInstanceIdToString(owner)) },
+                    }) });
+            }
         }
         entities.push_back(std::move(entityJson));
     }
@@ -306,6 +325,25 @@ std::optional<DocumentCookInput> CollectDocumentCookInput(
     const DocumentCookOptions& options,
     std::string* error)
 {
+    // The cook consumes the live registry, and the projection is part of it.
+    // Anything unresolved -- a source that failed, a path with no recorded id,
+    // an override aimed at nothing -- would cook a scene that silently differs
+    // from what the placement means, so it refuses instead.
+    if (const auto& projection = document.GetProjectionDiagnostics();
+        !projection.Clean())
+    {
+        std::string message = "scene instances did not fully resolve:";
+        if (!projection.ResolveError.empty())
+            message += " " + projection.ResolveError;
+        for (const std::string& missing : projection.MissingIds)
+            message += " [missing id] " + missing;
+        for (const std::string& dangling : projection.DanglingOverrides)
+            message += " [dangling override] " + dangling;
+        if (error != nullptr)
+            *error = message;
+        return std::nullopt;
+    }
+
     const auto fail = [error](std::string message) -> std::optional<DocumentCookInput>
     {
         if (error != nullptr)
@@ -391,6 +429,7 @@ std::optional<ProbeHaloZone> CollectZoneBakeHalo(
     LoggingProvider silent;
     LoggingProvider& log = logging != nullptr ? *logging : silent;
     EditorDocument doc(log);
+    doc.SetContentRoots({ assetsRoot });
     if (assets != nullptr)
         doc.SetAssetEnvironment(*assets);
     if (!doc.Load(authoredLevelPath.generic_string()))

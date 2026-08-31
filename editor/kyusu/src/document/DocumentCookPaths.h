@@ -9,16 +9,16 @@
 #include <string_view>
 
 // The active-publication paths one document cook reads and replaces, derived
-// once from the source and the resolved document identity. A world cook publishes
-// under a content-addressed stem inside its output namespace, so the stem folds
-// the document hash; a standalone level cook publishes under its bare stem.
+// once from the source and the resolved document identity. The stem mirrors
+// the source's directory under the cooked root (levels/room_2, prefabs/turret),
+// so a document cooks beside its family wherever it was authored. A world cook
+// publishes under a content-addressed stem inside its output namespace, so the
+// stem folds the document hash; a standalone cook publishes under its bare stem.
 struct DocumentCookPaths
 {
-    std::string           Stem; // namespaced publication stem (no extension)
+    std::string           Stem; // directory-qualified publication stem (no extension)
     std::filesystem::path CookedDir;
-    std::filesystem::path Scene;
-    std::filesystem::path Manifest;
-    std::filesystem::path Collision;
+    std::filesystem::path Scene; // the .smap, which carries dependencies and collision
     std::filesystem::path Receipt;
     std::filesystem::path Index;
 };
@@ -29,13 +29,14 @@ struct DocumentCookPaths
     std::uint64_t documentHash)
 {
     DocumentCookPaths paths;
-    paths.Stem = outputNamespace.empty()
+    const std::string sourceDir =
+        std::filesystem::path(sourceRel).parent_path().generic_string();
+    const std::string local = outputNamespace.empty()
         ? std::string(stem)
         : outputNamespace + "/" + std::format("{:016x}", documentHash);
-    paths.CookedDir = assetsRoot / ".cooked/levels";
-    paths.Scene = paths.CookedDir / (paths.Stem + ".cooked.json");
-    paths.Manifest = paths.CookedDir / (paths.Stem + ".manifest.json");
-    paths.Collision = paths.CookedDir / (paths.Stem + ".collision.json");
+    paths.Stem = sourceDir.empty() ? local : sourceDir + "/" + local;
+    paths.CookedDir = assetsRoot / ".cooked";
+    paths.Scene = paths.CookedDir / (paths.Stem + ".smap");
     paths.Receipt = DocumentCookReceiptPath(assetsRoot, sourceRel);
     paths.Index = assetsRoot / ".cooked/index.json";
     return paths;

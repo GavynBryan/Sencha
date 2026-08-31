@@ -57,7 +57,7 @@ TEST_F(MergeSeparateTest, MergeJoinsShellsWithWorldPositionsIntact)
     ASSERT_NE(merged, nullptr);
     EXPECT_EQ(merged->Faces.size(), 12u);
     // A source corner (5,0,0)+(1,1,1) = (6,1,1) lands at the same world spot.
-    EXPECT_TRUE(ContainsWorldPoint(*merged, *Scene.TryGetTransform(target), { 6.0f, 1.0f, 1.0f }));
+    EXPECT_TRUE(ContainsWorldPoint(*merged, *Scene.TryGetWorldTransform(target), { 6.0f, 1.0f, 1.0f }));
 
     command->Undo();
     EXPECT_EQ(Scene.GetEntityCount(), 2u);
@@ -70,7 +70,7 @@ TEST_F(MergeSeparateTest, MergePreservesWorldTexturePlacementAcrossRotatedFrames
     const EntityId source = Scene.CreateBrush({ 3.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f });
 
     // Rotate the source's frame so a straight UV copy would shift the texture.
-    Transform3f rotated = *Scene.TryGetTransform(source);
+    Transform3f rotated = *Scene.TryGetWorldTransform(source);
     rotated.Rotation = Quatf::FromAxisAngle({ 0.0f, 1.0f, 0.0f }, 0.7f);
     Scene.SetTransform(source, rotated);
 
@@ -89,7 +89,7 @@ TEST_F(MergeSeparateTest, MergePreservesWorldTexturePlacementAcrossRotatedFrames
     // Find the merged vertex at the same world position and compare its UV
     // under the rebased projection: identical placement.
     const BrushMesh* merged = Scene.TryGetBrushMesh(target);
-    const Transform3f targetTransform = *Scene.TryGetTransform(target);
+    const Transform3f targetTransform = *Scene.TryGetWorldTransform(target);
     bool found = false;
     for (const BrushFace& mergedFace : merged->Faces)
         for (std::uint32_t index : mergedFace.Loop)
@@ -128,7 +128,7 @@ TEST_F(MergeSeparateTest, MergingAnInstancedSourceLeavesSiblingsAlive)
 TEST_F(MergeSeparateTest, SeparateSplitsFacesIntoANewBrush)
 {
     const EntityId source = Scene.CreateBrush({ 1.0f, 2.0f, 3.0f }, { 1.0f, 1.0f, 1.0f });
-    const Transform3f transform = *Scene.TryGetTransform(source);
+    const Transform3f transform = *Scene.TryGetWorldTransform(source);
 
     // Take faces 0 and 1 out.
     const std::array<std::uint32_t, 2> faces = { 0u, 1u };
@@ -147,7 +147,7 @@ TEST_F(MergeSeparateTest, SeparateSplitsFacesIntoANewBrush)
     ASSERT_NE(separated, nullptr);
     EXPECT_EQ(separated->Faces.size(), 2u);
     // Same transform, same world positions.
-    EXPECT_TRUE(ContainsWorldPoint(*separated, *Scene.TryGetTransform(created), worldProbe));
+    EXPECT_TRUE(ContainsWorldPoint(*separated, *Scene.TryGetWorldTransform(created), worldProbe));
 
     command->Undo();
     EXPECT_EQ(Scene.GetEntityCount(), 1u);

@@ -1,0 +1,2577 @@
+{
+  format_version: 1,
+  settings: {
+    default_material: "asset://materials/dev/gray.smat",
+  },
+  entities: [
+    {
+      id: "1bb28bcfa66a8b94",
+      components: {
+        Transform: {
+          local: {
+            position: [0, -0.25, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 1,
+        },
+      },
+    },
+    {
+      id: "087bb68147bea6a3",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 8.25, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 2,
+        },
+      },
+    },
+    {
+      id: "7f99902c7157cf43",
+      components: {
+        Transform: {
+          local: {
+            position: [-18.25, 4, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 3,
+        },
+      },
+    },
+    {
+      id: "3c6c38a6de4bcb91",
+      components: {
+        Transform: {
+          local: {
+            position: [18.25, 4, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 4,
+        },
+      },
+    },
+    {
+      id: "05bc0b2b428def10",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 4, -18.25],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 5,
+        },
+      },
+    },
+    {
+      id: "3bad6e4b1560b6a7",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 4, 18.25],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 6,
+        },
+      },
+    },
+    {
+      id: "6ca049c200e41636",
+      components: {
+        Transform: {
+          local: {
+            position: [-3, 2, -3],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 7,
+        },
+      },
+    },
+    {
+      id: "34035124743e6e20",
+      components: {
+        Transform: {
+          local: {
+            position: [-3, 2, 3],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 8,
+        },
+      },
+    },
+    {
+      id: "598e30067b39bbed",
+      components: {
+        Transform: {
+          local: {
+            position: [3, 2, -3],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 9,
+        },
+      },
+    },
+    {
+      id: "12536c4bd848b5b9",
+      components: {
+        Transform: {
+          local: {
+            position: [3, 2, 3],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 10,
+        },
+      },
+    },
+    {
+      id: "27f6f8a050c68373",
+      components: {
+        Transform: {
+          local: {
+            position: [-12, 6, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.8999999761581421, 0.699999988079071],
+          intensity: 25,
+          range: 20,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "26ad7628977000b1",
+      components: {
+        Transform: {
+          local: {
+            position: [12, 6, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.8999999761581421, 0.699999988079071],
+          intensity: 25,
+          range: 20,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "direct",
+        },
+      },
+    },
+    {
+      id: "16490eacd36f93ea",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 4, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        IrradianceVolume: {
+          half_extents: [18, 4, 18],
+          cell_size: 2,
+          priority: 0,
+        },
+      },
+    },
+    {
+      id: "1bdcf8190b81617f",
+      components: {
+        Transform: {
+          local: {
+            position: [-4.900000095367432, 1, -4.900000095367432],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.6000000238418579, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "668dc4ce5a3f7bd6",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.5, 1, -4.900000095367432],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 1, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "315cb512b0018983",
+      components: {
+        Transform: {
+          local: {
+            position: [-2.0999999046325684, 1, -4.900000095367432],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 0.6000000238418579, 1],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "6798ed850eafa368",
+      components: {
+        Transform: {
+          local: {
+            position: [-0.699999988079071, 1, -4.900000095367432],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.6000000238418579, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "6a34d54229cd1502",
+      components: {
+        Transform: {
+          local: {
+            position: [0.699999988079071, 1, -4.900000095367432],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 1, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "185142b4ef1dc5c3",
+      components: {
+        Transform: {
+          local: {
+            position: [2.0999999046325684, 1, -4.900000095367432],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 0.6000000238418579, 1],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "0add78c137e04d6a",
+      components: {
+        Transform: {
+          local: {
+            position: [3.5, 1, -4.900000095367432],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.6000000238418579, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "18de1e061894679b",
+      components: {
+        Transform: {
+          local: {
+            position: [4.900000095367432, 1, -4.900000095367432],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 1, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "36a8613145236c89",
+      components: {
+        Transform: {
+          local: {
+            position: [-4.900000095367432, 1, -3.5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 0.6000000238418579, 1],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "02ded58f48d4d09d",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.5, 1, -3.5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.6000000238418579, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "390a8387e5d18244",
+      components: {
+        Transform: {
+          local: {
+            position: [-2.0999999046325684, 1, -3.5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 1, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "01c4739ec9663316",
+      components: {
+        Transform: {
+          local: {
+            position: [-0.699999988079071, 1, -3.5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 0.6000000238418579, 1],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "5fbabda12f1f5fbd",
+      components: {
+        Transform: {
+          local: {
+            position: [0.699999988079071, 1, -3.5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.6000000238418579, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "640ea4c64585e718",
+      components: {
+        Transform: {
+          local: {
+            position: [2.0999999046325684, 1, -3.5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 1, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "13f57f67f04f516e",
+      components: {
+        Transform: {
+          local: {
+            position: [3.5, 1, -3.5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 0.6000000238418579, 1],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "1a4dff9e5d60e137",
+      components: {
+        Transform: {
+          local: {
+            position: [4.900000095367432, 1, -3.5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.6000000238418579, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "7b13e0ec62ae44a5",
+      components: {
+        Transform: {
+          local: {
+            position: [-4.900000095367432, 1, -2.0999999046325684],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 1, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "2678b1fbfd42fffe",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.5, 1, -2.0999999046325684],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 0.6000000238418579, 1],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "747b9c9a7b25aff9",
+      components: {
+        Transform: {
+          local: {
+            position: [-2.0999999046325684, 1, -2.0999999046325684],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.6000000238418579, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "75a09f6d20bca71c",
+      components: {
+        Transform: {
+          local: {
+            position: [-0.699999988079071, 1, -2.0999999046325684],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 1, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "2c4448abfd22dd49",
+      components: {
+        Transform: {
+          local: {
+            position: [0.699999988079071, 1, -2.0999999046325684],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 0.6000000238418579, 1],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "1eec37ff9a580165",
+      components: {
+        Transform: {
+          local: {
+            position: [2.0999999046325684, 1, -2.0999999046325684],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.6000000238418579, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "1c642b24e533f889",
+      components: {
+        Transform: {
+          local: {
+            position: [3.5, 1, -2.0999999046325684],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 1, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "35d74ea04cc4a6bc",
+      components: {
+        Transform: {
+          local: {
+            position: [4.900000095367432, 1, -2.0999999046325684],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 0.6000000238418579, 1],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "0cad74d6a07af26b",
+      components: {
+        Transform: {
+          local: {
+            position: [-4.900000095367432, 1, -0.699999988079071],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.6000000238418579, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "1920861392b215cf",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.5, 1, -0.699999988079071],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 1, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "152bae523cc128a4",
+      components: {
+        Transform: {
+          local: {
+            position: [-2.0999999046325684, 1, -0.699999988079071],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 0.6000000238418579, 1],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "1fb16e44c67c50d5",
+      components: {
+        Transform: {
+          local: {
+            position: [-0.699999988079071, 1, -0.699999988079071],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.6000000238418579, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "50f5db711a070f51",
+      components: {
+        Transform: {
+          local: {
+            position: [0.699999988079071, 1, -0.699999988079071],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 1, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "5705f83545b55986",
+      components: {
+        Transform: {
+          local: {
+            position: [2.0999999046325684, 1, -0.699999988079071],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 0.6000000238418579, 1],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "485356bc132efd4d",
+      components: {
+        Transform: {
+          local: {
+            position: [3.5, 1, -0.699999988079071],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.6000000238418579, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "08d3aa96c9926e33",
+      components: {
+        Transform: {
+          local: {
+            position: [4.900000095367432, 1, -0.699999988079071],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 1, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "33c7c938fc12d760",
+      components: {
+        Transform: {
+          local: {
+            position: [-4.900000095367432, 1, 0.699999988079071],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 0.6000000238418579, 1],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "6c6471df8ff1de77",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.5, 1, 0.699999988079071],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.6000000238418579, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "5a92ff128ac03c8b",
+      components: {
+        Transform: {
+          local: {
+            position: [-2.0999999046325684, 1, 0.699999988079071],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 1, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "6ec6a4a15ee58b15",
+      components: {
+        Transform: {
+          local: {
+            position: [-0.699999988079071, 1, 0.699999988079071],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 0.6000000238418579, 1],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "75279ea8e2c4b5bf",
+      components: {
+        Transform: {
+          local: {
+            position: [0.699999988079071, 1, 0.699999988079071],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.6000000238418579, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "62e1fa3bfbe26ddf",
+      components: {
+        Transform: {
+          local: {
+            position: [2.0999999046325684, 1, 0.699999988079071],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 1, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "6ab36b2da8201acb",
+      components: {
+        Transform: {
+          local: {
+            position: [3.5, 1, 0.699999988079071],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 0.6000000238418579, 1],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "248a7ccc2f899cf4",
+      components: {
+        Transform: {
+          local: {
+            position: [4.900000095367432, 1, 0.699999988079071],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.6000000238418579, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "2ad436b7f67bcb3a",
+      components: {
+        Transform: {
+          local: {
+            position: [-4.900000095367432, 1, 2.0999999046325684],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 1, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "75c76a82fb1cf6e4",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.5, 1, 2.0999999046325684],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 0.6000000238418579, 1],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "23aa90b8a533a9c3",
+      components: {
+        Transform: {
+          local: {
+            position: [-2.0999999046325684, 1, 2.0999999046325684],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.6000000238418579, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "33d4ab0f30aad902",
+      components: {
+        Transform: {
+          local: {
+            position: [-0.699999988079071, 1, 2.0999999046325684],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 1, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "7ae0b6ffed0fc8bb",
+      components: {
+        Transform: {
+          local: {
+            position: [0.699999988079071, 1, 2.0999999046325684],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 0.6000000238418579, 1],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "769263f76e784209",
+      components: {
+        Transform: {
+          local: {
+            position: [2.0999999046325684, 1, 2.0999999046325684],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.6000000238418579, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "77742155db828bd3",
+      components: {
+        Transform: {
+          local: {
+            position: [3.5, 1, 2.0999999046325684],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 1, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "4a658a1cce687323",
+      components: {
+        Transform: {
+          local: {
+            position: [4.900000095367432, 1, 2.0999999046325684],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 0.6000000238418579, 1],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "604c9a8f9e1148b9",
+      components: {
+        Transform: {
+          local: {
+            position: [-4.900000095367432, 1, 3.5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.6000000238418579, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "630bcfd821dd2509",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.5, 1, 3.5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 1, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "63f84eb293fda23b",
+      components: {
+        Transform: {
+          local: {
+            position: [-2.0999999046325684, 1, 3.5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [0.6000000238418579, 0.6000000238418579, 1],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "59c6bd1b1a0d8079",
+      components: {
+        Transform: {
+          local: {
+            position: [-0.699999988079071, 1, 3.5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.6000000238418579, 0.6000000238418579],
+          intensity: 4,
+          range: 3,
+          enabled: true,
+          cast_shadows: false,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "2374a02686d5d16e",
+      components: {
+        Transform: {
+          local: {
+            position: [5.5, 7, 0],
+            rotation: [-0.7071067690849304, -0, -0, 0.7071067690849304],
+            scale: [1, 1, 1],
+          },
+        },
+        SpotLight: {
+          color: [0.8999999761581421, 0.8999999761581421, 1],
+          intensity: 20,
+          range: 10,
+          inner_angle_degrees: 25,
+          outer_angle_degrees: 40,
+          enabled: true,
+          cast_shadows: true,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "1723e3530aaeafe6",
+      components: {
+        Transform: {
+          local: {
+            position: [3.889087200164795, 7, 3.889087200164795],
+            rotation: [-0.7071067690849304, -0, -0, 0.7071067690849304],
+            scale: [1, 1, 1],
+          },
+        },
+        SpotLight: {
+          color: [0.8999999761581421, 0.8999999761581421, 1],
+          intensity: 20,
+          range: 10,
+          inner_angle_degrees: 25,
+          outer_angle_degrees: 40,
+          enabled: true,
+          cast_shadows: true,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "538ee26308889ee1",
+      components: {
+        Transform: {
+          local: {
+            position: [-2.4041264623519965e-07, 7, 5.5],
+            rotation: [-0.7071067690849304, -0, -0, 0.7071067690849304],
+            scale: [1, 1, 1],
+          },
+        },
+        SpotLight: {
+          color: [0.8999999761581421, 0.8999999761581421, 1],
+          intensity: 20,
+          range: 10,
+          inner_angle_degrees: 25,
+          outer_angle_degrees: 40,
+          enabled: true,
+          cast_shadows: true,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "2814d1952a846593",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.889087200164795, 7, 3.889087200164795],
+            rotation: [-0.7071067690849304, -0, -0, 0.7071067690849304],
+            scale: [1, 1, 1],
+          },
+        },
+        SpotLight: {
+          color: [0.8999999761581421, 0.8999999761581421, 1],
+          intensity: 20,
+          range: 10,
+          inner_angle_degrees: 25,
+          outer_angle_degrees: 40,
+          enabled: true,
+          cast_shadows: true,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "0d1cbfff4019ef52",
+      components: {
+        Transform: {
+          local: {
+            position: [-5.5, 7, -4.808252924703993e-07],
+            rotation: [-0.7071067690849304, -0, -0, 0.7071067690849304],
+            scale: [1, 1, 1],
+          },
+        },
+        SpotLight: {
+          color: [0.8999999761581421, 0.8999999761581421, 1],
+          intensity: 20,
+          range: 10,
+          inner_angle_degrees: 25,
+          outer_angle_degrees: 40,
+          enabled: true,
+          cast_shadows: true,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "68985d4487c85aae",
+      components: {
+        Transform: {
+          local: {
+            position: [-3.8890864849090576, 7, -3.8890879154205322],
+            rotation: [-0.7071067690849304, -0, -0, 0.7071067690849304],
+            scale: [1, 1, 1],
+          },
+        },
+        SpotLight: {
+          color: [0.8999999761581421, 0.8999999761581421, 1],
+          intensity: 20,
+          range: 10,
+          inner_angle_degrees: 25,
+          outer_angle_degrees: 40,
+          enabled: true,
+          cast_shadows: true,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "24d1551dabbb250c",
+      components: {
+        Transform: {
+          local: {
+            position: [6.558684617630206e-08, 7, -5.5],
+            rotation: [-0.7071067690849304, -0, -0, 0.7071067690849304],
+            scale: [1, 1, 1],
+          },
+        },
+        SpotLight: {
+          color: [0.8999999761581421, 0.8999999761581421, 1],
+          intensity: 20,
+          range: 10,
+          inner_angle_degrees: 25,
+          outer_angle_degrees: 40,
+          enabled: true,
+          cast_shadows: true,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "10a5cbecfb144297",
+      components: {
+        Transform: {
+          local: {
+            position: [3.8890886306762695, 7, -3.8890860080718994],
+            rotation: [-0.7071067690849304, -0, -0, 0.7071067690849304],
+            scale: [1, 1, 1],
+          },
+        },
+        SpotLight: {
+          color: [0.8999999761581421, 0.8999999761581421, 1],
+          intensity: 20,
+          range: 10,
+          inner_angle_degrees: 25,
+          outer_angle_degrees: 40,
+          enabled: true,
+          cast_shadows: true,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "75a22aafb778c873",
+      components: {
+        Transform: {
+          local: {
+            position: [-2, 3, -2],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.800000011920929, 0.6000000238418579],
+          intensity: 10,
+          range: 7,
+          enabled: true,
+          cast_shadows: true,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "6f60da9bca1bf1e7",
+      components: {
+        Transform: {
+          local: {
+            position: [-2, 3, 2],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.800000011920929, 0.6000000238418579],
+          intensity: 10,
+          range: 7,
+          enabled: true,
+          cast_shadows: true,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "1a6879ef38319109",
+      components: {
+        Transform: {
+          local: {
+            position: [2, 3, -2],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.800000011920929, 0.6000000238418579],
+          intensity: 10,
+          range: 7,
+          enabled: true,
+          cast_shadows: true,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+    {
+      id: "4f20f43d7c89a92f",
+      components: {
+        Transform: {
+          local: {
+            position: [2, 3, 2],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        PointLight: {
+          color: [1, 0.800000011920929, 0.6000000238418579],
+          intensity: 10,
+          range: 7,
+          enabled: true,
+          cast_shadows: true,
+          shadow_resolution: "medium",
+          shadow_update: "on_change",
+          shadow_softness: 1.5,
+          shadow_bias_scale: 1,
+          bake_contribution: "none",
+        },
+      },
+    },
+  ],
+  brush_meshes: {
+    "1": {
+      vertices: [
+        [-18.5, -0.25, -18.5],
+        [18.5, -0.25, -18.5],
+        [18.5, 0.25, -18.5],
+        [-18.5, 0.25, -18.5],
+        [-18.5, -0.25, 18.5],
+        [18.5, -0.25, 18.5],
+        [18.5, 0.25, 18.5],
+        [-18.5, 0.25, 18.5],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [3, 2, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 6, 7],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 5, 4],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 6, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 7, 3, 0],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [1, 2, 6, 5],
+        },
+      ],
+    },
+    "2": {
+      vertices: [
+        [-18.5, -0.25, -18.5],
+        [18.5, -0.25, -18.5],
+        [18.5, 0.25, -18.5],
+        [-18.5, 0.25, -18.5],
+        [-18.5, -0.25, 18.5],
+        [18.5, -0.25, 18.5],
+        [18.5, 0.25, 18.5],
+        [-18.5, 0.25, 18.5],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [3, 2, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 6, 7],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 5, 4],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 6, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 7, 3, 0],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [1, 2, 6, 5],
+        },
+      ],
+    },
+    "3": {
+      vertices: [
+        [-0.25, -4, -18.5],
+        [0.25, -4, -18.5],
+        [0.25, 4, -18.5],
+        [-0.25, 4, -18.5],
+        [-0.25, -4, 18.5],
+        [0.25, -4, 18.5],
+        [0.25, 4, 18.5],
+        [-0.25, 4, 18.5],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [3, 2, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 6, 7],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 5, 4],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 6, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 7, 3, 0],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [1, 2, 6, 5],
+        },
+      ],
+    },
+    "4": {
+      vertices: [
+        [-0.25, -4, -18.5],
+        [0.25, -4, -18.5],
+        [0.25, 4, -18.5],
+        [-0.25, 4, -18.5],
+        [-0.25, -4, 18.5],
+        [0.25, -4, 18.5],
+        [0.25, 4, 18.5],
+        [-0.25, 4, 18.5],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [3, 2, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 6, 7],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 5, 4],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 6, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 7, 3, 0],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [1, 2, 6, 5],
+        },
+      ],
+    },
+    "5": {
+      vertices: [
+        [-18, -4, -0.25],
+        [18, -4, -0.25],
+        [18, 4, -0.25],
+        [-18, 4, -0.25],
+        [-18, -4, 0.25],
+        [18, -4, 0.25],
+        [18, 4, 0.25],
+        [-18, 4, 0.25],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [3, 2, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 6, 7],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 5, 4],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 6, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 7, 3, 0],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [1, 2, 6, 5],
+        },
+      ],
+    },
+    "6": {
+      vertices: [
+        [-18, -4, -0.25],
+        [18, -4, -0.25],
+        [18, 4, -0.25],
+        [-18, 4, -0.25],
+        [-18, -4, 0.25],
+        [18, -4, 0.25],
+        [18, 4, 0.25],
+        [-18, 4, 0.25],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [3, 2, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 6, 7],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 5, 4],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 6, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 7, 3, 0],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [1, 2, 6, 5],
+        },
+      ],
+    },
+    "7": {
+      vertices: [
+        [-0.4000000059604645, -2, -0.4000000059604645],
+        [0.4000000059604645, -2, -0.4000000059604645],
+        [0.4000000059604645, 2, -0.4000000059604645],
+        [-0.4000000059604645, 2, -0.4000000059604645],
+        [-0.4000000059604645, -2, 0.4000000059604645],
+        [0.4000000059604645, -2, 0.4000000059604645],
+        [0.4000000059604645, 2, 0.4000000059604645],
+        [-0.4000000059604645, 2, 0.4000000059604645],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [3, 2, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 6, 7],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 5, 4],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 6, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 7, 3, 0],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [1, 2, 6, 5],
+        },
+      ],
+    },
+    "8": {
+      vertices: [
+        [-0.4000000059604645, -2, -0.4000000059604645],
+        [0.4000000059604645, -2, -0.4000000059604645],
+        [0.4000000059604645, 2, -0.4000000059604645],
+        [-0.4000000059604645, 2, -0.4000000059604645],
+        [-0.4000000059604645, -2, 0.4000000059604645],
+        [0.4000000059604645, -2, 0.4000000059604645],
+        [0.4000000059604645, 2, 0.4000000059604645],
+        [-0.4000000059604645, 2, 0.4000000059604645],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [3, 2, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 6, 7],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 5, 4],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 6, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 7, 3, 0],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [1, 2, 6, 5],
+        },
+      ],
+    },
+    "9": {
+      vertices: [
+        [-0.4000000059604645, -2, -0.4000000059604645],
+        [0.4000000059604645, -2, -0.4000000059604645],
+        [0.4000000059604645, 2, -0.4000000059604645],
+        [-0.4000000059604645, 2, -0.4000000059604645],
+        [-0.4000000059604645, -2, 0.4000000059604645],
+        [0.4000000059604645, -2, 0.4000000059604645],
+        [0.4000000059604645, 2, 0.4000000059604645],
+        [-0.4000000059604645, 2, 0.4000000059604645],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [3, 2, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 6, 7],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 5, 4],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 6, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 7, 3, 0],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [1, 2, 6, 5],
+        },
+      ],
+    },
+    "10": {
+      vertices: [
+        [-0.4000000059604645, -2, -0.4000000059604645],
+        [0.4000000059604645, -2, -0.4000000059604645],
+        [0.4000000059604645, 2, -0.4000000059604645],
+        [-0.4000000059604645, 2, -0.4000000059604645],
+        [-0.4000000059604645, -2, 0.4000000059604645],
+        [0.4000000059604645, -2, 0.4000000059604645],
+        [0.4000000059604645, 2, 0.4000000059604645],
+        [-0.4000000059604645, 2, 0.4000000059604645],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [3, 2, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 6, 7],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 5, 4],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 6, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 7, 3, 0],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [1, 2, 6, 5],
+        },
+      ],
+    },
+  },
+}

@@ -1,6 +1,7 @@
 #include "DocumentSerialization.h"
 
 #include "EditorScene.h"
+#include "EntityNameComponent.h"
 
 #include <core/serialization/Archive.h>
 #include <world/serialization/ComponentStorageTraits.h>
@@ -121,4 +122,25 @@ void RegisterDocumentSerializers()
     // Editor-only components.
     RegisterComponent<BrushComponent>(serializers);
     RegisterComponent<BakedBrushComponent>(serializers);
+    RegisterComponent<EntityNameComponent>(serializers);
+}
+
+namespace
+{
+    std::function<void(World&)>& ModuleVocabulary()
+    {
+        static std::function<void(World&)> install;
+        return install;
+    }
+}
+
+void SetEditorModuleVocabulary(std::function<void(World&)> install)
+{
+    ModuleVocabulary() = std::move(install);
+}
+
+void InstallEditorModuleVocabulary(World& world)
+{
+    if (const std::function<void(World&)>& install = ModuleVocabulary(); install)
+        install(world);
 }

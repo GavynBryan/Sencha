@@ -2,6 +2,7 @@
 
 #include "project/Project.h"
 
+#include <assets/data/DataAssetSubtype.h>
 #include <core/json/JsonFormat.h>
 #include <core/json/JsonParser.h>
 
@@ -358,11 +359,7 @@ std::string DataEditorWorkspace::DataSubtypeOf(std::string_view virtualPath) con
     std::ostringstream contents;
     contents << stream.rdbuf();
 
-    const std::optional<JsonValue> root = JsonParse(contents.str());
-    if (!root.has_value())
-        return {};
-    const JsonValue* type = root->Find("type");
-    return type != nullptr && type->IsString() ? type->AsString() : std::string{};
+    return PeekDataAssetSubtype(contents.str());
 }
 
 std::filesystem::path DataEditorWorkspace::ResolveFile(std::string_view virtualPath) const

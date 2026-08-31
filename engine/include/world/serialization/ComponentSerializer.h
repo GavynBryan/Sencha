@@ -9,6 +9,7 @@
 
 #include <cstddef>
 #include <cstring>
+#include <type_traits>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -66,6 +67,30 @@ namespace SceneComponentSerialization
 
         archive.End();
         return ok && archive.Ok();
+    }
+
+    // Drops whatever LoadFields acquired. Called once the loaded value has
+    // been handed to the entity that will own it -- the component's own
+    // lifecycle hooks take its reference -- and on every path where the value
+    // is discarded instead. Field types that acquire nothing declare no
+    // Release and are skipped.
+    template<typename Component>
+    void ReleaseFields(Component& component, SceneSerializationContext& context)
+    {
+        auto fields = TypeSchema<Component>::Fields();
+        std::apply([&](auto&... field)
+        {
+            (([&]
+            {
+                using FieldType = std::remove_cvref_t<decltype(component.*field.Ptr)>;
+                if constexpr (requires (FieldType& value) {
+                                  SceneFieldCodec<FieldType>::Release(value, context);
+                              })
+                {
+                    SceneFieldCodec<FieldType>::Release(component.*field.Ptr, context);
+                }
+            }()), ...);
+        }, fields);
     }
 }
 
@@ -132,13 +157,28 @@ public:
               const Registry& registry,
               SceneSerializationContext& context) const override
     {
-        const Component* component = registry.Components.IsRegistered<Component>()
-            ? registry.Components.TryGet<Component>(entity)
-            : nullptr;
-        if (!component)
-            return true;
+        if constexpr (std::is_empty_v<Component>)
+        {
+            // A tag's presence is its whole value: it has no column, so
+            // TryGet answers null even when the signature bit is set.
+            if (!registry.Components.IsRegistered<Component>()
+                || !registry.Components.HasComponent<Component>(entity))
+                return true;
+            const Component tag{};
+            return SceneComponentSerialization::SaveFields(archive, tag, context);
+        }
+        else
+        {
+            const Component* component =
+                registry.Components.IsRegistered<Component>()
+                    ? registry.Components.TryGet<Component>(entity)
+                    : nullptr;
+            if (!component)
+                return true;
 
-        return SceneComponentSerialization::SaveFields(archive, *component, context);
+            return SceneComponentSerialization::SaveFields(archive, *component,
+                                                           context);
+        }
     }
 
     bool Load(IReadArchive& archive,
@@ -160,17 +200,26 @@ public:
     {
         Component component{};
         if (!SceneComponentSerialization::LoadFields(archive, component, context))
+        {
+            // A partial load still acquired whatever it got through.
+            SceneComponentSerialization::ReleaseFields(component, context);
             return false;
+        }
 
         // A batch importer creates the entity at its final archetype signature,
         // so the column is already there and Traits::Add would read the presence
         // as a duplicate. Write in place instead; OnAdd still fires exactly once.
         // Rows the editor's document path loads into are never pre-created, so
         // that path always takes the branch below.
-        if (world.HasComponent<Component>(entity))
-            return world.InitializeComponent<Component>(entity, component);
+        const bool added = world.HasComponent<Component>(entity)
+            ? world.InitializeComponent<Component>(entity, component)
+            : Traits::Add(world, entity, component);
 
-        return Traits::Add(world, entity, component);
+        // Either the entity's copy now owns its own reference, taken by OnAdd,
+        // or nothing was added and nothing owns one. The load's reference is
+        // spent either way.
+        SceneComponentSerialization::ReleaseFields(component, context);
+        return added;
     }
 
     bool Remove(EntityId entity, Registry& registry) const override

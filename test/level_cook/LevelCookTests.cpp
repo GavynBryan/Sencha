@@ -1,5 +1,6 @@
 #include "document/DocumentCook.h"
 #include "document/EditorDocument.h"
+#include "CookedSmapReaders.h"
 #include "document/DocumentSerialization.h"
 
 #include <assets/cook/CookPrune.h>
@@ -8,10 +9,11 @@
 #include <core/assets/AssetManifest.h>
 #include <core/assets/AssetKindRegistry.h>
 #include <core/assets/AssetRegistry.h>
-#include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
 #include <jobs/AsyncTaskQueue.h>
+#include <world/scene/SmapFormat.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 
 #include <gtest/gtest.h>
 
@@ -60,18 +62,10 @@ namespace
             doc.GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
             doc.GetScene().CreateBrush(Vec3d{ 100, 0, 0 });
 
-            const fs::path levelPath = Root / "levels/test.json";
+            const fs::path levelPath = Root / "levels/test.sscene";
             fs::create_directories(levelPath.parent_path());
             EXPECT_TRUE(doc.SaveAs(levelPath.generic_string()));
             return levelPath;
-        }
-
-        [[nodiscard]] JsonValue ReadJson(const fs::path& p) const
-        {
-            std::ifstream f(p);
-            std::ostringstream buf;
-            buf << f.rdbuf();
-            return *JsonParse(buf.str());
         }
 
         fs::path Root;
@@ -96,22 +90,16 @@ TEST_F(LevelCookTest, CooksPerCellMeshesAndScene)
     }
 
     EXPECT_TRUE(fs::exists(result.CookedScenePath));
-    EXPECT_TRUE(fs::exists(result.ManifestPath));
 
     // The cooked scene is brush-free and carries a StaticMesh-per-cell with a
     // materials array (the per-cell, per-section binding).
-    const JsonValue cooked = ReadJson(result.CookedScenePath);
-    const JsonValue* entities = cooked.Find("entities");
-    ASSERT_NE(entities, nullptr);
-    ASSERT_TRUE(entities->IsArray());
+    const SmapContents cooked = ReadCookedScene(result.CookedScenePath);
 
     std::size_t staticMeshEntities = 0;
-    for (const JsonValue& entity : entities->AsArray())
+    for (const SmapEntityRecord& entity : cooked.Entities)
     {
-        const JsonValue* components = entity.Find("components");
-        ASSERT_NE(components, nullptr);
-        EXPECT_EQ(components->Find("brush"), nullptr); // no brushes survive the cook
-        if (const JsonValue* sm = components->Find("StaticMesh"))
+        EXPECT_EQ(FindCookedComponent(entity, "brush"), nullptr); // no brushes survive the cook
+        if (const JsonValue* sm = FindCookedComponent(entity, "StaticMesh"))
         {
             ++staticMeshEntities;
             ASSERT_NE(sm->Find("materials"), nullptr);
@@ -142,20 +130,14 @@ TEST_F(LevelCookTest, CooksLiveDocumentWithoutSavingOrMutatingIt)
 
     // The cooked scene drops brushes, emits one cell StaticMesh, and passes the
     // camera entity through.
-    const JsonValue cooked = ReadJson(result.CookedScenePath);
-    const JsonValue* entities = cooked.Find("entities");
-    ASSERT_NE(entities, nullptr);
-    ASSERT_TRUE(entities->IsArray());
+    const SmapContents cooked = ReadCookedScene(result.CookedScenePath);
 
     int cameras = 0, staticMeshes = 0, brushes = 0;
-    for (const JsonValue& entity : entities->AsArray())
+    for (const SmapEntityRecord& entity : cooked.Entities)
     {
-        const JsonValue* components = entity.Find("components");
-        if (components == nullptr)
-            continue;
-        cameras += components->Find("Camera") != nullptr;
-        staticMeshes += components->Find("StaticMesh") != nullptr;
-        brushes += components->Find("brush") != nullptr;
+        cameras += FindCookedComponent(entity, "Camera") != nullptr;
+        staticMeshes += FindCookedComponent(entity, "StaticMesh") != nullptr;
+        brushes += FindCookedComponent(entity, "brush") != nullptr;
     }
     EXPECT_EQ(cameras, 1);
     EXPECT_EQ(staticMeshes, 1);
@@ -185,7 +167,7 @@ TEST_F(LevelCookTest, ImmutableCookInputRunsThroughAsyncTaskHandoff)
             DocumentCookInput value = std::move(inputBox->value());
             inputBox->reset();
             return ExecuteDocumentCook(std::move(value), "async",
-                                       "levels/async.level.json", Root,
+                                       "levels/async.sscene", Root,
                                        workerLogging);
         },
         [&committed](DocumentCookResult result)
@@ -252,8 +234,12 @@ TEST_F(LevelCookTest, CookedSceneFullyResolvesAgainstScannedRegistry)
     // record carrying the id the cook assigned. This is the headless proof that a
     // host can find everything a cooked level points at (the registration gate),
     // independent of GPU-backed mesh/material residency.
-    const JsonValue cooked = ReadJson(Root / ".cooked/levels/test.cooked.json");
-    const std::vector<std::string> refs = CollectAssetPaths(cooked);
+    const SmapContents cooked = ReadCookedScene(Root / ".cooked/levels/test.smap");
+    JsonValue::Array payloads;
+    for (const SmapEntityRecord& entity : cooked.Entities)
+        for (const auto& [type, payload] : entity.Components)
+            payloads.push_back(payload);
+    const std::vector<std::string> refs = CollectAssetPaths(JsonValue(std::move(payloads)));
     ASSERT_FALSE(refs.empty());
 
     for (const std::string& ref : refs)

@@ -7,6 +7,7 @@
 #include <core/logging/Logger.h>
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <span>
@@ -123,6 +124,14 @@ public:
     // paths and unsupported types count as failures, not errors — the
     // consumer's sync fallback covers them. Never returns null.
     [[nodiscard]] std::shared_ptr<AssetPreload> Begin(std::span<const std::string> paths);
+
+    // Warms a cooked scene's own dependency table: reads the .smap's
+    // metadata (no entity decode, no schema gate) and begins a preload over
+    // its id-first resolved paths. Null when the metadata cannot be read —
+    // resolve-on-attach remains the advisory fallback, and the caller owns
+    // whether that is worth a log line (`error` says what happened).
+    [[nodiscard]] std::shared_ptr<AssetPreload> BeginSceneDependencies(
+        const std::filesystem::path& smapPath, std::string* error = nullptr);
 
 private:
     // Who is waiting on one in-flight load: a preload directly, or a parent

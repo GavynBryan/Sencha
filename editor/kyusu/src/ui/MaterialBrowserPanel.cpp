@@ -3,6 +3,7 @@
 #include "ui/EditorUiStyle.h"
 #include "ui/MaterialThumbnailCache.h"
 #include "ui/ScopedPanel.h"
+#include "ui/TextFilterMatch.h"
 
 #include "project/MaterialLibrary.h"
 #include "meshedit/ActiveMaterialState.h"
@@ -21,18 +22,6 @@
 
 namespace
 {
-    bool MatchesFilter(const std::string& name, const char* filter)
-    {
-        if (filter[0] == '\0')
-            return true;
-        const auto toLower = [](std::string s)
-        {
-            std::transform(s.begin(), s.end(), s.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            return s;
-        };
-        return toLower(name).find(toLower(filter)) != std::string::npos;
-    }
 
     // "materials/dev/gray" -> "gray": the cell label; the tooltip carries the
     // full path.
@@ -134,7 +123,7 @@ void MaterialBrowserPanel::OnDraw()
 
     std::vector<const MaterialAsset*> filtered;
     for (const MaterialAsset& material : Materials.Materials())
-        if (MatchesFilter(material.DisplayName, Filter))
+        if (TextFilterMatch(material.DisplayName, Filter))
             filtered.push_back(&material);
 
     if (filtered.empty())

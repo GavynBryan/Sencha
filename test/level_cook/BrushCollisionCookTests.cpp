@@ -1,7 +1,8 @@
 // End-to-end: an authored brush becomes walkable collision with zero collision
-// authoring. Cook a brush level -> a collision sidecar + per-cell .scol blobs ->
-// LoadZoneCollision spawns static colliders -> RigidBodyBinding makes static bodies
-// -> a downward ray hits the cooked brush. Headless: no AssetSystem, no graphics.
+// authoring. Cook a brush level -> collision cells in the .smap + per-cell .scol
+// blobs -> LoadZoneCollision spawns static colliders -> RigidBodyBinding makes
+// static bodies -> a downward ray hits the cooked brush. Headless: no
+// AssetSystem, no graphics.
 
 #include "document/DocumentCook.h"
 #include "document/DocumentSerialization.h"
@@ -10,8 +11,6 @@
 #include <core/assets/AssetRef.h>
 #include <core/assets/AssetKindRegistry.h>
 #include <core/assets/AssetRegistry.h>
-#include <core/json/JsonParser.h>
-#include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
@@ -30,7 +29,6 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
-#include <sstream>
 #include <string>
 
 namespace
@@ -116,18 +114,15 @@ TEST_F(BrushCollisionCookTest, BrushBecomesWalkableCollision)
     const DocumentCookResult result = CookDocument(levelPath, Root, /*cellSize*/ 16.0);
     ASSERT_TRUE(result.Success) << result.Error;
 
-    // The cook wrote a collision sidecar with one entry and a non-empty .scol blob.
-    const fs::path sidecarPath = Root / ".cooked/levels/test.collision.json";
-    ASSERT_TRUE(fs::exists(sidecarPath));
-    std::ifstream sidecarFile(sidecarPath);
-    std::ostringstream sidecarBuf;
-    sidecarBuf << sidecarFile.rdbuf();
-    const std::optional<JsonValue> sidecar = JsonParse(sidecarBuf.str());
-    ASSERT_TRUE(sidecar && sidecar->IsArray());
-    ASSERT_EQ(sidecar->AsArray().size(), 1u);
-    const JsonValue* blob = sidecar->AsArray()[0].Find("blob");
-    ASSERT_NE(blob, nullptr);
-    EXPECT_GT(fs::file_size(Root / ".cooked" / blob->AsString()), 0u);
+    // The cooked .smap carries one collision cell whose .scol blob is non-empty.
+    const fs::path smapPath = Root / ".cooked/levels/test.smap";
+    ASSERT_TRUE(fs::exists(smapPath));
+    SmapContents metadata;
+    SmapError metadataError;
+    ASSERT_TRUE(ReadSmapMetadataFile(smapPath, metadata, &metadataError))
+        << metadataError.Message;
+    ASSERT_EQ(metadata.Collision.size(), 1u);
+    EXPECT_GT(fs::file_size(Root / ".cooked" / metadata.Collision[0].BlobPath), 0u);
 
     // Runtime: load the cooked collision and bind it to a world.
     PhysicsWorld world;
@@ -139,7 +134,7 @@ TEST_F(BrushCollisionCookTest, BrushBecomesWalkableCollision)
     RegisterPhysicsComponents(ecs);
 
     const int loaded = LoadZoneCollision(
-        ecs, cache, sidecarPath.generic_string(), (Root / ".cooked").generic_string());
+        ecs, cache, metadata.Collision, (Root / ".cooked").generic_string());
     EXPECT_EQ(loaded, 1);
     EXPECT_EQ(cache.Count(), 1u);
 

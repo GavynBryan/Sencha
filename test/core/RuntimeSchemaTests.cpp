@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <string_view>
 #include <tuple>
@@ -435,4 +436,66 @@ TEST(RuntimeSchema, StrongIdReflectsAsReadOnlyUnderlyingScalar)
     const RuntimeField* value = Find(fields, "value");
     ASSERT_NE(value, nullptr);
     EXPECT_FALSE(value->ReadOnly);
+}
+
+// Display metadata describes how a value is shown, never what is stored. Both
+// of these narrow an authoring surface -- a degrees widget over a radian field,
+// a picker restricted to one data subtype -- and neither changes the bytes at
+// Offset, so neither may reach a component's schema fingerprint.
+struct PresentedComp
+{
+    float Pitch = 0.0f;
+    float Plain = 0.0f;
+};
+template <> struct TypeSchema<PresentedComp>
+{
+    static constexpr std::string_view Name = "test.presented";
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("pitch", &PresentedComp::Pitch).Degrees(),
+            MakeField("plain", &PresentedComp::Plain),
+        };
+    }
+};
+
+struct ReferencingComp
+{
+    std::uint32_t Filler = 0;
+};
+template <> struct TypeSchema<ReferencingComp>
+{
+    static constexpr std::string_view Name = "test.referencing";
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("profile", &ReferencingComp::Filler).AsDataAsset("test.subtype"),
+        };
+    }
+};
+
+TEST(RuntimeSchema, DegreesIsCarriedPerFieldAndChangesNothingElse)
+{
+    const auto& fields = RuntimeFieldsOf<PresentedComp>();
+    const RuntimeField* pitch = Find(fields, "pitch");
+    ASSERT_NE(pitch, nullptr);
+    EXPECT_TRUE(pitch->DisplayDegrees);
+    // Still an ordinary float leaf: the conversion belongs to the widget.
+    EXPECT_EQ(pitch->Scalar, FieldScalar::Float);
+    EXPECT_EQ(pitch->Size, sizeof(float));
+    EXPECT_EQ(pitch->Offset, offsetof(PresentedComp, Pitch));
+
+    // It does not spread to the members beside it.
+    const RuntimeField* plain = Find(fields, "plain");
+    ASSERT_NE(plain, nullptr);
+    EXPECT_FALSE(plain->DisplayDegrees);
+}
+
+TEST(RuntimeSchema, ADataReferenceCarriesTheSubtypeItAccepts)
+{
+    const auto& fields = RuntimeFieldsOf<ReferencingComp>();
+    ASSERT_EQ(fields.size(), 1u);
+    EXPECT_EQ(fields[0].Asset, AssetType::Data);
+    EXPECT_EQ(fields[0].Arity, AssetArity::Single);
+    EXPECT_EQ(fields[0].DataSubtype, "test.subtype");
 }

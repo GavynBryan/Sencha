@@ -51,14 +51,14 @@ namespace
     // the cook that produces the runtime scene has an authored source: a level
     // cooked once on one machine and never committed reads as passing coverage
     // everywhere it was never cooked.
-    constexpr std::string_view kHostMap = "levels/room_2.level";
+    constexpr std::string_view kHostMap = "levels/room_2";
 
     // Where the cook lands it. Derived from the map name rather than written
     // out again, so the two cannot drift apart.
     [[nodiscard]] std::filesystem::path CookedMapScene()
     {
         return std::filesystem::path(SENCHA_REPO_ROOT) / "template/assets/.cooked"
-            / (std::string(kHostMap) + ".cooked.json");
+            / (std::string(kHostMap) + ".smap");
     }
 
     std::filesystem::path TempLogPath(std::string_view suffix)
@@ -326,11 +326,23 @@ TEST_F(HostClientProcess, ADedicatedHostServesAJoiningClient)
     std::string clientLog;
     EXPECT_TRUE(client.WaitForLog("predicting this player's own pawn", &clientLog))
         << "client never took possession:\n" << clientLog;
+    // And the body it is predicting came from the prefab the authority named,
+    // not from loose components it reassembled. A client that cannot build the
+    // prefab defers the spawn forever and says so every snapshot; the pawn it
+    // eventually possesses would then be one it built some other way.
+    EXPECT_EQ(clientLog.find("named a prefab this machine could not build"),
+              std::string::npos)
+        << "the client could not instantiate the pawn prefab:\n" << clientLog;
 
     // The host's side: a peer arrived and was given a pawn, with no local
     // player of its own anywhere in it.
     EXPECT_TRUE(host.WaitForLog("spawned a pawn for peer", &hostLog))
         << "host never served the peer:\n" << hostLog;
+    // The shipped game.sdata names a pawn prefab and the fixture cooked it,
+    // so the body must come from the scene spawn, never the fallback.
+    EXPECT_NE(hostLog.find("(pawn prefab)"), std::string::npos) << hostLog;
+    EXPECT_EQ(hostLog.find("using the built-in pawn"), std::string::npos)
+        << hostLog;
     EXPECT_EQ(hostLog.find("local player attached"), std::string::npos)
         << "a dedicated host must not provision a player of its own:\n" << hostLog;
 

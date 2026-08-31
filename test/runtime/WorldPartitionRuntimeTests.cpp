@@ -10,7 +10,7 @@
 #include <world/serialization/SceneSerializationContext.h>
 #include <zone/AsyncZoneLoader.h>
 #include <zone/WorldPartitionRuntime.h>
-#include <zone/ZoneLoadPackage.h>
+#include <world/build/EntityBuildPackage.h>
 
 #include "ZoneDockFixture.h"
 
@@ -35,22 +35,19 @@ constexpr const char* kFixtureJson = R"({
   "regions": [ { "id": "00000000000000b1", "name": "Fixture Region" } ],
   "zones": [
     { "id": "00000000000000a1", "name": "Hub", "region": "00000000000000b1",
-      "scene": "levels/hub.level.json",
+      "scene": "levels/hub.sscene",
       "bounds": { "min": [-8, 0, -8], "max": [8, 4, 8] },
-      "cooked_scene": "levels/hub.cooked.json",
-      "cooked_collision": "levels/hub.collision.json",
+      "cooked_scene": "levels/hub.smap",
       "content_hash": "00000000000000d1" },
     { "id": "00000000000000a2", "name": "Hallway", "region": "00000000000000b1",
-      "scene": "levels/hallway.level.json",
+      "scene": "levels/hallway.sscene",
       "bounds": { "min": [9, 0, -2], "max": [20, 4, 2] },
-      "cooked_scene": "levels/hallway.cooked.json",
-      "cooked_collision": "levels/hallway.collision.json",
+      "cooked_scene": "levels/hallway.smap",
       "content_hash": "00000000000000d2" },
     { "id": "00000000000000a3", "name": "Arena", "region": "00000000000000b1",
-      "scene": "levels/arena.level.json",
+      "scene": "levels/arena.sscene",
       "bounds": { "min": [21, 0, -8], "max": [40, 8, 8] },
-      "cooked_scene": "levels/arena.cooked.json",
-      "cooked_collision": "levels/arena.collision.json",
+      "cooked_scene": "levels/arena.smap",
       "content_hash": "00000000000000d3" }
   ],
   "transitions": [
@@ -133,7 +130,7 @@ protected:
         {
             const ZoneId zone = header.Id;
             ZoneLoadRecipe recipe;
-            recipe.Build = [](ZoneLoadPackage& package)
+            recipe.Build = [](EntityBuildPackage& package)
             {
                 package.CreateEntity();
             };
@@ -566,7 +563,7 @@ TEST(WorldPartitionRuntimeThreaded, MidBuildCancellationRetriesThenDetaches)
             ZoneLoadRecipe recipe;
             if (header.Id == kHallway)
             {
-                recipe.Build = [&](ZoneLoadPackage& package)
+                recipe.Build = [&](EntityBuildPackage& package)
                 {
                     started = true;
                     while (!release)
@@ -579,7 +576,7 @@ TEST(WorldPartitionRuntimeThreaded, MidBuildCancellationRetriesThenDetaches)
             }
             else
             {
-                recipe.Build = [](ZoneLoadPackage& package)
+                recipe.Build = [](EntityBuildPackage& package)
                 {
                     package.CreateEntity();
                 };

@@ -13,7 +13,7 @@ class EditorScene;
 class SelectionService;
 
 // The one brush-backed edit backend: previews by writing the live scene and
-// commits via the value-command factories (MakeMoveCommand / MakeEditBrushMeshCommand).
+// commits via the value-command factories (MakeWorldMoveCommand / MakeEditBrushMeshCommand).
 // Implements both the
 // manipulator-facing ManipulationSink (preview/commit during drags) and the
 // verb-facing IMeshEditTarget (resolve + make-command for MeshEditService). The
@@ -31,6 +31,7 @@ public:
     // ManipulationSink
     [[nodiscard]] std::optional<Transform3f> ResolveTransform(EntityId entity) const override;
     [[nodiscard]] std::optional<MeshEditTargetMesh> ResolveMesh(EntityId entity) const override;
+    [[nodiscard]] EntityId GetParent(EntityId entity) const override;
     void PreviewTransform(EntityId entity, const Transform3f& transform) override;
     void PreviewMesh(EntityId entity, const BrushMesh& mesh) override;
     void CommitTransforms(const std::vector<TransformEdit>& edits) override;

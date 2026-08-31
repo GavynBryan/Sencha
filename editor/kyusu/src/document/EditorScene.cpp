@@ -1,10 +1,14 @@
 #include "EditorScene.h"
 
+#include "EntityNameComponent.h"
+
 #include "brush/BrushBounds.h"
 #include "brush/BrushOps.h"
 
 #include <world/identity/PersistentIdComponent.h>
 #include <world/transform/TransformComponents.h>
+#include <world/transform/DerivedTransform.h>
+#include <world/transform/TransformPropagation.h>
 
 #include <algorithm>
 #include <utility>
@@ -28,6 +32,8 @@ EntityId EditorScene::CreateBrushFromMesh(const Transform3f& transform, BrushMes
     world.AddComponent(entity, LocalTransform{ transform });
     world.AddComponent(entity, BrushComponent{ BrushMeshes.Create(std::move(mesh)) });
     world.AddComponent(entity, PersistentIdComponent{ MintPersistentId() });
+    world.AddComponent(entity,
+                       EntityNameComponent{ InlineString<64>(NextEntityName("Brush")) });
 
     Entities.push_back(entity);
     return entity;
@@ -43,6 +49,8 @@ EntityId EditorScene::CreateCamera(Vec3d position)
     world.AddComponent(entity, LocalTransform{ transform });
     world.AddComponent(entity, CameraComponent{});
     world.AddComponent(entity, PersistentIdComponent{ MintPersistentId() });
+    world.AddComponent(entity,
+                       EntityNameComponent{ InlineString<64>(NextEntityName("Camera")) });
 
     Entities.push_back(entity);
     return entity;
@@ -57,9 +65,44 @@ EntityId EditorScene::CreateEntity(Vec3d position)
     EntityId entity = world.CreateEntity();
     world.AddComponent(entity, LocalTransform{ transform });
     world.AddComponent(entity, PersistentIdComponent{ MintPersistentId() });
+    world.AddComponent(entity,
+                       EntityNameComponent{ InlineString<64>(NextEntityName("Entity")) });
 
     Entities.push_back(entity);
     return entity;
+}
+
+std::string EditorScene::NextEntityName(
+    std::string_view base, const std::unordered_set<std::string>* alsoTaken) const
+{
+    // The suffix must survive InlineString<64>'s silent truncation, or two
+    // long candidates could collapse into the same stored name. 63 usable
+    // chars minus room for " " and a generous suffix.
+    constexpr std::size_t kMaxBase = 63 - 12;
+    if (base.size() > kMaxBase)
+        base = base.substr(0, kMaxBase);
+
+    std::unordered_set<std::string> taken;
+    const World& world = Registry_.Components;
+    for (EntityId entity : Entities)
+        if (const auto* name = world.TryGet<EntityNameComponent>(entity))
+            taken.emplace(name->Value.View());
+
+    const auto isFree = [&](const std::string& candidate)
+    {
+        return !taken.contains(candidate)
+            && (alsoTaken == nullptr || !alsoTaken->contains(candidate));
+    };
+
+    std::string candidate(base);
+    if (isFree(candidate))
+        return candidate;
+    for (int suffix = 1;; ++suffix)
+    {
+        candidate = std::string(base) + " " + std::to_string(suffix);
+        if (isFree(candidate))
+            return candidate;
+    }
 }
 
 PersistentEntityId EditorScene::MintPersistentId()
@@ -76,21 +119,38 @@ bool EditorScene::EnsurePersistentId(EntityId entity)
 {
     World& world = Registry_.Components;
     PersistentIdComponent* id = world.TryGet<PersistentIdComponent>(entity);
+    auto* index = world.TryGetResource<PersistentEntityIndex>();
 
-    // The entity does not contribute to the index until it is adopted, so a
-    // successful insert means its id was genuinely free and it keeps it. A
-    // failed insert means another tracked entity already holds the value.
-    if (id != nullptr && IsAuthoredPersistentEntityId(id->Id)
-        && TakenIds_.insert(id->Id.Value).second)
+    if (id != nullptr && IsAuthoredPersistentEntityId(id->Id))
     {
-        return false;
+        // A successful insert means the id was genuinely free and the entity
+        // keeps it. A failed insert usually means another tracked entity holds
+        // the value -- but an id this document minted FOR this entity is
+        // reserved in TakenIds_ before the entity exists, so ownership is
+        // settled by the index: the component's own registration ran when the
+        // component was added, and if the id resolves to this entity, the
+        // reservation is this entity's.
+        if (TakenIds_.insert(id->Id.Value).second)
+            return false;
+        if (index != nullptr && index->TryResolve(id->Id) == entity)
+            return false;
     }
 
     const PersistentEntityId minted = MintPersistentId();
     if (id != nullptr)
+    {
+        // Through the index, or the old registration would keep resolving an
+        // id this entity no longer carries.
+        if (index != nullptr)
+            index->Unregister(id->Id, entity);
         id->Id = minted;
+        if (index != nullptr)
+            (void)index->Register(minted, entity);
+    }
     else
+    {
         world.AddComponent(entity, PersistentIdComponent{ minted });
+    }
     return true;
 }
 
@@ -119,6 +179,126 @@ bool EditorScene::ValidateIdentities(std::string* error) const
                 + " is held by two entities");
     }
     return true;
+}
+
+Transform3f EditorScene::ComposeWorldTransform(EntityId entity) const
+{
+    const World& world = Registry_.Components;
+    Transform3f composed = Transform3f::Identity();
+    if (const LocalTransform* local = world.TryGet<LocalTransform>(entity))
+        composed = local->Value;
+
+    // Bounded like IsAncestorOf, so damaged parentage terminates.
+    std::size_t remaining = Entities.size();
+    for (EntityId parent = GetParent(entity);
+         parent.IsValid() && remaining > 0;
+         parent = GetParent(parent), --remaining)
+    {
+        if (const LocalTransform* local = world.TryGet<LocalTransform>(parent))
+            composed = local->Value * composed;
+    }
+    return composed;
+}
+
+EntityId EditorScene::GetParent(EntityId entity) const
+{
+    const Parent* parent = Registry_.Components.TryGet<Parent>(entity);
+    return parent != nullptr ? parent->Entity : EntityId{};
+}
+
+bool EditorScene::IsAncestorOf(EntityId ancestor, EntityId entity) const
+{
+    if (!ancestor.IsValid())
+        return false;
+
+    // Bounded by the entity count so damaged parentage (a cycle that predates
+    // the SetParent guard, or a stale id) walks off the end instead of forever.
+    std::size_t remaining = Entities.size();
+    for (EntityId current = GetParent(entity);
+         current.IsValid() && remaining > 0;
+         current = GetParent(current), --remaining)
+    {
+        if (current == ancestor)
+            return true;
+    }
+    return false;
+}
+
+bool EditorScene::SetParent(EntityId child, EntityId parent)
+{
+    World& world = Registry_.Components;
+    if (!world.IsAlive(child))
+        return false;
+
+    if (!parent.IsValid())
+    {
+        if (world.TryGet<Parent>(child) != nullptr)
+            world.RemoveComponent<Parent>(child);
+        return true;
+    }
+
+    if (!world.IsAlive(parent) || parent == child || IsAncestorOf(child, parent))
+        return false;
+
+    if (Parent* existing = world.TryGet<Parent>(child))
+        existing->Entity = parent;
+    else
+        world.AddComponent(child, Parent{ parent });
+    return true;
+}
+
+void EditorScene::CollectSubtree(EntityId root, std::vector<EntityId>& out) const
+{
+    if (!Registry_.Components.IsAlive(root))
+        return;
+
+    // Breadth-first over the tracked list. Quadratic in scene size for a deep
+    // tree, but subtree operations are user gestures over editor-scale scenes,
+    // not a per-frame path.
+    const std::size_t first = out.size();
+    out.push_back(root);
+    for (std::size_t cursor = first; cursor < out.size(); ++cursor)
+        for (EntityId candidate : Entities)
+            if (GetParent(candidate) == out[cursor])
+                out.push_back(candidate);
+}
+
+void EditorScene::DestroySubtree(EntityId root)
+{
+    std::vector<EntityId> subtree;
+    CollectSubtree(root, subtree);
+    for (auto it = subtree.rbegin(); it != subtree.rend(); ++it)
+        DestroyEntity(*it);
+}
+
+void EditorScene::RefreshDerivedTransforms()
+{
+    World& world = Registry_.Components;
+    if (!world.IsRegistered<LocalTransform>() || !world.IsRegistered<WorldTransform>())
+        return;
+
+    // Change detection compares column versions against the frame counter, and
+    // an edit made in the same frame as the sweep that must observe it is
+    // invisible to that comparison (TransformPropagation.cpp spells this out).
+    // Each refresh is therefore one frame of the document's world; it is also
+    // what moves the sweeps off their frame-zero full-sweep fallback.
+    world.AdvanceFrame();
+
+    // Authoring builds an entity component by component, so it arrives carrying
+    // a local transform and no derived column. Seeding here rather than in each
+    // creation path keeps the pairing under one owner and covers the routes that
+    // do not go through Create* at all -- a restored snapshot, a loaded file, a
+    // recipe. Once an entity is seeded this costs one lookup and nothing else.
+    for (EntityId entity : Entities)
+    {
+        if (world.TryGet<LocalTransform>(entity) != nullptr
+            && world.TryGet<WorldTransform>(entity) == nullptr)
+        {
+            SeedDerivedWorldTransform(world, entity);
+        }
+    }
+
+    PropagateTransforms(world);
 }
 
 void EditorScene::DestroyEntity(EntityId entity)
@@ -155,16 +335,34 @@ void EditorScene::DestroyEntity(EntityId entity)
             BrushMeshes.Destroy(baked->Source);
     }
 
+    // A destroyed parent hands its children to their grandparent (or the root)
+    // at their current world position, so deleting one entity never teleports
+    // or strands a branch. Deleting a branch on purpose is DestroySubtree,
+    // which reaches here with no children left to adopt.
+    const EntityId grandparent = GetParent(entity);
+    for (EntityId candidate : Entities)
+    {
+        if (candidate == entity || GetParent(candidate) != entity)
+            continue;
+        const Transform3f held = ComposeWorldTransform(candidate);
+        (void)SetParent(candidate, grandparent);
+        SetWorldTransform(candidate, held);
+    }
+
     // Release the id while the component still exists. Undo of a delete restores
     // the snapshot's id, which only works because destruction frees it here.
     if (const auto* id = world.TryGet<PersistentIdComponent>(entity))
         TakenIds_.erase(id->Id.Value);
 
+    // Flags go with the identity: the id was released above, so a later mint
+    // may hand it out again, and a lingering flag would attach to that
+    // stranger. (An undo-restored entity gets its flags back from the
+    // snapshot, not from here.)
+    HiddenEntities.erase(FlagKeyOf(entity));
+    LockedEntities.erase(FlagKeyOf(entity));
+
     world.DestroyEntity(entity);
     std::erase(Entities, entity);
-    // Drop any editor flags so a reused slot index starts visible + unlocked.
-    HiddenEntities.erase(entity.Index);
-    LockedEntities.erase(entity.Index);
 }
 
 void EditorScene::TrackEntity(EntityId entity)
@@ -190,6 +388,30 @@ void EditorScene::SetTransform(EntityId entity, const Transform3f& transform)
         local->Value = transform;
 }
 
+void EditorScene::SetWorldTransform(EntityId entity, const Transform3f& world)
+{
+    const EntityId parent = GetParent(entity);
+    if (!parent.IsValid())
+    {
+        SetTransform(entity, world);
+        return;
+    }
+
+    // The exact inverse of the parent-times-child composition transform
+    // propagation applies, so a value placed here reads back unchanged. The
+    // frame is composed live rather than read from the derived component,
+    // which can be a refresh behind the mutation being made.
+    const Transform3f frame = ComposeWorldTransform(parent);
+    Transform3f local;
+    local.Position = frame.InverseTransformPoint(world.Position);
+    local.Rotation = frame.Rotation.Conjugate() * world.Rotation;
+    local.Scale = Vec3d(
+        frame.Scale.X != 0.0f ? world.Scale.X / frame.Scale.X : world.Scale.X,
+        frame.Scale.Y != 0.0f ? world.Scale.Y / frame.Scale.Y : world.Scale.Y,
+        frame.Scale.Z != 0.0f ? world.Scale.Z / frame.Scale.Z : world.Scale.Z);
+    SetTransform(entity, local);
+}
+
 void EditorScene::SetBrushHalfExtents(EntityId entity, Vec3d halfExtents)
 {
     SetBrushMesh(entity, BrushOps::MakeBox(halfExtents));
@@ -211,6 +433,19 @@ void EditorScene::Clear()
     BrushMeshes.Clear();
     HiddenEntities.clear();
     LockedEntities.clear();
+}
+
+bool EditorScene::SetEntityOrder(std::span<const EntityId> order)
+{
+    if (order.size() != Entities.size())
+        return false;
+    std::unordered_set<EntityId, EntityIdHash> current(Entities.begin(),
+                                                       Entities.end());
+    for (EntityId entity : order)
+        if (current.erase(entity) == 0)
+            return false;
+    Entities.assign(order.begin(), order.end());
+    return true;
 }
 
 void EditorScene::SyncFromRegistry()
@@ -245,11 +480,19 @@ std::span<const EntityId> EditorScene::GetAllEntities() const
     return Entities;
 }
 
-const Transform3f* EditorScene::TryGetTransform(EntityId entity) const
+const Transform3f* EditorScene::TryGetLocalTransform(EntityId entity) const
 {
     const World& world = Registry_.Components;
     const LocalTransform* local = world.TryGet<LocalTransform>(entity);
     return local != nullptr ? &local->Value : nullptr;
+}
+
+const Transform3f* EditorScene::TryGetWorldTransform(EntityId entity) const
+{
+    const World& world = Registry_.Components;
+    if (const WorldTransform* derived = world.TryGet<WorldTransform>(entity))
+        return &derived->Value;
+    return TryGetLocalTransform(entity);
 }
 
 const BrushComponent* EditorScene::TryGetBrush(EntityId entity) const
@@ -311,7 +554,7 @@ std::optional<Aabb3d> EditorScene::TryGetWorldBounds(EntityId entity) const
     const BrushMesh* mesh = TryGetBrushMesh(entity);
     if (mesh == nullptr)
         mesh = TryGetDormantBrushMesh(entity); // a baked brush keeps its shape
-    const Transform3f* transform = TryGetTransform(entity);
+    const Transform3f* transform = TryGetWorldTransform(entity);
     if (mesh == nullptr || transform == nullptr || mesh->Vertices.empty())
         return std::nullopt;
 
@@ -328,28 +571,72 @@ const Registry& EditorScene::GetRegistry() const
     return Registry_;
 }
 
+std::uint64_t EditorScene::FlagKeyOf(EntityId entity) const
+{
+    const auto* id = Registry_.Components.TryGet<PersistentIdComponent>(entity);
+    return id != nullptr ? id->Id.Value : 0;
+}
+
 bool EditorScene::IsEntityVisible(EntityId entity) const
 {
-    return !HiddenEntities.contains(entity.Index);
+    const std::uint64_t key = FlagKeyOf(entity);
+    return key == 0 || !HiddenEntities.contains(key);
+}
+
+bool EditorScene::IsEntityEffectivelyVisible(EntityId entity) const
+{
+    if (!IsEntityVisible(entity))
+        return false;
+    std::size_t remaining = Entities.size();
+    for (EntityId parent = GetParent(entity);
+         parent.IsValid() && remaining > 0;
+         parent = GetParent(parent), --remaining)
+    {
+        if (!IsEntityVisible(parent))
+            return false;
+    }
+    return true;
+}
+
+bool EditorScene::IsEntityEffectivelyLocked(EntityId entity) const
+{
+    if (IsEntityLocked(entity))
+        return true;
+    std::size_t remaining = Entities.size();
+    for (EntityId parent = GetParent(entity);
+         parent.IsValid() && remaining > 0;
+         parent = GetParent(parent), --remaining)
+    {
+        if (IsEntityLocked(parent))
+            return true;
+    }
+    return false;
 }
 
 bool EditorScene::IsEntityLocked(EntityId entity) const
 {
-    return LockedEntities.contains(entity.Index);
+    const std::uint64_t key = FlagKeyOf(entity);
+    return key != 0 && LockedEntities.contains(key);
 }
 
 void EditorScene::SetEntityVisible(EntityId entity, bool visible)
 {
+    const std::uint64_t key = FlagKeyOf(entity);
+    if (key == 0)
+        return;
     if (visible)
-        HiddenEntities.erase(entity.Index);
+        HiddenEntities.erase(key);
     else
-        HiddenEntities.insert(entity.Index);
+        HiddenEntities.insert(key);
 }
 
 void EditorScene::SetEntityLocked(EntityId entity, bool locked)
 {
+    const std::uint64_t key = FlagKeyOf(entity);
+    if (key == 0)
+        return;
     if (locked)
-        LockedEntities.insert(entity.Index);
+        LockedEntities.insert(key);
     else
-        LockedEntities.erase(entity.Index);
+        LockedEntities.erase(key);
 }

@@ -11,12 +11,13 @@ inline constexpr std::string_view kLightmapAtlasFile = "lightmap.stex";
 inline constexpr std::string_view kAoAtlasFile = "ao.stex";
 inline constexpr std::string_view kProbeVolumeFile = "probes.sprobe";
 
-// Path relative to the cooked root (".cooked/") for a zone's baked artifact.
-[[nodiscard]] inline std::string LevelArtifactRel(std::string_view stem,
-                                                  std::string_view file)
+// Path relative to the cooked root (".cooked/") for a document's baked
+// artifact. The stem is directory-qualified (levels/room_2, prefabs/turret),
+// so the family lands beside the document's .smap.
+[[nodiscard]] inline std::string DocumentArtifactRel(std::string_view stem,
+                                                     std::string_view file)
 {
-    std::string rel = "levels/";
-    rel += stem;
+    std::string rel(stem);
     rel += '/';
     rel += file;
     return rel;
@@ -24,17 +25,17 @@ inline constexpr std::string_view kProbeVolumeFile = "probes.sprobe";
 
 [[nodiscard]] inline std::string LightmapAtlasRel(std::string_view stem)
 {
-    return LevelArtifactRel(stem, kLightmapAtlasFile);
+    return DocumentArtifactRel(stem, kLightmapAtlasFile);
 }
 
 [[nodiscard]] inline std::string AoAtlasRel(std::string_view stem)
 {
-    return LevelArtifactRel(stem, kAoAtlasFile);
+    return DocumentArtifactRel(stem, kAoAtlasFile);
 }
 
 [[nodiscard]] inline std::string ProbeVolumeRel(std::string_view stem)
 {
-    return LevelArtifactRel(stem, kProbeVolumeFile);
+    return DocumentArtifactRel(stem, kProbeVolumeFile);
 }
 
 // Whether a stored reference or artifact path ends in "/<file>": the match the

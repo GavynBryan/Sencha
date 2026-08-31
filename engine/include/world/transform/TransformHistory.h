@@ -26,9 +26,7 @@ class World;
 //
 // Mesh and shadow-caster extraction consume this; they have to agree or a
 // shadow separates from the object casting it. Light extraction does not, so a
-// light on a history-carrying entity still steps at the tick rate. Nothing
-// attaches one today; wire it there when something does, rather than carrying
-// an untested path.
+// light on a history-carrying entity still steps at the tick rate.
 //=============================================================================
 struct WorldTransformHistory
 {

@@ -68,6 +68,18 @@ WorldDocument::WorldDocument(LoggingProvider& logging)
 {
 }
 
+void WorldDocument::SetContentRoots(std::vector<std::filesystem::path> roots)
+{
+    ContentRoots_ = std::move(roots);
+    if (LegacyDocument_ != nullptr)
+        LegacyDocument_->SetContentRoots(ContentRoots_);
+    if (WorldScene_ != nullptr)
+        WorldScene_->SetContentRoots(ContentRoots_);
+    for (auto& [zone, open] : OpenZones_)
+        if (open.Document != nullptr)
+            open.Document->SetContentRoots(ContentRoots_);
+}
+
 WorldDocument::~WorldDocument()
 {
     WriteUserSidecar();
@@ -151,6 +163,8 @@ bool WorldDocument::LoadWorld(std::string_view path)
         WorldScene_.reset();
         WorldSceneFocused_ = false;
         LegacyDocument_ = std::make_unique<EditorDocument>(Logging_);
+    LegacyDocument_->SetContentRoots(ContentRoots_);
+        LegacyDocument_->SetContentRoots(ContentRoots_);
         if (Assets_)
             LegacyDocument_->SetAssetEnvironment(*Assets_);
         NotifyEditedDocumentChanged();
@@ -183,7 +197,7 @@ bool WorldDocument::SaveWorld()
     if (Manifest_.WorldSceneRef.empty())
     {
         const std::string base = SanitizeZoneFileName(fs::path(WorldPath_).stem().string());
-        std::string candidate = "levels/" + base + "_world.level.json";
+        std::string candidate = "levels/" + base + "_world.sscene";
         for (int suffix = 2;; ++suffix)
         {
             const auto taken = std::any_of(Manifest_.Zones.begin(), Manifest_.Zones.end(),
@@ -191,7 +205,7 @@ bool WorldDocument::SaveWorld()
                                            { return zone.SceneRef == candidate; });
             if (!taken)
                 break;
-            candidate = "levels/" + base + "_world_" + std::to_string(suffix) + ".level.json";
+            candidate = "levels/" + base + "_world_" + std::to_string(suffix) + ".sscene";
         }
         Manifest_.WorldSceneRef = std::move(candidate);
         MarkManifestEdited();
@@ -200,6 +214,10 @@ bool WorldDocument::SaveWorld()
     AssignSceneRefsForNewZones();
     // Refresh derived bounds before the zone files write so they persist current.
     RefreshDerivedZoneBounds();
+    // Which source files this save rewrites: any open document that depends
+    // on one of them re-projects once every file is on disk (§3: saving a
+    // source rebuilds dependent open projections).
+    std::vector<std::string> savedSources;
     for (ZoneHeader& header : Manifest_.Zones)
     {
         const std::string scenePath = ResolveScenePath(header.SceneRef);
@@ -210,6 +228,7 @@ bool WorldDocument::SaveWorld()
         if (it != OpenZones_.end())
         {
             EditorDocument& document = *it->second.Document;
+            const bool wroteFile = !document.HasFilePath() || document.IsDirty();
             if (!document.HasFilePath())
             {
                 if (!document.SaveAs(scenePath))
@@ -223,6 +242,9 @@ bool WorldDocument::SaveWorld()
                 log.Error("failed to save zone scene '{}'", scenePath);
                 return false;
             }
+            if (wroteFile)
+                if (std::string source = document.SourceAssetPath(); !source.empty())
+                    savedSources.push_back(std::move(source));
         }
         else if (!fs::exists(scenePath, ec))
         {
@@ -243,6 +265,7 @@ bool WorldDocument::SaveWorld()
         const std::string scenePath = ResolveScenePath(Manifest_.WorldSceneRef);
         std::error_code ec;
         fs::create_directories(fs::path(scenePath).parent_path(), ec);
+        const bool wroteFile = !WorldScene_->HasFilePath() || WorldScene_->IsDirty();
         if (!WorldScene_->HasFilePath())
         {
             if (!WorldScene_->SaveAs(scenePath))
@@ -256,6 +279,9 @@ bool WorldDocument::SaveWorld()
             log.Error("failed to save world scene '{}'", scenePath);
             return false;
         }
+        if (wroteFile)
+            if (std::string source = WorldScene_->SourceAssetPath(); !source.empty())
+                savedSources.push_back(std::move(source));
     }
 
     const std::string text = JsonStringify(WriteWorldPartitionManifest(Manifest_), /*pretty*/ true);
@@ -271,8 +297,29 @@ bool WorldDocument::SaveWorld()
 
     WorldDirty_ = false;
     WriteUserSidecar();
+    PropagateSavedSources(savedSources);
     RunValidation();
     return true;
+}
+
+void WorldDocument::PropagateSavedSources(std::span<const std::string> savedSources)
+{
+    if (savedSources.empty())
+        return;
+
+    // Every open document, the savers included: a zone that both saved and
+    // places another saved zone still has to pick up the sibling's new
+    // content. A document never depends on itself (the resolver refuses
+    // cycles), so the saver is naturally excluded from its own reload.
+    auto& log = Logging_.GetLogger<WorldDocument>();
+    VisitOpenZones([&](ZoneId, EditorDocument& document, const ZoneViewState&)
+    {
+        if (document.ReloadDependentSources(savedSources))
+            log.Info("re-projected '{}' after its sources saved",
+                     document.GetDisplayName());
+    });
+    if (WorldScene_ != nullptr && WorldScene_->ReloadDependentSources(savedSources))
+        log.Info("re-projected the world scene after its sources saved");
 }
 
 bool WorldDocument::SaveWorldAs(std::string_view path)
@@ -356,6 +403,7 @@ bool WorldDocument::Load(std::string_view path)
     // is already open. Only a document that came up whole replaces the current
     // one, so a rejected file leaves the session exactly as it was.
     auto staged = std::make_unique<EditorDocument>(Logging_);
+    staged->SetContentRoots(ContentRoots_);
     if (Assets_)
         staged->SetAssetEnvironment(*Assets_);
     if (!staged->Load(path))
@@ -416,6 +464,7 @@ bool WorldDocument::LoadZone(ZoneId zone)
     }
 
     auto document = std::make_unique<EditorDocument>(Logging_);
+    document->SetContentRoots(ContentRoots_);
     document->OnEdited = [this] { Revalidate(); };
     document->SetRegistryIdentity(RegistryId{ NextRegistryIndex_++, 1 }, zone);
     if (Assets_)
@@ -1011,7 +1060,7 @@ void WorldDocument::AssignSceneRefsForNewZones()
             continue;
 
         const std::string base = SanitizeZoneFileName(header.Name);
-        std::string candidate = "levels/" + base + ".level.json";
+        std::string candidate = "levels/" + base + ".sscene";
         for (int suffix = 2;; ++suffix)
         {
             const auto taken = candidate == Manifest_.WorldSceneRef
@@ -1020,7 +1069,7 @@ void WorldDocument::AssignSceneRefsForNewZones()
                                { return &other != &header && other.SceneRef == candidate; });
             if (!taken)
                 break;
-            candidate = "levels/" + base + "_" + std::to_string(suffix) + ".level.json";
+            candidate = "levels/" + base + "_" + std::to_string(suffix) + ".sscene";
         }
         header.SceneRef = std::move(candidate);
         MarkManifestEdited();
@@ -1254,6 +1303,7 @@ void WorldDocument::RunValidation()
 void WorldDocument::CreateWorldSceneDocument()
 {
     WorldScene_ = std::make_unique<EditorDocument>(Logging_);
+    WorldScene_->SetContentRoots(ContentRoots_);
     WorldScene_->OnEdited = [this] { Revalidate(); };
     WorldScene_->SetRegistryIdentity(RegistryId{ NextRegistryIndex_++, 1 }, ZoneId{});
     if (Assets_)
@@ -1269,6 +1319,7 @@ void WorldDocument::CreateWorldSceneDocument()
         Logging_.GetLogger<WorldDocument>().Error(
             "cannot load world scene '{}'; the world scene starts empty", scenePath);
         WorldScene_ = std::make_unique<EditorDocument>(Logging_);
+    WorldScene_->SetContentRoots(ContentRoots_);
         WorldScene_->OnEdited = [this] { Revalidate(); };
         WorldScene_->SetRegistryIdentity(RegistryId{ NextRegistryIndex_++, 1 }, ZoneId{});
         if (Assets_)
@@ -1410,6 +1461,7 @@ void WorldDocument::CloseWorldToLegacy()
 {
     CloseWorldState();
     LegacyDocument_ = std::make_unique<EditorDocument>(Logging_);
+    LegacyDocument_->SetContentRoots(ContentRoots_);
     if (Assets_)
         LegacyDocument_->SetAssetEnvironment(*Assets_);
 }

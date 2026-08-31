@@ -1,5 +1,7 @@
 #include <assets/runtime/AssetPreloader.h>
 
+#include <world/scene/SmapFormat.h>
+
 #include <assets/runtime/AssetSystem.h>
 #include <core/assets/AssetKindRegistry.h>
 #include <core/logging/LoggingProvider.h>
@@ -88,6 +90,20 @@ bool AssetPreloader::CanStage(const AssetRecord& record) const
     // because something registered it directly.
     return kind != nullptr && kind->IsLoadable()
         && record.SourceKind == AssetSourceKind::File;
+}
+
+std::shared_ptr<AssetPreload> AssetPreloader::BeginSceneDependencies(
+    const std::filesystem::path& smapPath, std::string* error)
+{
+    SmapContents metadata;
+    SmapError metadataError;
+    if (!ReadSmapMetadataFile(smapPath, metadata, &metadataError))
+    {
+        if (error != nullptr)
+            *error = std::move(metadataError.Message);
+        return nullptr;
+    }
+    return Begin(ResolveSmapDependencyPaths(metadata.Dependencies, Registry));
 }
 
 std::shared_ptr<AssetPreload> AssetPreloader::Begin(std::span<const std::string> paths)

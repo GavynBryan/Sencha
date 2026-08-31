@@ -170,6 +170,11 @@ BrushMesh BrushMeshFromJson(const JsonValue& value)
                 static_cast<std::uint32_t>(a[i].AsNumber()),
                 static_cast<std::uint32_t>(a[i + 1].AsNumber())));
     }
+    // Part of parsing, not a courtesy for the caller: the cached face normals
+    // are data the tessellator reads, and a mesh without them lights as black
+    // rather than failing. Every route from serialized data to a live mesh
+    // goes through here, so the repair has exactly one owner.
+    BrushValidateAndRepair(mesh);
     return mesh;
 }
 
@@ -187,8 +192,7 @@ void DeserializeBrushMeshes(const JsonValue& value, BrushMeshStore& store)
         return;
     for (const auto& [idText, meshJson] : value.AsObject())
     {
-        BrushMesh mesh = BrushMeshFromJson(meshJson);
-        BrushValidateAndRepair(mesh); // never accept a corrupt brush silently (03-§5)
-        store.Set(BrushId{ static_cast<std::uint32_t>(std::stoul(idText)) }, std::move(mesh));
+        store.Set(BrushId{ static_cast<std::uint32_t>(std::stoul(idText)) },
+                  BrushMeshFromJson(meshJson));
     }
 }

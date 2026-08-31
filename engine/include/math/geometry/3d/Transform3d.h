@@ -80,6 +80,28 @@ struct Transform3d
 		return Rotation.RotateVector(ComponentScale(vector, Scale));
 	}
 
+	// Exact inverses of the pair above, for expressing a world-space value back
+	// in this transform's frame -- the direction a hierarchy needs when a value
+	// is authored in world space and stored relative to a parent. A zero scale
+	// axis is not invertible, so it passes the component through rather than
+	// dividing; the caller gets a finite answer instead of a NaN that spreads.
+	Vec<3, T> InverseTransformVector(const Vec<3, T>& vector) const
+		requires std::floating_point<T>
+	{
+		const Vec<3, T> unrotated = Rotation.Conjugate().RotateVector(vector);
+		return Vec<3, T>{
+			Scale.X != T{ 0 } ? unrotated.X / Scale.X : unrotated.X,
+			Scale.Y != T{ 0 } ? unrotated.Y / Scale.Y : unrotated.Y,
+			Scale.Z != T{ 0 } ? unrotated.Z / Scale.Z : unrotated.Z
+		};
+	}
+
+	Vec<3, T> InverseTransformPoint(const Vec<3, T>& point) const
+		requires std::floating_point<T>
+	{
+		return InverseTransformVector(point - Position);
+	}
+
 	Vec<3, T> Forward() const
 		requires std::floating_point<T>
 	{

@@ -4,23 +4,36 @@
 #include <abilities/AbilityActivationSystem.h>
 #include <abilities/AbilityRegistry.h>
 #include <abilities/AbilitySet.h>
+#include <abilities/AbilitySetSerializer.h>
 #include <app/EngineSchedule.h>
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
+#include <attributes/AttributeSetSerializer.h>
 #include <ecs/World.h>
 #include <effects/ActiveEffect.h>
 #include <effects/AttributeResolveSystem.h>
 #include <effects/EffectLifetimeSystem.h>
 #include <effects/EffectRegistry.h>
 #include <gameplay_tags/GameplayTagContainer.h>
+#include <gameplay_tags/GameplayTagContainerSerializer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <world/ComponentRegistrar.h>
 
 void RegisterAbilityKitComponents(ComponentRegistrar& registrar)
 {
+    // Tags and attributes hold registration-order ids, so their persisted form
+    // is names and cannot come from a schema. The serializer goes in beside the
+    // storage: one edit here reaches the runtime, the editor's preview
+    // registry, and the cook, because all three compose from this registrar.
     registrar.Add<GameplayTagContainer>();
+    registrar.AddSerializer(MakeGameplayTagContainerSerializer());
+
     registrar.Add<AttributeSet>();
+    registrar.AddSerializer(MakeAttributeSetSerializer());
+
     registrar.Add<AbilitySet>();
+    registrar.AddSerializer(MakeAbilitySetSerializer());
+
     registrar.Add<ActiveEffect>();
 }
 

@@ -9,6 +9,7 @@
 #include <zone/WorldPartitionManifest.h>
 
 #include <cassert>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <random>
@@ -40,13 +41,19 @@ struct LegacyTransitionMigrationReport
 
 // The container above EditorDocument: the authored partition manifest plus the set
 // of open zone documents. Exactly one of two modes at a time:
-//   Legacy: no manifest; one anonymous zone document (a bare .level.json). Every
+//   Legacy: no manifest; one anonymous zone document (a bare .sscene). Every
 //           existing single-level behavior routes through this mode unchanged.
 //   World:  manifest-backed (.sworld); zones open and close individually.
 // Constructed in legacy mode; LoadWorld and NewWorld switch to world mode.
 class WorldDocument
 {
 public:
+    // Where every document this world owns resolves asset:// scene sources.
+    // EditorServices supplies the project's roots; cook drivers supply their
+    // assets root. Applied to the documents that already exist and to every
+    // one created afterwards.
+    void SetContentRoots(std::vector<std::filesystem::path> roots);
+
     explicit WorldDocument(LoggingProvider& logging);
     ~WorldDocument();   // writes the user sidecar so view state survives exit
 
@@ -75,7 +82,10 @@ public:
     // world saved under the wrong extension must still open as a world.
     [[nodiscard]] static bool IsWorldManifestFile(std::string_view path);
     bool LoadWorld(std::string_view path);          // parses .sworld; sidecar or start zone picks focus
-    bool SaveWorld();                                // world file + every dirty zone document + sidecar
+    bool SaveWorld();
+    // After a save lands source files on disk: every open document that
+    // depends on one of them re-projects from the fresh content.
+    void PropagateSavedSources(std::span<const std::string> savedSources);                                // world file + every dirty zone document + sidecar
     // Enforces the .sworld extension (replacing whatever the dialog produced)
     // so saved worlds always round-trip through the extension fast path.
     bool SaveWorldAs(std::string_view path);
@@ -294,6 +304,7 @@ private:
     std::unique_ptr<EditorDocument> LegacyDocument_;
     ZoneViewState LegacyView_;
 
+    std::vector<std::filesystem::path> ContentRoots_;
     uint16_t NextRegistryIndex_ = 2;
     std::mt19937_64 Rng_;
 };

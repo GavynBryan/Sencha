@@ -199,7 +199,7 @@ void ViewportToolDispatcher::UpdateHover(EditorViewport& viewport, ImVec2 pos)
     if (hovered.IsEdge())
     {
         const BrushMesh* mesh = Context.Scene.TryGetBrushMesh(hovered.Entity);
-        const Transform3f* transform = Context.Scene.TryGetTransform(hovered.Entity);
+        const Transform3f* transform = Context.Scene.TryGetWorldTransform(hovered.Entity);
         if (mesh != nullptr && transform != nullptr)
             if (const std::optional<EdgeElement> edge =
                     MeshElements::TryGetEdge(*mesh, *transform, hovered.ElementId))

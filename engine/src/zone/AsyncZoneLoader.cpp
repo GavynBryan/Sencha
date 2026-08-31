@@ -1,15 +1,19 @@
 #include <zone/AsyncZoneLoader.h>
 
 #include <assets/runtime/AssetPreloader.h>
+#include <assets/runtime/AssetSystem.h>
+#include <assets/scene/ScenePackageBuild.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/WorldComponentSchema.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <world/RuntimeWorld.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializationContext.h>
+#include <world/scene/SmapFormat.h>
 #include <zone/ZonePackageImporter.h>
 
 #include <algorithm>
+#include <string>
 #include <cassert>
 #include <memory>
 #include <utility>
@@ -71,57 +75,133 @@ AsyncTaskHandle AsyncZoneLoader::BeginLoad(
     assert(!IsLoading(zone)
            && "AsyncZoneLoader::BeginLoad: zone load is already in flight");
 
-    AsyncTaskHandle handle = Tasks.Submit<std::unique_ptr<ZoneLoadPackage>>(
+    AsyncTaskHandle handle = Tasks.Submit<std::unique_ptr<EntityBuildPackage>>(
         // Work, on a task thread: package-local identity and owned CPU payloads
         // need no synchronization with the live entity world.
-        [zone, build = std::move(build)]() mutable {
-            auto package = std::make_unique<ZoneLoadPackage>(zone);
+        [build = std::move(build)]() mutable {
+            auto package = std::make_unique<EntityBuildPackage>();
             build(*package);
             return package;
         },
-        // Commit, on the owner thread at the drain point. A cancelled preload
-        // counts as complete; decoding may use its synchronous fallback.
+        // Commit, on the owner thread at the drain point.
         [this, zone, participation, finalize = std::move(finalize), assets](
-            std::unique_ptr<ZoneLoadPackage> package) mutable {
-            if (assets && !assets->IsComplete() && !assets->IsCancelled())
-            {
-                auto deferredPackage =
-                    std::make_shared<std::unique_ptr<ZoneLoadPackage>>(
-                        std::move(package));
-                auto deferredFinalize =
-                    std::make_shared<FinalizeFn>(std::move(finalize));
-                assets->SetOnComplete(
-                    [this,
-                     zone,
-                     participation,
-                     deferredPackage,
-                     deferredFinalize,
-                     assets]() mutable {
-                        ImportAndFinalize(
-                            zone,
-                            std::move(*deferredPackage),
-                            *deferredFinalize,
-                            participation,
-                            assets);
-                    });
-                return;
-            }
-
-            ImportAndFinalize(
-                zone,
-                std::move(package),
-                finalize,
-                participation,
-                assets);
+            std::unique_ptr<EntityBuildPackage> package) mutable {
+            CommitOrDefer(zone, std::move(package), std::move(finalize),
+                          participation, std::move(assets));
         });
 
     InFlight.push_back(InFlightLoad{ zone, handle, std::move(assets) });
     return handle;
 }
 
+AsyncTaskHandle AsyncZoneLoader::BeginLoadScene(
+    ZoneId zone,
+    std::string_view sceneAssetPath,
+    AssetSystem& assets,
+    SceneStageFn stageExtra,
+    SceneFinalizeFn finalize,
+    ZoneParticipation participation,
+    std::shared_ptr<AssetPreload> preload)
+{
+    assert(zone.IsValid() && "AsyncZoneLoader::BeginLoadScene: zone id must be valid");
+    assert(RuntimeWorldState.FindZone(zone) == nullptr
+           && "AsyncZoneLoader::BeginLoadScene: zone is already loaded or importing");
+    assert(!IsLoading(zone)
+           && "AsyncZoneLoader::BeginLoadScene: zone load is already in flight");
+
+    const AssetRecord* record = assets.Resolve(sceneAssetPath, AssetType::Scene);
+    if (record == nullptr)
+    {
+        RecordFailure(zone, ZoneLoadStage::Build,
+                      "scene '" + std::string(sceneAssetPath)
+                          + "' did not resolve to a cooked scene asset");
+        if (preload)
+            preload->ReleaseAll();
+        return {};
+    }
+
+    // Shared rather than unique because the task closures must stay copyable;
+    // each phase of the build still runs on exactly the thread its name says.
+    auto build = std::make_shared<ScenePackageBuild>(assets, *record);
+    AsyncTaskHandle handle = Tasks.Submit<int>(
+        // Work, on a task thread: file IO, parse, and package build against
+        // immutable inputs. `Serializers` sees only const reads; module
+        // registration is sealed before zones stream.
+        [this, build, stageExtra = std::move(stageExtra)]() {
+            build->Build(Serializers);
+            if (stageExtra && build->Contents() != nullptr)
+                stageExtra(*build->Contents());
+            return 0;
+        },
+        // Commit, on the owner thread at the drain point: residency first,
+        // then the ordinary import path.
+        [this, zone, participation, build, finalize = std::move(finalize),
+         preload](int) mutable {
+            if (!build->Settle())
+            {
+                RemoveInFlight(zone);
+                RecordFailure(zone, ZoneLoadStage::Build, build->Error());
+                if (preload)
+                    preload->ReleaseAll();
+                return;
+            }
+
+            // The reference is scaffolding for this import; it releases on
+            // the owner thread once publication settles, even when a pending
+            // preload defers it. The payload itself is shared, so a finalize
+            // that runs after an unrelated release still reads valid data.
+            std::shared_ptr<const SmapContents> contents = build->ContentsShared();
+            std::unique_ptr<EntityBuildPackage> package = build->TakePackage();
+            std::shared_ptr<void> sceneLease(
+                nullptr, [build](void*) { build->ReleaseScene(); });
+
+            FinalizeFn wrapped;
+            if (finalize)
+                wrapped = [finalize = std::move(finalize), contents](
+                              RuntimeWorld& world, RuntimeZoneRecord& zoneRecord) {
+                    return finalize(world, zoneRecord, *contents);
+                };
+
+            CommitOrDefer(zone, std::move(package), std::move(wrapped),
+                          participation, std::move(preload),
+                          std::move(sceneLease));
+        });
+
+    InFlight.push_back(InFlightLoad{ zone, handle, std::move(preload) });
+    return handle;
+}
+
+void AsyncZoneLoader::CommitOrDefer(
+    ZoneId zone,
+    std::unique_ptr<EntityBuildPackage> package,
+    FinalizeFn finalize,
+    ZoneParticipation participation,
+    std::shared_ptr<AssetPreload> assets,
+    std::shared_ptr<void> keepAlive)
+{
+    // A cancelled preload counts as complete; owner-thread decoding may use
+    // its synchronous fallback.
+    if (assets && !assets->IsComplete() && !assets->IsCancelled())
+    {
+        auto deferredPackage =
+            std::make_shared<std::unique_ptr<EntityBuildPackage>>(
+                std::move(package));
+        auto deferredFinalize = std::make_shared<FinalizeFn>(std::move(finalize));
+        assets->SetOnComplete(
+            [this, zone, participation, deferredPackage, deferredFinalize,
+             assets, keepAlive = std::move(keepAlive)]() mutable {
+                ImportAndFinalize(zone, std::move(*deferredPackage),
+                                  *deferredFinalize, participation, assets);
+            });
+        return;
+    }
+
+    ImportAndFinalize(zone, std::move(package), finalize, participation, assets);
+}
+
 void AsyncZoneLoader::ImportAndFinalize(
     ZoneId zone,
-    std::unique_ptr<ZoneLoadPackage> package,
+    std::unique_ptr<EntityBuildPackage> package,
     FinalizeFn& finalize,
     ZoneParticipation participation,
     const std::shared_ptr<AssetPreload>& assets)
@@ -133,6 +213,7 @@ void AsyncZoneLoader::ImportAndFinalize(
         || !ImportZonePackageHidden(
             RuntimeWorldState,
             Schema,
+            zone,
             *package,
             Serializers,
             SceneContext,

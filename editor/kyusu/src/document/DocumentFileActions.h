@@ -3,6 +3,7 @@
 #include <functional>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <vector>
 
 class ConsoleRegistry;
@@ -36,6 +37,10 @@ public:
 
     void New();
     void NewWorld();
+    // Opens the .sscene an asset:// path names, through the same deferred
+    // queue as the dialogs (the caller sits inside a frame walking the
+    // document the open replaces). False when no content root holds it.
+    bool OpenSceneSource(std::string_view assetPath);
     void Save();
     void RequestOpen();
     void RequestSaveAs();

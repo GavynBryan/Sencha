@@ -30,7 +30,7 @@
 #include <zone/AsyncZoneLoader.h>
 #include <zone/WorldPartitionManifest.h>
 #include <zone/WorldPartitionRuntime.h>
-#include <zone/ZoneLoadPackage.h>
+#include <world/build/EntityBuildPackage.h>
 
 #include <chrono>
 #include <cmath>
@@ -260,11 +260,10 @@ inline void AddStressLinkPair(WorldPartitionManifest& manifest,
             .Id = StressZoneAt(index),
             .Name = "Zone" + suffix,
             .Graph = StressGraphAt(GraphIndexOfZone(spec, index)),
-            .SceneRef = "levels/stress" + suffix + ".level.json",
+            .SceneRef = "levels/stress" + suffix + ".sscene",
             .Bounds = StressZoneBounds(spec, index),
             .BoundsOverridden = true,
-            .CookedSceneRef = "levels/stress" + suffix + ".cooked.json",
-            .CookedCollisionRef = "levels/stress" + suffix + ".collision.json",
+            .CookedSceneRef = "levels/stress" + suffix + ".smap",
             // Distinct per zone so failed-load suppression keys them apart.
             .CookedContentHash = 0xd000 + static_cast<std::uint64_t>(index),
         });
@@ -479,11 +478,11 @@ private:
             ZoneLoadRecipe recipe;
             const int entities = Spec_.EntitiesPerZone;
             const double span = Spec_.ZoneSpan;
-            recipe.Build = [index, entities, span](ZoneLoadPackage& package)
+            recipe.Build = [index, entities, span](EntityBuildPackage& package)
             {
                 for (int entity = 0; entity < entities; ++entity)
                 {
-                    const ZoneLocalEntityId id = package.CreateEntity();
+                    const PackageEntityId id = package.CreateEntity();
                     Transform3f transform;
                     transform.Position =
                         Vec3d(static_cast<float>(static_cast<double>(index) * span

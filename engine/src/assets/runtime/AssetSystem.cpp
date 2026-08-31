@@ -4,8 +4,9 @@
 
 #include <anim/AnimationClipCache.h>
 #include <anim/SkeletonCache.h>
-#include <audio/AudioClipCache.h>
+#include <assets/scene/SceneCache.h>
 #include <assets/texture/TextureCache.h>
+#include <audio/AudioClipCache.h>
 #include <render/MaterialCache.h>
 #include <render/MaterialSetCache.h>
 #include <render/skinned_mesh/SkinnedMeshCache.h>
@@ -24,9 +25,12 @@ AssetSystem::AssetSystem(LoggingProvider& logging,
                          SkeletonCache& skeletons,
                          AnimationClipCache& animationClips,
                          SkinnedMeshCache& skinnedMeshes,
-                         MaterialSetCache& materialSets)
+                         MaterialSetCache& materialSets,
+                         SceneCache& scenes,
+                         const ComponentSerializerRegistry& sceneSerializers)
     : AssetSystem(logging, registry, &meshes, &materials, &textures, &audioClips,
-                  &skeletons, &animationClips, &skinnedMeshes, &materialSets)
+                  &skeletons, &animationClips, &skinnedMeshes, &materialSets,
+                  &scenes, &sceneSerializers)
 {
 }
 
@@ -39,7 +43,9 @@ AssetSystem::AssetSystem(LoggingProvider& logging,
                          SkeletonCache* skeletons,
                          AnimationClipCache* animationClips,
                          SkinnedMeshCache* skinnedMeshes,
-                         MaterialSetCache* materialSets)
+                         MaterialSetCache* materialSets,
+                         SceneCache* scenes,
+                         const ComponentSerializerRegistry* sceneSerializers)
     : Log(logging.GetLogger<AssetSystem>())
     , Registry(registry)
     , StaticMeshes(meshes)
@@ -50,6 +56,7 @@ AssetSystem::AssetSystem(LoggingProvider& logging,
     , Skeletons(skeletons)
     , AnimationClips(animationClips)
     , SkinnedMeshes(skinnedMeshes)
+    , Scenes(scenes)
     , MeshLoader(logging, meshes)
     , TexLoader(logging, textures)
     , MatLoader(logging, *this, materials, textures)
@@ -57,6 +64,7 @@ AssetSystem::AssetSystem(LoggingProvider& logging,
     , SkelLoader(logging, skeletons)
     , AnimLoader(logging, *this, animationClips, skeletons)
     , SkinnedLoader(logging, *this, skinnedMeshes, skeletons)
+    , SceneLoader(logging, scenes, sceneSerializers)
 {
     RegisterKinds();
 }
@@ -136,10 +144,8 @@ void AssetSystem::RegisterKinds()
            MakeCommit(AssetType::Skeleton, SkelLoader, Skeletons));
     attach(AssetType::AnimationClip, AnimLoader, AnimationClips,
            MakeCommit(AssetType::AnimationClip, AnimLoader, AnimationClips));
-
-    // Scenes are scanned and referenced but never resolved through a cache.
-    if (!KindRegistry.Register(MakeBuiltinAssetKind(AssetType::Scene)))
-        Log.Error("AssetSystem: rejected Scene kind registration");
+    attach(AssetType::Scene, SceneLoader, Scenes,
+           MakeCommit(AssetType::Scene, SceneLoader, Scenes));
 }
 
 IAssetStore* AssetSystem::StoreFor(AssetType type)
@@ -163,6 +169,46 @@ AssetLease AssetSystem::TryAcquireLease(std::string_view path, AssetType type)
 {
     IAssetStore* store = StoreFor(type);
     return store ? store->TryAcquireLease(path) : AssetLease{};
+}
+
+AssetLease AssetSystem::LoadLease(std::string_view path, AssetType type)
+{
+    const AssetRecord* record = Resolve(path, type);
+    if (record == nullptr)
+        return {};
+
+    if (AssetLease resident = TryAcquireLease(record->Path, type); resident.IsValid())
+        return resident;
+
+    IAssetStager* stager = LoaderFor(type);
+    if (stager == nullptr)
+    {
+        Log.Error("AssetSystem: no loader registered for {} '{}'",
+                  AssetTypeToString(type), record->Path);
+        return {};
+    }
+
+    AssetStaging staged = stager->LoadStaged(*record, Source);
+    if (!staged.IsValid())
+    {
+        Log.Error("AssetSystem: {}", staged.Error);
+        return {};
+    }
+
+    return Commit(std::move(staged));
+}
+
+std::string_view AssetSystem::GetPathForLease(AssetType type,
+                                              std::uint64_t token) const
+{
+    const IAssetStore* store = StoreFor(type);
+    return store != nullptr ? store->GetPath(token) : std::string_view{};
+}
+
+void AssetSystem::ReleaseLease(AssetType type, std::uint64_t token)
+{
+    if (IAssetStore* store = StoreFor(type); store != nullptr)
+        store->ReleaseToken(token);
 }
 
 AssetLease AssetSystem::Commit(AssetStaging&& staged)

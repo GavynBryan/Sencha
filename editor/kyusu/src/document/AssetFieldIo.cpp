@@ -1,10 +1,13 @@
 #include "AssetFieldIo.h"
 
 #include <core/assets/AssetRegistry.h>
+#include <core/assets/AssetLease.h>
+#include <assets/data/DataAssetHandle.h>
 #include <assets/runtime/AssetSystem.h>
 #include <render/MaterialSetCache.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 #include <anim/AnimationClipHandle.h>
+#include <audio/AudioClipCache.h>
 #include <render/skinned_mesh/SkinnedMeshHandle.h>
 
 #include <cassert>
@@ -81,6 +84,26 @@ AssetFieldValue ReadAssetField(AssetSystem& assets, AssetType type,
         return value;
     }
 
+    if (type == AssetType::Audio && arity == AssetArity::Single)
+    {
+        std::string path(assets.GetPathForAudioClip(ReadHandle<AudioClipHandle>(field)));
+        if (!path.empty())
+            value.Refs.push_back(RefFromPath(assets, std::move(path), type));
+        return value;
+    }
+
+    // Structured data is the one kind the asset front door cannot name a
+    // handle type for -- a subtype's value is opaque to it -- so it travels as
+    // an opaque token rather than through a typed GetPathFor*.
+    if (type == AssetType::Data && arity == AssetArity::Single)
+    {
+        std::string path(assets.GetPathForLease(
+            AssetType::Data, ReadHandle<DataAssetHandle>(field).ToToken()));
+        if (!path.empty())
+            value.Refs.push_back(RefFromPath(assets, std::move(path), type));
+        return value;
+    }
+
     if (type == AssetType::Material && arity == AssetArity::List)
     {
         const MaterialSetHandle set = ReadHandle<MaterialSetHandle>(field);
@@ -138,6 +161,37 @@ void ApplyAssetField(AssetSystem& assets, AssetType type, AssetArity arity,
             : assets.LoadAnimationClip(path);
         WriteHandle(field, next);            // acquire-then-write
         assets.ReleaseAnimationClip(old);    // release the replaced handle last
+        return;
+    }
+
+    if (type == AssetType::Audio && arity == AssetArity::Single)
+    {
+        const std::string path = value.Refs.empty()
+            ? std::string{}
+            : ResolvePath(assets, value.Refs.front(), type);
+
+        const AudioClipHandle old = ReadHandle<AudioClipHandle>(field);
+        const AudioClipHandle next = path.empty() ? AudioClipHandle{}
+                                                  : assets.LoadAudioClip(path);
+        WriteHandle(field, next);            // acquire-then-write
+        assets.ReleaseAudioClip(old);        // release the replaced handle last
+        return;
+    }
+
+    if (type == AssetType::Data && arity == AssetArity::Single)
+    {
+        const std::string path = value.Refs.empty()
+            ? std::string{}
+            : ResolvePath(assets, value.Refs.front(), type);
+
+        const DataAssetHandle old = ReadHandle<DataAssetHandle>(field);
+        // The load's own reference becomes the field's: the component's
+        // lifecycle hooks release what the field holds, so the lease must not
+        // also drop it on the way out of this scope.
+        AssetLease next = path.empty() ? AssetLease{}
+                                       : assets.LoadLease(path, AssetType::Data);
+        WriteHandle(field, DataAssetHandle::FromToken(next.Relinquish()));
+        assets.ReleaseLease(AssetType::Data, old.ToToken()); // the replaced one last
         return;
     }
 

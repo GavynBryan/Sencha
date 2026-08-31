@@ -1,5 +1,7 @@
 #include "ViewportPanel.h"
 
+#include "SceneBrowserPanel.h"
+
 #include "ui/EditorUiStyle.h"
 
 #include "EditorTheme.h"
@@ -116,6 +118,17 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
                                          std::round(viewport.RegionMin.y)));
         ImGui::Image(tex, ImVec2(static_cast<float>(targetExtent.width),
                                  static_cast<float>(targetExtent.height)));
+        if (SceneDrop && ImGui::BeginDragDropTarget())
+        {
+            if (const ImGuiPayload* payload =
+                    ImGui::AcceptDragDropPayload(SceneBrowserPanel::kDragPayloadType))
+            {
+                SceneDrop(viewport.Id, ImGui::GetMousePos(),
+                          std::string_view(static_cast<const char*>(payload->Data),
+                                           static_cast<std::size_t>(payload->DataSize) - 1));
+            }
+            ImGui::EndDragDropTarget();
+        }
     }
 
     ImDrawList* drawList = ImGui::GetWindowDrawList();

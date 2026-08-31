@@ -2,6 +2,7 @@
 
 #include <world/ComponentRegistrar.h>
 #include <world/identity/PersistentIdComponent.h>
+#include <world/scene/SceneInstance.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
 
@@ -22,4 +23,8 @@ inline void RegisterWorldComponents(ComponentRegistrar& registrar)
     registrar.Add<WorldTransformHistory>();
 
     registrar.Add<PersistentIdComponent>();
+
+    // Which placed scene an entity came from; cooked placements and runtime
+    // spawns carry it alike, and SceneInstanceIndex keeps the group live.
+    registrar.Add<SceneInstance>();
 }

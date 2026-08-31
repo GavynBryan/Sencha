@@ -8,6 +8,7 @@ class Engine;
 class ComponentRegistrar;
 class DataAssetTypeRegistry;
 class DataSchemaRegistry;
+class World;
 
 //=============================================================================
 // Game
@@ -56,6 +57,32 @@ public:
     virtual void OnRegisterSystems(SystemRegisterContext&) {}
     virtual void OnPlatformEvent(PlatformEventContext&) {}
     virtual void OnShutdown(GameShutdownContext&) {}
+
+    // The gameplay vocabulary this game defines: its gameplay tags, attributes,
+    // abilities, and locomotion modes, declared into one World's registries.
+    //
+    // These are registration-order runtime values, so they cannot travel in a
+    // sealed component schema the way a component type does -- each World
+    // installs them for itself. Content names them as strings and resolves them
+    // at load, which is what makes this the editor's business too: an authoring
+    // document that does not know the game's names cannot offer them in a
+    // picker, and cannot tell an author that a tag it read back was one this
+    // game never declared.
+    //
+    // Called by whoever owns the World -- the game's own OnStart for the runtime
+    // world, once the engine vocabulary is installed, and the editor for each
+    // authoring document it creates. Registration only: no entities, no
+    // components, no engine state. Registries are idempotent, so declaring the
+    // same name twice is the same as declaring it once.
+    //
+    // Lifetime: a registration can carry module code -- a locomotion mode's
+    // enter and exit closures do -- and none of these registries can retract
+    // one. So a World this was called on must be destroyed before the module is
+    // unmapped, the way a module's data subtypes must be unregistered first.
+    //
+    // Last on purpose: a new hook takes a trailing vtable slot, so a module
+    // built against an older header keeps every earlier slot at its old index.
+    virtual void OnRegisterVocabulary(World&) {}
 
     // Wiring, not behavior: Engine::Run binds itself once before any hook so a
     // game can reach the engine without threading a handle through contexts.

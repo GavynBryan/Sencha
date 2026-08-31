@@ -49,7 +49,7 @@ protected:
     [[nodiscard]] std::vector<SelectableRef> RefsOf(EntityId entity, MeshElementKind kind)
     {
         const BrushMesh* mesh = Scene().TryGetBrushMesh(entity);
-        const Transform3f* transform = Scene().TryGetTransform(entity);
+        const Transform3f* transform = Scene().TryGetWorldTransform(entity);
         EXPECT_NE(mesh, nullptr);
         EXPECT_NE(transform, nullptr);
         if (mesh == nullptr || transform == nullptr)

@@ -10,7 +10,8 @@
 #include <ecs/WorldComponentSchema.h>
 #include <net/NetReplicationComponents.h>
 #include <ecs/Query.h>
-#include <net/NetSpawnRecipe.h>
+#include <net/NetSpawnPrefab.h>
+#include "StubPrefabSpawner.h"
 #include <net/ReplicationInterpolation.h>
 #include <net/ReplicationChangeStore.h>
 #include <net/ReplicationSchemas.h>
@@ -88,7 +89,7 @@ namespace
         // One snapshot: written on the authority, carried as bytes, applied on
         // the client. Returns the bytes it took.
         std::size_t Replicate(std::uint32_t ownerPeer = 0,
-                              const NetSpawnRecipes* recipes = nullptr,
+                              INetPrefabSpawner* prefabs = nullptr,
                               ClientPrediction* prediction = nullptr,
                               ReplicationInterpolation* interpolation = nullptr,
                               std::uint64_t commandAck = 0)
@@ -117,7 +118,7 @@ namespace
             apply.Schema = &Schema;
             apply.Layout = &Layout;
             apply.Identity = &ClientIdentity;
-            apply.Recipes = recipes;
+            apply.Prefabs = prefabs;
             apply.Prediction = prediction;
             apply.Interpolation = interpolation;
 
@@ -801,19 +802,58 @@ namespace
     {
         const EntityId pawn = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
         pair.Authority.AddComponent<NetOwner>(pawn, NetOwner{ .Peer = peer });
-        KinematicState motion;
-        motion.Velocity = Vec3d{ 3.0f, -1.0f, 0.5f };
-        pair.Authority.AddComponent<KinematicState>(pawn, motion);
-        SupportState support;
-        support.Kind = SupportKind::Stable;
-        support.SurfaceVelocity = Vec3d{ 0.25f, 0.0f, 0.0f };
-        pair.Authority.AddComponent<SupportState>(pawn, support);
+        // Velocity, support, and jump cooldown come with the movement
+        // component; the values a snapshot has to carry are written onto them.
         pair.Authority.AddComponent<CharacterMovement>(
             pawn, CharacterMovement{ .Mode = LocomotionModeId{ 2 } });
-        pair.Authority.AddComponent<JumpState>(
-            pawn, JumpState{ .CooldownRemaining = 0.12f });
+        pair.Authority.TryGet<KinematicState>(pawn)->Velocity =
+            Vec3d{ 3.0f, -1.0f, 0.5f };
+        SupportState& support = *pair.Authority.TryGet<SupportState>(pawn);
+        support.Kind = SupportKind::Stable;
+        support.SurfaceVelocity = Vec3d{ 0.25f, 0.0f, 0.0f };
+        pair.Authority.TryGet<JumpState>(pawn)->CooldownRemaining = 0.12f;
         return pawn;
     }
+}
+
+// A client's copy of a pawn is assembled from a snapshot, and a snapshot
+// carries only what travels. Everything else the movement step reads -- this
+// tick's request, the resolved coefficients, the contribution channels, the
+// composed output -- is per-tick scratch that never goes on the wire, and a
+// pawn missing any one of them stops matching the query that would have moved
+// it. No error, no frame it happens on: the pawn simply stands still while its
+// owner presses forward.
+//
+// It arrives because the movement component owes it, and replication creates
+// components through the same typed add everything else does.
+TEST(ReplicationPawnState, AReplicatedPawnArrivesAbleToMove)
+{
+    Pair pair;
+    const EntityId pawn = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(pawn, NetOwner{ .Peer = 7 });
+    pair.Authority.AddComponent<CharacterMovement>(
+        pawn, CharacterMovement{ .Mode = LocomotionModeId{ 1 } });
+
+    pair.Replicate(7);
+    const EntityId mirror = pair.Mirror(pawn);
+    ASSERT_TRUE(mirror.IsValid());
+
+    // None of these is replicated; all of them are owed.
+    EXPECT_TRUE(pair.Client.HasComponent<MovementIntent>(mirror));
+    EXPECT_TRUE(pair.Client.HasComponent<ResolvedMovementTuning>(mirror));
+    EXPECT_TRUE(pair.Client.HasComponent<LocomotionOutput>(mirror));
+    EXPECT_TRUE(pair.Client.HasComponent<MotionAxisOverride>(mirror));
+    EXPECT_TRUE(pair.Client.HasComponent<MotionImpulse>(mirror));
+    EXPECT_TRUE(pair.Client.HasComponent<MotionRequest>(mirror));
+    EXPECT_TRUE(pair.Client.HasComponent<ModeTransitionRequest>(mirror));
+    EXPECT_TRUE(pair.Client.HasComponent<WorldTransformHistory>(mirror));
+
+    // At their initializers, which for the composed request is the difference
+    // between standing still and being shoved toward the origin.
+    EXPECT_EQ(pair.Client.TryGet<MotionRequest>(mirror)->UpAxis,
+              MotionRequest{}.UpAxis);
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<ResolvedMovementTuning>(mirror)->MaxSpeed,
+                    ResolvedMovementTuning{}.MaxSpeed);
 }
 
 TEST(ReplicationPawnState, TheOwnerGetsWhatItNeedsToResumeSimulating)
@@ -899,10 +939,7 @@ TEST(ReplicationPawnState, TheShadowKeepsStateAnEmptyDeltaDidNotResend)
     schema.Seal();
     schema.Apply(scratch);
     const EntityId probe = scratch.CreateEntity();
-    scratch.AddComponent<KinematicState>(probe, KinematicState{});
-    scratch.AddComponent<SupportState>(probe, SupportState{});
     scratch.AddComponent<CharacterMovement>(probe, CharacterMovement{});
-    scratch.AddComponent<JumpState>(probe, JumpState{});
     scratch.AddComponent<LocalTransform>(probe, LocalTransform{});
     ASSERT_TRUE(prediction.RestoreTo(scratch, schema, probe));
 
@@ -938,80 +975,89 @@ TEST(ReplicationPrediction, OtherPlayersPawnsStillArriveAsState)
         << "a puppet has to be drawn where the authority says it is";
 }
 
-// What a machine knows about content it already has cannot travel, and does not
-// need to: a handle into one process's asset cache is a slot index that means
-// something else in another. The spawn recipe is where the receiving machine
-// fills those in -- so this pins the ordering that makes that work, which is
-// not obvious and which nothing else states.
+// What a machine derives for itself cannot travel, and does not need to: a
+// contact normal is re-derived by the first replayed sweep, an asset handle is
+// a slot index that means something else in another process, an aim limit is a
+// property of content both ends loaded. The prefab is where those values come
+// from on the receiving machine -- so this pins the chain that keeps them,
+// which is not obvious and which nothing else states.
 //
-// Replication creates the component with type defaults before the recipe runs,
-// so a recipe writes onto an existing component rather than adding one. The
-// prediction shadow then seeds from the world's copy, which by that point holds
-// the recipe's value; and because a local-only field has no place in the wire
-// layout at all, no mask bit can ever address it and no later snapshot can take
-// it back. Break any link in that and a client silently runs on defaults while
-// the authority runs on authored content -- two simulations disagreeing for a
-// reason no amount of reconciling can fix, because reconciling is what carries
-// the disagreement.
-TEST(ReplicationPrediction, ARecipeWrittenLocalFieldSurvivesSnapshotsAndReconcile)
+// The prefab is instantiated first, so the snapshot lands on an entity that
+// already holds its authored values. A delta only carries the fields it names,
+// so the write has to leave the rest of the component alone rather than stamp
+// the staging buffer over it -- that buffer was seeded from type defaults,
+// because at planning time there was no entity to seed from. The prediction
+// shadow then seeds from the world's copy, which holds the prefab's value; and
+// because a local-only field has no place in the wire layout at all, no mask
+// bit can ever address it and no later snapshot can take it back.
+//
+// Break any link in that and a client silently runs on one value while the
+// authority runs on another -- two simulations disagreeing for a reason no
+// amount of reconciling can fix, because reconciling is what carries the
+// disagreement.
+TEST(ReplicationPrediction, APrefabsLocalFieldSurvivesSnapshotsAndReconcile)
 {
     Pair pair;
     ClientPrediction prediction;
     prediction.Bind(pair.Layout);
 
-    // A handle no cache minted, which is exactly the point: its value is this
-    // machine's business and it is never compared with the authority's.
-    const MovementProfileHandle local{ DataAssetHandle{ .Index = 5,
-                                                        .Generation = 2 } };
+    // A value only this machine has any business holding, which is the point:
+    // it is never compared with the authority's.
+    const Vec3d local(0.0f, 0.0f, 1.0f);
 
-    NetSpawnRecipes recipes;
-    ASSERT_TRUE(recipes.Register(7, [local](World& world, EntityId entity) {
-        if (CharacterMovement* movement = world.TryGet<CharacterMovement>(entity))
-            movement->Profile = local;
-    }));
+    constexpr AssetId kPrefab{ 0x51u };
+    StubPrefabSpawner prefabs;
+    prefabs.Register(kPrefab, [local](World& world, StoragePartitionId partition) {
+        const EntityId entity = world.CreateEntity(partition);
+        SupportState support{};
+        support.Normal = local;
+        world.AddComponent<SupportState>(entity, support);
+        return std::vector<EntityId>{ entity };
+    });
 
     const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
     pair.Authority.AddComponent<NetOwner>(authority, NetOwner{ .Peer = 7 });
-    pair.Authority.AddComponent<CharacterMovement>(
-        authority, CharacterMovement{ .Mode = LocomotionModeId{ 3 } });
-    pair.Authority.AddComponent<NetSpawnRecipe>(authority, NetSpawnRecipe{ .Id = 7 });
+    SupportState authoritySupport{};
+    authoritySupport.Kind = SupportKind::Stable;
+    pair.Authority.AddComponent<SupportState>(authority, authoritySupport);
+    pair.Authority.AddComponent<NetSpawnPrefab>(authority,
+                                                NetSpawnPrefab{ .Scene = kPrefab });
 
-    pair.Replicate(7, &recipes);
+    pair.Replicate(7, &prefabs);
     const EntityId mirror = pair.Mirror(authority);
     ASSERT_TRUE(mirror.IsValid());
-    const CharacterMovement* held = pair.Client.TryGet<CharacterMovement>(mirror);
+    const SupportState* held = pair.Client.TryGet<SupportState>(mirror);
     ASSERT_NE(held, nullptr);
-    ASSERT_EQ(held->Profile, local)
-        << "the recipe ran before the component existed, so it had nothing to "
-           "write onto";
-    EXPECT_EQ(held->Mode.Value, 3u) << "the wire's own field did not arrive";
+    ASSERT_EQ(held->Normal, local)
+        << "the snapshot stamped its staging buffer over what the prefab set";
+    EXPECT_EQ(held->Kind, SupportKind::Stable) << "the wire's own field did not arrive";
 
     // Possession happens after the spawn, which is the order that matters: the
     // shadow cannot seed before this, so it seeds from a world copy the recipe
     // has already completed.
     prediction.SetPredicted(mirror);
 
-    pair.Authority.TryGet<CharacterMovement>(authority)->Mode = LocomotionModeId{ 4 };
-    pair.Replicate(7, &recipes, &prediction);
+    pair.Authority.TryGet<SupportState>(authority)->Kind = SupportKind::Steep;
+    pair.Replicate(7, &prefabs, &prediction);
     ASSERT_TRUE(pair.LastApply.ReconcilePredicted);
-    EXPECT_EQ(pair.Client.TryGet<CharacterMovement>(mirror)->Profile, local)
+    EXPECT_EQ(pair.Client.TryGet<SupportState>(mirror)->Normal, local)
         << "an arriving snapshot overwrote a field it does not carry";
 
     // The reconcile itself: the shadow restores the whole component, so a field
     // the wire never mentions has to have been in the shadow to survive it.
     ASSERT_TRUE(prediction.RestoreTo(pair.Client, pair.Schema, mirror));
-    const CharacterMovement* restored = pair.Client.TryGet<CharacterMovement>(mirror);
+    const SupportState* restored = pair.Client.TryGet<SupportState>(mirror);
     ASSERT_NE(restored, nullptr);
-    EXPECT_EQ(restored->Profile, local)
-        << "the reconcile stamped a default over what this machine resolved, so "
-           "every replayed tick from here runs on the wrong tuning";
-    EXPECT_EQ(restored->Mode.Value, 4u)
+    EXPECT_EQ(restored->Normal, local)
+        << "the reconcile stamped a default over what the prefab set, so every "
+           "replayed tick from here runs on the wrong contact";
+    EXPECT_EQ(restored->Kind, SupportKind::Steep)
         << "the authority's own field did not survive the same restore";
 
     // And it stays put however long the session runs.
-    pair.Replicate(7, &recipes, &prediction);
-    pair.Replicate(7, &recipes, &prediction);
-    EXPECT_EQ(pair.Client.TryGet<CharacterMovement>(mirror)->Profile, local);
+    pair.Replicate(7, &prefabs, &prediction);
+    pair.Replicate(7, &prefabs, &prediction);
+    EXPECT_EQ(pair.Client.TryGet<SupportState>(mirror)->Normal, local);
 }
 
 //=============================================================================
@@ -1254,55 +1300,105 @@ TEST(ReplicationVisibility, AnOwnedSpawnKeepsItsLimitsToo)
     EXPECT_FLOAT_EQ(aim->MaxPitch, declared.MaxPitch);
 }
 
-TEST(ReplicationVisibility, ARecipeCompletesTheEntityOnArrival)
+TEST(ReplicationVisibility, APrefabIsTheEntityOnArrival)
 {
     Pair pair;
-    NetSpawnRecipes recipes;
+    constexpr AssetId kPrefab{ 0x77u };
+    StubPrefabSpawner prefabs;
     int built = 0;
-    // Written the way a real recipe is: idempotent, so that "ran once" is
-    // proven by the counter rather than by a duplicate add bringing the process
-    // down. A test that detects a regression by crashing reports it as no
-    // output at all, which is easy to misread as passing.
-    ASSERT_TRUE(recipes.Register(7, [&built](World& world, EntityId entity) {
+    prefabs.Register(kPrefab, [&built](World& world, StoragePartitionId partition) {
         ++built;
-        if (!world.HasComponent<WorldTransformHistory>(entity))
-            world.AddComponent<WorldTransformHistory>(entity, WorldTransformHistory{});
-    }));
+        const EntityId entity = world.CreateEntity(partition);
+        world.AddComponent<WorldTransformHistory>(entity, WorldTransformHistory{});
+        return std::vector<EntityId>{ entity };
+    });
 
     const EntityId authority = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
-    pair.Authority.AddComponent<NetSpawnRecipe>(authority, NetSpawnRecipe{ .Id = 7 });
-    pair.Replicate(0, &recipes);
+    pair.Authority.AddComponent<NetSpawnPrefab>(authority,
+                                                NetSpawnPrefab{ .Scene = kPrefab });
+    pair.Replicate(0, &prefabs);
 
     const EntityId mirror = pair.Mirror(authority);
     ASSERT_TRUE(mirror.IsValid());
     EXPECT_EQ(built, 1);
     EXPECT_TRUE(pair.Client.HasComponent<WorldTransformHistory>(mirror))
-        << "the recipe did not run, so the entity arrived bare";
+        << "the entity was created bare instead of instantiated from its prefab";
+    // And the snapshot's own values landed on the instantiated root.
+    EXPECT_NEAR(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X, 1.0f,
+                kWirePosition);
 
     // And only once, however many snapshots follow.
-    pair.Replicate(0, &recipes);
-    pair.Replicate(0, &recipes);
-    EXPECT_EQ(built, 1) << "a recipe must build an entity once, not every tick";
+    pair.Replicate(0, &prefabs);
+    pair.Replicate(0, &prefabs);
+    EXPECT_EQ(built, 1) << "a prefab builds an entity once, not every tick";
 }
 
-// A recipe this build does not know leaves the entity with its state rather
-// than failing the snapshot: an authority may run content a client lacks.
-TEST(ReplicationVisibility, AnUnknownRecipeIsCountedNotFatal)
+// A prefab this machine cannot build is deferred, never built bare. An entity
+// with its state and no body is invisible in the literal sense: it exists, it
+// is correct, and nothing draws it -- so the snapshot goes unacknowledged and
+// the authority offers the entity again.
+TEST(ReplicationVisibility, AnUnbuildablePrefabDefersTheSpawn)
 {
     Pair pair;
-    NetSpawnRecipes recipes;
+    constexpr AssetId kPrefab{ 0x99u };
+    StubPrefabSpawner prefabs;
 
     const EntityId authority = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
-    pair.Authority.AddComponent<NetSpawnRecipe>(authority, NetSpawnRecipe{ .Id = 99 });
-    pair.Replicate(0, &recipes);
+    pair.Authority.AddComponent<NetSpawnPrefab>(authority,
+                                                NetSpawnPrefab{ .Scene = kPrefab });
+    pair.Replicate(0, &prefabs);
 
-    EXPECT_TRUE(pair.LastApply.Ok());
-    EXPECT_EQ(pair.LastApply.RecipesMissing, 1u);
-    // Which recipe, not just how many: the count alone does not shorten the
-    // search for a body that is in the right place and invisible.
-    EXPECT_EQ(pair.LastApply.FirstMissingRecipe, 99);
-    EXPECT_TRUE(pair.Mirror(authority).IsValid())
-        << "the entity still exists with the state it was sent";
+    EXPECT_TRUE(pair.LastApply.Ok()) << "a deferral is not a decoding failure";
+    EXPECT_FALSE(pair.LastApply.Complete())
+        << "acknowledging would tell the authority this client holds the entity";
+    EXPECT_EQ(pair.LastApply.PrefabsDeferred, 1u);
+    EXPECT_FALSE(pair.Mirror(authority).IsValid())
+        << "a bare entity was created for a prefab that could not be built";
+
+    // And when the content arrives, so does the entity.
+    prefabs.Register(kPrefab, [](World& world, StoragePartitionId partition) {
+        const EntityId entity = world.CreateEntity(partition);
+        world.AddComponent<WorldTransformHistory>(entity, WorldTransformHistory{});
+        return std::vector<EntityId>{ entity };
+    });
+    pair.Replicate(0, &prefabs);
+    EXPECT_EQ(pair.LastApply.PrefabsDeferred, 0u);
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid()) << "the retry never produced the entity";
+    EXPECT_TRUE(pair.Client.HasComponent<WorldTransformHistory>(mirror));
+}
+
+// The wire names one entity; a prefab may be several. Destroying the root has
+// to take the group with it, or a session leaks a body's worth of entities per
+// player who leaves.
+TEST(ReplicationVisibility, DestroyingAPrefabRootTakesItsGroup)
+{
+    Pair pair;
+    constexpr AssetId kPrefab{ 0xA1u };
+    StubPrefabSpawner prefabs;
+    EntityId child;
+    prefabs.Register(kPrefab, [&child](World& world, StoragePartitionId partition) {
+        const EntityId root = world.CreateEntity(partition);
+        child = world.CreateEntity(partition);
+        world.AddComponent<Parent>(child, Parent{ .Entity = root });
+        return std::vector<EntityId>{ root, child };
+    });
+
+    const EntityId authority = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetSpawnPrefab>(authority,
+                                                NetSpawnPrefab{ .Scene = kPrefab });
+    pair.Replicate(0, &prefabs);
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+    ASSERT_TRUE(child.IsValid());
+    ASSERT_TRUE(pair.Client.IsAlive(child));
+
+    pair.Authority.DestroyEntity(authority);
+    pair.Replicate(0, &prefabs);
+
+    EXPECT_FALSE(pair.Client.IsAlive(mirror));
+    EXPECT_FALSE(pair.Client.IsAlive(child))
+        << "the root's group outlived the entity the wire named";
 }
 
 //=============================================================================

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <core/assets/AssetRef.h>
 #include <core/metadata/TypeSchema.h>
+#include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/WorldComponentSchema.h>
 #include <net/ReplicationLayout.h>
@@ -8,6 +10,7 @@
 #include <world/serialization/SceneSerializer.h>
 
 #include <cassert>
+#include <memory>
 #include <span>
 #include <tuple>
 #include <vector>
@@ -89,6 +92,20 @@ template <typename T>
     return ok;
 }
 
+// Whether any of T's fields is an asset reference. A component that names an
+// asset has to own it: the scene load hands its reference over and lets go, so
+// the only thing keeping the asset alive afterwards is the component's own
+// OnAdd, and the only thing that frees it is the matching OnRemove.
+template <typename T>
+[[nodiscard]] bool ComponentNamesAnAsset()
+{
+    bool any = false;
+    std::apply([&](const auto&... field)
+               { ((any = any || field.Asset != AssetType::Unknown), ...); },
+               TypeSchema<T>::Fields());
+    return any;
+}
+
 class ComponentRegistrar
 {
 public:
@@ -128,6 +145,15 @@ public:
                       "load as another.");
         }
 
+        if constexpr (ComponentIsSceneSerialized<T>)
+        {
+            assert((!ComponentNamesAnAsset<T>()
+                    || (ComponentHasOnAdd<T> && ComponentHasOnRemove<T>))
+                   && "A component names an asset but has no ComponentTraits to "
+                      "retain and release it: loading one from a scene would "
+                      "leave the component holding an asset nothing owns.");
+        }
+
         if (Storage != nullptr)
             Storage->Add<T>();
 
@@ -149,6 +175,46 @@ public:
             if (Replication != nullptr)
                 Replication->Add<T>();
         }
+    }
+
+    // Registers a persisted form the component's own TypeSchema cannot state.
+    //
+    // A few components persist as names rather than as values: a tag container
+    // saves the tags' registered names and an attribute set saves its
+    // attributes', because the runtime ids are registration-order values that
+    // mean nothing in another process or another build. Those components carry
+    // a hand-written serializer instead of a schema, and this is where it
+    // enters -- beside the Add<T> that gives the component its storage, so the
+    // two facts about one component are stated in one place.
+    //
+    // Registering the same serializer twice is a no-op, so a component two
+    // features both name costs nothing. A different serializer claiming an
+    // identity another component already holds -- its type, its json key, or
+    // its chunk id -- would make one component load as another, so it is
+    // refused rather than quietly dropped and returns false.
+    bool AddSerializer(std::unique_ptr<IComponentSerializer> serializer)
+    {
+        assert(serializer != nullptr
+               && "AddSerializer needs a serializer to register.");
+        if (serializer == nullptr)
+            return false;
+
+        // A host that owns no serializer registry (a bare World, a schema-only
+        // composition) is owed nothing, exactly as it is for Add<T>.
+        if (Serializers == nullptr)
+            return true;
+
+        const ComponentTypeId type = serializer->TypeId();
+        const ComponentSerializerRegistry::RegisterResult result =
+            Serializers->Register(std::move(serializer));
+
+        assert(result != ComponentSerializerRegistry::RegisterResult::Rejected
+               && "A serializer claims a component identity another component "
+                  "already holds: one of them would load as the other.");
+
+        if (result == ComponentSerializerRegistry::RegisterResult::Added)
+            Added_.push_back(type);
+        return result != ComponentSerializerRegistry::RegisterResult::Rejected;
     }
 
     // The serializers this registrar added, in the order it added them. A host

@@ -192,9 +192,16 @@ void ReplicationSnapToWire(const ReplicatedComponent& component,
 // Returns false on a truncated or malformed message. The target is not
 // guaranteed untouched on failure -- callers decode into staging bytes and
 // commit only on success.
+//
+// `fieldMask` receives which fields the message actually carried, for a caller
+// whose staging baseline may not be the receiver's current value: on a spawn
+// that instantiates a prefab there was no entity to stage from, and the fields
+// the message left alone have to keep what the prefab put there rather than
+// the type's defaults.
 [[nodiscard]] bool ReplicationDecodeComponent(const ReplicatedComponent& component,
                                               NetBitReader& reader,
-                                              std::span<std::byte> target);
+                                              std::span<std::byte> target,
+                                              std::uint64_t* fieldMask = nullptr);
 
 // Widest a single component can be on the wire: the mask plus every field at
 // full width. Callers size staging buffers from this rather than from anything

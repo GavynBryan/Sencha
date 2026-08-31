@@ -1,14 +1,19 @@
 #pragma once
 
+#include <world/serialization/IComponentSerializer.h>
+
+#include <memory>
+
 //=============================================================================
-// AttributeSet scene-serializer registration
+// AttributeSet scene serializer
 //
-// Registers an IComponentSerializer for AttributeSet with the scene serializer.
 // Attributes persist by name (see AttributeSerialization.h), resolved through
 // the AttributeRegistry stored as a world resource on the registry being
-// (de)serialized. Call once at startup, on the host's serializer registry.
+// (de)serialized. A TypeSchema cannot state that: the set holds
+// registration-order ids, which are a fact about one process's startup and
+// nothing a file may carry.
+//
+// Hand this to ComponentRegistrar::AddSerializer beside the component's Add.
 //=============================================================================
 
-class ComponentSerializerRegistry;
-
-void RegisterAttributeSerializer(ComponentSerializerRegistry& serializers);
+[[nodiscard]] std::unique_ptr<IComponentSerializer> MakeAttributeSetSerializer();

@@ -43,8 +43,12 @@ struct TypeSchema<TurretMount>
         return std::tuple{
             // A tenth of a degree is finer than anyone can see a gun move, and
             // it is a third of the bits a full float would spend saying so.
-            MakeField("yaw", &TurretMount::Yaw).Quantize(-3.2f, 3.2f, 12),
-            MakeField("rounds", &TurretMount::Rounds).OwnerOnly(),
+            MakeField("yaw", &TurretMount::Yaw).Quantize(-3.2f, 3.2f, 12)
+                .Degrees()
+                .Label("Facing")
+                .Tooltip("Which way the gun starts out pointing."),
+            MakeField("rounds", &TurretMount::Rounds).OwnerOnly()
+                .Label("Rounds loaded"),
         };
     }
 };

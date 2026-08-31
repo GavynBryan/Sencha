@@ -1,8 +1,6 @@
 #pragma once
 
 #include <core/json/JsonValue.h>
-#include <core/serialization/BinaryReader.h>
-#include <core/serialization/BinaryWriter.h>
 #include <world/serialization/ComponentSerializer.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/IComponentSerializer.h>
@@ -52,25 +50,6 @@ void RegisterComponent(ComponentSerializerRegistry& serializers)
 
 // Registers every component in the engine's scene manifest.
 void RegisterEngineSceneSerializers(ComponentSerializerRegistry& serializers);
-
-[[nodiscard]] bool SaveSceneBinary(const Registry& registry,
-    const ComponentSerializerRegistry& serializers,
-    BinaryWriter& writer,
-    SceneSaveError* error = nullptr);
-[[nodiscard]] bool SaveSceneBinary(const Registry& registry,
-    const ComponentSerializerRegistry& serializers,
-    BinaryWriter& writer,
-    SceneSerializationContext& context,
-    SceneSaveError* error = nullptr);
-[[nodiscard]] bool LoadSceneBinary(BinaryReader& reader,
-    Registry& registry,
-    const ComponentSerializerRegistry& serializers,
-    SceneLoadError* error = nullptr);
-[[nodiscard]] bool LoadSceneBinary(BinaryReader& reader,
-    Registry& registry,
-    const ComponentSerializerRegistry& serializers,
-    SceneSerializationContext& context,
-    SceneLoadError* error = nullptr);
 
 [[nodiscard]] JsonValue SaveSceneJson(const Registry& registry,
     const ComponentSerializerRegistry& serializers);
