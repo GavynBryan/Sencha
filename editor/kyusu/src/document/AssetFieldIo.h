@@ -28,13 +28,13 @@ struct AssetFieldValue
 
 // Reads the live handle(s) at `field` (component bytes with the field offset
 // already applied) back to references, for display and for snapshotting an
-// edit's "before". Dispatches on (type, arity): the one place that knows each
-// handle's shape on the live-edit path.
+// edit's "before".
 //
-// The archive path is SceneFieldCodec<Handle> (world/serialization), kept
-// separate on purpose: archive I/O and live-memory edits are different
-// operations (merging them would be a fat interface). A new asset-handle type
-// updates both.
+// `type` and `arity` come from the field's own schema (.AsAsset), which is the
+// only statement of what the reference means; nothing here names a handle type,
+// so a new asset kind needs no case. The archive path is SceneAssetFieldIo
+// (world/serialization), kept separate on purpose: archive I/O and live-memory
+// edits are different operations, and merging them would be a fat interface.
 [[nodiscard]] AssetFieldValue ReadAssetField(AssetSystem& assets, AssetType type,
                                              AssetArity arity, const void* field);
 

@@ -137,6 +137,33 @@ TEST(AssetFieldIo, SharedMaterialSurvivesAcrossPartialEdit)
 
 // id-first resolution: a ref carrying the stable id but a stale path (the case an
 // undo holds after the asset was renamed) resolves to the asset's current path.
+// A Single-arity reference of a kind nothing enumerated. The dispatch this
+// replaced listed six (type, arity) pairs and aborted on anything else, so a
+// single material -- or a texture, which ZoneLightmapComponent actually
+// declares -- reached an assert instead of a value. Nothing is enumerated now:
+// the kind comes from the field, so the shape works for kinds no one has added
+// yet.
+TEST(AssetFieldIo, ASingleReferenceWorksForAKindNothingEnumerated)
+{
+    AssetFieldFixture f;
+    const char* path = "asset://m/single.smat";
+    f.Register(path);
+
+    MaterialHandle field{};
+    ApplyAssetField(f.Assets, AssetType::Material, AssetArity::Single, &field, Value({ path }));
+
+    const AssetFieldValue read =
+        ReadAssetField(f.Assets, AssetType::Material, AssetArity::Single, &field);
+    ASSERT_EQ(read.Refs.size(), 1u);
+    EXPECT_EQ(read.Refs[0].Path, path);
+
+    // And clearing it lets the reference go rather than stranding it.
+    ApplyAssetField(f.Assets, AssetType::Material, AssetArity::Single, &field, Value({}));
+    EXPECT_FALSE(field.IsValid());
+    EXPECT_TRUE(ReadAssetField(f.Assets, AssetType::Material, AssetArity::Single, &field)
+                    .Refs.empty());
+}
+
 TEST(AssetFieldIo, ResolvesRefByIdWhenPathIsStale)
 {
     AssetFieldFixture f;

@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <type_traits>
 #include <string_view>
 
 //=============================================================================
@@ -114,8 +115,19 @@ struct Field
         return *this;
     }
 
+    // Declares that this member is an owning reference to a resident asset: the
+    // component holds one reference for as long as it carries the value, and
+    // this is the only statement of which kind it refers to. Serialization and
+    // the asset-field editors both read it, and neither names the handle type.
+    //
+    // The member has to be a handle for that to work -- they address it as the
+    // opaque token every handle is, without knowing which one it is.
     Field& AsAsset(AssetType type, AssetArity arity = AssetArity::Single)
     {
+        static_assert(sizeof(Member) == sizeof(std::uint64_t)
+                          && std::is_trivially_copyable_v<Member>,
+                      "an asset field must be a handle: it is carried as an "
+                      "8-byte token by code that never names its type");
         Asset = type;
         Arity = arity;
         return *this;
@@ -128,6 +140,10 @@ struct Field
     // schema (string literals do).
     Field& AsDataAsset(std::string_view subtype)
     {
+        static_assert(sizeof(Member) == sizeof(std::uint64_t)
+                          && std::is_trivially_copyable_v<Member>,
+                      "an asset field must be a handle: it is carried as an "
+                      "8-byte token by code that never names its type");
         Asset = AssetType::Data;
         Arity = AssetArity::Single;
         DataSubtype = subtype;

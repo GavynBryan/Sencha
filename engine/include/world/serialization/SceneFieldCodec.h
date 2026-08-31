@@ -1,16 +1,8 @@
 #pragma once
 
-#include <anim/AnimationClipHandle.h>
-#include <audio/AudioClipCache.h>
 #include <audio/Caption.h>
-#include <core/assets/AssetRef.h>
 #include <core/serialization/Archive.h>
 #include <core/text/InlineString.h>
-#include <render/Material.h>
-#include <render/MaterialSetCache.h>
-#include <render/skinned_mesh/SkinnedMeshHandle.h>
-#include <render/static_mesh/StaticMeshHandle.h>
-#include <render/TextureHandle.h>
 #include <world/serialization/SceneSerializationContext.h>
 
 #include <cassert>
@@ -24,13 +16,20 @@
 // TypeSchema<T> describes fields and structure. SceneFieldCodec<T> describes
 // how each field type is persisted in scene files.
 //
+// For field types whose scene form differs from their in-memory form: an enum
+// that persists as an author-readable string, a fixed-capacity string that
+// persists as a plain one. Everything else uses the primary template and its
+// archive value.
+//
+// Asset references are not here. Which asset kind a member refers to is stated
+// by its schema (.AsAsset), not by the handle type it is stored in, so they are
+// addressed by kind in SceneAssetFieldIo -- one implementation for every kind
+// rather than a specialization per handle.
+//
 // A field type whose Load acquires something also declares Release, the
 // inverse: what to let go of when the loaded value is handed on or thrown
-// away. Loading an asset reference resolves a path to a held handle, and the
-// component that ends up carrying it takes its own reference through its
-// lifecycle hooks -- so the load's reference has to go, or every entity built
-// from content pins its assets forever. Field types that acquire nothing
-// declare nothing; the serializer asks whether the operation exists.
+// away. Field types that acquire nothing declare nothing; the serializer asks
+// whether the operation exists.
 //=============================================================================
 template<typename T>
 struct SceneFieldCodec
@@ -52,123 +51,6 @@ struct SceneFieldCodec
         ReadArchiveValue(archive, key, value);
         return archive.Ok();
     }
-};
-
-template<>
-struct SceneFieldCodec<StaticMeshHandle>
-{
-    static bool Save(IWriteArchive& archive,
-                     std::string_view key,
-                     StaticMeshHandle value,
-                     SceneSerializationContext& context);
-
-    static bool Load(IReadArchive& archive,
-                     std::string_view key,
-                     StaticMeshHandle& value,
-                     SceneSerializationContext& context);
-
-    static void Release(StaticMeshHandle& value, SceneSerializationContext& context);
-};
-
-template<>
-struct SceneFieldCodec<SkinnedMeshHandle>
-{
-    static bool Save(IWriteArchive& archive,
-                     std::string_view key,
-                     SkinnedMeshHandle value,
-                     SceneSerializationContext& context);
-
-    static bool Load(IReadArchive& archive,
-                     std::string_view key,
-                     SkinnedMeshHandle& value,
-                     SceneSerializationContext& context);
-
-    static void Release(SkinnedMeshHandle& value, SceneSerializationContext& context);
-};
-
-template<>
-struct SceneFieldCodec<AnimationClipHandle>
-{
-    static bool Save(IWriteArchive& archive,
-                     std::string_view key,
-                     AnimationClipHandle value,
-                     SceneSerializationContext& context);
-
-    static bool Load(IReadArchive& archive,
-                     std::string_view key,
-                     AnimationClipHandle& value,
-                     SceneSerializationContext& context);
-
-    static void Release(AnimationClipHandle& value, SceneSerializationContext& context);
-};
-
-template<>
-struct SceneFieldCodec<MaterialHandle>
-{
-    static bool Save(IWriteArchive& archive,
-                     std::string_view key,
-                     MaterialHandle value,
-                     SceneSerializationContext& context);
-
-    static bool Load(IReadArchive& archive,
-                     std::string_view key,
-                     MaterialHandle& value,
-                     SceneSerializationContext& context);
-
-    static void Release(MaterialHandle& value, SceneSerializationContext& context);
-};
-
-// A StaticMeshComponent's per-section materials persist as a JSON array of
-// material refs ("materials": [ ... ]); each element is a path string or an
-// id/legacy ref object, resolved through the AssetSystem and interned into a
-// MaterialSetCache. A legacy singular "material" field still reads as a
-// one-element set (the pre-multi-material scene form).
-template<>
-struct SceneFieldCodec<MaterialSetHandle>
-{
-    static bool Save(IWriteArchive& archive,
-                     std::string_view key,
-                     MaterialSetHandle value,
-                     SceneSerializationContext& context);
-
-    static bool Load(IReadArchive& archive,
-                     std::string_view key,
-                     MaterialSetHandle& value,
-                     SceneSerializationContext& context);
-
-    static void Release(MaterialSetHandle& value, SceneSerializationContext& context);
-};
-
-template<>
-struct SceneFieldCodec<TextureHandle>
-{
-    static bool Save(IWriteArchive& archive,
-                     std::string_view key,
-                     TextureHandle value,
-                     SceneSerializationContext& context);
-
-    static bool Load(IReadArchive& archive,
-                     std::string_view key,
-                     TextureHandle& value,
-                     SceneSerializationContext& context);
-
-    static void Release(TextureHandle& value, SceneSerializationContext& context);
-};
-
-template<>
-struct SceneFieldCodec<AudioClipHandle>
-{
-    static bool Save(IWriteArchive& archive,
-                     std::string_view key,
-                     AudioClipHandle value,
-                     SceneSerializationContext& context);
-
-    static bool Load(IReadArchive& archive,
-                     std::string_view key,
-                     AudioClipHandle& value,
-                     SceneSerializationContext& context);
-
-    static void Release(AudioClipHandle& value, SceneSerializationContext& context);
 };
 
 // Caption enums persist as author-readable strings ("Subtitle", not 1) in

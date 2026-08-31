@@ -13,6 +13,7 @@
 #include "scene_source/Json5Convert.h"
 
 #include <core/logging/Logger.h>
+#include <core/logging/LoggingProvider.h>
 #include <cstring>
 #include <core/serialization/JsonArchive.h>
 #include <world/identity/PersistentEntityIndex.h>

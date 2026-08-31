@@ -12,6 +12,9 @@
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 #include <world/registry/Registry.h>
+#include "HandleFieldIo.h"
+
+#include <world/serialization/SceneAssetFieldIo.h>
 #include <world/serialization/SceneFieldCodec.h>
 #include <world/serialization/SceneSerializer.h>
 
@@ -114,7 +117,7 @@ TEST(AudioClipCodec, SaveWritesPathString)
 
     SceneSerializationContext context(logging, &assets);
     JsonWriteArchive archive;
-    ASSERT_TRUE(SceneFieldCodec<AudioClipHandle>::Save(
+    ASSERT_TRUE(SaveHandleField<AudioClipHandle>(AssetType::Audio,
         archive,
         "clip",
         handle,
@@ -148,7 +151,7 @@ TEST(AudioClipCodec, LoadResolvesPathString)
     SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     AudioClipHandle loaded;
-    ASSERT_TRUE(SceneFieldCodec<AudioClipHandle>::Load(
+    ASSERT_TRUE(LoadHandleField<AudioClipHandle>(AssetType::Audio,
         archive,
         "",
         loaded,

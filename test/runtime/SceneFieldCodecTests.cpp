@@ -16,6 +16,9 @@
 #include <render/static_mesh/StaticMeshHandle.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/ComponentSerializer.h>
+#include "HandleFieldIo.h"
+
+#include <world/serialization/SceneAssetFieldIo.h>
 #include <world/serialization/SceneFieldCodec.h>
 #include <world/serialization/SceneSerializer.h>
 
@@ -35,7 +38,8 @@ struct TypeSchema<SceneCodecMaterialComponent>
     static auto Fields()
     {
         return std::tuple{
-            MakeField("material", &SceneCodecMaterialComponent::Material),
+            MakeField("material", &SceneCodecMaterialComponent::Material)
+                .AsAsset(AssetType::Material),
         };
     }
 };
@@ -53,7 +57,8 @@ struct TypeSchema<SceneCodecMeshComponent>
     static auto Fields()
     {
         return std::tuple{
-            MakeField("mesh", &SceneCodecMeshComponent::Mesh),
+            MakeField("mesh", &SceneCodecMeshComponent::Mesh)
+                .AsAsset(AssetType::StaticMesh),
         };
     }
 };
@@ -195,7 +200,7 @@ TEST(SceneFieldCodec, MaterialHandleWritesPathString)
 
     SceneSerializationContext context(logging, &assets);
     JsonWriteArchive archive;
-    ASSERT_TRUE(SceneFieldCodec<MaterialHandle>::Save(archive, "material", handle, context));
+    ASSERT_TRUE(SaveHandleField<MaterialHandle>(AssetType::Material, archive, "material", handle, context));
 
     JsonValue json = archive.TakeValue();
     ASSERT_TRUE(json.IsString());
@@ -219,7 +224,7 @@ TEST(SceneFieldCodec, MaterialHandleLoadsPathString)
     SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     MaterialHandle loaded;
-    ASSERT_TRUE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
+    ASSERT_TRUE(LoadHandleField<MaterialHandle>(AssetType::Material, archive, "", loaded, context));
     EXPECT_EQ(loaded, registered);
 }
 
@@ -240,7 +245,7 @@ TEST(SceneFieldCodec, MaterialHandleLoadsLegacyAssetRefObject)
     SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     MaterialHandle loaded;
-    ASSERT_TRUE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
+    ASSERT_TRUE(LoadHandleField<MaterialHandle>(AssetType::Material, archive, "", loaded, context));
     EXPECT_EQ(loaded, registered);
 }
 
@@ -265,7 +270,7 @@ TEST(SceneFieldCodec, MaterialIdWinsOverStalePath)
     SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     MaterialHandle loaded;
-    ASSERT_TRUE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
+    ASSERT_TRUE(LoadHandleField<MaterialHandle>(AssetType::Material, archive, "", loaded, context));
     EXPECT_EQ(loaded, registered);
 }
 
@@ -286,7 +291,7 @@ TEST(SceneFieldCodec, MaterialHandleFallsBackToPathForUnknownId)
     SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     MaterialHandle loaded;
-    ASSERT_TRUE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
+    ASSERT_TRUE(LoadHandleField<MaterialHandle>(AssetType::Material, archive, "", loaded, context));
     EXPECT_EQ(loaded, registered);
 }
 
@@ -302,13 +307,13 @@ TEST(SceneFieldCodec, MaterialHandleRejectsMalformedIdAndIdWithoutFallback)
     auto malformed = JsonParse(R"({ "id": "not-hex", "path": "asset://materials/dev/red.smat" })");
     ASSERT_TRUE(malformed.has_value());
     JsonReadArchive malformedArchive(*malformed);
-    EXPECT_FALSE(SceneFieldCodec<MaterialHandle>::Load(malformedArchive, "", loaded, context));
+    EXPECT_FALSE(LoadHandleField<MaterialHandle>(AssetType::Material, malformedArchive, "", loaded, context));
     EXPECT_FALSE(malformedArchive.Ok());
 
     auto idOnly = JsonParse(R"({ "id": "00000000000dead0" })");
     ASSERT_TRUE(idOnly.has_value());
     JsonReadArchive idOnlyArchive(*idOnly);
-    EXPECT_FALSE(SceneFieldCodec<MaterialHandle>::Load(idOnlyArchive, "", loaded, context));
+    EXPECT_FALSE(LoadHandleField<MaterialHandle>(AssetType::Material, idOnlyArchive, "", loaded, context));
     EXPECT_FALSE(idOnlyArchive.Ok());
 }
 
@@ -324,19 +329,19 @@ TEST(SceneFieldCodec, MaterialHandleRejectsWrongTypeEmptyPathAndMissingPath)
     ASSERT_TRUE(wrongType.has_value());
     JsonReadArchive wrongTypeArchive(*wrongType);
     MaterialHandle loaded;
-    EXPECT_FALSE(SceneFieldCodec<MaterialHandle>::Load(wrongTypeArchive, "", loaded, context));
+    EXPECT_FALSE(LoadHandleField<MaterialHandle>(AssetType::Material, wrongTypeArchive, "", loaded, context));
     EXPECT_FALSE(wrongTypeArchive.Ok());
 
     auto emptyPath = JsonParse(R"("")");
     ASSERT_TRUE(emptyPath.has_value());
     JsonReadArchive emptyPathArchive(*emptyPath);
-    EXPECT_FALSE(SceneFieldCodec<MaterialHandle>::Load(emptyPathArchive, "", loaded, context));
+    EXPECT_FALSE(LoadHandleField<MaterialHandle>(AssetType::Material, emptyPathArchive, "", loaded, context));
     EXPECT_FALSE(emptyPathArchive.Ok());
 
     auto missingPath = JsonParse(R"("asset://materials/dev/missing.smat")");
     ASSERT_TRUE(missingPath.has_value());
     JsonReadArchive missingPathArchive(*missingPath);
-    EXPECT_FALSE(SceneFieldCodec<MaterialHandle>::Load(missingPathArchive, "", loaded, context));
+    EXPECT_FALSE(LoadHandleField<MaterialHandle>(AssetType::Material, missingPathArchive, "", loaded, context));
     EXPECT_FALSE(missingPathArchive.Ok());
 }
 
@@ -362,7 +367,7 @@ TEST(SceneFieldCodec, MaterialHandleRejectsRegistryTypeMismatch)
     SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     MaterialHandle loaded;
-    EXPECT_FALSE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
+    EXPECT_FALSE(LoadHandleField<MaterialHandle>(AssetType::Material, archive, "", loaded, context));
     EXPECT_FALSE(archive.Ok());
 }
 
@@ -375,7 +380,7 @@ TEST(SceneFieldCodec, StaticMeshHandleRejectsWrongLegacyObjectType)
     SceneSerializationContext context(logging);
     JsonReadArchive archive(*wrongType);
     StaticMeshHandle loaded;
-    EXPECT_FALSE(SceneFieldCodec<StaticMeshHandle>::Load(archive, "", loaded, context));
+    EXPECT_FALSE(LoadHandleField<StaticMeshHandle>(AssetType::StaticMesh, archive, "", loaded, context));
     EXPECT_FALSE(archive.Ok());
 }
 
@@ -405,7 +410,7 @@ TEST(SceneFieldCodec, StaticMeshHandleSkipsWhenTheProcessCannotHoldMeshes)
     SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     StaticMeshHandle loaded;
-    EXPECT_TRUE(SceneFieldCodec<StaticMeshHandle>::Load(archive, "", loaded, context));
+    EXPECT_TRUE(LoadHandleField<StaticMeshHandle>(AssetType::StaticMesh, archive, "", loaded, context));
     EXPECT_TRUE(archive.Ok());
     EXPECT_FALSE(loaded.IsValid())
         << "the field is read and declined, leaving no handle behind";
@@ -430,7 +435,7 @@ TEST(SceneFieldCodec, AMissingAssetStillFailsWhereTheProcessCanHoldIt)
     SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     MaterialHandle loaded;
-    EXPECT_FALSE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
+    EXPECT_FALSE(LoadHandleField<MaterialHandle>(AssetType::Material, archive, "", loaded, context));
     EXPECT_FALSE(archive.Ok());
 }
 
@@ -450,7 +455,7 @@ TEST(SceneFieldCodec, CapabilityAbsenceDoesNotExcuseAMalformedRef)
     SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     StaticMeshHandle loaded;
-    EXPECT_FALSE(SceneFieldCodec<StaticMeshHandle>::Load(archive, "", loaded, context));
+    EXPECT_FALSE(LoadHandleField<StaticMeshHandle>(AssetType::StaticMesh, archive, "", loaded, context));
     EXPECT_FALSE(archive.Ok());
 }
 

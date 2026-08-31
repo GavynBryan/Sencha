@@ -1,37 +1,33 @@
 #include "AssetFieldIo.h"
 
-#include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetLease.h>
-#include <assets/data/DataAssetHandle.h>
+#include <core/assets/AssetRegistry.h>
 #include <assets/runtime/AssetSystem.h>
 #include <render/MaterialSetCache.h>
-#include <render/static_mesh/StaticMeshHandle.h>
-#include <anim/AnimationClipHandle.h>
-#include <audio/AudioClipCache.h>
-#include <render/skinned_mesh/SkinnedMeshHandle.h>
 
 #include <cassert>
+#include <cstdint>
 #include <cstring>
-#include <span>
+#include <string>
 #include <utility>
 #include <vector>
 
 namespace
 {
-    // The field is type-erased (void* with the offset already applied); handles
-    // are trivially copyable, so we move them in and out by bytes.
-    template <typename Handle>
-    Handle ReadHandle(const void* field)
+    // The field is type-erased (void* with the offset already applied). Every
+    // asset handle is an 8-byte token, and which store the token belongs to is
+    // what the field's declared kind answers -- so the bytes move without this
+    // code ever naming a handle type.
+    std::uint64_t ReadToken(const void* field)
     {
-        Handle handle{};
-        std::memcpy(&handle, field, sizeof(handle));
-        return handle;
+        std::uint64_t token = 0;
+        std::memcpy(&token, field, sizeof(token));
+        return token;
     }
 
-    template <typename Handle>
-    void WriteHandle(void* field, Handle handle)
+    void WriteToken(void* field, std::uint64_t token)
     {
-        std::memcpy(field, &handle, sizeof(handle));
+        std::memcpy(field, &token, sizeof(token));
     }
 
     // A path back to a reference: the id looked up through the catalog (invalid
@@ -52,6 +48,11 @@ namespace
         return ref.Path.empty() ? std::string{}
                                 : std::string(assets.ResolveRefPath(ref.Id, ref.Path, type));
     }
+
+    bool IsCompositeSet(AssetType type, AssetArity arity)
+    {
+        return arity == AssetArity::List && type == AssetType::Material;
+    }
 }
 
 AssetFieldValue ReadAssetField(AssetSystem& assets, AssetType type,
@@ -59,54 +60,9 @@ AssetFieldValue ReadAssetField(AssetSystem& assets, AssetType type,
 {
     AssetFieldValue value;
 
-    if (type == AssetType::StaticMesh && arity == AssetArity::Single)
+    if (IsCompositeSet(type, arity))
     {
-        std::string path(assets.GetPathForStaticMesh(ReadHandle<StaticMeshHandle>(field)));
-        if (!path.empty())
-            value.Refs.push_back(RefFromPath(assets, std::move(path), type));
-        return value;
-    }
-
-    if (type == AssetType::SkinnedMesh && arity == AssetArity::Single)
-    {
-        std::string path(assets.GetPathForSkinnedMesh(ReadHandle<SkinnedMeshHandle>(field)));
-        if (!path.empty())
-            value.Refs.push_back(RefFromPath(assets, std::move(path), type));
-        return value;
-    }
-
-    if (type == AssetType::AnimationClip && arity == AssetArity::Single)
-    {
-        std::string path(assets.GetPathForAnimationClip(
-            ReadHandle<AnimationClipHandle>(field)));
-        if (!path.empty())
-            value.Refs.push_back(RefFromPath(assets, std::move(path), type));
-        return value;
-    }
-
-    if (type == AssetType::Audio && arity == AssetArity::Single)
-    {
-        std::string path(assets.GetPathForAudioClip(ReadHandle<AudioClipHandle>(field)));
-        if (!path.empty())
-            value.Refs.push_back(RefFromPath(assets, std::move(path), type));
-        return value;
-    }
-
-    // Structured data is the one kind the asset front door cannot name a
-    // handle type for -- a subtype's value is opaque to it -- so it travels as
-    // an opaque token rather than through a typed GetPathFor*.
-    if (type == AssetType::Data && arity == AssetArity::Single)
-    {
-        std::string path(assets.GetPathForLease(
-            AssetType::Data, ReadHandle<DataAssetHandle>(field).ToToken()));
-        if (!path.empty())
-            value.Refs.push_back(RefFromPath(assets, std::move(path), type));
-        return value;
-    }
-
-    if (type == AssetType::Material && arity == AssetArity::List)
-    {
-        const MaterialSetHandle set = ReadHandle<MaterialSetHandle>(field);
+        const MaterialSetHandle set = MaterialSetHandle::FromToken(ReadToken(field));
         if (const std::vector<MaterialHandle>* members = assets.GetMaterialSet(set))
             for (const MaterialHandle material : *members)
                 value.Refs.push_back(
@@ -114,88 +70,18 @@ AssetFieldValue ReadAssetField(AssetSystem& assets, AssetType type,
         return value;
     }
 
-    assert(false && "ReadAssetField: unsupported (asset type, arity) shape");
+    assert(arity == AssetArity::Single && "only a material list has a composite field form");
+
+    std::string path(assets.GetPathForLease(type, ReadToken(field)));
+    if (!path.empty())
+        value.Refs.push_back(RefFromPath(assets, std::move(path), type));
     return value;
 }
 
 void ApplyAssetField(AssetSystem& assets, AssetType type, AssetArity arity,
                      void* field, const AssetFieldValue& value)
 {
-    if (type == AssetType::StaticMesh && arity == AssetArity::Single)
-    {
-        const std::string path = value.Refs.empty()
-            ? std::string{}
-            : ResolvePath(assets, value.Refs.front(), type);
-
-        const StaticMeshHandle old = ReadHandle<StaticMeshHandle>(field);
-        const StaticMeshHandle next = path.empty() ? StaticMeshHandle{}
-                                                   : assets.LoadStaticMesh(path);
-        WriteHandle(field, next);            // acquire-then-write
-        assets.ReleaseStaticMesh(old);       // release the replaced handle last
-        return;
-    }
-
-    if (type == AssetType::SkinnedMesh && arity == AssetArity::Single)
-    {
-        const std::string path = value.Refs.empty()
-            ? std::string{}
-            : ResolvePath(assets, value.Refs.front(), type);
-
-        const SkinnedMeshHandle old = ReadHandle<SkinnedMeshHandle>(field);
-        const SkinnedMeshHandle next = path.empty() ? SkinnedMeshHandle{}
-                                                    : assets.LoadSkinnedMesh(path);
-        WriteHandle(field, next);            // acquire-then-write
-        assets.ReleaseSkinnedMesh(old);      // release the replaced handle last
-        return;
-    }
-
-    if (type == AssetType::AnimationClip && arity == AssetArity::Single)
-    {
-        const std::string path = value.Refs.empty()
-            ? std::string{}
-            : ResolvePath(assets, value.Refs.front(), type);
-
-        const AnimationClipHandle old = ReadHandle<AnimationClipHandle>(field);
-        const AnimationClipHandle next = path.empty()
-            ? AnimationClipHandle{}
-            : assets.LoadAnimationClip(path);
-        WriteHandle(field, next);            // acquire-then-write
-        assets.ReleaseAnimationClip(old);    // release the replaced handle last
-        return;
-    }
-
-    if (type == AssetType::Audio && arity == AssetArity::Single)
-    {
-        const std::string path = value.Refs.empty()
-            ? std::string{}
-            : ResolvePath(assets, value.Refs.front(), type);
-
-        const AudioClipHandle old = ReadHandle<AudioClipHandle>(field);
-        const AudioClipHandle next = path.empty() ? AudioClipHandle{}
-                                                  : assets.LoadAudioClip(path);
-        WriteHandle(field, next);            // acquire-then-write
-        assets.ReleaseAudioClip(old);        // release the replaced handle last
-        return;
-    }
-
-    if (type == AssetType::Data && arity == AssetArity::Single)
-    {
-        const std::string path = value.Refs.empty()
-            ? std::string{}
-            : ResolvePath(assets, value.Refs.front(), type);
-
-        const DataAssetHandle old = ReadHandle<DataAssetHandle>(field);
-        // The load's own reference becomes the field's: the component's
-        // lifecycle hooks release what the field holds, so the lease must not
-        // also drop it on the way out of this scope.
-        AssetLease next = path.empty() ? AssetLease{}
-                                       : assets.LoadLease(path, AssetType::Data);
-        WriteHandle(field, DataAssetHandle::FromToken(next.Relinquish()));
-        assets.ReleaseLease(AssetType::Data, old.ToToken()); // the replaced one last
-        return;
-    }
-
-    if (type == AssetType::Material && arity == AssetArity::List)
+    if (IsCompositeSet(type, arity))
     {
         // Build the new set in slot order. An unset slot keeps its position with
         // an invalid handle (slots are positional: index binds to a mesh section).
@@ -217,11 +103,23 @@ void ApplyAssetField(AssetSystem& assets, AssetType type, AssetArity arity,
             if (material.IsValid())
                 assets.ReleaseMaterial(material); // the set holds its own reference
 
-        const MaterialSetHandle old = ReadHandle<MaterialSetHandle>(field);
-        WriteHandle(field, next);
+        const MaterialSetHandle old = MaterialSetHandle::FromToken(ReadToken(field));
+        WriteToken(field, next.ToToken());
         assets.ReleaseMaterialSet(old);
         return;
     }
 
-    assert(false && "ApplyAssetField: unsupported (asset type, arity) shape");
+    assert(arity == AssetArity::Single && "only a material list has a composite field form");
+
+    const std::string path = value.Refs.empty()
+        ? std::string{}
+        : ResolvePath(assets, value.Refs.front(), type);
+
+    const std::uint64_t old = ReadToken(field);
+    // The load's own reference becomes the field's: the component's lifecycle
+    // hooks release what the field holds, so the lease must not also drop it on
+    // the way out of this scope.
+    AssetLease next = path.empty() ? AssetLease{} : assets.LoadLease(path, type);
+    WriteToken(field, next.Relinquish()); // acquire-then-write
+    assets.ReleaseLease(type, old);       // release the replaced handle last
 }
