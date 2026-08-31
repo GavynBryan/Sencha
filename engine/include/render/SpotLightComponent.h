@@ -3,6 +3,7 @@
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
 #include <core/serialization/FourCC.h>
+#include <ecs/ComponentTypeId.h>
 #include <math/Vec.h>
 #include <render/LightComponentTypes.h>
 
@@ -82,3 +83,7 @@ struct TypeSchema<SpotLightComponent>
         };
     }
 };
+
+// Stated rather than derived from TypeSchema::Name, so the schema can move
+// without the identity moving with it. The name is repeated exactly.
+SENCHA_DECLARE_COMPONENT_TYPE(SpotLightComponent, "SpotLight");

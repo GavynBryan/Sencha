@@ -6,6 +6,7 @@
 #include <core/metadata/TypeSchema.h>
 #include <core/serialization/FourCC.h>
 #include <ecs/ComponentTraits.h>
+#include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 #include <ecs/World.h>
 #include <world/identity/PersistentEntityIndex.h>
@@ -82,3 +83,7 @@ struct TypeSchema<PersistentIdComponent>
         };
     }
 };
+
+// Stated rather than derived from TypeSchema::Name, so the schema can move
+// without the identity moving with it. The name is repeated exactly.
+SENCHA_DECLARE_COMPONENT_TYPE(PersistentIdComponent, "persistent_id");

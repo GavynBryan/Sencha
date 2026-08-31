@@ -4,6 +4,7 @@
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
 #include <core/serialization/FourCC.h>
+#include <ecs/ComponentTypeId.h>
 #include <math/MathSchemas.h>
 #include <world/serialization/SceneFieldCodec.h>
 #include <zone/WorldPartitionIds.h>
@@ -132,3 +133,11 @@ struct SceneFieldCodec<LinkId>
     static bool Load(IReadArchive&, std::string_view, LinkId&,
                      SceneSerializationContext&);
 };
+
+// Stated rather than derived from TypeSchema::Name, so the schemas can move
+// without the identities moving with them. The names are repeated exactly,
+// spaces included: they are display labels that became persisted identity, and
+// tidying them now would rename every component in every cooked world.
+SENCHA_DECLARE_COMPONENT_TYPE(WorldDock,       "World Dock");
+SENCHA_DECLARE_COMPONENT_TYPE(WorldLink,       "World Link");
+SENCHA_DECLARE_COMPONENT_TYPE(DockGateBinding, "Dock Gate Binding");

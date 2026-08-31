@@ -4,6 +4,7 @@
 #include <core/metadata/TypeSchema.h>
 #include <core/serialization/FourCC.h>
 #include <ecs/ComponentTraits.h>
+#include <ecs/ComponentTypeId.h>
 #include <ecs/World.h>
 #include <render/Material.h>
 #include <render/MaterialSetCache.h>
@@ -133,3 +134,7 @@ struct TypeSchema<StaticMeshComponent>
         };
     }
 };
+
+// Stated rather than derived from TypeSchema::Name, so the schema can move
+// without the identity moving with it. The name is repeated exactly.
+SENCHA_DECLARE_COMPONENT_TYPE(StaticMeshComponent, "StaticMesh");

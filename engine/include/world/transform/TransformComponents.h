@@ -77,7 +77,12 @@ struct ComponentRemovable<LocalTransform>
 
 // WorldTransform and Parent are pure-runtime (never serialized themselves), so
 // they carry no TypeSchema. They still need module-stable identity for the World
-// type→id map — declared explicitly here. (LocalTransform's identity derives from
-// its TypeSchema::Name above.)
+// type→id map — declared explicitly here.
+//
+// LocalTransform's identity used to be read off its TypeSchema::Name. Stating it
+// here instead lets the schema move without the identity following it; the name
+// is repeated exactly, because it is what every cooked scene and every peer
+// already calls this component.
+SENCHA_DECLARE_COMPONENT_TYPE(LocalTransform, "Transform");
 SENCHA_DECLARE_COMPONENT_TYPE(WorldTransform, "sencha.world_transform");
 SENCHA_DECLARE_COMPONENT_TYPE(Parent,         "sencha.parent");

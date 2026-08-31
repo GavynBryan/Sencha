@@ -5,6 +5,7 @@
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
 #include <core/serialization/FourCC.h>
+#include <ecs/ComponentTypeId.h>
 
 #include <array>
 #include <optional>
@@ -85,3 +86,7 @@ struct ComponentEditorVisual<CameraComponent>
     static constexpr std::optional<EditorVisual> Value =
         EditorVisual{ EditorVisual::Kind::Mesh, "camera.glb" };
 };
+
+// Stated rather than derived from TypeSchema::Name, so the schema can move
+// without the identity moving with it. The name is repeated exactly.
+SENCHA_DECLARE_COMPONENT_TYPE(CameraComponent, "Camera");

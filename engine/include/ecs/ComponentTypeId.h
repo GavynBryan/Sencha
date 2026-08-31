@@ -112,6 +112,12 @@ constexpr std::string_view ResolveComponentName()
 // override its schema identity). Use at namespace (global) scope, once, next to
 // the type. The name must be a lower-case, dotted, namespaced identifier
 // (e.g. "sencha.world_transform", "editor.brush") — never an unqualified label.
+//
+// One exception, and only one: a component whose identity was already derived
+// from TypeSchema<T>::Name repeats that exact name here, deviations included.
+// The id is a hash of the string, and cooked content and replication peers
+// already name the component by the value it produces. Fixing the spelling
+// would be a content migration, not a rename.
 //-----------------------------------------------------------------------------
 #define SENCHA_DECLARE_COMPONENT_TYPE(Type, StableName)                       \
     template <>                                                               \
