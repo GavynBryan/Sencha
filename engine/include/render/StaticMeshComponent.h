@@ -135,6 +135,4 @@ struct TypeSchema<StaticMeshComponent>
     }
 };
 
-// Stated rather than derived from TypeSchema::Name, so the schema can move
-// without the identity moving with it. The name is repeated exactly.
 SENCHA_DECLARE_COMPONENT_TYPE(StaticMeshComponent, "StaticMesh");
