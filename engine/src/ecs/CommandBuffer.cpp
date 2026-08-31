@@ -25,11 +25,25 @@ void CommandBuffer::Flush()
         return created[command.PendingOrdinal];
     };
 
+    // The batch paths fire no lifecycle hooks, so only a hook-free component may
+    // take them. That is a fact about the component rather than about the
+    // recording, which is why it is asked of the World here and not captured
+    // when the command was recorded: the unit that records an add need not have
+    // the component's ComponentTraits in scope.
+    const auto hasAddHook = [this](ComponentId id) {
+        const ComponentMeta* meta = W->GetMeta(id);
+        return meta != nullptr && meta->OnAddHook != nullptr;
+    };
+    const auto hasRemoveHook = [this](ComponentId id) {
+        const ComponentMeta* meta = W->GetMeta(id);
+        return meta != nullptr && meta->OnRemoveHook != nullptr;
+    };
+
     for (size_t i = 0; i < Commands.size();)
     {
         Command& cmd = Commands[i];
 
-        if (cmd.Kind == CommandKind::AddComponent && cmd.Payload.OnAddHook == nullptr)
+        if (cmd.Kind == CommandKind::AddComponent && !hasAddHook(cmd.Payload.Id))
         {
             const ComponentId id = cmd.Payload.Id;
             const size_t size = cmd.Payload.Size;
@@ -40,8 +54,7 @@ void CommandBuffer::Flush()
                    && Commands[end].Kind == CommandKind::AddComponent
                    && Commands[end].Payload.Id == id
                    && Commands[end].Payload.Size == size
-                   && Commands[end].Payload.Align == align
-                   && Commands[end].Payload.OnAddHook == nullptr)
+                   && Commands[end].Payload.Align == align)
             {
                 ++end;
             }
@@ -66,15 +79,14 @@ void CommandBuffer::Flush()
             }
         }
 
-        if (cmd.Kind == CommandKind::RemoveComponent && cmd.Payload.OnRemoveHook == nullptr)
+        if (cmd.Kind == CommandKind::RemoveComponent && !hasRemoveHook(cmd.Payload.Id))
         {
             const ComponentId id = cmd.Payload.Id;
 
             size_t end = i + 1;
             while (end < Commands.size()
                    && Commands[end].Kind == CommandKind::RemoveComponent
-                   && Commands[end].Payload.Id == id
-                   && Commands[end].Payload.OnRemoveHook == nullptr)
+                   && Commands[end].Payload.Id == id)
             {
                 ++end;
             }
@@ -107,18 +119,14 @@ void CommandBuffer::Flush()
                 cmd.Payload.Id,
                 PayloadData(cmd.Payload),
                 cmd.Payload.Size,
-                cmd.Payload.Align,
-                cmd.Payload.OnAddHook);
+                cmd.Payload.Align);
             break;
         }
         case CommandKind::RemoveComponent:
         {
             const EntityId entity = resolve(cmd);
             if (!W->IsAlive(entity)) break;
-            W->RemoveComponentRaw(
-                entity,
-                cmd.Payload.Id,
-                cmd.Payload.OnRemoveHook);
+            W->RemoveComponentRaw(entity, cmd.Payload.Id);
             break;
         }
         case CommandKind::DestroyEntity:

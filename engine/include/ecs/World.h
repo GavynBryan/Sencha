@@ -41,9 +41,12 @@ struct ComponentMeta
     size_t           Alignment;
     bool             IsTag;     // zero-size marker; no per-entity column
 
-    // Type-erased OnRemove dispatch for paths that cannot name T: entity
-    // destruction and World teardown. Typed remove paths dispatch the trait
-    // directly. Null when T has no OnRemove hook or is a tag.
+    // Type-erased lifecycle dispatch, captured when T is registered. Every
+    // structural path goes through these, including the typed ones: whether a
+    // component has hooks is a fact about the component, and a translation unit
+    // that cannot see ComponentTraits<T> must not be able to answer it
+    // differently. Null when T declares no such hook, or is a tag.
+    void (*OnAddHook)(void* component, World& world, EntityId entity) = nullptr;
     void (*OnRemoveHook)(const void* component, World& world, EntityId entity) = nullptr;
 };
 
@@ -129,6 +132,9 @@ public:
         const size_t size  = std::is_empty_v<T> ? 0 : sizeof(T);
         const size_t align = std::is_empty_v<T> ? 1 : alignof(T);
 
+        constexpr bool hasOnAdd    = !std::is_empty_v<T> && ComponentHasOnAdd<T>;
+        constexpr bool hasOnRemove = !std::is_empty_v<T> && ComponentHasOnRemove<T>;
+
         auto it = TypeToId.find(key);
         if (it != TypeToId.end())
         {
@@ -146,6 +152,14 @@ public:
             assert(Provisioning[it->second].DeclaredOwed == DeclaredOwedIds<T>()
                    && "Component registered twice with different DerivedComponents: "
                       "one of the translation units cannot see the declaration.");
+            // And the same lifecycle obligations, for the same reason. Presence
+            // rather than the pointers themselves: a game module instantiates
+            // its own copy of the dispatch, so two registrations of one
+            // component legitimately carry different addresses.
+            assert((existing.OnAddHook != nullptr) == hasOnAdd
+                   && (existing.OnRemoveHook != nullptr) == hasOnRemove
+                   && "Component registered twice with different lifecycle hooks: "
+                      "one of the translation units cannot see ComponentTraits.");
             return it->second;
         }
 
@@ -162,7 +176,13 @@ public:
         meta.Size      = size;
         meta.Alignment = align;
         meta.IsTag     = std::is_empty_v<T>;
-        if constexpr (!std::is_empty_v<T> && ComponentHasOnRemove<T>)
+        if constexpr (hasOnAdd)
+        {
+            meta.OnAddHook = [](void* ptr, World& w, EntityId e) {
+                ComponentTraits<T>::OnAdd(*static_cast<T*>(ptr), w, e);
+            };
+        }
+        if constexpr (hasOnRemove)
         {
             meta.OnRemoveHook = [](const void* ptr, World& w, EntityId e) {
                 ComponentTraits<T>::OnRemove(*static_cast<const T*>(ptr), w, e);
@@ -290,10 +310,10 @@ public:
                 return false;
 
             *slot = value;
-            if constexpr (ComponentHasOnAdd<T>)
+            if (auto* onAdd = ComponentMetas[GetComponentId<T>()].OnAddHook)
             {
                 ScopedLifecycleHook hookScope(*this);
-                ComponentTraits<T>::OnAdd(*slot, *this, entity);
+                onAdd(slot, *this, entity);
             }
         }
 
@@ -457,14 +477,7 @@ public:
 
         Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri, loc.Partition });
 
-        if constexpr (!std::is_empty_v<T> && ComponentHasOnAdd<T>)
-        {
-            const Chunk* ch  = dst->Chunks[dci].get();
-            const uint32_t c = ch->FindColumn(id);
-            T* ptr = reinterpret_cast<T*>(const_cast<uint8_t*>(ch->ColumnData(c))) + dri;
-            ScopedLifecycleHook hookScope(*this);
-            ComponentTraits<T>::OnAdd(*ptr, *this, entity);
-        }
+        FireAddHook(entity, id, *dst, dci, dri);
 
         // After T is whole, because an owed component's own hook may look at
         // the entity and T is part of what it would see.
@@ -486,14 +499,7 @@ public:
 
         assert(src.Signature.test(id) && "Entity does not have component T.");
 
-        if constexpr (!std::is_empty_v<T> && ComponentHasOnRemove<T>)
-        {
-            const uint32_t c   = src.Chunks[loc.ChunkIndex]->FindColumn(id);
-            const T*       ptr = reinterpret_cast<const T*>(
-                src.Chunks[loc.ChunkIndex]->ColumnData(c)) + loc.RowIndex;
-            ScopedLifecycleHook hookScope(*this);
-            ComponentTraits<T>::OnRemove(*ptr, *this, entity);
-        }
+        FireRemoveHook(entity, id, *src.Chunks[loc.ChunkIndex], loc.RowIndex);
 
         ArchetypeSignature newSig = src.Signature;
         newSig.reset(id);
@@ -919,17 +925,16 @@ public:
 
     // ── Type-erased mutation (used by CommandBuffer::Flush) ──────────────────
     //
-    // These accept raw bytes and function pointers rather than templates so that
-    // CommandBuffer can call them without knowing T at call time.
-    // OnAddHook / OnRemoveHook may be null.
+    // These accept raw bytes and an id rather than templates so that
+    // CommandBuffer can call them without knowing T at call time. Lifecycle
+    // hooks come from the registration, exactly as they do for the typed paths.
 
     void AddComponentRaw(
         EntityId entity,
         ComponentId id,
         const void* blob,
         size_t size,
-        size_t /*align*/,
-        void (*onAdd)(void*, World&, EntityId))
+        size_t /*align*/)
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "Structural change during active query/lifecycle hook.");
@@ -962,13 +967,7 @@ public:
 
         Entities.SetLocation(entity, EntityLocation{ dst->Id, dci, dri, loc.Partition });
 
-        if (onAdd && size > 0)
-        {
-            Chunk*         ch  = dst->Chunks[dci].get();
-            const uint32_t col = ch->FindColumn(id);
-            ScopedLifecycleHook hookScope(*this);
-            onAdd(ch->ColumnData(col) + dri * size, *this, entity);
-        }
+        FireAddHook(entity, id, *dst, dci, dri);
 
         // Outside the hook scope, not inside it: provisioning ends in the typed
         // add, which refuses to run while a lifecycle hook is on the stack. The
@@ -977,10 +976,7 @@ public:
         ProvideDerivedComponents(entity, id);
     }
 
-    void RemoveComponentRaw(
-        EntityId entity,
-        ComponentId id,
-        void (*onRemove)(const void*, World&, EntityId))
+    void RemoveComponentRaw(EntityId entity, ComponentId id)
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
                && "Structural change during active query/lifecycle hook.");
@@ -992,18 +988,7 @@ public:
         BumpStructural(loc.Partition);
         assert(src.Signature.test(id) && "Entity does not have component.");
 
-        if (onRemove)
-        {
-            const Chunk*   ch  = src.Chunks[loc.ChunkIndex].get();
-            const uint32_t col = ch->FindColumn(id);
-            if (col != UINT32_MAX)
-            {
-                const void* ptr = ch->ColumnData(col) +
-                                  loc.RowIndex * ch->Columns[col].Stride;
-                ScopedLifecycleHook hookScope(*this);
-                onRemove(ptr, *this, entity);
-            }
-        }
+        FireRemoveHook(entity, id, *src.Chunks[loc.ChunkIndex], loc.RowIndex);
 
         ArchetypeSignature newSig = src.Signature;
         newSig.reset(id);
@@ -1278,6 +1263,38 @@ private:
     {
         ++StructuralCounter;
         BumpPartitionStructural(partition);
+    }
+
+    // Fire one component's OnAdd, on a row that already carries its column.
+    // Shared by the typed add and the type-erased one so the two cannot drift:
+    // the component decides whether a hook runs, never the caller.
+    void FireAddHook(
+        EntityId entity, ComponentId id, Archetype& arch, uint32_t chunkIndex, uint32_t rowIndex)
+    {
+        auto* onAdd = ComponentMetas[id].OnAddHook;
+        if (onAdd == nullptr)
+            return;
+
+        Chunk*         ch  = arch.Chunks[chunkIndex].get();
+        const uint32_t col = ch->FindColumn(id);
+        assert(col != UINT32_MAX && "Hooked component missing its column");
+        ScopedLifecycleHook hookScope(*this);
+        onAdd(ch->ColumnData(col) + rowIndex * ch->Columns[col].Stride, *this, entity);
+    }
+
+    // The counterpart, fired before the row leaves the archetype so the hook
+    // still reads the component's own bytes.
+    void FireRemoveHook(EntityId entity, ComponentId id, Chunk& chunk, uint32_t rowIndex)
+    {
+        auto* onRemove = ComponentMetas[id].OnRemoveHook;
+        if (onRemove == nullptr)
+            return;
+
+        const uint32_t col = chunk.FindColumn(id);
+        assert(col != UINT32_MAX && "Hooked component missing its column");
+        const void* ptr = chunk.ColumnData(col) + rowIndex * chunk.Columns[col].Stride;
+        ScopedLifecycleHook hookScope(*this);
+        onRemove(ptr, *this, entity);
     }
 
     // Fire OnRemove for every hooked component of one live row, in column

@@ -361,7 +361,7 @@ TEST(DerivedComponents, TheCommandBufferBatchPathAgrees)
 {
     static_assert(!ComponentHasOnAdd<Owner>,
                   "this test only exercises the batch path while Owner is "
-                  "hook-free: Flush coalesces on a null OnAdd hook");
+                  "hook-free: Flush coalesces on the registered OnAdd hook");
 
     const WorldComponentSchema schema = MakeSchema();
 
@@ -403,7 +403,7 @@ TEST(DerivedComponents, TheRawAddProvidesTheDeclaredSet)
     const EntityId erased = raw.CreateEntity();
     const Owner value{ 11 };
     raw.AddComponentRaw(erased, raw.GetComponentId<Owner>(), &value,
-                        sizeof(Owner), alignof(Owner), nullptr);
+                        sizeof(Owner), alignof(Owner));
 
     EXPECT_EQ(ShapeOf(raw, schema, erased), ShapeOf(typed, schema, built));
 }
@@ -419,7 +419,7 @@ TEST(DerivedComponents, WhatIsAlreadyThereIsLeftAloneOnTheRawPath)
 
     const Owner value{ 1 };
     world.AddComponentRaw(entity, world.GetComponentId<Owner>(), &value,
-                          sizeof(Owner), alignof(Owner), nullptr);
+                          sizeof(Owner), alignof(Owner));
 
     ASSERT_NE(world.TryGet<FirstOwed>(entity), nullptr);
     EXPECT_EQ(world.TryGet<FirstOwed>(entity)->Value, 42);

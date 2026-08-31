@@ -1,7 +1,6 @@
 #pragma once
 
 #include <ecs/ComponentId.h>
-#include <ecs/ComponentTraits.h>
 #include <ecs/EntityId.h>
 #include <ecs/StoragePartitionId.h>
 #include <ecs/World.h>
@@ -30,9 +29,6 @@ struct ComponentPayload
     size_t      Align      = 1;
     size_t      DataOffset = 0;
     bool        HasData    = false;
-
-    void (*OnAddHook)(void*, World&, EntityId) = nullptr;
-    void (*OnRemoveHook)(const void*, World&, EntityId) = nullptr;
 
     ComponentPayload() = default;
 };
@@ -123,13 +119,6 @@ public:
         cmd.Entity = entity;
         cmd.Payload.Id   = W->template GetComponentId<T>();
         cmd.Payload.Size = std::is_empty_v<T> ? 0 : sizeof(T);
-
-        if constexpr (!std::is_empty_v<T> && ComponentHasOnRemove<T>)
-        {
-            cmd.Payload.OnRemoveHook = [](const void* ptr, World& w, EntityId e) {
-                ComponentTraits<T>::OnRemove(*static_cast<const T*>(ptr), w, e);
-            };
-        }
 
         Commands.push_back(std::move(cmd));
     }
@@ -226,13 +215,6 @@ private:
         {
             cmd.Payload.HasData = true;
             cmd.Payload.DataOffset = StorePayload(&value, sizeof(T), alignof(T));
-        }
-
-        if constexpr (!std::is_empty_v<T> && ComponentHasOnAdd<T>)
-        {
-            cmd.Payload.OnAddHook = [](void* ptr, World& w, EntityId e) {
-                ComponentTraits<T>::OnAdd(*static_cast<T*>(ptr), w, e);
-            };
         }
 
         return cmd;
