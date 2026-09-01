@@ -75,6 +75,8 @@ file(GLOB_RECURSE PARTICIPANT_TEST_SOURCES CONFIGURE_DEPENDS
 
 add_executable(core_tests ${CORE_TEST_SOURCES})
 target_link_libraries(core_tests PRIVATE sencha_engine GTest::gtest_main)
+# The component-codegen golden fixture is included by logical path.
+target_include_directories(core_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # Committed content lives in the source tree, not beside the test binary.
 target_compile_definitions(core_tests PRIVATE SENCHA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
 
@@ -415,6 +417,10 @@ if(NOT WIN32)
     add_test(
         NAME asset_layering_directions
         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_asset_layering.sh ${CMAKE_SOURCE_DIR}
+    )
+    add_test(
+        NAME component_index_validation
+        COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_component_index.sh ${CMAKE_SOURCE_DIR}
     )
     add_test(
         NAME gameplay_input_discipline

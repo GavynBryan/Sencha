@@ -13,6 +13,8 @@
 # with Clang -- the preprocessor environment is reproduced exactly while
 # toolchain-specific flags are excluded by construction.
 
+set(SENCHA_COMPONENT_CODEGEN_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE INTERNAL "")
+
 function(sencha_generate_component_metadata target)
     cmake_parse_arguments(ARG "" "" "HEADERS" ${ARGN})
     if(NOT ARG_HEADERS)
@@ -80,8 +82,24 @@ $<JOIN:$<LIST:TRANSFORM,$<REMOVE_DUPLICATES:$<TARGET_PROPERTY:${target},INCLUDE_
     target_sources(${target} PRIVATE ${_outputs})
     target_include_directories(${target} PUBLIC "$<BUILD_INTERFACE:${_generated}>")
 
-    # One aggregate stage sees every index, which is where a collision between
-    # two headers is visible at all.
-    add_custom_target(${target}_component_index DEPENDS ${_indexes})
+    # Per-header generation cannot see a collision with another header, so one
+    # aggregate stage reads every index. BASE_INDEX lets an out-of-tree module
+    # be checked against engine components it cannot see.
+    set(_validated "${CMAKE_CURRENT_BINARY_DIR}/${target}.components-validated")
+    set(_base_index "")
+    if(DEFINED SENCHA_BASE_COMPONENT_INDEX)
+        set(_base_index "-DBASE_INDEX=${SENCHA_BASE_COMPONENT_INDEX}")
+    endif()
+
+    add_custom_command(
+        OUTPUT "${_validated}"
+        COMMAND ${CMAKE_COMMAND} -DINDEX_DIR=${_generated} ${_base_index}
+                -P "${SENCHA_COMPONENT_CODEGEN_DIR}/ValidateComponentIndex.cmake"
+        COMMAND ${CMAKE_COMMAND} -E touch "${_validated}"
+        DEPENDS ${_indexes} "${SENCHA_COMPONENT_CODEGEN_DIR}/ValidateComponentIndex.cmake"
+        COMMENT "Validating component metadata for ${target}"
+        VERBATIM)
+
+    add_custom_target(${target}_component_index DEPENDS "${_validated}")
     add_dependencies(${target} ${target}_component_index)
 endfunction()
