@@ -5,8 +5,7 @@
 #include <components/ActiveCameraService.h>
 #include <movement/MovementRegistration.h>
 #include <render/MeshComponentAssets.h>
-#include <render/ZoneLightmapSchema.h>
-#include <render/ZoneLightmapComponent.h>
+#include <render/ZoneLightmapComponentAssets.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/registry/Registry.h>

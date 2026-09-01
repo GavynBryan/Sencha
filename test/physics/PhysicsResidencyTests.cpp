@@ -5,7 +5,6 @@
 // dedicated path. Headless; no Jolt headers.
 
 #include <gtest/gtest.h>
-#include <world/transform/TransformComponentSchemas.h>
 
 #include <app/GameContexts.h>
 #include <ecs/StoragePartitionSet.h>

@@ -1,13 +1,13 @@
 #include <gtest/gtest.h>
 #include <audio/AudioComponentTraits.h>
 #include <render/MeshComponentTraits.h>
-#include <render/ZoneLightmapSchema.h>
 
 #include <audio/AudioSourceComponent.h>
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
 #include <render/StaticMeshComponent.h>
 #include <render/ZoneLightmapComponent.h>
+#include <render/ZoneLightmapComponentAssets.h>
 #include <world/registry/Registry.h>
 #include <world/registry/SceneRegistryInitialization.h>
 #include <world/transform/TransformComponents.h>

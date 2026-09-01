@@ -307,7 +307,11 @@ sencha_generate_component_metadata(sencha_engine
         "${SENCHA_ENGINE_INCLUDE_DIR}/render/PointLightComponent.h"
         "${SENCHA_ENGINE_INCLUDE_DIR}/render/SpotLightComponent.h"
         "${SENCHA_ENGINE_INCLUDE_DIR}/render/StaticMeshComponent.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/render/ZoneLightmapComponent.h"
         "${SENCHA_ENGINE_INCLUDE_DIR}/render/skinned_mesh/SkinnedMeshComponent.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/world/identity/PersistentIdComponent.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/world/scene/SceneInstance.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/world/transform/TransformComponents.h"
         "${SENCHA_ENGINE_INCLUDE_DIR}/zone/WorldConnectionComponents.h"
 )
 

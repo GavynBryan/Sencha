@@ -5,7 +5,6 @@
 #include <jobs/JobSystem.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <world/RuntimeWorld.h>
-#include <world/transform/TransformComponentSchemas.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformPropagation.h>
 

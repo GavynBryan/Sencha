@@ -3,10 +3,9 @@
 #include "brush/BrushId.h"
 #include "brush/BrushMesh.h"
 #include "brush/BrushMeshStore.h"
+#include "document/BrushComponents.h"
 
 #include <core/identity/Id.h>
-#include <core/metadata/Field.h>
-#include <core/metadata/TypeSchema.h>
 #include <ecs/EntityId.h>
 #include <math/MathSchemas.h>
 #include <math/geometry/3d/Aabb3d.h>
@@ -25,54 +24,6 @@
 #include <cstdint>
 #include <unordered_set>
 #include <vector>
-
-// A brush is now an editable polygon mesh; the component holds a stable BrushId
-// into the EditorScene's BrushMeshStore (heavy mesh data kept out of the
-// trivially-copyable component). (03-brush-representation.md §2.2)
-struct BrushComponent
-{
-    BrushId Id;
-};
-
-template <>
-struct TypeSchema<BrushComponent>
-{
-    static constexpr std::string_view Name = "brush";
-
-    static auto Fields()
-    {
-        // The id links the entity to its mesh in the BrushMeshStore sidecar; the
-        // mesh geometry itself is serialized by EditorDocument (§5). Persisted via
-        // SceneFieldCodec<BrushId>; the inspector renders it as non-editable.
-        return std::tuple{
-            MakeField("id", &BrushComponent::Id),
-        };
-    }
-};
-
-// The dormant source of a brush baked to a StaticMesh: the entity swapped its
-// BrushComponent for a StaticMeshComponent, but its polygon mesh stays in the
-// BrushMeshStore under this id so the bake can be reverted (and the entity
-// stays pickable through its source shape). Editor-only, like BrushComponent;
-// the level cook strips it from the passthrough scene, so it never reaches the
-// runtime.
-struct BakedBrushComponent
-{
-    BrushId Source;
-};
-
-template <>
-struct TypeSchema<BakedBrushComponent>
-{
-    static constexpr std::string_view Name = "baked_brush";
-
-    static auto Fields()
-    {
-        return std::tuple{
-            MakeField("source", &BakedBrushComponent::Source),
-        };
-    }
-};
 
 class EditorScene
 {

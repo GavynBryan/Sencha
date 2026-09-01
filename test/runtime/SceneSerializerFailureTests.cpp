@@ -4,7 +4,7 @@
 // unwind the entities and components already created.
 
 #include <gtest/gtest.h>
-#include <world/transform/TransformComponentSchemas.h>
+#include <world/transform/TransformComponents.h>
 
 #include <core/json/JsonParser.h>
 #include <core/serialization/Serialize.h>

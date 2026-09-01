@@ -3,6 +3,8 @@
 #include <core/assets/AssetId.h>
 #include <core/identity/Id.h>
 #include <core/identity/StrongId.h>
+#include <ecs/ComponentAnnotations.h>
+#include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 #include <world/serialization/SceneFieldCodec.h>
@@ -11,7 +13,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <tuple>
 
 //=============================================================================
 // SceneInstance
@@ -50,13 +51,28 @@ SceneInstanceIdFromString(std::string_view text)
     return SceneInstanceId{ parsed->Value };
 }
 
-struct SceneInstance
+struct SENCHA_COMPONENT("scene_instance")
+       SENCHA_SCHEMA("scene_instance")
+       SENCHA_SCENE_CHUNK("SNIN")
+SceneInstance
 {
     // The scene asset this instance expands, as its cook-stamped stable id.
     // Invalid when no id map covered the source (dev cooks); group identity
     // and the index never depend on it.
+    SENCHA_FIELD("source")
     AssetId Source;
+
+    SENCHA_FIELD("id")
     SceneInstanceId Id;
+};
+
+// Instance membership: the group stays addressable through SceneInstanceIndex
+// for exactly as long as its members carry the component.
+template <>
+struct ComponentTraits<SceneInstance>
+{
+    static void OnAdd(SceneInstance& component, World& world, EntityId entity);
+    static void OnRemove(const SceneInstance& component, World& world, EntityId entity);
 };
 
 template <>
@@ -68,6 +84,22 @@ struct SceneFieldCodec<SceneInstanceId>
                      SceneSerializationContext&);
 };
 
-SENCHA_DECLARE_COMPONENT_TYPE(SceneInstance, "scene_instance");
-SENCHA_COMPONENT_DECLARES_SCHEMA(SceneInstance);
+// An asset's stable id as a scene field. Saved as the 16-hex id; load also
+// accepts the cook-stamped {"id","path"} ref object -- the id inside the
+// stamp is the value, no registry resolution involved -- and reads a bare
+// asset:// path (a cook that had no id map) as the invalid id rather than
+// failing the entity.
+template <>
+struct SceneFieldCodec<AssetId>
+{
+    static bool Save(IWriteArchive&, std::string_view, AssetId,
+                     SceneSerializationContext&);
+    static bool Load(IReadArchive&, std::string_view, AssetId&,
+                     SceneSerializationContext&);
+};
+
 SENCHA_COMPONENT_DECLARES_TRAITS(SceneInstance);
+
+#if !defined(SENCHA_CODEGEN)
+#  include <world/scene/SceneInstance.sencha.h>
+#endif

@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-#include <world/transform/TransformComponentSchemas.h>
 
 #include <app/EngineSchedule.h>
 #include <camera/CameraFollowSystem.h>

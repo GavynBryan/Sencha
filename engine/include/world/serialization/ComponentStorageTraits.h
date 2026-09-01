@@ -1,32 +1,25 @@
 #pragma once
 
-#include <core/metadata/TypeSchema.h>
-#include <core/serialization/FourCC.h>
 #include <world/registry/Registry.h>
-
-#include <cstdint>
 
 //=============================================================================
 // ComponentStorageTraits
 //
-// Maps serializable component types to their binary chunk IDs and insertion
-// behavior. Runtime import targets the unified World directly; Registry overloads
-// remain editor/legacy adapters until the cutover removes runtime registries.
+// How a serializable component enters storage. Runtime import targets the
+// unified World directly; Registry overloads remain editor/legacy adapters
+// until the cutover removes runtime registries.
 //
-// The primary template handles any component whose TypeSchema declares a
-// SceneChunkId: idempotent registration, reject-duplicate insertion. Only
-// specialize when a component needs more than that (see LocalTransform).
-//
-// All specializations must live in this header. The primary template compiles
-// for any component with a TypeSchema, so a specialization in a header that
-// some translation unit fails to include would silently fall back to the
-// default behavior in that unit (an ODR violation).
+// The primary template handles any component: idempotent registration,
+// reject-duplicate insertion. Only specialize when a component needs more than
+// that (see LocalTransform), and declare the specialization beside the
+// component itself: the primary template compiles for any component, so a
+// specialization some translation unit fails to see would silently fall back
+// to the default behavior in that unit (an ODR violation), and nothing can
+// name a component without including its header.
 //=============================================================================
 template <typename T>
 struct ComponentStorageTraits
 {
-    static constexpr std::uint32_t BinaryChunkId = TypeSchema<T>::SceneChunkId;
-
     static void Register(World& world)
     {
         if (!world.IsRegistered<T>())

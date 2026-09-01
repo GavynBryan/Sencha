@@ -171,7 +171,7 @@ class ComponentSerializer final : public IComponentSerializer
 public:
     ComponentTypeId TypeId() const override { return ResolveComponentTypeId<Component>(); }
     std::string_view JsonKey() const override { return TypeSchema<Component>::Name; }
-    std::uint32_t BinaryChunkId() const override { return Traits::BinaryChunkId; }
+    std::uint32_t BinaryChunkId() const override { return TypeSchema<Component>::SceneChunkId; }
 
     std::span<const RuntimeField> RuntimeFields() const override
     {

@@ -2,6 +2,7 @@
 #include <assets/runtime/AssetSystem.h>
 #include <assets/scene/SceneCache.h>
 #include <core/logging/LoggingProvider.h>
+#include <core/serialization/FourCC.h>
 #include <jobs/AsyncTaskQueue.h>
 #include <world/scene/SmapFormat.h>
 #include <world/serialization/ComponentSerializer.h>

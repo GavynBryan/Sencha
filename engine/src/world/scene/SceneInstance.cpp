@@ -1,6 +1,7 @@
 #include <world/scene/SceneInstance.h>
-#include <world/scene/SceneInstanceSchema.h>
 
+#include <core/serialization/Archive.h>
+#include <ecs/World.h>
 #include <world/scene/SceneInstanceIndex.h>
 
 #include <string>

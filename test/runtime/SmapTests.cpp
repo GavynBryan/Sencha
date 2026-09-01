@@ -1,5 +1,4 @@
 #include <core/logging/LoggingProvider.h>
-#include <world/identity/PersistentIdSchema.h>
 #include <ecs/WorldComponentSchema.h>
 #include <world/RuntimeWorld.h>
 #include <world/build/EntityBuildPackage.h>

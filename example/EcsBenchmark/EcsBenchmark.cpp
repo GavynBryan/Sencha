@@ -9,7 +9,6 @@
 //   cmake --build --preset profile --target EcsBenchmark
 
 #include <ecs/Ecs.h>
-#include <world/transform/TransformComponentSchemas.h>
 #include <render/MeshComponentTraits.h>
 #include <render/RenderQueue.h>
 #include <render/StaticMeshComponent.h>

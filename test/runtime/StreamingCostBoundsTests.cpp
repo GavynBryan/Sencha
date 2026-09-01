@@ -12,7 +12,6 @@
 // states.
 
 #include <gtest/gtest.h>
-#include <world/transform/TransformComponentSchemas.h>
 
 #include <ecs/ArchetypeSignature.h>
 #include <ecs/StoragePartitionSet.h>

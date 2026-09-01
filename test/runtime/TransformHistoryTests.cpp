@@ -1,5 +1,4 @@
 #include <ecs/StoragePartitionSet.h>
-#include <world/transform/TransformComponentSchemas.h>
 #include <ecs/World.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>

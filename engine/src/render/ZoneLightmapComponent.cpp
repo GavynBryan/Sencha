@@ -1,7 +1,8 @@
 #include <render/ZoneLightmapComponent.h>
-#include <render/ZoneLightmapSchema.h>
 
 #include <assets/texture/TextureCache.h>
+#include <ecs/World.h>
+#include <render/ZoneLightmapComponentAssets.h>
 
 void ComponentTraits<ZoneLightmapComponent>::OnAdd(
     ZoneLightmapComponent& component, World& world, EntityId)

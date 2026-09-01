@@ -5,7 +5,7 @@
 #include <render/MeshComponentTraits.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
-#include <render/ZoneLightmapSchema.h>
+#include <render/ZoneLightmapComponent.h>
 #include <world/ComponentRegistrar.h>
 
 // What a zone draws: the meshes and the lights, plus the baked products a zone

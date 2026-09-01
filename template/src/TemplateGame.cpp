@@ -77,8 +77,8 @@
 #include <runtime/spawn/SceneSpawnService.h>
 #include <render/StaticMeshComponent.h>
 #include <render/MeshComponentAssets.h>
-#include <render/ZoneLightmapSchema.h>
 #include <render/ZoneLightmapComponent.h>
+#include <render/ZoneLightmapComponentAssets.h>
 #include <world/RuntimeWorld.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>

@@ -7,6 +7,7 @@
 #include <assets/runtime/AssetSystem.h>
 #include <assets/scene/SceneCache.h>
 #include <core/logging/LoggingProvider.h>
+#include <core/serialization/FourCC.h>
 #include <ecs/WorldComponentSchema.h>
 #include <jobs/AsyncTaskQueue.h>
 #include <runtime/RuntimeFrameLoop.h>

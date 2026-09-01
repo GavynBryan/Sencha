@@ -18,9 +18,6 @@
 #include <world/serialization/ComponentSerializer.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
-#include <world/transform/TransformComponentSchemas.h>
-#include <world/identity/PersistentIdSchema.h>
-#include <world/scene/SceneInstanceSchema.h>
 #include <world/transform/TransformComponents.h>
 
 #include "SmapSceneFixture.h"
