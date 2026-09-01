@@ -40,7 +40,9 @@ Empty tag components have no stored object pointer, so they should not rely on
 
 ## Adding hooks
 
-Specialize `ComponentTraits<T>` in a header **near the component type definition**:
+Declare the specialization in the component's own header, and put the hook
+bodies in the matching `.cpp` so that naming the component does not pull its
+caches or `World` into every include graph that mentions it:
 
 ```cpp
 // engine/include/render/StaticMeshComponent.h
@@ -48,22 +50,39 @@ Specialize `ComponentTraits<T>` in a header **near the component type definition
 template <>
 struct ComponentTraits<StaticMeshComponent>
 {
-    static void OnAdd(StaticMeshComponent& component, World& world, EntityId)
-    {
-        auto* assets = world.TryGetResource<StaticMeshComponentAssets>();
-        if (assets == nullptr) return;
-        if (assets->Meshes)     assets->Meshes->Retain(component.Mesh);
-        if (assets->Materials)  assets->Materials->Retain(component.Material);
-    }
-
-    static void OnRemove(const StaticMeshComponent& component, World& world, EntityId)
-    {
-        auto* assets = world.TryGetResource<StaticMeshComponentAssets>();
-        if (assets == nullptr) return;
-        if (assets->Materials)  assets->Materials->Release(component.Material);
-        if (assets->Meshes)     assets->Meshes->Release(component.Mesh);
-    }
+    static void OnAdd(StaticMeshComponent& component, World& world, EntityId);
+    static void OnRemove(const StaticMeshComponent& component, World& world, EntityId);
 };
+```
+
+```cpp
+// engine/src/render/StaticMeshComponent.cpp
+
+void ComponentTraits<StaticMeshComponent>::OnAdd(
+    StaticMeshComponent& component, World& world, EntityId)
+{
+    auto* assets = world.TryGetResource<StaticMeshComponentAssets>();
+    if (assets == nullptr)
+        return;
+
+    if (assets->Meshes != nullptr)
+        assets->Meshes->Retain(component.Mesh);
+    if (assets->MaterialSets != nullptr)
+        assets->MaterialSets->Retain(component.Materials);
+}
+
+void ComponentTraits<StaticMeshComponent>::OnRemove(
+    const StaticMeshComponent& component, World& world, EntityId)
+{
+    auto* assets = world.TryGetResource<StaticMeshComponentAssets>();
+    if (assets == nullptr)
+        return;
+
+    if (assets->MaterialSets != nullptr)
+        assets->MaterialSets->Release(component.Materials);
+    if (assets->Meshes != nullptr)
+        assets->Meshes->Release(component.Mesh);
+}
 ```
 
 Hook signatures:
@@ -144,7 +163,7 @@ performance impact. See `docs/ecs/decisions.md` D1.5 for the batching strategy.
 rg "ComponentTraits<" engine/include engine/src
 ```
 
-By design, `ComponentTraits` specializations live near the component definition.
+By design, `ComponentTraits` specializations live in the component's own header.
 `rg ComponentTraits` in the engine tree lists every component with hooks.
 
 ---
