@@ -19,7 +19,7 @@
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendActions.h"
-#include "clang/Tooling/CommonOptionsParser.h"
+#include "clang/Tooling/CompilationDatabase.h"
 #include "clang/Tooling/Tooling.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
@@ -46,6 +46,19 @@ llvm::cl::opt<std::string> gIndex(
 llvm::cl::opt<std::string> gLogical(
     "logical", llvm::cl::desc("Logical include path of the parsed header"),
     llvm::cl::value_desc("path"), llvm::cl::cat(gCategory));
+
+llvm::cl::opt<std::string> gResourceDir(
+    "resource-dir", llvm::cl::desc("Clang builtin header directory"),
+    llvm::cl::value_desc("path"), llvm::cl::init(SENCHA_CLANG_RESOURCE_DIR),
+    llvm::cl::cat(gCategory));
+
+llvm::cl::opt<std::string> gFlags(
+    "flags", llvm::cl::desc("File of compile flags, one per line"),
+    llvm::cl::value_desc("path"), llvm::cl::cat(gCategory));
+
+llvm::cl::opt<std::string> gSource(
+    llvm::cl::Positional, llvm::cl::desc("<header>"), llvm::cl::Required,
+    llvm::cl::cat(gCategory));
 
 // Kept in step with kComponentCodegenFormatVersion in ComponentDefinition.h.
 // Stamped into every companion so an SDK whose generator predates its headers
@@ -242,6 +255,22 @@ private:
 
 std::string Quoted(const std::string& text) { return "\"" + text + "\""; }
 
+// The macro stringifies its arguments without spacing; generated code should
+// read the way a person would have written it.
+std::string Spaced(llvm::StringRef csv)
+{
+    std::string out;
+    llvm::SmallVector<llvm::StringRef, 4> parts;
+    csv.split(parts, ',');
+    for (llvm::StringRef part : parts)
+    {
+        if (!out.empty())
+            out += ", ";
+        out += part.trim().str();
+    }
+    return out;
+}
+
 void EmitField(std::ostream& out, const ComponentFacts& component, const FieldFacts& field)
 {
     out << "            MakeField(" << Quoted(field.Name)
@@ -263,7 +292,7 @@ void EmitField(std::ostream& out, const ComponentFacts& component, const FieldFa
     if (field.Optional)   out << "\n                .Optional()";
     if (field.Color)      out << "\n                .AsColor()";
     if (field.Degrees)    out << "\n                .Degrees()";
-    if (!field.Quantize.empty()) out << "\n                .Quantize(" << field.Quantize << ")";
+    if (!field.Quantize.empty()) out << "\n                .Quantize(" << Spaced(field.Quantize) << ")";
     if (field.OwnerOnly)  out << "\n                .OwnerOnly()";
     if (field.OwnerLocal) out << "\n                .OwnerLocal()";
     if (field.LocalOnly)  out << "\n                .LocalOnly()";
@@ -357,7 +386,10 @@ public:
     {
         Visitor visitor(context);
         visitor.TraverseDecl(context.getTranslationUnitDecl());
-        if (visitor.Failed)
+
+        // Writing anything after a failed parse would replace a good companion
+        // with an empty one, which reads as a component that no longer exists.
+        if (visitor.Failed || context.getDiagnostics().hasErrorOccurred())
         {
             Ok = false;
             return;
@@ -386,21 +418,49 @@ public:
 
 } // namespace
 
+// One flag per line, so a path containing spaces needs no quoting and the file
+// CMake generates is the file the parse sees.
+std::vector<std::string> ReadFlags(const std::string& path)
+{
+    // A component header is C++ whatever its extension says.
+    std::vector<std::string> flags{ "-fsyntax-only", "-x", "c++",
+                                    "-resource-dir=" + gResourceDir.getValue() };
+    std::ifstream in(path);
+    for (std::string line; std::getline(in, line);)
+    {
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' '))
+            line.pop_back();
+
+        // An empty definition or include directory arrives as a bare -D or -I,
+        // which would swallow the next argument -- the source path among them.
+        if (line.empty() || line == "-D" || line == "-I" || line == "-isystem")
+            continue;
+
+        flags.push_back(line);
+    }
+    return flags;
+}
+
 int main(int argc, const char** argv)
 {
-    auto options = clang::tooling::CommonOptionsParser::create(argc, argv, gCategory);
-    if (!options)
-    {
-        llvm::errs() << llvm::toString(options.takeError());
+    llvm::cl::HideUnrelatedOptions(gCategory);
+    if (!llvm::cl::ParseCommandLineOptions(argc, argv))
         return 2;
-    }
-    if (gOutput.empty() || gIndex.empty())
+    if (gOutput.empty() || gIndex.empty() || gFlags.empty())
     {
-        llvm::errs() << "sencha-component-codegen: --output and --index are required\n";
+        llvm::errs() << "sencha-component-codegen: --output, --index and --flags are required\n";
         return 2;
     }
 
-    clang::tooling::ClangTool tool(options->getCompilations(), options->getSourcePathList());
+    const std::vector<std::string> flags = ReadFlags(gFlags);
+    if (flags.size() <= 1)
+    {
+        llvm::errs() << "sencha-component-codegen: no compile flags in " << gFlags << "\n";
+        return 2;
+    }
+
+    clang::tooling::FixedCompilationDatabase compilations(".", flags);
+    clang::tooling::ClangTool tool(compilations, { gSource.getValue() });
     if (tool.run(clang::tooling::newFrontendActionFactory<Action>().get()) != 0)
         return 1;
     return Consumer::Ok ? 0 : 1;

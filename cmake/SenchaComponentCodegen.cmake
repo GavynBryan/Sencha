@@ -16,7 +16,10 @@
 set(SENCHA_COMPONENT_CODEGEN_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE INTERNAL "")
 
 function(sencha_generate_component_metadata target)
-    cmake_parse_arguments(ARG "" "" "HEADERS" ${ARGN})
+    cmake_parse_arguments(ARG "" "INCLUDE_ROOT" "HEADERS" ${ARGN})
+    if(NOT ARG_INCLUDE_ROOT)
+        set(ARG_INCLUDE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+    endif()
     if(NOT ARG_HEADERS)
         return()
     endif()
@@ -52,7 +55,9 @@ $<JOIN:$<LIST:TRANSFORM,$<REMOVE_DUPLICATES:$<TARGET_PROPERTY:${target},INCLUDE_
     set(_indexes "")
     foreach(_header IN LISTS ARG_HEADERS)
         get_filename_component(_abs "${_header}" ABSOLUTE)
-        file(RELATIVE_PATH _logical "${CMAKE_CURRENT_SOURCE_DIR}" "${_abs}")
+        # Relative to the include root, so the companion is reachable by the
+        # same logical path the component header is included by.
+        file(RELATIVE_PATH _logical "${ARG_INCLUDE_ROOT}" "${_abs}")
         get_filename_component(_dir "${_logical}" DIRECTORY)
         get_filename_component(_stem "${_logical}" NAME_WE)
 
@@ -66,11 +71,12 @@ $<JOIN:$<LIST:TRANSFORM,$<REMOVE_DUPLICATES:$<TARGET_PROPERTY:${target},INCLUDE_
             file(WRITE "${_companion}" "#pragma once\n// Placeholder; regenerated at build time.\n")
         endif()
 
+
         add_custom_command(
             OUTPUT "${_companion}" "${_index}"
             COMMAND ${_tool} "${_abs}"
-                    "--output=${_companion}" "--index=${_index}" "--logical=${_logical}"
-                    -- "@${_flags}"
+                    "--output=${_companion}" "--index=${_index}"
+                    "--logical=${_logical}" "--flags=${_flags}"
             DEPENDS "${_abs}" "${_flags}" ${_tool}
             COMMENT "Generating component metadata for ${_logical}"
             VERBATIM)

@@ -418,6 +418,15 @@ if(NOT WIN32)
         NAME asset_layering_directions
         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_asset_layering.sh ${CMAKE_SOURCE_DIR}
     )
+    if(TARGET sencha-component-codegen)
+        add_test(
+            NAME component_codegen
+            COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_component_codegen.sh
+                    $<TARGET_FILE:sencha-component-codegen>
+                    ${CMAKE_SOURCE_DIR}
+                    ${CMAKE_BINARY_DIR}/engine/generated-public
+        )
+    endif()
     add_test(
         NAME component_index_validation
         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_component_index.sh ${CMAKE_SOURCE_DIR}

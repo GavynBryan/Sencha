@@ -282,6 +282,12 @@ target_compile_features(sencha_engine PUBLIC cxx_std_20)
 
 sencha_warnings(sencha_engine)
 
+sencha_generate_component_metadata(sencha_engine
+    INCLUDE_ROOT "${SENCHA_ENGINE_INCLUDE_DIR}"
+    HEADERS
+        "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/CharacterController.h"
+)
+
 if(SENCHA_ENABLE_COOK)
     target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_COOK)
 

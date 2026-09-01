@@ -13,6 +13,10 @@
 # annotated header makes it required, and sencha_generate_component_metadata
 # fails loudly if it is missing.
 
+# LLVMConfig probes for FFI with check_c_source_compiles, and the engine only
+# enables CXX.
+enable_language(C)
+
 find_package(Clang QUIET CONFIG)
 
 if(NOT Clang_FOUND)
@@ -26,7 +30,22 @@ endif()
 
 set(SENCHA_COMPONENT_CODEGEN_AVAILABLE ON CACHE INTERNAL "")
 
+# Asked of clang rather than derived from LLVM_LIBRARY_DIR, which points at
+# lib64 while the resource headers live under lib on this distribution. A
+# shipped generator can be pointed elsewhere with --resource-dir.
+execute_process(
+    COMMAND "${LLVM_TOOLS_BINARY_DIR}/clang" -print-resource-dir
+    OUTPUT_VARIABLE SENCHA_CLANG_RESOURCE_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE _resource_result)
+if(NOT _resource_result EQUAL 0)
+    message(FATAL_ERROR "sencha-component-codegen: could not determine clang's resource directory")
+endif()
+
 add_executable(sencha-component-codegen ComponentCodegen.cpp)
+
+target_compile_definitions(sencha-component-codegen PRIVATE
+    SENCHA_CLANG_RESOURCE_DIR="${SENCHA_CLANG_RESOURCE_DIR}")
 
 target_include_directories(sencha-component-codegen SYSTEM PRIVATE
     ${CLANG_INCLUDE_DIRS} ${LLVM_INCLUDE_DIRS})
