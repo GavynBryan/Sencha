@@ -4,9 +4,10 @@
 #include <ecs/ComponentAnnotations.h>
 #include <math/Vec.h>
 
-// The generator's golden input: one component exercising every annotation.
-// Its expected output is GoldenComponent.sencha.h.expected, compiled by
-// GoldenComponentTests.cpp and byte-compared once the generator can run.
+// The generator's golden input: one component exercising every annotation,
+// and one tag whose schema has no fields. Its expected output is
+// GoldenComponent.sencha.h.expected, compiled by GoldenComponentTests.cpp and
+// byte-compared once the generator can run.
 
 struct SENCHA_COMPONENT("test.codegen.golden")
        SENCHA_SCHEMA("CodegenGolden")
@@ -39,4 +40,12 @@ CodegenGolden
     // Untagged: not part of the schema, and adding one must never change the
     // scene format or the replication layout.
     float Scratch = 0.0f;
+};
+
+// A schema with no fields: the scene can place it, and it carries nothing.
+struct SENCHA_COMPONENT("test.codegen.golden_tag")
+       SENCHA_SCHEMA("CodegenGoldenTag")
+       SENCHA_SCENE_CHUNK("GTAG")
+CodegenGoldenTag
+{
 };

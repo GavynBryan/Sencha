@@ -301,6 +301,27 @@ void EmitField(std::ostream& out, const ComponentFacts& component, const FieldFa
     out << ",\n";
 }
 
+// A schema with no fields is still a schema: a tag the scene can place.
+void EmitFields(std::ostream& out, const ComponentFacts& component)
+{
+    if (component.Fields.empty())
+    {
+        out << "\n    static auto Fields() { return std::tuple{}; }\n";
+        return;
+    }
+
+    out << "\n    static auto Fields()\n    {\n";
+    const bool needsDefaults = std::any_of(
+        component.Fields.begin(), component.Fields.end(),
+        [](const FieldFacts& f) { return f.HasDefault; });
+    if (needsDefaults)
+        out << "        const " << component.Type << " defaults;\n";
+    out << "        return std::tuple{\n";
+    for (const FieldFacts& field : component.Fields)
+        EmitField(out, component, field);
+    out << "        };\n    }\n";
+}
+
 bool WriteCompanion(const std::string& path,
                     const std::string& logical,
                     const std::vector<ComponentFacts>& components)
@@ -340,19 +361,8 @@ bool WriteCompanion(const std::string& path,
         if (!component.VisualMesh.empty())
             out << "    static constexpr std::string_view VisualMeshAsset = " << Quoted(component.VisualMesh) << ";\n";
 
-        if (!component.Fields.empty())
-        {
-            out << "\n    static auto Fields()\n    {\n";
-            const bool needsDefaults = std::any_of(
-                component.Fields.begin(), component.Fields.end(),
-                [](const FieldFacts& f) { return f.HasDefault; });
-            if (needsDefaults)
-                out << "        const " << component.Type << " defaults;\n";
-            out << "        return std::tuple{\n";
-            for (const FieldFacts& field : component.Fields)
-                EmitField(out, component, field);
-            out << "        };\n    }\n";
-        }
+        if (!component.SchemaName.empty())
+            EmitFields(out, component);
         out << "};\n";
     }
     return true;

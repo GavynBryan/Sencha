@@ -1,12 +1,10 @@
 #pragma once
 
-#include <ecs/ComponentTypeId.h>
+#include <ecs/ComponentAnnotations.h>
 #include <input/InputAction.h>
 
 #include <algorithm>
 #include <cstdint>
-#include <string_view>
-#include <tuple>
 #include <type_traits>
 
 //=============================================================================
@@ -24,12 +22,58 @@
 // Input contributes displacement; this holds the running total. Keeping the two
 // apart is what lets the same orientation be driven by a player's look action,
 // by an AI turning toward a target, or by a replayed command.
+//
+// Saved and sent both. It is sent because where something aims is one of the
+// few facts other machines must see; it is saved because the pitch limits are
+// a property of the thing and because an authored yaw is how a placed body
+// states which way it begins facing -- the only way to state it for a body
+// carrying AimFacing, whose rotation is overwritten from the first tick.
 //=============================================================================
-struct LookOrientation
+struct SENCHA_COMPONENT("sencha.look_orientation")
+       SENCHA_SCHEMA("LookOrientation")
+       SENCHA_SCENE_CHUNK("LOOK")
+       SENCHA_REPLICATED
+LookOrientation
 {
+    // Yaw accumulates without bound -- it is a running total, not an angle
+    // folded into a circle -- so a fixed quantization range would clamp a
+    // player who kept turning one way. It ships at full width until the codec
+    // can carry a wrapping angle.
+    SENCHA_FIELD("yaw")
+    SENCHA_OWNER_LOCAL
+    SENCHA_DEGREES
+    SENCHA_LABEL("Facing")
+    SENCHA_TOOLTIP("Which way this body starts out aiming. Stored in radians; "
+                   "a body carrying AimFacing begins turned to this rather "
+                   "than to its authored rotation.")
     float Yaw = 0.0f;
+
+    // Bounded by the limits below, which are stricter than the quantization
+    // range, so nothing here can clamp.
+    SENCHA_FIELD("pitch")
+    SENCHA_QUANTIZE(-1.5707964f, 1.5707964f, 16)
+    SENCHA_OWNER_LOCAL
+    SENCHA_DEGREES
+    SENCHA_LABEL("Elevation")
+    SENCHA_TOOLTIP("How far up or down this body starts out aiming.")
     float Pitch = 0.0f;
+
+    // How far this thing can look is a property of the thing, identical on
+    // every machine that loaded it. Sending it every tick would be sending a
+    // constant.
+    SENCHA_FIELD("min_pitch")
+    SENCHA_LOCAL_ONLY
+    SENCHA_DEGREES
+    SENCHA_LABEL("Look down limit")
+    SENCHA_TOOLTIP("How far down this thing can aim. A property of the thing: "
+                   "a neck and a tank turret differ.")
     float MinPitch = -1.4f;
+
+    SENCHA_FIELD("max_pitch")
+    SENCHA_LOCAL_ONLY
+    SENCHA_DEGREES
+    SENCHA_LABEL("Look up limit")
+    SENCHA_TOOLTIP("How far up this thing can aim.")
     float MaxPitch = 1.4f;
 };
 
@@ -47,9 +91,6 @@ inline void ApplyLook(LookOrientation& look, float yaw, float pitch)
     look.Pitch = std::clamp(pitch, look.MinPitch, look.MaxPitch);
 }
 
-SENCHA_DECLARE_COMPONENT_TYPE(LookOrientation, "sencha.look_orientation");
-SENCHA_COMPONENT_DECLARES_SCHEMA(LookOrientation);
-
 //=============================================================================
 // LocalLookControl
 //
@@ -57,14 +98,12 @@ SENCHA_COMPONENT_DECLARES_SCHEMA(LookOrientation);
 // An AI-aimed entity carries a LookOrientation without this, and its own
 // controller writes it instead.
 //=============================================================================
-struct LocalLookControl
+struct SENCHA_COMPONENT("sencha.local_look_control") LocalLookControl
 {
 };
 
 static_assert(std::is_empty_v<LocalLookControl>,
               "LocalLookControl is a tag: it carries no data");
-
-SENCHA_DECLARE_COMPONENT_TYPE(LocalLookControl, "sencha.local_look_control");
 
 //=============================================================================
 // AimFacing
@@ -84,16 +123,19 @@ SENCHA_DECLARE_COMPONENT_TYPE(LocalLookControl, "sencha.local_look_control");
 // overwritten from the first tick, so an entity that must begin facing a
 // particular way is placed with the matching LookOrientation.Yaw rather than
 // with a rotation.
+//
+// It has a schema so content can opt a placed body in without any code naming
+// it; presence is the whole value, so the schema has no fields.
 //=============================================================================
-struct AimFacing
+struct SENCHA_COMPONENT("sencha.aim_facing")
+       SENCHA_SCHEMA("AimFacing")
+       SENCHA_SCENE_CHUNK("AIMF")
+AimFacing
 {
 };
 
 static_assert(std::is_empty_v<AimFacing>,
               "AimFacing is a tag: it carries no data");
-
-SENCHA_DECLARE_COMPONENT_TYPE(AimFacing, "sencha.aim_facing");
-SENCHA_COMPONENT_DECLARES_SCHEMA(AimFacing);
 
 //=============================================================================
 // LookInputBinding
@@ -140,3 +182,7 @@ struct PendingLookInput
     float RateYaw = 0.0f;
     float RatePitch = 0.0f;
 };
+
+#if !defined(SENCHA_CODEGEN)
+#  include <controller/LookOrientation.sencha.h>
+#endif

@@ -285,7 +285,18 @@ sencha_warnings(sencha_engine)
 sencha_generate_component_metadata(sencha_engine
     INCLUDE_ROOT "${SENCHA_ENGINE_INCLUDE_DIR}"
     HEADERS
+        "${SENCHA_ENGINE_INCLUDE_DIR}/camera/CameraRig.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/camera/CameraSeat.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/components/CameraComponent.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/controller/LookOrientation.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetParticipantIdentity.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetReplicationComponents.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetSpawnPrefab.h"
         "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/CharacterController.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/render/IrradianceVolumeComponent.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/render/PointLightComponent.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/render/SpotLightComponent.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/zone/WorldConnectionComponents.h"
 )
 
 if(SENCHA_ENABLE_COOK)
@@ -565,11 +576,15 @@ install(TARGETS sencha_engine
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
     INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
-# Public engine headers and the generated ABI fingerprint + SDK version headers.
+# Public engine headers, the generated ABI fingerprint + SDK version headers,
+# and the component companions the public headers include.
 install(DIRECTORY "${SENCHA_ENGINE_INCLUDE_DIR}/"
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated-public/"
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated-components/"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+    FILES_MATCHING PATTERN "*.sencha.h")
 
 # Vendored headers re-exposed by public engine headers (Vulkan builds only).
 if(SENCHA_ENABLE_VULKAN)

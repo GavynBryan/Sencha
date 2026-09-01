@@ -31,6 +31,15 @@ TEST(GeneratedComponentMetadata, ProjectsIntoEveryConsumer)
     EXPECT_EQ(ComponentEditorVisual<CodegenGolden>::Value->AssetPath, "golden.glb");
 }
 
+// Presence is the tag's whole value, and a schema is what lets a scene state
+// that presence.
+TEST(GeneratedComponentMetadata, AFieldlessSchemaStillNamesASceneChunk)
+{
+    EXPECT_EQ(TypeSchema<CodegenGoldenTag>::Name, "CodegenGoldenTag");
+    EXPECT_EQ(TypeSchema<CodegenGoldenTag>::SceneChunkId, MakeFourCC('G', 'T', 'A', 'G'));
+    EXPECT_TRUE(RuntimeFieldsOf<CodegenGoldenTag>().empty());
+}
+
 TEST(GeneratedComponentMetadata, CarriesEveryFieldAnnotation)
 {
     const auto& fields = RuntimeFieldsOf<CodegenGolden>();

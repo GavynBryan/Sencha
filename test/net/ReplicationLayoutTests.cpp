@@ -1,6 +1,4 @@
 #include <gtest/gtest.h>
-#include <net/NetComponentSchemas.h>
-#include <controller/ControllerComponentSchemas.h>
 
 #include <controller/LookOrientation.h>
 #include <math/MathSchemas.h>

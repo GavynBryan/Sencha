@@ -43,3 +43,13 @@ struct ComponentDefinition<CodegenGolden>
         };
     }
 };
+
+template <>
+struct ComponentDefinition<CodegenGoldenTag>
+{
+    static constexpr std::string_view Identity = "test.codegen.golden_tag";
+    static constexpr std::string_view SchemaName = "CodegenGoldenTag";
+    static constexpr std::uint32_t SceneChunk = MakeFourCC('G', 'T', 'A', 'G');
+
+    static auto Fields() { return std::tuple{}; }
+};

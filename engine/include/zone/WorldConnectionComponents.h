@@ -1,15 +1,14 @@
 #pragma once
 
 #include <core/metadata/EnumSchema.h>
+#include <ecs/ComponentAnnotations.h>
 #include <math/Vec.h>
-#include <ecs/ComponentTypeId.h>
 #include <world/serialization/SceneFieldCodec.h>
 #include <zone/WorldPartitionIds.h>
 
 #include <array>
 #include <cstdint>
 #include <string_view>
-#include <tuple>
 
 enum class LinkKind : std::uint32_t
 {
@@ -31,26 +30,57 @@ enum DockDirection : std::uint32_t
     DockDirectionBoth = DockDirectionAToB | DockDirectionBToA,
 };
 
-struct WorldDock
+// The identities are the schema names, spaces included: they are display
+// labels that became persisted identity, and tidying them now would rename
+// every component in every cooked world.
+struct SENCHA_COMPONENT("World Dock")
+       SENCHA_SCHEMA("World Dock")
+       SENCHA_SCENE_CHUNK("WDCK")
+WorldDock
 {
+    SENCHA_FIELD("id")
     DockId Id;
+
+    SENCHA_FIELD("zone_a")
     ZoneId ZoneA;
+
+    SENCHA_FIELD("zone_b")
     ZoneId ZoneB;
+
+    SENCHA_FIELD("half_extents")
     Vec2d HalfExtents{ 1.0f, 1.5f };
+
+    SENCHA_FIELD("directions")
     std::uint32_t Directions = DockDirectionBoth;
 };
 
-struct WorldLink
+struct SENCHA_COMPONENT("World Link")
+       SENCHA_SCHEMA("World Link")
+       SENCHA_SCENE_CHUNK("WLNK")
+WorldLink
 {
+    SENCHA_FIELD("id")
     LinkId Id;
+
+    SENCHA_FIELD("zone_a")
     ZoneId ZoneA;
+
+    SENCHA_FIELD("zone_b")
     ZoneId ZoneB;
+
+    SENCHA_FIELD("kind")
     LinkKind Kind = LinkKind::Teleport;
+
+    SENCHA_FIELD("directions")
     std::uint32_t Directions = DockDirectionBoth;
 };
 
-struct DockGateBinding
+struct SENCHA_COMPONENT("Dock Gate Binding")
+       SENCHA_SCHEMA("Dock Gate Binding")
+       SENCHA_SCENE_CHUNK("DGAT")
+DockGateBinding
 {
+    SENCHA_FIELD("dock")
     DockId Id;
 };
 
@@ -81,13 +111,6 @@ struct SceneFieldCodec<LinkId>
                      SceneSerializationContext&);
 };
 
-// Stated rather than derived from TypeSchema::Name, so the schemas can move
-// without the identities moving with them. The names are repeated exactly,
-// spaces included: they are display labels that became persisted identity, and
-// tidying them now would rename every component in every cooked world.
-SENCHA_DECLARE_COMPONENT_TYPE(WorldDock,       "World Dock");
-SENCHA_COMPONENT_DECLARES_SCHEMA(WorldDock);
-SENCHA_DECLARE_COMPONENT_TYPE(WorldLink,       "World Link");
-SENCHA_COMPONENT_DECLARES_SCHEMA(WorldLink);
-SENCHA_DECLARE_COMPONENT_TYPE(DockGateBinding, "Dock Gate Binding");
-SENCHA_COMPONENT_DECLARES_SCHEMA(DockGateBinding);
+#if !defined(SENCHA_CODEGEN)
+#  include <zone/WorldConnectionComponents.sencha.h>
+#endif

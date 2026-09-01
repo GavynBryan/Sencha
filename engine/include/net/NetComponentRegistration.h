@@ -1,7 +1,6 @@
 #pragma once
 
 #include <net/NetParticipantIdentity.h>
-#include <net/NetComponentSchemas.h>
 #include <net/NetReplicationComponents.h>
 #include <net/NetSpawnPrefab.h>
 #include <world/ComponentRegistrar.h>

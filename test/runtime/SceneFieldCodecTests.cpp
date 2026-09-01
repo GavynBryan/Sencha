@@ -4,7 +4,7 @@
 // a stamped id, and must resolve back through the asset registry on load.
 
 #include <gtest/gtest.h>
-#include <render/LightComponentSchemas.h>
+#include <render/PointLightComponent.h>
 #include <world/transform/TransformComponentSchemas.h>
 
 #include <assets/runtime/AssetSystem.h>

@@ -1,12 +1,10 @@
 #pragma once
 
 #include <core/assets/AssetId.h>
-#include <ecs/ComponentTypeId.h>
+#include <ecs/ComponentAnnotations.h>
 #include <ecs/EntityId.h>
 #include <ecs/StoragePartitionId.h>
 
-#include <string_view>
-#include <tuple>
 #include <type_traits>
 
 class World;
@@ -31,19 +29,27 @@ class World;
 // written into the id map both machines ship. Nothing about it depends on the
 // order content was seen in, which is what makes it something a peer can
 // resolve rather than a number local to one process.
+//
+// Replicated because it is how a client builds the entity in the first place,
+// so it has to arrive in the same snapshot that first mentions it.
 //=============================================================================
-struct NetSpawnPrefab
+struct SENCHA_COMPONENT("sencha.net_spawn_prefab")
+       SENCHA_SCHEMA("NetSpawnPrefab")
+       SENCHA_REPLICATED
+NetSpawnPrefab
 {
     // Invalid means no prefab: an entity that is nothing but its replicated
     // state, which is a legitimate thing to be.
+    SENCHA_FIELD("scene")
     AssetId Scene;
 };
 
 static_assert(std::is_trivially_copyable_v<NetSpawnPrefab>,
               "NetSpawnPrefab must be trivially copyable to live in ECS chunks");
 
-SENCHA_DECLARE_COMPONENT_TYPE(NetSpawnPrefab, "sencha.net_spawn_prefab");
-SENCHA_COMPONENT_DECLARES_SCHEMA(NetSpawnPrefab);
+#if !defined(SENCHA_CODEGEN)
+#  include <net/NetSpawnPrefab.sencha.h>
+#endif
 
 //=============================================================================
 // INetPrefabSpawner

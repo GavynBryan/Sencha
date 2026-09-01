@@ -1,7 +1,6 @@
 #pragma once
 
 #include <controller/LookOrientation.h>
-#include <controller/ControllerComponentSchemas.h>
 #include <world/ComponentRegistrar.h>
 
 // Where a controlled entity is aiming, the marker naming the one this machine's
