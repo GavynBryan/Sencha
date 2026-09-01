@@ -1,5 +1,7 @@
 #pragma once
 
+#include <world/ComponentSet.h>
+
 #include <core/assets/AssetRef.h>
 #include <core/metadata/TypeSchema.h>
 #include <ecs/ComponentTraits.h>
@@ -187,6 +189,15 @@ public:
         }
     }
 
+    // A module's whole vocabulary, in the order the set states it. Order is
+    // load-bearing -- it fixes the dense component index and the one-byte wire
+    // key -- and a pack preserves it, so this is a fold and nothing more.
+    template <typename Set>
+    void AddAll()
+    {
+        AddEachOf(static_cast<Set*>(nullptr));
+    }
+
     // Registers a persisted form the component's own TypeSchema cannot state.
     //
     // A few components persist as names rather than as values: a tag container
@@ -239,6 +250,12 @@ public:
     }
 
 private:
+    template <typename... Components>
+    void AddEachOf(ComponentSet<Components...>*)
+    {
+        (Add<Components>(), ...);
+    }
+
     WorldComponentSchema* Storage = nullptr;
     World* DirectWorld = nullptr;
     ComponentSerializerRegistry* Serializers = nullptr;

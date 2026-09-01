@@ -14,4 +14,9 @@ find_dependency(Vulkan)
 include("${CMAKE_CURRENT_LIST_DIR}/SenchaTargets.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/SenchaGameModule.cmake")
 
+# Component metadata generation. The generator ships built, as the imported
+# sencha::component-codegen target, so a game module declares components the way
+# the engine does without needing Clang development packages of its own.
+include("${CMAKE_CURRENT_LIST_DIR}/SenchaComponentCodegen.cmake")
+
 check_required_components(Sencha)

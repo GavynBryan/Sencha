@@ -60,6 +60,22 @@ constexpr ComponentTypeId MakeComponentTypeId(std::string_view name)
 // Primary left undefined: only specializations carry an identity.
 template <typename T> struct ComponentTypeKey;
 
+// A generated definition states the identity, so the key projects from it. This
+// is why the descriptor is a per-header companion the component header includes:
+// resolving a component's id is reached from arbitrary translation units --
+// GetComponentId, TryGet, HasComponent, every typed structural call -- and all
+// of them must see the identity by including the component alone.
+//
+// Partial, so the SENCHA_DECLARE_COMPONENT_TYPE macro below still wins for a
+// component that has not migrated.
+template <typename T>
+    requires HasComponentDefinition<T>
+struct ComponentTypeKey<T>
+{
+    static constexpr std::string_view Name = ComponentDefinition<T>::Identity;
+    static constexpr ComponentTypeId  Id   = MakeComponentTypeId(Name);
+};
+
 template <typename T>
 concept HasComponentTypeKey = requires { ComponentTypeKey<T>::Id; };
 

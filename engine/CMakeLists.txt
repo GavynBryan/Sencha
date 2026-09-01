@@ -13,6 +13,7 @@ file(GLOB_RECURSE SENCHA_ENGINE_HEADERS CONFIGURE_DEPENDS
 )
 
 include("${CMAKE_SOURCE_DIR}/cmake/SenchaShaders.cmake")
+include("${CMAKE_SOURCE_DIR}/cmake/SenchaComponentCodegen.cmake")
 
 if(NOT SENCHA_ENABLE_VULKAN)
     # Only the Vulkan graphics subtree here. The ImGui debug panels are gated
@@ -593,4 +594,5 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/SenchaConfig.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/SenchaConfigVersion.cmake"
     "${CMAKE_SOURCE_DIR}/cmake/SenchaGameModule.cmake"
+    "${CMAKE_SOURCE_DIR}/cmake/SenchaComponentCodegen.cmake"
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/Sencha")

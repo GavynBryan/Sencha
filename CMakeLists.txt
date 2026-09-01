@@ -102,6 +102,11 @@ if(MINGW)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
 endif()
 
+# Built before the engine so component metadata can be generated for it. The
+# tool links no engine code; it is skipped when Clang development packages are
+# absent, which is harmless until a component is annotated.
+add_subdirectory(tools/component-codegen)
+
 add_subdirectory(engine)
 
 add_subdirectory(app)

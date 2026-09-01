@@ -8,8 +8,12 @@
 #
 # OUTPUT_NAME defaults to "game" so the host discovers the module beside itself
 # (game<ext>) and a bundle runs with a bare `app +map ...`.
+# COMPONENT_HEADERS lists the module's annotated component headers. Their
+# ComponentDefinition companions are generated into the module's own build tree
+# by the generator the SDK ships prebuilt, so declaring a game component costs
+# the same as declaring an engine one and needs no Clang installed.
 function(sencha_game_module target)
-    cmake_parse_arguments(ARG "" "OUTPUT_NAME" "SOURCES" ${ARGN})
+    cmake_parse_arguments(ARG "" "OUTPUT_NAME" "SOURCES;COMPONENT_HEADERS" ${ARGN})
     if(NOT ARG_SOURCES)
         message(FATAL_ERROR "sencha_game_module(${target}): SOURCES is required")
     endif()
@@ -24,4 +28,8 @@ function(sencha_game_module target)
         VISIBILITY_INLINES_HIDDEN ON
         PREFIX ""
         OUTPUT_NAME "${ARG_OUTPUT_NAME}")
+
+    if(ARG_COMPONENT_HEADERS)
+        sencha_generate_component_metadata(${target} HEADERS ${ARG_COMPONENT_HEADERS})
+    endif()
 endfunction()
