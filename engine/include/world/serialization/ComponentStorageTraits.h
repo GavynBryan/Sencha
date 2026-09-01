@@ -1,8 +1,8 @@
 #pragma once
 
 #include <core/metadata/TypeSchema.h>
+#include <core/serialization/FourCC.h>
 #include <world/registry/Registry.h>
-#include <world/transform/TransformComponents.h>
 
 #include <cstdint>
 
@@ -52,43 +52,3 @@ struct ComponentStorageTraits
     }
 };
 
-// LocalTransform is the one structural special case: WorldTransform and Parent
-// are not serialized themselves (hierarchy travels separately and
-// WorldTransform is derived), so they register alongside LocalTransform, and
-// every loaded LocalTransform seeds a matching WorldTransform for propagation.
-template <>
-struct ComponentStorageTraits<LocalTransform>
-{
-    static constexpr std::uint32_t BinaryChunkId = TypeSchema<LocalTransform>::SceneChunkId;
-
-    static void Register(World& world)
-    {
-        if (!world.IsRegistered<LocalTransform>())
-            world.RegisterComponent<LocalTransform>();
-        if (!world.IsRegistered<WorldTransform>())
-            world.RegisterComponent<WorldTransform>();
-        if (!world.IsRegistered<Parent>())
-            world.RegisterComponent<Parent>();
-    }
-
-    static void Register(Registry& registry)
-    {
-        Register(registry.Components);
-    }
-
-    static bool Add(World& world, EntityId entity, LocalTransform component)
-    {
-        if (world.HasComponent<LocalTransform>(entity))
-            return false;
-
-        world.AddComponent(entity, component);
-        if (!world.HasComponent<WorldTransform>(entity))
-            world.AddComponent(entity, WorldTransform{ component.Value });
-        return true;
-    }
-
-    static bool Add(Registry& registry, EntityId entity, LocalTransform component)
-    {
-        return Add(registry.Components, entity, component);
-    }
-};

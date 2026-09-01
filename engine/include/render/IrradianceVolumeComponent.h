@@ -1,8 +1,5 @@
 #pragma once
 
-#include <core/metadata/Field.h>
-#include <core/metadata/TypeSchema.h>
-#include <core/serialization/FourCC.h>
 #include <ecs/ComponentTypeId.h>
 #include <math/Vec.h>
 
@@ -27,26 +24,6 @@ struct IrradianceVolumeComponent
     // interior wall thickness so dilation cannot bleed across a thin wall.
     float CellSize = 1.0f;
     std::int32_t Priority = 0;
-};
-
-template <>
-struct TypeSchema<IrradianceVolumeComponent>
-{
-    static constexpr std::string_view Name = "IrradianceVolume";
-    static constexpr std::uint32_t SceneChunkId = MakeFourCC('I', 'R', 'V', 'L');
-
-    static auto Fields()
-    {
-        const IrradianceVolumeComponent defaults{};
-        return std::tuple{
-            MakeField("half_extents", &IrradianceVolumeComponent::HalfExtents)
-                .Default(defaults.HalfExtents),
-            MakeField("cell_size", &IrradianceVolumeComponent::CellSize)
-                .Default(defaults.CellSize),
-            MakeField("priority", &IrradianceVolumeComponent::Priority)
-                .Default(defaults.Priority),
-        };
-    }
 };
 
 SENCHA_DECLARE_COMPONENT_TYPE(IrradianceVolumeComponent, "IrradianceVolume");

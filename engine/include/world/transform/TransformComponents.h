@@ -1,9 +1,5 @@
 #pragma once
 
-#include <core/metadata/ComponentRemovable.h>
-#include <core/metadata/Field.h>
-#include <core/metadata/TypeSchema.h>
-#include <core/serialization/FourCC.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 #include <math/geometry/3d/Transform3d.h>
@@ -43,36 +39,6 @@ struct WorldTransform
 struct Parent
 {
     EntityId Entity;
-};
-
-template <>
-struct TypeSchema<LocalTransform>
-{
-    static constexpr std::string_view Name = "Transform";
-    static constexpr std::uint32_t SceneChunkId = MakeFourCC('X', 'F', 'R', 'M');
-    // Where a thing is, which is the one fact every peer needs about every
-    // entity it can see.
-    static constexpr bool Replicated = true;
-    // A player moves the moment the key goes down rather than a round trip
-    // later, so their own machine keeps simulating where they are and treats
-    // what arrives as the authority's view to resume from.
-    static constexpr bool Predicted = true;
-
-    static auto Fields()
-    {
-        return std::tuple{
-            MakeField("local", &LocalTransform::Value),
-        };
-    }
-};
-
-// Structural: paired with the derived WorldTransform, so the editor must not let
-// it be removed (that would orphan the pairing). A transform-less entity is made
-// by never adding one, not by stripping it. (core/metadata/ComponentRemovable.h)
-template <>
-struct ComponentRemovable<LocalTransform>
-{
-    static constexpr bool Value = false;
 };
 
 // WorldTransform and Parent are pure-runtime (never serialized themselves), so

@@ -1,5 +1,6 @@
 #include <ecs/WorldComponentSchema.h>
 #include <world/RuntimeWorld.h>
+#include <world/WorldComponentSchemas.h>
 #include <world/transform/TransformComponents.h>
 #include <world/build/EntityBuildPackage.h>
 #include <zone/ZonePackageImporter.h>

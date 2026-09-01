@@ -1,8 +1,6 @@
 #pragma once
 
 #include <core/assets/AssetId.h>
-#include <core/metadata/Field.h>
-#include <core/metadata/TypeSchema.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 #include <ecs/StoragePartitionId.h>
@@ -45,22 +43,6 @@ static_assert(std::is_trivially_copyable_v<NetSpawnPrefab>,
               "NetSpawnPrefab must be trivially copyable to live in ECS chunks");
 
 SENCHA_DECLARE_COMPONENT_TYPE(NetSpawnPrefab, "sencha.net_spawn_prefab");
-
-template <>
-struct TypeSchema<NetSpawnPrefab>
-{
-    static constexpr std::string_view Name = "NetSpawnPrefab";
-    // How a client builds the entity in the first place, so it has to arrive in
-    // the same snapshot that first mentions it.
-    static constexpr bool Replicated = true;
-
-    static auto Fields()
-    {
-        return std::tuple{
-            MakeField("scene", &NetSpawnPrefab::Scene),
-        };
-    }
-};
 
 //=============================================================================
 // INetPrefabSpawner

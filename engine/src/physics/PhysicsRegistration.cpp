@@ -1,4 +1,5 @@
 #include <physics/PhysicsRegistration.h>
+#include <physics/PhysicsComponentSchemas.h>
 
 #include <app/EngineSchedule.h>
 #include <ecs/World.h>

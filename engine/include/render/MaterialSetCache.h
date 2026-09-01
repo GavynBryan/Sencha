@@ -3,17 +3,12 @@
 #include <core/assets/AssetCache.h>
 #include <core/handle/Handle.h>
 #include <render/Material.h>
+#include <render/MaterialSetHandle.h>
 
 #include <cstdint>
 #include <span>
 #include <string>
 #include <vector>
-
-// Handle to an ordered, immutable set of materials owned by MaterialSetCache.
-// One of the engine's unified Handle<Tag> types. Transient: scene data persists
-// the material paths, never this handle (the StaticMeshHandle / MaterialHandle
-// rule).
-using MaterialSetHandle = Handle<struct MaterialSetHandleTag>;
 
 class MaterialCache;
 

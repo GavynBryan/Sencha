@@ -1,4 +1,5 @@
 #include <world/scene/SceneInstance.h>
+#include <world/WorldComponentSchemas.h>
 
 #include <world/scene/SceneInstanceIndex.h>
 

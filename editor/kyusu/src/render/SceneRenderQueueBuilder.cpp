@@ -7,6 +7,7 @@
 #include "render/EditorLightGather.h"
 
 #include <assets/cook/BrushClustering.h>   // CookBrushGeometry
+#include <render/skinned_mesh/SkinnedMeshCache.h>
 #include <assets/cook/BrushGeometryCook.h> // CollectMaterialOrder, BakeBrushFacesToStaticMesh
 #include <assets/runtime/AssetSystem.h>
 #include <core/hash/Fnv1a.h>

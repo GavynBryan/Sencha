@@ -1,4 +1,5 @@
 #include <audio/AudioSystem.h>
+#include <audio/AudioComponentSchemas.h>
 
 #include <app/GameContexts.h>
 #include <audio/AudioService.h>

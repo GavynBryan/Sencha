@@ -9,6 +9,7 @@
 #include "document/EditorDocument.h"
 
 #include <core/assets/AssetRef.h>
+#include <world/WorldComponentSchemas.h>
 #include <core/assets/AssetKindRegistry.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>

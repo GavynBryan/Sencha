@@ -1,4 +1,5 @@
 #include <world/identity/PersistentIdComponent.h>
+#include <world/WorldComponentSchemas.h>
 
 #include <core/serialization/Archive.h>
 

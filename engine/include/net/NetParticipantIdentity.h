@@ -1,7 +1,5 @@
 #pragma once
 
-#include <core/metadata/Field.h>
-#include <core/metadata/TypeSchema.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 #include <net/NetReplicationComponents.h>
@@ -25,20 +23,6 @@ static_assert(std::is_trivially_copyable_v<NetParticipantIdentity>);
 
 SENCHA_DECLARE_COMPONENT_TYPE(NetParticipantIdentity,
                               "sencha.net_participant_identity");
-
-template <>
-struct TypeSchema<NetParticipantIdentity>
-{
-    static constexpr std::string_view Name = "NetParticipantIdentity";
-    static constexpr bool Replicated = true;
-
-    static auto Fields()
-    {
-        return std::tuple{
-            MakeField("peer", &NetParticipantIdentity::Peer),
-        };
-    }
-};
 
 // A valid peer has at most one projected participant. Peer zero is deliberately
 // not searchable: it represents local participants, bots, and the authority,

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/identity/StrongId.h>
-#include <core/metadata/Field.h>
 #include <ecs/ComponentTypeId.h>
 
 #include <cstdint>
@@ -67,22 +66,6 @@ static_assert(std::is_trivially_copyable_v<NetOwner>,
 
 SENCHA_DECLARE_COMPONENT_TYPE(NetOwner, "sencha.net_owner");
 
-template <>
-struct TypeSchema<NetOwner>
-{
-    static constexpr std::string_view Name = "NetOwner";
-    // Ownership itself travels: a client cannot know which entity is its own
-    // until the authority says so, and everything owner-only keys off it.
-    static constexpr bool Replicated = true;
-
-    static auto Fields()
-    {
-        return std::tuple{
-            MakeField("peer", &NetOwner::Peer),
-        };
-    }
-};
-
 //-----------------------------------------------------------------------------
 // NetDrivenBy
 //
@@ -110,18 +93,3 @@ static_assert(std::is_trivially_copyable_v<NetDrivenBy>,
 
 SENCHA_DECLARE_COMPONENT_TYPE(NetDrivenBy, "sencha.net_driven_by");
 
-template <>
-struct TypeSchema<NetDrivenBy>
-{
-    static constexpr std::string_view Name = "NetDrivenBy";
-    // A client cannot tell which of the entities it holds is the one its own
-    // input reaches until the authority says so.
-    static constexpr bool Replicated = true;
-
-    static auto Fields()
-    {
-        return std::tuple{
-            MakeField("peer", &NetDrivenBy::Peer),
-        };
-    }
-};

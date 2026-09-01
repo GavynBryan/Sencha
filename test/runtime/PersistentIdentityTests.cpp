@@ -1,4 +1,5 @@
 #include <ecs/WorldComponentSchema.h>
+#include <world/WorldComponentSchemas.h>
 #include <world/RuntimeWorld.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>

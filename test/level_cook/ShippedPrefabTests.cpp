@@ -13,6 +13,7 @@
 #include "TemplateComponents.h"
 
 #include <assets/runtime/RuntimeAssets.h>
+#include <world/transform/TransformComponents.h>
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
 #include <abilities/AbilitySet.h>

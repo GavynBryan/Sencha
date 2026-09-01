@@ -4,6 +4,7 @@
 // a stamped id, and must resolve back through the asset registry on load.
 
 #include <gtest/gtest.h>
+#include <world/WorldComponentSchemas.h>
 
 #include <assets/runtime/AssetSystem.h>
 #include <core/json/JsonParser.h>
@@ -12,7 +13,7 @@
 #include <core/serialization/JsonArchive.h>
 #include <math/MathSchemas.h>
 #include <render/MaterialCache.h>
-#include <render/PointLightComponent.h>
+#include <render/RenderComponentSchemas.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/ComponentSerializer.h>

@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <world/WorldComponentSchemas.h>
 
 #include <app/EngineSchedule.h>
 #include <camera/CameraRig.h>

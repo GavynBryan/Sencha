@@ -1,4 +1,6 @@
 #include <world/registry/SceneRegistryInitialization.h>
+#include <anim/AnimationComponentSchemas.h>
+#include <audio/AudioComponentSchemas.h>
 
 #include <anim/AnimationClipPlayerComponent.h>
 #include <audio/AudioSourceComponent.h>
@@ -6,6 +8,7 @@
 #include <movement/MovementComponentSchemas.h>
 #include <movement/MovementRegistration.h>
 #include <render/StaticMeshComponent.h>
+#include <render/RenderComponentSchemas.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <render/ZoneLightmapComponent.h>
 #include <world/ComponentRegistrar.h>

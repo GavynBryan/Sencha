@@ -8,6 +8,7 @@
 // what decides which atlas a chunk samples does not, and that is what regressed.
 
 #include <gtest/gtest.h>
+#include <render/RenderComponentSchemas.h>
 
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>

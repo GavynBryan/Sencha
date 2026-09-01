@@ -1,6 +1,7 @@
 #pragma once
 
 #include <world/ComponentRegistrar.h>
+#include <world/WorldComponentSchemas.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/scene/SceneInstance.h>
 #include <world/transform/TransformComponents.h>

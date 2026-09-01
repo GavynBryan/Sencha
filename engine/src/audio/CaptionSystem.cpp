@@ -1,4 +1,5 @@
 #include <audio/CaptionSystem.h>
+#include <audio/AudioComponentSchemas.h>
 
 #include <app/GameContexts.h>
 #include <audio/AudioCaptionComponent.h>

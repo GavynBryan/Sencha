@@ -4,6 +4,7 @@
 // rollback lives in SceneSerializerFailureTests.cpp.
 
 #include <gtest/gtest.h>
+#include <world/transform/TransformComponents.h>
 
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>

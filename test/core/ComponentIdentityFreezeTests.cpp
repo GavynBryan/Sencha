@@ -139,6 +139,27 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
 };
 // clang-format on
 
+// Components whose lifecycle hooks are load-bearing, and the fact that the
+    // engine's own registration captures them.
+    //
+    // Whether a component has hooks is decided where it is registered, from the
+    // ComponentTraits that registration can see. A registration site that cannot
+    // see them registers the component with no hooks at all, and nothing says so:
+    // the component still stores, still serializes, still replicates, and only the
+    // behaviour the hooks carried goes missing -- an asset never retained, an index
+    // never populated. That is what this table is for.
+    constexpr std::string_view kComponentsWithLifecycleHooks[] = {
+        "StaticMesh",
+        "SkinnedMesh",
+        "AnimationClipPlayer",
+        "ZoneLightmap",
+        "AudioSource",
+        "AudioCaption",
+        "persistent_id",
+        "scene_instance",
+        "sencha.movement_tuning_source",
+    };
+
 // The wire contract: two builds refuse each other unless these agree.
 constexpr std::uint64_t kFrozenReplicationTableHash = 0x524A2DFCC6407759ull;
 
@@ -231,6 +252,29 @@ TEST(ComponentIdentityFreeze, ReplicationTableHashIsUnchanged)
     EXPECT_EQ(vocabulary.Replication.TableHash(), kFrozenReplicationTableHash)
         << "the replication handshake compares this value: a build whose hash "
            "moved refuses every peer that has not moved with it";
+}
+
+TEST(ComponentIdentityFreeze, LifecycleHooksSurviveRegistration)
+{
+    EngineVocabulary vocabulary;
+
+    World world;
+    vocabulary.Schema.Apply(world);
+
+    for (const std::string_view name : kComponentsWithLifecycleHooks)
+    {
+        const auto entries = vocabulary.Schema.Entries();
+        const auto found = std::find_if(
+            entries.begin(), entries.end(),
+            [&](const WorldComponentSchema::Entry& entry) { return entry.Name == name; });
+        ASSERT_NE(found, entries.end()) << "component vanished: " << name;
+
+        const ComponentMeta* meta = world.GetMeta(world.GetComponentIdByType(found->Type));
+        ASSERT_NE(meta, nullptr) << name;
+        EXPECT_TRUE(meta->OnAddHook != nullptr || meta->OnRemoveHook != nullptr)
+            << name << " registered without its lifecycle hooks: whatever they "
+                       "retained or indexed is now silently unowned";
+    }
 }
 
 // Not a test. Prints the table above in source form; see the header comment.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <camera/CameraRig.h>
+#include <camera/CameraComponentSchemas.h>
 #include <camera/CameraSeat.h>
 #include <components/CameraComponent.h>
 #include <world/ComponentRegistrar.h>

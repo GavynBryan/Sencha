@@ -1,4 +1,5 @@
 #include <core/logging/LoggingProvider.h>
+#include <world/WorldComponentSchemas.h>
 #include <ecs/WorldComponentSchema.h>
 #include <world/RuntimeWorld.h>
 #include <world/build/EntityBuildPackage.h>

@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <world/transform/TransformComponents.h>
 
 #include <core/metadata/Field.h>
 #include <core/serialization/FourCC.h>

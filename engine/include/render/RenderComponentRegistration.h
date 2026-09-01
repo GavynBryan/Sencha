@@ -1,12 +1,7 @@
 #pragma once
 
-#include <anim/AnimationClipPlayerComponent.h>
-#include <render/IrradianceVolumeComponent.h>
-#include <render/PointLightComponent.h>
-#include <render/SpotLightComponent.h>
-#include <render/StaticMeshComponent.h>
-#include <render/skinned_mesh/SkinnedMeshComponent.h>
-#include <render/ZoneLightmapComponent.h>
+#include <anim/AnimationComponentSchemas.h>
+#include <render/RenderComponentSchemas.h>
 #include <world/ComponentRegistrar.h>
 
 // What a zone draws: the meshes and the lights, plus the baked products a zone

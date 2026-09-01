@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+#include <net/NetComponentSchemas.h>
+#include <controller/ControllerComponentSchemas.h>
 
 #include <controller/LookOrientation.h>
 #include <math/MathSchemas.h>
@@ -7,6 +9,7 @@
 #include <net/ReplicationLayout.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
+#include <world/WorldComponentSchemas.h>
 #include <world/transform/TransformComponents.h>
 
 #include <algorithm>

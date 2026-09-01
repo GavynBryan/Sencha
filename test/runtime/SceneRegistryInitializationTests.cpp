@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+#include <audio/AudioComponentSchemas.h>
+#include <render/RenderComponentSchemas.h>
 
 #include <audio/AudioSourceComponent.h>
 #include <components/ActiveCameraService.h>
