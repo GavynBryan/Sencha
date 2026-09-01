@@ -98,8 +98,6 @@ struct SceneFieldCodec<AssetId>
                      SceneSerializationContext&);
 };
 
-SENCHA_COMPONENT_DECLARES_TRAITS(SceneInstance);
-
 #if !defined(SENCHA_CODEGEN)
 #  include <world/scene/SceneInstance.sencha.h>
 #endif

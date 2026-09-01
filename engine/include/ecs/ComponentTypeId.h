@@ -142,30 +142,3 @@ constexpr std::string_view ResolveComponentName()
         static constexpr std::string_view  Name = StableName;                \
         static constexpr ComponentTypeId   Id   = MakeComponentTypeId(StableName); \
     }
-
-//-----------------------------------------------------------------------------
-// What a component's feature promises about it
-//
-// Registration answers "does this have a schema?" and "what do its
-// ComponentTraits say?" by asking whether the declarations are visible, and
-// silence means nothing to do.
-// A registration site that cannot see them therefore registers a component with
-// no serializer, or with no hooks, and nothing reports it: the component still
-// stores, still replicates, and only what the missing half did goes quietly
-// undone -- an asset never retained, an entity never indexed, a component that
-// arrives without the columns it cannot work without, a component that stops
-// round-tripping through scenes.
-//
-// These say, in the component's own header where every registration site sees
-// them, that the feature defines those things somewhere. Registration checks the
-// promise against what it can actually see, so a missing include is a compile
-// error naming the component instead of behaviour going missing at runtime.
-//-----------------------------------------------------------------------------
-template <typename T> inline constexpr bool ComponentDeclaresSchema = false;
-template <typename T> inline constexpr bool ComponentDeclaresTraits = false;
-
-#define SENCHA_COMPONENT_DECLARES_SCHEMA(Type)                                \
-    template <> inline constexpr bool ComponentDeclaresSchema<Type> = true
-
-#define SENCHA_COMPONENT_DECLARES_TRAITS(Type)                             \
-    template <> inline constexpr bool ComponentDeclaresTraits<Type> = true

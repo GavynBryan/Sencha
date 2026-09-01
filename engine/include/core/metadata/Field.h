@@ -55,7 +55,6 @@ struct Field
     Member Class::* Ptr = nullptr;
     bool IsOptional = false;
     std::optional<Member> DefaultValue{};
-    std::uint32_t StableId = 0;
     // Asset-reference shape of this member, the two co-varying together: Asset is
     // the kind (Unknown means "not an asset field"), Arity is how it is stored
     // (one handle, or an ordered list). Tooling resolves the handle to/from an

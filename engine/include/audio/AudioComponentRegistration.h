@@ -1,7 +1,6 @@
 #pragma once
 
 #include <audio/AudioCaptionComponent.h>
-#include <audio/AudioComponentTraits.h>
 #include <audio/AudioSourceComponent.h>
 #include <world/ComponentRegistrar.h>
 

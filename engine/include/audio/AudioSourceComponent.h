@@ -4,6 +4,7 @@
 #include <audio/AudioClipHandle.h>
 #include <core/text/InlineString.h>
 #include <ecs/ComponentAnnotations.h>
+#include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 
@@ -57,9 +58,20 @@ AudioSourceComponent
     // One-shots fire once per component lifetime; loops use Voice validity.
     bool Started = false;
 };
-SENCHA_COMPONENT_DECLARES_TRAITS(AudioSourceComponent);
 
-class CaptionRuntime;
+// OnAdd retains the clip and nothing more: deserialization is not activation,
+// and the zone may be dormant. AudioSystem starts playback.
+//
+// OnRemove enforces the slice's one invariant (docs/audio/runtime.md,
+// Decision C): a voice never outlives the clip reference that feeds it. Stop
+// first, then release -- in that order, in this hook, which fires on both
+// entity destruction and zone detach.
+template <>
+struct ComponentTraits<AudioSourceComponent>
+{
+    static void OnAdd(AudioSourceComponent& component, World& world, EntityId);
+    static void OnRemove(const AudioSourceComponent& component, World& world, EntityId);
+};
 
 // Archetype storage relocates components with memcpy, so the component must
 // stay trivially copyable (enforced by World::RegisterComponent) — this is

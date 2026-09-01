@@ -6,7 +6,8 @@
 #include <core/metadata/RuntimeSchema.h>
 #include <core/serialization/FourCC.h>
 #include <ecs/ComponentTypeId.h>
-#include <movement/MovementComponentTraits.h>
+#include <movement/components/CharacterMovement.h>
+#include <movement/components/MovementTuning.h>
 #include <world/serialization/IComponentSerializer.h>
 #include <world/serialization/SceneAssetRef.h>
 

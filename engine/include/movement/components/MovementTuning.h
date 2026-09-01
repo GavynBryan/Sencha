@@ -1,7 +1,9 @@
 #pragma once
 
 #include <ecs/ComponentAnnotations.h>
+#include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
+#include <ecs/EntityId.h>
 #include <movement/MovementProfileData.h>
 
 #include <cstddef>
@@ -33,7 +35,17 @@ MovementTuningSource
                    "MoveSpeed attribute.")
     MovementProfileHandle Profile{};
 };
-SENCHA_COMPONENT_DECLARES_TRAITS(MovementTuningSource);
+
+// The component owns one reference to its profile for as long as it carries
+// it. Whoever produced the handle owns their own and lets it go; this is what
+// keeps the profile resident afterwards, and what frees it when the last
+// character naming it is destroyed.
+template <>
+struct ComponentTraits<MovementTuningSource>
+{
+    static void OnAdd(MovementTuningSource& component, World& world, EntityId);
+    static void OnRemove(const MovementTuningSource& component, World& world, EntityId);
+};
 
 // The handle wrapper is addressed by the asset-field editors at the member's
 // own offset, the way a mesh handle is: they copy handle bytes without naming

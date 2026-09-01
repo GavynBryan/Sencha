@@ -52,8 +52,6 @@ struct SceneFieldCodec<PersistentEntityId>
                      SceneSerializationContext&);
 };
 
-SENCHA_COMPONENT_DECLARES_TRAITS(PersistentIdComponent);
-
 #if !defined(SENCHA_CODEGEN)
 #  include <world/identity/PersistentIdComponent.sencha.h>
 #endif

@@ -3,7 +3,14 @@
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
 #include <ecs/ComponentAnnotations.h>
+#include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
+#include <movement/JumpState.h>
+#include <movement/MovementIntent.h>
+#include <movement/components/CharacterFacts.h>
+#include <movement/components/MotionChannels.h>
+#include <movement/components/MovementTuning.h>
+#include <world/transform/TransformHistory.h>
 
 #include <compare>
 #include <cstdint>
@@ -16,7 +23,7 @@
 //
 // Carrying CharacterMovement is what makes an entity something the movement
 // systems step. The columns that tick reads and writes are the set it owes,
-// declared with its lifecycle (movement/MovementComponentTraits.h).
+// declared below.
 //=============================================================================
 
 // Registration-order id from the LocomotionModeRegistry. Zero is the sentinel;
@@ -63,7 +70,6 @@ CharacterMovement
     SENCHA_OWNER_ONLY
     LocomotionModeId Mode{};
 };
-SENCHA_COMPONENT_DECLARES_TRAITS(CharacterMovement);
 
 // How hard a mode request pushes. Automatic loses to Explicit, which loses to
 // Forced; a Forced request also bypasses the target mode's entry check.
@@ -82,6 +88,45 @@ struct SENCHA_COMPONENT("sencha.mode_transition_request") ModeTransitionRequest
 };
 
 static_assert(std::is_trivially_copyable_v<CharacterMovement>);
+
+//=============================================================================
+// What a moving character owes
+//
+// These are the columns the movement tick reads and writes: last step's
+// physical facts, this tick's request and resolved coefficients, the
+// contribution channels, and the composed motor request. None of them is
+// authored and none of them means anything on its own -- an entity with a
+// CharacterMovement and no MotionRequest is not a character with a missing
+// setting, it is a character that quietly stops matching the query that would
+// have moved it.
+//
+// That failure has no error to report and no frame to happen on, which is why
+// it is stated once here instead of ensured at every place a character is
+// built. Every path that adds a CharacterMovement -- content, code, the editor
+// adding it by identity, a command buffer flushing it after a query -- ends in
+// one of the World's structural adds, and each of those applies the set.
+//
+// The transform history is here for the same reason in a different register: a
+// body stepped at the tick rate and drawn at the frame rate needs the two poses
+// to interpolate between, and having them is not optional for something that
+// moves every tick.
+//=============================================================================
+template <>
+struct ComponentTraits<CharacterMovement>
+{
+    using DerivedComponents = std::tuple<
+        MovementIntent,
+        JumpState,
+        KinematicState,
+        SupportState,
+        ResolvedMovementTuning,
+        LocomotionOutput,
+        MotionAxisOverride,
+        MotionImpulse,
+        MotionRequest,
+        ModeTransitionRequest,
+        WorldTransformHistory>;
+};
 
 #if !defined(SENCHA_CODEGEN)
 #  include <movement/components/CharacterMovement.sencha.h>

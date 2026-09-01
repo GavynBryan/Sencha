@@ -2,7 +2,9 @@
 
 #include <anim/AnimationClipHandle.h>
 #include <ecs/ComponentAnnotations.h>
+#include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
+#include <ecs/EntityId.h>
 
 //=============================================================================
 // AnimationClipPlayerComponent
@@ -51,7 +53,16 @@ AnimationClipPlayerComponent
                    "final pose.")
     bool Loop = true;
 };
-SENCHA_COMPONENT_DECLARES_TRAITS(AnimationClipPlayerComponent);
+
+// Holds the clip for as long as the component is carried, through the
+// AnimationClipComponentAssets resource the host points at its cache.
+template <>
+struct ComponentTraits<AnimationClipPlayerComponent>
+{
+    static void OnAdd(AnimationClipPlayerComponent& component, World& world, EntityId);
+    static void OnRemove(const AnimationClipPlayerComponent& component, World& world,
+                         EntityId);
+};
 
 #if !defined(SENCHA_CODEGEN)
 #  include <anim/AnimationClipPlayerComponent.sencha.h>

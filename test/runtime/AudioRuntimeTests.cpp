@@ -1,9 +1,10 @@
 #include <gtest/gtest.h>
-#include <audio/AudioComponentTraits.h>
 
+#include <audio/AudioCaptionComponent.h>
 #include <audio/AudioClipCache.h>
 #include <audio/AudioService.h>
 #include <audio/AudioSourceComponent.h>
+#include <audio/AudioSourceRuntime.h>
 #include <audio/AudioSystem.h>
 #include <core/assets/AssetRegistry.h>
 #include <assets/runtime/AssetSystem.h>

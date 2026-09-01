@@ -17,7 +17,9 @@
 #include <movement/JumpExecutionSystem.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MotionComposition.h>
-#include <movement/MovementComponentTraits.h>
+#include <movement/MovementComponentAssets.h>
+#include <movement/components/CharacterMovement.h>
+#include <movement/components/MovementTuning.h>
 #include <movement/components/MovementSessions.h>
 #include <movement/MovementDefs.h>
 #include <movement/MovementIntent.h>

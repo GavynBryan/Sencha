@@ -3,7 +3,8 @@
 #include <ecs/World.h>
 #include <net/NetDesyncProbe.h>
 #include <net/NetProtocol.h>
-#include <movement/MovementComponentTraits.h>
+#include <movement/components/CharacterMovement.h>
+#include <movement/components/MovementTuning.h>
 #include <net/NetReplicationComponents.h>
 #include <net/ReplicationChangeStore.h>
 #include <net/ReplicationCodec.h>

@@ -3,6 +3,7 @@
 #include <audio/AudioSourceComponent.h>
 #include <audio/Caption.h>
 #include <ecs/ComponentAnnotations.h>
+#include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 
@@ -61,7 +62,18 @@ AudioCaptionComponent
     // Warn-once latch for a caption component without a sibling source.
     bool WarnedOrphan = false;
 };
-SENCHA_COMPONENT_DECLARES_TRAITS(AudioCaptionComponent);
+
+// No OnAdd: there is no asset edge to retain, and deserialization is not
+// activation -- CaptionSystem begins captions.
+//
+// OnRemove ends the active caption (entity destruction and zone detach both
+// fire it). Stale-safe: an already-retired caption is a no-op, and ordering
+// against the sibling source's own OnRemove does not matter.
+template <>
+struct ComponentTraits<AudioCaptionComponent>
+{
+    static void OnRemove(const AudioCaptionComponent& component, World& world, EntityId);
+};
 
 // Archetype storage relocates components with memcpy, so the component must
 // stay trivially copyable (enforced by World::RegisterComponent) — this is

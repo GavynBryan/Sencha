@@ -135,18 +135,6 @@ public:
         constexpr bool hasOnAdd    = !std::is_empty_v<T> && ComponentHasOnAdd<T>;
         constexpr bool hasOnRemove = !std::is_empty_v<T> && ComponentHasOnRemove<T>;
 
-        // Registration is where a component's traits are read for the whole
-        // World, so a unit that cannot see them would decide there are none and
-        // say nothing. The component's own header states that its feature
-        // defines them; this is where that promise is kept.
-        static_assert(!ComponentDeclaresTraits<T> || hasOnAdd || hasOnRemove
-                          || ComponentOwesComponents<T>,
-                      "This component declares ComponentTraits, but none are "
-                      "visible here: include the feature's traits header that "
-                      "defines them. Registering without them leaves whatever "
-                      "they retain or index unowned, and drops the columns the "
-                      "component cannot work without.");
-
         auto it = TypeToId.find(key);
         if (it != TypeToId.end())
         {

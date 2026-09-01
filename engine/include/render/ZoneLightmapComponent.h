@@ -29,12 +29,8 @@ ZoneLightmapComponent
     TextureHandle Ao{};
 };
 
-// Defined in ZoneLightmapComponent.cpp. Retaining a texture needs the cache's
-// definition, and this header is pulled in by scene serialization, schema
-// startup, and the editor's queue builder -- none of which should acquire a
-// dependency on the Vulkan-side texture cache to name a component. Sibling
-// components can inline their hooks because their caches (StaticMeshCache,
-// MaterialSetCache) live under render/; TextureCache does not.
+// Holds both atlases for as long as the component is carried, through the
+// ZoneLightmapComponentAssets resource the host points at its texture cache.
 template <>
 struct ComponentTraits<ZoneLightmapComponent>
 {
@@ -42,8 +38,6 @@ struct ComponentTraits<ZoneLightmapComponent>
     static void OnRemove(const ZoneLightmapComponent& component, World& world,
                          EntityId);
 };
-
-SENCHA_COMPONENT_DECLARES_TRAITS(ZoneLightmapComponent);
 
 #if !defined(SENCHA_CODEGEN)
 #  include <render/ZoneLightmapComponent.sencha.h>

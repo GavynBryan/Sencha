@@ -1,7 +1,9 @@
 #pragma once
 
 #include <ecs/ComponentAnnotations.h>
+#include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
+#include <ecs/EntityId.h>
 #include <render/skinned_mesh/SkinnedMeshHandle.h>
 #include <assets/static_mesh/MeshGeometry.h>
 #include <render/MaterialSetHandle.h>
@@ -59,7 +61,15 @@ SkinnedMeshComponent
                   "ValidateMeshGeometry accepts, or extraction shifts past "
                   "its width");
 };
-SENCHA_COMPONENT_DECLARES_TRAITS(SkinnedMeshComponent);
+
+// Holds the mesh and material set for as long as the component is carried,
+// through the SkinnedMeshComponentAssets resource the host points at its caches.
+template <>
+struct ComponentTraits<SkinnedMeshComponent>
+{
+    static void OnAdd(SkinnedMeshComponent& component, World& world, EntityId);
+    static void OnRemove(const SkinnedMeshComponent& component, World& world, EntityId);
+};
 
 #if !defined(SENCHA_CODEGEN)
 #  include <render/skinned_mesh/SkinnedMeshComponent.sencha.h>

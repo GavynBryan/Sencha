@@ -2,7 +2,6 @@
 // on every machine regardless of how many ticks a frame happened to run.
 
 #include <gtest/gtest.h>
-#include <anim/AnimationComponentTraits.h>
 
 #include <anim/AnimationClipPlaybackSystem.h>
 #include <anim/AnimationClipPlayerComponent.h>
