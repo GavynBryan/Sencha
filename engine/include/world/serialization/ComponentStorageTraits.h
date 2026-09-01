@@ -51,4 +51,3 @@ struct ComponentStorageTraits
         return Add(registry.Components, entity, component);
     }
 };
-

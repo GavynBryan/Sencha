@@ -92,4 +92,3 @@ static_assert(std::is_trivially_copyable_v<NetDrivenBy>,
               "NetDrivenBy must be trivially copyable to live in ECS chunks");
 
 SENCHA_DECLARE_COMPONENT_TYPE(NetDrivenBy, "sencha.net_driven_by");
-
