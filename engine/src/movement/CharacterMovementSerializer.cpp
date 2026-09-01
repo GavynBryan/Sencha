@@ -4,7 +4,7 @@
 #include <core/serialization/FourCC.h>
 #include <ecs/ComponentTypeId.h>
 #include <movement/LocomotionMode.h>
-#include <movement/MovementComponentSchemas.h>
+#include <movement/MovementComponentTraits.h>
 #include <world/serialization/IComponentSerializer.h>
 
 #include <cstddef>

@@ -45,6 +45,28 @@ struct ComponentDefinition<CodegenGolden>
 };
 
 template <>
+struct ComponentDefinition<CodegenGoldenAssets>
+{
+    static constexpr std::string_view Identity = "test.codegen.golden_assets";
+    static constexpr std::string_view SchemaName = "CodegenGoldenAssets";
+    static constexpr std::uint32_t SceneChunk = MakeFourCC('G', 'A', 'S', 'T');
+
+    static auto Fields()
+    {
+        const CodegenGoldenAssets defaults;
+        return std::tuple{
+            MakeField("mesh", &CodegenGoldenAssets::Mesh)
+                .AsAsset(AssetType::StaticMesh, AssetArity::Single),
+            MakeField("materials", &CodegenGoldenAssets::Materials)
+                .AsAsset(AssetType::Material, AssetArity::List),
+            MakeField("profile", &CodegenGoldenAssets::Profile)
+                .Default(defaults.Profile)
+                .AsDataAsset(kGoldenProfileSubtype),
+        };
+    }
+};
+
+template <>
 struct ComponentDefinition<CodegenGoldenTag>
 {
     static constexpr std::string_view Identity = "test.codegen.golden_tag";

@@ -8,7 +8,7 @@
 #include <movement/JumpState.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MotionComposition.h>
-#include <movement/MovementComponentSchemas.h>
+#include <movement/MovementComponentTraits.h>
 #include <movement/MovementIntent.h>
 #include <movement/MovementRegistration.h>
 #include <net/ClientPrediction.h>

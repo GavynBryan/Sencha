@@ -6,7 +6,7 @@
 #include "scene_source/Json5Convert.h"
 
 #include <core/assets/AssetRegistry.h>
-#include <anim/AnimationComponentSchemas.h>
+#include <anim/AnimationClipComponentAssets.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
@@ -15,7 +15,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <render/extract/Camera.h>
 #include <render/StaticMeshComponent.h>
-#include <render/MeshComponentSchemas.h>
+#include <render/MeshComponentAssets.h>
 #include <anim/AnimationClipPlayerComponent.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <movement/MovementComponentAssets.h>

@@ -160,8 +160,10 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
         "sencha.movement_tuning_source",
     };
 
-// The wire contract: two builds refuse each other unless these agree.
-constexpr std::uint64_t kFrozenReplicationTableHash = 0x524A2DFCC6407759ull;
+// The wire contract: two builds refuse each other unless these agree. Moving
+// it is a deliberate act with a reason, never a side effect: the last move put
+// SupportState's fields on the wire in declaration order.
+constexpr std::uint64_t kFrozenReplicationTableHash = 0xD2F75DBD53AAFBE9ull;
 
 struct EngineVocabulary
 {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ecs/ComponentTypeId.h>
+#include <ecs/ComponentAnnotations.h>
 #include <math/Vec.h>
 
 #include <type_traits>
@@ -22,7 +22,7 @@
 // Actions that ask the authority for something -- fire, cast, interact -- go the
 // other way, through AbilityKit, where being answered late is correct.
 //=============================================================================
-struct MovementIntent
+struct SENCHA_COMPONENT("sencha.movement_intent") MovementIntent
 {
     Vec3d WishDir = Vec3d::Zero();
     // Held, not edge-triggered: a replayed tick has to see what the live tick
@@ -33,4 +33,6 @@ struct MovementIntent
 static_assert(std::is_trivially_copyable_v<MovementIntent>,
               "MovementIntent must be trivially copyable to live in ECS chunks");
 
-SENCHA_DECLARE_COMPONENT_TYPE(MovementIntent, "sencha.movement_intent");
+#if !defined(SENCHA_CODEGEN)
+#  include <movement/MovementIntent.sencha.h>
+#endif

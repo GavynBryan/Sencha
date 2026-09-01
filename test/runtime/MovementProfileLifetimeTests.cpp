@@ -22,7 +22,7 @@
 #include <ecs/WorldComponentSchema.h>
 #include <movement/JumpState.h>
 #include <movement/LocomotionMode.h>
-#include <movement/MovementComponentSchemas.h>
+#include <movement/MovementComponentTraits.h>
 #include <movement/MovementProfileData.h>
 #include <movement/MovementRegistration.h>
 #include <net/ReplicationLayout.h>

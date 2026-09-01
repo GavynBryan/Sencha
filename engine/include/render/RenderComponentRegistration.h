@@ -1,8 +1,8 @@
 #pragma once
 
-#include <anim/AnimationComponentSchemas.h>
+#include <anim/AnimationComponentTraits.h>
 #include <render/IrradianceVolumeComponent.h>
-#include <render/MeshComponentSchemas.h>
+#include <render/MeshComponentTraits.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
 #include <render/ZoneLightmapSchema.h>

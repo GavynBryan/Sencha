@@ -3,7 +3,7 @@
 #include <ecs/World.h>
 #include <ecs/WorldComponentSchema.h>
 #include <movement/JumpState.h>
-#include <movement/MovementComponentSchemas.h>
+#include <movement/MovementComponentTraits.h>
 #include <net/ClientPrediction.h>
 #include <net/ReplicationLayout.h>
 #include <world/ComponentRegistrar.h>

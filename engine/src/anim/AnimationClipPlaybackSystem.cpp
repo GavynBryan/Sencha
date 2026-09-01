@@ -1,5 +1,5 @@
 #include <anim/AnimationClipPlaybackSystem.h>
-#include <anim/AnimationComponentSchemas.h>
+#include <anim/AnimationClipComponentAssets.h>
 
 #include <anim/AnimationClipPlayerComponent.h>
 #include <app/EngineSchedule.h>

@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <audio/AudioComponentSchemas.h>
+#include <audio/AudioComponentTraits.h>
 
 #include <audio/AudioClipCache.h>
 #include <audio/AudioService.h>

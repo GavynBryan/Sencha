@@ -142,7 +142,7 @@ public:
         static_assert(!ComponentDeclaresTraits<T> || hasOnAdd || hasOnRemove
                           || ComponentOwesComponents<T>,
                       "This component declares ComponentTraits, but none are "
-                      "visible here: include the feature schema unit that "
+                      "visible here: include the feature's traits header that "
                       "defines them. Registering without them leaves whatever "
                       "they retain or index unowned, and drops the columns the "
                       "component cannot work without.");

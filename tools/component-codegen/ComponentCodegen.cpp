@@ -71,9 +71,7 @@ struct FieldFacts
 {
     std::string Member;      // C++ member name
     std::string Name;        // serialized name
-    std::string AssetKind;   // AssetType enumerator, if any
-    std::string AssetArity;  // "Single" | "List"
-    std::string DataSubtype;
+    std::string AssetRef;    // the Field call that binds the member to an asset, if any
     std::string Label;
     std::string Tooltip;
     std::string Quantize;    // "min,max,bits"
@@ -207,9 +205,9 @@ private:
                 continue;
             std::string value;
             if (Split(text, "sencha.field=", value))            { out.Name = value; tagged = true; }
-            else if (Split(text, "sencha.asset=", value))       { out.AssetKind = value; out.AssetArity = "Single"; }
-            else if (Split(text, "sencha.asset_list=", value))  { out.AssetKind = value; out.AssetArity = "List"; }
-            else if (Split(text, "sencha.data_asset=", value))  out.DataSubtype = value;
+            else if (Split(text, "sencha.asset=", value))       BindAsset(field, out, "AsAsset(AssetType::" + value + ", AssetArity::Single)");
+            else if (Split(text, "sencha.asset_list=", value))  BindAsset(field, out, "AsAsset(AssetType::" + value + ", AssetArity::List)");
+            else if (Split(text, "sencha.data_asset=", value))  BindAsset(field, out, "AsDataAsset(" + value + ")");
             else if (Split(text, "sencha.label=", value))       out.Label = value;
             else if (Split(text, "sencha.tooltip=", value))     out.Tooltip = value;
             else if (Split(text, "sencha.quantize=", value))    out.Quantize = value;
@@ -226,7 +224,7 @@ private:
         {
             // An annotation on an untagged member is a mistake worth reporting:
             // the member is not in the schema, so the annotation does nothing.
-            if (!out.AssetKind.empty() || out.OwnerOnly || out.LocalOnly || !out.Label.empty())
+            if (!out.AssetRef.empty() || out.OwnerOnly || out.LocalOnly || !out.Label.empty())
             {
                 Error(field->getLocation(),
                       "member '" + field->getNameAsString() + "' carries field annotations "
@@ -238,6 +236,19 @@ private:
         out.Member = field->getNameAsString();
         out.HasDefault = field->hasInClassInitializer();
         facts.Fields.push_back(std::move(out));
+    }
+
+    // A member refers to one asset in one way; a second binding is a mistake,
+    // not an override.
+    void BindAsset(const clang::FieldDecl* field, FieldFacts& out, std::string call)
+    {
+        if (!out.AssetRef.empty())
+        {
+            Error(field->getLocation(),
+                  "member '" + field->getNameAsString() + "' has more than one asset binding");
+            return;
+        }
+        out.AssetRef = std::move(call);
     }
 
     void Error(clang::SourceLocation where, const std::string& message)
@@ -277,18 +288,7 @@ void EmitField(std::ostream& out, const ComponentFacts& component, const FieldFa
         << ", &" << component.Type << "::" << field.Member << ")";
     if (field.HasDefault)
         out << "\n                .Default(defaults." << field.Member << ")";
-    if (!field.AssetKind.empty())
-    {
-        if (!field.DataSubtype.empty())
-            out << "\n                .AsDataAsset(" << Quoted(field.DataSubtype) << ")";
-        else
-            out << "\n                .AsAsset(AssetType::" << field.AssetKind
-                << ", AssetArity::" << field.AssetArity << ")";
-    }
-    else if (!field.DataSubtype.empty())
-    {
-        out << "\n                .AsDataAsset(" << Quoted(field.DataSubtype) << ")";
-    }
+    if (!field.AssetRef.empty()) out << "\n                ." << field.AssetRef;
     if (field.Optional)   out << "\n                .Optional()";
     if (field.Color)      out << "\n                .AsColor()";
     if (field.Degrees)    out << "\n                .Degrees()";

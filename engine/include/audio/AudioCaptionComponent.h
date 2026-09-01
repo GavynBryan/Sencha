@@ -2,12 +2,9 @@
 
 #include <audio/AudioSourceComponent.h>
 #include <audio/Caption.h>
+#include <ecs/ComponentAnnotations.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
-
-#include <string_view>
-#include <tuple>
-#include <type_traits>
 
 //=============================================================================
 // AudioCaptionComponent (docs/audio/captions-and-dialogue.md, Decision D)
@@ -20,19 +17,35 @@
 //
 // CaptionSystem drives it (Decision E): when the sibling source's voice
 // starts, a voice-bound caption begins; when playback failed outright, the
-// Decision C degrade path runs once. Authored fields serialize through
-// TypeSchema; the runtime fields default-initialize on load.
+// Decision C degrade path runs once. The authored fields are the schema; the
+// runtime fields default-initialize on load.
 //=============================================================================
-struct AudioCaptionComponent
+struct SENCHA_COMPONENT("AudioCaption")
+       SENCHA_SCHEMA("AudioCaption")
+       SENCHA_SCENE_CHUNK("ACAP")
+AudioCaptionComponent
 {
     // -- Authored (serialized) -----------------------------------------------
+    SENCHA_FIELD("kind")
     CaptionKind Kind = CaptionKind::ClosedCaption;
+
+    SENCHA_FIELD("channel")
     CaptionChannelName Channel = "World";
+
+    SENCHA_FIELD("priority")
     CaptionPriority Priority = CaptionPriority::Gameplay;
-    CaptionTextKey Text{};
+
+    SENCHA_FIELD("text")
+    CaptionTextKey Text;
+
+    SENCHA_FIELD("speaker")
     SpeakerKey Speaker{};             // empty = no speaker tag
+
+    SENCHA_FIELD("duration_seconds")
     float DurationSeconds = 0.0f;   // 0 = derive from voice/clip; loops should
                                     // author finite unless persistent is meant
+
+    SENCHA_FIELD("merge_duplicates")
     bool MergeDuplicates = true;
 
     // -- Runtime (not serialized) ----------------------------------------------
@@ -48,11 +61,12 @@ struct AudioCaptionComponent
     // Warn-once latch for a caption component without a sibling source.
     bool WarnedOrphan = false;
 };
+SENCHA_COMPONENT_DECLARES_TRAITS(AudioCaptionComponent);
 
 // Archetype storage relocates components with memcpy, so the component must
 // stay trivially copyable (enforced by World::RegisterComponent) — this is
 // why the names are InlineStrings.
 
-SENCHA_DECLARE_COMPONENT_TYPE(AudioCaptionComponent, "AudioCaption");
-SENCHA_COMPONENT_DECLARES_SCHEMA(AudioCaptionComponent);
-SENCHA_COMPONENT_DECLARES_TRAITS(AudioCaptionComponent);
+#if !defined(SENCHA_CODEGEN)
+#  include <audio/AudioCaptionComponent.sencha.h>
+#endif

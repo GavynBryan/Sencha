@@ -84,7 +84,7 @@ struct MovementProfileHandle
     DataAssetHandle Value;
 
     [[nodiscard]] bool IsValid() const { return Value.IsValid(); }
-    auto operator<=>(const MovementProfileHandle&) const = default;
+    bool operator==(const MovementProfileHandle&) const = default;
 };
 
 void RegisterMovementProfileData(DataAssetTypeRegistry& types,

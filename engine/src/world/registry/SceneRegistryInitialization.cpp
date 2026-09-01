@@ -1,16 +1,11 @@
 #include <world/registry/SceneRegistryInitialization.h>
-#include <anim/AnimationComponentSchemas.h>
-#include <audio/AudioComponentSchemas.h>
 
-#include <anim/AnimationClipPlayerComponent.h>
-#include <audio/AudioSourceComponent.h>
+#include <anim/AnimationClipComponentAssets.h>
+#include <audio/AudioSourceRuntime.h>
 #include <components/ActiveCameraService.h>
-#include <movement/MovementComponentSchemas.h>
 #include <movement/MovementRegistration.h>
-#include <render/StaticMeshComponent.h>
-#include <render/MeshComponentSchemas.h>
+#include <render/MeshComponentAssets.h>
 #include <render/ZoneLightmapSchema.h>
-#include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <render/ZoneLightmapComponent.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>

@@ -3,12 +3,9 @@
 #include <audio/AudioVoice.h>
 #include <audio/AudioClipHandle.h>
 #include <core/text/InlineString.h>
+#include <ecs/ComponentAnnotations.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
-
-#include <string_view>
-#include <tuple>
-#include <type_traits>
 
 // Bus names are short, config-defined, and live inside an ECS component, so
 // they are a fixed-capacity inline string (the archetype storage relocates
@@ -24,18 +21,32 @@ using BusName = InlineString<32>;
 // music is a separate later slice. This is the emitter, not a player —
 // the imperative control surface is AudioService.
 //
-// Authored fields are serialized through TypeSchema; the runtime fields
-// (Voice, Started) are not — they default-initialize on load and are
-// driven by AudioSystem.
+// The authored fields are the schema; the runtime fields (Voice, Started)
+// default-initialize on load and are driven by AudioSystem.
 //=============================================================================
-struct AudioSourceComponent
+struct SENCHA_COMPONENT("AudioSource")
+       SENCHA_SCHEMA("AudioSource")
+       SENCHA_SCENE_CHUNK("ASRC")
+AudioSourceComponent
 {
     // -- Authored (serialized) -----------------------------------------------
-    AudioClipHandle Clip{};
+    SENCHA_FIELD("clip")
+    SENCHA_ASSET(Audio)
+    AudioClipHandle Clip;
+
+    SENCHA_FIELD("bus")
     BusName Bus = "Sfx";
+
+    SENCHA_FIELD("gain")
     float Gain = 1.0f;          // [0, 1]
+
+    SENCHA_FIELD("pan")
     float Pan = 0.0f;           // [-1 left, +1 right], static (no listener yet)
+
+    SENCHA_FIELD("looping")
     bool Looping = false;
+
+    SENCHA_FIELD("play_on_active")
     bool PlayOnActive = true;   // emit while the zone is audio-active
 
     // -- Runtime (not serialized) --------------------------------------------
@@ -46,6 +57,7 @@ struct AudioSourceComponent
     // One-shots fire once per component lifetime; loops use Voice validity.
     bool Started = false;
 };
+SENCHA_COMPONENT_DECLARES_TRAITS(AudioSourceComponent);
 
 class CaptionRuntime;
 
@@ -53,6 +65,6 @@ class CaptionRuntime;
 // stay trivially copyable (enforced by World::RegisterComponent) — this is
 // why Bus is an InlineString, not std::string.
 
-SENCHA_DECLARE_COMPONENT_TYPE(AudioSourceComponent, "AudioSource");
-SENCHA_COMPONENT_DECLARES_SCHEMA(AudioSourceComponent);
-SENCHA_COMPONENT_DECLARES_TRAITS(AudioSourceComponent);
+#if !defined(SENCHA_CODEGEN)
+#  include <audio/AudioSourceComponent.sencha.h>
+#endif

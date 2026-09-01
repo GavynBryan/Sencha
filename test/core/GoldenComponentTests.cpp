@@ -40,6 +40,31 @@ TEST(GeneratedComponentMetadata, AFieldlessSchemaStillNamesASceneChunk)
     EXPECT_TRUE(RuntimeFieldsOf<CodegenGoldenTag>().empty());
 }
 
+TEST(GeneratedComponentMetadata, BindsAssetFieldsByKindArityAndSubtype)
+{
+    const RuntimeField* mesh = nullptr;
+    const RuntimeField* materials = nullptr;
+    const RuntimeField* profile = nullptr;
+    for (const RuntimeField& field : RuntimeFieldsOf<CodegenGoldenAssets>())
+    {
+        if (field.Name == "mesh")           mesh = &field;
+        else if (field.Name == "materials") materials = &field;
+        else if (field.Name == "profile")   profile = &field;
+    }
+
+    ASSERT_NE(mesh, nullptr);
+    EXPECT_EQ(mesh->Asset, AssetType::StaticMesh);
+    EXPECT_EQ(mesh->Arity, AssetArity::Single);
+
+    ASSERT_NE(materials, nullptr);
+    EXPECT_EQ(materials->Asset, AssetType::Material);
+    EXPECT_EQ(materials->Arity, AssetArity::List);
+
+    ASSERT_NE(profile, nullptr);
+    EXPECT_EQ(profile->Asset, AssetType::Data);
+    EXPECT_EQ(profile->DataSubtype, kGoldenProfileSubtype);
+}
+
 TEST(GeneratedComponentMetadata, CarriesEveryFieldAnnotation)
 {
     const auto& fields = RuntimeFieldsOf<CodegenGolden>();

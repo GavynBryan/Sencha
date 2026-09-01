@@ -14,7 +14,7 @@
 #include <core/serialization/JsonArchive.h>
 #include <math/MathSchemas.h>
 #include <render/MaterialCache.h>
-#include <render/MeshComponentSchemas.h>
+#include <render/MeshComponentTraits.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/ComponentSerializer.h>

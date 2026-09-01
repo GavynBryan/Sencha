@@ -16,7 +16,7 @@
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/WorldComponentSchema.h>
-#include <movement/MovementComponentSchemas.h>
+#include <movement/MovementComponentTraits.h>
 #include <movement/MovementRegistration.h>
 #include <physics/components/CharacterController.h>
 #include <world/ComponentRegistrar.h>

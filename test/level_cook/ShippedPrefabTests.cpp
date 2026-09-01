@@ -25,7 +25,7 @@
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <movement/LocomotionMode.h>
-#include <movement/MovementComponentSchemas.h>
+#include <movement/MovementComponentTraits.h>
 #include <movement/MovementIntent.h>
 #include <physics/components/CharacterController.h>
 #include <world/transform/TransformHistory.h>

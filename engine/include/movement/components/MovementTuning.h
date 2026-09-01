@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ecs/ComponentAnnotations.h>
 #include <ecs/ComponentTypeId.h>
 #include <movement/MovementProfileData.h>
 
@@ -17,12 +18,21 @@
 // speed attribute, so a missing profile degrades rather than breaking.
 //=============================================================================
 
-struct MovementTuningSource
+// The scene form is the profile's path (see MovementTuningSourceSerializer);
+// the schema describes the same member for an authoring surface, which resolves
+// the handle through the asset system rather than reading its bytes as a number.
+struct SENCHA_COMPONENT("sencha.movement_tuning_source")
+       SENCHA_SCHEMA("MovementTuning")
+MovementTuningSource
 {
+    SENCHA_FIELD("profile")
+    SENCHA_DATA_ASSET(kMovementProfileTypeName)
+    SENCHA_LABEL("Movement profile")
+    SENCHA_TOOLTIP("Authored acceleration, friction, and jump coefficients. "
+                   "None leaves the character on engine defaults plus the "
+                   "MoveSpeed attribute.")
     MovementProfileHandle Profile{};
 };
-SENCHA_DECLARE_COMPONENT_TYPE(MovementTuningSource, "sencha.movement_tuning_source");
-SENCHA_COMPONENT_DECLARES_SCHEMA(MovementTuningSource);
 SENCHA_COMPONENT_DECLARES_TRAITS(MovementTuningSource);
 
 // The handle wrapper is addressed by the asset-field editors at the member's
@@ -34,7 +44,7 @@ static_assert(offsetof(MovementProfileHandle, Value) == 0);
 // This tick's coefficients, resolved from the profile's layers against the
 // current facts. Written by the tuning resolution system and read by
 // locomotion; nothing else writes it.
-struct ResolvedMovementTuning
+struct SENCHA_COMPONENT("sencha.resolved_movement_tuning") ResolvedMovementTuning
 {
     float MaxSpeed = 7.0f;
     float Acceleration = 24.0f;
@@ -53,4 +63,7 @@ struct ResolvedMovementTuning
     // resolved with the rest of it rather than authored somewhere else.
     float JumpCooldownSeconds = 0.15f;
 };
-SENCHA_DECLARE_COMPONENT_TYPE(ResolvedMovementTuning, "sencha.resolved_movement_tuning");
+
+#if !defined(SENCHA_CODEGEN)
+#  include <movement/components/MovementTuning.sencha.h>
+#endif

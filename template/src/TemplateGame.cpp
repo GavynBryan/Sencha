@@ -7,7 +7,7 @@
 #include "TurretMount.h"
 
 #include <abilities/AbilityKit.h>
-#include <audio/AudioComponentSchemas.h>
+#include <audio/AudioSourceRuntime.h>
 #include <anim/AnimationClipPlaybackSystem.h>
 #include <app/DefaultRenderPipeline.h>
 #include <app/Engine.h>
@@ -76,7 +76,7 @@
 #include <render/ProbeVolumeSet.h>
 #include <runtime/spawn/SceneSpawnService.h>
 #include <render/StaticMeshComponent.h>
-#include <render/MeshComponentSchemas.h>
+#include <render/MeshComponentAssets.h>
 #include <render/ZoneLightmapSchema.h>
 #include <render/ZoneLightmapComponent.h>
 #include <world/RuntimeWorld.h>

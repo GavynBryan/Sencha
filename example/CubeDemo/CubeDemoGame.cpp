@@ -1,8 +1,8 @@
 #include "CubeDemoGame.h"
 
 #include <input/InputActionResolveSystem.h>
-#include <audio/AudioComponentSchemas.h>
-#include <render/MeshComponentSchemas.h>
+#include <audio/AudioSourceRuntime.h>
+#include <render/MeshComponentAssets.h>
 #include <input/InputBindingCache.h>
 #include <input/InputRegistration.h>
 

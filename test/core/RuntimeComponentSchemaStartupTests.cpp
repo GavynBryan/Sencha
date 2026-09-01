@@ -15,7 +15,7 @@
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <controller/LookOrientation.h>
 #include <movement/LocomotionMode.h>
-#include <movement/MovementComponentSchemas.h>
+#include <movement/MovementComponentTraits.h>
 #include <movement/JumpState.h>
 #include <movement/MovementIntent.h>
 #include <net/NetReplicationComponents.h>

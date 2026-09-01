@@ -2,6 +2,7 @@
 
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
+#include <ecs/ComponentAnnotations.h>
 #include <ecs/ComponentTypeId.h>
 
 #include <compare>
@@ -15,7 +16,7 @@
 //
 // Carrying CharacterMovement is what makes an entity something the movement
 // systems step. The columns that tick reads and writes are the set it owes,
-// declared with its schema (movement/MovementComponentSchemas.h).
+// declared with its lifecycle (movement/MovementComponentTraits.h).
 //=============================================================================
 
 // Registration-order id from the LocomotionModeRegistry. Zero is the sentinel;
@@ -28,8 +29,8 @@ struct LocomotionModeId
     auto operator<=>(const LocomotionModeId&) const = default;
 };
 
-// Beside its type rather than in the schema unit: this describes a value, not a
-// component, and every schema with a mode field needs it in scope.
+// Beside its type: this describes a value, not a component, and every schema
+// with a mode field needs it in scope.
 template <>
 struct TypeSchema<LocomotionModeId>
 {
@@ -43,12 +44,25 @@ struct TypeSchema<LocomotionModeId>
     }
 };
 
-struct CharacterMovement
+// The mode travels to the owner so its own machine knows which rules it is
+// resuming under, and refuses to replay under rules it does not implement
+// rather than replaying under the wrong ones.
+//
+// This is a registration-order id on the wire, which content must never carry.
+// A snapshot is not content: it is traffic between two processes the identity
+// gate has already proved are the same build, so their registration orders are
+// the same order -- the argument the action columns in a player command already
+// run on. It is session-transient in both directions and is never written down.
+struct SENCHA_COMPONENT("sencha.character_movement")
+       SENCHA_SCHEMA("CharacterMovement")
+       SENCHA_REPLICATED
+       SENCHA_PREDICTED
+CharacterMovement
 {
+    SENCHA_FIELD("mode")
+    SENCHA_OWNER_ONLY
     LocomotionModeId Mode{};
 };
-SENCHA_DECLARE_COMPONENT_TYPE(CharacterMovement, "sencha.character_movement");
-SENCHA_COMPONENT_DECLARES_SCHEMA(CharacterMovement);
 SENCHA_COMPONENT_DECLARES_TRAITS(CharacterMovement);
 
 // How hard a mode request pushes. Automatic loses to Explicit, which loses to
@@ -60,12 +74,15 @@ enum class ModeRequestClass : uint8_t
     Forced,
 };
 
-struct ModeTransitionRequest
+struct SENCHA_COMPONENT("sencha.mode_transition_request") ModeTransitionRequest
 {
     LocomotionModeId Target;
     ModeRequestClass Class = ModeRequestClass::Automatic;
     bool Pending = false;
 };
-SENCHA_DECLARE_COMPONENT_TYPE(ModeTransitionRequest, "sencha.mode_transition_request");
 
 static_assert(std::is_trivially_copyable_v<CharacterMovement>);
+
+#if !defined(SENCHA_CODEGEN)
+#  include <movement/components/CharacterMovement.sencha.h>
+#endif

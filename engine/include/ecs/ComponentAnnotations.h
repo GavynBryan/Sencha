@@ -40,6 +40,9 @@
 
 // Opt-in: an untagged member is not part of the schema, so adding an ordinary
 // member never silently changes the scene format or the replication layout.
+//
+// A member initializer is the field's default, which a scene may then omit; a
+// member without one is required.
 #define SENCHA_FIELD(name)           SENCHA_ANNOTATE("sencha.field=" name)
 
 #define SENCHA_OWNER_ONLY            SENCHA_ANNOTATE("sencha.owner_only")
@@ -48,9 +51,17 @@
 #define SENCHA_COLOR                 SENCHA_ANNOTATE("sencha.color")
 #define SENCHA_DEGREES               SENCHA_ANNOTATE("sencha.degrees")
 #define SENCHA_OPTIONAL              SENCHA_ANNOTATE("sencha.optional")
-#define SENCHA_ASSET(kind)           SENCHA_ANNOTATE("sencha.asset=" kind)
-#define SENCHA_ASSET_LIST(kind)      SENCHA_ANNOTATE("sencha.asset_list=" kind)
-#define SENCHA_DATA_ASSET(subtype)   SENCHA_ANNOTATE("sencha.data_asset=" subtype)
+
+// The member is a handle owning one reference to an asset of that kind, named
+// by its AssetType enumerator: SENCHA_ASSET(StaticMesh).
+#define SENCHA_ASSET(kind)           SENCHA_ANNOTATE("sencha.asset=" #kind)
+#define SENCHA_ASSET_LIST(kind)      SENCHA_ANNOTATE("sencha.asset_list=" #kind)
+
+// A structured-data asset of one subtype. The argument is emitted as written,
+// so it can name the constant the subtype is declared by rather than repeat
+// its value.
+#define SENCHA_DATA_ASSET(subtype)   SENCHA_ANNOTATE("sencha.data_asset=" #subtype)
+
 #define SENCHA_LABEL(text)           SENCHA_ANNOTATE("sencha.label=" text)
 #define SENCHA_TOOLTIP(text)         SENCHA_ANNOTATE("sencha.tooltip=" text)
 

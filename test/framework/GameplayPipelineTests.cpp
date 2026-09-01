@@ -8,7 +8,7 @@
 #include <movement/LocomotionMode.h>
 #include <movement/MovementDefs.h>
 #include <assets/data/DataAssetCache.h>
-#include <movement/MovementComponentSchemas.h>
+#include <movement/MovementComponentTraits.h>
 #include <movement/JumpState.h>
 #include <movement/MovementIntent.h>
 #include <movement/MovementRegistration.h>

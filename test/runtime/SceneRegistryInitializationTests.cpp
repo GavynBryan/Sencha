@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include <audio/AudioComponentSchemas.h>
-#include <render/MeshComponentSchemas.h>
+#include <audio/AudioComponentTraits.h>
+#include <render/MeshComponentTraits.h>
 #include <render/ZoneLightmapSchema.h>
 
 #include <audio/AudioSourceComponent.h>

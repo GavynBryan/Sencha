@@ -3,9 +3,9 @@
 #include "SceneViewerSystems.h"
 
 #include <anim/AnimationClipPlaybackSystem.h>
-#include <anim/AnimationComponentSchemas.h>
-#include <audio/AudioComponentSchemas.h>
-#include <render/MeshComponentSchemas.h>
+#include <anim/AnimationClipComponentAssets.h>
+#include <audio/AudioSourceRuntime.h>
+#include <render/MeshComponentAssets.h>
 #include <render/ZoneLightmapSchema.h>
 #include <anim/AnimationClipPlayerComponent.h>
 #include <input/InputActionResolveSystem.h>

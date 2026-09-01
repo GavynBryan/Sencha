@@ -285,10 +285,20 @@ sencha_warnings(sencha_engine)
 sencha_generate_component_metadata(sencha_engine
     INCLUDE_ROOT "${SENCHA_ENGINE_INCLUDE_DIR}"
     HEADERS
+        "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimationClipPlayerComponent.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/audio/AudioCaptionComponent.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/audio/AudioSourceComponent.h"
         "${SENCHA_ENGINE_INCLUDE_DIR}/camera/CameraRig.h"
         "${SENCHA_ENGINE_INCLUDE_DIR}/camera/CameraSeat.h"
         "${SENCHA_ENGINE_INCLUDE_DIR}/components/CameraComponent.h"
         "${SENCHA_ENGINE_INCLUDE_DIR}/controller/LookOrientation.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/movement/JumpState.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/movement/MovementIntent.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/CharacterFacts.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/CharacterMovement.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/MotionChannels.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/MovementSessions.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/MovementTuning.h"
         "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetParticipantIdentity.h"
         "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetReplicationComponents.h"
         "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetSpawnPrefab.h"
@@ -296,6 +306,8 @@ sencha_generate_component_metadata(sencha_engine
         "${SENCHA_ENGINE_INCLUDE_DIR}/render/IrradianceVolumeComponent.h"
         "${SENCHA_ENGINE_INCLUDE_DIR}/render/PointLightComponent.h"
         "${SENCHA_ENGINE_INCLUDE_DIR}/render/SpotLightComponent.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/render/StaticMeshComponent.h"
+        "${SENCHA_ENGINE_INCLUDE_DIR}/render/skinned_mesh/SkinnedMeshComponent.h"
         "${SENCHA_ENGINE_INCLUDE_DIR}/zone/WorldConnectionComponents.h"
 )
 
