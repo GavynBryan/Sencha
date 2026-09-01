@@ -34,3 +34,5 @@ struct AnimationClipPlayerComponent
 };
 
 SENCHA_DECLARE_COMPONENT_TYPE(AnimationClipPlayerComponent, "AnimationClipPlayer");
+SENCHA_COMPONENT_DECLARES_SCHEMA(AnimationClipPlayerComponent);
+SENCHA_COMPONENT_DECLARES_TRAITS(AnimationClipPlayerComponent);

@@ -24,3 +24,5 @@ struct PersistentIdComponent
 };
 
 SENCHA_DECLARE_COMPONENT_TYPE(PersistentIdComponent, "persistent_id");
+SENCHA_COMPONENT_DECLARES_SCHEMA(PersistentIdComponent);
+SENCHA_COMPONENT_DECLARES_TRAITS(PersistentIdComponent);

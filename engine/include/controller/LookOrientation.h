@@ -48,6 +48,7 @@ inline void ApplyLook(LookOrientation& look, float yaw, float pitch)
 }
 
 SENCHA_DECLARE_COMPONENT_TYPE(LookOrientation, "sencha.look_orientation");
+SENCHA_COMPONENT_DECLARES_SCHEMA(LookOrientation);
 
 //=============================================================================
 // LocalLookControl
@@ -92,6 +93,7 @@ static_assert(std::is_empty_v<AimFacing>,
               "AimFacing is a tag: it carries no data");
 
 SENCHA_DECLARE_COMPONENT_TYPE(AimFacing, "sencha.aim_facing");
+SENCHA_COMPONENT_DECLARES_SCHEMA(AimFacing);
 
 //=============================================================================
 // LookInputBinding

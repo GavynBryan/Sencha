@@ -26,3 +26,4 @@ struct PointLightComponent
 };
 
 SENCHA_DECLARE_COMPONENT_TYPE(PointLightComponent, "PointLight");
+SENCHA_COMPONENT_DECLARES_SCHEMA(PointLightComponent);

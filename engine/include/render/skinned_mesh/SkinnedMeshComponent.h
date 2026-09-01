@@ -50,3 +50,5 @@ struct SkinnedMeshComponent
 };
 
 SENCHA_DECLARE_COMPONENT_TYPE(SkinnedMeshComponent, "SkinnedMesh");
+SENCHA_COMPONENT_DECLARES_SCHEMA(SkinnedMeshComponent);
+SENCHA_COMPONENT_DECLARES_TRAITS(SkinnedMeshComponent);

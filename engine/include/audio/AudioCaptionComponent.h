@@ -54,3 +54,5 @@ struct AudioCaptionComponent
 // why the names are InlineStrings.
 
 SENCHA_DECLARE_COMPONENT_TYPE(AudioCaptionComponent, "AudioCaption");
+SENCHA_COMPONENT_DECLARES_SCHEMA(AudioCaptionComponent);
+SENCHA_COMPONENT_DECLARES_TRAITS(AudioCaptionComponent);

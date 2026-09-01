@@ -54,3 +54,5 @@ class CaptionRuntime;
 // why Bus is an InlineString, not std::string.
 
 SENCHA_DECLARE_COMPONENT_TYPE(AudioSourceComponent, "AudioSource");
+SENCHA_COMPONENT_DECLARES_SCHEMA(AudioSourceComponent);
+SENCHA_COMPONENT_DECLARES_TRAITS(AudioSourceComponent);

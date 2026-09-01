@@ -25,3 +25,5 @@ struct ZoneLightmapComponent
 };
 
 SENCHA_DECLARE_COMPONENT_TYPE(ZoneLightmapComponent, "ZoneLightmap");
+SENCHA_COMPONENT_DECLARES_SCHEMA(ZoneLightmapComponent);
+SENCHA_COMPONENT_DECLARES_TRAITS(ZoneLightmapComponent);

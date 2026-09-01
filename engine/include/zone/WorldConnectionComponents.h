@@ -86,5 +86,8 @@ struct SceneFieldCodec<LinkId>
 // spaces included: they are display labels that became persisted identity, and
 // tidying them now would rename every component in every cooked world.
 SENCHA_DECLARE_COMPONENT_TYPE(WorldDock,       "World Dock");
+SENCHA_COMPONENT_DECLARES_SCHEMA(WorldDock);
 SENCHA_DECLARE_COMPONENT_TYPE(WorldLink,       "World Link");
+SENCHA_COMPONENT_DECLARES_SCHEMA(WorldLink);
 SENCHA_DECLARE_COMPONENT_TYPE(DockGateBinding, "Dock Gate Binding");
+SENCHA_COMPONENT_DECLARES_SCHEMA(DockGateBinding);

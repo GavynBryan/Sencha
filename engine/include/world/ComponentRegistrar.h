@@ -129,6 +129,16 @@ public:
     template <typename T>
     void Add()
     {
+        // Whether a component is serialized is read off its schema, so a unit
+        // that cannot see the schema registers it as a component that is not --
+        // storage without a serializer, and every scene naming it stops round
+        // tripping. The component's header states that its feature has one.
+        static_assert(!ComponentDeclaresSchema<T> || HasTypeSchema<T>,
+                      "This component declares a schema, but none is visible "
+                      "here: include the feature schema unit that defines it. "
+                      "Registering without it silently drops the component's "
+                      "serializer and its place in the replication table.");
+
         // The predicted set is a subset of the wire table: a client resumes
         // simulating a component from what the authority said about it, and a
         // component that does not travel has nothing to resume from.

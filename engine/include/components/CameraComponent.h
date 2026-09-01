@@ -44,3 +44,4 @@ struct CameraComponent
 };
 
 SENCHA_DECLARE_COMPONENT_TYPE(CameraComponent, "Camera");
+SENCHA_COMPONENT_DECLARES_SCHEMA(CameraComponent);

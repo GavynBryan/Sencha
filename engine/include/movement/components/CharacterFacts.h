@@ -37,6 +37,7 @@ struct SupportState
     SupportKind Kind = SupportKind::None;
 };
 SENCHA_DECLARE_COMPONENT_TYPE(SupportState, "sencha.support_state");
+SENCHA_COMPONENT_DECLARES_SCHEMA(SupportState);
 
 // How deeply the character is inside a volume, in [0, 1]. A fact like
 // SupportState: profiles condition on it rather than a "swimming" mode being
@@ -56,5 +57,6 @@ struct KinematicState
     Vec3d Velocity = Vec3d::Zero();
 };
 SENCHA_DECLARE_COMPONENT_TYPE(KinematicState, "sencha.kinematic_state");
+SENCHA_COMPONENT_DECLARES_SCHEMA(KinematicState);
 
 static_assert(std::is_trivially_copyable_v<SupportState>);

@@ -66,3 +66,4 @@ static_assert(std::is_trivially_copyable_v<CameraSeat>,
               "CameraSeat must be trivially copyable to live in ECS chunks");
 
 SENCHA_DECLARE_COMPONENT_TYPE(CameraSeat, "sencha.camera_seat");
+SENCHA_COMPONENT_DECLARES_SCHEMA(CameraSeat);

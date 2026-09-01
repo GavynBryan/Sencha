@@ -5,7 +5,8 @@
 #include <anim/AnimationClipPlaybackSystem.h>
 #include <anim/AnimationComponentSchemas.h>
 #include <audio/AudioComponentSchemas.h>
-#include <render/RenderComponentSchemas.h>
+#include <render/MeshComponentSchemas.h>
+#include <render/ZoneLightmapSchema.h>
 #include <anim/AnimationClipPlayerComponent.h>
 #include <input/InputActionResolveSystem.h>
 #include <input/InputActionState.h>

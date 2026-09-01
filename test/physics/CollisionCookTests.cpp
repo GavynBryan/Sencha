@@ -5,7 +5,7 @@
 // Cook-only: BakeCollisionBlob is compiled under SENCHA_ENABLE_COOK.
 
 #include <gtest/gtest.h>
-#include <world/WorldComponentSchemas.h>
+#include <world/transform/TransformComponentSchemas.h>
 
 #ifdef SENCHA_ENABLE_COOK
 

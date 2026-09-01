@@ -43,6 +43,7 @@ static_assert(std::is_trivially_copyable_v<NetSpawnPrefab>,
               "NetSpawnPrefab must be trivially copyable to live in ECS chunks");
 
 SENCHA_DECLARE_COMPONENT_TYPE(NetSpawnPrefab, "sencha.net_spawn_prefab");
+SENCHA_COMPONENT_DECLARES_SCHEMA(NetSpawnPrefab);
 
 //=============================================================================
 // INetPrefabSpawner

@@ -27,3 +27,4 @@ struct IrradianceVolumeComponent
 };
 
 SENCHA_DECLARE_COMPONENT_TYPE(IrradianceVolumeComponent, "IrradianceVolume");
+SENCHA_COMPONENT_DECLARES_SCHEMA(IrradianceVolumeComponent);

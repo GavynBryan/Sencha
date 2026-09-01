@@ -22,6 +22,8 @@ struct MovementTuningSource
     MovementProfileHandle Profile{};
 };
 SENCHA_DECLARE_COMPONENT_TYPE(MovementTuningSource, "sencha.movement_tuning_source");
+SENCHA_COMPONENT_DECLARES_SCHEMA(MovementTuningSource);
+SENCHA_COMPONENT_DECLARES_TRAITS(MovementTuningSource);
 
 // The handle wrapper is addressed by the asset-field editors at the member's
 // own offset, the way a mesh handle is: they copy handle bytes without naming

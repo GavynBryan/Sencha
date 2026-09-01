@@ -1,5 +1,5 @@
 #include <render/ZoneLightmapComponent.h>
-#include <render/RenderComponentSchemas.h>
+#include <render/ZoneLightmapSchema.h>
 
 #include <assets/texture/TextureCache.h>
 

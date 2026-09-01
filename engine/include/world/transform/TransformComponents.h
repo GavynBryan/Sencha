@@ -50,5 +50,6 @@ struct Parent
 // is repeated exactly, because it is what every cooked scene and every peer
 // already calls this component.
 SENCHA_DECLARE_COMPONENT_TYPE(LocalTransform, "Transform");
+SENCHA_COMPONENT_DECLARES_SCHEMA(LocalTransform);
 SENCHA_DECLARE_COMPONENT_TYPE(WorldTransform, "sencha.world_transform");
 SENCHA_DECLARE_COMPONENT_TYPE(Parent,         "sencha.parent");

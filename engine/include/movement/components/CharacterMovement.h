@@ -48,6 +48,8 @@ struct CharacterMovement
     LocomotionModeId Mode{};
 };
 SENCHA_DECLARE_COMPONENT_TYPE(CharacterMovement, "sencha.character_movement");
+SENCHA_COMPONENT_DECLARES_SCHEMA(CharacterMovement);
+SENCHA_COMPONENT_DECLARES_TRAITS(CharacterMovement);
 
 // How hard a mode request pushes. Automatic loses to Explicit, which loses to
 // Forced; a Forced request also bypasses the target mode's entry check.

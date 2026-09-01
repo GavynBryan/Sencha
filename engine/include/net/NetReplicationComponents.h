@@ -65,6 +65,7 @@ static_assert(std::is_trivially_copyable_v<NetOwner>,
               "NetOwner must be trivially copyable to live in ECS chunks");
 
 SENCHA_DECLARE_COMPONENT_TYPE(NetOwner, "sencha.net_owner");
+SENCHA_COMPONENT_DECLARES_SCHEMA(NetOwner);
 
 //-----------------------------------------------------------------------------
 // NetDrivenBy
@@ -92,3 +93,4 @@ static_assert(std::is_trivially_copyable_v<NetDrivenBy>,
               "NetDrivenBy must be trivially copyable to live in ECS chunks");
 
 SENCHA_DECLARE_COMPONENT_TYPE(NetDrivenBy, "sencha.net_driven_by");
+SENCHA_COMPONENT_DECLARES_SCHEMA(NetDrivenBy);

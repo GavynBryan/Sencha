@@ -1,7 +1,9 @@
 #pragma once
 
 #include <anim/AnimationComponentSchemas.h>
-#include <render/RenderComponentSchemas.h>
+#include <render/MeshComponentSchemas.h>
+#include <render/ZoneLightmapSchema.h>
+#include <render/LightComponentSchemas.h>
 #include <world/ComponentRegistrar.h>
 
 // What a zone draws: the meshes and the lights, plus the baked products a zone

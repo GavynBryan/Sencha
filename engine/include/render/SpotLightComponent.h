@@ -28,3 +28,4 @@ struct SpotLightComponent
 };
 
 SENCHA_DECLARE_COMPONENT_TYPE(SpotLightComponent, "SpotLight");
+SENCHA_COMPONENT_DECLARES_SCHEMA(SpotLightComponent);

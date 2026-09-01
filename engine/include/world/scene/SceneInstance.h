@@ -69,3 +69,5 @@ struct SceneFieldCodec<SceneInstanceId>
 };
 
 SENCHA_DECLARE_COMPONENT_TYPE(SceneInstance, "scene_instance");
+SENCHA_COMPONENT_DECLARES_SCHEMA(SceneInstance);
+SENCHA_COMPONENT_DECLARES_TRAITS(SceneInstance);

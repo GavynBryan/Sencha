@@ -6,7 +6,7 @@
 // zone with no recorded deviation restreams verbatim.
 
 #include <ecs/WorldComponentSchema.h>
-#include <world/WorldComponentSchemas.h>
+#include <world/identity/PersistentIdSchema.h>
 #include <world/RuntimeWorld.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>

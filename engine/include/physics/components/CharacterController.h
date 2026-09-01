@@ -25,3 +25,4 @@ struct CharacterController
 };
 
 SENCHA_DECLARE_COMPONENT_TYPE(CharacterController, "sencha.physics.character_controller");
+SENCHA_COMPONENT_DECLARES_SCHEMA(CharacterController);

@@ -14,7 +14,7 @@
 #include <world/RuntimeWorld.h>
 #include <world/build/EntityBuildPackage.h>
 #include <world/transform/DerivedTransform.h>
-#include <world/WorldComponentSchemas.h>
+#include <world/transform/TransformComponentSchemas.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/ZonePackageImporter.h>
 

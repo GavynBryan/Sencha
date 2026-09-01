@@ -2,7 +2,7 @@
 
 #include <input/InputActionResolveSystem.h>
 #include <audio/AudioComponentSchemas.h>
-#include <render/RenderComponentSchemas.h>
+#include <render/MeshComponentSchemas.h>
 #include <input/InputBindingCache.h>
 #include <input/InputRegistration.h>
 

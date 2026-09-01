@@ -8,7 +8,8 @@
 #include <movement/MovementComponentSchemas.h>
 #include <movement/MovementRegistration.h>
 #include <render/StaticMeshComponent.h>
-#include <render/RenderComponentSchemas.h>
+#include <render/MeshComponentSchemas.h>
+#include <render/ZoneLightmapSchema.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <render/ZoneLightmapComponent.h>
 #include <world/ComponentRegistrar.h>

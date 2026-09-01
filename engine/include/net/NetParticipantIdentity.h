@@ -23,6 +23,7 @@ static_assert(std::is_trivially_copyable_v<NetParticipantIdentity>);
 
 SENCHA_DECLARE_COMPONENT_TYPE(NetParticipantIdentity,
                               "sencha.net_participant_identity");
+SENCHA_COMPONENT_DECLARES_SCHEMA(NetParticipantIdentity);
 
 // A valid peer has at most one projected participant. Peer zero is deliberately
 // not searchable: it represents local participants, bots, and the authority,

@@ -52,3 +52,5 @@ struct StaticMeshComponent
 };
 
 SENCHA_DECLARE_COMPONENT_TYPE(StaticMeshComponent, "StaticMesh");
+SENCHA_COMPONENT_DECLARES_SCHEMA(StaticMeshComponent);
+SENCHA_COMPONENT_DECLARES_TRAITS(StaticMeshComponent);

@@ -4,7 +4,7 @@
 #include "document/WorldDocument.h"
 
 #include <core/serialization/JsonArchive.h>
-#include <world/WorldComponentSchemas.h>
+#include <world/transform/TransformComponentSchemas.h>
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/WorldConnectionComponents.h>

@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <world/WorldComponentSchemas.h>
+#include <world/transform/TransformComponentSchemas.h>
 
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>

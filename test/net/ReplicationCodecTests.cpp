@@ -6,7 +6,7 @@
 #include <net/ReplicationLayout.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
-#include <world/WorldComponentSchemas.h>
+#include <world/transform/TransformComponentSchemas.h>
 #include <world/transform/TransformComponents.h>
 
 #include <array>
