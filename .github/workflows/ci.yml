@@ -31,13 +31,19 @@ jobs:
       - name: Render layer portability checks
         run: ./scripts/check_render_portability.sh
 
+      # clang, libclang-dev and llvm-dev build sencha-component-codegen, which
+      # parses the annotated component headers. They are needed to build the
+      # engine, not to consume the SDK.
       - name: Install build and Vulkan dependencies
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes \
+            clang \
             clang-tidy \
             glslc \
+            libclang-dev \
             libvulkan-dev \
+            llvm-dev \
             ninja-build
 
       - name: Build and install SDL3

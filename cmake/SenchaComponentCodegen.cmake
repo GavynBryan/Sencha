@@ -24,12 +24,6 @@ function(sencha_generate_component_metadata target)
         return()
     endif()
 
-    if(NOT TARGET sencha-component-codegen AND NOT TARGET sencha::component-codegen)
-        message(FATAL_ERROR
-            "sencha_generate_component_metadata(${target}): annotated component headers "
-            "were given but sencha-component-codegen is not available. Install the Clang "
-            "development packages (clang-devel/llvm-devel) and reconfigure.")
-    endif()
     if(TARGET sencha::component-codegen)
         set(_tool sencha::component-codegen)
     else()

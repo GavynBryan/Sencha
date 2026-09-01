@@ -103,8 +103,7 @@ if(MINGW)
 endif()
 
 # Built before the engine so component metadata can be generated for it. The
-# tool links no engine code; it is skipped when Clang development packages are
-# absent, which is harmless until a component is annotated.
+# tool links no engine code.
 add_subdirectory(tools/component-codegen)
 
 add_subdirectory(engine)
