@@ -15,13 +15,18 @@ file(GLOB_RECURSE SENCHA_ENGINE_HEADERS CONFIGURE_DEPENDS
 # The annotated component headers: the generator reads them, and the ABI
 # fingerprint below hashes them.
 set(SENCHA_ENGINE_COMPONENT_HEADERS
+    "${SENCHA_ENGINE_INCLUDE_DIR}/abilities/AbilitySet.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimationClipPlayerComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/attributes/AttributeSet.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/audio/AudioCaptionComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/audio/AudioSourceComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/camera/CameraRig.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/camera/CameraSeat.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/components/CameraComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/controller/LookOrientation.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/effects/ActiveEffect.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/gameplay_tags/GameplayTagContainer.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/input/InputActionSource.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/JumpState.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/MovementIntent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/CharacterFacts.h"
@@ -32,7 +37,12 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetParticipantIdentity.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetReplicationComponents.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetSpawnPrefab.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/participant/ParticipantControl.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/CharacterController.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/CharacterMoverLink.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/Collider.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/PhysicsBodyLink.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/RigidBody.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/IrradianceVolumeComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/PointLightComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/SpotLightComponent.h"
@@ -42,6 +52,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/identity/PersistentIdComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/scene/SceneInstance.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/transform/TransformComponents.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/world/transform/TransformHistory.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/zone/WorldConnectionComponents.h"
 )
 

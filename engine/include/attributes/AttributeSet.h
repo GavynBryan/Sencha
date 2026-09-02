@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ecs/ComponentTypeId.h>
+#include <ecs/ComponentAnnotations.h>
 #include <attributes/AttributeId.h>
 
 #include <cstdint>
@@ -15,7 +15,7 @@
 // folded with active modifiers, then clamped). Attribute *definitions* live in
 // AttributeRegistry.
 //=============================================================================
-struct AttributeSet
+struct SENCHA_COMPONENT("sencha.attribute_set") AttributeSet
 {
     static constexpr std::uint8_t Capacity = 16;
 
@@ -56,4 +56,6 @@ struct AttributeSet
 static_assert(std::is_trivially_copyable_v<AttributeSet>,
               "AttributeSet must be trivially copyable to live in ECS chunks");
 
-SENCHA_DECLARE_COMPONENT_TYPE(AttributeSet, "sencha.attribute_set");
+#if !defined(SENCHA_CODEGEN)
+#  include <attributes/AttributeSet.sencha.h>
+#endif

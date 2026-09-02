@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ecs/ComponentTypeId.h>
+#include <ecs/ComponentAnnotations.h>
 #include <physics/CollisionShape.h>
 
 //=============================================================================
@@ -12,7 +12,7 @@
 // authored here. The cooked-mesh shape used for static brush collision is added
 // with the cook path (a CollisionShape asset handle alongside the primitive).
 //=============================================================================
-struct Collider
+struct SENCHA_COMPONENT("sencha.physics.collider") Collider
 {
     // A valid Mesh (a cooked shape resolved into the CollisionShapeCache, the
     // static-brush-collision case) takes precedence over the inline primitive
@@ -22,4 +22,6 @@ struct Collider
     bool IsTrigger = false;
 };
 
-SENCHA_DECLARE_COMPONENT_TYPE(Collider, "sencha.physics.collider");
+#if !defined(SENCHA_CODEGEN)
+#  include <physics/components/Collider.sencha.h>
+#endif

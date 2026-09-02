@@ -67,7 +67,7 @@ template <typename T> struct ComponentTypeKey;
 // of them must see the identity by including the component alone.
 //
 // Partial, so the SENCHA_DECLARE_COMPONENT_TYPE macro below still wins for a
-// component that has not migrated.
+// component whose header is not run through the generator.
 template <typename T>
     requires HasComponentDefinition<T>
 struct ComponentTypeKey<T>
@@ -124,10 +124,12 @@ constexpr std::string_view ResolveComponentName()
 //-----------------------------------------------------------------------------
 // SENCHA_DECLARE_COMPONENT_TYPE(Type, "vendor.name")
 //
-// Binds a stable identity to a component that has no TypeSchema (or that must
-// override its schema identity). Use at namespace (global) scope, once, next to
-// the type. The name must be a lower-case, dotted, namespaced identifier
-// (e.g. "sencha.world_transform", "editor.brush") — never an unqualified label.
+// Binds a stable identity to a component by hand, where a header is not run
+// through sencha-component-codegen: a test fixture, or a module that declares
+// its components without annotating them. Use at namespace (global) scope,
+// once, next to the type. The name must be a lower-case, dotted, namespaced
+// identifier (e.g. "sencha.world_transform", "editor.brush") — never an
+// unqualified label.
 //
 // One exception, and only one: a component whose identity was already derived
 // from TypeSchema<T>::Name repeats that exact name here, deviations included.

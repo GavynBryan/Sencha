@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ecs/ComponentTypeId.h>
+#include <ecs/ComponentAnnotations.h>
 #include <ecs/EntityId.h>
 #include <math/geometry/3d/Transform3d.h>
 
@@ -28,13 +28,15 @@ class World;
 // shadow separates from the object casting it. Light extraction does not, so a
 // light on a history-carrying entity still steps at the tick rate.
 //=============================================================================
-struct WorldTransformHistory
+struct SENCHA_COMPONENT("sencha.world_transform_history") WorldTransformHistory
 {
     Transform3f Previous;
     Transform3f Current;
     bool Snap = true;
 };
-SENCHA_DECLARE_COMPONENT_TYPE(WorldTransformHistory, "sencha.world_transform_history");
+#if !defined(SENCHA_CODEGEN)
+#  include <world/transform/TransformHistory.sencha.h>
+#endif
 
 // Roll Current into Previous and sample the entity's world pose. Call once per
 // fixed tick, after simulation-domain propagation has produced this tick's

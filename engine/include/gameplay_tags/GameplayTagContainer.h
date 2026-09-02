@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ecs/ComponentTypeId.h>
+#include <ecs/ComponentAnnotations.h>
 #include <gameplay_tags/GameplayTagId.h>
 
 #include <cstdint>
@@ -22,8 +22,12 @@ class GameplayTagRegistry;
 // Hierarchical queries take the GameplayTagRegistry, which lives as a world
 // resource (the provenance "who granted this tag" is not stored here — the
 // effect entity that granted a tag is its provenance).
+//
+// Scene persistence goes through a hand-written serializer
+// (GameplayTagContainerSerializer) rather than a schema, because the ids held
+// here are registration-order values.
 //=============================================================================
-struct GameplayTagContainer
+struct SENCHA_COMPONENT("sencha.gameplay_tag_container") GameplayTagContainer
 {
     static constexpr std::uint8_t Capacity = 32;
 
@@ -58,8 +62,6 @@ struct GameplayTagContainer
 static_assert(std::is_trivially_copyable_v<GameplayTagContainer>,
               "GameplayTagContainer must be trivially copyable to live in ECS chunks");
 
-// Scene persistence goes through a hand-written serializer
-// (GameplayTagContainerSerializer) rather than a TypeSchema, because the ids
-// held here are registration-order values; the explicit key below is what
-// supplies the stable component identity the World resolves.
-SENCHA_DECLARE_COMPONENT_TYPE(GameplayTagContainer, "sencha.gameplay_tag_container");
+#if !defined(SENCHA_CODEGEN)
+#  include <gameplay_tags/GameplayTagContainer.sencha.h>
+#endif

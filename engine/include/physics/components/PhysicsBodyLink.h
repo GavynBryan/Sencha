@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ecs/ComponentTypeId.h>
+#include <ecs/ComponentAnnotations.h>
 #include <physics/PhysicsTypes.h>
 
 //=============================================================================
@@ -13,9 +13,11 @@
 // per-frame transform sync walk (LocalTransform, RigidBody, PhysicsBodyLink) as
 // contiguous columns with no per-entity lookup and no hashing.
 //=============================================================================
-struct PhysicsBodyLink
+struct SENCHA_COMPONENT("sencha.physics.body_link") PhysicsBodyLink
 {
     PhysicsBodyId Body;
 };
 
-SENCHA_DECLARE_COMPONENT_TYPE(PhysicsBodyLink, "sencha.physics.body_link");
+#if !defined(SENCHA_CODEGEN)
+#  include <physics/components/PhysicsBodyLink.sencha.h>
+#endif
