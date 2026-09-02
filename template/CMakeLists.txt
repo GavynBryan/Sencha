@@ -20,6 +20,7 @@ set(SENCHA_TEMPLATE_MODULE_SOURCES
     src/CharacterInputSystem.cpp
     src/GameSettingsData.cpp
     src/PawnSpawn.cpp
+    src/SessionContent.cpp
     src/TurretControl.cpp
     src/TemplateComponents.cpp
     src/PlayerAvatarData.cpp
