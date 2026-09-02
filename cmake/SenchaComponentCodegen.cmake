@@ -24,14 +24,18 @@ function(sencha_generate_component_metadata target)
         return()
     endif()
 
-    if(TARGET sencha::component-codegen)
-        set(_tool sencha::component-codegen)
-    else()
-        set(_tool sencha-component-codegen)
-    endif()
-
     set(_generated "${CMAKE_CURRENT_BINARY_DIR}/generated-components")
     set(_flags "${CMAKE_CURRENT_BINARY_DIR}/component-codegen.rsp")
+
+    # Every configuration compiles the same companion, so the flags come from
+    # one reference configuration; a definition such as NDEBUG that varies with
+    # the configuration cannot change what a component declares.
+    set(_reference_config "")
+    get_property(_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+    if(_multi_config)
+        list(GET CMAKE_CONFIGURATION_TYPES 0 _reference)
+        set(_reference_config CONDITION "$<CONFIG:${_reference}>")
+    endif()
 
     # Written from the target's own properties, the same source of truth CMake
     # expands into the real compile line.
@@ -43,7 +47,7 @@ $<JOIN:$<LIST:TRANSFORM,$<REMOVE_DUPLICATES:$<TARGET_PROPERTY:${target},COMPILE_
 >
 $<JOIN:$<LIST:TRANSFORM,$<REMOVE_DUPLICATES:$<TARGET_PROPERTY:${target},INCLUDE_DIRECTORIES>>,PREPEND,-I>,
 >
-")
+" ${_reference_config})
 
     set(_outputs "")
     set(_indexes "")
@@ -68,10 +72,10 @@ $<JOIN:$<LIST:TRANSFORM,$<REMOVE_DUPLICATES:$<TARGET_PROPERTY:${target},INCLUDE_
 
         add_custom_command(
             OUTPUT "${_companion}" "${_index}"
-            COMMAND ${_tool} "${_abs}"
+            COMMAND sencha::component-codegen "${_abs}"
                     "--output=${_companion}" "--index=${_index}"
                     "--logical=${_logical}" "--flags=${_flags}"
-            DEPENDS "${_abs}" "${_flags}" ${_tool}
+            DEPENDS "${_abs}" "${_flags}" sencha::component-codegen
             COMMENT "Generating component metadata for ${_logical}"
             VERBATIM)
 

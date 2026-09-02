@@ -421,7 +421,7 @@ if(NOT WIN32)
     add_test(
         NAME component_codegen
         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_component_codegen.sh
-                $<TARGET_FILE:sencha-component-codegen>
+                $<TARGET_FILE:sencha::component-codegen>
                 ${CMAKE_SOURCE_DIR}
                 ${CMAKE_BINARY_DIR}/engine/generated-public
     )

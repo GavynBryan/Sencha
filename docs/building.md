@@ -11,6 +11,11 @@ blocked by the root `CMakeLists.txt`.
 - A **C++20** compiler (GCC, Clang, or MSVC)
 - **SDL3** — discovered via `find_package(SDL3 REQUIRED CONFIG)`
 - **Vulkan SDK** — currently required (see [Headless builds](#headless-builds))
+- **Clang development libraries** — `clang-devel llvm-devel` (Fedora) or
+  `clang libclang-dev llvm-dev` (Debian). They build
+  `sencha-component-codegen`, the host tool that generates component metadata
+  from the annotated headers. Only building the engine needs them; a game
+  module built against an installed SDK runs the shipped binary.
 
 FetchContent pulls the rest (stb, GoogleTest, VMA, ImGui, glslang, and the cook
 encoders) automatically at configure time, gated on the relevant feature flag.
@@ -60,8 +65,27 @@ All `SENCHA_ENABLE_*` options are declared in
 | `SENCHA_ENABLE_HOT_RELOAD` | OFF     | glslang for live GLSL reload. Never in release. |
 | `SENCHA_ENABLE_TSAN`       | OFF     | ThreadSanitizer (GCC/Clang). |
 | `SENCHA_WARNINGS_AS_ERRORS` | OFF (ON in `dev`) | Compiler warnings fail the build. See [Warnings](#warnings). |
+| `SENCHA_COMPONENT_CODEGEN_EXECUTABLE` | empty | A prebuilt `sencha-component-codegen` to run instead of building the tool. See [The component generator on MSVC](#the-component-generator-on-msvc). |
 
 Override any of them on a classic configure with `-DSENCHA_ENABLE_FOO=ON/OFF`.
+
+## The component generator on MSVC
+
+`sencha-component-codegen` links Clang's libraries, which no MSVC toolchain
+carries. Build the tool as its own project against an LLVM release archive
+(`clang+llvm-<version>-x86_64-pc-windows-msvc`), then hand the binary to the
+engine configure:
+
+```sh
+cmake -S tools/component-codegen -B build-codegen -DClang_DIR=C:/llvm/lib/cmake/clang
+cmake --build build-codegen --config Release
+cmake --install build-codegen --config Release --prefix C:/sencha-codegen
+cmake -B build -DSENCHA_COMPONENT_CODEGEN_EXECUTABLE=C:/sencha-codegen/bin/sencha-component-codegen.exe ...
+```
+
+The tool is built in Release because the archive's libraries link the release
+CRT; the engine configuration is independent of it. The Windows CI job in
+`.github/workflows/ci.yml` is the worked example.
 
 ## Warnings
 

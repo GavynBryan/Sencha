@@ -620,7 +620,8 @@ install(EXPORT SenchaTargets
 configure_package_config_file(
     "${CMAKE_SOURCE_DIR}/cmake/SenchaConfig.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/SenchaConfig.cmake"
-    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/Sencha")
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/Sencha"
+    PATH_VARS CMAKE_INSTALL_BINDIR)
 
 write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/SenchaConfigVersion.cmake"

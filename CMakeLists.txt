@@ -102,8 +102,8 @@ if(MINGW)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
 endif()
 
-# Built before the engine so component metadata can be generated for it. The
-# tool links no engine code.
+# The component metadata generator, built or taken prebuilt before the engine
+# that runs it. The tool links no engine code.
 add_subdirectory(tools/component-codegen)
 
 add_subdirectory(engine)
