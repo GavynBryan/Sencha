@@ -16,7 +16,6 @@
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/WorldComponentSchema.h>
-#include <movement/MovementComponentAssets.h>
 #include <movement/components/CharacterMovement.h>
 #include <movement/components/MovementTuning.h>
 #include <movement/MovementRegistration.h>
@@ -81,12 +80,11 @@ namespace
             Schema.Seal();
             Runtime.emplace(Schema);
             // The vocabulary the prefab's name-based components resolve
-            // against, and where the movement profile it names is held. A
-            // runtime composes both; without them the prefab's tags,
+            // against, and the stores that hold the movement profile it
+            // names. A runtime composes both; without them the prefab's tags,
             // attributes, and tuning would refuse to load.
             RegisterMovement(Runtime->Entities());
-            Runtime->Entities().GetResource<MovementComponentAssets>().Profiles =
-                &Assets->DataAssets;
+            Runtime->Entities().SetResource(Assets->Assets.Stores());
             Spawner.emplace(*Runtime, Schema, Serializers, Logging);
             Spawner->ConnectAssets(&Assets->Assets);
         }

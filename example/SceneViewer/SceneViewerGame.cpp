@@ -2,11 +2,10 @@
 
 #include "SceneViewerSystems.h"
 
+#include <anim/AnimationClipPlaybackRuntime.h>
 #include <anim/AnimationClipPlaybackSystem.h>
-#include <anim/AnimationClipComponentAssets.h>
-#include <audio/AudioSourceRuntime.h>
-#include <render/MeshComponentAssets.h>
 #include <anim/AnimationClipPlayerComponent.h>
+#include <audio/AudioSourceRuntime.h>
 #include <input/InputActionResolveSystem.h>
 #include <input/InputActionState.h>
 #include <input/InputBindingCache.h>
@@ -21,6 +20,7 @@
 #include <components/CameraComponent.h>
 #include <core/assets/AssetIdMap.h>
 #include <core/assets/AssetRegistry.h>
+#include <core/assets/AssetStoreTable.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
 #include <core/logging/LoggingProvider.h>
@@ -32,7 +32,6 @@
 #include <render/ProbeVolumeSet.h>
 #include <render/StaticMeshComponent.h>
 #include <render/ZoneLightmapComponent.h>
-#include <render/ZoneLightmapComponentAssets.h>
 #include <world/RuntimeWorld.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
@@ -161,20 +160,11 @@ void SceneViewerGame::OnStart(GameStartupContext&)
     }
 
     World& world = engine.World().Entities();
-    world.AddResource<StaticMeshComponentAssets>(
-        runtimeAssets.StaticMeshes.get(),
-        &runtimeAssets.MaterialSets);
-    world.AddResource<SkinnedMeshComponentAssets>(
-        runtimeAssets.SkinnedMeshes.get(),
-        &runtimeAssets.MaterialSets);
-    world.AddResource<AnimationClipComponentAssets>(
-        &runtimeAssets.AnimationClips);
-    world.AddResource<ZoneLightmapComponentAssets>(
-        runtimeAssets.Textures.get());
-    world.AddResource<AudioSourceRuntime>(
-        &runtimeAssets.AudioClips,
-        &engine.Audio(),
-        &engine.Captions());
+    world.SetResource(runtimeAssets.Assets.Stores());
+    world.SetResource(AudioSourceRuntime{
+        &runtimeAssets.AudioClips, &engine.Audio(), &engine.Captions() });
+    world.SetResource(
+        AnimationClipPlaybackRuntime{ &runtimeAssets.AnimationClips });
     RegisterCameraComponents(world);
 
     SceneContext = std::make_unique<SceneSerializationContext>(
@@ -380,24 +370,9 @@ void SceneViewerGame::OnShutdown(GameShutdownContext&)
         .GetResource<ActiveCameraService>()
         .SetActive(EntityId{});
 
-    if (StaticMeshComponentAssets* meshAssets =
-            runtime.Entities().TryGetResource<StaticMeshComponentAssets>())
-    {
-        meshAssets->Meshes = nullptr;
-        meshAssets->MaterialSets = nullptr;
-    }
-    if (ZoneLightmapComponentAssets* lightmapAssets =
-            runtime.Entities().TryGetResource<ZoneLightmapComponentAssets>())
-    {
-        lightmapAssets->Textures = nullptr;
-    }
-    if (AudioSourceRuntime* audioRuntime =
-            runtime.Entities().TryGetResource<AudioSourceRuntime>())
-    {
-        audioRuntime->Clips = nullptr;
-        audioRuntime->Audio = nullptr;
-        audioRuntime->Captions = nullptr;
-    }
+    runtime.Entities().SetResource(AssetStoreTable{});
+    runtime.Entities().SetResource(AudioSourceRuntime{});
+    runtime.Entities().SetResource(AnimationClipPlaybackRuntime{});
 
     CameraEntity = EntityId{};
     ZoneActive = false;

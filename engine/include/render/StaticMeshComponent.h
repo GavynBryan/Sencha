@@ -3,11 +3,11 @@
 #include <ecs/ComponentAnnotations.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
-#include <ecs/EntityId.h>
 #include <render/Material.h>
 #include <assets/static_mesh/MeshGeometry.h>
 #include <render/MaterialSetHandle.h>
 #include <render/static_mesh/StaticMeshHandle.h>
+#include <world/ComponentAssetOwnership.h>
 
 #include <cstdint>
 
@@ -76,15 +76,9 @@ StaticMeshComponent
     Vec4 LightmapScaleBias = Vec4{ 1.0f, 1.0f, 0.0f, 0.0f };
 };
 
-// Holds the mesh and material set for as long as the component is carried,
-// through the StaticMeshComponentAssets resource the host points at its caches.
-template <>
-struct ComponentTraits<StaticMeshComponent>
-{
-    static void OnAdd(StaticMeshComponent& component, World& world, EntityId);
-    static void OnRemove(const StaticMeshComponent& component, World& world, EntityId);
-};
-
 #if !defined(SENCHA_CODEGEN)
 #  include <render/StaticMeshComponent.sencha.h>
 #endif
+
+template <>
+struct ComponentTraits<StaticMeshComponent> : SchemaAssetOwnership<StaticMeshComponent> {};

@@ -3,8 +3,8 @@
 #include <ecs/ComponentAnnotations.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
-#include <ecs/EntityId.h>
 #include <render/TextureHandle.h>
+#include <world/ComponentAssetOwnership.h>
 
 //=============================================================================
 // ZoneLightmapComponent
@@ -29,16 +29,9 @@ ZoneLightmapComponent
     TextureHandle Ao{};
 };
 
-// Holds both atlases for as long as the component is carried, through the
-// ZoneLightmapComponentAssets resource the host points at its texture cache.
-template <>
-struct ComponentTraits<ZoneLightmapComponent>
-{
-    static void OnAdd(ZoneLightmapComponent& component, World& world, EntityId);
-    static void OnRemove(const ZoneLightmapComponent& component, World& world,
-                         EntityId);
-};
-
 #if !defined(SENCHA_CODEGEN)
 #  include <render/ZoneLightmapComponent.sencha.h>
 #endif
+
+template <>
+struct ComponentTraits<ZoneLightmapComponent> : SchemaAssetOwnership<ZoneLightmapComponent> {};

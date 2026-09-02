@@ -1,6 +1,6 @@
 #include <anim/AnimationClipPlaybackSystem.h>
-#include <anim/AnimationClipComponentAssets.h>
 
+#include <anim/AnimationClipPlaybackRuntime.h>
 #include <anim/AnimationClipPlayerComponent.h>
 #include <app/EngineSchedule.h>
 #include <app/GameContexts.h>
@@ -58,9 +58,9 @@ void RegisterAnimationSystems(EngineSchedule& schedule)
 
 void AnimationClipPlaybackSystem::FixedLogic(FixedLogicContext& ctx)
 {
-    const auto* assets = ctx.Entities.TryGetResource<AnimationClipComponentAssets>();
-    if (assets == nullptr || assets->Clips == nullptr)
+    const auto* runtime = ctx.Entities.TryGetResource<AnimationClipPlaybackRuntime>();
+    if (runtime == nullptr || runtime->Clips == nullptr)
         return;
-    AdvanceAnimationClipPlayers(ctx.Entities, ctx.Partitions, *assets->Clips,
+    AdvanceAnimationClipPlayers(ctx.Entities, ctx.Partitions, *runtime->Clips,
                                 static_cast<float>(ctx.Time.DeltaSeconds));
 }

@@ -4,7 +4,7 @@
 #include <ecs/ComponentAnnotations.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
-#include <ecs/EntityId.h>
+#include <world/ComponentAssetOwnership.h>
 
 //=============================================================================
 // AnimationClipPlayerComponent
@@ -54,16 +54,10 @@ AnimationClipPlayerComponent
     bool Loop = true;
 };
 
-// Holds the clip for as long as the component is carried, through the
-// AnimationClipComponentAssets resource the host points at its cache.
-template <>
-struct ComponentTraits<AnimationClipPlayerComponent>
-{
-    static void OnAdd(AnimationClipPlayerComponent& component, World& world, EntityId);
-    static void OnRemove(const AnimationClipPlayerComponent& component, World& world,
-                         EntityId);
-};
-
 #if !defined(SENCHA_CODEGEN)
 #  include <anim/AnimationClipPlayerComponent.sencha.h>
 #endif
+
+template <>
+struct ComponentTraits<AnimationClipPlayerComponent>
+    : SchemaAssetOwnership<AnimationClipPlayerComponent> {};

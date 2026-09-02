@@ -7,8 +7,9 @@
 #include "TurretMount.h"
 
 #include <abilities/AbilityKit.h>
-#include <audio/AudioSourceRuntime.h>
+#include <anim/AnimationClipPlaybackRuntime.h>
 #include <anim/AnimationClipPlaybackSystem.h>
+#include <audio/AudioSourceRuntime.h>
 #include <app/DefaultRenderPipeline.h>
 #include <app/Engine.h>
 #ifdef SENCHA_ENABLE_DEBUG_UI
@@ -27,6 +28,7 @@
 #include <controller/LookOrientation.h>
 #include <core/assets/AssetIdMap.h>
 #include <core/assets/AssetRegistry.h>
+#include <core/assets/AssetStoreTable.h>
 #include <core/config/EngineConfig.h>
 #include <core/console/ConsoleService.h>
 #include <core/json/JsonParser.h>
@@ -40,7 +42,6 @@
 #include <movement/LocomotionMode.h>
 #include <movement/MovementDefs.h>
 #include <movement/JumpState.h>
-#include <movement/MovementComponentAssets.h>
 #include <movement/components/CharacterMovement.h>
 #include <movement/components/MovementTuning.h>
 #include <movement/MotionComposition.h>
@@ -76,9 +77,7 @@
 #include <render/ProbeVolumeSet.h>
 #include <runtime/spawn/SceneSpawnService.h>
 #include <render/StaticMeshComponent.h>
-#include <render/MeshComponentAssets.h>
 #include <render/ZoneLightmapComponent.h>
-#include <render/ZoneLightmapComponentAssets.h>
 #include <world/RuntimeWorld.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
@@ -514,53 +513,10 @@ void ConfigureRuntimeResources(
 {
     World& world = engine.World().Entities();
 
-    if (StaticMeshComponentAssets* meshAssets =
-            world.TryGetResource<StaticMeshComponentAssets>())
-    {
-        meshAssets->Meshes = assets.StaticMeshes.get();
-        meshAssets->MaterialSets = &assets.MaterialSets;
-    }
-    else
-    {
-        world.AddResource<StaticMeshComponentAssets>(
-            assets.StaticMeshes.get(),
-            &assets.MaterialSets);
-    }
-
-    if (ZoneLightmapComponentAssets* lightmapAssets =
-            world.TryGetResource<ZoneLightmapComponentAssets>())
-    {
-        lightmapAssets->Textures = assets.Textures.get();
-    }
-    else
-    {
-        world.AddResource<ZoneLightmapComponentAssets>(assets.Textures.get());
-    }
-
-    if (MovementComponentAssets* movementAssets =
-            world.TryGetResource<MovementComponentAssets>())
-    {
-        movementAssets->Profiles = &assets.DataAssets;
-    }
-    else
-    {
-        world.AddResource<MovementComponentAssets>(&assets.DataAssets);
-    }
-
-    if (AudioSourceRuntime* audioRuntime =
-            world.TryGetResource<AudioSourceRuntime>())
-    {
-        audioRuntime->Clips = &assets.AudioClips;
-        audioRuntime->Audio = &engine.Audio();
-        audioRuntime->Captions = &engine.Captions();
-    }
-    else
-    {
-        world.AddResource<AudioSourceRuntime>(
-            &assets.AudioClips,
-            &engine.Audio(),
-            &engine.Captions());
-    }
+    world.SetResource(assets.Assets.Stores());
+    world.SetResource(AudioSourceRuntime{
+        &assets.AudioClips, &engine.Audio(), &engine.Captions() });
+    world.SetResource(AnimationClipPlaybackRuntime{ &assets.AnimationClips });
 
     RegisterPhysicsComponents(world);
     RegisterMovement(world);
@@ -2558,19 +2514,9 @@ void TemplateGame::OnShutdown(GameShutdownContext&)
     runtime.Entities()
         .GetResource<ActiveCameraService>()
         .SetActive(EntityId{});
-    if (StaticMeshComponentAssets* meshAssets =
-            runtime.Entities().TryGetResource<StaticMeshComponentAssets>())
-    {
-        meshAssets->Meshes = nullptr;
-        meshAssets->MaterialSets = nullptr;
-    }
-    if (AudioSourceRuntime* audioRuntime =
-            runtime.Entities().TryGetResource<AudioSourceRuntime>())
-    {
-        audioRuntime->Clips = nullptr;
-        audioRuntime->Audio = nullptr;
-        audioRuntime->Captions = nullptr;
-    }
+    runtime.Entities().SetResource(AssetStoreTable{});
+    runtime.Entities().SetResource(AudioSourceRuntime{});
+    runtime.Entities().SetResource(AnimationClipPlaybackRuntime{});
 
     PlayZoneActive = false;
     // Before the runtime it points at goes.

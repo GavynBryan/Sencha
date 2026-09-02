@@ -7,6 +7,7 @@
 #include <audio/AudioSourceRuntime.h>
 #include <audio/AudioSystem.h>
 #include <core/assets/AssetRegistry.h>
+#include <core/assets/AssetStoreTable.h>
 #include <assets/runtime/AssetSystem.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
@@ -24,6 +25,7 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 
 namespace
 {
@@ -91,10 +93,13 @@ StoragePartitionSet ActivePartitions()
 
 void SetupAudioWorld(
     World& world,
-    AudioClipCache* cache,
+    AudioClipCache& cache,
     AudioService* audio)
 {
-    world.AddResource<AudioSourceRuntime>(cache, audio);
+    AssetStoreTable stores;
+    stores.Add(AssetType::Audio, AssetArity::Single, cache);
+    world.AddResource<AssetStoreTable>(std::move(stores));
+    world.AddResource<AudioSourceRuntime>(&cache, audio);
     world.RegisterComponent<AudioSourceComponent>();
 }
 } // namespace
@@ -234,7 +239,7 @@ TEST(AudioSourceLifetime, RemoveStopsVoiceBeforeReleasingSoleClipReference)
         MakeClip());
 
     World world;
-    SetupAudioWorld(world, &cache, &audio);
+    SetupAudioWorld(world, cache, &audio);
     const EntityId entity = world.CreateEntity();
     world.AddComponent(
         entity,
@@ -303,7 +308,7 @@ TEST(AudioSystemSweep, LoopRestartsAcrossDormancyAndOneShotDoesNot)
         MakeClip());
 
     World world;
-    SetupAudioWorld(world, &cache, &audio);
+    SetupAudioWorld(world, cache, &audio);
 
     const EntityId loop = world.CreateEntity();
     world.AddComponent(
@@ -363,7 +368,7 @@ TEST(AudioSystemSweep, NullServiceAndPlayOnActiveFalseAreNoOps)
         MakeClip());
 
     World world;
-    SetupAudioWorld(world, &cache, nullptr);
+    SetupAudioWorld(world, cache, nullptr);
     const EntityId entity = world.CreateEntity();
     world.AddComponent(
         entity,

@@ -79,15 +79,13 @@ SceneRenderQueueBuilder::SceneRenderQueueBuilder(AssetSystem& assets,
                                                  MaterialSetCache& materialSets,
                                                  LoggingProvider& logging,
                                                  TextureCache* textures,
-                                                 SkinnedMeshCache* skinnedMeshes,
-                                                 AnimationClipCache* animationClips)
+                                                 SkinnedMeshCache* skinnedMeshes)
     : Assets(assets)
     , Meshes(meshes)
     , Materials(materials)
     , MaterialSets(materialSets)
     , Textures(textures)
     , SkinnedMeshes(skinnedMeshes)
-    , AnimationClips(animationClips)
     , Logging(logging)
     , Log(logging.GetLogger<SceneRenderQueueBuilder>())
 {
@@ -312,9 +310,7 @@ void SceneRenderQueueBuilder::SetLightmapPreview(const LightmapPreviewSource& so
     }
 
     auto registry = std::make_unique<Registry>();
-    InitializeSceneRegistry(*registry, &Meshes, &MaterialSets,
-                            nullptr, nullptr, nullptr, Textures, SkinnedMeshes,
-                            AnimationClips);
+    InitializeSceneRegistry(*registry, Assets.Stores());
     // The engine vocabulary comes with the registry; a loaded module's does
     // not, and a scene naming one of its tags would refuse to load without it.
     InstallEditorModuleVocabulary(registry->Components);

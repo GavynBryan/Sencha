@@ -38,10 +38,10 @@ public:
 
     // Binds the engine asset system the document serializes through (one pipeline,
     // shared with the cook and runtime): StaticMeshComponent and other asset-handle
-    // fields round-trip handle<->asset:// path through this. Also wires the
-    // document World's StaticMeshComponentAssets resource so mesh/material handles
-    // stay retained while authored. Until set, the context carries a null asset
-    // system, which is the brush-only path (no asset fields to resolve).
+    // fields round-trip handle<->asset:// path through this. Also points the
+    // document World at the asset stores, so an authored handle stays retained
+    // while the component carries it. Until set, the context carries a null
+    // asset system, which is the brush-only path (no asset fields to resolve).
     void SetAssetEnvironment(RuntimeAssets& assets);
 
     // The shared asset system and its registry, for tooling that resolves asset

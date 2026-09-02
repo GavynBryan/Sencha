@@ -2,7 +2,7 @@
 
 #include <input/InputActionResolveSystem.h>
 #include <audio/AudioSourceRuntime.h>
-#include <render/MeshComponentAssets.h>
+#include <core/assets/AssetStoreTable.h>
 #include <input/InputBindingCache.h>
 #include <input/InputRegistration.h>
 
@@ -302,13 +302,9 @@ void CubeDemoGame::OnStart(GameStartupContext&)
 #endif
 
     World& world = engine.World().Entities();
-    world.AddResource<StaticMeshComponentAssets>(
-        runtimeAssets.StaticMeshes.get(),
-        &runtimeAssets.MaterialSets);
-    world.AddResource<AudioSourceRuntime>(
-        &runtimeAssets.AudioClips,
-        &engine.Audio(),
-        &engine.Captions());
+    world.SetResource(runtimeAssets.Assets.Stores());
+    world.SetResource(AudioSourceRuntime{
+        &runtimeAssets.AudioClips, &engine.Audio(), &engine.Captions() });
 
     SceneContext = std::make_unique<SceneSerializationContext>(
         logging,
@@ -494,19 +490,8 @@ void CubeDemoGame::OnShutdown(GameShutdownContext&)
     runtime.Entities()
         .GetResource<ActiveCameraService>()
         .SetActive(EntityId{});
-    if (StaticMeshComponentAssets* meshAssets =
-            runtime.Entities().TryGetResource<StaticMeshComponentAssets>())
-    {
-        meshAssets->Meshes = nullptr;
-        meshAssets->MaterialSets = nullptr;
-    }
-    if (AudioSourceRuntime* audioRuntime =
-            runtime.Entities().TryGetResource<AudioSourceRuntime>())
-    {
-        audioRuntime->Clips = nullptr;
-        audioRuntime->Audio = nullptr;
-        audioRuntime->Captions = nullptr;
-    }
+    runtime.Entities().SetResource(AssetStoreTable{});
+    runtime.Entities().SetResource(AudioSourceRuntime{});
 
     Demo = DemoScene{};
     FreeCam = FreeCamera{};

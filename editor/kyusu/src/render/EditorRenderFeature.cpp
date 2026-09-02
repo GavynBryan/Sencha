@@ -75,8 +75,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
         QueueBuilder.emplace(runtimeAssets->Assets, *runtimeAssets->StaticMeshes,
                              runtimeAssets->Materials, runtimeAssets->MaterialSets,
                              logging, runtimeAssets->Textures.get(),
-                             runtimeAssets->SkinnedMeshes.get(),
-                             &runtimeAssets->AnimationClips);
+                             runtimeAssets->SkinnedMeshes.get());
         SceneSolid.emplace(Forward, *QueueBuilder, *runtimeAssets->StaticMeshes,
                            runtimeAssets->Materials);
         MaterialPath = true;
@@ -210,8 +209,7 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
                         RuntimeAssetsRef->Assets, *RuntimeAssetsRef->StaticMeshes,
                         RuntimeAssetsRef->Materials, RuntimeAssetsRef->MaterialSets,
                         *LoggingRef, nullptr,
-                        RuntimeAssetsRef->SkinnedMeshes.get(),
-                        &RuntimeAssetsRef->AnimationClips);
+                        RuntimeAssetsRef->SkinnedMeshes.get());
                 document.GetScene().RefreshDerivedTransforms();
                 builder->Build(document);
             });

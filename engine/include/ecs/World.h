@@ -805,6 +805,7 @@ public:
     template <typename T, typename... Args>
     T& AddResource(Args&&... args)
     {
+        assert(!HasResource<T>() && "Resource already registered");
         auto ptr = std::make_unique<T>(std::forward<Args>(args)...);
         T*   raw = ptr.get();
         Resources[std::type_index(typeid(T))] = {
@@ -813,6 +814,20 @@ public:
         };
         ptr.release();
         return *raw;
+    }
+
+    // Assigns over the resource if it is registered, adds it otherwise. For a
+    // host re-pointing a value resource at its services; anything holding the
+    // resource's address keeps a valid one.
+    template <typename T>
+    T& SetResource(T value)
+    {
+        if (T* installed = TryGetResource<T>())
+        {
+            *installed = std::move(value);
+            return *installed;
+        }
+        return AddResource<T>(std::move(value));
     }
 
     template <typename T>

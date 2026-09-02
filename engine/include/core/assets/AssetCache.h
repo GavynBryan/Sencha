@@ -141,6 +141,11 @@ public:
         }
     }
 
+    void RetainToken(uint64_t token) override
+    {
+        Retain(THandle::FromToken(token));
+    }
+
     void ReleaseToken(uint64_t token) override
     {
         Release(THandle::FromToken(token));

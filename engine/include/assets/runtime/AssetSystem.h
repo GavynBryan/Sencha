@@ -13,6 +13,7 @@
 #include <core/assets/AssetKindRegistry.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetSource.h>
+#include <core/assets/AssetStoreTable.h>
 #include <core/logging/Logger.h>
 #include <render/Material.h>
 #include <render/MaterialSetCache.h>
@@ -223,6 +224,11 @@ public:
     // module can register a kind of its own at composition time.
     [[nodiscard]] AssetKindRegistry& Kinds() { return KindRegistry; }
     [[nodiscard]] const AssetKindRegistry& Kinds() const { return KindRegistry; }
+
+    // The store of every kind registered so far, plus the material-set cache
+    // under (Material, List): what a World's components retain their asset
+    // fields through. A snapshot, so take it after the last kind is registered.
+    [[nodiscard]] AssetStoreTable Stores() const;
 
     // Synchronous typed facades still name their own loader; only generic
     // orchestration goes through the registry.

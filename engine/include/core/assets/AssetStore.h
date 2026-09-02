@@ -29,10 +29,11 @@ public:
     // Never loads.
     [[nodiscard]] virtual AssetLease TryAcquireLease(std::string_view path) = 0;
 
-    // Drops one reference named by an opaque token. The counterpart of
-    // TryAcquireLease for a caller that kept the token rather than the lease --
-    // a component field holding a raw handle, whose owner releases it when the
-    // field is overwritten. A zero or stale token is a no-op.
+    // One reference named by an opaque token, for a caller that keeps the
+    // token rather than a lease: a component field holding a raw handle,
+    // retained while the component is carried and released when it is not.
+    // A zero or stale token is a no-op for both.
+    virtual void RetainToken(uint64_t token) = 0;
     virtual void ReleaseToken(uint64_t token) = 0;
 
     [[nodiscard]] virtual std::string_view GetPath(uint64_t token) const = 0;

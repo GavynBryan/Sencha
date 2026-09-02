@@ -22,7 +22,6 @@
 #include <ecs/WorldComponentSchema.h>
 #include <movement/JumpState.h>
 #include <movement/LocomotionMode.h>
-#include <movement/MovementComponentAssets.h>
 #include <movement/components/CharacterMovement.h>
 #include <movement/components/MovementTuning.h>
 #include <movement/MovementProfileData.h>
@@ -89,7 +88,7 @@ namespace
             ComponentRegistrar components(World_);
             RegisterEngineComponents(components);
             RegisterMovement(World_);
-            World_.AddResource<MovementComponentAssets>(&DataAssets);
+            World_.SetResource(Assets.Stores());
 
             RegisterEngineSceneSerializers(Serializers);
         }
@@ -215,7 +214,7 @@ TEST_F(MovementProfileLifetimeTest, WorldTeardownReleasesWhatItsEntitiesHold)
         RegisterEngineComponents(components);
         schema.Seal();
         schema.Apply(scoped);
-        scoped.AddResource<MovementComponentAssets>(&DataAssets);
+        scoped.SetResource(Assets.Stores());
 
         const EntityId entity = scoped.CreateEntity();
         AssetLease lease = LoadProfile();
@@ -284,7 +283,7 @@ TEST_F(MovementProfileLifetimeTest, ASceneLoadLeavesTheComponentHoldingItAlone)
     ComponentRegistrar components(scene.Components);
     RegisterEngineComponents(components);
     RegisterMovement(scene.Components);
-    scene.Components.AddResource<MovementComponentAssets>(&DataAssets);
+    scene.Components.SetResource(Assets.Stores());
 
     SceneSerializationContext context(Logging, &Assets);
     ASSERT_TRUE(LoadSceneJson(*parsed, scene, Serializers, context));
@@ -330,7 +329,7 @@ TEST_F(MovementProfileLifetimeTest, TheCooksStampedReferenceReadsBack)
     ComponentRegistrar components(scene.Components);
     RegisterEngineComponents(components);
     RegisterMovement(scene.Components);
-    scene.Components.AddResource<MovementComponentAssets>(&DataAssets);
+    scene.Components.SetResource(Assets.Stores());
 
     SceneSerializationContext context(Logging, &Assets);
     ASSERT_TRUE(LoadSceneJson(*parsed, scene, Serializers, context));
@@ -364,7 +363,7 @@ TEST_F(MovementProfileLifetimeTest, AMissingProfileLoadsAsAnUnauthoredCharacter)
     ComponentRegistrar components(scene.Components);
     RegisterEngineComponents(components);
     RegisterMovement(scene.Components);
-    scene.Components.AddResource<MovementComponentAssets>(&DataAssets);
+    scene.Components.SetResource(Assets.Stores());
 
     SceneSerializationContext context(Logging, &Assets);
     ASSERT_TRUE(LoadSceneJson(*parsed, scene, Serializers, context))

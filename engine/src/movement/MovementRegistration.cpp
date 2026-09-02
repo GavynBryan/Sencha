@@ -17,7 +17,6 @@
 #include <movement/JumpExecutionSystem.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MotionComposition.h>
-#include <movement/MovementComponentAssets.h>
 #include <movement/MovementDefs.h>
 #include <movement/MovementModeSystems.h>
 #include <movement/MovementTags.h>
@@ -56,13 +55,6 @@ void RegisterMovementComponents(World& world)
 
     ComponentRegistrar registrar(world);
     RegisterMovementComponents(registrar);
-
-    // Where MovementTuningSource's hooks hold its profile. Registered empty
-    // beside the component rather than by each host, so a world that can carry
-    // the component can always answer where its asset lives; a host with a
-    // data-asset cache points this at it.
-    if (!world.HasResource<MovementComponentAssets>())
-        world.AddResource<MovementComponentAssets>(nullptr);
 
     (void)EnsureMovementTags(world);
 

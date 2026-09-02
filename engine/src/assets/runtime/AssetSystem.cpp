@@ -165,6 +165,19 @@ bool AssetSystem::HasStore(AssetType type) const
     return StoreFor(type) != nullptr;
 }
 
+AssetStoreTable AssetSystem::Stores() const
+{
+    AssetStoreTable stores;
+    for (const AssetKindRegistration& kind : KindRegistry.Entries())
+    {
+        if (kind.Store != nullptr)
+            stores.Add(kind.Type, AssetArity::Single, *kind.Store);
+    }
+    if (MaterialSets != nullptr)
+        stores.Add(AssetType::Material, AssetArity::List, *MaterialSets);
+    return stores;
+}
+
 AssetLease AssetSystem::TryAcquireLease(std::string_view path, AssetType type)
 {
     IAssetStore* store = StoreFor(type);

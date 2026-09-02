@@ -6,7 +6,6 @@
 #include "scene_source/Json5Convert.h"
 
 #include <core/assets/AssetRegistry.h>
-#include <anim/AnimationClipComponentAssets.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
@@ -15,10 +14,8 @@
 #include <core/logging/LoggingProvider.h>
 #include <render/extract/Camera.h>
 #include <render/StaticMeshComponent.h>
-#include <render/MeshComponentAssets.h>
 #include <anim/AnimationClipPlayerComponent.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
-#include <movement/MovementComponentAssets.h>
 #include <movement/MovementRegistration.h>
 #include <world/serialization/IComponentSerializer.h>
 #include <world/identity/PersistentEntityIndex.h>
@@ -181,21 +178,10 @@ void EditorDocument::SetAssetEnvironment(RuntimeAssets& assets)
     Assets = &assets.Assets;
     Catalog = &assets.Registry;
 
-    // The lifecycle hooks for StaticMeshComponent retain/release through this
-    // resource; without it an authored mesh handle would not hold its asset.
-    World& world = Registry_.Components;
-    if (!world.HasResource<StaticMeshComponentAssets>())
-        world.AddResource<StaticMeshComponentAssets>(assets.StaticMeshes.get(), &assets.MaterialSets);
-    if (!world.HasResource<SkinnedMeshComponentAssets>())
-        world.AddResource<SkinnedMeshComponentAssets>(assets.SkinnedMeshes.get(), &assets.MaterialSets);
-    if (!world.HasResource<AnimationClipComponentAssets>())
-        world.AddResource<AnimationClipComponentAssets>(&assets.AnimationClips);
-    // Registered empty with the movement components; this is the host naming
-    // where its structured data lives. Without it an authored movement profile
-    // is freed the moment the load lets go of it, and the document then saves a
-    // handle that names nothing.
-    if (auto* movement = world.TryGetResource<MovementComponentAssets>())
-        movement->Profiles = &assets.DataAssets;
+    // Without the stores an authored handle would not hold its asset: the load
+    // lets go of its reference, and the document then saves a handle that
+    // names nothing.
+    Registry_.Components.SetResource(assets.Assets.Stores());
 }
 
 void EditorDocument::SetRegistryIdentity(RegistryId id, ZoneId zone)

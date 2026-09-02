@@ -82,7 +82,7 @@ namespace
             ASSERT_TRUE(Registry_.Register(record));
             ASSERT_FALSE(Clips.IsResident(kClipPath));
 
-            InitializeSceneRegistry(Scene, nullptr, nullptr, &Clips, nullptr, nullptr);
+            InitializeSceneRegistry(Scene, Assets.Stores());
             RegisterEngineSceneSerializers(Serializers);
         }
 
