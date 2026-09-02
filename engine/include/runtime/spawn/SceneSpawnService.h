@@ -16,6 +16,7 @@
 #include <vector>
 
 class AssetSystem;
+class SceneCache;
 class ComponentSerializerRegistry;
 class LoggingProvider;
 class RuntimeWorld;
@@ -72,9 +73,9 @@ public:
     SceneSpawnService& operator=(const SceneSpawnService&) = delete;
 
     // The game's asset front door, handed over once (null on shutdown). The
-    // engine borrows it; scene resolution, residency, and handle decode all
-    // go through it.
-    void ConnectAssets(AssetSystem* assets);
+    // engine borrows it; scene resolution and residency go through it, and
+    // `scenes` is the cache the Scene kind commits into, read for contents.
+    void ConnectAssets(AssetSystem* assets, SceneCache* scenes);
 
     // Queues a spawn of `sceneAssetPath` (an asset://...smap ref) at `root`,
     // into `partition` -- the persistent partition zero by default, or a
@@ -112,6 +113,7 @@ private:
     AsyncTaskQueue& Tasks;
     LoggingProvider& Logging;
     AssetSystem* Assets = nullptr;
+    SceneCache* Scenes = nullptr;
     std::unique_ptr<SceneSerializationContext> SceneContext;
 
     // Requests in arrival order; the earliest unpublished one publishes

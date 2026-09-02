@@ -85,7 +85,7 @@ namespace
     };
 
     // Decoding is not under test; the record's own path stands in for the
-    // bytes a real stager would read.
+    // bytes a real stager would read from the byte source.
     class ScriptStager final : public IAssetStager
     {
     public:
@@ -160,8 +160,9 @@ namespace
             {
                 AssetRecord record;
                 record.Type = AssetType::Script;
-                record.SourceKind = AssetSourceKind::Procedural;
+                record.SourceKind = AssetSourceKind::File;
                 record.Path = std::string(path);
+                record.FilePath = std::string(path);
                 ASSERT_TRUE(Registry_.Register(record));
             }
 
@@ -183,7 +184,7 @@ namespace
         AssetRegistry Registry_{ Logging };
         ScriptStager Stager;
         ScriptCache Scripts;
-        AssetSystem Assets{ Logging, Registry_, nullptr, nullptr };
+        AssetSystem Assets{ Logging, Registry_ };
         ComponentSerializerRegistry Serializers;
         Registry Scene;
     };

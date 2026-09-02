@@ -14,7 +14,7 @@
 #include <assets/data/DataAssetLoader.h>
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <assets/runtime/AssetSystem.h>
-#include <core/assets/AssetKindRegistry.h>
+#include <assets/runtime/RegisterAssetKind.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
@@ -73,17 +73,7 @@ namespace
 
             RegisterMovementProfileData(DataTypes, DataSchemas);
 
-            AssetKindRegistration data = MakeBuiltinAssetKind(AssetType::Data);
-            data.Stager = &DataLoader;
-            data.Store = &DataAssets;
-            data.Commit = [this](AssetStaging&& staged) -> AssetLease
-            {
-                const DataAssetHandle handle = DataLoader.CommitTyped(std::move(staged));
-                if (!handle.IsValid())
-                    return {};
-                return AssetLease::Adopt(AssetType::Data, DataAssets, handle.ToToken());
-            };
-            ASSERT_TRUE(Assets.Kinds().Register(std::move(data)));
+            RegisterAssetKind(Assets, AssetType::Data, DataLoader, &DataAssets);
 
             ComponentRegistrar components(World_);
             RegisterEngineComponents(components);
@@ -124,7 +114,7 @@ namespace
         DataSchemaRegistry DataSchemas;
         DataAssetCache DataAssets;
         DataAssetLoader DataLoader{ Logging, &DataTypes, &DataSchemas, &DataAssets };
-        AssetSystem Assets{ Logging, AssetRegistry_, nullptr, nullptr };
+        AssetSystem Assets{ Logging, AssetRegistry_ };
         World World_;
         ComponentSerializerRegistry Serializers;
     };

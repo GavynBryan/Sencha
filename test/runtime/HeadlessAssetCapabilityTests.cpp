@@ -2,6 +2,7 @@
 #include <assets/runtime/RuntimeAssets.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
+#include <core/assets/AssetLease.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
 #include <jobs/AsyncTaskQueue.h>
@@ -116,8 +117,8 @@ TEST(HeadlessAssetCapability, LoadingAnUnsupportedKindYieldsNoHandle)
     const TempAsset mesh(assets.Registry, AssetType::StaticMesh, ".smesh", "not read");
     const TempAsset texture(assets.Registry, AssetType::Texture, ".stex", "not read");
 
-    EXPECT_FALSE(assets.Assets.LoadStaticMesh(mesh.Path()).IsValid());
-    EXPECT_FALSE(assets.Assets.LoadTexture(texture.Path()).IsValid());
+    EXPECT_FALSE(assets.Assets.LoadLease(mesh.Path(), AssetType::StaticMesh).IsValid());
+    EXPECT_FALSE(assets.Assets.LoadLease(texture.Path(), AssetType::Texture).IsValid());
 }
 
 // A material references textures it cannot hold and still commits: the loader
@@ -133,7 +134,7 @@ TEST(HeadlessAssetCapability, MaterialsStillLoadWithoutATextureCache)
     const TempAsset material(assets.Registry, AssetType::Material, ".smat",
                              R"({"version": 2})");
 
-    EXPECT_TRUE(assets.Assets.LoadMaterial(material.Path()).IsValid());
+    EXPECT_TRUE(assets.Assets.LoadLease(material.Path(), AssetType::Material).IsValid());
 }
 
 // A manifest describes content, not the process reading it. Staging bytes that

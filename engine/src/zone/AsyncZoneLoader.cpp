@@ -98,6 +98,7 @@ AsyncTaskHandle AsyncZoneLoader::BeginLoadScene(
     ZoneId zone,
     std::string_view sceneAssetPath,
     AssetSystem& assets,
+    SceneCache& scenes,
     SceneStageFn stageExtra,
     SceneFinalizeFn finalize,
     ZoneParticipation participation,
@@ -122,7 +123,7 @@ AsyncTaskHandle AsyncZoneLoader::BeginLoadScene(
 
     // Shared rather than unique because the task closures must stay copyable;
     // each phase of the build still runs on exactly the thread its name says.
-    auto build = std::make_shared<ScenePackageBuild>(assets, *record);
+    auto build = std::make_shared<ScenePackageBuild>(assets, scenes, *record);
     AsyncTaskHandle handle = Tasks.Submit<int>(
         // Work, on a task thread: file IO, parse, and package build against
         // immutable inputs. `Serializers` sees only const reads; module

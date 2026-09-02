@@ -9,8 +9,11 @@
 
 #include <gtest/gtest.h>
 
+#include <assets/audio_clip/AudioClipAssetLoader.h>
 #include <assets/runtime/AssetSystem.h>
+#include <assets/runtime/RegisterAssetKind.h>
 #include <audio/AudioClipCache.h>
+#include <core/assets/AssetLease.h>
 #include <audio/AudioSourceComponent.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/json/JsonParser.h>
@@ -82,6 +85,7 @@ namespace
             ASSERT_TRUE(Registry_.Register(record));
             ASSERT_FALSE(Clips.IsResident(kClipPath));
 
+            RegisterAssetKind(Assets, AssetType::Audio, ClipLoader, &Clips);
             InitializeSceneRegistry(Scene, Assets.Stores());
             RegisterEngineSceneSerializers(Serializers);
         }
@@ -96,7 +100,8 @@ namespace
         LoggingProvider Logging;
         AssetRegistry Registry_{ Logging };
         AudioClipCache Clips{ Logging };
-        AssetSystem Assets{ Logging, Registry_, nullptr, nullptr, nullptr, &Clips };
+        AudioClipAssetLoader ClipLoader{ Logging, &Clips };
+        AssetSystem Assets{ Logging, Registry_ };
         Registry Scene;
         ComponentSerializerRegistry Serializers;
     };
@@ -108,14 +113,14 @@ TEST_F(ComponentAssetLifetimeTest, AComponentAddedInCodeHoldsOneReference)
 {
     const EntityId entity = Scene.Components.CreateEntity();
 
-    const AudioClipHandle held = Assets.LoadAudioClip(kClipPath);
+    AssetLease held = Assets.LoadLease(kClipPath, AssetType::Audio);
     ASSERT_TRUE(held.IsValid());
 
     AudioSourceComponent source{};
-    source.Clip = held;
+    source.Clip = AudioClipHandle::FromToken(held.OpaqueToken());
     Scene.Components.AddComponent(entity, source); // OnAdd retains
 
-    Assets.ReleaseAudioClip(held); // the caller lets go of its own
+    held.Reset(); // the caller lets go of its own
     EXPECT_TRUE(Clips.IsResident(kClipPath))
         << "the component still names the clip";
 

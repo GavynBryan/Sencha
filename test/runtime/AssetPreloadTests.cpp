@@ -1,12 +1,18 @@
 #include <anim/AnimationClipCache.h>
 #include <anim/SkeletonCache.h>
+#include <assets/animation/AnimationClipAssetLoader.h>
 #include <assets/animation/AnimationClipSerializer.h>
+#include <assets/audio_clip/AudioClipAssetLoader.h>
 #include <assets/audio_clip/AudioClipSerializer.h>
+#include <assets/material/MaterialAssetLoader.h>
+#include <assets/skeleton/SkeletonAssetLoader.h>
 #include <assets/skeleton/SkeletonSerializer.h>
 #include <audio/AudioClipCache.h>
+#include <core/assets/AssetLease.h>
 #include <core/assets/AssetManifest.h>
 #include <assets/runtime/AssetPreloader.h>
 #include <assets/runtime/AssetSystem.h>
+#include <assets/runtime/RegisterAssetKind.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 #include <jobs/AsyncTaskQueue.h>
@@ -204,27 +210,26 @@ namespace
     struct PreloadHarness
     {
         PreloadHarness()
-            : Tasks(0)
-            , Registry(Logging)
-            , Materials()
-            , AudioClips(Logging)
-            , Skeletons()
-            , AnimationClips()
-            , Assets(Logging, Registry, nullptr, &Materials, nullptr, &AudioClips,
-                     &Skeletons, &AnimationClips)
-            , Preloader(Logging, Registry, Assets, Tasks)
         {
+            RegisterAssetKind(Assets, AssetType::Material, MaterialLoader, &Materials);
+            RegisterAssetKind(Assets, AssetType::Audio, AudioClipLoader, &AudioClips);
+            RegisterAssetKind(Assets, AssetType::Skeleton, SkeletonLoader, &Skeletons);
+            RegisterAssetKind(Assets, AssetType::AnimationClip, AnimationClipLoader, &AnimationClips);
         }
 
         LoggingProvider Logging;
-        AsyncTaskQueue Tasks;
-        AssetRegistry Registry;
+        AsyncTaskQueue Tasks{ 0 };
+        AssetRegistry Registry{ Logging };
         MaterialCache Materials;
-        AudioClipCache AudioClips;
+        AudioClipCache AudioClips{ Logging };
         SkeletonCache Skeletons;
         AnimationClipCache AnimationClips;
-        AssetSystem Assets;
-        AssetPreloader Preloader;
+        MaterialAssetLoader MaterialLoader{ Logging, &Materials, nullptr };
+        AudioClipAssetLoader AudioClipLoader{ Logging, &AudioClips };
+        SkeletonAssetLoader SkeletonLoader{ Logging, &Skeletons };
+        AnimationClipAssetLoader AnimationClipLoader{ Logging, &AnimationClips, &Skeletons };
+        AssetSystem Assets{ Logging, Registry };
+        AssetPreloader Preloader{ Logging, Registry, Assets, Tasks };
     };
 }
 
@@ -370,7 +375,8 @@ TEST(AssetPreload, AlreadyResidentDependencyCommitsImmediately)
     TempSkeletonAsset skeleton(h.Registry, "rig");
     TempAnimationClipAsset clip(h.Registry, "walk", skeleton.Path);
 
-    ASSERT_TRUE(h.Assets.LoadSkeleton(skeleton.Path).IsValid());
+    const AssetLease resident = h.Assets.LoadLease(skeleton.Path, AssetType::Skeleton);
+    ASSERT_TRUE(resident.IsValid());
 
     const std::vector<std::string> paths{ clip.Path };
     auto preload = h.Preloader.Begin(paths);
@@ -452,7 +458,7 @@ TEST(AssetPreload, AlreadyResidentAssetsCompleteImmediately)
     PreloadHarness h;
     TempMaterialAsset red(h.Registry, "resident");
 
-    MaterialHandle existing = h.Assets.LoadMaterial(red.Path);
+    const AssetLease existing = h.Assets.LoadLease(red.Path, AssetType::Material);
     ASSERT_TRUE(existing.IsValid());
 
     const std::vector<std::string> paths{ red.Path };
@@ -465,7 +471,6 @@ TEST(AssetPreload, AlreadyResidentAssetsCompleteImmediately)
     EXPECT_TRUE(fired);
 
     preload->ReleaseAll();
-    h.Assets.ReleaseMaterial(existing);
 }
 
 TEST(AssetPreload, MissingRecordsAndFilesCountAsFailuresNotDeadlocks)
@@ -625,7 +630,9 @@ TEST(AssetPreload, ThreadedSmoke)
     AsyncTaskQueue tasks(1);
     AssetRegistry registry(logging);
     MaterialCache materials;
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
     AssetPreloader preloader(logging, registry, assets, tasks);
     TempMaterialAsset material(registry, "threaded");
 

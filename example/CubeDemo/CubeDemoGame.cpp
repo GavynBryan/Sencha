@@ -350,6 +350,7 @@ void CubeDemoGame::OnStart(GameStartupContext&)
         kDemoZone,
         "asset://cube_demo_scene.smap",
         runtimeAssets.Assets,
+        runtimeAssets.Scenes,
         AsyncZoneLoader::SceneStageFn{},
         [this, &logging](
             RuntimeWorld& runtime,

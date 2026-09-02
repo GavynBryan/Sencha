@@ -1,6 +1,6 @@
 #pragma once
 
-#include <assets/scene/SceneCache.h>
+#include <core/assets/AssetLease.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetStager.h>
 #include <world/scene/SmapFormat.h>
@@ -11,6 +11,7 @@
 class AssetSystem;
 class ComponentSerializerRegistry;
 class EntityBuildPackage;
+class SceneCache;
 
 //=============================================================================
 // ScenePackageBuild
@@ -33,8 +34,9 @@ class ScenePackageBuild
 {
 public:
     // Owner thread. `record` is a resolved Scene asset record; a copy is
-    // kept so registry churn cannot reach the task thread.
-    ScenePackageBuild(AssetSystem& assets, const AssetRecord& record);
+    // kept so registry churn cannot reach the task thread. `scenes` is the
+    // cache the Scene kind commits into, read for the resident contents.
+    ScenePackageBuild(AssetSystem& assets, SceneCache& scenes, const AssetRecord& record);
 
     ScenePackageBuild(ScenePackageBuild&&) noexcept = default;
     ScenePackageBuild& operator=(ScenePackageBuild&&) noexcept = default;
@@ -57,13 +59,12 @@ public:
 
     // Owner thread, at the drain: commits staged contents into the cache.
     // False when the build failed or the commit refused (Error() says why);
-    // any held reference is released then. True means Scene() is the held
-    // reference and ContentsShared() is stable past release.
+    // any held reference is released then. True means the scene reference is
+    // held and ContentsShared() is stable past release.
     [[nodiscard]] bool Settle();
 
     [[nodiscard]] std::unique_ptr<EntityBuildPackage> TakePackage();
     [[nodiscard]] std::shared_ptr<const SmapContents> ContentsShared() const;
-    [[nodiscard]] SceneHandle Scene() const { return SceneRef; }
     [[nodiscard]] const std::string& Error() const { return ErrorText; }
 
     // Idempotent; owner thread. Safe after a failed Settle (already let go).
@@ -71,8 +72,10 @@ public:
 
 private:
     AssetSystem* Assets = nullptr;
+    SceneCache* Scenes = nullptr;
+    IAssetStager* Stager = nullptr; // looked up on the owner thread, used on the task thread
     AssetRecord Record;
-    SceneHandle SceneRef;
+    AssetLease SceneRef;
     std::shared_ptr<const SmapContents> Resident;
     AssetStaging Staging; // engaged only when the scene was not resident
     bool Staged = false;

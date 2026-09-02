@@ -4,6 +4,7 @@
 
 #include "commands/CommandStack.h"
 
+#include <core/assets/AssetLease.h>
 #include <render/Material.h>
 
 #include <cstddef>
@@ -12,15 +13,20 @@
 #include <string_view>
 #include <vector>
 
-// One open material: its edit session, its own undo history, the resident
-// preview handle (owned by the composition root, which loads/releases it),
+// One open material: its edit session, its own undo history, the lease on
+// the resident preview material (taken and let go by the composition root),
 // and the last session version pushed into the material cache.
 struct MaterialEditTab
 {
     MaterialEditSession Session;
     CommandStack Commands;
-    MaterialHandle Handle{};
+    AssetLease Resident;
     uint64_t AppliedVersion = 0;
+
+    [[nodiscard]] MaterialHandle Handle() const
+    {
+        return MaterialHandle::FromToken(Resident.OpaqueToken());
+    }
 };
 
 //=============================================================================
@@ -28,7 +34,7 @@ struct MaterialEditTab
 //
 // The set of open materials plus which one is active. Pure tab bookkeeping
 // over MaterialEditSession (headless-testable); asset residency stays with
-// the composition root via each tab's Handle.
+// the composition root via each tab's lease.
 //=============================================================================
 class MaterialTabSet
 {
@@ -38,8 +44,8 @@ public:
     MaterialEditTab* OpenOrFocus(std::string virtualPath, std::string filePath,
                                  std::string* error);
 
-    // Removes the tab; the caller releases its Handle first. The active tab
-    // clamps to a neighbor.
+    // Removes the tab, and its lease with it. The active tab clamps to a
+    // neighbor.
     void Close(std::size_t index);
 
     [[nodiscard]] MaterialEditTab* Active();

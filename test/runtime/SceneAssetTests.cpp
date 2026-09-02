@@ -1,6 +1,9 @@
 #include <assets/runtime/AssetPreloader.h>
 #include <assets/runtime/AssetSystem.h>
+#include <assets/runtime/RegisterAssetKind.h>
+#include <assets/scene/SceneAssetLoader.h>
 #include <assets/scene/SceneCache.h>
+#include <core/assets/AssetLease.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/FourCC.h>
 #include <jobs/AsyncTaskQueue.h>
@@ -69,25 +72,21 @@ namespace
     struct SceneAssetHarness
     {
         SceneAssetHarness()
-            : Tasks(0)
-            , Registry(Logging)
-            , Scenes(Logging)
-            , Assets(Logging, Registry, nullptr, nullptr, nullptr, nullptr,
-                     nullptr, nullptr, nullptr, nullptr, &Scenes, &Serializers)
-            , Preloader(Logging, Registry, Assets, Tasks)
         {
             EXPECT_EQ(Serializers.Register(
                           std::make_unique<ComponentSerializer<SceneAssetValue>>()),
                       ComponentSerializerRegistry::RegisterResult::Added);
+            RegisterAssetKind(Assets, AssetType::Scene, SceneLoader, &Scenes);
         }
 
         LoggingProvider Logging;
-        AsyncTaskQueue Tasks;
-        AssetRegistry Registry;
+        AsyncTaskQueue Tasks{ 0 };
+        AssetRegistry Registry{ Logging };
         ComponentSerializerRegistry Serializers;
-        SceneCache Scenes;
-        AssetSystem Assets;
-        AssetPreloader Preloader;
+        SceneCache Scenes{ Logging };
+        SceneAssetLoader SceneLoader{ Logging, &Scenes, &Serializers };
+        AssetSystem Assets{ Logging, Registry };
+        AssetPreloader Preloader{ Logging, Registry, Assets, Tasks };
     };
 
     // One entity carrying scene_asset_value plus one dependency: the minimal
@@ -111,22 +110,22 @@ TEST(SceneAsset, LoadsThroughTheFrontDoorAndDedupsResidency)
     SceneAssetHarness h;
     TempSmapScene scene(h.Registry, h.Serializers, MakeSceneContents(), "hall");
 
-    const SceneHandle first = h.Assets.LoadScene(scene.Path);
+    AssetLease first = h.Assets.LoadLease(scene.Path, AssetType::Scene);
     ASSERT_TRUE(first.IsValid());
 
-    const SmapContents* contents = h.Scenes.Get(first);
+    const SmapContents* contents = h.Scenes.Get(SceneHandle::FromToken(first.OpaqueToken()));
     ASSERT_NE(contents, nullptr);
     ASSERT_EQ(contents->Entities.size(), 1u);
     ASSERT_EQ(contents->Dependencies.size(), 1u);
     EXPECT_EQ(contents->Dependencies[0].Path, "asset://meshes/prop.smesh");
 
     // A second load acquires the resident entry instead of re-parsing.
-    const SceneHandle second = h.Assets.LoadScene(scene.Path);
-    EXPECT_EQ(second, first);
+    AssetLease second = h.Assets.LoadLease(scene.Path, AssetType::Scene);
+    EXPECT_EQ(second.OpaqueToken(), first.OpaqueToken());
 
-    h.Assets.ReleaseScene(second);
+    second.Reset();
     EXPECT_TRUE(h.Scenes.Find(scene.Path).IsValid());
-    h.Assets.ReleaseScene(first);
+    first.Reset();
     EXPECT_FALSE(h.Scenes.Find(scene.Path).IsValid());
 }
 
@@ -140,7 +139,7 @@ TEST(SceneAsset, SchemaSkewRefusesTheLoad)
               ComponentSerializerRegistry::RegisterResult::Added);
     TempSmapScene scene(h.Registry, skewed, MakeSceneContents(), "skewed");
 
-    EXPECT_FALSE(h.Assets.LoadScene(scene.Path).IsValid());
+    EXPECT_FALSE(h.Assets.LoadLease(scene.Path, AssetType::Scene).IsValid());
     EXPECT_FALSE(h.Scenes.Find(scene.Path).IsValid());
 }
 
@@ -154,7 +153,7 @@ TEST(SceneAsset, MissingFileFailsWithoutResidency)
         .FilePath = "does/not/exist.smap",
     }));
 
-    EXPECT_FALSE(h.Assets.LoadScene("asset://levels/gone.smap").IsValid());
+    EXPECT_FALSE(h.Assets.LoadLease("asset://levels/gone.smap", AssetType::Scene).IsValid());
     EXPECT_FALSE(h.Scenes.Find("asset://levels/gone.smap").IsValid());
 }
 

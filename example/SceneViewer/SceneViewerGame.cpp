@@ -275,6 +275,7 @@ ConsoleResult SceneViewerGame::LoadMap(
         kPlayZone,
         sceneAssetPath,
         runtimeAssets.Assets,
+        runtimeAssets.Scenes,
         [probes, sceneFilePath](const SmapContents&)
         {
             (void)ReadZoneProbeFile(sceneFilePath, *probes);

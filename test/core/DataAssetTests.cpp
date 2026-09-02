@@ -272,7 +272,7 @@ TEST(DataAssetKind, RegisteringTheKindMakesItVisibleThroughTheFrontDoor)
 
     // No caches: the front door knows nothing about structured data until the
     // kind is registered, which is what a game-defined kind relies on.
-    AssetSystem assets(logging, registry, nullptr, nullptr);
+    AssetSystem assets(logging, registry);
     EXPECT_EQ(assets.LoaderFor(AssetType::Data), nullptr);
 
     AssetKindRegistration kind = MakeBuiltinAssetKind(AssetType::Data);

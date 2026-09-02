@@ -146,8 +146,8 @@ std::vector<LightmapPlacement> CollectLightmapPlacements(
             const LocalTransform* transform = world.TryGet<LocalTransform>(entity);
             if (transform == nullptr)
                 return;
-            const std::string_view assetPath =
-                assetSystem->GetPathForStaticMesh(renderer.Mesh);
+            const std::string_view assetPath = assetSystem->GetPathForLease(
+                AssetType::StaticMesh, renderer.Mesh.ToToken());
             constexpr std::string_view prefix = "asset://";
             if (assetPath.size() <= prefix.size())
                 return;

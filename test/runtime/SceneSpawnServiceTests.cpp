@@ -4,6 +4,8 @@
 // stage is deterministic.
 
 #include <assets/runtime/AssetSystem.h>
+#include <assets/runtime/RegisterAssetKind.h>
+#include <assets/scene/SceneAssetLoader.h>
 #include <assets/scene/SceneCache.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/WorldComponentSchema.h>
@@ -70,8 +72,8 @@ namespace
             , World(Schema)
             , Registry(Logging)
             , Scenes(Logging)
-            , Assets(Logging, Registry, nullptr, nullptr, nullptr, nullptr,
-                     nullptr, nullptr, nullptr, nullptr, &Scenes, &Serializers)
+            , SceneLoader(Logging, &Scenes, &Serializers)
+            , Assets(Logging, Registry)
             , Service(World, Schema, Serializers, Tasks, Logging)
         {
             // The engine's own serializer set covers transform, identity,
@@ -80,7 +82,8 @@ namespace
             EXPECT_EQ(Serializers.Register(
                           std::make_unique<ComponentSerializer<SpawnMarker>>()),
                       ComponentSerializerRegistry::RegisterResult::Added);
-            Service.ConnectAssets(&Assets);
+            RegisterAssetKind(Assets, AssetType::Scene, SceneLoader, &Scenes);
+            Service.ConnectAssets(&Assets, &Scenes);
         }
 
         // One full turn of the async drain: worker runs, completion commits,
@@ -99,6 +102,7 @@ namespace
         RuntimeWorld World;
         AssetRegistry Registry;
         SceneCache Scenes;
+        SceneAssetLoader SceneLoader;
         AssetSystem Assets;
         SceneSpawnService Service;
     };
@@ -283,7 +287,7 @@ TEST(SceneSpawnService, RefusalsAreStatusesNotCrashes)
     EXPECT_EQ(h.Service.Status(unknown), SceneSpawnStatus::Failed);
 
     // No asset system connected.
-    h.Service.ConnectAssets(nullptr);
+    h.Service.ConnectAssets(nullptr, nullptr);
     const SceneSpawnId unwired =
         h.Service.RequestSpawn("asset://scenes/never.smap", Transform3f::Identity());
     EXPECT_EQ(h.Service.Status(unwired), SceneSpawnStatus::Failed);

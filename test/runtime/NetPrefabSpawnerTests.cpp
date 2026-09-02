@@ -86,7 +86,7 @@ namespace
             RegisterMovement(Runtime->Entities());
             Runtime->Entities().SetResource(Assets->Assets.Stores());
             Spawner.emplace(*Runtime, Schema, Serializers, Logging);
-            Spawner->ConnectAssets(&Assets->Assets);
+            Spawner->ConnectAssets(&Assets->Assets, &Assets->Scenes);
         }
 
         LoggingProvider Logging;
@@ -170,12 +170,27 @@ TEST_F(NetPrefabSpawnerTest, AnUnknownIdIsRefusedRatherThanApproximated)
     EXPECT_EQ(Runtime->Entities().GetAliveEntities().size(), before);
 }
 
+// A resolved prefab is held for the session, and the reference belongs to a
+// cache the spawner does not own. Disconnecting is how a host gives those back
+// before its asset stack goes away, so the release has to happen there rather
+// than in a destructor that runs whenever the engine happens to go.
+TEST_F(NetPrefabSpawnerTest, DisconnectingGivesBackTheScenesItHeld)
+{
+    ASSERT_EQ(Spawner->Prepare(PawnId), NetPrefabReadiness::Ready);
+    ASSERT_TRUE(Assets->Scenes.Find(kPawnPrefab).IsValid());
+
+    Spawner->ConnectAssets(nullptr, nullptr);
+    EXPECT_EQ(Spawner->ResolvedCount(), 0u);
+    EXPECT_FALSE(Assets->Scenes.Find(kPawnPrefab).IsValid())
+        << "the prefab's scene outlived the connection that resolved it";
+}
+
 // A process with no content stack refuses every prefab rather than producing
 // bodyless entities. A dedicated host composed without graphics is not this --
 // it still has scenes -- but a bare test world is.
 TEST_F(NetPrefabSpawnerTest, WithNoAssetSystemEveryPrefabIsUnavailable)
 {
-    Spawner->ConnectAssets(nullptr);
+    Spawner->ConnectAssets(nullptr, nullptr);
     EXPECT_EQ(Spawner->Prepare(PawnId), NetPrefabReadiness::Unavailable);
     EXPECT_FALSE(
         Spawner->Instantiate(PawnId, Runtime->Entities(), PersistentStoragePartition)

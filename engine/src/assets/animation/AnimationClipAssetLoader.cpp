@@ -10,11 +10,9 @@
 #include <utility>
 
 AnimationClipAssetLoader::AnimationClipAssetLoader(LoggingProvider& logging,
-                                                   AssetSystem& assets,
                                                    AnimationClipCache* cache,
                                                    SkeletonCache* skeletons)
     : Log(logging.GetLogger<AnimationClipAssetLoader>())
-    , Assets(assets)
     , Cache(cache)
     , Skeletons(skeletons)
 {
@@ -50,7 +48,7 @@ AssetStaging AnimationClipAssetLoader::LoadStaged(const AssetRecord& record, IAs
     return staging;
 }
 
-AnimationClipHandle AnimationClipAssetLoader::CommitTyped(AssetStaging&& staged)
+AnimationClipHandle AnimationClipAssetLoader::CommitTyped(AssetStaging&& staged, AssetSystem& assets)
 {
     if (!staged.IsValid())
     {
@@ -76,14 +74,15 @@ AnimationClipHandle AnimationClipAssetLoader::CommitTyped(AssetStaging&& staged)
     // Resident by now on the async path (declared as a staging dependency);
     // the synchronous path loads it inline here. Either way the commit holds
     // the reference that forms the clip→skeleton chain.
-    SkeletonHandle skeleton = Assets.LoadSkeleton(data->SkeletonPath);
+    const SkeletonHandle skeleton = SkeletonHandle::FromToken(
+        assets.LoadLease(data->SkeletonPath, AssetType::Skeleton).Relinquish());
     if (!skeleton.IsValid())
     {
         Log.Error("AnimationClipAssetLoader: clip '{}' references skeleton '{}' that failed to load",
                   staged.Record.Path, data->SkeletonPath);
         return {};
     }
-    // LoadSkeleton already incremented the refcount -- wrap without attaching.
+    // The load's reference is the one the clip keeps -- wrap without attaching.
     SkeletonCacheHandle ownedSkeleton(Skeletons, skeleton, SkeletonCacheHandle::NoAttachTag{});
 
     // The clip alone can only bound joint indices by the joint cap; only here,

@@ -8,11 +8,12 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
 //=============================================================================
-// AssetCache<TDerived, THandle, TEntry, TAssetType>
+// AssetCache<TDerived, THandle, TEntry, TAssetType, TStore>
 //
 // CRTP base for path-keyed, ref-counted asset caches. Provides:
 //   - Generational slot pool (Entries, FreeSlots)
@@ -25,6 +26,10 @@
 // orchestration hold a reference without knowing THandle: the lease carries
 // the same token/owner pair the typed handle does. A cache that leaves it
 // Unknown keeps its typed API and simply issues no leases.
+//
+// TStore is the store seam this cache implements: IAssetStore, or a refinement
+// of it such as IAssetListStore, whose extra methods the derived cache then
+// supplies itself.
 //
 // A cache resolves; it does not load. Entries arrive through the derived
 // cache's own create/commit entry points, which the staged loaders call on
@@ -59,9 +64,12 @@
 template<typename TDerived,
          typename THandle,
          typename TEntry,
-         AssetType TAssetType = AssetType::Unknown>
-class AssetCache : public ILifetimeOwner, public IAssetStore
+         AssetType TAssetType = AssetType::Unknown,
+         typename TStore = IAssetStore>
+class AssetCache : public ILifetimeOwner, public TStore
 {
+    static_assert(std::is_base_of_v<IAssetStore, TStore>);
+
 public:
     // -- Resolve an already-registered path -----------------------------------
     //

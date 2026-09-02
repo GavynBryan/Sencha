@@ -27,6 +27,8 @@
 #include <controller/LookIntegrationSystem.h>
 #include <controller/LookOrientation.h>
 #include <core/assets/AssetIdMap.h>
+#include <core/assets/AssetLease.h>
+#include <core/assets/AssetRef.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetStoreTable.h>
 #include <core/config/EngineConfig.h>
@@ -1726,11 +1728,11 @@ void TemplateGame::OnStart(GameStartupContext&)
 
     // The spawn service is engine-owned; the asset stack it resolves scenes
     // through is this game's.
-    engine.Spawns().ConnectAssets(&runtimeAssets.Assets);
+    engine.Spawns().ConnectAssets(&runtimeAssets.Assets, &runtimeAssets.Scenes);
     // The same content stack, for the spawns a peer names rather than this
     // machine asking for: without it every replicated prefab is unbuildable
     // and every body a client is sent is deferred forever.
-    engine.NetPrefabs().ConnectAssets(&runtimeAssets.Assets);
+    engine.NetPrefabs().ConnectAssets(&runtimeAssets.Assets, &runtimeAssets.Scenes);
 
     engine.Console().Registry().RegisterCommand({
         .Name = "scene.spawn",
@@ -2018,6 +2020,7 @@ ConsoleResult TemplateGame::LoadMap(std::string_view mapName)
         kPlayZone,
         sceneAssetPath,
         runtimeAssets.Assets,
+        runtimeAssets.Scenes,
         MakeProbeStage(sceneFilePath, probes),
         [this, probes](
             RuntimeWorld& runtime,
@@ -2091,12 +2094,11 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
     }
 
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
-    AssetSystem* assetSystem = &runtimeAssets.Assets;
 
     const EngineRuntimeConfig& runtimeConfig =
         engine.Config().Runtime;
     Partition.emplace(
-        [this, assetSystem](const ZoneHeader& header)
+        [this, assets = &runtimeAssets](const ZoneHeader& header)
         {
             const std::string scenePath =
                 std::string(kAuthoredRoot) + "/"
@@ -2112,7 +2114,8 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
 
             ZoneSceneRecipe scene;
             scene.AssetPath = CookedRefToAssetPath(header.CookedSceneRef);
-            scene.Assets = assetSystem;
+            scene.Assets = &assets->Assets;
+            scene.Scenes = &assets->Scenes;
             scene.StageExtra = MakeProbeStage(scenePath, probes);
             scene.Finalize =
                 [this, probes](
@@ -2150,8 +2153,10 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
         // Synchronous through the front door: the world scene loads once at
         // world start, so the async lane buys nothing here, and residency
         // means a later spawn of the same scene shares the parse.
-        const SceneHandle worldScene = runtimeAssets.Assets.LoadScene(
-            CookedRefToAssetPath(loaded.CookedWorldSceneRef));
+        // The imported entities are the product; the parse is scaffolding
+        // that the lease lets go of on every path out of this block.
+        const AssetLease worldScene = runtimeAssets.Assets.LoadLease(
+            CookedRefToAssetPath(loaded.CookedWorldSceneRef), AssetType::Scene);
         if (!worldScene.IsValid())
         {
             Partition.reset();
@@ -2159,15 +2164,14 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
                          + "' failed to load");
             return result;
         }
-        const SmapContents* contents =
-            runtimeAssets.Assets.GetSceneContents(worldScene);
+        const SmapContents* contents = runtimeAssets.Scenes.Get(
+            SceneHandle::FromToken(worldScene.OpaqueToken()));
 
         EntityBuildPackage package;
         SmapError buildError;
         if (!BuildEntityPackageFromSmap(*contents, engine.SceneSerializers(),
                                         package, &buildError))
         {
-            runtimeAssets.Assets.ReleaseScene(worldScene);
             Partition.reset();
             result.Error("world scene load error: " + buildError.Message);
             return result;
@@ -2187,7 +2191,6 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
                 *SceneContext,
                 &importError))
         {
-            runtimeAssets.Assets.ReleaseScene(worldScene);
             Partition.reset();
             result.Error(
                 "world scene import error: " + importError.Message);
@@ -2207,9 +2210,6 @@ ConsoleResult TemplateGame::LoadWorld(std::string_view worldName)
         {
             PendingWorldSceneCollision = contents->Collision;
         }
-
-        // The imported entities are the product; the parse was scaffolding.
-        runtimeAssets.Assets.ReleaseScene(worldScene);
     }
 
     // A world's scene imports into the persistent partition, so that is where
@@ -2521,6 +2521,12 @@ void TemplateGame::OnShutdown(GameShutdownContext&)
     PlayZoneActive = false;
     // Before the runtime it points at goes.
     GetEngine().SetWorldStreaming(nullptr, nullptr);
+    // Same for the spawn services: this game connected them to its asset stack,
+    // and the prefab spawner holds a scene reference per resident prefab for the
+    // length of the session. Disconnecting drops those while the caches that
+    // issued them are still here.
+    engine.Spawns().ConnectAssets(nullptr, nullptr);
+    engine.NetPrefabs().ConnectAssets(nullptr, nullptr);
     Partition.reset();
     ZoneLoader.reset();
     SceneContext.reset();
@@ -2656,8 +2662,7 @@ ResolvedPlayerAvatar TemplateGame::ResolvePlayerAvatar(Logger& log)
         log.Warn("TemplateGame: '{}' is not a player.avatar", kPlayerAvatarPath);
         return {};
     }
-    const StaticMeshHandle mesh =
-        assets.Assets.LoadStaticMesh(avatar->MeshPath);
+    AssetLease mesh = assets.Assets.LoadLease(avatar->MeshPath, AssetType::StaticMesh);
     if (!mesh.IsValid())
     {
         log.Warn("TemplateGame: player avatar mesh '{}' did not load",
@@ -2665,51 +2670,44 @@ ResolvedPlayerAvatar TemplateGame::ResolvePlayerAvatar(Logger& log)
         return {};
     }
 
-    std::vector<MaterialHandle> materials;
-    materials.reserve(avatar->MaterialPaths.size());
+    // Each material is held only until the set takes its own reference.
+    std::vector<AssetLease> materials;
+    std::vector<std::uint64_t> materialTokens;
     for (const std::string& path : avatar->MaterialPaths)
     {
-        const MaterialHandle material = assets.Assets.LoadMaterial(path);
+        AssetLease material = assets.Assets.LoadLease(path, AssetType::Material);
         if (!material.IsValid())
         {
             log.Warn("TemplateGame: player avatar material '{}' did not load",
                      path);
-            for (MaterialHandle loaded : materials)
-                assets.Assets.ReleaseMaterial(loaded);
-            assets.Assets.ReleaseStaticMesh(mesh);
             return {};
         }
-        materials.push_back(material);
+        materialTokens.push_back(material.OpaqueToken());
+        materials.push_back(std::move(material));
     }
 
-    const MaterialSetHandle set = assets.Assets.AcquireMaterialSet(materials);
-    // The set retains its own reference to each member for its lifetime, so the
-    // loads above have done their job once it exists.
-    for (MaterialHandle material : materials)
-        assets.Assets.ReleaseMaterial(material);
+    AssetLease set = assets.Assets.InternList(AssetType::Material, materialTokens);
     if (!set.IsValid())
     {
         log.Warn("TemplateGame: player avatar materials did not form a set");
-        assets.Assets.ReleaseStaticMesh(mesh);
         return {};
     }
 
-    PlayerAvatar = ResolvedPlayerAvatar{ .Mesh = mesh, .Materials = set };
+    PlayerAvatar = ResolvedPlayerAvatar{
+        .Mesh = StaticMeshHandle::FromToken(mesh.Relinquish()),
+        .Materials = MaterialSetHandle::FromToken(set.Relinquish()),
+    };
     return PlayerAvatar;
 }
 
 void TemplateGame::ReleasePlayerAvatar()
 {
-    if (!Assets.has_value())
+    if (Assets.has_value())
     {
-        PlayerAvatar = {};
-        return;
+        Assets->Assets.ReleaseLease(AssetType::Material, PlayerAvatar.Materials.ToToken(),
+                                    AssetArity::List);
+        Assets->Assets.ReleaseLease(AssetType::StaticMesh, PlayerAvatar.Mesh.ToToken());
     }
-
-    if (PlayerAvatar.Materials.IsValid())
-        Assets->Assets.ReleaseMaterialSet(PlayerAvatar.Materials);
-    if (PlayerAvatar.Mesh.IsValid())
-        Assets->Assets.ReleaseStaticMesh(PlayerAvatar.Mesh);
     PlayerAvatar = {};
 }
 

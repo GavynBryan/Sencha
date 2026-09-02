@@ -40,9 +40,13 @@ struct MaterialSetEntry
 // the same materials share one entry. The set owns a reference to each member
 // material (released when the set's refcount hits zero), mirroring how
 // MaterialCache owns the textures a material points at.
+//
+// To generic asset code this is the Material kind's list store: the same
+// entries, addressed by token instead of by handle.
 //=============================================================================
 class MaterialSetCache final
-    : public AssetCache<MaterialSetCache, MaterialSetHandle, MaterialSetEntry>
+    : public AssetCache<MaterialSetCache, MaterialSetHandle, MaterialSetEntry,
+                        AssetType::Material, IAssetListStore>
 {
 public:
     // `materials` is the MaterialCache whose entries this set retains; null
@@ -61,8 +65,14 @@ public:
 
     [[nodiscard]] const std::vector<MaterialHandle>* Get(MaterialSetHandle handle) const;
 
+    // -- IAssetListStore ------------------------------------------------------
+
+    [[nodiscard]] AssetLease InternList(std::span<const uint64_t> members) override;
+    [[nodiscard]] std::vector<uint64_t> ListMembers(uint64_t token) const override;
+
 private:
-    friend class AssetCache<MaterialSetCache, MaterialSetHandle, MaterialSetEntry>;
+    friend class AssetCache<MaterialSetCache, MaterialSetHandle, MaterialSetEntry,
+                            AssetType::Material, IAssetListStore>;
 
     // The content path is the only creation route; there is no byte source to
     // load a set from, so the base's path-keyed Acquire(path) is unused.

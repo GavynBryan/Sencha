@@ -6,9 +6,11 @@
 #include <audio/AudioSourceComponent.h>
 #include <audio/AudioSourceRuntime.h>
 #include <audio/AudioSystem.h>
+#include <assets/audio_clip/AudioClipAssetLoader.h>
+#include <assets/runtime/AssetSystem.h>
+#include <assets/runtime/RegisterAssetKind.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetStoreTable.h>
-#include <assets/runtime/AssetSystem.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/JsonArchive.h>
@@ -109,13 +111,9 @@ TEST(AudioClipCodec, SaveWritesPathString)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     AudioClipCache cache(logging);
-    AssetSystem assets(
-        logging,
-        registry,
-        nullptr,
-        nullptr,
-        nullptr,
-        &cache);
+    AudioClipAssetLoader loader(logging, &cache);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Audio, loader, &cache);
 
     const AudioClipHandle handle = RegisterResidentClip(
         registry,
@@ -140,13 +138,9 @@ TEST(AudioClipCodec, LoadResolvesPathString)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     AudioClipCache cache(logging);
-    AssetSystem assets(
-        logging,
-        registry,
-        nullptr,
-        nullptr,
-        nullptr,
-        &cache);
+    AudioClipAssetLoader loader(logging, &cache);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Audio, loader, &cache);
 
     const AudioClipHandle registered = RegisterResidentClip(
         registry,
@@ -174,13 +168,9 @@ TEST(AudioClipCodec, ComponentRoundTripsThroughSceneJson)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     AudioClipCache cache(logging);
-    AssetSystem assets(
-        logging,
-        registry,
-        nullptr,
-        nullptr,
-        nullptr,
-        &cache);
+    AudioClipAssetLoader loader(logging, &cache);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Audio, loader, &cache);
     const AudioClipHandle clip = RegisterResidentClip(
         registry,
         cache,

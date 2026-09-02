@@ -121,10 +121,8 @@ MaterialEditorServices::~MaterialEditorServices()
     // feature, which tears down in ~Renderer.
     if (Textures != nullptr)
         Textures->ReleasePreviewResources();
-    if (Assets)
-        for (const auto& tab : Tabs.Tabs())
-            if (tab->Handle.IsValid())
-                Assets->Assets.ReleaseMaterial(tab->Handle);
+    for (const auto& tab : Tabs.Tabs())
+        tab->Resident.Reset();
     TextureRecook.reset();
     Assets.reset();
 }
@@ -395,7 +393,7 @@ void MaterialEditorServices::ProcessFrame()
     // going through OpenMaterial).
     MaterialEditTab* active = Tabs.Active();
     if (Preview != nullptr)
-        Preview->SetMaterial(active != nullptr ? active->Handle : MaterialHandle{});
+        Preview->SetMaterial(active != nullptr ? active->Handle() : MaterialHandle{});
     UpdatePreviewBackdropStyle();
 
     UpdateTitle();
@@ -423,7 +421,7 @@ void MaterialEditorServices::OpenMaterial(const std::string& virtualPath)
 
     if (!existed)
     {
-        tab->Handle = Assets->Assets.LoadMaterial(virtualPath);
+        tab->Resident = Assets->Assets.LoadLease(virtualPath, AssetType::Material);
         // The resident material just loaded from disk, which is the saved
         // (and, right after Open, working) state.
         tab->AppliedVersion = tab->Session.Version();
@@ -434,8 +432,6 @@ void MaterialEditorServices::CloseTab(std::size_t index)
 {
     if (index >= Tabs.Tabs().size())
         return;
-    if (Assets && Tabs.Tabs()[index]->Handle.IsValid())
-        Assets->Assets.ReleaseMaterial(Tabs.Tabs()[index]->Handle);
     Tabs.Close(index);
 }
 
@@ -547,16 +543,14 @@ void MaterialEditorServices::RenameMaterial(const std::string& virtualPath,
     if (MaterialEditTab* tab = Tabs.Find(virtualPath))
     {
         tab->Session.RenameTo(newVirtual, newFile.string());
-        if (tab->Handle.IsValid())
-            Assets->Assets.ReleaseMaterial(tab->Handle);
-        tab->Handle = MaterialHandle{};
+        tab->Resident.Reset();
     }
 
     RescanMaterials();
 
-    if (MaterialEditTab* tab = Tabs.Find(newVirtual); tab != nullptr && !tab->Handle.IsValid())
+    if (MaterialEditTab* tab = Tabs.Find(newVirtual); tab != nullptr && !tab->Resident.IsValid())
     {
-        tab->Handle = Assets->Assets.LoadMaterial(newVirtual);
+        tab->Resident = Assets->Assets.LoadLease(newVirtual, AssetType::Material);
         // Force a re-apply so an unsaved working state survives the move.
         tab->AppliedVersion = 0;
     }
@@ -647,7 +641,7 @@ void MaterialEditorServices::RescanMaterials()
 
 void MaterialEditorServices::ApplyWorkingToResident(MaterialEditTab& tab)
 {
-    if (!Assets || !tab.Session.HasOpen() || !tab.Handle.IsValid())
+    if (!Assets || !tab.Session.HasOpen() || !tab.Resident.IsValid())
         return;
     const AssetRecord* record = Assets->Registry.FindByPath(tab.Session.VirtualPath());
     if (record == nullptr)
@@ -656,7 +650,7 @@ void MaterialEditorServices::ApplyWorkingToResident(MaterialEditTab& tab)
     AssetStaging staging;
     staging.Record = *record;
     staging.Payload = tab.Session.Working();
-    (void)Assets->Assets.MaterialLoaderRef().CommitReload(std::move(staging));
+    (void)Assets->Assets.Reload(std::move(staging));
 }
 
 void MaterialEditorServices::UpdateTitle()

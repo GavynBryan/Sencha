@@ -9,9 +9,9 @@ the code and need to know where things are and why.
 
 ## The problem
 
-The engine has ~7 asset types (static meshes, skinned meshes, textures,
-materials, skeletons, animation clips, audio clips). Every one of them needs
-the same lifecycle:
+The engine has nine asset kinds (static meshes, skinned meshes, textures,
+materials, skeletons, animation clips, audio clips, scenes, data), and a game
+module can register more. Every one of them needs the same lifecycle:
 
 1. Find the file (registry lookup).
 2. Read bytes from disk (or a pack file, eventually).
@@ -32,9 +32,11 @@ cross-references create ordering constraints (you must load textures before
 committing materials) and ownership chains (when a material frees, its texture
 refs must release too).
 
-The class count comes from solving this problem honestly across 7 types. There
-are 4 layers, and each layer fans out by type where the logic is genuinely
-type-specific.
+The class count comes from solving this problem honestly across nine kinds.
+There are 4 layers, and each layer fans out by kind where the logic is genuinely
+kind-specific. Above them sits one registry describing the kinds themselves, so
+the drivers that are *not* kind-specific — the scanner, the preloader, the hot
+reloader, the front door — read a record instead of branching on a type tag.
 
 ---
 
@@ -102,8 +104,10 @@ two schedulings.
 | `SkeletonAssetLoader` | `SkeletonData` | CPU-only registration in `SkeletonCache`. |
 | `AnimationClipAssetLoader` | `AnimationClipData` | Resolves skeleton ref, registers with owned `SkeletonHandle`. |
 | `AudioClipAssetLoader` | `AudioClip` | CPU-only registration in `AudioClipCache`. |
+| `SceneAssetLoader` | `SmapContents` | Parses a cooked scene against the serializer registry; CPU-only. |
+| `DataAssetLoader` | parsed data document | Validates against the registered schema, registers in `DataAssetCache`. |
 
-**Why 7 separate classes instead of a generic one?** Because the decode logic
+**Why one class per kind instead of a generic one?** Because the decode logic
 (mesh binary deserialization vs JSON parsing vs image decompression vs audio
 decoding) and the commit logic (GPU buffer upload vs GPU image upload vs
 CPU-only cache insert vs resolving cross-asset refs) are genuinely different per
@@ -116,9 +120,15 @@ the async path the preloader stages textures first (wave 1) so material commits
 hit warm caches (wave 2). This dependency drives the two-wave design in the
 preloader.
 
-Each loader also has a `CommitReload()` method for hot-reload (dev-only): it
+A loader whose commit resolves references to other assets takes the front door
+as a parameter (`CommitTyped(staged, assets)`); one with nothing to resolve does
+not. That difference is the whole of the loader-to-front-door coupling, and
+`RegisterAssetKind` picks the right call for each.
+
+Most loaders also have a `CommitReload()` method for hot-reload (dev-only): it
 swaps new data into an existing cache slot in place, so handles never change
-and components see updated data through their existing references.
+and components see updated data through their existing references. A kind whose
+loader has none simply registers no reload operation.
 
 ---
 
@@ -163,6 +173,14 @@ The derived class provides three hooks via CRTP (no virtual dispatch):
 | `SkeletonCache` | `SkeletonData` (joint hierarchy, bind poses) | No | Nothing |
 | `AnimationClipCache` | `AnimationClipData` | No | `SkeletonHandle` |
 | `AudioClipCache` | `AudioClip` (decoded PCM) | No | Nothing |
+| `MaterialSetCache` | ordered `MaterialHandle` list, content-deduped | No | `MaterialHandle`s |
+| `SceneCache` | `SmapContents` (parsed cooked scene) | No | Nothing |
+| `DataAssetCache` | parsed data document | No | Nothing |
+
+`MaterialSetCache` is the odd one: it is the Material kind's *list* form rather
+than a kind of its own. A field that names several materials at once (a mesh's
+per-slot materials) carries one interned token instead of a variable-length
+array, which is what keeps the component trivially copyable.
 
 ### Refcount chains
 
@@ -170,7 +188,8 @@ When a cache entry owns handles into another cache, freeing the parent
 automatically releases the child refs:
 
 ```
-MaterialEntry frees  ->  releases its TextureHandles  ->  textures free if refcount hits 0
+MaterialSetEntry frees  ->  releases its MaterialHandles
+MaterialEntry frees     ->  releases its TextureHandles  ->  textures free if refcount hits 0
 SkinnedMeshEntry frees  ->  releases its SkeletonHandle
 AnimationClipEntry frees  ->  releases its SkeletonHandle
 ```
@@ -183,50 +202,99 @@ first):
 ```cpp
 // RuntimeAssets member order (destruction is bottom-to-top):
 AssetRegistry Registry;
-TextureCache Textures;         // destroyed last among caches (materials ref it)
-MaterialCache Materials;       // destroyed before textures
-SkeletonCache Skeletons;       // destroyed after meshes and clips
-StaticMeshCache StaticMeshes;
-SkinnedMeshCache SkinnedMeshes; // destroyed before skeletons
-AnimationClipCache AnimationClips; // destroyed before skeletons
+unique_ptr<TextureCache> Textures;  // destroyed last among caches (materials ref it)
+MaterialCache Materials;            // destroyed before textures
+MaterialSetCache MaterialSets;      // destroyed before materials
+SkeletonCache Skeletons;            // destroyed after meshes and clips
+unique_ptr<StaticMeshCache> StaticMeshes;
+unique_ptr<SkinnedMeshCache> SkinnedMeshes;
+AnimationClipCache AnimationClips;  // destroyed before skeletons
 AudioClipCache AudioClips;
-AssetSystem Assets;            // destroyed first (refs all caches, but owns nothing)
+SceneCache Scenes;
+DataAssetTypeRegistry DataTypes;    // schemas outlive the documents validated against them
+DataSchemaRegistry DataSchemas;
+DataAssetCache DataAssets;
+/* private: the nine loaders */     // hold nothing; destroyed after the front door
+AssetSystem Assets;                 // destroyed first: no registered commit or
+                                    // reload can run against a dead loader or cache
 ```
+
+The three caches that own GPU resources are held by pointer because a process
+without graphics services does not have them. Which of them exist is decided
+once, by which `RuntimeAssets` constructor ran.
 
 ---
 
 ## Layer 4: Orchestration
 
+### `AssetKindRegistry` — what a kind is
+
+**File:** `core/assets/AssetKindRegistry.h`
+
+One record per kind: its name, the file extensions of its runtime form, its
+stager, its store (and list store, where it has one), and its commit and reload
+operations. Registration-ordered and linear — a handful of entries, walked
+rarely, iterated deterministically.
+
+Commit and reload are registered operations rather than virtuals on
+`IAssetStager` because the registration site already names the concrete loader:
+its `CommitTyped` keeps returning that loader's own handle type, and only an
+`AssetLease` crosses the type-erased boundary.
+
+`Register` refuses a half-wired kind — a store without its commit, a store whose
+type disagrees with the kind's, a list store without the single store it is made
+of, a reload with nothing to reload into, an extension another kind claims —
+because every driver downstream reads these records and trusts their shape.
+
+Stager, store and commit are independently optional on purpose. Staging touches
+no cache, so it is wired for every kind; the commit half exists only where this
+process has a cache. That is what lets a dedicated server stage a mesh it can
+never hold, and it is why "this process cannot hold a mesh" is a fact about the
+composition rather than a load failure.
+
 ### `AssetSystem` — the front door
 
 **File:** `assets/runtime/AssetSystem.h`
 
-The single entry point for all asset operations. It owns all 7 loaders, holds
-(non-owning) pointers to all 7 caches, and provides three families of methods:
+The single entry point for asset operations, and generic over kind: it owns no
+loader and no cache, and names no asset type of its own. Every operation takes
+an `AssetType` and reads the kind record.
 
-- **`Load*(path) -> Handle`** — The synchronous path. Resolves the path through
-  the registry, checks the cache for a dedup hit, calls `LoadStaged` then
-  `CommitTyped` back-to-back, returns a ref-counted handle.
+- **`LoadLease(path, type) -> AssetLease`** — The synchronous path. Resolves the
+  path through the registry, checks the store for a dedup hit, otherwise stages
+  and commits back-to-back. The returned lease is the caller's reference.
 
-- **`TryAcquire*(path) -> Handle`** — Cache-only lookup. Returns a handle if
-  the asset is already resident, invalid handle otherwise. Never loads. The
-  preloader uses this to dedup against what's already in cache before submitting
-  async work.
+- **`TryAcquireLease(path, type)`** — Store-only lookup, never loads. The
+  preloader dedups against residency with it before submitting async work.
 
-- **`Release*(handle)`** — Forwards to the appropriate cache's `Release()`.
+- **`ReleaseLease(type, token, arity)`** — For a caller that kept the raw token
+  rather than the lease, which is what a component field holds.
 
-It also exposes `LoaderFor(type)` and `DefaultSource()` for the async path —
-the preloader calls these to get the right loader and byte source for task-
-thread work.
+- **`InternList(type, members)` / `ListMembers(type, token)`** — The list form of
+  a kind, for a field naming several assets at once.
+
+- **`Commit` / `Reload`** — Owner-thread completion of async staging.
+
+`AssetLease` is the scope-owning form: move-only, releases on destruction,
+`Relinquish()` hands the token to a longer-lived owner without dropping the
+reference. Callers that hold an asset for the length of a block hold a lease;
+callers that store it in a component store the token and release it explicitly.
+
+`LoaderFor(type)`, `DefaultSource()` and `Kinds()` serve the async path and the
+content scanner.
 
 ### `RuntimeAssets` — the owner
 
 **File:** `assets/runtime/RuntimeAssets.h`
 
-A plain struct that owns the registry, all 7 caches, and the `AssetSystem`. Its
-only job is construction (wiring everything together with the right Vulkan
-services) and destruction (in the right order). It's the "one bag of asset
-state" that the engine holds.
+The engine's asset composition: the registry, every cache, the loader for each,
+and the front door they all register with. Its constructor wires the nine
+built-in kinds with `RegisterAssetKind` (`assets/runtime/RegisterAssetKind.h`),
+which is also what a test uses to stand up a single kind and what a game module
+follows to add one of its own.
+
+Its other job is destruction order, described above: declaration order is the
+contract, and the front door goes first.
 
 ### `AssetPreloader` — the async driver
 
@@ -297,16 +365,18 @@ to glTF), and audio (WAV/OGG). Gated behind `SENCHA_ENABLE_COOK`.
 
 ## How to read the code
 
-**Starting from a load call:** `AssetSystem::Load*()` is always the entry
-point. Follow it to the loader's `LoadStaged` (decode) then `CommitTyped`
-(cache insert + GPU upload).
+**Starting from a load call:** `AssetSystem::LoadLease()` is always the entry
+point. It reads the kind record, then follows the loader's `LoadStaged`
+(decode) and the kind's registered commit (cache insert + GPU upload).
 
 **Starting from async loading:** `AssetPreloader::Begin()` fans out to task
 threads. Follow `OnAssetCommitted` for the drain-point commit path.
 
-**Adding a new asset type:** implement `IAssetStager` plus a `CommitTyped`,
-derive from `AssetCache` (three CRTP hooks), register both in `AssetSystem`
-and `RuntimeAssets`. The pattern is identical across all 7 existing types.
+**Adding a new asset kind:** implement `IAssetStager` plus a `CommitTyped`,
+derive from `AssetCache` (three CRTP hooks), and add one `RegisterAssetKind`
+call where the cache and loader are composed. Nothing else changes: no driver
+branches on asset type, so a kind a game module brings costs what a built-in
+one costs.
 
 **Understanding ownership:** look at the cache entry structs. If an entry holds
 an `Owned<SomeHandle>` or a `vector<SomeHandle>`, that's a refcount chain —

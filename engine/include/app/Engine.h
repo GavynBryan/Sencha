@@ -278,8 +278,9 @@ public:
     // Runtime scene spawning: cooked scenes placed at play time, published in
     // request order at the async drain. Valid over the same span as World().
     // The game connects its asset stack once in OnStart
-    // (Spawns().ConnectAssets(&runtimeAssets.Assets)); requests before that
-    // wiring fail with a status, not a crash.
+    // (Spawns().ConnectAssets(&runtimeAssets.Assets, &runtimeAssets.Scenes))
+    // and disconnects it in OnShutdown before that stack goes away; requests
+    // outside that span fail with a status, not a crash.
     [[nodiscard]] SceneSpawnService& Spawns();
 
     [[nodiscard]] RuntimeFrameLoop& Runtime() { return RuntimeLoop; }

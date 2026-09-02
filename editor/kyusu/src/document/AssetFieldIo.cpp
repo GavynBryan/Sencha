@@ -3,9 +3,7 @@
 #include <core/assets/AssetLease.h>
 #include <core/assets/AssetRegistry.h>
 #include <assets/runtime/AssetSystem.h>
-#include <render/MaterialSetCache.h>
 
-#include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -49,29 +47,47 @@ namespace
                                 : std::string(assets.ResolveRefPath(ref.Id, ref.Path, type));
     }
 
-    bool IsCompositeSet(AssetType type, AssetArity arity)
+    // A list's slots are positional (index binds to a mesh section), so an
+    // unset member is kept as an empty ref rather than dropped.
+    AssetFieldValue ReadAssetList(AssetSystem& assets, AssetType type, std::uint64_t token)
     {
-        return arity == AssetArity::List && type == AssetType::Material;
+        AssetFieldValue value;
+        for (const std::uint64_t member : assets.ListMembers(type, token))
+            value.Refs.push_back(
+                RefFromPath(assets, std::string(assets.GetPathForLease(type, member)), type));
+        return value;
+    }
+
+    void ApplyAssetList(AssetSystem& assets, AssetType type, void* field,
+                        const AssetFieldValue& value)
+    {
+        // The members are held here until the new list has taken its own
+        // references, and the old list is released only after that, so a member
+        // shared between an edited and an unedited slot never reaches zero.
+        std::vector<AssetLease> members;
+        std::vector<std::uint64_t> tokens;
+        for (const AssetFieldRef& ref : value.Refs)
+        {
+            const std::string path = ResolvePath(assets, ref, type);
+            AssetLease member = path.empty() ? AssetLease{} : assets.LoadLease(path, type);
+            tokens.push_back(member.OpaqueToken());
+            members.push_back(std::move(member));
+        }
+
+        AssetLease next = assets.InternList(type, tokens);
+        const std::uint64_t old = ReadToken(field);
+        WriteToken(field, next.Relinquish()); // the list's reference becomes the field's
+        assets.ReleaseLease(type, old, AssetArity::List);
     }
 }
 
 AssetFieldValue ReadAssetField(AssetSystem& assets, AssetType type,
                                AssetArity arity, const void* field)
 {
+    if (arity == AssetArity::List)
+        return ReadAssetList(assets, type, ReadToken(field));
+
     AssetFieldValue value;
-
-    if (IsCompositeSet(type, arity))
-    {
-        const MaterialSetHandle set = MaterialSetHandle::FromToken(ReadToken(field));
-        if (const std::vector<MaterialHandle>* members = assets.GetMaterialSet(set))
-            for (const MaterialHandle material : *members)
-                value.Refs.push_back(
-                    RefFromPath(assets, std::string(assets.GetPathForMaterial(material)), type));
-        return value;
-    }
-
-    assert(arity == AssetArity::Single && "only a material list has a composite field form");
-
     std::string path(assets.GetPathForLease(type, ReadToken(field)));
     if (!path.empty())
         value.Refs.push_back(RefFromPath(assets, std::move(path), type));
@@ -81,35 +97,11 @@ AssetFieldValue ReadAssetField(AssetSystem& assets, AssetType type,
 void ApplyAssetField(AssetSystem& assets, AssetType type, AssetArity arity,
                      void* field, const AssetFieldValue& value)
 {
-    if (IsCompositeSet(type, arity))
+    if (arity == AssetArity::List)
     {
-        // Build the new set in slot order. An unset slot keeps its position with
-        // an invalid handle (slots are positional: index binds to a mesh section).
-        // Loading each member up front retains it, so the materials are held
-        // before the old set is released below.
-        std::vector<MaterialHandle> materials;
-        materials.reserve(value.Refs.size());
-        for (const AssetFieldRef& ref : value.Refs)
-        {
-            const std::string path = ResolvePath(assets, ref, type);
-            materials.push_back(path.empty() ? MaterialHandle{} : assets.LoadMaterial(path));
-        }
-
-        // Acquire the whole new set (it retains its own member refs) before
-        // releasing the old set, so a material shared between an edited and an
-        // unedited slot never reaches zero in between.
-        const MaterialSetHandle next = assets.AcquireMaterialSet(materials);
-        for (const MaterialHandle material : materials)
-            if (material.IsValid())
-                assets.ReleaseMaterial(material); // the set holds its own reference
-
-        const MaterialSetHandle old = MaterialSetHandle::FromToken(ReadToken(field));
-        WriteToken(field, next.ToToken());
-        assets.ReleaseMaterialSet(old);
+        ApplyAssetList(assets, type, field, value);
         return;
     }
-
-    assert(arity == AssetArity::Single && "only a material list has a composite field form");
 
     const std::string path = value.Refs.empty()
         ? std::string{}

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <assets/scene/SceneCache.h>
 #include <core/assets/AssetId.h>
+#include <core/assets/AssetLease.h>
 #include <net/NetSpawnPrefab.h>
 #include <world/scene/SceneInstance.h>
 
@@ -15,6 +15,7 @@ class AssetSystem;
 class ComponentSerializerRegistry;
 class LoggingProvider;
 class RuntimeWorld;
+class SceneCache;
 class WorldComponentSchema;
 struct SceneSerializationContext;
 
@@ -50,7 +51,12 @@ public:
 
     // Null disconnects, which is what a host with no content stack is. Every
     // prefab then reads as unavailable rather than as an entity with no body.
-    void ConnectAssets(AssetSystem* assets);
+    // `scenes` is the cache the Scene kind commits into, read for contents.
+    //
+    // A resolved prefab is held resident for the session, so a game that
+    // connects its own asset stack has to disconnect before that stack goes
+    // away -- these references belong to caches this does not own.
+    void ConnectAssets(AssetSystem* assets, SceneCache* scenes);
 
     [[nodiscard]] NetPrefabReadiness Prepare(AssetId scene) override;
     [[nodiscard]] EntityId Instantiate(AssetId scene,
@@ -68,7 +74,7 @@ private:
     struct ResidentPrefab
     {
         std::string Path;
-        SceneHandle Scene;
+        AssetLease Scene;
     };
 
     // Logged once per id: a peer sending the same unresolvable spawn every
@@ -80,6 +86,7 @@ private:
     const ComponentSerializerRegistry& Serializers;
     LoggingProvider& Logging;
     AssetSystem* Assets = nullptr;
+    SceneCache* Scenes = nullptr;
     std::unique_ptr<SceneSerializationContext> SceneContext;
 
     std::unordered_map<AssetId, ResidentPrefab> Resident;

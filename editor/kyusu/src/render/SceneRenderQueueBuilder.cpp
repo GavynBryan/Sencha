@@ -175,7 +175,8 @@ void SceneRenderQueueBuilder::RebuildBrushMeshes(const EditorDocument& document)
         entry.SlotMaterials.reserve(order.size());
         for (const AssetRef& ref : order)
         {
-            const MaterialHandle material = Assets.LoadMaterial(ref.Path);
+            const MaterialHandle material = MaterialHandle::FromToken(
+                Assets.LoadLease(ref.Path, AssetType::Material).Relinquish());
             entry.SlotMaterials.push_back(material);
             if (material.IsValid())
                 acquired.push_back(material);
@@ -524,6 +525,6 @@ void SceneRenderQueueBuilder::ReleaseBrushMeshes()
     BrushMeshes.clear();
 
     for (const MaterialHandle material : BrushMaterials)
-        Assets.ReleaseMaterial(material);
+        Assets.ReleaseLease(AssetType::Material, material.ToToken());
     BrushMaterials.clear();
 }

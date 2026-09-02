@@ -7,7 +7,9 @@
 #include <render/PointLightComponent.h>
 #include <world/transform/TransformComponents.h>
 
+#include <assets/material/MaterialAssetLoader.h>
 #include <assets/runtime/AssetSystem.h>
+#include <assets/runtime/RegisterAssetKind.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/FourCC.h>
@@ -105,8 +107,11 @@ TEST(SceneFieldCodec, GenericComponentSerializerWritesTypedMaterialHandleAsPathS
     LoggingProvider logging;
     AssetRegistry assetRegistry(logging);
     MaterialCache materials;
-    AssetSystem assets(logging, assetRegistry, nullptr, &materials);
-    MaterialHandle material = assets.RegisterProceduralMaterial(
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, assetRegistry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
+    RegisterMaterialAsset(assetRegistry, "asset://materials/dev/red.smat");
+    MaterialHandle material = materials.Register(
         "asset://materials/dev/red.smat",
         Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
 
@@ -138,8 +143,11 @@ TEST(SceneFieldCodec, MaterialHandleWritesPathString)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     MaterialCache materials;
-    AssetSystem assets(logging, registry, nullptr, &materials);
-    MaterialHandle handle = assets.RegisterProceduralMaterial(
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
+    RegisterMaterialAsset(registry, "asset://materials/dev/red.smat");
+    MaterialHandle handle = materials.Register(
         "asset://materials/dev/red.smat",
         Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
 
@@ -161,7 +169,9 @@ TEST(SceneFieldCodec, MaterialHandleLoadsPathString)
     MaterialHandle registered = materials.Register(
         "asset://materials/dev/red.smat",
         Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
 
     auto parsed = JsonParse(R"("asset://materials/dev/red.smat")");
     ASSERT_TRUE(parsed.has_value());
@@ -182,7 +192,9 @@ TEST(SceneFieldCodec, MaterialHandleLoadsLegacyAssetRefObject)
     MaterialHandle registered = materials.Register(
         "asset://materials/dev/red.smat",
         Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
 
     auto parsed = JsonParse(R"({ "type": "Material", "path": "asset://materials/dev/red.smat" })");
     ASSERT_TRUE(parsed.has_value());
@@ -207,7 +219,9 @@ TEST(SceneFieldCodec, MaterialIdWinsOverStalePath)
     MaterialHandle registered = materials.Register(
         "asset://materials/dev/renamed.smat",
         Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
 
     auto parsed = JsonParse(R"({ "id": "000000000000beef", "path": "asset://materials/dev/old.smat" })");
     ASSERT_TRUE(parsed.has_value());
@@ -228,7 +242,9 @@ TEST(SceneFieldCodec, MaterialHandleFallsBackToPathForUnknownId)
     MaterialHandle registered = materials.Register(
         "asset://materials/dev/red.smat",
         Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
 
     auto parsed = JsonParse(R"({ "id": "00000000000dead0", "path": "asset://materials/dev/red.smat" })");
     ASSERT_TRUE(parsed.has_value());
@@ -245,7 +261,9 @@ TEST(SceneFieldCodec, MaterialHandleRejectsMalformedIdAndIdWithoutFallback)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     MaterialCache materials;
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
     SceneSerializationContext context(logging, &assets);
     MaterialHandle loaded;
 
@@ -267,7 +285,9 @@ TEST(SceneFieldCodec, MaterialHandleRejectsWrongTypeEmptyPathAndMissingPath)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     MaterialCache materials;
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
     SceneSerializationContext context(logging, &assets);
 
     auto wrongType = JsonParse(R"({ "type": "StaticMesh", "path": "asset://materials/dev/red.smat" })");
@@ -304,7 +324,9 @@ TEST(SceneFieldCodec, MaterialHandleRejectsRegistryTypeMismatch)
     [[maybe_unused]] MaterialHandle material = materials.Register(
         "asset://materials/dev/red.smat",
         Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
 
     auto parsed = JsonParse(R"("asset://materials/dev/red.smat")");
     ASSERT_TRUE(parsed.has_value());
@@ -346,7 +368,9 @@ TEST(SceneFieldCodec, StaticMeshHandleSkipsWhenTheProcessCannotHoldMeshes)
 
     MaterialCache materials;
     // No mesh cache: the composition a host without graphics services gets.
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
     ASSERT_FALSE(assets.HasStore(AssetType::StaticMesh));
 
     auto parsed = JsonParse(R"("asset://meshes/dev/cube.smesh")");
@@ -370,7 +394,9 @@ TEST(SceneFieldCodec, AMissingAssetStillFailsWhereTheProcessCanHoldIt)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     MaterialCache materials;
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
     ASSERT_TRUE(assets.HasStore(AssetType::Material));
 
     // Registered nowhere: the capability exists, the asset does not.
@@ -391,7 +417,9 @@ TEST(SceneFieldCodec, CapabilityAbsenceDoesNotExcuseAMalformedRef)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     MaterialCache materials;
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
     ASSERT_FALSE(assets.HasStore(AssetType::StaticMesh));
 
     auto parsed = JsonParse(R"({ "type": "Material", "path": "asset://meshes/dev/cube.smesh" })");
@@ -442,7 +470,9 @@ TEST(SceneFieldCodec, AMeshBearingSceneStillLoadsWhereMeshesCannotBeHeld)
         .Path = "asset://meshes/dev/cube.smesh",
     });
     MaterialCache materials;
-    AssetSystem assets(logging, assetRegistry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, assetRegistry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
     ASSERT_FALSE(assets.HasStore(AssetType::StaticMesh));
 
     Registry registry;

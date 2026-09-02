@@ -33,23 +33,19 @@ void ImGuiTextureBinding::SetTexture(const std::string& virtualPath, bool neares
     if (virtualPath == Path && nearestFilter == Nearest)
         return;
 
-    if (Handle.IsValid())
-        Assets.ReleaseTexture(Handle);
-    Handle = {};
+    Texture.Reset();
     BoundImage = {};
     RetireSet();
 
     Path = virtualPath;
     Nearest = nearestFilter;
     if (!Path.empty())
-        Handle = Assets.LoadTexture(Path);
+        Texture = Assets.LoadLease(Path, AssetType::Texture);
 }
 
 void ImGuiTextureBinding::Release()
 {
-    if (Handle.IsValid())
-        Assets.ReleaseTexture(Handle);
-    Handle = {};
+    Texture.Reset();
     BoundImage = {};
     Path.clear();
 
@@ -83,10 +79,10 @@ ImTextureID ImGuiTextureBinding::TextureId()
         }
     }
 
-    if (!Handle.IsValid())
+    if (!Texture.IsValid())
         return 0;
 
-    const ImageHandle current = Textures.GetGpuImage(Handle);
+    const ImageHandle current = Textures.GetGpuImage(Handle());
     if (!current.IsValid())
         return 0;
 
@@ -106,9 +102,9 @@ ImTextureID ImGuiTextureBinding::TextureId()
 
 VkExtent2D ImGuiTextureBinding::Extent() const
 {
-    if (!Handle.IsValid())
+    if (!Texture.IsValid())
         return {};
-    const RenderExtent extent = Textures.GetExtent(Handle);
+    const RenderExtent extent = Textures.GetExtent(Handle());
     return { extent.Width, extent.Height };
 }
 

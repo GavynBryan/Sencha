@@ -7,11 +7,10 @@
 #include <core/assets/AssetLease.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/Archive.h>
-#include <render/Material.h>
-#include <render/MaterialSetCache.h>
 #include <world/serialization/SceneSerializationContext.h>
 
 #include <cassert>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -171,58 +170,58 @@ namespace
         return true;
     }
 
-    // ── The composite arity ──────────────────────────────────────────────────
+    // ── The list arity ───────────────────────────────────────────────────────
     //
-    // A material list is not a token in a store like every other reference: it
-    // persists as an array of refs and is interned into a set whose handle the
-    // component carries. That is a different representation, not a different
-    // asset kind, so it is one branch on arity here rather than a per-kind case.
+    // A list is not a token in a store like every other reference: it persists
+    // as an array of refs and is interned into the kind's list store, whose
+    // token the component carries. That is a different representation, not a
+    // different asset kind, so it is one branch on arity here.
 
-    bool SaveMaterialSet(IWriteArchive& archive,
-                         std::string_view key,
-                         MaterialSetHandle value,
-                         SceneSerializationContext& context)
+    bool SaveAssetList(IWriteArchive& archive,
+                       std::string_view key,
+                       std::uint64_t token,
+                       AssetType type,
+                       SceneSerializationContext& context)
     {
-        const std::vector<MaterialHandle>* members = context.Assets->GetMaterialSet(value);
-        const std::size_t count = members ? members->size() : 0;
-        archive.BeginArray(key, count);
-        if (members)
+        const std::vector<std::uint64_t> members = context.Assets->ListMembers(type, token);
+        archive.BeginArray(key, members.size());
+        for (const std::uint64_t member : members)
         {
-            for (const MaterialHandle material : *members)
+            // Key is ignored inside an array scope; the element is appended.
+            if (!WriteSceneAssetRef(archive, key, context.Assets->GetPathForLease(type, member), context))
             {
-                // Key is ignored inside an array scope; the element is appended.
-                if (!WriteSceneAssetRef(archive, key, context.Assets->GetPathForMaterial(material), context))
-                {
-                    archive.End();
-                    return false;
-                }
+                archive.End();
+                return false;
             }
         }
         archive.End();
         return archive.Ok();
     }
 
-    bool LoadMaterialSet(IReadArchive& archive,
-                         std::string_view key,
-                         MaterialSetHandle& value,
-                         SceneSerializationContext& context)
+    bool LoadAssetList(IReadArchive& archive,
+                       std::string_view key,
+                       std::uint64_t& token,
+                       AssetType type,
+                       SceneSerializationContext& context)
     {
-        const auto resolveInto = [&](std::string_view refKey, std::vector<MaterialHandle>& out) {
+        // Each member's load reference is held only until the list takes its
+        // own, so a list that fails to intern leaves nothing behind.
+        std::vector<AssetLease> members;
+        const auto resolveInto = [&](std::string_view refKey) {
             std::string path;
-            if (!ReadSceneAssetRef(archive, refKey, AssetType::Material, path, context))
+            if (!ReadSceneAssetRef(archive, refKey, type, path, context))
                 return false;
-            const MaterialHandle material = context.Assets->LoadMaterial(path);
-            if (!material.IsValid())
+            AssetLease member = context.Assets->LoadLease(path, type);
+            if (!member.IsValid())
             {
-                GetSceneLogger(context).Error("SceneAssetField: failed to load material asset '{}'", path);
+                GetSceneLogger(context).Error("SceneAssetField: failed to load {} asset '{}'",
+                                              AssetTypeToString(type), path);
                 archive.MarkInvalidField(refKey);
                 return false;
             }
-            out.push_back(material);
+            members.push_back(std::move(member));
             return true;
         };
-
-        std::vector<MaterialHandle> materials;
 
         if (archive.HasField(key))
         {
@@ -235,7 +234,7 @@ namespace
             }
             for (std::size_t i = 0; i < count; ++i)
             {
-                if (!resolveInto(key, materials))
+                if (!resolveInto(key))
                 {
                     archive.End();
                     return false;
@@ -243,10 +242,10 @@ namespace
             }
             archive.End();
         }
-        else if (archive.HasField(std::string_view{"material"}))
+        else if (type == AssetType::Material && archive.HasField(std::string_view{"material"}))
         {
             // Legacy single-material scene form, before per-section binding.
-            if (!resolveInto(std::string_view{"material"}, materials))
+            if (!resolveInto(std::string_view{"material"}))
                 return false;
         }
         else
@@ -256,24 +255,21 @@ namespace
             return false;
         }
 
-        // The set takes ownership of each member; drop the load references the
-        // resolve step took so the set is the sole owner.
-        value = context.Assets->AcquireMaterialSet(materials);
-        for (const MaterialHandle material : materials)
-            context.Assets->ReleaseMaterial(material);
+        std::vector<std::uint64_t> tokens;
+        tokens.reserve(members.size());
+        for (const AssetLease& member : members)
+            tokens.push_back(member.OpaqueToken());
 
-        if (!value.IsValid())
+        AssetLease list = context.Assets->InternList(type, tokens);
+        if (!list.IsValid())
         {
-            GetSceneLogger(context).Error("SceneAssetField: could not intern material set for '{}'", key);
+            GetSceneLogger(context).Error("SceneAssetField: could not intern {} list for '{}'",
+                                          AssetTypeToString(type), key);
             archive.MarkInvalidField(key);
             return false;
         }
+        token = list.Relinquish();
         return archive.Ok();
-    }
-
-    bool IsCompositeSet(AssetType type, AssetArity arity)
-    {
-        return arity == AssetArity::List && type == AssetType::Material;
     }
 }
 
@@ -343,10 +339,9 @@ bool SaveAssetField(IWriteArchive& archive,
     if (!context.Assets)
         return MissingAssetSystem(archive, key, type, context);
 
-    if (IsCompositeSet(type, arity))
-        return SaveMaterialSet(archive, key, MaterialSetHandle::FromToken(token), context);
+    if (arity == AssetArity::List)
+        return SaveAssetList(archive, key, token, type, context);
 
-    assert(arity == AssetArity::Single && "only a material list has a composite scene form");
     return WriteSceneAssetRef(archive, key, context.Assets->GetPathForLease(type, token), context);
 }
 
@@ -360,20 +355,14 @@ bool LoadAssetField(IReadArchive& archive,
     if (!archive.IsText())
         return RejectBinaryRead(archive, key);
 
-    if (IsCompositeSet(type, arity))
+    if (arity == AssetArity::List)
     {
         if (!context.Assets)
             return MissingAssetSystem(archive, key, type, context);
         if (LacksCapability(type, context))
             return archive.Ok();
-
-        MaterialSetHandle set = MaterialSetHandle::FromToken(token);
-        const bool ok = LoadMaterialSet(archive, key, set, context);
-        token = set.ToToken();
-        return ok;
+        return LoadAssetList(archive, key, token, type, context);
     }
-
-    assert(arity == AssetArity::Single && "only a material list has a composite scene form");
 
     std::string path;
     if (!ReadSceneAssetRef(archive, key, type, path, context))
@@ -409,11 +398,5 @@ void ReleaseAssetField(std::uint64_t& token,
     if (context.Assets == nullptr)
         return;
 
-    if (IsCompositeSet(type, arity))
-    {
-        context.Assets->ReleaseMaterialSet(MaterialSetHandle::FromToken(token));
-        return;
-    }
-
-    context.Assets->ReleaseLease(type, token);
+    context.Assets->ReleaseLease(type, token, arity);
 }
