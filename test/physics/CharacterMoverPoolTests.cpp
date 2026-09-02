@@ -8,7 +8,8 @@
 #include <physics/CharacterMoverPool.h>
 #include <physics/PhysicsRegistration.h>
 #include <physics/PhysicsWorld.h>
-#include <movement/MovementComponents.h>
+#include <movement/components/CharacterMovement.h>
+#include <movement/components/MovementTuning.h>
 #include <physics/components/CharacterController.h>
 #include <physics/components/CharacterMoverLink.h>
 #include <world/transform/TransformComponents.h>

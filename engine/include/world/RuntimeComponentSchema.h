@@ -1,5 +1,8 @@
 #pragma once
 
+#include <ecs/ComponentTypeId.h>
+
+#include <span>
 #include <string>
 
 class ComponentRegistrar;
@@ -16,6 +19,10 @@ class WorldComponentSchema;
 // goes through the same registrar afterwards, so its components take runtime
 // indices and wire keys after the engine's.
 void RegisterEngineComponents(ComponentRegistrar& registrar);
+
+// Every component those features name, in the order they register. The engine
+// registers exactly these, and each is named by exactly one feature.
+std::span<const ComponentTypeId> EngineComponentIds();
 
 // Storage only, for a caller that wants the vocabulary without a serializer
 // registry or a replicated table: the streaming and zone fixtures that seal a

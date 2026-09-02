@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <world/transform/TransformComponents.h>
 
 #include <ecs/Query.h>
 #include <math/geometry/3d/Transform3d.h>

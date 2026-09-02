@@ -88,6 +88,12 @@ add_library(kyusu_authoring STATIC
 target_link_libraries(kyusu_authoring PUBLIC editor_common)
 sencha_warnings(kyusu_authoring)
 target_include_directories(kyusu_authoring PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+sencha_generate_component_metadata(kyusu_authoring
+    INCLUDE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    HEADERS
+        src/document/BrushComponents.h
+        src/document/EntityNameComponent.h
+)
 
 add_executable(kyusu
     ${KYUSU_SHELL_SOURCES}

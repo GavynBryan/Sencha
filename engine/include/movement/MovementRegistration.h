@@ -3,7 +3,15 @@
 #include <abilities/AbilityActivationSystem.h>
 #include <app/EngineSchedule.h>
 #include <movement/FreeLocomotionSystem.h>
+#include <movement/JumpState.h>
+#include <movement/MovementIntent.h>
 #include <movement/MovementModeSystems.h>
+#include <movement/components/CharacterFacts.h>
+#include <movement/components/CharacterMovement.h>
+#include <movement/components/MotionChannels.h>
+#include <movement/components/MovementSessions.h>
+#include <movement/components/MovementTuning.h>
+#include <world/ComponentSet.h>
 
 class ComponentRegistrar;
 class DataAssetCache;
@@ -24,8 +32,28 @@ class World;
 // authority validates.
 //=============================================================================
 
-// The movement component vocabulary, including the ability kit's. Movement is
-// built on the kit, so a caller cannot get one without the other.
+// The movement component vocabulary: the physical facts, this tick's request
+// and resolved coefficients, and the contribution channels that compose into
+// one motor request.
+using MovementComponents = ComponentSet<
+    MovementIntent,
+    JumpState,
+    KinematicState,
+    SupportState,
+    Immersion,
+    CharacterMovement,
+    MovementTuningSource,
+    ResolvedMovementTuning,
+    LocomotionOutput,
+    MotionAxisOverride,
+    MotionImpulse,
+    MotionRequest,
+    ModeTransitionRequest,
+    ClingSession,
+    FlightSession>;
+
+// Registers MovementComponents after the ability kit's. Movement is built on
+// the kit, so a caller cannot get one without the other.
 void RegisterMovementComponents(ComponentRegistrar& registrar);
 
 // The same components plus the per-World pieces a sealed vocabulary cannot

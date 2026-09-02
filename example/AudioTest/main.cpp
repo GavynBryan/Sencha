@@ -1,7 +1,10 @@
 #include <audio/AudioClipCache.h>
 #include <audio/AudioService.h>
-#include <core/assets/AssetRegistry.h>
+#include <assets/audio_clip/AudioClipAssetLoader.h>
 #include <assets/runtime/AssetSystem.h>
+#include <assets/runtime/RegisterAssetKind.h>
+#include <core/assets/AssetLease.h>
+#include <core/assets/AssetRegistry.h>
 #include <core/logging/ConsoleLogSink.h>
 #include <core/logging/LoggingProvider.h>
 #include <platform/SdlVideoService.h>
@@ -64,8 +67,10 @@ int main()
     // The WAV source under assets/ cooks to .sclip via import-on-demand
     // and registers under its virtual path; the clip then loads through
     // AssetSystem like every other asset type.
-    AssetRegistry registry(logging);
-    AssetSystem   assets(logging, registry, nullptr, nullptr, nullptr, &clipCache);
+    AssetRegistry        registry(logging);
+    AssetSystem          assets(logging, registry);
+    AudioClipAssetLoader clipLoader(logging, &clipCache);
+    RegisterAssetKind(assets, AssetType::Audio, clipLoader, &clipCache);
 
 #ifdef SENCHA_ENABLE_COOK
     {
@@ -79,12 +84,13 @@ int main()
     ScanAssetsDirectory("assets", registry, assets.Kinds());
 
     // -- Load clip -----------------------------------------------------
-    AudioClipHandle clip = assets.LoadAudioClip(kSoundPath);
-    if (!clip.IsValid())
+    const AssetLease clipLease = assets.LoadLease(kSoundPath, AssetType::Audio);
+    if (!clipLease.IsValid())
     {
         std::fprintf(stderr, "Failed to load '%s'.\n", kSoundPath);
         return 1;
     }
+    const AudioClipHandle clip = AudioClipHandle::FromToken(clipLease.OpaqueToken());
 
     std::printf("Audio test running.\n");
     std::printf("  Space      — play sound\n");
@@ -160,6 +166,5 @@ int main()
         SDL_Delay(16);
     }
 
-    assets.ReleaseAudioClip(clip);
     return 0;
 }

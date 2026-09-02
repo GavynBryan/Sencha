@@ -40,31 +40,46 @@ Empty tag components have no stored object pointer, so they should not rely on
 
 ## Adding hooks
 
-Specialize `ComponentTraits<T>` in a header **near the component type definition**:
+Declare the specialization in the component's own header, and put the hook
+bodies in the matching `.cpp` so that naming the component does not pull its
+services or `World` into every include graph that mentions it:
+
+```cpp
+// engine/include/world/identity/PersistentIdComponent.h
+
+template <>
+struct ComponentTraits<PersistentIdComponent>
+{
+    static void OnAdd(PersistentIdComponent& component, World& world, EntityId);
+    static void OnRemove(const PersistentIdComponent& component, World& world, EntityId);
+};
+```
+
+### Asset fields
+
+A component whose schema tags a field `.AsAsset()` owns one reference to that
+asset for as long as it carries the value. The hooks for that are not written
+per component: `SchemaAssetOwnership<T>` (`world/ComponentAssetOwnership.h`)
+walks the flattened schema, retains every asset leaf through the World's
+`AssetStoreTable` resource on add, and releases them in reverse on remove.
+The traits inherit it, after the schema is visible:
 
 ```cpp
 // engine/include/render/StaticMeshComponent.h
 
 template <>
 struct ComponentTraits<StaticMeshComponent>
-{
-    static void OnAdd(StaticMeshComponent& component, World& world, EntityId)
-    {
-        auto* assets = world.TryGetResource<StaticMeshComponentAssets>();
-        if (assets == nullptr) return;
-        if (assets->Meshes)     assets->Meshes->Retain(component.Mesh);
-        if (assets->Materials)  assets->Materials->Retain(component.Material);
-    }
-
-    static void OnRemove(const StaticMeshComponent& component, World& world, EntityId)
-    {
-        auto* assets = world.TryGetResource<StaticMeshComponentAssets>();
-        if (assets == nullptr) return;
-        if (assets->Materials)  assets->Materials->Release(component.Material);
-        if (assets->Meshes)     assets->Meshes->Release(component.Mesh);
-    }
-};
+    : SchemaAssetOwnership<StaticMeshComponent> {};
 ```
+
+A component with more to do on removal declares its own `OnRemove` and calls
+the inherited one last, so the asset outlives whatever still uses it
+(`AudioSourceComponent` stops its voice first). The table is keyed by asset
+kind and arity; the host that owns the caches installs it with
+`AssetSystem::Stores()` and replaces it with an empty table before the caches
+are destroyed. A World with no table, or a table with no store for a field's
+kind, holds nothing for that field, which is what lets tests build worlds
+with no graphics services.
 
 Hook signatures:
 
@@ -144,7 +159,7 @@ performance impact. See `docs/ecs/decisions.md` D1.5 for the batching strategy.
 rg "ComponentTraits<" engine/include engine/src
 ```
 
-By design, `ComponentTraits` specializations live near the component definition.
+By design, `ComponentTraits` specializations live in the component's own header.
 `rg ComponentTraits` in the engine tree lists every component with hooks.
 
 ---

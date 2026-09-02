@@ -55,6 +55,26 @@ const std::vector<MaterialHandle>* MaterialSetCache::Get(MaterialSetHandle handl
     return entry ? &entry->Materials : nullptr;
 }
 
+AssetLease MaterialSetCache::InternList(std::span<const uint64_t> members)
+{
+    std::vector<MaterialHandle> materials;
+    materials.reserve(members.size());
+    for (const uint64_t token : members)
+        materials.push_back(MaterialHandle::FromToken(token));
+
+    // Adopt: Acquire already took the reference the lease owns.
+    return AssetLease::Adopt(AssetType::Material, *this, Acquire(materials).ToToken());
+}
+
+std::vector<uint64_t> MaterialSetCache::ListMembers(uint64_t token) const
+{
+    std::vector<uint64_t> tokens;
+    if (const std::vector<MaterialHandle>* materials = Get(MaterialSetHandle::FromToken(token)))
+        for (const MaterialHandle handle : *materials)
+            tokens.push_back(handle.ToToken());
+    return tokens;
+}
+
 void MaterialSetCache::OnFree(MaterialSetEntry& entry)
 {
     if (Materials != nullptr)

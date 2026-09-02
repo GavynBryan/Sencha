@@ -4,18 +4,26 @@
 // a stamped id, and must resolve back through the asset registry on load.
 
 #include <gtest/gtest.h>
+#include <render/PointLightComponent.h>
+#include <world/transform/TransformComponents.h>
 
+#include <assets/material/MaterialAssetLoader.h>
 #include <assets/runtime/AssetSystem.h>
+#include <assets/runtime/RegisterAssetKind.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/FourCC.h>
 #include <core/serialization/JsonArchive.h>
 #include <math/MathSchemas.h>
 #include <render/MaterialCache.h>
-#include <render/PointLightComponent.h>
+#include <render/StaticMeshComponent.h>
+#include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/ComponentSerializer.h>
+#include "HandleFieldIo.h"
+
+#include <world/serialization/SceneAssetFieldIo.h>
 #include <world/serialization/SceneFieldCodec.h>
 #include <world/serialization/SceneSerializer.h>
 
@@ -31,11 +39,13 @@ template <>
 struct TypeSchema<SceneCodecMaterialComponent>
 {
     static constexpr std::string_view Name = "SceneCodecMaterial";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('T', 'M', 'A', 'T');
 
     static auto Fields()
     {
         return std::tuple{
-            MakeField("material", &SceneCodecMaterialComponent::Material),
+            MakeField("material", &SceneCodecMaterialComponent::Material)
+                .AsAsset(AssetType::Material),
         };
     }
 };
@@ -49,72 +59,14 @@ template <>
 struct TypeSchema<SceneCodecMeshComponent>
 {
     static constexpr std::string_view Name = "SceneCodecMesh";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('T', 'M', 'S', 'H');
 
     static auto Fields()
     {
         return std::tuple{
-            MakeField("mesh", &SceneCodecMeshComponent::Mesh),
+            MakeField("mesh", &SceneCodecMeshComponent::Mesh)
+                .AsAsset(AssetType::StaticMesh),
         };
-    }
-};
-
-template <>
-struct ComponentStorageTraits<SceneCodecMeshComponent>
-{
-    static constexpr std::uint32_t BinaryChunkId = MakeFourCC('T', 'M', 'S', 'H');
-
-    static void Register(World& world)
-    {
-        if (!world.IsRegistered<SceneCodecMeshComponent>())
-            world.RegisterComponent<SceneCodecMeshComponent>();
-    }
-
-    static void Register(Registry& registry)
-    {
-        Register(registry.Components);
-    }
-
-    static bool Add(World& world, EntityId entity, SceneCodecMeshComponent component)
-    {
-        if (world.HasComponent<SceneCodecMeshComponent>(entity))
-            return false;
-        world.AddComponent(entity, component);
-        return true;
-    }
-
-    static bool Add(Registry& registry, EntityId entity, SceneCodecMeshComponent component)
-    {
-        return Add(registry.Components, entity, component);
-    }
-};
-
-template <>
-struct ComponentStorageTraits<SceneCodecMaterialComponent>
-{
-    static constexpr std::uint32_t BinaryChunkId = MakeFourCC('T', 'M', 'A', 'T');
-
-    static void Register(World& world)
-    {
-        if (!world.IsRegistered<SceneCodecMaterialComponent>())
-            world.RegisterComponent<SceneCodecMaterialComponent>();
-    }
-
-    static void Register(Registry& registry)
-    {
-        Register(registry.Components);
-    }
-
-    static bool Add(World& world, EntityId entity, SceneCodecMaterialComponent component)
-    {
-        if (world.HasComponent<SceneCodecMaterialComponent>(entity))
-            return false;
-        world.AddComponent(entity, component);
-        return true;
-    }
-
-    static bool Add(Registry& registry, EntityId entity, SceneCodecMaterialComponent component)
-    {
-        return Add(registry.Components, entity, component);
     }
 };
 
@@ -155,8 +107,11 @@ TEST(SceneFieldCodec, GenericComponentSerializerWritesTypedMaterialHandleAsPathS
     LoggingProvider logging;
     AssetRegistry assetRegistry(logging);
     MaterialCache materials;
-    AssetSystem assets(logging, assetRegistry, nullptr, &materials);
-    MaterialHandle material = assets.RegisterProceduralMaterial(
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, assetRegistry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
+    RegisterMaterialAsset(assetRegistry, "asset://materials/dev/red.smat");
+    MaterialHandle material = materials.Register(
         "asset://materials/dev/red.smat",
         Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
 
@@ -188,14 +143,17 @@ TEST(SceneFieldCodec, MaterialHandleWritesPathString)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     MaterialCache materials;
-    AssetSystem assets(logging, registry, nullptr, &materials);
-    MaterialHandle handle = assets.RegisterProceduralMaterial(
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
+    RegisterMaterialAsset(registry, "asset://materials/dev/red.smat");
+    MaterialHandle handle = materials.Register(
         "asset://materials/dev/red.smat",
         Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
 
     SceneSerializationContext context(logging, &assets);
     JsonWriteArchive archive;
-    ASSERT_TRUE(SceneFieldCodec<MaterialHandle>::Save(archive, "material", handle, context));
+    ASSERT_TRUE(SaveHandleField<MaterialHandle>(AssetType::Material, archive, "material", handle, context));
 
     JsonValue json = archive.TakeValue();
     ASSERT_TRUE(json.IsString());
@@ -211,7 +169,9 @@ TEST(SceneFieldCodec, MaterialHandleLoadsPathString)
     MaterialHandle registered = materials.Register(
         "asset://materials/dev/red.smat",
         Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
 
     auto parsed = JsonParse(R"("asset://materials/dev/red.smat")");
     ASSERT_TRUE(parsed.has_value());
@@ -219,7 +179,7 @@ TEST(SceneFieldCodec, MaterialHandleLoadsPathString)
     SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     MaterialHandle loaded;
-    ASSERT_TRUE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
+    ASSERT_TRUE(LoadHandleField<MaterialHandle>(AssetType::Material, archive, "", loaded, context));
     EXPECT_EQ(loaded, registered);
 }
 
@@ -232,7 +192,9 @@ TEST(SceneFieldCodec, MaterialHandleLoadsLegacyAssetRefObject)
     MaterialHandle registered = materials.Register(
         "asset://materials/dev/red.smat",
         Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
 
     auto parsed = JsonParse(R"({ "type": "Material", "path": "asset://materials/dev/red.smat" })");
     ASSERT_TRUE(parsed.has_value());
@@ -240,7 +202,7 @@ TEST(SceneFieldCodec, MaterialHandleLoadsLegacyAssetRefObject)
     SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     MaterialHandle loaded;
-    ASSERT_TRUE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
+    ASSERT_TRUE(LoadHandleField<MaterialHandle>(AssetType::Material, archive, "", loaded, context));
     EXPECT_EQ(loaded, registered);
 }
 
@@ -257,7 +219,9 @@ TEST(SceneFieldCodec, MaterialIdWinsOverStalePath)
     MaterialHandle registered = materials.Register(
         "asset://materials/dev/renamed.smat",
         Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
 
     auto parsed = JsonParse(R"({ "id": "000000000000beef", "path": "asset://materials/dev/old.smat" })");
     ASSERT_TRUE(parsed.has_value());
@@ -265,7 +229,7 @@ TEST(SceneFieldCodec, MaterialIdWinsOverStalePath)
     SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     MaterialHandle loaded;
-    ASSERT_TRUE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
+    ASSERT_TRUE(LoadHandleField<MaterialHandle>(AssetType::Material, archive, "", loaded, context));
     EXPECT_EQ(loaded, registered);
 }
 
@@ -278,7 +242,9 @@ TEST(SceneFieldCodec, MaterialHandleFallsBackToPathForUnknownId)
     MaterialHandle registered = materials.Register(
         "asset://materials/dev/red.smat",
         Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
 
     auto parsed = JsonParse(R"({ "id": "00000000000dead0", "path": "asset://materials/dev/red.smat" })");
     ASSERT_TRUE(parsed.has_value());
@@ -286,7 +252,7 @@ TEST(SceneFieldCodec, MaterialHandleFallsBackToPathForUnknownId)
     SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     MaterialHandle loaded;
-    ASSERT_TRUE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
+    ASSERT_TRUE(LoadHandleField<MaterialHandle>(AssetType::Material, archive, "", loaded, context));
     EXPECT_EQ(loaded, registered);
 }
 
@@ -295,20 +261,22 @@ TEST(SceneFieldCodec, MaterialHandleRejectsMalformedIdAndIdWithoutFallback)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     MaterialCache materials;
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
     SceneSerializationContext context(logging, &assets);
     MaterialHandle loaded;
 
     auto malformed = JsonParse(R"({ "id": "not-hex", "path": "asset://materials/dev/red.smat" })");
     ASSERT_TRUE(malformed.has_value());
     JsonReadArchive malformedArchive(*malformed);
-    EXPECT_FALSE(SceneFieldCodec<MaterialHandle>::Load(malformedArchive, "", loaded, context));
+    EXPECT_FALSE(LoadHandleField<MaterialHandle>(AssetType::Material, malformedArchive, "", loaded, context));
     EXPECT_FALSE(malformedArchive.Ok());
 
     auto idOnly = JsonParse(R"({ "id": "00000000000dead0" })");
     ASSERT_TRUE(idOnly.has_value());
     JsonReadArchive idOnlyArchive(*idOnly);
-    EXPECT_FALSE(SceneFieldCodec<MaterialHandle>::Load(idOnlyArchive, "", loaded, context));
+    EXPECT_FALSE(LoadHandleField<MaterialHandle>(AssetType::Material, idOnlyArchive, "", loaded, context));
     EXPECT_FALSE(idOnlyArchive.Ok());
 }
 
@@ -317,26 +285,28 @@ TEST(SceneFieldCodec, MaterialHandleRejectsWrongTypeEmptyPathAndMissingPath)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     MaterialCache materials;
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
     SceneSerializationContext context(logging, &assets);
 
     auto wrongType = JsonParse(R"({ "type": "StaticMesh", "path": "asset://materials/dev/red.smat" })");
     ASSERT_TRUE(wrongType.has_value());
     JsonReadArchive wrongTypeArchive(*wrongType);
     MaterialHandle loaded;
-    EXPECT_FALSE(SceneFieldCodec<MaterialHandle>::Load(wrongTypeArchive, "", loaded, context));
+    EXPECT_FALSE(LoadHandleField<MaterialHandle>(AssetType::Material, wrongTypeArchive, "", loaded, context));
     EXPECT_FALSE(wrongTypeArchive.Ok());
 
     auto emptyPath = JsonParse(R"("")");
     ASSERT_TRUE(emptyPath.has_value());
     JsonReadArchive emptyPathArchive(*emptyPath);
-    EXPECT_FALSE(SceneFieldCodec<MaterialHandle>::Load(emptyPathArchive, "", loaded, context));
+    EXPECT_FALSE(LoadHandleField<MaterialHandle>(AssetType::Material, emptyPathArchive, "", loaded, context));
     EXPECT_FALSE(emptyPathArchive.Ok());
 
     auto missingPath = JsonParse(R"("asset://materials/dev/missing.smat")");
     ASSERT_TRUE(missingPath.has_value());
     JsonReadArchive missingPathArchive(*missingPath);
-    EXPECT_FALSE(SceneFieldCodec<MaterialHandle>::Load(missingPathArchive, "", loaded, context));
+    EXPECT_FALSE(LoadHandleField<MaterialHandle>(AssetType::Material, missingPathArchive, "", loaded, context));
     EXPECT_FALSE(missingPathArchive.Ok());
 }
 
@@ -354,7 +324,9 @@ TEST(SceneFieldCodec, MaterialHandleRejectsRegistryTypeMismatch)
     [[maybe_unused]] MaterialHandle material = materials.Register(
         "asset://materials/dev/red.smat",
         Material{ .BaseColor = Vec4(1.0f, 0.0f, 0.0f, 1.0f) });
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
 
     auto parsed = JsonParse(R"("asset://materials/dev/red.smat")");
     ASSERT_TRUE(parsed.has_value());
@@ -362,7 +334,7 @@ TEST(SceneFieldCodec, MaterialHandleRejectsRegistryTypeMismatch)
     SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     MaterialHandle loaded;
-    EXPECT_FALSE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
+    EXPECT_FALSE(LoadHandleField<MaterialHandle>(AssetType::Material, archive, "", loaded, context));
     EXPECT_FALSE(archive.Ok());
 }
 
@@ -375,7 +347,7 @@ TEST(SceneFieldCodec, StaticMeshHandleRejectsWrongLegacyObjectType)
     SceneSerializationContext context(logging);
     JsonReadArchive archive(*wrongType);
     StaticMeshHandle loaded;
-    EXPECT_FALSE(SceneFieldCodec<StaticMeshHandle>::Load(archive, "", loaded, context));
+    EXPECT_FALSE(LoadHandleField<StaticMeshHandle>(AssetType::StaticMesh, archive, "", loaded, context));
     EXPECT_FALSE(archive.Ok());
 }
 
@@ -396,7 +368,9 @@ TEST(SceneFieldCodec, StaticMeshHandleSkipsWhenTheProcessCannotHoldMeshes)
 
     MaterialCache materials;
     // No mesh cache: the composition a host without graphics services gets.
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
     ASSERT_FALSE(assets.HasStore(AssetType::StaticMesh));
 
     auto parsed = JsonParse(R"("asset://meshes/dev/cube.smesh")");
@@ -405,7 +379,7 @@ TEST(SceneFieldCodec, StaticMeshHandleSkipsWhenTheProcessCannotHoldMeshes)
     SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     StaticMeshHandle loaded;
-    EXPECT_TRUE(SceneFieldCodec<StaticMeshHandle>::Load(archive, "", loaded, context));
+    EXPECT_TRUE(LoadHandleField<StaticMeshHandle>(AssetType::StaticMesh, archive, "", loaded, context));
     EXPECT_TRUE(archive.Ok());
     EXPECT_FALSE(loaded.IsValid())
         << "the field is read and declined, leaving no handle behind";
@@ -420,7 +394,9 @@ TEST(SceneFieldCodec, AMissingAssetStillFailsWhereTheProcessCanHoldIt)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     MaterialCache materials;
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
     ASSERT_TRUE(assets.HasStore(AssetType::Material));
 
     // Registered nowhere: the capability exists, the asset does not.
@@ -430,7 +406,7 @@ TEST(SceneFieldCodec, AMissingAssetStillFailsWhereTheProcessCanHoldIt)
     SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     MaterialHandle loaded;
-    EXPECT_FALSE(SceneFieldCodec<MaterialHandle>::Load(archive, "", loaded, context));
+    EXPECT_FALSE(LoadHandleField<MaterialHandle>(AssetType::Material, archive, "", loaded, context));
     EXPECT_FALSE(archive.Ok());
 }
 
@@ -441,7 +417,9 @@ TEST(SceneFieldCodec, CapabilityAbsenceDoesNotExcuseAMalformedRef)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     MaterialCache materials;
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
     ASSERT_FALSE(assets.HasStore(AssetType::StaticMesh));
 
     auto parsed = JsonParse(R"({ "type": "Material", "path": "asset://meshes/dev/cube.smesh" })");
@@ -450,7 +428,7 @@ TEST(SceneFieldCodec, CapabilityAbsenceDoesNotExcuseAMalformedRef)
     SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     StaticMeshHandle loaded;
-    EXPECT_FALSE(SceneFieldCodec<StaticMeshHandle>::Load(archive, "", loaded, context));
+    EXPECT_FALSE(LoadHandleField<StaticMeshHandle>(AssetType::StaticMesh, archive, "", loaded, context));
     EXPECT_FALSE(archive.Ok());
 }
 
@@ -492,7 +470,9 @@ TEST(SceneFieldCodec, AMeshBearingSceneStillLoadsWhereMeshesCannotBeHeld)
         .Path = "asset://meshes/dev/cube.smesh",
     });
     MaterialCache materials;
-    AssetSystem assets(logging, assetRegistry, nullptr, &materials);
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, assetRegistry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
     ASSERT_FALSE(assets.HasStore(AssetType::StaticMesh));
 
     Registry registry;

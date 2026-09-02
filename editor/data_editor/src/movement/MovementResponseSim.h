@@ -2,7 +2,7 @@
 
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <math/Vec.h>
-#include <movement/MovementComponents.h>
+#include <movement/components/CharacterFacts.h>
 #include <movement/MovementProfileRuntime.h>
 
 #include <functional>

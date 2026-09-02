@@ -4,6 +4,7 @@
 #include <audio/AudioClipCache.h>
 #include <audio/AudioService.h>
 #include <audio/AudioSourceComponent.h>
+#include <audio/AudioSourceRuntime.h>
 #include <audio/AudioSystem.h>
 #include <audio/CaptionRuntime.h>
 #include <audio/CaptionSystem.h>

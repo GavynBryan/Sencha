@@ -627,10 +627,11 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
         if (header == nullptr)
             continue;
         ZoneLoadRecipe recipe = Recipe_(*header);
-        if (recipe.Scene.has_value() && recipe.Scene->Assets != nullptr)
+        if (recipe.Scene.has_value() && recipe.Scene->Assets != nullptr
+            && recipe.Scene->Scenes != nullptr)
         {
             loader.BeginLoadScene(record->Zone, recipe.Scene->AssetPath,
-                                  *recipe.Scene->Assets,
+                                  *recipe.Scene->Assets, *recipe.Scene->Scenes,
                                   std::move(recipe.Scene->StageExtra),
                                   std::move(recipe.Scene->Finalize),
                                   ZoneParticipation{}, std::move(recipe.Preload));

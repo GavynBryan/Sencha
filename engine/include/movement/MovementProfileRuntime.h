@@ -1,7 +1,9 @@
 #pragma once
 
 #include <gameplay_tags/GameplayTagContainer.h>
-#include <movement/MovementComponents.h>
+#include <movement/components/CharacterFacts.h>
+#include <movement/components/CharacterMovement.h>
+#include <movement/components/MovementTuning.h>
 #include <movement/MovementProfileData.h>
 
 #include <functional>

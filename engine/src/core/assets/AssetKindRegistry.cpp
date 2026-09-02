@@ -19,6 +19,12 @@ bool AssetKindRegistry::Register(AssetKindRegistration registration)
     if (registration.Store != nullptr && registration.Store->Type() != registration.Type)
         return false;
 
+    if (registration.ListStore != nullptr
+        && (registration.Store == nullptr || registration.ListStore->Type() != registration.Type))
+    {
+        return false;
+    }
+
     if (registration.Reload != nullptr && !registration.IsLoadable())
         return false;
 

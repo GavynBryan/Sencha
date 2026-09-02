@@ -31,13 +31,19 @@ jobs:
       - name: Render layer portability checks
         run: ./scripts/check_render_portability.sh
 
+      # clang, libclang-dev and llvm-dev build sencha-component-codegen, which
+      # parses the annotated component headers. They are needed to build the
+      # engine, not to consume the SDK.
       - name: Install build and Vulkan dependencies
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes \
+            clang \
             clang-tidy \
             glslc \
+            libclang-dev \
             libvulkan-dev \
+            llvm-dev \
             ninja-build
 
       - name: Build and install SDL3
@@ -108,6 +114,7 @@ jobs:
     env:
       VULKAN_SDK_VERSION: 1.4.350.0
       VULKAN_SDK: C:\VulkanSDK
+      LLVM_RELEASE: clang+llvm-21.1.0-x86_64-pc-windows-msvc
       # vcpkg builds SDL3 from source, which is most of this job's setup time.
       VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-cache,readwrite
 
@@ -154,15 +161,46 @@ jobs:
         shell: pwsh
         run: vcpkg install sdl3:x64-windows
 
+      # sencha-component-codegen is a LibTooling program, and the release
+      # toolchain archive is the one Windows distribution that carries Clang's
+      # libraries and CMake package. Only the parts the tool's build reads are
+      # unpacked.
+      - name: Install LLVM
+        shell: pwsh
+        run: |
+          $archive = "$env:RUNNER_TEMP\llvm.tar.xz"
+          curl.exe --fail --location --silent --show-error --output $archive `
+            "https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.0/$env:LLVM_RELEASE.tar.xz"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Path C:\llvm | Out-Null
+          tar.exe -xf $archive -C C:\llvm --strip-components=1 `
+            "$env:LLVM_RELEASE/bin/clang.exe" "$env:LLVM_RELEASE/include" "$env:LLVM_RELEASE/lib"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Remove-Item $archive
+
+      # Built as its own Release project: the engine's Debug CRT cannot link
+      # LLVM's release libraries, and the engine only needs the binary.
+      - name: Build the component generator
+        shell: pwsh
+        run: |
+          cmake -S tools/component-codegen -B build-codegen -G "Visual Studio 17 2022" -A x64 `
+            -DClang_DIR=C:/llvm/lib/cmake/clang 2>&1 | Tee-Object build-windows.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build-codegen --config Release --parallel 4 2>&1 | Tee-Object -Append build-windows.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --install build-codegen --config Release --prefix C:/sencha-codegen 2>&1 | Tee-Object -Append build-windows.log
+          exit $LASTEXITCODE
+
       - name: Configure
         shell: pwsh
         run: |
           cmake -B build -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DSENCHA_COMPONENT_CODEGEN_EXECUTABLE=C:/sencha-codegen/bin/sencha-component-codegen.exe `
             -DSENCHA_ENABLE_VULKAN=ON `
             -DSENCHA_ENABLE_COOK=ON `
             -DSENCHA_ENABLE_DEBUG_UI=OFF `
-            -DSENCHA_ENABLE_HOT_RELOAD=OFF 2>&1 | Tee-Object build-windows.log
+            -DSENCHA_ENABLE_HOT_RELOAD=OFF 2>&1 | Tee-Object -Append build-windows.log
           exit $LASTEXITCODE
 
       - name: Build
@@ -177,7 +215,7 @@ jobs:
         with:
           name: windows-build-log
           path: build-windows.log
-          # A failure before the configure step legitimately leaves no log.
+          # A failure before the generator's configure legitimately leaves no log.
           if-no-files-found: ignore
           retention-days: 7
 

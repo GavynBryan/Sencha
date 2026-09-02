@@ -3,8 +3,10 @@
 #include <assets/audio_clip/AudioClipSerializer.h>
 #include <audio/AudioClipCache.h>
 #include <audio/AudioClipLoader.h>
-#include <core/assets/AssetSource.h>
 #include <assets/runtime/AssetSystem.h>
+#include <assets/runtime/RegisterAssetKind.h>
+#include <core/assets/AssetLease.h>
+#include <core/assets/AssetSource.h>
 #include <core/logging/LoggingProvider.h>
 
 #ifdef SENCHA_ENABLE_COOK
@@ -353,32 +355,35 @@ TEST(AssetSystemAudio, LoadAudioClipResolvesDedupsAndReleases)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     AudioClipCache cache(logging);
-    AssetSystem assets(logging, registry, nullptr, nullptr, nullptr, &cache);
+    AudioClipAssetLoader loader(logging, &cache);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Audio, loader, &cache);
 
     const AudioClip clip = MakeRampClip(11025, 1, 16);
     TempSclipAsset blip(registry, "blip", clip);
 
     // Not resident yet: TryAcquire never loads.
-    EXPECT_FALSE(assets.TryAcquireAudioClip(blip.Path).IsValid());
+    EXPECT_FALSE(assets.TryAcquireLease(blip.Path, AssetType::Audio).IsValid());
 
-    AudioClipHandle first = assets.LoadAudioClip(blip.Path);
+    AssetLease first = assets.LoadLease(blip.Path, AssetType::Audio);
     ASSERT_TRUE(first.IsValid());
-    ASSERT_NE(cache.Get(first), nullptr);
-    EXPECT_EQ(cache.Get(first)->Samples, clip.Samples);
+    const AudioClipHandle handle = AudioClipHandle::FromToken(first.OpaqueToken());
+    ASSERT_NE(cache.Get(handle), nullptr);
+    EXPECT_EQ(cache.Get(handle)->Samples, clip.Samples);
 
     // Second load dedups onto the same entry.
-    AudioClipHandle second = assets.LoadAudioClip(blip.Path);
-    EXPECT_EQ(first, second);
+    AssetLease second = assets.LoadLease(blip.Path, AssetType::Audio);
+    EXPECT_EQ(first.OpaqueToken(), second.OpaqueToken());
 
     // Resident now: TryAcquire takes a third reference.
-    AudioClipHandle third = assets.TryAcquireAudioClip(blip.Path);
-    EXPECT_EQ(first, third);
+    AssetLease third = assets.TryAcquireLease(blip.Path, AssetType::Audio);
+    EXPECT_EQ(first.OpaqueToken(), third.OpaqueToken());
 
-    assets.ReleaseAudioClip(first);
-    assets.ReleaseAudioClip(second);
-    EXPECT_NE(cache.Get(third), nullptr);
-    assets.ReleaseAudioClip(third);
-    EXPECT_EQ(cache.Get(third), nullptr);
+    first.Reset();
+    second.Reset();
+    EXPECT_NE(cache.Get(handle), nullptr);
+    third.Reset();
+    EXPECT_EQ(cache.Get(handle), nullptr);
 }
 
 TEST(AssetSystemAudio, WrongTypeAndMissingRecordFailCleanly)
@@ -386,9 +391,11 @@ TEST(AssetSystemAudio, WrongTypeAndMissingRecordFailCleanly)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     AudioClipCache cache(logging);
-    AssetSystem assets(logging, registry, nullptr, nullptr, nullptr, &cache);
+    AudioClipAssetLoader loader(logging, &cache);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Audio, loader, &cache);
 
-    EXPECT_FALSE(assets.LoadAudioClip("asset://audio/unregistered.sclip").IsValid());
+    EXPECT_FALSE(assets.LoadLease("asset://audio/unregistered.sclip", AssetType::Audio).IsValid());
 
     ASSERT_TRUE(registry.Register(AssetRecord{
         .Type = AssetType::Material,
@@ -396,7 +403,7 @@ TEST(AssetSystemAudio, WrongTypeAndMissingRecordFailCleanly)
         .Path = "asset://materials/red.smat",
         .FilePath = "red.smat",
     }));
-    EXPECT_FALSE(assets.LoadAudioClip("asset://materials/red.smat").IsValid());
+    EXPECT_FALSE(assets.LoadLease("asset://materials/red.smat", AssetType::Audio).IsValid());
 }
 
 #ifdef SENCHA_ENABLE_COOK

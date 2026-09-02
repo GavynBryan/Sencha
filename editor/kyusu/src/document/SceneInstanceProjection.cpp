@@ -1,10 +1,6 @@
-// The document's instance projection: expanding placement records into derived
-// live entities, and folding what happened to them back into the records.
-// EditorDocument's other mechanisms live in EditorDocument.cpp; this file is
-// the projection alone.
+#include "SceneInstanceProjection.h"
 
-#include "EditorDocument.h"
-
+#include "EditorScene.h"
 #include "scene_source/SceneSourcePaths.h"
 
 #include "DocumentSerialization.h"
@@ -13,6 +9,7 @@
 #include "scene_source/Json5Convert.h"
 
 #include <core/logging/Logger.h>
+#include <core/logging/LoggingProvider.h>
 #include <cstring>
 #include <core/serialization/JsonArchive.h>
 #include <world/identity/PersistentEntityIndex.h>
@@ -112,28 +109,52 @@ namespace
     }
 } // namespace
 
-void EditorDocument::SetContentRoots(std::vector<std::filesystem::path> roots)
+SceneInstanceProjection::SceneInstanceProjection(Registry& registry,
+                                                 EditorScene& scene,
+                                                 SceneSourceDocument& records,
+                                                 LoggingProvider& logging)
+    : Registry_(registry)
+    , Scene(scene)
+    , Records(records)
+    , Logging(logging)
 {
-    ContentRoots_ = std::move(roots);
-    SourceCache_.reset();
 }
 
-SceneSourceCache& EditorDocument::EnsureSourceCache()
+void SceneInstanceProjection::Reset()
 {
-    if (SourceCache_ == nullptr)
-        SourceCache_ = std::make_unique<SceneSourceCache>(ContentRoots_);
-    return *SourceCache_;
+    Elements.clear();
+    AbsorbedIds_.clear();
+    Diagnostics_ = SceneProjectionDiagnostics{};
 }
 
-void EditorDocument::RebuildSceneProjection()
+void SceneInstanceProjection::Forget(SceneInstanceId instance)
 {
-    ExpandSceneProjection();
+    std::erase_if(Elements, [&](const auto& entry)
+                  { return entry.second.Path.Elements.front() == instance.Value; });
+}
+
+void SceneInstanceProjection::SetContentRoots(std::vector<std::filesystem::path> roots)
+{
+    Roots = std::move(roots);
+    Sources_.reset();
+}
+
+SceneSourceCache& SceneInstanceProjection::Sources()
+{
+    if (Sources_ == nullptr)
+        Sources_ = std::make_unique<SceneSourceCache>(Roots);
+    return *Sources_;
+}
+
+void SceneInstanceProjection::Rebuild()
+{
+    Expand();
 
     // Every path through the expansion invalidated the previous projection's
     // handles, including the ones that expanded nothing, so the announcement
     // is unconditional.
-    if (ProjectionObserver_)
-        ProjectionObserver_();
+    if (Observer)
+        Observer();
 }
 
 // The source's values in the shape a live entity serializes to.
@@ -150,7 +171,7 @@ void EditorDocument::RebuildSceneProjection()
 // it takes no part in the document beyond the moment it exists. Document-local
 // components (brush geometry, which names sidecar ids) never enter a diff, so
 // they are skipped.
-Json5Value EditorDocument::SerializeSourceBaseline(
+Json5Value SceneInstanceProjection::SerializeSourceBaseline(
     const Json5Value& components, SceneSerializationContext& context)
 {
     const EntityId scratch = Registry_.Components.CreateEntity();
@@ -167,16 +188,16 @@ Json5Value EditorDocument::SerializeSourceBaseline(
         JsonReadArchive archive(value);
         (void)serializer->Load(archive, scratch, Registry_, context);
     }
-    Json5Value baseline = SerializeEntityComponents(scratch);
+    Json5Value baseline = SerializeEntityComponents(scratch, Registry_, context);
     Registry_.Components.DestroyEntity(scratch);
     return baseline;
 }
 
-void EditorDocument::ExpandSceneProjection()
+void SceneInstanceProjection::Expand()
 {
     // The records must already say everything the live projection knows,
     // because the projection is about to be destroyed.
-    HarvestInstanceOverrides();
+    Harvest();
 
     // Leaf-up over everything the previous projection created.
     {
@@ -184,7 +205,7 @@ void EditorDocument::ExpandSceneProjection()
         if (const auto* index =
                 Registry_.Components.TryGetResource<PersistentEntityIndex>())
         {
-            for (const auto& [pid, element] : Projection_)
+            for (const auto& [pid, element] : Elements)
             {
                 const EntityId entity = index->TryResolve(PersistentEntityId{ pid });
                 if (entity.IsValid())
@@ -210,37 +231,37 @@ void EditorDocument::ExpandSceneProjection()
             if (Scene.HasEntity(entity))
                 Scene.DestroyEntity(entity);
     }
-    Projection_.clear();
-    ProjectionDiagnostics_ = ProjectionDiagnostics{};
+    Elements.clear();
+    Diagnostics_ = SceneProjectionDiagnostics{};
 
-    if (Retained_.Instances.empty())
+    if (Records.Instances.empty())
         return;
 
-    SceneSourceCache& sources = EnsureSourceCache();
+    SceneSourceCache& sources = Sources();
     std::string resolveError;
     const std::optional<SceneCompositionResult> resolved =
-        ResolveSceneComposition(Retained_, sources, &resolveError);
+        ResolveSceneComposition(Records, sources, &resolveError);
     if (!resolved.has_value())
     {
         if (!sources.LastError().empty())
             resolveError += " (" + sources.LastError() + ")";
-        ProjectionDiagnostics_.ResolveError = resolveError;
-        Logging.GetLogger<EditorDocument>().Error(
+        Diagnostics_.ResolveError = resolveError;
+        Logging.GetLogger<SceneInstanceProjection>().Error(
             "scene projection: {}", resolveError);
         return;
     }
 
     for (const auto& [instance, path] : resolved->MissingIds)
-        ProjectionDiagnostics_.MissingIds.push_back(
+        Diagnostics_.MissingIds.push_back(
             PersistentEntityIdToString(PersistentEntityId{ instance.Value })
             + ": " + path.ToString());
-    ProjectionDiagnostics_.DanglingOverrides = resolved->DanglingOverrides;
+    Diagnostics_.DanglingOverrides = resolved->DanglingOverrides;
 
     // Instantiate the expanded entities -- everything the resolver produced
     // beyond the document's own locals, which are already live.
     SceneSerializationContext context(Logging, Assets);
     const auto* index = Registry_.Components.TryGetResource<PersistentEntityIndex>();
-    Logger& log = Logging.GetLogger<EditorDocument>();
+    Logger& log = Logging.GetLogger<SceneInstanceProjection>();
 
     for (const ResolvedSceneEntity& element : resolved->Entities)
     {
@@ -312,7 +333,7 @@ void EditorDocument::ExpandSceneProjection()
         record.Root = element.IsInstanceRoot;
         record.Added = element.IsAdded;
         record.Baseline = SerializeSourceBaseline(element.SourceComponents, context);
-        Projection_.emplace(element.Id.Value, std::move(record));
+        Elements.emplace(element.Id.Value, std::move(record));
     }
 
     // Parentage second, everything now resolvable: expanded entities to their
@@ -335,17 +356,17 @@ void EditorDocument::ExpandSceneProjection()
     }
 }
 
-void EditorDocument::MintMissingInstanceIds()
+bool SceneInstanceProjection::MintMissingIds()
 {
     std::string resolveError;
     const std::optional<SceneCompositionResult> resolved =
-        ResolveSceneComposition(Retained_, EnsureSourceCache(), &resolveError);
+        ResolveSceneComposition(Records, Sources(), &resolveError);
     if (!resolved.has_value() || resolved->MissingIds.empty())
-        return;
+        return false;
 
     for (const auto& [instanceId, path] : resolved->MissingIds)
     {
-        for (SceneInstanceRecord& record : Retained_.Instances)
+        for (SceneInstanceRecord& record : Records.Instances)
         {
             if (record.Id != instanceId)
                 continue;
@@ -358,25 +379,25 @@ void EditorDocument::MintMissingInstanceIds()
         }
     }
 
-    MarkDirty();
-    RebuildSceneProjection();
+    Rebuild();
+    return true;
 }
 
-const Json5Value* EditorDocument::ProjectionBaselineOf(EntityId entity) const
+const Json5Value* SceneInstanceProjection::BaselineOf(EntityId entity) const
 {
     const auto* id = Registry_.Components.TryGet<PersistentIdComponent>(entity);
     if (id == nullptr)
         return nullptr;
-    const auto found = Projection_.find(id->Id.Value);
-    if (found == Projection_.end() || found->second.Root || found->second.Added)
+    const auto found = Elements.find(id->Id.Value);
+    if (found == Elements.end() || found->second.Root || found->second.Added)
         return nullptr;
     return &found->second.Baseline;
 }
 
-std::vector<std::byte> EditorDocument::BaselineComponentBytes(
+std::vector<std::byte> SceneInstanceProjection::BaselineComponentBytes(
     EntityId entity, IComponentSerializer& serializer)
 {
-    const Json5Value* baseline = ProjectionBaselineOf(entity);
+    const Json5Value* baseline = BaselineOf(entity);
     if (baseline == nullptr)
         return {};
     const Json5Value* component = baseline->Find(serializer.JsonKey());
@@ -408,41 +429,34 @@ std::vector<std::byte> EditorDocument::BaselineComponentBytes(
     return bytes;
 }
 
-bool EditorDocument::DependsOnSource(std::string_view assetPath) const
+bool SceneInstanceProjection::DependsOnSource(std::string_view assetPath) const
 {
-    for (const SceneInstanceRecord& record : Retained_.Instances)
+    for (const SceneInstanceRecord& record : Records.Instances)
         if (record.Source == assetPath)
             return true;
-    return SourceCache_ != nullptr && SourceCache_->HasLoaded(assetPath);
+    return Sources_ != nullptr && Sources_->HasLoaded(assetPath);
 }
 
-bool EditorDocument::ReloadDependentSources(std::span<const std::string> assetPaths)
+bool SceneInstanceProjection::ReloadSources(std::span<const std::string> assetPaths)
 {
     bool any = false;
     for (const std::string& assetPath : assetPaths)
     {
         if (!DependsOnSource(assetPath))
             continue;
-        if (SourceCache_ != nullptr)
-            SourceCache_->Invalidate(assetPath);
+        if (Sources_ != nullptr)
+            Sources_->Invalidate(assetPath);
         any = true;
     }
     if (any)
-        RebuildSceneProjection();
+        Rebuild();
     return any;
 }
 
-std::string EditorDocument::SourceAssetPath() const
+void SceneInstanceProjection::Harvest()
 {
-    if (FilePath.empty())
-        return {};
-    return MakeSceneSourcePath(ContentRoots_, FilePath);
-}
-
-void EditorDocument::HarvestInstanceOverrides()
-{
-    AbsorbedPids_.clear();
-    if (Projection_.empty())
+    AbsorbedIds_.clear();
+    if (Elements.empty())
         return;
 
     const auto* index = Registry_.Components.TryGetResource<PersistentEntityIndex>();
@@ -450,7 +464,7 @@ void EditorDocument::HarvestInstanceOverrides()
         return;
 
     std::unordered_map<std::uint64_t, RecordHarvest> byInstance;
-    for (const SceneInstanceRecord& record : Retained_.Instances)
+    for (const SceneInstanceRecord& record : Records.Instances)
         byInstance.emplace(record.Id.Value, RecordHarvest{});
 
     HarvestProjectedElements(*index, byInstance);
@@ -461,16 +475,17 @@ void EditorDocument::HarvestInstanceOverrides()
 // Phase one: every element the projection produced lands in its instance's
 // harvest bucket -- the root's liveness, an added entity's whole record, a
 // member's sparse diff against its baseline, or a suppression.
-void EditorDocument::HarvestProjectedElements(
+void SceneInstanceProjection::HarvestProjectedElements(
     const PersistentEntityIndex& index,
     std::unordered_map<std::uint64_t, RecordHarvest>& byInstance)
 {
+    SceneSerializationContext context(Logging, Assets);
     // Sorted by projected path: this loop's append order becomes the saved
     // file's patch/added/removed order, and unordered_map bucket order would
     // reshuffle those blocks whenever the projection rehashes.
     std::vector<std::pair<const std::uint64_t, ProjectedElement>*> ordered;
-    ordered.reserve(Projection_.size());
-    for (auto& entry : Projection_)
+    ordered.reserve(Elements.size());
+    for (auto& entry : Elements)
         ordered.push_back(&entry);
     std::sort(ordered.begin(), ordered.end(),
               [](const auto* a, const auto* b)
@@ -508,15 +523,15 @@ void EditorDocument::HarvestProjectedElements(
                 if (const auto* parentId =
                         Registry_.Components.TryGet<PersistentIdComponent>(parent))
                     if (const auto projectedParent =
-                            Projection_.find(parentId->Id.Value);
-                        projectedParent != Projection_.end()
+                            Elements.find(parentId->Id.Value);
+                        projectedParent != Elements.end()
                         && !projectedParent->second.Root)
                     {
                         record.ParentPath = InnerPath(projectedParent->second.Path);
                     }
-            record.Components = SerializeEntityComponents(entity);
+            record.Components = SerializeEntityComponents(entity, Registry_, context);
             StripDocumentLocal(record.Components,
-                               Logging.GetLogger<EditorDocument>(), record.Id);
+                               Logging.GetLogger<SceneInstanceProjection>(), record.Id);
             harvest->second.AddedEntities.push_back(std::move(record));
             continue;
         }
@@ -527,7 +542,7 @@ void EditorDocument::HarvestProjectedElements(
             continue;
         }
 
-        const Json5Value live = SerializeEntityComponents(entity);
+        const Json5Value live = SerializeEntityComponents(entity, Registry_, context);
         Json5Value patch = Json5Value::MakeObject();
         Json5Value added = Json5Value::MakeObject();
         std::vector<std::string> removed;
@@ -548,15 +563,16 @@ void EditorDocument::HarvestProjectedElements(
 // entity, not to the document's local list -- a local record cannot legally
 // name a projected parent. Deeper authored trees inside an instance flatten
 // onto it: an added-entity record can only name a source path as its parent.
-void EditorDocument::AbsorbAuthoredChildren(
+void SceneInstanceProjection::AbsorbAuthoredChildren(
     std::unordered_map<std::uint64_t, RecordHarvest>& byInstance)
 {
+    SceneSerializationContext context(Logging, Assets);
     const World& world = Registry_.Components;
-    Logger& log = Logging.GetLogger<EditorDocument>();
+    Logger& log = Logging.GetLogger<SceneInstanceProjection>();
     for (EntityId entity : Scene.GetAllEntities())
     {
         const auto* id = world.TryGet<PersistentIdComponent>(entity);
-        if (id == nullptr || Projection_.contains(id->Id.Value))
+        if (id == nullptr || Elements.contains(id->Id.Value))
             continue;
 
         const ProjectedElement* anchor = nullptr;
@@ -569,8 +585,8 @@ void EditorDocument::AbsorbAuthoredChildren(
             const auto* parentId = world.TryGet<PersistentIdComponent>(parent);
             if (parentId == nullptr)
                 break;
-            const auto projected = Projection_.find(parentId->Id.Value);
-            if (projected != Projection_.end())
+            const auto projected = Elements.find(parentId->Id.Value);
+            if (projected != Elements.end())
                 anchor = &projected->second;
             else
                 crossedLocal = true;
@@ -592,10 +608,10 @@ void EditorDocument::AbsorbAuthoredChildren(
         record.Id = id->Id;
         record.ParentPath = anchor->Root ? SceneElementPath{}
                                          : InnerPath(anchor->Path);
-        record.Components = SerializeEntityComponents(entity);
+        record.Components = SerializeEntityComponents(entity, Registry_, context);
         StripDocumentLocal(record.Components, log, record.Id);
         harvest->second.AddedEntities.push_back(std::move(record));
-        AbsorbedPids_.insert(id->Id.Value);
+        AbsorbedIds_.insert(id->Id.Value);
     }
 }
 
@@ -604,7 +620,7 @@ void EditorDocument::AbsorbAuthoredChildren(
 // root means the placement was deleted. Entries whose paths this projection
 // did not produce -- dangling, possibly meaningful to a build that resolves
 // more -- carry over rather than evaporating.
-void EditorDocument::FoldHarvestsIntoRecords(
+void SceneInstanceProjection::FoldHarvestsIntoRecords(
     const PersistentEntityIndex& index,
     std::unordered_map<std::uint64_t, RecordHarvest>& byInstance)
 {
@@ -612,7 +628,7 @@ void EditorDocument::FoldHarvestsIntoRecords(
     // indexed up front instead of rescanned (and re-allocated) per probe.
     std::unordered_map<std::uint64_t, std::vector<std::vector<std::uint64_t>>>
         projectedInner;
-    for (const auto& [pid, element] : Projection_)
+    for (const auto& [pid, element] : Elements)
         if (!element.Root)
             projectedInner[element.Path.Elements.front()].push_back(
                 InnerPath(element.Path).Elements);
@@ -627,7 +643,7 @@ void EditorDocument::FoldHarvestsIntoRecords(
                                   inner.Elements);
     };
 
-    std::erase_if(Retained_.Instances, [&](SceneInstanceRecord& record)
+    std::erase_if(Records.Instances, [&](SceneInstanceRecord& record)
     {
         const auto harvest = byInstance.find(record.Id.Value);
         if (harvest == byInstance.end())
@@ -688,148 +704,38 @@ void EditorDocument::FoldHarvestsIntoRecords(
         // Added-entity records whose entities this projection produced were
         // re-harvested in phase one; records the projection never saw carry.
         for (SceneAddedEntity& prior : record.AddedEntities)
-            if (!Projection_.contains(prior.Id.Value))
+            if (!Elements.contains(prior.Id.Value))
                 fresh.AddedEntities.push_back(std::move(prior));
         record.AddedEntities = std::move(fresh.AddedEntities);
         return false;
     });
 }
 
-SceneInstanceId EditorDocument::PlaceSceneInstance(std::string source,
-                                                   const Transform3f& placement,
-                                                   PersistentEntityId parent,
-                                                   std::string* error)
-{
-    SceneSourceCache& sources = EnsureSourceCache();
-    if (sources.Find(source) == nullptr)
-    {
-        if (error != nullptr)
-            *error = sources.LastError();
-        return SceneInstanceId{};
-    }
-
-    const SceneInstanceId id{ Scene.MintPersistentId().Value };
-    SceneInstanceRecord record;
-    record.Id = id;
-    record.Parent = parent;
-    record.Source = std::move(source);
-    record.Placement = placement;
-    Retained_.Instances.push_back(std::move(record));
-
-    // Mints an id for every path the source contributes and re-projects; also
-    // the authoring act that marks the document dirty.
-    MintMissingInstanceIds();
-
-    // By id, never by position: the mint's rebuild harvests, and the record's
-    // survival is the placement's success.
-    if (FindSceneInstance(id) == nullptr)
-    {
-        if (error != nullptr)
-            *error = "the placement did not survive projection";
-        return SceneInstanceId{};
-    }
-    return id;
-}
-
-const SceneInstanceRecord* EditorDocument::FindSceneInstance(SceneInstanceId id) const
-{
-    for (const SceneInstanceRecord& record : Retained_.Instances)
-        if (record.Id == id)
-            return &record;
-    return nullptr;
-}
-
-bool EditorDocument::RestoreSceneInstance(SceneInstanceRecord record)
-{
-    if (FindSceneInstance(record.Id) != nullptr)
-        return false;
-    Retained_.Instances.push_back(std::move(record));
-    MarkDirty();
-    RebuildSceneProjection();
-    return true;
-}
-
-bool EditorDocument::RemoveSceneInstance(SceneInstanceId id, SceneInstanceRecord* removed)
-{
-    // Harvest first so the captured record carries every unsaved edit; that is
-    // what makes an undo of the removal restore the placement as it was.
-    HarvestInstanceOverrides();
-    const auto found = std::find_if(Retained_.Instances.begin(),
-                                    Retained_.Instances.end(),
-                                    [&](const SceneInstanceRecord& record)
-                                    { return record.Id == id; });
-    if (found == Retained_.Instances.end())
-        return false;
-    if (removed != nullptr)
-        *removed = *found;
-    Retained_.Instances.erase(found);
-    MarkDirty();
-    RebuildSceneProjection();
-    return true;
-}
-
-bool EditorDocument::BreakSceneInstance(SceneInstanceId id, SceneInstanceRecord* broken)
-{
-    // The record must say everything the live entities do, because undo will
-    // rebuild the placement from it.
-    HarvestInstanceOverrides();
-    const auto found = std::find_if(Retained_.Instances.begin(),
-                                    Retained_.Instances.end(),
-                                    [&](const SceneInstanceRecord& record)
-                                    { return record.Id == id; });
-    if (found == Retained_.Instances.end())
-        return false;
-    if (broken != nullptr)
-        *broken = *found;
-
-    // The live entities stay exactly as they are; they simply stop being a
-    // projection. Everything the placement contributed -- nested content
-    // included -- becomes plain local entities of this document.
-    std::erase_if(Projection_, [&](const auto& entry)
-                  { return entry.second.Path.Elements.front() == id.Value; });
-    Retained_.Instances.erase(found);
-    MarkDirty();
-    return true;
-}
-
-bool EditorDocument::IsSceneInstanceMember(EntityId entity) const
+bool SceneInstanceProjection::IsMember(EntityId entity) const
 {
     const auto* id = Registry_.Components.TryGet<PersistentIdComponent>(entity);
     if (id == nullptr)
         return false;
-    const auto found = Projection_.find(id->Id.Value);
-    return found != Projection_.end() && !found->second.Root;
+    const auto found = Elements.find(id->Id.Value);
+    return found != Elements.end() && !found->second.Root;
 }
 
-bool EditorDocument::IsSceneInstanceRoot(EntityId entity) const
+bool SceneInstanceProjection::IsRoot(EntityId entity) const
 {
     const auto* id = Registry_.Components.TryGet<PersistentIdComponent>(entity);
     if (id == nullptr)
         return false;
-    const auto found = Projection_.find(id->Id.Value);
-    return found != Projection_.end() && found->second.Root;
+    const auto found = Elements.find(id->Id.Value);
+    return found != Elements.end() && found->second.Root;
 }
 
-SceneInstanceId EditorDocument::SceneInstanceOwnerOf(EntityId entity) const
+SceneInstanceId SceneInstanceProjection::OwnerOf(EntityId entity) const
 {
     const auto* id = Registry_.Components.TryGet<PersistentIdComponent>(entity);
     if (id == nullptr)
         return {};
-    const auto found = Projection_.find(id->Id.Value);
-    if (found == Projection_.end() || found->second.Path.Elements.empty())
+    const auto found = Elements.find(id->Id.Value);
+    if (found == Elements.end() || found->second.Path.Elements.empty())
         return {};
     return SceneInstanceId{ found->second.Path.Elements.front() };
-}
-
-std::string EditorDocument::SceneInstanceSourceOf(EntityId entity) const
-{
-    const auto* id = Registry_.Components.TryGet<PersistentIdComponent>(entity);
-    if (id == nullptr)
-        return {};
-    const auto found = Projection_.find(id->Id.Value);
-    if (found == Projection_.end())
-        return {};
-    const SceneInstanceRecord* record = FindSceneInstance(
-        SceneInstanceId{ found->second.Path.Elements.front() });
-    return record != nullptr ? record->Source : std::string{};
 }

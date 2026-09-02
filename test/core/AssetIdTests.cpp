@@ -286,8 +286,7 @@ TEST(AssetSystemIds, ResolveRefPathPrefersIdAndFallsBackToPath)
 {
     LoggingProvider logging;
     AssetRegistry registry(logging);
-    MaterialCache materials;
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    AssetSystem assets(logging, registry);
 
     ASSERT_TRUE(registry.Register(MakeRecord("asset://meshes/renamed.smesh")));
     const AssetId meshId{ 0x77 };

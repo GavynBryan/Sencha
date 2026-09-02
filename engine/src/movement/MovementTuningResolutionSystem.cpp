@@ -4,7 +4,9 @@
 #include <attributes/AttributeSet.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
-#include <movement/MovementComponents.h>
+#include <movement/components/CharacterFacts.h>
+#include <movement/components/CharacterMovement.h>
+#include <movement/components/MovementTuning.h>
 #include <movement/MovementDefs.h>
 #include <movement/LocomotionMode.h>
 #include <core/logging/LoggingProvider.h>

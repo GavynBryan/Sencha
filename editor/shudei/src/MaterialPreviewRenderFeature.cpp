@@ -62,7 +62,7 @@ void MaterialPreviewRenderFeature::Teardown()
     for (StaticMeshHandle& mesh : Meshes)
     {
         if (mesh.IsValid())
-            Assets.Assets.ReleaseStaticMesh(mesh);
+            Assets.Assets.ReleaseLease(AssetType::StaticMesh, mesh.ToToken());
         mesh = StaticMeshHandle{};
     }
     Material = MaterialHandle{};

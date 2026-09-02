@@ -17,9 +17,7 @@
 #include <movement/JumpExecutionSystem.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MotionComposition.h>
-#include <movement/MovementComponents.h>
 #include <movement/MovementDefs.h>
-#include <movement/MovementIntent.h>
 #include <movement/MovementModeSystems.h>
 #include <movement/MovementTags.h>
 #include <movement/MovementTuningResolutionSystem.h>
@@ -43,28 +41,12 @@ namespace
 void RegisterMovementComponents(ComponentRegistrar& registrar)
 {
     RegisterAbilityKitComponents(registrar);
+    registrar.AddAll<MovementComponents>();
 
-    // The physical facts, this tick's request and resolved coefficients, and
-    // the contribution channels that compose into one motor request.
-    registrar.Add<MovementIntent>();
-    registrar.Add<JumpState>();
-    registrar.Add<KinematicState>();
-    registrar.Add<SupportState>();
-    registrar.Add<Immersion>();
     // The mode is a registration and the profile is an asset, so what content
     // states for both is a name; the wire keeps the id the mode is.
-    registrar.Add<CharacterMovement>();
     registrar.AddSerializer(MakeCharacterMovementSerializer());
-    registrar.Add<MovementTuningSource>();
     registrar.AddSerializer(MakeMovementTuningSourceSerializer());
-    registrar.Add<ResolvedMovementTuning>();
-    registrar.Add<LocomotionOutput>();
-    registrar.Add<MotionAxisOverride>();
-    registrar.Add<MotionImpulse>();
-    registrar.Add<MotionRequest>();
-    registrar.Add<ModeTransitionRequest>();
-    registrar.Add<ClingSession>();
-    registrar.Add<FlightSession>();
 }
 
 void RegisterMovementComponents(World& world)
@@ -73,13 +55,6 @@ void RegisterMovementComponents(World& world)
 
     ComponentRegistrar registrar(world);
     RegisterMovementComponents(registrar);
-
-    // Where MovementTuningSource's hooks hold its profile. Registered empty
-    // beside the component rather than by each host, so a world that can carry
-    // the component can always answer where its asset lives; a host with a
-    // data-asset cache points this at it.
-    if (!world.HasResource<MovementComponentAssets>())
-        world.AddResource<MovementComponentAssets>(nullptr);
 
     (void)EnsureMovementTags(world);
 

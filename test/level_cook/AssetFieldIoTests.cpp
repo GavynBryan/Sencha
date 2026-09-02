@@ -5,13 +5,15 @@
 
 #include "document/AssetFieldIo.h"
 
+#include <assets/material/MaterialAssetLoader.h>
+#include <assets/runtime/AssetSystem.h>
+#include <assets/runtime/RegisterAssetKind.h>
+#include <assets/runtime/RuntimeAssets.h>
 #include <core/assets/AssetLease.h>
 #include <core/assets/AssetRegistry.h>
-#include <assets/runtime/AssetSystem.h>
-#include <assets/runtime/RuntimeAssets.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/metadata/RuntimeSchema.h>
-#include <movement/MovementComponents.h>
+#include <movement/components/CharacterMovement.h>
 #include <movement/MovementProfileData.h>
 #include <movement/MovementTuningSourceSerializer.h>
 #include <render/Material.h>
@@ -35,19 +37,36 @@
 namespace
 {
     // A sink-less logger plus the material caches, wired into an AssetSystem the
-    // way the editor wires the real one (only the material half is needed here).
+    // way the editor wires the real one (only the material kind is needed here).
     struct AssetFieldFixture
     {
-        LoggingProvider  Logging;
-        AssetRegistry    Registry{ Logging };
-        MaterialCache    Materials;
-        MaterialSetCache Sets{ &Materials };
-        AssetSystem      Assets{ Logging, Registry, nullptr, &Materials,
-                                 nullptr, nullptr, nullptr, nullptr, nullptr, &Sets };
+        LoggingProvider     Logging;
+        AssetRegistry       Registry{ Logging };
+        MaterialCache       Materials;
+        MaterialSetCache    Sets{ &Materials };
+        MaterialAssetLoader Loader{ Logging, &Materials, nullptr };
+        AssetSystem         Assets{ Logging, Registry };
 
+        AssetFieldFixture()
+        {
+            RegisterAssetKind(Assets, AssetType::Material, Loader, &Materials, &Sets);
+        }
+
+        // A procedural material: a record for the path, and a resident entry
+        // the caller holds one reference to.
         MaterialHandle Register(const char* path)
         {
-            return Assets.RegisterProceduralMaterial(path, Material{});
+            Registry.RegisterOrVerify(AssetRecord{
+                .Type = AssetType::Material,
+                .SourceKind = AssetSourceKind::Procedural,
+                .Path = path,
+            });
+            return Materials.Register(path, Material{});
+        }
+
+        void ReleaseList(const MaterialSetHandle& field)
+        {
+            Assets.ReleaseLease(AssetType::Material, field.ToToken(), AssetArity::List);
         }
     };
 
@@ -95,7 +114,7 @@ TEST(AssetFieldIo, ListRoundTripPreservesUneditedSlots)
     EXPECT_EQ(read.Refs[0].Path, a);
     EXPECT_EQ(read.Refs[1].Path, c);
 
-    f.Assets.ReleaseMaterialSet(field);
+    f.ReleaseList(field);
 }
 
 // The transient-zero guard. After dropping the registration references, the set
@@ -117,8 +136,8 @@ TEST(AssetFieldIo, SharedMaterialSurvivesAcrossPartialEdit)
     WriteList(f.Assets, field, Value({ a, b }));
 
     // The set now holds a and b; drop the registration refs so it is the only one.
-    f.Assets.ReleaseMaterial(hA);
-    f.Assets.ReleaseMaterial(hB);
+    f.Materials.Release(hA);
+    f.Materials.Release(hB);
     ASSERT_NE(f.Materials.Get(hA), nullptr);
     ASSERT_NE(f.Materials.Get(hB), nullptr);
 
@@ -132,11 +151,38 @@ TEST(AssetFieldIo, SharedMaterialSurvivesAcrossPartialEdit)
     EXPECT_EQ(read.Refs[0].Path, a);
     EXPECT_EQ(read.Refs[1].Path, c);
 
-    f.Assets.ReleaseMaterialSet(field);
+    f.ReleaseList(field);
 }
 
 // id-first resolution: a ref carrying the stable id but a stale path (the case an
 // undo holds after the asset was renamed) resolves to the asset's current path.
+// A Single-arity reference of a kind nothing enumerated. The dispatch this
+// replaced listed six (type, arity) pairs and aborted on anything else, so a
+// single material -- or a texture, which ZoneLightmapComponent actually
+// declares -- reached an assert instead of a value. Nothing is enumerated now:
+// the kind comes from the field, so the shape works for kinds no one has added
+// yet.
+TEST(AssetFieldIo, ASingleReferenceWorksForAKindNothingEnumerated)
+{
+    AssetFieldFixture f;
+    const char* path = "asset://m/single.smat";
+    f.Register(path);
+
+    MaterialHandle field{};
+    ApplyAssetField(f.Assets, AssetType::Material, AssetArity::Single, &field, Value({ path }));
+
+    const AssetFieldValue read =
+        ReadAssetField(f.Assets, AssetType::Material, AssetArity::Single, &field);
+    ASSERT_EQ(read.Refs.size(), 1u);
+    EXPECT_EQ(read.Refs[0].Path, path);
+
+    // And clearing it lets the reference go rather than stranding it.
+    ApplyAssetField(f.Assets, AssetType::Material, AssetArity::Single, &field, Value({}));
+    EXPECT_FALSE(field.IsValid());
+    EXPECT_TRUE(ReadAssetField(f.Assets, AssetType::Material, AssetArity::Single, &field)
+                    .Refs.empty());
+}
+
 TEST(AssetFieldIo, ResolvesRefByIdWhenPathIsStale)
 {
     AssetFieldFixture f;
@@ -155,7 +201,7 @@ TEST(AssetFieldIo, ResolvesRefByIdWhenPathIsStale)
     ASSERT_EQ(read.Refs.size(), 1u);
     EXPECT_EQ(read.Refs[0].Path, current); // the id won over the stale path
 
-    f.Assets.ReleaseMaterialSet(field);
+    f.ReleaseList(field);
 }
 
 // A ref to an asset that no longer exists (no id, unknown path: the undo-after-
@@ -174,7 +220,7 @@ TEST(AssetFieldIo, MissingRefResolvesToEmptySlot)
     ASSERT_EQ(read.Refs.size(), 1u);
     EXPECT_TRUE(read.Refs[0].Path.empty());
 
-    f.Assets.ReleaseMaterialSet(field);
+    f.ReleaseList(field);
 }
 
 //=============================================================================

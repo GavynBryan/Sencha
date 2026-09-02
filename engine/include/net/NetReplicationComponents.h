@@ -1,8 +1,7 @@
 #pragma once
 
 #include <core/identity/StrongId.h>
-#include <core/metadata/Field.h>
-#include <ecs/ComponentTypeId.h>
+#include <ecs/ComponentAnnotations.h>
 
 #include <cstdint>
 #include <type_traits>
@@ -27,14 +26,12 @@
 // The authority reads this. On a client it means nothing, because a client
 // sends no state.
 //-----------------------------------------------------------------------------
-struct NetReplicated
+struct SENCHA_COMPONENT("sencha.net_replicated") NetReplicated
 {
 };
 
 static_assert(std::is_empty_v<NetReplicated>,
               "NetReplicated is a tag: presence is its whole meaning");
-
-SENCHA_DECLARE_COMPONENT_TYPE(NetReplicated, "sencha.net_replicated");
 
 //-----------------------------------------------------------------------------
 // NetOwner
@@ -43,9 +40,9 @@ SENCHA_DECLARE_COMPONENT_TYPE(NetReplicated, "sencha.net_replicated");
 // owner-only fields. Absent, or present and invalid, means the authority owns
 // it -- an authored door and a server-driven turret both simply have no owner.
 //
-// Not replicated as a value the way state is: a client learns it owns something
-// through the snapshot that carries this component, so it is in the replicated
-// table like any other data.
+// Ownership itself travels: a client cannot know which entity is its own until
+// the authority says so, and everything owner-only keys off it. So it is in
+// the replicated table like any other data.
 //-----------------------------------------------------------------------------
 // No peer. PeerId mints from one, so zero can never name one, and an entity
 // nobody owns and an entity the authority owns are deliberately the same thing.
@@ -55,33 +52,19 @@ SENCHA_DECLARE_COMPONENT_TYPE(NetReplicated, "sencha.net_replicated");
 // "no longer yours" has to be a number rather than an absence.
 inline constexpr std::uint32_t kNetAuthorityPeer = 0;
 
-struct NetOwner
+struct SENCHA_COMPONENT("sencha.net_owner")
+       SENCHA_SCHEMA("NetOwner")
+       SENCHA_REPLICATED
+NetOwner
 {
     // Deliberately the raw peer number rather than PeerId: components are data,
     // and the wire codec addresses plain scalars. The session converts.
+    SENCHA_FIELD("peer")
     std::uint32_t Peer = 0;
 };
 
 static_assert(std::is_trivially_copyable_v<NetOwner>,
               "NetOwner must be trivially copyable to live in ECS chunks");
-
-SENCHA_DECLARE_COMPONENT_TYPE(NetOwner, "sencha.net_owner");
-
-template <>
-struct TypeSchema<NetOwner>
-{
-    static constexpr std::string_view Name = "NetOwner";
-    // Ownership itself travels: a client cannot know which entity is its own
-    // until the authority says so, and everything owner-only keys off it.
-    static constexpr bool Replicated = true;
-
-    static auto Fields()
-    {
-        return std::tuple{
-            MakeField("peer", &NetOwner::Peer),
-        };
-    }
-};
 
 //-----------------------------------------------------------------------------
 // NetDrivenBy
@@ -99,29 +82,22 @@ struct TypeSchema<NetOwner>
 // player's own pawn and part company the moment somebody drives a vehicle they
 // do not own -- which is also what decides that a driver disconnecting does not
 // take the vehicle with them.
+//
+// Replicated because a client cannot tell which of the entities it holds is the
+// one its own input reaches until the authority says so.
 //-----------------------------------------------------------------------------
-struct NetDrivenBy
+struct SENCHA_COMPONENT("sencha.net_driven_by")
+       SENCHA_SCHEMA("NetDrivenBy")
+       SENCHA_REPLICATED
+NetDrivenBy
 {
+    SENCHA_FIELD("peer")
     std::uint32_t Peer = kNetAuthorityPeer;
 };
 
 static_assert(std::is_trivially_copyable_v<NetDrivenBy>,
               "NetDrivenBy must be trivially copyable to live in ECS chunks");
 
-SENCHA_DECLARE_COMPONENT_TYPE(NetDrivenBy, "sencha.net_driven_by");
-
-template <>
-struct TypeSchema<NetDrivenBy>
-{
-    static constexpr std::string_view Name = "NetDrivenBy";
-    // A client cannot tell which of the entities it holds is the one its own
-    // input reaches until the authority says so.
-    static constexpr bool Replicated = true;
-
-    static auto Fields()
-    {
-        return std::tuple{
-            MakeField("peer", &NetDrivenBy::Peer),
-        };
-    }
-};
+#if !defined(SENCHA_CODEGEN)
+#  include <net/NetReplicationComponents.sencha.h>
+#endif

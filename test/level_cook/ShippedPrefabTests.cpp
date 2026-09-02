@@ -13,6 +13,7 @@
 #include "TemplateComponents.h"
 
 #include <assets/runtime/RuntimeAssets.h>
+#include <world/transform/TransformComponents.h>
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
 #include <abilities/AbilitySet.h>
@@ -24,7 +25,8 @@
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <movement/LocomotionMode.h>
-#include <movement/MovementComponents.h>
+#include <movement/components/CharacterMovement.h>
+#include <movement/components/MovementTuning.h>
 #include <movement/MovementIntent.h>
 #include <physics/components/CharacterController.h>
 #include <world/transform/TransformHistory.h>

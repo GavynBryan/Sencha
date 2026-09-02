@@ -1,17 +1,14 @@
 #pragma once
 
 #include <core/metadata/EnumSchema.h>
-#include <core/metadata/Field.h>
-#include <core/metadata/TypeSchema.h>
-#include <core/serialization/FourCC.h>
-#include <math/MathSchemas.h>
+#include <ecs/ComponentAnnotations.h>
+#include <math/Vec.h>
 #include <world/serialization/SceneFieldCodec.h>
 #include <zone/WorldPartitionIds.h>
 
 #include <array>
 #include <cstdint>
 #include <string_view>
-#include <tuple>
 
 enum class LinkKind : std::uint32_t
 {
@@ -33,77 +30,58 @@ enum DockDirection : std::uint32_t
     DockDirectionBoth = DockDirectionAToB | DockDirectionBToA,
 };
 
-struct WorldDock
+// The identities are the schema names, spaces included: they are display
+// labels that became persisted identity, and tidying them now would rename
+// every component in every cooked world.
+struct SENCHA_COMPONENT("World Dock")
+       SENCHA_SCHEMA("World Dock")
+       SENCHA_SCENE_CHUNK("WDCK")
+WorldDock
 {
+    SENCHA_FIELD("id")
     DockId Id;
+
+    SENCHA_FIELD("zone_a")
     ZoneId ZoneA;
+
+    SENCHA_FIELD("zone_b")
     ZoneId ZoneB;
+
+    SENCHA_FIELD("half_extents")
     Vec2d HalfExtents{ 1.0f, 1.5f };
+
+    SENCHA_FIELD("directions")
     std::uint32_t Directions = DockDirectionBoth;
 };
 
-struct WorldLink
+struct SENCHA_COMPONENT("World Link")
+       SENCHA_SCHEMA("World Link")
+       SENCHA_SCENE_CHUNK("WLNK")
+WorldLink
 {
+    SENCHA_FIELD("id")
     LinkId Id;
+
+    SENCHA_FIELD("zone_a")
     ZoneId ZoneA;
+
+    SENCHA_FIELD("zone_b")
     ZoneId ZoneB;
+
+    SENCHA_FIELD("kind")
     LinkKind Kind = LinkKind::Teleport;
+
+    SENCHA_FIELD("directions")
     std::uint32_t Directions = DockDirectionBoth;
 };
 
-struct DockGateBinding
+struct SENCHA_COMPONENT("Dock Gate Binding")
+       SENCHA_SCHEMA("Dock Gate Binding")
+       SENCHA_SCENE_CHUNK("DGAT")
+DockGateBinding
 {
+    SENCHA_FIELD("dock")
     DockId Id;
-};
-
-template <>
-struct TypeSchema<WorldDock>
-{
-    static constexpr std::string_view Name = "World Dock";
-    static constexpr std::uint32_t SceneChunkId = MakeFourCC('W', 'D', 'C', 'K');
-
-    static auto Fields()
-    {
-        return std::tuple{
-            MakeField("id", &WorldDock::Id),
-            MakeField("zone_a", &WorldDock::ZoneA),
-            MakeField("zone_b", &WorldDock::ZoneB),
-            MakeField("half_extents", &WorldDock::HalfExtents),
-            MakeField("directions", &WorldDock::Directions),
-        };
-    }
-};
-
-template <>
-struct TypeSchema<WorldLink>
-{
-    static constexpr std::string_view Name = "World Link";
-    static constexpr std::uint32_t SceneChunkId = MakeFourCC('W', 'L', 'N', 'K');
-
-    static auto Fields()
-    {
-        return std::tuple{
-            MakeField("id", &WorldLink::Id),
-            MakeField("zone_a", &WorldLink::ZoneA),
-            MakeField("zone_b", &WorldLink::ZoneB),
-            MakeField("kind", &WorldLink::Kind),
-            MakeField("directions", &WorldLink::Directions),
-        };
-    }
-};
-
-template <>
-struct TypeSchema<DockGateBinding>
-{
-    static constexpr std::string_view Name = "Dock Gate Binding";
-    static constexpr std::uint32_t SceneChunkId = MakeFourCC('D', 'G', 'A', 'T');
-
-    static auto Fields()
-    {
-        return std::tuple{
-            MakeField("dock", &DockGateBinding::Id),
-        };
-    }
 };
 
 template <>
@@ -132,3 +110,7 @@ struct SceneFieldCodec<LinkId>
     static bool Load(IReadArchive&, std::string_view, LinkId&,
                      SceneSerializationContext&);
 };
+
+#if !defined(SENCHA_CODEGEN)
+#  include <zone/WorldConnectionComponents.sencha.h>
+#endif

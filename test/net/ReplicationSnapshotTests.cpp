@@ -3,7 +3,8 @@
 #include <assets/data/DataAssetHandle.h>
 #include <controller/LookOrientation.h>
 #include <movement/JumpState.h>
-#include <movement/MovementComponents.h>
+#include <movement/components/CharacterMovement.h>
+#include <movement/components/MovementTuning.h>
 #include <movement/MovementProfileData.h>
 #include <net/ClientPrediction.h>
 #include <ecs/World.h>

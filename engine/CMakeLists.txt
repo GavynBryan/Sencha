@@ -12,7 +12,52 @@ file(GLOB_RECURSE SENCHA_ENGINE_HEADERS CONFIGURE_DEPENDS
     "${SENCHA_ENGINE_INCLUDE_DIR}/*.h"
 )
 
+# The annotated component headers: the generator reads them, and the ABI
+# fingerprint below hashes them.
+set(SENCHA_ENGINE_COMPONENT_HEADERS
+    "${SENCHA_ENGINE_INCLUDE_DIR}/abilities/AbilitySet.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimationClipPlayerComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/attributes/AttributeSet.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/audio/AudioCaptionComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/audio/AudioSourceComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/camera/CameraRig.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/camera/CameraSeat.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/components/CameraComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/controller/LookOrientation.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/effects/ActiveEffect.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/gameplay_tags/GameplayTagContainer.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/input/InputActionSource.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/movement/JumpState.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/movement/MovementIntent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/CharacterFacts.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/CharacterMovement.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/MotionChannels.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/MovementSessions.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/MovementTuning.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetParticipantIdentity.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetReplicationComponents.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetSpawnPrefab.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/participant/ParticipantControl.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/CharacterController.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/CharacterMoverLink.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/Collider.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/PhysicsBodyLink.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/RigidBody.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/IrradianceVolumeComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/PointLightComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/SpotLightComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/StaticMeshComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/ZoneLightmapComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/skinned_mesh/SkinnedMeshComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/world/identity/PersistentIdComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/world/scene/SceneInstance.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/world/transform/TransformComponents.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/world/transform/TransformHistory.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/zone/WorldConnectionComponents.h"
+)
+
 include("${CMAKE_SOURCE_DIR}/cmake/SenchaShaders.cmake")
+include("${CMAKE_SOURCE_DIR}/cmake/SenchaComponentCodegen.cmake")
 
 if(NOT SENCHA_ENABLE_VULKAN)
     # Only the Vulkan graphics subtree here. The ImGui debug panels are gated
@@ -180,8 +225,9 @@ endif()
 # a renamed type, a changed signature — still does. Whitespace is collapsed, not
 # removed, so two distinct token streams can never normalize to the same string;
 # and no ABI header here embeds a comment-introducer (// or /*) inside a string
-# literal, so comment stripping never deletes a real token. Keep both true: it is
-# what makes this safe (a false negative is the segfault we are eliminating).
+# literal -- a component label or tooltip included -- so comment stripping never
+# deletes a real token. Keep both true: it is what makes this safe (a false
+# negative is the segfault we are eliminating).
 #
 # A directory belongs here when its headers can change the layout of something a
 # game module compiles against. That is not only the types a module names: it
@@ -189,6 +235,13 @@ endif()
 # through an inline accessor has the member offset baked into its own code. net/
 # is here for exactly that reason -- Engine holds the replication, cvar-sync,
 # command, traffic, and clock runtimes by value.
+#
+# The annotated component headers are hashed as well. A module reads engine
+# components at member offsets, and it compiles the generated companion that
+# fixes each component's identity, schema and wire fields. The companion is
+# produced at build time, after this hash, but it is a pure function of the
+# header, the generator and the format version, so hashing those inputs is
+# hashing it. The format version lives in core/metadata/, already covered.
 file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     "${SENCHA_ENGINE_INCLUDE_DIR}/app/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/graphics/*.h"
@@ -199,6 +252,8 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/console/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/ecs/*.h"
 )
+list(APPEND SENCHA_ABI_FINGERPRINT_HEADERS ${SENCHA_ENGINE_COMPONENT_HEADERS})
+list(REMOVE_DUPLICATES SENCHA_ABI_FINGERPRINT_HEADERS)
 list(SORT SENCHA_ABI_FINGERPRINT_HEADERS)
 set(_sencha_abi_accum "")
 foreach(_abi_hdr ${SENCHA_ABI_FINGERPRINT_HEADERS})
@@ -210,6 +265,12 @@ foreach(_abi_hdr ${SENCHA_ABI_FINGERPRINT_HEADERS})
     string(SHA256 _abi_hdr_hash "${_abi_hdr_text}")
     string(APPEND _sencha_abi_accum "${_abi_hdr_hash}")
 endforeach()
+# The companion a module compiles is a function of the header and the
+# generator, and the generator writes comment introducers inside string
+# literals, so its source is hashed as written rather than normalized.
+set(_sencha_component_generator "${CMAKE_SOURCE_DIR}/tools/component-codegen/ComponentCodegen.cpp")
+file(SHA256 "${_sencha_component_generator}" _sencha_generator_hash)
+string(APPEND _sencha_abi_accum "${_sencha_generator_hash}")
 string(SHA256 _sencha_abi_full "${_sencha_abi_accum}")
 string(SUBSTRING "${_sencha_abi_full}" 0 16 _sencha_abi_fp)
 set(SENCHA_GAME_ABI_FINGERPRINT "0x${_sencha_abi_fp}ULL")
@@ -223,7 +284,8 @@ file(CONFIGURE
     @ONLY)
 # Reconfigure (and so re-hash) when any ABI header's content changes, not just
 # when files are added/removed.
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${SENCHA_ABI_FINGERPRINT_HEADERS})
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    ${SENCHA_ABI_FINGERPRINT_HEADERS} "${_sencha_component_generator}")
 
 # --- Engine SDK version (engine-roadmap.md: SDK boundary, shipped) ---
 # The semantic version of the published product, sourced from the root project()
@@ -280,6 +342,16 @@ target_link_libraries(sencha_engine PUBLIC SDL3::SDL3 ${CMAKE_DL_LIBS})
 target_compile_features(sencha_engine PUBLIC cxx_std_20)
 
 sencha_warnings(sencha_engine)
+
+# A generator built here is proven by the companions it writes; a prebuilt one
+# can be asked before anything is built.
+if(SENCHA_COMPONENT_CODEGEN_EXECUTABLE)
+    sencha_require_component_codegen_format("${SENCHA_ENGINE_INCLUDE_DIR}")
+endif()
+sencha_generate_component_metadata(sencha_engine
+    INCLUDE_ROOT "${SENCHA_ENGINE_INCLUDE_DIR}"
+    HEADERS ${SENCHA_ENGINE_COMPONENT_HEADERS}
+)
 
 if(SENCHA_ENABLE_COOK)
     target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_COOK)
@@ -558,11 +630,23 @@ install(TARGETS sencha_engine
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
     INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
-# Public engine headers and the generated ABI fingerprint + SDK version headers.
+# Public engine headers, the generated ABI fingerprint + SDK version headers,
+# and the component companions the public headers include.
 install(DIRECTORY "${SENCHA_ENGINE_INCLUDE_DIR}/"
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated-public/"
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated-components/"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+    FILES_MATCHING PATTERN "*.sencha.h")
+
+# The engine's component roster, for a game module's metadata to be validated
+# against. SenchaConfig.cmake hands it to sencha_game_module through the
+# imported engine target.
+get_target_property(_engine_component_index sencha_engine SENCHA_COMPONENT_INDEX)
+install(FILES "${_engine_component_index}"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/Sencha"
+    RENAME SenchaComponents.index)
 
 # Vendored headers re-exposed by public engine headers (Vulkan builds only).
 if(SENCHA_ENABLE_VULKAN)
@@ -582,7 +666,8 @@ install(EXPORT SenchaTargets
 configure_package_config_file(
     "${CMAKE_SOURCE_DIR}/cmake/SenchaConfig.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/SenchaConfig.cmake"
-    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/Sencha")
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/Sencha"
+    PATH_VARS CMAKE_INSTALL_BINDIR CMAKE_INSTALL_INCLUDEDIR)
 
 write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/SenchaConfigVersion.cmake"
@@ -593,4 +678,6 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/SenchaConfig.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/SenchaConfigVersion.cmake"
     "${CMAKE_SOURCE_DIR}/cmake/SenchaGameModule.cmake"
+    "${CMAKE_SOURCE_DIR}/cmake/SenchaComponentCodegen.cmake"
+    "${CMAKE_SOURCE_DIR}/cmake/ValidateComponentIndex.cmake"
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/Sencha")

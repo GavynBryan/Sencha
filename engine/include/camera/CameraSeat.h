@@ -2,15 +2,10 @@
 
 #include <camera/CameraRig.h>
 #include <core/metadata/EnumSchema.h>
-#include <core/metadata/Field.h>
-#include <core/metadata/TypeSchema.h>
-#include <core/serialization/FourCC.h>
-#include <ecs/ComponentTypeId.h>
+#include <ecs/ComponentAnnotations.h>
 
 #include <array>
 #include <cstdint>
-#include <string_view>
-#include <tuple>
 #include <type_traits>
 
 //=============================================================================
@@ -54,41 +49,32 @@ struct EnumSchema<CameraSeatRole>
     };
 };
 
-struct CameraSeat
+struct SENCHA_COMPONENT("sencha.camera_seat")
+       SENCHA_SCHEMA("CameraSeat")
+       SENCHA_SCENE_CHUNK("CSET")
+CameraSeat
 {
+    SENCHA_FIELD("role")
     CameraSeatRole Role = CameraSeatRole::Primary;
+
     // How this seat watches what it is attached to. Possession copies it into
     // the rig it provisions, so the authored answer is the one that runs.
+    SENCHA_FIELD("mode")
+    SENCHA_LABEL("Watches from")
+    SENCHA_TOOLTIP("First person puts the view at the seat; third person "
+                   "orbits the body at the distance below.")
     CameraRigMode Mode = CameraRigMode::FirstPerson;
+
     // How far back a third-person seat sits. Ignored in first person, where the
     // seat is the eyes.
+    SENCHA_FIELD("distance")
+    SENCHA_TOOLTIP("Third person only: how far back the seat sits.")
     float Distance = 4.0f;
 };
 
 static_assert(std::is_trivially_copyable_v<CameraSeat>,
               "CameraSeat must be trivially copyable to live in ECS chunks");
 
-template <>
-struct TypeSchema<CameraSeat>
-{
-    static constexpr std::string_view Name = "CameraSeat";
-    static constexpr std::uint32_t SceneChunkId = MakeFourCC('C', 'S', 'E', 'T');
-
-    static auto Fields()
-    {
-        const CameraSeat defaults;
-        return std::tuple{
-            MakeField("role", &CameraSeat::Role).Default(defaults.Role),
-            MakeField("mode", &CameraSeat::Mode)
-                .Default(defaults.Mode)
-                .Label("Watches from")
-                .Tooltip("First person puts the view at the seat; third person "
-                         "orbits the body at the distance below."),
-            MakeField("distance", &CameraSeat::Distance)
-                .Default(defaults.Distance)
-                .Tooltip("Third person only: how far back the seat sits."),
-        };
-    }
-};
-
-SENCHA_DECLARE_COMPONENT_TYPE(CameraSeat, "sencha.camera_seat");
+#if !defined(SENCHA_CODEGEN)
+#  include <camera/CameraSeat.sencha.h>
+#endif

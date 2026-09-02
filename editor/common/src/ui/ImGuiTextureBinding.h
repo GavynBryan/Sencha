@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/assets/AssetLease.h>
 #include <graphics/vulkan/VulkanImageService.h>
 #include <render/TextureHandle.h>
 
@@ -14,9 +15,9 @@ class VulkanSamplerCache;
 
 //=============================================================================
 // ImGuiTextureBinding: displays a resident texture asset inside ImGui. Owns
-// one asset reference (AssetSystem::LoadTexture/ReleaseTexture) and the ImGui
-// Vulkan descriptor set for its image view, rebuilding the set whenever a hot
-// reload swaps the entry's GPU image in place.
+// one asset reference (a lease from AssetSystem) and the ImGui Vulkan
+// descriptor set for its image view, rebuilding the set whenever a hot reload
+// swaps the entry's GPU image in place.
 //
 // Retired descriptor sets are freed a few TextureId() calls later, not
 // immediately: an in-flight frame may still sample them (the same rule
@@ -53,6 +54,10 @@ public:
 
 private:
     void RetireSet();
+    [[nodiscard]] TextureHandle Handle() const
+    {
+        return TextureHandle::FromToken(Texture.OpaqueToken());
+    }
 
     AssetSystem& Assets;
     TextureCache& Textures;
@@ -61,7 +66,7 @@ private:
 
     std::string Path;
     bool Nearest = false;
-    TextureHandle Handle;
+    AssetLease Texture;
     ImageHandle BoundImage;
     VkDescriptorSet Set = VK_NULL_HANDLE;
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ecs/ComponentTypeId.h>
+#include <ecs/ComponentAnnotations.h>
 
 #include <type_traits>
 
@@ -21,11 +21,13 @@
 // forces the vertical channel from that wish -- which is what flying is, in
 // the vocabulary the motion composition already has.
 //=============================================================================
-struct ObserverFlight
+struct SENCHA_COMPONENT("template.observer_flight") ObserverFlight
 {
 };
 
 static_assert(std::is_empty_v<ObserverFlight>,
               "ObserverFlight is a tag: it carries no data");
 
-SENCHA_DECLARE_COMPONENT_TYPE(ObserverFlight, "template.observer_flight");
+#if !defined(SENCHA_CODEGEN)
+#  include <ObserverFlight.sencha.h>
+#endif

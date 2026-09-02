@@ -5,8 +5,12 @@
 // task threads reading one resident payload.
 
 #include <assets/runtime/AssetSystem.h>
+#include <assets/runtime/RegisterAssetKind.h>
+#include <assets/scene/SceneAssetLoader.h>
 #include <assets/scene/SceneCache.h>
+#include <core/assets/AssetLease.h>
 #include <core/logging/LoggingProvider.h>
+#include <core/serialization/FourCC.h>
 #include <ecs/WorldComponentSchema.h>
 #include <jobs/AsyncTaskQueue.h>
 #include <runtime/RuntimeFrameLoop.h>
@@ -66,12 +70,13 @@ namespace
             , Loader(Tasks, World, Schema, Serializers, SceneContext, Runtime)
             , Registry(Logging)
             , Scenes(Logging)
-            , Assets(Logging, Registry, nullptr, nullptr, nullptr, nullptr,
-                     nullptr, nullptr, nullptr, nullptr, &Scenes, &Serializers)
+            , SceneLoader(Logging, &Scenes, &Serializers)
+            , Assets(Logging, Registry)
         {
             EXPECT_EQ(Serializers.Register(
                           std::make_unique<ComponentSerializer<ZoneSceneMarker>>()),
                       ComponentSerializerRegistry::RegisterResult::Added);
+            RegisterAssetKind(Assets, AssetType::Scene, SceneLoader, &Scenes);
         }
 
         LoggingProvider Logging;
@@ -84,6 +89,7 @@ namespace
         AsyncZoneLoader Loader;
         AssetRegistry Registry;
         SceneCache Scenes;
+        SceneAssetLoader SceneLoader;
         AssetSystem Assets;
     };
 
@@ -129,7 +135,7 @@ TEST(AsyncZoneSceneLoad, ZeroThreadEndToEnd)
     std::size_t finalizeCollisionCells = 0;
     const ZoneId zone{ 5 };
     const AsyncTaskHandle handle = h.Loader.BeginLoadScene(
-        zone, scene.Path, h.Assets, AsyncZoneLoader::SceneStageFn{},
+        zone, scene.Path, h.Assets, h.Scenes, AsyncZoneLoader::SceneStageFn{},
         [&finalizeCollisionCells](RuntimeWorld&, RuntimeZoneRecord&,
                                   const SmapContents& contents) {
             finalizeCollisionCells = contents.Collision.size();
@@ -158,13 +164,13 @@ TEST(AsyncZoneSceneLoad, ResidentSceneLoadsWithoutTouchingTheFile)
 
     // Pin the scene resident, then delete the backing file: a load that still
     // succeeds provably never re-read or re-parsed it.
-    const SceneHandle pinned = h.Assets.LoadScene(scene.Path);
+    AssetLease pinned = h.Assets.LoadLease(scene.Path, AssetType::Scene);
     ASSERT_TRUE(pinned.IsValid());
     std::filesystem::remove(scene.File);
 
     const ZoneId zone{ 6 };
     const AsyncTaskHandle handle = h.Loader.BeginLoadScene(
-        zone, scene.Path, h.Assets, AsyncZoneLoader::SceneStageFn{},
+        zone, scene.Path, h.Assets, h.Scenes, AsyncZoneLoader::SceneStageFn{},
         AsyncZoneLoader::SceneFinalizeFn{}, ZoneParticipation{ .Logic = true });
     ASSERT_TRUE(handle.IsValid());
     EXPECT_EQ(h.Tasks.PumpWork(), 1u);
@@ -175,7 +181,7 @@ TEST(AsyncZoneSceneLoad, ResidentSceneLoadsWithoutTouchingTheFile)
 
     // The pin still holds the entry; the load's own reference is gone.
     EXPECT_TRUE(h.Scenes.Find(scene.Path).IsValid());
-    h.Assets.ReleaseScene(pinned);
+    pinned.Reset();
     EXPECT_FALSE(h.Scenes.Find(scene.Path).IsValid());
 }
 
@@ -191,7 +197,7 @@ TEST(AsyncZoneSceneLoad, MissingSceneFileRecordsABuildFailure)
 
     const ZoneId zone{ 7 };
     const AsyncTaskHandle handle = h.Loader.BeginLoadScene(
-        zone, "asset://levels/gone.smap", h.Assets,
+        zone, "asset://levels/gone.smap", h.Assets, h.Scenes,
         AsyncZoneLoader::SceneStageFn{}, AsyncZoneLoader::SceneFinalizeFn{},
         ZoneParticipation{ .Logic = true });
     ASSERT_TRUE(handle.IsValid());
@@ -212,19 +218,19 @@ TEST(AsyncZoneSceneLoad, ThreadedLoadsShareOneResidentSceneAcrossZones)
 
     // Pinned resident up front: both loads read the one shared payload from
     // their task threads while the owner thread keeps working the cache.
-    const SceneHandle pinned = h.Assets.LoadScene(scene.Path);
+    AssetLease pinned = h.Assets.LoadLease(scene.Path, AssetType::Scene);
     ASSERT_TRUE(pinned.IsValid());
 
     const ZoneId first{ 21 };
     const ZoneId second{ 22 };
     ASSERT_TRUE(h.Loader
-                    .BeginLoadScene(first, scene.Path, h.Assets,
+                    .BeginLoadScene(first, scene.Path, h.Assets, h.Scenes,
                                     AsyncZoneLoader::SceneStageFn{},
                                     AsyncZoneLoader::SceneFinalizeFn{},
                                     ZoneParticipation{ .Logic = true })
                     .IsValid());
     ASSERT_TRUE(h.Loader
-                    .BeginLoadScene(second, scene.Path, h.Assets,
+                    .BeginLoadScene(second, scene.Path, h.Assets, h.Scenes,
                                     AsyncZoneLoader::SceneStageFn{},
                                     AsyncZoneLoader::SceneFinalizeFn{},
                                     ZoneParticipation{ .Logic = true })
@@ -242,7 +248,7 @@ TEST(AsyncZoneSceneLoad, ThreadedLoadsShareOneResidentSceneAcrossZones)
 
     EXPECT_EQ(CountMarkers(h.World, first), 2u);
     EXPECT_EQ(CountMarkers(h.World, second), 2u);
-    h.Assets.ReleaseScene(pinned);
+    pinned.Reset();
     EXPECT_FALSE(h.Scenes.Find(scene.Path).IsValid());
 }
 
@@ -251,7 +257,7 @@ TEST(AsyncZoneSceneLoad, UnresolvedPathRefusesUpFront)
     SceneZoneHarness h;
     const ZoneId zone{ 8 };
     const AsyncTaskHandle handle = h.Loader.BeginLoadScene(
-        zone, "asset://levels/never_registered.smap", h.Assets,
+        zone, "asset://levels/never_registered.smap", h.Assets, h.Scenes,
         AsyncZoneLoader::SceneStageFn{}, AsyncZoneLoader::SceneFinalizeFn{},
         ZoneParticipation{ .Logic = true });
 

@@ -1,17 +1,25 @@
 #include <gtest/gtest.h>
 
+#include <audio/AudioCaptionComponent.h>
 #include <audio/AudioClipCache.h>
 #include <audio/AudioService.h>
 #include <audio/AudioSourceComponent.h>
+#include <audio/AudioSourceRuntime.h>
 #include <audio/AudioSystem.h>
-#include <core/assets/AssetRegistry.h>
+#include <assets/audio_clip/AudioClipAssetLoader.h>
 #include <assets/runtime/AssetSystem.h>
+#include <assets/runtime/RegisterAssetKind.h>
+#include <core/assets/AssetRegistry.h>
+#include <core/assets/AssetStoreTable.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/JsonArchive.h>
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 #include <world/registry/Registry.h>
+#include "HandleFieldIo.h"
+
+#include <world/serialization/SceneAssetFieldIo.h>
 #include <world/serialization/SceneFieldCodec.h>
 #include <world/serialization/SceneSerializer.h>
 
@@ -19,6 +27,7 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 
 namespace
 {
@@ -86,10 +95,13 @@ StoragePartitionSet ActivePartitions()
 
 void SetupAudioWorld(
     World& world,
-    AudioClipCache* cache,
+    AudioClipCache& cache,
     AudioService* audio)
 {
-    world.AddResource<AudioSourceRuntime>(cache, audio);
+    AssetStoreTable stores;
+    stores.Add(AssetType::Audio, AssetArity::Single, cache);
+    world.AddResource<AssetStoreTable>(std::move(stores));
+    world.AddResource<AudioSourceRuntime>(&cache, audio);
     world.RegisterComponent<AudioSourceComponent>();
 }
 } // namespace
@@ -99,13 +111,9 @@ TEST(AudioClipCodec, SaveWritesPathString)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     AudioClipCache cache(logging);
-    AssetSystem assets(
-        logging,
-        registry,
-        nullptr,
-        nullptr,
-        nullptr,
-        &cache);
+    AudioClipAssetLoader loader(logging, &cache);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Audio, loader, &cache);
 
     const AudioClipHandle handle = RegisterResidentClip(
         registry,
@@ -114,7 +122,7 @@ TEST(AudioClipCodec, SaveWritesPathString)
 
     SceneSerializationContext context(logging, &assets);
     JsonWriteArchive archive;
-    ASSERT_TRUE(SceneFieldCodec<AudioClipHandle>::Save(
+    ASSERT_TRUE(SaveHandleField<AudioClipHandle>(AssetType::Audio,
         archive,
         "clip",
         handle,
@@ -130,13 +138,9 @@ TEST(AudioClipCodec, LoadResolvesPathString)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     AudioClipCache cache(logging);
-    AssetSystem assets(
-        logging,
-        registry,
-        nullptr,
-        nullptr,
-        nullptr,
-        &cache);
+    AudioClipAssetLoader loader(logging, &cache);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Audio, loader, &cache);
 
     const AudioClipHandle registered = RegisterResidentClip(
         registry,
@@ -148,7 +152,7 @@ TEST(AudioClipCodec, LoadResolvesPathString)
     SceneSerializationContext context(logging, &assets);
     JsonReadArchive archive(*parsed);
     AudioClipHandle loaded;
-    ASSERT_TRUE(SceneFieldCodec<AudioClipHandle>::Load(
+    ASSERT_TRUE(LoadHandleField<AudioClipHandle>(AssetType::Audio,
         archive,
         "",
         loaded,
@@ -164,13 +168,9 @@ TEST(AudioClipCodec, ComponentRoundTripsThroughSceneJson)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     AudioClipCache cache(logging);
-    AssetSystem assets(
-        logging,
-        registry,
-        nullptr,
-        nullptr,
-        nullptr,
-        &cache);
+    AudioClipAssetLoader loader(logging, &cache);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Audio, loader, &cache);
     const AudioClipHandle clip = RegisterResidentClip(
         registry,
         cache,
@@ -229,7 +229,7 @@ TEST(AudioSourceLifetime, RemoveStopsVoiceBeforeReleasingSoleClipReference)
         MakeClip());
 
     World world;
-    SetupAudioWorld(world, &cache, &audio);
+    SetupAudioWorld(world, cache, &audio);
     const EntityId entity = world.CreateEntity();
     world.AddComponent(
         entity,
@@ -298,7 +298,7 @@ TEST(AudioSystemSweep, LoopRestartsAcrossDormancyAndOneShotDoesNot)
         MakeClip());
 
     World world;
-    SetupAudioWorld(world, &cache, &audio);
+    SetupAudioWorld(world, cache, &audio);
 
     const EntityId loop = world.CreateEntity();
     world.AddComponent(
@@ -358,7 +358,7 @@ TEST(AudioSystemSweep, NullServiceAndPlayOnActiveFalseAreNoOps)
         MakeClip());
 
     World world;
-    SetupAudioWorld(world, &cache, nullptr);
+    SetupAudioWorld(world, cache, nullptr);
     const EntityId entity = world.CreateEntity();
     world.AddComponent(
         entity,

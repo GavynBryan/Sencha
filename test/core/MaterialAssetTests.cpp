@@ -1,7 +1,10 @@
+#include <assets/material/MaterialAssetLoader.h>
 #include <assets/material/MaterialLoader.h>
 #include <assets/material/MaterialWriter.h>
-#include <core/assets/AssetRegistry.h>
 #include <assets/runtime/AssetSystem.h>
+#include <assets/runtime/RegisterAssetKind.h>
+#include <core/assets/AssetLease.h>
+#include <core/assets/AssetRegistry.h>
 #include <core/handle/ILifetimeOwner.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
@@ -293,15 +296,17 @@ TEST(AssetSystemMaterial, LoadsSmatFileWithNeutralTextureSlots)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     MaterialCache materials;
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader loader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, loader, &materials);
 
     ASSERT_TRUE(registry.Register(
         MakeFileMaterialRecord(file.Path, "asset://materials/dev/test.smat")));
 
-    MaterialHandle handle = assets.LoadMaterial("asset://materials/dev/test.smat");
+    const AssetLease handle = assets.LoadLease("asset://materials/dev/test.smat", AssetType::Material);
     ASSERT_TRUE(handle.IsValid());
 
-    const Material* material = materials.Get(handle);
+    const Material* material = materials.Get(MaterialHandle::FromToken(handle.OpaqueToken()));
     ASSERT_NE(material, nullptr);
     EXPECT_FLOAT_EQ(material->BaseColor.X, 1.0f);
     EXPECT_FLOAT_EQ(material->BaseColor.Y, 0.15f);
@@ -318,15 +323,17 @@ TEST(AssetSystemMaterial, SecondLoadReturnsSameHandle)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     MaterialCache materials;
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader loader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, loader, &materials);
 
     ASSERT_TRUE(registry.Register(
         MakeFileMaterialRecord(file.Path, "asset://materials/dev/dedup.smat")));
 
-    MaterialHandle first = assets.LoadMaterial("asset://materials/dev/dedup.smat");
-    MaterialHandle second = assets.LoadMaterial("asset://materials/dev/dedup.smat");
+    const AssetLease first = assets.LoadLease("asset://materials/dev/dedup.smat", AssetType::Material);
+    const AssetLease second = assets.LoadLease("asset://materials/dev/dedup.smat", AssetType::Material);
     ASSERT_TRUE(first.IsValid());
-    EXPECT_EQ(first, second);
+    EXPECT_EQ(first.OpaqueToken(), second.OpaqueToken());
 }
 
 TEST(AssetSystemMaterial, MalformedSmatFailsCleanly)
@@ -336,12 +343,14 @@ TEST(AssetSystemMaterial, MalformedSmatFailsCleanly)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     MaterialCache materials;
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    MaterialAssetLoader loader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, loader, &materials);
 
     ASSERT_TRUE(registry.Register(
         MakeFileMaterialRecord(file.Path, "asset://materials/dev/bad.smat")));
 
-    EXPECT_FALSE(assets.LoadMaterial("asset://materials/dev/bad.smat").IsValid());
+    EXPECT_FALSE(assets.LoadLease("asset://materials/dev/bad.smat", AssetType::Material).IsValid());
 }
 
 // -- MaterialWriter -----------------------------------------------------------

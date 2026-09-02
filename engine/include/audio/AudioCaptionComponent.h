@@ -2,17 +2,10 @@
 
 #include <audio/AudioSourceComponent.h>
 #include <audio/Caption.h>
-#include <audio/CaptionRuntime.h>
-#include <core/metadata/Field.h>
-#include <core/metadata/TypeSchema.h>
-#include <core/serialization/FourCC.h>
+#include <ecs/ComponentAnnotations.h>
 #include <ecs/ComponentTraits.h>
+#include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
-#include <ecs/World.h>
-
-#include <string_view>
-#include <tuple>
-#include <type_traits>
 
 //=============================================================================
 // AudioCaptionComponent (docs/audio/captions-and-dialogue.md, Decision D)
@@ -25,19 +18,35 @@
 //
 // CaptionSystem drives it (Decision E): when the sibling source's voice
 // starts, a voice-bound caption begins; when playback failed outright, the
-// Decision C degrade path runs once. Authored fields serialize through
-// TypeSchema; the runtime fields default-initialize on load.
+// Decision C degrade path runs once. The authored fields are the schema; the
+// runtime fields default-initialize on load.
 //=============================================================================
-struct AudioCaptionComponent
+struct SENCHA_COMPONENT("AudioCaption")
+       SENCHA_SCHEMA("AudioCaption")
+       SENCHA_SCENE_CHUNK("ACAP")
+AudioCaptionComponent
 {
     // -- Authored (serialized) -----------------------------------------------
+    SENCHA_FIELD("kind")
     CaptionKind Kind = CaptionKind::ClosedCaption;
+
+    SENCHA_FIELD("channel")
     CaptionChannelName Channel = "World";
+
+    SENCHA_FIELD("priority")
     CaptionPriority Priority = CaptionPriority::Gameplay;
-    CaptionTextKey Text{};
+
+    SENCHA_FIELD("text")
+    CaptionTextKey Text;
+
+    SENCHA_FIELD("speaker")
     SpeakerKey Speaker{};             // empty = no speaker tag
+
+    SENCHA_FIELD("duration_seconds")
     float DurationSeconds = 0.0f;   // 0 = derive from voice/clip; loops should
                                     // author finite unless persistent is meant
+
+    SENCHA_FIELD("merge_duplicates")
     bool MergeDuplicates = true;
 
     // -- Runtime (not serialized) ----------------------------------------------
@@ -54,51 +63,22 @@ struct AudioCaptionComponent
     bool WarnedOrphan = false;
 };
 
+// No OnAdd: there is no asset edge to retain, and deserialization is not
+// activation -- CaptionSystem begins captions.
+//
+// OnRemove ends the active caption (entity destruction and zone detach both
+// fire it). Stale-safe: an already-retired caption is a no-op, and ordering
+// against the sibling source's own OnRemove does not matter.
+template <>
+struct ComponentTraits<AudioCaptionComponent>
+{
+    static void OnRemove(const AudioCaptionComponent& component, World& world, EntityId);
+};
+
 // Archetype storage relocates components with memcpy, so the component must
 // stay trivially copyable (enforced by World::RegisterComponent) — this is
 // why the names are InlineStrings.
 
-template <>
-struct ComponentTraits<AudioCaptionComponent>
-{
-    // No OnAdd: there is no asset edge to retain, and deserialization is not
-    // activation — CaptionSystem begins captions.
-
-    // OnRemove ends the active caption (entity destruction and zone detach
-    // both fire it). Stale-safe: an already-retired caption is a no-op, and
-    // ordering against the sibling source's own OnRemove does not matter.
-    static void OnRemove(const AudioCaptionComponent& component, World& world, EntityId)
-    {
-        auto* runtime = world.TryGetResource<AudioSourceRuntime>();
-        if (runtime == nullptr || runtime->Captions == nullptr)
-            return;
-
-        runtime->Captions->EndCaption(component.Caption);
-    }
-};
-
-template <>
-struct TypeSchema<AudioCaptionComponent>
-{
-    static constexpr std::string_view Name = "AudioCaption";
-    static constexpr std::uint32_t SceneChunkId = MakeFourCC('A', 'C', 'A', 'P');
-
-    static auto Fields()
-    {
-        return std::tuple{
-            MakeField("kind", &AudioCaptionComponent::Kind)
-                .Default(CaptionKind::ClosedCaption),
-            MakeField("channel", &AudioCaptionComponent::Channel)
-                .Default(CaptionChannelName("World")),
-            MakeField("priority", &AudioCaptionComponent::Priority)
-                .Default(CaptionPriority::Gameplay),
-            MakeField("text", &AudioCaptionComponent::Text),
-            MakeField("speaker", &AudioCaptionComponent::Speaker)
-                .Default(SpeakerKey()),
-            MakeField("duration_seconds", &AudioCaptionComponent::DurationSeconds)
-                .Default(0.0f),
-            MakeField("merge_duplicates", &AudioCaptionComponent::MergeDuplicates)
-                .Default(true),
-        };
-    }
-};
+#if !defined(SENCHA_CODEGEN)
+#  include <audio/AudioCaptionComponent.sencha.h>
+#endif

@@ -2,167 +2,52 @@
 
 #include <core/logging/LoggingProvider.h>
 
-#include <anim/AnimationClipCache.h>
-#include <anim/SkeletonCache.h>
-#include <assets/scene/SceneCache.h>
-#include <assets/texture/TextureCache.h>
-#include <audio/AudioClipCache.h>
-#include <render/MaterialCache.h>
-#include <render/MaterialSetCache.h>
-#include <render/skinned_mesh/SkinnedMeshCache.h>
-#include <render/static_mesh/StaticMeshCache.h>
-
-#include <cassert>
-#include <functional>
 #include <utility>
 
-AssetSystem::AssetSystem(LoggingProvider& logging,
-                         AssetRegistry& registry,
-                         StaticMeshCache& meshes,
-                         MaterialCache& materials,
-                         TextureCache& textures,
-                         AudioClipCache& audioClips,
-                         SkeletonCache& skeletons,
-                         AnimationClipCache& animationClips,
-                         SkinnedMeshCache& skinnedMeshes,
-                         MaterialSetCache& materialSets,
-                         SceneCache& scenes,
-                         const ComponentSerializerRegistry& sceneSerializers)
-    : AssetSystem(logging, registry, &meshes, &materials, &textures, &audioClips,
-                  &skeletons, &animationClips, &skinnedMeshes, &materialSets,
-                  &scenes, &sceneSerializers)
-{
-}
-
-AssetSystem::AssetSystem(LoggingProvider& logging,
-                         AssetRegistry& registry,
-                         StaticMeshCache* meshes,
-                         MaterialCache* materials,
-                         TextureCache* textures,
-                         AudioClipCache* audioClips,
-                         SkeletonCache* skeletons,
-                         AnimationClipCache* animationClips,
-                         SkinnedMeshCache* skinnedMeshes,
-                         MaterialSetCache* materialSets,
-                         SceneCache* scenes,
-                         const ComponentSerializerRegistry* sceneSerializers)
+AssetSystem::AssetSystem(LoggingProvider& logging, AssetRegistry& registry)
     : Log(logging.GetLogger<AssetSystem>())
     , Registry(registry)
-    , StaticMeshes(meshes)
-    , Materials(materials)
-    , MaterialSets(materialSets)
-    , Textures(textures)
-    , AudioClips(audioClips)
-    , Skeletons(skeletons)
-    , AnimationClips(animationClips)
-    , SkinnedMeshes(skinnedMeshes)
-    , Scenes(scenes)
-    , MeshLoader(logging, meshes)
-    , TexLoader(logging, textures)
-    , MatLoader(logging, *this, materials, textures)
-    , ClipLoader(logging, audioClips)
-    , SkelLoader(logging, skeletons)
-    , AnimLoader(logging, *this, animationClips, skeletons)
-    , SkinnedLoader(logging, *this, skinnedMeshes, skeletons)
-    , SceneLoader(logging, scenes, sceneSerializers)
 {
-    RegisterKinds();
 }
 
-namespace
-{
-    // Wraps a loader's CommitTyped so the lease adopts the creation reference
-    // the commit already holds. TCache is the issuing store, which is what
-    // decodes the token back into its own handle.
-    template<typename TLoader, typename TCache>
-    std::function<AssetLease(AssetStaging&&)> MakeCommit(AssetType type,
-                                                         TLoader& loader,
-                                                         TCache* cache)
-    {
-        if (cache == nullptr)
-            return {};
-
-        return [type, &loader, cache](AssetStaging&& staged) -> AssetLease
-        {
-            auto handle = loader.CommitTyped(std::move(staged));
-            if (!handle.IsValid())
-                return {};
-
-            return AssetLease::Adopt(type, *cache, handle.ToToken());
-        };
-    }
-
-    template<typename TLoader>
-    std::function<bool(AssetStaging&&)> MakeReload(TLoader& loader)
-    {
-        return [&loader](AssetStaging&& staged) -> bool
-        {
-            return loader.CommitReload(std::move(staged));
-        };
-    }
-}
-
-void AssetSystem::RegisterKinds()
-{
-    // Identity comes from the built-in table; this only attaches the load half.
-    // The stager is always wired because staging touches no cache; the commit
-    // half appears only for caches the host actually supplied, so a headless
-    // AssetSystem still stages and simply reports the commit as a failure.
-    const auto attach = [this](AssetType type,
-                               IAssetStager& stager,
-                               IAssetStore* store,
-                               std::function<AssetLease(AssetStaging&&)> commit,
-                               std::function<bool(AssetStaging&&)> reload = {})
-    {
-        AssetKindRegistration registration = MakeBuiltinAssetKind(type);
-        registration.Stager = &stager;
-        if (store != nullptr && commit)
-        {
-            registration.Store = store;
-            registration.Commit = std::move(commit);
-            registration.Reload = std::move(reload);
-        }
-
-        if (!KindRegistry.Register(std::move(registration)))
-            Log.Error("AssetSystem: rejected {} kind registration", AssetTypeToString(type));
-    };
-
-    attach(AssetType::StaticMesh, MeshLoader, StaticMeshes,
-           MakeCommit(AssetType::StaticMesh, MeshLoader, StaticMeshes),
-           MakeReload(MeshLoader));
-    attach(AssetType::SkinnedMesh, SkinnedLoader, SkinnedMeshes,
-           MakeCommit(AssetType::SkinnedMesh, SkinnedLoader, SkinnedMeshes));
-    attach(AssetType::Material, MatLoader, Materials,
-           MakeCommit(AssetType::Material, MatLoader, Materials),
-           MakeReload(MatLoader));
-    attach(AssetType::Texture, TexLoader, Textures,
-           MakeCommit(AssetType::Texture, TexLoader, Textures),
-           MakeReload(TexLoader));
-    attach(AssetType::Audio, ClipLoader, AudioClips,
-           MakeCommit(AssetType::Audio, ClipLoader, AudioClips));
-    attach(AssetType::Skeleton, SkelLoader, Skeletons,
-           MakeCommit(AssetType::Skeleton, SkelLoader, Skeletons));
-    attach(AssetType::AnimationClip, AnimLoader, AnimationClips,
-           MakeCommit(AssetType::AnimationClip, AnimLoader, AnimationClips));
-    attach(AssetType::Scene, SceneLoader, Scenes,
-           MakeCommit(AssetType::Scene, SceneLoader, Scenes));
-}
-
-IAssetStore* AssetSystem::StoreFor(AssetType type)
+IAssetStore* AssetSystem::StoreFor(AssetType type, AssetArity arity)
 {
     AssetKindRegistration* kind = KindRegistry.Find(type);
-    return kind ? kind->Store : nullptr;
+    if (kind == nullptr)
+        return nullptr;
+    return arity == AssetArity::List ? kind->ListStore : kind->Store;
 }
 
-const IAssetStore* AssetSystem::StoreFor(AssetType type) const
+const IAssetStore* AssetSystem::StoreFor(AssetType type, AssetArity arity) const
 {
     const AssetKindRegistration* kind = KindRegistry.Find(type);
-    return kind ? kind->Store : nullptr;
+    if (kind == nullptr)
+        return nullptr;
+    return arity == AssetArity::List ? kind->ListStore : kind->Store;
+}
+
+IAssetListStore* AssetSystem::ListStoreFor(AssetType type)
+{
+    AssetKindRegistration* kind = KindRegistry.Find(type);
+    return kind ? kind->ListStore : nullptr;
 }
 
 bool AssetSystem::HasStore(AssetType type) const
 {
     return StoreFor(type) != nullptr;
+}
+
+AssetStoreTable AssetSystem::Stores() const
+{
+    AssetStoreTable stores;
+    for (const AssetKindRegistration& kind : KindRegistry.Entries())
+    {
+        if (kind.Store != nullptr)
+            stores.Add(kind.Type, AssetArity::Single, *kind.Store);
+        if (kind.ListStore != nullptr)
+            stores.Add(kind.Type, AssetArity::List, *kind.ListStore);
+    }
+    return stores;
 }
 
 AssetLease AssetSystem::TryAcquireLease(std::string_view path, AssetType type)
@@ -179,6 +64,15 @@ AssetLease AssetSystem::LoadLease(std::string_view path, AssetType type)
 
     if (AssetLease resident = TryAcquireLease(record->Path, type); resident.IsValid())
         return resident;
+
+    // A procedural asset is put into its store by whoever built it; there are
+    // no bytes to stage.
+    if (record->SourceKind == AssetSourceKind::Procedural)
+    {
+        Log.Error("AssetSystem: no runtime resource registered for procedural {} '{}'",
+                  AssetTypeToString(type), record->Path);
+        return {};
+    }
 
     IAssetStager* stager = LoaderFor(type);
     if (stager == nullptr)
@@ -205,10 +99,29 @@ std::string_view AssetSystem::GetPathForLease(AssetType type,
     return store != nullptr ? store->GetPath(token) : std::string_view{};
 }
 
-void AssetSystem::ReleaseLease(AssetType type, std::uint64_t token)
+void AssetSystem::ReleaseLease(AssetType type, std::uint64_t token, AssetArity arity)
 {
-    if (IAssetStore* store = StoreFor(type); store != nullptr)
+    if (IAssetStore* store = StoreFor(type, arity); store != nullptr)
         store->ReleaseToken(token);
+}
+
+AssetLease AssetSystem::InternList(AssetType type, std::span<const std::uint64_t> members)
+{
+    IAssetListStore* store = ListStoreFor(type);
+    if (store == nullptr)
+    {
+        Log.Error("AssetSystem: no list store registered for {}", AssetTypeToString(type));
+        return {};
+    }
+    return store->InternList(members);
+}
+
+std::vector<std::uint64_t> AssetSystem::ListMembers(AssetType type, std::uint64_t token) const
+{
+    const AssetKindRegistration* kind = KindRegistry.Find(type);
+    if (kind == nullptr || kind->ListStore == nullptr)
+        return {};
+    return kind->ListStore->ListMembers(token);
 }
 
 AssetLease AssetSystem::Commit(AssetStaging&& staged)
@@ -222,6 +135,19 @@ AssetLease AssetSystem::Commit(AssetStaging&& staged)
     }
 
     return kind->Commit(std::move(staged));
+}
+
+bool AssetSystem::Reload(AssetStaging&& staged)
+{
+    const AssetKindRegistration* kind = KindRegistry.Find(staged.Record.Type);
+    if (kind == nullptr || !kind->Reload)
+    {
+        Log.Error("AssetSystem: no reload registered for {} '{}'",
+                  AssetTypeToString(staged.Record.Type), staged.Record.Path);
+        return false;
+    }
+
+    return kind->Reload(std::move(staged));
 }
 
 const AssetRecord* AssetSystem::Resolve(std::string_view path, AssetType expectedType) const

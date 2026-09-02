@@ -245,8 +245,8 @@ TEST(MaterialAssetLoader, StageAndCommitRoundTripHeadless)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     MaterialCache materials;
-    AssetSystem assets(logging, registry, nullptr, &materials);
-    MaterialAssetLoader loader(logging, assets, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    MaterialAssetLoader loader(logging, &materials, nullptr);
 
     MemoryAssetSource source;
     source.Add("asset://materials/dev/test.smat", R"({
@@ -260,7 +260,7 @@ TEST(MaterialAssetLoader, StageAndCommitRoundTripHeadless)
         MakeFileRecord(AssetType::Material, "asset://materials/dev/test.smat"), source);
     ASSERT_TRUE(staging.IsValid()) << staging.Error;
 
-    MaterialHandle handle = loader.CommitTyped(std::move(staging));
+    MaterialHandle handle = loader.CommitTyped(std::move(staging), assets);
     ASSERT_TRUE(handle.IsValid());
 
     const Material* material = materials.Get(handle);
@@ -276,8 +276,8 @@ TEST(MaterialAssetLoader, StagingReportsParseErrors)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     MaterialCache materials;
-    AssetSystem assets(logging, registry, nullptr, &materials);
-    MaterialAssetLoader loader(logging, assets, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    MaterialAssetLoader loader(logging, &materials, nullptr);
 
     MemoryAssetSource source;
     source.Add("asset://materials/dev/bad.smat", R"({"version": 2, "typo_key": 1})");
@@ -295,14 +295,14 @@ TEST(AssetLoaderContract, CommitRejectsMismatchedPayload)
     LoggingProvider logging;
     AssetRegistry registry(logging);
     MaterialCache materials;
-    AssetSystem assets(logging, registry, nullptr, &materials);
+    AssetSystem assets(logging, registry);
 
     AssetStaging staging;
     staging.Record = MakeFileRecord(AssetType::Material, "asset://materials/dev/wrong.smat");
     staging.Payload = 42; // not a MaterialDescription
 
-    MaterialAssetLoader matLoader(logging, assets, &materials, nullptr);
-    EXPECT_FALSE(matLoader.CommitTyped(std::move(staging)).IsValid());
+    MaterialAssetLoader matLoader(logging, &materials, nullptr);
+    EXPECT_FALSE(matLoader.CommitTyped(std::move(staging), assets).IsValid());
 
     AssetStaging meshStaging;
     meshStaging.Record = MakeFileRecord(AssetType::StaticMesh, "asset://meshes/dev/wrong.smesh");

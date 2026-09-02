@@ -13,13 +13,12 @@
 #include <utility>
 
 MaterialAssetLoader::MaterialAssetLoader(LoggingProvider& logging,
-                                         AssetSystem& assets,
                                          MaterialCache* materials,
                                          TextureCache* textures)
     : Log(logging.GetLogger<MaterialAssetLoader>())
-    , Assets(assets)
     , Materials(materials)
     , Textures(textures)
+    , TextureLoader(logging, textures)
 {
 }
 
@@ -68,7 +67,7 @@ AssetStaging MaterialAssetLoader::LoadStaged(const AssetRecord& record, IAssetSo
     return staging;
 }
 
-MaterialHandle MaterialAssetLoader::CommitTyped(AssetStaging&& staged)
+MaterialHandle MaterialAssetLoader::CommitTyped(AssetStaging&& staged, AssetSystem& assets)
 {
     if (!staged.IsValid())
     {
@@ -92,7 +91,7 @@ MaterialHandle MaterialAssetLoader::CommitTyped(AssetStaging&& staged)
     }
 
     std::vector<TextureCacheHandle> ownedTextures;
-    Material material = ResolveDescription(*desc, staged.Record.Path, ownedTextures);
+    Material material = ResolveDescription(*desc, assets, ownedTextures);
 
     MaterialHandle handle =
         Materials->Register(staged.Record.Path, material, std::move(ownedTextures));
@@ -103,7 +102,7 @@ MaterialHandle MaterialAssetLoader::CommitTyped(AssetStaging&& staged)
     return handle;
 }
 
-bool MaterialAssetLoader::CommitReload(AssetStaging&& staged)
+bool MaterialAssetLoader::CommitReload(AssetStaging&& staged, AssetSystem& assets)
 {
     if (!staged.IsValid())
     {
@@ -128,13 +127,13 @@ bool MaterialAssetLoader::CommitReload(AssetStaging&& staged)
     }
 
     std::vector<TextureCacheHandle> ownedTextures;
-    Material material = ResolveDescription(*desc, staged.Record.Path, ownedTextures);
+    Material material = ResolveDescription(*desc, assets, ownedTextures);
 
     return Materials->ReloadInPlace(staged.Record.Path, material, std::move(ownedTextures));
 }
 
 Material MaterialAssetLoader::ResolveDescription(const MaterialDescription& desc,
-                                                 std::string_view,
+                                                 AssetSystem& assets,
                                                  std::vector<TextureCacheHandle>& outOwned)
 {
     Material material;
@@ -152,14 +151,13 @@ Material MaterialAssetLoader::ResolveDescription(const MaterialDescription& desc
     material.ReceiveShadows = desc.ReceiveShadows;
     material.CastShadows = desc.CastShadows;
 
-
-    ResolveTextureSlot(desc.BaseColorTexture, /*srgb*/ true,
+    ResolveTextureSlot(desc.BaseColorTexture, /*srgb*/ true, assets,
                        material.BaseColorTextureIndex, outOwned);
-    ResolveTextureSlot(desc.NormalTexture, /*srgb*/ false,
+    ResolveTextureSlot(desc.NormalTexture, /*srgb*/ false, assets,
                        material.NormalTextureIndex, outOwned);
-    ResolveTextureSlot(desc.OrmTexture, /*srgb*/ false,
+    ResolveTextureSlot(desc.OrmTexture, /*srgb*/ false, assets,
                        material.OrmTextureIndex, outOwned);
-    ResolveTextureSlot(desc.EmissiveTexture, /*srgb*/ true,
+    ResolveTextureSlot(desc.EmissiveTexture, /*srgb*/ true, assets,
                        material.EmissiveTextureIndex, outOwned);
 
     return material;
@@ -167,6 +165,7 @@ Material MaterialAssetLoader::ResolveDescription(const MaterialDescription& desc
 
 void MaterialAssetLoader::ResolveTextureSlot(const AssetRef& ref,
                                              bool srgb,
+                                             AssetSystem& assets,
                                              uint32_t& outIndex,
                                              std::vector<TextureCacheHandle>& owned)
 {
@@ -179,7 +178,7 @@ void MaterialAssetLoader::ResolveTextureSlot(const AssetRef& ref,
     if (!Textures)
         return;
 
-    TextureHandle handle = Assets.LoadTexture(ref.Path, srgb);
+    TextureHandle handle = LoadTexture(ref.Path, srgb, assets);
     if (!handle.IsValid())
     {
         Log.Error("MaterialAssetLoader: failed to resolve texture '{}'; using neutral default",
@@ -199,4 +198,25 @@ void MaterialAssetLoader::ResolveTextureSlot(const AssetRef& ref,
     outIndex = bindless.Value;
     // LoadTexture already incremented the refcount. Wrap without attaching.
     owned.emplace_back(Textures, handle, TextureCacheHandle::NoAttachTag{});
+}
+
+TextureHandle MaterialAssetLoader::LoadTexture(std::string_view path, bool srgb, AssetSystem& assets)
+{
+    const AssetRecord* record = assets.Resolve(path, AssetType::Texture);
+    if (record == nullptr)
+        return {};
+
+    AssetLease lease = assets.TryAcquireLease(record->Path, AssetType::Texture);
+    if (!lease.IsValid() && record->SourceKind == AssetSourceKind::File)
+    {
+        AssetStaging staged = TextureLoader.LoadStaged(*record, assets.DefaultSource(), srgb);
+        if (!staged.IsValid())
+        {
+            Log.Error("MaterialAssetLoader: {}", staged.Error);
+            return {};
+        }
+        lease = assets.Commit(std::move(staged));
+    }
+
+    return TextureHandle::FromToken(lease.Relinquish());
 }

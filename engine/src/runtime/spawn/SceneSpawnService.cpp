@@ -73,9 +73,10 @@ SceneSpawnService::SceneSpawnService(RuntimeWorld& world,
 
 SceneSpawnService::~SceneSpawnService() = default;
 
-void SceneSpawnService::ConnectAssets(AssetSystem* assets)
+void SceneSpawnService::ConnectAssets(AssetSystem* assets, SceneCache* scenes)
 {
     Assets = assets;
+    Scenes = scenes;
     SceneContext = assets != nullptr
         ? std::make_unique<SceneSerializationContext>(Logging, assets)
         : nullptr;
@@ -106,7 +107,7 @@ SceneSpawnId SceneSpawnService::RequestSpawn(std::string_view sceneAssetPath,
     Requests.push_back(std::move(request));
 
     Logger& log = Logging.GetLogger<SceneSpawnService>();
-    if (Assets == nullptr)
+    if (Assets == nullptr || Scenes == nullptr)
     {
         record->State = Request::Phase::Failed;
         record->Error = "no asset system is connected";
@@ -128,7 +129,7 @@ SceneSpawnId SceneSpawnService::RequestSpawn(std::string_view sceneAssetPath,
 
     // Shared rather than unique because the task closures must stay copyable;
     // each phase still runs on exactly the thread its name says.
-    auto build = std::make_shared<ScenePackageBuild>(*Assets, *asset);
+    auto build = std::make_shared<ScenePackageBuild>(*Assets, *Scenes, *asset);
     const SceneInstanceId instance = record->Instance;
     const AssetId source = record->Source;
     (void)Tasks.Submit<int>(

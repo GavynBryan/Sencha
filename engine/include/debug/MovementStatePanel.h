@@ -3,7 +3,7 @@
 #include <debug/IDebugPanel.h>
 #include <ecs/EntityId.h>
 #include <ecs/Query.h>
-#include <movement/MovementComponents.h>
+#include <movement/components/CharacterMovement.h>
 
 #include <array>
 #include <cstdint>

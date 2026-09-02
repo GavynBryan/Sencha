@@ -1,18 +1,10 @@
 #pragma once
 
-#include <core/metadata/Field.h>
-#include <core/metadata/TypeSchema.h>
-#include <core/serialization/FourCC.h>
+#include <ecs/ComponentAnnotations.h>
 #include <ecs/ComponentTraits.h>
-#include <ecs/EntityId.h>
-#include <ecs/World.h>
+#include <ecs/ComponentTypeId.h>
 #include <render/TextureHandle.h>
-
-#include <cstdint>
-#include <string_view>
-#include <tuple>
-
-class TextureCache;
+#include <world/ComponentAssetOwnership.h>
 
 //=============================================================================
 // ZoneLightmapComponent
@@ -23,51 +15,23 @@ class TextureCache;
 // render extraction resolves the textures' bindless indices once per
 // registry and stamps them on every draw item from that zone.
 //=============================================================================
-struct ZoneLightmapComponent
+struct SENCHA_COMPONENT("ZoneLightmap")
+       SENCHA_SCHEMA("ZoneLightmap")
+       SENCHA_SCENE_CHUNK("ZLMP")
+ZoneLightmapComponent
 {
+    SENCHA_FIELD("texture")
+    SENCHA_ASSET(Texture)
     TextureHandle Texture;
-    TextureHandle Ao;
+
+    SENCHA_FIELD("ao")
+    SENCHA_ASSET(Texture)
+    TextureHandle Ao{};
 };
 
-struct ZoneLightmapComponentAssets
-{
-    ZoneLightmapComponentAssets() = default;
-    explicit ZoneLightmapComponentAssets(TextureCache* textures)
-        : Textures(textures)
-    {
-    }
-
-    TextureCache* Textures = nullptr;
-};
-
-// Defined in ZoneLightmapComponent.cpp. Retaining a texture needs the cache's
-// definition, and this header is pulled in by scene serialization, schema
-// startup, and the editor's queue builder -- none of which should acquire a
-// dependency on the Vulkan-side texture cache to name a component. Sibling
-// components can inline their hooks because their caches (StaticMeshCache,
-// MaterialSetCache) live under render/; TextureCache does not.
-template <>
-struct ComponentTraits<ZoneLightmapComponent>
-{
-    static void OnAdd(ZoneLightmapComponent& component, World& world, EntityId);
-    static void OnRemove(const ZoneLightmapComponent& component, World& world,
-                         EntityId);
-};
+#if !defined(SENCHA_CODEGEN)
+#  include <render/ZoneLightmapComponent.sencha.h>
+#endif
 
 template <>
-struct TypeSchema<ZoneLightmapComponent>
-{
-    static constexpr std::string_view Name = "ZoneLightmap";
-    static constexpr std::uint32_t SceneChunkId = MakeFourCC('Z', 'L', 'M', 'P');
-
-    static auto Fields()
-    {
-        return std::tuple{
-            MakeField("texture", &ZoneLightmapComponent::Texture)
-                .AsAsset(AssetType::Texture),
-            MakeField("ao", &ZoneLightmapComponent::Ao)
-                .AsAsset(AssetType::Texture)
-                .Default(TextureHandle{}),
-        };
-    }
-};
+struct ComponentTraits<ZoneLightmapComponent> : SchemaAssetOwnership<ZoneLightmapComponent> {};

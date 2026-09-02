@@ -179,7 +179,7 @@ remember to retain or release:
 | `StaticMeshComponent` | retains mesh and material set | releases material set, then mesh |
 | `ZoneLightmapComponent` | retains the atlas and AO textures | releases both |
 
-Both resolve their cache pointers from a world resource
-(`StaticMeshComponentAssets`, `ZoneLightmapComponentAssets`). If the resource is
-absent, the hooks do nothing, which is what lets tests build worlds with no
-graphics services.
+Both are `SchemaAssetOwnership` traits: the fields are the ones the schema
+tags `.AsAsset()`, and the stores are found in the World's `AssetStoreTable`
+resource. If the table is absent, the hooks do nothing, which is what lets
+tests build worlds with no graphics services.

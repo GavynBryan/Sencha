@@ -1,6 +1,7 @@
 #include <core/assets/AssetRef.h>
 #include <core/identity/StrongId.h>
 #include <core/metadata/EnumSchema.h>
+#include <core/handle/Handle.h>
 #include <core/metadata/Field.h>
 #include <core/metadata/RuntimeSchema.h>
 #include <math/MathSchemas.h>
@@ -461,7 +462,7 @@ template <> struct TypeSchema<PresentedComp>
 
 struct ReferencingComp
 {
-    std::uint32_t Filler = 0;
+    Handle<struct ReferencingCompTag> Profile{};
 };
 template <> struct TypeSchema<ReferencingComp>
 {
@@ -469,7 +470,7 @@ template <> struct TypeSchema<ReferencingComp>
     static auto Fields()
     {
         return std::tuple{
-            MakeField("profile", &ReferencingComp::Filler).AsDataAsset("test.subtype"),
+            MakeField("profile", &ReferencingComp::Profile).AsDataAsset("test.subtype"),
         };
     }
 };

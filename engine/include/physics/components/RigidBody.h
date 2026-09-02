@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ecs/ComponentTypeId.h>
+#include <ecs/ComponentAnnotations.h>
 #include <math/Vec.h>
 #include <physics/PhysicsTypes.h>
 
@@ -18,7 +18,7 @@
 // created; the backend exposes no cheap per-step setter for it. Logic lives
 // in the physics systems; this struct holds no behavior.
 //=============================================================================
-struct RigidBody
+struct SENCHA_COMPONENT("sencha.physics.rigid_body") RigidBody
 {
     BodyMotion Motion = BodyMotion::Dynamic;
     float Mass = 1.0f; // <= 0 lets the backend derive mass from the shape
@@ -33,4 +33,6 @@ struct RigidBody
     float AngularDamping = 0.05f;
 };
 
-SENCHA_DECLARE_COMPONENT_TYPE(RigidBody, "sencha.physics.rigid_body");
+#if !defined(SENCHA_CODEGEN)
+#  include <physics/components/RigidBody.sencha.h>
+#endif

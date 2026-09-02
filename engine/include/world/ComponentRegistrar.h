@@ -1,11 +1,13 @@
 #pragma once
 
-#include <core/assets/AssetRef.h>
+#include <world/ComponentSet.h>
+
 #include <core/metadata/TypeSchema.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/WorldComponentSchema.h>
 #include <net/ReplicationLayout.h>
+#include <world/ComponentAssetOwnership.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
 
@@ -92,18 +94,15 @@ template <typename T>
     return ok;
 }
 
-// Whether any of T's fields is an asset reference. A component that names an
-// asset has to own it: the scene load hands its reference over and lets go, so
-// the only thing keeping the asset alive afterwards is the component's own
-// OnAdd, and the only thing that frees it is the matching OnRemove.
+// Whether any leaf of T's schema is an asset reference. A component that
+// names an asset has to own it: the scene load hands its reference over and
+// lets go, so the only thing keeping the asset alive afterwards is the
+// component's own OnAdd, and the only thing that frees it is the matching
+// OnRemove.
 template <typename T>
 [[nodiscard]] bool ComponentNamesAnAsset()
 {
-    bool any = false;
-    std::apply([&](const auto&... field)
-               { ((any = any || field.Asset != AssetType::Unknown), ...); },
-               TypeSchema<T>::Fields());
-    return any;
+    return !AssetFieldsOf<T>().empty();
 }
 
 class ComponentRegistrar
@@ -177,6 +176,15 @@ public:
         }
     }
 
+    // A module's whole vocabulary, in the order the set states it. Order is
+    // load-bearing -- it fixes the dense component index and the one-byte wire
+    // key -- and a pack preserves it, so this is a fold and nothing more.
+    template <typename Set>
+    void AddAll()
+    {
+        AddEachOf(static_cast<Set*>(nullptr));
+    }
+
     // Registers a persisted form the component's own TypeSchema cannot state.
     //
     // A few components persist as names rather than as values: a tag container
@@ -229,6 +237,12 @@ public:
     }
 
 private:
+    template <typename... Components>
+    void AddEachOf(ComponentSet<Components...>*)
+    {
+        (Add<Components>(), ...);
+    }
+
     WorldComponentSchema* Storage = nullptr;
     World* DirectWorld = nullptr;
     ComponentSerializerRegistry* Serializers = nullptr;

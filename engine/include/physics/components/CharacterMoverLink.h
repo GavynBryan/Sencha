@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include <ecs/ComponentTypeId.h>
+#include <ecs/ComponentAnnotations.h>
 
 //=============================================================================
 // CharacterMoverLink
@@ -14,9 +14,11 @@
 // free list so a slot stays valid for the mover's lifetime (no fixup on release).
 // Written by the character bridge's reconcile; never authored or serialized.
 //=============================================================================
-struct CharacterMoverLink
+struct SENCHA_COMPONENT("sencha.physics.mover_link") CharacterMoverLink
 {
     uint32_t MoverSlot = 0;
 };
 
-SENCHA_DECLARE_COMPONENT_TYPE(CharacterMoverLink, "sencha.physics.mover_link");
+#if !defined(SENCHA_CODEGEN)
+#  include <physics/components/CharacterMoverLink.sencha.h>
+#endif

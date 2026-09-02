@@ -129,7 +129,7 @@ bool SceneThumbnailCache::LoadEntry(const std::string& assetPath, Entry& entry)
 
     entry.Queues = std::make_unique<SceneRenderQueueBuilder>(
         Assets.Assets, *Assets.StaticMeshes, Assets.Materials, Assets.MaterialSets,
-        Logging, nullptr, Assets.SkinnedMeshes.get(), &Assets.AnimationClips);
+        Logging, nullptr, Assets.SkinnedMeshes.get());
     entry.Queues->Build(*entry.Document);
     return true;
 }

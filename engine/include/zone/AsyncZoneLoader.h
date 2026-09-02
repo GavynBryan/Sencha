@@ -15,6 +15,7 @@
 
 class AssetPreload;
 class AssetSystem;
+class SceneCache;
 class ComponentSerializerRegistry;
 class RuntimeFrameLoop;
 class RuntimeWorld;
@@ -93,6 +94,7 @@ public:
         ZoneId zone,
         std::string_view sceneAssetPath,
         AssetSystem& assets,
+        SceneCache& scenes,
         SceneStageFn stageExtra,
         SceneFinalizeFn finalize,
         ZoneParticipation participation,

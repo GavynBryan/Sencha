@@ -9,11 +9,9 @@
 #include <utility>
 
 SkinnedMeshAssetLoader::SkinnedMeshAssetLoader(LoggingProvider& logging,
-                                               AssetSystem& assets,
                                                SkinnedMeshCache* cache,
                                                SkeletonCache* skeletons)
     : Log(logging.GetLogger<SkinnedMeshAssetLoader>())
-    , Assets(assets)
     , Cache(cache)
     , Skeletons(skeletons)
     , FileLoader(logging)
@@ -52,7 +50,7 @@ AssetStaging SkinnedMeshAssetLoader::LoadStaged(const AssetRecord& record, IAsse
     return staging;
 }
 
-SkinnedMeshHandle SkinnedMeshAssetLoader::CommitTyped(AssetStaging&& staged)
+SkinnedMeshHandle SkinnedMeshAssetLoader::CommitTyped(AssetStaging&& staged, AssetSystem& assets)
 {
     if (!staged.IsValid())
     {
@@ -78,14 +76,15 @@ SkinnedMeshHandle SkinnedMeshAssetLoader::CommitTyped(AssetStaging&& staged)
     // Resident by now on the async path (declared as a staging dependency);
     // the synchronous path loads it inline here. Either way the commit holds
     // the reference that binds the mesh→skeleton chain.
-    SkeletonHandle skeleton = Assets.LoadSkeleton(data->Skinning.SkeletonPath);
+    const SkeletonHandle skeleton = SkeletonHandle::FromToken(
+        assets.LoadLease(data->Skinning.SkeletonPath, AssetType::Skeleton).Relinquish());
     if (!skeleton.IsValid())
     {
         Log.Error("SkinnedMeshAssetLoader: skinned mesh '{}' references skeleton '{}' that "
                   "failed to load", staged.Record.Path, data->Skinning.SkeletonPath);
         return {};
     }
-    // LoadSkeleton already incremented the refcount -- wrap without attaching.
+    // The load's reference is the one the mesh keeps -- wrap without attaching.
     SkeletonCacheHandle ownedSkeleton(Skeletons, skeleton, SkeletonCacheHandle::NoAttachTag{});
 
     // The joint count the mesh was cooked against must match the skeleton it

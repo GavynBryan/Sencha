@@ -23,6 +23,7 @@ struct ZoneSceneRecipe
 {
     std::string AssetPath; // asset://... of the cooked .smap
     AssetSystem* Assets = nullptr;
+    SceneCache* Scenes = nullptr;
     AsyncZoneLoader::SceneStageFn StageExtra;
     AsyncZoneLoader::SceneFinalizeFn Finalize;
 };

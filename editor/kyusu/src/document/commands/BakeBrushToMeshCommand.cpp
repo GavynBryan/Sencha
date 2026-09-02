@@ -5,12 +5,14 @@
 #include "document/EditorScene.h"
 
 #include <assets/static_mesh/MeshSerializer.h>
+#include <core/assets/AssetLease.h>
 #include <core/assets/AssetRegistry.h>
 #include <assets/runtime/AssetSystem.h>
 #include <core/hash/ContentHash.h>
 #include <core/logging/Logger.h>
 #include <render/StaticMeshComponent.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <string>
 #include <utility>
@@ -19,30 +21,30 @@
 namespace
 {
 // Resolve the baked asset + its per-slot materials and attach the component.
-// Load/Acquire each add a caller reference; the component's OnAdd hook retains
-// its own, so the caller references are released before returning: the
-// component alone owns the assets afterwards, exactly like a scene-loaded one.
+// The leases here are the caller's references; the component's OnAdd hook
+// retains its own, so they drop on return and the component alone owns the
+// assets afterwards, exactly like a scene-loaded one.
 bool AttachStaticMeshComponent(EditorScene& scene, AssetSystem& assets, EntityId entity,
                                const std::string& meshPath, const std::vector<AssetRef>& materials)
 {
-    const StaticMeshHandle mesh = assets.LoadStaticMesh(meshPath);
+    const AssetLease mesh = assets.LoadLease(meshPath, AssetType::StaticMesh);
     if (!mesh.IsValid())
         return false;
 
-    std::vector<MaterialHandle> slots;
-    slots.reserve(materials.size());
+    std::vector<AssetLease> slots;
+    std::vector<std::uint64_t> slotTokens;
     for (const AssetRef& material : materials)
-        slots.push_back(material.Path.empty() ? MaterialHandle{} : assets.LoadMaterial(material.Path));
-    const MaterialSetHandle set = assets.AcquireMaterialSet(slots);
-    for (MaterialHandle slot : slots)
-        if (slot.IsValid())
-            assets.ReleaseMaterial(slot); // the set holds its own member references
+    {
+        slots.push_back(material.Path.empty()
+                            ? AssetLease{}
+                            : assets.LoadLease(material.Path, AssetType::Material));
+        slotTokens.push_back(slots.back().OpaqueToken());
+    }
+    const AssetLease set = assets.InternList(AssetType::Material, slotTokens);
 
     scene.GetRegistry().Components.AddComponent(
-        entity, StaticMeshComponent{ .Mesh = mesh, .Materials = set });
-
-    assets.ReleaseStaticMesh(mesh);
-    assets.ReleaseMaterialSet(set);
+        entity, StaticMeshComponent{ .Mesh = StaticMeshHandle::FromToken(mesh.OpaqueToken()),
+                                     .Materials = MaterialSetHandle::FromToken(set.OpaqueToken()) });
     return true;
 }
 
@@ -207,11 +209,11 @@ std::unique_ptr<ICommand> MakeRevertBakedBrushCommand(EditorScene& scene,
     const World& world = std::as_const(scene).GetRegistry().Components;
     if (const StaticMeshComponent* component = world.TryGet<StaticMeshComponent>(entity))
     {
-        meshPath = assets.GetPathForStaticMesh(component->Mesh);
-        if (const std::vector<MaterialHandle>* slots = assets.GetMaterialSet(component->Materials))
-            for (MaterialHandle slot : *slots)
-                materials.push_back(AssetRef{ AssetType::Material,
-                                              std::string(assets.GetPathForMaterial(slot)) });
+        meshPath = assets.GetPathForLease(AssetType::StaticMesh, component->Mesh.ToToken());
+        for (const std::uint64_t slot :
+             assets.ListMembers(AssetType::Material, component->Materials.ToToken()))
+            materials.push_back(AssetRef{ AssetType::Material,
+                                          std::string(assets.GetPathForLease(AssetType::Material, slot)) });
     }
 
     return std::make_unique<RevertBakedBrushCommand>(scene, document, assets, entity,

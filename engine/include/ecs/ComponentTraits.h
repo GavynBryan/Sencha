@@ -11,13 +11,14 @@
 // ComponentTraits<T>: opt-in specialization point for lifecycle hooks.
 // Default specialization is trivial — zero overhead for components without hooks.
 //
-// To add hooks for a component type T, specialize this template near T's definition:
+// To add hooks for a component type T, declare this specialization in T's own
+// header and define the hooks in its .cpp:
 //
 //   template <>
 //   struct ComponentTraits<MyComponent>
 //   {
-//       static void OnAdd(MyComponent& component, World& world, EntityId entity) { ... }
-//       static void OnRemove(const MyComponent& component, World& world, EntityId entity) { ... }
+//       static void OnAdd(MyComponent& component, World& world, EntityId entity);
+//       static void OnRemove(const MyComponent& component, World& world, EntityId entity);
 //   };
 //
 // Hooks run synchronously at command-buffer flush.

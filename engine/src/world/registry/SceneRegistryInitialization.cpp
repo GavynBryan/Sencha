@@ -1,28 +1,18 @@
 #include <world/registry/SceneRegistryInitialization.h>
 
-#include <anim/AnimationClipPlayerComponent.h>
-#include <audio/AudioSourceComponent.h>
 #include <components/ActiveCameraService.h>
-#include <movement/MovementComponents.h>
 #include <movement/MovementRegistration.h>
-#include <render/StaticMeshComponent.h>
-#include <render/skinned_mesh/SkinnedMeshComponent.h>
-#include <render/ZoneLightmapComponent.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/ComponentStorageTraits.h>
 
-void InitializeSceneRegistry(
-    Registry& registry,
-    StaticMeshCache* meshes,
-    MaterialSetCache* materialSets,
-    AudioClipCache* audioClips,
-    AudioService* audio,
-    CaptionRuntime* captions,
-    TextureCache* textures,
-    SkinnedMeshCache* skinnedMeshes,
-    AnimationClipCache* clips)
+#include <utility>
+
+void InitializeSceneRegistry(Registry& registry,
+                             AssetStoreTable stores,
+                             AudioSourceRuntime audio,
+                             AnimationClipPlaybackRuntime animation)
 {
     registry.Resources.Register<ActiveCameraService>();
     // The same feature registrars the runtime composes its sealed vocabulary
@@ -31,18 +21,9 @@ void InitializeSceneRegistry(
     // scene than the game does.
     ComponentRegistrar components(registry.Components);
     RegisterEngineComponents(components);
-    registry.Components.AddResource<StaticMeshComponentAssets>(
-        meshes,
-        materialSets);
-    registry.Components.AddResource<SkinnedMeshComponentAssets>(
-        skinnedMeshes,
-        materialSets);
-    registry.Components.AddResource<AnimationClipComponentAssets>(clips);
-    registry.Components.AddResource<ZoneLightmapComponentAssets>(textures);
-    registry.Components.AddResource<AudioSourceRuntime>(
-        audioClips,
-        audio,
-        captions);
+    registry.Components.SetResource(std::move(stores));
+    registry.Components.SetResource(audio);
+    registry.Components.SetResource(animation);
     // Tags, attributes, abilities, and locomotion modes are named in content by
     // the name they were registered under, so a registry that is going to hold
     // a loaded scene needs the vocabulary those names resolve against -- the

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ecs/ComponentTypeId.h>
+#include <ecs/ComponentAnnotations.h>
 #include <abilities/AbilityId.h>
 
 #include <cstdint>
@@ -13,7 +13,7 @@
 // component. Small fixed capacity, linear lookup. Activation references an
 // ability the entity holds; granting/revoking is a gameplay action.
 //=============================================================================
-struct AbilitySet
+struct SENCHA_COMPONENT("sencha.ability_set") AbilitySet
 {
     static constexpr std::uint8_t Capacity = 16;
 
@@ -31,4 +31,6 @@ struct AbilitySet
 static_assert(std::is_trivially_copyable_v<AbilitySet>,
               "AbilitySet must be trivially copyable to live in ECS chunks");
 
-SENCHA_DECLARE_COMPONENT_TYPE(AbilitySet, "sencha.ability_set");
+#if !defined(SENCHA_CODEGEN)
+#  include <abilities/AbilitySet.sencha.h>
+#endif

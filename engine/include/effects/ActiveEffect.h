@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ecs/ComponentTypeId.h>
+#include <ecs/ComponentAnnotations.h>
 #include <ecs/EntityId.h>
 #include <effects/EffectId.h>
 
@@ -18,7 +18,7 @@
 // Runtime-only state: not scene-serialized (persistence is the streaming
 // overlay's job). Trivially copyable so it lives in chunks.
 //=============================================================================
-struct ActiveEffect
+struct SENCHA_COMPONENT("sencha.active_effect") ActiveEffect
 {
     EntityId Target;
     EffectId Def;
@@ -29,4 +29,6 @@ struct ActiveEffect
 static_assert(std::is_trivially_copyable_v<ActiveEffect>,
               "ActiveEffect must be trivially copyable to live in ECS chunks");
 
-SENCHA_DECLARE_COMPONENT_TYPE(ActiveEffect, "sencha.active_effect");
+#if !defined(SENCHA_CODEGEN)
+#  include <effects/ActiveEffect.sencha.h>
+#endif

@@ -87,7 +87,8 @@ void StaticMeshRenderer::DrawViewport(const FrameContext& frame, const EditorVie
         if (mesh == nullptr)
             continue;
 
-        const std::string path(Assets->GetPathForStaticMesh(mesh->Mesh));
+        const std::string path(
+            Assets->GetPathForLease(AssetType::StaticMesh, mesh->Mesh.ToToken()));
         if (path.empty())
             continue;
         const MeshGeometry* geometry = GeometryFor(path);

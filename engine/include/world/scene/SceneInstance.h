@@ -3,19 +3,16 @@
 #include <core/assets/AssetId.h>
 #include <core/identity/Id.h>
 #include <core/identity/StrongId.h>
-#include <core/metadata/Field.h>
-#include <core/metadata/TypeSchema.h>
-#include <core/serialization/FourCC.h>
+#include <ecs/ComponentAnnotations.h>
 #include <ecs/ComponentTraits.h>
+#include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
-#include <ecs/World.h>
 #include <world/serialization/SceneFieldCodec.h>
 
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <tuple>
 
 //=============================================================================
 // SceneInstance
@@ -54,15 +51,23 @@ SceneInstanceIdFromString(std::string_view text)
     return SceneInstanceId{ parsed->Value };
 }
 
-struct SceneInstance
+struct SENCHA_COMPONENT("scene_instance")
+       SENCHA_SCHEMA("scene_instance")
+       SENCHA_SCENE_CHUNK("SNIN")
+SceneInstance
 {
     // The scene asset this instance expands, as its cook-stamped stable id.
     // Invalid when no id map covered the source (dev cooks); group identity
     // and the index never depend on it.
+    SENCHA_FIELD("source")
     AssetId Source;
+
+    SENCHA_FIELD("id")
     SceneInstanceId Id;
 };
 
+// Instance membership: the group stays addressable through SceneInstanceIndex
+// for exactly as long as its members carry the component.
 template <>
 struct ComponentTraits<SceneInstance>
 {
@@ -93,17 +98,6 @@ struct SceneFieldCodec<AssetId>
                      SceneSerializationContext&);
 };
 
-template <>
-struct TypeSchema<SceneInstance>
-{
-    static constexpr std::string_view Name = "scene_instance";
-    static constexpr std::uint32_t SceneChunkId = MakeFourCC('S', 'N', 'I', 'N');
-
-    static auto Fields()
-    {
-        return std::tuple{
-            MakeField("source", &SceneInstance::Source),
-            MakeField("id", &SceneInstance::Id),
-        };
-    }
-};
+#if !defined(SENCHA_CODEGEN)
+#  include <world/scene/SceneInstance.sencha.h>
+#endif

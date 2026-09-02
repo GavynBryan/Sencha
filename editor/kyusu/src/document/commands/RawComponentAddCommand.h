@@ -42,10 +42,14 @@ public:
         // redo brought rather than what the first add did.
         world.ComponentIdsOn(Entity, Before);
 
+        // Fires the component's OnAdd, which is what makes this balance the
+        // OnRemove in Undo. Default bytes name no asset, so a retain/release
+        // component retains nothing here; the reference it ends up owning
+        // arrives later, through an edit to the field itself.
         const void* blob = (meta->Size > 0 && InitialBytes.size() == meta->Size)
             ? InitialBytes.data()
             : nullptr;
-        world.AddComponentRaw(Entity, Component, blob, meta->Size, meta->Alignment, nullptr);
+        world.AddComponentRaw(Entity, Component, blob, meta->Size, meta->Alignment);
 
         world.ComponentIdsOn(Entity, After);
         Provisioned.clear();
@@ -85,9 +89,7 @@ private:
     {
         if (!world.HasComponent(Entity, id))
             return;
-        const ComponentMeta* meta = world.GetMeta(id);
-        world.RemoveComponentRaw(Entity, id,
-                                 meta != nullptr ? meta->OnRemoveHook : nullptr);
+        world.RemoveComponentRaw(Entity, id);
     }
 
     EntityId                 Entity;

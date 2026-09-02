@@ -1,5 +1,7 @@
 #pragma once
 
+#include <core/metadata/ComponentDefinition.h>
+
 //=============================================================================
 // ComponentRemovable
 //
@@ -18,4 +20,14 @@ template <typename Component>
 struct ComponentRemovable
 {
     static constexpr bool Value = true;
+};
+
+// A generated definition states removability with the rest of the component's
+// declarative facts. Partial, so a handwritten opt-out still wins.
+template <typename Component>
+    requires HasComponentDefinition<Component>
+             && requires { ComponentDefinition<Component>::Removable; }
+struct ComponentRemovable<Component>
+{
+    static constexpr bool Value = ComponentDefinition<Component>::Removable;
 };

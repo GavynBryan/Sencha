@@ -1,4 +1,5 @@
 #include <render/extract/RenderExtractionSystem.h>
+#include <render/skinned_mesh/SkinnedMeshCache.h>
 
 #include <anim/AnimationClipPlayerComponent.h>
 #include <anim/AnimationClipSampling.h>

@@ -11,6 +11,7 @@
 #include <ecs/Ecs.h>
 #include <render/RenderQueue.h>
 #include <render/StaticMeshComponent.h>
+#include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformPropagation.h>
 

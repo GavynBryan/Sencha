@@ -8,14 +8,18 @@ the supported way to make a game on Sencha.
 project.senchaproj   project descriptor the editor opens (name, module, content)
 CMakeLists.txt       find_package(Sencha) + sencha_game_module(game ...)
 src/TemplateGame.*   the game module: a v4 module-is-a-Game (map viewer + systems)
-src/SpinComponent.h  an example game-defined component (schema-reflected)
+src/SpinComponent.h  an example game-defined component (annotated)
 assets/              authored content; the cook writes assets/.cooked/
 ```
 
-`SpinComponent` shows the whole game-data path: a `TypeSchema` makes it cook
+`SpinComponent` shows the whole game-data path: its annotations make it cook
 through and appear, editable, in the editor inspector with no editor code naming
 it, and `SpinSystem` (in `TemplateGame.cpp`) rotates entities that carry it at
-play time. Delete it and add your own.
+play time. Its metadata is generated at build time by the SDK's
+`sencha-component-codegen` from the headers listed as `COMPONENT_HEADERS` in
+`CMakeLists.txt`, and checked against the engine's own components: a game
+component claiming an engine identity fails the build naming both. Delete it
+and add your own.
 
 ## Build the game module
 

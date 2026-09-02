@@ -42,6 +42,10 @@ struct AssetKindRegistration
     IAssetStager* Stager = nullptr;
     IAssetStore* Store = nullptr;
 
+    // The kind's list form (a mesh's per-slot materials), when it has one.
+    // Requires Store: a list is made of that store's tokens.
+    IAssetListStore* ListStore = nullptr;
+
     // Commits a staged payload and yields the creation reference.
     std::function<AssetLease(AssetStaging&&)> Commit;
 
@@ -67,7 +71,8 @@ class AssetKindRegistry
 {
 public:
     // Rejects a duplicate type, an unnamed kind, a partially wired loadable
-    // kind, and an extension another kind already claims.
+    // kind, a list store without its single store, and an extension another
+    // kind already claims.
     [[nodiscard]] bool Register(AssetKindRegistration registration);
 
     [[nodiscard]] const AssetKindRegistration* Find(AssetType type) const;

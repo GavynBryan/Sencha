@@ -6,6 +6,7 @@
 #include "brush/BrushOps.h"
 
 #include <world/identity/PersistentIdComponent.h>
+#include <world/identity/PersistentEntityIndex.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/DerivedTransform.h>
 #include <world/transform/TransformPropagation.h>

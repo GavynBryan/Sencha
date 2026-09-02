@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ecs/ComponentTypeId.h>
+#include <ecs/ComponentAnnotations.h>
 #include <ecs/EntityId.h>
 #include <input/InputActionState.h>
 
@@ -67,7 +67,7 @@ private:
 // The reference an entity carries. Absent means source zero, so this exists
 // only on entities some other source steers.
 //-----------------------------------------------------------------------------
-struct InputActionSourceRef
+struct SENCHA_COMPONENT("sencha.input_action_source_ref") InputActionSourceRef
 {
     InputActionSourceId Source = kLocalInputActionSource;
 };
@@ -75,7 +75,9 @@ struct InputActionSourceRef
 static_assert(std::is_trivially_copyable_v<InputActionSourceRef>,
               "InputActionSourceRef must be trivially copyable to live in ECS chunks");
 
-SENCHA_DECLARE_COMPONENT_TYPE(InputActionSourceRef, "sencha.input_action_source_ref");
+#if !defined(SENCHA_CODEGEN)
+#  include <input/InputActionSource.sencha.h>
+#endif
 
 //-----------------------------------------------------------------------------
 // InputActionSourceTable

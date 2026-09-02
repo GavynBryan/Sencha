@@ -262,23 +262,30 @@ cached row pointers. It rebuilds when structural version changes or
 
 Scene serialization is schema-driven:
 
-- `TypeSchema<T>` describes the authored fields of a component.
+- `TypeSchema<T>` describes the authored fields of a component. For a
+  component it is projected from `ComponentDefinition<T>`, which
+  `sencha-component-codegen` generates from the `SENCHA_*` annotations on the
+  struct (`ecs/ComponentAnnotations.h`) into a `<Header>.sencha.h` companion
+  the component header includes. Value types such as the math types keep
+  handwritten schemas, and a handwritten specialization always wins over the
+  projection.
 - `Field` descriptors name members and can carry defaults/optional flags.
 - `ComponentSerializer<T>` saves/loads a component by visiting its schema.
 - `SceneFieldCodec<T>` handles special field types, especially runtime handles
   that serialize as asset paths.
-- `ComponentStorageTraits<T>` maps a serializable component to a binary chunk
-  ID and defines how it is inserted into registry storage. The primary
-  template handles any component whose `TypeSchema` declares a `SceneChunkId`;
-  only `LocalTransform` is specialized (it co-registers `WorldTransform` and
-  `Parent`). All specializations live in `ComponentStorageTraits.h` — see the
-  ODR note in that header.
+- `ComponentStorageTraits<T>` defines how a serialized component enters
+  registry storage. The primary template handles any component whose schema
+  names a `SceneChunkId`; only `LocalTransform` is specialized (it co-registers
+  `WorldTransform` and `Parent`), in its own header beside the component.
 
-The set of serializable components is named once, in
-`world/ComponentManifest.h` (`EngineSceneComponents`). `RegisterEngineSceneSerializers()`
-and `InitializeSceneRegistry()` both fold over that list, so serializer
-registration and storage registration cannot drift apart. Each component's
-JSON key and chunk FourCC live on its own `TypeSchema<T>` (`Name`,
+Each feature names the components it owns in one `Register*Components(
+ComponentRegistrar&)` function, and `RegisterEngineComponents()` walks those in
+a fixed order. `ComponentRegistrar::Add<T>` reads `SceneChunkId` and
+`Replicated` off the schema and fans one call out to storage, the serializer
+registry, and the replication table, whichever the host supplied, so the three
+cannot drift apart. `RegisterEngineSceneSerializers()` walks the same
+registrars with serializers alone, for hosts that read scenes without a World.
+Each component's JSON key and chunk FourCC live on its own schema (`Name`,
 `SceneChunkId`).
 
 JSON scene format:
@@ -617,20 +624,30 @@ New component:
 
 1. Define plain data near the owning feature. Components must be trivially
    copyable (enforced by a `static_assert` in `World::RegisterComponent`).
-2. Add `TypeSchema<T>` only for authored fields. JSON keys are snake_case of
-   the member name; `.Default()` values must equal the member initializers
-   (both enforced by convention/tests so future reflection-generated schemas
-   stay wire-compatible — see docs/ecs/component-registration-plan.md).
-3. If it serializes, add `static constexpr std::uint32_t SceneChunkId` to its
-   `TypeSchema` and add the type to `EngineSceneComponents` in
-   `world/ComponentManifest.h`. That is the only registration edit; storage
-   traits default from the primary template.
-4. Add `ComponentTraits<T>` only if lifetime hooks are needed.
-5. If it holds asset handles, retain on add and release on remove through a
-   world resource that stores cache pointers.
-6. Runtime-only (non-serialized) components register directly via
-   `RegisterComponent<T>()` before any entity is created in each registry
-   that may use them.
+2. Annotate the struct with `SENCHA_COMPONENT("<identity>")`, the identity
+   whose hash names it in cooked content and on the wire. Once content exists
+   the identity is frozen; `test/core/ComponentIdentityFreezeTests.cpp` pins
+   every engine one.
+3. If it is authored, add `SENCHA_SCHEMA("<name>")` and tag each authored
+   member with `SENCHA_FIELD("<snake_case key>")`. A member initializer is the
+   field's default; a member without one is required. Untagged members are
+   invisible to the schema, so adding one never changes the scene format or
+   the wire layout. `SENCHA_SCENE_CHUNK("XXXX")` makes it persist into scenes,
+   `SENCHA_REPLICATED` puts it on the wire.
+4. List the header under `sencha_generate_component_metadata(...)` in the
+   owning target's CMake (a game module lists it as `COMPONENT_HEADERS` of
+   `sencha_game_module`) and include `<path/Header.sencha.h>` at the end of
+   the header, guarded by `#if !defined(SENCHA_CODEGEN)`. The path is the
+   header's own relative to its include root.
+5. Add the type to the feature's `ComponentSet` (`AudioComponents`,
+   `MovementComponents`, ...). That is the only registration edit; the
+   registrar reads what follows off the schema, and
+   `test/core/EngineComponentRosterTests.cpp` fails on an annotated engine
+   component no feature names.
+6. Add `ComponentTraits<T>` only if lifetime hooks are needed, declared in the
+   component's header with the bodies in its `.cpp`. A component holding
+   asset handles retains on add and releases on remove through a world
+   resource that stores cache pointers.
 
 New asset type:
 

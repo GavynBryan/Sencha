@@ -390,7 +390,8 @@ void DataEditorWorkspace::ReloadResident(std::string_view virtualPath)
     if (record == nullptr || !Assets.Assets.IsResident(virtualPath, AssetType::Data))
         return;
 
-    AssetStaging staged = Assets.DataLoader.LoadStaged(*record, Assets.Assets.DefaultSource());
+    AssetStaging staged =
+        Assets.Assets.LoaderFor(AssetType::Data)->LoadStaged(*record, Assets.Assets.DefaultSource());
     if (staged.IsValid())
-        (void)Assets.DataLoader.CommitReload(std::move(staged));
+        (void)Assets.Assets.Reload(std::move(staged));
 }

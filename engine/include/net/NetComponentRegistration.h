@@ -12,11 +12,14 @@
 // session can exist, so these cannot be added later on the machine that turns
 // out to host. They cost a column each and nothing else when no session is
 // ever created.
+using NetComponents = ComponentSet<
+    NetReplicated,
+    NetOwner,
+    NetDrivenBy,
+    NetSpawnPrefab,
+    NetParticipantIdentity>;
+
 inline void RegisterNetComponents(ComponentRegistrar& registrar)
 {
-    registrar.Add<NetReplicated>();
-    registrar.Add<NetOwner>();
-    registrar.Add<NetDrivenBy>();
-    registrar.Add<NetSpawnPrefab>();
-    registrar.Add<NetParticipantIdentity>();
+    registrar.AddAll<NetComponents>();
 }

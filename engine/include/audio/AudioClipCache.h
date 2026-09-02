@@ -1,6 +1,7 @@
 #pragma once
 
 #include <audio/AudioClip.h>
+#include <audio/AudioClipHandle.h>
 #include <core/assets/AssetCache.h>
 #include <core/handle/Handle.h>
 #include <core/handle/Owned.h>
@@ -15,7 +16,6 @@
 // Opaque generational handle returned by AudioClipCache. One of the engine's
 // unified Handle<Tag> types.
 //=============================================================================
-using AudioClipHandle = Handle<struct AudioClipHandleTag>;
 
 //=============================================================================
 // AudioClipEntry

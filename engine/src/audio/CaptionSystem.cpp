@@ -1,9 +1,11 @@
 #include <audio/CaptionSystem.h>
 
 #include <app/GameContexts.h>
+#include <audio/AudioClipCache.h>
 #include <audio/AudioCaptionComponent.h>
 #include <audio/AudioService.h>
 #include <audio/AudioSourceComponent.h>
+#include <audio/AudioSourceRuntime.h>
 #include <audio/CaptionRuntime.h>
 #include <ecs/Query.h>
 #include <ecs/StoragePartitionSet.h>

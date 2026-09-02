@@ -50,6 +50,16 @@ struct Handle
     }
 };
 
+// Whether T is some Handle<Tag>, for generic code that treats every handle the
+// same way: schema-driven serialization carries one as its token and asks the
+// field which asset kind the token belongs to. Deliberately narrow -- a strong
+// id is not a handle, and must not be mistaken for one.
+template <typename T>
+inline constexpr bool IsHandleType = false;
+
+template <typename Tag>
+inline constexpr bool IsHandleType<Handle<Tag>> = true;
+
 // The slot index of a valid handle, for code that indexes a parallel array by
 // slot (e.g. per-instance draw data). Free function rather than a method so it
 // is uniform across every Handle<Tag>.

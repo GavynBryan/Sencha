@@ -1,5 +1,7 @@
 #pragma once
 
+#include <core/metadata/ComponentDefinition.h>
+
 #include <cstdint>
 #include <optional>
 #include <string_view>
@@ -31,4 +33,14 @@ template <typename Component>
 struct ComponentEditorVisual
 {
     static constexpr std::optional<EditorVisual> Value = std::nullopt;
+};
+
+// A generated definition naming a visual mesh projects to the same trait.
+// Partial, so a handwritten visual still wins.
+template <typename Component>
+    requires DefinitionHasVisualMesh<Component>
+struct ComponentEditorVisual<Component>
+{
+    static constexpr std::optional<EditorVisual> Value = EditorVisual{
+        EditorVisual::Kind::Mesh, ComponentDefinition<Component>::VisualMeshAsset };
 };

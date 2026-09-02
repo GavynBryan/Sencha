@@ -7,9 +7,9 @@
 
 // The authored camera an entity carries, what a body's own camera says it is
 // for, and the runtime rig that steers one.
+using CameraComponents = ComponentSet<CameraComponent, CameraSeat, CameraRig>;
+
 inline void RegisterCameraComponents(ComponentRegistrar& registrar)
 {
-    registrar.Add<CameraComponent>();
-    registrar.Add<CameraSeat>();
-    registrar.Add<CameraRig>();
+    registrar.AddAll<CameraComponents>();
 }

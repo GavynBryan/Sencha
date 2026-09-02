@@ -14,7 +14,7 @@
 #include <assets/data/DataAssetLoader.h>
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <assets/runtime/AssetSystem.h>
-#include <core/assets/AssetKindRegistry.h>
+#include <assets/runtime/RegisterAssetKind.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
@@ -22,7 +22,8 @@
 #include <ecs/WorldComponentSchema.h>
 #include <movement/JumpState.h>
 #include <movement/LocomotionMode.h>
-#include <movement/MovementComponents.h>
+#include <movement/components/CharacterMovement.h>
+#include <movement/components/MovementTuning.h>
 #include <movement/MovementProfileData.h>
 #include <movement/MovementRegistration.h>
 #include <net/ReplicationLayout.h>
@@ -72,22 +73,12 @@ namespace
 
             RegisterMovementProfileData(DataTypes, DataSchemas);
 
-            AssetKindRegistration data = MakeBuiltinAssetKind(AssetType::Data);
-            data.Stager = &DataLoader;
-            data.Store = &DataAssets;
-            data.Commit = [this](AssetStaging&& staged) -> AssetLease
-            {
-                const DataAssetHandle handle = DataLoader.CommitTyped(std::move(staged));
-                if (!handle.IsValid())
-                    return {};
-                return AssetLease::Adopt(AssetType::Data, DataAssets, handle.ToToken());
-            };
-            ASSERT_TRUE(Assets.Kinds().Register(std::move(data)));
+            RegisterAssetKind(Assets, AssetType::Data, DataLoader, &DataAssets);
 
             ComponentRegistrar components(World_);
             RegisterEngineComponents(components);
             RegisterMovement(World_);
-            World_.AddResource<MovementComponentAssets>(&DataAssets);
+            World_.SetResource(Assets.Stores());
 
             RegisterEngineSceneSerializers(Serializers);
         }
@@ -123,7 +114,7 @@ namespace
         DataSchemaRegistry DataSchemas;
         DataAssetCache DataAssets;
         DataAssetLoader DataLoader{ Logging, &DataTypes, &DataSchemas, &DataAssets };
-        AssetSystem Assets{ Logging, AssetRegistry_, nullptr, nullptr };
+        AssetSystem Assets{ Logging, AssetRegistry_ };
         World World_;
         ComponentSerializerRegistry Serializers;
     };
@@ -213,7 +204,7 @@ TEST_F(MovementProfileLifetimeTest, WorldTeardownReleasesWhatItsEntitiesHold)
         RegisterEngineComponents(components);
         schema.Seal();
         schema.Apply(scoped);
-        scoped.AddResource<MovementComponentAssets>(&DataAssets);
+        scoped.SetResource(Assets.Stores());
 
         const EntityId entity = scoped.CreateEntity();
         AssetLease lease = LoadProfile();
@@ -282,7 +273,7 @@ TEST_F(MovementProfileLifetimeTest, ASceneLoadLeavesTheComponentHoldingItAlone)
     ComponentRegistrar components(scene.Components);
     RegisterEngineComponents(components);
     RegisterMovement(scene.Components);
-    scene.Components.AddResource<MovementComponentAssets>(&DataAssets);
+    scene.Components.SetResource(Assets.Stores());
 
     SceneSerializationContext context(Logging, &Assets);
     ASSERT_TRUE(LoadSceneJson(*parsed, scene, Serializers, context));
@@ -328,7 +319,7 @@ TEST_F(MovementProfileLifetimeTest, TheCooksStampedReferenceReadsBack)
     ComponentRegistrar components(scene.Components);
     RegisterEngineComponents(components);
     RegisterMovement(scene.Components);
-    scene.Components.AddResource<MovementComponentAssets>(&DataAssets);
+    scene.Components.SetResource(Assets.Stores());
 
     SceneSerializationContext context(Logging, &Assets);
     ASSERT_TRUE(LoadSceneJson(*parsed, scene, Serializers, context));
@@ -362,7 +353,7 @@ TEST_F(MovementProfileLifetimeTest, AMissingProfileLoadsAsAnUnauthoredCharacter)
     ComponentRegistrar components(scene.Components);
     RegisterEngineComponents(components);
     RegisterMovement(scene.Components);
-    scene.Components.AddResource<MovementComponentAssets>(&DataAssets);
+    scene.Components.SetResource(Assets.Stores());
 
     SceneSerializationContext context(Logging, &Assets);
     ASSERT_TRUE(LoadSceneJson(*parsed, scene, Serializers, context))

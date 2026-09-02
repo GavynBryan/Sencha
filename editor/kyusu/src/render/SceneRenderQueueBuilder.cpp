@@ -7,6 +7,7 @@
 #include "render/EditorLightGather.h"
 
 #include <assets/cook/BrushClustering.h>   // CookBrushGeometry
+#include <render/skinned_mesh/SkinnedMeshCache.h>
 #include <assets/cook/BrushGeometryCook.h> // CollectMaterialOrder, BakeBrushFacesToStaticMesh
 #include <assets/runtime/AssetSystem.h>
 #include <core/hash/Fnv1a.h>
@@ -78,15 +79,13 @@ SceneRenderQueueBuilder::SceneRenderQueueBuilder(AssetSystem& assets,
                                                  MaterialSetCache& materialSets,
                                                  LoggingProvider& logging,
                                                  TextureCache* textures,
-                                                 SkinnedMeshCache* skinnedMeshes,
-                                                 AnimationClipCache* animationClips)
+                                                 SkinnedMeshCache* skinnedMeshes)
     : Assets(assets)
     , Meshes(meshes)
     , Materials(materials)
     , MaterialSets(materialSets)
     , Textures(textures)
     , SkinnedMeshes(skinnedMeshes)
-    , AnimationClips(animationClips)
     , Logging(logging)
     , Log(logging.GetLogger<SceneRenderQueueBuilder>())
 {
@@ -176,7 +175,8 @@ void SceneRenderQueueBuilder::RebuildBrushMeshes(const EditorDocument& document)
         entry.SlotMaterials.reserve(order.size());
         for (const AssetRef& ref : order)
         {
-            const MaterialHandle material = Assets.LoadMaterial(ref.Path);
+            const MaterialHandle material = MaterialHandle::FromToken(
+                Assets.LoadLease(ref.Path, AssetType::Material).Relinquish());
             entry.SlotMaterials.push_back(material);
             if (material.IsValid())
                 acquired.push_back(material);
@@ -311,9 +311,7 @@ void SceneRenderQueueBuilder::SetLightmapPreview(const LightmapPreviewSource& so
     }
 
     auto registry = std::make_unique<Registry>();
-    InitializeSceneRegistry(*registry, &Meshes, &MaterialSets,
-                            nullptr, nullptr, nullptr, Textures, SkinnedMeshes,
-                            AnimationClips);
+    InitializeSceneRegistry(*registry, Assets.Stores());
     // The engine vocabulary comes with the registry; a loaded module's does
     // not, and a scene naming one of its tags would refuse to load without it.
     InstallEditorModuleVocabulary(registry->Components);
@@ -527,6 +525,6 @@ void SceneRenderQueueBuilder::ReleaseBrushMeshes()
     BrushMeshes.clear();
 
     for (const MaterialHandle material : BrushMaterials)
-        Assets.ReleaseMaterial(material);
+        Assets.ReleaseLease(AssetType::Material, material.ToToken());
     BrushMaterials.clear();
 }

@@ -9,7 +9,6 @@
 #include <render/static_mesh/StaticMeshHandle.h>
 
 class SkinnedMeshCache;
-class AnimationClipCache;
 
 #include <cstdint>
 #include <filesystem>
@@ -56,16 +55,14 @@ class SceneRenderQueueBuilder
 {
 public:
     // `skinnedMeshes` is optional the same way `textures` is: without it,
-    // skinned placements simply emit nothing. Non-const because the preview
-    // registry's component lifecycle retains through it.
+    // skinned placements simply emit nothing.
     SceneRenderQueueBuilder(AssetSystem& assets,
                             StaticMeshCache& meshes,
                             MaterialCache& materials,
                             MaterialSetCache& materialSets,
                             LoggingProvider& logging,
                             TextureCache* textures = nullptr,
-                            SkinnedMeshCache* skinnedMeshes = nullptr,
-                            AnimationClipCache* animationClips = nullptr);
+                            SkinnedMeshCache* skinnedMeshes = nullptr);
     ~SceneRenderQueueBuilder();
 
     SceneRenderQueueBuilder(const SceneRenderQueueBuilder&) = delete;
@@ -136,7 +133,6 @@ private:
     MaterialSetCache& MaterialSets;
     TextureCache* Textures = nullptr;
     SkinnedMeshCache* SkinnedMeshes = nullptr;
-    AnimationClipCache* AnimationClips = nullptr;
     LoggingProvider& Logging;
     Logger& Log;
 

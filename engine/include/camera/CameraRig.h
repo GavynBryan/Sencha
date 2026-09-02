@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/metadata/EnumSchema.h>
-#include <ecs/ComponentTypeId.h>
+#include <ecs/ComponentAnnotations.h>
 #include <ecs/EntityId.h>
 #include <math/Quat.h>
 #include <math/Vec.h>
@@ -53,7 +53,7 @@ struct EnumSchema<CameraRigMode>
     };
 };
 
-struct CameraRig
+struct SENCHA_COMPONENT("sencha.camera_rig") CameraRig
 {
     EntityId Target;
     CameraRigMode Mode = CameraRigMode::FirstPerson;
@@ -64,7 +64,9 @@ struct CameraRig
 static_assert(std::is_trivially_copyable_v<CameraRig>,
               "CameraRig must be trivially copyable to live in ECS chunks");
 
-SENCHA_DECLARE_COMPONENT_TYPE(CameraRig, "sencha.camera_rig");
+#if !defined(SENCHA_CODEGEN)
+#  include <camera/CameraRig.sencha.h>
+#endif
 
 //=============================================================================
 // CameraPose

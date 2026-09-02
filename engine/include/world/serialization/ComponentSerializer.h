@@ -1,13 +1,17 @@
 #pragma once
 
+#include <core/handle/Handle.h>
 #include <core/metadata/ComponentRemovable.h>
 #include <core/metadata/SchemaVisit.h>
 #include <core/metadata/TypeSchema.h>
 #include <world/serialization/ComponentStorageTraits.h>
 #include <world/serialization/IComponentSerializer.h>
+#include <world/serialization/SceneAssetFieldIo.h>
 #include <world/serialization/SceneFieldCodec.h>
 
+#include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <type_traits>
 #include <string_view>
@@ -17,6 +21,61 @@
 
 namespace SceneComponentSerialization
 {
+    // A handle member is an asset reference, and its schema says which kind.
+    // Nothing else can say it: the handle type is deliberately opaque and the
+    // same Handle<Tag> shape backs every kind, so the tag on the field is the
+    // only statement of what the reference means.
+    template<typename FieldT>
+    void AssertTagged([[maybe_unused]] const FieldT& field)
+    {
+        assert(field.Asset != AssetType::Unknown
+               && "a handle field must declare its asset kind with .AsAsset(): "
+                  "a handle has no persisted form of its own");
+    }
+
+    template<typename Component, typename FieldT>
+    bool SaveField(IWriteArchive& archive,
+                   const Component& component,
+                   const FieldT& field,
+                   SceneSerializationContext& context)
+    {
+        using FieldType = std::remove_cvref_t<decltype(component.*field.Ptr)>;
+        if constexpr (IsHandleType<FieldType>)
+        {
+            AssertTagged(field);
+            return SaveAssetField(archive, field.Name, (component.*field.Ptr).ToToken(),
+                                  field.Asset, field.Arity, context);
+        }
+        else
+        {
+            return SceneFieldCodec<FieldType>::Save(
+                archive, field.Name, component.*field.Ptr, context);
+        }
+    }
+
+    template<typename Component, typename FieldT>
+    bool LoadField(IReadArchive& archive,
+                   Component& component,
+                   const FieldT& field,
+                   SceneSerializationContext& context)
+    {
+        using FieldType = std::remove_cvref_t<decltype(component.*field.Ptr)>;
+        if constexpr (IsHandleType<FieldType>)
+        {
+            AssertTagged(field);
+            std::uint64_t token = (component.*field.Ptr).ToToken();
+            const bool ok = LoadAssetField(archive, field.Name, token,
+                                           field.Asset, field.Arity, context);
+            component.*field.Ptr = FieldType::FromToken(token);
+            return ok;
+        }
+        else
+        {
+            return SceneFieldCodec<FieldType>::Load(
+                archive, field.Name, component.*field.Ptr, context);
+        }
+    }
+
     template<typename Component>
     bool SaveFields(IWriteArchive& archive,
                     const Component& component,
@@ -28,8 +87,7 @@ namespace SceneComponentSerialization
         auto fields = TypeSchema<Component>::Fields();
         std::apply([&](auto&... field)
         {
-            ((ok = SceneFieldCodec<std::remove_cvref_t<decltype(component.*field.Ptr)>>::Save(
-                archive, field.Name, component.*field.Ptr, context) && ok), ...);
+            ((ok = SaveField(archive, component, field, context) && ok), ...);
         }, fields);
 
         archive.End();
@@ -59,9 +117,7 @@ namespace SceneComponentSerialization
                     return;
                 }
 
-                using FieldType = std::remove_cvref_t<decltype(component.*field.Ptr)>;
-                ok = SceneFieldCodec<FieldType>::Load(
-                    archive, field.Name, component.*field.Ptr, context) && ok;
+                ok = LoadField(archive, component, field, context) && ok;
             }()), ...);
         }, fields);
 
@@ -83,9 +139,15 @@ namespace SceneComponentSerialization
             (([&]
             {
                 using FieldType = std::remove_cvref_t<decltype(component.*field.Ptr)>;
-                if constexpr (requires (FieldType& value) {
-                                  SceneFieldCodec<FieldType>::Release(value, context);
-                              })
+                if constexpr (IsHandleType<FieldType>)
+                {
+                    std::uint64_t token = (component.*field.Ptr).ToToken();
+                    ReleaseAssetField(token, field.Asset, field.Arity, context);
+                    component.*field.Ptr = FieldType::FromToken(token);
+                }
+                else if constexpr (requires (FieldType& value) {
+                                       SceneFieldCodec<FieldType>::Release(value, context);
+                                   })
                 {
                     SceneFieldCodec<FieldType>::Release(component.*field.Ptr, context);
                 }
@@ -109,7 +171,7 @@ class ComponentSerializer final : public IComponentSerializer
 public:
     ComponentTypeId TypeId() const override { return ResolveComponentTypeId<Component>(); }
     std::string_view JsonKey() const override { return TypeSchema<Component>::Name; }
-    std::uint32_t BinaryChunkId() const override { return Traits::BinaryChunkId; }
+    std::uint32_t BinaryChunkId() const override { return TypeSchema<Component>::SceneChunkId; }
 
     std::span<const RuntimeField> RuntimeFields() const override
     {
