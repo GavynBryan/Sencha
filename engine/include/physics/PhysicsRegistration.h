@@ -1,5 +1,12 @@
 #pragma once
 
+#include <physics/components/CharacterController.h>
+#include <physics/components/CharacterMoverLink.h>
+#include <physics/components/Collider.h>
+#include <physics/components/PhysicsBodyLink.h>
+#include <physics/components/RigidBody.h>
+#include <world/ComponentSet.h>
+
 class ComponentRegistrar;
 class EngineSchedule;
 class World;
@@ -25,5 +32,14 @@ void RegisterPhysics(EngineSchedule& schedule);
 // it by hand rather than sealing a schema for it. Call once per World, before
 // any entity is created in it.
 //=============================================================================
+using PhysicsComponents = ComponentSet<
+    Collider,
+    RigidBody,
+    CharacterController,
+    // The runtime links the bridges add at reconcile time. Named here so a
+    // caller cannot forget them and the reconcile's AddComponent never asserts.
+    PhysicsBodyLink,
+    CharacterMoverLink>;
+
 void RegisterPhysicsComponents(ComponentRegistrar& registrar);
 void RegisterPhysicsComponents(World& world);

@@ -5,7 +5,9 @@
 
 // Which input source steers an entity. Absent means this machine's own, so
 // single-player content never carries one.
+using InputComponents = ComponentSet<InputActionSourceRef>;
+
 inline void RegisterInputComponents(ComponentRegistrar& registrar)
 {
-    registrar.Add<InputActionSourceRef>();
+    registrar.AddAll<InputComponents>();
 }

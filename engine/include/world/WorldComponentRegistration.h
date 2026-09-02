@@ -12,19 +12,19 @@
 // and Parent are derived columns rather than authored state, so they are not
 // scene-serializable and say so by having no chunk id; they still need storage,
 // which is why they are named here beside the one that is.
-inline void RegisterWorldComponents(ComponentRegistrar& registrar)
-{
-    registrar.Add<LocalTransform>();
-    registrar.Add<WorldTransform>();
-    registrar.Add<Parent>();
-
+using WorldComponents = ComponentSet<
+    LocalTransform,
+    WorldTransform,
+    Parent,
     // Per-tick pose history for entities that opt into render interpolation.
     // Derived and runtime-only, like WorldTransform.
-    registrar.Add<WorldTransformHistory>();
-
-    registrar.Add<PersistentIdComponent>();
-
+    WorldTransformHistory,
+    PersistentIdComponent,
     // Which placed scene an entity came from; cooked placements and runtime
     // spawns carry it alike, and SceneInstanceIndex keeps the group live.
-    registrar.Add<SceneInstance>();
+    SceneInstance>;
+
+inline void RegisterWorldComponents(ComponentRegistrar& registrar)
+{
+    registrar.AddAll<WorldComponents>();
 }

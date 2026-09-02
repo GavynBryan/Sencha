@@ -21,20 +21,15 @@
 
 void RegisterAbilityKitComponents(ComponentRegistrar& registrar)
 {
+    registrar.AddAll<AbilityKitComponents>();
+
     // Tags and attributes hold registration-order ids, so their persisted form
-    // is names and cannot come from a schema. The serializer goes in beside the
+    // is names and cannot come from a schema. The serializers go in beside the
     // storage: one edit here reaches the runtime, the editor's preview
     // registry, and the cook, because all three compose from this registrar.
-    registrar.Add<GameplayTagContainer>();
     registrar.AddSerializer(MakeGameplayTagContainerSerializer());
-
-    registrar.Add<AttributeSet>();
     registrar.AddSerializer(MakeAttributeSetSerializer());
-
-    registrar.Add<AbilitySet>();
     registrar.AddSerializer(MakeAbilitySetSerializer());
-
-    registrar.Add<ActiveEffect>();
 }
 
 void RegisterAbilityKit(World& world)

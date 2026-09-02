@@ -1,7 +1,11 @@
-# sencha_generate_component_metadata(<target> HEADERS <header>...)
+# sencha_generate_component_metadata(<target> [INCLUDE_ROOT <dir>] HEADERS <header>...)
 #
 # Generates a ComponentDefinition companion beside each annotated component
-# header, and an index sidecar the validation stage reads.
+# header, and an index sidecar the validation stage reads. The validated
+# sidecars are joined into one index, recorded on the target as its
+# SENCHA_COMPONENT_INDEX property: the roster its tests check against what it
+# registers, and the file the SDK installs for game modules to validate
+# against.
 #
 # The same function serves the engine build and an out-of-tree game module, so a
 # game declares components exactly the way the engine does. The flags come from
@@ -86,24 +90,32 @@ $<JOIN:$<LIST:TRANSFORM,$<REMOVE_DUPLICATES:$<TARGET_PROPERTY:${target},INCLUDE_
     target_sources(${target} PRIVATE ${_outputs})
     target_include_directories(${target} PUBLIC "$<BUILD_INTERFACE:${_generated}>")
 
+    # A header dropped from the list leaves its companion and sidecar behind,
+    # and the validation stage reads every sidecar it finds.
+    file(GLOB_RECURSE _stale "${_generated}/*.sencha.h" "${_generated}/*.index")
+    list(REMOVE_ITEM _stale ${_outputs} ${_indexes})
+    if(_stale)
+        file(REMOVE ${_stale})
+    endif()
+
     # Per-header generation cannot see a collision with another header, so one
     # aggregate stage reads every index. BASE_INDEX lets an out-of-tree module
     # be checked against engine components it cannot see.
-    set(_validated "${CMAKE_CURRENT_BINARY_DIR}/${target}.components-validated")
+    set(_index "${CMAKE_CURRENT_BINARY_DIR}/${target}.components.index")
     set(_base_index "")
     if(DEFINED SENCHA_BASE_COMPONENT_INDEX)
         set(_base_index "-DBASE_INDEX=${SENCHA_BASE_COMPONENT_INDEX}")
     endif()
 
     add_custom_command(
-        OUTPUT "${_validated}"
-        COMMAND ${CMAKE_COMMAND} -DINDEX_DIR=${_generated} ${_base_index}
+        OUTPUT "${_index}"
+        COMMAND ${CMAKE_COMMAND} -DINDEX_DIR=${_generated} -DOUTPUT=${_index} ${_base_index}
                 -P "${SENCHA_COMPONENT_CODEGEN_DIR}/ValidateComponentIndex.cmake"
-        COMMAND ${CMAKE_COMMAND} -E touch "${_validated}"
         DEPENDS ${_indexes} "${SENCHA_COMPONENT_CODEGEN_DIR}/ValidateComponentIndex.cmake"
         COMMENT "Validating component metadata for ${target}"
         VERBATIM)
 
-    add_custom_target(${target}_component_index DEPENDS "${_validated}")
+    add_custom_target(${target}_component_index DEPENDS "${_index}")
     add_dependencies(${target} ${target}_component_index)
+    set_property(TARGET ${target} PROPERTY SENCHA_COMPONENT_INDEX "${_index}")
 endfunction()

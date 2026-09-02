@@ -79,6 +79,9 @@ target_link_libraries(core_tests PRIVATE sencha_engine GTest::gtest_main)
 target_include_directories(core_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # Committed content lives in the source tree, not beside the test binary.
 target_compile_definitions(core_tests PRIVATE SENCHA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+get_target_property(_engine_component_index sencha_engine SENCHA_COMPONENT_INDEX)
+target_compile_definitions(core_tests PRIVATE
+    SENCHA_ENGINE_COMPONENT_INDEX="${_engine_component_index}")
 
 add_executable(math_geometry_tests ${MATH_GEOMETRY_TEST_SOURCES})
 target_link_libraries(math_geometry_tests PRIVATE sencha_engine GTest::gtest_main)

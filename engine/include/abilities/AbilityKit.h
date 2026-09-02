@@ -34,12 +34,20 @@
 #include <abilities/AbilitySet.h>
 #include <abilities/AbilitySystem.h>
 
+#include <world/ComponentSet.h>
+
 class ComponentRegistrar;
 class World;
 class EngineSchedule;
 
 // The kit's component vocabulary: tag container, attribute set, ability set,
 // active effects.
+using AbilityKitComponents = ComponentSet<
+    GameplayTagContainer,
+    AttributeSet,
+    AbilitySet,
+    ActiveEffect>;
+
 void RegisterAbilityKitComponents(ComponentRegistrar& registrar);
 
 // The same components plus the per-World resources they need (the

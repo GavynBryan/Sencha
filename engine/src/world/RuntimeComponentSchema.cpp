@@ -13,9 +13,39 @@
 #include <physics/PhysicsRegistration.h>
 #include <render/RenderComponentRegistration.h>
 #include <world/ComponentRegistrar.h>
+#include <world/ComponentSet.h>
 #include <world/WorldComponentRegistration.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <zone/ZoneComponentRegistration.h>
+
+namespace
+{
+    // The features below in the order RegisterEngineComponents asks them.
+    // Listed as types so ownership can be asserted: registration is
+    // idempotent, so a component two features both named would take one column
+    // and leave no trace of the second claim.
+    using EngineComponentSets = ComponentSetCollection<
+        WorldComponents,
+        RenderComponents,
+        AudioComponents,
+        ZoneComponents,
+        CameraComponents,
+        PhysicsComponents,
+        AbilityKitComponents,
+        MovementComponents,
+        ControllerComponents,
+        InputComponents,
+        ParticipantComponents,
+        NetComponents>;
+
+    static_assert(EngineComponentSets::Owned,
+                  "a component is named by more than one feature's vocabulary");
+}
+
+std::span<const ComponentTypeId> EngineComponentIds()
+{
+    return EngineComponentSets::Flattened::Ids();
+}
 
 void RegisterEngineComponents(ComponentRegistrar& registrar)
 {
