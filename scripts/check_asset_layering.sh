@@ -38,6 +38,38 @@ if [ -n "$hits" ]; then
     status=1
 fi
 
+# The front door is generic over kind: it holds a registry of records, and every
+# operation is addressed by AssetType with an AssetLease crossing the boundary.
+# A loader, a cache, or a typed handle in its header would be a kind it names,
+# and the switch-per-driver this replaced would grow back one include at a time.
+FRONT_DOOR="$ROOT/engine/include/assets/runtime/AssetSystem.h"
+named="$(grep -nE '#include[[:space:]]*[\"<]([^\">]*/)?([A-Za-z]*Loader|[A-Za-z]*Cache|[A-Za-z]*Handle)\.h' \
+              "$FRONT_DOOR" 2>/dev/null)"
+if [ -n "$named" ]; then
+    echo "VIOLATION: the asset front door names an asset kind (keep it generic over AssetType)"
+    echo "$named"
+    echo
+    status=1
+fi
+
+# Asset fields are read and written through the schema's AssetType and arity,
+# never by naming the kinds a document might hold. A concrete handle header here
+# means one kind got special treatment, which is the shape both of these were
+# rewritten to remove.
+FIELD_IO="$ROOT/engine/src/world/serialization/SceneAssetFieldIo.cpp
+$ROOT/editor/kyusu/src/document/AssetFieldIo.cpp"
+while read -r unit; do
+    [ -f "$unit" ] || continue
+    named="$(grep -nE '#include[[:space:]]*[\"<]([^\">]*/)?([A-Za-z]*Handle|[A-Za-z]*Cache)\.h' \
+                  "$unit" 2>/dev/null)"
+    if [ -n "$named" ]; then
+        echo "VIOLATION: ${unit#"$ROOT"/} names a concrete asset kind (go through AssetType and arity)"
+        echo "$named"
+        echo
+        status=1
+    fi
+done <<< "$FIELD_IO"
+
 if [ "$status" -eq 0 ]; then
     echo "asset layering directions: OK"
 fi

@@ -441,6 +441,10 @@ if(NOT WIN32)
         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_component_index.sh ${CMAKE_SOURCE_DIR}
     )
     add_test(
+        NAME component_header_discipline
+        COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_component_headers.sh ${CMAKE_SOURCE_DIR}
+    )
+    add_test(
         NAME gameplay_input_discipline
         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_gameplay_input.sh ${CMAKE_SOURCE_DIR}
     )
