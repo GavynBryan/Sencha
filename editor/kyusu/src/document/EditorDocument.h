@@ -2,6 +2,7 @@
 
 #include "EntitySnapshot.h"
 #include "EditorScene.h"
+#include "SceneInstanceProjection.h"
 
 #include "scene_source/SceneComposition.h"
 #include "scene_source/SceneSourceCache.h"
@@ -65,31 +66,22 @@ public:
     // Where asset://... source references resolve on disk. Set before Load on
     // any document that may hold scene instances; a document with none never
     // consults them.
-    void SetContentRoots(std::vector<std::filesystem::path> roots);
+    void SetContentRoots(std::vector<std::filesystem::path> roots)
+    {
+        Projection.SetContentRoots(std::move(roots));
+    }
 
     // What resolution and expansion of this document's instances reported.
-    // Empty when everything resolved; the cook refuses on anything here, the
-    // editor shows it and keeps working.
-    struct ProjectionDiagnostics
-    {
-        std::string ResolveError; // cycle or unresolvable source: nothing expanded
-        std::vector<std::string> MissingIds;
-        std::vector<std::string> DanglingOverrides;
-        [[nodiscard]] bool Clean() const
-        {
-            return ResolveError.empty() && MissingIds.empty()
-                && DanglingOverrides.empty();
-        }
-    };
+    using ProjectionDiagnostics = SceneProjectionDiagnostics;
     [[nodiscard]] const ProjectionDiagnostics& GetProjectionDiagnostics() const
     {
-        return ProjectionDiagnostics_;
+        return Projection.Diagnostics();
     }
 
     // Destroys the derived instance entities and expands the instance records
     // again. Load runs it; an explicit call re-projects after a record or
     // source change.
-    void RebuildSceneProjection();
+    void RebuildSceneProjection() { Projection.Rebuild(); }
 
     // Fired after every rebuild, once the new projection is live. Projected
     // entities are destroyed and recreated, so anything holding their handles
@@ -97,7 +89,7 @@ public:
     // is how it learns without the document knowing who is listening.
     void SetProjectionObserver(std::function<void()> observer)
     {
-        ProjectionObserver_ = std::move(observer);
+        Projection.SetObserver(std::move(observer));
     }
 
     // ── Scene instances ─────────────────────────────────────────────────────
@@ -125,8 +117,14 @@ public:
     [[nodiscard]] const SceneInstanceRecord* FindSceneInstance(SceneInstanceId id) const;
     // A derived, non-root member of a placement: editable in place, not
     // restructurable -- reparenting it out has no override to land in.
-    [[nodiscard]] bool IsSceneInstanceMember(EntityId entity) const;
-    [[nodiscard]] bool IsSceneInstanceRoot(EntityId entity) const;
+    [[nodiscard]] bool IsSceneInstanceMember(EntityId entity) const
+    {
+        return Projection.IsMember(entity);
+    }
+    [[nodiscard]] bool IsSceneInstanceRoot(EntityId entity) const
+    {
+        return Projection.IsRoot(entity);
+    }
     // The source path of the placement the entity belongs to, empty for
     // entities outside any projection.
     [[nodiscard]] std::string SceneInstanceSourceOf(EntityId entity) const;
@@ -136,32 +134,47 @@ public:
     // the cook stamps on expanded members: the outermost placement, because
     // an inner instance id repeats across two placements of the same source
     // and could not address one group.
-    [[nodiscard]] SceneInstanceId SceneInstanceOwnerOf(EntityId entity) const;
+    [[nodiscard]] SceneInstanceId SceneInstanceOwnerOf(EntityId entity) const
+    {
+        return Projection.OwnerOf(entity);
+    }
 
     // The source's serialized components for a projected member -- what "no
     // override" looks like -- or null for locals, instance roots (their
     // transform IS the placement), and the placement's own added entities
     // (their source is themselves).
-    [[nodiscard]] const Json5Value* ProjectionBaselineOf(EntityId entity) const;
+    [[nodiscard]] const Json5Value* ProjectionBaselineOf(EntityId entity) const
+    {
+        return Projection.BaselineOf(entity);
+    }
 
     // One baseline component materialized as raw component bytes, for the
     // inspector's field-level override comparison and reset. Empty when the
     // entity has no baseline or the baseline lacks the component. Not a
     // per-frame call: it builds the value on a scratch entity.
     [[nodiscard]] std::vector<std::byte> BaselineComponentBytes(
-        EntityId entity, IComponentSerializer& serializer);
+        EntityId entity, IComponentSerializer& serializer)
+    {
+        return Projection.BaselineComponentBytes(entity, serializer);
+    }
 
     // Whether this document's placements reach `assetPath` -- directly, as a
     // nested source its resolve had to read, or as a record whose resolve
     // failed (a broken source that later saves valid must still trigger the
     // dependent). The saver asks this before ordering a re-projection.
-    [[nodiscard]] bool DependsOnSource(std::string_view assetPath) const;
+    [[nodiscard]] bool DependsOnSource(std::string_view assetPath) const
+    {
+        return Projection.DependsOnSource(assetPath);
+    }
 
     // Forgets the given sources' cached parses and re-projects once, when
     // any of them is one this document depends on; false means none were and
     // nothing happened. The explicit half of source invalidation (§3):
     // timestamps alone can miss a same-second rewrite.
-    bool ReloadDependentSources(std::span<const std::string> assetPaths);
+    bool ReloadDependentSources(std::span<const std::string> assetPaths)
+    {
+        return Projection.ReloadSources(assetPaths);
+    }
 
     // This document's own identity as a source reference: the asset:// path
     // its file is known by under the content roots, or empty for an unsaved
@@ -173,12 +186,6 @@ public:
     // An authoring act: marks the document dirty. Never called by loads or
     // cooks -- a cook that minted would bake ids the source never recorded.
     void MintMissingInstanceIds();
-
-    // One entity's components as the serializers say they are right now, as
-    // an ordered Json5 object -- identity excluded, since it lives at record
-    // level. The one shape the source build, the projection baselines, and
-    // the harvest diffs all speak.
-    [[nodiscard]] Json5Value SerializeEntityComponents(EntityId entity) const;
 
     // In-memory serialization to and from .sscene text. Save and Load are the
     // file-backed wrappers. Known component values always come from live
@@ -230,59 +237,10 @@ public:
     void SetDefaultMaterial(AssetRef material);
 
 private:
-    // The lazily built source lookup over ContentRoots_.
-    [[nodiscard]] SceneSourceCache& EnsureSourceCache();
-
     // Builds the document's current source form: live values merged over the
     // retained source's trivia and unknowns. ToSceneText renders it; Save also
     // scans it for unresolved asset references before writing.
     [[nodiscard]] SceneSourceDocument BuildSceneSource() const;
-
-    // Folds what happened to the projected entities back into the instance
-    // records: the root's transform into the placement, member edits into
-    // sparse patches, added and removed components, entities added beneath the
-    // projection, and deletions into suppressions. Runs before every save and
-    // every re-projection, so the records are always the authority at rest.
-    void HarvestInstanceOverrides();
-
-    // The harvest's working state for one instance record, filled by the
-    // three phases below in order.
-    struct RecordHarvest
-    {
-        std::vector<std::pair<SceneElementPath, Json5Value>> Patches;
-        std::vector<std::pair<SceneElementPath, Json5Value>> Added;
-        std::vector<std::pair<SceneElementPath, std::vector<std::string>>> Removed;
-        std::vector<SceneAddedEntity> AddedEntities;
-        std::vector<SceneElementPath> Suppressed;
-        // Seen distinguishes "the projection produced this placement's root"
-        // from "this record was never projected at all" -- a freshly placed
-        // record, or one whose source failed to resolve. The harvest can only
-        // speak about what the projection produced.
-        bool RootSeen = false;
-        bool RootAlive = false;
-    };
-    void HarvestProjectedElements(
-        const PersistentEntityIndex& index,
-        std::unordered_map<std::uint64_t, RecordHarvest>& byInstance);
-    void AbsorbAuthoredChildren(
-        std::unordered_map<std::uint64_t, RecordHarvest>& byInstance);
-    void FoldHarvestsIntoRecords(
-        const PersistentEntityIndex& index,
-        std::unordered_map<std::uint64_t, RecordHarvest>& byInstance);
-
-    // One expanded entity the projection owns, keyed by its persistent id.
-    struct ProjectedElement
-    {
-        SceneElementPath Path;
-        SceneInstanceId Instance;
-        bool Root = false;
-        // The placement's own added entity (D4): harvested back into the
-        // add_entities record, never into a patch.
-        bool Added = false;
-        // The entity's components as this document loaded them -- serializer
-        // shape, post-override -- so a harvest diff sees only live edits.
-        Json5Value Baseline;
-    };
 
     std::string FilePath;
     bool Dirty = false;
@@ -293,21 +251,6 @@ private:
     // newer build. Loaded with the document, consulted on every save.
     SceneSourceDocument Retained_;
 
-    std::vector<std::filesystem::path> ContentRoots_;
-    std::unique_ptr<SceneSourceCache> SourceCache_;
-    std::unordered_map<std::uint64_t, ProjectedElement> Projection_;
-    // Entities absorbed into add_entities records by the last harvest, so the
-    // source build leaves them out of the local entity list.
-    std::unordered_set<std::uint64_t> AbsorbedPids_;
-    ProjectionDiagnostics ProjectionDiagnostics_;
-    // Announced after each rebuild; empty in hosts that hold no handles.
-    std::function<void()> ProjectionObserver_;
-
-    // The rebuild itself, with the many early exits its diagnostics need.
-    // RebuildSceneProjection wraps it so the announcement has one home.
-    void ExpandSceneProjection();
-    [[nodiscard]] Json5Value SerializeSourceBaseline(
-        const Json5Value& components, SceneSerializationContext& context);
     AssetRef DefaultMaterial{ AssetType::Material, "asset://materials/dev/gray.smat" };
 
     // Always present (constructor-injected). The asset system and catalog are
@@ -315,4 +258,8 @@ private:
     LoggingProvider& Logging;
     AssetSystem* Assets = nullptr;
     AssetRegistry* Catalog = nullptr;
+
+    // Declared last: it names Registry_, Scene, Retained_ and Logging, so all
+    // four have to exist before it is constructed.
+    SceneInstanceProjection Projection{ Registry_, Scene, Retained_, Logging };
 };

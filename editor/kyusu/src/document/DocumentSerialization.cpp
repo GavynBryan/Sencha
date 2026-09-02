@@ -1,9 +1,15 @@
 #include "DocumentSerialization.h"
 
+#include "scene_source/Json5Convert.h"
+
 #include "EditorScene.h"
 #include "EntityNameComponent.h"
 
 #include <core/serialization/Archive.h>
+#include <core/serialization/JsonArchive.h>
+#include <world/registry/Registry.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
+#include <world/serialization/IComponentSerializer.h>
 #include <world/serialization/SceneFieldCodec.h>
 #include <world/serialization/SceneFormat.h>
 #include <zone/WorldPartitionIds.h>
@@ -78,4 +84,25 @@ void InstallEditorModuleVocabulary(World& world)
 {
     if (const std::function<void(World&)>& install = ModuleVocabulary(); install)
         install(world);
+}
+
+Json5Value SerializeEntityComponents(EntityId entity, const Registry& registry,
+                                     SceneSerializationContext& context)
+{
+    Json5Value components = Json5Value::MakeObject();
+    for (const auto& serializer : EditorSceneSerializers().Entries())
+    {
+        if (serializer->JsonKey() == "persistent_id")
+            continue;
+        if (!serializer->HasComponent(entity, registry))
+            continue;
+        JsonWriteArchive archive;
+        if (!serializer->Save(archive, entity, registry, context) || !archive.Ok())
+            continue;
+        JsonValue value = archive.TakeValue();
+        if (!value.IsNull())
+            components.Members.emplace_back(std::string(serializer->JsonKey()),
+                                            Json5FromJson(value));
+    }
+    return components;
 }

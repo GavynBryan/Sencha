@@ -17,7 +17,10 @@ cmake_minimum_required(VERSION 3.20)
 #    points at, so the in-tree editor/host loads it with no extra steps.
 
 set(SENCHA_TEMPLATE_MODULE_SOURCES
+    src/CharacterInputSystem.cpp
     src/GameSettingsData.cpp
+    src/PawnSpawn.cpp
+    src/TurretControl.cpp
     src/TemplateComponents.cpp
     src/PlayerAvatarData.cpp
     src/TemplateGame.cpp

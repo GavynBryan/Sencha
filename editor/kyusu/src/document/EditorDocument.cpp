@@ -177,6 +177,7 @@ void EditorDocument::SetAssetEnvironment(RuntimeAssets& assets)
 {
     Assets = &assets.Assets;
     Catalog = &assets.Registry;
+    Projection.SetAssets(Assets);
 
     // Without the stores an authored handle would not hold its asset: the load
     // lets go of its reference, and the document then saves a handle that
@@ -200,27 +201,6 @@ std::string_view EditorDocument::GetDisplayName() const
 bool EditorDocument::IsDirty() const
 {
     return Dirty;
-}
-
-Json5Value EditorDocument::SerializeEntityComponents(EntityId entity) const
-{
-    SceneSerializationContext context(Logging, Assets);
-    Json5Value components = Json5Value::MakeObject();
-    for (const auto& serializer : EditorSceneSerializers().Entries())
-    {
-        if (serializer->JsonKey() == "persistent_id")
-            continue;
-        if (!serializer->HasComponent(entity, Registry_))
-            continue;
-        JsonWriteArchive archive;
-        if (!serializer->Save(archive, entity, Registry_, context) || !archive.Ok())
-            continue;
-        JsonValue value = archive.TakeValue();
-        if (!value.IsNull())
-            components.Members.emplace_back(std::string(serializer->JsonKey()),
-                                            Json5FromJson(value));
-    }
-    return components;
 }
 
 SceneSourceDocument EditorDocument::BuildSceneSource() const
@@ -259,7 +239,7 @@ SceneSourceDocument EditorDocument::BuildSceneSource() const
             continue; // untracked interlopers have no place in the file
         // Derived projection entities live in their instance records, and
         // entities the harvest absorbed into add_entities live there too.
-        if (Projection_.contains(id->Id.Value) || AbsorbedPids_.contains(id->Id.Value))
+        if (Projection.Projects(id->Id) || Projection.AbsorbedIds().contains(id->Id.Value))
             continue;
 
         SceneSourceEntity record;
@@ -274,7 +254,7 @@ SceneSourceDocument EditorDocument::BuildSceneSource() const
         else if (const BakedBrushComponent* baked = Scene.TryGetBakedBrush(entity))
             savedMeshes.push_back(baked->Source);
 
-        Json5Value fresh = SerializeEntityComponents(entity);
+        Json5Value fresh = SerializeEntityComponents(entity, Registry_, context);
 
         if (const auto retained = retainedById.find(id->Id.Value);
             retained != retainedById.end())
@@ -308,7 +288,7 @@ SceneSourceDocument EditorDocument::BuildSceneSource() const
 
 std::string EditorDocument::ToSceneText()
 {
-    HarvestInstanceOverrides();
+    Projection.Harvest();
     return WriteSceneSource(BuildSceneSource());
 }
 
@@ -420,8 +400,8 @@ bool EditorDocument::LoadFromSceneText(std::string_view text, std::string* error
 
     // Expand the instance records into derived entities. Not an authored
     // mutation: whatever it reports lands in the diagnostics, never in Dirty.
-    Projection_.clear();
-    RebuildSceneProjection();
+    Projection.Reset();
+    Projection.Rebuild();
 
     // The document was replaced wholesale, so whatever divergence the previous
     // contents had from disk went with them. Written directly because OnEdited
@@ -585,7 +565,7 @@ bool EditorDocument::Save()
     if (FilePath.empty())
         return false;
 
-    HarvestInstanceOverrides();
+    Projection.Harvest();
     const SceneSourceDocument source = BuildSceneSource();
     if (Catalog != nullptr)
     {
@@ -646,9 +626,7 @@ void EditorDocument::New()
 {
     Scene.Clear();
     Retained_ = SceneSourceDocument{};
-    Projection_.clear();
-    AbsorbedPids_.clear();
-    ProjectionDiagnostics_ = ProjectionDiagnostics{};
+    Projection.Reset();
     FilePath.clear();
     Dirty = false;
 }

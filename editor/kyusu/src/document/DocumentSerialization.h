@@ -1,9 +1,15 @@
 #pragma once
 
+#include "scene_source/Json5Value.h"
+
+#include <ecs/EntityId.h>
+
 #include <functional>
 
 class ComponentSerializerRegistry;
+class Registry;
 class World;
+struct SceneSerializationContext;
 
 // The editor's component serializer set: the engine scene manifest plus the
 // authoring-only components (brushes) that never reach a cooked scene, plus
@@ -34,3 +40,11 @@ void RegisterDocumentSerializers();
 // Setting it does not reach documents that already exist.
 void SetEditorModuleVocabulary(std::function<void(World&)> install);
 void InstallEditorModuleVocabulary(World& world);
+
+// One entity's components as the serializers say they are right now, as an
+// ordered Json5 object -- identity excluded, since it lives at record level.
+// The one shape the source build, the projection baselines, and the harvest
+// diffs all speak.
+[[nodiscard]] Json5Value SerializeEntityComponents(EntityId entity,
+                                                   const Registry& registry,
+                                                   SceneSerializationContext& context);
