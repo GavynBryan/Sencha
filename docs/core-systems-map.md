@@ -635,11 +635,15 @@ New component:
    the wire layout. `SENCHA_SCENE_CHUNK("XXXX")` makes it persist into scenes,
    `SENCHA_REPLICATED` puts it on the wire.
 4. List the header under `sencha_generate_component_metadata(...)` in the
-   owning target's CMake and include `<path/Header.sencha.h>` at the end of
-   the header, guarded by `#if !defined(SENCHA_CODEGEN)`.
-5. Add the type to the feature's `Register*Components(ComponentRegistrar&)`.
-   That is the only registration edit; the registrar reads what follows off
-   the schema.
+   owning target's CMake (a game module lists it as `COMPONENT_HEADERS` of
+   `sencha_game_module`) and include `<path/Header.sencha.h>` at the end of
+   the header, guarded by `#if !defined(SENCHA_CODEGEN)`. The path is the
+   header's own relative to its include root.
+5. Add the type to the feature's `ComponentSet` (`AudioComponents`,
+   `MovementComponents`, ...). That is the only registration edit; the
+   registrar reads what follows off the schema, and
+   `test/core/EngineComponentRosterTests.cpp` fails on an annotated engine
+   component no feature names.
 6. Add `ComponentTraits<T>` only if lifetime hooks are needed, declared in the
    component's header with the bodies in its `.cpp`. A component holding
    asset handles retains on add and releases on remove through a world

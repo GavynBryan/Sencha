@@ -343,6 +343,11 @@ target_compile_features(sencha_engine PUBLIC cxx_std_20)
 
 sencha_warnings(sencha_engine)
 
+# A generator built here is proven by the companions it writes; a prebuilt one
+# can be asked before anything is built.
+if(SENCHA_COMPONENT_CODEGEN_EXECUTABLE)
+    sencha_require_component_codegen_format("${SENCHA_ENGINE_INCLUDE_DIR}")
+endif()
 sencha_generate_component_metadata(sencha_engine
     INCLUDE_ROOT "${SENCHA_ENGINE_INCLUDE_DIR}"
     HEADERS ${SENCHA_ENGINE_COMPONENT_HEADERS}
@@ -635,6 +640,14 @@ install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated-components/"
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
     FILES_MATCHING PATTERN "*.sencha.h")
 
+# The engine's component roster, for a game module's metadata to be validated
+# against. SenchaConfig.cmake hands it to sencha_game_module through the
+# imported engine target.
+get_target_property(_engine_component_index sencha_engine SENCHA_COMPONENT_INDEX)
+install(FILES "${_engine_component_index}"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/Sencha"
+    RENAME SenchaComponents.index)
+
 # Vendored headers re-exposed by public engine headers (Vulkan builds only).
 if(SENCHA_ENABLE_VULKAN)
     install(FILES "${vulkanmemoryallocator_SOURCE_DIR}/include/vk_mem_alloc.h"
@@ -654,7 +667,7 @@ configure_package_config_file(
     "${CMAKE_SOURCE_DIR}/cmake/SenchaConfig.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/SenchaConfig.cmake"
     INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/Sencha"
-    PATH_VARS CMAKE_INSTALL_BINDIR)
+    PATH_VARS CMAKE_INSTALL_BINDIR CMAKE_INSTALL_INCLUDEDIR)
 
 write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/SenchaConfigVersion.cmake"
@@ -666,4 +679,5 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/SenchaConfigVersion.cmake"
     "${CMAKE_SOURCE_DIR}/cmake/SenchaGameModule.cmake"
     "${CMAKE_SOURCE_DIR}/cmake/SenchaComponentCodegen.cmake"
+    "${CMAKE_SOURCE_DIR}/cmake/ValidateComponentIndex.cmake"
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/Sencha")

@@ -87,6 +87,11 @@ The tool is built in Release because the archive's libraries link the release
 CRT; the engine configuration is independent of it. The Windows CI job in
 `.github/workflows/ci.yml` is the worked example.
 
+A prebuilt generator must come from the same revision as the headers: the
+configure asks it for `--format-version` and refuses one whose companion format
+is not the one `core/metadata/ComponentDefinition.h` reads. An installed SDK
+makes the same check of its shipped generator from `find_package(Sencha)`.
+
 ## Warnings
 
 Every first-party target calls `sencha_warnings()` from

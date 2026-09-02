@@ -162,6 +162,14 @@ if(LEVEL_COOK_TEST_SOURCES AND TARGET kyusu_authoring)
         ${CMAKE_SOURCE_DIR}/template/src/TemplateComponents.cpp)
     target_include_directories(level_cook_tests PRIVATE ${CMAKE_SOURCE_DIR}/template/src)
     target_link_libraries(level_cook_tests PRIVATE kyusu_authoring GTest::gtest_main)
+    # The template's components are compiled here, so their metadata is
+    # generated here, as the module generates it for itself.
+    sencha_generate_component_metadata(level_cook_tests
+        INCLUDE_ROOT ${CMAKE_SOURCE_DIR}/template/src
+        HEADERS ${CMAKE_SOURCE_DIR}/template/src/ObserverFlight.h
+                ${CMAKE_SOURCE_DIR}/template/src/PlayerStartComponent.h
+                ${CMAKE_SOURCE_DIR}/template/src/SpinComponent.h
+                ${CMAKE_SOURCE_DIR}/template/src/TurretMount.h)
     # The shipped prefabs are content under test: a case reads them from the
     # checkout rather than restating them.
     target_compile_definitions(level_cook_tests PRIVATE

@@ -11,7 +11,8 @@
 // neither reads nor emits them.
 //
 //   sencha-component-codegen <header> --output=<companion.h> --index=<f.index>
-//                            --logical=<world/transform/X.h> -- <compile flags>
+//                            --logical=<world/transform/X.h> --flags=<flags.rsp>
+//   sencha-component-codegen --format-version
 //=============================================================================
 
 #include "clang/AST/ASTConsumer.h"
@@ -56,13 +57,17 @@ llvm::cl::opt<std::string> gFlags(
     "flags", llvm::cl::desc("File of compile flags, one per line"),
     llvm::cl::value_desc("path"), llvm::cl::cat(gCategory));
 
-llvm::cl::opt<std::string> gSource(
-    llvm::cl::Positional, llvm::cl::desc("<header>"), llvm::cl::Required,
+llvm::cl::opt<bool> gPrintFormatVersion(
+    "format-version", llvm::cl::desc("Print the companion format version and exit"),
     llvm::cl::cat(gCategory));
+
+llvm::cl::opt<std::string> gSource(
+    llvm::cl::Positional, llvm::cl::desc("<header>"), llvm::cl::cat(gCategory));
 
 // Kept in step with kComponentCodegenFormatVersion in ComponentDefinition.h.
 // Stamped into every companion so an SDK whose generator predates its headers
-// fails at compile naming both versions.
+// fails at compile naming both versions, and reported by --format-version so
+// the build can refuse such a generator at configure time.
 constexpr unsigned kFormatVersion = 1;
 
 // ─── The facts a declaration can state ───────────────────────────────────────
@@ -456,9 +461,14 @@ int main(int argc, const char** argv)
     llvm::cl::HideUnrelatedOptions(gCategory);
     if (!llvm::cl::ParseCommandLineOptions(argc, argv))
         return 2;
-    if (gOutput.empty() || gIndex.empty() || gFlags.empty())
+    if (gPrintFormatVersion)
     {
-        llvm::errs() << "sencha-component-codegen: --output, --index and --flags are required\n";
+        llvm::outs() << kFormatVersion << "\n";
+        return 0;
+    }
+    if (gSource.empty() || gOutput.empty() || gIndex.empty() || gFlags.empty())
+    {
+        llvm::errs() << "sencha-component-codegen: <header>, --output, --index and --flags are required\n";
         return 2;
     }
 

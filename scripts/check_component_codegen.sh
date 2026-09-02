@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # The generator's own contract: what it emits for the golden component, that it
-# emits the same bytes twice, and that a malformed declaration is refused
-# without leaving output behind -- an empty companion would read as a component
-# that no longer exists.
+# emits the same bytes twice, that a malformed declaration is refused without
+# leaving output behind -- an empty companion would read as a component that no
+# longer exists -- and that the format it reports is the one the headers read.
 #
 #   check_component_codegen.sh <tool> <source-root> <generated-public-dir>
 set -uo pipefail
@@ -64,6 +64,14 @@ fi
 expect_rejected BadPredictedNotReplicated.h predicted "predicted but not replicated"
 expect_rejected BadNoIdentity.h no_identity "no SENCHA_COMPONENT identity"
 expect_rejected BadShortChunk.h short_chunk "exactly four characters"
+
+reported="$("${TOOL}" --format-version)"
+declared="$(sed -n 's/.*kComponentCodegenFormatVersion = \([0-9]*\);.*/\1/p' \
+    "${ROOT}/engine/include/core/metadata/ComponentDefinition.h")"
+if [[ "${reported}" != "${declared}" ]]; then
+    echo "FAIL: --format-version reports ${reported}; ComponentDefinition.h reads ${declared}"
+    status=1
+fi
 
 if [[ ${status} -eq 0 ]]; then
     echo "component codegen: OK"

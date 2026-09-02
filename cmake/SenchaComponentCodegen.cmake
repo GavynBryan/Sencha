@@ -1,4 +1,5 @@
-# sencha_generate_component_metadata(<target> [INCLUDE_ROOT <dir>] HEADERS <header>...)
+# sencha_generate_component_metadata(<target> [INCLUDE_ROOT <dir>] [BASE <target>]
+#                                    HEADERS <header>...)
 #
 # Generates a ComponentDefinition companion beside each annotated component
 # header, and an index sidecar the validation stage reads. The validated
@@ -6,6 +7,11 @@
 # SENCHA_COMPONENT_INDEX property: the roster its tests check against what it
 # registers, and the file the SDK installs for game modules to validate
 # against.
+#
+# BASE names a target whose SENCHA_COMPONENT_INDEX the validation stage reads
+# alongside this target's own, so a game module is checked against the engine
+# components it cannot otherwise see: sencha::engine, built in-tree or imported
+# from an SDK.
 #
 # The same function serves the engine build and an out-of-tree game module, so a
 # game declares components exactly the way the engine does. The flags come from
@@ -19,11 +25,44 @@
 
 set(SENCHA_COMPONENT_CODEGEN_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE INTERNAL "")
 
+# sencha_require_component_codegen_format(<include-dir>)
+#
+# Refuses a prebuilt sencha::component-codegen whose companion format is not
+# the one core/metadata/ComponentDefinition.h under <include-dir> reads. The
+# companions' own static_assert would catch the mismatch, but only after the
+# whole build has been configured and the first component compiled.
+function(sencha_require_component_codegen_format include_dir)
+    set(_header "${include_dir}/core/metadata/ComponentDefinition.h")
+    file(STRINGS "${_header}" _declaration REGEX "kComponentCodegenFormatVersion = [0-9]+")
+    if(NOT _declaration MATCHES "kComponentCodegenFormatVersion = ([0-9]+)")
+        message(FATAL_ERROR "${_header} does not declare kComponentCodegenFormatVersion")
+    endif()
+    set(_expected "${CMAKE_MATCH_1}")
+
+    get_target_property(_generator sencha::component-codegen IMPORTED_LOCATION)
+    execute_process(
+        COMMAND "${_generator}" --format-version
+        OUTPUT_VARIABLE _actual
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE _result)
+    if(NOT _result EQUAL 0)
+        message(FATAL_ERROR
+            "${_generator} could not report its component metadata format (--format-version)")
+    endif()
+    if(NOT _actual STREQUAL _expected)
+        message(FATAL_ERROR
+            "${_generator} writes component metadata format ${_actual}, but ${_header} "
+            "reads format ${_expected}. Build the generator from the same revision as "
+            "the headers.")
+    endif()
+endfunction()
+
 function(sencha_generate_component_metadata target)
-    cmake_parse_arguments(ARG "" "INCLUDE_ROOT" "HEADERS" ${ARGN})
+    cmake_parse_arguments(ARG "" "INCLUDE_ROOT;BASE" "HEADERS" ${ARGN})
     if(NOT ARG_INCLUDE_ROOT)
         set(ARG_INCLUDE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
     endif()
+    get_filename_component(ARG_INCLUDE_ROOT "${ARG_INCLUDE_ROOT}" ABSOLUTE)
     if(NOT ARG_HEADERS)
         return()
     endif()
@@ -99,23 +138,34 @@ $<JOIN:$<LIST:TRANSFORM,$<REMOVE_DUPLICATES:$<TARGET_PROPERTY:${target},INCLUDE_
     endif()
 
     # Per-header generation cannot see a collision with another header, so one
-    # aggregate stage reads every index. BASE_INDEX lets an out-of-tree module
-    # be checked against engine components it cannot see.
+    # aggregate stage reads every index.
     set(_index "${CMAKE_CURRENT_BINARY_DIR}/${target}.components.index")
     set(_base_index "")
-    if(DEFINED SENCHA_BASE_COMPONENT_INDEX)
-        set(_base_index "-DBASE_INDEX=${SENCHA_BASE_COMPONENT_INDEX}")
+    set(_base_argument "")
+    if(ARG_BASE)
+        get_target_property(_base_index ${ARG_BASE} SENCHA_COMPONENT_INDEX)
+        if(NOT _base_index)
+            message(FATAL_ERROR
+                "sencha_generate_component_metadata(${target}): ${ARG_BASE} has no SENCHA_COMPONENT_INDEX")
+        endif()
+        set(_base_argument "-DBASE_INDEX=${_base_index}")
     endif()
 
     add_custom_command(
         OUTPUT "${_index}"
-        COMMAND ${CMAKE_COMMAND} -DINDEX_DIR=${_generated} -DOUTPUT=${_index} ${_base_index}
+        COMMAND ${CMAKE_COMMAND} -DINDEX_DIR=${_generated} -DOUTPUT=${_index} ${_base_argument}
                 -P "${SENCHA_COMPONENT_CODEGEN_DIR}/ValidateComponentIndex.cmake"
-        DEPENDS ${_indexes} "${SENCHA_COMPONENT_CODEGEN_DIR}/ValidateComponentIndex.cmake"
+        DEPENDS ${_indexes} ${_base_index}
+                "${SENCHA_COMPONENT_CODEGEN_DIR}/ValidateComponentIndex.cmake"
         COMMENT "Validating component metadata for ${target}"
         VERBATIM)
 
     add_custom_target(${target}_component_index DEPENDS "${_index}")
+    if(ARG_BASE)
+        # An in-tree base writes its index during the build; an imported one
+        # already has it, and a dependency on an imported target is a no-op.
+        add_dependencies(${target}_component_index ${ARG_BASE})
+    endif()
     add_dependencies(${target} ${target}_component_index)
     set_property(TARGET ${target} PROPERTY SENCHA_COMPONENT_INDEX "${_index}")
 endfunction()

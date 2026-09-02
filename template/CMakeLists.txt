@@ -23,6 +23,15 @@ set(SENCHA_TEMPLATE_MODULE_SOURCES
     src/TemplateGame.cpp
     src/TemplateRuntimeComponents.cpp)
 
+# The game's components, declared by annotation like the engine's. Their
+# metadata is generated into the build tree, and each header includes its
+# companion by its own name: src/SpinComponent.h includes <SpinComponent.sencha.h>.
+set(SENCHA_TEMPLATE_COMPONENT_HEADERS
+    src/ObserverFlight.h
+    src/PlayerStartComponent.h
+    src/SpinComponent.h
+    src/TurretMount.h)
+
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     # Standalone against a prebuilt SDK.
     project(SenchaGameTemplate LANGUAGES CXX)
@@ -38,7 +47,9 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
     # OUTPUT_NAME defaults to "game", so the host discovers it beside the executable.
     sencha_game_module(game
-        SOURCES ${SENCHA_TEMPLATE_MODULE_SOURCES})
+        SOURCES ${SENCHA_TEMPLATE_MODULE_SOURCES}
+        INCLUDE_ROOT src
+        COMPONENT_HEADERS ${SENCHA_TEMPLATE_COMPONENT_HEADERS})
 else()
     # In-tree against the engine being built. Same helper the SDK ships, resolved
     # from the source tree; sencha::engine is the in-tree alias. Output goes to
@@ -46,7 +57,9 @@ else()
     include("${CMAKE_SOURCE_DIR}/cmake/SenchaGameModule.cmake")
 
     sencha_game_module(template_game
-        SOURCES ${SENCHA_TEMPLATE_MODULE_SOURCES})
+        SOURCES ${SENCHA_TEMPLATE_MODULE_SOURCES}
+        INCLUDE_ROOT src
+        COMPONENT_HEADERS ${SENCHA_TEMPLATE_COMPONENT_HEADERS})
     # In-tree the template is held to the engine's own warning set. The SDK does
     # not install SenchaWarnings.cmake, so a standalone build of this same file
     # keeps whatever diagnostics the game project chose.
