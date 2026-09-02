@@ -12,6 +12,39 @@ file(GLOB_RECURSE SENCHA_ENGINE_HEADERS CONFIGURE_DEPENDS
     "${SENCHA_ENGINE_INCLUDE_DIR}/*.h"
 )
 
+# The annotated component headers: the generator reads them, and the ABI
+# fingerprint below hashes them.
+set(SENCHA_ENGINE_COMPONENT_HEADERS
+    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimationClipPlayerComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/audio/AudioCaptionComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/audio/AudioSourceComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/camera/CameraRig.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/camera/CameraSeat.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/components/CameraComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/controller/LookOrientation.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/movement/JumpState.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/movement/MovementIntent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/CharacterFacts.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/CharacterMovement.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/MotionChannels.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/MovementSessions.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/MovementTuning.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetParticipantIdentity.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetReplicationComponents.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetSpawnPrefab.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/CharacterController.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/IrradianceVolumeComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/PointLightComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/SpotLightComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/StaticMeshComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/ZoneLightmapComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/skinned_mesh/SkinnedMeshComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/world/identity/PersistentIdComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/world/scene/SceneInstance.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/world/transform/TransformComponents.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/zone/WorldConnectionComponents.h"
+)
+
 include("${CMAKE_SOURCE_DIR}/cmake/SenchaShaders.cmake")
 include("${CMAKE_SOURCE_DIR}/cmake/SenchaComponentCodegen.cmake")
 
@@ -181,8 +214,9 @@ endif()
 # a renamed type, a changed signature — still does. Whitespace is collapsed, not
 # removed, so two distinct token streams can never normalize to the same string;
 # and no ABI header here embeds a comment-introducer (// or /*) inside a string
-# literal, so comment stripping never deletes a real token. Keep both true: it is
-# what makes this safe (a false negative is the segfault we are eliminating).
+# literal -- a component label or tooltip included -- so comment stripping never
+# deletes a real token. Keep both true: it is what makes this safe (a false
+# negative is the segfault we are eliminating).
 #
 # A directory belongs here when its headers can change the layout of something a
 # game module compiles against. That is not only the types a module names: it
@@ -190,6 +224,13 @@ endif()
 # through an inline accessor has the member offset baked into its own code. net/
 # is here for exactly that reason -- Engine holds the replication, cvar-sync,
 # command, traffic, and clock runtimes by value.
+#
+# The annotated component headers are hashed as well. A module reads engine
+# components at member offsets, and it compiles the generated companion that
+# fixes each component's identity, schema and wire fields. The companion is
+# produced at build time, after this hash, but it is a pure function of the
+# header, the generator and the format version, so hashing those inputs is
+# hashing it. The format version lives in core/metadata/, already covered.
 file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     "${SENCHA_ENGINE_INCLUDE_DIR}/app/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/graphics/*.h"
@@ -200,6 +241,8 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/console/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/ecs/*.h"
 )
+list(APPEND SENCHA_ABI_FINGERPRINT_HEADERS ${SENCHA_ENGINE_COMPONENT_HEADERS})
+list(REMOVE_DUPLICATES SENCHA_ABI_FINGERPRINT_HEADERS)
 list(SORT SENCHA_ABI_FINGERPRINT_HEADERS)
 set(_sencha_abi_accum "")
 foreach(_abi_hdr ${SENCHA_ABI_FINGERPRINT_HEADERS})
@@ -211,6 +254,12 @@ foreach(_abi_hdr ${SENCHA_ABI_FINGERPRINT_HEADERS})
     string(SHA256 _abi_hdr_hash "${_abi_hdr_text}")
     string(APPEND _sencha_abi_accum "${_abi_hdr_hash}")
 endforeach()
+# The companion a module compiles is a function of the header and the
+# generator, and the generator writes comment introducers inside string
+# literals, so its source is hashed as written rather than normalized.
+set(_sencha_component_generator "${CMAKE_SOURCE_DIR}/tools/component-codegen/ComponentCodegen.cpp")
+file(SHA256 "${_sencha_component_generator}" _sencha_generator_hash)
+string(APPEND _sencha_abi_accum "${_sencha_generator_hash}")
 string(SHA256 _sencha_abi_full "${_sencha_abi_accum}")
 string(SUBSTRING "${_sencha_abi_full}" 0 16 _sencha_abi_fp)
 set(SENCHA_GAME_ABI_FINGERPRINT "0x${_sencha_abi_fp}ULL")
@@ -224,7 +273,8 @@ file(CONFIGURE
     @ONLY)
 # Reconfigure (and so re-hash) when any ABI header's content changes, not just
 # when files are added/removed.
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${SENCHA_ABI_FINGERPRINT_HEADERS})
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    ${SENCHA_ABI_FINGERPRINT_HEADERS} "${_sencha_component_generator}")
 
 # --- Engine SDK version (engine-roadmap.md: SDK boundary, shipped) ---
 # The semantic version of the published product, sourced from the root project()
@@ -284,35 +334,7 @@ sencha_warnings(sencha_engine)
 
 sencha_generate_component_metadata(sencha_engine
     INCLUDE_ROOT "${SENCHA_ENGINE_INCLUDE_DIR}"
-    HEADERS
-        "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimationClipPlayerComponent.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/audio/AudioCaptionComponent.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/audio/AudioSourceComponent.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/camera/CameraRig.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/camera/CameraSeat.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/components/CameraComponent.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/controller/LookOrientation.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/movement/JumpState.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/movement/MovementIntent.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/CharacterFacts.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/CharacterMovement.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/MotionChannels.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/MovementSessions.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/MovementTuning.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetParticipantIdentity.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetReplicationComponents.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetSpawnPrefab.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/CharacterController.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/render/IrradianceVolumeComponent.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/render/PointLightComponent.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/render/SpotLightComponent.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/render/StaticMeshComponent.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/render/ZoneLightmapComponent.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/render/skinned_mesh/SkinnedMeshComponent.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/world/identity/PersistentIdComponent.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/world/scene/SceneInstance.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/world/transform/TransformComponents.h"
-        "${SENCHA_ENGINE_INCLUDE_DIR}/zone/WorldConnectionComponents.h"
+    HEADERS ${SENCHA_ENGINE_COMPONENT_HEADERS}
 )
 
 if(SENCHA_ENABLE_COOK)
