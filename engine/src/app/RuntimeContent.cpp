@@ -18,6 +18,7 @@
 #include <runtime/spawn/SceneSpawnService.h>
 #include <world/RuntimeWorld.h>
 
+#include <cassert>
 #include <string>
 #include <utility>
 
@@ -83,7 +84,16 @@ RuntimeContent::RuntimeContent(Engine& engine, Logger& log)
         logging, &Assets_->Assets);
 }
 
-RuntimeContent::~RuntimeContent() = default;
+RuntimeContent::~RuntimeContent()
+{
+    // Destroying a published stack leaves the world naming caches that no
+    // longer exist, and the failure surfaces later as a call through a
+    // destroyed vtable. Disconnect is what makes that impossible, so a path
+    // that skips it is a bug in the caller's teardown, not something to
+    // silently repair here.
+    assert(!Published
+           && "RuntimeContent destroyed while still published; Disconnect first");
+}
 
 void RuntimeContent::Mount()
 {
