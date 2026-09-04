@@ -15,7 +15,7 @@
 #include <camera/CameraRegistration.h>
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
-#include <core/assets/AssetIdMap.h>
+#include <assets/runtime/ContentMount.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetStoreTable.h>
 #include <core/console/ConsoleRegistry.h>
@@ -47,7 +47,6 @@
 namespace
 {
 constexpr std::string_view kAuthoredRoot = "assets";
-constexpr std::string_view kCookedScanRoot = "assets/.cooked";
 constexpr ZoneId kPlayZone{ 1 };
 
 EntityId CreateViewerCamera(World& world)
@@ -91,21 +90,10 @@ void SceneViewerGame::OnStart(GameStartupContext&)
         engine.SceneSerializers());
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
 
-    // Mount: authored assets, then the cooked overlay (cooked wins), then the
-    // cooked index. The index adds artifacts the physical scan cannot key,
-    // notably cooked textures (asset://...png serving cooked .stex bytes);
-    // without it a material's texture refs fall back to the neutral default.
-    ScanAssetsDirectory(
-        std::string(kAuthoredRoot),
-        runtimeAssets.Registry,
-        runtimeAssets.Assets.Kinds());
-    ScanAssetsDirectory(
-        std::string(kCookedScanRoot),
-        runtimeAssets.Registry,
-        runtimeAssets.Assets.Kinds());
-    RegisterCookedAssets(
-        std::string(kAuthoredRoot),
-        runtimeAssets.Registry);
+    const ContentRootPaths contentRoot =
+        ResolveContentRoot(std::string(kAuthoredRoot));
+    MountContentRoot(
+        contentRoot, runtimeAssets, logging.GetLogger<SceneViewerGame>());
 
     // The viewer's own controls. Registered as a procedural profile so the
     // camera works against any content root, whatever input assets it holds.
@@ -131,25 +119,6 @@ void SceneViewerGame::OnStart(GameStartupContext&)
                 "fly camera input did not bind: {}",
                 DescribeBindErrors(bindings.Status(profile)));
         }
-    }
-
-    AssetIdMap idMap;
-    std::string idMapError;
-    const std::string idMapPath =
-        std::string(kAuthoredRoot) + "/"
-        + std::string(kAssetIdMapFileName);
-    if (AssetIdMap::LoadFromFile(
-            idMapPath,
-            idMap,
-            &idMapError))
-    {
-        ApplyAssetIds(idMap, runtimeAssets.Registry);
-    }
-    else
-    {
-        logging.GetLogger<SceneViewerGame>().Warn(
-            "SceneViewer: no asset id map ({}); refs resolve by path only",
-            idMapError);
     }
 
     World& world = engine.World().Entities();

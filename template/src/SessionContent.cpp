@@ -12,7 +12,7 @@
 #include <camera/CameraRegistration.h>
 #include <components/ActiveCameraService.h>
 #include <controller/ControllerRegistration.h>
-#include <core/assets/AssetIdMap.h>
+#include <assets/runtime/ContentMount.h>
 #include <core/assets/AssetLease.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetStoreTable.h>
@@ -251,36 +251,8 @@ void SessionContent::Open()
     // holds function pointers into this module.
     RegisterTemplateDataTypes(runtimeAssets.DataTypes, runtimeAssets.DataSchemas);
 
-    ScanAssetsDirectory(
-        std::string(kAuthoredRoot),
-        runtimeAssets.Registry,
-        runtimeAssets.Assets.Kinds());
-    ScanAssetsDirectory(
-        std::string(kCookedScanRoot),
-        runtimeAssets.Registry,
-        runtimeAssets.Assets.Kinds());
-    RegisterCookedAssets(
-        std::string(kAuthoredRoot),
-        runtimeAssets.Registry);
-
-    AssetIdMap idMap;
-    std::string idMapError;
-    const std::string idMapPath =
-        std::string(kAuthoredRoot) + "/"
-        + std::string(kAssetIdMapFileName);
-    if (AssetIdMap::LoadFromFile(
-            idMapPath,
-            idMap,
-            &idMapError))
-    {
-        ApplyAssetIds(idMap, runtimeAssets.Registry);
-    }
-    else
-    {
-        Log.Warn(
-            "TemplateGame: no asset id map ({}); refs resolve by path only",
-            idMapError);
-    }
+    MountContentRoot(
+        ResolveContentRoot(std::string(kAuthoredRoot)), runtimeAssets, Log);
 
     ConfigureRuntimeResources(engine, runtimeAssets);
     SetupInputMapping();
