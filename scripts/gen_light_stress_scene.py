@@ -26,8 +26,8 @@ PALETTE = [
     [0.10, 0.85, 0.95],   # cyan
 ]
 
-# Rig: the SceneViewer default (static) camera sits at (0, 3, 10) looking down
-# -Z (run with sceneviewer.camera.scripted 0, no input, so the framing is fixed
+# Rig: the render host's default (static) camera sits at (0, 3, 10) looking down
+# -Z (run with render_host.camera.scripted 0, no input, so the framing is fixed
 # and the run is deterministic). Geometry and lights are placed in front of it.
 LIGHT_RANGE = 3.0
 LIGHT_INTENSITY = 10.0

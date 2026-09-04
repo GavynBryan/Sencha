@@ -365,29 +365,6 @@ void ConsoleService::RegisterBuiltIns()
     });
 
     RegistryInstance.RegisterCommand({
-        .Name = "map",
-        .Owner = "engine",
-        .Usage = "map <path>",
-        .Help = "Request loading a startup/play map through the host-provided map handler.",
-        .RequiredPhase = ConsolePhase::GameLoaded,
-        .Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args) {
-            if (args.size() != 1)
-                return Usage("usage: map <path>");
-            if (!MapHandler)
-            {
-                ConsoleResult result;
-                result.Status = ConsoleStatus::ExecutionFailed;
-                result.Error("map command has no host handler");
-                return result;
-            }
-            ConsoleResult result = MapHandler(args[0]);
-            if (result.Status == ConsoleStatus::Ok)
-                LoadedMap = args[0];
-            return result;
-        },
-    });
-
-    RegistryInstance.RegisterCommand({
         .Name = "exec",
         .Owner = "engine",
         .Usage = "exec <path>",

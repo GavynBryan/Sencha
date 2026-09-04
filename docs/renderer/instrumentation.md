@@ -173,7 +173,7 @@ per process with `EngineConfig.Console.UiEnabled = false`, which the editors do.
 
 ## Bench harness
 
-`scripts/bench_render_ab.sh` runs a deterministic SceneViewer flythrough N times
+`scripts/bench_render_ab.sh` runs a deterministic render-host flythrough N times
 and writes one chrome://tracing frame trace per run.
 
 ```sh
@@ -182,7 +182,7 @@ scripts/bench_render_ab.sh <app-binary> <content-dir> <out-dir> <runs> <frames> 
 
 What makes a run comparable:
 
-- `sceneviewer.camera.scripted` follows a fixed orbit, so every run renders an
+- `render_host.camera.scripted` follows a fixed orbit, so every run renders an
   identical view sequence.
 - `app.exit_after_frames` self-terminates the run.
 - `frame.trace.output` writes the trace.

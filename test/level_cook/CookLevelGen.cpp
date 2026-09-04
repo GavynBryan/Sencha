@@ -1,6 +1,6 @@
 // Utility generator: cooks authored levels into a chosen assets root, the
 // headless half of the live GPU validation workflow (cook here, then view the
-// output in SceneViewer or diff the atlas offline). Complements the scene
+// output in the render host or diff the atlas offline). Complements the scene
 // generators: this one takes existing authored content instead of building it.
 //
 // Skipped unless SENCHA_COOK_LEVEL (authored .sscene paths, comma-separated)

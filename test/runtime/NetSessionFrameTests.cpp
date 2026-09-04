@@ -116,6 +116,12 @@ namespace
         NetSession* Client = nullptr;
         Engine* Owner = nullptr;
         int Frames = 0;
+        // Frames to keep running after the handshake. A test that only watches
+        // the handshake stops there; one that watches what admission set in
+        // motion has to stay for it, because a map load stages off the frame
+        // and commits at the async drain some frames later.
+        int LingerFrames = 0;
+        int FramesSinceConnected = 0;
 
         void FrameUpdate(FrameUpdateContext&)
         {
@@ -127,7 +133,10 @@ namespace
                 Host->Flush(now);
             }
             const bool connected = Client != nullptr && Client->IsConnected();
-            if ((connected || Frames > 600) && Owner != nullptr)
+            if (connected)
+                ++FramesSinceConnected;
+            const bool settled = connected && FramesSinceConnected > LingerFrames;
+            if ((settled || Frames > 600) && Owner != nullptr)
                 Owner->RequestExit();
         }
     };
@@ -227,9 +236,38 @@ TEST(NetSessionFrame, TheFramePhasesPumpTheSession)
 
 namespace
 {
-    // A client whose map handler counts what it is asked to load. `Preloaded`
-    // stands in for a process launched with `+map`: it runs the same console
-    // path before any session exists.
+    // Engine-owned fixture content (test/CMakeLists.txt, CookEngineFixtureContent).
+    // The engine loads for real now, so the scene has to be one a game that
+    // registers no components and no vocabulary can actually load -- which the
+    // template's own levels, by design, are not.
+    constexpr const char* kFixtureContentRoot = SENCHA_REPO_ROOT "/test/fixtures/content";
+    constexpr const char* kFixtureMap = "levels/box";
+
+    // Counts play-zone attaches, which is what a load produces: a reload is
+    // a detach and a second attach, and a refused load produces neither.
+    struct ZoneAttachCounter
+    {
+        int* Attaches = nullptr;
+
+        void ZoneResidency(ZoneResidencyContext& ctx)
+        {
+            for (const ZoneResidencyChange& change : ctx.Changes)
+                if (change.Kind == ZoneResidencyChangeKind::Attached
+                    && Attaches != nullptr)
+                {
+                    ++*Attaches;
+                }
+        }
+    };
+
+    // A client that really loads what it is told to. `Preloaded` stands in for
+    // a process launched with `+map`: it runs the same console path before any
+    // session exists.
+    //
+    // The map is a cooked fixture rather than a name a stub would accept,
+    // because the engine loads it now -- a client that is told to load
+    // something nonexistent records nothing, which is exactly what the failure
+    // this covers would look like.
     class MapAnnouncementClient final : public Game
     {
     public:
@@ -243,19 +281,11 @@ namespace
             ctx.Config.Window.GraphicsApi = WindowGraphicsApi::None;
             ctx.Config.Debug.ConsoleLogging = false;
             ctx.Config.Runtime.TargetFps = 2000.0;
+            ctx.Config.Runtime.ContentRoots = { kFixtureContentRoot };
         }
 
         void OnStart(GameStartupContext&) override
         {
-            GetEngine().Console().SetMapHandler(
-                [this](std::string_view map) {
-                    ++Loads;
-                    LastLoaded = std::string(map);
-                    ConsoleResult result;
-                    result.Status = ConsoleStatus::Ok;
-                    return result;
-                });
-
             // Deferred, because OnStart runs before the phase a map command
             // needs. That is the same route a `+map` launch argument takes:
             // held until the game is loaded, then run, and in either case done
@@ -283,6 +313,9 @@ namespace
             system.Host = &HostSession;
             system.Client = Session;
             system.Owner = &GetEngine();
+            // Long enough for a staged scene load to reach the async drain.
+            system.LingerFrames = 240;
+            ctx.Schedule.Register<ZoneAttachCounter>().Attaches = &Loads;
         }
 
         void OnShutdown(GameShutdownContext&) override
@@ -298,8 +331,8 @@ namespace
         NetSession* Session = nullptr;
         bool Started = false;
         bool Connected = false;
+        // Play-zone attaches: one per level actually loaded.
         int Loads = 0;
-        std::string LastLoaded;
         std::string CurrentMap;
     };
 
@@ -329,7 +362,7 @@ TEST(NetSessionFrame, AJoiningClientLoadsTheWorldItWasAdmittedTo)
     SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
 
     StandaloneHost host;
-    ASSERT_TRUE(host.Start("levels/box"));
+    ASSERT_TRUE(host.Start(kFixtureMap));
 
     Application app(0, nullptr);
     MapAnnouncementClient game(host.Session, host.Session.LocalAddress());
@@ -340,8 +373,7 @@ TEST(NetSessionFrame, AJoiningClientLoadsTheWorldItWasAdmittedTo)
         << "a client joined a session and was never told what to load, so it "
            "renders an empty world and feels the authority's geometry through "
            "reconciliation instead";
-    EXPECT_EQ(game.LastLoaded, "levels/box");
-    EXPECT_EQ(game.CurrentMap, "levels/box")
+    EXPECT_EQ(game.CurrentMap, kFixtureMap)
         << "the map was loaded without being recorded, so nothing downstream "
            "knows which world this process is in";
 }
@@ -353,15 +385,16 @@ TEST(NetSessionFrame, AClientAlreadyInTheRightWorldDoesNotReloadIt)
     SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
 
     StandaloneHost host;
-    ASSERT_TRUE(host.Start("levels/box"));
+    ASSERT_TRUE(host.Start(kFixtureMap));
 
     Application app(0, nullptr);
     MapAnnouncementClient game(host.Session, host.Session.LocalAddress(),
-                               "levels/box");
+                               kFixtureMap);
     ASSERT_EQ(app.Run(game), 0);
 
     ASSERT_TRUE(game.Connected);
     EXPECT_EQ(game.Loads, 1) << "the announced map was loaded a second time";
+    EXPECT_EQ(game.CurrentMap, kFixtureMap);
 }
 
 // A disagreement is reported and nothing else. Whether content mismatch should
@@ -371,17 +404,17 @@ TEST(NetSessionFrame, AClientInADifferentWorldIsNotQuietlyMoved)
     SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
 
     StandaloneHost host;
-    ASSERT_TRUE(host.Start("levels/box"));
+    ASSERT_TRUE(host.Start("levels/elsewhere"));
 
     Application app(0, nullptr);
     MapAnnouncementClient game(host.Session, host.Session.LocalAddress(),
-                               "levels/other");
+                               kFixtureMap);
     ASSERT_EQ(app.Run(game), 0);
 
     ASSERT_TRUE(game.Connected) << "a content disagreement ended the session";
     EXPECT_EQ(game.Loads, 1)
         << "the client's own world was replaced out from under it";
-    EXPECT_EQ(game.CurrentMap, "levels/other");
+    EXPECT_EQ(game.CurrentMap, kFixtureMap);
 }
 
 // The recorded gap: an authority that had nothing loaded when this peer joined
@@ -441,17 +474,13 @@ namespace
             ctx.Config.Window.GraphicsApi = WindowGraphicsApi::None;
             ctx.Config.Debug.ConsoleLogging = false;
             ctx.Config.Runtime.TargetFps = 2000.0;
+            ctx.Config.Runtime.ContentRoots = { kFixtureContentRoot };
         }
 
         void OnStart(GameStartupContext&) override
         {
-            GetEngine().Console().SetMapHandler([](std::string_view) {
-                ConsoleResult result;
-                result.Status = ConsoleStatus::Ok;
-                return result;
-            });
             (void)GetEngine().Console().ExecuteTokens(
-                { "map", "levels/box" }, ConsoleValueSource{ "test" }, true);
+                { "map", kFixtureMap }, ConsoleValueSource{ "test" }, true);
 
             Session = GetEngine().CreateNetSession(Transport);
             if (Session == nullptr)
@@ -500,7 +529,7 @@ TEST(NetSessionFrame, AHostFrameTellsItsSessionWhichWorldIsLoaded)
     ASSERT_TRUE(game.Started) << "the host never bound";
     ASSERT_TRUE(game.Dialed) << "the hand-driven client never opened a socket";
     EXPECT_TRUE(client.IsConnected());
-    EXPECT_EQ(client.AnnouncedMap(), "levels/box")
+    EXPECT_EQ(client.AnnouncedMap(), kFixtureMap)
         << "the host's frame never told its session what it had loaded, so "
            "every joining client is admitted knowing nothing";
 }

@@ -4,6 +4,7 @@
 #include <net/NetConsoleCommands.h>
 #include <app/Game.h>
 #include <app/GameDataAssets.h>
+#include <app/LevelCommands.h>
 #include <audio/AudioService.h>
 #include <audio/AudioSystem.h>
 #include <audio/CaptionRuntime.h>
@@ -405,6 +406,20 @@ SceneSpawnService& Engine::Spawns()
     return *SpawnServiceState;
 }
 
+LoadedLevel& Engine::Level()
+{
+    assert(LevelState.has_value()
+           && "Engine::Level: valid from just before OnStart to just after OnShutdown");
+    return *LevelState;
+}
+
+const LoadedLevel& Engine::Level() const
+{
+    assert(LevelState.has_value()
+           && "Engine::Level: valid from just before OnStart to just after OnShutdown");
+    return *LevelState;
+}
+
 RuntimeContent& Engine::Content()
 {
     assert(ContentState.has_value()
@@ -712,8 +727,10 @@ int Engine::Run(Game& game)
     RegisterGameDataAssets(game, ContentState->Assets());
     ContentState->Mount();
     ContentState->Publish(RuntimeWorldState->Entities());
+    LevelState.emplace(*this, *ContentState, LoggingState.GetLogger<Engine>());
 
     ConsoleService& console = Console();
+    RegisterLevelCommands(console, *this);
     console.AdvancePhase(ConsolePhase::EngineReady);
 
     // Running from the start of the lifecycle, not from the first frame, so
@@ -793,6 +810,10 @@ int Engine::Run(Game& game)
     // every lease it held, so the consumers of the stack are disconnected, then
     // the subtype registrations -- function pointers into the game module -- are
     // withdrawn while it is still mapped, and only then does the stack go.
+    // The level goes before the content it loaded through, and its detaches
+    // run while the game's zone-residency systems are still registered.
+    LevelState->Unload();
+    LevelState.reset();
     ContentState->Disconnect(RuntimeWorldState->Entities());
     UnregisterGameDataAssets(game, ContentState->Assets());
     ContentState.reset();

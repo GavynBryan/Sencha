@@ -28,7 +28,6 @@ GAMEPLAY_DIRS=(
     "$ROOT/engine/src/controller"
     "$ROOT/engine/include/controller"
     "$ROOT/example/CubeDemo"
-    "$ROOT/example/SceneViewer"
     "$ROOT/engine/src/movement"
     "$ROOT/engine/include/movement"
     "$ROOT/engine/src/abilities"

@@ -49,7 +49,16 @@ for tree in "$ENGINE" "$ROOT/example" "$ROOT/editor"; do
           "$tree"
 done
 
-# B. The content mount is an asset-layer primitive. It takes a RuntimeAssets&
+# B. A loaded level publishes content and stops there. Including camera,
+# participant, or input headers would mean it had started deciding what a game
+# does with what it loaded, which is the boundary this whole split is about.
+# Hot reload is content's, not a level's, so those headers stay out too.
+check "LoadedLevel decides what a game does with a level" \
+      '#include[[:space:]]*["<](camera|participant|input|controller|assets/hotreload)/' \
+      "$ENGINE/include/app/LoadedLevel.h" \
+      "$ENGINE/src/app/LoadedLevel.cpp"
+
+# C. The content mount is an asset-layer primitive. It takes a RuntimeAssets&
 # and an already-resolved root; anything it needed from app/, world/, or
 # core/config/ would be a decision it is not entitled to make.
 check "ContentMount reaches outside the asset layer" \

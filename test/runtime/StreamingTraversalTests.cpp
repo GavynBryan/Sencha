@@ -8,7 +8,7 @@
 // StreamingBench.Generate and the evidence doc.
 //
 // What this does NOT cover: the GPU. Nothing in this repository drives multi-zone
-// streaming with a renderer attached — SceneViewer loads one zone and refuses a
+// streaming with a renderer attached — the render host loads one zone and refuses a
 // second — so cost here is the owner thread only. The application driver is a game
 // module, which owns the focus position and streaming policy that make a traversal
 // meaningful; frame cost with a renderer attached was measured there and is

@@ -64,5 +64,10 @@
 // world's asset resources, and connects the spawn services and render pipeline
 // itself. A module no longer builds a RuntimeAssets, and
 // Game::OnRegisterDataAssetTypes is now called by the runtime rather than only
-// by the data editor.
-#define SENCHA_GAME_ABI_VERSION 15u
+// by the data editor. v16: the engine loads levels. Engine gained a LoadedLevel
+// member (so accessor offsets moved) and exposes it as Level(); map, world,
+// zone, zones, scene.spawn and scene.despawn are engine console commands, and
+// ConsoleService::SetMapHandler is gone -- `+map` loads through the engine
+// rather than calling back into a game. A game learns that a level arrived from
+// the zone-residency changes the load publishes.
+#define SENCHA_GAME_ABI_VERSION 16u

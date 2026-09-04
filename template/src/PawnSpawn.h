@@ -16,6 +16,7 @@ class Engine;
 class Logger;
 class World;
 struct FrameUpdateContext;
+struct ZoneResidencyContext;
 
 // Where a body comes from and who ends up driving it.
 //
@@ -142,6 +143,15 @@ struct SpawnSettlementSystem
 {
     Engine* Owner = nullptr;
     Logger* Log = nullptr;
+
+    // Where a pawn belongs, learned from the level arriving rather than from
+    // having loaded it. The engine loads; this decides that a loaded play zone
+    // is somewhere a player's body can go, and asks for one.
+    //
+    // Every frame the zone is resident, not once when it lands: a load that
+    // finished after a join would otherwise place a second body beside the one
+    // the authority is already simulating.
+    void ZoneResidency(ZoneResidencyContext& ctx);
 
     void FrameUpdate(FrameUpdateContext& ctx);
 

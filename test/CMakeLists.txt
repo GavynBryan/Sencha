@@ -186,17 +186,12 @@ if(FRAMEWORK_TEST_SOURCES)
     # GUI-free registration TUs directly so a bad After edge fails under ctest
     # instead of only on a Debug boot.
     #
-    # One FreeCamera.cpp for both. example/CubeDemo and example/SceneViewer
-    # carry byte-identical copies of FreeCamera.{h,cpp}, so a single definition
-    # resolves both systems TUs; linking both would be a duplicate symbol. If
-    # the two ever diverge, this needs to become two test executables.
     add_executable(framework_tests
         ${FRAMEWORK_TEST_SOURCES}
         ${CMAKE_SOURCE_DIR}/template/src/GameSettingsData.cpp
         ${CMAKE_SOURCE_DIR}/example/CubeDemo/CubeDemoSystems.cpp
         ${CMAKE_SOURCE_DIR}/example/CubeDemo/CubeDemoScene.cpp
-        ${CMAKE_SOURCE_DIR}/example/CubeDemo/FreeCamera.cpp
-        ${CMAKE_SOURCE_DIR}/example/SceneViewer/SceneViewerSystems.cpp)
+        ${CMAKE_SOURCE_DIR}/example/CubeDemo/FreeCamera.cpp)
     target_include_directories(framework_tests PRIVATE ${CMAKE_SOURCE_DIR}/template/src)
     target_link_libraries(framework_tests PRIVATE sencha_engine GTest::gtest_main)
     # The template's shipped gameplay data lives in the source tree, so the
@@ -257,19 +252,22 @@ file(GLOB_RECURSE RENDER_GOLDEN_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/render_golden/*.cpp
 )
 if(RENDER_GOLDEN_TEST_SOURCES AND SENCHA_ENABLE_VULKAN)
+    # The host it renders in: a game module that places a camera and nothing
+    # else. A fixture, not an example, so it lives beside the tests that use it.
+    add_subdirectory(fixtures/render_host)
     add_executable(render_golden_tests ${RENDER_GOLDEN_TEST_SOURCES})
     target_link_libraries(render_golden_tests PRIVATE sencha_engine GTest::gtest_main)
     target_compile_definitions(render_golden_tests PRIVATE
         # The bundled host, not the bare target: `app` discovers its game module
         # as game<ext> beside itself, and only the bundle directory has one.
-        SENCHA_GOLDEN_APP="$<TARGET_FILE_DIR:SceneViewer>/app"
+        SENCHA_GOLDEN_APP="$<TARGET_FILE_DIR:render_host>/app"
         SENCHA_GOLDEN_CONTENT_ROOT="${CMAKE_SOURCE_DIR}/template"
         SENCHA_GOLDEN_REFERENCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/render_golden/references"
         SENCHA_GOLDEN_COOK="$<TARGET_FILE:level_cook_tests>"
         SENCHA_GOLDEN_EDITOR="$<TARGET_FILE:kyusu>")
     # The host, the default game module, and the cook have to exist before a
     # scene renders; the test cooks its own fixtures.
-    add_dependencies(render_golden_tests app SceneViewer level_cook_tests kyusu)
+    add_dependencies(render_golden_tests app render_host level_cook_tests kyusu)
     list(APPEND SENCHA_TEST_TARGETS render_golden_tests)
 endif()
 
@@ -341,6 +339,16 @@ if(TARGET runtime_tests AND TARGET app AND TARGET template_game
         FIXTURES_SETUP ${SENCHA_HOST_MAP_FIXTURE}
         ENVIRONMENT
             "SENCHA_COOK_LEVEL=${CMAKE_SOURCE_DIR}/template/assets/levels/room_2.sscene,${CMAKE_SOURCE_DIR}/template/assets/prefabs/player_pawn.sscene,${CMAKE_SOURCE_DIR}/template/assets/prefabs/turret.sscene;SENCHA_COOK_ROOT=${CMAKE_SOURCE_DIR}/template/assets")
+    # Engine-owned fixture content, cooked into its own root: a scene with no
+    # game components and no gameplay vocabulary, so a test game that registers
+    # nothing can load it. The template's levels cannot serve that purpose --
+    # they name the template's components by design.
+    add_test(NAME CookEngineFixtureContent
+        COMMAND level_cook_tests --gtest_filter=CookLevel.Generate)
+    set_tests_properties(CookEngineFixtureContent PROPERTIES
+        FIXTURES_SETUP ${SENCHA_HOST_MAP_FIXTURE}
+        ENVIRONMENT
+            "SENCHA_COOK_LEVEL=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/content/levels/box.sscene;SENCHA_COOK_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/content")
     # Tells the cases apart: with the fixture wired a missing scene is a
     # failure, and without it they have no way to get one and skip instead.
     target_compile_definitions(runtime_tests PRIVATE SENCHA_TEST_HOST_MAP_COOKED=1)

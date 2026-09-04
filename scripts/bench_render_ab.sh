@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Runs a fixed, deterministic SceneViewer flythrough N times and writes one
+# Runs a fixed, deterministic render-host flythrough N times and writes one
 # chrome://tracing frame trace per run (via frame.trace.output). The camera
-# follows a scripted orbit (sceneviewer.camera.scripted) so every run renders an
+# follows a scripted orbit (render_host.camera.scripted) so every run renders an
 # identical view sequence, and the run self-terminates after a fixed frame count
 # (app.exit_after_frames). Present mode is forced to IMMEDIATE so frame times
 # reflect CPU+GPU work rather than the vsync interval, and pacing is disabled.
@@ -54,7 +54,7 @@ for i in $(seq 1 "$runs"); do
         SENCHA_VALIDATION="${SENCHA_VALIDATION:-0}" \
         "${pin[@]}" "$app" \
             +set r.target_fps 0 \
-            +set sceneviewer.camera.scripted 1 \
+            +set render_host.camera.scripted 1 \
             +set app.exit_after_frames "$frames" \
             +set frame.trace.output "$out/$run" \
             +set render.profile.mode capture \

@@ -110,7 +110,7 @@ SENCHA_COOK_ROOT=$PWD/template/assets \
 # Run it. The cooked artifact takes the full stem, so the map is
 # levels/shadow_probe.level.
 cd template && SENCHA_PRESENT_MODE=IMMEDIATE \
-  ../build/example/SceneViewer/app +map levels/shadow_probe.level \
+  ../build/test/fixtures/render_host/app +map levels/shadow_probe.level \
   +set app.exit_after_frames 300 2>&1 | grep -E 'VUID-|Validation Error'
 ```
 

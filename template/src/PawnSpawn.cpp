@@ -27,6 +27,7 @@
 #include <participant/LocalControl.h>
 #include <participant/ParticipantControl.h>
 #include <physics/components/CharacterController.h>
+#include <world/RuntimeWorld.h>
 #include <world/scene/SceneInstance.h>
 #include <world/transform/DerivedTransform.h>
 #include <world/transform/TransformComponents.h>
@@ -360,6 +361,35 @@ void SessionPlayerSystem::FollowLocalControl(World& world)
     AttachLocalPlayer(world, subject, *Log);
     if (Owner->Prediction().Predicts(subject))
         Log->Info("TemplateGame: predicting this player's own pawn");
+}
+
+void SpawnSettlementSystem::ZoneResidency(ZoneResidencyContext& ctx)
+{
+    if (Owner == nullptr)
+        return;
+
+    const ZoneId play = Owner->Level().PlayZone();
+    if (!play.IsValid())
+        return;
+
+    for (const ZoneResidencyChange& change : ctx.Changes)
+    {
+        if (change.Zone != play)
+            continue;
+
+        if (change.Kind == ZoneResidencyChangeKind::Detaching)
+        {
+            PublishPlayContent(ctx.Entities, std::nullopt);
+            continue;
+        }
+        if (change.Kind != ZoneResidencyChangeKind::Attached)
+            continue;
+
+        // Where a pawn belongs, not a pawn. Who provides one is the session's
+        // decision, taken every frame once this exists.
+        PublishPlayContent(ctx.Entities, change.Partition);
+        RequestBodiesForWaitingParticipants(*Owner);
+    }
 }
 
 void SpawnSettlementSystem::FrameUpdate(FrameUpdateContext& ctx)

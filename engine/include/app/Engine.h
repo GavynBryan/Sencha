@@ -5,6 +5,7 @@
 #include <net/NetMessageRouter.h>
 #include <net/NetSession.h>
 #include <app/EngineSchedule.h>
+#include <app/LoadedLevel.h>
 #include <app/RuntimeContent.h>
 #include <core/console/ConsoleLineFeed.h>
 #include <core/console/ConsoleStartupScript.h>
@@ -291,6 +292,13 @@ public:
     [[nodiscard]] RuntimeContent& Content();
     [[nodiscard]] const RuntimeContent& Content() const;
 
+    // What this process has loaded. Live over the same span as Content(), and
+    // empty until something loads a scene or a world. Loading is all it does:
+    // what a game makes of a loaded level -- a camera, a player, a focus -- the
+    // game decides by watching the residency changes the load publishes.
+    [[nodiscard]] LoadedLevel& Level();
+    [[nodiscard]] const LoadedLevel& Level() const;
+
     [[nodiscard]] RuntimeFrameLoop& Runtime() { return RuntimeLoop; }
     [[nodiscard]] const RuntimeFrameLoop& Runtime() const
     {
@@ -430,6 +438,8 @@ private:
     // so destruction alone would give them back in the right order. Run states
     // that order explicitly anyway: OnShutdown, Disconnect, then reset.
     std::optional<RuntimeContent> ContentState;
+    // After the content it loads through, so it is destroyed before it.
+    std::optional<LoadedLevel> LevelState;
     RuntimeFrameLoop RuntimeLoop;
     ConsoleStartupScript StartupScript;
     std::unique_ptr<FrameDriver> FrameDriverInstance;
