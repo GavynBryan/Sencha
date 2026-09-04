@@ -79,21 +79,7 @@ void SceneViewerGame::OnStart(GameStartupContext&)
 {
     Engine& engine = GetEngine();
     LoggingProvider& logging = engine.Logging();
-    GraphicsServices& graphics = engine.Graphics();
-
-    Assets.emplace(
-        logging,
-        graphics.Buffers,
-        graphics.Images,
-        graphics.Descriptors,
-        graphics.Samplers,
-        engine.SceneSerializers());
     RuntimeAssets& runtimeAssets = RuntimeAssetState();
-
-    const ContentRootPaths contentRoot =
-        ResolveContentRoot(std::string(kAuthoredRoot));
-    MountContentRoot(
-        contentRoot, runtimeAssets, logging.GetLogger<SceneViewerGame>());
 
     // The viewer's own controls. Registered as a procedural profile so the
     // camera works against any content root, whatever input assets it holds.
@@ -122,22 +108,14 @@ void SceneViewerGame::OnStart(GameStartupContext&)
     }
 
     World& world = engine.World().Entities();
-    world.SetResource(runtimeAssets.Assets.Stores());
-    world.SetResource(AudioSourceRuntime{
-        &runtimeAssets.AudioClips, &engine.Audio(), &engine.Captions() });
-    world.SetResource(
-        AnimationClipPlaybackRuntime{ &runtimeAssets.AnimationClips });
     RegisterCameraComponents(world);
 
-    SceneContext = std::make_unique<SceneSerializationContext>(
-        logging,
-        &runtimeAssets.Assets);
     ZoneLoader.emplace(
         engine.Tasks(),
         engine.World(),
         engine.RuntimeComponents(),
         engine.SceneSerializers(),
-        *SceneContext,
+        engine.Content().SceneContext(),
         engine.Runtime());
     Preloader.emplace(
         logging,
@@ -148,20 +126,6 @@ void SceneViewerGame::OnStart(GameStartupContext&)
     CameraEntity = CreateViewerCamera(world);
     FreeCam = FreeCamera{};
     FreeCam.Entity = CameraEntity;
-
-    if (DefaultRenderPipeline* pipeline =
-            engine.GetRenderPipeline())
-    {
-        pipeline->SetAssetStores(
-            *runtimeAssets.StaticMeshes,
-            runtimeAssets.Materials,
-            runtimeAssets.MaterialSets,
-            runtimeAssets.Textures.get(),
-            runtimeAssets.SkinnedMeshes.get(),
-            &runtimeAssets.AnimationClips,
-            &runtimeAssets.Skeletons);
-        pipeline->AddMeshRenderFeature(graphics);
-    }
 
     engine.Console().SetMapHandler(
         [this](std::string_view mapName)
@@ -333,46 +297,20 @@ void SceneViewerGame::OnShutdown(GameShutdownContext&)
         .GetResource<ActiveCameraService>()
         .SetActive(EntityId{});
 
-    runtime.Entities().SetResource(AssetStoreTable{});
-    runtime.Entities().SetResource(AudioSourceRuntime{});
-    runtime.Entities().SetResource(AnimationClipPlaybackRuntime{});
-
     CameraEntity = EntityId{};
     ZoneActive = false;
     ZoneLoader.reset();
-    SceneContext.reset();
-
-    // Before Assets goes: the cache's compiled entries hold Owned handles into
-    // RuntimeAssets::DataAssets, and Owned detaches from its owner in its
-    // destructor. Left to the World's own teardown the entries would detach
-    // from a destroyed cache.
-    if (InputBindingCache* bindings =
-            runtime.Entities().TryGetResource<InputBindingCache>())
-    {
-        bindings->Clear();
-    }
-
-    // Same reason, one level up: the lease detaches from the InputContextSet
-    // resource, and this Game is the module's static instance, destroyed at
-    // dlclose long after the World. Dropping it here is what keeps that
-    // detach on a live owner.
-    FlyInput = InputContextLease{};
-
-    // Release the GPU-backed asset caches while OnShutdown still runs with the
-    // engine (device, allocators, descriptor pools) up. Zone detach above
-    // returned the zone's mesh and texture handles to these caches; freeing
-    // them now, rather than at the module-static Game's own destruction (which
-    // runs at process exit after the device is gone), is what keeps a clean
-    // window close from freeing GPU handles into dead graphics services.
     Preloader.reset();
-    Assets.reset();
+
+    // The lease detaches from the InputContextSet resource, and this Game is
+    // the module's static instance, destroyed at dlclose long after the World.
+    // Dropping it here is what keeps that detach on a live owner.
+    FlyInput = InputContextLease{};
 }
 
 RuntimeAssets& SceneViewerGame::RuntimeAssetState()
 {
-    assert(Assets.has_value()
-           && "RuntimeAssets must be constructed before use");
-    return *Assets;
+    return GetEngine().Content().Assets();
 }
 
 void SceneViewerGame::SetRelativeMouseMode(bool enabled)

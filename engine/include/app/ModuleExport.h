@@ -58,5 +58,11 @@
 // moved. v14: added Game::OnRegisterVocabulary (a new trailing vtable slot), so
 // a module declares its gameplay tags, attributes, abilities, and locomotion
 // modes into any World -- the runtime's, and each of the editor's authoring
-// documents.
-#define SENCHA_GAME_ABI_VERSION 14u
+// documents. v15: the engine owns the process's content. Engine gained a
+// RuntimeContent member (so accessor offsets moved) and exposes it as Content();
+// it composes the asset stack, mounts RuntimeConfig::ContentRoots, publishes the
+// world's asset resources, and connects the spawn services and render pipeline
+// itself. A module no longer builds a RuntimeAssets, and
+// Game::OnRegisterDataAssetTypes is now called by the runtime rather than only
+// by the data editor.
+#define SENCHA_GAME_ABI_VERSION 15u

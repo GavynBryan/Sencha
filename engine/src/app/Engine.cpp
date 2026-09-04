@@ -3,6 +3,7 @@
 #include <app/EngineConsoleBuiltins.h>
 #include <net/NetConsoleCommands.h>
 #include <app/Game.h>
+#include <app/GameDataAssets.h>
 #include <audio/AudioService.h>
 #include <audio/AudioSystem.h>
 #include <audio/CaptionRuntime.h>
@@ -404,6 +405,20 @@ SceneSpawnService& Engine::Spawns()
     return *SpawnServiceState;
 }
 
+RuntimeContent& Engine::Content()
+{
+    assert(ContentState.has_value()
+           && "Engine::Content: valid from just before OnStart to just after OnShutdown");
+    return *ContentState;
+}
+
+const RuntimeContent& Engine::Content() const
+{
+    assert(ContentState.has_value()
+           && "Engine::Content: valid from just before OnStart to just after OnShutdown");
+    return *ContentState;
+}
+
 PlatformServices& Engine::Platform()
 {
     assert(PlatformState && "Engine::Platform: valid only when windowed, between Initialize and Shutdown");
@@ -689,6 +704,15 @@ int Engine::Run(Game& game)
         *RuntimeWorldState, RuntimeComponentSchemaState, SceneSerializerRegistry,
         LoggingState);
 
+    // The content stack, before the game exists as far as content is concerned:
+    // OnStart sees a mounted, published stack rather than assembling one. The
+    // game's data-asset subtypes register first, because the scan classifies
+    // .sdata by the subtypes that exist when it runs.
+    ContentState.emplace(*this, LoggingState.GetLogger<Engine>());
+    RegisterGameDataAssets(game, ContentState->Assets());
+    ContentState->Mount();
+    ContentState->Publish(RuntimeWorldState->Entities());
+
     ConsoleService& console = Console();
     console.AdvancePhase(ConsolePhase::EngineReady);
 
@@ -716,6 +740,9 @@ int Engine::Run(Game& game)
         .Schedule = EngineSystems,
     };
     game.OnRegisterSystems(registerSystems);
+    // After the game's, so whatever ordering constraints it declared already
+    // exist when these are added.
+    ContentState->RegisterSystems(EngineSystems);
     EngineSystems.Init();
     console.AdvancePhase(ConsolePhase::SystemsRegistered);
 
@@ -761,6 +788,14 @@ int Engine::Run(Game& game)
         .Config = Configuration,
     };
     game.OnShutdown(shutdown);
+
+    // Content teardown, in the one order that works: the game has just released
+    // every lease it held, so the consumers of the stack are disconnected, then
+    // the subtype registrations -- function pointers into the game module -- are
+    // withdrawn while it is still mapped, and only then does the stack go.
+    ContentState->Disconnect(RuntimeWorldState->Entities());
+    UnregisterGameDataAssets(game, ContentState->Assets());
+    ContentState.reset();
 
     // Symmetric teardown of OnRegisterComponents above: retract the game's
     // serializers while the module is still mapped (the host unloads it after Run

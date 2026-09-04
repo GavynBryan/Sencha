@@ -41,9 +41,7 @@ private:
     RuntimeAssets& RuntimeAssetState();
 
     bool ZoneActive = false;
-    std::optional<RuntimeAssets> Assets;
     std::optional<AssetPreloader> Preloader;
-    std::unique_ptr<SceneSerializationContext> SceneContext;
     std::optional<AsyncZoneLoader> ZoneLoader;
     EntityId CameraEntity;
     FreeCamera FreeCam;

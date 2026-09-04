@@ -77,23 +77,6 @@ constexpr ZoneId kPlayZone{ 1 };
     return "asset://" + std::string(ref);
 }
 
-void ConfigureRuntimeResources(
-    Engine& engine,
-    RuntimeAssets& assets)
-{
-    World& world = engine.World().Entities();
-
-    world.SetResource(assets.Assets.Stores());
-    world.SetResource(AudioSourceRuntime{
-        &assets.AudioClips, &engine.Audio(), &engine.Captions() });
-    world.SetResource(AnimationClipPlaybackRuntime{ &assets.AnimationClips });
-
-    RegisterPhysicsComponents(world);
-    RegisterMovement(world);
-    RegisterCameraComponents(world);
-    RegisterControllerComponents(world);
-}
-
 struct WorldPartitionUpdateSystem
 {
     explicit WorldPartitionUpdateSystem(
@@ -166,39 +149,6 @@ struct WorldPartitionUpdateSystem
     std::optional<Vec3d> PendingSafePosition;
 };
 
-#ifdef SENCHA_ENABLE_COOK
-// Polls the source watcher on wall time and hands changed files to the
-// reloader, which stages an in-place swap that commits at the async drain.
-struct HotReloadPollSystem
-{
-    HotReloadPollSystem(
-        std::optional<AssetSourceWatcher>& watcher,
-        std::optional<AssetHotReloader>& reloader)
-        : Watcher(watcher)
-        , Reloader(reloader)
-    {
-    }
-
-    void FrameUpdate(FrameUpdateContext& ctx)
-    {
-        if (!Watcher.has_value() || !Reloader.has_value())
-            return;
-
-        Accumulator += ctx.WallDeltaSeconds;
-        if (Accumulator < kPollIntervalSeconds)
-            return;
-        Accumulator = 0.0;
-
-        for (const std::string& changed : Watcher->PollChanged())
-            Reloader->ReloadSource(changed);
-    }
-
-    static constexpr double kPollIntervalSeconds = 0.3;
-    std::optional<AssetSourceWatcher>& Watcher;
-    std::optional<AssetHotReloader>& Reloader;
-    double Accumulator = 0.0;
-};
-#endif
 } // namespace
 
 void RegisterTemplateDataTypes(DataAssetTypeRegistry& types,
@@ -224,100 +174,39 @@ SessionContent::~SessionContent() = default;
 void SessionContent::Open()
 {
     Engine& engine = Host;
-    LoggingProvider& Logging = engine.Logging();
-    // A dedicated host has no graphics services, so it composes an asset stack
-    // that cannot hold a mesh or a texture and loads everything else -- the
-    // movement profiles it simulates from, the collision it collides with --
-    // through the same front door.
-    GraphicsServices* graphics = engine.TryGraphics();
-    if (graphics != nullptr)
-    {
-        Assets_.emplace(
-            Logging,
-            graphics->Buffers,
-            graphics->Images,
-            graphics->Descriptors,
-            graphics->Samplers,
-            engine.SceneSerializers());
-    }
-    else
-    {
-        Assets_.emplace(Logging, engine.SceneSerializers());
-    }
     RuntimeAssets& runtimeAssets = Assets();
 
-    // This game's own data subtypes, registered into the registries it owns and
-    // unregistered in Close while the module is still mapped: the registry
-    // holds function pointers into this module.
-    RegisterTemplateDataTypes(runtimeAssets.DataTypes, runtimeAssets.DataSchemas);
+    // Which gameplay features exist in this game's world. The engine's schema
+    // registry carries the vocabulary for every component cooked content can
+    // name; this decides which of them get storage here.
+    World& world = engine.World().Entities();
+    RegisterPhysicsComponents(world);
+    RegisterMovement(world);
+    RegisterCameraComponents(world);
+    RegisterControllerComponents(world);
 
-    MountContentRoot(
-        ResolveContentRoot(std::string(kAuthoredRoot)), runtimeAssets, Log);
-
-    ConfigureRuntimeResources(engine, runtimeAssets);
     SetupInputMapping();
-    SceneContext = std::make_unique<SceneSerializationContext>(
-        Logging,
-        &runtimeAssets.Assets);
     ZoneLoader.emplace(
         engine.Tasks(),
         engine.World(),
         engine.RuntimeComponents(),
         engine.SceneSerializers(),
-        *SceneContext,
+        engine.Content().SceneContext(),
         engine.Runtime());
     Preloader.emplace(
-        Logging,
+        engine.Logging(),
         runtimeAssets.Registry,
         runtimeAssets.Assets,
         engine.Tasks());
-
-#ifdef SENCHA_ENABLE_COOK
-    HotReloader.emplace(
-        Logging,
-        runtimeAssets.Assets,
-        runtimeAssets.Registry,
-        HotReloadImporters,
-        engine.Tasks(),
-        std::string(kAuthoredRoot));
-    HotReloadWatcher.emplace(
-        Logging,
-        std::string(kAuthoredRoot),
-        std::vector<std::string>{ ".sdata" });
-    HotReloadWatcher->Initialize();
-#endif
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
     // The other half of the movement tuning loop: the editor predicts what a
     // profile does, this reports what the running game resolved from it.
     // Composed here rather than by the engine overlay because the world being
-    // simulated and the data cache holding the profile are both the game's.
+    // simulated is the game's.
     engine.AddDebugPanel(std::make_unique<MovementStatePanel>(
-        engine.World().Entities(), &runtimeAssets.DataAssets));
+        world, &runtimeAssets.DataAssets));
 #endif
-
-    // The pipeline object exists headless -- it is registered unconditionally
-    // and its extract hook is simply never dispatched -- so the guard that
-    // matters is the graphics services its mesh feature is built from.
-    if (DefaultRenderPipeline* pipeline = engine.GetRenderPipeline();
-        pipeline != nullptr && graphics != nullptr)
-    {
-        pipeline->SetAssetStores(
-            *runtimeAssets.StaticMeshes,
-            runtimeAssets.Materials,
-            runtimeAssets.MaterialSets,
-            runtimeAssets.Textures.get());
-        pipeline->AddMeshRenderFeature(*graphics);
-    }
-
-    // The spawn service is engine-owned; the asset stack it resolves scenes
-    // through is this one. Close disconnects them before the stack goes.
-    engine.Spawns().ConnectAssets(&runtimeAssets.Assets, &runtimeAssets.Scenes);
-    // The same content stack, for the spawns a peer names rather than this
-    // machine asking for: without it every replicated prefab is unbuildable
-    // and every body a client is sent is deferred forever.
-    engine.NetPrefabs().ConnectAssets(&runtimeAssets.Assets, &runtimeAssets.Scenes);
-
 }
 
 void SessionContent::Close()
@@ -371,59 +260,22 @@ void SessionContent::Close()
     runtime.Entities()
         .GetResource<ActiveCameraService>()
         .SetActive(EntityId{});
-    runtime.Entities().SetResource(AssetStoreTable{});
-    runtime.Entities().SetResource(AudioSourceRuntime{});
-    runtime.Entities().SetResource(AnimationClipPlaybackRuntime{});
 
     PlayZoneActive = false;
     // Before the runtime it points at goes.
     engine.SetWorldStreaming(nullptr, nullptr);
-    // Same for the spawn services: Open connected them to this asset stack, and
-    // the prefab spawner holds a scene reference per resident prefab for the
-    // length of the session. Disconnecting drops those while the caches that
-    // issued them are still here.
-    engine.Spawns().ConnectAssets(nullptr, nullptr);
-    engine.NetPrefabs().ConnectAssets(nullptr, nullptr);
     Partition.reset();
     ZoneLoader.reset();
-    SceneContext.reset();
     Preloader.reset();
-#ifdef SENCHA_ENABLE_COOK
-    HotReloadWatcher.reset();
-    HotReloader.reset();
-#endif
 
-    // The world-resource binding caches hold leases into this game's data-asset
-    // cache; every reference must drop before Assets goes away. A lease that
-    // outlives its owner calls through a destroyed vtable when the world tears
-    // down, which aborts on the way out rather than at the point of the mistake.
-    if (MovementProfileBindingCache* bindings =
-            runtime.Entities().TryGetResource<MovementProfileBindingCache>())
-    {
-        bindings->Clear();
-    }
-    if (InputBindingCache* bindings =
-            runtime.Entities().TryGetResource<InputBindingCache>())
-    {
-        bindings->Clear();
-    }
-    // Same rule for the context lease. The game object is a module-static whose
-    // destructor runs at dlclose, long after the world that owns the context set,
-    // so the lease has to be dropped here while its owner still exists.
+    // Same rule the engine's content teardown follows, for the things this game
+    // holds: the context lease and every data-asset handle go here, while their
+    // owners still exist. The game object is a module-static whose destructor
+    // runs at dlclose, long after the world that owns the context set.
     GameplayInput.Reset();
-    // Every lease held into the data-asset cache, dropped here. Declaration
-    // order alone is not enough: the stack is reset explicitly below, so
-    // anything still holding a lease at that point outlives its owner and calls
-    // through a destroyed vtable when the module unloads.
     InputActionSetAsset.Reset();
     InputProfileAsset.Reset();
     GameSettingsAsset.Reset();
-    // The subtype registration holds a function pointer into this module, and
-    // unregistering refuses while values are still resident, so it follows the
-    // handles above and precedes the cache going away.
-    if (Assets_.has_value())
-        UnregisterTemplateDataTypes(Assets_->DataTypes, Assets_->DataSchemas);
-    Assets_.reset();
 }
 
 // A streamed scene's cooked content, attached while the zone is still hidden:
@@ -451,9 +303,6 @@ void SessionContent::RegisterSystems(SystemRegisterContext& ctx)
         ctx.Schedule.Register<WorldPartitionUpdateSystem>(Partition);
     if (PhysicsStepSystem* step = ctx.Schedule.Get<PhysicsStepSystem>())
         partitionUpdate.Movers = &step->GetCharacterMovers();
-#ifdef SENCHA_ENABLE_COOK
-    ctx.Schedule.Register<HotReloadPollSystem>(HotReloadWatcher, HotReloader);
-#endif
 }
 
 ConsoleResult SessionContent::DescribeZones() const
@@ -749,7 +598,7 @@ ConsoleResult SessionContent::LoadWorld(std::string_view worldName)
                 // rather than the partition it occupies.
                 kPlayZone,
                 engine.SceneSerializers(),
-                *SceneContext,
+                Host.Content().SceneContext(),
                 &importError))
         {
             Partition.reset();
@@ -839,9 +688,7 @@ ConsoleResult SessionContent::FocusZone(
 
 RuntimeAssets& SessionContent::Assets()
 {
-    assert(Assets_.has_value()
-           && "the asset stack is composed by Open before anything asks for it");
-    return *Assets_;
+    return Host.Content().Assets();
 }
 
 // Loads one structured data asset synchronously and returns an owned lease.

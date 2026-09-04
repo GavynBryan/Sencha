@@ -7,16 +7,9 @@
 #include <core/console/ConsoleTypes.h>
 #include <input/InputContextSet.h>
 #include <world/scene/SmapFormat.h>
-#include <world/serialization/SceneSerializationContext.h>
 #include <zone/AsyncZoneLoader.h>
 #include <zone/WorldPartitionRuntime.h>
 #include <zone/ZoneId.h>
-
-#ifdef SENCHA_ENABLE_COOK
-#include <assets/cook/AssetImporter.h>
-#include <assets/hotreload/AssetHotReloader.h>
-#include <assets/hotreload/AssetSourceWatcher.h>
-#endif
 
 #include <memory>
 #include <optional>
@@ -43,17 +36,14 @@ void UnregisterTemplateDataTypes(DataAssetTypeRegistry& types,
 //=============================================================================
 // SessionContent
 //
-// Everything this run has loaded and everything it took to load it: the asset
-// stack composed for what this process can hold, the preloader and zone loader
-// over it, the world partition when a world is up, the game's own authored
-// data, and the references all of that holds.
+// What this game has loaded on top of the engine's content: the loaders and
+// world partition a level needs, the game's own authored data, and the
+// references those hold.
 //
-// It exists because those are one lifetime, not several. A reference into the
-// asset stack that outlives the stack calls through a destroyed vtable at
-// shutdown -- which is a crash on the way out rather than at the mistake -- so
-// the order in which they are given back is a property worth having one owner
-// for. Open composes, Close gives back, and the members are declared so that
-// destruction alone would do the same thing.
+// The asset stack itself is the engine's (Engine::Content), and so is the
+// order in which the engine's own consumers give it back. What is left here is
+// this game's half of the same rule: every lease it takes is released in Close,
+// while the caches that issued them still exist.
 //
 // The engine and the logger are named collaborators; nothing here reaches back
 // into the game object that holds it.
@@ -67,15 +57,14 @@ public:
     SessionContent(const SessionContent&) = delete;
     SessionContent& operator=(const SessionContent&) = delete;
 
-    // Composes the asset stack this process can hold, scans the content roots,
-    // wires the world's resources and the services that resolve scenes through
-    // it, and binds the controls.
+    // Registers the gameplay features this game's world carries, composes the
+    // loaders over the engine's content, and binds the controls.
     void Open();
 
-    // Gives back everything held into the asset stack, then drops it. Explicit
-    // rather than left to the destructor because the data subtype registrations
-    // hold function pointers into this module and have to go while it is still
-    // mapped, and because the world it detaches outlives this object.
+    // Gives back everything this game holds into the engine's content stack.
+    // Explicit rather than left to the destructor because the world it detaches
+    // outlives this object, and because the leases have to drop before the
+    // engine tears the stack down.
     void Close();
 
     // The systems that drive loaded content, and the shape cache the collision
@@ -92,8 +81,8 @@ public:
     // the compiled value under the token and the next ask sees it.
     [[nodiscard]] const CompiledGameSettings* GameSettings();
 
-    // The composed asset stack, for the startup wiring that points engine
-    // services and debug panels at it.
+    // The engine's asset stack, for the startup wiring that reads this game's
+    // authored data out of it.
     [[nodiscard]] RuntimeAssets& Assets();
 
 private:
@@ -112,21 +101,10 @@ private:
     Logger& Log;
 
     // Declaration order is the destruction contract, and Close mirrors it: the
-    // handles and leases into the asset stack go before the stack does, and
-    // the loaders over it go before both.
-    std::optional<RuntimeAssets> Assets_;
+    // loaders over the engine's asset stack go before the handles into it.
     std::optional<AssetPreloader> Preloader;
-    std::unique_ptr<SceneSerializationContext> SceneContext;
     std::optional<AsyncZoneLoader> ZoneLoader;
     std::optional<WorldPartitionRuntime> Partition;
-
-#ifdef SENCHA_ENABLE_COOK
-    // Dev-only source watching so authored data (movement tuning) reloads in
-    // place while the game runs. No importers: .sdata is a runtime format.
-    AssetImporterRegistry HotReloadImporters;
-    std::optional<AssetHotReloader> HotReloader;
-    std::optional<AssetSourceWatcher> HotReloadWatcher;
-#endif
 
     // Held for the run, released in Close before the caches are destroyed.
     DataAssetCacheHandle GameSettingsAsset;

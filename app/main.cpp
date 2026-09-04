@@ -12,6 +12,7 @@
 #include <cstring>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 #if !defined(_WIN32)
 #include <fcntl.h>
@@ -115,6 +116,28 @@ namespace
         return headless;
     }
 
+    // Strips every --content-root <dir> and returns the roots in order. Empty
+    // when none was given, which leaves the config default in place. Repeatable
+    // because a project and the engine's own test content are separate roots
+    // that a run may want mounted together.
+    std::vector<std::string> ExtractContentRootArgs(int& argc, char** argv)
+    {
+        std::vector<std::string> roots;
+        int write = 1;
+        for (int read = 1; read < argc; ++read)
+        {
+            if (std::strcmp(argv[read], "--content-root") == 0 && read + 1 < argc)
+            {
+                roots.emplace_back(argv[read + 1]);
+                ++read; // skip the value too
+                continue;
+            }
+            argv[write++] = argv[read];
+        }
+        argc = write;
+        return roots;
+    }
+
     // The default game module sits next to the executable as game<ext>: drop a
     // game module there and `app` runs it with no --game. Empty if none found.
     std::string DefaultModuleBesideExe()
@@ -141,6 +164,7 @@ namespace
 int main(int argc, char** argv)
 {
     const bool headless = ExtractHeadlessArg(argc, argv);
+    const std::vector<std::string> contentRoots = ExtractContentRootArgs(argc, argv);
     const std::string modulePath = ResolveModulePath(argc, argv);
     if (modulePath.empty())
     {
@@ -163,8 +187,10 @@ int main(int argc, char** argv)
     }
 
     Application app(argc, argv);
-    app.Configure([headless](EngineConfig& config) {
+    app.Configure([headless, &contentRoots](EngineConfig& config) {
         config.App.Name = "Sencha";
+        if (!contentRoots.empty())
+            config.Runtime.ContentRoots = contentRoots;
         config.Window.Title = "Sencha";
         config.Window.Width = 1280;
         config.Window.Height = 720;

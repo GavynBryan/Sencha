@@ -632,8 +632,8 @@ void TemplateGame::OnShutdown(GameShutdownContext&)
     Content.reset();
 }
 
-// The same vocabulary the session registers into its own registries, aimed at
-// the data editor's instead.
+// This game's data vocabulary, registered into whichever registries are asking:
+// the engine's content stack at startup, and the data editor's.
 void TemplateGame::OnRegisterDataAssetTypes(DataAssetTypeRegistry& types,
                                             DataSchemaRegistry& schemas)
 {

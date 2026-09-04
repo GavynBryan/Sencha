@@ -5,6 +5,7 @@
 #include <csignal>
 #include <optional>
 #include <string>
+#include <vector>
 
 struct EngineRuntimeConfig
 {
@@ -78,6 +79,14 @@ struct EngineRuntimeConfig
     // draw a world it has no player in. A launch configuration is free to set
     // both; neither is allowed to mean the other.
     bool HasLocalPlayer = true;
+
+    // The content roots this process mounts, resolved against the working
+    // directory. Each root's `.cooked` sibling is its cook cache; a root names
+    // the authored directory and the pair is mounted together.
+    //
+    // Ordered: a path registered by an earlier root is not replaced by a later
+    // one, so the first root that claims a virtual path owns it.
+    std::vector<std::string> ContentRoots{ "assets" };
 
     // A flag the process host raises when it is told to stop -- a signal it
     // caught, most often. Null when nothing outside the engine can ask.

@@ -5,6 +5,7 @@
 #include <net/NetMessageRouter.h>
 #include <net/NetSession.h>
 #include <app/EngineSchedule.h>
+#include <app/RuntimeContent.h>
 #include <core/console/ConsoleLineFeed.h>
 #include <core/console/ConsoleStartupScript.h>
 #include <core/config/EngineConfig.h>
@@ -34,6 +35,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -276,12 +278,18 @@ public:
     [[nodiscard]] const RuntimeWorld& World() const;
 
     // Runtime scene spawning: cooked scenes placed at play time, published in
-    // request order at the async drain. Valid over the same span as World().
-    // The game connects its asset stack once in OnStart
-    // (Spawns().ConnectAssets(&runtimeAssets.Assets, &runtimeAssets.Scenes))
-    // and disconnects it in OnShutdown before that stack goes away; requests
-    // outside that span fail with a status, not a crash.
+    // request order at the async drain. Valid over the same span as World();
+    // the engine connects it to the content stack before OnStart and
+    // disconnects it after OnShutdown, so requests outside that span fail with
+    // a status, not a crash.
     [[nodiscard]] SceneSpawnService& Spawns();
+
+    // This process's mounted content. Live from just before Game::OnStart until
+    // just after Game::OnShutdown, which is the span a game may hold references
+    // into it; every lease a game takes must be released by the end of
+    // OnShutdown. Calling this outside Run is a programming error.
+    [[nodiscard]] RuntimeContent& Content();
+    [[nodiscard]] const RuntimeContent& Content() const;
 
     [[nodiscard]] RuntimeFrameLoop& Runtime() { return RuntimeLoop; }
     [[nodiscard]] const RuntimeFrameLoop& Runtime() const
@@ -418,6 +426,10 @@ private:
     // Constructed with the world; torn down before it (they borrow the world).
     std::unique_ptr<SceneSpawnService> SpawnServiceState;
     std::unique_ptr<NetPrefabSpawner> NetPrefabState;
+    // Declared after the services it connects and the world it publishes into,
+    // so destruction alone would give them back in the right order. Run states
+    // that order explicitly anyway: OnShutdown, Disconnect, then reset.
+    std::optional<RuntimeContent> ContentState;
     RuntimeFrameLoop RuntimeLoop;
     ConsoleStartupScript StartupScript;
     std::unique_ptr<FrameDriver> FrameDriverInstance;
