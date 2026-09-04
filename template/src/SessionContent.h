@@ -1,6 +1,5 @@
 #pragma once
 
-#include "PlayerAvatarData.h"
 
 #include <assets/data/DataAssetHandle.h>
 #include <assets/runtime/AssetPreloader.h>
@@ -92,9 +91,6 @@ public:
     // run. Read at every use, never cached by the caller: a hot reload swaps
     // the compiled value under the token and the next ask sees it.
     [[nodiscard]] const CompiledGameSettings* GameSettings();
-    // Invalid on a process that cannot hold a mesh, which is what a bodyless
-    // pawn wants rather than a failure.
-    [[nodiscard]] ResolvedPlayerAvatar PlayerAvatar();
 
     // The composed asset stack, for the startup wiring that points engine
     // services and debug panels at it.
@@ -102,7 +98,6 @@ public:
 
 private:
     [[nodiscard]] DataAssetCacheHandle AcquireDataAsset(std::string_view path);
-    void ReleasePlayerAvatar();
     void SetupInputMapping();
     // The shared cooked-content attach for streamed scenes (+map and world
     // zones): collision cells and the sibling probe file.
@@ -134,12 +129,9 @@ private:
 #endif
 
     // Held for the run, released in Close before the caches are destroyed.
-    DataAssetCacheHandle PlayerAvatarAsset;
     DataAssetCacheHandle GameSettingsAsset;
     DataAssetCacheHandle InputActionSetAsset;
     DataAssetCacheHandle InputProfileAsset;
-    // Resolved once so spawning a second pawn does not reload the body.
-    ResolvedPlayerAvatar Avatar;
     // Held for the process: this game is always in its gameplay context. A
     // menu would take its own lease and drop this one.
     InputContextLease GameplayInput;

@@ -2,7 +2,6 @@
 
 #include "GameSettingsData.h"
 #include "PawnSpawn.h"
-#include "PlayerAvatarData.h"
 #include "TemplateInputActions.h"
 
 #include <anim/AnimationClipPlaybackRuntime.h>
@@ -60,8 +59,6 @@ namespace
 {
 constexpr std::string_view kAuthoredRoot = "assets";
 constexpr std::string_view kCookedScanRoot = "assets/.cooked";
-constexpr std::string_view kPlayerAvatarPath =
-    "asset://data/player_avatar.sdata";
 constexpr std::string_view kInputActionSetPath =
     "asset://data/input_actions.sdata";
 constexpr std::string_view kInputProfilePath =
@@ -207,7 +204,6 @@ struct HotReloadPollSystem
 void RegisterTemplateDataTypes(DataAssetTypeRegistry& types,
                                DataSchemaRegistry& schemas)
 {
-    RegisterPlayerAvatarData(types, schemas);
     RegisterGameSettingsData(types, schemas);
 }
 
@@ -215,7 +211,6 @@ void UnregisterTemplateDataTypes(DataAssetTypeRegistry& types,
                                  DataSchemaRegistry& schemas)
 {
     UnregisterGameSettingsData(types, schemas);
-    UnregisterPlayerAvatarData(types, schemas);
 }
 
 SessionContent::SessionContent(Engine& engine, Logger& log)
@@ -450,10 +445,6 @@ void SessionContent::Close()
     // through a destroyed vtable when the module unloads.
     InputActionSetAsset.Reset();
     InputProfileAsset.Reset();
-    // The pawns that held their own references are destroyed above, so this
-    // drops the last one before the caches go away.
-    ReleasePlayerAvatar();
-    PlayerAvatarAsset.Reset();
     GameSettingsAsset.Reset();
     // The subtype registration holds a function pointer into this module, and
     // unregistering refuses while values are still resident, so it follows the
@@ -918,80 +909,6 @@ const CompiledGameSettings* SessionContent::GameSettings()
     if (settings == nullptr)
         Log.Warn("TemplateGame: '{}' is not a game.settings", kGameSettingsPath);
     return settings;
-}
-
-ResolvedPlayerAvatar SessionContent::PlayerAvatar()
-{
-    if (Avatar.IsValid())
-        return Avatar;
-
-    // A body is something to draw. A process that cannot hold a mesh has no
-    // body to give a pawn and is not missing one: the pawn simulates the same
-    // either way, and every machine that draws it resolves its own.
-    if (!Assets().Assets.HasStore(AssetType::StaticMesh))
-        return {};
-
-    if (!PlayerAvatarAsset.IsValid())
-        PlayerAvatarAsset = AcquireDataAsset(kPlayerAvatarPath);
-    if (!PlayerAvatarAsset.IsValid())
-        return {};
-
-    RuntimeAssets& assets = Assets();
-    const CompiledPlayerAvatar* avatar =
-        assets.DataAssets.TryGet<CompiledPlayerAvatar>(
-            PlayerAvatarAsset.GetToken(), "player.avatar");
-    if (avatar == nullptr)
-    {
-        Log.Warn("TemplateGame: '{}' is not a player.avatar", kPlayerAvatarPath);
-        return {};
-    }
-    AssetLease mesh = assets.Assets.LoadLease(avatar->MeshPath, AssetType::StaticMesh);
-    if (!mesh.IsValid())
-    {
-        Log.Warn("TemplateGame: player avatar mesh '{}' did not load",
-                 avatar->MeshPath);
-        return {};
-    }
-
-    // Each material is held only until the set takes its own reference.
-    std::vector<AssetLease> materials;
-    std::vector<std::uint64_t> materialTokens;
-    for (const std::string& path : avatar->MaterialPaths)
-    {
-        AssetLease material = assets.Assets.LoadLease(path, AssetType::Material);
-        if (!material.IsValid())
-        {
-            Log.Warn("TemplateGame: player avatar material '{}' did not load",
-                     path);
-            return {};
-        }
-        materialTokens.push_back(material.OpaqueToken());
-        materials.push_back(std::move(material));
-    }
-
-    AssetLease set = assets.Assets.InternList(AssetType::Material, materialTokens);
-    if (!set.IsValid())
-    {
-        Log.Warn("TemplateGame: player avatar materials did not form a set");
-        return {};
-    }
-
-    Avatar = ResolvedPlayerAvatar{
-        .Mesh = StaticMeshHandle::FromToken(mesh.Relinquish()),
-        .Materials = MaterialSetHandle::FromToken(set.Relinquish()),
-    };
-    return Avatar;
-}
-
-void SessionContent::ReleasePlayerAvatar()
-{
-    if (Assets_.has_value())
-    {
-        Assets_->Assets.ReleaseLease(AssetType::Material, Avatar.Materials.ToToken(),
-                                     AssetArity::List);
-        Assets_->Assets.ReleaseLease(AssetType::StaticMesh, Avatar.Mesh.ToToken());
-    }
-    Avatar = {};
 }
 
 // Binds the game's controls. The action set loads first: a profile names its

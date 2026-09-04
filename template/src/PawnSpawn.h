@@ -1,6 +1,5 @@
 #pragma once
 
-#include "PlayerAvatarData.h"
 
 #include <ecs/EntityId.h>
 #include <ecs/StoragePartitionId.h>
@@ -87,9 +86,6 @@ struct PendingSceneSpawns
 // the same body rather than a bag of replicated components.
 void StampNetPrefab(World& world, EntityId root, Logger& log);
 
-void AttachAvatarMesh(World& world, EntityId entity,
-                      const ResolvedPlayerAvatar& avatar);
-
 // A flying body with the movement columns a pawn has, for looking at a level
 // that has no player to put in it.
 [[nodiscard]] EntityId SpawnObserverPawn(World& world, const Vec3d& at);
@@ -123,12 +119,10 @@ struct SessionPlayerSystem
 {
     Engine* Owner = nullptr;
     Logger* Log = nullptr;
-    ResolvedPlayerAvatar Avatar;
 
     void FrameUpdate(FrameUpdateContext& ctx);
 
 private:
-    void DressArrivedBodies(World& world);
     void FollowLocalControl(World& world);
 
     // The pawn this machine was last told to drive, so taking up a new one is

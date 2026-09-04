@@ -28,6 +28,12 @@
           }
         },
         "CharacterController": {},
+        "StaticMesh": {
+          "mesh": "asset://meshes/dev/cube.smesh",
+          "materials": [
+            "asset://materials/dev/gray.smat"
+          ]
+        },
         "MovementTuning": {
           "profile": "asset://data/player_movement.sdata"
         },

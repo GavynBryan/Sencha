@@ -44,11 +44,12 @@ TEST(CookLevel, Generate)
     LoggingProvider logging;
     logging.AddSink<ConsoleLogSink>();
 
-    // The headless asset composition, so authored content that names a data
-    // asset -- a movement profile, a game's own settings -- resolves rather
-    // than being dropped on the way through. Mesh and texture references still
-    // need the windowed composition: those caches hold GPU resources.
-    RuntimeAssets assets(logging, EditorSceneSerializers());
+    // The reference-only asset composition: authored content that names a
+    // data asset -- a movement profile, a game's own settings -- resolves
+    // rather than being dropped on the way through, and a mesh reference
+    // round-trips as a path without a GPU to hold the geometry.
+    RuntimeAssets assets(logging, EditorSceneSerializers(),
+                         RuntimeAssets::ReferenceOnly{});
     (void)ScanAssetsDirectory(root, assets.Registry, assets.Assets.Kinds());
 
     std::string_view remaining(levels);

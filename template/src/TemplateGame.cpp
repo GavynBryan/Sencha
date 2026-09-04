@@ -222,11 +222,9 @@ void TemplateGame::OnStart(GameStartupContext&)
                 pending.Pawns.erase(entry);
                 return EntityId{};
             }
-            // The prefab is the pawn: its controller, tuning, mode, aim, tags,
-            // attributes, and abilities are all authored, and the per-tick
-            // columns come with the movement component. Only the mesh is still
-            // code's to supply.
-            AttachAvatarMesh(world, root, Session().PlayerAvatar());
+            // The prefab is the pawn: its mesh, controller, tuning, mode,
+            // aim, tags, attributes, and abilities are all authored, and the
+            // per-tick columns come with the movement component.
             StampNetPrefab(world, root, log);
             pending.LiveBodies.emplace_back(participant, entry->Spawn);
             pending.Pawns.erase(entry);
@@ -594,9 +592,6 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
         SessionPlayerSystem& players = ctx.Schedule.Register<SessionPlayerSystem>();
         players.Owner = &GetEngine();
         players.Log = &log;
-        // Resolves to no body on a process that cannot hold a mesh, which is
-        // exactly what a bodyless pawn wants.
-        players.Avatar = Session().PlayerAvatar();
 
         // Settles pending scene spawns before the session presents bodies, so
         // a pawn that lands this frame is followed this frame.

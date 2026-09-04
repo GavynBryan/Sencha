@@ -23,7 +23,6 @@ set(SENCHA_TEMPLATE_MODULE_SOURCES
     src/SessionContent.cpp
     src/TurretControl.cpp
     src/TemplateComponents.cpp
-    src/PlayerAvatarData.cpp
     src/TemplateGame.cpp
     src/TemplateRuntimeComponents.cpp)
 

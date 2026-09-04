@@ -1,7 +1,7 @@
 # The Pawn Prefab Roadmap
 
-Status: landed 2026-08-30, with one item blocked and its blocker written down
-(P4). Phase status is recorded per phase below.
+Status: landed 2026-08-30; the one item left blocked then (the mesh in the
+prefab, P4) landed 2026-09-03. Phase status is recorded per phase below.
 
 Audience: anyone touching component registration, scene serialization, derived
 component provisioning, net spawn, or the template game's archetypes.
@@ -33,7 +33,7 @@ The prefab now carries a controller, its movement tuning and mode, its aim and
 the opt-in that turns the body to it, its tags, its speed, its ability set, and
 the camera it is watched from. The per-tick scratch comes with the component
 that needs it. `BuildPawnBody`, the recipe registry, and the client-side
-reassembly are gone. What is still code: the avatar mesh, for the reason in P4.
+reassembly are gone, and so is the avatar mesh (P4).
 
 ## 1. Why it got that way
 
@@ -140,7 +140,7 @@ skips.
   mesh cache (a `StaticMeshCache` holds GPU resources), so a scene naming a mesh
   cannot round-trip through one — it refuses on save rather than dropping the
   reference. Moving the mesh into the prefab needs the cook to run in a
-  composition that can hold one. Folded into P4, where the avatar chain is
+  composition that can name one. Folded into P4, where the avatar chain is
   deleted anyway.
 - *An asset picker for data-asset fields in the inspector.* Nothing has a
   schema-driven data-asset field yet; the two components that name one persist
@@ -251,7 +251,7 @@ loud and names the component, so this is a convenience gap rather than a
 correctness one; the fix is to fold the schema identity of the components a
 document contains into its cook fingerprint.
 
-### P4 — Camera in the prefab; residual deletions (landed, one item blocked)
+### P4 — Camera in the prefab; residual deletions (landed)
 
 The pawn prefab places the camera it is watched from, as a child carrying
 `CameraSeat`. The seat says which camera it is — `Primary` — and how it
@@ -272,21 +272,24 @@ Deleted: the game-lifetime movement-profile lease, `ResolvePlayerMovementProfile
 and the path constant. The prefab authors the profile; nothing threads it any
 more.
 
-**Blocked, and why: the avatar chain stays.** Deleting `player_avatar.sdata`
-requires the mesh to move into the prefab, and a scene naming a mesh cannot
-round-trip through a headless cook: a `StaticMeshCache` holds GPU buffers, so a
-process composed without graphics has no cache, the load leaves the handle
-invalid, and the save refuses because an invalid handle has no path to write.
-The fixture that cooks the shipped prefabs runs headless in CI, so this is not
-a matter of cooking them somewhere else.
+**Mesh in the prefab (landed).** For a while the avatar chain stayed: a
+scene naming a mesh could not round-trip through a headless cook, because a
+`StaticMeshCache` holds GPU buffers, a process composed without graphics has
+no cache, the load left the handle invalid, and the save refused because an
+invalid handle has no path to write. The fixture that cooks the shipped
+prefabs runs headless in CI, so cooking them somewhere else was not an answer.
 
-The contract underneath it: the scene codec makes a process able to *load* an
-asset in order to *name* one. A cook, a dependency scanner, and a headless
-validator all want the name and none of them want the bytes. The fix is a
-composition that resolves a path to a handle without reading the asset --
-identity without residency -- at which point the mesh moves into the prefab and
-the avatar data asset, `ResolvePlayerAvatar`, the threaded `Avatar` members, and
-the temporary pass that dresses arriving bodies all go together.
+The contract underneath it was that the scene codec made a process able to
+*load* an asset in order to *name* one. The fix is `AssetReferenceStore`
+(`engine/include/core/assets/AssetReferenceStore.h`): a store for one kind
+that interns paths to generational handles and reads nothing, registered as
+the static and skinned mesh kinds by `RuntimeAssets`' reference-only
+composition (`RuntimeAssets::ReferenceOnly`). The cook fixture uses that
+composition, `player_pawn.sscene` carries its `StaticMesh`, and the avatar data
+asset, `PlayerAvatar`, the threaded `Avatar` members, and the pass that dressed
+arriving bodies are deleted. The runtime headless composition is unchanged: a
+dedicated host still declines mesh fields, because a handle that names
+geometry nothing loaded is not something a simulating process should hold.
 
 ## 4. Rules this roadmap establishes
 

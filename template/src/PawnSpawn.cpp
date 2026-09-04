@@ -27,7 +27,6 @@
 #include <participant/LocalControl.h>
 #include <participant/ParticipantControl.h>
 #include <physics/components/CharacterController.h>
-#include <render/StaticMeshComponent.h>
 #include <world/scene/SceneInstance.h>
 #include <world/transform/DerivedTransform.h>
 #include <world/transform/TransformComponents.h>
@@ -170,17 +169,6 @@ void StampNetPrefab(World& world, EntityId root, Logger& log)
 // naming a mesh cannot round-trip through a cook composition that has no mesh
 // cache, so the avatar stays a data asset until the mesh moves into the prefab
 // (docs/plans/pawn-prefab-roadmap.md, P4).
-void AttachAvatarMesh(World& world,
-                      EntityId entity,
-                      const ResolvedPlayerAvatar& avatar)
-{
-    if (!avatar.IsValid() || world.HasComponent<StaticMeshComponent>(entity))
-        return;
-    world.AddComponent<StaticMeshComponent>(
-        entity,
-        StaticMeshComponent{ .Mesh = avatar.Mesh, .Materials = avatar.Materials });
-}
-
 // The body a game gets when the pawn it wanted could not be built: a capsule
 // that collides and flies.
 //
@@ -345,32 +333,7 @@ void SessionPlayerSystem::FrameUpdate(FrameUpdateContext& ctx)
     // them replicated is the engine's decision, taken where the session
     // role is actually known; what is left is presenting whichever body
     // this machine ended up driving.
-    DressArrivedBodies(ctx.Entities);
     FollowLocalControl(ctx.Entities);
-}
-
-// Temporary, and the last of its kind: a body that arrived without a mesh
-// gets the avatar's.
-//
-// A pawn a peer receives is instantiated from the prefab the authority
-// named, so everything about it is authored -- except the mesh, which a
-// prefab cannot yet carry because a headless cook has no cache that can
-// hold one. This is what stands in until it can (see
-// docs/plans/pawn-prefab-roadmap.md, P4), and it goes when the avatar data
-// asset does.
-void SessionPlayerSystem::DressArrivedBodies(World& world)
-{
-    if (!Avatar.IsValid())
-        return;
-
-    std::vector<EntityId> undressed;
-    Query<Read<CharacterMovement>, Without<StaticMeshComponent>> bodies(world);
-    bodies.ForEachChunk([&](auto& view) {
-        for (std::uint32_t i = 0; i < view.Count(); ++i)
-            undressed.push_back(view.Entity(i));
-    });
-    for (const EntityId body : undressed)
-        AttachAvatarMesh(world, body, Avatar);
 }
 
 // What this machine has to do about driving a pawn, once the engine has
