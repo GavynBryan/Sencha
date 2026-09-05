@@ -4,7 +4,7 @@
 #include <attributes/AttributeSet.h>
 #include <audio/AudioCaptionComponent.h>
 #include <audio/AudioSourceComponent.h>
-#include <camera/CameraRig.h>
+#include <camera/CameraExclusion.h>
 #include <components/CameraComponent.h>
 #include <core/console/ConsoleService.h>
 #include <core/metadata/Field.h>

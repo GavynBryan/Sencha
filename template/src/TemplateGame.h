@@ -26,7 +26,6 @@ public:
 
 private:
     ConsoleResult RequestTurret(bool placeOnly);
-    ConsoleResult SetCameraMode(std::string_view modeName);
     void SetRelativeMouseMode(bool enabled);
 
     // Constructed on the first OnStart, which is where the engine and its

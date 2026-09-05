@@ -1,8 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <app/EngineSchedule.h>
-#include <camera/CameraFollowSystem.h>
-#include <camera/CameraRig.h>
 #include <components/ActiveCameraService.h>
 #include <controller/LookIntegrationSystem.h>
 #include <controller/LookOrientation.h>
@@ -49,7 +47,6 @@ namespace
     {
         LookHarness()
         {
-            WorldState.RegisterComponent<CameraRig>();
             WorldState.RegisterComponent<LookOrientation>();
             WorldState.RegisterComponent<LocalLookControl>();
             WorldState.RegisterComponent<LocalTransform>();
@@ -65,13 +62,6 @@ namespace
             WorldState.AddComponent<LocalLookControl>(Pawn, {});
             WorldState.AddComponent<LocalTransform>(Pawn, {});
 
-            Camera = WorldState.CreateEntity();
-            CameraRig rig{};
-            rig.Mode = CameraRigMode::FirstPerson;
-            rig.Target = Pawn;
-            WorldState.AddComponent<CameraRig>(Camera, rig);
-            WorldState.AddComponent<LocalTransform>(Camera, {});
-            WorldState.AddResource<ActiveCameraService>().SetActive(Camera);
 
             // Aim integrates from a resolved look action. Filling the snapshot
             // directly keeps this focused: the mapper has its own coverage, and
@@ -80,7 +70,6 @@ namespace
             WorldState.AddResource<LookInputBinding>().Look = InputActionId{ 1 };
 
             Integrate = &Schedule.Register<LookIntegrationSystem>();
-            Follow = &Schedule.Register<CameraFollowSystem>();
             Reader = &Schedule.Register<YawReadingSystem>();
             Reader->Pawn = Pawn;
             Schedule.Init();
@@ -224,15 +213,6 @@ namespace
 
         // Where the camera actually aimed this frame: the yaw of the pose the
         // follow pass wrote, which is the thing the player sees.
-        [[nodiscard]] float CameraYaw() const
-        {
-            const LocalTransform* transform =
-                WorldState.TryGet<LocalTransform>(Camera);
-            const Vec3d forward =
-                transform->Value.Rotation.RotateVector(Vec3d::Forward());
-            return std::atan2(-forward.X, -forward.Z);
-        }
-
         // The aim simulation steers along.
         [[nodiscard]] float Yaw() const
         {
@@ -255,10 +235,8 @@ namespace
         World WorldState;
         StoragePartitionSet Partitions;
         EngineSchedule Schedule;
-        EntityId Camera;
         EntityId Pawn;
         LookIntegrationSystem* Integrate = nullptr;
-        CameraFollowSystem* Follow = nullptr;
         YawReadingSystem* Reader = nullptr;
 
         // The two clocks' unconsumed displacement, as the mapper carries it.
@@ -275,7 +253,7 @@ namespace
 // simulation, so a tick steered along the previous frame's orientation while the
 // same frame rendered the new one. Turning and moving at once then carried
 // velocity along a heading the player had already left.
-TEST(CameraLook, SimulationSeesTheSameFrameYaw)
+TEST(LookIntegration, SimulationSeesTheSameFrameYaw)
 {
     LookHarness harness;
     harness.RunFrame(0.1f);
@@ -289,7 +267,7 @@ TEST(CameraLook, SimulationSeesTheSameFrameYaw)
 
 // Splitting the system across two phases must not apply the same mouse delta
 // twice; placement reads the orientation, it does not accumulate it.
-TEST(CameraLook, PlacementDoesNotAccumulateLookAgain)
+TEST(LookIntegration, PlacementDoesNotAccumulateLookAgain)
 {
     LookHarness harness;
     harness.RunFrame(0.04f);
@@ -302,7 +280,7 @@ TEST(CameraLook, PlacementDoesNotAccumulateLookAgain)
     EXPECT_FLOAT_EQ(harness.Reader->ObservedYaw, afterFirst);
 }
 
-TEST(CameraLook, PitchStaysClampedWhenAccumulatedBeforeSimulation)
+TEST(LookIntegration, PitchStaysClampedWhenAccumulatedBeforeSimulation)
 {
     LookHarness harness;
     LookOrientation* look = harness.WorldState.TryGet<LookOrientation>(harness.Pawn);
@@ -321,7 +299,7 @@ TEST(CameraLook, PitchStaysClampedWhenAccumulatedBeforeSimulation)
 // frame that ran two stepped twice under one angle. Steering along that heading
 // while moving made the velocity direction lurch. Every tick must advance the
 // aim by the displacement covering the span it simulates.
-TEST(CameraLook, EachTickTurnsByTheTravelSinceTheLastTick)
+TEST(LookIntegration, EachTickTurnsByTheTravelSinceTheLastTick)
 {
     LookHarness harness;
     constexpr float perFrame = 0.03f;
@@ -354,7 +332,7 @@ TEST(CameraLook, EachTickTurnsByTheTravelSinceTheLastTick)
 
 // A catch-up frame simulates two ticks. Both stepping under one angle is the
 // defect; the second must aim one tick further round than the first.
-TEST(CameraLook, TicksInOneFrameDoNotShareAnAngle)
+TEST(LookIntegration, TicksInOneFrameDoNotShareAnAngle)
 {
     LookHarness harness;
     harness.RunFrameWithTicks(0, 0.02f);
@@ -373,7 +351,7 @@ TEST(CameraLook, TicksInOneFrameDoNotShareAnAngle)
 
 // Moving the aim onto the tick clock must not make the view step at the tick
 // rate: a frame that runs no tick still turns what the player sees.
-TEST(CameraLook, ViewTurnsOnAFrameThatRunsNoTick)
+TEST(LookIntegration, ViewTurnsOnAFrameThatRunsNoTick)
 {
     LookHarness harness;
     harness.RunFrameWithTicks(1, 0.05f);
@@ -389,7 +367,7 @@ TEST(CameraLook, ViewTurnsOnAFrameThatRunsNoTick)
 
 // The lead is what simulation has not caught up to, never a running total: once
 // a tick absorbs it the view must not count it a second time.
-TEST(CameraLook, TheViewLeadIsSpentByTheNextTick)
+TEST(LookIntegration, TheViewLeadIsSpentByTheNextTick)
 {
     LookHarness harness;
     harness.RunFrameWithTicks(0, 0.05f);
@@ -400,65 +378,10 @@ TEST(CameraLook, TheViewLeadIsSpentByTheNextTick)
         << "the tick consumed the lead, so the view and the aim agree";
 }
 
-// A stick is a sample, not a displacement: the same deflection reads on every
-// pass. Accumulating it per frame while ticks consumed it per tick stepped the
-// view backward every time a tick landed -- at a 144 Hz display against a
-// 60 Hz simulation, a vibration at tick rate. A held stick must turn the view
-// by rate times wall time, every frame, in one direction.
-TEST(CameraLook, AHeldStickTurnsTheViewWithoutSteppingBack)
-{
-    LookHarness harness;
-    constexpr double dt = 1.0 / 144.0;
-    constexpr float rate = 2.4f;
-
-    harness.RunWallFrame(dt, rate);
-    float previous = harness.CameraYaw();
-
-    int reversals = 0;
-    double totalStep = 0.0;
-    double worstStep = 0.0;
-    const double expectedStep = rate * dt;
-    for (int i = 0; i < 90; ++i)
-    {
-        harness.RunWallFrame(dt, rate);
-        const double step = static_cast<double>(harness.CameraYaw()) - previous;
-        previous = harness.CameraYaw();
-        if (step > 0.0)
-            ++reversals;
-        totalStep += step;
-        worstStep = std::max(worstStep, std::abs(std::abs(step) - expectedStep));
-    }
-
-    EXPECT_EQ(reversals, 0)
-        << "the view must never move against a steadily held stick";
-    EXPECT_LT(worstStep, expectedStep * 0.02)
-        << "every frame advances by rate times its wall time";
-    EXPECT_NEAR(totalStep, -rate * dt * 90.0, 1e-3);
-}
-
-// Turn speed is a property of the stick, not of the display: a second of wall
-// time turns the view by the same angle at 144 Hz and 60 Hz frame rates.
-TEST(CameraLook, StickTurnSpeedIsIndependentOfFrameRate)
-{
-    constexpr float rate = 2.4f;
-
-    LookHarness at144;
-    for (int i = 0; i < 144; ++i)
-        at144.RunWallFrame(1.0 / 144.0, rate);
-
-    LookHarness at60;
-    for (int i = 0; i < 60; ++i)
-        at60.RunWallFrame(1.0 / 60.0, rate);
-
-    EXPECT_NEAR(at144.CameraYaw(), at60.CameraYaw(), 1e-3f);
-    EXPECT_NEAR(at144.CameraYaw(), -rate, 5e-3f)
-        << "one second at full deflection turns one rate's worth";
-}
-
 // The simulation's own aim advances only with simulated time: a frame that
 // runs two ticks turns the heading by two ticks of rate, a frame that runs
 // none leaves it alone.
-TEST(CameraLook, StickAdvancesTheHeadingByRateTimesSimulatedTime)
+TEST(LookIntegration, StickAdvancesTheHeadingByRateTimesSimulatedTime)
 {
     LookHarness harness;
     constexpr double fixedDt = 1.0 / 60.0;
@@ -474,107 +397,3 @@ TEST(CameraLook, StickAdvancesTheHeadingByRateTimesSimulatedTime)
     EXPECT_NEAR(harness.Yaw(), -rate * fixedDt * 2.0, 1e-5f);
 }
 
-TEST(CameraPose, FirstPersonSitsAtPivot)
-{
-    CameraRig rig{};
-    rig.Mode = CameraRigMode::FirstPerson;
-    rig.PivotOffset = Vec3d(0.0f, 1.6f, 0.0f);
-
-    const CameraPose pose = ComputeCameraPose(rig, Vec3d(5.0f, 0.0f, 3.0f), 0.0f, 0.0f);
-
-    EXPECT_TRUE(pose.Override);
-    EXPECT_FLOAT_EQ(pose.Position.X, 5.0f);
-    EXPECT_FLOAT_EQ(pose.Position.Y, 1.6f);
-    EXPECT_FLOAT_EQ(pose.Position.Z, 3.0f);
-}
-
-TEST(CameraPose, ThirdPersonPlacesBoomBehindAtRest)
-{
-    CameraRig rig{};
-    rig.Mode = CameraRigMode::ThirdPerson;
-    rig.PivotOffset = Vec3d(0.0f, 1.0f, 0.0f);
-    rig.Distance = 4.0f;
-
-    const CameraPose pose = ComputeCameraPose(rig, Vec3d::Zero(), 0.0f, 0.0f);
-
-    // At yaw 0 / pitch 0 the look direction is -Z, so the boom (behind) is +Z.
-    EXPECT_TRUE(pose.Override);
-    EXPECT_NEAR(pose.Position.X, 0.0f, 1e-4f);
-    EXPECT_NEAR(pose.Position.Y, 1.0f, 1e-4f);
-    EXPECT_NEAR(pose.Position.Z, 4.0f, 1e-4f);
-}
-
-TEST(CameraPose, ThirdPersonPreservesBoomLength)
-{
-    CameraRig rig{};
-    rig.Mode = CameraRigMode::ThirdPerson;
-    rig.PivotOffset = Vec3d::Zero();
-    rig.Distance = 4.0f;
-
-    const CameraPose pose = ComputeCameraPose(rig, Vec3d::Zero(), 0.9f, 0.2f);
-
-    EXPECT_NEAR(pose.Position.Magnitude(), rig.Distance, 1e-3f);
-}
-
-TEST(CameraPose, FixedLeavesAuthoredPose)
-{
-    CameraRig rig{};
-    rig.Mode = CameraRigMode::Fixed;
-
-    const CameraPose pose = ComputeCameraPose(rig, Vec3d(9.0f, 9.0f, 9.0f), 0.0f, 0.0f);
-
-    EXPECT_FALSE(pose.Override);
-}
-
-// A first-person camera sits at the pivot inside its target, so drawing the
-// target fills the view with the inside of its own body.
-TEST(CameraExclusion, FirstPersonExcludesItsTarget)
-{
-    CameraRig rig{};
-    rig.Mode = CameraRigMode::FirstPerson;
-    rig.Target = EntityId{ 7, 2 };
-
-    EXPECT_EQ(CameraRigExcludedEntity(rig), rig.Target);
-}
-
-// The boom looks at the target from outside it: seeing your own body is the
-// point of the mode.
-TEST(CameraExclusion, ThirdPersonExcludesNothing)
-{
-    CameraRig rig{};
-    rig.Mode = CameraRigMode::ThirdPerson;
-    rig.Target = EntityId{ 7, 2 };
-
-    EXPECT_FALSE(CameraRigExcludedEntity(rig).IsValid());
-}
-
-TEST(CameraExclusion, FixedExcludesNothing)
-{
-    CameraRig rig{};
-    rig.Mode = CameraRigMode::Fixed;
-    rig.Target = EntityId{ 7, 2 };
-
-    EXPECT_FALSE(CameraRigExcludedEntity(rig).IsValid());
-}
-
-// A rig with no target excludes nothing rather than excluding "entity zero":
-// the exclusion is carried as an id, and an invalid id matches no live entity.
-TEST(CameraExclusion, FirstPersonWithNoTargetExcludesNothing)
-{
-    CameraRig rig{};
-    rig.Mode = CameraRigMode::FirstPerson;
-
-    EXPECT_FALSE(CameraRigExcludedEntity(rig).IsValid());
-}
-
-// Identity is generational: once a target's slot is recycled, the rig's stale id
-// must stop matching the entity now living in that slot.
-TEST(CameraExclusion, ExclusionDoesNotFollowARecycledSlot)
-{
-    CameraRig rig{};
-    rig.Mode = CameraRigMode::FirstPerson;
-    rig.Target = EntityId{ 7, 2 };
-
-    const EntityId recycled{ 7, 3 };
-    EXPECT_NE(CameraRigExcludedEntity(rig), recycled);
-}

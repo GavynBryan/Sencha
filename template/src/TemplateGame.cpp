@@ -1,11 +1,12 @@
 #include "TemplateGame.h"
 
-#include "CharacterInputSystem.h"
+#include "FpsSteeringSystem.h"
+#include "PawnCameraSystem.h"
 #include "PawnSpawn.h"
 
 #include "GameSettingsData.h"
 #include "PlayerStartComponent.h"
-#include "TemplateInputActions.h"
+#include "FpsInputActions.h"
 #include "SpinComponent.h"
 #include "TurretControl.h"
 #include "TurretMount.h"
@@ -20,7 +21,6 @@
 #endif
 #include <app/GameModule.h>
 #include <camera/CameraRegistration.h>
-#include <camera/CameraRig.h>
 #include <components/ActiveCameraService.h>
 #include <controller/ControllerRegistration.h>
 #include <controller/LookIntegrationSystem.h>
@@ -296,26 +296,6 @@ void TemplateGame::OnStart(GameStartupContext&)
         },
     });
 
-    engine.Console().Registry().RegisterCommand({
-        .Name = "camera_mode",
-        .Owner = "game",
-        .Usage = "camera_mode <first|third|fixed>",
-        .Help = "Switch the active camera between first-person, third-person, and the authored pose.",
-        .RequiredPhase = ConsolePhase::GameLoaded,
-        .Callback = [this](
-            ConsoleExecutionContext&,
-            std::span<const std::string> args)
-        {
-            if (args.size() != 1)
-            {
-                ConsoleResult usage;
-                usage.Error("usage: camera_mode <first|third|fixed>");
-                return usage;
-            }
-            return SetCameraMode(args[0]);
-        },
-    });
-
     // A dedicated host has nobody at a keyboard, so it is told how to serve
     // rather than how to play.
     std::printf("Sencha game template\n");
@@ -374,39 +354,6 @@ ConsoleResult TemplateGame::RequestTurret(bool placeOnly)
     return TakeTurretHere(engine, Session().GameSettings(), log);
 }
 
-ConsoleResult TemplateGame::SetCameraMode(std::string_view modeName)
-{
-    ConsoleResult result;
-
-    CameraRigMode mode{};
-    if (modeName == "first")
-        mode = CameraRigMode::FirstPerson;
-    else if (modeName == "third")
-        mode = CameraRigMode::ThirdPerson;
-    else if (modeName == "fixed")
-        mode = CameraRigMode::Fixed;
-    else
-    {
-        result.Error("unknown camera mode '" + std::string(modeName)
-                     + "'; expected first, third, or fixed");
-        return result;
-    }
-
-    World& world = GetEngine().World().Entities();
-    const EntityId camera =
-        world.GetResource<ActiveCameraService>().GetActive();
-    CameraRig* rig = camera.IsValid() ? world.TryGet<CameraRig>(camera) : nullptr;
-    if (rig == nullptr)
-    {
-        result.Error("no active camera with a rig; load a map first");
-        return result;
-    }
-
-    rig->Mode = mode;
-    result.Info("camera mode " + std::string(modeName));
-    return result;
-}
-
 void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
 {
     RegisterPhysics(ctx.Schedule);
@@ -424,23 +371,22 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
         ctx.Schedule,
         Session().Assets().DataAssets,
         GetEngine().Logging());
-    RegisterCameraSystem(ctx.Schedule);
     RegisterControllerSystems(ctx.Schedule);
     RegisterNetSystems(ctx.Schedule, GetEngine().PeerCommands(),
                        GetEngine().Prediction(), GetEngine().Interpolation(),
                        GetEngine().NetClock());
-    ctx.Schedule.Register<CharacterInputSystem>();
+    ctx.Schedule.Register<FpsSteeringSystem>();
 
     // Everything that reads actions runs after they are resolved: the aim
     // integrates on the frame snapshot, the character steers on the tick record
     // along the orientation that produced.
     ctx.Schedule.After<LookIntegrationSystem, InputActionResolveSystem>();
-    ctx.Schedule.After<CharacterInputSystem, LookIntegrationSystem>();
-    ctx.Schedule.After<CharacterInputSystem, InputActionResolveSystem>();
+    ctx.Schedule.After<FpsSteeringSystem, LookIntegrationSystem>();
+    ctx.Schedule.After<FpsSteeringSystem, InputActionResolveSystem>();
     // The two edges the net input channel needs around whichever system turns
     // actions into intent. Declared by the engine, which owns why they exist.
-    OrderNetInputAround<CharacterInputSystem>(ctx.Schedule);
-    OrderMovementAfterInput<CharacterInputSystem>(ctx.Schedule);
+    OrderNetInputAround<FpsSteeringSystem>(ctx.Schedule);
+    OrderMovementAfterInput<FpsSteeringSystem>(ctx.Schedule);
     ctx.Schedule.Register<SpinSystem>();
     // A turret points where its driver looks. After the look integrates, for
     // the same reason the character steers after it: the value it reads is
@@ -453,6 +399,9 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     // from.
     {
         Logger& log = GetEngine().Logging().GetLogger<TemplateGame>();
+        PawnCameraSystem& camera = ctx.Schedule.Register<PawnCameraSystem>();
+        camera.Owner = &GetEngine();
+        camera.Log = &GetEngine().Logging().GetLogger<TemplateGame>();
         SessionPlayerSystem& players = ctx.Schedule.Register<SessionPlayerSystem>();
         players.Owner = &GetEngine();
         players.Log = &log;

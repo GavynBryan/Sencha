@@ -1,15 +1,14 @@
 #pragma once
 
 class World;
-class EngineSchedule;
 
 //=============================================================================
 // Camera registration
 //
-// Opt-in camera follow: the CameraRig component plus the per-frame system that
-// places the active camera from it. A game that drives its own camera skips both.
+// World storage for the runtime camera vocabulary a game that drives cameras
+// needs: CameraExclusion, which the render extractor reads. The authored
+// CameraComponent is registered with the engine's scene vocabulary; this is
+// the opt-in half. How a camera is placed is the game's system, not the
+// engine's.
 //=============================================================================
-
 void RegisterCameraComponents(World& world);
-
-void RegisterCameraSystem(EngineSchedule& schedule);

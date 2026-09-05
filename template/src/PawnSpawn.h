@@ -100,8 +100,6 @@ void PublishPlayContent(World& world,
 // Content has arrived, so anybody admitted before it can have a body now.
 void RequestBodiesForWaitingParticipants(Engine& engine);
 
-// Points this machine's camera at whatever it is driving.
-void AttachLocalPlayer(World& world, EntityId pawn, Logger& log);
 
 //=============================================================================
 // SessionPlayerSystem

@@ -2,46 +2,25 @@
 
 #include "GameSettingsData.h"
 #include "PawnSpawn.h"
-#include "TemplateInputActions.h"
+#include "PawnStreaming.h"
+#include "FpsInputActions.h"
 
-#include <anim/AnimationClipPlaybackRuntime.h>
-#include <app/DefaultRenderPipeline.h>
 #include <app/Engine.h>
 #include <app/GameContexts.h>
-#include <audio/AudioSourceRuntime.h>
 #include <camera/CameraRegistration.h>
 #include <components/ActiveCameraService.h>
 #include <controller/ControllerRegistration.h>
-#include <assets/runtime/ContentMount.h>
+#include <controller/LookOrientation.h>
 #include <core/assets/AssetLease.h>
-#include <core/assets/AssetRegistry.h>
-#include <core/assets/AssetStoreTable.h>
 #include <core/config/EngineConfig.h>
-#include <core/json/JsonParser.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
-#include <graphics/vulkan/GraphicsServices.h>
-#include <input/InputBindingCache.h>
-#include <controller/LookOrientation.h>
 #include <input/InputRegistration.h>
-#include <movement/MovementProfileBindingCache.h>
 #include <movement/MovementRegistration.h>
-#include <participant/LocalControl.h>
-#include <physics/CharacterMoverPool.h>
-#include <physics/CollisionShapeCache.h>
 #include <physics/PhysicsRegistration.h>
 #include <physics/PhysicsStepSystem.h>
-#include <physics/ZoneCollisionLoader.h>
-#include <render/ProbeVolumeSet.h>
-#include <runtime/spawn/NetPrefabSpawner.h>
-#include <runtime/spawn/SceneSpawnService.h>
 #include <world/RuntimeWorld.h>
-#include <world/build/EntityBuildPackage.h>
-#include <world/transform/TransformComponents.h>
-#include <world/transform/TransformHistory.h>
-#include <zone/WorldPartitionIds.h>
-#include <zone/ZonePackageImporter.h>
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
 #include <debug/MovementStatePanel.h>
@@ -64,77 +43,6 @@ constexpr std::string_view kInputProfilePath =
     "asset://data/input_default.sdata";
 constexpr std::string_view kGameSettingsPath = "asset://data/game.sdata";
 
-
-struct WorldPartitionUpdateSystem
-{
-    explicit WorldPartitionUpdateSystem(Engine& engine)
-        : Host(engine)
-    {
-    }
-
-    void FrameUpdate(FrameUpdateContext& ctx)
-    {
-        const WorldPartitionRuntime* partition = Host.WorldStreaming();
-        if (partition == nullptr || !partition->HasManifest())
-            return;
-
-        // Streaming itself is the engine's: it was handed this partition when
-        // the world loaded and drives it in the zone-residency phase.
-        //
-        // What is left here is a gameplay decision. A crossing the destination
-        // is not ready for leaves the pawn where the sweep last had it fully
-        // inside the room it is leaving; streaming decides that on the wall
-        // clock, but moving a pawn is simulation, so the position is recorded
-        // and applied on the next fixed tick.
-        if (LocalControlSubjectOf(ctx.Entities).IsValid()
-            && partition->LastTraversal().Status
-                == DockTraversalStatus::BlockedDestinationNotReady)
-        {
-            PendingSafePosition = partition->LastTraversal().SafeSourcePosition;
-        }
-    }
-
-    // Applied at the head of the tick, before movement runs, so the pawn never
-    // enters physics at the position that reached into the unloaded zone.
-    void FixedLogic(FixedLogicContext& ctx)
-    {
-        if (!PendingSafePosition.has_value())
-            return;
-
-        World& world = ctx.Entities;
-        const EntityId pawn = LocalControlSubjectOf(world);
-        if (!pawn.IsValid())
-        {
-            PendingSafePosition.reset();
-            return;
-        }
-
-        const Vec3d safe = *PendingSafePosition;
-        PendingSafePosition.reset();
-
-        // Through the mover, never onto the transform alone: a character's
-        // position lives inside its mover and the transform is where the last
-        // sweep left a copy, so writing the copy is undone by the next tick.
-        bool moved = false;
-        if (Movers != nullptr)
-            moved = Movers->SetPosition(world, pawn, safe);
-        if (!moved)
-        {
-            if (LocalTransform* transform = world.TryGet<LocalTransform>(pawn))
-                transform->Value.Position = safe;
-            RequestTransformHistorySnap(world, pawn);
-        }
-        if (WorldTransform* transform = world.TryGet<WorldTransform>(pawn))
-            transform->Value.Position = safe;
-    }
-
-    Engine& Host;
-    // Owned by the physics step, which is where characters live. Null in a
-    // configuration with no physics, where the transform is all there is.
-    CharacterMoverPool* Movers = nullptr;
-    // Set by streaming on the wall clock, consumed by the next fixed tick.
-    std::optional<Vec3d> PendingSafePosition;
-};
 
 } // namespace
 
@@ -209,10 +117,12 @@ void SessionContent::RegisterSystems(SystemRegisterContext& ctx)
     if (PhysicsStepSystem* step = ctx.Schedule.Get<PhysicsStepSystem>())
         Host.Level().ConnectCollision(step->GetShapeCache());
 
-    WorldPartitionUpdateSystem& partitionUpdate =
-        ctx.Schedule.Register<WorldPartitionUpdateSystem>(Host);
+    // The world stays loaded around this machine's player, and the player
+    // stays out of rooms that are not ready. Both are this game's decisions.
+    PawnStreaming& streaming = ctx.Schedule.Register<PawnStreaming>();
+    streaming.Owner = &Host;
     if (PhysicsStepSystem* step = ctx.Schedule.Get<PhysicsStepSystem>())
-        partitionUpdate.Movers = &step->GetCharacterMovers();
+        streaming.Movers = &step->GetCharacterMovers();
 }
 
 
@@ -290,9 +200,9 @@ void SessionContent::SetupInputMapping()
         return;
     }
 
-    TemplateInputActions& ids = world.HasResource<TemplateInputActions>()
-        ? world.GetResource<TemplateInputActions>()
-        : world.AddResource<TemplateInputActions>();
+    FpsInputActions& ids = world.HasResource<FpsInputActions>()
+        ? world.GetResource<FpsInputActions>()
+        : world.AddResource<FpsInputActions>();
     ids.Move = actions->Find("move");
     ids.Look = actions->Find("look");
     ids.Jump = actions->Find("jump");

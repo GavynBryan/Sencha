@@ -1,6 +1,6 @@
-#include "CharacterInputSystem.h"
+#include "FpsSteeringSystem.h"
 
-#include "TemplateInputActions.h"
+#include "FpsInputActions.h"
 
 #include <app/GameContexts.h>
 #include <controller/LookOrientation.h>
@@ -16,7 +16,7 @@
 #include <cmath>
 #include <cstdint>
 
-void CharacterInputSystem::FixedLogic(FixedLogicContext& ctx)
+void FpsSteeringSystem::FixedLogic(FixedLogicContext& ctx)
 {
     World& world = ctx.Entities;
     if (!world.IsRegistered<MovementIntent>()
@@ -30,8 +30,8 @@ void CharacterInputSystem::FixedLogic(FixedLogicContext& ctx)
     if (tags == nullptr)
         return;
 
-    const TemplateInputActions* actionIds =
-        world.TryGetResource<TemplateInputActions>();
+    const FpsInputActions* actionIds =
+        world.TryGetResource<FpsInputActions>();
     if (actionIds == nullptr)
         return;
 

@@ -1,13 +1,12 @@
 #pragma once
 
-#include <camera/CameraRig.h>
-#include <camera/CameraSeat.h>
+#include <camera/CameraExclusion.h>
 #include <components/CameraComponent.h>
 #include <world/ComponentRegistrar.h>
 
-// The authored camera an entity carries, what a body's own camera says it is
-// for, and the runtime rig that steers one.
-using CameraComponents = ComponentSet<CameraComponent, CameraSeat, CameraRig>;
+// The authored camera an entity carries, and what a camera in use leaves out
+// of its picture.
+using CameraComponents = ComponentSet<CameraComponent, CameraExclusion>;
 
 inline void RegisterCameraComponents(ComponentRegistrar& registrar)
 {

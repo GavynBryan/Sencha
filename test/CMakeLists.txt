@@ -189,6 +189,7 @@ if(FRAMEWORK_TEST_SOURCES)
         ${FRAMEWORK_TEST_SOURCES}
         ${CMAKE_SOURCE_DIR}/template/src/GameSettingsData.cpp
         ${CMAKE_SOURCE_DIR}/template/src/LocalLookFollow.cpp
+        ${CMAKE_SOURCE_DIR}/template/src/PawnStreaming.cpp
         ${CMAKE_SOURCE_DIR}/example/CubeDemo/CubeDemoSystems.cpp
         ${CMAKE_SOURCE_DIR}/example/CubeDemo/CubeDemoScene.cpp
         ${CMAKE_SOURCE_DIR}/example/CubeDemo/FreeCamera.cpp)

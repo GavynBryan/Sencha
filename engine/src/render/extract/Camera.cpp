@@ -1,6 +1,6 @@
 #include <render/extract/Camera.h>
 
-#include <camera/CameraRig.h>
+#include <camera/CameraExclusion.h>
 #include <render/CameraProjection.h>
 #include <world/transform/TransformComponents.h>
 
@@ -47,13 +47,18 @@ bool CameraRenderDataSystem::Build(const ActiveCameraService& activeCamera,
     out.ViewProjection = projection * out.View;
     out.Position = transform->Value.Position;
     out.ViewFrustum = Frustum::FromViewProjection(out.ViewProjection);
-    // Rigs are optional vocabulary: an editor viewport camera and a bare
-    // authored camera have none, and their worlds never register the type.
+    // Exclusion is optional vocabulary: an editor viewport camera and a bare
+    // authored camera have none, and their worlds never register the type. A
+    // dead excluded entity excludes nothing rather than whatever recycled its
+    // slot.
     out.ExcludedEntity = EntityId{};
-    if (world.IsRegistered<CameraRig>())
+    if (world.IsRegistered<CameraExclusion>())
     {
-        if (const CameraRig* rig = world.TryGet<CameraRig>(entity))
-            out.ExcludedEntity = CameraRigExcludedEntity(*rig);
+        if (const CameraExclusion* exclusion = world.TryGet<CameraExclusion>(entity))
+        {
+            if (exclusion->Excluded.IsValid() && world.IsAlive(exclusion->Excluded))
+                out.ExcludedEntity = exclusion->Excluded;
+        }
     }
     return true;
 }

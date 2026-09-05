@@ -74,5 +74,11 @@
 // RequestBody take whether a session is active and add replication state only
 // then; Engine::ProjectSessionStart stamps retroactively when a process starts
 // hosting. SetLocalControlSubject publishes identity only and no longer adds or
-// removes LocalLookControl -- a game that wants that rule composes it.
-#define SENCHA_GAME_ABI_VERSION 17u
+// removes LocalLookControl -- a game that wants that rule composes it. v18:
+// the engine has no camera policy and no local streaming policy. CameraRig,
+// CameraRigMode, ComputeCameraPose, CameraFollowSystem, RegisterCameraSystem and
+// the authored CameraSeat (CSET) are gone; CameraExclusion is the one runtime
+// camera component, read by extraction, and FirstAuthoredCamera is the one
+// query. NetZoneStreaming::Update no longer takes a local control subject; a game
+// sets the partition's primary focus itself.
+#define SENCHA_GAME_ABI_VERSION 18u

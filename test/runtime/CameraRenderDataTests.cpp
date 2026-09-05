@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <camera/CameraRig.h>
+#include <camera/CameraExclusion.h>
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
 #include <ecs/World.h>
@@ -16,7 +16,7 @@ namespace
         CameraDataHarness()
         {
             WorldState.RegisterComponent<CameraComponent>();
-            WorldState.RegisterComponent<CameraRig>();
+            WorldState.RegisterComponent<CameraExclusion>();
             WorldState.RegisterComponent<LocalTransform>();
             WorldState.RegisterComponent<WorldTransform>();
 
@@ -29,12 +29,9 @@ namespace
             WorldState.AddResource<ActiveCameraService>().SetActive(Camera);
         }
 
-        void GiveCameraRig(CameraRigMode mode)
+        void Exclude(EntityId entity)
         {
-            CameraRig rig{};
-            rig.Mode = mode;
-            rig.Target = Target;
-            WorldState.AddComponent<CameraRig>(Camera, rig);
+            WorldState.AddComponent<CameraExclusion>(Camera, CameraExclusion{ entity });
         }
 
         [[nodiscard]] bool Build(CameraRenderData& out)
@@ -54,20 +51,20 @@ namespace
 
 // The exclusion is derived per frame from the rig, so the render domain learns
 // which entity to skip without any component carrying a per-viewer flag.
-TEST(CameraRenderDataExclusion, FirstPersonRigExcludesTheTarget)
+TEST(CameraRenderDataExclusion, AnExcludedEntityReachesTheFrame)
 {
     CameraDataHarness harness;
-    harness.GiveCameraRig(CameraRigMode::FirstPerson);
+    harness.Exclude(harness.Target);
 
     CameraRenderData data;
     ASSERT_TRUE(harness.Build(data));
     EXPECT_EQ(data.ExcludedEntity, harness.Target);
 }
 
-TEST(CameraRenderDataExclusion, ThirdPersonRigExcludesNothing)
+TEST(CameraRenderDataExclusion, AnEmptyExclusionExcludesNothing)
 {
     CameraDataHarness harness;
-    harness.GiveCameraRig(CameraRigMode::ThirdPerson);
+    harness.Exclude(EntityId{});
 
     CameraRenderData data;
     ASSERT_TRUE(harness.Build(data));
@@ -76,7 +73,7 @@ TEST(CameraRenderDataExclusion, ThirdPersonRigExcludesNothing)
 
 // Editor viewports and authored scene cameras have no rig. They must draw
 // everything rather than inherit whatever the field last held.
-TEST(CameraRenderDataExclusion, CameraWithoutARigExcludesNothing)
+TEST(CameraRenderDataExclusion, CameraWithoutAnExclusionExcludesNothing)
 {
     CameraDataHarness harness;
 
@@ -90,7 +87,7 @@ TEST(CameraRenderDataExclusion, CameraWithoutARigExcludesNothing)
 // Rigs are optional vocabulary. An editor viewport and a headless render world
 // never register the component at all, and building camera data must not
 // require them to start doing so.
-TEST(CameraRenderDataExclusion, WorldWithoutTheRigComponentStillBuilds)
+TEST(CameraRenderDataExclusion, WorldWithoutTheExclusionComponentStillBuilds)
 {
     World world;
     world.RegisterComponent<CameraComponent>();
@@ -112,17 +109,33 @@ TEST(CameraRenderDataExclusion, WorldWithoutTheRigComponentStillBuilds)
 
 // Switching to third person while running has to restore the body immediately;
 // the field is rebuilt every frame rather than latched at spawn.
-TEST(CameraRenderDataExclusion, ModeChangeIsPickedUpOnTheNextBuild)
+// The excluded entity died. Excluding whatever recycles its slot would hide a
+// stranger from this camera; excluding nothing is the only honest answer.
+TEST(CameraRenderDataExclusion, ADeadExcludedEntityExcludesNothing)
 {
     CameraDataHarness harness;
-    harness.GiveCameraRig(CameraRigMode::FirstPerson);
+    harness.Exclude(harness.Target);
 
     CameraRenderData data;
     ASSERT_TRUE(harness.Build(data));
     ASSERT_EQ(data.ExcludedEntity, harness.Target);
 
-    harness.WorldState.TryGet<CameraRig>(harness.Camera)->Mode =
-        CameraRigMode::ThirdPerson;
+    harness.WorldState.DestroyEntity(harness.Target);
     ASSERT_TRUE(harness.Build(data));
     EXPECT_FALSE(data.ExcludedEntity.IsValid());
+}
+
+// The active camera itself died -- a game deactivated nothing and its level
+// unloaded under it. Build declines and leaves the output alone, which is the
+// no-camera path Blank runs for its whole life.
+TEST(CameraRenderDataExclusion, ADeadActiveCameraBuildsNothing)
+{
+    CameraDataHarness harness;
+    CameraRenderData data;
+    ASSERT_TRUE(harness.Build(data));
+
+    harness.WorldState.DestroyEntity(harness.Camera);
+    data.ExcludedEntity = EntityId{ 3, 1 };
+    EXPECT_FALSE(harness.Build(data));
+    EXPECT_EQ(data.ExcludedEntity, (EntityId{ 3, 1 })) << "out must be untouched";
 }

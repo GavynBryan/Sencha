@@ -17,7 +17,6 @@
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
 #include <abilities/AbilitySet.h>
-#include <camera/CameraSeat.h>
 #include <components/CameraComponent.h>
 #include <controller/LookOrientation.h>
 #include <core/assets/AssetRegistry.h>
@@ -185,20 +184,14 @@ TEST_F(ShippedPrefabTest, ThePawnCarriesWhatMakesItAPawn)
     // trusted to show what it is authoring.
     EXPECT_NE(Get<WorldTransformHistory>(pawn), nullptr);
 
-    // And the camera it is watched from, which the prefab places and names.
-    // Possession takes the seat rather than the first camera it finds, so a
-    // pawn that lost this would silently be watched from somewhere else.
-    const EntityId seatEntity = ChildWith<CameraSeat>(pawn);
-    ASSERT_TRUE(seatEntity.IsValid())
-        << "the pawn prefab carries no camera seat";
-    const CameraSeat* seat = Get<CameraSeat>(seatEntity);
-    ASSERT_NE(seat, nullptr);
-    EXPECT_EQ(seat->Role, CameraSeatRole::Primary);
-    EXPECT_EQ(seat->Mode, CameraRigMode::FirstPerson)
-        << "this template's player is first person; a third-person game is the "
-           "same pawn with a different seat";
-    EXPECT_NE(Get<CameraComponent>(seatEntity), nullptr)
-        << "a seat with no camera on it is a seat nothing can look through";
+    // And the camera it is watched from, which the prefab places as a child.
+    // The game's camera system takes the body's camera child, so a pawn that
+    // lost this would silently be watched from nowhere.
+    const EntityId cameraEntity = ChildWith<CameraComponent>(pawn);
+    ASSERT_TRUE(cameraEntity.IsValid())
+        << "the pawn prefab carries no camera child";
+    EXPECT_NE(Get<LocalTransform>(cameraEntity), nullptr)
+        << "a camera child with no transform has nowhere to sit";
 }
 
 TEST_F(ShippedPrefabTest, TheTurretAimsAndTurns)

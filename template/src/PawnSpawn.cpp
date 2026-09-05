@@ -8,10 +8,6 @@
 #include <app/Engine.h>
 #include <app/GameContexts.h>
 #include <attributes/AttributeSet.h>
-#include <camera/CameraRig.h>
-#include <camera/CameraSeat.h>
-#include <components/ActiveCameraService.h>
-#include <components/CameraComponent.h>
 #include <controller/LookOrientation.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/Query.h>
@@ -36,57 +32,6 @@
 #include <vector>
 
 #include "TurretControl.h"
-
-EntityId FindFirstCamera(
-    const World& world,
-    StoragePartitionId partition)
-{
-    if (!world.IsRegistered<CameraComponent>())
-        return EntityId{};
-
-    for (EntityId entity : world.GetAliveEntities())
-    {
-        if (world.GetEntityPartition(entity) == partition
-            && world.TryGet<CameraComponent>(entity) != nullptr)
-        {
-            return entity;
-        }
-    }
-    return EntityId{};
-}
-
-// The camera a body carries for its player to look through, as the body itself
-// says: a descendant whose CameraSeat is the primary one.
-//
-// Not "the first camera child". A pawn may carry several -- a scope, a mirror,
-// an angle a cutscene chooses -- and picking by position means adding one
-// silently changes which the player looks through, with the symptom appearing
-// nowhere near the addition. A second primary is content disagreeing with
-// itself, so it is reported rather than resolved.
-EntityId PrimaryCameraSeatOf(const World& world, EntityId body, Logger& log)
-{
-    if (!world.IsRegistered<CameraSeat>() || !world.IsRegistered<Parent>())
-        return EntityId{};
-
-    EntityId found;
-    for (const EntityId entity : world.GetAliveEntities())
-    {
-        const Parent* parent = world.TryGet<Parent>(entity);
-        if (parent == nullptr || parent->Entity != body)
-            continue;
-        const CameraSeat* seat = world.TryGet<CameraSeat>(entity);
-        if (seat == nullptr || seat->Role != CameraSeatRole::Primary)
-            continue;
-        if (found.IsValid())
-        {
-            log.Error("TemplateGame: this body carries more than one primary "
-                      "camera seat; using the first and ignoring the rest");
-            break;
-        }
-        found = entity;
-    }
-    return found;
-}
 
 // Where a level says players begin, or none when it does not say. The two
 // answers are kept apart rather than folded into a default here, because a
@@ -215,61 +160,6 @@ void PublishPlayContent(World& world, std::optional<StoragePartitionId> partitio
         world.AddResource<PlayContentPartition>().Value = partition;
 }
 
-// Takes local control of a pawn and points this process's camera at it.
-//
-// Which entity this machine drives, the look control that follows from it, and
-// the prediction that follows from that are the engine's -- one call, so the
-// half that used to be forgotten cannot be. What is left here is the camera,
-// which is a presentation choice: first person, orbit, or spectator is not a
-// fact about the network.
-// Points this machine's camera at whatever it is driving.
-//
-// Only the camera. Which entity that is, whose input reaches it, and whether it
-// is predicted are all the engine's answers now -- this reacts to them rather
-// than deciding any of them, which is what stops the game from holding a second
-// copy of an answer that can go stale.
-void AttachLocalPlayer(World& world, EntityId pawn, Logger& log)
-{
-    const Vec3d position =
-        world.TryGet<LocalTransform>(pawn) != nullptr
-            ? world.TryGet<LocalTransform>(pawn)->Value.Position
-            : Vec3d{};
-
-    // The body's own seat first: a pawn prefab places the camera it is watched
-    // from and says how. Falling back to any camera in the world, and then to
-    // making one, is what keeps a body with no seat -- the observer, a level
-    // whose prefab predates this -- playable rather than blind.
-    CameraSeat seat{};
-    EntityId camera = PrimaryCameraSeatOf(world, pawn, log);
-    if (camera.IsValid())
-    {
-        seat = *world.TryGet<CameraSeat>(camera);
-    }
-    else
-    {
-        camera = FindFirstCamera(world, PersistentStoragePartition);
-        if (!camera.IsValid())
-        {
-            camera = CreateTransformEntity(world, position);
-            world.AddComponent<CameraComponent>(camera, CameraComponent{});
-        }
-    }
-    world.GetResource<ActiveCameraService>().SetActive(camera);
-
-    // The rig is provisioned at possession because who is watching is a fact
-    // about this machine; what it reads out of the seat is the authored half.
-    CameraRig rig{};
-    rig.Target = pawn;
-    rig.Mode = seat.Mode;
-    rig.Distance = seat.Distance;
-    if (CameraRig* existing = world.TryGet<CameraRig>(camera))
-        *existing = rig;
-    else
-        world.AddComponent<CameraRig>(camera, rig);
-
-    log.Info("TemplateGame: local player attached to its pawn");
-}
-
 void SessionPlayerSystem::FrameUpdate(FrameUpdateContext& ctx)
 {
     // No role anywhere in here. Who provides participants and who receives
@@ -303,8 +193,8 @@ void SessionPlayerSystem::FollowLocalControl(World& world)
     // Nothing to build. A pawn that arrived replicated was instantiated
     // from the prefab the authority named, so it is already the same
     // archetype the authority is simulating -- which is what makes
-    // predicting it from the same input produce the same pawn.
-    AttachLocalPlayer(world, subject, *Log);
+    // predicting it from the same input produce the same pawn. The camera
+    // that looks through it is PawnCameraSystem's.
     if (Owner->Prediction().Predicts(subject))
         Log->Info("TemplateGame: predicting this player's own pawn");
 }

@@ -92,11 +92,7 @@
             ]
           }
         },
-        "Camera": {},
-        "CameraSeat": {
-          "role": "primary",
-          "mode": "first_person"
-        }
+        "Camera": {}
       }
     }
   ]

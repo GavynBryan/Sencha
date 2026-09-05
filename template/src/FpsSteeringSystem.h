@@ -6,7 +6,7 @@ struct FixedLogicContext;
 // movement vocabulary marks as controlled -- the player sitting at this
 // machine and every peer whose commands arrived, each steering from its own
 // input source and along its own aim.
-struct CharacterInputSystem
+struct FpsSteeringSystem
 {
     void FixedLogic(FixedLogicContext& ctx);
 };

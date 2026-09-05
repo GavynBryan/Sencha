@@ -38,8 +38,13 @@ public:
     // Once per frame, immediately before the partition's own update. `session`
     // is null outside a session, where this is just streaming around the local
     // player and every net path below is skipped.
-    void Update(const World& world, EntityId localControlSubject,
-                NetSession* session,
+    //
+    // Which entity this machine streams around is not decided here. That is a
+    // game's answer -- its player, its spectator target, nothing -- and it sets
+    // the partition's primary focus itself. This owns the session half only:
+    // keeping the ground under every peer's body and offering each peer its own
+    // neighbourhood.
+    void Update(const World& world, NetSession* session,
                 ReplicationRuntime& replication, WorldPartitionRuntime& partition,
                 NetStats* traffic);
 
@@ -69,8 +74,6 @@ public:
     [[nodiscard]] std::span<const ZoneId> PinnedGrants() const { return Pinned_; }
 
 private:
-    void FollowLocalPlayer(const World& world, EntityId localControlSubject,
-                           WorldPartitionRuntime& partition);
     void FollowPeers(const World* world, WorldPartitionRuntime& partition);
     void OfferInterest(NetSession& session, ReplicationRuntime& replication,
                        WorldPartitionRuntime& partition, NetStats* traffic);

@@ -688,8 +688,7 @@ void Engine::RegisterSimulationFramePhases()
         if (WorldPartitionRuntime* partition = engine.WorldStreaming())
         {
             engine.ZoneStreaming().Update(
-                runtimeWorld.Entities(),
-                LocalControlSubjectOf(runtimeWorld.Entities()), engine.TryNet(),
+                runtimeWorld.Entities(), engine.TryNet(),
                 engine.Replication(), *partition, &engine.NetTraffic());
             if (AsyncZoneLoader* loader = engine.WorldStreamingLoader())
             {

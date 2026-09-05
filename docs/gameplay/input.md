@@ -163,11 +163,11 @@ keeps the schema-generated form.
 
 ```cpp
 // Resolved once at startup: names to dense ids.
-struct TemplateInputActions { InputActionId Move, Look, Jump; };
+struct FpsInputActions { InputActionId Move, Look, Jump; };
 
-void CharacterInputSystem::FixedLogic(FixedLogicContext& ctx)
+void FpsSteeringSystem::FixedLogic(FixedLogicContext& ctx)
 {
-    const auto* ids = ctx.Entities.TryGetResource<TemplateInputActions>();
+    const auto* ids = ctx.Entities.TryGetResource<FpsInputActions>();
     const auto* actions = ctx.Entities.TryGetResource<InputActionState>();
     if (ids == nullptr || actions == nullptr)
         return;
@@ -195,7 +195,7 @@ A `FixedLogic` or `PreSimulate` reader shares a phase with the resolve system,
 so it declares the edge:
 
 ```cpp
-ctx.Schedule.After<CharacterInputSystem, InputActionResolveSystem>();
+ctx.Schedule.After<FpsSteeringSystem, InputActionResolveSystem>();
 ```
 
 A `FrameUpdate` reader must not. `InputActionResolveSystem::PreSimulate` runs in
@@ -319,8 +319,8 @@ turns them.
 This deliberately does not live in the input layer. Input measures a device and
 produces displacement; the running total is simulation state with several
 readers — a character steers along it, a camera presents it, an AI could write it
-instead of the player. `CameraRig` is one of those readers: it carries the target
-relationship and boom shape, and `ComputeCameraPose` is passed the orientation.
+instead of the player. A game's camera system is one of those readers: the
+template's first-person camera takes its pitch from the body's orientation.
 
 Look integrates on the presentation clock, because aiming has to track the rate
 frames arrive or it visibly steps. Simulation therefore reads a frame-clocked

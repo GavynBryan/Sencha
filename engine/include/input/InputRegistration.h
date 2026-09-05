@@ -38,7 +38,7 @@ void RegisterInputMapping(World& world, DataAssetCache& dataAssets, InputProfile
 //
 //   FixedLogic or PreSimulate readers (InputActionState::Tick()) share a phase
 //   with the resolve system, so they need the edge:
-//       schedule.After<CharacterInputSystem, InputActionResolveSystem>();
+//       schedule.After<FpsSteeringSystem, InputActionResolveSystem>();
 //
 //   FrameUpdate readers (InputActionState::Frame(), the presentation snapshot a
 //   camera or menu wants) must NOT declare one. PreSimulate runs in
