@@ -680,3 +680,25 @@ install(FILES
     "${CMAKE_SOURCE_DIR}/cmake/SenchaComponentCodegen.cmake"
     "${CMAKE_SOURCE_DIR}/cmake/ValidateComponentIndex.cmake"
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/Sencha")
+
+# The starter templates ship with the SDK as source, one directory each, so a
+# new project begins as a copy of one. Each is complete on its own: its
+# CMakeLists.txt is the standalone front door and refers to nothing above it.
+# The in-tree half (templates/CMakeLists.txt, InTreeTemplate.cmake) is not
+# installed. Build trees, cook output, the asset id map, and per-user editor
+# state are the template's .gitignore, and stay out of the copy for the same
+# reason they stay out of the repository.
+file(GLOB _sencha_template_dirs LIST_DIRECTORIES true RELATIVE "${CMAKE_SOURCE_DIR}/templates"
+    "${CMAKE_SOURCE_DIR}/templates/*")
+foreach(_template IN LISTS _sencha_template_dirs)
+    if(IS_DIRECTORY "${CMAKE_SOURCE_DIR}/templates/${_template}")
+        install(DIRECTORY "${CMAKE_SOURCE_DIR}/templates/${_template}/"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/sencha/templates/${_template}"
+            PATTERN "build" EXCLUDE
+            PATTERN ".cooked" EXCLUDE
+            PATTERN "asset_ids.json" EXCLUDE
+            PATTERN "*.sworld.user.json" EXCLUDE)
+    endif()
+endforeach()
+install(FILES "${CMAKE_SOURCE_DIR}/templates/README.md"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/sencha/templates")

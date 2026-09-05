@@ -2,6 +2,7 @@
 
 #include "ProjectCatalog.h"
 
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -41,7 +42,10 @@ private:
     // Panel actions.
     void LaunchEditor(const char* binaryName, const std::string& projectPath);
     void BrowseForProject();
-    void CreateProject(const std::string& directory, const std::string& name);
+    // `templateName` names a directory under the SDK's templates, or is empty
+    // for a bare descriptor.
+    void CreateProject(const std::string& directory, const std::string& name,
+                       const std::string& templateName);
     void TouchCatalog(const std::string& projectPath);
     void RemoveCatalogEntry(const std::string& projectPath);
     void SaveCatalog();
@@ -49,6 +53,11 @@ private:
     // Sibling editor binary: beside this executable in an installed SDK,
     // ../<name>/<name> in the build tree.
     [[nodiscard]] static std::string ResolveEditorBinary(const char* name);
+    // Where the starter templates are: share/sencha/templates beside the
+    // installed binaries, or the repository's templates/ when running in-tree.
+    // Empty when neither is found.
+    [[nodiscard]] static std::filesystem::path ResolveTemplatesDirectory();
+    [[nodiscard]] static std::vector<std::string> ListTemplates();
 
     Engine* EnginePtr = nullptr;
     SdlWindow* Window = nullptr;

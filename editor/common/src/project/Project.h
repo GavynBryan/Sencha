@@ -37,6 +37,17 @@ struct ProjectDescriptor
     // Creates a new project: a descriptor with a default game module and content
     // root, written to <directory>/project.senchaproj, with the content root dir
     // created. Returns false and sets *error on failure.
+    // A new project as a copy of a starter template: the template directory's
+    // files land in `directory` (minus a build tree, cook output, the asset id
+    // map, and per-user editor state, which a source template never carries
+    // but a working copy might), and the descriptor is renamed. `directory`
+    // must not already hold a project.
+    static bool CreateFromTemplate(const std::string& templateDirectory,
+                                   const std::string& directory,
+                                   const std::string& name,
+                                   ProjectDescriptor& out,
+                                   std::string* error = nullptr);
+
     static bool Create(const std::string& directory,
                        const std::string& name,
                        ProjectDescriptor& out,

@@ -132,6 +132,26 @@ with `sencha_game_module()`. It links the in-tree `sencha::engine`, so the host
 and module always receive the same ABI fingerprint. Leaving
 `SENCHA_GAME_PROJECT_DIR` empty preserves the normal engine-only build.
 
+## Starter templates and the SDK
+
+`templates/` holds the five starter games. Each is a complete project that
+refers to nothing outside its own directory, and the SDK installs them as
+source under `share/sencha/templates/<name>/` (never their build trees, cook
+output, or per-user state). A new game starts as a copy of one: Kettle's
+"New Project..." offers the installed templates, or copy a directory by hand and
+build it against the SDK:
+
+```sh
+cmake --install build --prefix /path/to/sencha-sdk
+cp -r /path/to/sencha-sdk/share/sencha/templates/fps ~/my-game
+cmake -S ~/my-game -B ~/my-game/build -DCMAKE_PREFIX_PATH=/path/to/sencha-sdk
+cmake --build ~/my-game/build
+```
+
+In-tree, `SENCHA_BUILD_TEMPLATES` names the templates built with the engine
+(all five by default), each writing `templates/<name>/build/game.so`. It is a
+cache variable: an existing build tree keeps its list until told otherwise.
+
 ## Without presets (CMake < 3.23)
 
 ```sh

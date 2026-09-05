@@ -8,6 +8,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <vector>
 
 // The launcher's single surface: recent projects (open in either editor),
 // create-project form, and settings for the selected project. Catalog
@@ -22,13 +23,18 @@ public:
         std::function<void(const std::string& projectPath)> OpenMaterialEditor;
         std::function<void(const std::string& projectPath)> OpenDataEditor;
         std::function<void()> BrowseForProject;
-        std::function<void(const std::string& directory, const std::string& name)> CreateProject;
+        // `templateName` is one of the names the panel was given, or empty for
+        // a bare project with no module and no content.
+        std::function<void(const std::string& directory, const std::string& name,
+                           const std::string& templateName)> CreateProject;
         std::function<void(const std::string& projectPath)> RemoveEntry;
         // After the panel saves settings (name may have changed).
         std::function<void(const ProjectDescriptor& descriptor, const std::string& path)> SettingsSaved;
     };
 
-    ProjectBrowserPanel(const ProjectCatalog& catalog, Actions actions);
+    // `templates` are the starter templates the create form offers, by name.
+    ProjectBrowserPanel(const ProjectCatalog& catalog, Actions actions,
+                        std::vector<std::string> templates);
 
     [[nodiscard]] std::string_view GetTitle() const override { return "Projects"; }
     [[nodiscard]] DockSlot GetDockSlot() const override { return DockSlot::Center; }
@@ -55,7 +61,10 @@ private:
     char NewRootBuffer[512] = "";
 
     // Create form state.
+    std::vector<std::string> Templates;
     bool CreatePopupRequested = false;
     char CreateDirBuffer[512] = "";
     char CreateNameBuffer[128] = "";
+    // Index into Templates, or Templates.size() for a bare project.
+    int CreateTemplateIndex = 0;
 };
