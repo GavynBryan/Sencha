@@ -197,10 +197,15 @@ if(FRAMEWORK_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/templates/fps/src/FpsSettingsData.cpp
         ${CMAKE_SOURCE_DIR}/templates/fps/src/LocalLookFollow.cpp
         ${CMAKE_SOURCE_DIR}/templates/fps/src/PawnStreaming.cpp
+        ${CMAKE_SOURCE_DIR}/templates/platformer/src/CameraRelativeSteeringSystem.cpp
+        ${CMAKE_SOURCE_DIR}/templates/horror/src/TankSteeringSystem.cpp
         ${CMAKE_SOURCE_DIR}/example/CubeDemo/CubeDemoSystems.cpp
         ${CMAKE_SOURCE_DIR}/example/CubeDemo/CubeDemoScene.cpp
         ${CMAKE_SOURCE_DIR}/example/CubeDemo/FreeCamera.cpp)
-    target_include_directories(framework_tests PRIVATE ${CMAKE_SOURCE_DIR}/templates/fps/src)
+    target_include_directories(framework_tests PRIVATE
+        ${CMAKE_SOURCE_DIR}/templates/fps/src
+        ${CMAKE_SOURCE_DIR}/templates/platformer/src
+        ${CMAKE_SOURCE_DIR}/templates/horror/src)
     target_link_libraries(framework_tests PRIVATE sencha_engine GTest::gtest_main)
     # The template's shipped gameplay data lives in the source tree, so the
     # authored assets can be validated against the schemas that load them.
@@ -309,6 +314,16 @@ if(TEMPLATE_TEST_SOURCES AND TARGET level_cook_tests)
             ENVIRONMENT
                 "SENCHA_COOK_LEVEL=${CMAKE_SOURCE_DIR}/templates/fps/assets/levels/room_2.sscene,${CMAKE_SOURCE_DIR}/templates/fps/assets/prefabs/player_pawn.sscene;SENCHA_COOK_ROOT=${CMAKE_SOURCE_DIR}/templates/fps/assets")
     endif()
+    foreach(_template platformer horror)
+        if(TARGET ${_template}_game)
+            add_test(NAME Cook${_template}TemplateContent
+                COMMAND level_cook_tests --gtest_filter=CookLevel.Generate)
+            set_tests_properties(Cook${_template}TemplateContent PROPERTIES
+                FIXTURES_SETUP TemplateContent
+                ENVIRONMENT
+                    "SENCHA_COOK_LEVEL=${CMAKE_SOURCE_DIR}/templates/${_template}/assets/levels/${_template}_room.sscene,${CMAKE_SOURCE_DIR}/templates/${_template}/assets/prefabs/${_template}_pawn.sscene;SENCHA_COOK_ROOT=${CMAKE_SOURCE_DIR}/templates/${_template}/assets")
+        endif()
+    endforeach()
     if(TARGET blank_game)
         add_test(NAME CookBlankTemplateContent
             COMMAND level_cook_tests --gtest_filter=CookLevel.Generate)

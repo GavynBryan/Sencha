@@ -20,6 +20,10 @@ the engine assumes.
   peer's pawn spawned by the authority from one prefab and predicted on its own
   machine, and a turret sample that proves possession over the wire. A copy of
   `fps/` by design; the two share by duplication.
+- `platformer/` -- third person: a camera of the game's own making orbits the
+  body, the stick runs relative to it, the body faces where it runs. No aiming.
+- `horror/` -- fixed camera: the level places the camera, the room arriving
+  makes it the view, and tank controls walk and turn the body under it.
 
 In this repository the templates are also built in-tree, under
 `SENCHA_BUILD_TEMPLATES`, so they rebuild with the engine.

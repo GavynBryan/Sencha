@@ -1,0 +1,9 @@
+{
+    "type": "input.actions",
+    "version": 1,
+    "data": {
+        "actions": [
+            { "name": "move", "type": "axis2" }
+        ]
+    }
+}
