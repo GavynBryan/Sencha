@@ -316,6 +316,12 @@ accumulated yaw and pitch plus the pitch limits, on the entity doing the aiming.
 for entities tagged `LocalLookControl`; `LookInputBinding` names which action
 turns them.
 
+Who carries `LocalLookControl` is the game's rule, not the engine's. The engine
+publishes which entity this machine drives (`LocalControlSubjectOf`) and adds
+nothing to it; a first-person game moves the tag to follow that subject
+(`templates/fps/src/LocalLookFollow.cpp`), a third-person game never adds it
+because its body does not aim.
+
 This deliberately does not live in the input layer. Input measures a device and
 produces displacement; the running total is simulation state with several
 readers — a character steers along it, a camera presents it, an AI could write it

@@ -68,7 +68,7 @@ Components (all POD, `engine/include/movement/MovementComponents.h`):
 | `SupportState` | `CharacterMoverPool::Drive` | locomotion, tuning resolution, gameplay | `Stable` / `Steep` / `None`, contact normal, surface entity, surface velocity. **`Steep` covers any touched-but-unsupported contact, including vertical walls** (Jolt `NotSupported` maps to it), so a wall graze surfaces the wall normal here. |
 | `Immersion` | volume systems | tuning resolution | Fraction of the capsule inside a volume. A fact, not a "swimming mode". |
 | `KinematicState` | `CharacterMoverPool::Drive` | locomotion | Full achieved world velocity, vertical channel included. A character that hit a wall does not keep the velocity it asked for. |
-| `MovementIntent` | input mapping / AI | locomotion | World-space planar wish direction, magnitude = input strength. Discrete actions are *not* intent flags; they are ability activations. |
+| `MovementIntent` | the game's steering system, or AI | locomotion | World-space planar wish direction, magnitude = input strength. Discrete actions are *not* intent flags; they are ability activations. The engine has no producer: turning actions into intent is game code (`templates/*/src/*SteeringSystem.cpp`), ordered by `OrderMovementAfterInput<T>`. |
 | `CharacterMovement` | transition system (Mode), spawn (Profile) | everything | The authored profile handle plus the current `LocomotionModeId`. |
 | `ResolvedMovementTuning` | `MovementTuningResolutionSystem` only | locomotion, action producers | This tick's coefficients. Nothing else writes it. |
 | `LocomotionOutput` | the active mode's locomotion system | composition | Velocity plus up axis plus gravity scale. Exactly one writer per entity per tick. |
@@ -170,7 +170,7 @@ reuse the same motor, step logic, and composition unchanged.
 
 Character coefficients are authored in `movement.profile` data assets
 (`type: "movement.profile"`, version 1 — see
-`template/assets/data/player_movement.sdata` for a live example) and resolved
+`templates/fps/assets/data/player_movement.sdata` for a live example) and resolved
 every tick against the current facts. The asset compiles through
 `MovementProfileData.cpp`, binds names → runtime ids through
 `BindMovementProfile`, and is cached per handle by

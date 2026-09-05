@@ -80,7 +80,7 @@ Done and load-bearing:
 - Assets: `IAssetStager` staged-load contract, content-hashed `CookedCacheIndex`,
   `.cooked/` overlay, source importers, asset hot reload for materials and textures.
 - SDK boundary: engine as a shared library, `install()`/`find_package(Sencha)`,
-  `sencha_game_module()`, the ABI fingerprint handshake, the out-of-tree `template/`
+  `sencha_game_module()`, the ABI fingerprint handshake, the out-of-tree `templates/`
   project. (The superseded roadmap's Phase 0, shipped.)
 - Reflection: module-stable `ComponentTypeId` and `TypeSchema`/`Field` metadata shared
   by serialization, the inspector, and the module boundary.
@@ -220,7 +220,7 @@ Each item states its mechanism, version, the seam it builds on, and its gate.
    controls by priority. Actions feed `movement/MovementIntent.h` and AbilityKit
    activations through the game's own bridge system, so player input and AI share one
    activation path. Gate met: the template game rebinds movement and jump from
-   `template/assets/data/input_default.sdata` with no recompile, and an edge arriving on
+   `templates/fps/assets/data/input_default.sdata` with no recompile, and an edge arriving on
    a zero-tick frame fires on the next fixed tick (`InputRuntimeFixture`,
    `InputResolve`). Keyboard, mouse, and gamepad all bind through one vocabulary.
    Resolved tick records are flat, tick-stamped, action-indexed value arrays — the shape

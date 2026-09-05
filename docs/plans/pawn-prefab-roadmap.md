@@ -251,7 +251,12 @@ loud and names the component, so this is a convenience gap rather than a
 correctness one; the fix is to fold the schema identity of the components a
 document contains into its cook fingerprint.
 
-### P4 — Camera in the prefab; residual deletions (landed)
+### P4 — Camera in the prefab; residual deletions (landed; seat since superseded)
+
+*Superseded:* `CameraSeat`, `CameraRig`, and `CameraFollowSystem` were removed
+when camera policy left the engine (`docs/gameplay/camera.md`). The prefab still
+places the camera as a child carrying `CameraComponent`; the FPS template's own
+camera system takes it. The paragraphs below describe the shape as it landed.
 
 The pawn prefab places the camera it is watched from, as a child carrying
 `CameraSeat`. The seat says which camera it is — `Primary` — and how it
