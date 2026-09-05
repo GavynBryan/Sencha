@@ -24,15 +24,13 @@ set(SENCHA_GAME_MODULE_SOURCES
     src/LocalLookFollow.cpp
     src/PawnCameraSystem.cpp
     src/PawnSpawn.cpp
-    src/PawnStreaming.cpp
-    src/TurretControl.cpp)
+    src/PawnStreaming.cpp)
 
 # The game's components, declared by annotation like the engine's. Their
 # metadata is generated into the build tree, and each header includes its
 # companion by its own name: src/FpsStart.h includes <FpsStart.sencha.h>.
 set(SENCHA_GAME_COMPONENT_HEADERS
-    src/FpsStart.h
-    src/TurretMount.h)
+    src/FpsStart.h)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     project(SenchaFpsTemplate LANGUAGES CXX)

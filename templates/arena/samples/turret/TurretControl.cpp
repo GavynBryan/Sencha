@@ -1,8 +1,8 @@
-#include "TurretControl.h"
+#include "samples/turret/TurretControl.h"
 
-#include "FpsSettingsData.h"
-#include "PawnSpawn.h"
-#include "TurretMount.h"
+#include "src/ArenaSettingsData.h"
+#include "src/PawnSpawn.h"
+#include "samples/turret/TurretMount.h"
 
 #include <app/Engine.h>
 #include <app/GameContexts.h>
@@ -31,6 +31,13 @@
 #include <span>
 #include <string>
 #include <string_view>
+
+PendingTurretSpawns& PendingTurretsOf(World& world)
+{
+    if (PendingTurretSpawns* existing = world.TryGetResource<PendingTurretSpawns>())
+        return *existing;
+    return world.AddResource<PendingTurretSpawns>();
+}
 #include <vector>
 
 namespace
@@ -224,10 +231,10 @@ bool AnswerTurretRequest(Engine& engine, Logger& log,
     switch (ApplyTurretRequest(engine, world, participant, turret, message.From))
     {
     case TurretRequestOutcome::Took:
-        log.Info("FpsGame: peer {} took the turret", message.From.Value);
+        log.Info("ArenaGame: peer {} took the turret", message.From.Value);
         return true;
     case TurretRequestOutcome::Left:
-        log.Info("FpsGame: peer {} left the turret", message.From.Value);
+        log.Info("ArenaGame: peer {} left the turret", message.From.Value);
         return true;
     case TurretRequestOutcome::Occupied:
     case TurretRequestOutcome::Invalid:
@@ -280,7 +287,7 @@ struct TurretPlacementOutcome
 };
 
 TurretPlacementOutcome PlaceTurretForRequest(
-    Engine& engine, World& world, const CompiledGameSettings* settings,
+    Engine& engine, World& world, const CompiledArenaSettings* settings,
     Logger& log)
 {
     const PlayContentPartition* content =
@@ -295,15 +302,15 @@ TurretPlacementOutcome PlaceTurretForRequest(
         const SceneSpawnId id = engine.Spawns().RequestSpawn(
             settings->TurretScenePath, root,
             content->Value.value_or(PersistentStoragePartition));
-        PendingSpawnsOf(world).Turrets.push_back({ id, EntityId{} });
-        log.Info("FpsGame: placing a turret");
+        PendingTurretsOf(world).Turrets.push_back({ id, EntityId{} });
+        log.Info("ArenaGame: placing a turret");
         return { EntityId{}, true };
     }
 
     const EntityId turret =
         PlaceTurret(world, TurretPlacementNear(world),
                     content->Value.value_or(PersistentStoragePartition));
-    log.Info("FpsGame: placed a turret");
+    log.Info("ArenaGame: placed a turret");
     return { turret, false };
 }
 
@@ -382,7 +389,7 @@ ConsoleResult AskAuthorityForTurret(Engine& engine, NetSession& session)
 // the machine that decides what exists, and a client's turrets arrive
 // replicated.
 ConsoleResult PlaceTurretHere(
-    Engine& engine, const CompiledGameSettings* settings, Logger& log)
+    Engine& engine, const CompiledArenaSettings* settings, Logger& log)
 {
     ConsoleResult result;
     const TurretPlacementOutcome placed = PlaceTurretForRequest(
@@ -405,7 +412,7 @@ ConsoleResult PlaceTurretHere(
 // with a console reaches the possession path in one command. A host wanting a
 // gun it does not climb into asks for that instead.
 ConsoleResult TakeTurretHere(
-    Engine& engine, const CompiledGameSettings* settings, Logger& log)
+    Engine& engine, const CompiledArenaSettings* settings, Logger& log)
 {
     ConsoleResult result;
     World& world = engine.World().Entities();
@@ -437,10 +444,10 @@ ConsoleResult TakeTurretHere(
             // A placement already in flight is claimed rather than doubled;
             // otherwise place one, and ride it if the prefab path made that
             // asynchronous.
-            PendingSceneSpawns& pending = PendingSpawnsOf(world);
+            PendingTurretSpawns& pending = PendingTurretsOf(world);
             const auto inFlight = std::find_if(
                 pending.Turrets.begin(), pending.Turrets.end(),
-                [&](const PendingSceneSpawns::TurretRequest& request)
+                [&](const PendingTurretSpawns::Request& request)
                 {
                     return !request.Possessor.IsValid()
                         || request.Possessor == participant;
@@ -455,7 +462,7 @@ ConsoleResult TakeTurretHere(
                 engine, world, settings, log);
             if (placed.Requested)
             {
-                PendingSpawnsOf(world).Turrets.back().Possessor = participant;
+                PendingTurretsOf(world).Turrets.back().Possessor = participant;
                 result.Info("a turret is being placed; taking it when it lands");
                 return result;
             }

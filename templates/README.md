@@ -14,7 +14,12 @@ the engine assumes.
 - `blank/` -- an empty game module and one empty scene. Proof that the engine
   needs no game, and the place to start when none of the others is your game.
 - `fps/` -- a first-person game: prefab pawn, mouse look, planar steering,
-  jumping, a streamed world. The one template with world content.
+  jumping, a streamed world. The one template with world content. No
+  networking: it pays for none.
+- `arena/` -- the FPS with a session as its point: `host` and `connect`, every
+  peer's pawn spawned by the authority from one prefab and predicted on its own
+  machine, and a turret sample that proves possession over the wire. A copy of
+  `fps/` by design; the two share by duplication.
 
 In this repository the templates are also built in-tree, under
 `SENCHA_BUILD_TEMPLATES`, so they rebuild with the engine.

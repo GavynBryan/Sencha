@@ -108,16 +108,19 @@ if(RUNTIME_TEST_SOURCES)
         TEST_ENGINE_LIB_PATH="$<TARGET_FILE:sencha_engine>")
 endif()
 
-# Two-process hosting coverage runs the shipping host binary against the FPS
-# template's module, so it needs both built and needs to know where they landed.
-# Without them the cases skip rather than fail: a configuration that builds no
-# template has nothing to host.
-if(TARGET runtime_tests AND TARGET app AND TARGET fps_game)
-    add_dependencies(runtime_tests app fps_game)
+# Two-process hosting coverage runs the shipping host binary against the arena
+# template's module -- the one whose point is a session -- so it needs both
+# built and needs to know where they landed. Without them the cases skip rather
+# than fail: a configuration that builds no arena has nothing to host.
+if(TARGET runtime_tests AND TARGET app AND TARGET arena_game)
+    add_dependencies(runtime_tests app arena_game)
     target_compile_definitions(runtime_tests PRIVATE
         TEST_APP_PATH="$<TARGET_FILE:app>"
-        TEST_FPS_MODULE_PATH="$<TARGET_FILE:fps_game>"
-        SENCHA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+        TEST_ARENA_MODULE_PATH="$<TARGET_FILE:arena_game>")
+endif()
+if(TARGET runtime_tests)
+    # Committed content and fixture roots live in the source tree.
+    target_compile_definitions(runtime_tests PRIVATE SENCHA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
 endif()
 
 if(ENGINE_FEATURE_TEST_SOURCES)
@@ -159,16 +162,20 @@ endif()
 # relevant sources are UI/Vulkan-free, so they come from the authoring library.
 if(LEVEL_COOK_TEST_SOURCES AND TARGET kyusu_authoring)
     add_executable(level_cook_tests ${LEVEL_COOK_TEST_SOURCES}
-        ${CMAKE_SOURCE_DIR}/templates/fps/src/FpsComponents.cpp)
-    target_include_directories(level_cook_tests PRIVATE ${CMAKE_SOURCE_DIR}/templates/fps/src)
+        ${CMAKE_SOURCE_DIR}/templates/arena/src/ArenaComponents.cpp)
+    target_include_directories(level_cook_tests PRIVATE
+        ${CMAKE_SOURCE_DIR}/templates/arena/src
+        ${CMAKE_SOURCE_DIR}/templates/arena)
     target_link_libraries(level_cook_tests PRIVATE kyusu_authoring GTest::gtest_main)
-    # The FPS template's components are compiled here, so their metadata is
-    # generated here, as the module generates it for itself: its prefabs and
-    # levels are the content the cook cases read.
+    # The arena template's components are compiled here, so their metadata is
+    # generated here, as the module generates it for itself. The arena's
+    # vocabulary is the FPS's plus the turret, and the two templates name their
+    # player start identically, so this one list cooks both templates' content
+    # -- which the cook fixtures below do.
     sencha_generate_component_metadata(level_cook_tests
-        INCLUDE_ROOT ${CMAKE_SOURCE_DIR}/templates/fps/src
-        HEADERS ${CMAKE_SOURCE_DIR}/templates/fps/src/FpsStart.h
-                ${CMAKE_SOURCE_DIR}/templates/fps/src/TurretMount.h)
+        INCLUDE_ROOT ${CMAKE_SOURCE_DIR}/templates/arena
+        HEADERS ${CMAKE_SOURCE_DIR}/templates/arena/src/ArenaStart.h
+                ${CMAKE_SOURCE_DIR}/templates/arena/samples/turret/TurretMount.h)
     # The shipped prefabs are content under test: a case reads them from the
     # checkout rather than restating them.
     target_compile_definitions(level_cook_tests PRIVATE
@@ -291,8 +298,17 @@ if(TEMPLATE_TEST_SOURCES AND TARGET level_cook_tests)
         endif()
     endforeach()
     list(APPEND SENCHA_TEST_TARGETS template_tests)
-    # The blank template's one scene, cooked so its case can load it. The FPS
-    # template's content is cooked by the TemplateHostMap fixture below.
+    # Each template's content, cooked so its case can load it. The arena's is
+    # cooked by the TemplateHostMap fixture below, which the two-process tests
+    # share.
+    if(TARGET fps_game)
+        add_test(NAME CookFpsTemplateContent
+            COMMAND level_cook_tests --gtest_filter=CookLevel.Generate)
+        set_tests_properties(CookFpsTemplateContent PROPERTIES
+            FIXTURES_SETUP TemplateContent
+            ENVIRONMENT
+                "SENCHA_COOK_LEVEL=${CMAKE_SOURCE_DIR}/templates/fps/assets/levels/room_2.sscene,${CMAKE_SOURCE_DIR}/templates/fps/assets/prefabs/player_pawn.sscene;SENCHA_COOK_ROOT=${CMAKE_SOURCE_DIR}/templates/fps/assets")
+    endif()
     if(TARGET blank_game)
         add_test(NAME CookBlankTemplateContent
             COMMAND level_cook_tests --gtest_filter=CookLevel.Generate)
@@ -362,7 +378,7 @@ endif()
 # the cook lives in the editor authoring library, and a runtime test binary must
 # not link that.
 set(SENCHA_HOST_MAP_FIXTURE "")
-if(TARGET runtime_tests AND TARGET app AND TARGET fps_game
+if(TARGET runtime_tests AND TARGET app AND TARGET arena_game
    AND TARGET level_cook_tests)
     set(SENCHA_HOST_MAP_FIXTURE TemplateHostMap)
     add_test(NAME CookTemplateHostMap
@@ -370,7 +386,7 @@ if(TARGET runtime_tests AND TARGET app AND TARGET fps_game
     set_tests_properties(CookTemplateHostMap PROPERTIES
         FIXTURES_SETUP ${SENCHA_HOST_MAP_FIXTURE}
         ENVIRONMENT
-            "SENCHA_COOK_LEVEL=${CMAKE_SOURCE_DIR}/templates/fps/assets/levels/room_2.sscene,${CMAKE_SOURCE_DIR}/templates/fps/assets/prefabs/player_pawn.sscene,${CMAKE_SOURCE_DIR}/templates/fps/assets/prefabs/turret.sscene;SENCHA_COOK_ROOT=${CMAKE_SOURCE_DIR}/templates/fps/assets")
+            "SENCHA_COOK_LEVEL=${CMAKE_SOURCE_DIR}/templates/arena/assets/levels/arena_room.sscene,${CMAKE_SOURCE_DIR}/templates/arena/assets/prefabs/player_pawn.sscene,${CMAKE_SOURCE_DIR}/templates/arena/assets/prefabs/turret.sscene;SENCHA_COOK_ROOT=${CMAKE_SOURCE_DIR}/templates/arena/assets")
     # Engine-owned fixture content, cooked into its own root: a scene with no
     # game components and no gameplay vocabulary, so a test game that registers
     # nothing can load it. The template's levels cannot serve that purpose --

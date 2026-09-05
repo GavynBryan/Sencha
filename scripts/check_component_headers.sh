@@ -44,7 +44,13 @@ for template_cmake in "${ROOT}"/templates/*/CMakeLists.txt; do
     [ -f "${template_cmake}" ] || continue
     template_dir="$(dirname "${template_cmake}")"
     HEADERS+=$'\n'"$(roster "${template_cmake}" SENCHA_GAME_COMPONENT_HEADERS \
-                            "${template_dir}" | sed "s|^src/|${template_dir}/src/|")"
+                            "${template_dir}" | sed "s|^\([^/]\)|${template_dir}/\1|")"
+    # A sample's roster is appended from its own file; read those too.
+    for sample_cmake in "${template_dir}"/samples/*/*.cmake; do
+        [ -f "${sample_cmake}" ] || continue
+        HEADERS+=$'\n'"$(roster "${sample_cmake}" SENCHA_GAME_COMPONENT_HEADERS \
+                                "${template_dir}" | sed "s|^\([^/]\)|${template_dir}/\1|")"
+    done
 done
 
 count=0

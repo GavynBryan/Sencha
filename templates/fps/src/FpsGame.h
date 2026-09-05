@@ -25,7 +25,6 @@ public:
     void OnShutdown(GameShutdownContext& ctx) override;
 
 private:
-    ConsoleResult RequestTurret(bool placeOnly);
     void SetRelativeMouseMode(bool enabled);
 
     // Constructed on the first OnStart, which is where the engine and its

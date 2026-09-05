@@ -4,13 +4,16 @@
 #include <ecs/EntityId.h>
 #include <net/NetProtocol.h>
 #include <net/NetSession.h>
+#include <runtime/spawn/SceneSpawnService.h>
+
+#include <vector>
 
 #include <cstdint>
 
 class Engine;
 class Logger;
 class World;
-struct CompiledGameSettings;
+struct CompiledArenaSettings;
 struct FixedLogicContext;
 struct NetMessageContext;
 
@@ -66,9 +69,9 @@ enum class TurretRequestOutcome : std::uint8_t
 // process is the authority the request would have gone to. Authority-only,
 // structurally: a client's turrets arrive replicated.
 [[nodiscard]] ConsoleResult PlaceTurretHere(
-    Engine& engine, const CompiledGameSettings* settings, Logger& log);
+    Engine& engine, const CompiledArenaSettings* settings, Logger& log);
 [[nodiscard]] ConsoleResult TakeTurretHere(
-    Engine& engine, const CompiledGameSettings* settings, Logger& log);
+    Engine& engine, const CompiledArenaSettings* settings, Logger& log);
 
 //=============================================================================
 // TurretAimSystem
@@ -78,7 +81,20 @@ enum class TurretRequestOutcome : std::uint8_t
 // it into the one number that travels: no branch on who is driving, no branch
 // on whether anybody is.
 //=============================================================================
+// Placements in flight: the spawn, and who is waiting to take it.
+struct PendingTurretSpawns
+{
+    struct Request
+    {
+        SceneSpawnId Spawn;
+        EntityId Possessor; // invalid = placed without a taker
+    };
+    std::vector<Request> Turrets;
+};
+[[nodiscard]] PendingTurretSpawns& PendingTurretsOf(World& world);
+
 struct TurretAimSystem
 {
     void FixedLogic(FixedLogicContext& ctx);
 };
+

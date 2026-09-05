@@ -1,0 +1,8 @@
+{
+  "type": "game.settings",
+  "version": 1,
+  "data": {
+    "player_pawn": "asset://prefabs/player_pawn.smap",
+    "turret": "asset://prefabs/turret.smap"
+  }
+}

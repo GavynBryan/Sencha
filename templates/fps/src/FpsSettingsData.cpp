@@ -28,12 +28,7 @@ namespace
         root.Kind = DataFieldKind::Record;
         root.Children.push_back(MakeSceneField(
             "player_pawn", "Player pawn",
-            "Cooked scene spawned as a participant's body. Empty uses the "
-            "built-in pawn."));
-        root.Children.push_back(MakeSceneField(
-            "turret", "Turret",
-            "Cooked scene placed by the turret command. Empty uses the "
-            "built-in turret."));
+            "Cooked scene spawned as a participant's body."));
 
         DataSchema schema;
         schema.TypeName = std::string(kTypeName);
@@ -73,11 +68,8 @@ namespace
             return true;
         };
 
-        if (!readScene("player_pawn", settings->PlayerPawnScenePath)
-            || !readScene("turret", settings->TurretScenePath))
-        {
+        if (!readScene("player_pawn", settings->PlayerPawnScenePath))
             return result;
-        }
 
         result.Value = std::move(settings);
         return result;

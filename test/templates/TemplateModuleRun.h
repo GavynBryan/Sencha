@@ -64,6 +64,8 @@ public:
         Runtime.emplace(config);
         Runtime->SetStartupScript(script);
         Observed = &Runtime->Schedule().Register<Probe>();
+        if constexpr (requires { Observed->Host = &*Runtime; })
+            Observed->Host = &*Runtime;
         ExitCode = Runtime->Run(*Module.Instance);
     }
 

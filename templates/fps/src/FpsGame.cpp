@@ -7,8 +7,6 @@
 #include "FpsSettingsData.h"
 #include "FpsStart.h"
 #include "FpsInputActions.h"
-#include "TurretControl.h"
-#include "TurretMount.h"
 
 #include <abilities/AbilityKit.h>
 #include <anim/AnimationClipPlaybackSystem.h>
@@ -33,10 +31,6 @@
 #include <input/InputRegistration.h>
 #include <movement/MovementRegistration.h>
 #include <net/NetParticipantIdentity.h>
-#include <net/NetSpawnPrefab.h>
-#include <net/NetOwnership.h>
-#include <net/NetSession.h>
-#include <net/PeerCommandRuntime.h>
 #include <participant/ParticipantLifecycle.h>
 #include <participant/LocalControl.h>
 #include <physics/CharacterMoverPool.h>
@@ -183,7 +177,6 @@ void FpsGame::OnStart(GameStartupContext&)
             // The prefab is the pawn: its mesh, controller, tuning, mode,
             // aim, tags, attributes, and abilities are all authored, and the
             // per-tick columns come with the movement component.
-            StampNetPrefab(world, root, log);
             pending.LiveBodies.emplace_back(participant, entry->Spawn);
             pending.Pawns.erase(entry);
             announce("pawn prefab");
@@ -218,104 +211,12 @@ void FpsGame::OnStart(GameStartupContext&)
         return true;
     };
 
-    // Where a client's turret request is answered. One kind, one direction, one
-    // handler -- and the direction is checked before the handler is reached, so
-    // a client sending itself an authority-to-client kind is refused by the
-    // router rather than by every handler having to think about it.
-    if (!engine.NetMessages().Bind(
-            kTurretRequestKind, NetMessageDirection::ClientToAuthority,
-            [](void* context, const NetMessageContext& message)
-            {
-                Engine& authority = *static_cast<Engine*>(context);
-                return AnswerTurretRequest(
-                    authority,
-                    authority.Logging().GetLogger<FpsGame>(),
-                    message);
-            },
-            &engine))
-    {
-        engine.Logging().GetLogger<FpsGame>().Error(
-            "FpsGame: payload kind {} was already answered; turret "
-            "requests will not be handled",
-            static_cast<unsigned>(kTurretRequestKind));
-    }
-
-    engine.Console().Registry().RegisterCommand({
-        .Name = "turret",
-        .Owner = "game",
-        .Usage = "turret [place]",
-        .Help = "Take the nearest turret, or leave the one you are in; "
-                "`turret place` puts one down without taking it.",
-        .RequiredPhase = ConsolePhase::GameLoaded,
-        .Callback = [this](ConsoleExecutionContext&,
-                           std::span<const std::string> args) {
-            if (args.size() > 1 || (args.size() == 1 && args[0] != "place"))
-            {
-                ConsoleResult usage;
-                usage.Status = ConsoleStatus::InvalidArguments;
-                usage.Error("usage: turret [place]");
-                return usage;
-            }
-            return RequestTurret(!args.empty());
-        },
-    });
-
     // A dedicated host has nobody at a keyboard, so it is told how to serve
     // rather than how to play.
     std::printf("Sencha FPS template\n");
     std::printf("  Load a map: +map levels/<name>\n");
     std::printf("  Load a world: +world <name>\n");
-    if (GetEngine().Config().Runtime.HasLocalPlayer)
-        std::printf("  Right mouse: look | WASD: move | Space: jump\n");
-    else
-        std::printf("  Host a session: +host [port] | see net_status, net_zones\n");
-}
-
-// The client's half of taking a turret, and the whole of what a game has to
-// write to address a networked object: find the one you mean, ask replication
-// what it is called, and send that.
-//
-// Naming it is the part that could not be written before. A local EntityId is
-// an index into one World and means nothing on another machine, so a request
-// carrying one would be a request the authority could only guess at; the
-// identity map is what turns "this thing in front of me" into something both
-// machines agree about, and it refuses to name anything replication did not
-// hand this machine -- so a client cannot invent an object and ask for it.
-ConsoleResult FpsGame::RequestTurret(bool placeOnly)
-{
-    ConsoleResult result;
-    Engine& engine = GetEngine();
-
-    if (!engine.World().Entities().IsRegistered<TurretMount>())
-    {
-        result.Status = ConsoleStatus::InvalidArguments;
-        result.Error("this build has no turrets");
-        return result;
-    }
-
-    // A client decides nothing about who drives what, or about what exists, so
-    // it asks. Anywhere else -- a standalone game, and the player at a host's
-    // own machine -- this process is the authority that request would have been
-    // sent to, and the same rules answer it without one.
-    NetSession* session = engine.TryNet();
-    const bool client =
-        session != nullptr && session->Role() == NetSessionRole::Client;
-
-    Logger& log = engine.Logging().GetLogger<FpsGame>();
-    if (placeOnly)
-    {
-        if (client)
-        {
-            result.Status = ConsoleStatus::InvalidArguments;
-            result.Error("only the authority places turrets");
-            return result;
-        }
-        return PlaceTurretHere(engine, Session().GameSettings(), log);
-    }
-
-    if (client)
-        return AskAuthorityForTurret(engine, *session);
-    return TakeTurretHere(engine, Session().GameSettings(), log);
+    std::printf("  Right mouse: look | WASD: move | Space: jump\n");
 }
 
 void FpsGame::OnRegisterSystems(SystemRegisterContext& ctx)
@@ -336,9 +237,6 @@ void FpsGame::OnRegisterSystems(SystemRegisterContext& ctx)
         Session().Assets().DataAssets,
         GetEngine().Logging());
     RegisterControllerSystems(ctx.Schedule);
-    RegisterNetSystems(ctx.Schedule, GetEngine().PeerCommands(),
-                       GetEngine().Prediction(), GetEngine().Interpolation(),
-                       GetEngine().NetClock());
     ctx.Schedule.Register<FpsSteeringSystem>();
 
     // Everything that reads actions runs after they are resolved: the aim
@@ -347,15 +245,7 @@ void FpsGame::OnRegisterSystems(SystemRegisterContext& ctx)
     ctx.Schedule.After<LookIntegrationSystem, InputActionResolveSystem>();
     ctx.Schedule.After<FpsSteeringSystem, LookIntegrationSystem>();
     ctx.Schedule.After<FpsSteeringSystem, InputActionResolveSystem>();
-    // The two edges the net input channel needs around whichever system turns
-    // actions into intent. Declared by the engine, which owns why they exist.
-    OrderNetInputAround<FpsSteeringSystem>(ctx.Schedule);
     OrderMovementAfterInput<FpsSteeringSystem>(ctx.Schedule);
-    // A turret points where its driver looks. After the look integrates, for
-    // the same reason the character steers after it: the value it reads is
-    // this tick's aim rather than last tick's.
-    ctx.Schedule.Register<TurretAimSystem>();
-    ctx.Schedule.After<TurretAimSystem, LookIntegrationSystem>();
 
     // Waits on content with no session, and on the authority with one: either
     // way its first act each frame is to ask where this player's pawn comes

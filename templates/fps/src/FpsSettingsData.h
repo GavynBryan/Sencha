@@ -6,13 +6,11 @@
 #include <string>
 
 // Game-wide authored choices the module reads at spawn time: which cooked
-// scenes stand in for the archetypes the code would otherwise build by hand.
-// Every field is optional; an empty path means "use the procedural spawn", so
-// a project adopts prefabs one archetype at a time.
+// scene is spawned as a player's body. Empty means no body; a game with no
+// pawn content is a game that is not set up yet, and says so.
 struct CompiledGameSettings
 {
     std::string PlayerPawnScenePath; // asset://...smap, or empty
-    std::string TurretScenePath;     // asset://...smap, or empty
 };
 
 void RegisterGameSettingsData(DataAssetTypeRegistry& types,

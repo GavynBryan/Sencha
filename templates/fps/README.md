@@ -15,13 +15,12 @@ src/PawnCameraSystem.*  the body's camera child: pitch, exclusion, activation
 src/PawnStreaming.*     the world streams around the driven body
 src/PawnSpawn.*         where a participant's body comes from
 src/FpsStart.h          the level's player start (a tag)
-src/TurretControl.*     a networked possession sample, kept for the arena template
 assets/                 authored content; the cook writes assets/.cooked/
 ```
 
-What this template deliberately lacks: abilities, animation clips, and a
-session by default. `host` opens one; the arena template is this game with
-networking as its point.
+What this template deliberately lacks: abilities, animation clips, and
+networking. It pays for none of them; the arena template is this game with a
+session as its point.
 
 ## Build
 
@@ -45,6 +44,4 @@ directory is the content root:
 /path/to/sencha-sdk/bin/app --game build/game.so +world traversal3
 ```
 
-Right mouse looks, WASD moves, Space jumps. `host [port]` and
-`connect <address>` open a session; `turret` and `turret place` exercise
-networked possession.
+Right mouse looks, WASD moves, Space jumps.

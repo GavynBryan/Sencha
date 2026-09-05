@@ -48,5 +48,5 @@ TurretMount
 // copy of it.
 
 #if !defined(SENCHA_CODEGEN)
-#  include <TurretMount.sencha.h>
+#  include <samples/turret/TurretMount.sencha.h>
 #endif

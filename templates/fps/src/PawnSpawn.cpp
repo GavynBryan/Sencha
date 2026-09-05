@@ -2,7 +2,6 @@
 
 #include "LocalLookFollow.h"
 #include "FpsStart.h"
-#include "TurretMount.h"
 
 #include <abilities/AbilityKit.h>
 #include <app/Engine.h>
@@ -18,20 +17,16 @@
 #include <movement/MovementDefs.h>
 #include <movement/MovementTags.h>
 #include <movement/components/CharacterMovement.h>
-#include <net/NetReplicationComponents.h>
-#include <net/NetSpawnPrefab.h>
 #include <participant/LocalControl.h>
 #include <participant/ParticipantControl.h>
 #include <physics/components/CharacterController.h>
 #include <world/RuntimeWorld.h>
-#include <world/scene/SceneInstance.h>
 #include <world/transform/DerivedTransform.h>
 #include <world/transform/TransformComponents.h>
 
 #include <cstdint>
 #include <vector>
 
-#include "TurretControl.h"
 
 // Where a level says players begin, or none when it does not say. The two
 // answers are kept apart rather than folded into a default here, because a
@@ -81,29 +76,6 @@ EntityId CreateTransformEntity(
     // to place an entity; the engine states that obligation in one place.
     SeedDerivedWorldTransform(world, entity);
     return entity;
-}
-
-// Names the prefab a replicated body came from, so a peer instantiates the
-// same one instead of being handed loose components to reassemble. Read off the
-// group identity the spawn already stamped: the prefab's own asset id.
-//
-// A body built in code has none, and cannot get one -- there is no asset to
-// name. It still replicates its state; it simply arrives on a peer with no
-// body, which is the honest consequence of a game whose content did not load.
-void StampNetPrefab(World& world, EntityId root, Logger& log)
-{
-    const SceneInstance* group = world.TryGet<SceneInstance>(root);
-    if (group == nullptr || !group->Source.IsValid())
-    {
-        log.Warn("FpsGame: a replicated body has no prefab identity; peers "
-                 "will see its state and no body");
-        return;
-    }
-    if (!world.HasComponent<NetSpawnPrefab>(root))
-    {
-        world.AddComponent<NetSpawnPrefab>(root,
-                                           NetSpawnPrefab{ .Scene = group->Source });
-    }
 }
 
 PendingSceneSpawns& PendingSpawnsOf(World& world)
@@ -235,7 +207,6 @@ void SpawnSettlementSystem::FrameUpdate(FrameUpdateContext& ctx)
     if (pending == nullptr)
         return;
     SceneSpawnService& spawns = Owner->Spawns();
-    Logger& log = *Log;
 
     // Collected first: the re-ask reenters ProvideBody, which edits the
     // very list this walks.
@@ -258,39 +229,4 @@ void SpawnSettlementSystem::FrameUpdate(FrameUpdateContext& ctx)
     }
     for (const EntityId participant : ReAskScratch)
         (void)Owner->RequestParticipantBody(participant);
-
-    for (std::size_t i = 0; i < pending->Turrets.size();)
-    {
-        const SceneSpawnId id = pending->Turrets[i].Spawn;
-        if (spawns.Status(id) == SceneSpawnStatus::Pending)
-        {
-            ++i;
-            continue;
-        }
-        const EntityId possessor = pending->Turrets[i].Possessor;
-        pending->Turrets[i] = pending->Turrets.back();
-        pending->Turrets.pop_back();
-
-        if (spawns.Status(id) != SceneSpawnStatus::Live)
-        {
-            log.Warn("FpsGame: the turret prefab failed to spawn");
-            continue;
-        }
-        const EntityId root = SpawnedGroupRoot(world, spawns.Entities(id));
-        if (!root.IsValid() || world.TryGet<TurretMount>(root) == nullptr)
-        {
-            // Authoring rule: the mount rides the prefab's root, where
-            // possession and NearestTurret address it.
-            log.Error("FpsGame: the turret prefab's root carries no "
-                      "turret_mount; dropping the placement");
-            (void)spawns.RequestDespawn(id);
-            continue;
-        }
-        world.AddComponent<NetReplicated>(root);
-        StampNetPrefab(world, root, log);
-        log.Info("FpsGame: placed a turret");
-        if (possessor.IsValid() && world.IsAlive(possessor))
-            (void)ApplyTurretRequest(*Owner, world, possessor, root,
-                                     PeerId{});
-    }
 }

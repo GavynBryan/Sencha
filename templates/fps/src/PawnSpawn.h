@@ -60,13 +60,7 @@ struct PendingSceneSpawns
         EntityId Participant;
         SceneSpawnId Spawn;
     };
-    struct TurretRequest
-    {
-        SceneSpawnId Spawn;
-        EntityId Possessor; // invalid = placed without a taker
-    };
     std::vector<PawnRequest> Pawns;
-    std::vector<TurretRequest> Turrets;
     std::vector<std::pair<EntityId, SceneSpawnId>> LiveBodies;
 };
 
@@ -83,9 +77,6 @@ struct PendingSceneSpawns
     StoragePartitionId partition = PersistentStoragePartition,
     const Vec3d& scale = Vec3d::One());
 
-// Names the prefab a spawned group came from, so a peer receiving it builds
-// the same body rather than a bag of replicated components.
-void StampNetPrefab(World& world, EntityId root, Logger& log);
 
 // A flying body with the movement columns a pawn has, for looking at a level
 // that has no player to put in it.

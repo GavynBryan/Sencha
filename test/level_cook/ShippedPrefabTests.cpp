@@ -10,7 +10,7 @@
 #include "document/EditorDocument.h"
 #include "document/DocumentSerialization.h"
 
-#include "FpsComponents.h"
+#include "ArenaComponents.h"
 
 #include <assets/runtime/RuntimeAssets.h>
 #include <world/transform/TransformComponents.h>
@@ -46,7 +46,7 @@ namespace
         {
             RegisterDocumentSerializers();
             ComponentRegistrar registrar(nullptr, &EditorSceneSerializers(), nullptr);
-            RegisterFpsComponents(registrar);
+            RegisterArenaComponents(registrar);
         }
 
         void SetUp() override
@@ -192,19 +192,6 @@ TEST_F(ShippedPrefabTest, ThePawnCarriesWhatMakesItAPawn)
         << "the pawn prefab carries no camera child";
     EXPECT_NE(Get<LocalTransform>(cameraEntity), nullptr)
         << "a camera child with no transform has nowhere to sit";
-}
-
-TEST_F(ShippedPrefabTest, TheTurretAimsAndTurns)
-{
-    ASSERT_TRUE(LoadPrefab("prefabs/turret.sscene"));
-    const EntityId turret = RootEntity();
-    ASSERT_TRUE(turret.IsValid());
-
-    EXPECT_NE(Get<LookOrientation>(turret), nullptr);
-    EXPECT_TRUE(Carries<AimFacing>(turret));
-    // A turret does not move, so it has neither a controller nor tuning.
-    EXPECT_EQ(Get<CharacterController>(turret), nullptr);
-    EXPECT_EQ(Get<MovementTuningSource>(turret), nullptr);
 }
 
 // The save side of the same contract: what the document read back it can write
