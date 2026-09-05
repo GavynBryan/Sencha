@@ -1,6 +1,5 @@
 #include "CharacterInputSystem.h"
 
-#include "ObserverFlight.h"
 #include "TemplateInputActions.h"
 
 #include <app/GameContexts.h>
@@ -11,14 +10,11 @@
 #include <input/InputActionSource.h>
 #include <math/Quat.h>
 #include <math/Vec.h>
-#include <movement/MotionComposition.h>
 #include <movement/MovementIntent.h>
 #include <movement/MovementTags.h>
-#include <movement/components/MovementTuning.h>
 
 #include <cmath>
 #include <cstdint>
-#include <utility>
 
 void CharacterInputSystem::FixedLogic(FixedLogicContext& ctx)
 {
@@ -83,43 +79,20 @@ void CharacterInputSystem::FixedLogic(FixedLogicContext& ctx)
             // for free.
             const bool jump = input.Fired(actionIds->Jump);
 
-            // A walking body steers on the ground plane whatever it is
-            // looking at; a flying one goes where it is looking, which is
-            // the difference between the two and the whole of it.
-            const bool flying = world.HasComponent<ObserverFlight>(steered);
-            const Quatf frame = flying
-                ? Quatf::FromAxisAngle(Vec3d::Up(), orientations[index].Yaw)
-                      * Quatf::FromAxisAngle(Vec3d::Right(),
-                                             orientations[index].Pitch)
-                : Quatf::FromAxisAngle(Vec3d::Up(), orientations[index].Yaw);
+            // A body steers on the ground plane whatever it is looking at:
+            // yaw frames the wish, pitch does not.
+            const Quatf frame =
+                Quatf::FromAxisAngle(Vec3d::Up(), orientations[index].Yaw);
             Vec3d wish =
                 frame.RotateVector(Vec3d::Forward()) * forward
                 + frame.RotateVector(Vec3d::Right()) * strafe;
-            if (!flying)
-                wish.Y = 0.0f;
+            wish.Y = 0.0f;
             const float squared = wish.SqrMagnitude();
             if (squared > 1.0f)
                 wish = wish * (1.0f / std::sqrt(squared));
 
             intents[index].WishDir = wish;
             intents[index].Jump = jump;
-
-            // Free locomotion projects the wish onto the ground plane, so
-            // the vertical part of a flying body's intent has to arrive
-            // through the channel that replaces that axis outright --
-            // which is also what keeps gravity from being applied to it.
-            if (flying)
-            {
-                // The same speed the planar channel resolves to, so the
-                // body does not climb faster than it flies forward.
-                const ResolvedMovementTuning* tuning =
-                    std::as_const(world).TryGet<ResolvedMovementTuning>(steered);
-                const float speed =
-                    tuning != nullptr ? tuning->MaxSpeed
-                                      : ResolvedMovementTuning{}.MaxSpeed;
-                (void)ForceSetUpMotionOverride(world, steered,
-                                               wish.Y * speed);
-            }
         }
     });
 }

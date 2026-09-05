@@ -19,6 +19,7 @@ cmake_minimum_required(VERSION 3.20)
 set(SENCHA_TEMPLATE_MODULE_SOURCES
     src/CharacterInputSystem.cpp
     src/GameSettingsData.cpp
+    src/LocalLookFollow.cpp
     src/PawnSpawn.cpp
     src/SessionContent.cpp
     src/TurretControl.cpp
@@ -30,7 +31,6 @@ set(SENCHA_TEMPLATE_MODULE_SOURCES
 # metadata is generated into the build tree, and each header includes its
 # companion by its own name: src/SpinComponent.h includes <SpinComponent.sencha.h>.
 set(SENCHA_TEMPLATE_COMPONENT_HEADERS
-    src/ObserverFlight.h
     src/PlayerStartComponent.h
     src/SpinComponent.h
     src/TurretMount.h)

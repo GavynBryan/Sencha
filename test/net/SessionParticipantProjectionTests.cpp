@@ -175,7 +175,107 @@ TEST(SessionParticipantProjection, ClientReconciliationIsQueryThenEffect)
 
     EXPECT_EQ(LocalControlSubjectOf(fixture.Entities), mine);
     EXPECT_EQ(prediction.Predicted(), mine);
-    EXPECT_TRUE(fixture.Entities.HasComponent<LocalLookControl>(mine));
+    // Identity only: which controller facilities follow from it is a game's
+    // rule, so the projection adds no controller component.
+    EXPECT_FALSE(fixture.Entities.HasComponent<LocalLookControl>(mine));
+}
+
+// A singleplayer game's participant and body have no business in the
+// replicated table. Without a session there is nobody to replicate to, and
+// stamping anyway meant every FPS pawn sat in it for its whole life.
+TEST(SessionParticipantProjection, AdmissionWithoutASessionCarriesNoNetState)
+{
+    ProjectionWorld fixture;
+    fixture.CountPolicyCalls();
+
+    const SessionParticipantAdmission admitted =
+        fixture.Projection.AdmitLocal(fixture.Entities, /*sessionActive=*/false);
+    const EntityId participant = admitted.Admission.Participant;
+    const EntityId body = admitted.Body.Body;
+    ASSERT_TRUE(participant.IsValid());
+    ASSERT_TRUE(body.IsValid());
+
+    EXPECT_FALSE(fixture.Entities.HasComponent<NetParticipantIdentity>(participant));
+    EXPECT_FALSE(fixture.Entities.HasComponent<NetReplicated>(participant));
+    EXPECT_FALSE(fixture.Entities.HasComponent<NetReplicated>(body));
+    // The participant is still this machine's person for every other purpose.
+    EXPECT_EQ(LocalControlSubjectOf(fixture.Entities), body);
+}
+
+TEST(SessionParticipantProjection, AdmissionInsideASessionStampsBoth)
+{
+    ProjectionWorld fixture;
+    fixture.CountPolicyCalls();
+
+    const SessionParticipantAdmission admitted =
+        fixture.Projection.AdmitLocal(fixture.Entities, /*sessionActive=*/true);
+
+    EXPECT_TRUE(fixture.Entities.HasComponent<NetParticipantIdentity>(
+        admitted.Admission.Participant));
+    EXPECT_TRUE(fixture.Entities.HasComponent<NetReplicated>(
+        admitted.Admission.Participant));
+    EXPECT_TRUE(fixture.Entities.HasComponent<NetReplicated>(admitted.Body.Body));
+}
+
+// Hosting after singleplayer play: the person already here becomes the
+// authority's participant, retroactively and exactly once.
+TEST(SessionParticipantProjection, SessionStartStampsWhatWasAdmittedBeforeIt)
+{
+    ProjectionWorld fixture;
+    fixture.CountPolicyCalls();
+    const SessionParticipantAdmission admitted =
+        fixture.Projection.AdmitLocal(fixture.Entities, false);
+    const EntityId participant = admitted.Admission.Participant;
+    const EntityId body = admitted.Body.Body;
+
+    fixture.Projection.ProjectSessionStart(fixture.Entities);
+
+    const NetParticipantIdentity* identity =
+        fixture.Entities.TryGet<NetParticipantIdentity>(participant);
+    ASSERT_NE(identity, nullptr);
+    EXPECT_EQ(identity->Peer, kNetAuthorityPeer);
+    EXPECT_TRUE(fixture.Entities.HasComponent<NetReplicated>(participant));
+    EXPECT_TRUE(fixture.Entities.HasComponent<NetReplicated>(body));
+
+    // Idempotent: a second start changes nothing and adds nothing.
+    fixture.Projection.ProjectSessionStart(fixture.Entities);
+    EXPECT_EQ(fixture.Entities.TryGet<NetParticipantIdentity>(participant)->Peer,
+              kNetAuthorityPeer);
+    EXPECT_EQ(fixture.Asked, 1) << "a session start is not a body request";
+}
+
+// A peer only exists inside a session, so its admission stamps regardless of
+// what the caller knows about one.
+TEST(SessionParticipantProjection, PeerAdmissionAlwaysStamps)
+{
+    ProjectionWorld fixture;
+    fixture.CountPolicyCalls();
+
+    const SessionParticipantAdmission admitted =
+        fixture.Projection.AdmitPeer(fixture.Entities, PeerId{ 3 });
+    const EntityId participant = admitted.Admission.Participant;
+    ASSERT_TRUE(participant.IsValid());
+
+    ASSERT_NE(fixture.Entities.TryGet<NetParticipantIdentity>(participant), nullptr);
+    EXPECT_EQ(fixture.Entities.TryGet<NetParticipantIdentity>(participant)->Peer, 3u);
+    EXPECT_TRUE(fixture.Entities.HasComponent<NetReplicated>(participant));
+    EXPECT_TRUE(fixture.Entities.HasComponent<NetReplicated>(admitted.Body.Body));
+}
+
+// SetLocalControlSubject is a fact, not a switch: it changes which entity is
+// named and nothing about that entity's components.
+TEST(SessionParticipantProjection, LocalControlSubjectChangesNoComponentMembership)
+{
+    ProjectionWorld fixture;
+    const EntityId first = fixture.Thing();
+    const EntityId second = fixture.Thing();
+
+    (void)SetLocalControlSubject(fixture.Entities, first);
+    (void)SetLocalControlSubject(fixture.Entities, second);
+
+    EXPECT_EQ(LocalControlSubjectOf(fixture.Entities), second);
+    EXPECT_FALSE(fixture.Entities.HasComponent<LocalLookControl>(first));
+    EXPECT_FALSE(fixture.Entities.HasComponent<LocalLookControl>(second));
 }
 
 TEST(SessionParticipantProjection, GenericRetirementRejectsPeerBoundParticipants)

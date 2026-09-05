@@ -89,7 +89,6 @@ void StampNetPrefab(World& world, EntityId root, Logger& log);
 
 // A flying body with the movement columns a pawn has, for looking at a level
 // that has no player to put in it.
-[[nodiscard]] EntityId SpawnObserverPawn(World& world, const Vec3d& at);
 
 // Where a level says players begin, or none when it does not say.
 [[nodiscard]] std::optional<Vec3d> FindPlayerStart(
@@ -129,6 +128,9 @@ private:
     // The pawn this machine was last told to drive, so taking up a new one is
     // an edge rather than something re-derived every frame.
     EntityId Followed;
+    // The body carrying LocalLookControl, kept in step with Followed by
+    // FollowLocalLookControl.
+    EntityId LookTagged;
 };
 
 //=============================================================================

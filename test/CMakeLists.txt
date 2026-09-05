@@ -166,8 +166,7 @@ if(LEVEL_COOK_TEST_SOURCES AND TARGET kyusu_authoring)
     # generated here, as the module generates it for itself.
     sencha_generate_component_metadata(level_cook_tests
         INCLUDE_ROOT ${CMAKE_SOURCE_DIR}/template/src
-        HEADERS ${CMAKE_SOURCE_DIR}/template/src/ObserverFlight.h
-                ${CMAKE_SOURCE_DIR}/template/src/PlayerStartComponent.h
+        HEADERS ${CMAKE_SOURCE_DIR}/template/src/PlayerStartComponent.h
                 ${CMAKE_SOURCE_DIR}/template/src/SpinComponent.h
                 ${CMAKE_SOURCE_DIR}/template/src/TurretMount.h)
     # The shipped prefabs are content under test: a case reads them from the
@@ -189,6 +188,7 @@ if(FRAMEWORK_TEST_SOURCES)
     add_executable(framework_tests
         ${FRAMEWORK_TEST_SOURCES}
         ${CMAKE_SOURCE_DIR}/template/src/GameSettingsData.cpp
+        ${CMAKE_SOURCE_DIR}/template/src/LocalLookFollow.cpp
         ${CMAKE_SOURCE_DIR}/example/CubeDemo/CubeDemoSystems.cpp
         ${CMAKE_SOURCE_DIR}/example/CubeDemo/CubeDemoScene.cpp
         ${CMAKE_SOURCE_DIR}/example/CubeDemo/FreeCamera.cpp)

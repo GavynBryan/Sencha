@@ -516,7 +516,8 @@ SessionParticipantAdmission Engine::AdmitLocalParticipant()
     if (NetState != nullptr && NetState->Role() == NetSessionRole::Client)
         return {};
 
-    return ParticipantProjection.AdmitLocal(RuntimeWorldState->Entities());
+    return ParticipantProjection.AdmitLocal(RuntimeWorldState->Entities(),
+                                            NetState != nullptr);
 }
 
 SessionParticipantAdmission Engine::AdmitSimulatedParticipant(
@@ -525,7 +526,7 @@ SessionParticipantAdmission Engine::AdmitSimulatedParticipant(
     if (RuntimeWorldState == nullptr)
         return {};
     return ParticipantProjection.AdmitSimulated(RuntimeWorldState->Entities(),
-                                                source);
+                                                source, NetState != nullptr);
 }
 
 ParticipantBodyChange Engine::RequestParticipantBody(EntityId participant)
@@ -533,7 +534,7 @@ ParticipantBodyChange Engine::RequestParticipantBody(EntityId participant)
     if (RuntimeWorldState == nullptr)
         return {};
     return ParticipantProjection.RequestBody(RuntimeWorldState->Entities(),
-                                              participant);
+                                              participant, NetState != nullptr);
 }
 
 ParticipantControlChange Engine::SetParticipantControlSubject(
@@ -551,6 +552,13 @@ SessionParticipantRetirement Engine::RetireParticipant(EntityId participant)
         return {};
     return ParticipantProjection.RetireParticipant(
         RuntimeWorldState->Entities(), participant);
+}
+
+void Engine::ProjectSessionStart()
+{
+    if (RuntimeWorldState == nullptr || NetState == nullptr)
+        return;
+    ParticipantProjection.ProjectSessionStart(RuntimeWorldState->Entities());
 }
 
 SessionParticipantRetirement Engine::RetireLocalParticipant()

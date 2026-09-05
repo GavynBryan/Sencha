@@ -69,5 +69,10 @@
 // zone, zones, scene.spawn and scene.despawn are engine console commands, and
 // ConsoleService::SetMapHandler is gone -- `+map` loads through the engine
 // rather than calling back into a game. A game learns that a level arrived from
-// the zone-residency changes the load publishes.
-#define SENCHA_GAME_ABI_VERSION 16u
+// the zone-residency changes the load publishes. v17: participant admission is
+// session-gated. SessionParticipantProjection::AdmitLocal, AdmitSimulated and
+// RequestBody take whether a session is active and add replication state only
+// then; Engine::ProjectSessionStart stamps retroactively when a process starts
+// hosting. SetLocalControlSubject publishes identity only and no longer adds or
+// removes LocalLookControl -- a game that wants that rule composes it.
+#define SENCHA_GAME_ABI_VERSION 17u

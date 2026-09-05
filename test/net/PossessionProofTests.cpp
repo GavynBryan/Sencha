@@ -332,7 +332,6 @@ TEST(PossessionProof, AClientTakesATurretAndGivesItBack)
 
     session.Replicate();
     EXPECT_EQ(LocalControlSubjectOf(session.Client), mirror);
-    EXPECT_TRUE(session.Client.HasComponent<LocalLookControl>(mirror));
     EXPECT_EQ(session.Prediction.Predicted(), mirror);
 
     // 6. Owner-only state reaches the owner and nothing else does.
@@ -363,7 +362,6 @@ TEST(PossessionProof, AClientTakesATurretAndGivesItBack)
     EXPECT_FALSE(session.Authority.HasComponent<NetDrivenBy>(turret));
     EXPECT_FALSE(LocalControlSubjectOf(session.Client).IsValid())
         << "the client still drives a turret it handed back";
-    EXPECT_FALSE(session.Client.HasComponent<LocalLookControl>(mirror));
     EXPECT_FALSE(session.Prediction.Predicted().IsValid())
         << "the client still predicts a turret it handed back";
 }

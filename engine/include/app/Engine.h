@@ -92,6 +92,11 @@ public:
     // outlive it. Returns null if one already exists.
     [[nodiscard]] NetSession* CreateNetSession(INetTransport& transport);
     void DestroyNetSession();
+    // Called once the session this process created is hosting. Every
+    // participant admitted before it -- the person who played singleplayer and
+    // then opened the game up -- gets the replication state a session-time
+    // admission would have given it. Idempotent; a no-op without a session.
+    void ProjectSessionStart();
 
     // Per-session replication state: the authority's identity mint and per-peer
     // baselines, or a client's map of what it has been told about. Reset with

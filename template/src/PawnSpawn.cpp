@@ -1,6 +1,6 @@
 #include "PawnSpawn.h"
 
-#include "ObserverFlight.h"
+#include "LocalLookFollow.h"
 #include "PlayerStartComponent.h"
 #include "TurretMount.h"
 
@@ -161,64 +161,6 @@ void StampNetPrefab(World& world, EntityId root, Logger& log)
     }
 }
 
-// The body other viewers see. A first-person camera targeting this pawn
-// excludes it, so the local player does not sit inside their own mesh; a
-// third-person camera draws it. Without a resolved avatar the pawn simply has
-// no body, which is a missing asset rather than a broken player.
-//
-// The one thing a pawn spawned from its prefab still needs from code: a scene
-// naming a mesh cannot round-trip through a cook composition that has no mesh
-// cache, so the avatar stays a data asset until the mesh moves into the prefab
-// (docs/plans/pawn-prefab-roadmap.md, P4).
-// The body a game gets when the pawn it wanted could not be built: a capsule
-// that collides and flies.
-//
-// Nothing here is content. It exists precisely when content did not load, so
-// anything it depended on would be the thing that already failed -- no profile,
-// no prefab, no mesh. What it is made of is the movement layer everything else
-// uses, steered from the full aim basis rather than the ground plane.
-//
-// Loud where it is used, not here: a player flying a diagnostic body while the
-// game believes it is running is exactly the situation that must not go
-// unremarked.
-EntityId SpawnObserverPawn(World& world, const Vec3d& at)
-{
-    const EntityId pawn = CreateTransformEntity(world, at);
-    world.AddComponent<CharacterController>(pawn, CharacterController{});
-    world.AddComponent<ObserverFlight>(pawn);
-
-    // Brings every per-tick column the movement step reads, so the observer is
-    // steered by the same systems a pawn is.
-    CharacterMovement movement;
-    if (const LocomotionModeRegistry* modes =
-            world.TryGetResource<LocomotionModeRegistry>())
-    {
-        movement.Mode = modes->FreeMode();
-    }
-    world.AddComponent<CharacterMovement>(pawn, movement);
-
-    // It aims, and it turns to its aim: an observer that could not see where it
-    // was going would be no use as a way to look at a level.
-    world.AddComponent<LookOrientation>(pawn, LookOrientation{});
-    world.AddComponent<AimFacing>(pawn);
-
-    // What the steering pass selects on, and the speed it flies at. Without a
-    // profile the tuning resolves to engine defaults plus this attribute, which
-    // is the whole answer for a body with no authored feel.
-    GameplayTagContainer tags{};
-    if (const MovementTags* movementTags = world.TryGetResource<MovementTags>())
-        tags.Grant(movementTags->Controlled);
-    world.AddComponent<GameplayTagContainer>(pawn, tags);
-
-    AttributeSet attributes{};
-    if (const MovementDefs* defs = world.TryGetResource<MovementDefs>())
-        attributes.Add(defs->MoveSpeed, 8.0f);
-    world.AddComponent<AttributeSet>(pawn, attributes);
-
-    world.AddComponent<AbilitySet>(pawn, AbilitySet{});
-    return pawn;
-}
-
 PendingSceneSpawns& PendingSpawnsOf(World& world)
 {
     if (PendingSceneSpawns* existing = world.TryGetResource<PendingSceneSpawns>())
@@ -346,6 +288,10 @@ void SessionPlayerSystem::FrameUpdate(FrameUpdateContext& ctx)
 // unordered_map walk whose winner changed with hash order.
 void SessionPlayerSystem::FollowLocalControl(World& world)
 {
+    // Whose look input the body takes is this game's rule, applied here where
+    // the game already watches the subject change.
+    (void)FollowLocalLookControl(world, LookTagged);
+
     const EntityId subject = LocalControlSubjectOf(world);
     if (subject == Followed)
         return;

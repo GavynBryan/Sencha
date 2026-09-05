@@ -1,7 +1,6 @@
 #include "TemplateGame.h"
 
 #include "CharacterInputSystem.h"
-#include "ObserverFlight.h"
 #include "PawnSpawn.h"
 
 #include "GameSettingsData.h"
@@ -172,22 +171,17 @@ void TemplateGame::OnStart(GameStartupContext&)
                          how);
         };
 
-        // What this game hands a player when the pawn it wanted could not be
-        // built. Said at Warn because a player flying a diagnostic body while
-        // the game believes it is running is exactly what must not pass
-        // unremarked.
-        const auto observerPawn = [&]() -> EntityId
-        {
-            log.Warn("TemplateGame: no player pawn prefab; the player gets the "
-                     "built-in observer body, which flies and has no content");
-            const EntityId pawn = SpawnObserverPawn(world, spawnPosition());
-            announce("observer");
-            return pawn;
-        };
-
+        // No prefab is no body. Said at Error rather than papered over with a
+        // built-in one: a player driving a diagnostic capsule while the game
+        // believes it is running is exactly what must not pass unremarked,
+        // and a game with no pawn content is a game that is not set up yet.
         const CompiledGameSettings* settings = Session().GameSettings();
         if (settings == nullptr || settings->PlayerPawnScenePath.empty())
-            return observerPawn();
+        {
+            log.Error("TemplateGame: no player pawn prefab configured "
+                      "(game.settings player_pawn); nobody gets a body");
+            return EntityId{};
+        }
 
         // The prefab path is asynchronous: the first ask requests the spawn
         // and answers "not yet"; the settlement system asks again when the
@@ -233,10 +227,10 @@ void TemplateGame::OnStart(GameStartupContext&)
         }
         case SceneSpawnStatus::Failed:
         default:
-            log.Warn("TemplateGame: pawn prefab '{}' failed to spawn; using "
-                     "the built-in pawn", settings->PlayerPawnScenePath);
+            log.Error("TemplateGame: pawn prefab '{}' failed to spawn; nobody "
+                      "gets a body", settings->PlayerPawnScenePath);
             pending.Pawns.erase(entry);
-            return observerPawn();
+            return EntityId{};
         }
     };
 
