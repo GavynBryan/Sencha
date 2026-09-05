@@ -44,7 +44,7 @@ namespace
         void SetUp() override
         {
             const std::filesystem::path root =
-                std::filesystem::path(SENCHA_REPO_ROOT) / "template/assets";
+                std::filesystem::path(SENCHA_REPO_ROOT) / "templates/fps/assets";
             if (!std::filesystem::exists(root / ".cooked/prefabs/player_pawn.smap"))
                 GTEST_SKIP() << "the template prefabs are not cooked here";
 

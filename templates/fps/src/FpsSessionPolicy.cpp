@@ -1,6 +1,6 @@
-#include "SessionContent.h"
+#include "FpsSessionPolicy.h"
 
-#include "GameSettingsData.h"
+#include "FpsSettingsData.h"
 #include "PawnSpawn.h"
 #include "PawnStreaming.h"
 #include "FpsInputActions.h"
@@ -46,27 +46,27 @@ constexpr std::string_view kGameSettingsPath = "asset://data/game.sdata";
 
 } // namespace
 
-void RegisterTemplateDataTypes(DataAssetTypeRegistry& types,
+void RegisterFpsDataTypes(DataAssetTypeRegistry& types,
                                DataSchemaRegistry& schemas)
 {
     RegisterGameSettingsData(types, schemas);
 }
 
-void UnregisterTemplateDataTypes(DataAssetTypeRegistry& types,
+void UnregisterFpsDataTypes(DataAssetTypeRegistry& types,
                                  DataSchemaRegistry& schemas)
 {
     UnregisterGameSettingsData(types, schemas);
 }
 
-SessionContent::SessionContent(Engine& engine, Logger& log)
+FpsSessionPolicy::FpsSessionPolicy(Engine& engine, Logger& log)
     : Host(engine)
     , Log(log)
 {
 }
 
-SessionContent::~SessionContent() = default;
+FpsSessionPolicy::~FpsSessionPolicy() = default;
 
-void SessionContent::Open()
+void FpsSessionPolicy::Open()
 {
     Engine& engine = Host;
     RuntimeAssets& runtimeAssets = Assets();
@@ -92,7 +92,7 @@ void SessionContent::Open()
 #endif
 }
 
-void SessionContent::Close()
+void FpsSessionPolicy::Close()
 {
     World& world = Host.World().Entities();
 
@@ -110,7 +110,7 @@ void SessionContent::Close()
     GameSettingsAsset.Reset();
 }
 
-void SessionContent::RegisterSystems(SystemRegisterContext& ctx)
+void FpsSessionPolicy::RegisterSystems(SystemRegisterContext& ctx)
 {
     // Where a level's collision goes. Physics is this game's choice, so the
     // engine cannot know the cache exists until the schedule is composed.
@@ -126,7 +126,7 @@ void SessionContent::RegisterSystems(SystemRegisterContext& ctx)
 }
 
 
-RuntimeAssets& SessionContent::Assets()
+RuntimeAssets& FpsSessionPolicy::Assets()
 {
     return Host.Content().Assets();
 }
@@ -134,12 +134,12 @@ RuntimeAssets& SessionContent::Assets()
 // Loads one structured data asset synchronously and returns an owned lease.
 // Returns an invalid handle on any failure, which every caller treats as
 // "run without the authored data" rather than as a fatal error.
-DataAssetCacheHandle SessionContent::AcquireDataAsset(std::string_view path)
+DataAssetCacheHandle FpsSessionPolicy::AcquireDataAsset(std::string_view path)
 {
     AssetLease lease = Assets().Assets.LoadLease(path, AssetType::Data);
     if (!lease.IsValid())
     {
-        Log.Warn("TemplateGame: '{}' did not load; running without it", path);
+        Log.Warn("FpsGame: '{}' did not load; running without it", path);
         return {};
     }
 
@@ -156,7 +156,7 @@ DataAssetCacheHandle SessionContent::AcquireDataAsset(std::string_view path)
 // Every failure path leaves the result invalid, which spawns a bodyless pawn
 // rather than refusing to spawn: a missing body is a content problem, not a
 // reason to have no player.
-const CompiledGameSettings* SessionContent::GameSettings()
+const CompiledGameSettings* FpsSessionPolicy::GameSettings()
 {
     if (!GameSettingsAsset.IsValid())
         GameSettingsAsset = AcquireDataAsset(kGameSettingsPath);
@@ -166,13 +166,13 @@ const CompiledGameSettings* SessionContent::GameSettings()
         Assets().DataAssets.TryGet<CompiledGameSettings>(
             GameSettingsAsset.GetToken(), "game.settings");
     if (settings == nullptr)
-        Log.Warn("TemplateGame: '{}' is not a game.settings", kGameSettingsPath);
+        Log.Warn("FpsGame: '{}' is not a game.settings", kGameSettingsPath);
     return settings;
 }
 
 // Binds the game's controls. The action set loads first: a profile names its
 // actions, and binding cannot resolve those names until the set is resident.
-void SessionContent::SetupInputMapping()
+void FpsSessionPolicy::SetupInputMapping()
 {
     World& world = Host.World().Entities();
 
@@ -180,7 +180,7 @@ void SessionContent::SetupInputMapping()
     InputProfileAsset = AcquireDataAsset(kInputProfilePath);
     if (!InputProfileAsset.IsValid())
     {
-        Log.Error("TemplateGame: no input profile; the game has no controls");
+        Log.Error("FpsGame: no input profile; the game has no controls");
         return;
     }
 
@@ -195,7 +195,7 @@ void SessionContent::SetupInputMapping()
     const InputActionRegistry* actions = bindings.GetActions(profile);
     if (actions == nullptr)
     {
-        Log.Error("TemplateGame: input profile did not bind: {}",
+        Log.Error("FpsGame: input profile did not bind: {}",
                   DescribeBindErrors(bindings.Status(profile)));
         return;
     }

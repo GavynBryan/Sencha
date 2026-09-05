@@ -33,12 +33,12 @@
 // inside a live one is a known hazard the networking plan records.
 //=============================================================================
 
-#if defined(_WIN32) || !defined(TEST_APP_PATH) || !defined(TEST_TEMPLATE_MODULE_PATH)
+#if defined(_WIN32) || !defined(TEST_APP_PATH) || !defined(TEST_FPS_MODULE_PATH)
 
-TEST(HostClientProcess, RequiresPosixAndTheTemplateModule)
+TEST(HostClientProcess, RequiresPosixAndTheFpsModule)
 {
     GTEST_SKIP() << "two-process hosting coverage is POSIX-only and needs the "
-                    "app binary plus the template game module";
+                    "app binary plus the FPS template's game module";
 }
 
 #else
@@ -57,7 +57,7 @@ namespace
     // out again, so the two cannot drift apart.
     [[nodiscard]] std::filesystem::path CookedMapScene()
     {
-        return std::filesystem::path(SENCHA_REPO_ROOT) / "template/assets/.cooked"
+        return std::filesystem::path(SENCHA_REPO_ROOT) / "templates/fps/assets/.cooked"
             / (std::string(kHostMap) + ".smap");
     }
 
@@ -82,7 +82,7 @@ namespace
             : LogPath(std::move(logPath))
         {
             std::vector<std::string> argv{
-                TEST_APP_PATH, "--headless", "--game", TEST_TEMPLATE_MODULE_PATH
+                TEST_APP_PATH, "--headless", "--game", TEST_FPS_MODULE_PATH
             };
             argv.insert(argv.end(), args.begin(), args.end());
 
@@ -106,7 +106,7 @@ namespace
                 // Child: content root, stdin from the pipe, then output to the
                 // log both ways so a crash message is captured beside the
                 // ordinary logging.
-                if (::chdir(SENCHA_REPO_ROOT "/template") != 0)
+                if (::chdir(SENCHA_REPO_ROOT "/templates/fps") != 0)
                     ::_exit(127);
                 ::close(pipeFds[1]);
                 ::dup2(pipeFds[0], STDIN_FILENO);

@@ -24,7 +24,8 @@ namespace
     {
         const std::filesystem::path repo{ SENCHA_REPO_ROOT };
         return {
-            repo / "template" / "assets",
+            repo / "templates" / "fps" / "assets",
+            repo / "test" / "fixtures" / "content" / "assets",
             repo / "example" / "CubeDemo" / "assets",
         };
     }

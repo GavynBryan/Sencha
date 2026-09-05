@@ -10,7 +10,7 @@
 #include "document/EditorDocument.h"
 #include "document/DocumentSerialization.h"
 
-#include "TemplateComponents.h"
+#include "FpsComponents.h"
 
 #include <assets/runtime/RuntimeAssets.h>
 #include <world/transform/TransformComponents.h>
@@ -46,12 +46,12 @@ namespace
         {
             RegisterDocumentSerializers();
             ComponentRegistrar registrar(nullptr, &EditorSceneSerializers(), nullptr);
-            RegisterTemplateComponents(registrar);
+            RegisterFpsComponents(registrar);
         }
 
         void SetUp() override
         {
-            Root = std::filesystem::path(SENCHA_REPO_ROOT) / "template/assets";
+            Root = std::filesystem::path(SENCHA_REPO_ROOT) / "templates/fps/assets";
             (void)ScanAssetsDirectory(Root.generic_string(), Assets.Registry,
                                       Assets.Assets.Kinds());
             Document.SetAssetEnvironment(Assets);

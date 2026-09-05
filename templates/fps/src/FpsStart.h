@@ -10,10 +10,10 @@
 struct SENCHA_COMPONENT("player_start")
        SENCHA_SCHEMA("player_start")
        SENCHA_SCENE_CHUNK("PSTR")
-PlayerStartComponent
+FpsStart
 {
 };
 
 #if !defined(SENCHA_CODEGEN)
-#  include <PlayerStartComponent.sencha.h>
+#  include <FpsStart.sencha.h>
 #endif

@@ -12,7 +12,7 @@
 #include "document/DocumentCook.h"
 #include "document/DocumentSerialization.h"
 
-#include "TemplateComponents.h"
+#include "FpsComponents.h"
 
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/assets/AssetRegistry.h>
@@ -37,7 +37,7 @@ TEST(CookLevel, Generate)
 
     RegisterDocumentSerializers();
     ComponentRegistrar registrar(nullptr, &EditorSceneSerializers(), nullptr);
-    RegisterTemplateComponents(registrar);
+    RegisterFpsComponents(registrar);
 
     // With a console sink, so a load or cook failure names its reason instead
     // of surfacing as a bare 'could not load'.

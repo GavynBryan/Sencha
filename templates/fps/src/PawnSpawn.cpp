@@ -1,7 +1,7 @@
 #include "PawnSpawn.h"
 
 #include "LocalLookFollow.h"
-#include "PlayerStartComponent.h"
+#include "FpsStart.h"
 #include "TurretMount.h"
 
 #include <abilities/AbilityKit.h>
@@ -41,7 +41,7 @@ std::optional<Vec3d> FindPlayerStart(
     const World& world,
     std::optional<StoragePartitionId> partition)
 {
-    if (!world.IsRegistered<PlayerStartComponent>())
+    if (!world.IsRegistered<FpsStart>())
         return std::nullopt;
 
     for (EntityId entity : world.GetAliveEntities())
@@ -51,7 +51,7 @@ std::optional<Vec3d> FindPlayerStart(
         {
             continue;
         }
-        if (!world.HasComponent<PlayerStartComponent>(entity))
+        if (!world.HasComponent<FpsStart>(entity))
             continue;
 
         if (const LocalTransform* transform =
@@ -95,7 +95,7 @@ void StampNetPrefab(World& world, EntityId root, Logger& log)
     const SceneInstance* group = world.TryGet<SceneInstance>(root);
     if (group == nullptr || !group->Source.IsValid())
     {
-        log.Warn("TemplateGame: a replicated body has no prefab identity; peers "
+        log.Warn("FpsGame: a replicated body has no prefab identity; peers "
                  "will see its state and no body");
         return;
     }
@@ -196,7 +196,7 @@ void SessionPlayerSystem::FollowLocalControl(World& world)
     // predicting it from the same input produce the same pawn. The camera
     // that looks through it is PawnCameraSystem's.
     if (Owner->Prediction().Predicts(subject))
-        Log->Info("TemplateGame: predicting this player's own pawn");
+        Log->Info("FpsGame: predicting this player's own pawn");
 }
 
 void SpawnSettlementSystem::ZoneResidency(ZoneResidencyContext& ctx)
@@ -273,7 +273,7 @@ void SpawnSettlementSystem::FrameUpdate(FrameUpdateContext& ctx)
 
         if (spawns.Status(id) != SceneSpawnStatus::Live)
         {
-            log.Warn("TemplateGame: the turret prefab failed to spawn");
+            log.Warn("FpsGame: the turret prefab failed to spawn");
             continue;
         }
         const EntityId root = SpawnedGroupRoot(world, spawns.Entities(id));
@@ -281,14 +281,14 @@ void SpawnSettlementSystem::FrameUpdate(FrameUpdateContext& ctx)
         {
             // Authoring rule: the mount rides the prefab's root, where
             // possession and NearestTurret address it.
-            log.Error("TemplateGame: the turret prefab's root carries no "
+            log.Error("FpsGame: the turret prefab's root carries no "
                       "turret_mount; dropping the placement");
             (void)spawns.RequestDespawn(id);
             continue;
         }
         world.AddComponent<NetReplicated>(root);
         StampNetPrefab(world, root, log);
-        log.Info("TemplateGame: placed a turret");
+        log.Info("FpsGame: placed a turret");
         if (possessor.IsValid() && world.IsAlive(possessor))
             (void)ApplyTurretRequest(*Owner, world, possessor, root,
                                      PeerId{});

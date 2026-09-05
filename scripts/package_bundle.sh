@@ -33,7 +33,7 @@ Usage: package_bundle.sh --content <dir> --map <levels/name> --out <dir> [option
   --content <dir>   Project content root (the directory holding assets/).
   --map <name>      Level the server hosts, e.g. levels/EntranceHall.
   --out <dir>       Directory to write the bundles into.
-  --module <path>   Game module .so (default: the built template module).
+  --module <path>   Game module .so (default: the built FPS template module).
   --build <dir>     Build tree to take binaries from (default: <repo>/build).
   --port <n>        UDP port the server binds (default: 27500).
   --name <text>     Bundle name prefix (default: the content directory's name).
@@ -68,7 +68,7 @@ APP_BIN="$BUILD_DIR/app/app"
 [[ -x "$APP_BIN" ]] || { echo "host binary not found at '$APP_BIN'" >&2; exit 1; }
 
 if [[ -z "$GAME_MODULE" ]]; then
-    GAME_MODULE="$REPO_ROOT/template/build/game.so"
+    GAME_MODULE="$REPO_ROOT/templates/fps/build/game.so"
 fi
 [[ -f "$GAME_MODULE" ]] || { echo "game module not found at '$GAME_MODULE'" >&2; exit 1; }
 

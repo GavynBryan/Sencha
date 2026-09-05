@@ -172,7 +172,7 @@ The pacing default is twice the fixed tick rate, derived from
 nothing is still the frame that pumps the network, and nothing else paces a loop
 with no vsync. `+set r.target_fps <n>` overrides it.
 
-The game module has to cooperate, and the bundled `template/` now does: its
+The game module has to cooperate, and the bundled `templates/fps/` does: its
 asset stack composes without graphics services, holding everything except the
 caches that own GPU resources. A scene that references meshes or textures still
 loads there — an asset of a kind this process cannot hold is declined rather

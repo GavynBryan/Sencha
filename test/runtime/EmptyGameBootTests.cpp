@@ -172,7 +172,7 @@ TEST(EmptyGameBoot, TheEngineMountsAGamesContentWithoutTheGame)
     SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
 
     const std::filesystem::path templateAssets =
-        std::filesystem::path(SENCHA_REPO_ROOT) / "template" / "assets";
+        std::filesystem::path(SENCHA_REPO_ROOT) / "templates" / "fps" / "assets";
     ASSERT_TRUE(std::filesystem::is_directory(templateAssets));
 
     Application app(0, nullptr);

@@ -1,6 +1,6 @@
 #include "TurretControl.h"
 
-#include "GameSettingsData.h"
+#include "FpsSettingsData.h"
 #include "PawnSpawn.h"
 #include "TurretMount.h"
 
@@ -224,10 +224,10 @@ bool AnswerTurretRequest(Engine& engine, Logger& log,
     switch (ApplyTurretRequest(engine, world, participant, turret, message.From))
     {
     case TurretRequestOutcome::Took:
-        log.Info("TemplateGame: peer {} took the turret", message.From.Value);
+        log.Info("FpsGame: peer {} took the turret", message.From.Value);
         return true;
     case TurretRequestOutcome::Left:
-        log.Info("TemplateGame: peer {} left the turret", message.From.Value);
+        log.Info("FpsGame: peer {} left the turret", message.From.Value);
         return true;
     case TurretRequestOutcome::Occupied:
     case TurretRequestOutcome::Invalid:
@@ -296,14 +296,14 @@ TurretPlacementOutcome PlaceTurretForRequest(
             settings->TurretScenePath, root,
             content->Value.value_or(PersistentStoragePartition));
         PendingSpawnsOf(world).Turrets.push_back({ id, EntityId{} });
-        log.Info("TemplateGame: placing a turret");
+        log.Info("FpsGame: placing a turret");
         return { EntityId{}, true };
     }
 
     const EntityId turret =
         PlaceTurret(world, TurretPlacementNear(world),
                     content->Value.value_or(PersistentStoragePartition));
-    log.Info("TemplateGame: placed a turret");
+    log.Info("FpsGame: placed a turret");
     return { turret, false };
 }
 

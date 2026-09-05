@@ -1,4 +1,4 @@
-#include "GameSettingsData.h"
+#include "FpsSettingsData.h"
 
 #include <core/json/JsonValue.h>
 

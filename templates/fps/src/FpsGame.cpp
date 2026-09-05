@@ -1,13 +1,12 @@
-#include "TemplateGame.h"
+#include "FpsGame.h"
 
 #include "FpsSteeringSystem.h"
 #include "PawnCameraSystem.h"
 #include "PawnSpawn.h"
 
-#include "GameSettingsData.h"
-#include "PlayerStartComponent.h"
+#include "FpsSettingsData.h"
+#include "FpsStart.h"
 #include "FpsInputActions.h"
-#include "SpinComponent.h"
 #include "TurretControl.h"
 #include "TurretMount.h"
 
@@ -69,51 +68,16 @@
 #include <unordered_set>
 #include <utility>
 
-namespace
-{
-struct SpinSystem
-{
-    void FixedLogic(FixedLogicContext& ctx)
-    {
-        World& world = ctx.Entities;
-        if (!world.IsRegistered<SpinComponent>()
-            || !world.IsRegistered<LocalTransform>())
-        {
-            return;
-        }
-
-        const float dt =
-            static_cast<float>(ctx.Time.DeltaSeconds);
-        Query<Write<SpinComponent>, Write<LocalTransform>> query(world);
-        query.ForEachChunkIn(ctx.Partitions, [&](auto& view)
-        {
-            auto spins = view.template Write<SpinComponent>();
-            auto transforms = view.template Write<LocalTransform>();
-            for (std::uint32_t index = 0;
-                 index < view.Count();
-                 ++index)
-            {
-                transforms[index].Value.Rotation =
-                    transforms[index].Value.Rotation
-                    * Quatf::FromAxisAngle(
-                        Vec3d::Up(),
-                        spins[index].RadiansPerSecond * dt);
-            }
-        });
-    }
-};
-} // namespace
-
-SessionContent& TemplateGame::Session()
+FpsSessionPolicy& FpsGame::Session()
 {
     assert(Content.has_value() && "OnStart composes the session before anything asks");
     return *Content;
 }
 
-void TemplateGame::OnStart(GameStartupContext&)
+void FpsGame::OnStart(GameStartupContext&)
 {
     Engine& engine = GetEngine();
-    Content.emplace(engine, engine.Logging().GetLogger<TemplateGame>());
+    Content.emplace(engine, engine.Logging().GetLogger<FpsGame>());
     Content->Open();
 
     // What a participant is in this game, and where its body comes from. The
@@ -129,7 +93,7 @@ void TemplateGame::OnStart(GameStartupContext&)
         if (world.TryGetResource<PlayContentPartition>() == nullptr)
             return EntityId{};
 
-        Logger& log = GetEngine().Logging().GetLogger<TemplateGame>();
+        Logger& log = GetEngine().Logging().GetLogger<FpsGame>();
         const NetParticipantIdentity* who =
             world.TryGet<NetParticipantIdentity>(participant);
         const std::uint32_t peer = who == nullptr ? 0u : who->Peer;
@@ -146,7 +110,7 @@ void TemplateGame::OnStart(GameStartupContext&)
             // origin -- including anything else near where a player begins.
             if (!authored.has_value())
             {
-                log.Warn("TemplateGame: no player_start in the loaded content; "
+                log.Warn("FpsGame: no player_start in the loaded content; "
                          "spawning at the default position");
             }
             // Offset laterally from the start so two players do not arrive
@@ -164,10 +128,10 @@ void TemplateGame::OnStart(GameStartupContext&)
         const auto announce = [&](std::string_view how)
         {
             if (peer == kNetAuthorityPeer)
-                log.Info("TemplateGame: spawned a pawn for the player at "
+                log.Info("FpsGame: spawned a pawn for the player at "
                          "this machine ({})", how);
             else
-                log.Info("TemplateGame: spawned a pawn for peer {} ({})", peer,
+                log.Info("FpsGame: spawned a pawn for peer {} ({})", peer,
                          how);
         };
 
@@ -178,7 +142,7 @@ void TemplateGame::OnStart(GameStartupContext&)
         const CompiledGameSettings* settings = Session().GameSettings();
         if (settings == nullptr || settings->PlayerPawnScenePath.empty())
         {
-            log.Error("TemplateGame: no player pawn prefab configured "
+            log.Error("FpsGame: no player pawn prefab configured "
                       "(game.settings player_pawn); nobody gets a body");
             return EntityId{};
         }
@@ -227,7 +191,7 @@ void TemplateGame::OnStart(GameStartupContext&)
         }
         case SceneSpawnStatus::Failed:
         default:
-            log.Error("TemplateGame: pawn prefab '{}' failed to spawn; nobody "
+            log.Error("FpsGame: pawn prefab '{}' failed to spawn; nobody "
                       "gets a body", settings->PlayerPawnScenePath);
             pending.Pawns.erase(entry);
             return EntityId{};
@@ -265,13 +229,13 @@ void TemplateGame::OnStart(GameStartupContext&)
                 Engine& authority = *static_cast<Engine*>(context);
                 return AnswerTurretRequest(
                     authority,
-                    authority.Logging().GetLogger<TemplateGame>(),
+                    authority.Logging().GetLogger<FpsGame>(),
                     message);
             },
             &engine))
     {
-        engine.Logging().GetLogger<TemplateGame>().Error(
-            "TemplateGame: payload kind {} was already answered; turret "
+        engine.Logging().GetLogger<FpsGame>().Error(
+            "FpsGame: payload kind {} was already answered; turret "
             "requests will not be handled",
             static_cast<unsigned>(kTurretRequestKind));
     }
@@ -298,7 +262,7 @@ void TemplateGame::OnStart(GameStartupContext&)
 
     // A dedicated host has nobody at a keyboard, so it is told how to serve
     // rather than how to play.
-    std::printf("Sencha game template\n");
+    std::printf("Sencha FPS template\n");
     std::printf("  Load a map: +map levels/<name>\n");
     std::printf("  Load a world: +world <name>\n");
     if (GetEngine().Config().Runtime.HasLocalPlayer)
@@ -317,7 +281,7 @@ void TemplateGame::OnStart(GameStartupContext&)
 // identity map is what turns "this thing in front of me" into something both
 // machines agree about, and it refuses to name anything replication did not
 // hand this machine -- so a client cannot invent an object and ask for it.
-ConsoleResult TemplateGame::RequestTurret(bool placeOnly)
+ConsoleResult FpsGame::RequestTurret(bool placeOnly)
 {
     ConsoleResult result;
     Engine& engine = GetEngine();
@@ -337,7 +301,7 @@ ConsoleResult TemplateGame::RequestTurret(bool placeOnly)
     const bool client =
         session != nullptr && session->Role() == NetSessionRole::Client;
 
-    Logger& log = engine.Logging().GetLogger<TemplateGame>();
+    Logger& log = engine.Logging().GetLogger<FpsGame>();
     if (placeOnly)
     {
         if (client)
@@ -354,7 +318,7 @@ ConsoleResult TemplateGame::RequestTurret(bool placeOnly)
     return TakeTurretHere(engine, Session().GameSettings(), log);
 }
 
-void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
+void FpsGame::OnRegisterSystems(SystemRegisterContext& ctx)
 {
     RegisterPhysics(ctx.Schedule);
     // After physics, which owns the shape cache the loaded content's collision
@@ -387,7 +351,6 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     // actions into intent. Declared by the engine, which owns why they exist.
     OrderNetInputAround<FpsSteeringSystem>(ctx.Schedule);
     OrderMovementAfterInput<FpsSteeringSystem>(ctx.Schedule);
-    ctx.Schedule.Register<SpinSystem>();
     // A turret points where its driver looks. After the look integrates, for
     // the same reason the character steers after it: the value it reads is
     // this tick's aim rather than last tick's.
@@ -398,10 +361,10 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     // way its first act each frame is to ask where this player's pawn comes
     // from.
     {
-        Logger& log = GetEngine().Logging().GetLogger<TemplateGame>();
+        Logger& log = GetEngine().Logging().GetLogger<FpsGame>();
         PawnCameraSystem& camera = ctx.Schedule.Register<PawnCameraSystem>();
         camera.Owner = &GetEngine();
-        camera.Log = &GetEngine().Logging().GetLogger<TemplateGame>();
+        camera.Log = &GetEngine().Logging().GetLogger<FpsGame>();
         SessionPlayerSystem& players = ctx.Schedule.Register<SessionPlayerSystem>();
         players.Owner = &GetEngine();
         players.Log = &log;
@@ -416,7 +379,7 @@ void TemplateGame::OnRegisterSystems(SystemRegisterContext& ctx)
     }
 }
 
-void TemplateGame::OnPlatformEvent(PlatformEventContext& ctx)
+void FpsGame::OnPlatformEvent(PlatformEventContext& ctx)
 {
     if (ctx.Handled)
         return;
@@ -437,7 +400,7 @@ void TemplateGame::OnPlatformEvent(PlatformEventContext& ctx)
     }
 }
 
-void TemplateGame::OnShutdown(GameShutdownContext&)
+void FpsGame::OnShutdown(GameShutdownContext&)
 {
     SetRelativeMouseMode(false);
     if (Content.has_value())
@@ -447,19 +410,19 @@ void TemplateGame::OnShutdown(GameShutdownContext&)
 
 // This game's data vocabulary, registered into whichever registries are asking:
 // the engine's content stack at startup, and the data editor's.
-void TemplateGame::OnRegisterDataAssetTypes(DataAssetTypeRegistry& types,
+void FpsGame::OnRegisterDataAssetTypes(DataAssetTypeRegistry& types,
                                             DataSchemaRegistry& schemas)
 {
-    RegisterTemplateDataTypes(types, schemas);
+    RegisterFpsDataTypes(types, schemas);
 }
 
-void TemplateGame::OnUnregisterDataAssetTypes(DataAssetTypeRegistry& types,
+void FpsGame::OnUnregisterDataAssetTypes(DataAssetTypeRegistry& types,
                                               DataSchemaRegistry& schemas)
 {
-    UnregisterTemplateDataTypes(types, schemas);
+    UnregisterFpsDataTypes(types, schemas);
 }
 
-void TemplateGame::SetRelativeMouseMode(bool enabled)
+void FpsGame::SetRelativeMouseMode(bool enabled)
 {
     // No window to capture a pointer into on a headless host.
     PlatformServices* platform = GetEngine().TryPlatform();
@@ -476,7 +439,7 @@ void TemplateGame::SetRelativeMouseMode(bool enabled)
 
 extern "C" SENCHA_GAME_EXPORT Game* SenchaCreateGameModule()
 {
-    static TemplateGame instance;
+    static FpsGame instance;
     return &instance;
 }
 

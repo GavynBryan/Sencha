@@ -19,13 +19,13 @@ struct SystemRegisterContext;
 // The game's data vocabulary. One list, registered into whichever registries
 // are asking: the session's own at startup, and the data editor's through the
 // game module's OnRegisterDataAssetTypes hook.
-void RegisterTemplateDataTypes(DataAssetTypeRegistry& types,
+void RegisterFpsDataTypes(DataAssetTypeRegistry& types,
                                DataSchemaRegistry& schemas);
-void UnregisterTemplateDataTypes(DataAssetTypeRegistry& types,
+void UnregisterFpsDataTypes(DataAssetTypeRegistry& types,
                                  DataSchemaRegistry& schemas);
 
 //=============================================================================
-// SessionContent
+// FpsSessionPolicy
 //
 // This game's own session state: which gameplay features its world carries,
 // what it reads out of the engine's content, and the input context it plays in.
@@ -38,14 +38,14 @@ void UnregisterTemplateDataTypes(DataAssetTypeRegistry& types,
 // The engine and the logger are named collaborators; nothing here reaches back
 // into the game object that holds it.
 //=============================================================================
-class SessionContent
+class FpsSessionPolicy
 {
 public:
-    SessionContent(Engine& engine, Logger& log);
-    ~SessionContent();
+    FpsSessionPolicy(Engine& engine, Logger& log);
+    ~FpsSessionPolicy();
 
-    SessionContent(const SessionContent&) = delete;
-    SessionContent& operator=(const SessionContent&) = delete;
+    FpsSessionPolicy(const FpsSessionPolicy&) = delete;
+    FpsSessionPolicy& operator=(const FpsSessionPolicy&) = delete;
 
     // Registers the gameplay features this game's world carries and binds the
     // controls it plays with.

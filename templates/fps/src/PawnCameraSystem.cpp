@@ -58,11 +58,11 @@ void PawnCameraSystem::FrameUpdate(FrameUpdateContext& ctx)
                     world.AddComponent<CameraExclusion>(Camera, CameraExclusion{ Body });
             }
             if (Log != nullptr)
-                Log->Info("TemplateGame: local player attached to its pawn");
+                Log->Info("FpsGame: local player attached to its pawn");
         }
         else if (subject.IsValid() && Log != nullptr)
         {
-            Log->Warn("TemplateGame: the driven body carries no camera child; "
+            Log->Warn("FpsGame: the driven body carries no camera child; "
                       "nothing is looking through it");
         }
     }

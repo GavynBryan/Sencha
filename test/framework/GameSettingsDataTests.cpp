@@ -5,7 +5,7 @@
 #include <core/json/JsonValue.h>
 #include <core/metadata/DataSchema.h>
 
-#include "GameSettingsData.h"
+#include "FpsSettingsData.h"
 
 #include <filesystem>
 #include <fstream>
@@ -100,7 +100,7 @@ TEST(GameSettingsData, ANonStringSceneIsRejected)
 
 TEST(GameSettingsData, TheShippedSettingsFileCompiles)
 {
-    const std::string text = ReadRepoFile("template/assets/data/game.sdata");
+    const std::string text = ReadRepoFile("templates/fps/assets/data/game.sdata");
     ASSERT_FALSE(text.empty());
     const JsonValue envelope = ParseData(text);
     const JsonValue* type = envelope.Find("type");

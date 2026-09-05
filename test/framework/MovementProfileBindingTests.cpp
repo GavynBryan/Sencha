@@ -157,7 +157,7 @@ namespace
 TEST(MovementProfileBinding, TheTemplatesShippedMovementProfileBinds)
 {
     const std::string document =
-        ReadRepoFile("template/assets/data/player_movement.sdata");
+        ReadRepoFile("templates/fps/assets/data/player_movement.sdata");
     ASSERT_FALSE(document.empty());
 
     DataAssetTypeRegistry types;
