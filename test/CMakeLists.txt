@@ -262,7 +262,7 @@ if(RENDER_GOLDEN_TEST_SOURCES AND SENCHA_ENABLE_VULKAN)
         # The bundled host, not the bare target: `app` discovers its game module
         # as game<ext> beside itself, and only the bundle directory has one.
         SENCHA_GOLDEN_APP="$<TARGET_FILE_DIR:render_host>/app"
-        SENCHA_GOLDEN_CONTENT_ROOT="${CMAKE_SOURCE_DIR}/template"
+        SENCHA_GOLDEN_CONTENT_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/content"
         SENCHA_GOLDEN_REFERENCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/render_golden/references"
         SENCHA_GOLDEN_COOK="$<TARGET_FILE:level_cook_tests>"
         SENCHA_GOLDEN_EDITOR="$<TARGET_FILE:kyusu>")
@@ -349,7 +349,7 @@ if(TARGET runtime_tests AND TARGET app AND TARGET template_game
     set_tests_properties(CookEngineFixtureContent PROPERTIES
         FIXTURES_SETUP ${SENCHA_HOST_MAP_FIXTURE}
         ENVIRONMENT
-            "SENCHA_COOK_LEVEL=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/content/levels/box.sscene;SENCHA_COOK_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/content")
+            "SENCHA_COOK_LEVEL=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/content/assets/levels/box.sscene;SENCHA_COOK_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/content/assets")
     # Tells the cases apart: with the fixture wired a missing scene is a
     # failure, and without it they have no way to get one and skip instead.
     target_compile_definitions(runtime_tests PRIVATE SENCHA_TEST_HOST_MAP_COOKED=1)

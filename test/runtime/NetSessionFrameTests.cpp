@@ -240,7 +240,7 @@ namespace
     // The engine loads for real now, so the scene has to be one a game that
     // registers no components and no vocabulary can actually load -- which the
     // template's own levels, by design, are not.
-    constexpr const char* kFixtureContentRoot = SENCHA_REPO_ROOT "/test/fixtures/content";
+    constexpr const char* kFixtureContentRoot = SENCHA_REPO_ROOT "/test/fixtures/content/assets";
     constexpr const char* kFixtureMap = "levels/box";
 
     // Counts play-zone attaches, which is what a load produces: a reload is

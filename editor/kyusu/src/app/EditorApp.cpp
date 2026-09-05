@@ -23,6 +23,10 @@ void EditorApp::OnConfigure(GameConfigureContext& ctx)
     // a process can hold only one ImGui context over a window, so the engine's
     // default debug overlay must not be created.
     ctx.Config.Console.UiEnabled = false;
+    // The editor mounts its project's content roots itself, through its own
+    // asset stack; the runtime's default mount of `assets` beside the working
+    // directory would be a second stack over the wrong directory.
+    ctx.Config.Runtime.ContentRoots.clear();
     // Each frame the editor re-uploads every brush wireframe/solid/overlay once per
     // viewport (up to 4) into a single frame-scratch slice. The game's 1 MB default
     // overflows on real scenes (dropped draws look like warped/missing geometry), so
