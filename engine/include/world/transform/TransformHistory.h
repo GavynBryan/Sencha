@@ -54,3 +54,11 @@ void RequestTransformHistorySnap(World& world, EntityId entity);
 // pose when there is nothing meaningful to blend from.
 [[nodiscard]] Transform3f ResolvePresentationPose(const WorldTransformHistory& history,
                                                   double alpha);
+
+// The pose `entity` is drawn at this frame: its history blended at `alpha` when
+// it carries one, its WorldTransform otherwise, identity when it has neither.
+// Anything a presentation-rate system places relative to a simulated entity --
+// a following camera, a nameplate -- reads this and not WorldTransform, or it
+// steps at the tick rate while the entity it follows glides.
+[[nodiscard]] Transform3f PresentationPoseOf(const World& world, EntityId entity,
+                                             double alpha);

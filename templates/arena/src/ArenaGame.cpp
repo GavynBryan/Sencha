@@ -18,7 +18,6 @@
 #include <debug/MovementStatePanel.h>
 #endif
 #include <app/GameModule.h>
-#include <camera/CameraRegistration.h>
 #include <components/ActiveCameraService.h>
 #include <controller/ControllerRegistration.h>
 #include <controller/LookIntegrationSystem.h>

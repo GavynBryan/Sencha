@@ -17,6 +17,15 @@
 // A partition that re-enters a domain receives one conservative full sweep;
 // dormant partitions perform no propagation work.
 //
+// In the Presentation domain a child whose parent carries WorldTransformHistory
+// composes from the parent's pose interpolated at `presentationAlpha`, the same
+// pose mesh extraction draws the parent at. That is what keeps a camera or a
+// held object attached to a body drawn where the body is drawn: simulation runs
+// at a fixed rate the display does not share, and a child that inherited the
+// tick pose would step while its parent glides. Such children recompute every
+// presentation sweep, because the blend changes even when nothing moved. The
+// Simulation domain ignores the alpha and composes from tick poses.
+//
 // forceFullInvalidation rebuilds the order every sweep. It exists so a
 // suspected stale-transform bug can be bisected against the scoped
 // invalidation in one step, and so a churn scenario can be run both ways and
@@ -25,7 +34,8 @@ void PropagateTransforms(
     World& world,
     const StoragePartitionSet& partitions,
     TransformPropagationDomain domain,
-    bool forceFullInvalidation = false);
+    bool forceFullInvalidation = false,
+    double presentationAlpha = 1.0);
 
 // Test/tool convenience for an isolated World where every live partition is
 // intentionally active. Runtime frame code must pass the explicit phase-domain

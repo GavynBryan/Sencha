@@ -203,3 +203,29 @@ TEST(RuntimeConfig, StreamingPreloadFieldsParseAndValidate)
     EXPECT_FALSE(Parse(R"({"streaming_radius": -1.0})", &error).has_value());
     EXPECT_NE(error.Message.find("streamingRadius"), std::string::npos);
 }
+
+TEST(RuntimeConfig, ReadsContentRootsInEitherSpelling)
+{
+    auto camel = Parse(R"({"contentRoots": ["assets", "../shared"]})");
+    ASSERT_TRUE(camel.has_value());
+    ASSERT_EQ(camel->ContentRoots.size(), 2u);
+    EXPECT_EQ(camel->ContentRoots[0], "assets");
+    EXPECT_EQ(camel->ContentRoots[1], "../shared");
+
+    auto snake = Parse(R"({"content_roots": ["content"]})");
+    ASSERT_TRUE(snake.has_value());
+    ASSERT_EQ(snake->ContentRoots.size(), 1u);
+    EXPECT_EQ(snake->ContentRoots[0], "content");
+
+    // Absent keeps the default, which is the one root beside the working directory.
+    auto absent = Parse("{}");
+    ASSERT_TRUE(absent.has_value());
+    ASSERT_EQ(absent->ContentRoots.size(), 1u);
+    EXPECT_EQ(absent->ContentRoots[0], "assets");
+}
+
+TEST(RuntimeConfig, RejectsContentRootsThatAreNotStrings)
+{
+    EXPECT_FALSE(Parse(R"({"contentRoots": "assets"})").has_value());
+    EXPECT_FALSE(Parse(R"({"contentRoots": ["assets", 3]})").has_value());
+}

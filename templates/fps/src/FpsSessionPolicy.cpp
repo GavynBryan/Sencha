@@ -7,7 +7,6 @@
 
 #include <app/Engine.h>
 #include <app/GameContexts.h>
-#include <camera/CameraRegistration.h>
 #include <components/ActiveCameraService.h>
 #include <controller/ControllerRegistration.h>
 #include <controller/LookOrientation.h>
@@ -77,7 +76,6 @@ void FpsSessionPolicy::Open()
     World& world = engine.World().Entities();
     RegisterPhysicsComponents(world);
     RegisterMovement(world);
-    RegisterCameraComponents(world);
     RegisterControllerComponents(world);
 
     SetupInputMapping();

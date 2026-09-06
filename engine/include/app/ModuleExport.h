@@ -80,5 +80,10 @@
 // the authored CameraSeat (CSET) are gone; CameraExclusion is the one runtime
 // camera component, read by extraction, and FirstAuthoredCamera is the one
 // query. NetZoneStreaming::Update no longer takes a local control subject; a game
-// sets the partition's primary focus itself.
-#define SENCHA_GAME_ABI_VERSION 18u
+// sets the partition's primary focus itself. v19: RegisterCameraComponents(World&)
+// is gone -- the engine schema gives every world storage for its components, so
+// the call registered nothing. Render extraction and presentation-domain
+// transform propagation take the frame's interpolation alpha: a camera with pose
+// history, or one parented to an entity with it, is drawn from the blend the
+// meshes are.
+#define SENCHA_GAME_ABI_VERSION 19u

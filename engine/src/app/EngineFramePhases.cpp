@@ -981,7 +981,8 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
             entities,
             zones.Visible,
             TransformPropagationDomain::Presentation,
-            config.Runtime.TransformForceFullPropagation);
+            config.Runtime.TransformForceFullPropagation,
+            ctx.Runtime->GetCurrentFrame().Presentation.Alpha);
 
         RenderExtractContext extract{
             .Config = config,

@@ -225,7 +225,8 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
     const EntityId cameraEntity = activeCamera->GetActive();
     if (!world.IsAlive(cameraEntity)
         || !ctx.Partitions.Contains(world.GetEntityPartition(cameraEntity))
-        || !CameraRenderDataSystem::Build(*activeCamera, world, extent, Camera))
+        || !CameraRenderDataSystem::Build(*activeCamera, world, extent, Camera,
+                                          ctx.Presentation.Alpha))
     {
         return;
     }

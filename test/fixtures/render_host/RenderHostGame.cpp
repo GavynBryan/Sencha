@@ -4,7 +4,6 @@
 #include <app/Game.h>
 #include <app/GameModule.h>
 #include <world/ComponentRegistrar.h>
-#include <camera/CameraRegistration.h>
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
 #include <core/console/ConsoleRegistry.h>
@@ -90,7 +89,6 @@ public:
     {
         Engine& engine = GetEngine();
         World& world = engine.World().Entities();
-        RegisterCameraComponents(world);
 
         Transform3f transform;
         transform.Position = kCameraPosition;

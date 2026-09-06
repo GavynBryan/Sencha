@@ -13,6 +13,7 @@
 #include <world/RuntimeWorld.h>
 #include <world/transform/DerivedTransform.h>
 #include <world/transform/TransformComponents.h>
+#include <world/transform/TransformHistory.h>
 
 #include <algorithm>
 
@@ -56,12 +57,14 @@ void OrbitCameraSystem::FrameUpdate(FrameUpdateContext& ctx)
 
     if (!Body.IsValid() || !world.IsAlive(Body) || !Camera.IsValid() || !world.IsAlive(Camera))
         return;
-    const WorldTransform* target = world.TryGet<WorldTransform>(Body);
     LocalTransform* transform = world.TryGet<LocalTransform>(Camera);
-    if (target == nullptr || transform == nullptr)
+    if (transform == nullptr)
         return;
 
-    const Vec3d pivot = target->Value.Position + Vec3d{ 0.0f, orbit->PivotHeight, 0.0f };
+    // Where the body is drawn this frame, not where it last ticked: a camera
+    // that followed the tick pose would step while the body it follows glides.
+    const Transform3f target = PresentationPoseOf(world, Body, ctx.Presentation.Alpha);
+    const Vec3d pivot = target.Position + Vec3d{ 0.0f, orbit->PivotHeight, 0.0f };
     const Quatf rotation = Quatf::FromAxisAngle(Vec3d::Up(), orbit->Yaw)
                          * Quatf::FromAxisAngle(Vec3d::Right(), orbit->Pitch);
     transform->Value.Position =

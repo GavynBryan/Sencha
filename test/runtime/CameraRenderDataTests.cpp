@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <camera/CameraExclusion.h>
+#include <world/transform/TransformHistory.h>
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
 #include <ecs/World.h>
@@ -19,6 +20,7 @@ namespace
             WorldState.RegisterComponent<CameraExclusion>();
             WorldState.RegisterComponent<LocalTransform>();
             WorldState.RegisterComponent<WorldTransform>();
+            WorldState.RegisterComponent<WorldTransformHistory>();
 
             Target = WorldState.CreateEntity();
             WorldState.AddComponent<WorldTransform>(Target, {});
@@ -138,4 +140,22 @@ TEST(CameraRenderDataExclusion, ADeadActiveCameraBuildsNothing)
     data.ExcludedEntity = EntityId{ 3, 1 };
     EXPECT_FALSE(harness.Build(data));
     EXPECT_EQ(data.ExcludedEntity, (EntityId{ 3, 1 })) << "out must be untouched";
+}
+
+// A camera that carries pose history is drawn from the same blend every mesh
+// is. A camera drawn from its tick pose while the world around it is drawn
+// between ticks steps against that world every frame.
+TEST(CameraRenderDataExclusion, ACameraWithHistoryIsDrawnFromTheBlend)
+{
+    CameraDataHarness harness;
+    harness.WorldState.AddComponent<WorldTransformHistory>(harness.Camera, WorldTransformHistory{
+        .Previous = Transform3f(Vec3d(0.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()),
+        .Current = Transform3f(Vec3d(10.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()),
+        .Snap = false });
+
+    CameraRenderData data;
+    ASSERT_TRUE(CameraRenderDataSystem::Build(
+        harness.WorldState.GetResource<ActiveCameraService>(), harness.WorldState,
+        RenderExtent{ 640, 480 }, data, 0.5));
+    EXPECT_EQ(data.Position, Vec3d(5.0f, 0.0f, 0.0f));
 }

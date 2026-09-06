@@ -17,7 +17,6 @@
 #include <debug/MovementStatePanel.h>
 #endif
 #include <app/GameModule.h>
-#include <camera/CameraRegistration.h>
 #include <components/ActiveCameraService.h>
 #include <ecs/Query.h>
 #include <graphics/vulkan/GraphicsServices.h>

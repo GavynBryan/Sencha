@@ -60,6 +60,20 @@ actions"). It owns which entity is active and clears it when its subject goes
 away. It reads whatever simulation state it presents -- an orientation, a
 position -- and writes the camera's transform; it does not write the simulation.
 
-A parented camera inherits its parent's tick pose through transform
-propagation, which is exact but steps at the tick rate; a camera the game places
-from an interpolated pose is smoother and is the game's to write.
+Smoothness is the engine's job, not the camera system's. Simulation runs at a
+fixed rate the display does not share, and meshes are drawn between ticks from
+`WorldTransformHistory`; a camera drawn from a tick pose would step against
+them every frame. Three mechanisms make that hard to do by accident:
+
+- a child of an entity with history is composed, in the presentation domain,
+  from the parent's *interpolated* pose (`PropagateTransforms`), so a parented
+  camera is drawn where its body is drawn and keeps its frame-fresh local pitch;
+- a camera carrying its own history is extracted from that history at the
+  frame's alpha (`CameraRenderDataSystem::Build`);
+- a system placing a camera relative to an entity reads
+  `PresentationPoseOf(world, entity, ctx.Presentation.Alpha)`, never that
+  entity's `WorldTransform`. The orbit camera does.
+
+The way to reintroduce the jitter is to read a followed entity's
+`WorldTransform` in `FrameUpdate`; `PresentationPoseOf` exists so there is no
+reason to.

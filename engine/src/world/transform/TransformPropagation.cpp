@@ -1,3 +1,4 @@
+#include <world/transform/TransformHistory.h>
 #include <world/transform/TransformPropagation.h>
 
 #include <ecs/Query.h>
@@ -72,7 +73,8 @@ public:
     void Propagate(
         const StoragePartitionSet& partitions,
         TransformPropagationDomain domain,
-        bool forceFullInvalidation);
+        bool forceFullInvalidation,
+        double presentationAlpha);
 
 private:
     World& Target;
@@ -86,7 +88,9 @@ private:
         const StoragePartitionSet& partitions,
         const PropagationSweepState& sweep,
         bool fullSweep,
-        uint32_t frame);
+        uint32_t frame,
+        TransformPropagationDomain domain,
+        double presentationAlpha);
 };
 
 
@@ -243,12 +247,16 @@ void TransformPropagationSystem::ResolveAddresses(PropagationOrderCache& cache)
     std::vector<PropagationEntry>& order = cache.GetOrder();
     const ComponentId localId = Target.GetComponentId<LocalTransform>();
     const ComponentId worldId = Target.GetComponentId<WorldTransform>();
+    const bool historyRegistered = Target.IsRegistered<WorldTransformHistory>();
+    const ComponentId historyId =
+        historyRegistered ? Target.GetComponentId<WorldTransformHistory>() : ComponentId{};
 
     for (PropagationEntry& entry : order)
     {
         entry.LocalPtr = nullptr;
         entry.WorldPtr = nullptr;
         entry.ParentWorldPtr = nullptr;
+        entry.ParentHistoryPtr = nullptr;
         entry.ChunkPtr = nullptr;
         entry.ParentChunkPtr = nullptr;
         entry.LocalCol = UINT32_MAX;
@@ -272,14 +280,6 @@ void TransformPropagationSystem::ResolveAddresses(PropagationOrderCache& cache)
             }
         }
 
-        // Parents precede their children in the order, so an in-order parent's
-        // address is already resolved.
-        if (entry.ParentOrderIndex != UINT32_MAX)
-        {
-            entry.ParentWorldPtr = order[entry.ParentOrderIndex].WorldPtr;
-            continue;
-        }
-
         if (!entry.Parent.IsValid())
             continue;
 
@@ -287,6 +287,27 @@ void TransformPropagationSystem::ResolveAddresses(PropagationOrderCache& cache)
             Target.LocateEntity(entry.Parent);
         if (parentLoc.ChunkPtr == nullptr)
             continue;
+
+        // The parent's history, whether or not the parent is in the order: it
+        // is the pose the parent is drawn at, and the presentation sweep
+        // composes children from it.
+        if (historyRegistered)
+        {
+            const uint32_t historyCol = parentLoc.ChunkPtr->FindColumn(historyId);
+            if (historyCol != UINT32_MAX)
+            {
+                entry.ParentHistoryPtr = reinterpret_cast<const WorldTransformHistory*>(
+                    parentLoc.ChunkPtr->ColumnData(historyCol)) + parentLoc.Row;
+            }
+        }
+
+        // Parents precede their children in the order, so an in-order parent's
+        // address is already resolved.
+        if (entry.ParentOrderIndex != UINT32_MAX)
+        {
+            entry.ParentWorldPtr = order[entry.ParentOrderIndex].WorldPtr;
+            continue;
+        }
 
         const uint32_t parentWorldCol = parentLoc.ChunkPtr->FindColumn(worldId);
         if (parentWorldCol == UINT32_MAX)
@@ -306,8 +327,11 @@ void TransformPropagationSystem::SweepOrder(
     const StoragePartitionSet& partitions,
     const PropagationSweepState& sweep,
     bool fullSweep,
-    uint32_t frame)
+    uint32_t frame,
+    TransformPropagationDomain domain,
+    double presentationAlpha)
 {
+    const bool presentation = domain == TransformPropagationDomain::Presentation;
     std::vector<PropagationEntry>& order = cache.GetOrder();
     if (order.empty())
         return;
@@ -341,13 +365,21 @@ void TransformPropagationSystem::SweepOrder(
                              entry.ParentWorldCol) >= lastSweep;
         const bool localDirty =
             entry.ChunkPtr->ColumnLastWrittenFrame(entry.LocalCol) >= lastSweep;
+        // A blend changes every frame even when nothing moved.
+        const bool interpolated = presentation && entry.ParentHistoryPtr != nullptr;
 
-        if (!fullSweep && !resumed && !parentDirty && !localDirty)
+        if (!fullSweep && !resumed && !parentDirty && !localDirty && !interpolated)
             continue;
 
         dirty[index] = 1;
 
-        if (entry.ParentWorldPtr != nullptr)
+        if (interpolated)
+        {
+            entry.WorldPtr->Value =
+                ResolvePresentationPose(*entry.ParentHistoryPtr, presentationAlpha)
+                * entry.LocalPtr->Value;
+        }
+        else if (entry.ParentWorldPtr != nullptr)
         {
             entry.WorldPtr->Value =
                 entry.ParentWorldPtr->Value * entry.LocalPtr->Value;
@@ -364,7 +396,8 @@ void TransformPropagationSystem::SweepOrder(
 void TransformPropagationSystem::Propagate(
     const StoragePartitionSet& partitions,
     TransformPropagationDomain domain,
-    bool forceFullInvalidation)
+    bool forceFullInvalidation,
+    double presentationAlpha)
 {
     if (!Target.IsRegistered<LocalTransform>()
         || !Target.IsRegistered<WorldTransform>())
@@ -445,7 +478,7 @@ void TransformPropagationSystem::Propagate(
             sweep.LastSweepFrame);
     }
 
-    SweepOrder(cache, partitions, sweep, orderFullSweep, frame);
+    SweepOrder(cache, partitions, sweep, orderFullSweep, frame, domain, presentationAlpha);
 
     sweep.PreviousPartitions = partitions;
     sweep.LastSweepFrame = frame;
@@ -458,10 +491,11 @@ void PropagateTransforms(
     World& world,
     const StoragePartitionSet& partitions,
     TransformPropagationDomain domain,
-    bool forceFullInvalidation)
+    bool forceFullInvalidation,
+    double presentationAlpha)
 {
     TransformPropagationSystem propagation(world);
-    propagation.Propagate(partitions, domain, forceFullInvalidation);
+    propagation.Propagate(partitions, domain, forceFullInvalidation, presentationAlpha);
 }
 
 void PropagateTransforms(World& world)
