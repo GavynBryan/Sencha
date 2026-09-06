@@ -41,9 +41,9 @@ struct SmapContents;
 // zone state memory. Entities live in their requested partition and follow
 // its ordinary teardown.
 //
-// Owned by Engine; the game wires its asset stack once at startup
-// (ConnectAssets), because RuntimeAssets is game-owned. Requests before the
-// wiring fail.
+// Owned by Engine, which connects it to the process's content stack before a
+// game starts and disconnects it after the game stops. Requests outside that
+// span fail with a status.
 //=============================================================================
 
 using SceneSpawnId = StrongId<struct SceneSpawnIdTag, std::uint64_t>;
@@ -88,6 +88,10 @@ public:
 
     // Queues destruction of a live spawn's entities for the next drain.
     // False when the id is unknown or the spawn is not live.
+    // Ends a spawn whatever state it is in: a live group is destroyed at the
+    // next pump; a request still staging or waiting is withdrawn and its
+    // entities are never published. False only for an id that is unknown or
+    // already ending, so whoever started a request can always end it.
     bool RequestDespawn(SceneSpawnId id);
 
     [[nodiscard]] SceneSpawnStatus Status(SceneSpawnId id) const;
@@ -105,6 +109,7 @@ private:
     struct Request;
 
     void Instantiate(Request& request);
+    void Discard(Request& request);
     [[nodiscard]] Request* FindRequest(SceneSpawnId id) const;
 
     RuntimeWorld& WorldState;

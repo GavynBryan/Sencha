@@ -39,7 +39,10 @@ namespace
     }
 }
 
-TEST(InputActionSources, AnEntityWithNoReferenceReadsTheLocalSource)
+// A body nobody is driving reads nothing. The keyboard at this machine is a
+// source like any other and is assigned like any other; a fallback to it is
+// how a released body ends up walking under whoever is sitting here.
+TEST(InputActionSources, AnEntityWithNoReferenceReadsNothing)
 {
     World world = MakeWorld();
     InputActionState& local = world.AddResource<InputActionState>();
@@ -49,8 +52,45 @@ TEST(InputActionSources, AnEntityWithNoReferenceReadsTheLocalSource)
     const EntityId pawn = world.CreateEntity();
 
     const InputActionSources sources(world);
+    EXPECT_FLOAT_EQ(sources.TickFor(pawn).Axis2(kMove).Y, 0.0f);
+    EXPECT_FALSE(sources.TickFor(pawn).Fired(kJump));
+}
+
+TEST(InputActionSources, AnEntityReferencingTheLocalSourceReadsIt)
+{
+    World world = MakeWorld();
+    InputActionState& local = world.AddResource<InputActionState>();
+    local.Configure(kActionCount);
+    Steer(local, 1.0f, true);
+
+    const EntityId pawn = world.CreateEntity();
+    world.AddComponent<InputActionSourceRef>(
+        pawn, InputActionSourceRef{ .Source = kLocalInputActionSource });
+
+    const InputActionSources sources(world);
     EXPECT_FLOAT_EQ(sources.TickFor(pawn).Axis2(kMove).Y, 1.0f);
     EXPECT_TRUE(sources.TickFor(pawn).Fired(kJump));
+}
+
+// The defect this contract closes: a body released from a remote source used
+// to fall back to the local one, so the player at the host started driving the
+// pawn a peer had just stepped out of.
+TEST(InputActionSources, AReleasedReferenceLeavesTheBodyWithNoInput)
+{
+    World world = MakeWorld();
+    InputActionState& local = world.AddResource<InputActionState>();
+    local.Configure(kActionCount);
+    Steer(local, 1.0f, true);
+    InputActionSourceTable& table = world.AddResource<InputActionSourceTable>();
+    Steer(table.Open(17, kActionCount), -1.0f, false);
+
+    const EntityId pawn = world.CreateEntity();
+    world.AddComponent<InputActionSourceRef>(pawn, InputActionSourceRef{ .Source = 17 });
+    world.RemoveComponent<InputActionSourceRef>(pawn);
+
+    const InputActionSources sources(world);
+    EXPECT_FLOAT_EQ(sources.TickFor(pawn).Axis2(kMove).Y, 0.0f)
+        << "the released body is being driven from this keyboard";
 }
 
 TEST(InputActionSources, AReferencedEntityReadsItsOwnSourceAndNotTheLocalOne)
@@ -65,6 +105,8 @@ TEST(InputActionSources, AReferencedEntityReadsItsOwnSourceAndNotTheLocalOne)
 
     const EntityId mine = world.CreateEntity();
     const EntityId theirs = world.CreateEntity();
+    world.AddComponent<InputActionSourceRef>(
+        mine, InputActionSourceRef{ .Source = kLocalInputActionSource });
     world.AddComponent<InputActionSourceRef>(
         theirs, InputActionSourceRef{ .Source = 7 });
 
@@ -104,6 +146,8 @@ TEST(InputActionSources, ResolveWorksBeforeAnythingHasOpenedATable)
     Steer(local, 0.5f, false);
 
     const EntityId pawn = world.CreateEntity();
+    world.AddComponent<InputActionSourceRef>(
+        pawn, InputActionSourceRef{ .Source = kLocalInputActionSource });
     const InputActionSources sources(world);
     EXPECT_FLOAT_EQ(sources.TickFor(pawn).Axis2(kMove).Y, 0.5f);
 }

@@ -290,6 +290,15 @@ public:
     // a status, not a crash.
     [[nodiscard]] SceneSpawnService& Spawns();
 
+    // Whether the game wants the pointer captured: hidden and reporting
+    // relative motion, the way a look control reads it. A request, not a
+    // command: the platform owner applies it only while the window is focused
+    // and no overlay is taking input, and re-applies it when those return, so
+    // a game never has to know that the console opened on top of it. A
+    // headless process records the request and does nothing.
+    void SetPointerCaptured(bool captured);
+    [[nodiscard]] bool IsPointerCaptureRequested() const { return PointerCaptureRequested; }
+
     // This process's mounted content. Live from just before Game::OnStart until
     // just after Game::OnShutdown, which is the span a game may hold references
     // into it; every lease a game takes must be released by the end of
@@ -360,6 +369,8 @@ private:
     // alone and steps the same frame the windowed host does, minus the phases
     // that would have had nothing to draw into.
     void RegisterFramePhases(Game& game);
+    // Reconciles the capture request with focus and overlay state.
+    void ApplyPointerCapture();
     void RegisterHostCommandPhase();
     static void LogConsoleResult(Logger& log, const ConsoleResult& result);
     void RegisterSimulationFramePhases();
@@ -443,6 +454,9 @@ private:
     // so destruction alone would give them back in the right order. Run states
     // that order explicitly anyway: OnShutdown, Disconnect, then reset.
     std::optional<RuntimeContent> ContentState;
+    bool PointerCaptureRequested = false;
+    bool PointerCaptureApplied = false;
+    bool PrimaryWindowFocused = true;
     // After the content it loads through, so it is destroyed before it.
     std::optional<LoadedLevel> LevelState;
     RuntimeFrameLoop RuntimeLoop;

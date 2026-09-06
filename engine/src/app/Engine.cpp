@@ -48,6 +48,8 @@
 #include <platform/SdlWindow.h>
 #include <platform/SdlWindowService.h>
 
+#include <SDL3/SDL.h>
+
 #include <cassert>
 #include <cstdio>
 #include <string>
@@ -418,6 +420,33 @@ const LoadedLevel& Engine::Level() const
     assert(LevelState.has_value()
            && "Engine::Level: valid from just before OnStart to just after OnShutdown");
     return *LevelState;
+}
+
+void Engine::SetPointerCaptured(bool captured)
+{
+    PointerCaptureRequested = captured;
+    ApplyPointerCapture();
+}
+
+void Engine::ApplyPointerCapture()
+{
+    bool overlayCapturing = false;
+#ifdef SENCHA_ENABLE_DEBUG_UI
+    overlayCapturing = DebugOverlayFeature != nullptr && DebugOverlayFeature->IsCapturingInput();
+#endif
+    const bool desired = PointerCaptureRequested && PrimaryWindowFocused && !overlayCapturing;
+    if (desired == PointerCaptureApplied)
+        return;
+
+    // No window to capture a pointer into on a headless host; the request is
+    // still recorded so a query answers what the game asked for.
+    if (PlatformState == nullptr)
+        return;
+    SdlWindow* window = PlatformState->Windows.GetPrimaryWindow();
+    if (window == nullptr || window->GetHandle() == nullptr)
+        return;
+    SDL_SetWindowRelativeMouseMode(window->GetHandle(), desired);
+    PointerCaptureApplied = desired;
 }
 
 RuntimeContent& Engine::Content()

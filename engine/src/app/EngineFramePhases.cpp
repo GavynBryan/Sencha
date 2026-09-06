@@ -903,7 +903,15 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
                 ctx.Runtime->NotifyMinimized();
             else if (event.type == SDL_EVENT_WINDOW_RESTORED)
                 ctx.Runtime->NotifyRestored(windows.GetExtent(windowId));
+            else if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
+                engine.PrimaryWindowFocused = false;
+            else if (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED)
+                engine.PrimaryWindowFocused = true;
         }
+
+        // After the events, so a focus change or an overlay opening this frame
+        // releases the pointer this frame rather than after the game notices.
+        engine.ApplyPointerCapture();
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
         // A press that began before the console opened would otherwise stay

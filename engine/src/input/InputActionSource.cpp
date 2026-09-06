@@ -58,6 +58,11 @@ InputActionView InputActionSources::TickFor(EntityId entity) const
     // Probed per entity rather than read off the chunk, because most entities
     // carry no reference at all and the ones that do are counted in players.
     // Work here is proportional to what a pass already decided to steer.
+    //
+    // No reference is no input. The keyboard at this machine is a source like
+    // any other and is assigned like any other; a body nobody is driving must
+    // not fall back to it, or releasing a body hands it to whoever is sitting
+    // here.
     if (Entities->IsRegistered<InputActionSourceRef>())
     {
         if (const InputActionSourceRef* ref =
@@ -66,5 +71,5 @@ InputActionView InputActionSources::TickFor(EntityId entity) const
             return Tick(ref->Source);
         }
     }
-    return Tick(kLocalInputActionSource);
+    return InputActionView{};
 }

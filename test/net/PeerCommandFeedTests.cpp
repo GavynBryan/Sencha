@@ -126,6 +126,8 @@ TEST(PeerCommandFeed, ARemotePlayerCanAskForWhatTheLocalPlayerCan)
     World world = MakeWorld();
     const EntityId theirs = SpawnPawnFor(world, kAlice);
     const EntityId mine = world.CreateEntity();
+    world.AddComponent<InputActionSourceRef>(
+        mine, InputActionSourceRef{ .Source = kLocalInputActionSource });
 
     // The local player holds forward and does not jump.
     InputActionState& local = world.GetResource<InputActionState>();

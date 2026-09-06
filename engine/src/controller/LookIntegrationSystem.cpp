@@ -3,6 +3,7 @@
 #include <controller/LookOrientation.h>
 #include <ecs/Query.h>
 #include <input/InputActionState.h>
+#include <input/InputActionTravel.h>
 
 namespace
 {
@@ -29,11 +30,9 @@ bool ReadLookInput(const World& world,
     if (binding == nullptr)
         return false;
 
-    // The published value mixes both kinds; the sampled share is published
-    // beside it. The difference is the displacement.
-    const Vec2d value = actions.Axis2(binding->Look);
-    out.Rate = sampled.Axis2(binding->Look);
-    out.Displacement = Vec2d(value.X - out.Rate.X, value.Y - out.Rate.Y);
+    const InputAxis2Travel travel = SplitAxis2(actions, sampled, binding->Look);
+    out.Displacement = travel.Displacement;
+    out.Rate = travel.Rate;
     return true;
 }
 

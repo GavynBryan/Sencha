@@ -296,3 +296,27 @@ TEST(SceneSpawnService, RefusalsAreStatusesNotCrashes)
     EXPECT_EQ(h.Service.Status(SceneSpawnId{ 999 }), SceneSpawnStatus::Unknown);
     EXPECT_FALSE(h.Service.RequestDespawn(SceneSpawnId{ 999 }));
 }
+
+// Whoever started a request can always end it, including before anything
+// exists. A withdrawn request finishes staging and is then discarded rather
+// than published, so a body requested for a participant who left never
+// arrives to stand around with no owner.
+TEST(SceneSpawnService, APendingRequestCanBeWithdrawnAndIsNeverPublished)
+{
+    SpawnHarness h;
+    TempSmapScene scene(h.Registry, h.Serializers, MakeSpawnContents(), "lamp");
+
+    const SceneSpawnId id = h.Service.RequestSpawn(scene.Path, Transform3f::Identity());
+    ASSERT_EQ(h.Service.Status(id), SceneSpawnStatus::Pending);
+
+    EXPECT_TRUE(h.Service.RequestDespawn(id)) << "a pending request refused to end";
+    EXPECT_FALSE(h.Service.RequestDespawn(id)) << "ending it twice is not a second end";
+
+    h.Turn();
+    h.Turn();
+
+    EXPECT_EQ(h.Service.Status(id), SceneSpawnStatus::Despawned);
+    EXPECT_TRUE(h.Service.Entities(id).empty());
+    EXPECT_TRUE(h.World.Entities().GetAliveEntities().empty())
+        << "a withdrawn spawn published its group anyway";
+}

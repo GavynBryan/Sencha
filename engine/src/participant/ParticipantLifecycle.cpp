@@ -29,14 +29,9 @@ namespace
         if (!world.IsRegistered<InputActionSourceRef>())
             return;
 
-        // Source zero is represented by absence. Keeping a zero-valued
-        // reference is redundant and defeats the input layer's sparse shape.
-        if (source == kLocalInputActionSource)
-        {
-            ReleaseInputReference(world, subject);
-            return;
-        }
-
+        // The local source is assigned like any other. A body with no
+        // reference reads nothing, so releasing one cannot leave it on this
+        // machine's keyboard by default -- which is what a fallback did.
         if (InputActionSourceRef* ref = world.TryGet<InputActionSourceRef>(subject))
             ref->Source = source;
         else
