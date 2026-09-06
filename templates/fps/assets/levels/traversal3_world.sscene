@@ -5,26 +5,29 @@
   },
   entities: [
     {
-      id: "0a82d3d8720869b4",
+      id: "601c3035e784ffb2",
       components: {
         Transform: {
           local: {
-            position: [8, 3, 0],
+            position: [8, 1.5, 0],
             rotation: [0, 0.7071067690849304, 0, 0.7071067690849304],
             scale: [1, 1, 1],
           },
         },
         "World Dock": {
-          id: "a1384831e0e406c3",
-          zone_a: "ff1c3501bbc3e970",
-          zone_b: "00dc63f8e9f7969a",
-          half_extents: [8, 3],
+          id: "8187860d790e23c6",
+          zone_a: "9c76e74ceb9abd59",
+          zone_b: "429b0e6664e66213",
+          half_extents: [3, 1.5],
           directions: 3,
+        },
+        name: {
+          value: "Entity",
         },
       },
     },
     {
-      id: "0bf8a4bd06e8c492",
+      id: "0292d314b6af4b65",
       components: {
         Transform: {
           local: {
@@ -34,11 +37,14 @@
           },
         },
         "World Dock": {
-          id: "2c448213f92a0a19",
-          zone_a: "00dc63f8e9f7969a",
-          zone_b: "cd4723e01c9d299c",
+          id: "59ad2274d74bf4c0",
+          zone_a: "429b0e6664e66213",
+          zone_b: "1ba7c9d40fec52ec",
           half_extents: [3, 1.5],
           directions: 3,
+        },
+        name: {
+          value: "Entity 1",
         },
       },
     },
