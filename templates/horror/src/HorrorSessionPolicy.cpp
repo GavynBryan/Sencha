@@ -33,8 +33,6 @@
 namespace
 {
 constexpr std::string_view kAuthoredRoot = "assets";
-constexpr std::string_view kInputActionSetPath =
-    "asset://data/input_actions.sdata";
 constexpr std::string_view kInputProfilePath =
     "asset://data/input_default.sdata";
 constexpr std::string_view kGameSettingsPath = "asset://data/game.sdata";
@@ -98,9 +96,7 @@ void HorrorSessionPolicy::Close()
     // holds: the context lease and every data-asset handle go here, while their
     // owners still exist. The game object is a module-static whose destructor
     // runs at dlclose, long after the world that owns the context set.
-    GameplayInput.Reset();
-    InputActionSetAsset.Reset();
-    InputProfileAsset.Reset();
+    Input.Reset();
     GameSettingsAsset.Reset();
 }
 
@@ -163,36 +159,15 @@ const CompiledHorrorSettings* HorrorSessionPolicy::GameSettings()
 void HorrorSessionPolicy::SetupInputMapping()
 {
     World& world = Host.World().Entities();
-
-    InputActionSetAsset = AcquireDataAsset(kInputActionSetPath);
-    InputProfileAsset = AcquireDataAsset(kInputProfilePath);
-    if (!InputProfileAsset.IsValid())
+    Input = BindInputProfile(world, Assets(), kInputProfilePath, "gameplay", Log);
+    if (!Input.Ready())
     {
-        Log.Error("HorrorGame: no input profile; the game has no controls");
+        Log.Error("HorrorGame: no controls; the game cannot be played");
         return;
     }
 
-    const InputProfileHandle profile{ InputProfileAsset.GetToken() };
-    RegisterInputMapping(world, Assets().DataAssets, profile);
-
-    // Names resolve to ids once, here. An id outlives a reload of the action
-    // set, so every system downstream indexes by id from now on; the resolve
-    // system reports whatever failed to bind, including the bindings that were
-    // dropped while the rest of the profile bound fine.
-    InputBindingCache& bindings = world.GetResource<InputBindingCache>();
-    const InputActionRegistry* actions = bindings.GetActions(profile);
-    if (actions == nullptr)
-    {
-        Log.Error("HorrorGame: input profile did not bind: {}",
-                  DescribeBindErrors(bindings.Status(profile)));
-        return;
-    }
-
-    HorrorInputActions& ids = world.HasResource<HorrorInputActions>()
+    HorrorInputActions& actions = world.HasResource<HorrorInputActions>()
         ? world.GetResource<HorrorInputActions>()
         : world.AddResource<HorrorInputActions>();
-    ids.Move = actions->Find("move");
-
-
-    GameplayInput = world.GetResource<InputContextSet>().Activate("gameplay");
+    actions.Move = Input.Require("move", Log);
 }

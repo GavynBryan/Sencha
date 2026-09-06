@@ -25,10 +25,9 @@ public:
     void OnShutdown(GameShutdownContext& ctx) override;
 
 private:
-    void SetRelativeMouseMode(bool enabled);
 
     // Constructed on the first OnStart, which is where the engine and its
     // logger exist; the game object itself is a module-static.
-    std::optional<FpsSessionPolicy> Content;
+    std::optional<FpsSessionPolicy> SessionState;
     [[nodiscard]] FpsSessionPolicy& Session();
 };

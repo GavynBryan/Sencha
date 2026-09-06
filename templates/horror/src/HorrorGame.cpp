@@ -33,8 +33,6 @@
 #include <physics/CharacterMoverPool.h>
 #include <physics/PhysicsRegistration.h>
 #include <physics/ZoneCollisionLoader.h>
-#include <platform/PlatformServices.h>
-#include <platform/SdlWindow.h>
 #include <runtime/spawn/SceneSpawnService.h>
 #include <world/RuntimeWorld.h>
 #include <world/transform/DerivedTransform.h>
@@ -61,15 +59,15 @@
 
 HorrorSessionPolicy& HorrorGame::Session()
 {
-    assert(Content.has_value() && "OnStart composes the session before anything asks");
-    return *Content;
+    assert(SessionState.has_value() && "OnStart composes the session before anything asks");
+    return *SessionState;
 }
 
 void HorrorGame::OnStart(GameStartupContext&)
 {
     Engine& engine = GetEngine();
-    Content.emplace(engine, engine.Logging().GetLogger<HorrorGame>());
-    Content->Open();
+    SessionState.emplace(engine, engine.Logging().GetLogger<HorrorGame>());
+    SessionState->Open();
 
     // What a participant is in this game, and where its body comes from. The
     // engine runs the lifecycle -- admit, compose, ask for a body, bind it,
@@ -81,7 +79,11 @@ void HorrorGame::OnStart(GameStartupContext&)
         // Nowhere to put a body until content has loaded. Returning none is an
         // ordinary answer, and the engine does not ask again on its own -- the
         // map load asks, once it has somewhere to put one.
-        if (world.TryGetResource<PlayContentPartition>() == nullptr)
+        // Content that has been and gone leaves the resource behind with no
+        // partition in it; what proves there is somewhere for a body is the
+        // value, not the resource.
+        const PlayContentPartition* content = world.TryGetResource<PlayContentPartition>();
+        if (content == nullptr || !content->Value.has_value())
             return EntityId{};
 
         Logger& log = GetEngine().Logging().GetLogger<HorrorGame>();
@@ -266,10 +268,10 @@ void HorrorGame::OnPlatformEvent(PlatformEventContext&)
 
 void HorrorGame::OnShutdown(GameShutdownContext&)
 {
-    SetRelativeMouseMode(false);
-    if (Content.has_value())
-        Content->Close();
-    Content.reset();
+    GetEngine().SetPointerCaptured(false);
+    if (SessionState.has_value())
+        SessionState->Close();
+    SessionState.reset();
 }
 
 // This game's data vocabulary, registered into whichever registries are asking:
@@ -284,21 +286,6 @@ void HorrorGame::OnUnregisterDataAssetTypes(DataAssetTypeRegistry& types,
                                               DataSchemaRegistry& schemas)
 {
     UnregisterHorrorDataTypes(types, schemas);
-}
-
-void HorrorGame::SetRelativeMouseMode(bool enabled)
-{
-    // No window to capture a pointer into on a headless host.
-    PlatformServices* platform = GetEngine().TryPlatform();
-    if (platform == nullptr)
-        return;
-
-    SdlWindow* window = platform->Windows.GetPrimaryWindow();
-    if (window == nullptr || window->GetHandle() == nullptr)
-        return;
-    if (SDL_GetWindowRelativeMouseMode(window->GetHandle()) == enabled)
-        return;
-    SDL_SetWindowRelativeMouseMode(window->GetHandle(), enabled);
 }
 
 extern "C" SENCHA_GAME_EXPORT Game* SenchaCreateGameModule()

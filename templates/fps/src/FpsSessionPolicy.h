@@ -3,7 +3,7 @@
 #include <assets/data/DataAssetHandle.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/console/ConsoleTypes.h>
-#include <input/InputContextSet.h>
+#include <input/InputProfileSetup.h>
 
 #include <memory>
 #include <optional>
@@ -78,9 +78,7 @@ private:
 
     // Held for the run, released in Close before the caches are destroyed.
     DataAssetCacheHandle GameSettingsAsset;
-    DataAssetCacheHandle InputActionSetAsset;
-    DataAssetCacheHandle InputProfileAsset;
-    // Held for the process: this game is always in its gameplay context. A
-    // menu would take its own lease and drop this one.
-    InputContextLease GameplayInput;
+    // The bound controls: profile, action set, and the gameplay context this
+    // game is always in. A menu would take its own lease and drop this one.
+    InputProfileLease Input;
 };

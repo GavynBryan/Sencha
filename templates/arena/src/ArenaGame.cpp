@@ -40,8 +40,6 @@
 #include <physics/CharacterMoverPool.h>
 #include <physics/PhysicsRegistration.h>
 #include <physics/ZoneCollisionLoader.h>
-#include <platform/PlatformServices.h>
-#include <platform/SdlWindow.h>
 #include <runtime/spawn/SceneSpawnService.h>
 #include <world/RuntimeWorld.h>
 #include <world/transform/DerivedTransform.h>
@@ -68,15 +66,15 @@
 
 ArenaSessionPolicy& ArenaGame::Session()
 {
-    assert(Content.has_value() && "OnStart composes the session before anything asks");
-    return *Content;
+    assert(SessionState.has_value() && "OnStart composes the session before anything asks");
+    return *SessionState;
 }
 
 void ArenaGame::OnStart(GameStartupContext&)
 {
     Engine& engine = GetEngine();
-    Content.emplace(engine, engine.Logging().GetLogger<ArenaGame>());
-    Content->Open();
+    SessionState.emplace(engine, engine.Logging().GetLogger<ArenaGame>());
+    SessionState->Open();
 
     // What a participant is in this game, and where its body comes from. The
     // engine runs the lifecycle -- admit, compose, ask for a body, bind it,
@@ -88,7 +86,11 @@ void ArenaGame::OnStart(GameStartupContext&)
         // Nowhere to put a body until content has loaded. Returning none is an
         // ordinary answer, and the engine does not ask again on its own -- the
         // map load asks, once it has somewhere to put one.
-        if (world.TryGetResource<PlayContentPartition>() == nullptr)
+        // Content that has been and gone leaves the resource behind with no
+        // partition in it; what proves there is somewhere for a body is the
+        // value, not the resource.
+        const PlayContentPartition* content = world.TryGetResource<PlayContentPartition>();
+        if (content == nullptr || !content->Value.has_value())
             return EntityId{};
 
         Logger& log = GetEngine().Logging().GetLogger<ArenaGame>();
@@ -291,28 +293,26 @@ void ArenaGame::OnPlatformEvent(PlatformEventContext& ctx)
     if (ctx.Handled)
         return;
 
+    // Looking is holding the right button. Whether the pointer is actually
+    // captured while it is held -- focus, the console -- is the engine's.
     if (ctx.Event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
         && ctx.Event.button.button == SDL_BUTTON_RIGHT)
     {
-        SetRelativeMouseMode(true);
+        GetEngine().SetPointerCaptured(true);
     }
     else if (ctx.Event.type == SDL_EVENT_MOUSE_BUTTON_UP
              && ctx.Event.button.button == SDL_BUTTON_RIGHT)
     {
-        SetRelativeMouseMode(false);
-    }
-    else if (ctx.Event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
-    {
-        SetRelativeMouseMode(false);
+        GetEngine().SetPointerCaptured(false);
     }
 }
 
 void ArenaGame::OnShutdown(GameShutdownContext&)
 {
-    SetRelativeMouseMode(false);
-    if (Content.has_value())
-        Content->Close();
-    Content.reset();
+    GetEngine().SetPointerCaptured(false);
+    if (SessionState.has_value())
+        SessionState->Close();
+    SessionState.reset();
 }
 
 // This game's data vocabulary, registered into whichever registries are asking:
@@ -327,21 +327,6 @@ void ArenaGame::OnUnregisterDataAssetTypes(DataAssetTypeRegistry& types,
                                               DataSchemaRegistry& schemas)
 {
     UnregisterArenaDataTypes(types, schemas);
-}
-
-void ArenaGame::SetRelativeMouseMode(bool enabled)
-{
-    // No window to capture a pointer into on a headless host.
-    PlatformServices* platform = GetEngine().TryPlatform();
-    if (platform == nullptr)
-        return;
-
-    SdlWindow* window = platform->Windows.GetPrimaryWindow();
-    if (window == nullptr || window->GetHandle() == nullptr)
-        return;
-    if (SDL_GetWindowRelativeMouseMode(window->GetHandle()) == enabled)
-        return;
-    SDL_SetWindowRelativeMouseMode(window->GetHandle(), enabled);
 }
 
 extern "C" SENCHA_GAME_EXPORT Game* SenchaCreateGameModule()

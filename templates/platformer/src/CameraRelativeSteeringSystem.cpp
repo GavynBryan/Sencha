@@ -55,9 +55,10 @@ void CameraRelativeSteeringSystem::FixedLogic(FixedLogicContext& ctx)
     const InputActionSources sources(world);
     const float cameraYaw = orbit->Yaw;
 
-    Query<Write<MovementIntent>, Write<LocalTransform>, Read<GameplayTagContainer>>
-        query(world);
-    query.ForEachChunkIn(ctx.Partitions, [&](auto& view)
+    // Cached across ticks: constructing a query scans the archetypes.
+    if (!Steer)
+        Steer.emplace(world);
+    Steer->ForEachChunkIn(ctx.Partitions, [&](auto& view)
     {
         auto intents = view.template Write<MovementIntent>();
         auto transforms = view.template Write<LocalTransform>();

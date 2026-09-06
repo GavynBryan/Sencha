@@ -1,5 +1,13 @@
 #pragma once
 
+#include <controller/LookOrientation.h>
+#include <ecs/Query.h>
+#include <gameplay_tags/GameplayTagContainer.h>
+#include <movement/MovementIntent.h>
+#include <world/transform/TransformComponents.h>
+
+#include <optional>
+
 #include <math/Vec.h>
 
 struct FixedLogicContext;
@@ -20,4 +28,7 @@ struct FixedLogicContext;
 struct CameraRelativeSteeringSystem
 {
     void FixedLogic(FixedLogicContext& ctx);
+
+private:
+    std::optional<Query<Write<MovementIntent>, Write<LocalTransform>, Read<GameplayTagContainer>>> Steer;
 };

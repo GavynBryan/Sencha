@@ -43,11 +43,10 @@ void ArenaSteeringSystem::FixedLogic(FixedLogicContext& ctx)
 
     // Each controlled entity steers along its own aim, read from the entity
     // rather than from whatever camera happens to be watching it.
-    Query<
-        Write<MovementIntent>,
-        Read<GameplayTagContainer>,
-        Read<LookOrientation>> query(world);
-    query.ForEachChunkIn(ctx.Partitions, [&](auto& view)
+    // Cached across ticks: constructing a query scans the archetypes.
+    if (!Steer)
+        Steer.emplace(world);
+    Steer->ForEachChunkIn(ctx.Partitions, [&](auto& view)
     {
         auto intents = view.template Write<MovementIntent>();
         const auto entityTags =
