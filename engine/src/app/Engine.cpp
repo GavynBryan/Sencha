@@ -843,6 +843,11 @@ int Engine::Run(Game& game)
     };
     game.OnShutdown(shutdown);
 
+    // Task captures borrow loaders, caches, and serializers. Release unfinished
+    // work while all of those owners (including the level loader) still exist.
+    // Keep the stopped queue addressable for the level's cancellation path.
+    Tasks().Stop();
+
     // Content teardown, in the one order that works: the game has just released
     // every lease it held, so the consumers of the stack are disconnected, then
     // the subtype registrations -- function pointers into the game module -- are

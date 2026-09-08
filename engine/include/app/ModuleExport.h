@@ -85,5 +85,11 @@
 // the call registered nothing. Render extraction and presentation-domain
 // transform propagation take the frame's interpolation alpha: a camera with pose
 // history, or one parented to an entity with it, is drawn from the blend the
-// meshes are.
-#define SENCHA_GAME_ABI_VERSION 19u
+// meshes are. v20: app/BodySpawns owns a prefab body request from
+// the ask until its group is handed to the participant lifecycle or cleaned
+// up; games install it as their body policy instead of keeping the book
+// themselves. SceneSpawnService::IsDespawnRequested reports an ended request
+// before the pump, and AsyncTaskQueue::Stop ends the cross-frame lane. The
+// engine stops that lane right after Game::OnShutdown returns, so a module may
+// not submit async work from its shutdown hook or later.
+#define SENCHA_GAME_ABI_VERSION 20u

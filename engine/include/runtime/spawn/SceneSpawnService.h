@@ -75,6 +75,8 @@ public:
     // The game's asset front door, handed over once (null on shutdown). The
     // engine borrows it; scene resolution and residency go through it, and
     // `scenes` is the cache the Scene kind commits into, read for contents.
+    // Stop the task queue before disconnecting. Disconnect discards unpublished
+    // packages and releases their cache leases while the old stack is alive.
     void ConnectAssets(AssetSystem* assets, SceneCache* scenes);
 
     // Queues a spawn of `sceneAssetPath` (an asset://...smap ref) at `root`,
@@ -86,15 +88,17 @@ public:
         const Transform3f& root,
         StoragePartitionId partition = StoragePartitionId::Default());
 
-    // Queues destruction of a live spawn's entities for the next drain.
-    // False when the id is unknown or the spawn is not live.
     // Ends a spawn whatever state it is in: a live group is destroyed at the
     // next pump; a request still staging or waiting is withdrawn and its
-    // entities are never published. False only for an id that is unknown or
-    // already ending, so whoever started a request can always end it.
+    // entities are never published. False for unknown, failed, or already
+    // ending requests.
     bool RequestDespawn(SceneSpawnId id);
 
     [[nodiscard]] SceneSpawnStatus Status(SceneSpawnId id) const;
+
+    // Observable immediately, before the pump changes Status. Remains true
+    // after destruction or a withdrawn build's failure; false for unknown IDs.
+    [[nodiscard]] bool IsDespawnRequested(SceneSpawnId id) const;
 
     // The spawn's live entities, via the SceneInstanceIndex; empty unless
     // Live (and shrinking as gameplay destroys members).

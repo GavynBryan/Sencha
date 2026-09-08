@@ -77,6 +77,14 @@ SceneSpawnService::~SceneSpawnService() = default;
 
 void SceneSpawnService::ConnectAssets(AssetSystem* assets, SceneCache* scenes)
 {
+    if (assets == nullptr)
+    {
+        for (const auto& request : Requests)
+            if (request->State == Request::Phase::Staging
+                || request->State == Request::Phase::Ready)
+                Discard(*request);
+        FirstUnsettled = Requests.size();
+    }
     Assets = assets;
     Scenes = scenes;
     SceneContext = assets != nullptr
@@ -195,6 +203,15 @@ bool SceneSpawnService::RequestDespawn(SceneSpawnId id)
     default:
         return false;
     }
+}
+
+bool SceneSpawnService::IsDespawnRequested(SceneSpawnId id) const
+{
+    const Request* request = FindRequest(id);
+    return request != nullptr
+        && (request->Withdrawn
+            || request->State == Request::Phase::DespawnQueued
+            || request->State == Request::Phase::Despawned);
 }
 
 SceneSpawnStatus SceneSpawnService::Status(SceneSpawnId id) const

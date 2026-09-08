@@ -15,6 +15,9 @@
 #      registry and nothing else, so it must not reach into the application,
 #      world, or configuration layers -- the editor calls it without any of them.
 #
+#   The rest are per-layer include-direction rules, each explained where it
+#   is checked.
+#
 # Usage: check_engine_layering.sh <source-root>
 
 set -uo pipefail
@@ -80,5 +83,21 @@ check "ContentMount reaches outside the asset layer" \
       '#include[[:space:]]*["<](app|world|core/config)/' \
       "$ENGINE/include/assets/runtime/ContentMount.h" \
       "$ENGINE/src/assets/runtime/ContentMount.cpp"
+
+# F. Where a body comes from is nobody's business below app/. The participant
+# layer asks a policy for a body and never learns that it was a scene spawn;
+# the spawn service publishes groups and never learns that one was a body.
+# BodySpawns is the one place both are known, and it knows
+# nothing else: no session, no camera, no input, no zone policy.
+check "participant/ learns how a body is produced" \
+      '#include[[:space:]]*["<](runtime/spawn|world/scene|app)/' \
+      "$ENGINE/include/participant" "$ENGINE/src/participant"
+check "runtime/spawn/ learns what a participant is" \
+      '#include[[:space:]]*["<]participant/' \
+      "$ENGINE/include/runtime/spawn" "$ENGINE/src/runtime/spawn"
+check "BodySpawns decides a game policy" \
+      '#include[[:space:]]*["<](net|camera|controller|input|zone|core/config)/' \
+      "$ENGINE/include/app/BodySpawns.h" \
+      "$ENGINE/src/app/BodySpawns.cpp"
 
 exit $status

@@ -39,8 +39,13 @@ AsyncTaskQueue::AsyncTaskQueue(uint32_t workerCount)
 
 AsyncTaskQueue::~AsyncTaskQueue()
 {
+    Stop();
+}
+
+void AsyncTaskQueue::Stop()
+{
     assert(std::this_thread::get_id() == OwnerThread
-           && "AsyncTaskQueue must be destroyed on its owner thread");
+           && "AsyncTaskQueue::Stop is owner-thread-only");
     {
         std::lock_guard<std::mutex> lock(Mutex);
         ShutdownRequested = true;
@@ -50,6 +55,15 @@ AsyncTaskQueue::~AsyncTaskQueue()
     {
         worker.join();
     }
+    Workers.clear();
+    // Workers have relinquished both queues. Release captures outside the
+    // mutex, on the thread that owns their borrowed resources.
+    for (auto& task : PendingTasks)
+        task.State->store(AsyncTaskState::Cancelled);
+    for (auto& task : CompletedTasks)
+        task.State->store(AsyncTaskState::Cancelled);
+    PendingTasks.clear();
+    CompletedTasks.clear();
 }
 
 AsyncTaskHandle AsyncTaskQueue::SubmitErased(ErasedWork work)
@@ -61,6 +75,7 @@ AsyncTaskHandle AsyncTaskQueue::SubmitErased(ErasedWork work)
 
     {
         std::lock_guard<std::mutex> lock(Mutex);
+        assert(!ShutdownRequested && "AsyncTaskQueue::Submit after Stop");
         PendingTasks.push_back(Task{ state, std::move(work), {} });
     }
     if (!Workers.empty())
@@ -151,7 +166,7 @@ bool AsyncTaskQueue::RunOnePendingTask()
     {
         {
             std::lock_guard<std::mutex> lock(Mutex);
-            if (PendingTasks.empty())
+            if (ShutdownRequested || PendingTasks.empty())
             {
                 return false;
             }
