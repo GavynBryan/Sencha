@@ -1,0 +1,71 @@
+{
+  "format_version": 4,
+  "name": "Traversal3",
+  "start_zone": "9c76e74ceb9abd59",
+  "world_scene": "levels/traversal3_world.sscene",
+  "graphs": [
+    {
+      "id": "f47a34417bdf7530",
+      "name": "Graph 1"
+    }
+  ],
+  "zones": [
+    {
+      "id": "9c76e74ceb9abd59",
+      "name": "Zone 1",
+      "graph": "f47a34417bdf7530",
+      "scene": "levels/zone_1.sscene",
+      "bounds": {
+        "min": [
+          -8,
+          0,
+          -8
+        ],
+        "max": [
+          8,
+          6,
+          8
+        ]
+      },
+      "bounds_overridden": true
+    },
+    {
+      "id": "429b0e6664e66213",
+      "name": "Room 2",
+      "graph": "f47a34417bdf7530",
+      "scene": "levels/room_2.sscene",
+      "bounds": {
+        "min": [
+          8,
+          0,
+          -8
+        ],
+        "max": [
+          24,
+          6,
+          8
+        ]
+      },
+      "bounds_overridden": true
+    },
+    {
+      "id": "1ba7c9d40fec52ec",
+      "name": "Room 3",
+      "graph": "f47a34417bdf7530",
+      "scene": "levels/room_3.sscene",
+      "bounds": {
+        "min": [
+          24,
+          0,
+          -8
+        ],
+        "max": [
+          40,
+          6,
+          8
+        ]
+      },
+      "bounds_overridden": true
+    }
+  ]
+}

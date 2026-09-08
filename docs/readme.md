@@ -105,6 +105,13 @@ behavior.
   exists in the tree — facts vs. modes vs. the composed motor request, the
   locomotion mode registry, authored movement profiles — and the recipes for
   extending it with new modes, actions, coefficients, and detection systems.
+- `docs/gameplay/game-module.md` is the contract a game module is written
+  against: the hook sequence `Engine::Run` calls, what `RuntimeContent` and
+  `LoadedLevel` own, the things the engine will not decide for a game, and the
+  five starter templates under `templates/`.
+- `docs/gameplay/camera.md` is the engine's camera vocabulary — four things —
+  and the three template camera policies as worked examples of why the rest is
+  game code.
 
 ## Requirements
 

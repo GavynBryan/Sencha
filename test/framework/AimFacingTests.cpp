@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <app/EngineSchedule.h>
-#include <camera/CameraRig.h>
 #include <controller/AimFacingSystem.h>
 #include <controller/LookOrientation.h>
 #include <core/config/EngineConfig.h>
@@ -128,14 +127,13 @@ TEST(AimFacing, ABodyAndItsCameraAgreeOnWhereTheAimPoints)
 
     harness.Tick();
 
-    CameraRig rig{};
-    rig.Mode = CameraRigMode::FirstPerson;
-    rig.Target = body;
-    const CameraPose view = ComputeCameraPose(rig, Vec3d::Zero(), kYaw, 0.0f);
+    // A first-person view is the aim, framed: yaw about up, then pitch.
+    const Quatf view = Quatf::FromAxisAngle(Vec3d::Up(), kYaw)
+                     * Quatf::FromAxisAngle(Vec3d::Right(), 0.0f);
 
     const Vec3d bodyForward =
         harness.Pose(body).Rotation.RotateVector(Vec3d::Forward());
-    const Vec3d viewForward = view.Rotation.RotateVector(Vec3d::Forward());
+    const Vec3d viewForward = view.RotateVector(Vec3d::Forward());
     EXPECT_NEAR(bodyForward.X, viewForward.X, 1e-5f);
     EXPECT_NEAR(bodyForward.Z, viewForward.Z, 1e-5f);
 }

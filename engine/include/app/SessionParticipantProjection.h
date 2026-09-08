@@ -42,17 +42,31 @@ public:
         return Lifecycle.Policies();
     }
 
-    SessionParticipantAdmission AdmitLocal(World& world);
+    // `sessionActive` is whether this process is in a net session right now.
+    // Replication state -- the peer identity and the replicated marker -- is
+    // added only when it is, because a singleplayer game's participant and
+    // body have no business in the replicated table. A session that starts
+    // later stamps them retroactively through ProjectSessionStart.
+    SessionParticipantAdmission AdmitLocal(World& world, bool sessionActive);
     // `source` belongs to the input producer (bot, replay, script); it is not
     // fabricated from a peer id.
     SessionParticipantAdmission AdmitSimulated(
-        World& world, InputActionSourceId source);
+        World& world, InputActionSourceId source, bool sessionActive);
     // Idempotent per valid peer. Admission, body assignment, identity,
     // replication, ownership, driven-subject, and source allocation settle
     // before this returns.
     SessionParticipantAdmission AdmitPeer(World& world, PeerId peer);
 
-    ParticipantBodyChange RequestBody(World& world, EntityId participant);
+    ParticipantBodyChange RequestBody(World& world, EntityId participant,
+                                      bool sessionActive);
+
+    // The retroactive half of `sessionActive`: every participant admitted before
+    // a session existed, and every body it holds, gets the replication state a
+    // session-time admission would have given it. Idempotent. Session end does
+    // not undo it -- a body that was once replicated keeps its marker until it
+    // is reaped, which is a smaller lie than a table that changes shape under a
+    // live peer.
+    void ProjectSessionStart(World& world);
     ParticipantControlChange SetControlSubject(
         World& world, EntityId participant, EntityId subject);
     SessionParticipantRetirement RetireParticipant(
@@ -69,7 +83,7 @@ public:
 private:
     SessionParticipantAdmission Admit(
         World& world, PeerId peer, ParticipantPresence presence,
-        InputActionSourceId source);
+        InputActionSourceId source, bool sessionActive);
     void ProjectControl(World& world, const ParticipantControlChange& change,
                         std::uint32_t peer);
 

@@ -47,6 +47,34 @@ namespace
         return true;
     }
 
+    bool ReadStringListEither(const JsonValue& root,
+                              const char* a,
+                              const char* b,
+                              std::vector<std::string>& out,
+                              std::string& error)
+    {
+        const JsonValue* value = FindEither(root, a, b);
+        if (!value)
+            return true;
+        if (!value->IsArray())
+        {
+            error = std::string("runtime config: '") + a + "' must be an array of strings";
+            return false;
+        }
+        std::vector<std::string> roots;
+        for (const JsonValue& item : value->AsArray())
+        {
+            if (!item.IsString())
+            {
+                error = std::string("runtime config: '") + a + "' must be an array of strings";
+                return false;
+            }
+            roots.push_back(item.AsString());
+        }
+        out = std::move(roots);
+        return true;
+    }
+
     bool ReadIntEither(const JsonValue& root,
                        const char* a,
                        const char* b,
@@ -118,7 +146,9 @@ std::optional<EngineRuntimeConfig> DeserializeRuntimeConfig(
         || !ReadBoolEither(root, "togglePauseOnF1", "toggle_pause_on_f1",
             config.TogglePauseOnF1, sectionError)
         || !ReadBoolEither(root, "hasLocalPlayer", "has_local_player",
-            config.HasLocalPlayer, sectionError))
+            config.HasLocalPlayer, sectionError)
+        || !ReadStringListEither(root, "contentRoots", "content_roots",
+            config.ContentRoots, sectionError))
     {
         if (error) error->Message = sectionError;
         return std::nullopt;

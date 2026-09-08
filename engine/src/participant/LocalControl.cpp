@@ -1,6 +1,5 @@
 #include <participant/LocalControl.h>
 
-#include <controller/LookOrientation.h>
 #include <ecs/World.h>
 
 EntityId LocalControlSubjectOf(const World& world)
@@ -26,18 +25,9 @@ LocalControlChange SetLocalControlSubject(World& world, EntityId entity)
     if (!change.Changed)
         return change;
 
-    if (previous.IsValid() && world.IsRegistered<LocalLookControl>()
-        && world.HasComponent<LocalLookControl>(previous))
-    {
-        world.RemoveComponent<LocalLookControl>(previous);
-    }
-
-    if (current.IsValid() && world.IsRegistered<LocalLookControl>()
-        && !world.HasComponent<LocalLookControl>(current))
-    {
-        world.AddComponent<LocalLookControl>(current, {});
-    }
-
+    // Identity only. What controller facilities switch on because of it --
+    // whose look input a body takes, which camera follows -- is a game's
+    // composition rule, and a game that wants one watches this value.
     if (LocalControlSubject* held = world.TryGetResource<LocalControlSubject>())
         held->Value = current;
     else

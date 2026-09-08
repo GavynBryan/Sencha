@@ -1,5 +1,5 @@
 // Evidence generator: cooks a probe-volume validation scene for a live GPU
-// run (SceneViewer +map levels/probe_spike). Two sealed rooms share a wall;
+// run (the render host, +map levels/probe_spike). Two sealed rooms share a wall;
 // a Direct light fills the left room, an Indirect light the right, and one
 // IrradianceVolume spans both, so a run shows probe ambient tracking each
 // room's light while the runtime exercises the full residency path

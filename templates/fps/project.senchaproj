@@ -1,0 +1,5 @@
+{
+  "name": "SenchaFpsTemplate",
+  "gameModule": "build/game.so",
+  "contentRoots": ["assets"]
+}

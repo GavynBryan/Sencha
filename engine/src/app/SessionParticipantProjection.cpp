@@ -8,6 +8,9 @@
 #include <net/NetPeerInputSource.h>
 #include <net/NetReplicationComponents.h>
 #include <participant/LocalControl.h>
+#include <participant/ParticipantControl.h>
+
+#include <vector>
 
 namespace
 {
@@ -76,16 +79,18 @@ namespace
     }
 }
 
-SessionParticipantAdmission SessionParticipantProjection::AdmitLocal(World& world)
+SessionParticipantAdmission SessionParticipantProjection::AdmitLocal(
+    World& world, bool sessionActive)
 {
     return Admit(world, PeerId{}, ParticipantPresence::Local,
-                 kLocalInputActionSource);
+                 kLocalInputActionSource, sessionActive);
 }
 
 SessionParticipantAdmission SessionParticipantProjection::AdmitSimulated(
-    World& world, InputActionSourceId source)
+    World& world, InputActionSourceId source, bool sessionActive)
 {
-    return Admit(world, PeerId{}, ParticipantPresence::Simulated, source);
+    return Admit(world, PeerId{}, ParticipantPresence::Simulated, source,
+                 sessionActive);
 }
 
 SessionParticipantAdmission SessionParticipantProjection::AdmitPeer(
@@ -105,13 +110,14 @@ SessionParticipantAdmission SessionParticipantProjection::AdmitPeer(
         result.Body = DescribeExistingBody(world, existing);
         return result;
     }
+    // A peer exists only inside a session, so its admission always stamps.
     return Admit(world, peer, ParticipantPresence::Simulated,
-                 NetSourceForPeer(world, peer));
+                 NetSourceForPeer(world, peer), true);
 }
 
 SessionParticipantAdmission SessionParticipantProjection::Admit(
     World& world, PeerId peer, ParticipantPresence presence,
-    InputActionSourceId source)
+    InputActionSourceId source, bool sessionActive)
 {
     SessionParticipantAdmission result;
     result.Admission = Lifecycle.Admit(world, source, presence);
@@ -119,32 +125,61 @@ SessionParticipantAdmission SessionParticipantProjection::Admit(
     if (!participant.IsValid())
         return result;
 
-    SetIdentity(world, participant,
-                peer.IsValid() ? peer.Value : kNetAuthorityPeer);
-    AddReplicationMarker(world, participant);
+    if (sessionActive)
+    {
+        SetIdentity(world, participant,
+                    peer.IsValid() ? peer.Value : kNetAuthorityPeer);
+        AddReplicationMarker(world, participant);
+    }
 
     // Re-admission is observation, not a lifecycle event. In particular it
     // neither recomposes game-owned state nor asks the game for a body again.
     // Respawn/content-ready callers use RequestBody explicitly.
     result.Body = result.Admission.Created()
-        ? RequestBody(world, participant)
+        ? RequestBody(world, participant, sessionActive)
         : DescribeExistingBody(world, participant);
     return result;
 }
 
 ParticipantBodyChange SessionParticipantProjection::RequestBody(
-    World& world, EntityId participant)
+    World& world, EntityId participant, bool sessionActive)
 {
     ParticipantBodyChange result = Lifecycle.RequestBody(world, participant);
     if (result.Status != ParticipantBodyStatus::Assigned)
         return result;
 
     const std::uint32_t peer = PeerOf(world, participant);
-    AddReplicationMarker(world, result.Body);
+    if (sessionActive)
+        AddReplicationMarker(world, result.Body);
     if (peer != kNetAuthorityPeer)
         NetSetOwner(world, result.Body, PeerId{ peer });
     ProjectControl(world, result.Control, peer);
     return result;
+}
+
+void SessionParticipantProjection::ProjectSessionStart(World& world)
+{
+    if (!world.IsRegistered<ParticipantControl>())
+        return;
+
+    std::vector<EntityId> participants;
+    const World& reading = world;
+    reading.ForEachComponent<ParticipantControl>(
+        [&](EntityId participant, const ParticipantControl&) {
+            participants.push_back(participant);
+        });
+
+    for (const EntityId participant : participants)
+    {
+        // Admitted before the session, so it is this machine's own: the
+        // authority's. A peer's participant cannot predate the session it
+        // arrived through.
+        SetIdentity(world, participant, kNetAuthorityPeer);
+        AddReplicationMarker(world, participant);
+        const ParticipantBodyChange body = DescribeExistingBody(world, participant);
+        if (body.Body.IsValid())
+            AddReplicationMarker(world, body.Body);
+    }
 }
 
 ParticipantControlChange SessionParticipantProjection::SetControlSubject(

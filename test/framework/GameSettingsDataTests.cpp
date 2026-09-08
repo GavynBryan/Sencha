@@ -5,7 +5,7 @@
 #include <core/json/JsonValue.h>
 #include <core/metadata/DataSchema.h>
 
-#include "GameSettingsData.h"
+#include "FpsSettingsData.h"
 
 #include <filesystem>
 #include <fstream>
@@ -59,20 +59,18 @@ TEST(GameSettingsData, RegistersItsTypeAndSchema)
     ASSERT_NE(settings.Schemas.Find(kTypeName), nullptr);
 }
 
-TEST(GameSettingsData, CompilesBothScenesWithDependencies)
+TEST(GameSettingsData, CompilesTheSceneWithADependency)
 {
     SettingsTypes settings;
     const DataAssetCompileResult result = settings.Compile(ParseData(R"({
-        "player_pawn": "asset://prefabs/player_pawn.smap",
-        "turret": "asset://prefabs/turret.smap"
+        "player_pawn": "asset://prefabs/player_pawn.smap"
     })"));
     ASSERT_TRUE(result.Error.empty()) << result.Error;
     const auto* compiled =
         static_cast<const CompiledGameSettings*>(result.Value.get());
     ASSERT_NE(compiled, nullptr);
     EXPECT_EQ(compiled->PlayerPawnScenePath, "asset://prefabs/player_pawn.smap");
-    EXPECT_EQ(compiled->TurretScenePath, "asset://prefabs/turret.smap");
-    ASSERT_EQ(result.Dependencies.size(), 2u);
+    ASSERT_EQ(result.Dependencies.size(), 1u);
     EXPECT_EQ(result.Dependencies[0].Type, AssetType::Scene);
 }
 
@@ -85,7 +83,6 @@ TEST(GameSettingsData, AbsentFieldsMeanProceduralSpawns)
         static_cast<const CompiledGameSettings*>(result.Value.get());
     ASSERT_NE(compiled, nullptr);
     EXPECT_TRUE(compiled->PlayerPawnScenePath.empty());
-    EXPECT_TRUE(compiled->TurretScenePath.empty());
     EXPECT_TRUE(result.Dependencies.empty());
 }
 
@@ -100,7 +97,7 @@ TEST(GameSettingsData, ANonStringSceneIsRejected)
 
 TEST(GameSettingsData, TheShippedSettingsFileCompiles)
 {
-    const std::string text = ReadRepoFile("template/assets/data/game.sdata");
+    const std::string text = ReadRepoFile("templates/fps/assets/data/game.sdata");
     ASSERT_FALSE(text.empty());
     const JsonValue envelope = ParseData(text);
     const JsonValue* type = envelope.Find("type");
@@ -116,5 +113,4 @@ TEST(GameSettingsData, TheShippedSettingsFileCompiles)
         static_cast<const CompiledGameSettings*>(result.Value.get());
     ASSERT_NE(compiled, nullptr);
     EXPECT_FALSE(compiled->PlayerPawnScenePath.empty());
-    EXPECT_FALSE(compiled->TurretScenePath.empty());
 }

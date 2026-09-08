@@ -38,9 +38,8 @@ option(SENCHA_ENABLE_ASAN
     "Build with AddressSanitizer (GCC/Clang only). Catches use-after-free, double-free, and heap corruption with symbolized allocation/free stacks. Mutually exclusive with SENCHA_ENABLE_TSAN."
     OFF)
 
-option(SENCHA_BUILD_TEMPLATE
-    "Build the template game module in-tree against the engine being built. Engine-dev convenience: the module rebuilds with the engine in one build, so the host/module ABI fingerprint can never skew (no SDK install/rebuild dance). Writes template/build/game.so; the standalone SDK build of template/ is unaffected."
-    ON)
+set(SENCHA_BUILD_TEMPLATES "blank;fps;arena;platformer;horror" CACHE STRING
+    "Starter templates (directories under templates/) to build in-tree against the engine being built. Engine-dev convenience: a module rebuilt with the engine cannot skew from the host's ABI fingerprint. Each writes templates/<name>/build/game.so; the standalone SDK build of a template is unaffected. Empty builds none.")
 
 option(SENCHA_WARNINGS_AS_ERRORS
     "Treat first-party compiler warnings as errors. ON in the dev preset (and everything inheriting it: tsan, ci) so a new warning fails the build where it is introduced. OFF by default so bare configures, an installed SDK, and toolchains whose diagnostics we have not triaged still build."

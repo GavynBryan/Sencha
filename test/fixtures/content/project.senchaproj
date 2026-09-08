@@ -1,0 +1,5 @@
+{
+  "name": "SenchaEngineFixtures",
+  "gameModule": "../../../build/test/fixtures/render_host/game.so",
+  "contentRoots": ["assets"]
+}

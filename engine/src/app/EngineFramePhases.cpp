@@ -688,8 +688,7 @@ void Engine::RegisterSimulationFramePhases()
         if (WorldPartitionRuntime* partition = engine.WorldStreaming())
         {
             engine.ZoneStreaming().Update(
-                runtimeWorld.Entities(),
-                LocalControlSubjectOf(runtimeWorld.Entities()), engine.TryNet(),
+                runtimeWorld.Entities(), engine.TryNet(),
                 engine.Replication(), *partition, &engine.NetTraffic());
             if (AsyncZoneLoader* loader = engine.WorldStreamingLoader())
             {
@@ -904,7 +903,15 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
                 ctx.Runtime->NotifyMinimized();
             else if (event.type == SDL_EVENT_WINDOW_RESTORED)
                 ctx.Runtime->NotifyRestored(windows.GetExtent(windowId));
+            else if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
+                engine.PrimaryWindowFocused = false;
+            else if (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED)
+                engine.PrimaryWindowFocused = true;
         }
+
+        // After the events, so a focus change or an overlay opening this frame
+        // releases the pointer this frame rather than after the game notices.
+        engine.ApplyPointerCapture();
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
         // A press that began before the console opened would otherwise stay
@@ -982,7 +989,8 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
             entities,
             zones.Visible,
             TransformPropagationDomain::Presentation,
-            config.Runtime.TransformForceFullPropagation);
+            config.Runtime.TransformForceFullPropagation,
+            ctx.Runtime->GetCurrentFrame().Presentation.Alpha);
 
         RenderExtractContext extract{
             .Config = config,

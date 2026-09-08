@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "base_color_factor": [
+    0.6,
+    0.6,
+    0.6,
+    1
+  ],
+  "base_color_texture": "asset://textures/dev/checker.png"
+}

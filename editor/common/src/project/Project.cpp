@@ -119,6 +119,82 @@ bool ProjectDescriptor::Save(const std::string& path, std::string* error)
     return true;
 }
 
+namespace
+{
+    // What a working copy of a template carries that a new project must not.
+    bool IsLocalState(const std::filesystem::path& relative)
+    {
+        for (const std::filesystem::path& part : relative)
+        {
+            const std::string name = part.string();
+            if (name == "build" || name == ".cooked")
+                return true;
+        }
+        const std::string file = relative.filename().string();
+        return file == "asset_ids.json" || file.ends_with(".sworld.user.json");
+    }
+}
+
+bool ProjectDescriptor::CreateFromTemplate(const std::string& templateDirectory,
+                                           const std::string& directory,
+                                           const std::string& name,
+                                           ProjectDescriptor& out,
+                                           std::string* error)
+{
+    const auto setError = [&](const std::string& message) {
+        if (error) *error = message;
+        return false;
+    };
+
+    const std::filesystem::path source(templateDirectory);
+    const std::filesystem::path target(directory);
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(source / "project.senchaproj", ec))
+        return setError("'" + templateDirectory + "' is not a template: no project.senchaproj");
+    if (std::filesystem::exists(target / "project.senchaproj", ec))
+        return setError("'" + directory + "' already holds a project");
+
+    std::filesystem::create_directories(target, ec);
+    if (ec)
+        return setError("could not create '" + directory + "': " + ec.message());
+
+    for (std::filesystem::recursive_directory_iterator it(source, ec), end; it != end;
+         it.increment(ec))
+    {
+        if (ec)
+            return setError("could not read '" + templateDirectory + "': " + ec.message());
+        const std::filesystem::path relative = std::filesystem::relative(it->path(), source, ec);
+        if (IsLocalState(relative))
+        {
+            if (it->is_directory(ec))
+                it.disable_recursion_pending();
+            continue;
+        }
+        const std::filesystem::path destination = target / relative;
+        if (it->is_directory(ec))
+        {
+            std::filesystem::create_directories(destination, ec);
+        }
+        else if (it->is_regular_file(ec))
+        {
+            std::filesystem::create_directories(destination.parent_path(), ec);
+            std::filesystem::copy_file(it->path(), destination,
+                                       std::filesystem::copy_options::overwrite_existing, ec);
+        }
+        if (ec)
+            return setError("could not copy '" + relative.string() + "': " + ec.message());
+    }
+
+    const std::string descriptorPath = (target / "project.senchaproj").string();
+    if (!Load(descriptorPath, out, error))
+        return false;
+    if (!name.empty())
+        out.Name = name;
+    else
+        out.Name = target.filename().string();
+    return out.Save(descriptorPath, error);
+}
+
 bool ProjectDescriptor::Create(const std::string& directory,
                                const std::string& name,
                                ProjectDescriptor& out,

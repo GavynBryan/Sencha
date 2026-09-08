@@ -7,13 +7,12 @@
 #include <assets/cook/ImportOnDemand.h>
 #include <assets/cook/MeshCook.h>
 #include <assets/cook/TextureCook.h>
-#include <core/assets/AssetIdMap.h>
-#include <core/assets/AssetRegistry.h>
+#include <assets/runtime/ContentMount.h>
 #include <assets/runtime/RuntimeAssets.h>
+#include <core/assets/AssetRegistry.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 
-#include <filesystem>
 #include <string>
 
 void MountProjectContent(const ProjectDescriptor& project,
@@ -24,9 +23,8 @@ void MountProjectContent(const ProjectDescriptor& project,
     Logger& log = logging.GetLogger<ProjectDescriptor>();
     for (const std::string& root : project.ContentRoots)
     {
-        ScanAssetsDirectory(root, assets.Registry, assets.Assets.Kinds());
-        ScanAssetsDirectory((std::filesystem::path(root) / ".cooked").string(),
-                            assets.Registry, assets.Assets.Kinds());
+        const ContentRootPaths paths = ResolveContentRoot(root);
+        ScanContentRoot(paths, assets);
 
         // Cook source assets on demand and register the cooked overlay, so a
         // material's asset://...png resolves to its cooked .stex with a bindless
@@ -49,13 +47,7 @@ void MountProjectContent(const ProjectDescriptor& project,
             importers.Register(blendImporter);
             (void)ImportAssetsOnDemand(root, importers, assets.Registry, logging);
         }
-        RegisterCookedAssets(root, assets.Registry);
-
-        AssetIdMap idMap;
-        std::string idMapError;
-        const std::string idMapPath = (std::filesystem::path(root) / kAssetIdMapFileName).string();
-        if (AssetIdMap::LoadFromFile(idMapPath, idMap, &idMapError))
-            ApplyAssetIds(idMap, assets.Registry);
+        RegisterCookedContent(paths, assets, log);
     }
     log.Info("assets: mounted {} content root(s)", project.ContentRoots.size());
 }

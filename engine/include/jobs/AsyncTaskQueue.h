@@ -78,7 +78,7 @@ struct AsyncDrainBudget
 // payloads are plain data no other thread can observe.
 //
 // Threading contract:
-//   - Submit, Cancel, DrainCompletions, and PumpWork are owner-thread-only.
+//   - Submit, Cancel, DrainCompletions, PumpWork, and Stop are owner-thread-only.
 //   - work callbacks must not touch ambient engine state.
 //   - work and commit callbacks must not throw.
 //   - AsyncTaskQueue(0) is deterministic test mode; PumpWork is illegal when
@@ -93,6 +93,12 @@ public:
 
     explicit AsyncTaskQueue(uint32_t workerCount);
     ~AsyncTaskQueue();
+
+    // Joins running work, cancels queued work, and releases undelivered
+    // callbacks on the owner thread without committing them. Call before
+    // destroying dependencies borrowed by tasks. Idempotent; Submit is illegal
+    // afterward, while Cancel and drains remain safe on the stopped queue.
+    void Stop();
 
     AsyncTaskQueue(const AsyncTaskQueue&) = delete;
     AsyncTaskQueue& operator=(const AsyncTaskQueue&) = delete;

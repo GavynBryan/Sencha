@@ -42,7 +42,7 @@ TEST(BakedLightingStress, Generate)
     EditorDocument doc(logging);
     doc.SetDefaultMaterial(
         AssetRef{ AssetType::Material, "asset://materials/dev/gray.smat" });
-    // One large floor brush centered under the SceneViewer default camera's
+    // One large floor brush centered under the render host's default camera's
     // frustum (camera at (0,3,10) looking -Z), matching the measurement rig.
     doc.GetScene().CreateBrush(Vec3d{ 0, 0, -5 }, Vec3d{ 16.0, 0.25, 16.0 });
 

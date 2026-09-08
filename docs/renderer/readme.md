@@ -103,14 +103,14 @@ recorded*. Use 300.
 # Cook the fixture. SENCHA_COOK_LEVEL is the authored document path, not a level
 # name, and only *.level.json files are authored documents. Run the binary
 # directly: ctest truncates the failure message.
-SENCHA_COOK_LEVEL=$PWD/template/assets/levels/shadow_probe.level.json \
-SENCHA_COOK_ROOT=$PWD/template/assets \
+SENCHA_COOK_LEVEL=$PWD/test/fixtures/content/assets/levels/shadow_probe.sscene \
+SENCHA_COOK_ROOT=$PWD/test/fixtures/content/assets \
   ./build/test/level_cook_tests --gtest_filter='CookLevel.Generate'
 
 # Run it. The cooked artifact takes the full stem, so the map is
 # levels/shadow_probe.level.
-cd template && SENCHA_PRESENT_MODE=IMMEDIATE \
-  ../build/example/SceneViewer/app +map levels/shadow_probe.level \
+cd test/fixtures/content && SENCHA_PRESENT_MODE=IMMEDIATE \
+  ../../../build/test/fixtures/render_host/app +map levels/shadow_probe \
   +set app.exit_after_frames 300 2>&1 | grep -E 'VUID-|Validation Error'
 ```
 

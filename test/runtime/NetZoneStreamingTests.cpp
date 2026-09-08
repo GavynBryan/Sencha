@@ -92,7 +92,7 @@ namespace
         {
             for (int frame = 0; frame < frames; ++frame)
             {
-                Streaming.Update(Rig.World().Entities(), LocalSubject, session,
+                Streaming.Update(Rig.World().Entities(), session,
                                  Replication,
                                  Rig.Partition(), nullptr);
                 Rig.StepFrame();
@@ -128,7 +128,6 @@ namespace
         Harness Rig{ 0, kZoneCount };
         NetZoneStreaming Streaming;
         ReplicationRuntime Replication;
-        EntityId LocalSubject;
         LoopbackNetwork Network;
         LoopbackTransport HostTransport{ Network };
         LoopbackTransport ClientTransport{ Network };
@@ -136,22 +135,6 @@ namespace
         NetSession Client{ ClientTransport };
         double Now = 0.0;
     };
-}
-
-// Outside a session this is just streaming around the player, which is what a
-// single-player game gets for free by handing its partition over.
-TEST_F(NetZoneStreamingTest, WithNoSessionTheWorldFollowsTheLocalPlayer)
-{
-    World& world = Rig.World().Entities();
-    const EntityId pawn = world.CreateEntity();
-    Transform3f placed;
-    placed.Position = InZone(3);
-    world.AddComponent<WorldTransform>(pawn, WorldTransform{ placed });
-    LocalSubject = pawn;
-
-    Step(nullptr);
-
-    EXPECT_TRUE(Resident(3)) << "the room the player is standing in is not loaded";
 }
 
 // Hosting, the world is loaded around every player at once.

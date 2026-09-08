@@ -2,7 +2,9 @@
 #include <world/transform/TransformComponents.h>
 
 #include <ecs/Query.h>
+#include <ecs/StoragePartitionSet.h>
 #include <math/geometry/3d/Transform3d.h>
+#include <world/transform/TransformHistory.h>
 #include <world/transform/TransformPropagation.h>
 
 #include <numbers>
@@ -603,4 +605,91 @@ TEST(TransformPropagation, ChangedWorldTransformSkipsCleanChunks)
               Vec3d(3.0f, 0.0f, 0.0f));
     EXPECT_EQ(std::as_const(world).TryGet<WorldTransform>(b)->Value.Position,
               Vec3d(2.0f, 0.0f, 0.0f));
+}
+
+// The presentation sweep draws a child where its parent is drawn, not where the
+// parent last ticked. A camera or a held object hanging off a moving body would
+// otherwise step at the tick rate while the body glides between ticks.
+TEST(TransformPropagation, PresentationChildComposesFromTheParentsInterpolatedPose)
+{
+    World world;
+    world.RegisterComponent<LocalTransform>();
+    world.RegisterComponent<WorldTransform>();
+    world.RegisterComponent<WorldTransformHistory>();
+    world.RegisterComponent<Parent>();
+
+    const EntityId body = world.CreateEntity();
+    const EntityId camera = world.CreateEntity();
+    world.AddComponent(body, LocalTransform{ Transform3f(Vec3d(10.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
+    world.AddComponent(body, WorldTransform{ Transform3f(Vec3d(10.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
+    world.AddComponent(body, WorldTransformHistory{
+        .Previous = Transform3f(Vec3d(0.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()),
+        .Current = Transform3f(Vec3d(10.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()),
+        .Snap = false });
+    world.AddComponent(camera, LocalTransform{ Transform3f(Vec3d(0.0f, 1.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
+    world.AddComponent(camera, WorldTransform{});
+    world.AddComponent(camera, Parent{ body });
+
+    StoragePartitionSet partitions;
+    partitions.Add(StoragePartitionId::Default());
+
+    // Simulation: the tick pose, as ever.
+    world.AdvanceFrame();
+    PropagateTransforms(world, partitions, TransformPropagationDomain::Simulation);
+    EXPECT_EQ(world.TryGet<WorldTransform>(camera)->Value.Position, Vec3d(10.0f, 1.0f, 0.0f));
+
+    // Presentation, half way through the tick: half way along the body's path.
+    world.AdvanceFrame();
+    PropagateTransforms(world, partitions, TransformPropagationDomain::Presentation, false, 0.5);
+    EXPECT_EQ(world.TryGet<WorldTransform>(camera)->Value.Position, Vec3d(5.0f, 1.0f, 0.0f));
+
+    // Nothing moved, but the blend did: the child recomputes every sweep.
+    world.AdvanceFrame();
+    PropagateTransforms(world, partitions, TransformPropagationDomain::Presentation, false, 0.75);
+    EXPECT_EQ(world.TryGet<WorldTransform>(camera)->Value.Position, Vec3d(7.5f, 1.0f, 0.0f));
+}
+
+// A parent with no history is drawn at its tick pose, so its children are too.
+TEST(TransformPropagation, PresentationChildOfAnUnhistoriedParentUsesTheTickPose)
+{
+    World world;
+    world.RegisterComponent<LocalTransform>();
+    world.RegisterComponent<WorldTransform>();
+    world.RegisterComponent<WorldTransformHistory>();
+    world.RegisterComponent<Parent>();
+
+    const EntityId body = world.CreateEntity();
+    const EntityId child = world.CreateEntity();
+    world.AddComponent(body, LocalTransform{ Transform3f(Vec3d(10.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
+    world.AddComponent(body, WorldTransform{});
+    world.AddComponent(child, LocalTransform{ Transform3f(Vec3d(0.0f, 1.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
+    world.AddComponent(child, WorldTransform{});
+    world.AddComponent(child, Parent{ body });
+
+    StoragePartitionSet partitions;
+    partitions.Add(StoragePartitionId::Default());
+    world.AdvanceFrame();
+    PropagateTransforms(world, partitions, TransformPropagationDomain::Presentation, false, 0.5);
+    EXPECT_EQ(world.TryGet<WorldTransform>(child)->Value.Position, Vec3d(10.0f, 1.0f, 0.0f));
+}
+
+TEST(TransformPropagation, PresentationPoseOfBlendsHistoryAndFallsBackToTheTransform)
+{
+    World world;
+    world.RegisterComponent<WorldTransform>();
+    world.RegisterComponent<WorldTransformHistory>();
+
+    const EntityId blended = world.CreateEntity();
+    world.AddComponent(blended, WorldTransform{ Transform3f(Vec3d(10.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
+    world.AddComponent(blended, WorldTransformHistory{
+        .Previous = Transform3f(Vec3d(0.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()),
+        .Current = Transform3f(Vec3d(10.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()),
+        .Snap = false });
+    EXPECT_EQ(PresentationPoseOf(world, blended, 0.25).Position, Vec3d(2.5f, 0.0f, 0.0f));
+
+    const EntityId plain = world.CreateEntity();
+    world.AddComponent(plain, WorldTransform{ Transform3f(Vec3d(3.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
+    EXPECT_EQ(PresentationPoseOf(world, plain, 0.25).Position, Vec3d(3.0f, 0.0f, 0.0f));
+
+    EXPECT_EQ(PresentationPoseOf(world, EntityId{}, 0.25).Position, Vec3d::Zero());
 }

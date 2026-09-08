@@ -100,6 +100,30 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      # The SDK front door, proven the way a game developer meets it: install
+      # the SDK, copy a template out of it -- the copy is what Kettle's "new
+      # project" does -- and build the copy against the installed SDK alone.
+      # Copying from the installed tree rather than the source tree is what
+      # proves the install carries no build tree, cook output, or user state.
+      - name: Install the SDK
+        run: cmake --install build-ci --prefix "$RUNNER_TEMP/sencha-sdk"
+
+      - name: Build every template against the installed SDK
+        run: |
+          set -o pipefail
+          sdk="$RUNNER_TEMP/sencha-sdk"
+          if find "$sdk/share/sencha/templates" \( -name build -o -name .cooked -o -name asset_ids.json -o -name '*.sworld.user.json' \) | grep .; then
+            echo "installed templates carry local state" >&2; exit 1
+          fi
+          for dir in "$sdk"/share/sencha/templates/*/; do
+            name=$(basename "$dir")
+            copy="$RUNNER_TEMP/template-$name"
+            cp -r "$dir" "$copy"
+            cmake -S "$copy" -B "$copy/build" -DCMAKE_PREFIX_PATH="$sdk;${{ steps.sdl.outputs.prefix }}"
+            cmake --build "$copy/build" --parallel 2
+            (cd "$copy" && "$sdk/bin/app" --game build/game.so --headless +set app.exit_after_frames 30)
+          done
+
   # The renderer has only ever been compiled by GCC on Linux. MSVC is a
   # different front end with different defaults (LLP64, no GCC pragmas, no
   # implicit export of shared-library symbols), so this leg exists to find

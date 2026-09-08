@@ -15,9 +15,11 @@ namespace
     }
 }
 
-ProjectBrowserPanel::ProjectBrowserPanel(const ProjectCatalog& catalog, Actions actions)
+ProjectBrowserPanel::ProjectBrowserPanel(const ProjectCatalog& catalog, Actions actions,
+                                         std::vector<std::string> templates)
     : Catalog(catalog)
     , Act(std::move(actions))
+    , Templates(std::move(templates))
 {
 }
 
@@ -128,13 +130,45 @@ void ProjectBrowserPanel::DrawCreatePopup()
                              sizeof(CreateDirBuffer));
     ImGui::InputTextWithHint("Name", "defaults to the directory name", CreateNameBuffer,
                              sizeof(CreateNameBuffer));
-    ImGui::TextDisabled("Writes <directory>/project.senchaproj with a default game\nmodule path and an assets/ content root.");
+
+    // A starter template, or nothing. The names are the SDK's template
+    // directories; "(empty)" is the descriptor alone, for a project bringing
+    // its own module.
+    const int emptyIndex = static_cast<int>(Templates.size());
+    if (CreateTemplateIndex > emptyIndex)
+        CreateTemplateIndex = emptyIndex;
+    const char* current = CreateTemplateIndex < emptyIndex
+        ? Templates[static_cast<std::size_t>(CreateTemplateIndex)].c_str()
+        : "(empty)";
+    if (ImGui::BeginCombo("Template", current))
+    {
+        for (int i = 0; i < emptyIndex; ++i)
+        {
+            if (ImGui::Selectable(Templates[static_cast<std::size_t>(i)].c_str(),
+                                  i == CreateTemplateIndex))
+            {
+                CreateTemplateIndex = i;
+            }
+        }
+        if (ImGui::Selectable("(empty)", CreateTemplateIndex == emptyIndex))
+            CreateTemplateIndex = emptyIndex;
+        ImGui::EndCombo();
+    }
+    if (CreateTemplateIndex < emptyIndex)
+        ImGui::TextDisabled("Copies the template's sources and content into <directory>,\nready to build against this SDK.");
+    else
+        ImGui::TextDisabled("Writes <directory>/project.senchaproj with a default game\nmodule path and an assets/ content root.");
 
     ImGui::BeginDisabled(CreateDirBuffer[0] == '\0');
     if (ImGui::Button("Create"))
     {
         if (Act.CreateProject)
-            Act.CreateProject(CreateDirBuffer, CreateNameBuffer);
+        {
+            Act.CreateProject(CreateDirBuffer, CreateNameBuffer,
+                              CreateTemplateIndex < emptyIndex
+                                  ? Templates[static_cast<std::size_t>(CreateTemplateIndex)]
+                                  : std::string{});
+        }
         ImGui::CloseCurrentPopup();
     }
     ImGui::EndDisabled();

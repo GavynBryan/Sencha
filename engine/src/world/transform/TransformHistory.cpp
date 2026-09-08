@@ -50,6 +50,23 @@ void RequestTransformHistorySnap(World& world, EntityId entity)
         history->Snap = true;
 }
 
+Transform3f PresentationPoseOf(const World& world, EntityId entity, double alpha)
+{
+    if (!entity.IsValid() || !world.IsAlive(entity))
+        return Transform3f::Identity();
+    if (world.IsRegistered<WorldTransformHistory>())
+    {
+        if (const WorldTransformHistory* history = world.TryGet<WorldTransformHistory>(entity))
+            return ResolvePresentationPose(*history, alpha);
+    }
+    if (world.IsRegistered<WorldTransform>())
+    {
+        if (const WorldTransform* transform = world.TryGet<WorldTransform>(entity))
+            return transform->Value;
+    }
+    return Transform3f::Identity();
+}
+
 Transform3f ResolvePresentationPose(const WorldTransformHistory& history, double alpha)
 {
     const float t = alpha <= 0.0 ? 0.0f : (alpha >= 1.0 ? 1.0f : static_cast<float>(alpha));

@@ -387,6 +387,10 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
                     session->SetMaxPeers(static_cast<std::size_t>(*value));
             }
 
+            // Whoever was already playing here is now the authority's own
+            // participant, and peers have to be told about them.
+            engine.ProjectSessionStart();
+
             result.Info("hosting on " + NetAddressToString(session->LocalAddress()));
             return result;
         },

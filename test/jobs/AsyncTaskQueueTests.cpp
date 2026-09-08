@@ -322,6 +322,43 @@ TEST(AsyncTaskQueueThreaded, DestructorWithPendingAndUndrainedTasksDoesNotHang)
     EXPECT_FALSE(commitRan);
 }
 
+// Stop is the destructor's join, callable early: the owner of what the tasks
+// borrow can end the lane before those owners go, and nothing left in the
+// queue commits afterwards.
+TEST(AsyncTaskQueueThreaded, StopJoinsWorkAndCommitsNothingAfter)
+{
+    AsyncTaskQueue queue(1);
+    bool commitRan = false;
+    auto slow = queue.Submit<int>(
+        [] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            return 0;
+        },
+        [&](int) { commitRan = true; });
+    auto queued = queue.Submit<int>([] { return 0; }, [&](int) { commitRan = true; });
+
+    queue.Stop();
+    queue.Stop(); // idempotent
+
+    EXPECT_FALSE(commitRan);
+    EXPECT_EQ(queue.GetState(slow), AsyncTaskState::Cancelled);
+    EXPECT_EQ(queue.GetState(queued), AsyncTaskState::Cancelled);
+    // The stopped queue still answers the drains a teardown path may run.
+    EXPECT_EQ(queue.DrainCompletions(), 0u);
+    EXPECT_FALSE(commitRan);
+}
+
+TEST(AsyncTaskQueueZeroThread, StopDropsPendingWorkWithoutRunningIt)
+{
+    AsyncTaskQueue queue(0);
+    bool workRan = false;
+    auto handle = queue.Submit<int>([&] { workRan = true; return 0; }, [](int) {});
+    queue.Stop();
+    EXPECT_EQ(queue.PumpWork(), 0u);
+    EXPECT_FALSE(workRan);
+    EXPECT_EQ(queue.GetState(handle), AsyncTaskState::Cancelled);
+}
+
 //=============================================================================
 // Contract death tests, matching the engine's assert-based pattern.
 //=============================================================================

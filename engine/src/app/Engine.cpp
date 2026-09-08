@@ -3,6 +3,8 @@
 #include <app/EngineConsoleBuiltins.h>
 #include <net/NetConsoleCommands.h>
 #include <app/Game.h>
+#include <app/GameDataAssets.h>
+#include <app/LevelCommands.h>
 #include <audio/AudioService.h>
 #include <audio/AudioSystem.h>
 #include <audio/CaptionRuntime.h>
@@ -45,6 +47,8 @@
 #include <platform/PlatformServices.h>
 #include <platform/SdlWindow.h>
 #include <platform/SdlWindowService.h>
+
+#include <SDL3/SDL.h>
 
 #include <cassert>
 #include <cstdio>
@@ -404,6 +408,61 @@ SceneSpawnService& Engine::Spawns()
     return *SpawnServiceState;
 }
 
+LoadedLevel& Engine::Level()
+{
+    assert(LevelState.has_value()
+           && "Engine::Level: valid from just before OnStart to just after OnShutdown");
+    return *LevelState;
+}
+
+const LoadedLevel& Engine::Level() const
+{
+    assert(LevelState.has_value()
+           && "Engine::Level: valid from just before OnStart to just after OnShutdown");
+    return *LevelState;
+}
+
+void Engine::SetPointerCaptured(bool captured)
+{
+    PointerCaptureRequested = captured;
+    ApplyPointerCapture();
+}
+
+void Engine::ApplyPointerCapture()
+{
+    bool overlayCapturing = false;
+#ifdef SENCHA_ENABLE_DEBUG_UI
+    overlayCapturing = DebugOverlayFeature != nullptr && DebugOverlayFeature->IsCapturingInput();
+#endif
+    const bool desired = PointerCaptureRequested && PrimaryWindowFocused && !overlayCapturing;
+    if (desired == PointerCaptureApplied)
+        return;
+
+    // No window to capture a pointer into on a headless host; the request is
+    // still recorded so a query answers what the game asked for.
+    if (PlatformState == nullptr)
+        return;
+    SdlWindow* window = PlatformState->Windows.GetPrimaryWindow();
+    if (window == nullptr || window->GetHandle() == nullptr)
+        return;
+    SDL_SetWindowRelativeMouseMode(window->GetHandle(), desired);
+    PointerCaptureApplied = desired;
+}
+
+RuntimeContent& Engine::Content()
+{
+    assert(ContentState.has_value()
+           && "Engine::Content: valid from just before OnStart to just after OnShutdown");
+    return *ContentState;
+}
+
+const RuntimeContent& Engine::Content() const
+{
+    assert(ContentState.has_value()
+           && "Engine::Content: valid from just before OnStart to just after OnShutdown");
+    return *ContentState;
+}
+
 PlatformServices& Engine::Platform()
 {
     assert(PlatformState && "Engine::Platform: valid only when windowed, between Initialize and Shutdown");
@@ -486,7 +545,8 @@ SessionParticipantAdmission Engine::AdmitLocalParticipant()
     if (NetState != nullptr && NetState->Role() == NetSessionRole::Client)
         return {};
 
-    return ParticipantProjection.AdmitLocal(RuntimeWorldState->Entities());
+    return ParticipantProjection.AdmitLocal(RuntimeWorldState->Entities(),
+                                            NetState != nullptr);
 }
 
 SessionParticipantAdmission Engine::AdmitSimulatedParticipant(
@@ -495,7 +555,7 @@ SessionParticipantAdmission Engine::AdmitSimulatedParticipant(
     if (RuntimeWorldState == nullptr)
         return {};
     return ParticipantProjection.AdmitSimulated(RuntimeWorldState->Entities(),
-                                                source);
+                                                source, NetState != nullptr);
 }
 
 ParticipantBodyChange Engine::RequestParticipantBody(EntityId participant)
@@ -503,7 +563,7 @@ ParticipantBodyChange Engine::RequestParticipantBody(EntityId participant)
     if (RuntimeWorldState == nullptr)
         return {};
     return ParticipantProjection.RequestBody(RuntimeWorldState->Entities(),
-                                              participant);
+                                              participant, NetState != nullptr);
 }
 
 ParticipantControlChange Engine::SetParticipantControlSubject(
@@ -521,6 +581,13 @@ SessionParticipantRetirement Engine::RetireParticipant(EntityId participant)
         return {};
     return ParticipantProjection.RetireParticipant(
         RuntimeWorldState->Entities(), participant);
+}
+
+void Engine::ProjectSessionStart()
+{
+    if (RuntimeWorldState == nullptr || NetState == nullptr)
+        return;
+    ParticipantProjection.ProjectSessionStart(RuntimeWorldState->Entities());
 }
 
 SessionParticipantRetirement Engine::RetireLocalParticipant()
@@ -689,7 +756,18 @@ int Engine::Run(Game& game)
         *RuntimeWorldState, RuntimeComponentSchemaState, SceneSerializerRegistry,
         LoggingState);
 
+    // The content stack, before the game exists as far as content is concerned:
+    // OnStart sees a mounted, published stack rather than assembling one. The
+    // game's data-asset subtypes register first, because the scan classifies
+    // .sdata by the subtypes that exist when it runs.
+    ContentState.emplace(*this, LoggingState.GetLogger<Engine>());
+    RegisterGameDataAssets(game, ContentState->Assets());
+    ContentState->Mount();
+    ContentState->Publish(RuntimeWorldState->Entities());
+    LevelState.emplace(*this, *ContentState, LoggingState.GetLogger<Engine>());
+
     ConsoleService& console = Console();
+    RegisterLevelCommands(console, *this);
     console.AdvancePhase(ConsolePhase::EngineReady);
 
     // Running from the start of the lifecycle, not from the first frame, so
@@ -716,6 +794,9 @@ int Engine::Run(Game& game)
         .Schedule = EngineSystems,
     };
     game.OnRegisterSystems(registerSystems);
+    // After the game's, so whatever ordering constraints it declared already
+    // exist when these are added.
+    ContentState->RegisterSystems(EngineSystems);
     EngineSystems.Init();
     console.AdvancePhase(ConsolePhase::SystemsRegistered);
 
@@ -761,6 +842,23 @@ int Engine::Run(Game& game)
         .Config = Configuration,
     };
     game.OnShutdown(shutdown);
+
+    // Task captures borrow loaders, caches, and serializers. Release unfinished
+    // work while all of those owners (including the level loader) still exist.
+    // Keep the stopped queue addressable for the level's cancellation path.
+    Tasks().Stop();
+
+    // Content teardown, in the one order that works: the game has just released
+    // every lease it held, so the consumers of the stack are disconnected, then
+    // the subtype registrations -- function pointers into the game module -- are
+    // withdrawn while it is still mapped, and only then does the stack go.
+    // The level goes before the content it loaded through, and its detaches
+    // run while the game's zone-residency systems are still registered.
+    LevelState->Unload();
+    LevelState.reset();
+    ContentState->Disconnect(RuntimeWorldState->Entities());
+    UnregisterGameDataAssets(game, ContentState->Assets());
+    ContentState.reset();
 
     // Symmetric teardown of OnRegisterComponents above: retract the game's
     // serializers while the module is still mapped (the host unloads it after Run

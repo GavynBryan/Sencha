@@ -1,15 +1,17 @@
 #include <render/extract/Camera.h>
 
-#include <camera/CameraRig.h>
+#include <camera/CameraExclusion.h>
 #include <render/CameraProjection.h>
 #include <world/transform/TransformComponents.h>
+#include <world/transform/TransformHistory.h>
 
 #include <cmath>
 
 bool CameraRenderDataSystem::Build(const ActiveCameraService& activeCamera,
                                    const World& world,
                                    RenderExtent targetExtent,
-                                   CameraRenderData& out)
+                                   CameraRenderData& out,
+                                   double presentationAlpha)
 {
     if (!activeCamera.HasActive() || targetExtent.IsEmpty())
     {
@@ -41,19 +43,34 @@ bool CameraRenderDataSystem::Build(const ActiveCameraService& activeCamera,
             camera->NearPlane, camera->FarPlane);
     }
 
+    // A camera that carries pose history is drawn from the same blend every
+    // mesh is, so it cannot step against the world it looks at. A parented
+    // camera gets the blend through propagation instead and has no history.
+    const Transform3f pose =
+        world.IsRegistered<WorldTransformHistory>()
+                && world.TryGet<WorldTransformHistory>(entity) != nullptr
+            ? ResolvePresentationPose(*world.TryGet<WorldTransformHistory>(entity),
+                                      presentationAlpha)
+            : transform->Value;
+
     out.Entity = entity;
-    out.View = transform->Value.ToMat4().AffineInverse();
+    out.View = pose.ToMat4().AffineInverse();
     out.Projection = projection;
     out.ViewProjection = projection * out.View;
-    out.Position = transform->Value.Position;
+    out.Position = pose.Position;
     out.ViewFrustum = Frustum::FromViewProjection(out.ViewProjection);
-    // Rigs are optional vocabulary: an editor viewport camera and a bare
-    // authored camera have none, and their worlds never register the type.
+    // Exclusion is optional vocabulary: an editor viewport camera and a bare
+    // authored camera have none, and their worlds never register the type. A
+    // dead excluded entity excludes nothing rather than whatever recycled its
+    // slot.
     out.ExcludedEntity = EntityId{};
-    if (world.IsRegistered<CameraRig>())
+    if (world.IsRegistered<CameraExclusion>())
     {
-        if (const CameraRig* rig = world.TryGet<CameraRig>(entity))
-            out.ExcludedEntity = CameraRigExcludedEntity(*rig);
+        if (const CameraExclusion* exclusion = world.TryGet<CameraExclusion>(entity))
+        {
+            if (exclusion->Excluded.IsValid() && world.IsAlive(exclusion->Excluded))
+                out.ExcludedEntity = exclusion->Excluded;
+        }
     }
     return true;
 }

@@ -47,5 +47,6 @@ public:
     [[nodiscard]] static bool Build(const ActiveCameraService& activeCamera,
                                     const World& world,
                                     RenderExtent targetExtent,
-                                    CameraRenderData& out);
+                                    CameraRenderData& out,
+                      double presentationAlpha = 1.0);
 };

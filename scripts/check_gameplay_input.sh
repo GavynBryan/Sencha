@@ -20,15 +20,14 @@ set -uo pipefail
 ROOT="${1:-.}"
 status=0
 
-# Gameplay-owning trees: engine feature dirs that model gameplay, the game
-# template every new project is copied from, and the example hosts, which read
+# Gameplay-owning trees: engine feature dirs that model gameplay, every starter
+# template a new project is copied from, and the example hosts, which read
 # actions like any other consumer even though their controls are built in code
 # rather than authored.
 GAMEPLAY_DIRS=(
     "$ROOT/engine/src/controller"
     "$ROOT/engine/include/controller"
     "$ROOT/example/CubeDemo"
-    "$ROOT/example/SceneViewer"
     "$ROOT/engine/src/movement"
     "$ROOT/engine/include/movement"
     "$ROOT/engine/src/abilities"
@@ -39,8 +38,10 @@ GAMEPLAY_DIRS=(
     "$ROOT/engine/include/effects"
     "$ROOT/engine/src/camera"
     "$ROOT/engine/include/camera"
-    "$ROOT/template/src"
 )
+for template_src in "$ROOT"/templates/*/src; do
+    [ -d "$template_src" ] && GAMEPLAY_DIRS+=("$template_src")
+done
 
 EXISTING=()
 for dir in "${GAMEPLAY_DIRS[@]}"; do

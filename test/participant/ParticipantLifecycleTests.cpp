@@ -59,7 +59,11 @@ TEST(ParticipantLifecycle, ReadmissionDoesNotRecomposeTheLocalParticipant)
         << "readmission reset game-owned participant state";
 }
 
-TEST(ParticipantLifecycle, LocalSourceZeroIsRepresentedByNoInputReference)
+// The local source is assigned explicitly, like a peer's. It used to be
+// represented by absence, and absence meant "read the local source" -- so a
+// body released from a peer read this machine's keyboard the moment its
+// reference went away.
+TEST(ParticipantLifecycle, TheLocalSourceIsAssignedExplicitly)
 {
     ParticipantWorld fixture;
     const EntityId participant = fixture.Lifecycle.Admit(
@@ -71,8 +75,27 @@ TEST(ParticipantLifecycle, LocalSourceZeroIsRepresentedByNoInputReference)
         fixture.Entities, participant, body);
 
     EXPECT_TRUE(change.Changed());
-    EXPECT_EQ(fixture.Entities.TryGet<InputActionSourceRef>(body), nullptr);
+    const InputActionSourceRef* ref = fixture.Entities.TryGet<InputActionSourceRef>(body);
+    ASSERT_NE(ref, nullptr);
+    EXPECT_EQ(ref->Source, kLocalInputActionSource);
     EXPECT_EQ(LocalControlSubjectOf(fixture.Entities), body);
+}
+
+TEST(ParticipantLifecycle, AReleasedSubjectKeepsNoInputReference)
+{
+    ParticipantWorld fixture;
+    const InputActionSourceId source{ 17 };
+    const EntityId participant = fixture.Lifecycle.Admit(fixture.Entities, source).Participant;
+    const EntityId first = fixture.Thing();
+    const EntityId second = fixture.Thing();
+
+    (void)fixture.Lifecycle.SetControlSubject(fixture.Entities, participant, first);
+    (void)fixture.Lifecycle.SetControlSubject(fixture.Entities, participant, second);
+
+    EXPECT_EQ(fixture.Entities.TryGet<InputActionSourceRef>(first), nullptr)
+        << "the body that was stepped out of still names a source";
+    ASSERT_NE(fixture.Entities.TryGet<InputActionSourceRef>(second), nullptr);
+    EXPECT_EQ(fixture.Entities.TryGet<InputActionSourceRef>(second)->Source, source);
 }
 
 TEST(ParticipantLifecycle, NonLocalSourceFollowsControlAsOneInvariant)

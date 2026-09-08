@@ -167,7 +167,7 @@ namespace
             // A real host session, because being a host is what makes the
             // authority stream around its peers. The grant exchange below is
             // still driven by hand, so what is deterministic stays so.
-            Focus.Update(world, EntityId{}, &Host, Scopes,
+            Focus.Update(world, &Host, Scopes,
                          Authority.Partition(), nullptr);
             const std::span<const NetPeerZoneInterest> interest = Focus.Interest();
 

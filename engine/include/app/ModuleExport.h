@@ -58,5 +58,38 @@
 // moved. v14: added Game::OnRegisterVocabulary (a new trailing vtable slot), so
 // a module declares its gameplay tags, attributes, abilities, and locomotion
 // modes into any World -- the runtime's, and each of the editor's authoring
-// documents.
-#define SENCHA_GAME_ABI_VERSION 14u
+// documents. v15: the engine owns the process's content. Engine gained a
+// RuntimeContent member (so accessor offsets moved) and exposes it as Content();
+// it composes the asset stack, mounts RuntimeConfig::ContentRoots, publishes the
+// world's asset resources, and connects the spawn services and render pipeline
+// itself. A module no longer builds a RuntimeAssets, and
+// Game::OnRegisterDataAssetTypes is now called by the runtime rather than only
+// by the data editor. v16: the engine loads levels. Engine gained a LoadedLevel
+// member (so accessor offsets moved) and exposes it as Level(); map, world,
+// zone, zones, scene.spawn and scene.despawn are engine console commands, and
+// ConsoleService::SetMapHandler is gone -- `+map` loads through the engine
+// rather than calling back into a game. A game learns that a level arrived from
+// the zone-residency changes the load publishes. v17: participant admission is
+// session-gated. SessionParticipantProjection::AdmitLocal, AdmitSimulated and
+// RequestBody take whether a session is active and add replication state only
+// then; Engine::ProjectSessionStart stamps retroactively when a process starts
+// hosting. SetLocalControlSubject publishes identity only and no longer adds or
+// removes LocalLookControl -- a game that wants that rule composes it. v18:
+// the engine has no camera policy and no local streaming policy. CameraRig,
+// CameraRigMode, ComputeCameraPose, CameraFollowSystem, RegisterCameraSystem and
+// the authored CameraSeat (CSET) are gone; CameraExclusion is the one runtime
+// camera component, read by extraction, and FirstAuthoredCamera is the one
+// query. NetZoneStreaming::Update no longer takes a local control subject; a game
+// sets the partition's primary focus itself. v19: RegisterCameraComponents(World&)
+// is gone -- the engine schema gives every world storage for its components, so
+// the call registered nothing. Render extraction and presentation-domain
+// transform propagation take the frame's interpolation alpha: a camera with pose
+// history, or one parented to an entity with it, is drawn from the blend the
+// meshes are. v20: app/BodySpawns owns a prefab body request from
+// the ask until its group is handed to the participant lifecycle or cleaned
+// up; games install it as their body policy instead of keeping the book
+// themselves. SceneSpawnService::IsDespawnRequested reports an ended request
+// before the pump, and AsyncTaskQueue::Stop ends the cross-frame lane. The
+// engine stops that lane right after Game::OnShutdown returns, so a module may
+// not submit async work from its shutdown hook or later.
+#define SENCHA_GAME_ABI_VERSION 20u

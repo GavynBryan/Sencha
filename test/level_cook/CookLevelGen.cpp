@@ -1,6 +1,6 @@
 // Utility generator: cooks authored levels into a chosen assets root, the
 // headless half of the live GPU validation workflow (cook here, then view the
-// output in SceneViewer or diff the atlas offline). Complements the scene
+// output in the render host or diff the atlas offline). Complements the scene
 // generators: this one takes existing authored content instead of building it.
 //
 // Skipped unless SENCHA_COOK_LEVEL (authored .sscene paths, comma-separated)
@@ -12,7 +12,7 @@
 #include "document/DocumentCook.h"
 #include "document/DocumentSerialization.h"
 
-#include "TemplateComponents.h"
+#include "ArenaComponents.h"
 
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/assets/AssetRegistry.h>
@@ -37,18 +37,19 @@ TEST(CookLevel, Generate)
 
     RegisterDocumentSerializers();
     ComponentRegistrar registrar(nullptr, &EditorSceneSerializers(), nullptr);
-    RegisterTemplateComponents(registrar);
+    RegisterArenaComponents(registrar);
 
     // With a console sink, so a load or cook failure names its reason instead
     // of surfacing as a bare 'could not load'.
     LoggingProvider logging;
     logging.AddSink<ConsoleLogSink>();
 
-    // The headless asset composition, so authored content that names a data
-    // asset -- a movement profile, a game's own settings -- resolves rather
-    // than being dropped on the way through. Mesh and texture references still
-    // need the windowed composition: those caches hold GPU resources.
-    RuntimeAssets assets(logging, EditorSceneSerializers());
+    // The reference-only asset composition: authored content that names a
+    // data asset -- a movement profile, a game's own settings -- resolves
+    // rather than being dropped on the way through, and a mesh reference
+    // round-trips as a path without a GPU to hold the geometry.
+    RuntimeAssets assets(logging, EditorSceneSerializers(),
+                         RuntimeAssets::ReferenceOnly{});
     (void)ScanAssetsDirectory(root, assets.Registry, assets.Assets.Kinds());
 
     std::string_view remaining(levels);

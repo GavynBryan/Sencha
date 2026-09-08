@@ -48,6 +48,8 @@ struct SceneSpawnService::Request
     Transform3f Root;
     StoragePartitionId Partition;
     Phase State = Phase::Staging;
+    // Ended before it was published; the pump discards rather than instantiates.
+    bool Withdrawn = false;
     std::string Error;
 
     // Worker product, consumed at instantiation.
@@ -75,6 +77,14 @@ SceneSpawnService::~SceneSpawnService() = default;
 
 void SceneSpawnService::ConnectAssets(AssetSystem* assets, SceneCache* scenes)
 {
+    if (assets == nullptr)
+    {
+        for (const auto& request : Requests)
+            if (request->State == Request::Phase::Staging
+                || request->State == Request::Phase::Ready)
+                Discard(*request);
+        FirstUnsettled = Requests.size();
+    }
     Assets = assets;
     Scenes = scenes;
     SceneContext = assets != nullptr
@@ -173,11 +183,35 @@ SceneSpawnId SceneSpawnService::RequestSpawn(std::string_view sceneAssetPath,
 bool SceneSpawnService::RequestDespawn(SceneSpawnId id)
 {
     Request* request = FindRequest(id);
-    if (request == nullptr || request->State != Request::Phase::Live)
+    if (request == nullptr)
         return false;
-    request->State = Request::Phase::DespawnQueued;
-    PendingDespawns.push_back(id);
-    return true;
+    switch (request->State)
+    {
+    case Request::Phase::Live:
+        request->State = Request::Phase::DespawnQueued;
+        PendingDespawns.push_back(id);
+        return true;
+    case Request::Phase::Staging:
+    case Request::Phase::Ready:
+        // Withdrawn before anything exists. A staging request finishes its
+        // task -- the task cannot be recalled -- and the pump discards what it
+        // built instead of publishing it.
+        if (request->Withdrawn)
+            return false;
+        request->Withdrawn = true;
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool SceneSpawnService::IsDespawnRequested(SceneSpawnId id) const
+{
+    const Request* request = FindRequest(id);
+    return request != nullptr
+        && (request->Withdrawn
+            || request->State == Request::Phase::DespawnQueued
+            || request->State == Request::Phase::Despawned);
 }
 
 SceneSpawnStatus SceneSpawnService::Status(SceneSpawnId id) const
@@ -263,6 +297,21 @@ void SceneSpawnService::Instantiate(Request& request)
     request.ScenePath = std::string();
 }
 
+// A withdrawn request reaching the pump: what was built is let go of without
+// touching the world, and the request ends as if its group had been destroyed
+// -- which, to its owner, is what happened.
+void SceneSpawnService::Discard(Request& request)
+{
+    request.Package.reset();
+    if (request.Build != nullptr)
+    {
+        request.Build->ReleaseScene();
+        request.Build.reset();
+    }
+    request.ScenePath = std::string();
+    request.State = Request::Phase::Despawned;
+}
+
 void SceneSpawnService::Pump()
 {
     // Publication in request order: walk from the first request that could
@@ -277,7 +326,12 @@ void SceneSpawnService::Pump()
         if (request.State == Request::Phase::Staging)
             break;
         if (request.State == Request::Phase::Ready)
-            Instantiate(request);
+        {
+            if (request.Withdrawn)
+                Discard(request);
+            else
+                Instantiate(request);
+        }
         if (i == FirstUnsettled)
             ++FirstUnsettled;
     }

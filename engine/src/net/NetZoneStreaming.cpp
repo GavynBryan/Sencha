@@ -25,15 +25,12 @@ FocusSourceId NetZoneStreaming::SourceFor(EntityId entity)
     return FocusSourceId{ kPeerSourceBit | entity.Index };
 }
 
-void NetZoneStreaming::Update(const World& world, EntityId localControlSubject,
-                              NetSession* session,
+void NetZoneStreaming::Update(const World& world, NetSession* session,
                               ReplicationRuntime& replication,
                               WorldPartitionRuntime& partition, NetStats* traffic)
 {
     if (!partition.HasManifest())
         return;
-
-    FollowLocalPlayer(world, localControlSubject, partition);
 
     const NetSessionRole role =
         session == nullptr ? NetSessionRole::Standalone : session->Role();
@@ -49,29 +46,6 @@ void NetZoneStreaming::Update(const World& world, EntityId localControlSubject,
         LoadWhatWasGranted(replication.LocalZones(), partition);
     else
         LoadWhatWasGranted(NetZoneScope{}, partition);
-}
-
-void NetZoneStreaming::FollowLocalPlayer(const World& world,
-                                         EntityId localControlSubject,
-                                         WorldPartitionRuntime& partition)
-{
-    const EntityId pawn = localControlSubject.IsValid()
-        && world.IsAlive(localControlSubject)
-        ? localControlSubject
-        : EntityId{};
-    if (!pawn.IsValid())
-        return;
-
-    if (const WorldTransform* transform = world.TryGet<WorldTransform>(pawn))
-        partition.SetFocus(transform->Value.Position);
-    if (world.IsRegistered<CharacterController>())
-    {
-        if (const CharacterController* shape =
-                world.TryGet<CharacterController>(pawn))
-        {
-            partition.SetFocusCapsule(shape->Radius, shape->Height);
-        }
-    }
 }
 
 // `world` is null on a machine that is not the authority, which releases every

@@ -1,0 +1,7 @@
+{
+  "type": "game.settings",
+  "version": 1,
+  "data": {
+    "player_pawn": "asset://prefabs/platformer_pawn.smap"
+  }
+}

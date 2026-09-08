@@ -1,0 +1,5 @@
+{
+  "name": "SenchaPlatformerTemplate",
+  "gameModule": "build/game.so",
+  "contentRoots": ["assets"]
+}

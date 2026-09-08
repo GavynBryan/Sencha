@@ -24,7 +24,6 @@
 #include "../../example/CubeDemo/CubeDemoScene.h"
 #include "../../example/CubeDemo/CubeDemoSystems.h"
 #include "../../example/CubeDemo/FreeCamera.h"
-#include "../../example/SceneViewer/SceneViewerSystems.h"
 
 namespace
 {
@@ -57,18 +56,6 @@ TEST(ExampleScheduleComposition, CubeDemoDeclaresOnlyEdgesThatOrderSomething)
     DemoScene scene;
 
     RegisterCubeDemoSystems(harness.Schedule, camera, scene, nullptr);
-    harness.Schedule.Init();
-
-    SUCCEED() << "composition declared no cross-phase or unregistered edge";
-}
-
-TEST(ExampleScheduleComposition, SceneViewerDeclaresOnlyEdgesThatOrderSomething)
-{
-    CompositionHarness harness;
-    FreeCamera camera;
-    bool scriptedCameraEnabled = false;
-
-    RegisterSceneViewerSystems(harness.Schedule, camera, scriptedCameraEnabled);
     harness.Schedule.Init();
 
     SUCCEED() << "composition declared no cross-phase or unregistered edge";

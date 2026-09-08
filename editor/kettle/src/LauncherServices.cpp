@@ -72,12 +72,14 @@ void LauncherServices::BuildUi()
             .OpenMaterialEditor = [this](const std::string& path) { LaunchEditor("shudei", path); },
             .OpenDataEditor = [this](const std::string& path) { LaunchEditor("data_editor", path); },
             .BrowseForProject = [this]() { BrowseForProject(); },
-            .CreateProject = [this](const std::string& dir, const std::string& name)
-            { CreateProject(dir, name); },
+            .CreateProject = [this](const std::string& dir, const std::string& name,
+                                    const std::string& templateName)
+            { CreateProject(dir, name, templateName); },
             .RemoveEntry = [this](const std::string& path) { RemoveCatalogEntry(path); },
             .SettingsSaved = [this](const ProjectDescriptor& descriptor, const std::string& path)
             { TouchCatalog(path); (void)descriptor; },
-        });
+        },
+        ListTemplates());
 
     // File menu: New = the create-project modal, Open = browse for a
     // .senchaproj. Save/SaveAs stay unset (nothing document-like to save).
@@ -118,6 +120,50 @@ void LauncherServices::ProcessFrame()
     // zombies. Children are deliberately not killed on launcher exit.
     ChildPids.erase(std::remove_if(ChildPids.begin(), ChildPids.end(), HasProcessExited),
                     ChildPids.end());
+}
+
+std::filesystem::path LauncherServices::ResolveTemplatesDirectory()
+{
+    const char* base = SDL_GetBasePath();
+    if (base == nullptr)
+        return {};
+    const std::filesystem::path baseDir = std::filesystem::weakly_canonical(base);
+
+    std::error_code ec;
+    // Installed SDK: bin/kettle beside share/sencha/templates.
+    std::filesystem::path candidate = baseDir.parent_path() / "share" / "sencha" / "templates";
+    if (std::filesystem::is_directory(candidate, ec))
+        return candidate;
+    // In-tree: the launcher runs from its build directory somewhere under the
+    // repository, whose templates/ carries the in-tree helper.
+    for (std::filesystem::path dir = baseDir; !dir.empty() && dir != dir.root_path();
+         dir = dir.parent_path())
+    {
+        candidate = dir / "templates";
+        if (std::filesystem::is_regular_file(candidate / "InTreeTemplate.cmake", ec))
+            return candidate;
+    }
+    return {};
+}
+
+std::vector<std::string> LauncherServices::ListTemplates()
+{
+    std::vector<std::string> names;
+    const std::filesystem::path templates = ResolveTemplatesDirectory();
+    if (templates.empty())
+        return names;
+    std::error_code ec;
+    for (const std::filesystem::directory_entry& entry :
+         std::filesystem::directory_iterator(templates, ec))
+    {
+        if (entry.is_directory(ec)
+            && std::filesystem::is_regular_file(entry.path() / "project.senchaproj", ec))
+        {
+            names.push_back(entry.path().filename().string());
+        }
+    }
+    std::sort(names.begin(), names.end());
+    return names;
 }
 
 std::string LauncherServices::ResolveEditorBinary(const char* name)
@@ -185,11 +231,26 @@ void LauncherServices::BrowseForProject()
         false);
 }
 
-void LauncherServices::CreateProject(const std::string& directory, const std::string& name)
+void LauncherServices::CreateProject(const std::string& directory, const std::string& name,
+                                     const std::string& templateName)
 {
     ProjectDescriptor descriptor;
     std::string error;
-    if (!ProjectDescriptor::Create(directory, name, descriptor, &error))
+    bool created = false;
+    if (templateName.empty())
+    {
+        created = ProjectDescriptor::Create(directory, name, descriptor, &error);
+    }
+    else
+    {
+        const std::filesystem::path templates = ResolveTemplatesDirectory();
+        created = !templates.empty()
+            && ProjectDescriptor::CreateFromTemplate(
+                (templates / templateName).string(), directory, name, descriptor, &error);
+        if (templates.empty())
+            error = "no templates directory beside this launcher";
+    }
+    if (!created)
     {
         std::fprintf(stderr, "[kettle] create project failed: %s\n", error.c_str());
         return;

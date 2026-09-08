@@ -1,0 +1,20 @@
+{
+  "format_version": 1,
+  "entities": [
+    {
+      "id": "6b1a0e00000000c1",
+      "components": {
+        "name": {
+          "value": "Origin"
+        },
+        "Transform": {
+          "local": {
+            "position": [0, 0, 0],
+            "rotation": [0, 0, 0, 1],
+            "scale": [1, 1, 1]
+          }
+        }
+      }
+    }
+  ]
+}

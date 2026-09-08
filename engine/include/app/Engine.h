@@ -5,6 +5,8 @@
 #include <net/NetMessageRouter.h>
 #include <net/NetSession.h>
 #include <app/EngineSchedule.h>
+#include <app/LoadedLevel.h>
+#include <app/RuntimeContent.h>
 #include <core/console/ConsoleLineFeed.h>
 #include <core/console/ConsoleStartupScript.h>
 #include <core/config/EngineConfig.h>
@@ -34,6 +36,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -89,6 +92,11 @@ public:
     // outlive it. Returns null if one already exists.
     [[nodiscard]] NetSession* CreateNetSession(INetTransport& transport);
     void DestroyNetSession();
+    // Called once the session this process created is hosting. Every
+    // participant admitted before it -- the person who played singleplayer and
+    // then opened the game up -- gets the replication state a session-time
+    // admission would have given it. Idempotent; a no-op without a session.
+    void ProjectSessionStart();
 
     // Per-session replication state: the authority's identity mint and per-peer
     // baselines, or a client's map of what it has been told about. Reset with
@@ -276,12 +284,34 @@ public:
     [[nodiscard]] const RuntimeWorld& World() const;
 
     // Runtime scene spawning: cooked scenes placed at play time, published in
-    // request order at the async drain. Valid over the same span as World().
-    // The game connects its asset stack once in OnStart
-    // (Spawns().ConnectAssets(&runtimeAssets.Assets, &runtimeAssets.Scenes))
-    // and disconnects it in OnShutdown before that stack goes away; requests
-    // outside that span fail with a status, not a crash.
+    // request order at the async drain. Valid over the same span as World();
+    // the engine connects it to the content stack before OnStart and
+    // disconnects it after OnShutdown, so requests outside that span fail with
+    // a status, not a crash.
     [[nodiscard]] SceneSpawnService& Spawns();
+
+    // Whether the game wants the pointer captured: hidden and reporting
+    // relative motion, the way a look control reads it. A request, not a
+    // command: the platform owner applies it only while the window is focused
+    // and no overlay is taking input, and re-applies it when those return, so
+    // a game never has to know that the console opened on top of it. A
+    // headless process records the request and does nothing.
+    void SetPointerCaptured(bool captured);
+    [[nodiscard]] bool IsPointerCaptureRequested() const { return PointerCaptureRequested; }
+
+    // This process's mounted content. Live from just before Game::OnStart until
+    // just after Game::OnShutdown, which is the span a game may hold references
+    // into it; every lease a game takes must be released by the end of
+    // OnShutdown. Calling this outside Run is a programming error.
+    [[nodiscard]] RuntimeContent& Content();
+    [[nodiscard]] const RuntimeContent& Content() const;
+
+    // What this process has loaded. Live over the same span as Content(), and
+    // empty until something loads a scene or a world. Loading is all it does:
+    // what a game makes of a loaded level -- a camera, a player, a focus -- the
+    // game decides by watching the residency changes the load publishes.
+    [[nodiscard]] LoadedLevel& Level();
+    [[nodiscard]] const LoadedLevel& Level() const;
 
     [[nodiscard]] RuntimeFrameLoop& Runtime() { return RuntimeLoop; }
     [[nodiscard]] const RuntimeFrameLoop& Runtime() const
@@ -339,6 +369,8 @@ private:
     // alone and steps the same frame the windowed host does, minus the phases
     // that would have had nothing to draw into.
     void RegisterFramePhases(Game& game);
+    // Reconciles the capture request with focus and overlay state.
+    void ApplyPointerCapture();
     void RegisterHostCommandPhase();
     static void LogConsoleResult(Logger& log, const ConsoleResult& result);
     void RegisterSimulationFramePhases();
@@ -418,6 +450,15 @@ private:
     // Constructed with the world; torn down before it (they borrow the world).
     std::unique_ptr<SceneSpawnService> SpawnServiceState;
     std::unique_ptr<NetPrefabSpawner> NetPrefabState;
+    // Declared after the services it connects and the world it publishes into,
+    // so destruction alone would give them back in the right order. Run states
+    // that order explicitly anyway: OnShutdown, Disconnect, then reset.
+    std::optional<RuntimeContent> ContentState;
+    bool PointerCaptureRequested = false;
+    bool PointerCaptureApplied = false;
+    bool PrimaryWindowFocused = true;
+    // After the content it loads through, so it is destroyed before it.
+    std::optional<LoadedLevel> LevelState;
     RuntimeFrameLoop RuntimeLoop;
     ConsoleStartupScript StartupScript;
     std::unique_ptr<FrameDriver> FrameDriverInstance;

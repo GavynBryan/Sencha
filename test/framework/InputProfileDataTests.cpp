@@ -602,9 +602,9 @@ JsonValue DataSection(const std::string& document, std::string_view expectedType
 TEST_F(InputBindFixture, TheTemplatesShippedControlsLoadAndBind)
 {
     const std::string actionsDocument =
-        ReadRepoFile("template/assets/data/input_actions.sdata");
+        ReadRepoFile("templates/fps/assets/data/input_actions.sdata");
     const std::string profileDocument =
-        ReadRepoFile("template/assets/data/input_default.sdata");
+        ReadRepoFile("templates/fps/assets/data/input_default.sdata");
     ASSERT_FALSE(actionsDocument.empty());
     ASSERT_FALSE(profileDocument.empty());
 

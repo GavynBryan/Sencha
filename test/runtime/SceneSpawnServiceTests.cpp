@@ -296,3 +296,78 @@ TEST(SceneSpawnService, RefusalsAreStatusesNotCrashes)
     EXPECT_EQ(h.Service.Status(SceneSpawnId{ 999 }), SceneSpawnStatus::Unknown);
     EXPECT_FALSE(h.Service.RequestDespawn(SceneSpawnId{ 999 }));
 }
+
+// Whoever started a request can always end it, including before anything
+// exists. A withdrawn request finishes staging and is then discarded rather
+// than published, so a body requested for a participant who left never
+// arrives to stand around with no owner.
+TEST(SceneSpawnService, APendingRequestCanBeWithdrawnAndIsNeverPublished)
+{
+    SpawnHarness h;
+    TempSmapScene scene(h.Registry, h.Serializers, MakeSpawnContents(), "lamp");
+
+    const SceneSpawnId id = h.Service.RequestSpawn(scene.Path, Transform3f::Identity());
+    ASSERT_EQ(h.Service.Status(id), SceneSpawnStatus::Pending);
+
+    EXPECT_TRUE(h.Service.RequestDespawn(id)) << "a pending request refused to end";
+    EXPECT_FALSE(h.Service.RequestDespawn(id)) << "ending it twice is not a second end";
+
+    h.Turn();
+    h.Turn();
+
+    EXPECT_EQ(h.Service.Status(id), SceneSpawnStatus::Despawned);
+    EXPECT_TRUE(h.Service.Entities(id).empty());
+    EXPECT_TRUE(h.World.Entities().GetAliveEntities().empty())
+        << "a withdrawn spawn published its group anyway";
+}
+
+// Status reports the pump's view: a queued despawn is Live until the pump
+// runs, and a withdrawn request is Pending. Whoever holds a group open for a
+// handoff needs to know the request has been ended before then.
+TEST(SceneSpawnService, ADespawnRequestIsObservableBeforeThePump)
+{
+    SpawnHarness h;
+    TempSmapScene scene(h.Registry, h.Serializers, MakeSpawnContents(), "ending");
+
+    EXPECT_FALSE(h.Service.IsDespawnRequested(SceneSpawnId{ 999 }));
+
+    const SceneSpawnId withdrawn =
+        h.Service.RequestSpawn(scene.Path, Transform3f::Identity());
+    EXPECT_FALSE(h.Service.IsDespawnRequested(withdrawn));
+    ASSERT_TRUE(h.Service.RequestDespawn(withdrawn));
+    EXPECT_TRUE(h.Service.IsDespawnRequested(withdrawn));
+    EXPECT_EQ(h.Service.Status(withdrawn), SceneSpawnStatus::Pending);
+
+    const SceneSpawnId live =
+        h.Service.RequestSpawn(scene.Path, Transform3f::Identity());
+    h.Turn();
+    ASSERT_EQ(h.Service.Status(live), SceneSpawnStatus::Live);
+    EXPECT_FALSE(h.Service.IsDespawnRequested(live));
+    ASSERT_TRUE(h.Service.RequestDespawn(live));
+    EXPECT_TRUE(h.Service.IsDespawnRequested(live));
+    EXPECT_EQ(h.Service.Status(live), SceneSpawnStatus::Live);
+    h.Turn();
+    EXPECT_TRUE(h.Service.IsDespawnRequested(live));
+    EXPECT_EQ(h.Service.Status(live), SceneSpawnStatus::Despawned);
+    // A withdrawal outlives the discard the pump performed.
+    EXPECT_TRUE(h.Service.IsDespawnRequested(withdrawn));
+}
+
+// A withdrawn request whose build then fails is still an ended request: the
+// withdrawal is what the holder acted on, and the failure changes nothing.
+TEST(SceneSpawnService, AWithdrawalSurvivesTheBuildFailing)
+{
+    SpawnHarness h;
+    EXPECT_TRUE(h.Registry.Register(AssetRecord{
+        .Type = AssetType::Scene,
+        .SourceKind = AssetSourceKind::File,
+        .Path = "asset://scenes/gone.smap",
+        .FilePath = "does/not/exist.smap",
+    }));
+    const SceneSpawnId doomed =
+        h.Service.RequestSpawn("asset://scenes/gone.smap", Transform3f::Identity());
+    ASSERT_TRUE(h.Service.RequestDespawn(doomed));
+    h.Turn();
+    EXPECT_NE(h.Service.Status(doomed), SceneSpawnStatus::Live);
+    EXPECT_TRUE(h.Service.IsDespawnRequested(doomed));
+}

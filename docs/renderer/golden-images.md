@@ -76,7 +76,7 @@ still arriving, so an unattended capture should name a frame the scene has
 settled by. From a command line:
 
 ```sh
-cd template && SENCHA_PRESENT_MODE=IMMEDIATE ../build/example/SceneViewer/app \
+cd test/fixtures/content && SENCHA_PRESENT_MODE=IMMEDIATE ../../../build/test/fixtures/render_host/app \
   +map levels/shadow_probe.level \
   +render.screenshot /tmp/frame.png 150 \
   +set app.exit_after_frames 300

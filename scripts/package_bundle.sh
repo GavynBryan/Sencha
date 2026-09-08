@@ -20,6 +20,7 @@ REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$REPO_ROOT/build"
 CONTENT_DIR=""
 GAME_MODULE=""
+TEMPLATE="fps"
 MAP=""
 OUT_DIR=""
 PORT="27500"
@@ -33,7 +34,8 @@ Usage: package_bundle.sh --content <dir> --map <levels/name> --out <dir> [option
   --content <dir>   Project content root (the directory holding assets/).
   --map <name>      Level the server hosts, e.g. levels/EntranceHall.
   --out <dir>       Directory to write the bundles into.
-  --module <path>   Game module .so (default: the built template module).
+  --module <path>   Game module .so (default: the built module of --template).
+  --template <name> Starter template whose in-tree module to bundle (default: fps).
   --build <dir>     Build tree to take binaries from (default: <repo>/build).
   --port <n>        UDP port the server binds (default: 27500).
   --name <text>     Bundle name prefix (default: the content directory's name).
@@ -47,6 +49,7 @@ while [[ $# -gt 0 ]]; do
         --map)     MAP="${2:-}"; shift 2 ;;
         --out)     OUT_DIR="${2:-}"; shift 2 ;;
         --module)  GAME_MODULE="${2:-}"; shift 2 ;;
+        --template) TEMPLATE="${2:-}"; shift 2 ;;
         --build)   BUILD_DIR="${2:-}"; shift 2 ;;
         --port)    PORT="${2:-}"; shift 2 ;;
         --name)    NAME="${2:-}"; shift 2 ;;
@@ -68,7 +71,7 @@ APP_BIN="$BUILD_DIR/app/app"
 [[ -x "$APP_BIN" ]] || { echo "host binary not found at '$APP_BIN'" >&2; exit 1; }
 
 if [[ -z "$GAME_MODULE" ]]; then
-    GAME_MODULE="$REPO_ROOT/template/build/game.so"
+    GAME_MODULE="$REPO_ROOT/templates/$TEMPLATE/build/game.so"
 fi
 [[ -f "$GAME_MODULE" ]] || { echo "game module not found at '$GAME_MODULE'" >&2; exit 1; }
 
