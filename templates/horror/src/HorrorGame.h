@@ -5,6 +5,10 @@
 
 #include "HorrorSessionPolicy.h"
 
+#include <app/BodySpawns.h>
+
+#include <optional>
+
 #include <string_view>
 
 // The game module: what this game registers with the engine, what it puts on
@@ -21,7 +25,6 @@ public:
                                     DataSchemaRegistry& schemas) override;
     void OnStart(GameStartupContext& ctx) override;
     void OnRegisterSystems(SystemRegisterContext& ctx) override;
-    void OnPlatformEvent(PlatformEventContext& ctx) override;
     void OnShutdown(GameShutdownContext& ctx) override;
 
 private:
@@ -30,4 +33,9 @@ private:
     // logger exist; the game object itself is a module-static.
     std::optional<HorrorSessionPolicy> SessionState;
     [[nodiscard]] HorrorSessionPolicy& Session();
+
+    // The engine's book on this game's prefab body requests. Closed in
+    // OnShutdown, ahead of the session whose settings its callbacks read;
+    // kept, closed, until the next OnStart replaces it.
+    std::optional<BodySpawns> Bodies;
 };

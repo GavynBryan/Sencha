@@ -1,29 +1,29 @@
 #pragma once
 
-
+#include <app/BodySpawns.h>
 #include <ecs/EntityId.h>
 #include <ecs/StoragePartitionId.h>
 #include <math/Vec.h>
-#include <runtime/spawn/SceneSpawnService.h>
 #include <world/RuntimeWorld.h>
 
 #include <optional>
 #include <span>
-#include <utility>
-#include <vector>
 
 class Engine;
 class Logger;
 class World;
+struct CompiledArenaSettings;
 struct FrameUpdateContext;
 struct ZoneResidencyContext;
 
 // Where a body comes from and who ends up driving it.
 //
 // The engine owns who a participant is, which of them this process provides a
-// body for, and what happens when one leaves. What is here is the game's half:
-// building a pawn, deciding where it stands, dressing it, and pointing this
-// machine's camera at whatever it turned out to be driving.
+// body for, what happens when one leaves, and -- through BodySpawns
+// -- a prefab request from the moment it is asked for until its group is handed
+// over or cleaned up. What is here is the game's half: which prefab, where it
+// stands, when there is somewhere for it to stand, and pointing this machine's
+// camera at whatever it turned out to be driving.
 
 // Where a player goes when the level does not say. Above the origin rather than
 // on it, so a body lands on a floor at zero instead of inside it.
@@ -44,32 +44,6 @@ struct PlayContentPartition
     std::optional<StoragePartitionId> Value;
 };
 
-//=============================================================================
-// PendingSceneSpawns
-//
-// Scene spawns settle at the frame drain, but the participant lifecycle asks
-// for a body synchronously -- so requests wait here, and the settlement
-// system re-asks when one lands. Live prefab bodies are remembered so a
-// reaped participant despawns its whole group, not just the root the
-// lifecycle knows about.
-//=============================================================================
-struct PendingSceneSpawns
-{
-    struct PawnRequest
-    {
-        EntityId Participant;
-        SceneSpawnId Spawn;
-    };
-    std::vector<PawnRequest> Pawns;
-    std::vector<std::pair<EntityId, SceneSpawnId>> LiveBodies;
-};
-
-[[nodiscard]] PendingSceneSpawns& PendingSpawnsOf(World& world);
-
-// The spawned group's root: the member without a parent.
-[[nodiscard]] EntityId SpawnedGroupRoot(const World& world,
-                                        std::span<const EntityId> members);
-
 // An entity with a transform and the world transform the engine owes it.
 [[nodiscard]] EntityId CreateTransformEntity(
     World& world,
@@ -77,12 +51,13 @@ struct PendingSceneSpawns
     StoragePartitionId partition = PersistentStoragePartition,
     const Vec3d& scale = Vec3d::One());
 
+// The spawned group's root: the member without a parent.
+[[nodiscard]] EntityId SpawnedGroupRoot(const World& world,
+                                        std::span<const EntityId> members);
+
 // Names the prefab a spawned group came from, so a peer receiving it builds
 // the same body rather than a bag of replicated components.
 void StampNetPrefab(World& world, EntityId root, Logger& log);
-
-// A flying body with the movement columns a pawn has, for looking at a level
-// that has no player to put in it.
 
 // Where a level says players begin, or none when it does not say.
 [[nodiscard]] std::optional<Vec3d> FindPlayerStart(
@@ -94,6 +69,18 @@ void PublishPlayContent(World& world,
 // Content has arrived, so anybody admitted before it can have a body now.
 void RequestBodiesForWaitingParticipants(Engine& engine);
 
+// Which prefab a participant's body is and where it stands: the level's player
+// start, offset by peer so two players do not arrive inside each other. None
+// when there is no content to stand in or no prefab configured, and each of
+// those is said out loud.
+[[nodiscard]] std::optional<BodySpawnRequest> ChoosePawnSpawn(
+    const World& world, EntityId participant,
+    const CompiledArenaSettings* settings, Logger& log);
+
+// A pawn landed for `participant` and is about to be handed to the lifecycle:
+// it is stamped with the prefab it came from, so a later session can tell
+// peers how to build it.
+void PreparePawn(World& world, EntityId participant, EntityId root, Logger& log);
 
 //=============================================================================
 // SessionPlayerSystem
@@ -128,27 +115,22 @@ private:
 //=============================================================================
 // SpawnSettlementSystem
 //
-// Watches the pending scene spawns each frame, after the drain where the
-// spawn service publishes. A settled pawn request re-asks the participant
-// lifecycle (ProvideBody consumes the entry either way); a settled turret
-// gets its runtime body, its replication stamps, and its waiting driver.
+// Decides when there is somewhere for a body to go, and lets the engine's
+// prefab request book settle what landed. The book owns every request from
+// ask to handoff; this system owns when to ask and when to give up.
 //=============================================================================
 struct SpawnSettlementSystem
 {
     Engine* Owner = nullptr;
     Logger* Log = nullptr;
+    BodySpawns* Bodies = nullptr;
 
     // Where a pawn belongs, learned from the level arriving rather than from
     // having loaded it. The engine loads; this decides that a loaded play zone
-    // is somewhere a player's body can go, and asks for one.
-    //
-    // Every frame the zone is resident, not once when it lands: a load that
-    // finished after a join would otherwise place a second body beside the one
-    // the authority is already simulating.
+    // is somewhere a player's body can go, and asks for one. When it goes,
+    // whatever was still being asked for goes with it: a request made for
+    // departed content must not land in the next map.
     void ZoneResidency(ZoneResidencyContext& ctx);
 
     void FrameUpdate(FrameUpdateContext& ctx);
-
-private:
-    std::vector<EntityId> ReAskScratch;
 };

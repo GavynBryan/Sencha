@@ -1,26 +1,17 @@
 #include "PawnSpawn.h"
 
 #include "PlatformerStart.h"
+#include "PlatformerSettingsData.h"
 
-#include <abilities/AbilityKit.h>
 #include <app/Engine.h>
 #include <app/GameContexts.h>
-#include <attributes/AttributeSet.h>
-#include <controller/LookOrientation.h>
 #include <core/logging/LoggingProvider.h>
-#include <ecs/Query.h>
 #include <ecs/World.h>
-#include <gameplay_tags/GameplayTagContainer.h>
 #include <math/geometry/3d/Transform3d.h>
-#include <movement/LocomotionMode.h>
-#include <movement/MovementDefs.h>
-#include <movement/MovementTags.h>
-#include <movement/components/CharacterMovement.h>
+#include <net/NetParticipantIdentity.h>
 #include <participant/LocalControl.h>
 #include <participant/ParticipantControl.h>
-#include <physics/components/CharacterController.h>
 #include <world/RuntimeWorld.h>
-#include <world/transform/DerivedTransform.h>
 #include <world/transform/TransformComponents.h>
 
 #include <cstdint>
@@ -57,44 +48,6 @@ std::optional<Vec3d> FindPlayerStart(
     return std::nullopt;
 }
 
-EntityId CreateTransformEntity(
-    World& world,
-    const Vec3d& position,
-    StoragePartitionId partition,
-    const Vec3d& scale)
-{
-    Transform3f transform;
-    transform.Position = position;
-    transform.Scale = scale;
-
-    const EntityId entity = world.CreateEntity(partition);
-    world.AddComponent<LocalTransform>(
-        entity,
-        LocalTransform{ transform });
-    // WorldTransform is owed by the local one, not written by whoever happens
-    // to place an entity; the engine states that obligation in one place.
-    SeedDerivedWorldTransform(world, entity);
-    return entity;
-}
-
-PendingSceneSpawns& PendingSpawnsOf(World& world)
-{
-    if (PendingSceneSpawns* existing = world.TryGetResource<PendingSceneSpawns>())
-        return *existing;
-    return world.AddResource<PendingSceneSpawns>();
-}
-
-// The spawned group's root: the member without a parent. A prefab meant to be
-// spawned as one thing has exactly one; content that ships more is taken by
-// its first.
-EntityId SpawnedGroupRoot(const World& world, std::span<const EntityId> members)
-{
-    for (EntityId member : members)
-        if (world.TryGet<Parent>(member) == nullptr)
-            return member;
-    return {};
-}
-
 // Content has arrived, so anybody admitted before it can have a body now.
 //
 // The engine asks once, at admission, and never again on its own -- which is
@@ -129,6 +82,73 @@ void PublishPlayContent(World& world, std::optional<StoragePartitionId> partitio
         existing->Value = partition;
     else
         world.AddResource<PlayContentPartition>().Value = partition;
+}
+
+std::optional<BodySpawnRequest> ChoosePawnSpawn(
+    const World& world, EntityId participant,
+    const CompiledPlatformerSettings* settings, Logger& log)
+{
+    // Nowhere to put a body until content has loaded. Content that has been
+    // and gone leaves the resource behind with no partition in it; what proves
+    // there is somewhere for a body is the value, not the resource.
+    const PlayContentPartition* content = world.TryGetResource<PlayContentPartition>();
+    if (content == nullptr || !content->Value.has_value())
+        return std::nullopt;
+
+    // No prefab is no body. Said at Error rather than papered over with a
+    // built-in one: a player driving a diagnostic capsule while the game
+    // believes it is running is exactly what must not pass unremarked, and a
+    // game with no pawn content is a game that is not set up yet.
+    if (settings == nullptr || settings->PlayerPawnScenePath.empty())
+    {
+        log.Error("PlatformerGame: no player pawn prefab configured "
+                  "(game.settings player_pawn); nobody gets a body");
+        return std::nullopt;
+    }
+
+    // Unfiltered: a map's content is imported into its own zone partition, so
+    // a start looked for only in the persistent one is a start that is never
+    // found and a peer that arrives at the origin.
+    const std::optional<Vec3d> authored = FindPlayerStart(world, std::nullopt);
+    // Said out loud once per spawn, because everything downstream of it looks
+    // exactly like a level that authored a start at the origin -- including
+    // anything else near where a player begins.
+    if (!authored.has_value())
+    {
+        log.Warn("PlatformerGame: no player_start in the loaded content; "
+                 "spawning at the default position");
+    }
+
+    // Offset laterally from the start so two players do not arrive inside
+    // each other, by peer id so somebody lands in the same place however many
+    // others are present. A proper multi-start rotation is the level's
+    // business, not this policy's.
+    const NetParticipantIdentity* who = world.TryGet<NetParticipantIdentity>(participant);
+    const std::uint32_t peer = who == nullptr ? 0u : who->Peer;
+    Vec3d spawn = authored.value_or(kDefaultPlayerStart);
+    spawn.X += 2.0f * static_cast<float>(peer);
+
+    BodySpawnRequest request;
+    request.ScenePath = settings->PlayerPawnScenePath;
+    request.Root.Position = spawn;
+    request.Partition = PersistentStoragePartition;
+    return request;
+}
+
+// The prefab is the pawn: its mesh, controller, tuning, mode, aim, tags,
+// attributes, and abilities are all authored, and the per-tick columns come
+// with the movement component. What is left to do here is say so -- named
+// rather than numbered for the one with no peer behind it, because peer zero
+// is the authority, and "a pawn for peer 0" describes the person at this
+// machine as a connection that does not exist.
+void PreparePawn(World& world, EntityId participant, EntityId, Logger& log)
+{
+    const NetParticipantIdentity* who = world.TryGet<NetParticipantIdentity>(participant);
+    const std::uint32_t peer = who == nullptr ? 0u : who->Peer;
+    if (peer == kNetAuthorityPeer)
+        log.Info("PlatformerGame: spawned a pawn for the player at this machine (pawn prefab)");
+    else
+        log.Info("PlatformerGame: spawned a pawn for peer {} (pawn prefab)", peer);
 }
 
 void SessionPlayerSystem::FrameUpdate(FrameUpdateContext& ctx)
@@ -183,6 +203,8 @@ void SpawnSettlementSystem::ZoneResidency(ZoneResidencyContext& ctx)
         if (change.Kind == ZoneResidencyChangeKind::Detaching)
         {
             PublishPlayContent(ctx.Entities, std::nullopt);
+            if (Bodies != nullptr)
+                Bodies->CancelAllPending();
             continue;
         }
         if (change.Kind != ZoneResidencyChangeKind::Attached)
@@ -195,33 +217,10 @@ void SpawnSettlementSystem::ZoneResidency(ZoneResidencyContext& ctx)
     }
 }
 
-void SpawnSettlementSystem::FrameUpdate(FrameUpdateContext& ctx)
+// After the drain where the spawn service publishes, before the session
+// presents bodies: a pawn that lands this frame is followed this frame.
+void SpawnSettlementSystem::FrameUpdate(FrameUpdateContext&)
 {
-    World& world = ctx.Entities;
-    PendingSceneSpawns* pending = world.TryGetResource<PendingSceneSpawns>();
-    if (pending == nullptr)
-        return;
-    SceneSpawnService& spawns = Owner->Spawns();
-
-    // Collected first: the re-ask reenters ProvideBody, which edits the
-    // very list this walks.
-    ReAskScratch.clear();
-    for (std::size_t i = 0; i < pending->Pawns.size();)
-    {
-        const PendingSceneSpawns::PawnRequest& request = pending->Pawns[i];
-        if (!world.IsAlive(request.Participant))
-        {
-            // The participant left before its body landed; the group has
-            // nobody to belong to.
-            (void)spawns.RequestDespawn(request.Spawn);
-            pending->Pawns[i] = pending->Pawns.back();
-            pending->Pawns.pop_back();
-            continue;
-        }
-        if (spawns.Status(request.Spawn) != SceneSpawnStatus::Pending)
-            ReAskScratch.push_back(request.Participant);
-        ++i;
-    }
-    for (const EntityId participant : ReAskScratch)
-        (void)Owner->RequestParticipantBody(participant);
+    if (Bodies != nullptr)
+        Bodies->Update();
 }

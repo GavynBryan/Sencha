@@ -10,7 +10,7 @@ src/HorrorGame.*            composition root: physics, movement, input
 src/HorrorSessionPolicy.*   which features this game's world carries; its input
 src/TankSteeringSystem.*    stick -> walk along facing, turn in place
 src/FixedCameraSystem.*     the room's authored camera becomes the view when the room arrives
-src/PawnSpawn.*             where a participant's body comes from
+src/PawnSpawn.*             which prefab a body is and where it stands; the play zone
 src/HorrorStart.h           the level's player start (a tag)
 assets/                     one room with one authored camera
 ```

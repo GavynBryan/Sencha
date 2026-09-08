@@ -74,6 +74,11 @@ The engine does **not**:
 - admit a participant or ask for a body (`Engine::AdmitLocalParticipant` and
   `RequestParticipantBody` are called by the game when *it* decides content is
   ready),
+- choose a body. `BodySpawns` (`engine/include/app/BodySpawns.h`)
+  keeps the book on a prefab body request -- the spawn in flight, the landed
+  group handed over by its root, the cleanup of what was never handed over or
+  whose root died -- but which prefab, where it stands, and when there is
+  somewhere for it to stand are the callbacks a game installs into it,
 - choose a streaming focus after the initial one (`WorldPartitionRuntime`'s
   focus API is the game's),
 - add `LocalLookControl` or any other controller facility to the body this
@@ -100,6 +105,26 @@ void MySpawnSystem::ZoneResidency(ZoneResidencyContext& ctx)
 
 Every pawn template does exactly this; `templates/horror` activates the room's
 authored camera from the same hook.
+
+## Bodies from prefabs
+
+A participant's body is asked for synchronously (`ParticipantPolicies::ProvideBody`)
+and a prefab spawns asynchronously, so somebody has to own the request in
+between. That owner is `BodySpawns`: a game constructs one in
+`OnStart` over the engine's world and spawn service, gives it three callbacks
+(which prefab and where, the engine's `RequestParticipantBody`, and an optional
+step that runs on the landed root before assignment), and installs its
+`ProvideBody` and `RequestDespawnBody` as the lifecycle's body policy. The
+game's spawn system calls `Update` each frame; the book re-asks the lifecycle
+when a spawn lands, withdraws a spawn whose participant left, and destroys a
+group whose root died or was never handed over. `CancelAllPending` is the
+game's call when the content a request was made for goes away, and `Close`
+runs at the start of `OnShutdown`, before anything the callbacks captured.
+
+The book knows nothing about sessions, cameras, input, or zones, and the
+participant layer never learns that a body was a scene spawn
+(`scripts/check_engine_layering.sh`, rule F). A game that builds bodies some
+other way installs its own `ProvideBody` and never constructs the book.
 
 ## The templates
 

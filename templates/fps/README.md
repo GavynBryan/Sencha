@@ -13,7 +13,7 @@ src/FpsSessionPolicy.*  which gameplay features this game's world carries; its i
 src/FpsSteeringSystem.* actions -> movement intent, in the body's yaw frame
 src/PawnCameraSystem.*  the body's camera child: pitch, exclusion, activation
 src/PawnStreaming.*     the world streams around the driven body
-src/PawnSpawn.*         where a participant's body comes from
+src/PawnSpawn.*         which prefab a body is and where it stands; the play zone
 src/FpsStart.h          the level's player start (a tag)
 assets/                 authored content; the cook writes assets/.cooked/
 ```

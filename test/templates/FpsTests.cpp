@@ -1,5 +1,6 @@
 #include "TemplateModuleRun.h"
 
+#include <anim/AnimationClipPlaybackSystem.h>
 #include <camera/CameraExclusion.h>
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
@@ -26,6 +27,9 @@ namespace
 {
     struct FpsProbe
     {
+        Engine* Host = nullptr;
+        // No starter content plays clips; the template must not pay for playback.
+        bool AnimationRegistered = true;
         int Frames = 0;
         int Participants = 0;
         bool BodyAssigned = false;
@@ -39,6 +43,7 @@ namespace
 
         void FrameUpdate(FrameUpdateContext& ctx)
         {
+            AnimationRegistered = Host->Schedule().Has<AnimationClipPlaybackSystem>();
             const World& world = ctx.Entities;
             ++Frames;
             Participants = 0;
@@ -87,6 +92,7 @@ TEST(FpsTemplate, OnePlayerOneBodyLookedThroughFromInside)
     ASSERT_EQ(run.Exit(), 0);
 
     const FpsProbe& seen = run.Seen();
+    EXPECT_FALSE(seen.AnimationRegistered) << "no starter content plays clips";
     EXPECT_EQ(seen.Participants, 1) << "the player at this machine, and nobody else";
     ASSERT_TRUE(seen.BodyAssigned) << "the prefab pawn never landed";
     EXPECT_TRUE(seen.BodyAims) << "an FPS body carries the aim it is steered along";

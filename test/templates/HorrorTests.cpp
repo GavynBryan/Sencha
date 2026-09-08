@@ -1,5 +1,6 @@
 #include "TemplateModuleRun.h"
 
+#include <anim/AnimationClipPlaybackSystem.h>
 #include <camera/CameraExclusion.h>
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
@@ -22,6 +23,9 @@ namespace
 {
     struct HorrorProbe
     {
+        Engine* Host = nullptr;
+        // No starter content plays clips; the template must not pay for playback.
+        bool AnimationRegistered = true;
         int Participants = 0;
         bool BodyAssigned = false;
         bool BodyAims = true;
@@ -31,6 +35,7 @@ namespace
 
         void FrameUpdate(FrameUpdateContext& ctx)
         {
+            AnimationRegistered = Host->Schedule().Has<AnimationClipPlaybackSystem>();
             const World& world = ctx.Entities;
             Participants = 0;
             EntityId body;
@@ -69,6 +74,7 @@ TEST(HorrorTemplate, TheRoomsCameraIsTheViewAndTheBodyDoesNotAim)
     ASSERT_EQ(run.Exit(), 0);
 
     const HorrorProbe& seen = run.Seen();
+    EXPECT_FALSE(seen.AnimationRegistered) << "no starter content plays clips";
     EXPECT_EQ(seen.Participants, 1);
     ASSERT_TRUE(seen.BodyAssigned) << "the prefab pawn never landed";
     EXPECT_FALSE(seen.BodyAims) << "tank controls turn the body; nothing aims";

@@ -5,6 +5,10 @@
 
 #include "FpsSessionPolicy.h"
 
+#include <app/BodySpawns.h>
+
+#include <optional>
+
 #include <string_view>
 
 // The game module: what this game registers with the engine, what it puts on
@@ -30,4 +34,9 @@ private:
     // logger exist; the game object itself is a module-static.
     std::optional<FpsSessionPolicy> SessionState;
     [[nodiscard]] FpsSessionPolicy& Session();
+
+    // The engine's book on this game's prefab body requests. Closed in
+    // OnShutdown, ahead of the session whose settings its callbacks read;
+    // kept, closed, until the next OnStart replaces it.
+    std::optional<BodySpawns> Bodies;
 };

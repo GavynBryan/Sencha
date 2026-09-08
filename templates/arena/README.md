@@ -16,7 +16,7 @@ src/ArenaGame.*           composition root: physics, movement, input, controller
 src/ArenaSessionPolicy.*  which gameplay features this game's world carries; its input
 src/ArenaSteeringSystem.* actions -> movement intent, in the body's yaw frame
 src/PawnCameraSystem.*    the body's camera child: pitch, exclusion, activation
-src/PawnSpawn.*           where a participant's body comes from; NetSpawnPrefab
+src/PawnSpawn.*           which prefab a body is and where it stands; NetSpawnPrefab
 src/ArenaStart.h          the level's player start (a tag)
 samples/turret/           networked possession: a turret a player can take
 assets/                   authored content; the cook writes assets/.cooked/
