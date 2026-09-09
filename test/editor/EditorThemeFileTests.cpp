@@ -166,3 +166,17 @@ TEST(EditorThemeFile, SaveRoundTripsColorsAndMetrics)
     std::filesystem::remove(edited);
     std::filesystem::remove(saved);
 }
+
+TEST(EditorThemeFile, BundledThemesLoadWithoutProblems)
+{
+    // Every theme shipped under editor/themes names only keys the palette and
+    // metrics tables know, so a bundled theme never warns on selection.
+    for (const char* name : { "workstation.json", "dark_teal.json", "Shudei.json" })
+    {
+        const std::filesystem::path path = std::filesystem::path(SENCHA_EDITOR_THEME_DIR) / name;
+        std::string error;
+        EXPECT_TRUE(LoadEditorTheme(path, &error)) << error;
+        EXPECT_TRUE(error.empty()) << error;
+    }
+    ResetEditorTheme();
+}

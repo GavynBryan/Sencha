@@ -38,32 +38,35 @@ inline ImVec4 Srgb(float r, float g, float b, float a = 1.0f)
 }
 }
 
-// Palette: the default dark teal-black sci-fi look (glowing teal primary
-// accent, purple secondary). Single source of truth; the chrome layer and
-// EditorUiStyle::Apply both pull from here.
+// Palette: the workstation look. A near-black blue ground, gunmetal plates,
+// cyan for anything interactive (hover, focus, the technology reading out),
+// amber only for the selection and the important action, violet rarely and
+// decoratively, red for the destructive. Single source of truth; the chrome
+// layer and EditorUiStyle::Apply both pull from here.
 // Mutable: EditorThemeFile overwrites entries from a user theme JSON at
-// startup (data-driven chrome); these initializers are the built-in default.
-inline ImVec4 WindowBg       = detail::Hex(0x0A0D0F);                 // #0A0D0F
-inline ImVec4 PanelBg        = detail::Hex(0x0A0D0F);                 // #0A0D0F (window/child/popup)
-inline ImVec4 HeaderBg       = detail::Hex(0x0F1A1C);                 // #0F1A1C (title/menu)
-inline ImVec4 FrameBg        = detail::Hex(0x0D1214);                 // #0D1214 (inset wells)
-inline ImVec4 FrameBgHovered = detail::Hex(0x1A3535);                 // #1A3535
-inline ImVec4 FrameBgActive  = detail::Hex(0x003D35);                 // #003D35
-inline ImVec4 Border         = detail::Hex(0x1C3A3A);                 // #1C3A3A
-inline ImVec4 Accent         = detail::Hex(0x00E5CC);                 // #00E5CC teal
-inline ImVec4 AccentHover    = detail::Srgb(0.3000f, 1.0000f, 0.9200f); // brightened teal
-inline ImVec4 AccentDim      = detail::Hex(0x003D35);                 // #003D35 teal-dark
-inline ImVec4 Selected       = detail::Hex(0x003D35);                 // #003D35 selection
-inline ImVec4 Secondary      = detail::Hex(0x7B2FBE);                 // #7B2FBE purple
-inline ImVec4 SecondaryHover = detail::Srgb(0.6157f, 0.3725f, 0.8392f); // brightened purple
-inline ImVec4 ButtonBg       = detail::Hex(0x112022);                 // #112022
-inline ImVec4 ButtonHovered  = detail::Hex(0x1A3535);                 // #1A3535
-inline ImVec4 Warning        = detail::Srgb(0.9290f, 0.6160f, 0.1490f); // amber
-inline ImVec4 Danger         = detail::Srgb(0.8700f, 0.2550f, 0.2000f); // red
-inline ImVec4 Critical       = detail::Srgb(0.9570f, 0.1960f, 0.5530f); // magenta
-inline ImVec4 Success        = detail::Hex(0x00E5CC);                 // teal (use accent)
-inline ImVec4 TextPrimary    = detail::Hex(0xC8F0EC);                 // #C8F0EC
-inline ImVec4 TextDim        = detail::Hex(0x3A6060);                 // #3A6060
+// startup (data-driven chrome); these initializers are the built-in default,
+// recorded as editor/themes/workstation.json.
+inline ImVec4 WindowBg       = detail::Hex(0x080B10);                 // #080B10 near-black blue ground
+inline ImVec4 PanelBg        = detail::Hex(0x0B0F15);                 // #0B0F15 panel well / popup
+inline ImVec4 HeaderBg       = detail::Hex(0x121821);                 // #121821 title / menu / tab rail
+inline ImVec4 FrameBg        = detail::Hex(0x0A0D12);                 // #0A0D12 inset wells (inputs)
+inline ImVec4 FrameBgHovered = detail::Hex(0x16202B);                 // #16202B
+inline ImVec4 FrameBgActive  = detail::Hex(0x0E3A44);                 // #0E3A44 cyan-dark, lit interior
+inline ImVec4 Border         = detail::Hex(0x24303C);                 // #24303C steel hairline
+inline ImVec4 Accent         = detail::Hex(0x2ED0EA);                 // #2ED0EA cyan
+inline ImVec4 AccentHover    = detail::Hex(0x7FE9FF);                 // #7FE9FF bright cyan
+inline ImVec4 AccentDim      = detail::Hex(0x0E3A44);                 // #0E3A44 cyan-dark
+inline ImVec4 Selected       = detail::Hex(0x4D330B);                 // #4D330B amber-dark selection fill
+inline ImVec4 Secondary      = detail::Hex(0x8B5CF6);                 // #8B5CF6 violet
+inline ImVec4 SecondaryHover = detail::Hex(0xA78BFA);                 // #A78BFA
+inline ImVec4 ButtonBg       = detail::Hex(0x131A23);                 // #131A23 mounted button face
+inline ImVec4 ButtonHovered  = detail::Hex(0x1B2633);                 // #1B2633
+inline ImVec4 Warning        = detail::Hex(0xEE9D26);                 // #EE9D26 amber (status, never selection)
+inline ImVec4 Danger         = detail::Hex(0xE0473C);                 // #E0473C red
+inline ImVec4 Critical       = detail::Hex(0xF0508C);                 // #F0508C magenta
+inline ImVec4 Success        = detail::Hex(0x2ED0EA);                 // cyan (use accent)
+inline ImVec4 TextPrimary    = detail::Hex(0xD6E4F0);                 // #D6E4F0 pale blue-white
+inline ImVec4 TextDim        = detail::Hex(0x6E8296);                 // #6E8296 desaturated blue-gray
 
 // Workstation chassis layers, consumed by the chrome primitives: the darkest
 // ground the whole shell sits on, the metal a frame is milled from, and the two
@@ -71,10 +74,10 @@ inline ImVec4 TextDim        = detail::Hex(0x3A6060);                 // #3A6060
 // Selected, for outlines around the thing currently being edited (the active
 // viewport, the active material tile, the inspected entity's title); Selected
 // itself is the fill behind a selected row.
-inline ImVec4 ChassisBg       = detail::Hex(0x06080B);                // #06080B
-inline ImVec4 MetalBase       = detail::Hex(0x1A2129);                // #1A2129 graphite
-inline ImVec4 MetalHighlight  = detail::Hex(0x35424F);                // #35424F steel-blue
-inline ImVec4 MetalShadow     = detail::Hex(0x04060A);                // #04060A
+inline ImVec4 ChassisBg       = detail::Hex(0x05070A);                // #05070A
+inline ImVec4 MetalBase       = detail::Hex(0x1A222C);                // #1A222C graphite
+inline ImVec4 MetalHighlight  = detail::Hex(0x3A4856);                // #3A4856 steel-blue
+inline ImVec4 MetalShadow     = detail::Hex(0x03050A);                // #03050A
 inline ImVec4 SelectedOutline = detail::Hex(0xFFB347);                // #FFB347 bright amber
 
 // Palette-color math (toward white / toward black, alpha preserved or replaced).

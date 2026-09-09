@@ -126,44 +126,53 @@ void EditorUi::Apply(ImGuiStyle& style)
     ImVec4* c = style.Colors;
     c[ImGuiCol_Text]                 = TextPrimary;
     c[ImGuiCol_TextDisabled]         = TextDim;
-    c[ImGuiCol_WindowBg]             = WindowBg;   // #0A0D0F
+    c[ImGuiCol_WindowBg]             = WindowBg;
     c[ImGuiCol_ChildBg]              = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_PopupBg]              = WindowBg;   // #0A0D0F
-    c[ImGuiCol_Border]               = Border;     // #1C3A3A
+    c[ImGuiCol_PopupBg]              = PanelBg;
+    c[ImGuiCol_Border]               = Border;
     c[ImGuiCol_BorderShadow]         = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_FrameBg]              = FrameBg;     // #0D1214
+    c[ImGuiCol_FrameBg]              = FrameBg;
     c[ImGuiCol_FrameBgHovered]       = FrameBgHovered;
     c[ImGuiCol_FrameBgActive]        = FrameBgActive;
-    c[ImGuiCol_TitleBg]              = HeaderBg;    // #0F1A1C
+    c[ImGuiCol_TitleBg]              = HeaderBg;
     c[ImGuiCol_TitleBgActive]        = HeaderBg;
     c[ImGuiCol_TitleBgCollapsed]     = WindowBg;
     c[ImGuiCol_MenuBarBg]            = HeaderBg;
     c[ImGuiCol_ScrollbarBg]          = WindowBg;
-    c[ImGuiCol_ScrollbarGrab]        = Secondary;       // purple
-    c[ImGuiCol_ScrollbarGrabHovered] = SecondaryHover;
-    c[ImGuiCol_ScrollbarGrabActive]  = SecondaryHover;
-    c[ImGuiCol_CheckMark]            = Accent;          // teal
-    c[ImGuiCol_SliderGrab]           = Accent;          // teal
+    c[ImGuiCol_ScrollbarGrab]        = MetalBase;
+    c[ImGuiCol_ScrollbarGrabHovered] = MetalHighlight;
+    c[ImGuiCol_ScrollbarGrabActive]  = Accent;
+    c[ImGuiCol_CheckMark]            = Accent;
+    c[ImGuiCol_SliderGrab]           = Accent;
     c[ImGuiCol_SliderGrabActive]     = AccentHover;
-    c[ImGuiCol_Button]               = ButtonBg;        // #112022
-    c[ImGuiCol_ButtonHovered]        = ButtonHovered;   // #1A3535
-    c[ImGuiCol_ButtonActive]         = Accent;          // teal
-    c[ImGuiCol_Header]               = Selected;        // #003D35 selection highlight
+    c[ImGuiCol_Button]               = ButtonBg;
+    c[ImGuiCol_ButtonHovered]        = ButtonHovered;
+    c[ImGuiCol_ButtonActive]         = FrameBgActive;   // lit cyan interior while pressed
+    // Headers stay neutral: collapsing sections, list rows, and popup items
+    // share these. Selection is pushed around the selected widget alone
+    // (ScopedSelectionStyle), never set here.
+    c[ImGuiCol_Header]               = ButtonBg;
     c[ImGuiCol_HeaderHovered]        = ButtonHovered;
-    c[ImGuiCol_HeaderActive]         = Selected;
-    c[ImGuiCol_Separator]            = Secondary;       // purple separators
-    c[ImGuiCol_SeparatorHovered]     = SecondaryHover;
-    c[ImGuiCol_SeparatorActive]      = SecondaryHover;
+    c[ImGuiCol_HeaderActive]         = FrameBgActive;
+    c[ImGuiCol_Separator]            = Border;
+    c[ImGuiCol_SeparatorHovered]     = Accent;
+    c[ImGuiCol_SeparatorActive]      = AccentHover;
+    // The dock tab bar is the panel's mounting rail: gunmetal tabs, the
+    // selected one lit by a cyan overline and merging into the panel below.
     c[ImGuiCol_Tab]                  = HeaderBg;
     c[ImGuiCol_TabHovered]           = ButtonHovered;
-    c[ImGuiCol_TabActive]            = Selected;        // #003D35 (teal-dark active)
-    c[ImGuiCol_TabUnfocused]         = HeaderBg;
-    c[ImGuiCol_TabUnfocusedActive]   = FrameBg;
-    c[ImGuiCol_ResizeGrip]           = Secondary;       // purple secondary
-    c[ImGuiCol_ResizeGripHovered]    = SecondaryHover;
+    c[ImGuiCol_TabSelected]          = PanelBg;
+    c[ImGuiCol_TabSelectedOverline]  = Accent;
+    c[ImGuiCol_TabDimmed]            = WindowBg;
+    c[ImGuiCol_TabDimmedSelected]    = PanelBg;
+    c[ImGuiCol_TabDimmedSelectedOverline] = AccentDim;
+    c[ImGuiCol_DockingPreview]       = WithAlpha(Accent, 0.5f);
+    c[ImGuiCol_DockingEmptyBg]       = ChassisBg;
+    c[ImGuiCol_ResizeGrip]           = MetalBase;
+    c[ImGuiCol_ResizeGripHovered]    = MetalHighlight;
     c[ImGuiCol_ResizeGripActive]     = Accent;
     c[ImGuiCol_TextSelectedBg]       = WithAlpha(Accent, 0.35f);
-    c[ImGuiCol_DragDropTarget]       = Accent;
+    c[ImGuiCol_DragDropTarget]       = SelectedOutline;
     c[ImGuiCol_NavHighlight]         = Accent;
 
     // Sharp corners everywhere — beveled metal panels, not rounded cards.
@@ -185,6 +194,9 @@ void EditorUi::Apply(ImGuiStyle& style)
     style.IndentSpacing     = 18.0f;
     style.ScrollbarSize     = 12.0f;
     style.GrabMinSize       = 10.0f;
+    style.TabBarBorderSize  = 1.0f;
+    style.TabBarOverlineSize = 2.0f;
+    style.DockingSeparatorSize = 3.0f; // node gaps read as chassis seams
 
     // Every ImGui size above is a design pixel; this is the one place they meet
     // the display. Fonts were built at the same factor by LoadFonts.
