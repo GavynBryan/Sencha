@@ -2,6 +2,8 @@
 
 #include "ui/EditorUiStyle.h"
 #include "ui/ScopedPanel.h"
+#include "ui/chrome/ChromeControls.h"
+#include "ui/chrome/ChromeSelection.h"
 #include "ui/TextFilterMatch.h"
 #include "fonts/IconsFontAwesome6.h"
 
@@ -281,7 +283,7 @@ void SceneHierarchyPanel::DrawInsertionSlot(DrawContext& ctx, EntityId parent,
             const float y = 0.5f * (min.y + max.y);
             ImGui::GetWindowDrawList()->AddLine(
                 ImVec2(min.x, y), ImVec2(max.x, y),
-                ImGui::GetColorU32(EditorUi::Accent), 2.0f);
+                ImGui::GetColorU32(EditorUi::SelectedOutline), 2.0f);
             if (payload->IsDelivery())
             {
                 ctx.DropParent = parent;
@@ -626,7 +628,12 @@ void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth,
         ? std::string("##renaming")
         : RowLabelText(ctx, entity, instanceRoot, instanceMember, children.empty())
               + "##row";
-    const bool nodeOpen = ImGui::TreeNodeEx(label.c_str(), flags);
+    bool nodeOpen = false;
+    {
+        // Amber only around this row, and only while it is selected.
+        ScopedSelectionStyle selectionStyle(selected);
+        nodeOpen = ImGui::TreeNodeEx(label.c_str(), flags);
+    }
 
     if (!children.empty() && nodeOpen != open && !ctx.FilterActive)
         RememberRowOpenState(pid, instanceRoot, nodeOpen);
@@ -693,7 +700,7 @@ void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth,
 
 void SceneHierarchyPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
     if (!panel.IsOpen())
         return;
 
@@ -704,7 +711,8 @@ void SceneHierarchyPanel::OnDraw()
 
     // Create a plain entity (Transform only) and select it; the inspector adds
     // game components to it. This is the non-brush authoring path.
-    if (ImGui::Button(ICON_FA_PLUS "  New Entity"))
+    if (EditorChrome::Button("new_entity", ICON_FA_PLUS "  New Entity", ImVec2(0.0f, 0.0f),
+                             EditorChrome::ButtonTone::Normal))
     {
         auto create = MakeCreateEntityCommand(Vec3d::Zero(), scene, document);
         CreateEntityCommand* cmd = create.get();

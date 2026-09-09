@@ -42,4 +42,6 @@ private:
     bool Open = false;
     bool Chrome = false;
     PanelStyle Style = PanelStyle::Standard;
+    ImVec2 Min{}; // the frame's rect, fixed at Begin so the edges land where the base did
+    ImVec2 Max{};
 };
