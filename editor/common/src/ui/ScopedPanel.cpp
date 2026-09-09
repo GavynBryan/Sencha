@@ -27,16 +27,8 @@ ImVec2 FrameMax()
 }
 }
 
-ScopedPanel::ScopedPanel(std::string_view title, bool* open, ImGuiWindowFlags flags)
-    : Open(ImGui::Begin(title.data(), open, flags))
-{
-    if (Open)
-        EditorUiSkin::PanelBackdrop();
-}
-
 ScopedPanel::ScopedPanel(std::string_view title, bool* open, PanelStyle style, ImGuiWindowFlags flags)
-    : Chrome(true)
-    , Style(style)
+    : Style(style)
 {
     // The padding keeps widgets inside the ring; ImGui reads it at Begin.
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, EditorChrome::ContentPadding(style));
@@ -62,7 +54,7 @@ ScopedPanel::ScopedPanel(std::string_view title, bool* open, PanelStyle style, I
 
 ScopedPanel::~ScopedPanel()
 {
-    if (Open && Chrome)
+    if (Open)
     {
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);

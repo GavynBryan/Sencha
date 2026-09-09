@@ -2,7 +2,6 @@
 
 #include "ui/ButtonFlow.h"
 
-#include "ui/EditorUiSkin.h"
 #include "ui/EditorUiStyle.h"
 #include "ui/ScopedPanel.h"
 #include "ui/chrome/ChromeControls.h"

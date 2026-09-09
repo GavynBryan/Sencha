@@ -2,16 +2,19 @@
 #
 # Fitness function: editor UI colors come from the palette (EditorUiStyle), not
 # scattered literals. Keeps the theme a single source of truth so the whole
-# editor can be retuned in one place. Forbids, in editor/ui (outside
-# EditorUiStyle): raw IM_COL32(...) draw-list colors, and PushStyleColor calls
-# with an inline ImVec4(...) literal. (10-editor-ui-look-and-feel.md.)
+# editor can be retuned in one place. Forbids, in every editor tree that draws
+# UI (outside EditorUiStyle): raw IM_COL32(...) draw-list colors, and
+# PushStyleColor calls with an inline ImVec4(...) literal.
+# (10-editor-ui-look-and-feel.md.)
 #
 # Usage: check_ui_colors.sh <source-root>
 
 set -uo pipefail
 
 ROOT="${1:-.}"
-UI_DIRS=("$ROOT/editor/common/src/ui" "$ROOT/editor/kyusu/src/ui")
+UI_DIRS=("$ROOT/editor/common/src/ui" "$ROOT/editor/kyusu/src/ui" "$ROOT/editor/kyusu/src/document/tools"
+         "$ROOT/editor/kyusu/src/authoring" "$ROOT/editor/shudei/src" "$ROOT/editor/kettle/src"
+         "$ROOT/editor/data_editor/src")
 status=0
 
 # Greps UI sources for a pattern, excluding EditorUiStyle.* and comment-only lines.

@@ -1,7 +1,9 @@
 # Editor UI Look-and-Feel
 
-Status: plan (not yet implemented). Target captured from a concept mockup shared
-2026-06-17. See memory `editor-ui-look-and-feel`.
+Status: phases 1-5 shipped; the chrome layer (phase 6) shipped 2026-09-09 as
+the workstation restyle. Target captured from a concept mockup shared
+2026-06-17 and re-cut in 2026-09 toward an "alternate 2004 workstation":
+gunmetal chassis, cyan for interaction, amber for the selection.
 
 ## Context
 
@@ -37,10 +39,12 @@ This pass must preserve what makes the editor modular: the UI is a *view over
 registries and state*, behavior is decoupled, and there are no central switch
 statements that name specific things. Concretely:
 
-1. **Theme is flat leaf data, not a framework.** `EditorUiStyle` is a palette
-   struct + an `Apply`/`LoadFonts` function. No theming engine, no runtime style-
-   token registry, no observers, no hot-swap, no skin files. The moment it grows
-   indirection it has failed. (Mirror of `EditorTheme.h` for overlays.)
+1. **Theme is flat leaf data, not a framework.** `EditorUi` is a palette, a
+   metrics struct, decor strings, a scale factor, and `Apply`/`LoadFonts`; the
+   theme JSON (`editor/themes/*.json`, `editor.ui.theme`) overwrites those
+   through three flat key tables in `EditorThemeFile`. No style-token registry,
+   no observers. The moment it grows indirection it has failed. (Mirror of
+   `EditorTheme.h` for overlays.)
 2. **One palette, zero literals.** Every color/metric flows from the palette;
    panels reference named constants. No `PushStyleColor` with raw values (retire
    the existing one in `MeshEditPanel`). Enforce mechanically with a fitness
@@ -114,9 +118,12 @@ Bundled in `editor/fonts/` (all permissively licensed; see that dir's `README.md
 + `LICENSE-*.txt`). All four TTFs verified to carry a `glyf` table so ImGui's
 `stb_truetype` rasterizes them directly (no variable-font / CFF surprises):
 
-- **UI font:** Inter 4.1 Regular @ 15px (SIL OFL 1.1) — the default font.
-- **Monospace:** JetBrains Mono Regular @ 14px (SIL OFL 1.1) — console/readouts,
-  exposed via `EditorUi::MonoFont()`.
+- **UI font:** JetBrains Mono Regular @ 15px (SIL OFL 1.1) — the default font;
+  the same face at 12px and 18px serves the label roles (`EditorUi::TextRole`:
+  uppercase + tracking for panel and section titles, status readouts, the
+  application title). Inter ships but is unused.
+- **Monospace:** JetBrains Mono Regular @ 14px — console/readouts, exposed via
+  `EditorUi::MonoFont()`. All sizes multiply by `editor.ui.scale`.
 - **Icons:** Font Awesome 6 Free Solid @ 14px (OFL fonts / CC-BY 4.0 designs)
   merged into the UI font via `IconsFontAwesome6.h` (`ICON_FA_*` macros), so icon
   glyphs render inline in labels — gates the Phase 2 icon toolbar.
@@ -236,19 +243,27 @@ Add `editor/ui/EditorUiStyle.{h,cpp}`:
    panels) to power a `View` menu (per-panel toggles + **Reset Layout**). Layout
    persists via `imgui.ini`; the viewport is the dock-managed central window. See
    plan `~/.claude/plans/enumerated-sparking-penguin.md`.
-5. **Skin pass (bevel + gradient) — IN PROGRESS.** The user wanted an "edgy 2003
-   Winamp skin", not a clean flat theme. Scoped (with the user) to the bounded
-   draw-list pass — not a full texture skin. `EditorUiSkin.{h,cpp}` is a single
-   draw-list layer (gradient+bevel fill, glossy metal `Band`, accent-glow `Button`,
-   `PanelBackdrop`) with all colors derived from the palette (so
-   `ui_color_discipline` holds) and all look constants centralized. Palette retuned
-   glowier (glow cyan accent, saturated VU green/amber/magenta) and corners set
-   sharp (0 rounding). Applied so far: menu/toolbar/status **bands**, glossy
-   **toolbar buttons**, and a subtle **panel backdrop** in the five content panels
-   (the viewport stays transparent for the 3D). Full texture-skin fidelity (9-slice
-   frames, the transport/EQ ornaments) remains out of scope — disproportionate for
-   a dev tool; residual flatness in stock ImGui widgets (combos, checkboxes) is the
-   honest ceiling of this approach.
+5. **Skin pass (bevel + gradient) — SUPERSEDED** by the chrome layer below. The
+   draw-list skin (`EditorUiSkin`) and the 9-slice PNG skin (`EditorSkin`,
+   `editor/skin`) were retired once every panel had moved over.
+6. **Chrome layer — DONE (2026-09).** `editor/common/src/ui/chrome/` is the
+   workstation chrome, one mechanism per file: `ChromeGeometry` (chamfered
+   silhouettes, frame/header layout, ornament placement by size tier; pure
+   math, unit-tested), `ChromePaint` (the draw-list strokes), `ChromeFrame`
+   (the five `PanelStyle` weights), `ChromeChassis` (the application frame),
+   `ChromeHeader` (rail, titled row, section title), `ChromeBars` (bar backdrop,
+   `ModuleScope` bays), `ChromeControls` (mounted buttons, icon buttons),
+   `ChromeSelection` (`ScopedSelectionStyle`, the only way a widget turns
+   amber), `ChromeOrnaments` and `IconDraw` (procedural placeholders behind
+   source tables whose rows an authored sprite can replace; `ChromeSources`
+   holds that representation), `ChromeDecor` (flavor copy by `DecorSlot`).
+   `ScopedPanel(title, open, PanelStyle)` is the one hook every panel's chrome
+   comes through; a panel names a weight, a section title, a selection scope,
+   a control, an icon id, a decor slot, and never a screw or a chamfer
+   (layering rule D). Icons are `IconId` (`editor/common/src/icons/`), a leaf
+   the tool framework carries. `editor.ui.scale` scales fonts, ImGui metrics,
+   and chrome metrics once at startup; `editor.ui.click` drives a widget for
+   unattended screenshots.
 
 ## Risks / honest ceiling
 

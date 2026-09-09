@@ -5,7 +5,7 @@ redistributable; the license texts live alongside the files.
 
 | File | Role | Family | License | Source |
 |------|------|--------|---------|--------|
-| `JetBrainsMono-Regular.ttf` | UI body / labels + console | JetBrains Mono | SIL OFL 1.1 (`LICENSE-JetBrainsMono.txt`) | JetBrains/JetBrainsMono `fonts/ttf` |
+| `JetBrainsMono-Regular.ttf` | UI body (15px), label roles (12px, 18px), console (14px), all scaled by `editor.ui.scale` | JetBrains Mono | SIL OFL 1.1 (`LICENSE-JetBrainsMono.txt`) | JetBrains/JetBrainsMono `fonts/ttf` |
 | `Inter-Regular.ttf`, `Inter-Medium.ttf` | unused (kept for reference) | Inter 4.1 | SIL OFL 1.1 (`LICENSE-Inter.txt`) | rsms/inter release `extras/ttf` (static, hinted) |
 | `fa-solid-900.ttf` | Toolbar / status icons | Font Awesome 6 Free Solid | Fonts: SIL OFL 1.1; icon designs: CC-BY 4.0 (`LICENSE-FontAwesome.txt`) | FortAwesome/Font-Awesome `webfonts` |
 | `IconsFontAwesome6.h` | `ICON_FA_*` codepoint macros for the atlas merge | — | Zlib/MIT (juliettef/IconFontCppHeaders) | header only, no font data |

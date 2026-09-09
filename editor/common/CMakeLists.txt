@@ -28,6 +28,5 @@ target_compile_definitions(editor_common PUBLIC
     # Dev-time UI asset roots shared by every editor application. Packaging will
     # replace these with resolved install paths.
     SENCHA_EDITOR_FONT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../fonts"
-    SENCHA_EDITOR_SKIN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../skin"
     SENCHA_EDITOR_THEME_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../themes"
 )

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "EditorUiSkin.h"
 #include "chrome/PanelStyle.h"
 
 #include <imgui.h>
@@ -19,18 +18,17 @@
 //       ... body, may early-return freely ...
 //   }
 //
-// With a PanelStyle the panel is mounted in a chamfered frame with a header
-// rail, drawn around whatever the body does: the well goes under the content
-// and the ring and rail over it, so the body never keeps clear of its chrome.
-// Without one (the older form) the panel gets the previous gradient backdrop;
-// that form goes away once every panel has moved over.
+// The panel is mounted in a chamfered frame of the weight it names, with a
+// header rail under its tab, drawn around whatever the body does: the well
+// goes under the content and the ring, rail, and ornaments over it, so the
+// body never keeps clear of its chrome.
 //=============================================================================
 
 class ScopedPanel
 {
 public:
-    ScopedPanel(std::string_view title, bool* open, ImGuiWindowFlags flags = 0);
-    ScopedPanel(std::string_view title, bool* open, PanelStyle style, ImGuiWindowFlags flags = 0);
+    ScopedPanel(std::string_view title, bool* open, PanelStyle style = PanelStyle::Standard,
+                ImGuiWindowFlags flags = 0);
     ~ScopedPanel();
 
     ScopedPanel(const ScopedPanel&) = delete;
@@ -40,7 +38,6 @@ public:
 
 private:
     bool Open = false;
-    bool Chrome = false;
     PanelStyle Style = PanelStyle::Standard;
     ImVec2 Min{}; // the frame's rect, fixed at Begin so the edges land where the base did
     ImVec2 Max{};

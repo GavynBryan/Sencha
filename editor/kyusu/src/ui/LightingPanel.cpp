@@ -54,11 +54,6 @@ namespace
         return EditorUi::Warning;
     }
 
-    ImVec4 WithAlpha(ImVec4 color, float alpha)
-    {
-        color.w = alpha;
-        return color;
-    }
 }
 
 LightingPanel::LightingPanel(const ShadowResidencyReadout& readout,
@@ -418,14 +413,14 @@ void LightingPanel::DrawAtlasMap()
                              tileMin.y + slot.Allocation.Size * scale);
         const ImVec4 tier = TierColor(slot.Allocation.Size);
         draw->AddRectFilled(tileMin, tileMax,
-                            ImGui::GetColorU32(WithAlpha(tier, slot.Invalid ? 0.15f : 0.35f)));
-        draw->AddRect(tileMin, tileMax, ImGui::GetColorU32(WithAlpha(tier, 0.9f)));
+                            ImGui::GetColorU32(EditorUi::WithAlpha(tier, slot.Invalid ? 0.15f : 0.35f)));
+        draw->AddRect(tileMin, tileMax, ImGui::GetColorU32(EditorUi::WithAlpha(tier, 0.9f)));
 
         // The guard-band inset: the interior the filter actually samples.
         const float guard = kSpotShadowGuardTexels * scale;
         draw->AddRect(ImVec2(tileMin.x + guard, tileMin.y + guard),
                       ImVec2(tileMax.x - guard, tileMax.y - guard),
-                      ImGui::GetColorU32(WithAlpha(EditorUi::TextDim, 0.6f)));
+                      ImGui::GetColorU32(EditorUi::WithAlpha(EditorUi::TextDim, 0.6f)));
 
         char label[24];
         if (slot.EverRendered)

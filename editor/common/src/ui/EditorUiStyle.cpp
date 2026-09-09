@@ -175,7 +175,8 @@ void EditorUi::Apply(ImGuiStyle& style)
     c[ImGuiCol_DragDropTarget]       = SelectedOutline;
     c[ImGuiCol_NavHighlight]         = Accent;
 
-    // Sharp corners everywhere — beveled metal panels, not rounded cards.
+    // Sharp corners everywhere: chamfered metal, not rounded cards. Windows
+    // draw no border of their own; the panel frame is the border.
     style.WindowRounding    = 0.0f;
     style.ChildRounding     = 0.0f;
     style.FrameRounding     = 0.0f;
@@ -183,7 +184,7 @@ void EditorUi::Apply(ImGuiStyle& style)
     style.TabRounding       = 0.0f;
     style.ScrollbarRounding = 0.0f;
     style.PopupRounding     = 0.0f;
-    style.WindowBorderSize  = 1.0f;
+    style.WindowBorderSize  = 0.0f;
     style.ChildBorderSize   = 1.0f;
     style.FrameBorderSize   = 1.0f;
     style.TabBorderSize     = 0.0f;

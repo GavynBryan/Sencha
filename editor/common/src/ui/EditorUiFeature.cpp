@@ -1,7 +1,5 @@
 #include "EditorUiFeature.h"
 
-#include "EditorSkin.h"
-#include "EditorUiSkin.h"
 #include "EditorUiStyle.h"
 #include "IEditorPanel.h"
 #include "chrome/ChromeBars.h"
@@ -595,8 +593,8 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
     if (!IniFileName.empty())
         io.IniFilename = IniFileName.c_str();
 
-    // Every ImGuiTextureBinding costs one combined-image-sampler set: the skin,
-    // the viewport targets, and up to editor.materials.thumbnail_budget resident
+    // Every ImGuiTextureBinding costs one combined-image-sampler set: the
+    // viewport targets and up to editor.materials.thumbnail_budget resident
     // material thumbnails all draw from this pool, so it is sized well past that
     // budget's default (128).
     const std::array<VkDescriptorPoolSize, 11> poolSizes{{
@@ -661,17 +659,6 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
     }
     VulkanBackendReady = true;
 
-    // Load the 9-slice texture skin (soft dependency: if it fails, EditorUiSkin
-    // keeps its gradient rendering). Needs the Vulkan backend up (AddTexture).
-    if (services.Images != nullptr && services.Samplers != nullptr)
-    {
-        Skin = std::make_unique<EditorSkin>(*services.Images, *services.Samplers, SENCHA_EDITOR_SKIN_DIR);
-        if (Skin->Loaded())
-            EditorUiSkin::SetActiveSkin(Skin.get());
-        else if (Log)
-            Log->Warn("EditorUiFeature: skin textures not loaded; using gradient fallback");
-    }
-
     return true;
 }
 
@@ -679,11 +666,6 @@ void EditorUiFeature::ShutdownImGui()
 {
     if (DeviceHandle != VK_NULL_HANDLE)
         vkDeviceWaitIdle(DeviceHandle);
-
-    // Release the skin (its ImGui descriptor sets + images) while the backend and
-    // image service are still alive.
-    EditorUiSkin::SetActiveSkin(nullptr);
-    Skin.reset();
 
     if (VulkanBackendReady)
         ImGui_ImplVulkan_Shutdown();

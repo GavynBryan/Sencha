@@ -92,7 +92,9 @@ Shared shell (`editor/common/src/`):
 | `tools/` | Tool framework (`ToolRegistry`, `ToolContext`). | `ITool` |
 | `interaction/` | Drag-interaction host (`InteractionHost`). | `IInteraction` |
 | `input/` | Generic input primitives (`InputRouter` handler chain + pointer capture, `ShortcutRegistry`, `KeymapFile`, `UiInputGuard`). | router handlers |
-| `ui/` | ImGui shell (`EditorUiFeature`: context, docking, menu, per-app ini), theme/skin (`EditorUiStyle`, `EditorThemeFile`, `EditorThemeStartup`, `ThemePreferences`), console panel, `ScopedPanel`, `SchemaWidgets`. | `IEditorPanel` |
+| `ui/` | ImGui shell (`EditorUiFeature`: context, docking, menu, chassis, per-app ini), theme (`EditorUiStyle`: palette, metrics, decor, scale, text roles; `EditorThemeFile`, `EditorThemeStartup`, `ThemePreferences`), console panel, `ScopedPanel` (the one hook a panel's chrome comes through), `SchemaWidgets`. | `IEditorPanel` |
+| `ui/chrome/` | The workstation chrome, one mechanism per file: geometry, painters, panel frames (`PanelStyle`), chassis, headers, bars and modules, controls, selection scope, ornaments, icon drawing, decor. Panels include only the panel-facing headers (rule D in `check_editor_layering.sh`). | source tables (`ChromeSources`): an authored sprite replaces a row |
+| `icons/` | `IconId`, the leaf enum a tool or control names an icon by. | -- |
 | `render/` | ImGui presentation of offscreen targets (`ImGuiTargetPresenter`). | -- |
 | `viewport/` | `ViewportId`. | -- |
 | `project/` | Project descriptor + resolution + mounting + spawning (`Project`, `ProjectArgs`, `ProjectContentMount`, `ProcessLaunch`, `MaterialLibrary`). | -- |

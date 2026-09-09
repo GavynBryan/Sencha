@@ -17,7 +17,6 @@ class Engine;
 class SdlWindow;
 class VulkanFrameService;
 class VulkanInstanceService;
-class EditorSkin;
 struct IEditorPanel;
 
 // What the shell says it is, drawn at the head of the menu bar: the product
@@ -170,7 +169,4 @@ private:
         bool Pressed = false;
     };
     std::vector<QueuedClick> QueuedClicks;
-    // 9-slice texture skin (owned here; released before the ImGui backend shuts
-    // down since it holds ImGui descriptor sets). Null if textures didn't load.
-    std::unique_ptr<EditorSkin> Skin;
 };
