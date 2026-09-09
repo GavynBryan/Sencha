@@ -6,7 +6,9 @@
 #include "IEditorPanel.h"
 
 #include <app/Engine.h>
+#include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
+#include <core/console/ConsoleTypes.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanFrameService.h>
 #include <graphics/vulkan/VulkanInstanceService.h>
@@ -21,8 +23,10 @@
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
 
+#include <algorithm>
 #include <array>
 #include <string>
+#include <variant>
 #include <vector>
 
 #ifndef SENCHA_EDITOR_THEME_DIR
@@ -181,6 +185,48 @@ void BuildDefaultDockLayout(ImGuiID dockId,
     ImGui::DockBuilderFinish(dockId);
 }
 
+// The one place a display scale becomes the UI scale. Archived so a chosen value
+// survives restarts; 0 (the default) defers to what the window's display
+// reports, which is 1 on a plain desktop. Read once, before the style and the
+// font atlas are built at that size.
+float ResolveUiScale(ConsoleRegistry& registry, SDL_Window* window, Logger* log)
+{
+    registry.RegisterCVar({
+        .Name = "editor.ui.scale",
+        .Owner = "editor",
+        .Type = CVarType::Double,
+        .DefaultValue = 0.0,
+        .CurrentValue = 0.0,
+        .Flags = CVarFlags::Archive,
+        .Help = "UI scale for the editor chrome and fonts. 0 = follow the window's display scale. Applied at startup.",
+        .Source = { "editor" },
+        .Min = 0.0,
+        .Max = 4.0,
+    });
+
+    double requested = 0.0;
+    if (const CVarMetadata* var = registry.FindCVar("editor.ui.scale"))
+        if (const double* value = std::get_if<double>(&var->CurrentValue))
+            requested = *value;
+
+    float scale = static_cast<float>(requested);
+    const char* origin = "editor.ui.scale";
+    if (scale <= 0.0f)
+    {
+        scale = window != nullptr ? SDL_GetWindowDisplayScale(window) : 0.0f;
+        origin = "display";
+        if (scale <= 0.0f)
+        {
+            scale = 1.0f;
+            origin = "fallback";
+        }
+    }
+    scale = std::clamp(scale, 0.5f, 4.0f);
+    if (log != nullptr)
+        log->Info("EditorUiFeature: UI scale {} ({})", scale, origin);
+    return scale;
+}
+
 bool IsEditorUiInputEvent(const SDL_Event& event)
 {
     switch (event.type)
@@ -243,6 +289,18 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
     {
         Log->Info("EditorUiFeature drawing {} panel(s)", Panels.size());
         LoggedFirstDraw = true;
+    }
+
+    // The look is built on the first frame, not in Setup: the startup script
+    // (argv +set, config cvars) runs after every feature's Setup, so this is the
+    // earliest point editor.ui.scale holds its final value. The backend uploads
+    // the font atlas lazily in its NewFrame, so the atlas is still open here.
+    if (!LookBuilt)
+    {
+        EditorUi::UiScale = ResolveUiScale(EngineInstance.Console().Registry(), Window.GetHandle(), Log);
+        EditorUi::Apply(ImGui::GetStyle());
+        EditorUi::LoadFonts(ImGui::GetIO());
+        LookBuilt = true;
     }
 
     ImGui_ImplVulkan_NewFrame();
@@ -452,8 +510,6 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
     // over one ./imgui.ini. Points at the member so it outlives the context.
     if (!IniFileName.empty())
         io.IniFilename = IniFileName.c_str();
-    EditorUi::Apply(ImGui::GetStyle());
-    EditorUi::LoadFonts(io);
 
     // Every ImGuiTextureBinding costs one combined-image-sampler set: the skin,
     // the viewport targets, and up to editor.materials.thumbnail_budget resident

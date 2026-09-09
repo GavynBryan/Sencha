@@ -31,6 +31,7 @@ const EditorThemePaletteEntry kThemeEntries[] = {
     { "accent_hover", &EditorUi::AccentHover },
     { "accent_dim", &EditorUi::AccentDim },
     { "selected", &EditorUi::Selected },
+    { "selected_outline", &EditorUi::SelectedOutline },
     { "secondary", &EditorUi::Secondary },
     { "secondary_hover", &EditorUi::SecondaryHover },
     { "button_bg", &EditorUi::ButtonBg },
@@ -41,15 +42,41 @@ const EditorThemePaletteEntry kThemeEntries[] = {
     { "success", &EditorUi::Success },
     { "text_primary", &EditorUi::TextPrimary },
     { "text_dim", &EditorUi::TextDim },
+    { "chassis_bg", &EditorUi::ChassisBg },
+    { "metal_base", &EditorUi::MetalBase },
+    { "metal_highlight", &EditorUi::MetalHighlight },
+    { "metal_shadow", &EditorUi::MetalShadow },
+};
+
+// The editable chrome metrics, same shape as the palette table.
+const EditorThemeMetricEntry kThemeMetricEntries[] = {
+    { "chamfer", &EditorUi::Metrics.Chamfer },
+    { "border", &EditorUi::Metrics.Border },
+    { "recess", &EditorUi::Metrics.Recess },
+    { "rail_height", &EditorUi::Metrics.RailHeight },
+    { "header_height", &EditorUi::Metrics.HeaderHeight },
+    { "edge_width", &EditorUi::Metrics.EdgeWidth },
+    { "glow_alpha", &EditorUi::Metrics.GlowAlpha },
+    { "glow_width", &EditorUi::Metrics.GlowWidth },
+    { "tracking", &EditorUi::Metrics.Tracking },
+    { "ornament_medium_min", &EditorUi::Metrics.OrnamentMediumMin },
+    { "ornament_large_min", &EditorUi::Metrics.OrnamentLargeMin },
+    { "module_pad", &EditorUi::Metrics.ModulePad },
+    { "screw_radius", &EditorUi::Metrics.ScrewRadius },
+    { "vent_length", &EditorUi::Metrics.VentLength },
+    { "stripe_length", &EditorUi::Metrics.StripeLength },
+    { "chassis_border", &EditorUi::Metrics.ChassisBorder },
+    { "chassis_chamfer", &EditorUi::Metrics.ChassisChamfer },
 };
 
 // The pristine palette, captured before the first theme load or reset so
 // switching themes at runtime starts from the built-in defaults, not from
-// whatever the previous theme left behind.
+// whatever the previous theme left behind. The metrics need no capture: a
+// default-constructed ChromeMetrics is the built-in set.
 std::array<ImVec4, std::size(kThemeEntries)> kBuiltInPalette;
 bool kBuiltInCaptured = false;
 
-void CaptureBuiltInPalette()
+void CaptureBuiltIn()
 {
     if (kBuiltInCaptured)
         return;
@@ -89,6 +116,60 @@ bool HexByte(const std::string& s, std::size_t offset, float& out)
     out = static_cast<float>(hi * 16 + lo) / 255.0f;
     return true;
 }
+
+void LoadColors(const JsonValue& colors, std::string& problems)
+{
+    for (const auto& [key, value] : colors.AsObject())
+    {
+        ImVec4* target = nullptr;
+        for (const EditorThemePaletteEntry& entry : kThemeEntries)
+            if (key == entry.Key)
+            {
+                target = entry.Color;
+                break;
+            }
+        if (target == nullptr)
+        {
+            problems += " unknown color '" + key + "';";
+            continue;
+        }
+        float r = 0.0f;
+        float g = 0.0f;
+        float b = 0.0f;
+        float a = 1.0f;
+        if (!value.IsString() || !ParseThemeColor(value.AsString(), r, g, b, a))
+        {
+            problems += " bad color for '" + key + "';";
+            continue;
+        }
+        *target = ImVec4(r, g, b, a);
+    }
+}
+
+void LoadMetrics(const JsonValue& metrics, std::string& problems)
+{
+    for (const auto& [key, value] : metrics.AsObject())
+    {
+        float* target = nullptr;
+        for (const EditorThemeMetricEntry& entry : kThemeMetricEntries)
+            if (key == entry.Key)
+            {
+                target = entry.Value;
+                break;
+            }
+        if (target == nullptr)
+        {
+            problems += " unknown metric '" + key + "';";
+            continue;
+        }
+        if (!value.IsNumber())
+        {
+            problems += " bad value for '" + key + "';";
+            continue;
+        }
+        *target = static_cast<float>(value.AsNumber());
+    }
+}
 }
 
 bool ParseThemeColor(const std::string& hex, float& r, float& g, float& b, float& a)
@@ -118,15 +199,22 @@ bool ParseThemeColor(const std::string& hex, float& r, float& g, float& b, float
 
 std::span<const EditorThemePaletteEntry> EditorThemePalette()
 {
-    CaptureBuiltInPalette();
+    CaptureBuiltIn();
     return kThemeEntries;
 }
 
-void ResetEditorThemePalette()
+std::span<const EditorThemeMetricEntry> EditorThemeMetrics()
 {
-    CaptureBuiltInPalette();
+    CaptureBuiltIn();
+    return kThemeMetricEntries;
+}
+
+void ResetEditorTheme()
+{
+    CaptureBuiltIn();
     for (std::size_t i = 0; i < std::size(kThemeEntries); ++i)
         *kThemeEntries[i].Color = kBuiltInPalette[i];
+    EditorUi::Metrics = EditorUi::ChromeMetrics{};
 }
 
 bool SaveEditorTheme(const std::filesystem::path& path, std::string* error)
@@ -152,6 +240,14 @@ bool SaveEditorTheme(const std::filesystem::path& path, std::string* error)
         file << "    \"" << kThemeEntries[i].Key << "\": \"" << hex << '"'
              << (i + 1 < std::size(kThemeEntries) ? ",\n" : "\n");
     }
+    file << "  },\n  \"metrics\": {\n";
+    for (std::size_t i = 0; i < std::size(kThemeMetricEntries); ++i)
+    {
+        char number[32];
+        std::snprintf(number, sizeof(number), "%g", static_cast<double>(*kThemeMetricEntries[i].Value));
+        file << "    \"" << kThemeMetricEntries[i].Key << "\": " << number
+             << (i + 1 < std::size(kThemeMetricEntries) ? ",\n" : "\n");
+    }
     file << "  }\n}\n";
 
     if (!file.good())
@@ -165,7 +261,7 @@ bool SaveEditorTheme(const std::filesystem::path& path, std::string* error)
 
 bool LoadEditorTheme(const std::filesystem::path& path, std::string* error)
 {
-    CaptureBuiltInPalette();
+    CaptureBuiltIn();
     std::ifstream file(path);
     if (!file.is_open())
     {
@@ -186,42 +282,32 @@ bool LoadEditorTheme(const std::filesystem::path& path, std::string* error)
     }
 
     const JsonValue* colors = root->Find("colors");
-    if (colors == nullptr || !colors->IsObject())
+    const JsonValue* metrics = root->Find("metrics");
+    if ((colors == nullptr || !colors->IsObject()) && (metrics == nullptr || !metrics->IsObject()))
     {
         if (error != nullptr)
-            *error = "theme '" + path.string() + "' has no \"colors\" object";
+            *error = "theme '" + path.string() + "' has no \"colors\" or \"metrics\" object";
         return false;
     }
 
     // A theme file describes the full look: keys it omits fall back to the
     // built-in default, not to whatever the previously loaded theme set.
-    ResetEditorThemePalette();
+    ResetEditorTheme();
 
     std::string problems;
-    for (const auto& [key, value] : colors->AsObject())
+    if (colors != nullptr)
     {
-        ImVec4* target = nullptr;
-        for (const EditorThemePaletteEntry& entry : kThemeEntries)
-            if (key == entry.Key)
-            {
-                target = entry.Color;
-                break;
-            }
-        if (target == nullptr)
-        {
-            problems += " unknown key '" + key + "';";
-            continue;
-        }
-        float r = 0.0f;
-        float g = 0.0f;
-        float b = 0.0f;
-        float a = 1.0f;
-        if (!value.IsString() || !ParseThemeColor(value.AsString(), r, g, b, a))
-        {
-            problems += " bad color for '" + key + "';";
-            continue;
-        }
-        *target = ImVec4(r, g, b, a);
+        if (colors->IsObject())
+            LoadColors(*colors, problems);
+        else
+            problems += " \"colors\" is not an object;";
+    }
+    if (metrics != nullptr)
+    {
+        if (metrics->IsObject())
+            LoadMetrics(*metrics, problems);
+        else
+            problems += " \"metrics\" is not an object;";
     }
 
     if (!problems.empty() && error != nullptr)

@@ -77,3 +77,92 @@ TEST(EditorThemeFile, MalformedFileFails)
     EXPECT_FALSE(error.empty());
     std::filesystem::remove(path);
 }
+
+TEST(EditorThemeFile, MetricsApplyAndProblemsWarn)
+{
+    const float defaultChamfer = EditorUi::Metrics.Chamfer;
+    ASSERT_NE(defaultChamfer, 9.5f);
+
+    const auto path = WriteTempTheme(
+        "sencha_theme_metrics_test.json",
+        R"({ "colors": {}, "metrics": { "chamfer": 9.5, "rail_height": "six", "not_a_metric": 1 } })");
+    std::string error;
+    ASSERT_TRUE(LoadEditorTheme(path, &error));
+    EXPECT_FLOAT_EQ(EditorUi::Metrics.Chamfer, 9.5f);
+    // A bad value and an unknown key each warn, and neither aborts the load.
+    EXPECT_NE(error.find("rail_height"), std::string::npos) << error;
+    EXPECT_NE(error.find("not_a_metric"), std::string::npos) << error;
+
+    ResetEditorTheme();
+    EXPECT_FLOAT_EQ(EditorUi::Metrics.Chamfer, defaultChamfer);
+    std::filesystem::remove(path);
+}
+
+TEST(EditorThemeFile, MetricsOnlyFileLoads)
+{
+    const auto path = WriteTempTheme("sencha_theme_metrics_only_test.json",
+                                     R"({ "metrics": { "screw_radius": 4 } })");
+    std::string error;
+    ASSERT_TRUE(LoadEditorTheme(path, &error)) << error;
+    EXPECT_TRUE(error.empty()) << error;
+    EXPECT_FLOAT_EQ(EditorUi::Metrics.ScrewRadius, 4.0f);
+
+    ResetEditorTheme();
+    std::filesystem::remove(path);
+}
+
+TEST(EditorThemeFile, ColorsOnlyFileRevertsMetricsToDefaults)
+{
+    // A theme describes the whole look: a file with no metrics section leaves
+    // the built-in metrics, not the previous theme's.
+    const float defaultChamfer = EditorUi::Metrics.Chamfer;
+    EditorUi::Metrics.Chamfer = 42.0f;
+
+    const auto path = WriteTempTheme("sencha_theme_colors_only_test.json",
+                                     R"({ "colors": { "accent": "#FFFFFF" } })");
+    std::string error;
+    ASSERT_TRUE(LoadEditorTheme(path, &error)) << error;
+    EXPECT_FLOAT_EQ(EditorUi::Metrics.Chamfer, defaultChamfer);
+
+    ResetEditorTheme();
+    std::filesystem::remove(path);
+}
+
+TEST(EditorThemeFile, NonObjectMetricsWarnsButLoads)
+{
+    const auto path = WriteTempTheme("sencha_theme_metrics_shape_test.json",
+                                     R"({ "colors": { "accent": "#FFFFFF" }, "metrics": 5 })");
+    std::string error;
+    EXPECT_TRUE(LoadEditorTheme(path, &error));
+    EXPECT_NE(error.find("metrics"), std::string::npos) << error;
+
+    ResetEditorTheme();
+    std::filesystem::remove(path);
+}
+
+TEST(EditorThemeFile, SaveRoundTripsColorsAndMetrics)
+{
+    const auto edited = WriteTempTheme(
+        "sencha_theme_roundtrip_src_test.json",
+        R"({ "colors": { "accent": "#FF0080", "selected_outline": "#FFB347" }, "metrics": { "rail_height": 11, "glow_alpha": 0.5 } })");
+    std::string error;
+    ASSERT_TRUE(LoadEditorTheme(edited, &error)) << error;
+
+    const auto saved = std::filesystem::temp_directory_path() / "sencha_theme_roundtrip_out_test.json";
+    ASSERT_TRUE(SaveEditorTheme(saved, &error)) << error;
+
+    ResetEditorTheme();
+    EXPECT_NE(EditorUi::Metrics.RailHeight, 11.0f);
+
+    ASSERT_TRUE(LoadEditorTheme(saved, &error)) << error;
+    EXPECT_TRUE(error.empty()) << error;
+    EXPECT_FLOAT_EQ(EditorUi::Metrics.RailHeight, 11.0f);
+    EXPECT_FLOAT_EQ(EditorUi::Metrics.GlowAlpha, 0.5f);
+    EXPECT_NEAR(EditorUi::Accent.x, 1.0f, 1e-4f);
+    EXPECT_NEAR(EditorUi::Accent.z, 0.2158f, 1e-3f);
+    EXPECT_NEAR(EditorUi::SelectedOutline.x, 1.0f, 1e-4f);
+
+    ResetEditorTheme();
+    std::filesystem::remove(edited);
+    std::filesystem::remove(saved);
+}

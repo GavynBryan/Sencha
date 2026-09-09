@@ -88,7 +88,7 @@ void ThemePreferences::SetThemeCVar(ConsoleRegistry& console, const std::string&
 
 void ThemePreferences::ApplyChoice(ConsoleRegistry& console, const std::string& name)
 {
-    ResetEditorThemePalette();
+    ResetEditorTheme();
     Status.clear();
     if (!name.empty())
     {

@@ -115,6 +115,8 @@ private:
     bool VulkanBackendReady = false;
     bool Valid = false;
     bool LoggedFirstDraw = false;
+    // Style, scale, and fonts are built on the first OnDraw (see there).
+    bool LookBuilt = false;
 
     std::function<void()> UndoAction;
     std::function<void()> RedoAction;
