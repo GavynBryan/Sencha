@@ -494,7 +494,12 @@ SDL integration is split:
 
 - `PlatformServices` owns the video and window services as a group and creates
   the primary window; `Engine` owns it as `Engine::Platform()`.
-- `SdlWindowService` owns windows and window state.
+- `SdlWindowService` owns windows and window state. A window asked for client
+  decorations (`EngineWindowConfig::ClientDecorations`) draws its own frame:
+  the application publishes `WindowFrameRegions` (caption rects, whether
+  dragging is permitted, the resize border) and `SdlWindow` classifies the
+  platform's hit test against them (`ClassifyWindowFrameHit`); where hit
+  testing is unavailable the platform frame stays.
 - `SdlInputCapture` translates SDL events into `InputFrame`.
 
 `Game::OnPlatformEvent` sees each SDL event before input capture. If it marks
