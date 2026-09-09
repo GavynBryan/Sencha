@@ -12,6 +12,7 @@
 
 union SDL_Event;
 
+class ConsoleRegistry;
 class Engine;
 class SdlWindow;
 class VulkanFrameService;
@@ -99,6 +100,8 @@ private:
     bool InitImGui(const RendererServices& services);
     void ShutdownImGui();
     void DrawMainMenuBar();
+    void RegisterClickCommand(ConsoleRegistry& registry);
+    void FeedQueuedClicks();
 
     Engine& EngineInstance;
     SdlWindow& Window;
@@ -140,6 +143,17 @@ private:
     // Front tabs to raise on the frame after a layout rebuild (window titles of
     // tab-group nodes; SetWindowFocus needs the windows to exist first).
     std::vector<std::string> PendingTabFocus;
+    // A left click queued by the editor.ui.click command: pressed on the named
+    // frame, released on the next, so an unattended run can drive a widget
+    // before a screenshot. Fed to ImGui after the SDL backend's own mouse
+    // update so the injected position wins for that frame.
+    struct QueuedClick
+    {
+        ImVec2 Pos{};
+        int AtFrame = 0;
+        bool Pressed = false;
+    };
+    std::vector<QueuedClick> QueuedClicks;
     // 9-slice texture skin (owned here; released before the ImGui backend shuts
     // down since it holds ImGui descriptor sets). Null if textures didn't load.
     std::unique_ptr<EditorSkin> Skin;

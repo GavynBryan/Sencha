@@ -25,6 +25,8 @@
 
 #include <algorithm>
 #include <array>
+#include <format>
+#include <span>
 #include <string>
 #include <variant>
 #include <vector>
@@ -272,6 +274,8 @@ bool EditorUiFeature::Setup(const RenderFeatureServices& featureServices)
     const RendererServices& services = *featureServices.Backend;
     Log = services.Logging ? &services.Logging->GetLogger<EditorUiFeature>() : nullptr;
     Valid = InitImGui(services);
+    if (Valid)
+        RegisterClickCommand(EngineInstance.Console().Registry());
     if (Log != nullptr)
         Log->Info("EditorUiFeature setup {}", Valid ? "succeeded" : "failed");
     // The editor shell is its panels: without an ImGui context there is
@@ -305,6 +309,7 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
 
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
+    FeedQueuedClicks();
     ImGui::NewFrame();
 
     // One frame after a layout rebuild: raise the intended front tab of each
@@ -370,6 +375,68 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
 
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), frame.Cmd);
+}
+
+void EditorUiFeature::RegisterClickCommand(ConsoleRegistry& registry)
+{
+    registry.RegisterCommand({
+        .Name = "editor.ui.click",
+        .Owner = "editor",
+        .Usage = "editor.ui.click <x> <y> [frame]",
+        .Help = "Left-click the UI at window pixel (x, y). With a frame number, "
+                "waits until that UI frame so the layout has settled. For "
+                "unattended verification alongside render.screenshot.",
+        .Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args) {
+            ConsoleResult result;
+            if (args.size() < 2 || args.size() > 3)
+            {
+                result.Status = ConsoleStatus::InvalidArguments;
+                result.Error("expected <x> <y> [frame]");
+                return result;
+            }
+            QueuedClick click;
+            try
+            {
+                click.Pos = ImVec2(std::stof(args[0]), std::stof(args[1]));
+                click.AtFrame = args.size() == 3 ? std::stoi(args[2]) : 0;
+            }
+            catch (const std::exception&)
+            {
+                result.Status = ConsoleStatus::InvalidArguments;
+                result.Error("x, y, and frame must be numbers");
+                return result;
+            }
+            QueuedClicks.push_back(click);
+            result.Info(std::format("click queued at ({}, {}) for frame {}", click.Pos.x, click.Pos.y, click.AtFrame));
+            return result;
+        },
+    });
+}
+
+void EditorUiFeature::FeedQueuedClicks()
+{
+    if (QueuedClicks.empty())
+        return;
+    ImGuiIO& io = ImGui::GetIO();
+    const int frame = ImGui::GetFrameCount();
+    for (std::size_t i = 0; i < QueuedClicks.size();)
+    {
+        QueuedClick& click = QueuedClicks[i];
+        if (frame < click.AtFrame)
+        {
+            ++i;
+            continue;
+        }
+        io.AddMousePosEvent(click.Pos.x, click.Pos.y);
+        io.AddMouseButtonEvent(ImGuiMouseButton_Left, !click.Pressed);
+        if (!click.Pressed)
+        {
+            click.Pressed = true;
+            ++i;
+            continue;
+        }
+        QueuedClicks.erase(QueuedClicks.begin() + static_cast<std::ptrdiff_t>(i));
+    }
 }
 
 void EditorUiFeature::Teardown()
