@@ -288,7 +288,7 @@ void SelectionRenderer::AppendHover(std::vector<EditorLineSegment>& segments, co
         return;
 
     const Vec4 color = EditorTheme::HoverEligible;
-    const float width = EditorTheme::OverlayLinePixels;
+    const float width = EditorTheme::HoverLinePixels;
     if (hovered.IsFace())
     {
         if (const std::optional<FaceElement> face = MeshElements::TryGetFace(*mesh, *transform, hovered.ElementId))
