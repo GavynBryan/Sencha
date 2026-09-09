@@ -11,7 +11,8 @@
 //
 //   {
 //     "colors":  { "accent": "#00E5CC", "window_bg": "#0A0D0FFF", ... },
-//     "metrics": { "chamfer": 6, "rail_height": 6, ... }
+//     "metrics": { "chamfer": 6, "rail_height": 6, ... },
+//     "decor":   { "hierarchy_empty": "GEOMETRY", "status_tagline": "", ... }
 //   }
 //
 // Color keys are the snake_case palette names (see the table in the .cpp);
@@ -19,8 +20,9 @@
 // linearized on load: the editor renders into an sRGB swapchain that encodes on
 // write, so the authored hex is what lands on screen. Never brighten values to
 // compensate. Metric keys are the snake_case ChromeMetrics names; values are
-// design pixels (plain numbers, scaled at draw time). Either section may be
-// omitted. Missing keys keep the built-in default; unknown keys and bad values
+// design pixels (plain numbers, scaled at draw time). Decor keys are the
+// snake_case DecorStrings names; values are strings, newline-separated lines,
+// empty to silence a slot. Any section may be omitted. Missing keys keep the built-in default; unknown keys and bad values
 // warn through *error but do not fail. Call before the ImGui style is applied.
 [[nodiscard]] bool LoadEditorTheme(const std::filesystem::path& path, std::string* error);
 
@@ -42,11 +44,19 @@ struct EditorThemeMetricEntry
     float* Value;
 };
 
+// One decor string: the JSON key and the EditorUi::Decor field it drives.
+struct EditorThemeDecorEntry
+{
+    const char* Key;
+    std::string* Text;
+};
+
 // The themeable palette and metrics in declaration order: the same tables
 // LoadEditorTheme maps keys through, exposed so the preferences UI can edit
 // entries in place.
 [[nodiscard]] std::span<const EditorThemePaletteEntry> EditorThemePalette();
 [[nodiscard]] std::span<const EditorThemeMetricEntry> EditorThemeMetrics();
+[[nodiscard]] std::span<const EditorThemeDecorEntry> EditorThemeDecor();
 
 // Restores every palette entry and metric to the built-in default (the state
 // before any theme load or override).

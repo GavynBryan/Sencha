@@ -1,6 +1,7 @@
 #include "SceneBrowserPanel.h"
 
 #include "ui/ScopedPanel.h"
+#include "ui/chrome/ChromeDecor.h"
 #include "ui/TextFilterMatch.h"
 #include "fonts/IconsFontAwesome6.h"
 
@@ -166,5 +167,8 @@ void SceneBrowserPanel::OnDraw()
         column = (column + 1) % columns;
     }
     if (Entries.empty())
+    {
         ImGui::TextDisabled("no .sscene sources under the content roots");
+        EditorChrome::EmptyRegionLabel(EditorChrome::DecorSlot::SceneBrowserEmpty);
+    }
 }

@@ -3,6 +3,7 @@
 #include "ui/EditorUiStyle.h"
 #include "ui/ScopedPanel.h"
 #include "ui/chrome/ChromeControls.h"
+#include "ui/chrome/ChromeDecor.h"
 #include "ui/chrome/ChromeSelection.h"
 #include "ui/TextFilterMatch.h"
 #include "fonts/IconsFontAwesome6.h"
@@ -729,6 +730,8 @@ void SceneHierarchyPanel::OnDraw()
 
     // One pass over the tracked list builds the tree shape for the frame.
     ctx.Order.assign(scene.GetAllEntities().begin(), scene.GetAllEntities().end());
+    if (ctx.Order.empty())
+        EditorChrome::EmptyRegionLabel(EditorChrome::DecorSlot::HierarchyEmpty);
     ctx.Children.resize(ctx.Order.size());
     ctx.Slot.reserve(ctx.Order.size());
     for (std::size_t i = 0; i < ctx.Order.size(); ++i)

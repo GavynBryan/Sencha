@@ -1,3 +1,4 @@
+#include "ui/chrome/ChromeOrnaments.h"
 #include "ui/chrome/IconDraw.h"
 
 #include <gtest/gtest.h>
@@ -46,4 +47,23 @@ TEST(ChromeSources, OutOfRangeIdsResolveToNone)
     EXPECT_EQ(source.Procedural, nullptr);
     SetIconSource(IconId::Count, IconSource{ GlyphSourceKind::Sprite, nullptr, "x", {} });
     EXPECT_EQ(IconSourceFor(IconId::None).FontGlyph, nullptr);
+}
+
+TEST(ChromeSources, EveryOrnamentDrawsProcedurallyAndTakesASprite)
+{
+    for (std::size_t i = 0; i <= static_cast<std::size_t>(OrnamentKind::Scanlines); ++i)
+    {
+        const OrnamentSource& source = OrnamentSourceFor(static_cast<OrnamentKind>(i));
+        EXPECT_NE(source.Procedural, nullptr) << "ornament " << i;
+        EXPECT_EQ(source.Preferred, GlyphSourceKind::Procedural) << "ornament " << i;
+    }
+
+    OrnamentSource authored = OrnamentSourceFor(OrnamentKind::Vent);
+    authored.Preferred = GlyphSourceKind::Sprite;
+    authored.Sprite = SpriteRef{ .Texture = 7 };
+    SetOrnamentSource(OrnamentKind::Vent, authored);
+    EXPECT_EQ(OrnamentSourceFor(OrnamentKind::Vent).Preferred, GlyphSourceKind::Sprite);
+    EXPECT_NE(OrnamentSourceFor(OrnamentKind::Vent).Procedural, nullptr);
+    ResetOrnamentSources();
+    EXPECT_EQ(OrnamentSourceFor(OrnamentKind::Vent).Preferred, GlyphSourceKind::Procedural);
 }

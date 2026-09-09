@@ -3,6 +3,7 @@
 #include <imgui.h>
 
 #include <cmath>
+#include <string>
 #include <string_view>
 
 // The editor's UI look data and ImGui style — the single source for editor chrome
@@ -131,6 +132,20 @@ struct ChromeMetrics
     float ChassisChamfer = 10.0f;
 };
 inline ChromeMetrics Metrics{};
+
+// Flavor copy the chrome shows in space a panel knows is free, keyed by the
+// slot it fills (see EditorChrome::DecorSlot). Lines are newline-separated;
+// an empty string silences a slot. Themed by the theme file's "decor" object.
+struct DecorStrings
+{
+    std::string HierarchyEmpty = "GEOMETRY";
+    std::string MaterialBrowserEmpty = "TEXTURE";
+    std::string SceneBrowserEmpty = "BUILD WORLDS\nSHAPE REALITIES\nGO FURTHER";
+    std::string ToolPropertiesIdle = "///";
+    std::string ConsoleEmpty = "REPEAT";
+    std::string StatusTagline = "REALTIME // MODULAR // LIMITLESS";
+};
+inline DecorStrings Decor{};
 
 // Applies the palette + metrics onto the ImGui style (seeded from a fresh
 // ImGuiStyle + StyleColorsDark so no entry is left uninitialized), then scales

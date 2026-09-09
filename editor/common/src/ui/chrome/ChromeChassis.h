@@ -25,4 +25,7 @@ void DrawChassisBase(ImDrawList* dl, ImVec2 mn, ImVec2 mx);
 
 // The ring's bevel and the well's inset edge, drawn after the base.
 void DrawChassisEdges(ImDrawList* dl, ImVec2 mn, ImVec2 mx);
+
+// The mounting screws in the ring's corners.
+void DrawChassisOrnaments(ImDrawList* dl, ImVec2 mn, ImVec2 mx);
 } // namespace EditorChrome

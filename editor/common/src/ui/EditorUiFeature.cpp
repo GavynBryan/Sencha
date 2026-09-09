@@ -342,6 +342,7 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
         ImDrawList* background = ImGui::GetBackgroundDrawList();
         EditorChrome::DrawChassisBase(background, workMin, workMax);
         EditorChrome::DrawChassisEdges(background, workMin, workMax);
+        EditorChrome::DrawChassisOrnaments(background, workMin, workMax);
 
         const float inset = EditorChrome::ChassisInset();
         ImGui::SetNextWindowPos(ImVec2(workMin.x + inset, workMin.y + inset));

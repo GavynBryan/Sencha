@@ -69,6 +69,15 @@ const EditorThemeMetricEntry kThemeMetricEntries[] = {
     { "chassis_chamfer", &EditorUi::Metrics.ChassisChamfer },
 };
 
+const EditorThemeDecorEntry kThemeDecorEntries[] = {
+    { "hierarchy_empty", &EditorUi::Decor.HierarchyEmpty },
+    { "material_browser_empty", &EditorUi::Decor.MaterialBrowserEmpty },
+    { "scene_browser_empty", &EditorUi::Decor.SceneBrowserEmpty },
+    { "tool_properties_idle", &EditorUi::Decor.ToolPropertiesIdle },
+    { "console_empty", &EditorUi::Decor.ConsoleEmpty },
+    { "status_tagline", &EditorUi::Decor.StatusTagline },
+};
+
 // The pristine palette, captured before the first theme load or reset so
 // switching themes at runtime starts from the built-in defaults, not from
 // whatever the previous theme left behind. The metrics need no capture: a
@@ -146,6 +155,49 @@ void LoadColors(const JsonValue& colors, std::string& problems)
     }
 }
 
+void LoadDecor(const JsonValue& decor, std::string& problems)
+{
+    for (const auto& [key, value] : decor.AsObject())
+    {
+        std::string* target = nullptr;
+        for (const EditorThemeDecorEntry& entry : kThemeDecorEntries)
+            if (key == entry.Key)
+            {
+                target = entry.Text;
+                break;
+            }
+        if (target == nullptr)
+        {
+            problems += " unknown decor '" + key + "';";
+            continue;
+        }
+        if (!value.IsString())
+        {
+            problems += " bad value for '" + key + "';";
+            continue;
+        }
+        *target = value.AsString();
+    }
+}
+
+// JSON string escaping for the handful of characters decor copy can hold.
+std::string Quoted(const std::string& text)
+{
+    std::string out = "\"";
+    for (const char c : text)
+    {
+        switch (c)
+        {
+        case '"': out += "\\\""; break;
+        case '\\': out += "\\\\"; break;
+        case '\n': out += "\\n"; break;
+        default: out += c; break;
+        }
+    }
+    out += '"';
+    return out;
+}
+
 void LoadMetrics(const JsonValue& metrics, std::string& problems)
 {
     for (const auto& [key, value] : metrics.AsObject())
@@ -209,12 +261,18 @@ std::span<const EditorThemeMetricEntry> EditorThemeMetrics()
     return kThemeMetricEntries;
 }
 
+std::span<const EditorThemeDecorEntry> EditorThemeDecor()
+{
+    return kThemeDecorEntries;
+}
+
 void ResetEditorTheme()
 {
     CaptureBuiltIn();
     for (std::size_t i = 0; i < std::size(kThemeEntries); ++i)
         *kThemeEntries[i].Color = kBuiltInPalette[i];
     EditorUi::Metrics = EditorUi::ChromeMetrics{};
+    EditorUi::Decor = EditorUi::DecorStrings{};
 }
 
 bool SaveEditorTheme(const std::filesystem::path& path, std::string* error)
@@ -248,6 +306,10 @@ bool SaveEditorTheme(const std::filesystem::path& path, std::string* error)
         file << "    \"" << kThemeMetricEntries[i].Key << "\": " << number
              << (i + 1 < std::size(kThemeMetricEntries) ? ",\n" : "\n");
     }
+    file << "  },\n  \"decor\": {\n";
+    for (std::size_t i = 0; i < std::size(kThemeDecorEntries); ++i)
+        file << "    \"" << kThemeDecorEntries[i].Key << "\": " << Quoted(*kThemeDecorEntries[i].Text)
+             << (i + 1 < std::size(kThemeDecorEntries) ? ",\n" : "\n");
     file << "  }\n}\n";
 
     if (!file.good())
@@ -283,10 +345,12 @@ bool LoadEditorTheme(const std::filesystem::path& path, std::string* error)
 
     const JsonValue* colors = root->Find("colors");
     const JsonValue* metrics = root->Find("metrics");
-    if ((colors == nullptr || !colors->IsObject()) && (metrics == nullptr || !metrics->IsObject()))
+    const JsonValue* decor = root->Find("decor");
+    const auto isObject = [](const JsonValue* v) { return v != nullptr && v->IsObject(); };
+    if (!isObject(colors) && !isObject(metrics) && !isObject(decor))
     {
         if (error != nullptr)
-            *error = "theme '" + path.string() + "' has no \"colors\" or \"metrics\" object";
+            *error = "theme '" + path.string() + "' has no \"colors\", \"metrics\", or \"decor\" object";
         return false;
     }
 
@@ -308,6 +372,13 @@ bool LoadEditorTheme(const std::filesystem::path& path, std::string* error)
             LoadMetrics(*metrics, problems);
         else
             problems += " \"metrics\" is not an object;";
+    }
+    if (decor != nullptr)
+    {
+        if (decor->IsObject())
+            LoadDecor(*decor, problems);
+        else
+            problems += " \"decor\" is not an object;";
     }
 
     if (!problems.empty() && error != nullptr)

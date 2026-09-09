@@ -2,6 +2,7 @@
 
 #include "ui/EditorUiStyle.h"
 #include "ui/chrome/ChromeBars.h"
+#include "ui/chrome/ChromeDecor.h"
 #include "fonts/IconsFontAwesome6.h"
 
 #include "editmodes/ManipulatorSession.h"
@@ -112,10 +113,23 @@ void EditorStatusBar::Draw()
 #endif
             char clock[16];
             std::strftime(clock, sizeof(clock), ICON_FA_CLOCK "  %H:%M", &tm);
+            // The tagline sits before the clock, both right-aligned; the
+            // tagline yields first when the bar is narrow.
+            const std::string_view tagline = EditorChrome::DecorText(EditorChrome::DecorSlot::StatusTagline);
             const float clockWidth = ImGui::CalcTextSize(clock).x;
+            const float taglineWidth = tagline.empty() ? 0.0f
+                : EditorUi::MeasureRoleText(EditorUi::TextRole::Status, tagline).x + EditorUi::Px(18.0f);
             const float avail = ImGui::GetContentRegionAvail().x;
-            if (avail > clockWidth)
+            if (!tagline.empty() && avail > clockWidth + taglineWidth)
+            {
+                ImGui::SameLine(ImGui::GetCursorPosX() + avail - clockWidth - taglineWidth);
+                EditorUi::RoleLabel(EditorUi::TextRole::Status, tagline);
+                ImGui::SameLine(0.0f, EditorUi::Px(18.0f));
+            }
+            else if (avail > clockWidth)
+            {
                 ImGui::SameLine(ImGui::GetCursorPosX() + avail - clockWidth);
+            }
             ImGui::TextColored(EditorUi::TextDim, "%s", clock);
 
             ImGui::EndMenuBar();

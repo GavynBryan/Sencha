@@ -6,6 +6,7 @@
 #include "ui/EditorUiStyle.h"
 #include "ui/ScopedPanel.h"
 #include "ui/chrome/ChromeControls.h"
+#include "ui/chrome/ChromeDecor.h"
 
 #include "fonts/IconsFontAwesome6.h"
 
@@ -530,7 +531,10 @@ void ToolPropertiesPanel::OnDraw()
     ToolRegistry* tools = Tools();
     ITool* activeTool = tools != nullptr ? tools->GetActiveTool() : nullptr;
     if (activeTool == nullptr)
+    {
+        EditorChrome::EmptyRegionLabel(EditorChrome::DecorSlot::ToolPropertiesIdle);
         return;
+    }
 
     // The select tool's "properties" are the element-mode verbs over the current
     // selection, which is panel work rather than tool work. Every other tool

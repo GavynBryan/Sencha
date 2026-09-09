@@ -50,7 +50,7 @@ void DrawTitle(ImDrawList* dl, const HeaderRegions& regions, std::string_view ti
 
 namespace EditorChrome
 {
-void DrawHeaderRail(ImDrawList* dl, ImVec2 mn, ImVec2 mx, PanelStyle style, HeaderState state)
+void DrawHeaderRail(ImDrawList* dl, ImVec2 mn, ImVec2 mx, PanelStyle style, HeaderState state, float ornamentWidth)
 {
     (void)style;
     const float h = mx.y - mn.y;
@@ -61,7 +61,7 @@ void DrawHeaderRail(ImDrawList* dl, ImVec2 mn, ImVec2 mx, PanelStyle style, Head
     const float gap = EditorUi::Px(4.0f);
     const float inset = EditorUi::Px(2.0f);
     const HeaderRegions regions = LayoutHeader(ImVec2(mn.x + inset, mn.y), ImVec2(mx.x - inset, mx.y),
-                                               h * 3.0f, 0.0f, 0.0f, 0.0f, gap);
+                                               h * 3.0f, 0.0f, ornamentWidth, 0.0f, gap);
     DrawCapAndLine(dl, regions, state);
 }
 

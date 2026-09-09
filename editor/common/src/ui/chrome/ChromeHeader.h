@@ -21,8 +21,10 @@ struct HeaderState
     bool Focused = false; // the panel is the one being worked in
 };
 
-// Cap + line across [mn, mx], the rail at the top of a panel's well.
-void DrawHeaderRail(ImDrawList* dl, ImVec2 mn, ImVec2 mx, PanelStyle style, HeaderState state);
+// Cap + line across [mn, mx], the rail at the top of a panel's well. The line
+// stops ornamentWidth short of the right end for the ornaments placed there.
+void DrawHeaderRail(ImDrawList* dl, ImVec2 mn, ImVec2 mx, PanelStyle style, HeaderState state,
+                    float ornamentWidth = 0.0f);
 
 // A chamfered plate carrying cap, title, line, and a free control region of
 // reservedControlWidth at the right for the caller's own widgets. Returns the

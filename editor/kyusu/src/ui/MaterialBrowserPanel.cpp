@@ -3,6 +3,7 @@
 #include "ui/EditorUiStyle.h"
 #include "ui/MaterialThumbnailCache.h"
 #include "ui/ScopedPanel.h"
+#include "ui/chrome/ChromeDecor.h"
 #include "ui/TextFilterMatch.h"
 
 #include "project/MaterialLibrary.h"
@@ -132,6 +133,7 @@ void MaterialBrowserPanel::OnDraw()
         ImGui::TextDisabled(Materials.Materials().empty()
                                 ? "No .smat materials found. Save the level next to a materials/ folder, then Rescan."
                                 : "No materials match the filter.");
+        EditorChrome::EmptyRegionLabel(EditorChrome::DecorSlot::MaterialBrowserEmpty);
         return;
     }
 
