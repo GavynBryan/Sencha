@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ChromeGeometry.h"
 #include "PanelStyle.h"
 #include "ui/EditorUiStyle.h"
 
@@ -24,9 +25,10 @@ struct HeaderState
 void DrawHeaderRail(ImDrawList* dl, ImVec2 mn, ImVec2 mx, PanelStyle style, HeaderState state);
 
 // A chamfered plate carrying cap, title, line, and a free control region of
-// reservedControlWidth at the right for the caller's own widgets.
-void DrawHeaderRow(ImDrawList* dl, ImVec2 mn, ImVec2 mx, std::string_view title, EditorUi::TextRole role,
-                   HeaderState state, float reservedControlWidth);
+// reservedControlWidth at the right for the caller's own widgets. Returns the
+// regions it laid out so the caller can place a widget in the control one.
+HeaderRegions DrawHeaderRow(ImDrawList* dl, ImVec2 mn, ImVec2 mx, std::string_view title, EditorUi::TextRole role,
+                            HeaderState state, float reservedControlWidth);
 
 // Cap + title + line with no plate, for a section inside a panel.
 void DrawHeaderRule(ImDrawList* dl, ImVec2 mn, ImVec2 mx, std::string_view title, EditorUi::TextRole role,

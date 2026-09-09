@@ -3,6 +3,8 @@
 #include "SceneBrowserPanel.h"
 
 #include "ui/EditorUiStyle.h"
+#include "ui/ScopedPanel.h"
+#include "ui/chrome/ChromeHeader.h"
 
 #include "EditorTheme.h"
 #include "overlay/EditorOverlayState.h"
@@ -14,7 +16,6 @@
 #include <imgui.h>
 
 #include <algorithm>
-#include <cfloat>
 #include <cmath>
 #include <optional>
 
@@ -53,32 +54,30 @@ void ViewportPanel::ClearViewportRegion()
 void ViewportPanel::OnDraw()
 {
     // Dock-managed: the host docks this into its slot (see EditorUiFeature).
-    // The scene arrives as an offscreen target that DrawViewport composites, so
-    // the window paints its own background like any other panel.
+    // The Viewport frame is the quietest weight, so the scene keeps the area;
+    // the scene arrives as an offscreen target that DrawViewport composites.
     const ImGuiWindowFlags windowFlags =
         ImGuiWindowFlags_NoScrollbar
         | ImGuiWindowFlags_NoScrollWithMouse;
 
     RegionHovered = false;
 
-    if (!ImGui::Begin(Title.c_str(), &Visible, windowFlags))
+    ScopedPanel panel(Title, &Visible, PanelStyle::Viewport, windowFlags);
+    if (!panel.IsOpen())
     {
         // Collapsed or fully clipped: no rect was drawn this frame, so drop the
         // stale one; input must not route to a view that is not on screen.
         ClearViewportRegion();
-        ImGui::End();
         return;
     }
 
     if (EditorViewport* viewport = Layout.Find(Viewport))
         DrawViewport(*viewport, ImGui::GetContentRegionAvail());
-
-    ImGui::End();
 }
 
 void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
 {
-    ImGui::BeginChild("ViewportLeaf", size, ImGuiChildFlags_Borders, kViewportChildFlags);
+    ImGui::BeginChild("ViewportLeaf", size, ImGuiChildFlags_None, kViewportChildFlags);
 
     DrawOrientationSelector(viewport);
 
@@ -125,9 +124,11 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
         }
     }
 
+    // The active view is the one being edited, so it carries the selection
+    // outline; the others keep the steel hairline.
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     const ImU32 borderColor = viewport.IsActive
-        ? ImGui::GetColorU32(EditorUi::Accent)
+        ? ImGui::GetColorU32(EditorUi::SelectedOutline)
         : ImGui::GetColorU32(EditorUi::Border);
     drawList->AddRect(viewport.RegionMin, viewport.RegionMax, borderColor);
 
@@ -223,30 +224,40 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
 
 void ViewportPanel::DrawOrientationSelector(EditorViewport& viewport)
 {
-    if (viewport.Orientation == ViewportOrientation::Perspective)
+    // The view's header row: the perspective view names itself; the ortho view
+    // names the panel and keeps its orientation combo in the control region,
+    // so the row costs no more height than the combo did.
+    const bool perspective = viewport.Orientation == ViewportOrientation::Perspective;
+    const ImVec2 rowMin = ImGui::GetCursorScreenPos();
+    const float rowHeight = ImGui::GetFrameHeight() + EditorUi::Px(8.0f);
+    const ImVec2 rowMax(rowMin.x + std::max(0.0f, ImGui::GetContentRegionAvail().x), rowMin.y + rowHeight);
+    const float controlWidth = perspective ? 0.0f : ImGui::GetFontSize() * 7.0f;
+    const EditorChrome::HeaderRegions regions = EditorChrome::DrawHeaderRow(
+        ImGui::GetWindowDrawList(), rowMin, rowMax, perspective ? viewport.GetDisplayLabel() : Title,
+        EditorUi::TextRole::PanelTitle, EditorChrome::HeaderState{ .Focused = viewport.IsActive }, controlWidth);
+
+    if (!perspective && regions.HasControl)
     {
-        ImGui::TextUnformatted(viewport.GetDisplayLabel());
-        return;
+        ImGui::SetCursorScreenPos(regions.ControlMin);
+        ImGui::SetNextItemWidth(regions.ControlMax.x - regions.ControlMin.x);
+        if (ImGui::BeginCombo("##Orientation", viewport.GetDisplayLabel()))
+        {
+            for (ViewportOrientation orientation : AllViewportOrientations())
+            {
+                // The ortho view stays orthographic: only the fixed ortho orientations
+                // are offered (no Perspective, no camera-axis User view).
+                const OrientationTraits& traits = Traits(orientation);
+                if (traits.Mode != EditorCamera::Mode::Orthographic || traits.UsesCameraAxis)
+                    continue;
+                const bool selected = viewport.Orientation == orientation;
+                if (ImGui::Selectable(traits.Label, selected))
+                    viewport.ApplyOrientation(orientation);
+                if (selected)
+                    ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
     }
 
-    const char* preview = viewport.GetDisplayLabel();
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    if (!ImGui::BeginCombo("##Orientation", preview))
-        return;
-
-    for (ViewportOrientation orientation : AllViewportOrientations())
-    {
-        // The ortho view stays orthographic: only the fixed ortho orientations
-        // are offered (no Perspective, no camera-axis User view).
-        const OrientationTraits& traits = Traits(orientation);
-        if (traits.Mode != EditorCamera::Mode::Orthographic || traits.UsesCameraAxis)
-            continue;
-        const bool selected = viewport.Orientation == orientation;
-        if (ImGui::Selectable(traits.Label, selected))
-            viewport.ApplyOrientation(orientation);
-        if (selected)
-            ImGui::SetItemDefaultFocus();
-    }
-
-    ImGui::EndCombo();
+    ImGui::SetCursorScreenPos(ImVec2(rowMin.x, rowMax.y + EditorUi::Px(2.0f)));
 }

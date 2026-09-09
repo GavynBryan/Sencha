@@ -14,13 +14,14 @@ struct Weight
     float Chamfer;
     float Recess;
     float Rail;
+    float Padding; // of the content padding inside the ring
 };
 constexpr Weight kWeights[] = {
-    { 1.0f, 1.0f, 1.0f },    // Standard
-    { 1.5f, 1.5f, 1.25f },   // Major
-    { 0.75f, 1.0f, 1.0f },   // Tool
-    { 0.5f, 0.5f, 0.0f },    // Viewport
-    { 0.5f, 0.75f, 0.75f },  // Compact
+    { 1.0f, 1.0f, 1.0f, 1.0f },      // Standard
+    { 1.5f, 1.5f, 1.25f, 1.25f },    // Major
+    { 0.75f, 1.0f, 1.0f, 1.0f },     // Tool
+    { 0.5f, 0.5f, 0.0f, 0.35f },     // Viewport: the scene keeps the area
+    { 0.5f, 0.75f, 0.75f, 0.75f },   // Compact
 };
 }
 
@@ -41,8 +42,9 @@ FrameSpec SpecFor(PanelStyle style)
 ImVec2 ContentPadding(PanelStyle style)
 {
     const FrameSpec spec = SpecFor(style);
+    const float pad = kWeights[static_cast<int>(style)].Padding;
     const float ring = spec.Border + spec.Recess;
-    return ImVec2(ring + EditorUi::Px(8.0f), ring + EditorUi::Px(4.0f));
+    return ImVec2(ring + EditorUi::Px(8.0f * pad), ring + EditorUi::Px(4.0f * pad));
 }
 
 void DrawFrameBase(ImDrawList* dl, ImVec2 mn, ImVec2 mx, PanelStyle style)

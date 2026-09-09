@@ -65,12 +65,12 @@ void DrawHeaderRail(ImDrawList* dl, ImVec2 mn, ImVec2 mx, PanelStyle style, Head
     DrawCapAndLine(dl, regions, state);
 }
 
-void DrawHeaderRow(ImDrawList* dl, ImVec2 mn, ImVec2 mx, std::string_view title, EditorUi::TextRole role,
-                   HeaderState state, float reservedControlWidth)
+HeaderRegions DrawHeaderRow(ImDrawList* dl, ImVec2 mn, ImVec2 mx, std::string_view title, EditorUi::TextRole role,
+                            HeaderState state, float reservedControlWidth)
 {
     const float h = mx.y - mn.y;
     if (h <= 0.0f || mx.x <= mn.x)
-        return;
+        return HeaderRegions{};
     const EditorUi::ChromeMetrics& m = EditorUi::Metrics;
     const float edge = std::max(1.0f, EditorUi::Px(m.EdgeWidth));
     const float chamfer = std::min(EditorUi::Px(m.Chamfer), h * 0.5f);
@@ -90,6 +90,7 @@ void DrawHeaderRow(ImDrawList* dl, ImVec2 mn, ImVec2 mx, std::string_view title,
                                                (h - padY * 2.0f) * 0.6f, size.x, 0.0f, reservedControlWidth, gap);
     DrawCapAndLine(dl, regions, state);
     DrawTitle(dl, regions, title, role, state);
+    return regions;
 }
 
 void DrawHeaderRule(ImDrawList* dl, ImVec2 mn, ImVec2 mx, std::string_view title, EditorUi::TextRole role,
