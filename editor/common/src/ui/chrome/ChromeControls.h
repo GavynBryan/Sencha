@@ -1,5 +1,7 @@
 #pragma once
 
+#include "icons/IconId.h"
+
 #include <imgui.h>
 
 // The chrome's controls: buttons that read as mounted in the chassis rather
@@ -21,4 +23,14 @@ enum class ButtonTone
 // `label` is drawn verbatim (a Font Awesome glyph may lead it) and may not
 // carry a "##" id suffix.
 bool Button(const char* id, const char* label, ImVec2 size, ButtonTone tone);
+
+// A square mounted button carrying an icon, `size` on a side.
+bool IconButton(const char* id, IconId icon, float size, ButtonTone tone);
+
+// The bar-hosted control: a square IconButton whose tone follows `active`
+// (a tool or toggle that is on), with a tooltip while hovered. `tooltip` may
+// be null. The label form is for a control whose glyph is text (a tool's own
+// toolbar control, or a tool with no icon id showing its name).
+bool ToolButton(const char* id, IconId icon, const char* tooltip, bool active, float size);
+bool ToolButton(const char* id, const char* label, const char* tooltip, bool active, float size);
 } // namespace EditorChrome

@@ -1,8 +1,8 @@
 #include "EdgeCutTool.h"
 
 #include "ui/EditorUiSkin.h"
+#include "ui/chrome/ChromeControls.h"
 
-#include "fonts/IconsFontAwesome6.h"
 
 #include "brush/BrushOps.h"
 #include "brush/BrushValidation.h"
@@ -131,7 +131,7 @@ std::vector<SelectableRef> NewRingEdgeRefs(const EditorScene& scene, EntityId en
 
 std::string_view EdgeCutTool::GetId() const { return "edgecut"; }
 std::string_view EdgeCutTool::GetDisplayName() const { return "Edge Cut"; }
-std::string_view EdgeCutTool::GetIcon() const { return ICON_FA_SCISSORS; }
+IconId EdgeCutTool::GetIcon() const { return IconId::Cut; }
 
 InputConsumed EdgeCutTool::OnHover(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos)
 {
@@ -160,11 +160,11 @@ void EdgeCutTool::DrawProperties(ToolContext&)
 void EdgeCutTool::DrawToolbarControls(ToolContext&)
 {
     const float buttonSize = EditorUiSkin::BarButtonSize();
-    if (EditorUiSkin::ToolButton("cutloop", ICON_FA_ROTATE,
+    if (EditorChrome::ToolButton("cutloop", IconId::Rotate,
                                         "Loop cut (whole ring)  [Tab]", LoopCut, buttonSize))
         LoopCut = true;
     ImGui::SameLine();
-    if (EditorUiSkin::ToolButton("cutsingle", ICON_FA_GRIP_LINES,
+    if (EditorChrome::ToolButton("cutsingle", IconId::ModeEdge,
                                         "Single edge cut  [Tab]", !LoopCut, buttonSize))
         LoopCut = false;
 }

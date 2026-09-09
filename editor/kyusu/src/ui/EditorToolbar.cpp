@@ -2,6 +2,7 @@
 
 #include "ui/EditorUiSkin.h"
 #include "ui/EditorUiStyle.h"
+#include "ui/chrome/ChromeControls.h"
 #include "fonts/IconsFontAwesome6.h"
 
 #include "editmodes/ManipulatorSession.h"
@@ -99,12 +100,12 @@ void EditorToolbar::DrawTransformGroup(float buttonSize)
 
     // The gizmo (Shift+Q/W/E/R). Highlights the EFFECTIVE mode: with Resize
     // chosen but nothing resizable selected, Move is what the user is driving.
-    struct GizmoButton { TransformMode Mode; const char* Icon; const char* Tooltip; };
+    struct GizmoButton { TransformMode Mode; IconId Icon; const char* Tooltip; };
     static constexpr std::array<GizmoButton, 4> kGizmos = {{
-        { TransformMode::Resize, ICON_FA_UP_RIGHT_AND_DOWN_LEFT_FROM_CENTER, "Resize bounds  [Shift+Q]" },
-        { TransformMode::Move, ICON_FA_UP_DOWN_LEFT_RIGHT, "Move  [Shift+W]" },
-        { TransformMode::Rotate, ICON_FA_ROTATE, "Rotate  [Shift+E]" },
-        { TransformMode::Scale, ICON_FA_MAXIMIZE, "Scale  [Shift+R]" },
+        { TransformMode::Resize, IconId::Resize, "Resize bounds  [Shift+Q]" },
+        { TransformMode::Move, IconId::Move, "Move  [Shift+W]" },
+        { TransformMode::Rotate, IconId::Rotate, "Rotate  [Shift+E]" },
+        { TransformMode::Scale, IconId::Scale, "Scale  [Shift+R]" },
     }};
     const TransformMode effective = session.EffectiveMode();
     bool first = true;
@@ -113,7 +114,7 @@ void EditorToolbar::DrawTransformGroup(float buttonSize)
         if (!first)
             ImGui::SameLine();
         first = false;
-        if (EditorUiSkin::ToolButton(gizmo.Tooltip, gizmo.Icon, gizmo.Tooltip, effective == gizmo.Mode, buttonSize))
+        if (EditorChrome::ToolButton(gizmo.Tooltip, gizmo.Icon, gizmo.Tooltip, effective == gizmo.Mode, buttonSize))
             session.SetTransformMode(gizmo.Mode);
     }
 
@@ -139,14 +140,14 @@ void EditorToolbar::DrawTransformGroup(float buttonSize)
     {
         ImGui::SameLine();
         const bool editingPivot = session.IsEditingPivot();
-        if (EditorUiSkin::ToolButton("editpivot", ICON_FA_CROSSHAIRS,
+        if (EditorChrome::ToolButton("editpivot", IconId::Pivot,
                        editingPivot ? "Pivot: editing (Move gizmo drags it)" : "Edit pivot",
                        editingPivot, buttonSize))
             session.SetEditingPivot(!editingPivot);
 
         ImGui::SameLine();
         const bool hasPivot = session.HasPivotOverride();
-        if (EditorUiSkin::ToolButton("setorigin", ICON_FA_ANCHOR, "Set origin...", false, buttonSize))
+        if (EditorChrome::ToolButton("setorigin", IconId::Anchor, "Set origin...", false, buttonSize))
             ImGui::OpenPopup("##setorigin_menu");
         if (ImGui::BeginPopup("##setorigin_menu"))
         {
@@ -171,7 +172,7 @@ void EditorToolbar::DrawGridGroup(float buttonSize)
 {
     // Grid snap toggle + target + spacing: drives the shared GridSettings, so
     // picking, manipulators and brush-create all honor it.
-    if (EditorUiSkin::ToolButton("snap", ICON_FA_MAGNET,
+    if (EditorChrome::ToolButton("snap", IconId::Snap,
                    Grid.SnapEnabled ? "Snap: on" : "Snap: off",
                    Grid.SnapEnabled, buttonSize))
         Grid.SnapEnabled = !Grid.SnapEnabled;
@@ -191,7 +192,7 @@ void EditorToolbar::DrawGridGroup(float buttonSize)
         ImGui::SetTooltip("Snap target: grid lines, or the vertex/edge/face under the cursor");
 
     ImGui::SameLine();
-    if (EditorUiSkin::ToolButton("zonebounds", ICON_FA_VECTOR_SQUARE,
+    if (EditorChrome::ToolButton("zonebounds", IconId::ZoneBounds,
                    WorldView.ShowZoneBounds ? "Zone bounds: on" : "Zone bounds: off",
                    WorldView.ShowZoneBounds, buttonSize))
         WorldView.ShowZoneBounds = !WorldView.ShowZoneBounds;
@@ -236,18 +237,12 @@ void EditorToolbar::DrawGridGroup(float buttonSize)
         ImGui::SetTooltip("Grid size");
 
     // Grid frame: move/rotate the working grid to geometry, and reset it.
-    // Highlighted while a custom frame is active so an off-axis grid is
-    // never a surprise.
+    // Lit while a custom frame is active so an off-axis grid is never a
+    // surprise.
     ImGui::SameLine();
     const bool customFrame = Grid.HasCustomFrame();
-    if (customFrame)
-        ImGui::PushStyleColor(ImGuiCol_Button, EditorUi::AccentDim);
-    const bool frameMenu = ImGui::Button(ICON_FA_RULER_COMBINED "##gridframe");
-    if (customFrame)
-        ImGui::PopStyleColor();
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip(customFrame ? "Grid frame: custom" : "Grid frame: world");
-    if (frameMenu)
+    if (EditorChrome::ToolButton("gridframe", IconId::GridFrame,
+                                 customFrame ? "Grid frame: custom" : "Grid frame: world", customFrame, buttonSize))
         ImGui::OpenPopup("##gridframe_menu");
     if (ImGui::BeginPopup("##gridframe_menu"))
     {
@@ -281,7 +276,7 @@ void EditorToolbar::DrawPlayGroup(float buttonSize)
             if (!status.empty())
                 tooltip += "\n" + status;
         }
-        if (EditorUiSkin::ToolButton("cook", cooking ? ICON_FA_XMARK : ICON_FA_HAMMER,
+        if (EditorChrome::ToolButton("cook", cooking ? IconId::Cancel : IconId::Hammer,
                        tooltip.c_str(), cooking, buttonSize))
         {
             if (cooking && Play.CancelCook)
@@ -318,13 +313,13 @@ void EditorToolbar::DrawPlayGroup(float buttonSize)
     ImGui::SameLine();
     if (Play.Play)
     {
-        if (EditorUiSkin::ToolButton("play", ICON_FA_PLAY, playing ? "Playing" : "Play (PIE)", playing, buttonSize))
+        if (EditorChrome::ToolButton("play", IconId::Play, playing ? "Playing" : "Play (PIE)", playing, buttonSize))
             Play.Play();
     }
     ImGui::SameLine();
     if (Play.Stop)
     {
-        if (EditorUiSkin::ToolButton("stop", ICON_FA_STOP, "Stop", false, buttonSize) && playing)
+        if (EditorChrome::ToolButton("stop", IconId::Stop, "Stop", false, buttonSize) && playing)
             Play.Stop();
     }
 }

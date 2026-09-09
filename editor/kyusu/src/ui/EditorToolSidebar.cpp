@@ -2,6 +2,7 @@
 
 #include "ui/EditorUiSkin.h"
 #include "ui/EditorUiStyle.h"
+#include "ui/chrome/ChromeControls.h"
 
 #include "tools/ITool.h"
 #include "tools/ToolRegistry.h"
@@ -46,14 +47,14 @@ void EditorToolSidebar::Draw()
             if (tool == nullptr)
                 continue;
 
-            const std::string_view iconView = tool->GetIcon();
-            const std::string icon(iconView.empty() ? tool->GetDisplayName() : iconView);
+            const IconId icon = tool->GetIcon();
+            const std::string name(tool->GetDisplayName());
             const bool active = Tools().GetActiveIndex() == static_cast<int>(i);
-            if (EditorUiSkin::Button(tool->GetId().data(), icon.c_str(),
-                                     ImVec2(buttonSize, buttonSize), active))
+            const bool clicked = icon != IconId::None
+                ? EditorChrome::ToolButton(tool->GetId().data(), icon, name.c_str(), active, buttonSize)
+                : EditorChrome::ToolButton(tool->GetId().data(), name.c_str(), name.c_str(), active, buttonSize);
+            if (clicked)
                 Tools().Activate(i);
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s", tool->GetDisplayName().data());
         }
     }
     ImGui::End();

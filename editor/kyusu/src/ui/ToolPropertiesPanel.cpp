@@ -5,6 +5,7 @@
 #include "ui/EditorUiSkin.h"
 #include "ui/EditorUiStyle.h"
 #include "ui/ScopedPanel.h"
+#include "ui/chrome/ChromeControls.h"
 
 #include "fonts/IconsFontAwesome6.h"
 
@@ -486,12 +487,12 @@ void ToolPropertiesPanel::DrawSelectProperties()
 {
     // Element mode selector (Object/Vertex/Edge/Face): the icon buttons that
     // drive MeshEditService. Order and labels come from the shared element
-    // kind traits; only the glyph is a UI-local presentation choice.
-    static constexpr std::array<const char*, MeshElementKindCount> kModeIcons = {
-        ICON_FA_CUBE,          // Object
-        ICON_FA_CIRCLE_DOT,    // Vertex
-        ICON_FA_GRIP_LINES,    // Edge
-        ICON_FA_VECTOR_SQUARE, // Face
+    // kind traits; only the icon is a UI-local presentation choice.
+    static constexpr std::array<IconId, MeshElementKindCount> kModeIcons = {
+        IconId::ModeObject,
+        IconId::ModeVertex,
+        IconId::ModeEdge,
+        IconId::ModeFace,
     };
     {
         const float buttonSize = ImGui::GetFrameHeight() * 1.25f;
@@ -503,12 +504,9 @@ void ToolPropertiesPanel::DrawSelectProperties()
             first = false;
             const bool active = MeshEdit.GetElementKind() == kind;
             const char* label = Traits(kind).Label;
-            if (EditorUiSkin::Button(label, kModeIcons[static_cast<std::size_t>(kind)],
-                                     ImVec2(buttonSize, buttonSize), active)
+            if (EditorChrome::ToolButton(label, kModeIcons[static_cast<std::size_t>(kind)], label, active, buttonSize)
                 && !active)
                 MeshEdit.SetElementKind(kind);
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s", label);
         }
     }
     ImGui::Separator();

@@ -2,6 +2,7 @@
 
 #include "ui/EditorUiStyle.h"
 #include "ui/ScopedPanel.h"
+#include "ui/chrome/ChromeControls.h"
 #include "fonts/IconsFontAwesome6.h"
 
 #include "commands/CommandStack.h"
@@ -411,8 +412,10 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     }
     if (serializer.IsRemovable())
     {
-        ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::GetFrameHeight());
-        if (ImGui::SmallButton((std::string(ICON_FA_TRASH) + "##del_" + key).c_str()))
+        const float removeSize = ImGui::GetFrameHeight() - EditorUi::Px(2.0f);
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - removeSize);
+        if (EditorChrome::IconButton(("del_" + key).c_str(), IconId::Delete, removeSize,
+                                     EditorChrome::ButtonTone::Destructive))
             PendingRemoval = &serializer;
     }
     // The override badge, in the header's right gutter beside the trash spot:

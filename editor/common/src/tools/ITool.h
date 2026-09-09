@@ -1,5 +1,6 @@
 #pragma once
 
+#include "icons/IconId.h"
 #include "input/InputEvent.h"
 #include "interaction/IInteraction.h"
 
@@ -16,9 +17,8 @@ struct ITool
     virtual std::string_view GetId() const = 0;
     virtual std::string_view GetDisplayName() const = 0;
 
-    // Font Awesome glyph (an ICON_FA_* literal from fonts/IconsFontAwesome6.h) for
-    // the toolbar. Empty -> the toolbar falls back to the display name text.
-    virtual std::string_view GetIcon() const { return {}; }
+    // The icon the sidebar shows for this tool. None -> the display name text.
+    virtual IconId GetIcon() const { return IconId::None; }
 
     virtual void OnActivate(ToolContext& /*ctx*/) {}
     virtual void OnDeactivate(ToolContext& /*ctx*/) {}

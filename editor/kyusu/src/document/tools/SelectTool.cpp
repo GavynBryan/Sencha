@@ -2,7 +2,6 @@
 
 #include <SDL3/SDL_keycode.h>
 
-#include "fonts/IconsFontAwesome6.h"
 
 #include "document/interactions/MarqueeInteraction.h"
 #include "document/EditorScene.h"
@@ -58,9 +57,9 @@ std::string_view SelectTool::GetDisplayName() const
     return "Select";
 }
 
-std::string_view SelectTool::GetIcon() const
+IconId SelectTool::GetIcon() const
 {
-    return ICON_FA_ARROW_POINTER;
+    return IconId::Pointer;
 }
 
 // Unmodified letters here stay clear of the fly camera's W/A/S/D and Q/E.

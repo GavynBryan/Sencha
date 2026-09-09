@@ -2,9 +2,9 @@
 
 #include "ui/ButtonFlow.h"
 #include "ui/EditorUiSkin.h"
+#include "ui/chrome/ChromeControls.h"
 
 #include "EditorTheme.h"
-#include "fonts/IconsFontAwesome6.h"
 
 #include "document/EditorScene.h"
 #include "brush/BrushTransform.h"
@@ -104,9 +104,9 @@ std::string_view FaceCarveTool::GetDisplayName() const
     return "Face Carve";
 }
 
-std::string_view FaceCarveTool::GetIcon() const
+IconId FaceCarveTool::GetIcon() const
 {
-    return ICON_FA_CROP_SIMPLE;
+    return IconId::Carve;
 }
 
 void FaceCarveTool::SetMode(ToolContext& ctx, FaceCarveMode mode)
@@ -616,14 +616,14 @@ void FaceCarveTool::DrawToolbarControls(ToolContext& ctx)
 
     if (!canCommit)
         ImGui::BeginDisabled();
-    if (EditorUiSkin::ToolButton("carveapply", ICON_FA_CHECK, "Apply carve  [Enter]", false, size))
+    if (EditorChrome::ToolButton("carveapply", IconId::Check, "Apply carve  [Enter]", false, size))
         Commit(ctx);
     if (!canCommit)
         ImGui::EndDisabled();
     ImGui::SameLine();
     if (!hasDraft)
         ImGui::BeginDisabled();
-    if (EditorUiSkin::ToolButton("carvecancel", ICON_FA_XMARK, "Cancel carve  [Esc]", false, size))
+    if (EditorChrome::ToolButton("carvecancel", IconId::Cancel, "Cancel carve  [Esc]", false, size))
         RevertAll(ctx);
     if (!hasDraft)
         ImGui::EndDisabled();

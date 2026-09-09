@@ -2,7 +2,6 @@
 
 #include "ui/ButtonFlow.h"
 
-#include "fonts/IconsFontAwesome6.h"
 
 #include "brush/BrushMesh.h"
 #include "brush/BrushOps.h"
@@ -103,9 +102,9 @@ std::string_view BrushTool::GetDisplayName() const
     return "Brush";
 }
 
-std::string_view BrushTool::GetIcon() const
+IconId BrushTool::GetIcon() const
 {
-    return ICON_FA_CUBE;
+    return IconId::Box;
 }
 
 void BrushTool::OnActivate(ToolContext& ctx)

@@ -59,7 +59,7 @@ public:
 
     std::string_view GetId() const override;
     std::string_view GetDisplayName() const override;
-    std::string_view GetIcon() const override;
+    IconId GetIcon() const override;
     void OnActivate(ToolContext& ctx) override;
     void OnDeactivate(ToolContext& ctx) override;
     void OnCancel(ToolContext& ctx) override;

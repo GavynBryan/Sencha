@@ -14,7 +14,7 @@ class EdgeCutTool : public ITool
 public:
     std::string_view GetId() const override;
     std::string_view GetDisplayName() const override;
-    std::string_view GetIcon() const override;
+    IconId GetIcon() const override;
 
     InputConsumed OnHover(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos) override;
     void OnHoverEnd(ToolContext& ctx) override;
