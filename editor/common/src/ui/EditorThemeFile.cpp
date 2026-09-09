@@ -68,6 +68,8 @@ const EditorThemeMetricEntry kThemeMetricEntries[] = {
     { "stripe_length", &EditorUi::Metrics.StripeLength },
     { "chassis_border", &EditorUi::Metrics.ChassisBorder },
     { "chassis_chamfer", &EditorUi::Metrics.ChassisChamfer },
+    { "caption_pad", &EditorUi::Metrics.CaptionPad },
+    { "resize_border", &EditorUi::Metrics.ResizeBorder },
 };
 
 const EditorThemeDecorEntry kThemeDecorEntries[] = {

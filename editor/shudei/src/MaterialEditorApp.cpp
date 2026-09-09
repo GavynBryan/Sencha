@@ -17,6 +17,9 @@ MaterialEditorApp::~MaterialEditorApp() = default;
 void MaterialEditorApp::OnConfigure(GameConfigureContext& ctx)
 {
     ctx.Config.Window.Title = "Shudei - Material Editor";
+    // The editor draws its own caption; the window keeps the platform frame
+    // only where client decorations are unavailable.
+    ctx.Config.Window.ClientDecorations = true;
     // The editor is its own ImGui host; a process can hold only one ImGui
     // context over a window, so the engine's default debug overlay must not
     // be created.

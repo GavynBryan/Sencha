@@ -58,5 +58,11 @@ enum class IconId : std::uint8_t
     ModeEdge,
     ModeFace,
 
+    // Window caption controls
+    WindowMinimize,
+    WindowMaximize,
+    WindowRestore,
+    WindowClose,
+
     Count,
 };

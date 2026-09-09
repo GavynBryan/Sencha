@@ -4,6 +4,7 @@
 #include "IEditorPanel.h"
 #include "chrome/ChromeBars.h"
 #include "chrome/ChromeChassis.h"
+#include "chrome/ChromeControls.h"
 
 #include <app/Engine.h>
 #include <core/console/ConsoleRegistry.h>
@@ -24,6 +25,7 @@
 #include <imgui_impl_vulkan.h>
 
 #include <algorithm>
+#include <cmath>
 #include <array>
 #include <format>
 #include <span>
@@ -717,7 +719,17 @@ void EditorUiFeature::ShutdownImGui()
 
 void EditorUiFeature::DrawMainMenuBar()
 {
-    if (!ImGui::BeginMainMenuBar())
+    // The bar is the window's caption when the window draws its own frame:
+    // the identity plate and the free strip drag it, the controls at the
+    // right minimize, maximize, and close it. BeginMainMenuBar takes its
+    // height from the frame height, so the extra padding makes the row a
+    // little taller than a menu without leaving ImGui's public API.
+    const ImGuiStyle& style = ImGui::GetStyle();
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+                        ImVec2(style.FramePadding.x, style.FramePadding.y + EditorUi::Px(EditorUi::Metrics.CaptionPad)));
+    const bool open = ImGui::BeginMainMenuBar();
+    ImGui::PopStyleVar();
+    if (!open)
         return;
 
     EditorChrome::BarBackdrop(ImGui::GetWindowDrawList(), ImGui::GetWindowPos(),
@@ -725,9 +737,21 @@ void EditorUiFeature::DrawMainMenuBar()
                                      ImGui::GetWindowPos().y + ImGui::GetWindowSize().y),
                               EditorChrome::BarEdge::Bottom);
 
+    const bool clientFrame = Window.HasClientDecorations();
+    const ImVec2 viewportPos = ImGui::GetMainViewport()->Pos;
+    const auto toWindowRect = [&](ImVec2 mn, ImVec2 mx) {
+        return WindowRect{ static_cast<int32_t>(mn.x - viewportPos.x), static_cast<int32_t>(mn.y - viewportPos.y),
+                           static_cast<int32_t>(mx.x - mn.x), static_cast<int32_t>(mx.y - mn.y) };
+    };
+    WindowFrameRegions regions;
+    regions.ResizeBorder = static_cast<int32_t>(std::lround(EditorUi::Px(EditorUi::Metrics.ResizeBorder)));
+    const ImVec2 barMin = ImGui::GetWindowPos();
+    const ImVec2 barMax(barMin.x + ImGui::GetWindowSize().x, barMin.y + ImGui::GetWindowSize().y);
+
     // The identity plate at the head of the bar, before the menus.
     if (!Identity.Product.empty())
     {
+        const ImVec2 plateMin = ImGui::GetCursorScreenPos();
         EditorUi::RoleLabel(EditorUi::TextRole::ApplicationTitle, Identity.Product,
                             ImGui::GetColorU32(EditorUi::AccentHover));
         if (!Identity.Subtitle.empty())
@@ -735,7 +759,12 @@ void EditorUiFeature::DrawMainMenuBar()
             ImGui::SameLine(0.0f, EditorUi::Px(6.0f));
             EditorUi::RoleLabel(EditorUi::TextRole::Status, Identity.Subtitle);
         }
+        regions.Caption[regions.CaptionCount++] =
+            toWindowRect(ImVec2(barMin.x, barMin.y), ImVec2(ImGui::GetItemRectMax().x, barMax.y));
         ImGui::SameLine(0.0f, EditorUi::Px(14.0f));
+        const ImVec2 plateEnd = ImGui::GetCursorScreenPos();
+        (void)plateMin;
+        (void)plateEnd;
     }
 
     if (ImGui::BeginMenu("File"))
@@ -797,20 +826,57 @@ void EditorUiFeature::DrawMainMenuBar()
         ImGui::EndMenu();
     }
 
-    // What is open, at the tail of the bar.
-    if (StatusProvider)
+    // The free strip starts after the menus; the right cluster (document
+    // label, window controls) is laid out from the right edge.
+    const float stripStart = ImGui::GetCursorScreenPos().x + style.ItemSpacing.x;
+    const float buttonSize = EditorChrome::BarButtonSize();
+    const float controlsWidth = clientFrame ? buttonSize * 3.0f + style.ItemSpacing.x * 2.0f : 0.0f;
+    const std::string status = StatusProvider ? StatusProvider() : std::string{};
+    // A path or a name is data, so it takes the quiet secondary role rather
+    // than the uppercase label roles.
+    const float statusWidth = status.empty() ? 0.0f
+        : EditorUi::MeasureRoleText(EditorUi::TextRole::SecondaryText, status).x + EditorUi::Px(14.0f);
+    const float avail = ImGui::GetContentRegionAvail().x - EditorUi::Px(6.0f);
+    const float clusterWidth = statusWidth + controlsWidth;
+    if (avail > clusterWidth)
     {
-        const std::string status = StatusProvider();
+        ImGui::SameLine(ImGui::GetCursorPosX() + avail - clusterWidth);
+        const float stripEnd = ImGui::GetCursorScreenPos().x - style.ItemSpacing.x;
+        if (stripEnd > stripStart)
+            regions.Caption[regions.CaptionCount++] =
+                toWindowRect(ImVec2(stripStart, barMin.y), ImVec2(stripEnd, barMax.y));
         if (!status.empty())
         {
-            // A path or a name is data, so it takes the quiet secondary role
-            // rather than the uppercase label roles.
-            const float width = EditorUi::MeasureRoleText(EditorUi::TextRole::SecondaryText, status).x;
-            const float avail = ImGui::GetContentRegionAvail().x - EditorUi::Px(10.0f);
-            if (avail > width)
-                ImGui::SameLine(ImGui::GetCursorPosX() + avail - width);
             EditorUi::RoleLabel(EditorUi::TextRole::SecondaryText, status);
+            ImGui::SameLine(0.0f, EditorUi::Px(14.0f));
         }
+    }
+    if (clientFrame)
+    {
+        if (EditorChrome::IconButton("win_minimize", IconId::WindowMinimize, buttonSize, EditorChrome::ButtonTone::Normal))
+            Window.Minimize();
+        ImGui::SameLine();
+        const bool maximized = Window.IsMaximized();
+        if (EditorChrome::IconButton("win_maximize", maximized ? IconId::WindowRestore : IconId::WindowMaximize, buttonSize,
+                                     EditorChrome::ButtonTone::Normal))
+        {
+            if (maximized)
+                Window.Restore();
+            else
+                Window.Maximize();
+        }
+        ImGui::SameLine();
+        if (EditorChrome::IconButton("win_close", IconId::WindowClose, buttonSize, EditorChrome::ButtonTone::Destructive))
+            EngineInstance.RequestExit();
+
+        // Dragging is permitted only while the pointer is over this bar with
+        // nothing in the way: an open menu, an overlapping floating panel, or
+        // the scene owning the pointer all make IsWindowHovered false. The
+        // geometry is published regardless; the regions lag one frame, since
+        // the platform consumes the press before ImGui sees it.
+        regions.CaptionEnabled = ImGui::IsWindowHovered();
+        FrameRegions = regions;
+        Window.SetFrameRegions(FrameRegions);
     }
 
     ImGui::EndMainMenuBar();

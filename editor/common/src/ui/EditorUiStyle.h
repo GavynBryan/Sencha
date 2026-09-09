@@ -134,6 +134,8 @@ struct ChromeMetrics
     float StripeLength = 32.0f;
     float ChassisBorder = 4.0f;       // application chassis frame width
     float ChassisChamfer = 10.0f;
+    float CaptionPad = 3.0f;          // extra frame padding that makes the caption bar taller than a menu row
+    float ResizeBorder = 6.0f;        // edge thickness the window resizes from when it draws its own frame
 };
 inline ChromeMetrics Metrics{};
 

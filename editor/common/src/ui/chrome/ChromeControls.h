@@ -13,7 +13,7 @@ namespace EditorChrome
 enum class ButtonTone
 {
     Normal,      // an ordinary action: dark body, steel edge, cyan label
-    Active,      // a toggle that is on: lit cyan interior
+    Active,      // a toggle that is on: lit yellow interior
     Primary,     // the selection or the important action: amber
     Destructive, // removes something: red
 };

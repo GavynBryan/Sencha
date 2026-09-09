@@ -159,3 +159,26 @@ TEST(EngineConfig, RejectsInvalidWindowGraphicsApi)
 
     std::filesystem::remove(path);
 }
+
+TEST(EngineConfig, ClientDecorationsIsARequestOffByDefault)
+{
+    EXPECT_FALSE(EngineConfig{}.Window.ClientDecorations);
+
+    const std::filesystem::path snake = WriteTempConfig(R"({ "window": { "client_decorations": true } })");
+    std::optional<EngineConfig> loaded = LoadEngineConfig(snake.string().c_str(), nullptr);
+    ASSERT_TRUE(loaded.has_value());
+    EXPECT_TRUE(loaded->Window.ClientDecorations);
+    std::filesystem::remove(snake);
+
+    const std::filesystem::path camel = WriteTempConfig(R"({ "window": { "clientDecorations": false } })");
+    loaded = LoadEngineConfig(camel.string().c_str(), nullptr);
+    ASSERT_TRUE(loaded.has_value());
+    EXPECT_FALSE(loaded->Window.ClientDecorations);
+    std::filesystem::remove(camel);
+
+    const std::filesystem::path bad = WriteTempConfig(R"({ "window": { "client_decorations": "yes" } })");
+    EngineConfigError error;
+    EXPECT_FALSE(LoadEngineConfig(bad.string().c_str(), &error).has_value());
+    EXPECT_FALSE(error.Message.empty());
+    std::filesystem::remove(bad);
+}

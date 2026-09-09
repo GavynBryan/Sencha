@@ -153,7 +153,8 @@ std::optional<EngineWindowConfig> DeserializeWindowConfig(
         || !ReadU32Either(root, "width", "width", config.Width, sectionError, 1)
         || !ReadU32Either(root, "height", "height", config.Height, sectionError, 1)
         || !ReadBoolEither(root, "resizable", "resizable", config.Resizable, sectionError)
-        || !ReadBoolEither(root, "visible", "visible", config.Visible, sectionError))
+        || !ReadBoolEither(root, "visible", "visible", config.Visible, sectionError)
+        || !ReadBoolEither(root, "clientDecorations", "client_decorations", config.ClientDecorations, sectionError))
     {
         if (error) error->Message = sectionError;
         return std::nullopt;

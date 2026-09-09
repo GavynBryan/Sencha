@@ -4,6 +4,7 @@
 #include "ThemePreferences.h"
 
 #include <graphics/vulkan/Renderer.h>
+#include <platform/WindowFrameHit.h>
 
 #include <cstdint>
 #include <functional>
@@ -149,6 +150,9 @@ private:
     std::function<void()> NewWorldAction;
     ShellIdentity Identity;
     std::function<std::string()> StatusProvider;
+    // The caption's frame snapshot for the window, rewritten every frame the
+    // window draws its own frame.
+    WindowFrameRegions FrameRegions;
 
     std::vector<std::unique_ptr<IEditorPanel>> Panels;
     std::vector<std::function<void()>> ChromeBars;

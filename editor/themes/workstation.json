@@ -46,6 +46,8 @@
     "vent_length": 24,
     "stripe_length": 32,
     "chassis_border": 4,
-    "chassis_chamfer": 10
+    "chassis_chamfer": 10,
+    "caption_pad": 3,
+    "resize_border": 6
   }
 }

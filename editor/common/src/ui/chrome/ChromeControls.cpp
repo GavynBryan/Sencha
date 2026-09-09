@@ -26,7 +26,9 @@ ToneColors ColorsFor(ButtonTone tone, bool hovered, bool held)
     switch (tone)
     {
     case ButtonTone::Active:
-        colors = { held ? Darken(FrameBgActive, 0.15f) : FrameBgActive, Accent, AccentHover, Accent };
+        // The control that is on reads yellow, like the hover it answers to:
+        // a dark yellow interior under a yellow edge and label.
+        colors = { Darken(ControlHover, held ? 0.8f : 0.72f), ControlHover, ControlHover, ControlHover };
         break;
     case ButtonTone::Primary:
         colors = { held ? Darken(Selected, 0.2f) : hovered ? Lighten(Selected, 0.08f) : Selected, SelectedOutline,

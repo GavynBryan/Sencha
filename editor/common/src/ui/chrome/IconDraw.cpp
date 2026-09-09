@@ -376,6 +376,26 @@ void ModeFace(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
     k.Outline({ { 0.5f, 0.15f }, { 0.85f, 0.8f }, { 0.15f, 0.8f } });
 }
 
+void WindowMinimize(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
+{
+    const Canvas k(dl, mn, mx, c);
+    k.Line(0.22f, 0.72f, 0.78f, 0.72f, 1.6f);
+}
+
+void WindowMaximize(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
+{
+    const Canvas k(dl, mn, mx, c);
+    k.Rect(0.2f, 0.2f, 0.8f, 0.8f, 1.2f);
+}
+
+void WindowRestore(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
+{
+    const Canvas k(dl, mn, mx, c);
+    k.Rect(0.18f, 0.36f, 0.66f, 0.84f, 1.1f);
+    k.Line(0.36f, 0.36f, 0.36f, 0.18f); k.Line(0.36f, 0.18f, 0.84f, 0.18f);
+    k.Line(0.84f, 0.18f, 0.84f, 0.66f); k.Line(0.84f, 0.66f, 0.66f, 0.66f);
+}
+
 constexpr std::size_t kCount = static_cast<std::size_t>(IconId::Count);
 
 std::array<IconSource, kCount> DefaultSources()
@@ -418,6 +438,10 @@ std::array<IconSource, kCount> DefaultSources()
     row(IconId::ModeVertex, ModeVertex, ICON_FA_CIRCLE_DOT);
     row(IconId::ModeEdge, ModeEdge, ICON_FA_GRIP_LINES);
     row(IconId::ModeFace, ModeFace, ICON_FA_VECTOR_SQUARE);
+    row(IconId::WindowMinimize, WindowMinimize, ICON_FA_WINDOW_MINIMIZE);
+    row(IconId::WindowMaximize, WindowMaximize, ICON_FA_WINDOW_MAXIMIZE);
+    row(IconId::WindowRestore, WindowRestore, ICON_FA_WINDOW_RESTORE);
+    row(IconId::WindowClose, Cancel, ICON_FA_XMARK);
     return t;
 }
 
