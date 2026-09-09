@@ -8,8 +8,6 @@
 
 #include <functional>
 #include <string>
-#include <utility>
-#include <vector>
 
 struct MarqueeState;
 struct EditorOverlayState;
@@ -63,10 +61,6 @@ private:
     // drawn into the viewport's ImGui draw list via screen projection.
     void DrawOverlay(const EditorViewport& viewport, ImDrawList* drawList);
     void DrawOrientationSelector(EditorViewport& viewport);
-    // Fills the panel area NOT covered by the 3D region rect (the header strip +
-    // border gaps) with the dark panel color, so the bright engine clear color
-    // stops bleeding through the transparent (NoBackground) panel.
-    void FillGapsBehindViewports();
 
     ViewportLayout& Layout;
     const MarqueeState& Marquee;
@@ -77,8 +71,5 @@ private:
     float Weight;
     ViewportId Viewport;
     bool RegionHovered = false;
-    // 3D render-region rects collected this frame (the passthrough holes to keep
-    // transparent); everything else in the panel gets the dark gap fill.
-    std::vector<std::pair<ImVec2, ImVec2>> RegionRects;
     SceneDropHandler SceneDrop;
 };

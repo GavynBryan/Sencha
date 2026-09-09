@@ -329,14 +329,10 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
             chrome();
     }
 
-    // Host dockspace filling the work area the chrome bars left. We build the host
-    // window ourselves with NoBackground + a plain DockSpace (NOT PassthruCentralNode):
-    // PassthruCentralNode fills WindowBg over the whole root and only leaves a
-    // transparent hole when the central node is *empty* — but the viewport docks
-    // *into* the central node, so that bg would paint over the 3D. With no dockspace
-    // bg, the viewport window's own NoBackground keeps the central node clear so the
-    // scene (rendered behind ImGui and scissored to the viewport rect) shows through;
-    // the side panels carry their own opaque backgrounds.
+    // Host dockspace filling the work area the chrome bars left: our own window
+    // with no background and a plain DockSpace, so whatever is drawn behind it
+    // shows through the seams between nodes. Every docked panel, the viewports
+    // included, paints its own opaque body.
     {
         const ImGuiViewport* vp = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(vp->WorkPos);
