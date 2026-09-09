@@ -22,7 +22,7 @@ ActiveMaterialPanel::ActiveMaterialPanel(ActiveMaterialState& activeMaterial,
 }
 
 void ActiveMaterialPanel::PaintMaterialSquare(const AssetRef& material, ImVec2 pos, float size,
-                                              bool highlight)
+                                              Outline outline)
 {
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     const ImVec2 end(pos.x + size, pos.y + size);
@@ -33,14 +33,15 @@ void ActiveMaterialPanel::PaintMaterialSquare(const AssetRef& material, ImVec2 p
         drawList->AddImage(tex, pos, end);
     else
         drawList->AddRectFilled(pos, end, ImGui::GetColorU32(ImGuiCol_FrameBg));
-    drawList->AddRect(pos, end,
-                      ImGui::GetColorU32(highlight ? EditorUi::Accent : EditorUi::Border),
-                      0.0f, 0, highlight ? 2.0f : 1.0f);
+    const ImVec4& color = outline == Outline::Selected ? EditorUi::SelectedOutline
+                        : outline == Outline::Hovered  ? EditorUi::AccentHover
+                                                       : EditorUi::Border;
+    drawList->AddRect(pos, end, ImGui::GetColorU32(color), 0.0f, 0, outline == Outline::Plain ? 1.0f : 2.0f);
 }
 
 void ActiveMaterialPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Compact);
     if (!panel.IsOpen())
         return;
 
@@ -50,7 +51,8 @@ void ActiveMaterialPanel::OnDraw()
     // Browse + slots row stays on screen in a narrow column without scrolling.
     const float previewSize = std::clamp(avail, 48.0f, 148.0f);
     const ImVec2 previewPos = ImGui::GetCursorScreenPos();
-    PaintMaterialSquare(ActiveMaterial.Active, previewPos, previewSize, ActiveMaterial.Active.IsValid());
+    PaintMaterialSquare(ActiveMaterial.Active, previewPos, previewSize,
+                        ActiveMaterial.Active.IsValid() ? Outline::Selected : Outline::Plain);
     ImGui::Dummy(ImVec2(previewSize, previewSize));
 
     if (ActiveMaterial.Active.IsValid())
@@ -99,7 +101,7 @@ void ActiveMaterialPanel::OnDraw()
             ImGui::EndPopup();
         }
 
-        PaintMaterialSquare(slot, pos, slotSize, hovered && slot.IsValid());
+        PaintMaterialSquare(slot, pos, slotSize, hovered && slot.IsValid() ? Outline::Hovered : Outline::Plain);
         ImGui::PopID();
     }
 }

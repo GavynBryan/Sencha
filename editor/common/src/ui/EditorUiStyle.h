@@ -181,4 +181,8 @@ ImVec2 MeasureRoleText(TextRole role, std::string_view text);
 // Draws `text` in `role` at `pos` into `dl`. colorOverride (a packed ImU32, 0 =
 // none) replaces the role's color, for state tints such as a focused header.
 void DrawRoleText(ImDrawList* dl, ImVec2 pos, TextRole role, std::string_view text, ImU32 colorOverride = 0);
+
+// The same as an ImGui item at the cursor, one text line tall, so it lays out
+// beside ordinary widgets.
+void RoleLabel(TextRole role, std::string_view text, ImU32 colorOverride = 0);
 } // namespace EditorUi

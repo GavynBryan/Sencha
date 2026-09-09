@@ -30,7 +30,15 @@ public:
 private:
     // Paints a square material preview at `pos` (thumbnail or placeholder
     // frame); layout space is the caller's job.
-    void PaintMaterialSquare(const AssetRef& material, ImVec2 pos, float size, bool highlight);
+    // How a square's outline reads: the steel hairline, the cyan hover, or the
+    // amber of the material currently applied by the tools.
+    enum class Outline
+    {
+        Plain,
+        Hovered,
+        Selected,
+    };
+    void PaintMaterialSquare(const AssetRef& material, ImVec2 pos, float size, Outline outline);
 
     ActiveMaterialState& ActiveMaterial;
     MaterialThumbnailCache& Thumbnails;

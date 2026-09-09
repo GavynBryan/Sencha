@@ -87,7 +87,7 @@ std::string_view LightingPanel::GetTitle() const
 
 void LightingPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
     if (!panel.IsOpen())
         return;
 

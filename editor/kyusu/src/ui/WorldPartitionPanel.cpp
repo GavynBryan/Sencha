@@ -4,6 +4,7 @@
 
 #include "ui/EditorUiStyle.h"
 #include "ui/ScopedPanel.h"
+#include "ui/chrome/ChromeHeader.h"
 #include "fonts/IconsFontAwesome6.h"
 
 #include "commands/CommandStack.h"
@@ -57,7 +58,7 @@ void WorldPartitionPanel::OnDraw()
     if (!WorldDoc.IsWorld())
         return;
 
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
     if (!panel.IsOpen())
         return;
 
@@ -86,9 +87,7 @@ void WorldPartitionPanel::OnDraw()
             continue;
         if (!orphanHeader)
         {
-            ImGui::PushStyleColor(ImGuiCol_Text, EditorUi::TextDim);
-            ImGui::TextUnformatted("Unassigned");
-            ImGui::PopStyleColor();
+            EditorChrome::SectionTitle("Unassigned");
             orphanHeader = true;
         }
         DrawZoneRow(zone);
@@ -161,7 +160,7 @@ void WorldPartitionPanel::DrawStreamingPreview()
             ImGui::SetTooltip("Clear the preview override (back to the authored shape)");
         ImGui::PopID();
     };
-    ImGui::SetNextItemWidth(80.0f);
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 5.5f);
     int hops = view->PreviewHopCount.value_or(resolved.HopCount);
     if (ImGui::InputInt("Hops", &hops))
         view->PreviewHopCount = hops < 0 ? 0 : hops;
@@ -169,7 +168,7 @@ void WorldPartitionPanel::DrawStreamingPreview()
         ImGui::SetTooltip("What-if override: preview with a different preload hop count. "
                           "Edits nothing; clear to see the authored shape.");
     clearButton(view->PreviewHopCount, "clear_hops");
-    ImGui::SetNextItemWidth(80.0f);
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 5.5f);
     float radius = view->PreviewRadius.value_or(static_cast<float>(resolved.Radius));
     if (ImGui::InputFloat("Radius", &radius, 0.0f, 0.0f, "%.0f"))
         view->PreviewRadius = radius < 0.0f ? 0.0f : radius;
@@ -177,7 +176,7 @@ void WorldPartitionPanel::DrawStreamingPreview()
         ImGui::SetTooltip("What-if override: preview with a different load radius. "
                           "Edits nothing; clear to see the authored shape.");
     clearButton(view->PreviewRadius, "clear_radius");
-    ImGui::SetNextItemWidth(80.0f);
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 5.5f);
     int cap = view->PreviewResidentCap.value_or(resolved.ResidentZoneCap);
     if (ImGui::InputInt("Cap", &cap))
         view->PreviewResidentCap = cap < 1 ? 1 : cap;
@@ -566,7 +565,7 @@ void WorldPartitionPanel::DrawGraphStreaming(const GraphRecord& graph)
     // The shape combo is presentation over the radius value: Graph authors an
     // explicit 0, Proximity authors a starter radius, Inherited clears the
     // field. Nothing stores a mode; the runtime reads only the values.
-    ImGui::SetNextItemWidth(160.0f);
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 11.0f);
     if (ImGui::BeginCombo("Streaming",
                           GraphStreamingShapeLabel(graph.Streaming, base.Radius)))
     {

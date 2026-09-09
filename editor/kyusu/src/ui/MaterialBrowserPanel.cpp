@@ -81,7 +81,8 @@ void MaterialBrowserPanel::DrawCell(const MaterialAsset& material, float cellSiz
         drawList->AddImage(tex, pos, end);
     else
         drawList->AddRectFilled(pos, end, ImGui::GetColorU32(ImGuiCol_FrameBg));
-    const ImU32 border = isActive  ? ImGui::GetColorU32(EditorUi::Accent)
+    // The active material is the selection; hover is ordinary interaction.
+    const ImU32 border = isActive  ? ImGui::GetColorU32(EditorUi::SelectedOutline)
                          : hovered ? ImGui::GetColorU32(EditorUi::AccentHover)
                                    : ImGui::GetColorU32(EditorUi::Border);
     drawList->AddRect(pos, end, border, 0.0f, 0, isActive ? 2.0f : 1.0f);
@@ -103,7 +104,7 @@ void MaterialBrowserPanel::DrawCell(const MaterialAsset& material, float cellSiz
 
 void MaterialBrowserPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
     if (!panel.IsOpen())
         return;
 
@@ -115,7 +116,7 @@ void MaterialBrowserPanel::OnDraw()
         Thumbnails.Clear();
     }
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(220.0f);
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14.0f);
     ImGui::InputTextWithHint("##filter", "Filter", Filter, sizeof(Filter));
     ImGui::SameLine();
     ImGui::TextDisabled("%zu found, %zu resident",

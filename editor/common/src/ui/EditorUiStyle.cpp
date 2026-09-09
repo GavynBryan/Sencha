@@ -285,3 +285,13 @@ void EditorUi::DrawRoleText(ImDrawList* dl, ImVec2 pos, TextRole role, std::stri
         dl->AddText(&font, font.FontSize, ImVec2(x, pos.y), color, begin, end);
     });
 }
+
+void EditorUi::RoleLabel(TextRole role, std::string_view text, ImU32 colorOverride)
+{
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    const float lineHeight = ImGui::GetTextLineHeight();
+    const ImVec2 size = MeasureRoleText(role, text);
+    DrawRoleText(ImGui::GetWindowDrawList(), ImVec2(pos.x, std::floor(pos.y + (lineHeight - size.y) * 0.5f)), role,
+                 text, colorOverride);
+    ImGui::Dummy(ImVec2(size.x, lineHeight));
+}

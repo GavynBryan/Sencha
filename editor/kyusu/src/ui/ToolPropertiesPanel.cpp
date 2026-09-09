@@ -523,7 +523,7 @@ void ToolPropertiesPanel::DrawSelectProperties()
 
 void ToolPropertiesPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Tool);
     if (!panel.IsOpen())
         return;
 

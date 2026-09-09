@@ -760,7 +760,7 @@ void InspectorPanel::DrawAddComponentMenu(EntityId entity)
 
 void InspectorPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
     if (!panel.IsOpen())
         return;
 
@@ -781,10 +781,11 @@ void InspectorPanel::OnDraw()
         LastEntity = entity;
     }
 
-    // Plain accent title (the glow is reserved for panel titles now).
+    // The inspected entity is the thing being edited, so its name takes the
+    // selection outline in the panel-title role.
     char title[64];
-    std::snprintf(title, sizeof(title), ICON_FA_CUBE "  Entity %u", entity.Index);
-    ImGui::TextColored(EditorUi::Accent, "%s", title);
+    std::snprintf(title, sizeof(title), "Entity %u", entity.Index);
+    EditorUi::RoleLabel(EditorUi::TextRole::PanelTitle, title, ImGui::GetColorU32(EditorUi::SelectedOutline));
     ImGui::SameLine();
     ImGui::TextDisabled("(gen %u)", entity.Generation);
     ImGui::Separator();

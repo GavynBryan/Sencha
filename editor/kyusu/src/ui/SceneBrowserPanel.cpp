@@ -65,7 +65,7 @@ void SceneBrowserPanel::Rescan()
 
 void SceneBrowserPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
     if (!panel.IsOpen())
         return;
     if (!Scanned)
