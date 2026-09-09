@@ -275,7 +275,7 @@ bool EditorUiFeature::Setup(const RenderFeatureServices& featureServices)
     Log = services.Logging ? &services.Logging->GetLogger<EditorUiFeature>() : nullptr;
     Valid = InitImGui(services);
     if (Valid)
-        RegisterClickCommand(EngineInstance.Console().Registry());
+        RegisterPointerCommands(EngineInstance.Console().Registry());
     if (Log != nullptr)
         Log->Info("EditorUiFeature setup {}", Valid ? "succeeded" : "failed");
     // The editor shell is its panels: without an ImGui context there is
@@ -309,7 +309,7 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
 
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
-    FeedQueuedClicks();
+    FeedPointerActions();
     ImGui::NewFrame();
 
     // One frame after a layout rebuild: raise the intended front tab of each
@@ -382,8 +382,37 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), frame.Cmd);
 }
 
-void EditorUiFeature::RegisterClickCommand(ConsoleRegistry& registry)
+void EditorUiFeature::RegisterPointerCommands(ConsoleRegistry& registry)
 {
+    // Both commands parse the same "<x> <y> [frame]" arguments and queue one
+    // action; only the kind differs.
+    const auto queue = [this](PointerAction::Kind kind, std::span<const std::string> args) {
+        ConsoleResult result;
+        if (args.size() < 2 || args.size() > 3)
+        {
+            result.Status = ConsoleStatus::InvalidArguments;
+            result.Error("expected <x> <y> [frame]");
+            return result;
+        }
+        PointerAction action;
+        action.Action = kind;
+        try
+        {
+            action.Pos = ImVec2(std::stof(args[0]), std::stof(args[1]));
+            action.AtFrame = args.size() == 3 ? std::stoi(args[2]) : 0;
+        }
+        catch (const std::exception&)
+        {
+            result.Status = ConsoleStatus::InvalidArguments;
+            result.Error("x, y, and frame must be numbers");
+            return result;
+        }
+        PointerActions.push_back(action);
+        result.Info(std::format("{} queued at ({}, {}) for frame {}", kind == PointerAction::Kind::Click ? "click" : "pointer",
+                                action.Pos.x, action.Pos.y, action.AtFrame));
+        return result;
+    };
+
     registry.RegisterCommand({
         .Name = "editor.ui.click",
         .Owner = "editor",
@@ -391,57 +420,55 @@ void EditorUiFeature::RegisterClickCommand(ConsoleRegistry& registry)
         .Help = "Left-click the UI at window pixel (x, y). With a frame number, "
                 "waits until that UI frame so the layout has settled. For "
                 "unattended verification alongside render.screenshot.",
-        .Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args) {
-            ConsoleResult result;
-            if (args.size() < 2 || args.size() > 3)
-            {
-                result.Status = ConsoleStatus::InvalidArguments;
-                result.Error("expected <x> <y> [frame]");
-                return result;
-            }
-            QueuedClick click;
-            try
-            {
-                click.Pos = ImVec2(std::stof(args[0]), std::stof(args[1]));
-                click.AtFrame = args.size() == 3 ? std::stoi(args[2]) : 0;
-            }
-            catch (const std::exception&)
-            {
-                result.Status = ConsoleStatus::InvalidArguments;
-                result.Error("x, y, and frame must be numbers");
-                return result;
-            }
-            QueuedClicks.push_back(click);
-            result.Info(std::format("click queued at ({}, {}) for frame {}", click.Pos.x, click.Pos.y, click.AtFrame));
-            return result;
+        .Callback = [queue](ConsoleExecutionContext&, std::span<const std::string> args) {
+            return queue(PointerAction::Kind::Click, args);
+        },
+    });
+    registry.RegisterCommand({
+        .Name = "editor.ui.pointer",
+        .Owner = "editor",
+        .Usage = "editor.ui.pointer <x> <y> [frame]",
+        .Help = "Move the UI pointer to window pixel (x, y) and hold it there, "
+                "so hover states can be captured. With a frame number, waits "
+                "until that UI frame.",
+        .Callback = [queue](ConsoleExecutionContext&, std::span<const std::string> args) {
+            return queue(PointerAction::Kind::Move, args);
         },
     });
 }
 
-void EditorUiFeature::FeedQueuedClicks()
+void EditorUiFeature::FeedPointerActions()
 {
-    if (QueuedClicks.empty())
-        return;
     ImGuiIO& io = ImGui::GetIO();
     const int frame = ImGui::GetFrameCount();
-    for (std::size_t i = 0; i < QueuedClicks.size();)
+    for (std::size_t i = 0; i < PointerActions.size();)
     {
-        QueuedClick& click = QueuedClicks[i];
-        if (frame < click.AtFrame)
+        PointerAction& action = PointerActions[i];
+        if (frame < action.AtFrame)
         {
             ++i;
             continue;
         }
-        io.AddMousePosEvent(click.Pos.x, click.Pos.y);
-        io.AddMouseButtonEvent(ImGuiMouseButton_Left, !click.Pressed);
-        if (!click.Pressed)
+        if (action.Action == PointerAction::Kind::Move)
         {
-            click.Pressed = true;
+            HeldPointer = action.Pos;
+            PointerActions.erase(PointerActions.begin() + static_cast<std::ptrdiff_t>(i));
+            continue;
+        }
+        io.AddMousePosEvent(action.Pos.x, action.Pos.y);
+        io.AddMouseButtonEvent(ImGuiMouseButton_Left, !action.Pressed);
+        if (!action.Pressed)
+        {
+            action.Pressed = true;
             ++i;
             continue;
         }
-        QueuedClicks.erase(QueuedClicks.begin() + static_cast<std::ptrdiff_t>(i));
+        PointerActions.erase(PointerActions.begin() + static_cast<std::ptrdiff_t>(i));
     }
+    // The SDL backend re-asserts the real cursor each frame while the window
+    // has focus, so a held pointer is re-fed after it every frame.
+    if (HeldPointer.has_value())
+        io.AddMousePosEvent(HeldPointer->x, HeldPointer->y);
 }
 
 void EditorUiFeature::Teardown()

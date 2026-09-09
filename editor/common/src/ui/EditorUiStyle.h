@@ -80,6 +80,10 @@ inline ImVec4 MetalBase       = detail::Hex(0x1A222C);                // #1A222C
 inline ImVec4 MetalHighlight  = detail::Hex(0x3A4856);                // #3A4856 steel-blue
 inline ImVec4 MetalShadow     = detail::Hex(0x03050A);                // #03050A
 inline ImVec4 SelectedOutline = detail::Hex(0xFFB347);                // #FFB347 bright amber
+// The mounted control under the cursor: a yellow apart from both the cyan of
+// focus and the amber of selection. Only the chrome's own controls use it;
+// stock ImGui widgets keep ButtonHovered.
+inline ImVec4 ControlHover    = detail::Hex(0xFFD84A);                // #FFD84A yellow
 
 // Palette-color math (toward white / toward black, alpha preserved or replaced).
 // Operates on the linear values directly, which is what the draw lists want.

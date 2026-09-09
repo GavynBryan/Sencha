@@ -22,21 +22,32 @@ struct ToneColors
 ToneColors ColorsFor(ButtonTone tone, bool hovered, bool held)
 {
     using namespace EditorUi;
+    ToneColors colors;
     switch (tone)
     {
     case ButtonTone::Active:
-        return { held ? Darken(FrameBgActive, 0.15f) : FrameBgActive, hovered ? AccentHover : Accent, AccentHover, Accent };
+        colors = { held ? Darken(FrameBgActive, 0.15f) : FrameBgActive, Accent, AccentHover, Accent };
+        break;
     case ButtonTone::Primary:
-        return { held ? Darken(Selected, 0.2f) : hovered ? Lighten(Selected, 0.08f) : Selected, SelectedOutline,
-                 SelectedOutline, SelectedOutline };
+        colors = { held ? Darken(Selected, 0.2f) : hovered ? Lighten(Selected, 0.08f) : Selected, SelectedOutline,
+                   SelectedOutline, SelectedOutline };
+        break;
     case ButtonTone::Destructive:
-        return { held ? Darken(Danger, 0.8f) : hovered ? Darken(Danger, 0.65f) : Darken(Danger, 0.75f), Danger,
-                 Lighten(Danger, 0.35f), Danger };
+        colors = { held ? Darken(Danger, 0.8f) : hovered ? Darken(Danger, 0.65f) : Darken(Danger, 0.75f), Danger,
+                   Lighten(Danger, 0.35f), Danger };
+        break;
     case ButtonTone::Normal:
+        colors = { held ? FrameBgActive : hovered ? FrameBgHovered : FrameBg, Border, Accent, Accent };
         break;
     }
-    return { held ? FrameBgActive : hovered ? FrameBgHovered : FrameBg, hovered ? Accent : Border,
-             hovered ? AccentHover : Accent, Accent };
+    // Hover is one color for every tone: the edge and its glow turn yellow
+    // while the label keeps the tone's voice.
+    if (hovered && !held)
+    {
+        colors.Edge = ControlHover;
+        colors.Glow = ControlHover;
+    }
+    return colors;
 }
 }
 

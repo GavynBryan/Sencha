@@ -32,6 +32,7 @@ const EditorThemePaletteEntry kThemeEntries[] = {
     { "accent_dim", &EditorUi::AccentDim },
     { "selected", &EditorUi::Selected },
     { "selected_outline", &EditorUi::SelectedOutline },
+    { "control_hover", &EditorUi::ControlHover },
     { "secondary", &EditorUi::Secondary },
     { "secondary_hover", &EditorUi::SecondaryHover },
     { "button_bg", &EditorUi::ButtonBg },

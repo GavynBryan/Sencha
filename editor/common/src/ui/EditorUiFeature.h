@@ -5,8 +5,10 @@
 
 #include <graphics/vulkan/Renderer.h>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -113,8 +115,8 @@ private:
     bool InitImGui(const RendererServices& services);
     void ShutdownImGui();
     void DrawMainMenuBar();
-    void RegisterClickCommand(ConsoleRegistry& registry);
-    void FeedQueuedClicks();
+    void RegisterPointerCommands(ConsoleRegistry& registry);
+    void FeedPointerActions();
 
     Engine& EngineInstance;
     SdlWindow& Window;
@@ -158,15 +160,21 @@ private:
     // Front tabs to raise on the frame after a layout rebuild (window titles of
     // tab-group nodes; SetWindowFocus needs the windows to exist first).
     std::vector<std::string> PendingTabFocus;
-    // A left click queued by the editor.ui.click command: pressed on the named
-    // frame, released on the next, so an unattended run can drive a widget
-    // before a screenshot. Fed to ImGui after the SDL backend's own mouse
-    // update so the injected position wins for that frame.
-    struct QueuedClick
+    // Pointer actions queued by the editor.ui.click and editor.ui.pointer
+    // commands, so an unattended run can drive or hover a widget before a
+    // screenshot. A click is pressed on the named frame and released on the
+    // next; a move puts the pointer at the position on the named frame and
+    // holds it there. Fed to ImGui after the SDL backend's own mouse update so
+    // the injected position wins for that frame.
+    struct PointerAction
     {
+        enum class Kind : std::uint8_t { Click, Move };
+        Kind Action = Kind::Click;
         ImVec2 Pos{};
         int AtFrame = 0;
         bool Pressed = false;
     };
-    std::vector<QueuedClick> QueuedClicks;
+    std::vector<PointerAction> PointerActions;
+    // The held pointer position from the latest Move, re-fed every frame.
+    std::optional<ImVec2> HeldPointer;
 };

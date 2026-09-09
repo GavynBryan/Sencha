@@ -13,6 +13,7 @@
     "accent_dim": "#0E3A44",
     "selected": "#4D330B",
     "selected_outline": "#FFB347",
+    "control_hover": "#FFD84A",
     "secondary": "#8B5CF6",
     "secondary_hover": "#A78BFA",
     "button_bg": "#131A23",
