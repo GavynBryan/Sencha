@@ -1,7 +1,7 @@
 #include "FaceCarveTool.h"
 
 #include "ui/ButtonFlow.h"
-#include "ui/EditorUiSkin.h"
+#include "ui/chrome/ChromeBars.h"
 #include "ui/chrome/ChromeControls.h"
 
 #include "EditorTheme.h"
@@ -610,7 +610,7 @@ void FaceCarveTool::DrawProperties(ToolContext& ctx)
 
 void FaceCarveTool::DrawToolbarControls(ToolContext& ctx)
 {
-    const float size = EditorUiSkin::BarButtonSize();
+    const float size = EditorChrome::BarButtonSize();
     const bool hasDraft = HasPending();
     const bool canCommit = CanCommit();
 

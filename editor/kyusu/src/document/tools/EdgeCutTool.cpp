@@ -1,6 +1,6 @@
 #include "EdgeCutTool.h"
 
-#include "ui/EditorUiSkin.h"
+#include "ui/chrome/ChromeBars.h"
 #include "ui/chrome/ChromeControls.h"
 
 
@@ -159,7 +159,7 @@ void EdgeCutTool::DrawProperties(ToolContext&)
 
 void EdgeCutTool::DrawToolbarControls(ToolContext&)
 {
-    const float buttonSize = EditorUiSkin::BarButtonSize();
+    const float buttonSize = EditorChrome::BarButtonSize();
     if (EditorChrome::ToolButton("cutloop", IconId::Rotate,
                                         "Loop cut (whole ring)  [Tab]", LoopCut, buttonSize))
         LoopCut = true;

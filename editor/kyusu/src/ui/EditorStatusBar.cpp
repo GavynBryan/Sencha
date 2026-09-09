@@ -1,7 +1,7 @@
 #include "EditorStatusBar.h"
 
-#include "ui/EditorUiSkin.h"
 #include "ui/EditorUiStyle.h"
+#include "ui/chrome/ChromeBars.h"
 #include "fonts/IconsFontAwesome6.h"
 
 #include "editmodes/ManipulatorSession.h"
@@ -68,10 +68,10 @@ void EditorStatusBar::Draw()
 
     if (ImGui::BeginViewportSideBar("##EditorStatusBar", viewport, ImGuiDir_Down, barHeight, flags))
     {
-        EditorUiSkin::Band(ImGui::GetWindowDrawList(), ImGui::GetWindowPos(),
-                           ImVec2(ImGui::GetWindowPos().x + ImGui::GetWindowSize().x,
-                                  ImGui::GetWindowPos().y + ImGui::GetWindowSize().y),
-                           EditorUi::HeaderBg);
+        EditorChrome::BarBackdrop(ImGui::GetWindowDrawList(), ImGui::GetWindowPos(),
+                                  ImVec2(ImGui::GetWindowPos().x + ImGui::GetWindowSize().x,
+                                         ImGui::GetWindowPos().y + ImGui::GetWindowSize().y),
+                                  EditorChrome::BarEdge::Top);
         if (ImGui::BeginMenuBar())
         {
             const ITool* tool = Tools().GetActiveTool();

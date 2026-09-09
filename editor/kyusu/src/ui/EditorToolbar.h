@@ -89,7 +89,7 @@ public:
     void Draw();
 
 private:
-    void DrawToolContextGroup(float buttonSize); // edge-cut sub-mode / carve apply-cancel
+    void DrawToolContextGroup(); // edge-cut sub-mode / carve apply-cancel
     void DrawTransformGroup(float buttonSize);
     void DrawGridGroup(float buttonSize);
     void DrawPlayGroup(float buttonSize);

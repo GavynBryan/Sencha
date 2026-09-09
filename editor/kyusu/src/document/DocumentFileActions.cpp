@@ -238,32 +238,37 @@ void DocumentFileActions::LogUnresolvedFaceMaterials(const std::string& levelPat
                      levelPath.c_str(), path.c_str(), count);
 }
 
-void DocumentFileActions::UpdateTitle()
+std::string DocumentFileActions::DocumentLabel() const
 {
-    std::string title = "Kyusu - Level Editor - ";
+    std::string label;
     if (World.IsWorld())
     {
-        title += World.Manifest().Name;
+        label += World.Manifest().Name;
         const ZoneId focus = World.FocusZone();
         for (const ZoneHeader& zone : World.Manifest().Zones)
         {
             if (zone.Id != focus)
                 continue;
-            title += " : ";
-            title += zone.Name;
+            label += " : ";
+            label += zone.Name;
             break;
         }
         if (World.IsDirty())
-            title += " *";
+            label += " *";
     }
     else
     {
         const EditorDocument& document = World.FocusDocument();
-        title += document.GetDisplayName();
+        label += document.GetDisplayName();
         if (document.IsDirty())
-            title += " *";
+            label += " *";
     }
+    return label;
+}
 
+void DocumentFileActions::UpdateTitle()
+{
+    const std::string title = "Kyusu - Level Editor - " + DocumentLabel();
     if (title != LastWindowTitle)
     {
         Window.SetTitle(title);

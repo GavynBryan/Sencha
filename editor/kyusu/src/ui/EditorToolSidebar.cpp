@@ -1,7 +1,7 @@
 #include "EditorToolSidebar.h"
 
-#include "ui/EditorUiSkin.h"
 #include "ui/EditorUiStyle.h"
+#include "ui/chrome/ChromeBars.h"
 #include "ui/chrome/ChromeControls.h"
 
 #include "tools/ITool.h"
@@ -35,10 +35,10 @@ void EditorToolSidebar::Draw()
 
     if (ImGui::BeginViewportSideBar("##EditorToolSidebar", viewport, ImGuiDir_Left, barWidth, flags))
     {
-        EditorUiSkin::Band(ImGui::GetWindowDrawList(), ImGui::GetWindowPos(),
-                           ImVec2(ImGui::GetWindowPos().x + ImGui::GetWindowSize().x,
-                                  ImGui::GetWindowPos().y + ImGui::GetWindowSize().y),
-                           EditorUi::HeaderBg);
+        EditorChrome::BarBackdrop(ImGui::GetWindowDrawList(), ImGui::GetWindowPos(),
+                                  ImVec2(ImGui::GetWindowPos().x + ImGui::GetWindowSize().x,
+                                         ImGui::GetWindowPos().y + ImGui::GetWindowSize().y),
+                                  EditorChrome::BarEdge::Right);
 
         const auto& tools = Tools().GetTools();
         for (std::size_t i = 0; i < tools.size(); ++i)

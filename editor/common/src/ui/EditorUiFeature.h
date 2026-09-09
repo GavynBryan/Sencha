@@ -20,6 +20,15 @@ class VulkanInstanceService;
 class EditorSkin;
 struct IEditorPanel;
 
+// What the shell says it is, drawn at the head of the menu bar: the product
+// name and what kind of editor this is. Data the application supplies;
+// the shell never names a product itself.
+struct ShellIdentity
+{
+    std::string Product;
+    std::string Subtitle;
+};
+
 // Fraction of its parent split each DockSlot region takes when the default
 // layout is built. Regions without panels are never split, so the fields for
 // slots an application leaves empty are inert.
@@ -96,6 +105,11 @@ public:
     // Shown only when set (applications without world documents never see it).
     void SetNewWorldAction(std::function<void()> newWorldAction);
 
+    void SetIdentity(ShellIdentity identity);
+    // What the shell is working on, read each frame and shown at the tail of
+    // the menu bar (the open document and whether it has unsaved edits).
+    void SetStatusProvider(std::function<std::string()> statusProvider);
+
 private:
     bool InitImGui(const RendererServices& services);
     void ShutdownImGui();
@@ -132,6 +146,8 @@ private:
     std::function<void()> SaveAsAction;
     std::function<void()> SaveAllAction;
     std::function<void()> NewWorldAction;
+    ShellIdentity Identity;
+    std::function<std::string()> StatusProvider;
 
     std::vector<std::unique_ptr<IEditorPanel>> Panels;
     std::vector<std::function<void()>> ChromeBars;

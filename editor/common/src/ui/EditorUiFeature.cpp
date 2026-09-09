@@ -4,6 +4,8 @@
 #include "EditorUiSkin.h"
 #include "EditorUiStyle.h"
 #include "IEditorPanel.h"
+#include "chrome/ChromeBars.h"
+#include "chrome/ChromeChassis.h"
 
 #include <app/Engine.h>
 #include <core/console/ConsoleRegistry.h>
@@ -329,14 +331,22 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
             chrome();
     }
 
-    // Host dockspace filling the work area the chrome bars left: our own window
-    // with no background and a plain DockSpace, so whatever is drawn behind it
-    // shows through the seams between nodes. Every docked panel, the viewports
-    // included, paints its own opaque body.
+    // The chassis fills the work area the chrome bars left, and the dock host
+    // sits inside its ring: our own window with no background and a plain
+    // DockSpace, so the chassis ground shows through the seams between nodes.
+    // Every docked panel, the viewports included, paints its own opaque body.
     {
         const ImGuiViewport* vp = ImGui::GetMainViewport();
-        ImGui::SetNextWindowPos(vp->WorkPos);
-        ImGui::SetNextWindowSize(vp->WorkSize);
+        const ImVec2 workMin = vp->WorkPos;
+        const ImVec2 workMax(vp->WorkPos.x + vp->WorkSize.x, vp->WorkPos.y + vp->WorkSize.y);
+        ImDrawList* background = ImGui::GetBackgroundDrawList();
+        EditorChrome::DrawChassisBase(background, workMin, workMax);
+        EditorChrome::DrawChassisEdges(background, workMin, workMax);
+
+        const float inset = EditorChrome::ChassisInset();
+        ImGui::SetNextWindowPos(ImVec2(workMin.x + inset, workMin.y + inset));
+        ImGui::SetNextWindowSize(ImVec2(std::max(0.0f, vp->WorkSize.x - inset * 2.0f),
+                                        std::max(0.0f, vp->WorkSize.y - inset * 2.0f)));
         ImGui::SetNextWindowViewport(vp->ID);
 
         const ImGuiWindowFlags hostFlags =
@@ -543,6 +553,16 @@ void EditorUiFeature::SetNewWorldAction(std::function<void()> newWorldAction)
     NewWorldAction = std::move(newWorldAction);
 }
 
+void EditorUiFeature::SetIdentity(ShellIdentity identity)
+{
+    Identity = std::move(identity);
+}
+
+void EditorUiFeature::SetStatusProvider(std::function<std::string()> statusProvider)
+{
+    StatusProvider = std::move(statusProvider);
+}
+
 bool EditorUiFeature::InitImGui(const RendererServices& services)
 {
     if (!services.Device || !services.PhysicalDevice || !services.Queues || !services.Swapchain)
@@ -690,10 +710,23 @@ void EditorUiFeature::DrawMainMenuBar()
     if (!ImGui::BeginMainMenuBar())
         return;
 
-    EditorUiSkin::Band(ImGui::GetWindowDrawList(), ImGui::GetWindowPos(),
-                       ImVec2(ImGui::GetWindowPos().x + ImGui::GetWindowSize().x,
-                              ImGui::GetWindowPos().y + ImGui::GetWindowSize().y),
-                       EditorUi::HeaderBg);
+    EditorChrome::BarBackdrop(ImGui::GetWindowDrawList(), ImGui::GetWindowPos(),
+                              ImVec2(ImGui::GetWindowPos().x + ImGui::GetWindowSize().x,
+                                     ImGui::GetWindowPos().y + ImGui::GetWindowSize().y),
+                              EditorChrome::BarEdge::Bottom);
+
+    // The identity plate at the head of the bar, before the menus.
+    if (!Identity.Product.empty())
+    {
+        EditorUi::RoleLabel(EditorUi::TextRole::ApplicationTitle, Identity.Product,
+                            ImGui::GetColorU32(EditorUi::AccentHover));
+        if (!Identity.Subtitle.empty())
+        {
+            ImGui::SameLine(0.0f, EditorUi::Px(6.0f));
+            EditorUi::RoleLabel(EditorUi::TextRole::Status, Identity.Subtitle);
+        }
+        ImGui::SameLine(0.0f, EditorUi::Px(14.0f));
+    }
 
     if (ImGui::BeginMenu("File"))
     {
@@ -752,6 +785,22 @@ void EditorUiFeature::DrawMainMenuBar()
             ImGui::EndMenu();
         }
         ImGui::EndMenu();
+    }
+
+    // What is open, at the tail of the bar.
+    if (StatusProvider)
+    {
+        const std::string status = StatusProvider();
+        if (!status.empty())
+        {
+            // A path or a name is data, so it takes the quiet secondary role
+            // rather than the uppercase label roles.
+            const float width = EditorUi::MeasureRoleText(EditorUi::TextRole::SecondaryText, status).x;
+            const float avail = ImGui::GetContentRegionAvail().x - EditorUi::Px(10.0f);
+            if (avail > width)
+                ImGui::SameLine(ImGui::GetCursorPosX() + avail - width);
+            EditorUi::RoleLabel(EditorUi::TextRole::SecondaryText, status);
+        }
     }
 
     ImGui::EndMainMenuBar();

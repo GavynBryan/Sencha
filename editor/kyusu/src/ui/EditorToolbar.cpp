@@ -1,7 +1,7 @@
 #include "EditorToolbar.h"
 
-#include "ui/EditorUiSkin.h"
 #include "ui/EditorUiStyle.h"
+#include "ui/chrome/ChromeBars.h"
 #include "ui/chrome/ChromeControls.h"
 #include "fonts/IconsFontAwesome6.h"
 
@@ -58,25 +58,32 @@ void EditorToolbar::Draw()
 
     if (ImGui::BeginViewportSideBar("##EditorToolbar", viewport, ImGuiDir_Up, barHeight, flags))
     {
-        // Glossy metal band behind the buttons.
-        EditorUiSkin::Band(ImGui::GetWindowDrawList(), ImGui::GetWindowPos(),
-                           ImVec2(ImGui::GetWindowPos().x + ImGui::GetWindowSize().x,
-                                  ImGui::GetWindowPos().y + ImGui::GetWindowSize().y),
-                           EditorUi::HeaderBg);
+        EditorChrome::BarBackdrop(ImGui::GetWindowDrawList(), ImGui::GetWindowPos(),
+                                  ImVec2(ImGui::GetWindowPos().x + ImGui::GetWindowSize().x,
+                                         ImGui::GetWindowPos().y + ImGui::GetWindowSize().y),
+                                  EditorChrome::BarEdge::Bottom);
 
         // Tools themselves live on the left sidebar; the toolbar hosts the
-        // active tool's contextual controls and the shared editing groups.
-        DrawToolContextGroup(buttonSize);
-        DrawTransformGroup(buttonSize);
-        EditorUiSkin::Divider(buttonSize);
-        DrawGridGroup(buttonSize);
-        EditorUiSkin::Divider(buttonSize);
+        // active tool's contextual controls and the shared editing groups,
+        // each mounted in its own module.
+        const float moduleGap = EditorUi::Px(EditorUi::Metrics.ModulePad * 3.0f);
+        DrawToolContextGroup();
+        {
+            EditorChrome::ModuleScope module("transform");
+            DrawTransformGroup(buttonSize);
+        }
+        ImGui::SameLine(0.0f, moduleGap);
+        {
+            EditorChrome::ModuleScope module("grid");
+            DrawGridGroup(buttonSize);
+        }
+        ImGui::SameLine(0.0f, moduleGap);
         DrawPlayGroup(buttonSize);
     }
     ImGui::End();
 }
 
-void EditorToolbar::DrawToolContextGroup(float buttonSize)
+void EditorToolbar::DrawToolContextGroup()
 {
     // Whatever the active tool wants here, it draws itself: a tool with contextual
     // controls ships them with its own code rather than as a branch in the bar.
@@ -86,10 +93,13 @@ void EditorToolbar::DrawToolContextGroup(float buttonSize)
         return;
 
     const ImVec2 before = ImGui::GetCursorScreenPos();
-    active->DrawToolbarControls(tools.GetContext());
-    // Only fence off the group when the tool actually drew into it.
+    {
+        EditorChrome::ModuleScope module("toolcontext");
+        active->DrawToolbarControls(tools.GetContext());
+    }
+    // Only space the module off when the tool actually drew into it.
     if (ImGui::GetCursorScreenPos().x != before.x)
-        EditorUiSkin::Divider(buttonSize);
+        ImGui::SameLine(0.0f, EditorUi::Px(EditorUi::Metrics.ModulePad * 3.0f));
 }
 
 void EditorToolbar::DrawTransformGroup(float buttonSize)
@@ -121,7 +131,7 @@ void EditorToolbar::DrawTransformGroup(float buttonSize)
     // Gizmo frame (Shift+T cycles): grid follows the workspace grid frame,
     // local follows the primary selection's rotation.
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(76.0f);
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 5.0f);
     const TransformSpace space = session.GetTransformSpace();
     if (ImGui::BeginCombo("##gizmospace", TransformSpaceLabel(space)))
     {
@@ -178,7 +188,7 @@ void EditorToolbar::DrawGridGroup(float buttonSize)
         Grid.SnapEnabled = !Grid.SnapEnabled;
 
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(76.0f);
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 5.0f);
     static constexpr const char* kSnapTargetLabels[] = { "Grid", "Vertex", "Edge", "Face" };
     const int targetIndex = static_cast<int>(Grid.Target);
     if (ImGui::BeginCombo("##snaptarget", kSnapTargetLabels[targetIndex]))
@@ -199,7 +209,7 @@ void EditorToolbar::DrawGridGroup(float buttonSize)
 
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(132.0f);
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.8f);
     if (ImGui::BeginCombo("##renderdebugview",
                           RenderDebugViewLabel(WorldView.DebugViewMode)))
     {
@@ -219,7 +229,7 @@ void EditorToolbar::DrawGridGroup(float buttonSize)
 #endif
 
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(96.0f);
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6.4f);
     char preview[32];
     std::snprintf(preview, sizeof(preview), ICON_FA_BORDER_ALL "  %g", Grid.Spacing);
     if (ImGui::BeginCombo("##gridsize", preview))
@@ -266,6 +276,9 @@ void EditorToolbar::DrawPlayGroup(float buttonSize)
 {
     const bool playing = Play.IsPlaying && Play.IsPlaying();
     const bool cooking = Play.IsCooking && Play.IsCooking();
+    // The transport bay lights while a session runs or a cook is in flight.
+    EditorChrome::ModuleScope module("transport");
+    module.SetActive(playing || cooking);
 
     if (Play.RunCook)
     {
