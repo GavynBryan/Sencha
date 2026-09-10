@@ -22,6 +22,13 @@ void BarBackdrop(ImDrawList* dl, ImVec2 mn, ImVec2 mx, BarEdge lipEdge);
 // so bars and the controls tools draw into them agree without passing sizes.
 [[nodiscard]] float BarButtonSize();
 
+enum class LedState { Off, On, Alert };
+
+// Single items suitable for both menu bars and ordinary horizontal flows.
+void Divider();
+void Readout(const char* label, const char* value);
+void Readout(const char* label, const char* value, LedState state);
+
 // A module: the controls issued between construction and destruction share
 // one recessed bay, drawn under them when the scope ends. Lays out as one
 // ImGui group; put SameLine between modules. An empty module draws nothing.

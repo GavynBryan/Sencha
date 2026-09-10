@@ -245,4 +245,21 @@ BracketLines BracketCorners(ImVec2 mn, ImVec2 mx, float length)
     return result;
 }
 
+ReadoutRects ReadoutLayout(ImVec2 mn, float labelWidth, float valueWidth, float height,
+                           float padding, float gap, float ledSize)
+{
+    padding = std::max(0.0f, padding);
+    gap = std::max(0.0f, gap);
+    height = std::max(0.0f, height);
+    ledSize = std::clamp(ledSize, 0.0f, height);
+    ReadoutRects r;
+    r.HasLed = ledSize > 0.0f;
+    r.LedMin = ImVec2(mn.x + padding, mn.y + (height - ledSize) * 0.5f);
+    r.LedMax = ImVec2(r.LedMin.x + ledSize, r.LedMin.y + ledSize);
+    r.LabelMin = ImVec2(mn.x + padding + (r.HasLed ? ledSize + gap : 0.0f), mn.y);
+    r.ValueMin = ImVec2(r.LabelMin.x + std::max(0.0f, labelWidth) + gap, mn.y);
+    r.Size = ImVec2(r.ValueMin.x + std::max(0.0f, valueWidth) + padding - mn.x, height);
+    return r;
+}
+
 } // namespace EditorChrome

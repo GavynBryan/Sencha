@@ -310,3 +310,16 @@ TEST(ChromeGeometry, CornerBracketsClampAndRejectDegenerateRects)
     EXPECT_EQ(BracketCorners(ImVec2(), ImVec2(), 10).Count, 0);
     EXPECT_EQ(BracketCorners(ImVec2(), ImVec2(10, 10), 0).Count, 0);
 }
+
+TEST(ChromeGeometry, ReadoutReservesOnlyRequestedLedAndTextWidths)
+{
+    const auto plain = ReadoutLayout(ImVec2(10, 20), 24, 48, 24, 4, 5, 0);
+    EXPECT_FALSE(plain.HasLed);
+    EXPECT_FLOAT_EQ(plain.Size.x, 85);
+    EXPECT_FLOAT_EQ(plain.LabelMin.x, 14);
+    const auto lit = ReadoutLayout(ImVec2(10, 20), 24, 48, 24, 4, 5, 6);
+    EXPECT_TRUE(lit.HasLed);
+    EXPECT_FLOAT_EQ(lit.Size.x, plain.Size.x + 11);
+    EXPECT_FLOAT_EQ(lit.LedMin.y, 29);
+    EXPECT_LT(lit.LedMax.x, lit.LabelMin.x);
+}

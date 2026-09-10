@@ -19,6 +19,7 @@
 #include <imgui_internal.h> // BeginViewportSideBar (reserves work-area space)
 
 #include <ctime>
+#include <cstdio>
 
 EditorStatusBar::EditorStatusBar(std::function<ToolRegistry*()> tools,
                                  std::function<const ManipulatorSession*()> manipulators,
@@ -76,30 +77,26 @@ void EditorStatusBar::Draw()
         if (ImGui::BeginMenuBar())
         {
             const ITool* tool = Tools().GetActiveTool();
-            ImGui::Text(ICON_FA_ARROW_POINTER "  %s", tool ? tool->GetDisplayName().data() : "—");
-
-            // Element mode + the gizmo actually shown and the frame it drags in,
-            // so "why can't I resize this" is always answered at a glance.
-            ImGui::Separator();
-            ImGui::Text("%s", Traits(MeshEdit.GetElementKind()).Label);
-            ImGui::Separator();
-            ImGui::Text(ICON_FA_UP_DOWN_LEFT_RIGHT "  %s (%s)",
-                        TransformModeLabel(Manipulators().EffectiveMode()),
-                        TransformSpaceLabel(Manipulators().GetTransformSpace()));
-
-            ImGui::Separator();
+            EditorChrome::Readout("TOOL", tool ? tool->GetDisplayName().data() : "—");
+            EditorChrome::Divider();
+            EditorChrome::Readout("MODE", Traits(MeshEdit.GetElementKind()).Label);
+            EditorChrome::Divider();
+            char gizmo[64];
+            std::snprintf(gizmo, sizeof(gizmo), "%s (%s)", TransformModeLabel(Manipulators().EffectiveMode()),
+                           TransformSpaceLabel(Manipulators().GetTransformSpace()));
+            EditorChrome::Readout("GIZMO", gizmo);
+            EditorChrome::Divider();
             const std::size_t count = Selection.GetSelection().size();
-            ImGui::Text("%zu selected", count);
-
-            if (const EditorViewport* active = Layout.Active())
-            {
-                ImGui::Separator();
-                ImGui::Text("%s", active->GetDisplayLabel());
-            }
-            ImGui::Separator();
-            ImGui::Text(ICON_FA_BORDER_ALL "  grid %g%s%s",
-                        Grid.Spacing, Grid.SnapEnabled ? "" : " (snap off)",
-                        Grid.HasCustomFrame() ? " [custom]" : "");
+            char selected[32];
+            std::snprintf(selected, sizeof(selected), "%zu", count);
+            EditorChrome::Readout("SEL", selected, count > 0 ? EditorChrome::LedState::On : EditorChrome::LedState::Off);
+            EditorChrome::Divider();
+            const EditorViewport* active = Layout.Active();
+            EditorChrome::Readout("VIEW", active ? active->GetDisplayLabel() : "—");
+            EditorChrome::Divider();
+            char grid[48];
+            std::snprintf(grid, sizeof(grid), "%g%s", Grid.Spacing, Grid.HasCustomFrame() ? " [custom]" : "");
+            EditorChrome::Readout("GRID", grid, Grid.SnapEnabled ? EditorChrome::LedState::On : EditorChrome::LedState::Alert);
 
             // Wall clock, right-aligned.
             std::time_t now = std::time(nullptr);

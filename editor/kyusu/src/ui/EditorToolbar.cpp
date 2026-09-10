@@ -73,10 +73,14 @@ void EditorToolbar::Draw()
             DrawTransformGroup(buttonSize);
         }
         ImGui::SameLine(0.0f, moduleGap);
+        EditorChrome::Divider();
+        ImGui::SameLine(0.0f, moduleGap);
         {
             EditorChrome::ModuleScope module("grid");
             DrawGridGroup(buttonSize);
         }
+        ImGui::SameLine(0.0f, moduleGap);
+        EditorChrome::Divider();
         ImGui::SameLine(0.0f, moduleGap);
         DrawPlayGroup(buttonSize);
     }

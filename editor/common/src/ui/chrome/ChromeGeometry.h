@@ -74,6 +74,16 @@ struct FrameRects
 };
 FrameRects FrameLayout(ImVec2 mn, ImVec2 mx, const FrameSpec& spec);
 
+struct ReadoutRects
+{
+    ImVec2 Size;
+    ImVec2 LabelMin, ValueMin;
+    ImVec2 LedMin, LedMax;
+    bool HasLed = false;
+};
+ReadoutRects ReadoutLayout(ImVec2 mn, float labelWidth, float valueWidth, float height,
+                           float padding, float gap, float ledSize);
+
 struct TileRects
 {
     ImVec2 FaceMin, FaceMax;
