@@ -60,6 +60,15 @@ void Divider()
 
 void Readout(const char* label, const char* value) { Readout(label, value, LedState::Off); }
 
+float ReadoutWidth(const char* label, const char* value, LedState state)
+{
+    const ImVec2 labelSize = EditorUi::MeasureRoleText(EditorUi::TextRole::Status, label);
+    const ImVec2 valueSize = EditorUi::MeasureRoleText(EditorUi::TextRole::Data, value);
+    return ReadoutLayout(ImVec2(0.0f, 0.0f), labelSize.x, valueSize.x, ImGui::GetFrameHeight(), EditorUi::Px(4.0f),
+                         EditorUi::Px(5.0f), state == LedState::Off ? 0.0f : EditorUi::Px(EditorUi::Metrics.ScrewRadius * 2.0f))
+        .Size.x;
+}
+
 void Readout(const char* label, const char* value, LedState state)
 {
     const ImVec2 mn = ImGui::GetCursorScreenPos();

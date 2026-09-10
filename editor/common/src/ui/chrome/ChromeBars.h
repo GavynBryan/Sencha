@@ -27,6 +27,8 @@ enum class LedState { Off, On, Alert };
 void Divider();
 void Readout(const char* label, const char* value);
 void Readout(const char* label, const char* value, LedState state);
+// The width Readout will take, for a caller that right-aligns it.
+[[nodiscard]] float ReadoutWidth(const char* label, const char* value, LedState state);
 
 // A module: the controls issued between construction and destruction share
 // one recessed bay, drawn under them when the scope ends. Lays out as one
