@@ -19,7 +19,6 @@ enum class OrnamentKind : std::uint8_t
     StatusLed,
     Groove,
     Seam,
-    CyanStrip,
     Grid, // faint blueprint grid over an empty well; keep last, it bounds the table
 };
 

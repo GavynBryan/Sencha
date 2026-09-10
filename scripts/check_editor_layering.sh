@@ -96,7 +96,7 @@ done
 
 # D. Chrome internals stay inside common/ui/. Filter on the including FILE's
 # path, as in rule C.
-chrome_internals='ui/chrome/(ChromeGeometry|ChromePaint|ChromeFrame|ChromeChassis|ChromeOrnaments|ChromeSources|IconDraw)\.h'
+chrome_internals='ui/chrome/(ChromeGeometry|ChromePaint|ChromeFrame|ChromeChassis|ChromeOrnaments|IconDraw)\.h'
 chrome_includers="$(grep -rlE '#include[[:space:]]*["<]([^">]*/)?'"$chrome_internals" "$COMMON" "$KYUSU" 2>/dev/null \
                     | grep -vE '^'"$COMMON"'/ui/')"
 if [ -n "$chrome_includers" ]; then

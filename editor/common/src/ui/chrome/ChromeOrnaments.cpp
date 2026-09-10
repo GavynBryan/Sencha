@@ -3,7 +3,6 @@
 #include "ui/EditorUiStyle.h"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 
 namespace
@@ -91,14 +90,6 @@ void Seam(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32)
     dl->AddLine(ImVec2(cx + 1.0f, mn.y), ImVec2(cx + 1.0f, mx.y), Highlight(0.5f), 1.0f);
 }
 
-void CyanStrip(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 tint)
-{
-    if (mx.x <= mn.x || mx.y <= mn.y)
-        return;
-    dl->AddRectFilled(mn, mx, Tinted(tint, 0.65f));
-    dl->AddRect(ImVec2(mn.x - 1.0f, mn.y - 1.0f), ImVec2(mx.x + 1.0f, mx.y + 1.0f), Tinted(tint, 0.2f), 0.0f, 0, 2.0f);
-}
-
 // A blueprint grid at a fixed design pitch, faint enough to sit behind copy.
 void Grid(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 tint)
 {
@@ -112,61 +103,21 @@ void Grid(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 tint)
         dl->AddLine(ImVec2(mn.x, y + 0.5f), ImVec2(mx.x, y + 0.5f), line, 1.0f);
 }
 
-constexpr std::size_t kCount = static_cast<std::size_t>(OrnamentKind::Grid) + 1;
-
-std::array<OrnamentSource, kCount> DefaultSources()
-{
-    std::array<OrnamentSource, kCount> t{};
-    const auto row = [&](OrnamentKind kind, ProceduralGlyphFn fn) {
-        t[static_cast<std::size_t>(kind)] = OrnamentSource{ GlyphSourceKind::Procedural, fn, {} };
-    };
-    row(OrnamentKind::Screw, Screw);
-    row(OrnamentKind::Vent, Vent);
-    row(OrnamentKind::TripleSlash, TripleSlash);
-    row(OrnamentKind::StatusLed, StatusLed);
-    row(OrnamentKind::Groove, Groove);
-    row(OrnamentKind::Seam, Seam);
-    row(OrnamentKind::CyanStrip, CyanStrip);
-    row(OrnamentKind::Grid, Grid);
-    return t;
-}
-
-std::array<OrnamentSource, kCount>& Sources()
-{
-    static std::array<OrnamentSource, kCount> sources = DefaultSources();
-    return sources;
-}
 }
 
 namespace EditorChrome
 {
-const OrnamentSource& OrnamentSourceFor(OrnamentKind kind)
-{
-    const std::size_t index = static_cast<std::size_t>(kind);
-    return Sources()[index < kCount ? index : 0];
-}
-
-void SetOrnamentSource(OrnamentKind kind, const OrnamentSource& source)
-{
-    const std::size_t index = static_cast<std::size_t>(kind);
-    if (index < kCount)
-        Sources()[index] = source;
-}
-
-void ResetOrnamentSources()
-{
-    Sources() = DefaultSources();
-}
-
 void DrawOrnament(ImDrawList* dl, OrnamentKind kind, ImVec2 mn, ImVec2 mx, ImU32 tint)
 {
-    const OrnamentSource& source = OrnamentSourceFor(kind);
-    if (source.Preferred == GlyphSourceKind::Sprite && source.Sprite.Valid())
+    switch (kind)
     {
-        dl->AddImage(source.Sprite.Texture, mn, mx, source.Sprite.Uv0, source.Sprite.Uv1, tint);
-        return;
+    case OrnamentKind::Screw:       Screw(dl, mn, mx, tint); break;
+    case OrnamentKind::Vent:        Vent(dl, mn, mx, tint); break;
+    case OrnamentKind::TripleSlash: TripleSlash(dl, mn, mx, tint); break;
+    case OrnamentKind::StatusLed:   StatusLed(dl, mn, mx, tint); break;
+    case OrnamentKind::Groove:      Groove(dl, mn, mx, tint); break;
+    case OrnamentKind::Seam:        Seam(dl, mn, mx, tint); break;
+    case OrnamentKind::Grid:        Grid(dl, mn, mx, tint); break;
     }
-    if (source.Procedural != nullptr)
-        source.Procedural(dl, mn, mx, tint);
 }
 } // namespace EditorChrome

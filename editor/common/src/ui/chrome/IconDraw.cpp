@@ -409,12 +409,19 @@ void WindowRestore(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
 
 constexpr std::size_t kCount = static_cast<std::size_t>(IconId::Count);
 
-std::array<IconSource, kCount> DefaultSources()
+using DrawFn = void (*)(ImDrawList*, ImVec2 mn, ImVec2 mx, ImU32 tint);
+
+// One row per id: the drawing and the Font Awesome glyph that stands in when
+// there is none. IconId::None has neither and draws nothing.
+struct Icon
 {
-    std::array<IconSource, kCount> t{};
-    const auto row = [&](IconId id, ProceduralGlyphFn fn, const char* glyph) {
-        t[static_cast<std::size_t>(id)] = IconSource{ GlyphSourceKind::Procedural, fn, glyph, {} };
-    };
+    DrawFn Draw = nullptr;
+    const char* Glyph = nullptr;
+};
+
+constexpr std::array<Icon, kCount> kIcons = [] {
+    std::array<Icon, kCount> t{};
+    const auto row = [&](IconId id, DrawFn fn, const char* glyph) { t[static_cast<std::size_t>(id)] = Icon{ fn, glyph }; };
     row(IconId::Pointer, Pointer, ICON_FA_ARROW_POINTER);
     row(IconId::Move, Move, ICON_FA_UP_DOWN_LEFT_RIGHT);
     row(IconId::Rotate, Rotate, ICON_FA_ROTATE);
@@ -456,69 +463,26 @@ std::array<IconSource, kCount> DefaultSources()
     row(IconId::WindowRestore, WindowRestore, ICON_FA_WINDOW_RESTORE);
     row(IconId::WindowClose, Cancel, ICON_FA_XMARK);
     return t;
-}
-
-std::array<IconSource, kCount>& Sources()
-{
-    static std::array<IconSource, kCount> sources = DefaultSources();
-    return sources;
-}
-
-bool DrawFrom(const IconSource& source, GlyphSourceKind kind, ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 tint)
-{
-    switch (kind)
-    {
-    case GlyphSourceKind::Sprite:
-        if (!source.Sprite.Valid())
-            return false;
-        dl->AddImage(source.Sprite.Texture, mn, mx, source.Sprite.Uv0, source.Sprite.Uv1, tint);
-        return true;
-    case GlyphSourceKind::Procedural:
-        if (source.Procedural == nullptr)
-            return false;
-        source.Procedural(dl, mn, mx, tint);
-        return true;
-    case GlyphSourceKind::FontGlyph:
-    {
-        if (source.FontGlyph == nullptr)
-            return false;
-        const ImVec2 size = ImGui::CalcTextSize(source.FontGlyph);
-        dl->AddText(ImVec2(std::floor(mn.x + (mx.x - mn.x - size.x) * 0.5f), std::floor(mn.y + (mx.y - mn.y - size.y) * 0.5f)),
-                    tint, source.FontGlyph);
-        return true;
-    }
-    }
-    return false;
-}
+}();
 }
 
 namespace EditorChrome
 {
-const IconSource& IconSourceFor(IconId id)
-{
-    const std::size_t index = static_cast<std::size_t>(id);
-    return Sources()[index < kCount ? index : 0];
-}
-
-void SetIconSource(IconId id, const IconSource& source)
-{
-    const std::size_t index = static_cast<std::size_t>(id);
-    if (index < kCount)
-        Sources()[index] = source;
-}
-
-void ResetIconSources()
-{
-    Sources() = DefaultSources();
-}
-
 void DrawIcon(ImDrawList* dl, IconId id, ImVec2 mn, ImVec2 mx, ImU32 tint)
 {
-    const IconSource& source = IconSourceFor(id);
-    if (DrawFrom(source, source.Preferred, dl, mn, mx, tint))
+    const std::size_t index = static_cast<std::size_t>(id);
+    if (index >= kCount)
         return;
-    for (GlyphSourceKind kind : { GlyphSourceKind::Sprite, GlyphSourceKind::Procedural, GlyphSourceKind::FontGlyph })
-        if (kind != source.Preferred && DrawFrom(source, kind, dl, mn, mx, tint))
-            return;
+    const Icon& icon = kIcons[index];
+    if (icon.Draw != nullptr)
+    {
+        icon.Draw(dl, mn, mx, tint);
+        return;
+    }
+    if (icon.Glyph == nullptr)
+        return;
+    const ImVec2 size = ImGui::CalcTextSize(icon.Glyph);
+    dl->AddText(ImVec2(std::floor(mn.x + (mx.x - mn.x - size.x) * 0.5f), std::floor(mn.y + (mx.y - mn.y - size.y) * 0.5f)),
+                tint, icon.Glyph);
 }
 } // namespace EditorChrome
