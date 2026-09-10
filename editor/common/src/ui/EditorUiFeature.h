@@ -37,6 +37,7 @@ struct ShellIdentity
 struct DockLayoutRatios
 {
     float Bottom = 0.19f;       // full-width strip, of the whole dockspace height
+    float LeftEdge = 0.05f;    // tool column, of the main row width
     float Left = 0.18f;         // left column, of the main row width
     float Right = 0.24f;        // right column, of the width left after the left column
     float CenterBottom = 0.26f; // strip under the central node, of the center column height

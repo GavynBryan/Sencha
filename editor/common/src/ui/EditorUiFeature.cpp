@@ -124,7 +124,7 @@ void BuildDefaultDockLayout(ImGuiID dockId,
     ImGui::DockBuilderAddNode(dockId, ImGuiDockNodeFlags_DockSpace);
     ImGui::DockBuilderSetNodeSize(dockId, ImGui::GetMainViewport()->WorkSize);
 
-    std::vector<IEditorPanel*> leftPanels, rightPanels, rightBottomPanels,
+    std::vector<IEditorPanel*> leftEdgePanels, leftPanels, rightPanels, rightBottomPanels,
         bottomPanels, centerPanels, centerBottomPanels;
     for (const std::unique_ptr<IEditorPanel>& panel : panels)
     {
@@ -132,6 +132,7 @@ void BuildDefaultDockLayout(ImGuiID dockId,
             continue;
         switch (panel->GetDockSlot())
         {
+        case DockSlot::LeftEdge:     leftEdgePanels.push_back(panel.get());     break;
         case DockSlot::Left:         leftPanels.push_back(panel.get());         break;
         case DockSlot::Right:        rightPanels.push_back(panel.get());        break;
         case DockSlot::RightBottom:  rightBottomPanels.push_back(panel.get());  break;
@@ -150,6 +151,15 @@ void BuildDefaultDockLayout(ImGuiID dockId,
     {
         const ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, ratios.Bottom, nullptr, &center);
         DockPacked(bottom, bottomPanels, ImGuiDir_Right, outFrontTabs);
+    }
+    if (!leftEdgePanels.empty())
+    {
+        const ImGuiID edge = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, ratios.LeftEdge, nullptr, &center);
+        // The narrow edge column needs its tab width for the title; tab context
+        // menus remain available by right-clicking the tab.
+        if (ImGuiDockNode* node = ImGui::DockBuilderGetNode(edge))
+            node->LocalFlags |= ImGuiDockNodeFlags_NoWindowMenuButton;
+        DockPacked(edge, leftEdgePanels, ImGuiDir_Down, outFrontTabs);
     }
     if (!leftPanels.empty())
     {

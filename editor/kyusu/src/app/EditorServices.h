@@ -13,7 +13,7 @@
 #include "project/MaterialLibrary.h"
 #include "project/Project.h"
 #include "ui/EditorStatusBar.h"
-#include "ui/EditorToolSidebar.h"
+#include "ui/ToolPalettePanel.h"
 #include "ui/EditorToolbar.h"
 
 #include <memory>
@@ -144,7 +144,6 @@ private:
     // Declared after Workspace so they are destroyed before the state they
     // reference (ToolRegistry/MeshEdit/Layout/Selection live in Workspace).
     std::unique_ptr<EditorToolbar> Toolbar;
-    std::unique_ptr<EditorToolSidebar> ToolSidebar;
     std::unique_ptr<EditorStatusBar> StatusBar;
     std::unique_ptr<MaterialLibrary> Materials;
     // Thumbnail GPU residency for the browser and active-material previews.

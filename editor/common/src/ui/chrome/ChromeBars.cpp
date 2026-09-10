@@ -40,10 +40,6 @@ void BarBackdrop(ImDrawList* dl, ImVec2 mn, ImVec2 mx, BarEdge lipEdge)
         dl->AddLine(ImVec2(mn.x, mn.y + half), ImVec2(mx.x, mn.y + half), lipGlow, glow);
         dl->AddLine(ImVec2(mn.x, mn.y + half), ImVec2(mx.x, mn.y + half), lip, edge);
         break;
-    case BarEdge::Right:
-        dl->AddLine(ImVec2(mx.x - half, mn.y), ImVec2(mx.x - half, mx.y), lipGlow, glow);
-        dl->AddLine(ImVec2(mx.x - half, mn.y), ImVec2(mx.x - half, mx.y), lip, edge);
-        break;
     }
 }
 

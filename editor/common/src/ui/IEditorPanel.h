@@ -10,6 +10,7 @@ enum class DockSlot
 {
     Center,       // central node (no tab bar)
     CenterBottom, // strip under the central node, same width
+    LeftEdge,     // narrow column at the far left of the main row; panels stack vertically
     Left,         // left column, full height of the main row
     Right,        // upper right, panels pack left-to-right
     RightBottom,  // lower right, panels stack top-to-bottom

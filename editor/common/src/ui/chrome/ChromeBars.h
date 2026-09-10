@@ -2,7 +2,7 @@
 
 #include <imgui.h>
 
-// The bar hosts (menu, toolbar, tool sidebar, status bar) and the modules
+// The bar hosts (menu, toolbar, status bar) and the modules
 // mounted in them. A bar is a metal band with a lit lip on the edge facing the
 // workspace; a module is a recessed bay a group of related controls sits in,
 // so a toolbar reads as installed rather than as buttons floating on a strip.
@@ -12,7 +12,6 @@ enum class BarEdge
 {
     Bottom, // the lip runs along the bottom edge (a top bar)
     Top,    // along the top edge (a bottom bar)
-    Right,  // along the right edge (a left sidebar)
 };
 
 // The band across [mn, mx]. Call first thing inside the bar's window.

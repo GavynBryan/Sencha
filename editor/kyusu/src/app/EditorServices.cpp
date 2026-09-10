@@ -464,7 +464,8 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     // the ortho view + Materials/Console strip under it, world/hierarchy row
     // over the inspector on the right.
     const DockLayoutRatios layoutRatios{
-        .Left = 0.15f,
+        .LeftEdge = 0.06f,
+        .Left = 0.16f,
         .Right = 0.3f,
         .CenterBottom = 0.35f,
         .RightBottom = 0.3f,
@@ -569,10 +570,9 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         [this]() -> const ManipulatorSession* { return Workspace->Interaction.Manipulators; },
         Workspace->Layout, Workspace->Selection, Workspace->Grid,
         Workspace->MeshEdit);
-    ToolSidebar = std::make_unique<EditorToolSidebar>([this] { return Workspace->Interaction.Tools.get(); });
+    UiFeature->AddPanel(std::make_unique<ToolPalettePanel>([this] { return Workspace->Interaction.Tools.get(); }));
     UiFeature->AddChrome([this] { Toolbar->Draw(); });
     UiFeature->AddChrome([this] { StatusBar->Draw(); });
-    UiFeature->AddChrome([this] { ToolSidebar->Draw(); });
 
     // One panel per viewport: the perspective view owns the central node, the
     // ortho view shares the center-bottom strip with the Materials browser.

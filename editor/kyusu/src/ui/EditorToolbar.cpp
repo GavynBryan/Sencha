@@ -63,7 +63,7 @@ void EditorToolbar::Draw()
                                          ImGui::GetWindowPos().y + ImGui::GetWindowSize().y),
                                   EditorChrome::BarEdge::Bottom);
 
-        // Tools themselves live on the left sidebar; the toolbar hosts the
+        // Tools themselves live in the tool palette; the toolbar hosts the
         // active tool's contextual controls and the shared editing groups,
         // each mounted in its own module.
         const float moduleGap = EditorUi::Px(EditorUi::Metrics.ModulePad * 3.0f);
