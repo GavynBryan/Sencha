@@ -1,5 +1,7 @@
 #include "GraphViewerPanel.h"
 
+#include "ui/chrome/ChromeControls.h"
+
 #include "commands/CommandStack.h"
 #include "document/WorldDocument.h"
 #include "selection/SelectionService.h"
@@ -173,30 +175,30 @@ void GraphViewerPanel::OnDraw()
     ImGui::SetNextItemWidth(180.0f);
     ImGui::InputTextWithHint("##graph_search", "Search zones", Search, sizeof(Search));
     ImGui::SameLine();
-    if (ImGui::Button("Frame All"))
+    if (EditorChrome::Button("Frame All", "Frame All", {}, EditorChrome::ButtonTone::Normal))
         frameZones(false);
     ImGui::SameLine();
-    if (ImGui::Button("Frame Selection"))
+    if (EditorChrome::Button("Frame Selection", "Frame Selection", {}, EditorChrome::ButtonTone::Normal))
         frameZones(true);
     ImGui::SameLine();
-    if (ImGui::Button("Perspective"))
+    if (EditorChrome::Button("Perspective", "Perspective", {}, EditorChrome::ButtonTone::Normal))
         PerspectiveProjection = true;
     ImGui::SameLine();
-    if (ImGui::Button("Top"))
+    if (EditorChrome::Button("Top", "Top", {}, EditorChrome::ButtonTone::Normal))
     {
         Yaw = 0.0f;
         Pitch = -1.45f;
         PerspectiveProjection = false;
     }
     ImGui::SameLine();
-    if (ImGui::Button("Front"))
+    if (EditorChrome::Button("Front", "Front", {}, EditorChrome::ButtonTone::Normal))
     {
         Yaw = 0.0f;
         Pitch = 0.0f;
         PerspectiveProjection = false;
     }
     ImGui::SameLine();
-    if (ImGui::Button("Side"))
+    if (EditorChrome::Button("Side", "Side", {}, EditorChrome::ButtonTone::Normal))
     {
         Yaw = 1.5707963f;
         Pitch = 0.0f;

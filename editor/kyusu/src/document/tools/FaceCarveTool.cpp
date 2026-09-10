@@ -1,5 +1,7 @@
 #include "FaceCarveTool.h"
 
+#include "ui/chrome/ChromeHeader.h"
+
 #include "ui/ButtonFlow.h"
 #include "ui/chrome/ChromeBars.h"
 #include "ui/chrome/ChromeControls.h"
@@ -567,7 +569,7 @@ ITool::Shortcut FaceCarveTool::GetShortcut() const { return { SDLK_X, {} }; }
 
 void FaceCarveTool::DrawProperties(ToolContext& ctx)
 {
-    ImGui::SeparatorText("Face Carve");
+    EditorChrome::SectionTitle("Face Carve");
 
     const bool hasDraft = HasPending();
     const bool canCommit = CanCommit();
@@ -592,7 +594,7 @@ void FaceCarveTool::DrawProperties(ToolContext& ctx)
     if (!canCommit)
         ImGui::BeginDisabled();
     ButtonFlow flow;
-    if (flow.Button("Apply"))
+    if (flow.Button("Apply", EditorChrome::ButtonTone::Active))
         Commit(ctx);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Commit the pending carve  [Enter]");

@@ -1,5 +1,7 @@
 #include "SceneBrowserPanel.h"
 
+#include "ui/chrome/ChromeControls.h"
+
 #include "ui/ScopedPanel.h"
 #include "ui/chrome/ChromeDecor.h"
 #include "ui/TextFilterMatch.h"
@@ -72,7 +74,7 @@ void SceneBrowserPanel::OnDraw()
     if (!Scanned)
         Rescan();
 
-    if (ImGui::Button(ICON_FA_ARROWS_ROTATE "  Refresh"))
+    if (EditorChrome::Button(ICON_FA_ARROWS_ROTATE "  Refresh", ICON_FA_ARROWS_ROTATE "  Refresh", {}, EditorChrome::ButtonTone::Normal))
     {
         Rescan();
         if (SceneThumbnailCache* cache = Thumbnails ? Thumbnails() : nullptr)

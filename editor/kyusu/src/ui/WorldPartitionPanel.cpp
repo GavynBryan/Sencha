@@ -1,5 +1,7 @@
 #include "WorldPartitionPanel.h"
 
+#include "ui/chrome/ChromeControls.h"
+
 #include "document/commands/EditWorldManifestCommand.h"
 
 #include "ui/EditorUiStyle.h"
@@ -154,7 +156,7 @@ void WorldPartitionPanel::DrawStreamingPreview()
             return;
         ImGui::SameLine();
         ImGui::PushID(id);
-        if (ImGui::SmallButton(ICON_FA_XMARK))
+        if (EditorChrome::Button(ICON_FA_XMARK, ICON_FA_XMARK, ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
             field.reset();
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Clear the preview override (back to the authored shape)");
@@ -268,7 +270,7 @@ void WorldPartitionPanel::DrawHeaderButtons()
         return true;
     };
 
-    if (ImGui::Button(ICON_FA_PLUS "  Graph"))
+    if (EditorChrome::Button(ICON_FA_PLUS "  Graph", ICON_FA_PLUS "  Graph", {}, EditorChrome::ButtonTone::Normal))
         RunManifestEdit([&] { return WorldDoc.AddGraph("New Graph").IsValid(); });
 
     // New zones land in the focus zone's graph (fallback: the first graph).
@@ -280,7 +282,7 @@ void WorldPartitionPanel::DrawHeaderButtons()
         activeGraph = WorldDoc.Manifest().Graphs[0].Id;
     ImGui::SameLine();
     ImGui::BeginDisabled(!activeGraph.IsValid());
-    if (ImGui::Button(ICON_FA_PLUS "  Zone"))
+    if (EditorChrome::Button(ICON_FA_PLUS "  Zone", ICON_FA_PLUS "  Zone", {}, EditorChrome::ButtonTone::Normal))
         RunManifestEdit([&] { return WorldDoc.AddZone(activeGraph, "New Zone").IsValid(); });
     ImGui::EndDisabled();
 
@@ -290,7 +292,7 @@ void WorldPartitionPanel::DrawHeaderButtons()
             activeZone = &zone;
     ImGui::SameLine();
     ImGui::BeginDisabled(activeZone == nullptr);
-    if (ImGui::Button(ICON_FA_PLUS "  Dock") && activeZone != nullptr)
+    if (EditorChrome::Button(ICON_FA_PLUS "  Dock", ICON_FA_PLUS "  Dock", {}, EditorChrome::ButtonTone::Normal) && activeZone != nullptr)
     {
         const Vec3d center = activeZone->Bounds.Center();
         EditorCreateContext context{
@@ -311,7 +313,7 @@ void WorldPartitionPanel::DrawHeaderButtons()
     ImGui::SameLine();
     ImGui::BeginDisabled(activeZone == nullptr
                          || WorldDoc.Manifest().Zones.size() < 2);
-    if (ImGui::Button(ICON_FA_PLUS "  Teleport Link") && activeZone != nullptr)
+    if (EditorChrome::Button(ICON_FA_PLUS "  Teleport Link", ICON_FA_PLUS "  Teleport Link", {}, EditorChrome::ButtonTone::Normal) && activeZone != nullptr)
     {
         TeleportSource_ = activeZone->Id;
         if (TeleportDestination_ == TeleportSource_
@@ -365,7 +367,7 @@ void WorldPartitionPanel::DrawHeaderButtons()
 
         ImGui::BeginDisabled(source == nullptr || destination == nullptr
                              || source == destination);
-        if (ImGui::Button("Create WorldLink"))
+        if (EditorChrome::Button("Create WorldLink", "Create WorldLink", {}, EditorChrome::ButtonTone::Normal))
         {
             EditorCreateContext context{
                 .World = &WorldDoc,
@@ -381,7 +383,7 @@ void WorldPartitionPanel::DrawHeaderButtons()
         }
         ImGui::EndDisabled();
         ImGui::SameLine();
-        if (ImGui::Button("Cancel"))
+        if (EditorChrome::Button("Cancel", "Cancel", {}, EditorChrome::ButtonTone::Normal))
             ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
@@ -412,7 +414,7 @@ void WorldPartitionPanel::DrawLegacyTransitionMigration()
         [](const TransitionRecord& transition)
         { return transition.Topology == TransitionTopology::Teleport; });
     ImGui::BeginDisabled(!hasTeleport);
-    if (ImGui::Button("Migrate Existing Teleport Rows"))
+    if (EditorChrome::Button("Migrate Existing Teleport Rows", "Migrate Existing Teleport Rows", {}, EditorChrome::ButtonTone::Normal))
     {
         const LegacyTransitionMigrationReport report =
             WorldDoc.MigrateLegacyTransitions();
@@ -443,7 +445,7 @@ void WorldPartitionPanel::DrawLegacyTransitionMigration()
                     transition.Flags.OneWay ? " (one way)" : "");
         if (transition.Topology != TransitionTopology::Teleport)
         {
-            if (ImGui::SmallButton("Convert to Teleport Link"))
+            if (EditorChrome::Button("Convert to Teleport Link", "Convert to Teleport Link", ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
                 convert = transition.Id;
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Use only when this legacy connection is truly "
@@ -451,7 +453,7 @@ void WorldPartitionPanel::DrawLegacyTransitionMigration()
                                   "the same bidirectional WorldLink.");
             ImGui::SameLine();
         }
-        if (ImGui::SmallButton(ICON_FA_TRASH "  Discard Replaced Row"))
+        if (EditorChrome::Button(ICON_FA_TRASH "  Discard Replaced Row", ICON_FA_TRASH "  Discard Replaced Row", ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Destructive))
             discard = transition.Id;
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Discard only after a WorldDock or WorldLink replaces "
@@ -611,7 +613,7 @@ void WorldPartitionPanel::DrawGraphStreaming(const GraphRecord& graph)
             return;
         }
         ImGui::PushID(id);
-        if (ImGui::SmallButton(ICON_FA_XMARK))
+        if (EditorChrome::Button(ICON_FA_XMARK, ICON_FA_XMARK, ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
             clear();
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Clear back to inherited");
@@ -695,7 +697,7 @@ void WorldPartitionPanel::DrawZoneRow(const ZoneHeader& zone)
 
     if (isOpen)
     {
-        if (ImGui::SmallButton(visible ? ICON_FA_EYE : ICON_FA_EYE_SLASH))
+        if (EditorChrome::Button(visible ? ICON_FA_EYE : ICON_FA_EYE_SLASH, visible ? ICON_FA_EYE : ICON_FA_EYE_SLASH, ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
             (void)WorldDoc.SetZoneVisible(zone.Id, !visible);
         ImGui::SameLine();
     }

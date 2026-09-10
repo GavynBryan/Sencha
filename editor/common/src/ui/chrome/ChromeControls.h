@@ -13,15 +13,13 @@ namespace EditorChrome
 enum class ButtonTone
 {
     Normal,      // an ordinary action: dark body, steel edge, cyan label
-    Active,      // a toggle that is on: lit yellow interior
-    Primary,     // the selection or the important action: amber
+    Active,      // a toggle that is on or an important action: amber
     Destructive, // removes something: red
 };
 
 // A mounted button. Hover brightens the edge and adds a faint glow; pressing
 // lights the interior. size (0, 0) fits the label. `id` is the ImGui id;
-// `label` is drawn verbatim (a Font Awesome glyph may lead it) and may not
-// carry a "##" id suffix.
+// `label` hides an optional ImGui "##" id suffix.
 bool Button(const char* id, const char* label, ImVec2 size, ButtonTone tone);
 
 // A square mounted button carrying an icon, `size` on a side.

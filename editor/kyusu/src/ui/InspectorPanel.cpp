@@ -700,7 +700,7 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
             apply(std::move(next));
         }
         ImGui::SameLine();
-        if (ImGui::Button("X", ImVec2(ImGui::GetFrameHeight(), 0.0f)))
+        if (EditorChrome::Button("X", "X", ImVec2(ImGui::GetFrameHeight(), 0.0f), EditorChrome::ButtonTone::Normal))
         {
             AssetFieldValue next = current;
             next.Refs.erase(next.Refs.begin() + static_cast<std::ptrdiff_t>(i));
@@ -708,7 +708,7 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
         }
         ImGui::PopID();
     }
-    if (ImGui::Button("+ Add slot"))
+    if (EditorChrome::Button("+ Add slot", "+ Add slot", {}, EditorChrome::ButtonTone::Normal))
     {
         AssetFieldValue next = current;
         next.Refs.emplace_back();
@@ -724,7 +724,7 @@ void InspectorPanel::DrawAddComponentMenu(EntityId entity)
 
     // OpenPopup only sets state; BeginPopup must run every frame or ImGui closes
     // the popup before a selection can be made.
-    if (ImGui::Button(ICON_FA_PLUS "  Add Component"))
+    if (EditorChrome::Button(ICON_FA_PLUS "  Add Component", ICON_FA_PLUS "  Add Component", {}, EditorChrome::ButtonTone::Normal))
         ImGui::OpenPopup("##add_component");
 
     if (ImGui::BeginPopup("##add_component"))

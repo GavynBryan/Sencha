@@ -132,6 +132,13 @@ void Rotate(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
     k.Head(ex - std::sin(a1) * 0.02f, ey + std::cos(a1) * 0.02f, -std::sin(a1), std::cos(a1), 0.18f);
 }
 
+void ChevronDown(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
+{
+    const Canvas k(dl, mn, mx, c);
+    k.Line(0.2f, 0.35f, 0.5f, 0.65f);
+    k.Line(0.5f, 0.65f, 0.8f, 0.35f);
+}
+
 void Scale(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
 {
     const Canvas k(dl, mn, mx, c);
@@ -426,6 +433,8 @@ std::array<IconSource, kCount> DefaultSources()
     row(IconId::Check, Check, ICON_FA_CHECK);
     row(IconId::Folder, Folder, ICON_FA_FOLDER);
     row(IconId::Search, Search, ICON_FA_MAGNIFYING_GLASS);
+    row(IconId::Refresh, Rotate, ICON_FA_ARROWS_ROTATE);
+    row(IconId::ChevronDown, ChevronDown, ICON_FA_CHEVRON_DOWN);
     row(IconId::Add, Add, ICON_FA_PLUS);
     row(IconId::Delete, Delete, ICON_FA_TRASH);
     row(IconId::Eye, Eye, ICON_FA_EYE);

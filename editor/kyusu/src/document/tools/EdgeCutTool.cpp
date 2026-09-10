@@ -1,5 +1,7 @@
 #include "EdgeCutTool.h"
 
+#include "ui/chrome/ChromeHeader.h"
+
 #include "ui/chrome/ChromeBars.h"
 #include "ui/chrome/ChromeControls.h"
 
@@ -147,13 +149,10 @@ void EdgeCutTool::CommitPending(ToolContext& ctx) { Revert(ctx); }
 
 ITool::Shortcut EdgeCutTool::GetShortcut() const { return { SDLK_C, {} }; }
 
-void EdgeCutTool::DrawProperties(ToolContext&)
+void EdgeCutTool::DrawProperties(ToolContext& ctx)
 {
-    ImGui::SeparatorText("Edge Cut");
-    if (ImGui::RadioButton("Loop cut (whole ring)", LoopCut))
-        LoopCut = true;
-    if (ImGui::RadioButton("Single edge cut", !LoopCut))
-        LoopCut = false;
+    EditorChrome::SectionTitle("Edge Cut");
+    DrawToolbarControls(ctx);
     ImGui::TextDisabled("Tab toggles.  Click an edge to cut.");
 }
 

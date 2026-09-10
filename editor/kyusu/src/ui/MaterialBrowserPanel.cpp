@@ -1,5 +1,7 @@
 #include "MaterialBrowserPanel.h"
 
+#include "ui/chrome/ChromeControls.h"
+
 #include "ui/EditorUiStyle.h"
 #include "ui/MaterialThumbnailCache.h"
 #include "ui/ScopedPanel.h"
@@ -109,7 +111,7 @@ void MaterialBrowserPanel::OnDraw()
     if (!panel.IsOpen())
         return;
 
-    if (ImGui::Button("Rescan"))
+    if (EditorChrome::Button("Rescan", "Rescan", {}, EditorChrome::ButtonTone::Normal))
     {
         Materials.Rescan(Materials.Roots());
         // A rescan may follow a save that re-pointed a material's textures;

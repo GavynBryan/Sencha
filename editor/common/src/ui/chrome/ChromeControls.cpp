@@ -6,6 +6,7 @@
 #include "ui/EditorUiStyle.h"
 
 #include <algorithm>
+#include <cstring>
 
 namespace
 {
@@ -26,12 +27,7 @@ ToneColors ColorsFor(ButtonTone tone, bool hovered, bool held)
     switch (tone)
     {
     case ButtonTone::Active:
-        // The control that is on reads yellow, like the hover it answers to:
-        // a dark yellow interior under a yellow edge and label.
-        colors = { Darken(ControlHover, held ? 0.8f : 0.72f), ControlHover, ControlHover, ControlHover };
-        break;
-    case ButtonTone::Primary:
-        colors = { held ? Darken(Selected, 0.2f) : hovered ? Lighten(Selected, 0.08f) : Selected, SelectedOutline,
+        colors = { Darken(Selected, held ? 0.25f : 0.15f), SelectedOutline,
                    SelectedOutline, SelectedOutline };
         break;
     case ButtonTone::Destructive:
@@ -79,17 +75,27 @@ Face MountedFace(const char* id, ImVec2 size, ButtonTone tone)
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const ImVec2 mx(pos.x + size.x, pos.y + size.y);
     const EditorUi::ChromeMetrics& m = EditorUi::Metrics;
-    const float chamfer = std::min(EditorUi::Px(2.0f), size.y * 0.25f);
+    const float chamfer = std::clamp(std::min(size.x, size.y) * 0.16f, EditorUi::Px(2.0f), EditorUi::Px(4.0f));
     const float edge = std::max(1.0f, EditorUi::Px(m.EdgeWidth));
     const ToneColors colors = ColorsFor(tone, hovered, held);
 
+    const int vertexStart = dl->VtxBuffer.Size;
     FillChamfered(dl, ChamferOutline(pos, mx, chamfer), ImGui::GetColorU32(colors.Body));
-    // A faint sheen across the top: the inner highlight that makes the body
-    // read as a machined face rather than a flat fill.
+    // Tint the polygon's vertices so the gradient follows the chamfered silhouette.
+    const ImVec4 top = EditorUi::Lighten(colors.Body, held ? 0.03f : 0.12f);
+    const ImVec4 bottom = EditorUi::Darken(colors.Body, 0.25f);
+    for (int i = vertexStart; i < dl->VtxBuffer.Size; ++i)
+    {
+        const float t = std::clamp((dl->VtxBuffer[i].pos.y - pos.y) / size.y, 0.0f, 1.0f);
+        ImVec4 color(top.x + (bottom.x - top.x) * t, top.y + (bottom.y - top.y) * t,
+                     top.z + (bottom.z - top.z) * t, colors.Body.w);
+        // Preserve the anti-aliased fringe's transparent vertices.
+        const ImU32 alpha = dl->VtxBuffer[i].col & IM_COL32_A_MASK;
+        dl->VtxBuffer[i].col = (ImGui::GetColorU32(color) & ~IM_COL32_A_MASK) | alpha;
+    }
     if (size.x > chamfer * 2.0f)
-        VerticalGradient(dl, ImVec2(pos.x + chamfer, pos.y + edge), ImVec2(mx.x - chamfer, pos.y + size.y * 0.4f),
-                         ImGui::GetColorU32(EditorUi::WithAlpha(EditorUi::MetalHighlight, held ? 0.05f : 0.2f)),
-                         ImGui::GetColorU32(EditorUi::WithAlpha(EditorUi::MetalHighlight, 0.0f)));
+        dl->AddLine(ImVec2(pos.x + chamfer, pos.y + edge), ImVec2(mx.x - chamfer, pos.y + edge),
+                    ImGui::GetColorU32(EditorUi::WithAlpha(EditorUi::MetalHighlight, 0.25f)), edge);
 
     const float half = edge * 0.5f;
     const ChamferPoly outline = ChamferOutline(ImVec2(pos.x + half, pos.y + half), ImVec2(mx.x - half, mx.y - half), chamfer);
@@ -106,7 +112,7 @@ namespace EditorChrome
 bool Button(const char* id, const char* label, ImVec2 size, ButtonTone tone)
 {
     const ImGuiStyle& style = ImGui::GetStyle();
-    const ImVec2 textSize = ImGui::CalcTextSize(label);
+    const ImVec2 textSize = ImGui::CalcTextSize(label, nullptr, true);
     if (size.x <= 0.0f)
         size.x = textSize.x + style.FramePadding.x * 2.0f;
     if (size.y <= 0.0f)
@@ -115,7 +121,7 @@ bool Button(const char* id, const char* label, ImVec2 size, ButtonTone tone)
     const Face face = MountedFace(id, size, tone);
     const ImVec2 textPos(std::floor(face.Min.x + (size.x - textSize.x) * 0.5f),
                          std::floor(face.Min.y + (size.y - textSize.y) * 0.5f));
-    ImGui::GetWindowDrawList()->AddText(textPos, face.Label, label);
+    ImGui::GetWindowDrawList()->AddText(textPos, face.Label, label, std::strstr(label, "##"));
     return face.Clicked;
 }
 

@@ -1,6 +1,9 @@
 #include "BrushTool.h"
 
+#include "ui/chrome/ChromeHeader.h"
+
 #include "ui/ButtonFlow.h"
+#include "ui/chrome/ChromeBars.h"
 
 
 #include "brush/BrushMesh.h"
@@ -333,37 +336,33 @@ ITool::Shortcut BrushTool::GetShortcut() const { return { SDLK_B, {} }; }
 
 void BrushTool::DrawProperties(ToolContext& ctx)
 {
-    ImGui::SeparatorText("Primitive");
+    EditorChrome::SectionTitle("Primitive");
 
     const bool pending = HasPending();
     bool changed = false;
 
-    struct PrimitiveOption { BrushPrimitive Kind; const char* Label; };
+    struct PrimitiveOption { BrushPrimitive Kind; const char* Label; IconId Icon; };
     static constexpr PrimitiveOption kPrimitives[] = {
-        { BrushPrimitive::Box, "Box" },
-        { BrushPrimitive::Plane, "Plane" },
-        { BrushPrimitive::Cylinder, "Cylinder" },
+        { BrushPrimitive::Box, "Box", IconId::Box },
+        { BrushPrimitive::Plane, "Plane", IconId::Plane },
+        { BrushPrimitive::Cylinder, "Cylinder", IconId::Cylinder },
     };
     {
         ButtonFlow flow;
         for (const PrimitiveOption& prim : kPrimitives)
         {
             const bool active = Creation.ActivePrimitive == prim.Kind;
-            if (active)
-                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-            if (flow.Button(prim.Label) && !active)
+            if (flow.ToolButton(prim.Label, prim.Icon, prim.Label, active, EditorChrome::BarButtonSize()) && !active)
             {
                 Creation.ActivePrimitive = prim.Kind;
                 changed = true;
             }
-            if (active)
-                ImGui::PopStyleColor();
         }
     }
 
     if (Creation.ActivePrimitive == BrushPrimitive::Cylinder)
     {
-        ImGui::SetNextItemWidth(120.0f);
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.0f);
         if (ImGui::DragInt("Sides", &Creation.CylinderSides, 0.25f, 3, 64))
         {
             Creation.CylinderSides = std::clamp(Creation.CylinderSides, 3, 64);
@@ -373,7 +372,7 @@ void BrushTool::DrawProperties(ToolContext& ctx)
 
     if (Creation.ActivePrimitive == BrushPrimitive::Plane)
     {
-        ImGui::SetNextItemWidth(120.0f);
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.0f);
         if (ImGui::DragInt("Subdivisions", &Creation.PlaneSubdivisions, 0.25f, 1, 32))
         {
             Creation.PlaneSubdivisions = std::clamp(Creation.PlaneSubdivisions, 1, 32);
@@ -410,7 +409,7 @@ void BrushTool::DrawProperties(ToolContext& ctx)
     }
 
     ButtonFlow flow;
-    if (flow.Button("Apply"))
+    if (flow.Button("Apply", EditorChrome::ButtonTone::Active))
         CommitPending(ctx);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Commit the pending brush  [Enter]");

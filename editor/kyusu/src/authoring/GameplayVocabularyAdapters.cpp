@@ -1,5 +1,7 @@
 #include "GameplayVocabularyAdapters.h"
 
+#include "ui/chrome/ChromeControls.h"
+
 #include "GameplayVocabularyEdits.h"
 #include "commands/CommandStack.h"
 #include "document/EditorDocument.h"
@@ -111,7 +113,7 @@ namespace
     // The narrow row button every list uses to drop an entry.
     bool DrawRemoveButton()
     {
-        return ImGui::SmallButton(ICON_FA_XMARK);
+        return EditorChrome::Button(ICON_FA_XMARK, ICON_FA_XMARK, ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal);
     }
 
     //=========================================================================
@@ -186,7 +188,7 @@ namespace
                 "##newtag", "State.Stunned", NewTag.data(), NewTag.size(),
                 ImGuiInputTextFlags_EnterReturnsTrue);
             ImGui::SameLine();
-            if (ImGui::SmallButton("Add") || entered)
+            if (EditorChrome::Button("Add", "Add", ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal) || entered)
             {
                 const VocabularyEdit edit =
                     GrantTagByName(working, *registry, NewTag.data());
@@ -196,7 +198,7 @@ namespace
                     NewTag.fill('\0');
             }
             ImGui::SameLine();
-            if (ImGui::SmallButton(ICON_FA_CARET_DOWN "##knowntags"))
+            if (EditorChrome::Button(ICON_FA_CARET_DOWN "##knowntags", ICON_FA_CARET_DOWN "##knowntags", ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
                 ImGui::OpenPopup("known_tags");
             if (ImGui::BeginPopup("known_tags"))
             {
@@ -301,7 +303,7 @@ namespace
             if (before.Count == 0)
                 ImGui::TextDisabled("No attributes.");
 
-            if (ImGui::SmallButton("Add attribute"))
+            if (EditorChrome::Button("Add attribute", "Add attribute", ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
                 ImGui::OpenPopup("known_attributes");
             if (ImGui::BeginPopup("known_attributes"))
             {
@@ -391,7 +393,7 @@ namespace
             if (before.Count == 0)
                 ImGui::TextDisabled("No abilities.");
 
-            if (ImGui::SmallButton("Grant ability"))
+            if (EditorChrome::Button("Grant ability", "Grant ability", ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
                 ImGui::OpenPopup("known_abilities");
             if (ImGui::BeginPopup("known_abilities"))
             {

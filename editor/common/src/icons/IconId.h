@@ -43,6 +43,8 @@ enum class IconId : std::uint8_t
     // Browsing and editing
     Folder,
     Search,
+    Refresh,
+    ChevronDown,
     Add,
     Delete,
     Eye,

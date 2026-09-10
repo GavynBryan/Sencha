@@ -1,5 +1,7 @@
 #include "LightingPanel.h"
 
+#include "ui/chrome/ChromeControls.h"
+
 #include "render/ShadowResidencyReadout.h"
 
 #include "commands/CommandStack.h"
@@ -191,7 +193,7 @@ void LightingPanel::DrawBudgetHeader()
                           "A still scene of On change / Static lights should render 0 views.\n"
                           "Budgets: render.shadow.max_spot / max_point / max_views_per_frame cvars.");
 
-    if (ImGui::SmallButton("Re-render all"))
+    if (EditorChrome::Button("Re-render all", "Re-render all", ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
     {
         if (InvalidateShadows)
             InvalidateShadows();
@@ -219,7 +221,7 @@ void LightingPanel::DrawDeniedWarning()
         std::snprintf(label, sizeof(label), "%s %u##denied%u_%u",
                       LightTypeLabel(row.Type), row.Entity.Index,
                       row.Entity.Index, static_cast<unsigned>(row.Type));
-        if (ImGui::SmallButton(label))
+        if (EditorChrome::Button(label, label, ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
             SelectLight(row.Entity);
     }
 }

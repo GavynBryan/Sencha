@@ -49,7 +49,7 @@ void EditorToolbar::Draw()
 {
     ImGuiViewport* viewport = ImGui::GetMainViewport();
     const ImGuiStyle& style = ImGui::GetStyle();
-    const float buttonSize = ImGui::GetFrameHeight();
+    const float buttonSize = EditorChrome::BarButtonSize();
     const float barHeight = buttonSize + style.WindowPadding.y * 2.0f;
 
     const ImGuiWindowFlags flags =
@@ -299,7 +299,7 @@ void EditorToolbar::DrawPlayGroup(float buttonSize)
         }
     }
     ImGui::SameLine(0.0f, 1.0f);
-    if (ImGui::ArrowButton("##cook_profiles", ImGuiDir_Down))
+    if (EditorChrome::IconButton("##cook_profiles", IconId::ChevronDown, buttonSize, EditorChrome::ButtonTone::Normal))
         ImGui::OpenPopup("##cook_profile_menu");
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Cook profiles");
