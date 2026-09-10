@@ -1,488 +1,213 @@
 #include "IconDraw.h"
-#include "ui/EditorUiStyle.h"
 
 #include "fonts/IconsFontAwesome6.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <initializer_list>
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <vector>
+
+#define NANOSVG_IMPLEMENTATION
+#define NANOSVGRAST_IMPLEMENTATION
+#include <nanosvg.h>
+#include <nanosvgrast.h>
 
 namespace
 {
 using namespace EditorChrome;
 
-constexpr float kPi = 3.14159265f;
-
-// A unit square mapped onto the icon's rect: every drawing is authored in
-// 0..1 coordinates so one set of strokes serves every size the chrome asks
-// for. Stroke width follows the size.
-struct Canvas
-{
-    ImDrawList* Dl;
-    ImVec2 Mn;
-    float S;
-    ImU32 C;
-    float W;
-
-    Canvas(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 tint)
-        : Dl(dl)
-        , C(tint)
-    {
-        S = std::max(1.0f, std::min(mx.x - mn.x, mx.y - mn.y));
-        Mn = ImVec2(std::floor(mn.x + (mx.x - mn.x - S) * 0.5f), std::floor(mn.y + (mx.y - mn.y - S) * 0.5f));
-        W = std::max(EditorUi::Px(1.25f), S * 0.1f);
-    }
-
-    [[nodiscard]] ImVec2 P(float u, float v) const { return ImVec2(Mn.x + u * S, Mn.y + v * S); }
-    void Line(float u0, float v0, float u1, float v1, float k = 1.0f) const
-    {
-        Dl->AddLine(P(u0, v0), P(u1, v1), C, W * k);
-    }
-    void Rect(float u0, float v0, float u1, float v1, float k = 1.0f) const
-    {
-        Dl->AddRect(P(u0, v0), P(u1, v1), C, 0.0f, 0, W * k);
-    }
-    void RectFilled(float u0, float v0, float u1, float v1) const { Dl->AddRectFilled(P(u0, v0), P(u1, v1), C); }
-    void Circle(float u, float v, float r, float k = 1.0f) const { Dl->AddCircle(P(u, v), r * S, C, 0, W * k); }
-    void Dot(float u, float v, float r) const { Dl->AddCircleFilled(P(u, v), r * S, C); }
-    void Outline(std::initializer_list<ImVec2> uv, float k = 1.0f) const
-    {
-        for (const ImVec2& p : uv)
-            Dl->PathLineTo(P(p.x, p.y));
-        Dl->PathStroke(C, ImDrawFlags_Closed, W * k);
-    }
-    void Fill(std::initializer_list<ImVec2> uv) const
-    {
-        for (const ImVec2& p : uv)
-            Dl->PathLineTo(P(p.x, p.y));
-        Dl->PathFillConcave(C);
-    }
-    // Arc around (u, v), angles in radians with 0 at the right and the
-    // positive direction clockwise on screen.
-    void Arc(float u, float v, float r, float a0, float a1, float k = 1.0f) const
-    {
-        Dl->PathArcTo(P(u, v), r * S, a0, a1);
-        Dl->PathStroke(C, 0, W * k);
-    }
-    // A filled arrowhead at (u, v) pointing along (du, dv).
-    void Head(float u, float v, float du, float dv, float len = 0.16f) const
-    {
-        const float n = std::sqrt(du * du + dv * dv);
-        if (n <= 0.0f)
-            return;
-        du /= n;
-        dv /= n;
-        const float bx = u - du * len;
-        const float by = v - dv * len;
-        const float hw = len * 0.55f;
-        Dl->AddTriangleFilled(P(u, v), P(bx - dv * hw, by + du * hw), P(bx + dv * hw, by - du * hw), C);
-    }
-};
-
-void Pointer(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Fill({ { 0.28f, 0.14f }, { 0.28f, 0.78f }, { 0.43f, 0.63f }, { 0.55f, 0.88f }, { 0.66f, 0.82f }, { 0.54f, 0.58f }, { 0.75f, 0.56f } });
-}
-
-void Box(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Outline({ { 0.5f, 0.12f }, { 0.85f, 0.31f }, { 0.85f, 0.69f }, { 0.5f, 0.88f }, { 0.15f, 0.69f }, { 0.15f, 0.31f } });
-    k.Line(0.5f, 0.5f, 0.5f, 0.88f);
-    k.Line(0.5f, 0.5f, 0.15f, 0.31f);
-    k.Line(0.5f, 0.5f, 0.85f, 0.31f);
-}
-
-void Plane(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Outline({ { 0.12f, 0.72f }, { 0.38f, 0.32f }, { 0.88f, 0.32f }, { 0.62f, 0.72f } });
-}
-
-void Cylinder(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    dl->AddEllipse(k.P(0.5f, 0.28f), ImVec2(0.32f * k.S, 0.12f * k.S), c, 0.0f, 0, k.W);
-    k.Line(0.18f, 0.28f, 0.18f, 0.72f);
-    k.Line(0.82f, 0.28f, 0.82f, 0.72f);
-    dl->PathEllipticalArcTo(k.P(0.5f, 0.72f), ImVec2(0.32f * k.S, 0.12f * k.S), 0.0f, 0.0f, kPi);
-    dl->PathStroke(c, 0, k.W);
-}
-
-void Move(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Line(0.5f, 0.22f, 0.5f, 0.78f);
-    k.Line(0.22f, 0.5f, 0.78f, 0.5f);
-    k.Head(0.5f, 0.1f, 0.0f, -1.0f);
-    k.Head(0.5f, 0.9f, 0.0f, 1.0f);
-    k.Head(0.1f, 0.5f, -1.0f, 0.0f);
-    k.Head(0.9f, 0.5f, 1.0f, 0.0f);
-}
-
-void Rotate(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    const float a0 = kPi * 0.1f;
-    const float a1 = kPi * 1.7f;
-    k.Arc(0.5f, 0.5f, 0.32f, a0, a1);
-    const float ex = 0.5f + 0.32f * std::cos(a1);
-    const float ey = 0.5f + 0.32f * std::sin(a1);
-    k.Head(ex - std::sin(a1) * 0.02f, ey + std::cos(a1) * 0.02f, -std::sin(a1), std::cos(a1), 0.18f);
-}
-
-void ChevronDown(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Line(0.2f, 0.35f, 0.5f, 0.65f);
-    k.Line(0.5f, 0.65f, 0.8f, 0.35f);
-}
-
-void Scale(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Rect(0.15f, 0.55f, 0.45f, 0.85f);
-    k.Line(0.45f, 0.55f, 0.82f, 0.18f);
-    k.Line(0.58f, 0.15f, 0.85f, 0.15f);
-    k.Line(0.85f, 0.15f, 0.85f, 0.42f);
-}
-
-void Resize(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Line(0.25f, 0.75f, 0.75f, 0.25f);
-    k.Line(0.5f, 0.22f, 0.78f, 0.22f);
-    k.Line(0.78f, 0.22f, 0.78f, 0.5f);
-    k.Line(0.22f, 0.5f, 0.22f, 0.78f);
-    k.Line(0.22f, 0.78f, 0.5f, 0.78f);
-}
-
-void Pivot(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Circle(0.5f, 0.5f, 0.28f);
-    k.Line(0.5f, 0.1f, 0.5f, 0.3f);
-    k.Line(0.5f, 0.7f, 0.5f, 0.9f);
-    k.Line(0.1f, 0.5f, 0.3f, 0.5f);
-    k.Line(0.7f, 0.5f, 0.9f, 0.5f);
-    k.Dot(0.5f, 0.5f, 0.06f);
-}
-
-void Anchor(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Circle(0.5f, 0.2f, 0.09f);
-    k.Line(0.5f, 0.29f, 0.5f, 0.86f);
-    k.Line(0.32f, 0.42f, 0.68f, 0.42f);
-    k.Arc(0.5f, 0.55f, 0.32f, kPi * 0.15f, kPi * 0.85f);
-}
-
-void Light(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Rect(0.4f, 0.4f, 0.6f, 0.6f);
-    k.Line(0.5f, 0.08f, 0.5f, 0.28f);
-    k.Line(0.5f, 0.72f, 0.5f, 0.92f);
-    k.Line(0.08f, 0.5f, 0.28f, 0.5f);
-    k.Line(0.72f, 0.5f, 0.92f, 0.5f);
-    k.Line(0.18f, 0.18f, 0.32f, 0.32f);
-    k.Line(0.68f, 0.68f, 0.82f, 0.82f);
-    k.Line(0.18f, 0.82f, 0.32f, 0.68f);
-    k.Line(0.68f, 0.32f, 0.82f, 0.18f);
-}
-
-void Grid(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Rect(0.15f, 0.15f, 0.85f, 0.85f);
-    k.Line(0.383f, 0.15f, 0.383f, 0.85f, 0.8f);
-    k.Line(0.617f, 0.15f, 0.617f, 0.85f, 0.8f);
-    k.Line(0.15f, 0.383f, 0.85f, 0.383f, 0.8f);
-    k.Line(0.15f, 0.617f, 0.85f, 0.617f, 0.8f);
-}
-
-void GridFrame(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Line(0.383f, 0.15f, 0.383f, 0.85f, 0.7f);
-    k.Line(0.617f, 0.15f, 0.617f, 0.85f, 0.7f);
-    k.Line(0.15f, 0.383f, 0.85f, 0.383f, 0.7f);
-    k.Line(0.15f, 0.617f, 0.85f, 0.617f, 0.7f);
-    k.Line(0.15f, 0.12f, 0.15f, 0.88f, 2.0f);
-    k.Line(0.12f, 0.85f, 0.88f, 0.85f, 2.0f);
-}
-
-void Snap(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Line(0.15f, 0.35f, 0.15f, 0.15f); k.Line(0.15f, 0.15f, 0.35f, 0.15f);
-    k.Line(0.65f, 0.15f, 0.85f, 0.15f); k.Line(0.85f, 0.15f, 0.85f, 0.35f);
-    k.Line(0.85f, 0.65f, 0.85f, 0.85f); k.Line(0.85f, 0.85f, 0.65f, 0.85f);
-    k.Line(0.35f, 0.85f, 0.15f, 0.85f); k.Line(0.15f, 0.85f, 0.15f, 0.65f);
-    k.Line(0.3f, 0.5f, 0.7f, 0.5f);
-    k.Line(0.5f, 0.3f, 0.5f, 0.7f);
-}
-
-void ZoneBounds(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Line(0.15f, 0.38f, 0.15f, 0.15f); k.Line(0.15f, 0.15f, 0.38f, 0.15f);
-    k.Line(0.62f, 0.15f, 0.85f, 0.15f); k.Line(0.85f, 0.15f, 0.85f, 0.38f);
-    k.Line(0.85f, 0.62f, 0.85f, 0.85f); k.Line(0.85f, 0.85f, 0.62f, 0.85f);
-    k.Line(0.38f, 0.85f, 0.15f, 0.85f); k.Line(0.15f, 0.85f, 0.15f, 0.62f);
-    k.Dot(0.5f, 0.5f, 0.06f);
-}
-
-void Play(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Fill({ { 0.28f, 0.15f }, { 0.82f, 0.5f }, { 0.28f, 0.85f } });
-}
-
-void Stop(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.RectFilled(0.24f, 0.24f, 0.76f, 0.76f);
-}
-
-void Hammer(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Line(0.22f, 0.86f, 0.58f, 0.5f, 2.0f);
-    k.Fill({ { 0.48f, 0.4f }, { 0.78f, 0.1f }, { 0.9f, 0.22f }, { 0.6f, 0.52f } });
-}
-
-void Cancel(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Line(0.22f, 0.22f, 0.78f, 0.78f, 1.5f);
-    k.Line(0.78f, 0.22f, 0.22f, 0.78f, 1.5f);
-}
-
-void Check(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    dl->PathLineTo(k.P(0.18f, 0.55f));
-    dl->PathLineTo(k.P(0.42f, 0.8f));
-    dl->PathLineTo(k.P(0.84f, 0.26f));
-    dl->PathStroke(c, 0, k.W * 1.6f);
-}
-
-void Folder(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Outline({ { 0.12f, 0.25f }, { 0.4f, 0.25f }, { 0.48f, 0.35f }, { 0.88f, 0.35f }, { 0.88f, 0.8f }, { 0.12f, 0.8f } });
-}
-
-void Search(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Circle(0.42f, 0.42f, 0.24f);
-    k.Line(0.6f, 0.6f, 0.86f, 0.86f, 1.8f);
-}
-
-void Add(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Line(0.5f, 0.18f, 0.5f, 0.82f, 1.5f);
-    k.Line(0.18f, 0.5f, 0.82f, 0.5f, 1.5f);
-}
-
-void Delete(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Line(0.18f, 0.28f, 0.82f, 0.28f, 1.3f);
-    k.Line(0.42f, 0.18f, 0.58f, 0.18f);
-    dl->PathLineTo(k.P(0.27f, 0.3f));
-    dl->PathLineTo(k.P(0.32f, 0.86f));
-    dl->PathLineTo(k.P(0.68f, 0.86f));
-    dl->PathLineTo(k.P(0.73f, 0.3f));
-    dl->PathStroke(c, 0, k.W);
-    k.Line(0.43f, 0.42f, 0.45f, 0.74f, 0.8f);
-    k.Line(0.57f, 0.42f, 0.55f, 0.74f, 0.8f);
-}
-
-void EyeShape(const Canvas& k)
-{
-    k.Dl->PathLineTo(k.P(0.1f, 0.5f));
-    k.Dl->PathBezierQuadraticCurveTo(k.P(0.5f, 0.08f), k.P(0.9f, 0.5f));
-    k.Dl->PathBezierQuadraticCurveTo(k.P(0.5f, 0.92f), k.P(0.1f, 0.5f));
-    k.Dl->PathStroke(k.C, 0, k.W);
-    k.Dot(0.5f, 0.5f, 0.12f);
-}
-
-void Eye(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    EyeShape(Canvas(dl, mn, mx, c));
-}
-
-void EyeOff(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    EyeShape(k);
-    k.Line(0.2f, 0.86f, 0.8f, 0.14f, 1.3f);
-}
-
-void Lock(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Rect(0.25f, 0.45f, 0.75f, 0.85f);
-    k.Arc(0.5f, 0.4f, 0.18f, kPi, kPi * 2.0f);
-    k.Line(0.32f, 0.4f, 0.32f, 0.45f);
-    k.Line(0.68f, 0.4f, 0.68f, 0.45f);
-    k.Dot(0.5f, 0.64f, 0.06f);
-}
-
-void Unlock(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Rect(0.25f, 0.45f, 0.75f, 0.85f);
-    k.Arc(0.5f, 0.34f, 0.18f, kPi, kPi * 2.0f);
-    k.Line(0.68f, 0.34f, 0.68f, 0.45f);
-    k.Line(0.32f, 0.34f, 0.32f, 0.28f);
-    k.Dot(0.5f, 0.64f, 0.06f);
-}
-
-void Cut(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Line(0.35f, 0.36f, 0.86f, 0.72f, 1.4f);
-    k.Line(0.35f, 0.64f, 0.86f, 0.28f, 1.4f);
-    k.Circle(0.24f, 0.28f, 0.12f);
-    k.Circle(0.24f, 0.72f, 0.12f);
-}
-
-void Carve(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Outline({ { 0.15f, 0.15f }, { 0.85f, 0.15f }, { 0.85f, 0.5f }, { 0.55f, 0.5f }, { 0.55f, 0.85f }, { 0.15f, 0.85f } });
-    k.Line(0.62f, 0.62f, 0.85f, 0.85f, 0.8f);
-}
-
-void ModeVertex(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Outline({ { 0.5f, 0.15f }, { 0.85f, 0.8f }, { 0.15f, 0.8f } }, 0.6f);
-    k.Dot(0.5f, 0.15f, 0.1f);
-    k.Dot(0.85f, 0.8f, 0.1f);
-    k.Dot(0.15f, 0.8f, 0.1f);
-}
-
-void ModeEdge(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Outline({ { 0.5f, 0.15f }, { 0.85f, 0.8f }, { 0.15f, 0.8f } }, 0.6f);
-    k.Line(0.15f, 0.8f, 0.85f, 0.8f, 2.2f);
-    k.Dot(0.85f, 0.8f, 0.09f);
-    k.Dot(0.15f, 0.8f, 0.09f);
-}
-
-void ModeFace(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    const ImU32 fill = (c & 0x00FFFFFFu) | (static_cast<ImU32>(((c >> 24) & 0xFFu) * 0.45f) << 24);
-    dl->AddTriangleFilled(k.P(0.5f, 0.15f), k.P(0.85f, 0.8f), k.P(0.15f, 0.8f), fill);
-    k.Outline({ { 0.5f, 0.15f }, { 0.85f, 0.8f }, { 0.15f, 0.8f } });
-}
-
-void WindowMinimize(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Line(0.22f, 0.72f, 0.78f, 0.72f, 1.6f);
-}
-
-void WindowMaximize(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Rect(0.2f, 0.2f, 0.8f, 0.8f, 1.2f);
-}
-
-void WindowRestore(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
-{
-    const Canvas k(dl, mn, mx, c);
-    k.Rect(0.18f, 0.36f, 0.66f, 0.84f, 1.1f);
-    k.Line(0.36f, 0.36f, 0.36f, 0.18f); k.Line(0.36f, 0.18f, 0.84f, 0.18f);
-    k.Line(0.84f, 0.18f, 0.84f, 0.66f); k.Line(0.84f, 0.66f, 0.66f, 0.66f);
-}
+#ifndef SENCHA_EDITOR_ICON_DIR
+#define SENCHA_EDITOR_ICON_DIR "."
+#endif
 
 constexpr std::size_t kCount = static_cast<std::size_t>(IconId::Count);
 
-using DrawFn = void (*)(ImDrawList*, ImVec2 mn, ImVec2 mx, ImU32 tint);
+// The sampling resolutions each icon is rasterized at, design pixels. A box is
+// drawn from the smallest raster that covers it, so a 19 px box samples the
+// 24 px raster and a 9 px box the 12 px one.
+constexpr float kSizes[] = { 12.0f, 16.0f, 24.0f };
+constexpr std::size_t kSizeCount = sizeof(kSizes) / sizeof(kSizes[0]);
 
-// One row per id: the drawing and the Font Awesome glyph that stands in when
-// there is none. IconId::None has neither and draws nothing.
+// One row per id: the file under editor/icons and the Font Awesome glyph that
+// stands in when it cannot be baked. IconId::None has neither and draws nothing.
 struct Icon
 {
-    DrawFn Draw = nullptr;
+    const char* File = nullptr;
     const char* Glyph = nullptr;
 };
 
 constexpr std::array<Icon, kCount> kIcons = [] {
     std::array<Icon, kCount> t{};
-    const auto row = [&](IconId id, DrawFn fn, const char* glyph) { t[static_cast<std::size_t>(id)] = Icon{ fn, glyph }; };
-    row(IconId::Pointer, Pointer, ICON_FA_ARROW_POINTER);
-    row(IconId::Move, Move, ICON_FA_UP_DOWN_LEFT_RIGHT);
-    row(IconId::Rotate, Rotate, ICON_FA_ROTATE);
-    row(IconId::Scale, Scale, ICON_FA_MAXIMIZE);
-    row(IconId::Resize, Resize, ICON_FA_UP_RIGHT_AND_DOWN_LEFT_FROM_CENTER);
-    row(IconId::Pivot, Pivot, ICON_FA_CROSSHAIRS);
-    row(IconId::Anchor, Anchor, ICON_FA_ANCHOR);
-    row(IconId::Box, Box, ICON_FA_CUBE);
-    row(IconId::Plane, Plane, ICON_FA_SQUARE);
-    row(IconId::Cylinder, Cylinder, ICON_FA_DATABASE);
-    row(IconId::Light, Light, ICON_FA_LIGHTBULB);
-    row(IconId::Grid, Grid, ICON_FA_BORDER_ALL);
-    row(IconId::GridFrame, GridFrame, ICON_FA_RULER_COMBINED);
-    row(IconId::Snap, Snap, ICON_FA_MAGNET);
-    row(IconId::ZoneBounds, ZoneBounds, ICON_FA_VECTOR_SQUARE);
-    row(IconId::Play, Play, ICON_FA_PLAY);
-    row(IconId::Stop, Stop, ICON_FA_STOP);
-    row(IconId::Hammer, Hammer, ICON_FA_HAMMER);
-    row(IconId::Cancel, Cancel, ICON_FA_XMARK);
-    row(IconId::Check, Check, ICON_FA_CHECK);
-    row(IconId::Folder, Folder, ICON_FA_FOLDER);
-    row(IconId::Search, Search, ICON_FA_MAGNIFYING_GLASS);
-    row(IconId::Refresh, Rotate, ICON_FA_ARROWS_ROTATE);
-    row(IconId::ChevronDown, ChevronDown, ICON_FA_CHEVRON_DOWN);
-    row(IconId::Add, Add, ICON_FA_PLUS);
-    row(IconId::Delete, Delete, ICON_FA_TRASH);
-    row(IconId::Eye, Eye, ICON_FA_EYE);
-    row(IconId::EyeOff, EyeOff, ICON_FA_EYE_SLASH);
-    row(IconId::Lock, Lock, ICON_FA_LOCK);
-    row(IconId::Unlock, Unlock, ICON_FA_LOCK_OPEN);
-    row(IconId::Cut, Cut, ICON_FA_SCISSORS);
-    row(IconId::Carve, Carve, ICON_FA_CROP_SIMPLE);
-    row(IconId::ModeObject, Box, ICON_FA_CUBE);
-    row(IconId::ModeVertex, ModeVertex, ICON_FA_CIRCLE_DOT);
-    row(IconId::ModeEdge, ModeEdge, ICON_FA_GRIP_LINES);
-    row(IconId::ModeFace, ModeFace, ICON_FA_VECTOR_SQUARE);
-    row(IconId::WindowMinimize, WindowMinimize, ICON_FA_WINDOW_MINIMIZE);
-    row(IconId::WindowMaximize, WindowMaximize, ICON_FA_WINDOW_MAXIMIZE);
-    row(IconId::WindowRestore, WindowRestore, ICON_FA_WINDOW_RESTORE);
-    row(IconId::WindowClose, Cancel, ICON_FA_XMARK);
+    const auto row = [&](IconId id, const char* file, const char* glyph) { t[static_cast<std::size_t>(id)] = Icon{ file, glyph }; };
+    row(IconId::Pointer, "pointer", ICON_FA_ARROW_POINTER);
+    row(IconId::Move, "move", ICON_FA_UP_DOWN_LEFT_RIGHT);
+    row(IconId::Rotate, "rotate", ICON_FA_ROTATE);
+    row(IconId::Scale, "scale", ICON_FA_MAXIMIZE);
+    row(IconId::Resize, "resize", ICON_FA_UP_RIGHT_AND_DOWN_LEFT_FROM_CENTER);
+    row(IconId::Pivot, "pivot", ICON_FA_CROSSHAIRS);
+    row(IconId::Anchor, "anchor", ICON_FA_ANCHOR);
+    row(IconId::Box, "box", ICON_FA_CUBE);
+    row(IconId::Plane, "plane", ICON_FA_SQUARE);
+    row(IconId::Cylinder, "cylinder", ICON_FA_DATABASE);
+    row(IconId::Light, "light", ICON_FA_LIGHTBULB);
+    row(IconId::Grid, "grid", ICON_FA_BORDER_ALL);
+    row(IconId::GridFrame, "grid-frame", ICON_FA_RULER_COMBINED);
+    row(IconId::Snap, "snap", ICON_FA_MAGNET);
+    row(IconId::ZoneBounds, "zone-bounds", ICON_FA_VECTOR_SQUARE);
+    row(IconId::Play, "play", ICON_FA_PLAY);
+    row(IconId::Stop, "stop", ICON_FA_STOP);
+    row(IconId::Hammer, "hammer", ICON_FA_HAMMER);
+    row(IconId::Cancel, "cancel", ICON_FA_XMARK);
+    row(IconId::Check, "check", ICON_FA_CHECK);
+    row(IconId::Folder, "folder", ICON_FA_FOLDER);
+    row(IconId::Search, "search", ICON_FA_MAGNIFYING_GLASS);
+    row(IconId::Refresh, "refresh", ICON_FA_ARROWS_ROTATE);
+    row(IconId::ChevronDown, "chevron-down", ICON_FA_CHEVRON_DOWN);
+    row(IconId::Add, "add", ICON_FA_PLUS);
+    row(IconId::Delete, "delete", ICON_FA_TRASH);
+    row(IconId::Eye, "eye", ICON_FA_EYE);
+    row(IconId::EyeOff, "eye-off", ICON_FA_EYE_SLASH);
+    row(IconId::Lock, "lock", ICON_FA_LOCK);
+    row(IconId::Unlock, "unlock", ICON_FA_LOCK_OPEN);
+    row(IconId::Cut, "cut", ICON_FA_SCISSORS);
+    row(IconId::Carve, "carve", ICON_FA_CROP_SIMPLE);
+    row(IconId::ModeObject, "mode-object", ICON_FA_CUBE);
+    row(IconId::ModeVertex, "mode-vertex", ICON_FA_CIRCLE_DOT);
+    row(IconId::ModeEdge, "mode-edge", ICON_FA_GRIP_LINES);
+    row(IconId::ModeFace, "mode-face", ICON_FA_VECTOR_SQUARE);
+    row(IconId::WindowMinimize, "window-minimize", ICON_FA_WINDOW_MINIMIZE);
+    row(IconId::WindowMaximize, "window-maximize", ICON_FA_WINDOW_MAXIMIZE);
+    row(IconId::WindowRestore, "window-restore", ICON_FA_WINDOW_RESTORE);
+    row(IconId::WindowClose, "window-close", ICON_FA_XMARK);
     return t;
 }();
+
+// Where an icon's rasters landed in the atlas. Px is 0 for a size that was
+// not baked. The atlas pointer says which atlas the UVs belong to, so a
+// context rebuilt after a bake (tests) never reads them.
+struct Raster
+{
+    ImVec2 Uv0;
+    ImVec2 Uv1;
+    float Px = 0.0f;
+};
+std::array<std::array<Raster, kSizeCount>, kCount> g_Rasters{};
+const ImFontAtlas* g_BakedAtlas = nullptr;
 }
 
 namespace EditorChrome
 {
+int BakeIcons(ImFontAtlas& atlas, float uiScale)
+{
+    g_Rasters = {};
+    g_BakedAtlas = nullptr;
+
+    struct Parsed
+    {
+        NSVGimage* Image = nullptr;
+        std::array<int, kSizeCount> Rect{};
+    };
+    std::array<Parsed, kCount> parsed{};
+    int maxPx = 1;
+    for (std::size_t i = 1; i < kCount; ++i)
+    {
+        if (kIcons[i].File == nullptr)
+            continue;
+        const std::string path = std::string(SENCHA_EDITOR_ICON_DIR) + "/" + kIcons[i].File + ".svg";
+        NSVGimage* image = nsvgParseFromFile(path.c_str(), "px", 96.0f);
+        if (image == nullptr || image->width <= 0.0f || image->height <= 0.0f)
+        {
+            nsvgDelete(image);
+            continue;
+        }
+        parsed[i].Image = image;
+        for (std::size_t s = 0; s < kSizeCount; ++s)
+        {
+            const int px = std::max(1, static_cast<int>(std::lround(kSizes[s] * uiScale)));
+            maxPx = std::max(maxPx, px);
+            parsed[i].Rect[s] = atlas.AddCustomRectRegular(px, px);
+        }
+    }
+
+    // Build packs the rects and allocates the coverage plane the backend
+    // uploads as white times alpha; the rasters are written straight into it.
+    atlas.Build();
+    std::vector<unsigned char> scratch(static_cast<std::size_t>(maxPx) * static_cast<std::size_t>(maxPx) * 4u);
+    NSVGrasterizer* rasterizer = nsvgCreateRasterizer();
+    int loaded = 0;
+    for (std::size_t i = 1; i < kCount; ++i)
+    {
+        NSVGimage* image = parsed[i].Image;
+        if (image == nullptr)
+            continue;
+        bool any = false;
+        for (std::size_t s = 0; s < kSizeCount; ++s)
+        {
+            const ImFontAtlasCustomRect* rect = atlas.GetCustomRectByIndex(parsed[i].Rect[s]);
+            if (rect == nullptr || !rect->IsPacked() || atlas.TexPixelsAlpha8 == nullptr)
+                continue;
+            const int px = rect->Width;
+            std::memset(scratch.data(), 0, static_cast<std::size_t>(px) * static_cast<std::size_t>(px) * 4u);
+            nsvgRasterize(rasterizer, image, 0.0f, 0.0f, static_cast<float>(px) / image->height, scratch.data(), px, px, px * 4);
+            for (int y = 0; y < px; ++y)
+            {
+                unsigned char* row = atlas.TexPixelsAlpha8 + (rect->Y + y) * atlas.TexWidth + rect->X;
+                for (int x = 0; x < px; ++x)
+                {
+                    const unsigned char alpha = scratch[(static_cast<std::size_t>(y) * static_cast<std::size_t>(px) + static_cast<std::size_t>(x)) * 4u + 3u];
+                    row[x] = alpha;
+                    any |= alpha != 0;
+                }
+            }
+            Raster& raster = g_Rasters[i][s];
+            atlas.CalcCustomRectUV(rect, &raster.Uv0, &raster.Uv1);
+            raster.Px = static_cast<float>(px);
+        }
+        nsvgDelete(image);
+        loaded += any ? 1 : 0;
+    }
+    nsvgDeleteRasterizer(rasterizer);
+    g_BakedAtlas = &atlas;
+    return loaded;
+}
+
 void DrawIcon(ImDrawList* dl, IconId id, ImVec2 mn, ImVec2 mx, ImU32 tint)
 {
     const std::size_t index = static_cast<std::size_t>(id);
     if (index >= kCount)
         return;
-    const Icon& icon = kIcons[index];
-    if (icon.Draw != nullptr)
+
+    const float side = std::max(1.0f, std::min(mx.x - mn.x, mx.y - mn.y));
+    const ImVec2 origin(std::floor(mn.x + (mx.x - mn.x - side) * 0.5f), std::floor(mn.y + (mx.y - mn.y - side) * 0.5f));
+
+    ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+    if (atlas == g_BakedAtlas)
     {
-        icon.Draw(dl, mn, mx, tint);
-        return;
+        // The smallest raster that covers the box, else the largest baked.
+        const Raster* pick = nullptr;
+        for (const Raster& raster : g_Rasters[index])
+        {
+            if (raster.Px <= 0.0f)
+                continue;
+            pick = &raster;
+            if (raster.Px >= side)
+                break;
+        }
+        if (pick != nullptr)
+        {
+            dl->AddImage(atlas->TexID, origin, ImVec2(origin.x + side, origin.y + side), pick->Uv0, pick->Uv1, tint);
+            return;
+        }
     }
-    if (icon.Glyph == nullptr)
+
+    const char* glyph = kIcons[index].Glyph;
+    if (glyph == nullptr)
         return;
-    const ImVec2 size = ImGui::CalcTextSize(icon.Glyph);
+    const ImVec2 size = ImGui::CalcTextSize(glyph);
     dl->AddText(ImVec2(std::floor(mn.x + (mx.x - mn.x - size.x) * 0.5f), std::floor(mn.y + (mx.y - mn.y - size.y) * 0.5f)),
-                tint, icon.Glyph);
+                tint, glyph);
 }
 } // namespace EditorChrome

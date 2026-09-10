@@ -6,6 +6,7 @@
 #include "chrome/ChromeChassis.h"
 #include "chrome/ChromeControls.h"
 #include "chrome/ChromeHeader.h"
+#include "chrome/IconDraw.h"
 
 #include <app/Engine.h>
 #include <core/console/ConsoleRegistry.h>
@@ -317,6 +318,12 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
         EditorUi::UiScale = ResolveUiScale(EngineInstance.Console().Registry(), Window.GetHandle(), Log);
         EditorUi::Apply(ImGui::GetStyle());
         EditorUi::LoadFonts(ImGui::GetIO());
+        // The icons ride in the font atlas, so they are baked once the fonts
+        // are in and before the backend uploads it.
+        const int icons = EditorChrome::BakeIcons(*ImGui::GetIO().Fonts, EditorUi::UiScale);
+        constexpr int kIconCount = static_cast<int>(IconId::Count) - 1;
+        if (icons < kIconCount && Log != nullptr)
+            Log->Warn("EditorUiFeature: {} of {} icons baked from " SENCHA_EDITOR_ICON_DIR "; the rest show their glyph", icons, kIconCount);
         LookBuilt = true;
     }
 

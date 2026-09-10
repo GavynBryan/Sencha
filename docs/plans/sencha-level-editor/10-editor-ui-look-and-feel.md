@@ -260,9 +260,10 @@ Add `editor/ui/EditorUiStyle.{h,cpp}`:
    `ChromeHeader` (rail, titled row, section title), `ChromeBars` (bar backdrop,
    `ModuleScope` bays), `ChromeControls` (mounted buttons, icon buttons),
    `ChromeSelection` (`ScopedSelectionStyle`, the only way a widget turns
-   amber), `ChromeOrnaments` and `IconDraw` (procedural placeholders behind
-   source tables whose rows an authored sprite can replace; `ChromeSources`
-   holds that representation), `ChromeDecor` (flavor copy by `DecorSlot`).
+   amber), `ChromeOrnaments` (the machined decorations, drawn from the
+   palette), `IconDraw` (the icons, SVG files under `editor/icons/` baked
+   into the font atlas at startup; see that directory's README), `ChromeDecor`
+   (flavor copy by `DecorSlot`).
    `ScopedPanel(title, open, PanelStyle)` is the one hook every panel's chrome
    comes through; a panel names a weight, a section title, a selection scope,
    a control, an icon id, a decor slot, and never a screw or a chamfer

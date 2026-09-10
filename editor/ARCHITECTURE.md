@@ -93,7 +93,7 @@ Shared shell (`editor/common/src/`):
 | `interaction/` | Drag-interaction host (`InteractionHost`). | `IInteraction` |
 | `input/` | Generic input primitives (`InputRouter` handler chain + pointer capture, `ShortcutRegistry`, `KeymapFile`, `UiInputGuard`). | router handlers |
 | `ui/` | ImGui shell (`EditorUiFeature`: context, docking, menu, chassis, per-app ini), theme (`EditorUiStyle`: palette, metrics, decor, scale, text roles; `EditorThemeFile`, `EditorThemeStartup`, `ThemePreferences`), console panel, `ScopedPanel` (the one hook a panel's chrome comes through), `SchemaWidgets`. | `IEditorPanel` |
-| `ui/chrome/` | The workstation chrome, one mechanism per file: geometry, painters, panel frames (`PanelStyle`), chassis, headers, bars and modules (readout cells, dividers), controls (buttons, combo housing), tiles, selection scope and marks, ornaments, icon drawing, decor. Panels include only the panel-facing headers (rule D in `check_editor_layering.sh`). | source tables (`ChromeSources`): an authored sprite replaces a row |
+| `ui/chrome/` | The workstation chrome, one mechanism per file: geometry, painters, panel frames (`PanelStyle`), chassis, headers, bars and modules (readout cells, dividers), controls (buttons, combo housing), tiles, selection scope and marks, ornaments, icons (baked from `editor/icons/*.svg`), decor. Panels include only the panel-facing headers (rule D in `check_editor_layering.sh`). | edit an SVG in `editor/icons/` |
 | `icons/` | `IconId`, the leaf enum a tool or control names an icon by. | -- |
 | `render/` | ImGui presentation of offscreen targets (`ImGuiTargetPresenter`). | -- |
 | `viewport/` | `ViewportId`. | -- |
