@@ -6,7 +6,7 @@
 #include <imgui.h>
 
 // The ornament table and the one draw call over it: screws, vents, slashes,
-// stripes, LEDs, grooves, seams, strips, scanlines. Placement is decided by
+// LEDs, grooves, seams, strips, grids. Placement is decided by
 // ChromeGeometry; this only paints a kind into a rect. Each kind is a table
 // row an authored sprite can replace.
 namespace EditorChrome

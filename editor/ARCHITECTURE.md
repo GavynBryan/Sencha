@@ -93,7 +93,7 @@ Shared shell (`editor/common/src/`):
 | `interaction/` | Drag-interaction host (`InteractionHost`). | `IInteraction` |
 | `input/` | Generic input primitives (`InputRouter` handler chain + pointer capture, `ShortcutRegistry`, `KeymapFile`, `UiInputGuard`). | router handlers |
 | `ui/` | ImGui shell (`EditorUiFeature`: context, docking, menu, chassis, per-app ini), theme (`EditorUiStyle`: palette, metrics, decor, scale, text roles; `EditorThemeFile`, `EditorThemeStartup`, `ThemePreferences`), console panel, `ScopedPanel` (the one hook a panel's chrome comes through), `SchemaWidgets`. | `IEditorPanel` |
-| `ui/chrome/` | The workstation chrome, one mechanism per file: geometry, painters, panel frames (`PanelStyle`), chassis, headers, bars and modules, controls, selection scope, ornaments, icon drawing, decor. Panels include only the panel-facing headers (rule D in `check_editor_layering.sh`). | source tables (`ChromeSources`): an authored sprite replaces a row |
+| `ui/chrome/` | The workstation chrome, one mechanism per file: geometry, painters, panel frames (`PanelStyle`), chassis, headers, bars and modules (readout cells, dividers), controls (buttons, combo housing), tiles, selection scope and marks, ornaments, icon drawing, decor. Panels include only the panel-facing headers (rule D in `check_editor_layering.sh`). | source tables (`ChromeSources`): an authored sprite replaces a row |
 | `icons/` | `IconId`, the leaf enum a tool or control names an icon by. | -- |
 | `render/` | ImGui presentation of offscreen targets (`ImGuiTargetPresenter`). | -- |
 | `viewport/` | `ViewportId`. | -- |
@@ -111,7 +111,7 @@ Level editor (`editor/kyusu/src/`):
 | `meshedit/` | Polygon mesh-editing verbs (`MeshEditService`). | `IMeshEditTarget` |
 | `viewport/` | Viewport layout, camera, picking (`ViewportLayout`, `EditorCamera`, `EditorViewportCameraSystem`, `Picking`). | -- |
 | `render/` | Viewport render features and pipelines (`EditorRenderFeature`, grid/gizmo/selection/solid passes, the 14 embedded shaders). | `IRenderFeature` (engine) |
-| `ui/` | The level editor's panels + chrome (viewport, inspector, hierarchy, mesh edit, material, toolbar, status bar, tool sidebar). | `IEditorPanel` |
+| `ui/` | The level editor's panels + chrome (viewport, inspector, hierarchy, mesh edit, material, tool palette, toolbar, status bar). | `IEditorPanel` |
 | `document/` | Scene/document domain (see below). | -- |
 | `project/` | Play-In-Editor (`PieDriver`, `PieSession`). | -- |
 
@@ -179,7 +179,7 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   a tool declares its own properties UI (`DrawProperties`), toolbar chrome
   (`DrawToolbarControls`), activation key (`GetShortcut`), and how a save should
   resolve anything it has staged (`CommitPending`), so the panel, the toolbar,
-  the sidebar, the status bar, and the keymap all pick it up without an edit.
+  the tool palette, the status bar, and the keymap all pick it up without an edit.
   Settings only that tool acts on are members on the tool; genuinely shared
   authoring state (the grid, the active material) goes through `ToolContext`.
 - An undo-able edit: implement `ICommand` next to its domain, run it through the

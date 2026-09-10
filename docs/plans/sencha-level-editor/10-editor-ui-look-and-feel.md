@@ -1,7 +1,7 @@
 # Editor UI Look-and-Feel
 
 Status: phases 1-5 shipped; the chrome layer (phase 6) shipped 2026-09-09 as
-the workstation restyle. Target captured from a concept mockup shared
+the workstation restyle and its second cut (phase 7) on 2026-09-10. Target captured from a concept mockup shared
 2026-06-17 and re-cut in 2026-09 toward an "alternate 2004 workstation":
 gunmetal chassis, cyan for interaction, amber for the selection.
 
@@ -115,13 +115,19 @@ Squared, thin-bordered, tight — the sci-fi panel read.
 ## Fonts — DONE (sourced + wired)
 
 Bundled in `editor/fonts/` (all permissively licensed; see that dir's `README.md`
-+ `LICENSE-*.txt`). All four TTFs verified to carry a `glyf` table so ImGui's
++ `LICENSE-*.txt`). All five TTFs verified to carry a `glyf` table so ImGui's
 `stb_truetype` rasterizes them directly (no variable-font / CFF surprises):
 
 - **UI font:** JetBrains Mono Regular @ 15px (SIL OFL 1.1) — the default font;
-  the same face at 12px and 18px serves the label roles (`EditorUi::TextRole`:
-  uppercase + tracking for panel and section titles, status readouts, the
-  application title). Inter ships but is unused.
+  the same face at 12px serves `TextRole::SecondaryText`. Inter ships but is
+  unused.
+- **Title face:** Chakra Petch SemiBold (SIL OFL 1.1) @ 12px for the uppercase,
+  tracked label roles (panel and section titles, status labels), @ 18px for
+  the application nameplate, and @ 15px for `TextRole::Tab`, the font pushed
+  around `DockSpace` so dock tab labels take the title face. The tab cut must
+  match the body size: a docked window's content offset comes from the font
+  at its own `Begin`, so a smaller tab font would open a strip between the
+  tab bar and the panel frame.
 - **Monospace:** JetBrains Mono Regular @ 14px — console/readouts, exposed via
   `EditorUi::MonoFont()`. All sizes multiply by `editor.ui.scale`.
 - **Icons:** Font Awesome 6 Free Solid @ 14px (OFL fonts / CC-BY 4.0 designs)
@@ -264,6 +270,27 @@ Add `editor/ui/EditorUiStyle.{h,cpp}`:
    the tool framework carries. `editor.ui.scale` scales fonts, ImGui metrics,
    and chrome metrics once at startup; `editor.ui.click` drives a widget for
    unattended screenshots.
+7. **Second cut — DONE (2026-09-10).** The kit reaches inside the panels.
+   Frames carry a corner wedge, a 10px rail with terminator ticks and a
+   status LED (medium tier and up), and a scroll-stable frame rect; titled
+   rows take a slanted cap and a `Selected` state. Controls: amber is the
+   one "hot" family (`ButtonTone::Active` for a lit toggle or the action
+   that matters; `Primary` is gone), yellow stays hover-only; `Button`
+   honors the `##` id rule so `ButtonFlow` routes every verb through it;
+   `BeginCombo`/`EndCombo` house stock combos with a state-colored chevron;
+   `ChromeTile` is the one tile the material, active-material, and scene
+   browsers share (one item, so the clipper stride is exact);
+   `SelectionMark`/`SelectionOutline` and `HeaderNotch` mark rows, the
+   active viewport, and inspector sections. Bars: `Readout` cells with LEDs
+   and `Divider` seams make the status bar and the caption (nameplate as a
+   header row, document readout) machine readouts. Panel titles are
+   uppercase in the title face; a panel with no saved placement rebuilds the
+   designed layout (so renames and new panels never float). The far-left
+   tool rail is `ToolPalettePanel` in the new `DockSlot::LeftEdge`, docked
+   and floated like any panel. Empty wells carry a faint `Grid` ornament,
+   registration ticks, and a two-line decor readout. The unplaced hazard
+   stripe and scanline ornaments, the stripe metric, and the console decor
+   slot were removed.
 
 ## Risks / honest ceiling
 

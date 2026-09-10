@@ -67,22 +67,6 @@ void TripleSlash(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 tint)
     }
 }
 
-void HazardStripe(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 tint)
-{
-    const float h = mx.y - mn.y;
-    const float w = mx.x - mn.x;
-    if (h < 2.0f || w < 4.0f)
-        return;
-    dl->PushClipRect(mn, mx, true);
-    const float pitch = std::max(4.0f, h);
-    for (float x = mn.x - h; x < mx.x; x += pitch * 2.0f)
-    {
-        const ImVec2 p[4] = { ImVec2(x + h, mn.y), ImVec2(x + h + pitch, mn.y), ImVec2(x + pitch, mx.y), ImVec2(x, mx.y) };
-        dl->AddConvexPolyFilled(p, 4, Tinted(tint, 0.55f));
-    }
-    dl->PopClipRect();
-}
-
 void StatusLed(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 tint)
 {
     const ImVec2 c((mn.x + mx.x) * 0.5f, (mn.y + mx.y) * 0.5f);
@@ -115,14 +99,20 @@ void CyanStrip(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 tint)
     dl->AddRect(ImVec2(mn.x - 1.0f, mn.y - 1.0f), ImVec2(mx.x + 1.0f, mx.y + 1.0f), Tinted(tint, 0.2f), 0.0f, 0, 2.0f);
 }
 
-void Scanlines(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 tint)
+// A blueprint grid at a fixed design pitch, faint enough to sit behind copy.
+void Grid(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 tint)
 {
-    const ImU32 line = Tinted(tint, 0.06f);
-    for (float y = mn.y + 0.5f; y < mx.y; y += 2.0f)
-        dl->AddLine(ImVec2(mn.x, y), ImVec2(mx.x, y), line, 1.0f);
+    const float pitch = EditorUi::Px(24.0f);
+    if (pitch < 4.0f || mx.x <= mn.x || mx.y <= mn.y)
+        return;
+    const ImU32 line = Tinted(tint, 0.35f);
+    for (float x = std::floor(mn.x) + pitch; x < mx.x; x += pitch)
+        dl->AddLine(ImVec2(x + 0.5f, mn.y), ImVec2(x + 0.5f, mx.y), line, 1.0f);
+    for (float y = std::floor(mn.y) + pitch; y < mx.y; y += pitch)
+        dl->AddLine(ImVec2(mn.x, y + 0.5f), ImVec2(mx.x, y + 0.5f), line, 1.0f);
 }
 
-constexpr std::size_t kCount = static_cast<std::size_t>(OrnamentKind::Scanlines) + 1;
+constexpr std::size_t kCount = static_cast<std::size_t>(OrnamentKind::Grid) + 1;
 
 std::array<OrnamentSource, kCount> DefaultSources()
 {
@@ -133,12 +123,11 @@ std::array<OrnamentSource, kCount> DefaultSources()
     row(OrnamentKind::Screw, Screw);
     row(OrnamentKind::Vent, Vent);
     row(OrnamentKind::TripleSlash, TripleSlash);
-    row(OrnamentKind::HazardStripe, HazardStripe);
     row(OrnamentKind::StatusLed, StatusLed);
     row(OrnamentKind::Groove, Groove);
     row(OrnamentKind::Seam, Seam);
     row(OrnamentKind::CyanStrip, CyanStrip);
-    row(OrnamentKind::Scanlines, Scanlines);
+    row(OrnamentKind::Grid, Grid);
     return t;
 }
 

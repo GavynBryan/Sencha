@@ -16,12 +16,11 @@ enum class OrnamentKind : std::uint8_t
     Screw,
     Vent,
     TripleSlash,
-    HazardStripe,
     StatusLed,
     Groove,
     Seam,
     CyanStrip,
-    Scanlines,
+    Grid, // faint blueprint grid over an empty well; keep last, it bounds the table
 };
 
 // How much decoration a surface can carry, decided from its size so a small
