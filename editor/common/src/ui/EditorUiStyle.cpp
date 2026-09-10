@@ -17,7 +17,7 @@ namespace
 // Design sizes of the bundled faces, multiplied by UiScale at atlas build.
 constexpr float kBodySize = 15.0f;
 constexpr float kSmallSize = 12.0f;
-constexpr float kLargeSize = 18.0f;
+constexpr float kLargeSize = 24.0f;
 constexpr float kMonoSize = 14.0f;
 
 // Loaded faces; any may stay null (missing TTF), in which case the role falls

@@ -18,7 +18,7 @@ EditorApp::~EditorApp() = default;
 
 void EditorApp::OnConfigure(GameConfigureContext& ctx)
 {
-    ctx.Config.Window.Title = "Kyusu - Level Editor";
+    ctx.Config.Window.Title = "Kyusu";
     // The editor draws its own caption; the window keeps the platform frame
     // only where client decorations are unavailable.
     ctx.Config.Window.ClientDecorations = true;

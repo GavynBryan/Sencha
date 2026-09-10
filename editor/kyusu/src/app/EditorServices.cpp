@@ -488,7 +488,7 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     UiFeature->SetNewWorldAction([this]() { if (Files) Files->NewWorld(); });
     // The shell's nameplate and its readout of what is open. Product names
     // are data here, as on the window title.
-    UiFeature->SetIdentity(ShellIdentity{ .Product = "KYUSU", .Subtitle = "LEVEL EDITOR" });
+    UiFeature->SetIdentity(ShellIdentity{ .Product = "KYUSU" });
     UiFeature->SetStatusProvider([this]() { return Files ? Files->DocumentLabel() : std::string{}; });
 
     // Fixed app chrome: top toolbar + bottom status bar. Registered before the

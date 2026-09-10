@@ -12,7 +12,7 @@
 //   {
 //     "colors":  { "accent": "#00E5CC", "window_bg": "#0A0D0FFF", ... },
 //     "metrics": { "chamfer": 6, "rail_height": 6, ... },
-//     "decor":   { "hierarchy_empty": "GEOMETRY", "status_tagline": "", ... }
+//     "decor":   { "hierarchy_empty": "GEOMETRY", ... }
 //   }
 //
 // Color keys are the snake_case palette names (see the table in the .cpp);

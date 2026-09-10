@@ -717,7 +717,7 @@ void SceneHierarchyPanel::OnDraw()
     // Create a plain entity (Transform only) and select it; the inspector adds
     // game components to it. This is the non-brush authoring path.
     if (EditorChrome::Button("new_entity", "New Entity", {},
-                             EditorChrome::ButtonTone::Active))
+                             EditorChrome::ButtonTone::Normal))
     {
         auto create = MakeCreateEntityCommand(Vec3d::Zero(), scene, document);
         CreateEntityCommand* cmd = create.get();

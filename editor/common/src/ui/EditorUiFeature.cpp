@@ -782,8 +782,8 @@ void EditorUiFeature::DrawMainMenuBar()
     const ImVec2 barMax(barMin.x + ImGui::GetWindowSize().x, barMin.y + ImGui::GetWindowSize().y);
 
     // The nameplate at the head of the bar: a titled header row (cap, product,
-    // rule, subtitle in the control region) drawn inside one full-height item,
-    // so the menus after it keep the bar's line rather than the plate's inset.
+    // rule) drawn inside one full-height item, so the menus after it keep the
+    // bar's line rather than the plate's inset.
     if (!Identity.Product.empty())
     {
         const float frameH = ImGui::GetFrameHeight();
@@ -794,25 +794,15 @@ void EditorUiFeature::DrawMainMenuBar()
         const float gap = EditorUi::Px(6.0f);
         const float cap = (plateH - EditorUi::Px(8.0f)) * 0.6f;
         const float productW = EditorUi::MeasureRoleText(EditorUi::TextRole::ApplicationTitle, Identity.Product).x;
-        const float subtitleW = Identity.Subtitle.empty()
-            ? 0.0f : EditorUi::MeasureRoleText(EditorUi::TextRole::Status, Identity.Subtitle).x;
-        // Mirrors LayoutHeader's packing: control, cap, title, then a short rule.
-        const float plateW = padX * 2.0f + (subtitleW > 0.0f ? subtitleW + gap : 0.0f) + cap + gap + productW + gap
-                             + EditorUi::Px(28.0f);
+        // Mirrors LayoutHeader's packing: cap, title, then a short rule.
+        const float plateW = padX * 2.0f + cap + gap + productW + gap + EditorUi::Px(36.0f);
         const ImVec2 itemMin = ImGui::GetCursorScreenPos();
         ImGui::Dummy(ImVec2(plateW, frameH));
         const ImVec2 plateMin(itemMin.x, itemMin.y + inset);
         const ImVec2 plateMax(itemMin.x + plateW, itemMin.y + frameH - inset);
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        const EditorChrome::HeaderRegions plate = EditorChrome::DrawHeaderRow(
-            dl, plateMin, plateMax, Identity.Product, EditorUi::TextRole::ApplicationTitle,
-            EditorChrome::HeaderState{ .Focused = true }, subtitleW);
-        if (plate.HasControl)
-        {
-            const float h = EditorUi::MeasureRoleText(EditorUi::TextRole::Status, Identity.Subtitle).y;
-            EditorUi::DrawRoleText(dl, ImVec2(plate.ControlMin.x, std::floor((plate.ControlMin.y + plate.ControlMax.y - h) * 0.5f)),
-                                   EditorUi::TextRole::Status, Identity.Subtitle);
-        }
+        EditorChrome::DrawHeaderRow(dl, plateMin, plateMax, Identity.Product, EditorUi::TextRole::ApplicationTitle,
+                                    EditorChrome::HeaderState{ .Focused = true }, 0.0f);
         regions.Caption[regions.CaptionCount++] =
             toWindowRect(ImVec2(barMin.x, barMin.y), ImVec2(ImGui::GetItemRectMax().x, barMax.y));
         ImGui::SameLine(0.0f, EditorUi::Px(8.0f));

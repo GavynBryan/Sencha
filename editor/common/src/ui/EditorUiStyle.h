@@ -134,7 +134,7 @@ struct ChromeMetrics
     float ChassisBorder = 4.0f;       // application chassis frame width
     float ChassisChamfer = 10.0f;
     float ChassisRecess = 3.0f;       // the dock well's inset inside the chassis ring
-    float CaptionPad = 3.0f;          // extra frame padding that makes the caption bar taller than a menu row
+    float CaptionPad = 8.0f;          // extra frame padding that makes the caption bar taller than a menu row
     float ResizeBorder = 6.0f;        // edge thickness the window resizes from when it draws its own frame
 };
 inline ChromeMetrics Metrics{};
@@ -149,7 +149,6 @@ struct DecorStrings
     std::string MaterialBrowserEmpty = "TEXTURE\nMODULE // LIBRARY // NO SURFACES";
     std::string SceneBrowserEmpty = "BUILD WORLDS\nSHAPE REALITIES // GO FURTHER";
     std::string ToolPropertiesIdle = "///\nMODULE // TOOL // STANDBY";
-    std::string StatusTagline = "REALTIME // MODULAR // LIMITLESS";
 };
 inline DecorStrings Decor{};
 

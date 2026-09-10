@@ -13,7 +13,6 @@ enum class DecorSlot
     MaterialBrowserEmpty,
     SceneBrowserEmpty,
     ToolPropertiesIdle,
-    StatusTagline,
 };
 
 // The slot's text (lines separated by newlines); empty when the theme

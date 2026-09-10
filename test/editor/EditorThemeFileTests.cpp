@@ -185,11 +185,11 @@ TEST(EditorThemeFile, DecorStringsLoadSilenceAndRoundTrip)
 {
     const auto path = WriteTempTheme(
         "sencha_theme_decor_test.json",
-        R"({ "decor": { "hierarchy_empty": "VOID", "status_tagline": "", "scene_browser_empty": "ONE\nTWO", "not_a_slot": "x", "tool_properties_idle": 3 } })");
+        R"({ "decor": { "hierarchy_empty": "VOID", "material_browser_empty": "", "scene_browser_empty": "ONE\nTWO", "not_a_slot": "x", "tool_properties_idle": 3 } })");
     std::string error;
     ASSERT_TRUE(LoadEditorTheme(path, &error));
     EXPECT_EQ(EditorUi::Decor.HierarchyEmpty, "VOID");
-    EXPECT_TRUE(EditorUi::Decor.StatusTagline.empty());
+    EXPECT_TRUE(EditorUi::Decor.MaterialBrowserEmpty.empty());
     EXPECT_EQ(EditorUi::Decor.SceneBrowserEmpty, "ONE\nTWO");
     EXPECT_NE(error.find("not_a_slot"), std::string::npos) << error;
     EXPECT_NE(error.find("tool_properties_idle"), std::string::npos) << error;
@@ -205,7 +205,7 @@ TEST(EditorThemeFile, DecorStringsLoadSilenceAndRoundTrip)
     EXPECT_TRUE(error.empty()) << error;
     EXPECT_EQ(EditorUi::Decor.HierarchyEmpty, "VOID");
     EXPECT_EQ(EditorUi::Decor.SceneBrowserEmpty, "ONE\nTWO");
-    EXPECT_TRUE(EditorUi::Decor.StatusTagline.empty());
+    EXPECT_TRUE(EditorUi::Decor.MaterialBrowserEmpty.empty());
 
     ResetEditorTheme();
     std::filesystem::remove(path);

@@ -77,7 +77,6 @@ const EditorThemeDecorEntry kThemeDecorEntries[] = {
     { "material_browser_empty", &EditorUi::Decor.MaterialBrowserEmpty },
     { "scene_browser_empty", &EditorUi::Decor.SceneBrowserEmpty },
     { "tool_properties_idle", &EditorUi::Decor.ToolPropertiesIdle },
-    { "status_tagline", &EditorUi::Decor.StatusTagline },
 };
 
 // The pristine palette, captured before the first theme load or reset so

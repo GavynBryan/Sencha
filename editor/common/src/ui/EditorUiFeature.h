@@ -28,7 +28,6 @@ struct IEditorPanel;
 struct ShellIdentity
 {
     std::string Product;
-    std::string Subtitle;
 };
 
 // Fraction of its parent split each DockSlot region takes when the default

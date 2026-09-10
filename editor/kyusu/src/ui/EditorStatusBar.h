@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 
 class ManipulatorSession;
@@ -36,4 +37,9 @@ private:
     SelectionService& Selection;
     const GridSettings& Grid;
     MeshEditService& MeshEdit;
+
+    // The memory readout is sampled on a cadence, not per frame: the figure
+    // moves slowly and the query is a system call.
+    std::uint64_t ResidentBytes = 0;
+    int FramesUntilMemorySample = 0;
 };

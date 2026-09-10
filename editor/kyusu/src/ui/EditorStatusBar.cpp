@@ -2,7 +2,6 @@
 
 #include "ui/EditorUiStyle.h"
 #include "ui/chrome/ChromeBars.h"
-#include "ui/chrome/ChromeDecor.h"
 #include "fonts/IconsFontAwesome6.h"
 
 #include "editmodes/ManipulatorSession.h"
@@ -18,6 +17,10 @@
 #include <imgui.h>
 #include <imgui_internal.h> // BeginViewportSideBar (reserves work-area space)
 
+#include <platform/ProcessMemory.h>
+
+#include <cstdint>
+#include <cstdio>
 #include <ctime>
 #include <cstdio>
 
@@ -110,17 +113,27 @@ void EditorStatusBar::Draw()
 #endif
             char clock[16];
             std::strftime(clock, sizeof(clock), ICON_FA_CLOCK "  %H:%M", &tm);
-            // The tagline sits before the clock, both right-aligned; the
-            // tagline yields first when the bar is narrow.
-            const std::string_view tagline = EditorChrome::DecorText(EditorChrome::DecorSlot::StatusTagline);
-            const float clockWidth = ImGui::CalcTextSize(clock).x;
-            const float taglineWidth = tagline.empty() ? 0.0f
-                : EditorUi::MeasureRoleText(EditorUi::TextRole::Status, tagline).x + EditorUi::Px(18.0f);
-            const float avail = ImGui::GetContentRegionAvail().x;
-            if (!tagline.empty() && avail > clockWidth + taglineWidth)
+
+            // Resident memory, refreshed every half second or so at 60 Hz.
+            if (FramesUntilMemorySample-- <= 0)
             {
-                ImGui::SameLine(ImGui::GetCursorPosX() + avail - clockWidth - taglineWidth);
-                EditorUi::RoleLabel(EditorUi::TextRole::Status, tagline);
+                ResidentBytes = ProcessResidentBytes();
+                FramesUntilMemorySample = 30;
+            }
+            char memory[32];
+            std::snprintf(memory, sizeof(memory), "%llu MB",
+                          static_cast<unsigned long long>(ResidentBytes / (1024u * 1024u)));
+
+            // The memory cell sits before the clock, both right-aligned; the
+            // cell yields first when the bar is narrow.
+            const float clockWidth = ImGui::CalcTextSize(clock).x;
+            const float memoryWidth = ResidentBytes == 0 ? 0.0f
+                : EditorChrome::ReadoutWidth("MEM", memory, EditorChrome::LedState::Off) + EditorUi::Px(18.0f);
+            const float avail = ImGui::GetContentRegionAvail().x;
+            if (memoryWidth > 0.0f && avail > clockWidth + memoryWidth)
+            {
+                ImGui::SameLine(ImGui::GetCursorPosX() + avail - clockWidth - memoryWidth);
+                EditorChrome::Readout("MEM", memory);
                 ImGui::SameLine(0.0f, EditorUi::Px(18.0f));
             }
             else if (avail > clockWidth)
