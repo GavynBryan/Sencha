@@ -74,6 +74,23 @@ struct FrameRects
 };
 FrameRects FrameLayout(ImVec2 mn, ImVec2 mx, const FrameSpec& spec);
 
+struct TileRects
+{
+    ImVec2 FaceMin, FaceMax;
+    ImVec2 LabelMin, LabelMax;
+    ImVec2 BadgeMin, BadgeMax;
+    ImVec2 Size;
+};
+TileRects TileLayout(ImVec2 mn, float size, float labelHeight, float badgeSize, float inset);
+
+// Corner bracket segments; length and thickness are constrained by the rect.
+struct BracketLines
+{
+    ImVec2 Points[16];
+    int Count = 0;
+};
+BracketLines BracketCorners(ImVec2 mn, ImVec2 mx, float length);
+
 // A header's regions, left to right: accent cap, title, stretchable line,
 // right ornament, control (close/menu). When the width runs out the regions
 // yield in the order line, ornament, title, cap; the control region is kept

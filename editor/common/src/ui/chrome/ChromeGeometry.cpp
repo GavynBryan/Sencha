@@ -215,4 +215,34 @@ int LayoutOrnaments(const FrameRects& rects, OrnamentTier tier, float screwRadiu
     }
     return count;
 }
+TileRects TileLayout(ImVec2 mn, float size, float labelHeight, float badgeSize, float inset)
+{
+    size = std::max(0.0f, size);
+    labelHeight = std::max(0.0f, labelHeight);
+    inset = std::clamp(inset, 0.0f, size * 0.5f);
+    badgeSize = std::clamp(badgeSize, 0.0f, size - inset * 2.0f);
+    const ImVec2 end(mn.x + size, mn.y + size);
+    return { mn, end, ImVec2(mn.x, end.y), ImVec2(end.x, end.y + labelHeight),
+             ImVec2(mn.x + inset, end.y - inset - badgeSize),
+             ImVec2(mn.x + inset + badgeSize, end.y - inset), ImVec2(size, size + labelHeight) };
+}
+
+BracketLines BracketCorners(ImVec2 mn, ImVec2 mx, float length)
+{
+    BracketLines result;
+    if (mx.x <= mn.x || mx.y <= mn.y || length <= 0.0f)
+        return result;
+    length = std::min(length, std::min(mx.x - mn.x, mx.y - mn.y) * 0.5f);
+    for (int y = 0; y < 2; ++y)
+        for (int x = 0; x < 2; ++x)
+        {
+            const ImVec2 corner(x ? mx.x : mn.x, y ? mx.y : mn.y);
+            result.Points[result.Count++] = ImVec2(corner.x + (x ? -length : length), corner.y);
+            result.Points[result.Count++] = corner;
+            result.Points[result.Count++] = corner;
+            result.Points[result.Count++] = ImVec2(corner.x, corner.y + (y ? -length : length));
+        }
+    return result;
+}
+
 } // namespace EditorChrome

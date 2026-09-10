@@ -46,6 +46,13 @@ void GlowChamfered(ImDrawList* dl, const ChamferPoly& poly, ImVec4 color, float 
     dl->AddPolyline(poly.P, poly.Count, core, ImDrawFlags_Closed, std::max(1.0f, width * 0.4f));
 }
 
+void DrawBracketCorners(ImDrawList* dl, ImVec2 mn, ImVec2 mx, float length, ImU32 color, float width)
+{
+    const BracketLines lines = BracketCorners(mn, mx, length);
+    for (int i = 0; i < lines.Count; i += 2)
+        dl->AddLine(lines.Points[i], lines.Points[i + 1], color, width);
+}
+
 void VerticalGradient(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 top, ImU32 bottom)
 {
     if (mx.x <= mn.x || mx.y <= mn.y)

@@ -1,6 +1,7 @@
 #include "SceneBrowserPanel.h"
 
 #include "ui/chrome/ChromeControls.h"
+#include "ui/chrome/ChromeTile.h"
 
 #include "ui/ScopedPanel.h"
 #include "ui/chrome/ChromeDecor.h"
@@ -107,13 +108,10 @@ void SceneBrowserPanel::OnDraw()
 
         const bool isSelf = !focusPath.empty()
             && focusPath.ends_with(entry.AssetPath.substr(sizeof("asset://") - 1));
-        const ImVec2 pos = ImGui::GetCursorScreenPos();
-        const float labelHeight = ImGui::GetFontSize() + 4.0f;
+        const EditorChrome::TileResult tile = EditorChrome::Tile({
+            .Image = thumbnails != nullptr ? thumbnails->Thumbnail(entry.AssetPath) : 0,
+            .Size = kCell, .Label = entry.Label, .Badge = IconId::Box, .Selected = isSelf, .Disabled = isSelf });
         ImGui::BeginDisabled(isSelf);
-        // One fixed-size item covers image and label, so the cell's layout
-        // footprint never varies with the name -- the label renders through
-        // the draw list, clipped, without advancing the cursor.
-        ImGui::InvisibleButton("##cell", ImVec2(kCell, kCell + labelHeight));
         if (ImGui::BeginDragDropSource())
         {
             ImGui::SetDragDropPayload(kDragPayloadType, entry.AssetPath.c_str(),
@@ -133,37 +131,12 @@ void SceneBrowserPanel::OnDraw()
             ImGui::EndPopup();
         }
         ImGui::EndDisabled();
-        const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
+        const bool hovered = tile.Hovered;
         if (hovered)
             ImGui::SetTooltip(isSelf ? "%s (open scene: cannot place into itself)"
                                      : "%s",
                               entry.AssetPath.c_str());
 
-        ImDrawList* drawList = ImGui::GetWindowDrawList();
-        const ImVec2 end(pos.x + kCell, pos.y + kCell);
-        const ImTextureID preview =
-            thumbnails != nullptr ? thumbnails->Thumbnail(entry.AssetPath) : ImTextureID{};
-        if (preview)
-            drawList->AddImage(preview, pos, end);
-        else
-            drawList->AddRectFilled(pos, end, ImGui::GetColorU32(ImGuiCol_FrameBg));
-        drawList->AddRect(pos, end,
-                          ImGui::GetColorU32(hovered ? EditorUi::AccentHover
-                                                     : EditorUi::Border));
-        // The scene marker: the box in the lower-left corner, shadowed so it
-        // reads over any preview.
-        const ImVec2 badge(pos.x + 5.0f, end.y - ImGui::GetFontSize() - 4.0f);
-        drawList->AddText(ImVec2(badge.x + 1.0f, badge.y + 1.0f),
-                          ImGui::GetColorU32(EditorUi::AccentDim), ICON_FA_BOX_OPEN);
-        drawList->AddText(badge, ImGui::GetColorU32(EditorUi::Accent),
-                          ICON_FA_BOX_OPEN);
-
-        // One clipped label line under the image, drawn without layout.
-        const ImVec4 labelClip(pos.x, end.y, end.x, end.y + labelHeight);
-        drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize(),
-                          ImVec2(pos.x, end.y + 2.0f),
-                          ImGui::GetColorU32(ImGuiCol_Text),
-                          entry.Label.c_str(), nullptr, 0.0f, &labelClip);
         ImGui::PopID();
 
         column = (column + 1) % columns;

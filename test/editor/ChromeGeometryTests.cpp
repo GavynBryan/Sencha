@@ -280,3 +280,33 @@ TEST(ChromeGeometry, SlantedCapLeansRightAndClampsTheLean)
     EXPECT_FLOAT_EQ(SlantedCap(ImVec2(0, 0), ImVec2(20, 10), 50.0f).P[0].x, 10.0f);
     EXPECT_EQ(SlantedCap(ImVec2(0, 0), ImVec2(0, 10), 3.0f).Count, 0);
 }
+
+TEST(ChromeGeometry, TileFootprintAndBadgeStayInsideFace)
+{
+    const auto tile = TileLayout(ImVec2(10, 20), 96, 15, 15, 4);
+    EXPECT_FLOAT_EQ(tile.Size.y, 111);
+    EXPECT_FLOAT_EQ(tile.LabelMin.y, tile.FaceMax.y);
+    EXPECT_GE(tile.BadgeMin.x, tile.FaceMin.x);
+    EXPECT_GE(tile.BadgeMin.y, tile.FaceMin.y);
+    EXPECT_LE(tile.BadgeMax.x, tile.FaceMax.x);
+    EXPECT_LE(tile.BadgeMax.y, tile.FaceMax.y);
+    const auto tiny = TileLayout(ImVec2(), 2, 0, 15, 4);
+    EXPECT_FLOAT_EQ(tiny.Size.y, 2);
+    EXPECT_LE(tiny.BadgeMax.x, tiny.FaceMax.x);
+    EXPECT_GE(tiny.BadgeMin.y, tiny.FaceMin.y);
+}
+
+TEST(ChromeGeometry, CornerBracketsClampAndRejectDegenerateRects)
+{
+    const auto brackets = BracketCorners(ImVec2(10, 20), ImVec2(14, 22), 20);
+    EXPECT_EQ(brackets.Count, 16);
+    for (int i = 0; i < brackets.Count; ++i)
+    {
+        EXPECT_GE(brackets.Points[i].x, 10);
+        EXPECT_LE(brackets.Points[i].x, 14);
+        EXPECT_GE(brackets.Points[i].y, 20);
+        EXPECT_LE(brackets.Points[i].y, 22);
+    }
+    EXPECT_EQ(BracketCorners(ImVec2(), ImVec2(), 10).Count, 0);
+    EXPECT_EQ(BracketCorners(ImVec2(), ImVec2(10, 10), 0).Count, 0);
+}

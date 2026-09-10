@@ -1,6 +1,7 @@
 #include "ActiveMaterialPanel.h"
 
 #include "ui/chrome/ChromeControls.h"
+#include "ui/chrome/ChromeTile.h"
 
 #include "ui/EditorUiStyle.h"
 #include "ui/MaterialThumbnailCache.h"
@@ -23,24 +24,6 @@ ActiveMaterialPanel::ActiveMaterialPanel(ActiveMaterialState& activeMaterial,
 {
 }
 
-void ActiveMaterialPanel::PaintMaterialSquare(const AssetRef& material, ImVec2 pos, float size,
-                                              Outline outline)
-{
-    ImDrawList* drawList = ImGui::GetWindowDrawList();
-    const ImVec2 end(pos.x + size, pos.y + size);
-    ImTextureID tex = 0;
-    if (material.IsValid())
-        tex = Thumbnails.Thumbnail(material.Path);
-    if (tex != 0)
-        drawList->AddImage(tex, pos, end);
-    else
-        drawList->AddRectFilled(pos, end, ImGui::GetColorU32(ImGuiCol_FrameBg));
-    const ImVec4& color = outline == Outline::Selected ? EditorUi::SelectedOutline
-                        : outline == Outline::Hovered  ? EditorUi::AccentHover
-                                                       : EditorUi::Border;
-    drawList->AddRect(pos, end, ImGui::GetColorU32(color), 0.0f, 0, outline == Outline::Plain ? 1.0f : 2.0f);
-}
-
 void ActiveMaterialPanel::OnDraw()
 {
     ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Compact);
@@ -52,10 +35,8 @@ void ActiveMaterialPanel::OnDraw()
     // The preview: the material Shift+T / Apply will put on faces. Capped so the
     // Browse + slots row stays on screen in a narrow column without scrolling.
     const float previewSize = std::clamp(avail, 48.0f, 148.0f);
-    const ImVec2 previewPos = ImGui::GetCursorScreenPos();
-    PaintMaterialSquare(ActiveMaterial.Active, previewPos, previewSize,
-                        ActiveMaterial.Active.IsValid() ? Outline::Selected : Outline::Plain);
-    ImGui::Dummy(ImVec2(previewSize, previewSize));
+    EditorChrome::Tile({ .Image = ActiveMaterial.Active.IsValid() ? Thumbnails.Thumbnail(ActiveMaterial.Active.Path) : 0,
+                         .Size = previewSize, .Selected = ActiveMaterial.Active.IsValid(), .Interactive = false });
 
     if (ActiveMaterial.Active.IsValid())
         ImGui::TextWrapped("%s", MaterialDisplayName(ActiveMaterial.Active.Path).c_str());
@@ -77,15 +58,16 @@ void ActiveMaterialPanel::OnDraw()
         ImGui::PushID(i);
         ImGui::SameLine();
 
-        const ImVec2 pos = ImGui::GetCursorScreenPos();
-        if (ImGui::InvisibleButton("##slot", ImVec2(slotSize, slotSize)))
+        const EditorChrome::TileResult tile = EditorChrome::Tile({
+            .Image = slot.IsValid() ? Thumbnails.Thumbnail(slot.Path) : 0, .Size = slotSize });
+        if (tile.Clicked)
         {
             if (slot.IsValid())
                 std::swap(slot, ActiveMaterial.Active);
             else
                 slot = ActiveMaterial.Active;
         }
-        const bool hovered = ImGui::IsItemHovered();
+        const bool hovered = tile.Hovered;
         if (hovered)
         {
             if (slot.IsValid())
@@ -103,7 +85,6 @@ void ActiveMaterialPanel::OnDraw()
             ImGui::EndPopup();
         }
 
-        PaintMaterialSquare(slot, pos, slotSize, hovered && slot.IsValid() ? Outline::Hovered : Outline::Plain);
         ImGui::PopID();
     }
 }

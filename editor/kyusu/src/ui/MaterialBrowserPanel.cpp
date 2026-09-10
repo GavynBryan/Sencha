@@ -1,6 +1,7 @@
 #include "MaterialBrowserPanel.h"
 
 #include "ui/chrome/ChromeControls.h"
+#include "ui/chrome/ChromeTile.h"
 
 #include "ui/EditorUiStyle.h"
 #include "ui/MaterialThumbnailCache.h"
@@ -57,12 +58,12 @@ void MaterialBrowserPanel::Reveal()
 void MaterialBrowserPanel::DrawCell(const MaterialAsset& material, float cellSize)
 {
     ImGui::PushID(material.Path.c_str());
-    ImGui::BeginGroup();
-
-    const ImVec2 pos = ImGui::GetCursorScreenPos();
-    if (ImGui::InvisibleButton("##cell", ImVec2(cellSize, cellSize)))
+    const EditorChrome::TileResult tile = EditorChrome::Tile({
+        .Image = Thumbnails.Thumbnail(material.Path), .Size = cellSize,
+        .Label = LeafName(material.DisplayName), .Selected = ActiveMaterial.Active.Path == material.Path });
+    if (tile.Clicked)
         ActiveMaterial.Active = AssetRef{ AssetType::Material, material.Path };
-    const bool hovered = ImGui::IsItemHovered();
+    const bool hovered = tile.Hovered;
     if (hovered)
         ImGui::SetTooltip("%s", material.Path.c_str());
     if (ImGui::BeginPopupContextItem("##cellmenu"))
@@ -77,31 +78,6 @@ void MaterialBrowserPanel::DrawCell(const MaterialAsset& material, float cellSiz
         ImGui::EndPopup();
     }
 
-    const bool isActive = ActiveMaterial.Active.Path == material.Path;
-    ImDrawList* drawList = ImGui::GetWindowDrawList();
-    const ImVec2 end(pos.x + cellSize, pos.y + cellSize);
-    if (const ImTextureID tex = Thumbnails.Thumbnail(material.Path))
-        drawList->AddImage(tex, pos, end);
-    else
-        drawList->AddRectFilled(pos, end, ImGui::GetColorU32(ImGuiCol_FrameBg));
-    // The active material is the selection; hover is ordinary interaction.
-    const ImU32 border = isActive  ? ImGui::GetColorU32(EditorUi::SelectedOutline)
-                         : hovered ? ImGui::GetColorU32(EditorUi::AccentHover)
-                                   : ImGui::GetColorU32(EditorUi::Border);
-    drawList->AddRect(pos, end, border, 0.0f, 0, isActive ? 2.0f : 1.0f);
-
-    // One clipped label line under the image; long names read via the tooltip.
-    const std::string_view leaf = LeafName(material.DisplayName);
-    const float lineHeight = ImGui::GetTextLineHeight();
-    const ImVec2 textPos = ImGui::GetCursorScreenPos();
-    drawList->PushClipRect(textPos, ImVec2(textPos.x + cellSize, textPos.y + lineHeight), true);
-    drawList->AddText(textPos,
-                      ImGui::GetColorU32(isActive || hovered ? EditorUi::TextPrimary : EditorUi::TextDim),
-                      leaf.data(), leaf.data() + leaf.size());
-    drawList->PopClipRect();
-    ImGui::Dummy(ImVec2(cellSize, lineHeight));
-
-    ImGui::EndGroup();
     ImGui::PopID();
 }
 

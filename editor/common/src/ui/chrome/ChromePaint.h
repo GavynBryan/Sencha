@@ -21,6 +21,8 @@ void BevelChamfered(ImDrawList* dl, const ChamferPoly& poly, ImU32 highlight, Im
 // A soft illuminated edge: a wide faint stroke under a narrower brighter one.
 void GlowChamfered(ImDrawList* dl, const ChamferPoly& poly, ImVec4 color, float alpha, float width);
 
+void DrawBracketCorners(ImDrawList* dl, ImVec2 mn, ImVec2 mx, float length, ImU32 color, float width);
+
 void VerticalGradient(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 top, ImU32 bottom);
 
 // The inside edge of a recessed well: shadow along the top and left, a faint
