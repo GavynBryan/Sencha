@@ -137,4 +137,12 @@ void SectionTitle(const char* label)
                    EditorUi::TextRole::SectionTitle, HeaderState{});
     ImGui::Dummy(ImVec2(width, height));
 }
+void HeaderNotch()
+{
+    const ImVec2 mn = ImGui::GetItemRectMin();
+    const ImVec2 mx = ImGui::GetItemRectMax();
+    ImGui::GetWindowDrawList()->AddRectFilled(mn, ImVec2(mn.x + EditorUi::Px(2.0f), mx.y),
+                                              ImGui::GetColorU32(EditorUi::Accent));
+}
+
 } // namespace EditorChrome

@@ -25,5 +25,7 @@ private:
 
 namespace EditorChrome
 {
+// Call immediately after a selected tree node or selectable.
+void SelectionMark();
 void SelectionOutline(ImDrawList* dl, ImVec2 mn, ImVec2 mx);
 }

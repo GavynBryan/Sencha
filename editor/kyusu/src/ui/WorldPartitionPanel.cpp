@@ -1,5 +1,7 @@
 #include "WorldPartitionPanel.h"
 
+#include "ui/chrome/ChromeSelection.h"
+
 #include "ui/chrome/ChromeControls.h"
 
 #include "document/commands/EditWorldManifestCommand.h"
@@ -230,7 +232,12 @@ void WorldPartitionPanel::DrawWorldSceneRow()
     if (WorldDoc.WorldSceneDocument().IsDirty())
         label += " " ICON_FA_CIRCLE_DOT;
     label += "##world_scene_row";
-    ImGui::Selectable(label.c_str(), isFocus, ImGuiSelectableFlags_AllowDoubleClick);
+    {
+        ScopedSelectionStyle selectionStyle(isFocus);
+        ImGui::Selectable(label.c_str(), isFocus, ImGuiSelectableFlags_AllowDoubleClick);
+        if (isFocus)
+            EditorChrome::SelectionMark();
+    }
     if (ImGui::IsItemHovered())
     {
         ImGui::SetTooltip("The world scene: entities that live for the whole world "
@@ -729,8 +736,13 @@ void WorldPartitionPanel::DrawZoneRow(const ZoneHeader& zone)
         label += " " ICON_FA_CIRCLE_DOT;
     label += "##zone_row";
     const bool selected = WorldDoc.SelectedZone() == zone.Id;
-    const bool clicked = ImGui::Selectable(
-        label.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick);
+    bool clicked;
+    {
+        ScopedSelectionStyle selectionStyle(selected);
+        clicked = ImGui::Selectable(label.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick);
+        if (selected)
+            EditorChrome::SelectionMark();
+    }
     if (headerOnly)
         ImGui::PopStyleColor();
 

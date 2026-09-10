@@ -40,5 +40,8 @@ void DrawHeaderRule(ImDrawList* dl, ImVec2 mn, ImVec2 mx, std::string_view title
 
 // The item-sized section title: a DrawHeaderRule across the content width at
 // the cursor, advancing the cursor past it. Replaces a dimmed text label.
+// Call immediately after a stock CollapsingHeader, before overlapping controls.
+void HeaderNotch();
+
 void SectionTitle(const char* label);
 } // namespace EditorChrome

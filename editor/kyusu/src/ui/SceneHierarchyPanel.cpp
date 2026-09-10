@@ -1,5 +1,7 @@
 #include "SceneHierarchyPanel.h"
 
+#include "ui/chrome/ChromeHeader.h"
+
 #include "ui/EditorUiStyle.h"
 #include "ui/ScopedPanel.h"
 #include "ui/chrome/ChromeControls.h"
@@ -634,6 +636,8 @@ void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth,
         // Amber only around this row, and only while it is selected.
         ScopedSelectionStyle selectionStyle(selected);
         nodeOpen = ImGui::TreeNodeEx(label.c_str(), flags);
+        if (selected)
+            EditorChrome::SelectionMark();
     }
 
     if (!children.empty() && nodeOpen != open && !ctx.FilterActive)
@@ -712,8 +716,8 @@ void SceneHierarchyPanel::OnDraw()
 
     // Create a plain entity (Transform only) and select it; the inspector adds
     // game components to it. This is the non-brush authoring path.
-    if (EditorChrome::Button("new_entity", ICON_FA_PLUS "  New Entity", ImVec2(0.0f, 0.0f),
-                             EditorChrome::ButtonTone::Normal))
+    if (EditorChrome::Button("new_entity", "New Entity", {},
+                             EditorChrome::ButtonTone::Active))
     {
         auto create = MakeCreateEntityCommand(Vec3d::Zero(), scene, document);
         CreateEntityCommand* cmd = create.get();
@@ -774,7 +778,7 @@ void SceneHierarchyPanel::OnDraw()
     // The scene root: the drop target that unparents, and the anchor the whole
     // tree hangs from so "drop between top-level rows" has somewhere legal to
     // land.
-    ImGui::TextDisabled(ICON_FA_MAP "  Scene");
+    EditorChrome::SectionTitle("Scene");
     if (ImGui::BeginPopupContextItem("##scene_root_ctx"))
     {
         // Re-origin the source so it places well: the selection's world

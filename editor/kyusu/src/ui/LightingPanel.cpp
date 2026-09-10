@@ -1,5 +1,7 @@
 #include "LightingPanel.h"
 
+#include "ui/chrome/ChromeHeader.h"
+
 #include "ui/chrome/ChromeControls.h"
 
 #include "render/ShadowResidencyReadout.h"
@@ -363,7 +365,9 @@ void LightingPanel::DrawSelectedCostLine()
 
 void LightingPanel::DrawAtlasMap()
 {
-    if (!ImGui::CollapsingHeader("Shadow pools", ImGuiTreeNodeFlags_DefaultOpen))
+    const bool open = ImGui::CollapsingHeader("Shadow pools", ImGuiTreeNodeFlags_DefaultOpen);
+    EditorChrome::HeaderNotch();
+    if (!open)
         return;
 
     // Occupancy by physical tier.

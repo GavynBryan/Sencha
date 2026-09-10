@@ -1,5 +1,7 @@
 #include "InspectorPanel.h"
 
+#include "ui/chrome/ChromeHeader.h"
+
 #include "ui/EditorUiStyle.h"
 #include "ui/ScopedPanel.h"
 #include "ui/chrome/ChromeControls.h"
@@ -383,6 +385,7 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     // own clicks (otherwise the header swallows them as a collapse toggle).
     ImGui::SetNextItemAllowOverlap();
     const bool open = ImGui::CollapsingHeader(header.c_str());
+    EditorChrome::HeaderNotch();
 
     // Header affordances: a right-click context menu (remove, and reset for an
     // overridden member component) and a right-aligned trash button. Removal
@@ -429,7 +432,7 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
             ImVec2(ImGui::GetContentRegionMax().x + ImGui::GetWindowPos().x
                        - inset,
                    (rectMin.y + rectMax.y) * 0.5f),
-            3.0f, ImGui::GetColorU32(EditorUi::Accent));
+            EditorUi::Px(3.0f), ImGui::GetColorU32(EditorUi::Accent));
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip(baseline != nullptr && !baseline->Present
                                   ? "Added to this instance; the source has no "
@@ -501,9 +504,9 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
         // The field's override badge sits in the label gutter, and the row's
         // last widget carries the reset in its context menu.
         ImGui::GetWindowDrawList()->AddCircleFilled(
-            ImVec2(rowMin.x - 6.0f,
+            ImVec2(rowMin.x - EditorUi::Px(6.0f),
                    rowMin.y + ImGui::GetFrameHeight() * 0.5f),
-            2.5f, ImGui::GetColorU32(EditorUi::Accent));
+            EditorUi::Px(2.5f), ImGui::GetColorU32(EditorUi::Accent));
         if (baselineBytes != nullptr
             && ImGui::BeginPopupContextItem(
                 (std::string("##fieldctx_") + field.Name).c_str()))
@@ -700,7 +703,7 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
             apply(std::move(next));
         }
         ImGui::SameLine();
-        if (EditorChrome::Button("X", "X", ImVec2(ImGui::GetFrameHeight(), 0.0f), EditorChrome::ButtonTone::Normal))
+        if (EditorChrome::IconButton("remove_slot", IconId::Delete, ImGui::GetFrameHeight(), EditorChrome::ButtonTone::Destructive))
         {
             AssetFieldValue next = current;
             next.Refs.erase(next.Refs.begin() + static_cast<std::ptrdiff_t>(i));
@@ -781,14 +784,13 @@ void InspectorPanel::OnDraw()
         LastEntity = entity;
     }
 
-    // The inspected entity is the thing being edited, so its name takes the
-    // selection outline in the panel-title role.
-    char title[64];
-    std::snprintf(title, sizeof(title), "Entity %u", entity.Index);
-    EditorUi::RoleLabel(EditorUi::TextRole::PanelTitle, title, ImGui::GetColorU32(EditorUi::SelectedOutline));
-    ImGui::SameLine();
-    ImGui::TextDisabled("(gen %u)", entity.Generation);
-    ImGui::Separator();
+    char title[96];
+    std::snprintf(title, sizeof(title), "Entity %u (gen %u)", entity.Index, entity.Generation);
+    const ImVec2 headerMin = ImGui::GetCursorScreenPos();
+    const float headerHeight = std::max(EditorUi::Px(EditorUi::Metrics.HeaderHeight), ImGui::GetFrameHeight() + EditorUi::Px(4.0f));
+    ImGui::Dummy(ImVec2(ImGui::GetContentRegionAvail().x, headerHeight));
+    EditorChrome::DrawHeaderRow(ImGui::GetWindowDrawList(), headerMin, ImGui::GetItemRectMax(), title,
+                                EditorUi::TextRole::PanelTitle, { .Selected = true }, 0.0f);
 
     // Registry-driven: every component the registry knows about, drawn by schema.
     // No component is named in editor code here.
@@ -832,6 +834,7 @@ void InspectorPanel::DrawDerivedComponents(EntityId entity)
     const std::string header = "Derived Components (" + std::to_string(rows.size())
         + ")###derived_components";
     const bool open = ImGui::CollapsingHeader(header.c_str());
+    EditorChrome::HeaderNotch();
     ImGui::PopStyleColor();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
     {

@@ -30,3 +30,14 @@ void EditorChrome::SelectionOutline(ImDrawList* dl, ImVec2 mn, ImVec2 mx)
     dl->AddRect(mn, mx, color, 0.0f, 0, edge * 2.0f);
     DrawBracketCorners(dl, mn, mx, edge * 6.0f, color, edge * 3.0f);
 }
+
+void EditorChrome::SelectionMark()
+{
+    const ImVec2 mn = ImGui::GetItemRectMin();
+    const ImVec2 mx = ImGui::GetItemRectMax();
+    const float left = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMin().x;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(mn, mx, ImGui::GetColorU32(EditorUi::WithAlpha(EditorUi::Selected, 0.12f)));
+    dl->AddRectFilled(ImVec2(left, mn.y), ImVec2(left + EditorUi::Px(2.0f), mx.y),
+                      ImGui::GetColorU32(EditorUi::SelectedOutline));
+}

@@ -1,5 +1,7 @@
 #include "ViewportPanel.h"
 
+#include "ui/chrome/ChromeSelection.h"
+
 #include "ui/chrome/ChromeControls.h"
 
 #include "SceneBrowserPanel.h"
@@ -129,10 +131,10 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
     // The active view is the one being edited, so it carries the selection
     // outline; the others keep the steel hairline.
     ImDrawList* drawList = ImGui::GetWindowDrawList();
-    const ImU32 borderColor = viewport.IsActive
-        ? ImGui::GetColorU32(EditorUi::SelectedOutline)
-        : ImGui::GetColorU32(EditorUi::Border);
-    drawList->AddRect(viewport.RegionMin, viewport.RegionMax, borderColor);
+    if (viewport.IsActive)
+        EditorChrome::SelectionOutline(drawList, viewport.RegionMin, viewport.RegionMax);
+    else
+        drawList->AddRect(viewport.RegionMin, viewport.RegionMax, ImGui::GetColorU32(EditorUi::Border));
 
     // Rubber-band selection rectangle, drawn in the viewport it was started in.
     if (Marquee.Active && Marquee.Viewport == viewport.Id)
@@ -141,7 +143,7 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
                         std::min(Marquee.Start.y, Marquee.Current.y));
         const ImVec2 hi(std::max(Marquee.Start.x, Marquee.Current.x),
                         std::max(Marquee.Start.y, Marquee.Current.y));
-        drawList->AddRectFilled(lo, hi, ImGui::GetColorU32(ImVec4(EditorUi::Accent.x, EditorUi::Accent.y, EditorUi::Accent.z, 0.16f)));
+        drawList->AddRectFilled(lo, hi, ImGui::GetColorU32(EditorUi::WithAlpha(EditorUi::Accent, 0.16f)));
         drawList->AddRect(lo, hi, ImGui::GetColorU32(EditorUi::AccentHover));
     }
 
