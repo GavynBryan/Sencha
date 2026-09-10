@@ -352,14 +352,14 @@ void WorldPartitionPanel::DrawHeaderButtons()
             ? source->Name.c_str() : "<missing Zone>");
         const char* destinationName = destination != nullptr
             ? destination->Name.c_str() : "<select destination>";
-        if (ImGui::BeginCombo("Destination", destinationName))
+        if (EditorChrome::BeginCombo("Destination", destinationName))
         {
             for (const ZoneHeader& zone : WorldDoc.Manifest().Zones)
                 if (zone.Id != TeleportSource_)
                     if (ImGui::Selectable(zone.Name.c_str(),
                                           zone.Id == TeleportDestination_))
                         TeleportDestination_ = zone.Id;
-            ImGui::EndCombo();
+            EditorChrome::EndCombo();
         }
         ImGui::Checkbox("Bidirectional", &TeleportBidirectional_);
         if (!TeleportBidirectional_)
@@ -568,7 +568,7 @@ void WorldPartitionPanel::DrawGraphStreaming(const GraphRecord& graph)
     // explicit 0, Proximity authors a starter radius, Inherited clears the
     // field. Nothing stores a mode; the runtime reads only the values.
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 11.0f);
-    if (ImGui::BeginCombo("Streaming",
+    if (EditorChrome::BeginCombo("Streaming",
                           GraphStreamingShapeLabel(graph.Streaming, base.Radius)))
     {
         const auto option = [&](const char* label, bool selected, const char* help,
@@ -595,7 +595,7 @@ void WorldPartitionPanel::DrawGraphStreaming(const GraphRecord& graph)
                    RunManifestEdit([&] { return WorldDoc.SetGraphRadius(
                        graph.Id, SeedGraphRadius(WorldDoc.Manifest(), graph.Id)); });
                });
-        ImGui::EndCombo();
+        EditorChrome::EndCombo();
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("How this graph decides which zones load around the player");

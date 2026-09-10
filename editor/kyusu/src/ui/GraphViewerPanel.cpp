@@ -162,7 +162,7 @@ void GraphViewerPanel::OnDraw()
         if (graph.Id == FilterGraph)
             filteredGraph = &graph;
     ImGui::SetNextItemWidth(150.0f);
-    if (ImGui::BeginCombo("##graph_filter",
+    if (EditorChrome::BeginCombo("##graph_filter",
                           filteredGraph != nullptr ? filteredGraph->Name.c_str() : "All graphs"))
     {
         if (ImGui::Selectable("All graphs", !FilterGraph.IsValid()))
@@ -170,7 +170,7 @@ void GraphViewerPanel::OnDraw()
         for (const GraphRecord& graph : World.Manifest().Graphs)
             if (ImGui::Selectable(graph.Name.c_str(), graph.Id == FilterGraph))
                 FilterGraph = graph.Id;
-        ImGui::EndCombo();
+        EditorChrome::EndCombo();
     }
     ImGui::SetNextItemWidth(180.0f);
     ImGui::InputTextWithHint("##graph_search", "Search zones", Search, sizeof(Search));

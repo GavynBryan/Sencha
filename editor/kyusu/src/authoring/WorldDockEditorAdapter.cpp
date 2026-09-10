@@ -281,12 +281,12 @@ public:
         const auto zoneCombo = [&](const char* label, ZoneId current, auto set)
         {
             const std::string currentName = ZoneName(context.World.Manifest(), current);
-            if (ImGui::BeginCombo(label, currentName.c_str()))
+            if (EditorChrome::BeginCombo(label, currentName.c_str()))
             {
                 for (const ZoneHeader& zone : context.World.Manifest().Zones)
                     if (ImGui::Selectable(zone.Name.c_str(), zone.Id == current))
                         set(zone.Id);
-                ImGui::EndCombo();
+                EditorChrome::EndCombo();
             }
         };
         zoneCombo("Zone A", dock->ZoneA, [&](ZoneId id)
@@ -373,7 +373,7 @@ public:
                     return;
                 const std::string preview = choice.IsValid()
                     ? ZoneName(context.World.Manifest(), choice) : "Select a Zone";
-                if (ImGui::BeginCombo(label, preview.c_str()))
+                if (EditorChrome::BeginCombo(label, preview.c_str()))
                 {
                     for (ZoneId candidate : candidates)
                     {
@@ -381,7 +381,7 @@ public:
                         if (ImGui::Selectable(name.c_str(), choice == candidate))
                             choice = candidate;
                     }
-                    ImGui::EndCombo();
+                    EditorChrome::EndCombo();
                 }
             };
             candidateCombo("Side A", AmbiguousA, CandidateA);

@@ -147,7 +147,7 @@ namespace
         if (preview.empty())
             preview = std::to_string(current);
 
-        if (ImGui::BeginCombo(id.c_str(), preview.c_str()))
+        if (EditorChrome::BeginCombo(id.c_str(), preview.c_str()))
         {
             for (const EnumOption& option : field.Enum)
             {
@@ -167,7 +167,7 @@ namespace
                 if (selected)
                     ImGui::SetItemDefaultFocus();
             }
-            ImGui::EndCombo();
+            EditorChrome::EndCombo();
         }
         return edit;
     }
@@ -598,7 +598,7 @@ bool InspectorPanel::DrawAssetPickCombo(const char* widgetId,
     bool changed = false;
     const std::uint32_t pickerId = ImGui::GetID(widgetId);
     const char* preview = current.Path.empty() ? "(none)" : current.Path.c_str();
-    if (ImGui::BeginCombo(widgetId, preview))
+    if (EditorChrome::BeginCombo(widgetId, preview))
     {
         if (OpenPicker != pickerId || ImGui::IsWindowAppearing())
         {
@@ -623,7 +623,7 @@ bool InspectorPanel::DrawAssetPickCombo(const char* widgetId,
                 changed = true;
             }
         }
-        ImGui::EndCombo();
+        EditorChrome::EndCombo();
     }
     return changed;
 }

@@ -22,6 +22,11 @@ enum class ButtonTone
 // `label` hides an optional ImGui "##" id suffix.
 bool Button(const char* id, const char* label, ImVec2 size, ButtonTone tone);
 
+// A stock combo with a mounted chevron housing. Call EndCombo only when open.
+// Width comes from SetNextItemWidth; the label retains its ImGui ID semantics.
+bool BeginCombo(const char* label, const char* preview);
+void EndCombo();
+
 // A square mounted button carrying an icon, `size` on a side.
 bool IconButton(const char* id, IconId icon, float size, ButtonTone tone);
 

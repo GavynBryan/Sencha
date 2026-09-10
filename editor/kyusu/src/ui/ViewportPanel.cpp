@@ -1,5 +1,7 @@
 #include "ViewportPanel.h"
 
+#include "ui/chrome/ChromeControls.h"
+
 #include "SceneBrowserPanel.h"
 
 #include "ui/EditorUiStyle.h"
@@ -240,7 +242,7 @@ void ViewportPanel::DrawOrientationSelector(EditorViewport& viewport)
     {
         ImGui::SetCursorScreenPos(regions.ControlMin);
         ImGui::SetNextItemWidth(regions.ControlMax.x - regions.ControlMin.x);
-        if (ImGui::BeginCombo("##Orientation", viewport.GetDisplayLabel()))
+        if (EditorChrome::BeginCombo("##Orientation", viewport.GetDisplayLabel()))
         {
             for (ViewportOrientation orientation : AllViewportOrientations())
             {
@@ -255,7 +257,7 @@ void ViewportPanel::DrawOrientationSelector(EditorViewport& viewport)
                 if (selected)
                     ImGui::SetItemDefaultFocus();
             }
-            ImGui::EndCombo();
+            EditorChrome::EndCombo();
         }
     }
 

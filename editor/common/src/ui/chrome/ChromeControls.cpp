@@ -125,6 +125,30 @@ bool Button(const char* id, const char* label, ImVec2 size, ButtonTone tone)
     return face.Clicked;
 }
 
+bool BeginCombo(const char* label, const char* preview)
+{
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImVec2 mn = ImGui::GetCursorScreenPos();
+    const float width = ImGui::CalcItemWidth();
+    const float height = ImGui::GetFrameHeight();
+    const ImVec2 mx(mn.x + width, mn.y + height);
+    const bool open = ImGui::BeginCombo(label, preview, ImGuiComboFlags_NoArrowButton);
+    // An open combo has already entered its popup. Only the captured parent
+    // draw list and geometry may be used to paint the housing from here.
+    const bool hovered = !open && ImGui::IsItemHovered();
+    const ImVec2 housing(std::max(mn.x, mx.x - height), mn.y);
+    dl->AddRectFilled(housing, mx, ImGui::GetColorU32(EditorUi::FrameBg));
+    dl->AddLine(housing, ImVec2(housing.x, mx.y), ImGui::GetColorU32(EditorUi::Border),
+                EditorUi::Px(EditorUi::Metrics.EdgeWidth));
+    const float inset = height * 0.3f;
+    const ImVec4 tint = open ? EditorUi::SelectedOutline : hovered ? EditorUi::ControlHover : EditorUi::Accent;
+    DrawIcon(dl, IconId::ChevronDown, ImVec2(housing.x + inset, mn.y + inset),
+             ImVec2(mx.x - inset, mx.y - inset), ImGui::GetColorU32(tint));
+    return open;
+}
+
+void EndCombo() { ImGui::EndCombo(); }
+
 bool IconButton(const char* id, IconId icon, float size, ButtonTone tone)
 {
     const Face face = MountedFace(id, ImVec2(size, size), tone);

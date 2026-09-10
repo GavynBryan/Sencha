@@ -133,12 +133,12 @@ void EditorToolbar::DrawTransformGroup(float buttonSize)
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 5.0f);
     const TransformSpace space = session.GetTransformSpace();
-    if (ImGui::BeginCombo("##gizmospace", TransformSpaceLabel(space)))
+    if (EditorChrome::BeginCombo("##gizmospace", TransformSpaceLabel(space)))
     {
         for (TransformSpace candidate : { TransformSpace::Grid, TransformSpace::World, TransformSpace::Local })
             if (ImGui::Selectable(TransformSpaceLabel(candidate), candidate == space))
                 session.SetTransformSpace(candidate);
-        ImGui::EndCombo();
+        EditorChrome::EndCombo();
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Gizmo axes: grid frame, world, or the selection's local axes  [Shift+T]");
@@ -191,12 +191,12 @@ void EditorToolbar::DrawGridGroup(float buttonSize)
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 5.0f);
     static constexpr const char* kSnapTargetLabels[] = { "Grid", "Vertex", "Edge", "Face" };
     const int targetIndex = static_cast<int>(Grid.Target);
-    if (ImGui::BeginCombo("##snaptarget", kSnapTargetLabels[targetIndex]))
+    if (EditorChrome::BeginCombo("##snaptarget", kSnapTargetLabels[targetIndex]))
     {
         for (int i = 0; i < 4; ++i)
             if (ImGui::Selectable(kSnapTargetLabels[i], i == targetIndex))
                 Grid.Target = static_cast<SnapTarget>(i);
-        ImGui::EndCombo();
+        EditorChrome::EndCombo();
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Snap target: grid lines, or the vertex/edge/face under the cursor");
@@ -210,7 +210,7 @@ void EditorToolbar::DrawGridGroup(float buttonSize)
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.8f);
-    if (ImGui::BeginCombo("##renderdebugview",
+    if (EditorChrome::BeginCombo("##renderdebugview",
                           RenderDebugViewLabel(WorldView.DebugViewMode)))
     {
         for (std::uint32_t index = 0; index < kRenderDebugViewCount; ++index)
@@ -222,7 +222,7 @@ void EditorToolbar::DrawGridGroup(float buttonSize)
             if (selected)
                 ImGui::SetItemDefaultFocus();
         }
-        ImGui::EndCombo();
+        EditorChrome::EndCombo();
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Development render channel for Solid viewports");
@@ -232,7 +232,7 @@ void EditorToolbar::DrawGridGroup(float buttonSize)
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6.4f);
     char preview[32];
     std::snprintf(preview, sizeof(preview), ICON_FA_BORDER_ALL "  %g", Grid.Spacing);
-    if (ImGui::BeginCombo("##gridsize", preview))
+    if (EditorChrome::BeginCombo("##gridsize", preview))
     {
         for (float size : GridSettings::kSpacingSteps)
         {
@@ -241,7 +241,7 @@ void EditorToolbar::DrawGridGroup(float buttonSize)
             if (ImGui::Selectable(item, Grid.Spacing == size))
                 Grid.Spacing = size;
         }
-        ImGui::EndCombo();
+        EditorChrome::EndCombo();
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Grid size");

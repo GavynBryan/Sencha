@@ -468,7 +468,7 @@ namespace
                                   "Modes change during play; this is only where it begins.");
             ImGui::SameLine(ImGui::GetContentRegionAvail().x * 0.42f);
             ImGui::SetNextItemWidth(-FLT_MIN);
-            if (ImGui::BeginCombo("##mode", preview.c_str()))
+            if (EditorChrome::BeginCombo("##mode", preview.c_str()))
             {
                 for (const LocomotionModeEntry& mode : modes->Entries())
                 {
@@ -485,7 +485,7 @@ namespace
                     if (selected)
                         ImGui::SetItemDefaultFocus();
                 }
-                ImGui::EndCombo();
+                EditorChrome::EndCombo();
             }
             return true;
         }

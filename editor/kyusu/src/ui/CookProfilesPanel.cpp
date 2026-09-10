@@ -186,12 +186,12 @@ void CookProfilesPanel::OnDraw()
         selected = profiles.begin();
     }
 
-    if (ImGui::BeginCombo("Profile", selected->Name.c_str()))
+    if (EditorChrome::BeginCombo("Profile", selected->Name.c_str()))
     {
         for (const CookProfile& profile : profiles)
             if (ImGui::Selectable(profile.Name.c_str(), profile.Id == SelectedId))
                 SelectedId = profile.Id;
-        ImGui::EndCombo();
+        EditorChrome::EndCombo();
     }
 
     CookProfile* editable = EditableProfile();
@@ -265,7 +265,7 @@ void CookProfilesPanel::OnDraw()
             disposition = policy->Disposition;
         if (editable == nullptr)
             ImGui::BeginDisabled();
-        if (ImGui::BeginCombo(Label(family), DispositionLabel(disposition)))
+        if (EditorChrome::BeginCombo(Label(family), DispositionLabel(disposition)))
         {
             for (int option = 0; option != 3; ++option)
             {
@@ -284,7 +284,7 @@ void CookProfilesPanel::OnDraw()
                     Validate();
                 }
             }
-            ImGui::EndCombo();
+            EditorChrome::EndCombo();
         }
         if (editable == nullptr)
             ImGui::EndDisabled();
