@@ -77,7 +77,7 @@ LightingPanel::LightingPanel(const ShadowResidencyReadout& readout,
 
 std::string_view LightingPanel::GetTitle() const
 {
-    return "Lighting";
+    return "LIGHTING";
 }
 
 void LightingPanel::OnDraw()

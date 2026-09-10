@@ -20,7 +20,7 @@
 
 #include <SDL3/SDL.h>
 #include <imgui.h>
-#include <imgui_internal.h> // DockBuilder* for the default layout
+#include <imgui_internal.h> // DockBuilder* for the default layout, FindWindowSettingsByID for the placement check
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
 
@@ -362,13 +362,35 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
         ImGui::PopStyleVar(3);
 
         const ImGuiID dockId = ImGui::GetID("EditorDockSpace");
+        // A dockable panel with no saved placement (a renamed or newly added
+        // panel against an older ini) would come up floating; the designed
+        // layout is rebuilt instead. Checked once, after ImGui has loaded the
+        // ini in its first NewFrame; DockBuilder places every panel, so the
+        // check is quiet on later launches.
+        if (!PlacementChecked)
+        {
+            LayoutDirty |= std::any_of(Panels.begin(), Panels.end(), [](const std::unique_ptr<IEditorPanel>& panel) {
+                if (panel == nullptr || panel->GetDockSlot() == DockSlot::Floating)
+                    return false;
+                const std::string_view title = panel->GetTitle();
+                return ImGui::FindWindowSettingsByID(ImHashStr(title.data(), title.size())) == nullptr;
+            });
+            PlacementChecked = true;
+        }
         if (LayoutDirty || ImGui::DockBuilderGetNode(dockId) == nullptr)
         {
             PendingTabFocus.clear();
             BuildDefaultDockLayout(dockId, Panels, LayoutRatios, PendingTabFocus);
             LayoutDirty = false;
         }
+        // The tab bars are drawn inside DockSpace, so the font pushed here is
+        // the one every docked tab label takes.
+        ImFont* tabFont = EditorUi::StyleFor(EditorUi::TextRole::Tab).Font;
+        if (tabFont != nullptr)
+            ImGui::PushFont(tabFont);
         ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
+        if (tabFont != nullptr)
+            ImGui::PopFont();
         ImGui::End();
     }
 

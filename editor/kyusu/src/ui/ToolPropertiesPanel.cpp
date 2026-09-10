@@ -93,7 +93,7 @@ void ToolPropertiesPanel::CancelBridge() { BridgeEdit.Cancel(Commands); }
 
 std::string_view ToolPropertiesPanel::GetTitle() const
 {
-    return "Tool Properties";
+    return "TOOL PROPERTIES";
 }
 
 void ToolPropertiesPanel::DrawObjectVerbs()

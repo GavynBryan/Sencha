@@ -278,7 +278,7 @@ InspectorPanel::InspectorPanel(WorldDocument& world,
 
 std::string_view InspectorPanel::GetTitle() const
 {
-    return "Inspector";
+    return "INSPECTOR";
 }
 
 void InspectorPanel::ResetEditState()

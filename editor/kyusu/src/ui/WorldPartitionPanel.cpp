@@ -40,7 +40,7 @@ WorldPartitionPanel::WorldPartitionPanel(WorldDocument& world, SelectionService&
 
 std::string_view WorldPartitionPanel::GetTitle() const
 {
-    return "World";
+    return "WORLD";
 }
 
 

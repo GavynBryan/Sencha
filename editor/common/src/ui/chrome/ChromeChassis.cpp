@@ -15,7 +15,7 @@ ChassisSpec ChassisSpecNow()
     return ChassisSpec{
         .Border = EditorUi::Px(m.ChassisBorder),
         .Chamfer = EditorUi::Px(m.ChassisChamfer),
-        .Recess = EditorUi::Px(m.Recess),
+        .Recess = EditorUi::Px(m.ChassisRecess),
     };
 }
 

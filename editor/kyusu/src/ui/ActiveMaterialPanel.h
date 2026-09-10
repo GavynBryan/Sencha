@@ -23,7 +23,7 @@ public:
                         MaterialThumbnailCache& thumbnails,
                         std::function<void()> browse);
 
-    std::string_view GetTitle() const override { return "Active Material"; }
+    std::string_view GetTitle() const override { return "ACTIVE MATERIAL"; }
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return DockSlot::Left; }
 

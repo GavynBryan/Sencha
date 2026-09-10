@@ -627,13 +627,13 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
 
         auto perspectivePanel = std::make_unique<ViewportPanel>(
             Workspace->Layout, Workspace->Interaction.Marquee, Workspace->Interaction.Overlay,
-            RenderFeature->GetViewportTargets(), "Viewport", DockSlot::Center, 1.0f, perspectiveId);
+            RenderFeature->GetViewportTargets(), "VIEWPORT", DockSlot::Center, 1.0f, perspectiveId);
         perspectivePanel->SetSceneDropHandler(placeDroppedScene);
         PerspectivePanel = perspectivePanel.get();
         UiFeature->AddPanel(std::move(perspectivePanel));
         auto orthoPanel = std::make_unique<ViewportPanel>(
             Workspace->Layout, Workspace->Interaction.Marquee, Workspace->Interaction.Overlay,
-            RenderFeature->GetViewportTargets(), "Ortho", DockSlot::CenterBottom, 1.0f, orthoId);
+            RenderFeature->GetViewportTargets(), "ORTHO", DockSlot::CenterBottom, 1.0f, orthoId);
         orthoPanel->SetSceneDropHandler(placeDroppedScene);
         OrthoPanel = orthoPanel.get();
         UiFeature->AddPanel(std::move(orthoPanel));

@@ -19,7 +19,6 @@ std::string_view DecorText(DecorSlot slot)
     case DecorSlot::MaterialBrowserEmpty: return d.MaterialBrowserEmpty;
     case DecorSlot::SceneBrowserEmpty: return d.SceneBrowserEmpty;
     case DecorSlot::ToolPropertiesIdle: return d.ToolPropertiesIdle;
-    case DecorSlot::ConsoleEmpty: return d.ConsoleEmpty;
     case DecorSlot::StatusTagline: return d.StatusTagline;
     }
     return {};

@@ -65,9 +65,9 @@ const EditorThemeMetricEntry kThemeMetricEntries[] = {
     { "module_pad", &EditorUi::Metrics.ModulePad },
     { "screw_radius", &EditorUi::Metrics.ScrewRadius },
     { "vent_length", &EditorUi::Metrics.VentLength },
-    { "stripe_length", &EditorUi::Metrics.StripeLength },
     { "chassis_border", &EditorUi::Metrics.ChassisBorder },
     { "chassis_chamfer", &EditorUi::Metrics.ChassisChamfer },
+    { "chassis_recess", &EditorUi::Metrics.ChassisRecess },
     { "caption_pad", &EditorUi::Metrics.CaptionPad },
     { "resize_border", &EditorUi::Metrics.ResizeBorder },
 };
@@ -77,7 +77,6 @@ const EditorThemeDecorEntry kThemeDecorEntries[] = {
     { "material_browser_empty", &EditorUi::Decor.MaterialBrowserEmpty },
     { "scene_browser_empty", &EditorUi::Decor.SceneBrowserEmpty },
     { "tool_properties_idle", &EditorUi::Decor.ToolPropertiesIdle },
-    { "console_empty", &EditorUi::Decor.ConsoleEmpty },
     { "status_tagline", &EditorUi::Decor.StatusTagline },
 };
 

@@ -12,7 +12,7 @@ class CookProfilesPanel : public IEditorPanel
 public:
     explicit CookProfilesPanel(ProjectDescriptor* project);
 
-    std::string_view GetTitle() const override { return "Cook Profiles"; }
+    std::string_view GetTitle() const override { return "COOK PROFILES"; }
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return DockSlot::RightBottom; }
     int GetDockTabGroup() const override { return 0; }

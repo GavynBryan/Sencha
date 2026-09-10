@@ -24,8 +24,10 @@ constexpr float kMonoSize = 14.0f;
 // back to ImGui's current default font.
 ImFont* g_BodyFont = nullptr;
 ImFont* g_SmallFont = nullptr;
-ImFont* g_LargeFont = nullptr;
 ImFont* g_MonoFont = nullptr;
+ImFont* g_TitleSmall = nullptr; // the title face at the small size
+ImFont* g_TitleLarge = nullptr; // and at the large size
+ImFont* g_TitleTab = nullptr;   // and at the body size, for the dock tabs
 
 std::string FontPath(const char* file)
 {
@@ -130,7 +132,10 @@ void EditorUi::Apply(ImGuiStyle& style)
     c[ImGuiCol_ChildBg]              = ImVec4(0, 0, 0, 0);
     c[ImGuiCol_PopupBg]              = PanelBg;
     c[ImGuiCol_Border]               = Border;
-    c[ImGuiCol_BorderShadow]         = ImVec4(0, 0, 0, 0);
+    // RenderFrame draws this one pixel down and right of the border: a lit
+    // line just inside the top and left edges and just outside the bottom and
+    // right, which reads as a machined edge on every framed stock widget.
+    c[ImGuiCol_BorderShadow]         = WithAlpha(MetalHighlight, 0.25f);
     c[ImGuiCol_FrameBg]              = FrameBg;
     c[ImGuiCol_FrameBgHovered]       = FrameBgHovered;
     c[ImGuiCol_FrameBgActive]        = FrameBgActive;
@@ -139,7 +144,7 @@ void EditorUi::Apply(ImGuiStyle& style)
     c[ImGuiCol_TitleBgCollapsed]     = WindowBg;
     c[ImGuiCol_MenuBarBg]            = HeaderBg;
     c[ImGuiCol_ScrollbarBg]          = WindowBg;
-    c[ImGuiCol_ScrollbarGrab]        = MetalBase;
+    c[ImGuiCol_ScrollbarGrab]        = Lighten(MetalBase, 0.05f);
     c[ImGuiCol_ScrollbarGrabHovered] = MetalHighlight;
     c[ImGuiCol_ScrollbarGrabActive]  = Accent;
     c[ImGuiCol_CheckMark]            = Accent;
@@ -151,7 +156,7 @@ void EditorUi::Apply(ImGuiStyle& style)
     // Headers stay neutral: collapsing sections, list rows, and popup items
     // share these. Selection is pushed around the selected widget alone
     // (ScopedSelectionStyle), never set here.
-    c[ImGuiCol_Header]               = ButtonBg;
+    c[ImGuiCol_Header]               = HeaderBg;
     c[ImGuiCol_HeaderHovered]        = ButtonHovered;
     c[ImGuiCol_HeaderActive]         = FrameBgActive;
     c[ImGuiCol_Separator]            = Border;
@@ -159,8 +164,8 @@ void EditorUi::Apply(ImGuiStyle& style)
     c[ImGuiCol_SeparatorActive]      = AccentHover;
     // The dock tab bar is the panel's mounting rail: gunmetal tabs, the
     // selected one lit by a cyan overline and merging into the panel below.
-    c[ImGuiCol_Tab]                  = HeaderBg;
-    c[ImGuiCol_TabHovered]           = ButtonHovered;
+    c[ImGuiCol_Tab]                  = Darken(MetalBase, 0.2f);
+    c[ImGuiCol_TabHovered]           = MetalBase;
     c[ImGuiCol_TabSelected]          = PanelBg;
     c[ImGuiCol_TabSelectedOverline]  = Accent;
     c[ImGuiCol_TabDimmed]            = WindowBg;
@@ -236,13 +241,22 @@ void EditorUi::LoadFonts(ImGuiIO& io)
         io.Fonts->AddFontFromFileTTF(icons.c_str(), bodySize - Px(1.0f), &cfg, kIconRange);
     }
 
-    // The label faces (uppercase tracked titles, status readouts) and the
-    // console / numeric readout face. Same family, other sizes.
+    // The secondary-text face and the console / numeric readout face. Same
+    // family, other sizes.
     if (FontExists(ui))
     {
         g_SmallFont = io.Fonts->AddFontFromFileTTF(ui.c_str(), Px(kSmallSize));
-        g_LargeFont = io.Fonts->AddFontFromFileTTF(ui.c_str(), Px(kLargeSize));
         g_MonoFont = io.Fonts->AddFontFromFileTTF(ui.c_str(), Px(kMonoSize));
+    }
+
+    // The title face: uppercase tracked titles, status labels, the nameplate,
+    // and the dock tabs. Its tab cut must share the body size (see TextRole::Tab).
+    const std::string title = FontPath("ChakraPetch-SemiBold.ttf");
+    if (FontExists(title))
+    {
+        g_TitleSmall = io.Fonts->AddFontFromFileTTF(title.c_str(), Px(kSmallSize));
+        g_TitleLarge = io.Fonts->AddFontFromFileTTF(title.c_str(), Px(kLargeSize));
+        g_TitleTab = io.Fonts->AddFontFromFileTTF(title.c_str(), bodySize);
     }
 }
 
@@ -251,13 +265,14 @@ EditorUi::TextStyle EditorUi::StyleFor(TextRole role)
     const float tracking = Px(Metrics.Tracking);
     switch (role)
     {
-    case TextRole::ApplicationTitle: return { g_LargeFont, TextPrimary, true, tracking * 1.5f };
-    case TextRole::PanelTitle:       return { g_SmallFont, Accent, true, tracking };
-    case TextRole::SectionTitle:     return { g_SmallFont, TextPrimary, true, tracking };
+    case TextRole::ApplicationTitle: return { g_TitleLarge, TextPrimary, true, tracking * 1.5f };
+    case TextRole::PanelTitle:       return { g_TitleSmall, Accent, true, tracking };
+    case TextRole::SectionTitle:     return { g_TitleSmall, TextPrimary, true, tracking };
     case TextRole::Body:             return { g_BodyFont, TextPrimary, false, 0.0f };
     case TextRole::Data:             return { g_MonoFont, TextPrimary, false, 0.0f };
     case TextRole::SecondaryText:      return { g_SmallFont, TextDim, false, 0.0f };
-    case TextRole::Status:           return { g_SmallFont, TextDim, true, tracking };
+    case TextRole::Status:           return { g_TitleSmall, TextDim, true, tracking };
+    case TextRole::Tab:              return { g_TitleTab, TextPrimary, false, 0.0f };
     }
     return { g_BodyFont, TextPrimary, false, 0.0f };
 }

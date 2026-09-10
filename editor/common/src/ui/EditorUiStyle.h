@@ -117,11 +117,11 @@ inline float Px(float designPx)
 // palette is themed by "colors". Only the chrome primitives read these.
 struct ChromeMetrics
 {
-    float Chamfer = 6.0f;             // clipped-corner size of a Standard panel frame
+    float Chamfer = 8.0f;             // clipped-corner size of a Standard panel frame
     float Border = 1.0f;              // steel edge line width
-    float Recess = 2.0f;              // depth of the content well inside a frame
-    float RailHeight = 6.0f;          // header rail under a docked panel's tab
-    float HeaderHeight = 20.0f;       // full titled header row
+    float Recess = 3.0f;              // depth of the content well inside a frame
+    float RailHeight = 10.0f;         // header strip under a docked panel's tab
+    float HeaderHeight = 28.0f;       // full titled header row (a viewport's orientation row, an inspected entity)
     float EdgeWidth = 1.0f;           // bevel highlight/shadow line width
     float GlowAlpha = 0.35f;          // focused-edge glow opacity, 0..1
     float GlowWidth = 3.0f;           // focused-edge glow spread
@@ -131,24 +131,24 @@ struct ChromeMetrics
     float ModulePad = 3.0f;           // toolbar module recess around its controls
     float ScrewRadius = 3.0f;
     float VentLength = 24.0f;
-    float StripeLength = 32.0f;
     float ChassisBorder = 4.0f;       // application chassis frame width
     float ChassisChamfer = 10.0f;
+    float ChassisRecess = 3.0f;       // the dock well's inset inside the chassis ring
     float CaptionPad = 3.0f;          // extra frame padding that makes the caption bar taller than a menu row
     float ResizeBorder = 6.0f;        // edge thickness the window resizes from when it draws its own frame
 };
 inline ChromeMetrics Metrics{};
 
 // Flavor copy the chrome shows in space a panel knows is free, keyed by the
-// slot it fills (see EditorChrome::DecorSlot). Lines are newline-separated;
-// an empty string silences a slot. Themed by the theme file's "decor" object.
+// slot it fills (see EditorChrome::DecorSlot). Lines are newline-separated:
+// the first is the word, the rest the readout under it; an empty string
+// silences a slot. Themed by the theme file's "decor" object.
 struct DecorStrings
 {
-    std::string HierarchyEmpty = "GEOMETRY";
-    std::string MaterialBrowserEmpty = "TEXTURE";
-    std::string SceneBrowserEmpty = "BUILD WORLDS\nSHAPE REALITIES\nGO FURTHER";
-    std::string ToolPropertiesIdle = "///";
-    std::string ConsoleEmpty = "REPEAT";
+    std::string HierarchyEmpty = "GEOMETRY\nMODULE // SCENE // NO ENTRIES";
+    std::string MaterialBrowserEmpty = "TEXTURE\nMODULE // LIBRARY // NO SURFACES";
+    std::string SceneBrowserEmpty = "BUILD WORLDS\nSHAPE REALITIES // GO FURTHER";
+    std::string ToolPropertiesIdle = "///\nMODULE // TOOL // STANDBY";
     std::string StatusTagline = "REALTIME // MODULAR // LIMITLESS";
 };
 inline DecorStrings Decor{};
@@ -160,8 +160,9 @@ inline DecorStrings Decor{};
 void Apply(ImGuiStyle& style);
 
 // Builds the editor font atlas from the bundled TTFs (editor/fonts): JetBrains
-// Mono at the body size with Font Awesome 6 Solid icon glyphs merged in, plus
-// the small and large faces the text roles use and the console's mono face.
+// Mono at the body size with Font Awesome 6 Solid icon glyphs merged in, the
+// console's mono face, and Chakra Petch (the squared title face) at the sizes
+// the label roles and the dock tabs use.
 // Sizes are multiplied by UiScale. Call after the ImGui context exists and before
 // the render backend uploads the atlas. If a font file is missing it falls back
 // to ImGui's built-in font rather than failing, so a stripped checkout still runs.
@@ -184,6 +185,8 @@ enum class TextRole
     Data,             // numeric readouts, console output (monospace)
     SecondaryText,    // supporting text, de-emphasized
     Status,           // status bar readouts and telemetry
+    Tab,              // a docked panel's tab label: the title face at the body size, so the
+                      // tab bar ImGui draws and the window's own title offset agree in height
 };
 
 struct TextStyle

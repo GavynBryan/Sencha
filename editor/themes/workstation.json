@@ -30,11 +30,11 @@
     "metal_shadow": "#03050A"
   },
   "metrics": {
-    "chamfer": 6,
+    "chamfer": 8,
     "border": 1,
-    "recess": 2,
-    "rail_height": 6,
-    "header_height": 20,
+    "recess": 3,
+    "rail_height": 10,
+    "header_height": 28,
     "edge_width": 1,
     "glow_alpha": 0.35,
     "glow_width": 3,
@@ -44,10 +44,17 @@
     "module_pad": 3,
     "screw_radius": 3,
     "vent_length": 24,
-    "stripe_length": 32,
     "chassis_border": 4,
     "chassis_chamfer": 10,
+    "chassis_recess": 3,
     "caption_pad": 3,
     "resize_border": 6
+  },
+  "decor": {
+    "hierarchy_empty": "GEOMETRY\nMODULE // SCENE // NO ENTRIES",
+    "material_browser_empty": "TEXTURE\nMODULE // LIBRARY // NO SURFACES",
+    "scene_browser_empty": "BUILD WORLDS\nSHAPE REALITIES // GO FURTHER",
+    "tool_properties_idle": "///\nMODULE // TOOL // STANDBY",
+    "status_tagline": "REALTIME // MODULAR // LIMITLESS"
   }
 }

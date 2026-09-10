@@ -36,7 +36,7 @@ EditorConsolePanel::EditorConsolePanel(DebugLogSink& sink, ConsoleService& conso
 
 std::string_view EditorConsolePanel::GetTitle() const
 {
-    return "Console";
+    return "CONSOLE";
 }
 
 void EditorConsolePanel::OnDraw()

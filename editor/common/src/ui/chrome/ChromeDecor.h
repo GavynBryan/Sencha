@@ -13,7 +13,6 @@ enum class DecorSlot
     MaterialBrowserEmpty,
     SceneBrowserEmpty,
     ToolPropertiesIdle,
-    ConsoleEmpty,
     StatusTagline,
 };
 

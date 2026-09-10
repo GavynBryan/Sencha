@@ -153,7 +153,7 @@ SceneHierarchyPanel::SceneHierarchyPanel(WorldDocument& world,
 
 std::string_view SceneHierarchyPanel::GetTitle() const
 {
-    TitleCache = "Hierarchy";
+    TitleCache = "HIERARCHY";
     if (WorldDoc.IsWorld())
     {
         const ZoneId focus = WorldDoc.FocusZone();
@@ -161,12 +161,12 @@ std::string_view SceneHierarchyPanel::GetTitle() const
         {
             if (zone.Id != focus)
                 continue;
-            TitleCache += " - ";
+            TitleCache += " // ";
             TitleCache += zone.Name;
             break;
         }
     }
-    TitleCache += "###Hierarchy";
+    TitleCache += "###HIERARCHY";
     return TitleCache;
 }
 

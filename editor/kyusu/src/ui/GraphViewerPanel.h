@@ -19,7 +19,7 @@ public:
     GraphViewerPanel(WorldDocument& world, SelectionService& selection,
                      CommandStack& commands, ViewportLayout& viewports);
 
-    std::string_view GetTitle() const override { return "Graph Viewer"; }
+    std::string_view GetTitle() const override { return "GRAPH VIEWER"; }
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return DockSlot::CenterBottom; }
     int GetDockTabGroup() const override { return 0; }

@@ -185,21 +185,21 @@ TEST(EditorThemeFile, DecorStringsLoadSilenceAndRoundTrip)
 {
     const auto path = WriteTempTheme(
         "sencha_theme_decor_test.json",
-        R"({ "decor": { "hierarchy_empty": "VOID", "status_tagline": "", "scene_browser_empty": "ONE\nTWO", "not_a_slot": "x", "console_empty": 3 } })");
+        R"({ "decor": { "hierarchy_empty": "VOID", "status_tagline": "", "scene_browser_empty": "ONE\nTWO", "not_a_slot": "x", "tool_properties_idle": 3 } })");
     std::string error;
     ASSERT_TRUE(LoadEditorTheme(path, &error));
     EXPECT_EQ(EditorUi::Decor.HierarchyEmpty, "VOID");
     EXPECT_TRUE(EditorUi::Decor.StatusTagline.empty());
     EXPECT_EQ(EditorUi::Decor.SceneBrowserEmpty, "ONE\nTWO");
     EXPECT_NE(error.find("not_a_slot"), std::string::npos) << error;
-    EXPECT_NE(error.find("console_empty"), std::string::npos) << error;
+    EXPECT_NE(error.find("tool_properties_idle"), std::string::npos) << error;
     // Untouched slots keep the built-in copy.
     EXPECT_FALSE(EditorUi::Decor.ToolPropertiesIdle.empty());
 
     const auto saved = std::filesystem::temp_directory_path() / "sencha_theme_decor_out_test.json";
     ASSERT_TRUE(SaveEditorTheme(saved, &error)) << error;
     ResetEditorTheme();
-    EXPECT_EQ(EditorUi::Decor.HierarchyEmpty, "GEOMETRY");
+    EXPECT_EQ(EditorUi::Decor.HierarchyEmpty, EditorUi::DecorStrings{}.HierarchyEmpty);
     error.clear();
     ASSERT_TRUE(LoadEditorTheme(saved, &error)) << error;
     EXPECT_TRUE(error.empty()) << error;

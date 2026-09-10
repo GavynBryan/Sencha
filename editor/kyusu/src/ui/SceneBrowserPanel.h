@@ -25,7 +25,7 @@ public:
                       std::vector<std::filesystem::path> contentRoots,
                       std::function<SceneThumbnailCache*()> thumbnails);
 
-    std::string_view GetTitle() const override { return "Scenes"; }
+    std::string_view GetTitle() const override { return "SCENES"; }
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return DockSlot::Left; }
 
