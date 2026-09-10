@@ -71,6 +71,11 @@ void DrawChassisOrnaments(ImDrawList* dl, ImVec2 mn, ImVec2 mx)
     };
     screw(mn.x + along, mn.y + mid);
     screw(mx.x - along, mn.y + mid);
+    // A groove scored along the top ring between the screws.
+    const float grooveInset = along + r * 2.0f;
+    if (mx.x - mn.x > grooveInset * 2.0f)
+        DrawOrnament(dl, OrnamentKind::Groove, ImVec2(mn.x + grooveInset, mn.y + mid - 1.0f),
+                     ImVec2(mx.x - grooveInset, mn.y + mid + 1.0f), tint);
     screw(mn.x + along, mx.y - mid);
     screw(mx.x - along, mx.y - mid);
 }

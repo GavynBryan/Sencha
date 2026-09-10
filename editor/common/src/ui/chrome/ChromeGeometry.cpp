@@ -35,6 +35,43 @@ ChamferPoly ChamferOutline(ImVec2 mn, ImVec2 mx, float chamfer)
     return poly;
 }
 
+ChamferPoly CornerWedge(ImVec2 mn, ImVec2 mx, float chamfer, float thickness)
+{
+    ChamferPoly poly;
+    const float w = mx.x - mn.x;
+    const float h = mx.y - mn.y;
+    if (w <= 0.0f || h <= 0.0f || chamfer <= 0.0f || thickness <= 0.0f)
+        return poly;
+    const float half = std::min(w, h) * 0.5f;
+    const float c = std::min(chamfer, half);
+    // Offsetting a 45-degree cut inward by `thickness` moves its ends along
+    // the edges by thickness * sqrt(2).
+    const float reach = std::min(c + thickness * 1.41421356f, half);
+    if (reach <= c)
+        return poly;
+    poly.P[0] = ImVec2(mn.x, mn.y + c);
+    poly.P[1] = ImVec2(mn.x + c, mn.y);
+    poly.P[2] = ImVec2(mn.x + reach, mn.y);
+    poly.P[3] = ImVec2(mn.x, mn.y + reach);
+    poly.Count = 4;
+    return poly;
+}
+
+ChamferPoly SlantedCap(ImVec2 mn, ImVec2 mx, float lean)
+{
+    ChamferPoly poly;
+    const float w = mx.x - mn.x;
+    if (w <= 0.0f || mx.y <= mn.y)
+        return poly;
+    const float l = std::clamp(lean, 0.0f, w * 0.5f);
+    poly.P[0] = ImVec2(mn.x + l, mn.y);
+    poly.P[1] = ImVec2(mx.x, mn.y);
+    poly.P[2] = ImVec2(mx.x - l, mx.y);
+    poly.P[3] = ImVec2(mn.x, mx.y);
+    poly.Count = 4;
+    return poly;
+}
+
 FrameRects FrameLayout(ImVec2 mn, ImVec2 mx, const FrameSpec& spec)
 {
     const float ring = spec.Border + spec.Recess;
@@ -108,11 +145,14 @@ OrnamentTier TierFor(ImVec2 size, float mediumMin, float largeMin)
     return OrnamentTier::Small;
 }
 
-float RailOrnamentWidth(OrnamentTier tier, float ventLength, float slashLength, float gap)
+float RailOrnamentWidth(OrnamentTier tier, float ventLength, float slashLength, float ledDiameter, float gap)
 {
-    if (tier != OrnamentTier::Large)
+    if (tier == OrnamentTier::Small)
         return 0.0f;
-    return ventLength + gap + slashLength + gap;
+    float width = ledDiameter > 0.0f ? ledDiameter + gap : 0.0f;
+    if (tier == OrnamentTier::Large && ventLength > 0.0f)
+        width += ventLength + gap + (slashLength > 0.0f ? slashLength + gap : 0.0f);
+    return width;
 }
 
 int LayoutOrnaments(const FrameRects& rects, OrnamentTier tier, float screwRadius,
@@ -141,23 +181,37 @@ int LayoutOrnaments(const FrameRects& rects, OrnamentTier tier, float screwRadiu
         place(OrnamentKind::Screw, ImVec2(rects.WellMax.x - gap - screw, y0), ImVec2(rects.WellMax.x - gap, y1));
     }
 
-    if (tier != OrnamentTier::Large)
-        return count;
-
-    // The rail's right end carries a vent with a triple slash beside it, only
-    // when the rail is tall enough to hold them and wide enough that the cap
-    // and a line still fit to their left.
+    // The rail's right end carries the LED, and at Large a vent with a triple
+    // slash left of it, only when the rail is tall enough to hold them and
+    // wide enough that the cap and a line still fit to their left. A rail
+    // that cannot hold the Large set keeps the LED alone.
     const float railH = rects.RailMax.y - rects.RailMin.y;
     const float railW = rects.RailMax.x - rects.RailMin.x;
-    const float needed = RailOrnamentWidth(tier, ventLength, slashLength, gap);
-    if (railH > 0.0f && ventLength > 0.0f && railW >= needed + railH * 3.0f + gap * 3.0f)
+    const float led = screwRadius * 2.0f;
+    const auto fits = [&](OrnamentTier t) {
+        return railW >= RailOrnamentWidth(t, ventLength, slashLength, led, gap) + railH * 3.0f + gap * 3.0f;
+    };
+    OrnamentTier railTier = tier;
+    if (railTier == OrnamentTier::Large && !fits(railTier))
+        railTier = OrnamentTier::Medium;
+    if (railH <= 0.0f || !fits(railTier))
+        return count;
+
+    float right = rects.RailMax.x - gap;
+    if (led > 0.0f)
     {
-        const float ventMaxX = rects.RailMax.x - gap;
-        const float ventMinX = ventMaxX - ventLength;
-        place(OrnamentKind::Vent, ImVec2(ventMinX, rects.RailMin.y), ImVec2(ventMaxX, rects.RailMax.y));
+        const float d = std::min(led, railH);
+        const float cy = (rects.RailMin.y + rects.RailMax.y) * 0.5f;
+        place(OrnamentKind::StatusLed, ImVec2(right - d, cy - d * 0.5f), ImVec2(right, cy + d * 0.5f));
+        right -= led + gap;
+    }
+    if (railTier == OrnamentTier::Large && ventLength > 0.0f)
+    {
+        place(OrnamentKind::Vent, ImVec2(right - ventLength, rects.RailMin.y), ImVec2(right, rects.RailMax.y));
+        right -= ventLength + gap;
         if (slashLength > 0.0f)
-            place(OrnamentKind::TripleSlash, ImVec2(ventMinX - gap - slashLength, rects.RailMin.y),
-                  ImVec2(ventMinX - gap, rects.RailMax.y));
+            place(OrnamentKind::TripleSlash, ImVec2(right - slashLength, rects.RailMin.y),
+                  ImVec2(right, rects.RailMax.y));
     }
     return count;
 }

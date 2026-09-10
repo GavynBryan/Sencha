@@ -1,5 +1,6 @@
 #include "ChromeFrame.h"
 
+#include "ChromeGeometry.h"
 #include "ChromePaint.h"
 #include "ui/EditorUiStyle.h"
 
@@ -77,6 +78,11 @@ void DrawFrameEdges(ImDrawList* dl, ImVec2 mn, ImVec2 mx, PanelStyle style, bool
 
     InsetWell(dl, rects.WellMin, rects.WellMax, ImGui::GetColorU32(EditorUi::MetalShadow),
               ImGui::GetColorU32(EditorUi::WithAlpha(EditorUi::MetalHighlight, 0.45f)), edge);
+
+    // The corner cap: an accent band along the top-left cut, the mark that
+    // says which corner is the module's head. It brightens with the frame.
+    FillChamfered(dl, CornerWedge(mn, mx, spec.Chamfer, edge * 2.0f),
+                  ImGui::GetColorU32(focused ? EditorUi::Accent : EditorUi::AccentDim));
 
     if (focused)
         GlowChamfered(dl, outline, EditorUi::Accent, m.GlowAlpha, EditorUi::Px(m.GlowWidth));

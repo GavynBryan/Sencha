@@ -171,21 +171,33 @@ TEST(ChromeGeometry, OrnamentsScaleWithTierAndStayInsideTheFrame)
     EXPECT_EQ(LayoutOrnaments(rects, OrnamentTier::Small, 3.0f, 24.0f, 12.0f, 4.0f, slots), 0);
 
     const int medium = LayoutOrnaments(rects, OrnamentTier::Medium, 3.0f, 24.0f, 12.0f, 4.0f, slots);
-    ASSERT_EQ(medium, 2);
+    ASSERT_EQ(medium, 3);
     EXPECT_EQ(CountKind(std::span(slots).first(medium), OrnamentKind::Screw), 2);
+    EXPECT_EQ(CountKind(std::span(slots).first(medium), OrnamentKind::StatusLed), 1);
     for (int i = 0; i < medium; ++i)
     {
         EXPECT_TRUE(Inside(slots[i], rects.WellMin, rects.WellMax));
-        // Bottom corners: below the rail, never over it.
-        EXPECT_GT(slots[i].Min.y, rects.RailMax.y);
+        if (slots[i].Kind == OrnamentKind::Screw)
+        {
+            // Bottom corners: below the rail, never over it.
+            EXPECT_GT(slots[i].Min.y, rects.RailMax.y);
+        }
+        else
+        {
+            // The LED sits at the rail's right end, one gap in.
+            EXPECT_TRUE(Inside(slots[i], rects.RailMin, rects.RailMax));
+            EXPECT_FLOAT_EQ(slots[i].Max.x, rects.RailMax.x - 4.0f);
+            EXPECT_FLOAT_EQ(slots[i].Max.x - slots[i].Min.x, 6.0f);
+        }
     }
 
     const int large = LayoutOrnaments(rects, OrnamentTier::Large, 3.0f, 24.0f, 12.0f, 4.0f, slots);
-    ASSERT_EQ(large, 4);
+    ASSERT_EQ(large, 5);
     const std::span<const OrnamentSlot> placed(slots.data(), static_cast<std::size_t>(large));
     EXPECT_EQ(CountKind(placed, OrnamentKind::Screw), 2);
     EXPECT_EQ(CountKind(placed, OrnamentKind::Vent), 1);
     EXPECT_EQ(CountKind(placed, OrnamentKind::TripleSlash), 1);
+    EXPECT_EQ(CountKind(placed, OrnamentKind::StatusLed), 1);
     for (int i = 0; i < large; ++i)
     {
         EXPECT_TRUE(Inside(placed[i], mn, mx));
@@ -200,8 +212,9 @@ TEST(ChromeGeometry, OrnamentsScaleWithTierAndStayInsideTheFrame)
     }
     // The rail ornaments end at the rail's right edge minus the gap, in the
     // width the rail's line was told to leave free.
-    EXPECT_FLOAT_EQ(RailOrnamentWidth(OrnamentTier::Large, 24.0f, 12.0f, 4.0f), 44.0f);
-    EXPECT_FLOAT_EQ(RailOrnamentWidth(OrnamentTier::Medium, 24.0f, 12.0f, 4.0f), 0.0f);
+    EXPECT_FLOAT_EQ(RailOrnamentWidth(OrnamentTier::Large, 24.0f, 12.0f, 6.0f, 4.0f), 54.0f);
+    EXPECT_FLOAT_EQ(RailOrnamentWidth(OrnamentTier::Medium, 24.0f, 12.0f, 6.0f, 4.0f), 10.0f);
+    EXPECT_FLOAT_EQ(RailOrnamentWidth(OrnamentTier::Small, 24.0f, 12.0f, 6.0f, 4.0f), 0.0f);
 }
 
 TEST(ChromeGeometry, OrnamentsRespectTheOutputCapacityAndSmallFrames)
@@ -216,7 +229,54 @@ TEST(ChromeGeometry, OrnamentsRespectTheOutputCapacityAndSmallFrames)
     std::array<OrnamentSlot, 12> slots{};
     EXPECT_EQ(LayoutOrnaments(FrameLayout(ImVec2(0, 0), ImVec2(20, 20), spec), OrnamentTier::Medium,
                               3.0f, 24.0f, 12.0f, 4.0f, slots), 0);
+    // A rail too short for the vent and slash keeps its LED.
     const int narrow = LayoutOrnaments(FrameLayout(ImVec2(0, 0), ImVec2(70, 400), spec), OrnamentTier::Large,
                                        3.0f, 24.0f, 12.0f, 4.0f, slots);
     EXPECT_EQ(CountKind(std::span(slots).first(narrow), OrnamentKind::Vent), 0);
+    EXPECT_EQ(CountKind(std::span(slots).first(narrow), OrnamentKind::StatusLed), 1);
+    // And one too short for the LED as well carries nothing on the rail.
+    const int tiny = LayoutOrnaments(FrameLayout(ImVec2(0, 0), ImVec2(40, 400), spec), OrnamentTier::Large,
+                                     3.0f, 24.0f, 12.0f, 4.0f, slots);
+    EXPECT_EQ(CountKind(std::span(slots).first(tiny), OrnamentKind::StatusLed), 0);
+}
+
+TEST(ChromeGeometry, CornerWedgeHugsTheChamferAndClampsToTheFrame)
+{
+    const ChamferPoly wedge = CornerWedge(ImVec2(10, 20), ImVec2(210, 120), 8.0f, 2.0f);
+    ASSERT_EQ(wedge.Count, 4);
+    // From the left edge up along the cut, along the top, then back down the
+    // left edge, thickness * sqrt(2) further along each edge.
+    EXPECT_FLOAT_EQ(wedge.P[0].x, 10.0f);
+    EXPECT_FLOAT_EQ(wedge.P[0].y, 28.0f);
+    EXPECT_FLOAT_EQ(wedge.P[1].x, 18.0f);
+    EXPECT_FLOAT_EQ(wedge.P[1].y, 20.0f);
+    EXPECT_NEAR(wedge.P[2].x, 10.0f + 8.0f + 2.0f * 1.41421356f, 1e-4f);
+    EXPECT_FLOAT_EQ(wedge.P[2].y, 20.0f);
+    EXPECT_FLOAT_EQ(wedge.P[3].x, 10.0f);
+    EXPECT_NEAR(wedge.P[3].y, 20.0f + 8.0f + 2.0f * 1.41421356f, 1e-4f);
+
+    EXPECT_EQ(CornerWedge(ImVec2(0, 0), ImVec2(100, 100), 0.0f, 2.0f).Count, 0);
+    EXPECT_EQ(CornerWedge(ImVec2(0, 0), ImVec2(100, 0), 8.0f, 2.0f).Count, 0);
+    // On a frame smaller than the band the reach stops at half the side.
+    const ChamferPoly tiny = CornerWedge(ImVec2(0, 0), ImVec2(12, 12), 5.0f, 4.0f);
+    ASSERT_EQ(tiny.Count, 4);
+    EXPECT_FLOAT_EQ(tiny.P[2].x, 6.0f);
+    EXPECT_FLOAT_EQ(tiny.P[3].y, 6.0f);
+    EXPECT_EQ(CornerWedge(ImVec2(0, 0), ImVec2(12, 12), 6.0f, 4.0f).Count, 0);
+}
+
+TEST(ChromeGeometry, SlantedCapLeansRightAndClampsTheLean)
+{
+    const ChamferPoly cap = SlantedCap(ImVec2(0, 0), ImVec2(20, 10), 3.0f);
+    ASSERT_EQ(cap.Count, 4);
+    EXPECT_FLOAT_EQ(cap.P[0].x, 3.0f);
+    EXPECT_FLOAT_EQ(cap.P[0].y, 0.0f);
+    EXPECT_FLOAT_EQ(cap.P[1].x, 20.0f);
+    EXPECT_FLOAT_EQ(cap.P[1].y, 0.0f);
+    EXPECT_FLOAT_EQ(cap.P[2].x, 17.0f);
+    EXPECT_FLOAT_EQ(cap.P[2].y, 10.0f);
+    EXPECT_FLOAT_EQ(cap.P[3].x, 0.0f);
+    EXPECT_FLOAT_EQ(cap.P[3].y, 10.0f);
+    EXPECT_FLOAT_EQ(SlantedCap(ImVec2(0, 0), ImVec2(20, 10), 50.0f).P[0].x, 10.0f);
+    EXPECT_EQ(SlantedCap(ImVec2(0, 0), ImVec2(0, 10), 3.0f).Count, 0);
 }

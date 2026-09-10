@@ -12,11 +12,13 @@ namespace
 {
 // The rect the frame owns: the window below its title bar or dock tab (a
 // docked window's rect includes the tab bar ImGui draws for it). The content
-// region's top is that boundary plus the padding, independent of scroll.
+// region's top is that boundary plus the padding, less the scroll, which is
+// added back so the frame stays put while the body scrolls under it.
 ImVec2 FrameMin()
 {
     const ImVec2 pos = ImGui::GetWindowPos();
-    return ImVec2(pos.x, pos.y + ImGui::GetWindowContentRegionMin().y - ImGui::GetStyle().WindowPadding.y);
+    return ImVec2(pos.x, pos.y + ImGui::GetWindowContentRegionMin().y + ImGui::GetScrollY()
+                             - ImGui::GetStyle().WindowPadding.y);
 }
 
 ImVec2 FrameMax()
@@ -69,6 +71,7 @@ ScopedPanel::~ScopedPanel()
         const float gap = EditorUi::Px(4.0f);
         const float vent = EditorUi::Px(m.VentLength);
         const float slash = EditorUi::Px(m.VentLength * 0.5f);
+        const float led = EditorUi::Px(m.ScrewRadius) * 2.0f;
         std::array<EditorChrome::OrnamentSlot, 8> slots{};
         const int placed = EditorChrome::LayoutOrnaments(rects, tier, EditorUi::Px(m.ScrewRadius), vent, slash, gap, slots);
 
@@ -77,11 +80,17 @@ ScopedPanel::~ScopedPanel()
         if (spec.Rail > 0.0f)
             EditorChrome::DrawHeaderRail(dl, rects.RailMin, rects.RailMax, Style,
                                          EditorChrome::HeaderState{ .Focused = focused },
-                                         EditorChrome::RailOrnamentWidth(tier, vent, slash, gap));
+                                         EditorChrome::RailOrnamentWidth(tier, vent, slash, led, gap));
         const ImU32 accent = ImGui::GetColorU32(focused ? EditorUi::AccentHover : EditorUi::Accent);
+        // The LED is the one ornament that reads state: lit while the panel
+        // is being worked in, banked otherwise.
+        const ImU32 ledTint = ImGui::GetColorU32(focused ? EditorUi::AccentHover : EditorUi::Darken(EditorUi::Accent, 0.55f));
         for (int i = 0; i < placed; ++i)
-            EditorChrome::DrawOrnament(dl, slots[static_cast<std::size_t>(i)].Kind, slots[static_cast<std::size_t>(i)].Min,
-                                       slots[static_cast<std::size_t>(i)].Max, accent);
+        {
+            const EditorChrome::OrnamentSlot& slot = slots[static_cast<std::size_t>(i)];
+            EditorChrome::DrawOrnament(dl, slot.Kind, slot.Min, slot.Max,
+                                       slot.Kind == EditorChrome::OrnamentKind::StatusLed ? ledTint : accent);
+        }
         dl->PopClipRect();
     }
     ImGui::End();

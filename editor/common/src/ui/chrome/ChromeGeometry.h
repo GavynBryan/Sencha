@@ -52,6 +52,16 @@ struct ChamferPoly
 };
 ChamferPoly ChamferOutline(ImVec2 mn, ImVec2 mx, float chamfer);
 
+// The band just inside the top-left chamfer of [mn, mx]: `thickness` deep,
+// parallel to the cut, 4 points clockwise from the left edge. Count is 0 when
+// there is no chamfer or no room; the band never reaches past half the
+// shorter side.
+ChamferPoly CornerWedge(ImVec2 mn, ImVec2 mx, float chamfer, float thickness);
+
+// A parallelogram over [mn, mx] leaning `lean` to the right at the top, 4
+// points clockwise from the top edge. The lean is clamped to half the width.
+ChamferPoly SlantedCap(ImVec2 mn, ImVec2 mx, float lean);
+
 // The rectangles a frame is built from: the content well inside the metal ring
 // and the header rail across the well's top (zero height when the spec has no
 // rail).
@@ -97,13 +107,16 @@ struct OrnamentSlot
 
 // Places a frame's ornaments for its tier into `out` and returns how many were
 // placed (never more than out.size()). Small places nothing. Medium mounts a
-// screw in each bottom corner of the well. Large adds a vent and a triple
-// slash at the right end of the rail. Placement is a pure function of the
-// rects, so it never moves between frames.
+// screw in each bottom corner of the well and a status LED (a dot of
+// `screwRadius`) at the right end of the rail. Large adds a vent and a triple
+// slash left of the LED. A rail too short for the Large set falls back to the
+// LED alone; one too short for that carries nothing. Placement is a pure
+// function of the rects, so it never moves between frames.
 int LayoutOrnaments(const FrameRects& rects, OrnamentTier tier, float screwRadius,
                     float ventLength, float slashLength, float gap, std::span<OrnamentSlot> out);
 
 // Width the rail's line leaves free at its right end for the tier's rail
-// ornaments (what LayoutOrnaments will place there).
-float RailOrnamentWidth(OrnamentTier tier, float ventLength, float slashLength, float gap);
+// ornaments (what LayoutOrnaments will place there when the rail is wide
+// enough). `ledDiameter` is twice the screw radius.
+float RailOrnamentWidth(OrnamentTier tier, float ventLength, float slashLength, float ledDiameter, float gap);
 } // namespace EditorChrome

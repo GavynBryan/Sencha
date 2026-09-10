@@ -10,29 +10,47 @@ namespace
 {
 using namespace EditorChrome;
 
-ImU32 CapColor(const HeaderState& state)
+// The header's voice: amber when it names the thing being edited, bright
+// cyan when its panel is being worked in, cyan otherwise.
+const ImVec4& HeaderAccent(const HeaderState& state)
 {
-    return ImGui::GetColorU32(state.Focused ? EditorUi::AccentHover : EditorUi::Accent);
+    return state.Selected ? EditorUi::SelectedOutline : state.Focused ? EditorUi::AccentHover : EditorUi::Accent;
 }
 
-// The cap is a small chamfered block; the line a single crisp stroke that
-// brightens with focus.
-void DrawCapAndLine(ImDrawList* dl, const HeaderRegions& regions, const HeaderState& state)
+enum class CapShape
+{
+    Block,   // a chamfered block, the rail's cap
+    Slanted, // a parallelogram, the titled row's cap
+};
+
+// The cap, then the rule with a short terminator tick at each end, so the
+// line reads as a drawn segment rather than a fade. Both brighten with focus.
+void DrawCapAndLine(ImDrawList* dl, const HeaderRegions& regions, const HeaderState& state, CapShape shape)
 {
     const float edge = std::max(1.0f, EditorUi::Px(EditorUi::Metrics.EdgeWidth));
+    const ImVec4& accent = HeaderAccent(state);
     if (regions.HasCap)
     {
         const float h = regions.CapMax.y - regions.CapMin.y;
-        FillChamfered(dl, ChamferOutline(regions.CapMin, regions.CapMax, h * 0.35f), CapColor(state));
+        const ChamferPoly cap = shape == CapShape::Slanted ? SlantedCap(regions.CapMin, regions.CapMax, h * 0.35f)
+                                                          : ChamferOutline(regions.CapMin, regions.CapMax, h * 0.35f);
+        FillChamfered(dl, cap, ImGui::GetColorU32(accent));
     }
     if (regions.HasLine)
     {
         const float cy = std::floor((regions.LineMin.y + regions.LineMax.y) * 0.5f) + 0.5f;
-        const ImVec4 line = EditorUi::WithAlpha(EditorUi::Accent, state.Focused ? 0.85f : 0.45f);
-        dl->AddLine(ImVec2(regions.LineMin.x, cy), ImVec2(regions.LineMax.x, cy), ImGui::GetColorU32(line), edge);
-        if (state.Focused)
+        const bool lit = state.Focused || state.Selected;
+        const ImU32 line = ImGui::GetColorU32(EditorUi::WithAlpha(accent, lit ? 0.85f : 0.45f));
+        dl->AddLine(ImVec2(regions.LineMin.x, cy), ImVec2(regions.LineMax.x, cy), line, edge);
+        const float tick = std::min((regions.LineMax.y - regions.LineMin.y) * 0.3f, EditorUi::Px(3.0f));
+        const float x0 = std::floor(regions.LineMin.x) + 0.5f;
+        const float x1 = std::floor(regions.LineMax.x) - 0.5f;
+        const ImU32 terminator = ImGui::GetColorU32(accent);
+        dl->AddLine(ImVec2(x0, cy - tick), ImVec2(x0, cy + tick), terminator, edge);
+        dl->AddLine(ImVec2(x1, cy - tick), ImVec2(x1, cy + tick), terminator, edge);
+        if (lit)
             dl->AddLine(ImVec2(regions.LineMin.x, cy), ImVec2(regions.LineMax.x, cy),
-                        ImGui::GetColorU32(EditorUi::WithAlpha(EditorUi::Accent, EditorUi::Metrics.GlowAlpha * 0.5f)),
+                        ImGui::GetColorU32(EditorUi::WithAlpha(accent, EditorUi::Metrics.GlowAlpha * 0.5f)),
                         EditorUi::Px(EditorUi::Metrics.GlowWidth));
     }
 }
@@ -44,7 +62,8 @@ void DrawTitle(ImDrawList* dl, const HeaderRegions& regions, std::string_view ti
         return;
     const ImVec2 size = EditorUi::MeasureRoleText(role, title);
     const ImVec2 pos(regions.TitleMin.x, std::floor((regions.TitleMin.y + regions.TitleMax.y - size.y) * 0.5f));
-    EditorUi::DrawRoleText(dl, pos, role, title, state.Focused ? ImGui::GetColorU32(EditorUi::AccentHover) : 0);
+    EditorUi::DrawRoleText(dl, pos, role, title,
+                           state.Selected || state.Focused ? ImGui::GetColorU32(HeaderAccent(state)) : 0);
 }
 }
 
@@ -52,17 +71,20 @@ namespace EditorChrome
 {
 void DrawHeaderRail(ImDrawList* dl, ImVec2 mn, ImVec2 mx, PanelStyle style, HeaderState state, float ornamentWidth)
 {
-    (void)style;
     const float h = mx.y - mn.y;
     if (h <= 0.0f || mx.x <= mn.x)
         return;
-    // The rail is a groove in the well: the chassis shows through it.
-    dl->AddRectFilled(mn, mx, ImGui::GetColorU32(EditorUi::ChassisBg));
+    // The rail is a groove in the well: the chassis shows through it, its
+    // lower lip catching a little light.
+    VerticalGradient(dl, mn, mx, ImGui::GetColorU32(EditorUi::ChassisBg),
+                     ImGui::GetColorU32(EditorUi::Lighten(EditorUi::ChassisBg, 0.06f)));
+    // The lighter weights carry a shorter cap.
+    const bool light = style == PanelStyle::Tool || style == PanelStyle::Compact || style == PanelStyle::Viewport;
     const float gap = EditorUi::Px(4.0f);
     const float inset = EditorUi::Px(2.0f);
     const HeaderRegions regions = LayoutHeader(ImVec2(mn.x + inset, mn.y), ImVec2(mx.x - inset, mx.y),
-                                               h * 3.0f, 0.0f, ornamentWidth, 0.0f, gap);
-    DrawCapAndLine(dl, regions, state);
+                                               h * (light ? 2.0f : 3.0f), 0.0f, ornamentWidth, 0.0f, gap);
+    DrawCapAndLine(dl, regions, state, CapShape::Block);
 }
 
 HeaderRegions DrawHeaderRow(ImDrawList* dl, ImVec2 mn, ImVec2 mx, std::string_view title, EditorUi::TextRole role,
@@ -88,7 +110,7 @@ HeaderRegions DrawHeaderRow(ImDrawList* dl, ImVec2 mn, ImVec2 mx, std::string_vi
     const ImVec2 size = EditorUi::MeasureRoleText(role, title);
     const HeaderRegions regions = LayoutHeader(ImVec2(mn.x + padX, mn.y + padY), ImVec2(mx.x - padX, mx.y - padY),
                                                (h - padY * 2.0f) * 0.6f, size.x, 0.0f, reservedControlWidth, gap);
-    DrawCapAndLine(dl, regions, state);
+    DrawCapAndLine(dl, regions, state, CapShape::Slanted);
     DrawTitle(dl, regions, title, role, state);
     return regions;
 }
@@ -102,7 +124,7 @@ void DrawHeaderRule(ImDrawList* dl, ImVec2 mn, ImVec2 mx, std::string_view title
     const float gap = EditorUi::Px(6.0f);
     const ImVec2 size = EditorUi::MeasureRoleText(role, title);
     const HeaderRegions regions = LayoutHeader(mn, mx, h * 0.5f, size.x, 0.0f, 0.0f, gap);
-    DrawCapAndLine(dl, regions, state);
+    DrawCapAndLine(dl, regions, state, CapShape::Block);
     DrawTitle(dl, regions, title, role, state);
 }
 

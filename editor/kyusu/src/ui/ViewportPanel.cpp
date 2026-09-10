@@ -229,7 +229,7 @@ void ViewportPanel::DrawOrientationSelector(EditorViewport& viewport)
     // so the row costs no more height than the combo did.
     const bool perspective = viewport.Orientation == ViewportOrientation::Perspective;
     const ImVec2 rowMin = ImGui::GetCursorScreenPos();
-    const float rowHeight = ImGui::GetFrameHeight() + EditorUi::Px(8.0f);
+    const float rowHeight = std::max(EditorUi::Px(EditorUi::Metrics.HeaderHeight), ImGui::GetFrameHeight() + EditorUi::Px(4.0f));
     const ImVec2 rowMax(rowMin.x + std::max(0.0f, ImGui::GetContentRegionAvail().x), rowMin.y + rowHeight);
     const float controlWidth = perspective ? 0.0f : ImGui::GetFontSize() * 7.0f;
     const EditorChrome::HeaderRegions regions = EditorChrome::DrawHeaderRow(
