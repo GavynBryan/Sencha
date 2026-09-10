@@ -113,7 +113,7 @@ namespace
     // The narrow row button every list uses to drop an entry.
     bool DrawRemoveButton()
     {
-        return EditorChrome::Button(ICON_FA_XMARK, ICON_FA_XMARK, ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal);
+        return EditorChrome::IconButton("cancel", IconId::Cancel, ImGui::GetTextLineHeight(), EditorChrome::ButtonTone::Normal);
     }
 
     //=========================================================================
@@ -198,7 +198,7 @@ namespace
                     NewTag.fill('\0');
             }
             ImGui::SameLine();
-            if (EditorChrome::Button(ICON_FA_CARET_DOWN "##knowntags", ICON_FA_CARET_DOWN "##knowntags", ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
+            if (EditorChrome::IconButton("knowntags", IconId::ChevronDown, ImGui::GetTextLineHeight(), EditorChrome::ButtonTone::Normal))
                 ImGui::OpenPopup("known_tags");
             if (ImGui::BeginPopup("known_tags"))
             {

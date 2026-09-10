@@ -1,4 +1,6 @@
 #include "ThemePreferences.h"
+#include "ScopedPanel.h"
+#include "chrome/ChromeControls.h"
 
 #include "EditorThemeFile.h"
 #include "EditorUiStyle.h"
@@ -146,11 +148,9 @@ void ThemePreferences::DrawWindow(ConsoleRegistry& console)
         return;
 
     ImGui::SetNextWindowSize(ImVec2(360.0f, 540.0f), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Theme Palette", &WindowOpen))
-    {
-        ImGui::End();
+    ScopedPanel panel("Theme Palette", &WindowOpen);
+    if (!panel.IsOpen())
         return;
-    }
 
     ImGui::TextUnformatted(ActiveName.empty() ? "Base theme: Built-in"
                                               : ("Base theme: " + ActiveName).c_str());
@@ -163,13 +163,13 @@ void ThemePreferences::DrawWindow(ConsoleRegistry& console)
         EditorUi::Apply(ImGui::GetStyle());
 
     ImGui::Separator();
-    if (ImGui::Button("Revert to Base Theme"))
+    if (EditorChrome::Button("Revert to Base Theme", "Revert to Base Theme", {}, EditorChrome::ButtonTone::Normal))
         ApplyChoice(console, ActiveName);
 
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
     ImGui::InputText("##theme_name", SaveName, sizeof(SaveName));
     ImGui::SameLine();
-    if (ImGui::Button("Save as Theme") && SaveName[0] != '\0')
+    if (EditorChrome::Button("Save as Theme", "Save as Theme", {}, EditorChrome::ButtonTone::Normal) && SaveName[0] != '\0')
     {
         const std::string name(SaveName);
         std::string error;
@@ -193,5 +193,4 @@ void ThemePreferences::DrawWindow(ConsoleRegistry& console)
         ImGui::PopStyleColor();
     }
 
-    ImGui::End();
 }

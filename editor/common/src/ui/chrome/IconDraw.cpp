@@ -1,4 +1,5 @@
 #include "IconDraw.h"
+#include "ui/EditorUiStyle.h"
 
 #include "fonts/IconsFontAwesome6.h"
 
@@ -30,7 +31,7 @@ struct Canvas
     {
         S = std::max(1.0f, std::min(mx.x - mn.x, mx.y - mn.y));
         Mn = ImVec2(std::floor(mn.x + (mx.x - mn.x - S) * 0.5f), std::floor(mn.y + (mx.y - mn.y - S) * 0.5f));
-        W = std::max(1.0f, S * 0.085f);
+        W = std::max(EditorUi::Px(1.25f), S * 0.1f);
     }
 
     [[nodiscard]] ImVec2 P(float u, float v) const { return ImVec2(Mn.x + u * S, Mn.y + v * S); }
@@ -181,13 +182,15 @@ void Anchor(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
 void Light(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
 {
     const Canvas k(dl, mn, mx, c);
-    k.Circle(0.5f, 0.42f, 0.22f);
-    k.Rect(0.4f, 0.66f, 0.6f, 0.8f);
-    k.Line(0.5f, 0.06f, 0.5f, 0.15f);
-    k.Line(0.22f, 0.16f, 0.29f, 0.23f);
-    k.Line(0.78f, 0.16f, 0.71f, 0.23f);
-    k.Line(0.12f, 0.42f, 0.21f, 0.42f);
-    k.Line(0.88f, 0.42f, 0.79f, 0.42f);
+    k.Rect(0.4f, 0.4f, 0.6f, 0.6f);
+    k.Line(0.5f, 0.08f, 0.5f, 0.28f);
+    k.Line(0.5f, 0.72f, 0.5f, 0.92f);
+    k.Line(0.08f, 0.5f, 0.28f, 0.5f);
+    k.Line(0.72f, 0.5f, 0.92f, 0.5f);
+    k.Line(0.18f, 0.18f, 0.32f, 0.32f);
+    k.Line(0.68f, 0.68f, 0.82f, 0.82f);
+    k.Line(0.18f, 0.82f, 0.32f, 0.68f);
+    k.Line(0.68f, 0.32f, 0.82f, 0.18f);
 }
 
 void Grid(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
@@ -214,11 +217,12 @@ void GridFrame(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
 void Snap(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)
 {
     const Canvas k(dl, mn, mx, c);
-    k.Arc(0.5f, 0.44f, 0.28f, kPi, kPi * 2.0f, 2.2f);
-    k.Line(0.22f, 0.44f, 0.22f, 0.8f, 2.2f);
-    k.Line(0.78f, 0.44f, 0.78f, 0.8f, 2.2f);
-    k.RectFilled(0.14f, 0.68f, 0.3f, 0.84f);
-    k.RectFilled(0.7f, 0.68f, 0.86f, 0.84f);
+    k.Line(0.15f, 0.35f, 0.15f, 0.15f); k.Line(0.15f, 0.15f, 0.35f, 0.15f);
+    k.Line(0.65f, 0.15f, 0.85f, 0.15f); k.Line(0.85f, 0.15f, 0.85f, 0.35f);
+    k.Line(0.85f, 0.65f, 0.85f, 0.85f); k.Line(0.85f, 0.85f, 0.65f, 0.85f);
+    k.Line(0.35f, 0.85f, 0.15f, 0.85f); k.Line(0.15f, 0.85f, 0.15f, 0.65f);
+    k.Line(0.3f, 0.5f, 0.7f, 0.5f);
+    k.Line(0.5f, 0.3f, 0.5f, 0.7f);
 }
 
 void ZoneBounds(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 c)

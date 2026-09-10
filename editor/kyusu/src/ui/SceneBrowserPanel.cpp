@@ -75,7 +75,7 @@ void SceneBrowserPanel::OnDraw()
     if (!Scanned)
         Rescan();
 
-    if (EditorChrome::Button(ICON_FA_ARROWS_ROTATE "  Refresh", ICON_FA_ARROWS_ROTATE "  Refresh", {}, EditorChrome::ButtonTone::Normal))
+    if (EditorChrome::ToolButton(ICON_FA_ARROWS_ROTATE "  Refresh", IconId::Refresh, ICON_FA_ARROWS_ROTATE "  Refresh", false, ImGui::GetFrameHeight()))
     {
         Rescan();
         if (SceneThumbnailCache* cache = Thumbnails ? Thumbnails() : nullptr)

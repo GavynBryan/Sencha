@@ -489,13 +489,13 @@ void SceneHierarchyPanel::DrawRowFlagToggles(DrawContext& ctx, EntityId entity)
     const bool visible = ctx.Scene.IsEntityVisible(entity);
     const bool locked = ctx.Scene.IsEntityLocked(entity);
     EditorScene& scene = ctx.Scene;
-    if (EditorChrome::Button(visible ? ICON_FA_EYE : ICON_FA_EYE_SLASH, visible ? ICON_FA_EYE : ICON_FA_EYE_SLASH, ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
+    if (EditorChrome::IconButton("visible", visible ? IconId::Eye : IconId::EyeOff, ImGui::GetTextLineHeight(), EditorChrome::ButtonTone::Normal))
         Commands.Execute(std::make_unique<ValueCommand<bool>>(
             visible, !visible,
             [&scene, entity](const bool& v) { scene.SetEntityVisible(entity, v); },
             ctx.Document));
     ImGui::SameLine();
-    if (EditorChrome::Button(locked ? ICON_FA_LOCK : ICON_FA_LOCK_OPEN, locked ? ICON_FA_LOCK : ICON_FA_LOCK_OPEN, ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
+    if (EditorChrome::IconButton("locked", locked ? IconId::Lock : IconId::Unlock, ImGui::GetTextLineHeight(), EditorChrome::ButtonTone::Normal))
         Commands.Execute(std::make_unique<ValueCommand<bool>>(
             locked, !locked,
             [&scene, entity](const bool& v) { scene.SetEntityLocked(entity, v); },

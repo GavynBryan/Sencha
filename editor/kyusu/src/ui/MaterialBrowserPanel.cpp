@@ -87,7 +87,7 @@ void MaterialBrowserPanel::OnDraw()
     if (!panel.IsOpen())
         return;
 
-    if (EditorChrome::Button("Rescan", "Rescan", {}, EditorChrome::ButtonTone::Normal))
+    if (EditorChrome::ToolButton("Rescan", IconId::Refresh, "Rescan", false, ImGui::GetFrameHeight()))
     {
         Materials.Rescan(Materials.Roots());
         // A rescan may follow a save that re-pointed a material's textures;

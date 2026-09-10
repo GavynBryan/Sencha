@@ -158,7 +158,7 @@ void WorldPartitionPanel::DrawStreamingPreview()
             return;
         ImGui::SameLine();
         ImGui::PushID(id);
-        if (EditorChrome::Button(ICON_FA_XMARK, ICON_FA_XMARK, ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
+        if (EditorChrome::IconButton("cancel", IconId::Cancel, ImGui::GetTextLineHeight(), EditorChrome::ButtonTone::Normal))
             field.reset();
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Clear the preview override (back to the authored shape)");
@@ -620,7 +620,7 @@ void WorldPartitionPanel::DrawGraphStreaming(const GraphRecord& graph)
             return;
         }
         ImGui::PushID(id);
-        if (EditorChrome::Button(ICON_FA_XMARK, ICON_FA_XMARK, ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
+        if (EditorChrome::IconButton("cancel", IconId::Cancel, ImGui::GetTextLineHeight(), EditorChrome::ButtonTone::Normal))
             clear();
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Clear back to inherited");
@@ -704,7 +704,7 @@ void WorldPartitionPanel::DrawZoneRow(const ZoneHeader& zone)
 
     if (isOpen)
     {
-        if (EditorChrome::Button(visible ? ICON_FA_EYE : ICON_FA_EYE_SLASH, visible ? ICON_FA_EYE : ICON_FA_EYE_SLASH, ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
+        if (EditorChrome::IconButton("visible", visible ? IconId::Eye : IconId::EyeOff, ImGui::GetTextLineHeight(), EditorChrome::ButtonTone::Normal))
             (void)WorldDoc.SetZoneVisible(zone.Id, !visible);
         ImGui::SameLine();
     }

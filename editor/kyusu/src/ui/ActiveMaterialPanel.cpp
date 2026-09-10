@@ -46,7 +46,7 @@ void ActiveMaterialPanel::OnDraw()
     // Browse and the three stash slots share one row. Swap-on-click: a filled
     // slot swaps with the active material (stash + recall in one gesture); an
     // empty slot stores a copy (the active slot is never emptied by a click).
-    if (EditorChrome::Button("Browse", "Browse", {}, EditorChrome::ButtonTone::Normal) && Browse)
+    if (EditorChrome::ToolButton("Browse", IconId::Folder, "Browse", false, ImGui::GetFrameHeight()) && Browse)
         Browse();
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Show the Materials browser.");
