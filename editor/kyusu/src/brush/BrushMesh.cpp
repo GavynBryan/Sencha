@@ -1,6 +1,7 @@
 #include "BrushMesh.h"
 
 #include <algorithm>
+#include <cmath>
 
 Vec3d BrushComputeFaceNormal(const BrushMesh& mesh, const BrushFace& face)
 {
@@ -38,6 +39,13 @@ Vec3d BrushComputeFaceNormal(const BrushMesh& mesh, const BrushFace& face)
     if (normal.SqrMagnitude() <= 0.0f)
         return Vec3d{ 0.0f, 0.0f, 0.0f };
     return normal.Normalized();
+}
+
+bool BrushFacesCoplanar(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b)
+{
+    return std::abs(BrushComputeFaceNormal(mesh, mesh.Faces[a])
+                        .Dot(BrushComputeFaceNormal(mesh, mesh.Faces[b])))
+        > 0.99f;
 }
 
 Vec3d BrushFaceCentroid(const BrushMesh& mesh, const BrushFace& face)
@@ -82,4 +90,13 @@ void BrushSetEdgeSoft(BrushMesh& mesh, std::uint32_t a, std::uint32_t b, bool so
         mesh.SoftEdges.push_back(key);
     else if (!soft && it != mesh.SoftEdges.end())
         mesh.SoftEdges.erase(it);
+}
+
+void BrushSplitSoftEdge(BrushMesh& mesh, std::uint32_t a, std::uint32_t b, std::uint32_t middle)
+{
+    if (!BrushEdgeIsSoft(mesh, a, b))
+        return;
+    BrushSetEdgeSoft(mesh, a, b, false);
+    BrushSetEdgeSoft(mesh, a, middle, true);
+    BrushSetEdgeSoft(mesh, middle, b, true);
 }

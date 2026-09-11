@@ -52,12 +52,24 @@ struct BrushMesh
 // Add or remove the undirected edge (a, b) from the soft set (idempotent).
 void BrushSetEdgeSoft(BrushMesh& mesh, std::uint32_t a, std::uint32_t b, bool soft);
 
+// Rewrite the soft mark on (a, b) onto the two halves a split at `middle`
+// produced. A vertex inserted on a smooth edge must leave both halves smooth,
+// or the shading breaks along a seam the user never asked for. Every operation
+// that splits an edge owes this call.
+void BrushSplitSoftEdge(BrushMesh& mesh, std::uint32_t a, std::uint32_t b, std::uint32_t middle);
+
 // Newell's method — robust polygon normal consistent with CCW winding. Returns a
 // normalized vector, or {0,0,0} for a degenerate loop.
 [[nodiscard]] Vec3d BrushComputeFaceNormal(const BrushMesh& mesh, const BrushFace& face);
 
 // Average of a face's loop vertex positions.
 [[nodiscard]] Vec3d BrushFaceCentroid(const BrushMesh& mesh, const BrushFace& face);
+
+// Whether two faces that share an edge lie in the same plane: the surface
+// continues across that edge rather than bending. Judged on the normals alone,
+// so it is only meaningful for edge-sharing faces. This is the one criterion
+// the carves use to tell a seam from a rim.
+[[nodiscard]] bool BrushFacesCoplanar(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b);
 
 // Average of all vertex positions (mesh "center" for outward-orientation tests).
 [[nodiscard]] Vec3d BrushMeshCentroid(const BrushMesh& mesh);

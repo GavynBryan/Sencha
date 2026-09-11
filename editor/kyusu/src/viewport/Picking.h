@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -42,6 +43,17 @@ struct SurfaceHit
     Vec3d Point = {};
     Vec3d Normal = {};
 };
+
+// Nearest ray/face intersection: intersects the face plane and tests the hit for
+// containment in the loop, rather than fanning the loop into triangles.
+//
+// Rendering needs triangles; picking needs containment, and the two answers
+// differ for a concave face -- which is what a face becomes as soon as a carve
+// lands flush against one of its boundaries. `outDistance` is in units of
+// `ray.Direction` and is written only on a hit. The face boundary counts as a
+// hit, so a click exactly on a shared edge still selects.
+[[nodiscard]] bool IntersectRayFacePolygon(const Ray3d& ray, std::span<const Vec3d> corners,
+                                           float& outDistance);
 
 // The pick mode an element edit-mode selects with (Object->EntityOnly,
 // Vertex->VertexOnly, ...). The viewport's own table keyed by MeshElementKind —

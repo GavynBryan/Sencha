@@ -1,12 +1,15 @@
 #include "Picking.h"
 
 #include "EditorViewport.h"
+#include "ViewportMath.h"
 #include "ViewportProjection.h"
 
 #include "document/EditorScene.h"
 #include "document/SceneBrushWalk.h"
 #include "meshedit/MeshElementKindTraits.h" // MeshElementKindCount
 #include "meshedit/MeshElements.h"
+
+#include "brush/CarveSurround.h"
 
 #include <algorithm>
 #include <array>
@@ -16,6 +19,65 @@
 #include <map>
 #include <utility>
 #include <vector>
+
+bool IntersectRayFacePolygon(const Ray3d& ray, std::span<const Vec3d> corners, float& outDistance)
+{
+    if (corners.size() < 3)
+        return false;
+
+    // Newell: correct for n-gons and independent of which corner comes first.
+    Vec3d normal{ 0.0f, 0.0f, 0.0f };
+    for (std::size_t i = 0; i < corners.size(); ++i)
+    {
+        const Vec3d& a = corners[i];
+        const Vec3d& b = corners[(i + 1) % corners.size()];
+        normal.X += (a.Y - b.Y) * (a.Z + b.Z);
+        normal.Y += (a.Z - b.Z) * (a.X + b.X);
+        normal.Z += (a.X - b.X) * (a.Y + b.Y);
+    }
+    const float normalLength = normal.Magnitude();
+    if (normalLength < 1e-12f)
+        return false;
+    normal = normal * (1.0f / normalLength);
+
+    const double denominator = static_cast<double>(ray.Direction.Dot(normal));
+    if (std::abs(denominator) < ViewportMath::kParallelEpsilon)
+        return false;
+    const double t = static_cast<double>((corners[0] - ray.Origin).Dot(normal)) / denominator;
+    if (t < 0.0)
+        return false;
+
+    const std::array<Vec3d, 3> axes = { Vec3d{ 1, 0, 0 }, Vec3d{ 0, 1, 0 }, Vec3d{ 0, 0, 1 } };
+    std::size_t seed = 0;
+    for (std::size_t i = 1; i < axes.size(); ++i)
+        if (std::abs(normal.Dot(axes[i])) < std::abs(normal.Dot(axes[seed])))
+            seed = i;
+    Vec3d axisU = axes[seed] - normal * axes[seed].Dot(normal);
+    const float axisLength = axisU.Magnitude();
+    if (axisLength < 1e-6f)
+        return false;
+    axisU = axisU * (1.0f / axisLength);
+    const Vec3d axisV = normal.Cross(axisU);
+
+    const Vec3d origin = corners[0];
+    std::vector<Vec2d> polygon;
+    polygon.reserve(corners.size());
+    float extent = 0.0f;
+    for (const Vec3d& corner : corners)
+    {
+        const Vec3d offset = corner - origin;
+        polygon.push_back(Vec2d{ offset.Dot(axisU), offset.Dot(axisV) });
+        extent = std::max(extent, offset.Magnitude());
+    }
+    const Vec3d offset = ray.Origin + ray.Direction * static_cast<float>(t) - origin;
+    const Vec2d point{ offset.Dot(axisU), offset.Dot(axisV) };
+
+    if (ClassifyPointInPolygon2D(polygon, point, std::max(1e-5f * extent, 1e-6f))
+        == PointPolygonRelation::Outside)
+        return false;
+    outDistance = static_cast<float>(t);
+    return true;
+}
 
 BrushPickMode PickModeForElementKind(MeshElementKind kind)
 {
@@ -31,53 +93,6 @@ BrushPickMode PickModeForElementKind(MeshElementKind kind)
 namespace
 {
 constexpr double kMaxPickDistance = 1.0e6;
-constexpr double kParallelEpsilon = 1.0e-8;
-
-// Möller–Trumbore ray/triangle.
-bool IntersectRayTriangle(const Ray3d& ray, const Vec3d& a, const Vec3d& b, const Vec3d& c, double& outT)
-{
-    const Vec3d e1 = b - a;
-    const Vec3d e2 = c - a;
-    const Vec3d p = ray.Direction.Cross(e2);
-    const double det = e1.Dot(p);
-    if (std::abs(det) < kParallelEpsilon)
-        return false;
-    const double inv = 1.0 / det;
-    const Vec3d tvec = ray.Origin - a;
-    const double u = tvec.Dot(p) * inv;
-    if (u < 0.0 || u > 1.0)
-        return false;
-    const Vec3d q = tvec.Cross(e1);
-    const double v = ray.Direction.Dot(q) * inv;
-    if (v < 0.0 || u + v > 1.0)
-        return false;
-    const double t = e2.Dot(q) * inv;
-    if (t < 0.0)
-        return false;
-    outT = t;
-    return true;
-}
-
-// Ray vs a planar face polygon via triangle fan; nearest hit.
-bool IntersectRayPolygon(const Ray3d& ray, const std::vector<Vec3d>& corners, float& outDistance)
-{
-    if (corners.size() < 3)
-        return false;
-    bool hit = false;
-    double best = kMaxPickDistance;
-    for (std::size_t i = 1; i + 1 < corners.size(); ++i)
-    {
-        double t = 0.0;
-        if (IntersectRayTriangle(ray, corners[0], corners[i], corners[i + 1], t) && t < best)
-        {
-            best = t;
-            hit = true;
-        }
-    }
-    if (hit)
-        outDistance = static_cast<float>(best);
-    return hit;
-}
 
 // Nearest ray/brush-body hit. Tests the real transformed faces (the brush is a
 // convex solid) instead of an origin-anchored box, so whole-brush selection
@@ -89,7 +104,7 @@ bool RayHitsBrushBody(const BrushMesh& mesh, const Transform3f& transform, const
     for (const FaceElement& face : MeshElements::Faces(mesh, transform))
     {
         float distance = 0.0f;
-        if (IntersectRayPolygon(ray, face.Corners, distance) && distance < best)
+        if (IntersectRayFacePolygon(ray, face.Corners, distance) && distance < best)
         {
             best = distance;
             hit = true;
@@ -125,7 +140,7 @@ bool IsHidden(const EditorScene& scene, const ViewportProjection& projection, Ve
         for (const FaceElement& face : MeshElements::Faces(mesh, transform))
         {
             float t = 0.0f;
-            if (IntersectRayPolygon(ray, face.Corners, t) && static_cast<double>(t) < threshold)
+            if (IntersectRayFacePolygon(ray, face.Corners, t) && static_cast<double>(t) < threshold)
             {
                 hidden = true;
                 return;
@@ -306,7 +321,7 @@ void PickingService::GatherBrushFaceCandidates(const Ray3d& ray,
             continue;
 
         float hitDistance = 0.0f;
-        if (!IntersectRayPolygon(ray, face.Corners, hitDistance))
+        if (!IntersectRayFacePolygon(ray, face.Corners, hitDistance))
             continue;
 
         outCandidates.push_back(PickCandidate{
@@ -560,7 +575,7 @@ std::optional<Vec3d> PickingService::ProjectPointToPlane(const EditorViewport& v
     const Ray3d ray = BuildRay(viewport, point);
     const Vec3d normal = plane.AxisU.Cross(plane.AxisV).Normalized();
     const double denominator = normal.Dot(ray.Direction);
-    if (std::abs(denominator) < kParallelEpsilon)
+    if (std::abs(denominator) < ViewportMath::kParallelEpsilon)
         return std::nullopt;
 
     const double distance = normal.Dot(plane.Origin - ray.Origin) / denominator;
@@ -583,7 +598,7 @@ std::optional<SurfaceHit> PickingService::PickSurface(const EditorViewport& view
             for (const FaceElement& face : MeshElements::Faces(mesh, transform))
             {
                 float distance = 0.0f;
-                if (IntersectRayPolygon(ray, face.Corners, distance) && distance < best)
+                if (IntersectRayFacePolygon(ray, face.Corners, distance) && distance < best)
                 {
                     best = distance;
                     hit = SurfaceHit{ .Point = ray.PointAt(distance), .Normal = face.Normal };

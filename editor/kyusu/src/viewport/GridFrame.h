@@ -3,6 +3,7 @@
 #include "GridSettings.h"
 
 #include <math/Quat.h>
+#include <math/spatial/GridPlane.h>
 #include <math/Vec.h>
 
 #include <cmath>
@@ -53,6 +54,29 @@ inline void Basis(const GridSettings& settings, Vec3d& u, Vec3d& n, Vec3d& v)
     settings.AxisU = u;
     settings.AxisV = n.Cross(u).Normalized();
     return true;
+}
+
+// A snapping plane lying on a face: the face's own plane and in-plane axes,
+// carrying the shared grid's spacing and snap toggle.
+//
+// `pointOnFace` only has to be some point the plane contains; it does not set
+// the lattice phase. GridPlane::Snap rounds relative to its origin, so phasing
+// the lattice on a point taken from the geometry -- a face's first loop vertex,
+// say -- would make "snap to grid" mean "snap to that vertex" the moment the
+// vertex is off the world lattice, which is what an earlier edit leaves behind.
+[[nodiscard]] inline GridPlane SnapPlaneOnFace(Vec3d pointOnFace, Vec3d normal, Vec3d axisU,
+                                               Vec3d axisV, const GridSettings& settings)
+{
+    const Vec3d n = normal.SqrMagnitude() > 1e-12f ? normal.Normalized() : Vec3d{ 0.0f, 1.0f, 0.0f };
+    GridPlane plane;
+    // The grid's own origin dropped onto the face's plane: the same lattice
+    // phase, expressed at a point the plane actually contains.
+    plane.Origin = settings.Origin - n * (settings.Origin - pointOnFace).Dot(n);
+    plane.AxisU = axisU;
+    plane.AxisV = axisV;
+    plane.Spacing = settings.Spacing;
+    plane.SnapEnabled = settings.SnapEnabled;
+    return plane;
 }
 
 // The longest edge direction of a polygon loop (world-space corners, in order).

@@ -61,19 +61,13 @@ struct Face
     ImU32 Label = 0;
 };
 
-// The mounted face every button shares: an invisible button for the
-// behavior, then the body, sheen, edge, and hover glow painted over its rect.
-Face MountedFace(const char* id, ImVec2 size, ButtonTone tone)
+// The face every button shares, painted over `pos`..`mx`: body, sheen, edge,
+// and hover glow, in the tone's colours. Returns the label tint. Mounted and
+// floating buttons both paint through here, so a control over the viewport
+// reads the same as one in a panel.
+ImU32 PaintFace(ImDrawList* dl, ImVec2 pos, ImVec2 mx, ButtonTone tone, bool hovered, bool held)
 {
-    ImGui::PushID(id);
-    const ImVec2 pos = ImGui::GetCursorScreenPos();
-    const bool clicked = ImGui::InvisibleButton("##chromebutton", size);
-    const bool hovered = ImGui::IsItemHovered();
-    const bool held = ImGui::IsItemActive();
-    ImGui::PopID();
-
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    const ImVec2 mx(pos.x + size.x, pos.y + size.y);
+    const ImVec2 size(mx.x - pos.x, mx.y - pos.y);
     const EditorUi::ChromeMetrics& m = EditorUi::Metrics;
     const float chamfer = std::clamp(std::min(size.x, size.y) * 0.16f, EditorUi::Px(2.0f), EditorUi::Px(4.0f));
     const float edge = std::max(1.0f, EditorUi::Px(m.EdgeWidth));
@@ -103,7 +97,22 @@ Face MountedFace(const char* id, ImVec2 size, ButtonTone tone)
     if (hovered && !held)
         GlowChamfered(dl, outline, colors.Glow, m.GlowAlpha * 0.6f, EditorUi::Px(m.GlowWidth) * 0.7f);
 
-    return Face{ clicked, pos, mx, ImGui::GetColorU32(colors.Label) };
+    return ImGui::GetColorU32(colors.Label);
+}
+
+// The mounted face: an invisible button for the behavior, then the face
+// painted over its rect.
+Face MountedFace(const char* id, ImVec2 size, ButtonTone tone)
+{
+    ImGui::PushID(id);
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    const bool clicked = ImGui::InvisibleButton("##chromebutton", size);
+    const bool hovered = ImGui::IsItemHovered();
+    const bool held = ImGui::IsItemActive();
+    ImGui::PopID();
+
+    const ImVec2 mx(pos.x + size.x, pos.y + size.y);
+    return Face{ clicked, pos, mx, PaintFace(ImGui::GetWindowDrawList(), pos, mx, tone, hovered, held) };
 }
 }
 
@@ -176,3 +185,55 @@ bool ToolButton(const char* id, const char* label, const char* tooltip, bool act
     return clicked;
 }
 } // namespace EditorChrome
+
+namespace
+{
+// The floating face both painted buttons share; only the glyph differs. A
+// disabled one keeps its tone's body but goes quiet: no hover, dim label.
+ImU32 DrawFloatingFace(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ButtonTone tone, bool enabled, bool hot)
+{
+    const ImU32 label = PaintFace(dl, mn, mx, tone, hot && enabled, false);
+    return enabled ? label : ImGui::GetColorU32(EditorUi::TextDim);
+}
+}
+
+void EditorChrome::DrawIconButton(ImDrawList* dl, ImVec2 mn, ImVec2 mx, IconId icon, ButtonTone tone,
+                                  bool enabled, bool hot)
+{
+    const ImU32 tint = DrawFloatingFace(dl, mn, mx, tone, enabled, hot);
+    const float inset = EditorUi::Px(4.0f);
+    DrawIcon(dl, icon, ImVec2(mn.x + inset, mn.y + inset), ImVec2(mx.x - inset, mx.y - inset), tint);
+}
+
+void EditorChrome::DrawTextButton(ImDrawList* dl, ImVec2 mn, ImVec2 mx, const char* label,
+                                  ButtonTone tone, bool enabled, bool hot)
+{
+    const ImU32 tint = DrawFloatingFace(dl, mn, mx, tone, enabled, hot);
+    if (label == nullptr || label[0] == '\0')
+        return;
+    const ImVec2 size = ImGui::CalcTextSize(label);
+    dl->AddText(ImVec2((mn.x + mx.x - size.x) * 0.5f, (mn.y + mx.y - size.y) * 0.5f), tint, label);
+}
+
+void EditorChrome::DrawDial(ImDrawList* dl, std::span<const ImVec2> rim, std::span<const ImVec2> ticks,
+                            ImVec2 knob, bool hot)
+{
+    if (rim.size() < 2)
+        return;
+
+    const ImU32 rimColor = ImGui::GetColorU32(hot ? EditorUi::ControlHover : EditorUi::Border);
+    dl->AddPolyline(rim.data(), static_cast<int>(rim.size()), rimColor, ImDrawFlags_Closed,
+                    EditorUi::Px(1.0f));
+
+    const ImU32 tickColor = ImGui::GetColorU32(EditorUi::TextDim);
+    const float tickRadius = EditorUi::Px(1.5f);
+    for (const ImVec2& tick : ticks)
+        dl->AddCircleFilled(tick, tickRadius, tickColor);
+
+    // The knob reads as the thing to grab: a filled dot on the accent, ringed so
+    // it stays legible over whatever the viewport is showing behind it.
+    const float knobRadius = EditorUi::Px(4.0f);
+    dl->AddCircleFilled(knob, knobRadius,
+                        ImGui::GetColorU32(hot ? EditorUi::ControlHover : EditorUi::Accent));
+    dl->AddCircle(knob, knobRadius, ImGui::GetColorU32(EditorUi::ChassisBg), 0, EditorUi::Px(1.0f));
+}

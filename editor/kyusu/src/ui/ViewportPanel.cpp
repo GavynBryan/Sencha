@@ -14,14 +14,18 @@
 #include "overlay/EditorOverlayState.h"
 #include "viewport/EditorViewport.h"
 #include "viewport/MarqueeState.h"
+#include "viewport/ViewportButtonMath.h"
+#include "viewport/ViewportDialPlacement.h"
 #include "viewport/ViewportProjection.h"
 #include "render/ViewportTargetCache.h"
 
 #include <imgui.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <optional>
+#include <vector>
 
 namespace
 {
@@ -201,6 +205,97 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
         drawList->AddRectFilled(min, max, toColor(handle.Fill), 1.0f);
         drawList->AddRect(min, max, toColor(handle.Border), 1.0f, 0, 1.5f);
     }
+    // A tool's rotation dial, lying in the plane it turns things on. Skipped
+    // whole when any part of the ring is behind the camera: half a projected
+    // circle would draw as a line across the view and hit-test as one too.
+    for (const ViewportDialRequest& request : Overlay.ViewportDials)
+    {
+        if (request.Viewport.IsValid() && request.Viewport != viewport.Id)
+            continue;
+        const ViewportDial::Placement placement = ViewportDial::PlaceIn(
+            viewport, request.Center, request.AxisU, request.AxisV, request.BoxSemiMinor);
+        if (!placement.Visible)
+            continue;
+        std::array<Vec3d, ViewportDial::kRimSegments + 1> ring{};
+        const int count = ViewportDial::RimPoints(placement, ring);
+
+        std::vector<ImVec2> rim;
+        rim.reserve(static_cast<std::size_t>(count));
+        bool whole = true;
+        for (int i = 0; i < count && whole; ++i)
+        {
+            const std::optional<ProjectedPoint> p =
+                projection.WorldToPixel(ring[static_cast<std::size_t>(i)]);
+            whole = p.has_value();
+            if (whole)
+                rim.push_back(p->Pixel);
+        }
+        const std::optional<ProjectedPoint> knob =
+            projection.WorldToPixel(placement.PointAt(request.Angle));
+        if (!whole || !knob.has_value())
+            continue;
+
+        std::array<Vec3d, 64> stops{};
+        const int tickCount = ViewportDial::TickPoints(placement, request.TickIncrement, stops);
+        std::vector<ImVec2> ticks;
+        ticks.reserve(static_cast<std::size_t>(tickCount));
+        for (int i = 0; i < tickCount; ++i)
+        {
+            const std::optional<ProjectedPoint> p =
+                projection.WorldToPixel(stops[static_cast<std::size_t>(i)]);
+            if (p.has_value())
+                ticks.push_back(p->Pixel);
+        }
+
+        EditorChrome::DrawDial(drawList, rim, ticks, knob->Pixel, request.Hot);
+    }
+
+    // Tool buttons pinned over the geometry they act on. Painted here rather
+    // than made into ImGui items so the viewport's own input keeps working
+    // underneath them; the tool that asked for them tests the same rects.
+    for (const ViewportButtonRequest& request : Overlay.ViewportButtons)
+    {
+        if (request.Viewport.IsValid() && request.Viewport != viewport.Id)
+            continue;
+        std::vector<std::optional<ImVec2>> anchors;
+        anchors.reserve(request.Anchors.size());
+        for (const Vec3d& world : request.Anchors)
+        {
+            const std::optional<ProjectedPoint> p = projection.WorldToPixel(world);
+            anchors.push_back(p.has_value() ? std::optional<ImVec2>(p->Pixel) : std::nullopt);
+        }
+        const ViewportButtons::Row row =
+            ViewportButtons::Layout(anchors, static_cast<int>(request.Buttons.size()),
+                                    EditorUi::Px(1.0f), viewport.RegionMin, viewport.RegionMax);
+        if (!row.Visible)
+            continue;
+
+        for (int i = 0; i < row.Count; ++i)
+        {
+            const ViewportButton& button = request.Buttons[static_cast<std::size_t>(i)];
+            const ImVec2 min = row.MinOf(i);
+            const ImVec2 max = row.MaxOf(i);
+            const bool hot = request.Hot == i;
+            if (button.Icon == IconId::None)
+                EditorChrome::DrawTextButton(drawList, min, max, button.Label.c_str(), button.Tone,
+                                             button.Enabled, hot);
+            else
+                EditorChrome::DrawIconButton(drawList, min, max, button.Icon, button.Tone, button.Enabled,
+                                             hot);
+        }
+
+        // The caption is a readout the row places, not a control: centred over
+        // the buttons it describes and never hit-tested.
+        if (request.Caption.has_value())
+        {
+            const ImVec2 center = row.CaptionCenter(request.Caption->FirstButton,
+                                                    request.Caption->LastButton);
+            const ImVec2 size = ImGui::CalcTextSize(request.Caption->Text.c_str());
+            drawList->AddText(ImVec2(center.x - size.x * 0.5f, center.y - size.y),
+                              toColor(EditorTheme::DimensionLabel), request.Caption->Text.c_str());
+        }
+    }
+
 
     // Hovered edge's length, anchored at its midpoint.
     if (!Overlay.Hover.Measure.empty())

@@ -3,6 +3,8 @@
 #include "meshedit/MeshElements.h"
 #include "meshedit/LoopSelection.h"
 #include "brush/BrushOps.h"
+#include "brush/CarvePolygon.h"
+#include "brush/CarveShape.h"
 #include "brush/BrushValidation.h"
 
 #include <gtest/gtest.h>
@@ -1096,20 +1098,33 @@ TEST(MeshEditService, PanelExtrudeVerbKeepsCapAndContinuesNeighbors)
     EXPECT_EQ(captured->After.Faces.size(), 10u);
 }
 
-TEST(BrushOps, CarveFaceRectKeepsMaterialOnEveryPiece)
+TEST(BrushOps, CarveFacePolygonKeepsMaterialOnEveryPiece)
 {
     BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
     box.Faces[0].Material.Material = AssetRef{ AssetType::Material, kRed };
 
-    ASSERT_TRUE(BrushOps::RectFaceFrame(box, 0).has_value());
-    const BrushMesh carved = BrushOps::CarveFaceRect(
-        box, 0, Vec2d{ 0.5f, 0.5f }, Vec2d{ 1.5f, 1.5f });
+    const BrushFaceFrameResult frame = FaceFrame(box, 0, 1e-3f);
+    ASSERT_TRUE(frame.Frame.has_value());
+    Vec2d mn = frame.Frame->Outline.front();
+    Vec2d mx = mn;
+    for (const Vec2d& p : frame.Frame->Outline)
+    {
+        mn.X = std::min(mn.X, p.X);
+        mn.Y = std::min(mn.Y, p.Y);
+        mx.X = std::max(mx.X, p.X);
+        mx.Y = std::max(mx.Y, p.Y);
+    }
+    const CarveOutcome carved = CarveFacePolygon(
+        box, 0, *frame.Frame,
+        CarveShapeOutline(CarveShape::Rectangle, Vec2d{ mn.X + 0.5f, mn.Y + 0.5f },
+                          Vec2d{ mx.X - 0.5f, mx.Y - 0.5f }, {}));
+    ASSERT_TRUE(carved.Ok()) << CarveStatusText(carved.Status());
 
-    // Host face decomposed into ring quads + the center rectangle; every piece
-    // keeps the host's texture (this is the carve-then-extrude wall workflow).
-    EXPECT_GT(carved.Faces.size(), box.Faces.size());
-    EXPECT_EQ(CountFacesWithMaterial(carved, kRed),
-              static_cast<int>(carved.Faces.size() - 5));
+    // The host breaks into the opening plus its surround, and every piece keeps
+    // the host's texture: this is the carve-then-extrude wall workflow.
+    const BrushMesh& mesh = carved.Value().Mesh;
+    EXPECT_GT(mesh.Faces.size(), box.Faces.size());
+    EXPECT_EQ(CountFacesWithMaterial(mesh, kRed), static_cast<int>(mesh.Faces.size() - 5));
 }
 
 TEST(MeshEditService, EdgeExtrudeInheritsTheAdjacentFaceMaterial)

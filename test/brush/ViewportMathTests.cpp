@@ -97,3 +97,66 @@ TEST(GizmoMath, SnapAxisOffsetIsAbsoluteToGrid)
     // Spacing <= 0 disables snapping.
     EXPECT_NEAR(GizmoMath::SnapAxisOffset(0.37, 0.3, 0.0, 0.0f), 0.37, 1e-6);
 }
+
+TEST(GizmoMath, UnwrappingADeltaKeepsADragTurningTheSameWay)
+{
+    constexpr double kPi = 3.14159265358979323846;
+    // Crossing the half turn must read as a small step forward, not as a nearly
+    // full turn backwards. This is what stops a rotation flipping mid-drag.
+    EXPECT_NEAR(GizmoMath::UnwrapAngleDelta(-kPi + 0.1, kPi - 0.1), 0.2, 1e-9);
+    EXPECT_NEAR(GizmoMath::UnwrapAngleDelta(kPi - 0.1, -kPi + 0.1), -0.2, 1e-9);
+    EXPECT_NEAR(GizmoMath::UnwrapAngleDelta(0.3, 0.1), 0.2, 1e-12);
+    EXPECT_NEAR(GizmoMath::UnwrapAngleDelta(0.1, 0.3), -0.2, 1e-12);
+
+    // Accumulating around a full turn arrives where it set out, going forwards.
+    double accumulated = 0.0;
+    double previous = 0.0;
+    for (int i = 1; i <= 360; ++i)
+    {
+        const double angle = std::atan2(std::sin(i * kPi / 180.0), std::cos(i * kPi / 180.0));
+        accumulated += GizmoMath::UnwrapAngleDelta(angle, previous);
+        previous = angle;
+    }
+    EXPECT_NEAR(accumulated, 2.0 * kPi, 1e-9);
+}
+
+TEST(GizmoMath, SnappingAnAngleLandsOnIncrementsAndIsIdentityWithoutOne)
+{
+    constexpr double kPi = 3.14159265358979323846;
+    const double eighth = kPi / 4.0;
+    EXPECT_NEAR(GizmoMath::SnapAngle(eighth * 0.4, eighth), 0.0, 1e-12);
+    EXPECT_NEAR(GizmoMath::SnapAngle(eighth * 0.6, eighth), eighth, 1e-12);
+    EXPECT_NEAR(GizmoMath::SnapAngle(-eighth * 1.7, eighth), -2.0 * eighth, 1e-12);
+
+    // Free rotation is spelled as an increment of zero, not as a separate path.
+    EXPECT_NEAR(GizmoMath::SnapAngle(0.3456, 0.0), 0.3456, 1e-12);
+    EXPECT_NEAR(GizmoMath::SnapAngle(0.3456, -1.0), 0.3456, 1e-12);
+}
+
+TEST(GizmoMath, TheAngleOnAPlaneRoundTripsAgainstItsOwnBasis)
+{
+    constexpr double kPi = 3.14159265358979323846;
+    const Vec3d centre{ 2.0f, -1.0f, 4.0f };
+    const Vec3d u{ 0.0f, 0.0f, -1.0f };
+    const Vec3d v{ 0.0f, 1.0f, 0.0f };
+    const Vec3d normal = u.Cross(v); // +X
+
+    for (int degrees = -170; degrees <= 180; degrees += 10)
+    {
+        const double radians = degrees * kPi / 180.0;
+        const Vec3d on = centre + u * static_cast<float>(std::cos(radians) * 3.0)
+                       + v * static_cast<float>(std::sin(radians) * 3.0);
+        // A ray arriving from in front of the plane, aimed at that point.
+        const Vec3d origin = on + normal * 7.0f;
+        const Ray3d ray{ origin, (on - origin).Normalized() };
+
+        const std::optional<double> angle = GizmoMath::AngleOnPlane(ray, centre, normal, u, v);
+        ASSERT_TRUE(angle.has_value()) << degrees;
+        EXPECT_NEAR(std::sin(*angle), std::sin(radians), 1e-4) << degrees;
+        EXPECT_NEAR(std::cos(*angle), std::cos(radians), 1e-4) << degrees;
+    }
+
+    // A ray running along the plane has no crossing to report.
+    EXPECT_FALSE(GizmoMath::AngleOnPlane(Ray3d{ centre + v * 3.0f, u }, centre, normal, u, v)
+                     .has_value());
+}
