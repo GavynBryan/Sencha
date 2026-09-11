@@ -262,15 +262,98 @@ TEST(CarveAcrossSurface, ABoxTouchingASpandrelsExtentButNotItsPolygonIsNotRefuse
     ExpectSound(outcome.Value().Mesh);
 }
 
-TEST(CarveAcrossSurface, ReachingASpandrelRefusesAsNotConvex)
+TEST(CarveAcrossSurface, AConvexShapeIsClippedByAConcaveFace)
 {
+    // The box reaches the lower half, the arch and the spandrel around it.
+    // The spandrel is concave, the box is not: the box clips the spandrel.
     const SplitWall wall = MakeWallWithSpandrels();
     const float seam = SeamV(wall);
     const float mid = MidU(wall);
     const CarveOutcome outcome = CarveAcrossSurface(
         wall.Mesh, wall.Surface, wall.Frame, Rect(mid + 0.5f, seam - 0.5f, mid + 0.9f, seam + 1.4f), false, kPlanarTol);
+    ASSERT_TRUE(outcome.Ok()) << CarveStatusText(outcome.Status());
+    EXPECT_EQ(outcome.Value().CutFaces.size(), 3u);
+    ExpectSound(outcome.Value().Mesh);
+}
+
+TEST(CarveAcrossSurface, AConcaveShapeOverAConcaveFaceIsRefused)
+{
+    // An L-shaped outline into the spandrel: neither side can clip the other.
+    const SplitWall wall = MakeWallWithSpandrels();
+    const float seam = SeamV(wall);
+    const float mid = MidU(wall);
+    const std::vector<Vec2d> ell = { { mid + 0.5f, seam - 0.5f }, { mid + 0.9f, seam - 0.5f },
+                                     { mid + 0.9f, seam + 1.4f }, { mid + 0.7f, seam + 1.4f },
+                                     { mid + 0.7f, seam + 0.2f }, { mid + 0.5f, seam + 0.2f } };
+    const CarveOutcome outcome = CarveAcrossSurface(wall.Mesh, wall.Surface, wall.Frame, ell, false, kPlanarTol);
     EXPECT_FALSE(outcome.Ok());
     EXPECT_EQ(outcome.Status(), CarveStatus::HostNotConvex);
+}
+
+TEST(CarveAcrossSurface, ABoxAcrossASeamIntoACarvedFace)
+{
+    // The upper half already has a pierced window; a box from the lower half
+    // across the seam into what is left of the upper half, clear of the
+    // window, is one carve in two faces.
+    for (bool pierce : { false, true })
+    {
+        SplitWall wall = MakeSplitWall();
+        const float seam = SeamV(wall);
+        const float mid = MidU(wall);
+        const BrushFaceFrame upper = *FaceFrame(wall.Mesh, wall.Upper, kPlanarTol).Frame;
+        std::vector<Vec2d> window;
+        for (const Vec2d& p : Rect(mid - 1.5f, seam + 0.5f, mid - 0.5f, seam + 1.5f))
+            window.push_back(upper.ToFrame(wall.Frame.ToWorld(p)));
+        const CarveOutcome first = CarveFacePolygonThrough(wall.Mesh, wall.Upper, upper, window, kPlanarTol);
+        ASSERT_TRUE(first.Ok()) << CarveStatusText(first.Status());
+        wall.Mesh = first.Value().Mesh;
+        wall.Lower = 0xFFFFFFFFu;
+        for (std::uint32_t i = 0; i < wall.Mesh.Faces.size(); ++i)
+            if (BrushComputeFaceNormal(wall.Mesh, wall.Mesh.Faces[i]).X > 0.99f
+                && BrushFaceCentroid(wall.Mesh, wall.Mesh.Faces[i]).Dot(Vec3d::Up()) < 0.0f)
+                wall.Lower = i;
+        ASSERT_NE(wall.Lower, 0xFFFFFFFFu);
+        wall.Frame = *FaceFrame(wall.Mesh, wall.Lower, kPlanarTol).Frame;
+        wall.Surface = Descriptors(wall.Mesh, CoplanarSurface(wall.Mesh, wall.Lower, kPlanarTol));
+        const float seam2 = SeamV(wall);
+        const float mid2 = MidU(wall);
+        const std::vector<Vec2d> box = Rect(mid2 + 0.5f, seam2 - 1.0f, mid2 + 1.5f, seam2 + 1.0f);
+        const CarveOutcome across = CarveAcrossSurface(wall.Mesh, wall.Surface, wall.Frame, box, pierce, kPlanarTol);
+        ASSERT_TRUE(across.Ok()) << CarveStatusText(across.Status());
+        // The window's surround is two pieces joined by bridges, and the box
+        // crosses one of those bridges: the lower half plus both pieces.
+        EXPECT_EQ(across.Value().CutFaces.size(), pierce ? 0u : 3u);
+        ExpectSound(across.Value().Mesh);
+        EXPECT_EQ(Euler(across.Value().Mesh), pierce ? -2 : 0);
+    }
+}
+
+TEST(CarveAcrossSurface, AShapeSpanningAcrossAHoleIsRefused)
+{
+    // The same wall, but the box straddles the window: its piece of the
+    // upper half would be two parts, one each side of the hole.
+    SplitWall wall = MakeSplitWall();
+    const float seam = SeamV(wall);
+    const float mid = MidU(wall);
+    const BrushFaceFrame upper = *FaceFrame(wall.Mesh, wall.Upper, kPlanarTol).Frame;
+    std::vector<Vec2d> window;
+    for (const Vec2d& p : Rect(mid - 0.3f, seam + 0.5f, mid + 0.3f, seam + 1.5f))
+        window.push_back(upper.ToFrame(wall.Frame.ToWorld(p)));
+    const CarveOutcome first = CarveFacePolygonThrough(wall.Mesh, wall.Upper, upper, window, kPlanarTol);
+    ASSERT_TRUE(first.Ok()) << CarveStatusText(first.Status());
+    wall.Mesh = first.Value().Mesh;
+    wall.Lower = 0xFFFFFFFFu;
+    for (std::uint32_t i = 0; i < wall.Mesh.Faces.size(); ++i)
+        if (BrushComputeFaceNormal(wall.Mesh, wall.Mesh.Faces[i]).X > 0.99f
+            && BrushFaceCentroid(wall.Mesh, wall.Mesh.Faces[i]).Dot(Vec3d::Up()) < 0.0f)
+            wall.Lower = i;
+    wall.Frame = *FaceFrame(wall.Mesh, wall.Lower, kPlanarTol).Frame;
+    wall.Surface = Descriptors(wall.Mesh, CoplanarSurface(wall.Mesh, wall.Lower, kPlanarTol));
+    const float seam2 = SeamV(wall);
+    const float mid2 = MidU(wall);
+    const CarveOutcome across = CarveAcrossSurface(
+        wall.Mesh, wall.Surface, wall.Frame, Rect(mid2 - 1.0f, seam2 - 0.5f, mid2 + 1.0f, seam2 + 1.0f), false, kPlanarTol);
+    EXPECT_FALSE(across.Ok());
 }
 
 TEST(CarveAcrossSurface, AnEdgeOnTheSeamIsOneFaceWithSharedVertices)
@@ -521,13 +604,7 @@ TEST(CarveAcrossSurface, ASecondCarveSpanningIntoAConvexNeighbourStillDistribute
     const CarveOutcome across = CarveAcrossSurface(
         wall.Mesh, wall.Surface, wall.Frame, Rect(mid2 + 0.5f, seam2 - 0.5f, mid2 + 1.0f, seam2 + 0.5f), false,
         kPlanarTol);
-    // The surround piece hosting the box may itself be concave; that is the
-    // case this feature refuses, and the one the direct path never sees.
-    if (across.Ok())
-    {
-        EXPECT_EQ(across.Value().CutFaces.size(), 2u);
-        ExpectSound(across.Value().Mesh);
-    }
-    else
-        EXPECT_EQ(across.Status(), CarveStatus::HostNotConvex);
+    ASSERT_TRUE(across.Ok()) << CarveStatusText(across.Status());
+    EXPECT_EQ(across.Value().CutFaces.size(), 2u);
+    ExpectSound(across.Value().Mesh);
 }

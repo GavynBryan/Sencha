@@ -13,7 +13,7 @@ const char* CarveStatusText(CarveStatus status)
     case CarveStatus::InvalidProjection:   return "the far face is edge-on to this one";
     case CarveStatus::NonPlanarTunnelWall: return "the tunnel would need a bent wall";
     case CarveStatus::ChannelCrossesHole:  return "the surface it cuts through already has a hole";
-    case CarveStatus::HostNotConvex:       return "the carve crosses into a face that is not convex";
+    case CarveStatus::HostNotConvex:       return "the carve and the face it crosses into are both concave";
     case CarveStatus::TopologyFailure:     return "the carve could not be completed";
     }
     return "the carve could not be completed";

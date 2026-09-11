@@ -115,8 +115,13 @@ struct FaceCorners
 // and anything short is OutsideHost. Face extents are never taken as evidence.
 // An outline lying wholly within one face runs that face's plain kernel on the
 // outline itself, so a carve that never crosses an edge is what it always was.
-// Which faces the outline reaches is decided by polygon overlap; a reached face
-// that is not convex cannot be clipped to and is refused as HostNotConvex.
+// Which faces the outline reaches is decided by polygon overlap. A piece is
+// the outline's intersection with a face, computed by half-plane clipping,
+// which needs one of the two to be convex: a convex face clips the outline, a
+// concave face is clipped by a convex outline. A concave face whose piece
+// would come out in two parts -- the shape spans a hole an earlier carve left
+// -- is refused as ChannelCrossesHole, and a concave shape over a concave
+// face as HostNotConvex.
 [[nodiscard]] CarveOutcome CarveAcrossSurface(const BrushMesh& mesh, std::span<const FaceCorners> faces,
                                               const BrushFaceFrame& frame, std::span<const Vec2d> outline,
                                               bool pierce, float planarTol);

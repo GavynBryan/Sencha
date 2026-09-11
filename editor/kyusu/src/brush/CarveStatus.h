@@ -15,7 +15,7 @@ enum class CarveStatus
     InvalidProjection,   // the projection is singular: direction parallel to the target plane
     NonPlanarTunnelWall, // snapping the projected outline bent a wall out of plane
     ChannelCrossesHole,  // the side plane a channel crosses is not simply connected
-    HostNotConvex,       // the shape reaches a coplanar face that is not convex
+    HostNotConvex,       // a concave shape crosses into a concave face: nothing to clip by
     TopologyFailure,     // the mesh edit could not be completed
 };
 

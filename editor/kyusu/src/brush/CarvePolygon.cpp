@@ -1152,15 +1152,28 @@ CarveOutcome CarveAcrossSurface(const BrushMesh& mesh, std::span<const FaceCorne
                       : CarveFacePolygon(mesh, *face, *own.Frame, local);
     }
 
-    // Distributed: every reached face is a clipping host and has to be convex.
-    // The pieces must then add up to the outline, since the faces are a planar
+    // Distributed: every reached face is a clipping host. A piece is the
+    // intersection of the outline with the face, which half-plane clipping
+    // computes when either one is convex: a convex face clips the outline, a
+    // concave face is clipped by a convex outline. What a concave face cannot
+    // yield is a piece in two parts -- the outline spanning across a hole an
+    // earlier carve left -- and that shows as a piece that is not simple. The
+    // pieces must then add up to the outline, since the faces are a planar
     // partition; anything short lies over a gap in the surface.
+    const bool outlineConvex = IsConvexPolygon2D(outline, kCarveSnapTolerance);
     float covered = 0.0f;
     for (Reach& reach : reached)
     {
-        if (!IsConvexPolygon2D(reach.Region, kCarveSnapTolerance))
+        if (IsConvexPolygon2D(reach.Region, kCarveSnapTolerance))
+            reach.Piece = ClipPolygonToConvex2D(outline, reach.Region, kCarveSnapTolerance);
+        else if (outlineConvex)
+        {
+            reach.Piece = ClipPolygonToConvex2D(reach.Region, outline, kCarveSnapTolerance);
+            if (!reach.Piece.empty() && !IsSimplePolygon2D(reach.Piece, kCarveSnapTolerance))
+                return CarveOutcome::Failure(CarveStatus::ChannelCrossesHole);
+        }
+        else
             return CarveOutcome::Failure(CarveStatus::HostNotConvex);
-        reach.Piece = ClipPolygonToConvex2D(outline, reach.Region, kCarveSnapTolerance);
         covered += std::abs(PolygonSignedArea(reach.Piece));
     }
     if (std::abs(covered - PolygonSignedArea(outline)) > kCarveSnapTolerance * Perimeter(outline))
