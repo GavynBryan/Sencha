@@ -1,6 +1,7 @@
 #include "ClipTool.h"
 
 #include "ui/chrome/ChromeHeader.h"
+#include "ui/chrome/ChromeBars.h"
 #include "ui/chrome/ChromeControls.h"
 #include "ui/EditorUiStyle.h"
 
@@ -42,9 +43,34 @@ enum class ClipButton : std::uint8_t
     Front,
     Back,
     Split,
+    Cap,
     Confirm,
     Cancel,
 };
+
+const char* ModeTooltip(ClipMode mode)
+{
+    switch (mode)
+    {
+    case ClipMode::KeepFront: return "Keep front  [Tab]";
+    case ClipMode::KeepBack:  return "Keep back  [Tab]";
+    case ClipMode::Split:     return "Split into two brushes  [Tab]";
+    }
+    return "";
+}
+
+IconId ModeIcon(ClipMode mode)
+{
+    switch (mode)
+    {
+    case ClipMode::KeepFront: return IconId::ClipFront;
+    case ClipMode::KeepBack:  return IconId::ClipBack;
+    case ClipMode::Split:     return IconId::ClipSplit;
+    }
+    return IconId::None;
+}
+
+constexpr const char* kCapTooltip = "Close the cut with a face";
 
 // Forwards the drag to the tool. The ToolRegistry owns the tool and the
 // InteractionHost cancels interactions before any tool switch, so the reference
@@ -131,21 +157,35 @@ void ClipTool::SetMode(ToolContext& ctx, ClipMode mode)
         RefreshPreview(ctx);
 }
 
+void ClipTool::SetCapped(ToolContext& ctx, bool capped)
+{
+    if (Capped == capped)
+        return;
+    Capped = capped;
+    if (Phase != ClipPhase::Idle)
+        RefreshPreview(ctx);
+}
+
 ClipTool::ButtonRow ClipTool::BuildButtons() const
 {
     ButtonRow row;
-    const auto modeButton = [&](const char* label, ClipMode mode, ClipButton role) {
-        row.Buttons.push_back(ViewportButton{ IconId::None, label, true,
-                                              Mode == mode ? EditorChrome::ButtonTone::Active
-                                                           : EditorChrome::ButtonTone::Normal });
+    const auto toggle = [&](IconId icon, const char* tooltip, bool on, ClipButton role) {
+        ViewportButton button{ icon, {}, true,
+                               on ? EditorChrome::ButtonTone::Active : EditorChrome::ButtonTone::Normal,
+                               tooltip };
+        row.Buttons.push_back(std::move(button));
         row.Roles.push_back(role);
     };
-    modeButton("Front", ClipMode::KeepFront, ClipButton::Front);
-    modeButton("Back", ClipMode::KeepBack, ClipButton::Back);
-    modeButton("Split", ClipMode::Split, ClipButton::Split);
-    row.Buttons.push_back(ViewportButton{ IconId::Check, {}, CanCommit(), EditorChrome::ButtonTone::Active });
+    for (const ClipMode mode : { ClipMode::KeepFront, ClipMode::KeepBack, ClipMode::Split })
+        toggle(ModeIcon(mode), ModeTooltip(mode), Mode == mode,
+               mode == ClipMode::KeepFront ? ClipButton::Front
+               : mode == ClipMode::KeepBack ? ClipButton::Back : ClipButton::Split);
+    toggle(IconId::ClipCap, kCapTooltip, Capped, ClipButton::Cap);
+    ViewportButton confirm{ IconId::Check, {}, CanCommit(), EditorChrome::ButtonTone::Active, "Apply  [Enter]" };
+    row.Buttons.push_back(std::move(confirm));
     row.Roles.push_back(ClipButton::Confirm);
-    row.Buttons.push_back(ViewportButton{ IconId::Cancel, {}, true, EditorChrome::ButtonTone::Destructive });
+    ViewportButton cancel{ IconId::Cancel, {}, true, EditorChrome::ButtonTone::Destructive, "Cancel  [Esc]" };
+    row.Buttons.push_back(std::move(cancel));
     row.Roles.push_back(ClipButton::Cancel);
     return row;
 }
@@ -227,6 +267,7 @@ InputConsumed ClipTool::OnClick(ToolContext& ctx, EditorViewport& viewport, cons
         case ClipButton::Front:   SetMode(ctx, ClipMode::KeepFront); break;
         case ClipButton::Back:    SetMode(ctx, ClipMode::KeepBack); break;
         case ClipButton::Split:   SetMode(ctx, ClipMode::Split); break;
+        case ClipButton::Cap:     SetCapped(ctx, !Capped); break;
         case ClipButton::Confirm: if (CanCommit()) Commit(ctx); break;
         case ClipButton::Cancel:  RevertAll(ctx); break;
         }
@@ -392,8 +433,9 @@ void ClipTool::RefreshPreview(ToolContext& ctx)
     for (Target& target : Targets)
     {
         const Plane local = ClipPlaneMath::InLocal(*ClipPlane, front, target.Transform);
-        target.Front = BrushOps::Clip(target.Original, local, true);
-        target.Back = BrushOps::Clip(target.Original, local, false);
+        const BrushOps::ClipCap cap = Capped ? BrushOps::ClipCap::Capped : BrushOps::ClipCap::Open;
+        target.Front = BrushOps::Clip(target.Original, local, true, cap);
+        target.Back = BrushOps::Clip(target.Original, local, false, cap);
         if (target.Front.Faces.empty() || target.Back.Faces.empty())
         {
             target.Result = Outcome::Missed;
@@ -401,13 +443,14 @@ void ClipTool::RefreshPreview(ToolContext& ctx)
             ctx.Sink.PreviewMesh(target.Entity, target.Original);
             continue;
         }
-        // A closed solid must come out as two closed solids: the one way the
-        // clip kernel fails is a cut whose cap is more than one loop (across a
-        // tunnel, say), which it cannot close.
+        // A capped cut of a closed solid must come out as two closed solids:
+        // the one way the clip kernel fails is a cut whose cap is more than
+        // one loop (across a tunnel, say), which it cannot close. An open cut
+        // is open by request and only has to be a usable mesh.
         BrushMesh originalCheck = target.Original;
         BrushMesh frontCheck = target.Front;
         BrushMesh backCheck = target.Back;
-        const bool wasClosed = BrushValidateAndRepair(originalCheck).Closed;
+        const bool wasClosed = Capped && BrushValidateAndRepair(originalCheck).Closed;
         const BrushRepairResult frontReport = BrushValidateAndRepair(frontCheck);
         const BrushRepairResult backReport = BrushValidateAndRepair(backCheck);
         const bool sound = frontReport.Ok && backReport.Ok
@@ -623,15 +666,24 @@ void ClipTool::RevertAll(ToolContext& ctx)
     WriteOverlay(ctx);
 }
 
+void ClipTool::DrawToolbarControls(ToolContext& ctx)
+{
+    const float size = EditorChrome::BarButtonSize();
+    for (const ClipMode mode : { ClipMode::KeepFront, ClipMode::KeepBack, ClipMode::Split })
+    {
+        const char* id = mode == ClipMode::KeepFront ? "clipfront" : mode == ClipMode::KeepBack ? "clipback" : "clipsplit";
+        if (EditorChrome::ToolButton(id, ModeIcon(mode), ModeTooltip(mode), Mode == mode, size))
+            SetMode(ctx, mode);
+        ImGui::SameLine();
+    }
+    if (EditorChrome::ToolButton("clipcap", IconId::ClipCap, kCapTooltip, Capped, size))
+        SetCapped(ctx, !Capped);
+}
+
 void ClipTool::DrawProperties(ToolContext& ctx)
 {
     EditorChrome::SectionTitle("Clip");
-    if (ImGui::RadioButton("Keep front", Mode == ClipMode::KeepFront))
-        SetMode(ctx, ClipMode::KeepFront);
-    if (ImGui::RadioButton("Keep back", Mode == ClipMode::KeepBack))
-        SetMode(ctx, ClipMode::KeepBack);
-    if (ImGui::RadioButton("Split", Mode == ClipMode::Split))
-        SetMode(ctx, ClipMode::Split);
+    DrawToolbarControls(ctx);
     ImGui::TextDisabled("Tab cycles.  Drag a line across the selected brushes.");
     if (Phase == ClipPhase::Pending)
     {

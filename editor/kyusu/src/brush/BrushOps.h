@@ -290,10 +290,18 @@ struct BrushOps
                                                  float position = 0.5f,
                                                  std::uint32_t faceIndex = kAllAdjacentFaces);
 
-    // Slice by a plane, keep one side, cap the new opening. keepPositiveSide keeps
-    // the half-space the plane normal points into. (The classic clip tool.)
+    // Whether a clip closes the opening it makes with a face, or leaves it open.
+    enum class ClipCap : std::uint8_t
+    {
+        Capped,
+        Open,
+    };
+
+    // Slice by a plane, keep one side, and cap the new opening or not.
+    // keepPositiveSide keeps the half-space the plane normal points into. (The
+    // classic clip tool.)
     [[nodiscard]] static BrushMesh Clip(const BrushMesh& mesh, const Plane& plane,
-                                        bool keepPositiveSide);
+                                        bool keepPositiveSide, ClipCap cap = ClipCap::Capped);
 
     // The orthonormal in-plane frame of a flat rectangular quad face, or nullopt
     // when the face is not one (non-quad, degenerate, sheared, non-planar).

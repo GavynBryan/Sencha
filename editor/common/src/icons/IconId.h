@@ -53,6 +53,10 @@ enum class IconId : std::uint8_t
     Cut,
     Carve,
     Clip,
+    ClipFront, // keep the front half
+    ClipBack,  // keep the back half
+    ClipSplit, // keep both, as two brushes
+    ClipCap,   // close the cut with a face
 
     // Mesh element modes
     ModeObject,

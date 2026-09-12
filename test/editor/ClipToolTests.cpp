@@ -328,3 +328,21 @@ TEST_F(ClipToolTest, ModeSurvivesAFocusChangeAndCommitStaysOnTheTool)
     Press(SDLK_RETURN);
     EXPECT_EQ(Workspace.Interaction.Tools->GetActiveTool()->GetId(), "clip");
 }
+
+TEST_F(ClipToolTest, AnUncappedClipIsOpenAlongTheCutAndStillCommits)
+{
+    const EntityId brush = AddBrush({ 0, 0, 0 }, { 1, 1, 1 });
+    SelectEntity(brush);
+    EditorViewport top = TopViewport();
+    Tool().SetMode(Context(), ClipMode::KeepFront);
+    Tool().SetCapped(Context(), false);
+    Draw(top, Vec3d{ 0, 0, -3 }, Vec3d{ 0, 0, 3 });
+    ASSERT_TRUE(Tool().CanCommit());
+    Press(SDLK_RETURN);
+    BrushMesh check = *Scene().TryGetBrushMesh(brush);
+    EXPECT_EQ(check.Faces.size(), 5u);
+    const BrushRepairResult report = BrushValidateAndRepair(check);
+    EXPECT_TRUE(report.Ok);
+    EXPECT_FALSE(report.Closed);
+    Tool().SetCapped(Context(), true);
+}

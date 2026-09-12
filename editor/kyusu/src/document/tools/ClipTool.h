@@ -66,10 +66,15 @@ public:
     // less reverts.
     void CommitPending(ToolContext& ctx) override;
     void DrawProperties(ToolContext& ctx) override;
+    void DrawToolbarControls(ToolContext& ctx) override;
     [[nodiscard]] Shortcut GetShortcut() const override;
 
     [[nodiscard]] ClipMode GetMode() const { return Mode; }
     void SetMode(ToolContext& ctx, ClipMode mode);
+    // Whether the cut is closed with a face. Off leaves the halves open along
+    // the cut, which is what a shell wants.
+    [[nodiscard]] bool IsCapped() const { return Capped; }
+    void SetCapped(ToolContext& ctx, bool capped);
     [[nodiscard]] ClipPhase GetPhase() const { return Phase; }
     [[nodiscard]] bool CanCommit() const { return Phase == ClipPhase::Pending && Committable; }
     // The plane the pending cut is made with, once there is one.
@@ -116,6 +121,7 @@ private:
     [[nodiscard]] ButtonRow BuildButtons() const;
 
     ClipMode Mode = ClipMode::Split;
+    bool Capped = true;
     ClipPhase Phase = ClipPhase::Idle;
     bool Committable = false;
     std::string Status; // why the line cannot be applied, for the readout

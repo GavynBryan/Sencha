@@ -1005,10 +1005,10 @@ FaceCarveTool::ButtonRow FaceCarveTool::BuildButtons() const
         if (!limits.Empty())
         {
             row.Buttons.push_back(
-                ViewportButton{ IconId::None, "-", ShapeParams.ArchSegments > limits.MinSegments });
+                ViewportButton{ IconId::None, "-", ShapeParams.ArchSegments > limits.MinSegments, EditorChrome::ButtonTone::Normal, {} });
             row.Roles.push_back(CarveButton::SegmentsDown);
             row.Buttons.push_back(
-                ViewportButton{ IconId::None, "+", ShapeParams.ArchSegments < limits.MaxSegments });
+                ViewportButton{ IconId::None, "+", ShapeParams.ArchSegments < limits.MaxSegments, EditorChrome::ButtonTone::Normal, {} });
             row.Roles.push_back(CarveButton::SegmentsUp);
             // A readout rather than a third button: it says what the pair is
             // stepping, and nothing hit-tests it.
@@ -1016,9 +1016,9 @@ FaceCarveTool::ButtonRow FaceCarveTool::BuildButtons() const
         }
     }
 
-    row.Buttons.push_back(ViewportButton{ IconId::Check, {}, CanCommit(), EditorChrome::ButtonTone::Active });
+    row.Buttons.push_back(ViewportButton{ IconId::Check, {}, CanCommit(), EditorChrome::ButtonTone::Active, {} });
     row.Roles.push_back(CarveButton::Confirm);
-    row.Buttons.push_back(ViewportButton{ IconId::Cancel, {}, true, EditorChrome::ButtonTone::Destructive });
+    row.Buttons.push_back(ViewportButton{ IconId::Cancel, {}, true, EditorChrome::ButtonTone::Destructive, {} });
     row.Roles.push_back(CarveButton::Cancel);
     return row;
 }

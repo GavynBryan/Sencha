@@ -75,6 +75,10 @@ constexpr std::array<Icon, kCount> kIcons = [] {
     row(IconId::Cut, "cut", ICON_FA_SCISSORS);
     row(IconId::Carve, "carve", ICON_FA_CROP_SIMPLE);
     row(IconId::Clip, "clip", ICON_FA_SLASH);
+    row(IconId::ClipFront, "clip-front", ICON_FA_ARROW_RIGHT_TO_BRACKET);
+    row(IconId::ClipBack, "clip-back", ICON_FA_ARROWS_LEFT_RIGHT_TO_LINE);
+    row(IconId::ClipSplit, "clip-split", ICON_FA_OBJECT_UNGROUP);
+    row(IconId::ClipCap, "clip-cap", ICON_FA_SQUARE);
     row(IconId::ModeObject, "mode-object", ICON_FA_CUBE);
     row(IconId::ModeVertex, "mode-vertex", ICON_FA_CIRCLE_DOT);
     row(IconId::ModeEdge, "mode-edge", ICON_FA_GRIP_LINES);

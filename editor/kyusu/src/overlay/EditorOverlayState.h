@@ -76,6 +76,7 @@ struct ViewportButton
     std::string Label;
     bool Enabled = true;
     EditorChrome::ButtonTone Tone = EditorChrome::ButtonTone::Normal; // the panel buttons' own voice
+    std::string Tooltip; // shown while the button is hot; empty for none
 };
 
 // A readout the row places, not a control: drawn above the buttons it describes,

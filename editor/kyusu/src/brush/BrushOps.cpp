@@ -1355,7 +1355,7 @@ BrushMesh BrushOps::InsertEdgeCut(const BrushMesh& mesh, std::uint32_t a, std::u
     return out;
 }
 
-BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPositiveSide)
+BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPositiveSide, ClipCap cap)
 {
     const Plane p = plane.Normalized();
     auto inside = [&](const Vec3d& point) -> float
@@ -1402,12 +1402,12 @@ BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPos
     }
 
     // Chain the cut segments into the cap polygon loop.
-    if (!capSegments.empty())
+    if (cap == ClipCap::Capped && !capSegments.empty())
     {
-        std::vector<Vec3d> cap;
+        std::vector<Vec3d> capLoop;
         std::vector<bool> used(capSegments.size(), false);
-        cap.push_back(capSegments[0].first);
-        cap.push_back(capSegments[0].second);
+        capLoop.push_back(capSegments[0].first);
+        capLoop.push_back(capSegments[0].second);
         used[0] = true;
 
         bool extended = true;
@@ -1418,15 +1418,15 @@ BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPos
             {
                 if (used[i])
                     continue;
-                if (NearlyEqual(capSegments[i].first, cap.back()))
+                if (NearlyEqual(capSegments[i].first, capLoop.back()))
                 {
-                    cap.push_back(capSegments[i].second);
+                    capLoop.push_back(capSegments[i].second);
                     used[i] = true;
                     extended = true;
                 }
-                else if (NearlyEqual(capSegments[i].second, cap.back()))
+                else if (NearlyEqual(capSegments[i].second, capLoop.back()))
                 {
-                    cap.push_back(capSegments[i].first);
+                    capLoop.push_back(capSegments[i].first);
                     used[i] = true;
                     extended = true;
                 }
@@ -1434,15 +1434,15 @@ BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPos
         }
 
         // Drop the final point if it closed back onto the start.
-        if (cap.size() >= 2 && NearlyEqual(cap.front(), cap.back()))
-            cap.pop_back();
-        if (cap.size() >= 3)
+        if (capLoop.size() >= 2 && NearlyEqual(capLoop.front(), capLoop.back()))
+            capLoop.pop_back();
+        if (capLoop.size() >= 3)
         {
-            // The cut cap is a fresh face: default material, world-aligned UVs
-            // from the clip plane normal (which is the cap's normal).
+            // The cut capLoop is a fresh face: default material, world-aligned UVs
+            // from the clip plane normal (which is the capLoop's normal).
             FaceMaterial capMaterial;
             capMaterial.Uv = UvProjectionForNormal(p.Normal, /*worldAligned*/ true);
-            EmitFace(out, cap, capMaterial);
+            EmitFace(out, capLoop, capMaterial);
         }
     }
 

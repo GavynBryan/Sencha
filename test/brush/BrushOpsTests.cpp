@@ -147,6 +147,19 @@ TEST(BrushOps, ClipByAxisPlaneKeepsHalfAndCaps)
     EXPECT_EQ(half.Vertices.size(), 8u);  // 4 at x=-1, 4 new at x=0
 }
 
+TEST(BrushOps, AnOpenClipLeavesTheCutUncapped)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    const Plane plane{ Vec3d{ 1.0f, 0.0f, 0.0f }, 0.0f };
+    const BrushMesh capped = BrushOps::Clip(box, plane, false);
+    const BrushMesh open = BrushOps::Clip(box, plane, false, BrushOps::ClipCap::Open);
+    EXPECT_EQ(open.Faces.size(), capped.Faces.size() - 1);
+    BrushMesh check = open;
+    const BrushRepairResult report = BrushValidateAndRepair(check);
+    EXPECT_TRUE(report.Ok);
+    EXPECT_FALSE(report.Closed);
+}
+
 TEST(BrushOps, ClipByDiagonalPlaneStaysClosed)
 {
     const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });

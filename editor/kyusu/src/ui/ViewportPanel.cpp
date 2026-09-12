@@ -282,6 +282,10 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
             else
                 EditorChrome::DrawIconButton(drawList, min, max, button.Icon, button.Tone, button.Enabled,
                                              hot);
+            // A painted button is no ImGui item, so its tooltip is asked for
+            // directly; the tool's own hit-test decided it is hot.
+            if (hot && !button.Tooltip.empty())
+                ImGui::SetTooltip("%s", button.Tooltip.c_str());
         }
 
         // The caption is a readout the row places, not a control: centred over
