@@ -299,7 +299,13 @@ struct BrushOps
 
     // Slice by a plane, keep one side, and cap the new opening or not.
     // keepPositiveSide keeps the half-space the plane normal points into. (The
-    // classic clip tool.)
+    // classic clip tool.) Faces may be concave and the section may be several
+    // contours, nested or not; every one is capped, a cap with a hole is
+    // bridged into simple faces. The result is one mesh that may hold several
+    // closed shells when the cut dismembers the solid -- the caller decides
+    // what a shell is (the clip tool makes each its own brush). An empty mesh
+    // means the cut could not be completed (a section that does not close).
+    // A cut that touches nothing returns the solid whole or empty by side.
     [[nodiscard]] static BrushMesh Clip(const BrushMesh& mesh, const Plane& plane,
                                         bool keepPositiveSide, ClipCap cap = ClipCap::Capped);
 

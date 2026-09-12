@@ -326,3 +326,163 @@ TEST(CarveSurround, AChordSplitsAnArchIntoRectangleAndSegment)
     EXPECT_NEAR(std::abs(PolygonSignedArea(below)) + std::abs(PolygonSignedArea(above)),
                 std::abs(PolygonSignedArea(arch)), kTol);
 }
+
+namespace
+{
+float PieceArea(const std::vector<SplitVertex2D>& piece)
+{
+    Poly ring;
+    for (const SplitVertex2D& v : piece)
+        ring.push_back(v.Position);
+    return PolygonSignedArea(ring);
+}
+
+void ExpectSplitSound(const PolygonSplit2D& split, const Poly& polygon)
+{
+    ASSERT_EQ(split.Status, CarveStatus::Ok) << CarveStatusText(split.Status);
+    float total = 0.0f;
+    for (const auto* side : { &split.Left, &split.Right })
+        for (const std::vector<SplitVertex2D>& piece : *side)
+        {
+            Poly ring;
+            for (const SplitVertex2D& v : piece)
+            {
+                ring.push_back(v.Position);
+                if (v.Source != kNoSource)
+                {
+                    EXPECT_EQ(polygon[v.Source].X, v.Position.X) << "a source vertex moved";
+                }
+            }
+            EXPECT_TRUE(IsSimplePolygon2D(ring, kTol));
+            EXPECT_GT(PolygonSignedArea(ring), 0.0f) << "a piece is not counter-clockwise";
+            total += PolygonSignedArea(ring);
+        }
+    EXPECT_NEAR(total, PolygonSignedArea(polygon), 1e-3f) << "the pieces do not add up to the polygon";
+}
+}
+
+TEST(CarveSurround, SplitAConvexPolygonByALine)
+{
+    const PolygonSplit2D split = SplitPolygonByLine2D(kWall, P(0, 1.5f), P(1, 0), kTol);
+    ExpectSplitSound(split, kWall);
+    EXPECT_EQ(split.Left.size(), 1u);
+    EXPECT_EQ(split.Right.size(), 1u);
+    EXPECT_EQ(split.Spans.size(), 1u);
+    EXPECT_NEAR(PieceArea(split.Left.front()), 6.0f, kTol);
+    // The crossings are new and carry the edge they lie on.
+    int crossings = 0;
+    for (const SplitVertex2D& v : split.Left.front())
+        if (v.Source == kNoSource)
+        {
+            ++crossings;
+            EXPECT_NE(v.Edge, kNoSource);
+        }
+    EXPECT_EQ(crossings, 2);
+}
+
+TEST(CarveSurround, SplitAUShapeCrossedFourTimes)
+{
+    // A U open at the top: legs x in [0,1] and [3,4], base y in [0,1].
+    const Poly u = { P(0, 0), P(4, 0), P(4, 3), P(3, 3), P(3, 1), P(1, 1), P(1, 3), P(0, 3) };
+    const PolygonSplit2D split = SplitPolygonByLine2D(u, P(0, 2), P(1, 0), kTol);
+    ExpectSplitSound(split, u);
+    EXPECT_EQ(split.Left.size(), 2u) << "the two legs above the line";
+    EXPECT_EQ(split.Right.size(), 1u) << "the base below";
+    EXPECT_EQ(split.Spans.size(), 2u) << "one span per leg, none across the opening";
+}
+
+TEST(CarveSurround, SplitACShapeCrossedSixTimes)
+{
+    // An E without its middle bar: three prongs pointing +x, a spine on the left.
+    const Poly c = { P(0, 0), P(4, 0), P(4, 1), P(1, 1), P(1, 2), P(4, 2), P(4, 3), P(1, 3), P(1, 4), P(4, 4), P(4, 5), P(0, 5) };
+    const PolygonSplit2D split = SplitPolygonByLine2D(c, P(2, 0), P(0, 1), kTol);
+    ExpectSplitSound(split, c);
+    EXPECT_EQ(split.Spans.size(), 3u);
+    EXPECT_EQ(split.Right.size(), 3u) << "the three prong tips";
+    EXPECT_EQ(split.Left.size(), 1u);
+}
+
+TEST(CarveSurround, SplitThroughAVertexIsOneCrossing)
+{
+    // A diamond cut horizontally through its left and right vertices.
+    const Poly diamond = { P(2, 0), P(4, 2), P(2, 4), P(0, 2) };
+    const PolygonSplit2D split = SplitPolygonByLine2D(diamond, P(0, 2), P(1, 0), kTol);
+    ExpectSplitSound(split, diamond);
+    EXPECT_EQ(split.Left.size(), 1u);
+    EXPECT_EQ(split.Right.size(), 1u);
+    EXPECT_EQ(split.Spans.size(), 1u);
+    for (const auto* side : { &split.Left, &split.Right })
+        for (const SplitVertex2D& v : side->front())
+            EXPECT_NE(v.Source, kNoSource) << "no new vertex: the cut passes through existing ones";
+    EXPECT_EQ(split.Left.front().size(), 3u);
+}
+
+TEST(CarveSurround, ATangentVertexIsNotACrossing)
+{
+    const Poly diamond = { P(2, 0), P(4, 2), P(2, 4), P(0, 2) };
+    const PolygonSplit2D split = SplitPolygonByLine2D(diamond, P(0, 0), P(1, 0), kTol); // touches at (2, 0)
+    ExpectSplitSound(split, diamond);
+    EXPECT_EQ(split.Left.size(), 1u);
+    EXPECT_TRUE(split.Right.empty());
+    EXPECT_TRUE(split.Spans.empty());
+    EXPECT_EQ(split.Left.front().size(), 4u);
+}
+
+TEST(CarveSurround, AnEdgeOnTheLineIsNeverBridged)
+{
+    // The line runs along the wall's bottom edge: the wall is one piece, whole.
+    const PolygonSplit2D along = SplitPolygonByLine2D(kWall, P(0, 0), P(1, 0), kTol);
+    ExpectSplitSound(along, kWall);
+    EXPECT_EQ(along.Left.size(), 1u);
+    EXPECT_TRUE(along.Right.empty());
+    EXPECT_TRUE(along.Spans.empty());
+
+    // A notch whose floor lies on the line: the run is a crossing (the
+    // polygon is above on one side of it and dips below on the other), and
+    // the span never doubles the notch floor.
+    const Poly notched = { P(0, 0), P(4, 0), P(4, 3), P(3, 3), P(3, 1), P(1, 1), P(1, 3), P(0, 3) };
+    const PolygonSplit2D split = SplitPolygonByLine2D(notched, P(0, 1), P(1, 0), kTol);
+    ExpectSplitSound(split, notched);
+    EXPECT_EQ(split.Left.size(), 2u);
+    EXPECT_EQ(split.Right.size(), 1u);
+    // The base's top is the two leg widths bridged, and the notch floor itself
+    // between them: a boundary, never doubled by a span.
+    EXPECT_EQ(split.Spans.size(), 2u);
+    for (const auto& [a, b] : split.Spans)
+        EXPECT_NEAR(std::abs(b.Position.X - a.Position.X), 1.0f, kTol);
+}
+
+TEST(CarveSurround, APolygonWhollyOnOneSideIsOnePiece)
+{
+    const PolygonSplit2D split = SplitPolygonByLine2D(kWall, P(0, -1), P(1, 0), kTol);
+    ExpectSplitSound(split, kWall);
+    EXPECT_EQ(split.Left.size(), 1u);
+    EXPECT_TRUE(split.Right.empty());
+    EXPECT_TRUE(split.Spans.empty());
+}
+
+TEST(CarveSurround, SeveralHolesAreBridgedWithoutCrossingEachOther)
+{
+    const Poly outer = { P(0, 0), P(8, 0), P(8, 4), P(0, 4) };
+    const Poly left = { P(1, 1), P(3, 1), P(3, 3), P(1, 3) };
+    const Poly right = { P(5, 1), P(7, 1), P(7, 3), P(5, 3) };
+    const Poly top = { P(3.5f, 3.2f), P(4.5f, 3.2f), P(4.5f, 3.8f), P(3.5f, 3.8f) };
+    for (const std::vector<Poly>& holes : { std::vector<Poly>{ left, right }, std::vector<Poly>{ left, right, top } })
+    {
+        const SurroundResult result = SurroundPolygonsWithHoles(outer, holes, kTol);
+        ASSERT_EQ(result.Status, CarveStatus::Ok) << CarveStatusText(result.Status);
+        float area = 0.0f;
+        for (const Poly& piece : result.Pieces)
+        {
+            EXPECT_TRUE(IsSimplePolygon2D(piece, kTol));
+            EXPECT_GT(PolygonSignedArea(piece), 0.0f);
+            area += PolygonSignedArea(piece);
+            for (const Poly& hole : holes)
+                EXPECT_FALSE(PolygonsOverlap2D(piece, hole, kTol)) << "a piece covers a hole";
+        }
+        float expected = PolygonSignedArea(outer);
+        for (const Poly& hole : holes)
+            expected -= PolygonSignedArea(hole);
+        EXPECT_NEAR(area, expected, 1e-3f);
+    }
+}

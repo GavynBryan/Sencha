@@ -4,8 +4,10 @@
 
 #include <math/Vec.h>
 
+#include <cstdint>
 #include <optional>
 #include <span>
+#include <utility>
 #include <vector>
 
 // The carve's 2D half: what is left of a face once a shape has been cut out of
@@ -85,6 +87,54 @@ struct SurroundResult
     CarveStatus Status = CarveStatus::Ok;
     std::vector<std::vector<Vec2d>> Pieces; // empty unless Status is Ok
 };
+
+// A vertex of a piece a line split off a polygon: an input vertex by index,
+// whose position is the input's verbatim, or a crossing on input edge
+// `Edge -> Edge + 1`, interpolated. The provenance is what lets a caller keep
+// pre-existing 3D vertices exactly and compute only the crossings anew.
+inline constexpr std::uint32_t kNoSource = 0xFFFFFFFFu;
+struct SplitVertex2D
+{
+    std::uint32_t Source = kNoSource;
+    std::uint32_t Edge = kNoSource;
+    Vec2d Position;
+};
+
+struct PolygonSplit2D
+{
+    CarveStatus Status = CarveStatus::Ok;
+    std::vector<std::vector<SplitVertex2D>> Left;  // the side the line's left normal points to
+    std::vector<std::vector<SplitVertex2D>> Right;
+    // The line's runs through the polygon's interior, one per interior span:
+    // the segments a cap needs. Endpoints are the crossings they join.
+    std::vector<std::pair<SplitVertex2D, SplitVertex2D>> Spans;
+};
+
+// The pieces of a simple counter-clockwise polygon on each side of a line, each
+// simple and counter-clockwise, with the spans the line draws through the
+// interior. Vertices within `tolerance` of the line are on it, and consecutive
+// on-line vertices are one event judged by the nearest off-line vertices
+// either side: same side is a contact (no crossing, no span), opposite sides a
+// crossing. An edge lying on the line is therefore never bridged over. A
+// polygon whose vertices are all on the line is refused (InvalidOutline).
+[[nodiscard]] PolygonSplit2D SplitPolygonByLine2D(std::span<const Vec2d> polygon, Vec2d pointOnLine,
+                                                  Vec2d direction, float tolerance);
+
+// The same, with each vertex's signed distance to the line supplied (positive
+// on the left), for a caller that classified the vertices elsewhere -- a solid's
+// vertices against a plane, once, so every face agrees on which are on it.
+// `direction` orders the crossings along the line.
+[[nodiscard]] PolygonSplit2D SplitPolygonByDistances2D(std::span<const Vec2d> polygon,
+                                                       std::span<const float> distances, Vec2d direction,
+                                                       float tolerance);
+
+// The pieces of `outer` with several disjoint `holes` removed, all simple and
+// counter-clockwise. Holes are bridged one at a time into the piece that
+// contains them, in an order and a direction whose bridges cross no hole not
+// yet bridged; an arrangement with no such order refuses (ChannelCrossesHole).
+[[nodiscard]] SurroundResult SurroundPolygonsWithHoles(std::span<const Vec2d> outer,
+                                                       std::span<const std::vector<Vec2d>> holes,
+                                                       float tolerance);
 
 // The pieces of `outer` with `hole` removed, both simple and counter-clockwise.
 //

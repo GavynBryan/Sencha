@@ -211,6 +211,11 @@ std::optional<BrushMesh> ApplyClip(const VerbContext& ctx)
     BrushMesh after = BrushOps::Clip(ctx.Before, ctx.Params.ClipPlane, ctx.Params.KeepPositiveSide);
     if (!BrushValidateAndRepair(after).Ok)
         return std::nullopt;
+    // The verb edits one brush in place; a cut that leaves several shells
+    // would put more than one solid under one brush, which is the clip tool's
+    // to turn into brushes, not this verb's to commit.
+    if (BrushConnectedComponents(after).size() != 1)
+        return std::nullopt;
     return after;
 }
 

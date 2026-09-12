@@ -1,6 +1,7 @@
 #include "BrushMesh.h"
 
 #include <algorithm>
+#include <map>
 #include <cmath>
 
 Vec3d BrushComputeFaceNormal(const BrushMesh& mesh, const BrushFace& face)
@@ -99,4 +100,72 @@ void BrushSplitSoftEdge(BrushMesh& mesh, std::uint32_t a, std::uint32_t b, std::
     BrushSetEdgeSoft(mesh, a, b, false);
     BrushSetEdgeSoft(mesh, a, middle, true);
     BrushSetEdgeSoft(mesh, middle, b, true);
+}
+
+std::vector<BrushMesh> BrushConnectedComponents(const BrushMesh& mesh)
+{
+    // Faces sharing an undirected edge are one shell; flood over that.
+    std::map<std::pair<std::uint32_t, std::uint32_t>, std::vector<std::size_t>> byEdge;
+    for (std::size_t f = 0; f < mesh.Faces.size(); ++f)
+    {
+        const std::vector<std::uint32_t>& loop = mesh.Faces[f].Loop;
+        for (std::size_t i = 0; i < loop.size(); ++i)
+        {
+            const std::uint32_t a = loop[i];
+            const std::uint32_t b = loop[(i + 1) % loop.size()];
+            byEdge[{ std::min(a, b), std::max(a, b) }].push_back(f);
+        }
+    }
+    std::vector<int> shellOf(mesh.Faces.size(), -1);
+    int shells = 0;
+    for (std::size_t seed = 0; seed < mesh.Faces.size(); ++seed)
+    {
+        if (shellOf[seed] >= 0)
+            continue;
+        std::vector<std::size_t> stack{ seed };
+        shellOf[seed] = shells;
+        while (!stack.empty())
+        {
+            const std::size_t f = stack.back();
+            stack.pop_back();
+            const std::vector<std::uint32_t>& loop = mesh.Faces[f].Loop;
+            for (std::size_t i = 0; i < loop.size(); ++i)
+            {
+                const std::uint32_t a = loop[i];
+                const std::uint32_t b = loop[(i + 1) % loop.size()];
+                for (std::size_t g : byEdge[{ std::min(a, b), std::max(a, b) }])
+                    if (shellOf[g] < 0)
+                    {
+                        shellOf[g] = shells;
+                        stack.push_back(g);
+                    }
+            }
+        }
+        ++shells;
+    }
+
+    std::vector<BrushMesh> out(static_cast<std::size_t>(shells));
+    std::vector<std::vector<std::uint32_t>> remap(out.size(), std::vector<std::uint32_t>(mesh.Vertices.size(), 0xFFFFFFFFu));
+    for (std::size_t f = 0; f < mesh.Faces.size(); ++f)
+    {
+        BrushMesh& shell = out[static_cast<std::size_t>(shellOf[f])];
+        std::vector<std::uint32_t>& map = remap[static_cast<std::size_t>(shellOf[f])];
+        BrushFace face = mesh.Faces[f];
+        for (std::uint32_t& index : face.Loop)
+        {
+            if (map[index] == 0xFFFFFFFFu)
+            {
+                map[index] = static_cast<std::uint32_t>(shell.Vertices.size());
+                shell.Vertices.push_back(mesh.Vertices[index]);
+            }
+            index = map[index];
+        }
+        shell.Faces.push_back(std::move(face));
+    }
+    // Soft edges follow their vertices.
+    for (const auto& soft : mesh.SoftEdges)
+        for (std::size_t s = 0; s < out.size(); ++s)
+            if (remap[s][soft[0]] != 0xFFFFFFFFu && remap[s][soft[1]] != 0xFFFFFFFFu)
+                out[s].SoftEdges.push_back(BrushSoftEdgeKey(remap[s][soft[0]], remap[s][soft[1]]));
+    return out;
 }

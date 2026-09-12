@@ -35,14 +35,15 @@ struct MeshEdit
     BrushMesh After;
 };
 
-// One brush becoming two: the entity keeps `Keep`, and a copy of it -- same
-// components, name family, parent and material -- is created carrying `Other`.
+// One brush becoming several: the entity keeps `Keep`, and a copy of it --
+// same components, name family, parent and material -- is created for each
+// mesh in `Others`.
 struct SplitEdit
 {
     EntityId Entity = {};
     BrushMesh Before;
     BrushMesh Keep;
-    BrushMesh Other;
+    std::vector<BrushMesh> Others;
 };
 
 struct ManipulationSink

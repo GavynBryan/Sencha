@@ -95,7 +95,7 @@ TEST_F(ClipToolTest, ASplitCommitsAsOneStepAndUndoesAsOne)
     const Plane plane = Plane::FromNormalAndPoint(Vec3d{ 1, 0, 0 }, Vec3d{});
     std::vector<SplitEdit> edits;
     edits.push_back(SplitEdit{ brush, original, BrushOps::Clip(original, plane, true),
-                               BrushOps::Clip(original, plane, false) });
+                               { BrushOps::Clip(original, plane, false) } });
     Sink().CommitSplits(std::move(edits));
 
     ASSERT_EQ(BrushCount(), 2u);
@@ -142,7 +142,7 @@ TEST_F(ClipToolTest, ASplitCopiesTheBrushAloneUnderItsParent)
     const Plane local = Plane::FromNormalAndPoint(Vec3d{ 0, 0, 1 }, Vec3d{});
     std::vector<SplitEdit> edits;
     edits.push_back(SplitEdit{ brush, original, BrushOps::Clip(original, local, true),
-                               BrushOps::Clip(original, local, false) });
+                               { BrushOps::Clip(original, local, false) } });
     const std::size_t before = BrushCount();
     Sink().CommitSplits(std::move(edits));
     EXPECT_EQ(BrushCount(), before + 1) << "the child was not copied along";
@@ -315,27 +315,16 @@ TEST_F(ClipToolTest, OneInvalidBrushBlocksTheWholeCommit)
 {
     const EntityId good = AddBrush({ 0, 0, 0 }, { 1, 1, 1 });
     const EntityId bad = AddBrush({ 0, 0, 4 }, { 1, 1, 1 });
-    // A brush with a tunnel through it along X: a cut across the tunnel has an
-    // annular cap, which the clip kernel cannot close, so its halves are not
-    // solids.
+    // A brush with a face bent out of plane cannot be split in that face's
+    // plane, so the kernel refuses it.
     {
-        const BrushMesh solid = *Scene().TryGetBrushMesh(bad);
-        std::uint32_t face = 0;
-        for (std::uint32_t i = 0; i < solid.Faces.size(); ++i)
-            if (BrushComputeFaceNormal(solid, solid.Faces[i]).X > 0.99f)
-                face = i;
-        const BrushFaceFrame frame = *FaceFrame(solid, face, 1e-3f).Frame;
-        Vec2d lo = frame.Outline.front(), hi = lo;
-        for (const Vec2d& p : frame.Outline)
-        {
-            lo = Vec2d{ std::min(lo.X, p.X), std::min(lo.Y, p.Y) };
-            hi = Vec2d{ std::max(hi.X, p.X), std::max(hi.Y, p.Y) };
-        }
-        const std::vector<Vec2d> window = CarveShapeOutline(
-            CarveShape::Rectangle, Vec2d{ lo.X + 0.5f, lo.Y + 0.5f }, Vec2d{ hi.X - 0.5f, hi.Y - 0.5f }, {});
-        const CarveOutcome pierced = CarveFacePolygonThrough(solid, face, frame, window, 1e-3f);
-        ASSERT_TRUE(pierced.Ok()) << CarveStatusText(pierced.Status());
-        Sink().PreviewMesh(bad, pierced.Value().Mesh);
+        BrushMesh warped = *Scene().TryGetBrushMesh(bad);
+        std::uint32_t top = 0;
+        for (std::uint32_t i = 0; i < warped.Faces.size(); ++i)
+            if (BrushComputeFaceNormal(warped, warped.Faces[i]).Y > 0.99f)
+                top = i;
+        warped.Vertices[warped.Faces[top].Loop.front()].Position.Y += 0.4f;
+        Sink().PreviewMesh(bad, warped);
     }
     Select({ SelectableRef::EntitySelection(Registry(), good), SelectableRef::EntitySelection(Registry(), bad) });
     EditorViewport top = TopViewport();
@@ -382,4 +371,68 @@ TEST_F(ClipToolTest, AnUncappedClipIsOpenAlongTheCutAndStillCommits)
     EXPECT_TRUE(report.Ok);
     EXPECT_FALSE(report.Closed);
     Tool().SetCapped(Context(), true);
+}
+
+namespace
+{
+// A doorway pierced through a box's +X wall, standing on the floor edge: a
+// horizontal cut through it leaves two jambs below and one lintel above.
+BrushMesh DoorwayMesh(const BrushMesh& box)
+{
+    std::uint32_t face = 0;
+    for (std::uint32_t i = 0; i < box.Faces.size(); ++i)
+        if (BrushComputeFaceNormal(box, box.Faces[i]).X > 0.99f)
+            face = i;
+    const BrushFaceFrame frame = *FaceFrame(box, face, 1e-3f).Frame;
+    Vec2d lo = frame.Outline.front(), hi = lo;
+    for (const Vec2d& p : frame.Outline)
+    {
+        lo = Vec2d{ std::min(lo.X, p.X), std::min(lo.Y, p.Y) };
+        hi = Vec2d{ std::max(hi.X, p.X), std::max(hi.Y, p.Y) };
+    }
+    const std::vector<Vec2d> door = CarveShapeOutline(
+        CarveShape::Rectangle, Vec2d{ lo.X + 0.5f, lo.Y }, Vec2d{ hi.X - 0.5f, lo.Y + 1.5f }, {});
+    const CarveOutcome pierced = CarveFacePolygonThrough(box, face, frame, door, 1e-3f);
+    EXPECT_TRUE(pierced.Ok()) << CarveStatusText(pierced.Status());
+    return pierced.Ok() ? pierced.Value().Mesh : box;
+}
+}
+
+TEST_F(ClipToolTest, ACutThroughADoorwayMakesOneBrushPerPiece)
+{
+    // Keep below: the two jambs, two brushes. Split: jambs and lintel, three.
+    for (const ClipMode mode : { ClipMode::KeepBack, ClipMode::Split, ClipMode::KeepFront })
+    {
+        Workspace.World.NewWorld("doorway");
+        const EntityId brush = AddBrush({ 0, 0, 0 }, { 1, 1, 1 });
+        Sink().PreviewMesh(brush, DoorwayMesh(*Scene().TryGetBrushMesh(brush)));
+        SelectEntity(brush);
+        // Seen from above, a line along Z at x = 0... no: the cut is horizontal,
+        // so it is drawn in a Front view, where the grid plane's normal is Z
+        // and a line along X stands a plane along Z through it. Use the plane
+        // directly: a Front viewport's line at y = 0.
+        EditorViewport front;
+        front.ApplyOrientation(ViewportOrientation::Front);
+        front.Id = ViewportId{ 3 };
+        front.RegionMin = ImVec2(0.0f, 0.0f);
+        front.RegionMax = ImVec2(400.0f, 400.0f);
+        Tool().SetMode(Context(), mode);
+        Draw(front, Vec3d{ -3, 0, 0 }, Vec3d{ 3, 0, 0 });
+        ASSERT_TRUE(Tool().CanCommit());
+        const Plane plane = *Tool().GetClipPlane();
+        const bool frontIsUp = plane.Normal.Y > 0.0f;
+        Press(SDLK_RETURN);
+        const std::size_t expected = mode == ClipMode::Split ? 3u : ((mode == ClipMode::KeepFront) == frontIsUp ? 1u : 2u);
+        EXPECT_EQ(BrushCount(), expected) << "mode " << static_cast<int>(mode);
+        EXPECT_EQ(Workspace.Selection.GetSelection().size(), expected);
+        for (const EntityId entity : Scene().GetAllEntities())
+            if (const BrushMesh* mesh = Scene().TryGetBrushMesh(entity))
+            {
+                BrushMesh copy = *mesh;
+                EXPECT_TRUE(BrushValidateAndRepair(copy).Closed);
+                EXPECT_EQ(BrushConnectedComponents(*mesh).size(), 1u) << "a brush holds one solid";
+            }
+        Commands.Undo();
+        EXPECT_EQ(BrushCount(), 1u) << "one step";
+    }
 }

@@ -1,6 +1,8 @@
 #include "BrushOps.h"
 
+#include "BrushFaceFrame.h"
 #include "BrushValidation.h"
+#include "CarveSurround.h"
 
 #include <algorithm>
 #include <array>
@@ -1355,95 +1357,343 @@ BrushMesh BrushOps::InsertEdgeCut(const BrushMesh& mesh, std::uint32_t a, std::u
     return out;
 }
 
+namespace
+{
+    // On-plane tolerance for the clip: the weld tolerance, so a vertex judged
+    // on the plane is one the repair will merge with the cap's copy of it.
+    constexpr float kClipOnPlane = 1e-4f;
+
+    // A pool of 3D points welded within a tolerance: the section's vertices.
+    class PointPool3D
+    {
+    public:
+        explicit PointPool3D(float tolerance) : Tolerance(tolerance) {}
+        std::uint32_t Intern(const Vec3d& p)
+        {
+            for (std::uint32_t i = 0; i < Points.size(); ++i)
+                if (NearlyEqual(Points[i], p, Tolerance))
+                    return i;
+            Points.push_back(p);
+            return static_cast<std::uint32_t>(Points.size() - 1);
+        }
+        [[nodiscard]] std::optional<std::uint32_t> Find(const Vec3d& p) const
+        {
+            for (std::uint32_t i = 0; i < Points.size(); ++i)
+                if (NearlyEqual(Points[i], p, Tolerance))
+                    return i;
+            return std::nullopt;
+        }
+        [[nodiscard]] const Vec3d& At(std::uint32_t i) const { return Points[i]; }
+        [[nodiscard]] std::size_t Size() const { return Points.size(); }
+
+    private:
+        float Tolerance;
+        std::vector<Vec3d> Points;
+    };
+
+    // Splits every face edge that passes through `point` without ending there,
+    // so a cap vertex a bridge minted on a section edge is shared by the face
+    // whose edge that is, rather than left as a T-junction.
+    void InsertOnCollinearEdges(BrushMesh& mesh, const Vec3d& point, float tolerance)
+    {
+        for (BrushFace& face : mesh.Faces)
+        {
+            for (std::size_t i = 0; i < face.Loop.size(); ++i)
+            {
+                const Vec3d a = mesh.Vertices[face.Loop[i]].Position;
+                const Vec3d b = mesh.Vertices[face.Loop[(i + 1) % face.Loop.size()]].Position;
+                if (NearlyEqual(a, point, tolerance) || NearlyEqual(b, point, tolerance))
+                    continue;
+                const Vec3d ab = b - a;
+                const float length2 = ab.SqrMagnitude();
+                if (length2 <= 0.0f)
+                    continue;
+                const float t = (point - a).Dot(ab) / length2;
+                if (t <= 0.0f || t >= 1.0f)
+                    continue;
+                if ((point - (a + ab * t)).SqrMagnitude() > tolerance * tolerance)
+                    continue;
+                face.Loop.insert(face.Loop.begin() + static_cast<std::ptrdiff_t>(i) + 1,
+                                 static_cast<std::uint32_t>(mesh.Vertices.size()));
+                mesh.Vertices.push_back(BrushVertex{ point });
+                ++i; // past the vertex just inserted
+            }
+        }
+    }
+}
+
 BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPositiveSide, ClipCap cap)
 {
-    const Plane p = plane.Normalized();
-    auto inside = [&](const Vec3d& point) -> float
+    // Kept is always the positive side of `p`: the caller's choice is folded
+    // into the plane so every rule below reads one way.
+    Plane p = plane.Normalized();
+    if (!keepPositiveSide)
+        p = Plane(p.Normal * -1.0f, -p.D);
+    const float tolerance = kClipOnPlane;
+
+    // Every vertex is classified once, in 3D, so each face sees the same
+    // on-plane set as its neighbours.
+    std::vector<float> distance(mesh.Vertices.size());
+    std::vector<int> side(mesh.Vertices.size());
+    for (std::size_t v = 0; v < mesh.Vertices.size(); ++v)
     {
-        const float d = p.SignedDistanceTo(point);
-        return keepPositiveSide ? d : -d; // >= 0 means "keep"
+        distance[v] = p.SignedDistanceTo(mesh.Vertices[v].Position);
+        side[v] = distance[v] > tolerance ? 1 : distance[v] < -tolerance ? -1 : 0;
+    }
+
+    enum class FaceClass : std::uint8_t { Kept, Cut, Dropped, InPlane };
+    std::vector<FaceClass> faceClass(mesh.Faces.size());
+    for (std::size_t f = 0; f < mesh.Faces.size(); ++f)
+    {
+        bool any = false, anyPositive = false, anyNegative = false;
+        for (std::uint32_t v : mesh.Faces[f].Loop)
+        {
+            any = true;
+            anyPositive = anyPositive || side[v] > 0;
+            anyNegative = anyNegative || side[v] < 0;
+        }
+        faceClass[f] = !any ? FaceClass::Dropped
+                     : anyPositive && anyNegative ? FaceClass::Cut
+                     : anyPositive ? FaceClass::Kept
+                     : anyNegative ? FaceClass::Dropped : FaceClass::InPlane;
+    }
+    // Whether a face has kept material along an edge lying in the plane: the
+    // run that edge belongs to sits between kept vertices, or is a crossing run
+    // whose kept piece borders it. Dropped and in-plane faces have none.
+    const auto keptAlongEdge = [&](std::size_t f, std::uint32_t a) -> std::optional<bool> {
+        switch (faceClass[f])
+        {
+        case FaceClass::Kept: return true;
+        case FaceClass::Dropped: return false;
+        case FaceClass::InPlane: return std::nullopt;
+        case FaceClass::Cut: break;
+        }
+        const std::vector<std::uint32_t>& loop = mesh.Faces[f].Loop;
+        const std::size_t n = loop.size();
+        std::size_t at = 0;
+        while (at < n && loop[at] != a)
+            ++at;
+        // Walk out of the on-plane run both ways to its off-plane neighbours.
+        std::size_t before = at, after = at;
+        while (side[loop[(before + n - 1) % n]] == 0) before = (before + n - 1) % n;
+        while (side[loop[(after + 1) % n]] == 0) after = (after + 1) % n;
+        const int lo = side[loop[(before + n - 1) % n]];
+        const int hi = side[loop[(after + 1) % n]];
+        return lo > 0 || hi > 0; // a kept contact, or a crossing run: the kept piece borders it
     };
 
     BrushMesh out;
-    std::vector<std::pair<Vec3d, Vec3d>> capSegments;
+    PointPool3D section(tolerance);
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> segments;
+    const auto addSegment = [&](const Vec3d& a, const Vec3d& b) {
+        const std::uint32_t ia = section.Intern(a);
+        const std::uint32_t ib = section.Intern(b);
+        if (ia != ib)
+            segments.emplace_back(std::min(ia, ib), std::max(ia, ib));
+    };
 
-    for (const BrushFace& face : mesh.Faces)
+    for (std::size_t f = 0; f < mesh.Faces.size(); ++f)
     {
-        const std::size_t n = face.Loop.size();
-        if (n < 3)
+        const BrushFace& face = mesh.Faces[f];
+        const std::vector<std::uint32_t>& loop = face.Loop;
+        if (loop.size() < 3)
             continue;
-
-        std::vector<Vec3d> clipped;
-        std::vector<Vec3d> crossings;
-        for (std::size_t i = 0; i < n; ++i)
+        const auto emitWhole = [&] {
+            std::vector<Vec3d> corners;
+            corners.reserve(loop.size());
+            for (std::uint32_t v : loop)
+                corners.push_back(mesh.Vertices[v].Position);
+            EmitFace(out, corners, face.Material);
+        };
+        switch (faceClass[f])
         {
-            const Vec3d a = mesh.Vertices[face.Loop[i]].Position;
-            const Vec3d b = mesh.Vertices[face.Loop[(i + 1) % n]].Position;
-            const float da = inside(a);
-            const float db = inside(b);
-            const bool inA = da >= -kClipEps;
-            const bool inB = db >= -kClipEps;
-
-            if (inA)
-                clipped.push_back(a);
-            if (inA != inB)
-            {
-                const float t = da / (da - db);
-                const Vec3d crossing = a + (b - a) * t;
-                clipped.push_back(crossing);
-                crossings.push_back(crossing);
-            }
+        case FaceClass::Dropped:
+            continue;
+        case FaceClass::Kept:
+            emitWhole();
+            continue;
+        case FaceClass::InPlane:
+            // It is cap material already when the solid is on the kept side.
+            if (BrushComputeFaceNormal(mesh, face).Dot(p.Normal) <= 0.0f)
+                emitWhole();
+            continue;
+        case FaceClass::Cut:
+            break;
         }
 
-        if (clipped.size() >= 3)
-            EmitFace(out, clipped, face.Material); // clipped piece keeps its texturing
-        if (crossings.size() == 2)
-            capSegments.emplace_back(crossings[0], crossings[1]);
+        const BrushFaceFrameResult frame = FaceFrame(mesh, static_cast<std::uint32_t>(f), 1e-3f);
+        if (!frame.Frame.has_value())
+            return {}; // not flat enough to be split in its own plane
+        std::vector<float> distances;
+        distances.reserve(loop.size());
+        for (std::uint32_t v : loop)
+            distances.push_back(distance[v]);
+        // The plane's trace in the face, for ordering the crossings.
+        const Vec3d trace = frame.Frame->Normal.Cross(p.Normal);
+        Vec2d direction = frame.Frame->ToFrame(frame.Frame->Origin + trace) - frame.Frame->ToFrame(frame.Frame->Origin);
+        if (direction.SqrMagnitude() <= 0.0f)
+            direction = Vec2d{ 1.0f, 0.0f };
+        const PolygonSplit2D split =
+            SplitPolygonByDistances2D(frame.Frame->Outline, distances, direction, tolerance);
+        if (split.Status != CarveStatus::Ok)
+            return {};
+
+        const auto position = [&](const SplitVertex2D& vertex) -> Vec3d {
+            if (vertex.Source != kNoSource)
+                return mesh.Vertices[loop[vertex.Source]].Position; // verbatim
+            const std::uint32_t a = loop[vertex.Edge];
+            const std::uint32_t b = loop[(vertex.Edge + 1) % loop.size()];
+            const float t = distance[a] / (distance[a] - distance[b]);
+            return mesh.Vertices[a].Position + (mesh.Vertices[b].Position - mesh.Vertices[a].Position) * t;
+        };
+        for (const std::vector<SplitVertex2D>& piece : split.Left)
+        {
+            std::vector<Vec3d> corners;
+            corners.reserve(piece.size());
+            for (const SplitVertex2D& vertex : piece)
+                corners.push_back(position(vertex));
+            EmitFace(out, corners, face.Material);
+        }
+        for (const auto& [a, b] : split.Spans)
+            addSegment(position(a), position(b));
     }
 
-    // Chain the cut segments into the cap polygon loop.
-    if (cap == ClipCap::Capped && !capSegments.empty())
+    // Edges lying in the plane are section segments where kept material on
+    // one side of them meets dropped material on the other.
     {
-        std::vector<Vec3d> capLoop;
-        std::vector<bool> used(capSegments.size(), false);
-        capLoop.push_back(capSegments[0].first);
-        capLoop.push_back(capSegments[0].second);
-        used[0] = true;
-
-        bool extended = true;
-        while (extended)
+        std::map<std::pair<std::uint32_t, std::uint32_t>, std::vector<std::size_t>> byEdge;
+        for (std::size_t f = 0; f < mesh.Faces.size(); ++f)
         {
-            extended = false;
-            for (std::size_t i = 0; i < capSegments.size(); ++i)
+            const std::vector<std::uint32_t>& loop = mesh.Faces[f].Loop;
+            for (std::size_t i = 0; i < loop.size(); ++i)
             {
-                if (used[i])
-                    continue;
-                if (NearlyEqual(capSegments[i].first, capLoop.back()))
-                {
-                    capLoop.push_back(capSegments[i].second);
-                    used[i] = true;
-                    extended = true;
-                }
-                else if (NearlyEqual(capSegments[i].second, capLoop.back()))
-                {
-                    capLoop.push_back(capSegments[i].first);
-                    used[i] = true;
-                    extended = true;
-                }
+                const std::uint32_t a = loop[i], b = loop[(i + 1) % loop.size()];
+                if (side[a] == 0 && side[b] == 0)
+                    byEdge[{ std::min(a, b), std::max(a, b) }].push_back(f);
             }
         }
-
-        // Drop the final point if it closed back onto the start.
-        if (capLoop.size() >= 2 && NearlyEqual(capLoop.front(), capLoop.back()))
-            capLoop.pop_back();
-        if (capLoop.size() >= 3)
+        for (const auto& [edge, faces] : byEdge)
         {
-            // The cut capLoop is a fresh face: default material, world-aligned UVs
-            // from the clip plane normal (which is the capLoop's normal).
-            FaceMaterial capMaterial;
-            capMaterial.Uv = UvProjectionForNormal(p.Normal, /*worldAligned*/ true);
-            EmitFace(out, capLoop, capMaterial);
+            if (faces.size() != 2)
+                continue;
+            const std::optional<bool> first = keptAlongEdge(faces[0], edge.first);
+            const std::optional<bool> second = keptAlongEdge(faces[1], edge.first);
+            if (first.has_value() && second.has_value() && *first != *second)
+                addSegment(mesh.Vertices[edge.first].Position, mesh.Vertices[edge.second].Position);
         }
+    }
+
+    if (cap == ClipCap::Capped && !segments.empty())
+    {
+        // The section as a graph: welded endpoints, no duplicates, and every
+        // vertex of degree two, or the cut is not one a cap can close.
+        std::sort(segments.begin(), segments.end());
+        segments.erase(std::unique(segments.begin(), segments.end()), segments.end());
+        std::vector<std::vector<std::uint32_t>> adjacent(section.Size());
+        for (const auto& [a, b] : segments)
+        {
+            adjacent[a].push_back(b);
+            adjacent[b].push_back(a);
+        }
+        for (const std::vector<std::uint32_t>& links : adjacent)
+            if (!links.empty() && links.size() != 2)
+                return {};
+
+        // Every cycle.
+        std::vector<bool> visited(section.Size(), false);
+        std::vector<std::vector<std::uint32_t>> contours;
+        for (std::uint32_t start = 0; start < section.Size(); ++start)
+        {
+            if (visited[start] || adjacent[start].empty())
+                continue;
+            std::vector<std::uint32_t> contour;
+            std::uint32_t previous = start, current = start;
+            do
+            {
+                visited[current] = true;
+                contour.push_back(current);
+                const std::uint32_t next = adjacent[current][0] != previous || adjacent[current].size() == 1
+                                               ? adjacent[current][0] : adjacent[current][1];
+                previous = current;
+                current = next;
+            } while (current != start && !visited[current]);
+            if (current != start)
+                return {};
+            contours.push_back(std::move(contour));
+        }
+
+        // In the cap's own frame, whose normal points out of the kept solid.
+        const Vec3d normal = p.Normal * -1.0f;
+        const Vec3d seed = std::abs(normal.X) < 0.9f ? Vec3d{ 1, 0, 0 } : Vec3d{ 0, 1, 0 };
+        const Vec3d u = normal.Cross(seed).Normalized();
+        const Vec3d v = normal.Cross(u).Normalized(); // u x v == normal
+        const Vec3d origin = p.Normal * -p.D;
+        const auto toFrame = [&](const Vec3d& w) { return Vec2d{ (w - origin).Dot(u), (w - origin).Dot(v) }; };
+        const auto toWorld = [&](Vec2d q) { return origin + u * q.X + v * q.Y; };
+
+        std::vector<std::vector<Vec2d>> rings;
+        for (const std::vector<std::uint32_t>& contour : contours)
+        {
+            std::vector<Vec2d> ring;
+            for (std::uint32_t index : contour)
+                ring.push_back(toFrame(section.At(index)));
+            if (PolygonSignedArea(ring) < 0.0f)
+                std::reverse(ring.begin(), ring.end());
+            rings.push_back(std::move(ring));
+        }
+        // Nesting: a ring inside an odd number of others is a hole of the
+        // innermost ring that contains it.
+        std::vector<int> depth(rings.size(), 0);
+        std::vector<int> parent(rings.size(), -1);
+        for (std::size_t i = 0; i < rings.size(); ++i)
+            for (std::size_t j = 0; j < rings.size(); ++j)
+                if (i != j && ClassifyPointInPolygon2D(rings[j], rings[i].front(), tolerance) == PointPolygonRelation::Inside)
+                {
+                    ++depth[i];
+                    if (parent[i] < 0 || ClassifyPointInPolygon2D(rings[static_cast<std::size_t>(parent[i])], rings[j].front(), tolerance) == PointPolygonRelation::Inside)
+                        parent[i] = static_cast<int>(j);
+                }
+
+        FaceMaterial capMaterial;
+        capMaterial.Uv = UvProjectionForNormal(normal, /*worldAligned*/ true);
+        std::vector<Vec3d> minted; // cap vertices the bridges created on section edges
+        const auto emitCap = [&](const std::vector<Vec2d>& piece) {
+            std::vector<Vec3d> corners;
+            corners.reserve(piece.size());
+            for (const Vec2d& q : piece)
+            {
+                const Vec3d world = toWorld(q);
+                if (const std::optional<std::uint32_t> known = section.Find(world))
+                    corners.push_back(section.At(*known));
+                else
+                {
+                    corners.push_back(world);
+                    minted.push_back(world);
+                }
+            }
+            EmitFace(out, corners, capMaterial);
+        };
+        for (std::size_t i = 0; i < rings.size(); ++i)
+        {
+            if (depth[i] % 2 != 0)
+                continue; // a hole
+            std::vector<std::vector<Vec2d>> holes;
+            for (std::size_t j = 0; j < rings.size(); ++j)
+                if (parent[j] == static_cast<int>(i) && depth[j] % 2 == 1)
+                    holes.push_back(rings[j]);
+            if (holes.empty())
+            {
+                emitCap(rings[i]);
+                continue;
+            }
+            const SurroundResult pieces = SurroundPolygonsWithHoles(rings[i], holes, tolerance);
+            if (pieces.Status != CarveStatus::Ok)
+                return {};
+            for (const std::vector<Vec2d>& piece : pieces.Pieces)
+                emitCap(piece);
+        }
+        for (const Vec3d& point : minted)
+            InsertOnCollinearEdges(out, point, tolerance);
     }
 
     BrushValidateAndRepair(out);

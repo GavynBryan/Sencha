@@ -428,13 +428,31 @@ void ClipTool::RefreshPreview(ToolContext& ctx)
     for (Target& target : Targets)
     {
         const Plane local = ClipPlaneMath::InLocal(*ClipPlane, front, target.Transform);
+        // Missed is a fact about the brush, not about the kernel's answer: the
+        // plane crosses it only if it has vertices strictly on both sides.
+        bool anyFront = false, anyBack = false;
+        for (const BrushVertex& vertex : target.Original.Vertices)
+        {
+            const float d = local.SignedDistanceTo(vertex.Position);
+            anyFront = anyFront || d > 1e-4f;
+            anyBack = anyBack || d < -1e-4f;
+        }
+        if (!anyFront || !anyBack)
+        {
+            target.Result = Outcome::Missed;
+            ++Missed;
+            ctx.Sink.PreviewMesh(target.Entity, target.Original);
+            continue;
+        }
         const BrushOps::ClipCap cap = Capped ? BrushOps::ClipCap::Capped : BrushOps::ClipCap::Open;
         target.Front = BrushOps::Clip(target.Original, local, true, cap);
         target.Back = BrushOps::Clip(target.Original, local, false, cap);
         if (target.Front.Faces.empty() || target.Back.Faces.empty())
         {
-            target.Result = Outcome::Missed;
-            ++Missed;
+            // A crossing plane with an empty half is a cut the kernel could
+            // not complete, not a miss.
+            target.Result = Outcome::Invalid;
+            ++Failed;
             ctx.Sink.PreviewMesh(target.Entity, target.Original);
             continue;
         }
@@ -646,17 +664,11 @@ void ClipTool::Commit(ToolContext& ctx)
         if (ctx.Sink.ResolveMesh(target.Entity).has_value())
             ctx.Sink.PreviewMesh(target.Entity, target.Original);
 
-    if (mode == ClipMode::Split)
-    {
-        std::vector<SplitEdit> edits;
-        for (Target& target : targets)
-            if (target.Result == Outcome::Valid && ctx.Sink.ResolveMesh(target.Entity).has_value())
-                edits.push_back(SplitEdit{ target.Entity, std::move(target.Original), std::move(target.Front),
-                                           std::move(target.Back) });
-        ctx.Sink.CommitSplits(std::move(edits));
-        return;
-    }
-
+    // The kernel answers what the half-space intersection is; what a shell
+    // is, is decided here: the entity keeps the first, every other shell --
+    // of a kept half that came apart, or of a split's two halves -- becomes
+    // its own brush. One brush, one solid.
+    std::vector<SplitEdit> splits;
     std::vector<MeshEdit> edits;
     std::vector<SelectableRef> kept;
     const RegistryId registry = ctx.Scene.GetRegistry().Id;
@@ -664,9 +676,38 @@ void ClipTool::Commit(ToolContext& ctx)
     {
         if (target.Result != Outcome::Valid || !ctx.Sink.ResolveMesh(target.Entity).has_value())
             continue;
-        BrushMesh& keep = mode == ClipMode::KeepBack ? target.Back : target.Front;
-        edits.push_back(MeshEdit{ target.Entity, std::move(target.Original), std::move(keep) });
-        kept.push_back(SelectableRef::EntitySelection(registry, target.Entity));
+        std::vector<BrushMesh> shells;
+        if (mode == ClipMode::Split || mode == ClipMode::KeepFront)
+            for (BrushMesh& shell : BrushConnectedComponents(target.Front))
+                shells.push_back(std::move(shell));
+        if (mode == ClipMode::Split || mode == ClipMode::KeepBack)
+            for (BrushMesh& shell : BrushConnectedComponents(target.Back))
+                shells.push_back(std::move(shell));
+        if (shells.empty())
+            continue;
+        BrushMesh keep = std::move(shells.front());
+        shells.erase(shells.begin());
+        if (shells.empty())
+        {
+            edits.push_back(MeshEdit{ target.Entity, std::move(target.Original), std::move(keep) });
+            kept.push_back(SelectableRef::EntitySelection(registry, target.Entity));
+            continue;
+        }
+        splits.push_back(SplitEdit{ target.Entity, std::move(target.Original), std::move(keep), std::move(shells) });
+    }
+    if (!splits.empty())
+    {
+        // Every piece ends up selected: the splits select theirs, and the
+        // plain edits are added to that.
+        ctx.Sink.CommitSplits(std::move(splits));
+        if (!edits.empty())
+        {
+            ctx.Sink.CommitMeshes(std::move(edits));
+            std::vector<SelectableRef> all(ctx.Selection.GetSelection().begin(), ctx.Selection.GetSelection().end());
+            all.insert(all.end(), kept.begin(), kept.end());
+            ctx.Sink.SelectElements(all);
+        }
+        return;
     }
     ctx.Sink.CommitMeshes(std::move(edits));
     ctx.Sink.SelectElements(kept);

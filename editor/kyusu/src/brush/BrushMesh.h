@@ -71,6 +71,11 @@ void BrushSplitSoftEdge(BrushMesh& mesh, std::uint32_t a, std::uint32_t b, std::
 // the carves use to tell a seam from a rim.
 [[nodiscard]] bool BrushFacesCoplanar(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b);
 
+// The mesh split into its edge-connected shells, each with its own compacted
+// vertex list. Adjacency is by shared vertex indices, so weld first when the
+// mesh may carry coincident duplicates. One entry for a connected mesh.
+[[nodiscard]] std::vector<BrushMesh> BrushConnectedComponents(const BrushMesh& mesh);
+
 // Average of all vertex positions (mesh "center" for outward-orientation tests).
 [[nodiscard]] Vec3d BrushMeshCentroid(const BrushMesh& mesh);
 

@@ -572,33 +572,7 @@ std::optional<std::vector<std::uint32_t>> UnionBoundary(const BrushMesh& mesh,
 // not what anyone asked a carve to do.
 bool MeshIsConnected(const BrushMesh& mesh)
 {
-    if (mesh.Faces.empty())
-        return true;
-    std::vector<bool> reached(mesh.Faces.size(), false);
-    std::vector<std::uint32_t> stack{ 0 };
-    reached[0] = true;
-    std::size_t count = 1;
-    const auto sharesEdge = [&mesh](std::uint32_t a, std::uint32_t b) {
-        for (std::uint32_t v : mesh.Faces[a].Loop)
-            for (std::uint32_t w : mesh.Faces[b].Loop)
-                if (v == w)
-                    return true;
-        return false;
-    };
-    while (!stack.empty())
-    {
-        const std::uint32_t face = stack.back();
-        stack.pop_back();
-        for (std::uint32_t f = 0; f < mesh.Faces.size(); ++f)
-        {
-            if (reached[f] || !sharesEdge(face, f))
-                continue;
-            reached[f] = true;
-            ++count;
-            stack.push_back(f);
-        }
-    }
-    return count == mesh.Faces.size();
+    return mesh.Faces.empty() || BrushConnectedComponents(mesh).size() == 1;
 }
 
 // The face on the other side of a host-rim edge: the one the channel has to

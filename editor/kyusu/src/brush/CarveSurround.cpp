@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <span>
+#include <vector>
 
 namespace
 {
@@ -81,19 +83,95 @@ public:
 
     std::uint32_t Intern(Vec2d p)
     {
-        for (std::uint32_t i = 0; i < Points.size(); ++i)
-            if (NearlyEqual(Points[i], p, Tolerance))
+        for (std::uint32_t i = 0; i < PointsList.size(); ++i)
+            if (NearlyEqual(PointsList[i], p, Tolerance))
                 return i;
-        Points.push_back(p);
-        return static_cast<std::uint32_t>(Points.size() - 1);
+        PointsList.push_back(p);
+        return static_cast<std::uint32_t>(PointsList.size() - 1);
     }
 
-    [[nodiscard]] Vec2d At(std::uint32_t i) const { return Points[i]; }
+    [[nodiscard]] Vec2d At(std::uint32_t i) const { return PointsList[i]; }
+    [[nodiscard]] std::span<const Vec2d> Points() const { return PointsList; }
 
 private:
     float Tolerance;
-    std::vector<Vec2d> Points;
+    std::vector<Vec2d> PointsList;
 };
+
+// The material faces of a planar arc arrangement, traced by the rotational
+// rule: arriving along (u -> v), leave by the arc after (v -> u) clockwise
+// around v. That is what separates pieces meeting at a single vertex instead
+// of emitting one pinched loop. Every arc is consumed once; the arrangement's
+// outer face comes out clockwise and is dropped. Nullopt when an arc leads
+// nowhere or the walk does not close.
+using Arc = std::pair<std::uint32_t, std::uint32_t>;
+std::optional<std::vector<std::vector<std::uint32_t>>> TraceArcFaces(std::span<const Vec2d> points,
+                                                                     std::vector<Arc> arcs)
+{
+    std::sort(arcs.begin(), arcs.end());
+    arcs.erase(std::unique(arcs.begin(), arcs.end()), arcs.end());
+    std::vector<std::vector<std::uint32_t>> outgoing(points.size());
+    for (const Arc& a : arcs)
+    {
+        if (a.first >= points.size() || a.second >= points.size())
+            return std::nullopt;
+        outgoing[a.first].push_back(a.second);
+    }
+    const auto angle = [&](std::uint32_t from, std::uint32_t to) {
+        return std::atan2(points[to].Y - points[from].Y, points[to].X - points[from].X);
+    };
+    const auto nextArc = [&](std::uint32_t u, std::uint32_t v) -> std::optional<std::uint32_t> {
+        constexpr float kTau = 6.283185307179586f;
+        const float base = angle(v, u);
+        std::optional<std::uint32_t> best;
+        float bestTurn = 0.0f;
+        for (std::uint32_t w : outgoing[v])
+        {
+            float turn = std::fmod(base - angle(v, w) + kTau, kTau);
+            if (turn <= 0.0f)
+                turn = kTau; // never reverse unless it is the only way out
+            if (!best.has_value() || turn < bestTurn)
+            {
+                best = w;
+                bestTurn = turn;
+            }
+        }
+        return best;
+    };
+
+    std::vector<Arc> unused = arcs;
+    std::vector<std::vector<std::uint32_t>> faces;
+    const std::size_t guard = arcs.size() + 2;
+    while (!unused.empty())
+    {
+        const Arc seed = unused.front();
+        std::vector<std::uint32_t> piece{ seed.first };
+        std::uint32_t u = seed.first;
+        std::uint32_t v = seed.second;
+        std::erase(unused, seed);
+        std::size_t steps = 0;
+        while (v != seed.first)
+        {
+            piece.push_back(v);
+            const std::optional<std::uint32_t> w = nextArc(u, v);
+            if (!w.has_value())
+                return std::nullopt;
+            std::erase(unused, Arc{ v, *w });
+            u = v;
+            v = *w;
+            if (++steps > guard)
+                return std::nullopt;
+        }
+        if (piece.size() < 3)
+            continue;
+        std::vector<Vec2d> ring;
+        for (std::uint32_t index : piece)
+            ring.push_back(points[index]);
+        if (PolygonSignedArea(ring) > 0.0f)
+            faces.push_back(std::move(piece));
+    }
+    return faces;
+}
 
 struct Bridge
 {
@@ -256,7 +334,6 @@ SurroundResult SurroundPolygons(std::span<const Vec2d> outer, std::span<const Ve
     if (hasRepeat(outerRing) || hasRepeat(holeRing))
         return { CarveStatus::InvalidOutline, {} };
 
-    using Arc = std::pair<std::uint32_t, std::uint32_t>;
     const auto ringEdges = [](const std::vector<std::uint32_t>& ring) {
         std::vector<Arc> edges;
         edges.reserve(ring.size());
@@ -299,76 +376,18 @@ SurroundResult SurroundPolygons(std::span<const Vec2d> outer, std::span<const Ve
     std::sort(arcs.begin(), arcs.end());
     arcs.erase(std::unique(arcs.begin(), arcs.end()), arcs.end());
 
-    std::vector<std::vector<std::uint32_t>> outgoing;
-    std::size_t vertexCount = 0;
-    for (const Arc& a : arcs)
-        vertexCount = std::max<std::size_t>(vertexCount, std::max(a.first, a.second) + 1u);
-    outgoing.resize(vertexCount);
-    for (const Arc& a : arcs)
-        outgoing[a.first].push_back(a.second);
-
-    // Trace faces by the rotational rule: arriving along (u -> v), leave by the
-    // arc after (v -> u) clockwise around v. That is what separates the pieces
-    // where they meet at a single vertex, instead of emitting one pinched loop.
-    const auto angle = [&](std::uint32_t from, std::uint32_t to) {
-        const Vec2d a = pool.At(from);
-        const Vec2d b = pool.At(to);
-        return std::atan2(b.Y - a.Y, b.X - a.X);
-    };
-    const auto nextArc = [&](std::uint32_t u, std::uint32_t v) -> std::optional<std::uint32_t> {
-        constexpr float kTau = 6.283185307179586f;
-        const float base = angle(v, u);
-        std::optional<std::uint32_t> best;
-        float bestTurn = 0.0f;
-        for (std::uint32_t w : outgoing[v])
-        {
-            float turn = std::fmod(base - angle(v, w) + kTau, kTau);
-            if (turn <= 0.0f)
-                turn = kTau; // never reverse unless it is the only way out
-            if (!best.has_value() || turn < bestTurn)
-            {
-                best = w;
-                bestTurn = turn;
-            }
-        }
-        return best;
-    };
-
-    std::vector<Arc> unused = arcs;
+    const std::optional<std::vector<std::vector<std::uint32_t>>> faces = TraceArcFaces(pool.Points(), arcs);
+    if (!faces.has_value())
+        return { CarveStatus::TopologyFailure, {} };
     SurroundResult result;
-    const std::size_t guard = arcs.size() + 2;
-    while (!unused.empty())
+    for (const std::vector<std::uint32_t>& piece : *faces)
     {
-        const Arc seed = unused.front();
-        std::vector<std::uint32_t> piece{ seed.first };
-        std::uint32_t u = seed.first;
-        std::uint32_t v = seed.second;
-        std::erase(unused, seed);
-        std::size_t steps = 0;
-        while (v != seed.first)
-        {
-            piece.push_back(v);
-            const std::optional<std::uint32_t> w = nextArc(u, v);
-            if (!w.has_value())
-                return { CarveStatus::TopologyFailure, {} };
-            std::erase(unused, Arc{ v, *w });
-            u = v;
-            v = *w;
-            if (++steps > guard)
-                return { CarveStatus::TopologyFailure, {} };
-        }
-        if (piece.size() < 3)
-            continue;
         std::vector<Vec2d> points;
         points.reserve(piece.size());
         for (std::uint32_t index : piece)
             points.push_back(pool.At(index));
-        // The arrangement's outer face comes out clockwise; only the material
-        // pieces are wanted.
-        if (PolygonSignedArea(points) > 0.0f)
-            result.Pieces.push_back(std::move(points));
+        result.Pieces.push_back(std::move(points));
     }
-
     if (result.Pieces.empty())
         return { CarveStatus::TopologyFailure, {} };
     return result;
@@ -659,4 +678,276 @@ std::optional<Vec2d> SegmentCrossing2D(Vec2d a, Vec2d b, Vec2d c, Vec2d d, float
         return std::nullopt;
     const float t = ((c.X - a.X) * (d.Y - c.Y) - (c.Y - a.Y) * (d.X - c.X)) / denominator;
     return Vec2d{ a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t };
+}
+
+PolygonSplit2D SplitPolygonByDistances2D(std::span<const Vec2d> polygon, std::span<const float> distances,
+                                         Vec2d direction, float tolerance)
+{
+    PolygonSplit2D result;
+    const std::size_t n = polygon.size();
+    if (n < 3 || distances.size() != n)
+    {
+        result.Status = CarveStatus::InvalidOutline;
+        return result;
+    }
+    const auto sideOf = [&](std::size_t i) { return distances[i] > tolerance ? 1 : distances[i] < -tolerance ? -1 : 0; };
+    bool anyLeft = false, anyRight = false;
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        anyLeft = anyLeft || sideOf(i) > 0;
+        anyRight = anyRight || sideOf(i) < 0;
+    }
+    if (!anyLeft && !anyRight)
+    {
+        result.Status = CarveStatus::InvalidOutline; // lying on the line: not this call's to split
+        return result;
+    }
+    std::vector<SplitVertex2D> whole;
+    for (std::size_t i = 0; i < n; ++i)
+        whole.push_back(SplitVertex2D{ static_cast<std::uint32_t>(i), kNoSource, polygon[i] });
+    if (!anyLeft || !anyRight)
+    {
+        (anyLeft ? result.Left : result.Right).push_back(std::move(whole));
+        return result;
+    }
+
+    // The walk: input vertices, with a crossing node on every edge whose ends
+    // are strictly on opposite sides. Every node carries its side (0 on the line).
+    struct Node
+    {
+        SplitVertex2D Vertex;
+        int Side;
+    };
+    std::vector<Node> nodes;
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        nodes.push_back(Node{ SplitVertex2D{ static_cast<std::uint32_t>(i), kNoSource, polygon[i] }, sideOf(i) });
+        const std::size_t j = (i + 1) % n;
+        if (sideOf(i) != 0 && sideOf(j) != 0 && sideOf(i) != sideOf(j))
+        {
+            const float t = distances[i] / (distances[i] - distances[j]);
+            const Vec2d at{ polygon[i].X + (polygon[j].X - polygon[i].X) * t, polygon[i].Y + (polygon[j].Y - polygon[i].Y) * t };
+            nodes.push_back(Node{ SplitVertex2D{ kNoSource, static_cast<std::uint32_t>(i), at }, 0 });
+        }
+    }
+    const std::size_t m = nodes.size();
+
+    // Events: maximal runs of on-line nodes. A run bounded by opposite sides is
+    // a crossing; by the same side, a contact that belongs to that side.
+    struct Event
+    {
+        std::size_t First, Last; // node range, cyclic, inclusive
+        bool Crossing;
+        int ContactSide;
+        float MinT, MaxT;        // extent along the line
+        std::size_t MinNode, MaxNode;
+    };
+    std::vector<Event> events;
+    std::vector<int> eventOf(m, -1);
+    const Vec2d dir = direction.SqrMagnitude() > 0.0f ? Vec2d{ direction.X, direction.Y } : Vec2d{ 1.0f, 0.0f };
+    const auto param = [&](Vec2d p) { return p.X * dir.X + p.Y * dir.Y; };
+    for (std::size_t i = 0; i < m; ++i)
+    {
+        if (nodes[i].Side != 0 || eventOf[i] >= 0)
+            continue;
+        // Find the run's start: walk back over on-line nodes.
+        std::size_t first = i;
+        while (nodes[(first + m - 1) % m].Side == 0 && (first + m - 1) % m != i)
+            first = (first + m - 1) % m;
+        std::size_t last = first;
+        while (nodes[(last + 1) % m].Side == 0)
+            last = (last + 1) % m;
+        Event event{ first, last, false, 0, 0.0f, 0.0f, first, first };
+        const int before = nodes[(first + m - 1) % m].Side;
+        const int after = nodes[(last + 1) % m].Side;
+        event.Crossing = before != after;
+        event.ContactSide = before;
+        bool started = false;
+        for (std::size_t k = first;; k = (k + 1) % m)
+        {
+            eventOf[k] = static_cast<int>(events.size());
+            const float t = param(nodes[k].Vertex.Position);
+            if (!started || t < event.MinT) { event.MinT = t; event.MinNode = k; }
+            if (!started || t > event.MaxT) { event.MaxT = t; event.MaxNode = k; }
+            started = true;
+            if (k == last)
+                break;
+        }
+        events.push_back(event);
+    }
+
+    // Spans: between consecutive events along the line -- crossings and
+    // contacts alike, since a contact run is a boundary the line's interior
+    // stops at -- wherever the line runs through the interior. The midpoint
+    // decides, so contacts and collinear runs cannot desynchronise a parity
+    // count, and an edge lying on the line is never bridged over.
+    std::vector<std::size_t> ordered;
+    for (std::size_t e = 0; e < events.size(); ++e)
+        ordered.push_back(e);
+    std::sort(ordered.begin(), ordered.end(), [&](std::size_t a, std::size_t b) { return events[a].MinT < events[b].MinT; });
+    std::vector<std::pair<std::size_t, std::size_t>> spanNodes; // (node at the low end, node at the high end)
+    for (std::size_t k = 0; k + 1 < ordered.size(); ++k)
+    {
+        const Event& lo = events[ordered[k]];
+        const Event& hi = events[ordered[k + 1]];
+        const Vec2d a = nodes[lo.MaxNode].Vertex.Position;
+        const Vec2d b = nodes[hi.MinNode].Vertex.Position;
+        const Vec2d middle{ (a.X + b.X) * 0.5f, (a.Y + b.Y) * 0.5f };
+        if (ClassifyPointInPolygon2D(polygon, middle, tolerance) == PointPolygonRelation::Inside)
+        {
+            spanNodes.emplace_back(lo.MaxNode, hi.MinNode);
+            result.Spans.emplace_back(nodes[lo.MaxNode].Vertex, nodes[hi.MinNode].Vertex);
+        }
+    }
+
+    // The arrangement: the boundary walked in order plus every span both ways;
+    // its faces are the pieces, each on the side of any off-line vertex it has.
+    std::vector<Vec2d> points;
+    points.reserve(m);
+    for (const Node& node : nodes)
+        points.push_back(node.Vertex.Position);
+    std::vector<Arc> arcs;
+    for (std::size_t i = 0; i < m; ++i)
+        arcs.emplace_back(static_cast<std::uint32_t>(i), static_cast<std::uint32_t>((i + 1) % m));
+    for (const auto& [a, b] : spanNodes)
+    {
+        arcs.emplace_back(static_cast<std::uint32_t>(a), static_cast<std::uint32_t>(b));
+        arcs.emplace_back(static_cast<std::uint32_t>(b), static_cast<std::uint32_t>(a));
+    }
+    const std::optional<std::vector<std::vector<std::uint32_t>>> faces = TraceArcFaces(points, arcs);
+    if (!faces.has_value())
+    {
+        result.Status = CarveStatus::TopologyFailure;
+        return result;
+    }
+    for (const std::vector<std::uint32_t>& face : *faces)
+    {
+        int side = 0;
+        for (std::uint32_t index : face)
+            if (nodes[index].Side != 0)
+            {
+                side = nodes[index].Side;
+                break;
+            }
+        if (side == 0)
+            continue; // no area off the line: nothing
+        std::vector<SplitVertex2D> piece;
+        piece.reserve(face.size());
+        for (std::uint32_t index : face)
+            piece.push_back(nodes[index].Vertex);
+        (side > 0 ? result.Left : result.Right).push_back(std::move(piece));
+    }
+    return result;
+}
+
+PolygonSplit2D SplitPolygonByLine2D(std::span<const Vec2d> polygon, Vec2d pointOnLine, Vec2d direction,
+                                    float tolerance)
+{
+    const float length = std::sqrt(direction.X * direction.X + direction.Y * direction.Y);
+    if (length <= 0.0f)
+    {
+        PolygonSplit2D result;
+        result.Status = CarveStatus::InvalidOutline;
+        return result;
+    }
+    const Vec2d d{ direction.X / length, direction.Y / length };
+    const Vec2d leftNormal{ -d.Y, d.X };
+    std::vector<float> distances;
+    distances.reserve(polygon.size());
+    for (const Vec2d& p : polygon)
+        distances.push_back((p.X - pointOnLine.X) * leftNormal.X + (p.Y - pointOnLine.Y) * leftNormal.Y);
+    return SplitPolygonByDistances2D(polygon, distances, d, tolerance);
+}
+
+namespace
+{
+// Whether segment [a, b] meets `polygon` at all: crossing an edge, running
+// along one, or ending on it. A bridge that does any of these to a hole not
+// yet bridged is not a usable bridge.
+bool SegmentCrossesPolygon(Vec2d a, Vec2d b, std::span<const Vec2d> polygon, float tolerance)
+{
+    for (std::size_t i = 0; i < polygon.size(); ++i)
+        if (SegmentsProperlyCross(a, b, polygon[i], polygon[(i + 1) % polygon.size()], tolerance))
+            return true;
+    const Vec2d middle{ (a.X + b.X) * 0.5f, (a.Y + b.Y) * 0.5f };
+    return ClassifyPointInPolygon2D(polygon, middle, tolerance) != PointPolygonRelation::Outside
+        || ClassifyPointInPolygon2D(polygon, a, tolerance) != PointPolygonRelation::Outside
+        || ClassifyPointInPolygon2D(polygon, b, tolerance) != PointPolygonRelation::Outside;
+}
+
+// Reflect a polygon across the diagonal (swap X and Y), keeping it
+// counter-clockwise: how a vertical bridge is asked of a horizontal caster.
+std::vector<Vec2d> Transposed(std::span<const Vec2d> polygon)
+{
+    std::vector<Vec2d> out;
+    out.reserve(polygon.size());
+    for (std::size_t i = polygon.size(); i-- > 0;)
+        out.push_back(Vec2d{ polygon[i].Y, polygon[i].X });
+    return out;
+}
+}
+
+SurroundResult SurroundPolygonsWithHoles(std::span<const Vec2d> outer, std::span<const std::vector<Vec2d>> holes,
+                                         float tolerance)
+{
+    SurroundResult result;
+    result.Pieces.emplace_back(outer.begin(), outer.end());
+    std::vector<bool> done(holes.size(), false);
+    std::size_t remaining = holes.size();
+    while (remaining > 0)
+    {
+        bool progressed = false;
+        for (std::size_t h = 0; h < holes.size() && !progressed; ++h)
+        {
+            if (done[h])
+                continue;
+            const std::vector<Vec2d>& hole = holes[h];
+            // The piece that holds this hole.
+            std::size_t owner = result.Pieces.size();
+            for (std::size_t p = 0; p < result.Pieces.size(); ++p)
+                if (ClassifyPointInPolygon2D(result.Pieces[p], hole.front(), tolerance) != PointPolygonRelation::Outside)
+                {
+                    owner = p;
+                    break;
+                }
+            if (owner == result.Pieces.size())
+                return { CarveStatus::ChannelCrossesHole, {} };
+            // Horizontal bridges first, vertical when a neighbour is in the way;
+            // a bridge that crosses a hole not yet bridged is not usable.
+            for (const bool vertical : { false, true })
+            {
+                const std::vector<Vec2d> ring = vertical ? Transposed(result.Pieces[owner]) : result.Pieces[owner];
+                const std::vector<Vec2d> island = vertical ? Transposed(hole) : hole;
+                const SurroundResult bridged = SurroundPolygons(ring, island, tolerance);
+                if (bridged.Status != CarveStatus::Ok)
+                    continue;
+                std::vector<std::vector<Vec2d>> pieces;
+                for (const std::vector<Vec2d>& piece : bridged.Pieces)
+                    pieces.push_back(vertical ? Transposed(piece) : piece);
+                // The bridges are the new piece edges that are neither ring nor
+                // hole edges; a piece edge crossing an unbridged hole means one
+                // of them did.
+                bool crosses = false;
+                for (std::size_t other = 0; other < holes.size() && !crosses; ++other)
+                {
+                    if (other == h || done[other])
+                        continue;
+                    for (const std::vector<Vec2d>& piece : pieces)
+                        for (std::size_t i = 0; i < piece.size() && !crosses; ++i)
+                            crosses = SegmentCrossesPolygon(piece[i], piece[(i + 1) % piece.size()], holes[other], tolerance);
+                }
+                if (crosses)
+                    continue;
+                result.Pieces.erase(result.Pieces.begin() + static_cast<std::ptrdiff_t>(owner));
+                result.Pieces.insert(result.Pieces.end(), pieces.begin(), pieces.end());
+                done[h] = true;
+                --remaining;
+                progressed = true;
+                break;
+            }
+        }
+        if (!progressed)
+            return { CarveStatus::ChannelCrossesHole, {} };
+    }
+    return result;
 }
