@@ -13,7 +13,14 @@ namespace EditorChrome
 void FillChamfered(ImDrawList* dl, const ChamferPoly& poly, ImU32 color);
 void StrokeChamfered(ImDrawList* dl, const ChamferPoly& poly, ImU32 color, float width);
 
-// Lights the silhouette from the top-left: edges facing up or left take the
+// The chrome's one light: it sits slightly above the top-left, so an edge
+// whose outward normal faces up or left is lit and one facing down or right
+// falls into shadow. `a` to `b` is a clockwise edge in screen space (y down).
+// Every beveled surface, straight or curved, asks this so the chrome reads
+// as one machined object under one light.
+[[nodiscard]] bool EdgeLit(ImVec2 a, ImVec2 b);
+
+// Lights the silhouette by EdgeLit: edges facing up or left take the
 // highlight, edges facing down or right the shadow, so a flat fill reads as a
 // raised plate. Pass a polygon inset by half `width` for crisp lines.
 void BevelChamfered(ImDrawList* dl, const ChamferPoly& poly, ImU32 highlight, ImU32 shadow, float width);

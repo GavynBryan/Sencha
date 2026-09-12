@@ -345,6 +345,22 @@ void EditorServices::BuildInput()
                     .Min = vp->WorkPos,
                     .Max = ImVec2(vp->WorkPos.x + vp->WorkSize.x, vp->WorkPos.y + vp->WorkSize.y),
                 };
+            },
+            [this](ImVec2 pointer)
+            {
+                // The viewport whose rect holds the pointer, and that same
+                // viewport's panel saying nothing is drawn over it: one
+                // viewport, one hover flag. Which view is active or was
+                // focused last plays no part.
+                const ViewportId under = Workspace->Layout.ResolveAt(pointer);
+                if (!under.IsValid())
+                    return false;
+                for (const ViewportPanel* panel : { PerspectivePanel, OrthoPanel })
+                {
+                    if (panel != nullptr && panel->GetViewportId() == under)
+                        return panel->IsViewportRegionHovered();
+                }
+                return false;
             });
     }
 

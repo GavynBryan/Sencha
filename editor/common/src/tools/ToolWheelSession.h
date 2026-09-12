@@ -29,6 +29,10 @@ enum class ToolWheelPhase : std::uint8_t
 // the UI guard (a focused text field keeps its letters) and ahead of every
 // viewport handler, so the wheel is modal while it is open.
 //
+// The wheel opens only with the pointer inside a scene viewport, which the
+// application answers per press: elsewhere the key is swallowed and nothing
+// happens, so the gesture is never half-begun over a panel or a bar.
+//
 // The hot sector starts empty at open and is set only by pointer motion: a
 // wheel shifted in from a window edge may open with the pointer already
 // inside a sector, and an immediate release must not select by accident.
@@ -40,7 +44,8 @@ public:
     // `frame` is read once per open: the window area and UI scale the wheel
     // is placed against, which is what keeps hit-testing and painting on one
     // set of numbers.
-    ToolWheelSession(ToolRegistry& tools, ITool::Shortcut key, std::function<ToolWheel::Frame()> frame);
+    ToolWheelSession(ToolRegistry& tools, ITool::Shortcut key, std::function<ToolWheel::Frame()> frame,
+                     std::function<bool(ImVec2 pointer)> pointerOnScene);
 
     InputConsumed OnInput(const InputEvent& event, PointerCapture& capture);
 
@@ -61,6 +66,7 @@ private:
     ToolRegistry& Tools;
     ITool::Shortcut Key;
     std::function<ToolWheel::Frame()> FrameProvider;
+    std::function<bool(ImVec2)> PointerOnScene;
     ToolWheelPhase Phase = ToolWheelPhase::Closed;
     ToolWheel::Layout Layout{};
     int Hot = -1;

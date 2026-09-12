@@ -7,10 +7,12 @@
 #include <utility>
 
 ToolWheelSession::ToolWheelSession(ToolRegistry& tools, ITool::Shortcut key,
-                                   std::function<ToolWheel::Frame()> frame)
+                                   std::function<ToolWheel::Frame()> frame,
+                                   std::function<bool(ImVec2)> pointerOnScene)
     : Tools(tools)
     , Key(key)
     , FrameProvider(std::move(frame))
+    , PointerOnScene(std::move(pointerOnScene))
 {
 }
 
@@ -50,6 +52,10 @@ InputConsumed ToolWheelSession::OnKeyDown(const KeyDownEvent& event, PointerCapt
         // the wheel waits for a press with the pointer free.
         if (capture.HeldByOther())
             return InputConsumed::No;
+        // Off the scene the key is the wheel's and does nothing: no open, no
+        // capture, and nothing behind gets to act on it either.
+        if (!PointerOnScene || !PointerOnScene(event.Pointer))
+            return InputConsumed::Yes;
         Open(event.Pointer, capture);
         return InputConsumed::Yes;
 

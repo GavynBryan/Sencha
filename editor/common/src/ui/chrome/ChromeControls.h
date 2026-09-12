@@ -96,10 +96,10 @@ struct WheelPaint
     bool CaptionDim = false; // the caption names what is already on, not a choice
 };
 
-// A radial menu painted into a draw list. The wedge is the target, and the
-// paint says so: the hot slot's whole wedge fills and its outer arc glows,
-// and faint spokes divide the others, so moving the pointer makes the
-// geometry it is choosing by unmistakable. Painted rather than mounted for
+// A radial menu painted into a draw list as one machined part: petals cut
+// into a dark plate, a beveled rim around them, a recessed hub, a ledge under
+// the rim for the caption. The wedge is the target, and the paint says so:
+// the hot slot's whole petal turns orange. Painted rather than mounted for
 // the same reason as the other floating controls: it lives over everything
 // and the session that opened it hit-tests the same geometry.
 void DrawToolWheel(ImDrawList* dl, const WheelPaint& wheel);

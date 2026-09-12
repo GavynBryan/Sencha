@@ -38,7 +38,12 @@ protected:
 
         Wheel = std::make_unique<ToolWheelSession>(
             Tools(), ITool::Shortcut{ .Key = SDLK_Q, .Mods = {} },
-            [] { return ToolWheel::Frame{ .Scale = 1.0f, .Min = { 0.0f, 0.0f }, .Max = { 1600.0f, 900.0f } }; });
+            [] { return ToolWheel::Frame{ .Scale = 1.0f, .Min = { 0.0f, 0.0f }, .Max = { 1600.0f, 900.0f } }; },
+            [this](ImVec2 pointer)
+            {
+                Asked.push_back(pointer);
+                return OnScene;
+            });
 
         // A gesture ahead of the wheel that takes the pointer on a press, as
         // fly-look does; a recorder behind it that sees whatever the wheel let
@@ -100,6 +105,10 @@ protected:
     SpyTool* Spy = nullptr;
     int SpyIndex = -1;
     bool AheadGrabs = false;
+    // What the application answers when asked whether the pointer is on a
+    // scene viewport, and every position it was asked about.
+    bool OnScene = true;
+    std::vector<ImVec2> Asked;
     std::vector<InputEvent> Reached;
 };
 }
@@ -245,4 +254,46 @@ TEST_F(ToolWheelSessionTest, ClicksAndKeysAreSwallowedWhileOpen)
     // The release still selects: a click changed nothing.
     (void)Release(SDLK_Q, ModifierFlags{ .Shift = true });
     EXPECT_EQ(Tools().GetActiveIndex(), SpyIndex);
+}
+
+TEST_F(ToolWheelSessionTest, OffTheSceneTheKeyIsSwallowedAndNothingOpens)
+{
+    OnScene = false;
+    Reached.clear();
+    EXPECT_EQ(Press(SDLK_Q, { 40.0f, 40.0f }), InputConsumed::Yes);
+    EXPECT_EQ(Wheel->GetPhase(), ToolWheelPhase::Closed);
+    EXPECT_FALSE(Router.PointerCaptured());
+    EXPECT_TRUE(Reached.empty());
+    // The question was asked about where the key went down.
+    ASSERT_EQ(Asked.size(), 1u);
+    EXPECT_FLOAT_EQ(Asked.front().x, 40.0f);
+    EXPECT_FLOAT_EQ(Asked.front().y, 40.0f);
+    // Motion and the release are nobody's: the editor is untouched.
+    (void)Move({ 500.0f, 500.0f });
+    EXPECT_EQ(ReachedMoves(), 1u);
+    EXPECT_EQ(Release(SDLK_Q), InputConsumed::No);
+    EXPECT_EQ(Spy->Activations, 0);
+    EXPECT_EQ(Tools().GetActiveTool()->GetId(), "select");
+}
+
+TEST_F(ToolWheelSessionTest, TheAnswerIsAskedOnlyAtThePressAndNeverWhileOpenOrDismissed)
+{
+    (void)Press(SDLK_Q);
+    ASSERT_EQ(Asked.size(), 1u);
+    OnScene = false;
+    (void)Move(InSector(SpyIndex));
+    (void)Press(SDLK_ESCAPE);
+    (void)Press(SDLK_Q);
+    (void)Release(SDLK_Q);
+    EXPECT_EQ(Asked.size(), 1u);
+    EXPECT_EQ(Wheel->GetPhase(), ToolWheelPhase::Closed);
+}
+
+TEST_F(ToolWheelSessionTest, AHeldGestureStillOwnsTheKeyBeforeTheSceneIsAsked)
+{
+    AheadGrabs = true;
+    OnScene = false;
+    (void)Router.Route(PointerDownEvent{ .Position = { 1.0f, 1.0f }, .Button = MouseButton::Right, .Modifiers = {} });
+    EXPECT_EQ(Press(SDLK_Q), InputConsumed::No);
+    EXPECT_TRUE(Asked.empty());
 }

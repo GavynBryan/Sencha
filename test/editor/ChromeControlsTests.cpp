@@ -1,4 +1,5 @@
 #include "ui/chrome/ChromeControls.h"
+#include "ui/chrome/ChromePaint.h"
 #include "ui/chrome/ChromeTile.h"
 
 #include <imgui.h>
@@ -79,24 +80,36 @@ TEST_F(ChromeControlsTests, OpenComboKeepsPopupAndParentIdStacksBalanced)
     EXPECT_EQ(parent->IDStack.Size, parentDepth);
 }
 
-TEST_F(ChromeControlsTests, ToolWheelPaintsEverySlotAndFillsTheHotWedge)
+TEST(ChromePaint, EdgeLitFollowsTheTopLeftLight)
+{
+    // Clockwise edges of a screen-space square: top (normal up), right
+    // (normal right), bottom (normal down), left (normal left).
+    EXPECT_TRUE(EditorChrome::EdgeLit(ImVec2(0, 0), ImVec2(10, 0)));
+    EXPECT_FALSE(EditorChrome::EdgeLit(ImVec2(10, 0), ImVec2(10, 10)));
+    EXPECT_FALSE(EditorChrome::EdgeLit(ImVec2(10, 10), ImVec2(0, 10)));
+    EXPECT_TRUE(EditorChrome::EdgeLit(ImVec2(0, 10), ImVec2(0, 0)));
+    // The light sits above the top-left: a top-right chamfer catches it, a
+    // bottom-left one does not.
+    EXPECT_TRUE(EditorChrome::EdgeLit(ImVec2(8, 0), ImVec2(10, 2)));
+    EXPECT_FALSE(EditorChrome::EdgeLit(ImVec2(2, 10), ImVec2(0, 8)));
+}
+
+TEST_F(ChromeControlsTests, ToolWheelDrawsNothingForNoSlotsAndLeavesTheDrawListClean)
 {
     ImDrawList* dl = ImGui::GetWindowDrawList();
+    const int vertices = dl->VtxBuffer.Size;
+    const int clips = dl->_ClipRectStack.Size;
     EditorChrome::DrawToolWheel(dl, EditorChrome::WheelPaint{});
-    const int untouched = dl->VtxBuffer.Size;
+    EXPECT_EQ(dl->VtxBuffer.Size, vertices);
 
     std::vector<EditorChrome::WheelSlot> slots;
     for (int i = 0; i < 3; ++i)
         slots.push_back({ .Center = ImVec2(300.0f + 60.0f * static_cast<float>(i), 200.0f), .Size = 26.0f,
-                          .Angle0 = 0.0f, .Angle1 = 1.0f, .Icon = IconId::None, .Label = "T" });
-    EditorChrome::WheelPaint wheel{ .Center = ImVec2(300.0f, 200.0f), .Radius = 72.0f, .Hub = 26.0f,
-                                    .CaptionY = 320.0f, .Slots = slots, .Caption = "Select" };
-    EditorChrome::DrawToolWheel(dl, wheel);
-    const int cold = dl->VtxBuffer.Size - untouched;
-    EXPECT_GT(cold, 0);
-
-    slots[1].Hot = true;
-    EditorChrome::DrawToolWheel(dl, wheel);
-    const int hot = dl->VtxBuffer.Size - untouched - cold;
-    EXPECT_GT(hot, cold); // the wedge fill and its glow are extra geometry
+                          .Angle0 = 0.0f, .Angle1 = 1.0f, .Icon = IconId::None, .Label = "T", .Hot = i == 1 });
+    EditorChrome::DrawToolWheel(dl, EditorChrome::WheelPaint{ .Center = ImVec2(300.0f, 200.0f), .Radius = 72.0f,
+                                                              .Hub = 26.0f, .CaptionY = 320.0f, .Slots = slots,
+                                                              .Caption = "Select" });
+    EXPECT_GT(dl->VtxBuffer.Size, vertices);
+    EXPECT_EQ(dl->_Path.Size, 0);
+    EXPECT_EQ(dl->_ClipRectStack.Size, clips);
 }

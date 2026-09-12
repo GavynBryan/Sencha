@@ -18,6 +18,16 @@ void StrokeChamfered(ImDrawList* dl, const ChamferPoly& poly, ImU32 color, float
     dl->AddPolyline(poly.P, poly.Count, color, ImDrawFlags_Closed, width);
 }
 
+bool EdgeLit(ImVec2 a, ImVec2 b)
+{
+    // Outward normal of a clockwise edge. The light sits slightly above the
+    // top-left, so a top-right diagonal catches it and a bottom-left diagonal
+    // falls into shadow.
+    const float nx = b.y - a.y;
+    const float ny = -(b.x - a.x);
+    return nx * 0.9f + ny * 1.1f < 0.0f;
+}
+
 void BevelChamfered(ImDrawList* dl, const ChamferPoly& poly, ImU32 highlight, ImU32 shadow, float width)
 {
     if (poly.Count < 2)
@@ -26,13 +36,7 @@ void BevelChamfered(ImDrawList* dl, const ChamferPoly& poly, ImU32 highlight, Im
     {
         const ImVec2 a = poly.P[i];
         const ImVec2 b = poly.P[(i + 1) % poly.Count];
-        // Outward normal of a clockwise edge in screen space (y down). The
-        // light sits slightly above the top-left, so a top-right diagonal
-        // catches it and a bottom-left diagonal falls into shadow.
-        const float nx = b.y - a.y;
-        const float ny = -(b.x - a.x);
-        const bool lit = nx * 0.9f + ny * 1.1f < 0.0f;
-        dl->AddLine(a, b, lit ? highlight : shadow, width);
+        dl->AddLine(a, b, EdgeLit(a, b) ? highlight : shadow, width);
     }
 }
 
