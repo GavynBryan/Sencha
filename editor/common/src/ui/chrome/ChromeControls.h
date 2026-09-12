@@ -85,9 +85,9 @@ struct WheelSlot
 
 // A radial menu resolved to screen positions: the ring the slots sit on, the
 // hub that selects nothing, the seam and rim widths the rings are built from,
-// and the caption line under it all. `Variants` is the hot slot's fan on a
-// second ring at `OuterRadius`, drawn with the same petals and rim outside
-// the first; empty when nothing is showing one.
+// and the caption line under it all. `Variants` is the hot slot's fan at
+// `OuterRadius`: the same petals and rim as the ring, over only the arc the
+// variants' spans cover, outside the rim; empty when nothing is showing one.
 struct WheelPaint
 {
     ImVec2 Center{};

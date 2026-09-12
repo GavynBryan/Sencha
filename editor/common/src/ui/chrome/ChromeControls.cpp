@@ -357,9 +357,31 @@ void DrawPetal(ImDrawList* dl, ImVec2 center, float inner, float outer, float se
     }
 }
 
+// The marks on a rim: a tick at each seam and the active slot's orange arc
+// over its wedge. `closing` adds the tick that ends the last wedge, which a
+// full ring has no need of.
+void DrawRimMarks(ImDrawList* dl, ImVec2 center, float outer, float rim, float seamAngle,
+                  std::span<const EditorChrome::WheelSlot> slots, bool closing, const WheelPalette& p)
+{
+    const float rimInner = outer - rim;
+    const float detailRadius = outer - rim * 0.5f;
+    const auto tick = [&](float a)
+    {
+        dl->AddLine(OnCircle(center, rimInner + rim * 0.25f, a), OnCircle(center, outer - rim * 0.25f, a), p.AccentDim, p.Line);
+    };
+    for (const EditorChrome::WheelSlot& slot : slots)
+    {
+        tick(ArcAngle(slot.Angle0));
+        if (slot.Active)
+            StrokeArc(dl, center, detailRadius, ArcAngle(slot.Angle0) + seamAngle * 2.0f,
+                      ArcAngle(slot.Angle1) - seamAngle * 2.0f, p.Orange, p.Line * 2.0f);
+    }
+    if (closing && !slots.empty())
+        tick(ArcAngle(slots.back().Angle1));
+}
+
 // The rim closing a ring at `outer`: a band of metal, beveled on both
-// circles, a hairline gap to the petals, a tick at each seam, and the active
-// slot's orange mark over its wedge.
+// circles, with a hairline gap to the petals.
 void DrawRim(ImDrawList* dl, ImVec2 center, float outer, float rim, float seamAngle,
              std::span<const EditorChrome::WheelSlot> slots, const WheelPalette& p)
 {
@@ -376,26 +398,34 @@ void DrawRim(ImDrawList* dl, ImVec2 center, float outer, float rim, float seamAn
     std::reverse(innerRing.begin(), innerRing.end());
     BevelOutline(dl, innerRing, p.Highlight, p.Shadow, p.Line);
     dl->AddCircle(center, rimInner - p.Line * 0.5f, p.Chassis, 0, p.Line);
+    DrawRimMarks(dl, center, outer, rim, seamAngle, slots, false, p);
+}
 
-    const float detailRadius = outer - rim * 0.5f;
-    for (const EditorChrome::WheelSlot& slot : slots)
-    {
-        const float a = ArcAngle(slot.Angle0);
-        dl->AddLine(OnCircle(center, rimInner + rim * 0.25f, a), OnCircle(center, outer - rim * 0.25f, a), p.AccentDim, p.Line);
-        if (slot.Active)
-            StrokeArc(dl, center, detailRadius, ArcAngle(slot.Angle0) + seamAngle * 2.0f,
-                      ArcAngle(slot.Angle1) - seamAngle * 2.0f, p.Orange, p.Line * 2.0f);
-    }
+// The rim closing a fan: the same band over only the fan's arc, its two
+// ends squared off radially, beveled all round under the one light.
+void DrawRimArc(ImDrawList* dl, ImVec2 center, float outer, float rim, float a0, float a1, float seamAngle,
+                std::span<const EditorChrome::WheelSlot> slots, const WheelPalette& p)
+{
+    const float rimInner = outer - rim;
+    const std::vector<ImVec2> band = WedgePoints(center, rimInner, outer, a0, a1);
+    dl->AddConcavePolyFilled(band.data(), static_cast<int>(band.size()), ImGui::GetColorU32(EditorUi::MetalBase));
+    const float half = p.Line * 0.5f;
+    BevelOutline(dl, WedgePoints(center, rimInner + half, outer - half, a0 + half / outer, a1 - half / outer),
+                 p.Highlight, p.Shadow, p.Line);
+    dl->PathArcTo(center, rimInner - half, a0, a1);
+    dl->PathStroke(p.Chassis, 0, p.Line);
+    DrawRimMarks(dl, center, outer, rim, seamAngle, slots, true, p);
 }
 }
 
 // The wheel is one machined part: a dark plate with the petals cut into it,
 // a chunky rim around them, a recessed hub at the axle, and a ledge under
-// the rim carrying the caption. A hot tool's variants are a second ring of
-// the same petals and rim cut into the same plate outside the first. Depth
-// comes from the shared bevel light on every edge, straight or curved;
-// colour is the metals, with cyan kept thin and at the perimeter, and orange
-// on exactly the petal the pointer is in.
+// the rim carrying the caption. A hot tool's variants are a fan of the same
+// petals grown out of the plate beyond the rim, in that tool's direction and
+// no wider than they need, closed by an arc of the same rim. Depth comes
+// from the shared bevel light on every edge, straight or curved; colour is
+// the metals, with cyan kept thin and at the perimeter, and orange on
+// exactly the petal the pointer is in.
 void EditorChrome::DrawToolWheel(ImDrawList* dl, const WheelPaint& wheel)
 {
     if (wheel.Slots.empty())
@@ -420,10 +450,29 @@ void EditorChrome::DrawToolWheel(ImDrawList* dl, const WheelPaint& wheel)
     const bool fan = !wheel.Variants.empty() && wheel.OuterRadius > 0.0f;
     const float fanInner = outer + seam;
     const float fanOuter = wheel.OuterRadius + slotSize * 0.5f;
-    const float extent = fan ? fanOuter + seam + rim : outer;
+    const float fanExtent = fanOuter + seam + rim;
+    // The fan's arc: the variants' spans plus a rim's worth of plate at each end.
+    const float fanSeam = fan ? SeamAngle(seam, fanInner, fanOuter) : 0.0f;
+    const float fanA0 = fan ? ArcAngle(wheel.Variants.front().Angle0) : 0.0f;
+    const float fanA1 = fan ? ArcAngle(wheel.Variants.back().Angle1) : 0.0f;
+    const float fanMargin = fan ? rim / fanExtent : 0.0f;
 
-    // Plate: the dark body everything is cut into, as far as the wheel reaches.
-    dl->AddCircleFilled(wheel.Center, extent, p.Shadow);
+    // Plate: the dark body everything is cut into, with the fan's plate
+    // grown out of it under the rim so the two read as one part.
+    dl->AddCircleFilled(wheel.Center, outer, p.Shadow);
+    if (fan)
+    {
+        const std::vector<ImVec2> plate = WedgePoints(wheel.Center, outer - rim, fanExtent, fanA0 - fanMargin, fanA1 + fanMargin);
+        dl->AddConcavePolyFilled(plate.data(), static_cast<int>(plate.size()), p.Shadow);
+        // Its two flanks are edges of the part, beveled like the rest; the
+        // outer arc is the fan rim's business.
+        const ImVec2 la = OnCircle(wheel.Center, outer - rim, fanA0 - fanMargin);
+        const ImVec2 lb = OnCircle(wheel.Center, fanExtent, fanA0 - fanMargin);
+        const ImVec2 ra = OnCircle(wheel.Center, fanExtent, fanA1 + fanMargin);
+        const ImVec2 rb = OnCircle(wheel.Center, outer - rim, fanA1 + fanMargin);
+        dl->AddLine(la, lb, EditorChrome::EdgeLit(la, lb) ? p.Highlight : p.Shadow, p.Line);
+        dl->AddLine(ra, rb, EditorChrome::EdgeLit(ra, rb) ? p.Highlight : p.Shadow, p.Line);
+    }
 
     const float seamAngle = SeamAngle(seam, petalInner, petalOuter);
     for (const WheelSlot& slot : wheel.Slots)
@@ -432,10 +481,9 @@ void EditorChrome::DrawToolWheel(ImDrawList* dl, const WheelPaint& wheel)
 
     if (fan)
     {
-        const float fanSeam = SeamAngle(seam, fanInner, fanOuter);
         for (const WheelSlot& slot : wheel.Variants)
             DrawPetal(dl, wheel.Center, fanInner, fanOuter, fanSeam, slot, p);
-        DrawRim(dl, wheel.Center, extent, rim, fanSeam, wheel.Variants, p);
+        DrawRimArc(dl, wheel.Center, fanExtent, rim, fanA0 - fanMargin, fanA1 + fanMargin, fanSeam, wheel.Variants, p);
     }
 
     // Perimeter detail, sparse: a thin cyan arc over the top-left quadrant
@@ -459,7 +507,11 @@ void EditorChrome::DrawToolWheel(ImDrawList* dl, const WheelPaint& wheel)
         const float padX = EditorUi::Px(10.0f);
         const float ledgeHeight = textSize.y + EditorUi::Px(6.0f);
         const float halfWidth = std::max(textSize.x * 0.5f + padX, rim * 2.0f);
-        const float top = wheel.Center.y + extent - rim * 0.5f;
+        // Under the rim, unless the fan hangs over the ledge's place: then under
+        // the fan, so the ledge never sits on top of a petal.
+        const float bottom = std::numbers::pi_v<float> * 0.5f;
+        const bool fanBelow = fan && fanA0 - fanMargin < bottom + 0.6f && fanA1 + fanMargin > bottom - 0.6f;
+        const float top = wheel.Center.y + (fanBelow ? fanExtent : outer) - rim * 0.5f;
         const ImVec2 mn(wheel.Center.x - halfWidth, top);
         const ImVec2 mx(wheel.Center.x + halfWidth, top + ledgeHeight);
         const ChamferPoly ledge = ChamferOutline(mn, mx, std::min(EditorUi::Px(4.0f), ledgeHeight * 0.5f));

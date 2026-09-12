@@ -361,11 +361,20 @@ TEST_F(ToolWheelSessionTest, SweepingTheOuterRingPastAFansEdgeHandsOverToTheNeig
     const int select = IndexOf("select");
     const int brush = IndexOf("brush");
     (void)Press(SDLK_Q);
+    (void)Move(ToolWheel::SlotCenter(Wheel->GetLayout(), select));
     (void)Move(InVariant(select, 3));
+    // The last child lies on the select fan's flank, past the select
+    // sector's own edge: the tool holds it because the pointer is in its fan.
+    EXPECT_EQ(ToolWheel::SectorAt(Wheel->GetLayout(), InVariant(select, 3)), brush);
     EXPECT_EQ(Wheel->GetHot(), select);
     EXPECT_EQ(Wheel->GetHotVariant(), 3);
-    // Around the outer band, without coming back in: the brush's first
-    // variant is in the brush's direction, past the select fan's edge.
+    // Around the outer band, without coming back in: the brush's middle child
+    // is past the select fan's edge, so the brush takes over; its first child
+    // meets the select fan's edge, and now that the brush holds the pointer
+    // it is the brush's.
+    (void)Move(InVariant(brush, 1));
+    EXPECT_EQ(Wheel->GetHot(), brush);
+    EXPECT_EQ(Wheel->GetHotVariant(), 1);
     (void)Move(InVariant(brush, 0));
     EXPECT_EQ(Wheel->GetHot(), brush);
     EXPECT_EQ(Wheel->GetHotVariant(), 0);
@@ -383,12 +392,14 @@ TEST_F(ToolWheelSessionTest, ReleaseOnAVariantActivatesTheToolThenSelectsTheVari
     ASSERT_EQ(Workspace.MeshEdit.GetElementKind(), MeshElementKind::Object);
 
     (void)Press(SDLK_Q);
+    (void)Move(ToolWheel::SlotCenter(Wheel->GetLayout(), select));
     (void)Move(InVariant(select, 3));
     (void)Release(SDLK_Q);
     EXPECT_EQ(Tools().GetActiveIndex(), select);
     EXPECT_EQ(Workspace.MeshEdit.GetElementKind(), MeshElementKind::Face);
 
     (void)Press(SDLK_Q);
+    (void)Move(ToolWheel::SlotCenter(Wheel->GetLayout(), brush));
     (void)Move(InVariant(brush, 2));
     (void)Release(SDLK_Q);
     EXPECT_EQ(Tools().GetActiveIndex(), brush);
@@ -440,6 +451,7 @@ TEST_F(ToolWheelSessionTest, EscapeAndFocusLossDropTheHotVariantWithoutSelecting
 {
     const int select = IndexOf("select");
     (void)Press(SDLK_Q);
+    (void)Move(ToolWheel::SlotCenter(Wheel->GetLayout(), select));
     (void)Move(InVariant(select, 3));
     ASSERT_EQ(Wheel->GetHotVariant(), 3);
     (void)Press(SDLK_ESCAPE);
@@ -448,9 +460,28 @@ TEST_F(ToolWheelSessionTest, EscapeAndFocusLossDropTheHotVariantWithoutSelecting
     EXPECT_EQ(Workspace.MeshEdit.GetElementKind(), MeshElementKind::Object);
 
     (void)Press(SDLK_Q);
+    (void)Move(ToolWheel::SlotCenter(Wheel->GetLayout(), select));
     (void)Move(InVariant(select, 2));
     ASSERT_EQ(Wheel->GetHotVariant(), 2);
     (void)Router.Route(FocusLostEvent{});
     EXPECT_EQ(Wheel->GetHotVariant(), -1);
     EXPECT_EQ(Workspace.MeshEdit.GetElementKind(), MeshElementKind::Object);
+}
+
+TEST_F(ToolWheelSessionTest, WithNoToolHotTheOuterBandGoesByDirection)
+{
+    const int select = IndexOf("select");
+    const int brush = IndexOf("brush");
+    // Six tools make 60 degree sectors and the select fan of four is wider,
+    // so its last child sits in the brush's direction. Reached with no fan
+    // showing, that is the brush; reached from the select petal, it is select's.
+    (void)Press(SDLK_Q);
+    ASSERT_EQ(ToolWheel::SectorAt(Wheel->GetLayout(), InVariant(select, 3)), brush);
+    (void)Move(InVariant(select, 3));
+    EXPECT_EQ(Wheel->GetHot(), brush);
+    (void)Move(ToolWheel::SlotCenter(Wheel->GetLayout(), select));
+    (void)Move(InVariant(select, 3));
+    EXPECT_EQ(Wheel->GetHot(), select);
+    EXPECT_EQ(Wheel->GetHotVariant(), 3);
+    (void)Release(SDLK_Q);
 }

@@ -12,11 +12,13 @@
 // wheel and the chrome that paints it go through one rule rather than two
 // versions of it that drift apart.
 //
-// Two rings: the primary ring of tools, and outside its rim an optional ring
-// of the hovered tool's variants, laid as that tool's sector continued
-// outward and split evenly. The variant ring exists in the layout whenever
-// any tool has variants (the wheel reserves room for it at open and never
-// moves afterwards); which fan is showing is the session's business.
+// One layout rule, two uses: slots laid evenly over an angular range at a
+// radius. The primary ring is every tool over the full circle; a hot tool's
+// variants are a compact fan outside the rim, each a standard wedge wide,
+// centred on the tool's own direction, taking only the arc they need. The
+// outer band exists in the layout whenever any tool has variants (the wheel
+// reserves room for it at open and never moves afterwards); which fan is
+// showing is the session's business.
 //
 // Sizes are design pixels resolved exactly once, in Place, from the frame's
 // scale: a Layout holds nothing but physical pixels, and nothing downstream
@@ -28,7 +30,7 @@ inline constexpr float kHub = 26.0f;           // the dead zone: releasing here 
 inline constexpr float kButton = 26.0f;        // one slot, square
 inline constexpr float kSeam = 2.0f;           // the hairline between petals, and between petals and a rim
 inline constexpr float kRim = 7.0f;            // the band of metal closing a ring
-inline constexpr float kChildArc = 30.0f;      // the least arc a variant petal may have at its ring: a slot and its seams
+inline constexpr float kVariantWidth = std::numbers::pi_v<float> / 9.0f; // one variant wedge, radians (20 degrees)
 inline constexpr float kCaptionGap = 8.0f;     // between the lowest slot and the caption
 inline constexpr float kCaptionHeight = 18.0f; // the caption's line
 
@@ -49,7 +51,6 @@ struct Layout
     float Button = 0.0f;
     float Seam = 0.0f;
     float Rim = 0.0f;
-    float ChildArc = 0.0f;
     float CaptionGap = 0.0f;
     float CaptionHeight = 0.0f;
     // Hub centre to a variant slot's centre; 0 when no tool has variants.
@@ -79,15 +80,70 @@ struct Span
     float End = 0.0f;
 };
 
-// The angular span of sector `index`: sector 0 is centred straight up and the
-// sectors proceed clockwise, so the tools read in registry order like a clock.
-[[nodiscard]] inline Span SectorSpan(int index, int count)
+// A range of angles, radians clockwise from straight up.
+struct Range
+{
+    float Begin = 0.0f;
+    float Width = 0.0f;
+};
+
+// Slot `index` of `count` laid evenly over `range`, in order clockwise.
+[[nodiscard]] inline Span SlotSpan(Range range, int index, int count)
 {
     if (count <= 0)
         return {};
-    const float width = 2.0f * std::numbers::pi_v<float> / static_cast<float>(count);
-    const float begin = static_cast<float>(index) * width - width * 0.5f;
+    const float width = range.Width / static_cast<float>(count);
+    const float begin = range.Begin + width * static_cast<float>(index);
     return { begin, begin + width };
+}
+
+// The slot of `count` over `range` whose arc `angle` falls in, or -1 outside
+// the range. The range may cross straight up; the angle is taken modulo a
+// turn from its start.
+[[nodiscard]] inline int SlotAt(Range range, int count, float angle)
+{
+    if (count <= 0 || range.Width <= 0.0f)
+        return -1;
+    const float turn = 2.0f * std::numbers::pi_v<float>;
+    float from = angle - range.Begin;
+    while (from < 0.0f)
+        from += turn;
+    while (from >= turn)
+        from -= turn;
+    if (from >= range.Width)
+        return -1;
+    return std::min(static_cast<int>(std::floor(from / (range.Width / static_cast<float>(count)))), count - 1);
+}
+
+// The primary ring's range: the full circle, begun half a sector before
+// straight up so sector 0 is centred there and the tools proceed clockwise
+// in registry order like a clock.
+[[nodiscard]] inline Range PrimaryRange(int count)
+{
+    if (count <= 0)
+        return {};
+    const float turn = 2.0f * std::numbers::pi_v<float>;
+    return { -turn / static_cast<float>(count) * 0.5f, turn };
+}
+
+// The angular span of sector `index`.
+[[nodiscard]] inline Span SectorSpan(int index, int count)
+{
+    return SlotSpan(PrimaryRange(count), index, count);
+}
+
+// The fan of `count` variants of `parent`: a standard wedge each, never
+// stretched to fill more, centred on the parent's direction so the parent's
+// petal reads as the root, and only as wide as its children need. Many
+// variants share a turn evenly rather than overlap.
+[[nodiscard]] inline Range FanRange(const Layout& layout, int parent, int count)
+{
+    if (count <= 0 || parent < 0)
+        return {};
+    const float turn = 2.0f * std::numbers::pi_v<float>;
+    const float width = std::min(kVariantWidth, turn / static_cast<float>(count)) * static_cast<float>(count);
+    const Span sector = SectorSpan(parent, layout.Count);
+    return { (sector.Begin + sector.End) * 0.5f - width * 0.5f, width };
 }
 
 // A wheel of `count` slots opened at `pointer`, shifted -- never clipped -- so
@@ -101,7 +157,6 @@ struct Span
     layout.Button = kButton * frame.Scale;
     layout.Seam = kSeam * frame.Scale;
     layout.Rim = kRim * frame.Scale;
-    layout.ChildArc = kChildArc * frame.Scale;
     layout.CaptionGap = kCaptionGap * frame.Scale;
     layout.CaptionHeight = kCaptionHeight * frame.Scale;
     layout.Count = std::max(count, 0);
@@ -128,6 +183,12 @@ struct Span
     return { layout.Center.x + std::sin(angle) * layout.Radius, layout.Center.y - std::cos(angle) * layout.Radius };
 }
 
+// The direction of `point` from the wheel's centre, clockwise from straight up.
+[[nodiscard]] inline float AngleAt(const Layout& layout, ImVec2 point)
+{
+    return std::atan2(point.x - layout.Center.x, -(point.y - layout.Center.y));
+}
+
 // The sector `point` is in, or -1 inside the hub (or with nothing to choose).
 // Only the direction from the centre matters beyond the hub: the whole wedge,
 // out to the edge of the screen, is the target.
@@ -139,41 +200,13 @@ struct Span
     const float dy = point.y - layout.Center.y;
     if (dx * dx + dy * dy < layout.Hub * layout.Hub)
         return -1;
-    // Clockwise from straight up, in [0, 2pi).
-    float angle = std::atan2(dx, -dy);
-    if (angle < 0.0f)
-        angle += 2.0f * std::numbers::pi_v<float>;
-    const float width = 2.0f * std::numbers::pi_v<float> / static_cast<float>(layout.Count);
-    const int index = static_cast<int>(std::floor((angle + width * 0.5f) / width));
-    return index % layout.Count;
+    return SlotAt(PrimaryRange(layout.Count), layout.Count, AngleAt(layout, point));
 }
 
-// The angular width of one petal in a fan of `count` variants: the parent's
-// sector split evenly, widened only when a petal would have less than
-// ChildArc of arc at its ring (a dense primary ring), and never past a full
-// turn between them. So a fan always contains its parent's sector, and with
-// a few tools it fills that sector exactly, flush with the parent's flanks.
-[[nodiscard]] inline float VariantWidth(const Layout& layout, int count)
-{
-    if (count <= 0 || layout.Count <= 0)
-        return 0.0f;
-    const float turn = 2.0f * std::numbers::pi_v<float>;
-    const float even = turn / static_cast<float>(layout.Count) / static_cast<float>(count);
-    const float least = layout.OuterRadius > 0.0f ? layout.ChildArc / layout.OuterRadius : 0.0f;
-    return std::min(std::max(even, least), turn / static_cast<float>(count));
-}
-
-// The angular span of variant `index` of `parent`'s fan of `count`, centred
-// on the parent's sector like the parent's own petal continued outward.
+// The angular span of variant `index` of `parent`'s fan of `count`.
 [[nodiscard]] inline Span VariantSpan(const Layout& layout, int parent, int index, int count)
 {
-    if (count <= 0)
-        return {};
-    const Span sector = SectorSpan(parent, layout.Count);
-    const float middle = (sector.Begin + sector.End) * 0.5f;
-    const float width = VariantWidth(layout, count);
-    const float begin = middle - width * static_cast<float>(count) * 0.5f + width * static_cast<float>(index);
-    return { begin, begin + width };
+    return SlotSpan(FanRange(layout, parent, count), index, count);
 }
 
 // The centre of variant `index`'s slot, on the outer ring.
@@ -212,15 +245,6 @@ enum class Ring : std::uint8_t
 {
     if (count <= 0 || parent < 0 || layout.Count <= 0)
         return -1;
-    const float turn = 2.0f * std::numbers::pi_v<float>;
-    const float dx = point.x - layout.Center.x;
-    const float dy = point.y - layout.Center.y;
-    float angle = std::atan2(dx, -dy) - VariantSpan(layout, parent, 0, count).Begin;
-    while (angle < 0.0f)
-        angle += turn;
-    while (angle >= turn)
-        angle -= turn;
-    const int index = static_cast<int>(std::floor(angle / VariantWidth(layout, count)));
-    return index < count ? index : -1;
+    return SlotAt(FanRange(layout, parent, count), count, AngleAt(layout, point));
 }
 } // namespace ToolWheel

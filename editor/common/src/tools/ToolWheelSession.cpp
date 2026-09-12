@@ -123,10 +123,11 @@ void ToolWheelSession::Track(ImVec2 pointer)
     case ToolWheel::Ring::Outer:
         break;
     }
-    // The hot tool keeps the pointer while it is over that tool's own fan;
-    // past the fan's edge, direction picks the tool as it does inside. Every
-    // fan covers its parent's sector, so a tool picked by direction out here
-    // is in its fan already, and a variant of -1 means the tool has none.
+    // The hot tool keeps the pointer while it is over that tool's own fan,
+    // which is what lets the pointer leave the parent's wedge for a child on
+    // its flank; past the fan's edge, direction picks the tool as it does
+    // inside, and a tool picked that way has a variant only where its own
+    // fan lies in that direction.
     const bool held = Hot >= 0 && ToolWheel::VariantAt(Layout, Hot, VariantCount(Hot), pointer) >= 0;
     if (!held)
         Hot = ToolWheel::SectorAt(Layout, pointer);

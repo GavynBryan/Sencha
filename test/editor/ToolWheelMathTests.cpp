@@ -114,46 +114,65 @@ TEST(ToolWheelMath, AFrameTooSmallCentresTheWheelOnThatAxis)
     EXPECT_FLOAT_EQ(tiny.Center.y, 300.0f);
 }
 
-// The variant ring: a hot tool's choices laid outside the rim as that tool's
-// sector continued outward and split evenly, so they read as its children
-// and every point in the parent's direction is in its fan.
-TEST(ToolWheelMath, VariantsSplitTheParentsSectorEvenlyAndEndOnItsFlanks)
+// The variant fan: a hot tool's choices outside the rim, each a standard
+// wedge, centred on the tool's own direction and no wider than they need,
+// laid by the same slots-over-a-range rule as the primary ring.
+TEST(ToolWheelMath, SlotsOverARangeAreEvenAndFoundByAngle)
+{
+    const ToolWheel::Range range{ 1.0f, 0.9f };
+    float expectedBegin = range.Begin;
+    for (int i = 0; i < 3; ++i)
+    {
+        const ToolWheel::Span span = ToolWheel::SlotSpan(range, i, 3);
+        EXPECT_NEAR(span.Begin, expectedBegin, 1e-5f);
+        EXPECT_NEAR(span.End - span.Begin, 0.3f, 1e-5f);
+        EXPECT_EQ(ToolWheel::SlotAt(range, 3, (span.Begin + span.End) * 0.5f), i);
+        expectedBegin = span.End;
+    }
+    EXPECT_EQ(ToolWheel::SlotAt(range, 3, range.Begin - 0.01f), -1);
+    EXPECT_EQ(ToolWheel::SlotAt(range, 3, range.Begin + range.Width + 0.01f), -1);
+    // A turn away is the same direction.
+    EXPECT_EQ(ToolWheel::SlotAt(range, 3, 1.1f - 2.0f * kPi), 0);
+    // The primary ring is the same rule over the full circle.
+    for (int i = 0; i < 5; ++i)
+    {
+        const ToolWheel::Span sector = ToolWheel::SectorSpan(i, 5);
+        const ToolWheel::Span slot = ToolWheel::SlotSpan(ToolWheel::PrimaryRange(5), i, 5);
+        EXPECT_FLOAT_EQ(sector.Begin, slot.Begin);
+        EXPECT_FLOAT_EQ(sector.End, slot.End);
+    }
+}
+
+TEST(ToolWheelMath, AFanIsAStandardWedgePerVariantCentredOnItsParent)
 {
     const ToolWheel::Layout layout = ToolWheel::Place(Frame(), { 800.0f, 450.0f }, 5, 4);
     ASSERT_GT(layout.OuterRadius, layout.RimOuter());
     for (const int count : { 3, 4 })
     {
-        const ToolWheel::Span parent = ToolWheel::SectorSpan(1, 5);
-        float expectedBegin = parent.Begin;
-        for (int i = 0; i < count; ++i)
+        for (const int parent : { 0, 1, 4 })
         {
-            const ToolWheel::Span span = ToolWheel::VariantSpan(layout, 1, i, count);
-            EXPECT_NEAR(span.Begin, expectedBegin, 1e-5f) << count << " variants, variant " << i;
-            EXPECT_NEAR(span.End - span.Begin, (parent.End - parent.Begin) / static_cast<float>(count), 1e-5f);
-            expectedBegin = span.End;
+            const ToolWheel::Span sector = ToolWheel::SectorSpan(parent, 5);
+            const float middle = (sector.Begin + sector.End) * 0.5f;
+            const ToolWheel::Range fan = ToolWheel::FanRange(layout, parent, count);
+            EXPECT_NEAR(fan.Width, ToolWheel::kVariantWidth * static_cast<float>(count), 1e-5f) << count;
+            EXPECT_NEAR(fan.Begin + fan.Width * 0.5f, middle, 1e-5f) << count << " parent " << parent;
+            float expectedBegin = fan.Begin;
+            for (int i = 0; i < count; ++i)
+            {
+                const ToolWheel::Span span = ToolWheel::VariantSpan(layout, parent, i, count);
+                EXPECT_NEAR(span.Begin, expectedBegin, 1e-5f) << count << " variants, variant " << i;
+                EXPECT_NEAR(span.End - span.Begin, ToolWheel::kVariantWidth, 1e-5f);
+                expectedBegin = span.End;
+            }
         }
-        EXPECT_NEAR(expectedBegin, parent.End, 1e-4f);
     }
-}
-
-TEST(ToolWheelMath, ADensePrimaryRingWidensTheFanToTheArcFloorButKeepsItCentred)
-{
-    const ToolWheel::Layout layout = ToolWheel::Place(Frame(), { 800.0f, 450.0f }, 12, 4);
-    const ToolWheel::Span parent = ToolWheel::SectorSpan(3, 12);
-    const float parentMiddle = (parent.Begin + parent.End) * 0.5f;
-    const ToolWheel::Span first = ToolWheel::VariantSpan(layout, 3, 0, 4);
-    const ToolWheel::Span last = ToolWheel::VariantSpan(layout, 3, 3, 4);
-    // Each petal has at least the arc floor at its ring, and more than the
-    // even split of a 30 degree sector would give.
-    EXPECT_GE((first.End - first.Begin) * layout.OuterRadius, layout.ChildArc - 1e-3f);
-    EXPECT_GT(first.End - first.Begin, (parent.End - parent.Begin) / 4.0f);
-    // The fan overhangs the parent symmetrically and still contains its sector.
-    EXPECT_NEAR((first.Begin + last.End) * 0.5f, parentMiddle, 1e-5f);
-    EXPECT_LE(first.Begin, parent.Begin + 1e-5f);
-    EXPECT_GE(last.End, parent.End - 1e-5f);
-    // Never past a full turn between the variants.
-    const ToolWheel::Layout tiny = ToolWheel::Place(Frame(0.1f), { 800.0f, 450.0f }, 12, 40);
-    EXPECT_LE(ToolWheel::VariantWidth(tiny, 40) * 40.0f, 2.0f * kPi + 1e-4f);
+    // The wedge is standard whatever the primary ring's density: a fan of
+    // three is the same three wedges over twelve tools as over five.
+    const ToolWheel::Layout dense = ToolWheel::Place(Frame(), { 800.0f, 450.0f }, 12, 4);
+    EXPECT_NEAR(ToolWheel::FanRange(dense, 3, 3).Width, ToolWheel::FanRange(layout, 1, 3).Width, 1e-5f);
+    // Many variants share the turn rather than overlap.
+    EXPECT_LE(ToolWheel::FanRange(layout, 0, 40).Width, 2.0f * kPi + 1e-4f);
+    EXPECT_NEAR(ToolWheel::VariantSpan(layout, 0, 39, 40).End - ToolWheel::VariantSpan(layout, 0, 0, 40).Begin, 2.0f * kPi, 1e-3f);
 }
 
 TEST(ToolWheelMath, RingsAreByRadiusAndTheOuterOneIsUnbounded)
@@ -172,7 +191,7 @@ TEST(ToolWheelMath, RingsAreByRadiusAndTheOuterOneIsUnbounded)
     EXPECT_FLOAT_EQ(plain.OuterRadius, 0.0f);
 }
 
-TEST(ToolWheelMath, VariantSlotsRoundTripAndTheFanCoversTheParentsSector)
+TEST(ToolWheelMath, VariantSlotsRoundTripAndLieInTheirParentsDirection)
 {
     const ToolWheel::Layout layout = ToolWheel::Place(Frame(), { 800.0f, 450.0f }, 5, 4);
     for (int parent = 0; parent < 5; ++parent)
@@ -182,20 +201,14 @@ TEST(ToolWheelMath, VariantSlotsRoundTripAndTheFanCoversTheParentsSector)
             const ImVec2 slot = ToolWheel::VariantSlotCenter(layout, parent, i, 4);
             EXPECT_EQ(ToolWheel::VariantAt(layout, parent, 4, slot), i) << "parent " << parent << " variant " << i;
             EXPECT_EQ(ToolWheel::RingAt(layout, slot), ToolWheel::Ring::Outer);
-            // The slot lies in its parent's direction.
-            EXPECT_EQ(ToolWheel::SectorAt(layout, slot), parent);
         }
-        // Every direction in the parent's sector is in its fan, and the
-        // neighbour's direction is not.
-        const ToolWheel::Span sector = ToolWheel::SectorSpan(parent, 5);
-        for (const float t : { 0.02f, 0.5f, 0.98f })
-        {
-            const float angle = sector.Begin + (sector.End - sector.Begin) * t;
-            const ImVec2 p{ layout.Center.x + std::sin(angle) * 300.0f, layout.Center.y - std::cos(angle) * 300.0f };
-            EXPECT_GE(ToolWheel::VariantAt(layout, parent, 4, p), 0) << "parent " << parent << " t " << t;
-        }
-        const ImVec2 next = ToolWheel::SlotCenter(layout, (parent + 1) % 5);
-        EXPECT_EQ(ToolWheel::VariantAt(layout, parent, 4, next), -1);
+        // The fan straddles the parent's own direction, and the neighbours'
+        // directions are outside it.
+        const ImVec2 out = ToolWheel::SlotCenter(layout, parent);
+        const ImVec2 far{ layout.Center.x + (out.x - layout.Center.x) * 3.0f, layout.Center.y + (out.y - layout.Center.y) * 3.0f };
+        EXPECT_GE(ToolWheel::VariantAt(layout, parent, 4, far), 0);
+        EXPECT_EQ(ToolWheel::VariantAt(layout, parent, 4, ToolWheel::SlotCenter(layout, (parent + 1) % 5)), -1);
+        EXPECT_EQ(ToolWheel::VariantAt(layout, parent, 4, ToolWheel::SlotCenter(layout, (parent + 4) % 5)), -1);
     }
     EXPECT_EQ(ToolWheel::VariantAt(layout, 0, 0, layout.Center), -1);
     EXPECT_EQ(ToolWheel::VariantAt(layout, -1, 4, layout.Center), -1);
@@ -222,6 +235,5 @@ TEST(ToolWheelMath, PlaceReservesTheOuterRingOnlyWhenAToolHasVariants)
     const ToolWheel::Layout two = ToolWheel::Place(Frame(2.0f), { 800.0f, 450.0f }, 5, 4);
     EXPECT_FLOAT_EQ(two.Seam, one.Seam * 2.0f);
     EXPECT_FLOAT_EQ(two.Rim, one.Rim * 2.0f);
-    EXPECT_FLOAT_EQ(two.ChildArc, one.ChildArc * 2.0f);
     EXPECT_FLOAT_EQ(two.OuterRadius, one.OuterRadius * 2.0f);
 }

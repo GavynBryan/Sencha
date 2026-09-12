@@ -190,7 +190,7 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   `GetActiveVariant`, `SelectVariant`): a label and an icon each, addressed by
   index, resolved by the tool against whatever owns the mode (the select
   tool's is `MeshEditService`'s element kind, the brush tool's its own
-  primitive). The tool wheel shows them as an outer ring while the tool is
+  primitive). The tool wheel shows them as a fan outside its rim while the tool is
   hot and the properties row draws them; neither learns the type behind them.
 - An undo-able edit: implement `ICommand` next to its domain, run it through the
   `CommandStack`.

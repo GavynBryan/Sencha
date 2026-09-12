@@ -33,8 +33,8 @@ enum class ToolWheelPhase : std::uint8_t
 // application answers per press: elsewhere the key is swallowed and nothing
 // happens, so the gesture is never half-begun over a panel or a bar.
 //
-// A tool with variants (ITool::GetVariants) shows them as a fan outside the
-// rim while it is hot. Four states, two of them hovered and two committed:
+// A tool with variants (ITool::GetVariants) shows them as a compact fan
+// outside the rim, centred on its own petal, while it is hot. Four states, two of them hovered and two committed:
 // the hot tool (Hot), the hot variant of it (HotVariant), the tool the
 // release activates (Hot at release), and the variant the release then
 // selects on it (HotVariant at release). A tool holds the pointer for as
