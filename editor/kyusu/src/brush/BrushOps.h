@@ -297,6 +297,15 @@ struct BrushOps
         Open,
     };
 
+    // How close to the clipping plane a vertex may lie and still count as on
+    // it; such a vertex keeps its position verbatim. Twice the mesh weld
+    // tolerance (BrushValidateAndRepair's 1e-4), for the carve's no-sliver
+    // reason: a crossing is minted only on an edge whose ends are both farther
+    // than this, so it lands at least this far from either end and the repair
+    // weld can never absorb it. The clip tool tests "does the plane cross the
+    // brush" with the same number, so tool and kernel agree.
+    static constexpr float kClipSnap = 2e-4f;
+
     // Slice by a plane, keep one side, and cap the new opening or not.
     // keepPositiveSide keeps the half-space the plane normal points into. (The
     // classic clip tool.) Faces may be concave and the section may be several

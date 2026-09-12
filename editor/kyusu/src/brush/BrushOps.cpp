@@ -5,6 +5,7 @@
 #include "CarveSurround.h"
 
 #include <algorithm>
+#include <cassert>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -1359,9 +1360,45 @@ BrushMesh BrushOps::InsertEdgeCut(const BrushMesh& mesh, std::uint32_t a, std::u
 
 namespace
 {
-    // On-plane tolerance for the clip: the weld tolerance, so a vertex judged
-    // on the plane is one the repair will merge with the cap's copy of it.
-    constexpr float kClipOnPlane = 1e-4f;
+    // The clip's tolerances beyond the snap (BrushOps::kClipSnap), one per
+    // job. Section points weld at the mesh weld tolerance, so the section and
+    // the repaired mesh agree on which points are one: a crossing is one point
+    // to both faces that share its edge. The span interior epsilon is a
+    // predicate tolerance, orders of magnitude below the snap, because it only
+    // has to tell inside from outside for a midpoint that is never on an edge.
+    constexpr float kSectionWeld = 1e-4f;
+    constexpr float kSpanInterior = 1e-6f;
+    static_assert(BrushOps::kClipSnap >= 2.0f * kSectionWeld, "a crossing must clear the weld");
+
+    // Whether the plane of face `flat`, leaving it across its edge between
+    // vertices `u` and `v` (an edge `flat` shares with `other`), enters the
+    // solid: true at a reflex edge, where the dihedral between the two faces
+    // exceeds a half turn, false at a convex one. Winding: the edge is taken
+    // in `flat`'s loop order (counter-clockwise seen from outside), both
+    // normals outward, so `d` lies in `flat`'s plane, perpendicular to the
+    // edge, pointing away from `flat`'s interior; the extension is inside the
+    // solid exactly when that direction goes behind `other`.
+    bool ExtensionAcrossEdgeIsSolid(const BrushMesh& mesh, const BrushFace& flat, std::uint32_t u, std::uint32_t v,
+                                    const BrushFace& other)
+    {
+        std::uint32_t a = u, b = v;
+        for (std::size_t i = 0; i < flat.Loop.size(); ++i)
+        {
+            const std::uint32_t from = flat.Loop[i], to = flat.Loop[(i + 1) % flat.Loop.size()];
+            if ((from == u && to == v) || (from == v && to == u))
+            {
+                a = from;
+                b = to;
+                break;
+            }
+        }
+        const Vec3d n1 = BrushComputeFaceNormal(mesh, flat);
+        const Vec3d n2 = BrushComputeFaceNormal(mesh, other);
+        const Vec3d along = mesh.Vertices[b].Position - mesh.Vertices[a].Position;
+        const Vec3d away = n1.Cross(along) * -1.0f;
+        constexpr float kCoplanar = 1e-4f; // a neighbour in the same plane is neither
+        return away.Dot(n2) < -kCoplanar * away.Magnitude();
+    }
 
     // A pool of 3D points welded within a tolerance: the section's vertices.
     class PointPool3D
@@ -1429,7 +1466,7 @@ BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPos
     Plane p = plane.Normalized();
     if (!keepPositiveSide)
         p = Plane(p.Normal * -1.0f, -p.D);
-    const float tolerance = kClipOnPlane;
+    const float tolerance = kClipSnap;
 
     // Every vertex is classified once, in 3D, so each face sees the same
     // on-plane set as its neighbours.
@@ -1457,15 +1494,16 @@ BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPos
                      : anyPositive ? FaceClass::Kept
                      : anyNegative ? FaceClass::Dropped : FaceClass::InPlane;
     }
-    // Whether a face has kept material along an edge lying in the plane: the
-    // run that edge belongs to sits between kept vertices, or is a crossing run
-    // whose kept piece borders it. Dropped and in-plane faces have none.
-    const auto keptAlongEdge = [&](std::size_t f, std::uint32_t a) -> std::optional<bool> {
+    // Whether a face off the plane has kept material along an edge lying in
+    // it: the run that edge belongs to sits between kept vertices, or is a
+    // crossing run whose kept piece borders it. Not asked of an in-plane face,
+    // whose edges are judged by ExtensionAcrossEdgeIsSolid instead.
+    const auto keptAlongEdge = [&](std::size_t f, std::uint32_t a) -> bool {
         switch (faceClass[f])
         {
         case FaceClass::Kept: return true;
         case FaceClass::Dropped: return false;
-        case FaceClass::InPlane: return std::nullopt;
+        case FaceClass::InPlane: assert(false && "in-plane faces take the reflex rule"); return false;
         case FaceClass::Cut: break;
         }
         const std::vector<std::uint32_t>& loop = mesh.Faces[f].Loop;
@@ -1483,7 +1521,7 @@ BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPos
     };
 
     BrushMesh out;
-    PointPool3D section(tolerance);
+    PointPool3D section(kSectionWeld);
     std::vector<std::pair<std::uint32_t, std::uint32_t>> segments;
     const auto addSegment = [&](const Vec3d& a, const Vec3d& b) {
         const std::uint32_t ia = section.Intern(a);
@@ -1534,7 +1572,7 @@ BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPos
         if (direction.SqrMagnitude() <= 0.0f)
             direction = Vec2d{ 1.0f, 0.0f };
         const PolygonSplit2D split =
-            SplitPolygonByDistances2D(frame.Frame->Outline, distances, direction, tolerance);
+            SplitPolygonByDistances2D(frame.Frame->Outline, distances, direction, tolerance, kSpanInterior);
         if (split.Status != CarveStatus::Ok)
             return {};
 
@@ -1558,8 +1596,13 @@ BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPos
             addSegment(position(a), position(b));
     }
 
-    // Edges lying in the plane are section segments where kept material on
-    // one side of them meets dropped material on the other.
+    // Edges lying in the plane are section segments in two cases. Between two
+    // faces off the plane: where kept material on one side meets dropped on
+    // the other. At an in-plane face: where the plane, leaving that face
+    // across the edge, enters the solid -- a reflex edge, which is what every
+    // edge around a carved opening is. A convex edge there (the plane lying
+    // on a box face) is the solid's boundary on both sides and needs no cap.
+    // Two in-plane faces share no section edge.
     {
         std::map<std::pair<std::uint32_t, std::uint32_t>, std::vector<std::size_t>> byEdge;
         for (std::size_t f = 0; f < mesh.Faces.size(); ++f)
@@ -1576,9 +1619,22 @@ BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPos
         {
             if (faces.size() != 2)
                 continue;
-            const std::optional<bool> first = keptAlongEdge(faces[0], edge.first);
-            const std::optional<bool> second = keptAlongEdge(faces[1], edge.first);
-            if (first.has_value() && second.has_value() && *first != *second)
+            const bool firstInPlane = faceClass[faces[0]] == FaceClass::InPlane;
+            const bool secondInPlane = faceClass[faces[1]] == FaceClass::InPlane;
+            bool cuts = false;
+            if (firstInPlane != secondInPlane)
+            {
+                const std::size_t flat = firstInPlane ? faces[0] : faces[1];
+                const std::size_t other = firstInPlane ? faces[1] : faces[0];
+                assert(std::abs(BrushComputeFaceNormal(mesh, mesh.Faces[flat]).Dot(p.Normal)) > 1.0f - 1e-3f
+                       && "an in-plane face lies in the clipping plane");
+                cuts = ExtensionAcrossEdgeIsSolid(mesh, mesh.Faces[flat], edge.first, edge.second, mesh.Faces[other]);
+            }
+            else if (!firstInPlane)
+            {
+                cuts = keptAlongEdge(faces[0], edge.first) != keptAlongEdge(faces[1], edge.first);
+            }
+            if (cuts)
                 addSegment(mesh.Vertices[edge.first].Position, mesh.Vertices[edge.second].Position);
         }
     }
@@ -1631,16 +1687,30 @@ BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPos
         const auto toFrame = [&](const Vec3d& w) { return Vec2d{ (w - origin).Dot(u), (w - origin).Dot(v) }; };
         const auto toWorld = [&](Vec2d q) { return origin + u * q.X + v * q.Y; };
 
+        // Each ring point remembers which section vertex it is, so a cap corner
+        // takes that vertex's position verbatim -- a vertex snapped onto the
+        // plane sits up to the snap off it, and re-projecting it would mint a
+        // near-duplicate the pieces do not share.
         std::vector<std::vector<Vec2d>> rings;
+        std::vector<std::pair<Vec2d, std::uint32_t>> ringPoints;
         for (const std::vector<std::uint32_t>& contour : contours)
         {
             std::vector<Vec2d> ring;
             for (std::uint32_t index : contour)
+            {
                 ring.push_back(toFrame(section.At(index)));
+                ringPoints.emplace_back(ring.back(), index);
+            }
             if (PolygonSignedArea(ring) < 0.0f)
                 std::reverse(ring.begin(), ring.end());
             rings.push_back(std::move(ring));
         }
+        const auto sectionVertexAt = [&](Vec2d q) -> std::optional<std::uint32_t> {
+            for (const auto& [point, index] : ringPoints)
+                if ((point - q).SqrMagnitude() <= kSectionWeld * kSectionWeld)
+                    return index;
+            return std::nullopt;
+        };
         // Nesting: a ring inside an odd number of others is a hole of the
         // innermost ring that contains it.
         std::vector<int> depth(rings.size(), 0);
@@ -1662,13 +1732,12 @@ BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPos
             corners.reserve(piece.size());
             for (const Vec2d& q : piece)
             {
-                const Vec3d world = toWorld(q);
-                if (const std::optional<std::uint32_t> known = section.Find(world))
+                if (const std::optional<std::uint32_t> known = sectionVertexAt(q))
                     corners.push_back(section.At(*known));
                 else
                 {
-                    corners.push_back(world);
-                    minted.push_back(world);
+                    corners.push_back(toWorld(q));
+                    minted.push_back(corners.back());
                 }
             }
             EmitFace(out, corners, capMaterial);

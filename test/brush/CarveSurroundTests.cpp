@@ -14,6 +14,9 @@ namespace
 {
 using Poly = std::vector<Vec2d>;
 constexpr float kTol = 1e-4f;
+// The split's interior predicate epsilon: inside or outside for a midpoint
+// that is never on an edge, so far below the snap.
+constexpr float kInterior = 1e-6f;
 
 Vec2d P(float x, float y) { return Vec2d{ x, y }; }
 
@@ -363,7 +366,7 @@ void ExpectSplitSound(const PolygonSplit2D& split, const Poly& polygon)
 
 TEST(CarveSurround, SplitAConvexPolygonByALine)
 {
-    const PolygonSplit2D split = SplitPolygonByLine2D(kWall, P(0, 1.5f), P(1, 0), kTol);
+    const PolygonSplit2D split = SplitPolygonByLine2D(kWall, P(0, 1.5f), P(1, 0), kTol, kInterior);
     ExpectSplitSound(split, kWall);
     EXPECT_EQ(split.Left.size(), 1u);
     EXPECT_EQ(split.Right.size(), 1u);
@@ -384,7 +387,7 @@ TEST(CarveSurround, SplitAUShapeCrossedFourTimes)
 {
     // A U open at the top: legs x in [0,1] and [3,4], base y in [0,1].
     const Poly u = { P(0, 0), P(4, 0), P(4, 3), P(3, 3), P(3, 1), P(1, 1), P(1, 3), P(0, 3) };
-    const PolygonSplit2D split = SplitPolygonByLine2D(u, P(0, 2), P(1, 0), kTol);
+    const PolygonSplit2D split = SplitPolygonByLine2D(u, P(0, 2), P(1, 0), kTol, kInterior);
     ExpectSplitSound(split, u);
     EXPECT_EQ(split.Left.size(), 2u) << "the two legs above the line";
     EXPECT_EQ(split.Right.size(), 1u) << "the base below";
@@ -395,7 +398,7 @@ TEST(CarveSurround, SplitACShapeCrossedSixTimes)
 {
     // An E without its middle bar: three prongs pointing +x, a spine on the left.
     const Poly c = { P(0, 0), P(4, 0), P(4, 1), P(1, 1), P(1, 2), P(4, 2), P(4, 3), P(1, 3), P(1, 4), P(4, 4), P(4, 5), P(0, 5) };
-    const PolygonSplit2D split = SplitPolygonByLine2D(c, P(2, 0), P(0, 1), kTol);
+    const PolygonSplit2D split = SplitPolygonByLine2D(c, P(2, 0), P(0, 1), kTol, kInterior);
     ExpectSplitSound(split, c);
     EXPECT_EQ(split.Spans.size(), 3u);
     EXPECT_EQ(split.Right.size(), 3u) << "the three prong tips";
@@ -406,7 +409,7 @@ TEST(CarveSurround, SplitThroughAVertexIsOneCrossing)
 {
     // A diamond cut horizontally through its left and right vertices.
     const Poly diamond = { P(2, 0), P(4, 2), P(2, 4), P(0, 2) };
-    const PolygonSplit2D split = SplitPolygonByLine2D(diamond, P(0, 2), P(1, 0), kTol);
+    const PolygonSplit2D split = SplitPolygonByLine2D(diamond, P(0, 2), P(1, 0), kTol, kInterior);
     ExpectSplitSound(split, diamond);
     EXPECT_EQ(split.Left.size(), 1u);
     EXPECT_EQ(split.Right.size(), 1u);
@@ -420,7 +423,7 @@ TEST(CarveSurround, SplitThroughAVertexIsOneCrossing)
 TEST(CarveSurround, ATangentVertexIsNotACrossing)
 {
     const Poly diamond = { P(2, 0), P(4, 2), P(2, 4), P(0, 2) };
-    const PolygonSplit2D split = SplitPolygonByLine2D(diamond, P(0, 0), P(1, 0), kTol); // touches at (2, 0)
+    const PolygonSplit2D split = SplitPolygonByLine2D(diamond, P(0, 0), P(1, 0), kTol, kInterior); // touches at (2, 0)
     ExpectSplitSound(split, diamond);
     EXPECT_EQ(split.Left.size(), 1u);
     EXPECT_TRUE(split.Right.empty());
@@ -431,7 +434,7 @@ TEST(CarveSurround, ATangentVertexIsNotACrossing)
 TEST(CarveSurround, AnEdgeOnTheLineIsNeverBridged)
 {
     // The line runs along the wall's bottom edge: the wall is one piece, whole.
-    const PolygonSplit2D along = SplitPolygonByLine2D(kWall, P(0, 0), P(1, 0), kTol);
+    const PolygonSplit2D along = SplitPolygonByLine2D(kWall, P(0, 0), P(1, 0), kTol, kInterior);
     ExpectSplitSound(along, kWall);
     EXPECT_EQ(along.Left.size(), 1u);
     EXPECT_TRUE(along.Right.empty());
@@ -441,7 +444,7 @@ TEST(CarveSurround, AnEdgeOnTheLineIsNeverBridged)
     // polygon is above on one side of it and dips below on the other), and
     // the span never doubles the notch floor.
     const Poly notched = { P(0, 0), P(4, 0), P(4, 3), P(3, 3), P(3, 1), P(1, 1), P(1, 3), P(0, 3) };
-    const PolygonSplit2D split = SplitPolygonByLine2D(notched, P(0, 1), P(1, 0), kTol);
+    const PolygonSplit2D split = SplitPolygonByLine2D(notched, P(0, 1), P(1, 0), kTol, kInterior);
     ExpectSplitSound(split, notched);
     EXPECT_EQ(split.Left.size(), 2u);
     EXPECT_EQ(split.Right.size(), 1u);
@@ -454,7 +457,7 @@ TEST(CarveSurround, AnEdgeOnTheLineIsNeverBridged)
 
 TEST(CarveSurround, APolygonWhollyOnOneSideIsOnePiece)
 {
-    const PolygonSplit2D split = SplitPolygonByLine2D(kWall, P(0, -1), P(1, 0), kTol);
+    const PolygonSplit2D split = SplitPolygonByLine2D(kWall, P(0, -1), P(1, 0), kTol, kInterior);
     ExpectSplitSound(split, kWall);
     EXPECT_EQ(split.Left.size(), 1u);
     EXPECT_TRUE(split.Right.empty());
@@ -485,4 +488,22 @@ TEST(CarveSurround, SeveralHolesAreBridgedWithoutCrossingEachOther)
             expected -= PolygonSignedArea(hole);
         EXPECT_NEAR(area, expected, 1e-3f);
     }
+}
+
+TEST(CarveSurroundSplit, ACornerCutOffAtTheSnapHeightIsStillAPiece)
+{
+    // The corner of an arch cell (a quad with one acute corner at the crown),
+    // split 2e-4 inside that corner: the sliver triangle is a piece and the
+    // span across it exists. The span's midpoint lies 6e-5 from the boundary,
+    // so the interior predicate must not inherit the snap tolerance, or the
+    // midpoint reads as boundary and the span is lost -- the second case is
+    // the defect the clip kernel had.
+    const std::vector<Vec2d> cell{ P(0, 0.5f), P(-1, 0.5f), P(-1, -1), P(-0.7071f, 0.0607f) };
+    const PolygonSplit2D split = SplitPolygonByLine2D(cell, P(-2e-4f, 0), P(0, 1), kTol, kInterior);
+    ASSERT_EQ(split.Status, CarveStatus::Ok);
+    EXPECT_EQ(split.Spans.size(), 1u);
+    EXPECT_EQ(split.Left.size() + split.Right.size(), 2u);
+
+    const PolygonSplit2D wrong = SplitPolygonByLine2D(cell, P(-2e-4f, 0), P(0, 1), kTol, kTol);
+    EXPECT_TRUE(wrong.Spans.empty()) << "the snap tolerance as the interior epsilon loses the span";
 }

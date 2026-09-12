@@ -243,14 +243,20 @@ std::optional<std::array<Bridge, 2>> BuildBridges(std::span<const Vec2d> outer, 
 
 float PolygonSignedArea(std::span<const Vec2d> polygon)
 {
-    float sum = 0.0f;
+    if (polygon.empty())
+        return 0.0f;
+    // Relative to the first vertex, summed in double: the sign of a sliver
+    // (a corner a cut takes off at the snap height, ~1e-8 in area) must not
+    // drown in the rounding of products of coordinates far from the origin.
+    const Vec2d origin = polygon.front();
+    double sum = 0.0;
     for (std::size_t i = 0; i < polygon.size(); ++i)
     {
-        const Vec2d a = polygon[i];
-        const Vec2d b = polygon[(i + 1) % polygon.size()];
-        sum += a.X * b.Y - b.X * a.Y;
+        const Vec2d a = polygon[i] - origin;
+        const Vec2d b = polygon[(i + 1) % polygon.size()] - origin;
+        sum += static_cast<double>(a.X) * b.Y - static_cast<double>(b.X) * a.Y;
     }
-    return sum * 0.5f;
+    return static_cast<float>(sum * 0.5);
 }
 
 PointPolygonRelation ClassifyPointInPolygon2D(std::span<const Vec2d> polygon, Vec2d point, float tolerance)
@@ -681,8 +687,9 @@ std::optional<Vec2d> SegmentCrossing2D(Vec2d a, Vec2d b, Vec2d c, Vec2d d, float
 }
 
 PolygonSplit2D SplitPolygonByDistances2D(std::span<const Vec2d> polygon, std::span<const float> distances,
-                                         Vec2d direction, float tolerance)
+                                         Vec2d direction, float onLineTolerance, float interiorTolerance)
 {
+    const float tolerance = onLineTolerance;
     PolygonSplit2D result;
     const std::size_t n = polygon.size();
     if (n < 3 || distances.size() != n)
@@ -793,7 +800,9 @@ PolygonSplit2D SplitPolygonByDistances2D(std::span<const Vec2d> polygon, std::sp
         const Vec2d a = nodes[lo.MaxNode].Vertex.Position;
         const Vec2d b = nodes[hi.MinNode].Vertex.Position;
         const Vec2d middle{ (a.X + b.X) * 0.5f, (a.Y + b.Y) * 0.5f };
-        if (ClassifyPointInPolygon2D(polygon, middle, tolerance) == PointPolygonRelation::Inside)
+        // Inside or outside, never on an edge: the interior epsilon, not the
+        // snap, or a corner cut off at the snap height reads as boundary.
+        if (ClassifyPointInPolygon2D(polygon, middle, interiorTolerance) == PointPolygonRelation::Inside)
         {
             spanNodes.emplace_back(lo.MaxNode, hi.MinNode);
             result.Spans.emplace_back(nodes[lo.MaxNode].Vertex, nodes[hi.MinNode].Vertex);
@@ -841,7 +850,7 @@ PolygonSplit2D SplitPolygonByDistances2D(std::span<const Vec2d> polygon, std::sp
 }
 
 PolygonSplit2D SplitPolygonByLine2D(std::span<const Vec2d> polygon, Vec2d pointOnLine, Vec2d direction,
-                                    float tolerance)
+                                    float onLineTolerance, float interiorTolerance)
 {
     const float length = std::sqrt(direction.X * direction.X + direction.Y * direction.Y);
     if (length <= 0.0f)
@@ -856,7 +865,7 @@ PolygonSplit2D SplitPolygonByLine2D(std::span<const Vec2d> polygon, Vec2d pointO
     distances.reserve(polygon.size());
     for (const Vec2d& p : polygon)
         distances.push_back((p.X - pointOnLine.X) * leftNormal.X + (p.Y - pointOnLine.Y) * leftNormal.Y);
-    return SplitPolygonByDistances2D(polygon, distances, d, tolerance);
+    return SplitPolygonByDistances2D(polygon, distances, d, onLineTolerance, interiorTolerance);
 }
 
 namespace

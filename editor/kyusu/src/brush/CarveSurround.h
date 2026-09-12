@@ -112,13 +112,23 @@ struct PolygonSplit2D
 
 // The pieces of a simple counter-clockwise polygon on each side of a line, each
 // simple and counter-clockwise, with the spans the line draws through the
-// interior. Vertices within `tolerance` of the line are on it, and consecutive
-// on-line vertices are one event judged by the nearest off-line vertices
-// either side: same side is a contact (no crossing, no span), opposite sides a
-// crossing. An edge lying on the line is therefore never bridged over. A
-// polygon whose vertices are all on the line is refused (InvalidOutline).
+// interior. Vertices within `onLineTolerance` of the line are on it, and
+// consecutive on-line vertices are one event judged by the nearest off-line
+// vertices either side: same side is a contact (no crossing, no span),
+// opposite sides a crossing. An edge lying on the line is therefore never
+// bridged over. A polygon whose vertices are all on the line is refused
+// (InvalidOutline).
+//
+// Two tolerances, because they answer different questions. The on-line one is
+// a snap: how far from the line a vertex may sit and still count as on it. The
+// interior one is a predicate epsilon for deciding whether the stretch between
+// two consecutive events runs through the polygon's interior: its midpoint is
+// never on an edge (an edge on the line is one event), so it only has to tell
+// inside from outside, and a corner cut off at the snap height must read as
+// inside. Handing it the snap tolerance loses exactly those spans.
 [[nodiscard]] PolygonSplit2D SplitPolygonByLine2D(std::span<const Vec2d> polygon, Vec2d pointOnLine,
-                                                  Vec2d direction, float tolerance);
+                                                  Vec2d direction, float onLineTolerance,
+                                                  float interiorTolerance);
 
 // The same, with each vertex's signed distance to the line supplied (positive
 // on the left), for a caller that classified the vertices elsewhere -- a solid's
@@ -126,7 +136,7 @@ struct PolygonSplit2D
 // `direction` orders the crossings along the line.
 [[nodiscard]] PolygonSplit2D SplitPolygonByDistances2D(std::span<const Vec2d> polygon,
                                                        std::span<const float> distances, Vec2d direction,
-                                                       float tolerance);
+                                                       float onLineTolerance, float interiorTolerance);
 
 // The pieces of `outer` with several disjoint `holes` removed, all simple and
 // counter-clockwise. Holes are bridged one at a time into the piece that

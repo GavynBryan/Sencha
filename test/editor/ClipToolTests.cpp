@@ -436,3 +436,30 @@ TEST_F(ClipToolTest, ACutThroughADoorwayMakesOneBrushPerPiece)
         EXPECT_EQ(BrushCount(), 1u) << "one step";
     }
 }
+
+TEST_F(ClipToolTest, AVerticalSplitThroughADoorwayMakesOneBrushPerComponentOfEachHalf)
+{
+    // The doorway's +X wall carries the opening, so a cut across the wall is a
+    // plane along Z: in the Top view, a line along Z at x = 0 through the
+    // opening. Each half is one component here, so a split makes two brushes;
+    // the commit path makes one per component whatever the count.
+    const EntityId brush = AddBrush({ 0, 0, 0 }, { 1, 1, 1 });
+    Sink().PreviewMesh(brush, DoorwayMesh(*Scene().TryGetBrushMesh(brush)));
+    SelectEntity(brush);
+    EditorViewport top = TopViewport();
+    Tool().SetMode(Context(), ClipMode::Split);
+    Draw(top, Vec3d{ 0.3f, 0, -3 }, Vec3d{ 0.3f, 0, 3 });
+    ASSERT_TRUE(Tool().CanCommit());
+    Press(SDLK_RETURN);
+    EXPECT_EQ(BrushCount(), 2u);
+    EXPECT_EQ(Workspace.Selection.GetSelection().size(), 2u);
+    for (const EntityId entity : Scene().GetAllEntities())
+        if (const BrushMesh* mesh = Scene().TryGetBrushMesh(entity))
+        {
+            BrushMesh copy = *mesh;
+            EXPECT_TRUE(BrushValidateAndRepair(copy).Closed);
+            EXPECT_EQ(BrushConnectedComponents(*mesh).size(), 1u);
+        }
+    Commands.Undo();
+    EXPECT_EQ(BrushCount(), 1u);
+}

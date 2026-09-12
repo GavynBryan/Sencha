@@ -434,8 +434,8 @@ void ClipTool::RefreshPreview(ToolContext& ctx)
         for (const BrushVertex& vertex : target.Original.Vertices)
         {
             const float d = local.SignedDistanceTo(vertex.Position);
-            anyFront = anyFront || d > 1e-4f;
-            anyBack = anyBack || d < -1e-4f;
+            anyFront = anyFront || d > BrushOps::kClipSnap;
+            anyBack = anyBack || d < -BrushOps::kClipSnap;
         }
         if (!anyFront || !anyBack)
         {
