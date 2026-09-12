@@ -78,7 +78,8 @@ void SelectionActions::Duplicate(bool asInstance)
         return;
 
     Commands.Execute(std::make_unique<DuplicateEntitiesCommand>(
-        sources, transforms, document.GetScene(), document, Selection, asInstance, DuplicateRemap));
+        sources, transforms, document.GetScene(), document, Selection, DuplicateBranchPolicy::Subtree,
+        asInstance, DuplicateRemap));
 }
 
 void SelectionActions::DuplicateWithOffset(Vec3d offset)
@@ -99,7 +100,8 @@ void SelectionActions::DuplicateWithOffset(Vec3d offset)
         return;
 
     Commands.Execute(std::make_unique<DuplicateEntitiesCommand>(
-        sources, transforms, document.GetScene(), document, Selection, false, DuplicateRemap));
+        sources, transforms, document.GetScene(), document, Selection, DuplicateBranchPolicy::Subtree,
+        false, DuplicateRemap));
 }
 
 void SelectionActions::RecordRepeatableDuplicate(Vec3d offset)

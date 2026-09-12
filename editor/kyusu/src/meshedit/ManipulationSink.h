@@ -35,6 +35,16 @@ struct MeshEdit
     BrushMesh After;
 };
 
+// One brush becoming two: the entity keeps `Keep`, and a copy of it -- same
+// components, name family, parent and material -- is created carrying `Other`.
+struct SplitEdit
+{
+    EntityId Entity = {};
+    BrushMesh Before;
+    BrushMesh Keep;
+    BrushMesh Other;
+};
+
 struct ManipulationSink
 {
     [[nodiscard]] virtual std::optional<Transform3f> ResolveTransform(EntityId entity) const = 0;
@@ -55,6 +65,10 @@ struct ManipulationSink
     // many meshes). CommitMesh is the single-mesh convenience over it.
     virtual void CommitMeshes(std::vector<MeshEdit> edits) = 0;
     virtual void CommitMesh(EntityId entity, BrushMesh before, BrushMesh after) = 0;
+    // Commit all splits as one undoable step: every entity re-meshed to its
+    // Keep and a copy of each created with its Other, in place, selected
+    // alongside the originals.
+    virtual void CommitSplits(std::vector<SplitEdit> edits) = 0;
 
     // Replace the selection with the given refs (empty clears it). The extrude
     // drag reindexes the mesh, so it selects the freshly created cap/edge on

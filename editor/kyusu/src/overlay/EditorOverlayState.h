@@ -45,6 +45,18 @@ struct DragReadout
     [[nodiscard]] bool Active() const { return From.has_value() && To.has_value(); }
 };
 
+// A world-space line drawn over the viewports: a tool's construction line, seen
+// from every view where it lies rather than only the one it was drawn in.
+// Viewport limits drawing when set.
+struct WorldSegmentRequest
+{
+    Vec3d From = {};
+    Vec3d To = {};
+    Vec4 Color = {};
+    float Thickness = 1.0f;
+    ViewportId Viewport = {};
+};
+
 // A screen-sized square drawn at a world point. Viewport limits drawing when set.
 struct PointHandleRequest
 {
@@ -132,6 +144,7 @@ struct ElementHoverState
 struct EditorOverlayState
 {
     std::vector<LabelRequest> Labels;
+    std::vector<WorldSegmentRequest> Segments;
     std::vector<PointHandleRequest> PointHandles;
     std::vector<ViewportButtonRequest> ViewportButtons;
     std::vector<ViewportDialRequest> ViewportDials;

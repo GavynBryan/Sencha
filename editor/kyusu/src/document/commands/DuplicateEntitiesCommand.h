@@ -10,6 +10,7 @@
 #include <math/geometry/3d/Transform3d.h>
 
 #include <cstddef>
+#include <cstdint>
 
 #include <memory>
 #include <functional>
@@ -28,6 +29,14 @@ class SelectionService;
 // copies SHARE the source's BrushId: editing any instance edits them all, and
 // baking them produces placements of one shared mesh asset. The Shift-drag
 // object duplicate builds this via BrushManipulationSink::CommitDuplicate.
+// What a source entity brings with it when copied. A source normally means
+// its branch; a split, which turns one brush into two, copies the brush alone.
+enum class DuplicateBranchPolicy : std::uint8_t
+{
+    Subtree,    // the source and every descendant, parents before children
+    EntityOnly, // the source itself; its children stay where they are
+};
+
 class DuplicateEntitiesCommand : public ICommand
 {
 public:
@@ -35,6 +44,7 @@ public:
                              std::span<const Transform3f> transforms,
                              EditorScene& scene, EditorDocument& document,
                              SelectionService& selection,
+                             DuplicateBranchPolicy branch,
                              bool asInstance = false,
                              std::function<void(std::vector<EntitySnapshot>&)> remap = {});
 
@@ -58,6 +68,7 @@ private:
     std::vector<std::size_t>    RootOf; // index into Sources, or npos
     std::vector<EntityId>       Created; // the copies, for Undo to destroy
     SelectionSnapshot           PreviousSelection;
+    DuplicateBranchPolicy       Branch = DuplicateBranchPolicy::Subtree;
     bool                        AsInstance = false;
     bool                        Captured = false;
     std::function<void(std::vector<EntitySnapshot>&)> Remap;

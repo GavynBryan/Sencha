@@ -318,7 +318,8 @@ namespace
         Transform3f target = Transform3f::Identity();
         target.Position = Vec3d{ 5.0f, 0.0f, 0.0f };
         const std::array targets{ target };
-        DuplicateEntitiesCommand command(sources, targets, Scene, Document, Selection);
+        DuplicateEntitiesCommand command(sources, targets, Scene, Document, Selection,
+                                         DuplicateBranchPolicy::Subtree);
         command.Execute();
 
         ASSERT_EQ(Scene.GetEntityCount(), 4u);
@@ -353,7 +354,8 @@ namespace
         Scene.RefreshDerivedTransforms();
 
         const std::array sources{ child };
-        DuplicateEntitiesCommand command(sources, {}, Scene, Document, Selection);
+        DuplicateEntitiesCommand command(sources, {}, Scene, Document, Selection,
+                                         DuplicateBranchPolicy::Subtree);
         command.Execute();
 
         ASSERT_EQ(Scene.GetEntityCount(), 3u);

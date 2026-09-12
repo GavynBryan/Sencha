@@ -52,6 +52,7 @@ enum class IconId : std::uint8_t
     Unlock,
     Cut,
     Carve,
+    Clip,
 
     // Mesh element modes
     ModeObject,

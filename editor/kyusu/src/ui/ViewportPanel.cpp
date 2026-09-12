@@ -305,6 +305,17 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
             drawList->AddText(ImVec2(p->Pixel.x + 4.0f, p->Pixel.y - 6.0f),
                               toColor(EditorTheme::HoverEligible), Overlay.Hover.Measure.c_str());
     }
+    // Construction lines a tool laid in the world, in every view that can see them.
+    for (const WorldSegmentRequest& segment : Overlay.Segments)
+    {
+        if (segment.Viewport.IsValid() && segment.Viewport != viewport.Id)
+            continue;
+        const std::optional<ProjectedPoint> a = projection.WorldToPixel(segment.From);
+        const std::optional<ProjectedPoint> b = projection.WorldToPixel(segment.To);
+        if (a.has_value() && b.has_value())
+            drawList->AddLine(a->Pixel, b->Pixel, toColor(segment.Color), segment.Thickness);
+    }
+
 
     // Active drag's origin->current line + distance, only in the view it started in.
     if (Overlay.Readout.Active() && Overlay.Readout.Viewport == viewport.Id)

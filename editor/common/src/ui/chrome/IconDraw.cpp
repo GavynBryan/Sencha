@@ -74,6 +74,7 @@ constexpr std::array<Icon, kCount> kIcons = [] {
     row(IconId::Unlock, "unlock", ICON_FA_LOCK_OPEN);
     row(IconId::Cut, "cut", ICON_FA_SCISSORS);
     row(IconId::Carve, "carve", ICON_FA_CROP_SIMPLE);
+    row(IconId::Clip, "clip", ICON_FA_SLASH);
     row(IconId::ModeObject, "mode-object", ICON_FA_CUBE);
     row(IconId::ModeVertex, "mode-vertex", ICON_FA_CIRCLE_DOT);
     row(IconId::ModeEdge, "mode-edge", ICON_FA_GRIP_LINES);

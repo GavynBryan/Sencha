@@ -9,7 +9,9 @@
 #include "selection/SelectionService.h"
 
 #include <algorithm>
+#include <functional>
 #include <memory>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -88,6 +90,54 @@ void BrushManipulationSink::CommitMesh(EntityId entity, BrushMesh before, BrushM
     CommitMeshes(std::move(edits));
 }
 
+void BrushManipulationSink::CommitSplits(std::vector<SplitEdit> edits)
+{
+    if (edits.empty())
+        return;
+
+    // Per split: a copy of the entity alone, at its own world placement, whose
+    // captured mesh is swapped for the other half before it is restored; then
+    // the entity re-meshed to the kept half. Undo runs them backwards, so the
+    // mesh comes back first and the copy is destroyed last.
+    std::vector<std::unique_ptr<ICommand>> commands;
+    commands.reserve(edits.size() * 2);
+    std::vector<EntityId> originals;
+    originals.reserve(edits.size());
+    for (SplitEdit& edit : edits)
+    {
+        const Transform3f* world = Scene.TryGetWorldTransform(edit.Entity);
+        if (world == nullptr)
+            continue;
+        originals.push_back(edit.Entity);
+        const EntityId source = edit.Entity;
+        const Transform3f placement = *world;
+        BrushMesh other = std::move(edit.Other);
+        std::function<void(std::vector<EntitySnapshot>&)> chained = DuplicateRemap;
+        auto remap = [other = std::move(other), chained = std::move(chained)](std::vector<EntitySnapshot>& snapshots) {
+            for (EntitySnapshot& snapshot : snapshots)
+                if (snapshot.Mesh.has_value())
+                    snapshot.Mesh = other;
+            if (chained)
+                chained(snapshots);
+        };
+        commands.push_back(std::make_unique<DuplicateEntitiesCommand>(
+            std::span<const EntityId>(&source, 1), std::span<const Transform3f>(&placement, 1), Scene,
+            Document, Selection, DuplicateBranchPolicy::EntityOnly, false, std::move(remap)));
+        commands.push_back(MakeEditCommand(edit.Entity, std::move(edit.Before), std::move(edit.Keep)));
+    }
+    if (commands.empty())
+        return;
+    Commands.Execute(std::make_unique<CompositeCommand>(std::move(commands)));
+
+    // The duplicate commands each replaced the selection with their copy; the
+    // result of a split is both halves.
+    std::vector<SelectableRef> both(Selection.GetSelection().begin(), Selection.GetSelection().end());
+    const RegistryId registry = Scene.GetRegistry().Id;
+    for (EntityId entity : originals)
+        both.push_back(SelectableRef::EntitySelection(registry, entity));
+    Selection.SetSelection(std::move(both));
+}
+
 void BrushManipulationSink::SelectElements(std::span<const SelectableRef> refs)
 {
     Selection.SetSelection(std::vector<SelectableRef>(refs.begin(), refs.end()));
@@ -143,7 +193,8 @@ void BrushManipulationSink::CommitDuplicate(std::span<const EntityId> sources,
         if (const Transform3f* source = Scene.TryGetWorldTransform(sources.front()))
             offset = transforms.front().Position - source->Position;
     Commands.Execute(std::make_unique<DuplicateEntitiesCommand>(
-        sources, transforms, Scene, Document, Selection, false, DuplicateRemap));
+        sources, transforms, Scene, Document, Selection, DuplicateBranchPolicy::Subtree, false,
+        DuplicateRemap));
     if (DuplicateObserver && offset.has_value())
         DuplicateObserver(*offset);
 }
