@@ -121,6 +121,8 @@ TransformMode ManipulatorSession::EffectiveMode() const
 
 InputConsumed ManipulatorSession::OnPointerDown(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)
 {
+    if (!GizmoApplies())
+        return InputConsumed::No;
     const ImVec2 pos = pointer.Position;
     const SelectionSnapshot snapshot = Selection.GetSnapshot();
     const ManipulatorContext mctx = MakeContext(snapshot);
@@ -148,6 +150,8 @@ InputConsumed ManipulatorSession::OnPointerDown(ToolContext& ctx, EditorViewport
 void ManipulatorSession::UpdateHover(const EditorViewport& viewport, ImVec2 pos)
 {
     ClearHover();
+    if (!GizmoApplies())
+        return;
 
     const SelectionSnapshot snapshot = Selection.GetSnapshot();
     const ManipulatorContext mctx = MakeContext(snapshot);
@@ -180,6 +184,8 @@ void ManipulatorSession::ClearHover()
 
 void ManipulatorSession::BuildVisuals(const EditorViewport& viewport, ManipulatorVisual& out) const
 {
+    if (!GizmoApplies())
+        return;
     const SelectionSnapshot snapshot = Selection.GetSnapshot();
     const ManipulatorContext mctx = MakeContext(snapshot);
     const TransformMode mode = EffectiveMode();

@@ -50,6 +50,12 @@ struct ITool
     virtual InputConsumed OnHover(ToolContext& /*ctx*/, EditorViewport& /*viewport*/, ImVec2 /*pos*/) { return InputConsumed::No; }
     virtual void OnHoverEnd(ToolContext& /*ctx*/) {}
 
+    // Whether the transform gizmo belongs on screen while this tool is active.
+    // A tool whose whole job is its own interaction -- a cut, a carve, a clip
+    // -- says no, and the gizmo neither draws nor takes a press until the tool
+    // goes; the session honours it, and nothing else learns which tool it was.
+    [[nodiscard]] virtual bool UsesTransformGizmo() const { return true; }
+
     // A tool's own chrome, drawn while it is active: the settings and verbs in
     // the Tool Properties panel, and the compact controls in the toolbar's
     // contextual group. The tool draws them itself so that adding a tool does not

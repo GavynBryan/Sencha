@@ -309,17 +309,13 @@ std::optional<Vec3d> ClipTool::SnappedPoint(ToolContext& ctx, const EditorViewpo
 bool ClipTool::CaptureGesture(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos)
 {
     SourceViewport = viewport.Id;
-    Perspective = viewport.GetOrientationTraits().Mode == EditorCamera::Mode::Perspective;
-    const ViewportProjection projection(viewport);
-    const Ray3d ray = projection.RayThroughPixel(pos);
-    Eye = ray.Origin;
-    View = ray.Direction.Normalized();
+    const bool perspective = viewport.GetOrientationTraits().Mode == EditorCamera::Mode::Perspective;
 
     // The snap plane: the view's grid, or in perspective the face under the
     // press so the line snaps on the wall it is drawn on. Chosen once; the drag
-    // never re-picks.
+    // never re-picks, and the cut stands on this plane's normal.
     SnapPlane = viewport.GetGrid(ctx.Grid);
-    if (Perspective)
+    if (perspective)
         if (const std::optional<SurfaceHit> hit = ctx.Picking.PickSurface(viewport, pos, ctx.Scene))
         {
             Vec3d u, v;
@@ -387,11 +383,8 @@ void ClipTool::EndDrag(ToolContext& ctx, EditorViewport& viewport)
 {
     if (Phase != ClipPhase::Dragging)
         return;
-    if (!ClipPlane.has_value())
-    {
-        RevertAll(ctx);
-        return;
-    }
+    // A release never discards the gesture: a line too short to stand a plane
+    // on pends with its pins where they are, and dragging one apart is the cut.
     // The construction line's reach: what the source view's diagonal spans at
     // A, captured now and kept, so the line never grows or shrinks with a camera
     // moving afterwards.
@@ -416,20 +409,22 @@ void ClipTool::RefreshPreview(ToolContext& ctx)
     if (Phase == ClipPhase::Idle)
         return;
 
-    ClipPlane = Perspective ? ClipPlaneMath::ThroughLineAndEye(A, B, Eye)
-                            : ClipPlaneMath::ThroughLineAlongView(A, B, View);
+    ClipPlane = ClipPlaneMath::ThroughLineAndDirection(A, B, SnapPlane.AxisU.Cross(SnapPlane.AxisV));
     Crossed = Missed = Failed = 0;
     if (!ClipPlane.has_value())
     {
         RestorePreviews(ctx);
         Committable = false;
-        Status = "draw a line to clip along";
+        Status = "drag a pin to set the cut";
         WriteOverlay(ctx);
         return;
     }
 
     const Vec3d front = A + ClipPlane->Normal;
-    BrushMesh discarded;
+    // What the preview buffer carries: the discarded half for a keep, the
+    // section the cut makes for a split -- the brush itself stays whole there.
+    BrushMesh wire;
+    const Vec4 wireColor = Mode == ClipMode::Split ? EditorTheme::Readout : EditorTheme::ContextZoneDim;
     for (Target& target : Targets)
     {
         const Plane local = ClipPlaneMath::InLocal(*ClipPlane, front, target.Transform);
@@ -464,17 +459,45 @@ void ClipTool::RefreshPreview(ToolContext& ctx)
         }
         target.Result = Outcome::Valid;
         ++Crossed;
-        // The entity shows what it keeps; what it loses, or its other half,
-        // draws as a wireframe so the line reads as a cut from every view.
+        if (Mode == ClipMode::Split)
+        {
+            // Nothing goes: the brush stays whole and the section shows where
+            // the two halves will part, whatever the cap toggle says.
+            ctx.Sink.PreviewMesh(target.Entity, target.Original);
+            const BrushMesh capped = Capped ? target.Front
+                                            : BrushOps::Clip(target.Original, local, true, BrushOps::ClipCap::Capped);
+            BrushMesh section;
+            for (const BrushFace& face : capped.Faces)
+            {
+                const Vec3d normal = BrushComputeFaceNormal(capped, face);
+                if (std::abs(normal.Dot(local.Normal)) < 0.999f)
+                    continue;
+                bool onPlane = true; // parallel is not enough: the box's own side may be
+                for (std::uint32_t index : face.Loop)
+                    onPlane = onPlane && std::abs(local.SignedDistanceTo(capped.Vertices[index].Position)) < 1e-3f;
+                if (!onPlane)
+                    continue;
+                BrushFace copy = face;
+                for (std::uint32_t& index : copy.Loop)
+                {
+                    section.Vertices.push_back(capped.Vertices[index]);
+                    index = static_cast<std::uint32_t>(section.Vertices.size() - 1);
+                }
+                section.Faces.push_back(std::move(copy));
+            }
+            AppendInWorld(wire, section, target.Transform);
+            continue;
+        }
+        // The entity shows what it keeps; what it loses draws dim.
         const BrushMesh& kept = Mode == ClipMode::KeepBack ? target.Back : target.Front;
         const BrushMesh& other = Mode == ClipMode::KeepBack ? target.Front : target.Back;
         ctx.Sink.PreviewMesh(target.Entity, kept);
-        AppendInWorld(discarded, other, target.Transform);
+        AppendInWorld(wire, other, target.Transform);
     }
-    if (discarded.Faces.empty())
+    if (wire.Faces.empty())
         ctx.Preview.Clear();
     else
-        ctx.Preview.SetMesh(Transform3f::Identity(), std::move(discarded));
+        ctx.Preview.SetMesh(Transform3f::Identity(), std::move(wire), wireColor);
 
     Committable = Failed == 0 && Crossed > 0;
     if (Failed > 0)

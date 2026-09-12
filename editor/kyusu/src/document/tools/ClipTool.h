@@ -33,15 +33,17 @@ enum class ClipPhase : std::uint8_t
 };
 
 // Splits the selected brushes along a line drawn in a view. The line stands for
-// a plane: in an orthographic view the one through the line along the view
-// direction, in a perspective view the one through the line and the eye. Once
-// the gesture ends the tool owns that plane in world space; the camera can move
-// and the pending cut does not.
+// the plane through it along the normal of the surface it was drawn on: an
+// ortho view's grid (its view direction), or in perspective the face under the
+// press, so a line on a wall cuts straight through the wall. Once the gesture
+// ends the tool owns that plane in world space; the camera can move and the
+// pending cut does not.
 //
-// Two planes, kept apart: the snap plane the endpoints are dragged on (the
-// view's grid, or the face under the press in perspective), captured once at
-// press, and the clip plane the gesture produces. Endpoints are shown in every
-// view and draggable only in the one that drew them.
+// Two planes, kept apart: the snap plane the endpoints are dragged on, captured
+// once at press and never re-picked during the drag, and the clip plane the
+// gesture produces. Endpoints are shown in every view and draggable only in the
+// one that drew them; a release never discards a gesture, a line too short to
+// stand a plane on just waits for a pin to be dragged.
 //
 // Targets are the selected brushes, deduplicated and captured at press. A brush
 // the plane misses is left alone; one whose halves do not validate makes the
@@ -68,6 +70,7 @@ public:
     void DrawProperties(ToolContext& ctx) override;
     void DrawToolbarControls(ToolContext& ctx) override;
     [[nodiscard]] Shortcut GetShortcut() const override;
+    [[nodiscard]] bool UsesTransformGizmo() const override { return false; }
 
     [[nodiscard]] ClipMode GetMode() const { return Mode; }
     void SetMode(ToolContext& ctx, ClipMode mode);
@@ -131,11 +134,10 @@ private:
     std::size_t Missed = 0;
     std::size_t Failed = 0;
 
-    // The gesture, captured at press and owned from then on.
+    // The gesture, captured at press and owned from then on. The snap plane
+    // is where the endpoints live and what the cut stands on: the clip plane
+    // is the line plus this plane's normal, in every kind of view.
     ViewportId SourceViewport = {};
-    bool Perspective = false;
-    Vec3d Eye = {};
-    Vec3d View = {};
     GridPlane SnapPlane{};
     Vec3d A = {};
     Vec3d B = {};

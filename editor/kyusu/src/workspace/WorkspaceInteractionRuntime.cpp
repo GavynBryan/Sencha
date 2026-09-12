@@ -121,6 +121,12 @@ void WorkspaceInteractionRuntime::Rebuild(const WorkspaceInteractionInputs& inpu
             });
         Manipulators->SetScaleAllowedQuery(
             [&affordances] { return affordances.AllowsScaleForSelection(); });
+        // The tools outlive the session's rebinding, so the query reads the
+        // registry live rather than capturing a tool.
+        Manipulators->SetGizmoQuery([this] {
+            const ITool* active = Tools != nullptr ? Tools->GetActiveTool() : nullptr;
+            return active == nullptr || active->UsesTransformGizmo();
+        });
     }
     else
     {

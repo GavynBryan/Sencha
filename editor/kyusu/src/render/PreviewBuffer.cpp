@@ -2,9 +2,9 @@
 
 #include <utility>
 
-void PreviewBuffer::SetMesh(const Transform3f& transform, BrushMesh mesh)
+void PreviewBuffer::SetMesh(const Transform3f& transform, BrushMesh mesh, Vec4 color)
 {
-    Preview = PreviewMesh{ transform, std::move(mesh) };
+    Preview = PreviewMesh{ transform, std::move(mesh), color };
 }
 
 void PreviewBuffer::Clear()

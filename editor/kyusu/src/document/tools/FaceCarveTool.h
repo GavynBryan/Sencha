@@ -100,6 +100,7 @@ public:
     void CommitPending(ToolContext& ctx) override;
     void DrawProperties(ToolContext& ctx) override;
     [[nodiscard]] Shortcut GetShortcut() const override;
+    [[nodiscard]] bool UsesTransformGizmo() const override { return false; }
 
     // Toolbar wiring: Apply/Cancel enable state.
     [[nodiscard]] bool HasPending() const { return Phase != FaceCarvePhase::Idle && PreviewValid; }

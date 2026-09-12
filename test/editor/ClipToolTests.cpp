@@ -6,6 +6,8 @@
 #include "brush/CarveShape.h"
 #include "document/tools/ClipTool.h"
 #include "meshedit/ManipulationSink.h"
+#include "render/PreviewBuffer.h"
+#include "EditorTheme.h"
 #include "tools/ToolRegistry.h"
 #include "viewport/EditorViewport.h"
 #include "viewport/ViewportProjection.h"
@@ -209,7 +211,7 @@ TEST_F(ClipToolTest, EscapeRestoresAndAMissedLineCommitsNothing)
     EXPECT_FALSE(Commands.CanUndo());
 }
 
-TEST_F(ClipToolTest, APerspectiveCutStaysWhereTheCameraLeftIt)
+TEST_F(ClipToolTest, APerspectiveLineOnAWallCutsStraightThroughIt)
 {
     const EntityId brush = AddBrush({ 0, 0, 0 }, { 1, 1, 1 });
     SelectEntity(brush);
@@ -217,15 +219,22 @@ TEST_F(ClipToolTest, APerspectiveCutStaysWhereTheCameraLeftIt)
     Context().Grid.SnapEnabled = false; // the points are the test's own, not the lattice's
     Tool().SetMode(Context(), ClipMode::Split);
     // A diagonal across the brush's near face (z = 1), which the press lands
-    // on; the plane stands through it and the eye.
-    Draw(view, Vec3d{ -0.6f, 0.9f, 1.0f }, Vec3d{ 0.6f, -0.9f, 1.0f });
+    // on; the plane stands through it along the face's normal, not the eye.
+    const Vec3d a{ -0.6f, 0.9f, 1.0f };
+    const Vec3d b{ 0.6f, 0.3f, 1.0f }; // off the view axis, so the eye is not on the plane by accident
+    Draw(view, a, b);
     ASSERT_TRUE(Tool().CanCommit());
     const Plane before = *Tool().GetClipPlane();
-    const BrushMesh previewBefore = *Scene().TryGetBrushMesh(brush);
+    EXPECT_NEAR(before.SignedDistanceTo(a), 0.0f, 1e-3f);
+    EXPECT_NEAR(before.SignedDistanceTo(b), 0.0f, 1e-3f);
+    EXPECT_NEAR(before.SignedDistanceTo(a + Vec3d{ 0, 0, 1 }), 0.0f, 1e-3f) << "not along the face normal";
+    EXPECT_GT(std::abs(before.SignedDistanceTo(view.Camera.Position)), 0.5f) << "through the eye";
 
+    // The camera moving afterwards changes nothing: the plane is owned.
+    const BrushMesh previewBefore = *Scene().TryGetBrushMesh(brush);
     view.Camera.Position = Vec3d(4.0f, 3.0f, -2.0f);
     view.Camera.Yaw = 0.7f;
-    Press(SDLK_TAB); // a mode change rebuilds the preview: from the stored plane
+    Press(SDLK_TAB);
     Press(SDLK_TAB);
     Press(SDLK_TAB);
     ASSERT_EQ(Tool().GetMode(), ClipMode::Split);
@@ -236,31 +245,59 @@ TEST_F(ClipToolTest, APerspectiveCutStaysWhereTheCameraLeftIt)
     Press(SDLK_ESCAPE);
 }
 
-TEST_F(ClipToolTest, ADragKeepsTheSnapPlaneItStartedOn)
+TEST_F(ClipToolTest, AShortDragPendsWithItsPinsInsteadOfVanishing)
 {
-    // The press lands on the near face of a tall wall; the drag then crosses a
-    // second brush in front of it on screen. The endpoints stay on the wall's
-    // face plane, so the plane is the one the user drew, not one that jumped.
-    const EntityId wall = AddBrush({ 0, 0, -2 }, { 3, 3, 0.5f });
-    const EntityId blocker = AddBrush({ 1, 0, 1 }, { 0.5f, 0.5f, 0.5f });
-    SelectEntity(wall);
+    // Grid snap on, a drag inside one lattice cell on the near face: both pins
+    // land on the same point. The gesture stays, pins and all, uncommittable
+    // until a pin is dragged apart.
+    const EntityId brush = AddBrush({ 0, 0, 0 }, { 1, 1, 1 });
+    SelectEntity(brush);
     EditorViewport view = PerspectiveViewport();
-    Context().Grid.SnapEnabled = false;
+    Context().Grid.SnapEnabled = true;
+    Context().Grid.Spacing = 1.0f;
     Tool().SetMode(Context(), ClipMode::Split);
-    const Vec3d a{ -1.5f, 1.5f, -1.5f }; // on the wall's near face z = -1.5
-    const Vec3d b{ 1.0f, 0.0f, -1.5f };  // behind the blocker on screen
-    std::unique_ptr<IInteraction> drag =
-        Tool().BeginDrag(Context(), view, PointerEvent{ .Position = PixelOf(view, a) });
-    ASSERT_NE(drag, nullptr);
-    drag->OnPointerMove(Context(), view, PointerEvent{ .Position = PixelOf(view, b) });
-    drag->OnPointerUp(Context(), view, PointerEvent{ .Position = PixelOf(view, b) });
-    ASSERT_EQ(Tool().GetPhase(), ClipPhase::Pending);
-    const Plane plane = *Tool().GetClipPlane();
-    EXPECT_NEAR(plane.SignedDistanceTo(a), 0.0f, 1e-3f);
-    EXPECT_NEAR(plane.SignedDistanceTo(b), 0.0f, 1e-3f) << "the second point left the wall's plane";
-    EXPECT_NEAR(plane.SignedDistanceTo(view.Camera.Position), 0.0f, 1e-3f);
-    (void)blocker;
+    Draw(view, Vec3d{ 0.1f, 0.1f, 1.0f }, Vec3d{ 0.3f, 0.2f, 1.0f });
+    EXPECT_FALSE(Tool().CanCommit());
+    EXPECT_EQ(Context().Overlay.PointHandles.size(), 2u) << "the pins are gone";
+
+    // Drag the second pin to the next lattice point.
+    std::unique_ptr<IInteraction> drag = Tool().BeginDrag(
+        Context(), view, PointerEvent{ .Position = PixelOf(view, Vec3d{ 0, 0, 1 }) });
+    ASSERT_NE(drag, nullptr) << "no pin under the cursor";
+    drag->OnPointerMove(Context(), view, PointerEvent{ .Position = PixelOf(view, Vec3d{ 0, 1, 1 }) });
+    drag->OnPointerUp(Context(), view, PointerEvent{ .Position = PixelOf(view, Vec3d{ 0, 1, 1 }) });
+    EXPECT_TRUE(Tool().CanCommit());
     Press(SDLK_ESCAPE);
+}
+
+TEST_F(ClipToolTest, SplitPreviewsTheWholeBrushWithItsSection)
+{
+    const EntityId brush = AddBrush({ 0, 0, 0 }, { 1, 1, 1 });
+    const BrushMesh original = *Scene().TryGetBrushMesh(brush);
+    SelectEntity(brush);
+    EditorViewport top = TopViewport();
+    for (const bool capped : { true, false })
+    {
+        Tool().SetMode(Context(), ClipMode::Split);
+        Tool().SetCapped(Context(), capped);
+        Draw(top, Vec3d{ 0, 0, -3 }, Vec3d{ 0, 0, 3 });
+        EXPECT_EQ(Scene().TryGetBrushMesh(brush)->Faces.size(), original.Faces.size()) << "a half went missing";
+        const std::optional<PreviewMesh>& wire = Context().Preview.GetMesh();
+        ASSERT_TRUE(wire.has_value());
+        EXPECT_EQ(wire->Mesh.Faces.size(), 1u) << "the section, and only the section";
+        EXPECT_EQ(wire->Color, EditorTheme::Readout);
+        Press(SDLK_ESCAPE);
+    }
+    Tool().SetCapped(Context(), true);
+
+    Tool().SetMode(Context(), ClipMode::KeepFront);
+    Draw(top, Vec3d{ 0, 0, -3 }, Vec3d{ 0, 0, 3 });
+    const std::optional<PreviewMesh>& discarded = Context().Preview.GetMesh();
+    ASSERT_TRUE(discarded.has_value());
+    EXPECT_EQ(discarded->Color, EditorTheme::ContextZoneDim);
+    EXPECT_GT(discarded->Mesh.Faces.size(), 1u) << "the whole discarded half";
+    Press(SDLK_ESCAPE);
+    EXPECT_FALSE(Context().Preview.GetMesh().has_value());
 }
 
 TEST_F(ClipToolTest, ABrushSelectedThroughSeveralElementsIsClippedOnce)

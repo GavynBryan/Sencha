@@ -21,23 +21,13 @@ namespace ClipPlaneMath
 // Below this the line has no direction to stand a plane on.
 inline constexpr float kMinimumLength = 1e-4f;
 
-// An orthographic view: the plane containing the line and the view direction,
-// so it is perpendicular to the screen. Nullopt for a line too short, or one
-// running along the view.
-[[nodiscard]] inline std::optional<Plane> ThroughLineAlongView(Vec3d a, Vec3d b, Vec3d view)
+// The plane containing the line and `direction`. Every view passes the normal
+// of the plane the line was drawn on -- an ortho view's grid, the face under a
+// perspective press -- so the cut goes straight through the surface it was
+// drawn on. Nullopt for a line too short, or one running along the direction.
+[[nodiscard]] inline std::optional<Plane> ThroughLineAndDirection(Vec3d a, Vec3d b, Vec3d direction)
 {
-    const Vec3d normal = (b - a).Cross(view);
-    if ((b - a).Magnitude() < kMinimumLength || normal.Magnitude() < kMinimumLength)
-        return std::nullopt;
-    return Plane::FromNormalAndPoint(normal.Normalized(), a);
-}
-
-// A perspective view: the plane through the eye and both points, which is the
-// plane the drawn line projects to. Nullopt for a line too short, or one whose
-// points sight along a single ray from the eye.
-[[nodiscard]] inline std::optional<Plane> ThroughLineAndEye(Vec3d a, Vec3d b, Vec3d eye)
-{
-    const Vec3d normal = (a - eye).Cross(b - eye);
+    const Vec3d normal = (b - a).Cross(direction);
     if ((b - a).Magnitude() < kMinimumLength || normal.Magnitude() < kMinimumLength)
         return std::nullopt;
     return Plane::FromNormalAndPoint(normal.Normalized(), a);

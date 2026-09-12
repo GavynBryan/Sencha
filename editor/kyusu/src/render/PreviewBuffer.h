@@ -1,6 +1,7 @@
 #pragma once
 
 #include "brush/BrushMesh.h"
+#include "EditorTheme.h"
 
 #include <math/geometry/3d/Transform3d.h>
 
@@ -14,12 +15,13 @@ struct PreviewMesh
 {
     Transform3f Transform;
     BrushMesh   Mesh;
+    Vec4        Color; // a theme role: what the wireframe means (a brush to come, a half to go)
 };
 
 class PreviewBuffer
 {
 public:
-    void SetMesh(const Transform3f& transform, BrushMesh mesh);
+    void SetMesh(const Transform3f& transform, BrushMesh mesh, Vec4 color = EditorTheme::CreatePreview);
     void Clear();
     [[nodiscard]] const std::optional<PreviewMesh>& GetMesh() const;
 

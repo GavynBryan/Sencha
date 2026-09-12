@@ -56,6 +56,7 @@ inline constexpr Vec4 ActiveWireframe{ 0.25f, 0.55f, 2.5f, 1.0f };
 // mesh hovered in an element mode). A dimmer, subdued blue, no glow and no handles,
 // so it stays distinct from (and subordinate to) the active body.
 inline constexpr Vec4 PreviewWireframe{ 0.1f, 0.3f, 0.62f, 1.0f };
+inline constexpr Vec4 CreatePreview{ 1.0f, 0.6f, 0.0f, 1.0f };     // the create-drag's wireframe: the brush about to be placed
 // The element under the cursor (selection-eligible): a paler yellow than the
 // selected FaceHighlight/EdgeHighlight, drawn bolder, so a hovered neighbor of
 // a selected element still reads as a different state.

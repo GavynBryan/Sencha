@@ -15,12 +15,12 @@ void ExpectOnPlane(const Plane& plane, Vec3d p)
 }
 }
 
-TEST(ClipPlaneMath, AnOrthographicLineStandsAPlaneAlongTheView)
+TEST(ClipPlaneMath, ALineStandsAPlaneAlongTheDirection)
 {
     const Vec3d a{ 0, 0, 0 };
     const Vec3d b{ 2, 0, 1 };
     const Vec3d view{ 0, -1, 0 }; // looking down
-    const std::optional<Plane> plane = ClipPlaneMath::ThroughLineAlongView(a, b, view);
+    const std::optional<Plane> plane = ClipPlaneMath::ThroughLineAndDirection(a, b, view);
     ASSERT_TRUE(plane.has_value());
     ExpectOnPlane(*plane, a);
     ExpectOnPlane(*plane, b);
@@ -28,30 +28,16 @@ TEST(ClipPlaneMath, AnOrthographicLineStandsAPlaneAlongTheView)
     EXPECT_NEAR(plane->Normal.Dot(view), 0.0f, kTol);
     EXPECT_NEAR(plane->Normal.Magnitude(), 1.0f, kTol);
     // Drawing the other way flips front and back.
-    const std::optional<Plane> reversed = ClipPlaneMath::ThroughLineAlongView(b, a, view);
+    const std::optional<Plane> reversed = ClipPlaneMath::ThroughLineAndDirection(b, a, view);
     ASSERT_TRUE(reversed.has_value());
     EXPECT_NEAR(reversed->Normal.Dot(plane->Normal), -1.0f, kTol);
 }
 
-TEST(ClipPlaneMath, APerspectiveLineStandsAPlaneThroughTheEye)
-{
-    const Vec3d eye{ 0, 2, -5 };
-    const Vec3d a{ -1, 0, 0 };
-    const Vec3d b{ 1, 0.5f, 0 };
-    const std::optional<Plane> plane = ClipPlaneMath::ThroughLineAndEye(a, b, eye);
-    ASSERT_TRUE(plane.has_value());
-    ExpectOnPlane(*plane, a);
-    ExpectOnPlane(*plane, b);
-    ExpectOnPlane(*plane, eye);
-}
-
 TEST(ClipPlaneMath, DegenerateLinesStandNoPlane)
 {
-    EXPECT_FALSE(ClipPlaneMath::ThroughLineAlongView({ 0, 0, 0 }, { 0, 0, 0 }, { 0, -1, 0 }).has_value());
+    EXPECT_FALSE(ClipPlaneMath::ThroughLineAndDirection({ 0, 0, 0 }, { 0, 0, 0 }, { 0, -1, 0 }).has_value());
     // Along the view: no plane is perpendicular to the screen through it.
-    EXPECT_FALSE(ClipPlaneMath::ThroughLineAlongView({ 0, 0, 0 }, { 0, -3, 0 }, { 0, -1, 0 }).has_value());
-    // Two points on one ray from the eye.
-    EXPECT_FALSE(ClipPlaneMath::ThroughLineAndEye({ 0, 0, 1 }, { 0, 0, 2 }, { 0, 0, 0 }).has_value());
+    EXPECT_FALSE(ClipPlaneMath::ThroughLineAndDirection({ 0, 0, 0 }, { 0, -3, 0 }, { 0, -1, 0 }).has_value());
 }
 
 namespace
