@@ -1,6 +1,11 @@
 #include "WorkspaceFixture.h"
 
+#include "brush/BrushMesh.h"
+#include "commands/CommandStack.h"
+#include "document/EditorScene.h"
 #include "document/tools/BrushTool.h"
+#include "selection/SelectionService.h"
+#include "tools/ToolContext.h"
 #include "meshedit/MeshEditService.h"
 #include "meshedit/MeshElementKindTraits.h"
 #include "tools/ToolRegistry.h"
@@ -70,6 +75,43 @@ TEST_F(ToolVariantTest, BrushsVariantsAreItsPrimitives)
     EXPECT_EQ(brush.GetActiveVariant(Tools().GetContext()), 1);
     brush.SelectVariant(Tools().GetContext(), 99);
     EXPECT_EQ(brush.Creation.ActivePrimitive, BrushPrimitive::Plane);
+}
+
+TEST_F(ToolVariantTest, TheRegistryEntersTheToolOrPlacesItsWorkBeforeSelecting)
+{
+    // Not the active tool: entered first, as Activate enters it (the brush's
+    // entry drops the element mode), then the variant.
+    Workspace.MeshEdit.SetElementKind(MeshElementKind::Face);
+    ASSERT_EQ(Tools().GetActiveTool()->GetId(), "select");
+    std::size_t brushIndex = 0;
+    for (std::size_t i = 0; i < Tools().GetTools().size(); ++i)
+        if (Tools().GetTools()[i]->GetId() == "brush")
+            brushIndex = i;
+    ASSERT_TRUE(Tools().SelectVariant(brushIndex, 1));
+    EXPECT_EQ(Tools().GetActiveTool()->GetId(), "brush");
+    EXPECT_EQ(Workspace.MeshEdit.GetElementKind(), MeshElementKind::Object);
+    auto& brush = static_cast<BrushTool&>(ToolById("brush"));
+    EXPECT_EQ(brush.Creation.ActivePrimitive, BrushPrimitive::Plane);
+
+    // The active tool with a brush staged: the brush is placed as it stands,
+    // and only the next one is a cylinder.
+    ToolContext& ctx = Tools().GetContext();
+    brush.SetPending(ctx, BrushTool::PendingBrush{ .Center = { 0.0, 0.5, 0.0 }, .HalfExtents = { 0.5, 0.5, 0.5 },
+                                                   .DepthSign = 1.0f, .DragDepthHalf = 0.5f });
+    ASSERT_TRUE(brush.HasPending());
+    const EntityId placed = ctx.Selection.GetSelection().front().Entity;
+    const std::size_t planeFaces = ctx.Scene.TryGetBrushMesh(placed)->Faces.size();
+    ASSERT_TRUE(Tools().SelectVariant(brushIndex, 2));
+    EXPECT_FALSE(brush.HasPending());
+    EXPECT_EQ(brush.Creation.ActivePrimitive, BrushPrimitive::Cylinder);
+    ASSERT_NE(ctx.Scene.TryGetBrushMesh(placed), nullptr);
+    EXPECT_EQ(ctx.Scene.TryGetBrushMesh(placed)->Faces.size(), planeFaces);
+    EXPECT_TRUE(Workspace.Commands.CanUndo());
+
+    // Out of range is refused and changes nothing.
+    EXPECT_FALSE(Tools().SelectVariant(brushIndex, 99));
+    EXPECT_FALSE(Tools().SelectVariant(99, 0));
+    EXPECT_EQ(brush.Creation.ActivePrimitive, BrushPrimitive::Cylinder);
 }
 
 TEST_F(ToolVariantTest, AToolWithoutVariantsAnswersEmptyAndIgnoresASelection)

@@ -78,8 +78,10 @@ struct ITool
     [[nodiscard]] virtual std::span<const Variant> GetVariants() const { return {}; }
     // Index into GetVariants() of the one in effect, or -1.
     [[nodiscard]] virtual int GetActiveVariant(const ToolContext& /*ctx*/) const { return -1; }
-    // Puts variant `index` into effect, through whatever owns that state.
-    // Callable whether or not the tool is active.
+    // Puts variant `index` into effect for the work that follows, through
+    // whatever owns that state. Callable whether or not the tool is active;
+    // the registry resolves anything the tool has staged (CommitPending)
+    // before calling it, so this never meets a preview to reshape.
     virtual void SelectVariant(ToolContext& /*ctx*/, std::size_t /*index*/) {}
 
     // The key that activates this tool. Unmodified letters by convention; the

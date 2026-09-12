@@ -84,7 +84,9 @@ public:
     [[nodiscard]] Shortcut GetShortcut() const override;
 
     // The primitives as the tool's variants; Creation.ActivePrimitive is the
-    // one in effect, and choosing another regenerates a pending preview.
+    // one in effect for the next drag. The properties row reshapes a pending
+    // brush by writing the settings and refreshing; a variant chosen through
+    // the registry has already placed it.
     [[nodiscard]] std::span<const Variant> GetVariants() const override;
     [[nodiscard]] int GetActiveVariant(const ToolContext& ctx) const override;
     void SelectVariant(ToolContext& ctx, std::size_t index) override;

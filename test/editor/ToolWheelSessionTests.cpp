@@ -1,6 +1,11 @@
 #include "WorkspaceFixture.h"
 
+#include "brush/BrushMesh.h"
+#include "commands/CommandStack.h"
+#include "document/EditorScene.h"
 #include "document/tools/BrushTool.h"
+#include "selection/SelectionService.h"
+#include "tools/ToolContext.h"
 #include "input/InputRouter.h"
 #include "tools/ITool.h"
 #include "tools/ToolRegistry.h"
@@ -24,6 +29,7 @@ public:
     std::string_view GetId() const override { return "spy"; }
     std::string_view GetDisplayName() const override { return "Spy"; }
     void OnActivate(ToolContext&) override { ++Activations; }
+    void CommitPending(ToolContext&) override { Committed.push_back(VariantSelections); }
     // Variants only when a test gives it some; nothing about the wheel's
     // primary gesture depends on a tool having them.
     std::span<const Variant> GetVariants() const override { return Variants; }
@@ -37,6 +43,8 @@ public:
     int VariantSelections = 0;
     int Current = -1;
     std::vector<Variant> Variants;
+    // VariantSelections as of each CommitPending, so a test can see it came first.
+    std::vector<int> Committed;
 };
 
 class ToolWheelSessionTest : public WorkspaceTest
@@ -431,6 +439,38 @@ TEST_F(ToolWheelSessionTest, ReleaseOnAVariantOfTheActiveToolSelectsItWithoutRee
     EXPECT_EQ(Spy->Activations, 1);
     EXPECT_EQ(Spy->VariantSelections, 1);
     EXPECT_EQ(Spy->Current, 1);
+    // Whatever the tool had staged was placed before the variant changed.
+    ASSERT_EQ(Spy->Committed.size(), 1u);
+    EXPECT_EQ(Spy->Committed.front(), 0);
+}
+
+TEST_F(ToolWheelSessionTest, AVariantChosenOverAPendingBrushPlacesItInsteadOfReshapingIt)
+{
+    const int brush = IndexOf("brush");
+    ASSERT_TRUE(Tools().Activate("brush"));
+    auto& brushTool = static_cast<BrushTool&>(*Tools().GetTools()[static_cast<std::size_t>(brush)]);
+    ToolContext& ctx = Tools().GetContext();
+    brushTool.SetPending(ctx, BrushTool::PendingBrush{ .Center = { 0.0, 0.5, 0.0 }, .HalfExtents = { 0.5, 0.5, 0.5 },
+                                                       .DepthSign = 1.0f, .DragDepthHalf = 0.5f });
+    ASSERT_TRUE(brushTool.HasPending());
+    ASSERT_EQ(ctx.Selection.GetSelection().size(), 1u);
+    const EntityId placed = ctx.Selection.GetSelection().front().Entity;
+    const BrushMesh* before = ctx.Scene.TryGetBrushMesh(placed);
+    ASSERT_NE(before, nullptr);
+    const std::size_t boxFaces = before->Faces.size();
+
+    (void)Press(SDLK_Q);
+    (void)Move(ToolWheel::SlotCenter(Wheel->GetLayout(), brush));
+    (void)Move(InVariant(brush, 2));
+    (void)Release(SDLK_Q);
+
+    // The box is real and still a box; cylinders are what comes next.
+    EXPECT_FALSE(brushTool.HasPending());
+    EXPECT_EQ(brushTool.Creation.ActivePrimitive, BrushPrimitive::Cylinder);
+    const BrushMesh* after = ctx.Scene.TryGetBrushMesh(placed);
+    ASSERT_NE(after, nullptr);
+    EXPECT_EQ(after->Faces.size(), boxFaces);
+    EXPECT_TRUE(Workspace.Commands.CanUndo());
 }
 
 TEST_F(ToolWheelSessionTest, AToolWithoutVariantsKeepsItsWholeWedge)

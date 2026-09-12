@@ -21,6 +21,12 @@ public:
     void Register(std::unique_ptr<ITool> tool);
     bool Activate(std::string_view id);
     bool Activate(std::size_t index);
+    // Puts a tool's variant in effect for the work that follows. A tool that
+    // is not the active one is entered first, as Activate enters it; the
+    // active tool instead resolves what it has staged the way a save does
+    // (CommitPending), so a choice made mid-work places that work rather than
+    // reshaping it. Then the variant is selected on the tool.
+    bool SelectVariant(std::size_t index, std::size_t variant);
 
     [[nodiscard]] ITool* GetActiveTool();
     [[nodiscard]] const ITool* GetActiveTool() const;

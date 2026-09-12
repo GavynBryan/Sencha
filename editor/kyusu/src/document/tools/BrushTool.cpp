@@ -362,13 +362,10 @@ int BrushTool::GetActiveVariant(const ToolContext&) const
     return -1;
 }
 
-void BrushTool::SelectVariant(ToolContext& ctx, std::size_t index)
+void BrushTool::SelectVariant(ToolContext&, std::size_t index)
 {
-    if (index >= kPrimitiveKinds.size() || kPrimitiveKinds[index] == Creation.ActivePrimitive)
-        return;
-    Creation.ActivePrimitive = kPrimitiveKinds[index];
-    if (HasPending())
-        RefreshPending(ctx);
+    if (index < kPrimitiveKinds.size())
+        Creation.ActivePrimitive = kPrimitiveKinds[index];
 }
 
 void BrushTool::DrawProperties(ToolContext& ctx)

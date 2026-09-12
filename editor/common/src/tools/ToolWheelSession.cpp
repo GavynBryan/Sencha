@@ -136,12 +136,13 @@ void ToolWheelSession::Track(ImVec2 pointer)
 
 void ToolWheelSession::Select(int index, int variant)
 {
-    if (index != Tools.GetActiveIndex())
-        (void)Tools.Activate(static_cast<std::size_t>(index));
-    // The tool first, then its variant: a tool's entry may reset shared state
-    // (the brush drops the element mode) and the choice made here comes after.
+    // A variant is chosen for the work that follows: the registry enters the
+    // tool or places what it has staged, then selects the variant. The tool
+    // alone is entered only if it is not already on.
     if (variant >= 0)
-        Tools.GetTools()[static_cast<std::size_t>(index)]->SelectVariant(Tools.GetContext(), static_cast<std::size_t>(variant));
+        (void)Tools.SelectVariant(static_cast<std::size_t>(index), static_cast<std::size_t>(variant));
+    else if (index != Tools.GetActiveIndex())
+        (void)Tools.Activate(static_cast<std::size_t>(index));
 }
 
 int ToolWheelSession::VariantCount(int index) const
