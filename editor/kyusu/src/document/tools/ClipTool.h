@@ -105,6 +105,9 @@ private:
         Outcome Result = Outcome::Missed;
         BrushMesh Front;
         BrushMesh Back;
+        // The stage that refused, when Result is Invalid: what the readout says
+        // instead of a generic failure.
+        std::string Why;
     };
 
     // What a press took hold of: an endpoint handle, or nothing.

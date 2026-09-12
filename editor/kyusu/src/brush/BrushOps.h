@@ -306,15 +306,35 @@ struct BrushOps
     // brush" with the same number, so tool and kernel agree.
     static constexpr float kClipSnap = 2e-4f;
 
+    // The components of a section graph: the cycles, which a cap can close,
+    // and the chains, which run boundary to boundary of an open source and
+    // stay open. Nullopt when the graph is not one a plane through a manifold
+    // with boundary can make: a vertex of degree three or more, or an end
+    // (degree one) that no source boundary accounts for -- a chain ending in
+    // the middle of what should be closed surface is a defect, not an opening.
+    struct SectionComponents
+    {
+        std::vector<std::vector<std::uint32_t>> Cycles;
+        std::vector<std::vector<std::uint32_t>> Chains; // each from one boundary point to another
+    };
+    [[nodiscard]] static std::optional<SectionComponents> ClassifySection(
+        std::uint32_t pointCount, std::span<const std::pair<std::uint32_t, std::uint32_t>> segments,
+        std::span<const std::uint8_t> boundaryPoint); // 1 where the source boundary accounts for the point
+
     // Slice by a plane, keep one side, and cap the new opening or not.
     // keepPositiveSide keeps the half-space the plane normal points into. (The
     // classic clip tool.) Faces may be concave and the section may be several
-    // contours, nested or not; every one is capped, a cap with a hole is
-    // bridged into simple faces. The result is one mesh that may hold several
-    // closed shells when the cut dismembers the solid -- the caller decides
-    // what a shell is (the clip tool makes each its own brush). An empty mesh
-    // means the cut could not be completed (a section that does not close).
-    // A cut that touches nothing returns the solid whole or empty by side.
+    // contours, nested or not; every cycle is capped, a cap with a hole is
+    // bridged into simple faces. An open source (a manifold with boundary, as
+    // DeleteFace leaves) stays open: a section chain that runs from one point
+    // of the source's boundary to another is left as part of the result's
+    // boundary, never closed by invented geometry, whichever cap mode is
+    // asked for. The result is one mesh that may hold several shells when the
+    // cut dismembers the solid -- the caller decides what a shell is (the clip
+    // tool makes each its own brush). An empty mesh means the cut could not
+    // be completed: a section component that is neither a cycle nor a
+    // boundary-anchored chain. A cut that touches nothing returns the solid
+    // whole or empty by side.
     [[nodiscard]] static BrushMesh Clip(const BrushMesh& mesh, const Plane& plane,
                                         bool keepPositiveSide, ClipCap cap = ClipCap::Capped);
 

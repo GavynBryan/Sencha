@@ -36,6 +36,7 @@
 #include <string>
 #include <utility>
 
+
 namespace
 {
 enum class ClipButton : std::uint8_t
@@ -447,28 +448,29 @@ void ClipTool::RefreshPreview(ToolContext& ctx)
         const BrushOps::ClipCap cap = Capped ? BrushOps::ClipCap::Capped : BrushOps::ClipCap::Open;
         target.Front = BrushOps::Clip(target.Original, local, true, cap);
         target.Back = BrushOps::Clip(target.Original, local, false, cap);
-        if (target.Front.Faces.empty() || target.Back.Faces.empty())
-        {
-            // A crossing plane with an empty half is a cut the kernel could
-            // not complete, not a miss.
-            target.Result = Outcome::Invalid;
-            ++Failed;
-            ctx.Sink.PreviewMesh(target.Entity, target.Original);
-            continue;
-        }
-        // A capped cut of a closed solid must come out as two closed solids:
-        // the one way the clip kernel fails is a cut whose cap is more than
-        // one loop (across a tunnel, say), which it cannot close. An open cut
-        // is open by request and only has to be a usable mesh.
+        // A capped cut of a closed solid must come out as two closed solids;
+        // an open cut is open by request and only has to be a usable mesh. A
+        // crossing plane with an empty half is a cut the kernel could not
+        // complete, not a miss. Each stage names itself when it refuses.
         BrushMesh originalCheck = target.Original;
         BrushMesh frontCheck = target.Front;
         BrushMesh backCheck = target.Back;
         const bool wasClosed = Capped && BrushValidateAndRepair(originalCheck).Closed;
         const BrushRepairResult frontReport = BrushValidateAndRepair(frontCheck);
         const BrushRepairResult backReport = BrushValidateAndRepair(backCheck);
-        const bool sound = frontReport.Ok && backReport.Ok
-            && (!wasClosed || (frontReport.Closed && backReport.Closed));
-        if (!sound)
+        const auto stage = [&](const char* name, const BrushMesh& half, const BrushRepairResult& report) -> std::string {
+            if (half.Faces.empty())
+                return std::string(name) + " kernel refused";
+            if (!report.Ok)
+                return std::string(name) + " not usable";
+            if (wasClosed && !report.Closed)
+                return std::string(name) + " open";
+            return {};
+        };
+        target.Why = stage("front", target.Front, frontReport);
+        if (target.Why.empty())
+            target.Why = stage("back", target.Back, backReport);
+        if (!target.Why.empty())
         {
             target.Result = Outcome::Invalid;
             ++Failed;
@@ -519,8 +521,18 @@ void ClipTool::RefreshPreview(ToolContext& ctx)
 
     Committable = Failed == 0 && Crossed > 0;
     if (Failed > 0)
-        Status = std::to_string(Failed) + (Failed == 1 ? " selected brush could not be clipped"
-                                                       : " selected brushes could not be clipped");
+    {
+        // The first refusal's stage, by name; the count when there are more.
+        Status.clear();
+        for (const Target& target : Targets)
+            if (target.Result == Outcome::Invalid)
+            {
+                Status = target.Why;
+                break;
+            }
+        if (Failed > 1)
+            Status += " (" + std::to_string(Failed) + " brushes)";
+    }
     else if (Crossed == 0)
         Status = "the line misses every selected brush";
     else

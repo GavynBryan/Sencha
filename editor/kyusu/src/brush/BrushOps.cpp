@@ -1459,6 +1459,67 @@ namespace
     }
 }
 
+std::optional<BrushOps::SectionComponents> BrushOps::ClassifySection(
+    std::uint32_t pointCount, std::span<const std::pair<std::uint32_t, std::uint32_t>> segments,
+    std::span<const std::uint8_t> boundaryPoint)
+{
+    std::vector<std::vector<std::uint32_t>> adjacent(pointCount);
+    for (const auto& [a, b] : segments)
+    {
+        if (a >= pointCount || b >= pointCount || a == b)
+            return std::nullopt;
+        adjacent[a].push_back(b);
+        adjacent[b].push_back(a);
+    }
+    for (std::uint32_t v = 0; v < pointCount; ++v)
+    {
+        if (adjacent[v].size() > 2)
+            return std::nullopt; // a section is a manifold curve
+        if (adjacent[v].size() == 1 && !(v < boundaryPoint.size() && boundaryPoint[v] != 0))
+            return std::nullopt; // an end nothing in the source explains
+    }
+
+    SectionComponents result;
+    std::vector<bool> visited(pointCount, false);
+    // Walks from `start` along the graph until it closes or ends.
+    const auto walk = [&](std::uint32_t start) {
+        std::vector<std::uint32_t> path;
+        std::uint32_t previous = start, current = start;
+        do
+        {
+            visited[current] = true;
+            path.push_back(current);
+            if (adjacent[current].empty())
+                break;
+            const std::uint32_t next = adjacent[current][0] != previous || adjacent[current].size() == 1
+                                           ? adjacent[current][0] : adjacent[current][1];
+            if (adjacent[current].size() == 1 && current != start)
+                break; // the far end of a chain
+            previous = current;
+            current = next;
+        } while (current != start && !visited[current]);
+        return path;
+    };
+    // Chains first, from their ends; what is left is cycles.
+    for (std::uint32_t v = 0; v < pointCount; ++v)
+        if (!visited[v] && adjacent[v].size() == 1)
+            result.Chains.push_back(walk(v));
+    for (std::uint32_t v = 0; v < pointCount; ++v)
+    {
+        if (visited[v] || adjacent[v].empty())
+            continue;
+        std::vector<std::uint32_t> cycle = walk(v);
+        // A cycle walk returns to its start; anything else here is a graph
+        // the degree checks above should have refused.
+        const std::uint32_t last = cycle.back();
+        const bool closed = std::find(adjacent[last].begin(), adjacent[last].end(), v) != adjacent[last].end();
+        if (!closed)
+            return std::nullopt;
+        result.Cycles.push_back(std::move(cycle));
+    }
+    return result;
+}
+
 BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPositiveSide, ClipCap cap)
 {
     // Kept is always the positive side of `p`: the caller's choice is folded
@@ -1477,6 +1538,25 @@ BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPos
         distance[v] = p.SignedDistanceTo(mesh.Vertices[v].Position);
         side[v] = distance[v] > tolerance ? 1 : distance[v] < -tolerance ? -1 : 0;
     }
+
+    // The source's boundary, for attributing a section chain's ends: an edge
+    // used by exactly one face, and the vertices on such edges. An edge used
+    // by three or more is not boundary; a section ending there is a defect.
+    std::map<std::pair<std::uint32_t, std::uint32_t>, int> edgeUses;
+    for (const BrushFace& face : mesh.Faces)
+        for (std::size_t i = 0; i < face.Loop.size(); ++i)
+        {
+            const std::uint32_t a = face.Loop[i], b = face.Loop[(i + 1) % face.Loop.size()];
+            ++edgeUses[{ std::min(a, b), std::max(a, b) }];
+        }
+    const auto boundaryEdge = [&](std::uint32_t a, std::uint32_t b) {
+        const auto it = edgeUses.find({ std::min(a, b), std::max(a, b) });
+        return it != edgeUses.end() && it->second == 1;
+    };
+    std::vector<bool> boundaryVertex(mesh.Vertices.size(), false);
+    for (const auto& [edge, uses] : edgeUses)
+        if (uses == 1)
+            boundaryVertex[edge.first] = boundaryVertex[edge.second] = true;
 
     enum class FaceClass : std::uint8_t { Kept, Cut, Dropped, InPlane };
     std::vector<FaceClass> faceClass(mesh.Faces.size());
@@ -1523,9 +1603,19 @@ BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPos
     BrushMesh out;
     PointPool3D section(kSectionWeld);
     std::vector<std::pair<std::uint32_t, std::uint32_t>> segments;
-    const auto addSegment = [&](const Vec3d& a, const Vec3d& b) {
-        const std::uint32_t ia = section.Intern(a);
-        const std::uint32_t ib = section.Intern(b);
+    // Whether each section point lies on the source's boundary, carried from
+    // where it was minted: the only place a chain may end.
+    std::vector<std::uint8_t> boundaryPoint;
+    const auto intern = [&](const Vec3d& point, bool onBoundary) {
+        const std::uint32_t index = section.Intern(point);
+        if (index >= boundaryPoint.size())
+            boundaryPoint.resize(index + 1, 0);
+        boundaryPoint[index] = static_cast<std::uint8_t>(boundaryPoint[index] != 0 || onBoundary);
+        return index;
+    };
+    const auto addSegment = [&](const Vec3d& a, bool aOnBoundary, const Vec3d& b, bool bOnBoundary) {
+        const std::uint32_t ia = intern(a, aOnBoundary);
+        const std::uint32_t ib = intern(b, bOnBoundary);
         if (ia != ib)
             segments.emplace_back(std::min(ia, ib), std::max(ia, ib));
     };
@@ -1592,8 +1682,15 @@ BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPos
                 corners.push_back(position(vertex));
             EmitFace(out, corners, face.Material);
         }
+        // A span end is on the source boundary when it is a boundary vertex,
+        // or a crossing minted on a boundary edge.
+        const auto onBoundary = [&](const SplitVertex2D& vertex) {
+            if (vertex.Source != kNoSource)
+                return static_cast<bool>(boundaryVertex[loop[vertex.Source]]);
+            return boundaryEdge(loop[vertex.Edge], loop[(vertex.Edge + 1) % loop.size()]);
+        };
         for (const auto& [a, b] : split.Spans)
-            addSegment(position(a), position(b));
+            addSegment(position(a), onBoundary(a), position(b), onBoundary(b));
     }
 
     // Edges lying in the plane are section segments in two cases. Between two
@@ -1635,48 +1732,24 @@ BrushMesh BrushOps::Clip(const BrushMesh& mesh, const Plane& plane, bool keepPos
                 cuts = keptAlongEdge(faces[0], edge.first) != keptAlongEdge(faces[1], edge.first);
             }
             if (cuts)
-                addSegment(mesh.Vertices[edge.first].Position, mesh.Vertices[edge.second].Position);
+                addSegment(mesh.Vertices[edge.first].Position, boundaryVertex[edge.first],
+                           mesh.Vertices[edge.second].Position, boundaryVertex[edge.second]);
         }
     }
 
     if (cap == ClipCap::Capped && !segments.empty())
     {
-        // The section as a graph: welded endpoints, no duplicates, and every
-        // vertex of degree two, or the cut is not one a cap can close.
+        // The section as a graph: welded endpoints, no duplicates, then its
+        // components. Cycles are capped below; chains are the source's own
+        // openings carried through the cut and stay open.
         std::sort(segments.begin(), segments.end());
         segments.erase(std::unique(segments.begin(), segments.end()), segments.end());
-        std::vector<std::vector<std::uint32_t>> adjacent(section.Size());
-        for (const auto& [a, b] : segments)
-        {
-            adjacent[a].push_back(b);
-            adjacent[b].push_back(a);
-        }
-        for (const std::vector<std::uint32_t>& links : adjacent)
-            if (!links.empty() && links.size() != 2)
-                return {};
-
-        // Every cycle.
-        std::vector<bool> visited(section.Size(), false);
-        std::vector<std::vector<std::uint32_t>> contours;
-        for (std::uint32_t start = 0; start < section.Size(); ++start)
-        {
-            if (visited[start] || adjacent[start].empty())
-                continue;
-            std::vector<std::uint32_t> contour;
-            std::uint32_t previous = start, current = start;
-            do
-            {
-                visited[current] = true;
-                contour.push_back(current);
-                const std::uint32_t next = adjacent[current][0] != previous || adjacent[current].size() == 1
-                                               ? adjacent[current][0] : adjacent[current][1];
-                previous = current;
-                current = next;
-            } while (current != start && !visited[current]);
-            if (current != start)
-                return {};
-            contours.push_back(std::move(contour));
-        }
+        boundaryPoint.resize(section.Size(), 0);
+        const std::optional<SectionComponents> components =
+            ClassifySection(static_cast<std::uint32_t>(section.Size()), segments, boundaryPoint);
+        if (!components.has_value())
+            return {};
+        const std::vector<std::vector<std::uint32_t>>& contours = components->Cycles;
 
         // In the cap's own frame, whose normal points out of the kept solid.
         const Vec3d normal = p.Normal * -1.0f;
