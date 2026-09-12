@@ -8,12 +8,13 @@
 #include <vector>
 
 // What kind of owner currently holds the pointer. A UI drag (Ui) keeps the UI
-// live; a viewport gesture (Viewport) — fly-look, ortho-pan, or a tool drag — is
-// exclusive of the UI, so the app gates ImGui's mouse off while one is held.
+// live; an Exclusive gesture — fly-look, ortho-pan, a tool drag, or a modal
+// surface such as the tool wheel — owns the pointer and the keys outright, so
+// the app gates ImGui's mouse and keyboard off while one is held.
 enum class PointerCaptureKind
 {
     Ui,
-    Viewport,
+    Exclusive,
 };
 
 class InputRouter;
@@ -32,6 +33,10 @@ public:
     void Acquire(PointerCaptureKind kind, ViewportId origin = {});
     void Release();
     [[nodiscard]] bool HeldBySelf() const;
+    // Another handler owns the pointer: a gesture this handler must not begin
+    // over the top of. (Keyboard events still reach every handler while a
+    // capture is held, which is why a handler can be asked.)
+    [[nodiscard]] bool HeldByOther() const;
 
 private:
     friend class InputRouter;
@@ -63,7 +68,7 @@ public:
     [[nodiscard]] ViewportId CaptureViewport() const { return CaptureOrigin; }
 
     // Notified when the capture owner changes: the new kind, or nullopt on release.
-    // Drives the ImGui mouse gate (off while a Viewport capture is held).
+    // Drives the ImGui input gate (off while an Exclusive capture is held).
     void SetCaptureChanged(std::function<void(std::optional<PointerCaptureKind>)> callback);
 
 private:
@@ -74,7 +79,7 @@ private:
 
     std::vector<Handler> Handlers;
     std::optional<std::size_t> CapturedIndex;
-    PointerCaptureKind CapturedKind = PointerCaptureKind::Viewport;
+    PointerCaptureKind CapturedKind = PointerCaptureKind::Exclusive;
     ViewportId CaptureOrigin = {};
     std::function<void(std::optional<PointerCaptureKind>)> CaptureChanged;
 };

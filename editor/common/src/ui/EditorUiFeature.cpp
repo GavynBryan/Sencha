@@ -393,6 +393,9 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
                 const std::string_view title = panel->GetTitle();
                 return ImGui::FindWindowSettingsByID(ImHashStr(title.data(), title.size())) == nullptr;
             });
+            // The file has been read by now; a remembered choice overrides the
+            // compiled default exactly once.
+            PanelVisibility.Apply();
             PlacementChecked = true;
         }
         if (LayoutDirty || ImGui::DockBuilderGetNode(dockId) == nullptr)
@@ -417,8 +420,16 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
         if (panel != nullptr && panel->IsVisible())
             panel->OnDraw();
     }
+    // After the panels have drawn: a close box acts during a panel's own draw.
+    PanelVisibility.Track();
 
     ThemePrefs.DrawWindow(EngineInstance.Console().Registry());
+
+    for (const std::function<void()>& overlay : Overlays)
+    {
+        if (overlay)
+            overlay();
+    }
 
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), frame.Cmd);
@@ -589,6 +600,12 @@ void EditorUiFeature::AddChrome(std::function<void()> draw)
         ChromeBars.push_back(std::move(draw));
 }
 
+void EditorUiFeature::AddOverlay(std::function<void()> draw)
+{
+    if (draw)
+        Overlays.push_back(std::move(draw));
+}
+
 void EditorUiFeature::SetUndoActions(std::function<void()> undoAction,
                                      std::function<void()> redoAction,
                                      std::function<bool()> canUndoAction,
@@ -661,6 +678,8 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
     // over one ./imgui.ini. Points at the member so it outlives the context.
     if (!IniFileName.empty())
         io.IniFilename = IniFileName.c_str();
+    // Before the first NewFrame, which is when ImGui reads the file.
+    PanelVisibility.Register(Panels);
 
     // Every ImGuiTextureBinding costs one combined-image-sampler set: the
     // viewport targets and up to editor.materials.thumbnail_budget resident

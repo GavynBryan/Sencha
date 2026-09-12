@@ -38,6 +38,7 @@ public:
 
     [[nodiscard]] std::string_view GetTitle() const override { return "Projects"; }
     [[nodiscard]] DockSlot GetDockSlot() const override { return DockSlot::Center; }
+    [[nodiscard]] PanelPersistence GetPersistence() const override { return { "projects", PanelVisibilityPolicy::SessionOnly }; }
     void OnDraw() override;
 
     // Opens the create-project modal on the next draw (File > New routes here).

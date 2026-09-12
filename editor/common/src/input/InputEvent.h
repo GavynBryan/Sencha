@@ -11,11 +11,16 @@
 enum class InputConsumed : uint8_t { Yes, No };
 enum class MouseButton : uint8_t { Left, Right, Middle };
 
+// The chord modifiers a binding can name. Lock keys are deliberately absent:
+// the boundary masks them, so a binding compares equal to an event whatever
+// Caps Lock or Num Lock are doing.
 struct ModifierFlags
 {
     bool Ctrl = false;
     bool Shift = false;
     bool Alt = false;
+
+    bool operator==(const ModifierFlags&) const = default;
 };
 
 struct PointerDownEvent
@@ -53,10 +58,22 @@ struct WheelEvent
     ModifierFlags Modifiers;
 };
 
+// A key press or release, stamped at the boundary with where the pointer was
+// at that moment (window coordinates, the space the pointer events use), so a
+// gesture that opens at the cursor never reaches back into the platform for
+// it. Auto-repeat presses are dropped at the boundary and never arrive.
 struct KeyDownEvent
 {
     SDL_Keycode Key;
     ModifierFlags Modifiers;
+    ImVec2 Pointer = {};
+};
+
+struct KeyUpEvent
+{
+    SDL_Keycode Key;
+    ModifierFlags Modifiers;
+    ImVec2 Pointer = {};
 };
 
 struct FocusLostEvent {};
@@ -80,5 +97,6 @@ using InputEvent = std::variant<
     PointerMoveEvent,
     WheelEvent,
     KeyDownEvent,
+    KeyUpEvent,
     FocusLostEvent
 >;

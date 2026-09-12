@@ -16,6 +16,20 @@ ModifierFlags ReadModifiers(SDL_Keymod mod)
     };
 }
 
+namespace
+{
+// Where the pointer is as a key event is translated. A key event carries no
+// position of its own, and SDL keeps the pointer in the same window space the
+// mouse events report.
+ImVec2 PointerNow()
+{
+    float x = 0.0f;
+    float y = 0.0f;
+    SDL_GetMouseState(&x, &y);
+    return { x, y };
+}
+}
+
 std::optional<InputEvent> TranslateSdlEvent(const SDL_Event& event)
 {
     switch (event.type)
@@ -78,6 +92,14 @@ std::optional<InputEvent> TranslateSdlEvent(const SDL_Event& event)
         return KeyDownEvent{
             .Key = event.key.key,
             .Modifiers = ReadModifiers(event.key.mod),
+            .Pointer = PointerNow(),
+        };
+
+    case SDL_EVENT_KEY_UP:
+        return KeyUpEvent{
+            .Key = event.key.key,
+            .Modifiers = ReadModifiers(event.key.mod),
+            .Pointer = PointerNow(),
         };
 
     case SDL_EVENT_WINDOW_FOCUS_LOST:

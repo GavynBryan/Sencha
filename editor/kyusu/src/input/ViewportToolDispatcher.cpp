@@ -106,7 +106,7 @@ InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& 
     // Own the pointer for the gesture: while held, the router delivers every move/up
     // here exclusively (re-stamped with this viewport), so the gesture stays on its
     // origin viewport and the camera/UI never see these events.
-    capture.Acquire(PointerCaptureKind::Viewport, vp->Id);
+    capture.Acquire(PointerCaptureKind::Exclusive, vp->Id);
 
     const PointerEvent pointer{ .Position = e.Position, .Button = e.Button, .Modifiers = e.Modifiers };
 

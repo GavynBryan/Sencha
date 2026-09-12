@@ -93,7 +93,8 @@ Shared shell (`editor/common/src/`):
 | `interaction/` | Drag-interaction host (`InteractionHost`). | `IInteraction` |
 | `input/` | Generic input primitives (`InputRouter` handler chain + pointer capture, `ShortcutRegistry`, `KeymapFile`, `UiInputGuard`). | router handlers |
 | `ui/` | ImGui shell (`EditorUiFeature`: context, docking, menu, chassis, per-app ini), theme (`EditorUiStyle`: palette, metrics, decor, scale, text roles; `EditorThemeFile`, `EditorThemeStartup`, `ThemePreferences`), console panel, `ScopedPanel` (the one hook a panel's chrome comes through), `SchemaWidgets`. | `IEditorPanel` |
-| `ui/chrome/` | The workstation chrome, one mechanism per file: geometry, painters, panel frames (`PanelStyle`), chassis, headers, bars and modules (readout cells, dividers), controls (buttons, combo housing), tiles, selection scope and marks, ornaments, icons (baked from `editor/icons/*.svg`), decor. Panels include only the panel-facing headers (rule D in `check_editor_layering.sh`). | edit an SVG in `editor/icons/` |
+| `ui/chrome/` | The workstation chrome, one mechanism per file: geometry, painters, panel frames (`PanelStyle`), chassis, headers, bars and modules (the bar chassis of rims, recessed channel, end caps and lane; themed channel surfaces; readout cells, dividers, module bays), controls (buttons, combo housing), tiles, selection scope and marks, ornaments, icons (baked from `editor/icons/*.svg`), decor. Panels include only the panel-facing headers (rule D in `check_editor_layering.sh`). | edit an SVG in `editor/icons/` |
+| `ui/ThemeTextureCache` | The raster art a theme owns, keyed by path and source stamp, with its own GPU lifetime. Deliberately not the font atlas: a theme switch costs one upload, not a font rebuild. | add a texture path to a theme's `surfaces` |
 | `icons/` | `IconId`, the leaf enum a tool or control names an icon by. | -- |
 | `render/` | ImGui presentation of offscreen targets (`ImGuiTargetPresenter`). | -- |
 | `viewport/` | `ViewportId`. | -- |
@@ -173,13 +174,16 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
 ## Where do I add ...
 
 - A panel: implement `IEditorPanel` (kyusu panels in `kyusu/src/ui/`), register
-  it in the owning services' `BuildUi`.
+  it in the owning services' `BuildUi`. It declares a stable settings id and
+  whether its shown/hidden state is remembered across launches
+  (`GetPersistence`); the shell keeps that in the ImGui layout file.
 - A tool: implement `ITool` (built-ins live in `kyusu/src/document/tools/`) and
   register it in `WorkspaceInteractionRuntime::Rebuild`. That is the whole cost:
   a tool declares its own properties UI (`DrawProperties`), toolbar chrome
   (`DrawToolbarControls`), activation key (`GetShortcut`), and how a save should
   resolve anything it has staged (`CommitPending`), so the panel, the toolbar,
-  the tool palette, the status bar, and the keymap all pick it up without an edit.
+  the tool palette, the tool wheel, the status bar, and the keymap all pick it
+  up without an edit.
   Settings only that tool acts on are members on the tool; genuinely shared
   authoring state (the grid, the active material) goes through `ToolContext`.
 - An undo-able edit: implement `ICommand` next to its domain, run it through the
@@ -187,7 +191,10 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
 - A keyboard shortcut: the binding table in `EditorServices::BuildInput` (Kyusu);
   Shudei handles its few chords directly in `HandlePlatformEvent`. Tool
   activation rows are generated from the registry instead, under `tool.<id>`.
-  Any action, listed or generated, is rebindable from `keybinds.json`.
+  Any action, listed or generated, is rebindable from `keybinds.json`. A held
+  key (`tool.wheel`, the radial tool menu) is owned by its session rather than
+  the shortcut registry, which fires on presses; it resolves its override from
+  the same file.
 - A viewport visual: a render feature/pass in `kyusu/src/render/`, added in
   `EditorServices::BuildViewportRendering`.
 - A tunable: a cvar registered where it is read (see `editor.cull_backfaces` in

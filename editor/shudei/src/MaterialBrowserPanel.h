@@ -31,6 +31,7 @@ public:
 
     [[nodiscard]] std::string_view GetTitle() const override { return "Materials"; }
     [[nodiscard]] DockSlot GetDockSlot() const override { return DockSlot::Left; }
+    [[nodiscard]] PanelPersistence GetPersistence() const override { return { "materials", PanelVisibilityPolicy::Remembered }; }
     void OnDraw() override;
 
 private:

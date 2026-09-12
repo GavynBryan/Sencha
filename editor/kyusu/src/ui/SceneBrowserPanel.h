@@ -28,6 +28,7 @@ public:
     std::string_view GetTitle() const override { return "SCENES"; }
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return DockSlot::Left; }
+    PanelPersistence GetPersistence() const override { return { "scenes", PanelVisibilityPolicy::Remembered }; }
 
     // The drag payload type viewport drop targets accept; the payload bytes
     // are the asset:// source path.

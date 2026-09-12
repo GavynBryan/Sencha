@@ -22,6 +22,7 @@ public:
     std::string_view GetTitle() const override { return "GRAPH VIEWER"; }
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return DockSlot::CenterBottom; }
+    PanelPersistence GetPersistence() const override { return { "graph_viewer", PanelVisibilityPolicy::Remembered }; }
     int GetDockTabGroup() const override { return 0; }
 
 private:

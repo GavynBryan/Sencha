@@ -37,7 +37,7 @@ constexpr ImGuiWindowFlags kViewportChildFlags =
 
 ViewportPanel::ViewportPanel(ViewportLayout& layout, const MarqueeState& marquee, const EditorOverlayState& overlay,
                              ViewportTargetCache& targets, std::string title, DockSlot slot, float dockWeight,
-                             ViewportId viewport)
+                             PanelPersistence persistence, ViewportId viewport)
     : Layout(layout)
     , Marquee(marquee)
     , Overlay(overlay)
@@ -45,6 +45,7 @@ ViewportPanel::ViewportPanel(ViewportLayout& layout, const MarqueeState& marquee
     , Title(std::move(title))
     , Slot(slot)
     , Weight(dockWeight)
+    , Persistence(persistence)
     , Viewport(viewport)
 {
 }

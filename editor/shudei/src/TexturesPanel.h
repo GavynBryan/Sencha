@@ -36,6 +36,7 @@ public:
 
     [[nodiscard]] std::string_view GetTitle() const override { return "Textures"; }
     [[nodiscard]] DockSlot GetDockSlot() const override { return DockSlot::Left; }
+    [[nodiscard]] PanelPersistence GetPersistence() const override { return { "textures", PanelVisibilityPolicy::Remembered }; }
     void OnDraw() override;
 
     // Selects (and reveals) a texture; the inspector's texture slots route

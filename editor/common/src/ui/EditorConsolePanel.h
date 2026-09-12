@@ -18,6 +18,9 @@ public:
     std::string_view GetTitle() const override;
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return DockSlot::CenterBottom; }
+    // Startup state is configuration (open on start) and the grave key
+    // toggles it live; neither is a layout choice.
+    PanelPersistence GetPersistence() const override { return { "console", PanelVisibilityPolicy::SessionOnly }; }
     // Shares one tabbed node with the Materials browser in the center-bottom
     // strip.
     int GetDockTabGroup() const override { return 0; }

@@ -6,7 +6,10 @@
 #include "ui/EditorUiStyle.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <numbers>
+#include <vector>
 
 namespace
 {
@@ -236,4 +239,79 @@ void EditorChrome::DrawDial(ImDrawList* dl, std::span<const ImVec2> rim, std::sp
     dl->AddCircleFilled(knob, knobRadius,
                         ImGui::GetColorU32(hot ? EditorUi::ControlHover : EditorUi::Accent));
     dl->AddCircle(knob, knobRadius, ImGui::GetColorU32(EditorUi::ChassisBg), 0, EditorUi::Px(1.0f));
+}
+
+namespace
+{
+// Screen angle for the wheel's convention (clockwise from straight up) as an
+// ImGui arc angle (counter-clockwise from +x in screen space).
+float ArcAngle(float wheelAngle)
+{
+    return wheelAngle - std::numbers::pi_v<float> * 0.5f;
+}
+}
+
+void EditorChrome::DrawToolWheel(ImDrawList* dl, const WheelPaint& wheel)
+{
+    if (wheel.Slots.empty())
+        return;
+
+    const EditorUi::ChromeMetrics& m = EditorUi::Metrics;
+    const float line = std::max(1.0f, EditorUi::Px(m.EdgeWidth));
+    const ImU32 border = ImGui::GetColorU32(EditorUi::Border);
+    // The wedges reach as far as the slots do; beyond that the target is the
+    // direction alone, which paint cannot show.
+    const float outer = wheel.Radius + wheel.Slots.front().Size * 0.5f + EditorUi::Px(6.0f);
+
+    // Spokes first, under everything, so the sectors read before any is hot.
+    for (const WheelSlot& slot : wheel.Slots)
+    {
+        const float a = ArcAngle(slot.Angle0);
+        dl->AddLine(ImVec2(wheel.Center.x + std::cos(a) * wheel.Hub, wheel.Center.y + std::sin(a) * wheel.Hub),
+                    ImVec2(wheel.Center.x + std::cos(a) * outer, wheel.Center.y + std::sin(a) * outer),
+                    ImGui::GetColorU32(EditorUi::WithAlpha(EditorUi::Border, 0.6f)), line);
+    }
+
+    for (const WheelSlot& slot : wheel.Slots)
+    {
+        if (!slot.Hot)
+            continue;
+        // The whole wedge, hub to outer arc, as one concave polygon.
+        const float a0 = ArcAngle(slot.Angle0);
+        const float a1 = ArcAngle(slot.Angle1);
+        dl->PathArcTo(wheel.Center, outer, a0, a1);
+        dl->PathArcTo(wheel.Center, wheel.Hub, a1, a0);
+        std::vector<ImVec2> wedge(dl->_Path.begin(), dl->_Path.end());
+        dl->PathClear();
+        dl->AddConcavePolyFilled(wedge.data(), static_cast<int>(wedge.size()),
+                                 ImGui::GetColorU32(EditorUi::WithAlpha(EditorUi::FrameBgHovered, m.GlowAlpha * 2.0f)));
+        dl->PathArcTo(wheel.Center, outer, a0, a1);
+        dl->PathStroke(ImGui::GetColorU32(EditorUi::WithAlpha(EditorUi::ControlHover, m.GlowAlpha)), 0,
+                       EditorUi::Px(m.GlowWidth));
+        dl->PathArcTo(wheel.Center, outer, a0, a1);
+        dl->PathStroke(ImGui::GetColorU32(EditorUi::ControlHover), 0, line);
+    }
+
+    dl->AddCircle(wheel.Center, outer, border, 0, line);
+    dl->AddCircleFilled(wheel.Center, wheel.Hub, ImGui::GetColorU32(EditorUi::ChassisBg));
+    dl->AddCircle(wheel.Center, wheel.Hub, border, 0, line);
+
+    for (const WheelSlot& slot : wheel.Slots)
+    {
+        const ImVec2 mn(slot.Center.x - slot.Size * 0.5f, slot.Center.y - slot.Size * 0.5f);
+        const ImVec2 mx(slot.Center.x + slot.Size * 0.5f, slot.Center.y + slot.Size * 0.5f);
+        const ButtonTone tone = slot.Active ? ButtonTone::Active : ButtonTone::Normal;
+        if (slot.Icon != IconId::None)
+            DrawIconButton(dl, mn, mx, slot.Icon, tone, true, slot.Hot);
+        else
+            DrawTextButton(dl, mn, mx, slot.Label, tone, true, slot.Hot);
+    }
+
+    if (!wheel.Caption.empty())
+    {
+        const ImVec2 size = EditorUi::MeasureRoleText(EditorUi::TextRole::PanelTitle, wheel.Caption);
+        const ImVec2 pos(std::floor(wheel.Center.x - size.x * 0.5f), std::floor(wheel.CaptionY));
+        EditorUi::DrawRoleText(dl, pos, EditorUi::TextRole::PanelTitle, wheel.Caption,
+                               wheel.CaptionDim ? ImGui::GetColorU32(EditorUi::TextDim) : 0);
+    }
 }

@@ -9,6 +9,7 @@
 #include "input/InputRouter.h"
 #include "input/ShortcutRegistry.h"
 #include "input/ViewportNavigation.h"
+#include "tools/ToolWheelSession.h"
 #include "workspace/EditorWorkspace.h"
 #include "project/MaterialLibrary.h"
 #include "project/Project.h"
@@ -88,6 +89,8 @@ private:
     void BuildUi(bool consoleOpenOnStart);
 
     void ProcessFrame();
+    // The tool wheel while it is open, painted over the whole window.
+    void DrawToolWheel();
 
     // Opens the project (SENCHA_PROJECT = path to a .senchaproj) and loads its
     // game module so its components register into the editor's serializer registry
@@ -138,6 +141,8 @@ private:
 
     std::unique_ptr<CommandStack> Commands;
     std::unique_ptr<EditorWorkspace> Workspace;
+    // The held-key tool menu, over the workspace's registry.
+    std::unique_ptr<ToolWheelSession> Wheel;
     std::unique_ptr<InputRouter> Router;
     std::unique_ptr<ViewportNavigation> Navigation;
     std::unique_ptr<ShortcutRegistry> Shortcuts;

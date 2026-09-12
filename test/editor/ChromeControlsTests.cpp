@@ -78,3 +78,25 @@ TEST_F(ChromeControlsTests, OpenComboKeepsPopupAndParentIdStacksBalanced)
     EXPECT_EQ(ImGui::GetCurrentWindow(), parent);
     EXPECT_EQ(parent->IDStack.Size, parentDepth);
 }
+
+TEST_F(ChromeControlsTests, ToolWheelPaintsEverySlotAndFillsTheHotWedge)
+{
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    EditorChrome::DrawToolWheel(dl, EditorChrome::WheelPaint{});
+    const int untouched = dl->VtxBuffer.Size;
+
+    std::vector<EditorChrome::WheelSlot> slots;
+    for (int i = 0; i < 3; ++i)
+        slots.push_back({ .Center = ImVec2(300.0f + 60.0f * static_cast<float>(i), 200.0f), .Size = 26.0f,
+                          .Angle0 = 0.0f, .Angle1 = 1.0f, .Icon = IconId::None, .Label = "T" });
+    EditorChrome::WheelPaint wheel{ .Center = ImVec2(300.0f, 200.0f), .Radius = 72.0f, .Hub = 26.0f,
+                                    .CaptionY = 320.0f, .Slots = slots, .Caption = "Select" };
+    EditorChrome::DrawToolWheel(dl, wheel);
+    const int cold = dl->VtxBuffer.Size - untouched;
+    EXPECT_GT(cold, 0);
+
+    slots[1].Hot = true;
+    EditorChrome::DrawToolWheel(dl, wheel);
+    const int hot = dl->VtxBuffer.Size - untouched - cold;
+    EXPECT_GT(hot, cold); // the wedge fill and its glow are extra geometry
+}

@@ -5,6 +5,7 @@
 #include <imgui.h>
 
 #include <span>
+#include <string_view>
 
 // The chrome's controls: buttons that read as mounted in the chassis rather
 // than floating on it. Widget state supplies the tint; the button never knows
@@ -66,4 +67,40 @@ void DrawTextButton(ImDrawList* dl, ImVec2 mn, ImVec2 mx, const char* label, But
 // underneath, and the owning tool hit-tests the same ring in its own callback.
 void DrawDial(ImDrawList* dl, std::span<const ImVec2> rim, std::span<const ImVec2> ticks,
               ImVec2 knob, bool hot);
+
+// One slot of a radial menu: a tool button at `Center`, `Size` on a side,
+// owning the wedge from `Angle0` to `Angle1` (radians, clockwise from
+// straight up). `Label` stands in when the slot has no icon.
+struct WheelSlot
+{
+    ImVec2 Center{};
+    float Size = 0.0f;
+    float Angle0 = 0.0f;
+    float Angle1 = 0.0f;
+    IconId Icon = IconId::None;
+    const char* Label = nullptr;
+    bool Active = false; // the tool that is on
+    bool Hot = false;    // the wedge the pointer is in
+};
+
+// A radial menu resolved to screen positions: the ring the slots sit on, the
+// hub that selects nothing, and the caption line under it all.
+struct WheelPaint
+{
+    ImVec2 Center{};
+    float Radius = 0.0f;
+    float Hub = 0.0f;
+    float CaptionY = 0.0f;
+    std::span<const WheelSlot> Slots;
+    std::string_view Caption;
+    bool CaptionDim = false; // the caption names what is already on, not a choice
+};
+
+// A radial menu painted into a draw list. The wedge is the target, and the
+// paint says so: the hot slot's whole wedge fills and its outer arc glows,
+// and faint spokes divide the others, so moving the pointer makes the
+// geometry it is choosing by unmistakable. Painted rather than mounted for
+// the same reason as the other floating controls: it lives over everything
+// and the session that opened it hit-tests the same geometry.
+void DrawToolWheel(ImDrawList* dl, const WheelPaint& wheel);
 } // namespace EditorChrome

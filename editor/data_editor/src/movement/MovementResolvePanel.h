@@ -16,6 +16,7 @@ public:
     // The lower right column: the effective-value table is tall and needs the
     // full width of that column, which packing beside Documentation denies it.
     [[nodiscard]] DockSlot GetDockSlot() const override { return DockSlot::RightBottom; }
+    [[nodiscard]] PanelPersistence GetPersistence() const override { return { "movement_resolve", PanelVisibilityPolicy::Remembered }; }
     void OnDraw() override;
 
 private:

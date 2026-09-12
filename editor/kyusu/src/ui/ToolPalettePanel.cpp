@@ -15,7 +15,9 @@ ToolPalettePanel::ToolPalettePanel(std::function<ToolRegistry*()> tools)
 
 void ToolPalettePanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), nullptr, PanelStyle::Compact,
+    // The tab carries a close box: a user who works from the tool wheel can
+    // put the palette away, and the shell remembers that.
+    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Compact,
                        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     if (!panel.IsOpen())
         return;

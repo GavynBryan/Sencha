@@ -26,6 +26,7 @@ public:
     std::string_view GetTitle() const override { return "ACTIVE MATERIAL"; }
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return DockSlot::Left; }
+    PanelPersistence GetPersistence() const override { return { "active_material", PanelVisibilityPolicy::Remembered }; }
 
 private:
     ActiveMaterialState& ActiveMaterial;

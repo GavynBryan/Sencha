@@ -1,6 +1,7 @@
 #pragma once
 
 #include "input/UiInputCapture.h"
+#include "PanelVisibilitySettings.h"
 #include "ThemePreferences.h"
 
 #include <graphics/vulkan/Renderer.h>
@@ -95,6 +96,11 @@ public:
     // draw order. Kept as opaque draw callbacks so this feature stays decoupled
     // from the editor's domain types.
     void AddChrome(std::function<void()> draw);
+    // Transient surfaces drawn after every panel: something that floats over
+    // the whole window for a moment (a held-key menu) and reserves no layout
+    // space, as opposed to a chrome bar, which does. Insertion order = draw
+    // order.
+    void AddOverlay(std::function<void()> draw);
     void SetUndoActions(std::function<void()> undoAction,
                         std::function<void()> redoAction,
                         std::function<bool()> canUndoAction,
@@ -155,7 +161,10 @@ private:
     WindowFrameRegions FrameRegions;
 
     std::vector<std::unique_ptr<IEditorPanel>> Panels;
+    // Remembers which panels are shown; declared after Panels, which it reads.
+    PanelVisibilitySettings PanelVisibility;
     std::vector<std::function<void()>> ChromeBars;
+    std::vector<std::function<void()>> Overlays;
     DockLayoutRatios LayoutRatios;
     // View > Preferences > Theme: theme selection plus the palette override window.
     ThemePreferences ThemePrefs;

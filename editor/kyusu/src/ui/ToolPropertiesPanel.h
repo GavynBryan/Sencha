@@ -48,6 +48,7 @@ public:
     std::string_view GetTitle() const override;
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return DockSlot::Left; }
+    PanelPersistence GetPersistence() const override { return { "tool_properties", PanelVisibilityPolicy::Remembered }; }
     // Shares the left column with the Active Material panel; this keeps the
     // larger share.
     float GetDockWeight() const override { return 1.8f; }

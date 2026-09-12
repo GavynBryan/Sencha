@@ -15,6 +15,7 @@ public:
     std::string_view GetTitle() const override { return "COOK PROFILES"; }
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return DockSlot::RightBottom; }
+    PanelPersistence GetPersistence() const override { return { "cook_profiles", PanelVisibilityPolicy::SessionOnly }; }
     int GetDockTabGroup() const override { return 0; }
 
 private:

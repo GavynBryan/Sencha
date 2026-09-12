@@ -13,6 +13,7 @@ public:
     explicit ToolPalettePanel(std::function<ToolRegistry*()> tools);
     std::string_view GetTitle() const override { return "TOOLS"; }
     DockSlot GetDockSlot() const override { return DockSlot::LeftEdge; }
+    PanelPersistence GetPersistence() const override { return { "tools", PanelVisibilityPolicy::Remembered }; }
     void OnDraw() override;
 
 private:

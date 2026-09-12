@@ -51,6 +51,7 @@ public:
     std::string_view GetTitle() const override;
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return DockSlot::RightBottom; }
+    PanelPersistence GetPersistence() const override { return { "lighting", PanelVisibilityPolicy::Remembered }; }
     // Tabs with the inspector (same slot, same group) so diagnostics do not
     // permanently shrink it.
     int GetDockTabGroup() const override { return 0; }

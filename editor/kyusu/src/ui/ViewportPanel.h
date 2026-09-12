@@ -23,9 +23,10 @@ class ViewportPanel : public IEditorPanel
 public:
     ViewportPanel(ViewportLayout& layout, const MarqueeState& marquee, const EditorOverlayState& overlay,
                   ViewportTargetCache& targets, std::string title, DockSlot slot, float dockWeight,
-                  ViewportId viewport);
+                  PanelPersistence persistence, ViewportId viewport);
 
     std::string_view GetTitle() const override { return Title; }
+    PanelPersistence GetPersistence() const override { return Persistence; }
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return Slot; }
     float GetDockWeight() const override { return Weight; }
@@ -69,6 +70,7 @@ private:
     std::string Title;
     DockSlot Slot;
     float Weight;
+    PanelPersistence Persistence;
     ViewportId Viewport;
     bool RegionHovered = false;
     SceneDropHandler SceneDrop;

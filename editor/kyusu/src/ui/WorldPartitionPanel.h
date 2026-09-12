@@ -43,6 +43,7 @@ public:
     std::string_view GetTitle() const override;
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return DockSlot::Right; }
+    PanelPersistence GetPersistence() const override { return { "world_partition", PanelVisibilityPolicy::Remembered }; }
     // Wider share of the upper-right row than the hierarchy packed beside it.
     float GetDockWeight() const override { return 1.45f; }
 

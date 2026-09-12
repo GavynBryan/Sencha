@@ -28,6 +28,8 @@
 #include "ui/EditorThemeStartup.h"
 #include "ui/EditorToolbar.h"
 #include "ui/EditorUiFeature.h"
+#include "ui/EditorUiStyle.h"
+#include "ui/chrome/ChromeControls.h"
 #include "document/commands/SceneInstanceCommands.h"
 #include "ui/InspectorPanel.h"
 #include "ui/LightingPanel.h"
@@ -324,6 +326,28 @@ void EditorServices::BuildInput()
         }
     }
 
+    // The tool wheel's key is held, not pressed, so it is not a shortcut row:
+    // the session owns both edges of it. The action name is what a keymap file
+    // rebinds, like any other.
+    {
+        ITool::Shortcut wheelKey{ .Key = SDLK_Q, .Mods = {} };
+        if (const auto it = overrides.find("tool.wheel"); it != overrides.end())
+            wheelKey = { .Key = it->second.Key, .Mods = it->second.Mods };
+        Wheel = std::make_unique<ToolWheelSession>(
+            *Workspace->Interaction.Tools, wheelKey,
+            []
+            {
+                // The one place the wheel learns the window and the UI scale:
+                // captured together at open, resolved once into its layout.
+                const ImGuiViewport* vp = ImGui::GetMainViewport();
+                return ToolWheel::Frame{
+                    .Scale = EditorUi::UiScale,
+                    .Min = vp->WorkPos,
+                    .Max = ImVec2(vp->WorkPos.x + vp->WorkSize.x, vp->WorkPos.y + vp->WorkSize.y),
+                };
+            });
+    }
+
     Router = std::make_unique<InputRouter>();
     // The UI is the top layer of the input stack: events over an ImGui panel are
     // consumed here before navigation, tools, or shortcuts can act on them. The
@@ -342,6 +366,10 @@ void EditorServices::BuildInput()
                 capture.Mouse = false;
             return capture;
         }));
+    // The wheel sits under the guard (a focused text field keeps its letters)
+    // and above everything else: while it is open it owns the pointer and the
+    // keys, and it yields its key to any gesture already holding the pointer.
+    Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Wheel->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Navigation->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Workspace->Interaction.Dispatcher->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture&) { return Shortcuts->OnInput(e); });
@@ -356,7 +384,7 @@ void EditorServices::BuildInput()
         {
             if (UiFeature != nullptr)
             {
-                const bool uiOwnsInput = kind != PointerCaptureKind::Viewport;
+                const bool uiOwnsInput = kind != PointerCaptureKind::Exclusive;
                 UiFeature->SetMouseInputEnabled(uiOwnsInput);
                 UiFeature->SetKeyboardInputEnabled(uiOwnsInput);
             }
@@ -573,6 +601,7 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     UiFeature->AddPanel(std::make_unique<ToolPalettePanel>([this] { return Workspace->Interaction.Tools.get(); }));
     UiFeature->AddChrome([this] { Toolbar->Draw(); });
     UiFeature->AddChrome([this] { StatusBar->Draw(); });
+    UiFeature->AddOverlay([this] { DrawToolWheel(); });
 
     // One panel per viewport: the perspective view owns the central node, the
     // ortho view shares the center-bottom strip with the Materials browser.
@@ -627,13 +656,16 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
 
         auto perspectivePanel = std::make_unique<ViewportPanel>(
             Workspace->Layout, Workspace->Interaction.Marquee, Workspace->Interaction.Overlay,
-            RenderFeature->GetViewportTargets(), "VIEWPORT", DockSlot::Center, 1.0f, perspectiveId);
+            RenderFeature->GetViewportTargets(), "VIEWPORT", DockSlot::Center, 1.0f,
+            // The central node has no tab bar and no View entry: nothing can hide it.
+            PanelPersistence{ "viewport", PanelVisibilityPolicy::SessionOnly }, perspectiveId);
         perspectivePanel->SetSceneDropHandler(placeDroppedScene);
         PerspectivePanel = perspectivePanel.get();
         UiFeature->AddPanel(std::move(perspectivePanel));
         auto orthoPanel = std::make_unique<ViewportPanel>(
             Workspace->Layout, Workspace->Interaction.Marquee, Workspace->Interaction.Overlay,
-            RenderFeature->GetViewportTargets(), "ORTHO", DockSlot::CenterBottom, 1.0f, orthoId);
+            RenderFeature->GetViewportTargets(), "ORTHO", DockSlot::CenterBottom, 1.0f,
+            PanelPersistence{ "ortho", PanelVisibilityPolicy::Remembered }, orthoId);
         orthoPanel->SetSceneDropHandler(placeDroppedScene);
         OrthoPanel = orthoPanel.get();
         UiFeature->AddPanel(std::move(orthoPanel));
@@ -920,6 +952,55 @@ void EditorServices::BuildSourceWatch()
         watch->Watcher.Initialize();
         SourceWatch->Roots.push_back(std::move(watch));
     }
+}
+
+void EditorServices::DrawToolWheel()
+{
+    if (Wheel == nullptr || Wheel->GetPhase() != ToolWheelPhase::Open)
+        return;
+    ToolRegistry* tools = Workspace->Interaction.Tools.get();
+    if (tools == nullptr)
+        return;
+
+    // Every position comes from the session's layout, the same numbers it
+    // hit-tests; this only pairs each slot with what its tool looks like.
+    const ToolWheel::Layout& layout = Wheel->GetLayout();
+    const int hot = Wheel->GetHot();
+    const int active = tools->GetActiveIndex();
+    std::vector<EditorChrome::WheelSlot> slots;
+    slots.reserve(tools->GetTools().size());
+    std::string_view caption;
+    for (std::size_t i = 0; i < tools->GetTools().size(); ++i)
+    {
+        const ITool* tool = tools->GetTools()[i].get();
+        if (tool == nullptr)
+            continue;
+        const int index = static_cast<int>(i);
+        const ToolWheel::Span span = ToolWheel::SectorSpan(index, layout.Count);
+        slots.push_back({
+            .Center = ToolWheel::SlotCenter(layout, index),
+            .Size = layout.Button,
+            .Angle0 = span.Begin,
+            .Angle1 = span.End,
+            .Icon = tool->GetIcon(),
+            .Label = tool->GetDisplayName().data(),
+            .Active = index == active,
+            .Hot = index == hot,
+        });
+        if (index == hot || (hot < 0 && index == active))
+            caption = tool->GetDisplayName();
+    }
+    // The foreground list draws after every window, floating panels and open
+    // menus included, which is where a modal surface belongs.
+    EditorChrome::DrawToolWheel(ImGui::GetForegroundDrawList(), EditorChrome::WheelPaint{
+        .Center = layout.Center,
+        .Radius = layout.Radius,
+        .Hub = layout.Hub,
+        .CaptionY = layout.CaptionY(),
+        .Slots = slots,
+        .Caption = caption,
+        .CaptionDim = hot < 0,
+    });
 }
 
 void EditorServices::ProcessFrame()
