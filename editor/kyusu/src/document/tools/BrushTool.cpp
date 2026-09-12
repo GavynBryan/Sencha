@@ -26,6 +26,7 @@
 #include <SDL3/SDL_keycode.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <memory>
 #include <optional>
@@ -34,6 +35,20 @@
 
 namespace
 {
+    // The primitives in the order the controls show them; the two tables are
+    // one row per primitive, the kind beside what a control shows for it.
+    constexpr std::array<BrushPrimitive, 3> kPrimitiveKinds = {
+        BrushPrimitive::Box,
+        BrushPrimitive::Plane,
+        BrushPrimitive::Cylinder,
+    };
+    constexpr std::array<ITool::Variant, 3> kPrimitiveVariants = {
+        ITool::Variant{ .Label = "Box", .Icon = IconId::Box },
+        ITool::Variant{ .Label = "Plane", .Icon = IconId::Plane },
+        ITool::Variant{ .Label = "Cylinder", .Icon = IconId::Cylinder },
+    };
+    static_assert(kPrimitiveKinds.size() == kPrimitiveVariants.size());
+
     // The local-space mesh for the pending brush's current settings. Placement
     // lives on the scene entity; this builds shape only.
     BrushMesh BuildPendingMesh(const BrushCreationSettings& settings,
@@ -334,6 +349,28 @@ void BrushTool::CancelPending(ToolContext& ctx)
 
 ITool::Shortcut BrushTool::GetShortcut() const { return { SDLK_B, {} }; }
 
+std::span<const ITool::Variant> BrushTool::GetVariants() const
+{
+    return kPrimitiveVariants;
+}
+
+int BrushTool::GetActiveVariant(const ToolContext&) const
+{
+    for (std::size_t i = 0; i < kPrimitiveKinds.size(); ++i)
+        if (kPrimitiveKinds[i] == Creation.ActivePrimitive)
+            return static_cast<int>(i);
+    return -1;
+}
+
+void BrushTool::SelectVariant(ToolContext& ctx, std::size_t index)
+{
+    if (index >= kPrimitiveKinds.size() || kPrimitiveKinds[index] == Creation.ActivePrimitive)
+        return;
+    Creation.ActivePrimitive = kPrimitiveKinds[index];
+    if (HasPending())
+        RefreshPending(ctx);
+}
+
 void BrushTool::DrawProperties(ToolContext& ctx)
 {
     EditorChrome::SectionTitle("Primitive");
@@ -341,20 +378,16 @@ void BrushTool::DrawProperties(ToolContext& ctx)
     const bool pending = HasPending();
     bool changed = false;
 
-    struct PrimitiveOption { BrushPrimitive Kind; const char* Label; IconId Icon; };
-    static constexpr PrimitiveOption kPrimitives[] = {
-        { BrushPrimitive::Box, "Box", IconId::Box },
-        { BrushPrimitive::Plane, "Plane", IconId::Plane },
-        { BrushPrimitive::Cylinder, "Cylinder", IconId::Cylinder },
-    };
     {
         ButtonFlow flow;
-        for (const PrimitiveOption& prim : kPrimitives)
+        const int active = GetActiveVariant(ctx);
+        for (std::size_t i = 0; i < kPrimitiveVariants.size(); ++i)
         {
-            const bool active = Creation.ActivePrimitive == prim.Kind;
-            if (flow.ToolButton(prim.Label, prim.Icon, prim.Label, active, EditorChrome::BarButtonSize()) && !active)
+            const ITool::Variant& prim = kPrimitiveVariants[i];
+            const bool on = static_cast<int>(i) == active;
+            if (flow.ToolButton(prim.Label.data(), prim.Icon, prim.Label.data(), on, EditorChrome::BarButtonSize()) && !on)
             {
-                Creation.ActivePrimitive = prim.Kind;
+                Creation.ActivePrimitive = kPrimitiveKinds[i];
                 changed = true;
             }
         }

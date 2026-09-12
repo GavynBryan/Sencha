@@ -28,8 +28,8 @@
 #include <imgui.h>
 
 #include <algorithm>
-#include <array>
 #include <memory>
+#include <span>
 
 ToolPropertiesPanel::ToolPropertiesPanel(std::function<IMeshEditTarget*()> target,
                                          std::function<ManipulationSink*()> sink,
@@ -479,31 +479,24 @@ void ToolPropertiesPanel::DrawVertexVerbs()
         ImGui::SetTooltip("Move selected vertices to the nearest grid point.");
 }
 
-void ToolPropertiesPanel::DrawSelectProperties()
+void ToolPropertiesPanel::DrawSelectProperties(ITool& tool, ToolContext& ctx)
 {
-    // Element mode selector (Object/Vertex/Edge/Face): the icon buttons that
-    // drive MeshEditService. Order and labels come from the shared element
-    // kind traits; only the icon is a UI-local presentation choice.
-    static constexpr std::array<IconId, MeshElementKindCount> kModeIcons = {
-        IconId::ModeObject,
-        IconId::ModeVertex,
-        IconId::ModeEdge,
-        IconId::ModeFace,
-    };
+    // Element mode selector (Object/Vertex/Edge/Face): the select tool's
+    // variants, which read and write MeshEditService's kind, so this row and
+    // the tool wheel are two doors onto one state.
     {
         EditorChrome::ModuleScope module("modes");
         const float buttonSize = EditorChrome::BarButtonSize() * 1.25f;
-        bool first = true;
-        for (MeshElementKind kind : AllMeshElementKinds())
+        const std::span<const ITool::Variant> variants = tool.GetVariants();
+        const int active = tool.GetActiveVariant(ctx);
+        for (std::size_t i = 0; i < variants.size(); ++i)
         {
-            if (!first)
+            if (i > 0)
                 ImGui::SameLine();
-            first = false;
-            const bool active = MeshEdit.GetElementKind() == kind;
-            const char* label = Traits(kind).Label;
-            if (EditorChrome::ToolButton(label, kModeIcons[static_cast<std::size_t>(kind)], label, active, buttonSize)
-                && !active)
-                MeshEdit.SetElementKind(kind);
+            const ITool::Variant& variant = variants[i];
+            const bool on = static_cast<int>(i) == active;
+            if (EditorChrome::ToolButton(variant.Label.data(), variant.Icon, variant.Label.data(), on, buttonSize) && !on)
+                tool.SelectVariant(ctx, i);
         }
     }
     ImGui::Separator();
@@ -536,7 +529,7 @@ void ToolPropertiesPanel::OnDraw()
     // selection, which is panel work rather than tool work. Every other tool
     // draws its own settings, so a new one needs nothing here.
     if (activeTool->GetId() == "select")
-        DrawSelectProperties();
+        DrawSelectProperties(*activeTool, tools->GetContext());
     else
         activeTool->DrawProperties(tools->GetContext());
 }

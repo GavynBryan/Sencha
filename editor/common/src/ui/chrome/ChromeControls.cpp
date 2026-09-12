@@ -298,130 +298,177 @@ void StrokeArc(ImDrawList* dl, ImVec2 center, float radius, float a0, float a1, 
     dl->PathArcTo(center, radius, a0, a1);
     dl->PathStroke(color, 0, width);
 }
+
+// The colours and the line weight one wheel is painted with, so both rings
+// are the same metal under the same light.
+struct WheelPalette
+{
+    ImU32 Highlight = 0;
+    ImU32 Shadow = 0;
+    ImU32 Chassis = 0;
+    ImU32 Accent = 0;
+    ImU32 AccentDim = 0;
+    ImU32 Orange = 0;
+    float Line = 1.0f;
+};
+
+// The seam is a fixed width, so its angle narrows with radius: taken at the
+// mid radius of the petal so the gap reads even along the flank.
+float SeamAngle(float seam, float inner, float outer)
+{
+    return seam / ((inner + outer) * 0.5f);
+}
+
+// One petal of a ring: the wedge between `inner` and `outer` cut into the
+// plate, its glyph in a recess. Orange on the hot petal; the active slot's
+// glyph is orange on a plain petal.
+void DrawPetal(ImDrawList* dl, ImVec2 center, float inner, float outer, float seamAngle,
+               const EditorChrome::WheelSlot& slot, const WheelPalette& p)
+{
+    const float a0 = ArcAngle(slot.Angle0) + seamAngle;
+    const float a1 = ArcAngle(slot.Angle1) - seamAngle;
+    if (a1 <= a0)
+        return;
+    const std::vector<ImVec2> petal = WedgePoints(center, inner, outer, a0, a1);
+    const ImVec4 face = slot.Hot ? EditorUi::Selected : EditorUi::FrameBg;
+    dl->AddConcavePolyFilled(petal.data(), static_cast<int>(petal.size()), ImGui::GetColorU32(face));
+    if (slot.Hot)
+        dl->AddPolyline(petal.data(), static_cast<int>(petal.size()), p.Orange, ImDrawFlags_Closed, p.Line);
+    else
+        BevelOutline(dl, petal, p.Highlight, p.Shadow, p.Line);
+
+    // The glyph sits in a shallow recess, lit by the same light.
+    const float well = slot.Size * 0.42f;
+    const std::vector<ImVec2> ring = CirclePoints(slot.Center, well, 24);
+    dl->AddCircleFilled(slot.Center, well, slot.Hot ? ImGui::GetColorU32(EditorUi::Darken(EditorUi::Selected, 0.35f)) : p.Chassis);
+    BevelOutline(dl, ring, slot.Hot ? p.Orange : p.Shadow, slot.Hot ? p.Orange : p.Highlight, p.Line);
+    const float glyph = slot.Size * 0.6f;
+    const ImU32 tint = slot.Hot ? ImGui::GetColorU32(EditorUi::Lighten(EditorUi::SelectedOutline, 0.35f))
+                     : slot.Active ? p.Orange
+                                   : p.Accent;
+    if (slot.Icon != IconId::None)
+        EditorChrome::DrawIcon(dl, slot.Icon, ImVec2(slot.Center.x - glyph * 0.5f, slot.Center.y - glyph * 0.5f),
+                               ImVec2(slot.Center.x + glyph * 0.5f, slot.Center.y + glyph * 0.5f), tint);
+    else if (slot.Label != nullptr && slot.Label[0] != '\0')
+    {
+        const char glyphText[2] = { slot.Label[0], '\0' };
+        const ImVec2 size = ImGui::CalcTextSize(glyphText);
+        dl->AddText(ImVec2(slot.Center.x - size.x * 0.5f, slot.Center.y - size.y * 0.5f), tint, glyphText);
+    }
+}
+
+// The rim closing a ring at `outer`: a band of metal, beveled on both
+// circles, a hairline gap to the petals, a tick at each seam, and the active
+// slot's orange mark over its wedge.
+void DrawRim(ImDrawList* dl, ImVec2 center, float outer, float rim, float seamAngle,
+             std::span<const EditorChrome::WheelSlot> slots, const WheelPalette& p)
+{
+    const float rimInner = outer - rim;
+    dl->PathArcTo(center, outer, 0.0f, 2.0f * std::numbers::pi_v<float>);
+    dl->PathArcTo(center, rimInner, 2.0f * std::numbers::pi_v<float>, 0.0f);
+    std::vector<ImVec2> band(dl->_Path.begin(), dl->_Path.end());
+    dl->PathClear();
+    dl->AddConcavePolyFilled(band.data(), static_cast<int>(band.size()), ImGui::GetColorU32(EditorUi::MetalBase));
+    BevelOutline(dl, CirclePoints(center, outer - p.Line * 0.5f, 64), p.Highlight, p.Shadow, p.Line);
+    // The inner circle is lit as the edge of a hole: its outward normal points
+    // in, so the walk runs the other way.
+    std::vector<ImVec2> innerRing = CirclePoints(center, rimInner + p.Line * 0.5f, 64);
+    std::reverse(innerRing.begin(), innerRing.end());
+    BevelOutline(dl, innerRing, p.Highlight, p.Shadow, p.Line);
+    dl->AddCircle(center, rimInner - p.Line * 0.5f, p.Chassis, 0, p.Line);
+
+    const float detailRadius = outer - rim * 0.5f;
+    for (const EditorChrome::WheelSlot& slot : slots)
+    {
+        const float a = ArcAngle(slot.Angle0);
+        dl->AddLine(OnCircle(center, rimInner + rim * 0.25f, a), OnCircle(center, outer - rim * 0.25f, a), p.AccentDim, p.Line);
+        if (slot.Active)
+            StrokeArc(dl, center, detailRadius, ArcAngle(slot.Angle0) + seamAngle * 2.0f,
+                      ArcAngle(slot.Angle1) - seamAngle * 2.0f, p.Orange, p.Line * 2.0f);
+    }
+}
 }
 
 // The wheel is one machined part: a dark plate with the petals cut into it,
 // a chunky rim around them, a recessed hub at the axle, and a ledge under
-// the rim carrying the caption. Depth comes from the shared bevel light on
-// every edge, straight or curved; colour is the metals, with cyan kept thin
-// and at the perimeter, and orange on exactly the petal the pointer is in.
+// the rim carrying the caption. A hot tool's variants are a second ring of
+// the same petals and rim cut into the same plate outside the first. Depth
+// comes from the shared bevel light on every edge, straight or curved;
+// colour is the metals, with cyan kept thin and at the perimeter, and orange
+// on exactly the petal the pointer is in.
 void EditorChrome::DrawToolWheel(ImDrawList* dl, const WheelPaint& wheel)
 {
     if (wheel.Slots.empty())
         return;
 
     const EditorUi::ChromeMetrics& m = EditorUi::Metrics;
-    const float line = std::max(1.0f, EditorUi::Px(m.EdgeWidth));
-    const float seam = EditorUi::Px(2.0f);
-    const float rim = EditorUi::Px(7.0f);
+    const WheelPalette p{
+        .Highlight = ImGui::GetColorU32(EditorUi::MetalHighlight),
+        .Shadow = ImGui::GetColorU32(EditorUi::MetalShadow),
+        .Chassis = ImGui::GetColorU32(EditorUi::ChassisBg),
+        .Accent = ImGui::GetColorU32(EditorUi::Accent),
+        .AccentDim = ImGui::GetColorU32(EditorUi::AccentDim),
+        .Orange = ImGui::GetColorU32(EditorUi::SelectedOutline),
+        .Line = std::max(1.0f, EditorUi::Px(m.EdgeWidth)),
+    };
+    const float seam = wheel.Seam;
+    const float rim = wheel.Rim;
     const float slotSize = wheel.Slots.front().Size;
     const float outer = wheel.Radius + slotSize * 0.5f + seam + rim;
     const float petalOuter = outer - rim - seam;
     const float petalInner = wheel.Hub + seam;
+    const bool fan = !wheel.Variants.empty() && wheel.OuterRadius > 0.0f;
+    const float fanInner = outer + seam;
+    const float fanOuter = wheel.OuterRadius + slotSize * 0.5f;
+    const float extent = fan ? fanOuter + seam + rim : outer;
 
-    const ImU32 highlight = ImGui::GetColorU32(EditorUi::MetalHighlight);
-    const ImU32 shadow = ImGui::GetColorU32(EditorUi::MetalShadow);
-    const ImU32 chassis = ImGui::GetColorU32(EditorUi::ChassisBg);
-    const ImU32 accent = ImGui::GetColorU32(EditorUi::Accent);
-    const ImU32 accentDim = ImGui::GetColorU32(EditorUi::AccentDim);
-    const ImU32 orange = ImGui::GetColorU32(EditorUi::SelectedOutline);
+    // Plate: the dark body everything is cut into, as far as the wheel reaches.
+    dl->AddCircleFilled(wheel.Center, extent, p.Shadow);
 
-    // Plate: the dark body everything is cut into.
-    dl->AddCircleFilled(wheel.Center, outer, shadow);
-
-    // Petals. The seam is a fixed width, so its angle narrows with radius:
-    // taken at the mid radius so the gap reads even along the flank.
-    const float seamAngle = seam / ((petalInner + petalOuter) * 0.5f);
+    const float seamAngle = SeamAngle(seam, petalInner, petalOuter);
     for (const WheelSlot& slot : wheel.Slots)
-    {
-        const float a0 = ArcAngle(slot.Angle0) + seamAngle;
-        const float a1 = ArcAngle(slot.Angle1) - seamAngle;
-        if (a1 <= a0)
-            continue;
-        const std::vector<ImVec2> petal = WedgePoints(wheel.Center, petalInner, petalOuter, a0, a1);
-        const ImVec4 face = slot.Hot ? EditorUi::Selected : EditorUi::FrameBg;
-        dl->AddConcavePolyFilled(petal.data(), static_cast<int>(petal.size()), ImGui::GetColorU32(face));
-        if (slot.Hot)
-            dl->AddPolyline(petal.data(), static_cast<int>(petal.size()), orange, ImDrawFlags_Closed, line);
-        else
-            BevelOutline(dl, petal, highlight, shadow, line);
+        DrawPetal(dl, wheel.Center, petalInner, petalOuter, seamAngle, slot, p);
+    DrawRim(dl, wheel.Center, outer, rim, seamAngle, wheel.Slots, p);
 
-        // The glyph sits in a shallow recess, lit by the same light.
-        const float well = slotSize * 0.42f;
-        const std::vector<ImVec2> ring = CirclePoints(slot.Center, well, 24);
-        dl->AddCircleFilled(slot.Center, well, slot.Hot ? ImGui::GetColorU32(EditorUi::Darken(EditorUi::Selected, 0.35f)) : chassis);
-        BevelOutline(dl, ring, slot.Hot ? orange : shadow, slot.Hot ? orange : highlight, line);
-        const float glyph = slotSize * 0.6f;
-        const ImU32 tint = slot.Hot ? ImGui::GetColorU32(EditorUi::Lighten(EditorUi::SelectedOutline, 0.35f))
-                         : slot.Active ? orange
-                                       : accent;
-        if (slot.Icon != IconId::None)
-            DrawIcon(dl, slot.Icon, ImVec2(slot.Center.x - glyph * 0.5f, slot.Center.y - glyph * 0.5f),
-                     ImVec2(slot.Center.x + glyph * 0.5f, slot.Center.y + glyph * 0.5f), tint);
-        else if (slot.Label != nullptr && slot.Label[0] != '\0')
-        {
-            const char glyphText[2] = { slot.Label[0], '\0' };
-            const ImVec2 size = ImGui::CalcTextSize(glyphText);
-            dl->AddText(ImVec2(slot.Center.x - size.x * 0.5f, slot.Center.y - size.y * 0.5f), tint, glyphText);
-        }
+    if (fan)
+    {
+        const float fanSeam = SeamAngle(seam, fanInner, fanOuter);
+        for (const WheelSlot& slot : wheel.Variants)
+            DrawPetal(dl, wheel.Center, fanInner, fanOuter, fanSeam, slot, p);
+        DrawRim(dl, wheel.Center, extent, rim, fanSeam, wheel.Variants, p);
     }
 
-    // Rim: a band of metal, beveled on both circles, with a hairline gap to
-    // the petals.
-    const float rimInner = outer - rim;
-    dl->PathArcTo(wheel.Center, outer, 0.0f, 2.0f * std::numbers::pi_v<float>);
-    dl->PathArcTo(wheel.Center, rimInner, 2.0f * std::numbers::pi_v<float>, 0.0f);
-    std::vector<ImVec2> band(dl->_Path.begin(), dl->_Path.end());
-    dl->PathClear();
-    dl->AddConcavePolyFilled(band.data(), static_cast<int>(band.size()), ImGui::GetColorU32(EditorUi::MetalBase));
-    BevelOutline(dl, CirclePoints(wheel.Center, outer - line * 0.5f, 64), highlight, shadow, line);
-    // The inner circle is lit as the edge of a hole: its outward normal points
-    // in, so the walk runs the other way.
-    std::vector<ImVec2> innerRing = CirclePoints(wheel.Center, rimInner + line * 0.5f, 64);
-    std::reverse(innerRing.begin(), innerRing.end());
-    BevelOutline(dl, innerRing, highlight, shadow, line);
-    dl->AddCircle(wheel.Center, rimInner - line * 0.5f, chassis, 0, line);
-
-    // Perimeter detail, sparse: a thin cyan arc over the top-left quadrant, a
-    // shorter one bottom-right, a tick at each seam, and the active tool's
-    // orange mark over its wedge.
+    // Perimeter detail, sparse: a thin cyan arc over the top-left quadrant
+    // and a shorter one bottom-right, on the primary rim.
     const float detailRadius = outer - rim * 0.5f;
-    StrokeArc(dl, wheel.Center, detailRadius, std::numbers::pi_v<float> * 1.05f, std::numbers::pi_v<float> * 1.45f, accent, line);
-    StrokeArc(dl, wheel.Center, detailRadius, std::numbers::pi_v<float> * 0.15f, std::numbers::pi_v<float> * 0.35f, accent, line);
-    for (const WheelSlot& slot : wheel.Slots)
-    {
-        const float a = ArcAngle(slot.Angle0);
-        dl->AddLine(OnCircle(wheel.Center, rimInner + rim * 0.25f, a), OnCircle(wheel.Center, outer - rim * 0.25f, a), accentDim, line);
-        if (slot.Active)
-            StrokeArc(dl, wheel.Center, detailRadius, ArcAngle(slot.Angle0) + seamAngle * 2.0f,
-                      ArcAngle(slot.Angle1) - seamAngle * 2.0f, orange, line * 2.0f);
-    }
+    StrokeArc(dl, wheel.Center, detailRadius, std::numbers::pi_v<float> * 1.05f, std::numbers::pi_v<float> * 1.45f, p.Accent, p.Line);
+    StrokeArc(dl, wheel.Center, detailRadius, std::numbers::pi_v<float> * 0.15f, std::numbers::pi_v<float> * 0.35f, p.Accent, p.Line);
 
     // Hub: a small recess at the axle, its edge lit as a hole's is.
-    dl->AddCircleFilled(wheel.Center, wheel.Hub, chassis);
-    std::vector<ImVec2> hubRing = CirclePoints(wheel.Center, wheel.Hub - line * 0.5f, 32);
+    dl->AddCircleFilled(wheel.Center, wheel.Hub, p.Chassis);
+    std::vector<ImVec2> hubRing = CirclePoints(wheel.Center, wheel.Hub - p.Line * 0.5f, 32);
     std::reverse(hubRing.begin(), hubRing.end());
-    BevelOutline(dl, hubRing, highlight, shadow, line);
-    dl->AddCircleFilled(wheel.Center, std::max(line, EditorUi::Px(2.0f)), accentDim);
+    BevelOutline(dl, hubRing, p.Highlight, p.Shadow, p.Line);
+    dl->AddCircleFilled(wheel.Center, std::max(p.Line, EditorUi::Px(2.0f)), p.AccentDim);
 
-    // Caption: a shallow ledge under the rim, part of the chassis rather than
-    // a plate hung off it.
+    // Caption: a shallow ledge under the outermost rim, part of the chassis
+    // rather than a plate hung off it.
     if (!wheel.Caption.empty())
     {
         const ImVec2 textSize = EditorUi::MeasureRoleText(EditorUi::TextRole::Status, wheel.Caption);
         const float padX = EditorUi::Px(10.0f);
         const float ledgeHeight = textSize.y + EditorUi::Px(6.0f);
         const float halfWidth = std::max(textSize.x * 0.5f + padX, rim * 2.0f);
-        const float top = wheel.Center.y + outer - rim * 0.5f;
+        const float top = wheel.Center.y + extent - rim * 0.5f;
         const ImVec2 mn(wheel.Center.x - halfWidth, top);
         const ImVec2 mx(wheel.Center.x + halfWidth, top + ledgeHeight);
         const ChamferPoly ledge = ChamferOutline(mn, mx, std::min(EditorUi::Px(4.0f), ledgeHeight * 0.5f));
         FillChamfered(dl, ledge, ImGui::GetColorU32(EditorUi::MetalBase));
-        const float half = line * 0.5f;
+        const float half = p.Line * 0.5f;
         BevelChamfered(dl, ChamferOutline(ImVec2(mn.x + half, mn.y + half), ImVec2(mx.x - half, mx.y - half),
                                           std::min(EditorUi::Px(4.0f), ledgeHeight * 0.5f)),
-                       highlight, shadow, line);
-        const ImU32 textColor = wheel.CaptionDim ? ImGui::GetColorU32(EditorUi::TextDim) : orange;
+                       p.Highlight, p.Shadow, p.Line);
+        const ImU32 textColor = wheel.CaptionDim ? ImGui::GetColorU32(EditorUi::TextDim) : p.Orange;
         EditorUi::DrawRoleText(dl, ImVec2(std::floor(wheel.Center.x - textSize.x * 0.5f), std::floor(mn.y + (ledgeHeight - textSize.y) * 0.5f)),
                                EditorUi::TextRole::Status, wheel.Caption, textColor);
     }

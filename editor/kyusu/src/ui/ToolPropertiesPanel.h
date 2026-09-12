@@ -14,6 +14,8 @@ class CommandStack;
 class MeshEditService;
 class SelectionService;
 class ToolRegistry;
+struct ITool;
+struct ToolContext;
 struct ManipulationSink;
 class WorldDocument;
 struct ActiveMaterialState;
@@ -54,7 +56,7 @@ public:
     float GetDockWeight() const override { return 1.8f; }
 
 private:
-    void DrawSelectProperties();
+    void DrawSelectProperties(ITool& tool, ToolContext& ctx);
     void DrawObjectVerbs();
     void DrawFaceVerbs();
     void DrawEdgeVerbs();

@@ -107,8 +107,34 @@ TEST_F(ChromeControlsTests, ToolWheelDrawsNothingForNoSlotsAndLeavesTheDrawListC
         slots.push_back({ .Center = ImVec2(300.0f + 60.0f * static_cast<float>(i), 200.0f), .Size = 26.0f,
                           .Angle0 = 0.0f, .Angle1 = 1.0f, .Icon = IconId::None, .Label = "T", .Hot = i == 1 });
     EditorChrome::DrawToolWheel(dl, EditorChrome::WheelPaint{ .Center = ImVec2(300.0f, 200.0f), .Radius = 72.0f,
-                                                              .Hub = 26.0f, .CaptionY = 320.0f, .Slots = slots,
-                                                              .Caption = "Select" });
+                                                              .Hub = 26.0f, .Seam = 2.0f, .Rim = 7.0f,
+                                                              .OuterRadius = 0.0f, .CaptionY = 320.0f, .Slots = slots,
+                                                              .Variants = {}, .Caption = "Select", .CaptionDim = false });
+    EXPECT_GT(dl->VtxBuffer.Size, vertices);
+    EXPECT_EQ(dl->_Path.Size, 0);
+    EXPECT_EQ(dl->_ClipRectStack.Size, clips);
+}
+
+TEST_F(ChromeControlsTests, ToolWheelWithAVariantRingLeavesTheDrawListClean)
+{
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const int vertices = dl->VtxBuffer.Size;
+    const int clips = dl->_ClipRectStack.Size;
+    std::vector<EditorChrome::WheelSlot> slots;
+    for (int i = 0; i < 3; ++i)
+        slots.push_back({ .Center = ImVec2(300.0f + 60.0f * static_cast<float>(i), 200.0f), .Size = 26.0f,
+                          .Angle0 = 0.0f, .Angle1 = 1.0f, .Icon = IconId::None, .Label = "T", .Hot = i == 1 });
+    // The hot slot's fan: one hot, one already in effect, on the outer ring.
+    std::vector<EditorChrome::WheelSlot> variants;
+    for (int i = 0; i < 3; ++i)
+        variants.push_back({ .Center = ImVec2(300.0f, 200.0f - 118.0f), .Size = 26.0f, .Angle0 = 0.3f * static_cast<float>(i),
+                             .Angle1 = 0.3f * static_cast<float>(i + 1), .Icon = IconId::None, .Label = "V",
+                             .Active = i == 0, .Hot = i == 2 });
+    EditorChrome::DrawToolWheel(dl, EditorChrome::WheelPaint{ .Center = ImVec2(300.0f, 200.0f), .Radius = 72.0f,
+                                                              .Hub = 26.0f, .Seam = 2.0f, .Rim = 7.0f,
+                                                              .OuterRadius = 118.0f, .CaptionY = 360.0f,
+                                                              .Slots = slots, .Variants = variants,
+                                                              .Caption = "Select \xC2\xB7 Face", .CaptionDim = false });
     EXPECT_GT(dl->VtxBuffer.Size, vertices);
     EXPECT_EQ(dl->_Path.Size, 0);
     EXPECT_EQ(dl->_ClipRectStack.Size, clips);

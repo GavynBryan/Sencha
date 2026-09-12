@@ -2,11 +2,11 @@
 
 #include "brush/BrushOps.h" // BrushPrimitive
 
-// Editor-wide brush-creation settings: the active create sub-mode and the
-// per-primitive generator parameters. Owned by EditorWorkspace, read by the
-// create-drag interaction (to pick the generator) and surfaced/edited by the
-// Tool Properties panel. Mirrors GridSettings: one shared struct threaded by
-// reference, not per-tool state.
+// Brush-creation settings: the active create sub-mode and the per-primitive
+// generator parameters. A member of BrushTool, which outlives any one
+// document, so they survive a document swap; read by the create-drag
+// interaction (to pick the generator) and driven by the tool's properties
+// row and its variants on the tool wheel.
 struct BrushCreationSettings
 {
     BrushPrimitive ActivePrimitive = BrushPrimitive::Box;

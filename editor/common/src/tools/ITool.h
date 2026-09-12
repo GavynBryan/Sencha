@@ -6,7 +6,9 @@
 
 #include <imgui.h>
 
+#include <cstddef>
 #include <memory>
+#include <span>
 #include <string_view>
 
 struct EditorViewport;
@@ -63,6 +65,22 @@ struct ITool
     // the active tool its space. Leave empty for a tool with no controls.
     virtual void DrawProperties(ToolContext& /*ctx*/) {}
     virtual void DrawToolbarControls(ToolContext& /*ctx*/) {}
+
+    // A sub-mode the tool exposes as a choice: what a control shows for it.
+    // The tool maps an index back to whatever the choice means, so a surface
+    // that lists variants (the tool wheel, a properties row) never learns the
+    // type behind them, and a tool without any answers with an empty span.
+    struct Variant
+    {
+        std::string_view Label;
+        IconId Icon = IconId::None;
+    };
+    [[nodiscard]] virtual std::span<const Variant> GetVariants() const { return {}; }
+    // Index into GetVariants() of the one in effect, or -1.
+    [[nodiscard]] virtual int GetActiveVariant(const ToolContext& /*ctx*/) const { return -1; }
+    // Puts variant `index` into effect, through whatever owns that state.
+    // Callable whether or not the tool is active.
+    virtual void SelectVariant(ToolContext& /*ctx*/, std::size_t /*index*/) {}
 
     // The key that activates this tool. Unmodified letters by convention; the
     // binding is registered under "tool.<id>" and a keymap file can override it.

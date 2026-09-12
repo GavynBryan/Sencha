@@ -84,14 +84,21 @@ struct WheelSlot
 };
 
 // A radial menu resolved to screen positions: the ring the slots sit on, the
-// hub that selects nothing, and the caption line under it all.
+// hub that selects nothing, the seam and rim widths the rings are built from,
+// and the caption line under it all. `Variants` is the hot slot's fan on a
+// second ring at `OuterRadius`, drawn with the same petals and rim outside
+// the first; empty when nothing is showing one.
 struct WheelPaint
 {
     ImVec2 Center{};
     float Radius = 0.0f;
     float Hub = 0.0f;
+    float Seam = 0.0f;
+    float Rim = 0.0f;
+    float OuterRadius = 0.0f;
     float CaptionY = 0.0f;
     std::span<const WheelSlot> Slots;
+    std::span<const WheelSlot> Variants;
     std::string_view Caption;
     bool CaptionDim = false; // the caption names what is already on, not a choice
 };

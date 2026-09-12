@@ -1,5 +1,6 @@
 #include "WorkspaceFixture.h"
 
+#include "document/tools/BrushTool.h"
 #include "input/InputRouter.h"
 #include "tools/ITool.h"
 #include "tools/ToolRegistry.h"
@@ -8,6 +9,7 @@
 
 #include <SDL3/SDL_keycode.h>
 
+#include <span>
 #include <vector>
 
 // The hold-to-choose gesture as a state machine over the live registry: what
@@ -22,7 +24,19 @@ public:
     std::string_view GetId() const override { return "spy"; }
     std::string_view GetDisplayName() const override { return "Spy"; }
     void OnActivate(ToolContext&) override { ++Activations; }
+    // Variants only when a test gives it some; nothing about the wheel's
+    // primary gesture depends on a tool having them.
+    std::span<const Variant> GetVariants() const override { return Variants; }
+    int GetActiveVariant(const ToolContext&) const override { return Current; }
+    void SelectVariant(ToolContext&, std::size_t index) override
+    {
+        Current = static_cast<int>(index);
+        ++VariantSelections;
+    }
     int Activations = 0;
+    int VariantSelections = 0;
+    int Current = -1;
+    std::vector<Variant> Variants;
 };
 
 class ToolWheelSessionTest : public WorkspaceTest
@@ -70,7 +84,7 @@ protected:
         });
     }
 
-    [[nodiscard]] ToolRegistry& Tools() { return *Workspace.Interaction.Tools; }
+    [[nodiscard]] ToolRegistry& Tools() const { return *Workspace.Interaction.Tools; }
 
     InputConsumed Press(SDL_Keycode key, ImVec2 at = { 800.0f, 450.0f }, ModifierFlags mods = {})
     {
@@ -91,6 +105,20 @@ protected:
         const ImVec2 slot = ToolWheel::SlotCenter(layout, index);
         // Twice the radius out along the same direction: the wedge, not the button.
         return { layout.Center.x + (slot.x - layout.Center.x) * 2.0f, layout.Center.y + (slot.y - layout.Center.y) * 2.0f };
+    }
+    // The centre of variant `index` of tool `parent`'s fan on the open wheel.
+    [[nodiscard]] ImVec2 InVariant(int parent, int index) const
+    {
+        const int count = static_cast<int>(Tools().GetTools()[static_cast<std::size_t>(parent)]->GetVariants().size());
+        return ToolWheel::VariantSlotCenter(Wheel->GetLayout(), parent, index, count);
+    }
+    [[nodiscard]] int IndexOf(std::string_view id) const
+    {
+        const auto& tools = Tools().GetTools();
+        for (std::size_t i = 0; i < tools.size(); ++i)
+            if (tools[i]->GetId() == id)
+                return static_cast<int>(i);
+        return -1;
     }
     [[nodiscard]] std::size_t ReachedMoves() const
     {
@@ -296,4 +324,133 @@ TEST_F(ToolWheelSessionTest, AHeldGestureStillOwnsTheKeyBeforeTheSceneIsAsked)
     (void)Router.Route(PointerDownEvent{ .Position = { 1.0f, 1.0f }, .Button = MouseButton::Right, .Modifiers = {} });
     EXPECT_EQ(Press(SDLK_Q), InputConsumed::No);
     EXPECT_TRUE(Asked.empty());
+}
+
+// The variant ring. The select tool has four (the element kinds) and the
+// brush three (its primitives); the spy gets two when a test says so.
+TEST_F(ToolWheelSessionTest, MovingOutFromAToolIntoItsVariantsKeepsTheTool)
+{
+    const int select = IndexOf("select");
+    ASSERT_EQ(Tools().GetTools()[static_cast<std::size_t>(select)]->GetVariants().size(), 4u);
+    (void)Press(SDLK_Q);
+    EXPECT_EQ(Wheel->GetLayout().MaxVariants, 4);
+    (void)Move(ToolWheel::SlotCenter(Wheel->GetLayout(), select));
+    EXPECT_EQ(Wheel->GetHot(), select);
+    EXPECT_EQ(Wheel->GetHotVariant(), -1);
+    for (int i = 0; i < 4; ++i)
+    {
+        // Diagonally: halfway from the tool's slot to the child is still the
+        // tool, and the child itself is the child.
+        const ImVec2 slot = ToolWheel::SlotCenter(Wheel->GetLayout(), select);
+        const ImVec2 child = InVariant(select, i);
+        (void)Move({ (slot.x + child.x) * 0.5f, (slot.y + child.y) * 0.5f });
+        EXPECT_EQ(Wheel->GetHot(), select) << "variant " << i;
+        (void)Move(child);
+        EXPECT_EQ(Wheel->GetHot(), select) << "variant " << i;
+        EXPECT_EQ(Wheel->GetHotVariant(), i);
+    }
+    // Back inside the rim, direction picks again and no variant is hot.
+    (void)Move(ToolWheel::SlotCenter(Wheel->GetLayout(), IndexOf("brush")));
+    EXPECT_EQ(Wheel->GetHot(), IndexOf("brush"));
+    EXPECT_EQ(Wheel->GetHotVariant(), -1);
+    (void)Release(SDLK_Q);
+}
+
+TEST_F(ToolWheelSessionTest, SweepingTheOuterRingPastAFansEdgeHandsOverToTheNeighbour)
+{
+    const int select = IndexOf("select");
+    const int brush = IndexOf("brush");
+    (void)Press(SDLK_Q);
+    (void)Move(InVariant(select, 3));
+    EXPECT_EQ(Wheel->GetHot(), select);
+    EXPECT_EQ(Wheel->GetHotVariant(), 3);
+    // Around the outer band, without coming back in: the brush's first
+    // variant is in the brush's direction, past the select fan's edge.
+    (void)Move(InVariant(brush, 0));
+    EXPECT_EQ(Wheel->GetHot(), brush);
+    EXPECT_EQ(Wheel->GetHotVariant(), 0);
+    (void)Move(InVariant(brush, 2));
+    EXPECT_EQ(Wheel->GetHot(), brush);
+    EXPECT_EQ(Wheel->GetHotVariant(), 2);
+    (void)Release(SDLK_Q);
+}
+
+TEST_F(ToolWheelSessionTest, ReleaseOnAVariantActivatesTheToolThenSelectsTheVariant)
+{
+    const int select = IndexOf("select");
+    const int brush = IndexOf("brush");
+    ASSERT_TRUE(Tools().Activate("spy"));
+    ASSERT_EQ(Workspace.MeshEdit.GetElementKind(), MeshElementKind::Object);
+
+    (void)Press(SDLK_Q);
+    (void)Move(InVariant(select, 3));
+    (void)Release(SDLK_Q);
+    EXPECT_EQ(Tools().GetActiveIndex(), select);
+    EXPECT_EQ(Workspace.MeshEdit.GetElementKind(), MeshElementKind::Face);
+
+    (void)Press(SDLK_Q);
+    (void)Move(InVariant(brush, 2));
+    (void)Release(SDLK_Q);
+    EXPECT_EQ(Tools().GetActiveIndex(), brush);
+    auto& brushTool = static_cast<BrushTool&>(*Tools().GetTools()[static_cast<std::size_t>(brush)]);
+    EXPECT_EQ(brushTool.Creation.ActivePrimitive, BrushPrimitive::Cylinder);
+    // The brush's entry dropped the element mode, and the variant came after.
+    EXPECT_EQ(Workspace.MeshEdit.GetElementKind(), MeshElementKind::Object);
+
+    // The tool alone, from the primary ring: what it has stays.
+    ASSERT_TRUE(Tools().Activate("select"));
+    (void)Press(SDLK_Q);
+    (void)Move(ToolWheel::SlotCenter(Wheel->GetLayout(), brush));
+    EXPECT_EQ(Wheel->GetHotVariant(), -1);
+    (void)Release(SDLK_Q);
+    EXPECT_EQ(Tools().GetActiveIndex(), brush);
+    EXPECT_EQ(brushTool.Creation.ActivePrimitive, BrushPrimitive::Cylinder);
+}
+
+TEST_F(ToolWheelSessionTest, ReleaseOnAVariantOfTheActiveToolSelectsItWithoutReentry)
+{
+    Spy->Variants = { { .Label = "A" }, { .Label = "B" } };
+    ASSERT_TRUE(Tools().Activate("spy"));
+    ASSERT_EQ(Spy->Activations, 1);
+    (void)Press(SDLK_Q);
+    (void)Move(InVariant(SpyIndex, 1));
+    EXPECT_EQ(Wheel->GetHot(), SpyIndex);
+    EXPECT_EQ(Wheel->GetHotVariant(), 1);
+    (void)Release(SDLK_Q);
+    EXPECT_EQ(Spy->Activations, 1);
+    EXPECT_EQ(Spy->VariantSelections, 1);
+    EXPECT_EQ(Spy->Current, 1);
+}
+
+TEST_F(ToolWheelSessionTest, AToolWithoutVariantsKeepsItsWholeWedge)
+{
+    const int cut = IndexOf("edgecut");
+    ASSERT_TRUE(Tools().GetTools()[static_cast<std::size_t>(cut)]->GetVariants().empty());
+    (void)Press(SDLK_Q);
+    (void)Move(InSector(cut)); // twice the radius out: the outer band
+    EXPECT_EQ(ToolWheel::RingAt(Wheel->GetLayout(), InSector(cut)), ToolWheel::Ring::Outer);
+    EXPECT_EQ(Wheel->GetHot(), cut);
+    EXPECT_EQ(Wheel->GetHotVariant(), -1);
+    (void)Release(SDLK_Q);
+    EXPECT_EQ(Tools().GetActiveIndex(), cut);
+    EXPECT_EQ(Spy->VariantSelections, 0);
+}
+
+TEST_F(ToolWheelSessionTest, EscapeAndFocusLossDropTheHotVariantWithoutSelecting)
+{
+    const int select = IndexOf("select");
+    (void)Press(SDLK_Q);
+    (void)Move(InVariant(select, 3));
+    ASSERT_EQ(Wheel->GetHotVariant(), 3);
+    (void)Press(SDLK_ESCAPE);
+    EXPECT_EQ(Wheel->GetHotVariant(), -1);
+    (void)Release(SDLK_Q);
+    EXPECT_EQ(Workspace.MeshEdit.GetElementKind(), MeshElementKind::Object);
+
+    (void)Press(SDLK_Q);
+    (void)Move(InVariant(select, 2));
+    ASSERT_EQ(Wheel->GetHotVariant(), 2);
+    (void)Router.Route(FocusLostEvent{});
+    EXPECT_EQ(Wheel->GetHotVariant(), -1);
+    EXPECT_EQ(Workspace.MeshEdit.GetElementKind(), MeshElementKind::Object);
 }

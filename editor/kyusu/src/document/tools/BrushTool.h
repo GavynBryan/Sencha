@@ -83,6 +83,12 @@ public:
     void DrawProperties(ToolContext& ctx) override;
     [[nodiscard]] Shortcut GetShortcut() const override;
 
+    // The primitives as the tool's variants; Creation.ActivePrimitive is the
+    // one in effect, and choosing another regenerates a pending preview.
+    [[nodiscard]] std::span<const Variant> GetVariants() const override;
+    [[nodiscard]] int GetActiveVariant(const ToolContext& ctx) const override;
+    void SelectVariant(ToolContext& ctx, std::size_t index) override;
+
     // The primitive the next drag creates and its shape parameters. Owned here
     // because only this tool acts on them; the properties UI drives them and
     // regenerates the pending preview in place.

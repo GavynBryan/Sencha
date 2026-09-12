@@ -186,6 +186,12 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   up without an edit.
   Settings only that tool acts on are members on the tool; genuinely shared
   authoring state (the grid, the active material) goes through `ToolContext`.
+  A tool with sub-modes exposes them as variants (`GetVariants`,
+  `GetActiveVariant`, `SelectVariant`): a label and an icon each, addressed by
+  index, resolved by the tool against whatever owns the mode (the select
+  tool's is `MeshEditService`'s element kind, the brush tool's its own
+  primitive). The tool wheel shows them as an outer ring while the tool is
+  hot and the properties row draws them; neither learns the type behind them.
 - An undo-able edit: implement `ICommand` next to its domain, run it through the
   `CommandStack`.
 - A keyboard shortcut: the binding table in `EditorServices::BuildInput` (Kyusu);

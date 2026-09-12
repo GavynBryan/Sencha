@@ -4,6 +4,7 @@
 
 #include "input/InputRouter.h"
 
+#include <algorithm>
 #include <utility>
 
 ToolWheelSession::ToolWheelSession(ToolRegistry& tools, ITool::Shortcut key,
@@ -37,7 +38,7 @@ InputConsumed ToolWheelSession::OnInput(const InputEvent& event, PointerCapture&
     // Pointer events reach here exclusively while the wheel is open. Motion
     // picks; everything else is swallowed so nothing under the wheel reacts.
     if (const auto* move = std::get_if<PointerMoveEvent>(&event))
-        Hot = ToolWheel::SectorAt(Layout, move->Position);
+        Track(move->Position);
     return InputConsumed::Yes;
 }
 
@@ -80,16 +81,20 @@ InputConsumed ToolWheelSession::OnKeyUp(const KeyUpEvent& event, PointerCapture&
     if (Phase == ToolWheelPhase::Closed || !IsWheelKey(event.Key))
         return InputConsumed::No;
     if (Phase == ToolWheelPhase::Open && Hot >= 0)
-        Select(Hot);
+        Select(Hot, HotVariant);
     Leave(ToolWheelPhase::Closed, capture);
     return InputConsumed::Yes;
 }
 
 void ToolWheelSession::Open(ImVec2 pointer, PointerCapture& capture)
 {
-    Layout = ToolWheel::Place(FrameProvider ? FrameProvider() : ToolWheel::Frame{}, pointer,
-                              static_cast<int>(Tools.GetTools().size()));
+    const int count = static_cast<int>(Tools.GetTools().size());
+    int maxVariants = 0;
+    for (int i = 0; i < count; ++i)
+        maxVariants = std::max(maxVariants, VariantCount(i));
+    Layout = ToolWheel::Place(FrameProvider ? FrameProvider() : ToolWheel::Frame{}, pointer, count, maxVariants);
     Hot = -1;
+    HotVariant = -1;
     Phase = ToolWheelPhase::Open;
     capture.Acquire(PointerCaptureKind::Exclusive);
 }
@@ -99,12 +104,49 @@ void ToolWheelSession::Leave(ToolWheelPhase next, PointerCapture& capture)
     if (capture.HeldBySelf())
         capture.Release();
     Hot = -1;
+    HotVariant = -1;
     Phase = next;
 }
 
-void ToolWheelSession::Select(int index)
+void ToolWheelSession::Track(ImVec2 pointer)
 {
-    if (index == Tools.GetActiveIndex())
+    switch (ToolWheel::RingAt(Layout, pointer))
+    {
+    case ToolWheel::Ring::Hub:
+        Hot = -1;
+        HotVariant = -1;
         return;
-    (void)Tools.Activate(static_cast<std::size_t>(index));
+    case ToolWheel::Ring::Primary:
+        Hot = ToolWheel::SectorAt(Layout, pointer);
+        HotVariant = -1;
+        return;
+    case ToolWheel::Ring::Outer:
+        break;
+    }
+    // The hot tool keeps the pointer while it is over that tool's own fan;
+    // past the fan's edge, direction picks the tool as it does inside. Every
+    // fan covers its parent's sector, so a tool picked by direction out here
+    // is in its fan already, and a variant of -1 means the tool has none.
+    const bool held = Hot >= 0 && ToolWheel::VariantAt(Layout, Hot, VariantCount(Hot), pointer) >= 0;
+    if (!held)
+        Hot = ToolWheel::SectorAt(Layout, pointer);
+    HotVariant = Hot >= 0 ? ToolWheel::VariantAt(Layout, Hot, VariantCount(Hot), pointer) : -1;
+}
+
+void ToolWheelSession::Select(int index, int variant)
+{
+    if (index != Tools.GetActiveIndex())
+        (void)Tools.Activate(static_cast<std::size_t>(index));
+    // The tool first, then its variant: a tool's entry may reset shared state
+    // (the brush drops the element mode) and the choice made here comes after.
+    if (variant >= 0)
+        Tools.GetTools()[static_cast<std::size_t>(index)]->SelectVariant(Tools.GetContext(), static_cast<std::size_t>(variant));
+}
+
+int ToolWheelSession::VariantCount(int index) const
+{
+    if (index < 0 || static_cast<std::size_t>(index) >= Tools.GetTools().size())
+        return 0;
+    const ITool* tool = Tools.GetTools()[static_cast<std::size_t>(index)].get();
+    return tool != nullptr ? static_cast<int>(tool->GetVariants().size()) : 0;
 }

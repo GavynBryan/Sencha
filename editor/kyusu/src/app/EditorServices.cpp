@@ -81,6 +81,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <span>
 #include <variant>
 #include <vector>
 
@@ -982,10 +983,11 @@ void EditorServices::DrawToolWheel()
     // hit-tests; this only pairs each slot with what its tool looks like.
     const ToolWheel::Layout& layout = Wheel->GetLayout();
     const int hot = Wheel->GetHot();
+    const int hotVariant = Wheel->GetHotVariant();
     const int active = tools->GetActiveIndex();
     std::vector<EditorChrome::WheelSlot> slots;
     slots.reserve(tools->GetTools().size());
-    std::string_view caption;
+    std::string caption;
     for (std::size_t i = 0; i < tools->GetTools().size(); ++i)
     {
         const ITool* tool = tools->GetTools()[i].get();
@@ -1006,14 +1008,47 @@ void EditorServices::DrawToolWheel()
         if (index == hot || (hot < 0 && index == active))
             caption = tool->GetDisplayName();
     }
+
+    // The hot tool's variants on the outer ring, from the same layout the
+    // session resolves them against; the tool says what each looks like and
+    // which is in effect, and nothing here knows what they are.
+    std::vector<EditorChrome::WheelSlot> variants;
+    if (hot >= 0 && static_cast<std::size_t>(hot) < tools->GetTools().size() && tools->GetTools()[static_cast<std::size_t>(hot)] != nullptr)
+    {
+        const ITool& tool = *tools->GetTools()[static_cast<std::size_t>(hot)];
+        const std::span<const ITool::Variant> choices = tool.GetVariants();
+        const int count = static_cast<int>(choices.size());
+        const int current = tool.GetActiveVariant(tools->GetContext());
+        variants.reserve(choices.size());
+        for (int v = 0; v < count; ++v)
+        {
+            const ToolWheel::Span span = ToolWheel::VariantSpan(layout, hot, v, count);
+            variants.push_back({
+                .Center = ToolWheel::VariantSlotCenter(layout, hot, v, count),
+                .Size = layout.Button,
+                .Angle0 = span.Begin,
+                .Angle1 = span.End,
+                .Icon = choices[static_cast<std::size_t>(v)].Icon,
+                .Label = choices[static_cast<std::size_t>(v)].Label.data(),
+                .Active = v == current,
+                .Hot = v == hotVariant,
+            });
+        }
+        if (hotVariant >= 0 && hotVariant < count)
+            caption += std::string(" \xC2\xB7 ") + std::string(choices[static_cast<std::size_t>(hotVariant)].Label);
+    }
     // The foreground list draws after every window, floating panels and open
     // menus included, which is where a modal surface belongs.
     EditorChrome::DrawToolWheel(ImGui::GetForegroundDrawList(), EditorChrome::WheelPaint{
         .Center = layout.Center,
         .Radius = layout.Radius,
         .Hub = layout.Hub,
+        .Seam = layout.Seam,
+        .Rim = layout.Rim,
+        .OuterRadius = layout.OuterRadius,
         .CaptionY = layout.CaptionY(),
         .Slots = slots,
+        .Variants = variants,
         .Caption = caption,
         .CaptionDim = hot < 0,
     });
