@@ -50,15 +50,23 @@ undoable command, and republishes the resulting model.
 
 ```
 engine/include/ui/        PUBLIC. Sencha concepts. No RmlUi type, ever.
-engine/src/ui/            PRIVATE core. No graphics dependency.
-engine/src/ui/rml/        The only place <RmlUi/...> or Rml:: may appear.
+engine/src/ui/            PRIVATE. The document-engine integration, and the
+                          only place <RmlUi/...> or Rml:: may appear.
+engine/src/ui/rml/        The interface implementations, grouped because they
+                          are a family -- not a second firewall.
 engine/include/render/ui/ Render-domain UI data. Plain CPU values, no backend.
 engine/include/render/feature/UiRenderFeature.h
 engine/include/graphics/vulkan/UiDrawPass.h
 ```
 
-`cmake/CheckUiIsolation.cmake` (ctest `ui_isolation`) enforces the third line
+`cmake/CheckUiIsolation.cmake` (ctest `ui_isolation`) enforces that boundary
 across the engine, the editors, `app/`, `example/`, `templates/` and `test/`.
+
+The line sits at `engine/src/ui/` rather than at `rml/` inside it, deliberately.
+The runtime *is* the integration: its contexts and documents are RmlUi objects,
+and an adapter hiding them would be an interface around one class with no
+boundary behind it. What the guard protects is that nothing else -- above all
+the installed public headers -- can name the layout engine.
 
 That guard is load-bearing rather than tidy. `engine/include/` is installed
 verbatim into the SDK, so an RmlUi include in one public header would oblige
@@ -265,7 +273,45 @@ package data, the preloader warms declared dependencies, and an **open screen
 instance** owns the asset leases its document needs. Document lifetime and
 resource lifetime then line up exactly.
 
-## 10. What does not belong here
+## 10. The content path
+
+```
+.rml + the .rcss files it imports
+        |  UiPackageImporter (dev-only, SENCHA_ENABLE_COOK)
+        v
+     .sui  ---- declares ---->  Font / Texture assets
+        |                        (referenced, never inlined)
+        v
+   AssetSystem  ->  UiPackageCache
+        |
+        v
+   an open screen, which holds the leases
+```
+
+`.sui` carries the root markup, every stylesheet blob, the resource table, and
+the constructs the cooker noticed are outside the profile. A package opens with
+no filesystem beneath it -- which is why stylesheets are copied in, while fonts
+and textures, being real assets with their own identity, are referenced.
+
+Only the root `.rml` is a cooked asset. A `.rcss` has no runtime identity of its
+own; a document that imports it carries a copy.
+
+**Stylesheets are inputs to freshness, not just to the cook.** The importer reads
+them through `ImportInput::Sources` and lists them in
+`ImportResult::AdditionalSources`; the driver records them in the cooked index
+and folds them into the fingerprint, so editing a shared theme recooks every
+document that imports it. That is what `kCookedCacheIndexVersion` 8 is for.
+Reading a sibling any other way would leave it outside the hash, and a stale
+build cache is a worse failure than a missing feature because nothing about it
+looks wrong.
+
+Fonts cook `.ttf`/`.otf` to `.sfont`: the face bytes unchanged, plus the family,
+style and weight to register them under, taken from the filename convention
+(`Inter-BoldItalic.ttf`) and overridable in a `.meta` sidecar. No glyphs are
+baked. An atlas depends on the size a document asks for and on the renderer that
+samples it, so it belongs to the runtime that draws the text.
+
+## 11. What does not belong here
 
 Kyusu's spatial interaction stays purpose-built: transform gizmos, resize
 handles, carve, clip planes and pins, face highlights, vertex/edge/face selection,
@@ -280,7 +326,7 @@ default substrate for surfaces meant to become part of Kyusu's designed
 experience, and those migrate one at a time -- the ImGui version staying until the
 replacement is better.
 
-## 11. Related documents
+## 12. Related documents
 
 | Doc | Relationship |
 |---|---|

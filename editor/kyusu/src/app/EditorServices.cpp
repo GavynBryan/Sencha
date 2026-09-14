@@ -50,7 +50,8 @@
 #include <app/Engine.h>
 #include <app/EngineSchedule.h>
 #include <app/Game.h>
-#include <assets/cook/AssetImporter.h> // importer registry + kImportSettingsSuffix
+#include <assets/cook/AssetImporter.h> // kImportSettingsSuffix
+#include <assets/cook/ContentImporters.h>
 #include <assets/cook/TextureCook.h>
 #include <render/LightComponentTypes.h>
 #include <render/IrradianceVolumeComponent.h>
@@ -988,7 +989,7 @@ void EditorServices::HandlePlatformEvent(PlatformEventContext& ctx)
 struct EditorServices::SourceWatchState
 {
     explicit SourceWatchState(JobSystem* jobs)
-        : TextureImporter(jobs)
+        : Importers(jobs)
     {
     }
 
@@ -998,8 +999,7 @@ struct EditorServices::SourceWatchState
         AssetHotReloader Reloader;
     };
 
-    PngTextureImporter TextureImporter;
-    AssetImporterRegistry Importers;
+    ContentImporterSet Importers;
     std::vector<std::unique_ptr<RootWatch>> Roots;
     std::chrono::steady_clock::time_point NextPoll{};
 };
@@ -1011,13 +1011,13 @@ void EditorServices::BuildSourceWatch()
 
     Engine& engine = *EnginePtr;
     SourceWatch = std::make_unique<SourceWatchState>(&engine.Jobs());
-    SourceWatch->Importers.Register(SourceWatch->TextureImporter);
     for (const std::string& root : Project->ContentRoots)
     {
         auto watch = std::unique_ptr<SourceWatchState::RootWatch>(new SourceWatchState::RootWatch{
-            AssetSourceWatcher(engine.Logging(), root, { ".smat", ".png", ".meta" }),
+            AssetSourceWatcher(engine.Logging(), root,
+                               { ".smat", ".png", ".meta", ".rml", ".rcss", ".ttf", ".otf" }),
             AssetHotReloader(engine.Logging(), Assets->Assets, Assets->Registry,
-                             SourceWatch->Importers, engine.Tasks(), root),
+                             SourceWatch->Importers.Registry(), engine.Tasks(), root),
         });
         watch->Watcher.Initialize();
         SourceWatch->Roots.push_back(std::move(watch));

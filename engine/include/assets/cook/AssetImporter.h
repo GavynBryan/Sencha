@@ -33,6 +33,27 @@
 // importer (textures: TextureImportSettings).
 inline constexpr std::string_view kImportSettingsSuffix = ".meta";
 
+// Where an importer reads sources its root file references: a document's
+// stylesheets, a shader's includes. The mirror of ICookOutputWriter, and there
+// for the same two reasons -- importers stay filesystem-free, and the driver
+// sees every input a cook consumed.
+//
+// That second reason is the load-bearing one. Freshness is decided by hashing
+// the inputs, so an input the driver never learned about is one that can change
+// without recooking. Reading a sibling behind the driver's back does not just
+// bypass a seam; it silently breaks the build cache.
+class ISourceFileReader
+{
+public:
+    virtual ~ISourceFileReader() = default;
+
+    // Reads `relPath` (assets-root-relative, generic separators). False when it
+    // does not exist or cannot be read -- which an importer should report as an
+    // authoring error naming the file, not paper over.
+    [[nodiscard]] virtual bool ReadSource(std::string_view relPath,
+                                          std::vector<std::byte>& out) = 0;
+};
+
 struct ImportInput
 {
     // Source file, relative to the assets root, generic separators.
@@ -45,6 +66,11 @@ struct ImportInput
     // empty when absent. The driver reads it (and folds it into the cooked
     // cache's freshness hash) so importers stay filesystem-free.
     std::span<const std::byte> MetaBytes{};
+
+    // Additional sources the root file references, or null when the driver
+    // supplies none (a caller cooking from memory). An importer that reads
+    // through this MUST list what it read in ImportResult::AdditionalSources.
+    ISourceFileReader* Sources = nullptr;
 };
 
 // Where importers write cooked artifacts. The seam keeps importers free of
@@ -75,6 +101,15 @@ public:
 struct ImportResult
 {
     std::vector<CookedArtifact> Artifacts{};
+
+    // Every additional source this import read through ImportInput::Sources,
+    // assets-root-relative. The driver folds these into the freshness record,
+    // so editing a shared stylesheet recooks every document that includes it.
+    //
+    // Listing one the import did not read only costs a stat. Omitting one it did
+    // read is the bug this field exists to prevent, and it is invisible until
+    // somebody edits that file and nothing happens.
+    std::vector<std::string> AdditionalSources{};
 
     // Non-empty means the import failed. Importers report; the driver logs.
     std::string Error;

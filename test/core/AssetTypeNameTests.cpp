@@ -27,6 +27,9 @@ namespace
         AssetType::SkinnedMesh,
         AssetType::Collision,
         AssetType::ProbeVolume,
+        AssetType::Data,
+        AssetType::UiPackage,
+        AssetType::Font,
     };
 
     CookedSourceEntry MakeEntry(std::string sourceRel,
@@ -62,8 +65,10 @@ TEST(AssetTypeName, EveryNamedTypeRoundTripsThroughItsString)
 // Catches a gap in the middle of the enum range as well as one at the end.
 TEST(AssetTypeName, EveryValueInTheDeclaredRangeIsNamed)
 {
-    const auto last = static_cast<uint16_t>(AssetType::ProbeVolume);
-    for (uint16_t raw = 1; raw <= last; ++raw)
+    // Bounded by the enum's own sentinel rather than by whichever value was
+    // last when this was written, so adding a kind cannot slip past it.
+    const auto end = static_cast<uint16_t>(AssetType::Count);
+    for (uint16_t raw = 1; raw < end; ++raw)
     {
         const auto type = static_cast<AssetType>(raw);
         EXPECT_NE(AssetTypeToString(type), "Unknown")

@@ -1,8 +1,14 @@
 # Enforces the RmlUi firewall: RmlUi is an implementation detail of the retained
 # authored UI runtime and must not leak anywhere else.
 #
-#   - No first-party file outside engine/src/ui/rml/ may include an RmlUi header
+#   - No first-party file outside engine/src/ui/ may include an RmlUi header
 #     (<RmlUi/...>) or name an RmlUi type (Rml::).
+#
+#     That directory -- not the rml/ subdirectory inside it -- is the line. The
+#     runtime IS the document-engine integration: its contexts and documents are
+#     RmlUi objects, and hiding them behind an adapter would be an interface
+#     around one class with no boundary behind it. rml/ groups the interface
+#     implementations because they are a family, not because it is a firewall.
 #   - engine/include/ is held to this absolutely. The whole public header tree is
 #     installed verbatim (engine/CMakeLists.txt install(DIRECTORY ...)), so an
 #     RmlUi include in a public header would oblige the SDK to ship RmlUi's
@@ -25,10 +31,10 @@ cmake_minimum_required(VERSION 3.20)
 
 get_filename_component(REPO "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
-# The one place RmlUi may be named. Adding a second is a claim that the adapter
+# The one place RmlUi may be named. Adding a second entry is a claim that the
 # boundary moved, which is a design review, not a checkbox.
 set(UI_ALLOWED
-    "/engine/src/ui/rml/"
+    "/engine/src/ui/"
 )
 
 set(VIOLATIONS "")
@@ -77,7 +83,7 @@ foreach(file ${FIRST_PARTY_FILES})
     string(REGEX MATCH "#[ \t]*include[ \t]*[<\"]RmlUi/" inc_hit "${content}")
     if(inc_hit)
         list(APPEND VIOLATIONS
-            "${rel} includes an <RmlUi/...> header (RmlUi stays behind engine/src/ui/rml/)")
+            "${rel} includes an <RmlUi/...> header (RmlUi stays behind engine/src/ui/)")
     endif()
 
     string(REGEX MATCH "Rml::" rml_hit "${content}")
@@ -95,4 +101,4 @@ if(VIOLATIONS)
     message(FATAL_ERROR "ui isolation check failed: ${n} violation(s)")
 endif()
 
-message(STATUS "ui isolation OK (RmlUi confined to engine/src/ui/rml/)")
+message(STATUS "ui isolation OK (RmlUi confined to engine/src/ui/)")

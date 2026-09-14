@@ -18,7 +18,7 @@
 #include <app/EngineSchedule.h>
 #include <app/Game.h>
 #include <assets/cook/AssetImporter.h>
-#include <assets/cook/TextureCook.h>
+#include <assets/cook/ContentImporters.h>
 #include <assets/cook/TextureImportSettings.h>
 #include <assets/hotreload/AssetHotReloader.h>
 #include <assets/material/MaterialAssetLoader.h>
@@ -72,7 +72,7 @@ namespace
 struct MaterialEditorServices::TextureRecookState
 {
     explicit TextureRecookState(JobSystem* jobs)
-        : TextureImporter(jobs)
+        : Importers(jobs)
     {
     }
 
@@ -82,8 +82,7 @@ struct MaterialEditorServices::TextureRecookState
         AssetHotReloader Reloader;
     };
 
-    PngTextureImporter TextureImporter;
-    AssetImporterRegistry Importers;
+    ContentImporterSet Importers;
     std::vector<std::unique_ptr<RootReloader>> Roots;
 };
 
@@ -164,13 +163,12 @@ void MaterialEditorServices::InitAssets()
     Materials->Rescan(Project->ContentRoots);
 
     TextureRecook = std::make_unique<TextureRecookState>(&engine.Jobs());
-    TextureRecook->Importers.Register(TextureRecook->TextureImporter);
     for (const std::string& root : Project->ContentRoots)
         TextureRecook->Roots.push_back(std::unique_ptr<TextureRecookState::RootReloader>(
             new TextureRecookState::RootReloader{
                 root,
                 AssetHotReloader(engine.Logging(), Assets->Assets, Assets->Registry,
-                                 TextureRecook->Importers, engine.Tasks(), root),
+                                 TextureRecook->Importers.Registry(), engine.Tasks(), root),
             }));
 }
 

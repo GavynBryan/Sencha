@@ -162,6 +162,95 @@ namespace
         return hash;
     }
 
+    // The driver's answer to ImportInput::Sources. Records what it handed out,
+    // so the entry can be built from what the import actually read rather than
+    // from what it claimed to.
+    class AssetRootSourceReader final : public ISourceFileReader
+    {
+    public:
+        explicit AssetRootSourceReader(const std::filesystem::path& assetsRoot)
+            : Root(assetsRoot)
+        {
+        }
+
+        bool ReadSource(std::string_view relPath, std::vector<std::byte>& out) override
+        {
+            out.clear();
+            if (relPath.empty())
+                return false;
+            // Assets-root-relative only. A path escaping the root would cook
+            // content the index cannot key and the next machine cannot find.
+            const std::filesystem::path full =
+                (Root / std::filesystem::path(relPath)).lexically_normal();
+            const std::filesystem::path rootNormal = Root.lexically_normal();
+            if (full.generic_string().rfind(rootNormal.generic_string(), 0) != 0)
+                return false;
+            return ReadFileBytes(full, out);
+        }
+
+    private:
+        const std::filesystem::path& Root;
+    };
+
+    // The root's hash, then each additional source's, mixed in the order the
+    // importer reported them. Same mixer as the meta sidecar above, so one
+    // convention covers every input.
+    uint64_t MixHash(uint64_t hash, uint64_t next)
+    {
+        return hash ^ (next + 0x9e3779b97f4a7c15ull + (hash << 6) + (hash >> 2));
+    }
+
+    // Recomputes the fingerprint a cached entry would have today, by re-reading
+    // the additional sources it recorded. A source that has been deleted hashes
+    // as absent, which differs from what was recorded and so recooks.
+    uint64_t CombineAdditionalSourceHashes(
+        uint64_t rootHash,
+        const std::vector<CookedAdditionalSource>& additional,
+        const std::filesystem::path& assetsRoot)
+    {
+        uint64_t hash = rootHash;
+        std::vector<std::byte> bytes;
+        for (const CookedAdditionalSource& extra : additional)
+        {
+            const std::filesystem::path full = assetsRoot / extra.RelPath;
+            if (ReadFileBytes(full, bytes))
+                hash = MixHash(hash, HashBytes64(std::span<const std::byte>(bytes)));
+            else
+                hash = MixHash(hash, 0);
+        }
+        return hash;
+    }
+
+    // Whether every additional source still has the size and mtime it was
+    // cooked against. The stat accelerator has to cover these too: a document's
+    // own bytes do not change when one of its stylesheets does, so checking
+    // only the root would take the fast path forever.
+    bool AdditionalSourceStatsMatch(const std::vector<CookedAdditionalSource>& additional,
+                                    const std::filesystem::path& assetsRoot)
+    {
+        for (const CookedAdditionalSource& extra : additional)
+        {
+            const FileStat stat = StatFile(assetsRoot / extra.RelPath);
+            if (stat.MTime == 0 || stat != FileStat{ extra.Size, extra.MTime })
+                return false;
+        }
+        return true;
+    }
+
+    // Turns what an import read into what the entry records.
+    std::vector<CookedAdditionalSource> StampAdditionalSources(
+        const std::vector<std::string>& relPaths, const std::filesystem::path& assetsRoot)
+    {
+        std::vector<CookedAdditionalSource> out;
+        out.reserve(relPaths.size());
+        for (const std::string& relPath : relPaths)
+        {
+            const FileStat stat = StatFile(assetsRoot / relPath);
+            out.push_back(CookedAdditionalSource{ relPath, stat.Size, stat.MTime });
+        }
+        return out;
+    }
+
     bool ArtifactsAreValid(const std::vector<CookedArtifact>& artifacts, std::string& whyNot)
     {
         if (artifacts.empty())
@@ -328,6 +417,7 @@ bool PrepareAssetsOnDemand(const std::filesystem::path& assetsRoot,
         if (cached != nullptr && sourceStat.MTime != 0
             && FileStat{ cached->SourceSize, cached->SourceMTime } == sourceStat
             && FileStat{ cached->MetaSize, cached->MetaMTime } == metaStat
+            && AdditionalSourceStatsMatch(cached->AdditionalSources, assetsRoot)
             && ArtifactFilesExist(assetsRoot, *cached))
         {
             ++stats.CookedFresh;
@@ -352,7 +442,14 @@ bool PrepareAssetsOnDemand(const std::filesystem::path& assetsRoot,
         std::vector<std::byte> metaBytes;
         const uint64_t sourceHash = HashSourceWithMeta(it->path(), bytes, metaBytes);
 
-        if (cached != nullptr && cached->InputFingerprint == sourceHash
+        // What this source's fingerprint would be today, including whatever
+        // additional sources the last cook read. Equal to sourceHash when there
+        // were none, so a single-file importer is unaffected.
+        const uint64_t cachedFingerprint = cached != nullptr
+            ? CombineAdditionalSourceHashes(sourceHash, cached->AdditionalSources, assetsRoot)
+            : sourceHash;
+
+        if (cached != nullptr && cached->InputFingerprint == cachedFingerprint
             && ArtifactFilesExist(assetsRoot, *cached))
         {
             ++stats.CookedFresh;
@@ -360,6 +457,14 @@ bool PrepareAssetsOnDemand(const std::filesystem::path& assetsRoot,
             // the new stats so the next launch takes the fast path.
             CookedSourceEntry entry = *cached;
             StampSourceStats(entry, sourceStat, metaStat);
+            entry.AdditionalSources = StampAdditionalSources(
+                [&] {
+                    std::vector<std::string> paths;
+                    paths.reserve(cached->AdditionalSources.size());
+                    for (const CookedAdditionalSource& extra : cached->AdditionalSources)
+                        paths.push_back(extra.RelPath);
+                    return paths;
+                }(), assetsRoot);
             bool upgraded = false;
             ok = ResolveArtifactHashes(assetsRoot, entry.Artifacts, log, upgraded) && ok;
             out.Registrations.insert(out.Registrations.end(),
@@ -368,8 +473,9 @@ bool PrepareAssetsOnDemand(const std::filesystem::path& assetsRoot,
             continue;
         }
 
-        ImportResult result =
-            importer->Import(ImportInput{ sourceRel, bytes, metaBytes }, stagingWriter);
+        AssetRootSourceReader sourceReader(assetsRoot);
+        ImportResult result = importer->Import(
+            ImportInput{ sourceRel, bytes, metaBytes, &sourceReader }, stagingWriter);
         std::string whyNot = result.Error;
         if (!result.IsValid() || !ArtifactsAreValid(result.Artifacts, whyNot))
         {
@@ -382,7 +488,11 @@ bool PrepareAssetsOnDemand(const std::filesystem::path& assetsRoot,
 
         CookedSourceEntry entry;
         entry.SourceRelPath = sourceRel;
-        entry.InputFingerprint = sourceHash;
+        entry.AdditionalSources = StampAdditionalSources(result.AdditionalSources, assetsRoot);
+        // The fingerprint covers every input the import actually consumed, which
+        // is what makes editing one of them recook this source.
+        entry.InputFingerprint =
+            CombineAdditionalSourceHashes(sourceHash, entry.AdditionalSources, assetsRoot);
         StampSourceStats(entry, sourceStat, metaStat);
         entry.Artifacts = result.Artifacts;
 
@@ -565,7 +675,9 @@ bool ReimportOneSource(std::string_view rootDirectory,
     const uint64_t sourceHash = HashSourceWithMeta(sourcePath, bytes, metaBytes);
 
     FileCookOutputWriter writer(root);
-    ImportResult result = importer->Import(ImportInput{ sourceRelPath, bytes, metaBytes }, writer);
+    AssetRootSourceReader sourceReader(root);
+    ImportResult result = importer->Import(
+        ImportInput{ sourceRelPath, bytes, metaBytes, &sourceReader }, writer);
     std::string whyNot = result.Error;
     if (!result.IsValid() || !ArtifactsAreValid(result.Artifacts, whyNot))
     {
@@ -592,7 +704,9 @@ bool ReimportOneSource(std::string_view rootDirectory,
     }
     CookedSourceEntry entry;
     entry.SourceRelPath = std::string(sourceRelPath);
-    entry.InputFingerprint = sourceHash;
+    entry.AdditionalSources = StampAdditionalSources(result.AdditionalSources, root);
+    entry.InputFingerprint =
+        CombineAdditionalSourceHashes(sourceHash, entry.AdditionalSources, root);
     std::filesystem::path metaPath = sourcePath;
     metaPath += std::string(kImportSettingsSuffix);
     StampSourceStats(entry, StatFile(sourcePath), StatFile(metaPath));

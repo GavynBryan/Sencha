@@ -130,6 +130,19 @@ JsonValue CookedCacheIndex::ToJson() const
             artifacts.emplace_back(std::move(item));
         }
 
+        // Omitted entirely when empty, so the index of a project with no
+        // multi-file sources reads exactly as it did before version 8.
+        JsonValue::Array additional;
+        additional.reserve(entry->AdditionalSources.size());
+        for (const CookedAdditionalSource& extra : entry->AdditionalSources)
+        {
+            JsonValue::Object item;
+            item.emplace_back("source", JsonValue(extra.RelPath));
+            item.emplace_back("size", JsonValue(DecimalToString(extra.Size)));
+            item.emplace_back("mtime", JsonValue(DecimalToString(extra.MTime)));
+            additional.emplace_back(std::move(item));
+        }
+
         JsonValue::Object source;
         source.emplace_back("source", JsonValue(entry->SourceRelPath));
         source.emplace_back("input_fingerprint", JsonValue(HashToHex(entry->InputFingerprint)));
@@ -137,6 +150,8 @@ JsonValue CookedCacheIndex::ToJson() const
         source.emplace_back("mtime", JsonValue(DecimalToString(entry->SourceMTime)));
         source.emplace_back("meta_size", JsonValue(DecimalToString(entry->MetaSize)));
         source.emplace_back("meta_mtime", JsonValue(DecimalToString(entry->MetaMTime)));
+        if (!additional.empty())
+            source.emplace_back("additional_sources", JsonValue(std::move(additional)));
         source.emplace_back("artifacts", JsonValue(std::move(artifacts)));
         sources.emplace_back(std::move(source));
     }
@@ -188,6 +203,27 @@ bool CookedCacheIndex::FromJson(const JsonValue& root, CookedCacheIndex& out, st
         entry.SourceMTime = DecimalField<int64_t>(item, "mtime");
         entry.MetaSize = DecimalField<uint64_t>(item, "meta_size");
         entry.MetaMTime = DecimalField<int64_t>(item, "meta_mtime");
+
+        if (const JsonValue* additional = item.Find("additional_sources"); additional != nullptr)
+        {
+            if (!additional->IsArray())
+                return Fail(error, "source 'additional_sources' must be an array");
+            for (const JsonValue& extraJson : additional->AsArray())
+            {
+                if (!extraJson.IsObject())
+                    return Fail(error, "'additional_sources' entries must be JSON objects");
+                const JsonValue* path = extraJson.Find("source");
+                if (path == nullptr || !path->IsString() || path->AsString().empty())
+                    return Fail(error, "additional source 'source' must be a non-empty string");
+
+                CookedAdditionalSource extra;
+                extra.RelPath = path->AsString();
+                extra.Size = DecimalField<uint64_t>(extraJson, "size");
+                extra.MTime = DecimalField<int64_t>(extraJson, "mtime");
+                entry.AdditionalSources.push_back(std::move(extra));
+            }
+        }
+
         for (const JsonValue& artifactJson : artifacts->AsArray())
         {
             CookedArtifact artifact;
