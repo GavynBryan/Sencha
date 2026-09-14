@@ -9,13 +9,17 @@
 #include "input/InputRouter.h"
 #include "input/ShortcutRegistry.h"
 #include "input/ViewportNavigation.h"
-#include "tools/ToolWheelSession.h"
+#include "tools/RadialMenuModel.h"
+#include "tools/RadialMenuSession.h"
+#include "tools/ToolRegistryMenuModel.h"
+#include "editmodes/TransformModeMenuModel.h"
 #include "workspace/EditorWorkspace.h"
 #include "project/MaterialLibrary.h"
 #include "project/Project.h"
 #include "ui/EditorStatusBar.h"
 #include "ui/ToolPalettePanel.h"
 #include "ui/EditorToolbar.h"
+#include "ui/WorkspaceBar.h"
 
 #include <memory>
 #include <optional>
@@ -90,7 +94,8 @@ private:
 
     void ProcessFrame();
     // The tool wheel while it is open, painted over the whole window.
-    void DrawToolWheel();
+    // A radial menu while it is open, painted over the whole window.
+    void DrawRadialMenu(const RadialMenuSession& wheel, const IRadialMenuModel& menu);
 
     // Opens the project (SENCHA_PROJECT = path to a .senchaproj) and loads its
     // game module so its components register into the editor's serializer registry
@@ -141,14 +146,20 @@ private:
 
     std::unique_ptr<CommandStack> Commands;
     std::unique_ptr<EditorWorkspace> Workspace;
-    // The held-key tool menu, over the workspace's registry.
-    std::unique_ptr<ToolWheelSession> Wheel;
+    // The held-key radial menus: the tools over the workspace's registry, the
+    // gizmo modes over the manipulator session. One mechanism, two models.
+    std::unique_ptr<ToolRegistryMenuModel> ToolMenu;
+    std::unique_ptr<RadialMenuSession> ToolWheel;
+    std::unique_ptr<TransformModeMenuModel> GizmoMenu;
+    std::unique_ptr<RadialMenuSession> GizmoWheel;
     std::unique_ptr<InputRouter> Router;
     std::unique_ptr<ViewportNavigation> Navigation;
     std::unique_ptr<ShortcutRegistry> Shortcuts;
     // Declared after Workspace so they are destroyed before the state they
     // reference (ToolRegistry/MeshEdit/Layout/Selection live in Workspace).
     std::unique_ptr<EditorToolbar> Toolbar;
+    // The bar under the caption: the cook/play loop, and workspace tabs to come.
+    std::unique_ptr<WorkspaceBar> TopBar;
     std::unique_ptr<EditorStatusBar> StatusBar;
     std::unique_ptr<MaterialLibrary> Materials;
     // Thumbnail GPU residency for the browser and active-material previews.

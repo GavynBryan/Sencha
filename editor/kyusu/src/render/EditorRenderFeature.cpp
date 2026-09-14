@@ -1,5 +1,8 @@
 #include "EditorRenderFeature.h"
 
+#include "brush/BrushEvaluation.h"
+#include "brush/BrushWorkCounters.h"
+
 #include "PreviewBuffer.h"
 
 #include "document/EditorDocument.h"
@@ -12,9 +15,13 @@
 #include "viewport/ViewportShading.h"
 
 #include <app/EngineConsoleBuiltins.h>
+#include "BrushBakeGpu.h"
+
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/CVarRead.h>
+
+#include <algorithm>
 #include <core/console/ConsoleTypes.h>
 #include <render/CameraProjection.h>
 #include <render/RenderLightCVars.h>
@@ -26,6 +33,35 @@
 #include <optional>
 #include <variant>
 #include <vector>
+
+void EditorRenderFeature::SweepBrushBakes()
+{
+    // Residency follows the open documents and their stores, never
+    // visibility: an invisible zone or a hidden brush keeps its meshes.
+    std::vector<std::pair<RegistryId, const EditorScene*>> open;
+    const auto add = [&](const EditorDocument& document)
+    {
+        const EditorScene& scene = document.GetScene();
+        for (const auto& [id, known] : open)
+            if (id == scene.GetRegistry().Id)
+                return;
+        open.emplace_back(scene.GetRegistry().Id, &scene);
+    };
+    add(World.FocusDocument());
+    World.VisitOpenZones([&](ZoneId, EditorDocument& document, const ZoneViewState&)
+                         { add(document); });
+    std::vector<RegistryId> registries;
+    registries.reserve(open.size());
+    for (const auto& [id, scene] : open)
+        registries.push_back(id);
+    BrushBakes.Sweep(registries, [&](RegistryId registry, BrushId brush)
+    {
+        for (const auto& [id, scene] : open)
+            if (id == registry)
+                return scene->GetBrushMeshStore().FindRecord(brush) != nullptr;
+        return false;
+    });
+}
 
 EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
                                          WorldDocument& world,
@@ -48,6 +84,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     , GridCfg(grid)
     , WorldView(worldView)
     , BrushSolid(Solid)
+    , BrushBakes(runtimeAssets != nullptr ? MakeBrushBakeGpu(*runtimeAssets) : BrushBakeCache::Gpu{})
     , Meshes(Solid, logging, assets, catalog)
     , Wireframe(selection, overlay, Lines)
     , Visuals(Lines)
@@ -72,14 +109,17 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
         MeshCache = runtimeAssets->StaticMeshes.get();
         SkinnedMeshCacheRef = runtimeAssets->SkinnedMeshes.get();
         MaterialStore = &runtimeAssets->Materials;
-        QueueBuilder.emplace(runtimeAssets->Assets, *runtimeAssets->StaticMeshes,
+        QueueBuilder.emplace(runtimeAssets->Assets, BrushBakes, *runtimeAssets->StaticMeshes,
                              runtimeAssets->Materials, runtimeAssets->MaterialSets,
                              logging, runtimeAssets->Textures.get(),
                              runtimeAssets->SkinnedMeshes.get());
         SceneSolid.emplace(Forward, *QueueBuilder, *runtimeAssets->StaticMeshes,
                            runtimeAssets->Materials);
+        SceneWire.emplace(selection, overlay, *QueueBuilder, InstancedLines);
+        Highlight.SetInstancing(&QueueBuilder->BrushDraws(), &InstancedLines, &InstancedFill);
         MaterialPath = true;
         BodyRenderers[static_cast<std::size_t>(ViewportShading::Solid)] = &*SceneSolid;
+        BodyRenderers[static_cast<std::size_t>(ViewportShading::Wireframe)] = &*SceneWire;
     }
     else
     {
@@ -115,6 +155,8 @@ bool EditorRenderFeature::Setup(const RenderFeatureServices& featureServices)
     // needs and the descriptor cache keeps the largest.
     Forward.Setup(services, Lighting);
     Lines.Setup(services);
+    InstancedLines.Setup(services);
+    InstancedFill.Setup(services);
     WideLines.Setup(services);
     Fills.Setup(services);
     Targets.Setup(services);
@@ -169,10 +211,13 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
         Thumbnails->BeginFrame();
     Highlight.BeginFrame();
     Composition.Clear();
+    // Last frame's brush work tally, kept for the console readout; the
+    // counters start over for this frame.
+    (void)BrushWorkCounters::TakeFrame();
 
     // Build the scene draw queues once per frame; the per-viewport camera is applied at
     // draw time, so every viewport reuses the same brush + placed-mesh queues. Brush
-    // geometry re-uploads only when the scene's brushes changed (dirty-tracked inside).
+    // meshes upload only when a distinct mesh's content is new to the bake cache.
     if (MaterialPath)
     {
         // Stamp the live render.* tunables before Build: the shadow-view
@@ -191,6 +236,13 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
         // so every panel, tool, and gizmo has already made its edits for the
         // frame; refreshing any earlier would render a parented entity a frame
         // behind whatever moved it.
+        // The preview piece budget is a cvar; the scene evaluates modifier
+        // stacks against it for everything the viewport shows (the cook asks
+        // for its own hard limit).
+        const BrushEvaluationPolicy previewPolicy = BrushEvaluationPolicy::Interactive(
+            static_cast<std::uint32_t>(std::max(1.0, ReadCVarDouble(
+                Console, "editor.brush.preview_piece_budget", 4096.0))));
+        World.FocusDocument().GetScene().SetInteractiveEvaluationPolicy(previewPolicy);
         World.FocusDocument().GetScene().RefreshDerivedTransforms();
         QueueBuilder->Build(World.FocusDocument());
 
@@ -206,13 +258,15 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
                 auto& builder = ContextBuilders[zone.Value];
                 if (builder == nullptr)
                     builder = std::make_unique<SceneRenderQueueBuilder>(
-                        RuntimeAssetsRef->Assets, *RuntimeAssetsRef->StaticMeshes,
+                        RuntimeAssetsRef->Assets, BrushBakes, *RuntimeAssetsRef->StaticMeshes,
                         RuntimeAssetsRef->Materials, RuntimeAssetsRef->MaterialSets,
                         *LoggingRef, nullptr,
                         RuntimeAssetsRef->SkinnedMeshes.get());
+                document.GetScene().SetInteractiveEvaluationPolicy(previewPolicy);
                 document.GetScene().RefreshDerivedTransforms();
                 builder->Build(document);
             });
+        SweepBrushBakes();
         // Arbitrating and recording the focus scene's shadow atlas is one
         // frame's work that every Solid viewport then samples, so it is
         // declared as work the views wait on rather than called first and
@@ -539,7 +593,12 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
                 else
                 {
                     const Vec4 dimmedWire(EditorTheme::ContextZoneDim.X, 0.0f, 0.0f, 1.0f);
-                    Wireframe.DrawWireframe(local, viewport, camera, contextScene, dimmedWire);
+                    const auto it = ContextBuilders.find(zone.Value);
+                    if (SceneWire && it != ContextBuilders.end())
+                        SceneWire->DrawWireframe(local, viewport, camera, contextScene,
+                                                 it->second->BrushDraws(), dimmedWire);
+                    else
+                        Wireframe.DrawWireframe(local, viewport, camera, contextScene, dimmedWire);
                 }
                 Visuals.DrawViewport(local, viewport, camera, contextScene, EditorTheme::ContextZoneDim);
             });
@@ -646,9 +705,14 @@ void EditorRenderFeature::Teardown()
     // because the host removes it before releasing them. Point the Solid body
     // back at the checker so nothing dereferences the released builder.
     BodyRenderers[static_cast<std::size_t>(ViewportShading::Solid)] = &BrushSolid;
+    BodyRenderers[static_cast<std::size_t>(ViewportShading::Wireframe)] = &Wireframe;
     MaterialPath = false;
+    Highlight.SetInstancing(nullptr, nullptr, nullptr);
+    SceneWire.reset();
     SceneSolid.reset();
+    ContextBuilders.clear();
     QueueBuilder.reset();
+    BrushBakes.Clear();
     MeshCache = nullptr;
     SkinnedMeshCacheRef = nullptr;
     MaterialStore = nullptr;
@@ -661,6 +725,8 @@ void EditorRenderFeature::Teardown()
     ShadowPass.Teardown();
     Lighting.Teardown();
     Lines.Teardown();
+    InstancedLines.Teardown();
+    InstancedFill.Teardown();
     WideLines.Teardown();
     Fills.Teardown();
     Targets.Teardown();

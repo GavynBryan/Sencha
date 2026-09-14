@@ -3,6 +3,9 @@
 #include "input/UiInputCapture.h"
 #include "PanelVisibilitySettings.h"
 #include "ThemePreferences.h"
+#include "ThemeTextureCache.h"
+#include "chrome/ChromeBars.h"
+#include "chrome/IconDraw.h"
 
 #include <graphics/vulkan/Renderer.h>
 #include <platform/WindowFrameHit.h>
@@ -29,6 +32,16 @@ struct IEditorPanel;
 struct ShellIdentity
 {
     std::string Product;
+    // The product's mark, a path to a PNG. Shell branding, not theme art: it
+    // is fixed by the application and rides the font atlas with the icons.
+    std::string LogoPath;
+};
+
+// Which themed bar a surface belongs to.
+enum class BarRole
+{
+    Caption,
+    Toolbar,
 };
 
 // Fraction of its parent split each DockSlot region takes when the default
@@ -114,6 +127,10 @@ public:
     void SetNewWorldAction(std::function<void()> newWorldAction);
 
     void SetIdentity(ShellIdentity identity);
+
+    // The resolved surface for a bar, as prepared at this frame's boundary.
+    // A pure lookup: a bar painting itself never reaches a loader.
+    [[nodiscard]] EditorChrome::BarSurface SurfaceFor(BarRole role) const;
     // What the shell is working on, read each frame and shown at the tail of
     // the menu bar (the open document and whether it has unsaved edits).
     void SetStatusProvider(std::function<std::string()> statusProvider);
@@ -121,6 +138,13 @@ public:
 private:
     bool InitImGui(const RendererServices& services);
     void ShutdownImGui();
+    // The frame boundary: commit a pending theme, then resolve everything
+    // derived from theme state, before any of it is drawn.
+    void PrepareFrameChrome();
+    void PrepareThemeTextures();
+    void BuildShellAtlasIfStale();
+    [[nodiscard]] EditorChrome::BarSurface ResolveSurface(EditorUi::BarFinish finish, const std::string& path,
+                                                          EditorUi::SurfaceModulation modulation) const;
     void DrawMainMenuBar();
     void RegisterPointerCommands(ConsoleRegistry& registry);
     void FeedPointerActions();
@@ -142,6 +166,21 @@ private:
     bool LoggedFirstDraw = false;
     // Style, scale, and fonts are built on the first OnDraw (see there).
     bool LookBuilt = false;
+    bool ThemeSynced = false;
+
+    // Theme artwork, with a lifetime of its own: a theme switch replaces these
+    // and leaves the font atlas alone.
+    std::optional<ThemeTextureCache> ThemeTextures;
+    std::vector<std::string> RequestedTextures;
+    EditorChrome::BarSurface CaptionSurface;
+    EditorChrome::BarSurface ToolbarSurface;
+
+    // The inputs the shell atlas was last built from. Compared, not signalled:
+    // nothing tells this feature "the theme changed", it decides for itself
+    // whether its own inputs moved.
+    EditorChrome::ShellAtlasKey BuiltAtlas;
+    bool AtlasBuilt = false;
+    std::uint32_t AtlasBuilds = 0;
 
     std::function<void()> UndoAction;
     std::function<void()> RedoAction;

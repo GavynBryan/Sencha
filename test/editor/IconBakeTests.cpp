@@ -44,7 +44,7 @@ protected:
 
 TEST_F(IconBakeTests, EveryIconFileBakesToSomething)
 {
-    EXPECT_EQ(EditorChrome::BakeIcons(*ImGui::GetIO().Fonts, 1.0f), static_cast<int>(IconId::Count) - 1);
+    EXPECT_EQ(EditorChrome::BakeAtlasArt(*ImGui::GetIO().Fonts, {}).Icons, static_cast<int>(IconId::Count) - 1);
     EXPECT_NE(ImGui::GetIO().Fonts->TexPixelsAlpha8, nullptr);
     DrawEveryIcon();
 }
@@ -56,7 +56,7 @@ TEST_F(IconBakeTests, DrawingWithoutABakeFallsBackToTheGlyph)
 
 TEST_F(IconBakeTests, ABakeFromAnEarlierContextIsNotReused)
 {
-    EXPECT_GT(EditorChrome::BakeIcons(*ImGui::GetIO().Fonts, 1.0f), 0);
+    EXPECT_GT(EditorChrome::BakeAtlasArt(*ImGui::GetIO().Fonts, {}).Icons, 0);
     ImGui::DestroyContext();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();

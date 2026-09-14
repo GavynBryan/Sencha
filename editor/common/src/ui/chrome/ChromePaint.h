@@ -31,6 +31,7 @@ void GlowChamfered(ImDrawList* dl, const ChamferPoly& poly, ImVec4 color, float 
 void DrawBracketCorners(ImDrawList* dl, ImVec2 mn, ImVec2 mx, float length, ImU32 color, float width);
 
 void VerticalGradient(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 top, ImU32 bottom);
+void HorizontalGradient(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 left, ImU32 right);
 
 // The inside edge of a recessed well: shadow along the top and left, a faint
 // highlight along the bottom and right, drawn just inside [mn, mx].

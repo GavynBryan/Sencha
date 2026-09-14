@@ -101,14 +101,51 @@ struct Raster
 };
 std::array<std::array<Raster, kSizeCount>, kCount> g_Rasters{};
 const ImFontAtlas* g_BakedAtlas = nullptr;
+
+// The shell's mark: flat-white vector art like the icons, so it is baked as
+// coverage and takes its color from a tint at draw time. Its height comes from
+// the UI scale alone and never from a nameplate's dimensions -- letting a theme
+// metric decide it would make a colour-and-spacing change rebuild the atlas.
+constexpr float kLogoBakeHeight = 64.0f;
+struct LogoRaster
+{
+    ImVec2 Uv0;
+    ImVec2 Uv1;
+    float Aspect = 0.0f;
+};
+LogoRaster g_Logo{};
 }
 
 namespace EditorChrome
 {
-int BakeIcons(ImFontAtlas& atlas, float uiScale)
+ShellAtlasResult BakeAtlasArt(ImFontAtlas& atlas, const ShellAtlasKey& key)
 {
+    const float uiScale = key.UiScale;
     g_Rasters = {};
+    g_Logo = {};
     g_BakedAtlas = nullptr;
+
+    // The mark is parsed before anything is packed: its rect has to be reserved
+    // alongside the icons so one Build() places them all.
+    NSVGimage* logo = nullptr;
+    int logoW = 0;
+    int logoH = 0;
+    int logoRect = -1;
+    if (!key.LogoPath.empty())
+    {
+        logo = nsvgParseFromFile(key.LogoPath.c_str(), "px", 96.0f);
+        if (logo != nullptr && logo->width > 0.0f && logo->height > 0.0f)
+        {
+            logoH = std::max(1, static_cast<int>(std::lround(kLogoBakeHeight * uiScale)));
+            logoW = std::max(1, static_cast<int>(std::lround(static_cast<float>(logoH) * logo->width / logo->height)));
+            logoRect = atlas.AddCustomRectRegular(logoW, logoH);
+        }
+        else
+        {
+            nsvgDelete(logo);
+            logo = nullptr;
+        }
+    }
 
     struct Parsed
     {
@@ -174,9 +211,49 @@ int BakeIcons(ImFontAtlas& atlas, float uiScale)
         nsvgDelete(image);
         loaded += any ? 1 : 0;
     }
+    // The mark rides the same coverage plane as the icons, written before the
+    // rasterizer goes away.
+    bool logoBaked = false;
+    if (logo != nullptr)
+    {
+        const ImFontAtlasCustomRect* rect = atlas.GetCustomRectByIndex(logoRect);
+        if (rect != nullptr && rect->IsPacked() && atlas.TexPixelsAlpha8 != nullptr)
+        {
+            std::vector<unsigned char> logoPixels(static_cast<std::size_t>(logoW) * static_cast<std::size_t>(logoH) * 4u);
+            nsvgRasterize(rasterizer, logo, 0.0f, 0.0f, static_cast<float>(logoH) / logo->height,
+                          logoPixels.data(), logoW, logoH, logoW * 4);
+            for (int y = 0; y < logoH; ++y)
+            {
+                unsigned char* row = atlas.TexPixelsAlpha8 + (rect->Y + y) * atlas.TexWidth + rect->X;
+                for (int x = 0; x < logoW; ++x)
+                {
+                    row[x] = logoPixels[(static_cast<std::size_t>(y) * static_cast<std::size_t>(logoW)
+                                         + static_cast<std::size_t>(x)) * 4u + 3u];
+                    logoBaked |= row[x] != 0;
+                }
+            }
+            atlas.CalcCustomRectUV(rect, &g_Logo.Uv0, &g_Logo.Uv1);
+            g_Logo.Aspect = static_cast<float>(logoW) / static_cast<float>(logoH);
+        }
+        nsvgDelete(logo);
+    }
     nsvgDeleteRasterizer(rasterizer);
+
     g_BakedAtlas = &atlas;
-    return loaded;
+    return ShellAtlasResult{ loaded, logoBaked };
+}
+
+float LogoAspect()
+{
+    return ImGui::GetIO().Fonts == g_BakedAtlas ? g_Logo.Aspect : 0.0f;
+}
+
+void DrawLogo(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 tint)
+{
+    ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+    if (atlas != g_BakedAtlas || g_Logo.Aspect <= 0.0f || mx.x <= mn.x || mx.y <= mn.y)
+        return;
+    dl->AddImage(atlas->TexID, mn, mx, g_Logo.Uv0, g_Logo.Uv1, tint);
 }
 
 void DrawIcon(ImDrawList* dl, IconId id, ImVec2 mn, ImVec2 mx, ImU32 tint)

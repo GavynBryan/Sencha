@@ -19,7 +19,9 @@ enum class OrnamentKind : std::uint8_t
     StatusLed,
     Groove,
     Seam,
-    Grid, // faint blueprint grid over an empty well; keep last, it bounds the table
+    Grid,       // faint blueprint grid over an empty well
+    Bolt,       // the screw's heavier sibling, for bar caps and the primary frame
+    LightStrip, // a short illuminated bar mounted on a frame's ring
 };
 
 // How much decoration a surface can carry, decided from its size so a small
@@ -71,6 +73,75 @@ struct FrameRects
     ImVec2 RailMax;
 };
 FrameRects FrameLayout(ImVec2 mn, ImVec2 mx, const FrameSpec& spec);
+
+// A bar's chassis: the band a menu bar, toolbar, or status bar is built from.
+// Read top to bottom, a bar is a rim, a recessed channel, and a rim; the
+// controls sit on a lane centered in the channel, and a cap terminates each
+// end of the channel.
+struct BarSpec
+{
+    float Rim = 0.0f;       // depth of the metal band along the top and bottom edges
+    float Clearance = 0.0f; // channel floor above and below the control lane
+    float Cap = 0.0f;       // width of the block that terminates each end; 0 = no caps
+};
+
+struct BarRects
+{
+    ImVec2 TopRimMin, TopRimMax;
+    ImVec2 BottomRimMin, BottomRimMax;
+    ImVec2 ChannelMin, ChannelMax; // between the rims and inside the caps
+    ImVec2 LeftCapMin, LeftCapMax;
+    ImVec2 RightCapMin, RightCapMax;
+    ImVec2 LaneMin, LaneMax; // where controls are seated: `itemHeight` tall, centered in the channel
+    bool HasCaps = false;
+};
+
+// The chassis of the bar spanning [mn, mx] hosting controls `itemHeight` tall.
+// The rims are clamped so the channel never inverts, the caps are dropped when
+// the bar is too narrow to carry them, and the lane is snapped to whole pixels
+// so the 1px bevels it sits between stay crisp.
+BarRects BarLayout(ImVec2 mn, ImVec2 mx, const BarSpec& spec, float itemHeight);
+
+// The bar height that gives `itemHeight` controls their full clearance: a bar
+// this tall lays out with a lane exactly `itemHeight` tall at Rim + Clearance.
+float BarHeightFor(const BarSpec& spec, float itemHeight);
+
+// How a bar row placed its center block.
+enum class BarRowFit : std::uint8_t
+{
+    Centered, // the center block sits on the bar's midpoint
+    Shifted,  // an outer block forced it off the midpoint, but nothing overlaps
+    // It did not fit between the outer blocks. Those keep their ends and the
+    // center starts after the left one, overlapping the right one: the signal
+    // to drop a block and lay the row out again.
+    Flowed,
+};
+
+struct BarRowRects
+{
+    float LeftMin = 0.0f, LeftMax = 0.0f;
+    float CenterMin = 0.0f, CenterMax = 0.0f;
+    float RightMin = 0.0f, RightMax = 0.0f;
+    // The runs left over between the blocks; Min == Max when a run collapsed.
+    float LeftFreeMin = 0.0f, LeftFreeMax = 0.0f;
+    float RightFreeMin = 0.0f, RightFreeMax = 0.0f;
+    BarRowFit Fit = BarRowFit::Centered;
+};
+
+// The bar chassis's three-block row: a block at the channel's left end, one at
+// its right end, and one centered on the channel's midpoint, shifted only as
+// far as the outer blocks and `gap` force it.
+//
+// Three blocks, one axis, fixed widths in and screen x out. It is the rule this
+// chassis needs, not a layout engine: a row that does not fit these three
+// blocks wants its own function or its own placement, not a mode added here.
+BarRowRects BarRowLayout(float channelMin, float channelMax, float leftWidth, float centerWidth,
+                         float rightWidth, float gap);
+
+// The upper UV for tiling a `texture`-sized image across a `region`-sized area
+// with a repeating sampler: how many times it fits on each axis. A degenerate
+// texture tiles once rather than dividing by zero.
+ImVec2 SurfaceTileUv(ImVec2 region, ImVec2 texture);
 
 struct ReadoutRects
 {
@@ -139,6 +210,18 @@ struct OrnamentSlot
 // function of the rects, so it never moves between frames.
 int LayoutOrnaments(const FrameRects& rects, OrnamentTier tier, float screwRadius,
                     float ventLength, float slashLength, float gap, std::span<OrnamentSlot> out);
+
+// Ornaments mounted on a frame's metal ring rather than inside its well, for a
+// composition whose body covers the well (a viewport's scene image paints over
+// anything there). Places a bolt just past each corner chamfer, a lit strip
+// inside each bottom corner, and a vent centred on the top ring.
+//
+// Parts are placed in that order, so a frame -- or an `out` span -- with room
+// for only some of them keeps the bolts and loses the vent first. Returns how
+// many were placed. Everything lands inside the ring band and nothing inside
+// the well.
+int LayoutRingOrnaments(ImVec2 mn, ImVec2 mx, float ring, float chamfer, float boltRadius,
+                        float ventLength, float stripLength, float gap, std::span<OrnamentSlot> out);
 
 // Width the rail's line leaves free at its right end for the tier's rail
 // ornaments (what LayoutOrnaments will place there when the rail is wide

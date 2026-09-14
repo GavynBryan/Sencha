@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ChromeFrame.h"
 #include "ChromeGeometry.h"
 #include "PanelStyle.h"
 #include "ui/EditorUiStyle.h"
@@ -28,11 +29,39 @@ struct HeaderState
 void DrawHeaderRail(ImDrawList* dl, ImVec2 mn, ImVec2 mx, PanelStyle style, HeaderState state,
                     float ornamentWidth = 0.0f);
 
-// A chamfered plate carrying cap, title, line, and a free control region of
-// reservedControlWidth at the right for the caller's own widgets. Returns the
-// regions it laid out so the caller can place a widget in the control one.
+// What a titled row should look like and what it must make room for. The style
+// carries the plate's weight and whether it is a plain row or a bezel; CapWidth
+// overrides the style's own cap, for a caller mounting something of its own
+// there (the shell's nameplate puts its mark in the cap).
+struct HeaderRowSpec
+{
+    PanelStyle Style = PanelStyle::Standard;
+    // 0 = the style's own accent cap. Any other value reserves a cap that
+    // wide and leaves it empty: the region belongs to the caller, which draws
+    // whatever it mounts there.
+    float CapWidth = 0.0f;
+    float ReservedControlWidth = 0.0f;  // free region at the right for the caller's widgets
+    // Whether the rule runs from the title to the control region. A plate
+    // that is a mount for controls rather than a title reads cleaner bare.
+    bool Rule = true;
+};
+
+// A chamfered plate carrying cap, title, line, and the spec's free control
+// region at the right. Returns the regions it laid out so the caller can place
+// a widget in the control one, or draw into the cap.
 HeaderRegions DrawHeaderRow(ImDrawList* dl, ImVec2 mn, ImVec2 mx, std::string_view title, EditorUi::TextRole role,
-                            HeaderState state, float reservedControlWidth);
+                            HeaderState state, const HeaderRowSpec& spec);
+
+// The height a titled row should be for this composition. A panel asks rather
+// than knowing why a bezel wants more room than a plain row.
+[[nodiscard]] float HeaderRowHeight(PanelStyle style);
+
+// The plate width a row of `height` needs to hold its cap, `titleWidth` of
+// title, and a rule at least `minLineWidth` long. The one place that knows the
+// packing, so a caller sizing its own plate cannot drift from what the row
+// actually draws.
+[[nodiscard]] float HeaderRowWidth(const HeaderRowSpec& spec, float height, float titleWidth,
+                                   float minLineWidth, float gap);
 
 // Cap + title + line with no plate, for a section inside a panel.
 void DrawHeaderRule(ImDrawList* dl, ImVec2 mn, ImVec2 mx, std::string_view title, EditorUi::TextRole role,

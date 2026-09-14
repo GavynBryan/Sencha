@@ -3,6 +3,7 @@
 #include "BrushMesh.h"
 
 #include <math/geometry/3d/Plane.h>
+#include <math/geometry/3d/Transform3d.h>
 
 #include <array>
 #include <cstdint>
@@ -52,6 +53,16 @@ struct BrushOps
     // Whole-brush move (mesh is local space; normally the entity transform moves
     // instead — provided for completeness and testing).
     [[nodiscard]] static BrushMesh Translate(const BrushMesh& mesh, Vec3d delta);
+
+    // Appends `source` (expressed in sourceTransform's frame) onto `target`
+    // (expressed in targetTransform's frame): vertices rebase source-local ->
+    // world -> target-local, loops re-index, and each face's UV projection
+    // converts through world space so the texture renders exactly where it did
+    // (world-aligned projections are brush-local axes; a straight copy would
+    // shift them whenever the frames differ). Pure append: leaves validation to
+    // the caller. Merge, flattening a modifier stack, and bake all build on it.
+    static void AppendRebased(BrushMesh& target, const Transform3f& targetTransform,
+                              const BrushMesh& source, const Transform3f& sourceTransform);
 
     // Move a face's loop along its normal to a new plane position, clamped so the
     // solid keeps at least minThickness against the opposing geometry.

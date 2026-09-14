@@ -122,7 +122,7 @@ ResolveBrushCreationPlane(const ToolContext& ctx, const EditorViewport& viewport
     {
         const SelectableRef sel = ctx.Selection.GetPrimarySelection();
         if (sel.IsEntity() && ctx.Scene.TryGetBrush(sel.Entity) != nullptr)
-            selectedBounds = ctx.Scene.TryGetWorldBounds(sel.Entity);
+            selectedBounds = ctx.Scene.EvaluatedWorldBounds(sel.Entity);
     }
 
     BrushDepthPlacement depth;

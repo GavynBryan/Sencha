@@ -196,6 +196,11 @@ Add `editor/ui/EditorUiStyle.{h,cpp}`:
    active-viewport orientation + grid spacing, wall clock. Both are fixed chrome
    drawn via `BeginViewportSideBar` (reserves work-area space the full-bleed
    viewport panel avoids), registered through `EditorUiFeature::AddChrome`.
+   Since moved: the perspective viewport's header is the toolbar row, in
+   place of a title (`ViewportPanel::SetHeaderRows`), with the gizmo strip
+   centred on the window's midline (`ToolbarRowPlacement.h`); Cook/Play/Stop sit at the
+   right end of the `WorkspaceBar`, an untitled header plate under the
+   caption that will carry workspace tabs.
    *Deliberately no snap/grid/angle **toggles**: those imply backing state
    (snap-enable, configurable spacing, angle snap) the editor doesn't have yet —
    they'd be fake buttons, so they're deferred to Phase 4 as a real feature.*
@@ -292,6 +297,48 @@ Add `editor/ui/EditorUiStyle.{h,cpp}`:
    registration ticks, and a two-line decor readout. The unplaced hazard
    stripe and scanline ornaments, the stripe metric, and the console decor
    slot were removed.
+8. **Bar chassis — DONE (2026-09-10).** The caption and the main toolbar are
+   fabricated bands rather than gradient strips. `BarLayout`/`BarHeightFor`
+   (pure, tested) cut a bar into a rim at each edge, a recessed channel
+   terminated by a chamfered end cap carrying a rivet, and a control lane
+   centered in the channel; `BarFrame` paints that over `BarBackdrop`, whose
+   gradient survives only in the rims. `BarRowLayout` is the three-block row
+   the caption is laid out with: nameplate at the left, window controls at the
+   right, and the menus centered on the bar itself, shifted only as far as the
+   outer blocks force and flowing (dropping the document readout) when they
+   cannot fit. Both bars take their height from `BarHeight`, so `caption_pad`
+   is gone; `bar_rim` and `bar_clearance` replace it. The caption submits two
+   menu-bar appends: the menus first, on the padding that both sizes the bar
+   and centers them in it, then the chrome with the ordinary padding seated on
+   the lane. The comment in `DrawMainMenuBar` and the tests in
+   `ChromeBarsTests` carry the reasoning. An empty `ModuleScope` now leaves the cursor untouched,
+   which is what had been dropping the whole toolbar row five pixels whenever
+   the active tool contributed no controls.
+
+9. **Themed surfaces, the mark, and a primary viewport — DONE (2026-09-10).**
+   Three resource lifetimes, kept apart on purpose. *Style values* (palette,
+   metrics, decor, `ChromeSurfaces`) are plain state and cost nothing to
+   change. *Theme artwork* is `ThemeTextureCache`: paths a theme names, keyed
+   by path **and** a modification-time/size stamp so editing art in place
+   replaces it, with images on the deletion queue and ImGui sets on
+   `GpuFrameRetirement`. *Shell atlas art* (fonts, icons, the Kyusu mark) is
+   rebuilt only when `ShellAtlasKey` changes — UI scale or the mark's path —
+   so a theme switch never rebuilds the fonts. There is no theme revision
+   counter: each owner compares its own inputs. A theme chosen from the menu
+   is recorded and committed at the frame boundary, where the assets it names
+   and the atlas it implies are resolved together, so one frame sees one
+   theme; painting after that is pure lookup and draw.
+   A bar's channel carries a themed finish (`solid`, `gradient_x`,
+   `gradient_y`, `texture` with `none`/`metal` modulation); the finish is paint
+   only and the File/Edit/View bay keeps its own opaque plate over it.
+   `PanelStyle` is documented as naming a chrome *composition*, and
+   `PanelChromeSpec` is the one table that says what each implies — frame
+   weight, ornament mount, header plate, header height, corner brackets — so
+   no painter tests a style value. `ViewportPrimary` is the scene view's
+   composition: a chassis-scale ring with bolts, a vent and amber light strips
+   mounted on the metal (the well is covered by the scene image), cyan corner
+   brackets, a bezel header with a lit top-centre accent, and an amber content
+   trim. `Major` was deleted; it had no callers.
 
 ## Risks / honest ceiling
 

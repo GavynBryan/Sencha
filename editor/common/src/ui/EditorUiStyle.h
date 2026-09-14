@@ -5,6 +5,7 @@
 #include <cmath>
 #include <string>
 #include <string_view>
+#include <vector>
 
 // The editor's UI look data and ImGui style — the single source for editor chrome
 // colors, metrics, scale, and typography (the 2D analog of EditorTheme.h for the
@@ -96,6 +97,14 @@ inline ImVec4 Darken(const ImVec4& c, float amount)
 {
     return ImVec4(c.x * (1.0f - amount), c.y * (1.0f - amount), c.z * (1.0f - amount), c.w);
 }
+// Blends toward `other`; t = 0 keeps `c`. For deriving a color that belongs to
+// two palette roles at once rather than inventing a literal for it.
+inline ImVec4 Mix(const ImVec4& c, const ImVec4& other, float t)
+{
+    return ImVec4(c.x + (other.x - c.x) * t, c.y + (other.y - c.y) * t,
+                  c.z + (other.z - c.z) * t, c.w);
+}
+
 inline ImVec4 WithAlpha(const ImVec4& c, float alpha)
 {
     return ImVec4(c.x, c.y, c.z, alpha);
@@ -129,12 +138,13 @@ struct ChromeMetrics
     float OrnamentMediumMin = 160.0f; // smallest panel dimension for the medium ornament tier
     float OrnamentLargeMin = 320.0f;  // smallest panel dimension for the large ornament tier
     float ModulePad = 3.0f;           // toolbar module recess around its controls
+    float BarRim = 3.0f;              // metal band along a bar's top and bottom edges
+    float BarClearance = 5.0f;        // channel floor above and below a bar's control lane
     float ScrewRadius = 3.0f;
     float VentLength = 24.0f;
     float ChassisBorder = 4.0f;       // application chassis frame width
     float ChassisChamfer = 10.0f;
     float ChassisRecess = 3.0f;       // the dock well's inset inside the chassis ring
-    float CaptionPad = 8.0f;          // extra frame padding that makes the caption bar taller than a menu row
     float ResizeBorder = 6.0f;        // edge thickness the window resizes from when it draws its own frame
 };
 inline ChromeMetrics Metrics{};
@@ -151,6 +161,45 @@ struct DecorStrings
     std::string ToolPropertiesIdle = "///\nMODULE // TOOL // STANDBY";
 };
 inline DecorStrings Decor{};
+
+// How a bar's channel is surfaced. This is theme configuration, not a resource:
+// a texture is named by path here, and something else turns that into a GPU
+// image. Nothing in this header knows ImGui or Vulkan exist.
+enum class BarFinish
+{
+    Solid,     // the flat recessed floor
+    GradientX, // lit at the left, falling to the right
+    GradientY, // lit at the top, falling to the bottom
+    Texture,   // an authored strip, tiled across the channel
+};
+
+// Whether authored art is drawn as it was painted or tinted by the palette. A
+// theme shipping wood or stone wants None; a neutral greyscale strip wants
+// Metal, which multiplies it by the MetalBase color so it follows the theme.
+enum class SurfaceModulation
+{
+    None,
+    Metal,
+};
+
+// The surfaces a theme asks for, per bar. Paths are relative to the theme
+// directory. The status bar has no channel and takes no finish.
+struct ChromeSurfaces
+{
+    BarFinish Caption = BarFinish::GradientX;
+    std::string CaptionTexture;
+    SurfaceModulation CaptionModulate = SurfaceModulation::None;
+
+    BarFinish Toolbar = BarFinish::Solid;
+    std::string ToolbarTexture;
+    SurfaceModulation ToolbarModulate = SurfaceModulation::None;
+};
+inline ChromeSurfaces Surfaces{};
+
+// The texture assets this surface configuration needs, in no particular order
+// and without duplicates. Pure: the one input a resource owner derives its work
+// from, so a theme that only changes colors asks for nothing.
+void RequestedSurfaceTextures(const ChromeSurfaces& surfaces, std::vector<std::string>& out);
 
 // Applies the palette + metrics onto the ImGui style (seeded from a fresh
 // ImGuiStyle + StyleColorsDark so no entry is left uninitialized), then scales

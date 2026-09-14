@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <utility>
 #include <vector>
 
 struct FaceElement
@@ -35,12 +36,27 @@ struct VertexElement
     Vec3d Position = {};
 };
 
+// The authored mesh's elements in world space, all three kinds, as the
+// scene's placement facts retain them per entity. Consumers that resolve an
+// element ref read these; only the facts layer builds them.
+struct SourceWorldElements
+{
+    std::vector<EdgeElement>   Edges;    // BrushEdgePairs order
+    std::vector<VertexElement> Vertices; // source vertex order
+    std::vector<FaceElement>   Faces;    // source face order
+};
+
 struct MeshElements
 {
     [[nodiscard]] static std::vector<FaceElement> Faces(const BrushMesh& mesh,
                                                         const Transform3f& transform);
     [[nodiscard]] static std::vector<EdgeElement> Edges(const BrushMesh& mesh,
                                                         const Transform3f& transform);
+    // The edge topology alone, in Edges() order, as canonical (min, max)
+    // vertex pairs: what a caller placing one mesh many times enumerates once
+    // and transforms per placement.
+    [[nodiscard]] static std::vector<std::pair<std::uint32_t, std::uint32_t>> UniqueEdgeVertexPairs(
+        const BrushMesh& mesh);
     [[nodiscard]] static std::vector<VertexElement> Vertices(const BrushMesh& mesh,
                                                              const Transform3f& transform);
 

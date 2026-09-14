@@ -1,5 +1,6 @@
 #pragma once
 
+#include <math/geometry/3d/Aabb3d.h>
 #include <math/geometry/3d/Ray3d.h>
 #include "meshedit/MeshElementKind.h"
 #include "selection/SelectableRef.h"
@@ -54,6 +55,11 @@ struct SurfaceHit
 // hit, so a click exactly on a shared edge still selects.
 [[nodiscard]] bool IntersectRayFacePolygon(const Ray3d& ray, std::span<const Vec3d> corners,
                                            float& outDistance);
+
+// Slab test: true when the ray meets `box` at some t >= 0, with `outNear` the
+// entry distance (0 when the origin is inside). The reject every brush pick
+// runs before it builds a piece's faces.
+[[nodiscard]] bool IntersectRayAabb(const Ray3d& ray, const Aabb3d& box, float& outNear);
 
 // The pick mode an element edit-mode selects with (Object->EntityOnly,
 // Vertex->VertexOnly, ...). The viewport's own table keyed by MeshElementKind —
@@ -126,13 +132,6 @@ private:
     [[nodiscard]] static bool IsBetterCandidate(const PickCandidate& candidate,
                                                 const PickCandidate& best,
                                                 bool hasBest);
-    [[nodiscard]] std::optional<PickCandidate> MakeBrushBodyCandidate(const Ray3d& ray,
-                                                                      const EditorScene& scene,
-                                                                      EntityId entity) const;
-    void GatherBrushFaceCandidates(const Ray3d& ray,
-                                   const EditorScene& scene,
-                                   EntityId entity,
-                                   std::vector<PickCandidate>& outCandidates) const;
 
     // Screen-space picking for edge/vertex modes: project mesh elements to the
     // viewport and select the nearest within a pixel threshold, breaking ties by

@@ -17,9 +17,14 @@ VulkanDeletionQueueService::VulkanDeletionQueueService(
 
 VulkanDeletionQueueService::~VulkanDeletionQueueService()
 {
-    // Flush all residual entries. By the time this destructor runs,
-    // VulkanFrameService::DestroyFrameData will have called vkDeviceWaitIdle,
-    // so it is safe to release any remaining GPU resources synchronously.
+    // By the time this destructor runs, VulkanFrameService::DestroyFrameData
+    // will have called vkDeviceWaitIdle, so residual entries are safe to
+    // release synchronously.
+    FlushAll();
+}
+
+void VulkanDeletionQueueService::FlushAll()
+{
     for (auto& bucket : Buckets)
         FlushBucket(bucket);
 }

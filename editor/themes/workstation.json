@@ -42,13 +42,22 @@
     "ornament_medium_min": 160,
     "ornament_large_min": 320,
     "module_pad": 3,
+    "bar_rim": 3,
+    "bar_clearance": 5,
     "screw_radius": 3,
     "vent_length": 24,
     "chassis_border": 4,
     "chassis_chamfer": 10,
     "chassis_recess": 3,
-    "caption_pad": 8,
     "resize_border": 6
+  },
+  "surfaces": {
+    "caption_finish": "gradient_x",
+    "caption_texture": "",
+    "caption_texture_modulate": "none",
+    "toolbar_finish": "solid",
+    "toolbar_texture": "",
+    "toolbar_texture_modulate": "none"
   },
   "decor": {
     "hierarchy_empty": "GEOMETRY\nMODULE // SCENE // NO ENTRIES",

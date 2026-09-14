@@ -81,3 +81,19 @@ void BrushSplitSoftEdge(BrushMesh& mesh, std::uint32_t a, std::uint32_t b, std::
 
 // Axis-aligned bounds over all vertices.
 [[nodiscard]] Aabb3d BrushComputeBounds(const BrushMesh& mesh);
+
+// Content digests, in-process only and never serialized. Geometry covers what
+// shapes topology and tessellation positions: vertex positions, face loops,
+// soft edges. Material covers what shapes appearance only: each face's
+// material and UV projection. The full signature folds both; two meshes with
+// equal full signatures bake to the same geometry, which is what a residency
+// cache keys on across frames where the meshes themselves are minted anew.
+[[nodiscard]] std::uint64_t BrushGeometrySignature(const BrushMesh& mesh);
+[[nodiscard]] std::uint64_t BrushMaterialSignature(const BrushMesh& mesh);
+[[nodiscard]] std::uint64_t BrushMeshSignature(const BrushMesh& mesh);
+
+// The mesh's undirected edges as canonical (min, max) vertex pairs, sorted:
+// the one enumeration every edge index in the editor refers to (element refs,
+// soft-edge marks, wireframes). Built from the face loops without a
+// half-edge structure.
+[[nodiscard]] std::vector<std::array<std::uint32_t, 2>> BrushEdgePairs(const BrushMesh& mesh);

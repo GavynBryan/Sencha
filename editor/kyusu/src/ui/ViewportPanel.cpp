@@ -37,7 +37,7 @@ constexpr ImGuiWindowFlags kViewportChildFlags =
 
 ViewportPanel::ViewportPanel(ViewportLayout& layout, const MarqueeState& marquee, const EditorOverlayState& overlay,
                              ViewportTargetCache& targets, std::string title, DockSlot slot, float dockWeight,
-                             PanelPersistence persistence, ViewportId viewport)
+                             PanelStyle style, PanelPersistence persistence, ViewportId viewport)
     : Layout(layout)
     , Marquee(marquee)
     , Overlay(overlay)
@@ -45,6 +45,7 @@ ViewportPanel::ViewportPanel(ViewportLayout& layout, const MarqueeState& marquee
     , Title(std::move(title))
     , Slot(slot)
     , Weight(dockWeight)
+    , Style(style)
     , Persistence(persistence)
     , Viewport(viewport)
 {
@@ -63,15 +64,16 @@ void ViewportPanel::ClearViewportRegion()
 void ViewportPanel::OnDraw()
 {
     // Dock-managed: the host docks this into its slot (see EditorUiFeature).
-    // The Viewport frame is the quietest weight, so the scene keeps the area;
-    // the scene arrives as an offscreen target that DrawViewport composites.
+    // Whatever the composition costs in frame, the content padding stays tight
+    // so the scene keeps the area; it arrives as an offscreen target that
+    // DrawViewport composites.
     const ImGuiWindowFlags windowFlags =
         ImGuiWindowFlags_NoScrollbar
         | ImGuiWindowFlags_NoScrollWithMouse;
 
     RegionHovered = false;
 
-    ScopedPanel panel(Title, &Visible, PanelStyle::Viewport, windowFlags);
+    ScopedPanel panel(Title, &Visible, Style, windowFlags);
     if (!panel.IsOpen())
     {
         // Collapsed or fully clipped: no rect was drawn this frame, so drop the
@@ -88,7 +90,10 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
 {
     ImGui::BeginChild("ViewportLeaf", size, ImGuiChildFlags_None, kViewportChildFlags);
 
-    DrawOrientationSelector(viewport);
+    if (Rows.empty())
+        DrawOrientationSelector(viewport);
+    for (const ChromeRow& row : Rows)
+        DrawChromeRow(row);
 
     const ImVec2 renderSize(
         std::max(0.0f, ImGui::GetContentRegionAvail().x),
@@ -136,10 +141,7 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
     // The active view is the one being edited, so it carries the selection
     // outline; the others keep the steel hairline.
     ImDrawList* drawList = ImGui::GetWindowDrawList();
-    if (viewport.IsActive)
-        EditorChrome::SelectionOutline(drawList, viewport.RegionMin, viewport.RegionMax);
-    else
-        drawList->AddRect(viewport.RegionMin, viewport.RegionMax, ImGui::GetColorU32(EditorUi::Border));
+    EditorChrome::ContentBoundary(drawList, viewport.RegionMin, viewport.RegionMax, Style, viewport.IsActive);
 
     // Rubber-band selection rectangle, drawn in the viewport it was started in.
     if (Marquee.Active && Marquee.Viewport == viewport.Id)
@@ -206,6 +208,7 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
         drawList->AddRectFilled(min, max, toColor(handle.Fill), 1.0f);
         drawList->AddRect(min, max, toColor(handle.Border), 1.0f, 0, 1.5f);
     }
+
     // A tool's rotation dial, lying in the plane it turns things on. Skipped
     // whole when any part of the ring is behind the camera: half a projected
     // circle would draw as a line across the view and hit-test as one too.
@@ -301,7 +304,6 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
         }
     }
 
-
     // Hovered edge's length, anchored at its midpoint.
     if (!Overlay.Hover.Measure.empty())
     {
@@ -310,6 +312,7 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
             drawList->AddText(ImVec2(p->Pixel.x + 4.0f, p->Pixel.y - 6.0f),
                               toColor(EditorTheme::HoverEligible), Overlay.Hover.Measure.c_str());
     }
+
     // Construction lines a tool laid in the world, in every view that can see them.
     for (const WorldSegmentRequest& segment : Overlay.Segments)
     {
@@ -320,7 +323,6 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
         if (a.has_value() && b.has_value())
             drawList->AddLine(a->Pixel, b->Pixel, toColor(segment.Color), segment.Thickness);
     }
-
 
     // Active drag's origin->current line + distance, only in the view it started in.
     if (Overlay.Readout.Active() && Overlay.Readout.Viewport == viewport.Id)
@@ -337,6 +339,21 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
     }
 }
 
+void ViewportPanel::DrawChromeRow(const ChromeRow& row)
+{
+    if (!row.Height || !row.Draw)
+        return;
+    const float rowHeight = std::max(0.0f, row.Height());
+    if (rowHeight <= 0.0f)
+        return;
+    // Reserved the way the title row is: the rect handed over, the cursor
+    // moved under it, so what follows starts below the row.
+    const ImVec2 rowMin = ImGui::GetCursorScreenPos();
+    const ImVec2 rowMax(rowMin.x + std::max(0.0f, ImGui::GetContentRegionAvail().x), rowMin.y + rowHeight);
+    row.Draw(ImGui::GetWindowDrawList(), rowMin, rowMax);
+    ImGui::SetCursorScreenPos(ImVec2(rowMin.x, rowMax.y + EditorUi::Px(2.0f)));
+}
+
 void ViewportPanel::DrawOrientationSelector(EditorViewport& viewport)
 {
     // The view's header row: the perspective view names itself; the ortho view
@@ -344,12 +361,18 @@ void ViewportPanel::DrawOrientationSelector(EditorViewport& viewport)
     // so the row costs no more height than the combo did.
     const bool perspective = viewport.Orientation == ViewportOrientation::Perspective;
     const ImVec2 rowMin = ImGui::GetCursorScreenPos();
-    const float rowHeight = std::max(EditorUi::Px(EditorUi::Metrics.HeaderHeight), ImGui::GetFrameHeight() + EditorUi::Px(4.0f));
+    // How tall the row is belongs to the composition, not to this panel: a
+    // bezel wants more than a plain row, and the panel does not know why.
+    const float rowHeight = std::max(EditorChrome::HeaderRowHeight(Style),
+                                     ImGui::GetFrameHeight() + EditorUi::Px(4.0f));
     const ImVec2 rowMax(rowMin.x + std::max(0.0f, ImGui::GetContentRegionAvail().x), rowMin.y + rowHeight);
-    const float controlWidth = perspective ? 0.0f : ImGui::GetFontSize() * 7.0f;
+    const EditorChrome::HeaderRowSpec headerSpec{
+        .Style = Style,
+        .ReservedControlWidth = perspective ? 0.0f : ImGui::GetFontSize() * 7.0f,
+    };
     const EditorChrome::HeaderRegions regions = EditorChrome::DrawHeaderRow(
         ImGui::GetWindowDrawList(), rowMin, rowMax, perspective ? viewport.GetDisplayLabel() : Title,
-        EditorUi::TextRole::PanelTitle, EditorChrome::HeaderState{ .Focused = viewport.IsActive }, controlWidth);
+        EditorUi::TextRole::PanelTitle, EditorChrome::HeaderState{ .Focused = viewport.IsActive }, headerSpec);
 
     if (!perspective && regions.HasControl)
     {

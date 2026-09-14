@@ -1,5 +1,7 @@
 #include "BrushOps.h"
 
+#include "BrushTransform.h"
+
 #include "BrushFaceFrame.h"
 #include "BrushValidation.h"
 #include "CarveSurround.h"
@@ -389,6 +391,32 @@ BrushMesh BrushOps::DeleteFace(const BrushMesh& mesh, std::uint32_t face)
     out.Faces.erase(out.Faces.begin() + face);
     BrushValidateAndRepair(out); // drops now-unreferenced vertices; flags open mesh
     return out;
+}
+
+void BrushOps::AppendRebased(BrushMesh& target, const Transform3f& targetTransform,
+                             const BrushMesh& source, const Transform3f& sourceTransform)
+{
+    const std::uint32_t base = static_cast<std::uint32_t>(target.Vertices.size());
+    target.Vertices.reserve(target.Vertices.size() + source.Vertices.size());
+    for (const BrushVertex& vertex : source.Vertices)
+    {
+        const Vec3d world = sourceTransform.TransformPoint(vertex.Position);
+        target.Vertices.push_back(BrushVertex{ InverseTransformPoint(targetTransform, world) });
+    }
+
+    target.Faces.reserve(target.Faces.size() + source.Faces.size());
+    for (const BrushFace& face : source.Faces)
+    {
+        BrushFace rebased = face;
+        for (std::uint32_t& index : rebased.Loop)
+            index += base;
+        rebased.Material.Uv = UvProjectionToLocal(
+            UvProjectionToWorld(face.Material.Uv, sourceTransform), targetTransform);
+        target.Faces.push_back(std::move(rebased));
+    }
+    // Soft edges are vertex pairs; carry them across at the new base.
+    for (const std::array<std::uint32_t, 2>& edge : source.SoftEdges)
+        target.SoftEdges.push_back(BrushSoftEdgeKey(edge[0] + base, edge[1] + base));
 }
 
 BrushMesh BrushOps::FlipFace(const BrushMesh& mesh, std::uint32_t face)

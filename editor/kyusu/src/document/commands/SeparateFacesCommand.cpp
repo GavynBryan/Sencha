@@ -63,7 +63,11 @@ void SeparateFacesCommand::Execute()
     }
 
     Scene.SetBrushMesh(Source, SourceAfter);
-    Created = Scene.CreateBrushFromMesh(*Scene.TryGetWorldTransform(Source), SeparatedMesh);
+    // The separated faces keep the source's modifiers: a face pulled off a
+    // mirrored wall is still mirrored.
+    const BrushModifierStack* modifiers = Scene.TryGetBrushModifiers(Source);
+    Created = Scene.CreateBrushFromMesh(*Scene.TryGetWorldTransform(Source), SeparatedMesh,
+                                        modifiers != nullptr ? *modifiers : BrushModifierStack{});
 
     Selection.SetSelection({ SelectableRef::EntitySelection(Scene.GetRegistry().Id, Created) });
     Document.MarkDirty();

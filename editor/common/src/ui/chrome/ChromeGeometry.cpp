@@ -1,6 +1,7 @@
 #include "ChromeGeometry.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace EditorChrome
 {
@@ -81,6 +82,102 @@ FrameRects FrameLayout(ImVec2 mn, ImVec2 mx, const FrameSpec& spec)
     rects.RailMin = rects.WellMin;
     rects.RailMax = ImVec2(rects.WellMax.x, std::min(rects.WellMax.y, rects.WellMin.y + std::max(0.0f, spec.Rail)));
     return rects;
+}
+
+BarRects BarLayout(ImVec2 mn, ImVec2 mx, const BarSpec& spec, float itemHeight)
+{
+    BarRects r;
+    const float w = mx.x - mn.x;
+    const float h = mx.y - mn.y;
+    if (w <= 0.0f || h <= 0.0f)
+        return r;
+
+    // Two rims must leave the channel between them, so each is at most half the
+    // band; a bar squeezed that far keeps its rims and loses its channel.
+    const float rim = std::clamp(spec.Rim, 0.0f, h * 0.5f);
+    r.TopRimMin = mn;
+    r.TopRimMax = ImVec2(mx.x, mn.y + rim);
+    r.BottomRimMin = ImVec2(mn.x, mx.y - rim);
+    r.BottomRimMax = mx;
+
+    // Caps terminate the channel, so they are only worth cutting when the
+    // channel they leave is wider than the pair of them.
+    const float cap = std::max(0.0f, spec.Cap);
+    r.HasCaps = cap > 0.0f && w >= cap * 4.0f;
+    const float inset = r.HasCaps ? cap : 0.0f;
+    const float top = r.TopRimMax.y;
+    const float bottom = r.BottomRimMin.y;
+    r.LeftCapMin = ImVec2(mn.x, top);
+    r.LeftCapMax = ImVec2(mn.x + inset, bottom);
+    r.RightCapMin = ImVec2(mx.x - inset, top);
+    r.RightCapMax = ImVec2(mx.x, bottom);
+
+    r.ChannelMin = ImVec2(mn.x + inset, top);
+    r.ChannelMax = ImVec2(mx.x - inset, std::max(top, bottom));
+
+    const float channelH = r.ChannelMax.y - r.ChannelMin.y;
+    const float laneH = std::clamp(itemHeight, 0.0f, channelH);
+    // Whole pixels: the lane is flanked by 1px bevels that blur off-grid.
+    const float laneTop = std::floor(r.ChannelMin.y + (channelH - laneH) * 0.5f);
+    r.LaneMin = ImVec2(r.ChannelMin.x, laneTop);
+    r.LaneMax = ImVec2(r.ChannelMax.x, laneTop + laneH);
+    return r;
+}
+
+float BarHeightFor(const BarSpec& spec, float itemHeight)
+{
+    return std::max(0.0f, itemHeight) + (std::max(0.0f, spec.Rim) + std::max(0.0f, spec.Clearance)) * 2.0f;
+}
+
+BarRowRects BarRowLayout(float channelMin, float channelMax, float leftWidth, float centerWidth,
+                         float rightWidth, float gap)
+{
+    BarRowRects r;
+    leftWidth = std::max(0.0f, leftWidth);
+    centerWidth = std::max(0.0f, centerWidth);
+    rightWidth = std::max(0.0f, rightWidth);
+    gap = std::max(0.0f, gap);
+
+    r.LeftMin = channelMin;
+    r.LeftMax = channelMin + leftWidth;
+    r.RightMax = channelMax;
+    r.RightMin = channelMax - rightWidth;
+
+    // The midpoint of the channel is the bar's own center: the caps that bound
+    // it are the same width at both ends, so centering here centers on screen.
+    const float ideal = (channelMin + channelMax - centerWidth) * 0.5f;
+    // The center block may not touch either outer block, nor leave the channel.
+    const float low = std::max(channelMin, leftWidth > 0.0f ? r.LeftMax + gap : channelMin);
+    const float high = std::min(channelMax, rightWidth > 0.0f ? r.RightMin - gap : channelMax) - centerWidth;
+
+    if (low <= high)
+    {
+        r.CenterMin = std::clamp(ideal, low, high);
+        r.Fit = r.CenterMin == ideal ? BarRowFit::Centered : BarRowFit::Shifted;
+    }
+    else
+    {
+        // Nothing fits between the outer blocks. Both of those keep their ends,
+        // since a window's controls have to stay where a user reaches for them,
+        // so the center starts after the left block and is allowed to run under
+        // the right one. The caller is expected to drop something and lay out
+        // again rather than ship the overlap.
+        r.CenterMin = low;
+        r.Fit = BarRowFit::Flowed;
+    }
+    r.CenterMax = r.CenterMin + centerWidth;
+
+    r.LeftFreeMin = r.LeftMax;
+    r.LeftFreeMax = std::max(r.LeftMax, r.CenterMin);
+    r.RightFreeMin = r.CenterMax;
+    r.RightFreeMax = std::max(r.CenterMax, r.RightMin);
+    return r;
+}
+
+ImVec2 SurfaceTileUv(ImVec2 region, ImVec2 texture)
+{
+    return ImVec2(texture.x > 0.0f ? region.x / texture.x : 1.0f,
+                  texture.y > 0.0f ? region.y / texture.y : 1.0f);
 }
 
 HeaderRegions LayoutHeader(ImVec2 mn, ImVec2 mx, float capWidth, float titleWidth,
@@ -215,6 +312,58 @@ int LayoutOrnaments(const FrameRects& rects, OrnamentTier tier, float screwRadiu
     }
     return count;
 }
+int LayoutRingOrnaments(ImVec2 mn, ImVec2 mx, float ring, float chamfer, float boltRadius,
+                        float ventLength, float stripLength, float gap, std::span<OrnamentSlot> out)
+{
+    if (out.empty() || ring <= 0.0f)
+        return 0;
+    const float w = mx.x - mn.x;
+    const float h = mx.y - mn.y;
+    const float r = std::min(boltRadius, ring * 0.5f);
+    // The same guard the chassis uses: a frame that cannot hold a bolt past
+    // each chamfer has no ring worth mounting anything on.
+    if (r < 1.0f || w < chamfer * 4.0f || h < chamfer * 4.0f)
+        return 0;
+
+    int count = 0;
+    const auto place = [&](OrnamentKind kind, ImVec2 slotMin, ImVec2 slotMax) {
+        if (count < static_cast<int>(out.size()))
+            out[static_cast<std::size_t>(count++)] = OrnamentSlot{ kind, slotMin, slotMax };
+    };
+
+    const float along = chamfer + r * 2.0f;
+    const float mid = ring * 0.5f;
+    const auto bolt = [&](float cx, float cy) {
+        place(OrnamentKind::Bolt, ImVec2(cx - r, cy - r), ImVec2(cx + r, cy + r));
+    };
+    bolt(mn.x + along, mn.y + mid);
+    bolt(mx.x - along, mn.y + mid);
+    bolt(mn.x + along, mx.y - mid);
+    bolt(mx.x - along, mx.y - mid);
+
+    // The clear run along a ring between its two bolts.
+    const float runMin = mn.x + along + r + gap;
+    const float runMax = mx.x - along - r - gap;
+    const float run = runMax - runMin;
+
+    if (stripLength > 0.0f && run >= stripLength * 2.0f + gap * 3.0f)
+    {
+        const float stripH = std::max(1.0f, ring * 0.35f);
+        const float y0 = mx.y - mid - stripH * 0.5f;
+        place(OrnamentKind::LightStrip, ImVec2(runMin, y0), ImVec2(runMin + stripLength, y0 + stripH));
+        place(OrnamentKind::LightStrip, ImVec2(runMax - stripLength, y0), ImVec2(runMax, y0 + stripH));
+    }
+
+    if (ventLength > 0.0f && run >= ventLength + gap * 2.0f)
+    {
+        const float cx = (runMin + runMax) * 0.5f;
+        const float inset = std::min(gap * 0.5f, ring * 0.25f);
+        place(OrnamentKind::Vent, ImVec2(cx - ventLength * 0.5f, mn.y + inset),
+              ImVec2(cx + ventLength * 0.5f, mn.y + ring - inset));
+    }
+    return count;
+}
+
 TileRects TileLayout(ImVec2 mn, float size, float labelHeight, float badgeSize, float inset)
 {
     size = std::max(0.0f, size);

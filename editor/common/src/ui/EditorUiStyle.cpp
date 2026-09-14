@@ -214,8 +214,31 @@ ImFont* EditorUi::MonoFont()
     return g_MonoFont;
 }
 
+void EditorUi::RequestedSurfaceTextures(const ChromeSurfaces& surfaces, std::vector<std::string>& out)
+{
+    out.clear();
+    const auto want = [&out](BarFinish finish, const std::string& path) {
+        if (finish != BarFinish::Texture || path.empty())
+            return;
+        if (std::find(out.begin(), out.end(), path) == out.end())
+            out.push_back(path);
+    };
+    want(surfaces.Caption, surfaces.CaptionTexture);
+    want(surfaces.Toolbar, surfaces.ToolbarTexture);
+}
+
 void EditorUi::LoadFonts(ImGuiIO& io)
 {
+    // Every one of these is cleared first. A rebuild clears the atlas, so a
+    // font file that has gone missing since the last load would otherwise leave
+    // the previous generation's pointer behind, dangling.
+    g_BodyFont = nullptr;
+    g_SmallFont = nullptr;
+    g_MonoFont = nullptr;
+    g_TitleSmall = nullptr;
+    g_TitleLarge = nullptr;
+    g_TitleTab = nullptr;
+
     const std::string ui = FontPath("JetBrainsMono-Regular.ttf");
     const std::string icons = FontPath("fa-solid-900.ttf");
 

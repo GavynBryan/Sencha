@@ -3,6 +3,7 @@
 #include <imgui.h>
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -24,6 +25,21 @@ public:
     // menu bar.
     void DrawWindow(ConsoleRegistry& console);
 
+    // Makes the editor.ui.theme cvar and the loaded theme agree. The startup
+    // path applies a theme during Setup, but argv's +set lands after every
+    // feature's Setup, so the cvar can name a theme that was never loaded.
+    // Called once at the first frame boundary, where a theme change is
+    // already safe to make.
+    void SyncWithCVar(ConsoleRegistry& console);
+
+    // Applies a theme the menu asked for, if any; true when one was applied.
+    // Choosing a theme only records the request, because the menu is drawn
+    // mid-frame: loading there would leave the rest of that frame drawing new
+    // colors and metrics against resources resolved from the previous theme.
+    // The host calls this at the frame boundary, before it resolves anything
+    // derived from theme state, so one frame sees one coherent theme.
+    bool CommitPending();
+
 private:
     struct ThemeChoice
     {
@@ -33,14 +49,15 @@ private:
     };
 
     void Rescan();
-    // Resets the palette, loads the named theme ("" = built-in), reapplies the
-    // ImGui style, and records the choice in the cvar.
-    void ApplyChoice(ConsoleRegistry& console, const std::string& name);
+    // Records a theme choice for the next frame boundary and writes the cvar.
+    void RequestChoice(ConsoleRegistry& console, const std::string& name);
     void SetThemeCVar(ConsoleRegistry& console, const std::string& name);
 
     std::filesystem::path ThemeDir;
     std::vector<ThemeChoice> Themes;
     std::string ActiveName; // "" = built-in defaults
+    // Set by a menu choice, consumed by CommitPending at the frame boundary.
+    std::optional<std::string> Pending;
     bool Scanned = false;
     bool WindowOpen = false;
     char SaveName[64] = "custom";

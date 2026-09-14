@@ -109,5 +109,5 @@ struct WheelPaint
 // the hot slot's whole petal turns orange. Painted rather than mounted for
 // the same reason as the other floating controls: it lives over everything
 // and the session that opened it hit-tests the same geometry.
-void DrawToolWheel(ImDrawList* dl, const WheelPaint& wheel);
+void DrawRadialMenu(ImDrawList* dl, const WheelPaint& wheel);
 } // namespace EditorChrome

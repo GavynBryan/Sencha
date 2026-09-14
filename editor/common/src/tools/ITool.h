@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CommandChoice.h"
 #include "icons/IconId.h"
 #include "input/InputEvent.h"
 #include "interaction/IInteraction.h"
@@ -68,13 +69,9 @@ struct ITool
 
     // A sub-mode the tool exposes as a choice: what a control shows for it.
     // The tool maps an index back to whatever the choice means, so a surface
-    // that lists variants (the tool wheel, a properties row) never learns the
+    // that lists variants (a radial menu, a properties row) never learns the
     // type behind them, and a tool without any answers with an empty span.
-    struct Variant
-    {
-        std::string_view Label;
-        IconId Icon = IconId::None;
-    };
+    using Variant = CommandChoice;
     [[nodiscard]] virtual std::span<const Variant> GetVariants() const { return {}; }
     // Index into GetVariants() of the one in effect, or -1.
     [[nodiscard]] virtual int GetActiveVariant(const ToolContext& /*ctx*/) const { return -1; }

@@ -183,7 +183,11 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   (`DrawToolbarControls`), activation key (`GetShortcut`), and how a save should
   resolve anything it has staged (`CommitPending`), so the panel, the toolbar,
   the tool palette, the tool wheel, the status bar, and the keymap all pick it
-  up without an edit.
+  up without an edit. The toolbar is not a bar of its own: the perspective
+  viewport's header is the toolbar row it reserves in place of a title
+  (`ViewportPanel::SetHeaderRows`), with the gizmo strip centred on the
+  window's midline; the cook/play loop sits in the `WorkspaceBar` under the caption, the bare
+  plate that will carry workspace tabs.
   Settings only that tool acts on are members on the tool; genuinely shared
   authoring state (the grid, the active material) goes through `ToolContext`.
   A tool with sub-modes exposes them as variants (`GetVariants`,
@@ -198,9 +202,14 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   Shudei handles its few chords directly in `HandlePlatformEvent`. Tool
   activation rows are generated from the registry instead, under `tool.<id>`.
   Any action, listed or generated, is rebindable from `keybinds.json`. A held
-  key (`tool.wheel`, the radial tool menu) is owned by its session rather than
-  the shortcut registry, which fires on presses; it resolves its override from
-  the same file.
+  key is owned by a `RadialMenuSession` rather than the shortcut registry,
+  which fires on presses; it resolves its override from the same file. There is
+  one radial-menu mechanism (`RadialMenuMath`, `RadialMenuSession`, the chrome's
+  `DrawRadialMenu`) over `IRadialMenuModel`; the tools are one model
+  (`tool.wheel`, `ToolRegistryMenuModel`), the gizmo modes another
+  (`gizmo.wheel`, `TransformModeMenuModel` over the `TransformModeItems`
+  table the toolbar strip reads too). An open wheel is modal, which is what
+  keeps the other closed.
 - A viewport visual: a render feature/pass in `kyusu/src/render/`, added in
   `EditorServices::BuildViewportRendering`.
 - A tunable: a cvar registered where it is read (see `editor.cull_backfaces` in

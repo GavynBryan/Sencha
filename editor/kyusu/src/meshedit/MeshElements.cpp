@@ -1,5 +1,7 @@
 #include "MeshElements.h"
 
+#include "brush/BrushWorkCounters.h"
+
 #include <algorithm>
 #include <cstddef>
 #include <utility>
@@ -55,41 +57,23 @@ std::optional<FaceElement> BuildFace(const BrushMesh& mesh,
     return element;
 }
 
-std::vector<std::pair<std::uint32_t, std::uint32_t>> UniqueEdgeVertexPairs(const BrushMesh& mesh)
-{
-    // Straight from the face loops: same pair set (and so the same sorted
-    // enumeration order) as walking a half-edge build, without constructing
-    // one per call. Edge indices are hot-path lookups (selection, pivot,
-    // highlights), so this stays allocation-light.
-    std::vector<std::pair<std::uint32_t, std::uint32_t>> pairs;
-    std::size_t loopEntries = 0;
-    for (const BrushFace& face : mesh.Faces)
-        loopEntries += face.Loop.size();
-    pairs.reserve(loopEntries);
-
-    for (const BrushFace& face : mesh.Faces)
-    {
-        const std::size_t n = face.Loop.size();
-        for (std::size_t i = 0; i < n; ++i)
-        {
-            const std::uint32_t origin = face.Loop[i];
-            const std::uint32_t target = face.Loop[(i + 1) % n];
-            if (origin >= mesh.Vertices.size() || target >= mesh.Vertices.size()
-                || origin == target)
-                continue;
-            pairs.emplace_back(std::min(origin, target), std::max(origin, target));
-        }
-    }
-
-    std::sort(pairs.begin(), pairs.end());
-    pairs.erase(std::unique(pairs.begin(), pairs.end()), pairs.end());
-    return pairs;
 }
+
+std::vector<std::pair<std::uint32_t, std::uint32_t>> MeshElements::UniqueEdgeVertexPairs(const BrushMesh& mesh)
+{
+    // The kernel owns the enumeration; this is the pair-typed view of it.
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> pairs;
+    const auto edges = BrushEdgePairs(mesh);
+    pairs.reserve(edges.size());
+    for (const auto& edge : edges)
+        pairs.emplace_back(edge[0], edge[1]);
+    return pairs;
 }
 
 std::vector<FaceElement> MeshElements::Faces(const BrushMesh& mesh,
                                              const Transform3f& transform)
 {
+    ++BrushWorkCounters::Frame().ElementBuilds;
     std::vector<FaceElement> faces;
     faces.reserve(mesh.Faces.size());
     for (std::uint32_t i = 0; i < mesh.Faces.size(); ++i)
@@ -103,6 +87,7 @@ std::vector<FaceElement> MeshElements::Faces(const BrushMesh& mesh,
 std::vector<EdgeElement> MeshElements::Edges(const BrushMesh& mesh,
                                              const Transform3f& transform)
 {
+    ++BrushWorkCounters::Frame().ElementBuilds;
     const std::vector<std::pair<std::uint32_t, std::uint32_t>> pairs = UniqueEdgeVertexPairs(mesh);
 
     std::vector<EdgeElement> edges;
@@ -126,6 +111,7 @@ std::vector<EdgeElement> MeshElements::Edges(const BrushMesh& mesh,
 std::vector<VertexElement> MeshElements::Vertices(const BrushMesh& mesh,
                                                   const Transform3f& transform)
 {
+    ++BrushWorkCounters::Frame().ElementBuilds;
     std::vector<VertexElement> vertices;
     vertices.reserve(mesh.Vertices.size());
     for (std::uint32_t i = 0; i < mesh.Vertices.size(); ++i)

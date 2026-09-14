@@ -198,15 +198,14 @@ void ViewportToolDispatcher::UpdateHover(EditorViewport& viewport, ImVec2 pos)
     // An edge carries its length, anchored at its midpoint.
     if (hovered.IsEdge())
     {
-        const BrushMesh* mesh = Context.Scene.TryGetBrushMesh(hovered.Entity);
-        const Transform3f* transform = Context.Scene.TryGetWorldTransform(hovered.Entity);
-        if (mesh != nullptr && transform != nullptr)
-            if (const std::optional<EdgeElement> edge =
-                    MeshElements::TryGetEdge(*mesh, *transform, hovered.ElementId))
-            {
-                hover.Measure = FormatUnits((edge->A - edge->B).Magnitude());
-                hover.MeasureAnchor = edge->Mid;
-            }
+        const SourceWorldElements* elements =
+            Context.Scene.PlacementFacts().GetSourceWorldElements(hovered.Entity);
+        if (elements != nullptr && hovered.ElementId < elements->Edges.size())
+        {
+            const EdgeElement& edge = elements->Edges[hovered.ElementId];
+            hover.Measure = FormatUnits((edge.A - edge.B).Magnitude());
+            hover.MeasureAnchor = edge.Mid;
+        }
     }
 }
 

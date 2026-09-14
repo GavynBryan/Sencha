@@ -426,7 +426,7 @@ void DrawRimArc(ImDrawList* dl, ImVec2 center, float outer, float rim, float a0,
 // from the shared bevel light on every edge, straight or curved; colour is
 // the metals, with cyan kept thin and at the perimeter, and orange on
 // exactly the petal the pointer is in.
-void EditorChrome::DrawToolWheel(ImDrawList* dl, const WheelPaint& wheel)
+void EditorChrome::DrawRadialMenu(ImDrawList* dl, const WheelPaint& wheel)
 {
     if (wheel.Slots.empty())
         return;

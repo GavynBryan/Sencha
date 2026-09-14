@@ -1274,7 +1274,7 @@ void WorldDocument::RunValidation()
         size_t outside = 0;
         for (EntityId entity : scene.GetAllEntities())
         {
-            const auto bounds = scene.TryGetWorldBounds(entity);
+            const auto bounds = scene.EvaluatedWorldBounds(entity);
             if (!bounds.has_value())
                 continue;
             if (!zone.Bounds.Contains(bounds->Min) || !zone.Bounds.Contains(bounds->Max))

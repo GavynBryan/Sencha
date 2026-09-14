@@ -1,4 +1,7 @@
 #include "BakeBrushToMeshCommand.h"
+#include "brush/BrushWorkCounters.h"
+
+#include "brush/BrushEvaluation.h"
 
 #include "document/BrushBake.h"
 #include "document/EditorDocument.h"
@@ -140,14 +143,24 @@ std::unique_ptr<ICommand> MakeBakeBrushToMeshCommand(EditorScene& scene,
     Logger& log = logging.GetLogger<BakeBrushToMeshCommand>();
 
     const BrushComponent* brush = scene.TryGetBrush(entity);
-    const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-    if (brush == nullptr || mesh == nullptr)
+    const BrushEvaluated* evaluated = scene.TryGetBrushPieces(entity, BrushEvaluationPolicy::Cook());
+    if (brush == nullptr || evaluated == nullptr)
         return nullptr;
+    if (evaluated->Status != BrushEvaluationStatus::Ok)
+    {
+        log.Warn("bake: brush modifier {} exceeds the piece limit; nothing baked",
+                 evaluated->FailedModifier);
+        return nullptr;
+    }
 
+    // The asset is what the brush evaluates to: every modifier piece, flattened
+    // into the brush's own frame.
+    ++BrushWorkCounters::Frame().BakeFlattens;
+    const BrushMesh flattened = FlattenBrushPieces(*evaluated);
     MeshGeometry geometry;
     std::vector<AssetRef> materials;
     std::string error;
-    if (!BakeBrushToGeometry(*mesh, document.GetDefaultMaterial(), geometry, materials, &error))
+    if (!BakeBrushToGeometry(flattened, document.GetDefaultMaterial(), geometry, materials, &error))
     {
         log.Warn("bake: {}", error);
         return nullptr;

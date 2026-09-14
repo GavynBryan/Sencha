@@ -94,19 +94,19 @@ TEST(ChromePaint, EdgeLitFollowsTheTopLeftLight)
     EXPECT_FALSE(EditorChrome::EdgeLit(ImVec2(2, 10), ImVec2(0, 8)));
 }
 
-TEST_F(ChromeControlsTests, ToolWheelDrawsNothingForNoSlotsAndLeavesTheDrawListClean)
+TEST_F(ChromeControlsTests, RadialMenuDrawsNothingForNoSlotsAndLeavesTheDrawListClean)
 {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const int vertices = dl->VtxBuffer.Size;
     const int clips = dl->_ClipRectStack.Size;
-    EditorChrome::DrawToolWheel(dl, EditorChrome::WheelPaint{});
+    EditorChrome::DrawRadialMenu(dl, EditorChrome::WheelPaint{});
     EXPECT_EQ(dl->VtxBuffer.Size, vertices);
 
     std::vector<EditorChrome::WheelSlot> slots;
     for (int i = 0; i < 3; ++i)
         slots.push_back({ .Center = ImVec2(300.0f + 60.0f * static_cast<float>(i), 200.0f), .Size = 26.0f,
                           .Angle0 = 0.0f, .Angle1 = 1.0f, .Icon = IconId::None, .Label = "T", .Hot = i == 1 });
-    EditorChrome::DrawToolWheel(dl, EditorChrome::WheelPaint{ .Center = ImVec2(300.0f, 200.0f), .Radius = 72.0f,
+    EditorChrome::DrawRadialMenu(dl, EditorChrome::WheelPaint{ .Center = ImVec2(300.0f, 200.0f), .Radius = 72.0f,
                                                               .Hub = 26.0f, .Seam = 2.0f, .Rim = 7.0f,
                                                               .OuterRadius = 0.0f, .CaptionY = 320.0f, .Slots = slots,
                                                               .Variants = {}, .Caption = "Select", .CaptionDim = false });
@@ -115,7 +115,7 @@ TEST_F(ChromeControlsTests, ToolWheelDrawsNothingForNoSlotsAndLeavesTheDrawListC
     EXPECT_EQ(dl->_ClipRectStack.Size, clips);
 }
 
-TEST_F(ChromeControlsTests, ToolWheelWithAVariantRingLeavesTheDrawListClean)
+TEST_F(ChromeControlsTests, RadialMenuWithAVariantRingLeavesTheDrawListClean)
 {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const int vertices = dl->VtxBuffer.Size;
@@ -130,7 +130,7 @@ TEST_F(ChromeControlsTests, ToolWheelWithAVariantRingLeavesTheDrawListClean)
         variants.push_back({ .Center = ImVec2(300.0f, 200.0f - 118.0f), .Size = 26.0f, .Angle0 = 0.3f * static_cast<float>(i),
                              .Angle1 = 0.3f * static_cast<float>(i + 1), .Icon = IconId::None, .Label = "V",
                              .Active = i == 0, .Hot = i == 2 });
-    EditorChrome::DrawToolWheel(dl, EditorChrome::WheelPaint{ .Center = ImVec2(300.0f, 200.0f), .Radius = 72.0f,
+    EditorChrome::DrawRadialMenu(dl, EditorChrome::WheelPaint{ .Center = ImVec2(300.0f, 200.0f), .Radius = 72.0f,
                                                               .Hub = 26.0f, .Seam = 2.0f, .Rim = 7.0f,
                                                               .OuterRadius = 118.0f, .CaptionY = 360.0f,
                                                               .Slots = slots, .Variants = variants,

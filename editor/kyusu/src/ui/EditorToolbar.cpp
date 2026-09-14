@@ -1,5 +1,8 @@
 #include "EditorToolbar.h"
 
+#include "ToolbarRowPlacement.h"
+#include "editmodes/TransformModeItems.h"
+
 #include "ui/EditorUiStyle.h"
 #include "ui/chrome/ChromeBars.h"
 #include "ui/chrome/ChromeControls.h"
@@ -18,9 +21,7 @@
 #include <array>
 
 #include <imgui.h>
-#include <imgui_internal.h> // BeginViewportSideBar (reserves work-area space)
 
-#include <cstdio>
 #include <string>
 
 EditorToolbar::EditorToolbar(std::function<ToolRegistry*()> tools,
@@ -45,46 +46,87 @@ ManipulatorSession* EditorToolbar::Session() const
     return SessionResolver();
 }
 
-void EditorToolbar::Draw()
+float EditorToolbar::ViewportRowHeight()
 {
-    ImGuiViewport* viewport = ImGui::GetMainViewport();
-    const ImGuiStyle& style = ImGui::GetStyle();
+    return EditorChrome::BarHeight(EditorChrome::BarButtonSize());
+}
+
+float EditorToolbar::GizmoStripWidth(float buttonSize)
+{
+    return buttonSize * 4.0f + ImGui::GetStyle().ItemSpacing.x * 3.0f;
+}
+
+void EditorToolbar::DrawViewportRow(ImDrawList* dl, ImVec2 mn, ImVec2 mx, float centerX)
+{
     const float buttonSize = EditorChrome::BarButtonSize();
-    const float barHeight = buttonSize + style.WindowPadding.y * 2.0f;
+    const EditorChrome::BarRects bar = EditorChrome::BarFrame(
+        dl, mn, mx, EditorChrome::BarEdge::Bottom, buttonSize, Surface ? Surface() : EditorChrome::BarSurface{});
+    const float moduleGap = EditorUi::Px(EditorUi::Metrics.ModulePad * 3.0f);
+    const float edgePad = EditorUi::Px(EditorUi::Metrics.ModulePad * 2.0f);
+    const float channelMin = bar.ChannelMin.x + edgePad;
+    const float channelMax = bar.ChannelMax.x - edgePad;
 
-    const ImGuiWindowFlags flags =
-        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
-        | ImGuiWindowFlags_NoSavedSettings;
-
-    if (ImGui::BeginViewportSideBar("##EditorToolbar", viewport, ImGuiDir_Up, barHeight, flags))
+    // A block's width is the rect of a group around it, taken after the
+    // group; a module that submitted nothing leaves the cursor where it was
+    // and counts as no block, since an empty group's rect is not reliably empty.
+    const auto measure = [](const auto& draw)
     {
-        EditorChrome::BarBackdrop(ImGui::GetWindowDrawList(), ImGui::GetWindowPos(),
-                                  ImVec2(ImGui::GetWindowPos().x + ImGui::GetWindowSize().x,
-                                         ImGui::GetWindowPos().y + ImGui::GetWindowSize().y),
-                                  EditorChrome::BarEdge::Bottom);
+        const ImVec2 origin = ImGui::GetCursorScreenPos();
+        ImGui::BeginGroup();
+        draw();
+        const ImVec2 end = ImGui::GetCursorScreenPos();
+        const bool drew = end.x != origin.x || end.y != origin.y;
+        ImGui::EndGroup();
+        return drew ? ImGui::GetItemRectSize().x : 0.0f;
+    };
 
-        // Tools themselves live in the tool palette; the toolbar hosts the
-        // active tool's contextual controls and the shared editing groups,
-        // each mounted in its own module.
-        const float moduleGap = EditorUi::Px(EditorUi::Metrics.ModulePad * 3.0f);
-        DrawToolContextGroup();
-        {
-            EditorChrome::ModuleScope module("transform");
-            DrawTransformGroup(buttonSize);
-        }
-        ImGui::SameLine(0.0f, moduleGap);
-        EditorChrome::Divider();
-        ImGui::SameLine(0.0f, moduleGap);
-        {
-            EditorChrome::ModuleScope module("grid");
-            DrawGridGroup(buttonSize);
-        }
-        ImGui::SameLine(0.0f, moduleGap);
-        EditorChrome::Divider();
-        ImGui::SameLine(0.0f, moduleGap);
-        DrawPlayGroup(buttonSize);
+    // The tool context sits at the channel's left end whatever its width, so
+    // it is drawn first and measured in this frame: the tool changing never
+    // leaves the strip a frame off its centre. The tail and the grid are
+    // placed by their widest so far; the first frame of a session, with no
+    // measurement at all, takes the narrow row once.
+    ImGui::SetCursorScreenPos(ImVec2(channelMin, bar.LaneMin.y));
+    const float leftWidth = measure([&] { DrawToolContextGroup(); });
+
+    const ToolbarRow::Widths widths{
+        .Left = leftWidth,
+        .Strip = GizmoStripWidth(buttonSize),
+        .Tail = TailWidth,
+        .Right = GridWidth,
+    };
+    ToolbarRow::Placement placed = ToolbarRow::Place(channelMin, channelMax, widths, moduleGap, centerX);
+    if (!RowMeasured)
+        placed.Centered = false;
+
+    // The transform module: the tail (gizmo space, pivot pair) then the
+    // strip, so the strip's own edge is what the placement centred.
+    ImGui::SetCursorScreenPos(ImVec2(placed.Center - (placed.Centered ? widths.Tail : 0.0f), bar.LaneMin.y));
+    const float transformWidth = measure([&]
+    {
+        EditorChrome::ModuleScope module("transform");
+        DrawTransformTail(buttonSize);
+        DrawGizmoStrip(buttonSize);
+    });
+    TailWidth = std::max(TailWidth, transformWidth - widths.Strip);
+
+    // In the narrow row the grid follows the transform module rather than
+    // its own anchor, so the first frame's unknown width still lands it in order.
+    const float rightX = placed.Centered ? placed.Right : ImGui::GetItemRectMax().x + moduleGap;
+    ImGui::SetCursorScreenPos(ImVec2(rightX, bar.LaneMin.y));
+    const float gridWidth = measure([&]
+    {
+        EditorChrome::ModuleScope module("grid");
+        DrawGridGroup(buttonSize);
+    });
+    GridWidth = std::max(GridWidth, gridWidth);
+    RowMeasured = true;
+
+    if (placed.Centered)
+    {
+        // Technical markings in the runs the row left free.
+        EditorChrome::BarMarkings(dl, bar, placed.Left + leftWidth + moduleGap, placed.Center - widths.Tail - moduleGap);
+        EditorChrome::BarMarkings(dl, bar, placed.Center + widths.Strip + moduleGap, placed.Right - moduleGap);
     }
-    ImGui::End();
 }
 
 void EditorToolbar::DrawToolContextGroup()
@@ -96,45 +138,41 @@ void EditorToolbar::DrawToolContextGroup()
     if (active == nullptr)
         return;
 
-    const ImVec2 before = ImGui::GetCursorScreenPos();
-    {
-        EditorChrome::ModuleScope module("toolcontext");
-        active->DrawToolbarControls(tools.GetContext());
-    }
-    // Only space the module off when the tool actually drew into it.
-    if (ImGui::GetCursorScreenPos().x != before.x)
-        ImGui::SameLine(0.0f, EditorUi::Px(EditorUi::Metrics.ModulePad * 3.0f));
+    // The row places the blocks after it; a tool that drew nothing leaves
+    // the cursor untouched, which is how the row knows there is no block.
+    EditorChrome::ModuleScope module("toolcontext");
+    active->DrawToolbarControls(tools.GetContext());
 }
 
-void EditorToolbar::DrawTransformGroup(float buttonSize)
+void EditorToolbar::DrawGizmoStrip(float buttonSize)
 {
     if (Session() == nullptr)
         return;
     ManipulatorSession& session = *Session();
 
-    // The gizmo (Shift+Q/W/E/R). Highlights the EFFECTIVE mode: with Resize
-    // chosen but nothing resizable selected, Move is what the user is driving.
-    struct GizmoButton { TransformMode Mode; IconId Icon; const char* Tooltip; };
-    static constexpr std::array<GizmoButton, 4> kGizmos = {{
-        { TransformMode::Resize, IconId::Resize, "Resize bounds  [Shift+Q]" },
-        { TransformMode::Move, IconId::Move, "Move  [Shift+W]" },
-        { TransformMode::Rotate, IconId::Rotate, "Rotate  [Shift+E]" },
-        { TransformMode::Scale, IconId::Scale, "Scale  [Shift+R]" },
-    }};
+    // The gizmo (Shift+Q/W/E/R), from the one mode table the gizmo wheel also
+    // reads. Highlights the EFFECTIVE mode: with Resize chosen but nothing
+    // resizable selected, Move is what the user is driving.
     const TransformMode effective = session.EffectiveMode();
     bool first = true;
-    for (const GizmoButton& gizmo : kGizmos)
+    for (const TransformModeItem& item : kTransformModeItems)
     {
         if (!first)
             ImGui::SameLine();
         first = false;
-        if (EditorChrome::ToolButton(gizmo.Tooltip, gizmo.Icon, gizmo.Tooltip, effective == gizmo.Mode, buttonSize))
-            session.SetTransformMode(gizmo.Mode);
+        if (EditorChrome::ToolButton(item.Tooltip, item.Choice.Icon, item.Tooltip, effective == item.Mode, buttonSize))
+            session.SetTransformMode(item.Mode);
     }
+}
+
+void EditorToolbar::DrawTransformTail(float buttonSize)
+{
+    if (Session() == nullptr)
+        return;
+    ManipulatorSession& session = *Session();
 
     // Gizmo frame (Shift+T cycles): grid follows the workspace grid frame,
     // local follows the primary selection's rotation.
-    ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 5.0f);
     const TransformSpace space = session.GetTransformSpace();
     if (EditorChrome::BeginCombo("##gizmospace", TransformSpaceLabel(space)))
@@ -180,6 +218,8 @@ void EditorToolbar::DrawTransformGroup(float buttonSize)
             ImGui::EndPopup();
         }
     }
+    // The strip follows on the lane.
+    ImGui::SameLine();
 }
 
 void EditorToolbar::DrawGridGroup(float buttonSize)
@@ -273,70 +313,5 @@ void EditorToolbar::DrawGridGroup(float buttonSize)
         if (ImGui::MenuItem("Reset to world", "Ctrl+Shift+G", false, bool(GridFrame.Reset) && customFrame))
             GridFrame.Reset();
         ImGui::EndPopup();
-    }
-}
-
-void EditorToolbar::DrawPlayGroup(float buttonSize)
-{
-    const bool playing = Play.IsPlaying && Play.IsPlaying();
-    const bool cooking = Play.IsCooking && Play.IsCooking();
-    // The transport bay lights while a session runs or a cook is in flight.
-    EditorChrome::ModuleScope module("transport");
-    module.SetActive(playing || cooking);
-
-    if (Play.RunCook)
-    {
-        std::string tooltip = cooking ? "Cancel cook" : "Cook selected profile";
-        if (Play.CookStatus)
-        {
-            const std::string status = Play.CookStatus();
-            if (!status.empty())
-                tooltip += "\n" + status;
-        }
-        if (EditorChrome::ToolButton("cook", cooking ? IconId::Cancel : IconId::Hammer,
-                       tooltip.c_str(), cooking, buttonSize))
-        {
-            if (cooking && Play.CancelCook)
-                Play.CancelCook();
-            else
-                Play.RunCook();
-        }
-    }
-    ImGui::SameLine(0.0f, 1.0f);
-    if (EditorChrome::IconButton("##cook_profiles", IconId::ChevronDown, buttonSize, EditorChrome::ButtonTone::Normal))
-        ImGui::OpenPopup("##cook_profile_menu");
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Cook profiles");
-    if (ImGui::BeginPopup("##cook_profile_menu"))
-    {
-        const std::string selected = Play.SelectedProfileId
-            ? Play.SelectedProfileId() : std::string{};
-        if (Play.Profiles)
-            for (const PlayControls::ProfileChoice& profile : Play.Profiles())
-            {
-                if (ImGui::MenuItem(profile.Name.c_str(), nullptr,
-                                    profile.Id == selected) && Play.SelectProfile)
-                    Play.SelectProfile(profile.Id);
-            }
-        ImGui::Separator();
-        if (ImGui::MenuItem("Rebuild selected profile", nullptr, false,
-                            bool(Play.RebuildCook) && !cooking))
-            Play.RebuildCook();
-        if (ImGui::MenuItem("Edit profiles...", nullptr, false,
-                            bool(Play.OpenProfiles)))
-            Play.OpenProfiles();
-        ImGui::EndPopup();
-    }
-    ImGui::SameLine();
-    if (Play.Play)
-    {
-        if (EditorChrome::ToolButton("play", IconId::Play, playing ? "Playing" : "Play (PIE)", playing, buttonSize))
-            Play.Play();
-    }
-    ImGui::SameLine();
-    if (Play.Stop)
-    {
-        if (EditorChrome::ToolButton("stop", IconId::Stop, "Stop", false, buttonSize) && playing)
-            Play.Stop();
     }
 }

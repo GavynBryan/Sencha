@@ -11,17 +11,42 @@
 // body never has to keep clear of its own chrome.
 namespace EditorChrome
 {
-// The frame dimensions for a weight, in screen pixels: the theme's metrics
-// scaled by the weight's row and by the UI scale.
-FrameSpec SpecFor(PanelStyle style);
+// Where a frame mounts its ornaments. A panel's well is covered by whatever the
+// body draws into it -- a viewport's scene image paints straight over anything
+// there -- so a frame that wants visible hardware mounts it on the metal ring
+// instead.
+enum class OrnamentMount
+{
+    Well,
+    Ring,
+};
 
-// The window padding a panel needs so its widgets start inside the ring.
-ImVec2 ContentPadding(PanelStyle style);
+// Which header plate a composition carries.
+enum class HeaderPlate
+{
+    Plain,
+    Bezel, // a wider cap, the weight's chamfer, and a lit top-centre accent
+};
 
-// The recessed well, drawn before the content.
+// Everything a composition implies, in one lookup. Adding a field here is how a
+// new visual trait reaches every consumer; adding a branch on PanelStyle in a
+// painter is how this stops working.
+struct PanelChromeSpec
+{
+    FrameSpec Frame;
+    ImVec2 ContentPadding{};
+    OrnamentMount Mount = OrnamentMount::Well;
+    HeaderPlate Header = HeaderPlate::Plain;
+    float HeaderHeight = 0.0f;  // the row a panel gives a titled header
+    float RailCapScale = 3.0f;  // cap width on a docked panel's rail, in rail heights
+    bool CornerBrackets = false;
+};
+
+[[nodiscard]] PanelChromeSpec ChromeSpecFor(PanelStyle style);
+
 void DrawFrameBase(ImDrawList* dl, ImVec2 mn, ImVec2 mx, PanelStyle style);
 
-// The ring, its bevel, the well's inset edge, and the focus glow, drawn after
-// the content.
+// The frame's edges over whatever the body drew: ring, sheen, bevel, well
+// inset, corner cap, and the focus glow.
 void DrawFrameEdges(ImDrawList* dl, ImVec2 mn, ImVec2 mx, PanelStyle style, bool focused);
 } // namespace EditorChrome

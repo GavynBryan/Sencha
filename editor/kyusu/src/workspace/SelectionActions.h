@@ -80,9 +80,11 @@ public:
     [[nodiscard]] bool HasBakedSelection() const;
     [[nodiscard]] bool HasInstancedSelection() const;
 
-    // The first selected entity's brush geometry (live or dormant), for the
-    // shell's glTF export. Null when nothing selected resolves to a mesh; the
-    // caller owns presenting the file dialog.
+    // The first selected entity's brush geometry (live or dormant) with its
+    // modifier stack flattened in, for the shell's glTF export, so the file
+    // holds what the viewport shows. Null when nothing selected resolves to a
+    // mesh; the caller owns presenting the file dialog. The pointer is valid
+    // until the next call.
     [[nodiscard]] const BrushMesh* SelectedExportMesh() const;
 
 private:
@@ -106,4 +108,8 @@ private:
     // The last repeatable action, recorded by the action itself. Today that is a
     // duplicate-with-offset from the gizmo's Shift-drag.
     std::function<void()> LastRepeatable;
+
+    // The flattened mesh SelectedExportMesh hands out, owned here because the
+    // evaluated result is not one stored mesh.
+    mutable BrushMesh ExportScratch;
 };

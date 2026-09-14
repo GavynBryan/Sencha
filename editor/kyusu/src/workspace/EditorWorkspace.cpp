@@ -1,5 +1,10 @@
 #include "EditorWorkspace.h"
 
+#include "brush/BrushEvaluation.h"
+#include "brush/BrushModifier.h"
+
+#include <cstdio>
+
 #include "EscapePolicy.h"
 
 #include "BrushManipulationSink.h"
@@ -8,6 +13,7 @@
 
 #include "EditorTheme.h"
 #include "authoring/GameplayVocabularyAdapters.h"
+#include "authoring/BrushModifierEditorAdapter.h"
 #include "authoring/WorldDockEditorAdapter.h"
 #include "brush/BrushBounds.h"
 #include "document/EditorScene.h"
@@ -165,6 +171,7 @@ void EditorWorkspace::Build()
     Affordances = std::make_unique<EditorAffordanceService>(
         World, Selection, Commands, Grid);
     Affordances->Registry().Register(MakeWorldDockEditorAdapter());
+    Affordances->Registry().Register(MakeBrushModifierEditorAdapter());
     Affordances->Registry().Register(MakeGameplayTagEditorAdapter());
     Affordances->Registry().Register(MakeAttributeSetEditorAdapter());
     Affordances->Registry().Register(MakeAbilitySetEditorAdapter());
@@ -407,13 +414,8 @@ void EditorWorkspace::UpdateOverlay()
     {
         if (!ref.IsEntity())
             continue;
-        const BrushMesh* mesh = scene.TryGetBrushMesh(ref.Entity);
-        const Transform3f* transform = scene.TryGetWorldTransform(ref.Entity);
-        if (mesh == nullptr || transform == nullptr)
-            continue;
-        const Aabb3d entityBounds = BrushWorldBounds(*mesh, *transform);
-        if (entityBounds.IsValid())
-            bounds.ExpandToInclude(entityBounds);
+        if (const std::optional<Aabb3d> entityBounds = scene.EvaluatedWorldBounds(ref.Entity))
+            bounds.ExpandToInclude(*entityBounds);
     }
 
     // Appended, not assigned: clear() above keeps the vector's capacity, and a
@@ -421,6 +423,50 @@ void EditorWorkspace::UpdateOverlay()
     if (bounds.IsValid())
         AppendSelectionDimensionLabels(bounds, EditorTheme::DimensionLabel,
                                        Interaction.Overlay.Labels);
+
+    // Modifier readouts for the selected brushes, placed from what evaluation
+    // resolved: an array's count and gap at the end of its run, a mirror's
+    // axis and source on its plane.
+    for (const SelectableRef& ref : Selection.GetSelection())
+    {
+        if (!ref.IsEntity())
+            continue;
+        const BrushModifierStack* modifiers = scene.TryGetBrushModifiers(ref.Entity);
+        const BrushEvaluated* evaluated = scene.TryGetBrushPieces(ref.Entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(ref.Entity);
+        if (modifiers == nullptr || evaluated == nullptr || transform == nullptr)
+            continue;
+        for (std::size_t i = 0; i < modifiers->size() && i < evaluated->Stages.size(); ++i)
+        {
+            const BrushStageResolution& stage = evaluated->Stages[i];
+            if (!stage.Applied || !stage.InputBounds.IsValid())
+                continue;
+            LabelRequest label;
+            label.Color = EditorTheme::DimensionLabel;
+            if (const auto* array = std::get_if<ArrayModifier>(&(*modifiers)[i].Params))
+            {
+                const Vec3d end = stage.InputBounds.Center()
+                    + stage.ArrayStep * static_cast<float>(std::max(1, array->Count) - 1);
+                label.World = transform->TransformPoint(end);
+                char text[64];
+                if (array->Placement == ArrayPlacement::RelativeToBounds)
+                    std::snprintf(text, sizeof(text), "\xC3\x97%d \xC2\xB7 gap %.3g", array->Count, array->Spacing);
+                else
+                    std::snprintf(text, sizeof(text), "\xC3\x97%d", array->Count);
+                label.Text = text;
+            }
+            else if (const auto* mirror = std::get_if<MirrorModifier>(&(*modifiers)[i].Params))
+            {
+                label.World = transform->TransformPoint(
+                    stage.MirrorPlane.ClosestPoint(stage.InputBounds.Center()));
+                const char* axis = mirror->Axis == LocalAxis::Y ? "Y" : mirror->Axis == LocalAxis::Z ? "Z" : "X";
+                label.Text = std::string("Mirror ") + axis
+                    + (mirror->Source == MirrorPlaneSource::Origin ? " \xC2\xB7 origin"
+                       : mirror->Source == MirrorPlaneSource::BoundsCenter ? " \xC2\xB7 bounds" : "");
+            }
+            Interaction.Overlay.Labels.push_back(std::move(label));
+        }
+    }
 
     // Zone name labels ride the same per-frame label rebuild as the dimension
     // text, anchored at each zone box's top center.
@@ -492,7 +538,7 @@ void EditorWorkspace::SetSelectedBrushOrigin(OriginAnchor anchor)
     else
     {
         entity = Selection.GetPrimarySelection().Entity;
-        if (const std::optional<Aabb3d> bounds = ActiveDocument().GetScene().TryGetWorldBounds(entity))
+        if (const std::optional<Aabb3d> bounds = ActiveDocument().GetScene().SourceWorldBounds(entity))
         {
             if (anchor == OriginAnchor::BoundsCenter)
             {

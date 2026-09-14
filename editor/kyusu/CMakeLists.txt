@@ -29,11 +29,16 @@ foreach(_pattern IN LISTS KYUSU_SHELL_PATTERNS)
     list(FILTER KYUSU_AUTHORING_SOURCES EXCLUDE REGEX "${_pattern}")
 endforeach()
 
-# Two render sources carry no GPU dependency and the authoring layer uses both:
-# the light gather feeds the cook, the preview buffer backs tool previews.
+# These render sources carry no GPU dependency and the authoring layer uses
+# them: the light gather feeds the cook, the preview buffer backs tool
+# previews, and the brush bake cache and draw set (residency and retention
+# rules) are tested headlessly through injected GPU callbacks.
 list(APPEND KYUSU_AUTHORING_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/render/EditorLightGather.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/render/PreviewBuffer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/render/BrushBakeCache.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/render/BrushDrawSet.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/render/BrushFaceHighlight.cpp"
 )
 
 set(KYUSU_SHELL_SOURCES ${KYUSU_SOURCES})
@@ -46,6 +51,7 @@ set(KYUSU_SHADERS
     "grid.frag.glsl|frag|kGridFragSpv"
     "editor_line.vert.glsl|vert|kEditorLineVertSpv"
     "editor_line.frag.glsl|frag|kEditorLineFragSpv"
+    "editor_line_instanced.vert.glsl|vert|kEditorLineInstancedVertSpv"
     "editor_wideline.vert.glsl|vert|kEditorWideLineVertSpv"
     "editor_wideline.frag.glsl|frag|kEditorWideLineFragSpv"
     "fullscreen.vert.glsl|vert|kFullscreenVertSpv"
@@ -110,7 +116,20 @@ target_compile_definitions(kyusu PRIVATE
     # Dev-time editor visual assets (e.g. camera.glb). Packaging will replace
     # this with a resolved install path.
     SENCHA_EDITOR_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/meshes"
+    # The product's own branding: the caption mark and the window/executable
+    # icons. Kyusu's, not the shared shell's, which never names a product.
+    SENCHA_EDITOR_BRAND_DIR="${CMAKE_CURRENT_SOURCE_DIR}/branding"
 )
+
+# The executable's Windows icon. The .rc is generated so the path CMake knows
+# is substituted outright: a resource compiler resolving it relatively differs
+# between windres and rc, and there is nothing to gain by finding out how.
+if(WIN32)
+    enable_language(RC)
+    set(SENCHA_KYUSU_ICON "${CMAKE_CURRENT_SOURCE_DIR}/branding/kyusu.ico")
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/kyusu.rc.in" "${CMAKE_CURRENT_BINARY_DIR}/kyusu.rc" @ONLY)
+    target_sources(kyusu PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/kyusu.rc")
+endif()
 
 # Install into the SDK (engine-roadmap.md: SDK boundary, shipped). RPATH matches the
 # app's bin/ + lib/ layout.

@@ -1,6 +1,7 @@
 #include "EditorDocument.h"
 
 #include "brush/BrushMeshSerialization.h"
+#include "brush/BrushModifierSerialization.h"
 #include "EntityNameComponent.h"
 
 #include "scene_source/Json5Convert.h"
@@ -270,10 +271,10 @@ SceneSourceDocument EditorDocument::BuildSceneSource() const
                           savedMeshes.end());
         Json5Value meshes = Json5Value::MakeObject();
         for (const BrushId id : savedMeshes)
-            if (const BrushMesh* mesh = Scene.GetBrushMeshStore().Find(id))
+            if (const BrushRecord* record = Scene.GetBrushMeshStore().FindRecord(id))
                 meshes.Members.emplace_back(
                     std::to_string(id.Value),
-                    Json5FromJson(BrushMeshToJson(*mesh)));
+                    Json5FromJson(BrushRecordToJson(*record)));
         out.BrushMeshes = std::move(meshes);
     }
     return out;
@@ -358,8 +359,14 @@ bool EditorDocument::LoadFromSceneText(std::string_view text, std::string* error
         }
 
     if (parsed->BrushMeshes.IsObject() && !parsed->BrushMeshes.Members.empty())
+    {
+        std::string modifierErrors;
         DeserializeBrushMeshes(Json5ToJson(parsed->BrushMeshes),
-                               Scene.GetBrushMeshStore());
+                               Scene.GetBrushMeshStore(), &modifierErrors);
+        if (!modifierErrors.empty())
+            Logging.GetLogger<EditorDocument>().Warn(
+                "brush sidecar: modifier entries skipped:\n{}", modifierErrors);
+    }
 
     if (const Json5Value* material = parsed->Settings.Find("default_material");
         material != nullptr && material->IsString())
@@ -426,20 +433,19 @@ EntitySnapshot EditorDocument::CaptureEntity(EntityId entity) const
     }
     snapshot.Components = JsonValue(std::move(components));
 
-    // The brush mesh lives in the sidecar store, not the registry, so capture it
-    // separately along with the id the brush component serialized. A baked brush
-    // keeps its dormant source mesh under BakedBrushComponent instead.
+    // The brush record lives in the sidecar store, not the registry, so capture
+    // it separately along with the id the brush component serialized. A baked
+    // brush keeps its dormant source under BakedBrushComponent instead.
+    BrushId brushId;
     if (const BrushComponent* brush = Scene.TryGetBrush(entity))
-    {
-        snapshot.MeshId = brush->Id;
-        if (const BrushMesh* mesh = Scene.TryGetBrushMesh(entity))
-            snapshot.Mesh = *mesh;
-    }
+        brushId = brush->Id;
     else if (const BakedBrushComponent* baked = Scene.TryGetBakedBrush(entity))
+        brushId = baked->Source;
+    if (brushId.IsValid())
     {
-        snapshot.MeshId = baked->Source;
-        if (const BrushMesh* mesh = Scene.TryGetDormantBrushMesh(entity))
-            snapshot.Mesh = *mesh;
+        snapshot.MeshId = brushId;
+        if (const BrushRecord* record = Scene.GetBrushMeshStore().FindRecord(brushId))
+            snapshot.Brush = *record;
     }
 
     // Parent by persistent identity: the handle dies with the entities, the
@@ -485,20 +491,20 @@ EntityId EditorDocument::RestoreEntity(const EntitySnapshot& snapshot, bool fres
     // snapshot carries is the one being judged.
     Scene.TrackEntity(entity);
 
-    if (snapshot.Mesh.has_value())
+    if (snapshot.Brush.has_value())
     {
         if (freshMesh)
         {
             // Source is still alive and owns snapshot.MeshId: give the copy its own
-            // mesh and repoint whichever component carries it (brush, or the baked
+            // record and repoint whichever component carries it (brush, or the baked
             // dormant source), so the two entities are independent.
-            const BrushId id = Scene.GetBrushMeshStore().Create(*snapshot.Mesh);
+            const BrushId id = Scene.GetBrushMeshStore().Create(*snapshot.Brush);
             if (Scene.TryGetBrush(entity) != nullptr)
                 Scene.SetComponent(entity, BrushComponent{ id });
             else if (Scene.TryGetBakedBrush(entity) != nullptr)
                 Scene.SetComponent(entity, BakedBrushComponent{ id });
         }
-        else if (Scene.GetBrushMeshStore().Find(snapshot.MeshId) == nullptr)
+        else if (Scene.GetBrushMeshStore().FindRecord(snapshot.MeshId) == nullptr)
         {
             // Re-seat at the original id (the delete-undo case; the id is free
             // because destroy released it). BrushMeshStore::NextId is monotonic
@@ -506,7 +512,7 @@ EntityId EditorDocument::RestoreEntity(const EntitySnapshot& snapshot, bool fres
             // When the id is still LIVE the restore is an instance of an alive
             // mesh: leave the store alone so the shared mesh keeps any edits
             // made since the snapshot.
-            Scene.GetBrushMeshStore().Set(snapshot.MeshId, *snapshot.Mesh);
+            Scene.GetBrushMeshStore().Set(snapshot.MeshId, *snapshot.Brush);
         }
     }
 

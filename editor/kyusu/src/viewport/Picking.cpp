@@ -5,6 +5,8 @@
 #include "ViewportProjection.h"
 
 #include "document/EditorScene.h"
+#include "brush/BrushEvaluation.h"
+#include "document/BrushPlacementFacts.h"
 #include "document/SceneBrushWalk.h"
 #include "meshedit/MeshElementKindTraits.h" // MeshElementKindCount
 #include "meshedit/MeshElements.h"
@@ -90,6 +92,37 @@ BrushPickMode PickModeForElementKind(MeshElementKind kind)
     return kModes[static_cast<std::size_t>(kind)];
 }
 
+bool IntersectRayAabb(const Ray3d& ray, const Aabb3d& box, float& outNear)
+{
+    if (!box.IsValid())
+        return false;
+    double tMin = 0.0;
+    double tMax = std::numeric_limits<double>::infinity();
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        const double origin = ray.Origin[axis];
+        const double direction = ray.Direction[axis];
+        const double lo = box.Min[axis];
+        const double hi = box.Max[axis];
+        if (std::abs(direction) < 1e-12)
+        {
+            if (origin < lo || origin > hi)
+                return false; // parallel to this slab and outside it
+            continue;
+        }
+        double t0 = (lo - origin) / direction;
+        double t1 = (hi - origin) / direction;
+        if (t0 > t1)
+            std::swap(t0, t1);
+        tMin = t0 > tMin ? t0 : tMin;
+        tMax = t1 < tMax ? t1 : tMax;
+        if (tMin > tMax)
+            return false;
+    }
+    outNear = static_cast<float>(tMin);
+    return true;
+}
+
 namespace
 {
 constexpr double kMaxPickDistance = 1.0e6;
@@ -97,22 +130,99 @@ constexpr double kMaxPickDistance = 1.0e6;
 // Nearest ray/brush-body hit. Tests the real transformed faces (the brush is a
 // convex solid) instead of an origin-anchored box, so whole-brush selection
 // matches the rendered geometry under rotation/scale and for off-origin meshes.
-bool RayHitsBrushBody(const BrushMesh& mesh, const Transform3f& transform, const Ray3d& ray, float& outDistance)
+// One evaluated piece the ray's box test could not rule out. Faces are built
+// on first use and shared by every test a pick runs on the piece, so a body
+// hit and a face hit never tessellate the same piece twice.
+struct RayPieceCandidate
 {
-    bool hit = false;
-    float best = static_cast<float>(kMaxPickDistance);
-    for (const FaceElement& face : MeshElements::Faces(mesh, transform))
+    EntityId              Entity;
+    const BrushEvaluated* Evaluated = nullptr;
+    const BrushPiece*     Piece = nullptr;
+    Transform3f           World;       // entity transform composed with the placement
+    float                 Near = 0.0f; // ray entry into the piece's tight world box
+    bool                  Live = false; // a brush with faces to edit, not a baked one's dormant source
+    std::vector<FaceElement> Faces;
+    bool                  FacesBuilt = false;
+
+    const std::vector<FaceElement>& FacesOrBuild()
     {
-        float distance = 0.0f;
-        if (IntersectRayFacePolygon(ray, face.Corners, distance) && distance < best)
+        if (!FacesBuilt)
         {
-            best = distance;
-            hit = true;
+            Faces = MeshElements::Faces(*Piece->Mesh, World);
+            FacesBuilt = true;
+        }
+        return Faces;
+    }
+};
+
+// The one traversal a ray pick makes: every visible (and, with skipLocked,
+// unlocked) brush's pieces, kept only when the ray enters the piece's tight
+// world box, ordered by entry distance so a caller that wants the nearest hit
+// can stop early. Baked brushes keep their dormant source as a body target
+// (Live == false) but offer no faces.
+std::vector<RayPieceCandidate> GatherRayPieceCandidates(const EditorScene& scene, const Ray3d& ray,
+                                                        bool skipLocked, EntityId restrictTo)
+{
+    std::vector<RayPieceCandidate> candidates;
+    const BrushPlacementFacts& facts = scene.PlacementFacts();
+    for (EntityId entity : scene.GetAllEntities())
+    {
+        if (restrictTo.IsValid() && entity != restrictTo)
+            continue;
+        if (!scene.IsEntityEffectivelyVisible(entity))
+            continue;
+        if (skipLocked && scene.IsEntityEffectivelyLocked(entity))
+            continue;
+        // A baked brush keeps its dormant source as a body target: it has no
+        // placement facts, so it is bounded and placed by its source alone.
+        if (scene.TryGetBrush(entity) == nullptr)
+        {
+            const BrushEvaluated* evaluated = scene.TryGetBrushPieces(entity);
+            const Transform3f* transform = scene.TryGetWorldTransform(entity);
+            const std::optional<Aabb3d> bounds = scene.SourceWorldBounds(entity);
+            float near = 0.0f;
+            if (evaluated == nullptr || transform == nullptr || !bounds.has_value()
+                || evaluated->Pieces.empty() || !IntersectRayAabb(ray, *bounds, near))
+                continue;
+            RayPieceCandidate candidate;
+            candidate.Entity = entity;
+            candidate.Evaluated = evaluated;
+            candidate.Piece = &evaluated->Pieces[evaluated->SourcePiece];
+            candidate.World = *transform;
+            candidate.Near = near;
+            candidate.Live = false;
+            candidates.push_back(std::move(candidate));
+            continue;
+        }
+        float entityNear = 0.0f;
+        const std::optional<Aabb3d> union_ = facts.GetEntityBounds(entity);
+        if (!union_.has_value() || !IntersectRayAabb(ray, *union_, entityNear))
+            continue;
+        const BrushEvaluated* evaluated = facts.GetEvaluation(entity);
+        const std::span<const Aabb3d> bounds = facts.GetPieceBounds(entity);
+        const std::span<const Transform3f> placements = facts.GetPiecePlacements(entity);
+        if (evaluated == nullptr)
+            continue;
+        for (const BrushPiece& piece : evaluated->Pieces)
+        {
+            if (piece.Ordinal >= bounds.size() || piece.Ordinal >= placements.size())
+                continue;
+            float near = 0.0f;
+            if (!IntersectRayAabb(ray, bounds[piece.Ordinal], near))
+                continue;
+            RayPieceCandidate candidate;
+            candidate.Entity = entity;
+            candidate.Evaluated = evaluated;
+            candidate.Piece = &piece;
+            candidate.World = placements[piece.Ordinal];
+            candidate.Near = near;
+            candidate.Live = true;
+            candidates.push_back(std::move(candidate));
         }
     }
-    if (hit)
-        outDistance = best;
-    return hit;
+    std::stable_sort(candidates.begin(), candidates.end(),
+                     [](const RayPieceCandidate& a, const RayPieceCandidate& b) { return a.Near < b.Near; });
+    return candidates;
 }
 
 // Pixel thresholds for screen-space element picking.
@@ -131,23 +241,22 @@ bool IsHidden(const EditorScene& scene, const ViewportProjection& projection, Ve
         return true; // behind the camera
     const double threshold = tPoint - std::max(0.05, tPoint * 0.01);
 
-    bool hidden = false;
-    ForEachVisibleBrush(scene, /*skipLocked*/ true,
-        [&](EntityId, const BrushMesh& mesh, const Transform3f& transform)
+    // Candidates arrive nearest-box first: once a box starts beyond the
+    // threshold no face in it or after it can occlude.
+    for (RayPieceCandidate& candidate : GatherRayPieceCandidates(scene, ray, /*skipLocked*/ true, EntityId{}))
     {
-        if (hidden)
-            return;
-        for (const FaceElement& face : MeshElements::Faces(mesh, transform))
+        if (static_cast<double>(candidate.Near) >= threshold)
+            break;
+        if (!candidate.Live)
+            continue;
+        for (const FaceElement& face : candidate.FacesOrBuild())
         {
             float t = 0.0f;
             if (IntersectRayFacePolygon(ray, face.Corners, t) && static_cast<double>(t) < threshold)
-            {
-                hidden = true;
-                return;
-            }
+                return true;
         }
-    });
-    return hidden;
+    }
+    return false;
 }
 
 // The point on segment [a, b] closest to the ray. Used to test occlusion at the true
@@ -190,8 +299,6 @@ SelectableRef PickingService::PickBrushElement(const Ray3d& ray,
 {
     PickCandidate bestCandidate{};
     bool hasBestCandidate = false;
-    std::vector<PickCandidate> candidates;
-    candidates.reserve(6);
 
     if (AllowsEntities(request) && ProxyProvider)
     {
@@ -208,38 +315,60 @@ SelectableRef PickingService::PickBrushElement(const Ray3d& ray,
         }
     }
 
-    for (EntityId entity : scene.GetAllEntities())
+    const auto consider = [&](PickCandidate candidate)
     {
-        if (request.RestrictTo.IsValid() && entity != request.RestrictTo)
+        candidate.Priority = PriorityFor(request, candidate.Ref.Kind);
+        if (!IsBetterCandidate(candidate, bestCandidate, hasBestCandidate))
+            return;
+        bestCandidate = candidate;
+        hasBestCandidate = true;
+    };
+
+    // Every evaluated piece is the entity's body (a baked brush's dormant
+    // source keeps it clickable): the nearest piece hit selects the entity. A
+    // face on any evaluated piece selects the SOURCE face it stands for, so
+    // clicking a mirrored wall and applying a material edits the source and
+    // every copy follows. Faces a modifier invented have no source and are not
+    // selectable. Only live brushes have faces to edit.
+    const RegistryId registry = scene.GetRegistry().Id;
+    for (RayPieceCandidate& candidate :
+         GatherRayPieceCandidates(scene, ray, /*skipLocked*/ true, request.RestrictTo))
+    {
+        const bool wantFaces = AllowsFaces(request) && candidate.Live;
+        const bool wantBody = AllowsEntities(request);
+        if (!wantFaces && !wantBody)
             continue;
-        if (!scene.IsEntityEffectivelyVisible(entity) || scene.IsEntityEffectivelyLocked(entity))
-            continue;
-
-        candidates.clear();
-
-        if (AllowsFaces(request))
-            GatherBrushFaceCandidates(ray, scene, entity, candidates);
-
-        if (AllowsEntities(request))
+        float bodyDistance = static_cast<float>(kMaxPickDistance);
+        bool bodyHit = false;
+        for (const FaceElement& face : candidate.FacesOrBuild())
         {
-            if (const auto body = MakeBrushBodyCandidate(ray, scene, entity))
-                candidates.push_back(*body);
-        }
-
-        for (const PickCandidate& candidate : candidates)
-        {
-            if (!candidate.Ref.IsValid())
+            float hitDistance = 0.0f;
+            if (!IntersectRayFacePolygon(ray, face.Corners, hitDistance))
                 continue;
-
-            PickCandidate rankedCandidate = candidate;
-            rankedCandidate.Priority = PriorityFor(request, rankedCandidate.Ref.Kind);
-
-            if (!IsBetterCandidate(rankedCandidate, bestCandidate, hasBestCandidate))
+            if (wantBody && hitDistance < bodyDistance)
+            {
+                bodyDistance = hitDistance;
+                bodyHit = true;
+            }
+            // Back-facing surfaces aren't selectable: you pick what faces you.
+            if (!wantFaces || face.Normal.Dot(ray.Direction) >= 0.0)
                 continue;
-
-            bestCandidate = rankedCandidate;
-            hasBestCandidate = true;
+            const std::optional<std::uint32_t> source =
+                SourceFaceFor(*candidate.Evaluated, *candidate.Piece, face.Index);
+            if (!source.has_value())
+                continue;
+            consider(PickCandidate{
+                .Ref = SelectableRef::FaceSelection(registry, candidate.Entity, *source),
+                .Distance = hitDistance,
+                .Priority = 0u,
+            });
         }
+        if (bodyHit)
+            consider(PickCandidate{
+                .Ref = SelectableRef::EntitySelection(registry, candidate.Entity),
+                .Distance = bodyDistance,
+                .Priority = 0u,
+            });
     }
 
     return hasBestCandidate ? bestCandidate.Ref : SelectableRef{};
@@ -282,56 +411,6 @@ bool PickingService::IsBetterCandidate(const PickCandidate& candidate,
     return candidate.Distance < best.Distance;
 }
 
-std::optional<PickingService::PickCandidate> PickingService::MakeBrushBodyCandidate(const Ray3d& ray,
-                                                                                    const EditorScene& scene,
-                                                                                    EntityId entity) const
-{
-    const Transform3f* transform = scene.TryGetWorldTransform(entity);
-    const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-    if (mesh == nullptr)
-        mesh = scene.TryGetDormantBrushMesh(entity); // baked brushes stay clickable
-    if (transform == nullptr || mesh == nullptr)
-        return std::nullopt;
-
-    float hitDistance = 0.0f;
-    if (!RayHitsBrushBody(*mesh, *transform, ray, hitDistance))
-        return std::nullopt;
-
-    return PickCandidate{
-        .Ref = SelectableRef::EntitySelection(scene.GetRegistry().Id, entity),
-        .Distance = hitDistance,
-        .Priority = 0u,
-    };
-}
-
-void PickingService::GatherBrushFaceCandidates(const Ray3d& ray,
-                                               const EditorScene& scene,
-                                               EntityId entity,
-                                               std::vector<PickCandidate>& outCandidates) const
-{
-    const Transform3f* transform = scene.TryGetWorldTransform(entity);
-    const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-    if (transform == nullptr || mesh == nullptr)
-        return;
-
-    for (const FaceElement& face : MeshElements::Faces(*mesh, *transform))
-    {
-        // Back-facing surfaces aren't selectable: you pick what faces you.
-        if (face.Normal.Dot(ray.Direction) >= 0.0)
-            continue;
-
-        float hitDistance = 0.0f;
-        if (!IntersectRayFacePolygon(ray, face.Corners, hitDistance))
-            continue;
-
-        outCandidates.push_back(PickCandidate{
-            .Ref = SelectableRef::FaceSelection(scene.GetRegistry().Id, entity, face.Index),
-            .Distance = hitDistance,
-            .Priority = 0u,
-        });
-    }
-}
-
 SelectableRef PickingService::PickEdge(const EditorViewport& viewport,
                                        ImVec2 point,
                                        const EditorScene& scene,
@@ -346,12 +425,19 @@ SelectableRef PickingService::PickEdge(const EditorViewport& viewport,
     float bestPixels = kEdgePickPixels;
     float bestDepth = 0.0f;
 
-    ForEachVisibleBrush(scene, /*skipLocked*/ true,
-        [&](EntityId entity, const BrushMesh& mesh, const Transform3f& transform)
+    // Edges and vertices are grabbed on the source only: a drag redirected from
+    // a mirrored copy would move the source the other way. The elements are
+    // the scene's retained facts, built once per topology and transform.
+    for (EntityId entity : scene.GetAllEntities())
     {
         if (restrictTo.IsValid() && entity != restrictTo)
-            return;
-        for (const EdgeElement& edge : MeshElements::Edges(mesh, transform))
+            continue;
+        if (!scene.IsEntityEffectivelyVisible(entity) || scene.IsEntityEffectivelyLocked(entity))
+            continue;
+        const SourceWorldElements* elements = scene.PlacementFacts().GetSourceWorldElements(entity);
+        if (elements == nullptr)
+            continue;
+        for (const EdgeElement& edge : elements->Edges)
         {
             const std::optional<ProjectedPoint> a = projection.WorldToPixel(edge.A);
             const std::optional<ProjectedPoint> b = projection.WorldToPixel(edge.B);
@@ -382,7 +468,7 @@ SelectableRef PickingService::PickEdge(const EditorViewport& viewport,
             bestPixels = pixels;
             bestDepth = depth;
         }
-    });
+    }
 
     return best;
 }
@@ -399,12 +485,16 @@ SelectableRef PickingService::PickVertex(const EditorViewport& viewport,
     float bestPixels = kVertexPickPixels;
     float bestDepth = 0.0f;
 
-    ForEachVisibleBrush(scene, /*skipLocked*/ true,
-        [&](EntityId entity, const BrushMesh& mesh, const Transform3f& transform)
+    for (EntityId entity : scene.GetAllEntities())
     {
         if (restrictTo.IsValid() && entity != restrictTo)
-            return;
-        for (const VertexElement& vertex : MeshElements::Vertices(mesh, transform))
+            continue;
+        if (!scene.IsEntityEffectivelyVisible(entity) || scene.IsEntityEffectivelyLocked(entity))
+            continue;
+        const SourceWorldElements* elements = scene.PlacementFacts().GetSourceWorldElements(entity);
+        if (elements == nullptr)
+            continue;
+        for (const VertexElement& vertex : elements->Vertices)
         {
             const std::optional<ProjectedPoint> projected = projection.WorldToPixel(vertex.Position);
             if (!projected.has_value())
@@ -425,7 +515,7 @@ SelectableRef PickingService::PickVertex(const EditorViewport& viewport,
             bestPixels = pixels;
             bestDepth = projected->Depth;
         }
-    });
+    }
 
     return best;
 }
@@ -450,15 +540,13 @@ SelectableRef PickingService::PickLoopSeedEdge(const EditorViewport& viewport,
         return {};
 
     const BrushMesh* mesh = scene.TryGetBrushMesh(face.Entity);
-    const Transform3f* transform = scene.TryGetWorldTransform(face.Entity);
-    if (mesh == nullptr || transform == nullptr || face.ElementId >= mesh->Faces.size())
+    const BrushPlacementFacts& facts = scene.PlacementFacts();
+    const SourceWorldElements* elements = facts.GetSourceWorldElements(face.Entity);
+    if (mesh == nullptr || elements == nullptr || face.ElementId >= mesh->Faces.size())
         return {};
 
-    // The face's loop edges resolve to global edge ids via their sorted vertex pair.
-    std::map<std::pair<std::uint32_t, std::uint32_t>, EdgeElement> edges;
-    for (const EdgeElement& edge : MeshElements::Edges(*mesh, *transform))
-        edges[{ edge.VertexA, edge.VertexB }] = edge;
-
+    // The face's loop edges resolve to global edge ids through the retained
+    // edge table.
     const ViewportProjection projection(viewport);
     const std::vector<std::uint32_t>& loop = mesh->Faces[face.ElementId].Loop;
 
@@ -468,12 +556,13 @@ SelectableRef PickingService::PickLoopSeedEdge(const EditorViewport& viewport,
     {
         const std::uint32_t va = loop[i];
         const std::uint32_t vb = loop[(i + 1) % loop.size()];
-        const auto it = edges.find({ std::min(va, vb), std::max(va, vb) });
-        if (it == edges.end())
+        const std::optional<std::uint32_t> index = facts.SourceEdgeIndexOf(face.Entity, va, vb);
+        if (!index.has_value() || *index >= elements->Edges.size())
             continue;
+        const EdgeElement& edge = elements->Edges[*index];
 
-        const std::optional<ProjectedPoint> a = projection.WorldToPixel(it->second.A);
-        const std::optional<ProjectedPoint> b = projection.WorldToPixel(it->second.B);
+        const std::optional<ProjectedPoint> a = projection.WorldToPixel(edge.A);
+        const std::optional<ProjectedPoint> b = projection.WorldToPixel(edge.B);
         if (!a.has_value() || !b.has_value())
             continue;
 
@@ -482,7 +571,7 @@ SelectableRef PickingService::PickLoopSeedEdge(const EditorViewport& viewport,
             continue;
 
         bestPixels = pixels;
-        best = SelectableRef::EdgeSelection(scene.GetRegistry().Id, face.Entity, it->second.Index);
+        best = SelectableRef::EdgeSelection(scene.GetRegistry().Id, face.Entity, edge.Index);
     }
 
     return best;
@@ -506,10 +595,62 @@ std::vector<SelectableRef> PickingService::PickInRect(const EditorViewport& view
     };
 
     std::vector<SelectableRef> result;
+    const auto pushUnique = [&](const SelectableRef& ref) {
+        if (std::find(result.begin(), result.end(), ref) == result.end())
+            result.push_back(ref);
+    };
 
-    ForEachVisibleBrush(scene, /*skipLocked*/ true,
-        [&](EntityId entity, const BrushMesh& mesh, const Transform3f& transform)
+    // Object and face modes see every evaluated piece (several pieces resolve
+    // to one entity or one source face, hence the dedupe); edge and vertex
+    // modes see the source only, as PickEdge/PickVertex do.
+    const BrushPlacementFacts& facts = scene.PlacementFacts();
+    if (mode == MeshElementKind::Vertex || mode == MeshElementKind::Edge)
     {
+        for (EntityId entity : scene.GetAllEntities())
+        {
+            if (!scene.IsEntityEffectivelyVisible(entity) || scene.IsEntityEffectivelyLocked(entity))
+                continue;
+            const SourceWorldElements* elements = facts.GetSourceWorldElements(entity);
+            if (elements == nullptr)
+                continue;
+            if (mode == MeshElementKind::Vertex)
+            {
+                for (const VertexElement& vertex : elements->Vertices)
+                    if (const auto p = projection.WorldToPixel(vertex.Position); p && inside(p->Pixel))
+                        result.push_back(SelectableRef::VertexSelection(registry, entity, vertex.Index));
+            }
+            else
+            {
+                for (const EdgeElement& edge : elements->Edges)
+                    if (const auto p = projection.WorldToPixel(edge.Mid); p && inside(p->Pixel))
+                        result.push_back(SelectableRef::EdgeSelection(registry, entity, edge.Index));
+            }
+        }
+        return result;
+    }
+
+    // Object and face modes test every piece's projection, which is per drag
+    // frame and per camera, so it is computed here from the retained
+    // placements rather than retained itself.
+    const auto forEachPiece = [&](auto&& fn)
+    {
+        for (EntityId entity : scene.GetAllEntities())
+        {
+            if (!scene.IsEntityEffectivelyVisible(entity) || scene.IsEntityEffectivelyLocked(entity)
+                || scene.TryGetBrush(entity) == nullptr)
+                continue;
+            const BrushEvaluated* evaluated = facts.GetEvaluation(entity);
+            const std::span<const Transform3f> placements = facts.GetPiecePlacements(entity);
+            if (evaluated == nullptr)
+                continue;
+            for (const BrushPiece& piece : evaluated->Pieces)
+                if (piece.Ordinal < placements.size())
+                    fn(entity, piece, placements[piece.Ordinal]);
+        }
+    };
+    forEachPiece([&](EntityId entity, const BrushPiece& piece, const Transform3f& transform)
+    {
+        const BrushMesh& mesh = *piece.Mesh;
         if (mode == MeshElementKind::Object)
         {
             // Overlap of the real geometry's projected screen rectangle with the
@@ -531,30 +672,22 @@ std::vector<SelectableRef> PickingService::PickInRect(const EditorViewport& view
                 }
             }
             if (any && bxMin <= maxX && bxMax >= minX && byMin <= maxY && byMax >= minY)
-                result.push_back(SelectableRef::EntitySelection(registry, entity));
+                pushUnique(SelectableRef::EntitySelection(registry, entity));
             return;
         }
 
-        switch (mode)
+        if (mode != MeshElementKind::Face)
+            return;
+        const BrushEvaluated* evaluated = facts.GetEvaluation(entity);
+        if (evaluated == nullptr)
+            return;
+        for (const FaceElement& face : MeshElements::Faces(mesh, transform))
         {
-        case MeshElementKind::Vertex:
-            for (const VertexElement& vertex : MeshElements::Vertices(mesh, transform))
-                if (const auto p = projection.WorldToPixel(vertex.Position); p && inside(p->Pixel))
-                    result.push_back(SelectableRef::VertexSelection(registry, entity, vertex.Index));
-            break;
-        case MeshElementKind::Edge:
-            for (const EdgeElement& edge : MeshElements::Edges(mesh, transform))
-                if (const auto p = projection.WorldToPixel(edge.Mid); p && inside(p->Pixel))
-                    result.push_back(SelectableRef::EdgeSelection(registry, entity, edge.Index));
-            break;
-        case MeshElementKind::Face:
-            for (const FaceElement& face : MeshElements::Faces(mesh, transform))
-                if (const auto p = projection.WorldToPixel(face.Center); p && inside(p->Pixel))
-                    result.push_back(SelectableRef::FaceSelection(registry, entity, face.Index));
-            break;
-        case MeshElementKind::Object:
-        default:
-            break;
+            const auto p = projection.WorldToPixel(face.Center);
+            if (!p || !inside(p->Pixel))
+                continue;
+            if (const std::optional<std::uint32_t> source = SourceFaceFor(*evaluated, piece, face.Index))
+                pushUnique(SelectableRef::FaceSelection(registry, entity, *source));
         }
     });
 
@@ -592,19 +725,22 @@ std::optional<SurfaceHit> PickingService::PickSurface(const EditorViewport& view
     const Ray3d ray = BuildRay(viewport, point);
     float best = static_cast<float>(kMaxPickDistance);
     std::optional<SurfaceHit> hit;
-    ForEachVisibleBrush(scene, /*skipLocked*/ true,
-        [&](EntityId, const BrushMesh& mesh, const Transform3f& transform)
+    for (RayPieceCandidate& candidate : GatherRayPieceCandidates(scene, ray, /*skipLocked*/ true, EntityId{}))
+    {
+        if (candidate.Near >= best)
+            break; // nearest-box order: nothing after this can beat the hit in hand
+        if (!candidate.Live)
+            continue;
+        for (const FaceElement& face : candidate.FacesOrBuild())
         {
-            for (const FaceElement& face : MeshElements::Faces(mesh, transform))
+            float distance = 0.0f;
+            if (IntersectRayFacePolygon(ray, face.Corners, distance) && distance < best)
             {
-                float distance = 0.0f;
-                if (IntersectRayFacePolygon(ray, face.Corners, distance) && distance < best)
-                {
-                    best = distance;
-                    hit = SurfaceHit{ .Point = ray.PointAt(distance), .Normal = face.Normal };
-                }
+                best = distance;
+                hit = SurfaceHit{ .Point = ray.PointAt(distance), .Normal = face.Normal };
             }
-        });
+        }
+    }
     return hit;
 }
 

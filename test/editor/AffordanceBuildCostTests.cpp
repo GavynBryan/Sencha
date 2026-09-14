@@ -5,6 +5,7 @@
 #include "document/EntityNameComponent.h"
 #include "document/EditorScene.h"
 
+#include <world/transform/TransformComponents.h>
 #include <ecs/ComponentTypeId.h>
 #include <world/serialization/SceneSerializer.h>
 
@@ -84,9 +85,10 @@ TEST_F(AffordanceBuildCostTest, WorkScalesWithAffordanceAuthorsNotRegisteredComp
 
 TEST_F(AffordanceBuildCostTest, BuildingIsProportionalToVisibleEntities)
 {
-    // Two probes on components every brush carries: one that authors viewport
-    // affordances and one that only draws inspector rows.
-    Probe& author = AddProbe(ResolveComponentTypeId<BrushComponent>(), true);
+    // Two probes on components every brush carries and no shipped adapter
+    // claims (BrushComponent has the modifier-stack adapter): one that authors
+    // viewport affordances and one that only draws inspector rows.
+    Probe& author = AddProbe(ResolveComponentTypeId<LocalTransform>(), true);
     Probe& inspectorOnly =
         AddProbe(ResolveComponentTypeId<EntityNameComponent>(), false);
 

@@ -62,6 +62,15 @@ std::optional<Vec3d> ComputeSelectionPivot(const ManipulationSink& sink,
         if (!resolved.has_value() || resolved->Mesh == nullptr)
             continue;
 
+        // The scene's retained elements answer directly; only a pending edit's
+        // working copy (no facts) is enumerated here.
+        if (resolved->Elements != nullptr)
+        {
+            if (const std::optional<Vec3d> center = ElementCenter(*resolved->Elements, ref))
+                pivot.Add(*center);
+            continue;
+        }
+
         if (ref.IsEdge())
         {
             if (!(cachedEntity == ref.Entity))

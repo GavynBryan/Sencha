@@ -59,6 +59,19 @@ private:
         before, after, [&scene, entity](const Transform3f& t) { scene.SetWorldTransform(entity, t); }, document);
 }
 
+// Replaces a brush's modifier stack wholesale (the wrapper for every stack edit:
+// add, remove, reorder, enable, parameter change). Separate from the mesh
+// command so a stack edit can never clobber a mesh edit made in between.
+[[nodiscard]] inline std::unique_ptr<ICommand> MakeEditBrushModifiersCommand(
+    EntityId entity, BrushModifierStack before, BrushModifierStack after,
+    EditorScene& scene, EditorDocument& document)
+{
+    return std::make_unique<ValueCommand<BrushModifierStack>>(
+        std::move(before), std::move(after),
+        [&scene, entity](const BrushModifierStack& stack) { scene.SetBrushModifiers(entity, stack); },
+        document);
+}
+
 // Replaces a brush's mesh wholesale (the general wrapper for every mesh-edit verb).
 [[nodiscard]] inline std::unique_ptr<ICommand> MakeEditBrushMeshCommand(
     EntityId entity, BrushMesh before, BrushMesh after, EditorScene& scene, EditorDocument& document)

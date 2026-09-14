@@ -44,7 +44,8 @@ std::optional<MeshEditTargetMesh> BrushManipulationSink::ResolveMesh(EntityId en
     const Transform3f* transform = Scene.TryGetWorldTransform(entity);
     if (mesh == nullptr || transform == nullptr)
         return std::nullopt;
-    return MeshEditTargetMesh{ .Mesh = mesh, .Transform = *transform };
+    return MeshEditTargetMesh{ .Mesh = mesh, .Transform = *transform,
+                               .Elements = Scene.PlacementFacts().GetSourceWorldElements(entity) };
 }
 
 void BrushManipulationSink::PreviewTransform(EntityId entity, const Transform3f& transform)
@@ -116,8 +117,8 @@ void BrushManipulationSink::CommitSplits(std::vector<SplitEdit> edits)
             std::function<void(std::vector<EntitySnapshot>&)> chained = DuplicateRemap;
             auto remap = [other = std::move(other), chained = std::move(chained)](std::vector<EntitySnapshot>& snapshots) {
                 for (EntitySnapshot& snapshot : snapshots)
-                    if (snapshot.Mesh.has_value())
-                        snapshot.Mesh = other;
+                    if (snapshot.Brush.has_value())
+                        snapshot.Brush->Mesh = other;
                 if (chained)
                     chained(snapshots);
             };

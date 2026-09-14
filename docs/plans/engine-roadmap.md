@@ -98,7 +98,7 @@ Done and load-bearing:
 - Editors: kyusu, shudei, and kettle over `editor_common` (docking UI, themes, keymap
   rebinding, `CommandStack` undo, reflection-driven inspector that picks up game-module
   components, out-of-process PIE spawning the real `app` host, material hot reload).
-  The brush half-edge kernel with pure tested `BrushOps` verbs including `CarveFaceRect`,
+  The brush half-edge kernel with pure tested `BrushOps` verbs, the polygon face carve,
   four deep tools (Select, Brush, EdgeCut, FaceCarve), four-way viewports, gizmos with
   working-grid frames, and the level cook clustering brushes into per-cell static meshes.
   (Most of the superseded roadmap's Phase 1, shipped.)
@@ -474,11 +474,11 @@ absorbed here as v1.0 items with that document as the execution spec.
 
 `FaceCarveTool` is the pattern: a tool born from a common level-design need (draw a
 rectangle on a wall, decide it is a doorway, extrude), built as a pure tested `BrushOps`
-verb (`CarveFaceRect` over `RectFaceFrame`) wrapped in an undoable command, restricted to
-an honest domain, validated by `BrushValidateAndRepair`. Ten more tools in that mold,
+verb (`CarveFacePolygon` over `BrushFaceFrame`) wrapped in an undoable command, restricted
+to an honest domain, validated by `BrushValidateAndRepair`. Ten more tools in that mold,
 mechanically named. Batch 1 (tools 1, 2, 3, 5, 8, 9, 10) is v1.0; batch 2 (tools 4, 6, 7)
-is v2.0. Every batch-2 tool states its restricted domain up front, the way
-`CarveFaceRect` restricts itself to flat rectangular quads.
+is v2.0. Every batch-2 tool states its restricted domain up front, the way the carve
+states that its host has to be flat enough to be a 2D workspace.
 
 1. **`LoftSteps` (v1.0).** Stairs and ramps from a dragged rect plus rise-run data.
    Pattern: vertical traversal is the most common blockout task. Mechanism: a
@@ -487,14 +487,14 @@ is v2.0. Every batch-2 tool states its restricted domain up front, the way
    reads the project's `MovementProfile` step height through reflection, so stairs are
    climbable by construction.
 
-2. **`PierceFaceRect` (v1.0).** Through-openings: doorways and windows. Mechanism: a
-   composition verb applying `CarveFaceRect` to the picked face and the matching
-   projected rect on the opposite parallel face, `DeleteFace` on both inset rects, and
-   four bridging interior wall quads inheriting the host `FaceMaterial`. Domain:
-   rectangular-quad opposite-face pairs.
+2. **Through-openings (shipped).** Doorways and windows are `CarveFacePolygonThrough`:
+   the shape is cut out of the picked face and of the first face opposite it, and the
+   two openings are bridged into a tunnel whose walls inherit the host `FaceMaterial`.
+   A run of the outline lying on the host rim opens a notch through the side beside it
+   instead of walling, which is what makes a doorway rather than a window with a sill.
 
-3. **`FrameFaceRect` (v1.0).** Opening framing: door and window trim, recessed panels,
-   inset fixtures. Mechanism: two concentric `CarveFaceRect` calls; the ring between
+3. **`FrameFaceShape` (v1.0).** Opening framing: door and window trim, recessed panels,
+   inset fixtures. Mechanism: two concentric `CarveFacePolygon` calls; the ring between
    them becomes its own face set carrying a designer-picked material; an optional
    `ExtrudeFace` of the ring gives raised or recessed trim.
 

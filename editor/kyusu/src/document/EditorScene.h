@@ -1,8 +1,11 @@
 #pragma once
 
+#include "brush/BrushEvaluation.h"
 #include "brush/BrushId.h"
 #include "brush/BrushMesh.h"
+#include "BrushPlacementFacts.h"
 #include "brush/BrushMeshStore.h"
+#include "brush/BrushRecord.h"
 #include "document/BrushComponents.h"
 
 #include <core/identity/Id.h>
@@ -33,7 +36,8 @@ public:
     EntityId CreateBrush(Vec3d position, Vec3d halfExtents = { 0.5, 0.5, 0.5 });
     // Creates a brush entity from an explicit mesh (e.g. restoring a deleted brush
     // or loading). The mesh is moved into the store and the entity gets its id.
-    EntityId CreateBrushFromMesh(const Transform3f& transform, BrushMesh mesh);
+    EntityId CreateBrushFromMesh(const Transform3f& transform, BrushMesh mesh,
+                                 BrushModifierStack modifiers = {});
     EntityId CreateCamera(Vec3d position);
     // A plain entity: just a LocalTransform, ready for game components added via
     // the inspector. The non-brush authoring path (the cook passes such entities
@@ -100,8 +104,24 @@ public:
     // Rebuilds the brush's mesh as an axis-aligned box of the given half-extents
     // (the box-editing path; general mesh edits go through BrushOps verbs).
     void SetBrushHalfExtents(EntityId entity, Vec3d halfExtents);
-    // Replaces the brush's stored mesh wholesale (used by mesh-edit verbs).
+    // Replaces the brush's stored mesh wholesale (used by mesh-edit verbs); the
+    // modifier stack stays.
     void SetBrushMesh(EntityId entity, BrushMesh mesh);
+    // Replaces the brush's modifier stack wholesale (every stack edit); the
+    // mesh stays.
+    void SetBrushModifiers(EntityId entity, BrushModifierStack modifiers);
+    // Replaces the whole record (mesh and stack together) in one revision.
+    void SetBrushRecord(EntityId entity, const BrushRecord& record);
+    // The interactive evaluation policy every viewport-facing lookup uses; the
+    // cook asks for BrushEvaluationPolicy::Cook() explicitly.
+    void SetInteractiveEvaluationPolicy(const BrushEvaluationPolicy& policy)
+    {
+        InteractivePolicy_ = policy;
+    }
+    [[nodiscard]] const BrushEvaluationPolicy& InteractiveEvaluationPolicy() const
+    {
+        return InteractivePolicy_;
+    }
 
     // Overwrites an existing component wholesale. Used by editor commands;
     // does nothing if the entity lacks the component.
@@ -164,6 +184,14 @@ public:
     [[nodiscard]] const Transform3f* TryGetWorldTransform(EntityId entity) const;
     [[nodiscard]] const BrushComponent* TryGetBrush(EntityId entity) const;
     [[nodiscard]] const BrushMesh* TryGetBrushMesh(EntityId entity) const;
+    [[nodiscard]] const BrushModifierStack* TryGetBrushModifiers(EntityId entity) const;
+    // The entity's brush evaluated through its modifier stack (live brush or
+    // dormant baked source), cached in the store. Pieces alias the stored mesh
+    // and stay valid until the record next changes. Null when the entity has
+    // no brush record.
+    [[nodiscard]] const BrushEvaluated* TryGetBrushPieces(EntityId entity) const;
+    [[nodiscard]] const BrushEvaluated* TryGetBrushPieces(EntityId entity,
+                                                          const BrushEvaluationPolicy& policy) const;
     // The dormant source mesh of a baked brush (see BakedBrushComponent).
     // Deliberately separate from TryGetBrushMesh: the mesh-edit paths must not
     // treat a baked entity as editable brush geometry; picking and bounds use
@@ -174,10 +202,20 @@ public:
     // the entity is one placement of an instance group.
     [[nodiscard]] bool IsBrushInstanced(EntityId entity) const;
     [[nodiscard]] const CameraComponent* TryGetCamera(EntityId entity) const;
-    // World AABB of a brush entity (offset-aware): nullopt when it has no brush
-    // mesh/transform or the mesh is empty. Shared by the selection box, the
-    // bounds gizmo, and create-from-selection.
-    [[nodiscard]] std::optional<Aabb3d> TryGetWorldBounds(EntityId entity) const;
+    // World AABB of a brush entity's authored mesh alone: nullopt when it has
+    // no brush mesh/transform or the mesh is empty. For what edits the source
+    // (re-origin anchors, the resize gizmo's frame).
+    [[nodiscard]] std::optional<Aabb3d> SourceWorldBounds(EntityId entity) const;
+    // World AABB of everything the brush evaluates to (every modifier piece):
+    // for framing, selection boxes, zone bounds, thumbnails, and placement
+    // against the visible result. Two names so each consumer chooses on
+    // purpose; they agree for a brush without modifiers.
+    [[nodiscard]] std::optional<Aabb3d> EvaluatedWorldBounds(EntityId entity) const;
+    // The retained world-space facts every interactive consumer reads: piece
+    // placements and bounds, union and source bounds, source world elements.
+    // Queries validate their key on access, so they are exact in the same
+    // frame as the edit that changed them.
+    [[nodiscard]] const BrushPlacementFacts& PlacementFacts() const { return PlacementFacts_; }
     [[nodiscard]] Registry& GetRegistry();
     [[nodiscard]] const Registry& GetRegistry() const;
 
@@ -206,9 +244,13 @@ public:
     [[nodiscard]] const BrushMeshStore& GetBrushMeshStore() const { return BrushMeshes; }
 
 private:
+    [[nodiscard]] BrushId BrushRecordIdOf(EntityId entity) const;
+
     Registry& Registry_;
     std::vector<EntityId> Entities;
     BrushMeshStore BrushMeshes;
+    BrushEvaluationPolicy InteractivePolicy_ = BrushEvaluationPolicy::Interactive(4096);
+    BrushPlacementFacts PlacementFacts_{ *this }; // after the store and policy it reads
     // Persistent-id minting entropy (per document, like WorldDocument's Rng_).
     std::mt19937_64 IdRng_{ std::random_device{}() };
     // Every persistent id spoken for in this document: held by a tracked entity

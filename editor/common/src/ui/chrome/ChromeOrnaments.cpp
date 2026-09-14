@@ -33,6 +33,34 @@ void Screw(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 tint)
     dl->AddLine(ImVec2(c.x - s, c.y - s), ImVec2(c.x + s, c.y + s), Tinted(tint, 0.7f), 1.0f);
 }
 
+// The heavier mounting point: a bar cap or the primary frame's ring carries
+// these where a panel carries a screw. Darker body, thicker rim and slot, so it
+// reads as hardware at a glance rather than as a dot.
+void Bolt(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 tint)
+{
+    const ImVec2 c((mn.x + mx.x) * 0.5f, (mn.y + mx.y) * 0.5f);
+    const float r = std::min(mx.x - mn.x, mx.y - mn.y) * 0.5f;
+    if (r < 1.0f)
+        return;
+    dl->AddCircleFilled(c, r, ImGui::GetColorU32(EditorUi::Darken(EditorUi::MetalBase, 0.35f)));
+    dl->AddCircle(c, r - 0.75f, Highlight(0.8f), 0, 1.5f);
+    const float s = r * 0.62f;
+    dl->AddLine(ImVec2(c.x - s, c.y - s), ImVec2(c.x + s, c.y + s), Shadow(), 3.0f);
+    dl->AddLine(ImVec2(c.x - s, c.y - s), ImVec2(c.x + s, c.y + s), Tinted(tint, 0.85f), 1.5f);
+}
+
+// A lit bar mounted flush in a frame's ring. The halo is what makes it read as
+// illuminated rather than painted; the caller dims the tint when the surface it
+// belongs to is not the one being worked in.
+void LightStrip(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 tint)
+{
+    if (mx.x <= mn.x || mx.y <= mn.y)
+        return;
+    const float glow = std::max(1.0f, (mx.y - mn.y) * 0.75f);
+    dl->AddRectFilled(ImVec2(mn.x - glow, mn.y - glow), ImVec2(mx.x + glow, mx.y + glow), Tinted(tint, 0.18f));
+    dl->AddRectFilled(mn, mx, tint);
+}
+
 void Vent(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 tint)
 {
     const float h = mx.y - mn.y;
@@ -118,6 +146,8 @@ void DrawOrnament(ImDrawList* dl, OrnamentKind kind, ImVec2 mn, ImVec2 mx, ImU32
     case OrnamentKind::Groove:      Groove(dl, mn, mx, tint); break;
     case OrnamentKind::Seam:        Seam(dl, mn, mx, tint); break;
     case OrnamentKind::Grid:        Grid(dl, mn, mx, tint); break;
+    case OrnamentKind::Bolt:        Bolt(dl, mn, mx, tint); break;
+    case OrnamentKind::LightStrip:  LightStrip(dl, mn, mx, tint); break;
     }
 }
 } // namespace EditorChrome

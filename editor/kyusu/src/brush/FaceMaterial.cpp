@@ -173,6 +173,39 @@ UvProjection UvProjectionForNormal(Vec3d normal, bool worldAligned)
     return p;
 }
 
+UvProjection UvProjectionFoldRotation(const UvProjection& p)
+{
+    UvProjection out = p;
+    RotatedAxes(p, out.AxisU, out.AxisV);
+    out.Rotation = 0.0f;
+    return out;
+}
+
+UvProjection MirrorFaceProjection(const UvProjection& source, Vec3d sourceNormal,
+                                  Vec3d mirroredNormal,
+                                  std::span<const Vec3d> mirroredLocalPositions)
+{
+    Vec3d u;
+    Vec3d v;
+    RotatedAxes(source, u, v);
+    const Vec3d handed = u.Cross(v);
+    const float before = handed.Dot(sourceNormal);
+    const float after = handed.Dot(mirroredNormal);
+    // Same handedness (or a degenerate face with no verdict): the field reads
+    // the same from the copy's front, so the projection stays as authored.
+    if (before * after >= 0.0f)
+        return source;
+
+    UvProjection out = UvProjectionFoldRotation(source);
+    const RawBounds b = ComputeRawBoundsWith(
+        [&](Vec3d pos) { return ProjectUv(out, pos); }, mirroredLocalPositions);
+    if (!b.Valid)
+        return source;
+    out.AxisU = -out.AxisU;
+    out.Offset.X = (b.Min.X + b.Max.X) - out.Offset.X;
+    return out;
+}
+
 UvProjection UvProjectionFit(const UvProjection& p, std::span<const Vec3d> localPositions)
 {
     UvProjection out = p;

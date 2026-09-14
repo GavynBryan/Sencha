@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <numbers>
 
-// Where a radial tool menu lands on screen and which sector a point is in.
+// Where a radial menu lands on screen and which sector a point is in.
 // Pure pixel math with no ImGui runtime, so the session that hit-tests the
 // wheel and the chrome that paints it go through one rule rather than two
 // versions of it that drift apart.
@@ -23,7 +23,7 @@
 // Sizes are design pixels resolved exactly once, in Place, from the frame's
 // scale: a Layout holds nothing but physical pixels, and nothing downstream
 // scales anything again.
-namespace ToolWheel
+namespace RadialMenu
 {
 inline constexpr float kRadius = 72.0f;        // hub centre to a slot's centre
 inline constexpr float kHub = 26.0f;           // the dead zone: releasing here selects nothing
@@ -247,4 +247,4 @@ enum class Ring : std::uint8_t
         return -1;
     return SlotAt(FanRange(layout, parent, count), count, AngleAt(layout, point));
 }
-} // namespace ToolWheel
+} // namespace RadialMenu

@@ -8,7 +8,7 @@ std::optional<Aabb3d> ComputeZoneBounds(const EditorScene& scene)
     bool any = false;
     for (const EntityId entity : scene.GetAllEntities())
     {
-        if (const auto entityBounds = scene.TryGetWorldBounds(entity))
+        if (const auto entityBounds = scene.EvaluatedWorldBounds(entity))
         {
             bounds.ExpandToInclude(*entityBounds);
             any = true;

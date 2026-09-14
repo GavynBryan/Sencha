@@ -1,4 +1,7 @@
 #include "SelectionActions.h"
+#include "brush/BrushWorkCounters.h"
+
+#include "brush/BrushEvaluation.h"
 
 #include "commands/CommandStack.h"
 #include "commands/CompositeCommand.h"
@@ -267,10 +270,13 @@ const BrushMesh* SelectionActions::SelectedExportMesh() const
     {
         if (!ref.IsEntity())
             continue;
-        if (const BrushMesh* mesh = scene.TryGetBrushMesh(ref.Entity))
-            return mesh;
-        if (const BrushMesh* dormant = scene.TryGetDormantBrushMesh(ref.Entity))
-            return dormant;
+        const BrushEvaluated* evaluated =
+            scene.TryGetBrushPieces(ref.Entity, BrushEvaluationPolicy::Cook());
+        if (evaluated == nullptr || evaluated->Status != BrushEvaluationStatus::Ok)
+            continue;
+    ++BrushWorkCounters::Frame().ExportFlattens;
+        ExportScratch = FlattenBrushPieces(*evaluated);
+        return &ExportScratch;
     }
     return nullptr;
 }

@@ -64,6 +64,13 @@ void VerticalGradient(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 top, ImU32 bot
     dl->AddRectFilledMultiColor(mn, mx, top, top, bottom, bottom);
 }
 
+void HorizontalGradient(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 left, ImU32 right)
+{
+    if (mx.x <= mn.x || mx.y <= mn.y)
+        return;
+    dl->AddRectFilledMultiColor(mn, mx, left, right, right, left);
+}
+
 void InsetWell(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImU32 shadow, ImU32 highlight, float width)
 {
     if (mx.x <= mn.x || mx.y <= mn.y || width <= 0.0f)

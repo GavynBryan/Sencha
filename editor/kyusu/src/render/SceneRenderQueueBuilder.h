@@ -1,5 +1,10 @@
 #pragma once
 
+#include "BrushBakeCache.h"
+#include "BrushDrawSet.h"
+
+#include <ecs/EntityId.h>
+#include <math/Mat.h>
 #include <render/MaterialCache.h>   // MaterialHandle
 #include <render/LightSelection.h>
 #include <render/RenderLight.h>
@@ -30,11 +35,13 @@ struct Registry;
 //
 // Produces the editor's per-frame draw queues from the document so the Solid
 // viewport renders the exact GpuStaticMesh + bindless Material the runtime
-// ships (WYSIWYG). Brushes are tessellated and baked through the SAME brush
-// cook kernel the offline cook and PIE use (CollectCookBrushes +
-// BakeBrushFacesToStaticMesh), then uploaded to the shared StaticMeshCache;
-// placed meshes are already GPU-resident (loaded through the AssetSystem), so
-// their handles are emitted directly.
+// ships (WYSIWYG). Each distinct brush mesh is tessellated and baked through
+// the SAME brush cook kernel the offline cook and PIE use (CollectBrushGeometry
+// + BakeBrushFacesToStaticMesh) into the shared BrushBakeCache, and every
+// evaluated piece is emitted as an instance of its baked mesh at the piece's
+// world placement, so an Array of a hundred copies is one upload and one
+// instanced run per material. Placed meshes are already GPU-resident (loaded
+// through the AssetSystem), so their handles are emitted directly.
 //
 // Two queues because the per-viewport draw policy differs: brushes follow the
 // viewport's shading mode (only Solid viewports draw them through here),
@@ -57,6 +64,7 @@ public:
     // `skinnedMeshes` is optional the same way `textures` is: without it,
     // skinned placements simply emit nothing.
     SceneRenderQueueBuilder(AssetSystem& assets,
+                            BrushBakeCache& bakes,
                             StaticMeshCache& meshes,
                             MaterialCache& materials,
                             MaterialSetCache& materialSets,
@@ -69,11 +77,10 @@ public:
     SceneRenderQueueBuilder& operator=(const SceneRenderQueueBuilder&) = delete;
 
     // Rebuild both queues from the given document (per-call so the workspace can
-    // swap the edited document without touching this builder). Brush geometry is
-    // re-baked and re-uploaded only when the scene's brushes changed since the
-    // last call (whole-scene content hash, so an idle frame uploads nothing);
-    // placed-mesh items are re-emitted each call (their GPU meshes are owned by
-    // the asset system, not here).
+    // swap the edited document without touching this builder). Brush meshes are
+    // baked only when a distinct mesh's content is new to the cache (an idle
+    // frame, a Count drag, or a transform edit uploads nothing); placements and
+    // placed-mesh items are re-emitted each call.
     void Build(const EditorDocument& document);
 
     // Scores the gathered shadow candidates against the given origin (the
@@ -98,12 +105,20 @@ public:
         std::uint64_t CookHash = 0;
     };
     void SetLightmapPreview(const LightmapPreviewSource& source);
-    void SetLightmapPreviewEnabled(bool enabled) { PreviewEnabled = enabled; }
+    void SetLightmapPreviewEnabled(bool enabled)
+    {
+        // The preview overwrites the brush queue while on; coming back needs
+        // the retained brush draws emitted again.
+        if (PreviewEnabled && !enabled)
+            EmittedVersion = 0;
+        PreviewEnabled = enabled;
+    }
     [[nodiscard]] bool LightmapPreviewEnabled() const { return PreviewEnabled; }
     [[nodiscard]] bool LightmapPreviewLoaded() const { return PreviewRegistry != nullptr; }
     [[nodiscard]] bool LightmapPreviewStale() const { return PreviewStale; }
 
     [[nodiscard]] const RenderQueue& BrushQueue() const { return Brushes; }
+    [[nodiscard]] const BrushDrawSet& BrushDraws() const { return Draws; }
     [[nodiscard]] const RenderQueue& MeshQueue() const { return PlacedMeshes; }
     [[nodiscard]] const RenderLightSet& Lights() const { return SceneLights; }
     [[nodiscard]] RenderLightSet& Lights() { return SceneLights; }
@@ -111,23 +126,15 @@ public:
     [[nodiscard]] ShadowCasterSet& Casters() { return SceneCasters; }
 
 private:
-    // One cooked brush's GPU mesh, owned here (Create/Destroy), plus the material
-    // handle per material slot (index = StaticMeshSection::MaterialSlot).
-    struct CachedBrushMesh
-    {
-        StaticMeshHandle Mesh;
-        std::vector<MaterialHandle> SlotMaterials;
-    };
-
-    void RebuildBrushMeshes(const EditorDocument& document);
     void EmitBrushQueue();
+    void RebuildBrushCasters(const EditorDocument& document);
     void EmitPreviewQueue();
     void BuildMeshQueue(const EditorDocument& document);
     void BuildLights(const EditorDocument& document);
     void BuildShadowCasters(const EditorDocument& document);
-    void ReleaseBrushMeshes();
 
     AssetSystem& Assets;
+    BrushBakeCache& Bakes;
     StaticMeshCache& Meshes;
     MaterialCache& Materials;
     MaterialSetCache& MaterialSets;
@@ -136,10 +143,11 @@ private:
     LoggingProvider& Logging;
     Logger& Log;
 
-    std::vector<CachedBrushMesh> BrushMeshes;     // GPU brush meshes, one per cooked brush
-    std::vector<MaterialHandle> BrushMaterials;   // material refs this build holds (released on rebuild)
-    uint64_t BrushHash = 0;                       // content hash of the last bake
-    bool HasBaked = false;
+    // The retained brush representation; the brush queue and the brush caster
+    // set below are emitted from it only when its version moves.
+    BrushDrawSet Draws;
+    std::uint64_t EmittedVersion = 0;
+    ShadowCasterSet BrushCasters;                 // retained; bulk-copied into SceneCasters each frame
 
     // The cooked-scene snapshot backing the baked-lighting preview, loaded
     // through the editor's asset caches. DocHash captures the document state

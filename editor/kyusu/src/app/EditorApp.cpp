@@ -5,9 +5,19 @@
 #include <app/Engine.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <platform/PlatformServices.h>
+#include <assets/texture/Image.h>
+#include <assets/texture/ImageLoader.h>
 #include <platform/SdlWindow.h>
 
+#include <SDL3/SDL.h>
+
 #include <memory>
+#include <optional>
+#include <string>
+
+#ifndef SENCHA_EDITOR_BRAND_DIR
+#define SENCHA_EDITOR_BRAND_DIR "."
+#endif
 
 EditorApp::EditorApp(std::optional<std::string> projectPath)
     : ProjectPath(std::move(projectPath))
@@ -37,6 +47,28 @@ void EditorApp::OnConfigure(GameConfigureContext& ctx)
     ctx.Config.Graphics.FrameScratchBytesPerFrame = 64ull * 1024 * 1024;
 }
 
+namespace
+{
+// Platform branding, not theme art: the icon is the product's and never
+// changes with a theme, so it is set once and forgotten. SDL copies the
+// surface, which only borrows our pixels, so both are done with here.
+void ApplyWindowIcon(SdlWindow& window)
+{
+    const std::string path = std::string(SENCHA_EDITOR_BRAND_DIR) + "/kyusu-icon.png";
+    const std::optional<Image> icon = LoadImageFromFile(path, /*srgb*/ true);
+    if (!icon.has_value() || !icon->IsValid())
+        return;
+    SDL_Surface* surface = SDL_CreateSurfaceFrom(static_cast<int>(icon->Width), static_cast<int>(icon->Height),
+                                                 SDL_PIXELFORMAT_RGBA32,
+                                                 const_cast<unsigned char*>(icon->Pixels.data()),
+                                                 static_cast<int>(icon->Width) * 4);
+    if (surface == nullptr)
+        return;
+    SDL_SetWindowIcon(window.GetHandle(), surface);
+    SDL_DestroySurface(surface);
+}
+}
+
 void EditorApp::OnStart(GameStartupContext& ctx)
 {
     Engine& engine = GetEngine();
@@ -44,6 +76,7 @@ void EditorApp::OnStart(GameStartupContext& ctx)
     if (window == nullptr)
         return;
 
+    ApplyWindowIcon(*window);
     Services = std::make_unique<EditorServices>(engine, *window, ctx.Config, std::move(ProjectPath));
 }
 

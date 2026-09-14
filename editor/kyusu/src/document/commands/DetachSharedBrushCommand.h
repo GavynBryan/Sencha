@@ -6,10 +6,10 @@
 
 #include <memory>
 
-// Detaches a brush entity from its shared mesh: the entity gets its OWN copy
-// (a fresh BrushId), so later edits no longer propagate to the other users of
-// the mesh. The copy is taken from the LIVE mesh, so every edit made while
-// shared is kept. Undo repoints back to the shared id and frees the copy.
+// Detaches a brush entity from its shared record: the entity gets its OWN copy
+// of the mesh and modifier stack (a fresh BrushId), so later edits no longer
+// propagate to the other users of the record. The copy is taken from the LIVE
+// record, so every edit made while shared is kept. Undo repoints back to the shared id and frees the copy.
 // Unrelated to scene instances (BreakSceneInstanceCommand severs a placement);
 // this is the brush-mesh-sharing mechanism only, which is why the name says
 // brush.
@@ -22,7 +22,7 @@ public:
 
     void Execute() override
     {
-        const BrushMesh* shared = Scene.GetBrushMeshStore().Find(SharedId);
+        const BrushRecord* shared = Scene.GetBrushMeshStore().FindRecord(SharedId);
         if (shared == nullptr)
             return;
         OwnId = Scene.GetBrushMeshStore().Create(*shared);

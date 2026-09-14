@@ -1,4 +1,8 @@
 #include "ChromeSelection.h"
+
+#include "ChromeFrame.h"
+
+#include <algorithm>
 #include "ChromePaint.h"
 
 #include "ui/EditorUiStyle.h"
@@ -29,6 +33,28 @@ void EditorChrome::SelectionOutline(ImDrawList* dl, ImVec2 mn, ImVec2 mx)
     const float edge = EditorUi::Px(EditorUi::Metrics.EdgeWidth);
     dl->AddRect(mn, mx, color, 0.0f, 0, edge * 2.0f);
     DrawBracketCorners(dl, mn, mx, edge * 6.0f, color, edge * 3.0f);
+}
+
+void EditorChrome::ContentBoundary(ImDrawList* dl, ImVec2 mn, ImVec2 mx, PanelStyle style, bool active)
+{
+    if (mx.x <= mn.x || mx.y <= mn.y)
+        return;
+    if (active)
+    {
+        SelectionOutline(dl, mn, mx);
+        return;
+    }
+    const float edge = std::max(1.0f, EditorUi::Px(EditorUi::Metrics.EdgeWidth));
+    if (ChromeSpecFor(style).Header != HeaderPlate::Bezel)
+    {
+        dl->AddRect(mn, mx, ImGui::GetColorU32(EditorUi::Border));
+        return;
+    }
+    // A bezel's content keeps a trim of its own: the dim form of the amber that
+    // marks the view being edited, over a dark inset so it reads as recessed.
+    dl->AddRect(ImVec2(mn.x + edge, mn.y + edge), ImVec2(mx.x - edge, mx.y - edge),
+                ImGui::GetColorU32(EditorUi::MetalShadow), 0.0f, 0, edge);
+    dl->AddRect(mn, mx, ImGui::GetColorU32(EditorUi::WithAlpha(EditorUi::SelectedOutline, 0.45f)), 0.0f, 0, edge);
 }
 
 void EditorChrome::SelectionMark()

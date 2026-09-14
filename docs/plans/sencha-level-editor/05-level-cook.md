@@ -31,7 +31,10 @@ trigger: per-cell meshes are a correct final shape, not a throwaway.
 
 The cook is a pipeline; today builds the middle, the rest are named seams that slot in
 without reworking it:
-1. **Modifier expansion** *(future: array/mirror/...)* — expand a brush into concrete instances.
+1. **Modifier expansion** *(built, editor-side)* — a brush's modifier stack (Mirror, Array;
+   `editor/kyusu/src/brush/BrushEvaluation.h`) evaluates to a set of placed pieces before
+   collection, so `CollectCookBrushes` emits one `CookBrushGeometry` per piece and the cook
+   never sees a modifier. The stack lives in the brush record of the `brush_meshes` sidecar.
 2. **Classification** *(future)* — tag each brush *mergeable fill* vs *instanced*. Today all mergeable.
 3. **Spatial clustering** *(build now)* — bucket mergeable brushes into cells, bake one mesh per cell.
 4. **Instanced emission** *(future)* — instanced brushes emit a shared mesh + N placements (the

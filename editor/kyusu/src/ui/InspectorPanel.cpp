@@ -790,7 +790,8 @@ void InspectorPanel::OnDraw()
     const float headerHeight = std::max(EditorUi::Px(EditorUi::Metrics.HeaderHeight), ImGui::GetFrameHeight() + EditorUi::Px(4.0f));
     ImGui::Dummy(ImVec2(ImGui::GetContentRegionAvail().x, headerHeight));
     EditorChrome::DrawHeaderRow(ImGui::GetWindowDrawList(), headerMin, ImGui::GetItemRectMax(), title,
-                                EditorUi::TextRole::PanelTitle, { .Selected = true }, 0.0f);
+                                EditorUi::TextRole::PanelTitle, { .Selected = true },
+                                EditorChrome::HeaderRowSpec{});
 
     // Registry-driven: every component the registry knows about, drawn by schema.
     // No component is named in editor code here.

@@ -1,5 +1,7 @@
 #include "BrushMesh.h"
 
+#include <core/hash/Fnv1a.h>
+
 #include <algorithm>
 #include <map>
 #include <cmath>
@@ -168,4 +170,72 @@ std::vector<BrushMesh> BrushConnectedComponents(const BrushMesh& mesh)
             if (remap[s][soft[0]] != 0xFFFFFFFFu && remap[s][soft[1]] != 0xFFFFFFFFu)
                 out[s].SoftEdges.push_back(BrushSoftEdgeKey(remap[s][soft[0]], remap[s][soft[1]]));
     return out;
+}
+
+std::uint64_t BrushGeometrySignature(const BrushMesh& mesh)
+{
+    std::uint64_t h = kFnv1aOffsetBasis;
+    HashFnv1aValue(h, static_cast<std::uint64_t>(mesh.Vertices.size()));
+    for (const BrushVertex& vertex : mesh.Vertices)
+        HashFnv1aValue(h, vertex.Position);
+    HashFnv1aValue(h, static_cast<std::uint64_t>(mesh.Faces.size()));
+    for (const BrushFace& face : mesh.Faces)
+    {
+        HashFnv1aValue(h, static_cast<std::uint64_t>(face.Loop.size()));
+        for (const std::uint32_t index : face.Loop)
+            HashFnv1aValue(h, index);
+    }
+    HashFnv1aValue(h, static_cast<std::uint64_t>(mesh.SoftEdges.size()));
+    for (const auto& edge : mesh.SoftEdges)
+        HashFnv1aValue(h, edge);
+    return h;
+}
+
+std::uint64_t BrushMaterialSignature(const BrushMesh& mesh)
+{
+    std::uint64_t h = kFnv1aOffsetBasis;
+    for (const BrushFace& face : mesh.Faces)
+    {
+        const FaceMaterial& material = face.Material;
+        HashFnv1aBytes(h, material.Material.Path.data(), material.Material.Path.size());
+        HashFnv1aByte(h, 0);
+        HashFnv1aValue(h, material.Uv.AxisU);
+        HashFnv1aValue(h, material.Uv.AxisV);
+        HashFnv1aValue(h, material.Uv.Scale);
+        HashFnv1aValue(h, material.Uv.Offset);
+        HashFnv1aValue(h, material.Uv.Rotation);
+        HashFnv1aByte(h, material.Uv.WorldAligned ? 1 : 0);
+    }
+    return h;
+}
+
+std::uint64_t BrushMeshSignature(const BrushMesh& mesh)
+{
+    std::uint64_t h = BrushGeometrySignature(mesh);
+    HashFnv1aValue(h, BrushMaterialSignature(mesh));
+    return h;
+}
+
+std::vector<std::array<std::uint32_t, 2>> BrushEdgePairs(const BrushMesh& mesh)
+{
+    std::vector<std::array<std::uint32_t, 2>> pairs;
+    std::size_t loopEntries = 0;
+    for (const BrushFace& face : mesh.Faces)
+        loopEntries += face.Loop.size();
+    pairs.reserve(loopEntries);
+    for (const BrushFace& face : mesh.Faces)
+    {
+        const std::size_t n = face.Loop.size();
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            const std::uint32_t origin = face.Loop[i];
+            const std::uint32_t target = face.Loop[(i + 1) % n];
+            if (origin >= mesh.Vertices.size() || target >= mesh.Vertices.size() || origin == target)
+                continue;
+            pairs.push_back(BrushSoftEdgeKey(origin, target));
+        }
+    }
+    std::sort(pairs.begin(), pairs.end());
+    pairs.erase(std::unique(pairs.begin(), pairs.end()), pairs.end());
+    return pairs;
 }

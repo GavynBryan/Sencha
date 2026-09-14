@@ -98,6 +98,30 @@ TEST(EditorThemeFile, MetricsApplyAndProblemsWarn)
     std::filesystem::remove(path);
 }
 
+TEST(EditorThemeFile, RetiredMetricKeysLoadWithoutProblems)
+{
+    // A theme saved before a metric was retired is still a valid theme: the
+    // key is dropped in silence, the rest of the file applies, and only a key
+    // the editor never had is worth warning about.
+    const auto path = WriteTempTheme(
+        "sencha_theme_retired_metric_test.json",
+        R"({ "metrics": { "caption_pad": 8, "screw_radius": 4 } })");
+    std::string error;
+    ASSERT_TRUE(LoadEditorTheme(path, &error)) << error;
+    EXPECT_TRUE(error.empty()) << error;
+    EXPECT_FLOAT_EQ(EditorUi::Metrics.ScrewRadius, 4.0f);
+    ResetEditorTheme();
+    std::filesystem::remove(path);
+
+    const auto unknown = WriteTempTheme("sencha_theme_unknown_metric_test.json",
+                                        R"({ "metrics": { "not_a_metric": 8 } })");
+    error.clear();
+    ASSERT_TRUE(LoadEditorTheme(unknown, &error));
+    EXPECT_NE(error.find("not_a_metric"), std::string::npos) << error;
+    ResetEditorTheme();
+    std::filesystem::remove(unknown);
+}
+
 TEST(EditorThemeFile, MetricsOnlyFileLoads)
 {
     const auto path = WriteTempTheme("sencha_theme_metrics_only_test.json",
