@@ -1,23 +1,48 @@
 #pragma once
 
 #include "input/UiInputCapture.h"
+#include "PanelVisibilitySettings.h"
 #include "ThemePreferences.h"
+#include "ThemeTextureCache.h"
+#include "chrome/ChromeBars.h"
+#include "chrome/IconDraw.h"
 
 #include <graphics/vulkan/Renderer.h>
+#include <platform/WindowFrameHit.h>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 union SDL_Event;
 
+class ConsoleRegistry;
 class Engine;
 class SdlWindow;
 class VulkanFrameService;
 class VulkanInstanceService;
-class EditorSkin;
 struct IEditorPanel;
+
+// What the shell says it is, drawn at the head of the menu bar: the product
+// name and what kind of editor this is. Data the application supplies;
+// the shell never names a product itself.
+struct ShellIdentity
+{
+    std::string Product;
+    // The product's mark, a path to a PNG. Shell branding, not theme art: it
+    // is fixed by the application and rides the font atlas with the icons.
+    std::string LogoPath;
+};
+
+// Which themed bar a surface belongs to.
+enum class BarRole
+{
+    Caption,
+    Toolbar,
+};
 
 // Fraction of its parent split each DockSlot region takes when the default
 // layout is built. Regions without panels are never split, so the fields for
@@ -25,6 +50,7 @@ struct IEditorPanel;
 struct DockLayoutRatios
 {
     float Bottom = 0.19f;       // full-width strip, of the whole dockspace height
+    float LeftEdge = 0.05f;    // tool column, of the main row width
     float Left = 0.18f;         // left column, of the main row width
     float Right = 0.24f;        // right column, of the width left after the left column
     float CenterBottom = 0.26f; // strip under the central node, of the center column height
@@ -83,6 +109,11 @@ public:
     // draw order. Kept as opaque draw callbacks so this feature stays decoupled
     // from the editor's domain types.
     void AddChrome(std::function<void()> draw);
+    // Transient surfaces drawn after every panel: something that floats over
+    // the whole window for a moment (a held-key menu) and reserves no layout
+    // space, as opposed to a chrome bar, which does. Insertion order = draw
+    // order.
+    void AddOverlay(std::function<void()> draw);
     void SetUndoActions(std::function<void()> undoAction,
                         std::function<void()> redoAction,
                         std::function<bool()> canUndoAction,
@@ -95,10 +126,28 @@ public:
     // Shown only when set (applications without world documents never see it).
     void SetNewWorldAction(std::function<void()> newWorldAction);
 
+    void SetIdentity(ShellIdentity identity);
+
+    // The resolved surface for a bar, as prepared at this frame's boundary.
+    // A pure lookup: a bar painting itself never reaches a loader.
+    [[nodiscard]] EditorChrome::BarSurface SurfaceFor(BarRole role) const;
+    // What the shell is working on, read each frame and shown at the tail of
+    // the menu bar (the open document and whether it has unsaved edits).
+    void SetStatusProvider(std::function<std::string()> statusProvider);
+
 private:
     bool InitImGui(const RendererServices& services);
     void ShutdownImGui();
+    // The frame boundary: commit a pending theme, then resolve everything
+    // derived from theme state, before any of it is drawn.
+    void PrepareFrameChrome();
+    void PrepareThemeTextures();
+    void BuildShellAtlasIfStale();
+    [[nodiscard]] EditorChrome::BarSurface ResolveSurface(EditorUi::BarFinish finish, const std::string& path,
+                                                          EditorUi::SurfaceModulation modulation) const;
     void DrawMainMenuBar();
+    void RegisterPointerCommands(ConsoleRegistry& registry);
+    void FeedPointerActions();
 
     Engine& EngineInstance;
     SdlWindow& Window;
@@ -115,6 +164,23 @@ private:
     bool VulkanBackendReady = false;
     bool Valid = false;
     bool LoggedFirstDraw = false;
+    // Style, scale, and fonts are built on the first OnDraw (see there).
+    bool LookBuilt = false;
+    bool ThemeSynced = false;
+
+    // Theme artwork, with a lifetime of its own: a theme switch replaces these
+    // and leaves the font atlas alone.
+    std::optional<ThemeTextureCache> ThemeTextures;
+    std::vector<std::string> RequestedTextures;
+    EditorChrome::BarSurface CaptionSurface;
+    EditorChrome::BarSurface ToolbarSurface;
+
+    // The inputs the shell atlas was last built from. Compared, not signalled:
+    // nothing tells this feature "the theme changed", it decides for itself
+    // whether its own inputs moved.
+    EditorChrome::ShellAtlasKey BuiltAtlas;
+    bool AtlasBuilt = false;
+    std::uint32_t AtlasBuilds = 0;
 
     std::function<void()> UndoAction;
     std::function<void()> RedoAction;
@@ -127,18 +193,41 @@ private:
     std::function<void()> SaveAsAction;
     std::function<void()> SaveAllAction;
     std::function<void()> NewWorldAction;
+    ShellIdentity Identity;
+    std::function<std::string()> StatusProvider;
+    // The caption's frame snapshot for the window, rewritten every frame the
+    // window draws its own frame.
+    WindowFrameRegions FrameRegions;
 
     std::vector<std::unique_ptr<IEditorPanel>> Panels;
+    // Remembers which panels are shown; declared after Panels, which it reads.
+    PanelVisibilitySettings PanelVisibility;
     std::vector<std::function<void()>> ChromeBars;
+    std::vector<std::function<void()>> Overlays;
     DockLayoutRatios LayoutRatios;
     // View > Preferences > Theme: theme selection plus the palette override window.
     ThemePreferences ThemePrefs;
     // Forces a default-layout rebuild on the next frame (first run / View>Reset).
     bool LayoutDirty = false;
+    bool PlacementChecked = false; // the no-saved-placement check has run for this session
     // Front tabs to raise on the frame after a layout rebuild (window titles of
     // tab-group nodes; SetWindowFocus needs the windows to exist first).
     std::vector<std::string> PendingTabFocus;
-    // 9-slice texture skin (owned here; released before the ImGui backend shuts
-    // down since it holds ImGui descriptor sets). Null if textures didn't load.
-    std::unique_ptr<EditorSkin> Skin;
+    // Pointer actions queued by the editor.ui.click and editor.ui.pointer
+    // commands, so an unattended run can drive or hover a widget before a
+    // screenshot. A click is pressed on the named frame and released on the
+    // next; a move puts the pointer at the position on the named frame and
+    // holds it there. Fed to ImGui after the SDL backend's own mouse update so
+    // the injected position wins for that frame.
+    struct PointerAction
+    {
+        enum class Kind : std::uint8_t { Click, Move };
+        Kind Action = Kind::Click;
+        ImVec2 Pos{};
+        int AtFrame = 0;
+        bool Pressed = false;
+    };
+    std::vector<PointerAction> PointerActions;
+    // The held pointer position from the latest Move, re-fed every frame.
+    std::optional<ImVec2> HeldPointer;
 };

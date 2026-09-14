@@ -1,5 +1,6 @@
 #pragma once
 
+#include <math/geometry/3d/Aabb3d.h>
 #include <math/geometry/3d/Ray3d.h>
 #include "meshedit/MeshElementKind.h"
 #include "selection/SelectableRef.h"
@@ -9,6 +10,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -42,6 +44,22 @@ struct SurfaceHit
     Vec3d Point = {};
     Vec3d Normal = {};
 };
+
+// Nearest ray/face intersection: intersects the face plane and tests the hit for
+// containment in the loop, rather than fanning the loop into triangles.
+//
+// Rendering needs triangles; picking needs containment, and the two answers
+// differ for a concave face -- which is what a face becomes as soon as a carve
+// lands flush against one of its boundaries. `outDistance` is in units of
+// `ray.Direction` and is written only on a hit. The face boundary counts as a
+// hit, so a click exactly on a shared edge still selects.
+[[nodiscard]] bool IntersectRayFacePolygon(const Ray3d& ray, std::span<const Vec3d> corners,
+                                           float& outDistance);
+
+// Slab test: true when the ray meets `box` at some t >= 0, with `outNear` the
+// entry distance (0 when the origin is inside). The reject every brush pick
+// runs before it builds a piece's faces.
+[[nodiscard]] bool IntersectRayAabb(const Ray3d& ray, const Aabb3d& box, float& outNear);
 
 // The pick mode an element edit-mode selects with (Object->EntityOnly,
 // Vertex->VertexOnly, ...). The viewport's own table keyed by MeshElementKind —
@@ -114,13 +132,6 @@ private:
     [[nodiscard]] static bool IsBetterCandidate(const PickCandidate& candidate,
                                                 const PickCandidate& best,
                                                 bool hasBest);
-    [[nodiscard]] std::optional<PickCandidate> MakeBrushBodyCandidate(const Ray3d& ray,
-                                                                      const EditorScene& scene,
-                                                                      EntityId entity) const;
-    void GatherBrushFaceCandidates(const Ray3d& ray,
-                                   const EditorScene& scene,
-                                   EntityId entity,
-                                   std::vector<PickCandidate>& outCandidates) const;
 
     // Screen-space picking for edge/vertex modes: project mesh elements to the
     // viewport and select the nearest within a pixel threshold, breaking ties by

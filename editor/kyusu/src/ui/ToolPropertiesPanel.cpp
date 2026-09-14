@@ -1,12 +1,15 @@
 #include "ToolPropertiesPanel.h"
 
+#include "ui/chrome/ChromeHeader.h"
+
 #include "ui/ButtonFlow.h"
 
-#include "ui/EditorUiSkin.h"
 #include "ui/EditorUiStyle.h"
 #include "ui/ScopedPanel.h"
+#include "ui/chrome/ChromeControls.h"
+#include "ui/chrome/ChromeDecor.h"
 
-#include "fonts/IconsFontAwesome6.h"
+#include "ui/chrome/ChromeBars.h"
 
 #include "commands/CommandStack.h"
 #include "document/WorldDocument.h"
@@ -25,14 +28,8 @@
 #include <imgui.h>
 
 #include <algorithm>
-#include <array>
 #include <memory>
-
-namespace
-{
-// Lays buttons left to right, wrapping to a new row when the next one would
-// overflow the panel, so a thin panel never clips verbs off its right edge.
-}
+#include <span>
 
 ToolPropertiesPanel::ToolPropertiesPanel(std::function<IMeshEditTarget*()> target,
                                          std::function<ManipulationSink*()> sink,
@@ -92,7 +89,7 @@ void ToolPropertiesPanel::CancelBridge() { BridgeEdit.Cancel(Commands); }
 
 std::string_view ToolPropertiesPanel::GetTitle() const
 {
-    return "Tool Properties";
+    return "TOOL PROPERTIES";
 }
 
 void ToolPropertiesPanel::DrawObjectVerbs()
@@ -211,7 +208,7 @@ void ToolPropertiesPanel::DrawFaceVerbs()
     };
 
     ButtonFlow flow;
-    if (flow.Button("Delete"))
+    if (flow.Button("Delete", EditorChrome::ButtonTone::Destructive))
         applyVerb(MeshEditVerb::Delete, {});
     if (flow.Button("Flip Normals"))
         applyVerb(MeshEditVerb::FlipFaceNormal, {});
@@ -234,28 +231,28 @@ void ToolPropertiesPanel::DrawFaceVerbs()
     }
     else
     {
-        ImGui::SeparatorText("Inset");
-        ImGui::SetNextItemWidth(120.0f);
+        EditorChrome::SectionTitle("Inset");
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.0f);
         if (ImGui::DragFloat("Distance", &InsetDistance, 0.05f) )
             ElementEdit.SetInsetDistance(InsetDistance);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Along each face's normal: positive out (a rim), negative in (a recess)");
-        if (ImGui::Button("Apply##inset") )
+        if (EditorChrome::Button("Apply##inset", "Apply##inset", {}, EditorChrome::ButtonTone::Active) )
             CommitElementEdit();
         ImGui::SameLine();
-        if (ImGui::Button("Cancel##inset") )
+        if (EditorChrome::Button("Cancel##inset", "Cancel##inset", {}, EditorChrome::ButtonTone::Normal) )
             CancelElementEdit();
     }
 
     DrawTextureTools();
 
-    ImGui::SeparatorText("Modify Texture");
+    EditorChrome::SectionTitle("Modify Texture");
     Uv.Draw(Target(), Selection, Commands, UvClipboard);
 }
 
 void ToolPropertiesPanel::DrawTextureTools()
 {
-    ImGui::SeparatorText("Texture Tools");
+    EditorChrome::SectionTitle("Texture Tools");
 
     if (ActiveMaterial.Active.IsValid())
         ImGui::TextUnformatted(MaterialDisplayName(ActiveMaterial.Active.Path).c_str());
@@ -265,7 +262,7 @@ void ToolPropertiesPanel::DrawTextureTools()
     ButtonFlow flow;
     if (!ActiveMaterial.Active.IsValid())
         ImGui::BeginDisabled();
-    if (flow.Button("Apply##texture"))
+    if (flow.Button("Apply##texture", EditorChrome::ButtonTone::Active))
         ApplyMaterialToSelectedFaces(Target(), Selection, Commands, ActiveMaterial.Active);
     if (!ActiveMaterial.Active.IsValid())
         ImGui::EndDisabled();
@@ -340,14 +337,14 @@ void ToolPropertiesPanel::DrawEdgeVerbs()
     }
     else
     {
-        ImGui::SeparatorText("Bevel");
+        EditorChrome::SectionTitle("Bevel");
         bool bevelChanged = false;
-        ImGui::SetNextItemWidth(120.0f);
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.0f);
         if (ImGui::DragFloat("Width", &BevelWidth, 0.05f, 0.0f, 1000.0f))
             bevelChanged = true;
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("How far the bevel retreats into each adjacent face");
-        ImGui::SetNextItemWidth(120.0f);
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.0f);
         if (ImGui::DragInt("Segments", &BevelSegments, 0.1f, 1, 16))
         {
             BevelSegments = std::clamp(BevelSegments, 1, 16);
@@ -357,10 +354,10 @@ void ToolPropertiesPanel::DrawEdgeVerbs()
             ImGui::SetTooltip("Strips across the profile (1 = flat chamfer, more = rounder)");
         if (bevelChanged )
             ElementEdit.SetBevelParams(BevelWidth, BevelSegments);
-        if (ImGui::Button("Apply##bevel") )
+        if (EditorChrome::Button("Apply##bevel", "Apply##bevel", {}, EditorChrome::ButtonTone::Active) )
             CommitElementEdit();
         ImGui::SameLine();
-        if (ImGui::Button("Cancel##bevel") )
+        if (EditorChrome::Button("Cancel##bevel", "Cancel##bevel", {}, EditorChrome::ButtonTone::Normal) )
             CancelElementEdit();
     }
 
@@ -379,8 +376,8 @@ void ToolPropertiesPanel::DrawEdgeVerbs()
     }
     else
     {
-        ImGui::SeparatorText("Bridge");
-        ImGui::SetNextItemWidth(120.0f);
+        EditorChrome::SectionTitle("Bridge");
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.0f);
         if (ImGui::DragInt("Segments", &BridgeSegments, 0.25f, 1, 64))
         {
             BridgeSegments = std::clamp(BridgeSegments, 1, 64);
@@ -390,7 +387,7 @@ void ToolPropertiesPanel::DrawEdgeVerbs()
         }
         if (!pendingBridge)
         {
-            if (ImGui::Button("Bridge"))
+            if (EditorChrome::Button("Bridge", "Bridge", {}, EditorChrome::ButtonTone::Normal))
             {
                 // Same-brush and cross-brush both route here; the action picks
                 // the immediate mesh edit or the staged preview.
@@ -404,12 +401,12 @@ void ToolPropertiesPanel::DrawEdgeVerbs()
                 ImGui::SetTooltip("Bridge the selected edge runs.\n"
                                   "A cross-brush bridge previews until Apply.");
             ImGui::SameLine();
-            if (ImGui::Button("Cancel##bridge"))
+            if (EditorChrome::Button("Cancel##bridge", "Cancel##bridge", {}, EditorChrome::ButtonTone::Normal))
                 BridgeOptionsOpen = false;
         }
         else
         {
-            if (ImGui::Button("Apply##bridge") )
+            if (EditorChrome::Button("Apply##bridge", "Apply##bridge", {}, EditorChrome::ButtonTone::Active) )
             {
                 CommitBridge();
                 BridgeOptionsOpen = false;
@@ -417,7 +414,7 @@ void ToolPropertiesPanel::DrawEdgeVerbs()
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Commit the previewed bridge brush.");
             ImGui::SameLine();
-            if (ImGui::Button("Cancel##bridge2") )
+            if (EditorChrome::Button("Cancel##bridge2", "Cancel##bridge2", {}, EditorChrome::ButtonTone::Normal) )
             {
                 CancelBridge();
                 BridgeOptionsOpen = false;
@@ -453,7 +450,7 @@ void ToolPropertiesPanel::DrawVertexVerbs()
         }
     };
 
-    ImGui::SetNextItemWidth(120.0f);
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.0f);
     ImGui::DragFloat("Distance##weld", &WeldDistance, 0.01f, 0.0f, 100.0f, "%.3f");
     ButtonFlow flow;
     if (flow.Button("Weld by Distance"))
@@ -482,33 +479,24 @@ void ToolPropertiesPanel::DrawVertexVerbs()
         ImGui::SetTooltip("Move selected vertices to the nearest grid point.");
 }
 
-void ToolPropertiesPanel::DrawSelectProperties()
+void ToolPropertiesPanel::DrawSelectProperties(ITool& tool, ToolContext& ctx)
 {
-    // Element mode selector (Object/Vertex/Edge/Face): the icon buttons that
-    // drive MeshEditService. Order and labels come from the shared element
-    // kind traits; only the glyph is a UI-local presentation choice.
-    static constexpr std::array<const char*, MeshElementKindCount> kModeIcons = {
-        ICON_FA_CUBE,          // Object
-        ICON_FA_CIRCLE_DOT,    // Vertex
-        ICON_FA_GRIP_LINES,    // Edge
-        ICON_FA_VECTOR_SQUARE, // Face
-    };
+    // Element mode selector (Object/Vertex/Edge/Face): the select tool's
+    // variants, which read and write MeshEditService's kind, so this row and
+    // the tool wheel are two doors onto one state.
     {
-        const float buttonSize = ImGui::GetFrameHeight() * 1.25f;
-        bool first = true;
-        for (MeshElementKind kind : AllMeshElementKinds())
+        EditorChrome::ModuleScope module("modes");
+        const float buttonSize = EditorChrome::BarButtonSize() * 1.25f;
+        const std::span<const ITool::Variant> variants = tool.GetVariants();
+        const int active = tool.GetActiveVariant(ctx);
+        for (std::size_t i = 0; i < variants.size(); ++i)
         {
-            if (!first)
+            if (i > 0)
                 ImGui::SameLine();
-            first = false;
-            const bool active = MeshEdit.GetElementKind() == kind;
-            const char* label = Traits(kind).Label;
-            if (EditorUiSkin::Button(label, kModeIcons[static_cast<std::size_t>(kind)],
-                                     ImVec2(buttonSize, buttonSize), active)
-                && !active)
-                MeshEdit.SetElementKind(kind);
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s", label);
+            const ITool::Variant& variant = variants[i];
+            const bool on = static_cast<int>(i) == active;
+            if (EditorChrome::ToolButton(variant.Label.data(), variant.Icon, variant.Label.data(), on, buttonSize) && !on)
+                tool.SelectVariant(ctx, i);
         }
     }
     ImGui::Separator();
@@ -525,20 +513,23 @@ void ToolPropertiesPanel::DrawSelectProperties()
 
 void ToolPropertiesPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Tool);
     if (!panel.IsOpen())
         return;
 
     ToolRegistry* tools = Tools();
     ITool* activeTool = tools != nullptr ? tools->GetActiveTool() : nullptr;
     if (activeTool == nullptr)
+    {
+        EditorChrome::EmptyRegionLabel(EditorChrome::DecorSlot::ToolPropertiesIdle);
         return;
+    }
 
     // The select tool's "properties" are the element-mode verbs over the current
     // selection, which is panel work rather than tool work. Every other tool
     // draws its own settings, so a new one needs nothing here.
     if (activeTool->GetId() == "select")
-        DrawSelectProperties();
+        DrawSelectProperties(*activeTool, tools->GetContext());
     else
         activeTool->DrawProperties(tools->GetContext());
 }

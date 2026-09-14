@@ -27,6 +27,18 @@ bool ToolRegistry::Activate(std::string_view id)
     return false;
 }
 
+bool ToolRegistry::SelectVariant(std::size_t index, std::size_t variant)
+{
+    if (index >= Tools.size() || Tools[index] == nullptr || variant >= Tools[index]->GetVariants().size())
+        return false;
+    if (static_cast<int>(index) != ActiveIndex)
+        (void)Activate(index);
+    else
+        Tools[index]->CommitPending(*Context);
+    Tools[index]->SelectVariant(*Context, variant);
+    return true;
+}
+
 bool ToolRegistry::Activate(std::size_t index)
 {
     if (index >= Tools.size() || Tools[index] == nullptr)

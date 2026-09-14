@@ -74,6 +74,12 @@ public:
     void SetResizableQuery(std::function<bool()> query) { ResizableQuery = std::move(query); }
     void SetScaleAllowedQuery(std::function<bool()> query)
     { ScaleAllowedQuery = std::move(query); }
+    // Whether the gizmo belongs on screen at all: false while a tool that owns
+    // its own interaction is active (ITool::UsesTransformGizmo). Unset means
+    // always. Gates routing, hover and visuals alike, so the gizmo is
+    // wholly absent rather than drawn-but-inert or inert-but-drawn.
+    void SetGizmoQuery(std::function<bool()> query) { GizmoQuery = std::move(query); }
+    [[nodiscard]] bool GizmoApplies() const { return !GizmoQuery || GizmoQuery(); }
 
     // True once the pivot has been moved off the computed center (so "set origin to
     // pivot" has something to do).
@@ -133,6 +139,7 @@ private:
     std::vector<std::unique_ptr<IManipulator>> Manipulators;
     std::function<bool()> ResizableQuery;
     std::function<bool()> ScaleAllowedQuery;
+    std::function<bool()> GizmoQuery;
     TransformModeMemory Memory;
     TransformSpace Space = TransformSpace::Grid;
     bool GridOriginEditing = false;

@@ -1,7 +1,12 @@
 #include "SceneHierarchyPanel.h"
 
+#include "ui/chrome/ChromeHeader.h"
+
 #include "ui/EditorUiStyle.h"
 #include "ui/ScopedPanel.h"
+#include "ui/chrome/ChromeControls.h"
+#include "ui/chrome/ChromeDecor.h"
+#include "ui/chrome/ChromeSelection.h"
 #include "ui/TextFilterMatch.h"
 #include "fonts/IconsFontAwesome6.h"
 
@@ -150,7 +155,7 @@ SceneHierarchyPanel::SceneHierarchyPanel(WorldDocument& world,
 
 std::string_view SceneHierarchyPanel::GetTitle() const
 {
-    TitleCache = "Hierarchy";
+    TitleCache = "HIERARCHY";
     if (WorldDoc.IsWorld())
     {
         const ZoneId focus = WorldDoc.FocusZone();
@@ -158,12 +163,12 @@ std::string_view SceneHierarchyPanel::GetTitle() const
         {
             if (zone.Id != focus)
                 continue;
-            TitleCache += " - ";
+            TitleCache += " // ";
             TitleCache += zone.Name;
             break;
         }
     }
-    TitleCache += "###Hierarchy";
+    TitleCache += "###HIERARCHY";
     return TitleCache;
 }
 
@@ -281,7 +286,7 @@ void SceneHierarchyPanel::DrawInsertionSlot(DrawContext& ctx, EntityId parent,
             const float y = 0.5f * (min.y + max.y);
             ImGui::GetWindowDrawList()->AddLine(
                 ImVec2(min.x, y), ImVec2(max.x, y),
-                ImGui::GetColorU32(EditorUi::Accent), 2.0f);
+                ImGui::GetColorU32(EditorUi::SelectedOutline), 2.0f);
             if (payload->IsDelivery())
             {
                 ctx.DropParent = parent;
@@ -484,13 +489,13 @@ void SceneHierarchyPanel::DrawRowFlagToggles(DrawContext& ctx, EntityId entity)
     const bool visible = ctx.Scene.IsEntityVisible(entity);
     const bool locked = ctx.Scene.IsEntityLocked(entity);
     EditorScene& scene = ctx.Scene;
-    if (ImGui::SmallButton(visible ? ICON_FA_EYE : ICON_FA_EYE_SLASH))
+    if (EditorChrome::IconButton("visible", visible ? IconId::Eye : IconId::EyeOff, ImGui::GetTextLineHeight(), EditorChrome::ButtonTone::Normal))
         Commands.Execute(std::make_unique<ValueCommand<bool>>(
             visible, !visible,
             [&scene, entity](const bool& v) { scene.SetEntityVisible(entity, v); },
             ctx.Document));
     ImGui::SameLine();
-    if (ImGui::SmallButton(locked ? ICON_FA_LOCK : ICON_FA_LOCK_OPEN))
+    if (EditorChrome::IconButton("locked", locked ? IconId::Lock : IconId::Unlock, ImGui::GetTextLineHeight(), EditorChrome::ButtonTone::Normal))
         Commands.Execute(std::make_unique<ValueCommand<bool>>(
             locked, !locked,
             [&scene, entity](const bool& v) { scene.SetEntityLocked(entity, v); },
@@ -626,7 +631,14 @@ void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth,
         ? std::string("##renaming")
         : RowLabelText(ctx, entity, instanceRoot, instanceMember, children.empty())
               + "##row";
-    const bool nodeOpen = ImGui::TreeNodeEx(label.c_str(), flags);
+    bool nodeOpen = false;
+    {
+        // Amber only around this row, and only while it is selected.
+        ScopedSelectionStyle selectionStyle(selected);
+        nodeOpen = ImGui::TreeNodeEx(label.c_str(), flags);
+        if (selected)
+            EditorChrome::SelectionMark();
+    }
 
     if (!children.empty() && nodeOpen != open && !ctx.FilterActive)
         RememberRowOpenState(pid, instanceRoot, nodeOpen);
@@ -693,7 +705,7 @@ void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth,
 
 void SceneHierarchyPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
     if (!panel.IsOpen())
         return;
 
@@ -704,7 +716,8 @@ void SceneHierarchyPanel::OnDraw()
 
     // Create a plain entity (Transform only) and select it; the inspector adds
     // game components to it. This is the non-brush authoring path.
-    if (ImGui::Button(ICON_FA_PLUS "  New Entity"))
+    if (EditorChrome::Button("new_entity", "New Entity", {},
+                             EditorChrome::ButtonTone::Normal))
     {
         auto create = MakeCreateEntityCommand(Vec3d::Zero(), scene, document);
         CreateEntityCommand* cmd = create.get();
@@ -721,6 +734,8 @@ void SceneHierarchyPanel::OnDraw()
 
     // One pass over the tracked list builds the tree shape for the frame.
     ctx.Order.assign(scene.GetAllEntities().begin(), scene.GetAllEntities().end());
+    if (ctx.Order.empty())
+        EditorChrome::EmptyRegionLabel(EditorChrome::DecorSlot::HierarchyEmpty);
     ctx.Children.resize(ctx.Order.size());
     ctx.Slot.reserve(ctx.Order.size());
     for (std::size_t i = 0; i < ctx.Order.size(); ++i)
@@ -763,7 +778,7 @@ void SceneHierarchyPanel::OnDraw()
     // The scene root: the drop target that unparents, and the anchor the whole
     // tree hangs from so "drop between top-level rows" has somewhere legal to
     // land.
-    ImGui::TextDisabled(ICON_FA_MAP "  Scene");
+    EditorChrome::SectionTitle("Scene");
     if (ImGui::BeginPopupContextItem("##scene_root_ctx"))
     {
         // Re-origin the source so it places well: the selection's world

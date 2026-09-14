@@ -5,6 +5,7 @@
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <cmath>
@@ -31,6 +32,8 @@ const EditorThemePaletteEntry kThemeEntries[] = {
     { "accent_hover", &EditorUi::AccentHover },
     { "accent_dim", &EditorUi::AccentDim },
     { "selected", &EditorUi::Selected },
+    { "selected_outline", &EditorUi::SelectedOutline },
+    { "control_hover", &EditorUi::ControlHover },
     { "secondary", &EditorUi::Secondary },
     { "secondary_hover", &EditorUi::SecondaryHover },
     { "button_bg", &EditorUi::ButtonBg },
@@ -41,15 +44,114 @@ const EditorThemePaletteEntry kThemeEntries[] = {
     { "success", &EditorUi::Success },
     { "text_primary", &EditorUi::TextPrimary },
     { "text_dim", &EditorUi::TextDim },
+    { "chassis_bg", &EditorUi::ChassisBg },
+    { "metal_base", &EditorUi::MetalBase },
+    { "metal_highlight", &EditorUi::MetalHighlight },
+    { "metal_shadow", &EditorUi::MetalShadow },
+};
+
+// The editable chrome metrics, same shape as the palette table.
+const EditorThemeMetricEntry kThemeMetricEntries[] = {
+    { "chamfer", &EditorUi::Metrics.Chamfer },
+    { "border", &EditorUi::Metrics.Border },
+    { "recess", &EditorUi::Metrics.Recess },
+    { "rail_height", &EditorUi::Metrics.RailHeight },
+    { "header_height", &EditorUi::Metrics.HeaderHeight },
+    { "edge_width", &EditorUi::Metrics.EdgeWidth },
+    { "glow_alpha", &EditorUi::Metrics.GlowAlpha },
+    { "glow_width", &EditorUi::Metrics.GlowWidth },
+    { "tracking", &EditorUi::Metrics.Tracking },
+    { "ornament_medium_min", &EditorUi::Metrics.OrnamentMediumMin },
+    { "ornament_large_min", &EditorUi::Metrics.OrnamentLargeMin },
+    { "module_pad", &EditorUi::Metrics.ModulePad },
+    { "bar_rim", &EditorUi::Metrics.BarRim },
+    { "bar_clearance", &EditorUi::Metrics.BarClearance },
+    { "screw_radius", &EditorUi::Metrics.ScrewRadius },
+    { "vent_length", &EditorUi::Metrics.VentLength },
+    { "chassis_border", &EditorUi::Metrics.ChassisBorder },
+    { "chassis_chamfer", &EditorUi::Metrics.ChassisChamfer },
+    { "chassis_recess", &EditorUi::Metrics.ChassisRecess },
+    { "resize_border", &EditorUi::Metrics.ResizeBorder },
+};
+
+// Metric keys the chrome no longer has. A theme a user saved before the
+// mechanism changed still names them, and re-reading a file we wrote should not
+// scold the reader, so a listed key is validated and dropped in silence. The
+// next save omits it. Pre-1.0 compatibility only: empty this list when the
+// themes in the wild have turned over, rather than growing it into a migration
+// table.
+const char* const kRetiredMetricKeys[] = {
+    "caption_pad", // the caption's padding is derived from the bar chassis
+};
+
+// One themeable bar surface: the three keys that describe it and the fields
+// they drive. A row per surface rather than a table per field, so the keys that
+// belong together are written together.
+struct SurfaceEntry
+{
+    const char* FinishKey;
+    const char* TextureKey;
+    const char* ModulateKey;
+    EditorUi::BarFinish* Finish;
+    std::string* Texture;
+    EditorUi::SurfaceModulation* Modulate;
+};
+
+const SurfaceEntry kThemeSurfaceEntries[] = {
+    { "caption_finish", "caption_texture", "caption_texture_modulate",
+      &EditorUi::Surfaces.Caption, &EditorUi::Surfaces.CaptionTexture, &EditorUi::Surfaces.CaptionModulate },
+    { "toolbar_finish", "toolbar_texture", "toolbar_texture_modulate",
+      &EditorUi::Surfaces.Toolbar, &EditorUi::Surfaces.ToolbarTexture, &EditorUi::Surfaces.ToolbarModulate },
+};
+
+bool ParseBarFinish(const std::string& name, EditorUi::BarFinish& out)
+{
+    if (name == "solid")      { out = EditorUi::BarFinish::Solid;     return true; }
+    if (name == "gradient_x") { out = EditorUi::BarFinish::GradientX; return true; }
+    if (name == "gradient_y") { out = EditorUi::BarFinish::GradientY; return true; }
+    if (name == "texture")    { out = EditorUi::BarFinish::Texture;   return true; }
+    return false;
+}
+
+const char* BarFinishName(EditorUi::BarFinish finish)
+{
+    switch (finish)
+    {
+    case EditorUi::BarFinish::Solid:     return "solid";
+    case EditorUi::BarFinish::GradientX: return "gradient_x";
+    case EditorUi::BarFinish::GradientY: return "gradient_y";
+    case EditorUi::BarFinish::Texture:   return "texture";
+    }
+    return "solid";
+}
+
+bool ParseModulation(const std::string& name, EditorUi::SurfaceModulation& out)
+{
+    if (name == "none")       { out = EditorUi::SurfaceModulation::None;      return true; }
+    if (name == "metal")      { out = EditorUi::SurfaceModulation::Metal;     return true; }
+    return false;
+}
+
+const char* ModulationName(EditorUi::SurfaceModulation modulation)
+{
+    return modulation == EditorUi::SurfaceModulation::Metal ? "metal" : "none";
+}
+
+const EditorThemeDecorEntry kThemeDecorEntries[] = {
+    { "hierarchy_empty", &EditorUi::Decor.HierarchyEmpty },
+    { "material_browser_empty", &EditorUi::Decor.MaterialBrowserEmpty },
+    { "scene_browser_empty", &EditorUi::Decor.SceneBrowserEmpty },
+    { "tool_properties_idle", &EditorUi::Decor.ToolPropertiesIdle },
 };
 
 // The pristine palette, captured before the first theme load or reset so
 // switching themes at runtime starts from the built-in defaults, not from
-// whatever the previous theme left behind.
+// whatever the previous theme left behind. The metrics need no capture: a
+// default-constructed ChromeMetrics is the built-in set.
 std::array<ImVec4, std::size(kThemeEntries)> kBuiltInPalette;
 bool kBuiltInCaptured = false;
 
-void CaptureBuiltInPalette()
+void CaptureBuiltIn()
 {
     if (kBuiltInCaptured)
         return;
@@ -89,6 +191,154 @@ bool HexByte(const std::string& s, std::size_t offset, float& out)
     out = static_cast<float>(hi * 16 + lo) / 255.0f;
     return true;
 }
+
+void LoadColors(const JsonValue& colors, std::string& problems)
+{
+    for (const auto& [key, value] : colors.AsObject())
+    {
+        ImVec4* target = nullptr;
+        for (const EditorThemePaletteEntry& entry : kThemeEntries)
+            if (key == entry.Key)
+            {
+                target = entry.Color;
+                break;
+            }
+        if (target == nullptr)
+        {
+            problems += " unknown color '" + key + "';";
+            continue;
+        }
+        float r = 0.0f;
+        float g = 0.0f;
+        float b = 0.0f;
+        float a = 1.0f;
+        if (!value.IsString() || !ParseThemeColor(value.AsString(), r, g, b, a))
+        {
+            problems += " bad color for '" + key + "';";
+            continue;
+        }
+        *target = ImVec4(r, g, b, a);
+    }
+}
+
+void LoadDecor(const JsonValue& decor, std::string& problems)
+{
+    for (const auto& [key, value] : decor.AsObject())
+    {
+        std::string* target = nullptr;
+        for (const EditorThemeDecorEntry& entry : kThemeDecorEntries)
+            if (key == entry.Key)
+            {
+                target = entry.Text;
+                break;
+            }
+        if (target == nullptr)
+        {
+            problems += " unknown decor '" + key + "';";
+            continue;
+        }
+        if (!value.IsString())
+        {
+            problems += " bad value for '" + key + "';";
+            continue;
+        }
+        *target = value.AsString();
+    }
+}
+
+// JSON string escaping for the handful of characters decor copy can hold.
+std::string Quoted(const std::string& text)
+{
+    std::string out = "\"";
+    for (const char c : text)
+    {
+        switch (c)
+        {
+        case '"': out += "\\\""; break;
+        case '\\': out += "\\\\"; break;
+        case '\n': out += "\\n"; break;
+        default: out += c; break;
+        }
+    }
+    out += '"';
+    return out;
+}
+
+void LoadSurfaces(const JsonValue& surfaces, const std::filesystem::path& themeDir, std::string& problems)
+{
+    for (const auto& [key, value] : surfaces.AsObject())
+    {
+        bool matched = false;
+        for (const SurfaceEntry& entry : kThemeSurfaceEntries)
+        {
+            if (key == entry.FinishKey)
+            {
+                matched = true;
+                if (!value.IsString() || !ParseBarFinish(value.AsString(), *entry.Finish))
+                    problems += " bad finish for '" + key + "';";
+            }
+            else if (key == entry.TextureKey)
+            {
+                matched = true;
+                if (!value.IsString())
+                {
+                    problems += " bad value for '" + key + "';";
+                }
+                else
+                {
+                    // Resolved here, against the theme's own directory: what a
+                    // theme author writes is relative to their file, and what
+                    // the style state carries is something openable.
+                    const std::string named = value.AsString();
+                    std::filesystem::path texture(named);
+                    if (!named.empty() && texture.is_relative())
+                        texture = (themeDir / texture).lexically_normal();
+                    *entry.Texture = named.empty() ? std::string{} : texture.string();
+                }
+            }
+            else if (key == entry.ModulateKey)
+            {
+                matched = true;
+                if (!value.IsString() || !ParseModulation(value.AsString(), *entry.Modulate))
+                    problems += " bad modulation for '" + key + "';";
+            }
+            if (matched)
+                break;
+        }
+        if (!matched)
+            problems += " unknown surface '" + key + "';";
+    }
+}
+
+void LoadMetrics(const JsonValue& metrics, std::string& problems)
+{
+    for (const auto& [key, value] : metrics.AsObject())
+    {
+        float* target = nullptr;
+        for (const EditorThemeMetricEntry& entry : kThemeMetricEntries)
+            if (key == entry.Key)
+            {
+                target = entry.Value;
+                break;
+            }
+        if (target == nullptr)
+        {
+            const bool retired = std::any_of(std::begin(kRetiredMetricKeys), std::end(kRetiredMetricKeys),
+                                             [&key](const char* retiredKey) { return key == retiredKey; });
+            if (!retired)
+                problems += " unknown metric '" + key + "';";
+            else if (!value.IsNumber())
+                problems += " bad value for '" + key + "';";
+            continue;
+        }
+        if (!value.IsNumber())
+        {
+            problems += " bad value for '" + key + "';";
+            continue;
+        }
+        *target = static_cast<float>(value.AsNumber());
+    }
+}
 }
 
 bool ParseThemeColor(const std::string& hex, float& r, float& g, float& b, float& a)
@@ -118,15 +368,29 @@ bool ParseThemeColor(const std::string& hex, float& r, float& g, float& b, float
 
 std::span<const EditorThemePaletteEntry> EditorThemePalette()
 {
-    CaptureBuiltInPalette();
+    CaptureBuiltIn();
     return kThemeEntries;
 }
 
-void ResetEditorThemePalette()
+std::span<const EditorThemeMetricEntry> EditorThemeMetrics()
 {
-    CaptureBuiltInPalette();
+    CaptureBuiltIn();
+    return kThemeMetricEntries;
+}
+
+std::span<const EditorThemeDecorEntry> EditorThemeDecor()
+{
+    return kThemeDecorEntries;
+}
+
+void ResetEditorTheme()
+{
+    CaptureBuiltIn();
     for (std::size_t i = 0; i < std::size(kThemeEntries); ++i)
         *kThemeEntries[i].Color = kBuiltInPalette[i];
+    EditorUi::Metrics = EditorUi::ChromeMetrics{};
+    EditorUi::Decor = EditorUi::DecorStrings{};
+    EditorUi::Surfaces = EditorUi::ChromeSurfaces{};
 }
 
 bool SaveEditorTheme(const std::filesystem::path& path, std::string* error)
@@ -152,6 +416,27 @@ bool SaveEditorTheme(const std::filesystem::path& path, std::string* error)
         file << "    \"" << kThemeEntries[i].Key << "\": \"" << hex << '"'
              << (i + 1 < std::size(kThemeEntries) ? ",\n" : "\n");
     }
+    file << "  },\n  \"metrics\": {\n";
+    for (std::size_t i = 0; i < std::size(kThemeMetricEntries); ++i)
+    {
+        char number[32];
+        std::snprintf(number, sizeof(number), "%g", static_cast<double>(*kThemeMetricEntries[i].Value));
+        file << "    \"" << kThemeMetricEntries[i].Key << "\": " << number
+             << (i + 1 < std::size(kThemeMetricEntries) ? ",\n" : "\n");
+    }
+    file << "  },\n  \"decor\": {\n";
+    for (std::size_t i = 0; i < std::size(kThemeDecorEntries); ++i)
+        file << "    \"" << kThemeDecorEntries[i].Key << "\": " << Quoted(*kThemeDecorEntries[i].Text)
+             << (i + 1 < std::size(kThemeDecorEntries) ? ",\n" : "\n");
+    file << "  },\n  \"surfaces\": {\n";
+    for (std::size_t i = 0; i < std::size(kThemeSurfaceEntries); ++i)
+    {
+        const SurfaceEntry& entry = kThemeSurfaceEntries[i];
+        file << "    \"" << entry.FinishKey << "\": \"" << BarFinishName(*entry.Finish) << "\",\n"
+             << "    \"" << entry.TextureKey << "\": " << Quoted(*entry.Texture) << ",\n"
+             << "    \"" << entry.ModulateKey << "\": \"" << ModulationName(*entry.Modulate) << "\""
+             << (i + 1 < std::size(kThemeSurfaceEntries) ? ",\n" : "\n");
+    }
     file << "  }\n}\n";
 
     if (!file.good())
@@ -165,7 +450,7 @@ bool SaveEditorTheme(const std::filesystem::path& path, std::string* error)
 
 bool LoadEditorTheme(const std::filesystem::path& path, std::string* error)
 {
-    CaptureBuiltInPalette();
+    CaptureBuiltIn();
     std::ifstream file(path);
     if (!file.is_open())
     {
@@ -186,42 +471,50 @@ bool LoadEditorTheme(const std::filesystem::path& path, std::string* error)
     }
 
     const JsonValue* colors = root->Find("colors");
-    if (colors == nullptr || !colors->IsObject())
+    const JsonValue* metrics = root->Find("metrics");
+    const JsonValue* decor = root->Find("decor");
+    const JsonValue* surfaces = root->Find("surfaces");
+    const auto isObject = [](const JsonValue* v) { return v != nullptr && v->IsObject(); };
+    if (!isObject(colors) && !isObject(metrics) && !isObject(decor) && !isObject(surfaces))
     {
         if (error != nullptr)
-            *error = "theme '" + path.string() + "' has no \"colors\" object";
+            *error = "theme '" + path.string()
+                   + "' has no \"colors\", \"metrics\", \"decor\", or \"surfaces\" object";
         return false;
     }
 
     // A theme file describes the full look: keys it omits fall back to the
     // built-in default, not to whatever the previously loaded theme set.
-    ResetEditorThemePalette();
+    ResetEditorTheme();
 
     std::string problems;
-    for (const auto& [key, value] : colors->AsObject())
+    if (colors != nullptr)
     {
-        ImVec4* target = nullptr;
-        for (const EditorThemePaletteEntry& entry : kThemeEntries)
-            if (key == entry.Key)
-            {
-                target = entry.Color;
-                break;
-            }
-        if (target == nullptr)
-        {
-            problems += " unknown key '" + key + "';";
-            continue;
-        }
-        float r = 0.0f;
-        float g = 0.0f;
-        float b = 0.0f;
-        float a = 1.0f;
-        if (!value.IsString() || !ParseThemeColor(value.AsString(), r, g, b, a))
-        {
-            problems += " bad color for '" + key + "';";
-            continue;
-        }
-        *target = ImVec4(r, g, b, a);
+        if (colors->IsObject())
+            LoadColors(*colors, problems);
+        else
+            problems += " \"colors\" is not an object;";
+    }
+    if (metrics != nullptr)
+    {
+        if (metrics->IsObject())
+            LoadMetrics(*metrics, problems);
+        else
+            problems += " \"metrics\" is not an object;";
+    }
+    if (decor != nullptr)
+    {
+        if (decor->IsObject())
+            LoadDecor(*decor, problems);
+        else
+            problems += " \"decor\" is not an object;";
+    }
+    if (surfaces != nullptr)
+    {
+        if (surfaces->IsObject())
+            LoadSurfaces(*surfaces, path.parent_path(), problems);
+        else
+            problems += " \"surfaces\" is not an object;";
     }
 
     if (!problems.empty() && error != nullptr)

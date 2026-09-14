@@ -14,6 +14,7 @@
 #include <math/Mat.h>
 #include <math/Vec.h>
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -44,6 +45,11 @@ struct EditorImmediatePipelineConfig
     // vertices that the vertex shader derives from gl_VertexIndex (the
     // wide-line quad expansion), cutting upload size by the expansion factor.
     std::uint32_t        InstanceExpansion = 0;
+    // > 0: binding 1 carries per-instance records of this stride (rate
+    // INSTANCE); attributes with Binding == 1 index into it, and draws go
+    // through SubmitInstanced with one record per instance. Exclusive with
+    // InstanceExpansion, which already spends binding 0 on instance data.
+    std::uint32_t        InstanceStride = 0;
     ColorBlendAttachmentDesc Blend{}; // default = opaque (no blend)
     // Polygon offset applied to the depth-tested slot only (on-top draws ignore depth).
     float                DepthBiasConstant = 0.0f;
@@ -62,6 +68,7 @@ class EditorImmediatePipeline
 public:
     void Setup(const RendererServices& services, EditorImmediatePipelineConfig config)
     {
+        assert(config.InstanceExpansion == 0 || config.InstanceStride == 0);
         Config = std::move(config);
         Device = services.Device != nullptr ? services.Device->GetDevice() : VK_NULL_HANDLE;
         Shaders = services.Shaders;
@@ -184,6 +191,78 @@ public:
         PipelineOnTop = VK_NULL_HANDLE;
     }
 
+    // Instanced form: `vertices` is drawn once per record in `instances`
+    // (Config.InstanceStride bytes each), both uploaded to scratch. What the
+    // brush wireframe uses to draw one mesh's edges at every placement.
+    void SubmitInstanced(const FrameContext& frame, const EditorViewport& viewport,
+                         const CameraRenderData& camera,
+                         std::span<const TVertex> vertices,
+                         std::span<const std::byte> instances,
+                         std::uint32_t instanceCount, bool onTop = false)
+    {
+        if (PipelineLayout == VK_NULL_HANDLE || Scratch == nullptr || Buffers == nullptr
+            || frame.DepthFormat == VK_FORMAT_UNDEFINED || vertices.empty()
+            || instanceCount == 0 || Config.InstanceStride == 0
+            || instances.size() < static_cast<std::size_t>(Config.InstanceStride) * instanceCount)
+            return;
+
+        const VkPipeline pipeline = EnsurePipeline(frame, onTop);
+        if (pipeline == VK_NULL_HANDLE)
+            return;
+
+        const float vpWidth = viewport.RegionMax.x - viewport.RegionMin.x;
+        const float vpHeight = viewport.RegionMax.y - viewport.RegionMin.y;
+        if (vpWidth <= 1.0f || vpHeight <= 1.0f)
+            return;
+
+        const VkDeviceSize vertexBytes = sizeof(TVertex) * vertices.size();
+        const VkDeviceSize instanceBytes =
+            static_cast<VkDeviceSize>(Config.InstanceStride) * instanceCount;
+        const auto vertexAllocation = Scratch->AllocateVertex(vertexBytes, ScratchTag::ImmediateVertices);
+        const auto instanceAllocation = Scratch->AllocateVertex(instanceBytes, ScratchTag::ImmediateVertices);
+        if (!vertexAllocation.IsValid() || !instanceAllocation.IsValid())
+        {
+            if (Log != nullptr && !LoggedOverflow)
+            {
+                Log->Error("{}: dropped instanced submission of {} vertices x {} instances that exceeded frame scratch",
+                           Config.VertexName, vertices.size(), instanceCount);
+                LoggedOverflow = true;
+            }
+            return;
+        }
+        LoggedOverflow = false;
+        std::memcpy(vertexAllocation.Mapped, vertices.data(), static_cast<size_t>(vertexBytes));
+        std::memcpy(instanceAllocation.Mapped, instances.data(), static_cast<size_t>(instanceBytes));
+
+        VkViewport vkViewport{};
+        vkViewport.x = viewport.RegionMin.x;
+        vkViewport.y = viewport.RegionMin.y;
+        vkViewport.width = vpWidth;
+        vkViewport.height = vpHeight;
+        vkViewport.minDepth = 0.0f;
+        vkViewport.maxDepth = 1.0f;
+        VkRect2D scissor{};
+        scissor.offset = { static_cast<int32_t>(viewport.RegionMin.x),
+                           static_cast<int32_t>(viewport.RegionMin.y) };
+        scissor.extent = { static_cast<uint32_t>(vpWidth), static_cast<uint32_t>(vpHeight) };
+
+        const PushConstants push{
+            .ViewProjection = camera.ViewProjection.Transposed(),
+            .ViewportPixels = Vec2d{ vpWidth, vpHeight },
+        };
+
+        const VkBuffer buffers[2] = { Buffers->GetBuffer(vertexAllocation.Buffer),
+                                      Buffers->GetBuffer(instanceAllocation.Buffer) };
+        const VkDeviceSize offsets[2] = { vertexAllocation.Offset, instanceAllocation.Offset };
+
+        vkCmdBindPipeline(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        vkCmdSetViewport(frame.Cmd, 0, 1, &vkViewport);
+        vkCmdSetScissor(frame.Cmd, 0, 1, &scissor);
+        vkCmdBindVertexBuffers(frame.Cmd, 0, 2, buffers, offsets);
+        vkCmdPushConstants(frame.Cmd, PipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
+        vkCmdDraw(frame.Cmd, static_cast<uint32_t>(vertices.size()), instanceCount, 0, 0);
+    }
+
     [[nodiscard]] std::size_t MaxScratchVerticesPerSubmit() const
     {
         if (Scratch == nullptr)
@@ -246,6 +325,8 @@ private:
         desc.VertexBindings = { { 0, sizeof(TVertex),
                                   Config.InstanceExpansion > 0 ? VK_VERTEX_INPUT_RATE_INSTANCE
                                                                : VK_VERTEX_INPUT_RATE_VERTEX } };
+        if (Config.InstanceStride > 0)
+            desc.VertexBindings.push_back({ 1, Config.InstanceStride, VK_VERTEX_INPUT_RATE_INSTANCE });
         desc.VertexAttributes = Config.Attributes;
         desc.CullMode = Config.CullMode;
         desc.DepthTest = !onTop; // on-top overlays ignore depth so they're never occluded

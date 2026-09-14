@@ -25,7 +25,7 @@ void BrushPreviewRenderer::DrawViewport(const FrameContext& frame, const EditorV
     // primitive (box, plane quad, cylinder), no per-shape geometry.
     std::unordered_set<std::uint64_t> seen;
     std::vector<EditorLineVertex> vertices;
-    const Vec4 color(1.0f, 0.6f, 0.0f, 1.0f);
+    const Vec4 color = preview->Color;
     for (const BrushFace& face : mesh.Faces)
     {
         const std::size_t n = face.Loop.size();

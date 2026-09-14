@@ -1,5 +1,7 @@
 #pragma once
 
+#include "chrome/ChromeControls.h"
+
 #include <imgui.h>
 
 // Lays buttons left to right, wrapping to the next line when the next one would
@@ -16,17 +18,22 @@ public:
     {
     }
 
-    bool Button(const char* label)
+    bool Button(const char* label, EditorChrome::ButtonTone tone = EditorChrome::ButtonTone::Normal)
     {
-        Place(label);
-        return ImGui::Button(label);
+        Place(ImGui::CalcTextSize(label, nullptr, true).x + ImGui::GetStyle().FramePadding.x * 2.0f);
+        return EditorChrome::Button(label, label, {}, tone);
+    }
+
+    bool ToolButton(const char* id, IconId icon, const char* tooltip, bool active, float size)
+    {
+        Place(size);
+        return EditorChrome::ToolButton(id, icon, tooltip, active, size);
     }
 
 private:
-    void Place(const char* label)
+    void Place(float width)
     {
         const ImGuiStyle& style = ImGui::GetStyle();
-        const float width = ImGui::CalcTextSize(label, nullptr, true).x + style.FramePadding.x * 2.0f;
         if (!FirstInRow && ImGui::GetItemRectMax().x + style.ItemSpacing.x + width <= RightEdge)
             ImGui::SameLine();
         FirstInRow = false;

@@ -59,7 +59,7 @@ public:
 
     std::string_view GetId() const override;
     std::string_view GetDisplayName() const override;
-    std::string_view GetIcon() const override;
+    IconId GetIcon() const override;
     void OnActivate(ToolContext& ctx) override;
     void OnDeactivate(ToolContext& ctx) override;
     void OnCancel(ToolContext& ctx) override;
@@ -82,6 +82,14 @@ public:
 
     void DrawProperties(ToolContext& ctx) override;
     [[nodiscard]] Shortcut GetShortcut() const override;
+
+    // The primitives as the tool's variants; Creation.ActivePrimitive is the
+    // one in effect for the next drag. The properties row reshapes a pending
+    // brush by writing the settings and refreshing; a variant chosen through
+    // the registry has already placed it.
+    [[nodiscard]] std::span<const Variant> GetVariants() const override;
+    [[nodiscard]] int GetActiveVariant(const ToolContext& ctx) const override;
+    void SelectVariant(ToolContext& ctx, std::size_t index) override;
 
     // The primitive the next drag creates and its shape parameters. Owned here
     // because only this tool acts on them; the properties UI drives them and

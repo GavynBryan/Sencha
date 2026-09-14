@@ -1,7 +1,9 @@
 # Editor UI Look-and-Feel
 
-Status: plan (not yet implemented). Target captured from a concept mockup shared
-2026-06-17. See memory `editor-ui-look-and-feel`.
+Status: phases 1-5 shipped; the chrome layer (phase 6) shipped 2026-09-09 as
+the workstation restyle and its second cut (phase 7) on 2026-09-10. Target captured from a concept mockup shared
+2026-06-17 and re-cut in 2026-09 toward an "alternate 2004 workstation":
+gunmetal chassis, cyan for interaction, amber for the selection.
 
 ## Context
 
@@ -37,10 +39,12 @@ This pass must preserve what makes the editor modular: the UI is a *view over
 registries and state*, behavior is decoupled, and there are no central switch
 statements that name specific things. Concretely:
 
-1. **Theme is flat leaf data, not a framework.** `EditorUiStyle` is a palette
-   struct + an `Apply`/`LoadFonts` function. No theming engine, no runtime style-
-   token registry, no observers, no hot-swap, no skin files. The moment it grows
-   indirection it has failed. (Mirror of `EditorTheme.h` for overlays.)
+1. **Theme is flat leaf data, not a framework.** `EditorUi` is a palette, a
+   metrics struct, decor strings, a scale factor, and `Apply`/`LoadFonts`; the
+   theme JSON (`editor/themes/*.json`, `editor.ui.theme`) overwrites those
+   through three flat key tables in `EditorThemeFile`. No style-token registry,
+   no observers. The moment it grows indirection it has failed. (Mirror of
+   `EditorTheme.h` for overlays.)
 2. **One palette, zero literals.** Every color/metric flows from the palette;
    panels reference named constants. No `PushStyleColor` with raw values (retire
    the existing one in `MeshEditPanel`). Enforce mechanically with a fitness
@@ -111,12 +115,21 @@ Squared, thin-bordered, tight — the sci-fi panel read.
 ## Fonts — DONE (sourced + wired)
 
 Bundled in `editor/fonts/` (all permissively licensed; see that dir's `README.md`
-+ `LICENSE-*.txt`). All four TTFs verified to carry a `glyf` table so ImGui's
++ `LICENSE-*.txt`). All five TTFs verified to carry a `glyf` table so ImGui's
 `stb_truetype` rasterizes them directly (no variable-font / CFF surprises):
 
-- **UI font:** Inter 4.1 Regular @ 15px (SIL OFL 1.1) — the default font.
-- **Monospace:** JetBrains Mono Regular @ 14px (SIL OFL 1.1) — console/readouts,
-  exposed via `EditorUi::MonoFont()`.
+- **UI font:** JetBrains Mono Regular @ 15px (SIL OFL 1.1) — the default font;
+  the same face at 12px serves `TextRole::SecondaryText`. Inter ships but is
+  unused.
+- **Title face:** Chakra Petch SemiBold (SIL OFL 1.1) @ 12px for the uppercase,
+  tracked label roles (panel and section titles, status labels), @ 18px for
+  the application nameplate, and @ 15px for `TextRole::Tab`, the font pushed
+  around `DockSpace` so dock tab labels take the title face. The tab cut must
+  match the body size: a docked window's content offset comes from the font
+  at its own `Begin`, so a smaller tab font would open a strip between the
+  tab bar and the panel frame.
+- **Monospace:** JetBrains Mono Regular @ 14px — console/readouts, exposed via
+  `EditorUi::MonoFont()`. All sizes multiply by `editor.ui.scale`.
 - **Icons:** Font Awesome 6 Free Solid @ 14px (OFL fonts / CC-BY 4.0 designs)
   merged into the UI font via `IconsFontAwesome6.h` (`ICON_FA_*` macros), so icon
   glyphs render inline in labels — gates the Phase 2 icon toolbar.
@@ -183,6 +196,11 @@ Add `editor/ui/EditorUiStyle.{h,cpp}`:
    active-viewport orientation + grid spacing, wall clock. Both are fixed chrome
    drawn via `BeginViewportSideBar` (reserves work-area space the full-bleed
    viewport panel avoids), registered through `EditorUiFeature::AddChrome`.
+   Since moved: the perspective viewport's header is the toolbar row, in
+   place of a title (`ViewportPanel::SetHeaderRows`), with the gizmo strip
+   centred on the window's midline (`ToolbarRowPlacement.h`); Cook/Play/Stop sit at the
+   right end of the `WorkspaceBar`, an untitled header plate under the
+   caption that will carry workspace tabs.
    *Deliberately no snap/grid/angle **toggles**: those imply backing state
    (snap-enable, configurable spacing, angle snap) the editor doesn't have yet —
    they'd be fake buttons, so they're deferred to Phase 4 as a real feature.*
@@ -236,19 +254,91 @@ Add `editor/ui/EditorUiStyle.{h,cpp}`:
    panels) to power a `View` menu (per-panel toggles + **Reset Layout**). Layout
    persists via `imgui.ini`; the viewport is the dock-managed central window. See
    plan `~/.claude/plans/enumerated-sparking-penguin.md`.
-5. **Skin pass (bevel + gradient) — IN PROGRESS.** The user wanted an "edgy 2003
-   Winamp skin", not a clean flat theme. Scoped (with the user) to the bounded
-   draw-list pass — not a full texture skin. `EditorUiSkin.{h,cpp}` is a single
-   draw-list layer (gradient+bevel fill, glossy metal `Band`, accent-glow `Button`,
-   `PanelBackdrop`) with all colors derived from the palette (so
-   `ui_color_discipline` holds) and all look constants centralized. Palette retuned
-   glowier (glow cyan accent, saturated VU green/amber/magenta) and corners set
-   sharp (0 rounding). Applied so far: menu/toolbar/status **bands**, glossy
-   **toolbar buttons**, and a subtle **panel backdrop** in the five content panels
-   (the viewport stays transparent for the 3D). Full texture-skin fidelity (9-slice
-   frames, the transport/EQ ornaments) remains out of scope — disproportionate for
-   a dev tool; residual flatness in stock ImGui widgets (combos, checkboxes) is the
-   honest ceiling of this approach.
+5. **Skin pass (bevel + gradient) — SUPERSEDED** by the chrome layer below. The
+   draw-list skin (`EditorUiSkin`) and the 9-slice PNG skin (`EditorSkin`,
+   `editor/skin`) were retired once every panel had moved over.
+6. **Chrome layer — DONE (2026-09).** `editor/common/src/ui/chrome/` is the
+   workstation chrome, one mechanism per file: `ChromeGeometry` (chamfered
+   silhouettes, frame/header layout, ornament placement by size tier; pure
+   math, unit-tested), `ChromePaint` (the draw-list strokes), `ChromeFrame`
+   (the five `PanelStyle` weights), `ChromeChassis` (the application frame),
+   `ChromeHeader` (rail, titled row, section title), `ChromeBars` (bar backdrop,
+   `ModuleScope` bays), `ChromeControls` (mounted buttons, icon buttons),
+   `ChromeSelection` (`ScopedSelectionStyle`, the only way a widget turns
+   amber), `ChromeOrnaments` (the machined decorations, drawn from the
+   palette), `IconDraw` (the icons, SVG files under `editor/icons/` baked
+   into the font atlas at startup; see that directory's README), `ChromeDecor`
+   (flavor copy by `DecorSlot`).
+   `ScopedPanel(title, open, PanelStyle)` is the one hook every panel's chrome
+   comes through; a panel names a weight, a section title, a selection scope,
+   a control, an icon id, a decor slot, and never a screw or a chamfer
+   (layering rule D). Icons are `IconId` (`editor/common/src/icons/`), a leaf
+   the tool framework carries. `editor.ui.scale` scales fonts, ImGui metrics,
+   and chrome metrics once at startup; `editor.ui.click` drives a widget for
+   unattended screenshots.
+7. **Second cut — DONE (2026-09-10).** The kit reaches inside the panels.
+   Frames carry a corner wedge, a 10px rail with terminator ticks and a
+   status LED (medium tier and up), and a scroll-stable frame rect; titled
+   rows take a slanted cap and a `Selected` state. Controls: amber is the
+   one "hot" family (`ButtonTone::Active` for a lit toggle or the action
+   that matters; `Primary` is gone), yellow stays hover-only; `Button`
+   honors the `##` id rule so `ButtonFlow` routes every verb through it;
+   `BeginCombo`/`EndCombo` house stock combos with a state-colored chevron;
+   `ChromeTile` is the one tile the material, active-material, and scene
+   browsers share (one item, so the clipper stride is exact);
+   `SelectionMark`/`SelectionOutline` and `HeaderNotch` mark rows, the
+   active viewport, and inspector sections. Bars: `Readout` cells with LEDs
+   and `Divider` seams make the status bar and the caption (nameplate as a
+   header row, document readout) machine readouts. Panel titles are
+   uppercase in the title face; a panel with no saved placement rebuilds the
+   designed layout (so renames and new panels never float). The far-left
+   tool rail is `ToolPalettePanel` in the new `DockSlot::LeftEdge`, docked
+   and floated like any panel. Empty wells carry a faint `Grid` ornament,
+   registration ticks, and a two-line decor readout. The unplaced hazard
+   stripe and scanline ornaments, the stripe metric, and the console decor
+   slot were removed.
+8. **Bar chassis — DONE (2026-09-10).** The caption and the main toolbar are
+   fabricated bands rather than gradient strips. `BarLayout`/`BarHeightFor`
+   (pure, tested) cut a bar into a rim at each edge, a recessed channel
+   terminated by a chamfered end cap carrying a rivet, and a control lane
+   centered in the channel; `BarFrame` paints that over `BarBackdrop`, whose
+   gradient survives only in the rims. `BarRowLayout` is the three-block row
+   the caption is laid out with: nameplate at the left, window controls at the
+   right, and the menus centered on the bar itself, shifted only as far as the
+   outer blocks force and flowing (dropping the document readout) when they
+   cannot fit. Both bars take their height from `BarHeight`, so `caption_pad`
+   is gone; `bar_rim` and `bar_clearance` replace it. The caption submits two
+   menu-bar appends: the menus first, on the padding that both sizes the bar
+   and centers them in it, then the chrome with the ordinary padding seated on
+   the lane. The comment in `DrawMainMenuBar` and the tests in
+   `ChromeBarsTests` carry the reasoning. An empty `ModuleScope` now leaves the cursor untouched,
+   which is what had been dropping the whole toolbar row five pixels whenever
+   the active tool contributed no controls.
+
+9. **Themed surfaces, the mark, and a primary viewport — DONE (2026-09-10).**
+   Three resource lifetimes, kept apart on purpose. *Style values* (palette,
+   metrics, decor, `ChromeSurfaces`) are plain state and cost nothing to
+   change. *Theme artwork* is `ThemeTextureCache`: paths a theme names, keyed
+   by path **and** a modification-time/size stamp so editing art in place
+   replaces it, with images on the deletion queue and ImGui sets on
+   `GpuFrameRetirement`. *Shell atlas art* (fonts, icons, the Kyusu mark) is
+   rebuilt only when `ShellAtlasKey` changes — UI scale or the mark's path —
+   so a theme switch never rebuilds the fonts. There is no theme revision
+   counter: each owner compares its own inputs. A theme chosen from the menu
+   is recorded and committed at the frame boundary, where the assets it names
+   and the atlas it implies are resolved together, so one frame sees one
+   theme; painting after that is pure lookup and draw.
+   A bar's channel carries a themed finish (`solid`, `gradient_x`,
+   `gradient_y`, `texture` with `none`/`metal` modulation); the finish is paint
+   only and the File/Edit/View bay keeps its own opaque plate over it.
+   `PanelStyle` is documented as naming a chrome *composition*, and
+   `PanelChromeSpec` is the one table that says what each implies — frame
+   weight, ornament mount, header plate, header height, corner brackets — so
+   no painter tests a style value. `ViewportPrimary` is the scene view's
+   composition: a chassis-scale ring with bolts, a vent and amber light strips
+   mounted on the metal (the well is covered by the scene image), cyan corner
+   brackets, a bezel header with a lit top-centre accent, and an amber content
+   trim. `Major` was deleted; it had no callers.
 
 ## Risks / honest ceiling
 

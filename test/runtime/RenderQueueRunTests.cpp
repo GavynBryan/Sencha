@@ -102,3 +102,32 @@ TEST(RenderQueueRuns, PosedSkinnedInstancesNeverMerge)
     ASSERT_EQ(rest.OpaqueRuns().size(), 1u);
     EXPECT_EQ(rest.OpaqueRuns()[0].Count, 2u);
 }
+
+TEST(RenderQueueRuns, InterleavedPlacementsOfTwoMeshesCollapseToOneRunPerMeshAndMaterial)
+{
+    // The editor emits brush pieces entity by entity, alternating a source
+    // mesh and its mirrored copy, each with two material sections. The sort
+    // key orders material, mesh and section above depth, so however the
+    // placements interleave, every placement of one mesh under one material is
+    // one instanced run.
+    RenderQueue queue;
+    const StaticMeshHandle meshes[] = { StaticMeshHandle{ 3, 1 }, StaticMeshHandle{ 4, 1 } };
+    const MaterialHandle materials[] = { MaterialHandle{ 5, 1 }, MaterialHandle{ 6, 1 } };
+    for (std::uint32_t placement = 0; placement < 50; ++placement)
+    {
+        for (std::uint32_t section = 0; section < 2; ++section)
+        {
+            RenderQueueItem item{};
+            item.Mesh = meshes[placement % 2];
+            item.Material = materials[section];
+            item.SectionIndex = section;
+            item.CameraDepth = static_cast<float>(placement) * 3.0f + static_cast<float>(section);
+            queue.AddOpaque(item);
+        }
+    }
+    queue.SortOpaque();
+
+    ASSERT_EQ(queue.OpaqueRuns().size(), 4u);
+    for (const RenderQueueRun& run : queue.OpaqueRuns())
+        EXPECT_EQ(run.Count, 25u);
+}

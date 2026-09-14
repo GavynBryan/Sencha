@@ -14,13 +14,7 @@ InputConsumed ShortcutRegistry::OnInput(const InputEvent& event)
 
     for (const Shortcut& shortcut : Shortcuts)
     {
-        if (shortcut.Key != keyEvent->Key)
-            continue;
-        if (shortcut.Modifiers.Ctrl != keyEvent->Modifiers.Ctrl)
-            continue;
-        if (shortcut.Modifiers.Shift != keyEvent->Modifiers.Shift)
-            continue;
-        if (shortcut.Modifiers.Alt != keyEvent->Modifiers.Alt)
+        if (shortcut.Key != keyEvent->Key || !(shortcut.Modifiers == keyEvent->Modifiers))
             continue;
 
         shortcut.Callback();

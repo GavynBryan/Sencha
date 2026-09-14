@@ -26,9 +26,10 @@ public:
                          const ConsoleRegistry& console,
                          std::function<void()> applyToSelection);
 
-    std::string_view GetTitle() const override { return "Materials"; }
+    std::string_view GetTitle() const override { return "MATERIALS"; }
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return DockSlot::CenterBottom; }
+    PanelPersistence GetPersistence() const override { return { "materials", PanelVisibilityPolicy::Remembered }; }
     // Shares one tabbed node with the Console in the center-bottom strip.
     int GetDockTabGroup() const override { return 0; }
 

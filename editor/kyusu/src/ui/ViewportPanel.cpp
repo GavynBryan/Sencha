@@ -1,35 +1,43 @@
 #include "ViewportPanel.h"
 
+#include "ui/chrome/ChromeSelection.h"
+
+#include "ui/chrome/ChromeControls.h"
+
 #include "SceneBrowserPanel.h"
 
 #include "ui/EditorUiStyle.h"
+#include "ui/ScopedPanel.h"
+#include "ui/chrome/ChromeHeader.h"
 
 #include "EditorTheme.h"
 #include "overlay/EditorOverlayState.h"
 #include "viewport/EditorViewport.h"
 #include "viewport/MarqueeState.h"
+#include "viewport/ViewportButtonMath.h"
+#include "viewport/ViewportDialPlacement.h"
 #include "viewport/ViewportProjection.h"
 #include "render/ViewportTargetCache.h"
 
 #include <imgui.h>
 
 #include <algorithm>
-#include <cfloat>
+#include <array>
 #include <cmath>
 #include <optional>
+#include <vector>
 
 namespace
 {
 constexpr ImGuiWindowFlags kViewportChildFlags =
     ImGuiWindowFlags_NoMove
     | ImGuiWindowFlags_NoScrollbar
-    | ImGuiWindowFlags_NoScrollWithMouse
-    | ImGuiWindowFlags_NoBackground;
+    | ImGuiWindowFlags_NoScrollWithMouse;
 }
 
 ViewportPanel::ViewportPanel(ViewportLayout& layout, const MarqueeState& marquee, const EditorOverlayState& overlay,
                              ViewportTargetCache& targets, std::string title, DockSlot slot, float dockWeight,
-                             ViewportId viewport)
+                             PanelStyle style, PanelPersistence persistence, ViewportId viewport)
     : Layout(layout)
     , Marquee(marquee)
     , Overlay(overlay)
@@ -37,6 +45,8 @@ ViewportPanel::ViewportPanel(ViewportLayout& layout, const MarqueeState& marquee
     , Title(std::move(title))
     , Slot(slot)
     , Weight(dockWeight)
+    , Style(style)
+    , Persistence(persistence)
     , Viewport(viewport)
 {
 }
@@ -54,38 +64,36 @@ void ViewportPanel::ClearViewportRegion()
 void ViewportPanel::OnDraw()
 {
     // Dock-managed: the host docks this into its slot (see EditorUiFeature).
-    // NoBackground keeps the window transparent so the 3D scene — drawn into the
-    // swapchain behind ImGui and scissored to RegionMin/Max — shows through.
+    // Whatever the composition costs in frame, the content padding stays tight
+    // so the scene keeps the area; it arrives as an offscreen target that
+    // DrawViewport composites.
     const ImGuiWindowFlags windowFlags =
         ImGuiWindowFlags_NoScrollbar
-        | ImGuiWindowFlags_NoScrollWithMouse
-        | ImGuiWindowFlags_NoBackground;
+        | ImGuiWindowFlags_NoScrollWithMouse;
 
     RegionHovered = false;
-    RegionRects.clear();
 
-    if (!ImGui::Begin(Title.c_str(), &Visible, windowFlags))
+    ScopedPanel panel(Title, &Visible, Style, windowFlags);
+    if (!panel.IsOpen())
     {
         // Collapsed or fully clipped: no rect was drawn this frame, so drop the
         // stale one; input must not route to a view that is not on screen.
         ClearViewportRegion();
-        ImGui::End();
         return;
     }
 
     if (EditorViewport* viewport = Layout.Find(Viewport))
         DrawViewport(*viewport, ImGui::GetContentRegionAvail());
-
-    FillGapsBehindViewports();
-
-    ImGui::End();
 }
 
 void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
 {
-    ImGui::BeginChild("ViewportLeaf", size, ImGuiChildFlags_Borders, kViewportChildFlags);
+    ImGui::BeginChild("ViewportLeaf", size, ImGuiChildFlags_None, kViewportChildFlags);
 
-    DrawOrientationSelector(viewport);
+    if (Rows.empty())
+        DrawOrientationSelector(viewport);
+    for (const ChromeRow& row : Rows)
+        DrawChromeRow(row);
 
     const ImVec2 renderSize(
         std::max(0.0f, ImGui::GetContentRegionAvail().x),
@@ -101,7 +109,6 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
     viewport.RegionMin = ImGui::GetWindowPos();
     viewport.RegionMax = ImVec2(viewport.RegionMin.x + ImGui::GetWindowSize().x,
                                 viewport.RegionMin.y + ImGui::GetWindowSize().y);
-    RegionRects.emplace_back(viewport.RegionMin, viewport.RegionMax);
 
     // Composite this viewport's offscreen render (filled by the Offscreen phase this
     // frame). Recording the pixel size here also drives the target size next render.
@@ -131,11 +138,10 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
         }
     }
 
+    // The active view is the one being edited, so it carries the selection
+    // outline; the others keep the steel hairline.
     ImDrawList* drawList = ImGui::GetWindowDrawList();
-    const ImU32 borderColor = viewport.IsActive
-        ? ImGui::GetColorU32(EditorUi::Accent)
-        : ImGui::GetColorU32(EditorUi::Border);
-    drawList->AddRect(viewport.RegionMin, viewport.RegionMax, borderColor);
+    EditorChrome::ContentBoundary(drawList, viewport.RegionMin, viewport.RegionMax, Style, viewport.IsActive);
 
     // Rubber-band selection rectangle, drawn in the viewport it was started in.
     if (Marquee.Active && Marquee.Viewport == viewport.Id)
@@ -144,7 +150,7 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
                         std::min(Marquee.Start.y, Marquee.Current.y));
         const ImVec2 hi(std::max(Marquee.Start.x, Marquee.Current.x),
                         std::max(Marquee.Start.y, Marquee.Current.y));
-        drawList->AddRectFilled(lo, hi, ImGui::GetColorU32(ImVec4(EditorUi::Accent.x, EditorUi::Accent.y, EditorUi::Accent.z, 0.16f)));
+        drawList->AddRectFilled(lo, hi, ImGui::GetColorU32(EditorUi::WithAlpha(EditorUi::Accent, 0.16f)));
         drawList->AddRect(lo, hi, ImGui::GetColorU32(EditorUi::AccentHover));
     }
 
@@ -203,6 +209,101 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
         drawList->AddRect(min, max, toColor(handle.Border), 1.0f, 0, 1.5f);
     }
 
+    // A tool's rotation dial, lying in the plane it turns things on. Skipped
+    // whole when any part of the ring is behind the camera: half a projected
+    // circle would draw as a line across the view and hit-test as one too.
+    for (const ViewportDialRequest& request : Overlay.ViewportDials)
+    {
+        if (request.Viewport.IsValid() && request.Viewport != viewport.Id)
+            continue;
+        const ViewportDial::Placement placement = ViewportDial::PlaceIn(
+            viewport, request.Center, request.AxisU, request.AxisV, request.BoxSemiMinor);
+        if (!placement.Visible)
+            continue;
+        std::array<Vec3d, ViewportDial::kRimSegments + 1> ring{};
+        const int count = ViewportDial::RimPoints(placement, ring);
+
+        std::vector<ImVec2> rim;
+        rim.reserve(static_cast<std::size_t>(count));
+        bool whole = true;
+        for (int i = 0; i < count && whole; ++i)
+        {
+            const std::optional<ProjectedPoint> p =
+                projection.WorldToPixel(ring[static_cast<std::size_t>(i)]);
+            whole = p.has_value();
+            if (whole)
+                rim.push_back(p->Pixel);
+        }
+        const std::optional<ProjectedPoint> knob =
+            projection.WorldToPixel(placement.PointAt(request.Angle));
+        if (!whole || !knob.has_value())
+            continue;
+
+        std::array<Vec3d, 64> stops{};
+        const int tickCount = ViewportDial::TickPoints(placement, request.TickIncrement, stops);
+        std::vector<ImVec2> ticks;
+        ticks.reserve(static_cast<std::size_t>(tickCount));
+        for (int i = 0; i < tickCount; ++i)
+        {
+            const std::optional<ProjectedPoint> p =
+                projection.WorldToPixel(stops[static_cast<std::size_t>(i)]);
+            if (p.has_value())
+                ticks.push_back(p->Pixel);
+        }
+
+        EditorChrome::DrawDial(drawList, rim, ticks, knob->Pixel, request.Hot);
+    }
+
+    // Tool buttons pinned over the geometry they act on. Painted here rather
+    // than made into ImGui items so the viewport's own input keeps working
+    // underneath them; the tool that asked for them tests the same rects.
+    for (const ViewportButtonRequest& request : Overlay.ViewportButtons)
+    {
+        if (request.Viewport.IsValid() && request.Viewport != viewport.Id)
+            continue;
+        std::vector<std::optional<ImVec2>> anchors;
+        anchors.reserve(request.Anchors.size());
+        for (const Vec3d& world : request.Anchors)
+        {
+            const std::optional<ProjectedPoint> p = projection.WorldToPixel(world);
+            anchors.push_back(p.has_value() ? std::optional<ImVec2>(p->Pixel) : std::nullopt);
+        }
+        const ViewportButtons::Row row =
+            ViewportButtons::Layout(anchors, static_cast<int>(request.Buttons.size()),
+                                    EditorUi::Px(1.0f), viewport.RegionMin, viewport.RegionMax);
+        if (!row.Visible)
+            continue;
+
+        for (int i = 0; i < row.Count; ++i)
+        {
+            const ViewportButton& button = request.Buttons[static_cast<std::size_t>(i)];
+            const ImVec2 min = row.MinOf(i);
+            const ImVec2 max = row.MaxOf(i);
+            const bool hot = request.Hot == i;
+            if (button.Icon == IconId::None)
+                EditorChrome::DrawTextButton(drawList, min, max, button.Label.c_str(), button.Tone,
+                                             button.Enabled, hot);
+            else
+                EditorChrome::DrawIconButton(drawList, min, max, button.Icon, button.Tone, button.Enabled,
+                                             hot);
+            // A painted button is no ImGui item, so its tooltip is asked for
+            // directly; the tool's own hit-test decided it is hot.
+            if (hot && !button.Tooltip.empty())
+                ImGui::SetTooltip("%s", button.Tooltip.c_str());
+        }
+
+        // The caption is a readout the row places, not a control: centred over
+        // the buttons it describes and never hit-tested.
+        if (request.Caption.has_value())
+        {
+            const ImVec2 center = row.CaptionCenter(request.Caption->FirstButton,
+                                                    request.Caption->LastButton);
+            const ImVec2 size = ImGui::CalcTextSize(request.Caption->Text.c_str());
+            drawList->AddText(ImVec2(center.x - size.x * 0.5f, center.y - size.y),
+                              toColor(EditorTheme::DimensionLabel), request.Caption->Text.c_str());
+        }
+    }
+
     // Hovered edge's length, anchored at its midpoint.
     if (!Overlay.Hover.Measure.empty())
     {
@@ -210,6 +311,17 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
         if (p.has_value() && inRegion(p->Pixel))
             drawList->AddText(ImVec2(p->Pixel.x + 4.0f, p->Pixel.y - 6.0f),
                               toColor(EditorTheme::HoverEligible), Overlay.Hover.Measure.c_str());
+    }
+
+    // Construction lines a tool laid in the world, in every view that can see them.
+    for (const WorldSegmentRequest& segment : Overlay.Segments)
+    {
+        if (segment.Viewport.IsValid() && segment.Viewport != viewport.Id)
+            continue;
+        const std::optional<ProjectedPoint> a = projection.WorldToPixel(segment.From);
+        const std::optional<ProjectedPoint> b = projection.WorldToPixel(segment.To);
+        if (a.has_value() && b.has_value())
+            drawList->AddLine(a->Pixel, b->Pixel, toColor(segment.Color), segment.Thickness);
     }
 
     // Active drag's origin->current line + distance, only in the view it started in.
@@ -227,84 +339,63 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
     }
 }
 
-void ViewportPanel::FillGapsBehindViewports()
+void ViewportPanel::DrawChromeRow(const ChromeRow& row)
 {
-    // The panel window is NoBackground so the 3D scene shows through the viewport
-    // region rect. Everything else (the header strip, border gaps) would otherwise
-    // show the engine's bright clear color. Fill that complement with the dark
-    // panel color: build a grid from the region-rect edges and fill each cell
-    // whose center lies outside every region.
-    const ImVec2 wp = ImGui::GetWindowPos();
-    const ImVec2 cMin(wp.x + ImGui::GetWindowContentRegionMin().x,
-                      wp.y + ImGui::GetWindowContentRegionMin().y);
-    const ImVec2 cMax(wp.x + ImGui::GetWindowContentRegionMax().x,
-                      wp.y + ImGui::GetWindowContentRegionMax().y);
-    if (cMax.x <= cMin.x || cMax.y <= cMin.y)
+    if (!row.Height || !row.Draw)
         return;
-
-    std::vector<float> xs{ cMin.x, cMax.x };
-    std::vector<float> ys{ cMin.y, cMax.y };
-    for (const auto& r : RegionRects)
-    {
-        xs.push_back(std::clamp(r.first.x, cMin.x, cMax.x));
-        xs.push_back(std::clamp(r.second.x, cMin.x, cMax.x));
-        ys.push_back(std::clamp(r.first.y, cMin.y, cMax.y));
-        ys.push_back(std::clamp(r.second.y, cMin.y, cMax.y));
-    }
-    const auto dedup = [](std::vector<float>& v) {
-        std::sort(v.begin(), v.end());
-        v.erase(std::unique(v.begin(), v.end(),
-                            [](float a, float b) { return std::abs(a - b) < 0.5f; }),
-                v.end());
-    };
-    dedup(xs);
-    dedup(ys);
-
-    const auto insideRegion = [&](float px, float py) {
-        for (const auto& r : RegionRects)
-            if (px >= r.first.x && px <= r.second.x && py >= r.first.y && py <= r.second.y)
-                return true;
-        return false;
-    };
-
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    const ImU32 fill = ImGui::GetColorU32(EditorUi::PanelBg);
-    for (std::size_t i = 0; i + 1 < xs.size(); ++i)
-        for (std::size_t j = 0; j + 1 < ys.size(); ++j)
-        {
-            const float cx = (xs[i] + xs[i + 1]) * 0.5f;
-            const float cy = (ys[j] + ys[j + 1]) * 0.5f;
-            if (!insideRegion(cx, cy))
-                dl->AddRectFilled(ImVec2(xs[i], ys[j]), ImVec2(xs[i + 1], ys[j + 1]), fill);
-        }
+    const float rowHeight = std::max(0.0f, row.Height());
+    if (rowHeight <= 0.0f)
+        return;
+    // Reserved the way the title row is: the rect handed over, the cursor
+    // moved under it, so what follows starts below the row.
+    const ImVec2 rowMin = ImGui::GetCursorScreenPos();
+    const ImVec2 rowMax(rowMin.x + std::max(0.0f, ImGui::GetContentRegionAvail().x), rowMin.y + rowHeight);
+    row.Draw(ImGui::GetWindowDrawList(), rowMin, rowMax);
+    ImGui::SetCursorScreenPos(ImVec2(rowMin.x, rowMax.y + EditorUi::Px(2.0f)));
 }
 
 void ViewportPanel::DrawOrientationSelector(EditorViewport& viewport)
 {
-    if (viewport.Orientation == ViewportOrientation::Perspective)
+    // The view's header row: the perspective view names itself; the ortho view
+    // names the panel and keeps its orientation combo in the control region,
+    // so the row costs no more height than the combo did.
+    const bool perspective = viewport.Orientation == ViewportOrientation::Perspective;
+    const ImVec2 rowMin = ImGui::GetCursorScreenPos();
+    // How tall the row is belongs to the composition, not to this panel: a
+    // bezel wants more than a plain row, and the panel does not know why.
+    const float rowHeight = std::max(EditorChrome::HeaderRowHeight(Style),
+                                     ImGui::GetFrameHeight() + EditorUi::Px(4.0f));
+    const ImVec2 rowMax(rowMin.x + std::max(0.0f, ImGui::GetContentRegionAvail().x), rowMin.y + rowHeight);
+    const EditorChrome::HeaderRowSpec headerSpec{
+        .Style = Style,
+        .ReservedControlWidth = perspective ? 0.0f : ImGui::GetFontSize() * 7.0f,
+    };
+    const EditorChrome::HeaderRegions regions = EditorChrome::DrawHeaderRow(
+        ImGui::GetWindowDrawList(), rowMin, rowMax, perspective ? viewport.GetDisplayLabel() : Title,
+        EditorUi::TextRole::PanelTitle, EditorChrome::HeaderState{ .Focused = viewport.IsActive }, headerSpec);
+
+    if (!perspective && regions.HasControl)
     {
-        ImGui::TextUnformatted(viewport.GetDisplayLabel());
-        return;
+        ImGui::SetCursorScreenPos(regions.ControlMin);
+        ImGui::SetNextItemWidth(regions.ControlMax.x - regions.ControlMin.x);
+        if (EditorChrome::BeginCombo("##Orientation", viewport.GetDisplayLabel()))
+        {
+            for (ViewportOrientation orientation : AllViewportOrientations())
+            {
+                // The ortho view stays orthographic: only the fixed ortho orientations
+                // are offered (no Perspective, no camera-axis User view).
+                const OrientationTraits& traits = Traits(orientation);
+                if (traits.Mode != EditorCamera::Mode::Orthographic || traits.UsesCameraAxis)
+                    continue;
+                const bool selected = viewport.Orientation == orientation;
+                if (ImGui::Selectable(traits.Label, selected))
+                    viewport.ApplyOrientation(orientation);
+                if (selected)
+                    ImGui::SetItemDefaultFocus();
+            }
+            EditorChrome::EndCombo();
+        }
     }
 
-    const char* preview = viewport.GetDisplayLabel();
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    if (!ImGui::BeginCombo("##Orientation", preview))
-        return;
-
-    for (ViewportOrientation orientation : AllViewportOrientations())
-    {
-        // The ortho view stays orthographic: only the fixed ortho orientations
-        // are offered (no Perspective, no camera-axis User view).
-        const OrientationTraits& traits = Traits(orientation);
-        if (traits.Mode != EditorCamera::Mode::Orthographic || traits.UsesCameraAxis)
-            continue;
-        const bool selected = viewport.Orientation == orientation;
-        if (ImGui::Selectable(traits.Label, selected))
-            viewport.ApplyOrientation(orientation);
-        if (selected)
-            ImGui::SetItemDefaultFocus();
-    }
-
-    ImGui::EndCombo();
+    ImGui::SetCursorScreenPos(ImVec2(rowMin.x, rowMax.y + EditorUi::Px(2.0f)));
 }

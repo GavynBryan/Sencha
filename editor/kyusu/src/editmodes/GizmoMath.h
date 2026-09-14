@@ -45,6 +45,46 @@ inline constexpr double kParallelEpsilon = 1.0e-8;
     return ray.Origin + ray.Direction * static_cast<float>(t);
 }
 
+// The angle at which the cursor ray crosses the plane through `centre` with
+// `normal`, measured from +u toward +v. nullopt when the ray is near-parallel to
+// the plane and there is no crossing to speak of.
+//
+// Unlike RayPlanePoint this keeps a crossing behind the ray origin. A ring or a
+// dial is something already on screen and already being dragged; refusing the
+// grazing case would drop the gesture rather than improve it.
+[[nodiscard]] inline std::optional<double> AngleOnPlane(const Ray3d& ray, Vec3d centre, Vec3d normal,
+                                                        Vec3d u, Vec3d v)
+{
+    const double denom = ray.Direction.Dot(normal);
+    if (std::abs(denom) < kParallelEpsilon)
+        return std::nullopt;
+    const double t = (centre - ray.Origin).Dot(normal) / denom;
+    const Vec3d relative = ray.Origin + ray.Direction * static_cast<float>(t) - centre;
+    return std::atan2(static_cast<double>(relative.Dot(v)), static_cast<double>(relative.Dot(u)));
+}
+
+// `current` minus `previous`, brought into (-pi, pi], so a drag past a half turn
+// keeps turning the same way instead of flipping to the short way round.
+[[nodiscard]] inline double UnwrapAngleDelta(double current, double previous)
+{
+    constexpr double kPi = 3.14159265358979323846;
+    double delta = current - previous;
+    if (delta > kPi)
+        delta -= 2.0 * kPi;
+    if (delta < -kPi)
+        delta += 2.0 * kPi;
+    return delta;
+}
+
+// The nearest multiple of `increment`. An increment of zero or less is the
+// identity, which is how free rotation is spelled.
+[[nodiscard]] inline double SnapAngle(double radians, double increment)
+{
+    if (increment <= 0.0)
+        return radians;
+    return std::round(radians / increment) * increment;
+}
+
 // Absolute snap: the offset that lands the pivot on the nearest grid line along
 // the axis (measured from the grid origin), so geometry snaps to grid positions,
 // not just to grid-sized steps. spacing <= 0 disables snapping.

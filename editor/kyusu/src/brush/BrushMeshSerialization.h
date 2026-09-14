@@ -5,6 +5,8 @@
 
 #include <core/json/JsonValue.h>
 
+#include <string>
+
 //=============================================================================
 // BrushMeshSerialization — pure JSON <-> BrushMesh conversion for the brush
 // sidecar (03-§5, 04-§4). Lives in the brush kernel (no scene/UI deps) so it
@@ -19,7 +21,10 @@
 [[nodiscard]] JsonValue BrushMeshToJson(const BrushMesh& mesh);
 [[nodiscard]] BrushMesh BrushMeshFromJson(const JsonValue& value);
 
-// The whole store as an object keyed by BrushId text. Load validates/repairs
-// each mesh so a corrupt brush is never accepted silently.
+// The whole store as an object keyed by BrushId text, one record per entry
+// (mesh keys plus the modifier stack, BrushModifierSerialization). Load
+// validates/repairs each mesh so a corrupt brush is never accepted silently;
+// a malformed modifier entry is skipped and named in `error`.
 [[nodiscard]] JsonValue SerializeBrushMeshes(const BrushMeshStore& store);
-void DeserializeBrushMeshes(const JsonValue& value, BrushMeshStore& store);
+void DeserializeBrushMeshes(const JsonValue& value, BrushMeshStore& store,
+                            std::string* error = nullptr);

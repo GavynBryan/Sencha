@@ -1,7 +1,7 @@
 #pragma once
 
 #include "commands/ICommand.h"
-#include "brush/BrushMesh.h"
+#include "brush/BrushRecord.h"
 #include "document/EditorScene.h"
 
 #include <math/geometry/3d/Transform3d.h>
@@ -12,27 +12,29 @@
 
 // Moves an entity's origin (transform position) to a new world point and shifts
 // the brush's local vertices by the inverse, so the geometry stays exactly where
-// it was. One undoable step (transform + mesh together).
+// it was. The modifier stack shifts with the vertices (a mirror plane is a
+// local-space position too), so the evaluated result stays put as well. One
+// undoable step (transform + record together).
 class SetBrushOriginCommand : public ICommand
 {
 public:
     SetBrushOriginCommand(EditorScene& scene, EntityId entity,
                           Transform3f beforeTransform, Transform3f afterTransform,
-                          BrushMesh beforeMesh, BrushMesh afterMesh)
+                          BrushRecord before, BrushRecord after)
         : Scene(scene), Entity(entity)
         , BeforeTransform(beforeTransform), AfterTransform(afterTransform)
-        , BeforeMesh(std::move(beforeMesh)), AfterMesh(std::move(afterMesh)) {}
+        , Before(std::move(before)), After(std::move(after)) {}
 
     void Execute() override
     {
         Scene.SetWorldTransform(Entity, AfterTransform);
-        Scene.SetBrushMesh(Entity, AfterMesh);
+        Scene.SetBrushRecord(Entity, After);
     }
 
     void Undo() override
     {
         Scene.SetWorldTransform(Entity, BeforeTransform);
-        Scene.SetBrushMesh(Entity, BeforeMesh);
+        Scene.SetBrushRecord(Entity, Before);
     }
 
 private:
@@ -40,8 +42,8 @@ private:
     EntityId Entity;
     Transform3f BeforeTransform;
     Transform3f AfterTransform;
-    BrushMesh BeforeMesh;
-    BrushMesh AfterMesh;
+    BrushRecord Before;
+    BrushRecord After;
 };
 
 // Builds the command that re-origins `entity` to `newOrigin` (world). nullptr if
@@ -51,8 +53,10 @@ private:
                                                                          Vec3d newOrigin)
 {
     const Transform3f* transform = scene.TryGetWorldTransform(entity);
-    const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-    if (transform == nullptr || mesh == nullptr)
+    const BrushComponent* brush = scene.TryGetBrush(entity);
+    const BrushRecord* record =
+        brush != nullptr ? scene.GetBrushMeshStore().FindRecord(brush->Id) : nullptr;
+    if (transform == nullptr || record == nullptr)
         return nullptr;
 
     const Vec3d worldShift = transform->Position - newOrigin;
@@ -69,10 +73,11 @@ private:
     Transform3f afterTransform = *transform;
     afterTransform.Position = newOrigin;
 
-    BrushMesh afterMesh = *mesh;
-    for (BrushVertex& vertex : afterMesh.Vertices)
+    BrushRecord after = *record;
+    for (BrushVertex& vertex : after.Mesh.Vertices)
         vertex.Position += localShift;
+    RebaseBrushModifiers(after.Modifiers, localShift);
 
     return std::make_unique<SetBrushOriginCommand>(
-        scene, entity, *transform, afterTransform, *mesh, std::move(afterMesh));
+        scene, entity, *transform, afterTransform, *record, std::move(after));
 }

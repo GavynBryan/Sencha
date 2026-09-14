@@ -1,5 +1,6 @@
 #include "BrushMeshSerialization.h"
 
+#include "BrushModifierSerialization.h"
 #include "BrushValidation.h"
 
 #include <cstdint>
@@ -181,18 +182,18 @@ BrushMesh BrushMeshFromJson(const JsonValue& value)
 JsonValue SerializeBrushMeshes(const BrushMeshStore& store)
 {
     JsonValue::Object obj;
-    for (const auto& [id, mesh] : store.All())
-        obj.emplace_back(std::to_string(id), BrushMeshToJson(mesh));
+    for (const auto& [id, record] : store.All())
+        obj.emplace_back(std::to_string(id), BrushRecordToJson(record));
     return JsonValue(std::move(obj));
 }
 
-void DeserializeBrushMeshes(const JsonValue& value, BrushMeshStore& store)
+void DeserializeBrushMeshes(const JsonValue& value, BrushMeshStore& store, std::string* error)
 {
     if (!value.IsObject())
         return;
-    for (const auto& [idText, meshJson] : value.AsObject())
+    for (const auto& [idText, recordJson] : value.AsObject())
     {
         store.Set(BrushId{ static_cast<std::uint32_t>(std::stoul(idText)) },
-                  BrushMeshFromJson(meshJson));
+                  BrushRecordFromJson(recordJson, error));
     }
 }

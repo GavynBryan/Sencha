@@ -49,3 +49,49 @@ std::optional<Vec3d> ElementCenter(const BrushMesh& mesh,
         return std::nullopt;
     }
 }
+
+std::vector<std::uint32_t> ElementVertexIndices(const BrushMesh& mesh,
+                                                const SourceWorldElements& elements,
+                                                const SelectableRef& ref)
+{
+    switch (ref.Kind)
+    {
+    case SelectableKind::Vertex:
+        if (ref.ElementId < mesh.Vertices.size())
+            return { ref.ElementId };
+        return {};
+    case SelectableKind::Edge:
+        if (ref.ElementId < elements.Edges.size())
+            return { elements.Edges[ref.ElementId].VertexA, elements.Edges[ref.ElementId].VertexB };
+        return {};
+    case SelectableKind::Face:
+        if (ref.ElementId < mesh.Faces.size())
+            return mesh.Faces[ref.ElementId].Loop;
+        return {};
+    case SelectableKind::Entity:
+    default:
+        return {};
+    }
+}
+
+std::optional<Vec3d> ElementCenter(const SourceWorldElements& elements, const SelectableRef& ref)
+{
+    switch (ref.Kind)
+    {
+    case SelectableKind::Vertex:
+        if (ref.ElementId < elements.Vertices.size())
+            return elements.Vertices[ref.ElementId].Position;
+        return std::nullopt;
+    case SelectableKind::Edge:
+        if (ref.ElementId < elements.Edges.size())
+            return elements.Edges[ref.ElementId].Mid;
+        return std::nullopt;
+    case SelectableKind::Face:
+        if (ref.ElementId < elements.Faces.size())
+            return elements.Faces[ref.ElementId].Center;
+        return std::nullopt;
+    case SelectableKind::Entity:
+    default:
+        return std::nullopt;
+    }
+}

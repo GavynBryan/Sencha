@@ -11,6 +11,8 @@ class SdlWindow;
 class WorldDocument;
 class EditorDocument;
 class MaterialLibrary;
+class SelectionService;
+class MeshEditService;
 
 // The document's file I/O surface: New/Open/Save/SaveAs (open and save-as go
 // through the native SDL dialogs), the deferred queue that applies a dialog's
@@ -27,12 +29,15 @@ public:
     // capture half-staged geometry.
     DocumentFileActions(SdlWindow& window, WorldDocument& world,
                         std::function<void()> resolvePendingEdits,
-                        MaterialLibrary& materials, std::vector<std::string> contentRoots);
+                        MaterialLibrary& materials, std::vector<std::string> contentRoots,
+                        SelectionService& selection, MeshEditService& meshEdit);
 
     // Console surface: editor.open <path>, the scriptable half of RequestOpen.
     // An unattended cook needs to open a document without a file dialog, and
     // the console runs on the main thread, so the load is synchronous -- a
-    // startup script's next command sees the document already open.
+    // startup script's next command sees the document already open. And
+    // editor.select <persistent-id>, so a scripted run can measure what the
+    // editor draws for a selected entity without a pointer.
     void RegisterCommands(ConsoleRegistry& registry);
 
     void New();
@@ -49,6 +54,9 @@ public:
     void ProcessPending();
     // Sets the window title to the document name + dirty marker when it changes.
     void UpdateTitle();
+    // What is open, as the window title and the shell's status readout show
+    // it: the world or document name, the focus zone, and a dirty marker.
+    [[nodiscard]] std::string DocumentLabel() const;
 
 private:
     enum class FileActionKind
@@ -74,6 +82,8 @@ private:
     std::function<void()> ResolvePendingEdits;
     MaterialLibrary&  Materials;
     std::vector<std::string> ContentRoots;
+    SelectionService& Selection;
+    MeshEditService&  MeshEdit;
 
     std::mutex                     PendingFileMutex;
     std::vector<PendingFileAction> PendingFileActions;

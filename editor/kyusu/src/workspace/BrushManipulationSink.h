@@ -37,6 +37,7 @@ public:
     void CommitTransforms(const std::vector<TransformEdit>& edits) override;
     void CommitMeshes(std::vector<MeshEdit> edits) override;
     void CommitMesh(EntityId entity, BrushMesh before, BrushMesh after) override;
+    void CommitSplits(std::vector<SplitEdit> edits) override;
     void SelectElements(std::span<const SelectableRef> refs) override;
     [[nodiscard]] std::vector<EntityId> CreatePreviewDuplicates(
         std::span<const EntityId> sources) override;

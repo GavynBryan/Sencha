@@ -1,5 +1,6 @@
 #include "RotateManipulator.h"
 
+#include "GizmoMath.h"
 #include "ManipulatorTargets.h"
 #include "meshedit/MeshElements.h"
 #include "SelectionPivot.h"
@@ -56,15 +57,6 @@ void RingBasis(const ManipulatorContext& ctx, int part, Vec3d& u, Vec3d& v)
 float RingRadius(const EditorViewport& viewport, Vec3d pivot)
 {
     return ViewportProjection(viewport).WorldSizeForPixels(pivot, kRingPixels);
-}
-
-std::optional<Vec3d> RayPlaneHit(const Ray3d& ray, Vec3d point, Vec3d normal)
-{
-    const double denom = ray.Direction.Dot(normal);
-    if (std::abs(denom) < 1.0e-8)
-        return std::nullopt;
-    const double t = (point - ray.Origin).Dot(normal) / denom;
-    return ray.Origin + ray.Direction * static_cast<float>(t);
 }
 
 // The point the rings sit on: the grid origin while grid editing, otherwise the
@@ -409,26 +401,20 @@ private:
     bool UpdateAngle(const EditorViewport& viewport, ImVec2 pos)
     {
         const Ray3d ray = ViewportProjection(viewport).RayThroughPixel(pos);
-        const std::optional<Vec3d> hit = RayPlaneHit(ray, Pivot, Axis);
-        if (!hit.has_value())
+        const std::optional<double> angle = GizmoMath::AngleOnPlane(ray, Pivot, Axis, U, V);
+        if (!angle.has_value())
             return false;
-        const Vec3d rel = *hit - Pivot;
-        const double angle = std::atan2(rel.Dot(V), rel.Dot(U));
         // Accumulate unwrapped so a drag past +/-180 keeps turning instead of flipping.
-        double delta = angle - PrevAngle;
-        if (delta > kPi) delta -= 2.0 * kPi;
-        if (delta < -kPi) delta += 2.0 * kPi;
-        Accumulated += delta;
-        PrevAngle = angle;
+        Accumulated += GizmoMath::UnwrapAngleDelta(*angle, PrevAngle);
+        PrevAngle = *angle;
         return true;
     }
 
     double Snapped(ToolContext& ctx, const EditorViewport& viewport) const
     {
-        if (!viewport.GetGrid(ctx.Grid).SnapEnabled)
-            return Accumulated;
-        const double step = kSnapDegrees * kPi / 180.0;
-        return std::round(Accumulated / step) * step;
+        const double step =
+            viewport.GetGrid(ctx.Grid).SnapEnabled ? kSnapDegrees * kPi / 180.0 : 0.0;
+        return GizmoMath::SnapAngle(Accumulated, step);
     }
 
     void WriteReadout(ToolContext& ctx, const EditorViewport& viewport, double radians)
@@ -551,13 +537,8 @@ std::unique_ptr<IInteraction> RotateManipulator::BeginDrag(
     Vec3d u;
     Vec3d v;
     RingBasis(ctx, part, u, v);
-    double startAngle = 0.0;
     const Ray3d ray = ViewportProjection(viewport).RayThroughPixel(screenPos);
-    if (const std::optional<Vec3d> hit = RayPlaneHit(ray, *pivot, axis))
-    {
-        const Vec3d rel = *hit - *pivot;
-        startAngle = std::atan2(rel.Dot(v), rel.Dot(u));
-    }
+    const double startAngle = GizmoMath::AngleOnPlane(ray, *pivot, axis, u, v).value_or(0.0);
 
     // Grid-edit retargets the ring to the grid frame. Otherwise Shift turns the
     // drag into duplicate (object) or extrude-and-swing (face); anything that

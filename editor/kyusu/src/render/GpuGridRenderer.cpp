@@ -82,8 +82,12 @@ void GpuGridRenderer::DrawViewport(VkCommandBuffer cmd,
         blend.SrcColor    = VK_BLEND_FACTOR_SRC_ALPHA;
         blend.DstColor    = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
         blend.ColorOp     = VK_BLEND_OP_ADD;
+        // Alpha stays "over" like the color: the viewport target is composited
+        // as an opaque image, so a grid fragment must never lower the target's
+        // alpha to its own coverage (that let whatever the panel painted
+        // behind the image bleed through the horizon).
         blend.SrcAlpha    = VK_BLEND_FACTOR_ONE;
-        blend.DstAlpha    = VK_BLEND_FACTOR_ZERO;
+        blend.DstAlpha    = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
         blend.AlphaOp     = VK_BLEND_OP_ADD;
 
         GraphicsPipelineDesc desc{};

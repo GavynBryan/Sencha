@@ -1,10 +1,11 @@
 #include "MergeBrushesCommand.h"
+#include "brush/BrushWorkCounters.h"
 
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
-#include "brush/BrushTransform.h"
+#include "brush/BrushEvaluation.h"
+#include "brush/BrushOps.h"
 #include "brush/BrushValidation.h"
-#include "brush/FaceMaterial.h"
 #include "selection/SelectionService.h"
 
 #include <cstdint>
@@ -12,33 +13,18 @@
 
 namespace
 {
-// Appends `source` (expressed in sourceTransform's frame) onto `target`
-// (expressed in targetTransform's frame): vertices rebase source-local ->
-// world -> target-local, loops re-index, and each face's UV projection converts
-// through world space so the texture renders exactly where it did before the
-// merge (world-aligned projections are brush-local axes; a straight copy would
-// shift them whenever the frames differ).
-void AppendRebased(BrushMesh& target, const Transform3f& targetTransform,
-                   const BrushMesh& source, const Transform3f& sourceTransform)
+// Appends every evaluated piece of `entity` onto `target` in the target's frame.
+void AppendEvaluated(BrushMesh& target, const Transform3f& targetTransform,
+                     const EditorScene& scene, EntityId entity)
 {
-    const std::uint32_t base = static_cast<std::uint32_t>(target.Vertices.size());
-    target.Vertices.reserve(target.Vertices.size() + source.Vertices.size());
-    for (const BrushVertex& vertex : source.Vertices)
-    {
-        const Vec3d world = sourceTransform.TransformPoint(vertex.Position);
-        target.Vertices.push_back(BrushVertex{ InverseTransformPoint(targetTransform, world) });
-    }
-
-    target.Faces.reserve(target.Faces.size() + source.Faces.size());
-    for (const BrushFace& face : source.Faces)
-    {
-        BrushFace rebased = face;
-        for (std::uint32_t& index : rebased.Loop)
-            index += base;
-        rebased.Material.Uv = UvProjectionToLocal(
-            UvProjectionToWorld(face.Material.Uv, sourceTransform), targetTransform);
-        target.Faces.push_back(std::move(rebased));
-    }
+    ++BrushWorkCounters::Frame().MergeFlattens;
+    const BrushEvaluated* evaluated = scene.TryGetBrushPieces(entity, BrushEvaluationPolicy::Cook());
+    const Transform3f* world = scene.TryGetWorldTransform(entity);
+    if (evaluated == nullptr || world == nullptr)
+        return;
+    for (const BrushPiece& piece : evaluated->Pieces)
+        BrushOps::AppendRebased(target, targetTransform, *piece.Mesh,
+                                PieceWorldTransform(*world, piece));
 }
 }
 
@@ -59,22 +45,22 @@ void MergeBrushesCommand::Execute()
     // and a full snapshot of each source for undo restoration.
     if (!Captured)
     {
-        TargetBefore = *Scene.TryGetBrushMesh(Target);
+        TargetBefore = *Scene.GetBrushMeshStore().FindRecord(Scene.TryGetBrush(Target)->Id);
         const Transform3f targetTransform = *Scene.TryGetWorldTransform(Target);
 
-        Merged = TargetBefore;
+        Merged = BrushMesh{};
+        AppendEvaluated(Merged, targetTransform, Scene, Target);
         SourceSnapshots.reserve(Sources.size());
         for (EntityId source : Sources)
         {
             SourceSnapshots.push_back(Document.CaptureEntity(source));
-            AppendRebased(Merged, targetTransform,
-                          *Scene.TryGetBrushMesh(source), *Scene.TryGetWorldTransform(source));
+            AppendEvaluated(Merged, targetTransform, Scene, source);
         }
         BrushValidateAndRepair(Merged);
         Captured = true;
     }
 
-    Scene.SetBrushMesh(Target, Merged);
+    Scene.SetBrushRecord(Target, BrushRecord{ Merged, {} });
     for (EntityId source : Sources)
         Scene.DestroyEntity(source);
 
@@ -84,7 +70,7 @@ void MergeBrushesCommand::Execute()
 
 void MergeBrushesCommand::Undo()
 {
-    Scene.SetBrushMesh(Target, TargetBefore);
+    Scene.SetBrushRecord(Target, TargetBefore);
     // Restoration mints fresh entity ids, so the captured selection would point
     // at dead handles: select the restored set (target + sources) instead.
     Sources.clear();

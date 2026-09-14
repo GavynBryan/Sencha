@@ -31,15 +31,11 @@ void GridEditing::SetOriginToSelection(GridSettings& grid, const EditorScene& sc
     }
     if (vertexRef != nullptr)
     {
-        const BrushMesh* mesh = scene.TryGetBrushMesh(vertexRef->Entity);
-        const Transform3f* transform = scene.TryGetWorldTransform(vertexRef->Entity);
-        if (mesh != nullptr && transform != nullptr)
+        const SourceWorldElements* elements = scene.PlacementFacts().GetSourceWorldElements(vertexRef->Entity);
+        if (elements != nullptr && vertexRef->ElementId < elements->Vertices.size())
         {
-            if (const auto vertex = MeshElements::TryGetVertex(*mesh, *transform, vertexRef->ElementId))
-            {
-                grid.Origin = vertex->Position;
-                return;
-            }
+            grid.Origin = elements->Vertices[vertexRef->ElementId].Position;
+            return;
         }
     }
 
@@ -48,7 +44,7 @@ void GridEditing::SetOriginToSelection(GridSettings& grid, const EditorScene& sc
     {
         if (!ref.Entity.IsValid())
             continue;
-        if (const auto entityBounds = scene.TryGetWorldBounds(ref.Entity))
+        if (const auto entityBounds = scene.EvaluatedWorldBounds(ref.Entity))
             bounds.ExpandToInclude(*entityBounds);
     }
     if (bounds.IsValid())
@@ -72,17 +68,13 @@ void GridEditing::AlignToSelectedFace(GridSettings& grid, const EditorScene& sce
     if (!faceRef.IsFace())
         return;
 
-    const BrushMesh* mesh = scene.TryGetBrushMesh(faceRef.Entity);
-    const Transform3f* transform = scene.TryGetWorldTransform(faceRef.Entity);
-    if (mesh == nullptr || transform == nullptr)
+    const SourceWorldElements* elements = scene.PlacementFacts().GetSourceWorldElements(faceRef.Entity);
+    if (elements == nullptr || faceRef.ElementId >= elements->Faces.size())
         return;
 
-    const auto face = MeshElements::TryGetFace(*mesh, *transform, faceRef.ElementId);
-    if (!face.has_value())
-        return;
-
-    (void)GridFrame::FromFace(face->Center, face->Normal,
-                              GridFrame::LongestEdgeDirection(face->Corners), grid);
+    const FaceElement& face = elements->Faces[faceRef.ElementId];
+    (void)GridFrame::FromFace(face.Center, face.Normal,
+                              GridFrame::LongestEdgeDirection(face.Corners), grid);
 }
 
 void GridEditing::SyncOrthoViews(const GridSettings& grid, ViewportLayout& layout)

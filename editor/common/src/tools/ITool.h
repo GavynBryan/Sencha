@@ -1,11 +1,15 @@
 #pragma once
 
+#include "CommandChoice.h"
+#include "icons/IconId.h"
 #include "input/InputEvent.h"
 #include "interaction/IInteraction.h"
 
 #include <imgui.h>
 
+#include <cstddef>
 #include <memory>
+#include <span>
 #include <string_view>
 
 struct EditorViewport;
@@ -16,9 +20,8 @@ struct ITool
     virtual std::string_view GetId() const = 0;
     virtual std::string_view GetDisplayName() const = 0;
 
-    // Font Awesome glyph (an ICON_FA_* literal from fonts/IconsFontAwesome6.h) for
-    // the toolbar. Empty -> the toolbar falls back to the display name text.
-    virtual std::string_view GetIcon() const { return {}; }
+    // The icon the sidebar shows for this tool. None -> the display name text.
+    virtual IconId GetIcon() const { return IconId::None; }
 
     virtual void OnActivate(ToolContext& /*ctx*/) {}
     virtual void OnDeactivate(ToolContext& /*ctx*/) {}
@@ -50,6 +53,12 @@ struct ITool
     virtual InputConsumed OnHover(ToolContext& /*ctx*/, EditorViewport& /*viewport*/, ImVec2 /*pos*/) { return InputConsumed::No; }
     virtual void OnHoverEnd(ToolContext& /*ctx*/) {}
 
+    // Whether the transform gizmo belongs on screen while this tool is active.
+    // A tool whose whole job is its own interaction -- a cut, a carve, a clip
+    // -- says no, and the gizmo neither draws nor takes a press until the tool
+    // goes; the session honours it, and nothing else learns which tool it was.
+    [[nodiscard]] virtual bool UsesTransformGizmo() const { return true; }
+
     // A tool's own chrome, drawn while it is active: the settings and verbs in
     // the Tool Properties panel, and the compact controls in the toolbar's
     // contextual group. The tool draws them itself so that adding a tool does not
@@ -57,6 +66,20 @@ struct ITool
     // the active tool its space. Leave empty for a tool with no controls.
     virtual void DrawProperties(ToolContext& /*ctx*/) {}
     virtual void DrawToolbarControls(ToolContext& /*ctx*/) {}
+
+    // A sub-mode the tool exposes as a choice: what a control shows for it.
+    // The tool maps an index back to whatever the choice means, so a surface
+    // that lists variants (a radial menu, a properties row) never learns the
+    // type behind them, and a tool without any answers with an empty span.
+    using Variant = CommandChoice;
+    [[nodiscard]] virtual std::span<const Variant> GetVariants() const { return {}; }
+    // Index into GetVariants() of the one in effect, or -1.
+    [[nodiscard]] virtual int GetActiveVariant(const ToolContext& /*ctx*/) const { return -1; }
+    // Puts variant `index` into effect for the work that follows, through
+    // whatever owns that state. Callable whether or not the tool is active;
+    // the registry resolves anything the tool has staged (CommitPending)
+    // before calling it, so this never meets a preview to reshape.
+    virtual void SelectVariant(ToolContext& /*ctx*/, std::size_t /*index*/) {}
 
     // The key that activates this tool. Unmodified letters by convention; the
     // binding is registered under "tool.<id>" and a keymap file can override it.

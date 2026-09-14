@@ -14,6 +14,8 @@ class CommandStack;
 class MeshEditService;
 class SelectionService;
 class ToolRegistry;
+struct ITool;
+struct ToolContext;
 struct ManipulationSink;
 class WorldDocument;
 struct ActiveMaterialState;
@@ -48,12 +50,13 @@ public:
     std::string_view GetTitle() const override;
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return DockSlot::Left; }
+    PanelPersistence GetPersistence() const override { return { "tool_properties", PanelVisibilityPolicy::Remembered }; }
     // Shares the left column with the Active Material panel; this keeps the
     // larger share.
     float GetDockWeight() const override { return 1.8f; }
 
 private:
-    void DrawSelectProperties();
+    void DrawSelectProperties(ITool& tool, ToolContext& ctx);
     void DrawObjectVerbs();
     void DrawFaceVerbs();
     void DrawEdgeVerbs();

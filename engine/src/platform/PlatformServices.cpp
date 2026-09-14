@@ -15,6 +15,7 @@ namespace
         info.GraphicsApi = config.GraphicsApi;
         info.Resizable = config.Resizable;
         info.Visible = config.Visible;
+        info.ClientDecorations = config.ClientDecorations;
         return info;
     }
 }

@@ -1,5 +1,7 @@
 #include "FaceUvControls.h"
 
+#include "ui/chrome/ChromeControls.h"
+
 #include "brush/BrushMesh.h"
 #include "commands/CommandStack.h"
 #include "meshedit/IMeshEditTarget.h"
@@ -51,7 +53,7 @@ void FaceUvControls::Draw(IMeshEditTarget& target,
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Lock the projection to the face as it deforms.");
     ImGui::SameLine();
-    if (ImGui::SmallButton("Reset axes"))
+    if (EditorChrome::Button("Reset axes", "Reset axes", ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
         EditSelectedFaces(target, selection, commands,
                           [](const BrushMesh& mesh, const Transform3f&, BrushFace& f) {
                               f.Material.Uv = UvProjectionForNormal(BrushComputeFaceNormal(mesh, f),
@@ -96,7 +98,7 @@ void FaceUvControls::Draw(IMeshEditTarget& target,
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Justify");
     ImGui::SameLine();
-    if (ImGui::SmallButton("Fit"))
+    if (EditorChrome::Button("Fit", "Fit", ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
     {
         if (TreatAsOne)
             JustifySelectedFacesAsOne(target, selection, commands, /*fit*/ true);
@@ -107,7 +109,7 @@ void FaceUvControls::Draw(IMeshEditTarget& target,
                               });
     }
     ImGui::SameLine();
-    if (ImGui::SmallButton("Center"))
+    if (EditorChrome::Button("Center", "Center", ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
     {
         if (TreatAsOne)
             JustifySelectedFacesAsOne(target, selection, commands, /*fit*/ false);
@@ -123,7 +125,7 @@ void FaceUvControls::Draw(IMeshEditTarget& target,
         ImGui::SetTooltip("Fit/Center the whole selection as a single unit:\n"
                           "one continuous mapping across faces and brushes.");
 
-    if (ImGui::SmallButton("Copy projection"))
+    if (EditorChrome::Button("Copy projection", "Copy projection", ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
     {
         if (auto copied = CopySelectedFaceProjection(target, selection))
             clipboard = std::move(copied);
@@ -131,7 +133,7 @@ void FaceUvControls::Draw(IMeshEditTarget& target,
     ImGui::SameLine();
     if (!clipboard.has_value())
         ImGui::BeginDisabled();
-    if (ImGui::SmallButton("Paste projection"))
+    if (EditorChrome::Button("Paste projection", "Paste projection", ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
         PasteFaceProjection(target, selection, commands, *clipboard);
     if (!clipboard.has_value())
         ImGui::EndDisabled();

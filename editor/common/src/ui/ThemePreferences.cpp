@@ -1,4 +1,6 @@
 #include "ThemePreferences.h"
+#include "ScopedPanel.h"
+#include "chrome/ChromeControls.h"
 
 #include "EditorThemeFile.h"
 #include "EditorUiStyle.h"
@@ -86,23 +88,50 @@ void ThemePreferences::SetThemeCVar(ConsoleRegistry& console, const std::string&
                           ConsolePhase::GameplayStarted);
 }
 
-void ThemePreferences::ApplyChoice(ConsoleRegistry& console, const std::string& name)
+void ThemePreferences::RequestChoice(ConsoleRegistry& console, const std::string& name)
 {
-    ResetEditorThemePalette();
+    Pending = name;
+    SetThemeCVar(console, name);
+}
+
+void ThemePreferences::SyncWithCVar(ConsoleRegistry& console)
+{
+    if (!Scanned)
+        Rescan();
+    const CVarMetadata* var = console.FindCVar("editor.ui.theme");
+    const std::string* name = var != nullptr ? std::get_if<std::string>(&var->CurrentValue) : nullptr;
+    if (name == nullptr)
+        return;
+    // Requested, not applied: this runs at the boundary, but going through the
+    // same pending path keeps one route into a theme change.
+    Pending = *name;
+}
+
+bool ThemePreferences::CommitPending()
+{
+    if (!Pending.has_value())
+        return false;
+    const std::string name = *std::exchange(Pending, std::nullopt);
+
+    ResetEditorTheme();
     Status.clear();
     if (!name.empty())
     {
         const auto it = std::find_if(Themes.begin(), Themes.end(),
                                      [&name](const ThemeChoice& t) { return t.Name == name; });
         if (it == Themes.end())
-            return;
+        {
+            Status = "no theme named '" + name + "'";
+            EditorUi::Apply(ImGui::GetStyle());
+            return true;
+        }
         std::string error;
         if (!LoadEditorTheme(it->Path, &error) || !error.empty())
             Status = error;
     }
     EditorUi::Apply(ImGui::GetStyle());
     ActiveName = name;
-    SetThemeCVar(console, name);
+    return true;
 }
 
 void ThemePreferences::DrawMenu(ConsoleRegistry& console)
@@ -117,7 +146,7 @@ void ThemePreferences::DrawMenu(ConsoleRegistry& console)
     }
 
     if (ImGui::MenuItem("Built-in", nullptr, ActiveName.empty()))
-        ApplyChoice(console, std::string{});
+        RequestChoice(console, std::string{});
 
     for (const ThemeChoice& theme : Themes)
     {
@@ -130,7 +159,7 @@ void ThemePreferences::DrawMenu(ConsoleRegistry& console)
             ImGui::SameLine(0.0f, 2.0f);
         }
         if (ImGui::MenuItem(theme.Name.c_str(), nullptr, theme.Name == ActiveName))
-            ApplyChoice(console, theme.Name);
+            RequestChoice(console, theme.Name);
     }
 
     ImGui::Separator();
@@ -146,11 +175,9 @@ void ThemePreferences::DrawWindow(ConsoleRegistry& console)
         return;
 
     ImGui::SetNextWindowSize(ImVec2(360.0f, 540.0f), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Theme Palette", &WindowOpen))
-    {
-        ImGui::End();
+    ScopedPanel panel("Theme Palette", &WindowOpen);
+    if (!panel.IsOpen())
         return;
-    }
 
     ImGui::TextUnformatted(ActiveName.empty() ? "Base theme: Built-in"
                                               : ("Base theme: " + ActiveName).c_str());
@@ -163,13 +190,13 @@ void ThemePreferences::DrawWindow(ConsoleRegistry& console)
         EditorUi::Apply(ImGui::GetStyle());
 
     ImGui::Separator();
-    if (ImGui::Button("Revert to Base Theme"))
-        ApplyChoice(console, ActiveName);
+    if (EditorChrome::Button("Revert to Base Theme", "Revert to Base Theme", {}, EditorChrome::ButtonTone::Normal))
+        RequestChoice(console, ActiveName);
 
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
     ImGui::InputText("##theme_name", SaveName, sizeof(SaveName));
     ImGui::SameLine();
-    if (ImGui::Button("Save as Theme") && SaveName[0] != '\0')
+    if (EditorChrome::Button("Save as Theme", "Save as Theme", {}, EditorChrome::ButtonTone::Normal) && SaveName[0] != '\0')
     {
         const std::string name(SaveName);
         std::string error;
@@ -193,5 +220,4 @@ void ThemePreferences::DrawWindow(ConsoleRegistry& console)
         ImGui::PopStyleColor();
     }
 
-    ImGui::End();
 }

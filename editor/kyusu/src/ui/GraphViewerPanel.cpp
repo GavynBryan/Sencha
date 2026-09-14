@@ -1,5 +1,7 @@
 #include "GraphViewerPanel.h"
 
+#include "ui/chrome/ChromeControls.h"
+
 #include "commands/CommandStack.h"
 #include "document/WorldDocument.h"
 #include "selection/SelectionService.h"
@@ -122,7 +124,7 @@ void GraphViewerPanel::OnDraw()
 {
     if (!World.IsWorld())
         return;
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
     if (!panel.IsOpen())
         return;
 
@@ -160,7 +162,7 @@ void GraphViewerPanel::OnDraw()
         if (graph.Id == FilterGraph)
             filteredGraph = &graph;
     ImGui::SetNextItemWidth(150.0f);
-    if (ImGui::BeginCombo("##graph_filter",
+    if (EditorChrome::BeginCombo("##graph_filter",
                           filteredGraph != nullptr ? filteredGraph->Name.c_str() : "All graphs"))
     {
         if (ImGui::Selectable("All graphs", !FilterGraph.IsValid()))
@@ -168,35 +170,35 @@ void GraphViewerPanel::OnDraw()
         for (const GraphRecord& graph : World.Manifest().Graphs)
             if (ImGui::Selectable(graph.Name.c_str(), graph.Id == FilterGraph))
                 FilterGraph = graph.Id;
-        ImGui::EndCombo();
+        EditorChrome::EndCombo();
     }
     ImGui::SetNextItemWidth(180.0f);
     ImGui::InputTextWithHint("##graph_search", "Search zones", Search, sizeof(Search));
     ImGui::SameLine();
-    if (ImGui::Button("Frame All"))
+    if (EditorChrome::Button("Frame All", "Frame All", {}, EditorChrome::ButtonTone::Normal))
         frameZones(false);
     ImGui::SameLine();
-    if (ImGui::Button("Frame Selection"))
+    if (EditorChrome::Button("Frame Selection", "Frame Selection", {}, EditorChrome::ButtonTone::Normal))
         frameZones(true);
     ImGui::SameLine();
-    if (ImGui::Button("Perspective"))
+    if (EditorChrome::Button("Perspective", "Perspective", {}, EditorChrome::ButtonTone::Normal))
         PerspectiveProjection = true;
     ImGui::SameLine();
-    if (ImGui::Button("Top"))
+    if (EditorChrome::Button("Top", "Top", {}, EditorChrome::ButtonTone::Normal))
     {
         Yaw = 0.0f;
         Pitch = -1.45f;
         PerspectiveProjection = false;
     }
     ImGui::SameLine();
-    if (ImGui::Button("Front"))
+    if (EditorChrome::Button("Front", "Front", {}, EditorChrome::ButtonTone::Normal))
     {
         Yaw = 0.0f;
         Pitch = 0.0f;
         PerspectiveProjection = false;
     }
     ImGui::SameLine();
-    if (ImGui::Button("Side"))
+    if (EditorChrome::Button("Side", "Side", {}, EditorChrome::ButtonTone::Normal))
     {
         Yaw = 1.5707963f;
         Pitch = 0.0f;

@@ -14,6 +14,8 @@
 #include "IBrushBodyRenderer.h"
 #include "BrushFillRenderer.h"
 #include "SceneRenderQueueBuilder.h"
+#include "SceneWireframeRenderer.h"
+#include "EditorInstancedFillPipeline.h"
 #include "SceneThumbnailCache.h"
 #include "ThumbnailStudio.h"
 #include "SceneSolidRenderer.h"
@@ -142,6 +144,7 @@ private:
     // Runs the focus scene's shadow arbitration and records the scheduled
     // depth views, then publishes the panel snapshot. Called once per frame
     // before any viewport renders.
+    void SweepBrushBakes();
     void UpdateShadowResidency(const FrameContext& frame);
     // The camera position shadow scores rank against: the active viewport if
     // it is perspective, else the first perspective viewport, else the active
@@ -170,6 +173,10 @@ private:
     // (The feature owns the one shared solid pipeline.)
     EditorSolidPipeline    Solid;
     BrushSolidRenderer     BrushSolid;
+    // GPU residency for every open document's brush meshes, shared by the
+    // focus and context builders so a brush open in two zones uploads once.
+    // Declared before the builders: they hold a reference to it.
+    BrushBakeCache         BrushBakes;
     // Solid preview of placed static meshes; shares the one Solid pipeline above.
     StaticMeshRenderer     Meshes;
     // WYSIWYG material path: drives the runtime forward pass with the scene's real
@@ -200,10 +207,13 @@ private:
     std::optional<ThumbnailStudio> Studio;
     std::optional<SceneThumbnailCache> Thumbnails;
     std::optional<SceneSolidRenderer>      SceneSolid;
+    // Wireframe body over the builder's retained draws (instanced lines);
+    // declared after the pipelines and the builder it references.
+    std::optional<SceneWireframeRenderer>  SceneWire;
     // One WYSIWYG queue builder per open context zone (lazily created, dropped
     // when the zone closes): context zones render their real materials dimmed
     // by the draw-level tint instead of the procedural-checker fallback. Idle
-    // zones cost nothing (the builder's content hash skips re-bakes).
+    // zones cost their placements only (baked meshes live in the shared cache).
     std::unordered_map<uint64_t, std::unique_ptr<SceneRenderQueueBuilder>> ContextBuilders;
     RuntimeAssets*     RuntimeAssetsRef = nullptr;
     LoggingProvider*   LoggingRef = nullptr;
@@ -214,6 +224,8 @@ private:
     // Declared before the line renderers: they bind a reference to it at
     // construction. (The feature owns the one shared line pipeline.)
     EditorLinePipeline     Lines;
+    EditorInstancedLinePipeline InstancedLines;
+    EditorInstancedFillPipeline InstancedFill;
     WireframeRenderer      Wireframe;
     ComponentVisualRenderer Visuals;
     // Selection feedback strokes draw through the wide-line pipeline (exact pixel

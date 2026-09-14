@@ -1,5 +1,6 @@
 #pragma once
 
+#include "MeshElements.h"
 #include "brush/BrushMesh.h"
 #include "selection/SelectableRef.h"
 
@@ -30,4 +31,12 @@
 // this mesh-only primitive's.)
 [[nodiscard]] std::optional<Vec3d> ElementCenter(const BrushMesh& mesh,
                                                  const Transform3f& transform,
+                                                 const SelectableRef& ref);
+
+// The same answers from the retained world elements, for callers holding the
+// scene's placement facts: no enumeration, one index.
+[[nodiscard]] std::vector<std::uint32_t> ElementVertexIndices(const BrushMesh& mesh,
+                                                              const SourceWorldElements& elements,
+                                                              const SelectableRef& ref);
+[[nodiscard]] std::optional<Vec3d> ElementCenter(const SourceWorldElements& elements,
                                                  const SelectableRef& ref);

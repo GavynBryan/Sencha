@@ -52,18 +52,18 @@ std::optional<SelectedEdgePath> MakeSelectedEdgePath(const EditorScene& scene, E
                                                       std::span<const SelectableRef> refs)
 {
     const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-    const Transform3f* transform = scene.TryGetWorldTransform(entity);
-    if (mesh == nullptr || transform == nullptr)
+    const SourceWorldElements* elements = scene.PlacementFacts().GetSourceWorldElements(entity);
+    if (mesh == nullptr || elements == nullptr)
         return std::nullopt;
 
     std::map<std::uint32_t, std::vector<std::uint32_t>> adjacency;
     for (const SelectableRef& ref : refs)
     {
-        const std::optional<EdgeElement> edge = MeshElements::TryGetEdge(*mesh, *transform, ref.ElementId);
-        if (!edge.has_value())
+        if (ref.ElementId >= elements->Edges.size())
             continue;
-        adjacency[edge->VertexA].push_back(edge->VertexB);
-        adjacency[edge->VertexB].push_back(edge->VertexA);
+        const EdgeElement& edge = elements->Edges[ref.ElementId];
+        adjacency[edge.VertexA].push_back(edge.VertexB);
+        adjacency[edge.VertexB].push_back(edge.VertexA);
     }
     if (adjacency.size() < 2)
         return std::nullopt;

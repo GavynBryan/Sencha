@@ -44,12 +44,17 @@ InputRouter::Handler MakeUiInputGuard(std::function<UiInputCapture()> capture)
                 {
                     return ui.Mouse;
                 }
-                else if constexpr (std::is_same_v<E, KeyDownEvent>)
+                else if constexpr (std::is_same_v<E, KeyDownEvent> || std::is_same_v<E, KeyUpEvent>)
                 {
+                    // A release belongs to whoever owned the press: a field that
+                    // took the letter takes its release too.
                     return ui.Keyboard;
                 }
-                else // FocusLostEvent — abandon any in-progress UI drag.
+                else
                 {
+                    static_assert(std::is_same_v<E, FocusLostEvent>,
+                                  "every InputEvent alternative needs an ownership rule here");
+                    // Focus loss abandons any in-progress UI drag.
                     if (pointerCapture.HeldBySelf())
                         pointerCapture.Release();
                     return false;

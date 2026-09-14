@@ -18,6 +18,7 @@ DuplicateEntitiesCommand::DuplicateEntitiesCommand(std::span<const EntityId> sou
                                                    std::span<const Transform3f> transforms,
                                                    EditorScene& scene, EditorDocument& document,
                                                    SelectionService& selection,
+                                                   DuplicateBranchPolicy branch,
                                                    bool asInstance,
                                                    std::function<void(std::vector<EntitySnapshot>&)> remap)
     : Scene(scene)
@@ -25,6 +26,7 @@ DuplicateEntitiesCommand::DuplicateEntitiesCommand(std::span<const EntityId> sou
     , Selection(selection)
     , Sources(sources.begin(), sources.end())
     , Transforms(transforms.begin(), transforms.end())
+    , Branch(branch)
     , AsInstance(asInstance)
     , Remap(std::move(remap))
 {
@@ -38,14 +40,18 @@ void DuplicateEntitiesCommand::Execute()
     {
         PreviousSelection = Selection.GetSnapshot();
 
-        // A source means its branch. Expand each to its subtree, parents before
-        // children, skipping members already covered by an earlier source so a
-        // parent-and-child selection copies the branch once.
+        // A source means its branch, or just itself, by policy. Expand each to
+        // its subtree, parents before children, skipping members already
+        // covered by an earlier source so a parent-and-child selection copies
+        // the branch once.
         std::vector<EntityId> expanded;
         for (std::size_t i = 0; i < Sources.size(); ++i)
         {
             std::vector<EntityId> subtree;
-            Scene.CollectSubtree(Sources[i], subtree);
+            if (Branch == DuplicateBranchPolicy::Subtree)
+                Scene.CollectSubtree(Sources[i], subtree);
+            else
+                subtree.push_back(Sources[i]);
             for (EntityId member : subtree)
             {
                 const auto seen = std::find(expanded.begin(), expanded.end(), member);

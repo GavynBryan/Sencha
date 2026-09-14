@@ -52,6 +52,12 @@ struct BrushMesh
 // Add or remove the undirected edge (a, b) from the soft set (idempotent).
 void BrushSetEdgeSoft(BrushMesh& mesh, std::uint32_t a, std::uint32_t b, bool soft);
 
+// Rewrite the soft mark on (a, b) onto the two halves a split at `middle`
+// produced. A vertex inserted on a smooth edge must leave both halves smooth,
+// or the shading breaks along a seam the user never asked for. Every operation
+// that splits an edge owes this call.
+void BrushSplitSoftEdge(BrushMesh& mesh, std::uint32_t a, std::uint32_t b, std::uint32_t middle);
+
 // Newell's method — robust polygon normal consistent with CCW winding. Returns a
 // normalized vector, or {0,0,0} for a degenerate loop.
 [[nodiscard]] Vec3d BrushComputeFaceNormal(const BrushMesh& mesh, const BrushFace& face);
@@ -59,8 +65,35 @@ void BrushSetEdgeSoft(BrushMesh& mesh, std::uint32_t a, std::uint32_t b, bool so
 // Average of a face's loop vertex positions.
 [[nodiscard]] Vec3d BrushFaceCentroid(const BrushMesh& mesh, const BrushFace& face);
 
+// Whether two faces that share an edge lie in the same plane: the surface
+// continues across that edge rather than bending. Judged on the normals alone,
+// so it is only meaningful for edge-sharing faces. This is the one criterion
+// the carves use to tell a seam from a rim.
+[[nodiscard]] bool BrushFacesCoplanar(const BrushMesh& mesh, std::uint32_t a, std::uint32_t b);
+
+// The mesh split into its edge-connected shells, each with its own compacted
+// vertex list. Adjacency is by shared vertex indices, so weld first when the
+// mesh may carry coincident duplicates. One entry for a connected mesh.
+[[nodiscard]] std::vector<BrushMesh> BrushConnectedComponents(const BrushMesh& mesh);
+
 // Average of all vertex positions (mesh "center" for outward-orientation tests).
 [[nodiscard]] Vec3d BrushMeshCentroid(const BrushMesh& mesh);
 
 // Axis-aligned bounds over all vertices.
 [[nodiscard]] Aabb3d BrushComputeBounds(const BrushMesh& mesh);
+
+// Content digests, in-process only and never serialized. Geometry covers what
+// shapes topology and tessellation positions: vertex positions, face loops,
+// soft edges. Material covers what shapes appearance only: each face's
+// material and UV projection. The full signature folds both; two meshes with
+// equal full signatures bake to the same geometry, which is what a residency
+// cache keys on across frames where the meshes themselves are minted anew.
+[[nodiscard]] std::uint64_t BrushGeometrySignature(const BrushMesh& mesh);
+[[nodiscard]] std::uint64_t BrushMaterialSignature(const BrushMesh& mesh);
+[[nodiscard]] std::uint64_t BrushMeshSignature(const BrushMesh& mesh);
+
+// The mesh's undirected edges as canonical (min, max) vertex pairs, sorted:
+// the one enumeration every edge index in the editor refers to (element refs,
+// soft-edge marks, wireframes). Built from the face loops without a
+// half-edge structure.
+[[nodiscard]] std::vector<std::array<std::uint32_t, 2>> BrushEdgePairs(const BrushMesh& mesh);

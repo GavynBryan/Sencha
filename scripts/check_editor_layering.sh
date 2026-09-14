@@ -14,8 +14,9 @@
 #      kyusu brush/) must not depend on the authoring/domain subsystems
 #      (document/ viewport/ render/ ui/ editmodes/ meshedit/ workspace/). They
 #      are the editor's reusable leaves; domain code depends on them, not the
-#      reverse. The shared pointer-event header (input/InputEvent.h) is the one
-#      allowed crossing, so input/ is not in the forbidden set.
+#      reverse. The shared pointer-event header (input/InputEvent.h) and the
+#      icon id leaf (icons/IconId.h) are the allowed crossings, so input/ and
+#      icons/ are not in the forbidden set.
 #
 #   B. editor_common must not include an application-only subsystem. CMake
 #      enforces this at compile time (application src dirs are not on common's
@@ -24,6 +25,12 @@
 #   C. Only app/ (the composition root) may reach UP into workspace/ (the
 #      aggregator). Cross-subsystem composition lives in workspace/; the
 #      subsystems below it stay independent of it.
+#
+#   D. The chrome's internals (its geometry, painters, frame, chassis,
+#      ornaments, sources, icon drawing) are reachable only from inside
+#      common/ui/. A panel asks for a PanelStyle, a section title, a selection
+#      scope, a control; it never draws a screw or a chamfer itself, so the
+#      look can change without a panel changing.
 #
 # Usage: check_editor_layering.sh <source-root>
 
@@ -86,6 +93,18 @@ for file in $ws_includers; do
     echo
     status=1
 done
+
+# D. Chrome internals stay inside common/ui/. Filter on the including FILE's
+# path, as in rule C.
+chrome_internals='ui/chrome/(ChromeGeometry|ChromePaint|ChromeFrame|ChromeChassis|ChromeOrnaments|IconDraw)\.h'
+chrome_includers="$(grep -rlE '#include[[:space:]]*["<]([^">]*/)?'"$chrome_internals" "$COMMON" "$KYUSU" 2>/dev/null \
+                    | grep -vE '^'"$COMMON"'/ui/')"
+if [ -n "$chrome_includers" ]; then
+    echo "VIOLATION: a panel or subsystem draws chrome internals (use ScopedPanel, ChromeHeader, ChromeSelection, ChromeControls, ChromeDecor, ChromeBars)"
+    echo "$chrome_includers"
+    echo
+    status=1
+fi
 
 if [ "$status" -eq 0 ]; then
     echo "editor layering directions: OK"

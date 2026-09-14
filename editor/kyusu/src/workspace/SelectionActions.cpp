@@ -1,4 +1,7 @@
 #include "SelectionActions.h"
+#include "brush/BrushWorkCounters.h"
+
+#include "brush/BrushEvaluation.h"
 
 #include "commands/CommandStack.h"
 #include "commands/CompositeCommand.h"
@@ -78,7 +81,8 @@ void SelectionActions::Duplicate(bool asInstance)
         return;
 
     Commands.Execute(std::make_unique<DuplicateEntitiesCommand>(
-        sources, transforms, document.GetScene(), document, Selection, asInstance, DuplicateRemap));
+        sources, transforms, document.GetScene(), document, Selection, DuplicateBranchPolicy::Subtree,
+        asInstance, DuplicateRemap));
 }
 
 void SelectionActions::DuplicateWithOffset(Vec3d offset)
@@ -99,7 +103,8 @@ void SelectionActions::DuplicateWithOffset(Vec3d offset)
         return;
 
     Commands.Execute(std::make_unique<DuplicateEntitiesCommand>(
-        sources, transforms, document.GetScene(), document, Selection, false, DuplicateRemap));
+        sources, transforms, document.GetScene(), document, Selection, DuplicateBranchPolicy::Subtree,
+        false, DuplicateRemap));
 }
 
 void SelectionActions::RecordRepeatableDuplicate(Vec3d offset)
@@ -265,10 +270,13 @@ const BrushMesh* SelectionActions::SelectedExportMesh() const
     {
         if (!ref.IsEntity())
             continue;
-        if (const BrushMesh* mesh = scene.TryGetBrushMesh(ref.Entity))
-            return mesh;
-        if (const BrushMesh* dormant = scene.TryGetDormantBrushMesh(ref.Entity))
-            return dormant;
+        const BrushEvaluated* evaluated =
+            scene.TryGetBrushPieces(ref.Entity, BrushEvaluationPolicy::Cook());
+        if (evaluated == nullptr || evaluated->Status != BrushEvaluationStatus::Ok)
+            continue;
+    ++BrushWorkCounters::Frame().ExportFlattens;
+        ExportScratch = FlattenBrushPieces(*evaluated);
+        return &ExportScratch;
     }
     return nullptr;
 }

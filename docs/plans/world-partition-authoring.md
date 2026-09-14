@@ -127,7 +127,7 @@ Editor (exists):
   `RegistryId`, so multi-registry selection is representable without changing the ref.
 - `CommandStack` plus `CompositeCommand` for multi-part undo steps;
   `CaptureEntity`/`RestoreEntity` snapshots for undoable entity lifecycle.
-- `BrushOps` pure verbs including `CarveFaceRect` and `RectFaceFrame`; `FaceCarveTool`
+- `BrushOps` pure verbs, `CarveFacePolygon` over `BrushFaceFrame`; `FaceCarveTool`
   as the canonical face-pick, live-preview, commit tool pattern.
 - Shared `EditorLinePipeline`/`EditorWideLinePipeline`/`EditorFillPipeline` for overlay
   rendering; `EditorOverlayState.Labels` for world-anchored text. The `EditorLineBatch`

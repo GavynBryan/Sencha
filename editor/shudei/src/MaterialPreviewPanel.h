@@ -23,6 +23,7 @@ public:
 
     [[nodiscard]] std::string_view GetTitle() const override { return "Preview"; }
     [[nodiscard]] DockSlot GetDockSlot() const override { return DockSlot::Center; }
+    [[nodiscard]] PanelPersistence GetPersistence() const override { return { "preview", PanelVisibilityPolicy::SessionOnly }; }
     void OnDraw() override;
 
 private:

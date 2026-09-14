@@ -1,5 +1,6 @@
 #include "SceneThumbnailCache.h"
 
+#include "BrushBakeGpu.h"
 #include "SceneRenderQueueBuilder.h"
 
 #include "document/EditorDocument.h"
@@ -32,7 +33,7 @@ namespace
         Aabb3d bounds = Aabb3d::Empty();
         for (EntityId entity : scene.GetAllEntities())
         {
-            if (const std::optional<Aabb3d> brush = scene.TryGetWorldBounds(entity))
+            if (const std::optional<Aabb3d> brush = scene.EvaluatedWorldBounds(entity))
             {
                 bounds.ExpandToInclude(*brush);
                 continue;
@@ -127,8 +128,9 @@ bool SceneThumbnailCache::LoadEntry(const std::string& assetPath, Entry& entry)
     entry.Camera = ThumbnailStudio::FrameSubject(
         RenderableBounds(*entry.Document, Meshes, Assets.SkinnedMeshes.get()));
 
+    entry.Bakes = std::make_unique<BrushBakeCache>(MakeBrushBakeGpu(Assets));
     entry.Queues = std::make_unique<SceneRenderQueueBuilder>(
-        Assets.Assets, *Assets.StaticMeshes, Assets.Materials, Assets.MaterialSets,
+        Assets.Assets, *entry.Bakes, *Assets.StaticMeshes, Assets.Materials, Assets.MaterialSets,
         Logging, nullptr, Assets.SkinnedMeshes.get());
     entry.Queues->Build(*entry.Document);
     return true;
@@ -142,6 +144,7 @@ void SceneThumbnailCache::RenderPending(const FrameContext& frame)
         if (entry.Document != nullptr && FrameClock > entry.ReleasePayloadAfter)
         {
             entry.Queues.reset();
+            entry.Bakes.reset();
             entry.Document.reset();
         }
 

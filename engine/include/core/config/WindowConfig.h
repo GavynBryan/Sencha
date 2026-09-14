@@ -16,6 +16,11 @@ struct EngineWindowConfig
     WindowGraphicsApi GraphicsApi = WindowGraphicsApi::Vulkan;
     bool Resizable = true;
     bool Visible = true;
+    // Ask for a window without the platform's frame, decorated by the
+    // application (its own caption, drag, and resize regions). A request: the
+    // window falls back to the platform frame where hit testing is
+    // unavailable, and reports what it actually has.
+    bool ClientDecorations = false;
 };
 
 struct WindowConfigError

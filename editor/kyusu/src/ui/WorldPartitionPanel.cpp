@@ -1,9 +1,14 @@
 #include "WorldPartitionPanel.h"
 
+#include "ui/chrome/ChromeSelection.h"
+
+#include "ui/chrome/ChromeControls.h"
+
 #include "document/commands/EditWorldManifestCommand.h"
 
 #include "ui/EditorUiStyle.h"
 #include "ui/ScopedPanel.h"
+#include "ui/chrome/ChromeHeader.h"
 #include "fonts/IconsFontAwesome6.h"
 
 #include "commands/CommandStack.h"
@@ -39,7 +44,7 @@ WorldPartitionPanel::WorldPartitionPanel(WorldDocument& world, SelectionService&
 
 std::string_view WorldPartitionPanel::GetTitle() const
 {
-    return "World";
+    return "WORLD";
 }
 
 
@@ -57,7 +62,7 @@ void WorldPartitionPanel::OnDraw()
     if (!WorldDoc.IsWorld())
         return;
 
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
     if (!panel.IsOpen())
         return;
 
@@ -86,9 +91,7 @@ void WorldPartitionPanel::OnDraw()
             continue;
         if (!orphanHeader)
         {
-            ImGui::PushStyleColor(ImGuiCol_Text, EditorUi::TextDim);
-            ImGui::TextUnformatted("Unassigned");
-            ImGui::PopStyleColor();
+            EditorChrome::SectionTitle("Unassigned");
             orphanHeader = true;
         }
         DrawZoneRow(zone);
@@ -155,13 +158,13 @@ void WorldPartitionPanel::DrawStreamingPreview()
             return;
         ImGui::SameLine();
         ImGui::PushID(id);
-        if (ImGui::SmallButton(ICON_FA_XMARK))
+        if (EditorChrome::IconButton("cancel", IconId::Cancel, ImGui::GetTextLineHeight(), EditorChrome::ButtonTone::Normal))
             field.reset();
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Clear the preview override (back to the authored shape)");
         ImGui::PopID();
     };
-    ImGui::SetNextItemWidth(80.0f);
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 5.5f);
     int hops = view->PreviewHopCount.value_or(resolved.HopCount);
     if (ImGui::InputInt("Hops", &hops))
         view->PreviewHopCount = hops < 0 ? 0 : hops;
@@ -169,7 +172,7 @@ void WorldPartitionPanel::DrawStreamingPreview()
         ImGui::SetTooltip("What-if override: preview with a different preload hop count. "
                           "Edits nothing; clear to see the authored shape.");
     clearButton(view->PreviewHopCount, "clear_hops");
-    ImGui::SetNextItemWidth(80.0f);
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 5.5f);
     float radius = view->PreviewRadius.value_or(static_cast<float>(resolved.Radius));
     if (ImGui::InputFloat("Radius", &radius, 0.0f, 0.0f, "%.0f"))
         view->PreviewRadius = radius < 0.0f ? 0.0f : radius;
@@ -177,7 +180,7 @@ void WorldPartitionPanel::DrawStreamingPreview()
         ImGui::SetTooltip("What-if override: preview with a different load radius. "
                           "Edits nothing; clear to see the authored shape.");
     clearButton(view->PreviewRadius, "clear_radius");
-    ImGui::SetNextItemWidth(80.0f);
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 5.5f);
     int cap = view->PreviewResidentCap.value_or(resolved.ResidentZoneCap);
     if (ImGui::InputInt("Cap", &cap))
         view->PreviewResidentCap = cap < 1 ? 1 : cap;
@@ -229,7 +232,12 @@ void WorldPartitionPanel::DrawWorldSceneRow()
     if (WorldDoc.WorldSceneDocument().IsDirty())
         label += " " ICON_FA_CIRCLE_DOT;
     label += "##world_scene_row";
-    ImGui::Selectable(label.c_str(), isFocus, ImGuiSelectableFlags_AllowDoubleClick);
+    {
+        ScopedSelectionStyle selectionStyle(isFocus);
+        ImGui::Selectable(label.c_str(), isFocus, ImGuiSelectableFlags_AllowDoubleClick);
+        if (isFocus)
+            EditorChrome::SelectionMark();
+    }
     if (ImGui::IsItemHovered())
     {
         ImGui::SetTooltip("The world scene: entities that live for the whole world "
@@ -269,7 +277,7 @@ void WorldPartitionPanel::DrawHeaderButtons()
         return true;
     };
 
-    if (ImGui::Button(ICON_FA_PLUS "  Graph"))
+    if (EditorChrome::Button(ICON_FA_PLUS "  Graph", ICON_FA_PLUS "  Graph", {}, EditorChrome::ButtonTone::Normal))
         RunManifestEdit([&] { return WorldDoc.AddGraph("New Graph").IsValid(); });
 
     // New zones land in the focus zone's graph (fallback: the first graph).
@@ -281,7 +289,7 @@ void WorldPartitionPanel::DrawHeaderButtons()
         activeGraph = WorldDoc.Manifest().Graphs[0].Id;
     ImGui::SameLine();
     ImGui::BeginDisabled(!activeGraph.IsValid());
-    if (ImGui::Button(ICON_FA_PLUS "  Zone"))
+    if (EditorChrome::Button(ICON_FA_PLUS "  Zone", ICON_FA_PLUS "  Zone", {}, EditorChrome::ButtonTone::Normal))
         RunManifestEdit([&] { return WorldDoc.AddZone(activeGraph, "New Zone").IsValid(); });
     ImGui::EndDisabled();
 
@@ -291,7 +299,7 @@ void WorldPartitionPanel::DrawHeaderButtons()
             activeZone = &zone;
     ImGui::SameLine();
     ImGui::BeginDisabled(activeZone == nullptr);
-    if (ImGui::Button(ICON_FA_PLUS "  Dock") && activeZone != nullptr)
+    if (EditorChrome::Button(ICON_FA_PLUS "  Dock", ICON_FA_PLUS "  Dock", {}, EditorChrome::ButtonTone::Normal) && activeZone != nullptr)
     {
         const Vec3d center = activeZone->Bounds.Center();
         EditorCreateContext context{
@@ -312,7 +320,7 @@ void WorldPartitionPanel::DrawHeaderButtons()
     ImGui::SameLine();
     ImGui::BeginDisabled(activeZone == nullptr
                          || WorldDoc.Manifest().Zones.size() < 2);
-    if (ImGui::Button(ICON_FA_PLUS "  Teleport Link") && activeZone != nullptr)
+    if (EditorChrome::Button(ICON_FA_PLUS "  Teleport Link", ICON_FA_PLUS "  Teleport Link", {}, EditorChrome::ButtonTone::Normal) && activeZone != nullptr)
     {
         TeleportSource_ = activeZone->Id;
         if (TeleportDestination_ == TeleportSource_
@@ -351,14 +359,14 @@ void WorldPartitionPanel::DrawHeaderButtons()
             ? source->Name.c_str() : "<missing Zone>");
         const char* destinationName = destination != nullptr
             ? destination->Name.c_str() : "<select destination>";
-        if (ImGui::BeginCombo("Destination", destinationName))
+        if (EditorChrome::BeginCombo("Destination", destinationName))
         {
             for (const ZoneHeader& zone : WorldDoc.Manifest().Zones)
                 if (zone.Id != TeleportSource_)
                     if (ImGui::Selectable(zone.Name.c_str(),
                                           zone.Id == TeleportDestination_))
                         TeleportDestination_ = zone.Id;
-            ImGui::EndCombo();
+            EditorChrome::EndCombo();
         }
         ImGui::Checkbox("Bidirectional", &TeleportBidirectional_);
         if (!TeleportBidirectional_)
@@ -366,7 +374,7 @@ void WorldPartitionPanel::DrawHeaderButtons()
 
         ImGui::BeginDisabled(source == nullptr || destination == nullptr
                              || source == destination);
-        if (ImGui::Button("Create WorldLink"))
+        if (EditorChrome::Button("Create WorldLink", "Create WorldLink", {}, EditorChrome::ButtonTone::Normal))
         {
             EditorCreateContext context{
                 .World = &WorldDoc,
@@ -382,7 +390,7 @@ void WorldPartitionPanel::DrawHeaderButtons()
         }
         ImGui::EndDisabled();
         ImGui::SameLine();
-        if (ImGui::Button("Cancel"))
+        if (EditorChrome::Button("Cancel", "Cancel", {}, EditorChrome::ButtonTone::Normal))
             ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
@@ -413,7 +421,7 @@ void WorldPartitionPanel::DrawLegacyTransitionMigration()
         [](const TransitionRecord& transition)
         { return transition.Topology == TransitionTopology::Teleport; });
     ImGui::BeginDisabled(!hasTeleport);
-    if (ImGui::Button("Migrate Existing Teleport Rows"))
+    if (EditorChrome::Button("Migrate Existing Teleport Rows", "Migrate Existing Teleport Rows", {}, EditorChrome::ButtonTone::Normal))
     {
         const LegacyTransitionMigrationReport report =
             WorldDoc.MigrateLegacyTransitions();
@@ -444,7 +452,7 @@ void WorldPartitionPanel::DrawLegacyTransitionMigration()
                     transition.Flags.OneWay ? " (one way)" : "");
         if (transition.Topology != TransitionTopology::Teleport)
         {
-            if (ImGui::SmallButton("Convert to Teleport Link"))
+            if (EditorChrome::Button("Convert to Teleport Link", "Convert to Teleport Link", ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
                 convert = transition.Id;
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Use only when this legacy connection is truly "
@@ -452,7 +460,7 @@ void WorldPartitionPanel::DrawLegacyTransitionMigration()
                                   "the same bidirectional WorldLink.");
             ImGui::SameLine();
         }
-        if (ImGui::SmallButton(ICON_FA_TRASH "  Discard Replaced Row"))
+        if (EditorChrome::Button(ICON_FA_TRASH "  Discard Replaced Row", ICON_FA_TRASH "  Discard Replaced Row", ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Destructive))
             discard = transition.Id;
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Discard only after a WorldDock or WorldLink replaces "
@@ -566,8 +574,8 @@ void WorldPartitionPanel::DrawGraphStreaming(const GraphRecord& graph)
     // The shape combo is presentation over the radius value: Graph authors an
     // explicit 0, Proximity authors a starter radius, Inherited clears the
     // field. Nothing stores a mode; the runtime reads only the values.
-    ImGui::SetNextItemWidth(160.0f);
-    if (ImGui::BeginCombo("Streaming",
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 11.0f);
+    if (EditorChrome::BeginCombo("Streaming",
                           GraphStreamingShapeLabel(graph.Streaming, base.Radius)))
     {
         const auto option = [&](const char* label, bool selected, const char* help,
@@ -594,7 +602,7 @@ void WorldPartitionPanel::DrawGraphStreaming(const GraphRecord& graph)
                    RunManifestEdit([&] { return WorldDoc.SetGraphRadius(
                        graph.Id, SeedGraphRadius(WorldDoc.Manifest(), graph.Id)); });
                });
-        ImGui::EndCombo();
+        EditorChrome::EndCombo();
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("How this graph decides which zones load around the player");
@@ -612,7 +620,7 @@ void WorldPartitionPanel::DrawGraphStreaming(const GraphRecord& graph)
             return;
         }
         ImGui::PushID(id);
-        if (ImGui::SmallButton(ICON_FA_XMARK))
+        if (EditorChrome::IconButton("cancel", IconId::Cancel, ImGui::GetTextLineHeight(), EditorChrome::ButtonTone::Normal))
             clear();
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Clear back to inherited");
@@ -696,7 +704,7 @@ void WorldPartitionPanel::DrawZoneRow(const ZoneHeader& zone)
 
     if (isOpen)
     {
-        if (ImGui::SmallButton(visible ? ICON_FA_EYE : ICON_FA_EYE_SLASH))
+        if (EditorChrome::IconButton("visible", visible ? IconId::Eye : IconId::EyeOff, ImGui::GetTextLineHeight(), EditorChrome::ButtonTone::Normal))
             (void)WorldDoc.SetZoneVisible(zone.Id, !visible);
         ImGui::SameLine();
     }
@@ -728,8 +736,13 @@ void WorldPartitionPanel::DrawZoneRow(const ZoneHeader& zone)
         label += " " ICON_FA_CIRCLE_DOT;
     label += "##zone_row";
     const bool selected = WorldDoc.SelectedZone() == zone.Id;
-    const bool clicked = ImGui::Selectable(
-        label.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick);
+    bool clicked;
+    {
+        ScopedSelectionStyle selectionStyle(selected);
+        clicked = ImGui::Selectable(label.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick);
+        if (selected)
+            EditorChrome::SelectionMark();
+    }
     if (headerOnly)
         ImGui::PopStyleColor();
 

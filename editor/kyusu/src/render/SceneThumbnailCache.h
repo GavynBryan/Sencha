@@ -10,6 +10,7 @@
 
 class EditorDocument;
 class LoggingProvider;
+class BrushBakeCache;
 class SceneRenderQueueBuilder;
 struct FrameContext;
 struct RuntimeAssets;
@@ -63,6 +64,9 @@ private:
     {
         ViewportId Target{};
         std::unique_ptr<EditorDocument> Document;
+        // The thumbnail document is never an open document, so its brush
+        // meshes are resident exactly as long as this entry's builder is.
+        std::unique_ptr<BrushBakeCache> Bakes;
         std::unique_ptr<SceneRenderQueueBuilder> Queues;
         CameraRenderData Camera;
         int RemainingPasses = 0;

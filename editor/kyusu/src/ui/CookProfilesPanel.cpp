@@ -1,5 +1,9 @@
 #include "CookProfilesPanel.h"
 
+#include "ui/chrome/ChromeHeader.h"
+
+#include "ui/chrome/ChromeControls.h"
+
 #include "document/CookGraph.h"
 #include "project/Project.h"
 #include "ui/ScopedPanel.h"
@@ -164,7 +168,7 @@ void CookProfilesPanel::Validate()
 
 void CookProfilesPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
     if (!panel.IsOpen())
         return;
     if (Project == nullptr)
@@ -182,12 +186,12 @@ void CookProfilesPanel::OnDraw()
         selected = profiles.begin();
     }
 
-    if (ImGui::BeginCombo("Profile", selected->Name.c_str()))
+    if (EditorChrome::BeginCombo("Profile", selected->Name.c_str()))
     {
         for (const CookProfile& profile : profiles)
             if (ImGui::Selectable(profile.Name.c_str(), profile.Id == SelectedId))
                 SelectedId = profile.Id;
-        ImGui::EndCombo();
+        EditorChrome::EndCombo();
     }
 
     CookProfile* editable = EditableProfile();
@@ -195,7 +199,7 @@ void CookProfilesPanel::OnDraw()
     if (view->BuiltIn)
         ImGui::TextDisabled("Built-in profile (read only)");
     ImGui::SameLine();
-    if (ImGui::Button("Duplicate"))
+    if (EditorChrome::Button("Duplicate", "Duplicate", {}, EditorChrome::ButtonTone::Normal))
     {
         AddProfile(view);
         return;
@@ -203,7 +207,7 @@ void CookProfilesPanel::OnDraw()
     if (editable != nullptr)
     {
         ImGui::SameLine();
-        if (ImGui::Button("Delete"))
+        if (EditorChrome::Button("Delete", "Delete", {}, EditorChrome::ButtonTone::Destructive))
         {
             std::erase_if(Project->CookProfiles,
                 [this](const CookProfile& profile) { return profile.Id == SelectedId; });
@@ -228,7 +232,7 @@ void CookProfilesPanel::OnDraw()
     }
     ImGui::TextDisabled("Id: %s", view->Id.c_str());
 
-    ImGui::SeparatorText("Steps");
+    EditorChrome::SectionTitle("Steps");
     ImGui::PushID("cook_steps");
     for (std::string_view step : PublicSteps)
     {
@@ -250,7 +254,7 @@ void CookProfilesPanel::OnDraw()
     }
     ImGui::PopID();
 
-    ImGui::SeparatorText("Published outputs");
+    EditorChrome::SectionTitle("Published outputs");
     ImGui::PushID("published_outputs");
     for (std::string_view family : OutputFamilies)
     {
@@ -261,7 +265,7 @@ void CookProfilesPanel::OnDraw()
             disposition = policy->Disposition;
         if (editable == nullptr)
             ImGui::BeginDisabled();
-        if (ImGui::BeginCombo(Label(family), DispositionLabel(disposition)))
+        if (EditorChrome::BeginCombo(Label(family), DispositionLabel(disposition)))
         {
             for (int option = 0; option != 3; ++option)
             {
@@ -280,14 +284,14 @@ void CookProfilesPanel::OnDraw()
                     Validate();
                 }
             }
-            ImGui::EndCombo();
+            EditorChrome::EndCombo();
         }
         if (editable == nullptr)
             ImGui::EndDisabled();
     }
     ImGui::PopID();
 
-    if (ImGui::Button(Dirty ? "Save Profiles*" : "Save Profiles"))
+    if (EditorChrome::Button(Dirty ? "Save Profiles*" : "Save Profiles", Dirty ? "Save Profiles*" : "Save Profiles", {}, EditorChrome::ButtonTone::Normal))
         Save();
     if (!Message.empty())
     {

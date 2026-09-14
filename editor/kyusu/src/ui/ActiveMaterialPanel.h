@@ -23,15 +23,12 @@ public:
                         MaterialThumbnailCache& thumbnails,
                         std::function<void()> browse);
 
-    std::string_view GetTitle() const override { return "Active Material"; }
+    std::string_view GetTitle() const override { return "ACTIVE MATERIAL"; }
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return DockSlot::Left; }
+    PanelPersistence GetPersistence() const override { return { "active_material", PanelVisibilityPolicy::Remembered }; }
 
 private:
-    // Paints a square material preview at `pos` (thumbnail or placeholder
-    // frame); layout space is the caller's job.
-    void PaintMaterialSquare(const AssetRef& material, ImVec2 pos, float size, bool highlight);
-
     ActiveMaterialState& ActiveMaterial;
     MaterialThumbnailCache& Thumbnails;
     std::function<void()> Browse;

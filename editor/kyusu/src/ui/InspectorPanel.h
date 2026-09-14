@@ -40,6 +40,7 @@ public:
     std::string_view GetTitle() const override;
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return DockSlot::RightBottom; }
+    PanelPersistence GetPersistence() const override { return { "inspector", PanelVisibilityPolicy::Remembered }; }
     // Shares the lower-right node with the lighting panel (tabbed).
     int GetDockTabGroup() const override { return 0; }
 

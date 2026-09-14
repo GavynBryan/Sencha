@@ -8,6 +8,7 @@
 #include "document/WorldDocument.h"
 #include "document/tools/BrushTool.h"
 #include "document/tools/EdgeCutTool.h"
+#include "document/tools/ClipTool.h"
 #include "document/tools/FaceCarveTool.h"
 #include "document/tools/SelectTool.h"
 #include "editmodes/ManipulatorSession.h"
@@ -75,6 +76,7 @@ void WorkspaceInteractionRuntime::Rebuild(const WorkspaceInteractionInputs& inpu
         Tools->Register(std::make_unique<BrushTool>());
         Tools->Register(std::make_unique<EdgeCutTool>());
         Tools->Register(std::make_unique<FaceCarveTool>());
+        Tools->Register(std::make_unique<ClipTool>());
         Tools->Activate("select");
     }
     else
@@ -119,6 +121,12 @@ void WorkspaceInteractionRuntime::Rebuild(const WorkspaceInteractionInputs& inpu
             });
         Manipulators->SetScaleAllowedQuery(
             [&affordances] { return affordances.AllowsScaleForSelection(); });
+        // The tools outlive the session's rebinding, so the query reads the
+        // registry live rather than capturing a tool.
+        Manipulators->SetGizmoQuery([this] {
+            const ITool* active = Tools != nullptr ? Tools->GetActiveTool() : nullptr;
+            return active == nullptr || active->UsesTransformGizmo();
+        });
     }
     else
     {

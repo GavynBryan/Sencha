@@ -2,13 +2,13 @@
 
 #include <SDL3/SDL_keycode.h>
 
-#include "fonts/IconsFontAwesome6.h"
 
 #include "document/interactions/MarqueeInteraction.h"
 #include "document/EditorScene.h"
 #include "commands/CommandStack.h"
 #include "meshedit/LoopSelection.h"
 #include "meshedit/MeshEditService.h"
+#include "meshedit/MeshElementKindTraits.h"
 #include "meshedit/MeshElements.h"
 #include "meshedit/PathSelection.h"
 #include "selection/SelectionFold.h"
@@ -19,11 +19,21 @@
 #include "viewport/MarqueeState.h"
 #include "viewport/Picking.h"
 
+#include <array>
 #include <memory>
 #include <vector>
 
 namespace
 {
+// The icon for each element mode: a presentation fact, kept beside the tool
+// that shows the modes rather than in the layer-agnostic traits.
+constexpr std::array<IconId, MeshElementKindCount> kModeIcons = {
+    IconId::ModeObject,
+    IconId::ModeVertex,
+    IconId::ModeEdge,
+    IconId::ModeFace,
+};
+
 // Expand the loop through the element under the cursor (edge loop or face strip),
 // restricted to the active body. Empty if nothing resolves.
 std::vector<SelectableRef> GatherLoop(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos,
@@ -48,6 +58,30 @@ std::vector<SelectableRef> AllElementsOf(const EditorScene& scene, EntityId enti
 }
 }
 
+SelectTool::SelectTool()
+{
+    const auto& kinds = AllMeshElementKinds();
+    for (std::size_t i = 0; i < kinds.size(); ++i)
+        Variants[i] = { .Label = Traits(kinds[i]).Label, .Icon = kModeIcons[static_cast<std::size_t>(kinds[i])] };
+}
+
+int SelectTool::GetActiveVariant(const ToolContext& ctx) const
+{
+    const auto& kinds = AllMeshElementKinds();
+    const MeshElementKind kind = ctx.MeshEdit.GetElementKind();
+    for (std::size_t i = 0; i < kinds.size(); ++i)
+        if (kinds[i] == kind)
+            return static_cast<int>(i);
+    return -1;
+}
+
+void SelectTool::SelectVariant(ToolContext& ctx, std::size_t index)
+{
+    const auto& kinds = AllMeshElementKinds();
+    if (index < kinds.size())
+        ctx.MeshEdit.SetElementKind(kinds[index]);
+}
+
 std::string_view SelectTool::GetId() const
 {
     return "select";
@@ -58,9 +92,9 @@ std::string_view SelectTool::GetDisplayName() const
     return "Select";
 }
 
-std::string_view SelectTool::GetIcon() const
+IconId SelectTool::GetIcon() const
 {
-    return ICON_FA_ARROW_POINTER;
+    return IconId::Pointer;
 }
 
 // Unmodified letters here stay clear of the fly camera's W/A/S/D and Q/E.

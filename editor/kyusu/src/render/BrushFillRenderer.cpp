@@ -33,6 +33,11 @@ void BrushFillRenderer::DrawZoneOverlay(const FrameContext& frame,
                                         const CameraRenderData& camera,
                                         const EditorScene& scene, const Vec4& color)
 {
+    // Intentional immediate path: the context-zone wash tessellates every
+    // piece each frame rather than reading the retained draw set. It is the
+    // one per-frame piece walk the editor keeps, counted by PieceWalks so it
+    // cannot grow quietly; draw it from the context builder's queue with a
+    // tint when it shows up in a profile.
     std::vector<EditorLineVertex> vertices;
     ForEachVisibleBrush(scene, /*skipLocked*/ false,
         [&](EntityId, const BrushMesh& mesh, const Transform3f& transform)

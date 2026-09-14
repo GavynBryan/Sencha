@@ -147,6 +147,19 @@ TEST(BrushOps, ClipByAxisPlaneKeepsHalfAndCaps)
     EXPECT_EQ(half.Vertices.size(), 8u);  // 4 at x=-1, 4 new at x=0
 }
 
+TEST(BrushOps, AnOpenClipLeavesTheCutUncapped)
+{
+    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
+    const Plane plane{ Vec3d{ 1.0f, 0.0f, 0.0f }, 0.0f };
+    const BrushMesh capped = BrushOps::Clip(box, plane, false);
+    const BrushMesh open = BrushOps::Clip(box, plane, false, BrushOps::ClipCap::Open);
+    EXPECT_EQ(open.Faces.size(), capped.Faces.size() - 1);
+    BrushMesh check = open;
+    const BrushRepairResult report = BrushValidateAndRepair(check);
+    EXPECT_TRUE(report.Ok);
+    EXPECT_FALSE(report.Closed);
+}
+
 TEST(BrushOps, ClipByDiagonalPlaneStaysClosed)
 {
     const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
@@ -592,15 +605,6 @@ namespace
         return host;
     }
 
-    std::size_t CountFacesWithLoopSize(const BrushMesh& mesh, std::size_t n)
-    {
-        std::size_t count = 0;
-        for (const BrushFace& face : mesh.Faces)
-            if (face.Loop.size() == n)
-                ++count;
-        return count;
-    }
-
     std::size_t CountFrameFaceCentroidsInside(const BrushMesh& mesh,
                                               const BrushOps::BrushRectFaceFrame& frame,
                                               Vec2d rectMin, Vec2d rectMax)
@@ -627,39 +631,6 @@ namespace
         return count;
     }
 
-    std::uint32_t FaceWithNormal(const BrushMesh& mesh, Vec3d normal)
-    {
-        for (std::uint32_t i = 0; i < mesh.Faces.size(); ++i)
-            if (BrushComputeFaceNormal(mesh, mesh.Faces[i]).Dot(normal) > 0.9f)
-                return i;
-        return 0;
-    }
-
-    BrushMesh MakeRectFrustum(float frontHalf, float backHalf, Vec2d backOffset = {})
-    {
-        BrushMesh mesh;
-        mesh.Vertices = {
-            { { -frontHalf, -frontHalf, 1.0f } },
-            { {  frontHalf, -frontHalf, 1.0f } },
-            { {  frontHalf,  frontHalf, 1.0f } },
-            { { -frontHalf,  frontHalf, 1.0f } },
-            { { backOffset.X - backHalf, backOffset.Y - backHalf, -1.0f } },
-            { { backOffset.X + backHalf, backOffset.Y - backHalf, -1.0f } },
-            { { backOffset.X + backHalf, backOffset.Y + backHalf, -1.0f } },
-            { { backOffset.X - backHalf, backOffset.Y + backHalf, -1.0f } },
-        };
-        mesh.Faces = {
-            BrushFace{ .Loop = { 0, 1, 2, 3 } },
-            BrushFace{ .Loop = { 4, 7, 6, 5 } },
-            BrushFace{ .Loop = { 0, 4, 5, 1 } },
-            BrushFace{ .Loop = { 1, 5, 6, 2 } },
-            BrushFace{ .Loop = { 2, 6, 7, 3 } },
-            BrushFace{ .Loop = { 3, 7, 4, 0 } },
-        };
-        BrushValidateAndRepair(mesh);
-        BrushOrientFacesOutward(mesh);
-        return mesh;
-    }
 }
 
 TEST(BrushOpsCarve, RectFaceFrameAcceptsBoxFaceRejectsOthers)
@@ -769,230 +740,6 @@ TEST(BrushOpsCarve, ThroughLoopBoundsRejectOppositePairFlushAndFullCover)
         host.Mesh, host.Face, { 0.0f, 0.0f }, { 2.0f, 2.0f });
     EXPECT_EQ(cover.Faces.size(), host.Mesh.Faces.size());
     EXPECT_EQ(cover.Vertices.size(), host.Mesh.Vertices.size());
-}
-
-TEST(BrushOpsCarve, InteriorCarveMakesFiveQuadsClosed)
-{
-    CarveHost host = MakeCarveHost();
-    BrushMesh out = BrushOps::CarveFaceRect(host.Mesh, host.Face, { 0.5f, 0.5f }, { 1.5f, 1.5f });
-
-    EXPECT_EQ(out.Vertices.size(), 12u); // 8 + 4 minted corners
-    EXPECT_EQ(out.Faces.size(), 10u);    // 5 box faces + 5 carve quads
-    EXPECT_EQ(CountFacesWithLoopSize(out, 4), 10u);
-    EXPECT_TRUE(BrushValidateAndRepair(out).Ok);
-    EXPECT_TRUE(IsClosed(out));
-    EXPECT_TRUE(AllNormalsOutward(out));
-
-    // Center-last contract: the kept face's centroid is the mapped rect center.
-    const Vec3d expected = host.Frame.Origin + host.Frame.AxisU * 1.0f + host.Frame.AxisV * 1.0f;
-    EXPECT_NEAR((BrushFaceCentroid(out, out.Faces.back()) - expected).Magnitude(), 0.0f, 1e-4f);
-}
-
-TEST(BrushOpsCarve, OneFlushSideMakesFourQuadsAndHexagonNeighbor)
-{
-    CarveHost host = MakeCarveHost();
-    BrushMesh out = BrushOps::CarveFaceRect(host.Mesh, host.Face, { 0.5f, 0.0f }, { 1.5f, 1.0f });
-
-    EXPECT_EQ(out.Vertices.size(), 12u); // 4 minted (2 interior + 2 on the flush edge)
-    EXPECT_EQ(out.Faces.size(), 9u);     // 5 box faces + 4 carve quads
-    EXPECT_TRUE(BrushValidateAndRepair(out).Ok);
-    EXPECT_TRUE(IsClosed(out));
-    // Exactly one neighbor grew to a hexagon (the face across the flush edge).
-    EXPECT_EQ(CountFacesWithLoopSize(out, 6), 1u);
-    EXPECT_EQ(CountFacesWithLoopSize(out, 4), 8u);
-}
-
-TEST(BrushOpsCarve, TwoFlushOppositeMakesThreeStrips)
-{
-    CarveHost host = MakeCarveHost();
-    BrushMesh out = BrushOps::CarveFaceRect(host.Mesh, host.Face, { 0.5f, 0.0f }, { 1.5f, 2.0f });
-
-    EXPECT_EQ(out.Vertices.size(), 12u);
-    EXPECT_EQ(out.Faces.size(), 8u); // 5 box faces + 3 strips
-    EXPECT_TRUE(BrushValidateAndRepair(out).Ok);
-    EXPECT_TRUE(IsClosed(out));
-    EXPECT_EQ(CountFacesWithLoopSize(out, 6), 2u); // both flush-edge neighbors
-}
-
-TEST(BrushOpsCarve, TwoFlushAdjacentReusesHostCorner)
-{
-    CarveHost host = MakeCarveHost();
-    BrushMesh out = BrushOps::CarveFaceRect(host.Mesh, host.Face, { 0.0f, 0.0f }, { 1.0f, 1.0f });
-
-    EXPECT_EQ(out.Vertices.size(), 11u); // 3 minted; the corner reuses the host index
-    EXPECT_EQ(out.Faces.size(), 8u);     // 5 box faces + center + 2 ring quads
-    EXPECT_TRUE(BrushValidateAndRepair(out).Ok);
-    EXPECT_TRUE(IsClosed(out));
-    // The center loop contains the original host corner index.
-    const std::uint32_t hostCorner = host.Mesh.Faces[host.Face].Loop[0];
-    const BrushFace& center = out.Faces.back();
-    EXPECT_NE(std::find(center.Loop.begin(), center.Loop.end(), hostCorner), center.Loop.end());
-    // Each flush edge gained ONE split vertex: two pentagon neighbors.
-    EXPECT_EQ(CountFacesWithLoopSize(out, 5), 2u);
-}
-
-TEST(BrushOpsCarve, ThreeFlushMakesTwoQuads)
-{
-    CarveHost host = MakeCarveHost();
-    BrushMesh out = BrushOps::CarveFaceRect(host.Mesh, host.Face, { 1.0f, 0.0f }, { 2.0f, 2.0f });
-
-    EXPECT_EQ(out.Vertices.size(), 10u); // 2 minted split vertices
-    EXPECT_EQ(out.Faces.size(), 7u);     // 5 box faces + center + 1 ring quad
-    EXPECT_TRUE(BrushValidateAndRepair(out).Ok);
-    EXPECT_TRUE(IsClosed(out));
-    EXPECT_EQ(CountFacesWithLoopSize(out, 5), 2u); // bottom + top neighbors
-}
-
-TEST(BrushOpsCarve, DegenerateInputsAreNoOps)
-{
-    CarveHost host = MakeCarveHost();
-
-    // Full cover.
-    EXPECT_EQ(BrushOps::CarveFaceRect(host.Mesh, host.Face, { 0.0f, 0.0f }, { 2.0f, 2.0f }).Faces.size(),
-              host.Mesh.Faces.size());
-    // Zero size.
-    EXPECT_EQ(BrushOps::CarveFaceRect(host.Mesh, host.Face, { 1.0f, 1.0f }, { 1.0f, 1.5f }).Faces.size(),
-              host.Mesh.Faces.size());
-    // Entirely off the face (clamps to zero size).
-    EXPECT_EQ(BrushOps::CarveFaceRect(host.Mesh, host.Face, { 5.0f, 5.0f }, { 6.0f, 6.0f }).Faces.size(),
-              host.Mesh.Faces.size());
-    // Out-of-range face index.
-    EXPECT_EQ(BrushOps::CarveFaceRect(host.Mesh, 99, { 0.5f, 0.5f }, { 1.5f, 1.5f }).Faces.size(),
-              host.Mesh.Faces.size());
-}
-
-TEST(BrushOpsCarve, SwappedCornersCanonicalize)
-{
-    CarveHost host = MakeCarveHost();
-    const BrushMesh a = BrushOps::CarveFaceRect(host.Mesh, host.Face, { 0.5f, 0.5f }, { 1.5f, 1.5f });
-    const BrushMesh b = BrushOps::CarveFaceRect(host.Mesh, host.Face, { 1.5f, 1.5f }, { 0.5f, 0.5f });
-    ASSERT_EQ(a.Vertices.size(), b.Vertices.size());
-    for (std::size_t i = 0; i < a.Vertices.size(); ++i)
-        EXPECT_NEAR((a.Vertices[i].Position - b.Vertices[i].Position).Magnitude(), 0.0f, 1e-6f);
-}
-
-TEST(BrushOpsCarve, SnapsWithinWeldToleranceProducesFlushTopology)
-{
-    CarveHost host = MakeCarveHost();
-    // 5e-5 off the bottom edge: snaps flush, identical topology to the 1-flush
-    // case, and repair has nothing to weld (no sliver).
-    BrushMesh out = BrushOps::CarveFaceRect(host.Mesh, host.Face, { 0.5f, 5e-5f }, { 1.5f, 1.0f });
-    EXPECT_EQ(out.Vertices.size(), 12u);
-    EXPECT_EQ(out.Faces.size(), 9u);
-    const BrushRepairResult repair = BrushValidateAndRepair(out);
-    EXPECT_TRUE(repair.Ok);
-    EXPECT_EQ(out.Vertices.size(), 12u); // weld removed nothing
-
-    // Corner variant: both coordinates snap, host corner reused.
-    BrushMesh corner = BrushOps::CarveFaceRect(host.Mesh, host.Face, { 5e-5f, 5e-5f }, { 1.0f, 1.0f });
-    EXPECT_EQ(corner.Vertices.size(), 11u);
-    EXPECT_EQ(corner.Faces.size(), 8u);
-}
-
-TEST(BrushOpsCarve, InheritsHostMaterialVerbatim)
-{
-    CarveHost host = MakeCarveHost();
-    FaceMaterial& material = host.Mesh.Faces[host.Face].Material;
-    material.Material = AssetRef{ AssetType::Material, "asset://materials/wall.smat" };
-    material.Uv.Scale = { 0.25f, 4.0f };
-    material.Uv.Offset = { 0.3f, 0.7f };
-    material.Uv.Rotation = 37.0f;
-
-    const BrushMesh out = BrushOps::CarveFaceRect(host.Mesh, host.Face, { 0.5f, 0.5f }, { 1.5f, 1.5f });
-    int carved = 0;
-    for (const BrushFace& face : out.Faces)
-    {
-        if (face.Material.Material.Path != "asset://materials/wall.smat")
-            continue;
-        EXPECT_FLOAT_EQ(face.Material.Uv.Scale.X, 0.25f);
-        EXPECT_FLOAT_EQ(face.Material.Uv.Offset.X, 0.3f);
-        EXPECT_FLOAT_EQ(face.Material.Uv.Offset.Y, 0.7f);
-        EXPECT_FLOAT_EQ(face.Material.Uv.Rotation, 37.0f);
-        ++carved;
-    }
-    EXPECT_EQ(carved, 5); // all five replacement quads carry the projection
-}
-
-TEST(BrushOpsCarve, WindingSurvivesRepair)
-{
-    CarveHost host = MakeCarveHost();
-    const Vec3d hostNormal = BrushComputeFaceNormal(host.Mesh, host.Mesh.Faces[host.Face]);
-    BrushMesh out = BrushOps::CarveFaceRect(host.Mesh, host.Face, { 0.5f, 0.0f }, { 1.5f, 1.0f });
-
-    // The four replacement faces are the appended tail; each winds with the host.
-    for (std::size_t i = out.Faces.size() - 4; i < out.Faces.size(); ++i)
-        EXPECT_GT(BrushComputeFaceNormal(out, out.Faces[i]).Dot(hostNormal), 0.99f);
-
-    ASSERT_TRUE(BrushValidateAndRepair(out).Ok);
-    EXPECT_TRUE(AllNormalsOutward(out));
-}
-
-TEST(BrushOpsCarve, OpenMeshFlushSideIsTolerated)
-{
-    BrushMesh plane = BrushOps::MakePlane({ 1.0f, 0.0f, 1.0f }, 1);
-    ASSERT_TRUE(BrushOps::RectFaceFrame(plane, 0).has_value());
-    const BrushOps::BrushRectFaceFrame frame = *BrushOps::RectFaceFrame(plane, 0);
-
-    BrushMesh out = BrushOps::CarveFaceRect(plane, 0, { frame.Width * 0.25f, 0.0f },
-                                            { frame.Width * 0.75f, frame.Height * 0.5f });
-    EXPECT_EQ(out.Faces.size(), 4u);   // 3 ring quads + center
-    EXPECT_EQ(out.Vertices.size(), 8u); // 4 host + 4 minted, no neighbor to split
-    EXPECT_TRUE(BrushValidateAndRepair(out).Ok);
-}
-
-TEST(BrushOpsCarve, ThroughRectCarveBridgesOppositeFacesIntoClosedHole)
-{
-    CarveHost host = MakeCarveHost();
-    host.Mesh.Faces[host.Face].Material.Material =
-        AssetRef{ AssetType::Material, "asset://materials/hole.smat" };
-
-    BrushMesh out = BrushOps::CarveFaceRectThrough(host.Mesh, host.Face,
-                                                   { 0.5f, 0.5f }, { 1.5f, 1.5f });
-
-    EXPECT_EQ(out.Vertices.size(), 16u);
-    EXPECT_EQ(out.Faces.size(), 16u);
-    const BrushRepairResult repair = BrushValidateAndRepair(out);
-    EXPECT_TRUE(repair.Ok);
-    EXPECT_TRUE(repair.Closed);
-
-    int sourceMaterialFaces = 0;
-    for (const BrushFace& face : out.Faces)
-        if (face.Material.Material.Path == "asset://materials/hole.smat")
-            ++sourceMaterialFaces;
-    EXPECT_EQ(sourceMaterialFaces, 8);
-}
-
-TEST(BrushOpsCarve, ThroughRectCarveAcceptsLargerOffsetOppositeFace)
-{
-    BrushMesh mesh = MakeRectFrustum(/*frontHalf*/ 0.5f, /*backHalf*/ 1.25f,
-                                     Vec2d{ 0.25f, 0.0f });
-    const std::uint32_t front = FaceWithNormal(mesh, { 0.0f, 0.0f, 1.0f });
-    const BrushOps::BrushRectFaceFrame frame = *BrushOps::RectFaceFrame(mesh, front);
-
-    BrushMesh out = BrushOps::CarveFaceRectThrough(
-        mesh, front,
-        { frame.Width * 0.25f, frame.Height * 0.25f },
-        { frame.Width * 0.75f, frame.Height * 0.75f });
-
-    EXPECT_GT(out.Faces.size(), mesh.Faces.size());
-    const BrushRepairResult repair = BrushValidateAndRepair(out);
-    EXPECT_TRUE(repair.Ok);
-    EXPECT_TRUE(repair.Closed);
-}
-
-TEST(BrushOpsCarve, ThroughRectCarveRejectsWhenProjectionEscapesOppositeFace)
-{
-    BrushMesh mesh = MakeRectFrustum(/*frontHalf*/ 1.25f, /*backHalf*/ 0.35f);
-    const std::uint32_t front = FaceWithNormal(mesh, { 0.0f, 0.0f, 1.0f });
-    const BrushOps::BrushRectFaceFrame frame = *BrushOps::RectFaceFrame(mesh, front);
-
-    BrushMesh out = BrushOps::CarveFaceRectThrough(
-        mesh, front,
-        { frame.Width * 0.25f, frame.Height * 0.25f },
-        { frame.Width * 0.75f, frame.Height * 0.75f });
-
-    EXPECT_EQ(out.Vertices.size(), mesh.Vertices.size());
-    EXPECT_EQ(out.Faces.size(), mesh.Faces.size());
 }
 
 namespace
@@ -1178,63 +925,6 @@ namespace
     }
 }
 
-TEST(BrushOpsCarve, ThroughCarveFlushOneSideOpensNotch)
-{
-    CarveHost host = MakeCarveHost();
-    BrushMesh out = BrushOps::CarveFaceRectThrough(host.Mesh, host.Face, { 0.5f, 0.0f }, { 1.5f, 1.0f });
-
-    // Source ring 3 + target ring 3 + split neighbor 2 + walls 3 on the 3
-    // remaining box faces.
-    EXPECT_EQ(out.Faces.size(), 14u);
-    EXPECT_EQ(out.Vertices.size(), 16u);
-    EXPECT_TRUE(BrushValidateAndRepair(out).Ok);
-    EXPECT_TRUE(IsClosed(out));
-    EXPECT_EQ(EulerCharacteristic(out), 2); // a notch is still genus 0
-
-    // The opening is open: nothing spans the flush rect on the source plane.
-    EXPECT_EQ(CountFrameFaceCentroidsInside(out, host.Frame, { 0.5f, 0.0f }, { 1.5f, 1.0f }), 0u);
-}
-
-TEST(BrushOpsCarve, ThroughCarveFlushAdjacentSidesCutsCornerNotch)
-{
-    CarveHost host = MakeCarveHost();
-    BrushMesh out = BrushOps::CarveFaceRectThrough(host.Mesh, host.Face, { 0.0f, 0.0f }, { 1.0f, 1.0f });
-
-    EXPECT_EQ(out.Faces.size(), 10u);
-    EXPECT_TRUE(BrushValidateAndRepair(out).Ok);
-    EXPECT_TRUE(IsClosed(out));
-    EXPECT_EQ(EulerCharacteristic(out), 2);
-    EXPECT_EQ(CountFrameFaceCentroidsInside(out, host.Frame, { 0.0f, 0.0f }, { 1.0f, 1.0f }), 0u);
-}
-
-TEST(BrushOpsCarve, ThroughCarveFlushThreeSidesRemovesBoundarySlab)
-{
-    CarveHost host = MakeCarveHost();
-    BrushMesh out = BrushOps::CarveFaceRectThrough(host.Mesh, host.Face, { 0.0f, 0.0f }, { 2.0f, 1.0f });
-
-    // The whole flush-side slab goes: the result is the box shrunk to the kept
-    // half, still closed and simple. Face count returns to 6.
-    EXPECT_EQ(out.Faces.size(), 6u);
-    EXPECT_EQ(out.Vertices.size(), 12u); // 8 + minted rims; the slab corners orphan
-    EXPECT_TRUE(BrushValidateAndRepair(out).Ok); // repair compacts the orphans away
-    EXPECT_TRUE(IsClosed(out));
-    EXPECT_EQ(EulerCharacteristic(out), 2);
-    EXPECT_EQ(out.Vertices.size(), 8u);
-}
-
-TEST(BrushOpsCarve, ThroughCarveRejectsOppositePairFlushAndFullCover)
-{
-    CarveHost host = MakeCarveHost();
-    // Opposite-pair-only channel would split the brush in two: refused.
-    EXPECT_EQ(BrushOps::CarveFaceRectThrough(host.Mesh, host.Face,
-                                             { 0.0f, 0.5f }, { 2.0f, 1.5f }).Faces.size(),
-              host.Mesh.Faces.size());
-    // Full cover removes everything: refused.
-    EXPECT_EQ(BrushOps::CarveFaceRectThrough(host.Mesh, host.Face,
-                                             { 0.0f, 0.0f }, { 2.0f, 2.0f }).Faces.size(),
-              host.Mesh.Faces.size());
-}
-
 TEST(BrushOpsCarve, ThroughLoopBoundsFlushSideOpensNotch)
 {
     CarveHost host = MakeCarveHost();
@@ -1290,127 +980,6 @@ TEST(BrushOpsCarve, LoopBoundsCoincidingWithExistingLoopSkipThatCut)
 
 namespace
 {
-    std::size_t CountFacesWithNormalZ(const BrushMesh& mesh, float sign)
-    {
-        std::size_t count = 0;
-        for (const BrushFace& face : mesh.Faces)
-            if (BrushComputeFaceNormal(mesh, face).Z * sign > 0.9f)
-                ++count;
-        return count;
-    }
-
-    std::uint32_t FindQuadFaceWithNormalZ(const BrushMesh& mesh, float sign)
-    {
-        for (std::uint32_t f = 0; f < mesh.Faces.size(); ++f)
-            if (mesh.Faces[f].Loop.size() == 4
-                && BrushComputeFaceNormal(mesh, mesh.Faces[f]).Z * sign > 0.9f)
-                return f;
-        return std::numeric_limits<std::uint32_t>::max();
-    }
-}
-
-TEST(BrushOpsCarve, ThroughCarveFlushConsumesSubdividedSideChannel)
-{
-    CarveHost host = MakeCarveHost();
-    std::uint32_t sideFace = std::numeric_limits<std::uint32_t>::max();
-    for (std::uint32_t f = 0; f < host.Mesh.Faces.size(); ++f)
-        if (BrushComputeFaceNormal(host.Mesh, host.Mesh.Faces[f]).X > 0.9f)
-            sideFace = f;
-    ASSERT_NE(sideFace, std::numeric_limits<std::uint32_t>::max());
-
-    // Wrap a loop pair around the box's side faces (the family that leaves the
-    // +Z source face intact), subdividing every side face across the future
-    // channel.
-    BrushMesh looped = BrushOps::InsertFaceLoopBounds(host.Mesh, sideFace,
-                                                      { 0.5f, 0.0f }, { 1.5f, 2.0f });
-    if (CountFacesWithNormalZ(looped, 1.0f) != 1)
-        looped = BrushOps::InsertFaceLoopBounds(host.Mesh, sideFace,
-                                                { 0.0f, 0.5f }, { 2.0f, 1.5f });
-    ASSERT_EQ(CountFacesWithNormalZ(looped, 1.0f), 1u);
-    ASSERT_GT(looped.Faces.size(), host.Mesh.Faces.size());
-
-    const std::uint32_t source = FindQuadFaceWithNormalZ(looped, 1.0f);
-    ASSERT_NE(source, std::numeric_limits<std::uint32_t>::max());
-
-    // Each single-flush pierce crosses a subdivided side plane: the channel
-    // must consume every crossed piece (delete or ring-cut) and come out a
-    // closed genus-0 notch, not garbage walls to points beyond a sub-face.
-    const Vec2d rects[4][2] = {
-        { { 0.5f, 0.0f }, { 1.5f, 1.0f } },
-        { { 1.0f, 0.5f }, { 2.0f, 1.5f } },
-        { { 0.5f, 1.0f }, { 1.5f, 2.0f } },
-        { { 0.0f, 0.5f }, { 1.0f, 1.5f } },
-    };
-    for (const auto& rect : rects)
-    {
-        BrushMesh out = BrushOps::CarveFaceRectThrough(looped, source, rect[0], rect[1]);
-        ASSERT_TRUE(out.Faces.size() != looped.Faces.size()
-                    || out.Vertices.size() != looped.Vertices.size());
-        EXPECT_TRUE(BrushValidateAndRepair(out).Ok);
-        EXPECT_TRUE(IsClosed(out));
-        EXPECT_EQ(EulerCharacteristic(out), 2);
-    }
-}
-
-TEST(BrushOpsCarve, ThroughCarveAllSeamSidesRemovesInteriorPrism)
-{
-    // Subdivide the source (and, via the wrapping loops, the target) into a
-    // 3x3 grid, then pierce the center sub-face covering it entirely: every
-    // side seams against a coplanar neighbor, so the result is a square tube
-    // through the box (genus 1), not a reject.
-    CarveHost host = MakeCarveHost();
-    BrushMesh grid = BrushOps::InsertFaceLoopBounds(host.Mesh, host.Face,
-                                                    { 0.5f, 0.5f }, { 1.5f, 1.5f });
-    ASSERT_GT(grid.Faces.size(), host.Mesh.Faces.size());
-
-    // The center sub-face on the source plane: corners at (0.5,0.5)-(1.5,1.5)
-    // of the original frame.
-    std::uint32_t center = std::numeric_limits<std::uint32_t>::max();
-    for (std::uint32_t f = 0; f < grid.Faces.size(); ++f)
-    {
-        if (grid.Faces[f].Loop.size() != 4
-            || BrushComputeFaceNormal(grid, grid.Faces[f]).Z < 0.9f)
-            continue;
-        bool matches = true;
-        for (std::uint32_t v : grid.Faces[f].Loop)
-        {
-            const Vec3d rel = grid.Vertices[v].Position - host.Frame.Origin;
-            const Vec2d uv{ rel.Dot(host.Frame.AxisU), rel.Dot(host.Frame.AxisV) };
-            matches &= (std::abs(uv.X - 0.5f) < 1e-3f || std::abs(uv.X - 1.5f) < 1e-3f)
-                    && (std::abs(uv.Y - 0.5f) < 1e-3f || std::abs(uv.Y - 1.5f) < 1e-3f);
-        }
-        if (matches)
-        {
-            center = f;
-            break;
-        }
-    }
-    ASSERT_NE(center, std::numeric_limits<std::uint32_t>::max());
-
-    const std::optional<BrushOps::BrushRectFaceFrame> centerFrame =
-        BrushOps::RectFaceFrame(grid, center);
-    ASSERT_TRUE(centerFrame.has_value());
-    BrushMesh out = BrushOps::CarveFaceRectThrough(
-        grid, center, { 0.0f, 0.0f }, { centerFrame->Width, centerFrame->Height });
-
-    ASSERT_TRUE(out.Faces.size() != grid.Faces.size()
-                || out.Vertices.size() != grid.Vertices.size());
-    EXPECT_TRUE(BrushValidateAndRepair(out).Ok);
-    EXPECT_TRUE(IsClosed(out));
-    EXPECT_EQ(EulerCharacteristic(out), 0); // a through-tube: torus
-}
-
-TEST(BrushOpsCarve, CarveFaceRectWorksOnAPlane)
-{
-    // A plane is an open single-quad mesh; carve must retopologize it the same
-    // way it does a box face (ring quads + center rect), tolerating openness.
-    const BrushMesh plane = BrushOps::MakePlane({ 1.0f, 0.0f, 1.0f }, /*depthAxis*/ 1);
-    ASSERT_EQ(plane.Faces.size(), 1u);
-
-    BrushMesh out = BrushOps::CarveFaceRect(plane, 0, { 0.5f, 0.5f }, { 1.5f, 1.5f });
-    EXPECT_EQ(out.Vertices.size(), 8u); // 4 host + 4 minted corners
-    EXPECT_EQ(out.Faces.size(), 5u);    // 4 ring quads + center
-    EXPECT_TRUE(BrushValidateAndRepair(out).Ok);
 }
 
 TEST(BrushOpsCarve, LoopBoundsWorkOnASubdividedPlane)
@@ -1422,97 +991,6 @@ TEST(BrushOpsCarve, LoopBoundsWorkOnASubdividedPlane)
     EXPECT_GT(out.Vertices.size(), plane.Vertices.size());
     EXPECT_GT(out.Faces.size(), plane.Faces.size());
     EXPECT_TRUE(BrushValidateAndRepair(out).Ok);
-}
-
-TEST(BrushOpsCarve, PierceWallsGetTheirOwnUvProjection)
-{
-    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
-    std::uint32_t plusZ = 0;
-    for (std::uint32_t i = 0; i < box.Faces.size(); ++i)
-        if (BrushComputeFaceNormal(box, box.Faces[i]).Z > 0.9f)
-            plusZ = i;
-
-    BrushMesh out = BrushOps::CarveFaceRectThrough(box, plusZ, { 0.5f, 0.5f }, { 1.5f, 1.5f });
-    ASSERT_GT(out.Faces.size(), box.Faces.size());
-    EXPECT_TRUE(AllUvAxesInFacePlanes(out));
-
-    out = BrushOps::InsertFaceLoopBoundsThrough(box, plusZ, { 0.5f, 0.5f }, { 1.5f, 1.5f });
-    ASSERT_GT(out.Faces.size(), box.Faces.size());
-    EXPECT_TRUE(AllUvAxesInFacePlanes(out));
-}
-
-TEST(BrushOpsCarve, CarveOnPlaneKeepsFacesPointingUp)
-{
-    const BrushMesh plane = BrushOps::MakePlane({ 1.0f, 0.0f, 1.0f }, /*depthAxis*/ 1);
-    const Vec3d hostNormal = BrushComputeFaceNormal(plane, plane.Faces[0]);
-    EXPECT_GT(hostNormal.Y, 0.9f);
-    const auto frame = BrushOps::RectFaceFrame(plane, 0);
-    ASSERT_TRUE(frame.has_value());
-    EXPECT_GT(frame->AxisU.Cross(frame->AxisV).Dot(hostNormal), 0.99f);
-
-    BrushMesh out = BrushOps::CarveFaceRect(plane, 0, { 0.5f, 0.5f }, { 1.5f, 1.5f });
-    ASSERT_EQ(out.Faces.size(), 5u);
-    for (const BrushFace& f : out.Faces)
-    {
-        const Vec3d n = BrushComputeFaceNormal(out, f);
-        EXPECT_GT(n.Y, 0.9f);
-    }
-}
-
-TEST(BrushOpsCarve, PierceOnAPlanePunchesAHole)
-{
-    const BrushMesh plane = BrushOps::MakePlane({ 1.0f, 0.0f, 1.0f }, /*depthAxis*/ 1);
-
-    // Rect variant: carve minus the center face.
-    BrushMesh rect = BrushOps::CarveFaceRectThrough(plane, 0, { 0.5f, 0.5f }, { 1.5f, 1.5f });
-    EXPECT_EQ(rect.Faces.size(), 4u); // 4 ring quads, no center
-    EXPECT_TRUE(BrushValidateAndRepair(rect).Ok);
-
-    // Loop variant: loop cuts minus the bounded rect face.
-    BrushMesh loop = BrushOps::InsertFaceLoopBoundsThrough(plane, 0, { 0.5f, 0.5f }, { 1.5f, 1.5f });
-    EXPECT_GT(loop.Faces.size(), plane.Faces.size());
-    EXPECT_TRUE(BrushValidateAndRepair(loop).Ok);
-    const auto frame = BrushOps::RectFaceFrame(plane, 0);
-    ASSERT_TRUE(frame.has_value());
-    EXPECT_EQ(CountFrameFaceCentroidsInside(loop, *frame, { 0.5f, 0.5f }, { 1.5f, 1.5f }), 0u);
-}
-
-TEST(BrushOpsCarve, PierceStillRefusesBlindHolesOnClosedSolids)
-{
-    // An odd-sided prism has no parallel opposite side face; the pierce must
-    // refuse rather than open the solid with a blind hole.
-    const BrushMesh cylinder = BrushOps::MakeCylinder({ 1.0f, 1.0f, 1.0f }, /*depthAxis*/ 2, 7);
-    std::uint32_t cap = std::numeric_limits<std::uint32_t>::max();
-    for (std::uint32_t i = 0; i < cylinder.Faces.size(); ++i)
-        if (cylinder.Faces[i].Loop.size() == 4
-            && BrushOps::RectFaceFrame(cylinder, i).has_value())
-            cap = i;
-    if (cap == std::numeric_limits<std::uint32_t>::max())
-        GTEST_SKIP() << "no rectangular side face on this prism";
-    const auto frame = BrushOps::RectFaceFrame(cylinder, cap);
-    const BrushMesh out = BrushOps::CarveFaceRectThrough(
-        cylinder, cap, { frame->Width * 0.25f, frame->Height * 0.25f },
-        { frame->Width * 0.75f, frame->Height * 0.75f });
-    EXPECT_EQ(out.Faces.size(), cylinder.Faces.size());
-}
-
-TEST(BrushOpsCarve, FlushPierceWallsGetTheirOwnUvProjection)
-{
-    // A rect flush on one side runs the notch path (CarveThroughWithFlushSides),
-    // which mints its tunnel walls separately from BridgeCapsIntoTunnel.
-    const BrushMesh box = BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f });
-    std::uint32_t plusZ = 0;
-    for (std::uint32_t i = 0; i < box.Faces.size(); ++i)
-        if (BrushComputeFaceNormal(box, box.Faces[i]).Z > 0.9f)
-            plusZ = i;
-
-    BrushMesh out = BrushOps::CarveFaceRectThrough(box, plusZ, { 0.5f, 0.0f }, { 1.5f, 1.0f });
-    ASSERT_TRUE(out.Faces.size() != box.Faces.size() || out.Vertices.size() != box.Vertices.size());
-    EXPECT_TRUE(AllUvAxesInFacePlanes(out));
-
-    out = BrushOps::InsertFaceLoopBoundsThrough(box, plusZ, { 0.5f, 0.0f }, { 1.5f, 1.0f });
-    ASSERT_TRUE(out.Faces.size() != box.Faces.size() || out.Vertices.size() != box.Vertices.size());
-    EXPECT_TRUE(AllUvAxesInFacePlanes(out));
 }
 
 TEST(BrushOpsInset, SingleFaceMatchesExtrudeShape)

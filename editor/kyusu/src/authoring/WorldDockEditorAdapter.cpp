@@ -1,5 +1,7 @@
 #include "WorldDockEditorAdapter.h"
 
+#include "ui/chrome/ChromeControls.h"
+
 #include "EditorTheme.h"
 #include "commands/CommandStack.h"
 #include "document/EditorDocument.h"
@@ -269,7 +271,7 @@ public:
 
         ImGui::Text("Id  %016llx", static_cast<unsigned long long>(dock->Id.Value));
         ImGui::SameLine();
-        if (ImGui::SmallButton("Generate##dock_id"))
+        if (EditorChrome::Button("Generate##dock_id", "Generate##dock_id", ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
         {
             WorldDock after = *dock;
             after.Id = context.World.MintDockId();
@@ -279,12 +281,12 @@ public:
         const auto zoneCombo = [&](const char* label, ZoneId current, auto set)
         {
             const std::string currentName = ZoneName(context.World.Manifest(), current);
-            if (ImGui::BeginCombo(label, currentName.c_str()))
+            if (EditorChrome::BeginCombo(label, currentName.c_str()))
             {
                 for (const ZoneHeader& zone : context.World.Manifest().Zones)
                     if (ImGui::Selectable(zone.Name.c_str(), zone.Id == current))
                         set(zone.Id);
-                ImGui::EndCombo();
+                EditorChrome::EndCombo();
             }
         };
         zoneCombo("Zone A", dock->ZoneA, [&](ZoneId id)
@@ -311,7 +313,7 @@ public:
                                   std::max(0.025f, dimensions[1] * 0.5f) };
             applyDock(*dock, after);
         }
-        if (ImGui::Button("Swap Sides"))
+        if (EditorChrome::Button("Swap Sides", "Swap Sides", {}, EditorChrome::ButtonTone::Normal))
         {
             DockEntityState before{ *dock, local->Value };
             DockEntityState after = before;
@@ -326,7 +328,7 @@ public:
                     world.Revalidate();
                 }, context.Document));
         }
-        if (ImGui::Button("Suggest Zones From AABBs"))
+        if (EditorChrome::Button("Suggest Zones From AABBs", "Suggest Zones From AABBs", {}, EditorChrome::ButtonTone::Normal))
         {
             const Vec3d normal = -local->Value.Forward();
             WorldDock after = *dock;
@@ -371,7 +373,7 @@ public:
                     return;
                 const std::string preview = choice.IsValid()
                     ? ZoneName(context.World.Manifest(), choice) : "Select a Zone";
-                if (ImGui::BeginCombo(label, preview.c_str()))
+                if (EditorChrome::BeginCombo(label, preview.c_str()))
                 {
                     for (ZoneId candidate : candidates)
                     {
@@ -379,7 +381,7 @@ public:
                         if (ImGui::Selectable(name.c_str(), choice == candidate))
                             choice = candidate;
                     }
-                    ImGui::EndCombo();
+                    EditorChrome::EndCombo();
                 }
             };
             candidateCombo("Side A", AmbiguousA, CandidateA);
@@ -388,7 +390,7 @@ public:
                 && (AmbiguousB.empty() || CandidateB.IsValid());
             if (!complete)
                 ImGui::BeginDisabled();
-            if (ImGui::Button("Apply Explicit Candidates"))
+            if (EditorChrome::Button("Apply Explicit Candidates", "Apply Explicit Candidates", {}, EditorChrome::ButtonTone::Active))
             {
                 if (WorldDock* current = registry.Components.TryGet<WorldDock>(context.Entity))
                 {
@@ -406,7 +408,7 @@ public:
             if (!complete)
                 ImGui::EndDisabled();
             ImGui::SameLine();
-            if (ImGui::Button("Cancel"))
+            if (EditorChrome::Button("Cancel", "Cancel", {}, EditorChrome::ButtonTone::Normal))
             {
                 AmbiguousA.clear();
                 AmbiguousB.clear();

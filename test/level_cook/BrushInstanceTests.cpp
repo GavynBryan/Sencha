@@ -28,7 +28,7 @@ namespace
             const std::array<EntityId, 1> sources = { source };
             const std::array<Transform3f, 1> transforms = { *Scene.TryGetWorldTransform(source) };
             DuplicateEntitiesCommand command(sources, transforms, Scene, Document, Selection,
-                                             /*asInstance*/ true);
+                                             DuplicateBranchPolicy::Subtree, /*asInstance*/ true);
             command.Execute();
             return Selection.GetPrimarySelection().Entity;
         }
@@ -81,7 +81,8 @@ namespace
 
         const std::array<EntityId, 1> sources = { source };
         const std::array<Transform3f, 1> transforms = { *Scene.TryGetWorldTransform(source) };
-        DuplicateEntitiesCommand command(sources, transforms, Scene, Document, Selection, true);
+        DuplicateEntitiesCommand command(sources, transforms, Scene, Document, Selection,
+                                         DuplicateBranchPolicy::Subtree, true);
         command.Execute();
         command.Undo();
 

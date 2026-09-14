@@ -3,6 +3,7 @@
 #include "BrushMesh.h"
 
 #include <math/geometry/3d/Plane.h>
+#include <math/geometry/3d/Transform3d.h>
 
 #include <array>
 #include <cstdint>
@@ -52,6 +53,16 @@ struct BrushOps
     // Whole-brush move (mesh is local space; normally the entity transform moves
     // instead — provided for completeness and testing).
     [[nodiscard]] static BrushMesh Translate(const BrushMesh& mesh, Vec3d delta);
+
+    // Appends `source` (expressed in sourceTransform's frame) onto `target`
+    // (expressed in targetTransform's frame): vertices rebase source-local ->
+    // world -> target-local, loops re-index, and each face's UV projection
+    // converts through world space so the texture renders exactly where it did
+    // (world-aligned projections are brush-local axes; a straight copy would
+    // shift them whenever the frames differ). Pure append: leaves validation to
+    // the caller. Merge, flattening a modifier stack, and bake all build on it.
+    static void AppendRebased(BrushMesh& target, const Transform3f& targetTransform,
+                              const BrushMesh& source, const Transform3f& sourceTransform);
 
     // Move a face's loop along its normal to a new plane position, clamped so the
     // solid keeps at least minThickness against the opposing geometry.
@@ -251,6 +262,33 @@ struct BrushOps
                                                   std::uint32_t a, std::uint32_t b,
                                                   float position = 0.5f);
 
+    // The result of splitting one edge: the new mesh and the index of the vertex
+    // it gained.
+    struct BrushEdgeSplit
+    {
+        BrushMesh Mesh;
+        std::uint32_t Vertex = 0;
+    };
+
+    // Split the undirected edge (a, b) at `point`, in every face loop that uses
+    // it, and carry the edge's soft mark onto both halves.
+    //
+    // This is a topology primitive, not a repair rule: an operation that needs a
+    // vertex on an existing edge says so here, atomically, rather than leaving
+    // T-junctions for validation to infer and reconstruct afterwards.
+    //
+    // It takes the position rather than a scalar along the edge, because callers
+    // that have already snapped to an exact point must not round-trip it through
+    // an edge parameter. A caller holding a parameter computes the point itself.
+    // Refuses (nullopt) when the edge is absent, when `point` is further than
+    // `tolerance` from it, or when the split would land within `tolerance` of an
+    // endpoint and leave an edge too short to survive a weld.
+    [[nodiscard]] static std::optional<BrushEdgeSplit> InsertVertexOnEdge(const BrushMesh& mesh,
+                                                                          std::uint32_t a,
+                                                                          std::uint32_t b,
+                                                                          Vec3d point,
+                                                                          float tolerance);
+
     // Single-edge cut: split only the seed edge (a, b) at `position` (0..1 from a)
     // and subdivide its adjacent quads, without propagating around the loop. Leaves
     // a T-vertex on each cut face's opposite edge (the open result is tolerated for
@@ -263,10 +301,53 @@ struct BrushOps
                                                  float position = 0.5f,
                                                  std::uint32_t faceIndex = kAllAdjacentFaces);
 
-    // Slice by a plane, keep one side, cap the new opening. keepPositiveSide keeps
-    // the half-space the plane normal points into. (The classic clip tool.)
+    // Whether a clip closes the opening it makes with a face, or leaves it open.
+    enum class ClipCap : std::uint8_t
+    {
+        Capped,
+        Open,
+    };
+
+    // How close to the clipping plane a vertex may lie and still count as on
+    // it; such a vertex keeps its position verbatim. Twice the mesh weld
+    // tolerance (BrushValidateAndRepair's 1e-4), for the carve's no-sliver
+    // reason: a crossing is minted only on an edge whose ends are both farther
+    // than this, so it lands at least this far from either end and the repair
+    // weld can never absorb it. The clip tool tests "does the plane cross the
+    // brush" with the same number, so tool and kernel agree.
+    static constexpr float kClipSnap = 2e-4f;
+
+    // The components of a section graph: the cycles, which a cap can close,
+    // and the chains, which run boundary to boundary of an open source and
+    // stay open. Nullopt when the graph is not one a plane through a manifold
+    // with boundary can make: a vertex of degree three or more, or an end
+    // (degree one) that no source boundary accounts for -- a chain ending in
+    // the middle of what should be closed surface is a defect, not an opening.
+    struct SectionComponents
+    {
+        std::vector<std::vector<std::uint32_t>> Cycles;
+        std::vector<std::vector<std::uint32_t>> Chains; // each from one boundary point to another
+    };
+    [[nodiscard]] static std::optional<SectionComponents> ClassifySection(
+        std::uint32_t pointCount, std::span<const std::pair<std::uint32_t, std::uint32_t>> segments,
+        std::span<const std::uint8_t> boundaryPoint); // 1 where the source boundary accounts for the point
+
+    // Slice by a plane, keep one side, and cap the new opening or not.
+    // keepPositiveSide keeps the half-space the plane normal points into. (The
+    // classic clip tool.) Faces may be concave and the section may be several
+    // contours, nested or not; every cycle is capped, a cap with a hole is
+    // bridged into simple faces. An open source (a manifold with boundary, as
+    // DeleteFace leaves) stays open: a section chain that runs from one point
+    // of the source's boundary to another is left as part of the result's
+    // boundary, never closed by invented geometry, whichever cap mode is
+    // asked for. The result is one mesh that may hold several shells when the
+    // cut dismembers the solid -- the caller decides what a shell is (the clip
+    // tool makes each its own brush). An empty mesh means the cut could not
+    // be completed: a section component that is neither a cycle nor a
+    // boundary-anchored chain. A cut that touches nothing returns the solid
+    // whole or empty by side.
     [[nodiscard]] static BrushMesh Clip(const BrushMesh& mesh, const Plane& plane,
-                                        bool keepPositiveSide);
+                                        bool keepPositiveSide, ClipCap cap = ClipCap::Capped);
 
     // The orthonormal in-plane frame of a flat rectangular quad face, or nullopt
     // when the face is not one (non-quad, degenerate, sheared, non-planar).
@@ -283,6 +364,22 @@ struct BrushOps
     };
     [[nodiscard]] static std::optional<BrushRectFaceFrame> RectFaceFrame(const BrushMesh& mesh,
                                                                          std::uint32_t face);
+
+    // The quad face lying in `frame`'s plane whose vertices are exactly the
+    // rect corners (matched in frame UV space, tolerating the interpolation
+    // drift of loop-minted vertices): the cell the wrapping cuts of
+    // InsertFaceLoopBounds leave at the rect. Nullopt when there is none.
+    [[nodiscard]] static std::optional<std::uint32_t> FindRectFaceInFrame(const BrushMesh& mesh,
+                                                                          const BrushRectFaceFrame& frame,
+                                                                          Vec2d rectMin, Vec2d rectMax);
+
+    // One loop cut along the frame line U = bound (cutAlongU) or V = bound,
+    // seeded where the line crosses the frame's rim and wrapped around the
+    // brush. Nullopt when the line cannot be cut as a full loop; a line an edge
+    // already runs along is returned unchanged, since the loop is already there.
+    [[nodiscard]] static std::optional<BrushMesh> InsertFrameLoop(const BrushMesh& mesh,
+                                                                  const BrushRectFaceFrame& frame,
+                                                                  bool cutAlongU, float bound);
 
     // Insert loop cuts at the interior bounds of a rectangle authored in a
     // rectangular face frame. Flush bounds are omitted; every non-flush bound
@@ -308,38 +405,4 @@ struct BrushOps
     // pair of sides is flush (the channel would split the brush in two).
     [[nodiscard]] static BrushMesh InsertFaceLoopBoundsThrough(const BrushMesh& mesh, std::uint32_t face,
                                                                Vec2d rectMin, Vec2d rectMax);
-
-    // Re-topologize a flat rectangular quad face around an inset rectangle given
-    // in RectFaceFrame coordinates (rectMin/rectMax are (u,v) pairs, any corner
-    // order, unclamped). The rectangle becomes its own face, appended LAST (the
-    // caller's handle to it: Faces.back(); success is a grown face count); the
-    // surround decomposes into one convex trapezoid ring quad per non-flush side
-    // via corner-diagonal edges. A rect side within snap tolerance of a host
-    // side clamps flush: that ring quad is omitted and the flush rect corners
-    // become split vertices ON the host edge, inserted as SHARED vertices into
-    // every other face bordering it (the neighbor gains collinear loop vertices
-    // and may become a hexagon: legal). All produced faces are quads carrying
-    // the host's FaceMaterial verbatim (coplanar + projective UVs = exact
-    // texture continuity). Pure topology like InsertEdgeLoop: validation is the
-    // caller's. Returns the mesh unchanged when the face is not a rectangular
-    // quad, the rect is empty after clamping, or the rect covers the whole face.
-    [[nodiscard]] static BrushMesh CarveFaceRect(const BrushMesh& mesh, std::uint32_t face,
-                                                 Vec2d rectMin, Vec2d rectMax);
-
-    // Carve a rectangular opening through `face` and the first opposite
-    // near-parallel rectangular face that contains the projection along -face
-    // normal. The two center cap faces are removed and their loops are bridged
-    // into a closed tunnel. A rect side flush with the face edge (snap
-    // tolerance) opens a notch instead of walling: the bordering face on that
-    // side is cut so the channel is open (requires box-like flat rectangular
-    // sides bordering both caps; source and target must be flush on matching
-    // sides). On an OPEN mesh (a plane) with no opposite face the pierce
-    // degrades to CarveFaceRect with the center face removed (a hole).
-    // Returns the mesh unchanged when a closed solid has no eligible opposite
-    // face, the projected rectangle is not aligned to that face's frame, the
-    // rect covers the face, or only an opposite pair of sides is flush (the
-    // channel would split the brush in two).
-    [[nodiscard]] static BrushMesh CarveFaceRectThrough(const BrushMesh& mesh, std::uint32_t face,
-                                                        Vec2d rectMin, Vec2d rectMax);
-
 };

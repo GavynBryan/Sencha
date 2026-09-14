@@ -76,6 +76,13 @@ public:
     void EnqueueImageDestroy(DeferredImageDestroy entry);
     void EnqueueBufferDestroy(DeferredBufferDestroy entry);
 
+    // Run every pending destroy now, whatever bucket it is in. Only valid with
+    // the device idle: it is the teardown path, for an owner releasing GPU
+    // resources when there are no future frames left to retire them. The
+    // destructor is one such caller; a host draining a subsystem inside its own
+    // idle window is another. Never call it mid-frame.
+    void FlushAll();
+
     // Advance the ring and flush the bucket that is now safe to release.
     // Called by VulkanFrameService::BeginFrame after the in-flight fence wait.
     void AdvanceFrame();

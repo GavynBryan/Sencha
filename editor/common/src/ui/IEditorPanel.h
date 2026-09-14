@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string_view>
 
 // Where a panel wants to live in the default dock layout. The dockspace host
@@ -10,6 +11,7 @@ enum class DockSlot
 {
     Center,       // central node (no tab bar)
     CenterBottom, // strip under the central node, same width
+    LeftEdge,     // narrow column at the far left of the main row; panels stack vertically
     Left,         // left column, full height of the main row
     Right,        // upper right, panels pack left-to-right
     RightBottom,  // lower right, panels stack top-to-bottom
@@ -17,10 +19,32 @@ enum class DockSlot
     Floating
 };
 
+// Whether a panel's shown/hidden state is a workspace preference the shell
+// remembers across launches, or belongs to the session it was opened in (a
+// console whose startup state is configuration, a dialog-like panel a flow
+// opens and closes).
+enum class PanelVisibilityPolicy : std::uint8_t
+{
+    Remembered,
+    SessionOnly,
+};
+
+// What the shell files a panel's settings under. The id is stable identity
+// and never the title: a title is presentation and may change; a user's
+// remembered layout must not.
+struct PanelPersistence
+{
+    std::string_view Id;
+    PanelVisibilityPolicy Visibility = PanelVisibilityPolicy::Remembered;
+};
+
 struct IEditorPanel
 {
     virtual std::string_view GetTitle() const = 0;
     virtual void OnDraw() = 0;
+
+    // Every panel declares its settings identity and visibility policy.
+    [[nodiscard]] virtual PanelPersistence GetPersistence() const = 0;
 
     // Preferred default dock slot; the host may override once the user rearranges.
     [[nodiscard]] virtual DockSlot GetDockSlot() const { return DockSlot::Floating; }

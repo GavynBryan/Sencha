@@ -239,7 +239,7 @@ namespace
         // Picking, framing, and the render queue all read bounds; a parented
         // brush whose bounds ignored the parent would be clickable in one place
         // and drawn in another.
-        const std::optional<Aabb3d> bounds = Scene.TryGetWorldBounds(brush);
+        const std::optional<Aabb3d> bounds = Scene.EvaluatedWorldBounds(brush);
         ASSERT_TRUE(bounds.has_value());
         ExpectNear(bounds->Center(), Vec3d{ 20.0f, 0.0f, 0.0f });
     }

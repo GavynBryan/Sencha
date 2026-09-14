@@ -1,5 +1,5 @@
 {
-  "comment": "The built-in editor chrome palette, as a starting point for custom themes. Colors are authored sRGB hex (#RRGGBB or #RRGGBBAA); the editor linearizes them for its sRGB swapchain. Point the editor.ui.theme cvar at a copy of this file and edit away.",
+  "comment": "The previous teal-and-purple chrome palette, kept as a theme. Only the colors it names are set; the rest of the look is the built-in default. Colors are authored sRGB hex (#RRGGBB or #RRGGBBAA); the editor linearizes them for its sRGB swapchain. Point the editor.ui.theme cvar at a copy of this file and edit away.",
   "colors": {
     "window_bg": "#0A0D0F",
     "panel_bg": "#0A0D0F",

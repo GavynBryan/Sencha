@@ -29,6 +29,7 @@ public:
     std::string_view GetTitle() const override;
     void OnDraw() override;
     DockSlot GetDockSlot() const override { return DockSlot::Right; }
+    PanelPersistence GetPersistence() const override { return { "hierarchy", PanelVisibilityPolicy::Remembered }; }
 
 private:
     struct DrawContext;

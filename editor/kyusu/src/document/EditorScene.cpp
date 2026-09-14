@@ -26,12 +26,14 @@ EntityId EditorScene::CreateBrush(Vec3d position, Vec3d halfExtents)
     return CreateBrushFromMesh(transform, BrushOps::MakeBox(halfExtents));
 }
 
-EntityId EditorScene::CreateBrushFromMesh(const Transform3f& transform, BrushMesh mesh)
+EntityId EditorScene::CreateBrushFromMesh(const Transform3f& transform, BrushMesh mesh,
+                                          BrushModifierStack modifiers)
 {
     World& world = Registry_.Components;
     EntityId entity = world.CreateEntity();
     world.AddComponent(entity, LocalTransform{ transform });
-    world.AddComponent(entity, BrushComponent{ BrushMeshes.Create(std::move(mesh)) });
+    world.AddComponent(entity,
+                       BrushComponent{ BrushMeshes.Create(std::move(mesh), std::move(modifiers)) });
     world.AddComponent(entity, PersistentIdComponent{ MintPersistentId() });
     world.AddComponent(entity,
                        EntityNameComponent{ InlineString<64>(NextEntityName("Brush")) });
@@ -300,6 +302,7 @@ void EditorScene::RefreshDerivedTransforms()
     }
 
     PropagateTransforms(world);
+    PlacementFacts_.Refresh();
 }
 
 void EditorScene::DestroyEntity(EntityId entity)
@@ -424,6 +427,46 @@ void EditorScene::SetBrushMesh(EntityId entity, BrushMesh mesh)
         BrushMeshes.Set(brush->Id, std::move(mesh));
 }
 
+void EditorScene::SetBrushModifiers(EntityId entity, BrushModifierStack modifiers)
+{
+    if (const BrushComponent* brush = Registry_.Components.TryGet<BrushComponent>(entity))
+        BrushMeshes.SetModifiers(brush->Id, std::move(modifiers));
+}
+
+void EditorScene::SetBrushRecord(EntityId entity, const BrushRecord& record)
+{
+    if (const BrushComponent* brush = Registry_.Components.TryGet<BrushComponent>(entity))
+        BrushMeshes.Set(brush->Id, record);
+}
+
+BrushId EditorScene::BrushRecordIdOf(EntityId entity) const
+{
+    const World& world = Registry_.Components;
+    if (const BrushComponent* brush = world.TryGet<BrushComponent>(entity))
+        return brush->Id;
+    if (const BakedBrushComponent* baked = world.TryGet<BakedBrushComponent>(entity))
+        return baked->Source;
+    return {};
+}
+
+const BrushModifierStack* EditorScene::TryGetBrushModifiers(EntityId entity) const
+{
+    const BrushComponent* brush = TryGetBrush(entity);
+    return brush != nullptr ? BrushMeshes.FindModifiers(brush->Id) : nullptr;
+}
+
+const BrushEvaluated* EditorScene::TryGetBrushPieces(EntityId entity) const
+{
+    return TryGetBrushPieces(entity, InteractivePolicy_);
+}
+
+const BrushEvaluated* EditorScene::TryGetBrushPieces(EntityId entity,
+                                                     const BrushEvaluationPolicy& policy) const
+{
+    const BrushId id = BrushRecordIdOf(entity);
+    return id.IsValid() ? BrushMeshes.Evaluated(id, policy) : nullptr;
+}
+
 void EditorScene::Clear()
 {
     World& world = Registry_.Components;
@@ -432,6 +475,7 @@ void EditorScene::Clear()
     Entities.clear();
     TakenIds_.clear();
     BrushMeshes.Clear();
+    PlacementFacts_.Clear();
     HiddenEntities.clear();
     LockedEntities.clear();
 }
@@ -550,16 +594,26 @@ const CameraComponent* EditorScene::TryGetCamera(EntityId entity) const
     return world.TryGet<CameraComponent>(entity);
 }
 
-std::optional<Aabb3d> EditorScene::TryGetWorldBounds(EntityId entity) const
+std::optional<Aabb3d> EditorScene::SourceWorldBounds(EntityId entity) const
 {
-    const BrushMesh* mesh = TryGetBrushMesh(entity);
-    if (mesh == nullptr)
-        mesh = TryGetDormantBrushMesh(entity); // a baked brush keeps its shape
+    if (const std::optional<Aabb3d> live = PlacementFacts_.GetSourceBounds(entity))
+        return live;
+    // A baked brush keeps its shape as a dormant source; it has no live record
+    // and so no placement facts.
+    const BrushMesh* mesh = TryGetDormantBrushMesh(entity);
     const Transform3f* transform = TryGetWorldTransform(entity);
     if (mesh == nullptr || transform == nullptr || mesh->Vertices.empty())
         return std::nullopt;
-
     return BrushWorldBounds(*mesh, *transform);
+}
+
+std::optional<Aabb3d> EditorScene::EvaluatedWorldBounds(EntityId entity) const
+{
+    if (const std::optional<Aabb3d> live = PlacementFacts_.GetEntityBounds(entity))
+        return live;
+    // Dormant sources evaluate too (their record is still in the store), but
+    // carry no placement facts; a baked brush is bounded by its source.
+    return SourceWorldBounds(entity);
 }
 
 Registry& EditorScene::GetRegistry()

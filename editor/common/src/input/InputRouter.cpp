@@ -17,6 +17,11 @@ bool PointerCapture::HeldBySelf() const
     return Router.CapturedIndex.has_value() && *Router.CapturedIndex == Index;
 }
 
+bool PointerCapture::HeldByOther() const
+{
+    return Router.CapturedIndex.has_value() && *Router.CapturedIndex != Index;
+}
+
 void InputRouter::AddHandler(Handler handler)
 {
     Handlers.push_back(std::move(handler));

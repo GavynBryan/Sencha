@@ -1,7 +1,10 @@
 #include "InspectorPanel.h"
 
+#include "ui/chrome/ChromeHeader.h"
+
 #include "ui/EditorUiStyle.h"
 #include "ui/ScopedPanel.h"
+#include "ui/chrome/ChromeControls.h"
 #include "fonts/IconsFontAwesome6.h"
 
 #include "commands/CommandStack.h"
@@ -146,7 +149,7 @@ namespace
         if (preview.empty())
             preview = std::to_string(current);
 
-        if (ImGui::BeginCombo(id.c_str(), preview.c_str()))
+        if (EditorChrome::BeginCombo(id.c_str(), preview.c_str()))
         {
             for (const EnumOption& option : field.Enum)
             {
@@ -166,7 +169,7 @@ namespace
                 if (selected)
                     ImGui::SetItemDefaultFocus();
             }
-            ImGui::EndCombo();
+            EditorChrome::EndCombo();
         }
         return edit;
     }
@@ -277,7 +280,7 @@ InspectorPanel::InspectorPanel(WorldDocument& world,
 
 std::string_view InspectorPanel::GetTitle() const
 {
-    return "Inspector";
+    return "INSPECTOR";
 }
 
 void InspectorPanel::ResetEditState()
@@ -382,6 +385,7 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     // own clicks (otherwise the header swallows them as a collapse toggle).
     ImGui::SetNextItemAllowOverlap();
     const bool open = ImGui::CollapsingHeader(header.c_str());
+    EditorChrome::HeaderNotch();
 
     // Header affordances: a right-click context menu (remove, and reset for an
     // overridden member component) and a right-aligned trash button. Removal
@@ -411,8 +415,10 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     }
     if (serializer.IsRemovable())
     {
-        ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::GetFrameHeight());
-        if (ImGui::SmallButton((std::string(ICON_FA_TRASH) + "##del_" + key).c_str()))
+        const float removeSize = ImGui::GetFrameHeight() - EditorUi::Px(2.0f);
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - removeSize);
+        if (EditorChrome::IconButton(("del_" + key).c_str(), IconId::Delete, removeSize,
+                                     EditorChrome::ButtonTone::Destructive))
             PendingRemoval = &serializer;
     }
     // The override badge, in the header's right gutter beside the trash spot:
@@ -426,7 +432,7 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
             ImVec2(ImGui::GetContentRegionMax().x + ImGui::GetWindowPos().x
                        - inset,
                    (rectMin.y + rectMax.y) * 0.5f),
-            3.0f, ImGui::GetColorU32(EditorUi::Accent));
+            EditorUi::Px(3.0f), ImGui::GetColorU32(EditorUi::Accent));
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip(baseline != nullptr && !baseline->Present
                                   ? "Added to this instance; the source has no "
@@ -498,9 +504,9 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
         // The field's override badge sits in the label gutter, and the row's
         // last widget carries the reset in its context menu.
         ImGui::GetWindowDrawList()->AddCircleFilled(
-            ImVec2(rowMin.x - 6.0f,
+            ImVec2(rowMin.x - EditorUi::Px(6.0f),
                    rowMin.y + ImGui::GetFrameHeight() * 0.5f),
-            2.5f, ImGui::GetColorU32(EditorUi::Accent));
+            EditorUi::Px(2.5f), ImGui::GetColorU32(EditorUi::Accent));
         if (baselineBytes != nullptr
             && ImGui::BeginPopupContextItem(
                 (std::string("##fieldctx_") + field.Name).c_str()))
@@ -595,7 +601,7 @@ bool InspectorPanel::DrawAssetPickCombo(const char* widgetId,
     bool changed = false;
     const std::uint32_t pickerId = ImGui::GetID(widgetId);
     const char* preview = current.Path.empty() ? "(none)" : current.Path.c_str();
-    if (ImGui::BeginCombo(widgetId, preview))
+    if (EditorChrome::BeginCombo(widgetId, preview))
     {
         if (OpenPicker != pickerId || ImGui::IsWindowAppearing())
         {
@@ -620,7 +626,7 @@ bool InspectorPanel::DrawAssetPickCombo(const char* widgetId,
                 changed = true;
             }
         }
-        ImGui::EndCombo();
+        EditorChrome::EndCombo();
     }
     return changed;
 }
@@ -697,7 +703,7 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
             apply(std::move(next));
         }
         ImGui::SameLine();
-        if (ImGui::Button("X", ImVec2(ImGui::GetFrameHeight(), 0.0f)))
+        if (EditorChrome::IconButton("remove_slot", IconId::Delete, ImGui::GetFrameHeight(), EditorChrome::ButtonTone::Destructive))
         {
             AssetFieldValue next = current;
             next.Refs.erase(next.Refs.begin() + static_cast<std::ptrdiff_t>(i));
@@ -705,7 +711,7 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
         }
         ImGui::PopID();
     }
-    if (ImGui::Button("+ Add slot"))
+    if (EditorChrome::Button("+ Add slot", "+ Add slot", {}, EditorChrome::ButtonTone::Normal))
     {
         AssetFieldValue next = current;
         next.Refs.emplace_back();
@@ -721,7 +727,7 @@ void InspectorPanel::DrawAddComponentMenu(EntityId entity)
 
     // OpenPopup only sets state; BeginPopup must run every frame or ImGui closes
     // the popup before a selection can be made.
-    if (ImGui::Button(ICON_FA_PLUS "  Add Component"))
+    if (EditorChrome::Button(ICON_FA_PLUS "  Add Component", ICON_FA_PLUS "  Add Component", {}, EditorChrome::ButtonTone::Normal))
         ImGui::OpenPopup("##add_component");
 
     if (ImGui::BeginPopup("##add_component"))
@@ -757,7 +763,7 @@ void InspectorPanel::DrawAddComponentMenu(EntityId entity)
 
 void InspectorPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
     if (!panel.IsOpen())
         return;
 
@@ -778,13 +784,14 @@ void InspectorPanel::OnDraw()
         LastEntity = entity;
     }
 
-    // Plain accent title (the glow is reserved for panel titles now).
-    char title[64];
-    std::snprintf(title, sizeof(title), ICON_FA_CUBE "  Entity %u", entity.Index);
-    ImGui::TextColored(EditorUi::Accent, "%s", title);
-    ImGui::SameLine();
-    ImGui::TextDisabled("(gen %u)", entity.Generation);
-    ImGui::Separator();
+    char title[96];
+    std::snprintf(title, sizeof(title), "Entity %u (gen %u)", entity.Index, entity.Generation);
+    const ImVec2 headerMin = ImGui::GetCursorScreenPos();
+    const float headerHeight = std::max(EditorUi::Px(EditorUi::Metrics.HeaderHeight), ImGui::GetFrameHeight() + EditorUi::Px(4.0f));
+    ImGui::Dummy(ImVec2(ImGui::GetContentRegionAvail().x, headerHeight));
+    EditorChrome::DrawHeaderRow(ImGui::GetWindowDrawList(), headerMin, ImGui::GetItemRectMax(), title,
+                                EditorUi::TextRole::PanelTitle, { .Selected = true },
+                                EditorChrome::HeaderRowSpec{});
 
     // Registry-driven: every component the registry knows about, drawn by schema.
     // No component is named in editor code here.
@@ -828,6 +835,7 @@ void InspectorPanel::DrawDerivedComponents(EntityId entity)
     const std::string header = "Derived Components (" + std::to_string(rows.size())
         + ")###derived_components";
     const bool open = ImGui::CollapsingHeader(header.c_str());
+    EditorChrome::HeaderNotch();
     ImGui::PopStyleColor();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
     {

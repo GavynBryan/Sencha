@@ -13,4 +13,5 @@ struct WindowCreateInfo
     WindowGraphicsApi GraphicsApi = WindowGraphicsApi::None;
     bool        Resizable = true;
     bool        Visible   = true;
+    bool ClientDecorations = false; // requested; see EngineWindowConfig
 };

@@ -1,14 +1,11 @@
 #include "SceneRenderQueueBuilder.h"
 #include "EditorRenderEntityKey.h"
 
-#include "document/BrushCookInput.h"
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
 #include "render/EditorLightGather.h"
 
-#include <assets/cook/BrushClustering.h>   // CookBrushGeometry
 #include <render/skinned_mesh/SkinnedMeshCache.h>
-#include <assets/cook/BrushGeometryCook.h> // CollectMaterialOrder, BakeBrushFacesToStaticMesh
 #include <assets/runtime/AssetSystem.h>
 #include <core/hash/Fnv1a.h>
 #include <core/json/JsonParser.h>
@@ -46,34 +43,8 @@
 #include <utility>
 #include "document/DocumentSerialization.h"
 
-namespace
-{
-    // Content hash of the collected brushes: the bake is skipped (no GPU upload)
-    // when this is unchanged. Covers each face's material path and the input
-    // vertices (position/normal/uv); tangents are bake output, not input.
-    uint64_t HashBrushes(const std::vector<CookBrushGeometry>& brushes)
-    {
-        uint64_t h = kFnv1aOffsetBasis;
-        for (const CookBrushGeometry& brush : brushes)
-        {
-            for (const CookFace& face : brush.Faces)
-            {
-                HashFnv1aBytes(h, face.Material.Path.data(), face.Material.Path.size());
-                for (const StaticMeshVertex& v : face.Triangles)
-                {
-                    HashFnv1aValue(h, v.Position);
-                    HashFnv1aValue(h, v.Normal);
-                    HashFnv1aValue(h, v.Uv0);
-                }
-            }
-            HashFnv1aByte(h, '|'); // brush boundary, so regrouping faces changes the hash
-        }
-        return h;
-    }
-
-}
-
 SceneRenderQueueBuilder::SceneRenderQueueBuilder(AssetSystem& assets,
+                                                 BrushBakeCache& bakes,
                                                  StaticMeshCache& meshes,
                                                  MaterialCache& materials,
                                                  MaterialSetCache& materialSets,
@@ -81,6 +52,7 @@ SceneRenderQueueBuilder::SceneRenderQueueBuilder(AssetSystem& assets,
                                                  TextureCache* textures,
                                                  SkinnedMeshCache* skinnedMeshes)
     : Assets(assets)
+    , Bakes(bakes)
     , Meshes(meshes)
     , Materials(materials)
     , MaterialSets(materialSets)
@@ -91,14 +63,18 @@ SceneRenderQueueBuilder::SceneRenderQueueBuilder(AssetSystem& assets,
 {
 }
 
-SceneRenderQueueBuilder::~SceneRenderQueueBuilder()
-{
-    ReleaseBrushMeshes();
-}
+SceneRenderQueueBuilder::~SceneRenderQueueBuilder() = default;
 
 void SceneRenderQueueBuilder::Build(const EditorDocument& document)
 {
-    RebuildBrushMeshes(document);
+    const EditorScene& scene = document.GetScene();
+    const bool changed = Draws.Refresh(scene, Bakes, document.GetDefaultMaterial());
+    if (changed || EmittedVersion != Draws.Version())
+    {
+        EmitBrushQueue();
+        RebuildBrushCasters(document);
+        EmittedVersion = Draws.Version();
+    }
     const bool preview = PreviewEnabled && PreviewRegistry != nullptr;
     if (preview)
     {
@@ -106,14 +82,12 @@ void SceneRenderQueueBuilder::Build(const EditorDocument& document)
         // atlas, and placements carry their cooked scale/bias. Live geometry
         // still feeds the shadow casters below (it is the same geometry).
         EmitPreviewQueue();
+        EmittedVersion = 0; // the brush queue must be re-emitted once the preview ends
         PlacedMeshes.Reset();
         PlacedMeshes.SortOpaque();
     }
     else
-    {
-        EmitBrushQueue();
         BuildMeshQueue(document);
-    }
     BuildLights(document);
     BuildShadowCasters(document);
 
@@ -121,7 +95,6 @@ void SceneRenderQueueBuilder::Build(const EditorDocument& document)
     // editing one restales the badge like a brush or light edit does. No
     // visibility filter: the cook bakes hidden volumes too.
     uint64_t probeVolumesHash = kFnv1aOffsetBasis;
-    const EditorScene& scene = document.GetScene();
     const World& world = scene.GetRegistry().Components;
     if (world.IsRegistered<IrradianceVolumeComponent>())
     {
@@ -136,87 +109,82 @@ void SceneRenderQueueBuilder::Build(const EditorDocument& document)
             });
     }
 
-    CurrentDocHash = BrushHash ^ (LightsHash * 0x9E3779B97F4A7C15ull)
+    CurrentDocHash = Draws.ContentDigest() ^ (LightsHash * 0x9E3779B97F4A7C15ull)
         ^ (probeVolumesHash * 0xC2B2AE3D27D4EB4Full);
     PreviewStale = PreviewRegistry != nullptr && CurrentDocHash != PreviewDocHash;
 }
 
-void SceneRenderQueueBuilder::RebuildBrushMeshes(const EditorDocument& document)
-{
-    // Same kernel the cook and PIE use, so the preview is the cooked geometry.
-    std::vector<CookBrushGeometry> brushes =
-        CollectCookBrushes(document.GetScene(), document.GetDefaultMaterial());
-
-    const uint64_t hash = HashBrushes(brushes);
-    if (HasBaked && hash == BrushHash)
-        return; // brushes unchanged since the last bake — nothing to re-upload
-
-    std::vector<CachedBrushMesh> built;
-    std::vector<MaterialHandle> acquired;
-    built.reserve(brushes.size());
-    for (const CookBrushGeometry& brush : brushes)
-    {
-        const std::vector<AssetRef> order = CollectMaterialOrder(brush.Faces);
-
-        MeshGeometry geometry;
-        std::string error;
-        if (!BakeBrushFacesToStaticMesh(brush.Faces, order, geometry, &error))
-        {
-            Log.Warn("brush bake failed: {}", error);
-            continue;
-        }
-
-        const StaticMeshHandle mesh = Meshes.Create(geometry);
-        if (!mesh.IsValid())
-            continue;
-
-        CachedBrushMesh entry;
-        entry.Mesh = mesh;
-        entry.SlotMaterials.reserve(order.size());
-        for (const AssetRef& ref : order)
-        {
-            const MaterialHandle material = MaterialHandle::FromToken(
-                Assets.LoadLease(ref.Path, AssetType::Material).Relinquish());
-            entry.SlotMaterials.push_back(material);
-            if (material.IsValid())
-                acquired.push_back(material);
-        }
-        built.push_back(std::move(entry));
-    }
-
-    // Acquired the new refs already, so releasing the old set here cannot free a
-    // material the new build still needs (no free/reload churn for shared ones).
-    ReleaseBrushMeshes();
-    BrushMeshes = std::move(built);
-    BrushMaterials = std::move(acquired);
-    BrushHash = hash;
-    HasBaked = true;
-}
-
 void SceneRenderQueueBuilder::EmitBrushQueue()
 {
+    // Emission order is irrelevant to batching: SortOpaque keys on material,
+    // mesh and section above depth, so every placement of one baked mesh under
+    // one material lands in one instanced run. Runs only when the retained
+    // draws changed; an unchanged frame keeps the sorted queue as is.
     Brushes.Reset();
-    for (const CachedBrushMesh& entry : BrushMeshes)
+    for (const BrushDrawEntity& entity : Draws.Entities())
     {
-        const GpuStaticMesh* mesh = Meshes.Get(entry.Mesh);
-        if (mesh == nullptr)
-            continue;
-
-        // Brush geometry is baked in world space (BrushTessellate), so it sits
-        // at identity. Its section bounds are already world-space, which the
-        // shared emit cannot express through one instance-wide box, so each
-        // section is emitted on its own.
-        for (uint32_t section = 0; section < static_cast<uint32_t>(mesh->Sections.size()); ++section)
+        for (const BrushMeshRun& run : entity.Runs)
         {
-            MeshDrawInstance instance;
-            instance.Mesh = entry.Mesh;
-            instance.WorldMatrix = Mat4::Identity();
-            instance.WorldBounds = mesh->Sections[section].LocalBounds;
-            instance.SectionMask = 1u << section;
-            EmitMeshSections(instance, *mesh, entry.SlotMaterials, Materials, Brushes);
+            const BrushDrawMesh& drawMesh = entity.Meshes[run.MeshIndex];
+            const GpuStaticMesh* mesh = Meshes.Get(drawMesh.Handle);
+            if (mesh == nullptr)
+                continue;
+            for (std::uint32_t i = 0; i < run.PlacementCount; ++i)
+            {
+                const BrushPlacement& placement = entity.Placements[run.FirstPlacement + i];
+                MeshDrawInstance instance;
+                instance.Mesh = drawMesh.Handle;
+                instance.WorldMatrix = placement.World;
+                instance.WorldBounds = placement.WorldBounds;
+                EmitMeshSections(instance, *mesh, drawMesh.SlotMaterials, Materials, Brushes);
+            }
         }
     }
     Brushes.SortOpaque();
+}
+
+void SceneRenderQueueBuilder::RebuildBrushCasters(const EditorDocument& document)
+{
+    // Every piece casts on its own: one item set per placement of a baked
+    // mesh, at that placement's world matrix. The diff record is per brush
+    // entity and is only the invalidation unit: its bounds are the union of
+    // the entity's pieces, its mask their OR, and its state hash folds every
+    // piece's mesh handle and material state, so a rebake of any one distinct
+    // mesh or a placement change reads as a change over that entity's extent.
+    BrushCasters.Reset();
+    const Registry& registry = document.GetScene().GetRegistry();
+    for (const BrushDrawEntity& entity : Draws.Entities())
+    {
+        ShadowCasterGatherResult folded;
+        StaticMeshHandle firstMesh;
+        for (const BrushMeshRun& run : entity.Runs)
+        {
+            const BrushDrawMesh& drawMesh = entity.Meshes[run.MeshIndex];
+            const GpuStaticMesh* mesh = Meshes.Get(drawMesh.Handle);
+            if (mesh == nullptr)
+                continue;
+            for (std::uint32_t i = 0; i < run.PlacementCount; ++i)
+            {
+                const BrushPlacement& placement = entity.Placements[run.FirstPlacement + i];
+                const ShadowCasterGatherResult gathered = AppendShadowCasterSections(
+                    drawMesh.Handle, *mesh, drawMesh.SlotMaterials, Materials,
+                    ~0u, placement.World, placement.WorldBounds, BrushCasters);
+                if (gathered.EffectiveSectionMask == 0)
+                    continue;
+                if (!firstMesh.IsValid())
+                    firstMesh = drawMesh.Handle;
+                folded.EffectiveSectionMask |= gathered.EffectiveSectionMask;
+                HashFnv1aValue(folded.MaterialStateHash, gathered.MaterialStateHash);
+                HashFnv1aValue(folded.MaterialStateHash, drawMesh.Handle.ToToken());
+                folded.WorldBounds.ExpandToInclude(gathered.WorldBounds);
+            }
+        }
+        if (folded.EffectiveSectionMask == 0)
+            continue;
+        // Cooked brush cells carry their materials in the mesh, not a set.
+        AppendShadowCasterRecord(BrushCasters, MakeRenderEntityKey(registry, entity.Key.Entity),
+                                 firstMesh, MaterialSetHandle{}, folded);
+    }
 }
 
 void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
@@ -465,32 +433,12 @@ void SceneRenderQueueBuilder::BuildShadowCasters(const EditorDocument& document)
     const EditorScene& scene = document.GetScene();
     const Registry& registry = scene.GetRegistry();
 
-    // Brush geometry is baked in world space at identity, so its mesh bounds
-    // are already world bounds. Every section is offered; the engine caster
-    // policy drops sections whose material opts out. Cooked brushes have no
-    // entity, so their diff records key on the bake ordinal in a high-bit
-    // index namespace real entities cannot reach; a rebake recreates every
-    // brush mesh handle, so any brush edit reads as changed records over the
-    // affected bounds.
-    std::uint32_t brushOrdinal = 0;
-    for (const CachedBrushMesh& entry : BrushMeshes)
-    {
-        const GpuStaticMesh* mesh = Meshes.Get(entry.Mesh);
-        if (mesh == nullptr)
-            continue;
-        const ShadowCasterGatherResult gathered = AppendShadowCasterSections(
-            entry.Mesh, *mesh, entry.SlotMaterials, Materials,
-            ~0u, Mat4::Identity(), mesh->LocalBounds, SceneCasters);
-        const std::uint32_t ordinal = brushOrdinal++;
-        if (gathered.EffectiveSectionMask == 0)
-            continue;
-
-        RenderEntityKey key = MakeRenderEntityKey(
-            registry, EntityId{ .Index = 0x80000000u | ordinal, .Generation = 0 });
-        // Cooked brush cells carry their materials in the mesh, not a set.
-        AppendShadowCasterRecord(SceneCasters, key, entry.Mesh,
-                                 MaterialSetHandle{}, gathered);
-    }
+    // The brush casters are retained (RebuildBrushCasters) and bulk-copied
+    // here: plain items and records, no geometry recomputed per frame.
+    SceneCasters.Items.insert(SceneCasters.Items.end(), BrushCasters.Items.begin(),
+                              BrushCasters.Items.end());
+    SceneCasters.Records.insert(SceneCasters.Records.end(), BrushCasters.Records.begin(),
+                                BrushCasters.Records.end());
 
     const World& world = registry.Components;
     for (const EntityId entity : scene.GetAllEntities())
@@ -516,15 +464,4 @@ void SceneRenderQueueBuilder::BuildShadowCasters(const EditorDocument& document)
         AppendShadowCasterRecord(SceneCasters, MakeRenderEntityKey(registry, entity),
                                  renderer->Mesh, renderer->Materials, gathered);
     }
-}
-
-void SceneRenderQueueBuilder::ReleaseBrushMeshes()
-{
-    for (const CachedBrushMesh& entry : BrushMeshes)
-        Meshes.Destroy(entry.Mesh);
-    BrushMeshes.clear();
-
-    for (const MaterialHandle material : BrushMaterials)
-        Assets.ReleaseLease(AssetType::Material, material.ToToken());
-    BrushMaterials.clear();
 }

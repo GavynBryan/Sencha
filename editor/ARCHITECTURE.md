@@ -92,7 +92,10 @@ Shared shell (`editor/common/src/`):
 | `tools/` | Tool framework (`ToolRegistry`, `ToolContext`). | `ITool` |
 | `interaction/` | Drag-interaction host (`InteractionHost`). | `IInteraction` |
 | `input/` | Generic input primitives (`InputRouter` handler chain + pointer capture, `ShortcutRegistry`, `KeymapFile`, `UiInputGuard`). | router handlers |
-| `ui/` | ImGui shell (`EditorUiFeature`: context, docking, menu, per-app ini), theme/skin (`EditorUiStyle`, `EditorThemeFile`, `EditorThemeStartup`, `ThemePreferences`), console panel, `ScopedPanel`, `SchemaWidgets`. | `IEditorPanel` |
+| `ui/` | ImGui shell (`EditorUiFeature`: context, docking, menu, chassis, per-app ini), theme (`EditorUiStyle`: palette, metrics, decor, scale, text roles; `EditorThemeFile`, `EditorThemeStartup`, `ThemePreferences`), console panel, `ScopedPanel` (the one hook a panel's chrome comes through), `SchemaWidgets`. | `IEditorPanel` |
+| `ui/chrome/` | The workstation chrome, one mechanism per file: geometry, painters, panel frames (`PanelStyle`), chassis, headers, bars and modules (the bar chassis of rims, recessed channel, end caps and lane; themed channel surfaces; readout cells, dividers, module bays), controls (buttons, combo housing), tiles, selection scope and marks, ornaments, icons (baked from `editor/icons/*.svg`), decor. Panels include only the panel-facing headers (rule D in `check_editor_layering.sh`). | edit an SVG in `editor/icons/` |
+| `ui/ThemeTextureCache` | The raster art a theme owns, keyed by path and source stamp, with its own GPU lifetime. Deliberately not the font atlas: a theme switch costs one upload, not a font rebuild. | add a texture path to a theme's `surfaces` |
+| `icons/` | `IconId`, the leaf enum a tool or control names an icon by. | -- |
 | `render/` | ImGui presentation of offscreen targets (`ImGuiTargetPresenter`). | -- |
 | `viewport/` | `ViewportId`. | -- |
 | `project/` | Project descriptor + resolution + mounting + spawning (`Project`, `ProjectArgs`, `ProjectContentMount`, `ProcessLaunch`, `MaterialLibrary`). | -- |
@@ -109,7 +112,7 @@ Level editor (`editor/kyusu/src/`):
 | `meshedit/` | Polygon mesh-editing verbs (`MeshEditService`). | `IMeshEditTarget` |
 | `viewport/` | Viewport layout, camera, picking (`ViewportLayout`, `EditorCamera`, `EditorViewportCameraSystem`, `Picking`). | -- |
 | `render/` | Viewport render features and pipelines (`EditorRenderFeature`, grid/gizmo/selection/solid passes, the 14 embedded shaders). | `IRenderFeature` (engine) |
-| `ui/` | The level editor's panels + chrome (viewport, inspector, hierarchy, mesh edit, material, toolbar, status bar, tool sidebar). | `IEditorPanel` |
+| `ui/` | The level editor's panels + chrome (viewport, inspector, hierarchy, mesh edit, material, tool palette, toolbar, status bar). | `IEditorPanel` |
 | `document/` | Scene/document domain (see below). | -- |
 | `project/` | Play-In-Editor (`PieDriver`, `PieSession`). | -- |
 
@@ -171,21 +174,42 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
 ## Where do I add ...
 
 - A panel: implement `IEditorPanel` (kyusu panels in `kyusu/src/ui/`), register
-  it in the owning services' `BuildUi`.
+  it in the owning services' `BuildUi`. It declares a stable settings id and
+  whether its shown/hidden state is remembered across launches
+  (`GetPersistence`); the shell keeps that in the ImGui layout file.
 - A tool: implement `ITool` (built-ins live in `kyusu/src/document/tools/`) and
   register it in `WorkspaceInteractionRuntime::Rebuild`. That is the whole cost:
   a tool declares its own properties UI (`DrawProperties`), toolbar chrome
   (`DrawToolbarControls`), activation key (`GetShortcut`), and how a save should
   resolve anything it has staged (`CommitPending`), so the panel, the toolbar,
-  the sidebar, the status bar, and the keymap all pick it up without an edit.
+  the tool palette, the tool wheel, the status bar, and the keymap all pick it
+  up without an edit. The toolbar is not a bar of its own: the perspective
+  viewport's header is the toolbar row it reserves in place of a title
+  (`ViewportPanel::SetHeaderRows`), with the gizmo strip centred on the
+  window's midline; the cook/play loop sits in the `WorkspaceBar` under the caption, the bare
+  plate that will carry workspace tabs.
   Settings only that tool acts on are members on the tool; genuinely shared
   authoring state (the grid, the active material) goes through `ToolContext`.
+  A tool with sub-modes exposes them as variants (`GetVariants`,
+  `GetActiveVariant`, `SelectVariant`): a label and an icon each, addressed by
+  index, resolved by the tool against whatever owns the mode (the select
+  tool's is `MeshEditService`'s element kind, the brush tool's its own
+  primitive). The tool wheel shows them as a fan outside its rim while the tool is
+  hot and the properties row draws them; neither learns the type behind them.
 - An undo-able edit: implement `ICommand` next to its domain, run it through the
   `CommandStack`.
 - A keyboard shortcut: the binding table in `EditorServices::BuildInput` (Kyusu);
   Shudei handles its few chords directly in `HandlePlatformEvent`. Tool
   activation rows are generated from the registry instead, under `tool.<id>`.
-  Any action, listed or generated, is rebindable from `keybinds.json`.
+  Any action, listed or generated, is rebindable from `keybinds.json`. A held
+  key is owned by a `RadialMenuSession` rather than the shortcut registry,
+  which fires on presses; it resolves its override from the same file. There is
+  one radial-menu mechanism (`RadialMenuMath`, `RadialMenuSession`, the chrome's
+  `DrawRadialMenu`) over `IRadialMenuModel`; the tools are one model
+  (`tool.wheel`, `ToolRegistryMenuModel`), the gizmo modes another
+  (`gizmo.wheel`, `TransformModeMenuModel` over the `TransformModeItems`
+  table the toolbar strip reads too). An open wheel is modal, which is what
+  keeps the other closed.
 - A viewport visual: a render feature/pass in `kyusu/src/render/`, added in
   `EditorServices::BuildViewportRendering`.
 - A tunable: a cvar registered where it is read (see `editor.cull_backfaces` in

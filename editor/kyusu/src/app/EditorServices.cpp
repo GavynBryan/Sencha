@@ -28,6 +28,8 @@
 #include "ui/EditorThemeStartup.h"
 #include "ui/EditorToolbar.h"
 #include "ui/EditorUiFeature.h"
+#include "ui/EditorUiStyle.h"
+#include "ui/chrome/ChromeControls.h"
 #include "document/commands/SceneInstanceCommands.h"
 #include "ui/InspectorPanel.h"
 #include "ui/LightingPanel.h"
@@ -79,8 +81,14 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <span>
 #include <variant>
 #include <vector>
+
+
+#ifndef SENCHA_EDITOR_BRAND_DIR
+#define SENCHA_EDITOR_BRAND_DIR "."
+#endif
 
 namespace
 {
@@ -218,7 +226,7 @@ void EditorServices::BuildFileActions()
                                                engine.Logging());
     Files = std::make_unique<DocumentFileActions>(
         *Window, Workspace->World, [this] { Workspace->ResolvePendingEdits(); },
-        *Materials, std::move(contentRoots));
+        *Materials, std::move(contentRoots), Workspace->Selection, Workspace->MeshEdit);
     Files->RegisterCommands(engine.Console().Registry());
 }
 
@@ -324,6 +332,50 @@ void EditorServices::BuildInput()
         }
     }
 
+    // A wheel's key is held, not pressed, so it is not a shortcut row: the
+    // session owns both edges of it. The action names are what a keymap file
+    // rebinds, like any other. Both wheels place themselves against the same
+    // window and open over the same scene test.
+    {
+        const auto chordFor = [&](std::string_view action, SDL_Keycode fallback)
+        {
+            if (const auto it = overrides.find(std::string(action)); it != overrides.end())
+                return it->second;
+            return KeyChord{ .Key = fallback, .Mods = {} };
+        };
+        const auto frame = []
+        {
+            // The one place a wheel learns the window and the UI scale:
+            // captured together at open, resolved once into its layout.
+            const ImGuiViewport* vp = ImGui::GetMainViewport();
+            return RadialMenu::Frame{
+                .Scale = EditorUi::UiScale,
+                .Min = vp->WorkPos,
+                .Max = ImVec2(vp->WorkPos.x + vp->WorkSize.x, vp->WorkPos.y + vp->WorkSize.y),
+            };
+        };
+        const auto pointerOnScene = [this](ImVec2 pointer)
+        {
+            // The viewport whose rect holds the pointer, and that same
+            // viewport's panel saying nothing is drawn over it: one
+            // viewport, one hover flag. Which view is active or was
+            // focused last plays no part.
+            const ViewportId under = Workspace->Layout.ResolveAt(pointer);
+            if (!under.IsValid())
+                return false;
+            for (const ViewportPanel* panel : { PerspectivePanel, OrthoPanel })
+            {
+                if (panel != nullptr && panel->GetViewportId() == under)
+                    return panel->IsViewportRegionHovered();
+            }
+            return false;
+        };
+        ToolMenu = std::make_unique<ToolRegistryMenuModel>(*Workspace->Interaction.Tools);
+        ToolWheel = std::make_unique<RadialMenuSession>(*ToolMenu, chordFor("tool.wheel", SDLK_Q), frame, pointerOnScene);
+        GizmoMenu = std::make_unique<TransformModeMenuModel>([this] { return Workspace->Interaction.Manipulators; });
+        GizmoWheel = std::make_unique<RadialMenuSession>(*GizmoMenu, chordFor("gizmo.wheel", SDLK_Z), frame, pointerOnScene);
+    }
+
     Router = std::make_unique<InputRouter>();
     // The UI is the top layer of the input stack: events over an ImGui panel are
     // consumed here before navigation, tools, or shortcuts can act on them. The
@@ -342,6 +394,12 @@ void EditorServices::BuildInput()
                 capture.Mouse = false;
             return capture;
         }));
+    // The wheels sit under the guard (a focused text field keeps its letters)
+    // and above everything else: an open wheel owns the pointer and the keys,
+    // which is also what keeps the other wheel closed, and each yields its key
+    // to any gesture already holding the pointer.
+    Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return ToolWheel->OnInput(e, cap); });
+    Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return GizmoWheel->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Navigation->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Workspace->Interaction.Dispatcher->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture&) { return Shortcuts->OnInput(e); });
@@ -356,7 +414,7 @@ void EditorServices::BuildInput()
         {
             if (UiFeature != nullptr)
             {
-                const bool uiOwnsInput = kind != PointerCaptureKind::Viewport;
+                const bool uiOwnsInput = kind != PointerCaptureKind::Exclusive;
                 UiFeature->SetMouseInputEnabled(uiOwnsInput);
                 UiFeature->SetKeyboardInputEnabled(uiOwnsInput);
             }
@@ -378,6 +436,20 @@ void EditorServices::BuildViewportRendering()
         .CurrentValue = true,
         .Flags = CVarFlags::Archive,
         .Help = "Backface-cull the editor solid viewport to match play mode.",
+        .Source = { "editor" },
+    });
+
+    // The interactive limit on pieces one brush's modifier stack may evaluate to
+    // (read per frame by EditorRenderFeature). Preview only: the cook uses the
+    // compile-time hard limit, so this never changes whether a level cooks.
+    console.Registry().RegisterCVar({
+        .Name = "editor.brush.preview_piece_budget",
+        .Owner = "editor",
+        .Type = CVarType::Int,
+        .DefaultValue = 4096,
+        .CurrentValue = 4096,
+        .Flags = CVarFlags::Archive,
+        .Help = "Editor: max pieces a brush's modifier stack evaluates to in the viewport preview.",
         .Source = { "editor" },
     });
 
@@ -464,7 +536,8 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     // the ortho view + Materials/Console strip under it, world/hierarchy row
     // over the inspector on the right.
     const DockLayoutRatios layoutRatios{
-        .Left = 0.15f,
+        .LeftEdge = 0.06f,
+        .Left = 0.16f,
         .Right = 0.3f,
         .CenterBottom = 0.35f,
         .RightBottom = 0.3f,
@@ -485,10 +558,18 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         [this]() { if (Files) Files->Save(); },
         [this]() { if (Files) Files->RequestSaveAs(); });
     UiFeature->SetNewWorldAction([this]() { if (Files) Files->NewWorld(); });
+    // The shell's nameplate and its readout of what is open. Product names
+    // are data here, as on the window title.
+    UiFeature->SetIdentity(ShellIdentity{
+        .Product = "KYUSU",
+        .LogoPath = std::string(SENCHA_EDITOR_BRAND_DIR) + "/kyusu-logo.svg",
+    });
+    UiFeature->SetStatusProvider([this]() { return Files ? Files->DocumentLabel() : std::string{}; });
 
-    // Fixed app chrome: top toolbar + bottom status bar. Registered before the
-    // panels so the work-area space they reserve is subtracted from the full-bleed
-    // viewport panel below.
+    // The editing toolbar's presentation, hosted by the perspective viewport;
+    // the workspace bar and the status bar are the fixed bars of app chrome,
+    // registered before the panels so the space they reserve is subtracted
+    // from the work area.
     Toolbar = std::make_unique<EditorToolbar>(
         [this] { return Workspace->Interaction.Tools.get(); },
         [this] { return Workspace->Interaction.Manipulators; },
@@ -497,7 +578,8 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     // console commands.
     // A cook reads the live documents (and force-saves the world first), so open
     // previews settle before it starts or they would cook half-staged.
-    Toolbar->SetPlayControls({
+    TopBar = std::make_unique<WorkspaceBar>();
+    TopBar->SetPlayControls({
         .RunCook = [this] {
             Workspace->ResolvePendingEdits();
             if (CookRuntime) CookRuntime->Start();
@@ -509,7 +591,7 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         },
         .IsCooking = [this] { return CookRuntime != nullptr && CookRuntime->IsActive(); },
         .Profiles = [this] {
-            std::vector<EditorToolbar::PlayControls::ProfileChoice> choices;
+            std::vector<WorkspaceBar::PlayControls::ProfileChoice> choices;
             if (CookRuntime)
                 for (const CookProfile& profile : CookRuntime->GetSession().AvailableProfiles())
                     choices.push_back({ profile.Id, profile.Name, profile.BuiltIn });
@@ -565,10 +647,17 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         [this]() -> const ManipulatorSession* { return Workspace->Interaction.Manipulators; },
         Workspace->Layout, Workspace->Selection, Workspace->Grid,
         Workspace->MeshEdit);
-    ToolSidebar = std::make_unique<EditorToolSidebar>([this] { return Workspace->Interaction.Tools.get(); });
-    UiFeature->AddChrome([this] { Toolbar->Draw(); });
+    UiFeature->AddPanel(std::make_unique<ToolPalettePanel>([this] { return Workspace->Interaction.Tools.get(); }));
+    Toolbar->SetSurfaceProvider([this] { return UiFeature->SurfaceFor(BarRole::Toolbar); });
+    // The workspace bar sits under the caption as app chrome, on the primary
+    // viewport's header plate, so it reads apart from the editing row.
+    UiFeature->AddChrome([this] { TopBar->Draw(); });
     UiFeature->AddChrome([this] { StatusBar->Draw(); });
-    UiFeature->AddChrome([this] { ToolSidebar->Draw(); });
+    UiFeature->AddOverlay([this]
+    {
+        DrawRadialMenu(*ToolWheel, *ToolMenu);
+        DrawRadialMenu(*GizmoWheel, *GizmoMenu);
+    });
 
     // One panel per viewport: the perspective view owns the central node, the
     // ortho view shares the center-bottom strip with the Materials browser.
@@ -623,13 +712,30 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
 
         auto perspectivePanel = std::make_unique<ViewportPanel>(
             Workspace->Layout, Workspace->Interaction.Marquee, Workspace->Interaction.Overlay,
-            RenderFeature->GetViewportTargets(), "Viewport", DockSlot::Center, 1.0f, perspectiveId);
+            RenderFeature->GetViewportTargets(), "VIEWPORT", DockSlot::Center, 1.0f,
+            PanelStyle::ViewportPrimary,
+            // The central node has no tab bar and no View entry: nothing can hide it.
+            PanelPersistence{ "viewport", PanelVisibilityPolicy::SessionOnly }, perspectiveId);
         perspectivePanel->SetSceneDropHandler(placeDroppedScene);
+        // This viewport's header is the editing toolbar: one row in place of
+        // a title, above the scene, with the gizmo strip on the window's
+        // midline, where the eye rests, rather than the pane's own.
+        perspectivePanel->SetHeaderRows({
+            {
+                .Height = [] { return EditorToolbar::ViewportRowHeight(); },
+                .Draw = [this](ImDrawList* dl, ImVec2 mn, ImVec2 mx)
+                {
+                    const ImGuiViewport* window = ImGui::GetMainViewport();
+                    Toolbar->DrawViewportRow(dl, mn, mx, window->Pos.x + window->Size.x * 0.5f);
+                },
+            },
+        });
         PerspectivePanel = perspectivePanel.get();
         UiFeature->AddPanel(std::move(perspectivePanel));
         auto orthoPanel = std::make_unique<ViewportPanel>(
             Workspace->Layout, Workspace->Interaction.Marquee, Workspace->Interaction.Overlay,
-            RenderFeature->GetViewportTargets(), "Ortho", DockSlot::CenterBottom, 1.0f, orthoId);
+            RenderFeature->GetViewportTargets(), "ORTHO", DockSlot::CenterBottom, 1.0f,
+            PanelStyle::Viewport, PanelPersistence{ "ortho", PanelVisibilityPolicy::Remembered }, orthoId);
         orthoPanel->SetSceneDropHandler(placeDroppedScene);
         OrthoPanel = orthoPanel.get();
         UiFeature->AddPanel(std::move(orthoPanel));
@@ -916,6 +1022,84 @@ void EditorServices::BuildSourceWatch()
         watch->Watcher.Initialize();
         SourceWatch->Roots.push_back(std::move(watch));
     }
+}
+
+void EditorServices::DrawRadialMenu(const RadialMenuSession& wheel, const IRadialMenuModel& menu)
+{
+    if (wheel.GetPhase() != RadialMenuPhase::Open)
+        return;
+
+    // Every position comes from the session's layout, the same numbers it
+    // hit-tests; this only pairs each slot with what the model says it looks
+    // like. Labels are the model's storage, null-terminated where they come
+    // from tables and registries.
+    const RadialMenu::Layout& layout = wheel.GetLayout();
+    const int hot = wheel.GetHot();
+    const int hotVariant = wheel.GetHotVariant();
+    const int active = menu.ActiveIndex();
+    const int count = menu.Count();
+    std::vector<EditorChrome::WheelSlot> slots;
+    slots.reserve(static_cast<std::size_t>(std::max(count, 0)));
+    std::string caption;
+    for (int index = 0; index < count; ++index)
+    {
+        const IRadialMenuModel::MenuItem item = menu.Item(index);
+        const RadialMenu::Span span = RadialMenu::SectorSpan(index, layout.Count);
+        slots.push_back({
+            .Center = RadialMenu::SlotCenter(layout, index),
+            .Size = layout.Button,
+            .Angle0 = span.Begin,
+            .Angle1 = span.End,
+            .Icon = item.Icon,
+            .Label = item.Label.data(),
+            .Active = index == active,
+            .Hot = index == hot,
+        });
+        if (index == hot || (hot < 0 && index == active))
+            caption = item.Label;
+    }
+
+    // The hot entry's variants on the outer ring, from the same layout the
+    // session resolves them against.
+    std::vector<EditorChrome::WheelSlot> variants;
+    if (hot >= 0 && hot < count)
+    {
+        const std::span<const IRadialMenuModel::MenuItem> choices = menu.Variants(hot);
+        const int choiceCount = static_cast<int>(choices.size());
+        const int current = menu.ActiveVariant(hot);
+        variants.reserve(choices.size());
+        for (int v = 0; v < choiceCount; ++v)
+        {
+            const RadialMenu::Span span = RadialMenu::VariantSpan(layout, hot, v, choiceCount);
+            variants.push_back({
+                .Center = RadialMenu::VariantSlotCenter(layout, hot, v, choiceCount),
+                .Size = layout.Button,
+                .Angle0 = span.Begin,
+                .Angle1 = span.End,
+                .Icon = choices[static_cast<std::size_t>(v)].Icon,
+                .Label = choices[static_cast<std::size_t>(v)].Label.data(),
+                .Active = v == current,
+                .Hot = v == hotVariant,
+            });
+        }
+        if (hotVariant >= 0 && hotVariant < choiceCount)
+            caption += std::string(" \xC2\xB7 ") + std::string(choices[static_cast<std::size_t>(hotVariant)].Label);
+    }
+    // The foreground list draws after every window, floating panels and open
+    // menus included, which is where a modal surface belongs.
+    EditorChrome::DrawRadialMenu(ImGui::GetForegroundDrawList(), EditorChrome::WheelPaint{
+        .Center = layout.Center,
+        .Radius = layout.Radius,
+        .Hub = layout.Hub,
+        .Seam = layout.Seam,
+        .Rim = layout.Rim,
+        .OuterRadius = layout.OuterRadius,
+        .CaptionY = layout.CaptionY(),
+        .Slots = slots,
+        .Variants = variants,
+        .Caption = caption,
+        .CaptionDim = hot < 0,
+    });
 }
 
 void EditorServices::ProcessFrame()

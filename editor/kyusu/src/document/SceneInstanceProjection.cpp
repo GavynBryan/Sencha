@@ -6,6 +6,7 @@
 #include "DocumentSerialization.h"
 #include "EntityNameComponent.h"
 #include "brush/BrushMeshSerialization.h"
+#include "brush/BrushModifierSerialization.h"
 #include "scene_source/Json5Convert.h"
 
 #include <core/logging/Logger.h>
@@ -302,7 +303,7 @@ void SceneInstanceProjection::Expand()
                     continue;
                 }
                 const BrushId copied = Scene.GetBrushMeshStore().Create(
-                    BrushMeshFromJson(Json5ToJson(*mesh)));
+                    BrushRecordFromJson(Json5ToJson(*mesh)));
                 if (member.first == "brush")
                     Registry_.Components.AddComponent(entity, BrushComponent{ copied });
                 else

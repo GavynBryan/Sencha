@@ -249,6 +249,9 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/serialization/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/metadata/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/console/*.h"
+    # EngineConfig reaches a game module through GameConfigureContext, so its
+    # sections are layout the module compiled against.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/core/config/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/ecs/*.h"
 )
 list(APPEND SENCHA_ABI_FINGERPRINT_HEADERS ${SENCHA_ENGINE_COMPONENT_HEADERS})

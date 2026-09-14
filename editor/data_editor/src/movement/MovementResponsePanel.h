@@ -16,6 +16,7 @@ public:
     MovementResponsePanel(DataEditorWorkspace& workspace, MovementResolvePreview& preview);
     [[nodiscard]] std::string_view GetTitle() const override { return "Response"; }
     [[nodiscard]] DockSlot GetDockSlot() const override { return DockSlot::CenterBottom; }
+    [[nodiscard]] PanelPersistence GetPersistence() const override { return { "movement_response", PanelVisibilityPolicy::Remembered }; }
     [[nodiscard]] int GetDockTabGroup() const override { return 0; }
     void OnDraw() override;
 

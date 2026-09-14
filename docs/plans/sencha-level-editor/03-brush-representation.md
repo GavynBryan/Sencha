@@ -302,6 +302,73 @@ Work:
     body (move) handle. Face editing flows through click-select + Brush Tools.
   - **Needs visual QA:** click individual faces of a box and an extruded brush → the correct
     face highlights; with a face selected, Extrude/Delete acts on it.
+- 2026-09-13 — **Non-destructive modifier stacks (Mirror, Array).** The sidecar entry is
+  now a brush *record*: `{ vertices, faces, soft_edges, modifiers? }`, with the store
+  (`BrushMeshStore`) keyed by `BrushId` holding `BrushRecord { Mesh, Modifiers, Revision }`
+  and a lazily cached evaluation per record. `BrushComponent` is unchanged; snapshots,
+  duplication, instancing, prefab projection, and the sidecar carry the record as one unit.
+  Evaluation is `piece set -> modifier -> piece set` (`BrushEvaluation.h`): Array is N
+  placements of one mesh, Mirror mints one reflected mesh per distinct input mesh
+  (`MirrorModifier.h`), placements are translations only, and reflections are baked into
+  meshes so no renderer meets an improper transform. Mirror keeps each face's projection and
+  flips the folded U axis about the face's own span only when the projection's handedness
+  against the face normal flips, so the copy shows the source's image un-reflected with the
+  same up (`MirrorFaceProjection`, `FaceMaterial.h`). A checked piece budget stops evaluation
+  before an overflowing modifier: the cook uses the compile-time hard limit, the viewport a
+  cvar (`editor.brush.preview_piece_budget`) that may only lower it. Every viewport consumer
+  walks `ForEachVisibleBrushPiece`; face picks on a copy select the source face
+  (`SourceFaceFor`), edge/vertex picks stay on the source; `SourceWorldBounds` and
+  `EvaluatedWorldBounds` are distinct. Merge flattens every participant's evaluated pieces
+  into a brush with an empty stack. Inspector rows come from `BrushModifierEditorAdapter`.
+- 2026-09-13 — **Modifiers name relationships, not transforms.** Mirror's plane is derived
+  from the brush origin by default (`MirrorPlaneSource::Origin`: move the origin, the copy
+  moves; only a `Custom` plane is rebased across a re-origin), or from the bounds center.
+  Array is bounds-relative by default (`ArrayPlacement::RelativeToBounds`: step = the
+  repeated set's extent along a local axis + gap, so widening the source keeps copies
+  touching); `ConstantOffset` is the advanced raw form. Both resolve against the piece set
+  the stage consumes, so Mirror → Array repeats the mirrored pair. Each evaluation records a
+  `BrushStageResolution` (input bounds, resolved plane or step) that the viewport and
+  labels draw from. Entries saved with a bare plane or offset load as Custom /
+  ConstantOffset. The inspector is one "+ Add Modifier" popup over `BrushModifierKinds()`
+  with per-row enable/reorder/remove and an Advanced disclosure for the alternate modes.
+- **Done (pieces drawn as instances):** an evaluation names its distinct meshes
+  (`BrushEvaluated::Meshes`, each with a content signature and local bounds) and every
+  piece indexes one. The Solid viewport bakes each distinct mesh once, in the brush's own
+  frame, into a `BrushBakeCache` keyed by that signature and shared by every open
+  document, and emits one draw instance per piece at its world placement; the opaque sort
+  makes the placements of one mesh under one material a single instanced run. A Count,
+  Spacing or transform edit bakes nothing; a mirror plane edit bakes the one reflected
+  mesh. Residency follows existence, not visibility. Picking runs one ray traversal with a
+  tight per-piece box reject, the selection wireframe enumerates edge topology once per
+  distinct mesh, and `EvaluatedWorldBounds` rotates each distinct mesh once. Cook, bake
+  and export still flatten world-space geometry.
+- **Done (retained draw set):** each document keeps a `BrushDrawSet`, one record per
+  visible brush entity (baked meshes, every piece's world matrix and vertex-tight bounds,
+  edge topology, a digest), rebuilt only when the entity's `BrushPlacementKey` (record
+  revision, evaluation budget, world transform) or its bake fingerprint changes. The
+  solid queue and brush shadow casters are emitted from it only when it changes; the
+  Wireframe body draws each mesh's edges as an instanced line list over the retained
+  placements (`SceneWireframeRenderer`, `EditorInstancedLinePipeline`); the selection
+  renderer retains a selected body's wide-line segments under the same key. An unchanged
+  frame recomputes no per-piece geometry. `editor.select <id>` exists so the selected
+  case can be measured from a script.
+- **Done (brush facts, three layers):** the rule is that no editor subsystem walks
+  evaluated pieces to reconstruct persistent geometry-derived facts. *Evaluation facts*
+  (`BrushEvaluated`) carry provenance (`Origin`, `ProducedBy`, `SourcePiece`; per mesh
+  `MintedBy`/`MintedFrom`), evaluated-to-source element maps (`Identity`, table, none),
+  and per-mesh edge topology. *Placement facts* (`EditorScene::PlacementFacts()`) retain
+  per entity the piece placements, piece and union bounds, source bounds and source world
+  elements, keyed by `BrushPlacementKey` and validated on every access, so a same-frame
+  read after a command is exact; picking, pivots, hover, grid and bridge edits, and the
+  selection renderer query them. *Render facts* (`BrushDrawSet`, `BrushBakeCache`) add
+  GPU handles, materials and instance rows. `BrushRecord` carries `TopologyRevision`,
+  `PlacementRevision` and `MaterialRevision` beside `Revision`, minted from content
+  signatures, so an Array count edit rebuilds placements only and a material edit
+  rebakes only. A selected body's copies and a selected face's fill and outline draw
+  instanced per distinct mesh; the source piece keeps the wide stroke.
+  `BrushWorkCounters` tallies interactive reconstruction and intentional flattening per
+  frame (`editor.brush.counters`); an idle scene reads zero. `editor.select` and
+  `editor.mode` script selection for measurement.
 - **Remaining (Phase 2b, slice 2b — drag handles):** per-face drag handles that *move/extrude
   a face along its normal* (the interactive drag math, ortho + perspective), an interactive
   clip-plane tool, and edge/vertex sub-element handles. UX polish over the now-working,

@@ -106,7 +106,7 @@ InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& 
     // Own the pointer for the gesture: while held, the router delivers every move/up
     // here exclusively (re-stamped with this viewport), so the gesture stays on its
     // origin viewport and the camera/UI never see these events.
-    capture.Acquire(PointerCaptureKind::Viewport, vp->Id);
+    capture.Acquire(PointerCaptureKind::Exclusive, vp->Id);
 
     const PointerEvent pointer{ .Position = e.Position, .Button = e.Button, .Modifiers = e.Modifiers };
 
@@ -198,15 +198,14 @@ void ViewportToolDispatcher::UpdateHover(EditorViewport& viewport, ImVec2 pos)
     // An edge carries its length, anchored at its midpoint.
     if (hovered.IsEdge())
     {
-        const BrushMesh* mesh = Context.Scene.TryGetBrushMesh(hovered.Entity);
-        const Transform3f* transform = Context.Scene.TryGetWorldTransform(hovered.Entity);
-        if (mesh != nullptr && transform != nullptr)
-            if (const std::optional<EdgeElement> edge =
-                    MeshElements::TryGetEdge(*mesh, *transform, hovered.ElementId))
-            {
-                hover.Measure = FormatUnits((edge->A - edge->B).Magnitude());
-                hover.MeasureAnchor = edge->Mid;
-            }
+        const SourceWorldElements* elements =
+            Context.Scene.PlacementFacts().GetSourceWorldElements(hovered.Entity);
+        if (elements != nullptr && hovered.ElementId < elements->Edges.size())
+        {
+            const EdgeElement& edge = elements->Edges[hovered.ElementId];
+            hover.Measure = FormatUnits((edge.A - edge.B).Magnitude());
+            hover.MeasureAnchor = edge.Mid;
+        }
     }
 }
 

@@ -59,6 +59,28 @@ struct FaceMaterial
 // Face-aligned: U/V span the face plane itself, so they follow it as it rotates.
 [[nodiscard]] UvProjection UvProjectionForNormal(Vec3d normal, bool worldAligned);
 
+// The projection with Rotation folded into the axes (Rotation == 0 afterwards):
+// the exact basis ProjectUv dots against, for callers that rewrite axes.
+[[nodiscard]] UvProjection UvProjectionFoldRotation(const UvProjection& p);
+
+// The texture projection a mirrored face carries so it shows its source's
+// image un-reflected, seen from its own front, with the same up direction.
+//
+// UVs are a function of local position, so a face whose plane crosses the
+// mirror plane keeps reading correctly with its projection untouched: the
+// texture is a field over space and the reflected geometry samples it
+// elsewhere, seamlessly across the plane. The image only appears reflected
+// when the projection's handedness against the face normal flips between
+// source and copy (the wall copied to the other side of the room); then the
+// folded U axis is negated and the offset rewritten so the face's U span is
+// the interval it was, which keeps V (world up on walls) upright and fitted
+// signs fitted. `mirroredLocalPositions` is the copy's loop, in brush-local
+// space. (docs/plans: kyusu brush modifiers, Mirror UV preservation)
+[[nodiscard]] UvProjection MirrorFaceProjection(const UvProjection& source,
+                                                Vec3d sourceNormal,
+                                                Vec3d mirroredNormal,
+                                                std::span<const Vec3d> mirroredLocalPositions);
+
 // Justify presets, as pure functions of the projection and the (brush-local)
 // points being justified — no mesh/face dependency, so they are unit-testable and
 // reusable (editor UV tools, cook-time presets).

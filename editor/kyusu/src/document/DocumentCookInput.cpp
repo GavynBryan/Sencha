@@ -401,10 +401,22 @@ std::optional<DocumentCookInput> CollectDocumentCookInput(
     snapshot.BounceLights = snapshot.ProbeVolumes.empty()
         ? std::vector<BakeDirectLight>{}
         : CollectBakeLights(document.GetRegistry().Components, true);
+    std::vector<CookBrushFailure> brushFailures;
     snapshot.Brushes = CollectCookBrushes(
         document.GetScene(), document.GetDefaultMaterial(),
         snapshot.BakeLights.empty() ? nullptr : &snapshot.Charts,
-        snapshot.Lighting.ConeDegrees, snapshot.Lighting.LuxelSize);
+        snapshot.Lighting.ConeDegrees, snapshot.Lighting.LuxelSize,
+        BrushEvaluationPolicy::Cook(), &brushFailures);
+    if (!brushFailures.empty())
+    {
+        // A modifier stack past the hard piece limit is a document error, not a
+        // brush to cook partially; name it so the author can find the row.
+        std::string message = "brush modifier stack exceeds the piece limit:";
+        for (const CookBrushFailure& failure : brushFailures)
+            message += " entity " + std::to_string(failure.Entity.Index)
+                     + " modifier " + std::to_string(failure.Modifier) + ";";
+        return fail(message.c_str());
+    }
     snapshot.Placements = (snapshot.BakeLights.empty() && snapshot.ProbeVolumes.empty())
         ? std::vector<LightmapPlacement>{}
         : CollectLightmapPlacements(document.GetRegistry().Components, assetSystem,

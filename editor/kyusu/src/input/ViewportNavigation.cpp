@@ -49,13 +49,13 @@ InputConsumed ViewportNavigation::HandlePointerDown(const PointerDownEvent& e, P
     {
         hit->WantsFlyCameraInput = true;
         OnRelativeModeChange(true);
-        capture.Acquire(PointerCaptureKind::Viewport, hit->Id);
+        capture.Acquire(PointerCaptureKind::Exclusive, hit->Id);
     }
     else if (e.Button == MouseButton::Middle
              && hit->Camera.ActiveMode == EditorCamera::Mode::Orthographic)
     {
         hit->WantsOrthoPanInput = true;
-        capture.Acquire(PointerCaptureKind::Viewport, hit->Id);
+        capture.Acquire(PointerCaptureKind::Exclusive, hit->Id);
     }
 
     return InputConsumed::Yes;

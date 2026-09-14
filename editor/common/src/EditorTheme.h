@@ -56,7 +56,11 @@ inline constexpr Vec4 ActiveWireframe{ 0.25f, 0.55f, 2.5f, 1.0f };
 // mesh hovered in an element mode). A dimmer, subdued blue, no glow and no handles,
 // so it stays distinct from (and subordinate to) the active body.
 inline constexpr Vec4 PreviewWireframe{ 0.1f, 0.3f, 0.62f, 1.0f };
-inline constexpr Vec4 HoverEligible{ 0.4f, 1.0f, 0.85f, 1.0f };  // element under the cursor (selection-eligible)
+inline constexpr Vec4 CreatePreview{ 1.0f, 0.6f, 0.0f, 1.0f };     // the create-drag's wireframe: the brush about to be placed
+// The element under the cursor (selection-eligible): a paler yellow than the
+// selected FaceHighlight/EdgeHighlight, drawn bolder, so a hovered neighbor of
+// a selected element still reads as a different state.
+inline constexpr Vec4 HoverEligible{ 1.0f, 0.95f, 0.55f, 1.0f };
 inline constexpr Vec4 VertexHandle{ 0.6f, 0.7f, 0.85f, 1.0f };   // all vertices shown in vertex mode
 // Soft (smooth-shaded) edges: a green stroke replacing the wireframe color on
 // edges marked soft, so softness reads directly in the viewport.
@@ -72,4 +76,5 @@ inline constexpr float HandlePixels = 8.0f;
 inline constexpr float ActiveLinePixels = 2.0f;   // active-body wireframe
 inline constexpr float OverlayLinePixels = 1.5f;  // hover/element highlights, manipulators
 inline constexpr float PreviewLinePixels = 1.0f;  // preview-body wireframe (subordinate)
+inline constexpr float HoverLinePixels = 2.0f;    // the hovered element, bolder than a selected one
 } // namespace EditorTheme

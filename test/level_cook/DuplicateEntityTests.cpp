@@ -81,8 +81,8 @@ namespace
 
         const std::array<EntityId, 1> sources = { brush };
         const std::array<Transform3f, 1> transforms = { Transform3f::Identity() };
-        DuplicateEntitiesCommand command(sources, transforms, Scene, Document,
-                                         selection, /*asInstance*/ false);
+        DuplicateEntitiesCommand command(sources, transforms, Scene, Document, selection,
+                                         DuplicateBranchPolicy::Subtree, /*asInstance*/ false);
         command.Execute();
 
         const auto nameOf = [&](EntityId entity)
@@ -104,8 +104,8 @@ namespace
         auto* renamed =
             Scene.GetRegistry().Components.TryGet<EntityNameComponent>(brush);
         renamed->Value = InlineString<64>("Brush 7");
-        DuplicateEntitiesCommand again(sources, transforms, Scene, Document,
-                                       selection, false);
+        DuplicateEntitiesCommand again(sources, transforms, Scene, Document, selection,
+                                       DuplicateBranchPolicy::Subtree, false);
         again.Execute();
         EXPECT_EQ(nameOf(selection.GetPrimarySelection().Entity), "Brush");
     }
@@ -120,8 +120,8 @@ namespace
 
         const std::array<EntityId, 1> sources = { source };
         const std::array<Transform3f, 1> transforms = { Transform3f::Identity() };
-        DuplicateEntitiesCommand command(sources, transforms, Scene, Document,
-                                         selection, false);
+        DuplicateEntitiesCommand command(sources, transforms, Scene, Document, selection,
+                                         DuplicateBranchPolicy::Subtree, false);
         command.Execute();
         const EntityId copy = selection.GetPrimarySelection().Entity;
         EXPECT_EQ(Document.GetRegistry().Components.TryGet<EntityNameComponent>(copy),

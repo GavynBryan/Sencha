@@ -21,6 +21,7 @@ public:
 
     [[nodiscard]] std::string_view GetTitle() const override { return "Inspector"; }
     [[nodiscard]] DockSlot GetDockSlot() const override { return DockSlot::Right; }
+    [[nodiscard]] PanelPersistence GetPersistence() const override { return { "inspector", PanelVisibilityPolicy::Remembered }; }
     void OnDraw() override;
 
 private:
