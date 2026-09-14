@@ -211,10 +211,20 @@ void UiDrawPass::Teardown()
     Textures = nullptr;
 }
 
-bool UiDrawPass::EnsurePipeline(const FrameContext& frame)
+VkPipeline UiDrawPass::EnsurePipeline(const FrameContext& frame, Variant variant)
 {
-    if (Pipeline != VK_NULL_HANDLE && PipelineColorFormat == frame.TargetFormat)
-        return true;
+    // One format change invalidates every variant: they all record into the
+    // same scope, so none of them outlives it.
+    if (PipelineColorFormat != frame.TargetFormat)
+    {
+        for (VkPipeline& pipeline : Pipelines)
+            pipeline = VK_NULL_HANDLE;
+        PipelineColorFormat = frame.TargetFormat;
+    }
+
+    VkPipeline& cached = Pipelines[static_cast<std::size_t>(variant)];
+    if (cached != VK_NULL_HANDLE)
+        return cached;
 
     GraphicsPipelineDesc desc{};
     desc.VertexShader = VertexShader;
@@ -248,8 +258,11 @@ bool UiDrawPass::EnsurePipeline(const FrameContext& frame)
     desc.DepthTest = false;
     desc.DepthWrite = false;
 
+    const bool writesMask = variant == Variant::MaskReplace
+                         || variant == Variant::MaskIncrement;
+
     // Premultiplied alpha, which is what the document engine produces and what
-    // the shaders preserve end to end.
+    // the shaders preserve end to end. A mask pass writes no colour at all.
     ColorBlendAttachmentDesc blend{};
     blend.BlendEnable = true;
     blend.SrcColor = VK_BLEND_FACTOR_ONE;
@@ -258,16 +271,47 @@ bool UiDrawPass::EnsurePipeline(const FrameContext& frame)
     blend.SrcAlpha = VK_BLEND_FACTOR_ONE;
     blend.DstAlpha = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     blend.AlphaOp = VK_BLEND_OP_ADD;
-    blend.WriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
-                    | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    blend.WriteMask = writesMask
+        ? 0
+        : (VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
+           | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT);
     desc.ColorBlend.push_back(blend);
+
+    switch (variant)
+    {
+    case Variant::Colour:
+        desc.StencilTest = false;
+        break;
+    case Variant::ColourMasked:
+        // Draw only where the mask says. The reference is dynamic because it
+        // counts nesting depth.
+        desc.StencilTest = true;
+        desc.Stencil.CompareOp = VK_COMPARE_OP_EQUAL;
+        break;
+    case Variant::MaskReplace:
+        // Stamp the reference wherever the geometry covers: Set writes 1 over a
+        // buffer cleared to 0, SetInverse writes 0 over one cleared to 1.
+        desc.StencilTest = true;
+        desc.Stencil.CompareOp = VK_COMPARE_OP_ALWAYS;
+        desc.Stencil.PassOp = VK_STENCIL_OP_REPLACE;
+        break;
+    case Variant::MaskIncrement:
+        // Intersect: covered pixels go up by one, so only those covered by both
+        // the previous mask and this geometry reach the new reference.
+        desc.StencilTest = true;
+        desc.Stencil.CompareOp = VK_COMPARE_OP_ALWAYS;
+        desc.Stencil.PassOp = VK_STENCIL_OP_INCREMENT_AND_CLAMP;
+        break;
+    case Variant::Count:
+        return VK_NULL_HANDLE;
+    }
 
     desc.ColorFormats.push_back(frame.TargetFormat);
     desc.DepthFormat = frame.DepthFormat;
+    desc.StencilFormat = frame.StencilFormat;
 
-    Pipeline = Services->Pipelines->GetGraphicsPipeline(desc);
-    PipelineColorFormat = frame.TargetFormat;
-    return Pipeline != VK_NULL_HANDLE;
+    cached = Services->Pipelines->GetGraphicsPipeline(desc);
+    return cached;
 }
 
 void UiDrawPass::ApplyUploads(const UiDrawFrame& ui)
@@ -341,6 +385,31 @@ void UiDrawPass::CollectRetired(const FrameContext& frame)
     Retiring.erase(retired, Retiring.end());
 }
 
+// Resets the mask inside the scope that is already open. vkCmdClearAttachments
+// is the only way to clear mid-scope, and it is what the document engine's own
+// backends do here: a Set or SetInverse starts a new mask rather than adding to
+// whatever the previous one left.
+void UiDrawPass::ClearStencil(const FrameContext& frame, const UiDrawFrame& ui, std::uint32_t value)
+{
+    VkClearAttachment attachment{};
+    attachment.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
+    attachment.clearValue.depthStencil.stencil = value;
+
+    const std::uint32_t width = std::min(
+        ui.Surface.Width > 0 ? ui.Surface.Width : frame.TargetExtent.width,
+        frame.TargetExtent.width);
+    const std::uint32_t height = std::min(
+        ui.Surface.Height > 0 ? ui.Surface.Height : frame.TargetExtent.height,
+        frame.TargetExtent.height);
+
+    VkClearRect rect{};
+    rect.rect = VkRect2D{ { 0, 0 }, { width, height } };
+    rect.baseArrayLayer = 0;
+    rect.layerCount = 1;
+
+    vkCmdClearAttachments(frame.Cmd, 1, &attachment, 1, &rect);
+}
+
 void UiDrawPass::Draw(const FrameContext& frame, const UiDrawFrame& ui)
 {
     if (PipelineLayout == VK_NULL_HANDLE || Services == nullptr)
@@ -350,8 +419,20 @@ void UiDrawPass::Draw(const FrameContext& frame, const UiDrawFrame& ui)
     ApplyReleases(ui, frame);
     CollectRetired(frame);
 
-    if (ui.Commands.empty() || !EnsurePipeline(frame))
+    if (ui.Commands.empty())
         return;
+
+    const bool stencilAvailable = frame.StencilFormat != VK_FORMAT_UNDEFINED;
+    if (!stencilAvailable && !WarnedNoStencil)
+    {
+        WarnedNoStencil = true;
+        if (Services->Logging != nullptr)
+        {
+            Services->Logging->GetLogger<UiDrawPass>().Warn(
+                "UiDrawPass: no stencil aspect on the depth attachment, so clipping "
+                "to a rounded boundary falls back to a rectangle");
+        }
+    }
 
     GpuFrameScratch* scratch = Services->Scratch;
     if (scratch == nullptr)
@@ -359,8 +440,6 @@ void UiDrawPass::Draw(const FrameContext& frame, const UiDrawFrame& ui)
 
     float projection[16];
     MakeSurfaceProjection(ui.Surface, projection);
-
-    vkCmdBindPipeline(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline);
 
     const VkDescriptorSet bindlessSet = Services->Descriptors->GetBindlessSet();
     vkCmdBindDescriptorSets(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout,
@@ -375,14 +454,77 @@ void UiDrawPass::Draw(const FrameContext& frame, const UiDrawFrame& ui)
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(frame.Cmd, 0, 1, &viewport);
 
+    // Which stencil value the mask currently means. Set and SetInverse reset it
+    // to one; Intersect raises it, so a nested clip only passes where every
+    // enclosing mask also covered.
+    std::uint32_t stencilReference = 1;
+    Variant boundVariant = Variant::Count;
+
     for (const UiDrawCommand& command : ui.Commands)
     {
         if (!command.Geometry || command.Geometry->Indices.empty())
             continue;
-        // Clip-mask writes are recorded but not yet drawn; see the stencil note
-        // in Draw's header comment.
-        if (command.ClipMask != UiClipMaskOp::None)
+
+        const bool writesMask = command.ClipMask != UiClipMaskOp::None;
+        if (writesMask && !stencilAvailable)
+        {
+            // Nothing to write the mask into. Skipping the write leaves the
+            // subsequent colour draws unclipped, which is the documented
+            // degradation rather than a wrong picture.
             continue;
+        }
+
+        // The mask geometry is drawn with the value it establishes; everything
+        // after is tested against it.
+        std::uint32_t drawReference = stencilReference;
+        Variant variant = Variant::Colour;
+        if (writesMask)
+        {
+            switch (command.ClipMask)
+            {
+            case UiClipMaskOp::Set:
+                ClearStencil(frame, ui, 0);
+                stencilReference = 1;
+                drawReference = 1;
+                variant = Variant::MaskReplace;
+                break;
+            case UiClipMaskOp::SetInverse:
+                // Cleared to one so the area *outside* the geometry is what
+                // passes; the geometry stamps zero over itself.
+                ClearStencil(frame, ui, 1);
+                stencilReference = 1;
+                drawReference = 0;
+                variant = Variant::MaskReplace;
+                break;
+            case UiClipMaskOp::Intersect:
+                ++stencilReference;
+                drawReference = stencilReference;
+                variant = Variant::MaskIncrement;
+                break;
+            case UiClipMaskOp::None:
+                break;
+            }
+        }
+        else if (command.ClipMaskEnabled && stencilAvailable)
+        {
+            variant = Variant::ColourMasked;
+        }
+
+        const VkPipeline pipeline = EnsurePipeline(frame, variant);
+        if (pipeline == VK_NULL_HANDLE)
+            continue;
+        if (variant != boundVariant)
+        {
+            vkCmdBindPipeline(frame.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            boundVariant = variant;
+        }
+        if (variant != Variant::Colour)
+        {
+            vkCmdSetStencilCompareMask(frame.Cmd, VK_STENCIL_FACE_FRONT_AND_BACK, 0xFFu);
+            vkCmdSetStencilWriteMask(frame.Cmd, VK_STENCIL_FACE_FRONT_AND_BACK,
+                                     writesMask ? 0xFFu : 0u);
+            vkCmdSetStencilReference(frame.Cmd, VK_STENCIL_FACE_FRONT_AND_BACK, drawReference);
+        }
 
         const UiGeometryBlob& blob = *command.Geometry;
         const auto vertexBytes = static_cast<std::uint64_t>(blob.Vertices.size() * sizeof(UiVertex));

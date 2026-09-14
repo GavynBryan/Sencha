@@ -115,6 +115,8 @@ uint64_t VulkanPipelineCache::HashDesc(const GraphicsPipelineDesc& desc) const
 
     hash.FeedPod(desc.DepthFormat);
     hash.FeedPod(desc.StencilFormat);
+    hash.FeedPod(desc.StencilTest);
+    hash.FeedPod(desc.Stencil);
     return hash.Value;
 }
 
@@ -280,6 +282,14 @@ VkPipeline VulkanPipelineCache::CreateGraphicsPipeline(const GraphicsPipelineDes
     depthStencil.depthTestEnable = desc.DepthTest ? VK_TRUE : VK_FALSE;
     depthStencil.depthWriteEnable = desc.DepthWrite ? VK_TRUE : VK_FALSE;
     depthStencil.depthCompareOp = desc.DepthCompare;
+    depthStencil.stencilTestEnable = desc.StencilTest ? VK_TRUE : VK_FALSE;
+    depthStencil.front.failOp = desc.Stencil.FailOp;
+    depthStencil.front.passOp = desc.Stencil.PassOp;
+    depthStencil.front.depthFailOp = desc.Stencil.DepthFailOp;
+    depthStencil.front.compareOp = desc.Stencil.CompareOp;
+    // Compare mask, write mask and reference are dynamic; the values here are
+    // ignored, and setting them would only suggest otherwise.
+    depthStencil.back = depthStencil.front;
 
     std::vector<VkPipelineColorBlendAttachmentState> blendStates;
     blendStates.reserve(desc.ColorBlend.size());
@@ -305,10 +315,16 @@ VkPipeline VulkanPipelineCache::CreateGraphicsPipeline(const GraphicsPipelineDes
     const VkDynamicState dynamicStates[] = {
         VK_DYNAMIC_STATE_VIEWPORT,
         VK_DYNAMIC_STATE_SCISSOR,
+        VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK,
+        VK_DYNAMIC_STATE_STENCIL_WRITE_MASK,
+        VK_DYNAMIC_STATE_STENCIL_REFERENCE,
     };
     VkPipelineDynamicStateCreateInfo dynamic{};
     dynamic.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamic.dynamicStateCount = 2;
+    // The three stencil masks are only declared dynamic when the pipeline tests
+    // against them: a pipeline that never touches the stencil would otherwise
+    // oblige every caller to set state it does not use.
+    dynamic.dynamicStateCount = desc.StencilTest ? 5 : 2;
     dynamic.pDynamicStates = dynamicStates;
 
     VkPipelineRenderingCreateInfo rendering{};

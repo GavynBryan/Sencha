@@ -233,6 +233,7 @@ bool MeshForwardPass::EnsurePipelines(const FrameContext& frame)
             desc.ColorBlend = { ColorBlendAttachmentDesc{} };
             desc.ColorFormats = { frame.TargetFormat };
             desc.DepthFormat = frame.DepthFormat;
+        desc.StencilFormat = frame.StencilFormat;
 
             // Read the axes as bits. The old test for unlit was "index is at
             // or past UnlitBack", which stops being true the moment a third
@@ -288,6 +289,7 @@ bool MeshForwardPass::EnsureTransparentPipelines(const FrameContext& frame)
             desc.ColorBlend = { blend };
             desc.ColorFormats = { frame.TargetFormat };
             desc.DepthFormat = frame.DepthFormat;
+        desc.StencilFormat = frame.StencilFormat;
 
             const bool doubleSided = (index & kOpaquePipelineDoubleSidedBit) != 0;
             const bool unlit = (index & kOpaquePipelineUnlitBit) != 0;
@@ -345,6 +347,7 @@ bool MeshForwardPass::EnsureDebugPipelines(const FrameContext& frame,
         desc.ColorBlend = { blend };
         desc.ColorFormats = { frame.TargetFormat };
         desc.DepthFormat = frame.DepthFormat;
+        desc.StencilFormat = frame.StencilFormat;
         desc.CullMode = (index & 1u) != 0 ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
         // Only the mask constant: the debug shader has no lit/unlit variant.
         desc.FragmentSpecializationConstants = {

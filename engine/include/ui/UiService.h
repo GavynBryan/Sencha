@@ -49,6 +49,18 @@ public:
     UiService(UiService&&) = delete;
     UiService& operator=(UiService&&) = delete;
 
+    // Closes every screen and surface, releasing the asset leases they hold.
+    //
+    // A host MUST call this while the asset caches are still alive -- from
+    // Game::OnShutdown, not from wherever its UiService member happens to be
+    // destroyed. A lease outliving the cache it references calls Detach on a
+    // destroyed owner, which is a pure-virtual call, not a leak: it takes the
+    // process down at exit and points nowhere near the cause.
+    //
+    // Idempotent, and the destructor calls it too, so a host whose ordering is
+    // already correct needs nothing extra.
+    void Shutdown();
+
     // False when the document engine could not be brought up. Every call below
     // is a safe no-op in that state rather than a crash: a game whose UI failed
     // to initialise should lose its menus, not its process.

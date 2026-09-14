@@ -195,17 +195,22 @@ alone does not buy the visuals authored chrome wants.
 `EnableScissorRegion`, `SetScissorRegion`), plus `SetTransform`, plus
 `EnableClipMask` / `RenderToClipMask`.
 
-All of it is recorded. Everything except the clip mask also **draws** today;
-rounded *backgrounds* are ordinary geometry and render correctly, which is most
-of what authored chrome looks like. What is still outstanding is clipping
-*children* to a rounded boundary: the recorder emits the mask commands, and the
-pass currently skips them, so a child overflowing a rounded container is clipped
-rectangularly rather than to the radius.
-
-The clip mask is Tier 1 rather than Tier 2 deliberately -- RmlUi needs it for
+The clip mask is Tier 1 rather than Tier 2 deliberately: RmlUi needs it for
 `border-radius` combined with `overflow`, and for `transform`/`perspective`, and
-a rectangular scissor cannot express any of that. The stencil aspect it needs is
-already in place (§7, Stencil); what remains is the pass work.
+a rectangular scissor cannot express any of that -- while rounded panels are
+most of what authored chrome is made of.
+
+It is stencil-backed, following the semantics RmlUi's own backends use. `Set`
+clears the stencil to zero and stamps one over the mask geometry; `SetInverse`
+clears to one and stamps zero, so what passes is the area *outside*; `Intersect`
+increments and raises the test reference, so a nested clip passes only where
+every enclosing mask also covered. Four pipeline variants cover it, because
+whether a draw writes the mask or tests against it is pipeline state: reference,
+compare mask and write mask stay dynamic so nesting depth does not multiply
+pipelines.
+
+A device with no stencil-bearing depth format skips the mask writes, leaving the
+draws it would have clipped unclipped, and says so once.
 
 **Tier 2 -- not implemented.** `PushLayer`/`CompositeLayers`/`PopLayer`,
 `SaveLayerAsTexture`, `SaveLayerAsMaskImage`, `CompileFilter`, `CompileShader`.
@@ -228,10 +233,15 @@ prefers `VK_FORMAT_D32_SFLOAT_S8_UINT`, then `D32_SFLOAT`, then
 because depth precision is not a thing to trade for a stencil aspect. Verified
 against the golden images: the format change moved no pixel.
 
+The whole swapchain scope binds that stencil aspect, so **every pipeline
+recording into it declares the format** -- the mesh and sky passes, and both
+ImGui hosts. Dynamic rendering matches attachment formats, not intentions: a
+pipeline that never touches the stencil still has to say so. Verified against
+the golden images, which did not move.
+
 A device offering no stencil-bearing depth format degrades `border-radius`
-clipping to rectangular scissor with a one-time diagnostic rather than failing
-to start, which is the same behaviour every device gets until the pass work
-lands.
+clipping to a rectangle with a one-time diagnostic rather than failing to
+start.
 
 ## 8. Colour, alpha, and blend state
 
@@ -282,6 +292,13 @@ package data, the preloader warms declared dependencies, and an **open screen
 instance** owns the asset leases its document needs. Document lifetime and
 resource lifetime then line up exactly.
 
+That makes shutdown order a real contract rather than a detail. A host must call
+`UiService::Shutdown()` while the asset caches are still alive -- from
+`Game::OnShutdown`, not from wherever its `UiService` member happens to be
+destroyed. A lease outliving the cache it references calls `Detach` on a
+destroyed owner, which is a pure-virtual call at exit that points nowhere near
+its cause.
+
 ## 10. The content path
 
 ```
@@ -315,10 +332,17 @@ build cache is a worse failure than a missing feature because nothing about it
 looks wrong.
 
 Fonts cook `.ttf`/`.otf` to `.sfont`: the face bytes unchanged, plus the family,
-style and weight to register them under, taken from the filename convention
-(`Inter-BoldItalic.ttf`) and overridable in a `.meta` sidecar. No glyphs are
-baked. An atlas depends on the size a document asks for and on the renderer that
-samples it, so it belongs to the runtime that draws the text.
+style and weight, taken from the filename convention (`Inter-BoldItalic.ttf`)
+and overridable in a `.meta` sidecar. No glyphs are baked. An atlas depends on
+the size a document asks for and on the renderer that samples it, so it belongs
+to the runtime that draws the text.
+
+A document declares the faces it uses in RCSS, with `@font-face`, and the
+document engine loads them through the file interface like any other resource --
+the runtime answers that request with the cooked bytes the open screen leases.
+Registering them a second time from the cooked metadata would be a competing
+source of truth for what a face is called, so the runtime does not; the `.sfont`
+metadata is the default for registering a face programmatically instead.
 
 ## 11. What does not belong here
 

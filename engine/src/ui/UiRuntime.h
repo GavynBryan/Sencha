@@ -3,9 +3,11 @@
 #include <core/assets/AssetLease.h>
 #include <core/logging/Logger.h>
 #include <graphics/RenderExtent.h>
+#include <assets/font/FontFaceHandle.h>
 #include <ui/UiScreenHandle.h>
 #include <ui/UiSurface.h>
 
+#include "rml/RmlPackageFileSource.h"
 #include "rml/RmlRenderRecorder.h"
 
 #include <cstdint>
@@ -44,7 +46,7 @@ class UiPackageCache;
 // of these in one process would have the second quietly steal the first's
 // interfaces, so construction refuses rather than allowing it.
 //=============================================================================
-class UiRuntime final : public IUiTextureResolver
+class UiRuntime final : public IUiTextureResolver, public IUiPackageResourceBytes
 {
 public:
     // `textures` is null in a process with no texture cache, which makes content
@@ -63,6 +65,12 @@ public:
     UiRuntime& operator=(UiRuntime&&) = delete;
 
     [[nodiscard]] bool IsReady() const { return Ready; }
+
+    // Releases everything the runtime holds on behalf of a host: screens, their
+    // leases, and the contexts. Separate from the destructor because the leases
+    // have to go while the caches they reference are still alive, and a host's
+    // member destruction order is not something this layer can decide.
+    void Shutdown();
 
     [[nodiscard]] UiSurfaceId CreateSurface(std::string_view name, RenderExtent size);
     void DestroySurface(UiSurfaceId surface);
@@ -88,6 +96,12 @@ public:
     [[nodiscard]] bool ResolveTexture(std::string_view source,
                                       TextureHandle& outHandle,
                                       RenderExtent& outSize) override;
+
+    // IUiPackageResourceBytes: a font face the open screen leases. Faces are
+    // referenced rather than packaged, so this is how the document engine's
+    // own @font-face handling reaches one.
+    [[nodiscard]] bool ResolveResourceBytes(std::string_view source,
+                                            const std::vector<std::byte>*& outBytes) override;
 
     [[nodiscard]] std::optional<UiElementBox> MeasureElement(UiScreenHandle screen,
                                                              std::string_view elementId) const;
@@ -128,6 +142,7 @@ private:
         // resource table the same way, so the two agree by construction.
         std::string ResourceRoot;
         std::unordered_map<std::string, TextureHandle> TexturesByAssetPath;
+        std::unordered_map<std::string, FontFaceHandle> FontsByAssetPath;
 
         std::uint32_t Generation = 1;
         bool Live = false;
@@ -145,7 +160,12 @@ private:
         const struct UiPackage& package,
         std::string_view packagePath,
         std::vector<AssetLease>& outLeases,
-        std::unordered_map<std::string, TextureHandle>& outTextures);
+        std::unordered_map<std::string, TextureHandle>& outTextures,
+        std::unordered_map<std::string, FontFaceHandle>& outFonts);
+
+    // The asset path a document-relative reference names, resolved the way the
+    // cooker resolved the resource table so the two agree by construction.
+    [[nodiscard]] std::string AssetPathFor(const Screen& screen, std::string_view source) const;
 
     void CloseScreenSlot(Screen& screen);
 
@@ -174,12 +194,6 @@ private:
     // loading or rendering, null otherwise, so a request arriving outside both
     // fails instead of resolving against whatever was open last.
     const Screen* ActiveScreen = nullptr;
-
-    // Faces already handed to the document engine, by asset path. The engine
-    // takes a copy of the bytes and files the face under its family, so
-    // registering the same path twice would shadow the first registration with
-    // an identical one.
-    std::vector<std::string> RegisteredFonts;
 
     bool Ready = false;
 };

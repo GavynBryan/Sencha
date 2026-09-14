@@ -4,11 +4,33 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
 struct UiPackage;
 class Logger;
+
+//=============================================================================
+// IUiPackageResourceBytes
+//
+// Bytes for a resource the package declared but does not carry: a font face,
+// which is a real asset with its own identity and so is referenced rather than
+// copied into the package.
+//
+// A document engine asks for a font through the file interface, the same way it
+// asks for a stylesheet, so this is where that request lands.
+//=============================================================================
+class IUiPackageResourceBytes
+{
+public:
+    virtual ~IUiPackageResourceBytes() = default;
+
+    // False when the open screen's resource table does not name it, which is an
+    // authoring error rather than a reason to look on disk.
+    [[nodiscard]] virtual bool ResolveResourceBytes(std::string_view source,
+                                                    const std::vector<std::byte>*& outBytes) = 0;
+};
 
 //=============================================================================
 // RmlPackageFileSource
@@ -29,6 +51,9 @@ class RmlPackageFileSource final : public Rml::FileInterface
 {
 public:
     explicit RmlPackageFileSource(Logger& log);
+
+    // Consulted when the package carries no blob under the requested name.
+    void SetResourceBytes(IUiPackageResourceBytes* resolver) { Resources = resolver; }
 
     // Binds `package` for as long as it lives. Not reentrant: one load at a
     // time, which is what the document engine does anyway.
@@ -62,6 +87,7 @@ private:
     [[nodiscard]] OpenFile* Resolve(Rml::FileHandle file);
 
     Logger& Log;
+    IUiPackageResourceBytes* Resources = nullptr;
     const UiPackage* Active = nullptr;
     std::unordered_map<std::uint64_t, OpenFile> Files;
     // Never reused, so a handle outliving its Close reads as invalid rather

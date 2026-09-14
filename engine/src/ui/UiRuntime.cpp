@@ -31,16 +31,7 @@ Rml::Vector2i ToRmlDimensions(RenderExtent size)
     return Rml::Vector2i(static_cast<int>(size.Width), static_cast<int>(size.Height));
 }
 
-Rml::Style::FontStyle ToRmlFontStyle(FontStyle style)
-{
-    return style == FontStyle::Italic ? Rml::Style::FontStyle::Italic
-                                      : Rml::Style::FontStyle::Normal;
-}
 
-Rml::Style::FontWeight ToRmlFontWeight(std::uint16_t weight)
-{
-    return static_cast<Rml::Style::FontWeight>(weight);
-}
 } // namespace
 
 UiRuntime::UiRuntime(LoggingProvider& logging,
@@ -69,6 +60,7 @@ UiRuntime::UiRuntime(LoggingProvider& logging,
     Rml::SetSystemInterface(SystemBridge.get());
     Rml::SetFileInterface(FileSource.get());
     Recorder->SetTextureResolver(this);
+    FileSource->SetResourceBytes(this);
     Rml::SetRenderInterface(Recorder.get());
 
     if (!Rml::Initialise())
@@ -88,14 +80,14 @@ UiRuntime::UiRuntime(LoggingProvider& logging,
     Ready = true;
 }
 
-UiRuntime::~UiRuntime()
+void UiRuntime::Shutdown()
 {
     if (!Ready)
         return;
 
-    // Screens before surfaces before the engine. A document outliving its
-    // context, or either outliving Shutdown, is a use-after-free inside the
-    // engine rather than a leak we would hear about.
+    // Screens before surfaces. A document outliving its context is a
+    // use-after-free inside the document engine rather than a leak we would
+    // hear about.
     for (Screen& screen : Screens)
     {
         if (screen.Live)
@@ -109,6 +101,19 @@ UiRuntime::~UiRuntime()
             Rml::RemoveContext(surface.Context->GetName());
     }
     Surfaces.clear();
+    DrawFrames.clear();
+    ActiveScreen = nullptr;
+}
+
+UiRuntime::~UiRuntime()
+{
+    if (!Ready)
+        return;
+
+    // Idempotent, and a no-op for a host that shut down in the right order --
+    // which it had to, because the leases released in here reference caches
+    // this object does not own and cannot outlive.
+    Shutdown();
 
     Rml::Shutdown();
 
@@ -239,10 +244,12 @@ float UiRuntime::GetSurfaceScale(UiSurfaceId surface) const
 bool UiRuntime::AcquireResources(const UiPackage& package,
                                  std::string_view packagePath,
                                  std::vector<AssetLease>& outLeases,
-                                 std::unordered_map<std::string, TextureHandle>& outTextures)
+                                 std::unordered_map<std::string, TextureHandle>& outTextures,
+                                 std::unordered_map<std::string, FontFaceHandle>& outFonts)
 {
     outLeases.clear();
     outTextures.clear();
+    outFonts.clear();
     outLeases.reserve(package.Resources.size());
 
     for (const AssetRef& resource : package.Resources)
@@ -261,32 +268,12 @@ bool UiRuntime::AcquireResources(const UiPackage& package,
 
         if (resource.Type == AssetType::Font)
         {
-            const bool already = std::find(RegisteredFonts.begin(), RegisteredFonts.end(),
-                                           resource.Path) != RegisteredFonts.end();
-            if (!already)
-            {
-                const FontFace* face = Fonts.Get(FontFaceHandle::FromToken(lease.OpaqueToken()));
-                if (face == nullptr)
-                {
-                    Log.Error("UiRuntime: font '{}' loaded but is not resident", resource.Path);
-                    outLeases.clear();
-                    return false;
-                }
-
-                // Bytes, never a path: the engine is handed a span it copies,
-                // so a shipped build needs no font file on disk.
-                const Rml::Span<const Rml::byte> bytes(
-                    reinterpret_cast<const Rml::byte*>(face->Bytes.data()), face->Bytes.size());
-                if (!Rml::LoadFontFace(bytes, face->Family, ToRmlFontStyle(face->Style),
-                                       ToRmlFontWeight(face->Weight), face->Fallback))
-                {
-                    Log.Error("UiRuntime: '{}' is not a face the font engine could read",
-                              resource.Path);
-                    outLeases.clear();
-                    return false;
-                }
-                RegisteredFonts.emplace_back(resource.Path);
-            }
+            // Not registered here. A document declares its faces in RCSS, and
+            // the document engine loads them through the file interface, which
+            // is how it learns the family, weight and style the author wrote.
+            // Registering them a second time from the cooked metadata would be
+            // a competing source of truth for what a face is called.
+            outFonts.emplace(resource.Path, FontFaceHandle::FromToken(lease.OpaqueToken()));
         }
         else if (resource.Type == AssetType::Texture)
         {
@@ -327,7 +314,8 @@ UiScreenHandle UiRuntime::OpenScreen(UiSurfaceId surface, std::string_view packa
 
     std::vector<AssetLease> resourceLeases;
     std::unordered_map<std::string, TextureHandle> screenTextures;
-    if (!AcquireResources(*package, packagePath, resourceLeases, screenTextures))
+    std::unordered_map<std::string, FontFaceHandle> screenFonts;
+    if (!AcquireResources(*package, packagePath, resourceLeases, screenTextures, screenFonts))
         return {};
 
     // Built before the load, because the document engine resolves images while
@@ -338,6 +326,7 @@ UiScreenHandle UiRuntime::OpenScreen(UiSurfaceId surface, std::string_view packa
         ? std::string{}
         : std::filesystem::path(package->Blobs.front().SourcePath).parent_path().generic_string();
     pending.TexturesByAssetPath = std::move(screenTextures);
+    pending.FontsByAssetPath = std::move(screenFonts);
 
     Rml::ElementDocument* document = nullptr;
     {
@@ -395,6 +384,7 @@ void UiRuntime::CloseScreenSlot(Screen& screen)
     // After the document, so a resource is released only once nothing is laid
     // out against it.
     screen.TexturesByAssetPath.clear();
+    screen.FontsByAssetPath.clear();
     screen.Resources.clear();
     screen.Package.Reset();
     screen.Live = false;
@@ -466,6 +456,18 @@ void UiRuntime::ExtractRender()
     }
 }
 
+std::string UiRuntime::AssetPathFor(const Screen& screen, std::string_view source) const
+{
+    // A document names a resource the way its author wrote it; the resource
+    // table holds asset paths. The cooker resolved references against the root
+    // document's directory, so resolving the same way here is what makes the
+    // two agree by construction rather than by coincidence.
+    std::filesystem::path combined = screen.ResourceRoot.empty()
+        ? std::filesystem::path(source)
+        : std::filesystem::path(screen.ResourceRoot) / std::filesystem::path(source);
+    return "asset://" + combined.lexically_normal().generic_string();
+}
+
 bool UiRuntime::ResolveTexture(std::string_view source,
                                TextureHandle& outHandle,
                                RenderExtent& outSize)
@@ -473,21 +475,34 @@ bool UiRuntime::ResolveTexture(std::string_view source,
     if (ActiveScreen == nullptr || Textures == nullptr)
         return false;
 
-    // The document names an image the way its author wrote it; the resource
-    // table holds asset paths. The cooker resolved references against the root
-    // document's directory, so resolving the same way here is what makes the
-    // two agree.
-    std::filesystem::path combined = ActiveScreen->ResourceRoot.empty()
-        ? std::filesystem::path(source)
-        : std::filesystem::path(ActiveScreen->ResourceRoot) / std::filesystem::path(source);
-    const std::string assetPath = "asset://" + combined.lexically_normal().generic_string();
-
+    const std::string assetPath = AssetPathFor(*ActiveScreen, source);
     const auto it = ActiveScreen->TexturesByAssetPath.find(assetPath);
     if (it == ActiveScreen->TexturesByAssetPath.end())
         return false;
 
     outHandle = it->second;
     outSize = Textures->GetExtent(it->second);
+    return true;
+}
+
+bool UiRuntime::ResolveResourceBytes(std::string_view source,
+                                     const std::vector<std::byte>*& outBytes)
+{
+    if (ActiveScreen == nullptr)
+        return false;
+
+    const std::string assetPath = AssetPathFor(*ActiveScreen, source);
+    const auto it = ActiveScreen->FontsByAssetPath.find(assetPath);
+    if (it == ActiveScreen->FontsByAssetPath.end())
+        return false;
+
+    const FontFace* face = Fonts.Get(it->second);
+    if (face == nullptr)
+        return false;
+
+    // The face bytes out of the cooked container, never a path: a shipped build
+    // has no font file on disk to find.
+    outBytes = &face->Bytes;
     return true;
 }
 

@@ -13,6 +13,11 @@ UiService::UiService(LoggingProvider& logging,
 
 UiService::~UiService() = default;
 
+void UiService::Shutdown()
+{
+    Runtime->Shutdown();
+}
+
 bool UiService::IsReady() const
 {
     return Runtime->IsReady();

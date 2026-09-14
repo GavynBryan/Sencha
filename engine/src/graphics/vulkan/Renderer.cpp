@@ -138,6 +138,8 @@ Renderer::Renderer(LoggingProvider& logging,
     DepthTarget = std::make_unique<VulkanDepthTarget>(images, physicalDevice);
     DepthTarget->Create(swapchain.GetExtent());
     Services.DepthFormat = DepthTarget->GetFormat();
+    Services.StencilFormat = DepthTarget->HasStencil()
+        ? DepthTarget->GetFormat() : VK_FORMAT_UNDEFINED;
     ImageCapture.Setup(Services);
     Valid = true;
 }
@@ -532,7 +534,9 @@ void Renderer::RecordSwapchainPhases(const VulkanFrame& frame)
         t.SrcAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         t.DstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT
                     | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        t.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        t.AspectMask = DepthTarget->HasStencil()
+            ? (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
+            : VK_IMAGE_ASPECT_DEPTH_BIT;
         VulkanBarriers::TransitionImage(frame.CommandBuffer, t);
         DepthLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     }
@@ -553,6 +557,17 @@ void Renderer::RecordSwapchainPhases(const VulkanFrame& frame)
     depthAttach.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttach.clearValue.depthStencil = { 1.0f, 0 };
 
+    // The same view, as Vulkan requires when a scope binds both. Cleared to
+    // zero so authored UI's clip mask starts from a known state rather than
+    // from whatever the previous frame left; nothing else in the scope tests
+    // against it.
+    const bool hasStencil = DepthTarget->HasStencil()
+        && DepthTarget->GetView() != VK_NULL_HANDLE;
+    VkRenderingAttachmentInfo stencilAttach = depthAttach;
+    stencilAttach.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    stencilAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    stencilAttach.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
     renderingInfo.renderArea.offset = { 0, 0 };
@@ -561,6 +576,7 @@ void Renderer::RecordSwapchainPhases(const VulkanFrame& frame)
     renderingInfo.colorAttachmentCount = 1;
     renderingInfo.pColorAttachments = &colorAttach;
     renderingInfo.pDepthAttachment = depthAttach.imageView != VK_NULL_HANDLE ? &depthAttach : nullptr;
+    renderingInfo.pStencilAttachment = hasStencil ? &stencilAttach : nullptr;
 
     vkCmdBeginRendering(frame.CommandBuffer, &renderingInfo);
 
@@ -571,6 +587,7 @@ void Renderer::RecordSwapchainPhases(const VulkanFrame& frame)
     ctx.TargetFormat = frame.SwapchainFormat;
     ctx.DepthView = DepthTarget->GetView();
     ctx.DepthFormat = DepthTarget->GetFormat();
+    ctx.StencilFormat = hasStencil ? DepthTarget->GetFormat() : VK_FORMAT_UNDEFINED;
     ctx.Retirement = Frames.GetRetirement();
 
     struct SwapchainPhase { RenderPhase Phase; GpuScope Scope; };

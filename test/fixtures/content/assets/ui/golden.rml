@@ -8,5 +8,6 @@
     <div id="rounded"/>
     <div id="invisible"/>
     <div id="label">Sencha authored UI</div>
+    <div id="clipper"><div id="overflowing"/></div>
 </body>
 </rml>

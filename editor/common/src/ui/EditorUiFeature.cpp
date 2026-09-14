@@ -755,7 +755,10 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
 
     ColorFormat = services.Swapchain->GetFormat();
     vulkanInfo.PipelineRenderingCreateInfo.pColorAttachmentFormats = &ColorFormat;
+    // See the same line in ImGuiDebugOverlay: the swapchain scope binds a
+    // stencil attachment, so every pipeline in it declares the format.
     vulkanInfo.PipelineRenderingCreateInfo.depthAttachmentFormat = services.DepthFormat;
+    vulkanInfo.PipelineRenderingCreateInfo.stencilAttachmentFormat = services.StencilFormat;
 
     if (!ImGui_ImplVulkan_Init(&vulkanInfo))
     {

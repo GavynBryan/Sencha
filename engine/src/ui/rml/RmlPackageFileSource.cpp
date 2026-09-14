@@ -35,15 +35,20 @@ Rml::FileHandle RmlPackageFileSource::Open(const Rml::String& path)
         return 0;
     }
 
-    const UiPackageBlob* blob = Active->FindBlob(path);
-    if (blob == nullptr)
+    const std::vector<std::byte>* bytes = nullptr;
+    if (const UiPackageBlob* blob = Active->FindBlob(path); blob != nullptr)
     {
-        Log.Error("ui: package '{}' has no blob named '{}'", Active->RootDocumentName, path);
+        bytes = &blob->Bytes;
+    }
+    else if (Resources == nullptr || !Resources->ResolveResourceBytes(path, bytes))
+    {
+        Log.Error("ui: package '{}' neither carries nor declares '{}'",
+                  Active->RootDocumentName, path);
         return 0;
     }
 
     const std::uint64_t handle = NextHandle++;
-    Files.emplace(handle, OpenFile{ &blob->Bytes, 0 });
+    Files.emplace(handle, OpenFile{ bytes, 0 });
     return static_cast<Rml::FileHandle>(handle);
 }
 

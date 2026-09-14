@@ -58,7 +58,20 @@ private:
         std::uint64_t RetireStamp = 0;
     };
 
-    [[nodiscard]] bool EnsurePipeline(const FrameContext& frame);
+    // Which pipeline a command needs. Four rather than one because the clip
+    // mask is pipeline state: writing the mask means colour off and a stencil
+    // op, testing against it means colour on and a stencil compare.
+    enum class Variant : std::uint8_t
+    {
+        Colour = 0,       // no clip mask in effect
+        ColourMasked,     // colour, tested against the current mask
+        MaskReplace,      // writes the mask: Set and SetInverse
+        MaskIncrement,    // narrows the mask: Intersect
+        Count,
+    };
+
+    [[nodiscard]] VkPipeline EnsurePipeline(const FrameContext& frame, Variant variant);
+    void ClearStencil(const FrameContext& frame, const UiDrawFrame& ui, std::uint32_t value);
     void ApplyUploads(const UiDrawFrame& ui);
     void ApplyReleases(const UiDrawFrame& ui, const FrameContext& frame);
     void CollectRetired(const FrameContext& frame);
@@ -68,8 +81,11 @@ private:
 
     VkDevice Device = VK_NULL_HANDLE;
     VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
-    VkPipeline Pipeline = VK_NULL_HANDLE;
+    VkPipeline Pipelines[static_cast<std::size_t>(Variant::Count)]{};
     VkFormat PipelineColorFormat = VK_FORMAT_UNDEFINED;
+    // Reported once rather than per frame: a device with no stencil aspect
+    // draws every frame, and the log would become the failure.
+    bool WarnedNoStencil = false;
     ShaderHandle VertexShader{};
     ShaderHandle FragmentShader{};
     VkSampler Sampler = VK_NULL_HANDLE;

@@ -87,6 +87,10 @@ struct RendererServices
     GpuFrameScratch* Scratch = nullptr;
     VulkanUploadContextService* Upload = nullptr;
     VkFormat DepthFormat = VK_FORMAT_UNDEFINED;
+    // The stencil aspect of that same attachment, or UNDEFINED. A feature that
+    // builds its pipelines at Setup rather than per frame -- the ImGui hosts --
+    // reads it from here; one building them per frame reads FrameContext.
+    VkFormat StencilFormat = VK_FORMAT_UNDEFINED;
     // The engine's instrumentation bundle. The pointer is stable for the
     // renderer's life; the members flip with render.profile.mode, so cache
     // the bundle and re-read its members per frame, never the members.
@@ -104,6 +108,12 @@ struct FrameContext
     VkFormat TargetFormat = VK_FORMAT_UNDEFINED;
     VkImageView DepthView = VK_NULL_HANDLE;
     VkFormat DepthFormat = VK_FORMAT_UNDEFINED;
+    // The stencil aspect of the same attachment, or UNDEFINED when the depth
+    // format has none. Every pipeline recording into this scope must declare
+    // it: dynamic rendering requires the pipeline's attachment formats to match
+    // the scope's, and "no stencil declared" against a bound stencil attachment
+    // is a mismatch rather than an omission.
+    VkFormat StencilFormat = VK_FORMAT_UNDEFINED;
     RenderPhase Phase = RenderPhase::MainColor;
     // Fence-anchored frame clock. A feature releasing a GPU resource the
     // renderer may still be reading stamps it from here and frees it once this

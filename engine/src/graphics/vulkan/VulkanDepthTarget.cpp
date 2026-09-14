@@ -26,7 +26,12 @@ void VulkanDepthTarget::Create(VkExtent2D extent)
     info.Format = Format;
     info.Extent = extent;
     info.Usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    info.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    // Both aspects when the format carries a stencil. Vulkan requires the depth
+    // and stencil attachments of one rendering scope to be the *same* view, so a
+    // separate stencil-only view would be illegal rather than merely wasteful.
+    info.AspectMask = HasStencil()
+        ? (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
+        : VK_IMAGE_ASPECT_DEPTH_BIT;
     info.DebugName = "Main depth target";
 
     Handle = Images->Create(info);

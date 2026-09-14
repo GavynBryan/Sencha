@@ -60,6 +60,22 @@ struct ColorBlendAttachmentDesc
     bool operator==(const ColorBlendAttachmentDesc&) const = default;
 };
 
+// Stencil state, for a pipeline that writes or tests a clip mask. Front and back
+// share one description: nothing using this is culled, so a per-face split would
+// be two names for the same value.
+//
+// The reference, compare mask and write mask stay dynamic -- they change per
+// draw within one mask, and baking them would mean a pipeline per nesting depth.
+struct StencilOpDesc
+{
+    VkStencilOp FailOp = VK_STENCIL_OP_KEEP;
+    VkStencilOp PassOp = VK_STENCIL_OP_KEEP;
+    VkStencilOp DepthFailOp = VK_STENCIL_OP_KEEP;
+    VkCompareOp CompareOp = VK_COMPARE_OP_ALWAYS;
+
+    bool operator==(const StencilOpDesc&) const = default;
+};
+
 struct GraphicsPipelineDesc
 {
     ShaderHandle VertexShader;
@@ -87,6 +103,11 @@ struct GraphicsPipelineDesc
     std::vector<VkFormat> ColorFormats;
     VkFormat DepthFormat = VK_FORMAT_UNDEFINED;
     VkFormat StencilFormat = VK_FORMAT_UNDEFINED;
+
+    // Off by default, which is every pipeline that is not drawing or writing an
+    // authored UI clip mask.
+    bool StencilTest = false;
+    StencilOpDesc Stencil{};
 
     bool operator==(const GraphicsPipelineDesc&) const = default;
 };

@@ -46,6 +46,33 @@ body
     border-radius: 18px;
 }
 
+/* The clip-mask case, and the only one that needs a stencil: a child clipped to
+   a ROUNDED boundary. Without the mask the child spills out as a rectangle, so
+   the corners of this are the whole assertion. */
+#clipper
+{
+    display: block;
+    position: absolute;
+    left: 420px;
+    top: 240px;
+    width: 200px;
+    height: 120px;
+    border-radius: 40px;
+    overflow: hidden;
+    background-color: #2e3b4eff;
+}
+
+#overflowing
+{
+    display: block;
+    position: absolute;
+    left: -30px;
+    top: -30px;
+    width: 300px;
+    height: 200px;
+    background-color: #46c86eff;
+}
+
 /* Text: the font kind, LoadFontFace over bytes, the glyph atlas as a generated
    texture, and its upload all have to hold for a single word to appear. */
 @font-face

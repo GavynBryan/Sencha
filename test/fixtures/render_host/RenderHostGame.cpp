@@ -119,6 +119,17 @@ public:
             Ui->ExtractRender();
     }
 
+    // Called from Game::OnShutdown, while the asset caches are still alive.
+    // Waiting for this object's own destruction would release the screen's
+    // leases against caches that are already gone.
+    void Shutdown()
+    {
+        if (Ui != nullptr)
+            Ui->Shutdown();
+    }
+
+    [[nodiscard]] UiService* Service() { return Ui.get(); }
+
 private:
     void Initialise()
     {
@@ -211,7 +222,7 @@ public:
     void OnRegisterSystems(SystemRegisterContext& ctx) override
     {
         ctx.Schedule.Register<ScriptedCameraPathSystem>(Camera, ScriptedCamera);
-        ctx.Schedule.Register<UiHostSystem>(GetEngine(), UiPackagePath);
+        UiHost = &ctx.Schedule.Register<UiHostSystem>(GetEngine(), UiPackagePath);
         // Clip playback: a posed skinned mesh is one of the things the goldens
         // watch, and nothing else in this host would advance it.
         RegisterAnimationSystems(ctx.Schedule);
@@ -219,6 +230,12 @@ public:
 
     void OnShutdown(GameShutdownContext&) override
     {
+        // Before anything else here: the UI holds asset leases, and this is the
+        // last point at which the caches behind them are guaranteed alive.
+        if (UiHost != nullptr)
+            UiHost->Shutdown();
+        UiHost = nullptr;
+
         World& world = GetEngine().World().Entities();
         world.GetResource<ActiveCameraService>().SetActive(EntityId{});
         if (Camera.IsValid() && world.IsAlive(Camera))
@@ -230,6 +247,7 @@ private:
     EntityId Camera;
     bool ScriptedCamera = false;
     std::string UiPackagePath;
+    UiHostSystem* UiHost = nullptr;
 };
 
 extern "C" SENCHA_GAME_EXPORT Game* SenchaCreateGameModule()
