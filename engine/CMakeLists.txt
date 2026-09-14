@@ -80,6 +80,34 @@ if(NOT SENCHA_ENABLE_VULKAN)
     endforeach()
 endif()
 
+# Two gates, not one. The retained authored UI core -- package loading, document
+# parsing, layout, presentation models, semantic actions -- needs no device, and
+# the headless UI tests depend on that staying true. Only the rendering half
+# reaches a backend, so it is gated on Vulkan as well as on the feature.
+if(NOT SENCHA_ENABLE_UI)
+    foreach(_pattern
+        "[/\\\\]src[/\\\\]ui[/\\\\]"
+        "[/\\\\]include[/\\\\]ui[/\\\\]"
+        "[/\\\\]src[/\\\\]assets[/\\\\]ui[/\\\\]"
+        "[/\\\\]include[/\\\\]assets[/\\\\]ui[/\\\\]"
+    )
+        list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
+        list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")
+    endforeach()
+endif()
+
+if(NOT (SENCHA_ENABLE_UI AND SENCHA_ENABLE_VULKAN))
+    foreach(_pattern
+        "[/\\\\]src[/\\\\]render[/\\\\]ui[/\\\\]"
+        "[/\\\\]include[/\\\\]render[/\\\\]ui[/\\\\]"
+        "[/\\\\]render[/\\\\]feature[/\\\\]UiRenderFeature\\."
+        "[/\\\\]graphics[/\\\\]vulkan[/\\\\]UiDrawPass\\."
+    )
+        list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
+        list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")
+    endforeach()
+endif()
+
 if(NOT SENCHA_ENABLE_COOK)
     # Hot reload (Stage 6) re-cooks on source change, so it is dev-only too —
     # filtered out alongside the cook layer it depends on.
@@ -467,6 +495,84 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(JoltPhysics)
 target_link_libraries(sencha_engine PRIVATE Jolt)
+
+# RmlUi: the layout and document engine behind the retained authored UI runtime
+# (docs/ui/architecture.md). Deliberately NOT inside the Vulkan block -- cooking a
+# package, parsing a document, laying it out, and driving presentation models need
+# no device, and the headless UI tests are what keep that honest.
+#
+# STATIC and PRIVATE, which is the opposite of the imgui treatment below, for the
+# reason recorded there in reverse: imgui is an OBJECT library because the editors
+# link only sencha::engine yet call ImGui, so those symbols must reach the shared
+# library's export table. Nothing outside engine/src/ui/rml/ ever calls RmlUi --
+# cmake/CheckUiIsolation.cmake enforces exactly that -- so RmlUi must not be
+# re-exported, must not appear on the install interface, and must not oblige the
+# SDK to ship its headers. PIC comes from CMAKE_POSITION_INDEPENDENT_CODE at the
+# root, so a static library links into the shared engine cleanly.
+if(SENCHA_ENABLE_UI)
+    # RmlUi's own font engine. The alternative is implementing FontEngineInterface
+    # ourselves, which is a large project buying nothing we need today.
+    find_package(Freetype REQUIRED)
+
+    if(NOT RMLUI_DIR)
+        set(RMLUI_SAMPLES         OFF CACHE BOOL "" FORCE)
+        set(RMLUI_LUA_BINDINGS    OFF CACHE BOOL "" FORCE)
+        set(RMLUI_LOTTIE_PLUGIN   OFF CACHE BOOL "" FORCE)
+        set(RMLUI_SVG_PLUGIN      OFF CACHE BOOL "" FORCE)
+        set(RMLUI_TRACY_PROFILING OFF CACHE BOOL "" FORCE)
+        set(BUILD_TESTING         OFF CACHE BOOL "" FORCE)
+        # RMLUI_BACKEND is deliberately left alone. It selects which bundled
+        # sample backend to build, and RMLUI_SAMPLES=OFF means none is built at
+        # all; it rejects "none" as a value, so naming one here would only pick a
+        # windowing/GL stack we never compile. Sencha implements
+        # RenderInterface/SystemInterface/FileInterface itself against its own
+        # frame, asset and input architecture.
+        set(RMLUI_FONT_ENGINE "freetype" CACHE STRING "" FORCE)
+        # RmlUi defaults this ON and would build itself as a second shared object.
+        # A normal variable, not a forced cache entry: CMP0077 (NEW at our 3.20
+        # minimum) lets it win over RmlUi's own option() without editing the cache
+        # every other project in this build also reads.
+        set(_sencha_saved_build_shared "${BUILD_SHARED_LIBS}")
+        set(BUILD_SHARED_LIBS OFF)
+        FetchContent_Declare(
+            RmlUi
+            GIT_REPOSITORY https://github.com/mikke89/RmlUi.git
+            GIT_TAG        6.3
+        )
+        FetchContent_MakeAvailable(RmlUi)
+        set(BUILD_SHARED_LIBS "${_sencha_saved_build_shared}")
+        set(RMLUI_DIR "${rmlui_SOURCE_DIR}")
+    endif()
+
+    # The source firewall (cmake/CheckUiIsolation.cmake) stops first-party code
+    # naming RmlUi; this stops the linker re-exporting it. A static library's
+    # symbols inherit default visibility and would otherwise land in the engine
+    # .so's dynamic symbol table, where a game module could bind to them and make
+    # RmlUi part of the SDK surface by accident. Every caller lives inside this
+    # same shared object, so hiding them costs nothing.
+    if(TARGET rmlui_core)
+        set_target_properties(rmlui_core PROPERTIES
+            CXX_VISIBILITY_PRESET hidden
+            C_VISIBILITY_PRESET   hidden
+            VISIBILITY_INLINES_HIDDEN ON)
+
+        # RmlUi exports its include dir as a plain -I, which would put its headers
+        # under sencha_warnings()'s -Werror set the moment an adapter includes one.
+        # Every other third-party include here is SYSTEM; this makes RmlUi match.
+        get_target_property(_rmlui_includes rmlui_core INTERFACE_INCLUDE_DIRECTORIES)
+        if(_rmlui_includes)
+            set_target_properties(rmlui_core PROPERTIES
+                INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_rmlui_includes}")
+        endif()
+    endif()
+
+    # PUBLIC, on the SENCHA_ENABLE_DEBUG_UI precedent: Engine holds the UI runtime
+    # under this flag, so a game module compiled without it would disagree with the
+    # host about Engine's layout.
+    target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_UI)
+    target_link_libraries(sencha_engine PRIVATE RmlUi::Core)
+endif()
+
 
 if(SENCHA_ENABLE_VULKAN)
     target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_VULKAN)

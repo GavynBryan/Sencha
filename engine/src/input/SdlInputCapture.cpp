@@ -7,6 +7,10 @@ void SdlInputCapture::BeginFrame(InputFrame& frame)
     frame.MouseDeltaX = 0.0f;
     frame.MouseDeltaY = 0.0f;
     frame.MouseWheelY = 0.0f;
+    // Republished after this frame's events are routed, by whoever owns the
+    // surfaces. Cleared here so a host that registers none, or one whose overlay
+    // was torn down, cannot leave a stale claim standing.
+    frame.UiCapture = {};
 }
 
 bool SdlInputCapture::Accept(InputFrame& frame, const SDL_Event& event)

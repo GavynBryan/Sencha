@@ -1,7 +1,7 @@
 #pragma once
 
 #include "InputRouter.h"
-#include "UiInputCapture.h"
+#include <input/UiInputCapture.h>
 
 #include <functional>
 

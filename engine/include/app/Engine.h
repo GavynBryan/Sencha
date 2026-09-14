@@ -12,6 +12,7 @@
 #include <core/config/EngineConfig.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/WorldComponentSchema.h>
+#include <input/PlatformEventRouter.h>
 #include <net/ReplicationLayout.h>
 #include <net/NetCVarSync.h>
 #include <net/NetSpawnPrefab.h>
@@ -346,6 +347,11 @@ public:
     // Present regardless of the debug UI: pads are ordinary input hardware.
     [[nodiscard]] SdlGamepadCapture* GetGamepadCapture() { return GamepadCaptureState.get(); }
 
+    // Who is offered a platform event, in what order, and the guarantee that the
+    // device snapshot is folded before any of them. A host adds a consumer once
+    // at startup; the PumpPlatform phase drives it. See PlatformEventRouter.
+    [[nodiscard]] PlatformEventRouter& PlatformEvents() { return PlatformEventRouterState; }
+
 #ifdef SENCHA_ENABLE_DEBUG_UI
     // The runtime debug overlay (console + timing panels, grave-key toggle).
     // Created by Run when windowed and Config().Console.UiEnabled. Null when
@@ -428,6 +434,7 @@ private:
     // Owns the open gamepads. Stateful, unlike the keyboard and mouse adapter:
     // a pad has to be held open to report anything.
     std::unique_ptr<SdlGamepadCapture> GamepadCaptureState;
+    PlatformEventRouter PlatformEventRouterState;
 #ifdef SENCHA_ENABLE_VULKAN
     std::unique_ptr<GraphicsServices> GraphicsState;
 #endif

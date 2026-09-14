@@ -390,19 +390,11 @@ RenderFrameResult Renderer::DrawFrameScheduled()
     {
         gpuScopes->EndScope(frame.CommandBuffer, GpuScope::PhaseOffscreen);
         VulkanDebugLabels::EndLabel(frame.CommandBuffer);
-        VulkanDebugLabels::BeginLabel(frame.CommandBuffer,
-                                      ToString(GpuScope::PhaseMainColor));
-        gpuScopes->BeginScope(frame.CommandBuffer, GpuScope::PhaseMainColor);
     }
 #endif
-    RecordMainColorPhase(frame);
-#ifdef SENCHA_ENABLE_RENDER_PROFILING
-    if (gpuScopes != nullptr)
-    {
-        gpuScopes->EndScope(frame.CommandBuffer, GpuScope::PhaseMainColor);
-        VulkanDebugLabels::EndLabel(frame.CommandBuffer);
-    }
-#endif
+    // The three swapchain phases share one rendering scope, so each is labelled
+    // and timed inside rather than wrapped as a group here.
+    RecordSwapchainPhases(frame);
     LastTiming.RecordSeconds = SecondsSince(recordStart);
 
     if (Services.Instrumentation != nullptr
@@ -495,7 +487,16 @@ void Renderer::RecordOffscreenPhase(const VulkanFrame& frame)
         feat->OnDraw(MakeRenderFrame(ctx, Services.Instrumentation));
 }
 
-void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
+// The swapchain phases, in one rendering scope. MainColor is the scene;
+// ApplicationUi is authored user-facing UI drawn over it; DevelopmentOverlay is
+// diagnostics drawn over everything. One vkCmdBeginRendering serves all three:
+// the UI phases want the same colour attachment and no depth interaction, and
+// their pipelines disable depth test and write rather than open a scope of their
+// own.
+//
+// Capture and the present transition stay after the last bucket, so a capture is
+// still the finished frame.
+void Renderer::RecordSwapchainPhases(const VulkanFrame& frame)
 {
     VkImageLayout oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     if (frame.ImageIndex < ImageLayouts.size())
@@ -570,12 +571,43 @@ void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
     ctx.TargetFormat = frame.SwapchainFormat;
     ctx.DepthView = DepthTarget->GetView();
     ctx.DepthFormat = DepthTarget->GetFormat();
-    ctx.Phase = RenderPhase::MainColor;
     ctx.Retirement = Frames.GetRetirement();
 
-    for (IRenderFeature* feat : PhaseBuckets[static_cast<size_t>(RenderPhase::MainColor)])
+    struct SwapchainPhase { RenderPhase Phase; GpuScope Scope; };
+    constexpr SwapchainPhase kSwapchainPhases[] = {
+        { RenderPhase::MainColor,          GpuScope::PhaseMainColor },
+        { RenderPhase::ApplicationUi,      GpuScope::PhaseApplicationUi },
+        { RenderPhase::DevelopmentOverlay, GpuScope::PhaseDevelopmentOverlay },
+    };
+
+    for (const auto& [phase, scope] : kSwapchainPhases)
     {
-        feat->OnDraw(MakeRenderFrame(ctx, Services.Instrumentation));
+        auto& bucket = PhaseBuckets[static_cast<size_t>(phase)];
+        if (bucket.empty())
+            continue;
+
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+        GpuTimestampPool* const phaseScopes = Services.Instrumentation != nullptr
+            ? Services.Instrumentation->GpuTimestamps
+            : nullptr;
+        if (phaseScopes != nullptr)
+        {
+            VulkanDebugLabels::BeginLabel(frame.CommandBuffer, ToString(scope));
+            phaseScopes->BeginScope(frame.CommandBuffer, scope);
+        }
+#endif
+        ctx.Phase = phase;
+        for (IRenderFeature* feat : bucket)
+        {
+            feat->OnDraw(MakeRenderFrame(ctx, Services.Instrumentation));
+        }
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+        if (phaseScopes != nullptr)
+        {
+            phaseScopes->EndScope(frame.CommandBuffer, scope);
+            VulkanDebugLabels::EndLabel(frame.CommandBuffer);
+        }
+#endif
     }
 
     vkCmdEndRendering(frame.CommandBuffer);

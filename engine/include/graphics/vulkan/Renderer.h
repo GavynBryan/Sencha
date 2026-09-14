@@ -274,5 +274,5 @@ private:
                                    const FeatureRegistration& registration);
 
     void RecordOffscreenPhase(const VulkanFrame& frame);
-    void RecordMainColorPhase(const VulkanFrame& frame);
+    void RecordSwapchainPhases(const VulkanFrame& frame);
 };

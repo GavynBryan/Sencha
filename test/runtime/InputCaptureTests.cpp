@@ -8,9 +8,14 @@
 
 #include <algorithm>
 
-// The capture layer's contract: held device state is only ever cleared by a
-// real release or by ReleaseAllHeld(), so every path that stops events reaching
-// the frame mid-press has to release explicitly or the key sticks down.
+// The capture layer's contract: held device state is only ever cleared by a real
+// release or by ReleaseAllHeld().
+//
+// ReleaseAllHeld() is now for the one case where the device genuinely stops
+// reporting -- focus loss, where the key-up is never sent -- and Accept() calls
+// it there itself. A surface consuming input is NOT such a case: PlatformEventRouter
+// folds every event in before any consumer is offered it, so a claimed release
+// still arrives. See PlatformEventRouterTests.cpp.
 
 namespace
 {

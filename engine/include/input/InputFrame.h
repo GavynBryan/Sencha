@@ -1,5 +1,7 @@
 #pragma once
 
+#include <input/UiInputCapture.h>
+
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -29,9 +31,16 @@
 // typical capture toggle.
 //
 // Held state clears only on a real device release or through ReleaseAllHeld().
-// Anything that stops device events reaching this frame mid-press -- focus
-// loss, a UI layer taking capture -- owes a ReleaseAllHeld() call, because the
-// matching key-up will never arrive and the key would stay held forever.
+// Nothing is allowed to stop device events reaching this frame: PlatformEventRouter
+// folds every event in before offering it to any consumer, precisely so a release
+// edge cannot be thrown away by a surface that claimed the press. ReleaseAllHeld()
+// is for the case the device genuinely stops reporting -- focus loss, where the
+// key-up is never sent at all -- which SdlInputCapture::Accept handles itself.
+//
+// A surface consuming input does not hide it from here; it reports itself in
+// UiCapture instead. A reader of mapped actions ignores that (an InputContextLease
+// already decides what it hears); a reader of raw state below gates on it, because
+// this snapshot faithfully contains the keystrokes someone typed into a console.
 //
 // This type is platform-agnostic — SDL / GLFW / Win32 capture adapters
 // populate it identically.
@@ -80,6 +89,11 @@ struct InputFrame
     bool GamepadConnected = false;
 
     bool QuitRequested = false;
+
+    // Which devices a presentation surface owned while this frame's events were
+    // routed. Set by the frame pump after routing; reset each frame by
+    // SdlInputCapture::BeginFrame. Raw readers below gate on it -- see above.
+    UiInputCapture UiCapture;
 
     // Release every held key and button as a release edge and drop pending
     // motion, for when device events stop arriving mid-press.

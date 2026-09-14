@@ -22,6 +22,10 @@ option(SENCHA_ENABLE_DEBUG_UI
     "Build the ImGui-based runtime debug overlay (console + timing panels, grave-key toggle). ON by default: game builds ship it so the runtime is tunable in the field; a host opts out per-process via EngineConfig.Console.UiEnabled. Requires SENCHA_ENABLE_VULKAN."
     ON)
 
+option(SENCHA_ENABLE_UI
+    "Build the retained authored UI substrate (RML/RCSS documents, presentation models, semantic actions) over RmlUi. ON by default: games and Sencha applications both host it. Independent of SENCHA_ENABLE_VULKAN -- package cooking, document parsing, layout, models and actions need no device, and the headless tests depend on that. Only the UI *rendering* half (render/ui, UiRenderFeature, UiDrawPass) additionally requires Vulkan."
+    ON)
+
 option(SENCHA_ENABLE_COOK
     "Build the dev-only asset cook layer (import-on-demand, cooked cache, importers). Always OFF in shipping builds -- cooked data ships, importers do not."
     ON)

@@ -33,7 +33,10 @@ public:
 	ImGuiDebugOverlay(ImGuiDebugOverlay&&) = delete;
 	ImGuiDebugOverlay& operator=(ImGuiDebugOverlay&&) = delete;
 
-	[[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::MainColor; }
+	// DevelopmentOverlay, not ApplicationUi: this is the console and the timing
+	// panels, and it has to stay readable on top of whatever authored UI a game
+	// draws underneath it.
+	[[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::DevelopmentOverlay; }
 	[[nodiscard]] bool Setup(const RenderFeatureServices& services) override;
 	void OnDraw(const RenderFrame& frame) override;
 	void Teardown() override;
