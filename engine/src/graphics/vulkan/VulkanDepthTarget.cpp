@@ -69,11 +69,20 @@ VkImageView VulkanDepthTarget::GetView() const
 
 VkFormat VulkanDepthTarget::ChooseDepthFormat() const
 {
-    // Prefer pure depth (no stencil) to avoid unnecessary bandwidth; stencil variants are fallbacks.
+    // 32-bit float depth first, with a stencil aspect if the device offers it.
+    //
+    // Authored UI clips to rounded boundaries through a stencil-backed clip
+    // mask, which a rectangular scissor cannot express -- and rounded panels are
+    // most of what authored chrome is made of. So a stencil aspect is worth the
+    // bandwidth where it is free, and D32_SFLOAT stays ahead of D24 either way
+    // because depth precision is not a thing to trade for it.
+    //
+    // A device offering no stencil-bearing depth format still runs: the UI pass
+    // degrades border-radius clipping to rectangular scissor and says so once.
     const VkFormat candidates[] = {
+        VK_FORMAT_D32_SFLOAT_S8_UINT,
         VK_FORMAT_D32_SFLOAT,
         VK_FORMAT_D24_UNORM_S8_UINT,
-        VK_FORMAT_D32_SFLOAT_S8_UINT,
     };
 
     for (VkFormat format : candidates)

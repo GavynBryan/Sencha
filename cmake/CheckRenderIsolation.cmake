@@ -81,6 +81,7 @@ set(RENDER_PASS_DRIVERS
 # these may include, because it holds that pass by value.
 set(RENDER_DRIVER_BACKEND_PAIRS
     "/engine/include/render/feature/SkyRenderFeature.h=graphics/vulkan/SkyGradientPass.h"
+    "/engine/include/render/feature/UiRenderFeature.h=graphics/vulkan/UiDrawPass.h"
     "/engine/include/render/feature/SkinnedPoseRenderFeature.h=graphics/vulkan/SkinnedPosePass.h"
 )
 

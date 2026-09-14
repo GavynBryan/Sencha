@@ -30,6 +30,8 @@ enum class ScratchTag : std::uint8_t
     ForwardViewUniforms,
     ForwardInstanceData,
     ImmediateVertices,
+    UiVertices,
+    UiIndices,
     Count,
 };
 
@@ -174,6 +176,11 @@ public:
 
     // 16-byte aligned, suitable for vertex / instance streams.
     [[nodiscard]] Allocation AllocateVertex(std::uint64_t size, ScratchTag tag);
+
+    // Index data. Four-byte alignment because every index stream in the engine
+    // is uint32; a uint16 stream would need two, which this still satisfies.
+    static constexpr std::uint64_t kIndexAlignment = 4;
+    [[nodiscard]] Allocation AllocateIndex(std::uint64_t size, ScratchTag tag);
 
     // A partial grant: `Count` elements were served, which may be fewer than
     // asked for. Zero means the slice had no room at all.

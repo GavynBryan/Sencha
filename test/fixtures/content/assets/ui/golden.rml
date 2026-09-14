@@ -1,0 +1,12 @@
+<rml>
+<head>
+    <link type="text/rcss" href="golden.rcss"/>
+</head>
+<body>
+    <div id="opaque"/>
+    <div id="translucent"/>
+    <div id="rounded"/>
+    <div id="invisible"/>
+    <div id="label">Sencha authored UI</div>
+</body>
+</rml>

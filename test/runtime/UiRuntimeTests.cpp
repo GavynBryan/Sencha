@@ -318,3 +318,55 @@ TEST(UiRuntimeStage2, HandlesToAClosedScreenAndDestroyedSurfaceStayStale)
     EXPECT_TRUE(ui.IsScreenOpen(secondScreen));
     EXPECT_EQ(ui.GetSurfaceSize(first).Width, 0u) << "a destroyed surface answers nothing";
 }
+
+TEST(UiRuntimeStage2, DisplayScaleIsLiveAndRelaysOutTheDocument)
+{
+    // The property that makes a retained document worth the machinery: a scale
+    // change re-flows it. The ImGui shell latches UI scale at startup because a
+    // baked font atlas cannot follow one.
+    TempAssetRoot root;
+    UiPackage package = MakeLayoutPackage();
+    // dp units resolve against the ratio; px would not, which is the point.
+    package.Blobs[1].Bytes = BytesOf(
+        "body { display: block; width: 100%; height: 100%; }\n"
+        "#panel { display: block; width: 100dp; height: 50dp; }\n"
+        "#inner { display: block; width: 10px; height: 10px; }\n");
+    WritePackage(root, "ui/layout.sui", package);
+
+    UiTestHost host(root);
+    UiService& ui = host.Service();
+    const UiSurfaceId surface = ui.CreateSurface("test", RenderExtent{ 800, 600 });
+    const UiScreenHandle screen = ui.OpenScreen(surface, "asset://ui/layout.sui");
+    ASSERT_TRUE(screen.IsValid());
+
+    EXPECT_FLOAT_EQ(ui.GetSurfaceScale(surface), 1.0f);
+    ui.Update();
+    ASSERT_TRUE(ui.MeasureElement(screen, "panel").has_value());
+    EXPECT_FLOAT_EQ(ui.MeasureElement(screen, "panel")->Width, 100.0f);
+
+    ui.SetSurfaceScale(surface, 2.0f);
+    EXPECT_FLOAT_EQ(ui.GetSurfaceScale(surface), 2.0f);
+    ui.Update();
+    EXPECT_FLOAT_EQ(ui.MeasureElement(screen, "panel")->Width, 200.0f);
+}
+
+TEST(UiRuntimeStage2, AnImplausibleDisplayScaleIsClampedNotObeyed)
+{
+    // A zero or negative ratio collapses every authored length to nothing, with
+    // no obvious cause to whoever has to debug the blank screen.
+    TempAssetRoot root;
+    WritePackage(root, "ui/layout.sui", MakeLayoutPackage());
+
+    UiTestHost host(root);
+    UiService& ui = host.Service();
+    const UiSurfaceId surface = ui.CreateSurface("test", RenderExtent{ 800, 600 });
+
+    ui.SetSurfaceScale(surface, 0.0f);
+    EXPECT_GT(ui.GetSurfaceScale(surface), 0.0f);
+
+    ui.SetSurfaceScale(surface, -3.0f);
+    EXPECT_GT(ui.GetSurfaceScale(surface), 0.0f);
+
+    ui.SetSurfaceScale(surface, 1000.0f);
+    EXPECT_LE(ui.GetSurfaceScale(surface), 8.0f);
+}

@@ -1,6 +1,6 @@
 #include "UiRuntime.h"
 
-#include "rml/RmlHeadlessRenderTarget.h"
+#include "rml/RmlRenderRecorder.h"
 #include "rml/RmlPackageFileSource.h"
 #include "rml/RmlSystemBridge.h"
 
@@ -9,12 +9,14 @@
 #include <assets/font/FontFace.h>
 #include <assets/font/FontFaceCache.h>
 #include <assets/runtime/AssetSystem.h>
+#include <assets/texture/TextureCache.h>
 #include <assets/ui/UiPackage.h>
 #include <assets/ui/UiPackageCache.h>
 #include <core/logging/LoggingProvider.h>
 
 #include <algorithm>
 #include <atomic>
+#include <filesystem>
 #include <utility>
 
 namespace
@@ -44,11 +46,13 @@ Rml::Style::FontWeight ToRmlFontWeight(std::uint16_t weight)
 UiRuntime::UiRuntime(LoggingProvider& logging,
                      AssetSystem& assets,
                      UiPackageCache& packages,
-                     FontFaceCache& fonts)
+                     FontFaceCache& fonts,
+                     TextureCache* textures)
     : Log(logging.GetLogger<UiRuntime>())
     , Assets(assets)
     , Packages(packages)
     , Fonts(fonts)
+    , Textures(textures)
 {
     bool expected = false;
     if (!g_RuntimeLive.compare_exchange_strong(expected, true))
@@ -60,11 +64,12 @@ UiRuntime::UiRuntime(LoggingProvider& logging,
 
     SystemBridge = std::make_unique<RmlSystemBridge>(Log);
     FileSource = std::make_unique<RmlPackageFileSource>(Log);
-    RenderTarget = std::make_unique<RmlHeadlessRenderTarget>();
+    Recorder = std::make_unique<RmlRenderRecorder>(Log);
 
     Rml::SetSystemInterface(SystemBridge.get());
     Rml::SetFileInterface(FileSource.get());
-    Rml::SetRenderInterface(RenderTarget.get());
+    Recorder->SetTextureResolver(this);
+    Rml::SetRenderInterface(Recorder.get());
 
     if (!Rml::Initialise())
     {
@@ -75,7 +80,7 @@ UiRuntime::UiRuntime(LoggingProvider& logging,
         Rml::SetRenderInterface(nullptr);
         SystemBridge.reset();
         FileSource.reset();
-        RenderTarget.reset();
+        Recorder.reset();
         g_RuntimeLive.store(false);
         return;
     }
@@ -111,7 +116,7 @@ UiRuntime::~UiRuntime()
     Rml::SetFileInterface(nullptr);
     Rml::SetRenderInterface(nullptr);
 
-    RenderTarget.reset();
+    Recorder.reset();
     FileSource.reset();
     SystemBridge.reset();
 
@@ -206,13 +211,38 @@ RenderExtent UiRuntime::GetSurfaceSize(UiSurfaceId surface) const
     return slot != nullptr ? slot->Size : RenderExtent{};
 }
 
+void UiRuntime::SetSurfaceScale(UiSurfaceId surface, float scale)
+{
+    Surface* slot = ResolveSurface(surface);
+    // Clamped rather than trusted: this comes from a display probe or a user
+    // setting, and a zero or negative ratio collapses every authored length to
+    // nothing with no obvious cause.
+    const float clamped = std::clamp(scale, 0.25f, 8.0f);
+    if (slot == nullptr || slot->Scale == clamped)
+        return;
+
+    slot->Scale = clamped;
+    // Every authored length re-resolves against this, which is the whole reason
+    // UI scale is live here and latched at startup for the ImGui shell: a
+    // retained document re-flows, a baked font atlas cannot.
+    slot->Context->SetDensityIndependentPixelRatio(clamped);
+}
+
+float UiRuntime::GetSurfaceScale(UiSurfaceId surface) const
+{
+    const Surface* slot = ResolveSurface(surface);
+    return slot != nullptr ? slot->Scale : 0.0f;
+}
+
 // -- screens -----------------------------------------------------------------
 
 bool UiRuntime::AcquireResources(const UiPackage& package,
                                  std::string_view packagePath,
-                                 std::vector<AssetLease>& outLeases)
+                                 std::vector<AssetLease>& outLeases,
+                                 std::unordered_map<std::string, TextureHandle>& outTextures)
 {
     outLeases.clear();
+    outTextures.clear();
     outLeases.reserve(package.Resources.size());
 
     for (const AssetRef& resource : package.Resources)
@@ -258,6 +288,10 @@ bool UiRuntime::AcquireResources(const UiPackage& package,
                 RegisteredFonts.emplace_back(resource.Path);
             }
         }
+        else if (resource.Type == AssetType::Texture)
+        {
+            outTextures.emplace(resource.Path, TextureHandle::FromToken(lease.OpaqueToken()));
+        }
 
         outLeases.push_back(std::move(lease));
     }
@@ -292,15 +326,28 @@ UiScreenHandle UiRuntime::OpenScreen(UiSurfaceId surface, std::string_view packa
     }
 
     std::vector<AssetLease> resourceLeases;
-    if (!AcquireResources(*package, packagePath, resourceLeases))
+    std::unordered_map<std::string, TextureHandle> screenTextures;
+    if (!AcquireResources(*package, packagePath, resourceLeases, screenTextures))
         return {};
+
+    // Built before the load, because the document engine resolves images while
+    // parsing and the resolver has to have something to answer from.
+    Screen pending;
+    pending.Surface = surface;
+    pending.ResourceRoot = package->Blobs.empty()
+        ? std::string{}
+        : std::filesystem::path(package->Blobs.front().SourcePath).parent_path().generic_string();
+    pending.TexturesByAssetPath = std::move(screenTextures);
 
     Rml::ElementDocument* document = nullptr;
     {
-        // The file interface answers from this package for exactly as long as
-        // the load runs, and from nothing at all outside it.
+        // The file interface answers from this package, and the resolver from
+        // this screen, for exactly as long as the load runs -- and from nothing
+        // at all outside it.
         const RmlPackageFileSource::ActivePackageScope scope(*FileSource, *package);
+        ActiveScreen = &pending;
         document = slot->Context->LoadDocument(package->RootDocumentName);
+        ActiveScreen = nullptr;
     }
 
     if (document == nullptr)
@@ -324,7 +371,9 @@ UiScreenHandle UiRuntime::OpenScreen(UiSurfaceId surface, std::string_view packa
         Screens.emplace_back();
 
     Screen& screen = Screens[index];
-    screen.Surface = surface;
+    const std::uint32_t generation = screen.Generation;
+    screen = std::move(pending);
+    screen.Generation = generation;
     screen.Document = document;
     screen.Package = std::move(packageLease);
     screen.Resources = std::move(resourceLeases);
@@ -345,6 +394,7 @@ void UiRuntime::CloseScreenSlot(Screen& screen)
 
     // After the document, so a resource is released only once nothing is laid
     // out against it.
+    screen.TexturesByAssetPath.clear();
     screen.Resources.clear();
     screen.Package.Reset();
     screen.Live = false;
@@ -378,6 +428,69 @@ void UiRuntime::Update()
     }
 }
 
+void UiRuntime::ExtractRender()
+{
+    DrawFrames.clear();
+    if (!Ready)
+        return;
+
+    for (std::size_t index = 0; index < Surfaces.size(); ++index)
+    {
+        const Surface& surface = Surfaces[index];
+        if (!surface.Live || surface.Context == nullptr)
+            continue;
+
+        const UiSurfaceId surfaceId{ static_cast<std::uint32_t>(index + 1), surface.Generation };
+
+        // Whose resource table answers an image request while this surface
+        // renders. One screen per surface today; a surface carrying a stack
+        // resolves against the screen owning the command, which is why this is
+        // scoped around the render rather than set once at open.
+        ActiveScreen = nullptr;
+        for (const Screen& screen : Screens)
+        {
+            if (screen.Live && screen.Surface == surfaceId && screen.Document != nullptr)
+            {
+                ActiveScreen = &screen;
+                break;
+            }
+        }
+
+        Recorder->BeginFrame(surface.Size);
+        surface.Context->Render();
+        ActiveScreen = nullptr;
+
+        UiDrawFrame frame = Recorder->EndFrame();
+        if (!frame.IsEmpty())
+            DrawFrames.push_back(std::move(frame));
+    }
+}
+
+bool UiRuntime::ResolveTexture(std::string_view source,
+                               TextureHandle& outHandle,
+                               RenderExtent& outSize)
+{
+    if (ActiveScreen == nullptr || Textures == nullptr)
+        return false;
+
+    // The document names an image the way its author wrote it; the resource
+    // table holds asset paths. The cooker resolved references against the root
+    // document's directory, so resolving the same way here is what makes the
+    // two agree.
+    std::filesystem::path combined = ActiveScreen->ResourceRoot.empty()
+        ? std::filesystem::path(source)
+        : std::filesystem::path(ActiveScreen->ResourceRoot) / std::filesystem::path(source);
+    const std::string assetPath = "asset://" + combined.lexically_normal().generic_string();
+
+    const auto it = ActiveScreen->TexturesByAssetPath.find(assetPath);
+    if (it == ActiveScreen->TexturesByAssetPath.end())
+        return false;
+
+    outHandle = it->second;
+    outSize = Textures->GetExtent(it->second);
+    return true;
+}
+
 // -- inspection --------------------------------------------------------------
 
 std::optional<UiElementBox> UiRuntime::MeasureElement(UiScreenHandle screen,
@@ -398,12 +511,12 @@ std::optional<UiElementBox> UiRuntime::MeasureElement(UiScreenHandle screen,
 
 std::uint32_t UiRuntime::LiveGeometryCount() const
 {
-    return RenderTarget != nullptr ? RenderTarget->LiveGeometryCount() : 0;
+    return Recorder != nullptr ? Recorder->LiveGeometryCount() : 0;
 }
 
 std::uint32_t UiRuntime::LiveTextureCount() const
 {
-    return RenderTarget != nullptr ? RenderTarget->LiveTextureCount() : 0;
+    return Recorder != nullptr ? Recorder->LiveTextureCount() : 0;
 }
 
 // -- slot resolution ---------------------------------------------------------

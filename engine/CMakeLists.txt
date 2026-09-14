@@ -90,6 +90,12 @@ if(NOT SENCHA_ENABLE_UI)
         "[/\\\\]include[/\\\\]ui[/\\\\]"
         "[/\\\\]src[/\\\\]assets[/\\\\]ui[/\\\\]"
         "[/\\\\]include[/\\\\]assets[/\\\\]ui[/\\\\]"
+        "[/\\\\]src[/\\\\]assets[/\\\\]font[/\\\\]"
+        "[/\\\\]include[/\\\\]assets[/\\\\]font[/\\\\]"
+        # UiDrawFrame is CPU data the device-free recorder produces, so it
+        # belongs to this gate rather than the rendering one below.
+        "[/\\\\]src[/\\\\]render[/\\\\]ui[/\\\\]"
+        "[/\\\\]include[/\\\\]render[/\\\\]ui[/\\\\]"
     )
         list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
         list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")
@@ -98,8 +104,6 @@ endif()
 
 if(NOT (SENCHA_ENABLE_UI AND SENCHA_ENABLE_VULKAN))
     foreach(_pattern
-        "[/\\\\]src[/\\\\]render[/\\\\]ui[/\\\\]"
-        "[/\\\\]include[/\\\\]render[/\\\\]ui[/\\\\]"
         "[/\\\\]render[/\\\\]feature[/\\\\]UiRenderFeature\\."
         "[/\\\\]graphics[/\\\\]vulkan[/\\\\]UiDrawPass\\."
     )
@@ -223,6 +227,31 @@ if(SENCHA_ENABLE_VULKAN)
         VAR_NAME kSkinPoseCompSpv
         OUT_HEADER _skin_pose_comp_header
     )
+    # Authored UI. Compiled with the rest because the rendering half only exists
+    # when Vulkan does, and this whole block is already inside that condition.
+    if(SENCHA_ENABLE_UI)
+        sencha_compile_shader(
+            SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/ui.vert.glsl"
+            STAGE vert
+            OUTPUT_SPV _ui_vert_spv
+        )
+        sencha_embed_spirv(
+            SOURCE_SPV "${_ui_vert_spv}"
+            VAR_NAME kUiVertSpv
+            OUT_HEADER _ui_vert_header
+        )
+        sencha_compile_shader(
+            SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/ui.frag.glsl"
+            STAGE frag
+            OUTPUT_SPV _ui_frag_spv
+        )
+        sencha_embed_spirv(
+            SOURCE_SPV "${_ui_frag_spv}"
+            VAR_NAME kUiFragSpv
+            OUT_HEADER _ui_frag_header
+        )
+    endif()
+
     list(APPEND SENCHA_ENGINE_GENERATED_HEADERS
         "${_mesh_forward_vert_header}"
         "${_mesh_forward_frag_header}"
@@ -235,6 +264,12 @@ if(SENCHA_ENABLE_VULKAN)
     if(SENCHA_ENABLE_RENDER_PROFILING)
         list(APPEND SENCHA_ENGINE_GENERATED_HEADERS
             "${_mesh_debug_view_frag_header}"
+        )
+    endif()
+    if(SENCHA_ENABLE_UI)
+        list(APPEND SENCHA_ENGINE_GENERATED_HEADERS
+            "${_ui_vert_header}"
+            "${_ui_frag_header}"
         )
     endif()
 endif()

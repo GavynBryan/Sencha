@@ -3,6 +3,13 @@
 #include <app/GameContexts.h>
 #include <app/Game.h>
 #include <app/GameModule.h>
+#include <app/RuntimeContent.h>
+#include <assets/runtime/RuntimeAssets.h>
+#include <graphics/vulkan/GraphicsServices.h>
+#include <graphics/vulkan/Renderer.h>
+#include <graphics/vulkan/VulkanSwapchainService.h>
+#include <render/feature/UiRenderFeature.h>
+#include <ui/UiService.h>
 #include <world/ComponentRegistrar.h>
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
@@ -16,6 +23,9 @@
 
 #include <cmath>
 #include <cstdint>
+#include <memory>
+#include <string>
+#include <utility>
 
 //=============================================================================
 // The render host: what the golden-image comparison and the renderer A/B bench
@@ -80,6 +90,74 @@ struct ScriptedCameraPathSystem
 
 }  // namespace
 
+// Authored UI, hosted the way an application hosts it rather than the way the
+// engine might eventually offer it: this fixture builds its own UiService over
+// the asset caches it already has, drives update and extraction from its own
+// registered system, and stages the render feature itself. That is the second
+// half of what the golden scene proves -- not just that authored UI draws, but
+// that a plain Sencha application can put it on screen without engine privilege.
+class UiHostSystem
+{
+public:
+    UiHostSystem(Engine& engine, std::string packagePath)
+        : EnginePtr(&engine)
+        , PackagePath(std::move(packagePath))
+    {
+    }
+
+    void FrameUpdate(FrameUpdateContext&)
+    {
+        if (!Initialised)
+            Initialise();
+        if (Ui != nullptr)
+            Ui->Update();
+    }
+
+    void ExtractRender(RenderExtractContext&)
+    {
+        if (Ui != nullptr)
+            Ui->ExtractRender();
+    }
+
+private:
+    void Initialise()
+    {
+        // Once, and only once: a failed bring-up must not be retried every
+        // frame, or the log becomes the failure.
+        Initialised = true;
+
+        if (PackagePath.empty())
+            return;
+
+        RuntimeAssets& assets = EnginePtr->Content().Assets();
+        Ui = std::make_unique<UiService>(EnginePtr->Logging(), assets.Assets,
+                                         assets.UiPackages, assets.Fonts,
+                                         assets.Textures.get());
+        if (!Ui->IsReady())
+        {
+            Ui.reset();
+            return;
+        }
+
+        const VkExtent2D extent = EnginePtr->Graphics().Swapchain.GetExtent();
+        Surface = Ui->CreateSurface("render_host", RenderExtent{ extent.width, extent.height });
+        if (!Ui->OpenScreen(Surface, PackagePath).IsValid())
+        {
+            Ui.reset();
+            return;
+        }
+
+        EnginePtr->Graphics().MainRenderer.AddFeature(
+            std::make_unique<UiRenderFeature>(*Ui, assets.Textures.get()));
+    }
+
+    Engine* EnginePtr = nullptr;
+    std::string PackagePath;
+    std::unique_ptr<UiService> Ui;
+    UiSurfaceId Surface;
+    bool Initialised = false;
+};
+
 class RenderHostGame final : public Game
 {
 public:
@@ -113,11 +191,27 @@ public:
                 ScriptedCamera = std::get<bool>(ctx.NewValue);
             },
         });
+
+        engine.Console().Registry().RegisterCVar({
+            .Name = "render_host.ui",
+            .Owner = "render_host",
+            .Type = CVarType::String,
+            .DefaultValue = std::string{},
+            .CurrentValue = std::string{},
+            .Flags = CVarFlags::Transient,
+            .Help = "Authored UI package to open over the scene "
+                    "(\"asset://ui/golden.rml\"). Empty draws no UI.",
+            .Source = { "render_host" },
+            .OnChange = [this](const CVarChangeContext& ctx) {
+                UiPackagePath = std::get<std::string>(ctx.NewValue);
+            },
+        });
     }
 
     void OnRegisterSystems(SystemRegisterContext& ctx) override
     {
         ctx.Schedule.Register<ScriptedCameraPathSystem>(Camera, ScriptedCamera);
+        ctx.Schedule.Register<UiHostSystem>(GetEngine(), UiPackagePath);
         // Clip playback: a posed skinned mesh is one of the things the goldens
         // watch, and nothing else in this host would advance it.
         RegisterAnimationSystems(ctx.Schedule);
@@ -135,6 +229,7 @@ public:
 private:
     EntityId Camera;
     bool ScriptedCamera = false;
+    std::string UiPackagePath;
 };
 
 extern "C" SENCHA_GAME_EXPORT Game* SenchaCreateGameModule()

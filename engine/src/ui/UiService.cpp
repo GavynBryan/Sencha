@@ -5,8 +5,9 @@
 UiService::UiService(LoggingProvider& logging,
                      AssetSystem& assets,
                      UiPackageCache& packages,
-                     FontFaceCache& fonts)
-    : Runtime(std::make_unique<UiRuntime>(logging, assets, packages, fonts))
+                     FontFaceCache& fonts,
+                     TextureCache* textures)
+    : Runtime(std::make_unique<UiRuntime>(logging, assets, packages, fonts, textures))
 {
 }
 
@@ -37,6 +38,16 @@ RenderExtent UiService::GetSurfaceSize(UiSurfaceId surface) const
     return Runtime->GetSurfaceSize(surface);
 }
 
+void UiService::SetSurfaceScale(UiSurfaceId surface, float scale)
+{
+    Runtime->SetSurfaceScale(surface, scale);
+}
+
+float UiService::GetSurfaceScale(UiSurfaceId surface) const
+{
+    return Runtime->GetSurfaceScale(surface);
+}
+
 UiScreenHandle UiService::OpenScreen(UiSurfaceId surface, std::string_view packagePath)
 {
     return Runtime->OpenScreen(surface, packagePath);
@@ -55,6 +66,16 @@ bool UiService::IsScreenOpen(UiScreenHandle screen) const
 void UiService::Update()
 {
     Runtime->Update();
+}
+
+void UiService::ExtractRender()
+{
+    Runtime->ExtractRender();
+}
+
+const std::vector<UiDrawFrame>& UiService::Frames() const
+{
+    return Runtime->Frames();
 }
 
 std::optional<UiElementBox> UiService::MeasureElement(UiScreenHandle screen,

@@ -49,6 +49,11 @@ struct GoldenScene
     // reproduce their paths without their stores, and the editor is the
     // process composed with all of them.
     bool EditorCook = false;
+
+    // Extra startup cvars, appended verbatim. A scene that needs the host to
+    // do something beyond loading a map says so here rather than growing a
+    // boolean per capability.
+    const char* ExtraArgs = "";
 };
 
 [[nodiscard]] std::filesystem::path ReferenceDir()
@@ -80,6 +85,20 @@ struct GoldenScene
     std::system(command.c_str());
     return std::filesystem::exists(std::filesystem::path(SENCHA_GOLDEN_CONTENT_ROOT)
                                    / "assets" / "meshes" / "dev" / "golden_rig.skmesh");
+}
+
+// Source assets the scenes reference but the level cook does not touch: the
+// authored UI documents above all. The assetless cook deliberately cooks a
+// level and nothing else, so anything living beside it has to be imported
+// separately or it never reaches the runtime.
+[[nodiscard]] bool ImportContent()
+{
+    const std::string command =
+        std::string("SENCHA_CONTENT_IMPORT_ROOT=") + SENCHA_GOLDEN_CONTENT_ROOT + "/assets "
+        + SENCHA_GOLDEN_COOK + " --gtest_filter=ContentImport.Generate >/dev/null 2>&1";
+    std::system(command.c_str());
+    return std::filesystem::exists(std::filesystem::path(SENCHA_GOLDEN_CONTENT_ROOT)
+                                   / "assets" / ".cooked" / "ui" / "golden.rml.sui");
 }
 
 [[nodiscard]] bool CookScene(const GoldenScene& scene)
@@ -116,6 +135,7 @@ struct GoldenScene
         + " +map " + scene.Map
         + " +render.screenshot " + output.string() + " " + std::to_string(kCaptureFrame)
         + " +set app.exit_after_frames " + std::to_string(kRunFrames)
+        + " " + scene.ExtraArgs
         + " >/dev/null 2>&1";
     std::system(command.c_str());
     return std::filesystem::exists(output);
@@ -162,6 +182,9 @@ void CheckScene(const GoldenScene& scene)
 
     ASSERT_TRUE(GenerateFixtures())
         << "the skinned fixture did not generate, so the scenes cannot reference it";
+    ASSERT_TRUE(ImportContent())
+        << "the content root's source assets did not import, so a scene that "
+           "references one would render without it and quietly differ";
     ASSERT_TRUE(CookScene(scene))
         << "the level did not cook, so nothing below this describes the renderer";
     ASSERT_TRUE(RenderScene(scene, actual))
@@ -229,6 +252,26 @@ TEST(GoldenImage, AClipPosesASkinnedMesh)
 {
     CheckScene({ .Name = "skinned_pose", .Map = "levels/golden_skinned_pose",
                  .EditorCook = true });
+}
+
+// Authored UI over a rendered scene: the first-pixels gate.
+//
+// Four panels chosen for what they can each break on their own. An opaque one
+// says geometry, the surface projection, and the colour conversion all agree.
+// A translucent one overlapping it says premultiplied-alpha blending is right
+// where it is only visible -- where two things cross. A rounded one is the
+// shape authored chrome is actually made of. And a fully transparent one over
+// the opaque panel must vanish completely: if premultiplication is inverted
+// anywhere along the path, it darkens what is underneath instead.
+//
+// The host is the second half of the proof. It builds its own UiService over
+// the asset caches, drives update and extraction from its own system, and
+// stages the render feature itself -- so this also says a plain Sencha
+// application can put authored UI on screen without engine privilege.
+TEST(GoldenImage, AuthoredUiDrawsOverTheScene)
+{
+    CheckScene({ .Name = "authored_ui", .Map = "levels/shadow_probe",
+                 .ExtraArgs = "+set render_host.ui asset://ui/golden.rml" });
 }
 
 // The same geometry through a blended default material: the transparent pass's

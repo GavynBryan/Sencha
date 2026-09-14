@@ -1,16 +1,19 @@
 #pragma once
 
 #include <graphics/RenderExtent.h>
+#include <render/ui/UiDrawFrame.h>
 #include <ui/UiScreenHandle.h>
 #include <ui/UiSurface.h>
 
 #include <memory>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 class AssetSystem;
 class FontFaceCache;
 class LoggingProvider;
+class TextureCache;
 class UiPackageCache;
 class UiRuntime;
 
@@ -32,10 +35,13 @@ class UiRuntime;
 class UiService
 {
 public:
+    // `textures` may be null: a process with no texture cache simply cannot
+    // resolve content images, and says so when a document asks for one.
     UiService(LoggingProvider& logging,
               AssetSystem& assets,
               UiPackageCache& packages,
-              FontFaceCache& fonts);
+              FontFaceCache& fonts,
+              TextureCache* textures = nullptr);
     ~UiService();
 
     UiService(const UiService&) = delete;
@@ -59,6 +65,13 @@ public:
     void SetSurfaceSize(UiSurfaceId surface, RenderExtent size);
     [[nodiscard]] RenderExtent GetSurfaceSize(UiSurfaceId surface) const;
 
+    // Display scale, as a ratio against authored lengths: 2.0 makes a 100px
+    // panel cover 200 physical pixels. Live, not latched at startup -- a
+    // retained document re-flows when it changes, which is exactly what a baked
+    // immediate-mode font atlas cannot do. Clamped to a sane range.
+    void SetSurfaceScale(UiSurfaceId surface, float scale);
+    [[nodiscard]] float GetSurfaceScale(UiSurfaceId surface) const;
+
     // -- screens -------------------------------------------------------------
 
     // Opens the cooked package at `packagePath` (an "asset://..." virtual path)
@@ -80,6 +93,19 @@ public:
     // ordering is the engine's to guarantee and not a matter of who registered
     // a system first.
     void Update();
+
+    // Records every live surface into an immutable draw frame, in
+    // ExtractRender. No GPU work happens here; the frames stay valid until the
+    // next call, which is what the render feature reads.
+    void ExtractRender();
+
+    // This frame's recorded UI, one entry per surface that drew anything.
+    //
+    // Handed to the render feature by reference, the same way the render
+    // pipeline publishes its own extracted state: valid from ExtractRender
+    // until the next one, and self-contained, so reading it never reaches back
+    // into a document.
+    [[nodiscard]] const std::vector<UiDrawFrame>& Frames() const;
 
     // -- inspection ----------------------------------------------------------
 

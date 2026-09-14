@@ -42,7 +42,10 @@ GpuFrameScratch::GpuFrameScratch(LoggingProvider& logging,
     info.Size = Ring.GetTotalBytes();
     info.Usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
                | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
-               | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+               | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+               // Authored UI draws indexed, and de-indexing on the CPU to avoid
+               // one usage bit would trade real per-frame work for nothing.
+               | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
     info.Memory = BufferMemory::HostVisible;
     info.DebugName = "GpuFrameScratch.Ring";
 
@@ -83,6 +86,8 @@ std::string_view ToString(ScratchTag tag)
         case ScratchTag::ForwardViewUniforms:      return "forward_view_uniforms";
         case ScratchTag::ForwardInstanceData:      return "forward_instance_data";
         case ScratchTag::ImmediateVertices:        return "immediate_vertices";
+        case ScratchTag::UiVertices:               return "ui_vertices";
+        case ScratchTag::UiIndices:                return "ui_indices";
         case ScratchTag::Count:                    break;
     }
     return "unknown";
@@ -138,6 +143,11 @@ GpuFrameScratch::Allocation GpuFrameScratch::AllocateUniform(VkDeviceSize size, 
 GpuFrameScratch::Allocation GpuFrameScratch::AllocateVertex(VkDeviceSize size, ScratchTag tag)
 {
     return Allocate(size, kVertexAlignment, tag);
+}
+
+GpuFrameScratch::Allocation GpuFrameScratch::AllocateIndex(VkDeviceSize size, ScratchTag tag)
+{
+    return Allocate(size, kIndexAlignment, tag);
 }
 
 GpuFrameScratch::ElementAllocation GpuFrameScratch::AllocateVertexElements(

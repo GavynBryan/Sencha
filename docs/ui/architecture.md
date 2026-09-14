@@ -190,15 +190,22 @@ Taken from RmlUi 6.3's `RenderInterface.h` and its render-interface
 documentation, not assumed. The distinction matters because the *required* set
 alone does not buy the visuals authored chrome wants.
 
-**Tier 1 -- implemented.** The eight required methods (`CompileGeometry`,
-`RenderGeometry`, `ReleaseGeometry`, `LoadTexture`, `GenerateTexture`,
-`ReleaseTexture`, `EnableScissorRegion`, `SetScissorRegion`), plus `SetTransform`,
-plus `EnableClipMask` / `RenderToClipMask`.
+**Tier 1.** The eight required methods (`CompileGeometry`, `RenderGeometry`,
+`ReleaseGeometry`, `LoadTexture`, `GenerateTexture`, `ReleaseTexture`,
+`EnableScissorRegion`, `SetScissorRegion`), plus `SetTransform`, plus
+`EnableClipMask` / `RenderToClipMask`.
 
-The clip mask is Tier 1 deliberately: RmlUi needs it for `border-radius` combined
-with `overflow`, and for `transform`/`perspective`. A rectangular scissor does not
-clip to a rounded boundary, and rounded clipped panels are exactly what Kyusu's
-chrome is made of.
+All of it is recorded. Everything except the clip mask also **draws** today;
+rounded *backgrounds* are ordinary geometry and render correctly, which is most
+of what authored chrome looks like. What is still outstanding is clipping
+*children* to a rounded boundary: the recorder emits the mask commands, and the
+pass currently skips them, so a child overflowing a rounded container is clipped
+rectangularly rather than to the radius.
+
+The clip mask is Tier 1 rather than Tier 2 deliberately -- RmlUi needs it for
+`border-radius` combined with `overflow`, and for `transform`/`perspective`, and
+a rectangular scissor cannot express any of that. The stencil aspect it needs is
+already in place (§7, Stencil); what remains is the pass work.
 
 **Tier 2 -- not implemented.** `PushLayer`/`CompositeLayers`/`PopLayer`,
 `SaveLayerAsTexture`, `SaveLayerAsMaskImage`, `CompileFilter`, `CompileShader`.
@@ -215,14 +222,16 @@ statically would mean reimplementing part of RmlUi's cascade.
 
 ### Stencil
 
-Clip masks need a stencil aspect. `VulkanDepthTarget::ChooseDepthFormat` today
-prefers `VK_FORMAT_D32_SFLOAT`, which has none, falling back to
-`D24_UNORM_S8_UINT` / `D32_SFLOAT_S8_UINT`. **Decision:** when UI rendering is
-compiled in, prefer a stencil-bearing format; keep the stencil-free one for
-builds without it. Depth precision is unchanged either way, so golden images are
-unaffected. A device offering no stencil-bearing depth format degrades
-`border-radius` clipping to rectangular scissor with a one-time diagnostic rather
-than failing to start. Implemented and golden-tested in Stage 3.
+Clip masks need a stencil aspect. `VulkanDepthTarget::ChooseDepthFormat` now
+prefers `VK_FORMAT_D32_SFLOAT_S8_UINT`, then `D32_SFLOAT`, then
+`D24_UNORM_S8_UINT` -- 32-bit float depth stays the first choice either way,
+because depth precision is not a thing to trade for a stencil aspect. Verified
+against the golden images: the format change moved no pixel.
+
+A device offering no stencil-bearing depth format degrades `border-radius`
+clipping to rectangular scissor with a one-time diagnostic rather than failing
+to start, which is the same behaviour every device gets until the pass work
+lands.
 
 ## 8. Colour, alpha, and blend state
 
