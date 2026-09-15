@@ -565,30 +565,56 @@ current docking architecture", which is a different project and not a
 prerequisite for the first. And by the time it exists, some surfaces will turn
 out not to want a docked successor at all -- project configuration among them.
 
+This is now the remaining prerequisite for replacing a visible Kyusu panel.
+Theme parity (§14) was the other, and it is done.
+
 ## 14. Themes
 
-Authored surfaces carry their own colours today. Kyusu's ImGui shell is themed
-from a file at `editor/themes` and can switch at runtime; an `.rcss` cannot
-follow that, because RCSS has no variables and a stylesheet is parsed once per
-package.
+An application's theme is presentation policy the host owns. Authored documents
+do not carry it, and it does not travel through a presentation model -- a model
+is what a surface presents, and a colour is not that.
 
-This is the named gap in front of panel reduction. A surface that cannot follow
-the editor's theme will not replace a panel that does, however good it is
-otherwise -- so it is the thing to settle before §13's work, not after.
+So the host writes a stylesheet, and the runtime answers a name the packages
+already reference from the host's copy rather than the one cooked into each:
 
-Two shapes are plausible and the choice has not been made:
+```cpp
+ui.SetHostStyleSheet("theme.rcss", BuildAuthoredThemeStyleSheet());
+```
 
-- **A generated stylesheet.** The host supplies named values; the runtime builds
-  one `theme.rcss` every package `@import`s, and re-parses it on a theme change
-  through the same rebuild path a source edit already uses. Documents stay
-  ordinary RCSS and the markup says nothing about theming.
-- **Model-bound style properties.** `data-style-background-color="panel_bg"`,
-  read from published values. Works today with no engine change and no new
-  concept, at the cost of theme plumbing in every document's markup.
+Concrete RCSS text. There is no variable system and no styling engine here:
+whoever owns a theme already holds concrete colours and already knows how to
+write a rule. RCSS has no variables, and acquiring opinions about colour names
+to work around that would put a second theme system inside the UI layer.
 
-The first is better if authored surfaces become the norm; the second is right if
-they stay few. Both keep the DOM on this side of the boundary, which is the part
-that is not negotiable.
+**Structure and appearance are split by file, and the split is load-bearing.**
+A document's own stylesheet owns every size, position, width and font size; the
+theme owns colours and nothing else. That is what lets the same document lay out
+identically under any theme, and identically in a headless process that supplies
+none -- and it is what makes a theme change a restyle instead of a relayout. A
+fitness test asserts the generated sheet sets no geometric property, and another
+asserts every `theme-*` role a shipped document names is one the generator
+defines, because an undefined class is not an error in RCSS: the element simply
+goes unpainted.
+
+**A package still carries its own copy.** The cook has to resolve every import,
+and a process that supplies nothing should still show a readable document rather
+than an unpainted one on an unpainted ground. `editor/ui/theme.rcss` is that
+fallback, and deliberately does not try to match any theme -- parity is the
+generator's job and a second set of colours would only drift from it.
+
+**Changing it restyles rather than rebuilds.** A theme change reaches open
+documents through `ElementDocument::ReloadStyleSheet`, so the tree, the focus,
+the caret and the scroll offsets all survive: somebody mid-edit when a theme
+changes does not lose the field they were in. A rebuild is what a *source* edit
+gets (§12), because there the markup itself may have changed.
+
+One version counter covers the whole host sheet set rather than one per sheet. A
+theme change is rare and a document does not report which sheets it read, so
+working out who was affected would cost more bookkeeping than restyling
+everything.
+
+Kyusu refreshes it at the same frame boundary that commits a theme, loads the
+chrome textures it names, and rebuilds the shell atlas -- one frame, one theme.
 
 ## 15. What does not belong here
 

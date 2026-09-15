@@ -2,28 +2,29 @@
 <head>
     <title>Inspector</title>
     <link type="text/rcss" href="inspector.rcss"/>
+    <link type="text/rcss" href="theme.rcss"/>
 </head>
 <body data-model="inspector">
-    <div id="panel">
-        <div id="titlebar">
-            <span id="title">{{entity_label}}</span>
-            <div id="close" data-event-click="inspector_close">x</div>
+    <div id="panel" class="theme-surface">
+        <div id="titlebar" class="theme-header">
+            <span id="title" class="theme-title">{{entity_label}}</span>
+            <div id="close" class="theme-icon" data-event-click="inspector_close">x</div>
         </div>
 
         <div id="fields">
-            <div class="field" data-for="field : fields">
-                <span class="name">{{field.label}}</span>
-                <input class="value" type="text" data-if="field.editable"
+            <div class="field theme-row" data-for="field : fields">
+                <span class="name theme-dim">{{field.label}}</span>
+                <input class="value theme-field" type="text" data-if="field.editable"
                        data-value="field.value"
                        data-event-focus="inspector_begin(it_index)"
                        data-event-blur="inspector_commit(it_index)"/>
-                <span class="value fixed" data-if="!field.editable">{{field.value}}</span>
-                <span class="origin">{{field.detail}}</span>
+                <span class="value fixed theme-muted" data-if="!field.editable">{{field.value}}</span>
+                <span class="origin theme-muted">{{field.detail}}</span>
             </div>
-            <div id="empty" data-if="!has_selection">Nothing selected.</div>
+            <div id="empty" class="theme-dim" data-if="!has_selection">Nothing selected.</div>
         </div>
 
-        <div id="status">{{status}}</div>
+        <div id="status" class="theme-footer">{{status}}</div>
     </div>
 </body>
 </rml>

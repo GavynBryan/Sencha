@@ -1,0 +1,51 @@
+/* The editor theme, as authored surfaces see it.
+
+   What is written here is only the fallback. The real rules are generated from
+   the active editor theme at runtime and handed to the UI service, which
+   answers this name from the host's copy instead of the one cooked into each
+   package (see editor/common/src/ui/AuthoredThemeStyleSheet.h). In the editor
+   these declarations are replaced on the first frame and never seen.
+
+   They exist because a package has to carry the sheets it imports, and because
+   a process that supplies no theme -- a headless test, a tool, a document
+   opened by something that is not the editor -- would otherwise draw an
+   unpainted document on an unpainted ground. This is enough to read, and
+   deliberately not an attempt to match any theme: parity is the generator's
+   job, and a second set of colours here would only drift from it.
+
+   Colours only, for the same reason the generated sheet is: a document owns its
+   own structure, and anything here that moved something would make it lay out
+   differently depending on which theme was loaded. */
+
+body { color: #d8dce4ff; }
+
+.theme-surface { background-color: #1b1f27ff; border-color: #39414fff; }
+.theme-header  { background-color: #232937ff; border-color: #39414fff; }
+.theme-title   { color: #9fb4d8ff; }
+.theme-footer  { background-color: #161b24ff; color: #9aa3b4ff; }
+.theme-scrim   { background-color: #05070aa0; }
+
+.theme-field        { background-color: #12161dff; border-color: #39414fff; color: #e8ecf4ff; }
+.theme-field:hover  { background-color: #161b24ff; }
+.theme-field:focus  { background-color: #161b24ff; border-color: #4c7fd0ff; }
+.theme-well         { background-color: #12161dff; border-color: #39414fff; }
+
+.theme-icon        { color: #8d95a5ff; }
+.theme-icon:hover  { background-color: #38414fff; color: #e8ecf4ff; }
+
+.theme-button           { background-color: #2a3140ff; border-color: #39414fff; color: #d8dce4ff; }
+.theme-button:hover     { background-color: #364052ff; border-color: #4c7fd0ff; }
+.theme-button.disabled  { background-color: #20252eff; color: #5c6473ff; }
+
+.theme-row:hover     { background-color: #222834ff; }
+.theme-row.selected  { background-color: #2f6fb0ff; color: #ffffffff; }
+
+.theme-dim      { color: #aab3c4ff; }
+.theme-muted    { color: #6b7285ff; }
+.theme-accent   { color: #4c7fd0ff; }
+.theme-warning  { color: #d8a24aff; }
+.theme-danger   { color: #d86a5aff; }
+
+scrollbarvertical, scrollbarhorizontal { background-color: #12161dff; }
+scrollbarvertical sliderbar, scrollbarhorizontal sliderbar { background-color: #39414fff; }
+scrollbarvertical sliderbar:hover, scrollbarhorizontal sliderbar:hover { background-color: #4c5566ff; }

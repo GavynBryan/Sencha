@@ -206,6 +206,27 @@ public:
     // what its document asked for.
     [[nodiscard]] std::vector<UiAction> DrainActions(UiScreenHandle screen);
 
+    // -- presentation policy -------------------------------------------------
+
+    // A stylesheet the host supplies under a name packages already reference.
+    //
+    // This is how an application's theme reaches authored surfaces. A package
+    // is cooked carrying its own copy of the sheet, which is what it uses in a
+    // process that supplies nothing; setting this replaces those bytes for
+    // every screen, and restyles the ones already open rather than rebuilding
+    // them -- so a theme change keeps focus, caret and scroll where they were.
+    //
+    // Concrete stylesheet text, not a table of named values. Whoever owns a
+    // theme already knows how to write one, and this layer does not become a
+    // styling engine by acquiring opinions about colour names. It is also not a
+    // model: theme data is the host's presentation policy, not anything a
+    // document should be publishing through its presentation copy.
+    //
+    // Returns whether anything changed, so a host may hand its theme over on
+    // every frame without restyling on every frame. Empty text puts packages
+    // back on their own copies.
+    bool SetHostStyleSheet(std::string_view name, std::string_view text);
+
     // -- inspection ----------------------------------------------------------
 
     // The measured content box of an element, after layout. Nullopt when the

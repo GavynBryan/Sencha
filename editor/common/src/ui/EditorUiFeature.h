@@ -147,6 +147,11 @@ private:
     // The frame boundary: commit a pending theme, then resolve everything
     // derived from theme state, before any of it is drawn.
     void PrepareFrameChrome();
+    // Hands the active theme to the authored UI layer as a stylesheet. Called
+    // at the theme boundary, and once at startup because there is nothing to
+    // have changed yet.
+    void PublishAuthoredTheme(bool themeChanged);
+    bool AuthoredThemePublished = false;
     void PrepareThemeTextures();
     void BuildShellAtlasIfStale();
     [[nodiscard]] EditorChrome::BarSurface ResolveSurface(EditorUi::BarFinish finish, const std::string& path,

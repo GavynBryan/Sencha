@@ -23,6 +23,20 @@ RmlPackageFileSource::ActivePackageScope::~ActivePackageScope()
     Source.Active = nullptr;
 }
 
+bool RmlPackageFileSource::ReplaceHostFile(std::string_view name, std::vector<std::byte> bytes)
+{
+    const std::string key(name);
+    if (bytes.empty())
+        return HostFiles.erase(key) > 0;
+
+    const auto existing = HostFiles.find(key);
+    if (existing != HostFiles.end() && existing->second == bytes)
+        return false;
+
+    HostFiles[key] = std::move(bytes);
+    return true;
+}
+
 Rml::FileHandle RmlPackageFileSource::Open(const Rml::String& path)
 {
     if (Active == nullptr)
@@ -36,7 +50,11 @@ Rml::FileHandle RmlPackageFileSource::Open(const Rml::String& path)
     }
 
     const std::vector<std::byte>* bytes = nullptr;
-    if (const UiPackageBlob* blob = Active->FindBlob(path); blob != nullptr)
+    if (const auto host = HostFiles.find(std::string(path)); host != HostFiles.end())
+    {
+        bytes = &host->second;
+    }
+    else if (const UiPackageBlob* blob = Active->FindBlob(path); blob != nullptr)
     {
         bytes = &blob->Bytes;
     }

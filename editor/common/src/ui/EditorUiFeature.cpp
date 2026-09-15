@@ -1,5 +1,9 @@
 #include "EditorUiFeature.h"
 
+#include "AuthoredThemeStyleSheet.h"
+
+#include <ui/UiService.h>
+
 #include "EditorUiStyle.h"
 #include "IEditorPanel.h"
 #include "chrome/ChromeBars.h"
@@ -833,9 +837,30 @@ void EditorUiFeature::PrepareFrameChrome()
         ThemePrefs.SyncWithCVar(EngineInstance.Console().Registry());
         ThemeSynced = true;
     }
-    ThemePrefs.CommitPending();
+    const bool themeChanged = ThemePrefs.CommitPending();
+    PublishAuthoredTheme(themeChanged);
     PrepareThemeTextures();
     BuildShellAtlasIfStale();
+}
+
+void EditorUiFeature::PublishAuthoredTheme(bool themeChanged)
+{
+    // The authored UI layer is the other thing that derives from theme state,
+    // so it is refreshed at the same boundary as the chrome textures and the
+    // shell atlas: one frame, one theme.
+    //
+    // Written as a stylesheet rather than published through any document's
+    // model. A theme is the host's presentation policy; a presentation model is
+    // what a surface presents, and a colour is not that.
+    if (!themeChanged && AuthoredThemePublished)
+        return;
+
+    UiService* ui = EngineInstance.TryUi();
+    if (ui == nullptr || !ui->IsReady())
+        return;
+
+    (void)ui->SetHostStyleSheet(kAuthoredThemeStyleSheetName, BuildAuthoredThemeStyleSheet());
+    AuthoredThemePublished = true;
 }
 
 void EditorUiFeature::PrepareThemeTextures()

@@ -341,6 +341,15 @@ void LoadMetrics(const JsonValue& metrics, std::string& problems)
 }
 }
 
+std::string ThemeColorHex(const ImVec4& linear)
+{
+    char hex[10];
+    std::snprintf(hex, sizeof(hex), "#%02X%02X%02X%02X",
+                  SrgbByte(linear.x), SrgbByte(linear.y), SrgbByte(linear.z),
+                  static_cast<unsigned>(std::clamp(linear.w, 0.0f, 1.0f) * 255.0f + 0.5f));
+    return hex;
+}
+
 bool ParseThemeColor(const std::string& hex, float& r, float& g, float& b, float& a)
 {
     if (hex.size() != 7 && hex.size() != 9)
@@ -407,12 +416,13 @@ bool SaveEditorTheme(const std::filesystem::path& path, std::string* error)
     for (std::size_t i = 0; i < std::size(kThemeEntries); ++i)
     {
         const ImVec4& c = *kThemeEntries[i].Color;
-        char hex[10];
+        // Opaque entries keep the six-digit spelling a theme file is authored
+        // in; ThemeColorHex always spells the alpha, which a stylesheet wants
+        // and a hand-edited theme file does not.
+        std::string hexText = ThemeColorHex(c);
         if (c.w >= 1.0f)
-            std::snprintf(hex, sizeof(hex), "#%02X%02X%02X", SrgbByte(c.x), SrgbByte(c.y), SrgbByte(c.z));
-        else
-            std::snprintf(hex, sizeof(hex), "#%02X%02X%02X%02X", SrgbByte(c.x), SrgbByte(c.y), SrgbByte(c.z),
-                          static_cast<unsigned>(c.w * 255.0f + 0.5f));
+            hexText.resize(7);
+        const char* hex = hexText.c_str();
         file << "    \"" << kThemeEntries[i].Key << "\": \"" << hex << '"'
              << (i + 1 < std::size(kThemeEntries) ? ",\n" : "\n");
     }

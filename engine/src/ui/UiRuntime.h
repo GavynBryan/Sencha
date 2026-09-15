@@ -124,6 +124,8 @@ public:
     [[nodiscard]] std::vector<UiAction> DrainActions();
     [[nodiscard]] std::vector<UiAction> DrainActions(UiScreenHandle screen);
 
+    [[nodiscard]] bool SetHostStyleSheet(std::string_view name, std::string_view text);
+
     // Records every live surface into an immutable draw frame. Runs in
     // ExtractRender: no GPU work, and the frames stay valid until the next call.
     void ExtractRender();
@@ -229,6 +231,10 @@ private:
         // host re-describe a screen it already described.
         std::string PackagePath;
         std::uint64_t PackageVersion = 0;
+        // Which host stylesheet set this document was styled against. Separate
+        // from the package version because the answer is different: a package
+        // edit rebuilds the document, a theme change only restyles it.
+        std::uint64_t StyleVersion = 0;
         UiScreenDesc Description;
 
         std::uint32_t Generation = 1;
@@ -260,6 +266,13 @@ private:
     // carrying across the state the document itself does not own.
     void ReloadChangedScreens();
     [[nodiscard]] bool RebuildScreen(Screen& screen, UiScreenHandle handle);
+
+    // Re-parses the stylesheets of any document styled against an older host
+    // sheet. A restyle rather than a rebuild: the tree, the focus, the caret
+    // and the scroll offsets all survive, because none of them are what a
+    // colour change is about.
+    void RestyleChangedScreens();
+    std::uint64_t StyleVersion = 1;
 
     // Faces a document declared and the engine has already ingested. A face
     // whose bytes changed has to be dropped before a rebuild re-requests it, or

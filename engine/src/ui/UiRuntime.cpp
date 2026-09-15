@@ -633,6 +633,9 @@ UiScreenHandle UiRuntime::OpenScreen(UiSurfaceId surface, const UiScreenDesc& de
     screen.Resources = std::move(resourceLeases);
     screen.PackageVersion = Packages.GetReloadVersion(
         UiPackageHandle::FromToken(screen.Package.OpaqueToken()));
+    // Built against whatever the host has supplied by now, so it is not
+    // restyled on the frame it opened.
+    screen.StyleVersion = StyleVersion;
     screen.Live = true;
 
     return handle;
@@ -670,6 +673,7 @@ void UiRuntime::CloseScreenSlot(Screen& screen)
     screen.Description = {};
     screen.PackagePath.clear();
     screen.PackageVersion = 0;
+    screen.StyleVersion = 0;
     screen.TexturesByAssetPath.clear();
     screen.FontsByAssetPath.clear();
     screen.Resources.clear();
@@ -1036,6 +1040,9 @@ void UiRuntime::ReloadChangedScreens()
         // author is looking at the error, and a log filling at frame rate is
         // not help.
         screen.PackageVersion = version;
+        // A rebuild re-reads every sheet, host copies included, so it is
+        // already current by the time RestyleChangedScreens looks.
+        screen.StyleVersion = StyleVersion;
 
         const UiScreenHandle screenHandle{ static_cast<std::uint32_t>(i + 1),
                                            screen.Generation };
@@ -1147,6 +1154,60 @@ bool UiRuntime::RebuildScreen(Screen& screen, UiScreenHandle handle)
     return true;
 }
 
+bool UiRuntime::SetHostStyleSheet(std::string_view name, std::string_view text)
+{
+    if (!Ready || name.empty())
+        return false;
+
+    std::vector<std::byte> bytes(text.size());
+    std::memcpy(bytes.data(), text.data(), text.size());
+    if (!FileSource->ReplaceHostFile(name, std::move(bytes)))
+        return false;
+
+    // The document engine caches a parsed stylesheet by name, so without this
+    // the next screen to open would be handed the parse of the bytes that were
+    // just replaced. Screens already open re-parse through ReloadStyleSheet,
+    // which clears the cache itself.
+    Rml::Factory::ClearStyleSheetCache();
+
+    // One counter for the whole set rather than one per sheet. A theme change
+    // is rare and a document does not say which sheets it read, so working out
+    // who was affected would cost more bookkeeping than restyling everything.
+    ++StyleVersion;
+    return true;
+}
+
+void UiRuntime::RestyleChangedScreens()
+{
+    for (Screen& screen : Screens)
+    {
+        if (!screen.Live || screen.Document == nullptr || screen.StyleVersion == StyleVersion)
+            continue;
+        screen.StyleVersion = StyleVersion;
+
+        const UiPackage* package =
+            Packages.Get(UiPackageHandle::FromToken(screen.Package.OpaqueToken()));
+        if (package == nullptr || !package->IsValid())
+            continue;
+
+        // The document engine re-reads its own source to recover the stylesheet
+        // graph, and every one of those reads comes back through the package
+        // file source -- which answers nothing without a package bound. The
+        // screen goes with it: re-parsing a sheet re-runs its @font-face rules,
+        // and a face is resolved from the leases the screen holds.
+        // Fonts are deliberately left alone. ReleaseFontResources dirties every
+        // element and updates every context to re-rasterize glyphs, which is
+        // the right answer when a face's bytes changed and pointless work with
+        // a re-entrant context update in the middle of this one when a theme
+        // only changed colours. Faces the documents declared are already
+        // loaded, and re-parsing an @font-face asks for one already there.
+        RmlPackageFileSource::ActivePackageScope scope(*FileSource, *package);
+        ActiveScreen = &screen;
+        screen.Document->ReloadStyleSheet();
+        ActiveScreen = nullptr;
+    }
+}
+
 void UiRuntime::Update()
 {
     if (!Ready)
@@ -1155,6 +1216,9 @@ void UiRuntime::Update()
     // Before layout, so an edit lands in the frame the reload committed rather
     // than the one after it.
     ReloadChangedScreens();
+    // After, so a document rebuilt this frame is not immediately restyled: a
+    // rebuild already read the current sheets.
+    RestyleChangedScreens();
 
     for (Surface& surface : Surfaces)
     {

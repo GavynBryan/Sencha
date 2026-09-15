@@ -30,6 +30,12 @@
 // malformed string. Exposed for the theme tests.
 [[nodiscard]] bool ParseThemeColor(const std::string& hex, float& r, float& g, float& b, float& a);
 
+// The inverse: a linear palette color re-encoded to the authored sRGB hex form.
+// Always eight digits, because the consumers that are not a theme file want the
+// alpha spelled out. This is what a theme is saved as and what an authored
+// stylesheet is generated from, so the two cannot disagree about the encoding.
+[[nodiscard]] std::string ThemeColorHex(const ImVec4& linear);
+
 // One themeable palette entry: the JSON key and the EditorUi color it drives.
 struct EditorThemePaletteEntry
 {

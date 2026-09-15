@@ -128,6 +128,11 @@ std::vector<UiAction> UiService::DrainActions(UiScreenHandle screen)
     return Runtime->DrainActions(screen);
 }
 
+bool UiService::SetHostStyleSheet(std::string_view name, std::string_view text)
+{
+    return Runtime->SetHostStyleSheet(name, text);
+}
+
 void UiService::CloseScreen(UiScreenHandle screen)
 {
     Runtime->CloseScreen(screen);

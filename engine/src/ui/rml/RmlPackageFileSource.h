@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -55,6 +56,19 @@ public:
     // Consulted when the package carries no blob under the requested name.
     void SetResourceBytes(IUiPackageResourceBytes* resolver) { Resources = resolver; }
 
+    // A file the host supplies under a name packages already reference -- a
+    // theme stylesheet, in practice.
+    //
+    // Answered BEFORE the package's own blob, which is the whole point: the
+    // package carries a copy so that it opens in a process that supplies
+    // nothing, and the host replaces it when it has something better. Empty
+    // bytes remove the override rather than serving an empty file, so a host
+    // can put a package back on its own copy.
+    //
+    // False when the bytes are the ones already there, so a host that hands its
+    // theme over every frame costs a comparison and restyles nothing.
+    [[nodiscard]] bool ReplaceHostFile(std::string_view name, std::vector<std::byte> bytes);
+
     // Binds `package` for as long as it lives. Not reentrant: one load at a
     // time, which is what the document engine does anyway.
     class ActivePackageScope
@@ -88,6 +102,7 @@ private:
 
     Logger& Log;
     IUiPackageResourceBytes* Resources = nullptr;
+    std::unordered_map<std::string, std::vector<std::byte>> HostFiles;
     const UiPackage* Active = nullptr;
     std::unordered_map<std::uint64_t, OpenFile> Files;
     // Never reused, so a handle outliving its Close reads as invalid rather
