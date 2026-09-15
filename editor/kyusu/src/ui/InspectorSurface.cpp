@@ -6,6 +6,7 @@
 #include "commands/CommandStack.h"
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
+#include "document/EntityNameComponent.h"
 #include "document/WorldDocument.h"
 #include "document/AssetFieldIo.h"
 #include "document/commands/AssetFieldEditCommand.h"
@@ -468,6 +469,25 @@ void InspectorSurface::HandleChoose(std::size_t option)
     Status = RuntimeFieldLabel(field) + " updated";
 }
 
+std::string InspectorSurface::EntityLabel(EntityId entity) const
+{
+    if (!entity.IsValid())
+        return "No selection";
+
+    // The authored name when it has one, because that is what the hierarchy
+    // calls it and what a person is looking for. The handle is the fallback
+    // rather than the title: it identifies the entity to the editor, not to
+    // whoever is editing it.
+    const World& world =
+        std::as_const(WorldDoc.FocusDocument().GetScene().GetRegistry()).Components;
+    if (const auto* named = world.TryGet<EntityNameComponent>(entity);
+        named != nullptr && !named->Value.Empty())
+    {
+        return std::string(named->Value.View());
+    }
+    return "Entity " + std::to_string(entity.Index);
+}
+
 void InspectorSurface::Publish()
 {
     const EntityId entity = SelectedEntity();
@@ -481,11 +501,7 @@ void InspectorSurface::Publish()
     }
 
     (void)Ui.SetValue(Screen, kHasSelection, UiValue(entity.IsValid()));
-    (void)Ui.SetValue(Screen, kEntityLabel,
-                      UiValue(entity.IsValid()
-                                  ? "Entity " + std::to_string(entity.Index)
-                                        + " (gen " + std::to_string(entity.Generation) + ")"
-                                  : std::string("No selection")));
+    (void)Ui.SetValue(Screen, kEntityLabel, UiValue(EntityLabel(entity)));
     (void)Ui.SetValue(Screen, kStatus, UiValue(Status));
     PublishPicker();
 

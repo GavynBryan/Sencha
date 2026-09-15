@@ -2,6 +2,8 @@
 
 #include "ui/RuntimeFieldText.h"
 
+#include <core/text/InlineString.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -240,4 +242,83 @@ TEST(RuntimeFieldText, ALabelComesFromTheFieldOrItsName)
 
     field.Label = "Start Playing";
     EXPECT_EQ(RuntimeFieldLabel(field), "Start Playing");
+}
+
+// InlineString members: the one string form a component may hold, because
+// archetype storage relocates with memcpy. They are bytes at an offset like
+// everything else, so they read and write here rather than needing a component
+// to be named.
+
+namespace
+{
+struct Named
+{
+    InlineString<8> Short;
+    float           After;
+};
+
+[[nodiscard]] RuntimeField TextField()
+{
+    RuntimeField field;
+    field.Name = "value";
+    field.Offset = offsetof(Named, Short);
+    field.Size = sizeof(InlineString<8>);
+    field.Scalar = FieldScalar::Unsupported;
+    field.InlineText = true;
+    return field;
+}
+} // namespace
+
+TEST(RuntimeFieldText, InlineTextReadsAndWritesItsCharacters)
+{
+    Named sample{};
+    sample.Short = "crate";
+    sample.After = 1.5f;
+
+    const RuntimeField field = TextField();
+    EXPECT_TRUE(IsRuntimeFieldEditable(field));
+    EXPECT_EQ(FormatRuntimeField(field, &sample), "crate");
+
+    ASSERT_TRUE(ParseRuntimeField(field, "door", &sample));
+    EXPECT_EQ(sample.Short.View(), "door");
+    EXPECT_FLOAT_EQ(sample.After, 1.5f) << "writing the text ran past the field";
+}
+
+TEST(RuntimeFieldText, TextIsNotSplitOnCommas)
+{
+    // The comma rule belongs to numbers. A name is whatever was typed.
+    Named sample{};
+    const RuntimeField field = TextField();
+
+    ASSERT_TRUE(ParseRuntimeField(field, "a, b", &sample));
+    EXPECT_EQ(sample.Short.View(), "a, b");
+}
+
+TEST(RuntimeFieldText, TextTooLongIsRefusedRatherThanTruncated)
+{
+    // Everywhere else an InlineString assignment truncates, which is right when
+    // the caller is code. Here it is a person watching their own characters
+    // disappear.
+    Named sample{};
+    sample.Short = "keep";
+
+    const RuntimeField field = TextField();
+    EXPECT_FALSE(ParseRuntimeField(field, "far too long for eight", &sample));
+    EXPECT_EQ(sample.Short.View(), "keep");
+
+    // Exactly the capacity minus its terminator still fits.
+    ASSERT_TRUE(ParseRuntimeField(field, "seven77", &sample));
+    EXPECT_EQ(sample.Short.View(), "seven77");
+}
+
+TEST(RuntimeFieldText, AShorterNameZeroesWhatTheLongerOneLeft)
+{
+    // InlineString compares and hashes the whole buffer, so a leftover tail
+    // would make two equal names unequal.
+    Named sample{};
+    const RuntimeField field = TextField();
+
+    ASSERT_TRUE(ParseRuntimeField(field, "seven77", &sample));
+    ASSERT_TRUE(ParseRuntimeField(field, "ab", &sample));
+    EXPECT_EQ(sample.Short, InlineString<8>("ab"));
 }

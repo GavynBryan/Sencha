@@ -151,6 +151,9 @@ private:
     void AbandonEdit();
 
     [[nodiscard]] EntityId SelectedEntity() const;
+    // What the title bar says: the authored name, or the handle when there is
+    // none to say.
+    [[nodiscard]] std::string EntityLabel(EntityId entity) const;
 
     UiService& Ui;
     WorldDocument& WorldDoc;

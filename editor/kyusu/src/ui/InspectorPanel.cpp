@@ -184,6 +184,22 @@ namespace
         ImGui::SetNextItemWidth(-FLT_MIN);
 
         const std::string id = "##" + field.Name;
+
+        // An InlineString member: the field's own bytes are a null-terminated,
+        // tail-zeroed buffer, so ImGui edits them in place and the commit is the
+        // same whole-component byte snapshot every other field uses.
+        if (field.InlineText)
+        {
+            if (field.ReadOnly)
+                ImGui::BeginDisabled();
+            ImGui::InputText(id.c_str(), static_cast<char*>(ptr), field.Size);
+            edit.Activated = ImGui::IsItemActivated();
+            edit.Committed = ImGui::IsItemDeactivatedAfterEdit();
+            if (field.ReadOnly)
+                ImGui::EndDisabled();
+            return edit;
+        }
+
         if (field.Scalar == FieldScalar::Unsupported)
         {
             ImGui::TextDisabled("<unsupported>");

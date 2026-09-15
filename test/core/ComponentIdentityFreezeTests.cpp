@@ -4,6 +4,7 @@
 #include <net/ReplicationLayout.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
+#include <world/scene/SmapFormat.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
 #include <gtest/gtest.h>
@@ -48,6 +49,12 @@ struct FrozenSerializer
     std::string_view JsonKey;
     std::uint64_t    TypeId;
     std::uint32_t    ChunkId;
+    // The structural shape of the component as cooked content records it: every
+    // runtime field's name, kind, offset, size, count and asset binding. A
+    // cooked scene carries the fingerprint of the build that wrote it and is
+    // refused wholesale by a build whose fingerprint differs, so this moving
+    // means every scene already cooked has to be cooked again.
+    std::uint64_t    SchemaFingerprint;
 };
 
 // clang-format off
@@ -110,30 +117,30 @@ constexpr FrozenComponent kFrozenComponents[] = {
 };
 
 constexpr FrozenSerializer kFrozenSerializers[] = {
-    { "AbilitySet",          0x398F71246E3983A2ull, MakeFourCC('A','B','L','S') },
-    { "AimFacing",           0xA70764228D1A908Dull, MakeFourCC('A','I','M','F') },
-    { "AnimationClipPlayer", 0xFB8C76C712E6CA02ull, MakeFourCC('A','C','L','P') },
-    { "Attributes",          0xCBAB285D411E9BC8ull, MakeFourCC('A','T','T','R') },
-    { "AudioCaption",        0x4513D14CA77A1639ull, MakeFourCC('A','C','A','P') },
-    { "AudioSource",         0x917CF03FFE5623A4ull, MakeFourCC('A','S','R','C') },
-    { "Camera",              0x54D1B2A64667E32Eull, MakeFourCC('C','A','M','R') },
-    { "CharacterController", 0x9F1D2CE24A903B74ull, MakeFourCC('C','H','C','T') },
-    { "CharacterMovement",   0xD1A31FA332384D88ull, MakeFourCC('C','H','M','V') },
-    { "Dock Gate Binding",   0x9D8D4FD13397EBFCull, MakeFourCC('D','G','A','T') },
-    { "GameplayTags",        0x8AD70174123D7D06ull, MakeFourCC('G','T','A','G') },
-    { "IrradianceVolume",    0xB477A83303BC3F19ull, MakeFourCC('I','R','V','L') },
-    { "LookOrientation",     0x457DFC612E50E277ull, MakeFourCC('L','O','O','K') },
-    { "MovementTuning",      0xF266148A7AF04584ull, MakeFourCC('M','T','U','N') },
-    { "PointLight",          0x6A79ACB9CBC5CDDBull, MakeFourCC('P','L','G','T') },
-    { "SkinnedMesh",         0x1EE6CB7FBD7486D6ull, MakeFourCC('S','K','I','N') },
-    { "SpotLight",           0x553229AC9C575AC7ull, MakeFourCC('S','P','O','T') },
-    { "StaticMesh",          0xC8A13ED72D0FBD7Eull, MakeFourCC('M','E','S','H') },
-    { "Transform",           0xC1FFF4F356DFB2FBull, MakeFourCC('X','F','R','M') },
-    { "World Dock",          0xBC443581184484CEull, MakeFourCC('W','D','C','K') },
-    { "World Link",          0x9046133F6F99B85Dull, MakeFourCC('W','L','N','K') },
-    { "ZoneLightmap",        0xC85ECD44D42C5D5Dull, MakeFourCC('Z','L','M','P') },
-    { "persistent_id",       0xBB21CC0122FC1DD8ull, MakeFourCC('P','S','I','D') },
-    { "scene_instance",      0x17084CA474E1957Full, MakeFourCC('S','N','I','N') },
+    { "AbilitySet",          0x398F71246E3983A2ull, MakeFourCC('A','B','L','S'), 0x836F1C5BF9C32295ull },
+    { "AimFacing",           0xA70764228D1A908Dull, MakeFourCC('A','I','M','F'), 0x141188942D7459D8ull },
+    { "AnimationClipPlayer", 0xFB8C76C712E6CA02ull, MakeFourCC('A','C','L','P'), 0xDFB69B18CFE656A3ull },
+    { "Attributes",          0xCBAB285D411E9BC8ull, MakeFourCC('A','T','T','R'), 0x0DB13B4D4DCFF19Cull },
+    { "AudioCaption",        0x4513D14CA77A1639ull, MakeFourCC('A','C','A','P'), 0xD7974DBF9F9CAD02ull },
+    { "AudioSource",         0x917CF03FFE5623A4ull, MakeFourCC('A','S','R','C'), 0x7A7F3ECBA5C09B6Cull },
+    { "Camera",              0x54D1B2A64667E32Eull, MakeFourCC('C','A','M','R'), 0x42DB5872ADA403FEull },
+    { "CharacterController", 0x9F1D2CE24A903B74ull, MakeFourCC('C','H','C','T'), 0x2EF3100BF4535222ull },
+    { "CharacterMovement",   0xD1A31FA332384D88ull, MakeFourCC('C','H','M','V'), 0xC075703BBFDCB7FFull },
+    { "Dock Gate Binding",   0x9D8D4FD13397EBFCull, MakeFourCC('D','G','A','T'), 0x1B5191F0EC56CBF3ull },
+    { "GameplayTags",        0x8AD70174123D7D06ull, MakeFourCC('G','T','A','G'), 0x8CAB70CB062B6AF0ull },
+    { "IrradianceVolume",    0xB477A83303BC3F19ull, MakeFourCC('I','R','V','L'), 0xCCA25403DBEC5178ull },
+    { "LookOrientation",     0x457DFC612E50E277ull, MakeFourCC('L','O','O','K'), 0x02E7F865828EE5CBull },
+    { "MovementTuning",      0xF266148A7AF04584ull, MakeFourCC('M','T','U','N'), 0x75C60F44DC220B00ull },
+    { "PointLight",          0x6A79ACB9CBC5CDDBull, MakeFourCC('P','L','G','T'), 0x133C5B9C945CFC5Aull },
+    { "SkinnedMesh",         0x1EE6CB7FBD7486D6ull, MakeFourCC('S','K','I','N'), 0x354907348BB3323Bull },
+    { "SpotLight",           0x553229AC9C575AC7ull, MakeFourCC('S','P','O','T'), 0x92A3AB095926FFB1ull },
+    { "StaticMesh",          0xC8A13ED72D0FBD7Eull, MakeFourCC('M','E','S','H'), 0x020F54FC4D6291C6ull },
+    { "Transform",           0xC1FFF4F356DFB2FBull, MakeFourCC('X','F','R','M'), 0x4AA48FB24FD32794ull },
+    { "World Dock",          0xBC443581184484CEull, MakeFourCC('W','D','C','K'), 0xB1FD184554231B63ull },
+    { "World Link",          0x9046133F6F99B85Dull, MakeFourCC('W','L','N','K'), 0x517CCD3AEDFC1313ull },
+    { "ZoneLightmap",        0xC85ECD44D42C5D5Dull, MakeFourCC('Z','L','M','P'), 0x29077D04099615BEull },
+    { "persistent_id",       0xBB21CC0122FC1DD8ull, MakeFourCC('P','S','I','D'), 0x1F8F8B8897EAC0E1ull },
+    { "scene_instance",      0x17084CA474E1957Full, MakeFourCC('S','N','I','N'), 0x9A3576037AB80DDDull },
 };
 // clang-format on
 
@@ -238,6 +245,10 @@ TEST(ComponentIdentityFreeze, EveryFrozenSerializerKeepsItsKeyAndChunk)
         EXPECT_EQ(serializer->TypeId().Value, frozen.TypeId) << "for " << frozen.JsonKey;
         EXPECT_EQ(serializer->BinaryChunkId(), frozen.ChunkId)
             << "binary chunk id moved for " << frozen.JsonKey;
+        EXPECT_EQ(ComponentSchemaFingerprint(*serializer), frozen.SchemaFingerprint)
+            << "the cooked schema shape moved for " << frozen.JsonKey
+            << ": every scene already cooked with this component will be refused "
+               "until it is cooked again";
     }
 }
 
@@ -301,7 +312,8 @@ TEST(ComponentIdentityFreeze, DISABLED_PrintFrozenTable)
     {
         std::cout << "    { \"" << serializer->JsonKey() << "\", "
                   << HexLiteral(serializer->TypeId().Value) << ", "
-                  << FourCcLiteral(serializer->BinaryChunkId()) << " },\n";
+                  << FourCcLiteral(serializer->BinaryChunkId()) << ", "
+                  << HexLiteral(ComponentSchemaFingerprint(*serializer)) << " },\n";
     }
     std::cout << "};\n\nconstexpr std::uint64_t kFrozenReplicationTableHash = "
               << HexLiteral(vocabulary.Replication.TableHash()) << ";\n";

@@ -7,6 +7,7 @@
 #include <core/metadata/ScalarGroup.h>
 #include <core/metadata/SchemaVisit.h>
 #include <core/metadata/TypeSchema.h>
+#include <core/text/InlineString.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -70,6 +71,18 @@ struct RuntimeField
     // Display metadata, like Label: the bytes at Offset stay radians, so it
     // stays out of ComponentSchemaFingerprint.
     bool         DisplayDegrees = false;
+    // True for an InlineString member: Size bytes at Offset holding a
+    // null-terminated, tail-zeroed buffer, so an authoring surface can read and
+    // write it as text. Scalar stays Unsupported, the same way an asset handle's
+    // does -- the bytes are not one of the numeric kinds, and a consumer that
+    // only understands those must keep ignoring it.
+    //
+    // Out of ComponentSchemaFingerprint deliberately. Nothing about the bytes
+    // changes, and Size already states the capacity, so a cooked scene written
+    // before this existed describes exactly the same shape. Putting it in the
+    // fingerprint would refuse every scene already cooked with a name or a
+    // caption in it, to record something the fingerprint already covers.
+    bool         InlineText = false;
     // Non-empty for an enum member with an EnumSchema: the named choices for
     // this leaf, so an editor draws a selector instead of a number field.
     // Scalar stays the underlying integer kind and the bytes at Offset are
@@ -151,6 +164,19 @@ namespace RuntimeSchemaDetail
     struct IsStrongId<StrongId<Tag, U>> : std::true_type
     {
         using Underlying = U;
+    };
+
+    // Detects InlineString<N>, which is N bytes of null-terminated text at the
+    // member's own offset -- the one string form a component may hold, because
+    // archetype storage relocates with memcpy.
+    template <typename T>
+    struct IsInlineText : std::false_type
+    {
+    };
+
+    template <std::size_t Capacity>
+    struct IsInlineText<InlineString<Capacity>> : std::true_type
+    {
     };
 
     // A VisitSchema visitor that flattens fields against a fixed root object:
@@ -273,6 +299,8 @@ namespace RuntimeSchemaDetail
                                 ScalarKindOf<MemberType>(), field.Asset, field.Arity };
                 if constexpr (HasEnumSchema<MemberType>)
                     f.Enum = EnumOptionsOf<MemberType>();
+                if constexpr (IsInlineText<MemberType>::value)
+                    f.InlineText = true;
                 annotate(f);
                 Out.push_back(std::move(f));
             }

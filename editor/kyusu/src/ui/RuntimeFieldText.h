@@ -36,7 +36,9 @@
 
 // What this field currently holds, formatted for display. A multi-scalar leaf
 // (a position, a rotation) comes back comma-separated, in the order the schema
-// lays the scalars out. Empty for a leaf with nothing presentable.
+// lays the scalars out; an inline-text leaf comes back as its characters, which
+// is why the comma rule applies to numbers and not to text. Empty for a leaf
+// with nothing presentable.
 //
 // `componentBytes` is the start of the component; the field's own offset is
 // applied here.

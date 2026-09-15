@@ -261,15 +261,29 @@ bool IsRuntimeFieldEditable(const RuntimeField& field)
 {
     // An asset handle is refcounted and session-local, so it never travels as
     // bytes; it needs a picker and the command that goes with one.
-    return !field.ReadOnly && field.Asset == AssetType::Unknown && IsScalarKind(field);
+    if (field.ReadOnly || field.Asset != AssetType::Unknown)
+        return false;
+    return field.InlineText || IsScalarKind(field);
 }
 
 std::string FormatRuntimeField(const RuntimeField& field, const void* componentBytes)
 {
-    if (componentBytes == nullptr || !IsScalarKind(field))
+    if (componentBytes == nullptr)
         return {};
 
     const std::byte* base = At(componentBytes, field.Offset);
+
+    if (field.InlineText)
+    {
+        // Null-terminated and tail-zeroed by InlineString, so the terminator is
+        // the length -- but bounded by the field anyway, because a buffer that
+        // somehow lost its terminator must not be read past its own bytes.
+        const char* text = reinterpret_cast<const char*>(base);
+        return std::string(text, ::strnlen(text, field.Size));
+    }
+
+    if (!IsScalarKind(field))
+        return {};
 
     if (!field.Enum.empty())
     {
@@ -321,6 +335,23 @@ bool ParseRuntimeField(const RuntimeField& field, std::string_view text,
         return false;
 
     std::byte* base = At(componentBytes, field.Offset);
+
+    if (field.InlineText)
+    {
+        // Refused rather than truncated. Everywhere else in the engine an
+        // InlineString assignment truncates, which is right when the caller is
+        // code; here the caller is a person watching their own characters
+        // disappear, and being told the name is too long is the better answer.
+        if (field.Size == 0 || text.size() + 1 > field.Size)
+            return false;
+        std::memcpy(base, text.data(), text.size());
+        // The tail is zeroed, not just terminated: InlineString compares and
+        // hashes the whole buffer, so leftover bytes from a longer previous
+        // value would make two equal names unequal.
+        std::memset(reinterpret_cast<char*>(base) + text.size(), 0,
+                    field.Size - text.size());
+        return true;
+    }
 
     if (!field.Enum.empty())
     {

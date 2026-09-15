@@ -642,3 +642,50 @@ TEST(InspectorSurface, ClickingAPlainReadOnlyRowOpensNothing)
     harness.Frame();
     EXPECT_FALSE(harness.PickerOpen());
 }
+
+TEST(InspectorSurface, AnEntitysNameIsEditedLikeAnyOtherField)
+{
+    // The most common thing anybody does in an inspector. The name is an
+    // InlineString member, so it is bytes at an offset like every other field
+    // and needs no component to be named here.
+    Harness harness;
+    harness.Start();
+
+    const EntityId entity = harness.Scene().CreateEntity(Vec3d::Zero());
+    harness.Select(entity);
+    harness.Frame();
+
+    const std::size_t name = harness.RowIndexOf("Name");
+    ASSERT_NE(name, static_cast<std::size_t>(-1))
+        << "the entity's name was not presented as an editable row";
+
+    const std::string before = harness.Rows()[name].Value;
+    harness.ReplaceRowText(name, "Front Door");
+
+    EXPECT_EQ(harness.Rows()[name].Value, "Front Door");
+    EXPECT_NE(before, "Front Door");
+    EXPECT_TRUE(harness.Commands.CanUndo());
+
+    harness.Commands.Undo();
+    harness.Frame();
+    EXPECT_EQ(harness.Rows()[name].Value, before);
+}
+
+TEST(InspectorSurface, ANameLongerThanTheFieldIsRefusedWithItsRowIntact)
+{
+    Harness harness;
+    harness.Start();
+
+    const EntityId entity = harness.Scene().CreateEntity(Vec3d::Zero());
+    harness.Select(entity);
+    harness.Frame();
+
+    const std::size_t name = harness.RowIndexOf("Name");
+    ASSERT_NE(name, static_cast<std::size_t>(-1));
+    const std::string before = harness.Rows()[name].Value;
+
+    harness.ReplaceRowText(name, std::string(200, 'x'));
+
+    EXPECT_FALSE(harness.Commands.CanUndo()) << "an over-long name reached the component";
+    EXPECT_EQ(harness.Rows()[name].Value, before) << "the refused text was left on screen";
+}

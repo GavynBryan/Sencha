@@ -15,6 +15,9 @@ struct SENCHA_COMPONENT("name")
 EntityNameComponent
 {
     SENCHA_FIELD("value")
+    SENCHA_LABEL("Name")
+    SENCHA_TOOLTIP("What the hierarchy calls this entity. Authoring only: the "
+                   "level cook strips it, so nothing at runtime reads it.")
     InlineString<64> Value;
 };
 
