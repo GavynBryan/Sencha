@@ -17,10 +17,17 @@ RmlTextInputBridge::~RmlTextInputBridge()
 
 void RmlTextInputBridge::OnActivate(Rml::TextInputContext* context)
 {
-    if (context == nullptr || Window == nullptr)
+    if (context == nullptr)
         return;
 
+    // Tracked whether or not there is a window. Which field has focus is a fact
+    // about the UI, and a reader of raw device state gates on it; only the
+    // platform call is conditional, because a windowless process has no input
+    // method to ask.
     Active = context;
+    if (Window == nullptr)
+        return;
+
     SDL_StartTextInput(Window);
 
     // Where the candidate window should sit. An IME that does not know where

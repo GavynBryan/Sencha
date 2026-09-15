@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -106,6 +107,10 @@ public:
     void Navigate(UiSurfaceId surface, UiNavigation direction);
 
     [[nodiscard]] bool SetValue(UiScreenHandle screen, UiModelPropertyId property, UiValue value);
+    [[nodiscard]] bool SetArray(UiScreenHandle screen, UiModelArrayId array,
+                                std::span<const std::string> items);
+    [[nodiscard]] std::size_t ArraySize(UiScreenHandle screen, UiModelArrayId array) const;
+    [[nodiscard]] UiModelArrayId FindArray(UiScreenHandle screen, std::string_view path) const;
     [[nodiscard]] UiValue GetValue(UiScreenHandle screen, UiModelPropertyId property) const;
     [[nodiscard]] UiModelPropertyId FindProperty(UiScreenHandle screen,
                                                  std::string_view path) const;
@@ -168,6 +173,7 @@ private:
     {
         std::string Path;
         UiValue Value;
+        bool Editable = false;
     };
 
     struct Screen
@@ -187,6 +193,16 @@ private:
         bool Modal = false;
         std::string ModelName;
         std::vector<BoundProperty> Properties;
+
+        // Each list gets its own allocation because the document engine binds
+        // an array by address: a vector of vectors would move its elements on
+        // growth and leave every binding pointing at freed storage.
+        struct BoundArray
+        {
+            std::string Path;
+            std::vector<std::string> Items;
+        };
+        std::vector<std::unique_ptr<BoundArray>> Arrays;
         std::vector<std::string> ActionNames;
         // Null until a model is constructed, which only happens for a screen
         // that declared one.

@@ -71,6 +71,22 @@ bool UiService::SetValue(UiScreenHandle screen, UiModelPropertyId property, UiVa
     return Runtime->SetValue(screen, property, std::move(value));
 }
 
+bool UiService::SetArray(UiScreenHandle screen, UiModelArrayId array,
+                         std::span<const std::string> items)
+{
+    return Runtime->SetArray(screen, array, items);
+}
+
+std::size_t UiService::ArraySize(UiScreenHandle screen, UiModelArrayId array) const
+{
+    return Runtime->ArraySize(screen, array);
+}
+
+UiModelArrayId UiService::FindArray(UiScreenHandle screen, std::string_view path) const
+{
+    return Runtime->FindArray(screen, path);
+}
+
 UiValue UiService::GetValue(UiScreenHandle screen, UiModelPropertyId property) const
 {
     return Runtime->GetValue(screen, property);

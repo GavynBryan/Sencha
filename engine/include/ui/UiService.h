@@ -164,6 +164,13 @@ public:
     bool SetValue(UiScreenHandle screen, UiModelPropertyId property, UiValue value);
     [[nodiscard]] UiValue GetValue(UiScreenHandle screen, UiModelPropertyId property) const;
 
+    // Publishes a list the document repeats over. Same compare-then-dirty rule
+    // as a value: a list republished unchanged re-runs nothing.
+    bool SetArray(UiScreenHandle screen, UiModelArrayId array,
+                  std::span<const std::string> items);
+    [[nodiscard]] std::size_t ArraySize(UiScreenHandle screen, UiModelArrayId array) const;
+    [[nodiscard]] UiModelArrayId FindArray(UiScreenHandle screen, std::string_view path) const;
+
     // Resolve once and keep the id. Both are linear over a screen's declared
     // list, which is short and walked at setup, never per frame.
     [[nodiscard]] UiModelPropertyId FindProperty(UiScreenHandle screen,

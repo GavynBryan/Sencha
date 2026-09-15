@@ -29,15 +29,34 @@ using UiModelPropertyId = StrongId<struct UiModelPropertyTag, std::uint32_t>;
 // nothing the inspector should be able to name.
 using UiActionId = StrongId<struct UiActionTag, std::uint32_t>;
 
+// A list a document repeats over. Separate from a property because it is bound
+// by address rather than through a value getter, and because a list is the one
+// presentation shape whose size is part of what changed.
+using UiModelArrayId = StrongId<struct UiModelArrayTag, std::uint32_t>;
+
 struct UiModelProperty
 {
-    // The name the document reads, as written in the markup -- "health" for
-    // {{health}}, or "weapon.name" for a nested one.
+    // The name the document reads, as written in the markup.
     std::string Path;
 
     // What the property reads before the host publishes anything. A screen that
     // opens before its first update still has to present something.
     UiValue Initial;
+
+    // Whether a control may write this back -- a text field, a slider, a
+    // checkbox bound to it.
+    //
+    // A write changes the presentation copy and nothing else. It does not reach
+    // the application, and it is not a commit: the value a user is part-way
+    // through typing is presentation state, exactly like a scroll offset. The
+    // host learns what was typed by reading it back when the document raises
+    // the action that says to -- an apply, a preview, a confirm -- and remains
+    // free to validate it, transform it, or refuse it outright.
+    //
+    // That is what keeps undo, transactions, validation and scripting outside
+    // the presentation layer. A control that committed on change would put them
+    // all behind a keystroke.
+    bool Editable = false;
 };
 
 struct UiScreenDesc
@@ -55,6 +74,12 @@ struct UiScreenDesc
     // Action names as the document raises them, e.g. a `data-event-click`
     // calling "pause.resume". Ids are the index into this list plus one, so a
     // host can name them as constants beside the description that declares them.
+    // Lists the document repeats over with `data-for`. Strings, deliberately:
+    // a presentation list is labels -- profile names, asset paths, search
+    // results -- and a row needing more structure than that is a design
+    // question rather than a missing overload.
+    std::vector<std::string> Arrays;
+
     std::vector<std::string> Actions;
 
     // A modal screen takes UI focus from the screens below it: they stop
@@ -77,4 +102,9 @@ struct UiScreenDesc
 [[nodiscard]] inline UiActionId UiActionIdAt(std::size_t index)
 {
     return UiActionId{ static_cast<std::uint32_t>(index + 1) };
+}
+
+[[nodiscard]] inline UiModelArrayId UiArrayIdAt(std::size_t index)
+{
+    return UiModelArrayId{ static_cast<std::uint32_t>(index + 1) };
 }

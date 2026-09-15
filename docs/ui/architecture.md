@@ -365,9 +365,32 @@ Geometry bound from a model goes through `data-style-width` and friends, not an
 interpolated `style=""`: the engine substitutes data expressions in text and in
 `data-*` attributes only.
 
-Arrays and value structs are **not** here yet. They need the engine's array
-registration rather than the value variant, and nothing presents one, so they
-land with the surface that first needs them.
+**Two-way editing, without a control ever becoming authoritative.** A property
+declared `Editable` gets a setter, so a bound control -- a text field, a slider,
+a checkbox -- can write it. That write changes the *presentation copy* and
+nothing else. It does not reach the application and it is not a commit: a value
+someone is part-way through typing is presentation state, exactly like a scroll
+offset.
+
+The host learns what was typed by reading it back when the document raises the
+action that says to -- an apply, a preview, a confirm -- and stays free to
+validate it, transform it, or refuse it. That is what keeps undo, transactions,
+validation and scripting on the far side of an explicit action. It is also why
+cancelling and interruption are free: closing a screen mid-edit, or destroying
+its surface, commits nothing, because the edit never went anywhere.
+
+A property without `Editable` has no setter bound at all, so the engine refuses
+the write rather than accepting it into a value nothing reads back.
+
+**Lists** are declared separately (`UiScreenDesc::Arrays`) because the engine
+binds an array by address rather than through the value getter. They are lists
+of strings, deliberately: a presentation list is labels -- profile names, asset
+paths, search results -- and a row needing more structure than that is a design
+question rather than a missing overload. Same compare-then-dirty rule, so a
+panel republishing its list every frame re-runs nothing.
+
+Value structs are still not here. Nothing presents one, so they land with the
+surface that first needs them.
 
 ### The engine drives it
 

@@ -390,12 +390,51 @@ bool UiRuntime::BuildModel(Screen& screen, UiScreenHandle handle, Surface& surfa
         // captured pointer would survive that.
         Screen* slot = &screen;
         const std::size_t index = i;
+
+        // A setter only where the description said a control may write. Without
+        // one the binding is read-only and the document engine refuses the
+        // write, rather than accepting it into a value nothing will ever read
+        // back.
+        Rml::DataSetFunc setter;
+        if (screen.Properties[i].Editable)
+        {
+            setter = [slot, index](const Rml::Variant& in) {
+                // Presentation only. Nothing here reaches the application: the
+                // host reads this back when the document says to apply.
+                slot->Properties[index].Value = FromRmlVariant(in);
+            };
+        }
+
         if (!constructor.BindFunc(
                 screen.Properties[i].Path,
-                [slot, index](Rml::Variant& out) { ToRmlVariant(slot->Properties[index].Value, out); }))
+                [slot, index](Rml::Variant& out) { ToRmlVariant(slot->Properties[index].Value, out); },
+                std::move(setter)))
         {
             Log.Error("UiRuntime: data model '{}' refused the property '{}'",
                       screen.ModelName, screen.Properties[i].Path);
+            return fail();
+        }
+    }
+
+    // Registered once per model, before any array is bound: the engine resolves
+    // the element type when the container type is registered, not when a
+    // variable using it is.
+    if (!screen.Arrays.empty())
+        (void)constructor.RegisterArray<std::vector<std::string>>();
+
+    for (const std::unique_ptr<Screen::BoundArray>& array : screen.Arrays)
+    {
+        if (!IsBindableName(array->Path))
+        {
+            Log.Error("UiRuntime: '{}' is not a bindable list name, for the same reason "
+                      "a property is not: a data expression reads '.' as member access",
+                      array->Path);
+            return fail();
+        }
+        if (!constructor.Bind(array->Path, &array->Items))
+        {
+            Log.Error("UiRuntime: data model '{}' refused the list '{}'",
+                      screen.ModelName, array->Path);
             return fail();
         }
     }
@@ -480,9 +519,17 @@ UiScreenHandle UiRuntime::OpenScreen(UiSurfaceId surface, const UiScreenDesc& de
     pending.Modal = desc.Modal;
     pending.ModelName = desc.ModelName;
     pending.ActionNames = desc.Actions;
+    pending.Arrays.reserve(desc.Arrays.size());
+    for (const std::string& path : desc.Arrays)
+    {
+        auto array = std::make_unique<Screen::BoundArray>();
+        array->Path = path;
+        pending.Arrays.push_back(std::move(array));
+    }
     pending.Properties.reserve(desc.Properties.size());
     for (const UiModelProperty& property : desc.Properties)
-        pending.Properties.push_back(BoundProperty{ property.Path, property.Initial });
+        pending.Properties.push_back(
+            BoundProperty{ property.Path, property.Initial, property.Editable });
 
     // The screen takes its slot before the model binds and before the document
     // loads, and everything after this point works against the slot rather than
@@ -574,6 +621,7 @@ void UiRuntime::CloseScreenSlot(Screen& screen)
         screen.Model.reset();
     }
     screen.Properties.clear();
+    screen.Arrays.clear();
     screen.ActionNames.clear();
     screen.TexturesByAssetPath.clear();
     screen.FontsByAssetPath.clear();
@@ -615,6 +663,50 @@ bool UiRuntime::SetValue(UiScreenHandle screen, UiModelPropertyId property, UiVa
     if (slot->Model != nullptr)
         slot->Model->DirtyVariable(bound.Path);
     return true;
+}
+
+bool UiRuntime::SetArray(UiScreenHandle screen, UiModelArrayId array,
+                         std::span<const std::string> items)
+{
+    Screen* slot = ResolveScreen(screen);
+    if (slot == nullptr || !array.IsValid() || array.Value > slot->Arrays.size())
+        return false;
+
+    Screen::BoundArray& bound = *slot->Arrays[array.Value - 1];
+    // Same compare-then-dirty rule as a value. A list republished unchanged --
+    // which is what a panel does every frame -- must not re-run every binding
+    // that repeats over it.
+    if (bound.Items.size() == items.size()
+        && std::equal(bound.Items.begin(), bound.Items.end(), items.begin()))
+    {
+        return false;
+    }
+
+    bound.Items.assign(items.begin(), items.end());
+    if (slot->Model != nullptr)
+        slot->Model->DirtyVariable(bound.Path);
+    return true;
+}
+
+std::size_t UiRuntime::ArraySize(UiScreenHandle screen, UiModelArrayId array) const
+{
+    const Screen* slot = ResolveScreen(screen);
+    if (slot == nullptr || !array.IsValid() || array.Value > slot->Arrays.size())
+        return 0;
+    return slot->Arrays[array.Value - 1]->Items.size();
+}
+
+UiModelArrayId UiRuntime::FindArray(UiScreenHandle screen, std::string_view path) const
+{
+    const Screen* slot = ResolveScreen(screen);
+    if (slot == nullptr)
+        return {};
+    for (std::size_t i = 0; i < slot->Arrays.size(); ++i)
+    {
+        if (slot->Arrays[i]->Path == path)
+            return UiArrayIdAt(i);
+    }
+    return {};
 }
 
 UiValue UiRuntime::GetValue(UiScreenHandle screen, UiModelPropertyId property) const
