@@ -1,0 +1,214 @@
+@font-face
+{
+    src: "fonts/Inter-Regular.ttf";
+}
+
+/* Kyusu's first authored surface. Structure here, colour and metrics as close
+   to the ImGui chrome as RCSS gets without a theme file -- which is the next
+   thing this wants, and deliberately not part of proving the workflow. */
+
+body
+{
+    display: block;
+    width: 100%;
+    height: 100%;
+    /* The document covers the window, so it must not count as the pointer
+       being over the UI. The dialog and its controls opt back in. */
+    pointer-events: none;
+    font-family: Inter;
+    font-size: 14px;
+    color: #d8dce4ff;
+}
+
+/* Dims the editor behind, and swallows clicks aimed past the dialog -- which is
+   what makes it modal to the pointer as well as to focus. */
+#scrim
+{
+    display: block;
+    position: absolute;
+    left: 0; top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #05070aa0;
+    pointer-events: auto;
+}
+
+#dialog
+{
+    display: block;
+    position: absolute;
+    left: 280px;
+    top: 140px;
+    width: 720px;
+    height: 460px;
+    background-color: #1b1f27ff;
+    border: 1px #39414fff;
+    border-radius: 4px;
+    pointer-events: auto;
+}
+
+#titlebar
+{
+    display: block;
+    width: 100%;
+    height: 34px;
+    background-color: #232937ff;
+}
+
+#title
+{
+    display: inline-block;
+    margin-left: 14px;
+    margin-top: 8px;
+    color: #9fb4d8ff;
+    font-size: 13px;
+}
+
+#close
+{
+    display: block;
+    position: absolute;
+    right: 8px;
+    top: 6px;
+    width: 22px;
+    height: 22px;
+    text-align: center;
+    color: #9aa4b4ff;
+    tab-index: auto;
+}
+
+#close:hover { color: #ffffffff; background-color: #3a4152ff; }
+
+#body
+{
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 34px;
+    width: 720px;
+    height: 372px;
+}
+
+#list
+{
+    display: block;
+    position: absolute;
+    left: 12px;
+    top: 12px;
+    width: 240px;
+    height: 348px;
+    background-color: #12161cff;
+    border: 1px #2b313cff;
+    overflow-y: auto;
+}
+
+.row
+{
+    display: block;
+    width: 100%;
+    height: 26px;
+    padding-left: 10px;
+    padding-top: 5px;
+    tab-index: auto;
+}
+
+.row:hover { background-color: #232937ff; }
+.row.selected { background-color: #2f6fb0ff; color: #ffffffff; }
+
+#form
+{
+    display: block;
+    position: absolute;
+    left: 268px;
+    top: 12px;
+    width: 440px;
+    height: 348px;
+}
+
+.label
+{
+    display: block;
+    margin-top: 10px;
+    margin-bottom: 4px;
+    color: #8892a4ff;
+    font-size: 12px;
+}
+
+#name
+{
+    display: block;
+    width: 420px;
+    height: 26px;
+    padding-left: 8px;
+    background-color: #12161cff;
+    border: 1px #2b313cff;
+    color: #e6eaf2ff;
+    tab-index: auto;
+}
+
+#name:focus { border: 1px #2f6fb0ff; }
+
+#steps
+{
+    display: block;
+    width: 420px;
+    height: 200px;
+    background-color: #12161cff;
+    border: 1px #2b313cff;
+    overflow-y: auto;
+}
+
+.step
+{
+    display: block;
+    height: 22px;
+    padding-left: 10px;
+    padding-top: 3px;
+    color: #b6beccff;
+    font-size: 12px;
+}
+
+#footer
+{
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 406px;
+    width: 720px;
+    height: 54px;
+    background-color: #161a21ff;
+}
+
+#status
+{
+    display: block;
+    position: absolute;
+    left: 14px;
+    top: 18px;
+    width: 420px;
+    color: #9aa4b4ff;
+    font-size: 12px;
+}
+
+.button
+{
+    display: block;
+    position: absolute;
+    top: 13px;
+    width: 96px;
+    height: 28px;
+    padding-top: 6px;
+    text-align: center;
+    background-color: #2a3140ff;
+    border: 1px #39414fff;
+    border-radius: 3px;
+    tab-index: auto;
+}
+
+.button:hover { background-color: #36405230; background-color: #364052ff; }
+
+/* The one on the right is Save. */
+.button + .button { right: 14px; }
+.button { right: 122px; }
+
+.button.disabled { color: #5c6473ff; background-color: #20252eff; }

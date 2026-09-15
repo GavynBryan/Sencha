@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string_view>
+
 class JobSystem;
 class LoggingProvider;
 struct ProjectDescriptor;
@@ -14,3 +16,12 @@ void MountProjectContent(const ProjectDescriptor& project,
                          RuntimeAssets& assets,
                          LoggingProvider& logging,
                          JobSystem* jobs = nullptr);
+
+// Mounts the editor's own authored UI as a content root: its documents,
+// stylesheets and fonts, cooked and registered the same way a project's content
+// is. Separate from the project's roots because it ships with the editor and is
+// there whether or not a project is open.
+void MountEditorContent(std::string_view root,
+                        RuntimeAssets& assets,
+                        LoggingProvider& logging,
+                        JobSystem* jobs);

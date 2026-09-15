@@ -450,7 +450,40 @@ Registering them a second time from the cooked metadata would be a competing
 source of truth for what a face is called, so the runtime does not; the `.sfont`
 metadata is the default for registering a face programmatically instead.
 
-## 12. What does not belong here
+## 12. Rendering destinations
+
+Today a `UiSurface` renders into the window's swapchain, in the `ApplicationUi`
+phase. That is the whole of what exists, and it is enough for a game's HUD and
+menus and for an editor dialog that covers the window.
+
+It is **not** enough for an authored surface that has to occupy part of an
+editor's layout. Kyusu composites its viewports by rendering to an offscreen
+target and handing the result to ImGui as a texture; an authored panel sitting
+in a dock would need the same, and `UiDrawPass` has no notion of a destination
+other than the swapchain scope.
+
+The generalisation, when it is earned:
+
+```
+UiSurface
+    ├── target: Window / Swapchain
+    └── target: RenderTarget
+```
+
+`UiDrawPass` should be given a render destination by the host or the render
+graph. It should learn nothing about docking, panels, or ImGui -- those are one
+consumer of a texture during a migration, not concepts the retained UI
+architecture should carry. The same machinery then serves a window, an offscreen
+editor target, a second viewport, or whatever comes next.
+
+Deliberately deferred to the panel-reduction work rather than built to unblock
+the first migration. Building it first would have turned "prove Kyusu can use
+authored UI" into "extend the renderer until authored UI can reproduce Kyusu's
+current docking architecture", which is a different project and not a
+prerequisite for the first. And by the time it exists, some surfaces will turn
+out not to want a docked successor at all -- project configuration among them.
+
+## 13. What does not belong here
 
 Kyusu's spatial interaction stays purpose-built: transform gizmos, resize
 handles, carve, clip planes and pins, face highlights, vertex/edge/face selection,
@@ -465,7 +498,7 @@ default substrate for surfaces meant to become part of Kyusu's designed
 experience, and those migrate one at a time -- the ImGui version staying until the
 replacement is better.
 
-## 13. Related documents
+## 14. Related documents
 
 | Doc | Relationship |
 |---|---|

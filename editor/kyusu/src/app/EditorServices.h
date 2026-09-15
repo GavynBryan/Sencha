@@ -38,6 +38,7 @@ class EngineSchedule;
 class SdlWindow;
 class PieDriver;
 class CookSession;
+class CookProfilesModal;
 class CookProfilesPanel;
 class EditorCookRuntime;
 class DocumentFileActions;
@@ -113,6 +114,7 @@ private:
     // place (detection: AssetSourceWatcher; reaction: AssetHotReloader), so a
     // save from the material editor or a text editor shows up live. No-op
     // without a mounted project.
+    void BuildAuthoredWorkflows();
     void BuildSourceWatch();
 
     // Bake-to-static-mesh actions behind the ToolPropertiesPanel buttons. All need a
@@ -182,5 +184,9 @@ private:
     // Declared last so they are torn down before the state they reference.
     // Cooking, the player it feeds, and the serials that hand one to the other.
     std::unique_ptr<EditorCookRuntime>  CookRuntime;
+    // Kyusu's first authored workflow. Owned here rather than by the UI feature
+    // because it is editor logic that happens to present through a document,
+    // not a panel.
+    std::unique_ptr<CookProfilesModal>  ProfilesModal;
     std::unique_ptr<DocumentFileActions> Files;
 };

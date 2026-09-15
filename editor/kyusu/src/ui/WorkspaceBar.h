@@ -37,6 +37,9 @@ public:
         std::function<std::string()> SelectedProfileId;
         std::function<void(std::string_view)> SelectProfile;
         std::function<void()> OpenProfiles;
+        // The authored cook-profile workflow, offered beside the ImGui panel
+        // while both exist.
+        std::function<void()> OpenAuthoredProfiles;
         std::function<std::string()> CookStatus;
         std::function<void()> Play;
         std::function<void()> Stop;

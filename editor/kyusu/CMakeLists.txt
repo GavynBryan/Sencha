@@ -41,6 +41,14 @@ list(APPEND KYUSU_AUTHORING_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/render/BrushFaceHighlight.cpp"
 )
 
+# An authored workflow's controller is not shell. It presents through a document
+# rather than drawing one, so it has no GPU, window or ImGui dependency and is
+# testable headlessly -- which is most of the point of moving a workflow to
+# authored UI in the first place.
+list(APPEND KYUSU_AUTHORING_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/CookProfilesModal.cpp"
+)
+
 set(KYUSU_SHELL_SOURCES ${KYUSU_SOURCES})
 list(REMOVE_ITEM KYUSU_SHELL_SOURCES ${KYUSU_AUTHORING_SOURCES})
 

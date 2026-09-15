@@ -22,6 +22,8 @@
 #include <world/ComponentRegistrar.h>
 #include "render/EditorRenderFeature.h"
 #include "ui/ActiveMaterialPanel.h"
+#include "ui/CookProfilesModal.h"
+#include <ui/UiService.h>
 #include "ui/CookProfilesPanel.h"
 #include "ui/EditorConsolePanel.h"
 #include "ui/EditorStatusBar.h"
@@ -118,6 +120,7 @@ EditorServices::EditorServices(Engine& engine,
     // Build the asset system and mount the project content (needs the project from
     // LoadGameModule). The document then serializes through it.
     InitAssets();
+    BuildAuthoredWorkflows();
     BuildSourceWatch();
 
     BuildDocument();
@@ -606,6 +609,12 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
             if (CookRuntime && CookRuntime->ProfilesPanel() != nullptr)
                 CookRuntime->ProfilesPanel()->SetVisible(true);
         },
+        // The authored workflow, beside the ImGui panel rather than instead of
+        // it. Both stay until one is demonstrably better.
+        .OpenAuthoredProfiles = [this] {
+            if (ProfilesModal)
+                ProfilesModal->Open();
+        },
         .CookStatus = [this] {
             if (!CookRuntime)
                 return std::string{};
@@ -1004,6 +1013,46 @@ struct EditorServices::SourceWatchState
     std::chrono::steady_clock::time_point NextPoll{};
 };
 
+void EditorServices::BuildAuthoredWorkflows()
+{
+    UiService* ui = EnginePtr != nullptr ? EnginePtr->TryUi() : nullptr;
+    if (ui == nullptr || !ui->IsReady() || !Project.has_value())
+        return;
+    ProfilesModal = std::make_unique<CookProfilesModal>(*ui, &*Project);
+
+    // Openable from the console as well as the menu, so a startup script can
+    // bring it up -- which is how it gets captured and looked at without a
+    // person driving a menu.
+    EnginePtr->Console().Registry().RegisterCommand({
+        .Name = "editor.profiles.authored",
+        .Owner = "editor",
+        .Usage = "editor.profiles.authored [close]",
+        .Help = "Open the authored cook-profile workflow, the RML document that "
+                "coexists with the ImGui panel while it earns its place.",
+        .Callback = [this](ConsoleExecutionContext&,
+                           std::span<const std::string> args) {
+            ConsoleResult result;
+            if (ProfilesModal == nullptr)
+            {
+                result.Status = ConsoleStatus::ExecutionFailed;
+                result.Error("authored cook profiles are unavailable");
+                return result;
+            }
+            if (!args.empty() && args[0] == "close")
+            {
+                ProfilesModal->Close();
+                result.Info("closed the authored cook profiles");
+            }
+            else
+            {
+                ProfilesModal->Open();
+                result.Info("opened the authored cook profiles");
+            }
+            return result;
+        },
+    });
+}
+
 void EditorServices::BuildSourceWatch()
 {
     if (!Project || !Assets || Project->ContentRoots.empty())
@@ -1104,6 +1153,13 @@ void EditorServices::DrawRadialMenu(const RadialMenuSession& wheel, const IRadia
 
 void EditorServices::ProcessFrame()
 {
+    // Before the engine updates the UI: act on what the document asked for and
+    // publish what it should now show, so a click and its answer land in the
+    // same frame. This hook runs inside FramePhase::Update, which is where the
+    // engine guarantees that ordering.
+    if (ProfilesModal != nullptr)
+        ProfilesModal->Update();
+
     if (Files)
     {
         Files->ProcessPending();
@@ -1301,6 +1357,15 @@ void EditorServices::InitAssets()
         return;
 
     MountProjectContent(*Project, *Assets, logging, &engine.Jobs());
+#ifdef SENCHA_ENABLE_UI
+#ifdef SENCHA_EDITOR_UI_DIR
+    // Into the ENGINE's asset stack, not the editor's. The editor keeps its own
+    // RuntimeAssets for project content, but Engine::Ui() resolves a package
+    // through the engine's -- so authored UI mounted anywhere else is authored
+    // UI the UI service cannot find.
+    MountEditorContent(SENCHA_EDITOR_UI_DIR, engine.Content().Assets(), logging, &engine.Jobs());
+#endif
+#endif
 }
 
 void EditorServices::UnloadGameModule()

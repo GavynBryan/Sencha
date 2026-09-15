@@ -42,3 +42,21 @@ void MountProjectContent(const ProjectDescriptor& project,
     }
     log.Info("assets: mounted {} content root(s)", project.ContentRoots.size());
 }
+
+void MountEditorContent(std::string_view root,
+                        RuntimeAssets& assets,
+                        LoggingProvider& logging,
+                        JobSystem* jobs)
+{
+    Logger& log = logging.GetLogger<ProjectDescriptor>();
+    const std::string rootPath(root);
+
+    const ContentRootPaths paths = ResolveContentRoot(rootPath);
+    ScanContentRoot(paths, assets);
+    {
+        ContentImporterSet importers(jobs);
+        (void)ImportAssetsOnDemand(rootPath, importers.Registry(), assets.Registry, logging);
+    }
+    RegisterCookedContent(paths, assets, log);
+    log.Info("assets: mounted editor UI content at '{}'", rootPath);
+}
