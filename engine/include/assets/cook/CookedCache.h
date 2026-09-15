@@ -48,6 +48,21 @@ struct CookedArtifact
     uint64_t ContentHash = 0;
 };
 
+// One extra source a cook read beyond its root file: a stylesheet a document
+// imports, an include a shader pulls in. Recorded so freshness covers it -- both
+// the stat accelerator and the content hash treat these exactly like the root.
+struct CookedAdditionalSource
+{
+    // Assets-root-relative, generic separators.
+    std::string RelPath;
+
+    // Freshness accelerator, same contract as the root's: matching size and
+    // mtime means the bytes are not read, and any mismatch falls through to the
+    // content hash. 0/0 = unknown, or the file was missing when cooked.
+    uint64_t Size = 0;
+    int64_t MTime = 0;
+};
+
 struct CookedSourceEntry
 {
     // Source file, relative to the assets root, generic separators.
@@ -70,6 +85,11 @@ struct CookedSourceEntry
     uint64_t MetaSize = 0;
     int64_t MetaMTime = 0;
 
+    // Sources beyond the root that this cook consumed, in the order the
+    // importer reported them -- the order matters, because InputFingerprint
+    // mixes their hashes in it.
+    std::vector<CookedAdditionalSource> AdditionalSources{};
+
     std::vector<CookedArtifact> Artifacts;
 };
 
@@ -81,10 +101,18 @@ struct CookedSourceEntry
 // (lightmap UVs replaced the baked-direct vertex channel; per-zone atlas
 // artifacts). Version 6: lightmap atlases moved from RGBM RGBA8 to RGB9E5
 // (texels decode before filtering; the shader no longer applies a
-// multiplier, so older atlases would render wrong). A per-importer cook
-// version is the finer-grained eventual replacement if bumps become
-// frequent.
-inline constexpr uint32_t kCookedCacheIndexVersion = 7;
+// multiplier, so older atlases would render wrong). Version 8: entries record
+// the additional sources a cook read (CookedAdditionalSource), so a multi-file
+// source like a UI document recooks when one of its stylesheets changes; a
+// version-7 entry has no such list and would go on ignoring them. A
+// per-importer cook version is the finer-grained eventual replacement if bumps
+// become frequent.
+inline constexpr uint32_t kCookedCacheIndexVersion = 8;
+
+// The index's name inside <assets-root>/.cooked/. Part of the cache's contract
+// rather than a detail of whoever writes it: the hot reloader reads the same
+// file to find which cooks read an edited input.
+inline constexpr std::string_view kCookedCacheIndexFileName = "index.json";
 
 class CookedCacheIndex
 {

@@ -188,7 +188,11 @@ bool ImGuiDebugOverlay::InitImGui(const RendererServices& services)
 
 	ColorFormat = services.Swapchain->GetFormat();
 	vulkanInfo.PipelineRenderingCreateInfo.pColorAttachmentFormats = &ColorFormat;
+	// The swapchain scope binds the stencil aspect for authored UI's clip
+	// mask. A pipeline recording there has to declare it even when it never
+	// tests against it -- dynamic rendering matches formats, not intentions.
 	vulkanInfo.PipelineRenderingCreateInfo.depthAttachmentFormat = services.DepthFormat;
+	vulkanInfo.PipelineRenderingCreateInfo.stencilAttachmentFormat = services.StencilFormat;
 
 	if (!ImGui_ImplVulkan_Init(&vulkanInfo))
 	{

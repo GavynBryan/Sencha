@@ -5,6 +5,8 @@
 #include <assets/animation/AnimationClipAssetLoader.h>
 #include <assets/audio_clip/AudioClipAssetLoader.h>
 #include <assets/data/DataAssetCache.h>
+#include <assets/font/FontFaceAssetLoader.h>
+#include <assets/font/FontFaceCache.h>
 #include <assets/data/DataAssetLoader.h>
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <assets/material/MaterialAssetLoader.h>
@@ -15,6 +17,8 @@
 #include <assets/skinned_mesh/SkinnedMeshAssetLoader.h>
 #include <assets/static_mesh/StaticMeshAssetLoader.h>
 #include <assets/texture/TextureAssetLoader.h>
+#include <assets/ui/UiPackageAssetLoader.h>
+#include <assets/ui/UiPackageCache.h>
 #include <assets/texture/TextureCache.h>
 #include <audio/AudioClipCache.h>
 #include <core/assets/AssetReferenceStore.h>
@@ -90,6 +94,13 @@ struct RuntimeAssets
     DataSchemaRegistry DataSchemas;
     DataAssetCache DataAssets;
 
+    // Authored UI. Both are plain CPU data and neither holds a reference into
+    // another cache -- a package's fonts and textures are leased by the open
+    // screen, not by the package -- so unlike the chain above, their position
+    // in this declaration order carries no ordering contract.
+    FontFaceCache Fonts;
+    UiPackageCache UiPackages;
+
 private:
     StaticMeshAssetLoader StaticMeshLoader;
     TextureAssetLoader TextureLoader;
@@ -100,6 +111,8 @@ private:
     SkinnedMeshAssetLoader SkinnedMeshLoader;
     SceneAssetLoader SceneLoader;
     DataAssetLoader DataLoader;
+    FontFaceAssetLoader FontLoader;
+    UiPackageAssetLoader UiPackageLoader;
 
 public:
     AssetSystem Assets;

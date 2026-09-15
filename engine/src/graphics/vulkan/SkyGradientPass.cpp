@@ -87,6 +87,7 @@ bool SkyGradientPass::EnsurePipeline(const FrameContext& frame)
             desc.ColorBlend = { ColorBlendAttachmentDesc{} };
             desc.ColorFormats = { frame.TargetFormat };
             desc.DepthFormat = frame.DepthFormat;
+        desc.StencilFormat = frame.StencilFormat;
 
             const VkPipeline pipeline = Pipelines->GetGraphicsPipeline(desc);
             if (pipeline != VK_NULL_HANDLE)

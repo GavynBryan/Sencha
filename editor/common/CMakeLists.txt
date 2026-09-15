@@ -42,7 +42,14 @@ target_compile_definitions(editor_common PUBLIC
     SENCHA_ENABLE_DEBUG_UI
     # Dev-time UI asset roots shared by every editor application. Packaging will
     # replace these with resolved install paths.
-    SENCHA_EDITOR_FONT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../fonts"
+    # The faces live under the authored-UI content root, because a cooked UI
+    # document declares the ones it uses and the cooker resolves them inside
+    # that root. One copy, two consumers: ImGui loads them from here directly,
+    # and an authored document gets them as cooked .sfont assets. The Font
+    # Awesome *header* stays at editor/fonts/, where the "fonts/..." include
+    # expects it.
+    SENCHA_EDITOR_FONT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../ui/fonts"
+    SENCHA_EDITOR_UI_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../ui"
     SENCHA_EDITOR_THEME_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../themes"
     SENCHA_EDITOR_ICON_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../icons"
 )

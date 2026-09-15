@@ -138,6 +138,8 @@ Renderer::Renderer(LoggingProvider& logging,
     DepthTarget = std::make_unique<VulkanDepthTarget>(images, physicalDevice);
     DepthTarget->Create(swapchain.GetExtent());
     Services.DepthFormat = DepthTarget->GetFormat();
+    Services.StencilFormat = DepthTarget->HasStencil()
+        ? DepthTarget->GetFormat() : VK_FORMAT_UNDEFINED;
     ImageCapture.Setup(Services);
     Valid = true;
 }
@@ -390,19 +392,11 @@ RenderFrameResult Renderer::DrawFrameScheduled()
     {
         gpuScopes->EndScope(frame.CommandBuffer, GpuScope::PhaseOffscreen);
         VulkanDebugLabels::EndLabel(frame.CommandBuffer);
-        VulkanDebugLabels::BeginLabel(frame.CommandBuffer,
-                                      ToString(GpuScope::PhaseMainColor));
-        gpuScopes->BeginScope(frame.CommandBuffer, GpuScope::PhaseMainColor);
     }
 #endif
-    RecordMainColorPhase(frame);
-#ifdef SENCHA_ENABLE_RENDER_PROFILING
-    if (gpuScopes != nullptr)
-    {
-        gpuScopes->EndScope(frame.CommandBuffer, GpuScope::PhaseMainColor);
-        VulkanDebugLabels::EndLabel(frame.CommandBuffer);
-    }
-#endif
+    // The three swapchain phases share one rendering scope, so each is labelled
+    // and timed inside rather than wrapped as a group here.
+    RecordSwapchainPhases(frame);
     LastTiming.RecordSeconds = SecondsSince(recordStart);
 
     if (Services.Instrumentation != nullptr
@@ -495,7 +489,16 @@ void Renderer::RecordOffscreenPhase(const VulkanFrame& frame)
         feat->OnDraw(MakeRenderFrame(ctx, Services.Instrumentation));
 }
 
-void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
+// The swapchain phases, in one rendering scope. MainColor is the scene;
+// ApplicationUi is authored user-facing UI drawn over it; DevelopmentOverlay is
+// diagnostics drawn over everything. One vkCmdBeginRendering serves all three:
+// the UI phases want the same colour attachment and no depth interaction, and
+// their pipelines disable depth test and write rather than open a scope of their
+// own.
+//
+// Capture and the present transition stay after the last bucket, so a capture is
+// still the finished frame.
+void Renderer::RecordSwapchainPhases(const VulkanFrame& frame)
 {
     VkImageLayout oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     if (frame.ImageIndex < ImageLayouts.size())
@@ -513,12 +516,22 @@ void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
     {
         DepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     }
+    // One layout for the whole attachment, decided by whether it carries a
+    // stencil. A barrier whose aspect mask includes stencil may not use a
+    // depth-only layout, and a rendering scope's attachments have to agree with
+    // the layout the image is actually in -- so the barrier, the depth
+    // attachment and the stencil attachment all read from here.
+    const bool depthHasStencil = DepthTarget->HasStencil();
+    const VkImageLayout depthLayout = depthHasStencil
+        ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+        : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+
     if (DepthTarget->GetImage() != VK_NULL_HANDLE)
     {
         VulkanBarriers::ImageTransition t{};
         t.Image = DepthTarget->GetImage();
         t.OldLayout = DepthLayout;
-        t.NewLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        t.NewLayout = depthLayout;
         // One depth image serves every frame in flight, and a frame only
         // waits on the fence of the frame two slots back, so this barrier is
         // what orders these depth writes after the previous frame's. That
@@ -531,9 +544,11 @@ void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
         t.SrcAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         t.DstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT
                     | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        t.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        t.AspectMask = depthHasStencil
+            ? (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
+            : VK_IMAGE_ASPECT_DEPTH_BIT;
         VulkanBarriers::TransitionImage(frame.CommandBuffer, t);
-        DepthLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        DepthLayout = depthLayout;
     }
 
     VkRenderingAttachmentInfo colorAttach{};
@@ -547,10 +562,19 @@ void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
     VkRenderingAttachmentInfo depthAttach{};
     depthAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     depthAttach.imageView = DepthTarget->GetView();
-    depthAttach.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    depthAttach.imageLayout = depthLayout;
     depthAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttach.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttach.clearValue.depthStencil = { 1.0f, 0 };
+
+    // The same view, as Vulkan requires when a scope binds both. Cleared to
+    // zero so authored UI's clip mask starts from a known state rather than
+    // from whatever the previous frame left; nothing else in the scope tests
+    // against it.
+    const bool hasStencil = depthHasStencil && DepthTarget->GetView() != VK_NULL_HANDLE;
+    VkRenderingAttachmentInfo stencilAttach = depthAttach;
+    stencilAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    stencilAttach.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
@@ -560,6 +584,7 @@ void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
     renderingInfo.colorAttachmentCount = 1;
     renderingInfo.pColorAttachments = &colorAttach;
     renderingInfo.pDepthAttachment = depthAttach.imageView != VK_NULL_HANDLE ? &depthAttach : nullptr;
+    renderingInfo.pStencilAttachment = hasStencil ? &stencilAttach : nullptr;
 
     vkCmdBeginRendering(frame.CommandBuffer, &renderingInfo);
 
@@ -570,12 +595,44 @@ void Renderer::RecordMainColorPhase(const VulkanFrame& frame)
     ctx.TargetFormat = frame.SwapchainFormat;
     ctx.DepthView = DepthTarget->GetView();
     ctx.DepthFormat = DepthTarget->GetFormat();
-    ctx.Phase = RenderPhase::MainColor;
+    ctx.StencilFormat = hasStencil ? DepthTarget->GetFormat() : VK_FORMAT_UNDEFINED;
     ctx.Retirement = Frames.GetRetirement();
 
-    for (IRenderFeature* feat : PhaseBuckets[static_cast<size_t>(RenderPhase::MainColor)])
+    struct SwapchainPhase { RenderPhase Phase; GpuScope Scope; };
+    constexpr SwapchainPhase kSwapchainPhases[] = {
+        { RenderPhase::MainColor,          GpuScope::PhaseMainColor },
+        { RenderPhase::ApplicationUi,      GpuScope::PhaseApplicationUi },
+        { RenderPhase::DevelopmentOverlay, GpuScope::PhaseDevelopmentOverlay },
+    };
+
+    for (const auto& [phase, scope] : kSwapchainPhases)
     {
-        feat->OnDraw(MakeRenderFrame(ctx, Services.Instrumentation));
+        auto& bucket = PhaseBuckets[static_cast<size_t>(phase)];
+        if (bucket.empty())
+            continue;
+
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+        GpuTimestampPool* const phaseScopes = Services.Instrumentation != nullptr
+            ? Services.Instrumentation->GpuTimestamps
+            : nullptr;
+        if (phaseScopes != nullptr)
+        {
+            VulkanDebugLabels::BeginLabel(frame.CommandBuffer, ToString(scope));
+            phaseScopes->BeginScope(frame.CommandBuffer, scope);
+        }
+#endif
+        ctx.Phase = phase;
+        for (IRenderFeature* feat : bucket)
+        {
+            feat->OnDraw(MakeRenderFrame(ctx, Services.Instrumentation));
+        }
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+        if (phaseScopes != nullptr)
+        {
+            phaseScopes->EndScope(frame.CommandBuffer, scope);
+            VulkanDebugLabels::EndLabel(frame.CommandBuffer);
+        }
+#endif
     }
 
     vkCmdEndRendering(frame.CommandBuffer);

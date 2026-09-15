@@ -12,6 +12,7 @@
 #include <core/config/EngineConfig.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/WorldComponentSchema.h>
+#include <input/PlatformEventRouter.h>
 #include <net/ReplicationLayout.h>
 #include <net/NetCVarSync.h>
 #include <net/NetSpawnPrefab.h>
@@ -50,6 +51,7 @@ class FrameDriver;
 class Game;
 class GpuTimestampPool;
 struct GraphicsServices;
+class UiService;
 class IDebugPanel;
 class ImGuiDebugOverlay;
 class SdlGamepadCapture;
@@ -346,6 +348,26 @@ public:
     // Present regardless of the debug UI: pads are ordinary input hardware.
     [[nodiscard]] SdlGamepadCapture* GetGamepadCapture() { return GamepadCaptureState.get(); }
 
+    // Who is offered a platform event, in what order, and the guarantee that the
+    // device snapshot is folded before any of them. A host adds a consumer once
+    // at startup; the PumpPlatform phase drives it. See PlatformEventRouter.
+    [[nodiscard]] PlatformEventRouter& PlatformEvents() { return PlatformEventRouterState; }
+
+#ifdef SENCHA_ENABLE_UI
+    // The authored UI layer: surfaces, screens, presentation models, semantic
+    // actions. Valid from just before OnStart to just after OnShutdown -- it
+    // holds asset leases, so it lives and dies inside the content stack's span.
+    //
+    // The engine drives it: Update after the game's frame-update systems, so an
+    // action drained and acted on this frame is presented this frame; extraction
+    // and the render feature follow from there.
+    [[nodiscard]] UiService& Ui();
+    [[nodiscard]] const UiService& Ui() const;
+    // Null before OnStart, after OnShutdown, or when the document engine failed
+    // to come up. A host that can carry on without menus checks this.
+    [[nodiscard]] UiService* TryUi() { return UiState.get(); }
+#endif
+
 #ifdef SENCHA_ENABLE_DEBUG_UI
     // The runtime debug overlay (console + timing panels, grave-key toggle).
     // Created by Run when windowed and Config().Console.UiEnabled. Null when
@@ -428,6 +450,10 @@ private:
     // Owns the open gamepads. Stateful, unlike the keyboard and mouse adapter:
     // a pad has to be held open to report anything.
     std::unique_ptr<SdlGamepadCapture> GamepadCaptureState;
+    PlatformEventRouter PlatformEventRouterState;
+#ifdef SENCHA_ENABLE_UI
+    std::unique_ptr<UiService> UiState;
+#endif
 #ifdef SENCHA_ENABLE_VULKAN
     std::unique_ptr<GraphicsServices> GraphicsState;
 #endif

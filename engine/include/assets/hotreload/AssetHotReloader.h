@@ -45,6 +45,11 @@ public:
     void ReloadSource(std::string_view sourceRelPath);
 
 private:
+    // Re-cooks every source whose cook recorded this file as an input. True when
+    // it found any, which is what tells ReloadSource the edit was meaningful
+    // even though the file is not an asset in its own right.
+    [[nodiscard]] bool ReloadDependents(std::string_view sourceRelPath);
+
     void StageReload(const AssetRecord& record);
 
     Logger& Log;

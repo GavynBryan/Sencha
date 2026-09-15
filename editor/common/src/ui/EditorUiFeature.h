@@ -1,6 +1,6 @@
 #pragma once
 
-#include "input/UiInputCapture.h"
+#include <input/UiInputCapture.h>
 #include "PanelVisibilitySettings.h"
 #include "ThemePreferences.h"
 #include "ThemeTextureCache.h"
@@ -75,7 +75,13 @@ public:
     EditorUiFeature(EditorUiFeature&&) = delete;
     EditorUiFeature& operator=(EditorUiFeature&&) = delete;
 
-    [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::MainColor; }
+    // ApplicationUi, not DevelopmentOverlay: this is the editor's own chrome --
+    // its application UI, which happens to be implemented in ImGui -- and not a
+    // diagnostic. The distinction is load-bearing during the migration to
+    // authored UI: retained surfaces record later in this same phase, so an
+    // authored panel draws over the ImGui panel it is replacing rather than
+    // under it.
+    [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::ApplicationUi; }
     [[nodiscard]] bool Setup(const RenderFeatureServices& services) override;
     void OnDraw(const RenderFrame& frame) override;
     void Teardown() override;
@@ -141,6 +147,11 @@ private:
     // The frame boundary: commit a pending theme, then resolve everything
     // derived from theme state, before any of it is drawn.
     void PrepareFrameChrome();
+    // Hands the active theme to the authored UI layer as a stylesheet. Called
+    // at the theme boundary, and once at startup because there is nothing to
+    // have changed yet.
+    void PublishAuthoredTheme(bool themeChanged);
+    bool AuthoredThemePublished = false;
     void PrepareThemeTextures();
     void BuildShellAtlasIfStale();
     [[nodiscard]] EditorChrome::BarSurface ResolveSurface(EditorUi::BarFinish finish, const std::string& path,

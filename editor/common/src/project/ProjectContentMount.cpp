@@ -2,11 +2,8 @@
 
 #include "project/Project.h"
 
-#include <assets/cook/AssetImporter.h>
-#include <assets/cook/BlendCook.h>
+#include <assets/cook/ContentImporters.h>
 #include <assets/cook/ImportOnDemand.h>
-#include <assets/cook/MeshCook.h>
-#include <assets/cook/TextureCook.h>
 #include <assets/runtime/ContentMount.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/assets/AssetRegistry.h>
@@ -38,16 +35,28 @@ void MountProjectContent(const ProjectDescriptor& project,
         // so it can never be placed. The work is hash-gated by the cooked-cache
         // index, so an unchanged source costs a hash and a lookup.
         {
-            PngTextureImporter textureImporter(jobs);
-            GltfMeshImporter gltfImporter;
-            BlendMeshImporter blendImporter;
-            AssetImporterRegistry importers;
-            importers.Register(textureImporter);
-            importers.Register(gltfImporter);
-            importers.Register(blendImporter);
-            (void)ImportAssetsOnDemand(root, importers, assets.Registry, logging);
+            ContentImporterSet importers(jobs);
+            (void)ImportAssetsOnDemand(root, importers.Registry(), assets.Registry, logging);
         }
         RegisterCookedContent(paths, assets, log);
     }
     log.Info("assets: mounted {} content root(s)", project.ContentRoots.size());
+}
+
+void MountEditorContent(std::string_view root,
+                        RuntimeAssets& assets,
+                        LoggingProvider& logging,
+                        JobSystem* jobs)
+{
+    Logger& log = logging.GetLogger<ProjectDescriptor>();
+    const std::string rootPath(root);
+
+    const ContentRootPaths paths = ResolveContentRoot(rootPath);
+    ScanContentRoot(paths, assets);
+    {
+        ContentImporterSet importers(jobs);
+        (void)ImportAssetsOnDemand(rootPath, importers.Registry(), assets.Registry, logging);
+    }
+    RegisterCookedContent(paths, assets, log);
+    log.Info("assets: mounted editor UI content at '{}'", rootPath);
 }

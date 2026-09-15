@@ -3,6 +3,13 @@
 #include <app/GameContexts.h>
 #include <app/Game.h>
 #include <app/GameModule.h>
+#include <app/RuntimeContent.h>
+#include <assets/runtime/RuntimeAssets.h>
+#include <graphics/vulkan/GraphicsServices.h>
+#include <graphics/vulkan/Renderer.h>
+#include <graphics/vulkan/VulkanSwapchainService.h>
+#include <render/feature/UiRenderFeature.h>
+#include <ui/UiService.h>
 #include <world/ComponentRegistrar.h>
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
@@ -16,6 +23,9 @@
 
 #include <cmath>
 #include <cstdint>
+#include <memory>
+#include <string>
+#include <utility>
 
 //=============================================================================
 // The render host: what the golden-image comparison and the renderer A/B bench
@@ -80,6 +90,76 @@ struct ScriptedCameraPathSystem
 
 }  // namespace
 
+// Authored UI, hosted the way a game hosts it: the engine owns the service and
+// drives its update, extraction and rendering, so a host only says which
+// package to open and what it presents.
+//
+// It used to build its own UiService to prove a plain application could. The
+// engine provides one now, and the document engine's interfaces are
+// process-global, so a second would be refused -- which is the right answer: a
+// host that wants authored UI asks the engine for it.
+class UiHostSystem
+{
+public:
+    UiHostSystem(Engine& engine, std::string packagePath)
+        : EnginePtr(&engine)
+        , PackagePath(std::move(packagePath))
+    {
+    }
+
+    void FrameUpdate(FrameUpdateContext&)
+    {
+        if (!Initialised)
+            Initialise();
+
+        // Where a game's controller would act on what the document asked for.
+        // Drained every frame so the queue cannot grow unbounded, and drained
+        // here -- before the engine updates the UI -- so a response published
+        // in answer lands in the same frame.
+        UiService* ui = EnginePtr->TryUi();
+        if (ui == nullptr)
+            return;
+        for (const UiAction& action : ui->DrainActions())
+            (void)action;
+    }
+
+private:
+    void Initialise()
+    {
+        // Once, and only once: a failed bring-up must not be retried every
+        // frame, or the log becomes the failure.
+        Initialised = true;
+
+        UiService* ui = EnginePtr->TryUi();
+        if (ui == nullptr || !ui->IsReady() || PackagePath.empty())
+            return;
+
+        const VkExtent2D extent = EnginePtr->Graphics().Swapchain.GetExtent();
+        const UiSurfaceId surface =
+            ui->CreateSurface("render_host", RenderExtent{ extent.width, extent.height });
+
+        UiScreenDesc desc;
+        desc.PackagePath = PackagePath;
+        desc.ModelName = "golden";
+        desc.Properties = { UiModelProperty{ "health", UiValue(0.0) } };
+        desc.Actions = { "golden_ack" };
+
+        Screen = ui->OpenScreen(surface, desc);
+        if (!Screen.IsValid())
+            return;
+
+        // A fixed value, because a golden image has to be the same every run --
+        // but published through the model rather than authored into the
+        // document, so the capture is a statement about that whole path.
+        (void)ui->SetValue(Screen, UiPropertyIdAt(0), UiValue(210.0));
+    }
+
+    Engine* EnginePtr = nullptr;
+    std::string PackagePath;
+    UiScreenHandle Screen;
+    bool Initialised = false;
+};
+
 class RenderHostGame final : public Game
 {
 public:
@@ -113,11 +193,27 @@ public:
                 ScriptedCamera = std::get<bool>(ctx.NewValue);
             },
         });
+
+        engine.Console().Registry().RegisterCVar({
+            .Name = "render_host.ui",
+            .Owner = "render_host",
+            .Type = CVarType::String,
+            .DefaultValue = std::string{},
+            .CurrentValue = std::string{},
+            .Flags = CVarFlags::Transient,
+            .Help = "Authored UI package to open over the scene "
+                    "(\"asset://ui/golden.rml\"). Empty draws no UI.",
+            .Source = { "render_host" },
+            .OnChange = [this](const CVarChangeContext& ctx) {
+                UiPackagePath = std::get<std::string>(ctx.NewValue);
+            },
+        });
     }
 
     void OnRegisterSystems(SystemRegisterContext& ctx) override
     {
         ctx.Schedule.Register<ScriptedCameraPathSystem>(Camera, ScriptedCamera);
+        ctx.Schedule.Register<UiHostSystem>(GetEngine(), UiPackagePath);
         // Clip playback: a posed skinned mesh is one of the things the goldens
         // watch, and nothing else in this host would advance it.
         RegisterAnimationSystems(ctx.Schedule);
@@ -135,6 +231,7 @@ public:
 private:
     EntityId Camera;
     bool ScriptedCamera = false;
+    std::string UiPackagePath;
 };
 
 extern "C" SENCHA_GAME_EXPORT Game* SenchaCreateGameModule()

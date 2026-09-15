@@ -35,7 +35,19 @@ enum class RenderPhase : std::uint8_t
     // run before MainColor: e.g. the editor rendering viewports to offscreen textures.
     Offscreen = 0,
     MainColor = 1,
-    // Reserved for: Shadow, Opaque, Transparent, UI, Post...
+    // Authored, user-facing application UI: a game's HUD and menus, and an
+    // editor's own chrome. Named ApplicationUi rather than the runtime-flavoured
+    // "UI" because Kyusu draws its application surfaces through it and a name
+    // implying "game" would misdescribe half its traffic. Recorded inside the
+    // same swapchain scope as MainColor, after it.
+    ApplicationUi = 2,
+    // Diagnostics only -- the ImGui debug overlay and anything else an engineer
+    // reads while the product runs. Last, so it is never occluded by the
+    // application UI it is used to inspect. This is not where an editor's own
+    // chrome belongs: that is application UI implemented in ImGui, and putting it
+    // here would let it paint over the authored surfaces replacing it.
+    DevelopmentOverlay = 3,
+    // Reserved for: Shadow, Opaque, Transparent, Post...
     Count
 };
 

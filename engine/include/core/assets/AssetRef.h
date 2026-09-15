@@ -29,6 +29,14 @@ enum class AssetType : uint16_t
     Collision = 11,
     ProbeVolume = 12,
     Data = 13,
+    // The authored UI pair. UiPackage is one cooked document with the markup,
+    // stylesheets and resource table it needs; Font is a face the packages
+    // referencing it share. See docs/ui/architecture.md.
+    UiPackage = 14,
+    Font = 15,
+    // One past the last real kind, so a range check over the enum cannot go
+    // stale the next time one is added. Never serialized, never a valid tag.
+    Count,
 };
 
 enum class AssetSourceKind : uint16_t
@@ -69,7 +77,10 @@ inline std::string_view AssetTypeToString(AssetType type)
     case AssetType::Collision: return "Collision";
     case AssetType::ProbeVolume: return "ProbeVolume";
     case AssetType::Data: return "Data";
-    case AssetType::Unknown:  break;
+    case AssetType::UiPackage: return "UiPackage";
+    case AssetType::Font: return "Font";
+    case AssetType::Unknown:
+    case AssetType::Count:    break;
     }
     return "Unknown";
 }
@@ -89,6 +100,8 @@ inline bool AssetTypeFromString(std::string_view name, AssetType& out)
     if (name == "Collision") { out = AssetType::Collision; return true; }
     if (name == "ProbeVolume") { out = AssetType::ProbeVolume; return true; }
     if (name == "Data") { out = AssetType::Data; return true; }
+    if (name == "UiPackage") { out = AssetType::UiPackage; return true; }
+    if (name == "Font") { out = AssetType::Font; return true; }
     return false;
 }
 

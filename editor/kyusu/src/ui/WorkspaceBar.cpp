@@ -133,6 +133,9 @@ void WorkspaceBar::DrawGroup(float buttonSize)
         if (ImGui::MenuItem("Edit profiles...", nullptr, false,
                             bool(Play.OpenProfiles)))
             Play.OpenProfiles();
+        if (ImGui::MenuItem("Edit profiles (authored)...", nullptr, false,
+                            bool(Play.OpenAuthoredProfiles)))
+            Play.OpenAuthoredProfiles();
         ImGui::EndPopup();
     }
     if (Play.Play)

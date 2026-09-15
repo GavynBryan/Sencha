@@ -22,6 +22,9 @@
 #include <world/ComponentRegistrar.h>
 #include "render/EditorRenderFeature.h"
 #include "ui/ActiveMaterialPanel.h"
+#include "ui/CookProfilesModal.h"
+#include "ui/InspectorSurface.h"
+#include <ui/UiService.h>
 #include "ui/CookProfilesPanel.h"
 #include "ui/EditorConsolePanel.h"
 #include "ui/EditorStatusBar.h"
@@ -50,7 +53,8 @@
 #include <app/Engine.h>
 #include <app/EngineSchedule.h>
 #include <app/Game.h>
-#include <assets/cook/AssetImporter.h> // importer registry + kImportSettingsSuffix
+#include <assets/cook/AssetImporter.h> // kImportSettingsSuffix
+#include <assets/cook/ContentImporters.h>
 #include <assets/cook/TextureCook.h>
 #include <render/LightComponentTypes.h>
 #include <render/IrradianceVolumeComponent.h>
@@ -120,6 +124,9 @@ EditorServices::EditorServices(Engine& engine,
     BuildSourceWatch();
 
     BuildDocument();
+    // After the document: an authored workflow presents editor state, and the
+    // inspector's is the selection and the command stack the document owns.
+    BuildAuthoredWorkflows();
     BuildPlayLoop();
     BuildFileActions();
     BuildInput();
@@ -385,14 +392,14 @@ void EditorServices::BuildInput()
     Router->AddHandler(MakeUiInputGuard(
         [this]
         {
-            UiInputCapture capture = UiFeature != nullptr ? UiFeature->GetInputCapture()
-                                                          : UiInputCapture{};
+            const UiInputCapture shell =
+                UiFeature != nullptr ? UiFeature->GetInputCapture() : UiInputCapture{};
             const bool overViewport =
                 (PerspectivePanel != nullptr && PerspectivePanel->IsViewportRegionHovered())
                 || (OrthoPanel != nullptr && OrthoPanel->IsViewportRegionHovered());
-            if (overViewport)
-                capture.Mouse = false;
-            return capture;
+            UiService* ui = EnginePtr != nullptr ? EnginePtr->TryUi() : nullptr;
+            return CombineUiCapture(shell, overViewport,
+                                    ui != nullptr ? ui->Capture() : UiInputCapture{});
         }));
     // The wheels sit under the guard (a focused text field keeps its letters)
     // and above everything else: an open wheel owns the pointer and the keys,
@@ -604,6 +611,12 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         .OpenProfiles = [this] {
             if (CookRuntime && CookRuntime->ProfilesPanel() != nullptr)
                 CookRuntime->ProfilesPanel()->SetVisible(true);
+        },
+        // The authored workflow, beside the ImGui panel rather than instead of
+        // it. Both stay until one is demonstrably better.
+        .OpenAuthoredProfiles = [this] {
+            if (ProfilesModal)
+                ProfilesModal->Open();
         },
         .CookStatus = [this] {
             if (!CookRuntime)
@@ -988,7 +1001,7 @@ void EditorServices::HandlePlatformEvent(PlatformEventContext& ctx)
 struct EditorServices::SourceWatchState
 {
     explicit SourceWatchState(JobSystem* jobs)
-        : TextureImporter(jobs)
+        : Importers(jobs)
     {
     }
 
@@ -998,11 +1011,100 @@ struct EditorServices::SourceWatchState
         AssetHotReloader Reloader;
     };
 
-    PngTextureImporter TextureImporter;
-    AssetImporterRegistry Importers;
+    ContentImporterSet Importers;
     std::vector<std::unique_ptr<RootWatch>> Roots;
     std::chrono::steady_clock::time_point NextPoll{};
 };
+
+void EditorServices::BuildAuthoredWorkflows()
+{
+    UiService* ui = EnginePtr != nullptr ? EnginePtr->TryUi() : nullptr;
+    if (ui == nullptr || !ui->IsReady() || !Project.has_value())
+        return;
+
+    // The window, as authored UI sees it. One surface for every authored screen
+    // Kyusu opens, because focus and modality are arbitrated within a surface:
+    // a dialog on a surface of its own would take focus from nothing. Tracked
+    // against the window in ProcessFrame, since a retained document re-flows on
+    // a resize where a baked atlas cannot.
+    if (!AuthoredSurface.IsValid() && Window != nullptr)
+    {
+        AuthoredSurface = ui->CreateSurface(
+            "kyusu",
+            RenderExtent{ Window->GetExtent().Width, Window->GetExtent().Height });
+    }
+    if (!AuthoredSurface.IsValid())
+        return;
+
+    ProfilesModal = std::make_unique<CookProfilesModal>(*ui, AuthoredSurface, &*Project);
+    if (Workspace != nullptr && Commands != nullptr)
+    {
+        Inspector = std::make_unique<InspectorSurface>(
+            *ui, AuthoredSurface, Workspace->World, Workspace->Selection, *Commands,
+            Workspace->Affordances->Registry());
+    }
+
+    // Openable from the console as well as the menu, so a startup script can
+    // bring it up -- which is how it gets captured and looked at without a
+    // person driving a menu.
+    EnginePtr->Console().Registry().RegisterCommand({
+        .Name = "editor.inspector.authored",
+        .Owner = "editor",
+        .Usage = "editor.inspector.authored [close]",
+        .Help = "Open the authored inspector, the RML document that presents the "
+                "selected entity's components beside the ImGui panel.",
+        .Callback = [this](ConsoleExecutionContext&,
+                           std::span<const std::string> args) {
+            ConsoleResult result;
+            if (Inspector == nullptr)
+            {
+                result.Status = ConsoleStatus::ExecutionFailed;
+                result.Error("the authored inspector is unavailable");
+                return result;
+            }
+            if (!args.empty() && args[0] == "close")
+            {
+                Inspector->Close();
+                result.Info("closed the authored inspector");
+            }
+            else
+            {
+                Inspector->Open();
+                result.Info("opened the authored inspector");
+            }
+            return result;
+        },
+    });
+
+    EnginePtr->Console().Registry().RegisterCommand({
+        .Name = "editor.profiles.authored",
+        .Owner = "editor",
+        .Usage = "editor.profiles.authored [close]",
+        .Help = "Open the authored cook-profile workflow, the RML document that "
+                "coexists with the ImGui panel while it earns its place.",
+        .Callback = [this](ConsoleExecutionContext&,
+                           std::span<const std::string> args) {
+            ConsoleResult result;
+            if (ProfilesModal == nullptr)
+            {
+                result.Status = ConsoleStatus::ExecutionFailed;
+                result.Error("authored cook profiles are unavailable");
+                return result;
+            }
+            if (!args.empty() && args[0] == "close")
+            {
+                ProfilesModal->Close();
+                result.Info("closed the authored cook profiles");
+            }
+            else
+            {
+                ProfilesModal->Open();
+                result.Info("opened the authored cook profiles");
+            }
+            return result;
+        },
+    });
+}
 
 void EditorServices::BuildSourceWatch()
 {
@@ -1011,13 +1113,33 @@ void EditorServices::BuildSourceWatch()
 
     Engine& engine = *EnginePtr;
     SourceWatch = std::make_unique<SourceWatchState>(&engine.Jobs());
-    SourceWatch->Importers.Register(SourceWatch->TextureImporter);
+
+#if defined(SENCHA_ENABLE_UI) && defined(SENCHA_EDITOR_UI_DIR)
+    // The editor's own authored UI, watched against the ENGINE's asset stack --
+    // the one it was mounted into, and the one Engine::Ui() resolves through.
+    // This is what makes editing Kyusu's own interface a save-and-look loop
+    // rather than a restart.
+    {
+        auto watch = std::unique_ptr<SourceWatchState::RootWatch>(new SourceWatchState::RootWatch{
+            AssetSourceWatcher(engine.Logging(), SENCHA_EDITOR_UI_DIR,
+                               { ".rml", ".rcss", ".ttf", ".otf" }),
+            AssetHotReloader(engine.Logging(), engine.Content().Assets().Assets,
+                             engine.Content().Assets().Registry,
+                             SourceWatch->Importers.Registry(), engine.Tasks(),
+                             SENCHA_EDITOR_UI_DIR),
+        });
+        watch->Watcher.Initialize();
+        SourceWatch->Roots.push_back(std::move(watch));
+    }
+#endif
+
     for (const std::string& root : Project->ContentRoots)
     {
         auto watch = std::unique_ptr<SourceWatchState::RootWatch>(new SourceWatchState::RootWatch{
-            AssetSourceWatcher(engine.Logging(), root, { ".smat", ".png", ".meta" }),
+            AssetSourceWatcher(engine.Logging(), root,
+                               { ".smat", ".png", ".meta", ".rml", ".rcss", ".ttf", ".otf" }),
             AssetHotReloader(engine.Logging(), Assets->Assets, Assets->Registry,
-                             SourceWatch->Importers, engine.Tasks(), root),
+                             SourceWatch->Importers.Registry(), engine.Tasks(), root),
         });
         watch->Watcher.Initialize();
         SourceWatch->Roots.push_back(std::move(watch));
@@ -1104,6 +1226,35 @@ void EditorServices::DrawRadialMenu(const RadialMenuSession& wheel, const IRadia
 
 void EditorServices::ProcessFrame()
 {
+    // Before the engine updates the UI: act on what the document asked for and
+    // publish what it should now show, so a click and its answer land in the
+    // same frame. This hook runs inside FramePhase::Update, which is where the
+    // engine guarantees that ordering.
+    // A retained document re-flows on a resize, so the surface follows the
+    // window rather than latching whatever size it was created at. Unchanged
+    // sizes cost a comparison.
+    if (AuthoredSurface.IsValid() && Window != nullptr)
+    {
+        if (UiService* ui = EnginePtr != nullptr ? EnginePtr->TryUi() : nullptr; ui != nullptr)
+        {
+            ui->SetSurfaceSize(AuthoredSurface,
+                               RenderExtent{ Window->GetExtent().Width,
+                                             Window->GetExtent().Height });
+            // The same display scale the shell resolved. Without this an
+            // authored surface stays at 1.0 while the ImGui chrome beside it
+            // scales, so on a HiDPI display the two halves of the same editor
+            // disagree about how big a pixel is. Unchanged values cost a
+            // comparison; a change re-flows the documents, which is the whole
+            // reason this is live rather than latched.
+            ui->SetSurfaceScale(AuthoredSurface, EditorUi::UiScale);
+        }
+    }
+
+    if (ProfilesModal != nullptr)
+        ProfilesModal->Update();
+    if (Inspector != nullptr)
+        Inspector->Update();
+
     if (Files)
     {
         Files->ProcessPending();
@@ -1301,6 +1452,15 @@ void EditorServices::InitAssets()
         return;
 
     MountProjectContent(*Project, *Assets, logging, &engine.Jobs());
+#ifdef SENCHA_ENABLE_UI
+#ifdef SENCHA_EDITOR_UI_DIR
+    // Into the ENGINE's asset stack, not the editor's. The editor keeps its own
+    // RuntimeAssets for project content, but Engine::Ui() resolves a package
+    // through the engine's -- so authored UI mounted anywhere else is authored
+    // UI the UI service cannot find.
+    MountEditorContent(SENCHA_EDITOR_UI_DIR, engine.Content().Assets(), logging, &engine.Jobs());
+#endif
+#endif
 }
 
 void EditorServices::UnloadGameModule()

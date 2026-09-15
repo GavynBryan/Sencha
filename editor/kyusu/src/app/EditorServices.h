@@ -4,6 +4,7 @@
 #include <app/GameModuleLoader.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <ecs/ComponentTypeId.h>
+#include <ui/UiSurface.h>
 
 #include "commands/CommandStack.h"
 #include "input/InputRouter.h"
@@ -38,6 +39,8 @@ class EngineSchedule;
 class SdlWindow;
 class PieDriver;
 class CookSession;
+class CookProfilesModal;
+class InspectorSurface;
 class CookProfilesPanel;
 class EditorCookRuntime;
 class DocumentFileActions;
@@ -113,6 +116,7 @@ private:
     // place (detection: AssetSourceWatcher; reaction: AssetHotReloader), so a
     // save from the material editor or a text editor shows up live. No-op
     // without a mounted project.
+    void BuildAuthoredWorkflows();
     void BuildSourceWatch();
 
     // Bake-to-static-mesh actions behind the ToolPropertiesPanel buttons. All need a
@@ -182,5 +186,15 @@ private:
     // Declared last so they are torn down before the state they reference.
     // Cooking, the player it feeds, and the serials that hand one to the other.
     std::unique_ptr<EditorCookRuntime>  CookRuntime;
+    // Kyusu's authored workflows. Owned here rather than by the UI feature
+    // because they are editor logic that happens to present through a document,
+    // not panels.
+    //
+    // One surface between them: focus and modality are arbitrated within a
+    // surface, so a surface each would mean the profile dialog taking focus
+    // from nothing while the inspector kept taking clicks behind it.
+    UiSurfaceId                         AuthoredSurface;
+    std::unique_ptr<CookProfilesModal>  ProfilesModal;
+    std::unique_ptr<InspectorSurface>   Inspector;
     std::unique_ptr<DocumentFileActions> Files;
 };

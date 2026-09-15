@@ -109,7 +109,8 @@ Absent. This list is the roadmap's backlog:
 
 - Animation runtime: clips and skeletons load, but nothing samples, blends, or poses.
   Skinned meshes cannot be drawn at all (no `SkinnedMeshComponent`, no GPU skinning).
-- Game-facing UI/HUD: ImGui is debug and editor only.
+- Game-facing UI/HUD: the authored UI substrate is in progress (Track A item 9); until it
+  lands, ImGui is debug and editor only.
 - Navigation: none. AI: none. Save games: none. Localization: none.
 - Rendering: no transparency (opaque fallback with a warning), no post-processing
   (phase reserved, empty), no particles, no decals, no skybox, no probe GI. (Spot and
@@ -303,12 +304,17 @@ Each item states its mechanism, version, the seam it builds on, and its gate.
    mid-zone, kill the process, restore; opened doors and taken pickups stay opened and
    taken.
 
-9. **Game UI/HUD (v1.0 HUD, v2.0 menus).** A runtime screen-space layer: quad and text
-   batches through the renderer (reusing the Track B transparency pass), layout documents
-   as data, values bound to component fields via the existing reflection. Explicitly not
-   ImGui and not linked to debug UI. v1.0 ships HUD primitives; a full widget toolkit is
-   deferred until menus demand it (directive 4). Gate: a HUD showing `AttributeSet`-bound
-   health renders in a shipping-config build with debug UI compiled out.
+9. **Authored UI (v1.0 HUD and menus).** A retained authored presentation layer over
+   RmlUi: RML for structure, RCSS for presentation, native code for state and behaviour.
+   Documents consume copied presentation models and emit semantic actions; no pointer
+   crosses the boundary and no gameplay state lives in a document. Cooked `.sui` packages
+   through the existing asset pipeline, drawn in the `ApplicationUi` render phase, driven
+   by the existing input action and context machinery. Hosted by games and by Sencha
+   applications alike -- Kyusu is a first-class consumer, which is how its inspector,
+   browsers and chrome stop being permanently docked ImGui panels. ImGui stays for
+   diagnostics. Execution detail in `docs/ui/architecture.md`. Gate: a HUD showing
+   `AttributeSet`-bound health renders in a shipping-config build with debug UI compiled
+   out, and one real Kyusu surface is authored rather than immediate-mode.
 
 10. **Audio spatialization and streamed music (v1.0).** A listener component and
     distance/pan attenuation in `AudioSystem` over the audio participation span; streamed
@@ -774,7 +780,9 @@ The repo's deferral pattern: every deferral records the concrete trigger that re
 - **Chunk-parallel queries: profile-gated** (Track E item 6), never speculative.
 - **Participation tiers: earned per tier**, never adopted wholesale from the candidate
   list in the streaming spec.
-- **Widget toolkit: deferred until menus demand it.** v1.0 HUD is bound primitives.
+- **Widget toolkit: no longer deferred, and no longer ours to write.** The bound-primitive
+  HUD and the "defer a widget toolkit" posture are both retired: RmlUi supplies layout and
+  controls, and the earned work is the boundary around it (Track A item 9).
 
 ---
 
@@ -792,6 +800,7 @@ the specialist doc wins.
 | `docs/architecture/hardening-and-consolidation.md` | Execution spec for Track D item 11 and Track F item 7. |
 | `docs/plans/sencha-level-editor/*` | Shipped-branch record plus execution detail for the editor substrate Track D builds on. |
 | `docs/assets/pipeline.md` | Execution record and deferral register for the asset pipeline items in Track F. |
+| `docs/ui/architecture.md` | Execution spec for Track A item 9: the authored UI boundary, capability profile, colour contract, and render/input placement. |
 | `docs/core-systems-map.md` | Reader's map of the current tree; not a plan. |
 | `docs/plans/world-partition/11-zone-runtime-model.md`, `12-spatial-compilation.md` | The world graph contracts: runtime residency, crossing, authoring, cook, and validation. Canonical for Track C item 3. |
 | `docs/plans/runtime-stable-identity.md` | The persistent entity identity scheme and in-session zone state memory. The identity substrate Track A item 8, Track C item 5, Track D item 1, and Track G all join on. |
@@ -826,7 +835,8 @@ Dependency edges:
   blocks the save system.
 - Stateful detach also blocks the world-state half of the v1.0 gate.
 - Prefab assets block the placement palette, which blocks the designer authoring loop.
-- The transparency pass blocks the HUD and particles.
+- The transparency pass blocks particles. It does **not** block authored UI, which draws
+  in its own render phase with its own premultiplied-alpha blend state.
 - The transition model blocks cinematics (v2.0).
 - `ContentRiskRecord`s (runtime) block the editor validation dashboard (records first,
   UI second).

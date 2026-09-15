@@ -103,6 +103,8 @@ AssetKindRegistration MakeBuiltinAssetKind(AssetType type)
     case AssetType::Skeleton:      return make("Skeleton", {".sskel"});
     case AssetType::AnimationClip: return make("AnimationClip", {".sanim"});
     case AssetType::Data:          return make("Data", {".sdata"});
+    case AssetType::UiPackage:     return make("UiPackage", {".sui"});
+    case AssetType::Font:          return make("Font", {".sfont"});
     default:                       return {};
     }
 }
@@ -131,6 +133,10 @@ std::span<const AssetType> BuiltinAssetKinds()
         AssetType::Skeleton,
         AssetType::AnimationClip,
         AssetType::Data,
+        // Fonts before packages: a package's staging declares the faces it needs
+        // as dependencies, and registration order is what the preloader walks.
+        AssetType::Font,
+        AssetType::UiPackage,
     };
     return kKinds;
 }

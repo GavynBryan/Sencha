@@ -1,0 +1,128 @@
+/* Geometry and colour are fully determined here, so the golden image is a
+   statement about the renderer rather than about layout drifting. */
+
+body
+{
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+#opaque
+{
+    display: block;
+    position: absolute;
+    left: 40px;
+    top: 40px;
+    width: 220px;
+    height: 120px;
+    background-color: #c8321eff;
+}
+
+/* Overlaps the opaque panel. Premultiplied-alpha blending is the thing most
+   likely to be silently wrong, and it is only visible where two things cross. */
+#translucent
+{
+    display: block;
+    position: absolute;
+    left: 150px;
+    top: 100px;
+    width: 220px;
+    height: 120px;
+    background-color: #1e78c880;
+}
+
+/* Rounded corners are drawn as geometry, which Tier 1 covers. This is the
+   panel shape authored chrome is actually made of. */
+#rounded
+{
+    display: block;
+    position: absolute;
+    left: 40px;
+    top: 240px;
+    width: 180px;
+    height: 90px;
+    background-color: #f0e6d2ff;
+    border-radius: 18px;
+}
+
+/* The clip-mask case, and the only one that needs a stencil: a child clipped to
+   a ROUNDED boundary. Without the mask the child spills out as a rectangle, so
+   the corners of this are the whole assertion. */
+#clipper
+{
+    display: block;
+    position: absolute;
+    left: 420px;
+    top: 240px;
+    width: 200px;
+    height: 120px;
+    border-radius: 40px;
+    overflow: hidden;
+    background-color: #2e3b4eff;
+}
+
+#overflowing
+{
+    display: block;
+    position: absolute;
+    left: -30px;
+    top: -30px;
+    width: 300px;
+    height: 200px;
+    background-color: #46c86eff;
+}
+
+/* Text: the font kind, LoadFontFace over bytes, the glyph atlas as a generated
+   texture, and its upload all have to hold for a single word to appear. */
+@font-face
+{
+    src: "fonts/Inter-Regular.ttf";
+}
+
+#label
+{
+    display: block;
+    position: absolute;
+    left: 420px;
+    top: 48px;
+    width: 400px;
+    height: 60px;
+    font-family: Inter;
+    font-size: 36px;
+    color: #ffffffff;
+}
+
+/* Fully transparent over fully opaque: if premultiplication is inverted
+   anywhere, this darkens the panel underneath instead of vanishing. */
+#invisible
+{
+    display: block;
+    position: absolute;
+    left: 60px;
+    top: 60px;
+    width: 80px;
+    height: 40px;
+    background-color: #ffffff00;
+}
+
+/* Driven by a presentation model rather than authored: the width comes from a
+   value the host published, so this bar is the whole model path -- declare,
+   publish, bind, lay out, draw -- rendered. */
+#meter
+{
+    display: block;
+    position: absolute;
+    left: 420px;
+    top: 400px;
+    width: 300px;
+    height: 24px;
+    background-color: #20242cff;
+}
+
+#fill
+{
+    display: block;
+    height: 24px;
+    background-color: #e0a030ff;
+}

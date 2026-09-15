@@ -59,6 +59,18 @@ struct RenderStats
     std::uint64_t ShadowTileBytes = 0;
     std::uint32_t CasterDiffEvents = 0;
 
+    // Authored UI, summed across every surface drawn this frame. Separate from
+    // the forward pass's counters because they answer a different question: the
+    // scene's draws scale with what is visible in the world, and these scale
+    // with what documents are open.
+    std::uint32_t UiDrawCalls = 0;
+    std::uint32_t UiTriangles = 0;
+    // Generated textures materialized this frame -- font atlases, decorator
+    // images. Steady state is zero; a number that stays nonzero frame after
+    // frame is a document re-minting what it already had.
+    std::uint32_t UiTextureUploads = 0;
+    std::uint64_t UiTextureUploadBytes = 0;
+
     // Baked lighting residency: probe volumes holding GPU 3D textures.
     // Zone streaming drives this up and down; a stale nonzero count after
     // an unload is a leak.

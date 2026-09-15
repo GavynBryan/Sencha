@@ -1,0 +1,44 @@
+<rml>
+<head>
+    <title>Cook Profiles</title>
+    <link type="text/rcss" href="cook_profiles.rcss"/>
+    <link type="text/rcss" href="theme.rcss"/>
+</head>
+<body data-model="cook_profiles">
+    <div id="scrim" class="theme-scrim"/>
+
+    <div id="dialog" class="theme-surface">
+        <div id="titlebar" class="theme-header">
+            <span id="title" class="theme-title">COOK PROFILES</span>
+            <div id="close" class="theme-icon" data-event-click="profiles_close">x</div>
+        </div>
+
+        <div id="body">
+            <div id="list" class="theme-well">
+                <div class="row theme-row" data-for="profile : profiles"
+                     data-event-click="profiles_select(it_index)"
+                     data-class-selected="it_index == selected_index">{{profile}}</div>
+            </div>
+
+            <div id="form">
+                <div class="label theme-dim">Name</div>
+                <input id="name" class="theme-field" type="text" data-value="selected_name"/>
+
+                <div class="label theme-dim">Steps</div>
+                <div id="steps" class="theme-well">
+                    <div class="step theme-muted" data-for="step : steps">{{step}}</div>
+                </div>
+
+                <div class="label theme-warning" data-if="builtin">Built-in profiles cannot be edited.</div>
+            </div>
+        </div>
+
+        <div id="footer" class="theme-footer">
+            <div id="status">{{status}}</div>
+            <div class="button theme-button" data-event-click="profiles_validate">Validate</div>
+            <div class="button theme-button" data-event-click="profiles_save"
+                 data-class-disabled="!dirty">Save</div>
+        </div>
+    </div>
+</body>
+</rml>

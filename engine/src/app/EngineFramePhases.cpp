@@ -1,3 +1,7 @@
+#ifdef SENCHA_ENABLE_UI
+#include <profiling/CpuScopeTimings.h>
+#include <ui/UiService.h>
+#endif
 #include <app/Engine.h>
 #include <app/Game.h>
 #include <input/SdlGamepadCapture.h>
@@ -796,6 +800,18 @@ void Engine::RegisterSimulationFramePhases()
         };
         engine.Schedule().RunFrameUpdate(update);
 
+#ifdef SENCHA_ENABLE_UI
+        // Explicitly after the game's frame-update systems, and explicitly not
+        // by registering a system that happens to sort later. Host controllers
+        // drain semantic actions, change state, and republish presentation
+        // values in RunFrameUpdate; this applies what they published and lays
+        // out. That is what makes an action taken this frame visible in this
+        // frame rather than the next, and it is a guarantee the engine owes
+        // rather than one a module could arrange for itself.
+        if (UiService* ui = engine.TryUi(); ui != nullptr)
+            ui->Update();
+#endif
+
         AudioContext audio{
             .Config = config,
             .Runtime = *ctx.Runtime,
@@ -861,6 +877,27 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
     auto& renderer = engine.Graphics().MainRenderer;
     const SdlWindowService::WindowId windowId = windows.GetPrimaryWindowId();
 
+#ifdef SENCHA_ENABLE_DEBUG_UI
+    // Diagnostics sit at the top of the routing order for the same reason they
+    // sit at the top of the z-order: the console has to be usable while looking
+    // at whatever is underneath it. Registered once here rather than when the
+    // overlay is constructed, and resolved per event, so it costs no lifetime
+    // coupling to a feature the renderer owns and may refuse to set up.
+    engine.PlatformEvents().AddConsumer("debug_overlay", [&engine](const SDL_Event& event) {
+        ImGuiDebugOverlay* overlay = engine.GetDebugOverlay();
+        return overlay != nullptr && overlay->ProcessSdlEvent(event);
+    });
+#endif
+
+#ifdef SENCHA_ENABLE_UI
+    // Below diagnostics and above the application, matching the z-order: the
+    // console has to be usable over a menu, and a menu over the game.
+    engine.PlatformEvents().AddConsumer("authored_ui", [&engine](const SDL_Event& event) {
+        UiService* ui = engine.TryUi();
+        return ui != nullptr && ui->ProcessPlatformEvent(event);
+    });
+#endif
+
     driver.Register(FramePhase::PumpPlatform, [&engine, &game, &config, &windows, windowId](PhaseContext& ctx) {
         SdlInputCapture::BeginFrame(*ctx.Input);
 
@@ -875,26 +912,16 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
         {
             windows.HandleEvent(event);
 
-#ifdef SENCHA_ENABLE_DEBUG_UI
-            // The overlay claims input before capture, not after: the grave
-            // toggle always, and keyboard/mouse while the console is open. An
-            // event folded into the InputFrame first would reach every gameplay
-            // reader whatever the overlay then said about it.
-            if (ImGuiDebugOverlay* overlay = engine.GetDebugOverlay();
-                overlay != nullptr && overlay->ProcessSdlEvent(event))
-            {
-                continue;
-            }
-#endif
-
-            SdlInputCapture::Accept(*ctx.Input, event);
-            if (gamepads != nullptr)
-                gamepads->Accept(*ctx.Input, event);
-
+            // Router order is surface z-order, and the fold into the InputFrame
+            // happens inside Route() before any of them is asked. See
+            // PlatformEventRouter's header for why that order is not negotiable.
             PlatformEventContext eventCtx{
                 .Config = config,
                 .Event = event,
             };
+            if (engine.PlatformEvents().Route(event, *ctx.Input, gamepads))
+                continue;
+
             game.OnPlatformEvent(eventCtx);
             if (eventCtx.Handled)
                 continue;
@@ -914,21 +941,37 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
         engine.ApplyPointerCapture();
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
-        // A press that began before the console opened would otherwise stay
-        // held for as long as it is open, since its key-up is claimed above.
-        if (ImGuiDebugOverlay* overlay = engine.GetDebugOverlay();
+        // Published, not compensated for. The snapshot keeps every keystroke
+        // that happened; this is what tells a raw reader which of them were
+        // typed into the console rather than aimed at the game.
+        if (const ImGuiDebugOverlay* overlay = engine.GetDebugOverlay();
             overlay != nullptr && overlay->IsCapturingInput())
         {
-            ctx.Input->ReleaseAllHeld();
+            ctx.Input->UiCapture.Keyboard = true;
+            ctx.Input->UiCapture.Mouse = true;
+        }
+#endif
+#ifdef SENCHA_ENABLE_UI
+        // The same posture for authored UI: a field taking text, or a pointer
+        // over a panel, reported rather than hidden.
+        if (const UiService* ui = engine.TryUi(); ui != nullptr)
+        {
+            const UiInputCapture uiCapture = ui->Capture();
+            ctx.Input->UiCapture.Keyboard |= uiCapture.Keyboard;
+            ctx.Input->UiCapture.Mouse |= uiCapture.Mouse;
         }
 #endif
 
         if (windows.IsCloseRequested(windowId))
             ctx.Input->QuitRequested = true;
-        if (config.Runtime.ExitOnEscape && ctx.Input->IsKeyDown(SDL_SCANCODE_ESCAPE))
+        // Both of these read raw device state rather than a mapped action, so
+        // both owe the UiCapture check: typing "escape" into the console must
+        // not quit the game, and F1 in a text field is a keystroke.
+        if (config.Runtime.ExitOnEscape && !ctx.Input->UiCapture.Keyboard
+            && ctx.Input->IsKeyDown(SDL_SCANCODE_ESCAPE))
             ctx.Input->QuitRequested = true;
 
-        if (config.Runtime.TogglePauseOnF1
+        if (config.Runtime.TogglePauseOnF1 && !ctx.Input->UiCapture.Keyboard
             && ctx.Input->ConsumeKeyPressed(SDL_SCANCODE_F1))
         {
             // Routed through the console rather than set directly, so pausing
@@ -1000,6 +1043,25 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
             .Partitions = zones.Visible,
         };
         engine.Schedule().RunExtractRender(extract);
+
+#ifdef SENCHA_ENABLE_UI
+        // Records each surface into an immutable frame. No GPU work; the render
+        // feature reads what this produced.
+        if (UiService* ui = engine.TryUi(); ui != nullptr)
+        {
+            // The update that fed this extraction, reported here because the
+            // scope set is reset at the top of this phase -- a span timed
+            // during Update would be wiped before the frame record is taken.
+            if (CpuScopeTimings* scopes = engine.Instrumentation().CpuScopes;
+                scopes != nullptr)
+            {
+                scopes->Add(CpuScope::UiUpdate, ui->LastUpdateMilliseconds());
+            }
+
+            CpuScopeTimer timer(engine.Instrumentation().CpuScopes, CpuScope::UiExtract);
+            ui->ExtractRender();
+        }
+#endif
     });
 
     driver.Register(FramePhase::Render, [&engine, &windows, windowId, &renderer, &frames, &swapchain](PhaseContext& ctx) {

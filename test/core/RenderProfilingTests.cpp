@@ -184,9 +184,9 @@ TEST(RenderCapture, JsonEnvelopeCarriesSchemaCvarsAndUnitKeyedFrames)
     ASSERT_TRUE(parsed.has_value()) << error.Message;
     const JsonValue& root = *parsed;
     ASSERT_NE(root.Find("schema_version"), nullptr);
-    // Last moved by the per-consumer scratch columns joining the frame record
-    // (v7).
-    EXPECT_EQ(root.Find("schema_version")->AsNumber(), 7.0);
+    // Last moved by the authored UI's draw, triangle and texture-upload
+    // columns joining the frame record (v8).
+    EXPECT_EQ(root.Find("schema_version")->AsNumber(), 8.0);
     EXPECT_EQ(root.Find("frame_count")->AsNumber(), 3.0);
     ASSERT_NE(root.Find("cvars"), nullptr);
     ASSERT_NE(root.Find("cvars")->Find("render.profile.mode"), nullptr);

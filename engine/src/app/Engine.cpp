@@ -1,3 +1,9 @@
+#ifdef SENCHA_ENABLE_UI
+#if defined(SENCHA_ENABLE_UI) && defined(SENCHA_ENABLE_VULKAN)
+#include <render/feature/UiRenderFeature.h>
+#endif
+#include <ui/UiService.h>
+#endif
 #include <app/Engine.h>
 #include <app/SessionParticipantDiagnostics.h>
 #include <app/EngineConsoleBuiltins.h>
@@ -449,6 +455,22 @@ void Engine::ApplyPointerCapture()
     PointerCaptureApplied = desired;
 }
 
+#ifdef SENCHA_ENABLE_UI
+UiService& Engine::Ui()
+{
+    assert(UiState != nullptr
+           && "Engine::Ui: valid from just before OnStart to just after OnShutdown");
+    return *UiState;
+}
+
+const UiService& Engine::Ui() const
+{
+    assert(UiState != nullptr
+           && "Engine::Ui: valid from just before OnStart to just after OnShutdown");
+    return *UiState;
+}
+#endif
+
 RuntimeContent& Engine::Content()
 {
     assert(ContentState.has_value()
@@ -766,6 +788,20 @@ int Engine::Run(Game& game)
     ContentState->Publish(RuntimeWorldState->Entities());
     LevelState.emplace(*this, *ContentState, LoggingState.GetLogger<Engine>());
 
+#ifdef SENCHA_ENABLE_UI
+    // After the content stack, because a screen leases out of it, and before
+    // OnStart, so a game can open one from its startup hook.
+    {
+        RuntimeAssets& assets = ContentState->Assets();
+        SDL_Window* const window = PlatformState != nullptr
+            ? PlatformState->Windows.GetNativeHandle(
+                  PlatformState->Windows.GetPrimaryWindowId())
+            : nullptr;
+        UiState = std::make_unique<UiService>(LoggingState, assets.Assets, assets.UiPackages,
+                                              assets.Fonts, assets.Textures.get(), window);
+    }
+#endif
+
     ConsoleService& console = Console();
     RegisterLevelCommands(console, *this);
     console.AdvancePhase(ConsolePhase::EngineReady);
@@ -799,6 +835,20 @@ int Engine::Run(Game& game)
     ContentState->RegisterSystems(EngineSystems);
     EngineSystems.Init();
     console.AdvancePhase(ConsolePhase::SystemsRegistered);
+
+#if defined(SENCHA_ENABLE_UI) && defined(SENCHA_ENABLE_VULKAN)
+    // Authored UI draws for every host, without one having to assemble the
+    // feature itself. Phase order puts it over the scene and under the debug
+    // overlay regardless of when it is added, so this needs no dependency edge
+    // -- an editor ordering its own chrome against it will, and that is what
+    // kUiRenderFeatureId is for.
+    if (UiState != nullptr && UiState->IsReady() && GraphicsState != nullptr)
+    {
+        RuntimeAssets& assets = ContentState->Assets();
+        GraphicsState->MainRenderer.AddFeature(
+            std::make_unique<UiRenderFeature>(*UiState, assets.Textures.get()));
+    }
+#endif
 
     CreateDebugOverlay();
 
@@ -843,6 +893,13 @@ int Engine::Run(Game& game)
     };
     game.OnShutdown(shutdown);
 
+#ifdef SENCHA_ENABLE_UI
+    // Before the content stack goes. A screen holds asset leases, and a lease
+    // outliving the cache it references detaches from a destroyed owner.
+    if (UiState != nullptr)
+        UiState->Shutdown();
+#endif
+
     // Task captures borrow loaders, caches, and serializers. Release unfinished
     // work while all of those owners (including the level loader) still exist.
     // Keep the stopped queue addressable for the level's cancellation path.
@@ -859,6 +916,9 @@ int Engine::Run(Game& game)
     ContentState->Disconnect(RuntimeWorldState->Entities());
     UnregisterGameDataAssets(game, ContentState->Assets());
     ContentState.reset();
+#ifdef SENCHA_ENABLE_UI
+    UiState.reset();
+#endif
 
     // Symmetric teardown of OnRegisterComponents above: retract the game's
     // serializers while the module is still mapped (the host unloads it after Run

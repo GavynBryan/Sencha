@@ -1,5 +1,7 @@
 #include <assets/hotreload/AssetHotReloader.h>
 
+#include <algorithm>
+
 #include <assets/cook/AssetImporter.h>
 #include <assets/cook/ImportOnDemand.h>
 #include <core/assets/AssetStager.h>
@@ -34,6 +36,47 @@ AssetHotReloader::AssetHotReloader(LoggingProvider& logging,
 {
 }
 
+bool AssetHotReloader::ReloadDependents(std::string_view sourceRelPath)
+{
+    const std::filesystem::path indexPath =
+        std::filesystem::path(AssetsRoot) / kCookedCacheDirName / kCookedCacheIndexFileName;
+    std::error_code ec;
+    if (!std::filesystem::exists(indexPath, ec))
+        return false;
+
+    CookedCacheIndex index;
+    std::string error;
+    if (!CookedCacheIndex::LoadFromFile(indexPath.generic_string(), index, &error))
+        return false;
+
+    // Collected before re-cooking any of them: a re-cook rewrites the index, and
+    // walking a container while something else replaces it is the kind of bug
+    // that only shows up when two documents share a stylesheet.
+    std::vector<std::string> dependents;
+    for (const auto& [sourcePath, entry] : index.Entries())
+    {
+        const bool reads = std::any_of(entry.AdditionalSources.begin(),
+                                       entry.AdditionalSources.end(),
+            [&](const CookedAdditionalSource& extra) { return extra.RelPath == sourceRelPath; });
+        if (reads)
+            dependents.push_back(sourcePath);
+    }
+
+    if (dependents.empty())
+        return false;
+
+    // Deterministic, so two documents sharing a stylesheet recook in the same
+    // order every time and a diff of what happened is readable.
+    std::sort(dependents.begin(), dependents.end());
+    for (const std::string& dependent : dependents)
+    {
+        Log.Info("AssetHotReloader: '{}' changed; recooking '{}' which reads it",
+                 sourceRelPath, dependent);
+        ReloadSource(dependent);
+    }
+    return true;
+}
+
 void AssetHotReloader::ReloadSource(std::string_view sourceRelPath)
 {
     // Authored runtime formats (.smat) have no importer: the edited file *is*
@@ -47,6 +90,14 @@ void AssetHotReloader::ReloadSource(std::string_view sourceRelPath)
         const AssetRecord* record = Registry.FindByPath(virtualPath);
         if (record == nullptr)
         {
+            // Not an asset itself, but possibly an input to one: a stylesheet a
+            // UI document imports, an include a future shader pulls in. The cook
+            // recorded which cooks read it, so this is a lookup rather than a
+            // guess -- and without it, editing a shared stylesheet would watch
+            // the file, notice the change, and do nothing.
+            if (ReloadDependents(sourceRelPath))
+                return;
+
             Log.Debug("AssetHotReloader: edited source '{}' is not a registered asset",
                       sourceRelPath);
             return;

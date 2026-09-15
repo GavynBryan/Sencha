@@ -167,7 +167,7 @@ bool EditorRenderFeature::Setup(const RenderFeatureServices& featureServices)
         Studio.emplace(Targets, Forward, Sky, *RuntimeAssetsRef->StaticMeshes,
                        RuntimeAssetsRef->Materials,
                        RuntimeAssetsRef->SkinnedMeshes.get(),
-                       Services.DepthFormat);
+                       VK_FORMAT_D32_SFLOAT);
         Thumbnails.emplace(*Studio, *RuntimeAssetsRef,
                            *RuntimeAssetsRef->StaticMeshes, *LoggingRef);
     }
@@ -488,7 +488,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     // Brackets the recording below: both planes into attachment layouts now,
     // color back to sampled and the store's layout committed at scope end.
     RenderTargetSession session(frame.Cmd, target.ColorImage, target.ColorLayout,
-                                target.DepthImage);
+                                target.DepthImage, VK_FORMAT_D32_SFLOAT);
 
     // The offscreen target is RGBA16F linear; the scene pipelines key on these
     // formats and rebuild their RGBA16F variant transparently.
@@ -503,7 +503,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     scope.Depth.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     scope.Depth.StoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     scope.Depth.Clear.depthStencil = { 1.0f, 0 };
-    scope.DepthFormat = Services.DepthFormat;
+    scope.DepthFormat = VK_FORMAT_D32_SFLOAT;
     scope.Phase = RenderPhase::Offscreen;
 
     {
@@ -678,7 +678,7 @@ void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorV
         glowScope.Depth.LoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         glowScope.Depth.StoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         glowScope.Depth.Clear.depthStencil = { 1.0f, 0 };
-        glowScope.DepthFormat = Services.DepthFormat;
+        glowScope.DepthFormat = VK_FORMAT_D32_SFLOAT;
         glowScope.Phase = RenderPhase::Offscreen;
 
         {

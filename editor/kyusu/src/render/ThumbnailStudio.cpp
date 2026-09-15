@@ -100,7 +100,7 @@ bool ThumbnailStudio::RenderPass(const FrameContext& frame, ViewportId target,
         return false;
 
     RenderTargetSession session(frame.Cmd, view->ColorImage, view->ColorLayout,
-                                view->DepthImage);
+                                view->DepthImage, frame.DepthFormat);
     RenderScopeDesc scope{};
     scope.Area.offset = { 0, 0 };
     scope.Area.extent = view->Extent;

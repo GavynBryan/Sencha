@@ -68,6 +68,12 @@ add_test(NAME net_isolation
 add_test(NAME render_isolation
     COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/cmake/CheckRenderIsolation.cmake")
 
+# RmlUi firewall, on the same terms as the physics one: the retained authored UI
+# runtime owns RmlUi behind engine/src/ui/rml/, so every other first-party file --
+# the installed public headers above all -- stays free of it.
+add_test(NAME ui_isolation
+    COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/cmake/CheckUiIsolation.cmake")
+
 # All SENCHA_ENABLE_* feature flags are declared here, before any subdirectory
 # consumes them.
 include("${CMAKE_SOURCE_DIR}/cmake/SenchaOptions.cmake")

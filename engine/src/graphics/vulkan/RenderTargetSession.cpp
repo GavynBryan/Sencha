@@ -34,7 +34,8 @@ void BeginColor(VkCommandBuffer cmd, VkImage image, VkImageLayout oldLayout)
 } // namespace
 
 RenderTargetSession::RenderTargetSession(VkCommandBuffer cmd, VkImage color,
-                                         VkImageLayout* layout, VkImage depth)
+                                         VkImageLayout* layout, VkImage depth,
+                                         VkFormat depthFormat)
     : Cmd(cmd)
     , Color(color)
     , Layout(layout)
@@ -54,14 +55,21 @@ RenderTargetSession::RenderTargetSession(VkCommandBuffer cmd, VkImage color,
         VulkanBarriers::ImageTransition transition{};
         transition.Image = depth;
         transition.OldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        transition.NewLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        const bool hasStencil = depthFormat == VK_FORMAT_D32_SFLOAT_S8_UINT
+            || depthFormat == VK_FORMAT_D24_UNORM_S8_UINT
+            || depthFormat == VK_FORMAT_D16_UNORM_S8_UINT;
+        transition.NewLayout = hasStencil
+            ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+            : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
         transition.SrcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
                             | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
         transition.DstStage = transition.SrcStage;
         transition.SrcAccess = 0;
         transition.DstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT
                              | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        transition.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        transition.AspectMask = hasStencil
+            ? (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
+            : VK_IMAGE_ASPECT_DEPTH_BIT;
         VulkanBarriers::TransitionImage(Cmd, transition);
     }
 }

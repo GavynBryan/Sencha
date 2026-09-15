@@ -65,3 +65,13 @@ InputRouter::Handler MakeUiInputGuard(std::function<UiInputCapture()> capture)
         return consumed ? InputConsumed::Yes : InputConsumed::No;
     };
 }
+
+UiInputCapture CombineUiCapture(UiInputCapture shell, bool overViewport,
+                                UiInputCapture authored)
+{
+    if (overViewport)
+        shell.Mouse = false;
+    shell.Mouse |= authored.Mouse;
+    shell.Keyboard |= authored.Keyboard;
+    return shell;
+}

@@ -119,6 +119,15 @@ public:
 
     // Rows for this component in the inspector, in place of the generic
     // field-driven ones. True when it drew them.
+    //
+    // These two travel together, the same way the viewport pair above does. An
+    // authoring surface that cannot call DrawInspector -- because it presents a
+    // document rather than drawing widgets -- still has to know that this
+    // component's generic rows are not the whole story, or it shows a designer
+    // raw zone ids where the panel offers zone names. Overriding DrawInspector
+    // without AuthorsInspectorRows is rows one inspector has and the other
+    // silently contradicts.
+    [[nodiscard]] virtual bool AuthorsInspectorRows() const { return false; }
     virtual bool DrawInspector(EditorComponentInspectorContext&) const { return false; }
     [[nodiscard]] virtual bool AllowEntityScale() const { return true; }
     virtual ~IEditorComponentAdapter() = default;

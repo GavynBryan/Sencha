@@ -9,9 +9,9 @@ the code and need to know where things are and why.
 
 ## The problem
 
-The engine has nine asset kinds (static meshes, skinned meshes, textures,
-materials, skeletons, animation clips, audio clips, scenes, data), and a game
-module can register more. Every one of them needs the same lifecycle:
+The engine has eleven asset kinds (static meshes, skinned meshes, textures,
+materials, skeletons, animation clips, audio clips, scenes, data, UI packages,
+fonts), and a game module can register more. Every one of them needs the same lifecycle:
 
 1. Find the file (registry lookup).
 2. Read bytes from disk (or a pack file, eventually).
@@ -32,7 +32,7 @@ cross-references create ordering constraints (you must load textures before
 committing materials) and ownership chains (when a material frees, its texture
 refs must release too).
 
-The class count comes from solving this problem honestly across nine kinds.
+The class count comes from solving this problem honestly across every kind.
 There are 4 layers, and each layer fans out by kind where the logic is genuinely
 kind-specific. Above them sits one registry describing the kinds themselves, so
 the drivers that are *not* kind-specific — the scanner, the preloader, the hot
@@ -106,6 +106,8 @@ two schedulings.
 | `AudioClipAssetLoader` | `AudioClip` | CPU-only registration in `AudioClipCache`. |
 | `SceneAssetLoader` | `SmapContents` | Parses a cooked scene against the serializer registry; CPU-only. |
 | `DataAssetLoader` | parsed data document | Validates against the registered schema, registers in `DataAssetCache`. |
+| `FontFaceAssetLoader` | `FontFace` | CPU-only registration in `FontFaceCache`. Face bytes pass through; nothing is rasterised. |
+| `UiPackageAssetLoader` | `UiPackage` | CPU-only registration in `UiPackageCache`. Declares the package's resource table as its staging dependencies. |
 
 **Why one class per kind instead of a generic one?** Because the decode logic
 (mesh binary deserialization vs JSON parsing vs image decompression vs audio
@@ -176,6 +178,8 @@ The derived class provides three hooks via CRTP (no virtual dispatch):
 | `MaterialSetCache` | ordered `MaterialHandle` list, content-deduped | No | `MaterialHandle`s |
 | `SceneCache` | `SmapContents` (parsed cooked scene) | No | Nothing |
 | `DataAssetCache` | parsed data document | No | Nothing |
+| `FontFaceCache` | `FontFace` (bytes + family/style/weight) | No | Nothing |
+| `UiPackageCache` | `UiPackage` (markup, stylesheets, resource table) | No | Nothing — an open UI screen owns the leases, not the cache |
 
 `MaterialSetCache` is the odd one: it is the Material kind's *list* form rather
 than a kind of its own. A field that names several materials at once (a mesh's
@@ -214,7 +218,7 @@ SceneCache Scenes;
 DataAssetTypeRegistry DataTypes;    // schemas outlive the documents validated against them
 DataSchemaRegistry DataSchemas;
 DataAssetCache DataAssets;
-/* private: the nine loaders */     // hold nothing; destroyed after the front door
+/* private: the loaders */          // hold nothing; destroyed after the front door
 AssetSystem Assets;                 // destroyed first: no registered commit or
                                     // reload can run against a dead loader or cache
 ```
@@ -348,11 +352,21 @@ Otherwise fall back to the path in the ref.
 | Class | Role |
 |-------|------|
 | `IAssetImporter` | Abstract: source bytes in, cooked artifacts out. Pure — no engine state. |
+| `ISourceFileReader` | How an importer reads sources its root file references (a document's stylesheets). Supplied by the driver, mirroring `ICookOutputWriter`. An importer that reads through it **must** list what it read in `ImportResult::AdditionalSources`, because that is what the freshness hash covers — reading a sibling behind the driver's back silently breaks the build cache. |
+| `ContentImporterSet` | Every source importer the engine ships, owned and registered together. For call sites that mean "everything"; a site that deliberately handles one kind keeps naming that one. |
 | `AssetImporterRegistry` | Maps file extensions to importers. |
 | `CookedCacheIndex` | Tracks source-hash -> cooked artifacts at `.cooked/index.json` for incremental re-cook. |
 
 Importers exist for PNG textures, glTF meshes, Blender files (headless export
-to glTF), and audio (WAV/OGG). Gated behind `SENCHA_ENABLE_COOK`.
+to glTF), audio (WAV/OGG), fonts (TTF/OTF → `.sfont`), and authored UI
+(`.rml` plus the stylesheets it imports → one `.sui`). Gated behind
+`SENCHA_ENABLE_COOK`.
+
+UI is the first multi-file source, and the reason `ISourceFileReader` and
+`CookedSourceEntry::AdditionalSources` exist: a document's stylesheets are
+inputs to its cook, so they have to be inputs to its freshness too. Editing a
+shared theme recooks every document that imports it, checked by
+`UiPackageCook.EditingASharedStylesheetRecooksEveryDocumentThatImportsIt`.
 
 ### Hot reload (`assets/hotreload/`)
 

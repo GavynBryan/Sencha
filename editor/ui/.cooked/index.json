@@ -1,0 +1,141 @@
+{
+  "version": 8,
+  "sources": [
+    {
+      "source": "cook_profiles.rml",
+      "input_fingerprint": "59d964a56d646cac",
+      "size": "1730",
+      "mtime": "-4648177900039692591",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "additional_sources": [
+        {
+          "source": "cook_profiles.rcss",
+          "size": "3129",
+          "mtime": "-4648151981810047394"
+        },
+        {
+          "source": "theme.rcss",
+          "size": "2684",
+          "mtime": "-4648177562230662708"
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "asset://cook_profiles.rml",
+          "file": ".cooked/cook_profiles.rml.sui",
+          "type": "UiPackage",
+          "hash": "6f7f664f66cf2559"
+        }
+      ]
+    },
+    {
+      "source": "fonts/ChakraPetch-SemiBold.ttf",
+      "input_fingerprint": "5f92830505c1f46b",
+      "size": "78604",
+      "mtime": "-4648281512816556531",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://fonts/ChakraPetch-SemiBold.ttf",
+          "file": ".cooked/fonts/ChakraPetch-SemiBold.ttf.sfont",
+          "type": "Font",
+          "hash": "db37414eafffed1e"
+        }
+      ]
+    },
+    {
+      "source": "fonts/Inter-Medium.ttf",
+      "input_fingerprint": "76da859b2e3396b4",
+      "size": "417300",
+      "mtime": "-4655010070462985667",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://fonts/Inter-Medium.ttf",
+          "file": ".cooked/fonts/Inter-Medium.ttf.sfont",
+          "type": "Font",
+          "hash": "db2d9851966bb769"
+        }
+      ]
+    },
+    {
+      "source": "fonts/Inter-Regular.ttf",
+      "input_fingerprint": "c694bb143377f2be",
+      "size": "411640",
+      "mtime": "-4655010070462811187",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://fonts/Inter-Regular.ttf",
+          "file": ".cooked/fonts/Inter-Regular.ttf.sfont",
+          "type": "Font",
+          "hash": "50409bd6468ed112"
+        }
+      ]
+    },
+    {
+      "source": "fonts/JetBrainsMono-Regular.ttf",
+      "input_fingerprint": "f4b7077dab274e6b",
+      "size": "270224",
+      "mtime": "-4655010070462123034",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://fonts/JetBrainsMono-Regular.ttf",
+          "file": ".cooked/fonts/JetBrainsMono-Regular.ttf.sfont",
+          "type": "Font",
+          "hash": "358e88fb023d9527"
+        }
+      ]
+    },
+    {
+      "source": "fonts/fa-solid-900.ttf",
+      "input_fingerprint": "dfd5f17967c05612",
+      "size": "426112",
+      "mtime": "-4655010070461120199",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://fonts/fa-solid-900.ttf",
+          "file": ".cooked/fonts/fa-solid-900.ttf.sfont",
+          "type": "Font",
+          "hash": "b7f199cd34ab7fba"
+        }
+      ]
+    },
+    {
+      "source": "inspector.rml",
+      "input_fingerprint": "2d65ced8d4fa7d5d",
+      "size": "2242",
+      "mtime": "-4648156599175863197",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "additional_sources": [
+        {
+          "source": "inspector.rcss",
+          "size": "4849",
+          "mtime": "-4648151981810284410"
+        },
+        {
+          "source": "theme.rcss",
+          "size": "2684",
+          "mtime": "-4648177562230662708"
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "asset://inspector.rml",
+          "file": ".cooked/inspector.rml.sui",
+          "type": "UiPackage",
+          "hash": "59052d672f955b56"
+        }
+      ]
+    }
+  ]
+}

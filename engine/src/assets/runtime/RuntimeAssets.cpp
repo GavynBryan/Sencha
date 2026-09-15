@@ -53,6 +53,8 @@ RuntimeAssets::RuntimeAssets(LoggingProvider& logging,
     , SkinnedMeshReferences(std::move(skinnedMeshReferences))
     , AudioClips(logging)
     , Scenes(logging)
+    , Fonts(logging)
+    , UiPackages(logging)
     , StaticMeshLoader(logging, StaticMeshes.get())
     , TextureLoader(logging, Textures.get())
     , MaterialLoader(logging, &Materials, Textures.get())
@@ -62,6 +64,8 @@ RuntimeAssets::RuntimeAssets(LoggingProvider& logging,
     , SkinnedMeshLoader(logging, SkinnedMeshes.get(), &Skeletons)
     , SceneLoader(logging, &Scenes, &sceneSerializers)
     , DataLoader(logging, &DataTypes, &DataSchemas, &DataAssets)
+    , FontLoader(logging, &Fonts)
+    , UiPackageLoader(logging, &UiPackages)
     , Assets(logging, Registry)
 {
     // Unregistering a subtype with values still resident would leave the
@@ -95,4 +99,9 @@ RuntimeAssets::RuntimeAssets(LoggingProvider& logging,
     RegisterAssetKind(Assets, AssetType::AnimationClip, AnimationClipLoader, &AnimationClips);
     RegisterAssetKind(Assets, AssetType::Scene, SceneLoader, &Scenes);
     RegisterAssetKind(Assets, AssetType::Data, DataLoader, &DataAssets);
+    // Fonts before packages, matching BuiltinAssetKinds(): a package declares
+    // its faces as staging dependencies, and the preloader walks kinds in
+    // registration order.
+    RegisterAssetKind(Assets, AssetType::Font, FontLoader, &Fonts);
+    RegisterAssetKind(Assets, AssetType::UiPackage, UiPackageLoader, &UiPackages);
 }
