@@ -3,6 +3,7 @@
 #include "AssetFieldCandidates.h"
 #include "RuntimeFieldText.h"
 
+#include "authoring/EditorComponentAdapter.h"
 #include "commands/CommandStack.h"
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
@@ -67,11 +68,13 @@ InspectorSurface::InspectorSurface(UiService& ui,
                                    UiSurfaceId surface,
                                    WorldDocument& world,
                                    SelectionService& selection,
-                                   CommandStack& commands)
+                                   CommandStack& commands,
+                                   const EditorComponentAdapterRegistry& adapters)
     : Ui(ui)
     , WorldDoc(world)
     , Selection(selection)
     , Commands(commands)
+    , Adapters(adapters)
     , Surface(surface)
 {
 }
@@ -527,6 +530,25 @@ void InspectorSurface::Publish()
             if (id == InvalidComponentId || !world.HasComponent(entity, id))
                 continue;
             const std::string key(serializer->JsonKey());
+
+            // An adapter that authors its own rows replaces this component's
+            // generic ones in the panel, so showing them here would be two
+            // inspectors disagreeing about the same component.
+            const IEditorComponentAdapter* adapter =
+                Adapters.Find(serializer->TypeId());
+            if (adapter != nullptr && adapter->AuthorsInspectorRows())
+            {
+                UiRow row;
+                row.Label = HumanizeSchemaName(key);
+                row.Value = "(edited in the panel)";
+                row.Detail = key;
+                origins.push_back(RowOrigin{ .Serializer = serializer.get(),
+                                             .Component = id,
+                                             .Published = row.Value });
+                rows.push_back(std::move(row));
+                continue;
+            }
+
             const std::span<const RuntimeField> fields = serializer->RuntimeFields();
             // Asked for only when there is something to read at an offset: a
             // zero-size tag has no storage, so requiring bytes first would drop

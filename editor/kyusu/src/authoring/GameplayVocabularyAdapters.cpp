@@ -127,6 +127,8 @@ namespace
             return ResolveComponentTypeId<GameplayTagContainer>();
         }
 
+        bool AuthorsInspectorRows() const override { return true; }
+
         bool DrawInspector(EditorComponentInspectorContext& context) const override
         {
             World& world = context.Scene.GetRegistry().Components;
@@ -250,6 +252,8 @@ namespace
             return ResolveComponentTypeId<AttributeSet>();
         }
 
+        bool AuthorsInspectorRows() const override { return true; }
+
         bool DrawInspector(EditorComponentInspectorContext& context) const override
         {
             World& world = context.Scene.GetRegistry().Components;
@@ -354,6 +358,8 @@ namespace
             return ResolveComponentTypeId<AbilitySet>();
         }
 
+        bool AuthorsInspectorRows() const override { return true; }
+
         bool DrawInspector(EditorComponentInspectorContext& context) const override
         {
             World& world = context.Scene.GetRegistry().Components;
@@ -441,6 +447,8 @@ namespace
         {
             return ResolveComponentTypeId<CharacterMovement>();
         }
+
+        bool AuthorsInspectorRows() const override { return true; }
 
         bool DrawInspector(EditorComponentInspectorContext& context) const override
         {

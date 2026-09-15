@@ -4,6 +4,7 @@
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
 #include "document/WorldDocument.h"
+#include "authoring/EditorComponentAdapter.h"
 #include "selection/SelectionContext.h"
 #include "selection/SelectionService.h"
 #include "ui/InspectorSurface.h"
@@ -112,7 +113,7 @@ public:
     void Start()
     {
         Inspector = std::make_unique<InspectorSurface>(*Ui, Surface, World,
-                                                       Selection, Commands);
+                                                       Selection, Commands, Adapters);
         Inspector->Open();
         Ui->Update();
         Frame();
@@ -251,6 +252,7 @@ public:
     SelectionContext SelectionCtx;
     SelectionService Selection;
     CommandStack Commands;
+    EditorComponentAdapterRegistry Adapters;
     std::unique_ptr<UiService> Ui;
     UiSurfaceId Surface;
     std::unique_ptr<InspectorSurface> Inspector;
@@ -688,4 +690,45 @@ TEST(InspectorSurface, ANameLongerThanTheFieldIsRefusedWithItsRowIntact)
 
     EXPECT_FALSE(harness.Commands.CanUndo()) << "an over-long name reached the component";
     EXPECT_EQ(harness.Rows()[name].Value, before) << "the refused text was left on screen";
+}
+
+namespace
+{
+// An adapter that claims a component's rows without drawing anything, which is
+// all the authored surface needs to know about it.
+class RowOwningAdapter final : public IEditorComponentAdapter
+{
+public:
+    explicit RowOwningAdapter(ComponentTypeId type) : Owned(type) {}
+    [[nodiscard]] ComponentTypeId Type() const override { return Owned; }
+    [[nodiscard]] bool AuthorsInspectorRows() const override { return true; }
+
+private:
+    ComponentTypeId Owned;
+};
+} // namespace
+
+TEST(InspectorSurface, AComponentWhoseAdapterOwnsItsRowsSaysSo)
+{
+    // The panel replaces this component's generic rows with the adapter's, so
+    // showing raw schema here would be two inspectors contradicting each other
+    // about the same component.
+    Harness harness;
+    harness.Adapters.Register(
+        std::make_unique<RowOwningAdapter>(ResolveComponentTypeId<StaticMeshComponent>()));
+    harness.Start();
+    harness.RegisterAssets();
+
+    const EntityId entity = harness.Scene().CreateEntity(Vec3d::Zero());
+    harness.Components().AddComponent<StaticMeshComponent>(entity, StaticMeshComponent{});
+    harness.Select(entity);
+    harness.Frame();
+
+    EXPECT_EQ(harness.AnyRowIndexOf("Mesh"), static_cast<std::size_t>(-1))
+        << "the adapter's component still presented its raw schema";
+
+    const std::size_t owned = harness.AnyRowIndexOf("StaticMesh");
+    ASSERT_NE(owned, static_cast<std::size_t>(-1))
+        << "the component vanished instead of saying where it is edited";
+    EXPECT_FALSE(harness.Rows()[owned].Editable);
 }

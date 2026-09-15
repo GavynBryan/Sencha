@@ -14,6 +14,7 @@
 #include <vector>
 
 class CommandStack;
+class EditorComponentAdapterRegistry;
 class SelectionService;
 class UiService;
 class WorldDocument;
@@ -54,11 +55,15 @@ struct IComponentSerializer;
 // document lists them, and choosing one raises an action naming an index. No
 // path is ever typed, and the document never learns what an asset is.
 //
-// What it does not do yet: a component that registers an EditorComponentAdapter
-// (the gameplay vocabularies, the world dock, brush modifiers) draws its own
-// rows in the ImGui panel, and here it falls back to its raw schema -- truthful,
-// but a tag id where the panel offers a picker. A list-arity asset field shows
-// and picks per slot, but slots cannot be added or removed from here.
+// A component whose adapter authors its own inspector rows -- the gameplay
+// vocabularies, the world dock, brush modifiers -- gets one row saying where it
+// is edited, not its raw schema. Those adapters replace the generic rows in the
+// panel too, so showing raw zone ids here would be two inspectors contradicting
+// each other about the same component. Presenting them properly is per-adapter
+// work each will have to earn; saying so is what this owes in the meantime.
+//
+// A list-arity asset field shows and picks per slot, but slots cannot be added
+// or removed from here.
 //
 // The ImGui inspector stays. This coexists with it until it is demonstrably
 // better, which is the only honest way to find out.
@@ -73,7 +78,8 @@ public:
                      UiSurfaceId surface,
                      WorldDocument& world,
                      SelectionService& selection,
-                     CommandStack& commands);
+                     CommandStack& commands,
+                     const EditorComponentAdapterRegistry& adapters);
 
     void Open();
     void Close();
@@ -159,6 +165,7 @@ private:
     WorldDocument& WorldDoc;
     SelectionService& Selection;
     CommandStack& Commands;
+    const EditorComponentAdapterRegistry& Adapters;
 
     UiSurfaceId Surface;
     UiScreenHandle Screen;

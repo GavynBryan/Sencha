@@ -87,6 +87,8 @@ namespace
             return ResolveComponentTypeId<BrushComponent>();
         }
 
+        bool AuthorsInspectorRows() const override { return true; }
+
         bool DrawInspector(EditorComponentInspectorContext& context) const override
         {
             const BrushComponent* brush = context.Scene.TryGetBrush(context.Entity);

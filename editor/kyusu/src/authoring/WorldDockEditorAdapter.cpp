@@ -249,6 +249,8 @@ public:
         });
     }
 
+    bool AuthorsInspectorRows() const override { return true; }
+
     bool DrawInspector(EditorComponentInspectorContext& context) const override
     {
         Registry& registry = context.Scene.GetRegistry();

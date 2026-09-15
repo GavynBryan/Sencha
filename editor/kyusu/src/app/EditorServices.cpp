@@ -1040,7 +1040,8 @@ void EditorServices::BuildAuthoredWorkflows()
     if (Workspace != nullptr && Commands != nullptr)
     {
         Inspector = std::make_unique<InspectorSurface>(
-            *ui, AuthoredSurface, Workspace->World, Workspace->Selection, *Commands);
+            *ui, AuthoredSurface, Workspace->World, Workspace->Selection, *Commands,
+            Workspace->Affordances->Registry());
     }
 
     // Openable from the console as well as the menu, so a startup script can
