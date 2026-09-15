@@ -103,6 +103,29 @@
           "hash": "b7f199cd34ab7fba"
         }
       ]
+    },
+    {
+      "source": "inspector.rml",
+      "input_fingerprint": "531fc6f50933bbfc",
+      "size": "1054",
+      "mtime": "-4648193700585067533",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "additional_sources": [
+        {
+          "source": "inspector.rcss",
+          "size": "3762",
+          "mtime": "-4648192313817085372"
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "asset://inspector.rml",
+          "file": ".cooked/inspector.rml.sui",
+          "type": "UiPackage",
+          "hash": "c2577a441de84be1"
+        }
+      ]
     }
   ]
 }

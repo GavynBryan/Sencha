@@ -399,10 +399,21 @@ refuse "1.2.3" without the document ever having had an opinion.
 A row's members are bound by pointer-to-member, so each is read-write: a control
 inside a repeated row edits the presentation copy directly, with no setter per
 row, and the value still goes no further than that copy until an action says to
-read it.
+read it. `UiRow::Editable` says whether the document should *offer* a control at
+all -- an identity, an asset handle, a leaf the schema cannot express. It is
+presentation metadata rather than a gate, because a struct member binds once for
+the whole array and not once per element; a document that offers a control
+anyway still only writes the copy, and the host is still what decides whether a
+value read back becomes a change.
 
 Arbitrary value structs are still not here. Rows cover what surfaces have asked
 for; a shape rows cannot express is a design question when it turns up.
+
+**Actions drain per screen.** `DrainActions(screen)` is what a controller that
+owns a screen calls. The no-argument overload takes every screen's, which is
+right for a host that owns them all and wrong the moment a second controller
+exists: whichever ran first would swallow the other's actions, and the other
+would simply never hear what its document asked for.
 
 ### The engine drives it
 
@@ -515,6 +526,13 @@ Kyusu watches its own UI root, so editing the editor's interface while the edito
 is running is a save-and-look loop rather than a restart.
 
 ## 13. Rendering destinations
+
+**One surface per host surface, not per controller.** Focus and modality are
+arbitrated within a surface, so a dialog opened on a surface of its own would
+take focus from nothing while the screens it meant to block kept taking clicks.
+Kyusu creates one surface for its window and hands it to every authored
+controller; the surface tracks the window's size each frame, because a retained
+document re-flows on a resize where a baked font atlas cannot.
 
 Today a `UiSurface` renders into the window's swapchain, in the `ApplicationUi`
 phase. That is the whole of what exists, and it is enough for a game's HUD and

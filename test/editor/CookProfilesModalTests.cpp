@@ -86,6 +86,9 @@ public:
         MountEditorContent(SENCHA_EDITOR_UI_DIR, Assets, Logging, nullptr);
         Ui = std::make_unique<UiService>(Logging, Assets.Assets, Assets.UiPackages,
                                          Assets.Fonts, nullptr, nullptr);
+        // The host's surface, as Kyusu's is: authored screens arbitrate focus
+        // within one, so every authored workflow shares the window's.
+        Surface = Ui->CreateSurface("test", RenderExtent{ 1280, 720 });
     }
 
     ~Harness()
@@ -97,7 +100,7 @@ public:
 
     void Start(ProjectDescriptor& project)
     {
-        Modal = std::make_unique<CookProfilesModal>(*Ui, &project);
+        Modal = std::make_unique<CookProfilesModal>(*Ui, Surface, &project);
         Modal->Open();
         Ui->Update();
     }
@@ -138,6 +141,7 @@ private:
     ComponentSerializerRegistry Serializers;
     RuntimeAssets Assets;
     std::unique_ptr<UiService> Ui;
+    UiSurfaceId Surface;
     std::unique_ptr<CookProfilesModal> Modal;
 };
 

@@ -23,6 +23,7 @@
 #include "render/EditorRenderFeature.h"
 #include "ui/ActiveMaterialPanel.h"
 #include "ui/CookProfilesModal.h"
+#include "ui/InspectorSurface.h"
 #include <ui/UiService.h>
 #include "ui/CookProfilesPanel.h"
 #include "ui/EditorConsolePanel.h"
@@ -120,10 +121,12 @@ EditorServices::EditorServices(Engine& engine,
     // Build the asset system and mount the project content (needs the project from
     // LoadGameModule). The document then serializes through it.
     InitAssets();
-    BuildAuthoredWorkflows();
     BuildSourceWatch();
 
     BuildDocument();
+    // After the document: an authored workflow presents editor state, and the
+    // inspector's is the selection and the command stack the document owns.
+    BuildAuthoredWorkflows();
     BuildPlayLoop();
     BuildFileActions();
     BuildInput();
@@ -1018,11 +1021,60 @@ void EditorServices::BuildAuthoredWorkflows()
     UiService* ui = EnginePtr != nullptr ? EnginePtr->TryUi() : nullptr;
     if (ui == nullptr || !ui->IsReady() || !Project.has_value())
         return;
-    ProfilesModal = std::make_unique<CookProfilesModal>(*ui, &*Project);
+
+    // The window, as authored UI sees it. One surface for every authored screen
+    // Kyusu opens, because focus and modality are arbitrated within a surface:
+    // a dialog on a surface of its own would take focus from nothing. Tracked
+    // against the window in ProcessFrame, since a retained document re-flows on
+    // a resize where a baked atlas cannot.
+    if (!AuthoredSurface.IsValid() && Window != nullptr)
+    {
+        AuthoredSurface = ui->CreateSurface(
+            "kyusu",
+            RenderExtent{ Window->GetExtent().Width, Window->GetExtent().Height });
+    }
+    if (!AuthoredSurface.IsValid())
+        return;
+
+    ProfilesModal = std::make_unique<CookProfilesModal>(*ui, AuthoredSurface, &*Project);
+    if (Workspace != nullptr && Commands != nullptr)
+    {
+        Inspector = std::make_unique<InspectorSurface>(
+            *ui, AuthoredSurface, Workspace->World, Workspace->Selection, *Commands);
+    }
 
     // Openable from the console as well as the menu, so a startup script can
     // bring it up -- which is how it gets captured and looked at without a
     // person driving a menu.
+    EnginePtr->Console().Registry().RegisterCommand({
+        .Name = "editor.inspector.authored",
+        .Owner = "editor",
+        .Usage = "editor.inspector.authored [close]",
+        .Help = "Open the authored inspector, the RML document that presents the "
+                "selected entity's components beside the ImGui panel.",
+        .Callback = [this](ConsoleExecutionContext&,
+                           std::span<const std::string> args) {
+            ConsoleResult result;
+            if (Inspector == nullptr)
+            {
+                result.Status = ConsoleStatus::ExecutionFailed;
+                result.Error("the authored inspector is unavailable");
+                return result;
+            }
+            if (!args.empty() && args[0] == "close")
+            {
+                Inspector->Close();
+                result.Info("closed the authored inspector");
+            }
+            else
+            {
+                Inspector->Open();
+                result.Info("opened the authored inspector");
+            }
+            return result;
+        },
+    });
+
     EnginePtr->Console().Registry().RegisterCommand({
         .Name = "editor.profiles.authored",
         .Owner = "editor",
@@ -1177,8 +1229,23 @@ void EditorServices::ProcessFrame()
     // publish what it should now show, so a click and its answer land in the
     // same frame. This hook runs inside FramePhase::Update, which is where the
     // engine guarantees that ordering.
+    // A retained document re-flows on a resize, so the surface follows the
+    // window rather than latching whatever size it was created at. Unchanged
+    // sizes cost a comparison.
+    if (AuthoredSurface.IsValid() && Window != nullptr)
+    {
+        if (UiService* ui = EnginePtr != nullptr ? EnginePtr->TryUi() : nullptr; ui != nullptr)
+        {
+            ui->SetSurfaceSize(AuthoredSurface,
+                               RenderExtent{ Window->GetExtent().Width,
+                                             Window->GetExtent().Height });
+        }
+    }
+
     if (ProfilesModal != nullptr)
         ProfilesModal->Update();
+    if (Inspector != nullptr)
+        Inspector->Update();
 
     if (Files)
     {

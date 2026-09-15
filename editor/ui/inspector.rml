@@ -1,0 +1,29 @@
+<rml>
+<head>
+    <title>Inspector</title>
+    <link type="text/rcss" href="inspector.rcss"/>
+</head>
+<body data-model="inspector">
+    <div id="panel">
+        <div id="titlebar">
+            <span id="title">{{entity_label}}</span>
+            <div id="close" data-event-click="inspector_close">x</div>
+        </div>
+
+        <div id="fields">
+            <div class="field" data-for="field : fields">
+                <span class="name">{{field.label}}</span>
+                <input class="value" type="text" data-if="field.editable"
+                       data-value="field.value"
+                       data-event-focus="inspector_begin(it_index)"
+                       data-event-blur="inspector_commit(it_index)"/>
+                <span class="value fixed" data-if="!field.editable">{{field.value}}</span>
+                <span class="origin">{{field.detail}}</span>
+            </div>
+            <div id="empty" data-if="!has_selection">Nothing selected.</div>
+        </div>
+
+        <div id="status">{{status}}</div>
+    </div>
+</body>
+</rml>

@@ -1,5 +1,7 @@
 #include "InspectorPanel.h"
 
+#include "RuntimeFieldText.h"
+
 #include "ui/chrome/ChromeHeader.h"
 
 #include "ui/EditorUiStyle.h"
@@ -44,29 +46,6 @@
 
 namespace
 {
-    // Row label from a dotted schema path: last segment, '_' to space, each word
-    // capitalized ("local.position" -> "Position", "play_on_active" -> "Play On
-    // Active"). Display-only; the widget id and serialization keep the raw path.
-    std::string HumanizeFieldLabel(const std::string& dotted)
-    {
-        const std::size_t dot = dotted.find_last_of('.');
-        std::string out = dotted.substr(dot == std::string::npos ? 0 : dot + 1);
-        bool boundary = true;
-        for (char& ch : out)
-        {
-            if (ch == '_')
-            {
-                ch = ' ';
-                boundary = true;
-                continue;
-            }
-            if (boundary && ch >= 'a' && ch <= 'z')
-                ch = static_cast<char>(ch - 'a' + 'A');
-            boundary = false;
-        }
-        return out;
-    }
-
     ImGuiDataType DataTypeFor(const RuntimeField& field)
     {
         switch (field.Scalar)
@@ -129,7 +108,7 @@ namespace
     // persisted string never changes with the display.
     std::string EnumOptionLabel(const EnumOption& option)
     {
-        return option.Display.empty() ? HumanizeFieldLabel(std::string(option.Name))
+        return option.Display.empty() ? HumanizeSchemaName(option.Name)
                                       : std::string(option.Display);
     }
 
@@ -181,7 +160,7 @@ namespace
     {
         ImGui::AlignTextToFramePadding();
         if (field.Label.empty())
-            ImGui::TextUnformatted(HumanizeFieldLabel(field.Name).c_str());
+            ImGui::TextUnformatted(HumanizeSchemaName(field.Name).c_str());
         else
             ImGui::TextUnformatted(field.Label.data(),
                                    field.Label.data() + field.Label.size());
@@ -639,7 +618,7 @@ void InspectorPanel::DrawAssetField(const RuntimeField& field, EntityId entity,
     if (assets == nullptr || catalog == nullptr)
     {
         ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(HumanizeFieldLabel(field.Name).c_str());
+        ImGui::TextUnformatted(HumanizeSchemaName(field.Name).c_str());
         ImGui::SameLine(labelWidth);
         ImGui::TextDisabled("<no asset system>");
         return;
@@ -850,7 +829,7 @@ void InspectorPanel::DrawDerivedComponents(EntityId entity)
     ImGui::Indent();
     for (const DerivedComponentRow& row : rows)
     {
-        const std::string label = HumanizeFieldLabel(std::string(row.Name));
+        const std::string label = HumanizeSchemaName(row.Name);
         ImGui::BulletText("%s", label.c_str());
         // The stable name on hover rather than in the row: it is a wire key,
         // and it is what a search of the source will actually find.
@@ -865,7 +844,7 @@ void InspectorPanel::DrawDerivedComponents(EntityId entity)
 
         ImGui::SameLine();
         ImGui::TextColored(EditorUi::TextDim, "from %s",
-                           HumanizeFieldLabel(std::string(owner->Name)).c_str());
+                           HumanizeSchemaName(owner->Name).c_str());
     }
     ImGui::Unindent();
 }

@@ -122,6 +122,7 @@ public:
     [[nodiscard]] UiActionId FindAction(UiScreenHandle screen, std::string_view name) const;
 
     [[nodiscard]] std::vector<UiAction> DrainActions();
+    [[nodiscard]] std::vector<UiAction> DrainActions(UiScreenHandle screen);
 
     // Records every live surface into an immutable draw frame. Runs in
     // ExtractRender: no GPU work, and the frames stay valid until the next call.

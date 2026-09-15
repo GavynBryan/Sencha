@@ -197,6 +197,15 @@ public:
     // document, an element, or anything the application owns.
     [[nodiscard]] std::vector<UiAction> DrainActions();
 
+    // One screen's, leaving every other screen's where they are.
+    //
+    // This is what a controller that owns a screen calls. The overload above
+    // takes everything, which is right for a host that owns every screen there
+    // is and wrong the moment a second controller exists: whichever ran first
+    // would swallow the other's actions and the other would simply never hear
+    // what its document asked for.
+    [[nodiscard]] std::vector<UiAction> DrainActions(UiScreenHandle screen);
+
     // -- inspection ----------------------------------------------------------
 
     // The measured content box of an element, after layout. Nullopt when the

@@ -123,6 +123,11 @@ std::vector<UiAction> UiService::DrainActions()
     return Runtime->DrainActions();
 }
 
+std::vector<UiAction> UiService::DrainActions(UiScreenHandle screen)
+{
+    return Runtime->DrainActions(screen);
+}
+
 void UiService::CloseScreen(UiScreenHandle screen)
 {
     Runtime->CloseScreen(screen);

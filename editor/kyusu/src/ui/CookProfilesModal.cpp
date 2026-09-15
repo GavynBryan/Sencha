@@ -14,9 +14,11 @@ namespace
 constexpr std::size_t Index(auto id) { return static_cast<std::size_t>(id); }
 } // namespace
 
-CookProfilesModal::CookProfilesModal(UiService& ui, ProjectDescriptor* project)
+CookProfilesModal::CookProfilesModal(UiService& ui, UiSurfaceId surface,
+                                     ProjectDescriptor* project)
     : Ui(ui)
     , Project(project)
+    , Surface(surface)
 {
 }
 
@@ -70,16 +72,8 @@ std::vector<CookProfile> CookProfilesModal::ResolvedProfiles() const
 
 void CookProfilesModal::Open()
 {
-    if (Screen.IsValid() || Project == nullptr)
+    if (Screen.IsValid() || Project == nullptr || !Surface.IsValid())
         return;
-
-    if (!Surface.IsValid())
-    {
-        // Full window. A dialog does not need a slice of the layout, and asking
-        // for one would mean solving render-target composition before finding
-        // out whether the workflow is any good.
-        Surface = Ui.CreateSurface("kyusu_modal", RenderExtent{ 1280, 720 });
-    }
 
     Screen = Ui.OpenScreen(Surface, Describe());
     if (!Screen.IsValid())
@@ -108,11 +102,8 @@ void CookProfilesModal::Update()
     if (!Screen.IsValid())
         return;
 
-    for (const UiAction& action : Ui.DrainActions())
+    for (const UiAction& action : Ui.DrainActions(Screen))
     {
-        if (action.Screen != Screen)
-            continue;
-
         if (action.Id == kSelect)
         {
             const std::size_t index = action.Arguments.empty()

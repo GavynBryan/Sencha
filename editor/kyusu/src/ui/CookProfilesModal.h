@@ -31,7 +31,9 @@ struct ProjectDescriptor;
 class CookProfilesModal
 {
 public:
-    CookProfilesModal(UiService& ui, ProjectDescriptor* project);
+    // The surface is the host's, not this dialog's: modality is arbitrated
+    // within a surface, so a dialog on its own would take focus from nothing.
+    CookProfilesModal(UiService& ui, UiSurfaceId surface, ProjectDescriptor* project);
 
     // Opens the dialog, or brings the open one back to the front of the host's
     // attention. Safe to call when already open.

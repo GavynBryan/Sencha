@@ -434,6 +434,7 @@ bool UiRuntime::BuildModel(Screen& screen, UiScreenHandle handle, Surface& surfa
             (void)row.RegisterMember("label", &UiRow::Label);
             (void)row.RegisterMember("value", &UiRow::Value);
             (void)row.RegisterMember("detail", &UiRow::Detail);
+            (void)row.RegisterMember("editable", &UiRow::Editable);
         }
         (void)constructor.RegisterArray<std::vector<UiRow>>();
     }
@@ -833,6 +834,24 @@ UiActionId UiRuntime::FindAction(UiScreenHandle screen, std::string_view name) c
 std::vector<UiAction> UiRuntime::DrainActions()
 {
     return std::exchange(PendingActions, {});
+}
+
+std::vector<UiAction> UiRuntime::DrainActions(UiScreenHandle screen)
+{
+    std::vector<UiAction> taken;
+    std::vector<UiAction> left;
+    left.reserve(PendingActions.size());
+    for (UiAction& action : PendingActions)
+    {
+        if (action.Screen == screen)
+            taken.push_back(std::move(action));
+        else
+            left.push_back(std::move(action));
+    }
+    // Order within each screen survives, which is what matters: a begin and the
+    // commit that follows it must not arrive the other way round.
+    PendingActions = std::move(left);
+    return taken;
 }
 
 bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)

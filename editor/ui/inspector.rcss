@@ -1,0 +1,204 @@
+@font-face
+{
+    src: "fonts/Inter-Regular.ttf";
+}
+
+/* The selected entity's schema as a document. Anchored to the right edge over
+   the ImGui shell it coexists with, and deliberately not docked: an authored
+   surface that had to participate in the dock layout would need a render target
+   to draw into, which is a separate piece of work. */
+
+body
+{
+    display: block;
+    width: 100%;
+    height: 100%;
+    /* Covers the window so the panel can anchor against it. Only the panel
+       itself counts as the pointer being over the UI. */
+    pointer-events: none;
+    font-family: Inter;
+    font-size: 13px;
+    color: #d8dce4ff;
+}
+
+#panel
+{
+    display: block;
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 340px;
+    height: 100%;
+    background-color: #1b1f27ff;
+    border-left: 1px #39414fff;
+    pointer-events: auto;
+}
+
+#titlebar
+{
+    display: block;
+    width: 100%;
+    height: 30px;
+    background-color: #232937ff;
+}
+
+#title
+{
+    display: inline-block;
+    margin-left: 10px;
+    line-height: 30px;
+    color: #9fb4d8ff;
+}
+
+#close
+{
+    display: block;
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 30px;
+    height: 30px;
+    text-align: center;
+    line-height: 30px;
+    color: #8d95a5ff;
+}
+
+#close:hover
+{
+    background-color: #38414fff;
+    color: #e8ecf4ff;
+}
+
+/* The scroll surface. A real entity carries more fields than fit, so this is
+   also where the clip path earns itself on a surface somebody uses. */
+#fields
+{
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 30px;
+    bottom: 26px;
+    width: 100%;
+    overflow-y: auto;
+}
+
+/* Three columns, placed rather than flowed. Inline boxes would inherit the
+   whitespace between the markup elements and the widths would stop adding up,
+   which is how a 340px panel ends up 12px wider than itself. */
+.field
+{
+    display: block;
+    position: relative;
+    width: 100%;
+    height: 24px;
+}
+
+.field:hover
+{
+    background-color: #222834ff;
+}
+
+.name
+{
+    display: block;
+    position: absolute;
+    left: 8px;
+    top: 0px;
+    width: 106px;
+    height: 24px;
+    line-height: 24px;
+    overflow: hidden;
+    color: #aab3c4ff;
+}
+
+.value
+{
+    box-sizing: border-box;
+    display: block;
+    position: absolute;
+    left: 118px;
+    top: 3px;
+    width: 128px;
+    height: 18px;
+    padding: 0px 4px;
+    background-color: #12161dff;
+    border: 1px #39414fff;
+    border-radius: 2px;
+    color: #e8ecf4ff;
+}
+
+.value:focus
+{
+    border-color: #4c7fd0ff;
+    background-color: #161b24ff;
+}
+
+/* A field the host will not take text for: an identity, an asset handle, a leaf
+   the schema cannot express. Shown, because an entity that quietly carries more
+   than the panel admits to is the surprise -- just not offered a box that would
+   snap back. */
+.value.fixed
+{
+    top: 0px;
+    height: 24px;
+    line-height: 24px;
+    padding: 0px 5px;
+    background-color: transparent;
+    border-color: transparent;
+    overflow: hidden;
+    color: #7f889aff;
+}
+
+.origin
+{
+    display: block;
+    position: absolute;
+    right: 8px;
+    top: 0px;
+    width: 78px;
+    height: 24px;
+    line-height: 24px;
+    text-align: right;
+    font-size: 11px;
+    overflow: hidden;
+    color: #5f6878ff;
+}
+
+#empty
+{
+    display: block;
+    padding: 12px 10px;
+    color: #7f889aff;
+}
+
+#status
+{
+    display: block;
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    height: 26px;
+    padding: 0px 10px;
+    line-height: 26px;
+    background-color: #161b24ff;
+    color: #9aa3b4ff;
+}
+
+scrollbarvertical
+{
+    width: 8px;
+    background-color: #12161dff;
+}
+
+scrollbarvertical sliderbar
+{
+    width: 8px;
+    background-color: #39414fff;
+    border-radius: 4px;
+}
+
+scrollbarvertical sliderbar:hover
+{
+    background-color: #4c5566ff;
+}

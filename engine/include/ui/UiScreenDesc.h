@@ -80,6 +80,17 @@ struct UiRow
     // type name, a validation hint.
     std::string Detail;
 
+    // Whether the document should offer a control for this row's value.
+    //
+    // Presentation metadata rather than a gate: a struct member is bound once
+    // for the whole array, so `value` is read-write on every row and a document
+    // that offers a control anyway can still write the copy. Nothing is lost by
+    // that -- a write reaches the presentation copy and stops there, and the
+    // host is still what decides whether a value read back becomes a change.
+    // This is how a row says which of its values are worth offering: an
+    // identity, a type it cannot express, a field it has no editor for.
+    bool Editable = false;
+
     friend bool operator==(const UiRow&, const UiRow&) = default;
 };
 
