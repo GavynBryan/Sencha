@@ -565,8 +565,23 @@ current docking architecture", which is a different project and not a
 prerequisite for the first. And by the time it exists, some surfaces will turn
 out not to want a docked successor at all -- project configuration among them.
 
-This is now the remaining prerequisite for replacing a visible Kyusu panel.
-Theme parity (§14) was the other, and it is done.
+This is the remaining *substrate* prerequisite for replacing a visible Kyusu
+panel. Theme parity (§14) was the other, and it is done.
+
+Per-panel parity is separate work and belongs to each panel. The authored
+inspector, for instance, now matches the ImGui one for anything the component
+schema describes -- numbers, enums, flags, inline text, asset references -- and
+does not yet present the six components whose `EditorComponentAdapter` authors
+its own rows, or offer adding and removing components. It says so on the rows
+concerned rather than showing something the panel would contradict. Neither
+inspector goes away until one is better at all of it.
+
+**Authored lengths are `dp`, not `px`.** A surface carries the display scale its
+host resolved, and the document engine applies that to the `dp` unit alone. A
+stylesheet written in `px` ignores the setting and renders half-size beside
+chrome that did not -- which is what Kyusu's authored surfaces did until it was
+measured. At scale 1 the two units are the same number, which is exactly why the
+mistake is invisible until somebody has a HiDPI display.
 
 ## 14. Themes
 
@@ -616,7 +631,48 @@ everything.
 Kyusu refreshes it at the same frame boundary that commits a theme, loads the
 chrome textures it names, and rebuilds the shell atlas -- one frame, one theme.
 
-## 15. What does not belong here
+## 15. What it costs
+
+Measured, because the plan's own rule is evidence before any caching, batching
+or persistent geometry work.
+
+Kyusu, `build-profile` (`-O3`), a 1280x720 window, the authored inspector open
+over a pawn prefab (about 45 rows across seven components), medians over 130
+frames past warm-up:
+
+| | 1x display scale | 2x |
+|---|---|---|
+| `Ui/Update` (apply + layout) | 0.030 ms | 0.032 ms |
+| `Ui/Extract` (record the draw frame) | 0.050 ms | 0.049 ms |
+| `Phase_ApplicationUi` GPU | 0.078 ms | 0.078 ms |
+| draw calls | 140 | 95 |
+| triangles | 2762 | 1932 |
+| generated-texture uploads, steady state | 0 | 0 |
+
+About 0.16 ms of a 6.8 ms frame, roughly 2%, and flat in display scale: at 2x
+the document re-flows and fewer rows fit, so the work goes down rather than up.
+Texture uploads settle at zero, which is the number that says the font atlas is
+not being re-minted.
+
+**So no caching and no batching.** 140 draw calls for one panel is one per
+element and looks alarming until it is measured; the pass that submits them
+costs 0.078 ms. Retained layout is doing its job -- an update that applies what
+a host published and re-lays-out costs 0.03 ms, which is why publishing every
+frame is a reasonable thing for a host to do.
+
+**Take these from a Release build or not at all.** The same run under the `dev`
+preset reports `Ui/Extract` at 0.76 ms -- sixteen times higher, and enough to
+justify optimisation work that the shipping binary does not need. The `profile`
+preset exists for this and says so in its own description.
+
+The counters are `RenderStats::Ui*` (draws, triangles, texture uploads and
+bytes), in the capture record and in the debug stats panel. `CpuScope::UiUpdate`
+and `UiExtract` are the two spans. `Ui/Update` is measured by `UiService` and
+reported during extraction rather than timed in place: the scope set is reset at
+the top of the extract phase, so a span timed during `Update` would be wiped
+before the frame record is taken.
+
+## 16. What does not belong here
 
 Kyusu's spatial interaction stays purpose-built: transform gizmos, resize
 handles, carve, clip planes and pins, face highlights, vertex/edge/face selection,
@@ -631,7 +687,7 @@ default substrate for surfaces meant to become part of Kyusu's designed
 experience, and those migrate one at a time -- the ImGui version staying until the
 replacement is better.
 
-## 16. Related documents
+## 17. Related documents
 
 | Doc | Relationship |
 |---|---|

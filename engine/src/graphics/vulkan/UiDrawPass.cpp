@@ -336,6 +336,10 @@ void UiDrawPass::ApplyUploads(const UiDrawFrame& ui)
         info.Usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
         info.DebugName = "ui_generated";
 
+        ++LastStats.TextureUploads;
+        LastStats.TextureUploadBytes +=
+            static_cast<std::uint64_t>(upload.Size.Width) * upload.Size.Height * 4u;
+
         const ImageHandle image = Services->Images->Create(info);
         if (!image.IsValid())
         {
@@ -414,6 +418,10 @@ void UiDrawPass::Draw(const FrameContext& frame, const UiDrawFrame& ui)
 {
     if (PipelineLayout == VK_NULL_HANDLE || Services == nullptr)
         return;
+
+    // Reset before the uploads, so a frame that draws nothing still reports the
+    // textures it materialized rather than carrying last frame's number.
+    LastStats = DrawStats{};
 
     ApplyUploads(ui);
     ApplyReleases(ui, frame);
@@ -573,5 +581,7 @@ void UiDrawPass::Draw(const FrameContext& frame, const UiDrawFrame& ui)
         vkCmdBindIndexBuffer(frame.Cmd, Services->Buffers->GetBuffer(indices.Buffer),
                              indices.Offset, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(frame.Cmd, static_cast<std::uint32_t>(blob.Indices.size()), 1, 0, 0, 0);
+        ++LastStats.DrawCalls;
+        LastStats.Triangles += static_cast<std::uint32_t>(blob.Indices.size() / 3);
     }
 }

@@ -122,6 +122,16 @@ public:
     // a system first.
     void Update();
 
+    // How long the last Update took, in milliseconds.
+    //
+    // Measured here rather than by whoever calls it because of where the call
+    // sits: the frame's profiling counters are reset at the top of the extract
+    // phase, so a span timed during Update is wiped before the frame record is
+    // taken. The engine reads this during extraction instead, which pairs the
+    // layout cost with the draw frame it produced -- the two halves of the same
+    // frame's UI work.
+    [[nodiscard]] double LastUpdateMilliseconds() const;
+
     // -- input ---------------------------------------------------------------
 
     // Offers one platform event to the UI. True when a surface consumed it,
@@ -241,4 +251,5 @@ public:
 private:
     // The document engine, and the only thing that knows what implements it.
     std::unique_ptr<UiRuntime> Runtime;
+    double LastUpdateMs = 0.0;
 };

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <graphics/RenderFeature.h>
+#include <profiling/RenderInstrumentation.h>
 #include <graphics/vulkan/UiDrawPass.h>
 
 #include <string_view>
@@ -42,6 +43,7 @@ public:
 private:
     UiService& Ui;
     TextureCache* Textures = nullptr;
+    const RenderInstrumentation* Instrumentation = nullptr;
     UiDrawPass Pass;
     bool Ready = false;
 };

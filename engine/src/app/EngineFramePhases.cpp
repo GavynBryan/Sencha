@@ -1,4 +1,5 @@
 #ifdef SENCHA_ENABLE_UI
+#include <profiling/CpuScopeTimings.h>
 #include <ui/UiService.h>
 #endif
 #include <app/Engine.h>
@@ -1047,7 +1048,19 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
         // Records each surface into an immutable frame. No GPU work; the render
         // feature reads what this produced.
         if (UiService* ui = engine.TryUi(); ui != nullptr)
+        {
+            // The update that fed this extraction, reported here because the
+            // scope set is reset at the top of this phase -- a span timed
+            // during Update would be wiped before the frame record is taken.
+            if (CpuScopeTimings* scopes = engine.Instrumentation().CpuScopes;
+                scopes != nullptr)
+            {
+                scopes->Add(CpuScope::UiUpdate, ui->LastUpdateMilliseconds());
+            }
+
+            CpuScopeTimer timer(engine.Instrumentation().CpuScopes, CpuScope::UiExtract);
             ui->ExtractRender();
+        }
 #endif
     });
 

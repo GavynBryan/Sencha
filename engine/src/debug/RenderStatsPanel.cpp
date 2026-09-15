@@ -88,6 +88,14 @@ void RenderStatsPanel::Draw()
 	ImGui::Text("  probe volumes resident %u", stats->ProbeVolumesResident);
 
 	ImGui::Separator();
+	ImGui::Text("Authored UI");
+	ImGui::Text("  draws %u  triangles %u", stats->UiDrawCalls, stats->UiTriangles);
+	// Steady state is zero uploads. A number that stays nonzero frame after
+	// frame is a document re-minting an atlas it already had.
+	ImGui::Text("  texture uploads %u  (%.1f KiB)", stats->UiTextureUploads,
+	            static_cast<float>(stats->UiTextureUploadBytes) / 1024.0f);
+
+	ImGui::Separator();
 	ImGui::Text("Shadows");
 	ImGui::Text("  slots %u  denied %u  views rendered %u  caster draws %u",
 	            stats->ShadowSlotsHeld, stats->ShadowRequestsDenied,

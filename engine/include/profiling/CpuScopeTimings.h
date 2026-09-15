@@ -31,6 +31,13 @@ enum class CpuScope : std::uint8_t
     ShadowRecord,
     // Recording the forward opaque pass.
     ForwardRecord,
+    // Authored UI: applying what hosts published, then laying out every open
+    // document. The cost of a retained layout is a fact about the documents
+    // that are open, not about the scene, so it gets its own span.
+    UiUpdate,
+    // Authored UI: recording every live surface into its immutable draw frame.
+    // No GPU work, which is exactly why no GPU scope can see it.
+    UiExtract,
     Count
 };
 

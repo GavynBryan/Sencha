@@ -6,7 +6,12 @@
 /* The selected entity's schema as a document. Structure only -- every colour
    comes from theme.rcss, which the host generates from the active editor theme
    and replaces at runtime. A rule here that painted something would be a colour
-   that could not follow a theme switch. */
+   that could not follow a theme switch.
+
+   Lengths are dp, not px. The surface carries the display scale the editor
+   resolved, and RmlUi applies it to dp alone -- a document authored in px is a
+   document that ignores the setting and renders half-size beside chrome that
+   did not. At scale 1 the two are the same number. */
 
 body
 {
@@ -17,7 +22,7 @@ body
        itself counts as the pointer being over the UI. */
     pointer-events: none;
     font-family: Inter;
-    font-size: 13px;
+    font-size: 13dp;
 }
 
 /* Anchored to the right edge over the ImGui shell it coexists with, and
@@ -29,9 +34,9 @@ body
     position: absolute;
     right: 0;
     top: 0;
-    width: 340px;
+    width: 340dp;
     height: 100%;
-    border-left-width: 1px;
+    border-left-width: 1dp;
     pointer-events: auto;
 }
 
@@ -39,14 +44,14 @@ body
 {
     display: block;
     width: 100%;
-    height: 30px;
+    height: 30dp;
 }
 
 #title
 {
     display: inline-block;
-    margin-left: 10px;
-    line-height: 30px;
+    margin-left: 10dp;
+    line-height: 30dp;
 }
 
 #close
@@ -55,10 +60,10 @@ body
     position: absolute;
     right: 0;
     top: 0;
-    width: 30px;
-    height: 30px;
+    width: 30dp;
+    height: 30dp;
     text-align: center;
-    line-height: 30px;
+    line-height: 30dp;
 }
 
 /* The scroll surface. A real entity carries more fields than fit, so this is
@@ -68,32 +73,32 @@ body
     display: block;
     position: absolute;
     left: 0;
-    top: 30px;
-    bottom: 26px;
+    top: 30dp;
+    bottom: 26dp;
     width: 100%;
     overflow-y: auto;
 }
 
 /* Three columns, placed rather than flowed. Inline boxes would inherit the
    whitespace between the markup elements and the widths would stop adding up,
-   which is how a 340px panel ends up 12px wider than itself. */
+   which is how a 340dp panel ends up 12dp wider than itself. */
 .field
 {
     display: block;
     position: relative;
     width: 100%;
-    height: 24px;
+    height: 24dp;
 }
 
 .name
 {
     display: block;
     position: absolute;
-    left: 8px;
-    top: 0px;
-    width: 106px;
-    height: 24px;
-    line-height: 24px;
+    left: 8dp;
+    top: 0dp;
+    width: 106dp;
+    height: 24dp;
+    line-height: 24dp;
     overflow: hidden;
 }
 
@@ -102,15 +107,15 @@ body
     box-sizing: border-box;
     display: block;
     position: absolute;
-    left: 118px;
-    top: 3px;
-    width: 128px;
-    height: 18px;
-    padding: 0px 4px;
+    left: 118dp;
+    top: 3dp;
+    width: 128dp;
+    height: 18dp;
+    padding: 0dp 4dp;
     /* Width here, colour in the theme: the shorthand would set both, and a
        document that set a border colour would not follow a theme switch. */
-    border-width: 1px;
-    border-radius: 2px;
+    border-width: 1dp;
+    border-radius: 2dp;
 }
 
 /* A field the host will not take text for: an identity, an asset handle, a leaf
@@ -121,12 +126,12 @@ body
    typed into, and an asset path needs every pixel it can get. */
 .value.fixed
 {
-    top: 0px;
-    width: 136px;
-    height: 24px;
-    line-height: 24px;
-    padding: 0px 5px;
-    border-width: 0px;
+    top: 0dp;
+    width: 136dp;
+    height: 24dp;
+    line-height: 24dp;
+    padding: 0dp 5dp;
+    border-width: 0dp;
     overflow: hidden;
 }
 
@@ -134,20 +139,20 @@ body
 {
     display: block;
     position: absolute;
-    right: 8px;
-    top: 0px;
-    width: 78px;
-    height: 24px;
-    line-height: 24px;
+    right: 8dp;
+    top: 0dp;
+    width: 78dp;
+    height: 24dp;
+    line-height: 24dp;
     text-align: right;
-    font-size: 11px;
+    font-size: 11dp;
     overflow: hidden;
 }
 
 #empty
 {
     display: block;
-    padding: 12px 10px;
+    padding: 12dp 10dp;
 }
 
 #status
@@ -157,20 +162,20 @@ body
     left: 0;
     bottom: 0;
     width: 100%;
-    height: 26px;
-    padding: 0px 10px;
-    line-height: 26px;
+    height: 26dp;
+    padding: 0dp 10dp;
+    line-height: 26dp;
 }
 
 scrollbarvertical
 {
-    width: 8px;
+    width: 8dp;
 }
 
 scrollbarvertical sliderbar
 {
-    width: 8px;
-    border-radius: 4px;
+    width: 8dp;
+    border-radius: 4dp;
 }
 
 /* The asset picker. Anchored inside the panel, because it is choosing a value
@@ -199,32 +204,32 @@ scrollbarvertical sliderbar
 {
     display: block;
     position: absolute;
-    left: 16px;
-    top: 60px;
-    width: 308px;
-    height: 320px;
-    border-width: 1px;
-    border-radius: 3px;
+    left: 16dp;
+    top: 60dp;
+    width: 308dp;
+    height: 320dp;
+    border-width: 1dp;
+    border-radius: 3dp;
 }
 
 #picker_title
 {
     display: block;
     width: 100%;
-    height: 26px;
-    padding: 0px 10px;
-    line-height: 26px;
+    height: 26dp;
+    padding: 0dp 10dp;
+    line-height: 26dp;
 }
 
 #picker_list
 {
     display: block;
     position: absolute;
-    left: 6px;
-    top: 32px;
-    width: 296px;
-    height: 282px;
-    border-width: 1px;
+    left: 6dp;
+    top: 32dp;
+    width: 296dp;
+    height: 282dp;
+    border-width: 1dp;
     overflow-y: auto;
 }
 
@@ -232,8 +237,8 @@ scrollbarvertical sliderbar
 {
     display: block;
     width: 100%;
-    height: 22px;
-    padding: 0px 8px;
-    line-height: 22px;
+    height: 22dp;
+    padding: 0dp 8dp;
+    line-height: 22dp;
     overflow: hidden;
 }

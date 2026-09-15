@@ -41,7 +41,24 @@ public:
     // one memcpy and a persistent cache would cost invalidation logic forever.
     void Draw(const FrameContext& frame, const UiDrawFrame& ui);
 
+    // What the last Draw actually submitted. Published by the feature rather
+    // than written here, the same way the forward pass reports its own totals:
+    // a pass does not know whether anybody is counting.
+    struct DrawStats
+    {
+        std::uint32_t DrawCalls = 0;
+        std::uint32_t Triangles = 0;
+        // Generated textures materialized this frame -- font atlases and
+        // decorator images. Steady state is zero; a number that stays nonzero
+        // is a document re-minting what it already had.
+        std::uint32_t TextureUploads = 0;
+        std::uint64_t TextureUploadBytes = 0;
+    };
+    [[nodiscard]] const DrawStats& GetLastDrawStats() const { return LastStats; }
+
 private:
+    DrawStats LastStats;
+
     struct GeneratedTexture
     {
         ImageHandle Image{};

@@ -1,5 +1,7 @@
 #include <ui/UiService.h>
 
+#include <chrono>
+
 #include "UiRuntime.h"
 
 UiService::UiService(LoggingProvider& logging,
@@ -145,7 +147,16 @@ bool UiService::IsScreenOpen(UiScreenHandle screen) const
 
 void UiService::Update()
 {
+    const auto started = std::chrono::steady_clock::now();
     Runtime->Update();
+    const std::chrono::duration<double, std::milli> elapsed =
+        std::chrono::steady_clock::now() - started;
+    LastUpdateMs = elapsed.count();
+}
+
+double UiService::LastUpdateMilliseconds() const
+{
+    return LastUpdateMs;
 }
 
 bool UiService::ProcessPlatformEvent(const SDL_Event& event)

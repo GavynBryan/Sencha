@@ -1240,6 +1240,13 @@ void EditorServices::ProcessFrame()
             ui->SetSurfaceSize(AuthoredSurface,
                                RenderExtent{ Window->GetExtent().Width,
                                              Window->GetExtent().Height });
+            // The same display scale the shell resolved. Without this an
+            // authored surface stays at 1.0 while the ImGui chrome beside it
+            // scales, so on a HiDPI display the two halves of the same editor
+            // disagree about how big a pixel is. Unchanged values cost a
+            // comparison; a change re-flows the documents, which is the whole
+            // reason this is live rather than latched.
+            ui->SetSurfaceScale(AuthoredSurface, EditorUi::UiScale);
         }
     }
 

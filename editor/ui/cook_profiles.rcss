@@ -6,7 +6,10 @@
 /* Kyusu's first authored surface. Structure only -- every colour comes from
    theme.rcss, which the host generates from the active editor theme and
    replaces at runtime, so this dialog follows a theme switch without knowing
-   one happened. */
+   one happened.
+
+   Lengths are dp, not px: the surface carries the editor's display scale and
+   RmlUi applies it to dp alone. At scale 1 the two are the same number. */
 
 body
 {
@@ -17,7 +20,7 @@ body
        being over the UI. The dialog and its controls opt back in. */
     pointer-events: none;
     font-family: Inter;
-    font-size: 14px;
+    font-size: 14dp;
 }
 
 /* Dims the editor behind, and swallows clicks aimed past the dialog -- which is
@@ -36,12 +39,12 @@ body
 {
     display: block;
     position: absolute;
-    left: 280px;
-    top: 140px;
-    width: 720px;
-    height: 460px;
-    border-width: 1px;
-    border-radius: 4px;
+    left: 280dp;
+    top: 140dp;
+    width: 720dp;
+    height: 460dp;
+    border-width: 1dp;
+    border-radius: 4dp;
     pointer-events: auto;
 }
 
@@ -49,25 +52,25 @@ body
 {
     display: block;
     width: 100%;
-    height: 34px;
+    height: 34dp;
 }
 
 #title
 {
     display: inline-block;
-    margin-left: 14px;
-    margin-top: 8px;
-    font-size: 13px;
+    margin-left: 14dp;
+    margin-top: 8dp;
+    font-size: 13dp;
 }
 
 #close
 {
     display: block;
     position: absolute;
-    right: 8px;
-    top: 6px;
-    width: 22px;
-    height: 22px;
+    right: 8dp;
+    top: 6dp;
+    width: 22dp;
+    height: 22dp;
     text-align: center;
     tab-index: auto;
 }
@@ -77,20 +80,20 @@ body
     display: block;
     position: absolute;
     left: 0;
-    top: 34px;
-    width: 720px;
-    height: 372px;
+    top: 34dp;
+    width: 720dp;
+    height: 372dp;
 }
 
 #list
 {
     display: block;
     position: absolute;
-    left: 12px;
-    top: 12px;
-    width: 240px;
-    height: 348px;
-    border-width: 1px;
+    left: 12dp;
+    top: 12dp;
+    width: 240dp;
+    height: 348dp;
+    border-width: 1dp;
     overflow-y: auto;
 }
 
@@ -98,9 +101,9 @@ body
 {
     display: block;
     width: 100%;
-    height: 26px;
-    padding-left: 10px;
-    padding-top: 5px;
+    height: 26dp;
+    padding-left: 10dp;
+    padding-top: 5dp;
     tab-index: auto;
 }
 
@@ -108,46 +111,46 @@ body
 {
     display: block;
     position: absolute;
-    left: 268px;
-    top: 12px;
-    width: 440px;
-    height: 348px;
+    left: 268dp;
+    top: 12dp;
+    width: 440dp;
+    height: 348dp;
 }
 
 .label
 {
     display: block;
-    margin-top: 10px;
-    margin-bottom: 4px;
-    font-size: 12px;
+    margin-top: 10dp;
+    margin-bottom: 4dp;
+    font-size: 12dp;
 }
 
 #name
 {
     display: block;
-    width: 420px;
-    height: 26px;
-    padding-left: 8px;
-    border-width: 1px;
+    width: 420dp;
+    height: 26dp;
+    padding-left: 8dp;
+    border-width: 1dp;
     tab-index: auto;
 }
 
 #steps
 {
     display: block;
-    width: 420px;
-    height: 200px;
-    border-width: 1px;
+    width: 420dp;
+    height: 200dp;
+    border-width: 1dp;
     overflow-y: auto;
 }
 
 .step
 {
     display: block;
-    height: 22px;
-    padding-left: 10px;
-    padding-top: 3px;
-    font-size: 12px;
+    height: 22dp;
+    padding-left: 10dp;
+    padding-top: 3dp;
+    font-size: 12dp;
 }
 
 #footer
@@ -155,35 +158,35 @@ body
     display: block;
     position: absolute;
     left: 0;
-    top: 406px;
-    width: 720px;
-    height: 54px;
+    top: 406dp;
+    width: 720dp;
+    height: 54dp;
 }
 
 #status
 {
     display: block;
     position: absolute;
-    left: 14px;
-    top: 18px;
-    width: 420px;
-    font-size: 12px;
+    left: 14dp;
+    top: 18dp;
+    width: 420dp;
+    font-size: 12dp;
 }
 
 .button
 {
     display: block;
     position: absolute;
-    top: 13px;
-    width: 96px;
-    height: 28px;
-    padding-top: 6px;
+    top: 13dp;
+    width: 96dp;
+    height: 28dp;
+    padding-top: 6dp;
     text-align: center;
-    border-width: 1px;
-    border-radius: 3px;
+    border-width: 1dp;
+    border-radius: 3dp;
     tab-index: auto;
 }
 
 /* The one on the right is Save. */
-.button + .button { right: 14px; }
-.button { right: 122px; }
+.button + .button { right: 14dp; }
+.button { right: 122dp; }
