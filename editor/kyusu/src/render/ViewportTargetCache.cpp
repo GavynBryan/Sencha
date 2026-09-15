@@ -55,7 +55,11 @@ ViewportTargetCache::Entry& ViewportTargetCache::FindOrAdd(ViewportId id)
 
     RenderTargetDesc scene{};
     scene.ColorFormat = kColorFormat;
-    scene.DepthFormat = Services.DepthFormat;
+    // Depth only, deliberately not the swapchain's format. That one carries a
+    // stencil aspect for authored UI's clip mask, and a viewport target has no
+    // use for one -- inheriting it would make every barrier on these images a
+    // combined-aspect barrier for a feature they do not have.
+    scene.DepthFormat = VK_FORMAT_D32_SFLOAT;
     // ImGui binds this one itself, through the presenter.
     scene.Read = RenderTargetRead::Sampled;
     scene.DebugName = "viewport_color";

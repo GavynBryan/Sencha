@@ -2,12 +2,13 @@
 <head>
     <link type="text/rcss" href="golden.rcss"/>
 </head>
-<body>
+<body data-model="golden">
     <div id="opaque"/>
     <div id="translucent"/>
     <div id="rounded"/>
     <div id="invisible"/>
     <div id="label">Sencha authored UI</div>
     <div id="clipper"><div id="overflowing"/></div>
+    <div id="meter"><div id="fill" data-style-width="health + 'px'"/></div>
 </body>
 </rml>

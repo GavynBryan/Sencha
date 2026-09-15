@@ -2,11 +2,14 @@
 
 #include <graphics/RenderExtent.h>
 #include <render/ui/UiDrawFrame.h>
+#include <ui/UiAction.h>
+#include <ui/UiScreenDesc.h>
 #include <ui/UiScreenHandle.h>
 #include <ui/UiSurface.h>
 
 #include <memory>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -86,13 +89,20 @@ public:
 
     // -- screens -------------------------------------------------------------
 
-    // Opens the cooked package at `packagePath` (an "asset://..." virtual path)
-    // on `surface`. The screen takes its own lease on the package and on every
-    // resource the package's table names, and drops them when it closes.
+    // Opens a screen: the cooked package, what it presents, and what it can ask
+    // for, all declared together because the document engine binds a model
+    // before it parses the document that reads it.
     //
-    // Invalid handle if the package is missing, is not a cooked .sui, or names
-    // a resource that cannot be resolved. The failure is logged once with the
-    // authoring detail; callers check the handle rather than an error code.
+    // The screen takes its own lease on the package and on every resource the
+    // package's table names, and drops them when it closes.
+    //
+    // Invalid handle if the package is missing, is not a cooked .sui, names a
+    // resource that cannot be resolved, or declares a model the document engine
+    // refuses. The failure is logged once with the authoring detail; callers
+    // check the handle rather than an error code.
+    [[nodiscard]] UiScreenHandle OpenScreen(UiSurfaceId surface, const UiScreenDesc& desc);
+
+    // A package with nothing to present and nothing to ask for.
     [[nodiscard]] UiScreenHandle OpenScreen(UiSurfaceId surface, std::string_view packagePath);
     void CloseScreen(UiScreenHandle screen);
     [[nodiscard]] bool IsScreenOpen(UiScreenHandle screen) const;
@@ -118,6 +128,32 @@ public:
     // until the next one, and self-contained, so reading it never reaches back
     // into a document.
     [[nodiscard]] const std::vector<UiDrawFrame>& Frames() const;
+
+    // -- presentation model --------------------------------------------------
+
+    // Publishes a value. Returns whether it changed: an unchanged set costs a
+    // comparison and marks nothing dirty, so a host may publish every frame
+    // without re-evaluating every binding that reads the property.
+    bool SetValue(UiScreenHandle screen, UiModelPropertyId property, UiValue value);
+    [[nodiscard]] UiValue GetValue(UiScreenHandle screen, UiModelPropertyId property) const;
+
+    // Resolve once and keep the id. Both are linear over a screen's declared
+    // list, which is short and walked at setup, never per frame.
+    [[nodiscard]] UiModelPropertyId FindProperty(UiScreenHandle screen,
+                                                 std::string_view path) const;
+    [[nodiscard]] UiActionId FindAction(UiScreenHandle screen, std::string_view name) const;
+
+    // -- semantic actions ----------------------------------------------------
+
+    // Takes everything documents have asked for since the last call.
+    //
+    // Drained by host controllers at the top of the frame's update, before the
+    // engine updates the UI -- so an action, the state change it causes, and
+    // the republished value all land in one frame rather than three.
+    //
+    // The returned actions are owned copies. Nothing in one refers to a
+    // document, an element, or anything the application owns.
+    [[nodiscard]] std::vector<UiAction> DrainActions();
 
     // -- inspection ----------------------------------------------------------
 

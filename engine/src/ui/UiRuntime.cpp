@@ -5,6 +5,7 @@
 #include "rml/RmlSystemBridge.h"
 
 #include <RmlUi/Core.h>
+#include <RmlUi/Core/DataModelHandle.h>
 
 #include <assets/font/FontFace.h>
 #include <assets/font/FontFaceCache.h>
@@ -16,6 +17,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <filesystem>
 #include <utility>
 
@@ -25,6 +27,58 @@ namespace
 // process would silently fight over them. Refusing the second is a clearer
 // failure than the corruption that follows from allowing it.
 std::atomic<bool> g_RuntimeLive{ false };
+
+// The document engine's variant is what a binding reads and writes; UiValue is
+// what crosses the public boundary. Converting at exactly these two points is
+// what stops the engine's type appearing anywhere a host can see.
+void ToRmlVariant(const UiValue& value, Rml::Variant& out)
+{
+    switch (value.Kind())
+    {
+    case UiValueKind::Bool:   out = Rml::Variant(value.AsBool()); break;
+    case UiValueKind::Int:    out = Rml::Variant(static_cast<int>(value.AsInt())); break;
+    case UiValueKind::Float:  out = Rml::Variant(static_cast<float>(value.AsFloat())); break;
+    case UiValueKind::String: out = Rml::Variant(Rml::String(value.AsString())); break;
+    // Presented as text: an identity is for a document to pass back, not to do
+    // arithmetic on, and every id fits a string exactly where a float would
+    // start losing digits above 2^53.
+    case UiValueKind::Id:     out = Rml::Variant(Rml::ToString(value.AsId())); break;
+    case UiValueKind::None:
+    default:                  out = Rml::Variant(); break;
+    }
+}
+
+UiValue FromRmlVariant(const Rml::Variant& value)
+{
+    switch (value.GetType())
+    {
+    case Rml::Variant::BOOL:   return UiValue(value.Get<bool>());
+    case Rml::Variant::CHAR:
+    case Rml::Variant::INT:    return UiValue(static_cast<std::int64_t>(value.Get<int>()));
+    case Rml::Variant::INT64:  return UiValue(value.Get<std::int64_t>());
+    case Rml::Variant::FLOAT:  return UiValue(static_cast<double>(value.Get<float>()));
+    case Rml::Variant::DOUBLE: return UiValue(value.Get<double>());
+    case Rml::Variant::STRING: return UiValue(value.Get<Rml::String>());
+    default:                   return UiValue();
+    }
+}
+
+// A data-model name the document engine can actually bind.
+//
+// Names are identifiers because a data expression reads a dot as member access:
+// "pause.quit" is not a callback called "pause.quit", it is the member "quit"
+// of something called "pause". Binding one silently fails, and the first sign
+// is a button that does nothing, so it is refused here with the reason instead.
+bool IsBindableName(std::string_view name)
+{
+    if (name.empty())
+        return false;
+    if (std::isdigit(static_cast<unsigned char>(name.front())) != 0)
+        return false;
+    return std::all_of(name.begin(), name.end(), [](char c) {
+        return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
+    });
+}
 
 Rml::Vector2i ToRmlDimensions(RenderExtent size)
 {
@@ -102,6 +156,7 @@ void UiRuntime::Shutdown()
     }
     Surfaces.clear();
     DrawFrames.clear();
+    PendingActions.clear();
     ActiveScreen = nullptr;
 }
 
@@ -286,11 +341,96 @@ bool UiRuntime::AcquireResources(const UiPackage& package,
     return true;
 }
 
-UiScreenHandle UiRuntime::OpenScreen(UiSurfaceId surface, std::string_view packagePath)
+bool UiRuntime::BuildModel(Screen& screen, UiScreenHandle handle, Surface& surface)
+{
+    Rml::DataModelConstructor constructor = surface.Context->CreateDataModel(screen.ModelName);
+    if (!constructor)
+    {
+        Log.Error("UiRuntime: could not create data model '{}'", screen.ModelName);
+        return false;
+    }
+
+    // The model is registered on the context the moment it is created, so every
+    // failure below has to take it back off. Leaving it there would make the
+    // next screen declaring the same model name fail to create one -- a
+    // refused open poisoning the next attempt, which is far harder to read than
+    // the original error.
+    const auto fail = [&] {
+        surface.Context->RemoveDataModel(screen.ModelName);
+        return false;
+    };
+
+    for (std::size_t i = 0; i < screen.Properties.size(); ++i)
+    {
+        if (!IsBindableName(screen.Properties[i].Path))
+        {
+            Log.Error("UiRuntime: '{}' is not a bindable property name. A data expression "
+                      "reads '.' as member access, so a name needs to be an identifier "
+                      "(letters, digits, underscore, not starting with a digit)",
+                      screen.Properties[i].Path);
+            return fail();
+        }
+
+        // Bound by function rather than by address. A pointer binding would
+        // need one C++ variable per declared type and stable storage for every
+        // one of them; a getter routes every kind through the same path and
+        // keeps the value where the dirty comparison already lives.
+        //
+        // The capture is the screen slot and an index, not a pointer into the
+        // property vector: the vector is rebuilt when a slot is reused, and a
+        // captured pointer would survive that.
+        Screen* slot = &screen;
+        const std::size_t index = i;
+        if (!constructor.BindFunc(
+                screen.Properties[i].Path,
+                [slot, index](Rml::Variant& out) { ToRmlVariant(slot->Properties[index].Value, out); }))
+        {
+            Log.Error("UiRuntime: data model '{}' refused the property '{}'",
+                      screen.ModelName, screen.Properties[i].Path);
+            return fail();
+        }
+    }
+
+    for (std::size_t i = 0; i < screen.ActionNames.size(); ++i)
+    {
+        if (!IsBindableName(screen.ActionNames[i]))
+        {
+            Log.Error("UiRuntime: '{}' is not a bindable action name, for the same reason "
+                      "a property is not: a data expression reads '.' as member access",
+                      screen.ActionNames[i]);
+            return fail();
+        }
+
+        const UiActionId id = UiActionIdAt(i);
+        if (!constructor.BindEventCallback(
+                screen.ActionNames[i],
+                [this, handle, id](Rml::DataModelHandle, Rml::Event&,
+                                   const Rml::VariantList& arguments) {
+                    UiAction action;
+                    action.Screen = handle;
+                    action.Id = id;
+                    action.Arguments.reserve(arguments.size());
+                    for (const Rml::Variant& argument : arguments)
+                        action.Arguments.push_back(FromRmlVariant(argument));
+                    PendingActions.push_back(std::move(action));
+                }))
+        {
+            Log.Error("UiRuntime: data model '{}' refused the action '{}'",
+                      screen.ModelName, screen.ActionNames[i]);
+            return fail();
+        }
+    }
+
+    screen.Model = std::make_unique<Rml::DataModelHandle>(constructor.GetModelHandle());
+    return true;
+}
+
+UiScreenHandle UiRuntime::OpenScreen(UiSurfaceId surface, const UiScreenDesc& desc)
 {
     if (!Ready)
         return {};
 
+    const std::string_view packagePath = desc.PackagePath;
     Surface* slot = ResolveSurface(surface);
     if (slot == nullptr)
     {
@@ -328,25 +468,21 @@ UiScreenHandle UiRuntime::OpenScreen(UiSurfaceId surface, std::string_view packa
     pending.TexturesByAssetPath = std::move(screenTextures);
     pending.FontsByAssetPath = std::move(screenFonts);
 
-    Rml::ElementDocument* document = nullptr;
-    {
-        // The file interface answers from this package, and the resolver from
-        // this screen, for exactly as long as the load runs -- and from nothing
-        // at all outside it.
-        const RmlPackageFileSource::ActivePackageScope scope(*FileSource, *package);
-        ActiveScreen = &pending;
-        document = slot->Context->LoadDocument(package->RootDocumentName);
-        ActiveScreen = nullptr;
-    }
+    pending.ModelName = desc.ModelName;
+    pending.ActionNames = desc.Actions;
+    pending.Properties.reserve(desc.Properties.size());
+    for (const UiModelProperty& property : desc.Properties)
+        pending.Properties.push_back(BoundProperty{ property.Path, property.Initial });
 
-    if (document == nullptr)
-    {
-        Log.Error("UiRuntime: '{}' did not parse into a document", packagePath);
-        return {};
-    }
-
-    document->Show();
-
+    // The screen takes its slot before the model binds and before the document
+    // loads, and everything after this point works against the slot rather than
+    // against a local.
+    //
+    // It has to. A model binding captures the screen it reads from, and a
+    // capture of a local that is later moved into the slot is a dangling
+    // pointer the moment the document evaluates it. An action raised during the
+    // load also needs the handle the host will match against, which means that
+    // handle must already be decided.
     std::size_t index = Screens.size();
     for (std::size_t i = 0; i < Screens.size(); ++i)
     {
@@ -363,12 +499,41 @@ UiScreenHandle UiRuntime::OpenScreen(UiSurfaceId surface, std::string_view packa
     const std::uint32_t generation = screen.Generation;
     screen = std::move(pending);
     screen.Generation = generation;
+
+    const UiScreenHandle handle{ static_cast<std::uint32_t>(index + 1), generation };
+
+    if (!desc.ModelName.empty() && !BuildModel(screen, handle, *slot))
+    {
+        CloseScreenSlot(screen);
+        return {};
+    }
+
+    Rml::ElementDocument* document = nullptr;
+    {
+        // The file interface answers from this package, and the resolver from
+        // this screen, for exactly as long as the load runs -- and from nothing
+        // at all outside it.
+        const RmlPackageFileSource::ActivePackageScope scope(*FileSource, *package);
+        ActiveScreen = &screen;
+        document = slot->Context->LoadDocument(package->RootDocumentName);
+        ActiveScreen = nullptr;
+    }
+
+    if (document == nullptr)
+    {
+        Log.Error("UiRuntime: '{}' did not parse into a document", packagePath);
+        CloseScreenSlot(screen);
+        return {};
+    }
+
+    document->Show();
+
     screen.Document = document;
     screen.Package = std::move(packageLease);
     screen.Resources = std::move(resourceLeases);
     screen.Live = true;
 
-    return UiScreenHandle{ static_cast<std::uint32_t>(index + 1), screen.Generation };
+    return handle;
 }
 
 void UiRuntime::CloseScreenSlot(Screen& screen)
@@ -383,6 +548,21 @@ void UiRuntime::CloseScreenSlot(Screen& screen)
 
     // After the document, so a resource is released only once nothing is laid
     // out against it.
+    // The model outlives the document only long enough to be removed: its
+    // bindings capture this screen's slot, and a context that still holds them
+    // after the slot is reused would feed the next screen's values into a
+    // document that is gone.
+    if (screen.Model != nullptr)
+    {
+        if (Surface* slot = ResolveSurface(screen.Surface);
+            slot != nullptr && slot->Context != nullptr)
+        {
+            slot->Context->RemoveDataModel(screen.ModelName);
+        }
+        screen.Model.reset();
+    }
+    screen.Properties.clear();
+    screen.ActionNames.clear();
     screen.TexturesByAssetPath.clear();
     screen.FontsByAssetPath.clear();
     screen.Resources.clear();
@@ -405,6 +585,64 @@ bool UiRuntime::IsScreenOpen(UiScreenHandle screen) const
 }
 
 // -- frame -------------------------------------------------------------------
+
+bool UiRuntime::SetValue(UiScreenHandle screen, UiModelPropertyId property, UiValue value)
+{
+    Screen* slot = ResolveScreen(screen);
+    if (slot == nullptr || !property.IsValid() || property.Value > slot->Properties.size())
+        return false;
+
+    BoundProperty& bound = slot->Properties[property.Value - 1];
+    // Compare before marking dirty. A model that dirties everything every frame
+    // re-evaluates every binding reading it, which for a HUD publishing one
+    // unchanged number is the whole cost of having a HUD.
+    if (bound.Value == value)
+        return false;
+
+    bound.Value = std::move(value);
+    if (slot->Model != nullptr)
+        slot->Model->DirtyVariable(bound.Path);
+    return true;
+}
+
+UiValue UiRuntime::GetValue(UiScreenHandle screen, UiModelPropertyId property) const
+{
+    const Screen* slot = ResolveScreen(screen);
+    if (slot == nullptr || !property.IsValid() || property.Value > slot->Properties.size())
+        return {};
+    return slot->Properties[property.Value - 1].Value;
+}
+
+UiModelPropertyId UiRuntime::FindProperty(UiScreenHandle screen, std::string_view path) const
+{
+    const Screen* slot = ResolveScreen(screen);
+    if (slot == nullptr)
+        return {};
+    for (std::size_t i = 0; i < slot->Properties.size(); ++i)
+    {
+        if (slot->Properties[i].Path == path)
+            return UiPropertyIdAt(i);
+    }
+    return {};
+}
+
+UiActionId UiRuntime::FindAction(UiScreenHandle screen, std::string_view name) const
+{
+    const Screen* slot = ResolveScreen(screen);
+    if (slot == nullptr)
+        return {};
+    for (std::size_t i = 0; i < slot->ActionNames.size(); ++i)
+    {
+        if (slot->ActionNames[i] == name)
+            return UiActionIdAt(i);
+    }
+    return {};
+}
+
+std::vector<UiAction> UiRuntime::DrainActions()
+{
+    return std::exchange(PendingActions, {});
+}
 
 void UiRuntime::Update()
 {

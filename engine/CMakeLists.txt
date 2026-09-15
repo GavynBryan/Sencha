@@ -316,6 +316,10 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     # sections are layout the module compiled against.
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/config/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/ecs/*.h"
+    # The authored UI surface: a game holds UiScreenHandle, UiValue and the ids
+    # by value and reaches the service through an inline Engine accessor, so
+    # these decide layout a module compiles against.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/ui/*.h"
 )
 list(APPEND SENCHA_ABI_FINGERPRINT_HEADERS ${SENCHA_ENGINE_COMPONENT_HEADERS})
 list(REMOVE_DUPLICATES SENCHA_ABI_FINGERPRINT_HEADERS)

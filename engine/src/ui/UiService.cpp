@@ -53,9 +53,41 @@ float UiService::GetSurfaceScale(UiSurfaceId surface) const
     return Runtime->GetSurfaceScale(surface);
 }
 
+UiScreenHandle UiService::OpenScreen(UiSurfaceId surface, const UiScreenDesc& desc)
+{
+    return Runtime->OpenScreen(surface, desc);
+}
+
 UiScreenHandle UiService::OpenScreen(UiSurfaceId surface, std::string_view packagePath)
 {
-    return Runtime->OpenScreen(surface, packagePath);
+    UiScreenDesc desc;
+    desc.PackagePath = std::string(packagePath);
+    return Runtime->OpenScreen(surface, desc);
+}
+
+bool UiService::SetValue(UiScreenHandle screen, UiModelPropertyId property, UiValue value)
+{
+    return Runtime->SetValue(screen, property, std::move(value));
+}
+
+UiValue UiService::GetValue(UiScreenHandle screen, UiModelPropertyId property) const
+{
+    return Runtime->GetValue(screen, property);
+}
+
+UiModelPropertyId UiService::FindProperty(UiScreenHandle screen, std::string_view path) const
+{
+    return Runtime->FindProperty(screen, path);
+}
+
+UiActionId UiService::FindAction(UiScreenHandle screen, std::string_view name) const
+{
+    return Runtime->FindAction(screen, name);
+}
+
+std::vector<UiAction> UiService::DrainActions()
+{
+    return Runtime->DrainActions();
 }
 
 void UiService::CloseScreen(UiScreenHandle screen)

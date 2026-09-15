@@ -91,5 +91,12 @@
 // themselves. SceneSpawnService::IsDespawnRequested reports an ended request
 // before the pump, and AsyncTaskQueue::Stop ends the cross-frame lane. The
 // engine stops that lane right after Game::OnShutdown returns, so a module may
-// not submit async work from its shutdown hook or later.
-#define SENCHA_GAME_ABI_VERSION 20u
+// not submit async work from its shutdown hook or later. v21: the authored UI
+// layer reaches modules. Engine::Ui() hands back a UiService, and a game opens
+// screens, publishes presentation values and drains semantic actions through
+// it; the engine drives update, extraction and rendering, and the ui/ headers
+// join the ABI fingerprint because a module holds those handles and values by
+// value. A screen holds asset leases, so it lives inside the content stack's
+// span: the engine shuts the UI down right after Game::OnShutdown returns, and
+// a module must not hold a screen past its own shutdown hook.
+#define SENCHA_GAME_ABI_VERSION 21u

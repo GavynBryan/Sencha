@@ -299,7 +299,62 @@ destroyed. A lease outliving the cache it references calls `Detach` on a
 destroyed owner, which is a pure-virtual call at exit that points nowhere near
 its cause.
 
-## 10. The content path
+## 10. Presentation models and semantic actions
+
+A screen declares both when it opens, because the document engine binds a model
+before it parses the document that reads it -- and an action the host never
+declared is one it has no code to handle, better refused at open than dispatched
+at runtime.
+
+```cpp
+UiScreenDesc desc;
+desc.PackagePath = "asset://ui/hud.rml";
+desc.ModelName   = "hud";
+desc.Properties  = { { "health", UiValue(100.0) }, { "weapon", UiValue("none") } };
+desc.Actions     = { "pause_quit" };
+```
+
+Ids are positional (`UiPropertyIdAt(0)`), so a host names them as constants
+beside the description that declares them and never parses a path per frame.
+`FindProperty`/`FindAction` resolve by name once for a host that would rather.
+
+**Setting compares before it dirties.** A value equal to the one already there
+marks nothing, so a HUD may publish every frame without re-evaluating every
+binding that reads the property. `SetValue` returns whether anything changed.
+
+**Actions carry copies and nothing else.** No element pointer, no DOM node, no
+entity, no editor object, no callback the document registered. An action says
+what was asked; turning `inspector.set_position` into a validated, undoable
+command is the controller's job, which is what keeps undo, transactions and
+scripting outside the presentation layer.
+
+**Names must be identifiers.** A data expression reads `.` as member access, so
+`pause.quit` is not a callback of that name -- it is the member `quit` of
+something called `pause`, and binding it silently does nothing. The runtime
+refuses a name it cannot bind, with the reason, at open. Use `pause_quit`.
+
+Geometry bound from a model goes through `data-style-width` and friends, not an
+interpolated `style=""`: the engine substitutes data expressions in text and in
+`data-*` attributes only.
+
+Arrays and value structs are **not** here yet. They need the engine's array
+registration rather than the value variant, and nothing presents one, so they
+land with the surface that first needs them.
+
+### The engine drives it
+
+`Engine::Ui()` from `Game::OnStart` onward. The engine calls the runtime's update
+inside `FramePhase::Update` **immediately after** dispatching the game's
+frame-update systems -- explicitly, not by registering a system that happens to
+sort later. Host controllers drain actions, change state and republish values in
+their own systems; the engine then applies what they published and lays out. That
+is what makes an action taken this frame visible in this frame, and it is a
+guarantee the engine owes rather than one a module could arrange for itself.
+
+Extraction follows in `ExtractRender`, and the engine stages the render feature
+for every host, so a game gets authored UI drawing without assembling anything.
+
+## 11. The content path
 
 ```
 .rml + the .rcss files it imports
@@ -344,7 +399,7 @@ Registering them a second time from the cooked metadata would be a competing
 source of truth for what a face is called, so the runtime does not; the `.sfont`
 metadata is the default for registering a face programmatically instead.
 
-## 11. What does not belong here
+## 12. What does not belong here
 
 Kyusu's spatial interaction stays purpose-built: transform gizmos, resize
 handles, carve, clip planes and pins, face highlights, vertex/edge/face selection,
@@ -359,7 +414,7 @@ default substrate for surfaces meant to become part of Kyusu's designed
 experience, and those migrate one at a time -- the ImGui version staying until the
 replacement is better.
 
-## 12. Related documents
+## 13. Related documents
 
 | Doc | Relationship |
 |---|---|

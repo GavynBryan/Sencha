@@ -516,12 +516,22 @@ void Renderer::RecordSwapchainPhases(const VulkanFrame& frame)
     {
         DepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     }
+    // One layout for the whole attachment, decided by whether it carries a
+    // stencil. A barrier whose aspect mask includes stencil may not use a
+    // depth-only layout, and a rendering scope's attachments have to agree with
+    // the layout the image is actually in -- so the barrier, the depth
+    // attachment and the stencil attachment all read from here.
+    const bool depthHasStencil = DepthTarget->HasStencil();
+    const VkImageLayout depthLayout = depthHasStencil
+        ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+        : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+
     if (DepthTarget->GetImage() != VK_NULL_HANDLE)
     {
         VulkanBarriers::ImageTransition t{};
         t.Image = DepthTarget->GetImage();
         t.OldLayout = DepthLayout;
-        t.NewLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        t.NewLayout = depthLayout;
         // One depth image serves every frame in flight, and a frame only
         // waits on the fence of the frame two slots back, so this barrier is
         // what orders these depth writes after the previous frame's. That
@@ -534,11 +544,11 @@ void Renderer::RecordSwapchainPhases(const VulkanFrame& frame)
         t.SrcAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         t.DstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT
                     | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        t.AspectMask = DepthTarget->HasStencil()
+        t.AspectMask = depthHasStencil
             ? (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
             : VK_IMAGE_ASPECT_DEPTH_BIT;
         VulkanBarriers::TransitionImage(frame.CommandBuffer, t);
-        DepthLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        DepthLayout = depthLayout;
     }
 
     VkRenderingAttachmentInfo colorAttach{};
@@ -552,7 +562,7 @@ void Renderer::RecordSwapchainPhases(const VulkanFrame& frame)
     VkRenderingAttachmentInfo depthAttach{};
     depthAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     depthAttach.imageView = DepthTarget->GetView();
-    depthAttach.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    depthAttach.imageLayout = depthLayout;
     depthAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttach.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttach.clearValue.depthStencil = { 1.0f, 0 };
@@ -561,10 +571,8 @@ void Renderer::RecordSwapchainPhases(const VulkanFrame& frame)
     // zero so authored UI's clip mask starts from a known state rather than
     // from whatever the previous frame left; nothing else in the scope tests
     // against it.
-    const bool hasStencil = DepthTarget->HasStencil()
-        && DepthTarget->GetView() != VK_NULL_HANDLE;
+    const bool hasStencil = depthHasStencil && DepthTarget->GetView() != VK_NULL_HANDLE;
     VkRenderingAttachmentInfo stencilAttach = depthAttach;
-    stencilAttach.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     stencilAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     stencilAttach.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 

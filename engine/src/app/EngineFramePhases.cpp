@@ -1,3 +1,6 @@
+#ifdef SENCHA_ENABLE_UI
+#include <ui/UiService.h>
+#endif
 #include <app/Engine.h>
 #include <app/Game.h>
 #include <input/SdlGamepadCapture.h>
@@ -796,6 +799,18 @@ void Engine::RegisterSimulationFramePhases()
         };
         engine.Schedule().RunFrameUpdate(update);
 
+#ifdef SENCHA_ENABLE_UI
+        // Explicitly after the game's frame-update systems, and explicitly not
+        // by registering a system that happens to sort later. Host controllers
+        // drain semantic actions, change state, and republish presentation
+        // values in RunFrameUpdate; this applies what they published and lays
+        // out. That is what makes an action taken this frame visible in this
+        // frame rather than the next, and it is a guarantee the engine owes
+        // rather than one a module could arrange for itself.
+        if (UiService* ui = engine.TryUi(); ui != nullptr)
+            ui->Update();
+#endif
+
         AudioContext audio{
             .Config = config,
             .Runtime = *ctx.Runtime,
@@ -1008,6 +1023,13 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
             .Partitions = zones.Visible,
         };
         engine.Schedule().RunExtractRender(extract);
+
+#ifdef SENCHA_ENABLE_UI
+        // Records each surface into an immutable frame. No GPU work; the render
+        // feature reads what this produced.
+        if (UiService* ui = engine.TryUi(); ui != nullptr)
+            ui->ExtractRender();
+#endif
     });
 
     driver.Register(FramePhase::Render, [&engine, &windows, windowId, &renderer, &frames, &swapchain](PhaseContext& ctx) {

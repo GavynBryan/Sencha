@@ -30,8 +30,15 @@ public:
     // contents never survive a pass. A single-plane session (no depth) is what
     // the bloom chain uses, where each pass's destination becomes the next
     // pass's sampled source.
+    //
+    // `depthFormat` decides the aspect and layout the depth barrier uses. A
+    // combined depth/stencil image must be transitioned with both aspects and
+    // into the combined layout; barriering one as depth-only is a validation
+    // error and, on some drivers, corruption rather than a warning. Defaulting
+    // to UNDEFINED keeps a caller with a depth-only target saying nothing.
     RenderTargetSession(VkCommandBuffer cmd, VkImage color, VkImageLayout* layout,
-                        VkImage depth = VK_NULL_HANDLE);
+                        VkImage depth = VK_NULL_HANDLE,
+                        VkFormat depthFormat = VK_FORMAT_UNDEFINED);
 
     ~RenderTargetSession() { End(); }
 

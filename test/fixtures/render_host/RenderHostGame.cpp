@@ -90,12 +90,14 @@ struct ScriptedCameraPathSystem
 
 }  // namespace
 
-// Authored UI, hosted the way an application hosts it rather than the way the
-// engine might eventually offer it: this fixture builds its own UiService over
-// the asset caches it already has, drives update and extraction from its own
-// registered system, and stages the render feature itself. That is the second
-// half of what the golden scene proves -- not just that authored UI draws, but
-// that a plain Sencha application can put it on screen without engine privilege.
+// Authored UI, hosted the way a game hosts it: the engine owns the service and
+// drives its update, extraction and rendering, so a host only says which
+// package to open and what it presents.
+//
+// It used to build its own UiService to prove a plain application could. The
+// engine provides one now, and the document engine's interfaces are
+// process-global, so a second would be refused -- which is the right answer: a
+// host that wants authored UI asks the engine for it.
 class UiHostSystem
 {
 public:
@@ -109,26 +111,17 @@ public:
     {
         if (!Initialised)
             Initialise();
-        if (Ui != nullptr)
-            Ui->Update();
-    }
 
-    void ExtractRender(RenderExtractContext&)
-    {
-        if (Ui != nullptr)
-            Ui->ExtractRender();
+        // Where a game's controller would act on what the document asked for.
+        // Drained every frame so the queue cannot grow unbounded, and drained
+        // here -- before the engine updates the UI -- so a response published
+        // in answer lands in the same frame.
+        UiService* ui = EnginePtr->TryUi();
+        if (ui == nullptr)
+            return;
+        for (const UiAction& action : ui->DrainActions())
+            (void)action;
     }
-
-    // Called from Game::OnShutdown, while the asset caches are still alive.
-    // Waiting for this object's own destruction would release the screen's
-    // leases against caches that are already gone.
-    void Shutdown()
-    {
-        if (Ui != nullptr)
-            Ui->Shutdown();
-    }
-
-    [[nodiscard]] UiService* Service() { return Ui.get(); }
 
 private:
     void Initialise()
@@ -137,35 +130,33 @@ private:
         // frame, or the log becomes the failure.
         Initialised = true;
 
-        if (PackagePath.empty())
+        UiService* ui = EnginePtr->TryUi();
+        if (ui == nullptr || !ui->IsReady() || PackagePath.empty())
             return;
-
-        RuntimeAssets& assets = EnginePtr->Content().Assets();
-        Ui = std::make_unique<UiService>(EnginePtr->Logging(), assets.Assets,
-                                         assets.UiPackages, assets.Fonts,
-                                         assets.Textures.get());
-        if (!Ui->IsReady())
-        {
-            Ui.reset();
-            return;
-        }
 
         const VkExtent2D extent = EnginePtr->Graphics().Swapchain.GetExtent();
-        Surface = Ui->CreateSurface("render_host", RenderExtent{ extent.width, extent.height });
-        if (!Ui->OpenScreen(Surface, PackagePath).IsValid())
-        {
-            Ui.reset();
-            return;
-        }
+        const UiSurfaceId surface =
+            ui->CreateSurface("render_host", RenderExtent{ extent.width, extent.height });
 
-        EnginePtr->Graphics().MainRenderer.AddFeature(
-            std::make_unique<UiRenderFeature>(*Ui, assets.Textures.get()));
+        UiScreenDesc desc;
+        desc.PackagePath = PackagePath;
+        desc.ModelName = "golden";
+        desc.Properties = { UiModelProperty{ "health", UiValue(0.0) } };
+        desc.Actions = { "golden_ack" };
+
+        Screen = ui->OpenScreen(surface, desc);
+        if (!Screen.IsValid())
+            return;
+
+        // A fixed value, because a golden image has to be the same every run --
+        // but published through the model rather than authored into the
+        // document, so the capture is a statement about that whole path.
+        (void)ui->SetValue(Screen, UiPropertyIdAt(0), UiValue(210.0));
     }
 
     Engine* EnginePtr = nullptr;
     std::string PackagePath;
-    std::unique_ptr<UiService> Ui;
-    UiSurfaceId Surface;
+    UiScreenHandle Screen;
     bool Initialised = false;
 };
 
@@ -222,7 +213,7 @@ public:
     void OnRegisterSystems(SystemRegisterContext& ctx) override
     {
         ctx.Schedule.Register<ScriptedCameraPathSystem>(Camera, ScriptedCamera);
-        UiHost = &ctx.Schedule.Register<UiHostSystem>(GetEngine(), UiPackagePath);
+        ctx.Schedule.Register<UiHostSystem>(GetEngine(), UiPackagePath);
         // Clip playback: a posed skinned mesh is one of the things the goldens
         // watch, and nothing else in this host would advance it.
         RegisterAnimationSystems(ctx.Schedule);
@@ -230,12 +221,6 @@ public:
 
     void OnShutdown(GameShutdownContext&) override
     {
-        // Before anything else here: the UI holds asset leases, and this is the
-        // last point at which the caches behind them are guaranteed alive.
-        if (UiHost != nullptr)
-            UiHost->Shutdown();
-        UiHost = nullptr;
-
         World& world = GetEngine().World().Entities();
         world.GetResource<ActiveCameraService>().SetActive(EntityId{});
         if (Camera.IsValid() && world.IsAlive(Camera))
@@ -247,7 +232,6 @@ private:
     EntityId Camera;
     bool ScriptedCamera = false;
     std::string UiPackagePath;
-    UiHostSystem* UiHost = nullptr;
 };
 
 extern "C" SENCHA_GAME_EXPORT Game* SenchaCreateGameModule()

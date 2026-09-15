@@ -4,6 +4,8 @@
 #include <core/logging/Logger.h>
 #include <graphics/RenderExtent.h>
 #include <assets/font/FontFaceHandle.h>
+#include <ui/UiAction.h>
+#include <ui/UiScreenDesc.h>
 #include <ui/UiScreenHandle.h>
 #include <ui/UiSurface.h>
 
@@ -22,6 +24,7 @@ namespace Rml
 {
 class Context;
 class ElementDocument;
+class DataModelHandle;
 }
 
 class AssetSystem;
@@ -80,11 +83,19 @@ public:
     void SetSurfaceScale(UiSurfaceId surface, float scale);
     [[nodiscard]] float GetSurfaceScale(UiSurfaceId surface) const;
 
-    [[nodiscard]] UiScreenHandle OpenScreen(UiSurfaceId surface, std::string_view packagePath);
+    [[nodiscard]] UiScreenHandle OpenScreen(UiSurfaceId surface, const UiScreenDesc& desc);
     void CloseScreen(UiScreenHandle screen);
     [[nodiscard]] bool IsScreenOpen(UiScreenHandle screen) const;
 
     void Update();
+
+    [[nodiscard]] bool SetValue(UiScreenHandle screen, UiModelPropertyId property, UiValue value);
+    [[nodiscard]] UiValue GetValue(UiScreenHandle screen, UiModelPropertyId property) const;
+    [[nodiscard]] UiModelPropertyId FindProperty(UiScreenHandle screen,
+                                                 std::string_view path) const;
+    [[nodiscard]] UiActionId FindAction(UiScreenHandle screen, std::string_view name) const;
+
+    [[nodiscard]] std::vector<UiAction> DrainActions();
 
     // Records every live surface into an immutable draw frame. Runs in
     // ExtractRender: no GPU work, and the frames stay valid until the next call.
@@ -130,6 +141,19 @@ private:
     // that package's table names, so closing it releases exactly what opening
     // it acquired -- and two screens built from one package each hold their own,
     // rather than racing over a reference the cache would have to arbitrate.
+    // One bound property: its declared path, the value the document currently
+    // reads, and whether that value changed since the document last saw it.
+    //
+    // Storage lives here rather than in the document engine because a set has
+    // to compare against the previous value to decide whether anything is
+    // dirty -- and a model that marks everything dirty every frame re-evaluates
+    // every binding that reads it, which is the cost this exists to avoid.
+    struct BoundProperty
+    {
+        std::string Path;
+        UiValue Value;
+    };
+
     struct Screen
     {
         UiSurfaceId Surface;
@@ -143,6 +167,13 @@ private:
         std::string ResourceRoot;
         std::unordered_map<std::string, TextureHandle> TexturesByAssetPath;
         std::unordered_map<std::string, FontFaceHandle> FontsByAssetPath;
+
+        std::string ModelName;
+        std::vector<BoundProperty> Properties;
+        std::vector<std::string> ActionNames;
+        // Null until a model is constructed, which only happens for a screen
+        // that declared one.
+        std::unique_ptr<Rml::DataModelHandle> Model;
 
         std::uint32_t Generation = 1;
         bool Live = false;
@@ -169,6 +200,12 @@ private:
 
     void CloseScreenSlot(Screen& screen);
 
+    // Constructs the data model a screen's document will bind to. Must run
+    // before the document loads: the engine resolves a document's data-model
+    // attribute at parse, and a model that appears afterwards is a model the
+    // document never saw.
+    [[nodiscard]] bool BuildModel(Screen& screen, UiScreenHandle handle, Surface& surface);
+
     Logger& Log;
     AssetSystem& Assets;
     UiPackageCache& Packages;
@@ -184,6 +221,10 @@ private:
 
     std::vector<Surface> Surfaces;
     std::vector<Screen> Screens;
+
+    // What documents asked for since the host last drained. Owned copies, so a
+    // host can hold them across the frame boundary that produced them.
+    std::vector<UiAction> PendingActions;
 
     // Rebuilt every extract, one per live surface, and handed to the render
     // feature by reference -- the same publication shape the render pipeline
