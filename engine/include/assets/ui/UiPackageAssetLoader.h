@@ -19,7 +19,6 @@ class LoggingProvider;
 // textures are warm before a document built from it opens, and the open screen
 // takes its own leases against those warm caches.
 //
-// No reload operation yet -- see FontFaceAssetLoader for why.
 //=============================================================================
 class UiPackageAssetLoader final : public IAssetStager
 {
@@ -30,6 +29,11 @@ public:
                                           IAssetSource& source) override;
 
     [[nodiscard]] UiPackageHandle CommitTyped(AssetStaging&& staged);
+
+    // Hot reload: swaps the cached package in place. Whether an open document
+    // rebuilds is the runtime's decision, not this one -- a screen has state
+    // worth carrying across and this layer knows nothing about it.
+    [[nodiscard]] bool CommitReload(AssetStaging&& staged);
 
 private:
     Logger& Log;

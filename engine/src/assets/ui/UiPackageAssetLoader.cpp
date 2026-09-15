@@ -87,3 +87,23 @@ UiPackageHandle UiPackageAssetLoader::CommitTyped(AssetStaging&& staged)
 
     return Cache->Register(staged.Record.Path, std::move(*package));
 }
+
+bool UiPackageAssetLoader::CommitReload(AssetStaging&& staged)
+{
+    if (Cache == nullptr || !staged.IsValid())
+        return false;
+
+    auto* package = std::any_cast<UiPackage>(&staged.Payload);
+    if (package == nullptr)
+        return false;
+
+    // Reported again on reload: an author who just introduced one wants to hear
+    // about it now, not at the next cold start.
+    for (const UiUnsupportedFeature& note : package->Unsupported)
+    {
+        Log.Warn("UiPackage '{}': '{}' at {}:{} is outside the supported rendering profile",
+                 staged.Record.Path, note.Feature, note.SourcePath, note.Line);
+    }
+
+    return Cache->ReloadInPlace(staged.Record.Path, std::move(*package));
+}

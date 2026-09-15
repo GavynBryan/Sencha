@@ -42,6 +42,30 @@ const UiPackage* UiPackageCache::Get(UiPackageHandle handle) const
     return entry != nullptr ? &entry->Package : nullptr;
 }
 
+bool UiPackageCache::ReloadInPlace(std::string_view path, UiPackage package)
+{
+    if (!package.IsValid())
+    {
+        Log.Error("UiPackageCache: refusing to reload '{}' with an invalid package", path);
+        return false;
+    }
+
+    const UiPackageHandle handle = FindRegisteredHandle(path);
+    UiPackageEntry* entry = handle.IsValid() ? Resolve(handle) : nullptr;
+    if (entry == nullptr)
+        return false;
+
+    entry->Package = std::move(package);
+    ++entry->ReloadVersion;
+    return true;
+}
+
+std::uint64_t UiPackageCache::GetReloadVersion(UiPackageHandle handle) const
+{
+    const UiPackageEntry* entry = Resolve(handle);
+    return entry != nullptr ? entry->ReloadVersion : 0;
+}
+
 // -- AssetCache CRTP hooks ---------------------------------------------------
 
 void UiPackageCache::OnFree(UiPackageEntry& entry)

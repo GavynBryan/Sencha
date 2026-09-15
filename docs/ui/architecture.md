@@ -450,7 +450,59 @@ Registering them a second time from the cooked metadata would be a competing
 source of truth for what a face is called, so the runtime does not; the `.sfont`
 metadata is the default for registering a face programmatically instead.
 
-## 12. Rendering destinations
+## 12. The authoring loop
+
+```
+edit .rml / .rcss
+        |  source watcher
+        v
+  is it an asset?  ── no ──>  which cooks recorded it as an input?
+        | yes                          |  (CookedSourceEntry::AdditionalSources)
+        v                              v
+   re-cook it  <───────────────  re-cook each of those
+        v
+   .sui reload  ->  UiPackageCache::ReloadInPlace  (slot, handle, refcount kept)
+        v
+   open screens rebuild
+```
+
+A `.rcss` is not an asset -- it has no runtime identity, and a document that
+imports it carries a copy. So editing one reaches the runtime the same way it
+reaches the cook: by asking which cooks recorded it as an input. The index
+already knows, because the cook had to record it to get freshness right (§11),
+so this is a lookup rather than a guess. Without it, editing a shared stylesheet
+would watch the file, notice the change, and do nothing.
+
+**What survives a rebuild** is the point, not the rebuild itself:
+
+- the presentation model -- every value and list the host published, so a HUD
+  does not forget the health it was showing because somebody moved a margin;
+- the screen handle and every id resolved from it, so a host that resolved its
+  properties once at open does not start addressing the wrong ones;
+- the screen's place in its surface, its modal flag, and the leases it holds.
+
+Focus and scroll are **not** carried yet. They are cheap to add and were left
+until a surface complains, which is the same rule the rest of this followed.
+
+The document engine caches parsed stylesheets, templates and font faces by name,
+so all three are dropped before a rebuild -- otherwise it answers from what it
+parsed the first time and the edit never appears. Font faces are keyed by family
+rather than by the asset they came from, so there is no way to drop one without
+dropping the set; a rebuild immediately re-requests each through the file
+interface, which answers from the leases the screens hold.
+
+**The previous-valid-document guarantee comes from the cook, not from here.** A
+source that fails to cook produces no artifact, so the package in the cache is
+untouched and no reload is triggered: the document already open keeps running
+and the author sees the cook error. What this layer handles is the rarer case of
+a package that cooked but could not construct, which leaves the screen open and
+empty with the reason logged, once -- the version is stamped before the attempt
+so a broken document is not retried at frame rate.
+
+Kyusu watches its own UI root, so editing the editor's interface while the editor
+is running is a save-and-look loop rather than a restart.
+
+## 13. Rendering destinations
 
 Today a `UiSurface` renders into the window's swapchain, in the `ApplicationUi`
 phase. That is the whole of what exists, and it is enough for a game's HUD and
@@ -483,7 +535,7 @@ current docking architecture", which is a different project and not a
 prerequisite for the first. And by the time it exists, some surfaces will turn
 out not to want a docked successor at all -- project configuration among them.
 
-## 13. What does not belong here
+## 14. What does not belong here
 
 Kyusu's spatial interaction stays purpose-built: transform gizmos, resize
 handles, carve, clip planes and pins, face highlights, vertex/edge/face selection,
@@ -498,7 +550,7 @@ default substrate for surfaces meant to become part of Kyusu's designed
 experience, and those migrate one at a time -- the ImGui version staying until the
 replacement is better.
 
-## 14. Related documents
+## 15. Related documents
 
 | Doc | Relationship |
 |---|---|

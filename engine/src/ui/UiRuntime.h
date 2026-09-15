@@ -208,6 +208,13 @@ private:
         // that declared one.
         std::unique_ptr<Rml::DataModelHandle> Model;
 
+        // What the open document was built from, and everything needed to
+        // build it again. A reload rebuilds the document; it must not make the
+        // host re-describe a screen it already described.
+        std::string PackagePath;
+        std::uint64_t PackageVersion = 0;
+        UiScreenDesc Description;
+
         std::uint32_t Generation = 1;
         bool Live = false;
     };
@@ -232,6 +239,16 @@ private:
     [[nodiscard]] std::string AssetPathFor(const Screen& screen, std::string_view source) const;
 
     void CloseScreenSlot(Screen& screen);
+
+    // Rebuilds any open document whose package has been reloaded underneath it,
+    // carrying across the state the document itself does not own.
+    void ReloadChangedScreens();
+    [[nodiscard]] bool RebuildScreen(Screen& screen, UiScreenHandle handle);
+
+    // Faces a document declared and the engine has already ingested. A face
+    // whose bytes changed has to be dropped before a rebuild re-requests it, or
+    // the engine answers from what it parsed the first time.
+    void ForgetFontResources();
 
     // Constructs the data model a screen's document will bind to. Must run
     // before the document loads: the engine resolves a document's data-model

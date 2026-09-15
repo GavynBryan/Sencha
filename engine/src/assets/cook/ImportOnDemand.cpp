@@ -24,7 +24,7 @@ namespace
     {
     };
 
-    constexpr std::string_view kIndexFileName = "index.json";
+    constexpr std::string_view kIndexFileName = kCookedCacheIndexFileName;
 
     bool SetError(std::string* error, std::string message)
     {

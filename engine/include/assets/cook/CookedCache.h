@@ -109,6 +109,11 @@ struct CookedSourceEntry
 // become frequent.
 inline constexpr uint32_t kCookedCacheIndexVersion = 8;
 
+// The index's name inside <assets-root>/.cooked/. Part of the cache's contract
+// rather than a detail of whoever writes it: the hot reloader reads the same
+// file to find which cooks read an edited input.
+inline constexpr std::string_view kCookedCacheIndexFileName = "index.json";
+
 class CookedCacheIndex
 {
 public:

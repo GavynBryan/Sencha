@@ -6,6 +6,7 @@
 #include "rml/RmlSystemBridge.h"
 
 #include <RmlUi/Core.h>
+#include <RmlUi/Core/Factory.h>
 #include <SDL3/SDL_events.h>
 #include <RmlUi/Core/DataModelHandle.h>
 
@@ -517,6 +518,8 @@ UiScreenHandle UiRuntime::OpenScreen(UiSurfaceId surface, const UiScreenDesc& de
     pending.FontsByAssetPath = std::move(screenFonts);
 
     pending.Modal = desc.Modal;
+    pending.PackagePath = std::string(packagePath);
+    pending.Description = desc;
     pending.ModelName = desc.ModelName;
     pending.ActionNames = desc.Actions;
     pending.Arrays.reserve(desc.Arrays.size());
@@ -590,6 +593,8 @@ UiScreenHandle UiRuntime::OpenScreen(UiSurfaceId surface, const UiScreenDesc& de
     screen.Document = document;
     screen.Package = std::move(packageLease);
     screen.Resources = std::move(resourceLeases);
+    screen.PackageVersion = Packages.GetReloadVersion(
+        UiPackageHandle::FromToken(screen.Package.OpaqueToken()));
     screen.Live = true;
 
     return handle;
@@ -623,6 +628,9 @@ void UiRuntime::CloseScreenSlot(Screen& screen)
     screen.Properties.clear();
     screen.Arrays.clear();
     screen.ActionNames.clear();
+    screen.Description = {};
+    screen.PackagePath.clear();
+    screen.PackageVersion = 0;
     screen.TexturesByAssetPath.clear();
     screen.FontsByAssetPath.clear();
     screen.Resources.clear();
@@ -901,10 +909,140 @@ void UiRuntime::Navigate(UiSurfaceId surface, UiNavigation direction)
     (void)slot->Context->ProcessKeyUp(key, modifiers);
 }
 
+void UiRuntime::ForgetFontResources()
+{
+    // Blunt, and deliberately so. The engine keys a loaded face by family, not
+    // by the asset it came from, so there is no way to drop one face without
+    // dropping the set -- and a rebuild immediately re-requests every face the
+    // documents declare, through the file interface, which answers from the
+    // leases the screens hold. The cost is re-parsing faces during an authoring
+    // edit, which is the cheapest moment to pay it.
+    Rml::ReleaseFontResources();
+}
+
+void UiRuntime::ReloadChangedScreens()
+{
+    for (std::size_t i = 0; i < Screens.size(); ++i)
+    {
+        Screen& screen = Screens[i];
+        if (!screen.Live || !screen.Package.IsValid())
+            continue;
+
+        const auto handle = UiPackageHandle::FromToken(screen.Package.OpaqueToken());
+        const std::uint64_t version = Packages.GetReloadVersion(handle);
+        if (version == screen.PackageVersion)
+            continue;
+
+        // Stamped before the attempt, not after. A package that fails to build
+        // must not be retried every frame for as long as it stays broken -- the
+        // author is looking at the error, and a log filling at frame rate is
+        // not help.
+        screen.PackageVersion = version;
+
+        const UiScreenHandle screenHandle{ static_cast<std::uint32_t>(i + 1),
+                                           screen.Generation };
+        if (!RebuildScreen(screen, screenHandle))
+        {
+            Log.Error("UiRuntime: '{}' failed to rebuild after an edit; "
+                      "the document already open is left alone", screen.PackagePath);
+        }
+    }
+}
+
+bool UiRuntime::RebuildScreen(Screen& screen, UiScreenHandle handle)
+{
+    Surface* slot = ResolveSurface(screen.Surface);
+    if (slot == nullptr || slot->Context == nullptr)
+        return false;
+
+    const UiPackage* package =
+        Packages.Get(UiPackageHandle::FromToken(screen.Package.OpaqueToken()));
+    if (package == nullptr || !package->IsValid())
+        return false;
+
+    // What the host published, carried across. A reload is an author changing
+    // the markup, not the application forgetting what it was presenting -- a
+    // HUD that blanked its health every time somebody tweaked a stylesheet
+    // would make the feedback loop useless.
+    std::vector<UiValue> published;
+    published.reserve(screen.Properties.size());
+    for (const BoundProperty& property : screen.Properties)
+        published.push_back(property.Value);
+
+    std::vector<std::vector<std::string>> lists;
+    lists.reserve(screen.Arrays.size());
+    for (const std::unique_ptr<Screen::BoundArray>& array : screen.Arrays)
+        lists.push_back(array->Items);
+
+    // The document engine caches parsed stylesheets and templates by name, so a
+    // rebuild would re-use the sheet it parsed the first time and the edit would
+    // never appear. Cleared here rather than at reload time because this is the
+    // only place that is about to re-parse.
+    Rml::Factory::ClearStyleSheetCache();
+    Rml::Factory::ClearTemplateCache();
+    ForgetFontResources();
+
+    // The old document goes before the new one is built: two documents from one
+    // package, alive at once on the same context, would both be showing.
+    if (screen.Document != nullptr)
+    {
+        screen.Document->Close();
+        screen.Document = nullptr;
+    }
+    if (screen.Model != nullptr)
+    {
+        slot->Context->RemoveDataModel(screen.ModelName);
+        screen.Model.reset();
+    }
+
+    // Rebuilt from the description the host gave, so its ids keep meaning what
+    // they meant: a property the host resolved once at open must still be that
+    // property afterwards.
+    screen.Properties.clear();
+    for (const UiModelProperty& property : screen.Description.Properties)
+    {
+        screen.Properties.push_back(
+            BoundProperty{ property.Path, property.Initial, property.Editable });
+    }
+    screen.Arrays.clear();
+    for (const std::string& path : screen.Description.Arrays)
+    {
+        auto array = std::make_unique<Screen::BoundArray>();
+        array->Path = path;
+        screen.Arrays.push_back(std::move(array));
+    }
+
+    for (std::size_t i = 0; i < screen.Properties.size() && i < published.size(); ++i)
+        screen.Properties[i].Value = published[i];
+    for (std::size_t i = 0; i < screen.Arrays.size() && i < lists.size(); ++i)
+        screen.Arrays[i]->Items = lists[i];
+
+    if (!screen.ModelName.empty() && !BuildModel(screen, handle, *slot))
+        return false;
+
+    Rml::ElementDocument* document = nullptr;
+    {
+        const RmlPackageFileSource::ActivePackageScope scope(*FileSource, *package);
+        ActiveScreen = &screen;
+        document = slot->Context->LoadDocument(package->RootDocumentName);
+        ActiveScreen = nullptr;
+    }
+    if (document == nullptr)
+        return false;
+
+    document->Show(screen.Modal ? Rml::ModalFlag::Modal : Rml::ModalFlag::None);
+    screen.Document = document;
+    return true;
+}
+
 void UiRuntime::Update()
 {
     if (!Ready)
         return;
+
+    // Before layout, so an edit lands in the frame the reload committed rather
+    // than the one after it.
+    ReloadChangedScreens();
 
     for (Surface& surface : Surfaces)
     {

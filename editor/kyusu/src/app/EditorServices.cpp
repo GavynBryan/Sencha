@@ -1060,6 +1060,26 @@ void EditorServices::BuildSourceWatch()
 
     Engine& engine = *EnginePtr;
     SourceWatch = std::make_unique<SourceWatchState>(&engine.Jobs());
+
+#if defined(SENCHA_ENABLE_UI) && defined(SENCHA_EDITOR_UI_DIR)
+    // The editor's own authored UI, watched against the ENGINE's asset stack --
+    // the one it was mounted into, and the one Engine::Ui() resolves through.
+    // This is what makes editing Kyusu's own interface a save-and-look loop
+    // rather than a restart.
+    {
+        auto watch = std::unique_ptr<SourceWatchState::RootWatch>(new SourceWatchState::RootWatch{
+            AssetSourceWatcher(engine.Logging(), SENCHA_EDITOR_UI_DIR,
+                               { ".rml", ".rcss", ".ttf", ".otf" }),
+            AssetHotReloader(engine.Logging(), engine.Content().Assets().Assets,
+                             engine.Content().Assets().Registry,
+                             SourceWatch->Importers.Registry(), engine.Tasks(),
+                             SENCHA_EDITOR_UI_DIR),
+        });
+        watch->Watcher.Initialize();
+        SourceWatch->Roots.push_back(std::move(watch));
+    }
+#endif
+
     for (const std::string& root : Project->ContentRoots)
     {
         auto watch = std::unique_ptr<SourceWatchState::RootWatch>(new SourceWatchState::RootWatch{
