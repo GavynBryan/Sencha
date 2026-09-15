@@ -394,3 +394,26 @@ TEST(InspectorSurface, ARepublishDoesNotDeleteWhatIsBeingTyped)
     EXPECT_EQ(harness.Rows()[position].Value, "4")
         << "the host republished over what was being typed";
 }
+
+TEST(InspectorSurface, ThePointerOutsideThePanelStillBelongsToTheEditor)
+{
+    // Kyusu's input guard now folds this surface's claim into the one it hands
+    // the router, so a document that reported the pointer everywhere would make
+    // the whole editor unclickable for as long as the inspector is open.
+    Harness harness;
+    harness.Start();
+
+    SDL_Event move{};
+    move.type = SDL_EVENT_MOUSE_MOTION;
+    move.motion.x = 400.0f;
+    move.motion.y = 400.0f;
+    (void)harness.Service().ProcessPlatformEvent(move);
+    EXPECT_FALSE(harness.Service().Capture().Mouse)
+        << "the inspector claimed the pointer over the viewport";
+
+    move.motion.x = kPanelLeft + 100.0f;
+    move.motion.y = 300.0f;
+    (void)harness.Service().ProcessPlatformEvent(move);
+    EXPECT_TRUE(harness.Service().Capture().Mouse)
+        << "the pointer is over the inspector and nothing said so";
+}

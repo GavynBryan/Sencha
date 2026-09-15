@@ -14,3 +14,16 @@
 // state. This is the one place input ownership is decided — adding panels or
 // tools needs no new capture checks.
 InputRouter::Handler MakeUiInputGuard(std::function<UiInputCapture()> capture);
+
+// What the guard should be told, given an editor that hosts two UI layers.
+//
+// The shell's own capture is first narrowed by the viewport hole: input over
+// the 3D region belongs to the scene even though an ImGui window is technically
+// there. The authored layer's claim is folded in AFTER that, because it has no
+// such hole -- a modal scrim covering the viewport is covering it on purpose,
+// and a focused text field owns its letters wherever the cursor is. Applying
+// the hole to the combined value instead would let clicks fall through a dialog
+// into the tools it was blocking.
+[[nodiscard]] UiInputCapture CombineUiCapture(UiInputCapture shell,
+                                              bool overViewport,
+                                              UiInputCapture authored);

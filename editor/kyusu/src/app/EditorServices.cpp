@@ -392,14 +392,14 @@ void EditorServices::BuildInput()
     Router->AddHandler(MakeUiInputGuard(
         [this]
         {
-            UiInputCapture capture = UiFeature != nullptr ? UiFeature->GetInputCapture()
-                                                          : UiInputCapture{};
+            const UiInputCapture shell =
+                UiFeature != nullptr ? UiFeature->GetInputCapture() : UiInputCapture{};
             const bool overViewport =
                 (PerspectivePanel != nullptr && PerspectivePanel->IsViewportRegionHovered())
                 || (OrthoPanel != nullptr && OrthoPanel->IsViewportRegionHovered());
-            if (overViewport)
-                capture.Mouse = false;
-            return capture;
+            UiService* ui = EnginePtr != nullptr ? EnginePtr->TryUi() : nullptr;
+            return CombineUiCapture(shell, overViewport,
+                                    ui != nullptr ? ui->Capture() : UiInputCapture{});
         }));
     // The wheels sit under the guard (a focused text field keeps its letters)
     // and above everything else: an open wheel owns the pointer and the keys,
