@@ -46,6 +46,7 @@ list(APPEND KYUSU_AUTHORING_SOURCES
 # testable headlessly -- which is most of the point of moving a workflow to
 # authored UI in the first place.
 list(APPEND KYUSU_AUTHORING_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/AssetFieldCandidates.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/CookProfilesModal.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/InspectorSurface.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/RuntimeFieldText.cpp"

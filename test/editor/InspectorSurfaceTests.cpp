@@ -14,6 +14,7 @@
 #include <project/ProjectContentMount.h>
 #include <ui/UiService.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
+#include <render/StaticMeshComponent.h>
 #include <world/transform/TransformComponents.h>
 
 #include <SDL3/SDL.h>
@@ -62,7 +63,6 @@ public:
         , World(Logging)
         , Selection(SelectionCtx)
     {
-        RegisterDocumentSerializers();
         MountEditorContent(SENCHA_EDITOR_UI_DIR, Assets, Logging, nullptr);
         Ui = std::make_unique<UiService>(Logging, Assets.Assets, Assets.UiPackages,
                                          Assets.Fonts, nullptr, nullptr);
@@ -70,6 +70,30 @@ public:
             "test", RenderExtent{ static_cast<std::uint32_t>(kSurfaceWidth),
                                   static_cast<std::uint32_t>(kSurfaceHeight) });
         Selection.BindDocument(&Components());
+    }
+
+    // What the project "has", so an asset field has something to be picked
+    // from. Registered rather than cooked: the picker reads the catalog, and
+    // neither kind carries a subtype to narrow by, so no file is opened.
+    //
+    // Both kinds, because the picker's first job is to offer only what the
+    // field accepts. Mesh handles resolve path-only under ReferenceOnly, which
+    // is what lets a chosen reference be read back without a device.
+    void RegisterAssets()
+    {
+        const auto add = [&](AssetType type, const char* path) {
+            AssetRecord record;
+            record.Type = type;
+            record.SourceKind = AssetSourceKind::File;
+            record.Path = path;
+            record.FilePath = path;
+            EXPECT_TRUE(Assets.Registry.Register(record)) << "test fixture: " << path;
+        };
+        add(AssetType::Material, "asset://materials/blue.smat");
+        add(AssetType::Material, "asset://materials/red.smat");
+        add(AssetType::StaticMesh, "asset://meshes/crate.smesh");
+        add(AssetType::StaticMesh, "asset://meshes/door.smesh");
+        World.FocusDocument().SetAssetEnvironment(Assets);
     }
 
     ~Harness()
@@ -179,6 +203,28 @@ public:
         return static_cast<std::size_t>(-1);
     }
 
+    // Asset rows are deliberately not editable, so they are found by label alone.
+    [[nodiscard]] std::size_t AnyRowIndexOf(std::string_view label) const
+    {
+        const std::vector<UiRow> rows = Rows();
+        for (std::size_t i = 0; i < rows.size(); ++i)
+        {
+            if (rows[i].Label == label)
+                return i;
+        }
+        return static_cast<std::size_t>(-1);
+    }
+
+    [[nodiscard]] bool PickerOpen() const
+    {
+        return Ui->GetValue(Inspector->CurrentScreen(), UiPropertyIdAt(3)).AsBool();
+    }
+
+    [[nodiscard]] std::size_t PickerOptionCount() const
+    {
+        return Ui->ArraySize(Inspector->CurrentScreen(), UiArrayIdAt(0));
+    }
+
     [[nodiscard]] std::string Status() const
     {
         return std::string(
@@ -188,6 +234,15 @@ public:
 
     UiService& Service() { return *Ui; }
     InspectorSurface& Panel() { return *Inspector; }
+
+    // Declared before the document, not called from the constructor body: a
+    // document registers its component storage when it is built, so serializers
+    // registered afterwards describe types its World has never heard of. That
+    // fails only when this test runs first, which is the worst way to find out.
+    struct SerializersFirst
+    {
+        SerializersFirst() { RegisterDocumentSerializers(); }
+    } Registered;
 
     LoggingProvider Logging;
     ComponentSerializerRegistry Serializers;
@@ -416,4 +471,174 @@ TEST(InspectorSurface, ThePointerOutsideThePanelStillBelongsToTheEditor)
     (void)harness.Service().ProcessPlatformEvent(move);
     EXPECT_TRUE(harness.Service().Capture().Mouse)
         << "the pointer is over the inspector and nothing said so";
+}
+
+
+// The asset picker: a reference is chosen from what the project holds, never
+// typed. This is also the first authored surface to open a second thing inside
+// itself, which is why the cancel and interruption paths are here too.
+
+namespace
+{
+// Read off the stylesheet: the picker sits 16px inside the panel and 60px down,
+// its list 6px/32px inside that, and an option row is 22px.
+[[nodiscard]] float OptionY(std::size_t option)
+{
+    return 60.0f + 32.0f + static_cast<float>(option) * 22.0f + 11.0f;
+}
+[[nodiscard]] float OptionX() { return kPanelLeft + 22.0f + 40.0f; }
+} // namespace
+
+TEST(InspectorSurface, AnAssetFieldIsShownAsAReferenceAndNotOfferedAsText)
+{
+    Harness harness;
+    harness.Start();
+    harness.RegisterAssets();
+
+    const EntityId entity = harness.Scene().CreateEntity(Vec3d::Zero());
+    harness.Components().AddComponent<StaticMeshComponent>(entity, StaticMeshComponent{});
+    harness.Select(entity);
+    harness.Frame();
+
+    const std::size_t mesh = harness.AnyRowIndexOf("Mesh");
+    ASSERT_NE(mesh, static_cast<std::size_t>(-1)) << "the mesh handle was not presented";
+    EXPECT_FALSE(harness.Rows()[mesh].Editable)
+        << "an asset handle was offered as a text field, which would write bytes "
+           "through a refcount";
+    EXPECT_EQ(harness.Rows()[mesh].Value, "(none)");
+}
+
+TEST(InspectorSurface, ClickingAnAssetRowOffersWhatTheProjectHolds)
+{
+    Harness harness;
+    harness.Start();
+    harness.RegisterAssets();
+
+    const EntityId entity = harness.Scene().CreateEntity(Vec3d::Zero());
+    harness.Components().AddComponent<StaticMeshComponent>(entity, StaticMeshComponent{});
+    harness.Select(entity);
+    harness.Frame();
+
+    const std::size_t materials = harness.AnyRowIndexOf("Materials");
+    ASSERT_NE(materials, static_cast<std::size_t>(-1));
+    EXPECT_FALSE(harness.PickerOpen());
+
+    harness.ClickAt(ValueX(), RowY(materials));
+    harness.Frame();
+
+    EXPECT_TRUE(harness.PickerOpen()) << "clicking an asset row opened no picker";
+    // The two registered materials, plus the entry that clears the field -- and
+    // not the two meshes, which this field does not accept.
+    EXPECT_EQ(harness.PickerOptionCount(), 3u);
+}
+
+TEST(InspectorSurface, ChoosingAnAssetIsAnUndoableEdit)
+{
+    Harness harness;
+    harness.Start();
+    harness.RegisterAssets();
+
+    const EntityId entity = harness.Scene().CreateEntity(Vec3d::Zero());
+    harness.Components().AddComponent<StaticMeshComponent>(entity, StaticMeshComponent{});
+    harness.Select(entity);
+    harness.Frame();
+
+    // The mesh handle rather than the material list: a mesh resolves path-only
+    // under ReferenceOnly, so the chosen reference is readable back without a
+    // device, which is the whole round trip this is here to prove.
+    const std::size_t mesh = harness.AnyRowIndexOf("Mesh");
+    ASSERT_NE(mesh, static_cast<std::size_t>(-1));
+
+    harness.ClickAt(ValueX(), RowY(mesh));
+    harness.Frame();
+    ASSERT_TRUE(harness.PickerOpen());
+    ASSERT_EQ(harness.PickerOptionCount(), 3u);
+
+    // Option 0 clears; option 1 is the first mesh by sorted path.
+    harness.ClickAt(OptionX(), OptionY(1));
+    harness.Frame();
+
+    EXPECT_FALSE(harness.PickerOpen()) << "the picker stayed open after a choice";
+    EXPECT_TRUE(harness.Commands.CanUndo())
+        << "the asset was applied without anything to undo it with";
+    EXPECT_EQ(harness.Rows()[mesh].Value, "meshes/crate.smesh")
+        << "the chosen reference is not what the field now holds";
+
+    harness.Commands.Undo();
+    harness.Frame();
+    EXPECT_EQ(harness.Rows()[mesh].Value, "(none)")
+        << "undoing the asset edit did not put the field back";
+}
+
+TEST(InspectorSurface, DismissingThePickerChangesNothing)
+{
+    Harness harness;
+    harness.Start();
+    harness.RegisterAssets();
+
+    const EntityId entity = harness.Scene().CreateEntity(Vec3d::Zero());
+    harness.Components().AddComponent<StaticMeshComponent>(entity, StaticMeshComponent{});
+    harness.Select(entity);
+    harness.Frame();
+
+    const std::size_t materials = harness.AnyRowIndexOf("Materials");
+    ASSERT_NE(materials, static_cast<std::size_t>(-1));
+
+    harness.ClickAt(ValueX(), RowY(materials));
+    harness.Frame();
+    ASSERT_TRUE(harness.PickerOpen());
+
+    // The scrim: anywhere over the panel that is not the picker itself.
+    harness.ClickAt(kPanelLeft + 300.0f, 600.0f);
+    harness.Frame();
+
+    EXPECT_FALSE(harness.PickerOpen());
+    EXPECT_FALSE(harness.Commands.CanUndo()) << "dismissing the picker edited the field";
+}
+
+TEST(InspectorSurface, ChangingTheSelectionClosesThePicker)
+{
+    // The picker holds a row index into a list that is about to describe a
+    // different entity, so it cannot outlive the selection that opened it.
+    Harness harness;
+    harness.Start();
+    harness.RegisterAssets();
+
+    const EntityId first = harness.Scene().CreateEntity(Vec3d::Zero());
+    harness.Components().AddComponent<StaticMeshComponent>(first, StaticMeshComponent{});
+    const EntityId second = harness.Scene().CreateEntity(Vec3d::Zero());
+    harness.Select(first);
+    harness.Frame();
+
+    const std::size_t materials = harness.AnyRowIndexOf("Materials");
+    ASSERT_NE(materials, static_cast<std::size_t>(-1));
+    harness.ClickAt(ValueX(), RowY(materials));
+    harness.Frame();
+    ASSERT_TRUE(harness.PickerOpen());
+
+    harness.Select(second);
+    harness.Frame();
+
+    EXPECT_FALSE(harness.PickerOpen());
+    EXPECT_FALSE(harness.Commands.CanUndo());
+}
+
+TEST(InspectorSurface, ClickingAPlainReadOnlyRowOpensNothing)
+{
+    // The document offers a pick on every read-only row, because what a click
+    // means is the host's decision. An identity has nothing to choose from.
+    Harness harness;
+    harness.Start();
+    harness.RegisterAssets();
+
+    const EntityId entity = harness.Scene().CreateEntity(Vec3d::Zero());
+    harness.Select(entity);
+    harness.Frame();
+
+    const std::size_t id = harness.AnyRowIndexOf("Id");
+    ASSERT_NE(id, static_cast<std::size_t>(-1));
+
+    harness.ClickAt(ValueX(), RowY(id));
+    harness.Frame();
+    EXPECT_FALSE(harness.PickerOpen());
 }

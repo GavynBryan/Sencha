@@ -111,16 +111,16 @@
     },
     {
       "source": "inspector.rml",
-      "input_fingerprint": "d73a3f5f396d4696",
-      "size": "1278",
-      "mtime": "-4648177781732865623",
+      "input_fingerprint": "94c49b090c94aad2",
+      "size": "2242",
+      "mtime": "-4648156599175863197",
       "meta_size": "0",
       "meta_mtime": "0",
       "additional_sources": [
         {
           "source": "inspector.rcss",
-          "size": "3417",
-          "mtime": "-4648177946289339878"
+          "size": "4562",
+          "mtime": "-4648155645577914894"
         },
         {
           "source": "theme.rcss",
@@ -133,7 +133,7 @@
           "path": "asset://inspector.rml",
           "file": ".cooked/inspector.rml.sui",
           "type": "UiPackage",
-          "hash": "1c0d9ce7c910503f"
+          "hash": "4f3f0ca4d113b594"
         }
       ]
     }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ui/AssetFieldCandidates.h"
 #include "ui/IEditorPanel.h"
 
 #include <core/assets/AssetId.h>
@@ -80,15 +81,8 @@ private:
     // each candidate's envelope off disk -- neither belongs in every frame a
     // designer holds a dropdown open. Keyed by ImGui id, so two list slots
     // sharing a widget label still get their own list.
-    struct AssetPickerEntry
-    {
-        std::string Path;
-        AssetId     Id;
-    };
-    static std::vector<AssetPickerEntry> PickerCandidates(
-        const AssetRegistry& catalog, AssetSystem& assets, const RuntimeField& field);
-    std::uint32_t                 OpenPicker = 0;
-    std::vector<AssetPickerEntry> OpenPickerEntries;
+    std::uint32_t                     OpenPicker = 0;
+    std::vector<AssetFieldCandidate>  OpenPickerEntries;
     // What the entity carries that its file does not describe: the per-tick
     // columns a component declares it cannot work without, and the derived
     // transform columns. Collapsed, read-only, and drawn after the authored

@@ -1,5 +1,6 @@
 #include "InspectorPanel.h"
 
+#include "AssetFieldCandidates.h"
 #include "RuntimeFieldText.h"
 
 #include "ui/chrome/ChromeHeader.h"
@@ -542,34 +543,6 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     ImGui::PopID();
 }
 
-// Stable, sorted assets of one kind (AssetRegistry::Records() is unordered),
-// narrowed to the subtype a structured-data field accepts. A field that names
-// no subtype takes any data asset, and a field of any other kind has nothing
-// to narrow by.
-std::vector<InspectorPanel::AssetPickerEntry> InspectorPanel::PickerCandidates(
-    const AssetRegistry& catalog, AssetSystem& assets, const RuntimeField& field)
-{
-    std::vector<AssetPickerEntry> entries;
-    for (const auto& entry : catalog.Records())
-        if (entry.second.Type == field.Asset)
-            entries.push_back({ entry.first, entry.second.Id });
-    std::sort(entries.begin(), entries.end(),
-              [](const AssetPickerEntry& a, const AssetPickerEntry& b)
-              { return a.Path < b.Path; });
-
-    if (field.Asset != AssetType::Data || field.DataSubtype.empty())
-        return entries;
-
-    std::erase_if(entries, [&](const AssetPickerEntry& entry)
-    {
-        const AssetRecord* record = catalog.FindByPath(entry.Path);
-        return record == nullptr
-            || PeekDataAssetSubtype(assets.DefaultSource(), *record)
-                   != field.DataSubtype;
-    });
-    return entries;
-}
-
 bool InspectorPanel::DrawAssetPickCombo(const char* widgetId,
                                         const AssetFieldRef& current,
                                         const AssetRegistry& catalog,
@@ -585,7 +558,7 @@ bool InspectorPanel::DrawAssetPickCombo(const char* widgetId,
         if (OpenPicker != pickerId || ImGui::IsWindowAppearing())
         {
             OpenPicker = pickerId;
-            OpenPickerEntries = PickerCandidates(catalog, assets, field);
+            OpenPickerEntries = FindAssetFieldCandidates(catalog, assets, field);
         }
         if (ImGui::Selectable("(none)", current.Path.empty()) && !current.Path.empty())
         {
@@ -596,7 +569,7 @@ bool InspectorPanel::DrawAssetPickCombo(const char* widgetId,
             ImGui::TextDisabled("%s", field.DataSubtype.empty()
                                           ? "No assets of this kind in the project."
                                           : "No matching assets in the project.");
-        for (const AssetPickerEntry& entry : OpenPickerEntries)
+        for (const AssetFieldCandidate& entry : OpenPickerEntries)
         {
             const bool selected = (entry.Path == current.Path);
             if (ImGui::Selectable(entry.Path.c_str(), selected) && !selected)

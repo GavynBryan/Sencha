@@ -18,13 +18,30 @@
                        data-value="field.value"
                        data-event-focus="inspector_begin(it_index)"
                        data-event-blur="inspector_commit(it_index)"/>
-                <span class="value fixed theme-muted" data-if="!field.editable">{{field.value}}</span>
+                <span class="value fixed theme-muted" data-if="!field.editable"
+                      data-event-click="inspector_pick(it_index)">{{field.value}}</span>
                 <span class="origin theme-muted">{{field.detail}}</span>
             </div>
             <div id="empty" class="theme-dim" data-if="!has_selection">Nothing selected.</div>
         </div>
 
         <div id="status" class="theme-footer">{{status}}</div>
+
+        <!-- The asset picker, over the panel it belongs to rather than over the
+             window: it is choosing a value for one field, not interrupting the
+             editor. Its entries are whatever the host scanned; the first is
+             always the one that clears the field. -->
+        <div id="picker" data-if="picker_open">
+            <div id="picker_scrim" class="theme-scrim"
+                 data-event-click="inspector_cancel_pick"/>
+            <div id="picker_panel" class="theme-surface">
+                <div id="picker_title" class="theme-header theme-title">{{picker_label}}</div>
+                <div id="picker_list" class="theme-well">
+                    <div class="option theme-row" data-for="option : picker_options"
+                         data-event-click="inspector_choose(it_index)">{{option}}</div>
+                </div>
+            </div>
+        </div>
     </div>
 </body>
 </rml>

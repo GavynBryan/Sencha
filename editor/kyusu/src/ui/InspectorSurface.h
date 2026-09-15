@@ -1,5 +1,8 @@
 #pragma once
 
+#include "AssetFieldCandidates.h"
+
+#include <core/assets/AssetRef.h>
 #include <ecs/ComponentId.h>
 #include <ecs/EntityId.h>
 #include <ui/UiScreenDesc.h>
@@ -44,12 +47,18 @@ struct IComponentSerializer;
 // lived in the screen's presentation copy and never reached the component, so
 // closing the surface, changing the selection, or losing the entity discards it.
 //
+// An asset field is never text. It is refcounted and session-local, so it
+// travels through AssetFieldEditCommand rather than a byte write, and it is
+// chosen from what the project actually holds. Clicking one opens a picker
+// inside the same document: the host publishes the candidates it scanned, the
+// document lists them, and choosing one raises an action naming an index. No
+// path is ever typed, and the document never learns what an asset is.
+//
 // What it does not do yet: a component that registers an EditorComponentAdapter
 // (the gameplay vocabularies, the world dock, brush modifiers) draws its own
 // rows in the ImGui panel, and here it falls back to its raw schema -- truthful,
-// but a tag id where the panel offers a picker. Asset handles are shown and not
-// offered for the same reason: they are refcounted and session-local, so they
-// need a picker and the command that goes with one rather than a byte write.
+// but a tag id where the panel offers a picker. A list-arity asset field shows
+// and picks per slot, but slots cannot be added or removed from here.
 //
 // The ImGui inspector stays. This coexists with it until it is demonstrably
 // better, which is the only honest way to find out.
@@ -81,8 +90,9 @@ public:
 
 private:
     // Positional ids, declared beside the description so the two cannot drift.
-    enum class Property : std::size_t { EntityLabel = 0, Status, HasSelection };
-    enum class Action : std::size_t { Begin = 0, Commit, Close };
+    enum class Property : std::size_t { EntityLabel = 0, Status, HasSelection,
+                                        PickerOpen, PickerLabel };
+    enum class Action : std::size_t { Begin = 0, Commit, Close, Pick, Choose, CancelPick };
 
     [[nodiscard]] static UiScreenDesc Describe();
 
@@ -95,16 +105,47 @@ private:
         const IComponentSerializer* Serializer = nullptr;
         ComponentId Component = InvalidComponentId;
         std::size_t Field = 0;
+        // Which slot of a list-arity asset field this row stands for. Zero for
+        // everything else, which is also the only slot a single-arity field has.
+        std::size_t Slot = 0;
+        // An asset handle is chosen, never typed, so a click on this row opens
+        // a picker instead of doing nothing.
+        bool Pickable = false;
         // The text this row was last published with. A commit compares against
         // it rather than against the component, so a field somebody focused and
         // left alone cannot become an edit through the rounding in its own
         // display.
-        std::string Published;
+        std::string Published{};
+        // What the picker calls itself when opened from this row -- the field's
+        // label, plus the slot for a list. Kept here because by the time a
+        // picker is open the row it came from is the only thing that knows.
+        std::string PickerLabel{};
     };
 
     void Publish();
     void HandleBegin(std::size_t row);
     void HandleCommit(std::size_t row);
+    // Opens the picker for an asset row, scanning the project once for what the
+    // field accepts. A row that is not an asset field does nothing: what a click
+    // means is the host's decision, so the document offers one on every
+    // read-only row and this refuses the ones it has no picker for.
+    void HandlePick(std::size_t row);
+    void HandleChoose(std::size_t option);
+    void ClosePicker();
+    void PublishPicker();
+
+    // One asset field as rows: one for a single handle, one per slot for a
+    // list. Separate from the scalar path because an asset reference is read
+    // through the asset system rather than off an offset, and because a list
+    // arity is several rows where every other field is one.
+    void AppendAssetRows(const IComponentSerializer& serializer,
+                         ComponentId component,
+                         std::size_t fieldIndex,
+                         const struct RuntimeField& field,
+                         const void* bytes,
+                         const std::string& componentKey,
+                         std::vector<UiRow>& rows,
+                         std::vector<RowOrigin>& origins) const;
     // Ends the edit transaction. Nothing to undo: the text never left the
     // presentation copy.
     void AbandonEdit();
@@ -123,9 +164,17 @@ private:
     EntityId Showing = {};
     std::string Status;
 
+    // The open picker: which row asked for it, and what it is offering. The
+    // candidates are scanned when it opens rather than every frame, because
+    // narrowing a structured-data field reads each candidate's envelope off
+    // disk. Index zero of the published list is "(none)"; the rest line up with
+    // PickerCandidates.
+    static constexpr std::size_t kNoRow = static_cast<std::size_t>(-1);
+    std::size_t PickingRow = kNoRow;
+    std::vector<AssetFieldCandidate> PickerCandidates;
+
     // The row currently being edited, or none. While one is held the row list
     // is not republished, which is what keeps a republish from overwriting what
     // is being typed.
-    static constexpr std::size_t kNoRow = static_cast<std::size_t>(-1);
     std::size_t EditingRow = kNoRow;
 };
