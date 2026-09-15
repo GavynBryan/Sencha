@@ -389,8 +389,20 @@ paths, search results -- and a row needing more structure than that is a design
 question rather than a missing overload. Same compare-then-dirty rule, so a
 panel republishing its list every frame re-runs nothing.
 
-Value structs are still not here. Nothing presents one, so they land with the
-surface that first needs them.
+**Rows** (`UiScreenDesc::RowLists`) are the shape most editor surfaces actually
+present: an inspector's fields, a property sheet, a result set. A `UiRow` is a
+label, a value and an optional detail -- strings, like a list, because
+presentation is text and a number being edited is the text somebody is typing.
+The host parses it when it reads the row back, which is also where it gets to
+refuse "1.2.3" without the document ever having had an opinion.
+
+A row's members are bound by pointer-to-member, so each is read-write: a control
+inside a repeated row edits the presentation copy directly, with no setter per
+row, and the value still goes no further than that copy until an action says to
+read it.
+
+Arbitrary value structs are still not here. Rows cover what surfaces have asked
+for; a shape rows cannot express is a design question when it turns up.
 
 ### The engine drives it
 

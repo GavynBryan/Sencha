@@ -34,6 +34,13 @@ using UiActionId = StrongId<struct UiActionTag, std::uint32_t>;
 // presentation shape whose size is part of what changed.
 using UiModelArrayId = StrongId<struct UiModelArrayTag, std::uint32_t>;
 
+// A list of labelled rows, which is the shape most editor surfaces actually
+// present: an inspector's fields, a search result set, a property sheet. Kept
+// distinct from a list of strings because a row has parts a document addresses
+// separately -- and because the value part is editable where a plain list is
+// not.
+using UiModelRowsId = StrongId<struct UiModelRowsTag, std::uint32_t>;
+
 struct UiModelProperty
 {
     // The name the document reads, as written in the markup.
@@ -59,6 +66,23 @@ struct UiModelProperty
     bool Editable = false;
 };
 
+// One row of a presented list.
+//
+// Strings, and only strings, for the same reason a list is: presentation is
+// text. A number being edited is the text somebody is typing, and the host
+// parses it when it reads the row back -- which is also where it gets to refuse
+// "1.2.3" without the document ever having had an opinion.
+struct UiRow
+{
+    std::string Label;
+    std::string Value;
+    // Extra text the document can show without it being another row: a unit, a
+    // type name, a validation hint.
+    std::string Detail;
+
+    friend bool operator==(const UiRow&, const UiRow&) = default;
+};
+
 struct UiScreenDesc
 {
     // The cooked package, as an "asset://..." virtual path.
@@ -79,6 +103,12 @@ struct UiScreenDesc
     // results -- and a row needing more structure than that is a design
     // question rather than a missing overload.
     std::vector<std::string> Arrays;
+
+    // Row lists the document repeats over. Each row's `value` is bound
+    // read-write, so a bound control edits the presentation copy and the host
+    // reads it back on an explicit action -- the same rule as an editable
+    // property, for the same reason.
+    std::vector<std::string> RowLists;
 
     std::vector<std::string> Actions;
 
@@ -107,4 +137,9 @@ struct UiScreenDesc
 [[nodiscard]] inline UiModelArrayId UiArrayIdAt(std::size_t index)
 {
     return UiModelArrayId{ static_cast<std::uint32_t>(index + 1) };
+}
+
+[[nodiscard]] inline UiModelRowsId UiRowsIdAt(std::size_t index)
+{
+    return UiModelRowsId{ static_cast<std::uint32_t>(index + 1) };
 }

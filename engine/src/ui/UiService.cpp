@@ -77,6 +77,22 @@ bool UiService::SetArray(UiScreenHandle screen, UiModelArrayId array,
     return Runtime->SetArray(screen, array, items);
 }
 
+bool UiService::SetRows(UiScreenHandle screen, UiModelRowsId rows,
+                        std::span<const UiRow> items)
+{
+    return Runtime->SetRows(screen, rows, items);
+}
+
+std::vector<UiRow> UiService::GetRows(UiScreenHandle screen, UiModelRowsId rows) const
+{
+    return Runtime->GetRows(screen, rows);
+}
+
+UiModelRowsId UiService::FindRows(UiScreenHandle screen, std::string_view path) const
+{
+    return Runtime->FindRows(screen, path);
+}
+
 std::size_t UiService::ArraySize(UiScreenHandle screen, UiModelArrayId array) const
 {
     return Runtime->ArraySize(screen, array);

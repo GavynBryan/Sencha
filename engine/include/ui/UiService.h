@@ -171,6 +171,14 @@ public:
     [[nodiscard]] std::size_t ArraySize(UiScreenHandle screen, UiModelArrayId array) const;
     [[nodiscard]] UiModelArrayId FindArray(UiScreenHandle screen, std::string_view path) const;
 
+    // Publishes a list of labelled rows -- an inspector's fields, a property
+    // sheet, a result set. Each row's value is bound read-write, so a control
+    // inside a repeated row edits the presentation copy and the host reads it
+    // back on an explicit action, exactly like an editable property.
+    bool SetRows(UiScreenHandle screen, UiModelRowsId rows, std::span<const UiRow> items);
+    [[nodiscard]] std::vector<UiRow> GetRows(UiScreenHandle screen, UiModelRowsId rows) const;
+    [[nodiscard]] UiModelRowsId FindRows(UiScreenHandle screen, std::string_view path) const;
+
     // Resolve once and keep the id. Both are linear over a screen's declared
     // list, which is short and walked at setup, never per frame.
     [[nodiscard]] UiModelPropertyId FindProperty(UiScreenHandle screen,

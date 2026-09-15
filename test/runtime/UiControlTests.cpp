@@ -461,3 +461,159 @@ TEST(UiControls, ListsResolveByNameAndAClosedScreenHasNone)
     EXPECT_EQ(fixture.Ui().ArraySize(fixture.Screen, UiArrayIdAt(0)), 0u);
     EXPECT_FALSE(fixture.Ui().SetArray(fixture.Screen, UiArrayIdAt(0), { }));
 }
+
+// -- rows --------------------------------------------------------------------
+
+namespace
+{
+// An inspector's shape: rows the host publishes, each with a label the document
+// shows and a value a control edits.
+constexpr std::string_view kRowMarkup = R"(<rml>
+<head><link type="text/rcss" href="rows.rcss"/></head>
+<body data-model="inspector">
+    <div id="fields">
+        <div class="field" data-for="row : fields">
+            <span class="name">{{row.label}}</span>
+            <input type="text" data-value="row.value"/>
+        </div>
+    </div>
+</body>
+</rml>)";
+
+constexpr std::string_view kRowStyle = R"(
+body { display: block; width: 100%; height: 100%; pointer-events: none; }
+#fields { display: block; width: 400px; }
+.field { display: block; height: 24px; pointer-events: auto; }
+.name { display: inline-block; width: 120px; }
+.field input { display: inline-block; width: 200px; height: 20px; tab-index: auto; }
+)";
+
+UiPackage MakeRowPackage()
+{
+    UiPackage package;
+    package.RootDocumentName = "rows.rml";
+
+    UiPackageBlob root;
+    root.VirtualName = "rows.rml";
+    root.SourcePath = "ui/rows.rml";
+    root.Kind = UiBlobKind::Document;
+    root.Bytes = BytesOf(kRowMarkup);
+    package.Blobs.push_back(std::move(root));
+
+    UiPackageBlob sheet;
+    sheet.VirtualName = "rows.rcss";
+    sheet.SourcePath = "ui/rows.rcss";
+    sheet.Kind = UiBlobKind::StyleSheet;
+    sheet.Bytes = BytesOf(kRowStyle);
+    package.Blobs.push_back(std::move(sheet));
+    return package;
+}
+
+UiScreenDesc MakeRowDesc()
+{
+    UiScreenDesc desc;
+    desc.PackagePath = "asset://ui/rows.sui";
+    desc.ModelName = "inspector";
+    desc.RowLists = { "fields" };
+    return desc;
+}
+
+struct RowFixture
+{
+    TempAssetRoot Root;
+    std::unique_ptr<UiTestHost> Host;
+    UiSurfaceId Surface;
+    UiScreenHandle Screen;
+
+    RowFixture()
+    {
+        std::vector<std::byte> bytes;
+        EXPECT_TRUE(WriteSuiToBytes(MakeRowPackage(), bytes));
+        Root.WriteBytes("ui/rows.sui", bytes);
+        Host = std::make_unique<UiTestHost>(Root);
+        Surface = Host->Service().CreateSurface("test", RenderExtent{ 800, 600 });
+        Screen = Host->Service().OpenScreen(Surface, MakeRowDesc());
+        Host->Service().Update();
+    }
+    UiService& Ui() { return Host->Service(); }
+};
+} // namespace
+
+TEST(UiControls, RowsArePresentedWithTheirLabels)
+{
+    RowFixture fixture;
+    ASSERT_TRUE(fixture.Screen.IsValid());
+
+    const std::vector<UiRow> rows = {
+        UiRow{ "Position", "0, 0, 0", "" },
+        UiRow{ "Rotation", "0, 0, 0", "" },
+        UiRow{ "Scale", "1, 1, 1", "" },
+    };
+    EXPECT_TRUE(fixture.Ui().SetRows(fixture.Screen, UiRowsIdAt(0), rows));
+    fixture.Ui().Update();
+
+    // Three 24px rows. If the struct members did not bind, data-for repeats
+    // nothing and this is zero.
+    ASSERT_TRUE(fixture.Ui().MeasureElement(fixture.Screen, "fields").has_value());
+    EXPECT_FLOAT_EQ(fixture.Ui().MeasureElement(fixture.Screen, "fields")->Height, 72.0f);
+
+    const std::vector<UiRow> readBack = fixture.Ui().GetRows(fixture.Screen, UiRowsIdAt(0));
+    ASSERT_EQ(readBack.size(), 3u);
+    EXPECT_EQ(readBack[1].Label, "Rotation");
+}
+
+TEST(UiControls, ARowsValueIsEditableAndReadBackByTheHost)
+{
+    // The inspector's whole mechanism: a control inside a repeated row writes
+    // the presentation copy, and the host reads that row back when an action
+    // tells it to. Nothing about the row reaches the application before then.
+    RowFixture fixture;
+    ASSERT_TRUE(fixture.Screen.IsValid());
+
+    const std::vector<UiRow> rows = { UiRow{ "Position", "5", "" } };
+    EXPECT_TRUE(fixture.Ui().SetRows(fixture.Screen, UiRowsIdAt(0), rows));
+    fixture.Ui().Update();
+
+    // Click the row's input and type. The field sits right of a 120px label.
+    ClickAt(fixture.Ui(), 200.0f, 12.0f);
+    fixture.Ui().Update();
+
+    SDL_Event text{};
+    text.type = SDL_EVENT_TEXT_INPUT;
+    text.text.text = "7";
+    (void)fixture.Ui().ProcessPlatformEvent(text);
+    fixture.Ui().Update();
+
+    const std::vector<UiRow> edited = fixture.Ui().GetRows(fixture.Screen, UiRowsIdAt(0));
+    ASSERT_EQ(edited.size(), 1u);
+    EXPECT_NE(edited[0].Value, "5")
+        << "typing into a repeated row's control never reached the model";
+    EXPECT_EQ(edited[0].Label, "Position") << "editing the value disturbed the label";
+}
+
+TEST(UiControls, RepublishingIdenticalRowsReportsNoChange)
+{
+    RowFixture fixture;
+    ASSERT_TRUE(fixture.Screen.IsValid());
+
+    const std::vector<UiRow> rows = { UiRow{ "Position", "5", "" } };
+    EXPECT_TRUE(fixture.Ui().SetRows(fixture.Screen, UiRowsIdAt(0), rows));
+    EXPECT_FALSE(fixture.Ui().SetRows(fixture.Screen, UiRowsIdAt(0), rows));
+
+    const std::vector<UiRow> relabelled = { UiRow{ "Origin", "5", "" } };
+    EXPECT_TRUE(fixture.Ui().SetRows(fixture.Screen, UiRowsIdAt(0), relabelled))
+        << "a changed label is a change even though the value did not move";
+}
+
+TEST(UiControls, RowsResolveByNameAndAClosedScreenHasNone)
+{
+    RowFixture fixture;
+    ASSERT_TRUE(fixture.Screen.IsValid());
+
+    EXPECT_EQ(fixture.Ui().FindRows(fixture.Screen, "fields"), UiRowsIdAt(0));
+    EXPECT_FALSE(fixture.Ui().FindRows(fixture.Screen, "absent").IsValid());
+
+    fixture.Ui().CloseScreen(fixture.Screen);
+    EXPECT_TRUE(fixture.Ui().GetRows(fixture.Screen, UiRowsIdAt(0)).empty());
+    EXPECT_FALSE(fixture.Ui().SetRows(fixture.Screen, UiRowsIdAt(0), {}));
+}

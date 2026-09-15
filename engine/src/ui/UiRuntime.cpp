@@ -423,6 +423,36 @@ bool UiRuntime::BuildModel(Screen& screen, UiScreenHandle handle, Surface& surfa
     if (!screen.Arrays.empty())
         (void)constructor.RegisterArray<std::vector<std::string>>();
 
+    if (!screen.RowLists.empty())
+    {
+        // Members bound by pointer-to-member, which makes each one read-write.
+        // That is what lets a control inside a repeated row edit its value
+        // without the model needing a setter per row -- and the value still
+        // goes no further than the presentation copy.
+        if (auto row = constructor.RegisterStruct<UiRow>())
+        {
+            (void)row.RegisterMember("label", &UiRow::Label);
+            (void)row.RegisterMember("value", &UiRow::Value);
+            (void)row.RegisterMember("detail", &UiRow::Detail);
+        }
+        (void)constructor.RegisterArray<std::vector<UiRow>>();
+    }
+
+    for (const std::unique_ptr<Screen::BoundRows>& rows : screen.RowLists)
+    {
+        if (!IsBindableName(rows->Path))
+        {
+            Log.Error("UiRuntime: '{}' is not a bindable row-list name", rows->Path);
+            return fail();
+        }
+        if (!constructor.Bind(rows->Path, &rows->Items))
+        {
+            Log.Error("UiRuntime: data model '{}' refused the row list '{}'",
+                      screen.ModelName, rows->Path);
+            return fail();
+        }
+    }
+
     for (const std::unique_ptr<Screen::BoundArray>& array : screen.Arrays)
     {
         if (!IsBindableName(array->Path))
@@ -522,6 +552,13 @@ UiScreenHandle UiRuntime::OpenScreen(UiSurfaceId surface, const UiScreenDesc& de
     pending.Description = desc;
     pending.ModelName = desc.ModelName;
     pending.ActionNames = desc.Actions;
+    pending.RowLists.reserve(desc.RowLists.size());
+    for (const std::string& path : desc.RowLists)
+    {
+        auto rows = std::make_unique<Screen::BoundRows>();
+        rows->Path = path;
+        pending.RowLists.push_back(std::move(rows));
+    }
     pending.Arrays.reserve(desc.Arrays.size());
     for (const std::string& path : desc.Arrays)
     {
@@ -627,6 +664,7 @@ void UiRuntime::CloseScreenSlot(Screen& screen)
     }
     screen.Properties.clear();
     screen.Arrays.clear();
+    screen.RowLists.clear();
     screen.ActionNames.clear();
     screen.Description = {};
     screen.PackagePath.clear();
@@ -694,6 +732,47 @@ bool UiRuntime::SetArray(UiScreenHandle screen, UiModelArrayId array,
     if (slot->Model != nullptr)
         slot->Model->DirtyVariable(bound.Path);
     return true;
+}
+
+bool UiRuntime::SetRows(UiScreenHandle screen, UiModelRowsId rows,
+                        std::span<const UiRow> items)
+{
+    Screen* slot = ResolveScreen(screen);
+    if (slot == nullptr || !rows.IsValid() || rows.Value > slot->RowLists.size())
+        return false;
+
+    Screen::BoundRows& bound = *slot->RowLists[rows.Value - 1];
+    if (bound.Items.size() == items.size()
+        && std::equal(bound.Items.begin(), bound.Items.end(), items.begin()))
+    {
+        return false;
+    }
+
+    bound.Items.assign(items.begin(), items.end());
+    if (slot->Model != nullptr)
+        slot->Model->DirtyVariable(bound.Path);
+    return true;
+}
+
+std::vector<UiRow> UiRuntime::GetRows(UiScreenHandle screen, UiModelRowsId rows) const
+{
+    const Screen* slot = ResolveScreen(screen);
+    if (slot == nullptr || !rows.IsValid() || rows.Value > slot->RowLists.size())
+        return {};
+    return slot->RowLists[rows.Value - 1]->Items;
+}
+
+UiModelRowsId UiRuntime::FindRows(UiScreenHandle screen, std::string_view path) const
+{
+    const Screen* slot = ResolveScreen(screen);
+    if (slot == nullptr)
+        return {};
+    for (std::size_t i = 0; i < slot->RowLists.size(); ++i)
+    {
+        if (slot->RowLists[i]->Path == path)
+            return UiRowsIdAt(i);
+    }
+    return {};
 }
 
 std::size_t UiRuntime::ArraySize(UiScreenHandle screen, UiModelArrayId array) const
@@ -974,6 +1053,11 @@ bool UiRuntime::RebuildScreen(Screen& screen, UiScreenHandle handle)
     for (const std::unique_ptr<Screen::BoundArray>& array : screen.Arrays)
         lists.push_back(array->Items);
 
+    std::vector<std::vector<UiRow>> rowLists;
+    rowLists.reserve(screen.RowLists.size());
+    for (const std::unique_ptr<Screen::BoundRows>& rows : screen.RowLists)
+        rowLists.push_back(rows->Items);
+
     // The document engine caches parsed stylesheets and templates by name, so a
     // rebuild would re-use the sheet it parsed the first time and the edit would
     // never appear. Cleared here rather than at reload time because this is the
@@ -1011,11 +1095,20 @@ bool UiRuntime::RebuildScreen(Screen& screen, UiScreenHandle handle)
         array->Path = path;
         screen.Arrays.push_back(std::move(array));
     }
+    screen.RowLists.clear();
+    for (const std::string& path : screen.Description.RowLists)
+    {
+        auto rows = std::make_unique<Screen::BoundRows>();
+        rows->Path = path;
+        screen.RowLists.push_back(std::move(rows));
+    }
 
     for (std::size_t i = 0; i < screen.Properties.size() && i < published.size(); ++i)
         screen.Properties[i].Value = published[i];
     for (std::size_t i = 0; i < screen.Arrays.size() && i < lists.size(); ++i)
         screen.Arrays[i]->Items = lists[i];
+    for (std::size_t i = 0; i < screen.RowLists.size() && i < rowLists.size(); ++i)
+        screen.RowLists[i]->Items = rowLists[i];
 
     if (!screen.ModelName.empty() && !BuildModel(screen, handle, *slot))
         return false;

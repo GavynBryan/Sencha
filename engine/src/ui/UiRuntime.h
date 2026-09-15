@@ -111,6 +111,11 @@ public:
                                 std::span<const std::string> items);
     [[nodiscard]] std::size_t ArraySize(UiScreenHandle screen, UiModelArrayId array) const;
     [[nodiscard]] UiModelArrayId FindArray(UiScreenHandle screen, std::string_view path) const;
+
+    [[nodiscard]] bool SetRows(UiScreenHandle screen, UiModelRowsId rows,
+                               std::span<const UiRow> items);
+    [[nodiscard]] std::vector<UiRow> GetRows(UiScreenHandle screen, UiModelRowsId rows) const;
+    [[nodiscard]] UiModelRowsId FindRows(UiScreenHandle screen, std::string_view path) const;
     [[nodiscard]] UiValue GetValue(UiScreenHandle screen, UiModelPropertyId property) const;
     [[nodiscard]] UiModelPropertyId FindProperty(UiScreenHandle screen,
                                                  std::string_view path) const;
@@ -203,6 +208,16 @@ private:
             std::vector<std::string> Items;
         };
         std::vector<std::unique_ptr<BoundArray>> Arrays;
+
+        // Rows are bound by address like a list, and their members by
+        // pointer-to-member -- which is what makes a row's value writable by a
+        // bound control without a setter per row.
+        struct BoundRows
+        {
+            std::string Path;
+            std::vector<UiRow> Items;
+        };
+        std::vector<std::unique_ptr<BoundRows>> RowLists;
         std::vector<std::string> ActionNames;
         // Null until a model is constructed, which only happens for a screen
         // that declared one.
