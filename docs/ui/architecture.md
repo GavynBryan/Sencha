@@ -565,7 +565,32 @@ current docking architecture", which is a different project and not a
 prerequisite for the first. And by the time it exists, some surfaces will turn
 out not to want a docked successor at all -- project configuration among them.
 
-## 14. What does not belong here
+## 14. Themes
+
+Authored surfaces carry their own colours today. Kyusu's ImGui shell is themed
+from a file at `editor/themes` and can switch at runtime; an `.rcss` cannot
+follow that, because RCSS has no variables and a stylesheet is parsed once per
+package.
+
+This is the named gap in front of panel reduction. A surface that cannot follow
+the editor's theme will not replace a panel that does, however good it is
+otherwise -- so it is the thing to settle before §13's work, not after.
+
+Two shapes are plausible and the choice has not been made:
+
+- **A generated stylesheet.** The host supplies named values; the runtime builds
+  one `theme.rcss` every package `@import`s, and re-parses it on a theme change
+  through the same rebuild path a source edit already uses. Documents stay
+  ordinary RCSS and the markup says nothing about theming.
+- **Model-bound style properties.** `data-style-background-color="panel_bg"`,
+  read from published values. Works today with no engine change and no new
+  concept, at the cost of theme plumbing in every document's markup.
+
+The first is better if authored surfaces become the norm; the second is right if
+they stay few. Both keep the DOM on this side of the boundary, which is the part
+that is not negotiable.
+
+## 15. What does not belong here
 
 Kyusu's spatial interaction stays purpose-built: transform gizmos, resize
 handles, carve, clip planes and pins, face highlights, vertex/edge/face selection,
@@ -580,7 +605,7 @@ default substrate for surfaces meant to become part of Kyusu's designed
 experience, and those migrate one at a time -- the ImGui version staying until the
 replacement is better.
 
-## 15. Related documents
+## 16. Related documents
 
 | Doc | Relationship |
 |---|---|
