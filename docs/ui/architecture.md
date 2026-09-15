@@ -179,10 +179,38 @@ than hiding the events. Two kinds of reader care:
   `TogglePauseOnF1`) do. A game reading raw input should do the same or move to
   actions.
 
-Text entry uses real platform text and IME events (`SDL_EVENT_TEXT_INPUT`,
-`SDL_EVENT_TEXT_EDITING`, `SDL_StartTextInput`, `SDL_SetTextInputArea`), driven by
-RmlUi's per-context `TextInputHandler`. Characters are never reconstructed from
-keycodes. *(Stage 5.)*
+Text entry uses real platform text and IME events. A focused field starts
+platform text input and reports its caret box so the IME puts candidates
+somewhere other than on top of what is being composed; losing focus, or the
+field being destroyed under the caret, stops it. Characters are never
+reconstructed from keycodes -- that is wrong in every locale but the author's.
+
+Text input is started and stopped rather than left on, because a platform with
+it always active is one where the IME is always eligible to eat a keystroke
+meant for the game.
+
+### Navigation
+
+`UiService::Navigate(surface, UiNavigation::…)` — Up, Down, Left, Right, Next,
+Previous, Accept, Cancel. The host maps its own actions onto these; the layer
+translates them into the focus and spatial navigation the document engine
+already implements. No document names a key or a gamepad button anywhere in that
+path, so remapping, controller profiles and accessibility settings keep working
+without knowing a document exists.
+
+### Two authoring contracts worth knowing before they bite
+
+**`pointer-events: none` on a full-screen root.** A document's `body` is
+interactive by default, so a HUD covering the window counts as "the pointer is
+over the UI" and quietly takes the mouse from the game. Interactive elements opt
+back in with `pointer-events: auto`.
+
+**`tab-index: auto` to be focusable.** An element without it is not in the tab
+order, so navigation cannot reach it -- which means a controller and a keyboard
+cannot either, however well the rest is wired.
+
+Both are silent when missed, which is why they are written down here and
+exercised in `UiInputTests.cpp`.
 
 ## 7. Rendering capability profile
 

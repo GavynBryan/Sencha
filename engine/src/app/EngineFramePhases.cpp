@@ -888,6 +888,15 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
     });
 #endif
 
+#ifdef SENCHA_ENABLE_UI
+    // Below diagnostics and above the application, matching the z-order: the
+    // console has to be usable over a menu, and a menu over the game.
+    engine.PlatformEvents().AddConsumer("authored_ui", [&engine](const SDL_Event& event) {
+        UiService* ui = engine.TryUi();
+        return ui != nullptr && ui->ProcessPlatformEvent(event);
+    });
+#endif
+
     driver.Register(FramePhase::PumpPlatform, [&engine, &game, &config, &windows, windowId](PhaseContext& ctx) {
         SdlInputCapture::BeginFrame(*ctx.Input);
 
@@ -939,6 +948,16 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
         {
             ctx.Input->UiCapture.Keyboard = true;
             ctx.Input->UiCapture.Mouse = true;
+        }
+#endif
+#ifdef SENCHA_ENABLE_UI
+        // The same posture for authored UI: a field taking text, or a pointer
+        // over a panel, reported rather than hidden.
+        if (const UiService* ui = engine.TryUi(); ui != nullptr)
+        {
+            const UiInputCapture uiCapture = ui->Capture();
+            ctx.Input->UiCapture.Keyboard |= uiCapture.Keyboard;
+            ctx.Input->UiCapture.Mouse |= uiCapture.Mouse;
         }
 #endif
 

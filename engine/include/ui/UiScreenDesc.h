@@ -56,6 +56,15 @@ struct UiScreenDesc
     // calling "pause.resume". Ids are the index into this list plus one, so a
     // host can name them as constants beside the description that declares them.
     std::vector<std::string> Actions;
+
+    // A modal screen takes UI focus from the screens below it: they stop
+    // receiving input while it is open.
+    //
+    // It says nothing about the application. Whether the game pauses, and
+    // whether an editor's viewport tools keep working, are decisions their
+    // hosts make with an InputContextLease -- this layer arbitrates presentation
+    // focus and has no opinion on what a modal means to the thing behind it.
+    bool Modal = false;
 };
 
 // Ids are positional, and both directions are spelled out so a caller never has

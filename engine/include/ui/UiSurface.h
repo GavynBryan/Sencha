@@ -3,6 +3,8 @@
 #include <core/handle/Handle.h>
 #include <graphics/RenderExtent.h>
 
+#include <cstdint>
+
 //=============================================================================
 // UiSurface
 //
@@ -16,6 +18,22 @@
 // care which application hosts it.
 //=============================================================================
 using UiSurfaceId = Handle<struct UiSurfaceTag>;
+
+// Abstract navigation, as a host's mapped actions express it. Deliberately not
+// keys: a document never names a gamepad button or a scancode, so remapping,
+// controller profiles and accessibility settings keep working without any of
+// them knowing a document exists.
+enum class UiNavigation : std::uint8_t
+{
+    Up = 0,
+    Down,
+    Left,
+    Right,
+    Next,      // tab order forward
+    Previous,  // tab order back
+    Accept,    // activate what has focus
+    Cancel,    // dismiss, back out
+};
 
 // The measured layout box of an element, in surface pixels, with the origin at
 // the surface's top left. Content area: what the element actually occupies,

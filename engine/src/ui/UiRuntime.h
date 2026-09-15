@@ -4,12 +4,14 @@
 #include <core/logging/Logger.h>
 #include <graphics/RenderExtent.h>
 #include <assets/font/FontFaceHandle.h>
+#include <input/UiInputCapture.h>
 #include <ui/UiAction.h>
 #include <ui/UiScreenDesc.h>
 #include <ui/UiScreenHandle.h>
 #include <ui/UiSurface.h>
 
 #include "rml/RmlPackageFileSource.h"
+#include "rml/RmlTextInputBridge.h"
 #include "rml/RmlRenderRecorder.h"
 
 #include <cstdint>
@@ -34,6 +36,7 @@ class RmlPackageFileSource;
 class RmlSystemBridge;
 class TextureCache;
 class UiPackageCache;
+struct SDL_Window;
 
 //=============================================================================
 // UiRuntime
@@ -59,7 +62,8 @@ public:
               AssetSystem& assets,
               UiPackageCache& packages,
               FontFaceCache& fonts,
-              TextureCache* textures);
+              TextureCache* textures,
+              SDL_Window* window);
     ~UiRuntime();
 
     UiRuntime(const UiRuntime&) = delete;
@@ -88,6 +92,18 @@ public:
     [[nodiscard]] bool IsScreenOpen(UiScreenHandle screen) const;
 
     void Update();
+
+    // Offers one platform event to the surfaces, topmost first. True when a
+    // surface consumed it, which stops it reaching anything below.
+    [[nodiscard]] bool ProcessPlatformEvent(const union SDL_Event& event);
+
+    // What the UI is currently consuming, for a reader of raw device state.
+    [[nodiscard]] UiInputCapture Capture() const;
+
+    // Abstract navigation, driven by the host's own mapped actions rather than
+    // by keys this layer decided on. The document engine's focus and spatial
+    // navigation do the work; where the input came from stays Sencha's.
+    void Navigate(UiSurfaceId surface, UiNavigation direction);
 
     [[nodiscard]] bool SetValue(UiScreenHandle screen, UiModelPropertyId property, UiValue value);
     [[nodiscard]] UiValue GetValue(UiScreenHandle screen, UiModelPropertyId property) const;
@@ -168,6 +184,7 @@ private:
         std::unordered_map<std::string, TextureHandle> TexturesByAssetPath;
         std::unordered_map<std::string, FontFaceHandle> FontsByAssetPath;
 
+        bool Modal = false;
         std::string ModelName;
         std::vector<BoundProperty> Properties;
         std::vector<std::string> ActionNames;
@@ -217,6 +234,7 @@ private:
     // when they are.
     std::unique_ptr<RmlSystemBridge> SystemBridge;
     std::unique_ptr<RmlPackageFileSource> FileSource;
+    std::unique_ptr<RmlTextInputBridge> TextInput;
     std::unique_ptr<RmlRenderRecorder> Recorder;
 
     std::vector<Surface> Surfaces;
@@ -235,6 +253,14 @@ private:
     // loading or rendering, null otherwise, so a request arriving outside both
     // fails instead of resolving against whatever was open last.
     const Screen* ActiveScreen = nullptr;
+
+    // Last reported pointer position, in window pixels. The document engine is
+    // told where the pointer is on a move; a click has to be told the same
+    // thing again, because a button press with no preceding move (a synthetic
+    // event, a touch tap) would otherwise land wherever the pointer last was.
+    int PointerX = 0;
+    int PointerY = 0;
+    bool PointerInside = false;
 
     bool Ready = false;
 };

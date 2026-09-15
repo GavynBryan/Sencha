@@ -1,6 +1,7 @@
 #pragma once
 
 #include <graphics/RenderExtent.h>
+#include <input/UiInputCapture.h>
 #include <render/ui/UiDrawFrame.h>
 #include <ui/UiAction.h>
 #include <ui/UiScreenDesc.h>
@@ -19,6 +20,7 @@ class LoggingProvider;
 class TextureCache;
 class UiPackageCache;
 class UiRuntime;
+struct SDL_Window;
 
 //=============================================================================
 // UiService
@@ -40,11 +42,15 @@ class UiService
 public:
     // `textures` may be null: a process with no texture cache simply cannot
     // resolve content images, and says so when a document asks for one.
+    // `window` is what text input is requested against. Null in a process with
+    // no window: documents still load and lay out, and a text field simply
+    // never asks the platform for an input method.
     UiService(LoggingProvider& logging,
               AssetSystem& assets,
               UiPackageCache& packages,
               FontFaceCache& fonts,
-              TextureCache* textures = nullptr);
+              TextureCache* textures = nullptr,
+              SDL_Window* window = nullptr);
     ~UiService();
 
     UiService(const UiService&) = delete;
@@ -115,6 +121,27 @@ public:
     // ordering is the engine's to guarantee and not a matter of who registered
     // a system first.
     void Update();
+
+    // -- input ---------------------------------------------------------------
+
+    // Offers one platform event to the UI. True when a surface consumed it,
+    // which the frame pump uses to stop it reaching consumers below.
+    //
+    // Raw events on purpose: pointer position, wheel, key editing, text and IME
+    // are presentation concerns that need the fidelity the device reported, and
+    // an action mapping would have thrown most of it away. What gameplay hears
+    // is decided separately, by an InputContextLease the host takes.
+    [[nodiscard]] bool ProcessPlatformEvent(const union SDL_Event& event);
+
+    // Which devices the UI is consuming. Published, never compensated for: the
+    // device snapshot still records everything that happened, and this is what
+    // tells a reader of raw state which of it was not meant for them.
+    [[nodiscard]] UiInputCapture Capture() const;
+
+    // Abstract navigation, from whatever the host mapped it to. A document
+    // names no key and no gamepad button, so remapping, controller profiles and
+    // accessibility settings keep working without knowing a document exists.
+    void Navigate(UiSurfaceId surface, UiNavigation direction);
 
     // Records every live surface into an immutable draw frame, in
     // ExtractRender. No GPU work happens here; the frames stay valid until the

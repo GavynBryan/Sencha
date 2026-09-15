@@ -793,8 +793,12 @@ int Engine::Run(Game& game)
     // OnStart, so a game can open one from its startup hook.
     {
         RuntimeAssets& assets = ContentState->Assets();
+        SDL_Window* const window = PlatformState != nullptr
+            ? PlatformState->Windows.GetNativeHandle(
+                  PlatformState->Windows.GetPrimaryWindowId())
+            : nullptr;
         UiState = std::make_unique<UiService>(LoggingState, assets.Assets, assets.UiPackages,
-                                              assets.Fonts, assets.Textures.get());
+                                              assets.Fonts, assets.Textures.get(), window);
     }
 #endif
 

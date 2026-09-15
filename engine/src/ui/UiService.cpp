@@ -6,8 +6,9 @@ UiService::UiService(LoggingProvider& logging,
                      AssetSystem& assets,
                      UiPackageCache& packages,
                      FontFaceCache& fonts,
-                     TextureCache* textures)
-    : Runtime(std::make_unique<UiRuntime>(logging, assets, packages, fonts, textures))
+                     TextureCache* textures,
+                     SDL_Window* window)
+    : Runtime(std::make_unique<UiRuntime>(logging, assets, packages, fonts, textures, window))
 {
 }
 
@@ -103,6 +104,21 @@ bool UiService::IsScreenOpen(UiScreenHandle screen) const
 void UiService::Update()
 {
     Runtime->Update();
+}
+
+bool UiService::ProcessPlatformEvent(const SDL_Event& event)
+{
+    return Runtime->ProcessPlatformEvent(event);
+}
+
+UiInputCapture UiService::Capture() const
+{
+    return Runtime->Capture();
+}
+
+void UiService::Navigate(UiSurfaceId surface, UiNavigation direction)
+{
+    Runtime->Navigate(surface, direction);
 }
 
 void UiService::ExtractRender()

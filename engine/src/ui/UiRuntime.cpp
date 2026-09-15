@@ -1,10 +1,12 @@
 #include "UiRuntime.h"
 
+#include "rml/RmlInputBridge.h"
 #include "rml/RmlRenderRecorder.h"
 #include "rml/RmlPackageFileSource.h"
 #include "rml/RmlSystemBridge.h"
 
 #include <RmlUi/Core.h>
+#include <SDL3/SDL_events.h>
 #include <RmlUi/Core/DataModelHandle.h>
 
 #include <assets/font/FontFace.h>
@@ -92,7 +94,8 @@ UiRuntime::UiRuntime(LoggingProvider& logging,
                      AssetSystem& assets,
                      UiPackageCache& packages,
                      FontFaceCache& fonts,
-                     TextureCache* textures)
+                     TextureCache* textures,
+                     SDL_Window* window)
     : Log(logging.GetLogger<UiRuntime>())
     , Assets(assets)
     , Packages(packages)
@@ -109,10 +112,12 @@ UiRuntime::UiRuntime(LoggingProvider& logging,
 
     SystemBridge = std::make_unique<RmlSystemBridge>(Log);
     FileSource = std::make_unique<RmlPackageFileSource>(Log);
+    TextInput = std::make_unique<RmlTextInputBridge>(window);
     Recorder = std::make_unique<RmlRenderRecorder>(Log);
 
     Rml::SetSystemInterface(SystemBridge.get());
     Rml::SetFileInterface(FileSource.get());
+    Rml::SetTextInputHandler(TextInput.get());
     Recorder->SetTextureResolver(this);
     FileSource->SetResourceBytes(this);
     Rml::SetRenderInterface(Recorder.get());
@@ -124,8 +129,10 @@ UiRuntime::UiRuntime(LoggingProvider& logging,
         Rml::SetSystemInterface(nullptr);
         Rml::SetFileInterface(nullptr);
         Rml::SetRenderInterface(nullptr);
+        Rml::SetTextInputHandler(nullptr);
         SystemBridge.reset();
         FileSource.reset();
+        TextInput.reset();
         Recorder.reset();
         g_RuntimeLive.store(false);
         return;
@@ -175,8 +182,10 @@ UiRuntime::~UiRuntime()
     Rml::SetSystemInterface(nullptr);
     Rml::SetFileInterface(nullptr);
     Rml::SetRenderInterface(nullptr);
+    Rml::SetTextInputHandler(nullptr);
 
     Recorder.reset();
+    TextInput.reset();
     FileSource.reset();
     SystemBridge.reset();
 
@@ -468,6 +477,7 @@ UiScreenHandle UiRuntime::OpenScreen(UiSurfaceId surface, const UiScreenDesc& de
     pending.TexturesByAssetPath = std::move(screenTextures);
     pending.FontsByAssetPath = std::move(screenFonts);
 
+    pending.Modal = desc.Modal;
     pending.ModelName = desc.ModelName;
     pending.ActionNames = desc.Actions;
     pending.Properties.reserve(desc.Properties.size());
@@ -526,7 +536,9 @@ UiScreenHandle UiRuntime::OpenScreen(UiSurfaceId surface, const UiScreenDesc& de
         return {};
     }
 
-    document->Show();
+    // Modal takes focus from the documents under it, which is the whole of what
+    // "modal" means here.
+    document->Show(screen.Modal ? Rml::ModalFlag::Modal : Rml::ModalFlag::None);
 
     screen.Document = document;
     screen.Package = std::move(packageLease);
@@ -642,6 +654,159 @@ UiActionId UiRuntime::FindAction(UiScreenHandle screen, std::string_view name) c
 std::vector<UiAction> UiRuntime::DrainActions()
 {
     return std::exchange(PendingActions, {});
+}
+
+bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
+{
+    if (!Ready)
+        return false;
+
+    // Topmost first, and the first surface to consume ends it. Surfaces are
+    // created bottom-up, so reverse creation order is the z-order a host would
+    // expect without having to state one.
+    for (auto it = Surfaces.rbegin(); it != Surfaces.rend(); ++it)
+    {
+        Surface& surface = *it;
+        if (!surface.Live || surface.Context == nullptr)
+            continue;
+
+        Rml::Context& context = *surface.Context;
+        const int modifiers = ToRmlKeyModifiers(SDL_GetModState());
+
+        // Every Process* here returns true when the UI is NOT interacting, so
+        // consumption is the negation. Reading it the other way round would
+        // hand every event to the UI and none to the game.
+        switch (event.type)
+        {
+        case SDL_EVENT_MOUSE_MOTION:
+            PointerX = static_cast<int>(event.motion.x);
+            PointerY = static_cast<int>(event.motion.y);
+            PointerInside = true;
+            if (!context.ProcessMouseMove(PointerX, PointerY, modifiers))
+                return true;
+            break;
+
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+        {
+            const int button = ToRmlMouseButton(event.button.button);
+            if (button < 0)
+                break;
+            // Re-stated, because a press with no preceding move -- a synthetic
+            // event, a tap -- would otherwise be resolved against wherever the
+            // pointer happened to be last.
+            PointerX = static_cast<int>(event.button.x);
+            PointerY = static_cast<int>(event.button.y);
+            PointerInside = true;
+            (void)context.ProcessMouseMove(PointerX, PointerY, modifiers);
+            const bool free = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
+                ? context.ProcessMouseButtonDown(button, modifiers)
+                : context.ProcessMouseButtonUp(button, modifiers);
+            if (!free)
+                return true;
+            break;
+        }
+
+        case SDL_EVENT_MOUSE_WHEEL:
+            if (!context.ProcessMouseWheel(
+                    Rml::Vector2f(-event.wheel.x, -event.wheel.y), modifiers))
+            {
+                return true;
+            }
+            break;
+
+        case SDL_EVENT_KEY_DOWN:
+        case SDL_EVENT_KEY_UP:
+        {
+            const Rml::Input::KeyIdentifier key = ToRmlKey(event.key.scancode);
+            if (key == Rml::Input::KI_UNKNOWN)
+                break;
+            const bool free = event.type == SDL_EVENT_KEY_DOWN
+                ? context.ProcessKeyDown(key, modifiers)
+                : context.ProcessKeyUp(key, modifiers);
+            // Only claimed while a field is actually taking text. A menu that
+            // swallowed every key would take the console and the pause key with
+            // it, and neither belongs to the menu.
+            if (!free || TextInput->IsTextInputActive())
+                return true;
+            break;
+        }
+
+        case SDL_EVENT_TEXT_INPUT:
+            // Composed characters, from the platform. Never reassembled from
+            // keycodes, which is wrong in every locale but the author's.
+            if (TextInput->IsTextInputActive())
+            {
+                (void)context.ProcessTextInput(Rml::String(event.text.text));
+                return true;
+            }
+            break;
+
+        case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+            PointerInside = false;
+            (void)context.ProcessMouseLeave();
+            break;
+
+        default:
+            break;
+        }
+    }
+
+    return false;
+}
+
+UiInputCapture UiRuntime::Capture() const
+{
+    UiInputCapture capture;
+    if (!Ready)
+        return capture;
+
+    for (const Surface& surface : Surfaces)
+    {
+        if (!surface.Live || surface.Context == nullptr)
+            continue;
+        if (surface.Context->IsMouseInteracting())
+            capture.Mouse = true;
+    }
+
+    // Keyboard capture is a text field having focus, and nothing wider. A
+    // screen merely being open does not take the keyboard: a HUD is open for
+    // the whole game, and a pause menu still has to let the console key
+    // through. What suppresses gameplay controls is an InputContextLease the
+    // host takes, which is a decision this layer does not get to make.
+    capture.Keyboard = TextInput != nullptr && TextInput->IsTextInputActive();
+    return capture;
+}
+
+void UiRuntime::Navigate(UiSurfaceId surface, UiNavigation direction)
+{
+    Surface* slot = ResolveSurface(surface);
+    if (slot == nullptr || slot->Context == nullptr)
+        return;
+
+    // Expressed as the keys the document engine's own focus and spatial
+    // navigation already understand. What decided to send it -- a stick, a
+    // remapped button, a key -- was settled by the host's action mapping before
+    // this was called, which is the whole point of not reading devices here.
+    Rml::Input::KeyIdentifier key = Rml::Input::KI_UNKNOWN;
+    int modifiers = 0;
+    switch (direction)
+    {
+    case UiNavigation::Up:       key = Rml::Input::KI_UP; break;
+    case UiNavigation::Down:     key = Rml::Input::KI_DOWN; break;
+    case UiNavigation::Left:     key = Rml::Input::KI_LEFT; break;
+    case UiNavigation::Right:    key = Rml::Input::KI_RIGHT; break;
+    case UiNavigation::Next:     key = Rml::Input::KI_TAB; break;
+    case UiNavigation::Previous: key = Rml::Input::KI_TAB;
+                                 modifiers = Rml::Input::KM_SHIFT; break;
+    case UiNavigation::Accept:   key = Rml::Input::KI_RETURN; break;
+    case UiNavigation::Cancel:   key = Rml::Input::KI_ESCAPE; break;
+    }
+    if (key == Rml::Input::KI_UNKNOWN)
+        return;
+
+    (void)slot->Context->ProcessKeyDown(key, modifiers);
+    (void)slot->Context->ProcessKeyUp(key, modifiers);
 }
 
 void UiRuntime::Update()
