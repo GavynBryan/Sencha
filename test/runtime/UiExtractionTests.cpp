@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <random>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -306,4 +307,108 @@ TEST(UiExtraction, AnUndeclaredImageIsRefusedRatherThanFetched)
                 << "an undeclared image resolved to a content texture anyway";
         }
     }
+}
+
+namespace
+{
+// A package whose text needs a face the package itself declares, so opening it
+// is the only reason that face resolves.
+UiPackage MakeFontPackage(std::string_view rootName)
+{
+    constexpr std::string_view markup = R"(<rml>
+<head><link type="text/rcss" href="typed.rcss"/></head>
+<body><div id="line">Measured</div></body>
+</rml>)";
+    constexpr std::string_view style = R"(
+@font-face { src: "fonts/Inter.sfont"; }
+body { display: block; width: 100%; height: 100%; }
+#line { display: inline-block; font-family: Inter; font-size: 32px; color: #ffffff; }
+)";
+
+    UiPackage package;
+    package.RootDocumentName = std::string(rootName);
+
+    UiPackageBlob root;
+    root.VirtualName = std::string(rootName);
+    root.SourcePath = "ui/" + std::string(rootName);
+    root.Kind = UiBlobKind::Document;
+    root.Bytes = BytesOf(markup);
+    package.Blobs.push_back(std::move(root));
+
+    UiPackageBlob sheet;
+    sheet.VirtualName = "typed.rcss";
+    sheet.SourcePath = "ui/typed.rcss";
+    sheet.Kind = UiBlobKind::StyleSheet;
+    sheet.Bytes = BytesOf(style);
+    package.Blobs.push_back(std::move(sheet));
+
+    package.Resources.push_back(AssetRef{ AssetType::Font,
+                                          "asset://ui/fonts/Inter.sfont" });
+    return package;
+}
+
+// The cooked face the repository already ships for UI tests, written where the
+// directory scan will find it. Cooked artifacts normally reach the registry
+// through .cooked/index.json under their authored path; these tests take the
+// simpler route the .sui packages here already take and put the runtime file at
+// the path the document names.
+void InstallFontFixture(const TempAssetRoot& root)
+{
+    const std::filesystem::path cookedFace =
+        std::filesystem::path(SENCHA_REPO_ROOT)
+        / "test/fixtures/content/assets/.cooked/ui/fonts/Inter-Regular.ttf.sfont";
+    std::ifstream cooked(cookedFace, std::ios::binary);
+    ASSERT_TRUE(cooked.is_open()) << "cooked font fixture missing: " << cookedFace;
+    const std::string bytes((std::istreambuf_iterator<char>(cooked)), {});
+    ASSERT_FALSE(bytes.empty());
+
+    root.WriteBytes("ui/fonts/Inter.sfont",
+                    std::span(reinterpret_cast<const std::byte*>(bytes.data()),
+                              bytes.size()));
+}
+} // namespace
+
+TEST(UiExtraction, TwoScreensShareASurfaceAndEachKeepsItsOwnResources)
+{
+    // A surface carrying a stack -- a HUD with a menu over it -- is two
+    // documents in one context. Nothing had ever opened two, so this is the
+    // shape the pause shell introduces: the upper screen declares a face the
+    // lower one does not, and has to lay out with it.
+    TempAssetRoot root;
+    InstallFontFixture(root);
+
+    std::vector<std::byte> plain;
+    ASSERT_TRUE(WriteSuiToBytes(MakePackage(), plain));
+    root.WriteBytes("ui/plain.sui", plain);
+
+    std::vector<std::byte> typed;
+    ASSERT_TRUE(WriteSuiToBytes(MakeFontPackage("typed.rml"), typed));
+    root.WriteBytes("ui/typed.sui", typed);
+
+    UiTestHost host(root);
+    UiService& ui = host.Service();
+    ASSERT_TRUE(ui.IsReady());
+
+    const UiSurfaceId surface = ui.CreateSurface("test", RenderExtent{ 800, 600 });
+    // The plain one first, so it is the screen the old scope would have picked.
+    ASSERT_TRUE(ui.OpenScreen(surface, "asset://ui/plain.sui").IsValid());
+    const UiScreenHandle over = ui.OpenScreen(surface, "asset://ui/typed.sui");
+    ASSERT_TRUE(over.IsValid());
+
+    ui.Update();
+    ui.ExtractRender();
+
+    const std::optional<UiElementBox> line = ui.MeasureElement(over, "line");
+    ASSERT_TRUE(line.has_value());
+    // Shrink-to-fit, so the width is the measured advance of the glyphs. With no
+    // face resolved there are no advances and the box collapses -- which is what
+    // scoping resolution to the first screen on the surface produced.
+    EXPECT_GT(line->Width, 0.0f)
+        << "the upper screen's text measured nothing: its own face did not resolve";
+
+    // And the lower one is still there and still drawing, rather than having
+    // been displaced by the screen opened over it.
+    ui.ExtractRender();
+    ASSERT_EQ(ui.Frames().size(), 1u) << "one surface still records one frame";
+    EXPECT_GT(TotalIndices(ui.Frames().front()), 0u);
 }

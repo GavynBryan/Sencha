@@ -18,6 +18,7 @@
 class HorrorGame final : public Game
 {
 public:
+    void OnConfigure(GameConfigureContext& ctx) override;
     void OnRegisterComponents(ComponentRegistrar& registrar) override;
     void OnRegisterDataAssetTypes(DataAssetTypeRegistry& types,
                                   DataSchemaRegistry& schemas) override;

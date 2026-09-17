@@ -852,6 +852,8 @@ void EditorUiFeature::PublishAuthoredTheme(bool themeChanged)
     // Written as a stylesheet rather than published through any document's
     // model. A theme is the host's presentation policy; a presentation model is
     // what a surface presents, and a colour is not that.
+    if (!AuthoredThemeEnabled)
+        return;
     if (!themeChanged && AuthoredThemePublished)
         return;
 
@@ -861,6 +863,21 @@ void EditorUiFeature::PublishAuthoredTheme(bool themeChanged)
 
     (void)ui->SetHostStyleSheet(kAuthoredThemeStyleSheetName, BuildAuthoredThemeStyleSheet());
     AuthoredThemePublished = true;
+}
+
+void EditorUiFeature::SetAuthoredThemePublishing(bool enabled)
+{
+    if (AuthoredThemeEnabled == enabled)
+        return;
+    AuthoredThemeEnabled = enabled;
+    // Turning it off takes the sheet back out, so packages return to the copy
+    // they were cooked with; turning it on republishes at the next boundary.
+    if (!enabled && AuthoredThemePublished)
+    {
+        if (UiService* ui = EngineInstance.TryUi(); ui != nullptr && ui->IsReady())
+            (void)ui->SetHostStyleSheet(kAuthoredThemeStyleSheetName, {});
+        AuthoredThemePublished = false;
+    }
 }
 
 void EditorUiFeature::PrepareThemeTextures()

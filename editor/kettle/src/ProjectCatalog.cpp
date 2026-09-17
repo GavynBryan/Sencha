@@ -3,22 +3,15 @@
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <core/json/JsonValue.h>
+#include <platform/UserPaths.h>
 
 #include <algorithm>
-#include <cstdlib>
 #include <fstream>
 #include <sstream>
 
 std::filesystem::path ProjectCatalog::DefaultCatalogPath()
 {
-    std::filesystem::path configDir;
-    if (const char* xdg = std::getenv("XDG_CONFIG_HOME"); xdg != nullptr && xdg[0] != '\0')
-        configDir = xdg;
-    else if (const char* home = std::getenv("HOME"); home != nullptr && home[0] != '\0')
-        configDir = std::filesystem::path(home) / ".config";
-    else
-        configDir = ".";
-    return configDir / "sencha" / "recent_projects.json";
+    return UserConfigDirectory() / "sencha" / "recent_projects.json";
 }
 
 bool ProjectCatalog::Load(const std::filesystem::path& file, std::string* error)

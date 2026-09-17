@@ -127,8 +127,13 @@ TEST(EmptyGameBoot, AGameThatDoesNothingStillBootsMountsAndFrames)
 
     EXPECT_EQ(app.Run(game), 0);
     EXPECT_GE(game.Frames, 8);
-    EXPECT_EQ(game.MountedRootCount, 1u)
-        << "the engine mounts what it was configured to mount, with no game to ask";
+    // The configured root, plus the engine's own content. The shell ships a
+    // default pause document and the face it draws with, mounted last so any
+    // configured root shadows it -- which is also why a game that ships nothing
+    // still has a menu. The engine invents no root beyond that one, and never
+    // asks the game for any.
+    EXPECT_EQ(game.MountedRootCount, 2u)
+        << "the engine mounts what it was configured to mount plus its own content";
     EXPECT_TRUE(game.SawAssetStores)
         << "the asset stores are published before the first frame, not by the game";
 }

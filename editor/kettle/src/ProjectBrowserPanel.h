@@ -22,6 +22,7 @@ public:
         std::function<void(const std::string& projectPath)> OpenLevelEditor;
         std::function<void(const std::string& projectPath)> OpenMaterialEditor;
         std::function<void(const std::string& projectPath)> OpenDataEditor;
+        std::function<void(const std::string& projectPath)> OpenUiPreviewer;
         std::function<void()> BrowseForProject;
         // `templateName` is one of the names the panel was given, or empty for
         // a bare project with no module and no content.

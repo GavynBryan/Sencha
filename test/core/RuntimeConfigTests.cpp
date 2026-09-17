@@ -33,8 +33,6 @@ TEST(RuntimeConfig, EmptyObjectYieldsDefaults)
     EXPECT_DOUBLE_EQ(config->MaxFrameWallDeltaSeconds, 0.25);
     EXPECT_EQ(config->JobWorkerCount, -1);
     EXPECT_EQ(config->AsyncTaskThreadCount, 1);
-    EXPECT_FALSE(config->ExitOnEscape);
-    EXPECT_FALSE(config->TogglePauseOnF1);
 }
 
 TEST(RuntimeConfig, ReadsCatchUpBoundsInEitherSpelling)
@@ -144,7 +142,7 @@ TEST(RuntimeConfig, RejectsZeroAsyncTaskThreads)
 TEST(RuntimeConfig, RejectsWrongFieldTypes)
 {
     EXPECT_FALSE(Parse(R"({"fixedTickRate": "fast"})").has_value());
-    EXPECT_FALSE(Parse(R"({"exitOnEscape": 1})").has_value());
+    EXPECT_FALSE(Parse(R"({"hasLocalPlayer": 1})").has_value());
 }
 
 TEST(RuntimeConfig, StreamingFieldsParseAndDefault)

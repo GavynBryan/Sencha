@@ -1,0 +1,27 @@
+{
+  "model": "inspector",
+  "modal": false,
+  "properties": [
+    { "name": "entity_label", "kind": "string", "value": "Crate (Entity 42)" },
+    { "name": "status", "kind": "string", "value": "3 components" },
+    { "name": "has_selection", "kind": "bool", "value": true },
+    { "name": "picker_open", "kind": "bool", "value": false },
+    { "name": "picker_label", "kind": "string", "value": "Material" }
+  ],
+  "arrays": [
+    { "name": "picker_options", "items": ["(none)", "materials/crate.smat", "materials/metal.smat"] }
+  ],
+  "rows": [
+    {
+      "name": "fields",
+      "items": [
+        { "label": "Position", "value": "0, 1.5, -3", "detail": "Transform", "editable": true },
+        { "label": "Rotation", "value": "0, 90, 0", "detail": "Transform", "editable": true },
+        { "label": "Material", "value": "materials/crate.smat", "detail": "asset", "editable": false },
+        { "label": "Mass", "value": "12.5", "detail": "kg", "editable": true }
+      ]
+    }
+  ],
+  "actions": ["inspector_begin", "inspector_commit", "inspector_close",
+              "inspector_pick", "inspector_choose", "inspector_cancel_pick"]
+}

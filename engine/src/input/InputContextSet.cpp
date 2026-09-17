@@ -53,6 +53,20 @@ void InputContextSet::BuildActiveMask(const BoundInputProfile& profile,
     out.assign(profile.Contexts.size(), 0);
     for (std::size_t i = 0; i < profile.Contexts.size(); ++i)
     {
+        // The shell's own context is not lease-managed. It is the
+        // application's, always live, and exempt from the suspension it
+        // applies -- a game able to deactivate it, or a suspension able to
+        // silence it, would lock the player out of the menu with no way back.
+        if (profile.Contexts[i].IsShell)
+        {
+            out[i] = 1;
+            continue;
+        }
+        // Everything else goes quiet while the shell owns input. Lease state is
+        // left exactly as it was, so lifting the suspension restores whatever
+        // was active without anyone having to re-take it.
+        if (Suspended)
+            continue;
         const auto it = SlotsByName.find(profile.Contexts[i].Name);
         if (it != SlotsByName.end() && Slots[it->second].Applied)
             out[i] = 1;

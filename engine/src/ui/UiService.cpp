@@ -189,3 +189,74 @@ std::optional<UiElementBox> UiService::MeasureElement(UiScreenHandle screen,
 {
     return Runtime->MeasureElement(screen, elementId);
 }
+
+std::vector<UiDiagnostic> UiService::DrainDiagnostics()
+{
+    return Runtime->DrainDiagnostics();
+}
+
+UiElementRef UiService::ElementAt(UiSurfaceId surface, Vec2d surfacePoint)
+{
+    return Runtime->ElementAt(surface, surfacePoint);
+}
+
+std::optional<UiElementInfo> UiService::DescribeElement(UiElementRef ref)
+{
+    return Runtime->DescribeElement(ref);
+}
+
+std::vector<UiElementRef> UiService::ElementChildren(UiElementRef ref)
+{
+    return Runtime->ElementChildren(ref);
+}
+
+std::vector<UiElementInfo> UiService::ElementTree(UiScreenHandle screen)
+{
+    return Runtime->ElementTree(screen);
+}
+
+std::optional<std::string> UiService::ComputedProperty(UiElementRef ref,
+                                                       std::string_view property) const
+{
+    return Runtime->ComputedProperty(ref, property);
+}
+
+void UiService::SetSurfacePlacement(UiSurfaceId surface, std::optional<Rect2d> windowRect)
+{
+    Runtime->SetSurfacePlacement(surface, windowRect);
+}
+
+std::optional<Rect2d> UiService::GetSurfacePlacement(UiSurfaceId surface) const
+{
+    return Runtime->GetSurfacePlacement(surface);
+}
+
+void UiService::SetSurfaceInputPolicy(UiSurfaceId surface, UiSurfaceInputPolicy policy)
+{
+    Runtime->SetSurfaceInputPolicy(surface, policy);
+}
+
+UiSurfaceInputPolicy UiService::GetSurfaceInputPolicy(UiSurfaceId surface) const
+{
+    return Runtime->GetSurfaceInputPolicy(surface);
+}
+
+void UiService::SetSurfaceDestination(UiSurfaceId surface, UiSurfaceDestination destination)
+{
+    Runtime->SetSurfaceDestination(surface, destination);
+}
+
+UiSurfaceDestination UiService::GetSurfaceDestination(UiSurfaceId surface) const
+{
+    return Runtime->GetSurfaceDestination(surface);
+}
+
+const UiDrawFrame* UiService::OffscreenFrame(UiSurfaceId surface) const
+{
+    return Runtime->OffscreenFrame(surface);
+}
+
+bool UiService::IsPointerOver(UiSurfaceId surface) const
+{
+    return Runtime->IsPointerOver(surface);
+}

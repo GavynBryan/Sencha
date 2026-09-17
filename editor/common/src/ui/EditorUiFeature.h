@@ -134,6 +134,12 @@ public:
 
     void SetIdentity(ShellIdentity identity);
 
+    // Whether the shell writes the editor theme into the authored UI layer as
+    // `theme.rcss`. On for an editor whose own documents are themed with its
+    // chrome; off for a host that shows documents the way a game would, and
+    // decides for itself when a theme belongs on one.
+    void SetAuthoredThemePublishing(bool enabled);
+
     // The resolved surface for a bar, as prepared at this frame's boundary.
     // A pure lookup: a bar painting itself never reaches a loader.
     [[nodiscard]] EditorChrome::BarSurface SurfaceFor(BarRole role) const;
@@ -152,6 +158,7 @@ private:
     // have changed yet.
     void PublishAuthoredTheme(bool themeChanged);
     bool AuthoredThemePublished = false;
+    bool AuthoredThemeEnabled = true;
     void PrepareThemeTextures();
     void BuildShellAtlasIfStale();
     [[nodiscard]] EditorChrome::BarSurface ResolveSurface(EditorUi::BarFinish finish, const std::string& path,

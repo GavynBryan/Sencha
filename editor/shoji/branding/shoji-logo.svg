@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="180" viewBox="0 0 240 180">
+  <!-- Flat white by design: tinted at draw time with the theme accent, like every icon.
+       A shoji screen: the frame and its lattice, one pane slid open. -->
+  <path fill="#FFFFFF" fill-rule="evenodd" d="
+    M 8 8 H 232 V 172 H 8 Z
+    M 20 20 V 160 H 220 V 20 Z
+    M 20 20 V 160 H 220 V 20 Z
+    M 32 32 H 88 V 88 H 32 Z  M 96 32 H 152 V 88 H 96 Z  M 160 32 H 208 V 88 H 160 Z
+    M 32 96 H 88 V 148 H 32 Z  M 96 96 H 152 V 148 H 96 Z
+    M 160 96 H 208 V 148 H 160 Z"/>
+  <path fill="#FFFFFF" d="M 156 92 H 212 V 152 H 156 Z"/>
+</svg>

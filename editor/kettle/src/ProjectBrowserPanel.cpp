@@ -102,6 +102,9 @@ void ProjectBrowserPanel::DrawRecentList()
         ImGui::SameLine();
         if (ImGui::SmallButton("Data") && Act.OpenDataEditor)
             Act.OpenDataEditor(entry.Path);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Shoji") && Act.OpenUiPreviewer)
+            Act.OpenUiPreviewer(entry.Path);
         ImGui::SetItemTooltip("Open in the structured data editor");
         ImGui::EndDisabled();
         ImGui::SameLine();

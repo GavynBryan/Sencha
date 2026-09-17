@@ -1,5 +1,7 @@
 #pragma once
 
+#include <graphics/vulkan/VulkanFormat.h>
+
 #include <graphics/vulkan/VulkanImageService.h>
 #include <vulkan/vulkan.h>
 
@@ -38,12 +40,7 @@ public:
     // Whether the chosen format carries a stencil aspect. Authored UI clips to
     // rounded boundaries through it; a device that offered no stencil-bearing
     // depth format still runs, with that clipping degraded to a rectangle.
-    [[nodiscard]] bool HasStencil() const
-    {
-        return Format == VK_FORMAT_D32_SFLOAT_S8_UINT
-            || Format == VK_FORMAT_D24_UNORM_S8_UINT
-            || Format == VK_FORMAT_D16_UNORM_S8_UINT;
-    }
+    [[nodiscard]] bool HasStencil() const { return FormatHasStencil(Format); }
     [[nodiscard]] VkExtent2D GetExtent() const { return Extent; }
 
 private:

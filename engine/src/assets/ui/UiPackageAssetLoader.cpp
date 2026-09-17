@@ -77,14 +77,9 @@ UiPackageHandle UiPackageAssetLoader::CommitTyped(AssetStaging&& staged)
         return {};
     }
 
-    // Authoring problems the cooker noticed. Reported once, at the point the
-    // package becomes resident, rather than per frame it draws wrong.
-    for (const UiUnsupportedFeature& note : package->Unsupported)
-    {
-        Log.Warn("UiPackage '{}': '{}' at {}:{} is outside the supported rendering profile",
-                 staged.Record.Path, note.Feature, note.SourcePath, note.Line);
-    }
-
+    // The cooker's notes about this package travel with it and are reported
+    // by the UI layer when a screen opens on it -- the point that has a screen
+    // to attribute them to and a consumer that may be looking.
     return Cache->Register(staged.Record.Path, std::move(*package));
 }
 
@@ -96,14 +91,6 @@ bool UiPackageAssetLoader::CommitReload(AssetStaging&& staged)
     auto* package = std::any_cast<UiPackage>(&staged.Payload);
     if (package == nullptr)
         return false;
-
-    // Reported again on reload: an author who just introduced one wants to hear
-    // about it now, not at the next cold start.
-    for (const UiUnsupportedFeature& note : package->Unsupported)
-    {
-        Log.Warn("UiPackage '{}': '{}' at {}:{} is outside the supported rendering profile",
-                 staged.Record.Path, note.Feature, note.SourcePath, note.Line);
-    }
 
     return Cache->ReloadInPlace(staged.Record.Path, std::move(*package));
 }

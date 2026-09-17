@@ -49,11 +49,20 @@ struct RenderScopeDesc
 
     RenderScopeAttachment Color;
     RenderScopeAttachment Depth;
+    // The stencil half of a combined depth/stencil image, when a pass inside
+    // clips through it. Its view is the depth view; what differs is the load
+    // and store ops, which is why it is its own attachment rather than a flag.
+    // Binding it puts both aspects into DEPTH_STENCIL_ATTACHMENT_OPTIMAL, the
+    // layout the target session transitions a stencil-bearing image into.
+    RenderScopeAttachment Stencil;
 
     // Reported through Context() so pipelines keyed on attachment format pick
     // the right variant. Not derivable from the views.
     VkFormat ColorFormat = VK_FORMAT_UNDEFINED;
     VkFormat DepthFormat = VK_FORMAT_UNDEFINED;
+    // UNDEFINED means "no stencil inside this scope" even when the outer frame
+    // had one: a pass must not clip through an attachment the scope never opened.
+    VkFormat StencilFormat = VK_FORMAT_UNDEFINED;
 
     RenderPhase Phase = RenderPhase::Offscreen;
 };

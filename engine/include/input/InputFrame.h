@@ -88,6 +88,19 @@ struct InputFrame
     std::array<float, kInputGamepadAxisCount> GamepadAxes{};
     bool GamepadConnected = false;
 
+    // Forget how far the pointer moved this frame.
+    //
+    // For displacement that is not input: the jump the cursor makes when
+    // relative mouse mode is entered or left. Held buttons and keys are
+    // untouched, because they genuinely are where they are -- and so is the
+    // wheel, which a capture change does not move. Exactly as wide as its
+    // reason, so a scroll aimed at the frame a menu closes still lands.
+    void DropPointerMotion()
+    {
+        MouseDeltaX = 0.0f;
+        MouseDeltaY = 0.0f;
+    }
+
     bool QuitRequested = false;
 
     // Which devices a presentation surface owned while this frame's events were

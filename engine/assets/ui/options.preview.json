@@ -1,0 +1,25 @@
+{
+  "model": "options",
+  "modal": true,
+  "properties": [
+    { "name": "title", "kind": "string", "value": "Options" },
+    { "name": "hint", "kind": "string", "value": "Select a setting to change it." }
+  ],
+  "arrays": [],
+  "rows": [
+    {
+      "name": "rows",
+      "items": [
+        { "label": "Master Volume", "value": "0.8", "editable": true, "control": "range",
+          "number": 0.8, "min": 0.0, "max": 1.0, "step": 0.05 },
+        { "label": "Look Sensitivity", "value": "1", "editable": true, "control": "range",
+          "number": 1.0, "min": 0.25, "max": 3.0, "step": 0.05 },
+        { "label": "Display Mode", "value": "Windowed", "editable": true, "control": "choice",
+          "choices": ["Windowed", "Borderless", "Fullscreen"] },
+        { "label": "Frame Rate Cap", "value": "Unlimited", "editable": true, "control": "choice",
+          "choices": ["Unlimited", "30", "60", "90", "120", "144", "240"] }
+      ]
+    }
+  ],
+  "actions": ["options_activate"]
+}

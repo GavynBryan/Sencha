@@ -1,0 +1,31 @@
+<rml>
+<head>
+    <title>Pause</title>
+    <link type="text/rcss" href="pause.rcss"/>
+</head>
+<body data-model="pause">
+    <!-- The scrim is what makes this modal to the pointer: the modal flag traps
+         focus and nothing else, so a click aimed past the panel would otherwise
+         reach the game underneath.
+
+         The panel is inside it rather than beside it, because the scrim is also
+         what centres it: a box of unknown size centred against one that fills
+         the viewport is a containment relationship, not two siblings that
+         happen to overlap. -->
+    <div id="scrim">
+        <div id="panel">
+            <div id="title">{{title}}</div>
+
+            <!-- Entry-agnostic on purpose: the document repeats over whatever
+                 the model publishes and reports which row was activated. It
+                 names no command, so adding, renaming or reordering an entry is
+                 a change to the model and never an edit here. -->
+            <div id="entries">
+                <div class="entry" data-for="entry : entries"
+                     data-event-click="pause_activate(it_index)"
+                     tab-index="auto">{{entry}}</div>
+            </div>
+        </div>
+    </div>
+</body>
+</rml>

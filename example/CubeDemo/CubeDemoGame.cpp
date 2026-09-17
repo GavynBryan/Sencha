@@ -417,10 +417,6 @@ void CubeDemoGame::OnStart(GameStartupContext&)
 void CubeDemoGame::OnRegisterSystems(
     SystemRegisterContext& ctx)
 {
-    RegisterInputSystems(
-        ctx.Schedule,
-        RuntimeAssetState().DataAssets,
-        GetEngine().Logging());
     RegisterCubeDemoSystems(
         ctx.Schedule,
         FreeCam,
@@ -448,25 +444,25 @@ void CubeDemoGame::OnPlatformEvent(
     if (ctx.Handled)
         return;
 
+    // A free-camera diagnostic, not a game: holding the right button to fly is
+    // the gesture an editor viewport uses, and it stays. What changed is that
+    // it asks the engine's arbiter rather than reaching for SDL -- so focus
+    // loss, the console, and a menu are all somebody else's problem.
     if (ctx.Event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
         && ctx.Event.button.button == SDL_BUTTON_RIGHT)
     {
-        SetRelativeMouseMode(GetEngine(), true);
+        GetEngine().SetPointerCaptured(true);
     }
     else if (ctx.Event.type == SDL_EVENT_MOUSE_BUTTON_UP
              && ctx.Event.button.button == SDL_BUTTON_RIGHT)
     {
-        SetRelativeMouseMode(GetEngine(), false);
-    }
-    else if (ctx.Event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
-    {
-        SetRelativeMouseMode(GetEngine(), false);
+        GetEngine().SetPointerCaptured(false);
     }
 }
 
 void CubeDemoGame::OnShutdown(GameShutdownContext&)
 {
-    SetRelativeMouseMode(GetEngine(), false);
+    GetEngine().SetPointerCaptured(false);
 
     Engine& engine = GetEngine();
     RuntimeWorld& runtime = engine.World();
@@ -537,17 +533,4 @@ const RuntimeAssets& CubeDemoGame::RuntimeAssetState() const
     assert(Assets.has_value()
            && "RuntimeAssets must be constructed before use");
     return *Assets;
-}
-
-void CubeDemoGame::SetRelativeMouseMode(
-    Engine& engine,
-    bool enabled)
-{
-    SdlWindow* window =
-        engine.Platform().Windows.GetPrimaryWindow();
-    if (window == nullptr || window->GetHandle() == nullptr)
-        return;
-    if (SDL_GetWindowRelativeMouseMode(window->GetHandle()) == enabled)
-        return;
-    SDL_SetWindowRelativeMouseMode(window->GetHandle(), enabled);
 }

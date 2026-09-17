@@ -35,7 +35,6 @@ public:
     void OnShutdown(GameShutdownContext& ctx) override;
 
 private:
-    void SetRelativeMouseMode(Engine& engine, bool enabled);
     RuntimeAssets& RuntimeAssetState();
     const RuntimeAssets& RuntimeAssetState() const;
 

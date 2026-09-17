@@ -4,9 +4,14 @@
 #include <input/UiInputCapture.h>
 #include <render/ui/UiDrawFrame.h>
 #include <ui/UiAction.h>
+#include <ui/UiDiagnostic.h>
+#include <ui/UiElementInfo.h>
 #include <ui/UiScreenDesc.h>
 #include <ui/UiScreenHandle.h>
 #include <ui/UiSurface.h>
+
+#include <math/Vec.h>
+#include <math/geometry/2d/Rect2d.h>
 
 #include <memory>
 #include <optional>
@@ -93,6 +98,29 @@ public:
     void SetSurfaceScale(UiSurfaceId surface, float scale);
     [[nodiscard]] float GetSurfaceScale(UiSurfaceId surface) const;
 
+    // Where the surface is shown, in window points (UiSurfacePlacement.h names
+    // the spaces). Pointer events inside the rect are mapped into surface
+    // pixels; events outside never reach the surface -- unless a press inside
+    // is still held, in which case the drag follows the pointer out and back,
+    // because leaving a slider's track by five pixels is not letting go of it.
+    // nullopt, the default, is the whole window at one pixel per point.
+    void SetSurfacePlacement(UiSurfaceId surface, std::optional<Rect2d> windowRect);
+    [[nodiscard]] std::optional<Rect2d> GetSurfacePlacement(UiSurfaceId surface) const;
+
+    // Whether the pointer is over the surface -- inside its placement, or held
+    // there by a press that has not been released. A host deciding whether a
+    // surface should have the keyboard asks this rather than tracking events,
+    // because the events a surface consumes never reach the host.
+    [[nodiscard]] bool IsPointerOver(UiSurfaceId surface) const;
+
+    // What this surface may receive at all. See UiSurfaceInputPolicy.
+    void SetSurfaceInputPolicy(UiSurfaceId surface, UiSurfaceInputPolicy policy);
+    [[nodiscard]] UiSurfaceInputPolicy GetSurfaceInputPolicy(UiSurfaceId surface) const;
+
+    // Where the surface's recording goes. See UiSurfaceDestination.
+    void SetSurfaceDestination(UiSurfaceId surface, UiSurfaceDestination destination);
+    [[nodiscard]] UiSurfaceDestination GetSurfaceDestination(UiSurfaceId surface) const;
+
     // -- screens -------------------------------------------------------------
 
     // Opens a screen: the cooked package, what it presents, and what it can ask
@@ -165,6 +193,12 @@ public:
     // until the next one, and self-contained, so reading it never reaches back
     // into a document.
     [[nodiscard]] const std::vector<UiDrawFrame>& Frames() const;
+
+    // This frame's recording of an Offscreen surface, for the host feature that
+    // draws it into a target of its own. Null when the surface is not
+    // Offscreen, drew nothing, or does not exist. Same lifetime as Frames():
+    // valid from ExtractRender until the next.
+    [[nodiscard]] const UiDrawFrame* OffscreenFrame(UiSurfaceId surface) const;
 
     // -- presentation model --------------------------------------------------
 
@@ -247,6 +281,47 @@ public:
     // regression surface.
     [[nodiscard]] std::optional<UiElementBox> MeasureElement(UiScreenHandle screen,
                                                             std::string_view elementId) const;
+
+    // The element under a point, in surface pixels; invalid when nothing is
+    // there. A host presenting the surface somewhere other than the window
+    // maps its pointer into surface pixels first (UiSurfacePlacement.h).
+    //
+    // Minting a reference is what makes these non-const: the runtime records
+    // which element a ticket stands for, so it can say "gone" later instead
+    // of handing back whatever took its place.
+    [[nodiscard]] UiElementRef ElementAt(UiSurfaceId surface, Vec2d surfacePoint);
+
+    // Everything about one element, or nullopt once it no longer exists.
+    [[nodiscard]] std::optional<UiElementInfo> DescribeElement(UiElementRef ref);
+
+    // The element's DOM children, in order. Empty for a leaf or a stale ref.
+    [[nodiscard]] std::vector<UiElementRef> ElementChildren(UiElementRef ref);
+
+    // The whole document, preorder, root first. A snapshot: it is what the
+    // tree was when asked, and every entry carries a ref that keeps answering
+    // for as long as its element lives.
+    [[nodiscard]] std::vector<UiElementInfo> ElementTree(UiScreenHandle screen);
+
+    // One computed style property as the document engine would print it --
+    // "display", "font-size", "pointer-events" -- or nullopt for a name it
+    // does not know or a ref that no longer resolves.
+    [[nodiscard]] std::optional<std::string> ComputedProperty(UiElementRef ref,
+                                                              std::string_view property) const;
+
+    // -- diagnostics ---------------------------------------------------------
+
+    // Everything the layer reported since the last call, oldest first: the
+    // cooker's notes about a package that opened, this layer's refusals, and
+    // the document engine's own log with the binding it named where it named
+    // one. Each entry says where it came from and what happened, and carries
+    // only the attribution the layer genuinely had (UiDiagnostic).
+    //
+    // Destructive, and meant for ONE consumer per service: a second drainer
+    // sees only what the first left. A host with several parties interested
+    // drains once and fans out. Bounded to 256; a sequence gap says the ring
+    // overflowed. Everything here is also written to the ordinary log, so a
+    // host that never drains loses nothing.
+    [[nodiscard]] std::vector<UiDiagnostic> DrainDiagnostics();
 
 private:
     // The document engine, and the only thing that knows what implements it.

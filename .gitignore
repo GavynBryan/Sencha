@@ -88,3 +88,4 @@ core.*
 
 # Captured with a project open, per editor. data_editor has none yet.
 data_editor.imgui.ini
+shoji.imgui.ini

@@ -209,6 +209,24 @@ presentation snapshot at tick rate is the bug the phase split exists to prevent.
 Adding an action costs one entry in the action set, one binding in the profile,
 and one field wherever it is consumed. No engine edit, no central switch.
 
+## The shell's own actions
+
+`ui.back`, `ui.accept` and the four directions belong to the engine. It declares
+them and their default bindings, and merges them into whatever profile a game
+binds -- including into no profile at all, so a game shipping no input content
+still answers the key that opens its menu.
+
+`ui.` is reserved: an action set may redeclare one of these and only these, with
+a matching type and scope, which is how a game rebinds one. Any other `ui.` name
+fails the asset. A redeclaration keeps the engine's id, replaces the default
+binding rather than adding to it, and is compiled into the engine's own `ui`
+context whichever authored context declared it -- because authored contexts stop
+resolving while the application shell has input suspended, and a Back that went
+silent under a pause could never lift it.
+
+The `ui` context sits above any authored priority, and an authored context at or
+above that band is refused. See [pause.md](pause.md).
+
 ## Contexts
 
 A context is a named group of bindings that can be turned on and off at runtime.
@@ -220,6 +238,14 @@ context stuck on. Leases are counted, so two holders do not cancel each other.
 InputContextLease menu = world.GetResource<InputContextSet>().Activate("menu");
 // ... dropping `menu` deactivates it
 ```
+
+`InputContextSet::SetSuspended` is the other switch, and it belongs to the
+application shell: every context except the engine's own goes quiet while a menu
+owns input, and every lease stays exactly where it was. It suppresses rather than
+deactivates because the leases belong to whoever took them -- a game gets its
+controls back untouched without having to notice the shell existed. Priority
+could not do this: a context claims only the controls it *binds*, so a menu
+context above gameplay would leave movement and firing resolving.
 
 Every context has a unique priority within its profile. When several active
 contexts bind the same control, the highest-priority one claims it and the
@@ -296,6 +322,10 @@ directly to an action id, and abilities whose shape spans several moments —
 charge while held then loose on release, tap versus hold, timed sequences. Those
 need more than one moment and so read the raw edges; the tick records already
 carry the edges and tick stamps they will need.
+
+**The application shell.** Which actions open and drive a menu, and what a pause
+does to the contexts underneath it, are in [pause.md](pause.md). The mapper's
+only part in it is that the shell reads actions like anything else does.
 
 **Networking.** Tick records are flat, tick-stamped, action-indexed value arrays
 with no strings, pointers, or platform types. A command builder projects the

@@ -74,7 +74,7 @@ file(GLOB_RECURSE PARTICIPANT_TEST_SOURCES CONFIGURE_DEPENDS
 )
 
 add_executable(core_tests ${CORE_TEST_SOURCES})
-target_link_libraries(core_tests PRIVATE sencha_engine GTest::gtest_main)
+target_link_libraries(core_tests PRIVATE sencha_engine app_host_arguments GTest::gtest_main)
 # The component-codegen golden fixture is included by logical path.
 target_include_directories(core_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # Committed content lives in the source tree, not beside the test binary.
@@ -181,6 +181,15 @@ if(LEVEL_COOK_TEST_SOURCES AND TARGET kyusu_authoring)
     target_compile_definitions(level_cook_tests PRIVATE
         SENCHA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
     list(APPEND SENCHA_TEST_TARGETS level_cook_tests)
+
+    # The engine's own content, cooked into the artifacts a shipping build
+    # loads. Not a check -- a generator: a build with SENCHA_ENABLE_COOK off has
+    # no cooker in it, so engine/assets/.cooked is committed and this is how it
+    # is regenerated after editing the sources under engine/assets.
+    add_test(NAME CookEngineUiContent
+        COMMAND level_cook_tests --gtest_filter=CookContentRoot.Generate)
+    set_tests_properties(CookEngineUiContent PROPERTIES
+        ENVIRONMENT "SENCHA_COOK_ROOT=${CMAKE_SOURCE_DIR}/engine/assets")
 endif()
 
 if(FRAMEWORK_TEST_SOURCES)
@@ -243,7 +252,10 @@ if(EDITOR_TEST_SOURCES AND TARGET kyusu_authoring)
         ${CMAKE_SOURCE_DIR}/editor/shudei/src
         ${CMAKE_SOURCE_DIR}/editor/kettle/src
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src)
-    target_link_libraries(editor_tests PRIVATE kyusu_authoring GTest::gtest_main)
+    # The previewer's authoring half arrives as a library too, and its tests
+    # open the shipped documents from the source tree with their sidecars.
+    target_link_libraries(editor_tests PRIVATE kyusu_authoring shoji_authoring GTest::gtest_main)
+    target_compile_definitions(editor_tests PRIVATE SENCHA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
     list(APPEND SENCHA_TEST_TARGETS editor_tests)
 endif()
 

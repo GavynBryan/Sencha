@@ -99,7 +99,9 @@ protected:
 
         Partitions.Add(StoragePartitionId::Default());
         RegisterInputMapping(WorldState, Cache, Profile);
-        RegisterInputSystems(Schedule, Cache, Logging);
+        // Wired to the frame loop's own bus, the way the engine wires it, so a
+        // resume can tell the mapper to drop what it latched while suspended.
+        RegisterInputSystems(Schedule, Cache, Logging, &Runtime.GetDiscontinuityBus());
         Recorder = &Schedule.Register<TickRecorder>();
         Schedule.After<TickRecorder, InputActionResolveSystem>();
         Schedule.Init();
@@ -646,4 +648,243 @@ TEST(InputContextSetTest, LeasesResolveBeyondTheFirstByteOfSlotIndices)
     EXPECT_FALSE(contexts.IsActive(std::format("context{}", kContexts - 1)));
     for (std::size_t i = 0; i + 1 < kContexts; ++i)
         EXPECT_TRUE(contexts.IsActive(std::format("context{}", i))) << "context " << i;
+}
+
+// A frame that runs no fixed tick still folds its input into both clocks, so a
+// suspended simulation accumulates everything that happened while it was
+// stopped. Resuming has to discard that, or the first tick back inherits a
+// menu's worth of pointer travel and whatever was clicked in it.
+
+TEST_F(InputRuntimeFixture, AResumeDropsWhatTheSimulationLatchedWhileSuspended)
+{
+    InputContextLease gameplay = WorldState.GetResource<InputContextSet>().Activate("gameplay");
+    RunFrame(1);
+    BindActionIds();
+
+    // Ten frames of a stopped simulation: the pointer moves over a menu, and a
+    // key goes down in it.
+    for (int frame = 0; frame < 10; ++frame)
+    {
+        Input.MouseDeltaX = 40.0f;
+        RunFrame(0);
+    }
+    PressKey(SDL_SCANCODE_SPACE);
+    RunFrame(0);
+
+    // What leaving the paused state marks, and what the mapper subscribes to.
+    Runtime.GetDiscontinuityBus().Publish(FrameDiscontinuityEvent{
+        .Reason = TemporalDiscontinuityReason::SimulationPause,
+        .FrameIndex = 0,
+    });
+
+    Recorder->Samples.clear();
+    RunFrame(1);
+
+    ASSERT_EQ(Recorder->Samples.size(), 1u);
+    EXPECT_FALSE(Recorder->Samples.front().Jump.WasPressed())
+        << "a key pressed while the simulation was suspended fired on the first tick back";
+
+    const InputActionView tick = WorldState.GetResource<InputActionState>().Tick();
+    EXPECT_NEAR(tick.Axis2(Look).X, 0.0, 1e-9)
+        << "the whole suspension's pointer travel reached the first tick back";
+}
+
+TEST_F(InputRuntimeFixture, AResumeLeavesTheHeldStateItFoundAlone)
+{
+    // Clearing the latch drops transitions the simulation never consumed, not
+    // the device's state. Somebody holding W through a pause is still holding
+    // it afterwards -- and it must read as held rather than as a fresh press.
+    InputContextLease gameplay = WorldState.GetResource<InputContextSet>().Activate("gameplay");
+    PressKey(SDL_SCANCODE_W);
+    RunFrame(1);
+    BindActionIds();
+
+    RunFrame(0);
+    Runtime.GetDiscontinuityBus().Publish(FrameDiscontinuityEvent{
+        .Reason = TemporalDiscontinuityReason::SimulationPause,
+        .FrameIndex = 0,
+    });
+
+    Recorder->Samples.clear();
+    RunFrame(1);
+
+    ASSERT_EQ(Recorder->Samples.size(), 1u);
+    EXPECT_GT(Recorder->Samples.front().Move.Y, 0.0f)
+        << "a key held through the pause stopped moving";
+    EXPECT_FALSE(Recorder->Samples.front().Move.WasPressed())
+        << "a held key read as a fresh press after the resume";
+}
+
+TEST_F(InputRuntimeFixture, OnlyAPauseDiscardsLatchedInput)
+{
+    // The scope guard. A resize, a swapchain rebuild or a zone load says
+    // nothing about whether input the simulation has not consumed is still
+    // meant for it, and pause must not redefine what they mean.
+    InputContextLease gameplay = WorldState.GetResource<InputContextSet>().Activate("gameplay");
+    RunFrame(1);
+    BindActionIds();
+
+    Input.MouseDeltaX = 40.0f;
+    RunFrame(0);
+    PressKey(SDL_SCANCODE_SPACE);
+    RunFrame(0);
+
+    Runtime.GetDiscontinuityBus().Publish(FrameDiscontinuityEvent{
+        .Reason = TemporalDiscontinuityReason::Resize,
+        .FrameIndex = 0,
+    });
+
+    Recorder->Samples.clear();
+    RunFrame(1);
+
+    ASSERT_EQ(Recorder->Samples.size(), 1u);
+    EXPECT_TRUE(Recorder->Samples.front().Jump.WasPressed())
+        << "a resize swallowed a press the simulation was owed";
+
+    const InputActionView tick = WorldState.GetResource<InputActionState>().Tick();
+    EXPECT_GT(tick.Axis2(Look).X, 0.0) << "a resize swallowed latched motion";
+}
+
+// ---------------------------------------------------------------------------
+// Suspending gameplay input while the application shell owns it
+// ---------------------------------------------------------------------------
+
+TEST_F(InputRuntimeFixture, SuspensionSilencesAContextWithoutTouchingItsLease)
+{
+    InputContextLease gameplay = WorldState.GetResource<InputContextSet>().Activate("gameplay");
+    PressKey(SDL_SCANCODE_W);
+    RunFrame(1);
+    BindActionIds();
+    RunFrame(1);
+    ASSERT_GT(Recorder->Samples.back().Move.Y, 0.0f) << "precondition: the game is moving";
+
+    WorldState.GetResource<InputContextSet>().SetSuspended(true);
+    Recorder->Samples.clear();
+    RunFrame(1);
+
+    ASSERT_EQ(Recorder->Samples.size(), 1u);
+    EXPECT_FLOAT_EQ(Recorder->Samples.front().Move.Y, 0.0f)
+        << "gameplay kept resolving behind the shell";
+
+    // The holder never let go, and never had to: it gets its context back
+    // untouched rather than having to notice and re-take it.
+    EXPECT_TRUE(gameplay.IsValid());
+    WorldState.GetResource<InputContextSet>().SetSuspended(false);
+    Recorder->Samples.clear();
+    RunFrame(1);
+    EXPECT_GT(Recorder->Samples.front().Move.Y, 0.0f) << "the lease did not come back";
+}
+
+TEST_F(InputRuntimeFixture, AHeldActionReleasesOnSuspendAndIsHeldNotPressedOnResume)
+{
+    // The two edges a player feels. Suspending must not leave an action stuck
+    // down for the rest of the session, and resuming over a key that was never
+    // let go must not read as a fresh press -- which for a jump bound to that
+    // key is the difference between resuming and jumping.
+    InputContextLease gameplay = WorldState.GetResource<InputContextSet>().Activate("gameplay");
+    PressKey(SDL_SCANCODE_SPACE);
+    RunFrame(1);
+    BindActionIds();
+    RunFrame(1);
+
+    InputContextSet& contexts = WorldState.GetResource<InputContextSet>();
+    contexts.SetSuspended(true);
+    Recorder->Samples.clear();
+    RunFrame(1);
+
+    ASSERT_EQ(Recorder->Samples.size(), 1u);
+    EXPECT_TRUE(Recorder->Samples.front().Jump.WasReleased())
+        << "an action held when the shell took input never released";
+    EXPECT_FALSE(Recorder->Samples.front().Jump.IsHeld());
+
+    contexts.SetSuspended(false);
+    Recorder->Samples.clear();
+    RunFrame(1);
+
+    ASSERT_EQ(Recorder->Samples.size(), 1u);
+    EXPECT_TRUE(Recorder->Samples.front().Jump.IsHeld());
+    EXPECT_FALSE(Recorder->Samples.front().Jump.WasPressed())
+        << "resuming over a key that was never let go read as a fresh press";
+}
+
+TEST_F(InputRuntimeFixture, AMenuContextAtHigherPriorityDoesNotSuppressGameplay)
+{
+    // Why suspension exists at all. Claims are per control, and only for the
+    // controls an active context actually binds, so putting a menu context
+    // above gameplay takes Escape and leaves movement, look and jump resolving
+    // exactly as before. Out-prioritising is not suppressing.
+    InputContextSet& contexts = WorldState.GetResource<InputContextSet>();
+    InputContextLease gameplay = contexts.Activate("gameplay");
+    InputContextLease menu = contexts.Activate("menu");   // priority 200, binds escape
+
+    PressKey(SDL_SCANCODE_W);
+    RunFrame(1);
+    BindActionIds();
+    RunFrame(1);
+
+    EXPECT_GT(Recorder->Samples.back().Move.Y, 0.0f)
+        << "a higher-priority menu context suppressed movement it never bound, "
+           "which would make this whole mechanism unnecessary";
+}
+
+TEST_F(InputRuntimeFixture, AReboundBackStillResolvesWhileInputIsSuspended)
+{
+    // The deadlock this rule exists to prevent. Authored bindings for a shell
+    // action are compiled into the shell's context whichever context declared
+    // them, because authored contexts stop resolving while the shell has input
+    // suspended -- so a Back left where the author wrote it would go silent the
+    // instant the player paused, and there would be no way to resume.
+    PublishAlternateProfile(R"({
+        "actions": "asset://data/input_actions.sdata",
+        "contexts": [ { "name": "gameplay", "priority": 100, "bindings": [
+            { "action": "move", "composite": "cardinal",
+              "left": "key.a", "right": "key.d", "down": "key.s", "up": "key.w" },
+            { "action": "ui.back", "control": "key.p" } ] } ]
+    })");
+    RegisterInputMapping(WorldState, Cache, Profile);
+
+    InputContextLease gameplay = WorldState.GetResource<InputContextSet>().Activate("gameplay");
+    RunFrame(1);
+
+    const InputActionRegistry* actions =
+        WorldState.GetResource<InputBindingCache>().GetActions(Profile);
+    ASSERT_NE(actions, nullptr);
+    const InputActionId back = actions->Find("ui.back");
+    ASSERT_TRUE(back.IsValid());
+
+    WorldState.GetResource<InputContextSet>().SetSuspended(true);
+    PressKey(SDL_SCANCODE_P);
+    RunFrame(1);
+
+    EXPECT_TRUE(FrameActions().Fired(back))
+        << "a rebound Back went silent under the suspension it has to lift";
+
+    // And the gameplay binding beside it is silenced, which is the whole point
+    // of the suspension.
+    PressKey(SDL_SCANCODE_W);
+    RunFrame(1);
+    EXPECT_FLOAT_EQ(FrameActions().Axis2(actions->Find("move")).Y, 0.0f);
+}
+
+TEST_F(InputRuntimeFixture, TheShellsDefaultBackNeedsNoLeaseAndSurvivesSuspension)
+{
+    // The shell's context is not lease-managed. Nobody activates it, a game
+    // cannot deactivate it, and suspending does not reach it -- any of which
+    // would lock a player out of the menu with no way back.
+    const InputActionRegistry* actions =
+        WorldState.GetResource<InputBindingCache>().GetActions(Profile);
+    ASSERT_NE(actions, nullptr);
+    const InputActionId back = actions->Find("ui.back");
+    ASSERT_TRUE(back.IsValid());
+
+    PressKey(SDL_SCANCODE_ESCAPE);
+    RunFrame(1);
+    EXPECT_TRUE(FrameActions().Fired(back)) << "the default Back needed a lease nobody took";
+
+    ReleaseKey(SDL_SCANCODE_ESCAPE);
+    RunFrame(1);
+    WorldState.GetResource<InputContextSet>().SetSuspended(true);
+    PressKey(SDL_SCANCODE_ESCAPE);
+    RunFrame(1);
+    EXPECT_TRUE(FrameActions().Fired(back)) << "suspension silenced the action that lifts it";
 }

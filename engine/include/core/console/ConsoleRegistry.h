@@ -3,6 +3,7 @@
 #include <core/console/ConsoleTypes.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
@@ -68,6 +69,14 @@ public:
 
     [[nodiscard]] ConsoleOverrideScope CreateOverrideScope(ConsolePhase phase);
 
+    // Bumped whenever a committed write changes the value of a cvar carrying
+    // CVarFlags::Archive. A settings store polls this instead of comparing
+    // values: every write path funnels through one commit point, so one counter
+    // answers "is anything worth saving" without walking the registry.
+    //
+    // Latched and refused writes do not bump it -- nothing was committed.
+    [[nodiscard]] std::uint64_t ArchiveRevision() const { return ArchiveRevisionCounter; }
+
 private:
     friend class ConsoleOverrideScope;
 
@@ -95,6 +104,7 @@ private:
     std::unordered_map<std::string, CommandRecord> Commands;
     std::vector<PendingCVarAssignment> Pending;
     std::vector<std::string> TreeIndex;
+    std::uint64_t ArchiveRevisionCounter = 0;
 };
 
 class ConsoleOverrideScope

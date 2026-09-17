@@ -31,8 +31,18 @@ bool ReadLookInput(const World& world,
         return false;
 
     const InputAxis2Travel travel = SplitAxis2(actions, sampled, binding->Look);
-    out.Displacement = travel.Displacement;
-    out.Rate = travel.Rate;
+
+    // Both halves, because the player's preference is about how fast the view
+    // turns and not about which control turned it: scaling the pointer's
+    // displacement but not a stick's rate would make one setting mean two
+    // different things depending on what is in their hands.
+    const LookSensitivity* sensitivity = world.TryGetResource<LookSensitivity>();
+    const double scale = sensitivity != nullptr
+        ? static_cast<double>(sensitivity->Scale)
+        : 1.0;
+
+    out.Displacement = travel.Displacement * scale;
+    out.Rate = travel.Rate * scale;
     return true;
 }
 

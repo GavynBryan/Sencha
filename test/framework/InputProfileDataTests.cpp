@@ -6,6 +6,7 @@
 #include <core/metadata/DataSchema.h>
 #include <input/InputBindingCache.h>
 #include <input/InputProfileData.h>
+#include <input/ShellInputActions.h>
 
 #include <SDL3/SDL.h>
 
@@ -20,6 +21,32 @@
 
 namespace
 {
+// Every compiled profile also carries the application shell's context -- the
+// engine's own `ui.*` actions and their default bindings, merged in so a game
+// does not have to declare backing out of gameplay for itself. These cases are
+// about what an author wrote, so they look past it.
+
+[[nodiscard]] std::size_t AuthoredContextCount(const BoundInputProfile& profile)
+{
+    return profile.Contexts.empty() ? 0u : profile.Contexts.size() - 1u;
+}
+
+// Authored contexts keep their relative claim order; the shell sits above them
+// all, so index 0 of the authored set is index 1 of the compiled one.
+[[nodiscard]] const InputContextDefinition& AuthoredContext(const BoundInputProfile& profile,
+                                                           std::size_t index)
+{
+    return profile.Contexts[index + 1u];
+}
+
+[[nodiscard]] std::size_t AuthoredBindingCount(const BoundInputProfile& profile)
+{
+    std::size_t total = 0;
+    for (std::size_t i = 1; i < profile.Contexts.size(); ++i)
+        total += profile.Contexts[i].BindingCount;
+    return total;
+}
+
 class InputDataFixture : public ::testing::Test
 {
 protected:
@@ -339,17 +366,19 @@ TEST_F(InputBindFixture, BindsNamesToDenseIndicesInClaimOrder)
     ASSERT_NE(bound, nullptr) << error;
 
     // Highest priority first, so a resolve pass walks contexts in claim order.
-    ASSERT_EQ(bound->Contexts.size(), 2u);
-    EXPECT_EQ(bound->Contexts[0].Name, "menu");
-    EXPECT_EQ(bound->Contexts[1].Name, "gameplay");
-    EXPECT_EQ(bound->ActionCount(), 4u);
+    ASSERT_EQ(AuthoredContextCount(*bound), 2u);
+    EXPECT_EQ(AuthoredContext(*bound, 0).Name, "menu");
+    EXPECT_EQ(AuthoredContext(*bound, 1).Name, "gameplay");
+    // The authored four, plus the shell's own vocabulary merged in ahead of
+    // them so a dense id means the same thing in every profile.
+    EXPECT_EQ(bound->ActionCount(), 4u + ShellActionDefinitions().size());
 
     const InputActionRegistry* actions = bindings.GetActions(handle);
     ASSERT_NE(actions, nullptr);
     const InputActionId jump = actions->Find("jump");
     ASSERT_TRUE(jump.IsValid());
 
-    const InputContextDefinition& gameplay = bound->Contexts[1];
+    const InputContextDefinition& gameplay = AuthoredContext(*bound, 1);
     const InputBinding& jumpBinding = bound->Bindings[gameplay.FirstBinding + 2];
     EXPECT_EQ(jumpBinding.ActionIndex, InputActionRegistry::IndexOf(jump));
 }
@@ -436,9 +465,9 @@ TEST_F(InputBindFixture, ABindingThatCannotResolveCostsOnlyItself)
     ASSERT_NE(bound, nullptr) << "the profile still binds";
 
     // Move and look survive; only the trigger binding is dropped.
-    ASSERT_EQ(bound->Contexts.size(), 1u);
-    EXPECT_EQ(bound->Bindings.size(), 2u);
-    EXPECT_EQ(bound->Contexts[0].BindingCount, 2u);
+    ASSERT_EQ(AuthoredContextCount(*bound), 1u);
+    EXPECT_EQ(AuthoredBindingCount(*bound), 2u);
+    EXPECT_EQ(AuthoredContext(*bound, 0).BindingCount, 2u);
     EXPECT_NE(error.find("binding 2"), std::string::npos) << error;
     EXPECT_NE(error.find("cannot produce"), std::string::npos) << error;
 }
@@ -458,7 +487,7 @@ TEST_F(InputBindFixture, ATriggerBindsToAButtonAction)
     const std::string error = DescribeBindErrors(bindings.Status(handle));
     ASSERT_NE(bound, nullptr) << error;
     EXPECT_TRUE(error.empty()) << error;
-    ASSERT_EQ(bound->Bindings.size(), 1u);
+    ASSERT_EQ(AuthoredBindingCount(*bound), 1u);
     EXPECT_FLOAT_EQ(bound->Bindings[0].Threshold, 0.4f);
 }
 
@@ -491,7 +520,7 @@ TEST_F(InputBindFixture, RejectsABindingForAnUnknownAction)
     const BoundInputProfile* bound = bindings.Get(handle);
     const std::string error = DescribeBindErrors(bindings.Status(handle));
     ASSERT_NE(bound, nullptr);
-    EXPECT_TRUE(bound->Bindings.empty()) << "the unresolvable binding is dropped";
+    EXPECT_EQ(AuthoredBindingCount(*bound), 0u) << "the unresolvable binding is dropped";
     EXPECT_NE(error.find("names no declared action"), std::string::npos) << error;
 }
 
@@ -509,7 +538,7 @@ TEST_F(InputBindFixture, RejectsAControlThatCannotProduceTheActionsValue)
     const BoundInputProfile* bound = bindings.Get(handle);
     const std::string error = DescribeBindErrors(bindings.Status(handle));
     ASSERT_NE(bound, nullptr);
-    EXPECT_TRUE(bound->Bindings.empty()) << "the unresolvable binding is dropped";
+    EXPECT_EQ(AuthoredBindingCount(*bound), 0u) << "the unresolvable binding is dropped";
     EXPECT_NE(error.find("cannot produce"), std::string::npos) << error;
 }
 
@@ -548,8 +577,8 @@ TEST_F(InputBindFixture, RebindsWhenTheProfileReloadsAndKeepsTheHandle)
     const BoundInputProfile* bound = bindings.Get(handle);
     ASSERT_NE(bound, nullptr);
     EXPECT_GT(bindings.RebuildCount(), rebuildsAfterFirstBind);
-    ASSERT_EQ(bound->Contexts.size(), 1u);
-    ASSERT_EQ(bound->Bindings.size(), 1u);
+    ASSERT_EQ(AuthoredContextCount(*bound), 1u);
+    ASSERT_EQ(AuthoredBindingCount(*bound), 1u);
     EXPECT_EQ(bound->Bindings[0].Controls[kBindingNegativeX].Index, SDL_SCANCODE_J);
 }
 
@@ -665,7 +694,7 @@ TEST_F(InputBindFixture, ABadReloadReportsWhatItDroppedAndBindsTheRest)
     // The edit is reported, and what still resolves still binds.
     EXPECT_NE(error.find("names no declared action"), std::string::npos) << error;
     ASSERT_NE(bound, nullptr);
-    EXPECT_TRUE(bound->Bindings.empty());
+    EXPECT_EQ(AuthoredBindingCount(*bound), 0u);
     EXPECT_EQ(bindings.Status(handle).State, InputBindState::Current)
         << "a profile that compiled is current, however little of it resolved";
 }
@@ -676,7 +705,7 @@ TEST_F(InputBindFixture, ARebindWithNoVocabularyKeepsTheLastGoodTables)
     InputBindingCache bindings(Cache);
     const BoundInputProfile* first = bindings.Get(handle);
     ASSERT_NE(first, nullptr);
-    const std::size_t boundBefore = first->Bindings.size();
+    const std::size_t boundBefore = AuthoredBindingCount(*first);
     ASSERT_GT(boundBefore, 0u);
 
     // The profile is edited to name an action set nothing published, so not one
@@ -689,7 +718,7 @@ TEST_F(InputBindFixture, ARebindWithNoVocabularyKeepsTheLastGoodTables)
 
     const BoundInputProfile* bound = bindings.Get(handle);
     ASSERT_NE(bound, nullptr) << "the player keeps the controls that were working";
-    EXPECT_EQ(bound->Bindings.size(), boundBefore);
+    EXPECT_EQ(AuthoredBindingCount(*bound), boundBefore);
 
     const InputBindStatus status = bindings.Status(handle);
     EXPECT_EQ(status.State, InputBindState::Stale);
@@ -768,7 +797,7 @@ TEST_F(InputBindFixture, RetargetingTheProfilesActionSetBindsAgainstTheNewOne)
 
     const BoundInputProfile* bound = bindings.Get(handle);
     ASSERT_NE(bound, nullptr);
-    EXPECT_EQ(bound->Bindings.size(), 1u);
+    EXPECT_EQ(AuthoredBindingCount(*bound), 1u);
     EXPECT_TRUE(DescribeBindErrors(bindings.Status(handle)).empty());
 }
 
@@ -794,4 +823,143 @@ TEST_F(InputBindFixture, DiagnosticsAreNotConsumedByWhoeverReadsThemFirst)
     EXPECT_EQ(DescribeBindErrors(reporter), DescribeBindErrors(startup));
     EXPECT_EQ(reporter.Revision, startup.Revision)
         << "an unchanged failure is not a new one to report";
+}
+
+// ---------------------------------------------------------------------------
+// The application shell's vocabulary, merged into every profile
+// ---------------------------------------------------------------------------
+
+TEST_F(InputBindFixture, EveryProfileCarriesTheShellContextAtTheTopOfClaimOrder)
+{
+    const InputProfileHandle handle = Publish(kActionSet, kProfile);
+    InputBindingCache bindings(Cache);
+
+    const BoundInputProfile* bound = bindings.Get(handle);
+    ASSERT_NE(bound, nullptr) << DescribeBindErrors(bindings.Status(handle));
+    ASSERT_FALSE(bound->Contexts.empty());
+
+    // First in the vector, because a resolve pass claims as it walks: a
+    // gameplay binding on Escape must never take it from the shell.
+    EXPECT_TRUE(bound->Contexts[0].IsShell);
+    EXPECT_EQ(bound->Contexts[0].Name, kShellContextName);
+    EXPECT_EQ(bound->Contexts[0].Priority, kShellContextPriority);
+    for (std::size_t i = 1; i < bound->Contexts.size(); ++i)
+        EXPECT_FALSE(bound->Contexts[i].IsShell) << bound->Contexts[i].Name;
+}
+
+TEST_F(InputBindFixture, ShellActionsTakeTheSameDenseIdsInEveryProfile)
+{
+    // What lets the engine hold ShellAction as a constant rather than resolving
+    // a name: the shell's actions are declared first, so their ids do not move
+    // when a game adds, removes or reorders its own.
+    const InputProfileHandle handle = Publish(kActionSet, kProfile);
+    InputBindingCache bindings(Cache);
+    const InputActionRegistry* actions = bindings.GetActions(handle);
+    ASSERT_NE(actions, nullptr);
+
+    EXPECT_EQ(InputActionRegistry::IndexOf(actions->Find("ui.back")),
+              static_cast<std::size_t>(ShellAction::Back));
+    EXPECT_EQ(InputActionRegistry::IndexOf(actions->Find("ui.accept")),
+              static_cast<std::size_t>(ShellAction::Accept));
+}
+
+TEST_F(InputBindFixture, AProfileThatRebindsBackKeepsTheEnginesIdAndLosesTheDefaultKey)
+{
+    // Rebinding is the author declaring a replacement binding, not a second
+    // action. Replace rather than augment: a player who moved Back to another
+    // key must not find Escape still working.
+    const InputProfileHandle handle = Publish(R"({
+        "actions": [
+            { "name": "jump", "type": "digital" },
+            { "name": "ui.back", "type": "digital", "scope": "presentation" }
+        ]
+    })", R"({
+        "actions": "asset://data/input_actions.sdata",
+        "contexts": [ { "name": "gameplay", "priority": 100, "bindings": [
+            { "action": "jump", "control": "key.space" },
+            { "action": "ui.back", "control": "key.p" } ] } ]
+    })");
+    InputBindingCache bindings(Cache);
+
+    const BoundInputProfile* bound = bindings.Get(handle);
+    ASSERT_NE(bound, nullptr) << DescribeBindErrors(bindings.Status(handle));
+    const InputActionRegistry* actions = bindings.GetActions(handle);
+    ASSERT_NE(actions, nullptr);
+    EXPECT_EQ(InputActionRegistry::IndexOf(actions->Find("ui.back")),
+              static_cast<std::size_t>(ShellAction::Back))
+        << "redeclaring a shell action minted a second id for it";
+
+    // The rebound control lives in the shell's context, not the one that
+    // declared it. Authored contexts stop resolving while the shell has input
+    // suspended, so a Back left in `gameplay` would go silent the moment the
+    // player paused -- with no way to resume.
+    const InputContextDefinition& shell = bound->Contexts[0];
+    ASSERT_TRUE(shell.IsShell);
+
+    bool escapeBound = false;
+    bool pBound = false;
+    for (std::uint32_t i = shell.FirstBinding; i < shell.FirstBinding + shell.BindingCount; ++i)
+    {
+        const InputBinding& binding = bound->Bindings[i];
+        if (binding.ActionIndex != static_cast<std::uint32_t>(ShellAction::Back))
+            continue;
+        if (binding.Controls[kBindingNegativeX].Source != InputControlSource::Key)
+            continue;
+        escapeBound = escapeBound || binding.Controls[kBindingNegativeX].Index == SDL_SCANCODE_ESCAPE;
+        pBound = pBound || binding.Controls[kBindingNegativeX].Index == SDL_SCANCODE_P;
+    }
+    EXPECT_TRUE(pBound) << "the authored rebinding did not reach the shell context";
+    EXPECT_FALSE(escapeBound) << "the default key still works after a rebind";
+
+    // The action it did not rebind keeps its default.
+    EXPECT_GT(shell.BindingCount, 1u);
+}
+
+TEST_F(InputDataFixture, AReservedNameThatIsNotAShellActionFailsTheActionSet)
+{
+    const DataAssetCompileResult result = Compile(kInputActionSetTypeName, R"({
+        "actions": [ { "name": "ui.inventory", "type": "digital" } ]
+    })");
+    EXPECT_FALSE(result.IsValid());
+    EXPECT_NE(result.Error.find("reserved"), std::string::npos) << result.Error;
+    EXPECT_NE(result.Error.find("$.data.actions[0]"), std::string::npos) << result.Error;
+}
+
+TEST_F(InputDataFixture, RedeclaringAShellActionWithADifferentShapeFailsTheActionSet)
+{
+    // The engine keeps the identity, so the two declarations have to agree
+    // about what the action carries or they would mean different things.
+    const DataAssetCompileResult result = Compile(kInputActionSetTypeName, R"({
+        "actions": [ { "name": "ui.back", "type": "axis2" } ]
+    })");
+    EXPECT_FALSE(result.IsValid());
+    EXPECT_NE(result.Error.find("different type or scope"), std::string::npos) << result.Error;
+}
+
+TEST_F(InputDataFixture, AnAuthoredPriorityInTheReservedBandIsRefused)
+{
+    const DataAssetCompileResult result = Compile(kInputProfileTypeName, R"({
+        "actions": "asset://data/input_actions.sdata",
+        "contexts": [ { "name": "greedy", "priority": 1000000, "bindings": [] } ]
+    })");
+    EXPECT_FALSE(result.IsValid());
+    EXPECT_NE(result.Error.find("reserved"), std::string::npos) << result.Error;
+}
+
+TEST(ShellOnlyProfile, AGameWithNoInputContentStillResolvesTheShell)
+{
+    // templates/blank ships no action set and no profile. Backing out of
+    // gameplay is the application's operation, so it answers anyway -- which is
+    // the difference between pause being part of Sencha and pause being a thing
+    // each game assembles.
+    InputActionRegistry actions;
+    BoundInputProfile profile;
+    BuildShellOnlyProfile(actions, profile);
+
+    ASSERT_EQ(profile.Contexts.size(), 1u);
+    EXPECT_TRUE(profile.Contexts[0].IsShell);
+    EXPECT_EQ(profile.ActionCount(), ShellActionDefinitions().size());
+    EXPECT_EQ(InputActionRegistry::IndexOf(actions.Find("ui.back")),
+              static_cast<std::size_t>(ShellAction::Back));
+    EXPECT_EQ(profile.Contexts[0].BindingCount, ShellDefaultBindings().size());
 }

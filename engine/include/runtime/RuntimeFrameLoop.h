@@ -30,7 +30,7 @@ enum class TemporalDiscontinuityReason
     Minimized,
     Restored,
     Suspended,
-    DebugPause,
+    SimulationPause,
     Teleport,
     ZoneLoad,
     RegistryReset,
@@ -119,9 +119,31 @@ public:
     // Scales wall time on its way into the tick accumulator, so it changes how
     // often ticks are emitted and never how long a tick is:
     // FixedSimTime::DeltaSeconds stays constant and per-tick behavior stays
-    // deterministic. 0.0 accumulates nothing, which is what pauses simulation.
+    // deterministic. 0.0 accumulates nothing.
     void SetSimulationTimescale(float scale) { SimulationTimescale = scale < 0.0f ? 0.0f : scale; }
     [[nodiscard]] float GetSimulationTimescale() const { return SimulationTimescale; }
+
+    // Whether simulated time advances at all, which is a different question
+    // from how fast it advances when it does.
+    //
+    // Two facts rather than one so each has an owner: the application shell
+    // suspends while a menu is up, `time.timescale` sets the rate, and neither
+    // can overwrite the other. Representing a pause by writing the timescale
+    // instead would mean recording the old value and restoring it, which is a
+    // last-writer-wins rule -- a game that legitimately changed the rate while
+    // paused would have the change reverted on resume.
+    void SetSimulationSuspended(bool suspended) { SimulationSuspended = suspended; }
+    [[nodiscard]] bool IsSimulationSuspended() const { return SimulationSuspended; }
+
+    // This frame's remaining fixed ticks do not happen, and the wall time they
+    // would have covered is not owed: the residual is dropped rather than
+    // carried, so resuming cannot replay it as a catch-up burst.
+    //
+    // Callable between ScheduleFixedTicks and the tick loop, which is the one
+    // window in which a frame still has ticks to cancel. The shell uses it so
+    // that recognising a pause request stops the frame that recognised it,
+    // rather than letting an already-budgeted batch run first.
+    void CancelFixedTicksThisFrame();
 
     // Bounds on catch-up after a stall. Ticks beyond the cap are dropped, not
     // deferred; see FixedStepScheduler.
@@ -165,6 +187,7 @@ private:
     double ResizeSettleSeconds = 0.10;
     Clock::time_point ResizeSettleUntil{};
     float SimulationTimescale = 1.0f;
+    bool SimulationSuspended = false;
     bool SwapchainDirty = false;
     bool Minimized = false;
     bool DiscontinuityPending = false;

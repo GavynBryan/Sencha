@@ -72,7 +72,10 @@ void FrameDriver::StepOnce()
 
     InvokePhase(FramePhase::PumpPlatform, ctx);
 
-    if ((ShouldExitPredicate && ShouldExitPredicate()) || Input.QuitRequested)
+    // One stop condition. Everything that can end a run -- a window closed, a
+    // menu's exit, a console command, a signal, a failed device -- reaches the
+    // predicate, so a game's exit handler sees every graceful one of them.
+    if (ShouldExitPredicate && ShouldExitPredicate())
     {
         InvokePhase(FramePhase::EndFrame, ctx);
         if (Trace) Trace->EndFrame(Runtime.GetCurrentFrame().WallTime.FrameIndex);
@@ -140,8 +143,6 @@ void FrameDriver::Run()
     {
         StepOnce();
         if (ShouldExitPredicate && ShouldExitPredicate())
-            break;
-        if (Input.QuitRequested)
             break;
     }
 }

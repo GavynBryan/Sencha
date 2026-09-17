@@ -1,5 +1,7 @@
 #include "UiRuntime.h"
 
+#include <ui/UiSurfacePlacement.h>
+
 #include "rml/RmlInputBridge.h"
 #include "rml/RmlRenderRecorder.h"
 #include "rml/RmlPackageFileSource.h"
@@ -22,6 +24,7 @@
 #include <atomic>
 #include <cctype>
 #include <filesystem>
+#include <format>
 #include <utility>
 
 namespace
@@ -48,6 +51,17 @@ void ToRmlVariant(const UiValue& value, Rml::Variant& out)
     case UiValueKind::Id:     out = Rml::Variant(Rml::ToString(value.AsId())); break;
     case UiValueKind::None:
     default:                  out = Rml::Variant(); break;
+    }
+}
+
+const char* ControlName(UiRowControl control)
+{
+    switch (control)
+    {
+    case UiRowControl::Range:  return "range";
+    case UiRowControl::Choice: return "choice";
+    case UiRowControl::Text:
+    default:                   return "text";
     }
 }
 
@@ -102,6 +116,7 @@ UiRuntime::UiRuntime(LoggingProvider& logging,
     , Packages(packages)
     , Fonts(fonts)
     , Textures(textures)
+    , Diagnostics(Log)
 {
     bool expected = false;
     if (!g_RuntimeLive.compare_exchange_strong(expected, true))
@@ -111,7 +126,7 @@ UiRuntime::UiRuntime(LoggingProvider& logging,
         return;
     }
 
-    SystemBridge = std::make_unique<RmlSystemBridge>(Log);
+    SystemBridge = std::make_unique<RmlSystemBridge>(Diagnostics);
     FileSource = std::make_unique<RmlPackageFileSource>(Log);
     TextInput = std::make_unique<RmlTextInputBridge>(window);
     Recorder = std::make_unique<RmlRenderRecorder>(Log);
@@ -164,6 +179,7 @@ void UiRuntime::Shutdown()
     }
     Surfaces.clear();
     DrawFrames.clear();
+    OffscreenFrames.clear();
     PendingActions.clear();
     ActiveScreen = nullptr;
 }
@@ -191,6 +207,59 @@ UiRuntime::~UiRuntime()
     SystemBridge.reset();
 
     g_RuntimeLive.store(false);
+}
+
+UiScreenHandle UiRuntime::HandleOf(const Screen& screen) const
+{
+    const auto index = static_cast<std::uint32_t>(&screen - Screens.data());
+    return UiScreenHandle{ index + 1, screen.Generation };
+}
+
+UiRuntime::ActiveScreenScope::ActiveScreenScope(UiRuntime& runtime, const Screen& screen,
+                                                UiScreenHandle handle)
+    : Runtime(runtime)
+    , Previous(runtime.ActiveScreen)
+    , Attribution(runtime.Diagnostics, { handle, screen.Surface })
+{
+    Runtime.ActiveScreen = &screen;
+}
+
+UiRuntime::ActiveScreenScope::~ActiveScreenScope()
+{
+    Runtime.ActiveScreen = Previous;
+}
+
+void UiRuntime::Refuse(UiDiagnosticKind kind, std::optional<std::string> path, std::string message)
+{
+    UiDiagnostic entry;
+    entry.Severity = UiDiagnosticSeverity::Error;
+    entry.Source = UiDiagnosticSource::Runtime;
+    entry.Kind = kind;
+    entry.Path = std::move(path);
+    entry.Message = std::move(message);
+    Diagnostics.Push(std::move(entry));
+}
+
+std::vector<UiDiagnostic> UiRuntime::DrainDiagnostics()
+{
+    return Diagnostics.Drain();
+}
+
+UiDiagnosticLog::Attribution UiRuntime::SurfaceAttribution(std::size_t surfaceIndex) const
+{
+    const Surface& surface = Surfaces[surfaceIndex];
+    const UiSurfaceId surfaceId{ static_cast<std::uint32_t>(surfaceIndex + 1), surface.Generation };
+    UiScreenHandle only;
+    std::size_t liveOnSurface = 0;
+    for (const Screen& screen : Screens)
+    {
+        if (screen.Live && screen.Surface == surfaceId)
+        {
+            ++liveOnSurface;
+            only = HandleOf(screen);
+        }
+    }
+    return { liveOnSurface == 1 ? only : UiScreenHandle{}, surfaceId };
 }
 
 // -- surfaces ----------------------------------------------------------------
@@ -236,6 +305,7 @@ UiSurfaceId UiRuntime::CreateSurface(std::string_view name, RenderExtent size)
     surface.Size = size;
     surface.Context = context;
     surface.Live = true;
+    surface.ModelTypesDeclared = false;
 
     return UiSurfaceId{ static_cast<std::uint32_t>(index + 1), surface.Generation };
 }
@@ -258,6 +328,7 @@ void UiRuntime::DestroySurface(UiSurfaceId surface)
         Rml::RemoveContext(slot->Name);
 
     slot->Context = nullptr;
+    slot->ModelTypesDeclared = false;
     slot->Live = false;
     slot->Name.clear();
     ++slot->Generation;
@@ -304,6 +375,67 @@ float UiRuntime::GetSurfaceScale(UiSurfaceId surface) const
     return slot != nullptr ? slot->Scale : 0.0f;
 }
 
+void UiRuntime::SetSurfacePlacement(UiSurfaceId surface, std::optional<Rect2d> windowRect)
+{
+    if (Surface* slot = ResolveSurface(surface))
+        slot->Placement = windowRect;
+}
+
+std::optional<Rect2d> UiRuntime::GetSurfacePlacement(UiSurfaceId surface) const
+{
+    const Surface* slot = ResolveSurface(surface);
+    return slot != nullptr ? slot->Placement : std::nullopt;
+}
+
+void UiRuntime::SetSurfaceInputPolicy(UiSurfaceId surface, UiSurfaceInputPolicy policy)
+{
+    Surface* slot = ResolveSurface(surface);
+    if (slot == nullptr)
+        return;
+    // A surface that stops taking input is left the way a pointer leaving it
+    // would leave it, so nothing stays hovered or held under a policy change.
+    if (policy == UiSurfaceInputPolicy::Disabled && slot->InputPolicy != policy
+        && slot->Context != nullptr)
+    {
+        (void)slot->Context->ProcessMouseLeave();
+        slot->PointerInside = false;
+        slot->PointerOwned = false;
+    }
+    slot->InputPolicy = policy;
+}
+
+UiSurfaceInputPolicy UiRuntime::GetSurfaceInputPolicy(UiSurfaceId surface) const
+{
+    const Surface* slot = ResolveSurface(surface);
+    return slot != nullptr ? slot->InputPolicy : UiSurfaceInputPolicy::Disabled;
+}
+
+bool UiRuntime::IsPointerOver(UiSurfaceId surface) const
+{
+    const Surface* slot = ResolveSurface(surface);
+    return slot != nullptr && (slot->PointerInside || slot->PointerOwned);
+}
+
+void UiRuntime::SetSurfaceDestination(UiSurfaceId surface, UiSurfaceDestination destination)
+{
+    if (Surface* slot = ResolveSurface(surface))
+        slot->Destination = destination;
+}
+
+UiSurfaceDestination UiRuntime::GetSurfaceDestination(UiSurfaceId surface) const
+{
+    const Surface* slot = ResolveSurface(surface);
+    return slot != nullptr ? slot->Destination : UiSurfaceDestination::Window;
+}
+
+const UiDrawFrame* UiRuntime::OffscreenFrame(UiSurfaceId surface) const
+{
+    for (const auto& [id, frame] : OffscreenFrames)
+        if (id == surface)
+            return &frame;
+    return nullptr;
+}
+
 // -- screens -----------------------------------------------------------------
 
 bool UiRuntime::AcquireResources(const UiPackage& package,
@@ -322,8 +454,8 @@ bool UiRuntime::AcquireResources(const UiPackage& package,
         AssetLease lease = Assets.LoadLease(resource.Path, resource.Type);
         if (!lease.IsValid())
         {
-            Log.Error("UiRuntime: package '{}' names {} '{}', which did not load",
-                      packagePath, AssetTypeToString(resource.Type), resource.Path);
+            Refuse(UiDiagnosticKind::ResourceUnresolved, std::string(resource.Path), std::format("UiRuntime: package '{}' names {} '{}', which did not load",
+                      packagePath, AssetTypeToString(resource.Type), resource.Path));
             // All-or-nothing: a half-dressed document lays out against fonts it
             // does not have and measures wrong, which is harder to diagnose than
             // a refusal.
@@ -351,12 +483,58 @@ bool UiRuntime::AcquireResources(const UiPackage& package,
     return true;
 }
 
+// The types every data model on this context may bind, declared once. The
+// register is the context's, not the model's, and a second declaration is a
+// silent refusal that leaves a member unbound -- so this runs for the first
+// model on a surface and never again for that surface.
+//
+// Order is load-bearing. An enum binds as an integer unless a getter is
+// registered for it first; had a member of that type been registered before
+// the getter, the register would have auto-inserted the integer definition and
+// refused the getter. And an array's element type has to exist before the
+// array, which is why the string list precedes the row and the row precedes
+// the row list.
+void UiRuntime::DeclareModelTypes(Rml::DataModelConstructor& constructor, Surface& surface)
+{
+    if (surface.ModelTypesDeclared)
+        return;
+    surface.ModelTypesDeclared = true;
+
+    // Bound as its name so a document can write `row.control == 'range'`; the
+    // integer it would otherwise bind as compares against nothing anyone
+    // would author.
+    (void)constructor.RegisterScalar<UiRowControl>(
+        [](const UiRowControl& control, Rml::Variant& out) {
+            out = Rml::String(ControlName(control));
+        });
+    (void)constructor.RegisterArray<std::vector<std::string>>();
+
+    // Members bound by pointer-to-member, which makes each one read-write.
+    // That is what lets a control inside a repeated row edit its value without
+    // the model needing a setter per row -- and the value still goes no further
+    // than the presentation copy.
+    if (auto row = constructor.RegisterStruct<UiRow>())
+    {
+        (void)row.RegisterMember("label", &UiRow::Label);
+        (void)row.RegisterMember("value", &UiRow::Value);
+        (void)row.RegisterMember("detail", &UiRow::Detail);
+        (void)row.RegisterMember("editable", &UiRow::Editable);
+        (void)row.RegisterMember("control", &UiRow::Control);
+        (void)row.RegisterMember("number", &UiRow::Number);
+        (void)row.RegisterMember("min", &UiRow::Min);
+        (void)row.RegisterMember("max", &UiRow::Max);
+        (void)row.RegisterMember("step", &UiRow::Step);
+        (void)row.RegisterMember("choices", &UiRow::Choices);
+    }
+    (void)constructor.RegisterArray<std::vector<UiRow>>();
+}
+
 bool UiRuntime::BuildModel(Screen& screen, UiScreenHandle handle, Surface& surface)
 {
     Rml::DataModelConstructor constructor = surface.Context->CreateDataModel(screen.ModelName);
     if (!constructor)
     {
-        Log.Error("UiRuntime: could not create data model '{}'", screen.ModelName);
+        Refuse(UiDiagnosticKind::ModelRefused, std::nullopt, std::format("UiRuntime: could not create data model '{}'", screen.ModelName));
         return false;
     }
 
@@ -374,10 +552,10 @@ bool UiRuntime::BuildModel(Screen& screen, UiScreenHandle handle, Surface& surfa
     {
         if (!IsBindableName(screen.Properties[i].Path))
         {
-            Log.Error("UiRuntime: '{}' is not a bindable property name. A data expression "
+            Refuse(UiDiagnosticKind::ModelRefused, std::nullopt, std::format("UiRuntime: '{}' is not a bindable property name. A data expression "
                       "reads '.' as member access, so a name needs to be an identifier "
                       "(letters, digits, underscore, not starting with a digit)",
-                      screen.Properties[i].Path);
+                      screen.Properties[i].Path));
             return fail();
         }
 
@@ -411,45 +589,25 @@ bool UiRuntime::BuildModel(Screen& screen, UiScreenHandle handle, Surface& surfa
                 [slot, index](Rml::Variant& out) { ToRmlVariant(slot->Properties[index].Value, out); },
                 std::move(setter)))
         {
-            Log.Error("UiRuntime: data model '{}' refused the property '{}'",
-                      screen.ModelName, screen.Properties[i].Path);
+            Refuse(UiDiagnosticKind::ModelRefused, std::nullopt, std::format("UiRuntime: data model '{}' refused the property '{}'",
+                      screen.ModelName, screen.Properties[i].Path));
             return fail();
         }
     }
 
-    // Registered once per model, before any array is bound: the engine resolves
-    // the element type when the container type is registered, not when a
-    // variable using it is.
-    if (!screen.Arrays.empty())
-        (void)constructor.RegisterArray<std::vector<std::string>>();
-
-    if (!screen.RowLists.empty())
-    {
-        // Members bound by pointer-to-member, which makes each one read-write.
-        // That is what lets a control inside a repeated row edit its value
-        // without the model needing a setter per row -- and the value still
-        // goes no further than the presentation copy.
-        if (auto row = constructor.RegisterStruct<UiRow>())
-        {
-            (void)row.RegisterMember("label", &UiRow::Label);
-            (void)row.RegisterMember("value", &UiRow::Value);
-            (void)row.RegisterMember("detail", &UiRow::Detail);
-            (void)row.RegisterMember("editable", &UiRow::Editable);
-        }
-        (void)constructor.RegisterArray<std::vector<UiRow>>();
-    }
+    DeclareModelTypes(constructor, surface);
 
     for (const std::unique_ptr<Screen::BoundRows>& rows : screen.RowLists)
     {
         if (!IsBindableName(rows->Path))
         {
-            Log.Error("UiRuntime: '{}' is not a bindable row-list name", rows->Path);
+            Refuse(UiDiagnosticKind::ModelRefused, std::nullopt, std::format("UiRuntime: '{}' is not a bindable row-list name", rows->Path));
             return fail();
         }
         if (!constructor.Bind(rows->Path, &rows->Items))
         {
-            Log.Error("UiRuntime: data model '{}' refused the row list '{}'",
-                      screen.ModelName, rows->Path);
+            Refuse(UiDiagnosticKind::ModelRefused, std::nullopt, std::format("UiRuntime: data model '{}' refused the row list '{}'",
+                      screen.ModelName, rows->Path));
             return fail();
         }
     }
@@ -458,15 +616,15 @@ bool UiRuntime::BuildModel(Screen& screen, UiScreenHandle handle, Surface& surfa
     {
         if (!IsBindableName(array->Path))
         {
-            Log.Error("UiRuntime: '{}' is not a bindable list name, for the same reason "
+            Refuse(UiDiagnosticKind::ModelRefused, std::nullopt, std::format("UiRuntime: '{}' is not a bindable list name, for the same reason "
                       "a property is not: a data expression reads '.' as member access",
-                      array->Path);
+                      array->Path));
             return fail();
         }
         if (!constructor.Bind(array->Path, &array->Items))
         {
-            Log.Error("UiRuntime: data model '{}' refused the list '{}'",
-                      screen.ModelName, array->Path);
+            Refuse(UiDiagnosticKind::ModelRefused, std::nullopt, std::format("UiRuntime: data model '{}' refused the list '{}'",
+                      screen.ModelName, array->Path));
             return fail();
         }
     }
@@ -475,9 +633,9 @@ bool UiRuntime::BuildModel(Screen& screen, UiScreenHandle handle, Surface& surfa
     {
         if (!IsBindableName(screen.ActionNames[i]))
         {
-            Log.Error("UiRuntime: '{}' is not a bindable action name, for the same reason "
+            Refuse(UiDiagnosticKind::ModelRefused, std::nullopt, std::format("UiRuntime: '{}' is not a bindable action name, for the same reason "
                       "a property is not: a data expression reads '.' as member access",
-                      screen.ActionNames[i]);
+                      screen.ActionNames[i]));
             return fail();
         }
 
@@ -495,8 +653,8 @@ bool UiRuntime::BuildModel(Screen& screen, UiScreenHandle handle, Surface& surfa
                     PendingActions.push_back(std::move(action));
                 }))
         {
-            Log.Error("UiRuntime: data model '{}' refused the action '{}'",
-                      screen.ModelName, screen.ActionNames[i]);
+            Refuse(UiDiagnosticKind::ModelRefused, std::nullopt, std::format("UiRuntime: data model '{}' refused the action '{}'",
+                      screen.ModelName, screen.ActionNames[i]));
             return fail();
         }
     }
@@ -518,17 +676,21 @@ UiScreenHandle UiRuntime::OpenScreen(UiSurfaceId surface, const UiScreenDesc& de
         return {};
     }
 
+    // Everything reported while this opens names the surface; the screen joins
+    // the attribution the moment its handle is decided, below.
+    UiDiagnosticLog::Scope opening(Diagnostics, { {}, surface });
+
     AssetLease packageLease = Assets.LoadLease(packagePath, AssetType::UiPackage);
     if (!packageLease.IsValid())
     {
-        Log.Error("UiRuntime: UI package '{}' did not load", packagePath);
+        Refuse(UiDiagnosticKind::PackageUnavailable, std::string(packagePath), std::format("UiRuntime: UI package '{}' did not load", packagePath));
         return {};
     }
 
     const UiPackage* package = Packages.Get(UiPackageHandle::FromToken(packageLease.OpaqueToken()));
     if (package == nullptr)
     {
-        Log.Error("UiRuntime: UI package '{}' loaded but is not resident", packagePath);
+        Refuse(UiDiagnosticKind::PackageUnavailable, std::string(packagePath), std::format("UiRuntime: UI package '{}' loaded but is not resident", packagePath));
         return {};
     }
 
@@ -599,6 +761,25 @@ UiScreenHandle UiRuntime::OpenScreen(UiSurfaceId surface, const UiScreenDesc& de
     screen.Generation = generation;
 
     const UiScreenHandle handle{ static_cast<std::uint32_t>(index + 1), generation };
+    opening.Set({ handle, surface });
+
+    // What the cooker noticed about this package, hung on the screen that is
+    // about to show it. Reported here rather than when the package became
+    // resident, because this is the point that has a screen to attribute it to
+    // and a consumer that may be looking.
+    for (const UiUnsupportedFeature& note : package->Unsupported)
+    {
+        UiDiagnostic entry;
+        entry.Severity = UiDiagnosticSeverity::Warning;
+        entry.Source = UiDiagnosticSource::Cook;
+        entry.Kind = UiDiagnosticKind::UnsupportedStyle;
+        entry.Path = note.SourcePath;
+        entry.Line = note.Line;
+        entry.Message = std::format(
+            "UiPackage '{}': '{}' at {}:{} is outside the supported rendering profile",
+            packagePath, note.Feature, note.SourcePath, note.Line);
+        Diagnostics.Push(std::move(entry));
+    }
 
     if (!desc.ModelName.empty() && !BuildModel(screen, handle, *slot))
     {
@@ -612,14 +793,13 @@ UiScreenHandle UiRuntime::OpenScreen(UiSurfaceId surface, const UiScreenDesc& de
         // this screen, for exactly as long as the load runs -- and from nothing
         // at all outside it.
         const RmlPackageFileSource::ActivePackageScope scope(*FileSource, *package);
-        ActiveScreen = &screen;
+        const ActiveScreenScope active(*this, screen, handle);
         document = slot->Context->LoadDocument(package->RootDocumentName);
-        ActiveScreen = nullptr;
     }
 
     if (document == nullptr)
     {
-        Log.Error("UiRuntime: '{}' did not parse into a document", packagePath);
+        Refuse(UiDiagnosticKind::DocumentInvalid, std::string(packagePath), std::format("UiRuntime: '{}' did not parse into a document", packagePath));
         CloseScreenSlot(screen);
         return {};
     }
@@ -643,6 +823,25 @@ UiScreenHandle UiRuntime::OpenScreen(UiSurfaceId surface, const UiScreenDesc& de
 
 void UiRuntime::CloseScreenSlot(Screen& screen)
 {
+    // Anything this screen asked for that nobody has drained yet goes with it.
+    // The handle stops resolving the moment the generation below bumps, so a
+    // surviving action could never be matched by DrainActions(screen) again --
+    // it would sit in the queue until some other controller took everything.
+    // Dropping it is also the honest answer: it names a screen that is gone.
+    //
+    // Done before the generation bump, while the handle still matches.
+    if (!PendingActions.empty())
+    {
+        const auto index = static_cast<std::uint32_t>(&screen - Screens.data());
+        const UiScreenHandle closing{ index + 1, screen.Generation };
+        std::erase_if(PendingActions, [closing](const UiAction& action) {
+            return action.Screen == closing;
+        });
+    }
+
+    // References handed out for this document die with it.
+    screen.Elements.clear();
+
     if (screen.Document != nullptr)
     {
         // Close() unloads it from its context. The context owns the document, so
@@ -858,6 +1057,36 @@ std::vector<UiAction> UiRuntime::DrainActions(UiScreenHandle screen)
     return taken;
 }
 
+namespace
+{
+    // A window point in the surface's own pixels. Inside says whether the
+    // point lies within the placement; the coordinates are meaningful either
+    // way, because a drag that started inside is delivered wherever it went.
+    struct SurfacePoint
+    {
+        int X = 0;
+        int Y = 0;
+        bool Inside = false;
+    };
+
+    SurfacePoint ToSurface(const std::optional<Rect2d>& placement, RenderExtent size,
+                           float windowX, float windowY)
+    {
+        if (!placement.has_value())
+            return { static_cast<int>(windowX), static_cast<int>(windowY), true };
+        const Rect2d& rect = *placement;
+        if (rect.Size.X <= 0.0f || rect.Size.Y <= 0.0f)
+            return {};
+        const float sx = static_cast<float>(size.Width) / rect.Size.X;
+        const float sy = static_cast<float>(size.Height) / rect.Size.Y;
+        const float x = (windowX - rect.Position.X) * sx;
+        const float y = (windowY - rect.Position.Y) * sy;
+        const Vec2d windowPoint{ windowX, windowY };
+        return { static_cast<int>(x), static_cast<int>(y),
+                 MapWindowPointToSurface(windowPoint, rect, size).has_value() };
+    }
+}
+
 bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
 {
     if (!Ready)
@@ -871,9 +1100,16 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
         Surface& surface = *it;
         if (!surface.Live || surface.Context == nullptr)
             continue;
+        if (surface.InputPolicy == UiSurfaceInputPolicy::Disabled)
+            continue;
+        const bool keys = surface.InputPolicy == UiSurfaceInputPolicy::Full;
 
         Rml::Context& context = *surface.Context;
         const int modifiers = ToRmlKeyModifiers(SDL_GetModState());
+        // An action the document raises against a callback nobody declared is
+        // reported by the engine while the event is dispatched, which is here.
+        const UiDiagnosticLog::Scope dispatching(
+            Diagnostics, SurfaceAttribution(static_cast<std::size_t>(&surface - Surfaces.data())));
 
         // Every Process* here returns true when the UI is NOT interacting, so
         // consumption is the negation. Reading it the other way round would
@@ -881,12 +1117,27 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
         switch (event.type)
         {
         case SDL_EVENT_MOUSE_MOTION:
-            PointerX = static_cast<int>(event.motion.x);
-            PointerY = static_cast<int>(event.motion.y);
-            PointerInside = true;
-            if (!context.ProcessMouseMove(PointerX, PointerY, modifiers))
+        {
+            const SurfacePoint at =
+                ToSurface(surface.Placement, surface.Size, event.motion.x, event.motion.y);
+            if (!at.Inside && !surface.PointerOwned)
+            {
+                // Left the placement with nothing held: the document is told
+                // once, so nothing stays hovered.
+                if (surface.PointerInside)
+                {
+                    surface.PointerInside = false;
+                    (void)context.ProcessMouseLeave();
+                }
+                break;
+            }
+            surface.PointerX = at.X;
+            surface.PointerY = at.Y;
+            surface.PointerInside = at.Inside;
+            if (!context.ProcessMouseMove(at.X, at.Y, modifiers) || surface.PointerOwned)
                 return true;
             break;
+        }
 
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
         case SDL_EVENT_MOUSE_BUTTON_UP:
@@ -894,32 +1145,51 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
             const int button = ToRmlMouseButton(event.button.button);
             if (button < 0)
                 break;
+            const bool down = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+            const SurfacePoint at =
+                ToSurface(surface.Placement, surface.Size, event.button.x, event.button.y);
+            // A press lands only inside; a release goes to whoever holds the
+            // pointer, wherever it is now, else only inside.
+            if (!at.Inside && !(surface.PointerOwned && !down))
+                break;
             // Re-stated, because a press with no preceding move -- a synthetic
             // event, a tap -- would otherwise be resolved against wherever the
             // pointer happened to be last.
-            PointerX = static_cast<int>(event.button.x);
-            PointerY = static_cast<int>(event.button.y);
-            PointerInside = true;
-            (void)context.ProcessMouseMove(PointerX, PointerY, modifiers);
-            const bool free = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
-                ? context.ProcessMouseButtonDown(button, modifiers)
-                : context.ProcessMouseButtonUp(button, modifiers);
-            if (!free)
+            surface.PointerX = at.X;
+            surface.PointerY = at.Y;
+            surface.PointerInside = at.Inside;
+            (void)context.ProcessMouseMove(at.X, at.Y, modifiers);
+            const bool free = down ? context.ProcessMouseButtonDown(button, modifiers)
+                                   : context.ProcessMouseButtonUp(button, modifiers);
+            const bool owned = surface.PointerOwned;
+            if (down)
+                surface.PointerOwned = !free;
+            else
+                surface.PointerOwned = false;
+            if (!free || owned)
                 return true;
             break;
         }
 
         case SDL_EVENT_MOUSE_WHEEL:
+        {
+            const SurfacePoint at = ToSurface(surface.Placement, surface.Size,
+                                              event.wheel.mouse_x, event.wheel.mouse_y);
+            if (!at.Inside)
+                break;
             if (!context.ProcessMouseWheel(
                     Rml::Vector2f(-event.wheel.x, -event.wheel.y), modifiers))
             {
                 return true;
             }
             break;
+        }
 
         case SDL_EVENT_KEY_DOWN:
         case SDL_EVENT_KEY_UP:
         {
+            if (!keys)
+                break;
             const Rml::Input::KeyIdentifier key = ToRmlKey(event.key.scancode);
             if (key == Rml::Input::KI_UNKNOWN)
                 break;
@@ -935,6 +1205,8 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
         }
 
         case SDL_EVENT_TEXT_INPUT:
+            if (!keys)
+                break;
             // Composed characters, from the platform. Never reassembled from
             // keycodes, which is wrong in every locale but the author's.
             if (TextInput->IsTextInputActive())
@@ -945,7 +1217,7 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
             break;
 
         case SDL_EVENT_WINDOW_MOUSE_LEAVE:
-            PointerInside = false;
+            surface.PointerInside = false;
             (void)context.ProcessMouseLeave();
             break;
 
@@ -963,11 +1235,18 @@ UiInputCapture UiRuntime::Capture() const
     if (!Ready)
         return capture;
 
+    bool anyTakesKeys = false;
     for (const Surface& surface : Surfaces)
     {
         if (!surface.Live || surface.Context == nullptr)
             continue;
-        if (surface.Context->IsMouseInteracting())
+        if (surface.InputPolicy == UiSurfaceInputPolicy::Disabled)
+            continue;
+        anyTakesKeys |= surface.InputPolicy == UiSurfaceInputPolicy::Full;
+        // A surface the pointer is not over is not interacting with it,
+        // whatever hover state its context still remembers; one it holds a
+        // press in is, wherever the pointer went.
+        if ((surface.PointerInside || surface.PointerOwned) && surface.Context->IsMouseInteracting())
             capture.Mouse = true;
     }
 
@@ -976,7 +1255,7 @@ UiInputCapture UiRuntime::Capture() const
     // the whole game, and a pause menu still has to let the console key
     // through. What suppresses gameplay controls is an InputContextLease the
     // host takes, which is a decision this layer does not get to make.
-    capture.Keyboard = TextInput != nullptr && TextInput->IsTextInputActive();
+    capture.Keyboard = anyTakesKeys && TextInput != nullptr && TextInput->IsTextInputActive();
     return capture;
 }
 
@@ -1048,14 +1327,24 @@ void UiRuntime::ReloadChangedScreens()
                                            screen.Generation };
         if (!RebuildScreen(screen, screenHandle))
         {
-            Log.Error("UiRuntime: '{}' failed to rebuild after an edit; "
-                      "the document already open is left alone", screen.PackagePath);
+            UiDiagnostic entry;
+            entry.Severity = UiDiagnosticSeverity::Error;
+            entry.Source = UiDiagnosticSource::Runtime;
+            entry.Kind = UiDiagnosticKind::RebuildFailed;
+            entry.Screen = screenHandle;
+            entry.Surface = screen.Surface;
+            entry.Path = screen.PackagePath;
+            entry.Message = std::format("UiRuntime: '{}' failed to rebuild after an edit; "
+                                        "the document already open is left alone",
+                                        screen.PackagePath);
+            Diagnostics.Push(std::move(entry));
         }
     }
 }
 
 bool UiRuntime::RebuildScreen(Screen& screen, UiScreenHandle handle)
 {
+    const UiDiagnosticLog::Scope rebuilding(Diagnostics, { handle, screen.Surface });
     Surface* slot = ResolveSurface(screen.Surface);
     if (slot == nullptr || slot->Context == nullptr)
         return false;
@@ -1093,7 +1382,9 @@ bool UiRuntime::RebuildScreen(Screen& screen, UiScreenHandle handle)
     ForgetFontResources();
 
     // The old document goes before the new one is built: two documents from one
-    // package, alive at once on the same context, would both be showing.
+    // package, alive at once on the same context, would both be showing. Every
+    // element reference handed out for it goes with it.
+    screen.Elements.clear();
     if (screen.Document != nullptr)
     {
         screen.Document->Close();
@@ -1142,9 +1433,8 @@ bool UiRuntime::RebuildScreen(Screen& screen, UiScreenHandle handle)
     Rml::ElementDocument* document = nullptr;
     {
         const RmlPackageFileSource::ActivePackageScope scope(*FileSource, *package);
-        ActiveScreen = &screen;
+        const ActiveScreenScope active(*this, screen, handle);
         document = slot->Context->LoadDocument(package->RootDocumentName);
-        ActiveScreen = nullptr;
     }
     if (document == nullptr)
         return false;
@@ -1202,9 +1492,8 @@ void UiRuntime::RestyleChangedScreens()
         // only changed colours. Faces the documents declared are already
         // loaded, and re-parsing an @font-face asks for one already there.
         RmlPackageFileSource::ActivePackageScope scope(*FileSource, *package);
-        ActiveScreen = &screen;
+        const ActiveScreenScope active(*this, screen, HandleOf(screen));
         screen.Document->ReloadStyleSheet();
-        ActiveScreen = nullptr;
     }
 }
 
@@ -1220,16 +1509,21 @@ void UiRuntime::Update()
     // rebuild already read the current sheets.
     RestyleChangedScreens();
 
-    for (Surface& surface : Surfaces)
+    for (std::size_t index = 0; index < Surfaces.size(); ++index)
     {
-        if (surface.Live && surface.Context != nullptr)
-            surface.Context->Update();
+        Surface& surface = Surfaces[index];
+        if (!surface.Live || surface.Context == nullptr)
+            continue;
+
+        const UiDiagnosticLog::Scope updating(Diagnostics, SurfaceAttribution(index));
+        surface.Context->Update();
     }
 }
 
 void UiRuntime::ExtractRender()
 {
     DrawFrames.clear();
+    OffscreenFrames.clear();
     if (!Ready)
         return;
 
@@ -1245,22 +1539,21 @@ void UiRuntime::ExtractRender()
         // renders. One screen per surface today; a surface carrying a stack
         // resolves against the screen owning the command, which is why this is
         // scoped around the render rather than set once at open.
-        ActiveScreen = nullptr;
-        for (const Screen& screen : Screens)
-        {
-            if (screen.Live && screen.Surface == surfaceId && screen.Document != nullptr)
-            {
-                ActiveScreen = &screen;
-                break;
-            }
-        }
+        ActiveRenderSurface = surfaceId;
 
         Recorder->BeginFrame(surface.Size);
         surface.Context->Render();
-        ActiveScreen = nullptr;
+        ActiveRenderSurface = {};
 
         UiDrawFrame frame = Recorder->EndFrame();
-        if (!frame.IsEmpty())
+        if (frame.IsEmpty())
+            continue;
+        // Published once, to one place. The window feature reads the list; a
+        // host feature drawing this surface into its own target reads the
+        // entry by surface, and never sees the same recording twice.
+        if (surface.Destination == UiSurfaceDestination::Offscreen)
+            OffscreenFrames.emplace_back(surfaceId, std::move(frame));
+        else
             DrawFrames.push_back(std::move(frame));
     }
 }
@@ -1277,35 +1570,63 @@ std::string UiRuntime::AssetPathFor(const Screen& screen, std::string_view sourc
     return "asset://" + combined.lexically_normal().generic_string();
 }
 
+std::vector<const UiRuntime::Screen*> UiRuntime::ResolutionCandidates() const
+{
+    // A document being loaded, rebuilt or restyled resolves against its own
+    // package and nothing else: that is what makes an undeclared source an
+    // authoring error rather than a lucky hit on a neighbour's table.
+    if (ActiveScreen != nullptr)
+        return { ActiveScreen };
+
+    if (!ActiveRenderSurface.IsValid())
+        return {};
+
+    std::vector<const Screen*> candidates;
+    for (const Screen& screen : Screens)
+    {
+        if (screen.Live && screen.Surface == ActiveRenderSurface && screen.Document != nullptr)
+            candidates.push_back(&screen);
+    }
+    return candidates;
+}
+
 bool UiRuntime::ResolveTexture(std::string_view source,
                                TextureHandle& outHandle,
                                RenderExtent& outSize)
 {
-    if (ActiveScreen == nullptr || Textures == nullptr)
+    if (Textures == nullptr)
         return false;
 
-    const std::string assetPath = AssetPathFor(*ActiveScreen, source);
-    const auto it = ActiveScreen->TexturesByAssetPath.find(assetPath);
-    if (it == ActiveScreen->TexturesByAssetPath.end())
-        return false;
+    // Each candidate resolves the source against its own resource root before
+    // looking it up, because that root is what the cooker resolved against.
+    for (const Screen* screen : ResolutionCandidates())
+    {
+        const std::string assetPath = AssetPathFor(*screen, source);
+        const auto it = screen->TexturesByAssetPath.find(assetPath);
+        if (it == screen->TexturesByAssetPath.end())
+            continue;
 
-    outHandle = it->second;
-    outSize = Textures->GetExtent(it->second);
-    return true;
+        outHandle = it->second;
+        outSize = Textures->GetExtent(it->second);
+        return true;
+    }
+    return false;
 }
 
 bool UiRuntime::ResolveResourceBytes(std::string_view source,
                                      const std::vector<std::byte>*& outBytes)
 {
-    if (ActiveScreen == nullptr)
-        return false;
-
-    const std::string assetPath = AssetPathFor(*ActiveScreen, source);
-    const auto it = ActiveScreen->FontsByAssetPath.find(assetPath);
-    if (it == ActiveScreen->FontsByAssetPath.end())
-        return false;
-
-    const FontFace* face = Fonts.Get(it->second);
+    const FontFace* face = nullptr;
+    for (const Screen* screen : ResolutionCandidates())
+    {
+        const std::string assetPath = AssetPathFor(*screen, source);
+        const auto it = screen->FontsByAssetPath.find(assetPath);
+        if (it == screen->FontsByAssetPath.end())
+            continue;
+        face = Fonts.Get(it->second);
+        if (face != nullptr)
+            break;
+    }
     if (face == nullptr)
         return false;
 
@@ -1331,6 +1652,195 @@ std::optional<UiElementBox> UiRuntime::MeasureElement(UiScreenHandle screen,
     const Rml::Vector2f offset = element->GetAbsoluteOffset(Rml::BoxArea::Content);
     const Rml::Vector2f size = element->GetBox().GetSize(Rml::BoxArea::Content);
     return UiElementBox{ offset.x, offset.y, size.x, size.y };
+}
+
+// -- inspection ----------------------------------------------------------------
+
+namespace
+{
+    constexpr std::size_t kMaxElementRefsPerScreen = 8192;
+
+    UiElementBox BoxOf(Rml::Element& element, Rml::BoxArea area)
+    {
+        const Rml::Vector2f offset = element.GetAbsoluteOffset(area);
+        const Rml::Vector2f size = element.GetBox().GetSize(area);
+        return UiElementBox{ offset.x, offset.y, size.x, size.y };
+    }
+
+    std::vector<std::string> SplitClasses(const Rml::String& names)
+    {
+        std::vector<std::string> out;
+        std::size_t start = 0;
+        while (start < names.size())
+        {
+            while (start < names.size() && names[start] == ' ')
+                ++start;
+            std::size_t end = start;
+            while (end < names.size() && names[end] != ' ')
+                ++end;
+            if (end > start)
+                out.emplace_back(names.substr(start, end - start));
+            start = end;
+        }
+        return out;
+    }
+}
+
+UiElementRef UiRuntime::MintElementRef(Screen& screen, UiScreenHandle handle, Rml::Element& element)
+{
+    std::size_t dead = screen.Elements.size();
+    for (std::size_t i = 0; i < screen.Elements.size(); ++i)
+    {
+        Screen::ElementSlot& slot = screen.Elements[i];
+        if (slot.Element && slot.Element.get() == &element)
+            return UiElementRef{ handle, static_cast<std::uint32_t>(i), slot.Serial };
+        if (!slot.Element && dead == screen.Elements.size())
+            dead = i;
+    }
+    if (dead == screen.Elements.size())
+    {
+        if (screen.Elements.size() >= kMaxElementRefsPerScreen)
+            return {};
+        screen.Elements.emplace_back();
+    }
+    Screen::ElementSlot& slot = screen.Elements[dead];
+    slot.Element = element.GetObserverPtr();
+    slot.Serial = screen.NextElementSerial++;
+    return UiElementRef{ handle, static_cast<std::uint32_t>(dead), slot.Serial };
+}
+
+Rml::Element* UiRuntime::ResolveElement(UiElementRef ref) const
+{
+    if (!ref.IsValid())
+        return nullptr;
+    const Screen* screen = ResolveScreen(ref.Screen);
+    if (screen == nullptr || screen->Document == nullptr || ref.Slot >= screen->Elements.size())
+        return nullptr;
+    const Screen::ElementSlot& slot = screen->Elements[ref.Slot];
+    if (slot.Serial != ref.Serial || !slot.Element)
+        return nullptr;
+    // Alive is not enough: the document engine detaches a removed element at
+    // once and frees it a frame later, and "in the document" is the answer an
+    // inspector is asking for. Walk up to the screen's document, or nothing.
+    Rml::Element* element = slot.Element.get();
+    for (Rml::Element* up = element; up != nullptr; up = up->GetParentNode())
+    {
+        if (up == static_cast<Rml::Element*>(screen->Document))
+            return element;
+    }
+    return nullptr;
+}
+
+UiElementInfo UiRuntime::Describe(Screen& screen, UiScreenHandle handle, Rml::Element& element,
+                                  UiElementRef ref)
+{
+    UiElementInfo info;
+    info.Ref = ref;
+    info.Tag = element.GetTagName();
+    info.Id = element.GetId();
+    info.Classes = SplitClasses(element.GetClassNames());
+    for (const auto& [name, value] : element.GetAttributes())
+        info.Attributes.emplace_back(name, value.Get<Rml::String>());
+    info.Boxes.Margin = BoxOf(element, Rml::BoxArea::Margin);
+    info.Boxes.Border = BoxOf(element, Rml::BoxArea::Border);
+    info.Boxes.Padding = BoxOf(element, Rml::BoxArea::Padding);
+    info.Boxes.Content = BoxOf(element, Rml::BoxArea::Content);
+
+    // The document is the root of what a screen describes; its own parent is
+    // the context, which no screen owns.
+    if (&element != static_cast<Rml::Element*>(screen.Document))
+    {
+        std::uint32_t depth = 0;
+        for (Rml::Element* up = element.GetParentNode();
+             up != nullptr && up != static_cast<Rml::Element*>(screen.Document);
+             up = up->GetParentNode())
+            ++depth;
+        info.Depth = depth + 1;
+        if (Rml::Element* parent = element.GetParentNode())
+            info.Parent = MintElementRef(screen, handle, *parent);
+    }
+    return info;
+}
+
+UiElementRef UiRuntime::ElementAt(UiSurfaceId surface, Vec2d surfacePoint)
+{
+    Surface* slot = ResolveSurface(surface);
+    if (slot == nullptr || slot->Context == nullptr)
+        return {};
+    Rml::Element* element =
+        slot->Context->GetElementAtPoint(Rml::Vector2f(surfacePoint.X, surfacePoint.Y));
+    if (element == nullptr)
+        return {};
+    Rml::ElementDocument* owner = element->GetOwnerDocument();
+    for (Screen& screen : Screens)
+    {
+        if (screen.Live && screen.Document != nullptr && screen.Document == owner)
+            return MintElementRef(screen, HandleOf(screen), *element);
+    }
+    return {};
+}
+
+std::optional<UiElementInfo> UiRuntime::DescribeElement(UiElementRef ref)
+{
+    Rml::Element* element = ResolveElement(ref);
+    Screen* screen = ResolveScreen(ref.Screen);
+    if (element == nullptr || screen == nullptr)
+        return std::nullopt;
+    return Describe(*screen, ref.Screen, *element, ref);
+}
+
+std::vector<UiElementRef> UiRuntime::ElementChildren(UiElementRef ref)
+{
+    std::vector<UiElementRef> out;
+    Rml::Element* element = ResolveElement(ref);
+    Screen* screen = ResolveScreen(ref.Screen);
+    if (element == nullptr || screen == nullptr)
+        return out;
+    const int count = element->GetNumChildren(false);
+    out.reserve(static_cast<std::size_t>(count));
+    for (int i = 0; i < count; ++i)
+        if (Rml::Element* child = element->GetChild(i))
+            out.push_back(MintElementRef(*screen, ref.Screen, *child));
+    return out;
+}
+
+std::vector<UiElementInfo> UiRuntime::ElementTree(UiScreenHandle handle)
+{
+    std::vector<UiElementInfo> out;
+    Screen* screen = ResolveScreen(handle);
+    if (screen == nullptr || screen->Document == nullptr)
+        return out;
+
+    // Preorder, iteratively: a document is wide rather than deep, but a
+    // recursion bounded by authored nesting is still a recursion bounded by
+    // somebody else.
+    std::vector<Rml::Element*> stack{ screen->Document };
+    while (!stack.empty())
+    {
+        Rml::Element* element = stack.back();
+        stack.pop_back();
+        const UiElementRef ref = MintElementRef(*screen, handle, *element);
+        if (!ref.IsValid())
+            break;
+        out.push_back(Describe(*screen, handle, *element, ref));
+        const int count = element->GetNumChildren(false);
+        for (int i = count - 1; i >= 0; --i)
+            if (Rml::Element* child = element->GetChild(i))
+                stack.push_back(child);
+    }
+    return out;
+}
+
+std::optional<std::string> UiRuntime::ComputedProperty(UiElementRef ref,
+                                                       std::string_view property) const
+{
+    Rml::Element* element = ResolveElement(ref);
+    if (element == nullptr)
+        return std::nullopt;
+    const Rml::Property* value = element->GetProperty(Rml::String(property));
+    if (value == nullptr)
+        return std::nullopt;
+    return std::string(value->ToString());
 }
 
 std::uint32_t UiRuntime::LiveGeometryCount() const

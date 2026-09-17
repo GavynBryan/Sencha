@@ -53,15 +53,12 @@
 #include <app/Engine.h>
 #include <app/EngineSchedule.h>
 #include <app/Game.h>
-#include <assets/cook/AssetImporter.h> // kImportSettingsSuffix
-#include <assets/cook/ContentImporters.h>
 #include <assets/cook/TextureCook.h>
 #include <render/LightComponentTypes.h>
 #include <render/IrradianceVolumeComponent.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
-#include <assets/hotreload/AssetHotReloader.h>
-#include <assets/hotreload/AssetSourceWatcher.h>
+#include "project/SourceReloadRoots.h"
 #include <core/assets/AssetRegistry.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
@@ -991,31 +988,6 @@ void EditorServices::HandlePlatformEvent(PlatformEventContext& ctx)
     }
 }
 
-//=============================================================================
-// Source hot reload: AssetSourceWatcher detects content changes to authored
-// .smat/.png under each content root; AssetHotReloader re-cooks (textures) or
-// re-parses (materials) and swaps the resident cache slot in place at the
-// engine's async drain point. Live handles never change, so the viewport just
-// shows the new data on its next frame.
-//=============================================================================
-struct EditorServices::SourceWatchState
-{
-    explicit SourceWatchState(JobSystem* jobs)
-        : Importers(jobs)
-    {
-    }
-
-    struct RootWatch
-    {
-        AssetSourceWatcher Watcher;
-        AssetHotReloader Reloader;
-    };
-
-    ContentImporterSet Importers;
-    std::vector<std::unique_ptr<RootWatch>> Roots;
-    std::chrono::steady_clock::time_point NextPoll{};
-};
-
 void EditorServices::BuildAuthoredWorkflows()
 {
     UiService* ui = EnginePtr != nullptr ? EnginePtr->TryUi() : nullptr;
@@ -1112,37 +1084,21 @@ void EditorServices::BuildSourceWatch()
         return;
 
     Engine& engine = *EnginePtr;
-    SourceWatch = std::make_unique<SourceWatchState>(&engine.Jobs());
+    SourceWatch = std::make_unique<SourceReloadRoots>(engine.Logging(), &engine.Jobs(), engine.Tasks());
 
 #if defined(SENCHA_ENABLE_UI) && defined(SENCHA_EDITOR_UI_DIR)
     // The editor's own authored UI, watched against the ENGINE's asset stack --
     // the one it was mounted into, and the one Engine::Ui() resolves through.
     // This is what makes editing Kyusu's own interface a save-and-look loop
     // rather than a restart.
-    {
-        auto watch = std::unique_ptr<SourceWatchState::RootWatch>(new SourceWatchState::RootWatch{
-            AssetSourceWatcher(engine.Logging(), SENCHA_EDITOR_UI_DIR,
-                               { ".rml", ".rcss", ".ttf", ".otf" }),
-            AssetHotReloader(engine.Logging(), engine.Content().Assets().Assets,
-                             engine.Content().Assets().Registry,
-                             SourceWatch->Importers.Registry(), engine.Tasks(),
-                             SENCHA_EDITOR_UI_DIR),
-        });
-        watch->Watcher.Initialize();
-        SourceWatch->Roots.push_back(std::move(watch));
-    }
+    SourceWatch->AddRoot(SENCHA_EDITOR_UI_DIR, { ".rml", ".rcss", ".ttf", ".otf" },
+                         engine.Content().Assets().Assets, engine.Content().Assets().Registry);
 #endif
 
     for (const std::string& root : Project->ContentRoots)
     {
-        auto watch = std::unique_ptr<SourceWatchState::RootWatch>(new SourceWatchState::RootWatch{
-            AssetSourceWatcher(engine.Logging(), root,
-                               { ".smat", ".png", ".meta", ".rml", ".rcss", ".ttf", ".otf" }),
-            AssetHotReloader(engine.Logging(), Assets->Assets, Assets->Registry,
-                             SourceWatch->Importers.Registry(), engine.Tasks(), root),
-        });
-        watch->Watcher.Initialize();
-        SourceWatch->Roots.push_back(std::move(watch));
+        SourceWatch->AddRoot(root, { ".smat", ".png", ".meta", ".rml", ".rcss", ".ttf", ".otf" },
+                             Assets->Assets, Assets->Registry);
     }
 }
 
@@ -1270,22 +1226,7 @@ void EditorServices::ProcessFrame()
     // Files created after startup are not watched (Decision H); the material
     // panel's Rescan refreshes the pickable list for those.
     if (SourceWatch)
-    {
-        const auto now = std::chrono::steady_clock::now();
-        if (now >= SourceWatch->NextPoll)
-        {
-            SourceWatch->NextPoll = now + std::chrono::milliseconds(500);
-            for (auto& root : SourceWatch->Roots)
-                for (const std::string& changed : root->Watcher.PollChanged())
-                {
-                    // An import-settings sidecar edit recooks its source.
-                    std::string_view source = changed;
-                    if (source.ends_with(kImportSettingsSuffix))
-                        source.remove_suffix(kImportSettingsSuffix.size());
-                    root->Reloader.ReloadSource(source);
-                }
-        }
-    }
+        (void)SourceWatch->Poll(std::chrono::steady_clock::now());
 
     // Rebuild the transient viewport overlay (selected-brush dimension labels)
     // before the UI panel draws it this frame, and keep the ortho views aligned

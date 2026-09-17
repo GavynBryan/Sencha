@@ -101,6 +101,16 @@ public:
     [[nodiscard]] float GetBusVolume(std::string_view busName) const;
     [[nodiscard]] bool  IsBusMuted(std::string_view busName)   const;
 
+    // The player's own volume, multiplied over every bus.
+    //
+    // Distinct from a bus volume because the two belong to different people: a
+    // bus is the game's mix -- how loud its music sits against its effects --
+    // and this is how loud the player wants all of it. A master slider that
+    // wrote bus volumes would overwrite that mix and have nothing to restore it
+    // from.
+    void SetMasterVolume(float volume);
+    [[nodiscard]] float GetMasterVolume() const { return MasterVolume; }
+
     // -- Per-frame update -----------------------------------------------------
 
     // Retire non-looping voices whose SDL streams have fully drained. Should
@@ -121,6 +131,7 @@ private:
     };
 
     Logger&   Log;
+    float     MasterVolume       = 1.0f;
     uint32_t  DeviceId           = 0; // SDL_AudioDeviceID (uint32_t)
     bool      Valid              = false;
     bool      OwnsAudioSubsystem = false;

@@ -112,6 +112,10 @@ behavior.
 - `docs/gameplay/camera.md` is the engine's camera vocabulary — four things —
   and the three template camera policies as worked examples of why the rest is
   game code.
+- `docs/gameplay/pause.md` is the application shell: the engine-owned `ui.*`
+  action vocabulary, Back routing with pause as the fallback, what a pause does
+  to input, the pointer and the simulation clock, and how a game changes the
+  menu without writing any of it.
 
 ## Requirements
 

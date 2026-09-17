@@ -1,12 +1,19 @@
 #pragma once
 
+#include <app/BackRouter.h>
 #include <app/DefaultRenderPipeline.h>
+#include <app/OptionsPage.h>
+#include <app/PauseState.h>
+#include <input/PointerCaptureSettle.h>
 #include <app/SessionParticipantProjection.h>
 #include <net/NetMessageRouter.h>
 #include <net/NetSession.h>
 #include <app/EngineSchedule.h>
 #include <app/LoadedLevel.h>
 #include <app/RuntimeContent.h>
+#ifdef SENCHA_ENABLE_UI
+#include <ui/UiSurface.h>
+#endif
 #include <core/console/ConsoleLineFeed.h>
 #include <core/console/ConsoleStartupScript.h>
 #include <core/config/EngineConfig.h>
@@ -51,6 +58,8 @@ class FrameDriver;
 class Game;
 class GpuTimestampPool;
 struct GraphicsServices;
+class CVarArchive;
+class PauseMenu;
 class UiService;
 class IDebugPanel;
 class ImGuiDebugOverlay;
@@ -77,7 +86,51 @@ public:
     bool Initialize();
     void Shutdown();
     int Run(Game& game);
-    void RequestExit() { Running = false; }
+
+    // Where a graceful exit comes from. Told to the game's handler so it can
+    // answer differently -- a confirmation for the menu's own Quit, none for a
+    // console command an operator typed.
+    enum class ExitSource : std::uint8_t
+    {
+        WindowClose,  // the window's close button, Alt+F4, the desktop asking
+        Menu,         // the application shell's own exit entry
+        Console,      // the `quit` command
+        Game,         // the module's own call
+    };
+
+    enum class ExitDecision : std::uint8_t
+    {
+        Allow,
+        // Withheld, and the game takes responsibility for calling ConfirmExit
+        // or CancelExit later. Further requests coalesce into the pending one
+        // rather than re-entering the handler.
+        Defer,
+    };
+
+    // A game's chance to intervene before the loop stops: a save prompt, a
+    // confirmation, a disconnect, a return to a front end.
+    //
+    // Installed in OnStart like every other policy. Every *graceful* source
+    // reaches it -- the window button and Alt+F4 as much as the menu -- which
+    // is what makes "a game can intercept application exit" true rather than
+    // "a game can change what one button does". A renderer that failed and a
+    // signal the process was sent do not: those are notifications that this is
+    // ending, not requests, and a veto there would be a hang.
+    std::function<ExitDecision(ExitSource)> OnExitRequested;
+
+    void RequestExit(ExitSource source);
+    // The module's own call, unchanged for callers that had no source to name.
+    void RequestExit() { RequestExit(ExitSource::Game); }
+
+    // Answering a deferred request. Both are no-ops when nothing is pending, so
+    // a dialog that is dismissed twice cannot stop a later exit.
+    void ConfirmExit();
+    void CancelExit();
+    [[nodiscard]] bool IsExitPending() const { return ExitPending; }
+
+    // Ends the run without consulting anybody. For the endings that are not
+    // requests: a device that failed, a process being told to stop.
+    void StopImmediately();
     void SetStartupScript(ConsoleStartupScript script)
     {
         StartupScript = std::move(script);
@@ -301,6 +354,11 @@ public:
     void SetPointerCaptured(bool captured);
     [[nodiscard]] bool IsPointerCaptureRequested() const { return PointerCaptureRequested; }
 
+    // Whether the pointer has just been teleported by a capture change, and so
+    // whether this frame's displacement is the player's. Driven by the frame
+    // pump; public because the pump is what drives it.
+    [[nodiscard]] PointerCaptureSettle& PointerCapture() { return CaptureSettle; }
+
     // This process's mounted content. Live from just before Game::OnStart until
     // just after Game::OnShutdown, which is the span a game may hold references
     // into it; every lease a game takes must be released by the end of
@@ -363,9 +421,39 @@ public:
     // and the render feature follow from there.
     [[nodiscard]] UiService& Ui();
     [[nodiscard]] const UiService& Ui() const;
+
     // Null before OnStart, after OnShutdown, or when the document engine failed
     // to come up. A host that can carry on without menus checks this.
     [[nodiscard]] UiService* TryUi() { return UiState.get(); }
+
+    // The application shell. Composed by the engine for any host that can
+    // present one, so a game gets a working menu without assembling anything
+    // -- and customises it by editing the model rather than by replacing the
+    // machinery. Null in a process with no UI.
+    [[nodiscard]] PauseMenu* TryPauseMenu() { return PauseMenuState.get(); }
+    [[nodiscard]] const PauseMenu* TryPauseMenu() const { return PauseMenuState.get(); }
+
+    // Tracks the primary window's size and display scale onto the shell's
+    // surface. Called once per frame by the frame pipeline; a host with no
+    // window or no UI does nothing.
+    void SyncShellSurface();
+
+    [[nodiscard]] PauseState& Pause() { return PauseStateInstance; }
+    [[nodiscard]] const PauseState& Pause() const { return PauseStateInstance; }
+    [[nodiscard]] BackRouter& Back() { return BackRouterInstance; }
+
+    // The settings the shell's options page offers. A game adds, relabels or
+    // removes a row by editing this before the page is opened.
+    [[nodiscard]] OptionsPage& Options() { return OptionsState; }
+
+    // This process's saved settings. Null before Run reaches its console phase.
+    //
+    // Public because saving is an explicit commit rather than something a frame
+    // phase does: a settings screen calls Save when it closes, which is what
+    // keeps a dragged slider from writing a file per frame. Shutdown saves too,
+    // so a run that changed something from the console does not lose it.
+    [[nodiscard]] CVarArchive* TrySettings() { return SettingsStore.get(); }
+    [[nodiscard]] const CVarArchive* TrySettings() const { return SettingsStore.get(); }
 #endif
 
 #ifdef SENCHA_ENABLE_DEBUG_UI
@@ -453,6 +541,12 @@ private:
     PlatformEventRouter PlatformEventRouterState;
 #ifdef SENCHA_ENABLE_UI
     std::unique_ptr<UiService> UiState;
+    std::unique_ptr<CVarArchive> SettingsStore;
+    std::unique_ptr<PauseMenu> PauseMenuState;
+    PauseState PauseStateInstance;
+    OptionsPage OptionsState;
+    BackRouter BackRouterInstance;
+    UiSurfaceId ShellSurface;
 #endif
 #ifdef SENCHA_ENABLE_VULKAN
     std::unique_ptr<GraphicsServices> GraphicsState;
@@ -482,6 +576,9 @@ private:
     std::optional<RuntimeContent> ContentState;
     bool PointerCaptureRequested = false;
     bool PointerCaptureApplied = false;
+    // The pointer teleports when the mode changes; this is what stops that
+    // being read as the player having moved it.
+    PointerCaptureSettle CaptureSettle;
     bool PrimaryWindowFocused = true;
     // After the content it loads through, so it is destroyed before it.
     std::optional<LoadedLevel> LevelState;
@@ -532,5 +629,6 @@ private:
     std::unique_ptr<JobSystem> FramePoolInstance;
     bool Initialized = false;
     bool Running = false;
+    bool ExitPending = false;
     bool FramePhasesRegistered = false;
 };

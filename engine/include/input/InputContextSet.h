@@ -56,6 +56,22 @@ public:
     // meaning.
     void ApplyPending();
 
+    // Stop every context except the engine's shell one from resolving, for as
+    // long as the application shell owns input.
+    //
+    // Leases are untouched. Their holders still want their contexts and get
+    // them back exactly as they were, which is what lets this suppress a game's
+    // controls without the game cooperating, naming its context, or handing
+    // over ownership it is entitled to keep. Suppression could not be done by
+    // priority instead: a context claims only the controls it binds, so a menu
+    // context binding Escape would leave movement and firing resolving.
+    //
+    // Reads through BuildActiveMask, so a suspended context goes inactive at
+    // the frame boundary like any other and the actions it was holding release
+    // through the ordinary path rather than sticking down.
+    void SetSuspended(bool suspended) { Suspended = suspended; }
+    [[nodiscard]] bool IsSuspended() const { return Suspended; }
+
     // Applied state indexed by the profile's context order, which is what a
     // resolve pass walks. Rebuilt per frame: a profile has a handful of
     // contexts, and caching it against a profile that rebinds in place would
@@ -79,4 +95,5 @@ private:
 
     std::vector<Slot> Slots;
     std::unordered_map<std::string, std::uint32_t> SlotsByName;
+    bool Suspended = false;
 };

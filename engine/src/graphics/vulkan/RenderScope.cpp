@@ -25,6 +25,7 @@ FrameContext MakeScopeContext(const FrameContext& outer, const RenderScopeDesc& 
     inner.TargetFormat = desc.ColorFormat;
     inner.DepthView = desc.Depth.View;
     inner.DepthFormat = desc.DepthFormat;
+    inner.StencilFormat = desc.StencilFormat;
     inner.Phase = desc.Phase;
     return inner;
 }
@@ -34,8 +35,12 @@ RenderScope::RenderScope(const FrameContext& frame, const RenderScopeDesc& desc)
 {
     const VkRenderingAttachmentInfo color =
         MakeAttachment(desc.Color, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-    const VkRenderingAttachmentInfo depth =
-        MakeAttachment(desc.Depth, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+    // A combined image is in one layout for both of its aspects.
+    const VkImageLayout depthLayout = desc.Stencil.IsPresent()
+        ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+        : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    const VkRenderingAttachmentInfo depth = MakeAttachment(desc.Depth, depthLayout);
+    const VkRenderingAttachmentInfo stencil = MakeAttachment(desc.Stencil, depthLayout);
 
     VkRenderingInfo info{};
     info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
@@ -48,6 +53,8 @@ RenderScope::RenderScope(const FrameContext& frame, const RenderScopeDesc& desc)
     }
     if (desc.Depth.IsPresent())
         info.pDepthAttachment = &depth;
+    if (desc.Stencil.IsPresent())
+        info.pStencilAttachment = &stencil;
 
     vkCmdBeginRendering(Cmd, &info);
 

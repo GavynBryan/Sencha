@@ -29,7 +29,10 @@ and the arena count as one consumer: the arena is the FPS with a session).
 
 1. `OnConfigure` -- the process's `EngineConfig`, including
    `RuntimeConfig::ContentRoots` (default `assets`, beside the working
-   directory; `--content-root` overrides).
+   directory; `--content-root` overrides). **A game names itself here**
+   (`App.Name`): the name titles the window and is the namespace its saved
+   settings are filed under, so a game that ships should state one rather than
+   inherit the host's fallback. The templates do.
 2. `OnRegisterComponents` -- the module's components, into the engine's schema.
    The schema is sealed after this; storage for every schema component exists
    in every world.
@@ -130,7 +133,7 @@ other way installs its own `ProvideBody` and never constructs the book.
 
 | Template | What it demonstrates |
 |---|---|
-| `blank` | the engine needs no game |
+| `blank` | the engine needs no game -- and still has a working pause menu |
 | `fps` | prefab pawn, mouse look, planar steering, a streamed world |
 | `arena` | the FPS with a session; prefab identity on bodies; a networked possession sample |
 | `platformer` | a game-made orbit camera; camera-relative steering; a body that faces where it runs |

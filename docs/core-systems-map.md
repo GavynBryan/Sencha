@@ -114,20 +114,22 @@ compile time, not by runtime type lookup.
 
 | Phase | What happens |
 | ----- | ------------ |
-| `PumpPlatform` | Begin input frame, poll SDL, let `Game::OnPlatformEvent` consume events, update `InputFrame`, set quit/pause flags. |
+| `PumpPlatform` | Begin input frame, poll SDL, let `Game::OnPlatformEvent` consume events, update `InputFrame`, apply pointer capture and discard the motion a capture change teleported, route graceful exit requests. |
 | `ResolveLifecycle` | Apply window resize/minimize/restore to `RuntimeFrameLoop`. |
 | `RebuildGraphics` | Recreate swapchain/frame/render resources when needed. |
 | `DrainAsyncTasks` | Run ready async commits on the owner thread, within `AsyncCommitBudgetMs`. Zone attaches and asset publishes happen here. |
-| `ScheduleTicks` | Build `FrameZoneView` from zone participation and convert elapsed wall time into this frame's fixed-tick budget. |
+| `ScheduleTicks` | Build `FrameZoneView` from zone participation, apply any pending temporal discontinuity, and convert elapsed wall time into this frame's fixed-tick budget. Then `PreSimulate`, where the input mapper resolves and the application shell may cancel the budget that was just computed -- the one window in which a frame still has ticks to cancel. |
 | `Simulate` | Run fixed-phase systems, physics systems, transform propagation, then post-fixed systems. |
-| `Update` | Run presentation-rate systems and then audio systems. |
+| `Update` | Run presentation-rate systems, track the shell surface against the window, update the application shell and the authored UI, re-drive pointer capture, then audio systems. |
 | `ExtractRender` | Propagate visible transforms, extract camera and render queue data. |
 | `Render` | Record and submit the frame through `Renderer`. |
 | `EndFrame` | Run cleanup/end systems, record lifecycle timing, end runtime frame, pace. |
 
 Simulation runs on a fixed timestep decoupled from presentation.
-`RuntimeFrameLoop` accumulates each frame's elapsed wall time (scaled by
-`SetSimulationTimescale`) through `FixedStepScheduler` and emits however many
+`RuntimeFrameLoop` accumulates each frame's elapsed wall time (zero while
+`SetSimulationSuspended` is set, otherwise scaled by `SetSimulationTimescale` --
+two facts with one owner each, so the application shell pausing cannot overwrite
+a rate somebody else chose) through `FixedStepScheduler` and emits however many
 whole ticks that time now covers: zero on a short frame, several on a long one.
 Simulated time therefore tracks wall time at any frame rate, and every tick is
 still exactly `FixedSimTime::DeltaSeconds` long, so per-tick behavior stays

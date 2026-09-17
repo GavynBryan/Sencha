@@ -141,12 +141,10 @@ std::optional<EngineRuntimeConfig> DeserializeRuntimeConfig(
             config.StreamingNeighborPhysics, sectionError)
         || !ReadDoubleEither(root, "streamingRadius", "streaming_radius",
             config.StreamingRadius, sectionError)
-        || !ReadBoolEither(root, "exitOnEscape", "exit_on_escape",
-            config.ExitOnEscape, sectionError)
-        || !ReadBoolEither(root, "togglePauseOnF1", "toggle_pause_on_f1",
-            config.TogglePauseOnF1, sectionError)
         || !ReadBoolEither(root, "hasLocalPlayer", "has_local_player",
             config.HasLocalPlayer, sectionError)
+        || !ReadBoolEither(root, "applicationShell", "application_shell",
+            config.ApplicationShell, sectionError)
         || !ReadStringListEither(root, "contentRoots", "content_roots",
             config.ContentRoots, sectionError))
     {

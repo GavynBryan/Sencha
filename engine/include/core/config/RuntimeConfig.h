@@ -64,9 +64,6 @@ struct EngineRuntimeConfig
     // than a crash.
     bool TransformForceFullPropagation = false;
 
-    bool ExitOnEscape = false;
-    bool TogglePauseOnF1 = false;
-
     // Whether somebody is playing in this process, as opposed to whether this
     // process can draw. A dedicated host answers no: the authority simulates
     // every pawn, but none of them is a player sitting at this machine, so
@@ -79,6 +76,13 @@ struct EngineRuntimeConfig
     // draw a world it has no player in. A launch configuration is free to set
     // both; neither is allowed to mean the other.
     bool HasLocalPlayer = true;
+
+    // Whether this process is an application a player sits in front of: it
+    // composes the pause shell and reads the shell's Back action. An editor, a
+    // tool, a test host or a headless server is not one, and says so. Console
+    // tunables and player-setting cvars exist regardless -- they are the
+    // console's, not the shell's -- and so does the engine's built-in content.
+    bool ApplicationShell = true;
 
     // The content roots this process mounts, resolved against the working
     // directory. Each root's `.cooked` sibling is its cook cache; a root names

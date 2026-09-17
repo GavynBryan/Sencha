@@ -20,6 +20,13 @@ struct EngineConsoleConfig
     std::vector<EngineConsoleCVarAssignment> CVars;
     std::vector<std::string> ExecScripts;
 
+    // The directory the console's saved-settings archive lives under, or empty
+    // for no archive at all. A desktop host resolves its platform's
+    // configuration directory; a tool, a test or a server leaves it empty and
+    // can never write a user's disk. The file inside is named by App.Name --
+    // see CVarArchive::FileFor.
+    std::string SettingsRoot;
+
     // A file descriptor to read console commands from, or -1 for none. A
     // dedicated host is administered through its terminal and the process host
     // points this at standard input; anything else leaves it closed. Naming a

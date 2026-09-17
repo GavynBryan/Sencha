@@ -2,11 +2,17 @@
 #if defined(SENCHA_ENABLE_UI) && defined(SENCHA_ENABLE_VULKAN)
 #include <render/feature/UiRenderFeature.h>
 #endif
+#include <app/OptionsPage.h>
+#include <app/PauseMenu.h>
 #include <ui/UiService.h>
 #endif
 #include <app/Engine.h>
 #include <app/SessionParticipantDiagnostics.h>
 #include <app/EngineConsoleBuiltins.h>
+#include <app/PauseInputSystem.h>
+#include <input/InputActionResolveSystem.h>
+#include <input/InputRegistration.h>
+#include <core/console/CVarArchive.h>
 #include <net/NetConsoleCommands.h>
 #include <app/Game.h>
 #include <app/GameDataAssets.h>
@@ -58,8 +64,57 @@
 
 #include <cassert>
 #include <cstdio>
+#include <cstdlib>
+#include <filesystem>
 #include <string>
 #include <utility>
+
+namespace
+{
+    // The engine's own content root: the application shell's default documents
+    // and the face they draw with.
+    //
+    // Appended to the configured roots rather than prepended, so it is a
+    // fallback and not an override -- RuntimeContent::Mount gives the first
+    // root that claims a virtual path ownership of it, so a game shipping its
+    // own ui/pause.rml shadows this one by path alone.
+    //
+    // Empty when there is nothing to mount, which is the ordinary case for a
+    // build that installed no content and for a test binary.
+    std::filesystem::path EngineContentRoot()
+    {
+        const auto usable = [](const std::filesystem::path& candidate) {
+            std::error_code ec;
+            return !candidate.empty() && std::filesystem::is_directory(candidate, ec) && !ec;
+        };
+
+        // An override first, so a packaging layout this does not anticipate can
+        // be pointed at without a rebuild.
+        if (const char* override = std::getenv("SENCHA_ENGINE_CONTENT");
+            override != nullptr && override[0] != '\0')
+        {
+            const std::filesystem::path path(override);
+            if (usable(path))
+                return path;
+        }
+
+        // Installed, beside the executable, next to where the templates land.
+        if (const char* base = SDL_GetBasePath(); base != nullptr)
+        {
+            const std::filesystem::path installed =
+                std::filesystem::path(base) / ".." / "share" / "sencha" / "content";
+            if (usable(installed))
+                return installed.lexically_normal();
+        }
+
+#ifdef SENCHA_ENGINE_CONTENT_DIR
+        // In-tree. Defined only for a build from this source tree.
+        if (const std::filesystem::path source(SENCHA_ENGINE_CONTENT_DIR); usable(source))
+            return source;
+#endif
+        return {};
+    }
+}
 
 Engine::Engine(EngineConfig engineConfig)
     : Configuration(std::move(engineConfig))
@@ -428,6 +483,63 @@ const LoadedLevel& Engine::Level() const
     return *LevelState;
 }
 
+void Engine::SyncShellSurface()
+{
+#ifdef SENCHA_ENABLE_UI
+    if (UiState == nullptr || !ShellSurface.IsValid() || PlatformState == nullptr)
+        return;
+    SdlWindow* window = PlatformState->Windows.GetPrimaryWindow();
+    if (window == nullptr)
+        return;
+
+    const WindowExtent extent = window->GetExtent();
+    if (extent.Width == 0 || extent.Height == 0)
+        return;   // minimised; laying out against nothing collapses the document
+
+    UiState->SetSurfaceSize(ShellSurface, RenderExtent{ extent.Width, extent.Height });
+    UiState->SetSurfaceScale(ShellSurface, window->GetDisplayScale());
+#endif
+}
+
+void Engine::RequestExit(ExitSource source)
+{
+    if (!Running)
+        return;
+
+    // Already asked and deferred. Coalesced rather than re-offered, because the
+    // handler has a dialog up: holding Alt+F4, or a window manager repeating a
+    // close, would otherwise stack one confirmation per event.
+    if (ExitPending)
+        return;
+
+    if (OnExitRequested && OnExitRequested(source) == ExitDecision::Defer)
+    {
+        ExitPending = true;
+        return;
+    }
+    Running = false;
+}
+
+void Engine::ConfirmExit()
+{
+    if (!ExitPending)
+        return;
+    // Granted without consulting the handler again: it is the thing that asked.
+    ExitPending = false;
+    Running = false;
+}
+
+void Engine::CancelExit()
+{
+    ExitPending = false;
+}
+
+void Engine::StopImmediately()
+{
+    ExitPending = false;
+    Running = false;
+}
+
 void Engine::SetPointerCaptured(bool captured)
 {
     PointerCaptureRequested = captured;
@@ -440,7 +552,12 @@ void Engine::ApplyPointerCapture()
 #ifdef SENCHA_ENABLE_DEBUG_UI
     overlayCapturing = DebugOverlayFeature != nullptr && DebugOverlayFeature->IsCapturingInput();
 #endif
-    const bool desired = PointerCaptureRequested && PrimaryWindowFocused && !overlayCapturing;
+    // The game's standing intent, and the two facts that can override it. The
+    // request itself is never written here: a game that never asked for capture
+    // must not acquire it when a menu closes, and one that did gets exactly
+    // what it asked for back.
+    const bool desired = PointerCaptureRequested && PrimaryWindowFocused && !overlayCapturing
+                      && !PauseStateInstance.SuppressesPointerCapture();
     if (desired == PointerCaptureApplied)
         return;
 
@@ -453,6 +570,14 @@ void Engine::ApplyPointerCapture()
         return;
     SDL_SetWindowRelativeMouseMode(window->GetHandle(), desired);
     PointerCaptureApplied = desired;
+
+    // Entering relative mode hides the cursor and takes it over; leaving puts it
+    // back where the desktop kept it. Either way it has moved without the player
+    // moving it, and the platform reports that the only way it reports movement
+    // at all. Without this the first frame back from a menu turns the view by
+    // however far the cursor had wandered across it -- which reads as the camera
+    // snapping to the mouse, because that is exactly what it is doing.
+    CaptureSettle.NotifyChanged();
 }
 
 #ifdef SENCHA_ENABLE_UI
@@ -782,11 +907,26 @@ int Engine::Run(Game& game)
     // OnStart sees a mounted, published stack rather than assembling one. The
     // game's data-asset subtypes register first, because the scan classifies
     // .sdata by the subtypes that exist when it runs.
+    // Last, so it is the fallback every root above it may shadow.
+    if (const std::filesystem::path engineContent = EngineContentRoot(); !engineContent.empty())
+        Configuration.Runtime.ContentRoots.push_back(engineContent.string());
+
     ContentState.emplace(*this, LoggingState.GetLogger<Engine>());
     RegisterGameDataAssets(game, ContentState->Assets());
     ContentState->Mount();
     ContentState->Publish(RuntimeWorldState->Entities());
     LevelState.emplace(*this, *ContentState, LoggingState.GetLogger<Engine>());
+
+    // The player's own settings, before the shell that offers them and before
+    // the saved values are applied: the shell asks which of them this host
+    // registered to decide what its options page has rows for, and a saved
+    // setting whose cvar does not exist yet is queued rather than applied --
+    // a volume arriving one run late is the kind of thing nobody reports.
+    EngineConsoleBuiltins::RegisterPlayerSettingCVars(
+        Console().Registry(),
+        AudioState.get(),
+        PlatformState != nullptr ? PlatformState->Windows.GetPrimaryWindow() : nullptr,
+        RuntimeWorldState != nullptr ? &RuntimeWorldState->Entities() : nullptr);
 
 #ifdef SENCHA_ENABLE_UI
     // After the content stack, because a screen leases out of it, and before
@@ -800,11 +940,99 @@ int Engine::Run(Game& game)
         UiState = std::make_unique<UiService>(LoggingState, assets.Assets, assets.UiPackages,
                                               assets.Fonts, assets.Textures.get(), window);
     }
+
+    // The application shell, composed here rather than by the game.
+    //
+    // A new Sencha game gets a working menu by being a Sencha game: it writes
+    // no pause code, declares no action and registers no context. What it does
+    // instead is edit the model -- rename an entry, add one, replace the
+    // document -- which is a different thing from assembling the machinery.
+    //
+    // One surface for the window, because modality is arbitrated within a
+    // surface: pages on a surface of their own would take focus from nothing
+    // while the HUD they meant to block kept taking clicks.
+    // Only where the host said it is an application. An editor or a tool has a
+    // window and, with the engine's content mounted, a ready UI layer -- and
+    // neither of those is a declaration that a player sits in front of it.
+    if (Configuration.Runtime.ApplicationShell && UiState != nullptr && UiState->IsReady()
+        && PlatformState != nullptr)
+    {
+        SdlWindow* window = PlatformState->Windows.GetPrimaryWindow();
+        const WindowExtent extent = window != nullptr ? window->GetExtent() : WindowExtent{};
+        ShellSurface = UiState->CreateSurface(
+            "shell", RenderExtent{ extent.Width, extent.Height });
+
+        PauseMenuState = std::make_unique<PauseMenu>(
+            *UiState, ShellSurface, PauseStateInstance, BackRouterInstance);
+
+        PauseMenuModel& menu = PauseMenuState->Model();
+        // How you leave is a platform fact, so the host names it; the command
+        // it runs is neutral. A host that cannot terminate passes nothing here
+        // and the entry is simply absent rather than present and inert.
+        menu.InstallDefaults("Exit to Desktop");
+        (void)menu.SetHandler(kPauseResume, [](PauseMenuContext& ctx) {
+            ctx.Menu.RequestResume();
+        });
+        // The engine's own options page: the settings this host can actually
+        // apply, which is whichever of them registered a cvar above.
+        OptionsState.InstallDefaults(Console().Registry());
+        if (!OptionsState.Rows().empty())
+            menu.SetOptionsPage("asset://ui/options.rml");
+
+        (void)menu.SetHandler(kPauseOptions, [this](PauseMenuContext& ctx) {
+            // The page carries its own content and its own answer to a row
+            // being activated, so the menu never learns what a setting is.
+            PauseMenu::Page page;
+            page.Desc = OptionsState.Describe(ctx.Menu.Model().OptionsPage());
+            page.Publish = [this](UiScreenHandle screen) {
+                if (UiState != nullptr)
+                    (void)UiState->SetRows(screen, UiRowsIdAt(0),
+                                           OptionsState.Present(Console().Registry()));
+            };
+            page.Activate = [this](std::size_t row, const UiValue& value) {
+                (void)OptionsState.Apply(Console().Registry(), row, value);
+            };
+            // Closing the page is the commit boundary. A setting nudged a dozen
+            // times on the way to the one the player wanted is one write, not
+            // a dozen -- which is why the store is saved here rather than from
+            // a frame phase.
+            page.Closed = [this] {
+                if (SettingsStore != nullptr)
+                    (void)SettingsStore->Save(Console().Registry());
+            };
+            ctx.Menu.Push(std::move(page));
+        });
+        (void)menu.SetHandler(kPauseExit, [this](PauseMenuContext&) {
+            RequestExit(ExitSource::Menu);
+        });
+    }
 #endif
 
     ConsoleService& console = Console();
     RegisterLevelCommands(console, *this);
+
     console.AdvancePhase(ConsolePhase::EngineReady);
+
+    // Saved settings land here on purpose: after the engine's own cvars exist,
+    // and before the startup script runs. That ordering is the precedence --
+    // a +set on the command line is applied later and therefore wins over what
+    // the player saved, which in turn wins over the defaults.
+    //
+    // A name no cvar claims yet is queued rather than dropped, so a setting for
+    // a cvar the game module registers in OnStart is applied when it appears.
+    //
+    // The host names the directory and the game names itself, and this is the
+    // first point where both are known: the host configured before the game's
+    // OnConfigure ran. No directory means no archive, so a default
+    // configuration cannot reach a user's disk.
+    if (!Configuration.Console.SettingsRoot.empty())
+    {
+        SettingsStore = std::make_unique<CVarArchive>(
+            CVarArchive::FileFor(Configuration.Console.SettingsRoot, Configuration.App.Name));
+        SettingsStore->Load(console.Registry(), ConsolePhase::EngineReady);
+        for (const std::string& diagnostic : SettingsStore->LoadDiagnostics())
+            LoggingState.GetLogger<Engine>().Warn("{}", diagnostic);
+    }
 
     // Running from the start of the lifecycle, not from the first frame, so
     // RequestExit means something during startup: a host that cannot load what
@@ -829,6 +1057,23 @@ int Engine::Run(Game& game)
         .Config = Configuration,
         .Schedule = EngineSystems,
     };
+    // Input mapping is the engine's, not an opt-in a game assembles.
+    //
+    // It moved here when backing out of gameplay became an application
+    // operation: the shell reads a mapped action, so the mapper has to exist in
+    // a process whose game registered nothing at all. Registered before the
+    // game's hook so the ordering edges a game declares against it already have
+    // something to point at.
+    RegisterInputSystems(EngineSystems, ContentState->Assets().DataAssets, LoggingState,
+                         &RuntimeLoop.GetDiscontinuityBus());
+    // The shell's Back reader goes with the shell: a host that composes no
+    // menu must not have Escape flipping a pause state nothing presents.
+    if (Configuration.Runtime.ApplicationShell)
+    {
+        EngineSystems.Register<PauseInputSystem>(PauseStateInstance, BackRouterInstance);
+        EngineSystems.After<PauseInputSystem, InputActionResolveSystem>();
+    }
+
     game.OnRegisterSystems(registerSystems);
     // After the game's, so whatever ordering constraints it declared already
     // exist when these are added.
@@ -888,6 +1133,12 @@ int Engine::Run(Game& game)
 #endif
     }
 
+    // Before the game's hook, so a setting it changes during teardown is not
+    // what decides whether the file is written -- and before anything the store
+    // borrows goes away. A run that changed nothing writes nothing.
+    if (SettingsStore != nullptr)
+        (void)SettingsStore->Save(Console().Registry());
+
     GameShutdownContext shutdown{
         .Config = Configuration,
     };
@@ -918,6 +1169,9 @@ int Engine::Run(Game& game)
     ContentState.reset();
 #ifdef SENCHA_ENABLE_UI
     UiState.reset();
+    // Saved above, before the game's shutdown hook. Dropped here so a second
+    // Run starts from the file rather than from this run's synced revision.
+    SettingsStore.reset();
 #endif
 
     // Symmetric teardown of OnRegisterComponents above: retract the game's
@@ -1074,7 +1328,8 @@ void Engine::RegisterEngineConsoleBuiltins(ConsoleService& console, DebugService
     EngineConsoleBuiltins::RegisterCaptureCommands(
         registry, RenderCaptureStore, PendingProfileMode, RenderCaptureOutputPath);
 #endif
-    EngineConsoleBuiltins::RegisterHostCommands(console, [this] { RequestExit(); });
+    EngineConsoleBuiltins::RegisterHostCommands(
+        console, [this] { RequestExit(ExitSource::Console); });
     registry.RegisterCommand({
         .Name = "participant_status",
         .Owner = "engine",

@@ -2,6 +2,7 @@
 
 #include <app/Application.h>
 #include <core/config/EngineConfig.h>
+#include <platform/UserPaths.h>
 
 int main(int argc, char** argv)
 {
@@ -12,9 +13,6 @@ int main(int argc, char** argv)
         config.Window.Width = 1280;
         config.Window.Height = 720;
         config.Window.GraphicsApi = WindowGraphicsApi::Vulkan;
-        config.Runtime.ExitOnEscape = true;
-        config.Runtime.TogglePauseOnF1 = true;
-
         // Sfx bus for scene AudioSourceComponents (docs/audio/runtime.md):
         // looping ambients belong on a Reject bus with voice headroom so a
         // steal never silences them (Decision E).
@@ -23,7 +21,9 @@ int main(int argc, char** argv)
         sfx.MaxVoices = 8;
         sfx.StealPolicy = VoiceStealPolicy::Reject;
         config.Audio.Buses.push_back(std::move(sfx));
-        config.Debug.DebugUi = true;
+        // A desktop application: its settings persist under the user's
+        // configuration directory, in a file named for it.
+        config.Console.SettingsRoot = (UserConfigDirectory() / "sencha").string();
     });
 
     return app.Run<CubeDemoGame>();

@@ -1,0 +1,17 @@
+{
+  "model": "cook_profiles",
+  "modal": true,
+  "properties": [
+    { "name": "selected_index", "kind": "int", "value": 0 },
+    { "name": "selected_name", "kind": "string", "value": "Default", "editable": true },
+    { "name": "status", "kind": "string", "value": "2 profiles" },
+    { "name": "dirty", "kind": "bool", "value": false },
+    { "name": "builtin", "kind": "bool", "value": true }
+  ],
+  "arrays": [
+    { "name": "profiles", "items": ["Default", "Fast Iteration"] },
+    { "name": "steps", "items": ["Bake lighting", "Cook levels", "Copy runtime content"] }
+  ],
+  "rows": [],
+  "actions": ["profiles_select", "profiles_save", "profiles_validate", "profiles_close"]
+}

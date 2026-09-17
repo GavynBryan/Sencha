@@ -1,5 +1,7 @@
 #include <input/InputProfileData.h>
 
+#include <input/ShellInputActions.h>
+
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <core/json/JsonValue.h>
 
@@ -432,6 +434,31 @@ DataAssetCompileResult CompileInputActionSet(const JsonValue& data)
             }
         }
 
+        // `ui.` is the application shell's. Redeclaring one of its actions is
+        // how a game rebinds Back or Accept -- the binding is the author's, the
+        // identity stays the engine's -- so the shape has to match exactly or
+        // the two would disagree about what the action carries. Any other
+        // `ui.` name is a mistake that would otherwise mint a second action
+        // nothing drives, which reads as a control that silently does nothing.
+        if (definition.Name.starts_with(kShellActionPrefix))
+        {
+            const InputActionDefinition* shell = FindShellAction(definition.Name);
+            if (shell == nullptr)
+            {
+                result.Error = std::format(
+                    "{}.name is in the reserved '{}' namespace but is not a shell action: '{}'",
+                    path, kShellActionPrefix, definition.Name);
+                return result;
+            }
+            if (definition.Type != shell->Type || definition.Scope != shell->Scope)
+            {
+                result.Error = std::format(
+                    "{}.name redeclares shell action '{}' with a different type or scope",
+                    path, definition.Name);
+                return result;
+            }
+        }
+
         actionSet->Actions.push_back(std::move(definition));
     }
 
@@ -493,6 +520,20 @@ DataAssetCompileResult CompileInputProfile(const JsonValue& data)
         AuthoredInputContext context;
         context.Name = name->AsString();
         context.Priority = static_cast<std::int32_t>(priority->AsNumber());
+
+        // The band at and above the shell's priority is the engine's, so a
+        // gameplay binding can never shadow the control that backs out of
+        // gameplay. Refused rather than clamped: an author who wrote a number
+        // this high meant something by it and should hear that it is not
+        // available.
+        if (context.Priority >= kShellContextPriority)
+        {
+            result.Error = std::format(
+                "{}.priority {} is in the range reserved for the application shell "
+                "(anything at or above {})",
+                path, context.Priority, kShellContextPriority);
+            return result;
+        }
 
         // Equal priorities would make claim order depend on authoring order,
         // which is exactly the hidden rule contexts are meant to avoid.
