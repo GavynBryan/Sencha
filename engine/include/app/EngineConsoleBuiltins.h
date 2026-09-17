@@ -15,8 +15,11 @@ class ConsoleRegistry;
 class ConsoleService;
 class DebugService;
 class DefaultRenderPipeline;
+class AudioService;
 class FrameDriver;
 class RuntimeFrameLoop;
+class SdlWindow;
+class World;
 
 namespace EngineConsoleBuiltins
 {
@@ -38,6 +41,20 @@ namespace EngineConsoleBuiltins
     void RegisterRunControlCVars(ConsoleRegistry& registry,
                                  std::uint64_t& exitAfterFrames,
                                  std::string& frameTraceOutput);
+
+    // The settings a player changes, as opposed to the knobs a developer does.
+    //
+    // Each is registered only where the thing behind it exists: a headless host
+    // has no window and gets no display mode, a host with playback disabled
+    // gets no volume. A settings screen presents the rows whose cvars are
+    // registered, so what a host cannot do simply is not offered rather than
+    // being offered and refusing.
+    //
+    // `world` may be null before one exists; the look setting is then skipped.
+    void RegisterPlayerSettingCVars(ConsoleRegistry& registry,
+                                    AudioService* audio,
+                                    SdlWindow* window,
+                                    World* world);
 
     void RegisterHostCommands(ConsoleService& console,
                               std::function<void()> quitHandler);

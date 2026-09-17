@@ -143,13 +143,26 @@ TickBudget RuntimeFrameLoop::ScheduleFixedTicks()
         return Current.Budget;
     }
 
-    const double elapsed =
-        static_cast<double>(Current.WallTime.Dt) * static_cast<double>(SimulationTimescale);
+    // Suspension and rate are separate facts, so a suspended loop accrues
+    // nothing whatever the timescale says, and resuming finds the rate exactly
+    // as it was left.
+    const double elapsed = SimulationSuspended
+        ? 0.0
+        : static_cast<double>(Current.WallTime.Dt) * static_cast<double>(SimulationTimescale);
     const FixedStepPlan plan = Scheduler.Advance(elapsed, SimulationClock.GetFixedDt());
 
     Current.Budget.TicksToRunThisFrame = plan.TicksToRun;
     Current.TicksDropped = plan.TicksDropped;
     return Current.Budget;
+}
+
+void RuntimeFrameLoop::CancelFixedTicksThisFrame()
+{
+    Current.Budget.TicksToRunThisFrame = Current.FixedTicks;
+    // The sub-tick residual describes time this frame was going to simulate.
+    // Keeping it would hand the first resumed frame a partial tick it never
+    // owed, which is the small end of the catch-up burst this exists to avoid.
+    Scheduler.Reset();
 }
 
 bool RuntimeFrameLoop::CanRunFixedTickThisFrame() const
@@ -184,8 +197,25 @@ void RuntimeFrameLoop::EndFrame()
     if (State == RuntimeFrameState::RecoveringPresentation)
         State = RuntimeFrameState::Running;
     Current.State = State;
-    PendingDiscontinuityReason = TemporalDiscontinuityReason::None;
-    DiscontinuityPending = false;
+
+    // The reason goes with the flag, and for the same reason: a discontinuity
+    // carried to the next frame that arrived anonymous would reach every
+    // subscriber as None, and the ones that act on a particular kind -- the
+    // input mapper drops what it latched for a simulation that stopped -- would
+    // decline to act on it.
+    if (!DiscontinuityPending)
+        PendingDiscontinuityReason = TemporalDiscontinuityReason::None;
+
+    // DiscontinuityPending deliberately survives the frame.
+    //
+    // It is consumed by ScheduleFixedTicks, which runs early. Every caller that
+    // predates this marked one earlier still -- a resize, a minimize, a zone
+    // attach -- so the flag was always consumed in the frame it was raised and
+    // clearing it here looked free. It was not: anything recognising a
+    // discontinuity *after* the tick budget was decided had its signal dropped
+    // without a word, and the subsystems that carry temporal state were never
+    // told to drop theirs. Left pending, it applies at the next boundary, which
+    // is what "pending" already said it would do.
 }
 
 void RuntimeFrameLoop::SetResizeSettleSeconds(double seconds)

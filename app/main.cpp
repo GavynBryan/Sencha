@@ -2,6 +2,9 @@
 #include <app/Game.h>
 #include <app/GameModuleLoader.h>
 #include <core/config/EngineConfig.h>
+#include <platform/UserPaths.h>
+
+#include "HostArguments.h"
 
 #include <SDL3/SDL.h>
 
@@ -27,8 +30,9 @@
 // the same binary is what the editor spawns for Play-In-Editor. The module is
 // resolved as --game <path>, then $SENCHA_GAME_MODULE, then the default game
 // module beside the executable (game.so / .dll / .dylib) -- so a bundle of
-// app + game module runs with a bare `app +map levels/foo`. Everything else
-// (the +commands) flows through the engine's startup script.
+// app + game module runs with a bare `app +map levels/foo`. The host's own
+// flags are in HostArguments; everything else (the +commands) flows through
+// the engine's startup script.
 //=============================================================================
 
 namespace
@@ -76,68 +80,6 @@ namespace
     constexpr const char* kModuleExtension = ".so";
 #endif
 
-    // Strips --game <path> from argv (so the remaining +commands reach the engine
-    // startup script regardless of order) and returns the path, or empty.
-    std::string ExtractGameArg(int& argc, char** argv)
-    {
-        std::string path;
-        int write = 1;
-        for (int read = 1; read < argc; ++read)
-        {
-            if (std::strcmp(argv[read], "--game") == 0 && read + 1 < argc)
-            {
-                path = argv[read + 1];
-                ++read; // skip the value too
-                continue;
-            }
-            argv[write++] = argv[read];
-        }
-        argc = write;
-        return path;
-    }
-
-    // Strips --headless from argv and reports whether it was there. A headless
-    // host builds no window and no graphics services; it still runs the frame
-    // loop, which is what makes it a server rather than a dead process.
-    bool ExtractHeadlessArg(int& argc, char** argv)
-    {
-        bool headless = false;
-        int write = 1;
-        for (int read = 1; read < argc; ++read)
-        {
-            if (std::strcmp(argv[read], "--headless") == 0)
-            {
-                headless = true;
-                continue;
-            }
-            argv[write++] = argv[read];
-        }
-        argc = write;
-        return headless;
-    }
-
-    // Strips every --content-root <dir> and returns the roots in order. Empty
-    // when none was given, which leaves the config default in place. Repeatable
-    // because a project and the engine's own test content are separate roots
-    // that a run may want mounted together.
-    std::vector<std::string> ExtractContentRootArgs(int& argc, char** argv)
-    {
-        std::vector<std::string> roots;
-        int write = 1;
-        for (int read = 1; read < argc; ++read)
-        {
-            if (std::strcmp(argv[read], "--content-root") == 0 && read + 1 < argc)
-            {
-                roots.emplace_back(argv[read + 1]);
-                ++read; // skip the value too
-                continue;
-            }
-            argv[write++] = argv[read];
-        }
-        argc = write;
-        return roots;
-    }
-
     // The default game module sits next to the executable as game<ext>: drop a
     // game module there and `app` runs it with no --game. Empty if none found.
     std::string DefaultModuleBesideExe()
@@ -151,10 +93,10 @@ namespace
         return std::filesystem::exists(candidate, ec) ? candidate.string() : std::string{};
     }
 
-    std::string ResolveModulePath(int& argc, char** argv)
+    std::string ResolveModulePath(const HostArguments& arguments)
     {
-        if (std::string arg = ExtractGameArg(argc, argv); !arg.empty())
-            return arg;
+        if (arguments.GamePath.has_value() && !arguments.GamePath->empty())
+            return *arguments.GamePath;
         if (const char* env = std::getenv("SENCHA_GAME_MODULE"); env != nullptr && env[0] != '\0')
             return env;
         return DefaultModuleBesideExe();
@@ -163,9 +105,10 @@ namespace
 
 int main(int argc, char** argv)
 {
-    const bool headless = ExtractHeadlessArg(argc, argv);
-    const std::vector<std::string> contentRoots = ExtractContentRootArgs(argc, argv);
-    const std::string modulePath = ResolveModulePath(argc, argv);
+    const HostArguments arguments = ParseHostArguments(argc, argv);
+    const bool headless = arguments.Headless;
+    const std::vector<std::string>& contentRoots = arguments.ContentRoots;
+    const std::string modulePath = ResolveModulePath(arguments);
     if (modulePath.empty())
     {
         std::fprintf(stderr,
@@ -187,8 +130,15 @@ int main(int argc, char** argv)
     }
 
     Application app(argc, argv);
-    app.Configure([headless, &contentRoots](EngineConfig& config) {
+    app.Configure([headless, &contentRoots, &arguments](EngineConfig& config) {
+        // The fallback for a game that does not name itself in OnConfigure. A
+        // game's name is also its settings namespace, so one that ships should.
         config.App.Name = "Sencha";
+        // Where a player's settings persist, or nowhere: a desktop launch gets
+        // the platform's configuration directory, a server nothing, and
+        // --settings overrides either. The file inside is the game's to name.
+        config.Console.SettingsRoot =
+            ResolveSettingsRoot(arguments, (UserConfigDirectory() / "sencha").string());
         if (!contentRoots.empty())
             config.Runtime.ContentRoots = contentRoots;
         config.Window.Title = "Sencha";
@@ -244,16 +194,16 @@ int main(int argc, char** argv)
         // any other host; it just has nothing to present.
         config.Window.GraphicsApi =
             headless ? WindowGraphicsApi::None : WindowGraphicsApi::Vulkan;
-        // Escape and F1 arrive through SDL, which a headless host never pumps.
-        config.Runtime.ExitOnEscape = !headless;
-        config.Runtime.TogglePauseOnF1 = !headless;
-        // Nothing draws the overlay and nothing types into it. The console
-        // itself still exists: the startup script and cvars are how a headless
-        // host is driven.
-        config.Debug.DebugUi = !headless;
         if (headless)
         {
+            // Nothing draws the overlay and nothing types into it. The console
+            // itself still exists: the startup script and cvars are how a
+            // headless host is driven.
             config.Console.UiEnabled = false;
+            // And nobody sits in front of it: no pause shell, no options page,
+            // no Back action. Separate from HasLocalPlayer below only in what
+            // it governs -- presentation rather than possession.
+            config.Runtime.ApplicationShell = false;
 
             // The two ways to reach a process with no window: a signal asking
             // it to stop, and a line typed at its terminal. Both are the host's

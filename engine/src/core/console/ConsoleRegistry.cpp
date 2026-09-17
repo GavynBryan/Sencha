@@ -548,6 +548,11 @@ ConsoleResult ConsoleRegistry::SetRecord(CVarRecord& record,
     metadata.LatchedValue.reset();
     metadata.Source = std::move(source);
 
+    // The one commit point every write path reaches, which is why the settings
+    // store can watch a counter here instead of polling values.
+    if (HasFlag(metadata.Flags, CVarFlags::Archive) && old != metadata.CurrentValue)
+        ++ArchiveRevisionCounter;
+
     if (metadata.OnChange && old != metadata.CurrentValue)
     {
         CVarChangeContext ctx{

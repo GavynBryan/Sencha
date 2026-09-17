@@ -24,6 +24,14 @@ HorrorSessionPolicy& HorrorGame::Session()
     return *SessionState;
 }
 
+void HorrorGame::OnConfigure(GameConfigureContext& ctx)
+{
+    // The name is the game's identity to the host -- its window, its saved
+    // settings' namespace -- so it is the game's to state, not the host's to
+    // guess.
+    ctx.Config.App.Name = "Sencha Horror Template";
+}
+
 void HorrorGame::OnStart(GameStartupContext&)
 {
     Engine& engine = GetEngine();
@@ -79,10 +87,6 @@ void HorrorGame::OnRegisterSystems(SystemRegisterContext& ctx)
     RegisterAbilityKitSystems(ctx.Schedule);
     RegisterMovementSystems(ctx.Schedule, Session().Assets().DataAssets,
                             &GetEngine().Logging());
-    RegisterInputSystems(
-        ctx.Schedule,
-        Session().Assets().DataAssets,
-        GetEngine().Logging());
     ctx.Schedule.Register<TankSteeringSystem>();
 
     // The character steers on the tick record, after actions resolve.

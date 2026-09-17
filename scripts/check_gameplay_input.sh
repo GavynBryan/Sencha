@@ -8,10 +8,16 @@
 # behaviour on a frame that runs no fixed tick. Physical input stays below the
 # mapping layer, in engine/src/input, the platform layer, and the editors.
 #
-# Window management is not input mapping: a game may still handle raw platform
-# events for things like mouse capture, which is why SDL_BUTTON_* in an
-# OnPlatformEvent handler is not matched here. Reading device *state* is what
-# this forbids.
+# Window management is not input mapping: a host may still handle raw platform
+# events, which is why SDL_BUTTON_* in an OnPlatformEvent handler is not matched
+# here. Reading device *state* is what this forbids.
+#
+# The exemption used to carry the templates' hold-right-button-to-look
+# convention. It no longer does: gameplay states a standing capture request once
+# and the application shell releases and restores it, so no template handles a
+# platform event at all. What is left under the exemption is example/CubeDemo's
+# free camera, which is a diagnostic tool with an editor's gesture rather than a
+# game.
 #
 # Usage: check_gameplay_input.sh <source-root>
 
@@ -56,10 +62,11 @@ fi
 # SDL_GetKeyboardState is called out by name: polling the device directly
 # bypasses even the raw snapshot, so nothing above the platform layer may.
 #
-# Raw platform events are not matched. A host still handles window concerns like
-# mouse capture in OnPlatformEvent, which is below the mapping layer, not beside
-# it. Reading device *state* is what this forbids.
-hits="$(grep -rnE 'InputFrame|SDL_SCANCODE|SDL_GetKeyboardState|IsKeyDown|IsMouseButtonDown|\bctx\.Input\b' "${EXISTING[@]}" 2>/dev/null \
+# SDL_SetWindowRelativeMouseMode is called out for the same reason from the
+# other end: pointer capture is arbitrated against window focus, the debug
+# overlay and the application shell, and a caller that sets the mode itself
+# silently opts out of all three. Ask Engine::SetPointerCaptured instead.
+hits="$(grep -rnE 'InputFrame|SDL_SCANCODE|SDL_GetKeyboardState|SDL_SetWindowRelativeMouseMode|SDL_SetRelativeMouseMode|IsKeyDown|IsMouseButtonDown|\bctx\.Input\b' "${EXISTING[@]}" 2>/dev/null \
         | grep -vE ':[0-9]+:[[:space:]]*(//|\*|/\*)')"
 
 if [ -n "$hits" ]; then

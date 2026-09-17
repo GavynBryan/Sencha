@@ -132,6 +132,9 @@ struct GoldenScene
     const std::string command =
         std::string("cd ") + SENCHA_GOLDEN_CONTENT_ROOT
         + " && SENCHA_PRESENT_MODE=IMMEDIATE " + SENCHA_GOLDEN_APP
+        // A reference image is of the scene, not of whatever window mode or
+        // frame cap the developer running the suite last saved.
+        + " --settings none"
         + " +map " + scene.Map
         + " +render.screenshot " + output.string() + " " + std::to_string(kCaptureFrame)
         + " +set app.exit_after_frames " + std::to_string(kRunFrames)

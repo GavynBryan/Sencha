@@ -71,6 +71,7 @@ void LauncherServices::BuildUi()
             .OpenLevelEditor = [this](const std::string& path) { LaunchEditor("kyusu", path); },
             .OpenMaterialEditor = [this](const std::string& path) { LaunchEditor("shudei", path); },
             .OpenDataEditor = [this](const std::string& path) { LaunchEditor("data_editor", path); },
+            .OpenUiPreviewer = [this](const std::string& path) { LaunchEditor("shoji", path); },
             .BrowseForProject = [this]() { BrowseForProject(); },
             .CreateProject = [this](const std::string& dir, const std::string& name,
                                     const std::string& templateName)

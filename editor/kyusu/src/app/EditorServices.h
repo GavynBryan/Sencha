@@ -26,6 +26,7 @@
 #include <optional>
 #include <vector>
 
+class SourceReloadRoots;
 class EditorUiFeature;
 class EditorConsolePanel;
 class MaterialBrowserPanel;
@@ -145,8 +146,7 @@ private:
 
     // Source watch state (definition in the .cpp keeps the cook/hotreload
     // headers out of this one). References Assets; reset before it.
-    struct SourceWatchState;
-    std::unique_ptr<SourceWatchState> SourceWatch;
+    std::unique_ptr<SourceReloadRoots> SourceWatch;
 
     std::unique_ptr<CommandStack> Commands;
     std::unique_ptr<EditorWorkspace> Workspace;

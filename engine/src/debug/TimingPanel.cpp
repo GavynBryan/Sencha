@@ -80,7 +80,7 @@ namespace
         case 4: return "Minimized";
         case 5: return "Restored";
         case 6: return "Suspended";
-        case 7: return "DebugPause";
+        case 7: return "SimulationPause";
         case 8: return "Teleport";
         case 9: return "ZoneLoad";
         case 10: return "RegistryReset";

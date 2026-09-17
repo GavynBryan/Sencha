@@ -8,7 +8,6 @@
 struct EngineDebugConfig
 {
     bool ConsoleLogging = true;
-    bool DebugUi = false;
 };
 
 struct DebugConfigError

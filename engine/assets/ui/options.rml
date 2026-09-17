@@ -1,0 +1,42 @@
+<rml>
+<head>
+    <title>Options</title>
+    <link type="text/rcss" href="pause.rcss"/>
+</head>
+<body data-model="options">
+    <div id="scrim">
+        <div id="panel">
+            <div id="title">{{title}}</div>
+
+            <!-- A row per setting the host actually has. The document knows
+                 nothing about what any of them mean: it offers the control the
+                 row asks for, and reports which row changed and to what. The
+                 value travels with the action (ev.value) rather than being read
+                 back from the model, because the engine gives no order between
+                 the two listeners a change event reaches. The slider binds
+                 row.number and the drop-down row.value: data-if hides a
+                 control, it does not unbind it, and two bound controls writing
+                 one variable would fight over it. -->
+            <div id="entries">
+                <div class="entry setting" data-for="row : rows">
+                    <span class="label">{{row.label}}</span>
+                    <input type="range" class="control slider" tab-index="auto"
+                           data-if="row.editable && row.control == 'range'"
+                           data-attr-min="row.min" data-attr-max="row.max" data-attr-step="row.step"
+                           data-value="row.number"
+                           data-event-change="options_activate(it_index, ev.value)"/>
+                    <select class="control choice" tab-index="auto"
+                            data-if="row.editable && row.control == 'choice'"
+                            data-value="row.value"
+                            data-event-change="options_activate(it_index, ev.value)">
+                        <option data-for="c : row.choices" data-attr-value="c">{{c}}</option>
+                    </select>
+                    <span class="value" data-if="!row.editable || row.control == 'text'">{{row.value}}</span>
+                </div>
+            </div>
+
+            <div id="hint">{{hint}}</div>
+        </div>
+    </div>
+</body>
+</rml>

@@ -26,9 +26,24 @@ PlatformerSessionPolicy& PlatformerGame::Session()
     return *SessionState;
 }
 
+void PlatformerGame::OnConfigure(GameConfigureContext& ctx)
+{
+    // The name is the game's identity to the host -- its window, its saved
+    // settings' namespace -- so it is the game's to state, not the host's to
+    // guess.
+    ctx.Config.App.Name = "Sencha Platformer Template";
+}
+
 void PlatformerGame::OnStart(GameStartupContext&)
 {
     Engine& engine = GetEngine();
+
+    // Gameplay owns the mouse while it is being played. A standing request,
+    // stated once: the shell releases the pointer while a menu is up and takes
+    // it back on resume, and the platform layer drops it on focus loss, so
+    // nothing here has to notice any of that happening.
+    engine.SetPointerCaptured(true);
+
     SessionState.emplace(engine, engine.Logging().GetLogger<PlatformerGame>());
     SessionState->Open();
 
@@ -81,10 +96,6 @@ void PlatformerGame::OnRegisterSystems(SystemRegisterContext& ctx)
     RegisterAbilityKitSystems(ctx.Schedule);
     RegisterMovementSystems(ctx.Schedule, Session().Assets().DataAssets,
                             &GetEngine().Logging());
-    RegisterInputSystems(
-        ctx.Schedule,
-        Session().Assets().DataAssets,
-        GetEngine().Logging());
     ctx.Schedule.Register<CameraRelativeSteeringSystem>();
 
     // The character steers on the tick record, after actions resolve, and in
@@ -111,25 +122,6 @@ void PlatformerGame::OnRegisterSystems(SystemRegisterContext& ctx)
         settlement.Log = &log;
         settlement.Bodies = &*Bodies;
         ctx.Schedule.After<SessionPlayerSystem, SpawnSettlementSystem>();
-    }
-}
-
-void PlatformerGame::OnPlatformEvent(PlatformEventContext& ctx)
-{
-    if (ctx.Handled)
-        return;
-
-    // Looking is holding the right button. Whether the pointer is actually
-    // captured while it is held -- focus, the console -- is the engine's.
-    if (ctx.Event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
-        && ctx.Event.button.button == SDL_BUTTON_RIGHT)
-    {
-        GetEngine().SetPointerCaptured(true);
-    }
-    else if (ctx.Event.type == SDL_EVENT_MOUSE_BUTTON_UP
-             && ctx.Event.button.button == SDL_BUTTON_RIGHT)
-    {
-        GetEngine().SetPointerCaptured(false);
     }
 }
 

@@ -251,6 +251,18 @@ bool AudioService::SetBusVolume(std::string_view busName, float volume)
     return true;
 }
 
+void AudioService::SetMasterVolume(float volume)
+{
+    MasterVolume = volume < 0.0f ? 0.0f : volume;
+    // Every bus, because this multiplies over all of them -- including the ones
+    // with no voice playing right now, which will pick it up when they do.
+    for (BusEntry& bus : Buses)
+    {
+        for (uint32_t i : bus.VoiceIndices)
+            ApplyVoiceGain(Voices[i], bus.Bus);
+    }
+}
+
 bool AudioService::SetBusMuted(std::string_view busName, bool muted)
 {
     BusEntry* bus = FindBus(busName);
@@ -451,7 +463,8 @@ void AudioService::RetireVoice(uint32_t slotIndex, bool returnToPool)
 void AudioService::ApplyVoiceGain(const AudioVoiceSlot& slot, const AudioBus& bus) const
 {
     if (!slot.Stream) return;
-    const float effective = bus.Muted ? 0.0f : (slot.Gain * bus.Volume);
+    const float effective =
+        bus.Muted ? 0.0f : (slot.Gain * bus.Volume * MasterVolume);
     SDL_SetAudioStreamGain(slot.Stream, effective);
 }
 

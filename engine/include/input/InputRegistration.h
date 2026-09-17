@@ -4,6 +4,7 @@
 
 class DataAssetCache;
 class EngineSchedule;
+class FrameDiscontinuityBus;
 class LoggingProvider;
 class World;
 
@@ -44,6 +45,11 @@ void RegisterInputMapping(World& world, DataAssetCache& dataAssets, InputProfile
 //   camera or menu wants) must NOT declare one. PreSimulate runs in
 //   FramePhase::ScheduleTicks and FrameUpdate in FramePhase::Update, so the
 //   frame order already puts resolution first; the edge would only assert.
+//
+// `discontinuities` lets the resolve system hear that simulated time jumped, so
+// it can drop latched simulation input the new state should not replay. Null is
+// valid: a host with no frame loop simply never reports one.
 void RegisterInputSystems(EngineSchedule& schedule,
                           DataAssetCache& dataAssets,
-                          LoggingProvider& logging);
+                          LoggingProvider& logging,
+                          FrameDiscontinuityBus* discontinuities = nullptr);

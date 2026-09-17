@@ -1,6 +1,8 @@
 #include <string>
 #include <graphics/vulkan/RenderTargetStore.h>
 
+#include <graphics/vulkan/VulkanFormat.h>
+
 #include <graphics/vulkan/VulkanDeviceService.h>
 
 #include <cassert>
@@ -135,7 +137,12 @@ void RenderTargetStore::BuildSlot(Slot& slot, const RenderTargetDesc& desc)
         depth.Format = desc.DepthFormat;
         depth.Extent = desc.Extent;
         depth.Usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-        depth.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        // Both aspects for a combined format, or the stencil half is created
+        // without a view and a pass that clips through it falls back to a
+        // rectangle without saying so.
+        depth.AspectMask = FormatHasStencil(desc.DepthFormat)
+            ? (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
+            : VK_IMAGE_ASPECT_DEPTH_BIT;
         // Named after its target: every depth image sharing one label makes a
         // capture unreadable the moment a second viewport exists.
         const std::string depthName =

@@ -14,6 +14,7 @@
 #include <optional>
 #include <string>
 
+class SourceReloadRoots;
 class Engine;
 class EngineSchedule;
 class SdlWindow;
@@ -95,12 +96,10 @@ private:
     std::optional<RuntimeAssets> Assets;
 
     // Per-content-root recook machinery for import-settings changes. Owned
-    // here (not stack-local) because AssetHotReloader stages its commit on
-    // the async task queue and must outlive the drain. Definition in the
-    // .cpp keeps the cook/hotreload headers out of this one. References
-    // Assets; reset before it.
-    struct TextureRecookState;
-    std::unique_ptr<TextureRecookState> TextureRecook;
+    // here (not stack-local) because the reloader stages its commit on the
+    // async task queue and must outlive the drain. References Assets; reset
+    // before it. Watches nothing: the material editor recooks on demand.
+    std::unique_ptr<SourceReloadRoots> TextureRecook;
 
     std::unique_ptr<MaterialLibrary> Materials;
     MaterialTabSet Tabs;

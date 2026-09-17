@@ -316,6 +316,18 @@ Each item states its mechanism, version, the seam it builds on, and its gate.
    `AttributeSet`-bound health renders in a shipping-config build with debug UI compiled
    out, and one real Kyusu surface is authored rather than immediate-mode.
 
+   The menus half has landed as the application shell (`docs/gameplay/pause.md`): the
+   runtime composes a pause menu for any host that can present one, so a game gets
+   Resume / Options / Exit to Desktop without writing pause code, declaring an action or
+   registering a context. Pause is a session transition with one owner rather than a
+   timescale write -- suspension and rate are separate facts on `RuntimeFrameLoop`, a
+   live session degrades to suppressing local input rather than freezing the match, and
+   the frame that recognises the request runs no further ticks. Back is routed, with the
+   shell as the fallback, so a future inventory or frontend takes it without fighting.
+   Entries and options rows are data keyed by stable ids. `CVarArchive` makes
+   `CVarFlags::Archive` mean something for the first time. Deferred with it: in-game
+   control rebinding, and a slider control richer than a row that cycles.
+
 10. **Audio spatialization and streamed music (v1.0).** A listener component and
     distance/pan attenuation in `AudioSystem` over the audio participation span; streamed
     long-form playback through the async lane. Builds on `AudioService` voices,

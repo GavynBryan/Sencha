@@ -1,6 +1,10 @@
 #include <app/EngineConsoleBuiltins.h>
 
 #include <app/DefaultRenderPipeline.h>
+#include <audio/AudioService.h>
+#include <controller/LookOrientation.h>
+#include <ecs/World.h>
+#include <platform/SdlWindow.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
 #include <debug/DebugService.h>
@@ -380,6 +384,96 @@ namespace EngineConsoleBuiltins
                 frameTraceOutput = std::get<std::string>(ctx.NewValue);
             },
         });
+    }
+
+    void RegisterPlayerSettingCVars(ConsoleRegistry& registry,
+                                    AudioService* audio,
+                                    SdlWindow* window,
+                                    World* world)
+    {
+        if (audio != nullptr)
+        {
+            registry.RegisterCVar({
+                .Name = "audio.volume",
+                .Owner = "engine",
+                .Type = CVarType::Double,
+                .DefaultValue = 1.0,
+                .CurrentValue = static_cast<double>(audio->GetMasterVolume()),
+                .Flags = CVarFlags::Archive,
+                .Help = "How loud everything is, over whatever mix the game "
+                        "set up. 0 is silent, 1 is the game's own balance.",
+                .Source = { "player settings" },
+                .Min = 0.0,
+                .Max = 1.0,
+                .OnChange = [audio](const CVarChangeContext& ctx) {
+                    audio->SetMasterVolume(static_cast<float>(std::get<double>(ctx.NewValue)));
+                },
+            });
+        }
+
+        if (world != nullptr)
+        {
+            registry.RegisterCVar({
+                .Name = "input.look_sensitivity",
+                .Owner = "engine",
+                .Type = CVarType::Double,
+                .DefaultValue = 1.0,
+                .CurrentValue = 1.0,
+                .Flags = CVarFlags::Archive,
+                .Help = "How far the view turns for a given amount of mouse or "
+                        "stick travel, over whatever the controls were authored "
+                        "with. 1 is as authored.",
+                .Source = { "player settings" },
+                .Min = 0.01,
+                .Max = 10.0,
+                .OnChange = [world](const CVarChangeContext& ctx) {
+                    LookSensitivity& sensitivity = world->HasResource<LookSensitivity>()
+                        ? world->GetResource<LookSensitivity>()
+                        : world->AddResource<LookSensitivity>();
+                    sensitivity.Scale = static_cast<float>(std::get<double>(ctx.NewValue));
+                },
+            });
+        }
+
+        if (window != nullptr)
+        {
+            const auto modeName = [](WindowMode mode) -> std::string {
+                switch (mode)
+                {
+                case WindowMode::Windowed:             return "windowed";
+                case WindowMode::Fullscreen:           return "fullscreen";
+                case WindowMode::BorderlessFullscreen: return "borderless";
+                }
+                return "windowed";
+            };
+
+            registry.RegisterCVar({
+                .Name = "window.mode",
+                .Owner = "engine",
+                .Type = CVarType::String,
+                .DefaultValue = modeName(window->GetMode()),
+                .CurrentValue = modeName(window->GetMode()),
+                .Flags = CVarFlags::Archive,
+                .Help = "windowed, fullscreen, or borderless.",
+                .Source = { "player settings" },
+                .Validator = [](const CVarValue& value) {
+                    const std::string& name = std::get<std::string>(value);
+                    if (name == "windowed" || name == "fullscreen" || name == "borderless")
+                        return CVarValidationResult::Ok();
+                    return CVarValidationResult::Reject(
+                        "expected windowed, fullscreen, or borderless");
+                },
+                .OnChange = [window](const CVarChangeContext& ctx) {
+                    const std::string& name = std::get<std::string>(ctx.NewValue);
+                    if (name == "fullscreen")
+                        window->SetMode(WindowMode::Fullscreen);
+                    else if (name == "borderless")
+                        window->SetMode(WindowMode::BorderlessFullscreen);
+                    else
+                        window->SetMode(WindowMode::Windowed);
+                },
+            });
+        }
     }
 
     void RegisterHostCommands(ConsoleService& console,

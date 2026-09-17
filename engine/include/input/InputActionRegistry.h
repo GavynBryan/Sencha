@@ -53,6 +53,14 @@ public:
     // Dense index for value arrays. Only valid for an id this registry minted.
     [[nodiscard]] static std::size_t IndexOf(InputActionId id) { return id.Value - 1; }
 
+    // The reverse, for the one vocabulary whose indices are fixed: the shell's
+    // actions are declared first in every profile, so their ids do not move and
+    // the engine addresses them by position rather than by name.
+    [[nodiscard]] static InputActionId IdAt(std::size_t index)
+    {
+        return InputActionId{ static_cast<std::uint32_t>(index + 1) };
+    }
+
 private:
     enum class SlotState : std::uint8_t
     {

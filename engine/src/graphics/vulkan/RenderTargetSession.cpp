@@ -1,5 +1,7 @@
 #include <graphics/vulkan/RenderTargetSession.h>
 
+#include <graphics/vulkan/VulkanFormat.h>
+
 #include <graphics/vulkan/VulkanBarriers.h>
 
 namespace
@@ -55,9 +57,7 @@ RenderTargetSession::RenderTargetSession(VkCommandBuffer cmd, VkImage color,
         VulkanBarriers::ImageTransition transition{};
         transition.Image = depth;
         transition.OldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        const bool hasStencil = depthFormat == VK_FORMAT_D32_SFLOAT_S8_UINT
-            || depthFormat == VK_FORMAT_D24_UNORM_S8_UINT
-            || depthFormat == VK_FORMAT_D16_UNORM_S8_UINT;
+        const bool hasStencil = FormatHasStencil(depthFormat);
         transition.NewLayout = hasStencil
             ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
             : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;

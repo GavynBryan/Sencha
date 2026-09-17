@@ -131,6 +131,16 @@ struct InputContextDefinition
     std::int32_t Priority = 0;
     std::uint32_t FirstBinding = 0;
     std::uint32_t BindingCount = 0;
+
+    // Whether this context keeps resolving while the application shell has
+    // suspended input. True only for the engine's own shell context, and set
+    // only where that context is built -- there is no authored key for it.
+    //
+    // Deliberately not authorable: an authored opt-out is an easy way for a
+    // gameplay context to keep firing behind a menu, and the one case it would
+    // serve is the case the engine already knows about. A second genuine
+    // consumer (a spectator or debug scheme) earns the seam then, not now.
+    bool IsShell = false;
 };
 
 struct BoundInputProfile

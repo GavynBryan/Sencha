@@ -32,6 +32,14 @@ public:
     void SetTitle(std::string_view title);
 
     [[nodiscard]] WindowExtent GetExtent() const;
+
+    // How many physical pixels the display puts behind one logical unit: 2.0 on
+    // a HiDPI screen, 1.0 on an ordinary one. What an authored surface applies
+    // to `dp`, so a document written once is the same physical size on both.
+    //
+    // Live rather than latched: dragging a window between displays changes it,
+    // and a retained document re-flows where a baked atlas cannot.
+    [[nodiscard]] float GetDisplayScale() const;
     void SetSize(uint32_t width, uint32_t height);
 
     [[nodiscard]] bool IsResizable() const;

@@ -23,7 +23,8 @@ void RegisterInputMapping(World& world, DataAssetCache& dataAssets, InputProfile
 
 void RegisterInputSystems(EngineSchedule& schedule,
                           DataAssetCache& dataAssets,
-                          LoggingProvider& logging)
+                          LoggingProvider& logging,
+                          FrameDiscontinuityBus* discontinuities)
 {
-    schedule.Register<InputActionResolveSystem>(dataAssets, logging);
+    schedule.Register<InputActionResolveSystem>(dataAssets, logging, discontinuities);
 }

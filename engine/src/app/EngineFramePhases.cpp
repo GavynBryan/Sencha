@@ -1,5 +1,7 @@
 #ifdef SENCHA_ENABLE_UI
 #include <profiling/CpuScopeTimings.h>
+#include <app/PauseMenu.h>
+#include <input/InputContextSet.h>
 #include <ui/UiService.h>
 #endif
 #include <app/Engine.h>
@@ -801,6 +803,40 @@ void Engine::RegisterSimulationFramePhases()
         engine.Schedule().RunFrameUpdate(update);
 
 #ifdef SENCHA_ENABLE_UI
+        // The window's size and display scale, every frame.
+        //
+        // A retained document re-flows where a baked atlas cannot, which is the
+        // whole reason these are live rather than latched at startup: going
+        // fullscreen, dragging between displays, or resizing all change what
+        // the document should lay out against, and a surface still holding the
+        // extent it was created with lays out for a window that is no longer
+        // there. Cheap to do unconditionally -- the runtime compares before it
+        // re-lays-out.
+        engine.SyncShellSurface();
+
+        // The shell first: it drains what its documents asked for, resolves any
+        // transition that caused, and republishes. Before the UI update below,
+        // for the same reason a host controller runs before it -- an action
+        // taken this frame has to be visible in this frame.
+        if (PauseMenu* menu = engine.TryPauseMenu(); menu != nullptr)
+        {
+            if (InputContextSet* contexts =
+                    entities.TryGetResource<InputContextSet>();
+                contexts != nullptr)
+            {
+                menu->Update(*ctx.Runtime, *contexts);
+            }
+        }
+
+        // A transition resolved above, or in this frame's PreSimulate, changed
+        // whether the pointer may be captured -- and the arbiter's own call
+        // site is back in the platform pump, which ran before either of them.
+        // Left until the next frame, Escape would draw a menu over a cursor
+        // that is still hidden and grabbed, and Resume would hide the menu a
+        // frame before the pointer came back. Free when nothing changed: the
+        // arbiter early-outs unless the desired state actually moved.
+        engine.ApplyPointerCapture();
+
         // Explicitly after the game's frame-update systems, and explicitly not
         // by registering a system that happens to sort later. Host controllers
         // drain semantic actions, change state, and republish presentation
@@ -940,6 +976,14 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
         // releases the pointer this frame rather than after the game notices.
         engine.ApplyPointerCapture();
 
+        // And after that, so a change applied just now is accounted for: the
+        // displacement around a capture change is the cursor being teleported,
+        // not the player turning. Held buttons and keys are left alone -- they
+        // genuinely are where they are.
+        if (engine.PointerCapture().ShouldDropPointerMotion())
+            ctx.Input->DropPointerMotion();
+        engine.PointerCapture().EndFrame();
+
 #ifdef SENCHA_ENABLE_DEBUG_UI
         // Published, not compensated for. The snapshot keeps every keystroke
         // that happened; this is what tells a raw reader which of them were
@@ -962,33 +1006,15 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
         }
 #endif
 
-        if (windows.IsCloseRequested(windowId))
-            ctx.Input->QuitRequested = true;
-        // Both of these read raw device state rather than a mapped action, so
-        // both owe the UiCapture check: typing "escape" into the console must
-        // not quit the game, and F1 in a text field is a keystroke.
-        if (config.Runtime.ExitOnEscape && !ctx.Input->UiCapture.Keyboard
-            && ctx.Input->IsKeyDown(SDL_SCANCODE_ESCAPE))
-            ctx.Input->QuitRequested = true;
-
-        if (config.Runtime.TogglePauseOnF1 && !ctx.Input->UiCapture.Keyboard
-            && ctx.Input->ConsumeKeyPressed(SDL_SCANCODE_F1))
+        // Every graceful way out goes through the one gate, so a game that
+        // wants to confirm, save or disconnect before exiting intercepts the
+        // window button and Alt+F4 as well as its own menu. `QuitRequested` is
+        // the raw platform fact -- SDL_EVENT_QUIT -- and is consumed here
+        // rather than read by the frame loop, which now stops only on Running.
+        if (windows.IsCloseRequested(windowId) || ctx.Input->QuitRequested)
         {
-            // Routed through the console rather than set directly, so pausing
-            // obeys whatever the session decided about timescale. Solo is
-            // unchanged, a host pausing pauses the session, and a client is
-            // refused -- which is the correct answer to one player trying to
-            // stop everyone else's game.
-            const bool wasPaused = ctx.Runtime->GetSimulationTimescale() == 0.0f;
-            const ConsoleResult set = engine.Console().Registry().SetCVar(
-                "time.timescale", wasPaused ? 1.0 : 0.0,
-                ConsoleValueSource{ "pause key" }, ConsolePhase::EngineReady);
-            if (!set.Succeeded())
-            {
-                engine.Logging().GetLogger<Engine>().Info(
-                    "pause: {}",
-                    set.Output.empty() ? "refused" : set.Output.front().Text);
-            }
+            ctx.Input->QuitRequested = false;
+            engine.RequestExit(Engine::ExitSource::WindowClose);
         }
     });
 
@@ -1074,7 +1100,9 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
         }
         else if (renderResult == RenderFrameResult::Failed)
         {
-            ctx.Input->QuitRequested = true;
+            // Not a request: a device that failed cannot be talked out of it,
+            // and offering it to a confirmation dialog would be a hang.
+            engine.StopImmediately();
         }
 
         TimingSampler::PushRenderFrame(

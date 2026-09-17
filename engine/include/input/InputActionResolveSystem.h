@@ -8,6 +8,7 @@
 #include <vector>
 
 class DataAssetCache;
+class FrameDiscontinuityBus;
 class Logger;
 class LoggingProvider;
 
@@ -30,7 +31,17 @@ class LoggingProvider;
 class InputActionResolveSystem
 {
 public:
-    InputActionResolveSystem(DataAssetCache& dataAssets, LoggingProvider& logging);
+    // `discontinuities` may be null, which is what a test with no frame loop
+    // passes; the system then simply never hears about one.
+    InputActionResolveSystem(DataAssetCache& dataAssets,
+                             LoggingProvider& logging,
+                             FrameDiscontinuityBus* discontinuities = nullptr);
+    ~InputActionResolveSystem();
+
+    InputActionResolveSystem(const InputActionResolveSystem&) = delete;
+    InputActionResolveSystem& operator=(const InputActionResolveSystem&) = delete;
+    InputActionResolveSystem(InputActionResolveSystem&&) = delete;
+    InputActionResolveSystem& operator=(InputActionResolveSystem&&) = delete;
 
     void PreSimulate(PreSimulateContext& ctx);
     void FixedLogic(FixedLogicContext& ctx);
@@ -39,6 +50,9 @@ private:
     // The bound profile for this world, or null when no profile is configured
     // or nothing could be bound from it.
     const BoundInputProfile* ResolveProfile(World& world);
+
+    // The shell-only tables, built on first use.
+    const BoundInputProfile* ShellOnly();
 
     // The one place bind diagnostics reach a log and the diagnostic surface.
     // The cache holds them as state, so reporting is driven by the revision
@@ -60,4 +74,16 @@ private:
 
     // Rebuilt at the frame boundary and reused by every tick of that frame.
     std::vector<std::uint8_t> ActiveMask;
+
+    // Subscribed for the one discontinuity that invalidates latched simulation
+    // input: a resume. See the constructor.
+    FrameDiscontinuityBus* Discontinuities = nullptr;
+    std::uint64_t DiscontinuityToken = 0;
+
+    // What resolves when the world names no profile. Built once, on first use:
+    // the shell's own actions against their default bindings, so a game that
+    // ships no input content still answers the key that opens its menu.
+    InputActionRegistry ShellOnlyActions;
+    BoundInputProfile ShellOnlyProfile;
+    bool ShellOnlyBuilt = false;
 };

@@ -1359,3 +1359,89 @@ TEST(InputResolveFireMode, TheTwoClocksFireIndependently)
     EXPECT_TRUE(harness.ResolveTick().WasFired())
         << "the presentation clock must not consume the simulation's moment";
 }
+
+// ---------------------------------------------------------------------------
+// What a suspended simulation does to the latch, and what clearing it fixes
+// ---------------------------------------------------------------------------
+//
+// While simulated time is suspended no fixed tick runs, but every frame still
+// folds its transitions and motion into both clocks. The simulation latch has
+// nothing draining it, so it accumulates for as long as the suspension lasts.
+// These two cases are the shape of that, and the third is the correction the
+// resume boundary applies.
+
+TEST(InputResolve, ASuspendedSimulationAccumulatesEveryFramesMotion)
+{
+    Harness harness(SingleContext({ InputActionType::Axis2D },
+                                  { DirectBinding(0, InputControl{ InputControlSource::MouseMotion, 0 }) }));
+
+    // Thirty frames of pointer travel with no tick to take any of it: a player
+    // moving a cursor around a menu.
+    for (int frame = 0; frame < 30; ++frame)
+    {
+        harness.BeginFrame();
+        harness.Frame.MouseDeltaX = 10.0f;
+        harness.Accumulate();
+    }
+
+    EXPECT_FLOAT_EQ(harness.ResolveTick().X, 300.0f)
+        << "the whole suspension's travel arrived on one tick";
+}
+
+TEST(InputResolve, APressMadeWhileSuspendedStillFiresOnTheFirstTick)
+{
+    Harness harness(SingleContext({ InputActionType::Digital },
+                                  { DirectBinding(0, InputControl{ InputControlSource::MouseButton,
+                                                                   SDL_BUTTON_LEFT }) }));
+
+    // The click that pressed a menu button. A surface consuming the event does
+    // not keep it out of here: the router folds every event into the snapshot
+    // before offering it to any consumer, which is the contract that stops a
+    // claimed key-up from sticking a key down forever.
+    harness.Frame.SetMouseButtonHeld(SDL_BUTTON_LEFT, true);
+    harness.Frame.MouseButtonsPressed.push_back(SDL_BUTTON_LEFT);
+    harness.Accumulate();
+    harness.BeginFrame();
+    harness.Frame.SetMouseButtonHeld(SDL_BUTTON_LEFT, false);
+    harness.Frame.MouseButtonsReleased.push_back(SDL_BUTTON_LEFT);
+    harness.Accumulate();
+
+    EXPECT_TRUE(harness.ResolveTick().WasPressed())
+        << "a click aimed at a menu reached gameplay on the first resumed tick";
+}
+
+TEST(InputResolve, ClearingTheSimulationLatchDiscardsExactlyWhatResumingMustNotReplay)
+{
+    // What the resume boundary does, and the two halves of why it is the
+    // simulation clock alone: the accumulated travel and the menu's click go,
+    // and the presentation clock -- which drains every frame and drives the
+    // menu itself -- is untouched.
+    Harness harness(SingleContext({ InputActionType::Axis2D, InputActionType::Digital },
+                                  { DirectBinding(0, InputControl{ InputControlSource::MouseMotion, 0 }),
+                                    DirectBinding(1, InputControl{ InputControlSource::MouseButton,
+                                                                   SDL_BUTTON_LEFT }) }));
+
+    for (int frame = 0; frame < 10; ++frame)
+    {
+        harness.BeginFrame();
+        harness.Frame.MouseDeltaX = 25.0f;
+        harness.Accumulate();
+    }
+    harness.BeginFrame();
+    harness.Frame.SetMouseButtonHeld(SDL_BUTTON_LEFT, true);
+    harness.Frame.MouseButtonsPressed.push_back(SDL_BUTTON_LEFT);
+    harness.Accumulate();
+
+    harness.Simulation.Latch.Clear();
+
+    EXPECT_FLOAT_EQ(harness.ResolveTick(0).X, 0.0f) << "menu travel reached the simulation";
+    EXPECT_FALSE(harness.Values[1].WasPressed()) << "the menu's click reached the simulation";
+
+    // Still held, because the button genuinely is down: clearing drops the
+    // transitions the simulation never consumed, not the device's state.
+    EXPECT_TRUE(harness.Values[1].IsHeld());
+
+    // And the presentation clock kept everything, which is what lets the menu
+    // it was aimed at keep working.
+    EXPECT_GT(harness.ResolveFrameClock(0).X, 0.0f);
+}

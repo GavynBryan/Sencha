@@ -15,9 +15,10 @@ The editor tooling is a family of applications over one shared shell library:
 | `editor/kyusu/` | `kyusu_authoring` (static lib) + `kyusu` | The level editor ("Kyusu - Level Editor"). Split in two: the authoring library (document, brush kernel, mesh edit, workspace, edit modes, viewport math, cook) is GUI- and Vulkan-free and is what the headless test targets link; the `kyusu` executable is the shell over it (entry point, panels, render passes, SDL and window plumbing). Everything below is about its internals. |
 | `editor/shudei/` | `shudei` | The material editor ("Shudei - Material Editor"): browse/edit/save `.smat` with a live MeshForwardPass preview. |
 | `editor/kettle/` | `kettle` | The project launcher ("Kettle - Project Launcher"): recent projects, create project, project settings, launches the editors. |
+| `editor/shoji/` | `shoji_authoring` (static lib) + `shoji` | The authored-UI previewer ("Shoji - UI Previewer"): renders an `.rml` document through the engine's own UI pass into a panel at a chosen resolution and display scale, re-cooks and rebuilds it on save, and inspects elements, the preview model, raised actions and the layer's diagnostics. Same split as Kyusu: the authoring library (`DocumentLibrary`, `UiPreviewModel` and its `.preview.json` sidecar, `UiPreviewSession`, `BindingMisses`) is GUI-free; the executable is the shell. Built to fold into Kyusu: every panel takes a `UiPreviewSession&`, and consolidation is constructing one in Kyusu's composition root and adding these panels under a workspace tab. |
 
-Product names (Kyusu, Shudei, Kettle) exist only on executables and window
-titles; internal types stay mechanically named.
+Product names (Kyusu, Shudei, Kettle, Shoji) exist only on executables and
+window titles; internal types stay mechanically named.
 
 Every application is a `Game` running inside the runtime `Engine`. It does not
 embed or wrap the engine; it shares the engine's window, Vulkan context,
@@ -50,7 +51,9 @@ Materials (and assets generally) resolve against the project's content roots,
 never against the open level file's location. Kyusu watches `.smat`/`.png`
 sources per content root (`AssetSourceWatcher` + `AssetHotReloader`, polled
 from the frame hook) and hot-swaps resident assets in place, so a save from
-Shudei or a text editor shows up live.
+Shudei or a text editor shows up live. The assembly -- watcher, reloader,
+importer set, throttled poll -- is `SourceReloadRoots` in `common/src/project/`,
+shared by Kyusu, Shudei and Shoji; an editor adds roots and calls `Poll`.
 
 ## Include convention
 

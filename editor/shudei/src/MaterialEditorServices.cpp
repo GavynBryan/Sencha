@@ -18,9 +18,8 @@
 #include <app/EngineSchedule.h>
 #include <app/Game.h>
 #include <assets/cook/AssetImporter.h>
-#include <assets/cook/ContentImporters.h>
 #include <assets/cook/TextureImportSettings.h>
-#include <assets/hotreload/AssetHotReloader.h>
+#include "project/SourceReloadRoots.h"
 #include <assets/material/MaterialAssetLoader.h>
 #include <assets/material/MaterialWriter.h>
 #include <core/assets/AssetRegistry.h>
@@ -68,23 +67,6 @@ namespace
         std::function<void()> Fn;
     };
 }
-
-struct MaterialEditorServices::TextureRecookState
-{
-    explicit TextureRecookState(JobSystem* jobs)
-        : Importers(jobs)
-    {
-    }
-
-    struct RootReloader
-    {
-        std::string Root;
-        AssetHotReloader Reloader;
-    };
-
-    ContentImporterSet Importers;
-    std::vector<std::unique_ptr<RootReloader>> Roots;
-};
 
 MaterialEditorServices::MaterialEditorServices(Engine& engine,
                                                SdlWindow& window,
@@ -162,14 +144,9 @@ void MaterialEditorServices::InitAssets()
     MountProjectContent(*Project, *Assets, engine.Logging(), &engine.Jobs());
     Materials->Rescan(Project->ContentRoots);
 
-    TextureRecook = std::make_unique<TextureRecookState>(&engine.Jobs());
+    TextureRecook = std::make_unique<SourceReloadRoots>(engine.Logging(), &engine.Jobs(), engine.Tasks());
     for (const std::string& root : Project->ContentRoots)
-        TextureRecook->Roots.push_back(std::unique_ptr<TextureRecookState::RootReloader>(
-            new TextureRecookState::RootReloader{
-                root,
-                AssetHotReloader(engine.Logging(), Assets->Assets, Assets->Registry,
-                                 TextureRecook->Importers.Registry(), engine.Tasks(), root),
-            }));
+        TextureRecook->AddRoot(root, {}, Assets->Assets, Assets->Registry);
 }
 
 void MaterialEditorServices::BuildUi()
@@ -611,16 +588,11 @@ bool MaterialEditorServices::RecookTexture(const TextureSourceLocation& source, 
             *error = "no project mounted";
         return false;
     }
-    for (const auto& entry : TextureRecook->Roots)
-    {
-        if (entry->Root != source.Root)
-            continue;
-        // Recook is synchronous; the resident swap commits at the engine's
-        // async drain (the bindless slot repoints, so every material sampling
-        // the texture follows within a frame).
-        entry->Reloader.ReloadSource(source.RelPath);
+    // Recook is synchronous; the resident swap commits at the engine's async
+    // drain (the bindless slot repoints, so every material sampling the
+    // texture follows within a frame).
+    if (TextureRecook->ReloadSource(source.Root, source.RelPath))
         return true;
-    }
     if (error != nullptr)
         *error = "'" + source.Root + "' is not a mounted content root";
     return false;

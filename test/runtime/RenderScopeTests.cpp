@@ -124,3 +124,27 @@ TEST(MakeScopeContext, PreservesOuterFieldsItDoesNotOwn)
     EXPECT_EQ(inner.FrameInFlightIndex, 3u);
     EXPECT_EQ(inner.Retirement.Current, 41u);
 }
+
+TEST(MakeScopeContext, CarriesTheStencilFormatFromTheScope)
+{
+    RenderScopeDesc desc = MakeOffscreenDesc();
+    desc.DepthFormat = VK_FORMAT_D24_UNORM_S8_UINT;
+    desc.Stencil.View = desc.Depth.View;
+    desc.StencilFormat = VK_FORMAT_D24_UNORM_S8_UINT;
+
+    const FrameContext inner = MakeScopeContext(MakeOuterFrame(), desc);
+    // A pass that clips through the stencil asks the context whether one is
+    // bound. UNDEFINED here is what makes authored UI clip to rectangles.
+    EXPECT_EQ(inner.StencilFormat, VK_FORMAT_D24_UNORM_S8_UINT);
+}
+
+TEST(MakeScopeContext, ReportsNoStencilWhenTheScopeAttachesNone)
+{
+    FrameContext outer = MakeOuterFrame();
+    outer.StencilFormat = VK_FORMAT_D24_UNORM_S8_UINT;   // the swapchain frame has one
+
+    const FrameContext inner = MakeScopeContext(outer, MakeOffscreenDesc());
+    // Not inherited: a pass inside would otherwise clip through an attachment
+    // the scope never opened.
+    EXPECT_EQ(inner.StencilFormat, VK_FORMAT_UNDEFINED);
+}

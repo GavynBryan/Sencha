@@ -42,9 +42,7 @@ std::optional<EngineDebugConfig> DeserializeDebugConfig(
     std::string sectionError;
 
     if (!ReadBoolEither(root, "consoleLogging", "console_logging",
-            config.ConsoleLogging, sectionError)
-        || !ReadBoolEither(root, "debugUi", "debug_ui",
-            config.DebugUi, sectionError))
+            config.ConsoleLogging, sectionError))
     {
         if (error) error->Message = sectionError;
         return std::nullopt;

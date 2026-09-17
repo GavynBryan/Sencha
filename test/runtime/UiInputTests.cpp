@@ -347,3 +347,56 @@ TEST(UiInput, EventsReachNothingOnceEveryScreenIsClosed)
         << "a closed screen still answered a click";
     EXPECT_FALSE(ui.Capture().Mouse);
 }
+
+TEST(UiInput, ClosingAScreenTakesTheActionsItHadNotDeliveredYet)
+{
+    // A page stack pops a screen in response to one of its own actions, which
+    // is the moment a second queued action from the same screen would be
+    // stranded: closing bumps the generation, so its handle stops resolving and
+    // DrainActions(screen) can never match it again. It would sit in the queue
+    // until some unrelated controller drained everything, and then arrive
+    // naming a screen that no longer exists.
+    TempAssetRoot root;
+    WritePackage(root, "ui/menu.sui");
+    UiTestHost host(root);
+    UiService& ui = host.Service();
+
+    const UiSurfaceId surface = ui.CreateSurface("test", RenderExtent{ 800, 600 });
+    const UiScreenHandle screen = ui.OpenScreen(surface, MakeDesc());
+    ASSERT_TRUE(screen.IsValid());
+    ui.Update();
+
+    ClickAt(ui, 150.0f, 130.0f);
+    ui.CloseScreen(screen);
+
+    EXPECT_TRUE(ui.DrainActions().empty())
+        << "an action outlived the screen that raised it";
+}
+
+TEST(UiInput, AnotherScreensQueuedActionsSurviveACloseBesideThem)
+{
+    // The purge is scoped to the screen that closed. A stack popping its top
+    // page must not take the HUD's queued actions with it.
+    TempAssetRoot root;
+    WritePackage(root, "ui/menu.sui");
+    UiTestHost host(root);
+    UiService& ui = host.Service();
+
+    const UiSurfaceId surface = ui.CreateSurface("test", RenderExtent{ 800, 600 });
+    const UiScreenHandle lower = ui.OpenScreen(surface, MakeDesc());
+    ASSERT_TRUE(lower.IsValid());
+    ui.Update();
+    ClickAt(ui, 150.0f, 130.0f);
+
+    // A different model name, because a context holds one model per name: two
+    // screens on a surface cannot both declare "menu". The pause stack's pages
+    // are named apart for the same reason.
+    const UiScreenHandle upper = ui.OpenScreen(surface, "asset://ui/menu.sui");
+    ASSERT_TRUE(upper.IsValid());
+    ui.Update();
+    ui.CloseScreen(upper);
+
+    const std::vector<UiAction> left = ui.DrainActions();
+    ASSERT_EQ(left.size(), 1u) << "the lower screen's action was taken too";
+    EXPECT_EQ(left.front().Screen, lower);
+}

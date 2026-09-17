@@ -1,0 +1,228 @@
+/* The application shell's default pause menu.
+ *
+ * Self-contained: structure and colour together, because a game supplies no
+ * stylesheet and the theme vocabulary lives in editor code a game module
+ * cannot reach. A game that grows a theme calls UiService::SetHostStyleSheet
+ * and these rules restyle with everything else.
+ *
+ * Lengths are dp, not px. A surface carries the display scale its host
+ * resolved and the engine applies it to dp alone; px would render half-size
+ * beside chrome that did not, and at scale 1 the two are the same number,
+ * which is exactly why the mistake is invisible until somebody has a HiDPI
+ * display.
+ */
+
+@font-face
+{
+    src: "fonts/Inter-Regular.ttf";
+    font-family: Inter;
+}
+
+/* A full-screen root counts as "the pointer is over the UI" and would quietly
+ * take the mouse from the game. Interactive children opt back in below. */
+body
+{
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    font-family: Inter;
+}
+
+#scrim
+{
+    width: 100%;
+    height: 100%;
+    background-color: #0a0d12c0;
+    pointer-events: auto;
+}
+
+/* Centred by the layout rather than by arithmetic.
+ *
+ * The obvious trick -- top/left 50% pulled back by half the size in negative
+ * margins -- needs the size written down, and the panel's height is not
+ * something this stylesheet knows: it grows with however many entries the
+ * model published, which is the entry-agnostic part working. A hardcoded half
+ * is therefore wrong at every viewport, just most visibly at one it was not
+ * measured at. Flex centres a box of unknown size against a parent of any
+ * size, which is exactly the problem. */
+#scrim
+{
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+#panel
+{
+    display: block;
+    /* Caps how wide it gets on a large display without pinning it on a small
+     * one: a menu that stayed 340dp across a 4K screen reads as lost in it,
+     * and one that grew to a third of an ultrawide reads as a web page. */
+    width: 340dp;
+    max-width: 80%;
+    padding: 28dp 24dp;
+    background-color: #141a22f2;
+    border: 1dp #2e3b49;
+    border-radius: 6dp;
+    pointer-events: auto;
+}
+
+#title
+{
+    display: block;
+    font-size: 22dp;
+    color: #e8eef5;
+    margin-bottom: 22dp;
+}
+
+#entries { display: block; }
+
+.entry
+{
+    display: block;
+    font-size: 17dp;
+    color: #b9c6d4;
+    padding: 11dp 14dp;
+    margin-bottom: 6dp;
+    background-color: #1b2531;
+    border-radius: 4dp;
+    pointer-events: auto;
+}
+
+.entry:hover
+{
+    color: #ffffff;
+    background-color: #24313f;
+}
+
+/* Keyboard and controller navigation land here, so the highlight has to be
+ * visible without a pointer anywhere near it. */
+.entry:focus
+{
+    color: #ffffff;
+    background-color: #2b3b4c;
+    border: 1dp #4d8fc4;
+}
+
+/* The options page shares this sheet, because it is the same panel with rows
+ * that carry a value as well as a label. A second stylesheet would be a second
+ * place for the two to drift apart. */
+.setting
+{
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+}
+
+.setting .label { display: inline; }
+
+.setting .value
+{
+    display: inline;
+    color: #7fb2dd;
+}
+
+/* The controls, drawn as boxes. The document engine creates the parts below as
+ * elements named for what they are and styles none of them; an image
+ * decorator would have to be declared in the cooked resource table, and a box
+ * needs nothing. The parts inherit pointer-events from the control, which the
+ * root turned off, so each opts back in. */
+.setting .control
+{
+    display: inline-block;
+    width: 150dp;
+    pointer-events: auto;
+}
+
+.setting .control:focus { border: 1dp #4d8fc4; }
+
+.slider { height: 18dp; }
+
+slidertrack
+{
+    display: block;
+    height: 4dp;
+    margin-top: 7dp;
+    background-color: #2e3b49;
+    border-radius: 2dp;
+    pointer-events: auto;
+}
+
+sliderbar
+{
+    display: block;
+    width: 12dp;
+    height: 18dp;
+    margin-top: -7dp;
+    background-color: #7fb2dd;
+    border-radius: 3dp;
+    pointer-events: auto;
+}
+
+sliderbar:hover, sliderbar:active { background-color: #ffffff; }
+
+sliderprogress
+{
+    display: block;
+    height: 4dp;
+    background-color: #4d8fc4;
+    pointer-events: auto;
+}
+
+/* A slider, not a scrollbar: no stepping arrows at the ends. */
+sliderarrowdec, sliderarrowinc { display: none; }
+
+.choice
+{
+    height: 24dp;
+    background-color: #1b2531;
+    border: 1dp #2e3b49;
+    border-radius: 3dp;
+}
+
+selectvalue
+{
+    display: block;
+    padding: 3dp 8dp;
+    color: #7fb2dd;
+    pointer-events: auto;
+}
+
+selectarrow
+{
+    display: block;
+    width: 18dp;
+    height: 100%;
+    color: #7fb2dd;
+    pointer-events: auto;
+}
+
+selectbox
+{
+    display: block;
+    background-color: #1b2531;
+    border: 1dp #4d8fc4;
+    border-radius: 3dp;
+    pointer-events: auto;
+}
+
+selectbox option
+{
+    display: block;
+    padding: 5dp 8dp;
+    color: #b9c6d4;
+    pointer-events: auto;
+}
+
+selectbox option:hover { color: #ffffff; background-color: #24313f; }
+selectbox option:checked { color: #ffffff; background-color: #2b3b4c; }
+
+#hint
+{
+    display: block;
+    margin-top: 14dp;
+    font-size: 13dp;
+    color: #6b7b8c;
+}

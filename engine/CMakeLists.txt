@@ -422,6 +422,18 @@ sencha_generate_component_metadata(sencha_engine
     HEADERS ${SENCHA_ENGINE_COMPONENT_HEADERS}
 )
 
+# The application shell's own content -- the default pause document and the
+# face it draws with. Defined only for a build from this source tree; an
+# installed build finds the same content beside its executable, and a
+# SENCHA_ENGINE_CONTENT override beats both. See EngineContentRoot().
+target_compile_definitions(sencha_engine PRIVATE
+    SENCHA_ENGINE_CONTENT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets")
+
+# Cooked ahead of time and committed, because a shipping build has no cooker in
+# it: re-cook with `ctest -R CookEngineUiContent` after editing the sources.
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/"
+        DESTINATION share/sencha/content)
+
 if(SENCHA_ENABLE_COOK)
     target_compile_definitions(sencha_engine PUBLIC SENCHA_ENABLE_COOK)
 

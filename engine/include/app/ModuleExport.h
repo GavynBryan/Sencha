@@ -106,5 +106,17 @@
 // swallow each other's actions; the no-argument form stays for a host that owns
 // every screen. With the control vocabulary and two real surfaces built on it,
 // the facade is frozen: it changes from here under the ordinary rules rather
-// than a stage at a time.
-#define SENCHA_GAME_ABI_VERSION 22u
+// than a stage at a time. v23: the application shell. Engine carries the saved
+// settings store, so its size changes and a module holding an Engine& has to be
+// rebuilt; EngineRuntimeConfig loses ExitOnEscape and TogglePauseOnF1, whose
+// raw scancode handlers the shell's rebindable Back action replaces, which
+// changes EngineConfig's layout and a module receives one by reference in every
+// lifecycle context. RuntimeFrameLoop gains a suspension flag separate from the
+// timescale, and InputContextDefinition a shell flag, both of which a module
+// sees by value through the headers it already includes. In the same bump:
+// EngineRuntimeConfig gains ApplicationShell and EngineConsoleConfig gains
+// SettingsRoot, so a host declares its posture and where settings may live;
+// EngineDebugConfig loses DebugUi, which nothing read; and UiRow carries
+// control metadata (Control, Min, Max, Step, Choices) beside Editable, so a
+// row can name the slider or drop-down a document offers for it.
+#define SENCHA_GAME_ABI_VERSION 23u

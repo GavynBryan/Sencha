@@ -151,6 +151,24 @@ struct LookInputBinding
 };
 
 //=============================================================================
+// LookSensitivity
+//
+// How far the view turns for a given amount of device travel, as a multiplier
+// over whatever the binding already conditioned.
+//
+// The player's, not the author's. A binding's `scale` is the game saying what a
+// mouse count means in radians; this is the person holding the mouse saying
+// they want more or less of it, and the two multiply rather than one replacing
+// the other. Driven by the `input.look_sensitivity` cvar so a settings screen
+// and the console reach the same value, and held as a resource rather than
+// read by name per pass -- look integrates twice a frame.
+//=============================================================================
+struct LookSensitivity
+{
+    float Scale = 1.0f;
+};
+
+//=============================================================================
 // PendingLookInput
 //
 // The presentation clock's view of look input the simulation has not caught up

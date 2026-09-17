@@ -155,6 +155,17 @@ WindowExtent SdlWindow::GetExtent() const
     return { static_cast<uint32_t>(w), static_cast<uint32_t>(h) };
 }
 
+float SdlWindow::GetDisplayScale() const
+{
+    if (!Window)
+        return 1.0f;
+    const float scale = SDL_GetWindowDisplayScale(Window);
+    // Zero is what SDL reports when it cannot answer -- a window not yet shown,
+    // a display it has lost track of. Laying a document out against it would
+    // collapse every authored length to nothing.
+    return scale > 0.0f ? scale : 1.0f;
+}
+
 void SdlWindow::SetSize(uint32_t width, uint32_t height)
 {
     if (Window)

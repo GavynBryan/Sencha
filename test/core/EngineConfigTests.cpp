@@ -28,16 +28,17 @@ TEST(EngineConfig, DefaultsDescribeLaunchableEngine)
     EXPECT_EQ(config.Window.GraphicsApi, WindowGraphicsApi::Vulkan);
     EXPECT_DOUBLE_EQ(config.Runtime.FixedTickRate, 60.0);
     EXPECT_DOUBLE_EQ(config.Runtime.TargetFps, 0.0);
-    EXPECT_FALSE(config.Runtime.ExitOnEscape);
-    EXPECT_FALSE(config.Runtime.TogglePauseOnF1);
     EXPECT_EQ(config.Graphics.FramesInFlight, 2u);
     // Negative scores adapters normally; only an explicit index overrides it.
     EXPECT_EQ(config.Graphics.DeviceIndex, -1);
     EXPECT_TRUE(config.Debug.ConsoleLogging);
-    EXPECT_FALSE(config.Debug.DebugUi);
     EXPECT_TRUE(config.Console.UiEnabled);
     EXPECT_FALSE(config.Console.OpenOnStart);
     EXPECT_EQ(config.Console.HistoryCapacity, 256);
+    // A default configuration is an application, and persists nothing: the
+    // host that wants an archive names a directory for it.
+    EXPECT_TRUE(config.Runtime.ApplicationShell);
+    EXPECT_TRUE(config.Console.SettingsRoot.empty());
 }
 
 TEST(EngineConfig, LoadsAppWindowRuntimeGraphicsDebugAndAudio)
@@ -59,8 +60,7 @@ TEST(EngineConfig, LoadsAppWindowRuntimeGraphicsDebugAndAudio)
             "fixed_tick_rate": 120,
             "target_fps": 240,
             "resize_settle_seconds": 0.25,
-            "exit_on_escape": true,
-            "toggle_pause_on_f1": true
+            "application_shell": false
         },
         "graphics": {
             "frames_in_flight": 3,
@@ -68,13 +68,13 @@ TEST(EngineConfig, LoadsAppWindowRuntimeGraphicsDebugAndAudio)
             "device_index": 1
         },
         "debug": {
-            "console_logging": false,
-            "debug_ui": true
+            "console_logging": false
         },
         "console": {
             "ui_enabled": true,
             "open_on_start": true,
             "history_capacity": 64,
+            "settings_root": "/var/lib/sencha",
             "cvars": {
                 "r": { "target_fps": 144 },
                 "game": { "player": { "name": "Ada" } }
@@ -103,16 +103,15 @@ TEST(EngineConfig, LoadsAppWindowRuntimeGraphicsDebugAndAudio)
     EXPECT_DOUBLE_EQ(loaded->Runtime.FixedTickRate, 120.0);
     EXPECT_DOUBLE_EQ(loaded->Runtime.TargetFps, 240.0);
     EXPECT_DOUBLE_EQ(loaded->Runtime.ResizeSettleSeconds, 0.25);
-    EXPECT_TRUE(loaded->Runtime.ExitOnEscape);
-    EXPECT_TRUE(loaded->Runtime.TogglePauseOnF1);
     EXPECT_EQ(loaded->Graphics.FramesInFlight, 3u);
     EXPECT_FALSE(loaded->Graphics.EnableValidation);
     EXPECT_EQ(loaded->Graphics.DeviceIndex, 1);
     EXPECT_FALSE(loaded->Debug.ConsoleLogging);
-    EXPECT_TRUE(loaded->Debug.DebugUi);
     EXPECT_TRUE(loaded->Console.UiEnabled);
     EXPECT_TRUE(loaded->Console.OpenOnStart);
     EXPECT_EQ(loaded->Console.HistoryCapacity, 64);
+    EXPECT_FALSE(loaded->Runtime.ApplicationShell);
+    EXPECT_EQ(loaded->Console.SettingsRoot, "/var/lib/sencha");
     ASSERT_EQ(loaded->Console.CVars.size(), 2u);
     EXPECT_EQ(loaded->Console.CVars[0].Name, "r.target_fps");
     EXPECT_EQ(loaded->Console.CVars[0].Value, "144");

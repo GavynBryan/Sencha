@@ -1,0 +1,12 @@
+{
+  "model": "pause",
+  "modal": true,
+  "properties": [
+    { "name": "title", "kind": "string", "value": "Paused" }
+  ],
+  "arrays": [
+    { "name": "entries", "items": ["Resume", "Options", "Exit to Desktop"] }
+  ],
+  "rows": [],
+  "actions": ["pause_activate"]
+}

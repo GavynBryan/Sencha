@@ -425,3 +425,60 @@ TEST(RuntimeFrameLoop, TimescaleDoesNotScaleFixedTickDelta)
 
     EXPECT_DOUBLE_EQ(tick.DeltaSeconds, runtime.GetSimulationClock().GetFixedDt());
 }
+
+TEST(RuntimeFrameLoop, ADiscontinuityMarkedAfterTheBudgetIsAppliedOnTheNextFrame)
+{
+    // ScheduleFixedTicks consumes the pending discontinuity, and it runs early.
+    // Every caller that predates the application shell marked one earlier still
+    // -- a resize, a minimize, a zone attach -- so the flag was always consumed
+    // in the frame it was raised. Anything recognising one *after* the budget
+    // was decided had its signal dropped without a word, which is a silence
+    // that looks exactly like nothing having gone wrong.
+    RuntimeFrameLoop runtime;
+    ScriptedClock clock(runtime);
+
+    std::vector<TemporalDiscontinuityReason> seen;
+    (void)runtime.GetDiscontinuityBus().Subscribe(
+        [&seen](const FrameDiscontinuityEvent& event) { seen.push_back(event.Reason); });
+
+    StepFrame(runtime, clock, 0.0);
+
+    // A frame that marks one late: after its ticks were budgeted, which is
+    // where a system reading a mapped action necessarily sits.
+    clock.Advance(1.0 / 60.0);
+    runtime.BeginFrame();
+    runtime.ResolveLifecycleTransitions();
+    (void)runtime.ScheduleFixedTicks();
+    runtime.MarkTemporalDiscontinuity(TemporalDiscontinuityReason::SimulationPause);
+    runtime.BuildPresentationFrame();
+    runtime.EndFrame();
+
+    EXPECT_TRUE(seen.empty()) << "applied in a frame whose budget was already spent";
+
+    StepFrame(runtime, clock, 1.0 / 60.0);
+
+    ASSERT_EQ(seen.size(), 1u) << "a discontinuity marked late was silently dropped";
+    EXPECT_EQ(seen.front(), TemporalDiscontinuityReason::SimulationPause)
+        << "it arrived without the reason it was raised with, so nothing acting "
+           "on a particular kind would act on it";
+}
+
+TEST(RuntimeFrameLoop, ADiscontinuityConsumedInItsOwnFrameIsNotRepeated)
+{
+    RuntimeFrameLoop runtime;
+    ScriptedClock clock(runtime);
+
+    int events = 0;
+    (void)runtime.GetDiscontinuityBus().Subscribe(
+        [&events](const FrameDiscontinuityEvent&) { ++events; });
+
+    StepFrame(runtime, clock, 0.0);
+    runtime.MarkTemporalDiscontinuity(TemporalDiscontinuityReason::Teleport);
+    StepFrame(runtime, clock, 1.0 / 60.0);
+    EXPECT_EQ(events, 1);
+
+    // Carrying the flag must not mean carrying it forever.
+    StepFrame(runtime, clock, 1.0 / 60.0);
+    StepFrame(runtime, clock, 1.0 / 60.0);
+    EXPECT_EQ(events, 1) << "the discontinuity fired again on frames that had none";
+}

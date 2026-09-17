@@ -1,6 +1,9 @@
 #include <input/InputBindingCache.h>
 
+#include <input/ShellInputActions.h>
+
 #include <algorithm>
+#include <array>
 #include <format>
 #include <utility>
 
@@ -10,6 +13,38 @@ namespace
 bool HasTables(InputBindState state)
 {
     return state == InputBindState::Current || state == InputBindState::Stale;
+}
+
+// Puts the shell's context at the front of the claim order, holding the
+// author's bindings for shell actions plus the engine's defaults for the ones
+// they left alone.
+//
+// First because its priority is above the reserved line no authored context may
+// cross, so backing out of gameplay can never be shadowed by a gameplay binding
+// on the same key.
+void EmitShellContext(BoundInputProfile& out,
+                      const std::vector<InputBinding>& authored,
+                      const std::array<bool, static_cast<std::size_t>(ShellAction::Count)>& rebound)
+{
+    std::vector<InputBinding> bindings = authored;
+    for (const InputBinding& fallback : ShellDefaultBindings())
+    {
+        if (fallback.ActionIndex < rebound.size() && rebound[fallback.ActionIndex])
+            continue;
+        bindings.push_back(fallback);
+    }
+
+    InputContextDefinition shell;
+    shell.Name = std::string(kShellContextName);
+    shell.Priority = kShellContextPriority;
+    shell.IsShell = true;
+    shell.FirstBinding = static_cast<std::uint32_t>(out.Bindings.size());
+    shell.BindingCount = static_cast<std::uint32_t>(bindings.size());
+    out.Bindings.insert(out.Bindings.end(), bindings.begin(), bindings.end());
+
+    // The resolve pass walks contexts in order and claims as it goes, so the
+    // shell has to be first in the vector, not merely highest-numbered.
+    out.Contexts.insert(out.Contexts.begin(), std::move(shell));
 }
 
 // Compiles one profile against its action set into the tables a resolve pass
@@ -31,8 +66,24 @@ bool BuildTables(InputActionRegistry& actions,
         return false;
     }
 
+    // The shell's actions are declared first, in every profile, so a dense id
+    // means the same thing everywhere and the engine can hold ShellAction as a
+    // constant instead of resolving a name. An action set that redeclares one
+    // is rebinding it, not adding it: the compiler already checked the shape
+    // matches, so the engine's declaration stands and the authored one is
+    // dropped here rather than minting a second id for the same name.
+    std::vector<InputActionDefinition> merged;
+    merged.reserve(ShellActionDefinitions().size() + actionSet->Actions.size());
+    for (const InputActionDefinition& shell : ShellActionDefinitions())
+        merged.push_back(shell);
+    for (const InputActionDefinition& authored : actionSet->Actions)
+    {
+        if (FindShellAction(authored.Name) == nullptr)
+            merged.push_back(authored);
+    }
+
     std::string error;
-    if (!actions.Rebuild(actionSet->Actions, &error))
+    if (!actions.Rebuild(merged, &error))
     {
         errors.push_back(std::move(error));
         return false;
@@ -43,7 +94,7 @@ bool BuildTables(InputActionRegistry& actions,
     // retired slot has no binding and resolves to zero forever.
     out.ActionTypes.assign(actions.SlotCount(), InputActionType::Digital);
     out.ActionFireModes.assign(actions.SlotCount(), InputActionFireMode::Pressed);
-    for (const InputActionDefinition& definition : actionSet->Actions)
+    for (const InputActionDefinition& definition : merged)
     {
         const std::size_t index = InputActionRegistry::IndexOf(actions.Find(definition.Name));
         out.ActionTypes[index] = definition.Type;
@@ -60,6 +111,21 @@ bool BuildTables(InputActionRegistry& actions,
               [](const AuthoredInputContext* a, const AuthoredInputContext* b) {
                   return a->Priority > b->Priority;
               });
+
+    // Bindings an author wrote for a shell action, collected out of whatever
+    // context declared them and compiled into the shell's own context below.
+    //
+    // Re-homing them is load-bearing rather than tidy. Authored contexts stop
+    // resolving while the shell has input suspended, so a `ui.back` rebound
+    // inside a game's `gameplay` context would go silent the instant the player
+    // paused -- and there would be no way to resume. The author is declaring a
+    // replacement *binding*; the action's context, priority and lifetime stay
+    // the engine's.
+    std::vector<InputBinding> shellBindings;
+    // Which shell actions an author bound, so the engine's default bindings for
+    // those actions can be dropped. Replace rather than augment: a player who
+    // rebinds Back to another key must not find Escape still working.
+    std::array<bool, static_cast<std::size_t>(ShellAction::Count)> rebound{};
 
     for (const AuthoredInputContext* context : ordered)
     {
@@ -94,7 +160,16 @@ bool BuildTables(InputActionRegistry& actions,
             }
 
             InputBinding binding = authored.Binding;
-            binding.ActionIndex = static_cast<std::uint32_t>(InputActionRegistry::IndexOf(action));
+            const std::size_t actionIndex = InputActionRegistry::IndexOf(action);
+            binding.ActionIndex = static_cast<std::uint32_t>(actionIndex);
+
+            if (actionIndex < static_cast<std::size_t>(ShellAction::Count))
+            {
+                rebound[actionIndex] = true;
+                shellBindings.push_back(binding);
+                continue;
+            }
+
             out.Bindings.push_back(binding);
         }
 
@@ -103,6 +178,7 @@ bool BuildTables(InputActionRegistry& actions,
         out.Contexts.push_back(std::move(compiled));
     }
 
+    EmitShellContext(out, shellBindings, rebound);
     return true;
 }
 }

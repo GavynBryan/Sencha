@@ -6,13 +6,20 @@
 #include <assets/font/FontFaceHandle.h>
 #include <input/UiInputCapture.h>
 #include <ui/UiAction.h>
+#include <ui/UiElementInfo.h>
 #include <ui/UiScreenDesc.h>
 #include <ui/UiScreenHandle.h>
 #include <ui/UiSurface.h>
 
+#include "UiDiagnosticLog.h"
 #include "rml/RmlPackageFileSource.h"
 #include "rml/RmlTextInputBridge.h"
 #include "rml/RmlRenderRecorder.h"
+
+#include <math/Vec.h>
+#include <math/geometry/2d/Rect2d.h>
+
+#include <RmlUi/Core/ObserverPtr.h>
 
 #include <cstdint>
 #include <memory>
@@ -26,7 +33,9 @@
 namespace Rml
 {
 class Context;
+class Element;
 class ElementDocument;
+class DataModelConstructor;
 class DataModelHandle;
 }
 
@@ -88,6 +97,14 @@ public:
     void SetSurfaceScale(UiSurfaceId surface, float scale);
     [[nodiscard]] float GetSurfaceScale(UiSurfaceId surface) const;
 
+    void SetSurfacePlacement(UiSurfaceId surface, std::optional<Rect2d> windowRect);
+    [[nodiscard]] std::optional<Rect2d> GetSurfacePlacement(UiSurfaceId surface) const;
+    void SetSurfaceInputPolicy(UiSurfaceId surface, UiSurfaceInputPolicy policy);
+    [[nodiscard]] UiSurfaceInputPolicy GetSurfaceInputPolicy(UiSurfaceId surface) const;
+    [[nodiscard]] bool IsPointerOver(UiSurfaceId surface) const;
+    void SetSurfaceDestination(UiSurfaceId surface, UiSurfaceDestination destination);
+    [[nodiscard]] UiSurfaceDestination GetSurfaceDestination(UiSurfaceId surface) const;
+
     [[nodiscard]] UiScreenHandle OpenScreen(UiSurfaceId surface, const UiScreenDesc& desc);
     void CloseScreen(UiScreenHandle screen);
     [[nodiscard]] bool IsScreenOpen(UiScreenHandle screen) const;
@@ -130,6 +147,7 @@ public:
     // ExtractRender: no GPU work, and the frames stay valid until the next call.
     void ExtractRender();
     [[nodiscard]] const std::vector<UiDrawFrame>& Frames() const { return DrawFrames; }
+    [[nodiscard]] const UiDrawFrame* OffscreenFrame(UiSurfaceId surface) const;
 
     // IUiTextureResolver: a content image resolves against the open screen's
     // own resource table and nothing else.
@@ -145,6 +163,17 @@ public:
 
     [[nodiscard]] std::optional<UiElementBox> MeasureElement(UiScreenHandle screen,
                                                              std::string_view elementId) const;
+
+    // Everything this layer and the document engine reported since the last
+    // call. Destructive; one consumer per runtime.
+    [[nodiscard]] std::vector<UiDiagnostic> DrainDiagnostics();
+
+    [[nodiscard]] UiElementRef ElementAt(UiSurfaceId surface, Vec2d surfacePoint);
+    [[nodiscard]] std::optional<UiElementInfo> DescribeElement(UiElementRef ref);
+    [[nodiscard]] std::vector<UiElementRef> ElementChildren(UiElementRef ref);
+    [[nodiscard]] std::vector<UiElementInfo> ElementTree(UiScreenHandle screen);
+    [[nodiscard]] std::optional<std::string> ComputedProperty(UiElementRef ref,
+                                                              std::string_view property) const;
 
     // Outstanding document-engine resources, for a test that wants to prove a
     // closed screen left nothing behind.
@@ -162,6 +191,29 @@ private:
         Rml::Context* Context = nullptr;
         std::uint32_t Generation = 1;
         bool Live = false;
+        // Whether the row and list types have been declared on this context's
+        // type register. Once per context, not per model: the register is the
+        // context's, and a second declaration is a silent refusal.
+        bool ModelTypesDeclared = false;
+
+        // Where the surface is shown, in window points; nullopt is the window.
+        std::optional<Rect2d> Placement;
+        UiSurfaceInputPolicy InputPolicy = UiSurfaceInputPolicy::Full;
+        UiSurfaceDestination Destination = UiSurfaceDestination::Window;
+
+        // The last pointer position delivered, in surface pixels. The document
+        // engine is told where the pointer is on a move; a click has to be told
+        // the same thing again, because a press with no preceding move (a
+        // synthetic event, a touch tap) would otherwise land wherever the
+        // pointer last was. Per surface, because two placed surfaces see two
+        // different points for one event.
+        int PointerX = 0;
+        int PointerY = 0;
+        bool PointerInside = false;
+        // A press landed inside and has not been released. The drag follows the
+        // pointer wherever it goes until it is; leaving the placement does not
+        // end an interaction, releasing the button does.
+        bool PointerOwned = false;
     };
 
     // One open document, and everything whose lifetime it decides.
@@ -239,12 +291,64 @@ private:
 
         std::uint32_t Generation = 1;
         bool Live = false;
+
+        // The elements this screen has handed out references to. A slot holds a
+        // weak handle the document engine clears when the element is destroyed,
+        // and the serial minted into it, so a stale ref reads as stale rather
+        // than as whatever reused the slot. Cleared whenever the document is
+        // replaced. Bounded; a document that exhausts it gets no more refs.
+        struct ElementSlot
+        {
+            Rml::ObserverPtr<Rml::Element> Element;
+            std::uint32_t Serial = 0;
+        };
+        std::vector<ElementSlot> Elements;
+        std::uint32_t NextElementSerial = 1;
     };
+
+    // A ticket for an element of a screen's document: an existing live slot for
+    // that element, else a recycled dead one, else a new one. Invalid when the
+    // table is full.
+    [[nodiscard]] UiElementRef MintElementRef(Screen& screen, UiScreenHandle handle,
+                                              Rml::Element& element);
+    // The element a ticket stands for, or null once it is gone.
+    [[nodiscard]] Rml::Element* ResolveElement(UiElementRef ref) const;
+    [[nodiscard]] UiElementInfo Describe(Screen& screen, UiScreenHandle handle,
+                                         Rml::Element& element, UiElementRef ref);
 
     [[nodiscard]] Surface* ResolveSurface(UiSurfaceId surface);
     [[nodiscard]] const Surface* ResolveSurface(UiSurfaceId surface) const;
     [[nodiscard]] Screen* ResolveScreen(UiScreenHandle screen);
     [[nodiscard]] const Screen* ResolveScreen(UiScreenHandle screen) const;
+    // The handle a slot answers to, from its position and generation.
+    [[nodiscard]] UiScreenHandle HandleOf(const Screen& screen) const;
+
+    // What a report made while a surface is updating or taking input can be
+    // attributed to: the surface, and its screen when it carries exactly one.
+    // With several it does not guess -- the document engine evaluates a
+    // context's models together and does not say whose expression failed.
+    [[nodiscard]] UiDiagnosticLog::Attribution SurfaceAttribution(std::size_t surfaceIndex) const;
+
+    // Marks one screen as the one loading, rebuilding or restyling: the
+    // resolver answers image and font requests from its table, and whatever
+    // the document engine reports meanwhile is attributed to it.
+    class ActiveScreenScope
+    {
+    public:
+        ActiveScreenScope(UiRuntime& runtime, const Screen& screen, UiScreenHandle handle);
+        ~ActiveScreenScope();
+        ActiveScreenScope(const ActiveScreenScope&) = delete;
+        ActiveScreenScope& operator=(const ActiveScreenScope&) = delete;
+
+    private:
+        UiRuntime& Runtime;
+        const Screen* Previous;
+        UiDiagnosticLog::Scope Attribution;
+    };
+
+    // A refusal, recorded for whoever drains diagnostics and logged as an
+    // error. Attribution comes from the scope in force.
+    void Refuse(UiDiagnosticKind kind, std::optional<std::string> path, std::string message);
 
     // Acquires a lease on every resource the package names, and registers any
     // font among them with the document engine. All-or-nothing: a package that
@@ -284,12 +388,18 @@ private:
     // attribute at parse, and a model that appears afterwards is a model the
     // document never saw.
     [[nodiscard]] bool BuildModel(Screen& screen, UiScreenHandle handle, Surface& surface);
+    void DeclareModelTypes(Rml::DataModelConstructor& constructor, Surface& surface);
 
     Logger& Log;
     AssetSystem& Assets;
     UiPackageCache& Packages;
     FontFaceCache& Fonts;
     TextureCache* Textures = nullptr;
+
+    // Before the bridge that feeds it and the slots whose lifetimes report
+    // into it: the destructor releases contexts and documents, and the
+    // engine's log interface must still have somewhere to write.
+    UiDiagnosticLog Diagnostics;
 
     // Declared before the slots: contexts and documents are released in the
     // destructor body, and the interfaces they call into must still be alive
@@ -310,19 +420,29 @@ private:
     // feature by reference -- the same publication shape the render pipeline
     // uses for its own extracted state.
     std::vector<UiDrawFrame> DrawFrames;
+    // Offscreen surfaces' recordings, published by surface rather than in a
+    // list, because each one has exactly one consumer and that consumer asks
+    // for it by name.
+    std::vector<std::pair<UiSurfaceId, UiDrawFrame>> OffscreenFrames;
 
-    // Whose resource table answers an image request. Set while a document is
-    // loading or rendering, null otherwise, so a request arriving outside both
-    // fails instead of resolving against whatever was open last.
+    // Whose resource table answers an image or font request while one document
+    // is loading, rebuilding or being restyled. Exact by design: a package must
+    // resolve against its own table, never a neighbour's.
     const Screen* ActiveScreen = nullptr;
 
-    // Last reported pointer position, in window pixels. The document engine is
-    // told where the pointer is on a move; a click has to be told the same
-    // thing again, because a button press with no preceding move (a synthetic
-    // event, a touch tap) would otherwise land wherever the pointer last was.
-    int PointerX = 0;
-    int PointerY = 0;
-    bool PointerInside = false;
+    // Which surface is rendering, for the same question asked during
+    // extraction. A surface carrying a stack has several live screens -- a HUD
+    // and a pause page are two documents in one context -- and RmlUi renders a
+    // context in one call, so there is no per-document scope to hang the answer
+    // on. Each screen's table either names a source or does not, so asking them
+    // in turn is exact rather than a compromise, and a source no screen on the
+    // surface declares is still the authoring error it always was.
+    UiSurfaceId ActiveRenderSurface;
+
+    // The screens a resource request may resolve against, topmost-relevant
+    // first: the loading screen when there is one, otherwise every live screen
+    // on the rendering surface.
+    [[nodiscard]] std::vector<const Screen*> ResolutionCandidates() const;
 
     bool Ready = false;
 };

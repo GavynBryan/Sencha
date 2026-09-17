@@ -55,6 +55,24 @@ namespace
         return true;
     }
 
+    bool ReadStringEither(const JsonValue& root,
+                          const char* a,
+                          const char* b,
+                          std::string& out,
+                          std::string& error)
+    {
+        const JsonValue* value = FindEither(root, a, b);
+        if (!value)
+            return true;
+        if (!value->IsString())
+        {
+            error = std::string("console config: '") + a + "' must be a string";
+            return false;
+        }
+        out = value->AsString();
+        return true;
+    }
+
     std::string ScalarToString(const JsonValue& value)
     {
         if (value.IsBool())
@@ -149,7 +167,9 @@ std::optional<EngineConsoleConfig> DeserializeConsoleConfig(
     if (!ReadBoolEither(root, "uiEnabled", "ui_enabled", config.UiEnabled, sectionError)
         || !ReadBoolEither(root, "openOnStart", "open_on_start", config.OpenOnStart, sectionError)
         || !ReadIntEither(root, "historyCapacity", "history_capacity",
-                          config.HistoryCapacity, sectionError))
+                          config.HistoryCapacity, sectionError)
+        || !ReadStringEither(root, "settingsRoot", "settings_root",
+                             config.SettingsRoot, sectionError))
     {
         if (error) error->Message = sectionError;
         return std::nullopt;

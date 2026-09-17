@@ -66,12 +66,26 @@ struct UiModelProperty
     bool Editable = false;
 };
 
+// Which control a document offers for a row's value, when it offers one.
+//
+// Editable still says whether it offers one at all; this says which. A Range
+// that is not editable is a read-out with a bar, and a document tests both.
+// Text is the default and is what every existing row is.
+enum class UiRowControl : std::uint8_t
+{
+    Text,
+    Range,
+    Choice,
+};
+
 // One row of a presented list.
 //
 // Strings, and only strings, for the same reason a list is: presentation is
 // text. A number being edited is the text somebody is typing, and the host
 // parses it when it reads the row back -- which is also where it gets to refuse
-// "1.2.3" without the document ever having had an opinion.
+// "1.2.3" without the document ever having had an opinion. A slider bound to
+// the value writes it back as text too, which is the same rule met from the
+// other side.
 struct UiRow
 {
     std::string Label;
@@ -91,6 +105,30 @@ struct UiRow
     // identity, a type it cannot express, a field it has no editor for.
     bool Editable = false;
 
+    UiRowControl Control = UiRowControl::Text;
+
+    // Range: the value as a number, and the bounds and step the control moves
+    // within. Its own member rather than a reading of Value, because a document
+    // that offers every control and shows one still binds them all -- a hidden
+    // control is not an unbound one -- and two controls writing one variable
+    // fight over it. A slider writes Number; a drop-down and a field write
+    // Value; nothing has two writers.
+    double Number = 0.0;
+    double Min = 0.0;
+    double Max = 1.0;
+    double Step = 0.1;
+
+    // Choice: the labels offered. Value is one of them -- a host that cannot
+    // map its current value to a label puts the raw value here as well, so the
+    // control can represent it and publishing it changes nothing. A drop-down
+    // whose value matches no option selects the first and reports that as a
+    // change, which is how "not offered" would otherwise become "rewritten".
+    // Initialised explicitly so an aggregate that names only the first few
+    // members -- which is how every existing row is written -- stays warning-
+    // free: the compiler waives the missing-initializer warning for members
+    // that have a default of their own.
+    std::vector<std::string> Choices = {};
+
     friend bool operator==(const UiRow&, const UiRow&) = default;
 };
 
@@ -106,9 +144,6 @@ struct UiScreenDesc
 
     std::vector<UiModelProperty> Properties;
 
-    // Action names as the document raises them, e.g. a `data-event-click`
-    // calling "pause.resume". Ids are the index into this list plus one, so a
-    // host can name them as constants beside the description that declares them.
     // Lists the document repeats over with `data-for`. Strings, deliberately:
     // a presentation list is labels -- profile names, asset paths, search
     // results -- and a row needing more structure than that is a design
@@ -121,6 +156,13 @@ struct UiScreenDesc
     // property, for the same reason.
     std::vector<std::string> RowLists;
 
+    // Action names as the document raises them, e.g. a `data-event-click`
+    // calling "pause_activate". Ids are the index into this list plus one, so a
+    // host can name them as constants beside the description that declares them.
+    //
+    // Identifiers, not dotted paths: a data expression reads `pause.resume` as
+    // the member `resume` of something called `pause`, and binding it silently
+    // does nothing. The runtime refuses a name it cannot bind, at open.
     std::vector<std::string> Actions;
 
     // A modal screen takes UI focus from the screens below it: they stop

@@ -18,6 +18,7 @@
 class PlatformerGame final : public Game
 {
 public:
+    void OnConfigure(GameConfigureContext& ctx) override;
     void OnRegisterComponents(ComponentRegistrar& registrar) override;
     void OnRegisterDataAssetTypes(DataAssetTypeRegistry& types,
                                   DataSchemaRegistry& schemas) override;
@@ -25,7 +26,6 @@ public:
                                     DataSchemaRegistry& schemas) override;
     void OnStart(GameStartupContext& ctx) override;
     void OnRegisterSystems(SystemRegisterContext& ctx) override;
-    void OnPlatformEvent(PlatformEventContext& ctx) override;
     void OnShutdown(GameShutdownContext& ctx) override;
 
 private:

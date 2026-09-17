@@ -145,7 +145,7 @@ No new `FramePhase`. The existing twelve cover it.
 | Phase | UI work |
 |---|---|
 | `PumpPlatform` (0) | The device snapshot is folded first; surfaces are then offered the event in z-order (§6). |
-| `PreSimulate` | Unchanged. `ui.navigate_up`, `ui.accept`, `ui.cancel` resolve like any other mapped action, so they honour remapping and controller profiles. No document names a gamepad button. |
+| `PreSimulate` | The shell's own actions -- `ui.back`, `ui.accept`, the four directions -- resolve like any other mapped action, so they honour remapping and controller profiles. No document names a gamepad button. The engine declares them and merges them into every profile; see `docs/gameplay/pause.md`. A pause recognised here cancels this frame's remaining fixed ticks. |
 | `Simulate` (7) | RmlUi is not involved. Fixed simulation never reads document state. |
 | `Update` (9) | Host controllers run first, draining actions and publishing model values; the engine then calls the UI runtime's update **explicitly**, applying dirty values, processing the screen stack and navigation, and laying out. An action taken this frame is visible this frame, by mechanism -- not by having registered a system later than somebody else. |
 | `ExtractRender` (10) | The runtime renders against the recording adapter and publishes an immutable `UiDrawFrame`. No GPU work. |
@@ -361,6 +361,10 @@ scripting outside the presentation layer.
 something called `pause`, and binding it silently does nothing. The runtime
 refuses a name it cannot bind, with the reason, at open. Use `pause_quit`.
 
+**One model per name per surface.** A context holds a single data model under a
+given name, so two screens on one surface declaring the same `ModelName` means
+the second simply does not open. A stack of pages names them apart.
+
 Geometry bound from a model goes through `data-style-width` and friends, not an
 interpolated `style=""`: the engine substitutes data expressions in text and in
 `data-*` attributes only.
@@ -405,6 +409,28 @@ presentation metadata rather than a gate, because a struct member binds once for
 the whole array and not once per element; a document that offers a control
 anyway still only writes the copy, and the host is still what decides whether a
 value read back becomes a change.
+
+A row also names the control a document should offer for it. `UiRow::Control`
+is `Text` (the default, and what every row was), `Range` or `Choice`, with
+`Min`/`Max`/`Step` for a range and `Choices` for a drop-down; a document
+branches with `data-if="row.editable && row.control == 'range'"`. `Editable`
+still says whether a control is offered at all; `Control` says which. The value
+stays text either way -- a slider bound to `row.value` writes its number back as
+text, which is the same rule met from the other side. Two things about the
+document engine shape how a host consumes these, and the shell's options page
+is the worked example (`docs/gameplay/pause.md`): a change event reaches the
+`data-value` controller and a `data-event-change` controller in no defined
+order, so an action should carry the value (`ev.value`) rather than have the
+host reread the model; and a `<select>` whose value matches no option selects
+its first and reports that as a change, so a host presenting a value it has no
+label for appends it to the choices.
+
+The runtime declares the row and list types once per context
+(`UiRuntime::DeclareModelTypes`), not per model: the type register is the
+context's, a second declaration is a silent refusal that leaves a member
+unbound, and an enum binds as an integer unless a string getter is registered
+for it before any member of that type -- which is why `control` compares as a
+name at all.
 
 Arbitrary value structs are still not here. Rows cover what surfaces have asked
 for; a shape rows cannot express is a design question when it turns up.
@@ -523,7 +549,11 @@ empty with the reason logged, once -- the version is stamped before the attempt
 so a broken document is not retried at frame rate.
 
 Kyusu watches its own UI root, so editing the editor's interface while the editor
-is running is a save-and-look loop rather than a restart.
+is running is a save-and-look loop rather than a restart. The watcher, reloader
+and importer assembly the editors share is `SourceReloadRoots`
+(`editor/common/src/project/`); Shoji, the previewer (`editor/shoji/`), adds the
+project's roots, the engine's and the editor's own to it and shows the open
+document rebuilt on every save, with the diagnostics above beside it.
 
 ## 13. Rendering destinations
 
@@ -534,39 +564,93 @@ Kyusu creates one surface for its window and hands it to every authored
 controller; the surface tracks the window's size each frame, because a retained
 document re-flows on a resize where a baked font atlas cannot.
 
-Today a `UiSurface` renders into the window's swapchain, in the `ApplicationUi`
-phase. That is the whole of what exists, and it is enough for a game's HUD and
-menus and for an editor dialog that covers the window.
+The engine creates one for the primary window and tracks its size and display
+scale every frame, which is what the application shell's pages open on. Tracking
+is not optional: a surface still holding the extent it was created with lays out
+for a window that is no longer there, and one whose scale was never set treats
+`dp` as `px` and renders half-size on a HiDPI display.
 
-It is **not** enough for an authored surface that has to occupy part of an
-editor's layout. Kyusu composites its viewports by rendering to an offscreen
-target and handing the result to ImGui as a texture; an authored panel sitting
-in a dock would need the same, and `UiDrawPass` has no notion of a destination
-other than the swapchain scope.
+**Where a surface's recording goes is the surface's `UiSurfaceDestination`.**
+`Window` (the default) is drawn by the engine's own `UiRenderFeature` into the
+swapchain in the `ApplicationUi` phase. `Offscreen` is published through
+`UiService::OffscreenFrame(surface)` and never drawn to the window; whichever
+host feature asked for it draws it into a target of its own with a `UiDrawPass`
+instance of its own. The engine learns only the split -- `ExtractRender` sorts
+recordings into two lists by destination. The target, its format and its
+presentation stay the host's, which is what `RenderTargetStore` and
+`ImGuiTargetPresenter` already said about editor viewports.
 
-The generalisation, when it is earned:
+The editor family's consumer is `UiSurfaceTargetRenderFeature`
+(`editor/common/src/render/`): one `Offscreen`-phase feature, N surface-to-target
+bindings, each target sized from `GetSurfaceSize` every frame so the pass's
+projection (taken from the surface) and its viewport (taken from the target)
+agree. A binding is the host's declaration, not device state: it is made while
+the composition root is wiring panels -- before any feature has been set up --
+and the target behind it is created on the first frame it is drawn and remade
+after a teardown. A panel is therefore given its binding id when it is
+constructed, which is the only way it can be given a valid one. Three facts fix
+the details:
 
-```
-UiSurface
-    ├── target: Window / Swapchain
-    └── target: RenderTarget
-```
+- the target is `B8G8R8A8_SRGB` like the swapchain: the shaders output linear and
+  rely on encode-on-write, and sampled by ImGui into an sRGB swapchain the round
+  trip is exact;
+- it is cleared opaque with the host's ground colour, because the pass blends
+  premultiplied and ImGui composites straight alpha -- a transparent target would
+  be alpha-multiplied twice at every anti-aliased edge;
+- it carries a stencil aspect when the device has one (`FormatHasStencil`), so a
+  clip mask renders the same as on the swapchain instead of falling back to the
+  rectangular clip the pass warns about.
 
-`UiDrawPass` should be given a render destination by the host or the render
-graph. It should learn nothing about docking, panels, or ImGui -- those are one
-consumer of a texture during a migration, not concepts the retained UI
-architecture should carry. The same machinery then serves a window, an offscreen
-editor target, a second viewport, or whatever comes next.
+**Placement is the surface's too.** `SetSurfacePlacement(surface, windowRect)`
+says where a surface sits in the window, in window points; the runtime maps
+pointer events through it (`MapWindowPointToSurface`, pure and tested) and
+delivers surface pixels to the document. The mapping is
+`(point - rect.origin) * surface / rect.size` and never consults display density
+-- density enters only through which surface size the host chose. Without a
+placement the surface is the window, which is what every host had before. A
+`UiSurfaceInputPolicy` says what is delivered at all: `Disabled` nothing (a host
+may still ask `ElementAt` with a point it mapped itself), `Pointer` pointer and
+wheel, `Full` keys and text as well. A drag that started inside a placement keeps
+the pointer until the button comes up, wherever it comes up, so a slider survives
+an overshoot; leaving the placement sends the document one mouse-leave.
 
-Deliberately deferred to the panel-reduction work rather than built to unblock
-the first migration. Building it first would have turned "prove Kyusu can use
-authored UI" into "extend the renderer until authored UI can reproduce Kyusu's
-current docking architecture", which is a different project and not a
-prerequisite for the first. And by the time it exists, some surfaces will turn
-out not to want a docked successor at all -- project configuration among them.
+### Inspection
 
-This is the remaining *substrate* prerequisite for replacing a visible Kyusu
-panel. Theme parity (§14) was the other, and it is done.
+An inspector asks the layer, never the document engine. `ElementAt(surface,
+point)`, `DescribeElement`, `ElementChildren`, `ElementTree` and
+`ComputedProperty` answer in plain data (`UiElementInfo`: tag, id, classes,
+attributes, the four boxes in surface pixels, parent, depth). A `UiElementRef` is
+an opaque ticket -- a slot in the owning screen's table plus a serial, backed by
+a weak observer on the element -- that stops resolving when its element is gone:
+removed by a model-driven update, replaced by a rebuild after an edit, its screen
+closed. It is never a position in the tree, because positions move when the tree
+does.
+
+### Diagnostics
+
+Everything the layer notices goes through one `UiDiagnosticLog`, which forwards
+to the logger and keeps a ring of 256 for `DrainDiagnostics()`. An entry carries
+two orthogonal facts -- `Source` (cook, runtime, document engine) and `Kind`
+(unsupported style, package unavailable, resource unresolved, model refused,
+document invalid, rebuild failed, binding missing, member missing, event
+callback missing, other) -- and attribution filled only when the layer knows it.
+The rules are worth stating because they decide what a tool can promise:
+
+- a cook note knows its `Path` and `Line`, and the screen it was surfaced for;
+- a runtime refusal knows the `Path` it refused;
+- the document engine's parse-time evaluations (`{{title}}` in body text) happen
+  while a screen is being opened or rebuilt, so they know the `Screen`;
+- its update-time evaluations (a member inside a `data-for` row) happen during a
+  surface's update, which the engine does not attribute to a document, so they
+  know the `Surface` and the `Screen` only when that surface has exactly one;
+- an undeclared event callback is reported when the event fires, not before;
+- nothing knows an element. The field does not exist rather than being empty.
+
+The bridge that owns the document engine's log wording extracts the `Variable`
+from its three binding messages, under a test pinned to the vendored version, so
+an engine upgrade fails there rather than in a tool. `DrainDiagnostics` is
+destructive and meant for one consumer per service; a host with several
+interested parties drains once and fans out.
 
 Per-panel parity is separate work and belongs to each panel. The authored
 inspector, for instance, now matches the ImGui one for anything the component

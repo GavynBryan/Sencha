@@ -617,3 +617,303 @@ TEST(UiControls, RowsResolveByNameAndAClosedScreenHasNone)
     EXPECT_TRUE(fixture.Ui().GetRows(fixture.Screen, UiRowsIdAt(0)).empty());
     EXPECT_FALSE(fixture.Ui().SetRows(fixture.Screen, UiRowsIdAt(0), {}));
 }
+
+// -- row controls ------------------------------------------------------------
+
+namespace
+{
+// A settings page's shape: rows the host publishes with the control each one
+// asks for, and a list beside them so both kinds of repeat share one screen.
+// The ids are bound rather than written: a data-for keeps its template in the
+// document, hidden, and a static id inside it would be found ahead of the
+// generated row's. A bound attribute is applied only to generated rows.
+// The action carries the value (ev.value) rather than the host reading the
+// model back, because the document engine gives no order between the two
+// listeners a change event reaches.
+constexpr std::string_view kControlMarkup = R"rml(<rml>
+<head><link type="text/rcss" href="controls.rcss"/></head>
+<body data-model="settings">
+    <div id="rows">
+        <div class="row" data-for="row : rows">
+            <span class="name">{{row.label}}</span>
+            <input data-attr-id="'slider'" type="range" class="control"
+                   data-if="row.editable && row.control == 'range'"
+                   data-attr-min="row.min" data-attr-max="row.max" data-attr-step="row.step"
+                   data-value="row.number"
+                   data-event-change="rows_activate(it_index, ev.value)"/>
+            <select data-attr-id="'picker'" class="control"
+                    data-if="row.editable && row.control == 'choice'"
+                    data-value="row.value"
+                    data-event-change="rows_activate(it_index, ev.value)">
+                <option data-for="c : row.choices" data-attr-value="c">{{c}}</option>
+            </select>
+            <span data-attr-id="'plain'" class="plain" data-if="!row.editable || row.control == 'text'">{{row.value}}</span>
+        </div>
+    </div>
+    <div id="names"><div class="nm" data-for="n : names">{{n}}</div></div>
+</body>
+</rml>)rml";
+
+constexpr std::string_view kControlStyle = R"(
+body { display: block; width: 100%; height: 100%; pointer-events: none; }
+#rows { display: block; width: 400px; }
+.row { display: block; height: 24px; }
+.name { display: inline-block; width: 100px; }
+.control { display: inline-block; width: 150px; height: 20px; pointer-events: auto; tab-index: auto; }
+.plain { display: inline-block; width: 150px; height: 20px; }
+slidertrack { display: block; height: 20px; pointer-events: auto; }
+sliderbar { display: block; width: 10px; height: 20px; pointer-events: auto; }
+sliderprogress { display: block; height: 20px; pointer-events: auto; }
+sliderarrowdec, sliderarrowinc { display: none; }
+selectvalue { display: block; height: 20px; pointer-events: auto; }
+selectarrow { display: block; width: 16px; height: 20px; pointer-events: auto; }
+selectbox { display: block; pointer-events: auto; }
+selectbox option { display: block; height: 20px; pointer-events: auto; }
+#names { display: block; }
+.nm { display: block; height: 16px; }
+)";
+
+UiPackage MakeControlPackage()
+{
+    UiPackage package;
+    package.RootDocumentName = "controls.rml";
+
+    UiPackageBlob root;
+    root.VirtualName = "controls.rml";
+    root.SourcePath = "ui/controls.rml";
+    root.Kind = UiBlobKind::Document;
+    root.Bytes = BytesOf(kControlMarkup);
+    package.Blobs.push_back(std::move(root));
+
+    UiPackageBlob sheet;
+    sheet.VirtualName = "controls.rcss";
+    sheet.SourcePath = "ui/controls.rcss";
+    sheet.Kind = UiBlobKind::StyleSheet;
+    sheet.Bytes = BytesOf(kControlStyle);
+    package.Blobs.push_back(std::move(sheet));
+    return package;
+}
+
+UiScreenDesc MakeControlDesc()
+{
+    UiScreenDesc desc;
+    desc.PackagePath = "asset://ui/controls.sui";
+    desc.ModelName = "settings";
+    desc.RowLists = { "rows" };
+    desc.Arrays = { "names" };
+    desc.Actions = { "rows_activate" };
+    return desc;
+}
+
+constexpr auto kRowsActivate = UiActionId{ 1 };
+
+UiRow RangeRow(double value)
+{
+    UiRow row{ "Volume", "", "", true };
+    row.Control = UiRowControl::Range;
+    row.Number = value;
+    row.Min = 0.0;
+    row.Max = 1.0;
+    row.Step = 0.1;
+    return row;
+}
+
+UiRow ChoiceRow(const char* value, std::vector<std::string> choices)
+{
+    UiRow row{ "Quality", value, "", true };
+    row.Control = UiRowControl::Choice;
+    row.Choices = std::move(choices);
+    return row;
+}
+
+SDL_Event KeyPress(SDL_Scancode scancode, uint32_t type)
+{
+    SDL_Event event{};
+    event.type = type;
+    event.key.scancode = scancode;
+    return event;
+}
+
+struct ControlFixture
+{
+    TempAssetRoot Root;
+    std::unique_ptr<UiTestHost> Host;
+    UiSurfaceId Surface;
+    UiScreenHandle Screen;
+
+    ControlFixture()
+    {
+        std::vector<std::byte> bytes;
+        EXPECT_TRUE(WriteSuiToBytes(MakeControlPackage(), bytes));
+        Root.WriteBytes("ui/controls.sui", bytes);
+        Host = std::make_unique<UiTestHost>(Root);
+        Surface = Host->Service().CreateSurface("test", RenderExtent{ 800, 600 });
+        Screen = Host->Service().OpenScreen(Surface, MakeControlDesc());
+        Host->Service().Update();
+    }
+    UiService& Ui() { return Host->Service(); }
+
+    // Publishes, settles the document, and throws away the change the engine
+    // raises for a control as it receives its first value -- the tests below
+    // are about what a person does afterwards.
+    void Publish(const UiRow& row)
+    {
+        (void)Ui().SetRows(Screen, UiRowsIdAt(0), std::vector<UiRow>{ row });
+        Ui().Update();
+        Ui().Update();
+        (void)Ui().DrainActions(Screen);
+    }
+
+    void Press(SDL_Scancode scancode)
+    {
+        (void)Ui().ProcessPlatformEvent(KeyPress(scancode, SDL_EVENT_KEY_DOWN));
+        (void)Ui().ProcessPlatformEvent(KeyPress(scancode, SDL_EVENT_KEY_UP));
+        Ui().Update();
+    }
+};
+} // namespace
+
+TEST(UiControls, ARangeReportsTheValueItMovedToInTheActionItself)
+{
+    // The ordering claim: whatever order the engine installed the two change
+    // listeners in, the action carries the new value, so the host never has to
+    // read the model back and hope the write got there first.
+    ControlFixture fixture;
+    ASSERT_TRUE(fixture.Screen.IsValid());
+    fixture.Publish(RangeRow(0.5));
+
+    // The track spans the control's 150px, right of a 100px label; a press
+    // near its right end jumps the bar there.
+    ClickAt(fixture.Ui(), 100.0f + 150.0f * 0.9f, 10.0f);
+    fixture.Ui().Update();
+
+    const std::vector<UiAction> actions = fixture.Ui().DrainActions(fixture.Screen);
+    ASSERT_FALSE(actions.empty()) << "moving the slider raised nothing";
+    const UiAction& action = actions.back();
+    EXPECT_EQ(action.Id, kRowsActivate);
+    ASSERT_EQ(action.Arguments.size(), 2u) << "the action carries the row and the value";
+    EXPECT_EQ(action.Arguments[0].AsInt(), 0);
+    EXPECT_EQ(action.Arguments[1].Kind(), UiValueKind::Float)
+        << "a range reports a number, not the text of one";
+    EXPECT_GT(action.Arguments[1].AsFloat(), 0.5);
+    EXPECT_LE(action.Arguments[1].AsFloat(), 1.0);
+}
+
+TEST(UiControls, AChoiceChangesFromTheKeyboardAndReportsTheLabel)
+{
+    ControlFixture fixture;
+    ASSERT_TRUE(fixture.Screen.IsValid());
+    fixture.Publish(ChoiceRow("Low", { "Low", "Medium", "High" }));
+
+    // Focus the drop-down, then step it: a focused select changes on Down
+    // without the box being open, which is what a controller drives.
+    ClickAt(fixture.Ui(), 150.0f, 10.0f);
+    fixture.Ui().Update();
+    (void)fixture.Ui().DrainActions(fixture.Screen);
+    fixture.Press(SDL_SCANCODE_DOWN);
+
+    const std::vector<UiAction> actions = fixture.Ui().DrainActions(fixture.Screen);
+    ASSERT_FALSE(actions.empty()) << "stepping the drop-down raised nothing";
+    ASSERT_EQ(actions.back().Arguments.size(), 2u);
+    EXPECT_EQ(std::string(actions.back().Arguments[1].AsString()), "Medium");
+    // The presentation copy followed too, so the control shows what it said.
+    EXPECT_EQ(fixture.Ui().GetRows(fixture.Screen, UiRowsIdAt(0)).front().Value, "Medium");
+}
+
+TEST(UiControls, AChoiceNobodyOfferedIsShownAsItselfAndChangesNothing)
+{
+    // A drop-down whose value matches no option selects the first one and
+    // reports that as a change. So a host that cannot map its current value to
+    // a label publishes the raw value as an option too, and the round trip
+    // through publication is a fixed point: the same value comes back.
+    {
+        ControlFixture fixture;
+        ASSERT_TRUE(fixture.Screen.IsValid());
+        (void)fixture.Ui().SetRows(fixture.Screen, UiRowsIdAt(0), std::vector<UiRow>{
+            ChoiceRow("165", { "Low", "Medium", "High", "165" }) });
+        fixture.Ui().Update();
+        fixture.Ui().Update();
+
+        EXPECT_EQ(fixture.Ui().GetRows(fixture.Screen, UiRowsIdAt(0)).front().Value, "165")
+            << "the value the host published was replaced by the document";
+        // Every control in the row reports once on publish, the hidden slider
+        // included -- as a number, which is how a host tells them apart. What
+        // the drop-down reported is the labels, and they must all be the one
+        // the host published.
+        std::size_t fromTheDropDown = 0;
+        for (const UiAction& action : fixture.Ui().DrainActions(fixture.Screen))
+        {
+            ASSERT_EQ(action.Arguments.size(), 2u);
+            if (action.Arguments[1].Kind() != UiValueKind::String)
+                continue;
+            ++fromTheDropDown;
+            EXPECT_EQ(std::string(action.Arguments[1].AsString()), "165")
+                << "publication reported a change to something the player never chose";
+        }
+        EXPECT_GE(fromTheDropDown, 1u);
+    }
+    // The negative control: without the raw entry, the document does rewrite
+    // it -- which is what proves the assertion above is looking at the right
+    // thing.
+    {
+        ControlFixture fixture;
+        ASSERT_TRUE(fixture.Screen.IsValid());
+        (void)fixture.Ui().SetRows(fixture.Screen, UiRowsIdAt(0), std::vector<UiRow>{
+            ChoiceRow("165", { "Low", "Medium", "High" }) });
+        fixture.Ui().Update();
+        fixture.Ui().Update();
+        EXPECT_EQ(fixture.Ui().GetRows(fixture.Screen, UiRowsIdAt(0)).front().Value, "Low");
+    }
+}
+
+TEST(UiControls, ARowGetsTheControlItsKindNames)
+{
+    // The kind is an enum, and an enum binds as an integer unless the runtime
+    // says otherwise -- in which case `row.control == 'range'` is quietly false
+    // for every row and no control ever appears. This is the assertion that
+    // catches that. One fixture at a time: each owns the same temporary asset
+    // root.
+    const auto shown = [](const std::optional<UiElementBox>& box) {
+        return box.has_value() && box->Width > 0.0f && box->Height > 0.0f;
+    };
+
+    {
+        ControlFixture range;
+        ASSERT_TRUE(range.Screen.IsValid());
+        range.Publish(RangeRow(0.5));
+        EXPECT_TRUE(shown(range.Ui().MeasureElement(range.Screen, "slider")));
+        EXPECT_FALSE(shown(range.Ui().MeasureElement(range.Screen, "picker")));
+        EXPECT_FALSE(shown(range.Ui().MeasureElement(range.Screen, "plain")));
+    }
+    {
+        ControlFixture choice;
+        ASSERT_TRUE(choice.Screen.IsValid());
+        choice.Publish(ChoiceRow("Low", { "Low", "High" }));
+        EXPECT_FALSE(shown(choice.Ui().MeasureElement(choice.Screen, "slider")));
+        EXPECT_TRUE(shown(choice.Ui().MeasureElement(choice.Screen, "picker")));
+        EXPECT_FALSE(shown(choice.Ui().MeasureElement(choice.Screen, "plain")));
+    }
+    {
+        ControlFixture text;
+        ASSERT_TRUE(text.Screen.IsValid());
+        text.Publish(UiRow{ "Name", "value", "", false });
+        EXPECT_FALSE(shown(text.Ui().MeasureElement(text.Screen, "slider")));
+        EXPECT_FALSE(shown(text.Ui().MeasureElement(text.Screen, "picker")));
+        EXPECT_TRUE(shown(text.Ui().MeasureElement(text.Screen, "plain")));
+    }
+}
+
+TEST(UiControls, ListsAndRowsBindOnTheSameScreen)
+{
+    // The row's choices are a list of strings, and so is a plain list. Both
+    // want the same element type declared once; a screen that has both must
+    // not find the second declaration refused.
+    ControlFixture fixture;
+    ASSERT_TRUE(fixture.Screen.IsValid());
+    EXPECT_TRUE(fixture.Ui().SetArray(fixture.Screen, UiArrayIdAt(0),
+                                      std::vector<std::string>{ "a", "b", "c" }));
+    fixture.Publish(ChoiceRow("Low", { "Low", "High" }));
+    fixture.Ui().Update();
+    EXPECT_EQ(fixture.Ui().ArraySize(fixture.Screen, UiArrayIdAt(0)), 3u);
+    EXPECT_EQ(fixture.Ui().GetRows(fixture.Screen, UiRowsIdAt(0)).front().Value, "Low");
+}
