@@ -8,6 +8,7 @@ set(SENCHA_GAME_MODULE_SOURCES
     src/ArenaComponents.cpp
     src/ArenaGame.cpp
     src/ArenaRuntimeComponents.cpp
+    src/ArenaScore.cpp
     src/ArenaSessionPolicy.cpp
     src/ArenaSettingsData.cpp
     src/ArenaSteeringSystem.cpp

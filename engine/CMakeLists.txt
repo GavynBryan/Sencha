@@ -26,6 +26,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/effects/ActiveEffect.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/gameplay_tags/GameplayTagContainer.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/input/InputActionSource.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/logic/VerbRelay.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/JumpState.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/MovementIntent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/CharacterFacts.h"
@@ -320,6 +321,11 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     # by value and reaches the service through an inline Engine accessor, so
     # these decide layout a module compiles against.
     "${SENCHA_ENGINE_INCLUDE_DIR}/ui/*.h"
+    # The authored vocabulary: a game declares verbs through VerbRegistry and
+    # binds implementations through VerbDispatcher, holding tokens and
+    # invocation values by value.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/authored/*.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/logic/*.h"
 )
 list(APPEND SENCHA_ABI_FINGERPRINT_HEADERS ${SENCHA_ENGINE_COMPONENT_HEADERS})
 list(REMOVE_DUPLICATES SENCHA_ABI_FINGERPRINT_HEADERS)

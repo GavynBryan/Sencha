@@ -8,6 +8,7 @@
 #include "ui/OutlinePanel.h"
 #include "ui/PreviewPanel.h"
 #include "ui/ShojiStatusBar.h"
+#include "ui/VocabularyPanel.h"
 
 #include "project/ProcessLaunch.h"
 #include "project/ProjectContentMount.h"
@@ -21,6 +22,9 @@
 #include <app/GameContexts.h>
 #include <app/RuntimeContent.h>
 #include <assets/runtime/RuntimeAssets.h>
+#include <authored/VerbBindingData.h>
+#include <core/assets/AssetLease.h>
+#include <core/assets/AssetRegistry.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/Renderer.h>
 #include <platform/SdlWindow.h>
@@ -80,6 +84,7 @@ ShojiServices::ShojiServices(Engine& engine,
     , InitialDocument(std::move(initialDocument))
 {
     LoadProject();
+    LoadVocabulary();
     MountLibraries();
     BuildSourceWatch();
     BuildUi();
@@ -103,6 +108,32 @@ ShojiServices::~ShojiServices()
         Target = nullptr;
     }
     Watch.reset();
+    // The World that holds the module's declarations goes before the module.
+    Vocabulary.reset();
+    if (GameModule.IsValid())
+        ModuleLoader.Unload(GameModule);
+}
+
+// The vocabulary a project's documents author against. The module is loaded
+// for one hook and never started: no components, no systems, no engine state,
+// and no dispatcher behind the names it declares.
+void ShojiServices::LoadVocabulary()
+{
+    Vocabulary = std::make_unique<VocabularyCatalog>();
+    if (!Project || Project->GameModulePath.empty())
+        return;
+
+    std::string error;
+    GameModule = ModuleLoader.Load(Project->GameModulePath, &error);
+    if (!GameModule.IsValid())
+    {
+        std::fprintf(stderr, "[shoji] failed to load game module '%s': %s\n",
+                     Project->GameModulePath.c_str(), error.c_str());
+        return;
+    }
+    Vocabulary->InstallModuleVocabulary(*GameModule.Instance);
+    for (const std::string& diagnostic : Vocabulary->Errors())
+        std::fprintf(stderr, "[shoji] vocabulary: %s\n", diagnostic.c_str());
 }
 
 void ShojiServices::LoadProject()
@@ -238,6 +269,32 @@ void ShojiServices::BuildUi()
             .Reset = [this] { ResetModel(); },
         }));
     UiFeature->AddPanel(std::make_unique<ActionLogPanel>(*Session));
+    UiFeature->AddPanel(std::make_unique<VocabularyPanel>(*Vocabulary, [this] {
+        // Every structured-data asset in the mounted stack whose compiled
+        // value is a binding set, inspected against the metadata catalog. The
+        // path order is sorted so the panel reads the same way twice.
+        std::vector<VocabularyPanel::BindingAsset> found;
+        RuntimeAssets& stack = EnginePtr->Content().Assets();
+        std::vector<std::string> paths;
+        for (const auto& [path, record] : stack.Registry.Records())
+        {
+            if (record.Type == AssetType::Data)
+                paths.push_back(path);
+        }
+        std::sort(paths.begin(), paths.end());
+        for (const std::string& path : paths)
+        {
+            const AssetLease lease = stack.Assets.LoadLease(path, AssetType::Data);
+            if (!lease.IsValid())
+                continue;
+            const auto* library = stack.DataAssets.TryGet<VerbBindingLibrary>(
+                DataAssetHandle::FromToken(lease.OpaqueToken()), kVerbBindingsTypeName);
+            if (library == nullptr)
+                continue;
+            found.push_back({ path, Vocabulary->Inspect(*library) });
+        }
+        return found;
+    }));
     UiFeature->AddPanel(std::make_unique<DiagnosticsPanel>(
         *Session, View, [this](const std::string& path) {
             if (const DocumentEntry* entry = Library.Find("asset://" + path))

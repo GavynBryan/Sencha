@@ -1,0 +1,16 @@
+{
+    "type": "authored.bindings",
+    "version": 1,
+    "data": {
+        "bindings": [
+            {
+                "key": "shell.resume",
+                "verb": "runtime.resume"
+            },
+            {
+                "key": "shell.quit",
+                "verb": "application.quit"
+            }
+        ]
+    }
+}

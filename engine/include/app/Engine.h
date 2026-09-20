@@ -11,6 +11,8 @@
 #include <app/EngineSchedule.h>
 #include <app/LoadedLevel.h>
 #include <app/RuntimeContent.h>
+#include <authored/VerbBindingSet.h>
+#include <authored/VerbDispatcher.h>
 #ifdef SENCHA_ENABLE_UI
 #include <ui/UiSurface.h>
 #endif
@@ -69,6 +71,8 @@ struct PlatformServices;
 class RuntimeWorld;
 class NetPrefabSpawner;
 class SceneSpawnService;
+class RuntimeResumeOperation;
+class ApplicationQuitOperation;
 
 // Owns the runtime services, frame loop, unified entity world, schedule, and
 // timing state. There is exactly one runtime entity universe per Engine run.
@@ -411,6 +415,23 @@ public:
     // at startup; the PumpPlatform phase drives it. See PlatformEventRouter.
     [[nodiscard]] PlatformEventRouter& PlatformEvents() { return PlatformEventRouterState; }
 
+    // Where a game binds the implementations of the verbs it declared in
+    // OnRegisterVocabulary, and where every authored producer in this process
+    // sends its requests.
+    //
+    // Null outside the runtime World's lifetime, which is the same window as
+    // Content() and Ui(). A game reaches it from OnStart or OnRegisterSystems,
+    // once its own owners exist.
+    [[nodiscard]] VerbDispatcher* TryVerbs() { return VerbDispatcherState.get(); }
+    [[nodiscard]] const VerbDispatcher* TryVerbs() const { return VerbDispatcherState.get(); }
+
+    // The bindings the application shell's entries address, compiled against
+    // the runtime catalog. The engine's own records are instantiated here at
+    // startup; a game appends its own from OnStart and gives a menu entry one
+    // of their keys, which is how an authored entry reaches a game verb
+    // without the engine relating the two.
+    [[nodiscard]] VerbBindingSet& ShellBindings() { return ShellBindingSet; }
+
 #ifdef SENCHA_ENABLE_UI
     // The authored UI layer: surfaces, screens, presentation models, semantic
     // actions. Valid from just before OnStart to just after OnShutdown -- it
@@ -570,6 +591,25 @@ private:
     // Constructed with the world; torn down before it (they borrow the world).
     std::unique_ptr<SceneSpawnService> SpawnServiceState;
     std::unique_ptr<NetPrefabSpawner> NetPrefabState;
+    // The authored half. The catalog is a resource of the world above; this is
+    // the executable side of it, composed by the host and given back before the
+    // owners its operations hold -- the shell and this engine -- go away. Run
+    // states that order explicitly rather than relying on these declarations.
+    // Loads the engine's shell binding asset and compiles it against the
+    // runtime catalog. False when the asset is absent or the stock records did
+    // not resolve, which is the same condition that leaves the shell without a
+    // document to present.
+    [[nodiscard]] bool InstantiateShellBindings();
+
+    std::unique_ptr<VerbDispatcher> VerbDispatcherState;
+    // The stock shell's bindings, compiled against the runtime catalog. Derived
+    // state: the authored records stay in the asset the lease holds.
+    VerbBindingSet ShellBindingSet;
+    DataAssetCacheHandle ShellBindingLease;
+    std::unique_ptr<RuntimeResumeOperation> ResumeOperation;
+    std::unique_ptr<ApplicationQuitOperation> QuitOperation;
+    VerbBindingToken ResumeBinding;
+    VerbBindingToken QuitBinding;
     // Declared after the services it connects and the world it publishes into,
     // so destruction alone would give them back in the right order. Run states
     // that order explicitly anyway: OnShutdown, Disconnect, then reset.

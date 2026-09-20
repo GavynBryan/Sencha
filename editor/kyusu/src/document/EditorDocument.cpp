@@ -6,7 +6,9 @@
 
 #include "scene_source/Json5Convert.h"
 
+#include <app/EngineVerbs.h>
 #include <assets/runtime/RuntimeAssets.h>
+#include <authored/WorldVocabulary.h>
 #include <core/serialization/JsonArchive.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
@@ -164,7 +166,16 @@ EditorDocument::EditorDocument(LoggingProvider& logging)
     // back what it wrote. This installs the engine's own vocabulary; a loaded
     // game module adds its names to the same registries.
     RegisterMovement(world);
+    // The authored vocabulary, declarations only. A document offers and
+    // validates these names without a dispatcher behind them: nothing here can
+    // resume or quit anything, whatever a loaded module declares.
+    (void)DeclareEngineVerbs(InstallVerbRegistry(world));
     InstallEditorModuleVocabulary(world);
+    if (const VerbRegistry* verbs = FindVerbRegistry(world))
+    {
+        for (const std::string& error : verbs->InstallationErrors())
+            Logging.GetLogger<EditorDocument>().Error("vocabulary: {}", error);
+    }
 }
 
 void EditorDocument::SetAssetEnvironment(RuntimeAssets& assets)

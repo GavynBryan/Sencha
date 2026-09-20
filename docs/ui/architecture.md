@@ -441,6 +441,17 @@ right for a host that owns them all and wrong the moment a second controller
 exists: whichever ran first would swallow the other's actions, and the other
 would simply never hear what its document asked for.
 
+**Actions can reach authored verbs.** `UiVerbBindings` (`engine/include/ui/`)
+turns one screen's drained actions into invocations of compiled bindings from
+an `authored.bindings` asset: a mapping names a declared action, a binding key,
+and how each presentation argument becomes one of the binding's declared inputs
+(kind in, kind out, both explicit -- an `Id` payload is never inferred into an
+entity). It compiles the mapping against the exact opening of the screen, so a
+reopen or a reordered declaration recompiles the screen-local ids; it consumes
+a batch the host already drained, never draining itself. The stock shell's
+entries take the other route -- a binding key per entry, resolved by
+`PauseMenu` -- see `docs/gameplay/pause.md`.
+
 ### The engine drives it
 
 `Engine::Ui()` from `Game::OnStart` onward. The engine calls the runtime's update

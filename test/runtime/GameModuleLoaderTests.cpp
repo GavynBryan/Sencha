@@ -12,6 +12,7 @@
 #include <app/Game.h>
 #include <app/GameModuleLoader.h>
 #include <attributes/AttributeRegistry.h>
+#include <authored/WorldVocabulary.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <movement/LocomotionMode.h>
@@ -241,6 +242,28 @@ TEST(GameModuleLoader, ModuleDeclaresItsGameplayVocabularyIntoAnyWorld)
         const std::size_t tags = world.TryGetResource<GameplayTagRegistry>()->Size();
         m.Instance->OnRegisterVocabulary(world);
         EXPECT_EQ(world.TryGetResource<GameplayTagRegistry>()->Size(), tags);
+    }
+
+    // The authored half of the same hook: a World with a catalog gets the
+    // module's verb, and one without is left alone rather than given one.
+    {
+        World bare;
+        RegisterMovement(bare);
+        m.Instance->OnRegisterVocabulary(bare);
+        EXPECT_EQ(FindVerbRegistry(bare), nullptr);
+
+        World world;
+        RegisterMovement(world);
+        VerbRegistry& verbs = InstallVerbRegistry(world);
+        m.Instance->OnRegisterVocabulary(world);
+        const VerbId fire = verbs.Find("spike.grapple.fire");
+        ASSERT_TRUE(fire.IsValid());
+        EXPECT_EQ(verbs.Provider(fire), "spike");
+        EXPECT_TRUE(verbs.InstallationErrors().empty());
+        const VerbContractRevision revision = verbs.Revision(fire);
+        m.Instance->OnRegisterVocabulary(world);
+        EXPECT_EQ(verbs.Find("spike.grapple.fire"), fire);
+        EXPECT_EQ(verbs.Revision(fire), revision);
     }
 
     loader.Unload(m);

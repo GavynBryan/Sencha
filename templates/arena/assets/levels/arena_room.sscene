@@ -21,6 +21,25 @@
       },
     },
     {
+      id: "5a1e0c0ffee00001",
+      components: {
+        Transform: {
+          local: {
+            position: [12, 1, 4],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        name: {
+          value: "Score Relay",
+        },
+        verb_relay: {
+          bindings: "asset://data/arena.bindings.sdata",
+          binding: "d64d7d85d7c0fb9d",
+        },
+      },
+    },
+    {
       id: "2feaeaa63f327931",
       components: {
         Transform: {

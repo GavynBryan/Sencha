@@ -59,7 +59,8 @@ public:
     virtual void OnShutdown(GameShutdownContext&) {}
 
     // The gameplay vocabulary this game defines: its gameplay tags, attributes,
-    // abilities, and locomotion modes, declared into one World's registries.
+    // abilities, locomotion modes, and authored verbs, declared into one
+    // World's registries.
     //
     // These are registration-order runtime values, so they cannot travel in a
     // sealed component schema the way a component type does -- each World
@@ -69,11 +70,20 @@ public:
     // picker, and cannot tell an author that a tag it read back was one this
     // game never declared.
     //
-    // Called by whoever owns the World -- the game's own OnStart for the runtime
-    // world, once the engine vocabulary is installed, and the editor for each
-    // authoring document it creates. Registration only: no entities, no
-    // components, no engine state. Registries are idempotent, so declaring the
-    // same name twice is the same as declaring it once.
+    // Called by whoever owns the World: Engine::Run for the runtime world,
+    // once, after the engine's own vocabulary is installed and before any
+    // content can resolve a name, and the editor for each authoring document
+    // it creates. A game does not call this itself. Registration only: no
+    // entities, no components, no engine state, no GetEngine. Registries are
+    // idempotent, so declaring the same name twice is the same as declaring it
+    // once.
+    //
+    // Verbs are declared here and bound elsewhere. A verb's declaration goes
+    // through a VerbRegistrationScope on the World's catalog; its
+    // implementation is bound from OnStart or OnRegisterSystems through
+    // Engine::TryVerbs, once the object that implements it exists. The host
+    // reads the catalog's installation errors after this returns, so a refused
+    // declaration stops startup even if this ignores the scope's result.
     //
     // Lifetime: a registration can carry module code -- a locomotion mode's
     // enter and exit closures do -- and none of these registries can retract

@@ -1,11 +1,20 @@
 #include "ArenaGame.h"
 
+#include "ArenaScore.h"
 #include "ArenaSteeringSystem.h"
 #include "PawnCameraSystem.h"
 #include "PawnSpawn.h"
 #include "samples/turret/TurretSample.h"
 
 #include <abilities/AbilityKit.h>
+#include <app/PauseMenu.h>
+#include <authored/WorldVocabulary.h>
+#include <core/assets/AssetLease.h>
+#include <core/console/ConsoleRegistry.h>
+#include <core/console/ConsoleService.h>
+#include <ecs/World.h>
+#include <logic/VerbRelay.h>
+#include <logic/VerbRelaySystem.h>
 #include <app/Engine.h>
 #include <app/GameContexts.h>
 #include <app/GameModule.h>
@@ -24,6 +33,9 @@
 
 #include <cassert>
 #include <cstdio>
+#include <span>
+#include <string>
+#include <vector>
 
 ArenaSessionPolicy& ArenaGame::Session()
 {
@@ -82,6 +94,7 @@ void ArenaGame::OnStart(GameStartupContext&)
         };
 
     InstallTurretSample(engine, Session());
+    InstallScore(engine);
 
     // A dedicated host has nobody at a keyboard, so it is told how to serve
     // rather than how to play.
@@ -123,6 +136,11 @@ void ArenaGame::OnRegisterSystems(SystemRegisterContext& ctx)
     OrderNetInputAround<ArenaSteeringSystem>(ctx.Schedule);
     OrderMovementAfterInput<ArenaSteeringSystem>(ctx.Schedule);
     RegisterTurretSampleSystems(GetEngine(), ctx.Schedule);
+    if (VerbDispatcher* verbs = GetEngine().TryVerbs())
+    {
+        RegisterArenaScoreSystem(ctx.Schedule, Score, *verbs,
+                                 GetEngine().Logging().GetLogger<ArenaGame>());
+    }
 
     // Waits on content with no session, and on the authority with one: either
     // way its first act each frame is to ask where this player's pawn comes
@@ -150,6 +168,10 @@ void ArenaGame::OnRegisterSystems(SystemRegisterContext& ctx)
 void ArenaGame::OnShutdown(GameShutdownContext&)
 {
     GetEngine().SetPointerCaptured(false);
+    // The authored half first: the token while the dispatcher exists, the
+    // lease while the cache does.
+    ScoreBinding.Reset();
+    ShellBindingsAsset.Reset();
     // The lifecycle's answers go first, so nothing asks a closed book. The
     // closed book itself stays put: the level's final detaches still reach the
     // system that points at it, and a closed book touches nothing.
@@ -160,6 +182,127 @@ void ArenaGame::OnShutdown(GameShutdownContext&)
     if (SessionState.has_value())
         SessionState->Close();
     SessionState.reset();
+}
+
+// The names this game adds to a World's catalog. Registration only: the
+// runtime host calls this before content resolves a name, and the editor calls
+// it for every document, and neither gets an implementation from it.
+void ArenaGame::OnRegisterVocabulary(World& world)
+{
+    DeclareArenaVerbs(world);
+}
+
+namespace
+{
+constexpr std::string_view kArenaBindingsPath = "asset://data/arena.bindings.sdata";
+constexpr std::string_view kShellAwardBinding = "arena.award_red";
+
+// The relay placed in the level, or none. Costs the number of relays, which is
+// one; a game with many would address them by persistent identity.
+EntityId FindScoreRelay(const World& world)
+{
+    EntityId found;
+    if (!world.IsRegistered<VerbRelay>())
+        return found;
+    world.ForEachComponent<VerbRelay>([&found](EntityId entity, const VerbRelay&) {
+        if (!found.IsValid())
+            found = entity;
+    });
+    return found;
+}
+}
+
+// Binds the score operation, gives the shell an entry that awards through the
+// game's own binding asset, and puts the relay's native activation on the
+// console. Two producers, one verb, one schema; nothing here relates a menu row
+// or a command to the operation by name.
+void ArenaGame::InstallScore(Engine& engine)
+{
+    VerbDispatcher* verbs = engine.TryVerbs();
+    if (verbs == nullptr)
+        return;
+    Logger& log = engine.Logging().GetLogger<ArenaGame>();
+    ScoreBinding = BindArenaScore(*verbs, Score);
+
+    // The game's bindings beside the engine's, in the set the shell's entries
+    // address. Resolved now, against the runtime catalog: every argument here
+    // is a constant.
+    AssetLease lease = Session().Assets().Assets.LoadLease(kArenaBindingsPath, AssetType::Data);
+    if (lease.IsValid())
+    {
+        ShellBindingsAsset = DataAssetCacheHandle(
+            &Session().Assets().DataAssets, DataAssetHandle::FromToken(lease.OpaqueToken()));
+        const auto* library = Session().Assets().DataAssets.TryGet<VerbBindingLibrary>(
+            ShellBindingsAsset.GetToken(), kVerbBindingsTypeName);
+        std::vector<std::string> errors;
+        if (library != nullptr)
+        {
+            engine.ShellBindings().Append(
+                *library, MakeVerbBindingEnvironment(engine.World().Entities()), errors);
+        }
+        for (const std::string& error : errors)
+            log.Error("ArenaGame: {}", error);
+    }
+    else
+    {
+        log.Warn("ArenaGame: '{}' did not load; the menu offers no award", kArenaBindingsPath);
+    }
+
+    if (PauseMenu* menu = engine.TryPauseMenu();
+        menu != nullptr && engine.ShellBindings().Find(kShellAwardBinding) != nullptr)
+    {
+        const PauseCommandId award = menu->Model().Add("Award red a point", {});
+        (void)menu->Model().SetBinding(award, MakeVerbBindingKey(kShellAwardBinding));
+        (void)menu->Model().MoveBefore(award, kPauseExit);
+    }
+
+    engine.Console().Registry().RegisterCommand({
+        .Name = "award",
+        .Owner = "game",
+        .Usage = "award",
+        .Help = "Activate the level's score relay, which awards through its authored binding.",
+        .RequiredPhase = ConsolePhase::GameLoaded,
+        .Callback = [&engine](ConsoleExecutionContext&, std::span<const std::string>) {
+            ConsoleResult result;
+            VerbRelaySystem* relay = engine.Schedule().Get<VerbRelaySystem>();
+            const EntityId entity = FindScoreRelay(engine.World().Entities());
+            if (relay == nullptr || !entity.IsValid())
+            {
+                result.Status = ConsoleStatus::InvalidArguments;
+                result.Error("no score relay in the loaded content");
+                return result;
+            }
+            // The relay names itself as the source, which is the typed entity
+            // input the binding maps.
+            const VerbValue self = VerbValue::Entity(entity);
+            const VerbAdmission admission = relay->Activate(entity, { &self, 1 });
+            if (admission != VerbAdmission::Accepted)
+            {
+                result.Status = ConsoleStatus::InvalidArguments;
+                result.Error(std::string("relay refused: ") + VerbAdmissionName(admission));
+                return result;
+            }
+            result.Info("relay activated");
+            return result;
+        },
+    });
+
+    engine.Console().Registry().RegisterCommand({
+        .Name = "score",
+        .Owner = "game",
+        .Usage = "score",
+        .Help = "Print the arena scoreboard.",
+        .RequiredPhase = ConsolePhase::GameLoaded,
+        .Callback = [&engine](ConsoleExecutionContext&, std::span<const std::string>) {
+            ConsoleResult result;
+            const ArenaScoreboard* board =
+                engine.World().Entities().TryGetResource<ArenaScoreboard>();
+            result.Info(board == nullptr ? std::string("red 0, blue 0")
+                                         : "red " + std::to_string(board->Red) + ", blue "
+                                               + std::to_string(board->Blue));
+            return result;
+        },
+    });
 }
 
 // This game's data vocabulary, registered into whichever registries are asking:

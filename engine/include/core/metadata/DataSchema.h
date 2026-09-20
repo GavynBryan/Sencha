@@ -25,6 +25,17 @@ enum class DataFieldKind : uint8_t
     AssetRef,
     DataAssetRef,
     GameplayTag,
+    // An entity the content names by its persistent identity, spelled as the
+    // sixteen lowercase hex digits PersistentEntityIdToString produces. A
+    // JSON number cannot hold sixty-four bits, and a runtime entity index is
+    // not an identity anything may author, so the text form is the only one
+    // this kind accepts. Resolving it to a live generational handle needs a
+    // World and therefore belongs to whoever binds the data, not here.
+    //
+    // Appended, like every kind before it: the value is not persisted, but
+    // renumbering would still silently repoint every schema built against an
+    // older header in a module that was not rebuilt.
+    Entity,
 };
 
 using DataDefaultValue = std::variant<std::monostate, bool, int64_t, double, std::string>;

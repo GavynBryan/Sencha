@@ -1,0 +1,26 @@
+{
+    "type": "authored.bindings",
+    "version": 1,
+    "data": {
+        "bindings": [
+            {
+                "key": "arena.award_red",
+                "verb": "arena.award_score",
+                "arguments": {
+                    "Side": { "const": "red" },
+                    "Amount": { "const": 1 }
+                }
+            },
+            {
+                "key": "arena.relay_award",
+                "verb": "arena.award_score",
+                "inputs": ["source"],
+                "arguments": {
+                    "Side": { "const": "blue" },
+                    "Amount": { "const": 5 },
+                    "Source": { "input": "source" }
+                }
+            }
+        ]
+    }
+}

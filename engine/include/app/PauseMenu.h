@@ -3,6 +3,8 @@
 #include <app/BackRouter.h>
 #include <app/PauseMenuModel.h>
 #include <app/PauseState.h>
+#include <authored/VerbBindingSet.h>
+#include <authored/VerbDispatcher.h>
 #include <ui/UiScreenDesc.h>
 #include <ui/UiScreenHandle.h>
 #include <ui/UiSurface.h>
@@ -99,6 +101,22 @@ public:
     // that renames or reorders an entry while the menu is open calls this.
     void MarkModelChanged() { ModelDirty = true; }
 
+    // Where an entry's authored binding is resolved and what invokes it.
+    //
+    // Both null in a host that composed no vocabulary -- a tool, a test, a
+    // dedicated server -- which is what makes an entry with an authored binding
+    // report itself unavailable rather than reach through a null owner. Set
+    // once during startup composition, before the menu can be opened.
+    void SetVerbBindings(VerbDispatcher* dispatcher, const VerbBindingSet* bindings)
+    {
+        Verbs = dispatcher;
+        VerbBindings = bindings;
+    }
+
+    // What the last drained activation resolved to, for a headless test and for
+    // a diagnostic surface. Absent when the entry ran a native handler.
+    [[nodiscard]] VerbAdmission LastAuthoredAdmission() const { return LastAdmission; }
+
     // Per frame, inside the host's frame update: act on what the documents
     // asked for, resolve any transition it caused, then reconcile what is open
     // against the state and publish. The engine updates the UI immediately
@@ -137,6 +155,19 @@ private:
     PauseMenuModel Model_;
 
     std::vector<OpenPage> Pages;
+
+    // The row-to-command relation the document is currently repeating over,
+    // captured when the labels were published.
+    //
+    // A click is drained against what the player was looking at, not against
+    // what the model says now: a game that reordered the menu between the
+    // publish and the drain would otherwise make a queued press mean whichever
+    // command moved into that row.
+    std::vector<PauseCommandId> PublishedCommands;
+
+    VerbDispatcher* Verbs = nullptr;
+    const VerbBindingSet* VerbBindings = nullptr;
+    VerbAdmission LastAdmission = VerbAdmission::Unavailable;
 
     // Held for the shell's lifetime: with nothing open, Back opens the menu.
     BackConsumerLease Fallback;

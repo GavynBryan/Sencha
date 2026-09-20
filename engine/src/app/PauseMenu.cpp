@@ -1,5 +1,6 @@
 #include <app/PauseMenu.h>
 
+#include <authored/VerbBinding.h>
 #include <ui/UiAction.h>
 #include <ui/UiService.h>
 
@@ -175,6 +176,16 @@ void PauseMenu::PublishTop()
         return;
     (void)Ui.SetValue(screen, kTitle, UiValue(Model_.Title()));
     (void)Ui.SetArray(screen, kEntries, Model_.Labels());
+
+    // Captured with the labels, because they are two halves of one published
+    // state: the document repeats over these rows and reports positions in
+    // them, and a position only means a command while it is the ordering the
+    // player is looking at.
+    PublishedCommands.clear();
+    PublishedCommands.reserve(Model_.Entries().size());
+    for (const PauseMenuEntry& entry : Model_.Entries())
+        PublishedCommands.push_back(entry.Command);
+
     ModelDirty = false;
 }
 
@@ -182,6 +193,25 @@ void PauseMenu::Dispatch(PauseCommandId command)
 {
     if (!command.IsValid() || !Model_.IsEnabled(command))
         return;
+
+    // One behaviour per entry, decided by the model rather than here: an entry
+    // with an authored binding has no native handler, and the reverse. Which
+    // operation the binding names, and whether it is available, is the
+    // dispatcher's answer -- this layer never learns either.
+    if (const VerbBindingKey binding = Model_.Binding(command); binding.IsValid())
+    {
+        LastAdmission = VerbAdmission::Unavailable;
+        if (Verbs == nullptr || VerbBindings == nullptr)
+            return;
+        const CompiledVerbBinding* compiled = VerbBindings->Find(binding);
+        if (compiled == nullptr)
+        {
+            LastAdmission = VerbAdmission::UnresolvedBinding;
+            return;
+        }
+        LastAdmission = Verbs->Invoke(*compiled, {}).Status;
+        return;
+    }
 
     if (const PauseCommandHandler* handler = Model_.Handler(command); handler != nullptr)
     {
@@ -206,7 +236,8 @@ void PauseMenu::Update(RuntimeFrameLoop& runtime, InputContextSet& contexts)
 
             if (Pages.back().ModelName == kRootModel)
             {
-                Dispatch(Model_.CommandAt(index));
+                Dispatch(index < PublishedCommands.size() ? PublishedCommands[index]
+                                                          : PauseCommandId{});
             }
             else if (Pages.back().Activate)
             {

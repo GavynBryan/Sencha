@@ -3,7 +3,13 @@
 #include <render/feature/UiRenderFeature.h>
 #endif
 #include <app/OptionsPage.h>
+#include <app/EngineVerbs.h>
 #include <app/PauseMenu.h>
+#include <app/ShellVerbs.h>
+#include <authored/VerbBindingData.h>
+#include <authored/WorldVocabulary.h>
+#include <logic/VerbRelaySystem.h>
+#include <core/assets/AssetLease.h>
 #include <ui/UiService.h>
 #endif
 #include <app/Engine.h>
@@ -483,6 +489,47 @@ const LoadedLevel& Engine::Level() const
     return *LevelState;
 }
 
+bool Engine::InstantiateShellBindings()
+{
+    if (!ContentState.has_value() || RuntimeWorldState == nullptr
+        || VerbDispatcherState == nullptr)
+    {
+        return false;
+    }
+
+    Logger& log = LoggingState.GetLogger<Engine>();
+    RuntimeAssets& assets = ContentState->Assets();
+    const AssetLease lease = assets.Assets.LoadLease(kShellBindingsAsset, AssetType::Data);
+    if (!lease.IsValid())
+    {
+        log.Warn("vocabulary: '{}' did not load, so the shell keeps its native handlers",
+                 kShellBindingsAsset);
+        return false;
+    }
+
+    ShellBindingLease = DataAssetCacheHandle(&assets.DataAssets,
+                                             DataAssetHandle::FromToken(lease.OpaqueToken()));
+    const auto* library = assets.DataAssets.TryGet<VerbBindingLibrary>(
+        ShellBindingLease.GetToken(), kVerbBindingsTypeName);
+    if (library == nullptr)
+    {
+        log.Error("vocabulary: '{}' is not an authored binding set", kShellBindingsAsset);
+        ShellBindingLease.Reset();
+        return false;
+    }
+
+    std::vector<std::string> errors;
+    ShellBindingSet.Instantiate(
+        *library, MakeVerbBindingEnvironment(RuntimeWorldState->Entities()), errors);
+    for (const std::string& error : errors)
+        log.Error("vocabulary: {}", error);
+
+    // Both, or neither: a half-bound stock menu is a menu with a row that
+    // silently does nothing.
+    return ShellBindingSet.Find(kShellResumeBinding) != nullptr
+        && ShellBindingSet.Find(kShellQuitBinding) != nullptr;
+}
+
 void Engine::SyncShellSurface()
 {
 #ifdef SENCHA_ENABLE_UI
@@ -903,6 +950,43 @@ int Engine::Run(Game& game)
         *RuntimeWorldState, RuntimeComponentSchemaState, SceneSerializerRegistry,
         LoggingState);
 
+    // The authored vocabulary, before anything can resolve a name against it.
+    //
+    // Declaring is not implementing. The catalog exists from here on, so
+    // content mounted below and a game's own startup can name these operations
+    // and be told when they do not exist; what each one does is bound further
+    // down, once the owners -- the shell, the exit path, the game's own systems
+    // -- are there to hold.
+    {
+        // Qualified: Engine::World() is the runtime world accessor, and names
+        // the member before it names the type in here.
+        ::World& entities = RuntimeWorldState->Entities();
+        VerbRegistry& verbs = InstallVerbRegistry(entities);
+        (void)DeclareEngineVerbs(verbs);
+
+        // Registration only: no entities, no engine state, nothing that starts
+        // a service. The hook returns void, so what it got wrong is read off
+        // the catalog afterwards rather than trusted to the module -- a process
+        // whose content names a verb that was refused must not reach a frame.
+        game.OnRegisterVocabulary(entities);
+
+        if (!verbs.InstallationErrors().empty())
+        {
+            for (const std::string& error : verbs.InstallationErrors())
+                std::fprintf(stderr, "Vocabulary installation failed: %s\n", error.c_str());
+            NetPrefabState.reset();
+            SpawnServiceState.reset();
+            RuntimeWorldState.reset();
+            RetractGameComponents();
+            RuntimeComponentSchemaState = WorldComponentSchema{};
+            return 1;
+        }
+
+        // One dispatcher for this catalog, composed rather than discovered. A
+        // game reaches it through Engine::TryVerbs to bind what it declared.
+        VerbDispatcherState = std::make_unique<VerbDispatcher>(verbs);
+    }
+
     // The content stack, before the game exists as far as content is concerned:
     // OnStart sees a mounted, published stack rather than assembling one. The
     // game's data-asset subtypes register first, because the scan classifies
@@ -970,9 +1054,6 @@ int Engine::Run(Game& game)
         // it runs is neutral. A host that cannot terminate passes nothing here
         // and the entry is simply absent rather than present and inert.
         menu.InstallDefaults("Exit to Desktop");
-        (void)menu.SetHandler(kPauseResume, [](PauseMenuContext& ctx) {
-            ctx.Menu.RequestResume();
-        });
         // The engine's own options page: the settings this host can actually
         // apply, which is whichever of them registered a cvar above.
         OptionsState.InstallDefaults(Console().Registry());
@@ -1002,9 +1083,41 @@ int Engine::Run(Game& game)
             };
             ctx.Menu.Push(std::move(page));
         });
-        (void)menu.SetHandler(kPauseExit, [this](PauseMenuContext&) {
-            RequestExit(ExitSource::Menu);
-        });
+        // The stock entries' behaviour, from binding data.
+        //
+        // What Resume and Quit do is one authored record each, in the engine's
+        // own shell.bindings asset, resolved against this World's catalog like
+        // any other content. There is no switch here relating a command id to
+        // an operation: the model holds the key, the binding names the verb,
+        // and this composition knows neither.
+        //
+        // The operations are bound now because this is where their owners exist
+        // -- the menu was constructed a few lines up, and the exit path is this
+        // engine.
+        ResumeOperation = std::make_unique<RuntimeResumeOperation>(*PauseMenuState);
+        QuitOperation = std::make_unique<ApplicationQuitOperation>(*this);
+        VerbRegistry& verbs = RuntimeWorldState->Entities().GetResource<VerbRegistry>();
+        ResumeBinding =
+            VerbDispatcherState->Bind(verbs.Find(kRuntimeResumeVerb), *ResumeOperation);
+        QuitBinding = VerbDispatcherState->Bind(verbs.Find(kApplicationQuitVerb), *QuitOperation);
+
+        PauseMenuState->SetVerbBindings(VerbDispatcherState.get(), &ShellBindingSet);
+        if (InstantiateShellBindings())
+        {
+            (void)menu.SetBinding(kPauseResume, MakeVerbBindingKey(kShellResumeBinding));
+            (void)menu.SetBinding(kPauseExit, MakeVerbBindingKey(kShellQuitBinding));
+        }
+        else
+        {
+            // No engine content to load them from, which is the same condition
+            // that leaves the menu without a document to present. Native
+            // handlers keep the shell working for a host assembled that way,
+            // and the model still allows exactly one behaviour per entry.
+            (void)menu.SetHandler(kPauseResume,
+                                  [](PauseMenuContext& ctx) { ctx.Menu.RequestResume(); });
+            (void)menu.SetHandler(kPauseExit,
+                                  [this](PauseMenuContext&) { RequestExit(ExitSource::Menu); });
+        }
     }
 #endif
 
@@ -1066,6 +1179,12 @@ int Engine::Run(Game& game)
     // something to point at.
     RegisterInputSystems(EngineSystems, ContentState->Assets().DataAssets, LoggingState,
                          &RuntimeLoop.GetDiscontinuityBus());
+    // Placed relays are the engine's too: a scene that carries one fires it
+    // through the same dispatcher the shell uses, in a process whose game
+    // registered nothing at all. Zero relays cost an empty-queue check per tick.
+    (void)RegisterVerbRelaySystem(EngineSystems, RuntimeWorldState->Entities(),
+                                  *VerbDispatcherState, ContentState->Assets().DataAssets,
+                                  console.Registry(), LoggingState);
     // The shell's Back reader goes with the shell: a host that composes no
     // menu must not have Escape flipping a pause state nothing presents.
     if (Configuration.Runtime.ApplicationShell)
@@ -1143,6 +1262,28 @@ int Engine::Run(Game& game)
         .Config = Configuration,
     };
     game.OnShutdown(shutdown);
+
+    // The authored half, in the one order that is safe. Admission closes first,
+    // so nothing else can be accepted by an operation that is about to go; then
+    // the implementations are removed; then the objects behind them and the
+    // compiled bindings that named them. The game's own hook ran above, which
+    // is where it gave back the tokens it held.
+    if (VerbDispatcherState != nullptr)
+        VerbDispatcherState->CloseAdmission();
+    ResumeBinding.Reset();
+    QuitBinding.Reset();
+    ResumeOperation.reset();
+    QuitOperation.reset();
+#ifdef SENCHA_ENABLE_UI
+    if (PauseMenuState != nullptr)
+        PauseMenuState->SetVerbBindings(nullptr, nullptr);
+#endif
+    ShellBindingSet.Clear();
+    // Before the content stack: these leases reference a cache inside it, and
+    // the World that holds the relay store outlives that stack.
+    ShellBindingLease.Reset();
+    DisconnectVerbRelays(RuntimeWorldState->Entities());
+    VerbDispatcherState.reset();
 
 #ifdef SENCHA_ENABLE_UI
     // Before the content stack goes. A screen holds asset leases, and a lease

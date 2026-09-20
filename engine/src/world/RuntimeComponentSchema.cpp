@@ -6,6 +6,7 @@
 #include <controller/ControllerComponentRegistration.h>
 #include <ecs/WorldComponentSchema.h>
 #include <input/InputComponentRegistration.h>
+#include <logic/VerbRelayRegistration.h>
 #include <movement/MovementRegistration.h>
 #include <net/NetComponentRegistration.h>
 #include <net/ReplicationLayout.h>
@@ -36,7 +37,8 @@ namespace
         ControllerComponents,
         InputComponents,
         ParticipantComponents,
-        NetComponents>;
+        NetComponents,
+        LogicComponents>;
 
     static_assert(EngineComponentSets::Owned,
                   "a component is named by more than one feature's vocabulary");
@@ -83,6 +85,7 @@ void RegisterEngineComponents(ComponentRegistrar& registrar)
     RegisterInputComponents(registrar);
     RegisterParticipantComponents(registrar);
     RegisterNetComponents(registrar);
+    RegisterLogicComponents(registrar);
 }
 
 void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)

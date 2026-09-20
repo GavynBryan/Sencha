@@ -381,6 +381,10 @@ namespace
         case DataFieldKind::String:
         case DataFieldKind::AssetRef:
         case DataFieldKind::GameplayTag:
+        // Typed as text until a surface exists that can pick an entity out of
+        // a scene: the sixteen hex digits are what the file holds either way,
+        // and a field the author can read and paste beats one they cannot see.
+        case DataFieldKind::Entity:
         {
             std::array<char, 2048> buffer{};
             if (value.IsString())
