@@ -1,8 +1,9 @@
 #include <authored/VerbBindingCompiler.h>
 
+#include <assets/data/DataAssetCache.h>
+#include <core/assets/AssetRegistry.h>
 #include <core/identity/Id.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
-#include <world/identity/PersistentEntityIndex.h>
 
 #include <algorithm>
 #include <cmath>
@@ -352,6 +353,55 @@ namespace
             // string cannot claim to be a texture where the verb wants a mesh.
             reference.Type = wantsData ? AssetType::Data : expected.Reference.AssetTypeFilter;
             reference.Path = argument.Text;
+
+            // And the asset, when the host can say, has to be of that kind. A
+            // schema that constrains a kind or a subtype is describing what the
+            // operation will lease; a reference that passed here and failed
+            // there would fail in the wrong place, with the wrong diagnostic.
+            if (environment.Assets != nullptr)
+            {
+                const AssetRecord* record = environment.Assets->FindByPath(argument.Text);
+                if (record == nullptr)
+                {
+                    Fail(errors, bindingKey, argument.Key,
+                         std::format("no asset at '{}'", argument.Text));
+                    return false;
+                }
+                if (reference.Type != AssetType::Unknown && record->Type != reference.Type)
+                {
+                    Fail(errors, bindingKey, argument.Key,
+                         std::format("'{}' is a {} asset; the verb wants {}", argument.Text,
+                                     AssetTypeToString(record->Type),
+                                     AssetTypeToString(reference.Type)));
+                    return false;
+                }
+            }
+            // A subtype is checked against the resident value when the host
+            // can read one. A host that gives no cache is unchecked, like one
+            // that gives no registry; a host that gives one and has not made
+            // the asset resident has not preloaded the binding's dependencies,
+            // which is the fault reported.
+            if (wantsData && !expected.Reference.DataSubtype.empty()
+                && environment.DataAssets != nullptr)
+            {
+                const DataAssetHandle resident = environment.DataAssets->Find(argument.Text);
+                if (!resident.IsValid())
+                {
+                    Fail(errors, bindingKey, argument.Key,
+                         std::format("'{}' is not resident, so its subtype cannot be checked "
+                                     "against '{}'",
+                                     argument.Text, expected.Reference.DataSubtype));
+                    return false;
+                }
+                const std::string_view subtype = environment.DataAssets->GetSubtype(resident);
+                if (subtype != expected.Reference.DataSubtype)
+                {
+                    Fail(errors, bindingKey, argument.Key,
+                         std::format("'{}' is a '{}' data asset; the verb wants '{}'",
+                                     argument.Text, subtype, expected.Reference.DataSubtype));
+                    return false;
+                }
+            }
             out = wantsData ? VerbValue::DataAsset(std::move(reference))
                             : VerbValue::Asset(std::move(reference));
             return true;
@@ -398,22 +448,10 @@ namespace
                      "expected 16 lowercase hex digits naming a persistent entity");
                 return false;
             }
-            if (environment.Entities == nullptr)
-            {
-                Fail(errors, bindingKey, argument.Key,
-                     "this World keeps no persistent entity index to resolve the reference "
-                     "against");
-                return false;
-            }
-            const EntityId entity = environment.Entities->TryResolve(*identity);
-            if (!entity.IsValid())
-            {
-                Fail(errors, bindingKey, argument.Key,
-                     std::format("no entity in this World carries the identity '{}'",
-                                 argument.Text));
-                return false;
-            }
-            out = VerbValue::Entity(entity);
+            // Not resolved here. The identity is the authored relationship;
+            // the handle is whatever entity carries it at the moment of each
+            // invocation, which is the dispatcher's to look up.
+            out = VerbValue::PersistentEntity(*identity);
             return true;
         }
 
@@ -513,11 +551,20 @@ bool CompileVerbBinding(const VerbBindingDesc& desc,
                 ok = false;
                 continue;
             }
-            VerbCompiledInput input;
-            input.Name = argument.Text;
-            input.ArgumentSlot = slot;
-            input.Expected = *field;
-            inputs.push_back(std::move(input));
+            // One input, as many destinations as name it. The producer's one
+            // value is checked against each at invocation.
+            auto existing = std::ranges::find_if(
+                inputs, [&argument](const VerbCompiledInput& input) {
+                    return input.Name == argument.Text;
+                });
+            if (existing == inputs.end())
+            {
+                VerbCompiledInput input;
+                input.Name = argument.Text;
+                inputs.push_back(std::move(input));
+                existing = inputs.end() - 1;
+            }
+            existing->Destinations.push_back(VerbInputDestination{ slot, *field });
             continue;
         }
 

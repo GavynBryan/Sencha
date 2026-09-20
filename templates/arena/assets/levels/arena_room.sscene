@@ -35,7 +35,7 @@
         },
         verb_relay: {
           bindings: "asset://data/arena.bindings.sdata",
-          binding: "d64d7d85d7c0fb9d",
+          binding: "arena.relay_award",
         },
       },
     },

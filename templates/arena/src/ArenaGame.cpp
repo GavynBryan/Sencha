@@ -232,14 +232,10 @@ void ArenaGame::InstallScore(Engine& engine)
     {
         ShellBindingsAsset = DataAssetCacheHandle(
             &Session().Assets().DataAssets, DataAssetHandle::FromToken(lease.OpaqueToken()));
-        const auto* library = Session().Assets().DataAssets.TryGet<VerbBindingLibrary>(
-            ShellBindingsAsset.GetToken(), kVerbBindingsTypeName);
         std::vector<std::string> errors;
-        if (library != nullptr)
-        {
-            engine.ShellBindings().Append(
-                *library, MakeVerbBindingEnvironment(engine.World().Entities()), errors);
-        }
+        engine.ShellBindings().AppendFrom(Session().Assets().DataAssets,
+                                          ShellBindingsAsset.GetToken(),
+                                          engine.ShellBindingEnvironment(), errors);
         for (const std::string& error : errors)
             log.Error("ArenaGame: {}", error);
     }

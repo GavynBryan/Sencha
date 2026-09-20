@@ -11,10 +11,22 @@ Kyusu documents, Shoji's `VocabularyCatalog`), the shell proof
 and the relay proof (`logic/VerbRelay.h`, `VerbRelayBindingStore.h`,
 `VerbRelaySystem.h`, the arena template's `arena.award_score`). Type names
 below that were proposals are now the shipped names; the prose is kept as the
-design record. Known limitation: a placed relay's binding key is persisted as
-the key's sixteen-hex-digit hash, since a component cannot carry a string;
-an authoring surface that spells the key resolves it through the binding
-asset's records. This plan establishes the shared foundation
+design record. A review of the first landing corrected six contracts before any
+second consumer built on them: an entity constant compiles to its persistent
+identity and is resolved by the dispatcher at every invocation
+(`VerbAdmission::UnresolvedReference` when nothing carries it); a binding set
+carries a revision and reload sources, consumers address bindings by key and
+recompile when the revision moves, and the shell's set refreshes per frame;
+one producer input may fill several arguments; an implementation is bound
+against a contract revision and a changed or revived contract makes it
+unavailable until rebound; admission closes before `OnShutdown` and the
+dispatcher outlives scheduled-system shutdown; asset references are checked
+against the registry's kind and the resident data asset's subtype when the
+host supplies them; every host installs the ability kit's vocabulary registries before
+the hook (`InstallAbilityKitVocabulary`; movement stays opt-in); a relay's key persists as the text the
+author wrote, lowered to its hash on load. Producer ports with named, typed
+inputs and nested reference descriptors inside record/array literals remain
+open seams for the next consumer. This plan establishes the shared foundation
 before Shoji behavior authoring, animation markers, level logic, flowcharts, and
 the AbilityKit redesign acquire separate action vocabularies.
 

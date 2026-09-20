@@ -29,6 +29,12 @@
 // was opened with. Reopening, reordering the declared actions, or closing the
 // screen invalidates it, because a screen-local action id is a position in a
 // list that only that opening declared.
+//
+// It holds no pointer into the binding set. A binding is addressed by its key
+// at every dispatch, and the mapping is compiled again whenever the set's
+// revision has moved -- so a reload that removed a record makes its button
+// refuse, and one that replaced the storage behind it can never run whatever
+// now occupies that memory.
 //=============================================================================
 
 // How one presentation argument becomes one of the binding's declared inputs.
@@ -101,22 +107,33 @@ public:
     };
     [[nodiscard]] std::span<const Outcome> LastOutcomes() const { return Outcomes; }
 
+    // Why the last compile against the set failed, when it did. A screen whose
+    // bindings vanished in a reload stays open and reports here.
+    [[nodiscard]] std::span<const std::string> LastErrors() const { return Errors; }
+
 private:
     struct CompiledAction
     {
         UiActionId Action;
-        const CompiledVerbBinding* Binding = nullptr;
+        VerbBindingKey Binding;
         std::vector<UiVerbArgumentMapping> Arguments;
         std::size_t InputCount = 0;
     };
 
+    [[nodiscard]] bool Compile(std::vector<std::string>& errors);
     [[nodiscard]] const CompiledAction* Find(UiActionId action) const;
 
     VerbDispatcher& Dispatcher;
     const VerbBindingSet& Bindings;
 
     UiScreenHandle Screen;
+    // Kept so the mapping can be compiled again when the set changes under an
+    // open screen.
+    UiScreenDesc Desc;
+    std::vector<UiVerbActionMapping> Mappings;
     std::vector<CompiledAction> Actions;
+    std::uint64_t CompiledRevision = 0;
+    std::vector<std::string> Errors;
 
     // Reused across batches so a click costs no allocation once the widest
     // mapping has been seen.

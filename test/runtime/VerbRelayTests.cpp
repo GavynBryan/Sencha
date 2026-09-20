@@ -6,6 +6,7 @@
 #include <authored/VerbBindingData.h>
 #include <authored/VerbDispatcher.h>
 #include <authored/WorldVocabulary.h>
+#include <core/assets/AssetRegistry.h>
 #include <core/config/EngineConfig.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/logging/LoggingProvider.h>
@@ -136,8 +137,8 @@ protected:
         Token = Dispatcher->Bind(Verbs->Find("test.score"), Operation);
 
         Logic.Add(StoragePartitionId::Default());
-        Relay = &RegisterVerbRelaySystem(Schedule, WorldState, *Dispatcher, Cache, Console,
-                                         Logging);
+        Relay = &RegisterVerbRelaySystem(Schedule, WorldState, *Dispatcher, Assets, Cache,
+                                         Console, Logging);
         Operation.Relay = Relay;
         Schedule.Init();
     }
@@ -181,6 +182,7 @@ protected:
     EngineConfig Config;
     RuntimeFrameLoop Runtime;
     ConsoleRegistry Console;
+    AssetRegistry Assets{ Logging };
     DataAssetCache Cache;
     World WorldState;
     StoragePartitionSet Logic;

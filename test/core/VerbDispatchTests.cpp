@@ -4,6 +4,8 @@
 
 #include <authored/VerbBindingCompiler.h>
 #include <authored/VerbDispatcher.h>
+#include <core/identity/Id.h>
+#include <world/identity/PersistentEntityIndex.h>
 
 #include <gtest/gtest.h>
 
@@ -424,4 +426,140 @@ TEST_F(VerbDispatchTest, BindingRefusesAVerbThisCatalogDoesNotDeclare)
     ASSERT_TRUE(Declare(Verbs, "test.op", EmptyVerbArguments()));
     Verbs.RetireProvider("test");
     EXPECT_FALSE(dispatcher.Bind(VerbId{ 1 }, operation).IsValid());
+}
+
+TEST_F(VerbDispatchTest, AnImplementationBoundAgainstAnOlderContractIsNotOfferedANewerBinding)
+{
+    ASSERT_TRUE(Declare(Verbs, "test.op", Record({ Field("Amount", DataFieldKind::Int) })));
+    VerbDispatcher dispatcher(Verbs);
+    CountingOperation operation;
+    VerbBindingToken token = dispatcher.Bind(Verbs.Find("test.op"), operation);
+
+    // The contract moves, and the content is recompiled against the new one.
+    // The code reading the arguments has not said it was updated, so the new
+    // layout must not reach it.
+    ASSERT_TRUE(Declare(Verbs, "test.op", Record({ Field("Points", DataFieldKind::Int) })));
+    CompiledVerbBinding recompiled;
+    ASSERT_TRUE(Compile(Binding("op", "test.op", { Literal("Points", JsonValue(2.0)) }),
+                        recompiled));
+    EXPECT_EQ(dispatcher.Invoke(recompiled, {}).Status, VerbAdmission::Unavailable);
+    EXPECT_TRUE(operation.Queue.empty());
+
+    // Rebinding is the statement that it was.
+    token = dispatcher.Bind(Verbs.Find("test.op"), operation);
+    EXPECT_TRUE(dispatcher.Invoke(recompiled, {}).Accepted());
+    EXPECT_EQ(operation.Queue.size(), 1u);
+}
+
+TEST_F(VerbDispatchTest, EveryAttemptTakesItsOwnIdSoARefusalNeverSharesOneWithAnExecution)
+{
+    ASSERT_TRUE(Declare(Verbs, "test.op", EmptyVerbArguments()));
+    CompiledVerbBinding binding;
+    ASSERT_TRUE(Compile(Binding("op", "test.op"), binding));
+
+    VerbDispatcher dispatcher(Verbs);
+    VerbTraceRing ring(8);
+    dispatcher.SetTrace(&ring);
+    CountingOperation operation;
+    const VerbBindingToken token = dispatcher.Bind(binding.Verb, operation);
+
+    operation.Refuse = true;
+    (void)dispatcher.Invoke(binding, {});
+    operation.Refuse = false;
+    const VerbInvocationResult accepted = dispatcher.Invoke(binding, {});
+    ASSERT_TRUE(accepted.Accepted());
+
+    const std::vector<VerbTraceRecord> records = ring.Snapshot();
+    ASSERT_EQ(records.size(), 2u);
+    EXPECT_EQ(records[0].Event, VerbTraceEvent::Rejected);
+    EXPECT_EQ(records[1].Event, VerbTraceEvent::Admitted);
+    EXPECT_NE(records[0].Id, records[1].Id);
+    EXPECT_EQ(records[1].Id, accepted.Id);
+}
+
+TEST_F(VerbDispatchTest, AnEntityConstantResolvesAtEachInvocationAgainstTheLiveIndex)
+{
+    ASSERT_TRUE(Declare(Verbs, "test.target", Record({ Field("Target", DataFieldKind::Entity) })));
+    const PersistentEntityId identity{ 0xabcdull };
+    VerbBindingArgument anchor;
+    anchor.Key = "Target";
+    anchor.Source = VerbArgumentSource::Entity;
+    anchor.Text = PersistentEntityIdToString(identity);
+    CompiledVerbBinding binding;
+    ASSERT_TRUE(Compile(Binding("target", "test.target", { anchor }), binding));
+
+    // Reads the resolved handle out of the pack.
+    struct TargetOperation
+    {
+        std::vector<EntityId> Seen;
+        VerbAdmission Invoke(const VerbInvocation& invocation)
+        {
+            EntityId target;
+            if (!invocation.Arguments->TryGetEntity(0, target))
+                return VerbAdmission::InvalidArguments;
+            Seen.push_back(target);
+            return VerbAdmission::Accepted;
+        }
+    };
+
+    VerbDispatcher dispatcher(Verbs);
+    PersistentEntityIndex index;
+    dispatcher.SetEntityIndex(&index);
+    TargetOperation operation;
+    const VerbBindingToken token = dispatcher.Bind(binding.Verb, operation);
+
+    // Nothing carries the identity yet: refused, and the binding is intact for
+    // the next attempt rather than compiled away.
+    EXPECT_EQ(dispatcher.Invoke(binding, {}).Status, VerbAdmission::UnresolvedReference);
+
+    const EntityId first{ .Index = 4, .Generation = 1 };
+    ASSERT_TRUE(index.Register(identity, first));
+    ASSERT_TRUE(dispatcher.Invoke(binding, {}).Accepted());
+
+    // Streamed out and back with a new generation: the same binding reaches
+    // the new incarnation, and the operation never saw the identity itself.
+    index.Unregister(identity, first);
+    const EntityId second{ .Index = 4, .Generation = 2 };
+    ASSERT_TRUE(index.Register(identity, second));
+    ASSERT_TRUE(dispatcher.Invoke(binding, {}).Accepted());
+
+    ASSERT_EQ(operation.Seen.size(), 2u);
+    EXPECT_EQ(operation.Seen[0], first);
+    EXPECT_EQ(operation.Seen[1], second);
+
+    // A dispatcher with no index has nothing to resolve against.
+    dispatcher.SetEntityIndex(nullptr);
+    EXPECT_EQ(dispatcher.Invoke(binding, {}).Status, VerbAdmission::UnresolvedReference);
+}
+
+TEST_F(VerbDispatchTest, OneProducerValueFillsEveryArgumentThatNamesItsInput)
+{
+    ASSERT_TRUE(Declare(Verbs, "test.self",
+                        Record({ Field("Source", DataFieldKind::Entity),
+                                 Field("Target", DataFieldKind::Entity) })));
+    CompiledVerbBinding binding;
+    ASSERT_TRUE(Compile(Binding("self", "test.self",
+                                { FromInput("Source", "self"), FromInput("Target", "self") },
+                                { "self" }),
+                        binding));
+
+    struct PairOperation
+    {
+        EntityId Source;
+        EntityId Target;
+        VerbAdmission Invoke(const VerbInvocation& invocation)
+        {
+            (void)invocation.Arguments->TryGetEntity(0, Source);
+            (void)invocation.Arguments->TryGetEntity(1, Target);
+            return VerbAdmission::Accepted;
+        }
+    };
+
+    VerbDispatcher dispatcher(Verbs);
+    PairOperation operation;
+    const VerbBindingToken token = dispatcher.Bind(binding.Verb, operation);
+    const VerbValue self = VerbValue::Entity(EntityId{ .Index = 9, .Generation = 1 });
+    ASSERT_TRUE(dispatcher.Invoke(binding, { &self, 1 }).Accepted());
+    EXPECT_EQ(operation.Source, operation.Target);
+    EXPECT_EQ(operation.Source.Index, 9u);
 }

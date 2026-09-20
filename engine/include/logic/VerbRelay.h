@@ -7,10 +7,10 @@
 #include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
 #include <world/ComponentAssetOwnership.h>
-#include <world/serialization/SceneFieldCodec.h>
 
 #include <string>
 #include <string_view>
+#include <unordered_map>
 
 //=============================================================================
 // VerbRelay
@@ -25,13 +25,14 @@
 // between partitions, and stream out and back in.
 //
 // A relay is a placed thing, so it names its binding by the same stable key a
-// binding asset carries -- hashed, the way a persistent entity identity is a
-// number in a component and hex digits in a document.
+// binding asset carries. The component holds the key's hash, since a component
+// cannot carry a string; the scene holds the key's text, which is what an
+// author renames and a diagnostic reads. VerbRelaySerializer is where the two
+// meet, which is why this component declares no scene chunk of its own.
 //=============================================================================
 
 struct SENCHA_COMPONENT("sencha.verb_relay")
        SENCHA_SCHEMA("verb_relay")
-       SENCHA_SCENE_CHUNK("VRLY")
 VerbRelay
 {
     SENCHA_FIELD("bindings")
@@ -40,28 +41,38 @@ VerbRelay
     SENCHA_TOOLTIP("The authored binding set this relay invokes from.")
     DataAssetHandle Bindings{};
 
-    // Which record in that set. Persisted as sixteen lowercase hex digits of
-    // the key's hash; the set itself carries the key's text, which is what a
-    // diagnostic resolves this back to.
+    // Which record in that set, by the hash of its key. The scene form is the
+    // key's text; see VerbRelaySerializer.
     SENCHA_FIELD("binding")
     SENCHA_LABEL("Binding")
     SENCHA_TOOLTIP("The key of the binding to invoke, hashed.")
     VerbBindingKey Binding;
 };
 
-// The scene form of a hashed binding key: sixteen lowercase hex digits, strict
-// on load for the same reason a persistent entity id is -- a malformed key
-// that parsed leniently would resolve to no binding and read as a relay that
-// does nothing.
-template <>
-struct SceneFieldCodec<VerbBindingKey>
+// The spelling behind each hashed key this World has loaded, so a document
+// saves the name the author wrote rather than the number the component holds.
+// Filled by the scene serializer as relays load, and by whatever else learns a
+// key's text; read when a relay is saved. A key nothing ever spelled saves as
+// its hash's digits.
+struct VerbRelayKeyNames
 {
-    static bool Save(IWriteArchive&, std::string_view, VerbBindingKey,
-                     SceneSerializationContext&);
-    static bool Load(IReadArchive&, std::string_view, VerbBindingKey&,
-                     SceneSerializationContext&);
+    std::unordered_map<std::uint64_t, std::string> Names;
+
+    void Remember(VerbBindingKey key, std::string_view text)
+    {
+        if (key.IsValid())
+            Names[key.Value] = std::string(text);
+    }
+
+    [[nodiscard]] const std::string* Find(VerbBindingKey key) const
+    {
+        const auto it = Names.find(key.Value);
+        return it == Names.end() ? nullptr : &it->second;
+    }
 };
 
+// The hash's text form, for a scene whose key nothing can spell: sixteen
+// lowercase hex digits, strict on load.
 [[nodiscard]] std::string VerbBindingKeyToString(VerbBindingKey key);
 [[nodiscard]] bool VerbBindingKeyFromString(std::string_view text, VerbBindingKey& out);
 

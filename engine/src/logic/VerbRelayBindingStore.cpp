@@ -1,16 +1,17 @@
 #include <logic/VerbRelayBindingStore.h>
 
 #include <authored/VerbBindingCompiler.h>
-#include <authored/VerbBindingData.h>
 #include <authored/WorldVocabulary.h>
+#include <core/assets/AssetRegistry.h>
 #include <ecs/World.h>
 #include <logic/VerbRelay.h>
 
-#include <format>
 #include <utility>
 
-VerbRelayBindingStore::VerbRelayBindingStore(DataAssetCache& dataAssets)
-    : DataAssets(dataAssets)
+VerbRelayBindingStore::VerbRelayBindingStore(const AssetRegistry& assets,
+                                             DataAssetCache& dataAssets)
+    : Assets(assets)
+    , DataAssets(dataAssets)
 {
 }
 
@@ -21,9 +22,11 @@ const CompiledVerbBinding* VerbRelayBindingStore::Resolve(const VerbRelay& relay
     if (!relay.Bindings.IsValid() || !relay.Binding.IsValid())
         return nullptr;
 
-    const VerbBindingEnvironment environment = MakeVerbBindingEnvironment(world);
+    VerbBindingEnvironment environment = MakeVerbBindingEnvironment(world);
     if (environment.Verbs == nullptr)
         return nullptr;
+    environment.Assets = &Assets;
+    environment.DataAssets = &DataAssets;
 
     const DataAssetHandle handle = relay.Bindings;
     Entry& entry = Entries[handle.ToToken()];
@@ -37,32 +40,28 @@ const CompiledVerbBinding* VerbRelayBindingStore::Resolve(const VerbRelay& relay
             entry.Lease = DataAssets.AcquireOwned(path);
     }
 
-    const std::uint64_t reloadVersion = DataAssets.GetReloadVersion(handle);
     const CompiledVerbBinding* found = entry.Bindings.Find(relay.Binding);
     const bool stale = found != nullptr && !IsVerbBindingCurrent(*found, *environment.Verbs);
-    const bool rebuild = entry.ReloadVersion != reloadVersion
-        || entry.Catalog != environment.Verbs->Catalog() || stale;
+    const bool rebuild = entry.Catalog != environment.Verbs->Catalog() || stale;
 
+    std::vector<std::string> errors;
+    bool rebuilt = false;
     if (rebuild)
     {
-        ++Rebuilds;
-        entry.ReloadVersion = reloadVersion;
         entry.Catalog = environment.Verbs->Catalog();
-        entry.Errors.clear();
-        entry.ErrorsDelivered = false;
-        entry.Bindings.Clear();
+        entry.Bindings.InstantiateFrom(DataAssets, handle, environment, errors);
+        rebuilt = true;
+    }
+    else if (entry.Bindings.Refresh(DataAssets, environment, errors))
+    {
+        rebuilt = true;
+    }
 
-        const auto* library =
-            DataAssets.TryGet<VerbBindingLibrary>(handle, kVerbBindingsTypeName);
-        if (library == nullptr)
-        {
-            entry.Errors.push_back(std::format("'{}' is stale or is not an authored binding set",
-                                               DataAssets.GetName(handle)));
-        }
-        else
-        {
-            entry.Bindings.Instantiate(*library, environment, entry.Errors);
-        }
+    if (rebuilt)
+    {
+        ++Rebuilds;
+        entry.Errors = std::move(errors);
+        entry.ErrorsDelivered = false;
         found = entry.Bindings.Find(relay.Binding);
     }
 

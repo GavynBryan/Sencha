@@ -2,7 +2,6 @@
 
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
-#include <world/identity/PersistentEntityIndex.h>
 
 VerbRegistry& InstallVerbRegistry(World& world)
 {
@@ -26,6 +25,7 @@ VerbBindingEnvironment MakeVerbBindingEnvironment(const World& world)
     return VerbBindingEnvironment{
         .Verbs = world.TryGetResource<VerbRegistry>(),
         .Tags = world.TryGetResource<GameplayTagRegistry>(),
-        .Entities = world.TryGetResource<PersistentEntityIndex>(),
+        .Assets = nullptr,
+        .DataAssets = nullptr,
     };
 }

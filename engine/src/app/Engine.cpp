@@ -9,6 +9,8 @@
 #include <authored/VerbBindingData.h>
 #include <authored/WorldVocabulary.h>
 #include <logic/VerbRelaySystem.h>
+#include <abilities/AbilityKit.h>
+#include <world/identity/PersistentEntityIndex.h>
 #include <core/assets/AssetLease.h>
 #include <ui/UiService.h>
 #endif
@@ -350,6 +352,8 @@ void Engine::Shutdown()
     // the unified world and backend services are still alive, then join task
     // lanes before destroying the entity world they may have targeted.
     EngineSystems.Shutdown();
+    // After the systems that hold it, before the World whose catalog it reads.
+    VerbDispatcherState.reset();
     // Before the frame driver: the net phases hold a pointer to this, and a
     // session outliving the loop that pumps it is a session nothing drains.
     // The goodbye is what turns this quit into an immediate leave on the other
@@ -509,18 +513,9 @@ bool Engine::InstantiateShellBindings()
 
     ShellBindingLease = DataAssetCacheHandle(&assets.DataAssets,
                                              DataAssetHandle::FromToken(lease.OpaqueToken()));
-    const auto* library = assets.DataAssets.TryGet<VerbBindingLibrary>(
-        ShellBindingLease.GetToken(), kVerbBindingsTypeName);
-    if (library == nullptr)
-    {
-        log.Error("vocabulary: '{}' is not an authored binding set", kShellBindingsAsset);
-        ShellBindingLease.Reset();
-        return false;
-    }
-
     std::vector<std::string> errors;
-    ShellBindingSet.Instantiate(
-        *library, MakeVerbBindingEnvironment(RuntimeWorldState->Entities()), errors);
+    ShellBindingSet.InstantiateFrom(assets.DataAssets, ShellBindingLease.GetToken(),
+                                    ShellBindingEnvironment(), errors);
     for (const std::string& error : errors)
         log.Error("vocabulary: {}", error);
 
@@ -528,6 +523,34 @@ bool Engine::InstantiateShellBindings()
     // silently does nothing.
     return ShellBindingSet.Find(kShellResumeBinding) != nullptr
         && ShellBindingSet.Find(kShellQuitBinding) != nullptr;
+}
+
+VerbBindingEnvironment Engine::ShellBindingEnvironment() const
+{
+    VerbBindingEnvironment environment;
+    if (RuntimeWorldState != nullptr)
+        environment = MakeVerbBindingEnvironment(RuntimeWorldState->Entities());
+    if (ContentState.has_value())
+    {
+        const RuntimeAssets& assets = ContentState->Assets();
+        environment.Assets = &assets.Registry;
+        environment.DataAssets = &assets.DataAssets;
+    }
+    return environment;
+}
+
+void Engine::RefreshShellBindings()
+{
+    if (!ContentState.has_value() || VerbDispatcherState == nullptr)
+        return;
+    std::vector<std::string> errors;
+    if (ShellBindingSet.Refresh(ContentState->Assets().DataAssets, ShellBindingEnvironment(),
+                                errors))
+    {
+        Logger& log = LoggingState.GetLogger<Engine>();
+        for (const std::string& error : errors)
+            log.Error("vocabulary: {}", error);
+    }
 }
 
 void Engine::SyncShellSurface()
@@ -961,6 +984,13 @@ int Engine::Run(Game& game)
         // Qualified: Engine::World() is the runtime world accessor, and names
         // the member before it names the type in here.
         ::World& entities = RuntimeWorldState->Entities();
+        // The registries the hook declares into, before the hook: tags,
+        // attributes, effects, abilities -- registries only, no queue, no
+        // component, nothing that simulates. Every editor World installs these
+        // too, so a name a module declares lands here exactly as it does there.
+        // Movement is not among them: it is a feature a game opts into, and a
+        // locomotion mode is declared once the game has, as the templates do.
+        InstallAbilityKitVocabulary(entities);
         VerbRegistry& verbs = InstallVerbRegistry(entities);
         (void)DeclareEngineVerbs(verbs);
 
@@ -985,6 +1015,7 @@ int Engine::Run(Game& game)
         // One dispatcher for this catalog, composed rather than discovered. A
         // game reaches it through Engine::TryVerbs to bind what it declared.
         VerbDispatcherState = std::make_unique<VerbDispatcher>(verbs);
+        VerbDispatcherState->SetEntityIndex(entities.TryGetResource<PersistentEntityIndex>());
     }
 
     // The content stack, before the game exists as far as content is concerned:
@@ -1183,8 +1214,9 @@ int Engine::Run(Game& game)
     // through the same dispatcher the shell uses, in a process whose game
     // registered nothing at all. Zero relays cost an empty-queue check per tick.
     (void)RegisterVerbRelaySystem(EngineSystems, RuntimeWorldState->Entities(),
-                                  *VerbDispatcherState, ContentState->Assets().DataAssets,
-                                  console.Registry(), LoggingState);
+                                  *VerbDispatcherState, ContentState->Assets().Registry,
+                                  ContentState->Assets().DataAssets, console.Registry(),
+                                  LoggingState);
     // The shell's Back reader goes with the shell: a host that composes no
     // menu must not have Escape flipping a pause state nothing presents.
     if (Configuration.Runtime.ApplicationShell)
@@ -1258,18 +1290,21 @@ int Engine::Run(Game& game)
     if (SettingsStore != nullptr)
         (void)SettingsStore->Save(Console().Registry());
 
+    // Admission closes before anything is torn down, the game's own hook
+    // included: from here no producer can hand an operation a request it will
+    // not live to run. The dispatcher itself stays until Engine::Shutdown has
+    // shut the scheduled systems down, so an operation cancelling its queued
+    // work there still has the dependency it reports through.
+    if (VerbDispatcherState != nullptr)
+        VerbDispatcherState->CloseAdmission();
+
     GameShutdownContext shutdown{
         .Config = Configuration,
     };
     game.OnShutdown(shutdown);
 
-    // The authored half, in the one order that is safe. Admission closes first,
-    // so nothing else can be accepted by an operation that is about to go; then
-    // the implementations are removed; then the objects behind them and the
-    // compiled bindings that named them. The game's own hook ran above, which
-    // is where it gave back the tokens it held.
-    if (VerbDispatcherState != nullptr)
-        VerbDispatcherState->CloseAdmission();
+    // The host's implementations, then the compiled bindings that named them.
+    // The game's own hook ran above, which is where it gave back its tokens.
     ResumeBinding.Reset();
     QuitBinding.Reset();
     ResumeOperation.reset();
@@ -1283,7 +1318,6 @@ int Engine::Run(Game& game)
     // the World that holds the relay store outlives that stack.
     ShellBindingLease.Reset();
     DisconnectVerbRelays(RuntimeWorldState->Entities());
-    VerbDispatcherState.reset();
 
 #ifdef SENCHA_ENABLE_UI
     // Before the content stack goes. A screen holds asset leases, and a lease

@@ -110,6 +110,14 @@ VerbValue VerbValue::Entity(EntityId entity)
     return result;
 }
 
+VerbValue VerbValue::PersistentEntity(PersistentEntityId identity)
+{
+    VerbValue result;
+    result.Kind_ = VerbValueKind::PersistentEntity;
+    result.Value_ = identity;
+    return result;
+}
+
 bool VerbValue::TryGetBool(bool& out) const
 {
     if (Kind_ != VerbValueKind::Bool)
@@ -202,6 +210,14 @@ namespace
     }
 }
 
+bool VerbValue::TryGetPersistentEntity(PersistentEntityId& out) const
+{
+    if (Kind_ != VerbValueKind::PersistentEntity)
+        return false;
+    out = std::get<PersistentEntityId>(Value_);
+    return true;
+}
+
 bool VerbValueSatisfiesField(const VerbValue& value, const DataFieldSchema& field)
 {
     switch (field.Kind)
@@ -286,7 +302,10 @@ bool VerbValueSatisfiesField(const VerbValue& value, const DataFieldSchema& fiel
     case DataFieldKind::GameplayTag:
         return value.Kind() == VerbValueKind::GameplayTag;
     case DataFieldKind::Entity:
-        return value.Kind() == VerbValueKind::Entity;
+        // A constant holds the authored identity until the dispatcher resolves
+        // it; a producer's value is already a handle.
+        return value.Kind() == VerbValueKind::Entity
+            || value.Kind() == VerbValueKind::PersistentEntity;
     }
     return false;
 }
@@ -356,4 +375,9 @@ bool VerbArguments::TryGetTag(std::size_t slot, GameplayTagId& out) const
 bool VerbArguments::TryGetEntity(std::size_t slot, EntityId& out) const
 {
     return At(slot).TryGetEntity(out);
+}
+
+bool VerbArguments::TryGetPersistentEntity(std::size_t slot, PersistentEntityId& out) const
+{
+    return At(slot).TryGetPersistentEntity(out);
 }

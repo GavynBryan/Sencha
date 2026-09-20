@@ -9,6 +9,7 @@
 #include <authored/VerbDispatcher.h>
 #include <authored/WorldVocabulary.h>
 #include <ecs/World.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
 #include <world/RuntimeWorld.h>
 
 #include <SDL3/SDL.h>
@@ -52,11 +53,26 @@ struct StopAfterFrames
 {
     Engine* Host = nullptr;
     int Frames = 0;
+    // What a system cancelling queued work through the dispatcher would see
+    // at scheduled-system shutdown: the dependency, alive, and closed. Written
+    // through to the game, because the schedule deletes this system right
+    // after calling Shutdown.
+    bool* DispatcherAliveAtShutdown = nullptr;
+    bool* AdmissionClosedAtShutdown = nullptr;
 
     void FrameUpdate(FrameUpdateContext&)
     {
         if (++Frames >= 4 && Host != nullptr)
             Host->RequestExit();
+    }
+
+    void Shutdown()
+    {
+        const VerbDispatcher* verbs = Host != nullptr ? Host->TryVerbs() : nullptr;
+        if (DispatcherAliveAtShutdown != nullptr)
+            *DispatcherAliveAtShutdown = verbs != nullptr;
+        if (AdmissionClosedAtShutdown != nullptr)
+            *AdmissionClosedAtShutdown = verbs != nullptr && !verbs->IsAdmitting();
     }
 };
 
@@ -98,9 +114,18 @@ public:
         if (verbs == nullptr)
             return;
 
+        // A tag beside the verb, into the same World: the registries the hook
+        // declares into exist here exactly as they do in an editor document.
+        if (auto* tags = world.TryGetResource<GameplayTagRegistry>())
+            TagDeclared = tags->RegisterTag("Test.Declared").has_value();
+
         VerbRegistrationScope scope(*verbs, "test");
         VerbDefinition ping;
         ping.Name = DeclareBadly ? "test..ping" : "test.ping";
+        DataFieldSchema kind;
+        kind.Key = "Kind";
+        kind.Kind = DataFieldKind::GameplayTag;
+        ping.Arguments.Children.push_back(std::move(kind));
         (void)scope.Declare(std::move(ping));
         // Deliberately unchecked, the way a careless module would leave it.
         (void)scope.Commit();
@@ -124,6 +149,11 @@ public:
         desc.Key = "ping";
         desc.KeyId = MakeVerbBindingKey(desc.Key);
         desc.VerbName = "test.ping";
+        VerbBindingArgument kind;
+        kind.Key = "Kind";
+        kind.Source = VerbArgumentSource::Tag;
+        kind.Text = "Test.Declared";
+        desc.Arguments.push_back(std::move(kind));
         std::vector<std::string> errors;
         CompiledVerbBinding compiled;
         if (CompileVerbBinding(desc, MakeVerbBindingEnvironment(GetEngine().World().Entities()),
@@ -139,7 +169,10 @@ public:
 
     void OnRegisterSystems(SystemRegisterContext& ctx) override
     {
-        ctx.Schedule.Register<StopAfterFrames>().Host = &GetEngine();
+        StopAfterFrames& stop = ctx.Schedule.Register<StopAfterFrames>();
+        stop.Host = &GetEngine();
+        stop.DispatcherAliveAtShutdown = &DispatcherAliveAtShutdown;
+        stop.AdmissionClosedAtShutdown = &AdmissionClosedAtShutdown;
     }
 
     void OnShutdown(GameShutdownContext&) override
@@ -154,6 +187,9 @@ public:
     int StartCalls = 0;
     int VocabularyCallsAtStart = 0;
     bool SawEngineVerbsFirst = false;
+    bool TagDeclared = false;
+    bool DispatcherAliveAtShutdown = false;
+    bool AdmissionClosedAtShutdown = false;
     bool HadDispatcherAtStart = false;
     bool EngineVerbsDeclared = false;
     bool EngineVerbsUnavailable = false;
@@ -183,14 +219,23 @@ TEST(VerbVocabularyBoot, TheHookRunsOnceBeforeStartAndTheGameBindsFromStart)
     EXPECT_TRUE(game.HadDispatcherAtStart);
     EXPECT_TRUE(game.EngineVerbsDeclared);
     EXPECT_TRUE(game.EngineVerbsUnavailable);
-    EXPECT_EQ(game.Admission, VerbAdmission::Accepted);
+    EXPECT_TRUE(game.TagDeclared) << "the runtime World had no tag registry when the hook ran";
+    EXPECT_EQ(game.Admission, VerbAdmission::Accepted)
+        << "a binding naming the hook's own tag did not resolve at runtime";
     EXPECT_EQ(game.Ping.Calls, 1);
 
-    // Torn down with the run: the catalog is the World's and lives on, the
-    // executable half does not.
-    EXPECT_EQ(engine.TryVerbs(), nullptr);
+    // The dispatcher outlives the run, because the scheduled systems that hold
+    // it are shut down by Engine::Shutdown; it goes there, before the World
+    // whose catalog it reads. The catalog is the World's and lives on.
+    EXPECT_NE(engine.TryVerbs(), nullptr);
+    EXPECT_FALSE(engine.TryVerbs()->IsAdmitting());
     EXPECT_NE(FindVerbRegistry(engine.World().Entities()), nullptr);
     engine.Shutdown();
+    EXPECT_EQ(engine.TryVerbs(), nullptr);
+    // What the system saw when the schedule shut it down: a dispatcher still
+    // there to report through, already refusing new work.
+    EXPECT_TRUE(game.DispatcherAliveAtShutdown);
+    EXPECT_TRUE(game.AdmissionClosedAtShutdown);
 }
 
 TEST(VerbVocabularyBoot, ARefusedDeclarationStopsTheProcessBeforeItsFirstFrame)

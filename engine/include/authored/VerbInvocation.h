@@ -44,6 +44,10 @@ enum class VerbAdmission : std::uint8_t
     // Dispatch was entered from inside a dispatch. Refused whole: a partially
     // executed recursive chain is worse than a diagnostic.
     Reentrant,
+    // An entity the binding names by persistent identity is not in this World
+    // right now. A one-shot request against an absent target is refused, not
+    // held for a later incarnation.
+    UnresolvedReference,
 };
 
 [[nodiscard]] const char* VerbAdmissionName(VerbAdmission admission);

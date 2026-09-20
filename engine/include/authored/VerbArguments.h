@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/assets/AssetRef.h>
+#include <core/identity/Id.h>
 #include <core/metadata/DataSchema.h>
 #include <ecs/EntityId.h>
 #include <gameplay_tags/GameplayTagId.h>
@@ -53,10 +54,16 @@ enum class VerbValueKind : std::uint8_t
     DataAssetRef,
     // Already resolved against the bound World's tag registry.
     GameplayTag,
-    // Already resolved against the bound World's persistent entity index. Still
-    // revalidated for liveness at execution: a one-shot request whose target
-    // has gone fails rather than waiting for a later incarnation.
+    // A live generational handle. What a producer supplies for an entity
+    // input, and what an operation reads for an entity argument.
     Entity,
+    // An authored persistent identity, not yet a handle. What an entity
+    // constant compiles to: it is resolved against the World's persistent
+    // entity index at every invocation, so a binding compiled while its target
+    // was absent, or before the target streamed out and back with a new
+    // generation, still reaches the entity the author named. An operation
+    // never sees this kind -- the dispatcher resolves it or refuses.
+    PersistentEntity,
 };
 
 // A 2-, 3- or 4-wide numeric tuple, as DataFieldKind::Vector describes.
@@ -85,6 +92,7 @@ public:
     [[nodiscard]] static VerbValue DataAsset(AssetRef reference);
     [[nodiscard]] static VerbValue Tag(GameplayTagId tag);
     [[nodiscard]] static VerbValue Entity(EntityId entity);
+    [[nodiscard]] static VerbValue PersistentEntity(PersistentEntityId identity);
 
     [[nodiscard]] VerbValueKind Kind() const { return Kind_; }
     [[nodiscard]] bool IsNone() const { return Kind_ == VerbValueKind::None; }
@@ -102,6 +110,7 @@ public:
     [[nodiscard]] bool TryGetDataAsset(const AssetRef*& out) const;
     [[nodiscard]] bool TryGetTag(GameplayTagId& out) const;
     [[nodiscard]] bool TryGetEntity(EntityId& out) const;
+    [[nodiscard]] bool TryGetPersistentEntity(PersistentEntityId& out) const;
 
     // Members of a record, elements of an array. Empty for every other kind.
     [[nodiscard]] std::span<const VerbValue> Children() const { return Children_; }
@@ -115,7 +124,8 @@ private:
                                 VerbVectorValue,
                                 AssetRef,
                                 GameplayTagId,
-                                EntityId>;
+                                EntityId,
+                                PersistentEntityId>;
 
     VerbValueKind Kind_ = VerbValueKind::None;
     Scalar Value_;
@@ -174,6 +184,7 @@ public:
     [[nodiscard]] bool TryGetDataAsset(std::size_t slot, const AssetRef*& out) const;
     [[nodiscard]] bool TryGetTag(std::size_t slot, GameplayTagId& out) const;
     [[nodiscard]] bool TryGetEntity(std::size_t slot, EntityId& out) const;
+    [[nodiscard]] bool TryGetPersistentEntity(std::size_t slot, PersistentEntityId& out) const;
 
     [[nodiscard]] std::span<const VerbValue> Values() const { return Slots; }
 

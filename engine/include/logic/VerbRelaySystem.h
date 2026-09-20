@@ -9,6 +9,7 @@
 #include <span>
 #include <vector>
 
+class AssetRegistry;
 class ConsoleRegistry;
 class DataAssetCache;
 class EngineSchedule;
@@ -106,6 +107,7 @@ private:
 VerbRelaySystem& RegisterVerbRelaySystem(EngineSchedule& schedule,
                                          World& world,
                                          VerbDispatcher& dispatcher,
+                                         const AssetRegistry& assets,
                                          DataAssetCache& dataAssets,
                                          ConsoleRegistry& console,
                                          LoggingProvider& logging);

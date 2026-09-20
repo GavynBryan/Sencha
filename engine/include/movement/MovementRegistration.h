@@ -61,6 +61,13 @@ void RegisterMovementComponents(ComponentRegistrar& registrar);
 // built-in Free mode. Calls RegisterAbilityKit. No default abilities.
 void RegisterMovementComponents(World& world);
 
+// The registries a module's vocabulary hook declares into, and nothing that
+// simulates: the ability kit's, the movement tags, and the locomotion mode
+// registry with its one built-in mode. Idempotent. The runtime installs this
+// before it calls the hook, and every editor World installs it before it
+// replays the hook, so a name declared in one is a name declared in all.
+void InstallMovementVocabulary(World& world);
+
 // The default MoveSpeed attribute and the Jump ability/effects, authored as
 // data.
 void RegisterDefaultMovementAbilities(World& world);

@@ -9,6 +9,7 @@
 #include <assets/data/DataAssetLoader.h>
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <authored/VerbBindingCompiler.h>
+#include <authored/VerbBindingSet.h>
 #include <authored/VerbBindingData.h>
 #include <core/assets/AssetSource.h>
 #include <core/logging/LoggingProvider.h>
@@ -319,4 +320,47 @@ TEST_F(VerbBindingAssetTest, AnEmptyLibraryIsValidContent)
     ASSERT_NE(library, nullptr);
     EXPECT_TRUE(library->Bindings.empty());
     EXPECT_TRUE(staged.Dependencies.empty());
+}
+
+TEST_F(VerbBindingAssetTest, ASetBuiltFromAnAssetFollowsItsReloads)
+{
+    ASSERT_TRUE(Loader
+                    .CommitTyped(Stage(R"({"type":"authored.bindings","version":1,"data":{
+                        "bindings":[{"key":"a","verb":"test.op"}]}})"))
+                    .IsValid());
+    const DataAssetHandle handle = Cache.Find(File.Record().Path);
+    ASSERT_TRUE(handle.IsValid());
+
+    VerbRegistry registry;
+    {
+        VerbRegistrationScope scope(registry, "test");
+        VerbDefinition op;
+        op.Name = "test.op";
+        (void)scope.Declare(std::move(op));
+        VerbDefinition other;
+        other.Name = "test.other";
+        (void)scope.Declare(std::move(other));
+        ASSERT_TRUE(scope.Commit());
+    }
+    const VerbBindingEnvironment environment{ .Verbs = &registry };
+
+    VerbBindingSet set;
+    std::vector<std::string> errors;
+    set.InstantiateFrom(Cache, handle, environment, errors);
+    EXPECT_TRUE(errors.empty());
+    const std::uint64_t revision = set.Revision();
+    ASSERT_NE(set.Find("a"), nullptr);
+
+    // Nothing reloaded: nothing rebuilt, and the revision stays.
+    EXPECT_FALSE(set.Refresh(Cache, environment, errors));
+    EXPECT_EQ(set.Revision(), revision);
+
+    // A reload that drops one record and adds another is followed exactly.
+    ASSERT_TRUE(Loader.CommitReload(Stage(R"({"type":"authored.bindings","version":1,"data":{
+        "bindings":[{"key":"b","verb":"test.other"}]}})")));
+    EXPECT_TRUE(set.Refresh(Cache, environment, errors));
+    EXPECT_NE(set.Revision(), revision);
+    EXPECT_EQ(set.Find("a"), nullptr);
+    ASSERT_NE(set.Find("b"), nullptr);
+    EXPECT_EQ(set.Find("b")->Verb, registry.Find("test.other"));
 }

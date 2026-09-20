@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <vector>
 
+class AssetRegistry;
 class World;
 struct VerbRelay;
 
@@ -19,17 +20,17 @@ struct VerbRelay;
 // invoke. A World resource, because the resolved bindings carry this World's
 // verb ids and entity handles and mean nothing in another.
 //
-// Derived state with explicit invalidation, the shape MovementProfileBindingCache
-// has: one entry per binding asset, rebuilt when the asset's reload version
-// moves or when a binding it compiled has gone stale against the catalog. A
-// relay drain therefore costs a hash lookup and a revision comparison, never a
-// schema traversal, and a hot-reloaded binding file takes effect at the next
+// Derived state with explicit invalidation: one VerbBindingSet per binding
+// asset, refreshed through the set's own reload tracking and rebuilt when a
+// binding it compiled has gone stale against the catalog. A relay drain
+// therefore costs a hash lookup and a version comparison, never a schema
+// traversal, and a hot-reloaded binding file takes effect at the next
 // activation without anything polling it.
 //=============================================================================
 class VerbRelayBindingStore
 {
 public:
-    explicit VerbRelayBindingStore(DataAssetCache& dataAssets);
+    VerbRelayBindingStore(const AssetRegistry& assets, DataAssetCache& dataAssets);
 
     // The compiled binding a relay names, or null. Errors are reported once per
     // rebuild through `newErrors`, so a relay that fires every tick against a
@@ -47,12 +48,12 @@ private:
     {
         DataAssetCacheHandle Lease;
         VerbBindingSet Bindings;
-        std::uint64_t ReloadVersion = 0;
         VerbCatalogId Catalog;
         std::vector<std::string> Errors;
         bool ErrorsDelivered = false;
     };
 
+    const AssetRegistry& Assets;
     DataAssetCache& DataAssets;
     std::unordered_map<std::uint64_t, Entry> Entries;
     std::uint64_t Rebuilds = 0;

@@ -136,12 +136,13 @@ void DisconnectVerbRelays(World& world)
 VerbRelaySystem& RegisterVerbRelaySystem(EngineSchedule& schedule,
                                          World& world,
                                          VerbDispatcher& dispatcher,
+                                         const AssetRegistry& assets,
                                          DataAssetCache& dataAssets,
                                          ConsoleRegistry& console,
                                          LoggingProvider& logging)
 {
     if (world.TryGetResource<VerbRelayBindingStore>() == nullptr)
-        world.AddResource<VerbRelayBindingStore>(dataAssets);
+        world.AddResource<VerbRelayBindingStore>(assets, dataAssets);
 
     VerbRelaySystem& system = schedule.Register<VerbRelaySystem>(
         dispatcher, dataAssets, logging.GetLogger<VerbRelaySystem>());

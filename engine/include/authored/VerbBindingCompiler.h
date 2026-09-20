@@ -6,8 +6,9 @@
 #include <string>
 #include <vector>
 
+class AssetRegistry;
+class DataAssetCache;
 class GameplayTagRegistry;
-class PersistentEntityIndex;
 
 //=============================================================================
 // VerbBindingCompiler
@@ -32,14 +33,26 @@ struct VerbBindingEnvironment
     // compiling to an invalid id.
     const GameplayTagRegistry* Tags = nullptr;
 
-    // Where an entity constant resolves. Null, or an identity the index does
-    // not hold, fails the same way: a reference to an entity that is not here
-    // is not a reference that becomes valid by being ignored.
-    const PersistentEntityIndex* Entities = nullptr;
+    // Which assets exist and of what kind, for a reference the schema
+    // constrains. Null means unchecked: the reference compiles on its authored
+    // form alone. A host that has a registry gives it, and a reference to a
+    // missing asset or one of the wrong kind then fails here rather than in
+    // the operation that finally leases it.
+    const AssetRegistry* Assets = nullptr;
+
+    // Where a data asset's subtype is read, for a field that constrains one.
+    // The binding asset declares its data references as eager dependencies, so
+    // they are resident by the time an owner-thread pass runs; one that is not
+    // fails the subtype check rather than passing it unseen.
+    const DataAssetCache* DataAssets = nullptr;
 };
 
 // Compiles one authored record against one catalog. False leaves `out`
 // unspecified and appends at least one located diagnostic.
+//
+// An entity constant compiles to its persistent identity, not a handle: the
+// dispatcher resolves it at each invocation, so the binding is valid whether
+// or not its target is present when it is compiled.
 //
 // The diagnostics name the binding key and the argument, because the author is
 // looking at a file with a dozen of them and "type mismatch" is not an answer.

@@ -1,7 +1,5 @@
 #include <logic/VerbRelay.h>
 
-#include <core/serialization/Archive.h>
-
 #include <charconv>
 #include <format>
 #include <string>
@@ -27,27 +25,5 @@ bool VerbBindingKeyFromString(std::string_view text, VerbBindingKey& out)
     if (result.ec != std::errc{} || result.ptr != text.data() + text.size() || value == 0)
         return false;
     out = VerbBindingKey{ value };
-    return true;
-}
-
-bool SceneFieldCodec<VerbBindingKey>::Save(IWriteArchive& archive, std::string_view key,
-                                           VerbBindingKey value, SceneSerializationContext&)
-{
-    archive.Field(key, std::string_view(VerbBindingKeyToString(value)));
-    return archive.Ok();
-}
-
-bool SceneFieldCodec<VerbBindingKey>::Load(IReadArchive& archive, std::string_view key,
-                                           VerbBindingKey& value, SceneSerializationContext&)
-{
-    std::string text;
-    archive.Field(key, text);
-    if (!archive.Ok())
-        return false;
-    if (!VerbBindingKeyFromString(text, value))
-    {
-        archive.MarkInvalidField(key);
-        return false;
-    }
     return true;
 }

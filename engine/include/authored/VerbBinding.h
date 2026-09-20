@@ -98,14 +98,22 @@ struct VerbBindingLibrary
     [[nodiscard]] const VerbBindingDesc* Find(VerbBindingKey key) const;
 };
 
-// One declared input slot, compiled. The expected field is copied out of the
-// catalog rather than pointed at: a definition vector reallocates when the next
-// provider declares something, and a compiled binding outlives that.
+// One argument an input fills, and what that argument accepts. Copied out of
+// the catalog rather than pointed at: a definition vector reallocates when the
+// next provider declares something, and a compiled binding outlives that.
+struct VerbInputDestination
+{
+    std::size_t ArgumentSlot = 0;
+    DataFieldSchema Expected;
+};
+
+// One declared input slot, compiled. A producer supplies one value per input;
+// the value may fill several arguments -- an effect applied to the entity that
+// caused it names that entity twice -- and it is checked against every one.
 struct VerbCompiledInput
 {
     std::string Name;
-    std::size_t ArgumentSlot = 0;
-    DataFieldSchema Expected;
+    std::vector<VerbInputDestination> Destinations;
 };
 
 // One binding resolved against one catalog.

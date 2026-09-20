@@ -5,9 +5,11 @@
 // else becomes a diagnostic that names the binding and the argument.
 
 #include <authored/VerbBindingCompiler.h>
+#include <assets/data/DataAssetCache.h>
+#include <core/assets/AssetRegistry.h>
 #include <core/identity/Id.h>
+#include <core/logging/LoggingProvider.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
-#include <world/identity/PersistentEntityIndex.h>
 
 #include <gtest/gtest.h>
 
@@ -83,13 +85,11 @@ protected:
         return VerbBindingEnvironment{
             .Verbs = &Verbs,
             .Tags = &Tags,
-            .Entities = &Entities,
         };
     }
 
     VerbRegistry Verbs;
     GameplayTagRegistry Tags;
-    PersistentEntityIndex Entities;
     std::vector<std::string> Errors;
     CompiledVerbBinding Compiled;
 };
@@ -136,8 +136,6 @@ TEST_F(VerbBindingCompileTest, EveryAdvertisedShapeCompiles)
 
     const GameplayTagId tag = *Tags.RegisterTag("Score.Pickup");
     const PersistentEntityId identity{ 0xabull };
-    const EntityId entity{ .Index = 7, .Generation = 3 };
-    ASSERT_TRUE(Entities.Register(identity, entity));
 
     const VerbBindingDesc desc = Binding(
         "everything", "test.everything",
@@ -171,7 +169,7 @@ TEST_F(VerbBindingCompileTest, EveryAdvertisedShapeCompiles)
     const AssetRef* look = nullptr;
     const AssetRef* tuning = nullptr;
     GameplayTagId kind;
-    EntityId anchor;
+    PersistentEntityId anchor;
     EXPECT_TRUE(arguments.TryGetBool(0, flag));
     EXPECT_TRUE(arguments.TryGetInt(1, count));
     EXPECT_TRUE(arguments.TryGetFloat(2, scale));
@@ -181,7 +179,8 @@ TEST_F(VerbBindingCompileTest, EveryAdvertisedShapeCompiles)
     EXPECT_TRUE(arguments.TryGetAsset(9, look));
     EXPECT_TRUE(arguments.TryGetDataAsset(10, tuning));
     EXPECT_TRUE(arguments.TryGetTag(11, kind));
-    EXPECT_TRUE(arguments.TryGetEntity(12, anchor));
+    // Not a handle: the identity, for the dispatcher to resolve at each call.
+    EXPECT_TRUE(arguments.TryGetPersistentEntity(12, anchor));
 
     EXPECT_TRUE(flag);
     EXPECT_EQ(count, 42);
@@ -198,7 +197,7 @@ TEST_F(VerbBindingCompileTest, EveryAdvertisedShapeCompiles)
     EXPECT_EQ(look->Path, "asset://materials/hit.smat");
     EXPECT_EQ(tuning->Type, AssetType::Data);
     EXPECT_EQ(kind, tag);
-    EXPECT_EQ(anchor, entity);
+    EXPECT_EQ(anchor, identity);
 }
 
 TEST_F(VerbBindingCompileTest, AnUnsuppliedArgumentTakesItsDeclaredDefault)
@@ -315,10 +314,7 @@ TEST_F(VerbBindingCompileTest, ReferencesResolveAgainstTheBoundWorldOrFail)
                         Record({ Field("Kind", DataFieldKind::GameplayTag),
                                  Field("Anchor", DataFieldKind::Entity) })));
     (void)Tags.RegisterTag("Known.Tag");
-    const PersistentEntityId identity{ 0x2211ull };
-    ASSERT_TRUE(Entities.Register(identity, EntityId{ .Index = 1, .Generation = 1 }));
-
-    const std::string identityText = PersistentEntityIdToString(identity);
+    const std::string identityText = PersistentEntityIdToString(PersistentEntityId{ 0x2211ull });
 
     // A tag this World never declared is not resolved to something plausible.
     Errors.clear();
@@ -326,14 +322,6 @@ TEST_F(VerbBindingCompileTest, ReferencesResolveAgainstTheBoundWorldOrFail)
         Binding("unknown_tag", "test.refs",
                 { Reference("Kind", VerbArgumentSource::Tag, "Never.Declared"),
                   Reference("Anchor", VerbArgumentSource::Entity, identityText) }),
-        Environment(), Compiled, Errors));
-
-    // An entity nothing in this World carries.
-    Errors.clear();
-    EXPECT_FALSE(CompileVerbBinding(
-        Binding("unknown_entity", "test.refs",
-                { Reference("Kind", VerbArgumentSource::Tag, "Known.Tag"),
-                  Reference("Anchor", VerbArgumentSource::Entity, "00000000000000ff") }),
         Environment(), Compiled, Errors));
 
     // A malformed identity, which is a typo rather than a missing entity.
@@ -344,22 +332,28 @@ TEST_F(VerbBindingCompileTest, ReferencesResolveAgainstTheBoundWorldOrFail)
                   Reference("Anchor", VerbArgumentSource::Entity, "not-an-id") }),
         Environment(), Compiled, Errors));
 
-    // A World with no vocabulary to resolve against refuses rather than
-    // compiling to an invalid id.
+    // A World with no tag vocabulary refuses rather than compiling to an
+    // invalid id.
     Errors.clear();
-    const VerbBindingEnvironment bare{ .Verbs = &Verbs, .Tags = nullptr, .Entities = nullptr };
+    const VerbBindingEnvironment bare{ .Verbs = &Verbs, .Tags = nullptr };
     EXPECT_FALSE(CompileVerbBinding(
         Binding("bare", "test.refs",
                 { Reference("Kind", VerbArgumentSource::Tag, "Known.Tag"),
                   Reference("Anchor", VerbArgumentSource::Entity, identityText) }),
         bare, Compiled, Errors));
 
+    // An entity nothing carries yet still compiles: the binding names an
+    // authored relationship, and whether an entity carries that identity is a
+    // question for the moment of each invocation, not for the compile.
     Errors.clear();
     EXPECT_TRUE(CompileVerbBinding(
         Binding("good", "test.refs",
                 { Reference("Kind", VerbArgumentSource::Tag, "Known.Tag"),
                   Reference("Anchor", VerbArgumentSource::Entity, identityText) }),
         Environment(), Compiled, Errors));
+    PersistentEntityId anchor;
+    EXPECT_TRUE(Compiled.Constants.TryGetPersistentEntity(1, anchor));
+    EXPECT_EQ(anchor.Value, 0x2211ull);
 }
 
 TEST_F(VerbBindingCompileTest, AReferenceMustMatchTheDeclaredArgumentKind)
@@ -402,9 +396,11 @@ TEST_F(VerbBindingCompileTest, InputsBecomeSlotIndicesInProducerOrder)
 
     ASSERT_EQ(Compiled.Inputs.size(), 2u);
     EXPECT_EQ(Compiled.Inputs[0].Name, "target");
-    EXPECT_EQ(Compiled.Inputs[0].ArgumentSlot, 1u);
+    ASSERT_EQ(Compiled.Inputs[0].Destinations.size(), 1u);
+    EXPECT_EQ(Compiled.Inputs[0].Destinations[0].ArgumentSlot, 1u);
     EXPECT_EQ(Compiled.Inputs[1].Name, "amount");
-    EXPECT_EQ(Compiled.Inputs[1].ArgumentSlot, 0u);
+    ASSERT_EQ(Compiled.Inputs[1].Destinations.size(), 1u);
+    EXPECT_EQ(Compiled.Inputs[1].Destinations[0].ArgumentSlot, 0u);
     // The constant is in place; the input slots are waiting.
     std::string_view label;
     EXPECT_TRUE(Compiled.Constants.TryGetString(2, label));
@@ -437,6 +433,26 @@ TEST_F(VerbBindingCompileTest, InputDeclarationsAndUsesMustAgree)
                 { Reference("Amount", VerbArgumentSource::Input, "amount") },
                 { "amount", "amount" }),
         Environment(), Compiled, Errors));
+}
+
+TEST_F(VerbBindingCompileTest, OneInputMayFillSeveralArguments)
+{
+    // An effect applied to the entity that caused it names that entity twice.
+    // Both destinations are recorded; nothing is silently dropped.
+    ASSERT_TRUE(Declare(Verbs, "test.self",
+                        Record({ Field("Source", DataFieldKind::Entity),
+                                 Field("Target", DataFieldKind::Entity) })));
+    ASSERT_TRUE(CompileVerbBinding(
+        Binding("self", "test.self",
+                { Reference("Source", VerbArgumentSource::Input, "self"),
+                  Reference("Target", VerbArgumentSource::Input, "self") },
+                { "self" }),
+        Environment(), Compiled, Errors))
+        << (Errors.empty() ? std::string{} : Errors.front());
+    ASSERT_EQ(Compiled.Inputs.size(), 1u);
+    ASSERT_EQ(Compiled.Inputs[0].Destinations.size(), 2u);
+    EXPECT_EQ(Compiled.Inputs[0].Destinations[0].ArgumentSlot, 0u);
+    EXPECT_EQ(Compiled.Inputs[0].Destinations[1].ArgumentSlot, 1u);
 }
 
 TEST_F(VerbBindingCompileTest, OneArgumentCannotBeFilledTwice)
@@ -476,10 +492,7 @@ TEST_F(VerbBindingCompileTest, OneRecordResolvesIndependentlyInTwoWorlds)
     CompiledVerbBinding here;
     CompiledVerbBinding there;
     GameplayTagRegistry otherTags;
-    PersistentEntityIndex otherEntities;
-    const VerbBindingEnvironment otherEnvironment{
-        .Verbs = &other, .Tags = &otherTags, .Entities = &otherEntities
-    };
+    const VerbBindingEnvironment otherEnvironment{ .Verbs = &other, .Tags = &otherTags };
     ASSERT_TRUE(CompileVerbBinding(desc, Environment(), here, Errors));
     ASSERT_TRUE(CompileVerbBinding(desc, otherEnvironment, there, Errors));
 
@@ -511,4 +524,75 @@ TEST_F(VerbBindingCompileTest, AChangedContractMakesAnExistingBindingStale)
     EXPECT_TRUE(IsVerbBindingCurrent(Compiled, Verbs));
     Verbs.RetireProvider("test");
     EXPECT_FALSE(IsVerbBindingCurrent(Compiled, Verbs));
+}
+
+TEST_F(VerbBindingCompileTest, AnAssetReferenceIsCheckedAgainstWhatTheAssetActuallyIs)
+{
+    DataFieldSchema look = Field("Look", DataFieldKind::AssetRef);
+    look.Reference.AssetTypeFilter = AssetType::Material;
+    DataFieldSchema tuning = Field("Tuning", DataFieldKind::DataAssetRef);
+    tuning.Reference.DataSubtype = "movement.profile";
+    tuning.Required = false;
+    ASSERT_TRUE(Declare(Verbs, "test.assets", Record({ std::move(look), std::move(tuning) })));
+
+    LoggingProvider logging;
+    AssetRegistry assets(logging);
+    (void)assets.Register(AssetRecord{ .Type = AssetType::Material,
+                                 .SourceKind = AssetSourceKind::File,
+                                 .Path = "asset://materials/hit.smat",
+                                 .FilePath = "hit.smat" });
+    (void)assets.Register(AssetRecord{ .Type = AssetType::Texture,
+                                 .SourceKind = AssetSourceKind::File,
+                                 .Path = "asset://textures/hit.stex",
+                                 .FilePath = "hit.stex" });
+    (void)assets.Register(AssetRecord{ .Type = AssetType::Data,
+                                 .SourceKind = AssetSourceKind::File,
+                                 .Path = "asset://data/actions.sdata",
+                                 .FilePath = "actions.sdata" });
+    DataAssetCache dataAssets;
+    ASSERT_TRUE(dataAssets
+                    .Register("asset://data/actions.sdata", "input.actions",
+                              std::make_shared<int>(0))
+                    .IsValid());
+
+    VerbBindingEnvironment checked = Environment();
+    checked.Assets = &assets;
+    checked.DataAssets = &dataAssets;
+
+    // A texture where the verb wants a material.
+    Errors.clear();
+    EXPECT_FALSE(CompileVerbBinding(
+        Binding("texture", "test.assets",
+                { Reference("Look", VerbArgumentSource::Asset, "asset://textures/hit.stex") }),
+        checked, Compiled, Errors));
+    // An asset nothing mounted.
+    Errors.clear();
+    EXPECT_FALSE(CompileVerbBinding(
+        Binding("missing", "test.assets",
+                { Reference("Look", VerbArgumentSource::Asset, "asset://materials/nope.smat") }),
+        checked, Compiled, Errors));
+    // A data asset of another subtype than the argument constrains.
+    Errors.clear();
+    EXPECT_FALSE(CompileVerbBinding(
+        Binding("subtype", "test.assets",
+                { Reference("Look", VerbArgumentSource::Asset, "asset://materials/hit.smat"),
+                  Reference("Tuning", VerbArgumentSource::DataAsset,
+                            "asset://data/actions.sdata") }),
+        checked, Compiled, Errors));
+    ASSERT_FALSE(Errors.empty());
+    EXPECT_NE(Errors.front().find("movement.profile"), std::string::npos);
+
+    Errors.clear();
+    EXPECT_TRUE(CompileVerbBinding(
+        Binding("ok", "test.assets",
+                { Reference("Look", VerbArgumentSource::Asset, "asset://materials/hit.smat") }),
+        checked, Compiled, Errors))
+        << (Errors.empty() ? std::string{} : Errors.front());
+
+    // With no metadata to check against, the reference compiles on its form.
+    Errors.clear();
+    EXPECT_TRUE(CompileVerbBinding(
+        Binding("unchecked", "test.assets",
+                { Reference("Look", VerbArgumentSource::Asset, "asset://textures/hit.stex") }),
+        Environment(), Compiled, Errors));
 }

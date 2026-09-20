@@ -454,3 +454,49 @@ TEST(UiVerbBindings, ActionsForAnotherScreenAreLeftAlone)
     EXPECT_TRUE(fixture.Fire.Calls.empty());
     EXPECT_TRUE(fixture.Controller->LastOutcomes().empty());
 }
+
+TEST(UiVerbBindings, ABindingReplacedUnderAnOpenScreenIsNeverRunThroughTheOldMapping)
+{
+    UiVerbFixture fixture;
+    std::vector<std::string> errors;
+    ASSERT_TRUE(fixture.OpenScreenAndBind(MakeDesc(), WorkingMappings(), errors));
+
+    ClickAt(*fixture.Ui, 70.0f, 35.0f);
+    fixture.PumpFrame();
+    ASSERT_EQ(fixture.Fire.Calls.size(), 1u);
+
+    // The set is rebuilt with a different record in the storage the old one
+    // occupied. The button was mapped to "fire"; whatever now sits where
+    // "fire" sat must not run.
+    VerbBindingLibrary replacement;
+    VerbBindingDesc count;
+    count.Key = "count";
+    count.KeyId = MakeVerbBindingKey(count.Key);
+    count.VerbName = "test.count";
+    count.Inputs = { "amount" };
+    count.Arguments.push_back(FromInput("Amount", "amount"));
+    replacement.Bindings.push_back(std::move(count));
+    fixture.Bindings.Instantiate(replacement, MakeVerbBindingEnvironment(fixture.Entities),
+                                 errors);
+
+    ClickAt(*fixture.Ui, 70.0f, 35.0f);
+    fixture.PumpFrame();
+    EXPECT_EQ(fixture.Fire.Calls.size(), 1u);
+    EXPECT_TRUE(fixture.Count.Calls.empty()) << "the replacement ran through the old mapping";
+    // The screen stays open and says why its button does nothing.
+    EXPECT_TRUE(fixture.Controller->IsOpen());
+    EXPECT_FALSE(fixture.Controller->LastErrors().empty());
+
+    // Put the record back and the same button works again, with no reopen.
+    VerbBindingDesc fire;
+    fire.Key = "fire";
+    fire.KeyId = MakeVerbBindingKey(fire.Key);
+    fire.VerbName = "test.fire";
+    replacement.Bindings.push_back(std::move(fire));
+    fixture.Bindings.Instantiate(replacement, MakeVerbBindingEnvironment(fixture.Entities),
+                                 errors);
+    ClickAt(*fixture.Ui, 70.0f, 35.0f);
+    fixture.PumpFrame();
+    EXPECT_EQ(fixture.Fire.Calls.size(), 2u);
+    EXPECT_TRUE(fixture.Controller->LastErrors().empty());
+}

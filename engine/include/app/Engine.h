@@ -432,6 +432,11 @@ public:
     // without the engine relating the two.
     [[nodiscard]] VerbBindingSet& ShellBindings() { return ShellBindingSet; }
 
+    // The environment those bindings compile against: the runtime World's
+    // catalog and vocabulary plus the content stack's asset metadata. What a
+    // game passes when it appends its own asset to the set.
+    [[nodiscard]] VerbBindingEnvironment ShellBindingEnvironment() const;
+
 #ifdef SENCHA_ENABLE_UI
     // The authored UI layer: surfaces, screens, presentation models, semantic
     // actions. Valid from just before OnStart to just after OnShutdown -- it
@@ -600,6 +605,11 @@ private:
     // not resolve, which is the same condition that leaves the shell without a
     // document to present.
     [[nodiscard]] bool InstantiateShellBindings();
+
+    // Once per frame: rebuilds the shell's bindings when any asset they came
+    // from has reloaded, so an edited record takes effect on the next click
+    // and a removed one stops executing.
+    void RefreshShellBindings();
 
     std::unique_ptr<VerbDispatcher> VerbDispatcherState;
     // The stock shell's bindings, compiled against the runtime catalog. Derived

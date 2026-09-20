@@ -58,6 +58,14 @@ void RegisterAbilityKitComponents(ComponentRegistrar& registrar);
 // callers cannot forget a piece.
 void RegisterAbilityKit(World& world);
 
+// The kit's vocabulary registries and nothing else: tags, attributes, effects,
+// abilities. What a game's OnRegisterVocabulary declares into, so every host
+// that calls that hook -- the runtime before content, an editor per document,
+// a previewer's metadata World -- installs the same set first. Idempotent, and
+// deliberately not RegisterAbilityKit: installing a vocabulary starts no
+// activation queue and registers no component.
+void InstallAbilityKitVocabulary(World& world);
+
 // Register the ability-kit fixed-tick systems (ability activation, then attribute
 // resolve, then effect lifetime). This is the kit's standalone order; the movement
 // pipeline interleaves its own systems between these, so call this before

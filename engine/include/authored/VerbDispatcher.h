@@ -17,6 +17,7 @@ concept IsVerbImplementation = requires(T& implementation, const VerbInvocation&
     { implementation.Invoke(invocation) } -> std::same_as<VerbAdmission>;
 };
 
+class PersistentEntityIndex;
 class VerbDispatcher;
 
 //-----------------------------------------------------------------------------
@@ -116,10 +117,13 @@ public:
 
     [[nodiscard]] const VerbRegistry& Registry() const { return Verbs; }
 
-    // Puts one implementation behind one verb. An invalid or unknown verb, or a
-    // call made from inside a dispatch, returns an invalid token and binds
-    // nothing. Binding over an existing implementation replaces it and moves the
-    // generation, so the previous owner's token can no longer remove it.
+    // Puts one implementation behind one verb, against the verb's current
+    // contract revision. An invalid or unknown verb, or a call made from inside
+    // a dispatch, returns an invalid token and binds nothing. Binding over an
+    // existing implementation replaces it and moves the generation, so the
+    // previous owner's token can no longer remove it. A contract that changes
+    // or is revived afterwards makes the implementation unavailable until its
+    // owner binds it again: rebinding is the statement that it was updated.
     template<IsVerbImplementation T>
     [[nodiscard]] VerbBindingToken Bind(VerbId verb, T& implementation)
     {
@@ -138,6 +142,11 @@ public:
     [[nodiscard]] VerbInvocationResult Invoke(const CompiledVerbBinding& binding,
                                               std::span<const VerbValue> inputs,
                                               const VerbInvocationSource& source = {});
+
+    // Where an entity constant resolves at each invocation. Borrowed and
+    // outlived by its owner; null means a binding naming an entity is refused
+    // with UnresolvedReference, never dispatched with an invalid handle.
+    void SetEntityIndex(const PersistentEntityIndex* entities) { Entities = entities; }
 
     // Stops admitting anything. The first half of shutdown: producers are
     // refused before implementations are removed, so nothing is accepted by an
@@ -165,6 +174,10 @@ private:
         void* Target = nullptr;
         InvokeFn Invoke = nullptr;
         VerbBindingGeneration Generation;
+        // The contract this implementation was written against. A binding
+        // compiled against a newer one is not offered to it: the argument
+        // layout it would read is not the layout it was handed.
+        VerbContractRevision Revision;
     };
 
     [[nodiscard]] VerbBindingToken BindErased(VerbId verb, void* target, InvokeFn invoke);
@@ -188,6 +201,7 @@ private:
     VerbArguments Scratch;
 
     VerbTraceRing* Trace_ = nullptr;
+    const PersistentEntityIndex* Entities = nullptr;
     std::uint64_t NextInvocation = 0;
     std::uint32_t NextGeneration = 0;
     bool Admitting = true;

@@ -103,16 +103,30 @@ bool UiVerbBindings::Open(UiScreenHandle screen,
         return false;
     }
 
+    Desc = desc;
+    Mappings.assign(mappings.begin(), mappings.end());
+    if (!Compile(errors))
+    {
+        Desc = {};
+        Mappings.clear();
+        return false;
+    }
+    Screen = screen;
+    return true;
+}
+
+bool UiVerbBindings::Compile(std::vector<std::string>& errors)
+{
     std::vector<CompiledAction> compiled;
-    compiled.reserve(mappings.size());
+    compiled.reserve(Mappings.size());
     bool ok = true;
 
-    for (const UiVerbActionMapping& mapping : mappings)
+    for (const UiVerbActionMapping& mapping : Mappings)
     {
         // Screen-local ids are positions in the list this opening declared, so
         // they are resolved here rather than remembered from a previous one.
-        const auto declared = std::ranges::find(desc.Actions, mapping.ActionName);
-        if (declared == desc.Actions.end())
+        const auto declared = std::ranges::find(Desc.Actions, mapping.ActionName);
+        if (declared == Desc.Actions.end())
         {
             errors.push_back(std::format("this screen declares no action named '{}'",
                                          mapping.ActionName));
@@ -131,8 +145,8 @@ bool UiVerbBindings::Open(UiScreenHandle screen,
 
         CompiledAction action;
         action.Action =
-            UiActionIdAt(static_cast<std::size_t>(declared - desc.Actions.begin()));
-        action.Binding = binding;
+            UiActionIdAt(static_cast<std::size_t>(declared - Desc.Actions.begin()));
+        action.Binding = binding->Key;
         action.InputCount = binding->Inputs.size();
 
         std::vector<bool> filled(binding->Inputs.size(), false);
@@ -147,11 +161,11 @@ bool UiVerbBindings::Open(UiScreenHandle screen,
                 ok = false;
                 continue;
             }
+            const VerbCompiledInput& input = binding->Inputs[argument.InputSlot];
             if (filled[argument.InputSlot])
             {
                 errors.push_back(std::format("action '{}' fills input '{}' twice",
-                                             mapping.ActionName,
-                                             binding->Inputs[argument.InputSlot].Name));
+                                             mapping.ActionName, input.Name));
                 ok = false;
                 continue;
             }
@@ -159,16 +173,20 @@ bool UiVerbBindings::Open(UiScreenHandle screen,
             {
                 errors.push_back(std::format("action '{}' declares a conversion this boundary "
                                              "does not perform for input '{}'",
-                                             mapping.ActionName,
-                                             binding->Inputs[argument.InputSlot].Name));
+                                             mapping.ActionName, input.Name));
                 ok = false;
                 continue;
             }
-            if (argument.Produces != KindOfField(binding->Inputs[argument.InputSlot].Expected))
+            // Every argument the input feeds has to want what the mapping
+            // produces; one value cannot be an integer for one and a string
+            // for another.
+            bool kindsAgree = !input.Destinations.empty();
+            for (const VerbInputDestination& destination : input.Destinations)
+                kindsAgree = kindsAgree && argument.Produces == KindOfField(destination.Expected);
+            if (!kindsAgree)
             {
                 errors.push_back(std::format("action '{}' produces the wrong kind for input '{}'",
-                                             mapping.ActionName,
-                                             binding->Inputs[argument.InputSlot].Name));
+                                             mapping.ActionName, input.Name));
                 ok = false;
                 continue;
             }
@@ -200,18 +218,25 @@ bool UiVerbBindings::Open(UiScreenHandle screen,
     }
 
     if (!ok)
+    {
+        Actions.clear();
+        CompiledRevision = Bindings.Revision();
         return false;
+    }
 
-    Screen = screen;
     Actions = std::move(compiled);
+    CompiledRevision = Bindings.Revision();
     return true;
 }
 
 void UiVerbBindings::Close()
 {
     Screen = {};
+    Desc = {};
+    Mappings.clear();
     Actions.clear();
     Outcomes.clear();
+    Errors.clear();
 }
 
 const UiVerbBindings::CompiledAction* UiVerbBindings::Find(UiActionId action) const
@@ -230,6 +255,15 @@ void UiVerbBindings::Dispatch(std::span<const UiAction> actions)
     if (!IsOpen())
         return;
 
+    // The set moved under an open screen: compiled again against what it holds
+    // now. A mapping that no longer compiles leaves every action refusing,
+    // with the reasons in LastErrors, rather than acting on stale slots.
+    if (CompiledRevision != Bindings.Revision())
+    {
+        Errors.clear();
+        (void)Compile(Errors);
+    }
+
     for (const UiAction& action : actions)
     {
         if (action.Screen != Screen)
@@ -237,6 +271,15 @@ void UiVerbBindings::Dispatch(std::span<const UiAction> actions)
         const CompiledAction* compiled = Find(action.Id);
         if (compiled == nullptr)
             continue;
+
+        const CompiledVerbBinding* binding = Bindings.Find(compiled->Binding);
+        if (binding == nullptr)
+        {
+            Outcomes.push_back(Outcome{ .Action = action.Id,
+                                        .Status = VerbAdmission::UnresolvedBinding,
+                                        .Id = {} });
+            continue;
+        }
 
         Inputs.assign(compiled->InputCount, VerbValue{});
         bool payloadIsRight = true;
@@ -263,7 +306,7 @@ void UiVerbBindings::Dispatch(std::span<const UiAction> actions)
             continue;
         }
 
-        const VerbInvocationResult result = Dispatcher.Invoke(*compiled->Binding, Inputs);
+        const VerbInvocationResult result = Dispatcher.Invoke(*binding, Inputs);
         Outcomes.push_back(
             Outcome{ .Action = action.Id, .Status = result.Status, .Id = result.Id });
     }

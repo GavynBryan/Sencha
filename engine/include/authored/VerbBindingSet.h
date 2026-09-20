@@ -1,12 +1,16 @@
 #pragma once
 
+#include <assets/data/DataAssetHandle.h>
 #include <authored/VerbBinding.h>
 #include <authored/VerbBindingCompiler.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <vector>
+
+class DataAssetCache;
 
 //=============================================================================
 // VerbBindingSet
@@ -26,6 +30,12 @@
 // This is derived state. The authored records stay in the library, which is the
 // shared asset; nothing here is edited, and rebuilding it from the library is
 // always the way to change it.
+//
+// A consumer never keeps a pointer into this. Every rebuild moves the
+// revision, and a consumer that compiled anything against the set -- an action
+// mapping, a relay's resolved record -- compares revisions and looks its
+// binding up again by key. A record the new file no longer holds then fails
+// the lookup, which is the answer a reload that removed it should get.
 //=============================================================================
 class VerbBindingSet
 {
@@ -44,7 +54,30 @@ public:
                 const VerbBindingEnvironment& environment,
                 std::vector<std::string>& errors);
 
-    void Clear() { Bindings.clear(); }
+    // The same two operations from a resident asset. The set remembers which
+    // assets it was built from and at what reload version, so Refresh can
+    // rebuild it when any of them changes.
+    void InstantiateFrom(const DataAssetCache& cache,
+                         DataAssetHandle asset,
+                         const VerbBindingEnvironment& environment,
+                         std::vector<std::string>& errors);
+    void AppendFrom(const DataAssetCache& cache,
+                    DataAssetHandle asset,
+                    const VerbBindingEnvironment& environment,
+                    std::vector<std::string>& errors);
+
+    // Rebuilds from every remembered asset if any has reloaded since. True when
+    // it did, in which case the revision moved. Cheap when nothing changed: one
+    // version comparison per source, no schema work.
+    [[nodiscard]] bool Refresh(const DataAssetCache& cache,
+                               const VerbBindingEnvironment& environment,
+                               std::vector<std::string>& errors);
+
+    void Clear();
+
+    // Moves on every rebuild. What a consumer compares before trusting a
+    // lookup it made earlier.
+    [[nodiscard]] std::uint64_t Revision() const { return Revision_; }
 
     [[nodiscard]] const CompiledVerbBinding* Find(VerbBindingKey key) const;
     [[nodiscard]] const CompiledVerbBinding* Find(std::string_view key) const;
@@ -53,7 +86,19 @@ public:
     [[nodiscard]] std::size_t Size() const { return Bindings.size(); }
 
 private:
+    struct Source
+    {
+        DataAssetHandle Asset;
+        std::uint64_t ReloadVersion = 0;
+    };
+
+    void Compile(const VerbBindingLibrary& library,
+                 const VerbBindingEnvironment& environment,
+                 std::vector<std::string>& errors);
+
     // Authored order, and short: a set is one file's bindings, resolved when a
     // consumer is composed or the asset reloads, never per frame.
     std::vector<CompiledVerbBinding> Bindings;
+    std::vector<Source> Sources;
+    std::uint64_t Revision_ = 0;
 };

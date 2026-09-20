@@ -1,5 +1,7 @@
 #include <authored/VerbDispatcher.h>
 
+#include <world/identity/PersistentEntityIndex.h>
+
 #include <cassert>
 #include <utility>
 
@@ -15,6 +17,7 @@ const char* VerbAdmissionName(VerbAdmission admission)
     case VerbAdmission::Refused: return "refused";
     case VerbAdmission::QueueFull: return "queue full";
     case VerbAdmission::Reentrant: return "reentrant dispatch";
+    case VerbAdmission::UnresolvedReference: return "unresolved reference";
     }
     return "unknown";
 }
@@ -82,6 +85,7 @@ VerbBindingToken VerbDispatcher::BindErased(VerbId verb, void* target, InvokeFn 
     entry.Target = target;
     entry.Invoke = invoke;
     entry.Generation = VerbBindingGeneration{ ++NextGeneration };
+    entry.Revision = Verbs.Revision(verb);
 
     VerbBindingToken token;
     token.Link = Link;
@@ -126,12 +130,13 @@ VerbInvocationResult VerbDispatcher::Invoke(const CompiledVerbBinding& binding,
                                             std::span<const VerbValue> inputs,
                                             const VerbInvocationSource& source)
 {
-    // The candidate is reserved before anything can accept it, so an operation
-    // that queues work has the id to put in the record it queues. A refusal
-    // leaves a gap, which the sequence tolerates by design.
+    // Every attempt takes its own id, accepted or not, so a refusal in the
+    // trace can never share a number with an execution that came later. An
+    // operation that queues work has the id to put in the record it queues;
+    // the accepted sequence simply has gaps where refusals were.
     VerbInvocation invocation;
     invocation.Verb = binding.Verb;
-    invocation.Id = InvocationId{ NextInvocation + 1 };
+    invocation.Id = InvocationId{ ++NextInvocation };
     invocation.Parent = source.Parent;
     invocation.Binding = binding.Key;
     invocation.Producer = source.Producer;
@@ -151,7 +156,10 @@ VerbInvocationResult VerbDispatcher::Invoke(const CompiledVerbBinding& binding,
         return reject(VerbAdmission::StaleBinding);
 
     Implementation* entry = Find(binding.Verb);
-    if (entry == nullptr)
+    // An implementation bound against an older contract is not offered a newer
+    // binding: the catalog moved, the content recompiled, and the code that
+    // reads the arguments has not said it did.
+    if (entry == nullptr || entry->Revision != binding.Revision)
         return reject(VerbAdmission::Unavailable);
 
     if (inputs.size() != binding.Inputs.size())
@@ -159,14 +167,32 @@ VerbInvocationResult VerbDispatcher::Invoke(const CompiledVerbBinding& binding,
 
     Scratch.Resize(binding.Constants.Size());
     for (std::size_t slot = 0; slot < binding.Constants.Size(); ++slot)
-        Scratch.Set(slot, binding.Constants.At(slot));
+    {
+        const VerbValue& constant = binding.Constants.At(slot);
+        PersistentEntityId identity;
+        if (!constant.TryGetPersistentEntity(identity))
+        {
+            Scratch.Set(slot, constant);
+            continue;
+        }
+        // The authored relationship, resolved now: whichever entity carries
+        // the identity at this moment, or nothing. A target that is absent
+        // refuses this request and does not wait for a later one.
+        const EntityId entity =
+            Entities != nullptr ? Entities->TryResolve(identity) : EntityId{};
+        if (!entity.IsValid())
+            return reject(VerbAdmission::UnresolvedReference);
+        Scratch.Set(slot, VerbValue::Entity(entity));
+    }
 
     for (std::size_t index = 0; index < binding.Inputs.size(); ++index)
     {
-        const VerbCompiledInput& input = binding.Inputs[index];
-        if (!VerbValueSatisfiesField(inputs[index], input.Expected))
-            return reject(VerbAdmission::InvalidArguments);
-        Scratch.Set(input.ArgumentSlot, inputs[index]);
+        for (const VerbInputDestination& destination : binding.Inputs[index].Destinations)
+        {
+            if (!VerbValueSatisfiesField(inputs[index], destination.Expected))
+                return reject(VerbAdmission::InvalidArguments);
+            Scratch.Set(destination.ArgumentSlot, inputs[index]);
+        }
     }
 
     invocation.Arguments = &Scratch;
@@ -190,7 +216,6 @@ VerbInvocationResult VerbDispatcher::Invoke(const CompiledVerbBinding& binding,
     if (status != VerbAdmission::Accepted)
         return reject(status);
 
-    NextInvocation = invocation.Id.Value;
     RecordTrace(VerbTraceEvent::Admitted, status, invocation);
     return VerbInvocationResult{ .Status = status, .Id = invocation.Id };
 }

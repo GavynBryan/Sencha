@@ -40,9 +40,13 @@ and the arena count as one consumer: the arena is the FPS with a session).
    content stack's registries *before* the scan classifies `.sdata`. Called by
    the runtime and by the data editor through the same
    `RegisterGameDataAssets`.
-   Before the content stack exists, the engine installs the runtime World's
-   authored vocabulary (`VerbRegistry`, with its own `runtime.resume` and
-   `application.quit`) and calls `OnRegisterVocabulary` once. A game declares
+   Before the content stack exists, the engine installs the vocabulary
+   registries a game declares into (`InstallAbilityKitVocabulary`: tags,
+   attributes, effects, abilities -- registries only; movement stays a
+   feature the game opts into from `OnStart`, so a locomotion mode is
+   registered there, after `RegisterMovement`) and the runtime World's authored
+   vocabulary (`VerbRegistry`, with its own `runtime.resume` and
+   `application.quit`), then calls `OnRegisterVocabulary` once. A game declares
    its verbs there through a `VerbRegistrationScope` on that catalog, beside
    its tags, attributes and modes; the engine reads the catalog's installation
    errors afterwards and refuses to start on any. Declaration only: the

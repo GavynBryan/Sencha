@@ -26,7 +26,8 @@ VerbRegistry& InstallVerbRegistry(World& world);
 [[nodiscard]] VerbRegistry* FindVerbRegistry(World& world);
 [[nodiscard]] const VerbRegistry* FindVerbRegistry(const World& world);
 
-// The catalog, tag registry and entity index this World actually has. A
-// registry that is absent stays null, and a binding naming a reference it
-// cannot resolve fails to compile rather than compiling to an invalid id.
+// The catalog and tag registry this World actually has. A registry that is
+// absent stays null, and a binding naming a tag it cannot resolve fails to
+// compile rather than compiling to an invalid id. Asset metadata is not a
+// World's to give; a host that has it sets the environment's asset members.
 [[nodiscard]] VerbBindingEnvironment MakeVerbBindingEnvironment(const World& world);
