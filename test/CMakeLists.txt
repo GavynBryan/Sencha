@@ -228,6 +228,8 @@ endif()
 # its math headers -- the brush_tests discipline. GUI-coupled editor code (ImGui,
 # render passes) is out of scope for headless tests by construction.
 if(EDITOR_TEST_SOURCES AND TARGET kyusu_authoring)
+    add_executable(editor_process_probe editor_process/ProcessProbe.cpp)
+    sencha_warnings(editor_process_probe)
     # Kyusu's authoring half arrives as a library; only the other editor
     # applications, which have no such split, are still listed by hand.
     add_executable(editor_tests
@@ -255,8 +257,11 @@ if(EDITOR_TEST_SOURCES AND TARGET kyusu_authoring)
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src)
     # The previewer's authoring half arrives as a library too, and its tests
     # open the shipped documents from the source tree with their sidecars.
-    target_link_libraries(editor_tests PRIVATE kyusu_authoring shoji_authoring GTest::gtest_main)
+    target_link_libraries(editor_tests PRIVATE kyusu_authoring shoji_authoring animation_authoring GTest::gtest_main)
     target_compile_definitions(editor_tests PRIVATE SENCHA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+    target_compile_definitions(editor_tests PRIVATE
+        TEST_PROCESS_PROBE_PATH="$<TARGET_FILE:editor_process_probe>")
+    add_dependencies(editor_tests editor_process_probe)
     list(APPEND SENCHA_TEST_TARGETS editor_tests)
 endif()
 

@@ -105,12 +105,17 @@ else()
     target_link_libraries(sencha-component-codegen PRIVATE clangTooling)
 endif()
 
-# The Windows release libraries are built against the release CRT, whatever
-# configuration the tool itself is built in.
+# Match the CRT declared by the LLVM package. Older Windows packages do not
+# declare it and use the dynamic release CRT. This setting is local to the
+# host tool: LLVM's runtime choice must not change the engine/module ABI.
+set(_codegen_msvc_runtime MultiThreadedDLL)
+if(MSVC AND CMAKE_MSVC_RUNTIME_LIBRARY)
+    set(_codegen_msvc_runtime "${CMAKE_MSVC_RUNTIME_LIBRARY}")
+endif()
 set_target_properties(sencha-component-codegen PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
-    MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+    MSVC_RUNTIME_LIBRARY "${_codegen_msvc_runtime}")
 
 # SenchaConfig.cmake imports the installed binary as sencha::component-codegen.
 install(TARGETS sencha-component-codegen

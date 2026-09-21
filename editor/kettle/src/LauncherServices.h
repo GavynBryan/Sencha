@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ProjectCatalog.h"
+#include "project/ProcessLaunch.h"
 
 #include <filesystem>
 #include <memory>
@@ -64,7 +65,7 @@ private:
 
     ProjectCatalog Catalog;
     EditorUiFeature* UiFeature = nullptr;
-    std::vector<long> ChildPids;
+    std::vector<ChildProcess> Children;
 
     // Browse dialog results land off the frame loop; applied in ProcessFrame.
     std::mutex PendingMutex;
