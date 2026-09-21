@@ -72,6 +72,7 @@ void LauncherServices::BuildUi()
             .OpenMaterialEditor = [this](const std::string& path) { LaunchEditor("shudei", path); },
             .OpenDataEditor = [this](const std::string& path) { LaunchEditor("data_editor", path); },
             .OpenUiPreviewer = [this](const std::string& path) { LaunchEditor("shoji", path); },
+            .OpenAnimationEditor = [this](const std::string& path) { LaunchEditor("animation_editor", path); },
             .BrowseForProject = [this]() { BrowseForProject(); },
             .CreateProject = [this](const std::string& dir, const std::string& name,
                                     const std::string& templateName)
@@ -119,8 +120,9 @@ void LauncherServices::ProcessFrame()
 
     // Reap finished children so long launcher sessions do not accumulate
     // zombies. Children are deliberately not killed on launcher exit.
-    ChildPids.erase(std::remove_if(ChildPids.begin(), ChildPids.end(), HasProcessExited),
-                    ChildPids.end());
+    Children.erase(std::remove_if(Children.begin(), Children.end(),
+                                 [](ChildProcess& child) { return child.HasExited(); }),
+                   Children.end());
 }
 
 std::filesystem::path LauncherServices::ResolveTemplatesDirectory()
@@ -177,17 +179,21 @@ std::string LauncherServices::ResolveEditorBinary(const char* name)
     const std::filesystem::path baseDir = std::filesystem::weakly_canonical(base);
 
     // Installed SDK: the editors sit side by side in bin/.
-    std::filesystem::path candidate = baseDir / name;
+    std::filesystem::path binaryName(name);
+#if defined(_WIN32)
+    binaryName += ".exe";
+#endif
+    std::filesystem::path candidate = baseDir / binaryName;
     std::error_code ec;
     if (std::filesystem::exists(candidate, ec))
         return candidate.string();
 
     // Build tree: build/editor/kettle/ next to build/editor/<name>/<name>.
-    candidate = baseDir.parent_path() / name / name;
+    candidate = baseDir.parent_path() / name / binaryName;
     if (std::filesystem::exists(candidate, ec))
         return candidate.string();
 
-    return (baseDir / name).string();
+    return (baseDir / binaryName).string();
 }
 
 void LauncherServices::LaunchEditor(const char* binaryName, const std::string& projectPath)
@@ -196,14 +202,15 @@ void LauncherServices::LaunchEditor(const char* binaryName, const std::string& p
     const std::string absolute =
         std::filesystem::absolute(std::filesystem::path(projectPath)).lexically_normal().string();
 
-    long pid = -1;
+    ChildProcess child;
     std::string error;
-    if (!SpawnProcess(binary, { "--project", absolute }, std::string{}, pid, &error))
+    if (!SpawnProcess(binary, { "--project", absolute }, std::string{}, child, &error))
     {
         std::fprintf(stderr, "[kettle] failed to launch %s: %s\n", binaryName, error.c_str());
         return;
     }
-    ChildPids.push_back(pid);
+    const long pid = child.Pid();
+    Children.push_back(std::move(child));
     std::fprintf(stderr, "[kettle] launched %s --project %s (pid %ld)\n",
                  binary.c_str(), absolute.c_str(), pid);
     TouchCatalog(projectPath);

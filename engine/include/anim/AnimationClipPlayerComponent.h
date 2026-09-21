@@ -15,10 +15,9 @@
 // time the component currently holds, so playback is deterministic under
 // catch-up frames and a paused player is a fixed, authorable pose.
 //
-// Deliberately one clip and no blending. A state graph, transitions, and
-// layered modifiers are the animation runtime's business; this is the
-// smallest thing that makes a character move, and the seam it leaves is the
-// component that a graph would replace rather than extend.
+// Compatibility playback for scenes that directly name a clip. Rig-based
+// selection and content resolution belong to separate components; extending
+// this record with selector or flow bookkeeping would mix their ownership.
 //=============================================================================
 struct SENCHA_COMPONENT("AnimationClipPlayer")
        SENCHA_SCHEMA("AnimationClipPlayer")
