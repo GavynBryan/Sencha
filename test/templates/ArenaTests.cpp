@@ -247,7 +247,8 @@ TEST(ArenaTemplate, OneAuthoredVerbIsReachedFromTheRelayAndFromTheShellsBinding)
         << "the game's binding asset did not land in the shell's set";
     EXPECT_EQ(seen.MenuAdmission, VerbAdmission::Accepted);
     // The relay's binding awards blue five, with the relay as its source; the
-    // menu's awards red one, with none.
+    // menu's awards red one, with none. Both landed on the replicated match
+    // entity, which is where a late joiner would read them from.
     EXPECT_EQ(seen.Scoreboard, "red 1, blue 5");
 }
 #endif

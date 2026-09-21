@@ -22,10 +22,13 @@ struct FixedLogicContext;
 // relay placed in the level awards one when a native path activates it. Neither
 // producer knows the other exists, and neither names the game's code.
 //
-// The score is a World resource rather than a component because it is a fact
-// about the match, not about an entity. A relay names an entity anyway -- its
-// own -- so the operation validates a typed entity input at execution, which
-// is the one thing the relay proof is for.
+// The score lives on a replicated component (ArenaScoreboard), so it is state
+// every peer sees and a late joiner reconstructs from the snapshot. Awarding is
+// an event that changes it, applied only where this process is the simulation
+// authority: a client asking awards nothing locally, and the result arrives
+// as state. A relay names an entity anyway -- its own -- so the operation
+// validates a typed entity input at execution, which is the one thing the
+// relay proof is for.
 //=============================================================================
 
 inline constexpr std::string_view kArenaAwardScoreVerb = "arena.award_score";
@@ -36,12 +39,6 @@ enum class ArenaSide : std::uint8_t
 {
     Red,
     Blue,
-};
-
-struct ArenaScoreboard
-{
-    std::int64_t Red = 0;
-    std::int64_t Blue = 0;
 };
 
 // The verb's contract, in one place: the declaration in OnRegisterVocabulary
@@ -61,11 +58,12 @@ void DeclareArenaVerbs(World& world);
 // logic. Deferred because the score is simulation state: an award admitted
 // from a menu on the frame clock lands on the tick, once, in admission order.
 //
-// Contract at the drain: a request naming a source entity is applied only if
-// that entity is still alive and in the tick's logic set; one naming none is
-// applied unconditionally. Requests present when the drain begins are applied
-// in admission order; one admitted while draining waits for the next tick.
-// Capacity is fixed; overflow refuses admission. Shutdown drops the queue.
+// Contract at the drain: applied only where this process is the simulation
+// authority, and only if a named source entity is still alive and in the
+// tick's logic set; one naming none is applied unconditionally. Requests
+// present when the drain begins are applied in admission order; one admitted
+// while draining waits for the next tick. Capacity is fixed; overflow refuses
+// admission. Shutdown drops the queue.
 //-----------------------------------------------------------------------------
 class ArenaScoreOperation
 {
@@ -75,6 +73,7 @@ public:
     struct Award
     {
         InvocationId Id;
+        EntityId Instigator;
         ArenaSide Side = ArenaSide::Red;
         std::int64_t Amount = 0;
         EntityId Source;

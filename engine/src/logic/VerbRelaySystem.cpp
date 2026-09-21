@@ -22,6 +22,7 @@ VerbRelaySystem::VerbRelaySystem(VerbDispatcher& dispatcher, DataAssetCache& dat
 
 VerbAdmission VerbRelaySystem::Activate(EntityId relay,
                                         std::span<const VerbValue> inputs,
+                                        EntityId instigator,
                                         InvocationId parent)
 {
     if (!relay.IsValid())
@@ -39,6 +40,7 @@ VerbAdmission VerbRelaySystem::Activate(EntityId relay,
     // handler that returns before the drain.
     Request request;
     request.Relay = relay;
+    request.Instigator = instigator;
     request.Parent = parent;
     request.Inputs.assign(inputs.begin(), inputs.end());
     Queue.push_back(std::move(request));
@@ -61,6 +63,7 @@ void VerbRelaySystem::Abandon(const Request& request, VerbAdmission why)
         record.Status = why;
         record.Parent = request.Parent;
         record.Producer = request.Relay;
+        record.Instigator = request.Instigator;
         trace->Record(record);
     }
 }
@@ -112,7 +115,10 @@ void VerbRelaySystem::FixedLogic(FixedLogicContext& ctx)
 
         const VerbInvocationResult result = Dispatcher.Invoke(
             *binding, request.Inputs,
-            VerbInvocationSource{ .Parent = request.Parent, .Producer = request.Relay });
+            VerbInvocationSource{ .Parent = request.Parent,
+                                  .Producer = request.Relay,
+                                  .Instigator = request.Instigator,
+                                  .Tick = ctx.Time.TickIndex });
         if (result.Accepted())
             ++Counts.Invoked;
         else

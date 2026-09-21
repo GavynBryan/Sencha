@@ -5,6 +5,7 @@
 #include <app/PauseState.h>
 #include <authored/VerbBindingSet.h>
 #include <authored/VerbDispatcher.h>
+#include <ecs/EntityId.h>
 #include <ui/UiScreenDesc.h>
 #include <ui/UiScreenHandle.h>
 #include <ui/UiSurface.h>
@@ -113,6 +114,11 @@ public:
         VerbBindings = bindings;
     }
 
+    // Who an authored entry acts for: the participant at this machine. Set by
+    // the host as that changes; invalid means nobody, which an operation that
+    // needs an instigator refuses.
+    void SetInstigator(EntityId participant) { Instigator = participant; }
+
     // What the last drained activation resolved to, for a headless test and for
     // a diagnostic surface. Absent when the entry ran a native handler.
     [[nodiscard]] VerbAdmission LastAuthoredAdmission() const { return LastAdmission; }
@@ -167,6 +173,7 @@ private:
 
     VerbDispatcher* Verbs = nullptr;
     const VerbBindingSet* VerbBindings = nullptr;
+    EntityId Instigator;
     VerbAdmission LastAdmission = VerbAdmission::Unavailable;
 
     // Held for the shell's lifetime: with nothing open, Back opens the menu.

@@ -58,8 +58,14 @@ public:
     // binding at the next drain; QueueFull means it will not, and the caller
     // knows now. The relay's liveness is checked at the drain, not here: the
     // entity may legitimately be created and activated in one frame.
+    //
+    // `instigator` is the participant behind the activation when the native
+    // path knows one -- the player who stepped on the plate, the peer whose
+    // request the authority answered -- and is carried to the operation as
+    // provenance, never as a target. The tick is stamped at the drain.
     [[nodiscard]] VerbAdmission Activate(EntityId relay,
                                          std::span<const VerbValue> inputs,
+                                         EntityId instigator = {},
                                          InvocationId parent = {});
 
     void SetCapacity(std::size_t capacity);
@@ -82,6 +88,7 @@ private:
     struct Request
     {
         EntityId Relay;
+        EntityId Instigator;
         InvocationId Parent;
         std::vector<VerbValue> Inputs;
     };

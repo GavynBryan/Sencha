@@ -35,9 +35,22 @@ kind and resident subtype at the dispatcher; a relay's scene form is lossless
 (the asset path and key text survive a failed load, and a hash is its own
 `binding_hash` field, never inferred from spelling); and a game that declares
 locomotion modes installs movement's vocabulary in the same hook every host
-runs. Producer ports with named, typed inputs, nested reference descriptors
-inside record/array literals, and the UI controller's all-or-nothing
-recompile policy remain open seams for the next consumer. This plan establishes the shared foundation
+runs. A multiplayer review added the two provenance
+fields every later authority decision starts from -- `VerbInvocation::Instigator`
+(the participant entity behind a request; UI, shell and relay producers stamp
+it) and `VerbInvocation::Tick` (the fixed tick a drain produced it in, for
+predicted-replay dedupe) -- and one World fact, `SimulationAuthority`
+(`world/SimulationAuthority.h`, written per frame from the session role:
+standalone and host authoritative, client not), so an operation that mutates
+replicated state asks `IsSimulationAuthority` once and is correct in both. The
+stable form of a request is the binding key plus producer inputs in authored
+kinds, never `VerbArguments`; a networked producer resolves wire identities at
+its own ingress. The arena proof now writes a replicated `ArenaScoreboard`
+component on a match entity, gated on that fact. Verb classification for
+replication policy, a network ingress producer, prediction semantics,
+producer ports with named, typed inputs, nested reference descriptors inside
+record/array literals, and the UI controller's all-or-nothing recompile policy
+remain open seams for the consumers that need them. This plan establishes the shared foundation
 before Shoji behavior authoring, animation markers, level logic, flowcharts, and
 the AbilityKit redesign acquire separate action vocabularies.
 

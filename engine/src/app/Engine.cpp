@@ -10,6 +10,8 @@
 #include <authored/WorldVocabulary.h>
 #include <logic/VerbRelaySystem.h>
 #include <abilities/AbilityKit.h>
+#include <participant/ParticipantLifecycle.h>
+#include <world/SimulationAuthority.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <core/assets/AssetLease.h>
 #include <ui/UiService.h>
@@ -539,10 +541,26 @@ VerbBindingEnvironment Engine::ShellBindingEnvironment() const
     return environment;
 }
 
+void Engine::PublishSimulationAuthority()
+{
+    if (RuntimeWorldState == nullptr)
+        return;
+    ::World& entities = RuntimeWorldState->Entities();
+    SimulationAuthority& fact = entities.HasResource<SimulationAuthority>()
+        ? entities.GetResource<SimulationAuthority>()
+        : entities.AddResource<SimulationAuthority>();
+    fact.Authoritative = NetState == nullptr || NetState->Role() != NetSessionRole::Client;
+}
+
 void Engine::RefreshShellBindings()
 {
     if (!ContentState.has_value() || VerbDispatcherState == nullptr)
         return;
+#ifdef SENCHA_ENABLE_UI
+    // Whoever is playing at this machine is who a menu entry acts for.
+    if (PauseMenuState != nullptr && RuntimeWorldState != nullptr)
+        PauseMenuState->SetInstigator(LocalParticipantOf(RuntimeWorldState->Entities()));
+#endif
     std::vector<std::string> errors;
     if (ShellBindingSet.Refresh(&ContentState->Assets().DataAssets, ShellBindingEnvironment(),
                                 errors))
@@ -1016,6 +1034,10 @@ int Engine::Run(Game& game)
         // game reaches it through Engine::TryVerbs to bind what it declared.
         VerbDispatcherState = std::make_unique<VerbDispatcher>(verbs);
         VerbDispatcherState->SetEntityIndex(entities.TryGetResource<PersistentEntityIndex>());
+        // Authoritative until a session says otherwise, which is the answer
+        // for every process a session never touches.
+        if (!entities.HasResource<SimulationAuthority>())
+            entities.AddResource<SimulationAuthority>();
     }
 
     // The content stack, before the game exists as far as content is concerned:
@@ -1030,6 +1052,7 @@ int Engine::Run(Game& game)
     RegisterGameDataAssets(game, ContentState->Assets());
     ContentState->Mount();
     ContentState->Publish(RuntimeWorldState->Entities());
+    VerbDispatcherState->SetDataAssets(&ContentState->Assets().DataAssets);
     LevelState.emplace(*this, *ContentState, LoggingState.GetLogger<Engine>());
 
     // The player's own settings, before the shell that offers them and before
@@ -1318,6 +1341,7 @@ int Engine::Run(Game& game)
     // the World that holds the relay store outlives that stack.
     ShellBindingLease.Reset();
     DisconnectVerbRelays(RuntimeWorldState->Entities());
+    VerbDispatcherState->SetDataAssets(nullptr);
 
 #ifdef SENCHA_ENABLE_UI
     // Before the content stack goes. A screen holds asset leases, and a lease

@@ -608,8 +608,13 @@ private:
 
     // Once per frame: rebuilds the shell's bindings when any asset they came
     // from has reloaded, so an edited record takes effect on the next click
-    // and a removed one stops executing.
+    // and a removed one stops executing, and tells the shell's producers who
+    // the local participant is now.
     void RefreshShellBindings();
+
+    // Once per frame: writes the World's SimulationAuthority from the session's
+    // role. One writer, here, so an operation never asks the session itself.
+    void PublishSimulationAuthority();
 
     std::unique_ptr<VerbDispatcher> VerbDispatcherState;
     // The stock shell's bindings, compiled against the runtime catalog. Derived

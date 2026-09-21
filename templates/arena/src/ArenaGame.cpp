@@ -1,6 +1,7 @@
 #include "ArenaGame.h"
 
 #include "ArenaScore.h"
+#include "ArenaScoreboard.h"
 #include "ArenaSteeringSystem.h"
 #include "PawnCameraSystem.h"
 #include "PawnSpawn.h"
@@ -15,6 +16,7 @@
 #include <ecs/World.h>
 #include <logic/VerbRelay.h>
 #include <logic/VerbRelaySystem.h>
+#include <participant/ParticipantLifecycle.h>
 #include <app/Engine.h>
 #include <app/GameContexts.h>
 #include <app/GameModule.h>
@@ -269,9 +271,10 @@ void ArenaGame::InstallScore(Engine& engine)
                 return result;
             }
             // The relay names itself as the source, which is the typed entity
-            // input the binding maps.
+            // input the binding maps; the player at this machine is who asked.
             const VerbValue self = VerbValue::Entity(entity);
-            const VerbAdmission admission = relay->Activate(entity, { &self, 1 });
+            const VerbAdmission admission = relay->Activate(
+                entity, { &self, 1 }, LocalParticipantOf(engine.World().Entities()));
             if (admission != VerbAdmission::Accepted)
             {
                 result.Status = ConsoleStatus::InvalidArguments;
@@ -291,11 +294,18 @@ void ArenaGame::InstallScore(Engine& engine)
         .RequiredPhase = ConsolePhase::GameLoaded,
         .Callback = [&engine](ConsoleExecutionContext&, std::span<const std::string>) {
             ConsoleResult result;
-            const ArenaScoreboard* board =
-                engine.World().Entities().TryGetResource<ArenaScoreboard>();
-            result.Info(board == nullptr ? std::string("red 0, blue 0")
-                                         : "red " + std::to_string(board->Red) + ", blue "
-                                               + std::to_string(board->Blue));
+            const World& world = engine.World().Entities();
+            std::int32_t red = 0;
+            std::int32_t blue = 0;
+            if (world.IsRegistered<ArenaScoreboard>())
+            {
+                world.ForEachComponent<ArenaScoreboard>(
+                    [&](EntityId, const ArenaScoreboard& board) {
+                        red = board.Red;
+                        blue = board.Blue;
+                    });
+            }
+            result.Info("red " + std::to_string(red) + ", blue " + std::to_string(blue));
             return result;
         },
     });

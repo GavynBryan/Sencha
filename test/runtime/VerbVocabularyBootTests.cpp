@@ -14,6 +14,7 @@
 #include <movement/LocomotionMode.h>
 #include <movement/MovementRegistration.h>
 #include <world/RuntimeWorld.h>
+#include <world/SimulationAuthority.h>
 
 #include <SDL3/SDL.h>
 
@@ -184,6 +185,10 @@ public:
             Admission = dispatcher->Invoke(compiled, {}).Status;
         }
         EngineVerbsDeclared = verbs.Find(kApplicationQuitVerb).IsValid();
+        // No session: this process decides what happens, the way a standalone
+        // game always has.
+        AuthoritativeAtStart = IsSimulationAuthority(GetEngine().World().Entities())
+            && GetEngine().World().Entities().HasResource<SimulationAuthority>();
         // Declared by the engine, but this headless host composed no shell to
         // bind them: discovery without execution.
         EngineVerbsUnavailable = !dispatcher->HasImplementation(verbs.Find(kRuntimeResumeVerb));
@@ -210,6 +215,7 @@ public:
     int VocabularyCallsAtStart = 0;
     bool SawEngineVerbsFirst = false;
     bool TagDeclared = false;
+    bool AuthoritativeAtStart = false;
     bool ModeDeclared = false;
     bool ModePresentAtStart = false;
     bool DispatcherAliveAtShutdown = false;
@@ -245,6 +251,7 @@ TEST(VerbVocabularyBoot, TheHookRunsOnceBeforeStartAndTheGameBindsFromStart)
     EXPECT_TRUE(game.EngineVerbsUnavailable);
     EXPECT_TRUE(game.TagDeclared) << "the runtime World had no tag registry when the hook ran";
     EXPECT_TRUE(game.ModeDeclared);
+    EXPECT_TRUE(game.AuthoritativeAtStart);
     EXPECT_TRUE(game.ModePresentAtStart) << "a mode declared in the hook was not there at runtime";
     EXPECT_EQ(game.Admission, VerbAdmission::Accepted)
         << "a binding naming the hook's own tag did not resolve at runtime";

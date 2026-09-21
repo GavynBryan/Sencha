@@ -124,6 +124,7 @@ void VerbDispatcher::RecordTrace(VerbTraceEvent event,
         .Parent = invocation.Parent,
         .Binding = invocation.Binding,
         .Producer = invocation.Producer,
+        .Instigator = invocation.Instigator,
     });
 }
 
@@ -141,6 +142,8 @@ VerbInvocationResult VerbDispatcher::Invoke(const CompiledVerbBinding& binding,
     invocation.Parent = source.Parent;
     invocation.Binding = binding.Key;
     invocation.Producer = source.Producer;
+    invocation.Instigator = source.Instigator;
+    invocation.Tick = source.Tick;
 
     const auto reject = [&](VerbAdmission status) {
         RecordTrace(VerbTraceEvent::Rejected, status, invocation);

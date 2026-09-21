@@ -45,6 +45,7 @@ struct VerbTraceRecord
     InvocationId Parent;
     VerbBindingKey Binding;
     EntityId Producer;
+    EntityId Instigator;
 };
 
 class VerbTraceRing

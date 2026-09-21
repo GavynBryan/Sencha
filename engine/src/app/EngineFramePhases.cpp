@@ -813,6 +813,7 @@ void Engine::RegisterSimulationFramePhases()
         // there. Cheap to do unconditionally -- the runtime compares before it
         // re-lays-out.
         engine.SyncShellSurface();
+        engine.PublishSimulationAuthority();
         engine.RefreshShellBindings();
 
         // The shell first: it drains what its documents asked for, resolves any

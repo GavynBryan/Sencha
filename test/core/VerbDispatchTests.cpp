@@ -346,7 +346,7 @@ TEST_F(VerbDispatchTest, IdentityIsMintedOnAcceptanceAndCarriesItsParent)
     operation.Refuse = false;
 
     const VerbInvocationResult second =
-        dispatcher.Invoke(binding, {}, VerbInvocationSource{ .Parent = first.Id, .Producer = {} });
+        dispatcher.Invoke(binding, {}, VerbInvocationSource{ .Parent = first.Id, .Producer = {}, .Instigator = {}, .Tick = 0 });
     ASSERT_TRUE(second.Accepted());
     EXPECT_GT(second.Id.Value, first.Id.Value);
 
@@ -374,7 +374,7 @@ TEST_F(VerbDispatchTest, TracingCanBeTurnedOffWithoutTurningOffIdentity)
     dispatcher.SetTrace(&ring);
 
     const VerbInvocationResult traced =
-        dispatcher.Invoke(binding, {}, VerbInvocationSource{ .Parent = untraced.Id, .Producer = {} });
+        dispatcher.Invoke(binding, {}, VerbInvocationSource{ .Parent = untraced.Id, .Producer = {}, .Instigator = {}, .Tick = 0 });
     ASSERT_TRUE(traced.Accepted());
     operation.Refuse = true;
     (void)dispatcher.Invoke(binding, {});
@@ -562,4 +562,44 @@ TEST_F(VerbDispatchTest, OneProducerValueFillsEveryArgumentThatNamesItsInput)
     ASSERT_TRUE(dispatcher.Invoke(binding, { &self, 1 }).Accepted());
     EXPECT_EQ(operation.Source, operation.Target);
     EXPECT_EQ(operation.Source.Index, 9u);
+}
+
+TEST_F(VerbDispatchTest, ProvenanceReachesTheOperationAndTheTrace)
+{
+    ASSERT_TRUE(Declare(Verbs, "test.op", EmptyVerbArguments()));
+    CompiledVerbBinding binding;
+    ASSERT_TRUE(Compile(Binding("op", "test.op"), binding));
+
+    struct ProvenanceOperation
+    {
+        EntityId Instigator;
+        std::uint64_t Tick = 0;
+        VerbAdmission Invoke(const VerbInvocation& invocation)
+        {
+            Instigator = invocation.Instigator;
+            Tick = invocation.Tick;
+            return VerbAdmission::Accepted;
+        }
+    };
+
+    VerbDispatcher dispatcher(Verbs);
+    VerbTraceRing ring(4);
+    dispatcher.SetTrace(&ring);
+    ProvenanceOperation operation;
+    const VerbBindingToken token = dispatcher.Bind(binding.Verb, operation);
+
+    const EntityId player{ .Index = 21, .Generation = 2 };
+    ASSERT_TRUE(dispatcher
+                    .Invoke(binding, {},
+                            VerbInvocationSource{ .Parent = {}, .Producer = {}, .Instigator = player, .Tick = 77 })
+                    .Accepted());
+    EXPECT_EQ(operation.Instigator, player);
+    EXPECT_EQ(operation.Tick, 77u);
+    ASSERT_EQ(ring.Snapshot().size(), 1u);
+    EXPECT_EQ(ring.Snapshot()[0].Instigator, player);
+
+    // A producer with nothing to say passes nothing, and nothing is invented.
+    ASSERT_TRUE(dispatcher.Invoke(binding, {}).Accepted());
+    EXPECT_FALSE(operation.Instigator.IsValid());
+    EXPECT_EQ(operation.Tick, 0u);
 }

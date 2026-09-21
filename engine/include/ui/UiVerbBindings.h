@@ -92,6 +92,10 @@ public:
     void Close();
     [[nodiscard]] bool IsOpen() const { return Screen.IsValid(); }
 
+    // Who this screen's actions act for. A document knows nothing of players;
+    // the host that opened the screen says which participant is behind it.
+    void SetInstigator(EntityId participant) { Instigator = participant; }
+
     // Invokes whatever in the batch belongs to this screen and this controller.
     // Actions for other screens, and actions with no mapping, are left alone --
     // a host routes one batch to several consumers.
@@ -127,6 +131,7 @@ private:
     const VerbBindingSet& Bindings;
 
     UiScreenHandle Screen;
+    EntityId Instigator;
     // Kept so the mapping can be compiled again when the set changes under an
     // open screen.
     UiScreenDesc Desc;

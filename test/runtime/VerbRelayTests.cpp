@@ -85,13 +85,15 @@ public:
         Call call;
         call.Id = invocation.Id;
         call.Producer = invocation.Producer;
+        call.Instigator = invocation.Instigator;
+        call.Tick = invocation.Tick;
         (void)invocation.Arguments->TryGetEntity(0, call.Target);
         (void)invocation.Arguments->TryGetInt(1, call.Amount);
         Calls.push_back(call);
         if (Relay != nullptr && ReactivateDuringCall.IsValid())
         {
             const VerbValue self = VerbValue::Entity(ReactivateDuringCall);
-            Nested = Relay->Activate(ReactivateDuringCall, { &self, 1 }, invocation.Id);
+            Nested = Relay->Activate(ReactivateDuringCall, { &self, 1 }, {}, invocation.Id);
             ReactivateDuringCall = {};
         }
         return VerbAdmission::Accepted;
@@ -101,8 +103,10 @@ public:
     {
         InvocationId Id;
         EntityId Producer;
+        EntityId Instigator;
         EntityId Target;
         std::int64_t Amount = 0;
+        std::uint64_t Tick = 0;
     };
     std::vector<Call> Calls;
     VerbRelaySystem* Relay = nullptr;
@@ -160,18 +164,19 @@ protected:
         return entity;
     }
 
-    [[nodiscard]] VerbAdmission Activate(EntityId relay, EntityId target)
+    [[nodiscard]] VerbAdmission Activate(EntityId relay, EntityId target, EntityId instigator = {})
     {
         const VerbValue value = VerbValue::Entity(target);
-        return Relay->Activate(relay, { &value, 1 });
+        return Relay->Activate(relay, { &value, 1 }, instigator);
     }
 
     void Tick()
     {
+        ++TickIndex;
         FixedLogicContext fixed{
             .Config = Config,
             .Runtime = Runtime,
-            .Time = {},
+            .Time = FixedSimTime{ .DeltaSeconds = 1.0 / 60.0, .TickIndex = TickIndex },
             .Entities = WorldState,
             .Partitions = Logic,
         };
@@ -191,6 +196,7 @@ protected:
     DataAssetHandle Library;
     std::unique_ptr<VerbDispatcher> Dispatcher;
     VerbTraceRing Trace{ 32 };
+    std::uint64_t TickIndex = 0;
     ScoreOperation Operation;
     VerbBindingToken Token;
     VerbRelaySystem* Relay = nullptr;
@@ -500,4 +506,23 @@ TEST_F(VerbRelayFixture, AStructuralOperationRecordsDuringTheQueryAndFlushesAfte
     EXPECT_FALSE(WorldState.IsAlive(doomed));
     EXPECT_TRUE(WorldState.IsAlive(spared));
     EXPECT_TRUE(WorldState.IsAlive(relay));
+}
+
+TEST_F(VerbRelayFixture, TheDrainStampsTheTickAndCarriesTheInstigator)
+{
+    const EntityId relay = PlaceRelay();
+    const EntityId player = WorldState.CreateEntity();
+    ASSERT_EQ(Activate(relay, relay, player), VerbAdmission::Accepted);
+    Tick();
+    Tick();
+    ASSERT_EQ(Activate(relay, relay, player), VerbAdmission::Accepted);
+    Tick();
+
+    ASSERT_EQ(Operation.Calls.size(), 2u);
+    // The tick the request was drained in, not the frame it was asked on:
+    // what an operation replaying a predicted tick keys "already applied" on.
+    EXPECT_EQ(Operation.Calls[0].Tick, 1u);
+    EXPECT_EQ(Operation.Calls[1].Tick, 3u);
+    EXPECT_EQ(Operation.Calls[0].Instigator, player);
+    EXPECT_EQ(Operation.Calls[0].Producer, relay);
 }

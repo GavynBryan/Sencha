@@ -21,6 +21,7 @@ set(SENCHA_GAME_MODULE_SOURCES
 # companion by its path from this directory: src/ArenaStart.h includes
 # <src/ArenaStart.sencha.h>.
 set(SENCHA_GAME_COMPONENT_HEADERS
+    src/ArenaScoreboard.h
     src/ArenaStart.h)
 
 # The one sample. Remove this line and the directory to drop it.

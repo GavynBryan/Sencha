@@ -67,10 +67,25 @@ struct VerbInvocation
     // claim and never a gameplay input.
     InvocationId Parent;
 
-    // Diagnostic attribution: which authored record, and which entity produced
-    // it. An operation's target is a typed argument, never this.
+    // Diagnostic attribution: which authored record, and which entity the
+    // request came through -- a relay, a screen's owner. An operation's target
+    // is a typed argument, never this.
     VerbBindingKey Binding;
     EntityId Producer;
+
+    // Who caused it: the participant entity behind the request, when a producer
+    // knows one -- the local player for a menu or a console command, the peer's
+    // participant for a request that arrived over a session, the owner of an
+    // ability. Provenance for an operation that has to decide whether the
+    // request is allowed; never a target, and never authority by itself. An
+    // operation on the authority still validates it against what the World
+    // says that participant may do.
+    EntityId Instigator;
+
+    // The fixed tick the request was produced in, or zero from a producer on
+    // the frame clock. What an operation that runs a predicted tick twice keys
+    // its "already applied" on, so a replayed tick does not admit twice.
+    std::uint64_t Tick = 0;
 
     // Borrowed for exactly the duration of this call. An implementation that
     // defers copies what it needs, or keeps its own owning copy; it never
@@ -88,8 +103,16 @@ struct VerbInvocationResult
 
 // Optional attribution a producer supplies. Separate from the invocation so a
 // producer with nothing to say passes nothing.
+//
+// On the wire, none of this and none of VerbArguments travels. The stable form
+// of a request is the binding's authored key plus its producer inputs in their
+// authored kinds -- persistent identities, names, paths -- and a producer that
+// receives one over a session resolves wire identities to handles at its own
+// ingress, before Invoke. What crosses this boundary is already local.
 struct VerbInvocationSource
 {
     InvocationId Parent;
     EntityId Producer;
+    EntityId Instigator;
+    std::uint64_t Tick = 0;
 };

@@ -209,7 +209,8 @@ void PauseMenu::Dispatch(PauseCommandId command)
             LastAdmission = VerbAdmission::UnresolvedBinding;
             return;
         }
-        LastAdmission = Verbs->Invoke(*compiled, {}).Status;
+        LastAdmission =
+            Verbs->Invoke(*compiled, {}, VerbInvocationSource{ .Parent = {}, .Producer = {}, .Instigator = Instigator, .Tick = 0 }).Status;
         return;
     }
 

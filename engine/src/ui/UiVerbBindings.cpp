@@ -306,7 +306,8 @@ void UiVerbBindings::Dispatch(std::span<const UiAction> actions)
             continue;
         }
 
-        const VerbInvocationResult result = Dispatcher.Invoke(*binding, Inputs);
+        const VerbInvocationResult result =
+            Dispatcher.Invoke(*binding, Inputs, VerbInvocationSource{ .Parent = {}, .Producer = {}, .Instigator = Instigator, .Tick = 0 });
         Outcomes.push_back(
             Outcome{ .Action = action.Id, .Status = result.Status, .Id = result.Id });
     }
