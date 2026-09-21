@@ -174,7 +174,8 @@ if(LEVEL_COOK_TEST_SOURCES AND TARGET kyusu_authoring)
     # -- which the cook fixtures below do.
     sencha_generate_component_metadata(level_cook_tests
         INCLUDE_ROOT ${CMAKE_SOURCE_DIR}/templates/arena
-        HEADERS ${CMAKE_SOURCE_DIR}/templates/arena/src/ArenaStart.h
+        HEADERS ${CMAKE_SOURCE_DIR}/templates/arena/src/ArenaScoreboard.h
+                ${CMAKE_SOURCE_DIR}/templates/arena/src/ArenaStart.h
                 ${CMAKE_SOURCE_DIR}/templates/arena/samples/turret/TurretMount.h)
     # The shipped prefabs are content under test: a case reads them from the
     # checkout rather than restating them.

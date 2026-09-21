@@ -1,5 +1,6 @@
 #pragma once
 
+#include <authored/VerbId.h>
 #include <core/identity/StrongId.h>
 
 #include <cstdint>
@@ -48,6 +49,16 @@ struct PauseMenuEntry
     PauseCommandId Command;
     // Presented, but refusing to run. A save entry with nothing to save.
     bool Enabled = true;
+
+    // The authored behaviour: a key into the shell's binding asset, resolved
+    // against the World's catalog. Invalid means this entry runs its native
+    // handler instead.
+    //
+    // The association lives here, in host menu data, beside the binding asset
+    // the key addresses. No registry and no verb name appears in it: what a row
+    // does is a binding, and which operation that binding names is the
+    // binding's business.
+    VerbBindingKey Binding;
 };
 
 class PauseMenuModel
@@ -79,7 +90,17 @@ public:
 
     // Replaces what an existing command does, keeping its place and label. How
     // a game puts a confirmation in front of Quit, or a save behind it.
+    //
+    // Explicitly replaces the entry's authored behaviour: an entry has one
+    // behaviour, and a row that ran a native handler and an authored binding
+    // would do the thing twice.
     bool SetHandler(PauseCommandId command, PauseCommandHandler handler);
+
+    // Gives an entry its behaviour from the shell's binding asset instead, and
+    // explicitly replaces whatever native handler it had. An invalid key clears
+    // the association and leaves the entry on its native handler.
+    bool SetBinding(PauseCommandId command, VerbBindingKey binding);
+    [[nodiscard]] VerbBindingKey Binding(PauseCommandId command) const;
 
     bool SetLabel(PauseCommandId command, std::string label);
     bool SetEnabled(PauseCommandId command, bool enabled);

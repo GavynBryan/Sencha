@@ -456,6 +456,11 @@ JsonValue CreateDefaultDataValue(const DataFieldSchema& field)
     case DataFieldKind::AssetRef:
     case DataFieldKind::DataAssetRef:
     case DataFieldKind::GameplayTag:
+    // An entity reference starts unset. There is no identity this could invent
+    // that would name an entity the author meant, and the empty string fails
+    // validation loudly, which is the right thing for a reference nobody has
+    // chosen yet.
+    case DataFieldKind::Entity:
         return JsonValue("");
     case DataFieldKind::Enum:
         return field.EnumChoices.empty()

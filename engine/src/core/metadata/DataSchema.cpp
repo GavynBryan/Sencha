@@ -1,5 +1,7 @@
 #include <core/metadata/DataSchema.h>
 
+#include <core/identity/Id.h>
+
 #include <algorithm>
 #include <cmath>
 #include <format>
@@ -253,6 +255,23 @@ namespace
             if (value.AsString().empty())
             {
                 AddError(errors, path, "gameplay tag cannot be empty");
+                return false;
+            }
+            return true;
+
+        case DataFieldKind::Entity:
+            if (!value.IsString())
+            {
+                AddError(errors, path, "expected persistent entity id string");
+                return false;
+            }
+            // Strict, like PersistentEntityIdFromString: a malformed identity
+            // that parsed leniently would resolve to nothing at load and read
+            // as a missing entity rather than as the typo it is.
+            if (!PersistentEntityIdFromString(value.AsString()).has_value())
+            {
+                AddError(errors, path,
+                         "expected 16 lowercase hex digits naming a persistent entity");
                 return false;
             }
             return true;

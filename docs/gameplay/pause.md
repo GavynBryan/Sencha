@@ -225,7 +225,28 @@ m.SetRootPage("asset://ui/my_pause.sui");
 The document repeats over the published labels and reports which row was
 activated; that index is resolved back to a command before anything acts on it.
 So the markup names no command, and adding, renaming or reordering an entry is a
-change to the model and never an edit to a document.
+change to the model and never an edit to a document. The row-to-command
+relation the document is repeating over is captured when the labels are
+published, so a click queued before a reorder still means the row that was
+pressed.
+
+**An entry's behaviour is native or authored, never both.** The stock Resume
+and Exit entries take theirs from `engine/assets/data/shell.bindings.sdata`
+(`shell.resume`, `shell.quit`), records that name the engine's `runtime.resume`
+and `application.quit` verbs; the model holds the binding key
+(`PauseMenuEntry::Binding`) and never the verb. `SetHandler` on such an entry
+replaces the authored behaviour; `SetBinding` on a native entry replaces the
+handler. A game gives an entry a binding from its own asset by appending that
+asset's records to `Engine::ShellBindings()` from `OnStart`:
+
+```cpp
+engine.ShellBindings().Append(*library, MakeVerbBindingEnvironment(world), errors);
+const PauseCommandId award = m.Add("Award red a point", {});
+m.SetBinding(award, MakeVerbBindingKey("arena.award_red"));
+```
+
+Options stays a native handler: page navigation is a controller relation, not
+a verb.
 
 **Pages own what their rows mean.** A page carries its own `Publish`, `Activate`
 and `Closed`, so the settings page's knowledge of settings never reaches the

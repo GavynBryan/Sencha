@@ -3,9 +3,11 @@
 #include <app/Game.h>
 #include <core/console/ConsoleTypes.h>
 
+#include "ArenaScore.h"
 #include "ArenaSessionPolicy.h"
 
 #include <app/BodySpawns.h>
+#include <assets/data/DataAssetHandle.h>
 
 #include <optional>
 
@@ -27,6 +29,7 @@ public:
     void OnStart(GameStartupContext& ctx) override;
     void OnRegisterSystems(SystemRegisterContext& ctx) override;
     void OnShutdown(GameShutdownContext& ctx) override;
+    void OnRegisterVocabulary(World& world) override;
 
 private:
 
@@ -34,9 +37,16 @@ private:
     // logger exist; the game object itself is a module-static.
     std::optional<ArenaSessionPolicy> SessionState;
     [[nodiscard]] ArenaSessionPolicy& Session();
+    void InstallScore(Engine& engine);
 
     // The engine's book on this game's prefab body requests. Closed in
     // OnShutdown, ahead of the session whose settings its callbacks read;
     // kept, closed, until the next OnStart replaces it.
     std::optional<BodySpawns> Bodies;
+
+    // The game's one authored operation and the shell's bindings into it. The
+    // token goes back in OnShutdown, while the dispatcher still exists.
+    ArenaScoreOperation Score;
+    VerbBindingToken ScoreBinding;
+    DataAssetCacheHandle ShellBindingsAsset;
 };

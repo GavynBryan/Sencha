@@ -1,6 +1,7 @@
 #include <assets/runtime/RuntimeAssets.h>
 
 #include <assets/runtime/RegisterAssetKind.h>
+#include <authored/VerbBindingData.h>
 #include <core/logging/LoggingProvider.h>
 #include <input/InputProfileData.h>
 #include <movement/MovementProfileData.h>
@@ -80,6 +81,7 @@ RuntimeAssets::RuntimeAssets(LoggingProvider& logging,
     // makes them appear in the prebuilt Data Editor.
     RegisterMovementProfileData(DataTypes, DataSchemas);
     RegisterInputProfileData(DataTypes, DataSchemas);
+    RegisterVerbBindingData(DataTypes, DataSchemas);
 
     // A reference store is its own stager and store, so it takes the mesh
     // kind whole; the real loader stages against a cache this composition

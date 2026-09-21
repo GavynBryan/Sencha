@@ -32,11 +32,8 @@ void RegisterAbilityKitComponents(ComponentRegistrar& registrar)
     registrar.AddSerializer(MakeAbilitySetSerializer());
 }
 
-void RegisterAbilityKit(World& world)
+void InstallAbilityKitVocabulary(World& world)
 {
-    ComponentRegistrar registrar(world);
-    RegisterAbilityKitComponents(registrar);
-
     if (!world.HasResource<GameplayTagRegistry>())
         world.AddResource<GameplayTagRegistry>();
     if (!world.HasResource<AttributeRegistry>())
@@ -45,6 +42,14 @@ void RegisterAbilityKit(World& world)
         world.AddResource<EffectRegistry>();
     if (!world.HasResource<AbilityRegistry>())
         world.AddResource<AbilityRegistry>();
+}
+
+void RegisterAbilityKit(World& world)
+{
+    ComponentRegistrar registrar(world);
+    RegisterAbilityKitComponents(registrar);
+
+    InstallAbilityKitVocabulary(world);
     if (!world.HasResource<AbilityActivationQueue>())
         world.AddResource<AbilityActivationQueue>();
 }

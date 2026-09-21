@@ -49,13 +49,9 @@ void RegisterMovementComponents(ComponentRegistrar& registrar)
     registrar.AddSerializer(MakeMovementTuningSourceSerializer());
 }
 
-void RegisterMovementComponents(World& world)
+void InstallMovementVocabulary(World& world)
 {
-    RegisterAbilityKit(world);
-
-    ComponentRegistrar registrar(world);
-    RegisterMovementComponents(registrar);
-
+    InstallAbilityKitVocabulary(world);
     (void)EnsureMovementTags(world);
 
     // Free is the one built-in mode: one planar algorithm whose ground and air
@@ -67,6 +63,16 @@ void RegisterMovementComponents(World& world)
         : world.AddResource<LocomotionModeRegistry>(tagRegistry);
     if (!modes.FreeMode().IsValid())
         (void)modes.RegisterFree();
+}
+
+void RegisterMovementComponents(World& world)
+{
+    RegisterAbilityKit(world);
+
+    ComponentRegistrar registrar(world);
+    RegisterMovementComponents(registrar);
+
+    InstallMovementVocabulary(world);
 }
 
 void RegisterDefaultMovementAbilities(World& world)

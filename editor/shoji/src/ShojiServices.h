@@ -1,11 +1,14 @@
 #pragma once
 
 #include "authoring/DocumentLibrary.h"
+#include "authoring/VocabularyCatalog.h"
 #include "authoring/UiPreviewSession.h"
 #include "ui/PreviewViewState.h"
 
 #include "project/Project.h"
 #include "render/UiSurfaceTargetRenderFeature.h"
+
+#include <app/GameModuleLoader.h>
 
 #include <filesystem>
 #include <memory>
@@ -49,6 +52,7 @@ public:
 
 private:
     void LoadProject();
+    void LoadVocabulary();
     void MountLibraries();
     void BuildSourceWatch();
     void BuildUi();
@@ -66,6 +70,13 @@ private:
     std::optional<std::string> ProjectPath;
     std::optional<std::string> InitialDocument;
     std::optional<ProjectDescriptor> Project;
+
+    // The project's module, loaded for its declarations only, and the metadata
+    // World those declarations fill. The catalog is destroyed before the
+    // module is unmapped: a declaration can carry module code.
+    GameModuleLoader ModuleLoader;
+    LoadedModule GameModule;
+    std::unique_ptr<VocabularyCatalog> Vocabulary;
 
     DocumentLibrary Library;
     std::unique_ptr<SourceReloadRoots> Watch;

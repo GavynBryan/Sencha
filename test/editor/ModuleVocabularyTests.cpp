@@ -11,6 +11,8 @@
 #include "document/EditorDocument.h"
 
 #include <abilities/AbilityDefinition.h>
+#include <app/EngineVerbs.h>
+#include <authored/WorldVocabulary.h>
 #include <abilities/AbilityRegistry.h>
 #include <attributes/AttributeRegistry.h>
 #include <core/logging/LoggingProvider.h>
@@ -29,8 +31,18 @@ constexpr const char* kModuleAbility = "Sprint";
 // The installer a host sets at module load. Names only here: a real module's
 // locomotion mode carries closures out of its own image, which is why the hook
 // documents that a world must not outlive the mapping.
+constexpr const char* kModuleVerb = "spike.sprint";
+
 void InstallSpikeVocabulary(World& world)
 {
+    if (VerbRegistry* verbs = FindVerbRegistry(world))
+    {
+        VerbRegistrationScope scope(*verbs, "spike");
+        VerbDefinition sprint;
+        sprint.Name = kModuleVerb;
+        (void)scope.Declare(std::move(sprint));
+        (void)scope.Commit();
+    }
     if (auto* tags = world.TryGetResource<GameplayTagRegistry>())
         (void)tags->RegisterTag(kModuleTag);
     if (auto* attributes = world.TryGetResource<AttributeRegistry>())
@@ -54,7 +66,9 @@ protected:
         const auto* tags = world.TryGetResource<GameplayTagRegistry>();
         const auto* attributes = world.TryGetResource<AttributeRegistry>();
         const auto* abilities = world.TryGetResource<AbilityRegistry>();
+        const VerbRegistry* verbs = FindVerbRegistry(world);
         return tags != nullptr && attributes != nullptr && abilities != nullptr
+            && verbs != nullptr && verbs->Find(kModuleVerb).IsValid()
             && tags->FindTag(kModuleTag).IsValid()
             && attributes->FindAttribute(kModuleAttribute).IsValid()
             && abilities->Find(kModuleAbility).IsValid();
@@ -104,4 +118,24 @@ TEST_F(ModuleVocabularyTest, ClearingTheInstallerStopsTheNamesAtTheNextDocument)
     // The document that already has them keeps them: they are values in its
     // own world, not a view onto the module.
     EXPECT_TRUE(CarriesSpikeVocabulary(loaded));
+}
+
+// The engine's own verbs are in every document, whether or not a module is
+// loaded, so a picker can offer Resume beside a game's names. Declarations
+// only: a document has no dispatcher, and nothing installed here can run.
+TEST_F(ModuleVocabularyTest, EveryDocumentCarriesTheEngineVerbsWithoutADispatcher)
+{
+    EditorDocument document(Logging);
+    const VerbRegistry* verbs =
+        FindVerbRegistry(document.GetScene().GetRegistry().Components);
+    ASSERT_NE(verbs, nullptr);
+    EXPECT_TRUE(verbs->Find(kRuntimeResumeVerb).IsValid());
+    EXPECT_TRUE(verbs->Find(kApplicationQuitVerb).IsValid());
+    EXPECT_EQ(verbs->Provider(verbs->Find(kRuntimeResumeVerb)), "engine");
+    EXPECT_TRUE(verbs->InstallationErrors().empty());
+
+    // Two documents are two catalogs.
+    EditorDocument other(Logging);
+    EXPECT_NE(FindVerbRegistry(other.GetScene().GetRegistry().Components)->Catalog(),
+              verbs->Catalog());
 }

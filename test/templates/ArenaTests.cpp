@@ -1,6 +1,9 @@
 #include "TemplateModuleRun.h"
 
 #include <anim/AnimationClipPlaybackSystem.h>
+#include <authored/VerbBindingSet.h>
+#include <authored/VerbDispatcher.h>
+#include <logic/VerbRelay.h>
 #include <core/console/ConsoleService.h>
 #include <ecs/World.h>
 #include <net/NetParticipantIdentity.h>
@@ -166,5 +169,86 @@ TEST(ArenaTemplate, RetirementAfterRootDestructionStillCleansPrefabChildren)
     ASSERT_FALSE(run.Seen().Children.empty());
     EXPECT_GE(run.Seen().UpdatesAfterRetirement, 3);
     EXPECT_TRUE(run.Seen().ChildrenGone);
+}
+
+namespace
+{
+    // One game verb reached two ways: the level's placed relay, activated by a
+    // native console path, and the binding the shell's menu entry addresses,
+    // invoked through the same dispatcher a click would reach. Both carry the
+    // same schema; only the relay names an entity, and it names itself.
+    struct ScoreProbe
+    {
+        Engine* Host = nullptr;
+        int Frames = 0;
+        static constexpr int kAwardAtFrame = 60;
+        static constexpr int kMenuAtFrame = 90;
+        static constexpr int kReadAtFrame = 150;
+
+        bool RelayPlaced = false;
+        bool RelayActivated = false;
+        bool ShellBindingResolved = false;
+        VerbAdmission MenuAdmission = VerbAdmission::Unavailable;
+        std::string Scoreboard;
+
+        void FrameUpdate(FrameUpdateContext& ctx)
+        {
+            World& world = ctx.Entities;
+            ++Frames;
+            if (Frames == kAwardAtFrame)
+            {
+                if (world.IsRegistered<VerbRelay>())
+                {
+                    world.ForEachComponent<VerbRelay>(
+                        [this](EntityId, const VerbRelay& relay) {
+                            RelayPlaced = relay.Bindings.IsValid() && relay.Binding.IsValid();
+                        });
+                }
+                const ConsoleResult awarded = Host->Console().ExecuteTokens(
+                    { "award" }, ConsoleValueSource{ .Description = "arena test" });
+                RelayActivated = awarded.Status == ConsoleStatus::Ok;
+                return;
+            }
+            if (Frames == kMenuAtFrame)
+            {
+                const CompiledVerbBinding* binding =
+                    Host->ShellBindings().Find("arena.award_red");
+                ShellBindingResolved = binding != nullptr;
+                if (binding != nullptr && Host->TryVerbs() != nullptr)
+                    MenuAdmission = Host->TryVerbs()->Invoke(*binding, {}).Status;
+                return;
+            }
+            if (Frames == kReadAtFrame)
+            {
+                // Read at the module boundary, the way a player would: the
+                // scoreboard is the game's type, and this binary links only
+                // the engine.
+                const ConsoleResult score = Host->Console().ExecuteTokens(
+                    { "score" }, ConsoleValueSource{ .Description = "arena test" });
+                for (const ConsoleOutputEntry& entry : score.Output)
+                    Scoreboard += entry.Text;
+            }
+        }
+    };
+}
+
+TEST(ArenaTemplate, OneAuthoredVerbIsReachedFromTheRelayAndFromTheShellsBinding)
+{
+    TemplateModuleRun<ScoreProbe> run(
+        TEST_ARENA_MODULE_PATH, SENCHA_REPO_ROOT "/templates/arena/assets",
+        "levels/arena_room", 200);
+    ASSERT_TRUE(run.Loaded());
+    ASSERT_EQ(run.Exit(), 0);
+
+    const ScoreProbe& seen = run.Seen();
+    EXPECT_TRUE(seen.RelayPlaced) << "the cooked level carries no verb_relay";
+    EXPECT_TRUE(seen.RelayActivated) << "`award` was refused";
+    EXPECT_TRUE(seen.ShellBindingResolved)
+        << "the game's binding asset did not land in the shell's set";
+    EXPECT_EQ(seen.MenuAdmission, VerbAdmission::Accepted);
+    // The relay's binding awards blue five, with the relay as its source; the
+    // menu's awards red one, with none. Both landed on the replicated match
+    // entity, which is where a late joiner would read them from.
+    EXPECT_EQ(seen.Scoreboard, "red 1, blue 5");
 }
 #endif
