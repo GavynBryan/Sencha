@@ -291,7 +291,8 @@ void ShojiServices::BuildUi()
                 DataAssetHandle::FromToken(lease.OpaqueToken()), kVerbBindingsTypeName);
             if (library == nullptr)
                 continue;
-            found.push_back({ path, Vocabulary->Inspect(*library) });
+            found.push_back({ path, Vocabulary->Inspect(*library, &stack.Registry,
+                                                         &stack.DataAssets) });
         }
         return found;
     }));

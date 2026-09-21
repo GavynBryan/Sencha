@@ -36,20 +36,29 @@ class DataAssetCache;
 // mapping, a relay's resolved record -- compares revisions and looks its
 // binding up again by key. A record the new file no longer holds then fails
 // the lookup, which is the answer a reload that removed it should get.
+//
+// The set owns its own reconstruction. It remembers every contribution -- an
+// asset it was built from, or a library handed to it in memory -- and Refresh
+// rebuilds all of them, in order, when any asset reloaded, when the catalog is
+// a different one or has declared or retired anything since, or when the tag
+// vocabulary grew. That is what lets a record whose verb was unknown resolve
+// once the verb is declared, without every consumer keeping a retry list.
 //=============================================================================
 class VerbBindingSet
 {
 public:
-    // Replaces everything this set holds. A reload that removes a binding
+    // Replaces everything this set holds with one library's records, kept by
+    // copy so a later rebuild can replay it. A reload that removes a binding
     // removes it: the old behaviour must not keep running because the new file
     // stopped mentioning it.
     void Instantiate(const VerbBindingLibrary& library,
                      const VerbBindingEnvironment& environment,
                      std::vector<std::string>& errors);
 
-    // Adds another library's bindings beside what this set already holds. A
-    // key already present is refused and reported rather than replaced: two
-    // files claiming one key is an authoring conflict, not a precedence rule.
+    // Adds another library's records beside what this set already holds, kept
+    // by copy like the first. A key already present is refused and reported
+    // rather than replaced: two files claiming one key is an authoring
+    // conflict, not a precedence rule.
     void Append(const VerbBindingLibrary& library,
                 const VerbBindingEnvironment& environment,
                 std::vector<std::string>& errors);
@@ -66,12 +75,20 @@ public:
                     const VerbBindingEnvironment& environment,
                     std::vector<std::string>& errors);
 
-    // Rebuilds from every remembered asset if any has reloaded since. True when
-    // it did, in which case the revision moved. Cheap when nothing changed: one
-    // version comparison per source, no schema work.
-    [[nodiscard]] bool Refresh(const DataAssetCache& cache,
+    // Rebuilds every contribution, in order, if anything it was compiled from
+    // or against has changed: an asset's reload version, the catalog's
+    // identity or generation, or the tag vocabulary's size. True when it did,
+    // in which case the revision moved. Cheap when nothing changed: a handful
+    // of integer comparisons, no schema work. A set with no asset sources may
+    // pass a null cache.
+    [[nodiscard]] bool Refresh(const DataAssetCache* cache,
                                const VerbBindingEnvironment& environment,
                                std::vector<std::string>& errors);
+
+    // Whether any contribution's record failed to compile at the last build.
+    // An inspector shows it; Refresh needs no such hint, since what could make
+    // a failed record succeed is exactly what it already watches.
+    [[nodiscard]] bool HasUnresolved() const { return Unresolved; }
 
     void Clear();
 
@@ -86,19 +103,31 @@ public:
     [[nodiscard]] std::size_t Size() const { return Bindings.size(); }
 
 private:
+    // One contribution: an asset, remembered by handle and reload version, or
+    // a library handed over in memory, remembered by copy. Either replays.
     struct Source
     {
         DataAssetHandle Asset;
         std::uint64_t ReloadVersion = 0;
+        VerbBindingLibrary Library;
     };
 
     void Compile(const VerbBindingLibrary& library,
                  const VerbBindingEnvironment& environment,
                  std::vector<std::string>& errors);
+    void Rebuild(const DataAssetCache* cache,
+                 const VerbBindingEnvironment& environment,
+                 std::vector<std::string>& errors);
+    void Snapshot(const VerbBindingEnvironment& environment);
 
     // Authored order, and short: a set is one file's bindings, resolved when a
     // consumer is composed or the asset reloads, never per frame.
     std::vector<CompiledVerbBinding> Bindings;
     std::vector<Source> Sources;
     std::uint64_t Revision_ = 0;
+    // What the last build compiled against.
+    VerbCatalogId Catalog;
+    std::uint64_t CatalogGeneration = 0;
+    std::size_t TagCount = 0;
+    bool Unresolved = false;
 };

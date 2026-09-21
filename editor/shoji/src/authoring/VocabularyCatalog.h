@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+class AssetRegistry;
+class DataAssetCache;
 class Game;
 
 //=============================================================================
@@ -56,12 +58,20 @@ public:
         std::string Key;
         std::string VerbName;
         bool Resolved = false;
-        // The first reason it did not, when it did not.
+        // Whether every asset reference was checked against real metadata. A
+        // resolved row that was not is a row the runtime may still refuse, and
+        // an inspector says so rather than calling it good.
+        bool ReferencesChecked = true;
+        // The first reason it did not resolve, when it did not.
         std::string Error;
     };
     // Compiles each record against this catalog and reports the outcome. The
-    // records are untouched: an unresolved binding is content to inspect.
-    [[nodiscard]] std::vector<BindingRow> Inspect(const VerbBindingLibrary& library) const;
+    // records are untouched: an unresolved binding is content to inspect. The
+    // asset metadata is the previewer's mounted stack when it has one; without
+    // it, references compile on their form and the rows say so.
+    [[nodiscard]] std::vector<BindingRow> Inspect(const VerbBindingLibrary& library,
+                                                  const AssetRegistry* assets = nullptr,
+                                                  const DataAssetCache* dataAssets = nullptr) const;
 
 private:
     World Metadata;

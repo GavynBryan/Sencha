@@ -54,9 +54,13 @@ std::vector<VocabularyCatalog::VerbRow> VocabularyCatalog::ListVerbs() const
 }
 
 std::vector<VocabularyCatalog::BindingRow>
-VocabularyCatalog::Inspect(const VerbBindingLibrary& library) const
+VocabularyCatalog::Inspect(const VerbBindingLibrary& library,
+                           const AssetRegistry* assets,
+                           const DataAssetCache* dataAssets) const
 {
-    const VerbBindingEnvironment environment = MakeVerbBindingEnvironment(Metadata);
+    VerbBindingEnvironment environment = MakeVerbBindingEnvironment(Metadata);
+    environment.Assets = assets;
+    environment.DataAssets = dataAssets;
     std::vector<BindingRow> rows;
     rows.reserve(library.Bindings.size());
     for (const VerbBindingDesc& desc : library.Bindings)
@@ -67,6 +71,7 @@ VocabularyCatalog::Inspect(const VerbBindingLibrary& library) const
         std::vector<std::string> errors;
         CompiledVerbBinding compiled;
         row.Resolved = CompileVerbBinding(desc, environment, compiled, errors);
+        row.ReferencesChecked = !row.Resolved || compiled.ReferencesChecked;
         if (!row.Resolved && !errors.empty())
             row.Error = errors.front();
         rows.push_back(std::move(row));

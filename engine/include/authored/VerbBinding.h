@@ -140,5 +140,12 @@ struct CompiledVerbBinding
     // supplies values.
     std::vector<VerbCompiledInput> Inputs;
 
+    // Whether every asset reference this binding holds was checked against
+    // real asset metadata when it compiled. False when it holds one and the
+    // environment had none to check against: the binding compiled on its
+    // authored form, and an inspector must say so rather than call it
+    // resolved. A binding with no asset references is checked by vacuity.
+    bool ReferencesChecked = true;
+
     [[nodiscard]] bool IsValid() const { return Catalog.IsValid() && Verb.IsValid(); }
 };

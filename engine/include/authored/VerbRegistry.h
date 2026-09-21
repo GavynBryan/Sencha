@@ -160,6 +160,11 @@ public:
     // Slots ever minted, retired ones included.
     [[nodiscard]] std::size_t SlotCount() const { return Slots.size(); }
 
+    // Moves on every published batch and every retirement. What a compiled
+    // set compares to know whether a name that failed to resolve might resolve
+    // now, or one that did might have moved.
+    [[nodiscard]] std::uint64_t Generation() const { return Generation_; }
+
     // Every live verb, ordered by id. Deterministic by construction: no tool,
     // diagnostic, fixture or test ever sees hash order.
     [[nodiscard]] std::vector<VerbId> LiveVerbs() const;
@@ -205,6 +210,7 @@ private:
     VerbCatalogId Catalog_;
     std::vector<Slot> Slots;
     std::vector<std::string> InstallationErrors_;
+    std::uint64_t Generation_ = 0;
     // Every name ever declared, retired ones included, so a name that comes
     // back gets the id it had before rather than a second slot.
     std::unordered_map<std::string, VerbId> IdsByName;

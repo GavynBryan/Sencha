@@ -16,6 +16,7 @@
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <movement/LocomotionMode.h>
+#include <movement/MovementRegistration.h>
 #include <world/serialization/ComponentSerializer.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/ComponentRegistrar.h>
@@ -80,11 +81,14 @@ namespace
                 (void)attributes->RegisterAttribute(kGrappleAttribute, 0.0f, 50.0f, 12.0f);
             if (auto* abilities = world.TryGetResource<AbilityRegistry>())
                 (void)abilities->Register(kGrappleAbility, AbilityDefinition{});
-            if (auto* modes = world.TryGetResource<LocomotionModeRegistry>();
-                modes != nullptr && modes->Find(kGrappleMode) == nullptr)
-            {
-                (void)modes->Register<GrappleHook>(std::string(kGrappleMode));
-            }
+            // A mode is movement's vocabulary, and movement is this game's to
+            // opt into: the hook installs that vocabulary itself, so the same
+            // declaration lands in the runtime World and in an editor's, with
+            // no second declaration path for either.
+            InstallMovementVocabulary(world);
+            LocomotionModeRegistry& modes = world.GetResource<LocomotionModeRegistry>();
+            if (modes.Find(kGrappleMode) == nullptr)
+                (void)modes.Register<GrappleHook>(std::string(kGrappleMode));
             // The authored operation this module offers, declared into the same
             // World's catalog. Metadata only: what it does is bound by the
             // runtime host, never by this hook.

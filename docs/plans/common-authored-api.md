@@ -24,9 +24,20 @@ dispatcher outlives scheduled-system shutdown; asset references are checked
 against the registry's kind and the resident data asset's subtype when the
 host supplies them; every host installs the ability kit's vocabulary registries before
 the hook (`InstallAbilityKitVocabulary`; movement stays opt-in); a relay's key persists as the text the
-author wrote, lowered to its hash on load. Producer ports with named, typed
-inputs and nested reference descriptors inside record/array literals remain
-open seams for the next consumer. This plan establishes the shared foundation
+author wrote, lowered to its hash on load. A second review pass closed the
+remaining lifecycle gaps: a binding set remembers every contribution (asset or
+in-memory) and rebuilds itself on asset reload, catalog change, new
+declarations or new tags, so a record whose verb arrives late resolves without
+consumer retry lists; a compiled binding says whether its asset references
+were checked and Shoji inspects with the mounted stack's metadata; dynamic
+entity inputs must be handles and dynamic data-asset inputs are checked by
+kind and resident subtype at the dispatcher; a relay's scene form is lossless
+(the asset path and key text survive a failed load, and a hash is its own
+`binding_hash` field, never inferred from spelling); and a game that declares
+locomotion modes installs movement's vocabulary in the same hook every host
+runs. Producer ports with named, typed inputs, nested reference descriptors
+inside record/array literals, and the UI controller's all-or-nothing
+recompile policy remain open seams for the next consumer. This plan establishes the shared foundation
 before Shoji behavior authoring, animation markers, level logic, flowcharts, and
 the AbilityKit redesign acquire separate action vocabularies.
 

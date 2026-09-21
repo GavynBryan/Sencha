@@ -12,11 +12,12 @@
 // the generic schema serializer cannot write this component, and it carries a
 // serializer of its own the way MovementTuningSource does.
 //
-// The key round-trips as text whenever the binding asset is resident and still
-// holds the record, so a rename or a search in the scene file sees the name
-// the author gave it. When it does not -- the record was removed, or the asset
-// did not load -- the hash is written as sixteen hex digits, which is the only
-// truth the component has left, and reads back to the same hash. Either form
-// loads.
+// The scene form is lossless. `bindings` is the asset path and `binding` the
+// key's text, both kept as authored in the World's VerbRelayAuthoring whether
+// or not the asset loaded, so a scene opened without its gameplay package
+// saves the reference it came with. A key nothing ever spelled is written as
+// `binding_hash`, sixteen hex digits, a different field on purpose: a key is
+// never taken for a hash by its spelling, and a library may name a record
+// "deadbeefdeadbeef" if it likes.
 //=============================================================================
 [[nodiscard]] std::unique_ptr<IComponentSerializer> MakeVerbRelaySerializer();

@@ -21,11 +21,11 @@ struct VerbRelay;
 // verb ids and entity handles and mean nothing in another.
 //
 // Derived state with explicit invalidation: one VerbBindingSet per binding
-// asset, refreshed through the set's own reload tracking and rebuilt when a
-// binding it compiled has gone stale against the catalog. A relay drain
-// therefore costs a hash lookup and a version comparison, never a schema
-// traversal, and a hot-reloaded binding file takes effect at the next
-// activation without anything polling it.
+// asset, which owns its own rebuild -- asset reload, catalog change, new
+// declarations, new tags. A relay drain therefore costs a hash lookup and a
+// few version comparisons, never a schema traversal, and a hot-reloaded
+// binding file or a late-declared verb takes effect at the next activation
+// without anything polling it.
 //=============================================================================
 class VerbRelayBindingStore
 {
@@ -48,7 +48,7 @@ private:
     {
         DataAssetCacheHandle Lease;
         VerbBindingSet Bindings;
-        VerbCatalogId Catalog;
+        bool Built = false;
         std::vector<std::string> Errors;
         bool ErrorsDelivered = false;
     };

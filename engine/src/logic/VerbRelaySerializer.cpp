@@ -24,17 +24,12 @@ namespace
 {
     constexpr std::string_view kBindingsKey = "bindings";
     constexpr std::string_view kBindingKey = "binding";
+    constexpr std::string_view kBindingHashKey = "binding_hash";
 
-    // What the scene says for the key: the text this World has for it, or the
-    // hash's digits when nothing ever spelled it here.
-    std::string KeyTextFor(const VerbRelay& relay, const World& world)
+    VerbRelayAuthoring& AuthoringOf(World& world)
     {
-        if (const VerbRelayKeyNames* names = world.TryGetResource<VerbRelayKeyNames>())
-        {
-            if (const std::string* text = names->Find(relay.Binding))
-                return *text;
-        }
-        return VerbBindingKeyToString(relay.Binding);
+        return world.HasResource<VerbRelayAuthoring>() ? world.GetResource<VerbRelayAuthoring>()
+                                                       : world.AddResource<VerbRelayAuthoring>();
     }
 
 class VerbRelaySerializer final : public IComponentSerializer
@@ -78,17 +73,37 @@ public:
         if (relay == nullptr)
             return true;
 
-        archive.BeginObject(std::string_view{});
+        const VerbRelayAuthoring* authoring =
+            registry.Components.TryGetResource<VerbRelayAuthoring>();
+        const VerbRelayAuthoring::Record* authored =
+            authoring != nullptr ? authoring->Find(entity) : nullptr;
+
+        // The path the handle names when it names one; what the scene said
+        // otherwise. A load that could not resolve the asset must not save the
+        // reference away.
+        std::string bindingsPath;
         if (context.Assets != nullptr && relay->Bindings.IsValid())
-        {
-            const std::string_view path =
-                context.Assets->GetPathForLease(AssetType::Data, relay->Bindings.ToToken());
-            if (!WriteSceneAssetRef(archive, kBindingsKey, path, context))
-                return false;
-        }
+            bindingsPath = context.Assets->GetPathForLease(AssetType::Data,
+                                                          relay->Bindings.ToToken());
+        if (bindingsPath.empty() && authored != nullptr)
+            bindingsPath = authored->BindingsPath;
+
+        archive.BeginObject(std::string_view{});
+        if (!bindingsPath.empty()
+            && !WriteSceneAssetRef(archive, kBindingsKey, bindingsPath, context))
+            return false;
         if (relay->Binding.IsValid())
-            archive.Field(kBindingKey,
-                          std::string_view(KeyTextFor(*relay, registry.Components)));
+        {
+            const std::string* text =
+                authored != nullptr && !authored->KeyText.empty() ? &authored->KeyText
+                : authoring != nullptr ? authoring->FindKeyText(relay->Binding)
+                                       : nullptr;
+            if (text != nullptr)
+                archive.Field(kBindingKey, std::string_view(*text));
+            else
+                archive.Field(kBindingHashKey,
+                              std::string_view(VerbBindingKeyToString(relay->Binding)));
+        }
         archive.End();
         return archive.Ok();
     }
@@ -110,23 +125,29 @@ public:
         std::string keyText;
         if (archive.HasField(kBindingKey))
             archive.Field(kBindingKey, keyText);
+        std::string hashText;
+        if (archive.HasField(kBindingHashKey))
+            archive.Field(kBindingHashKey, hashText);
         archive.End();
         if (!read || !archive.Ok())
             return false;
 
         VerbRelay relay{};
 
-        // Text or digits, whichever the file has. Digits are what a scene keeps
-        // when nothing could spell the key; text is what an author wrote, and
-        // its hash is the same value the binding asset computes for its record.
-        if (!keyText.empty() && !VerbBindingKeyFromString(keyText, relay.Binding))
-        {
+        // The key's text is hashed; a hash field is parsed. Two fields, so a
+        // spelling is never mistaken for a number.
+        if (!keyText.empty())
             relay.Binding = MakeVerbBindingKey(keyText);
-            VerbRelayKeyNames& names = world.HasResource<VerbRelayKeyNames>()
-                ? world.GetResource<VerbRelayKeyNames>()
-                : world.AddResource<VerbRelayKeyNames>();
-            names.Remember(relay.Binding, keyText);
+        else if (!hashText.empty() && !VerbBindingKeyFromString(hashText, relay.Binding))
+        {
+            context.Logging->GetLogger<SceneSerializationContext>().Error(
+                "VerbRelay: '{}' is not a binding hash", hashText);
+            archive.MarkInvalidField(kBindingHashKey);
+            return false;
         }
+
+        // What the scene said, kept whether or not the asset resolves below.
+        AuthoringOf(world).Remember(entity, bindingsPath, keyText, relay.Binding);
 
         if (!bindingsPath.empty() && context.Assets == nullptr)
         {

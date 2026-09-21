@@ -43,9 +43,10 @@ and the arena count as one consumer: the arena is the FPS with a session).
    Before the content stack exists, the engine installs the vocabulary
    registries a game declares into (`InstallAbilityKitVocabulary`: tags,
    attributes, effects, abilities -- registries only; movement stays a
-   feature the game opts into from `OnStart`, so a locomotion mode is
-   registered there, after `RegisterMovement`) and the runtime World's authored
-   vocabulary (`VerbRegistry`, with its own `runtime.resume` and
+   feature the game opts into, so a game declaring a locomotion mode calls
+   `InstallMovementVocabulary` in this same hook first, and the declaration
+   then lands identically in the runtime World and in every editor's) and the
+   runtime World's authored vocabulary (`VerbRegistry`, with its own `runtime.resume` and
    `application.quit`), then calls `OnRegisterVocabulary` once. A game declares
    its verbs there through a `VerbRegistrationScope` on that catalog, beside
    its tags, attributes and modes; the engine reads the catalog's installation

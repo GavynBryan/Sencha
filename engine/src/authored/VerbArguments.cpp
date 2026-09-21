@@ -296,16 +296,26 @@ bool VerbValueSatisfiesField(const VerbValue& value, const DataFieldSchema& fiel
         return field.Children.size() == 1
             && VerbValueSatisfiesField(value, field.Children.front());
     case DataFieldKind::AssetRef:
-        return value.Kind() == VerbValueKind::AssetRef;
+    {
+        const AssetRef* reference = nullptr;
+        if (!value.TryGetAsset(reference))
+            return false;
+        return field.Reference.AssetTypeFilter == AssetType::Unknown
+            || reference->Type == field.Reference.AssetTypeFilter;
+    }
     case DataFieldKind::DataAssetRef:
-        return value.Kind() == VerbValueKind::DataAssetRef;
+    {
+        const AssetRef* reference = nullptr;
+        return value.TryGetDataAsset(reference) && reference->Type == AssetType::Data;
+    }
     case DataFieldKind::GameplayTag:
         return value.Kind() == VerbValueKind::GameplayTag;
     case DataFieldKind::Entity:
-        // A constant holds the authored identity until the dispatcher resolves
-        // it; a producer's value is already a handle.
-        return value.Kind() == VerbValueKind::Entity
-            || value.Kind() == VerbValueKind::PersistentEntity;
+        // A handle, and only a handle. A persistent identity is the authored
+        // form of a constant, which the dispatcher resolves before anything is
+        // validated; a producer supplying one dynamically has not done the
+        // resolving it owes, and an operation must never be handed one.
+        return value.Kind() == VerbValueKind::Entity;
     }
     return false;
 }

@@ -1,6 +1,5 @@
 #include <logic/VerbRelayBindingStore.h>
 
-#include <authored/VerbBindingCompiler.h>
 #include <authored/WorldVocabulary.h>
 #include <core/assets/AssetRegistry.h>
 #include <ecs/World.h>
@@ -40,19 +39,18 @@ const CompiledVerbBinding* VerbRelayBindingStore::Resolve(const VerbRelay& relay
             entry.Lease = DataAssets.AcquireOwned(path);
     }
 
-    const CompiledVerbBinding* found = entry.Bindings.Find(relay.Binding);
-    const bool stale = found != nullptr && !IsVerbBindingCurrent(*found, *environment.Verbs);
-    const bool rebuild = entry.Catalog != environment.Verbs->Catalog() || stale;
-
+    // The set knows what it was built against and rebuilds itself when any of
+    // it moved: the asset, the catalog, the tag vocabulary. The first
+    // resolution builds it; every later one asks.
     std::vector<std::string> errors;
     bool rebuilt = false;
-    if (rebuild)
+    if (!entry.Built)
     {
-        entry.Catalog = environment.Verbs->Catalog();
         entry.Bindings.InstantiateFrom(DataAssets, handle, environment, errors);
+        entry.Built = true;
         rebuilt = true;
     }
-    else if (entry.Bindings.Refresh(DataAssets, environment, errors))
+    else if (entry.Bindings.Refresh(&DataAssets, environment, errors))
     {
         rebuilt = true;
     }
@@ -62,8 +60,8 @@ const CompiledVerbBinding* VerbRelayBindingStore::Resolve(const VerbRelay& relay
         ++Rebuilds;
         entry.Errors = std::move(errors);
         entry.ErrorsDelivered = false;
-        found = entry.Bindings.Find(relay.Binding);
     }
+    const CompiledVerbBinding* found = entry.Bindings.Find(relay.Binding);
 
     if (newErrors != nullptr && !entry.ErrorsDelivered)
     {

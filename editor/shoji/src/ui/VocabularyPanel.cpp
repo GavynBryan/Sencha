@@ -81,8 +81,10 @@ void VocabularyPanel::OnDraw()
                 ImGui::TableNextColumn();
                 ImGui::TextUnformatted(record.VerbName.c_str());
                 ImGui::TableNextColumn();
-                if (record.Resolved)
+                if (record.Resolved && record.ReferencesChecked)
                     ImGui::TextDisabled("resolved");
+                else if (record.Resolved)
+                    ImGui::TextColored(EditorUi::Warning, "resolved; asset references unchecked");
                 else
                     ImGui::TextColored(EditorUi::Warning, "%s", record.Error.c_str());
             }

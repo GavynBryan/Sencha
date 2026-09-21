@@ -544,7 +544,7 @@ void Engine::RefreshShellBindings()
     if (!ContentState.has_value() || VerbDispatcherState == nullptr)
         return;
     std::vector<std::string> errors;
-    if (ShellBindingSet.Refresh(ContentState->Assets().DataAssets, ShellBindingEnvironment(),
+    if (ShellBindingSet.Refresh(&ContentState->Assets().DataAssets, ShellBindingEnvironment(),
                                 errors))
     {
         Logger& log = LoggingState.GetLogger<Engine>();

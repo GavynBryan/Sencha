@@ -69,21 +69,35 @@ TEST_F(RelaySerializerFixture, TheKeyTextRoundTripsAndLoadsToItsHash)
     EXPECT_EQ(key->AsString(), "arena.relay_award");
 }
 
-TEST_F(RelaySerializerFixture, ADigitsFormLoadsToTheSameHashAndSavesAsDigits)
+TEST_F(RelaySerializerFixture, AHashFieldLoadsToTheSameHashAndSavesAsAHashField)
 {
     const EntityId entity = Scene.Components.CreateEntity();
     const std::string digits = VerbBindingKeyToString(MakeVerbBindingKey("arena.relay_award"));
-    ASSERT_TRUE(LoadFrom(R"({"binding":")" + digits + R"("})", entity));
+    ASSERT_TRUE(LoadFrom(R"({"binding_hash":")" + digits + R"("})", entity));
 
     const VerbRelay* relay = Scene.Components.TryGet<VerbRelay>(entity);
     ASSERT_NE(relay, nullptr);
     EXPECT_EQ(relay->Binding, MakeVerbBindingKey("arena.relay_award"));
 
-    // Nothing in this World has spelled the key, so the digits are the only
-    // truth left, and they are what goes back out.
+    // Nothing in this World has spelled the key, so the hash is the only truth
+    // left, and it goes back out as a hash -- never as a key.
     const JsonValue saved = SaveOf(entity);
-    ASSERT_NE(saved.Find("binding"), nullptr);
-    EXPECT_EQ(saved.Find("binding")->AsString(), digits);
+    EXPECT_EQ(saved.Find("binding"), nullptr);
+    ASSERT_NE(saved.Find("binding_hash"), nullptr);
+    EXPECT_EQ(saved.Find("binding_hash")->AsString(), digits);
+}
+
+TEST_F(RelaySerializerFixture, AKeySpelledLikeAHashIsStillAKey)
+{
+    // A library may name a record with sixteen hex digits. That is its name,
+    // and its hash is the hash of that name, not the number it spells.
+    const EntityId entity = Scene.Components.CreateEntity();
+    ASSERT_TRUE(LoadFrom(R"({"binding":"deadbeefdeadbeef"})", entity));
+    const VerbRelay* relay = Scene.Components.TryGet<VerbRelay>(entity);
+    ASSERT_NE(relay, nullptr);
+    EXPECT_EQ(relay->Binding, MakeVerbBindingKey("deadbeefdeadbeef"));
+    EXPECT_NE(relay->Binding.Value, 0xdeadbeefdeadbeefull);
+    EXPECT_EQ(SaveOf(entity).Find("binding")->AsString(), "deadbeefdeadbeef");
 }
 
 TEST_F(RelaySerializerFixture, ASpellingLearnedFromOneRelayServesAnotherWithTheSameKey)
@@ -93,11 +107,31 @@ TEST_F(RelaySerializerFixture, ASpellingLearnedFromOneRelayServesAnotherWithTheS
 
     const EntityId numbered = Scene.Components.CreateEntity();
     ASSERT_TRUE(LoadFrom(
-        R"({"binding":")" + VerbBindingKeyToString(MakeVerbBindingKey("door.open")) + R"("})",
+        R"({"binding_hash":")" + VerbBindingKeyToString(MakeVerbBindingKey("door.open")) + R"("})",
         numbered));
 
     const JsonValue saved = SaveOf(numbered);
     ASSERT_NE(saved.Find("binding"), nullptr);
+    EXPECT_EQ(saved.Find("binding")->AsString(), "door.open");
+}
+
+TEST_F(RelaySerializerFixture, AnAssetThatDidNotLoadIsStillSavedAsAuthored)
+{
+    // The host has no asset system: the reference cannot resolve, the handle
+    // stays invalid, and the path the scene stated must survive the save.
+    const EntityId entity = Scene.Components.CreateEntity();
+    ASSERT_TRUE(LoadFrom(R"({"binding":"door.open"})", entity));
+    // An asset reference without an asset system is refused by the shared
+    // asset-field reader, so the lossless case is exercised through the
+    // authoring record directly, which is what a host with a store that
+    // failed the load leaves behind.
+    Scene.Components.GetResource<VerbRelayAuthoring>().Remember(
+        entity, "asset://data/missing.sdata", "door.open", MakeVerbBindingKey("door.open"));
+    const JsonValue saved = SaveOf(entity);
+    const JsonValue* bindings = saved.Find("bindings");
+    ASSERT_NE(bindings, nullptr);
+    ASSERT_TRUE(bindings->IsString());
+    EXPECT_EQ(bindings->AsString(), "asset://data/missing.sdata");
     EXPECT_EQ(saved.Find("binding")->AsString(), "door.open");
 }
 
@@ -109,4 +143,5 @@ TEST_F(RelaySerializerFixture, AnAbsentKeyLoadsAsNoBindingAndSavesNone)
     ASSERT_NE(relay, nullptr);
     EXPECT_FALSE(relay->Binding.IsValid());
     EXPECT_EQ(SaveOf(entity).Find("binding"), nullptr);
+    EXPECT_EQ(SaveOf(entity).Find("binding_hash"), nullptr);
 }

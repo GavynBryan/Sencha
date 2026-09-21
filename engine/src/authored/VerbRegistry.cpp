@@ -340,6 +340,7 @@ bool VerbRegistry::Publish(std::string_view provider,
         slot.Provider = std::string(provider);
         slot.State = SlotState::Live;
     }
+    ++Generation_;
     return true;
 }
 
@@ -381,13 +382,17 @@ std::string_view VerbRegistry::Provider(VerbId id) const
 
 void VerbRegistry::RetireProvider(std::string_view provider)
 {
+    bool retired = false;
     for (Slot& slot : Slots)
     {
         if (slot.State != SlotState::Live || slot.Provider != provider)
             continue;
         slot.State = SlotState::Retired;
         slot.Provider.clear();
+        retired = true;
     }
+    if (retired)
+        ++Generation_;
 }
 
 std::vector<VerbId> VerbRegistry::LiveVerbs() const

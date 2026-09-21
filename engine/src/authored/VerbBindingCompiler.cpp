@@ -325,6 +325,7 @@ namespace
                           const VerbBindingEnvironment& environment,
                           std::string_view bindingKey,
                           VerbValue& out,
+                          bool& referencesChecked,
                           std::vector<std::string>& errors)
     {
         const DataFieldSchema& expected = Unwrap(field);
@@ -358,7 +359,9 @@ namespace
             // schema that constrains a kind or a subtype is describing what the
             // operation will lease; a reference that passed here and failed
             // there would fail in the wrong place, with the wrong diagnostic.
-            if (environment.Assets != nullptr)
+            if (environment.Assets == nullptr)
+                referencesChecked = false;
+            else
             {
                 const AssetRecord* record = environment.Assets->FindByPath(argument.Text);
                 if (record == nullptr)
@@ -381,6 +384,9 @@ namespace
             // that gives no registry; a host that gives one and has not made
             // the asset resident has not preloaded the binding's dependencies,
             // which is the fault reported.
+            if (wantsData && !expected.Reference.DataSubtype.empty()
+                && environment.DataAssets == nullptr)
+                referencesChecked = false;
             if (wantsData && !expected.Reference.DataSubtype.empty()
                 && environment.DataAssets != nullptr)
             {
@@ -572,7 +578,8 @@ bool CompileVerbBinding(const VerbBindingDesc& desc,
         const bool compiledArgument =
             argument.Source == VerbArgumentSource::Literal
                 ? CompileLiteral(argument.Literal, *field, desc.Key, argument.Key, value, errors)
-                : CompileReference(argument, *field, environment, desc.Key, value, errors);
+                : CompileReference(argument, *field, environment, desc.Key, value,
+                                   compiled.ReferencesChecked, errors);
         if (!compiledArgument)
         {
             ok = false;

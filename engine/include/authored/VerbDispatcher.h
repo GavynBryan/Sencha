@@ -17,6 +17,7 @@ concept IsVerbImplementation = requires(T& implementation, const VerbInvocation&
     { implementation.Invoke(invocation) } -> std::same_as<VerbAdmission>;
 };
 
+class DataAssetCache;
 class PersistentEntityIndex;
 class VerbDispatcher;
 
@@ -148,6 +149,12 @@ public:
     // with UnresolvedReference, never dispatched with an invalid handle.
     void SetEntityIndex(const PersistentEntityIndex* entities) { Entities = entities; }
 
+    // Where a dynamic data-asset reference's subtype is read, for an input
+    // whose field constrains one. Borrowed and outlived by its owner. Null
+    // means such an input is refused as InvalidArguments rather than accepted
+    // unchecked: the schema promised a subtype, and nothing here can keep it.
+    void SetDataAssets(const DataAssetCache* dataAssets) { DataAssets = dataAssets; }
+
     // Stops admitting anything. The first half of shutdown: producers are
     // refused before implementations are removed, so nothing is accepted by an
     // operation that is about to go.
@@ -202,6 +209,7 @@ private:
 
     VerbTraceRing* Trace_ = nullptr;
     const PersistentEntityIndex* Entities = nullptr;
+    const DataAssetCache* DataAssets = nullptr;
     std::uint64_t NextInvocation = 0;
     std::uint32_t NextGeneration = 0;
     bool Admitting = true;

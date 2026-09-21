@@ -8,8 +8,11 @@
 #include <authored/VerbBindingCompiler.h>
 #include <authored/VerbDispatcher.h>
 #include <authored/WorldVocabulary.h>
+#include <ecs/ComponentTypeId.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <movement/LocomotionMode.h>
+#include <movement/MovementRegistration.h>
 #include <world/RuntimeWorld.h>
 
 #include <SDL3/SDL.h>
@@ -26,6 +29,14 @@
 // before its first frame. The engine's own verbs are there beside the game's,
 // and a game binds what it declared from OnStart, through the dispatcher the
 // host composed.
+
+// The mode the boot game declares. A locomotion mode is registered by a
+// component type, which needs a stable identity; a specialization cannot live
+// in an unnamed namespace.
+struct BootHoverMode
+{
+};
+SENCHA_DECLARE_COMPONENT_TYPE(BootHoverMode, "test.boot_hover_mode");
 
 namespace
 {
@@ -119,6 +130,14 @@ public:
         if (auto* tags = world.TryGetResource<GameplayTagRegistry>())
             TagDeclared = tags->RegisterTag("Test.Declared").has_value();
 
+        // A mode is movement's vocabulary, which this game opts into here, in
+        // the one hook every host runs -- so the declaration lands at runtime
+        // exactly as it does in an editor document.
+        InstallMovementVocabulary(world);
+        LocomotionModeRegistry& modes = world.GetResource<LocomotionModeRegistry>();
+        if (modes.Find("test.mode.hover") == nullptr)
+            ModeDeclared = modes.Register<BootHoverMode>("test.mode.hover").IsValid();
+
         VerbRegistrationScope scope(*verbs, "test");
         VerbDefinition ping;
         ping.Name = DeclareBadly ? "test..ping" : "test.ping";
@@ -137,6 +156,9 @@ public:
         VocabularyCallsAtStart = VocabularyCalls;
         VerbDispatcher* dispatcher = GetEngine().TryVerbs();
         HadDispatcherAtStart = dispatcher != nullptr;
+        if (const auto* modes =
+                GetEngine().World().Entities().TryGetResource<LocomotionModeRegistry>())
+            ModePresentAtStart = modes->Find("test.mode.hover") != nullptr;
         if (dispatcher == nullptr)
             return;
 
@@ -188,6 +210,8 @@ public:
     int VocabularyCallsAtStart = 0;
     bool SawEngineVerbsFirst = false;
     bool TagDeclared = false;
+    bool ModeDeclared = false;
+    bool ModePresentAtStart = false;
     bool DispatcherAliveAtShutdown = false;
     bool AdmissionClosedAtShutdown = false;
     bool HadDispatcherAtStart = false;
@@ -220,6 +244,8 @@ TEST(VerbVocabularyBoot, TheHookRunsOnceBeforeStartAndTheGameBindsFromStart)
     EXPECT_TRUE(game.EngineVerbsDeclared);
     EXPECT_TRUE(game.EngineVerbsUnavailable);
     EXPECT_TRUE(game.TagDeclared) << "the runtime World had no tag registry when the hook ran";
+    EXPECT_TRUE(game.ModeDeclared);
+    EXPECT_TRUE(game.ModePresentAtStart) << "a mode declared in the hook was not there at runtime";
     EXPECT_EQ(game.Admission, VerbAdmission::Accepted)
         << "a binding naming the hook's own tag did not resolve at runtime";
     EXPECT_EQ(game.Ping.Calls, 1);

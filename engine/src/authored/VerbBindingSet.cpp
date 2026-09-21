@@ -2,6 +2,7 @@
 
 #include <assets/data/DataAssetCache.h>
 #include <authored/VerbBindingData.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <format>
 #include <utility>
@@ -15,12 +16,22 @@ void VerbBindingSet::Compile(const VerbBindingLibrary& library,
         if (Find(desc.KeyId) != nullptr)
         {
             errors.push_back("binding '" + desc.Key + "' is already in this set");
+            Unresolved = true;
             continue;
         }
         CompiledVerbBinding compiled;
         if (CompileVerbBinding(desc, environment, compiled, errors))
             Bindings.push_back(std::move(compiled));
+        else
+            Unresolved = true;
     }
+}
+
+void VerbBindingSet::Snapshot(const VerbBindingEnvironment& environment)
+{
+    Catalog = environment.Verbs != nullptr ? environment.Verbs->Catalog() : VerbCatalogId{};
+    CatalogGeneration = environment.Verbs != nullptr ? environment.Verbs->Generation() : 0;
+    TagCount = environment.Tags != nullptr ? environment.Tags->Size() : 0;
 }
 
 void VerbBindingSet::Instantiate(const VerbBindingLibrary& library,
@@ -29,8 +40,11 @@ void VerbBindingSet::Instantiate(const VerbBindingLibrary& library,
 {
     Bindings.clear();
     Sources.clear();
+    Unresolved = false;
     Bindings.reserve(library.Bindings.size());
     Compile(library, environment, errors);
+    Sources.push_back(Source{ .Asset = {}, .ReloadVersion = 0, .Library = library });
+    Snapshot(environment);
     ++Revision_;
 }
 
@@ -39,6 +53,8 @@ void VerbBindingSet::Append(const VerbBindingLibrary& library,
                             std::vector<std::string>& errors)
 {
     Compile(library, environment, errors);
+    Sources.push_back(Source{ .Asset = {}, .ReloadVersion = 0, .Library = library });
+    Snapshot(environment);
     ++Revision_;
 }
 
@@ -65,9 +81,13 @@ void VerbBindingSet::InstantiateFrom(const DataAssetCache& cache,
 {
     Bindings.clear();
     Sources.clear();
+    Unresolved = false;
     if (const VerbBindingLibrary* library = LibraryOf(cache, asset, errors))
         Compile(*library, environment, errors);
-    Sources.push_back(Source{ asset, cache.GetReloadVersion(asset) });
+    else
+        Unresolved = true;
+    Sources.push_back(Source{ .Asset = asset, .ReloadVersion = cache.GetReloadVersion(asset), .Library = {} });
+    Snapshot(environment);
     ++Revision_;
 }
 
@@ -78,32 +98,66 @@ void VerbBindingSet::AppendFrom(const DataAssetCache& cache,
 {
     if (const VerbBindingLibrary* library = LibraryOf(cache, asset, errors))
         Compile(*library, environment, errors);
-    Sources.push_back(Source{ asset, cache.GetReloadVersion(asset) });
+    else
+        Unresolved = true;
+    Sources.push_back(Source{ .Asset = asset, .ReloadVersion = cache.GetReloadVersion(asset), .Library = {} });
+    Snapshot(environment);
     ++Revision_;
 }
 
-bool VerbBindingSet::Refresh(const DataAssetCache& cache,
+void VerbBindingSet::Rebuild(const DataAssetCache* cache,
+                             const VerbBindingEnvironment& environment,
+                             std::vector<std::string>& errors)
+{
+    // Whole, in contribution order, so a record that moved between files or
+    // vanished from one lands exactly as a fresh instantiation would.
+    std::vector<Source> sources = std::move(Sources);
+    Bindings.clear();
+    Sources.clear();
+    Unresolved = false;
+    for (Source& source : sources)
+    {
+        if (source.Asset.IsValid())
+        {
+            const VerbBindingLibrary* library =
+                cache != nullptr ? LibraryOf(*cache, source.Asset, errors) : nullptr;
+            if (library != nullptr)
+                Compile(*library, environment, errors);
+            else
+                Unresolved = true;
+            source.ReloadVersion = cache != nullptr ? cache->GetReloadVersion(source.Asset) : 0;
+        }
+        else
+        {
+            Compile(source.Library, environment, errors);
+        }
+        Sources.push_back(std::move(source));
+    }
+    Snapshot(environment);
+    ++Revision_;
+}
+
+bool VerbBindingSet::Refresh(const DataAssetCache* cache,
                              const VerbBindingEnvironment& environment,
                              std::vector<std::string>& errors)
 {
     bool changed = false;
     for (const Source& source : Sources)
-        changed = changed || cache.GetReloadVersion(source.Asset) != source.ReloadVersion;
+    {
+        if (source.Asset.IsValid() && cache != nullptr)
+            changed = changed || cache->GetReloadVersion(source.Asset) != source.ReloadVersion;
+    }
+    if (environment.Verbs != nullptr)
+    {
+        changed = changed || environment.Verbs->Catalog() != Catalog
+            || environment.Verbs->Generation() != CatalogGeneration;
+    }
+    if (environment.Tags != nullptr)
+        changed = changed || environment.Tags->Size() != TagCount;
     if (!changed)
         return false;
 
-    // Rebuilt whole, in source order, so a record that moved between files
-    // or vanished from one lands exactly as a fresh instantiation would.
-    std::vector<Source> sources = std::move(Sources);
-    Bindings.clear();
-    Sources.clear();
-    for (Source& source : sources)
-    {
-        if (const VerbBindingLibrary* library = LibraryOf(cache, source.Asset, errors))
-            Compile(*library, environment, errors);
-        Sources.push_back(Source{ source.Asset, cache.GetReloadVersion(source.Asset) });
-    }
-    ++Revision_;
+    Rebuild(cache, environment, errors);
     return true;
 }
 
@@ -111,6 +165,7 @@ void VerbBindingSet::Clear()
 {
     Bindings.clear();
     Sources.clear();
+    Unresolved = false;
     ++Revision_;
 }
 

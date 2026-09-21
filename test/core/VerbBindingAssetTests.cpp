@@ -352,15 +352,78 @@ TEST_F(VerbBindingAssetTest, ASetBuiltFromAnAssetFollowsItsReloads)
     ASSERT_NE(set.Find("a"), nullptr);
 
     // Nothing reloaded: nothing rebuilt, and the revision stays.
-    EXPECT_FALSE(set.Refresh(Cache, environment, errors));
+    EXPECT_FALSE(set.Refresh(&Cache, environment, errors));
     EXPECT_EQ(set.Revision(), revision);
 
     // A reload that drops one record and adds another is followed exactly.
     ASSERT_TRUE(Loader.CommitReload(Stage(R"({"type":"authored.bindings","version":1,"data":{
         "bindings":[{"key":"b","verb":"test.other"}]}})")));
-    EXPECT_TRUE(set.Refresh(Cache, environment, errors));
+    EXPECT_TRUE(set.Refresh(&Cache, environment, errors));
     EXPECT_NE(set.Revision(), revision);
     EXPECT_EQ(set.Find("a"), nullptr);
     ASSERT_NE(set.Find("b"), nullptr);
     EXPECT_EQ(set.Find("b")->Verb, registry.Find("test.other"));
+}
+
+TEST_F(VerbBindingAssetTest, ASetRebuildsItselfWhenTheCatalogOrAnInMemoryContributionIsInvolved)
+{
+    ASSERT_TRUE(Loader
+                    .CommitTyped(Stage(R"({"type":"authored.bindings","version":1,"data":{
+                        "bindings":[{"key":"a","verb":"test.later"}]}})"))
+                    .IsValid());
+    const DataAssetHandle handle = Cache.Find(File.Record().Path);
+    ASSERT_TRUE(handle.IsValid());
+
+    VerbRegistry registry;
+    const VerbBindingEnvironment environment{ .Verbs = &registry };
+
+    // Built while its verb is unknown: the record is unresolved, and the set
+    // knows it has something unresolved.
+    VerbBindingSet set;
+    std::vector<std::string> errors;
+    set.InstantiateFrom(Cache, handle, environment, errors);
+    EXPECT_EQ(set.Find("a"), nullptr);
+    EXPECT_TRUE(set.HasUnresolved());
+
+    // A library handed over in memory is a contribution like any other.
+    VerbBindingLibrary native;
+    VerbBindingDesc n;
+    n.Key = "native";
+    n.KeyId = MakeVerbBindingKey(n.Key);
+    n.VerbName = "test.native";
+    native.Bindings.push_back(std::move(n));
+    set.Append(native, environment, errors);
+    EXPECT_EQ(set.Find("native"), nullptr);
+
+    // Declaring the verbs is what could make either resolve, and the set sees
+    // that on its own: no consumer keeps a retry list.
+    {
+        VerbRegistrationScope scope(registry, "test");
+        VerbDefinition later;
+        later.Name = "test.later";
+        (void)scope.Declare(std::move(later));
+        VerbDefinition nativeVerb;
+        nativeVerb.Name = "test.native";
+        (void)scope.Declare(std::move(nativeVerb));
+        ASSERT_TRUE(scope.Commit());
+    }
+    errors.clear();
+    EXPECT_TRUE(set.Refresh(&Cache, environment, errors));
+    ASSERT_NE(set.Find("a"), nullptr);
+    ASSERT_NE(set.Find("native"), nullptr) << "the in-memory contribution was lost on rebuild";
+    EXPECT_FALSE(set.HasUnresolved());
+
+    // An asset reload rebuilds every contribution, the in-memory one included.
+    ASSERT_TRUE(Loader.CommitReload(Stage(R"({"type":"authored.bindings","version":1,"data":{
+        "bindings":[{"key":"a2","verb":"test.later"}]}})")));
+    EXPECT_TRUE(set.Refresh(&Cache, environment, errors));
+    EXPECT_EQ(set.Find("a"), nullptr);
+    ASSERT_NE(set.Find("a2"), nullptr);
+    ASSERT_NE(set.Find("native"), nullptr);
+
+    // Retiring the provider is a catalog change the set follows too.
+    registry.RetireProvider("test");
+    EXPECT_TRUE(set.Refresh(&Cache, environment, errors));
+    EXPECT_EQ(set.Find("a2"), nullptr);
+    EXPECT_TRUE(set.HasUnresolved());
 }

@@ -1,5 +1,6 @@
 #include <authored/VerbDispatcher.h>
 
+#include <assets/data/DataAssetCache.h>
 #include <world/identity/PersistentEntityIndex.h>
 
 #include <cassert>
@@ -191,6 +192,26 @@ VerbInvocationResult VerbDispatcher::Invoke(const CompiledVerbBinding& binding,
         {
             if (!VerbValueSatisfiesField(inputs[index], destination.Expected))
                 return reject(VerbAdmission::InvalidArguments);
+            // A subtype the field declares is checked against the resident
+            // value, which is the one thing the kind check above cannot see.
+            const DataFieldSchema& expected =
+                destination.Expected.Kind == DataFieldKind::Optional
+                        && destination.Expected.Children.size() == 1
+                    ? destination.Expected.Children.front()
+                    : destination.Expected;
+            const AssetRef* reference = nullptr;
+            if (expected.Kind == DataFieldKind::DataAssetRef
+                && !expected.Reference.DataSubtype.empty()
+                && inputs[index].TryGetDataAsset(reference))
+            {
+                const DataAssetHandle resident =
+                    DataAssets != nullptr ? DataAssets->Find(reference->Path) : DataAssetHandle{};
+                if (!resident.IsValid()
+                    || DataAssets->GetSubtype(resident) != expected.Reference.DataSubtype)
+                {
+                    return reject(VerbAdmission::InvalidArguments);
+                }
+            }
             Scratch.Set(destination.ArgumentSlot, inputs[index]);
         }
     }

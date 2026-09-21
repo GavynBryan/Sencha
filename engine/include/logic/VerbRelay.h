@@ -6,6 +6,7 @@
 #include <ecs/ComponentAnnotations.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
+#include <ecs/EntityId.h>
 #include <world/ComponentAssetOwnership.h>
 
 #include <string>
@@ -49,25 +50,42 @@ VerbRelay
     VerbBindingKey Binding;
 };
 
-// The spelling behind each hashed key this World has loaded, so a document
-// saves the name the author wrote rather than the number the component holds.
-// Filled by the scene serializer as relays load, and by whatever else learns a
-// key's text; read when a relay is saved. A key nothing ever spelled saves as
-// its hash's digits.
-struct VerbRelayKeyNames
+// What each loaded relay's scene said, kept beside the component because the
+// component cannot hold it: the asset path as authored, and the key's text.
+// Read back when the relay is saved, so a scene opened without its gameplay
+// package -- the asset absent, the load refused -- still saves the reference
+// it came with instead of the invalid handle it ended up holding. Also the
+// spelling behind each hashed key, so a relay that loaded from a hash saves
+// as the text some other relay taught this World.
+struct VerbRelayAuthoring
 {
-    std::unordered_map<std::uint64_t, std::string> Names;
-
-    void Remember(VerbBindingKey key, std::string_view text)
+    struct Record
     {
-        if (key.IsValid())
-            Names[key.Value] = std::string(text);
+        std::string BindingsPath;
+        std::string KeyText;
+    };
+
+    std::unordered_map<EntityId, Record, EntityIdHash> ByEntity;
+    std::unordered_map<std::uint64_t, std::string> KeyTexts;
+
+    void Remember(EntityId entity, std::string bindingsPath, std::string keyText,
+                  VerbBindingKey key)
+    {
+        if (!keyText.empty() && key.IsValid())
+            KeyTexts[key.Value] = keyText;
+        ByEntity[entity] = Record{ std::move(bindingsPath), std::move(keyText) };
     }
 
-    [[nodiscard]] const std::string* Find(VerbBindingKey key) const
+    [[nodiscard]] const Record* Find(EntityId entity) const
     {
-        const auto it = Names.find(key.Value);
-        return it == Names.end() ? nullptr : &it->second;
+        const auto it = ByEntity.find(entity);
+        return it == ByEntity.end() ? nullptr : &it->second;
+    }
+
+    [[nodiscard]] const std::string* FindKeyText(VerbBindingKey key) const
+    {
+        const auto it = KeyTexts.find(key.Value);
+        return it == KeyTexts.end() ? nullptr : &it->second;
     }
 };
 
