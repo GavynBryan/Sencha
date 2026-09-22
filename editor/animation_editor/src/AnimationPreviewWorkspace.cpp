@@ -3,11 +3,14 @@
 #include <assets/runtime/RuntimeAssets.h>
 #include <assets/data/DataAssetSubtype.h>
 #include <anim/AnimRequestSchema.h>
+#include <anim/AnimRigData.h>
 
 #include <algorithm>
+#include <filesystem>
 
 AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets)
-    : Assets(assets)
+    : Simulation(assets.DataAssets)
+    , Assets(assets)
 {
     Material material;
     material.BaseColor = Vec4(0.65f, 0.7f, 0.8f, 1.0f);
@@ -24,6 +27,7 @@ void AnimationPreviewWorkspace::RefreshBrowser()
     ClipPaths.clear();
     MaterialPaths.clear();
     RequestSchemaPaths.clear();
+    RigPaths.clear();
     for (const auto& [path, record] : Assets.Registry.Records())
     {
         if (record.Type == AssetType::SkinnedMesh)
@@ -37,8 +41,12 @@ void AnimationPreviewWorkspace::RefreshBrowser()
         else if (record.Type == AssetType::Data
             && PeekDataAssetSubtype(Assets.Assets.DefaultSource(), record) == kAnimRequestSchemaType)
             RequestSchemaPaths.push_back(path);
+        else if (record.Type == AssetType::Data
+            && PeekDataAssetSubtype(Assets.Assets.DefaultSource(), record) == kAnimRigType)
+            RigPaths.push_back(path);
     }
-    for (auto* paths : { &MeshPaths, &SkeletonPaths, &ClipPaths, &MaterialPaths, &RequestSchemaPaths })
+    for (auto* paths : { &MeshPaths, &SkeletonPaths, &ClipPaths, &MaterialPaths, &RequestSchemaPaths,
+                         &RigPaths })
         std::sort(paths->begin(), paths->end());
 }
 
@@ -64,6 +72,77 @@ bool AnimationPreviewWorkspace::OpenRequestSchema(const std::string& path)
     SelectDocument(Documents.size() - 1);
     DocumentError.clear();
     return true;
+}
+
+bool AnimationPreviewWorkspace::OpenRig(const std::string& path)
+{
+    const auto* record = Assets.Registry.FindByPath(path);
+    AssetLease lease = Assets.Assets.LoadLease(path, AssetType::Data);
+    const DataAssetHandle handle =
+        lease ? DataAssetHandle::FromToken(lease.OpaqueToken()) : DataAssetHandle{};
+    const AnimRigData* rig = Assets.DataAssets.TryGet<AnimRigData>(handle, kAnimRigType);
+    if (record == nullptr || rig == nullptr)
+    {
+        ScenarioError = "Select an animation.rig asset that loads.";
+        return false;
+    }
+
+    // The scenario lives beside the rig's source as an editor-only sidecar the
+    // asset scanner does not register.
+    std::filesystem::path sidecar(record->FilePath);
+    sidecar.replace_extension(".sanimscenario");
+
+    AnimationScenario scenario;
+    ScenarioLoadProblems.clear();
+    if (std::filesystem::exists(sidecar))
+    {
+        std::optional<AnimationScenario> loaded =
+            LoadAnimationScenario(sidecar.string(), ScenarioLoadProblems);
+        if (!loaded)
+        {
+            ScenarioError = "The saved scenario could not be read; see Problems.";
+            return false;
+        }
+        scenario = std::move(*loaded);
+        scenario.RigPath = path;
+    }
+    else
+    {
+        scenario.Name = sidecar.stem().string();
+        scenario.RigPath = path;
+        scenario.Participants = { "player" };
+    }
+
+    Simulation.Close();
+    RigLease = std::move(lease);
+    RigPath = path;
+    ScenarioFile = sidecar.string();
+    ScenarioError.clear();
+    (void)Simulation.Open(std::move(scenario));
+    if (!rig->SkeletonPath.empty() && Session.SkeletonPath() != rig->SkeletonPath && MeshPath.empty())
+        (void)SelectSkeleton(rig->SkeletonPath);
+    return true;
+}
+
+bool AnimationPreviewWorkspace::SaveScenario()
+{
+    if (!Simulation.IsOpen() || ScenarioFile.empty())
+        return false;
+    if (!SaveAnimationScenario(Simulation.Scenario(), ScenarioFile, ScenarioError))
+        return false;
+    Simulation.MarkScenarioSaved();
+    ScenarioError.clear();
+    return true;
+}
+
+const DataAssetCache& AnimationPreviewWorkspace::DataCache() const
+{
+    return Assets.DataAssets;
+}
+
+bool AnimationPreviewWorkspace::ReloadScenario()
+{
+    return !RigPath.empty() && OpenRig(RigPath);
 }
 
 void AnimationPreviewWorkspace::SelectDocument(std::size_t index)
@@ -240,6 +319,7 @@ bool AnimationPreviewWorkspace::SelectMaterial(const std::string& path)
 void AnimationPreviewWorkspace::Frame(double wallSeconds)
 {
     Session.Advance(wallSeconds);
+    Simulation.Advance(wallSeconds);
     Scene.Queue.Reset();
     Scene.Poses->Reset();
     Scene.Bounds = Aabb3d::Empty();

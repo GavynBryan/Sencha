@@ -1,0 +1,13 @@
+{
+    "type": "animation.rig",
+    "version": 1,
+    "data": {
+        "skeleton": "asset://meshes/dev/golden_rig.sskel",
+        "facts": "asset://animation/hero.facts.sdata",
+        "requests": "asset://animation/requests.sdata",
+        "layers": [
+            { "name": "anim.layer.base" },
+            { "name": "anim.layer.upper" }
+        ]
+    }
+}

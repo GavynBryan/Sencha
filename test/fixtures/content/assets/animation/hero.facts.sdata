@@ -1,0 +1,20 @@
+{
+    "type": "animation.fact_schema",
+    "version": 1,
+    "data": {
+        "extends": "asset://animation/engine.facts.sdata",
+        "slots": [
+            { "name": "Crouched", "kind": "bool" }
+        ],
+        "derived": [
+            { "name": "JustLanded", "op": "edge", "source": { "fact": "Grounded" },
+              "direction": "rising", "window_ms": 120 },
+            { "name": "Airborne", "op": "min_duration",
+              "source": { "fact": "Grounded", "not": true }, "window_ms": 80 },
+            { "name": "Moving", "op": "hysteresis", "source": { "fact": "Speed" },
+              "enter": 1.0, "exit": 0.5 },
+            { "name": "SmoothSpeed", "op": "smooth", "source": { "fact": "Speed" },
+              "window_ms": 150 }
+        ]
+    }
+}

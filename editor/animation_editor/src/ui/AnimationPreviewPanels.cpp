@@ -2,6 +2,7 @@
 
 #include "AnimationPreviewWorkspace.h"
 #include "ui/AnimationRequestSchemaPanel.h"
+#include "ui/AnimationSimulationPanels.h"
 #include "render/AnimationPreviewRenderFeature.h"
 #include "ui/EditorUiFeature.h"
 #include "ui/IEditorPanel.h"
@@ -168,7 +169,7 @@ public:
         ImGui::TextWrapped("Skeleton: %s", Workspace.Session.SkeletonPath().c_str());
         ImGui::TextWrapped("Clip: %s", Workspace.ClipPath.empty() ? "Bind pose" : Workspace.ClipPath.c_str());
         ImGui::Separator();
-        ImGui::TextWrapped("This surface auditions cooked clips. Selectors, requests, event tracks and gameplay simulation are not enabled here yet.");
+        ImGui::TextWrapped("This surface auditions cooked clips. Facts and requests simulate under a scenario in the Simulation panels; selectors, content resolution and event tracks are not enabled yet.");
         const auto& joints = Workspace.Session.Skeleton().Joints;
         if (ImGui::CollapsingHeader("Skeleton hierarchy", ImGuiTreeNodeFlags_DefaultOpen))
         {
@@ -190,6 +191,7 @@ void AddAnimationPreviewPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& w
     ui.AddPanel(std::make_unique<PreviewViewportPanel>(viewport));
     ui.AddPanel(std::make_unique<PreviewTransportPanel>(workspace.Session));
     ui.AddPanel(std::make_unique<PreviewDetailsPanel>(workspace));
+    AddAnimationSimulationPanels(ui, workspace);
     auto requestSchema = std::make_unique<AnimationRequestSchemaPanel>(workspace);
     auto* requestSchemaPanel = requestSchema.get();
     ui.AddPanel(std::move(requestSchema));

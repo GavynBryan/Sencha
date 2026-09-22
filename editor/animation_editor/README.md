@@ -56,14 +56,67 @@ change the preview subject or time. Reload is explicit and refuses dirty documen
 Save refuses externally modified files. Closing with unsaved changes offers Save
 all, Discard, or Keep editing.
 
-This edits the request contract only. Issuing/cancelling live preview requests,
-request lifetimes, selectors, anchors, and gameplay invocation are not implemented
-by this pane. Preview clip selections remain transient and do not dirty documents.
+This pane edits the request contract only; issuing and cancelling requests against
+a rig happens in the simulation panels below. Preview clip selections remain
+transient and do not dirty documents.
+
+## Rig simulation under a scenario
+
+Select an `animation.rig` in **Rig and scenario**. The rig is simulated in an
+isolated preview World at the scenario's fixed tick rate, using the runtime's
+own binding, fact gathering, derivations and request lifecycle. The editor
+replaces only gameplay: each gathered fact reads a scenario-owned input, and
+named scenario participants issue requests through the normal request API.
+
+- **Facts** lists every slot of the bound layout. Gathered facts take typed
+  inputs (bool, float, int, tag by name); derived facts are read-only and show
+  their derivation, and the panel says whether derived facts are exact or still
+  warming up toward the rig's horizon. While paused, the Next tick column is a
+  disposable evaluation of the edits scheduled for the next tick. Select a fact
+  to plot its history.
+- **Requests** issues from a form derived from the rig's request schema (source,
+  intent, lifetime, layers, typed parameters) and lists the live records with
+  age, primary-record status, cancel reason and retained tail. Capacity refusals,
+  supersession and impulse deduplication are reported per tick.
+- **Simulation** plays, pauses, steps and restarts. Speed changes how quickly
+  fixed ticks are scheduled, never their length. Running to an earlier tick
+  replays the scenario from tick 0.
+- **Problems and changes** shows the rig's bind diagnostics and the scenario's
+  located problems, the entity's decision history, and what is unsaved.
+
+Every live edit is recorded into the working scenario on the next tick, so the
+live session and a replay of the saved scenario run the same code on the same
+ticks. Acting at a tick the scenario has already scripted past drops the later
+actions (a new branch). **Save scenario** writes an editor-only sidecar beside
+the rig's source, `<rig>.sanimscenario`; the asset scanner does not register it,
+and nothing in the preview writes the rig or its schemas. Opening a rig restores
+its sidecar when one exists.
+
+The editor runs without a game module, so names a module would declare are not
+known here. A scenario may list `declared_tags` as preview fixtures; they are
+registered only in the preview World and shown as fixtures. Nothing a scenario
+names is registered on its behalf: an unknown fact, intent, parameter or tag is
+a located problem.
+
+The fixture project ships `asset://animation/hero.rig.sdata` with a
+landing-and-reload scenario beside it:
+
+```text
+animation_editor --project test/fixtures/content/animation_preview.senchaproj
+```
+
+Not yet: tag-set (tag container) inputs, selectors and content resolution,
+recorded-tick inspection without replay, and loading a project's module
+vocabulary. `AnimationPreviewSessionTests.cpp` covers the session headlessly:
+next-tick application, derived history, capacity/primary/retention, exact
+replay of a saved take, branching, unknown names, and asset immutability.
 
 ## Ownership
 
 `animation_authoring` is a GUI-independent library. `AnimationClipPreviewSession`
-owns audition time and pose scratch. `AnimationPreviewWorkspace` owns asset leases
+owns audition time and pose scratch. `AnimationPreviewSession` owns the preview
+World, fixed clock, scenario runner and tick history; `AnimationScenario` is the
+sidecar format. `AnimationPreviewWorkspace` owns asset leases
 and selection, then extracts `AnimationPreviewScene`. The rendering feature
 consumes that scene, never a simulation World. The application removes its render
 features before destroying the asset stack. No game module is activated during
@@ -81,9 +134,11 @@ The runtime these build is specified by
 the staging by [docs/plans/animation-authoring.md](../../docs/plans/animation-authoring.md).
 These are required implementation work, not capabilities of the current editor:
 
-1. Fact/request schemas, fixed-capacity requests and bounded fact history, with
-   editable preview snapshots, request controls, saved scenarios, shared document
-   transactions, and actionable schema diagnostics.
+1. Remaining from the facts/requests stage: rig and fact-schema panes in this
+   editor (they are authored in Data Editor today), tag-set inputs, the
+   project's module vocabulary in the preview World, skeletal joint identity,
+   and clip event/root metadata formats (landing with their consumers in
+   stages 3, 4 and 7).
 2. Flat selectors, behaviors and slot overlays, with live winner/failure views,
    typed predicates, cross-asset navigation and decision history. Preserve the
    selector-free Prop and one-layer Simple paths.

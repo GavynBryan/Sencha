@@ -1,4 +1,8 @@
-add_library(animation_authoring STATIC src/authoring/AnimationClipPreviewSession.cpp)
+add_library(animation_authoring STATIC
+    src/authoring/AnimationClipPreviewSession.cpp
+    src/authoring/AnimationPreviewSession.cpp
+    src/authoring/AnimationRigOutline.cpp
+    src/authoring/AnimationScenario.cpp)
 target_link_libraries(animation_authoring PUBLIC editor_common)
 target_include_directories(animation_authoring PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 sencha_warnings(animation_authoring)
@@ -10,7 +14,8 @@ add_executable(animation_editor
     src/render/AnimationPreviewRenderFeature.cpp
     src/ui/AnimationPreviewPanels.cpp
     src/ui/AnimationDocumentActions.cpp
-    src/ui/AnimationRequestSchemaPanel.cpp)
+    src/ui/AnimationRequestSchemaPanel.cpp
+    src/ui/AnimationSimulationPanels.cpp)
 target_link_libraries(animation_editor PRIVATE animation_authoring editor_common)
 sencha_warnings(animation_editor)
 set_target_properties(animation_editor PROPERTIES
