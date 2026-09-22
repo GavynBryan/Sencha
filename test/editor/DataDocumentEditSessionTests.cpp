@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "DataDocument.h"
+#include "data/DataDocument.h"
 
 #include <movement/MovementProfileData.h>
 

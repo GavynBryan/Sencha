@@ -1,6 +1,6 @@
 #include "input/InputProfileForm.h"
 
-#include "DataDocument.h"
+#include "data/DataDocument.h"
 #include "DataEditorWorkspace.h"
 #include "JsonObjectEdit.h"
 #include "input/InputBindingSummary.h"

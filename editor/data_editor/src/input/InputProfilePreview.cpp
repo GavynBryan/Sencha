@@ -1,6 +1,6 @@
 #include "input/InputProfilePreview.h"
 
-#include "DataDocument.h"
+#include "data/DataDocument.h"
 #include "DataEditorWorkspace.h"
 #include "JsonObjectEdit.h"
 

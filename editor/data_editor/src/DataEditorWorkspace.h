@@ -1,6 +1,6 @@
 #pragma once
 
-#include "DataDocument.h"
+#include "data/DataDocument.h"
 
 #include <assets/runtime/RuntimeAssets.h>
 

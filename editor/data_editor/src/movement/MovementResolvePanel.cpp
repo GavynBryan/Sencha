@@ -4,7 +4,7 @@
 #include "MovementProfileForm.h"
 #include "MovementResolvePreview.h"
 
-#include "../DataDocument.h"
+#include "data/DataDocument.h"
 #include "../DataEditorWorkspace.h"
 
 #include "ui/EditorUiStyle.h"

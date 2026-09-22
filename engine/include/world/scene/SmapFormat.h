@@ -15,7 +15,7 @@
 
 class AssetRegistry;
 class ComponentSerializerRegistry;
-class IComponentSerializer;
+struct IComponentSerializer;
 
 //=============================================================================
 // .smap — the cooked scene container

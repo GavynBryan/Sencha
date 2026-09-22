@@ -2,6 +2,7 @@
 
 #include "authoring/AnimationClipPreviewSession.h"
 #include "render/AnimationPreviewScene.h"
+#include "data/DataDocument.h"
 
 #include <anim/SkeletonHandle.h>
 #include <core/assets/AssetLease.h>
@@ -23,6 +24,17 @@ public:
     bool SelectClip(const std::string& path);
     bool SelectMaterial(const std::string& path);
     void Frame(double wallSeconds);
+    bool OpenRequestSchema(const std::string& path);
+    void SelectDocument(std::size_t index);
+    void CancelAuthoringEdit();
+    void ValidateDocument(DataDocument& document);
+    bool SaveDocument(DataDocument& document);
+    bool ReloadDocument(DataDocument& document);
+
+    std::vector<std::string> RequestSchemaPaths;
+    std::vector<std::unique_ptr<DataDocument>> Documents;
+    std::size_t ActiveDocument = 0;
+    std::string DocumentError;
 
     AnimationClipPreviewSession Session;
     AnimationPreviewScene Scene;
