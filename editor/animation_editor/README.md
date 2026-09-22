@@ -76,6 +76,9 @@ covers loading through the headless runtime asset composition.
 
 ## Remaining paired runtime/editor stages
 
+The runtime these build is specified by
+[docs/plans/animation-runtime.md](../../docs/plans/animation-runtime.md), and
+the staging by [docs/plans/animation-authoring.md](../../docs/plans/animation-authoring.md).
 These are required implementation work, not capabilities of the current editor:
 
 1. Fact/request schemas, fixed-capacity requests and bounded fact history, with
