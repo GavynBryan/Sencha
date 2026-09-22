@@ -1,5 +1,6 @@
 #include "vocabulary/VocabularyCatalog.h"
 
+#include <anim/AnimationRegistration.h>
 #include <app/EngineVerbs.h>
 #include <app/Game.h>
 #include <authored/VerbBindingCompiler.h>
@@ -14,6 +15,7 @@ VocabularyCatalog::VocabularyCatalog()
     // modes -- what Kyusu gives a document, for the same reason. A module
     // declaring a tag into a World with no tag registry would be told nothing.
     RegisterMovement(Metadata);
+    InstallAnimationVocabulary(Metadata);
     InstallAuthoredVocabulary(Metadata);
     (void)DeclareEngineVerbs(*FindVerbRegistry(Metadata));
     TakeInstallationErrors();

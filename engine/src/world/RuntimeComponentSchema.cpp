@@ -1,6 +1,7 @@
 #include <world/RuntimeComponentSchema.h>
 
 #include <abilities/AbilityKit.h>
+#include <anim/AnimationRegistration.h>
 #include <audio/AudioComponentRegistration.h>
 #include <camera/CameraComponentRegistration.h>
 #include <controller/ControllerComponentRegistration.h>
@@ -40,7 +41,8 @@ namespace
         InputComponents,
         ParticipantComponents,
         NetComponents,
-        LogicComponents>;
+        LogicComponents,
+        AnimationComponents>;
 
     static_assert(EngineComponentSets::Owned,
                   "a component is named by more than one feature's vocabulary");
@@ -89,6 +91,7 @@ void RegisterEngineComponents(ComponentRegistrar& registrar)
     RegisterParticipantComponents(registrar);
     RegisterNetComponents(registrar);
     RegisterLogicComponents(registrar);
+    RegisterAnimationComponents(registrar);
 }
 
 void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)

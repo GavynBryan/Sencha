@@ -1159,10 +1159,14 @@ private:
             // See docs/ecs/decisions.md D0.2 for benchmark impact.
             static constexpr size_t FNV_OFFSET = 14695981039346656037ULL;
             static constexpr size_t FNV_PRIME  = 1099511628211ULL;
+            // Masked to one word before narrowing: to_ullong throws when any
+            // higher bit is still set, which is every signature holding a
+            // component id of 64 or more.
+            static const ArchetypeSignature kWord(~0ULL);
             size_t h = FNV_OFFSET;
             for (int word = 0; word < 4; ++word)
             {
-                const uint64_t w = (s >> (word * 64)).to_ulong();
+                const uint64_t w = ((s >> (word * 64)) & kWord).to_ullong();
                 for (int b = 0; b < 8; ++b)
                 {
                     h ^= static_cast<uint8_t>(w >> (b * 8));

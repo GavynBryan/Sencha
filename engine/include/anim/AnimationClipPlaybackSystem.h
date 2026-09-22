@@ -4,7 +4,6 @@
 
 class World;
 class StoragePartitionSet;
-class EngineSchedule;
 struct FixedLogicContext;
 
 //=============================================================================
@@ -21,11 +20,6 @@ class AnimationClipPlaybackSystem
 public:
     void FixedLogic(FixedLogicContext& ctx);
 };
-
-// Registers clip playback on a game's schedule, the RegisterAbilityKitSystems
-// shape: an engine-owned system a host opts into rather than one the engine
-// forces on every schedule.
-void RegisterAnimationSystems(EngineSchedule& schedule);
 
 // The pure half: advances players in `world` by `deltaSeconds`. Clip
 // durations come from `clips`; a player whose clip is not resident holds

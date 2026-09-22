@@ -2,7 +2,6 @@
 
 #include <anim/AnimationClipPlaybackRuntime.h>
 #include <anim/AnimationClipPlayerComponent.h>
-#include <app/EngineSchedule.h>
 #include <app/GameContexts.h>
 #include <ecs/Query.h>
 #include <ecs/StoragePartitionSet.h>
@@ -49,11 +48,6 @@ void AdvanceAnimationClipPlayers(World& world,
             }
         }
     });
-}
-
-void RegisterAnimationSystems(EngineSchedule& schedule)
-{
-    schedule.Register<AnimationClipPlaybackSystem>();
 }
 
 void AnimationClipPlaybackSystem::FixedLogic(FixedLogicContext& ctx)

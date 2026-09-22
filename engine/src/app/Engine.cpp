@@ -10,6 +10,7 @@
 #include <authored/WorldVocabulary.h>
 #include <logic/VerbRelaySystem.h>
 #include <abilities/AbilityKit.h>
+#include <anim/AnimationRegistration.h>
 #include <participant/ParticipantLifecycle.h>
 #include <world/SimulationAuthority.h>
 #include <world/identity/PersistentEntityIndex.h>
@@ -1095,6 +1096,7 @@ int Engine::Run(Game& game)
         // Movement is not among them: it is a feature a game opts into, and a
         // locomotion mode is declared once the game has, as the templates do.
         InstallAbilityKitVocabulary(entities);
+        InstallAnimationVocabulary(entities);
         InstallAuthoredVocabulary(entities);
         VerbRegistry& verbs = *FindVerbRegistry(entities);
         (void)DeclareEngineVerbs(verbs);

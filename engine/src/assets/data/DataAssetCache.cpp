@@ -14,7 +14,8 @@ DataAssetCache::~DataAssetCache()
 
 DataAssetHandle DataAssetCache::Register(std::string_view path,
                                          std::string typeName,
-                                         std::shared_ptr<const void> value)
+                                         std::shared_ptr<const void> value,
+                                         std::vector<AssetLease> dependencies)
 {
     if (path.empty() || typeName.empty() || value == nullptr)
         return {};
@@ -25,6 +26,7 @@ DataAssetHandle DataAssetCache::Register(std::string_view path,
     DataAssetEntry entry;
     entry.Value = std::move(value);
     entry.TypeName = std::move(typeName);
+    entry.Dependencies = std::move(dependencies);
     entry.ReloadVersion = 1;
     entry.Alive = true;
 
@@ -36,7 +38,8 @@ DataAssetHandle DataAssetCache::Register(std::string_view path,
 
 bool DataAssetCache::ReloadInPlace(std::string_view path,
                                    std::string_view typeName,
-                                   std::shared_ptr<const void> value)
+                                   std::shared_ptr<const void> value,
+                                   std::vector<AssetLease> dependencies)
 {
     if (value == nullptr)
         return false;
@@ -46,6 +49,9 @@ bool DataAssetCache::ReloadInPlace(std::string_view path,
         return false;
 
     entry->Value = std::move(value);
+    // Swapped, so the old set is released when `dependencies` goes out of
+    // scope, after the new one is already held.
+    std::swap(entry->Dependencies, dependencies);
     ++entry->ReloadVersion;
     if (entry->ReloadVersion == 0)
         entry->ReloadVersion = 1;
@@ -111,10 +117,15 @@ void DataAssetCache::OnFree(DataAssetEntry& entry)
             LiveSubtypeCounts.erase(it);
     }
 
+    // Released last, once this entry no longer reads as live: a dependency in
+    // this cache frees through the same path, re-entrantly.
+    std::vector<AssetLease> dependencies = std::move(entry.Dependencies);
+    entry.Dependencies.clear();
     entry.Value.reset();
     entry.TypeName.clear();
     entry.ReloadVersion = 0;
     entry.Alive = false;
+    dependencies.clear();
 }
 
 bool DataAssetCache::IsEntryLive(const DataAssetEntry& entry) const

@@ -16,6 +16,10 @@ file(GLOB_RECURSE SENCHA_ENGINE_HEADERS CONFIGURE_DEPENDS
 # fingerprint below hashes them.
 set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/abilities/AbilitySet.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimDecisionLog.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimFacts.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimRequestSet.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimRig.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimationClipPlayerComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/attributes/AttributeSet.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/audio/AudioCaptionComponent.h"

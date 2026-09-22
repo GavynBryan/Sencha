@@ -1,5 +1,6 @@
 #include <app/RuntimeContent.h>
 
+#include <anim/AnimRigBinding.h>
 #include <anim/AnimationClipPlaybackRuntime.h>
 #include <app/DefaultRenderPipeline.h>
 #include <app/Engine.h>
@@ -135,6 +136,7 @@ void RuntimeContent::Publish(World& world)
     world.SetResource(AudioSourceRuntime{
         &assets.AudioClips, &Host.Audio(), &Host.Captions() });
     world.SetResource(AnimationClipPlaybackRuntime{ &assets.AnimationClips });
+    world.SetResource(AnimRigBindings{ &assets.DataAssets });
 
     // The spawn services are engine-owned; the asset stack they resolve scenes
     // through is this one. The second is for the spawns a peer names rather
@@ -202,6 +204,7 @@ void RuntimeContent::Disconnect(World& world)
     world.SetResource(AssetStoreTable{});
     world.SetResource(AudioSourceRuntime{});
     world.SetResource(AnimationClipPlaybackRuntime{});
+    world.SetResource(AnimRigBindings{});
 
 #ifdef SENCHA_ENABLE_COOK
     HotReloadRoots.clear();

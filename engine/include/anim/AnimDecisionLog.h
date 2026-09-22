@@ -1,0 +1,93 @@
+#pragma once
+
+#include <anim/AnimRequestSet.h>
+#include <anim/AnimTypes.h>
+#include <ecs/ComponentAnnotations.h>
+
+#include <cstdint>
+#include <string_view>
+
+//=============================================================================
+// AnimDecisionLog
+//
+// A ring of what changed on an animated entity and why. Every state change the
+// runtime makes writes one record with a cause, and a record with no cause is
+// a bug: the invariants in docs/plans/animation-runtime.md are only
+// enforceable because every change is attributable.
+//
+// Optional by construction: an entity carries a log only in dev builds or when
+// opted in, and every writer takes a nullable log. What it holds is compact
+// ids; an inspector resolves names against what is still loaded.
+//=============================================================================
+
+enum class AnimDecisionCause : std::uint8_t
+{
+    RequestAdded,
+    RequestSuperseded,
+    RequestDeduplicated,
+    RequestCancelled,
+    RequestExpired,
+    RequestRejected,
+};
+
+[[nodiscard]] std::string_view AnimDecisionCauseName(AnimDecisionCause cause);
+
+// Why a request was not accepted. Capacity is the one the architecture names:
+// nothing is evicted, so server and client decide identically.
+enum class AnimRejectReason : std::uint8_t
+{
+    None,
+    Capacity,
+    // The intent is not one the rig's request schema declares.
+    UndeclaredIntent,
+    // The request names no source, no intent, or no layer.
+    Malformed,
+};
+
+[[nodiscard]] std::string_view AnimRejectReasonName(AnimRejectReason reason);
+
+inline constexpr std::uint8_t kAnimNoLayer = 0xFF;
+
+struct AnimDecisionRecord
+{
+    AnimTick Tick = 0;
+    AnimDecisionCause Cause = AnimDecisionCause::RequestAdded;
+    std::uint8_t Layer = kAnimNoLayer;
+    AnimRequestId Request;
+    GameplayTagId Intent;
+    AnimCancelReason CancelReason = AnimCancelReason::None;
+    AnimRejectReason RejectReason = AnimRejectReason::None;
+};
+
+inline constexpr std::size_t kAnimDecisionLogCapacity = 64;
+
+struct SENCHA_COMPONENT("sencha.anim_decision_log") AnimDecisionLog
+{
+    AnimDecisionRecord Records[kAnimDecisionLogCapacity] = {};
+    // Records ever written. The newest is at (Written - 1) % capacity, and the
+    // ring holds min(Written, capacity) of them.
+    std::uint64_t Written = 0;
+
+    void Append(const AnimDecisionRecord& record)
+    {
+        Records[Written % kAnimDecisionLogCapacity] = record;
+        ++Written;
+    }
+
+    [[nodiscard]] std::size_t Size() const
+    {
+        return Written < kAnimDecisionLogCapacity ? static_cast<std::size_t>(Written)
+                                                  : kAnimDecisionLogCapacity;
+    }
+
+    // Oldest first: index 0 is the oldest record still held.
+    [[nodiscard]] const AnimDecisionRecord& At(std::size_t index) const
+    {
+        const std::uint64_t first = Written - Size();
+        return Records[(first + index) % kAnimDecisionLogCapacity];
+    }
+};
+
+#if !defined(SENCHA_CODEGEN)
+#  include <anim/AnimDecisionLog.sencha.h>
+#endif

@@ -1,4 +1,4 @@
-#include <anim/AnimationClipPlaybackSystem.h>
+#include <anim/AnimationRegistration.h>
 #include <app/Engine.h>
 #include <app/GameContexts.h>
 #include <app/Game.h>
@@ -216,7 +216,7 @@ public:
         ctx.Schedule.Register<UiHostSystem>(GetEngine(), UiPackagePath);
         // Clip playback: a posed skinned mesh is one of the things the goldens
         // watch, and nothing else in this host would advance it.
-        RegisterAnimationSystems(ctx.Schedule);
+        RegisterAnimationSystems(ctx.Schedule, &GetEngine().Logging());
     }
 
     void OnShutdown(GameShutdownContext&) override
